@@ -83,22 +83,12 @@ const LIST_CURSOR_ENT = "e:";
 
 // ── OAuth Agent ───────────────────────────────────────────────────────────────
 
-/** Bluesky AppView Agent that uses OAuth session fetch (DPoP, etc.). */
-export function createOAuthBskyAgent(session: OAuthSession): Agent {
-  const authFetchImpl = (
-    url: RequestInfo | URL,
-    init?: RequestInit
-  ): Promise<Response> =>
-    session.fetchHandler(url.toString(), init as RequestInit);
-  const authFetch = Object.assign(authFetchImpl, {
-    preconnect: fetch.preconnect.bind(fetch),
-  }) as typeof fetch;
-  return new Agent({ service: BSKY_SERVICE, fetch: authFetch });
-}
-
 /**
- * OAuth-backed Agent with `did` set — required for {@link Agent.post}, {@link Agent.like}, {@link Agent.repost}.
- * Routes XRPC through the session's fetch handler (typically the user's PDS audience).
+ * OAuth-backed Agent with `did` set — required for {@link Agent.post}, {@link Agent.like}, {@link Agent.repost},
+ * and {@link Agent.api}.com.atproto.repo.* against the user's **PDS** (correct token audience).
+ *
+ * Do **not** use this for arbitrary calls to `bsky.social`: OAuth tokens are usually scoped to the PDS,
+ * and App View may reject them. Prefer `Agent` with the default Bluesky service URL and no custom fetch for public reads.
  */
 export function createOAuthAgent(session: OAuthSession): Agent {
   return new Agent(session);
@@ -276,12 +266,18 @@ function str(v: unknown): string | undefined {
 
 /**
  * Discovers followed authors with standard.site-related records.
+ *
+ * Uses the public Bluesky App View relay (`bsky.social`) without attaching OAuth credentials:
+ * graph + repo reads are public, while OAuth tokens are audience-bound to the user's PDS.
+ *
+ * @param session retained for API stability; discovery does not send this token to App View.
  */
 export async function discoverPublications(
   userDid: string,
-  session: OAuthSession
+  _session: OAuthSession
 ): Promise<DiscoveredPublication[]> {
-  const agent = createOAuthBskyAgent(session);
+  void _session;
+  const agent = new Agent(BSKY_SERVICE);
   const follows: FollowProfile[] = [];
 
   let cursor: string | undefined;
