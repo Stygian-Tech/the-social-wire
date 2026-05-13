@@ -1,15 +1,14 @@
 /**
  * Public ATProto client for reading standard.site records directly from
- * the ATProto network.
- *
- * Uses bsky.social as the relay for `com.atproto.repo.*`; authenticated
- * calls use the viewer's OAuthSession (follow graph, profile).
+ * authors' PDS endpoints (PLC-resolved). Bluesky App View often returns 400 for
+ * `com.atproto.repo.*` on `site.standard.*` collections — do not rely on it for repo reads.
  */
 
 import { Agent } from "@atproto/api";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 
-const BSKY_SERVICE = "https://bsky.social";
+/** Public App View — graph + profile reads only (not `repo.listRecords` for arbitrary NSIDs). */
+const BSKY_APPVIEW_PUBLIC = "https://public.api.bsky.app";
 
 /**
  * Collections probed to decide whether a followed account has standard.site
@@ -84,51 +83,121 @@ const LIST_CURSOR_ENT = "e:";
 /** Follow edges stored on the viewer's repo (canonical over Bluesky relay mirrors). */
 const GRAPH_FOLLOW_COLLECTION = "app.bsky.graph.follow";
 
+const plcEndpointCache = new Map<string, string | null>();
+
 async function resolvePlcPdsEndpoint(did: string): Promise<string | null> {
-  if (!did.startsWith("did:plc:")) return null;
+  if (!did.startsWith("did:")) return null;
   try {
-    const res = await fetch(
-      `https://plc.directory/${encodeURIComponent(did)}`,
-      { headers: { Accept: "application/json" } }
-    );
+    const url = `https://plc.directory/${encodeURIComponent(did)}`;
+    const res = await fetch(url, { headers: { Accept: "application/json" } });
     if (!res.ok) return null;
     const doc = (await res.json()) as {
-      service?: Array<{ type?: string; serviceEndpoint?: string }>;
+      service?: Array<{
+        id?: string;
+        type?: string;
+        serviceEndpoint?: unknown;
+      }>;
     };
-    const endpoint = doc.service?.find(
-      (s) => s.type === "AtprotoPersonalDataServer"
-    )?.serviceEndpoint;
-    return typeof endpoint === "string" ? endpoint.replace(/\/$/, "") : null;
+    for (const s of doc.service ?? []) {
+      const ep = s.serviceEndpoint;
+      if (
+        typeof ep === "string" &&
+        (s.id === "#atproto_pds" || s.type === "AtprotoPersonalDataServer")
+      ) {
+        return ep.replace(/\/+$/, "");
+      }
+    }
+    return null;
   } catch {
     return null;
   }
 }
 
-/** Repo reads via author's PDS when the App View relay returns nothing (indexing gaps). */
-async function listRecordsDirectFromPds(
-  pdsBase: string,
+function oauthAwareFetch(session: OAuthSession | undefined) {
+  if (!session) return undefined;
+  return (url: string, init?: RequestInit) =>
+    session.fetchHandler(url, init as RequestInit);
+}
+
+/**
+ * Reads `listRecords` from the repo DID's **own** PDS (PLC). Optionally retries with OAuth
+ * when the host returns 400/401/403 (some PDS policies require an authenticated session).
+ */
+async function listRecordsOnAuthorRepo(
+  repoDid: string,
+  collection: string,
+  options: { limit: number; cursor?: string; reverse?: boolean },
+  oauthSession?: OAuthSession
+): Promise<{
+  records: Array<{ uri: string; value: unknown }>;
+  cursor?: string;
+}> {
+  let pdsBase = plcEndpointCache.get(repoDid);
+  if (pdsBase === undefined) {
+    pdsBase = await resolvePlcPdsEndpoint(repoDid);
+    plcEndpointCache.set(repoDid, pdsBase);
+  }
+  if (!pdsBase) return { records: [] };
+
+  const params = new URLSearchParams({
+    repo: repoDid,
+    collection,
+    limit: String(options.limit),
+    reverse: String(options.reverse ?? false),
+  });
+  if (options.cursor) params.set("cursor", options.cursor);
+
+  const url = `${pdsBase}/xrpc/com.atproto.repo.listRecords?${params}`;
+  const init: RequestInit = { headers: { Accept: "application/json" } };
+
+  let res = await fetch(url, init);
+  const authed = oauthAwareFetch(oauthSession);
+  if (
+    !res.ok &&
+    authed &&
+    (res.status === 400 || res.status === 401 || res.status === 403)
+  ) {
+    res = await authed(url, init);
+  }
+  if (!res.ok) return { records: [] };
+
+  const json = (await res.json()) as {
+    records?: Array<{ uri: string; value: unknown }>;
+    cursor?: string;
+  };
+  return { records: json.records ?? [], cursor: json.cursor };
+}
+
+async function getRecordOnAuthorRepo(
   repo: string,
   collection: string,
-  limit: number
-): Promise<{ uri: string; value: unknown }[]> {
-  const params = new URLSearchParams({
-    repo,
-    collection,
-    limit: String(limit),
-  });
-  try {
-    const res = await fetch(
-      `${pdsBase}/xrpc/com.atproto.repo.listRecords?${params}`,
-      { headers: { Accept: "application/json" } }
-    );
-    if (!res.ok) return [];
-    const json = (await res.json()) as {
-      records?: Array<{ uri: string; value: unknown }>;
-    };
-    return json.records ?? [];
-  } catch {
-    return [];
+  rkey: string,
+  oauthSession?: OAuthSession
+): Promise<unknown | null> {
+  let pdsBase = plcEndpointCache.get(repo);
+  if (pdsBase === undefined) {
+    pdsBase = await resolvePlcPdsEndpoint(repo);
+    plcEndpointCache.set(repo, pdsBase);
   }
+  if (!pdsBase) return null;
+
+  const params = new URLSearchParams({ repo, collection, rkey });
+  const url = `${pdsBase}/xrpc/com.atproto.repo.getRecord?${params}`;
+  const init: RequestInit = { headers: { Accept: "application/json" } };
+
+  let res = await fetch(url, init);
+  const authed = oauthAwareFetch(oauthSession);
+  if (
+    !res.ok &&
+    authed &&
+    (res.status === 400 || res.status === 401 || res.status === 403)
+  ) {
+    res = await authed(url, init);
+  }
+  if (!res.ok) return null;
+
+  const json = (await res.json()) as { value?: unknown };
+  return json.value ?? null;
 }
 
 async function enrichFollowsFromRelay(
@@ -233,6 +302,10 @@ function extractHttpsUrl(
   return undefined;
 }
 
+function str(v: unknown): string | undefined {
+  return typeof v === "string" ? v : undefined;
+}
+
 function parseStrongRef(
   v: unknown
 ): { uri: string; cid: string } | undefined {
@@ -251,31 +324,32 @@ function joinPublicationUrl(base: string, path: string): string {
 }
 
 async function resolvePublicationSiteBase(
-  agent: Agent,
-  siteField: string
+  siteField: string,
+  oauthSession?: OAuthSession
 ): Promise<string | undefined> {
   if (siteField.startsWith("http://") || siteField.startsWith("https://")) {
     return siteField.replace(/\/+$/, "");
   }
   const pubUri = parseAtUri(siteField);
   if (!pubUri) return undefined;
-  try {
-    const rec = await agent.api.com.atproto.repo.getRecord({
-      repo: pubUri.did,
-      collection: pubUri.collection,
-      rkey: pubUri.rkey,
-    });
-    const v = rec.data.value as Record<string, unknown>;
-    return extractHttpsUrl(str(v.url), str(v.href), str(v.site));
-  } catch {
-    return undefined;
-  }
+  const val = await getRecordOnAuthorRepo(
+    pubUri.did,
+    pubUri.collection,
+    pubUri.rkey,
+    oauthSession
+  );
+  if (!val || typeof val !== "object") return undefined;
+  const v = val as Record<string, unknown>;
+  return extractHttpsUrl(str(v.url), str(v.href), str(v.site));
 }
 
 /**
  * Resolves a canonical page URL for iframe embedding from standard.site-shaped records.
  */
-async function resolveEmbedUrl(agent: Agent, value: Record<string, unknown>): Promise<string | undefined> {
+async function resolveEmbedUrl(
+  value: Record<string, unknown>,
+  oauthSession?: OAuthSession
+): Promise<string | undefined> {
   const siteField = str(value.site);
   const pathField = str(value.path);
   if (siteField && pathField) {
@@ -283,7 +357,7 @@ async function resolveEmbedUrl(agent: Agent, value: Record<string, unknown>): Pr
       return joinPublicationUrl(siteField.replace(/\/+$/, ""), pathField);
     }
     if (siteField.startsWith("at://")) {
-      const base = await resolvePublicationSiteBase(agent, siteField);
+      const base = await resolvePublicationSiteBase(siteField, oauthSession);
       if (base) return joinPublicationUrl(base, pathField);
     }
   }
@@ -333,10 +407,6 @@ function publicationTitleFromRecord(
   return t ?? fallback;
 }
 
-function str(v: unknown): string | undefined {
-  return typeof v === "string" ? v : undefined;
-}
-
 // ── Public API ────────────────────────────────────────────────────────────────
 
 /**
@@ -346,33 +416,31 @@ function str(v: unknown): string | undefined {
  * - **`app.bsky.graph.follow`** on the viewer's repo (OAuth / PDS — canonical graph).
  * - **`app.bsky.graph.getFollows`** on the Bluesky relay (additional mirrored edges).
  *
- * Each followed repo is checked via the relay first; if empty, **`listRecords`** against the
- * author's **PDS** (PLC-resolved) catches relay indexing gaps.
+ * Each followed repo is probed via **that author's PDS** (PLC); optional OAuth retry on 400/401/403.
  */
 export async function discoverPublications(
   userDid: string,
   session: OAuthSession
 ): Promise<DiscoveredPublication[]> {
-  const relayAgent = new Agent(BSKY_SERVICE);
-  const pdsAgent = createOAuthAgent(session);
+  const relayAgent = new Agent(BSKY_APPVIEW_PUBLIC);
 
   const subjectDids = new Set<string>();
 
   try {
     let cursor: string | undefined;
     do {
-      const res = await pdsAgent.api.com.atproto.repo.listRecords({
-        repo: userDid,
-        collection: GRAPH_FOLLOW_COLLECTION,
-        limit: FOLLOW_PAGE_LIMIT,
-        cursor,
-      });
-      for (const record of res.data.records) {
+      const { records, cursor: next } = await listRecordsOnAuthorRepo(
+        userDid,
+        GRAPH_FOLLOW_COLLECTION,
+        { limit: FOLLOW_PAGE_LIMIT, cursor, reverse: false },
+        session
+      );
+      for (const record of records) {
         const val = record.value as { subject?: string };
         if (typeof val.subject === "string") subjectDids.add(val.subject);
         if (subjectDids.size >= MAX_FOLLOWS) break;
       }
-      cursor = res.data.cursor;
+      cursor = next;
       if (subjectDids.size >= MAX_FOLLOWS) break;
     } while (cursor);
   } catch {
@@ -418,31 +486,12 @@ export async function discoverPublications(
     follow: FollowProfile
   ): Promise<DiscoveredPublication | null> {
     for (const collection of DISCOVERY_COLLECTIONS) {
-      let rows: Array<{ value: unknown }> = [];
-      try {
-        const relayRes = await relayAgent.api.com.atproto.repo.listRecords({
-          repo: follow.did,
-          collection,
-          limit: 1,
-        });
-        rows = relayRes.data.records;
-      } catch {
-        rows = [];
-      }
-
-      if (rows.length === 0) {
-        const pds = await resolvePlcPdsEndpoint(follow.did);
-        if (pds) {
-          const direct = await listRecordsDirectFromPds(
-            pds,
-            follow.did,
-            collection,
-            1
-          );
-          if (direct.length > 0) rows = direct;
-        }
-      }
-
+      const { records: rows } = await listRecordsOnAuthorRepo(
+        follow.did,
+        collection,
+        { limit: 1, reverse: false },
+        session
+      );
       if (rows.length === 0) continue;
 
       const firstVal = rows[0]!.value as Record<string, unknown>;
@@ -487,21 +536,21 @@ export async function discoverPublications(
 export async function listEntries(
   authorDid: string,
   cursor?: string,
-  limit = 50
+  limit = 50,
+  oauthSession?: OAuthSession
 ): Promise<{ entries: EntryListItem[]; cursor?: string }> {
-  const agent = new Agent(BSKY_SERVICE);
   const mode = decodeListCursor(cursor);
 
   if (mode === "initial") {
-    const docRes = await agent.api.com.atproto.repo.listRecords({
-      repo: authorDid,
-      collection: LIST_COLLECTIONS_ORDER[0],
-      limit,
-      reverse: false,
-    });
+    const docRes = await listRecordsOnAuthorRepo(
+      authorDid,
+      LIST_COLLECTIONS_ORDER[0],
+      { limit, reverse: false },
+      oauthSession
+    );
 
-    if (docRes.data.records.length > 0) {
-      const entries = docRes.data.records.map((record) => {
+    if (docRes.records.length > 0) {
+      const entries = docRes.records.map((record) => {
         const parsed = parseEntryValue(record.value as Record<string, unknown>);
         return {
           entryId: record.uri,
@@ -512,21 +561,18 @@ export async function listEntries(
       });
       return {
         entries,
-        cursor: encodeListCursor(
-          "document",
-          docRes.data.cursor ?? undefined
-        ),
+        cursor: encodeListCursor("document", docRes.cursor),
       };
     }
 
-    const entRes = await agent.api.com.atproto.repo.listRecords({
-      repo: authorDid,
-      collection: LIST_COLLECTIONS_ORDER[1],
-      limit,
-      reverse: false,
-    });
+    const entRes = await listRecordsOnAuthorRepo(
+      authorDid,
+      LIST_COLLECTIONS_ORDER[1],
+      { limit, reverse: false },
+      oauthSession
+    );
 
-    const entries = entRes.data.records.map((record) => {
+    const entries = entRes.records.map((record) => {
       const parsed = parseEntryValue(record.value as Record<string, unknown>);
       return {
         entryId: record.uri,
@@ -537,19 +583,18 @@ export async function listEntries(
     });
     return {
       entries,
-      cursor: encodeListCursor("entry", entRes.data.cursor ?? undefined),
+      cursor: encodeListCursor("entry", entRes.cursor),
     };
   }
 
   if (mode.kind === "document") {
-    const docRes = await agent.api.com.atproto.repo.listRecords({
-      repo: authorDid,
-      collection: LIST_COLLECTIONS_ORDER[0],
-      limit,
-      cursor: mode.atproto,
-      reverse: false,
-    });
-    const entries = docRes.data.records.map((record) => {
+    const docRes = await listRecordsOnAuthorRepo(
+      authorDid,
+      LIST_COLLECTIONS_ORDER[0],
+      { limit, cursor: mode.atproto, reverse: false },
+      oauthSession
+    );
+    const entries = docRes.records.map((record) => {
       const parsed = parseEntryValue(record.value as Record<string, unknown>);
       return {
         entryId: record.uri,
@@ -560,18 +605,17 @@ export async function listEntries(
     });
     return {
       entries,
-      cursor: encodeListCursor("document", docRes.data.cursor ?? undefined),
+      cursor: encodeListCursor("document", docRes.cursor),
     };
   }
 
-  const entRes = await agent.api.com.atproto.repo.listRecords({
-    repo: authorDid,
-    collection: LIST_COLLECTIONS_ORDER[1],
-    limit,
-    cursor: mode.atproto,
-    reverse: false,
-  });
-  const entries = entRes.data.records.map((record) => {
+  const entRes = await listRecordsOnAuthorRepo(
+    authorDid,
+    LIST_COLLECTIONS_ORDER[1],
+    { limit, cursor: mode.atproto, reverse: false },
+    oauthSession
+  );
+  const entries = entRes.records.map((record) => {
     const parsed = parseEntryValue(record.value as Record<string, unknown>);
     return {
       entryId: record.uri,
@@ -582,30 +626,33 @@ export async function listEntries(
   });
   return {
     entries,
-    cursor: encodeListCursor("entry", entRes.data.cursor ?? undefined),
+    cursor: encodeListCursor("entry", entRes.cursor),
   };
 }
 
 /**
  * Fetches the full content for a single entry by its AT-URI.
  */
-export async function getEntry(entryId: string): Promise<EntryDetail | null> {
+export async function getEntry(
+  entryId: string,
+  oauthSession?: OAuthSession
+): Promise<EntryDetail | null> {
   const parsed = parseAtUri(entryId);
   if (!parsed) return null;
 
-  const agent = new Agent(BSKY_SERVICE);
-  const res = await agent.api.com.atproto.repo.getRecord({
-    repo: parsed.did,
-    collection: parsed.collection,
-    rkey: parsed.rkey,
-  });
+  const raw = (await getRecordOnAuthorRepo(
+    parsed.did,
+    parsed.collection,
+    parsed.rkey,
+    oauthSession
+  )) as Record<string, unknown> | null;
+  if (!raw) return null;
 
-  const raw = res.data.value as Record<string, unknown>;
   const fields = parseEntryValue(raw);
 
   const embedFromFields = extractHttpsUrl(fields.originalUrl);
   const embedUrl =
-    embedFromFields ?? (await resolveEmbedUrl(agent, raw));
+    embedFromFields ?? (await resolveEmbedUrl(raw, oauthSession));
 
   const bskyRef = parseStrongRef(raw.bskyPostRef);
 

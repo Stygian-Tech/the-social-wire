@@ -19,13 +19,19 @@ export const ENTRY_DETAIL_QUERY_KEY = (entryId: string) =>
  * directly from the ATProto network — no Social Wire service required.
  */
 export function useEntries(authorDid: string | null) {
-  const { session } = useAuth();
+  const { session, getOAuthSession } = useAuth();
 
   return useInfiniteQuery({
     queryKey: ENTRIES_QUERY_KEY(authorDid ?? ""),
     queryFn: async ({ pageParam }) => {
       if (!authorDid) return { entries: [], cursor: undefined };
-      return listEntries(authorDid, pageParam as string | undefined);
+      const oauth = getOAuthSession() ?? undefined;
+      return listEntries(
+        authorDid,
+        pageParam as string | undefined,
+        50,
+        oauth
+      );
     },
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) => lastPage.cursor,
@@ -38,13 +44,13 @@ export function useEntries(authorDid: string | null) {
  * Returns the full content for a single entry by its AT-URI.
  */
 export function useEntry(entryId: string | null) {
-  const { session } = useAuth();
+  const { session, getOAuthSession } = useAuth();
 
   return useQuery({
     queryKey: ENTRY_DETAIL_QUERY_KEY(entryId ?? ""),
     queryFn: async () => {
       if (!entryId) return null;
-      return getEntry(entryId);
+      return getEntry(entryId, getOAuthSession() ?? undefined);
     },
     enabled: !!entryId && !!session,
     staleTime: 5 * 60_000,
