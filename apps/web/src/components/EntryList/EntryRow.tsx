@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { cn } from "@/lib/utils";
 import type { EntryListItem } from "@/lib/atprotoClient";
 
@@ -26,6 +27,8 @@ export function EntryRow({
   });
 
   const showUnreadChrome = readIndicatorsEnabled && !isRead;
+  const [thumbFailed, setThumbFailed] = useState(false);
+  const showThumb = Boolean(entry.thumbnailUrl) && !thumbFailed;
 
   return (
     <button
@@ -37,15 +40,38 @@ export function EntryRow({
         readIndicatorsEnabled && isRead && "opacity-80"
       )}
     >
-      <span className="flex items-start gap-2">
+      <span className="flex items-start gap-3">
         {showUnreadChrome ? (
           <span
-            className="mt-1.5 size-1.5 shrink-0 rounded-full bg-primary"
+            className="mt-2 size-1.5 shrink-0 rounded-full bg-primary"
             aria-hidden
           />
         ) : (
-          <span className="mt-1.5 size-1.5 shrink-0" aria-hidden />
+          <span className="mt-2 size-1.5 shrink-0 rounded-full" aria-hidden />
         )}
+        <span
+          className={cn(
+            "relative mt-0.5 h-12 w-12 shrink-0 overflow-hidden rounded-md border border-border/50 bg-muted/35",
+            showThumb && "bg-muted"
+          )}
+        >
+          {entry.thumbnailUrl ? (
+            /* eslint-disable-next-line @next/next/no-img-element -- PDS / arbitrary publisher URLs */
+            <img
+              src={entry.thumbnailUrl}
+              alt=""
+              width={48}
+              height={48}
+              loading="lazy"
+              decoding="async"
+              onError={() => setThumbFailed(true)}
+              className={cn(
+                "absolute inset-0 h-full w-full object-cover",
+                thumbFailed && "hidden"
+              )}
+            />
+          ) : null}
+        </span>
         <span className="min-w-0 flex-1">
           <p
             className={cn(

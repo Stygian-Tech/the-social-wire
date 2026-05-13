@@ -260,6 +260,8 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
                   emptyLabel="No unfoldered publications. Follow feeds or assign items to a folder."
                   selectedPubId={selectedPubId}
                   onSelectPub={onSelectPub}
+                  folders={folders}
+                  prefsMap={prefsMap}
                   nameSuffix="unfoldered"
                 />
                 {viewerDid ? (
@@ -277,6 +279,8 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
                     emptyLabel="No publications on your account discovered yet."
                     selectedPubId={selectedPubId}
                     onSelectPub={onSelectPub}
+                    folders={folders}
+                    prefsMap={prefsMap}
                   />
                 ) : null}
                 {folders.map((f) => {
@@ -293,6 +297,8 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
                       emptyLabel="No publications in this folder."
                       selectedPubId={selectedPubId}
                       onSelectPub={onSelectPub}
+                      folders={folders}
+                      prefsMap={prefsMap}
                     />
                   );
                 })}
@@ -311,6 +317,8 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
                     emptyLabel="No hidden publications."
                     selectedPubId={selectedPubId}
                     onSelectPub={onSelectPub}
+                    folders={folders}
+                    prefsMap={prefsMap}
                   />
                 ) : null}
                 <NewFolderDialog />

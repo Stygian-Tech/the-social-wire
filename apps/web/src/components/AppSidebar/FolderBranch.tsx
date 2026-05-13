@@ -10,7 +10,11 @@ import {
 import { cn } from "@/lib/utils";
 import { PublicationSubItem } from "./PublicationSubItem";
 import type { DiscoveredPublication } from "@/lib/atprotoClient";
-import type { RepoRecord, FolderRecord } from "@/lib/pdsClient";
+import type {
+  RepoRecord,
+  FolderRecord,
+  PublicationPrefsRecord,
+} from "@/lib/pdsClient";
 
 export type FolderBranchDisplay = Pick<
   RepoRecord<FolderRecord>["value"],
@@ -27,6 +31,8 @@ interface FolderBranchProps {
   emptyLabel: string;
   selectedPubId: string | null;
   onSelectPub: (pubId: string) => void;
+  folders: RepoRecord<FolderRecord>[];
+  prefsMap: Map<string, RepoRecord<PublicationPrefsRecord>>;
   /** Shown after the folder name (e.g. All → unfoldered) */
   nameSuffix?: string;
 }
@@ -41,6 +47,8 @@ export function FolderBranch({
   emptyLabel,
   selectedPubId,
   onSelectPub,
+  folders,
+  prefsMap,
   nameSuffix,
 }: FolderBranchProps) {
   const subId = `sidebar-folder-sub-${expandKey.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
@@ -89,6 +97,8 @@ export function FolderBranch({
                 publication={pub}
                 isSelected={selectedPubId === pub.publicationId}
                 onSelect={onSelectPub}
+                folders={folders}
+                prefsMap={prefsMap}
               />
             ))
           )}

@@ -76,6 +76,11 @@ export interface EntryListItem {
   title: string;
   summary?: string;
   publishedAt: string;
+  /**
+   * Resolved image URL for list row (typically `site.standard.document` `coverImage` blob → PDS
+   * `com.atproto.sync.getBlob`, or HTTPS field fallbacks).
+   */
+  thumbnailUrl?: string;
 }
 
 export interface EntryDetail {
@@ -344,6 +349,16 @@ export function parseAtUri(
 }
 
 /**
+ * Decodes repo-style encoding (URL segments, `@`) and normalizes **`did:plc:`** to lowercase
+ * so OAuth `session.did` matches publication AT-URI authorities from the PDS.
+ */
+export function normalizeDidForOwnershipCompare(raw: string): string {
+  const n = normalizeAtRepoParam(raw);
+  if (n.toLowerCase().startsWith("did:plc:")) return n.toLowerCase();
+  return n;
+}
+
+/**
  * Maps a sidebar / route `pubId` to the repo DID for `listRecords`, and optionally the publication
  * record AT-URI for filtering document/entry `site` to that publication.
  */
@@ -373,11 +388,20 @@ export function publicationRepoDid(pubId: string): string {
 
 /** True if this discovered publication should appear only under "My Publications", not "All". */
 export function viewerOwnsDiscoveredPublication(
-  publication: { publicationId: string },
+  publication: { publicationId: string; authorDid?: string },
   viewerDid: string | null | undefined
 ): boolean {
   if (!viewerDid) return false;
-  return publicationRepoDid(publication.publicationId) === viewerDid;
+  const v = normalizeDidForOwnershipCompare(viewerDid);
+  const fromPubId = normalizeDidForOwnershipCompare(
+    publicationRepoDid(publication.publicationId)
+  );
+  if (fromPubId === v) return true;
+
+  const author = publication.authorDid;
+  if (author && normalizeDidForOwnershipCompare(author) === v) return true;
+
+  return false;
 }
 
 function slugFromPath(path: string): string | undefined {
@@ -435,6 +459,93 @@ function extractHttpsUrl(
 
 function str(v: unknown): string | undefined {
   return typeof v === "string" ? v : undefined;
+}
+
+/** Blob reference shape on records (`coverImage`, etc.). */
+function extractBlobLink(obj: unknown): string | undefined {
+  if (!obj || typeof obj !== "object") return undefined;
+  const o = obj as Record<string, unknown>;
+  if (typeof o["$link"] === "string") return o["$link"];
+  const ref = o.ref;
+  if (ref && typeof ref === "object") {
+    const link = (ref as Record<string, unknown>)["$link"];
+    if (typeof link === "string") return link;
+  }
+  return undefined;
+}
+
+async function getPdsBaseForDid(did: string): Promise<string | null> {
+  if (!did.startsWith("did:")) return null;
+  let pdsBase = plcEndpointCache.get(did);
+  if (pdsBase === undefined) {
+    pdsBase = await resolvePlcPdsEndpoint(did);
+    plcEndpointCache.set(did, pdsBase);
+  }
+  return pdsBase;
+}
+
+type ThumbnailCandidate =
+  | { kind: "blob"; cid: string }
+  | { kind: "https"; url: string };
+
+function thumbnailCandidateFromRecordValue(
+  value: Record<string, unknown>
+): ThumbnailCandidate | undefined {
+  const cover = value.coverImage;
+  if (typeof cover === "string") {
+    const url = extractHttpsUrl(cover);
+    if (url) return { kind: "https", url };
+  }
+  const coverCid = cover ? extractBlobLink(cover) : undefined;
+  if (coverCid) return { kind: "blob", cid: coverCid };
+
+  const thumb = value.thumbnail;
+  if (typeof thumb === "string") {
+    const url = extractHttpsUrl(thumb);
+    if (url) return { kind: "https", url };
+  }
+  const thumbCid = thumb ? extractBlobLink(thumb) : undefined;
+  if (thumbCid) return { kind: "blob", cid: thumbCid };
+
+  const ext = extractHttpsUrl(
+    str(value.thumbnailUrl),
+    str(value.coverImageUrl),
+    str(value.image),
+    str(value.heroImage),
+    str(value.socialImage)
+  );
+  if (ext) return { kind: "https", url: ext };
+
+  return undefined;
+}
+
+/**
+ * Resolves a usable `<img src>` URL for entry list rows from record fields (blob preferred per
+ * `site.standard.document#coverImage`, then common HTTPS metadata).
+ */
+export async function resolveEntryThumbnailUrl(
+  entryUri: string,
+  value: unknown,
+  _oauthSession?: OAuthSession
+): Promise<string | undefined> {
+  void _oauthSession;
+  if (!value || typeof value !== "object") return undefined;
+  const candidate = thumbnailCandidateFromRecordValue(value as Record<string, unknown>);
+  if (!candidate) return undefined;
+
+  if (candidate.kind === "https") return candidate.url;
+
+  const parsed = parseAtUri(entryUri);
+  if (!parsed) return undefined;
+
+  const pds = await getPdsBaseForDid(parsed.did);
+  if (!pds) return undefined;
+
+  const params = new URLSearchParams({
+    did: parsed.did,
+    cid: candidate.cid,
+  });
+  return `${pds}/xrpc/com.atproto.sync.getBlob?${params}`;
 }
 
 function parseStrongRef(
@@ -540,26 +651,57 @@ function decodeListCursor(cursor: string | undefined): ListEntriesCursorMode {
   return { phase: "page", colIdx: 0, atproto: cursor };
 }
 
-function encodeListColCursor(
+/**
+ * Computes the infinite-query cursor after a non-empty `listRecords` page when listing
+ * across {@link LIST_COLLECTIONS_ORDER}. When the PDS returns no `cursor`, advance to the
+ * next collection instead of stopping (otherwise entries in later NSIDs never load).
+ */
+export function computeNextListEntriesPageCursor(
   colIdx: number,
-  atproto: string | undefined
+  colCount: number,
+  listRecordsCursor: string | undefined
 ): string | undefined {
-  if (atproto === undefined || atproto === "") return undefined;
-  return `${colIdx}:${encodeURIComponent(atproto)}`;
+  if (listRecordsCursor) {
+    return `${colIdx}:${encodeURIComponent(listRecordsCursor)}`;
+  }
+  if (colIdx + 1 < colCount) {
+    return `${colIdx + 1}:`;
+  }
+  return undefined;
 }
 
-function recordsToListItems(
-  records: Array<{ uri: string; value: unknown }>
+/** Most-recent first using ISO `publishedAt` (lexicographic order), then AT-URI for stability. */
+export function sortEntryListItemsNewestFirst(
+  entries: EntryListItem[]
 ): EntryListItem[] {
-  return records.map((record) => {
-    const parsed = parseEntryValue(record.value as Record<string, unknown>);
-    return {
-      entryId: record.uri,
-      title: parsed.title,
-      summary: parsed.summary,
-      publishedAt: parsed.publishedAt,
-    };
+  return [...entries].sort((a, b) => {
+    const byTime = b.publishedAt.localeCompare(a.publishedAt);
+    if (byTime !== 0) return byTime;
+    return a.entryId.localeCompare(b.entryId);
   });
+}
+
+async function recordsToListItems(
+  records: Array<{ uri: string; value: unknown }>,
+  oauthSession?: OAuthSession
+): Promise<EntryListItem[]> {
+  return Promise.all(
+    records.map(async (record) => {
+      const parsed = parseEntryValue(record.value as Record<string, unknown>);
+      const thumbnailUrl = await resolveEntryThumbnailUrl(
+        record.uri,
+        record.value,
+        oauthSession
+      );
+      return {
+        entryId: record.uri,
+        title: parsed.title,
+        summary: parsed.summary,
+        publishedAt: parsed.publishedAt,
+        thumbnailUrl,
+      };
+    })
+  );
 }
 
 export type ListEntriesOptions = {
@@ -919,16 +1061,17 @@ async function listEntriesForPublicationScope(
       {
         limit: OWN_PUBLICATIONS_PAGE_LIMIT,
         cursor: listCursor,
-        reverse: false,
+        reverse: true,
         signal,
       },
       oauthSession
     );
 
-    const filteredItems = recordsToListItems(
+    const filteredItems = await recordsToListItems(
       res.records.filter((r) =>
         entryRecordMatchesPublication(r.value, publicationAtUri)
-      )
+      ),
+      oauthSession
     );
     const slice = filteredItems.slice(matchSkip);
     const need = limit - out.length;
@@ -970,9 +1113,11 @@ async function listEntriesForPublicationScope(
 }
 
 /**
- * Lists entries for a given author handle or DID (documents first, then legacy entry collections).
- * Cursors encode the collection index in {@link LIST_COLLECTIONS_ORDER} so pagination stays on one
- * NSID at a time; legacy `d:` / `e:` cursors from older clients are still accepted.
+ * Lists entries for a given author handle or DID, walking {@link LIST_COLLECTIONS_ORDER} so every
+ * document/entry NSID is paginated (cursors advance across collections when a slice has no PDS cursor).
+ * The UI should merge pages and sort by record time — {@link sortEntryListItemsNewestFirst} uses
+ * `publishedAt` from the lexicon (`publishedAt` → `createdAt` → `indexedAt` in {@link parseEntryValue}).
+ * Legacy `d:` / `e:` cursors from older clients are still accepted.
  *
  * With `options.publicationAtUri`, only records whose **`site`** matches that publication AT-URI
  * are returned, using `p|`-prefixed cursors.
@@ -1020,13 +1165,17 @@ export async function listEntries(
     const res = await listRecordsOnAuthorRepo(
       authorDid,
       LIST_COLLECTIONS_ORDER[i],
-      { limit, cursor: atprotoCursor, reverse: false, signal },
+      { limit, cursor: atprotoCursor, reverse: true, signal },
       oauthSession
     );
 
     if (res.records.length > 0) {
-      const entries = recordsToListItems(res.records);
-      const nextCursor = encodeListColCursor(i, res.cursor);
+      const entries = await recordsToListItems(res.records, oauthSession);
+      const nextCursor = computeNextListEntriesPageCursor(
+        i,
+        colCount,
+        res.cursor
+      );
       onProgress?.({ entries, cursor: nextCursor });
       return { entries, cursor: nextCursor };
     }

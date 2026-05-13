@@ -1,11 +1,14 @@
 "use client";
 
-import { useRef } from "react";
+import { useMemo, useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EntryRow } from "./EntryRow";
 import { useEntries } from "@/hooks/useEntries";
-import type { EntryListItem } from "@/lib/atprotoClient";
+import {
+  sortEntryListItemsNewestFirst,
+  type EntryListItem,
+} from "@/lib/atprotoClient";
 
 interface EntryListProps {
   pubId: string;
@@ -25,14 +28,17 @@ export function EntryList({
   const { data, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage } =
     useEntries(pubId);
 
-  const allEntries: EntryListItem[] = data?.pages.flatMap((p) => p.entries) ?? [];
+  const allEntries: EntryListItem[] = useMemo(() => {
+    const flat = data?.pages.flatMap((p) => p.entries) ?? [];
+    return sortEntryListItemsNewestFirst(flat);
+  }, [data?.pages]);
 
   const parentRef = useRef<HTMLDivElement>(null);
 
   const virtualizer = useVirtualizer({
     count: hasNextPage ? allEntries.length + 1 : allEntries.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => 72,
+    estimateSize: () => 92,
     overscan: 5,
   });
 
@@ -42,7 +48,7 @@ export function EntryList({
     return (
       <div className="space-y-2 p-4">
         {Array.from({ length: 6 }).map((_, i) => (
-          <Skeleton key={i} className="h-16 w-full rounded-md" />
+          <Skeleton key={i} className="h-[5.75rem] w-full rounded-md" />
         ))}
       </div>
     );

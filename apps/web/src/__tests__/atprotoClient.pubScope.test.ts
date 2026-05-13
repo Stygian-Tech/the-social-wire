@@ -1,8 +1,11 @@
 import { describe, it, expect } from "bun:test";
 import {
+  computeNextListEntriesPageCursor,
   normalizeAtRepoParam,
+  normalizeDidForOwnershipCompare,
   publicationRepoDid,
   repoAndPublicationFilterFromPubId,
+  sortEntryListItemsNewestFirst,
   viewerOwnsDiscoveredPublication,
 } from "@/lib/atprotoClient";
 
@@ -78,12 +81,32 @@ describe("publicationRepoDid", () => {
   });
 });
 
+describe("normalizeDidForOwnershipCompare", () => {
+  it("lowercases did:plc identifiers", () => {
+    expect(normalizeDidForOwnershipCompare("DID:PLC:AbC12")).toBe(
+      "did:plc:abc12"
+    );
+  });
+});
+
 describe("viewerOwnsDiscoveredPublication", () => {
   const me = "did:plc:viewer123";
 
   it("is true when publicationId is the viewer DID (aggregate feed)", () => {
     expect(
       viewerOwnsDiscoveredPublication({ publicationId: me }, me)
+    ).toBe(true);
+  });
+
+  it("matches publication AT-URI when session.did differs only by did:plc casing", () => {
+    expect(
+      viewerOwnsDiscoveredPublication(
+        {
+          publicationId:
+            "at://did:plc:VIEWER123/site.standard.publication/key1",
+        },
+        me
+      )
     ).toBe(true);
   });
 
@@ -99,10 +122,47 @@ describe("viewerOwnsDiscoveredPublication", () => {
     ).toBe(true);
   });
 
+  it("falls back to authorDid when publication AT-URI authority is a handle, not session DID", () => {
+    expect(
+      viewerOwnsDiscoveredPublication(
+        {
+          publicationId:
+            "at://writewithbloom.com/site.standard.publication/build-notes",
+          authorDid: me,
+        },
+        me
+      )
+    ).toBe(true);
+  });
+
+  it("falls back to authorDid when publicationId is not a resolvable ownership key", () => {
+    expect(
+      viewerOwnsDiscoveredPublication(
+        {
+          publicationId: "3kxwrisky17d2",
+          authorDid: me,
+        },
+        me
+      )
+    ).toBe(true);
+  });
+
   it("is false for another repo", () => {
     expect(
       viewerOwnsDiscoveredPublication(
         { publicationId: "did:plc:someoneelse" },
+        me
+      )
+    ).toBe(false);
+  });
+
+  it("does not treat another author's pub as owned when only publicationId is wrong", () => {
+    expect(
+      viewerOwnsDiscoveredPublication(
+        {
+          publicationId: "3kxwrisky17d2",
+          authorDid: "did:plc:someoneelse",
+        },
         me
       )
     ).toBe(false);
@@ -118,5 +178,52 @@ describe("viewerOwnsDiscoveredPublication", () => {
         me
       )
     ).toBe(true);
+  });
+});
+
+const FOUR_COLLECTION_FEEDS = 4;
+
+describe("computeNextListEntriesPageCursor", () => {
+  it("returns the same-collection cursor when the PDS returns a next cursor", () => {
+    expect(
+      computeNextListEntriesPageCursor(0, FOUR_COLLECTION_FEEDS, "next-token")
+    ).toBe(`0:${encodeURIComponent("next-token")}`);
+  });
+
+  it("advances to the next collection when the current slice has no PDS cursor", () => {
+    expect(
+      computeNextListEntriesPageCursor(0, FOUR_COLLECTION_FEEDS, undefined)
+    ).toBe("1:");
+    expect(
+      computeNextListEntriesPageCursor(2, FOUR_COLLECTION_FEEDS, undefined)
+    ).toBe("3:");
+  });
+
+  it("returns undefined after the last collection with no PDS cursor", () => {
+    expect(
+      computeNextListEntriesPageCursor(3, FOUR_COLLECTION_FEEDS, undefined)
+    ).toBeUndefined();
+  });
+});
+
+describe("sortEntryListItemsNewestFirst", () => {
+  it("orders by publishedAt descending and breaks ties by entryId", () => {
+    const a = {
+      entryId: "at://did/x/site.standard.document/a",
+      title: "A",
+      publishedAt: "2025-01-01T12:00:00.000Z",
+    };
+    const b = {
+      entryId: "at://did/x/site.standard.document/b",
+      title: "B",
+      publishedAt: "2025-06-01T08:00:00.000Z",
+    };
+    const c = {
+      entryId: "at://did/x/site.standard.document/c",
+      title: "C",
+      publishedAt: "2025-06-01T08:00:00.000Z",
+    };
+    const sorted = sortEntryListItemsNewestFirst([a, b, c]);
+    expect(sorted.map((e) => e.entryId)).toEqual([b.entryId, c.entryId, a.entryId]);
   });
 });
