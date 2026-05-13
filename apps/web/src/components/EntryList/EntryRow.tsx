@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, useEffect } from "react";
+import { thumbnailImageSrcAttempts } from "@/lib/publicResourceUrl";
 import { cn } from "@/lib/utils";
 import type { EntryListItem } from "@/lib/atprotoClient";
 
@@ -10,37 +11,6 @@ interface EntryRowProps {
   onSelect: (entryId: string) => void;
   isRead: boolean;
   readIndicatorsEnabled: boolean;
-}
-
-
-function protocolAlternate(url: string): string | undefined {
-  try {
-    const u = new URL(url);
-    const flipped =
-      u.protocol === "https:"
-        ? `http://${u.host}${u.pathname}${u.search}${u.hash}`
-        : `https://${u.host}${u.pathname}${u.search}${u.hash}`;
-    return flipped === url ? undefined : flipped;
-  } catch {
-    return undefined;
-  }
-}
-
-/** Ordered URLs to try (`<img onError>` advances), including opposite HTTP(S) variants. */
-function thumbnailSrcAttempts(primary?: string, fallback?: string): string[] {
-  const out: string[] = [];
-  const push = (url: string) => {
-    if (!out.includes(url)) out.push(url);
-  };
-  const branch = (u?: string) => {
-    if (!u) return;
-    push(u);
-    const alt = protocolAlternate(u);
-    if (alt) push(alt);
-  };
-  branch(primary);
-  branch(fallback);
-  return out;
 }
 
 export function EntryRow({
@@ -60,7 +30,7 @@ export function EntryRow({
   const showUnreadChrome = readIndicatorsEnabled && !isRead;
   const thumbAttempts = useMemo(
     () =>
-      thumbnailSrcAttempts(entry.thumbnailUrl, entry.thumbnailFallbackUrl),
+      thumbnailImageSrcAttempts(entry.thumbnailUrl, entry.thumbnailFallbackUrl),
     [entry.entryId, entry.thumbnailUrl, entry.thumbnailFallbackUrl]
   );
   const [attemptIdx, setAttemptIdx] = useState(0);

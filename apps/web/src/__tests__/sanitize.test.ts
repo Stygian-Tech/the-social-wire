@@ -54,6 +54,14 @@ describe("sanitizeHTML", () => {
     expect(result).toContain("https://example.com/img.png");
   });
 
+  it("upgrades http img src to https (mixed content defense)", () => {
+    const input =
+      '<img src="http://atproto.brid.gy/xrpc/com.atproto.sync.getBlob?did=x&cid=y" alt="" />';
+    const result = sanitizeHTML(input);
+    expect(result).toContain("https://atproto.brid.gy/");
+    expect(result).not.toContain('src="http://');
+  });
+
   it("strips data: URI images", () => {
     const input = '<img src="data:image/png;base64,abc" />';
     const result = sanitizeHTML(input);

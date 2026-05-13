@@ -34,3 +34,23 @@ export function normalizeHttpUrlToHttps(raw: string): string {
     return s;
   }
 }
+
+/**
+ * Builds ordered `<img src>` candidates for entry rows: every value is HTTPS-normalized.
+ * Never falls back from `https:` to `http:` — that triggers mixed-content warnings on HTTPS
+ * app origins and does not help ATProto blob URLs.
+ */
+export function thumbnailImageSrcAttempts(
+  primary?: string,
+  fallback?: string
+): string[] {
+  const out: string[] = [];
+  const push = (url: string) => {
+    if (!out.includes(url)) out.push(url);
+  };
+  for (const raw of [primary, fallback]) {
+    if (!raw?.trim()) continue;
+    push(normalizeHttpUrlToHttps(raw.trim()));
+  }
+  return out;
+}

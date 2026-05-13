@@ -8,6 +8,8 @@
 
 import DOMPurify from "dompurify";
 
+import { normalizeHttpUrlToHttps } from "@/lib/publicResourceUrl";
+
 /**
  * Sanitizes HTML content for safe rendering.
  *
@@ -15,7 +17,7 @@ import DOMPurify from "dompurify";
  * - Text formatting: h1-h6, p, strong, em, s, blockquote, pre, code
  * - Lists: ul, ol, li
  * - Links: a (href restricted to https:// and mailto:)
- * - Media: img (src restricted to https://)
+ * - Media: img (`http:` src upgraded to `https:` after DOMPurify — see stripUnsafeURIs)
  * - Structure: div, span, hr, br, table, thead, tbody, tr, th, td
  *
  * Strips: script, style, iframe, form, input, and all event handlers.
@@ -83,11 +85,13 @@ export function sanitizeHTMLWithLinks(dirty: string): string {
 }
 
 function sanitizeHTMLFallback(dirty: string, addLinkAttrs: boolean): string {
-  const clean = dirty
-    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
-    .replace(/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, "")
-    .replace(/\s+on[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, "")
-    .replace(/\s+(href|src)\s*=\s*(["'])\s*(?:javascript:|data:)[^"']*\2/gi, "");
+  const clean = normalizeHttpAttrsInHtmlString(
+    dirty
+      .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
+      .replace(/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, "")
+      .replace(/\s+on[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, "")
+      .replace(/\s+(href|src)\s*=\s*(["'])\s*(?:javascript:|data:)[^"']*\2/gi, "")
+  );
 
   if (!addLinkAttrs) return clean;
 
@@ -104,11 +108,26 @@ function stripUnsafeURIs(html: string): string {
   div.querySelectorAll("[href], [src]").forEach((node) => {
     for (const attr of ["href", "src"]) {
       const value = node.getAttribute(attr);
-      if (value && /^(?:javascript:|data:)/i.test(value.trim())) {
+      if (!value) continue;
+      const trimmed = value.trim();
+      if (/^(?:javascript:|data:)/i.test(trimmed)) {
         node.removeAttribute(attr);
+        continue;
+      }
+      if (trimmed.startsWith("http://")) {
+        node.setAttribute(attr, normalizeHttpUrlToHttps(trimmed));
       }
     }
   });
 
   return div.innerHTML;
+}
+
+/** SSR / test fallback: promote `http:` in `href` / `src` so article HTML cannot trigger mixed content. */
+function normalizeHttpAttrsInHtmlString(html: string): string {
+  return html.replace(
+    /\b(src|href)\s*=\s*(["'])(http:\/\/[^"']*)\2/gi,
+    (_, attr: string, q: string, url: string) =>
+      `${attr}=${q}${normalizeHttpUrlToHttps(url)}${q}`
+  );
 }

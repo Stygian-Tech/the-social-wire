@@ -14,10 +14,17 @@ interface EntryDetailProps {
 
 export function EntryDetail({ entryId }: EntryDetailProps) {
   const { data: entry, isLoading, error } = useEntry(entryId);
+
   const safeHTML = useMemo(
     () => sanitizeHTMLWithLinks(entry?.contentHtml ?? ""),
-    [entry?.contentHtml]
+    [entryId, entry?.contentHtml]
   );
+
+  /**
+   * Prefer sanitized record HTML over live iframe when present — avoids broken embeds (e.g. fed
+   * bridge query params) and mixed-origin iframe 404s; tradeoff: no live-site chrome in-page.
+   */
+  const preferRecordBodyOverEmbed = Boolean(entry) && safeHTML.trim().length > 0;
 
   if (isLoading) {
     return (
@@ -47,7 +54,7 @@ export function EntryDetail({ entryId }: EntryDetailProps) {
     day: "numeric",
   });
 
-  const showEmbed = Boolean(entry.embedUrl);
+  const showEmbed = Boolean(entry.embedUrl) && !preferRecordBodyOverEmbed;
 
   return (
     <article className="w-full max-w-none px-3 pb-8 pt-1 sm:px-4 sm:pb-10 sm:pt-2 md:px-6 lg:px-8">

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { normalizeHttpUrlToHttps } from "@/lib/publicResourceUrl";
+import { normalizeHttpUrlToHttps, thumbnailImageSrcAttempts } from "@/lib/publicResourceUrl";
 
 describe("normalizeHttpUrlToHttps", () => {
   it("promotes http to https", () => {
@@ -20,5 +20,28 @@ describe("normalizeHttpUrlToHttps", () => {
     expect(normalizeHttpUrlToHttps("https://pds.example/xrpc/a")).toBe(
       "https://pds.example/xrpc/a"
     );
+  });
+});
+
+describe("thumbnailImageSrcAttempts", () => {
+  it("normalizes candidates and never inserts http fallbacks", () => {
+    expect(
+      thumbnailImageSrcAttempts(
+        "http://atproto.brid.gy/xrpc/com.atproto.sync.getBlob?did=a&cid=b",
+        "https://img.example/thumb.png"
+      )
+    ).toEqual([
+      "https://atproto.brid.gy/xrpc/com.atproto.sync.getBlob?did=a&cid=b",
+      "https://img.example/thumb.png",
+    ]);
+  });
+
+  it("dedupes identical primary and fallback after normalization", () => {
+    expect(
+      thumbnailImageSrcAttempts(
+        "http://cdn.example/x",
+        "https://cdn.example/x"
+      )
+    ).toEqual(["https://cdn.example/x"]);
   });
 });
