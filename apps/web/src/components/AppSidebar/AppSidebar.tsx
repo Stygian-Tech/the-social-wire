@@ -1,13 +1,16 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { RefreshCw } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { LogOut, RefreshCw } from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
   SidebarGroup,
   SidebarGroupLabel,
   SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
   SidebarHeader,
   SidebarFooter,
 } from "@/components/ui/sidebar";
@@ -31,8 +34,22 @@ interface AppSidebarProps {
 }
 
 export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
-  const { session } = useAuth();
+  const router = useRouter();
+  const { session, signOut } = useAuth();
+  const [loggingOut, setLoggingOut] = useState(false);
   const [selectedFolderUri, setSelectedFolderUri] = useState<string | null>(null);
+
+  async function handleLogout() {
+    setLoggingOut(true);
+    try {
+      await signOut();
+      router.replace("/login");
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoggingOut(false);
+    }
+  }
 
   const { data: folders = [], isLoading: foldersLoading } = useFolders();
   const { data: publications = [], isLoading: pubsLoading } = useDiscovery();
@@ -170,10 +187,23 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
         </SidebarGroup>
       </SidebarContent>
 
-      <SidebarFooter className="border-t px-4 py-2">
-        <p className="text-xs text-muted-foreground truncate">
+      <SidebarFooter className="border-t px-2 py-3">
+        <p className="px-2 text-xs text-muted-foreground truncate">
           {session?.did ?? ""}
         </p>
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              type="button"
+              tooltip="Log out"
+              disabled={loggingOut}
+              onClick={() => void handleLogout()}
+            >
+              <LogOut />
+              <span>{loggingOut ? "Signing out…" : "Log out"}</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
       </SidebarFooter>
     </Sidebar>
   );
