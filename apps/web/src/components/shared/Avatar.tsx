@@ -1,5 +1,3 @@
-import Image from "next/image";
-
 interface AvatarProps {
   src?: string | null;
   alt: string;
@@ -10,13 +8,13 @@ interface AvatarProps {
 export function Avatar({ src, alt, size = 32, className = "" }: AvatarProps) {
   if (src) {
     return (
-      <Image
+      <img
         src={src}
         alt={alt}
         width={size}
         height={size}
         className={`rounded-full object-cover ${className}`}
-        unoptimized // CDN URLs from ATProto — skip Next.js image optimization for now
+        referrerPolicy="no-referrer"
       />
     );
   }

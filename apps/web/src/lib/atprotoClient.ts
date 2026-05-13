@@ -81,6 +81,81 @@ const DISCOVERY_BATCH_SIZE = 25;
 const LIST_CURSOR_DOC = "d:";
 const LIST_CURSOR_ENT = "e:";
 
+/** Follow edges stored on the viewer's repo (canonical over Bluesky relay mirrors). */
+const GRAPH_FOLLOW_COLLECTION = "app.bsky.graph.follow";
+
+async function resolvePlcPdsEndpoint(did: string): Promise<string | null> {
+  if (!did.startsWith("did:plc:")) return null;
+  try {
+    const res = await fetch(
+      `https://plc.directory/${encodeURIComponent(did)}`,
+      { headers: { Accept: "application/json" } }
+    );
+    if (!res.ok) return null;
+    const doc = (await res.json()) as {
+      service?: Array<{ type?: string; serviceEndpoint?: string }>;
+    };
+    const endpoint = doc.service?.find(
+      (s) => s.type === "AtprotoPersonalDataServer"
+    )?.serviceEndpoint;
+    return typeof endpoint === "string" ? endpoint.replace(/\/$/, "") : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Repo reads via author's PDS when the App View relay returns nothing (indexing gaps). */
+async function listRecordsDirectFromPds(
+  pdsBase: string,
+  repo: string,
+  collection: string,
+  limit: number
+): Promise<{ uri: string; value: unknown }[]> {
+  const params = new URLSearchParams({
+    repo,
+    collection,
+    limit: String(limit),
+  });
+  try {
+    const res = await fetch(
+      `${pdsBase}/xrpc/com.atproto.repo.listRecords?${params}`,
+      { headers: { Accept: "application/json" } }
+    );
+    if (!res.ok) return [];
+    const json = (await res.json()) as {
+      records?: Array<{ uri: string; value: unknown }>;
+    };
+    return json.records ?? [];
+  } catch {
+    return [];
+  }
+}
+
+async function enrichFollowsFromRelay(
+  relayAgent: Agent,
+  follows: FollowProfile[]
+): Promise<void> {
+  const chunkSize = 12;
+  for (let i = 0; i < follows.length; i += chunkSize) {
+    const slice = follows.slice(i, i + chunkSize);
+    await Promise.all(
+      slice.map(async (f) => {
+        try {
+          const res = await relayAgent.api.app.bsky.actor.getProfile({
+            actor: f.did,
+          });
+          const p = res.data;
+          f.handle = p.handle;
+          f.displayName = p.displayName ?? undefined;
+          f.avatar = p.avatar ?? undefined;
+        } catch {
+          /* DID may not be indexed on Bluesky — keep DID-shaped handle */
+        }
+      })
+    );
+  }
+}
+
 // ── OAuth Agent ───────────────────────────────────────────────────────────────
 
 /**
@@ -267,73 +342,132 @@ function str(v: unknown): string | undefined {
 /**
  * Discovers followed authors with standard.site-related records.
  *
- * Uses the public Bluesky App View relay (`bsky.social`) without attaching OAuth credentials:
- * graph + repo reads are public, while OAuth tokens are audience-bound to the user's PDS.
+ * Follow subjects come from:
+ * - **`app.bsky.graph.follow`** on the viewer's repo (OAuth / PDS — canonical graph).
+ * - **`app.bsky.graph.getFollows`** on the Bluesky relay (additional mirrored edges).
  *
- * @param session retained for API stability; discovery does not send this token to App View.
+ * Each followed repo is checked via the relay first; if empty, **`listRecords`** against the
+ * author's **PDS** (PLC-resolved) catches relay indexing gaps.
  */
 export async function discoverPublications(
   userDid: string,
-  _session: OAuthSession
+  session: OAuthSession
 ): Promise<DiscoveredPublication[]> {
-  void _session;
-  const agent = new Agent(BSKY_SERVICE);
-  const follows: FollowProfile[] = [];
+  const relayAgent = new Agent(BSKY_SERVICE);
+  const pdsAgent = createOAuthAgent(session);
 
-  let cursor: string | undefined;
-  do {
-    const res = await agent.api.app.bsky.graph.getFollows({
-      actor: userDid,
-      limit: FOLLOW_PAGE_LIMIT,
-      cursor,
-    });
+  const subjectDids = new Set<string>();
 
-    for (const follow of res.data.follows) {
-      follows.push({
-        did: follow.did,
-        handle: follow.handle,
-        displayName: follow.displayName,
-        avatar: follow.avatar,
+  try {
+    let cursor: string | undefined;
+    do {
+      const res = await pdsAgent.api.com.atproto.repo.listRecords({
+        repo: userDid,
+        collection: GRAPH_FOLLOW_COLLECTION,
+        limit: FOLLOW_PAGE_LIMIT,
+        cursor,
       });
-    }
+      for (const record of res.data.records) {
+        const val = record.value as { subject?: string };
+        if (typeof val.subject === "string") subjectDids.add(val.subject);
+        if (subjectDids.size >= MAX_FOLLOWS) break;
+      }
+      cursor = res.data.cursor;
+      if (subjectDids.size >= MAX_FOLLOWS) break;
+    } while (cursor);
+  } catch {
+    /* unreadable repo graph — merge relay-only below */
+  }
 
-    cursor = res.data.cursor;
-  } while (cursor && follows.length < MAX_FOLLOWS);
+  if (subjectDids.size < MAX_FOLLOWS) {
+    try {
+      let cursor: string | undefined;
+      do {
+        const res = await relayAgent.api.app.bsky.graph.getFollows({
+          actor: userDid,
+          limit: FOLLOW_PAGE_LIMIT,
+          cursor,
+        });
+        for (const follow of res.data.follows) {
+          subjectDids.add(follow.did);
+          if (subjectDids.size >= MAX_FOLLOWS) break;
+        }
+        cursor = res.data.cursor;
+        if (subjectDids.size >= MAX_FOLLOWS) break;
+      } while (cursor);
+    } catch {
+      /* relay unavailable */
+    }
+  }
+
+  const follows: FollowProfile[] = [...subjectDids]
+    .slice(0, MAX_FOLLOWS)
+    .map((did) => ({
+      did,
+      handle: did,
+      displayName: undefined,
+      avatar: undefined,
+    }));
+
+  await enrichFollowsFromRelay(relayAgent, follows);
 
   const publications: DiscoveredPublication[] = [];
   const discoveredAt = new Date().toISOString();
 
+  async function probeFollow(
+    follow: FollowProfile
+  ): Promise<DiscoveredPublication | null> {
+    for (const collection of DISCOVERY_COLLECTIONS) {
+      let rows: Array<{ value: unknown }> = [];
+      try {
+        const relayRes = await relayAgent.api.com.atproto.repo.listRecords({
+          repo: follow.did,
+          collection,
+          limit: 1,
+        });
+        rows = relayRes.data.records;
+      } catch {
+        rows = [];
+      }
+
+      if (rows.length === 0) {
+        const pds = await resolvePlcPdsEndpoint(follow.did);
+        if (pds) {
+          const direct = await listRecordsDirectFromPds(
+            pds,
+            follow.did,
+            collection,
+            1
+          );
+          if (direct.length > 0) rows = direct;
+        }
+      }
+
+      if (rows.length === 0) continue;
+
+      const firstVal = rows[0]!.value as Record<string, unknown>;
+      const title = publicationTitleFromRecord(
+        collection,
+        firstVal,
+        follow.displayName ?? follow.handle
+      );
+
+      return {
+        publicationId: follow.did,
+        authorDid: follow.did,
+        authorHandle: follow.handle,
+        title,
+        avatarUrl: follow.avatar,
+        discoveredAt,
+      };
+    }
+    return null;
+  }
+
   for (let i = 0; i < follows.length; i += DISCOVERY_BATCH_SIZE) {
     const batch = follows.slice(i, i + DISCOVERY_BATCH_SIZE);
     const results = await Promise.allSettled(
-      batch.map(async (follow) => {
-        for (const collection of DISCOVERY_COLLECTIONS) {
-          const res = await agent.api.com.atproto.repo.listRecords({
-            repo: follow.did,
-            collection,
-            limit: 1,
-          });
-
-          if (res.data.records.length === 0) continue;
-
-          const firstVal = res.data.records[0]!.value as Record<string, unknown>;
-          const title = publicationTitleFromRecord(
-            collection,
-            firstVal,
-            follow.displayName ?? follow.handle
-          );
-
-          return {
-            publicationId: follow.did,
-            authorDid: follow.did,
-            authorHandle: follow.handle,
-            title,
-            avatarUrl: follow.avatar,
-            discoveredAt,
-          } satisfies DiscoveredPublication;
-        }
-        return null;
-      })
+      batch.map((follow) => probeFollow(follow))
     );
 
     for (const result of results) {
