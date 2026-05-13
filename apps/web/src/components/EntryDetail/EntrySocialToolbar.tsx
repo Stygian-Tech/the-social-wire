@@ -1,13 +1,7 @@
 "use client";
 
-import { useCallback, useState } from "react";
-import {
-  Heart,
-  Link2,
-  MessageSquareQuote,
-  Repeat,
-  Share2,
-} from "lucide-react";
+import { useState } from "react";
+import { Heart, Link2, MessageSquareQuote, Repeat } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Dialog,
@@ -54,7 +48,6 @@ export function EntrySocialToolbar({
   const [repostOpen, setRepostOpen] = useState(false);
   const [quoteOpen, setQuoteOpen] = useState(false);
   const [quoteText, setQuoteText] = useState("");
-  const [shareHint, setShareHint] = useState<string | null>(null);
 
   const likeUri = viewerQuery.data?.likeUri;
   const repostUri = viewerQuery.data?.repostUri;
@@ -65,34 +58,6 @@ export function EntrySocialToolbar({
     toggleLikeMutation.isPending ||
     toggleRepostMutation.isPending ||
     viewerQuery.isLoading;
-
-  const onShare = useCallback(async () => {
-    const url = shareArticleUrl(entry);
-    const title = entry.title;
-    setShareHint(null);
-
-    if (navigator.share) {
-      try {
-        await navigator.share({
-          title,
-          text: title,
-          url,
-        });
-        return;
-      } catch (err) {
-        if ((err as Error).name === "AbortError") return;
-      }
-    }
-
-    try {
-      await navigator.clipboard.writeText(url);
-      setShareHint("Link copied");
-      window.setTimeout(() => setShareHint(null), 2000);
-    } catch {
-      setShareHint("Could not copy link");
-      window.setTimeout(() => setShareHint(null), 2500);
-    }
-  }, [entry]);
 
   const disabledHint = hasLinkedPost
     ? undefined
@@ -185,17 +150,6 @@ export function EntrySocialToolbar({
           <span className="text-xs font-medium sm:text-sm">Quote</span>
         </Button>
 
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-11 min-h-[44px] justify-center gap-1.5 px-2 sm:h-7 sm:min-h-0 sm:justify-start sm:px-2.5"
-          title="Share article"
-          onClick={onShare}
-        >
-          <Share2 className="size-5 shrink-0 sm:size-3.5" />
-          <span className="text-xs font-medium sm:text-sm">Share</span>
-        </Button>
-
         {(entry.embedUrl ?? entry.originalUrl) ? (
           <a
             href={shareArticleUrl(entry)}
@@ -215,19 +169,13 @@ export function EntrySocialToolbar({
           </a>
         ) : null}
 
-        {shareHint ? (
-          <span className="w-full px-1 text-xs text-muted-foreground sm:inline sm:w-auto" role="status">
-            {shareHint}
-          </span>
-        ) : null}
-
         {!hasLinkedPost ? (
           <p className="w-full text-[11px] leading-snug text-muted-foreground sm:text-xs">
             Like/Repost need a linked Bluesky post (
             <code className="rounded bg-muted px-1 py-0.5 text-[10px]">
               bskyPostRef
             </code>
-            ). Quote and Share work here.
+            ). Quote works here.
           </p>
         ) : null}
       </div>
