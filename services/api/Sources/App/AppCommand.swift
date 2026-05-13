@@ -72,7 +72,8 @@ struct App: AsyncParsableCommand {
           plcURL: config.atprotoPLCURL, logger: logger
         )
         let contentService = ContentService(
-          httpClient: httpClient, cache: cache, logger: logger
+          httpClient: httpClient, cache: cache, logger: logger,
+          plcURL: config.atprotoPLCURL
         )
         DiscoveryRoutes(discoveryService: discoveryService).register(on: protected)
         ContentRoutes(contentService: contentService).register(on: protected)
@@ -94,7 +95,8 @@ struct App: AsyncParsableCommand {
           plcURL: config.atprotoPLCURL, logger: logger
         )
         let contentService = ContentService(
-          httpClient: httpClient, cache: cache, logger: logger
+          httpClient: httpClient, cache: cache, logger: logger,
+          plcURL: config.atprotoPLCURL
         )
         DiscoveryRoutes(discoveryService: discoveryService).register(on: protected)
         ContentRoutes(contentService: contentService).register(on: protected)

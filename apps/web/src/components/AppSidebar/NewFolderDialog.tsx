@@ -1,7 +1,7 @@
 "use client";
 
 import { type ReactNode, useEffect, useId, useState } from "react";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useCreateFolder } from "@/hooks/useFolders";
 import { Plus } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 export type CreateFolderCreatedPayload = { uri: string };
 
@@ -45,18 +46,21 @@ function CreateFolderFormFields({
   const [name, setName] = useState("");
   const [icon, setIcon] = useState("");
   const [finishing, setFinishing] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const createFolder = useCreateFolder();
 
   useEffect(() => {
     if (!dialogOpen) {
       setName("");
       setIcon("");
+      setSubmitError(null);
     }
   }, [dialogOpen]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim() || finishing) return;
+    setSubmitError(null);
     setFinishing(true);
     try {
       const result = await createFolder.mutateAsync({
@@ -67,6 +71,9 @@ function CreateFolderFormFields({
       onOpenChange(false);
     } catch (err) {
       console.error(err);
+      setSubmitError(
+        err instanceof Error ? err.message : "Something went wrong. Try again."
+      );
     } finally {
       setFinishing(false);
     }
@@ -107,6 +114,11 @@ function CreateFolderFormFields({
             Enter an emoji. Leave blank to use the default folder icon.
           </p>
         </div>
+        {submitError ? (
+          <p className="text-sm text-destructive" role="alert">
+            {submitError}
+          </p>
+        ) : null}
         <DialogFooter>
           <Button
             type="button"
@@ -116,9 +128,14 @@ function CreateFolderFormFields({
           >
             Cancel
           </Button>
-          <Button type="submit" disabled={!name.trim() || pending}>
+          {/* Base UI `Button` merges internal props second and forces type="button", so type="submit" is ignored — use a native submit control */}
+          <button
+            type="submit"
+            disabled={!name.trim() || pending}
+            className={cn(buttonVariants())}
+          >
             {pending ? pendingSubmitLabel : submitLabel}
-          </Button>
+          </button>
         </DialogFooter>
       </form>
     </DialogContent>

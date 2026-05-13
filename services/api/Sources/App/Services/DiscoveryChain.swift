@@ -5,7 +5,7 @@ import Logging
 /// A single step in the publication discovery chain.
 protocol DiscoveryStep: Sendable {
   var name: String { get }
-  func discover(authorDID: String, httpClient: HTTPClient) async throws -> DiscoveredPublication?
+  func discover(authorDID: String, plcURL: String, httpClient: HTTPClient) async throws -> DiscoveredPublication?
 }
 
 // MARK: - Step 1: Lexicon-native discovery
@@ -24,9 +24,15 @@ struct LexiconNativeDiscovery: DiscoveryStep {
     "app.bsky.publication",  // hypothetical — check actual lexicon IDs when available
   ]
 
-  func discover(authorDID: String, httpClient: HTTPClient) async throws -> DiscoveredPublication? {
-    // Resolve the PDS endpoint for this DID
-    guard let pdsEndpoint = try await resolvePDSEndpoint(for: authorDID, httpClient: httpClient) else {
+  func discover(authorDID: String, plcURL: String, httpClient: HTTPClient) async throws -> DiscoveredPublication? {
+    guard
+      let pdsEndpoint = try await ATProtoPdsResolution.resolvePdsBase(
+        repoDid: authorDID,
+        plcBase: plcURL,
+        httpClient: httpClient,
+        timeout: .seconds(10)
+      )
+    else {
       return nil
     }
 
@@ -42,25 +48,6 @@ struct LexiconNativeDiscovery: DiscoveryStep {
     }
 
     return nil
-  }
-
-  private func resolvePDSEndpoint(for did: String, httpClient: HTTPClient) async throws -> String? {
-    let encoded = did.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? did
-    var request = HTTPClientRequest(url: "https://plc.directory/\(encoded)")
-    request.headers.add(name: "Accept", value: "application/json")
-
-    let response = try await httpClient.execute(request, timeout: .seconds(10))
-    guard response.status == .ok else { return nil }
-
-    let body = try await response.body.collect(upTo: 32 * 1024)
-    guard
-      let json = try? JSONSerialization.jsonObject(with: Data(buffer: body)) as? [String: Any],
-      let services = json["service"] as? [[String: Any]],
-      let pds = services.first(where: { ($0["type"] as? String) == "AtprotoPersonalDataServer" }),
-      let endpoint = pds["serviceEndpoint"] as? String
-    else { return nil }
-
-    return endpoint
   }
 
   private func fetchPublicationRecord(
@@ -111,9 +98,11 @@ struct ProfileLinkHeuristic: DiscoveryStep {
     "www.standard.site",
   ]
 
-  func discover(authorDID: String, httpClient: HTTPClient) async throws -> DiscoveredPublication? {
+  func discover(authorDID: String, plcURL: String, httpClient: HTTPClient) async throws -> DiscoveredPublication? {
+    _ = plcURL
     let encoded = authorDID.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? authorDID
-    let url = "https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=\(encoded)"
+    let url =
+      "\(ATProtoPdsResolution.bskyAppViewPublic)/xrpc/app.bsky.actor.getProfile?actor=\(encoded)"
 
     var request = HTTPClientRequest(url: url)
     request.headers.add(name: "Accept", value: "application/json")
@@ -176,7 +165,8 @@ struct DirectoryFallback: DiscoveryStep {
   // Update this URL when a standard.site directory API becomes available.
   static let directoryURL: String? = nil
 
-  func discover(authorDID: String, httpClient: HTTPClient) async throws -> DiscoveredPublication? {
+  func discover(authorDID: String, plcURL: String, httpClient: HTTPClient) async throws -> DiscoveredPublication? {
+    _ = plcURL
     guard let directoryURL = Self.directoryURL else {
       // Directory not yet available — skip this step.
       return nil

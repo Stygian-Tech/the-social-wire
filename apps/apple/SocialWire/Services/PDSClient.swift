@@ -8,6 +8,9 @@ import Foundation
 actor PDSClient {
     private let session: AuthSession
 
+    /// Cache repo DID → PDS XRPC origin for anonymous `com.atproto.repo.*` reads (PLC-resolved).
+    private var pdsOriginByRepoDid: [String: String] = [:]
+
     init(session: AuthSession) {
         self.session = session
     }
@@ -18,7 +21,11 @@ actor PDSClient {
     static let collectionPubPrefs = "com.thesocialwire.publicationPrefs"
     static let collectionEntry = "site.standard.entry"
 
-    private static let publicATProtoService = URL(string: "https://bsky.social")!
+    private static let publicAppView = URL(string: "https://public.api.bsky.app")!
+    private static let plcDirectoryRoot = URL(
+        string: ProcessInfo.processInfo.environment["ATPROTO_PLC_URL"] ?? "https://plc.directory"
+    )!
+
     private static let maxFollows = 500
     private static let followPageLimit = 100
     private static let discoveryBatchSize = 25
@@ -108,7 +115,8 @@ actor PDSClient {
                             let records: ListRecordsResponse<EntryRecordValue> = try await self.listPublicRecords(
                                 repo: follow.did,
                                 collection: Self.collectionEntry,
-                                limit: 1
+                                limit: 1,
+                                reverse: false
                             )
                             guard !records.records.isEmpty else { return nil }
                             return PublicationModel(
@@ -144,7 +152,8 @@ actor PDSClient {
         let records: ListRecordsResponse<EntryRecordValue> = try await listPublicRecords(
             repo: pubId,
             collection: Self.collectionEntry,
-            limit: 50
+            limit: 50,
+            reverse: true
         )
         let iso = ISO8601DateFormatter()
 
@@ -198,7 +207,7 @@ actor PDSClient {
     }
 
     private func getFollows(actor: String, cursor: String?) async throws -> FollowsResponse {
-        let url = Self.publicATProtoService
+        let url = Self.publicAppView
             .appendingPathComponent("/xrpc/app.bsky.graph.getFollows")
         var components = URLComponents(url: url, resolvingAgainstBaseURL: false)!
         components.queryItems = [
@@ -211,40 +220,137 @@ actor PDSClient {
         return try await getPublicJSON(url: components.url!)
     }
 
-    private func listPublicRecords<T: Decodable & Sendable>(
+    /// Bridgy Fed relay rejects `reverse=true` on `listRecords` (matches web `relayHostOmitsListRecordsReverse`).
+    private static func relayHostOmitsListRecordsReverse(pdsOrigin: String) -> Bool {
+        guard let host = URL(string: pdsOrigin)?.host?.lowercased() else { return false }
+        return host == "atproto.brid.gy" || host.hasSuffix(".brid.gy")
+    }
+
+    private func normalizePdsOrigin(_ serviceEndpoint: String) -> String? {
+        var s = serviceEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+        while s.hasSuffix("/") { s.removeLast() }
+        return s.isEmpty ? nil : s
+    }
+
+    /// `com.atproto.repo.*` against a third-party repo requires a repo DID; resolve handles via public App View (no OAuth).
+    private func resolveRepoDidForPublicRead(_ handleOrDid: String) async throws -> String {
+        var t = handleOrDid.trimmingCharacters(in: .whitespacesAndNewlines)
+        if t.hasPrefix("@") { t.removeFirst() }
+        if t.hasPrefix("did:") { return t }
+
+        var c = URLComponents()
+        c.scheme = Self.publicAppView.scheme
+        c.host = Self.publicAppView.host
+        c.path = "/xrpc/com.atproto.identity.resolveHandle"
+        c.queryItems = [URLQueryItem(name: "handle", value: t)]
+        guard let url = c.url else { throw PDSError.requestFailed }
+
+        let (data, response) = try await URLSession.shared.data(from: url)
+        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+            throw PDSError.requestFailed
+        }
+        struct ResolveBody: Decodable { let did: String? }
+        let body = try JSONDecoder().decode(ResolveBody.self, from: data)
+        guard let did = body.did else { throw PDSError.requestFailed }
+        return did
+    }
+
+    private func plcDocumentURL(forDid did: String) -> URL? {
+        let enc = did.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? did
+        var root = Self.plcDirectoryRoot.absoluteString.trimmingCharacters(in: .whitespacesAndNewlines)
+        while root.hasSuffix("/") { root.removeLast() }
+        return URL(string: "\(root)/\(enc)")
+    }
+
+    private func pdsOrigin(forRepoDid did: String) async throws -> String {
+        if let cached = pdsOriginByRepoDid[did] { return cached }
+        guard let plcURL = plcDocumentURL(forDid: did) else { throw PDSError.requestFailed }
+
+        let (data, response) = try await URLSession.shared.data(from: plcURL)
+        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+            throw PDSError.requestFailed
+        }
+        guard
+            let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let services = obj["service"] as? [[String: Any]]
+        else { throw PDSError.requestFailed }
+
+        var endpoint: String?
+        for s in services {
+            let sid = s["id"] as? String
+            let stype = s["type"] as? String
+            guard let ep = s["serviceEndpoint"] as? String else { continue }
+            if sid == "#atproto_pds" || stype == "AtprotoPersonalDataServer" {
+                endpoint = ep
+                break
+            }
+        }
+        guard let raw = endpoint, let origin = normalizePdsOrigin(raw) else { throw PDSError.requestFailed }
+        pdsOriginByRepoDid[did] = origin
+        return origin
+    }
+
+    private func sortPublicEntryRecordsNewestFirst(
+        _ records: [ListRecordsResponse<EntryRecordValue>.Record<EntryRecordValue>]
+    ) -> [ListRecordsResponse<EntryRecordValue>.Record<EntryRecordValue>] {
+        records.sorted {
+            let ka = $0.value.publishedAt ?? $0.value.createdAt ?? ""
+            let kb = $1.value.publishedAt ?? $1.value.createdAt ?? ""
+            if ka != kb { return ka > kb }
+            return $0.uri < $1.uri
+        }
+    }
+
+    /// Anonymous repo reads against the author's PDS (PLC); never the App View host.
+    private func listPublicRecords(
         repo: String,
         collection: String,
         limit: Int,
-        cursor: String? = nil
-    ) async throws -> ListRecordsResponse<T> {
-        let url = Self.publicATProtoService
-            .appendingPathComponent("/xrpc/com.atproto.repo.listRecords")
-        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)!
-        components.queryItems = [
-            URLQueryItem(name: "repo", value: repo),
+        cursor: String? = nil,
+        reverse: Bool = false
+    ) async throws -> ListRecordsResponse<EntryRecordValue> {
+        let repoDid = try await resolveRepoDidForPublicRead(repo)
+        let pds = try await pdsOrigin(forRepoDid: repoDid)
+
+        let wantReverse = reverse
+        let serverReverse = wantReverse && !Self.relayHostOmitsListRecordsReverse(pdsOrigin: pds)
+        let sortPageNewestFirst = wantReverse && serverReverse != wantReverse
+
+        var c = URLComponents(string: "\(pds)/xrpc/com.atproto.repo.listRecords")!
+        c.queryItems = [
+            URLQueryItem(name: "repo", value: repoDid),
             URLQueryItem(name: "collection", value: collection),
             URLQueryItem(name: "limit", value: String(limit)),
+            URLQueryItem(name: "reverse", value: serverReverse ? "true" : "false"),
         ]
         if let cursor {
-            components.queryItems?.append(URLQueryItem(name: "cursor", value: cursor))
+            c.queryItems?.append(URLQueryItem(name: "cursor", value: cursor))
         }
-        return try await getPublicJSON(url: components.url!)
+        guard let url = c.url else { throw PDSError.requestFailed }
+
+        var decoded: ListRecordsResponse<EntryRecordValue> = try await getPublicJSON(url: url)
+        if sortPageNewestFirst {
+            decoded = ListRecordsResponse(records: sortPublicEntryRecordsNewestFirst(decoded.records))
+        }
+        return decoded
     }
 
-    private func getPublicRecord<T: Decodable & Sendable>(
+    private func getPublicRecord(
         repo: String,
         collection: String,
         rkey: String
-    ) async throws -> GetRecordResponse<T> {
-        let url = Self.publicATProtoService
-            .appendingPathComponent("/xrpc/com.atproto.repo.getRecord")
-        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)!
-        components.queryItems = [
-            URLQueryItem(name: "repo", value: repo),
+    ) async throws -> GetRecordResponse<EntryRecordValue> {
+        let repoDid = try await resolveRepoDidForPublicRead(repo)
+        let pds = try await pdsOrigin(forRepoDid: repoDid)
+
+        var c = URLComponents(string: "\(pds)/xrpc/com.atproto.repo.getRecord")!
+        c.queryItems = [
+            URLQueryItem(name: "repo", value: repoDid),
             URLQueryItem(name: "collection", value: collection),
             URLQueryItem(name: "rkey", value: rkey),
         ]
-        return try await getPublicJSON(url: components.url!)
+        guard let url = c.url else { throw PDSError.requestFailed }
+        return try await getPublicJSON(url: url)
     }
 
     private func getPublicJSON<T: Decodable & Sendable>(url: URL) async throws -> T {
@@ -385,6 +491,10 @@ private struct ListRecordsResponse<T: Decodable & Sendable>: Decodable, Sendable
         let value: V
     }
     let records: [Record<T>]
+
+    init(records: [Record<T>]) {
+        self.records = records
+    }
 }
 
 private struct GetRecordResponse<T: Decodable & Sendable>: Decodable, Sendable {

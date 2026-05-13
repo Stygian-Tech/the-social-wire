@@ -1,6 +1,9 @@
 import { describe, it, expect } from "bun:test";
 import {
   computeNextListEntriesPageCursor,
+  decodeListEntriesPageCursor,
+  decodePublicationScopeListCursor,
+  entryRecordMatchesPublication,
   normalizeAtRepoParam,
   normalizeDidForOwnershipCompare,
   parseAtUri,
@@ -36,6 +39,24 @@ describe("normalizeAtRepoParam", () => {
     expect(normalizeAtRepoParam(encoded)).toBe(decoded);
     expect(parseAtUri(encoded)?.rkey).toBe("rkey1");
   });
+
+  it("decodes an encoded DID in the AT-URI authority (single-layer segment encoding)", () => {
+    const raw =
+      "at://did%3Aplc%3Aabc7/site.standard.publication/rkey1";
+    const canonical =
+      "at://did:plc:abc7/site.standard.publication/rkey1";
+    expect(normalizeAtRepoParam(raw)).toBe(canonical);
+    expect(parseAtUri(raw)?.did).toBe("did:plc:abc7");
+  });
+
+  it("fully unwraps double-encoded DID segments inside at:// without touching rkey escapes", () => {
+    const raw =
+      "at://did%253Aplc%253Ax77/site.standard.document/foo%3Abar";
+    const expected =
+      "at://did:plc:x77/site.standard.document/foo%3Abar";
+    expect(normalizeAtRepoParam(raw)).toBe(expected);
+    expect(parseAtUri(raw)?.rkey).toBe("foo%3Abar");
+  });
 });
 
 describe("repoAndPublicationFilterFromPubId", () => {
@@ -59,6 +80,17 @@ describe("repoAndPublicationFilterFromPubId", () => {
     expect(repoAndPublicationFilterFromPubId(uri)).toEqual({
       repoDid: "did:plc:abc",
       publicationAtUri: uri,
+    });
+  });
+
+  it("derives repo DID from a publication AT-URI whose authority is still segment-encoded", () => {
+    const encoded =
+      "at://did%3Aplc%3Aabc/site.standard.publication/3lmn4op56qr7s";
+    const canonical =
+      "at://did:plc:abc/site.standard.publication/3lmn4op56qr7s";
+    expect(repoAndPublicationFilterFromPubId(encoded)).toEqual({
+      repoDid: "did:plc:abc",
+      publicationAtUri: canonical,
     });
   });
 
@@ -197,6 +229,118 @@ describe("viewerOwnsDiscoveredPublication", () => {
 });
 
 const FOUR_COLLECTION_FEEDS = 4;
+
+describe("entryRecordMatchesPublication", () => {
+  const pub =
+    "at://did:plc:abc12/site.standard.publication/site-root";
+
+  it("matches when site string matches exactly", () => {
+    expect(
+      entryRecordMatchesPublication({ site: pub }, pub)
+    ).toBe(true);
+  });
+
+  it("matches when publication uses mixed-case did:plc and site is lowercase", () => {
+    const mixedPub =
+      "at://DID:PLC:ABC12/site.standard.publication/site-root";
+    expect(entryRecordMatchesPublication({ site: pub }, mixedPub)).toBe(
+      true
+    );
+  });
+
+  it("matches when site is still authority-encoded but filter is canonical", () => {
+    const encodedSite =
+      "at://did%3Aplc%3Aabc12/site.standard.publication/site-root";
+    expect(entryRecordMatchesPublication({ site: encodedSite }, pub)).toBe(
+      true
+    );
+  });
+
+  it("matches a com.atproto.repo.strongRef-shaped site field", () => {
+    expect(
+      entryRecordMatchesPublication(
+        { site: { uri: pub, cid: "bafyx" } },
+        pub
+      )
+    ).toBe(true);
+  });
+
+  it("is false for another publication rkey", () => {
+    expect(
+      entryRecordMatchesPublication(
+        {
+          site:
+            "at://did:plc:abc12/site.standard.publication/other-site",
+        },
+        pub
+      )
+    ).toBe(false);
+  });
+});
+
+describe("decodeListEntriesPageCursor", () => {
+  it("treats empty as initial fetch", () => {
+    expect(decodeListEntriesPageCursor(undefined)).toEqual({
+      phase: "initial",
+    });
+    expect(decodeListEntriesPageCursor("")).toEqual({ phase: "initial" });
+  });
+
+  it("parses collection index plus optional PDS listRecords cursor", () => {
+    expect(
+      decodeListEntriesPageCursor(
+        `2:${encodeURIComponent("next-cursor/token")}`
+      )
+    ).toEqual({
+      phase: "page",
+      colIdx: 2,
+      atproto: "next-cursor/token",
+    });
+  });
+
+  it("maps legacy d: and e: collection shims", () => {
+    expect(decodeListEntriesPageCursor("d:tok")).toEqual({
+      phase: "page",
+      colIdx: 0,
+      atproto: "tok",
+    });
+    expect(decodeListEntriesPageCursor("e:tok")).toEqual({
+      phase: "page",
+      colIdx: 2,
+      atproto: "tok",
+    });
+  });
+
+  it("passes through a bare token as collection 0 (older clients)", () => {
+    expect(decodeListEntriesPageCursor("opaque-cursor")).toEqual({
+      phase: "page",
+      colIdx: 0,
+      atproto: "opaque-cursor",
+    });
+  });
+});
+
+describe("decodePublicationScopeListCursor", () => {
+  it("round-trips publication-scope cursors with skip offset", () => {
+    const encoded = `p|2|${encodeURIComponent("pds-cursor")}|7`;
+    expect(decodePublicationScopeListCursor(encoded)).toEqual({
+      colIdx: 2,
+      atproto: "pds-cursor",
+      matchSkip: 7,
+    });
+  });
+
+  it("defaults when cursor is missing or uses wrong prefix", () => {
+    expect(decodePublicationScopeListCursor(undefined)).toEqual({
+      colIdx: 0,
+      matchSkip: 0,
+    });
+    expect(decodePublicationScopeListCursor("0:bad")).toEqual({
+      colIdx: 0,
+      matchSkip: 0,
+    });
+  });
+});
 
 describe("computeNextListEntriesPageCursor", () => {
   it("returns the same-collection cursor when the PDS returns a next cursor", () => {

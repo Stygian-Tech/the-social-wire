@@ -133,6 +133,33 @@ const plcEndpointCache = new Map<string, string | null>();
 /** In-flight PLC resolution so concurrent list/thumbnail lookups share one network round-trip. */
 const plcEndpointInflight = new Map<string, Promise<string | null>>();
 
+/**
+ * Some PLC `#atproto_pds` endpoints (notably Bridgy Fed relay) answer `com.atproto.repo.listRecords`
+ * but reject **`reverse=true`** with HTTP 400 — the param is valid per the lexicon on full PDSes.
+ * For those hosts we list ascending and {@link sortRepoRecordsNewestFirst} each page.
+ */
+function relayHostOmitsListRecordsReverse(pdsBase: string): boolean {
+  try {
+    const host = new URL(pdsBase).hostname.toLowerCase();
+    return host === "atproto.brid.gy" || host.endsWith(".brid.gy");
+  } catch {
+    return false;
+  }
+}
+
+/** Stable newest-first order for raw `listRecords` rows (matches {@link sortEntryListItemsNewestFirst}). */
+function sortRepoRecordsNewestFirst(
+  records: Array<{ uri: string; value: unknown }>
+): Array<{ uri: string; value: unknown }> {
+  return [...records].sort((a, b) => {
+    const ta = parseEntryValue(a.value as Record<string, unknown>).publishedAt;
+    const tb = parseEntryValue(b.value as Record<string, unknown>).publishedAt;
+    const byTime = tb.localeCompare(ta);
+    if (byTime !== 0) return byTime;
+    return a.uri.localeCompare(b.uri);
+  });
+}
+
 async function plcPdsBaseForRepoDid(repoDid: string): Promise<string | null> {
   if (!repoDid.startsWith("did:")) return null;
   const cached = plcEndpointCache.get(repoDid);
@@ -233,11 +260,19 @@ async function listRecordsOnAuthorRepo(
   const pdsBase = await plcPdsBaseForRepoDid(repoDid);
   if (!pdsBase) return { records: [] };
 
+  const wantReverse = options.reverse ?? false;
+  const serverReverse =
+    wantReverse && relayHostOmitsListRecordsReverse(pdsBase)
+      ? false
+      : wantReverse;
+  const sortPageNewestFirst =
+    wantReverse && serverReverse !== wantReverse;
+
   const params = new URLSearchParams({
     repo: repoDid,
     collection,
     limit: String(options.limit),
-    reverse: String(options.reverse ?? false),
+    reverse: String(serverReverse),
   });
   if (options.cursor) params.set("cursor", options.cursor);
 
@@ -262,7 +297,11 @@ async function listRecordsOnAuthorRepo(
     records?: Array<{ uri: string; value: unknown }>;
     cursor?: string;
   };
-  return { records: json.records ?? [], cursor: json.cursor };
+  const rows = json.records ?? [];
+  return {
+    records: sortPageNewestFirst ? sortRepoRecordsNewestFirst(rows) : rows,
+    cursor: json.cursor,
+  };
 }
 
 async function getRecordOnAuthorRepo(
@@ -339,26 +378,69 @@ export function createOAuthAgent(session: OAuthSession): Agent {
 const AT_URI_PATH_RE = /^at:\/\/([^/]+)\/([^/]+)\/([^/]+)$/;
 
 /**
+ * Decodes `encodeURIComponent` layers on a single path segment (e.g. did or NSID), but
+ * never touches the **`rkey`** segment of a full AT-URI.
+ */
+function decodeUriEncodingLayers(segment: string): string {
+  let s = segment;
+  for (let i = 0; i < 3; i++) {
+    if (!s.includes("%")) break;
+    try {
+      const next = decodeURIComponent(s);
+      if (next === s) break;
+      s = next;
+    } catch {
+      break;
+    }
+  }
+  return s;
+}
+
+/**
+ * For `at://…` only: decodes percent-escapes in the **authority** and **collection**
+ * segments so `at://did%3Aplc%3Ax/site.standard.publication/rkey` becomes a repo DID
+ * `listRecords` can use — without applying `decodeURIComponent` to the **rkey** (which
+ * must stay verbatim e.g. `foo%3Abar`).
+ */
+function decodeAtUriAuthorityAndCollection(s: string): string {
+  const m = s.match(AT_URI_PATH_RE);
+  if (!m) return s;
+  const [, auth, coll, rkey] = m;
+  const na = decodeUriEncodingLayers(auth);
+  const nc = decodeUriEncodingLayers(coll);
+  if (na === auth && nc === coll) return s;
+  return `at://${na}/${nc}/${rkey}`;
+}
+
+/**
  * Normalizes a sidebar or route `repo`-style value: trim, strip a leading `@`, then
  * apply up to three `decodeURIComponent` passes while each pass changes the string so
  * DIDs and `at://` URIs survive URL segments (`encodeURIComponent`), including accidental
  * double-encoding (`did%253A…`).
  *
- * Stops as soon as the value is a well-formed `at://…` path or **`did:`** repo id so we
- * do not decode `%`-sequences inside an **rkey** (e.g. `foo%3Abar`), which would change
- * the key and cause `com.atproto.repo.getRecord` to 404.
+ * When the value is already shaped like `at://repo/collection/rkey`, percent-decoding
+ * is applied only to **repo** and **collection**, not **rkey** (so rkeys stay stable).
+ * Standalone DIDs and not-yet-parsed strings still use full-string decoding passes.
  */
 export function normalizeAtRepoParam(raw: string): string {
   let s = raw.trim().replace(/^@/, "");
   for (let i = 0; i < 3; i++) {
-    if (AT_URI_PATH_RE.test(s) || s.startsWith("did:")) {
+    if (s.startsWith("did:")) {
+      return s;
+    }
+    if (AT_URI_PATH_RE.test(s)) {
+      const next = decodeAtUriAuthorityAndCollection(s);
+      if (next !== s) {
+        s = next;
+        continue;
+      }
       return s;
     }
     const prev = s;
     try {
-      const next = decodeURIComponent(prev);
-      if (next === prev) break;
-      s = next;
+      const decoded = decodeURIComponent(prev);
+      if (decoded === prev) break;
+      s = decoded;
     } catch {
       break;
     }
@@ -733,6 +815,15 @@ function decodeListCursor(cursor: string | undefined): ListEntriesCursorMode {
   return { phase: "page", colIdx: 0, atproto: cursor };
 }
 
+export type ListEntriesPageCursorState = ListEntriesCursorMode;
+
+/** Decodes the infinite-query `listEntries` cursor (collection index + optional PDS cursor token). */
+export function decodeListEntriesPageCursor(
+  cursor: string | undefined
+): ListEntriesPageCursorState {
+  return decodeListCursor(cursor);
+}
+
 /**
  * Computes the infinite-query cursor after a non-empty `listRecords` page when listing
  * across {@link LIST_COLLECTIONS_ORDER}. When the PDS returns no `cursor`, advance to the
@@ -1098,6 +1189,19 @@ function decodePublicationListCursor(cursor: string | undefined): {
   return { colIdx, atproto: atproto || undefined, matchSkip };
 }
 
+export type PublicationScopeListCursor = {
+  colIdx: number;
+  atproto?: string;
+  matchSkip: number;
+};
+
+/** Decodes publication-scoped `p|…` cursors ({@link listEntries} with `publicationAtUri`). */
+export function decodePublicationScopeListCursor(
+  cursor: string | undefined
+): PublicationScopeListCursor {
+  return decodePublicationListCursor(cursor);
+}
+
 function encodePublicationListCursor(
   colIdx: number,
   atproto: string | undefined,
@@ -1106,15 +1210,32 @@ function encodePublicationListCursor(
   return `p|${colIdx}|${encodeURIComponent(atproto ?? "")}|${matchSkip}`;
 }
 
-function entryRecordMatchesPublication(
+/** Stable key for comparing a publication AT-URI to document `site` / strong-ref URIs. */
+function canonicalPublicationAtUriKey(uri: string): string | null {
+  const n = normalizeAtRepoParam(uri);
+  const p = parseAtUri(n);
+  if (!p) return null;
+  const did =
+    p.did.toLowerCase().startsWith("did:plc:") ? p.did.toLowerCase() : p.did;
+  return `at://${did}/${p.collection}/${p.rkey}`;
+}
+
+export function entryRecordMatchesPublication(
   recordValue: unknown,
   publicationAtUri: string
 ): boolean {
   if (!recordValue || typeof recordValue !== "object") return false;
+  const want = canonicalPublicationAtUriKey(publicationAtUri);
+  if (!want) return false;
   const site = (recordValue as Record<string, unknown>).site;
-  if (typeof site === "string") return site === publicationAtUri;
+  if (typeof site === "string") {
+    const got = canonicalPublicationAtUriKey(site);
+    return got === want;
+  }
   const ref = parseStrongRef(site);
-  return ref?.uri === publicationAtUri;
+  if (!ref?.uri) return false;
+  const got = canonicalPublicationAtUriKey(ref.uri);
+  return got === want;
 }
 
 async function listEntriesForPublicationScope(

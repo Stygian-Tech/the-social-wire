@@ -157,7 +157,13 @@ final class ATProtoOAuthService: NSObject, ObservableObject, ASWebAuthentication
 
     private func resolveDID(handle: String) async throws -> String {
         let normalised = handle.hasPrefix("@") ? String(handle.dropFirst()) : handle
-        let url = URL(string: "https://bsky.social/xrpc/com.atproto.identity.resolveHandle?handle=\(normalised)")!
+        let base = (ProcessInfo.processInfo.environment["ATPROTO_APPVIEW_PUBLIC"] ?? "https://public.api.bsky.app")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        var trimmedBase = base
+        while trimmedBase.hasSuffix("/") { trimmedBase.removeLast() }
+        var c = URLComponents(string: "\(trimmedBase)/xrpc/com.atproto.identity.resolveHandle")!
+        c.queryItems = [URLQueryItem(name: "handle", value: normalised)]
+        guard let url = c.url else { throw OAuthError.didResolutionFailed }
         let (data, _) = try await URLSession.shared.data(from: url)
         let json = try JSONDecoder().decode([String: String].self, from: data)
         guard let did = json["did"] else { throw OAuthError.didResolutionFailed }

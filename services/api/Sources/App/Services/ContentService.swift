@@ -5,15 +5,20 @@ import Logging
 
 /// Fetches and returns entry feeds and entry detail from the ATProto network.
 /// Sanitizes content HTML before returning it to clients.
+///
+/// Repo reads (`com.atproto.repo.*` for `site.standard.*`) target each author's PDS
+/// (PLC-resolved), not the public App View — same as the web app's `atprotoClient`.
 actor ContentService {
   private let httpClient: HTTPClient
   private let cache: any CacheStore
   private let logger: Logger
+  private let plcURL: String
 
-  init(httpClient: HTTPClient, cache: any CacheStore, logger: Logger) {
+  init(httpClient: HTTPClient, cache: any CacheStore, logger: Logger, plcURL: String) {
     self.httpClient = httpClient
     self.cache = cache
     self.logger = logger
+    self.plcURL = plcURL
   }
 
   // MARK: - Entry list
@@ -84,15 +89,38 @@ actor ContentService {
     guard parts.count >= 2 else {
       throw HTTPError(.badRequest, message: "Invalid at-uri: \(atURI)")
     }
-    let did = String(parts[0])
+    let repoAuthority = String(parts[0])
+    guard
+      let repoDid = try await ATProtoPdsResolution.resolveRepoDid(
+        handleOrDid: repoAuthority,
+        httpClient: httpClient
+      )
+    else {
+      throw HTTPError(.badRequest, message: "Could not resolve repo: \(repoAuthority)")
+    }
 
-    // Use public Bluesky API as AppView proxy for Phase 1.
-    // The collection for standard.site entries may differ — update when lexicons are defined.
-    var urlComponents = URLComponents(string: "https://public.api.bsky.app/xrpc/com.atproto.repo.listRecords")!
+    guard
+      let pdsBase = try await ATProtoPdsResolution.resolvePdsBase(
+        repoDid: repoDid,
+        plcBase: plcURL,
+        httpClient: httpClient
+      )
+    else {
+      throw HTTPError(.badGateway, message: "Could not resolve PDS for \(repoDid)")
+    }
+
+    let wantReverse = true
+    let serverReverse =
+      wantReverse
+      && !ATProtoPdsResolution.relayHostOmitsListRecordsReverse(pdsBase: pdsBase)
+    let sortPageNewestFirst = wantReverse && serverReverse != wantReverse
+
+    var urlComponents = URLComponents(string: "\(pdsBase)/xrpc/com.atproto.repo.listRecords")!
     var queryItems = [
-      URLQueryItem(name: "repo", value: did),
+      URLQueryItem(name: "repo", value: repoDid),
       URLQueryItem(name: "collection", value: "site.standard.entry"),
       URLQueryItem(name: "limit", value: "\(min(limit, 100))"),
+      URLQueryItem(name: "reverse", value: serverReverse ? "true" : "false"),
     ]
     if let cursor { queryItems.append(URLQueryItem(name: "cursor", value: cursor)) }
     urlComponents.queryItems = queryItems
@@ -110,7 +138,10 @@ actor ContentService {
       throw HTTPError(.badGateway, message: "Invalid JSON from ATProto repo")
     }
 
-    let records = (json["records"] as? [[String: Any]]) ?? []
+    var records = (json["records"] as? [[String: Any]]) ?? []
+    if sortPageNewestFirst {
+      records = Self.sortStandardEntryRecordsNewestFirst(records)
+    }
     let entries = records.compactMap { record -> EntryListItem? in
       guard
         let uri = record["uri"] as? String,
@@ -201,9 +232,28 @@ actor ContentService {
     let collection = String(parts[1])
     let rkey = String(parts[2])
 
-    var urlComponents = URLComponents(string: "https://public.api.bsky.app/xrpc/com.atproto.repo.getRecord")!
+    guard
+      let repoDid = try await ATProtoPdsResolution.resolveRepoDid(
+        handleOrDid: did,
+        httpClient: httpClient
+      )
+    else {
+      throw HTTPError(.badRequest, message: "Could not resolve repo: \(did)")
+    }
+
+    guard
+      let pdsBase = try await ATProtoPdsResolution.resolvePdsBase(
+        repoDid: repoDid,
+        plcBase: plcURL,
+        httpClient: httpClient
+      )
+    else {
+      throw HTTPError(.badGateway, message: "Could not resolve PDS for \(repoDid)")
+    }
+
+    var urlComponents = URLComponents(string: "\(pdsBase)/xrpc/com.atproto.repo.getRecord")!
     urlComponents.queryItems = [
-      URLQueryItem(name: "repo", value: did),
+      URLQueryItem(name: "repo", value: repoDid),
       URLQueryItem(name: "collection", value: collection),
       URLQueryItem(name: "rkey", value: rkey),
     ]
@@ -272,5 +322,26 @@ actor ContentService {
     else { return nil }
     return String(html[titleStart.upperBound..<titleEnd.lowerBound])
       .trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  /// Newest-first ordering for a `listRecords` page when `reverse` must be omitted (Bridgy relay).
+  private static func sortStandardEntryRecordsNewestFirst(_ records: [[String: Any]]) -> [[String: Any]] {
+    records.sorted { a, b in
+      let va = (a["value"] as? [String: Any]) ?? [:]
+      let vb = (b["value"] as? [String: Any]) ?? [:]
+      let ta = publishedAtString(from: va)
+      let tb = publishedAtString(from: vb)
+      if ta != tb { return ta > tb }
+      let ua = a["uri"] as? String ?? ""
+      let ub = b["uri"] as? String ?? ""
+      return ua < ub
+    }
+  }
+
+  private static func publishedAtString(from value: [String: Any]) -> String {
+    (value["publishedAt"] as? String)
+      ?? (value["createdAt"] as? String)
+      ?? (value["indexedAt"] as? String)
+      ?? ""
   }
 }

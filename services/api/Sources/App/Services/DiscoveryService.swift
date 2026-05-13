@@ -98,6 +98,7 @@ actor DiscoveryService {
           return try await runChain(
             for: followedDID,
             chain: chain,
+            plcURL: plcURL,
             httpClient: httpClient,
             logger: logger
           )
@@ -154,12 +155,13 @@ actor DiscoveryService {
   private static func runChain(
     for did: String,
     chain: [any DiscoveryStep],
+    plcURL: String,
     httpClient: HTTPClient,
     logger: Logger
   ) async throws -> DiscoveredPublication? {
     for step in chain {
       do {
-        if let pub = try await step.discover(authorDID: did, httpClient: httpClient) {
+        if let pub = try await step.discover(authorDID: did, plcURL: plcURL, httpClient: httpClient) {
           logger.debug("Discovered via \(step.name)", metadata: ["did": "\(did)", "pub": "\(pub.publicationId)"])
           return pub
         }
