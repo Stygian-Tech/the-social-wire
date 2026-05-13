@@ -40,11 +40,31 @@ export function isBridgySyncGetBlobUrl(href: string): boolean {
   }
 }
 
-/** Bridgy Fed adds `bridge_*` query noise (including `bridge_completed`) that breaks many static/permalinks. */
+/**
+ * Bridgy Fed and similar relays add query noise (`bridge_completed`, `Bridge_completed`, camelCase
+ * `bridgeCompleted`, `bridgestate`, …) that breaks many static permalinks and can produce spurious 404s
+ * after iframe navigations.
+ *
+ * - Drops any param whose **name** matches `/^bridge/i` (case-sensitive `test` over the real key).
+ * - Drops params named `completed` (any casing) **only when** the original query also had at least one
+ *   `/^bridge/i` key — avoids stripping unrelated `?completed=` tracking fields.
+ *
+ * Embed-only: {@link sanitizeEmbedUrlForIframe} may strip **all** query strings on Bridgy relay hosts
+ * (`*.brid.gy`, `atproto.brid.gy`) — see {@link shouldStripAllQueryParamsForIframeEmbed}.
+ */
 function stripBridgyFedQueryNoise(u: URL): void {
-  for (const key of [...u.searchParams.keys()]) {
-    if (key.toLowerCase().startsWith("bridge_")) {
+  const keys = [...u.searchParams.keys()];
+  const hadBridgeKeyed = keys.some((k) => /^bridge/i.test(k));
+  for (const key of keys) {
+    if (/^bridge/i.test(key)) {
       u.searchParams.delete(key);
+    }
+  }
+  if (hadBridgeKeyed) {
+    for (const key of [...u.searchParams.keys()]) {
+      if (key.toLowerCase() === "completed") {
+        u.searchParams.delete(key);
+      }
     }
   }
 }
@@ -63,8 +83,8 @@ function finalizeHttpsPublicUrl(u: URL): string {
 
 /**
  * - Promotes `http:` to `https:` (PLC / Bridgy Fed often document `http://` PDS hosts).
- * - Drops query keys whose lowercase name starts with `bridge_` (Bridgy Fed / federation tooling),
- *   including `bridge_completed`, case-insensitive for spelling variants.
+ * - Drops Bridgy / federation query noise per {@link stripBridgyFedQueryNoise} (`/^bridge/i` keys and
+ *   paired `completed`).
  */
 export function normalizeHttpUrlToHttps(raw: string): string {
   const s = raw.trim();
@@ -95,10 +115,28 @@ export function normalizeHttpUrlToHttps(raw: string): string {
 }
 
 /**
- * Embed targets (iframes) must use the same public URL hygiene as anchors — explicit hook for callers.
+ * Embed targets (iframes): HTTPS normalization plus optional **full** query strip on Bridgy relay
+ * hosts only (see {@link shouldStripAllQueryParamsForIframeEmbed}) — avoids leaving toxic params on
+ * allowlisted patterns without applying that risk to arbitrary HTTPS URLs.
  */
+export function shouldStripAllQueryParamsForIframeEmbed(hostname: string): boolean {
+  return isBridgyAtprotoPdsHostname(hostname);
+}
+
 export function sanitizeEmbedUrlForIframe(raw: string): string {
-  return normalizeHttpUrlToHttps(raw);
+  const normalized = normalizeHttpUrlToHttps(raw);
+  try {
+    const u = new URL(normalized);
+    if (shouldStripAllQueryParamsForIframeEmbed(u.hostname)) {
+      u.search = "";
+    }
+    if (u.pathname === "/" && u.search === "" && u.hash === "") {
+      return u.origin;
+    }
+    return u.href;
+  } catch {
+    return normalized;
+  }
 }
 
 /**

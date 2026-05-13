@@ -82,7 +82,9 @@ export default function PubPage({ params }: Props) {
                 Articles
               </span>
             </div>
-            <EntryDetail entryId={selectedEntryId} />
+            <div className="flex min-h-0 flex-1 flex-col">
+              <EntryDetail entryId={selectedEntryId} />
+            </div>
           </>
         ) : (
           <div className="hidden flex-1 items-center justify-center p-8 text-center text-sm text-muted-foreground md:flex">

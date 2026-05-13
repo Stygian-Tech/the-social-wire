@@ -58,7 +58,7 @@ export function EntryDetail({ entryId }: EntryDetailProps) {
   const showEmbed = Boolean(entry.embedUrl) && !preferRecordBodyOverEmbed;
 
   return (
-    <article className="w-full max-w-none px-3 pb-8 pt-1 sm:px-4 sm:pb-10 sm:pt-2 md:px-6 lg:px-8">
+    <article className="flex min-h-0 w-full max-w-none flex-1 flex-col px-3 pb-8 pt-1 sm:px-4 sm:pb-10 sm:pt-2 md:px-6 lg:px-8">
       <EntrySocialToolbar entry={entry} />
 
       {canonicalArticleHref && !showEmbed ? (
@@ -76,11 +76,13 @@ export function EntryDetail({ entryId }: EntryDetailProps) {
       ) : null}
 
       {showEmbed ? (
-        <EntryArticleEmbed
-          url={entry.embedUrl!}
-          title={entry.title}
-          className="mb-5 sm:mb-6"
-        />
+        <div className="mb-5 flex min-h-0 flex-1 flex-col sm:mb-6">
+          <EntryArticleEmbed
+            url={entry.embedUrl!}
+            title={entry.title}
+            className="min-h-0 flex-1"
+          />
+        </div>
       ) : null}
 
       {!showEmbed && !safeHTML.trim() ? (
