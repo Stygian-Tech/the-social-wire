@@ -16,6 +16,14 @@ describe("normalizeHttpUrlToHttps", () => {
     ).toBe("https://blog.example/post/slug?utm_source=x");
   });
 
+  it("strips Bridge_completed case-insensitively", () => {
+    expect(
+      normalizeHttpUrlToHttps(
+        "https://blog.example/p?Bridge_completed=1&y=1"
+      )
+    ).toBe("https://blog.example/p?y=1");
+  });
+
   it("is idempotent for https origins", () => {
     expect(normalizeHttpUrlToHttps("https://pds.example/xrpc/a")).toBe(
       "https://pds.example/xrpc/a"

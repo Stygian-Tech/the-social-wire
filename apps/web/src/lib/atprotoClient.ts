@@ -1240,22 +1240,45 @@ function canonicalPublicationAtUriKey(uri: string): string | null {
   return `at://${did}/${p.collection}/${p.rkey}`;
 }
 
+/**
+ * Acceptable canonical AT-URI keys when scoping entries to a publication record.
+ * Includes `site.standard.publication` ↔ `com.standard.publication` mirror pairs (same DID + rkey).
+ */
+function publicationFilterEquivalenceKeys(publicationAtUri: string): Set<string> {
+  const keys = new Set<string>();
+  const primary = canonicalPublicationAtUriKey(publicationAtUri);
+  if (primary) keys.add(primary);
+
+  const p = parseAtUri(normalizeAtRepoParam(publicationAtUri));
+  if (!p || !PUBLICATION_RECORD_COLLECTIONS.has(p.collection)) return keys;
+
+  const didNorm = p.did.toLowerCase().startsWith("did:plc:")
+    ? p.did.toLowerCase()
+    : p.did;
+  if (p.collection === "site.standard.publication") {
+    keys.add(`at://${didNorm}/com.standard.publication/${p.rkey}`);
+  } else if (p.collection === "com.standard.publication") {
+    keys.add(`at://${didNorm}/site.standard.publication/${p.rkey}`);
+  }
+  return keys;
+}
+
 export function entryRecordMatchesPublication(
   recordValue: unknown,
   publicationAtUri: string
 ): boolean {
   if (!recordValue || typeof recordValue !== "object") return false;
-  const want = canonicalPublicationAtUriKey(publicationAtUri);
-  if (!want) return false;
+  const wantKeys = publicationFilterEquivalenceKeys(publicationAtUri);
+  if (wantKeys.size === 0) return false;
   const site = (recordValue as Record<string, unknown>).site;
   if (typeof site === "string") {
     const got = canonicalPublicationAtUriKey(site);
-    return got === want;
+    return got !== null && wantKeys.has(got);
   }
   const ref = parseStrongRef(site);
   if (!ref?.uri) return false;
   const got = canonicalPublicationAtUriKey(ref.uri);
-  return got === want;
+  return got !== null && wantKeys.has(got);
 }
 
 async function listEntriesForPublicationScope(

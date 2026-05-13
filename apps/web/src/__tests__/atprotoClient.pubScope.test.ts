@@ -293,6 +293,19 @@ describe("entryRecordMatchesPublication", () => {
     ).toBe(true);
   });
 
+  it("matches com.standard.publication sidebar key when site points at site.standard.publication (mirror lexicons)", () => {
+    const siteNs =
+      "at://did:plc:abc12/site.standard.publication/site-root";
+    const comNs =
+      "at://did:plc:abc12/com.standard.publication/site-root";
+    expect(
+      entryRecordMatchesPublication({ site: siteNs }, comNs)
+    ).toBe(true);
+    expect(
+      entryRecordMatchesPublication({ site: comNs }, siteNs)
+    ).toBe(true);
+  });
+
   it("is false for another publication rkey", () => {
     expect(
       entryRecordMatchesPublication(

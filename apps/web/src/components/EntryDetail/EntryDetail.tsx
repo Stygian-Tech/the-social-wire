@@ -6,6 +6,7 @@ import { EntryArticleEmbed } from "@/components/EntryDetail/EntryArticleEmbed";
 import { EntrySocialToolbar } from "@/components/EntryDetail/EntrySocialToolbar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useEntry } from "@/hooks/useEntries";
+import { normalizeHttpUrlToHttps } from "@/lib/publicResourceUrl";
 import { sanitizeHTMLWithLinks } from "@/lib/sanitize";
 
 interface EntryDetailProps {
@@ -25,6 +26,13 @@ export function EntryDetail({ entryId }: EntryDetailProps) {
    * bridge query params) and mixed-origin iframe 404s; tradeoff: no live-site chrome in-page.
    */
   const preferRecordBodyOverEmbed = Boolean(entry) && safeHTML.trim().length > 0;
+
+  const canonicalArticleHref =
+    entry?.embedUrl ?? entry?.originalUrl
+      ? normalizeHttpUrlToHttps(
+          entry?.embedUrl ?? entry?.originalUrl ?? ""
+        )
+      : undefined;
 
   if (isLoading) {
     return (
@@ -62,9 +70,9 @@ export function EntryDetail({ entryId }: EntryDetailProps) {
         <h1 className="text-xl font-bold leading-tight sm:text-2xl">{entry.title}</h1>
         <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground sm:text-sm">
           <time dateTime={entry.publishedAt}>{date}</time>
-          {(entry.embedUrl ?? entry.originalUrl) && !showEmbed && (
+          {canonicalArticleHref && !showEmbed && (
             <a
-              href={entry.embedUrl ?? entry.originalUrl}
+              href={canonicalArticleHref}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex min-h-[44px] min-w-0 items-center gap-1 py-2 hover:text-foreground transition-colors sm:min-h-0 sm:py-0"

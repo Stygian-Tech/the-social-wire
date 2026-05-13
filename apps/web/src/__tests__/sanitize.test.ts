@@ -62,6 +62,14 @@ describe("sanitizeHTML", () => {
     expect(result).not.toContain('src="http://');
   });
 
+  it("normalizes https anchors to strip bridge_completed (sanitization ran only for http before)", () => {
+    const input =
+      '<a href="https://example.com/article?bridge_completed=1">x</a>';
+    const result = sanitizeHTML(input);
+    expect(result).toContain('href="https://example.com/article"');
+    expect(result).not.toContain("bridge_completed");
+  });
+
   it("strips data: URI images", () => {
     const input = '<img src="data:image/png;base64,abc" />';
     const result = sanitizeHTML(input);

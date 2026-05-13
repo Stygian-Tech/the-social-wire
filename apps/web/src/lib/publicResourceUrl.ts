@@ -3,9 +3,19 @@
  * known-broken query payloads from federation tooling.
  */
 
+/** Bridgy Fed and similar tools append tracking/noise query params that break static hosts. */
+function stripNoisyHttpQueryParams(u: URL): void {
+  for (const key of [...u.searchParams.keys()]) {
+    if (key.toLowerCase() === "bridge_completed") {
+      u.searchParams.delete(key);
+    }
+  }
+}
+
 /**
  * - Promotes `http:` to `https:` (PLC / Bridgy Fed often document `http://` PDS hosts).
- * - Removes `bridge_completed` (Bridgy Fed post-redirect noise that can break static permalinks).
+ * - Removes `bridge_completed` (Bridgy Fed post-redirect noise that can break static permalinks),
+ *   case-insensitively for non-canonical spellings.
  */
 export function normalizeHttpUrlToHttps(raw: string): string {
   const s = raw.trim();
@@ -14,7 +24,7 @@ export function normalizeHttpUrlToHttps(raw: string): string {
     if (u.protocol === "http:") {
       u.protocol = "https:";
     }
-    u.searchParams.delete("bridge_completed");
+    stripNoisyHttpQueryParams(u);
     // `new URL("https://host")` uses pathname `/`; `host` + `/xrpc` must not become `host//xrpc`.
     if (u.pathname === "/" && u.search === "" && u.hash === "") {
       return u.origin;
@@ -25,7 +35,7 @@ export function normalizeHttpUrlToHttps(raw: string): string {
       const promoted = `https://${s.slice("http://".length)}`;
       try {
         const u2 = new URL(promoted);
-        u2.searchParams.delete("bridge_completed");
+        stripNoisyHttpQueryParams(u2);
         return u2.href;
       } catch {
         return promoted;

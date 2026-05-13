@@ -7,6 +7,7 @@ import {
   createPublicAppViewAgent,
   type EntryDetail,
 } from "@/lib/atprotoClient";
+import { normalizeHttpUrlToHttps } from "@/lib/publicResourceUrl";
 
 export const bskyPostViewerKey = (uri: string | undefined) =>
   ["bsky-post-viewer", uri ?? ""] as const;
@@ -68,10 +69,14 @@ export function useEntrySocial(entry: EntryDetail | null) {
       const oauth = getOAuthSession();
       if (!oauth) throw new Error("Not signed in");
       const agent = createOAuthAgent(oauth);
-      const shareUrl =
+      const rawShare =
         entry?.embedUrl ??
         entry?.originalUrl ??
         (typeof window !== "undefined" ? window.location.href : "");
+      const shareUrl =
+        rawShare.startsWith("http://") || rawShare.startsWith("https://")
+          ? normalizeHttpUrlToHttps(rawShare)
+          : rawShare;
       const title = entry?.title ?? "Article";
 
       if (uri && cid) {

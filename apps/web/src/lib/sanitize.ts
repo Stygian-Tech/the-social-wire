@@ -114,7 +114,7 @@ function stripUnsafeURIs(html: string): string {
         node.removeAttribute(attr);
         continue;
       }
-      if (trimmed.startsWith("http://")) {
+      if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
         node.setAttribute(attr, normalizeHttpUrlToHttps(trimmed));
       }
     }
@@ -126,7 +126,7 @@ function stripUnsafeURIs(html: string): string {
 /** SSR / test fallback: promote `http:` in `href` / `src` so article HTML cannot trigger mixed content. */
 function normalizeHttpAttrsInHtmlString(html: string): string {
   return html.replace(
-    /\b(src|href)\s*=\s*(["'])(http:\/\/[^"']*)\2/gi,
+    /\b(src|href)\s*=\s*(["'])((?:https?):\/\/[^"']*)\2/gi,
     (_, attr: string, q: string, url: string) =>
       `${attr}=${q}${normalizeHttpUrlToHttps(url)}${q}`
   );

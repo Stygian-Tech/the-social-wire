@@ -20,14 +20,18 @@ import {
 import { Label } from "@/components/ui/label";
 import { useEntrySocial } from "@/hooks/useEntrySocial";
 import type { EntryDetail } from "@/lib/atprotoClient";
+import { normalizeHttpUrlToHttps } from "@/lib/publicResourceUrl";
 import { cn } from "@/lib/utils";
 
 function shareArticleUrl(entry: EntryDetail): string {
-  return (
+  const raw =
     entry.embedUrl ??
     entry.originalUrl ??
-    (typeof window !== "undefined" ? window.location.href : "")
-  );
+    (typeof window !== "undefined" ? window.location.href : "");
+  if (raw.startsWith("http://") || raw.startsWith("https://")) {
+    return normalizeHttpUrlToHttps(raw);
+  }
+  return raw;
 }
 
 interface EntrySocialToolbarProps {
