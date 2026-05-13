@@ -38,7 +38,7 @@ export function EntryList({
   const virtualizer = useVirtualizer({
     count: hasNextPage ? allEntries.length + 1 : allEntries.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => 92,
+    estimateSize: () => 112,
     overscan: 5,
   });
 
@@ -48,7 +48,7 @@ export function EntryList({
     return (
       <div className="space-y-2 p-4">
         {Array.from({ length: 6 }).map((_, i) => (
-          <Skeleton key={i} className="h-[5.75rem] w-full rounded-md" />
+          <Skeleton key={i} className="h-28 w-full rounded-md" />
         ))}
       </div>
     );

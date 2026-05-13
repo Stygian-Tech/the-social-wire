@@ -98,7 +98,7 @@ export function EntryRow({
         <span className="min-w-0 flex-1">
           <p
             className={cn(
-              "truncate text-sm leading-snug",
+              "min-w-0 break-words text-pretty text-sm leading-snug",
               showUnreadChrome ? "font-semibold" : "font-medium"
             )}
           >
