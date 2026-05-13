@@ -110,8 +110,15 @@ export async function discoverPublications(
   userDid: string,
   session: OAuthSession
 ): Promise<DiscoveredPublication[]> {
-  const authFetch = (url: RequestInfo | URL, init?: RequestInit) =>
+  const authFetchImpl = (
+    url: RequestInfo | URL,
+    init?: RequestInit
+  ): Promise<Response> =>
     session.fetchHandler(url.toString(), init as RequestInit);
+  // Agent expects `typeof fetch`; TS lib typings include static `preconnect`.
+  const authFetch = Object.assign(authFetchImpl, {
+    preconnect: fetch.preconnect.bind(fetch),
+  }) as typeof fetch;
   const agent = new Agent({ service: BSKY_SERVICE, fetch: authFetch });
   const follows: FollowProfile[] = [];
 

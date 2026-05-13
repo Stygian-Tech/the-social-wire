@@ -2,6 +2,7 @@
  * Tests for useDiscovery and useRefreshDiscovery hooks.
  */
 
+import type { OAuthSession } from "@atproto/oauth-client-browser";
 import { describe, it, expect, afterEach, mock } from "bun:test";
 import { renderHook, waitFor, act } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -9,13 +10,15 @@ import React from "react";
 import { useDiscovery, useRefreshDiscovery } from "@/hooks/usePublications";
 import { MOCK_PUBLICATIONS } from "../mocks/handlers/service";
 
+const mockOAuthSession = {} as OAuthSession;
+
 // ── Auth mock ─────────────────────────────────────────────────────────────────
 
 mock.module("@/hooks/useAuth", () => ({
   useAuth: () => ({
     session: { did: "did:plc:testuser" },
     isLoading: false,
-    getOAuthSession: () => null,
+    getOAuthSession: () => mockOAuthSession,
     getAuthFetch: () => null,
     signIn: async () => {},
     signOut: async () => {},

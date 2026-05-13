@@ -35,14 +35,15 @@ export function usePublicationPrefs() {
  * Returns all publications discovered from the user's follow graph.
  */
 export function useDiscovery() {
-  const { session } = useAuth();
+  const { session, getOAuthSession } = useAuth();
   const did = session?.did ?? null;
 
   return useQuery({
     queryKey: DISCOVERY_QUERY_KEY(did ?? ""),
     queryFn: async (): Promise<DiscoveredPublication[]> => {
-      if (!did || !session) return [];
-      return discoverPublications(did, session);
+      const oauthSession = getOAuthSession();
+      if (!did || !oauthSession) return [];
+      return discoverPublications(did, oauthSession);
     },
     enabled: !!did && !!session,
     staleTime: 5 * 60_000, // 5 minutes
@@ -53,14 +54,15 @@ export function useDiscovery() {
  * Re-runs discovery by invalidating the cached results, triggering a fresh fetch.
  */
 export function useRefreshDiscovery() {
-  const { session } = useAuth();
+  const { session, getOAuthSession } = useAuth();
   const did = session?.did ?? null;
   const qc = useQueryClient();
 
   return useMutation({
     mutationFn: async (): Promise<DiscoveredPublication[]> => {
-      if (!did || !session) throw new Error("Not authenticated");
-      return discoverPublications(did, session);
+      const oauthSession = getOAuthSession();
+      if (!did || !oauthSession) throw new Error("Not authenticated");
+      return discoverPublications(did, oauthSession);
     },
     onSuccess: (publications) => {
       // Populate the query cache directly with fresh results — no extra round-trip.
