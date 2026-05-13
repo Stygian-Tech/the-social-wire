@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { LogOut, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,7 @@ import {
   SidebarFooter,
 } from "@/components/ui/sidebar";
 import { Avatar } from "@/components/shared/Avatar";
+import { Label } from "@/components/ui/label";
 import { FolderItem } from "./FolderItem";
 import { PublicationItem } from "./PublicationItem";
 import { NewFolderDialog } from "./NewFolderDialog";
@@ -27,8 +28,27 @@ import {
   usePublicationPrefs,
   useRefreshDiscovery,
 } from "@/hooks/usePublications";
+import { useShowHiddenFolder } from "@/hooks/useShowHiddenFolder";
+import { useReadRoute } from "@/contexts/ReadRouteContext";
 import { useViewerProfile } from "@/hooks/useViewerProfile";
-import { rkeyFromURI } from "@/lib/pdsClient";
+import {
+  PSEUDO_FOLDER_HIDDEN_URI,
+  PSEUDO_FOLDER_MY_URI,
+  rkeyFromURI,
+} from "@/lib/pdsClient";
+
+function publicationAuthoredByViewer(
+  publication: {
+    publicationId: string;
+    authorDid: string;
+  },
+  viewerDid: string | null | undefined
+): boolean {
+  if (!viewerDid) return false;
+  return (
+    publication.authorDid === viewerDid || publication.publicationId === viewerDid
+  );
+}
 
 interface AppSidebarProps {
   selectedPubId: string | null;
@@ -39,7 +59,7 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
   const router = useRouter();
   const { session, signOut } = useAuth();
   const [loggingOut, setLoggingOut] = useState(false);
-  const [selectedFolderUri, setSelectedFolderUri] = useState<string | null>(null);
+  const { selectedFolderUri, setSelectedFolderUri } = useReadRoute();
 
   async function handleLogout() {
     setLoggingOut(true);
@@ -58,6 +78,7 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
   const { data: prefs = [] } = usePublicationPrefs();
   const { data: profile, isLoading: profileLoading } = useViewerProfile();
   const refresh = useRefreshDiscovery();
+  const { showHiddenFolder, setShowHiddenFolder } = useShowHiddenFolder();
 
   // Build a map: publicationId → prefs record
   const prefsMap = useMemo(
@@ -75,32 +96,64 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
     [publications, prefsMap]
   );
 
-  // Group publications: unfolderd go to "All Publications"
-  const { folderMap, unfolderedPubs } = useMemo(() => {
+  const hiddenPubs = useMemo(
+    () =>
+      publications.filter((p) => {
+        const pref = prefsMap.get(p.publicationId);
+        return !!pref?.value.hidden;
+      }),
+    [publications, prefsMap]
+  );
+
+  const viewerDid = session?.did;
+
+  useEffect(() => {
+    if (!viewerDid && selectedFolderUri === PSEUDO_FOLDER_MY_URI) {
+      setSelectedFolderUri(null);
+    }
+  }, [viewerDid, selectedFolderUri, setSelectedFolderUri]);
+
+  // Group publications: unfoldered "All Publications" excludes viewer-authored (those use My Publications);
+  // user folders still list assigned pubs regardless of author.
+  const { folderMap, unfolderedPubs, myPublications } = useMemo(() => {
     const folderMap = new Map<string, typeof visiblePubs>();
     const unfolderedPubs: typeof visiblePubs = [];
+    const myPublications: typeof visiblePubs = [];
 
     for (const pub of visiblePubs) {
+      const mine = publicationAuthoredByViewer(pub, viewerDid);
+      if (mine) {
+        myPublications.push(pub);
+      }
+
       const pref = prefsMap.get(pub.publicationId);
       const folderId = pref?.value.folderId;
       if (folderId) {
         const list = folderMap.get(folderId) ?? [];
         list.push(pub);
         folderMap.set(folderId, list);
-      } else {
+      } else if (!mine) {
         unfolderedPubs.push(pub);
       }
     }
 
-    return { folderMap, unfolderedPubs };
-  }, [visiblePubs, prefsMap]);
+    return { folderMap, unfolderedPubs, myPublications };
+  }, [visiblePubs, prefsMap, viewerDid]);
 
   // Filter by selected folder (or show all)
   const displayedPubs = useMemo(() => {
+    if (selectedFolderUri === PSEUDO_FOLDER_HIDDEN_URI) return hiddenPubs;
+    if (selectedFolderUri === PSEUDO_FOLDER_MY_URI) return myPublications;
     if (!selectedFolderUri) return unfolderedPubs;
     const rkey = rkeyFromURI(selectedFolderUri);
     return folderMap.get(rkey) ?? [];
-  }, [selectedFolderUri, unfolderedPubs, folderMap]);
+  }, [
+    selectedFolderUri,
+    unfolderedPubs,
+    folderMap,
+    hiddenPubs,
+    myPublications,
+  ]);
 
   return (
     <Sidebar>
@@ -150,6 +203,21 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
                   isSelected={selectedFolderUri === null}
                   onSelect={() => setSelectedFolderUri(null)}
                 />
+                {viewerDid ? (
+                  <FolderItem
+                    folder={{
+                      uri: PSEUDO_FOLDER_MY_URI,
+                      cid: "",
+                      value: {
+                        $type: "com.thesocialwire.folder",
+                        name: "My Publications",
+                        createdAt: "",
+                      },
+                    }}
+                    isSelected={selectedFolderUri === PSEUDO_FOLDER_MY_URI}
+                    onSelect={setSelectedFolderUri}
+                  />
+                ) : null}
                 {folders.map((f) => (
                   <FolderItem
                     key={f.uri}
@@ -158,6 +226,21 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
                     onSelect={setSelectedFolderUri}
                   />
                 ))}
+                {showHiddenFolder ? (
+                  <FolderItem
+                    folder={{
+                      uri: PSEUDO_FOLDER_HIDDEN_URI,
+                      cid: "",
+                      value: {
+                        $type: "com.thesocialwire.folder",
+                        name: "Hidden Publications",
+                        createdAt: "",
+                      },
+                    }}
+                    isSelected={selectedFolderUri === PSEUDO_FOLDER_HIDDEN_URI}
+                    onSelect={setSelectedFolderUri}
+                  />
+                ) : null}
                 <NewFolderDialog />
               </>
             )}
@@ -172,9 +255,13 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
               <SidebarSkeleton count={5} />
             ) : displayedPubs.length === 0 ? (
               <p className="px-2 py-1 text-xs text-muted-foreground">
-                {selectedFolderUri
-                  ? "No publications in this folder."
-                  : "No publications found. Try refreshing."}
+                {selectedFolderUri === PSEUDO_FOLDER_HIDDEN_URI
+                  ? "No hidden publications."
+                  : selectedFolderUri === PSEUDO_FOLDER_MY_URI
+                    ? "No publications on your account discovered yet."
+                    : selectedFolderUri
+                      ? "No publications in this folder."
+                      : "No publications found. Try refreshing."}
               </p>
             ) : (
               displayedPubs.map((pub) => (
@@ -221,6 +308,21 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
               </div>
             </>
           )}
+        </div>
+        <div className="flex items-start gap-2 px-2 pb-2">
+          <input
+            id="show-hidden-folder"
+            type="checkbox"
+            checked={showHiddenFolder}
+            onChange={(e) => setShowHiddenFolder(e.target.checked)}
+            className="border-input text-primary focus-visible:ring-ring mt-0.5 size-4 shrink-0 rounded border shadow-xs focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
+          />
+          <Label
+            htmlFor="show-hidden-folder"
+            className="cursor-pointer text-xs leading-snug font-normal text-sidebar-foreground"
+          >
+            Show Hidden Publications folder
+          </Label>
         </div>
         <SidebarMenu>
           <SidebarMenuItem>

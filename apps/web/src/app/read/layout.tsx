@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 import { AppSidebar } from "@/components/AppSidebar/AppSidebar";
+import { ReadRouteProvider } from "@/contexts/ReadRouteContext";
 import {
   SidebarProvider,
   SidebarInset,
@@ -43,19 +44,19 @@ export default function ReadLayout({ children }: { children: React.ReactNode }) 
 
   return (
     <SidebarProvider>
-      <AppSidebar
-        selectedPubId={selectedPubId}
-        onSelectPub={(pubId) => router.push(`/read/${encodeURIComponent(pubId)}`)}
-      />
-      <SidebarInset className="flex flex-col min-h-0 flex-1">
-        <header className="flex h-10 shrink-0 items-center gap-2 border-b px-4">
-          <SidebarTrigger className="-ml-1" />
-          <Separator orientation="vertical" className="h-4" />
-        </header>
-        <main className="flex flex-1 overflow-hidden">
-          {children}
-        </main>
-      </SidebarInset>
+      <ReadRouteProvider>
+        <AppSidebar
+          selectedPubId={selectedPubId}
+          onSelectPub={(pubId) => router.push(`/read/${encodeURIComponent(pubId)}`)}
+        />
+        <SidebarInset className="flex flex-col min-h-0 flex-1">
+          <header className="flex h-10 shrink-0 items-center gap-2 border-b px-4">
+            <SidebarTrigger className="-ml-1" />
+            <Separator orientation="vertical" className="h-4" />
+          </header>
+          <main className="flex flex-1 overflow-hidden">{children}</main>
+        </SidebarInset>
+      </ReadRouteProvider>
     </SidebarProvider>
   );
 }

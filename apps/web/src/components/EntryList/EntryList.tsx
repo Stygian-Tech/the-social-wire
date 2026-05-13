@@ -11,12 +11,16 @@ interface EntryListProps {
   pubId: string;
   selectedEntryId: string | null;
   onSelectEntry: (entryId: string) => void;
+  isEntryRead: (entryId: string) => boolean;
+  readIndicatorsEnabled: boolean;
 }
 
 export function EntryList({
   pubId,
   selectedEntryId,
   onSelectEntry,
+  isEntryRead,
+  readIndicatorsEnabled,
 }: EntryListProps) {
   const { data, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage } =
     useEntries(pubId);
@@ -34,7 +38,7 @@ export function EntryList({
 
   const items = virtualizer.getVirtualItems();
 
-  if (isLoading) {
+  if (isLoading && allEntries.length === 0) {
     return (
       <div className="space-y-2 p-4">
         {Array.from({ length: 6 }).map((_, i) => (
@@ -102,6 +106,8 @@ export function EntryList({
                 entry={entry}
                 isSelected={selectedEntryId === entry.entryId}
                 onSelect={onSelectEntry}
+                isRead={isEntryRead(entry.entryId)}
+                readIndicatorsEnabled={readIndicatorsEnabled}
               />
             </div>
           );

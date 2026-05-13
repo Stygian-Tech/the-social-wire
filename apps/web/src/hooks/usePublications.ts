@@ -37,16 +37,24 @@ export function usePublicationPrefs() {
 export function useDiscovery() {
   const { session, getOAuthSession } = useAuth();
   const did = session?.did ?? null;
+  const qc = useQueryClient();
 
   return useQuery({
     queryKey: DISCOVERY_QUERY_KEY(did ?? ""),
-    queryFn: async (): Promise<DiscoveredPublication[]> => {
+    queryFn: async ({ signal }): Promise<DiscoveredPublication[]> => {
       const oauthSession = getOAuthSession();
       if (!did || !oauthSession) return [];
-      return discoverPublications(did, oauthSession);
+      return discoverPublications(did, oauthSession, {
+        signal,
+        onProgress: (list) =>
+          qc.setQueryData(DISCOVERY_QUERY_KEY(did), list),
+      });
     },
     enabled: !!did && !!session,
-    staleTime: 5 * 60_000, // 5 minutes
+    /** Long TTL — hydrated from localStorage; user refreshes explicitly via sidebar control. */
+    staleTime: 1000 * 60 * 60 * 6,
+    gcTime: 1000 * 60 * 60 * 24 * 7,
+    refetchOnWindowFocus: false,
   });
 }
 
@@ -62,13 +70,10 @@ export function useRefreshDiscovery() {
     mutationFn: async (): Promise<DiscoveredPublication[]> => {
       const oauthSession = getOAuthSession();
       if (!did || !oauthSession) throw new Error("Not authenticated");
-      return discoverPublications(did, oauthSession);
-    },
-    onSuccess: (publications) => {
-      // Populate the query cache directly with fresh results — no extra round-trip.
-      if (did) {
-        qc.setQueryData(DISCOVERY_QUERY_KEY(did), publications);
-      }
+      return discoverPublications(did, oauthSession, {
+        onProgress: (list) =>
+          qc.setQueryData(DISCOVERY_QUERY_KEY(did), list),
+      });
     },
   });
 }
@@ -91,7 +96,7 @@ export function useSetPublicationFolder() {
       if (!client) throw new Error("No PDS client — not signed in");
       return client.upsertPublicationPrefs(
         publicationId,
-        { folderId: folderId ?? undefined },
+        { folderId },
         existingRkey
       );
     },

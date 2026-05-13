@@ -15,6 +15,10 @@ import type { OAuthSession } from "@atproto/oauth-client-browser";
 export const COLLECTION_FOLDER = "com.thesocialwire.folder";
 export const COLLECTION_PUB_PREFS = "com.thesocialwire.publicationPrefs";
 
+/** Sidebar pseudo-folder URI (not a real `com.thesocialwire.folder` record). */
+export const PSEUDO_FOLDER_MY_URI = "__my__";
+export const PSEUDO_FOLDER_HIDDEN_URI = "__hidden__";
+
 // ── Record types ──────────────────────────────────────────────────────────────
 
 export interface FolderRecord {
@@ -144,18 +148,44 @@ export class PDSClient {
 
   async upsertPublicationPrefs(
     publicationId: string,
-    updates: Partial<Pick<PublicationPrefsRecord, "folderId" | "sortOrder" | "hidden">>,
+    updates: Partial<Pick<PublicationPrefsRecord, "sortOrder" | "hidden">> & {
+      folderId?: string | null;
+    },
     existingRkey?: string
   ): Promise<{ uri: string; cid: string }> {
     const rkey = existingRkey ?? generateTID();
 
+    let prev: PublicationPrefsRecord | null = null;
+    if (existingRkey) {
+      const current = await this.agent.api.com.atproto.repo.getRecord({
+        repo: this.did,
+        collection: COLLECTION_PUB_PREFS,
+        rkey: existingRkey,
+      });
+      prev = current.data.value as unknown as PublicationPrefsRecord;
+    }
+
+    const sortOrder =
+      updates.sortOrder !== undefined
+        ? updates.sortOrder
+        : (prev?.sortOrder ?? 0);
+    const hidden =
+      updates.hidden !== undefined ? updates.hidden : (prev?.hidden ?? false);
+
+    let folderId: string | undefined;
+    if ("folderId" in updates) {
+      folderId = updates.folderId === null ? undefined : updates.folderId;
+    } else {
+      folderId = prev?.folderId;
+    }
+
     const record: PublicationPrefsRecord = {
       $type: COLLECTION_PUB_PREFS,
       publicationId,
-      sortOrder: 0,
-      hidden: false,
-      ...updates,
-      createdAt: new Date().toISOString(),
+      sortOrder,
+      hidden,
+      createdAt: prev?.createdAt ?? new Date().toISOString(),
+      ...(folderId !== undefined ? { folderId } : {}),
     };
 
     const response = await this.agent.api.com.atproto.repo.putRecord({

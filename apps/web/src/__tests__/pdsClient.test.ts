@@ -7,7 +7,13 @@
  */
 
 import { describe, it, expect } from "bun:test";
-import { rkeyFromURI, COLLECTION_FOLDER, COLLECTION_PUB_PREFS } from "@/lib/pdsClient";
+import {
+  rkeyFromURI,
+  COLLECTION_FOLDER,
+  COLLECTION_PUB_PREFS,
+  PSEUDO_FOLDER_HIDDEN_URI,
+  PSEUDO_FOLDER_MY_URI,
+} from "@/lib/pdsClient";
 
 describe("rkeyFromURI", () => {
   it("extracts rkey from an at-uri", () => {
@@ -32,5 +38,15 @@ describe("collection constants", () => {
 
   it("publicationPrefs collection ID matches lexicon", () => {
     expect(COLLECTION_PUB_PREFS).toBe("com.thesocialwire.publicationPrefs");
+  });
+
+  it("hidden pseudo-folder URI is stable", () => {
+    expect(PSEUDO_FOLDER_HIDDEN_URI).toBe("__hidden__");
+    expect(rkeyFromURI(PSEUDO_FOLDER_HIDDEN_URI)).toBe(PSEUDO_FOLDER_HIDDEN_URI);
+  });
+
+  it("my pseudo-folder URI is stable", () => {
+    expect(PSEUDO_FOLDER_MY_URI).toBe("__my__");
+    expect(rkeyFromURI(PSEUDO_FOLDER_MY_URI)).toBe(PSEUDO_FOLDER_MY_URI);
   });
 });

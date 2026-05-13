@@ -28,7 +28,9 @@ const DISCOVERY_PUBLICATION_COLLECTIONS = [
  */
 const DISCOVERY_CONTENT_COLLECTIONS = [
   "site.standard.document",
+  "com.standard.document",
   "site.standard.entry",
+  "com.standard.entry",
 ] as const;
 
 /** Union of collections probed during discovery (publication lexicons first). */
@@ -37,10 +39,16 @@ export const DISCOVERY_COLLECTIONS = [
   ...DISCOVERY_CONTENT_COLLECTIONS,
 ] as const;
 
-/** Preferred collection for listing posts (current ecosystem); then legacy. */
+/**
+ * Post/document collections — same order as discovery probes for content, plus `com.standard.*`
+ * mirrors. Listing must cover every collection discovery can use or the sidebar shows a pub with
+ * no articles.
+ */
 const LIST_COLLECTIONS_ORDER = [
   "site.standard.document",
+  "com.standard.document",
   "site.standard.entry",
+  "com.standard.entry",
 ] as const;
 
 /** @deprecated Use LIST_COLLECTIONS_ORDER; kept for callers expecting the legacy NSID. */
@@ -170,7 +178,7 @@ function oauthAwareFetch(session: OAuthSession | undefined) {
 async function listRecordsOnAuthorRepo(
   repoDidOrHandle: string,
   collection: string,
-  options: { limit: number; cursor?: string; reverse?: boolean },
+  options: { limit: number; cursor?: string; reverse?: boolean; signal?: AbortSignal },
   oauthSession?: OAuthSession
 ): Promise<{
   records: Array<{ uri: string; value: unknown }>;
@@ -195,7 +203,10 @@ async function listRecordsOnAuthorRepo(
   if (options.cursor) params.set("cursor", options.cursor);
 
   const url = `${pdsBase}/xrpc/com.atproto.repo.listRecords?${params}`;
-  const init: RequestInit = { headers: { Accept: "application/json" } };
+  const init: RequestInit = {
+    headers: { Accept: "application/json" },
+    signal: options.signal,
+  };
 
   let res = await fetch(url, init);
   const authed = oauthAwareFetch(oauthSession);
@@ -418,31 +429,80 @@ async function resolveEmbedUrl(
   );
 }
 
-function decodeListCursor(cursor: string | undefined):
-  | "initial"
-  | { kind: "document"; atproto?: string }
-  | { kind: "entry"; atproto?: string } {
-  if (cursor === undefined || cursor === "") return "initial";
+type ListEntriesCursorMode =
+  | { phase: "initial" }
+  | { phase: "page"; colIdx: number; atproto?: string };
+
+/**
+ * Cursor encodes `collectionIndex` (see {@link LIST_COLLECTIONS_ORDER}) plus optional
+ * ATProto `listRecords` cursor. Legacy `d:` / `e:` prefixes map to older two-phase pagination.
+ */
+function decodeListCursor(cursor: string | undefined): ListEntriesCursorMode {
+  if (cursor === undefined || cursor === "") return { phase: "initial" };
+
+  const digitPrefix = cursor.match(/^(\d+):(.*)$/);
+  if (digitPrefix) {
+    const colIdx = parseInt(digitPrefix[1], 10);
+    const raw = digitPrefix[2];
+    return {
+      phase: "page",
+      colIdx,
+      atproto: raw ? decodeURIComponent(raw) : undefined,
+    };
+  }
+
   if (cursor.startsWith(LIST_CURSOR_DOC)) {
     const raw = cursor.slice(LIST_CURSOR_DOC.length);
-    return { kind: "document", atproto: raw ? decodeURIComponent(raw) : undefined };
+    return {
+      phase: "page",
+      colIdx: 0,
+      atproto: raw ? decodeURIComponent(raw) : undefined,
+    };
   }
   if (cursor.startsWith(LIST_CURSOR_ENT)) {
     const raw = cursor.slice(LIST_CURSOR_ENT.length);
-    return { kind: "entry", atproto: raw ? decodeURIComponent(raw) : undefined };
+    return {
+      phase: "page",
+      colIdx: 2,
+      atproto: raw ? decodeURIComponent(raw) : undefined,
+    };
   }
-  // Legacy: unprefixed cursors treated as document namespace (pre-change clients).
-  return { kind: "document", atproto: cursor };
+  return { phase: "page", colIdx: 0, atproto: cursor };
 }
 
-function encodeListCursor(
-  kind: "document" | "entry",
+function encodeListColCursor(
+  colIdx: number,
   atproto: string | undefined
 ): string | undefined {
-  if (!atproto) return undefined;
-  const enc = encodeURIComponent(atproto);
-  return kind === "document" ? `${LIST_CURSOR_DOC}${enc}` : `${LIST_CURSOR_ENT}${enc}`;
+  if (atproto === undefined || atproto === "") return undefined;
+  return `${colIdx}:${encodeURIComponent(atproto)}`;
 }
+
+function recordsToListItems(
+  records: Array<{ uri: string; value: unknown }>
+): EntryListItem[] {
+  return records.map((record) => {
+    const parsed = parseEntryValue(record.value as Record<string, unknown>);
+    return {
+      entryId: record.uri,
+      title: parsed.title,
+      summary: parsed.summary,
+      publishedAt: parsed.publishedAt,
+    };
+  });
+}
+
+export type ListEntriesOptions = {
+  /**
+   * Called when a non-empty page of records arrives (including while skipping empty collections).
+   * `cursor` is the encoded infinite-query page cursor that would be returned for this batch.
+   */
+  onProgress?: (payload: {
+    entries: EntryListItem[];
+    cursor?: string;
+  }) => void;
+  signal?: AbortSignal;
+};
 
 function publicationTitleFromRecord(
   collection: string,
@@ -459,6 +519,16 @@ function publicationTitleFromRecord(
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
+export type DiscoverPublicationsOptions = {
+  /** When aborted, probing stops between batch chunks. */
+  signal?: AbortSignal;
+  /**
+   * Called whenever a new publication is found, with the **full list so far** in
+   * **follow-graph order** (only includes DIDs that have been resolved to a publication).
+   */
+  onProgress?: (orderedPublications: DiscoveredPublication[]) => void;
+};
+
 /**
  * Discovers followed authors with standard.site-related records.
  *
@@ -470,11 +540,16 @@ function publicationTitleFromRecord(
  */
 export async function discoverPublications(
   userDid: string,
-  session: OAuthSession
+  session: OAuthSession,
+  options?: DiscoverPublicationsOptions
 ): Promise<DiscoveredPublication[]> {
+  const { signal, onProgress } = options ?? {};
+
   const relayAgent = new Agent(BSKY_APPVIEW_PUBLIC);
 
   const subjectDids = new Set<string>();
+  // Include the viewer's repo so authored publications surface (follow graph excludes self-follows).
+  subjectDids.add(userDid);
 
   try {
     let cursor: string | undefined;
@@ -529,7 +604,26 @@ export async function discoverPublications(
 
   await enrichFollowsFromRelay(relayAgent, follows);
 
-  const publications: DiscoveredPublication[] = [];
+  if (signal?.aborted) {
+    return [];
+  }
+
+  /** Stable follow order while probes finish out-of-order (parallel batches). */
+  const foundByDid = new Map<string, DiscoveredPublication>();
+
+  function snapshotOrdered(): DiscoveredPublication[] {
+    const list: DiscoveredPublication[] = [];
+    for (const f of follows) {
+      const pub = foundByDid.get(f.did);
+      if (pub) list.push(pub);
+    }
+    return list;
+  }
+
+  if (onProgress) {
+    onProgress([]);
+  }
+
   const discoveredAt = new Date().toISOString();
 
   async function probeFollow(
@@ -587,120 +681,76 @@ export async function discoverPublications(
   }
 
   for (let i = 0; i < follows.length; i += DISCOVERY_BATCH_SIZE) {
-    const batch = follows.slice(i, i + DISCOVERY_BATCH_SIZE);
-    const results = await Promise.allSettled(
-      batch.map((follow) => probeFollow(follow))
-    );
+    if (signal?.aborted) break;
 
-    for (const result of results) {
-      if (result.status === "fulfilled" && result.value !== null) {
-        publications.push(result.value);
-      }
-    }
+    const batch = follows.slice(i, i + DISCOVERY_BATCH_SIZE);
+    await Promise.allSettled(
+      batch.map(async (follow) => {
+        const pub = await probeFollow(follow);
+        if (pub) {
+          foundByDid.set(follow.did, pub);
+          onProgress?.(snapshotOrdered());
+        }
+      })
+    );
   }
 
-  return publications;
+  return snapshotOrdered();
 }
 
 /**
- * Lists entries for a given author DID (documents first, then legacy entries).
- * Cursors are prefixed (`d:` / `e:`) so pagination stays on one collection.
+ * Lists entries for a given author handle or DID (documents first, then legacy entry collections).
+ * Cursors encode the collection index in {@link LIST_COLLECTIONS_ORDER} so pagination stays on one
+ * NSID at a time; legacy `d:` / `e:` cursors from older clients are still accepted.
  */
 export async function listEntries(
   authorDid: string,
   cursor?: string,
   limit = 50,
-  oauthSession?: OAuthSession
+  oauthSession?: OAuthSession,
+  options?: ListEntriesOptions
 ): Promise<{ entries: EntryListItem[]; cursor?: string }> {
+  const { onProgress, signal } = options ?? {};
   const mode = decodeListCursor(cursor);
+  const colCount = LIST_COLLECTIONS_ORDER.length;
 
-  if (mode === "initial") {
-    const docRes = await listRecordsOnAuthorRepo(
-      authorDid,
-      LIST_COLLECTIONS_ORDER[0],
-      { limit, reverse: false },
-      oauthSession
-    );
+  let startIdx = 0;
+  let startAtproto: string | undefined;
 
-    if (docRes.records.length > 0) {
-      const entries = docRes.records.map((record) => {
-        const parsed = parseEntryValue(record.value as Record<string, unknown>);
-        return {
-          entryId: record.uri,
-          title: parsed.title,
-          summary: parsed.summary,
-          publishedAt: parsed.publishedAt,
-        };
-      });
-      return {
-        entries,
-        cursor: encodeListCursor("document", docRes.cursor),
-      };
+  if (mode.phase === "page") {
+    startIdx = mode.colIdx;
+    startAtproto = mode.atproto;
+    if (startIdx < 0 || startIdx >= colCount) {
+      return { entries: [], cursor: undefined };
+    }
+  }
+
+  for (let i = startIdx; i < colCount; i++) {
+    if (signal?.aborted) {
+      return { entries: [], cursor: undefined };
     }
 
-    const entRes = await listRecordsOnAuthorRepo(
+    const atprotoCursor = i === startIdx ? startAtproto : undefined;
+    const res = await listRecordsOnAuthorRepo(
       authorDid,
-      LIST_COLLECTIONS_ORDER[1],
-      { limit, reverse: false },
+      LIST_COLLECTIONS_ORDER[i],
+      { limit, cursor: atprotoCursor, reverse: false, signal },
       oauthSession
     );
 
-    const entries = entRes.records.map((record) => {
-      const parsed = parseEntryValue(record.value as Record<string, unknown>);
-      return {
-        entryId: record.uri,
-        title: parsed.title,
-        summary: parsed.summary,
-        publishedAt: parsed.publishedAt,
-      };
-    });
-    return {
-      entries,
-      cursor: encodeListCursor("entry", entRes.cursor),
-    };
+    if (res.records.length > 0) {
+      const entries = recordsToListItems(res.records);
+      const nextCursor = encodeListColCursor(i, res.cursor);
+      onProgress?.({ entries, cursor: nextCursor });
+      return { entries, cursor: nextCursor };
+    }
+
+    if (i === startIdx && atprotoCursor !== undefined) {
+      continue;
+    }
   }
 
-  if (mode.kind === "document") {
-    const docRes = await listRecordsOnAuthorRepo(
-      authorDid,
-      LIST_COLLECTIONS_ORDER[0],
-      { limit, cursor: mode.atproto, reverse: false },
-      oauthSession
-    );
-    const entries = docRes.records.map((record) => {
-      const parsed = parseEntryValue(record.value as Record<string, unknown>);
-      return {
-        entryId: record.uri,
-        title: parsed.title,
-        summary: parsed.summary,
-        publishedAt: parsed.publishedAt,
-      };
-    });
-    return {
-      entries,
-      cursor: encodeListCursor("document", docRes.cursor),
-    };
-  }
-
-  const entRes = await listRecordsOnAuthorRepo(
-    authorDid,
-    LIST_COLLECTIONS_ORDER[1],
-    { limit, cursor: mode.atproto, reverse: false },
-    oauthSession
-  );
-  const entries = entRes.records.map((record) => {
-    const parsed = parseEntryValue(record.value as Record<string, unknown>);
-    return {
-      entryId: record.uri,
-      title: parsed.title,
-      summary: parsed.summary,
-      publishedAt: parsed.publishedAt,
-    };
-  });
-  return {
-    entries,
-    cursor: encodeListCursor("entry", entRes.cursor),
-  };
+  return { entries: [], cursor: undefined };
 }
 
 /**

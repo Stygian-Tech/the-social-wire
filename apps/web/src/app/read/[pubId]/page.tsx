@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { use } from "react";
 import { EntryList } from "@/components/EntryList/EntryList";
 import { EntryDetail } from "@/components/EntryDetail/EntryDetail";
+import { useReadRoute } from "@/contexts/ReadRouteContext";
 
 interface Props {
   params: Promise<{ pubId: string }>;
@@ -12,6 +13,15 @@ interface Props {
 export default function PubPage({ params }: Props) {
   const { pubId } = use(params);
   const [selectedEntryId, setSelectedEntryId] = useState<string | null>(null);
+  const { markEntryRead, isEntryRead, isHiddenFolderContext } = useReadRoute();
+
+  const handleSelectEntry = useCallback(
+    (entryId: string) => {
+      setSelectedEntryId(entryId);
+      markEntryRead(entryId);
+    },
+    [markEntryRead]
+  );
 
   return (
     <div className="flex flex-1 min-h-0 overflow-hidden">
@@ -26,7 +36,9 @@ export default function PubPage({ params }: Props) {
           <EntryList
             pubId={pubId}
             selectedEntryId={selectedEntryId}
-            onSelectEntry={setSelectedEntryId}
+            onSelectEntry={handleSelectEntry}
+            isEntryRead={isEntryRead}
+            readIndicatorsEnabled={!isHiddenFolderContext}
           />
         </div>
       </aside>
