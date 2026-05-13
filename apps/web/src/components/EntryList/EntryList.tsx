@@ -63,7 +63,7 @@ export function EntryList({
   }
 
   return (
-    <div ref={parentRef} className="h-full overflow-y-auto">
+    <div ref={parentRef} className="h-full overflow-y-auto overscroll-y-contain">
       <div
         style={{ height: virtualizer.getTotalSize() }}
         className="relative w-full"

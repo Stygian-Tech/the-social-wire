@@ -48,7 +48,7 @@ export default function ReadLayout({ children }: { children: React.ReactNode }) 
 
   if (isLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
+      <div className="flex min-h-svh items-center justify-center">
         <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
       </div>
     );
@@ -60,7 +60,7 @@ export default function ReadLayout({ children }: { children: React.ReactNode }) 
   }
 
   return (
-    <SidebarProvider className="h-svh max-h-svh min-h-0 overflow-hidden">
+    <SidebarProvider className="min-h-svh h-svh max-h-svh overflow-hidden overscroll-none">
       <ReadRouteProvider>
         <ClosePublicationsSheetOnMobilePubRoute selectedPubId={selectedPubId} />
         <AppSidebar

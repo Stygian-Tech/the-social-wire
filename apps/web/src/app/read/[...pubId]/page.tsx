@@ -33,7 +33,7 @@ export default function PubPage({ params }: Props) {
   }, [pubId]);
 
   return (
-    <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden md:flex-row md:items-stretch">
+    <div className="flex h-full min-h-0 max-h-full flex-1 flex-col overflow-hidden md:flex-row md:items-stretch">
       {/* Article list — desktop: beside publications sidebar; mobile: full width until an entry opens */}
       <aside
         className={cn(
@@ -61,22 +61,22 @@ export default function PubPage({ params }: Props) {
       {/* Entry detail */}
       <div
         className={cn(
-          "flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overflow-x-hidden md:h-full",
+          "flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-auto overscroll-y-contain md:h-full",
           !selectedEntryId && "hidden md:flex"
         )}
       >
         {selectedEntryId ? (
           <>
-            <div className="bg-background sticky top-0 z-10 flex shrink-0 items-center gap-2 border-b px-1 md:hidden">
+            <div className="bg-background sticky top-0 z-10 flex min-h-[44px] shrink-0 items-center gap-2 border-b px-1 py-0 md:hidden">
               <Button
                 type="button"
                 variant="ghost"
                 size="icon-sm"
-                className="shrink-0"
+                className="size-11 shrink-0 rounded-lg"
                 aria-label="Back to articles"
                 onClick={() => setSelectedEntryId(null)}
               >
-                <ChevronLeft className="size-4" />
+                <ChevronLeft className="size-5" />
               </Button>
               <span className="text-sm font-medium text-muted-foreground">
                 Articles

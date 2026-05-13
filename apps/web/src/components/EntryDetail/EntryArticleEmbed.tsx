@@ -119,8 +119,8 @@ export function EntryArticleEmbed({
       )}
     >
       {showBusyOverlay && (
-        <div className="absolute inset-0 z-10 flex min-h-0 flex-col gap-2 bg-background p-3 sm:p-4">
-          <Skeleton className="min-h-0 h-full w-full rounded-md" />
+        <div className="absolute inset-0 z-10 flex min-h-0 flex-col bg-background">
+          <Skeleton className="min-h-0 h-full w-full rounded-none" />
         </div>
       )}
       {probeBlocksEmbed === true ? (

@@ -132,9 +132,8 @@ export function EntrySocialToolbar({
           variant={liked ? "secondary" : "outline"}
           size="sm"
           disabled={!hasLinkedPost || busySocial}
-          className="h-11 min-h-[44px] min-w-[44px] justify-center gap-1.5 px-1 sm:h-7 sm:min-h-0 sm:min-w-0 sm:justify-start sm:px-2.5"
+          className="h-11 min-h-[44px] justify-center gap-1.5 px-2 sm:h-7 sm:min-h-0 sm:justify-start sm:px-2.5"
           title={!hasLinkedPost ? disabledHint : liked ? "Unlike" : "Like"}
-          aria-label={liked ? "Unlike" : "Like"}
           onClick={() =>
             toggleLikeMutation.mutate({
               likeUri,
@@ -142,9 +141,9 @@ export function EntrySocialToolbar({
           }
         >
           <Heart
-            className={cn("size-5 sm:size-3.5", liked && "fill-current text-red-600")}
+            className={cn("size-5 shrink-0 sm:size-3.5", liked && "fill-current text-red-600")}
           />
-          <span className="hidden sm:inline">
+          <span className="text-xs font-medium sm:text-sm">
             {liked ? "Unlike" : "Like"}
           </span>
         </Button>
@@ -153,7 +152,7 @@ export function EntrySocialToolbar({
           variant={reposted ? "secondary" : "outline"}
           size="sm"
           disabled={!hasLinkedPost || busySocial}
-          className="h-11 min-h-[44px] min-w-[44px] justify-center gap-1.5 px-1 sm:h-7 sm:min-h-0 sm:min-w-0 sm:justify-start sm:px-2.5"
+          className="h-11 min-h-[44px] justify-center gap-1.5 px-2 sm:h-7 sm:min-h-0 sm:justify-start sm:px-2.5"
           title={
             !hasLinkedPost
               ? disabledHint
@@ -161,7 +160,6 @@ export function EntrySocialToolbar({
                 ? "Undo repost"
                 : "Repost"
           }
-          aria-label={reposted ? "Undo repost" : "Repost"}
           onClick={() => {
             if (reposted) {
               toggleRepostMutation.mutate({ repostUri });
@@ -170,8 +168,8 @@ export function EntrySocialToolbar({
             }
           }}
         >
-          <Repeat className="size-5 sm:size-3.5" />
-          <span className="hidden sm:inline">
+          <Repeat className="size-5 shrink-0 sm:size-3.5" />
+          <span className="text-xs font-medium sm:text-sm">
             {reposted ? "Undo repost" : "Repost"}
           </span>
         </Button>
@@ -179,25 +177,23 @@ export function EntrySocialToolbar({
         <Button
           variant="outline"
           size="sm"
-          className="h-11 min-h-[44px] min-w-[44px] justify-center gap-1.5 px-1 sm:h-7 sm:min-h-0 sm:min-w-0 sm:justify-start sm:px-2.5"
-          title="Quote"
-          aria-label="Quote post"
+          className="h-11 min-h-[44px] justify-center gap-1.5 px-2 sm:h-7 sm:min-h-0 sm:justify-start sm:px-2.5"
+          title="Quote post"
           onClick={() => setQuoteOpen(true)}
         >
-          <MessageSquareQuote className="size-5 sm:size-3.5" />
-          <span className="hidden sm:inline">Quote</span>
+          <MessageSquareQuote className="size-5 shrink-0 sm:size-3.5" />
+          <span className="text-xs font-medium sm:text-sm">Quote</span>
         </Button>
 
         <Button
           variant="outline"
           size="sm"
-          className="h-11 min-h-[44px] min-w-[44px] justify-center gap-1.5 px-1 sm:h-7 sm:min-h-0 sm:min-w-0 sm:justify-start sm:px-2.5"
-          title="Share"
-          aria-label="Share article"
+          className="h-11 min-h-[44px] justify-center gap-1.5 px-2 sm:h-7 sm:min-h-0 sm:justify-start sm:px-2.5"
+          title="Share article"
           onClick={onShare}
         >
-          <Share2 className="size-5 sm:size-3.5" />
-          <span className="hidden sm:inline">Share</span>
+          <Share2 className="size-5 shrink-0 sm:size-3.5" />
+          <span className="text-xs font-medium sm:text-sm">Share</span>
         </Button>
 
         {(entry.embedUrl ?? entry.originalUrl) ? (
@@ -207,13 +203,13 @@ export function EntrySocialToolbar({
             rel="noopener noreferrer"
             className={cn(
               buttonVariants({ variant: "outline", size: "sm" }),
-              "inline-flex h-11 min-h-[44px] min-w-[44px] items-center justify-center gap-1 px-1 no-underline sm:h-7 sm:min-h-0 sm:min-w-0 sm:justify-start sm:gap-1.5 sm:px-2.5"
+              "inline-flex h-11 min-h-[44px] items-center justify-center gap-1 px-2 no-underline sm:h-7 sm:min-h-0 sm:justify-start sm:gap-1.5 sm:px-2.5"
             )}
             title="Open canonical article"
             aria-label="Open canonical article in new tab"
           >
-            <Link2 className="size-5 sm:size-3.5" />
-            <span className="hidden sm:inline max-w-[9rem] truncate text-xs font-medium">
+            <Link2 className="size-5 shrink-0 sm:size-3.5" />
+            <span className="max-w-[5rem] truncate text-xs font-medium sm:max-w-[9rem] sm:text-sm">
               Link
             </span>
           </a>
