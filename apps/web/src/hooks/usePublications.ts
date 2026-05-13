@@ -41,10 +41,10 @@ export function useDiscovery() {
   return useQuery({
     queryKey: DISCOVERY_QUERY_KEY(did ?? ""),
     queryFn: async (): Promise<DiscoveredPublication[]> => {
-      if (!did) return [];
-      return discoverPublications(did);
+      if (!did || !session) return [];
+      return discoverPublications(did, session);
     },
-    enabled: !!did,
+    enabled: !!did && !!session,
     staleTime: 5 * 60_000, // 5 minutes
   });
 }
@@ -59,8 +59,8 @@ export function useRefreshDiscovery() {
 
   return useMutation({
     mutationFn: async (): Promise<DiscoveredPublication[]> => {
-      if (!did) throw new Error("Not authenticated");
-      return discoverPublications(did);
+      if (!did || !session) throw new Error("Not authenticated");
+      return discoverPublications(did, session);
     },
     onSuccess: (publications) => {
       // Populate the query cache directly with fresh results — no extra round-trip.

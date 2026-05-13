@@ -8,6 +8,7 @@
  */
 
 import { Agent } from "@atproto/api";
+import type { OAuthSession } from "@atproto/oauth-client-browser";
 
 const BSKY_SERVICE = "https://bsky.social";
 
@@ -106,9 +107,12 @@ function parseEntryValue(value: Record<string, unknown>): {
  * or Next.js API route required.
  */
 export async function discoverPublications(
-  userDid: string
+  userDid: string,
+  session: OAuthSession
 ): Promise<DiscoveredPublication[]> {
-  const agent = new Agent(BSKY_SERVICE);
+  const authFetch = (url: RequestInfo | URL, init?: RequestInit) =>
+    session.fetchHandler(url.toString(), init as RequestInit);
+  const agent = new Agent({ service: BSKY_SERVICE, fetch: authFetch });
   const follows: FollowProfile[] = [];
 
   let cursor: string | undefined;

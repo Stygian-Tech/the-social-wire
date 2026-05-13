@@ -125,12 +125,21 @@ export class PDSClient {
   // ── Publication prefs ─────────────────────────────────────────────────────
 
   async listPublicationPrefs(): Promise<RepoRecord<PublicationPrefsRecord>[]> {
-    const response = await this.agent.api.com.atproto.repo.listRecords({
-      repo: this.did,
-      collection: COLLECTION_PUB_PREFS,
-      limit: 500,
-    });
-    return response.data.records as unknown as RepoRecord<PublicationPrefsRecord>[];
+    const all: RepoRecord<PublicationPrefsRecord>[] = [];
+    let cursor: string | undefined;
+    do {
+      const response = await this.agent.api.com.atproto.repo.listRecords({
+        repo: this.did,
+        collection: COLLECTION_PUB_PREFS,
+        limit: 100,
+        cursor,
+      });
+      all.push(
+        ...(response.data.records as unknown as RepoRecord<PublicationPrefsRecord>[])
+      );
+      cursor = response.data.cursor ?? undefined;
+    } while (cursor);
+    return all;
   }
 
   async upsertPublicationPrefs(
