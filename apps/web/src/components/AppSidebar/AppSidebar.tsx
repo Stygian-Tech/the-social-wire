@@ -3,6 +3,8 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { LogOut, RefreshCw } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Sidebar,
   SidebarContent,
@@ -14,18 +16,18 @@ import {
   SidebarHeader,
   SidebarFooter,
 } from "@/components/ui/sidebar";
-import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Avatar } from "@/components/shared/Avatar";
 import { FolderItem } from "./FolderItem";
 import { PublicationItem } from "./PublicationItem";
 import { NewFolderDialog } from "./NewFolderDialog";
+import { useAuth } from "@/hooks/useAuth";
 import { useFolders } from "@/hooks/useFolders";
 import {
   useDiscovery,
   usePublicationPrefs,
   useRefreshDiscovery,
 } from "@/hooks/usePublications";
-import { useAuth } from "@/hooks/useAuth";
+import { useViewerProfile } from "@/hooks/useViewerProfile";
 import { rkeyFromURI } from "@/lib/pdsClient";
 
 interface AppSidebarProps {
@@ -54,6 +56,7 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
   const { data: folders = [], isLoading: foldersLoading } = useFolders();
   const { data: publications = [], isLoading: pubsLoading } = useDiscovery();
   const { data: prefs = [] } = usePublicationPrefs();
+  const { data: profile, isLoading: profileLoading } = useViewerProfile();
   const refresh = useRefreshDiscovery();
 
   // Build a map: publicationId → prefs record
@@ -188,9 +191,37 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
       </SidebarContent>
 
       <SidebarFooter className="border-t px-2 py-3">
-        <p className="px-2 text-xs text-muted-foreground truncate">
-          {session?.did ?? ""}
-        </p>
+        <div className="flex min-w-0 items-start gap-3 px-2 pb-2">
+          {profileLoading ? (
+            <div className="flex min-w-0 flex-1 items-start gap-3">
+              <Skeleton className="size-10 shrink-0 rounded-full" />
+              <div className="flex min-w-0 flex-1 flex-col gap-1.5 pt-0.5">
+                <Skeleton className="h-4 w-28" />
+                <Skeleton className="h-3 w-full max-w-[12rem]" />
+              </div>
+            </div>
+          ) : (
+            <>
+              <Avatar
+                src={profile?.avatar}
+                alt={profile?.displayName || profile?.handle || session?.did || "Account"}
+                size={40}
+                className="shrink-0"
+              />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium leading-tight text-sidebar-foreground">
+                  {profile?.displayName?.trim() ||
+                    profile?.handle ||
+                    session?.did ||
+                    "—"}
+                </p>
+                <p className="truncate text-[11px] leading-tight text-muted-foreground">
+                  {session?.did ?? ""}
+                </p>
+              </div>
+            </>
+          )}
+        </div>
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton

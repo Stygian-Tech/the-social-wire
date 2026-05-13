@@ -7,6 +7,11 @@
 import { http, HttpResponse } from "msw";
 import type { DiscoveredPublication, EntryListItem, EntryDetail } from "@/lib/atprotoClient";
 
+const LIST_COLLECTIONS = new Set([
+  "site.standard.document",
+  "site.standard.entry",
+]);
+
 // ── Fixture data ──────────────────────────────────────────────────────────────
 
 export const MOCK_PUBLICATIONS: DiscoveredPublication[] = [
@@ -30,13 +35,13 @@ export const MOCK_PUBLICATIONS: DiscoveredPublication[] = [
 
 export const MOCK_ENTRIES: EntryListItem[] = [
   {
-    entryId: "at://did:plc:alice/site.standard.entry/entry1",
+    entryId: "at://did:plc:alice/site.standard.document/entry1",
     title: "First Post",
     summary: "This is the first post summary.",
     publishedAt: "2025-01-10T12:00:00Z",
   },
   {
-    entryId: "at://did:plc:alice/site.standard.entry/entry2",
+    entryId: "at://did:plc:alice/site.standard.document/entry2",
     title: "Second Post",
     summary: "Another great post.",
     publishedAt: "2025-01-11T12:00:00Z",
@@ -44,7 +49,7 @@ export const MOCK_ENTRIES: EntryListItem[] = [
 ];
 
 export const MOCK_ENTRY_DETAIL: EntryDetail = {
-  entryId: "at://did:plc:alice/site.standard.entry/entry1",
+  entryId: "at://did:plc:alice/site.standard.document/entry1",
   title: "First Post",
   publishedAt: "2025-01-10T12:00:00Z",
   contentHtml: "<p>Hello <strong>world</strong>!</p>",
@@ -58,7 +63,7 @@ export const serviceHandlers = [
   http.get("https://bsky.social/xrpc/com.atproto.repo.listRecords", ({ request }) => {
     const url = new URL(request.url);
     const collection = url.searchParams.get("collection");
-    if (collection !== "site.standard.entry") {
+    if (!collection || !LIST_COLLECTIONS.has(collection)) {
       return HttpResponse.json({ records: [], cursor: undefined });
     }
     return HttpResponse.json({
@@ -66,7 +71,7 @@ export const serviceHandlers = [
         uri: e.entryId,
         cid: `cid-${e.entryId}`,
         value: {
-          $type: "site.standard.entry",
+          $type: "site.standard.document",
           title: e.title,
           summary: e.summary,
           publishedAt: e.publishedAt,
@@ -89,7 +94,7 @@ export const serviceHandlers = [
       uri: MOCK_ENTRY_DETAIL.entryId,
       cid: `cid-${MOCK_ENTRY_DETAIL.entryId}`,
       value: {
-        $type: "site.standard.entry",
+        $type: "site.standard.document",
         title: MOCK_ENTRY_DETAIL.title,
         publishedAt: MOCK_ENTRY_DETAIL.publishedAt,
         content: MOCK_ENTRY_DETAIL.contentHtml,

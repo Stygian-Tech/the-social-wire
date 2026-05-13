@@ -3,9 +3,11 @@
 import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { handleCallback } from "@/lib/auth";
+import { useAuth } from "@/hooks/useAuth";
 
 export default function CallbackPage() {
   const router = useRouter();
+  const { applyOAuthSession } = useAuth();
   const handled = useRef(false);
 
   useEffect(() => {
@@ -14,14 +16,15 @@ export default function CallbackPage() {
     handled.current = true;
 
     handleCallback()
-      .then(() => {
+      .then((oauthSession) => {
+        applyOAuthSession(oauthSession);
         router.replace("/read");
       })
       .catch((err) => {
         console.error("OAuth callback error:", err);
         router.replace("/login?error=callback_failed");
       });
-  }, [router]);
+  }, [router, applyOAuthSession]);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background">

@@ -31,6 +31,12 @@ interface AuthContextValue {
   /** True while the initial session restore is in progress */
   isLoading: boolean;
   /**
+   * Sets the OAuth session after a successful OAuth callback (client-side callback route).
+   * Required because handleCallback resolves outside AuthProvider lifecycle;
+   * without this, IndexedDB holds the session but context stays null until a full reload.
+   */
+  applyOAuthSession: (oauthSession: OAuthSession) => void;
+  /**
    * Returns the raw OAuthSession for constructing PDSClient.
    * Returns null when not signed in.
    */
@@ -84,6 +90,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [session]);
 
+  const applyOAuthSession = useCallback((oauthSession: OAuthSession) => {
+    oauthSessionRef.current = oauthSession;
+    setSession({ did: oauthSession.did });
+  }, []);
+
   const getOAuthSession = useCallback((): OAuthSession | null => {
     return oauthSessionRef.current;
   }, []);
@@ -99,6 +110,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       value={{
         session,
         isLoading,
+        applyOAuthSession,
         getOAuthSession,
         getAuthFetch,
         signIn: handleSignIn,

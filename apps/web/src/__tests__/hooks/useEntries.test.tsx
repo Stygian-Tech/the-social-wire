@@ -22,6 +22,7 @@ mock.module("@/hooks/useAuth", () => ({
   useAuth: () => ({
     session: { did: "did:plc:testuser" },
     isLoading: false,
+    applyOAuthSession: () => {},
     getOAuthSession: () => null,
     getAuthFetch: () => null,
     signIn: async () => {},
@@ -69,7 +70,7 @@ describe("useEntries", () => {
     expect(entries).toHaveLength(MOCK_ENTRIES.length);
     expect(entries[0].title).toBe("First Post");
     expect(entries[0].entryId).toBe(
-      "at://did:plc:alice/site.standard.entry/entry1"
+      "at://did:plc:alice/site.standard.document/entry1"
     );
   });
 
@@ -98,7 +99,7 @@ describe("useEntries", () => {
 describe("useEntry", () => {
   it("fetches entry detail by AT-URI", async () => {
     const { result } = renderHook(
-      () => useEntry("at://did:plc:alice/site.standard.entry/entry1"),
+      () => useEntry("at://did:plc:alice/site.standard.document/entry1"),
       { wrapper: makeWrapper() }
     );
 
@@ -120,7 +121,7 @@ describe("useEntry", () => {
 
   it("returns null for unknown entry", async () => {
     const { result } = renderHook(
-      () => useEntry("at://did:plc:alice/site.standard.entry/nonexistent"),
+      () => useEntry("at://did:plc:alice/site.standard.document/nonexistent"),
       { wrapper: makeWrapper() }
     );
 
