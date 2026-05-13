@@ -73,8 +73,7 @@ export async function signIn(handle: string): Promise<void> {
  */
 export async function handleCallback(): Promise<OAuthSession> {
   const client = await getOAuthClient();
-  const params = new URLSearchParams(window.location.search);
-  const { session } = await client.initCallback(params);
+  const { session } = await client.initCallback(client.readCallbackParams());
   return session;
 }
 

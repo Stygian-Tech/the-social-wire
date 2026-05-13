@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Script from "next/script";
 import "./globals.css";
 import { Providers } from "./providers";
 import { EnvironmentBanner } from "@/components/shared/EnvironmentBanner";
@@ -15,6 +16,11 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="h-full antialiased">
+      <Script id="dark-mode" strategy="beforeInteractive">{`
+        if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+          document.documentElement.classList.add('dark');
+        }
+      `}</Script>
       <body className="min-h-full flex flex-col">
         <Providers>
           <EnvironmentBanner />
