@@ -1,0 +1,40 @@
+{
+  "lexicon": 1,
+  "id": "com.thesocialwire.publicationPrefs",
+  "defs": {
+    "main": {
+      "type": "record",
+      "description": "User-defined display preferences for a discovered standard.site publication. The publication list itself is derived from the user's ATProto follow graph (app.bsky.graph.follow records) — this record stores only the organizational preferences that are not expressed in the protocol: folder assignment, display order, and visibility.",
+      "key": "tid",
+      "record": {
+        "type": "object",
+        "required": ["publicationId", "createdAt"],
+        "properties": {
+          "publicationId": {
+            "type": "string",
+            "description": "The at-uri or canonical URL identifying the publication. Used to correlate this prefs record with a discovered publication."
+          },
+          "folderId": {
+            "type": "string",
+            "description": "The rkey (TID) of the com.thesocialwire.folder record this publication is assigned to. Omit or set to null to leave the publication in 'All Publications'."
+          },
+          "sortOrder": {
+            "type": "integer",
+            "default": 0,
+            "description": "Position of this publication within its folder (or in 'All Publications' if unfoldered). Lower values appear first."
+          },
+          "hidden": {
+            "type": "boolean",
+            "default": false,
+            "description": "If true, this publication is excluded from the sidebar entirely. Useful for discovered publications the user doesn't want to read."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "datetime",
+            "description": "ISO 8601 timestamp when this prefs record was created."
+          }
+        }
+      }
+    }
+  }
+}

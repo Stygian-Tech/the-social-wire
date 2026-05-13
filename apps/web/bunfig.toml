@@ -1,0 +1,6 @@
+[test]
+# Use jsdom for DOM APIs (DOMPurify, document.createElement, etc.)
+environment = "jsdom"
+
+# Path aliases (mirrors tsconfig.json paths)
+preload = ["./src/__tests__/setup.ts"]

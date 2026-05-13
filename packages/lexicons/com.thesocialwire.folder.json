@@ -1,0 +1,42 @@
+{
+  "lexicon": 1,
+  "id": "com.thesocialwire.folder",
+  "defs": {
+    "main": {
+      "type": "record",
+      "description": "A named folder for organizing publication subscriptions in The Social Wire.",
+      "key": "tid",
+      "record": {
+        "type": "object",
+        "required": ["name", "createdAt"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Display name for the folder."
+          },
+          "sortOrder": {
+            "type": "integer",
+            "default": 0,
+            "description": "Position of this folder in the sidebar. Lower values appear first."
+          },
+          "icon": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Emoji character or short icon name for this folder. If omitted, the UI renders a default folder icon."
+          },
+          "iconImage": {
+            "type": "string",
+            "format": "uri",
+            "description": "Optional URI for a custom image to use as the folder icon. Takes precedence over 'icon' if both are set."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "datetime",
+            "description": "ISO 8601 timestamp when this folder was created."
+          }
+        }
+      }
+    }
+  }
+}

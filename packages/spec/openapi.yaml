@@ -1,0 +1,341 @@
+openapi: "3.1.0"
+
+info:
+  title: The Social Wire API
+  description: |
+    Discovery, content retrieval, and caching service for The Social Wire reader.
+
+    This API does NOT own user organization data (folders, publication prefs) — those live as
+    ATProto records on the user's own PDS. This service handles:
+    - Scanning a user's follow graph and discovering standard.site publications
+    - Returning cached discovery results
+    - Fetching paginated entry feeds and entry detail for publications
+    - Normalizing / sanitizing entry content for safe rendering
+
+    **Authentication:** All endpoints (except health check) require an ATProto DPoP-bound access
+    token passed as `Authorization: DPoP <token>`. The service verifies the token against the
+    user's PDS and extracts the DID for use as the caller identity.
+  version: "1.0.0"
+  contact:
+    name: Stygian Tech
+    url: https://github.com/Stygian-Tech
+
+servers:
+  - url: https://api.thesocialwire.com
+    description: Production
+  - url: https://api-dev.thesocialwire.com
+    description: Development
+  - url: http://localhost:8080
+    description: Local
+
+# ── Security ──────────────────────────────────────────────────────────────────
+
+components:
+  securitySchemes:
+    DPoP:
+      type: http
+      scheme: dpop
+      description: |
+        ATProto DPoP-bound access token. Pass as `Authorization: DPoP <token>`.
+        The service verifies the token signature using the key published in the user's
+        DID document and extracts the DID as the caller identity.
+
+  schemas:
+    Error:
+      type: object
+      required: [error, message]
+      properties:
+        error:
+          type: string
+          description: Machine-readable error code.
+          example: Unauthorized
+        message:
+          type: string
+          description: Human-readable error description.
+          example: Invalid or expired DPoP token.
+
+    DiscoveredPublication:
+      type: object
+      required: [publicationId, authorDid, title, discoveredAt]
+      properties:
+        publicationId:
+          type: string
+          description: at-uri or canonical URL identifying the publication.
+          example: "at://did:plc:abc123/com.example.publication/main"
+        authorDid:
+          type: string
+          description: DID of the account that owns this publication.
+          example: "did:plc:abc123"
+        authorHandle:
+          type: string
+          description: Bluesky handle of the author (best-effort, may lag).
+          example: "alice.bsky.social"
+        title:
+          type: string
+          description: Display name of the publication.
+          example: "Alice's Tech Blog"
+        avatarUrl:
+          type: string
+          format: uri
+          description: Publication avatar / author avatar URL.
+        discoveredAt:
+          type: string
+          format: date-time
+          description: When this publication was last confirmed in the cache.
+
+    EntryListItem:
+      type: object
+      required: [entryId, title, publishedAt]
+      properties:
+        entryId:
+          type: string
+          description: at-uri identifying this entry.
+          example: "at://did:plc:abc123/com.example.entry/3jxx"
+        title:
+          type: string
+          example: "Hello, World"
+        summary:
+          type: string
+          description: Short excerpt or subtitle.
+        publishedAt:
+          type: string
+          format: date-time
+        isRead:
+          type: boolean
+          default: false
+
+    EntryDetail:
+      type: object
+      required: [entryId, title, publishedAt, contentHtml]
+      properties:
+        entryId:
+          type: string
+        title:
+          type: string
+        publishedAt:
+          type: string
+          format: date-time
+        contentHtml:
+          type: string
+          description: |
+            Sanitized HTML content of the entry. Scripts and unsafe attributes have
+            been stripped. Images are allowed with validated URLs.
+        originalUrl:
+          type: string
+          format: uri
+          description: Link to the original entry on standard.site.
+
+    CursorPage:
+      type: object
+      properties:
+        cursor:
+          type: string
+          description: Opaque pagination cursor. Pass to the next request to get the next page. Absent on the last page.
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid DPoP token.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: Resource not found.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    InternalError:
+      description: Unexpected server error.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+security:
+  - DPoP: []
+
+# ── Paths ─────────────────────────────────────────────────────────────────────
+
+paths:
+  /health:
+    get:
+      operationId: healthCheck
+      summary: Health check
+      description: Returns 200 if the service is up. No authentication required.
+      security: []
+      tags: [Health]
+      responses:
+        "200":
+          description: Service is healthy.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+
+  # ── Discovery ──────────────────────────────────────────────────────────────
+
+  /discovery/refresh:
+    post:
+      operationId: refreshDiscovery
+      summary: Refresh publication discovery
+      description: |
+        Triggers a re-scan of the authenticated user's follow graph to find
+        standard.site publications. Results are stored in the discovery cache.
+
+        This is an async operation — the endpoint returns immediately with a job
+        status. The client should poll `GET /discovery/{userDid}` to get results.
+      tags: [Discovery]
+      responses:
+        "202":
+          description: Discovery refresh accepted and running.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    enum: [accepted]
+                  message:
+                    type: string
+                    example: "Discovery refresh started. Poll GET /discovery/{did} for results."
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /discovery/{userDid}:
+    get:
+      operationId: getDiscovery
+      summary: Get cached discovery results
+      description: |
+        Returns the cached list of standard.site publications discovered from
+        the given user's follow graph. The caller must be authenticated as the
+        user identified by `userDid`.
+      tags: [Discovery]
+      parameters:
+        - name: userDid
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The DID of the user whose discovery results to return.
+          example: "did:plc:abc123"
+      responses:
+        "200":
+          description: Cached discovery results.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [publications]
+                properties:
+                  publications:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/DiscoveredPublication"
+                  lastRefreshedAt:
+                    type: string
+                    format: date-time
+                    description: When the discovery cache was last populated.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ── Content ────────────────────────────────────────────────────────────────
+
+  /publications/{pubId}/entries:
+    get:
+      operationId: getPublicationEntries
+      summary: Get paginated entry list for a publication
+      description: |
+        Returns entries for the given publication sorted by publish time descending.
+        Supports cursor-based pagination.
+      tags: [Content]
+      parameters:
+        - name: pubId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: URL-encoded at-uri or canonical URL of the publication.
+        - name: cursor
+          in: query
+          schema:
+            type: string
+          description: Pagination cursor from a previous response.
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+          description: Maximum number of entries to return.
+      responses:
+        "200":
+          description: Paginated entry list.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/CursorPage"
+                  - type: object
+                    required: [entries]
+                    properties:
+                      entries:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/EntryListItem"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /entries/{entryId}:
+    get:
+      operationId: getEntry
+      summary: Get a single entry with sanitized content
+      description: |
+        Returns the full content for a single entry. Content is normalized to
+        safe HTML with scripts and unsafe attributes stripped.
+      tags: [Content]
+      parameters:
+        - name: entryId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: URL-encoded at-uri of the entry.
+      responses:
+        "200":
+          description: Entry detail.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EntryDetail"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+tags:
+  - name: Health
+    description: Service health
+  - name: Discovery
+    description: Follow graph scanning and publication discovery
+  - name: Content
+    description: Entry feeds and entry detail

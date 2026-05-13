@@ -1,0 +1,68 @@
+name: SocialWire
+options:
+  minimumXcodeGenVersion: 2.43.0
+  deploymentTarget:
+    iOS: "17.0"
+settings:
+  base:
+    SWIFT_VERSION: 6.0
+    MARKETING_VERSION: 1.0
+    CURRENT_PROJECT_VERSION: 1
+    DEVELOPMENT_TEAM: ""
+    CODE_SIGN_STYLE: Automatic
+targets:
+  SocialWire:
+    type: application
+    platform: iOS
+    sources:
+      - path: SocialWire
+    info:
+      path: SocialWire/Info.plist
+      properties:
+        CFBundleURLTypes:
+          - CFBundleURLName: com.stygiantech.socialwire.oauth
+            CFBundleURLSchemes:
+              - thesocialwire
+        LSRequiresIPhoneOS: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.stygiantech.socialwire
+        PRODUCT_NAME: SocialWire
+        CODE_SIGN_ENTITLEMENTS: SocialWire/SocialWire.entitlements
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.news
+        INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
+  SocialWireTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: SocialWireTests
+    dependencies:
+      - target: SocialWire
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.stygiantech.socialwire.tests
+        PRODUCT_NAME: SocialWireTests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/SocialWire.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/SocialWire"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+schemes:
+  SocialWire:
+    build:
+      targets:
+        SocialWire: all
+        SocialWireTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - SocialWireTests
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: Release
