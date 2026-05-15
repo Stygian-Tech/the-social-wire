@@ -25,12 +25,20 @@ export const metadata: Metadata = {
     title: "The Social Wire",
     description: "A reader for the standard.site publishing ecosystem",
     url: "/",
-    /* og:image / twitter:image: `opengraph-image.tsx` + `twitter-image.tsx` */
+    images: [
+      {
+        url: "/og/the-social-wire.png",
+        width: 1535,
+        height: 1024,
+        alt: "The Social Wire",
+      },
+    ],
   },
   twitter: {
     card: "summary_large_image",
     title: "The Social Wire",
     description: "A reader for the standard.site publishing ecosystem",
+    images: ["/og/the-social-wire.png"],
   },
 };
 
