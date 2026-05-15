@@ -68,7 +68,7 @@ describe("listRecordsOnAuthorRepo via listEntries", () => {
       }
 
       return Promise.reject(new Error(`unexpected fetch: ${url}`));
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
   });
 
   afterEach(() => {
@@ -159,7 +159,7 @@ describe("listEntries cursor chain (relay-style PDS)", () => {
       }
 
       return Promise.reject(new Error(`unexpected fetch: ${url}`));
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
 
     const { entries, cursor } = await listEntries(
       "did:plc:gapped",
@@ -230,7 +230,7 @@ describe("listRecords full PDS host", () => {
       }
 
       return Promise.reject(new Error(`unexpected fetch: ${url}`));
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
   });
 
   afterEach(() => {
