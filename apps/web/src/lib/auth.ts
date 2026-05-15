@@ -95,37 +95,6 @@ export function localOAuthCanonicalHref(
   return null;
 }
 
-/**
- * Resolved once per OAuth client load — must reflect the Next dev server's port/path.
- *
- * Prefer deriving from {@link window} when signing in locally; SSR falls back to
- * the port embedded in {@link process.env.NEXT_PUBLIC_ATPROTO_LOOPBACK_ORIGIN} or `:3000`.
- */
-function loopbackPortSegmentForSsrFallback(): string {
-  const raw = process.env.NEXT_PUBLIC_ATPROTO_LOOPBACK_ORIGIN?.trim();
-  if (!raw) return ":3000";
-  try {
-    const url = new URL(raw.includes("://") ? raw : `http://${raw}`);
-    return url.port ? `:${url.port}` : "";
-  } catch {
-    return ":3000";
-  }
-}
-
-function loopbackOAuthRedirectUris(): [string, string] {
-  const path = normalizeLoopbackPath(ATPROTO_LOOPBACK_CALLBACK_PATH);
-  const portSeg =
-    typeof window !== "undefined"
-      ? window.location.port
-        ? `:${window.location.port}`
-        : ""
-      : loopbackPortSegmentForSsrFallback();
-
-  const v4 = `http://127.0.0.1${portSeg}${path}`;
-  const v6 = `http://[::1]${portSeg}${path}`;
-  return [v4, v6];
-}
-
 /** Enable parameterized OAuth loopback (`http://localhost?redirect_uri=…`) for Next dev machines. */
 function shouldUseParameterizedLoopbackClientId(): boolean {
   const explicit = process.env.NEXT_PUBLIC_ATPROTO_LOOPBACK_FORCE;

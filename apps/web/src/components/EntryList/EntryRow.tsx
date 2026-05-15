@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState } from "react";
 import { thumbnailImageSrcAttempts } from "@/lib/publicResourceUrl";
 import { cn } from "@/lib/utils";
 import type { EntryListItem } from "@/lib/atprotoClient";
@@ -31,13 +31,9 @@ export function EntryRow({
   const thumbAttempts = useMemo(
     () =>
       thumbnailImageSrcAttempts(entry.thumbnailUrl, entry.thumbnailFallbackUrl),
-    [entry.entryId, entry.thumbnailUrl, entry.thumbnailFallbackUrl]
+    [entry.thumbnailUrl, entry.thumbnailFallbackUrl]
   );
   const [attemptIdx, setAttemptIdx] = useState(0);
-
-  useEffect(() => {
-    setAttemptIdx(0);
-  }, [entry.entryId, entry.thumbnailUrl, entry.thumbnailFallbackUrl]);
 
   const activeThumbSrc =
     thumbAttempts.length > 0 && attemptIdx < thumbAttempts.length

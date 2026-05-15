@@ -6,7 +6,6 @@ import {
   useContext,
   useEffect,
   useMemo,
-  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -36,30 +35,33 @@ export function ReadRouteProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    setReadMap(loadReadState(window.localStorage));
-  }, []);
-
-  useEffect(() => {
-    if (!showHiddenFolder && selectedFolderUri === PSEUDO_FOLDER_HIDDEN_URI) {
-      setSelectedFolderUri(null);
-    }
-  }, [showHiddenFolder, selectedFolderUri]);
-
-  const isHiddenFolderContext = selectedFolderUri === PSEUDO_FOLDER_HIDDEN_URI;
-  const hiddenRef = useRef(isHiddenFolderContext);
-  hiddenRef.current = isHiddenFolderContext;
-
-  const markEntryRead = useCallback((entryId: string) => {
-    if (hiddenRef.current) return;
-    setReadMap((prev) => {
-      if (prev[entryId]) return prev;
-      const next = { ...prev, [entryId]: new Date().toISOString() };
-      if (typeof window !== "undefined") {
-        saveReadState(window.localStorage, next);
-      }
-      return next;
+    queueMicrotask(() => {
+      setReadMap(loadReadState(window.localStorage));
     });
   }, []);
+
+  const resolvedSelectedFolderUri =
+    !showHiddenFolder && selectedFolderUri === PSEUDO_FOLDER_HIDDEN_URI
+      ? null
+      : selectedFolderUri;
+
+  const isHiddenFolderContext =
+    resolvedSelectedFolderUri === PSEUDO_FOLDER_HIDDEN_URI;
+
+  const markEntryRead = useCallback(
+    (entryId: string) => {
+      if (isHiddenFolderContext) return;
+      setReadMap((prev) => {
+        if (prev[entryId]) return prev;
+        const next = { ...prev, [entryId]: new Date().toISOString() };
+        if (typeof window !== "undefined") {
+          saveReadState(window.localStorage, next);
+        }
+        return next;
+      });
+    },
+    [isHiddenFolderContext]
+  );
 
   const isEntryRead = useCallback(
     (entryId: string) => {
@@ -71,13 +73,13 @@ export function ReadRouteProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo(
     (): ReadRouteContextValue => ({
-      selectedFolderUri,
+      selectedFolderUri: resolvedSelectedFolderUri,
       setSelectedFolderUri,
       isHiddenFolderContext,
       isEntryRead,
       markEntryRead,
     }),
-    [selectedFolderUri, isHiddenFolderContext, isEntryRead, markEntryRead]
+    [resolvedSelectedFolderUri, isHiddenFolderContext, isEntryRead, markEntryRead]
   );
 
   return (

@@ -19,7 +19,7 @@ export function EntryDetail({ entryId }: EntryDetailProps) {
 
   const safeHTML = useMemo(
     () => sanitizeHTMLWithLinks(entry?.contentHtml ?? ""),
-    [entryId, entry?.contentHtml]
+    [entry?.contentHtml]
   );
 
   /**

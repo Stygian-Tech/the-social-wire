@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { use } from "react";
 import { ChevronLeft } from "lucide-react";
 import { EntryList } from "@/components/EntryList/EntryList";
@@ -17,6 +17,10 @@ interface Props {
 export default function PubPage({ params }: Props) {
   const { pubId: pubSegments } = use(params);
   const pubId = readRoutePubIdFromSegments(pubSegments);
+  return <PubPageContent key={pubId} pubId={pubId} />;
+}
+
+function PubPageContent({ pubId }: { pubId: string }) {
   const [selectedEntryId, setSelectedEntryId] = useState<string | null>(null);
   const { markEntryRead, isEntryRead, isHiddenFolderContext } = useReadRoute();
 
@@ -27,10 +31,6 @@ export default function PubPage({ params }: Props) {
     },
     [markEntryRead]
   );
-
-  useEffect(() => {
-    setSelectedEntryId(null);
-  }, [pubId]);
 
   return (
     <div className="flex h-full min-h-0 max-h-full flex-1 flex-col overflow-hidden md:flex-row md:items-stretch">

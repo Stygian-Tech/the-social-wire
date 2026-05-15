@@ -118,13 +118,15 @@ function FolderGlyph({
   name: string;
 }) {
   if (iconImage) {
-    // eslint-disable-next-line @next/next/no-img-element
     return (
-      <img
-        src={iconImage}
-        alt=""
-        className="h-4 w-4 rounded object-cover"
-      />
+      <>
+        {/* eslint-disable-next-line @next/next/no-img-element -- arbitrary folder icon URLs */}
+        <img
+          src={iconImage}
+          alt={name}
+          className="h-4 w-4 rounded object-cover"
+        />
+      </>
     );
   }
   if (icon) {

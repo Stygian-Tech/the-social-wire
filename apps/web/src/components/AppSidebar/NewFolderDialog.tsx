@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode, useEffect, useId, useState } from "react";
+import { type ReactNode, useCallback, useId, useState } from "react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Dialog,
@@ -20,8 +20,6 @@ import { cn } from "@/lib/utils";
 export type CreateFolderCreatedPayload = { uri: string };
 
 interface CreateFolderFormFieldsProps {
-  /** Mirrors dialog `open` so fields reset when closed. */
-  dialogOpen: boolean;
   onOpenChange: (open: boolean) => void;
   onCreated?: (payload: CreateFolderCreatedPayload) => void | Promise<void>;
   description?: ReactNode;
@@ -31,7 +29,6 @@ interface CreateFolderFormFieldsProps {
 }
 
 function CreateFolderFormFields({
-  dialogOpen,
   onOpenChange,
   onCreated,
   description,
@@ -48,14 +45,6 @@ function CreateFolderFormFields({
   const [finishing, setFinishing] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const createFolder = useCreateFolder();
-
-  useEffect(() => {
-    if (!dialogOpen) {
-      setName("");
-      setIcon("");
-      setSubmitError(null);
-    }
-  }, [dialogOpen]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -143,7 +132,7 @@ function CreateFolderFormFields({
 }
 
 export interface ControlledCreateFolderDialogProps
-  extends Omit<CreateFolderFormFieldsProps, "dialogOpen"> {
+  extends CreateFolderFormFieldsProps {
   open: boolean;
 }
 
@@ -152,22 +141,34 @@ export function ControlledCreateFolderDialog({
   onOpenChange,
   ...fields
 }: ControlledCreateFolderDialogProps) {
+  const [formKey, setFormKey] = useState(0);
+
+  const handleOpenChange = useCallback(
+    (next: boolean) => {
+      onOpenChange(next);
+      if (!next) setFormKey((k) => k + 1);
+    },
+    [onOpenChange]
+  );
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <CreateFolderFormFields
-        dialogOpen={open}
-        onOpenChange={onOpenChange}
-        {...fields}
-      />
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <CreateFolderFormFields key={formKey} onOpenChange={handleOpenChange} {...fields} />
     </Dialog>
   );
 }
 
 export function NewFolderDialog() {
   const [open, setOpen] = useState(false);
+  const [formKey, setFormKey] = useState(0);
+
+  const handleOpenChange = useCallback((next: boolean) => {
+    setOpen(next);
+    if (!next) setFormKey((k) => k + 1);
+  }, []);
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger
         render={
           <Button variant="ghost" size="sm" className="w-full justify-start gap-2" />
@@ -176,7 +177,7 @@ export function NewFolderDialog() {
         <Plus className="h-4 w-4" />
         New Folder
       </DialogTrigger>
-      <CreateFolderFormFields dialogOpen={open} onOpenChange={setOpen} />
+      <CreateFolderFormFields key={formKey} onOpenChange={handleOpenChange} />
     </Dialog>
   );
 }

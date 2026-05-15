@@ -23,7 +23,7 @@ describe("resolveEntryThumbnailUrl", () => {
           { status: 200, headers: { "Content-Type": "application/json" } }
         )
       )
-    ) as typeof fetch;
+    ) as unknown as typeof fetch;
   });
 
   afterEach(() => {
@@ -96,7 +96,7 @@ describe("resolveEntryThumbnailUrl", () => {
         );
       }
       return Promise.reject(new Error(`unexpected fetch: ${url}`));
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
 
     const url = await resolveEntryThumbnailUrl(
       "at://alice.example/site.standard.document/rkey1",
@@ -132,7 +132,7 @@ describe("resolveEntryThumbnailUrl", () => {
           { status: 200, headers: { "Content-Type": "application/json" } }
         )
       )
-    ) as typeof fetch;
+    ) as unknown as typeof fetch;
 
     const url = await resolveEntryThumbnailUrl(
       "at://did:plc:bridgyrelay/site.standard.document/rk",
@@ -166,7 +166,7 @@ describe("resolveEntryThumbnailUrl", () => {
           { status: 200, headers: { "Content-Type": "application/json" } }
         )
       )
-    ) as typeof fetch;
+    ) as unknown as typeof fetch;
 
     const r = await resolveEntryThumbnailUrls(
       "at://did:plc:bridgyrelay/site.standard.document/rk",
@@ -202,7 +202,7 @@ describe("resolveEntryThumbnailUrl", () => {
           { status: 200, headers: { "Content-Type": "application/json" } }
         )
       )
-    ) as typeof fetch;
+    ) as unknown as typeof fetch;
 
     const url = await resolveEntryThumbnailUrl(
       "at://did:plc:httpthumb/site.standard.document/rk",
@@ -243,7 +243,7 @@ describe("resolveEntryThumbnailUrl", () => {
         );
       }
       return Promise.reject(new Error(`unexpected fetch: ${url}`));
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
 
     await Promise.all([
       resolveEntryThumbnailUrl(

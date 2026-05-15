@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { usePDSClient } from "./usePDSClient";
 import {
@@ -37,28 +37,26 @@ export function useAccountPreferences() {
 
 export function useConfiguredReadLaterService() {
   const prefs = useAccountPreferences();
-  const [localServiceId, setLocalServiceId] =
-    useState<ReadLaterServiceId>("latr-link");
+  const pdsServiceId = prefs.data?.value.readLaterService ?? null;
+
+  const serviceId = useMemo<ReadLaterServiceId>(() => {
+    if (isReadLaterServiceId(pdsServiceId)) return pdsServiceId;
+    return readLocalConfiguredService();
+  }, [pdsServiceId]);
 
   useEffect(() => {
-    setLocalServiceId(readLocalConfiguredService());
-  }, []);
-
-  useEffect(() => {
-    const pdsServiceId = prefs.data?.value.readLaterService ?? null;
     if (!isReadLaterServiceId(pdsServiceId)) return;
-    setLocalServiceId(pdsServiceId);
     window.localStorage.setItem(READ_LATER_SERVICE_STORAGE_KEY, pdsServiceId);
-  }, [prefs.data?.value.readLaterService]);
+  }, [pdsServiceId]);
 
   return useMemo(
     () => ({
       isLoading: prefs.isLoading,
       data: prefs.data,
-      serviceId: localServiceId,
-      service: findReadLaterService(localServiceId),
+      serviceId,
+      service: findReadLaterService(serviceId),
     }),
-    [prefs.isLoading, prefs.data, localServiceId]
+    [prefs.isLoading, prefs.data, serviceId]
   );
 }
 

@@ -62,7 +62,13 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<AuthSession | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(
+    () =>
+      typeof window !== "undefined" &&
+      pathnameIsOAuthCallbackRoute(window.location.pathname)
+        ? false
+        : true
+  );
 
   // Store the OAuthSession in a ref — it manages its own token lifecycle
   // (including DPoP key rotation and token refresh) and doesn't need to be
@@ -73,7 +79,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (typeof window === "undefined") return;
 
     if (pathnameIsOAuthCallbackRoute(window.location.pathname)) {
-      setIsLoading(false);
       return;
     }
 

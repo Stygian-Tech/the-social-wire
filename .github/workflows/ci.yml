@@ -11,6 +11,8 @@ jobs:
   build-web:
     name: Build & Test Web
     runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     defaults:
       run:
         working-directory: apps/web
@@ -49,41 +51,7 @@ jobs:
           flags: web
           token: ${{ secrets.CODECOV_TOKEN }}
 
-  # ── API ───────────────────────────────────────────────────────────────────
-  test-api:
-    name: Test API (Swift)
-    runs-on: ubuntu-latest
-    container:
-      image: swift:6.1-jammy
-    defaults:
-      run:
-        working-directory: services/api
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Resolve dependencies
-        run: swift package resolve
-
-      - name: Build
-        run: swift build
-
-      - name: Test with coverage
-        run: swift test --enable-code-coverage
-
-      - name: Export coverage (llvm-cov)
-        run: |
-          BINARY=$(swift build --show-bin-path)/App
-          llvm-cov export \
-            -format="lcov" \
-            -instr-profile=.build/debug/codecov/default.profdata \
-            "$BINARY" > coverage.lcov
-
-      - name: Upload coverage
-        uses: codecov/codecov-action@v4
-        with:
-          files: services/api/coverage.lcov
-          flags: api
-          token: ${{ secrets.CODECOV_TOKEN }}
+  # Swift API (`services/api`) CI disabled for now — restore a `test-api` job when ready.
 
   # ── iOS build (stub — wired via Xcode Cloud in Phase 1b) ──────────────────
   # Uncomment when using a macOS runner:

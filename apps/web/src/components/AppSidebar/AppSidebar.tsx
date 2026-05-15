@@ -258,93 +258,99 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
         </div>
       </SidebarHeader>
 
-      <SidebarContent>
-        <SidebarGroup>
-          <SidebarGroupLabel>Read Later</SidebarGroupLabel>
-          <SidebarMenu>
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                type="button"
-                tooltip="Read Later Links"
-                isActive={pathname.startsWith("/saved")}
-                onClick={() => router.push("/saved")}
-              >
-                <Bookmark />
-                <span>Saved</span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </SidebarMenu>
-        </SidebarGroup>
-        <SidebarGroup>
-          <SidebarMenu>
-            {foldersLoading || pubsLoading || subscriptionsLoading ? (
-              <SidebarSkeleton count={5} />
-            ) : (
-              <>
+      <SidebarContent className="overflow-hidden">
+        <div className="shrink-0 border-b border-sidebar-border bg-sidebar">
+          <SidebarGroup>
+            <SidebarGroupLabel>Read Later</SidebarGroupLabel>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  type="button"
+                  tooltip="Read Later Links"
+                  isActive={pathname.startsWith("/saved")}
+                  onClick={() => router.push("/saved")}
+                >
+                  <Bookmark />
+                  <span>Saved</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroup>
+          {!foldersLoading && !pubsLoading && !subscriptionsLoading ? (
+            <SidebarGroup className="pt-0">
+              <SidebarMenu>
                 <PublicationTabs
                   activeTab={publicationTab}
                   onTabChange={setPublicationTab}
                 />
-                {publicationTab === "subscribed" ? (
-                  <>
-                    <div className="h-1" aria-hidden />
-                    <SidebarSectionLabel>Folders</SidebarSectionLabel>
-                    {folders.map((f) => {
-                      const rkey = rkeyFromURI(f.uri);
-                      return (
-                        <FolderBranch
-                          key={f.uri}
-                          expandKey={f.uri}
-                          folder={f.value}
-                          isActive={selectedFolderUri === f.uri}
-                          expanded={expandedKeys.has(f.uri)}
-                          onToggleExpanded={() => toggleExpanded(f.uri)}
-                          publications={folderMap.get(rkey) ?? []}
-                          emptyLabel="No publications in this folder."
-                          selectedPubId={selectedPubId}
-                          onSelectPub={onSelectPub}
-                          folders={folders}
-                          prefsMap={prefsMap}
-                        />
-                      );
-                    })}
-                    <NewFolderDialog />
-                    <SidebarSectionLabel>Publications</SidebarSectionLabel>
-                    <PublicationList
-                      publications={unfolderedPubs}
-                      emptyLabel="No subscribed publications outside folders."
-                      selectedPubId={selectedPubId}
-                      onSelectPub={onSelectPub}
-                      folders={folders}
-                      prefsMap={prefsMap}
-                    />
-                    <SidebarSectionLabel>My Publications</SidebarSectionLabel>
-                    <PublicationList
-                      publications={myPublications}
-                      emptyLabel="No publications on your account discovered yet."
-                      selectedPubId={selectedPubId}
-                      onSelectPub={onSelectPub}
-                      folders={folders}
-                      prefsMap={prefsMap}
-                    />
-                  </>
-                ) : (
-                  <>
-                    <SidebarSectionLabel>Publications</SidebarSectionLabel>
-                    <PublicationList
-                      publications={followingTabPublications}
-                      emptyLabel="No unsubscribed publications from followed accounts."
-                      selectedPubId={selectedPubId}
-                      onSelectPub={onSelectPub}
-                      folders={folders}
-                      prefsMap={prefsMap}
-                    />
-                  </>
-                )}
-              </>
-            )}
-          </SidebarMenu>
-        </SidebarGroup>
+              </SidebarMenu>
+            </SidebarGroup>
+          ) : null}
+        </div>
+        <div className="no-scrollbar flex min-h-0 min-w-0 flex-1 flex-col gap-0 overflow-y-auto overflow-x-hidden group-data-[collapsible=icon]:overflow-hidden">
+          <SidebarGroup>
+            <SidebarMenu>
+              {foldersLoading || pubsLoading || subscriptionsLoading ? (
+                <SidebarSkeleton count={5} />
+              ) : publicationTab === "subscribed" ? (
+                <>
+                  <div className="h-1" aria-hidden />
+                  <SidebarSectionLabel>Folders</SidebarSectionLabel>
+                  {folders.map((f) => {
+                    const rkey = rkeyFromURI(f.uri);
+                    return (
+                      <FolderBranch
+                        key={f.uri}
+                        expandKey={f.uri}
+                        folder={f.value}
+                        isActive={selectedFolderUri === f.uri}
+                        expanded={expandedKeys.has(f.uri)}
+                        onToggleExpanded={() => toggleExpanded(f.uri)}
+                        publications={folderMap.get(rkey) ?? []}
+                        emptyLabel="No publications in this folder."
+                        selectedPubId={selectedPubId}
+                        onSelectPub={onSelectPub}
+                        folders={folders}
+                        prefsMap={prefsMap}
+                      />
+                    );
+                  })}
+                  <NewFolderDialog />
+                  <SidebarSectionLabel>Publications</SidebarSectionLabel>
+                  <PublicationList
+                    publications={unfolderedPubs}
+                    emptyLabel="No subscribed publications outside folders."
+                    selectedPubId={selectedPubId}
+                    onSelectPub={onSelectPub}
+                    folders={folders}
+                    prefsMap={prefsMap}
+                  />
+                  <SidebarSectionLabel>My Publications</SidebarSectionLabel>
+                  <PublicationList
+                    publications={myPublications}
+                    emptyLabel="No publications on your account discovered yet."
+                    selectedPubId={selectedPubId}
+                    onSelectPub={onSelectPub}
+                    folders={folders}
+                    prefsMap={prefsMap}
+                  />
+                </>
+              ) : (
+                <>
+                  <SidebarSectionLabel>Publications</SidebarSectionLabel>
+                  <PublicationList
+                    publications={followingTabPublications}
+                    emptyLabel="No unsubscribed publications from followed accounts."
+                    selectedPubId={selectedPubId}
+                    onSelectPub={onSelectPub}
+                    folders={folders}
+                    prefsMap={prefsMap}
+                  />
+                </>
+              )}
+            </SidebarMenu>
+          </SidebarGroup>
+        </div>
       </SidebarContent>
 
       <SidebarFooter className="border-t px-2 py-3">

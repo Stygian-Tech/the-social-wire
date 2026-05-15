@@ -52,7 +52,11 @@ function IframeLoadFailedMessage({ href }: { href: string }) {
 }
 
 /** iframe embed of the canonical article URL with sandbox defaults and loading UI. */
-export function EntryArticleEmbed({
+export function EntryArticleEmbed(props: EntryArticleEmbedProps) {
+  return <EntryArticleEmbedInner key={props.url} {...props} />;
+}
+
+function EntryArticleEmbedInner({
   url,
   title,
   className,
@@ -77,9 +81,6 @@ export function EntryArticleEmbed({
   const probeGeneration = useRef(0);
 
   useEffect(() => {
-    setProbeBlocksEmbed(null);
-    setLoaded(false);
-    setFailed(false);
     const gen = ++probeGeneration.current;
     const ac = new AbortController();
     const t = setTimeout(async () => {

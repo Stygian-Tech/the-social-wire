@@ -173,7 +173,7 @@ export function tokenizeCspDirectiveValue(value: string): string[] {
   while (i < v.length) {
     while (i < v.length && /\s/.test(v[i]!)) i++;
     if (i >= v.length) break;
-    let start = i;
+    const start = i;
     if (v[i] === "'" || v[i] === '"') {
       const q = v[i]!;
       i++;

@@ -35,6 +35,7 @@ export function EntryList({
 
   const parentRef = useRef<HTMLDivElement>(null);
 
+  // eslint-disable-next-line react-hooks/incompatible-library -- TanStack Virtual's internal store is not React-memoizable
   const virtualizer = useVirtualizer({
     count: hasNextPage ? allEntries.length + 1 : allEntries.length,
     getScrollElement: () => parentRef.current,
@@ -95,9 +96,10 @@ export function EntryList({
           }
 
           const entry = allEntries[virtualItem.index];
+          const rowKey = `${entry.entryId}:${entry.thumbnailUrl ?? ""}:${entry.thumbnailFallbackUrl ?? ""}`;
           return (
             <div
-              key={entry.entryId}
+              key={rowKey}
               style={{
                 position: "absolute",
                 top: 0,
