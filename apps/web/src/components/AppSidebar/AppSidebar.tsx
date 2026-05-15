@@ -520,18 +520,25 @@ function publicationSubscriptionKeys(pub: DiscoveredPublication): string[] {
 function addPublicationSubscriptionKey(keys: Set<string>, value: string | undefined) {
   if (!value) return;
   const normalized = normalizeAtRepoParam(value);
+
+  // Bare DID — subscriptions and content-only publications both key by DID.
+  if (normalized.startsWith("did:")) {
+    keys.add(normalized);
+    return;
+  }
+
   const parsed = parseAtUri(normalized);
   if (!parsed) return;
 
   keys.add(normalized);
+  // Index the author DID so subscriptions stored as AT-URIs match
+  // content-only follows whose publicationId is just the DID.
+  keys.add(parsed.did);
+  // Cross-collection alias: site.standard.publication ↔ com.standard.publication
   if (parsed.collection === "site.standard.publication") {
-    keys.add(
-      `at://${parsed.did}/com.standard.publication/${parsed.rkey}`
-    );
+    keys.add(`at://${parsed.did}/com.standard.publication/${parsed.rkey}`);
   } else if (parsed.collection === "com.standard.publication") {
-    keys.add(
-      `at://${parsed.did}/site.standard.publication/${parsed.rkey}`
-    );
+    keys.add(`at://${parsed.did}/site.standard.publication/${parsed.rkey}`);
   }
 }
 
