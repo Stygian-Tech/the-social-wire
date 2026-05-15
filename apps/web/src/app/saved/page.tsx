@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Archive, ChevronLeft, ExternalLink, Settings, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { EntryArticleEmbed } from "@/components/EntryDetail/EntryArticleEmbed";
@@ -61,17 +61,15 @@ export default function SavedPage() {
 
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
 
-  const selectedRow = useMemo(
-    () => data.find((r) => rowId(r) === selectedRowId) ?? null,
-    [data, selectedRowId]
-  );
+  const resolvedSelectedRowId =
+    selectedRowId !== null && data.some((r) => rowId(r) === selectedRowId)
+      ? selectedRowId
+      : null;
 
-  useEffect(() => {
-    if (!selectedRowId) return;
-    if (!data.some((r) => rowId(r) === selectedRowId)) {
-      queueMicrotask(() => setSelectedRowId(null));
-    }
-  }, [data, selectedRowId]);
+  const selectedRow = useMemo(
+    () => data.find((r) => rowId(r) === resolvedSelectedRowId) ?? null,
+    [data, resolvedSelectedRowId]
+  );
 
   const handleDelete = useCallback(
     (normalizedUrl: string) => {
@@ -177,7 +175,7 @@ export default function SavedPage() {
               onClick={() => setSelectedRowId(id)}
               className={cn(
                 "flex w-full gap-3 border-b px-4 py-3 text-left transition-colors hover:bg-muted/50",
-                selectedRowId === id && "bg-muted"
+                resolvedSelectedRowId === id && "bg-muted"
               )}
             >
               {row.image ? (
@@ -217,7 +215,7 @@ export default function SavedPage() {
         className={cn(
           "flex min-h-0 min-w-0 flex-col overflow-hidden border-r bg-muted/20",
           "w-full flex-1 md:h-full md:w-72 md:shrink-0 md:flex-none",
-          selectedRowId && "hidden md:flex"
+          resolvedSelectedRowId && "hidden md:flex"
         )}
       >
         <div className="flex shrink-0 items-center justify-between gap-2 border-b px-3 py-2">
@@ -242,8 +240,9 @@ export default function SavedPage() {
       <div
         className={cn(
           "flex min-h-0 min-w-0 flex-1 flex-col md:h-full md:overflow-hidden",
-          !selectedRowId && "hidden md:flex",
-          selectedRowId && "overflow-x-hidden overflow-y-auto overscroll-y-contain md:overflow-hidden"
+          !resolvedSelectedRowId && "hidden md:flex",
+          resolvedSelectedRowId &&
+            "overflow-x-hidden overflow-y-auto overscroll-y-contain md:overflow-hidden"
         )}
       >
         {selectedRow ? (
@@ -316,7 +315,7 @@ export default function SavedPage() {
               </div>
             </div>
 
-            <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-4 pb-4 pt-2">
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-4 py-2">
               {selectedUrl ? (
                 <EntryArticleEmbed
                   url={selectedUrl}

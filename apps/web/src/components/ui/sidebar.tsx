@@ -34,6 +34,18 @@ const SIDEBAR_WIDTH_MOBILE = "18rem"
 const SIDEBAR_WIDTH_ICON = "3rem"
 const SIDEBAR_KEYBOARD_SHORTCUT = "b"
 
+/** Two-up tab picker above the subscriptions list. */
+const SIDEBAR_GLASS_SEGMENTED =
+  "grid grid-cols-2 gap-1 rounded-xl border border-sidebar-border/70 bg-sidebar-accent/45 p-1 shadow-sm backdrop-blur-md dark:bg-sidebar-accent/35 dark:border-sidebar-border/55"
+
+/** Square icon triggers in SidebarHeader / compact spots. */
+const SIDEBAR_GLASS_ICON =
+  "rounded-lg border border-sidebar-border/70 bg-sidebar-accent/45 shadow-sm backdrop-blur-md hover:border-sidebar-border hover:bg-sidebar-accent/72 hover:[box-shadow:var(--purple-glow-hover)] active:[box-shadow:var(--purple-glow-selected)] dark:bg-sidebar-accent/35 dark:border-sidebar-border/55 dark:hover:border-sidebar-border dark:hover:bg-sidebar-accent/58"
+
+/** Full-width dialog triggers embedded in submenu rows. */
+const SIDEBAR_GLASS_ROW_ACTION =
+  "flex h-8 min-h-8 w-full shrink-0 items-center justify-start gap-2 rounded-lg border border-sidebar-border/70 bg-sidebar-accent/45 px-3 py-0 text-left text-sm shadow-sm backdrop-blur-md hover:border-sidebar-border hover:bg-sidebar-accent/72 hover:[box-shadow:var(--purple-glow-hover)] active:[box-shadow:var(--purple-glow-selected)] dark:bg-sidebar-accent/35 dark:border-sidebar-border/55 dark:hover:border-sidebar-border dark:hover:bg-sidebar-accent/58"
+
 type SidebarContextProps = {
   state: "expanded" | "collapsed"
   open: boolean
@@ -623,18 +635,18 @@ function SidebarMenuItem({ className, ...props }: React.ComponentProps<"li">) {
 }
 
 const sidebarMenuButtonVariants = cva(
-  "peer/menu-button group/menu-button flex w-full items-center gap-2 overflow-hidden rounded-md p-2 text-left text-sm ring-sidebar-ring outline-hidden transition-[width,height,padding] group-has-data-[sidebar=menu-action]/menu-item:pr-8 group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:p-2! hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-open:hover:bg-sidebar-accent data-open:hover:text-sidebar-accent-foreground data-active:bg-sidebar-accent data-active:font-medium data-active:text-sidebar-accent-foreground [&_svg]:size-4 [&_svg]:shrink-0 [&>span:last-child]:truncate",
+  "peer/menu-button group/menu-button flex w-full items-center gap-2 overflow-hidden rounded-lg border border-sidebar-border/70 bg-sidebar-accent/45 p-2 text-left text-sm shadow-sm backdrop-blur-md ring-sidebar-ring outline-hidden transition-[width,height,padding,border-color,background-color,box-shadow,color] group-has-data-[sidebar=menu-action]/menu-item:pr-8 group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:rounded-lg group-data-[collapsible=icon]:border-transparent group-data-[collapsible=icon]:bg-transparent group-data-[collapsible=icon]:shadow-none group-data-[collapsible=icon]:backdrop-blur-none group-data-[collapsible=icon]:p-2! hover:border-sidebar-border hover:bg-sidebar-accent/72 hover:text-sidebar-accent-foreground hover:[box-shadow:var(--purple-glow-hover)] active:[box-shadow:var(--purple-glow-selected)] focus-visible:ring-2 active:bg-sidebar-accent/88 disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-open:border-sidebar-border data-open:bg-sidebar-accent/75 data-active:border-sidebar-border/90 data-active:bg-sidebar data-active:font-semibold data-active:text-sidebar-foreground data-active:shadow-inner dark:bg-sidebar-accent/35 dark:border-sidebar-border/55 dark:hover:border-sidebar-border dark:hover:bg-sidebar-accent/62 dark:data-active:bg-sidebar-accent/95 dark:data-active:text-sidebar-accent-foreground [&_svg]:size-4 [&_svg]:shrink-0 [&>span:last-child]:truncate",
   {
     variants: {
       variant: {
-        default: "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+        default: "",
         outline:
-          "bg-background shadow-[0_0_0_1px_var(--sidebar-border)] hover:bg-sidebar-accent hover:text-sidebar-accent-foreground hover:shadow-[0_0_0_1px_var(--sidebar-accent)]",
+          "border-sidebar-border bg-background/90 shadow-inner backdrop-blur-md hover:bg-muted/95 hover:border-sidebar-border dark:bg-sidebar-accent/25 dark:border-sidebar-border dark:hover:bg-sidebar-accent/45",
       },
       size: {
-        default: "h-8 text-sm",
-        sm: "h-7 text-xs",
-        lg: "h-12 text-sm group-data-[collapsible=icon]:p-0!",
+        default: "h-8 min-h-8 text-sm",
+        sm: "h-8 min-h-8 text-xs",
+        lg: "h-12 min-h-12 text-sm group-data-[collapsible=icon]:p-0!",
       },
     },
     defaultVariants: {
@@ -712,7 +724,7 @@ function SidebarMenuAction({
     props: mergeProps<"button">(
       {
         className: cn(
-          "absolute top-1.5 right-1 flex aspect-square w-5 items-center justify-center rounded-md p-0 text-sidebar-foreground ring-sidebar-ring outline-hidden transition-transform group-data-[collapsible=icon]:hidden peer-hover/menu-button:text-sidebar-accent-foreground peer-data-[size=default]/menu-button:top-1.5 peer-data-[size=lg]/menu-button:top-2.5 peer-data-[size=sm]/menu-button:top-1 after:absolute after:-inset-2 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 md:after:hidden [&>svg]:size-4 [&>svg]:shrink-0",
+          "absolute top-1.5 right-1 flex aspect-square w-5 items-center justify-center rounded-md p-0 text-sidebar-foreground ring-sidebar-ring outline-hidden transition-transform group-data-[collapsible=icon]:hidden peer-hover/menu-button:text-sidebar-accent-foreground peer-data-[size=default]/menu-button:top-1.5 peer-data-[size=lg]/menu-button:top-2.5 peer-data-[size=sm]/menu-button:top-1.5 after:absolute after:-inset-2 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 md:after:hidden [&>svg]:size-4 [&>svg]:shrink-0",
           showOnHover &&
             "group-focus-within/menu-item:opacity-100 group-hover/menu-item:opacity-100 peer-data-active/menu-button:text-sidebar-accent-foreground aria-expanded:opacity-100 md:opacity-0",
           className
@@ -737,7 +749,7 @@ function SidebarMenuBadge({
       data-slot="sidebar-menu-badge"
       data-sidebar="menu-badge"
       className={cn(
-        "pointer-events-none absolute right-1 flex h-5 min-w-5 items-center justify-center rounded-md px-1 text-xs font-medium text-sidebar-foreground tabular-nums select-none group-data-[collapsible=icon]:hidden peer-hover/menu-button:text-sidebar-accent-foreground peer-data-[size=default]/menu-button:top-1.5 peer-data-[size=lg]/menu-button:top-2.5 peer-data-[size=sm]/menu-button:top-1 peer-data-active/menu-button:text-sidebar-accent-foreground",
+        "pointer-events-none absolute right-1 flex h-5 min-w-5 items-center justify-center rounded-md px-1 text-xs font-medium text-sidebar-foreground tabular-nums select-none group-data-[collapsible=icon]:hidden peer-hover/menu-button:text-sidebar-accent-foreground peer-data-[size=default]/menu-button:top-1.5 peer-data-[size=lg]/menu-button:top-2.5 peer-data-[size=sm]/menu-button:top-1.5 peer-data-active/menu-button:text-sidebar-accent-foreground",
         className
       )}
       {...props}
@@ -789,7 +801,7 @@ function SidebarMenuSub({ className, ...props }: React.ComponentProps<"ul">) {
       data-slot="sidebar-menu-sub"
       data-sidebar="menu-sub"
       className={cn(
-        "mx-3.5 flex min-w-0 translate-x-px flex-col gap-1 border-l border-sidebar-border px-2.5 py-0.5 group-data-[collapsible=icon]:hidden",
+        "ml-3.5 mr-0 flex min-w-0 translate-x-px flex-col gap-1.5 border-l border-sidebar-border pb-0.5 pt-0 pr-0 pl-2.5 group-data-[collapsible=icon]:hidden",
         className
       )}
       {...props}
@@ -805,7 +817,7 @@ function SidebarMenuSubItem({
     <li
       data-slot="sidebar-menu-sub-item"
       data-sidebar="menu-sub-item"
-      className={cn("group/menu-sub-item relative", className)}
+      className={cn("group/menu-sub-item relative min-w-0 w-full", className)}
       {...props}
     />
   )
@@ -827,7 +839,7 @@ function SidebarMenuSubButton({
     props: mergeProps<"a">(
       {
         className: cn(
-          "flex h-7 min-w-0 -translate-x-px items-center justify-start gap-2 overflow-hidden rounded-md px-2 text-left text-sidebar-foreground ring-sidebar-ring outline-hidden group-data-[collapsible=icon]:hidden hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-[size=md]:text-sm data-[size=sm]:text-xs data-active:bg-sidebar-accent data-active:text-sidebar-accent-foreground [&>span:last-child]:truncate [&>svg]:size-4 [&>svg]:shrink-0 [&>svg]:text-sidebar-accent-foreground",
+          "flex min-h-8 h-8 w-full -translate-x-px items-center justify-start gap-2 overflow-hidden rounded-lg border border-sidebar-border/65 bg-sidebar-accent/38 px-2 py-0 text-left text-sm text-sidebar-foreground shadow-sm backdrop-blur-md ring-sidebar-ring outline-hidden group-data-[collapsible=icon]:hidden hover:border-sidebar-border hover:bg-sidebar-accent/68 hover:text-sidebar-accent-foreground hover:[box-shadow:var(--purple-glow-hover)] active:[box-shadow:var(--purple-glow-selected)] focus-visible:ring-2 active:bg-sidebar-accent/85 disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-[size=md]:text-sm data-[size=sm]:min-h-8 data-[size=sm]:h-8 data-[size=sm]:text-xs data-active:border-sidebar-border/90 data-active:bg-sidebar data-active:text-sidebar-foreground data-active:shadow-inner dark:border-sidebar-border/50 dark:bg-sidebar-accent/28 dark:hover:border-sidebar-border dark:hover:bg-sidebar-accent/55 dark:data-active:bg-sidebar-accent/95 dark:data-active:text-sidebar-accent-foreground [&>span:last-child]:truncate [&>svg]:size-4 [&>svg]:shrink-0 [&>svg]:text-sidebar-accent-foreground",
           className
         ),
       },
@@ -844,6 +856,9 @@ function SidebarMenuSubButton({
 }
 
 export {
+  SIDEBAR_GLASS_ICON,
+  SIDEBAR_GLASS_ROW_ACTION,
+  SIDEBAR_GLASS_SEGMENTED,
   Sidebar,
   SidebarContent,
   SidebarFooter,

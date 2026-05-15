@@ -14,6 +14,8 @@ import { normalizeHttpUrlToHttps } from "@/lib/publicResourceUrl";
 import {
   resolveNativeSavedSubjectPreview,
   type NativeSavedSubjectPreview,
+  parseAtUri,
+  PUBLICATION_RECORD_COLLECTIONS,
 } from "@/lib/atprotoClient";
 import {
   latrExternalRkeyFromNormalizedUrl,
@@ -29,6 +31,9 @@ export const COLLECTION_PUB_PREFS = "com.thesocialwire.publicationPrefs";
 export const COLLECTION_PREFERENCES = "com.thesocialwire.preferences";
 export const COLLECTION_STANDARD_SITE_SUBSCRIPTION =
   "site.standard.graph.subscription";
+/** Skyreader RSS/Atom subscriptions (writes require OAuth repo scope). */
+export const COLLECTION_SKYREADER_FEED_SUBSCRIPTION =
+  "app.skyreader.feed.subscription";
 export const COLLECTION_LATR_SAVED_EXTERNAL = "com.latr.saved.external";
 export const COLLECTION_LATR_SAVED_ITEM = "com.latr.saved.item";
 export const PREFERENCES_RKEY = "self";
@@ -60,6 +65,24 @@ export interface PublicationPrefsRecord {
 export interface PublicationSubscriptionRecord {
   $type: typeof COLLECTION_STANDARD_SITE_SUBSCRIPTION;
   publication: string;
+}
+
+export interface SkyreaderFeedSubscriptionRecord {
+  $type: typeof COLLECTION_SKYREADER_FEED_SUBSCRIPTION;
+  createdAt: string;
+  updatedAt?: string;
+  feedUrl?: string;
+  title?: string;
+  siteUrl?: string;
+  category?: string;
+  tags?: string[];
+  source?: string;
+  sourceType?: string;
+  subjectDid?: string;
+  collectionNsid?: string;
+  customTitle?: string;
+  customIconUrl?: string;
+  externalRef?: string;
 }
 
 export type ReadLaterServicePreference =
@@ -358,6 +381,153 @@ export class PDSClient {
       cursor = response.data.cursor ?? undefined;
     } while (cursor);
     return all;
+  }
+
+  /**
+   * Subscribe to a standard.site publication via `site.standard.graph.subscription`
+   * (`publication`: AT-URI or bare author DID).
+   */
+  async createPublicationSubscription(input: {
+    publication: string;
+  }): Promise<{ uri: string; cid: string }> {
+    const publication = input.publication.trim();
+    if (!publication) throw new Error("Missing publication");
+
+    if (publication.startsWith("at://")) {
+      const parsed = parseAtUri(publication);
+      if (!parsed || !PUBLICATION_RECORD_COLLECTIONS.has(parsed.collection)) {
+        throw new Error(
+          "Publication must be a site.standard.publication or com.standard.publication AT-URI"
+        );
+      }
+    } else if (!publication.startsWith("did:")) {
+      throw new Error("Publication must be an AT-URI or author DID");
+    }
+
+    const record: PublicationSubscriptionRecord = {
+      $type: COLLECTION_STANDARD_SITE_SUBSCRIPTION,
+      publication,
+    };
+    const response = await this.agent.api.com.atproto.repo.createRecord({
+      repo: this.did,
+      collection: COLLECTION_STANDARD_SITE_SUBSCRIPTION,
+      record: record as unknown as Record<string, unknown>,
+    });
+    return { uri: response.data.uri, cid: response.data.cid };
+  }
+
+  async deletePublicationSubscription(rkey: string): Promise<void> {
+    await this.agent.api.com.atproto.repo.deleteRecord({
+      repo: this.did,
+      collection: COLLECTION_STANDARD_SITE_SUBSCRIPTION,
+      rkey,
+    });
+  }
+
+  async listSkyreaderFeedSubscriptions(): Promise<
+    RepoRecord<SkyreaderFeedSubscriptionRecord>[]
+  > {
+    const all: RepoRecord<SkyreaderFeedSubscriptionRecord>[] = [];
+    let cursor: string | undefined;
+    do {
+      const response = await this.agent.api.com.atproto.repo.listRecords({
+        repo: this.did,
+        collection: COLLECTION_SKYREADER_FEED_SUBSCRIPTION,
+        limit: 100,
+        cursor,
+      });
+      all.push(
+        ...(response.data.records as unknown as RepoRecord<SkyreaderFeedSubscriptionRecord>[])
+      );
+      cursor = response.data.cursor ?? undefined;
+    } while (cursor);
+    return all;
+  }
+
+  /**
+   * Creates a TID-keyed Skyreader feed subscription (`app.skyreader.feed.subscription`).
+   */
+  async createSkyreaderFeedSubscription(input: {
+    feedUrl: string;
+    title?: string;
+    siteUrl?: string;
+    customIconUrl?: string;
+  }): Promise<{ uri: string; cid: string }> {
+    const now = new Date().toISOString();
+    const record: SkyreaderFeedSubscriptionRecord = {
+      $type: COLLECTION_SKYREADER_FEED_SUBSCRIPTION,
+      createdAt: now,
+      updatedAt: now,
+      feedUrl: input.feedUrl,
+      source: "the-social-wire",
+      sourceType: "rss",
+      ...(input.title?.trim() ? { title: input.title.trim() } : {}),
+      ...(input.siteUrl?.trim()
+        ? { siteUrl: input.siteUrl.trim() }
+        : {}),
+      ...(input.customIconUrl?.trim()
+        ? { customIconUrl: input.customIconUrl.trim() }
+        : {}),
+    };
+    const response = await this.agent.api.com.atproto.repo.createRecord({
+      repo: this.did,
+      collection: COLLECTION_SKYREADER_FEED_SUBSCRIPTION,
+      record: record as unknown as Record<string, unknown>,
+    });
+    return { uri: response.data.uri, cid: response.data.cid };
+  }
+
+  async deleteSkyreaderFeedSubscription(rkey: string): Promise<void> {
+    await this.agent.api.com.atproto.repo.deleteRecord({
+      repo: this.did,
+      collection: COLLECTION_SKYREADER_FEED_SUBSCRIPTION,
+      rkey,
+    });
+  }
+
+  /**
+   * Updates branding fields on an existing Skyreader subscription (`putRecord`).
+   */
+  async updateSkyreaderFeedSubscription(params: {
+    rkey: string;
+    /** Pass `null` or empty string to clear `customIconUrl` on the record. Omit to leave unchanged. */
+    customIconUrl?: string | null;
+    /** Pass `null` or empty string to clear `siteUrl`. Omit to leave unchanged. */
+    siteUrl?: string | null;
+  }): Promise<{ uri: string; cid: string }> {
+    const current = await this.agent.api.com.atproto.repo.getRecord({
+      repo: this.did,
+      collection: COLLECTION_SKYREADER_FEED_SUBSCRIPTION,
+      rkey: params.rkey,
+    });
+    const prev = current.data.value as unknown as SkyreaderFeedSubscriptionRecord;
+    const now = new Date().toISOString();
+
+    const record: Record<string, unknown> = {
+      ...(prev as unknown as Record<string, unknown>),
+      $type: COLLECTION_SKYREADER_FEED_SUBSCRIPTION,
+      updatedAt: now,
+    };
+
+    if (params.customIconUrl !== undefined) {
+      const t = params.customIconUrl?.trim();
+      if (!t) delete record.customIconUrl;
+      else record.customIconUrl = t;
+    }
+
+    if (params.siteUrl !== undefined) {
+      const t = params.siteUrl?.trim();
+      if (!t) delete record.siteUrl;
+      else record.siteUrl = t;
+    }
+
+    const updated = await this.agent.api.com.atproto.repo.putRecord({
+      repo: this.did,
+      collection: COLLECTION_SKYREADER_FEED_SUBSCRIPTION,
+      rkey: params.rkey,
+      record,
+    });
+    return { uri: updated.data.uri, cid: updated.data.cid };
   }
 
   async upsertPublicationPrefs(

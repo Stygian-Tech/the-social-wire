@@ -15,6 +15,7 @@ The only data we write to the user's PDS is what the protocol doesn't already ha
 | `com.thesocialwire.preferences` | Account-level Social Wire preferences, including the configured read-later service |
 | `com.latr.saved.external` | L@tr (latr.link) wrapper for normalized HTTPS URLs (read-later interoperability) |
 | `com.latr.saved.item` | L@tr read-later queue item pointing at `subjectUri` (external wrapper or ATProto record) |
+| `app.skyreader.feed.subscription` | RSS/Atom subscriptions (Skyreader-compatible) on the user's PDS; see [`app/skyreader/feed/subscription.json`](app/skyreader/feed/subscription.json) |
 
 All records are public by default (ATProto repos are public). Any client that can read a PDS can see a user's Social Wire folders and preferences.
 

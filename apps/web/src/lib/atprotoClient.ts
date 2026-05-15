@@ -1092,6 +1092,28 @@ async function publicationIconUrlFromRecord(
   return `${pds}/xrpc/com.atproto.sync.getBlob?${params}`;
 }
 
+/**
+ * Returns the AT-URI of the first **`site.standard.publication` / `com.standard.publication`**
+ * record found in `repoDidOrHandle`'s repo (public PLC-backed `listRecords`, optional OAuth retry).
+ *
+ * Used when adding a publication from a bare handle/DID rather than HTTPS or `at://`.
+ */
+export async function probeFirstPublicationRecordUri(
+  repoDidOrHandle: string,
+  options?: { signal?: AbortSignal }
+): Promise<string | null> {
+  for (const collection of DISCOVERY_PUBLICATION_COLLECTIONS) {
+    const { records } = await listRecordsOnAuthorRepo(
+      repoDidOrHandle,
+      collection,
+      { limit: 1, reverse: false, signal: options?.signal },
+      undefined
+    );
+    if (records.length > 0) return records[0]!.uri;
+  }
+  return null;
+}
+
 // ── Public API ────────────────────────────────────────────────────────────────
 
 export type DiscoverPublicationsOptions = {

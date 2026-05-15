@@ -2,6 +2,8 @@
 
 import { type ReactNode, useCallback, useId, useState } from "react";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { SIDEBAR_GLASS_ROW_ACTION } from "@/components/ui/sidebar";
+import { cn } from "@/lib/utils";
 import {
   Dialog,
   DialogContent,
@@ -15,7 +17,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useCreateFolder } from "@/hooks/useFolders";
 import { Plus } from "lucide-react";
-import { cn } from "@/lib/utils";
 
 export type CreateFolderCreatedPayload = { uri: string };
 
@@ -171,7 +172,10 @@ export function NewFolderDialog() {
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger
         render={
-          <Button variant="ghost" size="sm" className="w-full justify-start gap-2" />
+          <Button
+            variant="ghost"
+            className={cn(SIDEBAR_GLASS_ROW_ACTION)}
+          />
         }
       >
         <Plus className="h-4 w-4" />

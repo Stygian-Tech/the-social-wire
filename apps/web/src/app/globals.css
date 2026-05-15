@@ -81,6 +81,13 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+  /* Hover / accent glow (theme purple — used by buttons & sidebar pills) */
+  --purple-glow-hover:
+    0 0 0 1px oklch(0.72 0.11 294 / 0.22),
+    0 6px 22px -8px oklch(0.58 0.16 292 / 0.18);
+  --purple-glow-selected:
+    0 0 0 1px oklch(0.62 0.13 294 / 0.32),
+    0 8px 28px -8px oklch(0.52 0.17 292 / 0.24);
 }
 
 .dark {
@@ -115,6 +122,12 @@
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
+  --purple-glow-hover:
+    0 0 0 1px oklch(0.62 0.14 294 / 0.38),
+    0 6px 26px -6px oklch(0.52 0.19 292 / 0.26);
+  --purple-glow-selected:
+    0 0 0 1px oklch(0.68 0.12 294 / 0.45),
+    0 10px 34px -6px oklch(0.58 0.18 292 / 0.32);
 }
 
 @layer base {

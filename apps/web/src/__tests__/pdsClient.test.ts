@@ -15,6 +15,7 @@ import {
   COLLECTION_STANDARD_SITE_SUBSCRIPTION,
   COLLECTION_LATR_SAVED_EXTERNAL,
   COLLECTION_LATR_SAVED_ITEM,
+  COLLECTION_SKYREADER_FEED_SUBSCRIPTION,
   mergeExternalsAndItemsToHttpsRows,
   type LatrSavedExternalRecord,
   type LatrSavedItemRecord,
@@ -54,6 +55,12 @@ describe("collection constants", () => {
   it("standard.site subscription collection ID matches lexicon", () => {
     expect(COLLECTION_STANDARD_SITE_SUBSCRIPTION).toBe(
       "site.standard.graph.subscription"
+    );
+  });
+
+  it("Skyreader subscription collection mirrors upstream lexicon", () => {
+    expect(COLLECTION_SKYREADER_FEED_SUBSCRIPTION).toBe(
+      "app.skyreader.feed.subscription"
     );
   });
 

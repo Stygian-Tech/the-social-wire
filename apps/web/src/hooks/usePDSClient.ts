@@ -12,13 +12,14 @@ import { useAuth } from "./useAuth";
  * in or out.
  */
 export function usePDSClient(): PDSClient | null {
-  const { session, getOAuthSession } = useAuth();
+  const { session, getOAuthSession, oauthSessionReloadSeq } = useAuth();
 
   return useMemo(() => {
     if (!session) return null;
     const oauthSession = getOAuthSession();
     if (!oauthSession) return null;
     return new PDSClient(oauthSession, session.did);
+    // oauthSessionReloadSeq: same DID can get a refreshed OAuthSession (restore / reconcile).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session?.did]); // re-create only when the DID changes (sign in / sign out)
+  }, [session?.did, oauthSessionReloadSeq]); // DID + OAuth handle identity
 }

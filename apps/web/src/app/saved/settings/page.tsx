@@ -2,12 +2,13 @@
 
 import { ArrowLeft, Check, LogIn } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { READ_LATER_SERVICES } from "@/lib/readLaterServices";
 import {
   useConfiguredReadLaterService,
   useSetReadLaterServicePreference,
 } from "@/hooks/useReadLaterPreferences";
+import { cn } from "@/lib/utils";
 
 export default function ReadLaterSettingsPage() {
   const router = useRouter();
@@ -69,16 +70,19 @@ export default function ReadLaterSettingsPage() {
               </div>
 
               <div className="flex shrink-0 flex-row items-center gap-2">
-                {!service.connected ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="gap-1.5"
+                {!service.connected && service.loginUrl ? (
+                  <a
+                    href={service.loginUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={cn(
+                      buttonVariants({ variant: "outline", size: "sm" }),
+                      "inline-flex gap-1.5 no-underline"
+                    )}
                   >
                     <LogIn className="size-3.5" />
                     {service.loginLabel}
-                  </Button>
+                  </a>
                 ) : null}
                 <Button
                   type="button"

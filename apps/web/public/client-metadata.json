@@ -4,7 +4,7 @@
   "grant_types": ["authorization_code", "refresh_token"],
   "response_types": ["code"],
   "redirect_uris": ["https://thesocialwire.app/callback"],
-  "scope": "atproto repo:com.thesocialwire.folder?action=create&action=update&action=delete repo:com.thesocialwire.publicationPrefs?action=create&action=update&action=delete repo:com.thesocialwire.preferences?action=create&action=update&action=delete repo:com.latr.saved.external?action=create&action=update&action=delete repo:com.latr.saved.item?action=create&action=update&action=delete",
+  "scope": "atproto repo:com.thesocialwire.folder?action=create&action=update&action=delete repo:com.thesocialwire.publicationPrefs?action=create&action=update&action=delete repo:com.thesocialwire.preferences?action=create&action=update&action=delete repo:com.latr.saved.external?action=create&action=update&action=delete repo:com.latr.saved.item?action=create&action=update&action=delete repo:site.standard.graph.subscription?action=create&action=update&action=delete repo:app.skyreader.feed.subscription?action=create&action=update&action=delete",
   "token_endpoint_auth_method": "none",
   "dpop_bound_access_tokens": true,
   "client_name": "The Social Wire",

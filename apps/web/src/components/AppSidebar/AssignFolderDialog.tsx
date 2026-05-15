@@ -48,7 +48,7 @@ export function AssignFolderDialog({
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Assign to Folder</DialogTitle>
+          <DialogTitle>Assign To Folder</DialogTitle>
         </DialogHeader>
         <div className="space-y-2">
           <Label>Folder</Label>

@@ -8,7 +8,10 @@ import {
   SidebarMenuSubItem,
 } from "@/components/ui/sidebar";
 import { cn } from "@/lib/utils";
-import { PublicationSubItem } from "./PublicationSubItem";
+import {
+  PublicationSubItem,
+  type PublicationSidebarTab,
+} from "./PublicationSubItem";
 import type { DiscoveredPublication } from "@/lib/atprotoClient";
 import type {
   RepoRecord,
@@ -33,6 +36,7 @@ interface FolderBranchProps {
   onSelectPub: (pubId: string) => void;
   folders: RepoRecord<FolderRecord>[];
   prefsMap: Map<string, RepoRecord<PublicationPrefsRecord>>;
+  sidebarTab: PublicationSidebarTab;
   /** Shown after the folder name (e.g. All → unfoldered) */
   nameSuffix?: string;
 }
@@ -49,6 +53,7 @@ export function FolderBranch({
   onSelectPub,
   folders,
   prefsMap,
+  sidebarTab,
   nameSuffix,
 }: FolderBranchProps) {
   const subId = `sidebar-folder-sub-${expandKey.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
@@ -83,7 +88,7 @@ export function FolderBranch({
         ) : null}
       </SidebarMenuButton>
       {expanded ? (
-        <SidebarMenuSub id={subId} aria-label={folder.name}>
+        <SidebarMenuSub id={subId} aria-label={folder.name} className="mt-1.5">
           {publications.length === 0 ? (
             <SidebarMenuSubItem>
               <span className="block min-w-0 break-words px-2 py-0.5 text-xs text-muted-foreground">
@@ -99,6 +104,7 @@ export function FolderBranch({
                 onSelect={onSelectPub}
                 folders={folders}
                 prefsMap={prefsMap}
+                sidebarTab={sidebarTab}
               />
             ))
           )}

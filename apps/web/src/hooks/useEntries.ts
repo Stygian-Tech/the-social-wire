@@ -13,6 +13,11 @@ import {
   repoAndPublicationFilterFromPubId,
 } from "@/lib/atprotoClient";
 import type { EntryListItem, EntryDetail } from "@/lib/atprotoClient";
+import {
+  isRssEntryId,
+  isRssPublicationId,
+  normalizedFeedUrlFromRssPublicationId,
+} from "@/lib/rssFeedCore";
 import { useAuth } from "./useAuth";
 
 export type { EntryListItem, EntryDetail };
@@ -39,6 +44,33 @@ export function useEntries(publicationKey: string | null) {
     queryKey: ENTRIES_QUERY_KEY(normalizedKey ?? ""),
     queryFn: async ({ pageParam, signal }) => {
       if (!normalizedKey) return { entries: [], cursor: undefined };
+
+      if (isRssPublicationId(normalizedKey)) {
+        const feedUrl = normalizedFeedUrlFromRssPublicationId(normalizedKey);
+        if (!feedUrl) return { entries: [], cursor: undefined };
+        const sp = new URLSearchParams({
+          url: feedUrl,
+          limit: "50",
+        });
+        const cursorPage =
+          typeof pageParam === "string" ? pageParam : undefined;
+        if (cursorPage) sp.set("cursor", cursorPage);
+        const res = await fetch(`/api/rss-feed?${sp.toString()}`, {
+          signal,
+        });
+        if (!res.ok) {
+          throw new Error("Could not load RSS feed");
+        }
+        const json = (await res.json()) as {
+          items: EntryListItem[];
+          nextCursor?: string;
+        };
+        return {
+          entries: json.items ?? [],
+          cursor: json.nextCursor,
+        };
+      }
+
       const oauth = getOAuthSession() ?? undefined;
       const key = ENTRIES_QUERY_KEY(normalizedKey);
       const { repoDid, publicationAtUri } =
@@ -91,8 +123,19 @@ export function useEntry(entryId: string | null) {
 
   return useQuery({
     queryKey: ENTRY_DETAIL_QUERY_KEY(normalizedId ?? ""),
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       if (!normalizedId) return null;
+      if (isRssEntryId(normalizedId)) {
+        const res = await fetch(
+          `/api/rss-feed?entryId=${encodeURIComponent(normalizedId)}`,
+          { signal }
+        );
+        if (!res.ok) return null;
+        const json = (await res.json()) as {
+          entry: EntryDetail | null;
+        };
+        return json.entry ?? null;
+      }
       return getEntry(normalizedId, getOAuthSession() ?? undefined);
     },
     enabled: !!normalizedId && !!session,
