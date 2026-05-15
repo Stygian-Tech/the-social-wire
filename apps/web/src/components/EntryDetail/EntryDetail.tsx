@@ -59,7 +59,12 @@ export function EntryDetail({ entryId }: EntryDetailProps) {
   const showEmbed = Boolean(entry.embedUrl) && !preferRecordBodyOverEmbed;
 
   return (
-    <article className="flex min-h-0 w-full max-w-none flex-1 flex-col px-3 pb-8 pt-1 sm:px-4 sm:pb-10 sm:pt-2 md:px-6 lg:px-8">
+    <article
+      className={cn(
+        "flex min-h-0 w-full max-w-none flex-1 flex-col px-3 pt-1 sm:px-4 sm:pt-2 md:px-6 lg:px-8",
+        showEmbed ? "pb-1 sm:pb-2" : "pb-8 sm:pb-10"
+      )}
+    >
       <div
         className={cn(
           "order-1 flex min-h-0 flex-col md:order-2",

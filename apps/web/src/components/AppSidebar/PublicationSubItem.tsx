@@ -13,16 +13,29 @@ import {
   ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 import { SidebarMenuSubButton, SidebarMenuSubItem } from "@/components/ui/sidebar";
 import { Avatar } from "@/components/shared/Avatar";
 import type { DiscoveredPublication } from "@/lib/atprotoClient";
 import type { FolderRecord, PublicationPrefsRecord, RepoRecord } from "@/lib/pdsClient";
 import { rkeyFromURI } from "@/lib/pdsClient";
 import {
-  useHidePublication,
   useSetPublicationFolder,
+  useSubscribeToPublication,
+  useUnsubscribePublication,
 } from "@/hooks/usePublications";
+import { standardSiteSubscriptionTargetFromDiscovery } from "@/lib/publicationSubscriptionMatch";
 import { ControlledCreateFolderDialog } from "./NewFolderDialog";
+
+export type PublicationSidebarTab = "following" | "subscribed";
 
 function notifyMutationFailure(label: string, err: unknown) {
   console.error(err);
@@ -41,6 +54,7 @@ interface PublicationSubItemProps {
   onSelect: (publicationId: string) => void;
   folders: RepoRecord<FolderRecord>[];
   prefsMap: Map<string, RepoRecord<PublicationPrefsRecord>>;
+  sidebarTab: PublicationSidebarTab;
 }
 
 export function PublicationSubItem({
@@ -49,17 +63,25 @@ export function PublicationSubItem({
   onSelect,
   folders,
   prefsMap,
+  sidebarTab,
 }: PublicationSubItemProps) {
   const { trigger, isSupported } = useWebHaptics();
   const setFolder = useSetPublicationFolder();
-  const hidePublication = useHidePublication();
+  const subscribe = useSubscribeToPublication();
+  const unsubscribe = useUnsubscribePublication();
   const [newFolderDialogOpen, setNewFolderDialogOpen] = useState(false);
+  const [unsubscribeDialogOpen, setUnsubscribeDialogOpen] = useState(false);
 
   const prefs = prefsMap.get(publication.publicationId);
   const currentFolderId = prefs?.value.folderId ?? null;
-  const isHidden = !!prefs?.value.hidden;
 
-  const busy = setFolder.isPending || hidePublication.isPending;
+  const subscribeTarget = useMemo(
+    () => standardSiteSubscriptionTargetFromDiscovery(publication),
+    [publication]
+  );
+
+  const busy =
+    setFolder.isPending || subscribe.isPending || unsubscribe.isPending;
 
   const hapticLight = useCallback(() => {
     if (isSupported) void trigger("light");
@@ -92,24 +114,24 @@ export function PublicationSubItem({
     [setFolder, publication.publicationId, prefs, hapticSuccess]
   );
 
-  const setHidden = useCallback(
-    async (hidden: boolean) => {
-      try {
-        await hidePublication.mutateAsync({
-          publicationId: publication.publicationId,
-          hidden,
-          existingRkey: prefs ? rkeyFromURI(prefs.uri) : undefined,
-        });
-        hapticSuccess();
-      } catch (e) {
-        notifyMutationFailure(
-          hidden ? "Could not hide publication" : "Could not unhide publication",
-          e
-        );
-      }
-    },
-    [hidePublication, publication.publicationId, prefs, hapticSuccess]
-  );
+  const handleSubscribe = useCallback(async () => {
+    try {
+      await subscribe.mutateAsync({ publication });
+      hapticSuccess();
+    } catch (e) {
+      notifyMutationFailure("Could not subscribe", e);
+    }
+  }, [subscribe, publication, hapticSuccess]);
+
+  const confirmUnsubscribe = useCallback(async () => {
+    try {
+      await unsubscribe.mutateAsync({ publication });
+      setUnsubscribeDialogOpen(false);
+      hapticSuccess();
+    } catch (e) {
+      notifyMutationFailure("Could not unsubscribe", e);
+    }
+  }, [unsubscribe, publication, hapticSuccess]);
 
   const folderSubmenuLabel = useMemo(() => {
     if (!currentFolderId) return "Move to Folder";
@@ -179,20 +201,34 @@ export function PublicationSubItem({
               })}
             </ContextMenuSubContent>
           </ContextMenuSub>
-          <ContextMenuSeparator />
-          {isHidden ? (
-            <ContextMenuItem disabled={busy} onClick={() => void setHidden(false)}>
-              Unhide Publication
-            </ContextMenuItem>
-          ) : (
-            <ContextMenuItem
-              variant="destructive"
-              disabled={busy}
-              onClick={() => void setHidden(true)}
-            >
-              Hide Publication
-            </ContextMenuItem>
-          )}
+          {sidebarTab === "following" ? (
+            <>
+              <ContextMenuSeparator />
+              <ContextMenuItem
+                disabled={busy || subscribeTarget === null}
+                title={
+                  subscribeTarget === null
+                    ? "No publication record or DID available to subscribe with."
+                    : undefined
+                }
+                onClick={() => void handleSubscribe()}
+              >
+                {subscribe.isPending ? "Subscribing…" : "Subscribe"}
+              </ContextMenuItem>
+            </>
+          ) : null}
+          {sidebarTab === "subscribed" ? (
+            <>
+              <ContextMenuSeparator />
+              <ContextMenuItem
+                variant="destructive"
+                disabled={busy}
+                onClick={() => setUnsubscribeDialogOpen(true)}
+              >
+                Unsubscribe
+              </ContextMenuItem>
+            </>
+          ) : null}
         </ContextMenuContent>
       </ContextMenu>
       <ControlledCreateFolderDialog
@@ -206,6 +242,35 @@ export function PublicationSubItem({
           await assignFolder(rkeyFromURI(uri));
         }}
       />
+      <Dialog open={unsubscribeDialogOpen} onOpenChange={setUnsubscribeDialogOpen}>
+        <DialogContent showCloseButton>
+          <DialogHeader>
+            <DialogTitle>Unsubscribe?</DialogTitle>
+            <DialogDescription>
+              Stop receiving entries from “{publication.title}” in Subscribed. You can add this source
+              again later from Add Publication.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={busy}
+              onClick={() => setUnsubscribeDialogOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={busy}
+              onClick={() => void confirmUnsubscribe()}
+            >
+              {unsubscribe.isPending ? "Unsubscribing…" : "Unsubscribe"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </SidebarMenuSubItem>
   );
 }

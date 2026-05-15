@@ -115,7 +115,7 @@ function EntryArticleEmbedInner({
   return (
     <div
       className={cn(
-        "relative flex min-h-0 w-full flex-1 flex-col overflow-hidden rounded-lg",
+        "relative flex min-h-0 w-full flex-1 flex-col overflow-hidden",
         className
       )}
     >

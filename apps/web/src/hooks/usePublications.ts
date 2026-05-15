@@ -5,9 +5,22 @@ import { usePDSClient } from "./usePDSClient";
 import { useAuth } from "./useAuth";
 import {
   discoverPublications,
+  normalizeAtRepoParam,
+  parseAtUri,
   type DiscoveredPublication,
 } from "@/lib/atprotoClient";
-import type { RepoRecord, SkyreaderFeedSubscriptionRecord } from "@/lib/pdsClient";
+import {
+  COLLECTION_SKYREADER_FEED_SUBSCRIPTION,
+  COLLECTION_STANDARD_SITE_SUBSCRIPTION,
+  type RepoRecord,
+  rkeyFromURI,
+  type SkyreaderFeedSubscriptionRecord,
+} from "@/lib/pdsClient";
+import {
+  addPublicationSubscriptionLookupKeys,
+  publicationSubscriptionMatchKeys,
+  standardSiteSubscriptionTargetFromDiscovery,
+} from "@/lib/publicationSubscriptionMatch";
 import {
   normalizeRssFeedUrlInput,
   rssPublicationIdFromNormalizedFeedUrl,
@@ -60,6 +73,24 @@ export function useSkyreaderFeedSubscriptions() {
   });
 }
 
+/** Fallback when Skyreader subscription has no `customIconUrl` (older records): `/favicon.ico` at site or feed origin. */
+function rssPublicationIconFallbackUrl(
+  v: SkyreaderFeedSubscriptionRecord,
+  normalizedFeedUrl: string
+): string | undefined {
+  const tryOrigin = (u: string | undefined) => {
+    const t = u?.trim();
+    if (!t) return undefined;
+    try {
+      return `${new URL(t).origin}/favicon.ico`;
+    } catch {
+      return undefined;
+    }
+  };
+
+  return tryOrigin(v.siteUrl) ?? tryOrigin(normalizedFeedUrl);
+}
+
 /** Sidebar rows backed by RSS `feedUrl` on Skyreader subscription records (not Bluesky discovery). */
 export function skyreaderSubscriptionsToDiscoveredPublications(
   records: RepoRecord<SkyreaderFeedSubscriptionRecord>[]
@@ -94,15 +125,17 @@ export function skyreaderSubscriptionsToDiscoveredPublications(
       hostLabel ||
       "RSS feed";
 
+    const iconFromRecord =
+      v.customIconUrl?.trim() ||
+      rssPublicationIconFallbackUrl(v, normalized);
+
     out.push({
       publicationId,
       subscriptionPublicationId: row.uri,
       authorDid: "did:web:skyreader.rss",
       authorHandle: "RSS",
       title,
-      iconUrl: v.customIconUrl?.trim()
-        ? v.customIconUrl.trim()
-        : undefined,
+      ...(iconFromRecord ? { iconUrl: iconFromRecord } : {}),
       discoveredAt: v.updatedAt ?? v.createdAt,
     });
   }
@@ -209,6 +242,95 @@ export function useHidePublication() {
   });
 }
 
+export function useSubscribeToPublication() {
+  const client = usePDSClient();
+  const qc = useQueryClient();
+  const { session } = useAuth();
+  const did = session?.did ?? null;
+
+  return useMutation({
+    mutationFn: async ({
+      publication,
+    }: {
+      publication: DiscoveredPublication;
+    }) => {
+      if (!client) throw new Error("No PDS client — not signed in");
+      const target = standardSiteSubscriptionTargetFromDiscovery(publication);
+      if (!target) {
+        throw new Error(
+          "This account does not expose a standard.site publication record we can subscribe to."
+        );
+      }
+      await client.createPublicationSubscription({ publication: target });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: PUBLICATION_SUBSCRIPTIONS_QUERY_KEY });
+      if (did) qc.invalidateQueries({ queryKey: DISCOVERY_QUERY_KEY(did) });
+    },
+  });
+}
+
+export function useUnsubscribePublication() {
+  const client = usePDSClient();
+  const qc = useQueryClient();
+  const { session } = useAuth();
+  const did = session?.did ?? null;
+
+  return useMutation({
+    mutationFn: async ({
+      publication,
+    }: {
+      publication: DiscoveredPublication;
+    }) => {
+      if (!client) throw new Error("No PDS client — not signed in");
+
+      const subUri = publication.subscriptionPublicationId?.trim();
+      if (subUri) {
+        const parsed = parseAtUri(normalizeAtRepoParam(subUri));
+        if (parsed?.collection === COLLECTION_SKYREADER_FEED_SUBSCRIPTION) {
+          await client.deleteSkyreaderFeedSubscription(parsed.rkey);
+          return;
+        }
+        if (parsed?.collection === COLLECTION_STANDARD_SITE_SUBSCRIPTION) {
+          await client.deletePublicationSubscription(parsed.rkey);
+          return;
+        }
+      }
+
+      const subs = await qc.fetchQuery({
+        queryKey: PUBLICATION_SUBSCRIPTIONS_QUERY_KEY,
+        queryFn: () => client.listPublicationSubscriptions(),
+      });
+
+      const matchKeys = new Set(publicationSubscriptionMatchKeys(publication));
+      for (const row of subs) {
+        const pubRef = row.value.publication?.trim();
+        if (!pubRef) continue;
+        const expanded = new Set<string>();
+        addPublicationSubscriptionLookupKeys(expanded, pubRef);
+        let matched = false;
+        for (const k of expanded) {
+          if (matchKeys.has(k)) {
+            matched = true;
+            break;
+          }
+        }
+        if (matched) {
+          await client.deletePublicationSubscription(rkeyFromURI(row.uri));
+          return;
+        }
+      }
+
+      throw new Error("No subscription record found for this publication.");
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: PUBLICATION_SUBSCRIPTIONS_QUERY_KEY });
+      qc.invalidateQueries({ queryKey: SKYREADER_FEED_SUBSCRIPTIONS_QUERY_KEY });
+      if (did) qc.invalidateQueries({ queryKey: DISCOVERY_QUERY_KEY(did) });
+    },
+  });
+}
+
 export function useCreateSkyreaderFeedSubscription() {
   const client = usePDSClient();
   const qc = useQueryClient();
@@ -264,6 +386,8 @@ export function useAddPublicationFromAnyLink() {
         publicationAtUri?: unknown;
         feedUrl?: unknown;
         title?: unknown;
+        siteUrl?: unknown;
+        feedIconUrl?: unknown;
       };
 
       const errMsg =
@@ -285,18 +409,25 @@ export function useAddPublicationFromAnyLink() {
         if (!normalized) throw new Error("Invalid feed URL from resolver");
         const resolvedTitle =
           typeof json.title === "string" ? json.title.trim() : "";
+        const resolvedSite =
+          typeof json.siteUrl === "string" ? json.siteUrl.trim() : "";
+        const resolvedIcon =
+          typeof json.feedIconUrl === "string" ? json.feedIconUrl.trim() : "";
         await client.createSkyreaderFeedSubscription({
           feedUrl: normalized,
           title:
             input.title?.trim() ||
             (resolvedTitle ? resolvedTitle : undefined),
-          siteUrl: (() => {
-            try {
-              return new URL(normalized).origin;
-            } catch {
-              return undefined;
-            }
-          })(),
+          siteUrl: resolvedSite
+            ? resolvedSite
+            : (() => {
+                try {
+                  return new URL(normalized).origin;
+                } catch {
+                  return undefined;
+                }
+              })(),
+          ...(resolvedIcon ? { customIconUrl: resolvedIcon } : {}),
         });
         return {
           kind: "rss" as const,

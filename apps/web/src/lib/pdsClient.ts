@@ -416,6 +416,14 @@ export class PDSClient {
     return { uri: response.data.uri, cid: response.data.cid };
   }
 
+  async deletePublicationSubscription(rkey: string): Promise<void> {
+    await this.agent.api.com.atproto.repo.deleteRecord({
+      repo: this.did,
+      collection: COLLECTION_STANDARD_SITE_SUBSCRIPTION,
+      rkey,
+    });
+  }
+
   async listSkyreaderFeedSubscriptions(): Promise<
     RepoRecord<SkyreaderFeedSubscriptionRecord>[]
   > {
@@ -443,6 +451,7 @@ export class PDSClient {
     feedUrl: string;
     title?: string;
     siteUrl?: string;
+    customIconUrl?: string;
   }): Promise<{ uri: string; cid: string }> {
     const now = new Date().toISOString();
     const record: SkyreaderFeedSubscriptionRecord = {
@@ -455,6 +464,9 @@ export class PDSClient {
       ...(input.title?.trim() ? { title: input.title.trim() } : {}),
       ...(input.siteUrl?.trim()
         ? { siteUrl: input.siteUrl.trim() }
+        : {}),
+      ...(input.customIconUrl?.trim()
+        ? { customIconUrl: input.customIconUrl.trim() }
         : {}),
     };
     const response = await this.agent.api.com.atproto.repo.createRecord({

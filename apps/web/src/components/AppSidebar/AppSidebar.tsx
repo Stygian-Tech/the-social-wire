@@ -38,7 +38,10 @@ import {
 } from "@/lib/pdsClient";
 import { type DiscoveredPublication, viewerOwnsDiscoveredPublication } from "@/lib/atprotoClient";
 import { cn } from "@/lib/utils";
-import { PublicationSubItem } from "./PublicationSubItem";
+import {
+  PublicationSubItem,
+  type PublicationSidebarTab,
+} from "./PublicationSubItem";
 
 type PublicationTab = "subscribed" | "following";
 
@@ -247,6 +250,7 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
                               onSelectPub={onSelectPub}
                               folders={folders}
                               prefsMap={prefsMap}
+                              sidebarTab="subscribed"
                             />
                           );
                         })}
@@ -268,6 +272,7 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
                       onSelectPub={onSelectPub}
                       folders={folders}
                       prefsMap={prefsMap}
+                      sidebarTab="subscribed"
                     />
                     <SidebarMenuSubItem className="p-0">
                       <AddPublicationDialog />
@@ -289,6 +294,7 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
                       onSelectPub={onSelectPub}
                       folders={folders}
                       prefsMap={prefsMap}
+                      sidebarTab="following"
                     />
                     <SidebarMenuSubItem className="p-0">
                       <AddPublicationDialog />
@@ -471,12 +477,14 @@ function PublicationMenuSubEntries({
   onSelectPub,
   folders,
   prefsMap,
+  sidebarTab,
 }: {
   publications: DiscoveredPublication[];
   selectedPubId: string | null;
   onSelectPub: (pubId: string) => void;
   folders: RepoRecord<FolderRecord>[];
   prefsMap: Map<string, RepoRecord<PublicationPrefsRecord>>;
+  sidebarTab: PublicationSidebarTab;
 }) {
   if (publications.length === 0) {
     return null;
@@ -492,6 +500,7 @@ function PublicationMenuSubEntries({
           onSelect={onSelectPub}
           folders={folders}
           prefsMap={prefsMap}
+          sidebarTab={sidebarTab}
         />
       ))}
     </>

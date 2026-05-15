@@ -17,6 +17,7 @@ import {
 import {
   parseRssFeedXml,
   rssItemsSortedNewestFirst,
+  feedBrandingFromParsed,
 } from "@/lib/rssFeedServer";
 
 export const RESOLVE_PUBLICATION_FETCH_MS = 14_000;
@@ -91,6 +92,8 @@ function collectAlternateFeedHrefs(html: string, baseUrl: URL): string[] {
 async function looksLikeRssFeed(normalizedFeedHref: string): Promise<{
   ok: boolean;
   title?: string;
+  siteUrl?: string;
+  feedIconUrl?: string;
 }> {
   const valid = validateRssFeedFetchUrl(normalizedFeedHref);
   if (!valid.ok) return { ok: false };
@@ -110,7 +113,12 @@ async function looksLikeRssFeed(normalizedFeedHref: string): Promise<{
     const feedTitle =
       typeof parsed.title === "string" ? parsed.title.trim() : undefined;
     if (items.length === 0 && !feedTitle) return { ok: false };
-    return { ok: true, title: feedTitle || undefined };
+    const branding = feedBrandingFromParsed(parsed, normalizedFeedHref);
+    return {
+      ok: true,
+      title: feedTitle || undefined,
+      ...branding,
+    };
   } catch {
     return { ok: false };
   }
@@ -187,6 +195,10 @@ export type ResolveAddPublicationPayload =
       kind: "rss";
       feedUrl: string;
       title?: string;
+      /** Canonical site origin derived from feed link or feed URL — stored on Skyreader subscription. */
+      siteUrl?: string;
+      /** Channel / feed-declared artwork (RSS image, Atom icon, iTunes image); stored as `customIconUrl`. */
+      feedIconUrl?: string;
     };
 
 export async function resolveAddPublicationInput(
@@ -229,10 +241,13 @@ export async function resolveAddPublicationInput(
       normalizeRssFeedUrlInput(pageUrl)
     );
     if (rssDirect.ok) {
+      const norm = normalizeRssFeedUrlInput(pageUrl);
       return {
         kind: "rss",
-        feedUrl: normalizeRssFeedUrlInput(pageUrl),
+        feedUrl: norm,
         title: rssDirect.title,
+        siteUrl: rssDirect.siteUrl,
+        feedIconUrl: rssDirect.feedIconUrl,
       };
     }
 
@@ -243,6 +258,8 @@ export async function resolveAddPublicationInput(
         kind: "rss",
         feedUrl: fromPage,
         title: again.title,
+        siteUrl: again.siteUrl,
+        feedIconUrl: again.feedIconUrl,
       };
     }
 

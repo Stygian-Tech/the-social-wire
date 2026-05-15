@@ -11,41 +11,13 @@ import {
   useSkyreaderFeedSubscriptions,
   skyreaderSubscriptionsToDiscoveredPublications,
 } from "@/hooks/usePublications";
+import type { DiscoveredPublication } from "@/lib/atprotoClient";
+import { viewerOwnsDiscoveredPublication } from "@/lib/atprotoClient";
 import {
-  normalizeAtRepoParam,
-  parseAtUri,
-  type DiscoveredPublication,
-  viewerOwnsDiscoveredPublication,
-} from "@/lib/atprotoClient";
+  addPublicationSubscriptionLookupKeys,
+  publicationSubscriptionMatchKeys,
+} from "@/lib/publicationSubscriptionMatch";
 import type { PublicationPrefsRecord, RepoRecord } from "@/lib/pdsClient";
-
-function publicationSubscriptionKeys(pub: DiscoveredPublication): string[] {
-  const keys = new Set<string>();
-  addPublicationSubscriptionKey(keys, pub.subscriptionPublicationId);
-  addPublicationSubscriptionKey(keys, pub.publicationId);
-  return [...keys];
-}
-
-function addPublicationSubscriptionKey(keys: Set<string>, value: string | undefined) {
-  if (!value) return;
-  const normalized = normalizeAtRepoParam(value);
-
-  if (normalized.startsWith("did:")) {
-    keys.add(normalized);
-    return;
-  }
-
-  const parsed = parseAtUri(normalized);
-  if (!parsed) return;
-
-  keys.add(normalized);
-  keys.add(parsed.did);
-  if (parsed.collection === "site.standard.publication") {
-    keys.add(`at://${parsed.did}/com.standard.publication/${parsed.rkey}`);
-  } else if (parsed.collection === "com.standard.publication") {
-    keys.add(`at://${parsed.did}/site.standard.publication/${parsed.rkey}`);
-  }
-}
 
 /** Shared discovery/subscription derivation for sidebar + `/me/publications`. */
 export function usePublicationSidebarData() {
@@ -99,14 +71,16 @@ export function usePublicationSidebarData() {
   const subscriptionPublicationKeys = useMemo(() => {
     const keys = new Set<string>();
     for (const subscription of subscriptions) {
-      addPublicationSubscriptionKey(keys, subscription.value.publication);
+      addPublicationSubscriptionLookupKeys(keys, subscription.value.publication);
     }
     return keys;
   }, [subscriptions]);
 
   const isSubscribedPublication = useCallback(
     (pub: (typeof visiblePubs)[number]) =>
-      publicationSubscriptionKeys(pub).some((key) => subscriptionPublicationKeys.has(key)),
+      publicationSubscriptionMatchKeys(pub).some((key) =>
+        subscriptionPublicationKeys.has(key)
+      ),
     [subscriptionPublicationKeys]
   );
 
