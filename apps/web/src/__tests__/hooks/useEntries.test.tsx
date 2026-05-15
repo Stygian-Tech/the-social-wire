@@ -24,6 +24,12 @@ import {
 
 const ORIG_FETCH = globalThis.fetch;
 
+function assignFetchPreconnect(impl: typeof fetch): typeof fetch {
+  return Object.assign(impl, {
+    preconnect: ORIG_FETCH.preconnect,
+  }) as typeof fetch;
+}
+
 // ── Module mocks ──────────────────────────────────────────────────────────────
 
 mock.module("@/hooks/useAuth", () => ({
@@ -114,11 +120,8 @@ describe("useEntries", () => {
       );
       const pubKey = rssPublicationIdFromNormalizedFeedUrl(canonical);
 
-      globalThis.fetch = mock(
-        async (
-          input: RequestInfo | URL,
-          init?: RequestInit & { signal?: AbortSignal | null }
-        ) => {
+      globalThis.fetch = assignFetchPreconnect(
+        mock(async (input: RequestInfo | URL, init?: RequestInit) => {
           const u =
             typeof input === "string"
               ? input
@@ -148,8 +151,8 @@ describe("useEntries", () => {
               statusText: "OK",
             }
           );
-        }
-      ) as typeof fetch;
+        }) as unknown as typeof fetch
+      );
 
       const { result } = renderHook(() => useEntries(pubKey), {
         wrapper: makeWrapper(),
@@ -210,8 +213,8 @@ describe("useEntry", () => {
         stableItemKeyFromRssItem({ link: "https://example.org/a" })
       );
 
-      globalThis.fetch = mock(
-        async (_input: RequestInfo | URL) =>
+      globalThis.fetch = assignFetchPreconnect(
+        mock(async (_input: RequestInfo | URL) =>
           new Response(
             JSON.stringify({
               entry: {
@@ -228,8 +231,8 @@ describe("useEntry", () => {
               status: 200,
               statusText: "OK",
             }
-          )
-      ) as typeof fetch;
+          )) as unknown as typeof fetch
+      );
 
       const { result } = renderHook(() => useEntry(eid), {
         wrapper: makeWrapper(),
