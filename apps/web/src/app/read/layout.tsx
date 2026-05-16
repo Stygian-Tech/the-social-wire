@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
 import { normalizeAtRepoParam } from "@/lib/atprotoClient";
+import { ReadArticleFilterBar } from "@/app/read/ReadArticleFilterBar";
 
 function ClosePublicationsSheetOnMobilePubRoute({
   selectedPubId,
@@ -68,9 +69,10 @@ export default function ReadLayout({ children }: { children: React.ReactNode }) 
           onSelectPub={(pubId) => router.push(`/read/${encodeURIComponent(pubId)}`)}
         />
         <SidebarInset className="flex min-h-0 flex-1 flex-col overflow-hidden">
-          <header className="flex h-11 min-h-11 shrink-0 items-center gap-1 border-b px-2 sm:h-10 sm:min-h-10 sm:gap-2 sm:px-3 md:px-4">
+          <header className="flex h-11 min-h-11 shrink-0 items-center gap-2 border-b px-2 sm:h-10 sm:min-h-10 sm:gap-2 sm:px-3 md:px-4">
             <SidebarTrigger className="h-11 w-11 min-h-[44px] min-w-[44px] shrink-0 -ml-0.5 sm:h-8 sm:w-8 sm:min-h-0 sm:min-w-0 sm:-ml-1" />
             <Separator orientation="vertical" className="h-4" />
+            <ReadArticleFilterBar />
           </header>
           <main className="flex min-h-0 flex-1 overflow-hidden">{children}</main>
         </SidebarInset>

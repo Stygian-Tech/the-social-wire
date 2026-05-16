@@ -9,19 +9,27 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { usePDSClient } from "@/hooks/usePDSClient";
 import { useShowHiddenFolder } from "@/hooks/useShowHiddenFolder";
 import {
   loadReadState,
+  mergeReadStateMaps,
   saveReadState,
   type EntryReadStateV1,
 } from "@/lib/entryReadStateStorage";
 import { PSEUDO_FOLDER_HIDDEN_URI } from "@/lib/pdsClient";
+import type { ArticleListFilter } from "@/lib/entryArticleFilter";
 
 export type ReadRouteContextValue = {
   selectedFolderUri: string | null;
   setSelectedFolderUri: (uri: string | null) => void;
   /** When the Hidden Publications folder is selected; also drives read UI + writes. */
   isHiddenFolderContext: boolean;
+  /** User preference for the entry list; use {@link effectiveArticleListFilter} for the gated value. */
+  articleListFilter: ArticleListFilter;
+  setArticleListFilter: (filter: ArticleListFilter) => void;
+  /** `all` when Hidden Publications is selected; otherwise {@link articleListFilter}. */
+  effectiveArticleListFilter: ArticleListFilter;
   markEntryRead: (entryId: string) => void;
   isEntryRead: (entryId: string) => boolean;
 };
@@ -31,7 +39,10 @@ const ReadRouteContext = createContext<ReadRouteContextValue | null>(null);
 export function ReadRouteProvider({ children }: { children: ReactNode }) {
   const [selectedFolderUri, setSelectedFolderUri] = useState<string | null>(null);
   const [readMap, setReadMap] = useState<EntryReadStateV1>({});
+  const [articleListFilter, setArticleListFilter] =
+    useState<ArticleListFilter>("all");
   const { showHiddenFolder } = useShowHiddenFolder();
+  const pdsClient = usePDSClient();
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -39,6 +50,29 @@ export function ReadRouteProvider({ children }: { children: ReactNode }) {
       setReadMap(loadReadState(window.localStorage));
     });
   }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!pdsClient) return;
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const remote = await pdsClient.listEntryReadStateMap();
+        if (cancelled) return;
+        const local = loadReadState(window.localStorage);
+        const merged = mergeReadStateMaps(local, remote);
+        setReadMap(merged);
+        saveReadState(window.localStorage, merged);
+      } catch {
+        /* network / OAuth scope / PDS — keep local cache */
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [pdsClient]);
 
   const resolvedSelectedFolderUri =
     !showHiddenFolder && selectedFolderUri === PSEUDO_FOLDER_HIDDEN_URI
@@ -48,19 +82,29 @@ export function ReadRouteProvider({ children }: { children: ReactNode }) {
   const isHiddenFolderContext =
     resolvedSelectedFolderUri === PSEUDO_FOLDER_HIDDEN_URI;
 
+  const effectiveArticleListFilter: ArticleListFilter = isHiddenFolderContext
+    ? "all"
+    : articleListFilter;
+
   const markEntryRead = useCallback(
     (entryId: string) => {
       if (isHiddenFolderContext) return;
       setReadMap((prev) => {
         if (prev[entryId]) return prev;
-        const next = { ...prev, [entryId]: new Date().toISOString() };
+        const readAt = new Date().toISOString();
+        const next = { ...prev, [entryId]: readAt };
         if (typeof window !== "undefined") {
           saveReadState(window.localStorage, next);
+        }
+        if (pdsClient) {
+          void pdsClient.putEntryReadState(entryId, readAt).catch(() => {
+            /* best-effort sync */
+          });
         }
         return next;
       });
     },
-    [isHiddenFolderContext]
+    [isHiddenFolderContext, pdsClient]
   );
 
   const isEntryRead = useCallback(
@@ -76,10 +120,20 @@ export function ReadRouteProvider({ children }: { children: ReactNode }) {
       selectedFolderUri: resolvedSelectedFolderUri,
       setSelectedFolderUri,
       isHiddenFolderContext,
+      articleListFilter,
+      setArticleListFilter,
+      effectiveArticleListFilter,
       isEntryRead,
       markEntryRead,
     }),
-    [resolvedSelectedFolderUri, isHiddenFolderContext, isEntryRead, markEntryRead]
+    [
+      resolvedSelectedFolderUri,
+      isHiddenFolderContext,
+      articleListFilter,
+      effectiveArticleListFilter,
+      isEntryRead,
+      markEntryRead,
+    ]
   );
 
   return (

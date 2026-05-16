@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { use } from "react";
 import { ChevronLeft } from "lucide-react";
 import { EntryList } from "@/components/EntryList/EntryList";
@@ -22,15 +22,61 @@ export default function PubPage({ params }: Props) {
 
 function PubPageContent({ pubId }: { pubId: string }) {
   const [selectedEntryId, setSelectedEntryId] = useState<string | null>(null);
-  const { markEntryRead, isEntryRead, isHiddenFolderContext } = useReadRoute();
+  const {
+    markEntryRead,
+    isEntryRead,
+    isHiddenFolderContext,
+    effectiveArticleListFilter,
+  } = useReadRoute();
+
+  const selectedRef = useRef<string | null>(null);
+  const filterRef = useRef(effectiveArticleListFilter);
+  useEffect(() => {
+    selectedRef.current = selectedEntryId;
+    filterRef.current = effectiveArticleListFilter;
+  });
+
+  const prevFilterRef = useRef(effectiveArticleListFilter);
+  useEffect(() => {
+    const prev = prevFilterRef.current;
+    if (prev === "unread" && effectiveArticleListFilter === "all" && selectedEntryId) {
+      markEntryRead(selectedEntryId);
+    }
+    prevFilterRef.current = effectiveArticleListFilter;
+  }, [effectiveArticleListFilter, selectedEntryId, markEntryRead]);
+
+  useEffect(() => {
+    return () => {
+      if (filterRef.current === "unread" && selectedRef.current) {
+        markEntryRead(selectedRef.current);
+      }
+    };
+  }, [pubId, markEntryRead]);
 
   const handleSelectEntry = useCallback(
     (entryId: string) => {
+      if (effectiveArticleListFilter === "unread") {
+        // Mark the previous open article read before switching — never call
+        // markEntryRead inside setState's updater (that updates the parent
+        // provider during a child state update and triggers a React warning).
+        if (selectedEntryId && selectedEntryId !== entryId) {
+          markEntryRead(selectedEntryId);
+        }
+        setSelectedEntryId(entryId);
+        return;
+      }
       setSelectedEntryId(entryId);
       markEntryRead(entryId);
     },
-    [markEntryRead]
+    [markEntryRead, effectiveArticleListFilter, selectedEntryId]
   );
+
+  const handleBackToList = useCallback(() => {
+    if (effectiveArticleListFilter === "unread" && selectedEntryId) {
+      markEntryRead(selectedEntryId);
+    }
+    setSelectedEntryId(null);
+  }, [effectiveArticleListFilter, selectedEntryId, markEntryRead]);
 
   return (
     <div className="flex h-full min-h-0 max-h-full flex-1 flex-col overflow-hidden md:flex-row md:items-stretch">
@@ -54,6 +100,7 @@ function PubPageContent({ pubId }: { pubId: string }) {
             onSelectEntry={handleSelectEntry}
             isEntryRead={isEntryRead}
             readIndicatorsEnabled={!isHiddenFolderContext}
+            articleFilter={effectiveArticleListFilter}
           />
         </div>
       </aside>
@@ -74,7 +121,7 @@ function PubPageContent({ pubId }: { pubId: string }) {
                 size="icon-sm"
                 className="size-11 shrink-0 rounded-lg"
                 aria-label="Back to Articles"
-                onClick={() => setSelectedEntryId(null)}
+                onClick={handleBackToList}
               >
                 <ChevronLeft className="size-5" />
               </Button>

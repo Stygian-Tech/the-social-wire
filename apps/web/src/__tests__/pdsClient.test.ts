@@ -15,8 +15,10 @@ import {
   COLLECTION_STANDARD_SITE_SUBSCRIPTION,
   COLLECTION_LATR_SAVED_EXTERNAL,
   COLLECTION_LATR_SAVED_ITEM,
+  COLLECTION_ENTRY_READ_STATE,
   COLLECTION_SKYREADER_FEED_SUBSCRIPTION,
   mergeExternalsAndItemsToHttpsRows,
+  entryReadStateRkeyFromSubjectUri,
   type LatrSavedExternalRecord,
   type LatrSavedItemRecord,
   PSEUDO_FOLDER_HIDDEN_URI,
@@ -61,6 +63,12 @@ describe("collection constants", () => {
   it("Skyreader subscription collection mirrors upstream lexicon", () => {
     expect(COLLECTION_SKYREADER_FEED_SUBSCRIPTION).toBe(
       "app.skyreader.feed.subscription"
+    );
+  });
+
+  it("entryReadState collection ID matches lexicon", () => {
+    expect(COLLECTION_ENTRY_READ_STATE).toBe(
+      "com.thesocialwire.entryReadState"
     );
   });
 
@@ -161,5 +169,15 @@ describe("mergeExternalsAndItemsToHttpsRows", () => {
     expect(mergeExternalsAndItemsToHttpsRows(externals, items)[0].state).toBe(
       "archived"
     );
+  });
+});
+
+describe("entryReadStateRkeyFromSubjectUri", () => {
+  it("is stable for a given entry URI", async () => {
+    const uri = "at://did:plc:alice/site.standard.document/entry1";
+    const a = await entryReadStateRkeyFromSubjectUri(uri);
+    const b = await entryReadStateRkeyFromSubjectUri(uri);
+    expect(a).toBe(b);
+    expect(a.length).toBeGreaterThan(10);
   });
 });

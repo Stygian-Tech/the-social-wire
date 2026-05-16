@@ -44,3 +44,34 @@ export function saveReadState(
     // quota / private mode
   }
 }
+
+/** When two clients report read times for the same entry, keep the earlier (first read). */
+export function pickEarlierReadAt(a: string, b: string): string {
+  const da = Date.parse(a);
+  const db = Date.parse(b);
+  const aOk = !Number.isNaN(da);
+  const bOk = !Number.isNaN(db);
+  if (aOk && bOk) return da <= db ? a : b;
+  if (aOk) return a;
+  if (bOk) return b;
+  return a;
+}
+
+/**
+ * Merges remote PDS read state into local map. Per entry, the earlier `readAt` wins.
+ */
+export function mergeReadStateMaps(
+  local: EntryReadStateV1,
+  remote: EntryReadStateV1
+): EntryReadStateV1 {
+  const out: EntryReadStateV1 = { ...local };
+  for (const [id, remoteTs] of Object.entries(remote)) {
+    const localTs = out[id];
+    if (!localTs) {
+      out[id] = remoteTs;
+    } else {
+      out[id] = pickEarlierReadAt(localTs, remoteTs);
+    }
+  }
+  return out;
+}

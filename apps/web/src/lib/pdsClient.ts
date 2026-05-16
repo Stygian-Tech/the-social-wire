@@ -17,6 +17,8 @@ import {
   parseAtUri,
   PUBLICATION_RECORD_COLLECTIONS,
 } from "@/lib/atprotoClient";
+import type { EntryReadStateV1 } from "@/lib/entryReadStateStorage";
+import { pickEarlierReadAt } from "@/lib/entryReadStateStorage";
 import {
   latrExternalRkeyFromNormalizedUrl,
   latrFingerprintFromNormalizedUrl,
@@ -36,6 +38,8 @@ export const COLLECTION_SKYREADER_FEED_SUBSCRIPTION =
   "app.skyreader.feed.subscription";
 export const COLLECTION_LATR_SAVED_EXTERNAL = "com.latr.saved.external";
 export const COLLECTION_LATR_SAVED_ITEM = "com.latr.saved.item";
+/** Per-entry feed read positions (subject AT-URI + read timestamps). */
+export const COLLECTION_ENTRY_READ_STATE = "com.thesocialwire.entryReadState";
 export const PREFERENCES_RKEY = "self";
 
 /** Sidebar pseudo-folder URI (not a real `com.thesocialwire.folder` record). */
@@ -133,6 +137,14 @@ export interface LatrSavedItemRecord {
   tags?: string[];
   note?: string;
   lastOpenedAt?: string;
+}
+
+/** PDS `com.thesocialwire.entryReadState` record shape. */
+export interface EntryReadStateRecord {
+  $type: typeof COLLECTION_ENTRY_READ_STATE;
+  subjectUri: string;
+  readAt: string;
+  updatedAt?: string;
 }
 
 export type MergedLatrSave =
@@ -853,6 +865,60 @@ export class PDSClient {
     });
   }
 
+  // ── Feed entry read state (unread sync) ─────────────────────────────────────
+
+  async listEntryReadStateMap(signal?: AbortSignal): Promise<EntryReadStateV1> {
+    const all: RepoRecord<EntryReadStateRecord>[] = [];
+    let cursor: string | undefined;
+    do {
+      const response = await this.agent.api.com.atproto.repo.listRecords({
+        repo: this.did,
+        collection: COLLECTION_ENTRY_READ_STATE,
+        limit: 100,
+        cursor,
+      });
+      signal?.throwIfAborted();
+      all.push(
+        ...(response.data.records as unknown as RepoRecord<EntryReadStateRecord>[])
+      );
+      cursor = response.data.cursor ?? undefined;
+    } while (cursor);
+
+    const out: EntryReadStateV1 = {};
+    for (const rec of all) {
+      const subjectUri = rec.value.subjectUri?.trim();
+      const readAt = rec.value.readAt;
+      if (!subjectUri || !readAt) continue;
+      const existing = out[subjectUri];
+      if (!existing) {
+        out[subjectUri] = readAt;
+      } else {
+        out[subjectUri] = pickEarlierReadAt(existing, readAt);
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Idempotent upsert with deterministic rkey (same base32(SHA-256(subjectUri)) scheme as L@tr).
+   */
+  async putEntryReadState(subjectUri: string, readAt: string): Promise<void> {
+    const rkey = await latrItemRkeyFromSubjectUri(subjectUri);
+    const updatedAt = new Date().toISOString();
+    const record: EntryReadStateRecord = {
+      $type: COLLECTION_ENTRY_READ_STATE,
+      subjectUri,
+      readAt,
+      updatedAt,
+    };
+    await this.agent.api.com.atproto.repo.putRecord({
+      repo: this.did,
+      collection: COLLECTION_ENTRY_READ_STATE,
+      rkey,
+      record: record as unknown as Record<string, unknown>,
+    });
+  }
+
   /** Joins wrappers with queue rows for read-later browsing. */
   async listMergedLatrSaves(signal?: AbortSignal): Promise<MergedLatrSave[]> {
     const externals = await this.listLatrSavedExternals(signal);
@@ -895,4 +961,11 @@ export class PDSClient {
  */
 export function rkeyFromURI(uri: string): string {
   return uri.split("/").pop() ?? uri;
+}
+
+/** Deterministic `com.thesocialwire.entryReadState` rkey from an entry AT-URI. */
+export async function entryReadStateRkeyFromSubjectUri(
+  subjectUri: string
+): Promise<string> {
+  return latrItemRkeyFromSubjectUri(subjectUri);
 }

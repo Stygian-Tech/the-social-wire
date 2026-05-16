@@ -1,0 +1,32 @@
+{
+  "lexicon": 1,
+  "id": "com.thesocialwire.entryReadState",
+  "defs": {
+    "main": {
+      "type": "record",
+      "description": "Records that the user has opened/read a feed entry (subject AT-URI). Repo records are public by default; store only the subject URI and timestamps—no titles, URLs, or other duplicated content. Clients should use a deterministic record key derived from the subject URI (see Social Wire client conventions).",
+      "key": "any",
+      "record": {
+        "type": "object",
+        "required": ["subjectUri", "readAt"],
+        "properties": {
+          "subjectUri": {
+            "type": "string",
+            "format": "at-uri",
+            "description": "The site.standard.entry (or other) AT-URI for the article."
+          },
+          "readAt": {
+            "type": "string",
+            "format": "datetime",
+            "description": "ISO 8601 time when the user first marked this entry as read in this client."
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "datetime",
+            "description": "ISO 8601 time when this record was last written (optional; defaults to readAt when absent)."
+          }
+        }
+      }
+    }
+  }
+}
