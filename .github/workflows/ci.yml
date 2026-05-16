@@ -64,11 +64,12 @@ jobs:
         uses: actions/cache@v4
         with:
           path: services/api/.build
-          key: ${{ runner.os }}-swift-api-${{ hashFiles('services/api/Package.resolved') }}
+          key: ${{ runner.os }}-swift-api-swift62-${{ hashFiles('services/api/Package.resolved') }}
 
-      - uses: swift-actions/setup-swift@v2
+      - uses: swift-actions/setup-swift@v3
         with:
-          swift-version: "6.0"
+          # Swiftly-managed toolchain (swift-actions/setup-swift v3); pin ≥ 6.2 for transitive packages (e.g. swift-log 1.12+).
+          swift-version: "latest"
 
       - name: Build
         run: swift build
