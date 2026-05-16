@@ -29,7 +29,11 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { SidebarMenuSubButton, SidebarMenuSubItem } from "@/components/ui/sidebar";
+import {
+  SidebarMenuBadge,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
+} from "@/components/ui/sidebar";
 import { Avatar } from "@/components/shared/Avatar";
 import type { DiscoveredPublication } from "@/lib/atprotoClient";
 import type { FolderRecord, PublicationPrefsRecord, RepoRecord } from "@/lib/pdsClient";
@@ -42,6 +46,7 @@ import {
 } from "@/hooks/usePublications";
 import { standardSiteSubscriptionTargetFromDiscovery } from "@/lib/publicationSubscriptionMatch";
 import { isRssPublicationId } from "@/lib/rssFeedCore";
+import { cn } from "@/lib/utils";
 import { ControlledCreateFolderDialog } from "./NewFolderDialog";
 
 export type PublicationSidebarTab = "following" | "subscribed";
@@ -59,6 +64,8 @@ function notifyMutationFailure(label: string, err: unknown) {
 
 interface PublicationSubItemProps {
   publication: DiscoveredPublication;
+  /** Cache-only unread count from {@link useSidebarUnreadCounts}. */
+  unreadCount: number;
   isSelected: boolean;
   onSelect: (publicationId: string) => void;
   folders: RepoRecord<FolderRecord>[];
@@ -68,6 +75,7 @@ interface PublicationSubItemProps {
 
 export function PublicationSubItem({
   publication,
+  unreadCount,
   isSelected,
   onSelect,
   folders,
@@ -174,10 +182,21 @@ export function PublicationSubItem({
             isActive={isSelected}
             render={<button type="button" />}
             onClick={() => onSelect(publication.publicationId)}
-            className="min-w-0 flex-1 gap-2"
+            className={cn(
+              "min-w-0 flex-1 gap-2",
+              unreadCount > 0 && "relative pr-8"
+            )}
           >
             <PublicationLeadingAvatar publication={publication} />
             <span className="min-w-0 flex-1 truncate">{publication.title}</span>
+            {unreadCount > 0 ? (
+              <SidebarMenuBadge
+                className="top-1/2 -translate-y-1/2"
+                aria-label={`${unreadCount} unread`}
+              >
+                {unreadCount}
+              </SidebarMenuBadge>
+            ) : null}
           </SidebarMenuSubButton>
         </ContextMenuTrigger>
         <ContextMenuContent className="min-w-[11rem]">

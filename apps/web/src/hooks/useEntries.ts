@@ -1,10 +1,12 @@
 "use client";
 
+import type { OAuthSession } from "@atproto/oauth-client-browser";
 import {
   useInfiniteQuery,
   useQuery,
   useQueryClient,
   type InfiniteData,
+  type QueryClient,
 } from "@tanstack/react-query";
 import {
   listEntries,
@@ -27,7 +29,102 @@ export const ENTRIES_QUERY_KEY = (authorDid: string) =>
 export const ENTRY_DETAIL_QUERY_KEY = (entryId: string) =>
   ["entry", entryId] as const;
 
-type EntriesPage = { entries: EntryListItem[]; cursor?: string };
+export type EntriesPage = { entries: EntryListItem[]; cursor?: string };
+
+/** Matches {@link useEntries} `staleTime` / `prefetchInfiniteQuery` for entry lists. */
+export const ENTRIES_QUERY_STALE_MS = 2 * 60_000;
+
+/**
+ * Fetches a single infinite-query page of entries — shared by {@link useEntries} and
+ * {@link prefetchSidebarPublicationEntries}.
+ */
+export async function fetchEntriesInfinitePage(args: {
+  normalizedPublicationKey: string;
+  pageParam: string | undefined;
+  signal?: AbortSignal;
+  oauthSession: OAuthSession | undefined;
+  /** When set with {@link streamFirstPageToCache}, merges streamed chunks into this cache. */
+  queryClient?: QueryClient;
+  /**
+   * Live read tab: stream the first ATProto `listRecords` slice into the query cache.
+   * Prefetch passes false so only the final merged page is written.
+   */
+  streamFirstPageToCache?: boolean;
+}): Promise<EntriesPage> {
+  const {
+    normalizedPublicationKey: normalizedKey,
+    pageParam,
+    signal,
+    oauthSession,
+    queryClient,
+    streamFirstPageToCache = false,
+  } = args;
+
+  if (!normalizedKey) return { entries: [], cursor: undefined };
+
+  if (isRssPublicationId(normalizedKey)) {
+    const feedUrl = normalizedFeedUrlFromRssPublicationId(normalizedKey);
+    if (!feedUrl) return { entries: [], cursor: undefined };
+    const sp = new URLSearchParams({
+      url: feedUrl,
+      limit: "50",
+    });
+    const cursorPage = typeof pageParam === "string" ? pageParam : undefined;
+    if (cursorPage) sp.set("cursor", cursorPage);
+    const res = await fetch(`/api/rss-feed?${sp.toString()}`, {
+      signal,
+    });
+    if (!res.ok) {
+      throw new Error("Could not load RSS feed");
+    }
+    const json = (await res.json()) as {
+      items: EntryListItem[];
+      nextCursor?: string;
+    };
+    return {
+      entries: json.items ?? [],
+      cursor: json.nextCursor,
+    };
+  }
+
+  const key = ENTRIES_QUERY_KEY(normalizedKey);
+  const { repoDid, publicationAtUri } =
+    repoAndPublicationFilterFromPubId(normalizedKey);
+  const isFirstInfinitePage = pageParam === undefined;
+  const onProgress =
+    streamFirstPageToCache && queryClient && isFirstInfinitePage
+      ? (payload: { entries: EntryListItem[]; cursor?: string }) => {
+          const { entries, cursor } = payload;
+          queryClient.setQueryData<InfiniteData<EntriesPage> | undefined>(
+            key,
+            (old) => {
+              const page: EntriesPage = { entries, cursor };
+              if (!old?.pages.length) {
+                return {
+                  pages: [page],
+                  pageParams: [undefined],
+                };
+              }
+              const nextPages = [...old.pages];
+              nextPages[0] = page;
+              return { ...old, pages: nextPages };
+            }
+          );
+        }
+      : undefined;
+
+  return listEntries(
+    repoDid,
+    pageParam as string | undefined,
+    50,
+    oauthSession,
+    {
+      signal,
+      publicationAtUri,
+      onProgress,
+    }
+  );
+}
 
 /**
  * Returns a paginated list of entries for a publication sidebar selection.
@@ -44,72 +141,19 @@ export function useEntries(publicationKey: string | null) {
     queryKey: ENTRIES_QUERY_KEY(normalizedKey ?? ""),
     queryFn: async ({ pageParam, signal }) => {
       if (!normalizedKey) return { entries: [], cursor: undefined };
-
-      if (isRssPublicationId(normalizedKey)) {
-        const feedUrl = normalizedFeedUrlFromRssPublicationId(normalizedKey);
-        if (!feedUrl) return { entries: [], cursor: undefined };
-        const sp = new URLSearchParams({
-          url: feedUrl,
-          limit: "50",
-        });
-        const cursorPage =
-          typeof pageParam === "string" ? pageParam : undefined;
-        if (cursorPage) sp.set("cursor", cursorPage);
-        const res = await fetch(`/api/rss-feed?${sp.toString()}`, {
-          signal,
-        });
-        if (!res.ok) {
-          throw new Error("Could not load RSS feed");
-        }
-        const json = (await res.json()) as {
-          items: EntryListItem[];
-          nextCursor?: string;
-        };
-        return {
-          entries: json.items ?? [],
-          cursor: json.nextCursor,
-        };
-      }
-
-      const oauth = getOAuthSession() ?? undefined;
-      const key = ENTRIES_QUERY_KEY(normalizedKey);
-      const { repoDid, publicationAtUri } =
-        repoAndPublicationFilterFromPubId(normalizedKey);
-      const isFirstInfinitePage = pageParam === undefined;
-      return listEntries(
-        repoDid,
-        pageParam as string | undefined,
-        50,
-        oauth,
-        {
-          signal,
-          publicationAtUri,
-          onProgress: isFirstInfinitePage
-            ? ({ entries, cursor }) => {
-                queryClient.setQueryData<InfiniteData<EntriesPage> | undefined>(
-                  key,
-                  (old) => {
-                    const page: EntriesPage = { entries, cursor };
-                    if (!old?.pages.length) {
-                      return {
-                        pages: [page],
-                        pageParams: [undefined],
-                      };
-                    }
-                    const nextPages = [...old.pages];
-                    nextPages[0] = page;
-                    return { ...old, pages: nextPages };
-                  }
-                );
-              }
-            : undefined,
-        }
-      );
+      return fetchEntriesInfinitePage({
+        normalizedPublicationKey: normalizedKey,
+        pageParam,
+        signal,
+        oauthSession: getOAuthSession() ?? undefined,
+        queryClient,
+        streamFirstPageToCache: true,
+      });
     },
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) => lastPage.cursor,
     enabled: !!normalizedKey && !!session,
-    staleTime: 2 * 60_000,
+    staleTime: ENTRIES_QUERY_STALE_MS,
     gcTime: 1000 * 60 * 60 * 24,
   });
 }

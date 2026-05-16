@@ -2,12 +2,14 @@
 
 import { ChevronRight, Folder } from "lucide-react";
 import {
+  SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarMenuSub,
   SidebarMenuSubItem,
 } from "@/components/ui/sidebar";
 import { cn } from "@/lib/utils";
+import { sumUnreadForPublications } from "@/lib/unreadCounts";
 import {
   PublicationSubItem,
   type PublicationSidebarTab,
@@ -37,6 +39,7 @@ interface FolderBranchProps {
   folders: RepoRecord<FolderRecord>[];
   prefsMap: Map<string, RepoRecord<PublicationPrefsRecord>>;
   sidebarTab: PublicationSidebarTab;
+  publicationUnreadCounts: Map<string, number>;
   /** Shown after the folder name (e.g. All → unfoldered) */
   nameSuffix?: string;
 }
@@ -54,9 +57,14 @@ export function FolderBranch({
   folders,
   prefsMap,
   sidebarTab,
+  publicationUnreadCounts,
   nameSuffix,
 }: FolderBranchProps) {
   const subId = `sidebar-folder-sub-${expandKey.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
+  const folderUnread = sumUnreadForPublications(
+    publications,
+    publicationUnreadCounts
+  );
 
   return (
     <SidebarMenuItem>
@@ -66,7 +74,10 @@ export function FolderBranch({
         onClick={onToggleExpanded}
         aria-expanded={expanded}
         aria-controls={subId}
-        className="gap-2"
+        className={cn(
+          "gap-2",
+          folderUnread > 0 && "relative pr-8"
+        )}
       >
         <ChevronRight
           className={cn(
@@ -86,6 +97,11 @@ export function FolderBranch({
             {nameSuffix}
           </span>
         ) : null}
+        {folderUnread > 0 ? (
+          <SidebarMenuBadge aria-label={`${folderUnread} unread`}>
+            {folderUnread}
+          </SidebarMenuBadge>
+        ) : null}
       </SidebarMenuButton>
       {expanded ? (
         <SidebarMenuSub id={subId} aria-label={folder.name} className="mt-1.5">
@@ -100,6 +116,7 @@ export function FolderBranch({
               <PublicationSubItem
                 key={pub.publicationId}
                 publication={pub}
+                unreadCount={publicationUnreadCounts.get(pub.publicationId) ?? 0}
                 isSelected={selectedPubId === pub.publicationId}
                 onSelect={onSelectPub}
                 folders={folders}

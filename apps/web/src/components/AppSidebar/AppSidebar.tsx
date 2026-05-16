@@ -14,6 +14,7 @@ import {
   SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
+  SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarMenuSub,
@@ -27,7 +28,9 @@ import { FolderBranch } from "./FolderBranch";
 import { NewFolderDialog } from "./NewFolderDialog";
 import { AddPublicationDialog } from "./AddPublicationDialog";
 import { useAuth } from "@/hooks/useAuth";
+import { usePrefetchSidebarPublicationEntries } from "@/hooks/usePrefetchSidebarPublicationEntries";
 import { usePublicationSidebarData } from "@/hooks/usePublicationSidebarData";
+import { useSidebarUnreadCounts } from "@/hooks/useSidebarUnreadCounts";
 import { useReadRoute } from "@/contexts/ReadRouteContext";
 import { useViewerProfile } from "@/hooks/useViewerProfile";
 import {
@@ -37,6 +40,7 @@ import {
   type RepoRecord,
 } from "@/lib/pdsClient";
 import { type DiscoveredPublication, viewerOwnsDiscoveredPublication } from "@/lib/atprotoClient";
+import { sumUnreadForPublications } from "@/lib/unreadCounts";
 import { cn } from "@/lib/utils";
 import {
   PublicationSubItem,
@@ -58,7 +62,7 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
   const pathname = usePathname();
   const { session, signOut } = useAuth();
   const [loggingOut, setLoggingOut] = useState(false);
-  const { selectedFolderUri, setSelectedFolderUri } = useReadRoute();
+  const { selectedFolderUri, setSelectedFolderUri, isEntryRead } = useReadRoute();
 
   const [expandedKeys, setExpandedKeys] = useState(
     () => new Set<string>([SIDEBAR_SEC_FOLDERS, SIDEBAR_SEC_PUBLICATIONS])
@@ -99,6 +103,64 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
     viewerDid,
   } = usePublicationSidebarData();
   const { data: profile, isLoading: profileLoading } = useViewerProfile();
+
+  const publicationsForUnread = useMemo(() => {
+    if (publicationTab !== "subscribed") {
+      return followingTabPublications;
+    }
+    const seen = new Set<string>();
+    const list: DiscoveredPublication[] = [];
+    for (const f of folders) {
+      const rkey = rkeyFromURI(f.uri);
+      for (const p of folderMap.get(rkey) ?? []) {
+        if (!seen.has(p.publicationId)) {
+          seen.add(p.publicationId);
+          list.push(p);
+        }
+      }
+    }
+    for (const p of unfolderedPubs) {
+      if (!seen.has(p.publicationId)) {
+        seen.add(p.publicationId);
+        list.push(p);
+      }
+    }
+    return list;
+  }, [publicationTab, folders, folderMap, unfolderedPubs, followingTabPublications]);
+
+  usePrefetchSidebarPublicationEntries(
+    publicationsForUnread,
+    !sidebarListsLoading && !!session
+  );
+
+  const publicationUnreadCounts = useSidebarUnreadCounts(
+    publicationsForUnread,
+    isEntryRead
+  );
+
+  const foldersSectionUnread = useMemo(() => {
+    if (publicationTab !== "subscribed") return 0;
+    return folders.reduce((acc, f) => {
+      const rkey = rkeyFromURI(f.uri);
+      const pubs = folderMap.get(rkey) ?? [];
+      return acc + sumUnreadForPublications(pubs, publicationUnreadCounts);
+    }, 0);
+  }, [publicationTab, folders, folderMap, publicationUnreadCounts]);
+
+  const publicationsSectionUnread = useMemo(() => {
+    if (publicationTab === "subscribed") {
+      return sumUnreadForPublications(unfolderedPubs, publicationUnreadCounts);
+    }
+    return sumUnreadForPublications(
+      followingTabPublications,
+      publicationUnreadCounts
+    );
+  }, [
+    publicationTab,
+    unfolderedPubs,
+    followingTabPublications,
+    publicationUnreadCounts,
+  ]);
 
   const selectionExpandedKeys = useMemo(() => {
     const next = new Set<string>();
@@ -219,7 +281,10 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
                       type="button"
                       onClick={() => toggleExpanded(SIDEBAR_SEC_FOLDERS)}
                       aria-expanded={effectiveExpandedKeys.has(SIDEBAR_SEC_FOLDERS)}
-                      className="gap-2"
+                      className={cn(
+                        "gap-2",
+                        foldersSectionUnread > 0 && "relative pr-8"
+                      )}
                     >
                       <ChevronRight
                         className={cn(
@@ -231,6 +296,7 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
                       <span className="min-w-0 flex-1 truncate text-left text-xs font-medium">
                         Folders
                       </span>
+                      <UnreadSidebarBadge count={foldersSectionUnread} />
                     </SidebarMenuButton>
                     {effectiveExpandedKeys.has(SIDEBAR_SEC_FOLDERS) ? (
                       <SidebarMenuSub
@@ -254,6 +320,7 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
                               folders={folders}
                               prefsMap={prefsMap}
                               sidebarTab="subscribed"
+                              publicationUnreadCounts={publicationUnreadCounts}
                             />
                           );
                         })}
@@ -265,12 +332,14 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
                   </SidebarMenuItem>
                   <CollapsibleSidebarSubSection
                     title="Publications"
+                    unreadCount={publicationsSectionUnread}
                     expanded={effectiveExpandedKeys.has(SIDEBAR_SEC_PUBLICATIONS)}
                     onToggle={() => toggleExpanded(SIDEBAR_SEC_PUBLICATIONS)}
                     subAriaLabel="Subscribed Publications"
                   >
                     <PublicationMenuSubEntries
                       publications={unfolderedPubs}
+                      publicationUnreadCounts={publicationUnreadCounts}
                       selectedPubId={selectedPubId}
                       onSelectPub={onSelectPub}
                       folders={folders}
@@ -286,12 +355,14 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
                 <>
                   <CollapsibleSidebarSubSection
                     title="Publications"
+                    unreadCount={publicationsSectionUnread}
                     expanded={effectiveExpandedKeys.has(SIDEBAR_SEC_PUBLICATIONS)}
                     onToggle={() => toggleExpanded(SIDEBAR_SEC_PUBLICATIONS)}
                     subAriaLabel="Publications From Followed Accounts"
                   >
                     <PublicationMenuSubEntries
                       publications={followingTabPublications}
+                      publicationUnreadCounts={publicationUnreadCounts}
                       selectedPubId={selectedPubId}
                       onSelectPub={onSelectPub}
                       folders={folders}
@@ -367,6 +438,14 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
   );
 }
 
+function UnreadSidebarBadge({ count }: { count: number }) {
+  if (count <= 0) return null;
+  const label = String(count);
+  return (
+    <SidebarMenuBadge aria-label={`${label} unread`}>{label}</SidebarMenuBadge>
+  );
+}
+
 function PublicationTabs({
   activeTab,
   onTabChange,
@@ -427,12 +506,14 @@ function PublicationTabButton({
 
 function CollapsibleSidebarSubSection({
   title,
+  unreadCount = 0,
   expanded,
   onToggle,
   subAriaLabel,
   children,
 }: {
   title: string;
+  unreadCount?: number;
   expanded: boolean;
   onToggle: () => void;
   subAriaLabel: string;
@@ -447,7 +528,7 @@ function CollapsibleSidebarSubSection({
         onClick={onToggle}
         aria-expanded={expanded}
         aria-controls={subId}
-        className="gap-2"
+        className={cn("gap-2", unreadCount > 0 && "relative pr-8")}
       >
         <ChevronRight
           className={cn(
@@ -459,6 +540,7 @@ function CollapsibleSidebarSubSection({
         <span className="min-w-0 flex-1 truncate text-left text-xs font-medium">
           {title}
         </span>
+        <UnreadSidebarBadge count={unreadCount} />
       </SidebarMenuButton>
       {expanded ? (
         <SidebarMenuSub
@@ -475,6 +557,7 @@ function CollapsibleSidebarSubSection({
 
 function PublicationMenuSubEntries({
   publications,
+  publicationUnreadCounts,
   selectedPubId,
   onSelectPub,
   folders,
@@ -482,6 +565,7 @@ function PublicationMenuSubEntries({
   sidebarTab,
 }: {
   publications: DiscoveredPublication[];
+  publicationUnreadCounts: Map<string, number>;
   selectedPubId: string | null;
   onSelectPub: (pubId: string) => void;
   folders: RepoRecord<FolderRecord>[];
@@ -498,6 +582,7 @@ function PublicationMenuSubEntries({
         <PublicationSubItem
           key={pub.publicationId}
           publication={pub}
+          unreadCount={publicationUnreadCounts.get(pub.publicationId) ?? 0}
           isSelected={selectedPubId === pub.publicationId}
           onSelect={onSelectPub}
           folders={folders}
