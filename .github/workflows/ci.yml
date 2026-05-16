@@ -108,22 +108,46 @@ jobs:
         run: swift build
 
       - name: Test with coverage
-        run: swift test --enable-code-coverage
+        run: |
+          set -euo pipefail
+          # Drop stale codecov trees so incremental/cached .build cannot leave tests thinking coverage is fresh without writing profdata.
+          while IFS= read -r -d '' d; do rm -rf "$d"; done < <(find "$PWD/.build" -type d -path '*/debug/codecov' -print0 2>/dev/null || true)
+          swift test --enable-code-coverage
 
       - name: Export lcov from llvm-cov
         run: |
           set -euo pipefail
-          # Use the llvm-cov bundled with the active Swift toolchain (PATH may pick an older system llvm-cov on Ubuntu, which rejects Swift's profdata).
           _swift="$(command -v swift)"
-          LLVM_COV="$(dirname "$(readlink -f "$_swift" 2>/dev/null || echo "$_swift")")/llvm-cov"
-          if [[ ! -x "$LLVM_COV" ]]; then
-            LLVM_COV="$(command -v llvm-cov)"
-          fi
+          _tooldir="$(dirname "$(readlink -f "$_swift" 2>/dev/null || echo "$_swift")")"
+          # Toolchain LLVM — Ubuntu PATH often includes an incompatible system llvm-cov/llvm-profdata.
+          LLVM_COV="${_tooldir}/llvm-cov"
+          [[ -x "$LLVM_COV" ]] || LLVM_COV="$(command -v llvm-cov)"
           [[ -x "$LLVM_COV" ]] || { echo "No usable llvm-cov next to swift or on PATH"; exit 1; }
 
-          PROF="$(find "$PWD/.build" -path '**/codecov/default.profdata' | head -n 1)"
+          LLVM_PROFDATA="${_tooldir}/llvm-profdata"
+          [[ -x "$LLVM_PROFDATA" ]] || LLVM_PROFDATA="$(command -v llvm-profdata || true)"
 
-          # Linux: flat ${BINDIR}/SocialWireAPIPackageTests. Do not rely on `find -executable` alone — CI/cache restores can omit the bit while the file is still valid for llvm-cov.
+          CODECOV_DIR="$(find "$PWD/.build" -type d -path '*/debug/codecov' 2>/dev/null | head -n 1)"
+          if [[ -z "${CODECOV_DIR:-}" ]]; then
+            _raw="$(find "$PWD/.build" -type f -name '*.profraw' -path '*codecov*' 2>/dev/null | head -n 1)"
+            [[ -z "$_raw" ]] || CODECOV_DIR="$(dirname "$_raw")"
+          fi
+
+          PROF=""
+          if [[ -n "${CODECOV_DIR:-}" ]]; then
+            PROF="${CODECOV_DIR}/default.profdata"
+            if [[ ! -f "$PROF" ]] && [[ -x "${LLVM_PROFDATA:-}" ]]; then
+              shopt -s nullglob
+              _profraws=( "${CODECOV_DIR}"/*.profraw )
+              shopt -u nullglob
+              if [[ ${#_profraws[@]} -gt 0 ]]; then
+                "$LLVM_PROFDATA" merge -sparse "${_profraws[@]}" -o "$PROF"
+              fi
+            fi
+          fi
+          [[ -f "$PROF" ]] || PROF="$(find "$PWD/.build" -name default.profdata -path '*codecov*' 2>/dev/null | head -n 1)"
+
+          # Linux: flat ${BINDIR}/SocialWireAPIPackageTests; skip dSYM paths on Darwin-style artifacts.
           BINDIR="$(swift build --show-bin-path)"
           BIN="${BINDIR}/SocialWireAPIPackageTests"
           if [[ ! -f "$BIN" ]]; then
@@ -133,7 +157,12 @@ jobs:
             BIN="$(find "$PWD/.build" -type f -name '*PackageTests' ! -path '*dSYM/*' | head -n 1)"
           fi
 
-          test -n "$PROF" || { echo "missing codecov profdata"; find "$PWD/.build" -path '**/codecov' -print 2>/dev/null | head -20; exit 1; }
+          if [[ ! -f "$PROF" ]]; then
+            echo "missing codecov profdata (merge or test output absent)"
+            find "$PWD/.build" -type d -path '*codecov*' -print 2>/dev/null | head -30
+            find "$PWD/.build" -type f \( -name '*.profraw' -o -name '*.profdata' \) 2>/dev/null | head -30
+            exit 1
+          fi
           test -n "$BIN" || { echo "missing PackageTests binary (BINDIR=$BINDIR)"; find "$BINDIR" -maxdepth 3 -type f 2>/dev/null | head -40; exit 1; }
           "$LLVM_COV" export -format=lcov -instr-profile="$PROF" "$BIN" > coverage.lcov
 

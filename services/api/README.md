@@ -84,7 +84,7 @@ Never commit bearer material—use Bruno secret variables locally.
 
 ## Running tests / coverage
 
-Default CI runs on GitHub Actions (`test-api` job) with `swift test --enable-code-coverage` followed by **`llvm-cov export`** uploads tagged `codecov` **`api`**.
+Default CI runs on GitHub Actions (`test-api` job) with `swift test --enable-code-coverage` followed by **`llvm-cov export`** uploads tagged `codecov` **`api`**. The job clears a stale `*/debug/codecov` tree before testing (avoid empty profdata with cached `.build`), uses the Swift toolchain’s **`llvm-profdata` / `llvm-cov`** (not Ubuntu’s), and merges **`*.profraw`** into **`default.profdata`** when Swift leaves only raw profiles (parallel XCTest / Swift Testing).
 
 Locally:
 
