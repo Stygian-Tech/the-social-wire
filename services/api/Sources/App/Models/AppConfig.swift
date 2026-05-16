@@ -2,11 +2,13 @@ import Foundation
 
 /// Configuration loaded from environment variables at startup.
 struct AppConfig: Sendable {
-    let atprotoPLCURL: String
-    let appEnv: AppEnvironment
-    let cacheBackend: CacheBackend
-    /// When set (e.g. `https://your-tunnel.example`), used as the OAuth metadata base URL instead of inferring from each request.
-    let oauthPublicOrigin: String?
+  let atprotoPLCURL: String
+  let appEnv: AppEnvironment
+  let cacheBackend: CacheBackend
+  /// Discoverable OAuth base override for tunnel previews (metadata JSON `client_id`).
+  let oauthPublicOrigin: String?
+  /// When `true`, keeps publication discovery/content routes online for phased migrations (default **`false`**).
+  let enableLegacyContentAPI: Bool
 
   enum AppEnvironment: String, Sendable {
     case local
@@ -15,17 +17,12 @@ struct AppConfig: Sendable {
   }
 
   enum CacheBackend: Sendable {
-    /// SQLite file on disk. Used automatically when APP_ENV=local.
+    /// SQLite file on disk. Used automatically when `APP_ENV=local`.
     case sqlite(path: String)
-    /// Postgres (Supabase). Used for dev and prod.
+    /// Postgres (Supabase). Used for `APP_ENV` dev/prod pairings.
     case postgres(url: String)
   }
 
-  /// Loads configuration from environment variables.
-  ///
-  /// - Parameter env: Override the environment dictionary (default: the process
-  ///   environment). Pass a custom dictionary in unit tests to avoid mutating
-  ///   `ProcessInfo.processInfo.environment`.
   static func fromEnvironment(
     _ env: [String: String] = ProcessInfo.processInfo.environment
   ) -> AppConfig {
@@ -35,7 +32,6 @@ struct AppConfig: Sendable {
     let backend: CacheBackend
     switch appEnv {
     case .local:
-      // Default path is ./social-wire.sqlite in the working directory.
       let sqlitePath = env["SQLITE_DB_PATH"] ?? "./social-wire.sqlite"
       backend = .sqlite(path: sqlitePath)
 
@@ -48,12 +44,23 @@ struct AppConfig: Sendable {
 
     let oauthRaw = env["OAUTH_PUBLIC_ORIGIN"]?.trimmingCharacters(in: .whitespacesAndNewlines)
     let oauthPublicOrigin = (oauthRaw?.isEmpty == false) ? oauthRaw : nil
+    let enableLegacyContentAPI = Self.truthyFlag(env["ENABLE_LEGACY_CONTENT_API"])
 
     return AppConfig(
       atprotoPLCURL: plcURL,
       appEnv: appEnv,
       cacheBackend: backend,
-      oauthPublicOrigin: oauthPublicOrigin
+      oauthPublicOrigin: oauthPublicOrigin,
+      enableLegacyContentAPI: enableLegacyContentAPI
     )
+  }
+
+  private static func truthyFlag(_ value: String?) -> Bool {
+    guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+          !trimmed.isEmpty
+    else {
+      return false
+    }
+    return ["1", "true", "yes", "on"].contains(trimmed)
   }
 }

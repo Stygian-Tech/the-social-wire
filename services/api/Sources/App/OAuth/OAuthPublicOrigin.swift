@@ -17,17 +17,11 @@ enum OAuthPublicOrigin {
   }
 
   private static func forwardedProto(_ request: Request) -> String? {
-    guard let name = HTTPField.Name("X-Forwarded-Proto"),
-          let raw = request.headers[name]
-    else { return nil }
-    return raw.split(separator: ",").first.map { String($0).trimmingCharacters(in: .whitespaces) }
+    ForwardedHTTP.forwardedProto(from: request.headers)
   }
 
   private static func inferredProto(forAuthority authority: String) -> String {
-    let hostOnly = authority.split(separator: ":").first.map(String.init) ?? authority
-    let lower = hostOnly.lowercased()
-    if lower == "localhost" || lower.hasPrefix("127.") { return "http" }
-    return "https"
+    ForwardedHTTP.inferredScheme(forAuthority: authority, headers: [:])
   }
 
   private static func stripTrailingSlash(_ s: String) -> String {

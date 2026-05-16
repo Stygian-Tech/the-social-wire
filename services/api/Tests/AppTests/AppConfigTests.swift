@@ -112,5 +112,19 @@ struct AppConfigTests {
     ])
     #expect(config.oauthPublicOrigin == "https://tunnel.example")
   }
+
+  @Test("ENABLE_LEGACY_CONTENT_API defaults false")
+  func legacyDiscoveryDefaultDisabled() {
+    let config = AppConfig.fromEnvironment([:])
+    #expect(config.enableLegacyContentAPI == false)
+  }
+
+  @Test("truthy ENABLE_LEGACY_CONTENT_API variants enable legacy gates")
+  func legacyFlagTruthy() {
+    for flag in ["1", "true", "YES", "on"] {
+      let cfg = AppConfig.fromEnvironment(["ENABLE_LEGACY_CONTENT_API": flag])
+      #expect(cfg.enableLegacyContentAPI == true)
+    }
+  }
 }
 

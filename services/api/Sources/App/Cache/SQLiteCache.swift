@@ -67,6 +67,23 @@ actor SQLiteCache: CacheStore {
       CREATE INDEX IF NOT EXISTS idx_discovery_user_did
         ON discovery_cache(user_did);
       """)
+
+    try db.execute(sql: """
+      CREATE TABLE IF NOT EXISTS pds_repo_record_cache (
+        owner_did TEXT NOT NULL,
+        scope_key TEXT NOT NULL,
+        cid TEXT,
+        json_body TEXT NOT NULL,
+        cached_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        PRIMARY KEY (owner_did, scope_key)
+      );
+      """)
+
+    try db.execute(sql: """
+      CREATE INDEX IF NOT EXISTS idx_pds_record_expires_at
+        ON pds_repo_record_cache(expires_at);
+      """)
   }
 
   // MARK: - CacheStore: Discovery
@@ -222,6 +239,78 @@ actor SQLiteCache: CacheStore {
           entry.originalUrl,
           publishedAt,
           now,
+        ])
+    }
+  }
+
+  // MARK: - **`com.atproto.repo.getRecord`** payload cache
+
+  func cachedPdsRepoRecord(ownerDid: String, scopeKey: String) async throws -> PdsCachedRepoRecordPayload? {
+    let iso = ISO8601DateFormatter()
+
+    let row = try await db.read { db in
+      try Row.fetchOne(db, sql: """
+        SELECT cid, json_body, cached_at, expires_at
+        FROM pds_repo_record_cache
+        WHERE owner_did = ? AND scope_key = ?
+        LIMIT 1
+        """,
+        arguments: [ownerDid, scopeKey])
+    }
+
+    guard let row else { return nil }
+
+    let expiresAtStr: String = row["expires_at"]
+    guard let expiresAt = iso.date(from: expiresAtStr) else { return nil }
+    if expiresAt <= Date() {
+      try await db.write { db in
+        try db.execute(sql: """
+          DELETE FROM pds_repo_record_cache
+          WHERE owner_did = ? AND scope_key = ?
+          """, arguments: [ownerDid, scopeKey])
+      }
+      return nil
+    }
+
+    let cachedAtStr: String = row["cached_at"]
+    let cachedAt = iso.date(from: cachedAtStr) ?? Date(timeIntervalSince1970: 0)
+
+    let cid: String? = row["cid"]
+    let body: String = row["json_body"]
+
+    return PdsCachedRepoRecordPayload(cid: cid, jsonBody: body, cachedAt: cachedAt)
+  }
+
+  func storePdsRepoRecordPayload(
+    ownerDid: String,
+    scopeKey: String,
+    cid: String?,
+    jsonBody: String,
+    cachedAt: Date,
+    expiresAt: Date
+  ) async throws {
+
+    let iso = ISO8601DateFormatter()
+    let cachedAtIso = iso.string(from: cachedAt)
+    let expiresAtIso = iso.string(from: expiresAt)
+    try await db.write { db in
+      try db.execute(sql: """
+        INSERT INTO pds_repo_record_cache
+          (owner_did, scope_key, cid, json_body, cached_at, expires_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT (owner_did, scope_key) DO UPDATE SET
+          cid       = excluded.cid,
+          json_body = excluded.json_body,
+          cached_at = excluded.cached_at,
+          expires_at= excluded.expires_at
+        """,
+        arguments: [
+          ownerDid,
+          scopeKey,
+          cid,
+          jsonBody,
+          cachedAtIso,
+          expiresAtIso,
         ])
     }
   }

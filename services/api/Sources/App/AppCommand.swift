@@ -41,24 +41,13 @@ struct App: AsyncParsableCommand {
       metadata: [
         "env":     .string(config.appEnv.rawValue),
         "backend": .string(config.cacheBackend.description),
+        "legacy_content_api_enabled": .string(config.enableLegacyContentAPI ? "true" : "false"),
         "port":    .string("\(listenPort)"),
       ]
     )
 
     // ── HTTP client ───────────────────────────────────────────────────────────
     let httpClient = HTTPClient(eventLoopGroupProvider: .singleton)
-
-    // ── Router ────────────────────────────────────────────────────────────────
-    let router = Router(context: AppRequestContext.self)
-    router.get("/health") { _, _ in ["status": "ok"] }
-    OAuthMetadataRoutes(oauthPublicOrigin: config.oauthPublicOrigin).register(on: router)
-
-    let authMiddleware = ATProtoAuthMiddleware(
-      httpClient: httpClient,
-      plcURL: config.atprotoPLCURL,
-      logger: logger
-    )
-    let protected = router.group().add(middleware: authMiddleware)
 
     // ── App bootstrap — branching on cache backend ────────────────────────────
     //
@@ -72,16 +61,12 @@ struct App: AsyncParsableCommand {
       case .sqlite(let path):
         // ── Local mode: SQLite, no Postgres pool ────────────────────────────
         let cache = try SQLiteCache(path: path, logger: logger)
-        let discoveryService = DiscoveryService(
-          httpClient: httpClient, cache: cache,
-          plcURL: config.atprotoPLCURL, logger: logger
+        let router = AppRouterBuilder.router(
+          config: config,
+          httpClient: httpClient,
+          cache: cache,
+          logger: logger
         )
-        let contentService = ContentService(
-          httpClient: httpClient, cache: cache, logger: logger,
-          plcURL: config.atprotoPLCURL
-        )
-        DiscoveryRoutes(discoveryService: discoveryService).register(on: protected)
-        ContentRoutes(contentService: contentService).register(on: protected)
 
         let app = Application(
           router: router,
@@ -95,16 +80,12 @@ struct App: AsyncParsableCommand {
         let pgPool = PostgresClient(configuration: pgConfig, backgroundLogger: logger)
 
         let cache = SupabaseCache(pool: pgPool, logger: logger)
-        let discoveryService = DiscoveryService(
-          httpClient: httpClient, cache: cache,
-          plcURL: config.atprotoPLCURL, logger: logger
+        let router = AppRouterBuilder.router(
+          config: config,
+          httpClient: httpClient,
+          cache: cache,
+          logger: logger
         )
-        let contentService = ContentService(
-          httpClient: httpClient, cache: cache, logger: logger,
-          plcURL: config.atprotoPLCURL
-        )
-        DiscoveryRoutes(discoveryService: discoveryService).register(on: protected)
-        ContentRoutes(contentService: contentService).register(on: protected)
 
         let app = Application(
           router: router,

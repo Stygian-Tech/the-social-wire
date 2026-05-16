@@ -51,7 +51,48 @@ jobs:
           flags: web
           token: ${{ secrets.CODECOV_TOKEN }}
 
-  # Swift API (`services/api`) CI disabled for now — restore a `test-api` job when ready.
+  test-api:
+    name: Swift API (Package)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/api
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache Swift PM build artifacts
+        uses: actions/cache@v4
+        with:
+          path: services/api/.build
+          key: ${{ runner.os }}-swift-api-${{ hashFiles('services/api/Package.resolved') }}
+
+      - uses: swiftlang/setup-swift@v2
+        with:
+          swift-version: "6.0"
+
+      - name: Build
+        run: swift build
+
+      - name: Test with coverage
+        run: swift test --enable-code-coverage
+
+      - name: Export lcov from llvm-cov
+        run: |
+          set -euo pipefail
+          PROF="$(find "$PWD/.build" -path '**/codecov/default.profdata' | head -n 1)"
+          BIN="$(find "$PWD/.build" -type f -perm -111 -name SocialWireAPIPackageTests | grep -v dSYM | head -n 1)"
+          test -n "$PROF"
+          test -n "$BIN"
+          llvm-cov export -format=lcov -instr-profile="$PROF" "$BIN" > coverage.lcov
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          files: services/api/coverage.lcov
+          flags: api
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+  # Swift API CI restored — see `services/api/README.md`
 
   # ── iOS build (stub — wired via Xcode Cloud in Phase 1b) ──────────────────
   # Uncomment when using a macOS runner:

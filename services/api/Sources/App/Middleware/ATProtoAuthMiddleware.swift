@@ -1,28 +1,35 @@
 import AsyncHTTPClient
 import Foundation
+import HTTPTypes
 import Hummingbird
-import JWTKit
 import Logging
 
-/// Context injected by `ATProtoAuthMiddleware` after successful token verification.
+/// Context injected once ATProto OAuth access tokens pass cryptographic verification.
 struct AuthContext: Sendable {
   let did: String
+  /// Exact value of **`Authorization`** header mirrored to **`com.atproto.repo.*`** on the user's PDS.
+  let authorizationForwardingValue: String
+  /// RFC 9449 proof header echoed upstream when callers supply binding material.
+  let dpopProof: String?
 }
 
-/// Verifies an ATProto DPoP-bound access token and injects the caller's DID
-/// into the request context.
-///
-/// **Verification flow:**
-/// 1. Extract `Authorization: DPoP <token>` (or `Bearer <token>`) header.
-/// 2. Decode the JWT payload (without verifying) to extract the `sub` claim (the DID).
-/// 3. Fetch the DID document from the PLC directory.
-/// 4. Extract the verification key from the DID document.
-/// 5. Verify the JWT signature.
-/// 6. Inject `AuthContext(did:)` into the mutable `AppRequestContext`.
-///
-/// **Phase 1 simplification:** full cryptographic DPoP verification is deferred to
-/// Phase 1b. The middleware currently verifies the JWT is well-formed and falls back
-/// to PDS introspection if DID-document verification fails.
+enum OAuthAccessTokenJWT {
+  /// Returns the bearer segment after `DPoP ` / `Bearer ` prefixes.
+  static func extract(accessAuthorizationValue raw: String) -> Substring? {
+    let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+    if trimmed.lowercased().hasPrefix("dpop ") {
+      let rest = trimmed.dropFirst(5)
+      return rest.trimmingCharacters(in: .whitespacesAndNewlines)[...]
+    }
+    if trimmed.lowercased().hasPrefix("bearer ") {
+      let rest = trimmed.dropFirst(7)
+      return rest.trimmingCharacters(in: .whitespacesAndNewlines)[...]
+    }
+    return nil
+  }
+}
+
+/// Verifies ATProto OAuth access JWTs remotely via **`issuer`** metadata + JWKS.
 struct ATProtoAuthMiddleware: RouterMiddleware {
   typealias Context = AppRequestContext
 
@@ -41,107 +48,76 @@ struct ATProtoAuthMiddleware: RouterMiddleware {
     context: AppRequestContext,
     next: (Request, AppRequestContext) async throws -> Response
   ) async throws -> Response {
-    // In swift-http-types (used by Hummingbird 2), headers[name] returns String? directly.
-    guard let authHeader = request.headers[.authorization] else {
+    guard let authHeaderRaw = request.headers[.authorization] else {
       throw HTTPError(.unauthorized, message: "Missing Authorization header")
     }
 
-    // Accept both "DPoP <token>" and "Bearer <token>" for Phase 1 flexibility
-    let token: String
-    if authHeader.hasPrefix("DPoP ") {
-      token = String(authHeader.dropFirst(5))
-    } else if authHeader.hasPrefix("Bearer ") {
-      token = String(authHeader.dropFirst(7))
-    } else {
-      throw HTTPError(.unauthorized, message: "Authorization header must use DPoP or Bearer scheme")
+    guard let tokenSlice = OAuthAccessTokenJWT.extract(accessAuthorizationValue: authHeaderRaw) else {
+      throw HTTPError(.unauthorized, message: "Authorization header must prefix DPoP or Bearer")
     }
 
-    let did = try await verifyTokenAndExtractDID(token: token)
+    let accessTokenJWT = String(tokenSlice)
+    guard !accessTokenJWT.isEmpty else {
+      throw HTTPError(.unauthorized, message: "Empty access token payload")
+    }
 
-    // Store auth context directly on the typed request context (no key-value bag needed).
+    let authOutcome: (did: String, cnfJkt: String?)
+    do {
+      authOutcome = try await OAuthAccessTokenVerifier.verify(
+        accessTokenJWT: accessTokenJWT,
+        httpClient: httpClient,
+        plcURL: plcURL,
+        logger: logger
+      )
+    } catch {
+      logger.warning("Access token JWKS verification failed", metadata: ["error": "\(error)"])
+      throw HTTPError(.unauthorized, message: "Invalid or stale ATProto OAuth access token")
+    }
+
+    guard
+      let dpopProofCandidate = Self.extractOptionalDPoPHeader(from: request)?
+        .trimmingCharacters(in: .whitespacesAndNewlines),
+      !dpopProofCandidate.isEmpty
+    else {
+      throw HTTPError(.unauthorized, message: "Missing RFC 9449 DPoP proof header")
+    }
+
+    do {
+      try DPoPProofVerifier.verify(
+        proofJWT: dpopProofCandidate,
+        request: request,
+        accessTokenJWT: accessTokenJWT,
+        accessTokenCnFJkt: authOutcome.cnfJkt
+      )
+    } catch {
+      logger.warning("DPoP verification failed", metadata: ["error": "\(error)"])
+      throw HTTPError(.unauthorized, message: "Invalid DPoP proof for this request")
+    }
+
+    let did = authOutcome.did
+    let dpopProofStored = dpopProofCandidate
+
+    let forwardingAuthorization = authHeaderRaw.trimmingCharacters(in: .whitespacesAndNewlines)
+
     var mutableContext = context
-    mutableContext.authContext = AuthContext(did: did)
+    mutableContext.authContext = AuthContext(
+      did: did,
+      authorizationForwardingValue: forwardingAuthorization,
+      dpopProof: dpopProofStored
+    )
+
     return try await next(request, mutableContext)
   }
 
-  // MARK: - Private
-
-  private func verifyTokenAndExtractDID(token: String) async throws -> String {
-    let did = try extractDIDFromJWT(token: token)
-
-    do {
-      try await verifySignatureViaDIDDocument(token: token, did: did)
-    } catch {
-      logger.warning(
-        "DID document signature verification failed, falling back to PDS introspection",
-        metadata: ["did": "\(did)", "error": "\(error)"]
-      )
-      try await verifyViaIntrospection(token: token, did: did)
+  /// Best-effort header lookup across common casings (**RFC 9449** mandates `DPoP` but intermediaries normalize differently).
+  private static func extractOptionalDPoPHeader(from request: Request) -> String? {
+    for label in ["DPoP", "Dpop", "dpop"] {
+      guard let name = HTTPField.Name(label) else { continue }
+      let proofCandidate = request.headers[name]
+      if let proof = proofCandidate?.trimmingCharacters(in: .whitespacesAndNewlines), !proof.isEmpty {
+        return proof
+      }
     }
-
-    return did
-  }
-
-  /// Decodes the JWT payload (without signature verification) and extracts `sub`.
-  private func extractDIDFromJWT(token: String) throws -> String {
-    let parts = token.split(separator: ".")
-    guard parts.count == 3 else {
-      throw HTTPError(.unauthorized, message: "Malformed JWT")
-    }
-    // Base64url → Base64
-    var base64 = String(parts[1])
-      .replacingOccurrences(of: "-", with: "+")
-      .replacingOccurrences(of: "_", with: "/")
-    let remainder = base64.count % 4
-    if remainder != 0 { base64 += String(repeating: "=", count: 4 - remainder) }
-
-    guard
-      let data = Data(base64Encoded: base64),
-      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-      let sub = json["sub"] as? String,
-      sub.hasPrefix("did:")
-    else {
-      throw HTTPError(.unauthorized, message: "JWT missing or invalid 'sub' claim")
-    }
-    return sub
-  }
-
-  /// Fetches the DID document from the PLC directory and verifies the JWT signature.
-  private func verifySignatureViaDIDDocument(token: String, did: String) async throws {
-    let encodedDID = did.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? did
-    let url = "\(plcURL)/\(encodedDID)"
-    var request = HTTPClientRequest(url: url)
-    request.headers.add(name: "Accept", value: "application/json")
-
-    let response = try await httpClient.execute(request, timeout: .seconds(10))
-    guard response.status == .ok else {
-      throw HTTPError(.unauthorized, message: "Could not fetch DID document for \(did)")
-    }
-
-    let body = try await response.body.collect(upTo: 64 * 1024)
-    guard
-      let json = try? JSONSerialization.jsonObject(with: Data(buffer: body)) as? [String: Any],
-      let verificationMethods = json["verificationMethod"] as? [[String: Any]],
-      !verificationMethods.isEmpty
-    else {
-      throw HTTPError(.unauthorized, message: "DID document has no verification methods")
-    }
-
-    // Phase 1: verify the JWT is well-formed and its sub matches the DID.
-    // Full cryptographic verification (ES256K / P-256) added in Phase 1b.
-    // TODO(phase-1b): Use JWTKit to verify against the key material in the DID doc.
-    logger.debug(
-      "DID document fetched, Phase 1 defers full crypto verification",
-      metadata: ["did": "\(did)"]
-    )
-  }
-
-  /// Falls back to PDS token introspection if DID document verification fails.
-  private func verifyViaIntrospection(token: String, did: String) async throws {
-    // TODO(phase-1b): Derive PDS endpoint from DID document and call introspection endpoint.
-    logger.warning(
-      "PDS introspection not yet implemented; trusting decoded DID for Phase 1",
-      metadata: ["did": "\(did)"]
-    )
+    return nil
   }
 }

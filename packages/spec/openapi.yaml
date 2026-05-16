@@ -3,18 +3,17 @@ openapi: "3.1.0"
 info:
   title: The Social Wire API
   description: |
-    Discovery, content retrieval, and caching service for The Social Wire reader.
+    Lightweight Swift **Social Wire gateway** that ships beside the Next.js web app:
 
-    This API does NOT own user organization data (folders, publication prefs) — those live as
-    ATProto records on the user's own PDS. This service handles:
-    - Scanning a user's follow graph and discovering standard.site publications
-    - Returning cached discovery results
-    - Fetching paginated entry feeds and entry detail for publications
-    - Normalizing / sanitizing entry content for safe rendering
+    - **OAuth client metadata** mirroring SPA + ATS clients (`/oauth/client-metadata.json`, `/ios-client-metadata.json`) with scopes sourced from **`ATProtoOAuthScopes`** so tunnel/App Runner deployments expose stable discovery URLs.
 
-    **Authentication:** All endpoints (except health check) require an ATProto DPoP-bound access
-    token passed as `Authorization: DPoP <token>`. The service verifies the token against the
-    user's PDS and extracts the DID for use as the caller identity.
+    - **Authenticated sync accelerators**: `Authorization: Bearer` or `Authorization: DPoP` access JWTs forwarded to ATProto repos, guarded by cryptographic JWKS verification **and** a mandatory RFC 9449 `DPoP` proof binding (`cnf.jkt` enforced when emitted by the issuer).
+
+    - **Performance caches**: short TTL blobs in **`pds_repo_record_cache`** (`Supabase`/SQLite); legacy **`discovery_cache` / `entry_cache`** persist only behind **`ENABLE_LEGACY_CONTENT_API`**.
+
+    LATRHTTPS merge APIs deliberately stay out—continue using the hosted web helpers for LATR flows.
+
+    **Legacy flag:** Setting `ENABLE_LEGACY_CONTENT_API` to `1/true/yes/on` re-registers `/discovery/**`, `/publications/**`, `/entries/**` for phased migrations only.
   version: "1.0.0"
   contact:
     name: Stygian Tech
@@ -32,13 +31,15 @@ servers:
 
 components:
   securitySchemes:
-    DPoP:
+    ATProtoOAuthDPoP:
       type: http
-      scheme: dpop
+      scheme: bearer
+      bearerFormat: JWT
       description: |
-        ATProto DPoP-bound access token. Pass as `Authorization: DPoP <token>`.
-        The service verifies the token signature using the key published in the user's
-        DID document and extracts the DID as the caller identity.
+        ATProto access JWT (`Authorization: Bearer` or `Authorization: DPoP` prefix extracting the JWT).
+        The gateway resolves issuer metadata to JWKS before trusting `sub`.
+
+        **`DPoP` header**: supply `DPoP: <jwt proof>` whose **`ath`** claim covers the ASCII access JWT and whose **`cnf`** hash matches **`cnf.jkt`** whenever the issuer embeds confirmation.
 
   schemas:
     Error:
@@ -52,7 +53,7 @@ components:
         message:
           type: string
           description: Human-readable error description.
-          example: Invalid or expired DPoP token.
+          example: Unauthorized — invalid ATProto JWT or malformed DPoP proof.
 
     DiscoveredPublication:
       type: object
@@ -134,7 +135,7 @@ components:
 
   responses:
     Unauthorized:
-      description: Missing or invalid DPoP token.
+      description: Missing/invalid bearer token **or** DPoP mismatch.
       content:
         application/json:
           schema:
@@ -153,7 +154,7 @@ components:
             $ref: "#/components/schemas/Error"
 
 security:
-  - DPoP: []
+  - ATProtoOAuthDPoP: []
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 
@@ -177,6 +178,119 @@ paths:
                     type: string
                     example: ok
 
+  /oauth/client-metadata.json:
+    get:
+      operationId: getOAuthWebClientMetadata
+      summary: Web OAuth discoverable metadata
+      description: |
+        Same semantic fields as [`apps/web/public/client-metadata.json`](/apps/web/public/client-metadata.json).
+        Hosted under `/oauth/` so multiple metadata documents can coexist on one origin.
+      security: []
+      tags: [OAuth]
+      responses:
+        "200":
+          description: Web client registration JSON (`application_type: web`).
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /ios-client-metadata.json:
+    get:
+      operationId: getOAuthIosClientMetadata
+      summary: Native ATS OAuth metadata
+      description: Mirrors [`apps/web/public/ios-client-metadata.json`](/apps/web/public/ios-client-metadata.json).
+      security: []
+      tags: [OAuth]
+      responses:
+        "200":
+          description: Native client registration JSON (`application_type: native`).
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /v1/sync/preferences:
+    get:
+      operationId: getPreferencesEnvelope
+      summary: Canonical `com.thesocialwire.preferences` envelope
+      description: |
+        Proxies cached `repo.getRecord` results for lexical `preferences` keyed by DID (token `sub`).
+        Supports `If-None-Match` using the lexical `cid` as the weak validator when available.
+      tags: [Sync]
+      parameters:
+        - name: If-None-Match
+          in: header
+          schema:
+            type: string
+          description: Optional revision token echoed from earlier `etag` payload.
+      responses:
+        "200":
+          description: Preferences lexical record plus metadata.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [record, etag, cid, revision, cachedAt]
+                properties:
+                  record:
+                    type: object
+                    description: Serialized `preferences` lexical `value` subtree.
+                  etag:
+                    type: string
+                    nullable: true
+                  cid:
+                    type: string
+                    nullable: true
+                  revision:
+                    type: string
+                    nullable: true
+                  cachedAt:
+                    type: string
+                    format: date-time
+        "304":
+          description: Matches `If-None-Match` against stored revision.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "502":
+          $ref: "#/components/responses/InternalError"
+
+  /v1/pds/cache/record:
+    get:
+      operationId: getCachedRepoRecordBlob
+      summary: Cached repo record JSON by collection + `rkey`
+      description: |
+        Generic short TTL accelerator for deterministic single-record reads (collection+rkey scopes).
+      tags: [Sync]
+      parameters:
+        - name: collection
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: rkey
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: If-None-Match
+          in: header
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Serialized `repo.getRecord` blob (matching upstream JSON).
+          content:
+            application/json:
+              schema:
+                type: object
+        "304":
+          description: Stored revision unchanged for supplied `If-None-Match`.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   # ── Discovery ──────────────────────────────────────────────────────────────
 
   /discovery/refresh:
@@ -184,6 +298,8 @@ paths:
       operationId: refreshDiscovery
       summary: Refresh publication discovery
       description: |
+        **`ENABLE_LEGACY_CONTENT_API` must be `true`** or this route responds `404`.
+
         Triggers a re-scan of the authenticated user's follow graph to find
         standard.site publications. Results are stored in the discovery cache.
 
@@ -207,6 +323,8 @@ paths:
                     example: "Discovery refresh started. Poll GET /discovery/{did} for results."
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Route disabled when legacy flag is unset.
         "500":
           $ref: "#/components/responses/InternalError"
 
@@ -215,6 +333,8 @@ paths:
       operationId: getDiscovery
       summary: Get cached discovery results
       description: |
+        **`ENABLE_LEGACY_CONTENT_API` must be `true`** or this handler is not wired.
+
         Returns the cached list of standard.site publications discovered from
         the given user's follow graph. The caller must be authenticated as the
         user identified by `userDid`.
@@ -258,6 +378,8 @@ paths:
       operationId: getPublicationEntries
       summary: Get paginated entry list for a publication
       description: |
+        **`ENABLE_LEGACY_CONTENT_API` must be `true`** or this handler is unavailable.
+
         Returns entries for the given publication sorted by publish time descending.
         Supports cursor-based pagination.
       tags: [Content]
@@ -308,6 +430,8 @@ paths:
       operationId: getEntry
       summary: Get a single entry with sanitized content
       description: |
+        **`ENABLE_LEGACY_CONTENT_API` must be `true`** or this handler is unavailable.
+
         Returns the full content for a single entry. Content is normalized to
         safe HTML with scripts and unsafe attributes stripped.
       tags: [Content]
@@ -335,7 +459,11 @@ paths:
 tags:
   - name: Health
     description: Service health
+  - name: OAuth
+    description: Discoverable client metadata for tunnel + hosted API origins
+  - name: Sync
+    description: Protected ATProto-backed reader accelerators
   - name: Discovery
-    description: Follow graph scanning and publication discovery
+    description: Follow graph scanning gated behind `ENABLE_LEGACY_CONTENT_API`
   - name: Content
-    description: Entry feeds and entry detail
+    description: Entry feeds gated behind `ENABLE_LEGACY_CONTENT_API`

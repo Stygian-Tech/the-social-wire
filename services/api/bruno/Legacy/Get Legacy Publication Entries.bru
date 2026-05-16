@@ -1,0 +1,17 @@
+meta {
+  name: Get Legacy Publication Entries
+  type: http
+  seq: 92
+}
+
+get {
+  url: {{baseUrl}}/publications/at_uri_placeholder/entries
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}
+

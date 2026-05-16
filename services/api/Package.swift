@@ -16,6 +16,7 @@ let package = Package(
     .package(url: "https://github.com/groue/GRDB.swift.git", from: "6.29.0"),
     // JWT / DPoP verification
     .package(url: "https://github.com/vapor/jwt-kit.git", from: "5.0.0"),
+    .package(url: "https://github.com/apple/swift-crypto.git", from: "3.14.0"),
     // Outbound HTTP (ATProto calls)
     .package(url: "https://github.com/swift-server/async-http-client.git", from: "1.21.0"),
     // Structured logging
@@ -34,6 +35,7 @@ let package = Package(
         .product(name: "PostgresNIO", package: "postgres-nio"),
         .product(name: "GRDB", package: "GRDB.swift"),
         .product(name: "JWTKit", package: "jwt-kit"),
+        .product(name: "Crypto", package: "swift-crypto"),
         .product(name: "AsyncHTTPClient", package: "async-http-client"),
         .product(name: "Logging", package: "swift-log"),
         .product(name: "ArgumentParser", package: "swift-argument-parser"),
@@ -52,6 +54,8 @@ let package = Package(
         "App",
         .product(name: "HummingbirdTesting", package: "hummingbird"),
         .product(name: "Logging", package: "swift-log"),
+        .product(name: "JWTKit", package: "jwt-kit"),
+        .product(name: "Crypto", package: "swift-crypto"),
       ],
       path: "Tests/AppTests"
     ),

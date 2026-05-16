@@ -10,7 +10,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write  # for OIDC AWS auth (optional)
+      packages: write
+      id-token: write # Depot + GHCR publishes
 
     steps:
       - uses: actions/checkout@v4
@@ -28,12 +29,18 @@ jobs:
             echo "APP_ENV=dev" >> $GITHUB_ENV
           fi
 
-      # ── Docker Hub login ────────────────────────────────────────────────────
-      - name: Log in to Docker Hub
+      - name: Configure GHCR image coordinates
+        run: |
+          OWNER_REPO_LOWER=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          echo "GHCR_IMAGE=ghcr.io/${OWNER_REPO_LOWER}/social-wire-api" >> "$GITHUB_ENV"
+
+      # ── Registry login (GHCR) ───────────────────────────────────────────────
+      - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
 
       # ── Depot build & push ──────────────────────────────────────────────────
       - uses: depot/setup-action@v1
@@ -48,8 +55,8 @@ jobs:
           file: services/api/Dockerfile
           push: true
           tags: |
-            docker.io/stygiantech/social-wire-api:${{ env.IMAGE_TAG }}
-            docker.io/stygiantech/social-wire-api:${{ github.sha }}
+            ${{ env.GHCR_IMAGE }}:${{ env.IMAGE_TAG }}
+            ${{ env.GHCR_IMAGE }}:${{ github.sha }}
           build-args: |
             APP_ENV=${{ env.APP_ENV }}
 

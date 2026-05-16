@@ -7,17 +7,8 @@ enum IosOAuthClientMetadata {
     case invalidPublicOrigin
   }
 
-  /// Space-separated scopes (must stay in sync with web `client-metadata.json` / iOS app).
-  static let scope =
-    "atproto "
-      + "repo:com.thesocialwire.folder?action=create&action=update&action=delete "
-      + "repo:com.thesocialwire.publicationPrefs?action=create&action=update&action=delete "
-      + "repo:com.thesocialwire.preferences?action=create&action=update&action=delete "
-      + "repo:com.thesocialwire.entryReadState?action=create&action=update&action=delete "
-      + "repo:com.latr.saved.external?action=create&action=update&action=delete "
-      + "repo:com.latr.saved.item?action=create&action=update&action=delete "
-      + "repo:site.standard.graph.subscription?action=create&action=update&action=delete "
-      + "repo:app.skyreader.feed.subscription?action=create&action=update&action=delete"
+  /// Space-separated scopes — kept in sync with web `client-metadata.json` via `ATProtoOAuthScopes`.
+  static var scope: String { ATProtoOAuthScopes.scope }
 
   /// Reversed domain labels for ATProto native redirect scheme hosts.
   static func nativeURLScheme(host: String) -> String {
