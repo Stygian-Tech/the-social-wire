@@ -1,0 +1,53 @@
+name: Publish GitHub Wiki
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/wiki/**"
+      - ".github/workflows/publish-wiki.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-wiki
+  cancel-in-progress: true
+
+jobs:
+  wiki:
+    runs-on: ubuntu-latest
+    steps:
+      # rsync mirrors docs/wiki into the wiki repo working tree; shallow checkout is enough.
+      - uses: actions/checkout@v4
+
+      # --delete removes wiki pages/files not present under docs/wiki/. Wiki edits committed only on
+      # the wiki remote (and never mirrored here) will be wiped on the next sync unless excluded or added to docs/wiki/.
+      - name: Sync docs/wiki to GitHub Wiki
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          REPO_ROOT="$(pwd)"
+          TMP="$(mktemp -d)"
+          cd "$TMP"
+          WIKI_REMOTE="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.wiki.git"
+          if git clone "$WIKI_REMOTE" wiki-repo 2>/dev/null; then
+            cd wiki-repo
+          else
+            mkdir wiki-repo && cd wiki-repo
+            git init
+            git remote add origin "$WIKI_REMOTE"
+          fi
+          rsync -av --delete --exclude='.git' "${REPO_ROOT}/docs/wiki/" ./
+          git add -A
+          if git diff --staged --quiet; then
+            echo "No wiki changes."
+            exit 0
+          fi
+          git commit -m "Sync wiki from docs/wiki (${GITHUB_SHA})"
+          git branch -M master
+          git push -u origin master

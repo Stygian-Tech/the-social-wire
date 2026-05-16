@@ -22,7 +22,7 @@ Web (Next.js 16.2+)     iOS/iPadOS (SwiftUI)
 ## Monorepo Structure
 
 ```
-social-wire/
+the-social-wire/
   apps/
     web/         # Next.js 16.2+ web client (Bun)
     apple/       # SwiftUI iOS/iPadOS app
@@ -35,14 +35,15 @@ social-wire/
     docker/      # docker-compose (API + Portainer + Caddy)
   docs/
     architecture/
+    wiki/        # Markdown synced to GitHub Wiki (see .github/workflows/publish-wiki.yml)
 ```
 
 ## Prerequisites
 
 | Tool | Version |
 |------|---------|
-| [Bun](https://bun.sh) | ≥ 1.2 |
-| [Swift](https://swift.org/install) | 6.1+ |
+| [Bun](https://bun.sh) | Matches root [`package.json`](package.json) `packageManager` (currently 1.3.x) |
+| [Swift](https://swift.org/install) | 6.1+ for iOS (`apps/apple`); run `swift test` locally for `services/api` |
 | [Docker](https://docker.com) | ≥ 25 |
 | [Depot CLI](https://depot.dev/docs/cli/installation) | Latest |
 | [Xcode](https://developer.apple.com/xcode/) | 16+ (for iOS) |
@@ -58,7 +59,7 @@ bun install
 # 2. Start the web app
 cd apps/web
 cp .env.example .env.local
-# Fill in .env.local
+# Optional: uncomment or set vars in .env.local (defaults work for local OAuth loopback)
 bun run dev
 ```
 
@@ -93,6 +94,7 @@ See [docs/architecture/overview.md](docs/architecture/overview.md) for the full 
 
 ## Docs
 
+- **[GitHub Wiki](https://github.com/Stygian-Tech/the-social-wire/wiki)** — curated navigation and links into this repository
 - [Architecture overview](docs/architecture/overview.md)
 - [Lexicons](docs/architecture/lexicons.md)
 - [Discovery chain](docs/architecture/discovery.md)
@@ -100,3 +102,7 @@ See [docs/architecture/overview.md](docs/architecture/overview.md) for the full 
 - [Apple app](apps/apple/README.md)
 - [Legacy service API](services/api/README.md)
 - [Lexicon reference](packages/lexicons/README.md)
+
+## License
+
+This project is licensed under the MIT License — see [LICENSE](LICENSE).

@@ -4,7 +4,7 @@ Next.js 16.2+ web client for The Social Wire, built with Bun.
 
 ## Prerequisites
 
-- [Bun](https://bun.sh) ≥ 1.2
+- [Bun](https://bun.sh) — use the version pinned in the monorepo root [`package.json`](../package.json) (`packageManager`)
 - Node.js ≥ 22 (for shadcn/ui compatibility)
 - An ATProto account (Bluesky or any PDS)
 
@@ -16,6 +16,7 @@ bun install
 
 # Start the dev server
 cd apps/web
+cp .env.example .env.local   # optional; uncomment vars as needed
 bun run dev
 ```
 
@@ -23,7 +24,7 @@ The app runs at [http://localhost:3000](http://localhost:3000).
 
 ## Environment Variables
 
-Copy `.env.local` in `apps/web` (see **Environment Variables**). No secrets are required for local ATProto OAuth loopback.
+Copy `.env.example` to `.env.local` or create `.env.local` manually (see **Environment Variables**). No secrets are required for local ATProto OAuth loopback.
 
 | Variable | Description |
 |----------|-------------|
