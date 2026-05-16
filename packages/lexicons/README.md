@@ -156,4 +156,4 @@ await agent.api.com.atproto.repo.deleteRecord({
 - Lexicon IDs are **stable**. Existing fields will not be removed or have their types changed.
 - New **optional** fields may be added in minor revisions.
 - Breaking changes require a new lexicon ID (e.g. `com.thesocialwire.folder#v2`).
-- All changes are documented in [CHANGELOG.md](./CHANGELOG.md) (to be created when first revision ships).
+- Material lexicon revisions are summarized in [CHANGELOG.md](./CHANGELOG.md).

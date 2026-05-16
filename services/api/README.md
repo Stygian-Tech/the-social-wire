@@ -57,6 +57,8 @@ cd services/api
 swift test --enable-code-coverage
 ```
 
+**CI:** GitHub Actions currently omits the dedicated Swift package job — `.github/workflows/ci.yml` keeps web verification enabled while API CI is paused. Run `swift test` locally when changing `services/api`.
+
 To view a coverage report:
 ```bash
 # After swift test, export lcov
