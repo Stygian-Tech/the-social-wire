@@ -100,7 +100,7 @@ jobs:
       - uses: swift-actions/setup-swift@v3
         with:
           # Pin a minor line — `latest` has resolved inconsistently with Swiftly and can fail the version check / build.
-          swift-version: "6.2"
+          swift-version: "6.2.4"
           # Ubuntu images often lack the Swiftly release signing key in gpg; verification then fails (swift-actions/setup-swift#798).
           skip-verify-signature: true
 
