@@ -113,11 +113,19 @@ jobs:
       - name: Export lcov from llvm-cov
         run: |
           set -euo pipefail
+          # Use the llvm-cov bundled with the active Swift toolchain (PATH may pick an older system llvm-cov on Ubuntu, which rejects Swift's profdata).
+          _swift="$(command -v swift)"
+          LLVM_COV="$(dirname "$(readlink -f "$_swift" 2>/dev/null || echo "$_swift")")/llvm-cov"
+          if [[ ! -x "$LLVM_COV" ]]; then
+            LLVM_COV="$(command -v llvm-cov)"
+          fi
+          [[ -x "$LLVM_COV" ]] || { echo "No usable llvm-cov next to swift or on PATH"; exit 1; }
+
           PROF="$(find "$PWD/.build" -path '**/codecov/default.profdata' | head -n 1)"
-          BIN="$(find "$PWD/.build" -type f -perm -111 -name SocialWireAPIPackageTests | grep -v dSYM | head -n 1)"
+          BIN="$(find "$PWD/.build" -type f -name SocialWireAPIPackageTests ! -path '*dSYM/*' -executable | head -n 1)"
           test -n "$PROF"
           test -n "$BIN"
-          llvm-cov export -format=lcov -instr-profile="$PROF" "$BIN" > coverage.lcov
+          "$LLVM_COV" export -format=lcov -instr-profile="$PROF" "$BIN" > coverage.lcov
 
       - name: Upload coverage
         uses: codecov/codecov-action@v4

@@ -91,9 +91,13 @@ Locally:
 ```bash
 cd services/api
 swift test --enable-code-coverage
+SWIFT_BIN="$(dirname "$(command -v swift)")"
+LLVM_COV="${SWIFT_BIN}/llvm-cov"
+[[ -x "$LLVM_COV" ]] || LLVM_COV="$(command -v llvm-cov)"
 PROF=$(find .build -path '**/codecov/default.profdata' | head -n 1)
-BIN=$(find .build -type f -perm -111 -name SocialWireAPIPackageTests | grep -v dSYM | head -n 1)
-llvm-cov export -format=lcov -instr-profile="$PROF" "$BIN" > coverage.lcov
+BIN=$(find .build -type f -name SocialWireAPIPackageTests ! -path '*dSYM/*' -print | while IFS= read -r f; do [[ -x "$f" ]] && echo "$f" && break; done)
+# On macOS, prefer `xcrun llvm-cov` if `"$LLVM_COV" export` complains about profile format.
+"$LLVM_COV" export -format=lcov -instr-profile="$PROF" "$BIN" > coverage.lcov
 ```
 
 ## Supabase schema
