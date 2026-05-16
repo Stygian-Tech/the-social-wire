@@ -44,6 +44,7 @@ import {
   useSubscribeToPublication,
   useUnsubscribePublication,
 } from "@/hooks/usePublications";
+import { useCachedBulkReadActions } from "@/hooks/useCachedBulkReadActions";
 import { standardSiteSubscriptionTargetFromDiscovery } from "@/lib/publicationSubscriptionMatch";
 import { isRssPublicationId } from "@/lib/rssFeedCore";
 import { cn } from "@/lib/utils";
@@ -89,6 +90,15 @@ export function PublicationSubItem({
   const refreshSkyreaderIcon = useRefreshSkyreaderSubscriptionIcon();
   const [newFolderDialogOpen, setNewFolderDialogOpen] = useState(false);
   const [unsubscribeDialogOpen, setUnsubscribeDialogOpen] = useState(false);
+  const [markAllReadDialogOpen, setMarkAllReadDialogOpen] = useState(false);
+
+  const bulkPublicationList = useMemo(() => [publication], [publication]);
+  const {
+    bulkDisabled,
+    hideReadBulkMenus,
+    applyMarkAllRead,
+    applyMarkAllUnread,
+  } = useCachedBulkReadActions(bulkPublicationList);
 
   const prefs = prefsMap.get(publication.publicationId);
   const currentFolderId = prefs?.value.folderId ?? null;
@@ -251,6 +261,28 @@ export function PublicationSubItem({
               })}
             </ContextMenuSubContent>
           </ContextMenuSub>
+          {!hideReadBulkMenus ? (
+            <>
+              <ContextMenuSeparator />
+              <ContextMenuItem
+                disabled={busy || bulkDisabled}
+                className="gap-2"
+                onClick={() => setMarkAllReadDialogOpen(true)}
+              >
+                Mark All As Read
+              </ContextMenuItem>
+              <ContextMenuItem
+                disabled={busy || bulkDisabled}
+                className="gap-2"
+                onClick={() => {
+                  applyMarkAllUnread();
+                  hapticSuccess();
+                }}
+              >
+                Mark All As Unread
+              </ContextMenuItem>
+            </>
+          ) : null}
           {sidebarTab === "following" ? (
             <>
               <ContextMenuSeparator />
@@ -334,6 +366,38 @@ export function PublicationSubItem({
               onClick={() => void confirmUnsubscribe()}
             >
               {unsubscribe.isPending ? "Unsubscribing…" : "Unsubscribe"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={markAllReadDialogOpen} onOpenChange={setMarkAllReadDialogOpen}>
+        <DialogContent showCloseButton>
+          <DialogHeader>
+            <DialogTitle>Mark All As Read?</DialogTitle>
+            <DialogDescription>
+              This marks every cached article in &quot;{publication.title}&quot; as read. Entries that
+              have not been loaded yet stay unchanged until you open them.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={busy}
+              onClick={() => setMarkAllReadDialogOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              disabled={busy || bulkDisabled}
+              onClick={() => {
+                applyMarkAllRead();
+                setMarkAllReadDialogOpen(false);
+                hapticSuccess();
+              }}
+            >
+              Mark All As Read
             </Button>
           </DialogFooter>
         </DialogContent>

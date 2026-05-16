@@ -24,6 +24,8 @@ interface EntryListProps {
   readIndicatorsEnabled: boolean;
   /** Ignored when `readIndicatorsEnabled` is false (Hidden Publications). */
   articleFilter: ArticleListFilter;
+  markEntryRead: (entryId: string) => void;
+  markEntryUnread: (entryId: string) => void;
 }
 
 type VirtualPaneProps = {
@@ -35,6 +37,8 @@ type VirtualPaneProps = {
   hasNextPage: boolean;
   isFetchingNextPage: boolean;
   fetchNextPage: () => void;
+  markEntryRead: (entryId: string) => void;
+  markEntryUnread: (entryId: string) => void;
 };
 
 /**
@@ -50,6 +54,8 @@ function EntryListVirtualPane({
   hasNextPage,
   isFetchingNextPage,
   fetchNextPage,
+  markEntryRead,
+  markEntryUnread,
 }: VirtualPaneProps) {
   const parentRef = useRef<HTMLDivElement>(null);
 
@@ -118,6 +124,8 @@ function EntryListVirtualPane({
                 onSelect={onSelectEntry}
                 isRead={isEntryRead(entry.entryId)}
                 readIndicatorsEnabled={readIndicatorsEnabled}
+                onMarkEntryRead={markEntryRead}
+                onMarkEntryUnread={markEntryUnread}
               />
             </div>
           );
@@ -134,6 +142,8 @@ export function EntryList({
   isEntryRead,
   readIndicatorsEnabled,
   articleFilter,
+  markEntryRead,
+  markEntryUnread,
 }: EntryListProps) {
   const { data, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage } =
     useEntries(pubId);
@@ -233,6 +243,8 @@ export function EntryList({
       hasNextPage={hasNextPage}
       isFetchingNextPage={isFetchingNextPage}
       fetchNextPage={fetchNextPage}
+      markEntryRead={markEntryRead}
+      markEntryUnread={markEntryUnread}
     />
   );
 }

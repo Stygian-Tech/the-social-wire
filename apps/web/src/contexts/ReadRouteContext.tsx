@@ -31,6 +31,9 @@ export type ReadRouteContextValue = {
   /** `all` when Hidden Publications is selected; otherwise {@link articleListFilter}. */
   effectiveArticleListFilter: ArticleListFilter;
   markEntryRead: (entryId: string) => void;
+  markEntryUnread: (entryId: string) => void;
+  markEntriesRead: (entryIds: string[]) => void;
+  markEntriesUnread: (entryIds: string[]) => void;
   isEntryRead: (entryId: string) => boolean;
 };
 
@@ -107,6 +110,88 @@ export function ReadRouteProvider({ children }: { children: ReactNode }) {
     [isHiddenFolderContext, pdsClient]
   );
 
+  const markEntryUnread = useCallback(
+    (entryId: string) => {
+      if (isHiddenFolderContext) return;
+      setReadMap((prev) => {
+        if (!prev[entryId]) return prev;
+        const next = { ...prev };
+        delete next[entryId];
+        if (typeof window !== "undefined") {
+          saveReadState(window.localStorage, next);
+        }
+        if (pdsClient) {
+          void pdsClient.deleteEntryReadState(entryId).catch(() => {
+            /* best-effort sync */
+          });
+        }
+        return next;
+      });
+    },
+    [isHiddenFolderContext, pdsClient]
+  );
+
+  const markEntriesRead = useCallback(
+    (entryIds: string[]) => {
+      if (isHiddenFolderContext || entryIds.length === 0) return;
+      const unique = [...new Set(entryIds)];
+      setReadMap((prev) => {
+        const readAt = new Date().toISOString();
+        const next = { ...prev };
+        const toSync: string[] = [];
+        for (const id of unique) {
+          if (!next[id]) {
+            next[id] = readAt;
+            toSync.push(id);
+          }
+        }
+        if (toSync.length === 0) return prev;
+        if (typeof window !== "undefined") {
+          saveReadState(window.localStorage, next);
+        }
+        if (pdsClient) {
+          for (const id of toSync) {
+            void pdsClient.putEntryReadState(id, readAt).catch(() => {
+              /* best-effort sync */
+            });
+          }
+        }
+        return next;
+      });
+    },
+    [isHiddenFolderContext, pdsClient]
+  );
+
+  const markEntriesUnread = useCallback(
+    (entryIds: string[]) => {
+      if (isHiddenFolderContext || entryIds.length === 0) return;
+      const unique = [...new Set(entryIds)];
+      setReadMap((prev) => {
+        const next = { ...prev };
+        const removed: string[] = [];
+        for (const id of unique) {
+          if (next[id]) {
+            delete next[id];
+            removed.push(id);
+          }
+        }
+        if (removed.length === 0) return prev;
+        if (typeof window !== "undefined") {
+          saveReadState(window.localStorage, next);
+        }
+        if (pdsClient) {
+          for (const id of removed) {
+            void pdsClient.deleteEntryReadState(id).catch(() => {
+              /* best-effort sync */
+            });
+          }
+        }
+        return next;
+      });
+    },
+    [isHiddenFolderContext, pdsClient]
+  );
+
   const isEntryRead = useCallback(
     (entryId: string) => {
       if (isHiddenFolderContext) return false;
@@ -125,6 +210,9 @@ export function ReadRouteProvider({ children }: { children: ReactNode }) {
       effectiveArticleListFilter,
       isEntryRead,
       markEntryRead,
+      markEntryUnread,
+      markEntriesRead,
+      markEntriesUnread,
     }),
     [
       resolvedSelectedFolderUri,
@@ -133,6 +221,9 @@ export function ReadRouteProvider({ children }: { children: ReactNode }) {
       effectiveArticleListFilter,
       isEntryRead,
       markEntryRead,
+      markEntryUnread,
+      markEntriesRead,
+      markEntriesUnread,
     ]
   );
 

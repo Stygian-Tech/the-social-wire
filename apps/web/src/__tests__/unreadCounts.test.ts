@@ -2,10 +2,11 @@ import { describe, expect, it } from "bun:test";
 
 import type { InfiniteData } from "@tanstack/react-query";
 
-import type { EntriesPage } from "@/hooks/useEntries";
+import { ENTRIES_QUERY_KEY, type EntriesPage } from "@/hooks/useEntries";
 import type { EntryListItem } from "@/lib/atprotoClient";
 import {
   countUnreadCachedEntries,
+  distinctCachedEntryIdsForPublications,
   flattenCachedInfiniteEntries,
   sumUnreadForPublications,
 } from "@/lib/unreadCounts";
@@ -54,6 +55,45 @@ describe("countUnreadCachedEntries", () => {
   it("returns zero when all read", () => {
     const a = makeEntry("at://did/a/x/1");
     expect(countUnreadCachedEntries([a], () => true)).toBe(0);
+  });
+});
+
+describe("distinctCachedEntryIdsForPublications", () => {
+  it("returns distinct entry IDs across publications", () => {
+    const pubDid = "did:plc:alice";
+    const otherDid = "did:plc:bob";
+    const e1 = makeEntry("at://did/a/site.standard.entry/1");
+    const e2 = makeEntry("at://did/a/site.standard.entry/2");
+    const eDup = makeEntry("at://did/a/site.standard.entry/1");
+    const store = new Map<string, unknown>();
+    store.set(JSON.stringify(ENTRIES_QUERY_KEY(pubDid)), {
+      pages: [{ entries: [e1, e2], cursor: undefined }],
+      pageParams: [undefined],
+    } satisfies InfiniteData<EntriesPage>);
+    store.set(JSON.stringify(ENTRIES_QUERY_KEY(otherDid)), {
+      pages: [{ entries: [eDup], cursor: undefined }],
+      pageParams: [undefined],
+    } satisfies InfiniteData<EntriesPage>);
+    const queryClient = {
+      getQueryData: <T>(key: readonly unknown[]) =>
+        store.get(JSON.stringify(key)) as T | undefined,
+    };
+    const ids = distinctCachedEntryIdsForPublications(queryClient, [
+      { publicationId: pubDid },
+      { publicationId: otherDid },
+    ]);
+    expect(ids).toEqual([e1.entryId, e2.entryId]);
+  });
+
+  it("returns empty when cache is missing", () => {
+    const queryClient = {
+      getQueryData: () => undefined,
+    };
+    expect(
+      distinctCachedEntryIdsForPublications(queryClient, [
+        { publicationId: "did:plc:none" },
+      ])
+    ).toEqual([]);
   });
 });
 
