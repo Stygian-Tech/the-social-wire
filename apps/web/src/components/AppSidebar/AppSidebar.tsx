@@ -208,13 +208,12 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
           ) : null}
         </div>
         <div className="no-scrollbar flex min-h-0 min-w-0 flex-1 flex-col gap-0 overflow-y-auto overflow-x-hidden group-data-[collapsible=icon]:overflow-hidden">
-          <SidebarGroup>
+          <SidebarGroup className="px-2 pb-2 pt-4">
             <SidebarMenu className="gap-4">
               {sidebarListsLoading ? (
                 <SidebarSkeleton count={5} />
               ) : publicationTab === "subscribed" ? (
                 <>
-                  <div className="h-1" aria-hidden />
                   <SidebarMenuItem>
                     <SidebarMenuButton
                       type="button"
@@ -285,7 +284,6 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
                 </>
               ) : (
                 <>
-                  <div className="h-1" aria-hidden />
                   <CollapsibleSidebarSubSection
                     title="Publications"
                     expanded={effectiveExpandedKeys.has(SIDEBAR_SEC_PUBLICATIONS)}
