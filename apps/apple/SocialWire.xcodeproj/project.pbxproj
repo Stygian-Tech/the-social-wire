@@ -3,23 +3,8 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 77;
+	objectVersion = 70;
 	objects = {
-
-/* Begin PBXBuildFile section */
-		101A16FB78FE92824BAF6055 /* PDSClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A675E11F1A26B59560EAE5F /* PDSClient.swift */; };
-		1A65B9B455FB8D1CC1F25893 /* FolderListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C134CE4D8EBE602031F0B71C /* FolderListView.swift */; };
-		34D9B9E42C0D648BE11E9B72 /* PDSClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F2C48AF2F64CD5237611016 /* PDSClientTests.swift */; };
-		3EDB7AA1513A34AE9911C843 /* ATProtoOAuthService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C37104F3B9129302C2ABD3E2 /* ATProtoOAuthService.swift */; };
-		56D74989E96F45B757A20ED8 /* EntryListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7EB8E9E0472E9615C71C010B /* EntryListView.swift */; };
-		7D12D1D5F41F97958827E8CD /* KeychainWrapperTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82BB4C4A4BB4503677502F0A /* KeychainWrapperTests.swift */; };
-		87838A6E7D232C2C29644289 /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7838AF71D472A8C8554758A /* LoginView.swift */; };
-		90AC6E3AAAFB4D9D27C4D604 /* KeychainWrapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07E89878D6BBEE87E67A545B /* KeychainWrapper.swift */; };
-		A05C608ECA1B317B2849824B /* MainSplitView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B48AC876294987D2805D3F67 /* MainSplitView.swift */; };
-		A92071EDA0EB1DE21DDE5164 /* EntryDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5656B6F074C41270FC62A1E5 /* EntryDetailView.swift */; };
-		D9EB0DE79B853B9928E31E67 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B130EEBB7B57DEF2A52F62CF /* ContentView.swift */; };
-		EE2C82AEB4BB3821747DDA88 /* SocialWireApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 473C18A73FEB8FB20E7CEB8F /* SocialWireApp.swift */; };
-/* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
 		3BF178C4E9E297659055B7A4 /* PBXContainerItemProxy */ = {
@@ -32,55 +17,16 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		07E89878D6BBEE87E67A545B /* KeychainWrapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainWrapper.swift; sourceTree = "<group>"; };
-		0A675E11F1A26B59560EAE5F /* PDSClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PDSClient.swift; sourceTree = "<group>"; };
-		0F2C48AF2F64CD5237611016 /* PDSClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PDSClientTests.swift; sourceTree = "<group>"; };
 		14CC81DF3BFE4EF7634B03B7 /* SocialWire.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = SocialWire.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		2AF6374301739191A87437BD /* SocialWireTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = SocialWireTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		473C18A73FEB8FB20E7CEB8F /* SocialWireApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocialWireApp.swift; sourceTree = "<group>"; };
-		5656B6F074C41270FC62A1E5 /* EntryDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntryDetailView.swift; sourceTree = "<group>"; };
-		5BE47BCFC4EE9B2BEA29FA81 /* SocialWire.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = SocialWire.entitlements; sourceTree = "<group>"; };
-		7EB8E9E0472E9615C71C010B /* EntryListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntryListView.swift; sourceTree = "<group>"; };
-		82BB4C4A4BB4503677502F0A /* KeychainWrapperTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainWrapperTests.swift; sourceTree = "<group>"; };
-		A3D2F91A77F8A6C3A9B5F87B /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
-		B130EEBB7B57DEF2A52F62CF /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
-		B48AC876294987D2805D3F67 /* MainSplitView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainSplitView.swift; sourceTree = "<group>"; };
-		C134CE4D8EBE602031F0B71C /* FolderListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolderListView.swift; sourceTree = "<group>"; };
-		C37104F3B9129302C2ABD3E2 /* ATProtoOAuthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ATProtoOAuthService.swift; sourceTree = "<group>"; };
-		D7838AF71D472A8C8554758A /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		12C57582DB94FD18F3EC79D8 /* SocialWire */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = SocialWire; sourceTree = "<group>"; };
+		5B92829F91E4D0C345978E6D /* SocialWireTests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = SocialWireTests; sourceTree = "<group>"; };
+/* End PBXFileSystemSynchronizedRootGroup section */
+
 /* Begin PBXGroup section */
-		007C2012A907CE4A8E2DF7D3 /* SocialWire */ = {
-			isa = PBXGroup;
-			children = (
-				A3D2F91A77F8A6C3A9B5F87B /* Info.plist */,
-				5BE47BCFC4EE9B2BEA29FA81 /* SocialWire.entitlements */,
-				224D168E3055CC3A1354EAE8 /* App */,
-				0F64621BD470D441D6EFAB31 /* Services */,
-				16130906ADAAE3457CED43E6 /* Utilities */,
-				16E633E23C91BCD9D6F8410B /* Views */,
-			);
-			path = SocialWire;
-			sourceTree = "<group>";
-		};
-		0F64621BD470D441D6EFAB31 /* Services */ = {
-			isa = PBXGroup;
-			children = (
-				C37104F3B9129302C2ABD3E2 /* ATProtoOAuthService.swift */,
-				0A675E11F1A26B59560EAE5F /* PDSClient.swift */,
-			);
-			path = Services;
-			sourceTree = "<group>";
-		};
-		16130906ADAAE3457CED43E6 /* Utilities */ = {
-			isa = PBXGroup;
-			children = (
-				07E89878D6BBEE87E67A545B /* KeychainWrapper.swift */,
-			);
-			path = Utilities;
-			sourceTree = "<group>";
-		};
 		16B1C4090EA2E3A6C8B4FFEC /* Products */ = {
 			isa = PBXGroup;
 			children = (
@@ -90,43 +36,13 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
-		16E633E23C91BCD9D6F8410B /* Views */ = {
-			isa = PBXGroup;
-			children = (
-				B130EEBB7B57DEF2A52F62CF /* ContentView.swift */,
-				5656B6F074C41270FC62A1E5 /* EntryDetailView.swift */,
-				7EB8E9E0472E9615C71C010B /* EntryListView.swift */,
-				C134CE4D8EBE602031F0B71C /* FolderListView.swift */,
-				D7838AF71D472A8C8554758A /* LoginView.swift */,
-				B48AC876294987D2805D3F67 /* MainSplitView.swift */,
-			);
-			path = Views;
-			sourceTree = "<group>";
-		};
-		224D168E3055CC3A1354EAE8 /* App */ = {
-			isa = PBXGroup;
-			children = (
-				473C18A73FEB8FB20E7CEB8F /* SocialWireApp.swift */,
-			);
-			path = App;
-			sourceTree = "<group>";
-		};
 		5321356260CE58FEDCBE0D25 = {
 			isa = PBXGroup;
 			children = (
-				007C2012A907CE4A8E2DF7D3 /* SocialWire */,
-				97276549595C85C741B747C5 /* SocialWireTests */,
+				12C57582DB94FD18F3EC79D8 /* SocialWire */,
+				5B92829F91E4D0C345978E6D /* SocialWireTests */,
 				16B1C4090EA2E3A6C8B4FFEC /* Products */,
 			);
-			sourceTree = "<group>";
-		};
-		97276549595C85C741B747C5 /* SocialWireTests */ = {
-			isa = PBXGroup;
-			children = (
-				82BB4C4A4BB4503677502F0A /* KeychainWrapperTests.swift */,
-				0F2C48AF2F64CD5237611016 /* PDSClientTests.swift */,
-			);
-			path = SocialWireTests;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -141,6 +57,9 @@
 			buildRules = (
 			);
 			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				12C57582DB94FD18F3EC79D8 /* SocialWire */,
 			);
 			name = SocialWire;
 			packageProductDependencies = (
@@ -160,6 +79,9 @@
 			dependencies = (
 				A6E971DB7C9B8BE787505516 /* PBXTargetDependency */,
 			);
+			fileSystemSynchronizedGroups = (
+				5B92829F91E4D0C345978E6D /* SocialWireTests */,
+			);
 			name = SocialWireTests;
 			packageProductDependencies = (
 			);
@@ -177,11 +99,11 @@
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
 					04B75DC532B5AA58ED16C643 = {
-						DevelopmentTeam = "";
+						DevelopmentTeam = G39TU2R26A;
 						ProvisioningStyle = Automatic;
 					};
 					D83A0F330826A5911B112A74 = {
-						DevelopmentTeam = "";
+						DevelopmentTeam = G39TU2R26A;
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -196,7 +118,6 @@
 			);
 			mainGroup = 5321356260CE58FEDCBE0D25;
 			minimizedProjectReferenceProxies = 1;
-			preferredProjectObjectVersion = 77;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
@@ -211,16 +132,6 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				3EDB7AA1513A34AE9911C843 /* ATProtoOAuthService.swift in Sources */,
-				D9EB0DE79B853B9928E31E67 /* ContentView.swift in Sources */,
-				A92071EDA0EB1DE21DDE5164 /* EntryDetailView.swift in Sources */,
-				56D74989E96F45B757A20ED8 /* EntryListView.swift in Sources */,
-				1A65B9B455FB8D1CC1F25893 /* FolderListView.swift in Sources */,
-				90AC6E3AAAFB4D9D27C4D604 /* KeychainWrapper.swift in Sources */,
-				87838A6E7D232C2C29644289 /* LoginView.swift in Sources */,
-				A05C608ECA1B317B2849824B /* MainSplitView.swift in Sources */,
-				101A16FB78FE92824BAF6055 /* PDSClient.swift in Sources */,
-				EE2C82AEB4BB3821747DDA88 /* SocialWireApp.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -228,8 +139,6 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				7D12D1D5F41F97958827E8CD /* KeychainWrapperTests.swift in Sources */,
-				34D9B9E42C0D648BE11E9B72 /* PDSClientTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -254,7 +163,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.stygiantech.socialwire.tests;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.samclemente.the-social-wire.tests";
 				PRODUCT_NAME = SocialWireTests;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -299,7 +208,7 @@
 				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 1;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = G39TU2R26A;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
@@ -332,7 +241,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.stygiantech.socialwire.tests;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.samclemente.the-social-wire.tests";
 				PRODUCT_NAME = SocialWireTests;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -348,15 +257,11 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				INFOPLIST_FILE = SocialWire/Info.plist;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.news";
-				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.stygiantech.socialwire;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.samclemente.the-social-wire";
 				PRODUCT_NAME = SocialWire;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -400,7 +305,7 @@
 				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 1;
 				DEBUG_INFORMATION_FORMAT = dwarf;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = G39TU2R26A;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
@@ -438,15 +343,11 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				INFOPLIST_FILE = SocialWire/Info.plist;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.news";
-				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.stygiantech.socialwire;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.samclemente.the-social-wire";
 				PRODUCT_NAME = SocialWire;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";

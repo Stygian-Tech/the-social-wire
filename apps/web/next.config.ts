@@ -25,6 +25,10 @@ const nextConfig: NextConfig = {
         source: "/client-metadata.json",
         headers: [{ key: "Access-Control-Allow-Origin", value: "*" }],
       },
+      {
+        source: "/ios-client-metadata.json",
+        headers: [{ key: "Access-Control-Allow-Origin", value: "*" }],
+      },
     ];
   },
 };

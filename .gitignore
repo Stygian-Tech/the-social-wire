@@ -17,6 +17,7 @@ dist/
 .build/
 *.xcuserdata
 *.xcworkspace/xcuserdata
+**/xcuserdata/
 DerivedData/
 
 # Environment

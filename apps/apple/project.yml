@@ -1,6 +1,7 @@
 name: SocialWire
 options:
   minimumXcodeGenVersion: 2.43.0
+  defaultSourceDirectoryType: syncedFolder
   deploymentTarget:
     iOS: "17.0"
 settings:
@@ -8,7 +9,7 @@ settings:
     SWIFT_VERSION: 6.0
     MARKETING_VERSION: 1.0
     CURRENT_PROJECT_VERSION: 1
-    DEVELOPMENT_TEAM: ""
+    DEVELOPMENT_TEAM: G39TU2R26A
     CODE_SIGN_STYLE: Automatic
 targets:
   SocialWire:
@@ -19,21 +20,31 @@ targets:
     info:
       path: SocialWire/Info.plist
       properties:
+        CFBundleDisplayName: The Social Wire
         CFBundleURLTypes:
-          - CFBundleURLName: com.stygiantech.socialwire.oauth
+          - CFBundleURLName: com.samclemente.the-social-wire.oauth
             CFBundleURLSchemes:
-              - thesocialwire
+              - app.thesocialwire
         LSRequiresIPhoneOS: true
+        UIApplicationSupportsIndirectInputEvents: true
+        UIRequiresFullScreen: true
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.stygiantech.socialwire
+        PRODUCT_BUNDLE_IDENTIFIER: com.samclemente.the-social-wire
         PRODUCT_NAME: SocialWire
+        TARGETED_DEVICE_FAMILY: "1,2"
         CODE_SIGN_ENTITLEMENTS: SocialWire/SocialWire.entitlements
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.news
-        INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
-        INFOPLIST_KEY_UILaunchScreen_Generation: YES
-        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
-        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
   SocialWireTests:
     type: bundle.unit-test
     platform: iOS
@@ -43,7 +54,7 @@ targets:
       - target: SocialWire
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.stygiantech.socialwire.tests
+        PRODUCT_BUNDLE_IDENTIFIER: com.samclemente.the-social-wire.tests
         PRODUCT_NAME: SocialWireTests
         GENERATE_INFOPLIST_FILE: YES
         TEST_HOST: "$(BUILT_PRODUCTS_DIR)/SocialWire.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/SocialWire"

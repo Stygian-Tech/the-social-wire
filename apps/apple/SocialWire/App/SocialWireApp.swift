@@ -2,17 +2,18 @@ import SwiftUI
 
 @main
 struct SocialWireApp: App {
-    @StateObject private var authService = ATProtoOAuthService()
+    @State private var appModel = SocialWireAppModel()
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
-                .environmentObject(authService)
+            RootView()
+                .environment(appModel)
+                .tint(.indigo)
+                .task {
+                    await appModel.restoreSession()
+                }
                 .onOpenURL { url in
-                    // Handle ATProto OAuth callback redirect
-                    Task {
-                        await authService.handleCallbackURL(url)
-                    }
+                    Task { await appModel.handleOAuthCallback(url) }
                 }
         }
     }
