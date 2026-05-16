@@ -70,6 +70,8 @@ jobs:
         with:
           # Swiftly-managed toolchain (swift-actions/setup-swift v3); pin ≥ 6.2 for transitive packages (e.g. swift-log 1.12+).
           swift-version: "latest"
+          # Ubuntu images often lack the Swiftly release signing key in gpg; verification then fails (swift-actions/setup-swift#798).
+          skip-verify-signature: true
 
       - name: Build
         run: swift build
