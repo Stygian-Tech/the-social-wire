@@ -28,6 +28,7 @@ export const AT_PROTO_OAUTH_SCOPES = [
   "repo:com.thesocialwire.folder?action=create&action=update&action=delete",
   "repo:com.thesocialwire.publicationPrefs?action=create&action=update&action=delete",
   "repo:com.thesocialwire.preferences?action=create&action=update&action=delete",
+  "repo:com.thesocialwire.entryReadState?action=create&action=update&action=delete",
   "repo:com.latr.saved.external?action=create&action=update&action=delete",
   "repo:com.latr.saved.item?action=create&action=update&action=delete",
   "repo:site.standard.graph.subscription?action=create&action=update&action=delete",

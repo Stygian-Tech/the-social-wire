@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EntryRow } from "./EntryRow";
@@ -9,6 +9,12 @@ import {
   sortEntryListItemsNewestFirst,
   type EntryListItem,
 } from "@/lib/atprotoClient";
+import {
+  filterEntriesForArticleFilter,
+  type ArticleListFilter,
+} from "@/lib/entryArticleFilter";
+
+export type { ArticleListFilter };
 
 interface EntryListProps {
   pubId: string;
@@ -16,52 +22,49 @@ interface EntryListProps {
   onSelectEntry: (entryId: string) => void;
   isEntryRead: (entryId: string) => boolean;
   readIndicatorsEnabled: boolean;
+  /** Ignored when `readIndicatorsEnabled` is false (Hidden Publications). */
+  articleFilter: ArticleListFilter;
 }
 
-export function EntryList({
-  pubId,
+type VirtualPaneProps = {
+  visibleEntries: EntryListItem[];
+  selectedEntryId: string | null;
+  onSelectEntry: (entryId: string) => void;
+  isEntryRead: (entryId: string) => boolean;
+  readIndicatorsEnabled: boolean;
+  hasNextPage: boolean;
+  isFetchingNextPage: boolean;
+  fetchNextPage: () => void;
+};
+
+/**
+ * Isolated virtual list so we can remount it when the filter changes and reset
+ * TanStack Virtual measurements (avoids overlapping rows / stray borders).
+ */
+function EntryListVirtualPane({
+  visibleEntries,
   selectedEntryId,
   onSelectEntry,
   isEntryRead,
   readIndicatorsEnabled,
-}: EntryListProps) {
-  const { data, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage } =
-    useEntries(pubId);
-
-  const allEntries: EntryListItem[] = useMemo(() => {
-    const flat = data?.pages.flatMap((p) => p.entries) ?? [];
-    return sortEntryListItemsNewestFirst(flat);
-  }, [data?.pages]);
-
+  hasNextPage,
+  isFetchingNextPage,
+  fetchNextPage,
+}: VirtualPaneProps) {
   const parentRef = useRef<HTMLDivElement>(null);
+
+  const virtualCount =
+    hasNextPage ? visibleEntries.length + 1 : visibleEntries.length;
 
   // eslint-disable-next-line react-hooks/incompatible-library -- TanStack Virtual's internal store is not React-memoizable
   const virtualizer = useVirtualizer({
-    count: hasNextPage ? allEntries.length + 1 : allEntries.length,
+    count: virtualCount,
     getScrollElement: () => parentRef.current,
     estimateSize: () => 112,
     overscan: 5,
   });
 
   const items = virtualizer.getVirtualItems();
-
-  if (isLoading && allEntries.length === 0) {
-    return (
-      <div className="space-y-2 p-4">
-        {Array.from({ length: 6 }).map((_, i) => (
-          <Skeleton key={i} className="h-28 w-full rounded-md" />
-        ))}
-      </div>
-    );
-  }
-
-  if (allEntries.length === 0) {
-    return (
-      <div className="flex h-full items-center justify-center text-sm text-muted-foreground p-8 text-center">
-        No entries found for this publication.
-      </div>
-    );
-  }
 
   return (
     <div ref={parentRef} className="h-full overflow-y-auto overscroll-y-contain">
@@ -70,12 +73,11 @@ export function EntryList({
         className="relative w-full"
       >
         {items.map((virtualItem) => {
-          const isLoaderRow = virtualItem.index === allEntries.length;
+          const isLoaderRow = virtualItem.index === visibleEntries.length;
 
           if (isLoaderRow) {
-            // Sentinel row: trigger next page load when visible
             if (hasNextPage && !isFetchingNextPage) {
-              fetchNextPage();
+              void fetchNextPage();
             }
             return (
               <div
@@ -88,18 +90,17 @@ export function EntryList({
                   transform: `translateY(${virtualItem.start}px)`,
                   height: virtualItem.size,
                 }}
-                className="flex items-center justify-center p-4"
+                className="flex items-center justify-center border-b border-transparent p-4"
               >
                 <Skeleton className="h-10 w-full rounded-md" />
               </div>
             );
           }
 
-          const entry = allEntries[virtualItem.index];
-          const rowKey = `${entry.entryId}:${entry.thumbnailUrl ?? ""}:${entry.thumbnailFallbackUrl ?? ""}`;
+          const entry = visibleEntries[virtualItem.index];
           return (
             <div
-              key={rowKey}
+              key={entry.entryId}
               style={{
                 position: "absolute",
                 top: 0,
@@ -109,6 +110,7 @@ export function EntryList({
               }}
               ref={virtualizer.measureElement}
               data-index={virtualItem.index}
+              data-entry-id={entry.entryId}
             >
               <EntryRow
                 entry={entry}
@@ -122,5 +124,115 @@ export function EntryList({
         })}
       </div>
     </div>
+  );
+}
+
+export function EntryList({
+  pubId,
+  selectedEntryId,
+  onSelectEntry,
+  isEntryRead,
+  readIndicatorsEnabled,
+  articleFilter,
+}: EntryListProps) {
+  const { data, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage } =
+    useEntries(pubId);
+
+  const allEntries: EntryListItem[] = useMemo(() => {
+    const flat = data?.pages.flatMap((p) => p.entries) ?? [];
+    return sortEntryListItemsNewestFirst(flat);
+  }, [data?.pages]);
+
+  const effectiveFilter: ArticleListFilter = useMemo(() => {
+    if (!readIndicatorsEnabled) return "all";
+    return articleFilter;
+  }, [readIndicatorsEnabled, articleFilter]);
+
+  const visibleEntries: EntryListItem[] = useMemo(() => {
+    return filterEntriesForArticleFilter(
+      allEntries,
+      effectiveFilter,
+      isEntryRead
+    );
+  }, [allEntries, effectiveFilter, isEntryRead]);
+
+  /** Unread: remount when membership changes (mark read removes a row). All: stable per pub + filter only. */
+  const virtualPaneKey = useMemo(() => {
+    if (effectiveFilter === "unread") {
+      return `${pubId}:unread:${visibleEntries.map((e) => e.entryId).join("\x1e")}`;
+    }
+    return `${pubId}:${effectiveFilter}`;
+  }, [pubId, effectiveFilter, visibleEntries]);
+
+  useEffect(() => {
+    if (effectiveFilter !== "unread" || !readIndicatorsEnabled) return;
+    if (!hasNextPage || isFetchingNextPage) return;
+    if (visibleEntries.length > 0) return;
+    if (allEntries.length === 0 || isLoading) return;
+    void fetchNextPage();
+  }, [
+    effectiveFilter,
+    readIndicatorsEnabled,
+    hasNextPage,
+    isFetchingNextPage,
+    visibleEntries.length,
+    allEntries.length,
+    isLoading,
+    fetchNextPage,
+  ]);
+
+  if (isLoading && allEntries.length === 0) {
+    return (
+      <div className="space-y-2 p-4">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <Skeleton key={i} className="h-28 w-full rounded-md" />
+        ))}
+      </div>
+    );
+  }
+
+  if (allEntries.length === 0) {
+    return (
+      <div className="flex h-full items-center justify-center p-8 text-center text-sm text-muted-foreground">
+        No entries found for this publication.
+      </div>
+    );
+  }
+
+  if (
+    effectiveFilter === "unread" &&
+    visibleEntries.length === 0 &&
+    allEntries.length > 0 &&
+    (hasNextPage || isFetchingNextPage)
+  ) {
+    return (
+      <div className="space-y-2 p-4">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Skeleton key={i} className="h-28 w-full rounded-md" />
+        ))}
+      </div>
+    );
+  }
+
+  if (effectiveFilter === "unread" && visibleEntries.length === 0) {
+    return (
+      <div className="flex h-full items-center justify-center p-8 text-center text-sm text-muted-foreground">
+        No unread entries for this publication.
+      </div>
+    );
+  }
+
+  return (
+    <EntryListVirtualPane
+      key={virtualPaneKey}
+      visibleEntries={visibleEntries}
+      selectedEntryId={selectedEntryId}
+      onSelectEntry={onSelectEntry}
+      isEntryRead={isEntryRead}
+      readIndicatorsEnabled={readIndicatorsEnabled}
+      hasNextPage={hasNextPage}
+      isFetchingNextPage={isFetchingNextPage}
+      fetchNextPage={fetchNextPage}
+    />
   );
 }

@@ -4,6 +4,8 @@ import {
   READ_STATE_STORAGE_KEY,
   loadReadState,
   saveReadState,
+  pickEarlierReadAt,
+  mergeReadStateMaps,
 } from "@/lib/entryReadStateStorage";
 
 describe("parseReadStateJson", () => {
@@ -29,6 +31,26 @@ describe("parseReadStateJson", () => {
 
   it("returns {} for invalid JSON", () => {
     expect(parseReadStateJson("not-json")).toEqual({});
+  });
+});
+
+describe("pickEarlierReadAt / mergeReadStateMaps", () => {
+  it("pickEarlierReadAt chooses the earlier ISO instant", () => {
+    expect(
+      pickEarlierReadAt("2026-01-02T00:00:00.000Z", "2026-01-01T12:00:00.000Z")
+    ).toBe("2026-01-01T12:00:00.000Z");
+  });
+
+  it("mergeReadStateMaps keeps earliest read per entry", () => {
+    const local = { a: "2026-01-03T00:00:00.000Z" };
+    const remote = {
+      a: "2026-01-01T00:00:00.000Z",
+      b: "2026-01-02T00:00:00.000Z",
+    };
+    expect(mergeReadStateMaps(local, remote)).toEqual({
+      a: "2026-01-01T00:00:00.000Z",
+      b: "2026-01-02T00:00:00.000Z",
+    });
   });
 });
 
