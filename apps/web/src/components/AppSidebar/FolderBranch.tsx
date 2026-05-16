@@ -1,6 +1,7 @@
 "use client";
 
 import { ChevronRight, Folder } from "lucide-react";
+import { SidebarReadBulkMenuWrap } from "./SidebarReadBulkMenuWrap";
 import {
   SidebarMenuBadge,
   SidebarMenuButton,
@@ -68,41 +69,51 @@ export function FolderBranch({
 
   return (
     <SidebarMenuItem>
-      <SidebarMenuButton
-        type="button"
-        isActive={isActive}
-        onClick={onToggleExpanded}
-        aria-expanded={expanded}
-        aria-controls={subId}
-        className={cn(
-          "gap-2",
-          folderUnread > 0 && "relative pr-8"
-        )}
+      <SidebarReadBulkMenuWrap
+        publications={publications}
+        markAllReadConfirmation={
+          <>
+            This marks every cached article in the folder &quot;{folder.name}&quot; as read.
+            Entries that have not been loaded yet stay unchanged until you open them.
+          </>
+        }
       >
-        <ChevronRight
+        <SidebarMenuButton
+          type="button"
+          isActive={isActive}
+          onClick={onToggleExpanded}
+          aria-expanded={expanded}
+          aria-controls={subId}
           className={cn(
-            "size-4 shrink-0 transition-transform",
-            expanded && "rotate-90"
+            "gap-2",
+            folderUnread > 0 && "relative pr-8"
           )}
-          aria-hidden
-        />
-        <FolderGlyph
-          icon={folder.icon}
-          iconImage={folder.iconImage}
-          name={folder.name}
-        />
-        <span className="min-w-0 flex-1 truncate text-left">{folder.name}</span>
-        {nameSuffix ? (
-          <span className="text-muted-foreground shrink-0 text-[10px] leading-none">
-            {nameSuffix}
-          </span>
-        ) : null}
-        {folderUnread > 0 ? (
-          <SidebarMenuBadge aria-label={`${folderUnread} unread`}>
-            {folderUnread}
-          </SidebarMenuBadge>
-        ) : null}
-      </SidebarMenuButton>
+        >
+          <ChevronRight
+            className={cn(
+              "size-4 shrink-0 transition-transform",
+              expanded && "rotate-90"
+            )}
+            aria-hidden
+          />
+          <FolderGlyph
+            icon={folder.icon}
+            iconImage={folder.iconImage}
+            name={folder.name}
+          />
+          <span className="min-w-0 flex-1 truncate text-left">{folder.name}</span>
+          {nameSuffix ? (
+            <span className="text-muted-foreground shrink-0 text-[10px] leading-none">
+              {nameSuffix}
+            </span>
+          ) : null}
+          {folderUnread > 0 ? (
+            <SidebarMenuBadge aria-label={`${folderUnread} unread`}>
+              {folderUnread}
+            </SidebarMenuBadge>
+          ) : null}
+        </SidebarMenuButton>
+      </SidebarReadBulkMenuWrap>
       {expanded ? (
         <SidebarMenuSub id={subId} aria-label={folder.name} className="mt-1.5">
           {publications.length === 0 ? (

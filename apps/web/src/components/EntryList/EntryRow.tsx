@@ -1,6 +1,12 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import { thumbnailImageSrcAttempts } from "@/lib/publicResourceUrl";
 import { cn } from "@/lib/utils";
 import type { EntryListItem } from "@/lib/atprotoClient";
@@ -11,6 +17,8 @@ interface EntryRowProps {
   onSelect: (entryId: string) => void;
   isRead: boolean;
   readIndicatorsEnabled: boolean;
+  onMarkEntryRead: (entryId: string) => void;
+  onMarkEntryUnread: (entryId: string) => void;
 }
 
 export function EntryRow({
@@ -19,6 +27,8 @@ export function EntryRow({
   onSelect,
   isRead,
   readIndicatorsEnabled,
+  onMarkEntryRead,
+  onMarkEntryUnread,
 }: EntryRowProps) {
   const date = new Date(entry.publishedAt);
   const formattedDate = date.toLocaleDateString(undefined, {
@@ -43,7 +53,7 @@ export function EntryRow({
     thumbAttempts.length > 0 && attemptIdx >= thumbAttempts.length;
   const showThumb = Boolean(activeThumbSrc) && !thumbsExhausted;
 
-  return (
+  const rowButton = (
     <button
       type="button"
       onClick={() => onSelect(entry.entryId)}
@@ -109,5 +119,34 @@ export function EntryRow({
         </span>
       </span>
     </button>
+  );
+
+  if (!readIndicatorsEnabled) {
+    return rowButton;
+  }
+
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger className="flex w-full min-w-0 outline-none">
+        {rowButton}
+      </ContextMenuTrigger>
+      <ContextMenuContent className="min-w-[11rem]">
+        {!isRead ? (
+          <ContextMenuItem
+            className="gap-2"
+            onClick={() => onMarkEntryRead(entry.entryId)}
+          >
+            Mark As Read
+          </ContextMenuItem>
+        ) : (
+          <ContextMenuItem
+            className="gap-2"
+            onClick={() => onMarkEntryUnread(entry.entryId)}
+          >
+            Mark As Unread
+          </ContextMenuItem>
+        )}
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }

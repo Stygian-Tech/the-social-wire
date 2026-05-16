@@ -919,6 +919,20 @@ export class PDSClient {
     });
   }
 
+  /** Best-effort delete; record may already be absent on the PDS. */
+  async deleteEntryReadState(subjectUri: string): Promise<void> {
+    const rkey = await latrItemRkeyFromSubjectUri(subjectUri);
+    try {
+      await this.agent.api.com.atproto.repo.deleteRecord({
+        repo: this.did,
+        collection: COLLECTION_ENTRY_READ_STATE,
+        rkey,
+      });
+    } catch {
+      /* record may already be absent */
+    }
+  }
+
   /** Joins wrappers with queue rows for read-later browsing. */
   async listMergedLatrSaves(signal?: AbortSignal): Promise<MergedLatrSave[]> {
     const externals = await this.listLatrSavedExternals(signal);

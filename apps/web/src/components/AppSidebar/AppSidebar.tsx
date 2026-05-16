@@ -32,6 +32,7 @@ import { usePrefetchSidebarPublicationEntries } from "@/hooks/usePrefetchSidebar
 import { usePublicationSidebarData } from "@/hooks/usePublicationSidebarData";
 import { useSidebarUnreadCounts } from "@/hooks/useSidebarUnreadCounts";
 import { useReadRoute } from "@/contexts/ReadRouteContext";
+import { useReadSidebarScopeOptional } from "@/contexts/ReadSidebarScopeContext";
 import { useViewerProfile } from "@/hooks/useViewerProfile";
 import {
   rkeyFromURI,
@@ -46,6 +47,7 @@ import {
   PublicationSubItem,
   type PublicationSidebarTab,
 } from "./PublicationSubItem";
+import { SidebarReadBulkMenuWrap } from "./SidebarReadBulkMenuWrap";
 
 type PublicationTab = "subscribed" | "following";
 
@@ -137,6 +139,27 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
     publicationsForUnread,
     isEntryRead
   );
+
+  const readSidebarScope = useReadSidebarScopeOptional();
+
+  useEffect(() => {
+    readSidebarScope?.setPublicationsInSidebarTab(publicationsForUnread);
+  }, [readSidebarScope, publicationsForUnread]);
+
+  const allFolderedPublicationsForBulk = useMemo(() => {
+    const seen = new Set<string>();
+    const list: DiscoveredPublication[] = [];
+    for (const f of folders) {
+      const rkey = rkeyFromURI(f.uri);
+      for (const p of folderMap.get(rkey) ?? []) {
+        if (!seen.has(p.publicationId)) {
+          seen.add(p.publicationId);
+          list.push(p);
+        }
+      }
+    }
+    return list;
+  }, [folders, folderMap]);
 
   const foldersSectionUnread = useMemo(() => {
     if (publicationTab !== "subscribed") return 0;
@@ -277,27 +300,38 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
               ) : publicationTab === "subscribed" ? (
                 <>
                   <SidebarMenuItem>
-                    <SidebarMenuButton
-                      type="button"
-                      onClick={() => toggleExpanded(SIDEBAR_SEC_FOLDERS)}
-                      aria-expanded={effectiveExpandedKeys.has(SIDEBAR_SEC_FOLDERS)}
-                      className={cn(
-                        "gap-2",
-                        foldersSectionUnread > 0 && "relative pr-8"
-                      )}
+                    <SidebarReadBulkMenuWrap
+                      publications={allFolderedPublicationsForBulk}
+                      markAllReadConfirmation={
+                        <>
+                          This marks every cached article across all folders as read.
+                          Entries that have not been loaded yet stay unchanged until you open
+                          them.
+                        </>
+                      }
                     >
-                      <ChevronRight
+                      <SidebarMenuButton
+                        type="button"
+                        onClick={() => toggleExpanded(SIDEBAR_SEC_FOLDERS)}
+                        aria-expanded={effectiveExpandedKeys.has(SIDEBAR_SEC_FOLDERS)}
                         className={cn(
-                          "size-4 shrink-0 transition-transform",
-                          effectiveExpandedKeys.has(SIDEBAR_SEC_FOLDERS) && "rotate-90"
+                          "gap-2",
+                          foldersSectionUnread > 0 && "relative pr-8"
                         )}
-                        aria-hidden
-                      />
-                      <span className="min-w-0 flex-1 truncate text-left text-xs font-medium">
-                        Folders
-                      </span>
-                      <UnreadSidebarBadge count={foldersSectionUnread} />
-                    </SidebarMenuButton>
+                      >
+                        <ChevronRight
+                          className={cn(
+                            "size-4 shrink-0 transition-transform",
+                            effectiveExpandedKeys.has(SIDEBAR_SEC_FOLDERS) && "rotate-90"
+                          )}
+                          aria-hidden
+                        />
+                        <span className="min-w-0 flex-1 truncate text-left text-xs font-medium">
+                          Folders
+                        </span>
+                        <UnreadSidebarBadge count={foldersSectionUnread} />
+                      </SidebarMenuButton>
+                    </SidebarReadBulkMenuWrap>
                     {effectiveExpandedKeys.has(SIDEBAR_SEC_FOLDERS) ? (
                       <SidebarMenuSub
                         aria-label="Folders"
@@ -336,6 +370,14 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
                     expanded={effectiveExpandedKeys.has(SIDEBAR_SEC_PUBLICATIONS)}
                     onToggle={() => toggleExpanded(SIDEBAR_SEC_PUBLICATIONS)}
                     subAriaLabel="Subscribed Publications"
+                    readBulkPublications={unfolderedPubs}
+                    readBulkMarkAllReadConfirmation={
+                      <>
+                        This marks every cached article in Publications (sources not in a
+                        folder) as read. Entries that have not been loaded yet stay unchanged
+                        until you open them.
+                      </>
+                    }
                   >
                     <PublicationMenuSubEntries
                       publications={unfolderedPubs}
@@ -359,6 +401,14 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
                     expanded={effectiveExpandedKeys.has(SIDEBAR_SEC_PUBLICATIONS)}
                     onToggle={() => toggleExpanded(SIDEBAR_SEC_PUBLICATIONS)}
                     subAriaLabel="Publications From Followed Accounts"
+                    readBulkPublications={followingTabPublications}
+                    readBulkMarkAllReadConfirmation={
+                      <>
+                        This marks every cached article from publications you follow as read.
+                        Entries that have not been loaded yet stay unchanged until you open
+                        them.
+                      </>
+                    }
                   >
                     <PublicationMenuSubEntries
                       publications={followingTabPublications}
@@ -510,6 +560,8 @@ function CollapsibleSidebarSubSection({
   expanded,
   onToggle,
   subAriaLabel,
+  readBulkPublications,
+  readBulkMarkAllReadConfirmation,
   children,
 }: {
   title: string;
@@ -517,31 +569,48 @@ function CollapsibleSidebarSubSection({
   expanded: boolean;
   onToggle: () => void;
   subAriaLabel: string;
+  readBulkPublications?: DiscoveredPublication[];
+  /** Required when `readBulkPublications` is provided */
+  readBulkMarkAllReadConfirmation?: ReactNode;
   children: ReactNode;
 }) {
   const subId = `sidebar-collapsible-sub-${useId().replace(/:/g, "")}`;
 
+  const toggleButton = (
+    <SidebarMenuButton
+      type="button"
+      onClick={onToggle}
+      aria-expanded={expanded}
+      aria-controls={subId}
+      className={cn("gap-2", unreadCount > 0 && "relative pr-8")}
+    >
+      <ChevronRight
+        className={cn(
+          "size-4 shrink-0 transition-transform",
+          expanded && "rotate-90"
+        )}
+        aria-hidden
+      />
+      <span className="min-w-0 flex-1 truncate text-left text-xs font-medium">
+        {title}
+      </span>
+      <UnreadSidebarBadge count={unreadCount} />
+    </SidebarMenuButton>
+  );
+
   return (
     <SidebarMenuItem>
-      <SidebarMenuButton
-        type="button"
-        onClick={onToggle}
-        aria-expanded={expanded}
-        aria-controls={subId}
-        className={cn("gap-2", unreadCount > 0 && "relative pr-8")}
-      >
-        <ChevronRight
-          className={cn(
-            "size-4 shrink-0 transition-transform",
-            expanded && "rotate-90"
-          )}
-          aria-hidden
-        />
-        <span className="min-w-0 flex-1 truncate text-left text-xs font-medium">
-          {title}
-        </span>
-        <UnreadSidebarBadge count={unreadCount} />
-      </SidebarMenuButton>
+      {readBulkPublications !== undefined &&
+      readBulkMarkAllReadConfirmation !== undefined ? (
+        <SidebarReadBulkMenuWrap
+          publications={readBulkPublications}
+          markAllReadConfirmation={readBulkMarkAllReadConfirmation}
+        >
+          {toggleButton}
+        </SidebarReadBulkMenuWrap>
+      ) : (
+        toggleButton
+      )}
       {expanded ? (
         <SidebarMenuSub
           id={subId}
