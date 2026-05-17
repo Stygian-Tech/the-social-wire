@@ -4,6 +4,8 @@
 # working directory name when running `supabase init`.
 project_id = "the-social-wire"
 # Hosted project: run `supabase link` from the repo root to associate the CLI with your dashboard project (needed for some flows).
+
+[api]
 enabled = true
 # Port to use for the API URL.
 port = 54321

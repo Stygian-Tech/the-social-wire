@@ -1,4 +1,5 @@
-# Default app name for local `fly deploy`; CI passes `--app` from secrets instead.
+# Default app name; CI passes `--app` from GitHub secrets.
+# Monorepo: deploy with `fly deploy ./services/api` from repo root (see README + deploy.yml).
 app = "social-wire-api"
 primary_region = "iad"
 

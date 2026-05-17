@@ -27,7 +27,6 @@ jobs:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: |
           set -euo pipefail
-          cd services/api
           if [ "${{ github.ref_name }}" = "main" ]; then
             APP="${{ secrets.FLY_APP_PROD }}"
           else
@@ -37,7 +36,7 @@ jobs:
             echo '::error::Missing Fly app name — set repository secrets FLY_APP_PROD and FLY_APP_DEV.'
             exit 1
           fi
-          flyctl deploy --app "${APP}" --remote-only
+          flyctl deploy ./services/api --app "${APP}" --remote-only
 
   # ── Web deploy (Vercel handles this via its GitHub integration) ────────────
   # Vercel auto-deploys on push to main (prod) and dev (preview).
