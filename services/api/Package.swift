@@ -44,9 +44,8 @@ let package = Package(
       ],
       path: "Sources/App",
       swiftSettings: [
-        // GRDB 6.x has not yet fully adopted Swift 6 strict concurrency;
-        // allow these warnings to be treated as expected.
         .swiftLanguageMode(.v6),
+        .unsafeFlags(["-warnings-as-errors"]),
       ]
     ),
     .testTarget(
@@ -58,7 +57,11 @@ let package = Package(
         .product(name: "JWTKit", package: "jwt-kit"),
         .product(name: "Crypto", package: "swift-crypto"),
       ],
-      path: "Tests/AppTests"
+      path: "Tests/AppTests",
+      swiftSettings: [
+        .swiftLanguageMode(.v6),
+        .unsafeFlags(["-warnings-as-errors"]),
+      ]
     ),
   ]
 )

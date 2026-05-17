@@ -1,6 +1,8 @@
 services:
   api:
-    image: docker.io/stygiantech/social-wire-api:${IMAGE_TAG:-dev}
+    build:
+      context: ../../services/api
+      dockerfile: Dockerfile
     ports:
       - "8080:8080"
     env_file: .env

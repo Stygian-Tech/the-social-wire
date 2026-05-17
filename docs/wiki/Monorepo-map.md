@@ -13,7 +13,7 @@ the-social-wire/
     lexicons/     # com.thesocialwire.* (and related) lexicons
     spec/         # OpenAPI for HTTP surfaces
   infra/
-    docker/       # docker-compose (API + Caddy)
+    docker/       # docker-compose — builds API from services/api + Caddy
   docs/
     architecture/ # narrative docs
     wiki/         # markdown synced to this GitHub Wiki (via Actions)

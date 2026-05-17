@@ -82,23 +82,18 @@ curl -sS http://127.0.0.1:8080/oauth/client-metadata.json | jq .
 
 Never commit bearer material—use Bruno secret variables locally.
 
-## Running tests / coverage
+## Running tests
 
-Default CI runs on GitHub Actions (`test-api` job) with `swift test --enable-code-coverage` followed by **`llvm-cov export`** uploads tagged `codecov` **`api`**. The job clears a stale `*/debug/codecov` tree before testing (avoid empty profdata with cached `.build`), uses the Swift toolchain’s **`llvm-profdata` / `llvm-cov`** (not Ubuntu’s), and merges **`*.profraw`** into **`default.profdata`** when Swift leaves only raw profiles (parallel XCTest / Swift Testing).
+CI runs `swift test` in the `test-api` job (`.github/workflows/ci.yml`). The package builds **App** and **AppTests** with **`-warnings-as-errors`**, so any compiler warning in those targets fails the build.
 
 Locally:
 
 ```bash
 cd services/api
-swift test --enable-code-coverage
-SWIFT_BIN="$(dirname "$(command -v swift)")"
-LLVM_COV="${SWIFT_BIN}/llvm-cov"
-[[ -x "$LLVM_COV" ]] || LLVM_COV="$(command -v llvm-cov)"
-PROF=$(find .build -path '**/codecov/default.profdata' | head -n 1)
-BIN=$(find .build -type f -name SocialWireAPIPackageTests ! -path '*dSYM/*' -print | while IFS= read -r f; do [[ -x "$f" ]] && echo "$f" && break; done)
-# On macOS, prefer `xcrun llvm-cov` if `"$LLVM_COV" export` complains about profile format.
-"$LLVM_COV" export -format=lcov -instr-profile="$PROF" "$BIN" > coverage.lcov
+swift test
 ```
+
+For optional local coverage and `llvm-cov` / `lcov` export, run `swift test --enable-code-coverage` and use the Swift toolchain’s `llvm-profdata` / `llvm-cov` against the `SocialWireAPIPackageTests` binary under `.build` (paths differ by platform).
 
 ## Supabase schema
 
@@ -148,11 +143,18 @@ Build a local tag:
 docker build -t social-wire-api:local services/api/
 ```
 
-## Deployment & container registry
+## Deployment (Fly.io)
 
-[`deploy.yml`](../../.github/workflows/deploy.yml):
+[`deploy.yml`](../../.github/workflows/deploy.yml) runs on pushes to **`main`** and **`dev`**: `flyctl deploy --remote-only` from this directory using [`fly.toml`](fly.toml).
 
-- Depot still builds Docker layers for speed **but publishes to GHCR** using `GITHUB_TOKEN`.
-- Canonical image refs look like **`ghcr.io/<org-or-user>/<repository>/social-wire-api:<branch-tag|sha>`** (GitHub forces lowercase URIs).
+**GitHub Actions secrets**
 
-**AWS App Runner:** swap the hosted image URI to GHCR + attach repository credentials scoped to **`read:packages`** (typically a PAT or shared deploy bot). Older Docker Hub sources can be deprecated once workloads pull GHCR exclusively.
+| Secret | Purpose |
+|--------|---------|
+| `FLY_API_TOKEN` | Deploy token from [Fly access tokens](https://fly.io/docs/flyctl/auth-token/) |
+| `FLY_APP_PROD` | Fly app name for `main` (e.g. `social-wire-api`) |
+| `FLY_APP_DEV` | Fly app name for `dev` (e.g. `social-wire-api-dev`) |
+
+Create both apps in your Fly org (`fly apps create …`), then set **`SUPABASE_DATABASE_URL`**, **`APP_ENV`** (`prod` / `dev`), and any other runtime vars with `fly secrets set` (or the dashboard). **`OAUTH_PUBLIC_ORIGIN`** should match the HTTPS URL clients use for OAuth metadata when it differs from the default Fly hostname.
+
+Local smoke: `fly deploy` from `services/api` or use **`infra/docker`** compose, which builds this Dockerfile instead of pulling a registry image.

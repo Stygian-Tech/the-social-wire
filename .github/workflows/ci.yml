@@ -6,6 +6,11 @@ on:
   pull_request:
     branches: [main, dev]
 
+# Avoid redundant runs stacking on rapid pushes; latest run wins.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # Path gates — branch protection must allow skipped jobs (or use separate workflows per surface).
   changes:
@@ -25,6 +30,7 @@ jobs:
           filters: |
             web:
               - 'apps/web/**'
+              - 'packages/**'
               - 'package.json'
               - 'bun.lock'
               - 'turbo.json'
@@ -50,7 +56,8 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          # Match root `packageManager` so CI doesn’t break on a future `latest`.
+          bun-version: 1.3.14
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -62,7 +69,7 @@ jobs:
       - name: Lint
         run: bunx turbo lint --filter=web
 
-      - name: Test with coverage
+      - name: Test
         run: bunx turbo test --filter=web
         env:
           NEXT_PUBLIC_APP_ENV: test
@@ -72,13 +79,6 @@ jobs:
         env:
           NEXT_PUBLIC_APP_ENV: test
           NEXT_PUBLIC_ATPROTO_CLIENT_ID: test-client
-
-      - name: Upload coverage
-        uses: codecov/codecov-action@v4
-        with:
-          files: apps/web/coverage/lcov.info
-          flags: web
-          token: ${{ secrets.CODECOV_TOKEN }}
 
   test-api:
     name: Swift API (Package)
@@ -95,7 +95,8 @@ jobs:
         uses: actions/cache@v4
         with:
           path: services/api/.build
-          key: ${{ runner.os }}-swift-api-swift62-${{ hashFiles('services/api/Package.resolved') }}
+          # Include toolchain pin: reusing .build across Swift minor bumps can corrupt incremental state.
+          key: ${{ runner.os }}-swift-api-swift-6.2.4-${{ hashFiles('services/api/Package.resolved') }}
 
       - uses: swift-actions/setup-swift@v3
         with:
@@ -104,74 +105,8 @@ jobs:
           # Ubuntu images often lack the Swiftly release signing key in gpg; verification then fails (swift-actions/setup-swift#798).
           skip-verify-signature: true
 
-      - name: Build
-        run: swift build
-
-      - name: Test with coverage
-        run: |
-          set -euo pipefail
-          # Drop stale codecov trees so incremental/cached .build cannot leave tests thinking coverage is fresh without writing profdata.
-          while IFS= read -r -d '' d; do rm -rf "$d"; done < <(find "$PWD/.build" -type d -path '*/debug/codecov' -print0 2>/dev/null || true)
-          swift test --enable-code-coverage
-
-      - name: Export lcov from llvm-cov
-        run: |
-          set -euo pipefail
-          _swift="$(command -v swift)"
-          _tooldir="$(dirname "$(readlink -f "$_swift" 2>/dev/null || echo "$_swift")")"
-          # Toolchain LLVM — Ubuntu PATH often includes an incompatible system llvm-cov/llvm-profdata.
-          LLVM_COV="${_tooldir}/llvm-cov"
-          [[ -x "$LLVM_COV" ]] || LLVM_COV="$(command -v llvm-cov)"
-          [[ -x "$LLVM_COV" ]] || { echo "No usable llvm-cov next to swift or on PATH"; exit 1; }
-
-          LLVM_PROFDATA="${_tooldir}/llvm-profdata"
-          [[ -x "$LLVM_PROFDATA" ]] || LLVM_PROFDATA="$(command -v llvm-profdata || true)"
-
-          CODECOV_DIR="$(find "$PWD/.build" -type d -path '*/debug/codecov' 2>/dev/null | head -n 1)"
-          if [[ -z "${CODECOV_DIR:-}" ]]; then
-            _raw="$(find "$PWD/.build" -type f -name '*.profraw' -path '*codecov*' 2>/dev/null | head -n 1)"
-            [[ -z "$_raw" ]] || CODECOV_DIR="$(dirname "$_raw")"
-          fi
-
-          PROF=""
-          if [[ -n "${CODECOV_DIR:-}" ]]; then
-            PROF="${CODECOV_DIR}/default.profdata"
-            if [[ ! -f "$PROF" ]] && [[ -x "${LLVM_PROFDATA:-}" ]]; then
-              shopt -s nullglob
-              _profraws=( "${CODECOV_DIR}"/*.profraw )
-              shopt -u nullglob
-              if [[ ${#_profraws[@]} -gt 0 ]]; then
-                "$LLVM_PROFDATA" merge -sparse "${_profraws[@]}" -o "$PROF"
-              fi
-            fi
-          fi
-          [[ -f "$PROF" ]] || PROF="$(find "$PWD/.build" -name default.profdata -path '*codecov*' 2>/dev/null | head -n 1)"
-
-          # Linux: flat ${BINDIR}/SocialWireAPIPackageTests; skip dSYM paths on Darwin-style artifacts.
-          BINDIR="$(swift build --show-bin-path)"
-          BIN="${BINDIR}/SocialWireAPIPackageTests"
-          if [[ ! -f "$BIN" ]]; then
-            BIN="$(find "$PWD/.build" -type f -name 'SocialWireAPIPackageTests' ! -path '*dSYM/*' | head -n 1)"
-          fi
-          if [[ ! -f "$BIN" ]]; then
-            BIN="$(find "$PWD/.build" -type f -name '*PackageTests' ! -path '*dSYM/*' | head -n 1)"
-          fi
-
-          if [[ ! -f "$PROF" ]]; then
-            echo "missing codecov profdata (merge or test output absent)"
-            find "$PWD/.build" -type d -path '*codecov*' -print 2>/dev/null | head -30
-            find "$PWD/.build" -type f \( -name '*.profraw' -o -name '*.profdata' \) 2>/dev/null | head -30
-            exit 1
-          fi
-          test -n "$BIN" || { echo "missing PackageTests binary (BINDIR=$BINDIR)"; find "$BINDIR" -maxdepth 3 -type f 2>/dev/null | head -40; exit 1; }
-          "$LLVM_COV" export -format=lcov -instr-profile="$PROF" "$BIN" > coverage.lcov
-
-      - name: Upload coverage
-        uses: codecov/codecov-action@v4
-        with:
-          files: services/api/coverage.lcov
-          flags: api
-          token: ${{ secrets.CODECOV_TOKEN }}
+      - name: Test
+        run: swift test
 
   # Swift API CI restored — see `services/api/README.md`
 

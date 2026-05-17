@@ -5,7 +5,7 @@ info:
   description: |
     Lightweight Swift **Social Wire gateway** that ships beside the Next.js web app:
 
-    - **OAuth client metadata** mirroring SPA + ATS clients (`/oauth/client-metadata.json`, `/ios-client-metadata.json`) with scopes sourced from **`ATProtoOAuthScopes`** so tunnel/App Runner deployments expose stable discovery URLs.
+    - **OAuth client metadata** mirroring SPA + ATS clients (`/oauth/client-metadata.json`, `/ios-client-metadata.json`) with scopes sourced from **`ATProtoOAuthScopes`** so tunnel or Fly deployments expose stable discovery URLs.
 
     - **Authenticated sync accelerators**: `Authorization: Bearer` or `Authorization: DPoP` access JWTs forwarded to ATProto repos, guarded by cryptographic JWKS verification **and** a mandatory RFC 9449 `DPoP` proof binding (`cnf.jkt` enforced when emitted by the issuer).
 
