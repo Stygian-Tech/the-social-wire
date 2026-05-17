@@ -114,7 +114,7 @@ Operational migrations live at the repo root for the **Supabase CLI** (and optio
 
 If you use a **single** hosted project for both branches, set the same ref/password in the **DEV** and **PROD** secrets. If the dashboard is also set to auto-apply the same `supabase/migrations/` tree, disable one path so migrations are not applied twice.
 
-**Workflow wiring:** pushes to **`dev`** read **`SUPABASE_DEV_PROJECT_REF`** + **`SUPABASE_DEV_DB_PASSWORD`** only; pushes to **`main`** read the **`SUPABASE_PROD_*`** pair. Each password must be the **Postgres** password from **Database** settings for the **same** project as that branch’s ref (plain password string, not a `postgres://` URI). The workflow runs **`supabase link --skip-pooler`** so migrations use a **direct** DB connection (not the pooler host).
+**Workflow wiring:** pushes to **`dev`** read **`SUPABASE_DEV_PROJECT_REF`** + **`SUPABASE_DEV_DB_PASSWORD`** only; pushes to **`main`** read the **`SUPABASE_PROD_*`** pair. Each password must be the **Postgres** password from **Database** settings for the **same** project as that branch’s ref (plain password string, not a `postgres://` URI). CI uses the default **`supabase link`** (pooler) because **GitHub Actions** typically cannot reach Supabase **direct** DB endpoints over **IPv6**; use **`--skip-pooler`** only on networks with working IPv6 to the database.
 
 ## API reference / HTTP contract
 
