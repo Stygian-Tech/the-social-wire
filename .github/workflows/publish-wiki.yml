@@ -8,6 +8,9 @@ on:
       - ".github/workflows/publish-wiki.yml"
   workflow_dispatch:
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 permissions:
   contents: write
 
@@ -20,7 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # rsync mirrors docs/wiki into the wiki repo working tree; shallow checkout is enough.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       # --delete removes wiki pages/files not present under docs/wiki/. Wiki edits committed only on
       # the wiki remote (and never mirrored here) will be wiped on the next sync unless excluded or added to docs/wiki/.

@@ -4,6 +4,9 @@ on:
   push:
     branches: [main, dev]
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 # Latest push wins; avoid overlapping Fly deploys from rapid commits.
 concurrency:
   group: deploy-api-${{ github.workflow }}-${{ github.ref }}
@@ -17,7 +20,7 @@ jobs:
       contents: read
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: superfly/flyctl-actions/setup-flyctl@v1
 
