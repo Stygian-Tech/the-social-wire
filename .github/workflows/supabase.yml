@@ -59,7 +59,9 @@ jobs:
         with:
           version: latest
 
-      # Env uses only *_DEV_* secret names; Supabase CLI still needs SUPABASE_DB_PASSWORD (set in-script from DEV password).
+      # GitHub only has SUPABASE_DEV_DB_PASSWORD. The Supabase CLI documents SUPABASE_DB_PASSWORD for CI;
+      # any log line that says to set SUPABASE_DB_PASSWORD is from the CLI. We export it from the GitHub
+      # secret and pass --password on link/db push so the value is explicit (avoids .env / store precedence).
       - name: Link & db push (dev Supabase project)
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
@@ -84,8 +86,8 @@ jobs:
           db_pass="${db_pass%$'\n'}"
           export SUPABASE_DB_PASSWORD="${db_pass}"
           unset SUPABASE_DEV_DB_PASSWORD
-          supabase link --project-ref "${REF}" --yes
-          supabase db push --yes
+          supabase link --project-ref "${REF}" --password "$db_pass" --yes
+          supabase db push --password "$db_pass" --yes
 
   push-migrations-prod:
     name: Push migrations (production)
@@ -101,6 +103,7 @@ jobs:
         with:
           version: latest
 
+      # Same as dev: CLI mentions SUPABASE_DB_PASSWORD in errors; we set it from SUPABASE_PROD_DB_PASSWORD.
       - name: Link & db push (production Supabase project)
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
@@ -125,5 +128,5 @@ jobs:
           db_pass="${db_pass%$'\n'}"
           export SUPABASE_DB_PASSWORD="${db_pass}"
           unset SUPABASE_PROD_DB_PASSWORD
-          supabase link --project-ref "${REF}" --yes
-          supabase db push --yes
+          supabase link --project-ref "${REF}" --password "$db_pass" --yes
+          supabase db push --password "$db_pass" --yes

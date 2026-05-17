@@ -1,7 +1,7 @@
 # Default app name; CI passes `--app` from GitHub secrets.
 # Monorepo: deploy with `fly deploy ./services/api` from repo root (see README + deploy.yml).
 app = "social-wire-api"
-primary_region = "iad"
+primary_region = "ord"
 
 [build]
   dockerfile = "Dockerfile"
@@ -15,12 +15,11 @@ primary_region = "iad"
   auto_stop_machines = "stop"
   auto_start_machines = true
   min_machines_running = 0
-  processes = ["app"]
 
   [[http_service.checks]]
     interval = "30s"
     timeout = "5s"
-    grace_period = "10s"
+    grace_period = "5m"
     method = "GET"
     path = "/health"
 
