@@ -79,6 +79,10 @@ jobs:
             echo '::error::Missing repository secret SUPABASE_DEV_DB_PASSWORD.'
             exit 1
           fi
+          # Strip CR and a single trailing LF from dashboard copy-paste (avoids SASL 28P01).
+          SUPABASE_DB_PASSWORD="$(printf '%s' "$SUPABASE_DB_PASSWORD" | tr -d '\r')"
+          SUPABASE_DB_PASSWORD="${SUPABASE_DB_PASSWORD%$'\n'}"
+          export SUPABASE_DB_PASSWORD
           # Default link uses the pooler (IPv4-friendly). GitHub-hosted runners often cannot reach Supabase direct DB IPv6.
           supabase link --project-ref "${SUPABASE_DEV_PROJECT_REF}" --yes
           supabase db push --yes
@@ -117,5 +121,8 @@ jobs:
             echo '::error::Missing repository secret SUPABASE_PROD_DB_PASSWORD.'
             exit 1
           fi
+          SUPABASE_DB_PASSWORD="$(printf '%s' "$SUPABASE_DB_PASSWORD" | tr -d '\r')"
+          SUPABASE_DB_PASSWORD="${SUPABASE_DB_PASSWORD%$'\n'}"
+          export SUPABASE_DB_PASSWORD
           supabase link --project-ref "${SUPABASE_PROD_PROJECT_REF}" --yes
           supabase db push --yes

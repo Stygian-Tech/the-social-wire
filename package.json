@@ -13,7 +13,10 @@
     "lint": "turbo lint",
     "typecheck": "turbo typecheck",
     "test": "turbo test",
-    "clean": "turbo clean"
+    "clean": "turbo clean",
+    "act:ci": "bash scripts/act/run-ci.sh",
+    "act:supabase": "bash scripts/act/run-supabase-validate.sh",
+    "act:all": "bash scripts/act/run-all.sh"
   },
   "devDependencies": {
     "turbo": "2.9.14"
