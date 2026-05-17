@@ -1,0 +1,132 @@
+name: Supabase
+
+# Migrations + local validation only when Supabase assets change (or this workflow edits).
+on:
+  pull_request:
+    branches: [main, dev]
+    paths:
+      - 'supabase/**'
+      - '.github/workflows/supabase.yml'
+  push:
+    branches: [main, dev]
+    paths:
+      - 'supabase/**'
+      - '.github/workflows/supabase.yml'
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+concurrency:
+  group: supabase-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate-migrations:
+    name: Validate migrations (local Postgres)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: supabase/setup-cli@v2
+        with:
+          version: latest
+
+      - name: Start local Postgres & apply migrations
+        run: |
+          set -euo pipefail
+          supabase db start --yes
+          supabase db reset --local --yes --no-seed
+
+      - name: Stop local Supabase
+        if: always()
+        run: supabase stop --no-backup --yes || true
+
+  push-migrations-dev:
+    name: Push migrations (dev)
+    if: github.event_name == 'push' && github.ref_name == 'dev'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: supabase/setup-cli@v2
+        with:
+          version: latest
+
+      # GitHub only has SUPABASE_DEV_DB_PASSWORD. The Supabase CLI documents SUPABASE_DB_PASSWORD for CI;
+      # any log line that says to set SUPABASE_DB_PASSWORD is from the CLI. We export it from the GitHub
+      # secret and pass --password on link/db push so the value is explicit (avoids .env / store precedence).
+      - name: Link & db push (dev Supabase project)
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          REF: ${{ secrets.SUPABASE_DEV_PROJECT_REF }}
+          SUPABASE_DEV_DB_PASSWORD: ${{ secrets.SUPABASE_DEV_DB_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SUPABASE_ACCESS_TOKEN:-}" ]; then
+            echo '::error::Missing repository secret SUPABASE_ACCESS_TOKEN.'
+            exit 1
+          fi
+          if [ -z "${REF:-}" ]; then
+            echo '::error::Missing repository secret SUPABASE_DEV_PROJECT_REF.'
+            exit 1
+          fi
+          if [ -z "${SUPABASE_DEV_DB_PASSWORD:-}" ]; then
+            echo '::error::Missing repository secret SUPABASE_DEV_DB_PASSWORD.'
+            exit 1
+          fi
+          echo "::notice::db push → Supabase **dev** project ref ${REF}"
+          db_pass="$(printf '%s' "$SUPABASE_DEV_DB_PASSWORD" | tr -d '\r')"
+          db_pass="${db_pass%$'\n'}"
+          export SUPABASE_DB_PASSWORD="${db_pass}"
+          unset SUPABASE_DEV_DB_PASSWORD
+          supabase link --project-ref "${REF}" --password "$db_pass" --yes
+          supabase db push --password "$db_pass" --yes
+
+  push-migrations-prod:
+    name: Push migrations (production)
+    if: github.event_name == 'push' && github.ref_name == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: supabase/setup-cli@v2
+        with:
+          version: latest
+
+      # Same as dev: CLI mentions SUPABASE_DB_PASSWORD in errors; we set it from SUPABASE_PROD_DB_PASSWORD.
+      - name: Link & db push (production Supabase project)
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          REF: ${{ secrets.SUPABASE_PROD_PROJECT_REF }}
+          SUPABASE_PROD_DB_PASSWORD: ${{ secrets.SUPABASE_PROD_DB_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SUPABASE_ACCESS_TOKEN:-}" ]; then
+            echo '::error::Missing repository secret SUPABASE_ACCESS_TOKEN.'
+            exit 1
+          fi
+          if [ -z "${REF:-}" ]; then
+            echo '::error::Missing repository secret SUPABASE_PROD_PROJECT_REF.'
+            exit 1
+          fi
+          if [ -z "${SUPABASE_PROD_DB_PASSWORD:-}" ]; then
+            echo '::error::Missing repository secret SUPABASE_PROD_DB_PASSWORD.'
+            exit 1
+          fi
+          echo "::notice::db push → Supabase **production** project ref ${REF}"
+          db_pass="$(printf '%s' "$SUPABASE_PROD_DB_PASSWORD" | tr -d '\r')"
+          db_pass="${db_pass%$'\n'}"
+          export SUPABASE_DB_PASSWORD="${db_pass}"
+          unset SUPABASE_PROD_DB_PASSWORD
+          supabase link --project-ref "${REF}" --password "$db_pass" --yes
+          supabase db push --password "$db_pass" --yes

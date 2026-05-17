@@ -3,6 +3,11 @@ FROM swift:6.1-jammy AS builder
 
 WORKDIR /app
 
+# GRDB compiles against system SQLite headers
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends libsqlite3-dev \
+  && rm -rf /var/lib/apt/lists/*
+
 # Copy manifest first for layer caching
 COPY Package.swift Package.resolved* ./
 
@@ -23,6 +28,7 @@ RUN apt-get update \
   && apt-get install -y --no-install-recommends \
     libssl3 \
     libcurl4 \
+    libsqlite3-0 \
     ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 

@@ -97,10 +97,24 @@ For optional local coverage and `llvm-cov` / `lcov` export, run `swift test --en
 
 ## Supabase schema
 
-Operational migrations live beside infrastructure sources:
+Operational migrations live at the repo root for the **Supabase CLI** (and optionally the dashboard’s GitHub integration):
 
 - Legacy cache tables originate from the hosted Supabase project’s older migrations (`discovery_cache`, `entry_cache`).
-- Repo checkout includes [`infra/supabase/migrations/20260516144500_add_pds_repo_record_cache.sql`](../infra/supabase/migrations/20260516144500_add_pds_repo_record_cache.sql) for **`pds_repo_record_cache`**. Apply via Supabase MCP / CLI before pointing `SUPABASE_DATABASE_URL` at refreshed environments.
+- [`supabase/migrations/20260516144500_add_pds_repo_record_cache.sql`](../../supabase/migrations/20260516144500_add_pds_repo_record_cache.sql) adds **`pds_repo_record_cache`**. Apply from the **`dev`** / **`main`** branches via [`.github/workflows/supabase.yml`](../../.github/workflows/supabase.yml) (**`supabase link`** + **`supabase db push`**), or locally with the same commands after **`supabase link`**, before pointing **`SUPABASE_DATABASE_URL`** at refreshed environments.
+
+**GitHub Actions secrets** (repository → *Settings* → *Secrets and variables* → *Actions*):
+
+| Secret | Used on | Purpose |
+|--------|---------|---------|
+| `SUPABASE_ACCESS_TOKEN` | `dev`, `main` | [CLI access token](https://supabase.com/dashboard/account/tokens) for `supabase link` / `db push` |
+| `SUPABASE_DEV_PROJECT_REF` | `dev` pushes | Project ref (**Settings → General** in the Supabase dashboard) |
+| `SUPABASE_DEV_DB_PASSWORD` | `dev` pushes | Database password for that project |
+| `SUPABASE_PROD_PROJECT_REF` | `main` pushes | Production project ref |
+| `SUPABASE_PROD_DB_PASSWORD` | `main` pushes | Production database password |
+
+If you use a **single** hosted project for both branches, set the same ref/password in the **DEV** and **PROD** secrets. If the dashboard is also set to auto-apply the same `supabase/migrations/` tree, disable one path so migrations are not applied twice.
+
+**Workflow wiring:** pushes to **`dev`** read **`SUPABASE_DEV_PROJECT_REF`** + **`SUPABASE_DEV_DB_PASSWORD`** only; pushes to **`main`** read the **`SUPABASE_PROD_*`** pair. Each password must be the **Postgres** password from **Database** settings for the **same** project as that branch’s ref (plain password string, not a `postgres://` URI). CI uses the default **`supabase link`** (pooler) because **GitHub Actions** typically cannot reach Supabase **direct** DB endpoints over **IPv6**; use **`--skip-pooler`** only on networks with working IPv6 to the database.
 
 ## API reference / HTTP contract
 
@@ -145,7 +159,9 @@ docker build -t social-wire-api:local services/api/
 
 ## Deployment (Fly.io)
 
-[`deploy.yml`](../../.github/workflows/deploy.yml) runs on pushes to **`main`** and **`dev`**: `flyctl deploy --remote-only` from this directory using [`fly.toml`](fly.toml).
+[`deploy.yml`](../../.github/workflows/deploy.yml) runs on pushes to **`main`** and **`dev`**: `flyctl deploy ./services/api --remote-only` from the **repo root**, so the [build context](https://fly.io/docs/launch/monorepo/) is this package directory and [`fly.toml`](fly.toml) / `Dockerfile` resolve correctly.
+
+**Native Fly ↔ GitHub deploy:** Fly usually clones the repo and runs deploy from the **repository root**, so it looks for **`./fly.toml` at root** unless you set a **subdirectory / root directory** for the app in the Fly dashboard (name varies by UI) to **`services/api`**, or use this workflow instead of the hosted GitHub deploy.
 
 **GitHub Actions secrets**
 
@@ -157,4 +173,4 @@ docker build -t social-wire-api:local services/api/
 
 Create both apps in your Fly org (`fly apps create …`), then set **`SUPABASE_DATABASE_URL`**, **`APP_ENV`** (`prod` / `dev`), and any other runtime vars with `fly secrets set` (or the dashboard). **`OAUTH_PUBLIC_ORIGIN`** should match the HTTPS URL clients use for OAuth metadata when it differs from the default Fly hostname.
 
-Local smoke: `fly deploy` from `services/api` or use **`infra/docker`** compose, which builds this Dockerfile instead of pulling a registry image.
+Local smoke: from the **repository root**, `fly deploy ./services/api` (or `cd services/api && fly deploy`); or use **`infra/docker`** compose, which builds this Dockerfile instead of pulling a registry image.

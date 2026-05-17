@@ -8,10 +8,12 @@ the-social-wire/
     web/          # Next.js web client (Bun)
     apple/        # SwiftUI iOS/iPadOS
   services/
-    api/          # Swift / Hummingbird API package
+    api/          # Swift / Hummingbird API package (`fly.toml`, Dockerfile)
   packages/
     lexicons/     # com.thesocialwire.* (and related) lexicons
     spec/         # OpenAPI for HTTP surfaces
+  supabase/
+    migrations/   # Postgres migrations (API cache; Actions: .github/workflows/supabase.yml)
   infra/
     docker/       # docker-compose — builds API from services/api + Caddy
   docs/
