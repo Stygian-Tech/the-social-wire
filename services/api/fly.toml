@@ -9,6 +9,11 @@ primary_region = "ord"
 [env]
   PORT = "8080"
 
+# Default deploy wait is 5m; slow image pulls + rolling health on 2 machines can exceed that and
+# surface as "request canceled" from the Machines API poll. 10m matches Fly's recommended fix.
+[deploy]
+  wait_timeout = "10m"
+
 [http_service]
   internal_port = 8080
   force_https = true
@@ -18,8 +23,8 @@ primary_region = "ord"
 
   [[http_service.checks]]
     interval = "30s"
-    timeout = "5s"
-    grace_period = "5m"
+    timeout = "10s"
+    grace_period = "60s"
     method = "GET"
     path = "/health"
 
