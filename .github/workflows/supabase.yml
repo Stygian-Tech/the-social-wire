@@ -52,9 +52,6 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: read
-    env:
-      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-      SUPABASE_DEV_PROJECT_REF: ${{ secrets.SUPABASE_DEV_PROJECT_REF }}
     steps:
       - uses: actions/checkout@v6
 
@@ -62,29 +59,32 @@ jobs:
         with:
           version: latest
 
-      - name: Link & db push
+      # Env uses only *_DEV_* secret names; Supabase CLI still needs SUPABASE_DB_PASSWORD (set in-script from DEV password).
+      - name: Link & db push (dev Supabase project)
         env:
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DEV_DB_PASSWORD }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          REF: ${{ secrets.SUPABASE_DEV_PROJECT_REF }}
+          SUPABASE_DEV_DB_PASSWORD: ${{ secrets.SUPABASE_DEV_DB_PASSWORD }}
         run: |
           set -euo pipefail
           if [ -z "${SUPABASE_ACCESS_TOKEN:-}" ]; then
             echo '::error::Missing repository secret SUPABASE_ACCESS_TOKEN.'
             exit 1
           fi
-          if [ -z "${SUPABASE_DEV_PROJECT_REF:-}" ]; then
+          if [ -z "${REF:-}" ]; then
             echo '::error::Missing repository secret SUPABASE_DEV_PROJECT_REF.'
             exit 1
           fi
-          if [ -z "${SUPABASE_DB_PASSWORD:-}" ]; then
+          if [ -z "${SUPABASE_DEV_DB_PASSWORD:-}" ]; then
             echo '::error::Missing repository secret SUPABASE_DEV_DB_PASSWORD.'
             exit 1
           fi
-          # Strip CR and a single trailing LF from dashboard copy-paste (avoids SASL 28P01).
-          SUPABASE_DB_PASSWORD="$(printf '%s' "$SUPABASE_DB_PASSWORD" | tr -d '\r')"
-          SUPABASE_DB_PASSWORD="${SUPABASE_DB_PASSWORD%$'\n'}"
-          export SUPABASE_DB_PASSWORD
-          # Default link uses the pooler (IPv4-friendly). GitHub-hosted runners often cannot reach Supabase direct DB IPv6.
-          supabase link --project-ref "${SUPABASE_DEV_PROJECT_REF}" --yes
+          echo "::notice::db push → Supabase **dev** project ref ${REF}"
+          db_pass="$(printf '%s' "$SUPABASE_DEV_DB_PASSWORD" | tr -d '\r')"
+          db_pass="${db_pass%$'\n'}"
+          export SUPABASE_DB_PASSWORD="${db_pass}"
+          unset SUPABASE_DEV_DB_PASSWORD
+          supabase link --project-ref "${REF}" --yes
           supabase db push --yes
 
   push-migrations-prod:
@@ -94,9 +94,6 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: read
-    env:
-      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-      SUPABASE_PROD_PROJECT_REF: ${{ secrets.SUPABASE_PROD_PROJECT_REF }}
     steps:
       - uses: actions/checkout@v6
 
@@ -104,25 +101,29 @@ jobs:
         with:
           version: latest
 
-      - name: Link & db push
+      - name: Link & db push (production Supabase project)
         env:
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_PROD_DB_PASSWORD }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          REF: ${{ secrets.SUPABASE_PROD_PROJECT_REF }}
+          SUPABASE_PROD_DB_PASSWORD: ${{ secrets.SUPABASE_PROD_DB_PASSWORD }}
         run: |
           set -euo pipefail
           if [ -z "${SUPABASE_ACCESS_TOKEN:-}" ]; then
             echo '::error::Missing repository secret SUPABASE_ACCESS_TOKEN.'
             exit 1
           fi
-          if [ -z "${SUPABASE_PROD_PROJECT_REF:-}" ]; then
+          if [ -z "${REF:-}" ]; then
             echo '::error::Missing repository secret SUPABASE_PROD_PROJECT_REF.'
             exit 1
           fi
-          if [ -z "${SUPABASE_DB_PASSWORD:-}" ]; then
+          if [ -z "${SUPABASE_PROD_DB_PASSWORD:-}" ]; then
             echo '::error::Missing repository secret SUPABASE_PROD_DB_PASSWORD.'
             exit 1
           fi
-          SUPABASE_DB_PASSWORD="$(printf '%s' "$SUPABASE_DB_PASSWORD" | tr -d '\r')"
-          SUPABASE_DB_PASSWORD="${SUPABASE_DB_PASSWORD%$'\n'}"
-          export SUPABASE_DB_PASSWORD
-          supabase link --project-ref "${SUPABASE_PROD_PROJECT_REF}" --yes
+          echo "::notice::db push → Supabase **production** project ref ${REF}"
+          db_pass="$(printf '%s' "$SUPABASE_PROD_DB_PASSWORD" | tr -d '\r')"
+          db_pass="${db_pass%$'\n'}"
+          export SUPABASE_DB_PASSWORD="${db_pass}"
+          unset SUPABASE_PROD_DB_PASSWORD
+          supabase link --project-ref "${REF}" --yes
           supabase db push --yes
