@@ -19,41 +19,35 @@ struct App: AsyncParsableCommand {
     abstract: "The Social Wire API Service"
   )
 
-  @Option(name: .long, help: "Port to bind on")
-  var port: Int = Int(ProcessInfo.processInfo.environment["PORT"] ?? "8080") ?? 8080
+  @Option(name: .long, help: "Port to bind on (overrides PORT from environment / .env)")
+  var port: Int?
 
-  @Option(name: .long, help: "Hostname to bind on")
-  var hostname: String = "0.0.0.0"
+  @Option(name: .long, help: "Hostname to bind on (overrides BIND_HOST from environment / .env)")
+  var hostname: String?
 
   mutating func run() async throws {
     var logger = Logger(label: "com.thesocialwire.api")
     logger.logLevel = .info
 
     // ── Config ────────────────────────────────────────────────────────────────
-    let config = AppConfig.fromEnvironment()
+    let environment = AppEnvironmentLoader.mergeProcessWithDotenv()
+    let config = AppConfig.fromEnvironment(environment)
+
+    let listenPort = port ?? Int(environment["PORT"] ?? "8080") ?? 8080
+    let listenHost = hostname ?? environment["BIND_HOST"] ?? "0.0.0.0"
 
     logger.info(
       "Starting Social Wire API",
       metadata: [
         "env":     .string(config.appEnv.rawValue),
         "backend": .string(config.cacheBackend.description),
-        "port":    .string("\(port)"),
+        "legacy_content_api_enabled": .string(config.enableLegacyContentAPI ? "true" : "false"),
+        "port":    .string("\(listenPort)"),
       ]
     )
 
     // ── HTTP client ───────────────────────────────────────────────────────────
     let httpClient = HTTPClient(eventLoopGroupProvider: .singleton)
-
-    // ── Router ────────────────────────────────────────────────────────────────
-    let router = Router(context: AppRequestContext.self)
-    router.get("/health") { _, _ in ["status": "ok"] }
-
-    let authMiddleware = ATProtoAuthMiddleware(
-      httpClient: httpClient,
-      plcURL: config.atprotoPLCURL,
-      logger: logger
-    )
-    let protected = router.group().add(middleware: authMiddleware)
 
     // ── App bootstrap — branching on cache backend ────────────────────────────
     //
@@ -67,20 +61,16 @@ struct App: AsyncParsableCommand {
       case .sqlite(let path):
         // ── Local mode: SQLite, no Postgres pool ────────────────────────────
         let cache = try SQLiteCache(path: path, logger: logger)
-        let discoveryService = DiscoveryService(
-          httpClient: httpClient, cache: cache,
-          plcURL: config.atprotoPLCURL, logger: logger
+        let router = AppRouterBuilder.router(
+          config: config,
+          httpClient: httpClient,
+          cache: cache,
+          logger: logger
         )
-        let contentService = ContentService(
-          httpClient: httpClient, cache: cache, logger: logger,
-          plcURL: config.atprotoPLCURL
-        )
-        DiscoveryRoutes(discoveryService: discoveryService).register(on: protected)
-        ContentRoutes(contentService: contentService).register(on: protected)
 
         let app = Application(
           router: router,
-          configuration: .init(address: .hostname(hostname, port: port))
+          configuration: .init(address: .hostname(listenHost, port: listenPort))
         )
         try await app.run()
 
@@ -90,20 +80,16 @@ struct App: AsyncParsableCommand {
         let pgPool = PostgresClient(configuration: pgConfig, backgroundLogger: logger)
 
         let cache = SupabaseCache(pool: pgPool, logger: logger)
-        let discoveryService = DiscoveryService(
-          httpClient: httpClient, cache: cache,
-          plcURL: config.atprotoPLCURL, logger: logger
+        let router = AppRouterBuilder.router(
+          config: config,
+          httpClient: httpClient,
+          cache: cache,
+          logger: logger
         )
-        let contentService = ContentService(
-          httpClient: httpClient, cache: cache, logger: logger,
-          plcURL: config.atprotoPLCURL
-        )
-        DiscoveryRoutes(discoveryService: discoveryService).register(on: protected)
-        ContentRoutes(contentService: contentService).register(on: protected)
 
         let app = Application(
           router: router,
-          configuration: .init(address: .hostname(hostname, port: port))
+          configuration: .init(address: .hostname(listenHost, port: listenPort))
         )
 
         // Run the Postgres pool and HTTP server together; cancel both on exit.

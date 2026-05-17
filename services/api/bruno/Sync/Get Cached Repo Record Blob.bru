@@ -1,0 +1,16 @@
+meta {
+  name: Get Cached Repo Record Blob
+  type: http
+  seq: 11
+}
+
+get {
+  url: {{baseUrl}}/v1/pds/cache/record?collection=com.example.fake&rkey=self
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}

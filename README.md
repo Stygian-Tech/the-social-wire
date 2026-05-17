@@ -32,7 +32,7 @@ the-social-wire/
     lexicons/    # com.thesocialwire.* ATProto lexicons
     spec/        # OpenAPI 3.1 spec (service API)
   infra/
-    docker/      # docker-compose (API + Portainer + Caddy)
+    docker/      # docker-compose — builds API from services/api + Caddy + Portainer
   docs/
     architecture/
     wiki/        # Markdown synced to GitHub Wiki (see .github/workflows/publish-wiki.yml)
@@ -44,8 +44,8 @@ the-social-wire/
 |------|---------|
 | [Bun](https://bun.sh) | Matches root [`package.json`](package.json) `packageManager` (currently 1.3.x) |
 | [Swift](https://swift.org/install) | 6.1+ for iOS (`apps/apple`); run `swift test` locally for `services/api` |
-| [Docker](https://docker.com) | ≥ 25 |
-| [Depot CLI](https://depot.dev/docs/cli/installation) | Latest |
+| [Docker](https://docker.com) | ≥ 25 (optional; local compose stack) |
+| [Fly CLI](https://fly.io/docs/flyctl/install/) | Latest (API deploys / ops) |
 | [Xcode](https://developer.apple.com/xcode/) | 16+ (for iOS) |
 
 ## Quick Start
@@ -86,9 +86,9 @@ cd apps/web && bun run test
 | Component | Where |
 |-----------|-------|
 | Web | Vercel (automatic from `main` / `dev` branches) |
-| Legacy API | AWS App Runner (two services: prod + dev) |
-| Docker images | Docker Hub (`stygiantech/social-wire-api`) |
-| CI/CD | GitHub Actions + Depot / Vercel |
+| API | Fly.io (`deploy.yml` — two Fly apps for prod + dev) |
+| Local API + TLS | `infra/docker` compose (builds `services/api` Dockerfile) |
+| CI/CD | GitHub Actions + Vercel + Fly |
 
 See [docs/architecture/overview.md](docs/architecture/overview.md) for the full architecture narrative.
 

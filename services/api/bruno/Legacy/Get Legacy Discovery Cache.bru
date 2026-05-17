@@ -1,0 +1,17 @@
+meta {
+  name: Get Legacy Discovery Cache
+  type: http
+  seq: 91
+}
+
+get {
+  url: {{baseUrl}}/discovery/did:plc_placeholder
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}
+

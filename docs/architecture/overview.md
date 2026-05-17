@@ -82,16 +82,16 @@ GitHub (source)
 GitHub Actions
        │
        ├─ build-web: bun install → turbo build → Vercel
-       └─ build-api: depot build → Docker Hub → AWS App Runner
+       └─ deploy-api: flyctl deploy (Fly.io, remote build)
 ```
 
 ### Environments
 
-| Environment | Branch | Docker tag | App Runner service |
-|-------------|--------|------------|-------------------|
-| Production | `main` | `:latest` | `social-wire-api-prod` |
-| Development | `dev` | `:dev` | `social-wire-api-dev` |
-| Local | — | `IMAGE_TAG=dev` | docker compose |
+| Environment | Branch | API hosting |
+|-------------|--------|-------------|
+| Production | `main` | Fly app from `FLY_APP_PROD` |
+| Development | `dev` | Fly app from `FLY_APP_DEV` |
+| Local | — | `swift run` / `infra/docker` compose (builds `services/api`) |
 
 ### Local Stack
 

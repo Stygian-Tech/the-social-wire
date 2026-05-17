@@ -98,4 +98,33 @@ struct AppConfigTests {
     let config = AppConfig.fromEnvironment(["APP_ENV": "staging"])
     #expect(config.appEnv == .local)
   }
+
+  @Test("OAUTH_PUBLIC_ORIGIN is nil when unset")
+  func oauthOriginUnset() {
+    let config = AppConfig.fromEnvironment([:])
+    #expect(config.oauthPublicOrigin == nil)
+  }
+
+  @Test("OAUTH_PUBLIC_ORIGIN is trimmed when set")
+  func oauthOriginSet() {
+    let config = AppConfig.fromEnvironment([
+      "OAUTH_PUBLIC_ORIGIN": "  https://tunnel.example  ",
+    ])
+    #expect(config.oauthPublicOrigin == "https://tunnel.example")
+  }
+
+  @Test("ENABLE_LEGACY_CONTENT_API defaults false")
+  func legacyDiscoveryDefaultDisabled() {
+    let config = AppConfig.fromEnvironment([:])
+    #expect(config.enableLegacyContentAPI == false)
+  }
+
+  @Test("truthy ENABLE_LEGACY_CONTENT_API variants enable legacy gates")
+  func legacyFlagTruthy() {
+    for flag in ["1", "true", "YES", "on"] {
+      let cfg = AppConfig.fromEnvironment(["ENABLE_LEGACY_CONTENT_API": flag])
+      #expect(cfg.enableLegacyContentAPI == true)
+    }
+  }
 }
+

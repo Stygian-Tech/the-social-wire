@@ -3,7 +3,7 @@ import Hummingbird
 /// Custom request context that carries per-request auth state through the middleware chain.
 ///
 /// Hummingbird 2 uses a typed context instead of a stringly-keyed storage bag.
-/// `ATProtoAuthMiddleware` sets `authContext` after verifying the DPoP token;
+/// `ATProtoAuthMiddleware` sets `authContext` after verifying the access JWT (`Bearer`/`DPoP` Authorization prefix) alongside the RFC 9449 **`DPoP`** header binding;
 /// route handlers read it to obtain the caller's DID.
 struct AppRequestContext: RequestContext {
   var coreContext: CoreRequestContextStorage

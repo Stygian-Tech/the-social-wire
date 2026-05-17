@@ -1,153 +1,160 @@
 # Social Wire API
 
-Swift/Hummingbird service that handles publication discovery and content retrieval for The Social Wire.
+Swift/Hummingbird gateway that complements the Next.js web app: publishes OAuth client-metadata for every platform caller, verifies ATProto bearer tokens + DPoP proofs, and fronts short-lived `repo.getRecord` accelerators keyed by DID.
 
 ## What this service does
 
-- **Discovery**: scans a user's ATProto follow graph and finds standard.site publications via a three-step chain (lexicon-native → profile heuristic → directory fallback)
-- **Content**: fetches paginated entry lists and entry detail from ATProto repos and standard.site feeds; sanitizes HTML before returning
-- **Cache**: stores discovery results and entry content — SQLite locally (`APP_ENV=local`) or Supabase Postgres in dev/prod (`APP_ENV=dev|prod`)
+- **OAuth surface**: exposes `GET /oauth/client-metadata.json` (SPA/Tunnel) alongside `GET /ios-client-metadata.json`; scope literals come from **`ATProtoOAuthScopes`** so Swift + Next.js stay aligned (`apps/web/public/client-metadata.json` remains the authoring reference).
+- **Authenticated sync lanes**: forwards `Authorization` + **`DPoP`** headers verbatim to ATProto repos for `GET /v1/sync/preferences` and selective `GET /v1/pds/cache/record?collection=&rkey=` reads (short TTL SQLite/Supabase cache via `pds_repo_record_cache`).
+- **Legacy reader APIs (migration only)**: follow-graph discovery (`DiscoveryService`) plus publication entry surfaces (`ContentService`) compile in-tree yet register **only** when `ENABLE_LEGACY_CONTENT_API=true` for phased cutovers without deleting code paths prematurely.
 
-**What it does NOT do**: manage folders or subscription preferences. That data lives as ATProto records in the user's own PDS — see [`packages/lexicons/`](../../packages/lexicons/README.md).
+LATRHTTPS merge APIs deliberately stay elsewhere—consume those flows through the deployed web stack.
+
+See [`packages/lexicons/`](../../packages/lexicons/README.md) for record shapes that originate on users’ own PDSes.
 
 ## Prerequisites
 
-- Swift 6.1+
-- Docker (for containerized local dev)
-- A running Supabase project — **only required for `APP_ENV=dev` or `prod`**; local mode uses SQLite with no external dependencies
+- Swift 6+
+- Docker (optional local compose)
+- Supabase Postgres project — **required for `APP_ENV=dev|prod`**; local mode persists to SQLite (`APP_ENV=local`)
 
 ## Environment variables
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `APP_ENV` | | `local` | `local` \| `dev` \| `prod` — controls which cache backend is used |
-| `SQLITE_DB_PATH` | | `./social-wire.sqlite` | Path to the SQLite file. Only used when `APP_ENV=local` |
-| `SUPABASE_DATABASE_URL` | ✅ (dev/prod) | — | Postgres connection string. Required when `APP_ENV=dev` or `prod` |
-| `PORT` | | `8080` | Port the server listens on |
-| `ATPROTO_PLC_URL` | | `https://plc.directory` | PLC directory for DID resolution |
+| `APP_ENV` | | `local` | `local` \| `dev` \| `prod` — chooses SQLite vs Postgres |
+| `SQLITE_DB_PATH` | | `./social-wire.sqlite` | SQLite backing file (`APP_ENV=local`) |
+| `SUPABASE_DATABASE_URL` | ✅ (dev/prod) | — | Postgres connection URI for Supabase workloads |
+| `ENABLE_LEGACY_CONTENT_API` | | `false` | When truthy (`1`, `true`, `yes`, `on`; case insensitive), mounts `/discovery/**`, `/publications/**`, `/entries/**` |
+| `PORT` | | `8080` | Listening port (`--port` overrides) |
+| `BIND_HOST` | | `0.0.0.0` | Listen address (`--hostname` overrides) |
+| `DOTENV_PATH` | | `.env` | Optional dotenv file relative to cwd |
+| `ATPROTO_PLC_URL` | | `https://plc.directory` | PLC directory base |
+| `OAUTH_PUBLIC_ORIGIN` | | — | Overrides forwarded authority when serving OAuth metadata |
 
-`SQLITE_DB_PATH` and `SUPABASE_DATABASE_URL` are mutually exclusive — the service picks one based on `APP_ENV`.
+`SQLITE_DB_PATH` and `SUPABASE_DATABASE_URL` toggle automatically through `APP_ENV`.
+
+### Dotenv (`.env`)
+
+Process + container env beats file values:
+
+```bash
+cd services/api
+cp .env.example .env
+APP_ENV=local swift run App
+```
 
 ## Local development
 
-No Supabase account required. The service uses SQLite automatically when `APP_ENV=local`.
-
 ```bash
-# From the repo root
+# Compose (infra/docker binds Caddy locally)
 cp infra/docker/.env.example infra/docker/.env
-# The default .env uses APP_ENV=local — no edits needed for local dev
+cd infra/docker && docker compose up
 
-# Option A: run with Docker Compose (recommended — SQLite is persisted in a named volume)
-cd infra/docker
-docker compose up
-
-# Option B: run directly with Swift (SQLite file created in services/api/)
+# Native Swift runner
 cd services/api
 APP_ENV=local swift run App
 ```
 
-The API will be available at:
-- Direct: `http://localhost:8080`
-- Via Caddy: `https://api.localhost` (trust Caddy's local CA with `caddy trust`)
+- Direct HTTP: [`http://127.0.0.1:8080`](http://127.0.0.1:8080)
+- Routed TLS: [`https://api.localhost`](https://api.localhost)
+
+### OAuth client metadata
+
+`GET /oauth/client-metadata.json` mirrors the SPA JSON but uses the **`/oauth/...`** slug so tunnels can host parallel documents. Native metadata remains at **`/ios-client-metadata.json`**.
+
+**Origin resolution:** honours `OAUTH_PUBLIC_ORIGIN` first, then `X-Forwarded-Proto` + `:authority` (or inferred `http` for loopback interfaces).
+
+Example:
+
+```bash
+curl -sS http://127.0.0.1:8080/oauth/client-metadata.json | jq .
+```
+
+### Bruno requests
+
+[`bruno`](https://www.usebruno.com/) workspace under [`services/api/bruno`](./bruno):
+
+1. Import the folder as a Bruno collection (`bruno.json` present).
+2. Pick `local` / `dev` / `prod` environments.
+3. Populate `oauthAccessToken` **and** `dpopProof` from your OAuth session whenever hitting `/v1/*` routes.
+4. Legacy examples call out the `ENABLE_LEGACY_CONTENT_API=true` prerequisite in file names/comments.
+
+Never commit bearer material—use Bruno secret variables locally.
 
 ## Running tests
 
+CI runs `swift test` in the `test-api` job (`.github/workflows/ci.yml`). The package builds **App** and **AppTests** with **`-warnings-as-errors`**, so any compiler warning in those targets fails the build.
+
+Locally:
+
 ```bash
 cd services/api
-swift test --enable-code-coverage
+swift test
 ```
 
-**CI:** GitHub Actions currently omits the dedicated Swift package job — `.github/workflows/ci.yml` keeps web verification enabled while API CI is paused. Run `swift test` locally when changing `services/api`.
+For optional local coverage and `llvm-cov` / `lcov` export, run `swift test --enable-code-coverage` and use the Swift toolchain’s `llvm-profdata` / `llvm-cov` against the `SocialWireAPIPackageTests` binary under `.build` (paths differ by platform).
 
-To view a coverage report:
-```bash
-# After swift test, export lcov
-BINARY=$(swift build --show-bin-path)/App
-llvm-cov export \
-  -format="lcov" \
-  -instr-profile=.build/debug/codecov/default.profdata \
-  "$BINARY" > coverage.lcov
+## Supabase schema
 
-# Generate HTML report
-genhtml coverage.lcov --output-directory coverage-report
-open coverage-report/index.html
-```
+Operational migrations live beside infrastructure sources:
 
-## Supabase setup
+- Legacy cache tables originate from the hosted Supabase project’s older migrations (`discovery_cache`, `entry_cache`).
+- Repo checkout includes [`infra/supabase/migrations/20260516144500_add_pds_repo_record_cache.sql`](../infra/supabase/migrations/20260516144500_add_pds_repo_record_cache.sql) for **`pds_repo_record_cache`**. Apply via Supabase MCP / CLI before pointing `SUPABASE_DATABASE_URL` at refreshed environments.
 
-The schema is managed via Supabase MCP migrations. The initial migration (`create_cache_tables`) has already been applied to the `The Social Wire` project (`byoeubizcjiyhlvrykzb`).
+## API reference / HTTP contract
 
-To get your database URL:
-1. Go to the [Supabase dashboard](https://supabase.com/dashboard/project/byoeubizcjiyhlvrykzb)
-2. Settings → Database → Connection string (URI mode)
-3. Copy the connection string and set it as `SUPABASE_DATABASE_URL`
+Canonical description: [`packages/spec/openapi.yaml`](../../packages/spec/openapi.yaml).
 
-## API reference
+| Method | Path | Notes |
+|--------|------|-------|
+| `GET` | `/health` | Liveness probe — no auth |
+| `GET` | `/oauth/client-metadata.json` | Web OAuth metadata (`application_type=web`), CORS `*` |
+| `GET` | `/ios-client-metadata.json` | Native ATS metadata (`application_type=native`) |
+| `GET` | `/v1/sync/preferences` | Requires bearer + **`DPoP`** headers + valid ATProto JWT |
+| `GET` | `/v1/pds/cache/record` | Generic repo record accel (`collection`,`rkey` query params) |
+| `POST` | `/discovery/refresh` | **`ENABLE_LEGACY_CONTENT_API`** |
+| `GET` | `/discovery/{userDid}` | Legacy gated |
+| `GET` | `/publications/{pubId}/entries` | Legacy gated |
+| `GET` | `/entries/{entryId}` | Legacy gated |
 
-See [`packages/spec/openapi.yaml`](../../packages/spec/openapi.yaml) for the full OpenAPI 3.1 spec.
+**Authentication:** JWT in `Authorization: Bearer <jwt>` **`or`** `Authorization: DPoP <jwt>` prefix (token payload identical) plus **mandatory** `DPoP: <proof>` verifying SHA-256 `ath` hashes of the bearer string and optional `cnf.jkt`.
 
-**Endpoints:**
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/health` | Health check (no auth) |
-| `POST` | `/discovery/refresh` | Trigger follow graph re-scan |
-| `GET` | `/discovery/{userDid}` | Get cached discovery results |
-| `GET` | `/publications/{pubId}/entries` | Paginated entry list |
-| `GET` | `/entries/{entryId}` | Entry detail with sanitized HTML |
-
-**Authentication:** `Authorization: DPoP <token>` — ATProto DPoP-bound access token.
-
-## Architecture
+## Architecture (conceptual)
 
 ```
-ATProto network (follows, PDS records)
-        │
-        ▼
-DiscoveryService ──► DiscoveryChain
-  Step 1: LexiconNativeDiscovery   (standard.site publication record)
-  Step 2: ProfileLinkHeuristic     (standard.site URL in profile)
-  Step 3: DirectoryFallback        (index API, when available)
-        │
-        ▼
-CacheStore (protocol)
-  ├── SQLiteCache   (APP_ENV=local  — GRDB, no external deps)
-  └── SupabaseCache (APP_ENV=dev/prod — PostgresNIO → Supabase)
-        │
-        ▼
-ContentService ──► HTMLSanitizer
-        │
-        ▼
-Hummingbird routes ──► ATProtoAuthMiddleware
+Clients (SPA / ATS)
+   │ OAuth discovery (public)
+   ▼
+Hummingbird router
+ ├── OAuthMetadataRoutes (/oauth/client-metadata.json, /ios-client-metadata.json)
+ ├── ATProtoAuthMiddleware (JWKS verified JWT + DPoP)
+ │    └── PreferenceSyncService + SyncRoutes
+ └── (optional legacy) DiscoveryService + ContentService
+          ▼                    ▼
+     CacheStore ───────► Supabase/SQLite
 ```
 
 ## Docker
 
-Build:
+Build a local tag:
+
 ```bash
 docker build -t social-wire-api:local services/api/
 ```
 
-Run locally (SQLite, no Supabase needed):
-```bash
-docker run -p 8080:8080 \
-  -e APP_ENV=local \
-  -e SQLITE_DB_PATH=/data/sqlite/social-wire.sqlite \
-  -v social-wire-sqlite:/data/sqlite \
-  social-wire-api:local
-```
+## Deployment (Fly.io)
 
-Run against Supabase (dev/prod):
-```bash
-docker run -p 8080:8080 \
-  -e APP_ENV=dev \
-  -e SUPABASE_DATABASE_URL="postgresql://postgres:PASSWORD@db.xxx.supabase.co:5432/postgres" \
-  social-wire-api:local
-```
+[`deploy.yml`](../../.github/workflows/deploy.yml) runs on pushes to **`main`** and **`dev`**: `flyctl deploy --remote-only` from this directory using [`fly.toml`](fly.toml).
 
-## Deployment
+**GitHub Actions secrets**
 
-- **Dev**: push to `dev` branch → Depot builds `:dev` tag → AWS App Runner `social-wire-api-dev` deploys
-- **Prod**: push to `main` branch → Depot builds `:latest` tag → AWS App Runner `social-wire-api-prod` deploys
+| Secret | Purpose |
+|--------|---------|
+| `FLY_API_TOKEN` | Deploy token from [Fly access tokens](https://fly.io/docs/flyctl/auth-token/) |
+| `FLY_APP_PROD` | Fly app name for `main` (e.g. `social-wire-api`) |
+| `FLY_APP_DEV` | Fly app name for `dev` (e.g. `social-wire-api-dev`) |
 
-See [`.github/workflows/deploy.yml`](../../.github/workflows/deploy.yml) for the full pipeline.
+Create both apps in your Fly org (`fly apps create …`), then set **`SUPABASE_DATABASE_URL`**, **`APP_ENV`** (`prod` / `dev`), and any other runtime vars with `fly secrets set` (or the dashboard). **`OAUTH_PUBLIC_ORIGIN`** should match the HTTPS URL clients use for OAuth metadata when it differs from the default Fly hostname.
+
+Local smoke: `fly deploy` from `services/api` or use **`infra/docker`** compose, which builds this Dockerfile instead of pulling a registry image.

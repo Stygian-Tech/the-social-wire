@@ -1,0 +1,17 @@
+meta {
+  name: Get Legacy Entry Detail
+  type: http
+  seq: 93
+}
+
+get {
+  url: {{baseUrl}}/entries/at_uri_placeholder
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}
+

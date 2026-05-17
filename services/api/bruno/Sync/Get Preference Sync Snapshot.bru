@@ -1,0 +1,16 @@
+meta {
+  name: Get Preference Sync Snapshot
+  type: http
+  seq: 10
+}
+
+get {
+  url: {{baseUrl}}/v1/sync/preferences
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}
