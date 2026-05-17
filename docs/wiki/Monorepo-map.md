@@ -12,6 +12,8 @@ the-social-wire/
   packages/
     lexicons/     # com.thesocialwire.* (and related) lexicons
     spec/         # OpenAPI for HTTP surfaces
+  supabase/
+    migrations/   # Postgres migrations (API cache; GitHub integration)
   infra/
     docker/       # docker-compose — builds API from services/api + Caddy
   docs/

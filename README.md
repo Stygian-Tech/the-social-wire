@@ -31,6 +31,8 @@ the-social-wire/
   packages/
     lexicons/    # com.thesocialwire.* ATProto lexicons
     spec/        # OpenAPI 3.1 spec (service API)
+  supabase/
+    config.toml  # Supabase CLI; migrations/ for hosted Postgres (GitHub integration)
   infra/
     docker/      # docker-compose — builds API from services/api + Caddy + Portainer
   docs/

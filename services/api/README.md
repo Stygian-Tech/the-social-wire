@@ -97,10 +97,10 @@ For optional local coverage and `llvm-cov` / `lcov` export, run `swift test --en
 
 ## Supabase schema
 
-Operational migrations live beside infrastructure sources:
+Operational migrations live at the repo root for the **Supabase CLI** and **GitHub integration**:
 
 - Legacy cache tables originate from the hosted Supabase project’s older migrations (`discovery_cache`, `entry_cache`).
-- Repo checkout includes [`infra/supabase/migrations/20260516144500_add_pds_repo_record_cache.sql`](../infra/supabase/migrations/20260516144500_add_pds_repo_record_cache.sql) for **`pds_repo_record_cache`**. Apply via Supabase MCP / CLI before pointing `SUPABASE_DATABASE_URL` at refreshed environments.
+- [`supabase/migrations/20260516144500_add_pds_repo_record_cache.sql`](../../supabase/migrations/20260516144500_add_pds_repo_record_cache.sql) adds **`pds_repo_record_cache`**. Apply via the Supabase dashboard (linked GitHub repo / migrations) or locally with **`supabase link`** then **`supabase db push`**, before pointing **`SUPABASE_DATABASE_URL`** at refreshed environments.
 
 ## API reference / HTTP contract
 

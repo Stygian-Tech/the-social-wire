@@ -54,3 +54,7 @@ coverage/
 # Docker
 infra/docker/.env
 apps/apple/SocialWire.xcodeproj/project.xcworkspace/xcuserdata/sam.xcuserdatad/UserInterfaceState.xcuserstate
+
+# Supabase CLI (local only)
+supabase/.branches
+supabase/.temp
