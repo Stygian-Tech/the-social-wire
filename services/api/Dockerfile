@@ -29,10 +29,15 @@ RUN apt-get update \
     libssl3 \
     libcurl4 \
     libsqlite3-0 \
+    libicu70 \
     ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /app/.build/release/App /usr/local/bin/App
+
+# Release binaries link the Swift runtime dynamically (libswiftCore, Concurrency, etc.); copy the
+# toolchain libraries from the build image—plain Ubuntu does not ship them.
+COPY --from=builder /usr/lib/swift/linux /usr/lib/swift/linux
 
 # Ensure the binary is executable
 RUN chmod +x /usr/local/bin/App
