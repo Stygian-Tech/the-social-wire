@@ -5,9 +5,10 @@ enum SocialWireAPIEnvironment {
     private static let productionBaseURLString = "https://api.thesocialwire.app"
     private static let testingBaseURLString = "https://api.testing.thesocialwire.app"
 
-    /// HTTPS API origin without a trailing slash. Debug builds use the testing fleet; Release uses production.
+    /// Debug simulators/devices and **TestFlight** (`Beta`) builds hit the testing API.
+    /// **App Store** Release builds (`Release`) use production.
     static var baseURLString: String {
-        #if DEBUG
+        #if DEBUG || SOCIALWIRE_TESTING_API
         testingBaseURLString
         #else
         productionBaseURLString
@@ -21,7 +22,7 @@ enum SocialWireAPIEnvironment {
         return url
     }
 
-    /// Discoverable OAuth `client_id` (`GET` returns native client metadata JSON).
+    /// Discoverable OAuth **`client_id`** (**`GET .../ios-client-metadata.json`**).
     static var iosClientMetadataURL: URL {
         baseURL.appendingPathComponent("ios-client-metadata.json")
     }

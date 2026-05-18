@@ -26,6 +26,8 @@
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>app.thesocialwire</string>
+				<string>app.thesocialwire.api</string>
+				<string>app.thesocialwire.testing.api</string>
 			</array>
 		</dict>
 	</array>

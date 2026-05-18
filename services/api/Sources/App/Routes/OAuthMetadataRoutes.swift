@@ -9,7 +9,6 @@ struct OAuthMetadataRoutes {
   let oauthPublicOrigin: String?
   /// Passed into **`OAuthPublicOrigin`** for **`/ios-client-metadata.json`** only (defaults **`nil`** → **`Host`**-derived).
   let oauthIosMetadataOrigin: String?
-  let oauthIosNativeRedirectHost: String?
 
   func register(on router: Router<AppRequestContext>) {
     router.get("/oauth/client-metadata.json") { request, _ in
@@ -23,12 +22,7 @@ struct OAuthMetadataRoutes {
       try Self.response(
         oauthConfiguredOrigin: oauthIosMetadataOrigin,
         request: request,
-        encode: { origin in
-          try IosOAuthClientMetadata.buildJSON(
-            publicOrigin: origin,
-            nativeRedirectHost: oauthIosNativeRedirectHost
-          )
-        }
+        encode: IosOAuthClientMetadata.buildJSON(publicOrigin:)
       )
     }
   }

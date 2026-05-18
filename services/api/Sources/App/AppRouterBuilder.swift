@@ -17,8 +17,7 @@ enum AppRouterBuilder {
     router.get("/health") { _, _ in ["status": "ok"] }
     OAuthMetadataRoutes(
       oauthPublicOrigin: config.oauthPublicOrigin,
-      oauthIosMetadataOrigin: config.oauthIosMetadataOrigin,
-      oauthIosNativeRedirectHost: config.oauthIosNativeRedirectHost
+      oauthIosMetadataOrigin: config.oauthIosMetadataOrigin
     ).register(on: router)
 
     let authMiddleware = ATProtoAuthMiddleware(httpClient: httpClient, plcURL: config.atprotoPLCURL, logger: logger)

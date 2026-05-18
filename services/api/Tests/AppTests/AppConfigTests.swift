@@ -113,20 +113,6 @@ struct AppConfigTests {
     #expect(config.oauthPublicOrigin == "https://tunnel.example")
   }
 
-  @Test("IOS_OAUTH_NATIVE_REDIRECT_HOST is nil when unset")
-  func iosOAuthNativeRedirectUnset() {
-    let config = AppConfig.fromEnvironment([:])
-    #expect(config.oauthIosNativeRedirectHost == nil)
-  }
-
-  @Test("IOS_OAUTH_NATIVE_REDIRECT_HOST is trimmed when set")
-  func iosOAuthNativeRedirectSet() {
-    let config = AppConfig.fromEnvironment([
-      "IOS_OAUTH_NATIVE_REDIRECT_HOST": "  thesocialwire.app  ",
-    ])
-    #expect(config.oauthIosNativeRedirectHost == "thesocialwire.app")
-  }
-
   @Test("OAUTH_IOS_METADATA_ORIGIN is nil when unset")
   func iosMetadataOriginUnset() {
     let config = AppConfig.fromEnvironment([:])

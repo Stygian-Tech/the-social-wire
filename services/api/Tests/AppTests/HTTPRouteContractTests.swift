@@ -39,7 +39,6 @@ struct HTTPRouteContractTests {
         cacheBackend: .sqlite(path: dbPath),
         oauthPublicOrigin: nil,
         oauthIosMetadataOrigin: nil,
-        oauthIosNativeRedirectHost: nil,
         enableLegacyContentAPI: false
       )
 
@@ -74,7 +73,6 @@ struct HTTPRouteContractTests {
         cacheBackend: .sqlite(path: dbPath),
         oauthPublicOrigin: nil,
         oauthIosMetadataOrigin: nil,
-        oauthIosNativeRedirectHost: nil,
         enableLegacyContentAPI: false
       )
 
@@ -109,7 +107,6 @@ struct HTTPRouteContractTests {
         cacheBackend: .sqlite(path: dbPath),
         oauthPublicOrigin: nil,
         oauthIosMetadataOrigin: nil,
-        oauthIosNativeRedirectHost: nil,
         enableLegacyContentAPI: false
       )
 

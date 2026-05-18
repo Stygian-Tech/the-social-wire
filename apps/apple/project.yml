@@ -4,6 +4,10 @@ options:
   defaultSourceDirectoryType: syncedFolder
   deploymentTarget:
     iOS: "17.0"
+configs:
+  Debug: debug
+  Beta: release
+  Release: release
 settings:
   base:
     SWIFT_VERSION: 6.0
@@ -25,6 +29,8 @@ targets:
           - CFBundleURLName: com.samclemente.the-social-wire.oauth
             CFBundleURLSchemes:
               - app.thesocialwire
+              - app.thesocialwire.api
+              - app.thesocialwire.testing.api
         LSRequiresIPhoneOS: true
         UIApplicationSupportsIndirectInputEvents: true
         UIRequiresFullScreen: true
@@ -45,6 +51,9 @@ targets:
         TARGETED_DEVICE_FAMILY: "1,2"
         CODE_SIGN_ENTITLEMENTS: SocialWire/SocialWire.entitlements
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.news
+      configs:
+        Beta:
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) SOCIALWIRE_TESTING_API
   SocialWireTests:
     type: bundle.unit-test
     platform: iOS
@@ -59,6 +68,9 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         TEST_HOST: "$(BUILT_PRODUCTS_DIR)/SocialWire.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/SocialWire"
         BUNDLE_LOADER: "$(TEST_HOST)"
+      configs:
+        Beta:
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) SOCIALWIRE_TESTING_API
 schemes:
   SocialWire:
     build:
@@ -77,3 +89,20 @@ schemes:
       config: Debug
     archive:
       config: Release
+  SocialWire-TestFlight:
+    build:
+      targets:
+        SocialWire: all
+        SocialWireTests: [test]
+    run:
+      config: Beta
+    test:
+      config: Beta
+      targets:
+        - SocialWireTests
+    profile:
+      config: Beta
+    analyze:
+      config: Beta
+    archive:
+      config: Beta

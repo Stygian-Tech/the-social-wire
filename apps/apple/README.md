@@ -6,6 +6,12 @@ Native SwiftUI client for The Social Wire.
 
 Generate the Xcode project:
 
+### Cursor / VS Code + SweetPad
+
+The repository root has no **`Package.swift`** (this target is Xcode + XcodeGen, not SPM). At the repo root the Swift VS Code extension’s **“Swift: Build All”** runs **`swift build`** and fails with *Could not find Package.swift*. Use **SweetPad: Build / Build & Run** instead, after **SweetPad: Select Xcode workspace** if needed—the workspace default is **[`.vscode/settings.json`](../../.vscode/settings.json)** → **`apps/apple/SocialWire.xcodeproj`**.
+
+For **`services/api`** Swift Package Manager work inside the same window, temporarily set **`swift.disableSwiftPackageManagerIntegration`** to **`false`** in your user settings, or open **`services/api`** as its own window / multi-root workspace entry.
+
 ## Project Structure
 
 ```
@@ -37,7 +43,7 @@ apps/apple/
 The app signs in with **OAuth 2.0 authorization code + PKCE** (`code_challenge_method=S256`) via `ASWebAuthenticationSession`.
 
 - **Authorize**: opens `{pds}/oauth/authorize` with `client_id`, `redirect_uri`, PKCE challenge, and a scope list (today limited to `atproto` plus Social Wire folder/publication prefs collections — narrower than the web client until parity work lands).
-- **Callback**: `thesocialwire://oauth/callback` delivers `code` → exchanged over **`POST {pds}/oauth/token`** with `grant_type=authorization_code`, PKCE verifier, `redirect_uri`, and `client_id`.
+- **Callback**: custom URL scheme **`{reversed-client_id-host}:/oauth/callback`** (e.g. `client_id` on `api.thesocialwire.app` → **`app.thesocialwire.api:/oauth/callback`**) delivers `code` → exchanged over **`POST {pds}/oauth/token`** with `grant_type=authorization_code`, PKCE verifier, `redirect_uri`, and `client_id`.
 - **Refresh**: `POST {pds}/oauth/token` with `grant_type=refresh_token`; refresh token lives in Keychain.
 
 DPoP proofs are **not** attached to token requests in this codebase yet (tokens may still be DPoP-bound depending on PDS policy—the Swift client does not implement the proof headers here).
@@ -62,12 +68,14 @@ Until that file is live on production, you can:
 
 **A. Next.js / Vercel** — Deploy **`apps/web`** to a **Vercel preview** (or staging host) so `ios-client-metadata.json` is reachable over HTTPS, then follow the steps below using that URL.
 
-**B. Swift API (local + tunnel)** — Run [`services/api`](../../services/api/README.md) (`APP_ENV=local swift run App`). Expose it with **ngrok** (or similar), set `OAUTH_PUBLIC_ORIGIN` to the tunnel URL if needed, then use `https://<tunnel>/ios-client-metadata.json` as `ATProtoOAuthClientID`.
+**B. Swift API (local + tunnel)** — Run [`services/api`](../../services/api/README.md) (`APP_ENV=local swift run App`). Expose it with **ngrok** (or similar). For **`/ios-client-metadata.json`**, set **`OAUTH_IOS_METADATA_ORIGIN`** when **`Host`/forwarded headers** do not match the tunnel URL (**`OAUTH_PUBLIC_ORIGIN`** applies only to web **`/oauth/client-metadata.json`**). Then use `https://<tunnel>/ios-client-metadata.json` as `ATProtoOAuthClientID`.
 
 Then:
 
-1. Ensure **client metadata** matches that URL: for Vercel/Next, edit the deployed JSON; for Swift API, `GET /ios-client-metadata.json` already returns a consistent `client_id` + `redirect_uris` for the resolved public origin.
+1. Ensure **client metadata** matches that URL: for Vercel/Next, edit the deployed JSON; for Swift API, `GET /ios-client-metadata.json` returns `redirect_uris` derived from **`client_id` host labels reversed** (same rule ATProto validates).
 2. In the iOS target **Info** plist, add **`ATProtoOAuthClientID`** (string) with that same metadata URL.
-3. Under **URL Types**, add the matching **URL Scheme** (reversed host labels, e.g. `app.vercel.my-app`) so the OAuth callback can open the app.
+3. Under **URL Types**, include every scheme the app uses: production API metadata → **`app.thesocialwire.api`**; testing API → **`app.thesocialwire.testing.api`**; marketing-site metadata (`thesocialwire.app`) → **`app.thesocialwire`** (see generated **URL Types** in [`project.yml`](project.yml)).
 
-With no plist override, the app falls back to `https://thesocialwire.app/ios-client-metadata.json` and scheme `app.thesocialwire`.
+With no plist override, the app uses **`SocialWireAPIEnvironment`**: **`https://api.thesocialwire.app/ios-client-metadata.json`** in Release; Debug and Beta (TestFlight) builds use **`https://api.testing.thesocialwire.app/...`** and scheme **`app.thesocialwire.testing.api`**.
+
+**Archives**: use scheme **SocialWire-TestFlight** (Beta) for TestFlight; **SocialWire** (Release) for App Store.

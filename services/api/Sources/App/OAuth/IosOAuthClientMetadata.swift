@@ -2,6 +2,9 @@ import Foundation
 
 /// ATProto native OAuth client metadata (`application_type: native`), aligned with
 /// `apps/web/public/ios-client-metadata.json`.
+///
+/// **[ATProto]** For discoverable clients, **`redirect_uris`** use the host of **`client_id`** (the metadata URL’s
+/// origin) with labels reversed — same rule as the native app’s URL scheme.
 enum IosOAuthClientMetadata {
   enum BuildError: Error {
     case invalidPublicOrigin
@@ -19,20 +22,16 @@ enum IosOAuthClientMetadata {
     "\(nativeURLScheme(host: host)):/oauth/callback"
   }
 
-  /// When `nativeRedirectHost` is set, **`redirect_uris`** use that host while **`client_id`** still reflects **`publicOrigin`** (Swift API deployed on **`api.*`** keeps **`app.thesocialwire`** callbacks).
-  ///
-  /// - Parameter nativeRedirectHost: Optional scheme-less host (`thesocialwire.app`). When **`nil`/empty**, `redirect_uris` follow **`URL(publicOrigin)?.host`** (tunnel / parity with older callers).
-  static func buildJSON(publicOrigin: String, nativeRedirectHost: String?) throws -> Data {
+  /// - Parameter publicOrigin: Scheme + host (+ optional non-default port), no trailing slash, e.g. `https://example.com` or `http://127.0.0.1:8090`.
+  static func buildJSON(publicOrigin: String) throws -> Data {
     var trimmed = publicOrigin.trimmingCharacters(in: .whitespacesAndNewlines)
     if trimmed.hasSuffix("/") { trimmed.removeLast() }
     guard let originHost = URL(string: trimmed)?.host, !originHost.isEmpty else {
       throw BuildError.invalidPublicOrigin
     }
-    let redirectCandidate = nativeRedirectHost?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-    let redirectHost = redirectCandidate.isEmpty ? originHost : redirectCandidate
     let base = trimmed
     let client_id = "\(base)/ios-client-metadata.json"
-    let redirect = nativeRedirectURI(host: redirectHost)
+    let redirect = nativeRedirectURI(host: originHost)
     let doc = MetadataBody(
       client_id: client_id,
       application_type: "native",
@@ -48,11 +47,6 @@ enum IosOAuthClientMetadata {
     let enc = JSONEncoder()
     enc.outputFormatting = [.sortedKeys]
     return try enc.encode(doc)
-  }
-
-  /// - Parameter publicOrigin: Scheme + host (+ optional non-default port), no trailing slash, e.g. `https://example.com` or `http://127.0.0.1:8090`.
-  static func buildJSON(publicOrigin: String) throws -> Data {
-    try buildJSON(publicOrigin: publicOrigin, nativeRedirectHost: nil)
   }
 
   private struct MetadataBody: Encodable {

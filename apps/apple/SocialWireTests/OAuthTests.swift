@@ -17,11 +17,27 @@ final class OAuthTests: XCTestCase {
         XCTAssertNil(query["scope"])
     }
 
-    func testNativeRedirectURIUsesReversedHostSingleSlash() {
-        let pair = ATProtoOAuthConfig.nativeRedirectPair(forClientID: ATProtoOAuthConfig.defaultClientID)
-        XCTAssertEqual(pair.redirectURI, "app.thesocialwire:/oauth/callback")
-        XCTAssertFalse(pair.redirectURI.contains("://"))
+    func testOAuthRedirectsMatchReversedFqdnOfClientMetadataURL() {
+        let pair = ATProtoOAuthConfig.nativeRedirectPair(forClientID: ATProtoOAuthConfig.clientID)
+        XCTAssertEqual(ATProtoOAuthConfig.callbackURLScheme, pair.scheme)
+        XCTAssertEqual(ATProtoOAuthConfig.redirectURI, pair.redirectURI)
+        XCTAssertFalse(ATProtoOAuthConfig.redirectURI.contains("://"))
+    }
+
+    func testNativeRedirectPairsForSwiftApiHostsUseAtprotoReversal() {
+        let prod = ATProtoOAuthConfig.nativeRedirectPair(forClientID: "https://api.thesocialwire.app/ios-client-metadata.json")
+        XCTAssertEqual(prod.scheme, "app.thesocialwire.api")
+        XCTAssertEqual(prod.redirectURI, "app.thesocialwire.api:/oauth/callback")
+
+        let testing = ATProtoOAuthConfig.nativeRedirectPair(forClientID: "https://api.testing.thesocialwire.app/ios-client-metadata.json")
+        XCTAssertEqual(testing.scheme, "app.thesocialwire.testing.api")
+        XCTAssertEqual(testing.redirectURI, "app.thesocialwire.testing.api:/oauth/callback")
+    }
+
+    func testNativeRedirectPairForMarketingHostMatchesWebMetadata() {
+        let pair = ATProtoOAuthConfig.nativeRedirectPair(forClientID: "https://thesocialwire.app/ios-client-metadata.json")
         XCTAssertEqual(pair.scheme, "app.thesocialwire")
+        XCTAssertEqual(pair.redirectURI, "app.thesocialwire:/oauth/callback")
     }
 
     func testNativeURLSchemeReversesHostLabels() {
@@ -46,5 +62,15 @@ final class OAuthTests: XCTestCase {
         XCTAssertFalse(challenge.contains("="))
         XCTAssertFalse(challenge.contains("+"))
         XCTAssertFalse(challenge.contains("/"))
+    }
+
+    func testDefaultClientUsesTestingApiWhenDebuggingOrBetaFlag() throws {
+        let id = ATProtoOAuthConfig.defaultClientID
+        XCTAssertTrue(id.hasSuffix("/ios-client-metadata.json"))
+        #if DEBUG || SOCIALWIRE_TESTING_API
+        XCTAssertEqual(id, "https://api.testing.thesocialwire.app/ios-client-metadata.json")
+        #else
+        XCTAssertEqual(id, "https://api.thesocialwire.app/ios-client-metadata.json")
+        #endif
     }
 }

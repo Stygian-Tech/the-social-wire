@@ -11,9 +11,8 @@ primary_region = "ord"
 
 [env]
   PORT = '8080'
-  # Set via `fly secrets set`: IOS_OAUTH_NATIVE_REDIRECT_HOST=thesocialwire.app
-  # so `/ios-client-metadata.json` declares app.thesocialwire callbacks when hosted on api.* .
-  # NOTE: `OAUTH_PUBLIC_ORIGIN` (if set) applies only to `/oauth/client-metadata.json`, not iOS metadata — avoids invalid_client_metadata when client_id is https://api…/ios-client-metadata.json.
+  # `/ios-client-metadata.json` derives `redirect_uris` from the request Host (`client_id` origin), reversed —
+  # no separate redirect override. `OAUTH_PUBLIC_ORIGIN` applies only to `/oauth/client-metadata.json`.
 
 # Default deploy wait is 5m; slow image pulls + rolling health on 2 machines can exceed that and
 # surface as "request canceled" from the Machines API poll. 10m matches Fly's recommended fix.

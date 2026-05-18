@@ -10,8 +10,6 @@ struct AppConfig: Sendable {
   /// Optional **`client_id`** origin override for **`/ios-client-metadata.json`** only — leave unset so **`client_id`**
   /// always matches **`Host`** (fixes `invalid_client_metadata` when `OAUTH_PUBLIC_ORIGIN` targets the marketing site).
   let oauthIosMetadataOrigin: String?
-  /// Override host for **`redirect_uris`** in **`/ios-client-metadata.json`** when metadata is hosted on **`api.*`** (`thesocialwire.app` → **`app.thesocialwire`**).
-  let oauthIosNativeRedirectHost: String?
   /// When `true`, keeps publication discovery/content routes online for phased migrations (default **`false`**).
   let enableLegacyContentAPI: Bool
 
@@ -52,9 +50,6 @@ struct AppConfig: Sendable {
     let oauthIosOrigRaw =
       env["OAUTH_IOS_METADATA_ORIGIN"]?.trimmingCharacters(in: .whitespacesAndNewlines)
     let oauthIosMetadataOrigin = (oauthIosOrigRaw?.isEmpty == false) ? oauthIosOrigRaw : nil
-    let oauthIosRaw =
-      env["IOS_OAUTH_NATIVE_REDIRECT_HOST"]?.trimmingCharacters(in: .whitespacesAndNewlines)
-    let oauthIosNativeRedirectHost = (oauthIosRaw?.isEmpty == false) ? oauthIosRaw : nil
     let enableLegacyContentAPI = Self.truthyFlag(env["ENABLE_LEGACY_CONTENT_API"])
 
     return AppConfig(
@@ -63,7 +58,6 @@ struct AppConfig: Sendable {
       cacheBackend: backend,
       oauthPublicOrigin: oauthPublicOrigin,
       oauthIosMetadataOrigin: oauthIosMetadataOrigin,
-      oauthIosNativeRedirectHost: oauthIosNativeRedirectHost,
       enableLegacyContentAPI: enableLegacyContentAPI
     )
   }
