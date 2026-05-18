@@ -7,38 +7,47 @@ import NIOCore
 /// without deploying the Next.js `public/` files.
 struct OAuthMetadataRoutes {
   let oauthPublicOrigin: String?
+  /// Passed into **`OAuthPublicOrigin`** for **`/ios-client-metadata.json`** only (defaults **`nil`** → **`Host`**-derived).
+  let oauthIosMetadataOrigin: String?
+  let oauthIosNativeRedirectHost: String?
 
   func register(on router: Router<AppRequestContext>) {
     router.get("/oauth/client-metadata.json") { request, _ in
       try Self.response(
-        oauthPublicOrigin: oauthPublicOrigin,
+        oauthConfiguredOrigin: oauthPublicOrigin,
         request: request,
         encode: WebOAuthClientMetadata.buildJSON(publicOrigin:)
       )
     }
     router.get("/ios-client-metadata.json") { request, _ in
       try Self.response(
-        oauthPublicOrigin: oauthPublicOrigin,
+        oauthConfiguredOrigin: oauthIosMetadataOrigin,
         request: request,
-        encode: IosOAuthClientMetadata.buildJSON(publicOrigin:)
+        encode: { origin in
+          try IosOAuthClientMetadata.buildJSON(
+            publicOrigin: origin,
+            nativeRedirectHost: oauthIosNativeRedirectHost
+          )
+        }
       )
     }
   }
 
   private static func response(
-    oauthPublicOrigin: String?,
+    oauthConfiguredOrigin: String?,
     request: Request,
     encode: (String) throws -> Data
   ) throws -> Response {
     guard
       let origin = OAuthPublicOrigin.resolve(
         request: request,
-        configuredOrigin: oauthPublicOrigin
+        configuredOrigin: oauthConfiguredOrigin
       )
     else {
       throw HTTPError(
         .internalServerError,
-        message: "Cannot build OAuth metadata origin. Set OAUTH_PUBLIC_ORIGIN or use a Host header."
+        message:
+          "Cannot resolve public origin for OAuth metadata. For /ios-client-metadata.json ensure Host (and X-Forwarded-Proto behind a proxy) or set OAUTH_IOS_METADATA_ORIGIN; for /oauth/client-metadata.json set OAUTH_PUBLIC_ORIGIN if needed."
       )
     }
 
@@ -46,7 +55,7 @@ struct OAuthMetadataRoutes {
     do {
       data = try encode(origin)
     } catch {
-      throw HTTPError(.internalServerError, message: "Invalid OAUTH_PUBLIC_ORIGIN or Host for OAuth metadata.")
+      throw HTTPError(.internalServerError, message: "Invalid public origin for OAuth metadata JSON.")
     }
 
     var headers: HTTPFields = [.contentType: "application/json; charset=utf-8"]

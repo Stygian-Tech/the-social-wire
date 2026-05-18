@@ -22,6 +22,18 @@ struct IosOAuthClientMetadataTests {
     #expect(obj["dpop_bound_access_tokens"] as? Bool == true)
   }
 
+  @Test("buildJSON can anchor client_id on API host while redirect uses branded native host")
+  func buildJSONWithNativeRedirectOverride() throws {
+    let data = try IosOAuthClientMetadata.buildJSON(
+      publicOrigin: "https://api.example.com",
+      nativeRedirectHost: "thesocialwire.app"
+    )
+    let obj = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+    #expect(obj["client_id"] as? String == "https://api.example.com/ios-client-metadata.json")
+    let redirects = try #require(obj["redirect_uris"] as? [String])
+    #expect(redirects == ["app.thesocialwire:/oauth/callback"])
+  }
+
   @Test("buildJSON includes port in client_id when present in origin")
   func buildJSONWithPort() throws {
     let data = try IosOAuthClientMetadata.buildJSON(publicOrigin: "http://127.0.0.1:8090")

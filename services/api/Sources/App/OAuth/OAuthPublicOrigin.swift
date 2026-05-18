@@ -4,9 +4,13 @@ import Hummingbird
 
 /// Resolves the public `https://`/`http://` origin used in `client_id` and `client_uri`
 /// for dynamically served OAuth client metadata.
+///
+/// **ATProto invariant:** fetched metadata’s `client_id` must match the retrieval URL — callers passing a
+/// `configuredOrigin` unrelated to **`Host`** (e.g. web marketing domain) must not reuse that origin for **`/ios-client-metadata.json`**
+/// when responses are reached via another host (Swift API subdomain).
 enum OAuthPublicOrigin {
-  /// Preferred: `OAUTH_PUBLIC_ORIGIN` when the service is not directly exposed (no accurate `Host`).
-  /// Otherwise: `X-Forwarded-Proto` + `:authority` (HTTP/1 `Host`), or inferred scheme for localhost.
+  /// If `configuredOrigin` is non-empty, it wins; otherwise `X-Forwarded-Proto` + `:authority`
+  /// (HTTP/1 **`Host`**), or inferred scheme for localhost.
   static func resolve(request: Request, configuredOrigin: String?) -> String? {
     if let fixed = configuredOrigin?.trimmingCharacters(in: .whitespacesAndNewlines), !fixed.isEmpty {
       return stripTrailingSlash(fixed)

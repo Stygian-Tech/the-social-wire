@@ -15,7 +15,11 @@ enum AppRouterBuilder {
   ) -> Router<AppRequestContext> {
     let router = Router(context: AppRequestContext.self)
     router.get("/health") { _, _ in ["status": "ok"] }
-    OAuthMetadataRoutes(oauthPublicOrigin: config.oauthPublicOrigin).register(on: router)
+    OAuthMetadataRoutes(
+      oauthPublicOrigin: config.oauthPublicOrigin,
+      oauthIosMetadataOrigin: config.oauthIosMetadataOrigin,
+      oauthIosNativeRedirectHost: config.oauthIosNativeRedirectHost
+    ).register(on: router)
 
     let authMiddleware = ATProtoAuthMiddleware(httpClient: httpClient, plcURL: config.atprotoPLCURL, logger: logger)
     let protected = router.group().add(middleware: authMiddleware)
