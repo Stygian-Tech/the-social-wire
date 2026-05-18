@@ -3,22 +3,19 @@
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
 
-app = "social-wire-api"
-primary_region = "ord"
+app = 'the-social-wire-dev'
+primary_region = 'ams'
 
 [build]
   dockerfile = 'Dockerfile'
+
+[deploy]
+  wait_timeout = '10m0s'
 
 [env]
   PORT = '8080'
   # `/ios-client-metadata.json` derives `redirect_uris` from the request Host (`client_id` origin), reversed —
   # no separate redirect override. `OAUTH_PUBLIC_ORIGIN` applies only to `/oauth/client-metadata.json`.
-
-# Default deploy wait is 5m; slow image pulls + rolling health on 2 machines can exceed that and
-# surface as "request canceled" from the Machines API poll. 10m matches Fly's recommended fix.
-
-[deploy]
-  wait_timeout = "10m"
 
 [http_service]
   internal_port = 8080
@@ -28,11 +25,11 @@ primary_region = "ord"
   min_machines_running = 0
 
   [[http_service.checks]]
-    interval = "30s"
-    timeout = "10s"
-    grace_period = "60s"
-    method = "GET"
-    path = "/health"
+    interval = '30s'
+    timeout = '10s'
+    grace_period = '1m0s'
+    method = 'GET'
+    path = '/health'
 
 [[vm]]
   memory = '1gb'
