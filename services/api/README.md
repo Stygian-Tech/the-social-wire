@@ -31,6 +31,11 @@ See [`packages/lexicons/`](../../packages/lexicons/README.md) for record shapes 
 | `DOTENV_PATH` | | `.env` | Optional dotenv file relative to cwd |
 | `ATPROTO_PLC_URL` | | `https://plc.directory` | PLC directory base |
 | `OAUTH_PUBLIC_ORIGIN` | | — | Overrides forwarded authority when serving OAuth metadata |
+| `OAUTH_GATEWAY_ALLOWED_CLIENT_IDS` | | _(empty)_ | Comma/whitespace-separated **`client_id`** / **`azp`** values permitted to call **`ATProtoAuthMiddleware`–protected** `/v1/*` routes on this deploy (first-party web + native URLs) |
+| `OAUTH_GATEWAY_ALLOWED_AUDIENCES` | | _(empty)_ | Comma/whitespace-separated JWT **`aud`** strings accepted for the same routes (RFC 8707–style resource identifiers, e.g. `https://api.thesocialwire.app`) |
+| `OAUTH_GATEWAY_REQUIRE_KNOWN_CLIENT` | | `false` | When `1`/`true`/`yes`/`on`, require the access token to satisfy at least one nonempty allowlist (**`OAUTH_GATEWAY_ALLOWED_CLIENT_IDS`** or **`OAUTH_GATEWAY_ALLOWED_AUDIENCES`**). Local dev should keep this off until you inspect real issuer claims. |
+
+**Self-hosting:** Operators who run their own gateway set their own allowlists (or leave enforcement off on private networks). Upstream Social Wire hosted environments are expected to enable known-client checks once claims are confirmed.
 
 `SQLITE_DB_PATH` and `SUPABASE_DATABASE_URL` toggle automatically through `APP_ENV`.
 

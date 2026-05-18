@@ -140,5 +140,30 @@ struct AppConfigTests {
       #expect(cfg.enableLegacyContentAPI == true)
     }
   }
+
+  // MARK: OAuth gateway client policy
+
+  @Test("OAUTH_GATEWAY_REQUIRE_KNOWN_CLIENT defaults permissive gateway policy")
+  func oauthGatewayDefaultPermissive() {
+    let cfg = AppConfig.fromEnvironment([:])
+    #expect(cfg.oauthGateway.requireKnownClient == false)
+    #expect(cfg.oauthGateway.allowedClientIds.isEmpty)
+    #expect(cfg.oauthGateway.allowedAudiences.isEmpty)
+  }
+
+  @Test("OAUTH_GATEWAY_* env wires allowlists")
+  func oauthGatewayEnvAllowlists() {
+    let cfg = AppConfig.fromEnvironment([
+      "OAUTH_GATEWAY_ALLOWED_CLIENT_IDS":
+        "https://api.example/ios-client-metadata.json,\n https://spa.example/oauth/client-metadata.json ",
+      "OAUTH_GATEWAY_ALLOWED_AUDIENCES": "https://api.example  https://pds.example/oauth",
+      "OAUTH_GATEWAY_REQUIRE_KNOWN_CLIENT": "true",
+    ])
+    #expect(cfg.oauthGateway.requireKnownClient == true)
+    #expect(cfg.oauthGateway.allowedClientIds.contains("https://api.example/ios-client-metadata.json"))
+    #expect(cfg.oauthGateway.allowedClientIds.contains("https://spa.example/oauth/client-metadata.json"))
+    #expect(cfg.oauthGateway.allowedAudiences.contains("https://api.example"))
+    #expect(cfg.oauthGateway.allowedAudiences.contains("https://pds.example/oauth"))
+  }
 }
 

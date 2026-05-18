@@ -2,6 +2,7 @@ import SwiftUI
 
 struct EntryDetailView: View {
     @Environment(SocialWireAppModel.self) private var appModel
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     let entry: EntryDetail
     @State private var quoteText = ""
     @State private var showingQuote = false
@@ -39,6 +40,22 @@ struct EntryDetailView: View {
         }
         .navigationTitle("Article")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if horizontalSizeClass == .compact {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        Task { await appModel.dismissReaderDetail() }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "chevron.backward")
+                            Text("Articles")
+                        }
+                        .frame(minHeight: 44)
+                    }
+                    .accessibilityLabel("Back to Articles")
+                }
+            }
+        }
         .sheet(isPresented: $showingQuote) {
             NavigationStack {
                 Form {
@@ -85,7 +102,7 @@ struct ArticleToolbar: View {
                     Label("Save", systemImage: "bookmark")
                 }
                 .buttonStyle(.bordered)
-                .disabled(entry.canonicalURL == nil)
+                .disabled(entry.canonicalURL == nil || !appModel.readLaterLatrConfigured)
 
                 Button {
                     showingQuote = true

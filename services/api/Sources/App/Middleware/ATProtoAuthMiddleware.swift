@@ -35,11 +35,18 @@ struct ATProtoAuthMiddleware: RouterMiddleware {
 
   private let httpClient: HTTPClient
   private let plcURL: String
+  private let gatewayClientPolicy: OAuthGatewayClientPolicy
   private let logger: Logger
 
-  init(httpClient: HTTPClient, plcURL: String, logger: Logger) {
+  init(
+    httpClient: HTTPClient,
+    plcURL: String,
+    gatewayClientPolicy: OAuthGatewayClientPolicy,
+    logger: Logger
+  ) {
     self.httpClient = httpClient
     self.plcURL = plcURL
+    self.gatewayClientPolicy = gatewayClientPolicy
     self.logger = logger
   }
 
@@ -61,7 +68,7 @@ struct ATProtoAuthMiddleware: RouterMiddleware {
       throw HTTPError(.unauthorized, message: "Empty access token payload")
     }
 
-    let authOutcome: (did: String, cnfJkt: String?)
+    let authOutcome: OAuthAccessTokenVerifier.VerifiedAccessToken
     do {
       authOutcome = try await OAuthAccessTokenVerifier.verify(
         accessTokenJWT: accessTokenJWT,
@@ -72,6 +79,18 @@ struct ATProtoAuthMiddleware: RouterMiddleware {
     } catch {
       logger.warning("Access token JWKS verification failed", metadata: ["error": "\(error)"])
       throw HTTPError(.unauthorized, message: "Invalid or stale ATProto OAuth access token")
+    }
+
+    do {
+      try gatewayClientPolicy.assertAllowedJWTClient(
+        clientIdClaim: authOutcome.clientIdClaim,
+        azpClaim: authOutcome.azpClaim,
+        audiences: authOutcome.audiences
+      )
+    } catch let policyError as HTTPError {
+      throw policyError
+    } catch {
+      throw HTTPError(.forbidden)
     }
 
     guard

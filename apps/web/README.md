@@ -95,19 +95,18 @@ Lexicon **collection** (NSID) strings used in the web client match `apps/web/src
 | `com.standard.entry` | Alternate legacy entry collection for listing |
 | `app.bsky.graph.follow` | Follow subjects read from the **viewer's** repo (canonical input to discovery) |
 | `com.thesocialwire.folder` | User-defined folders (`PDSClient.listFolders`, mutations) |
-| `com.thesocialwire.publicationPrefs` | Per-publication folder assignment, sort, and `hidden` flag on the user's PDS |
+| `com.thesocialwire.publicationPrefs` | Per-publication folder assignment and sort on the user's PDS (legacy `hidden` may still decode from old records but the client clears it on write) |
 
 JSON lexicons for Social Wire–specific records live under **`packages/lexicons/`** (`com.thesocialwire.*`).
 
 ### Sidebar folders & pseudo-folders
 
-Real folders are `com.thesocialwire.folder` records with AT-URIs. The sidebar also uses **pseudo-folder** sentinels (not stored on the PDS). `__my__` and `__hidden__` are exported from `pdsClient.ts`; `__all__` is display-only in `AppSidebar.tsx`.
+Real folders are `com.thesocialwire.folder` records with AT-URIs. The sidebar also uses a **pseudo-folder** sentinel for **My Publications** (not stored on the PDS). `__my__` is exported from `pdsClient.ts`; `__all__` is display-only in `AppSidebar.tsx`.
 
 | Sentinel | Constant / usage | Behavior |
 |----------|------------------|----------|
 | `__all__` | Display-only on the “All Publications” row (`AppSidebar.tsx`) | Selection state is **`selectedFolderUri === null`** — unfoldered publications you follow (excluding your own, which appear under My Publications). |
 | `__my__` | `PSEUDO_FOLDER_MY_URI` | **My Publications**: publications where the author DID matches the viewer (or `publicationId` matches the viewer). |
-| `__hidden__` | `PSEUDO_FOLDER_HIDDEN_URI` | **Hidden Publications**: pubs with `com.thesocialwire.publicationPrefs.hidden === true`. The footer checkbox **“Show Hidden Publications folder”** controls whether this row appears (`useShowHiddenFolder`). |
 
 ### Client-only persistence
 
@@ -116,8 +115,7 @@ These **localStorage** keys are browser-only convenience (no secrets):
 | Key | Purpose |
 |-----|---------|
 | `the-social-wire.react-query.v1` | Dehydrated TanStack Query cache (`PersistQueryClientProvider` in `providers.tsx`) |
-| `the-social-wire.show-hidden-folder` | Whether the Hidden Publications pseudo-folder is shown (`useShowHiddenFolder`) |
-| `the-social-wire.read-state.v1` | Read/unread map for entry AT-URIs (`entryReadStateStorage.ts`; updates suppressed while viewing the hidden folder per `ReadRouteContext`) |
+| `the-social-wire.read-state.v1` | Read/unread map for entry AT-URIs (`entryReadStateStorage.ts`) |
 
 **React Query persistence scope:** only queries that pass `shouldDehydrateQuery` are written: `["discovery", did]`, and **`["entries", authorDid]`** only when the infinite list is small (≤ 3 pages and ≤ 120 entries). Other query keys are not persisted. Persist writes are throttled (2s); max age 7 days.
 

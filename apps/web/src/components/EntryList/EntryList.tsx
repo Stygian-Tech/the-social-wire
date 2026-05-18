@@ -22,7 +22,7 @@ interface EntryListProps {
   onSelectEntry: (entryId: string) => void;
   isEntryRead: (entryId: string) => boolean;
   readIndicatorsEnabled: boolean;
-  /** Ignored when `readIndicatorsEnabled` is false (Hidden Publications). */
+  /** When false, read/unread visuals are suppressed without changing persisted state. */
   articleFilter: ArticleListFilter;
   markEntryRead: (entryId: string) => void;
   markEntryUnread: (entryId: string) => void;

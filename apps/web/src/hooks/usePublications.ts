@@ -220,30 +220,6 @@ export function useSetPublicationFolder() {
   });
 }
 
-export function useHidePublication() {
-  const client = usePDSClient();
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async ({
-      publicationId,
-      hidden,
-      existingRkey,
-    }: {
-      publicationId: string;
-      hidden: boolean;
-      existingRkey?: string;
-    }) => {
-      if (!client) throw new Error("No PDS client — not signed in");
-      return client.upsertPublicationPrefs(
-        publicationId,
-        { hidden },
-        existingRkey
-      );
-    },
-    onSuccess: () => qc.invalidateQueries({ queryKey: PUB_PREFS_QUERY_KEY }),
-  });
-}
-
 export function useSubscribeToPublication() {
   const client = usePDSClient();
   const qc = useQueryClient();

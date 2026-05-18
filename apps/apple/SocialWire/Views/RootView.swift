@@ -1,7 +1,9 @@
+import SwiftData
 import SwiftUI
 
 struct RootView: View {
     @Environment(SocialWireAppModel.self) private var appModel
+    @Environment(\.modelContext) private var modelContext
 
     var body: some View {
         Group {
@@ -13,6 +15,9 @@ struct RootView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(.systemBackground))
+        .task {
+            appModel.configureReaderPersistence(modelContext: modelContext)
+        }
         .alert("Something went wrong", isPresented: Binding(
             get: { appModel.errorMessage != nil },
             set: { if !$0 { appModel.errorMessage = nil } }

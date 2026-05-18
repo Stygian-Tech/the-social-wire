@@ -20,7 +20,12 @@ enum AppRouterBuilder {
       oauthIosMetadataOrigin: config.oauthIosMetadataOrigin
     ).register(on: router)
 
-    let authMiddleware = ATProtoAuthMiddleware(httpClient: httpClient, plcURL: config.atprotoPLCURL, logger: logger)
+    let authMiddleware = ATProtoAuthMiddleware(
+      httpClient: httpClient,
+      plcURL: config.atprotoPLCURL,
+      gatewayClientPolicy: config.oauthGateway,
+      logger: logger
+    )
     let protected = router.group().add(middleware: authMiddleware)
 
     Self.mountSyncAndOptionalLegacy(for: cache, config: config, httpClient: httpClient, logger: logger, onto: protected)

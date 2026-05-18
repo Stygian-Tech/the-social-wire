@@ -14,25 +14,24 @@ export default function ReadPubPage({ pubId }: { pubId: string }) {
     markEntryRead,
     markEntryUnread,
     isEntryRead,
-    isHiddenFolderContext,
-    effectiveArticleListFilter,
+    articleListFilter,
   } = useReadRoute();
 
   const selectedRef = useRef<string | null>(null);
-  const filterRef = useRef(effectiveArticleListFilter);
+  const filterRef = useRef(articleListFilter);
   useEffect(() => {
     selectedRef.current = selectedEntryId;
-    filterRef.current = effectiveArticleListFilter;
+    filterRef.current = articleListFilter;
   });
 
-  const prevFilterRef = useRef(effectiveArticleListFilter);
+  const prevFilterRef = useRef(articleListFilter);
   useEffect(() => {
     const prev = prevFilterRef.current;
-    if (prev === "unread" && effectiveArticleListFilter === "all" && selectedEntryId) {
+    if (prev === "unread" && articleListFilter === "all" && selectedEntryId) {
       markEntryRead(selectedEntryId);
     }
-    prevFilterRef.current = effectiveArticleListFilter;
-  }, [effectiveArticleListFilter, selectedEntryId, markEntryRead]);
+    prevFilterRef.current = articleListFilter;
+  }, [articleListFilter, selectedEntryId, markEntryRead]);
 
   useEffect(() => {
     return () => {
@@ -44,7 +43,7 @@ export default function ReadPubPage({ pubId }: { pubId: string }) {
 
   const handleSelectEntry = useCallback(
     (entryId: string) => {
-      if (effectiveArticleListFilter === "unread") {
+      if (articleListFilter === "unread") {
         // Mark the previous open article read before switching — never call
         // markEntryRead inside setState's updater (that updates the parent
         // provider during a child state update and triggers a React warning).
@@ -57,15 +56,15 @@ export default function ReadPubPage({ pubId }: { pubId: string }) {
       setSelectedEntryId(entryId);
       markEntryRead(entryId);
     },
-    [markEntryRead, effectiveArticleListFilter, selectedEntryId]
+    [markEntryRead, articleListFilter, selectedEntryId]
   );
 
   const handleBackToList = useCallback(() => {
-    if (effectiveArticleListFilter === "unread" && selectedEntryId) {
+    if (articleListFilter === "unread" && selectedEntryId) {
       markEntryRead(selectedEntryId);
     }
     setSelectedEntryId(null);
-  }, [effectiveArticleListFilter, selectedEntryId, markEntryRead]);
+  }, [articleListFilter, selectedEntryId, markEntryRead]);
 
   return (
     <div className="flex h-full min-h-0 max-h-full flex-1 flex-col overflow-hidden md:flex-row md:items-stretch">
@@ -88,8 +87,8 @@ export default function ReadPubPage({ pubId }: { pubId: string }) {
             selectedEntryId={selectedEntryId}
             onSelectEntry={handleSelectEntry}
             isEntryRead={isEntryRead}
-            readIndicatorsEnabled={!isHiddenFolderContext}
-            articleFilter={effectiveArticleListFilter}
+            readIndicatorsEnabled
+            articleFilter={articleListFilter}
             markEntryRead={markEntryRead}
             markEntryUnread={markEntryUnread}
           />

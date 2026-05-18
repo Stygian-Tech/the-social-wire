@@ -95,7 +95,6 @@ export function PublicationSubItem({
   const bulkPublicationList = useMemo(() => [publication], [publication]);
   const {
     bulkDisabled,
-    hideReadBulkMenus,
     applyMarkAllRead,
     applyMarkAllUnread,
   } = useCachedBulkReadActions(bulkPublicationList);
@@ -261,28 +260,24 @@ export function PublicationSubItem({
               })}
             </ContextMenuSubContent>
           </ContextMenuSub>
-          {!hideReadBulkMenus ? (
-            <>
-              <ContextMenuSeparator />
-              <ContextMenuItem
-                disabled={busy || bulkDisabled}
-                className="gap-2"
-                onClick={() => setMarkAllReadDialogOpen(true)}
-              >
-                Mark All As Read
-              </ContextMenuItem>
-              <ContextMenuItem
-                disabled={busy || bulkDisabled}
-                className="gap-2"
-                onClick={() => {
-                  applyMarkAllUnread();
-                  hapticSuccess();
-                }}
-              >
-                Mark All As Unread
-              </ContextMenuItem>
-            </>
-          ) : null}
+          <ContextMenuSeparator />
+          <ContextMenuItem
+            disabled={busy || bulkDisabled}
+            className="gap-2"
+            onClick={() => setMarkAllReadDialogOpen(true)}
+          >
+            Mark All As Read
+          </ContextMenuItem>
+          <ContextMenuItem
+            disabled={busy || bulkDisabled}
+            className="gap-2"
+            onClick={() => {
+              applyMarkAllUnread();
+              hapticSuccess();
+            }}
+          >
+            Mark All As Unread
+          </ContextMenuItem>
           {sidebarTab === "following" ? (
             <>
               <ContextMenuSeparator />

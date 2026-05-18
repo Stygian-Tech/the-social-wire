@@ -41,14 +41,8 @@ export function usePublicationSidebarData() {
     [prefs]
   );
 
-  const visiblePubs = useMemo(
-    () =>
-      publications.filter((p) => {
-        const pref = prefsMap.get(p.publicationId);
-        return !pref?.value.hidden;
-      }),
-    [publications, prefsMap]
-  );
+  /** Discovery rows (Subscriptions / Following segmentation does not hide entire publications). */
+  const visiblePubs = useMemo(() => publications, [publications]);
 
   const rssPublicationRows = useMemo(
     () => skyreaderSubscriptionsToDiscoveredPublications(skyreaderRecords),
@@ -60,11 +54,7 @@ export function usePublicationSidebarData() {
     [publications, rssPublicationRows]
   );
 
-  const rssPublicationRowsVisible = useMemo(
-    () =>
-      rssPublicationRows.filter((p) => !prefsMap.get(p.publicationId)?.value.hidden),
-    [rssPublicationRows, prefsMap]
-  );
+  const rssPublicationRowsVisible = useMemo(() => rssPublicationRows, [rssPublicationRows]);
 
   const viewerDid = session?.did;
 

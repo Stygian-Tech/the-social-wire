@@ -44,6 +44,51 @@ final class XRPCClient {
         return try await sendWithDPoPRetry(request, session: session)
     }
 
+    /// Signed `com.atproto.repo.getRecord` for the signed-in user's repo. Returns **`nil`** when the record does not exist (404).
+    func authorizedRepoGetRecord<Value: Decodable>(collection: String, rkey: String) async throws -> RepoRecord<Value>? {
+        let session = try await auth.validSession()
+        let query: [String: String?] = [
+            "repo": session.did,
+            "collection": collection,
+            "rkey": rkey,
+        ]
+        let url = try xrpcURL(base: session.pdsURL, method: "com.atproto.repo.getRecord", query: query)
+
+        func parseRepoRecordOptional(_ data: Data, _ http: HTTPURLResponse) throws -> RepoRecord<Value>? {
+            if http.statusCode == 404 { return nil }
+            guard (200 ..< 300).contains(http.statusCode) else {
+                throw SocialWireError.badResponse("XRPC request failed with HTTP \(http.statusCode).")
+            }
+            return try jsonDecoder.decode(RepoRecord<Value>.self, from: data)
+        }
+
+        var request = URLRequest(url: url)
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        try await sign(&request, session: session)
+
+        let (firstData, firstResponse) = try await URLSession.shared.data(for: request)
+        guard let firstHttp = firstResponse as? HTTPURLResponse else {
+            throw SocialWireError.badResponse("Missing response.")
+        }
+        await auth.dpop.updateNonce(from: firstHttp)
+
+        if [400, 401].contains(firstHttp.statusCode),
+           firstHttp.value(forHTTPHeaderField: "DPoP-Nonce") != nil {
+            var retry = URLRequest(url: url)
+            retry.setValue("application/json", forHTTPHeaderField: "Accept")
+            try await sign(&retry, session: session)
+
+            let (retryData, retryResponse) = try await URLSession.shared.data(for: retry)
+            guard let retryHttp = retryResponse as? HTTPURLResponse else {
+                throw SocialWireError.badResponse("Missing response.")
+            }
+            await auth.dpop.updateNonce(from: retryHttp)
+            return try parseRepoRecordOptional(retryData, retryHttp)
+        }
+
+        return try parseRepoRecordOptional(firstData, firstHttp)
+    }
+
     func listRecords<Value: Codable & Sendable>(
         repo: String,
         collection: String,

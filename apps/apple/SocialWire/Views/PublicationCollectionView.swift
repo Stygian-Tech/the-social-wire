@@ -32,17 +32,10 @@ struct PublicationCollectionView: View {
                     .buttonStyle(.plain)
                     .contextMenu {
                         FolderAssignmentMenu(publication: publication)
-                        Button(publicationIsHidden(publication) ? "Unhide" : "Hide", systemImage: publicationIsHidden(publication) ? "eye" : "eye.slash") {
-                            Task { await appModel.setHidden(publication, hidden: !publicationIsHidden(publication)) }
-                        }
                     }
                 }
             }
         }
         .navigationTitle(title)
-    }
-
-    private func publicationIsHidden(_ publication: DiscoveredPublication) -> Bool {
-        appModel.publicationPrefs[publication.publicationId]?.value.hidden ?? false
     }
 }

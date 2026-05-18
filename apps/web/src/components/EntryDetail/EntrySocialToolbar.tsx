@@ -17,6 +17,7 @@ import {
   useHttpsUrlIsLatrSaved,
   useSaveHttpsReadLaterMutation,
 } from "@/hooks/useLatrSaved";
+import { useConfiguredReadLaterService } from "@/hooks/useReadLaterPreferences";
 import type { EntryDetail } from "@/lib/atprotoClient";
 import { canonicalArticleHttpsUrl } from "@/lib/articleCanonicalUrl";
 import { cn } from "@/lib/utils";
@@ -46,6 +47,9 @@ export function EntrySocialToolbar({
   const canonUrl = canonicalArticleHttpsUrl(entry);
   const alreadyLatrSaved = useHttpsUrlIsLatrSaved(canonUrl ?? null);
   const saveLaterMut = useSaveHttpsReadLaterMutation();
+  const { serviceId: configuredReadLaterId } =
+    useConfiguredReadLaterService();
+  const latrReadLaterWritesEnabled = configuredReadLaterId === "latr-link";
 
   const [repostOpen, setRepostOpen] = useState(false);
   const [quoteOpen, setQuoteOpen] = useState(false);
@@ -162,13 +166,19 @@ export function EntrySocialToolbar({
             variant={alreadyLatrSaved ? "secondary" : "outline"}
             size="sm"
             disabled={
-              busySocial || savingLater || alreadyLatrSaved || !canonUrl
+              busySocial ||
+              savingLater ||
+              alreadyLatrSaved ||
+              !canonUrl ||
+              !latrReadLaterWritesEnabled
             }
             className="h-11 min-h-[44px] justify-center gap-1.5 px-2 sm:h-7 sm:min-h-0 sm:justify-start sm:px-2.5"
             title={
-              alreadyLatrSaved
-                ? "Already in Read Later"
-                : "Save Canonical URL to PDS Read Later (L@tr Compatible)"
+              !latrReadLaterWritesEnabled
+                ? "Choose L@tr Link in Read Later Settings to save HTTPS articles to your PDS."
+                : alreadyLatrSaved
+                  ? "Already in Read Later"
+                  : "Save Canonical URL to PDS Read Later (L@tr Compatible)"
             }
             onClick={() => {
               if (!canonUrl) return;
