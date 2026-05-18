@@ -1,5 +1,8 @@
-# Default app name; CI passes `--app` from GitHub secrets.
-# Monorepo: deploy with `fly deploy ./services/api` from repo root (see README + deploy.yml).
+# fly.toml app configuration file generated for social-wire-api on 2026-05-18T01:08:18Z
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
 app = "social-wire-api"
 primary_region = "ord"
 
@@ -11,6 +14,7 @@ primary_region = "ord"
 
 # Default deploy wait is 5m; slow image pulls + rolling health on 2 machines can exceed that and
 # surface as "request canceled" from the Machines API poll. 10m matches Fly's recommended fix.
+
 [deploy]
   wait_timeout = "10m"
 
