@@ -44,7 +44,6 @@ export const PREFERENCES_RKEY = "self";
 
 /** Sidebar pseudo-folder URI (not a real `com.thesocialwire.folder` record). */
 export const PSEUDO_FOLDER_MY_URI = "__my__";
-export const PSEUDO_FOLDER_HIDDEN_URI = "__hidden__";
 
 // ── Record types ──────────────────────────────────────────────────────────────
 
@@ -544,7 +543,7 @@ export class PDSClient {
 
   async upsertPublicationPrefs(
     publicationId: string,
-    updates: Partial<Pick<PublicationPrefsRecord, "sortOrder" | "hidden">> & {
+    updates: Partial<Pick<PublicationPrefsRecord, "sortOrder">> & {
       folderId?: string | null;
     },
     existingRkey?: string
@@ -563,8 +562,6 @@ export class PDSClient {
       updates.sortOrder !== undefined
         ? updates.sortOrder
         : (prev?.sortOrder ?? 0);
-    const hidden =
-      updates.hidden !== undefined ? updates.hidden : (prev?.hidden ?? false);
 
     let folderId: string | undefined;
     if ("folderId" in updates) {
@@ -577,7 +574,7 @@ export class PDSClient {
       $type: COLLECTION_PUB_PREFS,
       publicationId,
       sortOrder,
-      hidden,
+      hidden: false,
       createdAt: prev?.createdAt ?? new Date().toISOString(),
       ...(folderId !== undefined ? { folderId } : {}),
     };

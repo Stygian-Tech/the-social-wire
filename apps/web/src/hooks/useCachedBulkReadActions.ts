@@ -16,7 +16,6 @@ export function useCachedBulkReadActions(
   const {
     markEntriesRead,
     markEntriesUnread,
-    isHiddenFolderContext,
   } = useReadRoute();
 
   const cachedEntryIds = useMemo(() => {
@@ -24,8 +23,7 @@ export function useCachedBulkReadActions(
     return distinctCachedEntryIdsForPublications(queryClient, publications);
   }, [queryClient, publications, entriesEpoch]);
 
-  const bulkDisabled =
-    isHiddenFolderContext || cachedEntryIds.length === 0;
+  const bulkDisabled = cachedEntryIds.length === 0;
 
   const applyMarkAllRead = useCallback(() => {
     markEntriesRead(cachedEntryIds);
@@ -38,7 +36,6 @@ export function useCachedBulkReadActions(
   return {
     cachedEntryIds,
     bulkDisabled,
-    hideReadBulkMenus: isHiddenFolderContext,
     applyMarkAllRead,
     applyMarkAllUnread,
   };

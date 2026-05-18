@@ -12,6 +12,8 @@ struct AppConfig: Sendable {
   let oauthIosMetadataOrigin: String?
   /// When `true`, keeps publication discovery/content routes online for phased migrations (default **`false`**).
   let enableLegacyContentAPI: Bool
+  /// Binds JWT access tokens from **registered OAuth clients / audiences** for hosted gateway traffic.
+  let oauthGateway: OAuthGatewayClientPolicy
 
   enum AppEnvironment: String, Sendable {
     case local
@@ -52,13 +54,20 @@ struct AppConfig: Sendable {
     let oauthIosMetadataOrigin = (oauthIosOrigRaw?.isEmpty == false) ? oauthIosOrigRaw : nil
     let enableLegacyContentAPI = Self.truthyFlag(env["ENABLE_LEGACY_CONTENT_API"])
 
+    let gateway = OAuthGatewayClientPolicy(
+      allowedClientIds: OAuthGatewayPolicyParser.delimiterTokenSet(env["OAUTH_GATEWAY_ALLOWED_CLIENT_IDS"]),
+      allowedAudiences: OAuthGatewayPolicyParser.delimiterTokenSet(env["OAUTH_GATEWAY_ALLOWED_AUDIENCES"]),
+      requireKnownClient: OAuthGatewayPolicyParser.truthy(env["OAUTH_GATEWAY_REQUIRE_KNOWN_CLIENT"])
+    )
+
     return AppConfig(
       atprotoPLCURL: plcURL,
       appEnv: appEnv,
       cacheBackend: backend,
       oauthPublicOrigin: oauthPublicOrigin,
       oauthIosMetadataOrigin: oauthIosMetadataOrigin,
-      enableLegacyContentAPI: enableLegacyContentAPI
+      enableLegacyContentAPI: enableLegacyContentAPI,
+      oauthGateway: gateway
     )
   }
 

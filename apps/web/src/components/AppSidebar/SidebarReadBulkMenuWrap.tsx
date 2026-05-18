@@ -39,16 +39,11 @@ export function SidebarReadBulkMenuWrap({
 }: SidebarReadBulkMenuWrapProps) {
   const {
     bulkDisabled,
-    hideReadBulkMenus,
     applyMarkAllRead,
     applyMarkAllUnread,
   } = useCachedBulkReadActions(publications);
 
   const [markAllReadOpen, setMarkAllReadOpen] = useState(false);
-
-  if (hideReadBulkMenus) {
-    return <>{children}</>;
-  }
 
   return (
     <>

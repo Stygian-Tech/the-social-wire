@@ -2,9 +2,23 @@ import SwiftUI
 
 struct MainSplitView: View {
     @Environment(SocialWireAppModel.self) private var appModel
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var columnVisibility = NavigationSplitViewVisibility.all
     @State private var showingAddPublication = false
     @State private var showingNewFolder = false
+    @State private var showingSettings = false
+
+    private var compact: Bool {
+        horizontalSizeClass == .compact
+    }
+
+    private var publicationSidebarSelectionActive: Bool {
+        if case .publication = appModel.selectedSidebar {
+            true
+        } else {
+            false
+        }
+    }
 
     var body: some View {
         @Bindable var model = appModel
@@ -12,7 +26,8 @@ struct MainSplitView: View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             SidebarView(
                 showingAddPublication: $showingAddPublication,
-                showingNewFolder: $showingNewFolder
+                showingNewFolder: $showingNewFolder,
+                showingSettings: $showingSettings
             )
         } content: {
             contentColumn
@@ -26,6 +41,11 @@ struct MainSplitView: View {
         .sheet(isPresented: $showingNewFolder) {
             NewFolderView()
         }
+        .sheet(isPresented: $showingSettings) {
+            NavigationStack {
+                SettingsView()
+            }
+        }
         .refreshable {
             await appModel.refreshAll()
         }
@@ -36,51 +56,88 @@ struct MainSplitView: View {
 
     @ViewBuilder
     private var contentColumn: some View {
-        switch appModel.selectedSidebar ?? .readingList {
-        case .readingList:
-            PublicationCollectionView(title: "Reading List", publications: appModel.unfolderedPublications)
+        switch appModel.selectedSidebar {
         case .saved:
             SavedLinksView()
         case .myPublications:
             PublicationCollectionView(title: "My Publications", publications: appModel.myPublications)
-        case .following:
-            PublicationCollectionView(title: "Following", publications: appModel.followingPublications)
-        case .hidden:
-            PublicationCollectionView(title: "Hidden Publications", publications: appModel.hiddenPublications)
-        case .settings:
-            SettingsView()
-        case .folder(let folderURI):
-            if let folder = appModel.folders.first(where: { $0.uri == folderURI }) {
-                PublicationCollectionView(title: folder.value.name, publications: appModel.publications(in: folder))
-            } else {
-                ContentUnavailableView("Folder Missing", systemImage: "folder")
-            }
         case .publication:
-            EntryListView()
+            ZStack {
+                EntryListView(
+                    hidesNavigationChrome: compact && appModel.selectedEntry != nil
+                )
+                if compact, let entry = appModel.selectedEntry {
+                    EntryDetailView(entry: entry)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(Color(.systemBackground))
+                        .transition(.opacity)
+                }
+            }
+        case .none:
+            selectPublicationPlaceholder
         }
     }
 
     @ViewBuilder
     private var detailColumn: some View {
-        if let save = appModel.selectedSavedLink {
+        if compact && appModel.selectedSidebar == .saved {
+            Color.clear.frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if compact && appModel.selectedEntry != nil, publicationSidebarSelectionActive {
+            Color.clear.frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let save = appModel.selectedSavedLink {
             SavedLinkDetailView(save: save)
         } else if let entry = appModel.selectedEntry {
             EntryDetailView(entry: entry)
         } else {
-            ContentUnavailableView("Select an Item", systemImage: "doc.text", description: Text("Choose an article or saved link to preview."))
+            chooseArticlePlaceholder
         }
     }
 
-    private func handleSidebarSelection(_ selection: SidebarSelection?) async {
-        guard let selection else { return }
-        switch selection {
-        case .publication(let id):
-            if let publication = appModel.publications.first(where: { $0.publicationId == id }) {
-                await appModel.selectPublication(publication)
+    private var selectPublicationPlaceholder: some View {
+        ContentUnavailableView {
+            Label("Select a Publication", systemImage: "newspaper")
+        } description: {
+            Text("Choose a publication from the sidebar to start reading.")
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var chooseArticlePlaceholder: some View {
+        ContentUnavailableView {
+            Label("Choose an Article", systemImage: "doc.text")
+        } description: {
+            if appModel.selectedPublication != nil {
+                Text("Select an article from the list.")
+            } else {
+                Text("Choose a publication from the sidebar to start reading.")
             }
-        default:
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func handleSidebarSelection(_ selection: SidebarSelection?) async {
+        guard let selection else {
             appModel.selectedEntry = nil
             appModel.selectedSavedLink = nil
+            appModel.selectedPublication = nil
+            appModel.entries = []
+            return
+        }
+        switch selection {
+        case .publication(let id):
+            if let publication = appModel.allPublicationRows.first(where: { $0.publicationId == id }) {
+                await appModel.selectPublication(publication)
+            }
+        case .saved:
+            appModel.selectedEntry = nil
+            appModel.selectedPublication = nil
+            appModel.entries = []
+            appModel.selectedSavedLink = nil
+        case .myPublications:
+            appModel.selectedEntry = nil
+            appModel.selectedSavedLink = nil
+            appModel.selectedPublication = nil
+            appModel.entries = []
         }
     }
 }

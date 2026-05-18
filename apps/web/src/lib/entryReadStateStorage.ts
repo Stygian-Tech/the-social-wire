@@ -1,9 +1,5 @@
 /**
  * Client-only persisted read/unread for article entry AT-URIs.
- *
- * When the user is in the Hidden Publications folder, the UI does not show
- * read indicators and does not call into this module for updates (see ReadRouteContext).
- * Stored keys still exist on disk if the user previously marked entries read elsewhere.
  */
 
 export const READ_STATE_STORAGE_KEY = "the-social-wire.read-state.v1";

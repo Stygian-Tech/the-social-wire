@@ -21,7 +21,6 @@ import {
   entryReadStateRkeyFromSubjectUri,
   type LatrSavedExternalRecord,
   type LatrSavedItemRecord,
-  PSEUDO_FOLDER_HIDDEN_URI,
   PSEUDO_FOLDER_MY_URI,
 } from "@/lib/pdsClient";
 
@@ -70,11 +69,6 @@ describe("collection constants", () => {
     expect(COLLECTION_ENTRY_READ_STATE).toBe(
       "com.thesocialwire.entryReadState"
     );
-  });
-
-  it("hidden pseudo-folder URI is stable", () => {
-    expect(PSEUDO_FOLDER_HIDDEN_URI).toBe("__hidden__");
-    expect(rkeyFromURI(PSEUDO_FOLDER_HIDDEN_URI)).toBe(PSEUDO_FOLDER_HIDDEN_URI);
   });
 
   it("my pseudo-folder URI is stable", () => {

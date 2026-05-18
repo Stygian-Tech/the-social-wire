@@ -11,6 +11,8 @@ final class PDSRecordService {
     nonisolated static let latrSavedItem = "com.latr.saved.item"
     nonisolated static let entryReadState = "com.thesocialwire.entryReadState"
 
+    nonisolated private static let preferencesRKey = "self"
+
     private let xrpc: XRPCClient
 
     init(xrpc: XRPCClient) {
@@ -36,13 +38,13 @@ final class PDSRecordService {
         return page.records
     }
 
-    func upsertPublicationPrefs(publicationId: String, folderId: String?, hidden: Bool?, existing: RepoRecord<PublicationPrefsRecord>?) async throws {
+    func upsertPublicationPrefs(publicationId: String, folderId: String?, existing: RepoRecord<PublicationPrefsRecord>?) async throws {
         let record = PublicationPrefsRecord(
             type: Self.publicationPrefs,
             publicationId: publicationId,
             folderId: folderId ?? existing?.value.folderId,
             sortOrder: existing?.value.sortOrder ?? 0,
-            hidden: hidden ?? existing?.value.hidden ?? false,
+            hidden: false,
             createdAt: existing?.value.createdAt ?? DateFormatters.string()
         )
         try await xrpc.putRecord(collection: Self.publicationPrefs, rkey: existing.map { rkey(from: $0.uri) } ?? DeterministicKeys.generateTID(), record: record)
@@ -99,6 +101,24 @@ final class PDSRecordService {
 
     func markUnread(subjectURI: String) async throws {
         try await xrpc.deleteRecord(collection: Self.entryReadState, rkey: DeterministicKeys.entryReadStateRKey(subjectURI: subjectURI))
+    }
+
+    func getPreferences() async throws -> RepoRecord<PreferencesRecord>? {
+        try await xrpc.authorizedRepoGetRecord(collection: Self.preferences, rkey: Self.preferencesRKey)
+    }
+
+    func upsertReadLaterServicePreference(_ serviceId: String) async throws {
+        let current = try await getPreferences()
+        let prev = current?.value
+        let now = DateFormatters.string()
+        let record = PreferencesRecord(
+            type: Self.preferences,
+            readLaterService: serviceId,
+            readLaterConnections: prev?.readLaterConnections,
+            createdAt: prev?.createdAt ?? now,
+            updatedAt: now
+        )
+        try await xrpc.putRecord(collection: Self.preferences, rkey: Self.preferencesRKey, record: record)
     }
 
     func listMergedLatrSaves() async throws -> [MergedLatrSave] {

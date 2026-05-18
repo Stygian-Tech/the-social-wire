@@ -65,6 +65,14 @@ final class PublicationService {
         return EntryParser.parseDetail(record: record)
     }
 
+    func fetchActorProfile(actor: String) async throws -> ActorProfileResponse {
+        try await xrpc.publicGet(
+            Self.publicAppView,
+            method: "app.bsky.actor.getProfile",
+            query: ["actor": actor]
+        )
+    }
+
     func viewerState(for postURI: String) async throws -> ProfileViewResponse.Viewer? {
         let response: PostsResponse = try await xrpc.publicGet(
             Self.publicAppView,

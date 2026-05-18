@@ -3,6 +3,13 @@ import SwiftUI
 struct EntryListView: View {
     @Environment(SocialWireAppModel.self) private var appModel
 
+    /// Hides the navigation bar (filter + title) when an article is presented full-width on compact width.
+    var hidesNavigationChrome: Bool
+
+    init(hidesNavigationChrome: Bool = false) {
+        self.hidesNavigationChrome = hidesNavigationChrome
+    }
+
     var body: some View {
         @Bindable var model = appModel
 
@@ -31,7 +38,10 @@ struct EntryListView: View {
         .navigationTitle(appModel.selectedPublication?.title ?? "Articles")
         .toolbar {
             ToolbarItem(placement: .principal) {
-                Picker("Filter", selection: $model.readerFilter) {
+                Picker("Filter", selection: Binding(
+                    get: { model.readerFilter },
+                    set: { newValue in Task { await model.applyReaderFilter(newValue) } }
+                )) {
                     ForEach(ReaderFilter.allCases) { filter in
                         Text(filter.rawValue).tag(filter)
                     }
@@ -49,6 +59,7 @@ struct EntryListView: View {
                 }
             }
         }
+        .toolbar(hidesNavigationChrome ? .hidden : .automatic, for: .navigationBar)
         .refreshable {
             if let publication = appModel.selectedPublication {
                 await appModel.loadEntries(for: publication)

@@ -6,6 +6,16 @@ import Logging
 
 /// Verifies ATProto OAuth access JWTs (`issuer` metadata → JWKS) using JWTKit's `JWTKeyCollection`.
 enum OAuthAccessTokenVerifier {
+  /// Cryptographically verified JWT access token slice used for **`AuthContext`** + optional first-party gateway binding.
+  struct VerifiedAccessToken: Sendable {
+    let did: String
+    /// RFC 9449 **`cnf.jkt`** thumbprint binding (when issuer emits confirmation).
+    let cnfJkt: String?
+    let clientIdClaim: String?
+    let azpClaim: String?
+    let audiences: [String]
+  }
+
   struct AccessClaims: JWTPayload {
     struct CnfClaims: Codable {
       /// RFC 8707 **JSON Web Thumbprint confirmation** identifying the demonstrated DPoP key.
@@ -32,14 +42,14 @@ enum OAuthAccessTokenVerifier {
     case signatureRejected
   }
 
-  /// Returns the DID (`sub`) and optional **`cnf.jkt`** binding string from a cryptographically verified access token JWT.
+  /// Cryptographically verifies the access JWT, returning DID + **`cnf.jkt`** plus optional **`client_id`/`azp`/`aud`** claims.
   static func verify(
     accessTokenJWT: String,
     httpClient: HTTPClient,
     plcURL: String,
     logger: Logger
   )
-    async throws -> (did: String, cnfJkt: String?)
+    async throws -> VerifiedAccessToken
   {
     let unverifiedColl = JWTKeyCollection()
     let payload: AccessClaims = try await unverifiedColl.unverified(accessTokenJWT, as: AccessClaims.self)
@@ -102,7 +112,14 @@ enum OAuthAccessTokenVerifier {
         }
         let rawJkt = verified.cnf?.jkt?.trimmingCharacters(in: .whitespacesAndNewlines)
         let thumb = (rawJkt?.isEmpty == false) ? rawJkt : nil
-        return (subject, thumb)
+        let extra = Self.extractRegisteredClientSignals(fromJWT: accessTokenJWT)
+        return VerifiedAccessToken(
+          did: subject,
+          cnfJkt: thumb,
+          clientIdClaim: extra.clientId,
+          azpClaim: extra.azp,
+          audiences: extra.audiences
+        )
       } catch {
         probeError = error
         continue
@@ -110,6 +127,68 @@ enum OAuthAccessTokenVerifier {
     }
 
     throw probeError
+  }
+
+  private static func trimmedNonempty(_ raw: String?) -> String? {
+    guard let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else {
+      return nil
+    }
+    return trimmed
+  }
+
+  /// Best-effort parse of JWT JSON payload (**after** JWKS verification) — ATProto issuer-specific claim spelling.
+  private static func extractRegisteredClientSignals(fromJWT jwt: String)
+    -> (clientId: String?, azp: String?, audiences: [String])
+  {
+    let segments = jwt.split(separator: ".")
+    guard segments.count >= 2 else {
+      return (clientId: nil, azp: nil, audiences: [])
+    }
+
+    guard let payloadData = jwtPayloadData(base64URLEncoded: String(segments[1])) else {
+      return (clientId: nil, azp: nil, audiences: [])
+    }
+
+    guard let obj = try? JSONSerialization.jsonObject(with: payloadData) as? [String: Any] else {
+      return (clientId: nil, azp: nil, audiences: [])
+    }
+
+    let clientTrimmed = trimmedNonempty(obj["client_id"] as? String)
+      ?? trimmedNonempty(obj["clientId"] as? String)
+
+    let azpTrimmed = trimmedNonempty(obj["azp"] as? String)
+
+    var audiences: [String] = []
+
+    if let single = obj["aud"] as? String {
+      audiences = [single]
+    } else if let multi = obj["aud"] as? [String] {
+      audiences = multi
+    }
+
+    return (
+      clientId: clientTrimmed,
+      azp: azpTrimmed,
+      audiences: audiences
+    )
+  }
+
+  /// RFC 7519 Base64URL (no padding) → `Data`.
+  private static func jwtPayloadData(base64URLEncoded: String) -> Data? {
+    var copy = base64URLEncoded
+      .replacingOccurrences(of: "-", with: "+")
+      .replacingOccurrences(of: "_", with: "/")
+
+    let paddingLength = (4 - copy.count % 4) % 4
+    if paddingLength > 0 {
+      copy.append(String(repeating: "=", count: paddingLength))
+    }
+
+    guard let data = Data(base64Encoded: copy) else {
+      return nil
+    }
+
+    return data
   }
 
   private static func collectJwksURLs(

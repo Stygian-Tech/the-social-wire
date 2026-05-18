@@ -41,6 +41,12 @@ components:
 
         **`DPoP` header**: supply `DPoP: <jwt proof>` whose **`ath`** claim covers the ASCII access JWT and whose **`cnf`** hash matches **`cnf.jkt`** whenever the issuer embeds confirmation.
 
+        **Hosted infra (first-party only):** when `OAUTH_GATEWAY_REQUIRE_KNOWN_CLIENT` is enabled server-side,
+        callers must present JWT claims compatible with **`OAUTH_GATEWAY_ALLOWED_CLIENT_IDS`**
+        (typically **`client_id`** / **`azp`**) **and/or** **`OAUTH_GATEWAY_ALLOWED_AUDIENCES`**.
+        Operators who **self-host** this gateway configure their own allowlists; arbitrary third-party OAuth
+        apps should not rely on Social Wire production API hosts without an explicit arrangement.
+
   schemas:
     Error:
       type: object

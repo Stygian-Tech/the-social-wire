@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import SwiftData
 
 @Observable
 @MainActor
@@ -10,21 +11,36 @@ final class SocialWireAppModel {
     let pds: PDSRecordService
     let publicationsService: PublicationService
     let rss: RSSService
+    private let gateway: SocialWireGatewayClient
+    private var readerCacheCoordinator: ReaderCacheCoordinator?
+
+    private static let preferencesSyncCacheKey = "v1/sync/preferences"
 
     var folders: [RepoRecord<FolderRecord>] = []
     var publicationPrefs: [String: RepoRecord<PublicationPrefsRecord>] = [:]
-    var publications: [DiscoveredPublication] = []
+    /// Standard.site discovery rows (follow graph); RSS rows are kept separately.
+    var discoveredPublications: [DiscoveredPublication] = []
+    var rssPublications: [DiscoveredPublication] = []
+    var publicationSubscriptions: [RepoRecord<PublicationSubscriptionRecord>] = []
     var savedLinks: [MergedLatrSave] = []
     var readAtByEntryId: [String: Date] = [:]
     var entries: [EntryListItem] = []
     var selectedPublication: DiscoveredPublication?
     var selectedEntry: EntryDetail?
     var selectedSavedLink: MergedLatrSave?
-    var selectedSidebar: SidebarSelection? = .readingList
+    var selectedSidebar: SidebarSelection?
+    var publicationSidebarTab: PublicationSidebarTab = .subscribed
+    var viewerProfile: ActorProfileResponse?
     var readerFilter: ReaderFilter = .all
     var isLoading = false
     var isLoadingEntries = false
     var errorMessage: String?
+    /// Lexical account preferences returned from **`GET /v1/sync/preferences`** (optional read-later hints).
+    var preferencesFromGateway: PreferencesRecord?
+    /// Entry id currently open under **Unread** filter — `markRead` is deferred until navigation away.
+    private var unreadDeferredEntryId: String?
+    /// Read-later picker save in-flight (mirror web mutation pending state).
+    var isUpdatingReadLaterPreference = false
 
     init() {
         authService = ATProtoOAuthService()
@@ -33,6 +49,12 @@ final class SocialWireAppModel {
         pds = PDSRecordService(xrpc: xrpc)
         publicationsService = PublicationService(xrpc: xrpc)
         rss = RSSService()
+        gateway = SocialWireGatewayClient(auth: authService)
+    }
+
+    /// Call once SwiftData injects **`ModelContext`** (see **`RootView`**).
+    func configureReaderPersistence(modelContext: ModelContext) {
+        readerCacheCoordinator = ReaderCacheCoordinator(modelContext: modelContext)
     }
 
     var isSignedIn: Bool {
@@ -43,28 +65,56 @@ final class SocialWireAppModel {
         authService.session?.did
     }
 
-    var visiblePublications: [DiscoveredPublication] {
-        publications.filter { !(publicationPrefs[$0.publicationId]?.value.hidden ?? false) }
+    var allPublicationRows: [DiscoveredPublication] {
+        discoveredPublications + rssPublications
+    }
+
+    private var subscriptionLookupKeys: Set<String> {
+        subscriptionPublicationKeys(from: publicationSubscriptions)
+    }
+
+    private var segmentedDiscovery: (
+        graphSubscribed: [DiscoveredPublication],
+        followOwnedUnsubscribed: [DiscoveredPublication]
+    ) {
+        segmentDiscoveryPublications(
+            discoveredPublications,
+            viewerDid: viewerDID,
+            subscriptionKeys: subscriptionLookupKeys
+        )
+    }
+
+    var subscribedPublications: [DiscoveredPublication] {
+        mergeSubscribedPublications(
+            graphSubscribed: segmentedDiscovery.graphSubscribed,
+            rssPublications: rssPublications
+        )
     }
 
     var myPublications: [DiscoveredPublication] {
         guard let viewerDID else { return [] }
-        return publications.filter { $0.authorDid == viewerDID }
+        return subscribedPublications.filter { viewerOwnsDiscoveredPublication($0, viewerDid: viewerDID) }
     }
 
-    var followingPublications: [DiscoveredPublication] {
-        guard let viewerDID else { return visiblePublications }
-        return visiblePublications.filter { $0.authorDid != viewerDID }
-    }
-
-    var hiddenPublications: [DiscoveredPublication] {
-        publications.filter { publicationPrefs[$0.publicationId]?.value.hidden ?? false }
-    }
-
-    var unfolderedPublications: [DiscoveredPublication] {
-        visiblePublications.filter { pub in
-            guard pub.authorDid != viewerDID else { return false }
+    var subscribedUnfolderedPublications: [DiscoveredPublication] {
+        guard let viewerDID else { return [] }
+        return subscribedPublications.filter { pub in
+            guard !viewerOwnsDiscoveredPublication(pub, viewerDid: viewerDID) else { return false }
             return publicationPrefs[pub.publicationId]?.value.folderId == nil
+        }
+    }
+
+    var followingTabPublications: [DiscoveredPublication] {
+        filterFollowingTabPublications(
+            followOwnedUnsubscribed: segmentedDiscovery.followOwnedUnsubscribed,
+            myPublications: myPublications
+        )
+    }
+
+    func publicationsForSidebarTab(_ tab: PublicationSidebarTab) -> [DiscoveredPublication] {
+        switch tab {
+        case .subscribed: subscribedUnfolderedPublications
+        case .following: followingTabPublications
         }
     }
 
@@ -73,6 +123,28 @@ final class SocialWireAppModel {
         case .all: entries
         case .unread: entries.filter { readAtByEntryId[$0.entryId] == nil }
         }
+    }
+
+    /// Effective read-later designation (gateway → local cache → **`latr-link`**), aligned with **`useConfiguredReadLaterService`** on web.
+    var effectiveReadLaterServiceId: String {
+        let g = preferencesFromGateway?.readLaterService?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let g, ReadLaterServiceCatalog.isKnownServiceId(g) { return g }
+        let stored = UserDefaults.standard.string(forKey: ReadLaterServiceCatalog.userDefaultsStorageKey)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if let stored, ReadLaterServiceCatalog.isKnownServiceId(stored) { return stored }
+        return ReadLaterServiceCatalog.defaultServiceId
+    }
+
+    /// Whether merged HTTPS read-later is active (mirror web **`readLaterService === "latr-link"`** intent).
+    var readLaterLatrConfigured: Bool {
+        effectiveReadLaterServiceId == ReadLaterServiceCatalog.defaultServiceId
+    }
+
+    func unreadCachedBadge(for publication: DiscoveredPublication) -> Int {
+        readerCacheCoordinator?.unreadCachedCount(
+            publicationId: publication.publicationId,
+            readAtByEntryId: readAtByEntryId
+        ) ?? 0
     }
 
     func restoreSession() async {
@@ -106,12 +178,30 @@ final class SocialWireAppModel {
         authService.signOut()
         folders = []
         publicationPrefs = [:]
-        publications = []
+        discoveredPublications = []
+        rssPublications = []
+        publicationSubscriptions = []
         savedLinks = []
         entries = []
         selectedEntry = nil
         selectedPublication = nil
         selectedSavedLink = nil
+        selectedSidebar = nil
+        viewerProfile = nil
+        preferencesFromGateway = nil
+        unreadDeferredEntryId = nil
+    }
+
+    func sumUnread(for publications: [DiscoveredPublication]) -> Int {
+        sumUnreadCount(for: publications, unreadCount: unreadCachedBadge(for:))
+    }
+
+    func openMyPublications() {
+        selectedSidebar = .myPublications
+        selectedPublication = nil
+        selectedEntry = nil
+        selectedSavedLink = nil
+        entries = []
     }
 
     func refreshAll() async {
@@ -122,27 +212,115 @@ final class SocialWireAppModel {
             async let foldersTask = pds.listFolders()
             async let prefsTask = pds.listPublicationPrefs()
             async let standardTask = publicationsService.discoverPublications(viewerDID: viewerDID)
+            async let subscriptionsTask = pds.listPublicationSubscriptions()
             async let skyreaderTask = pds.listSkyreaderSubscriptions()
             async let readTask = pds.listEntryReadStates()
             async let savedTask = pds.listMergedLatrSaves()
+            async let profileTask = publicationsService.fetchActorProfile(actor: viewerDID)
 
             folders = try await foldersTask
             let prefs = try await prefsTask
             publicationPrefs = Dictionary(uniqueKeysWithValues: prefs.map { ($0.value.publicationId, $0) })
-            let rssPublications = try await skyreaderTask.compactMap { rss.discoveredPublication(from: $0) }
-            publications = try await standardTask + rssPublications
+            discoveredPublications = try await standardTask
+            rssPublications = try await skyreaderTask.compactMap { rss.discoveredPublication(from: $0) }
+            publicationSubscriptions = try await subscriptionsTask
             readAtByEntryId = try await readTask
             savedLinks = try await savedTask
+            viewerProfile = try? await profileTask
         } catch {
             errorMessage = error.localizedDescription
         }
+
+        await refreshGatewayPreferencesSnapshot()
+        Task(priority: .utility) { await self.prefetchSidebarPublications() }
+    }
+
+    /// Pulls account preferences through the Swift gateway (ETag aware) — failures are non-fatal.
+    private func refreshGatewayPreferencesSnapshot(forceRefetch: Bool = false) async {
+        guard let coordinator = readerCacheCoordinator else { return }
+        if forceRefetch {
+            try? coordinator.removeGatewayCachedResponse(for: Self.preferencesSyncCacheKey)
+        }
+        do {
+            let storedETag = forceRefetch ? nil : coordinator.gatewayETag(for: Self.preferencesSyncCacheKey)
+            let response = try await gateway.fetchSyncPreferences(ifNoneMatch: storedETag)
+
+            if response.statusCode == 304, let body = coordinator.gatewayCachedBody(for: Self.preferencesSyncCacheKey) {
+                applyPreferencesGatewayBody(body)
+                return
+            }
+
+            guard (200 ..< 300).contains(response.statusCode) else { return }
+
+            try coordinator.upsertGatewayResponse(
+                cacheKey: Self.preferencesSyncCacheKey,
+                etag: response.etagHeader,
+                body: response.body
+            )
+            applyPreferencesGatewayBody(response.body)
+        } catch {
+            // Prefer staying signed in + using PDS-only paths when the gateway is unavailable.
+        }
+    }
+
+    private func applyPreferencesGatewayBody(_ data: Data) {
+        guard let envelope = try? JSONDecoder().decode(SyncPreferencesEnvelope.self, from: data) else {
+            preferencesFromGateway = nil
+            return
+        }
+        preferencesFromGateway = envelope.record
+        if let raw = envelope.record?.readLaterService?.trimmingCharacters(in: .whitespacesAndNewlines),
+           ReadLaterServiceCatalog.isKnownServiceId(raw)
+        {
+            UserDefaults.standard.set(raw, forKey: ReadLaterServiceCatalog.userDefaultsStorageKey)
+        }
+    }
+
+    func selectReadLaterService(_ serviceId: String) async {
+        guard ReadLaterServiceCatalog.isKnownServiceId(serviceId) else { return }
+        isUpdatingReadLaterPreference = true
+        defer { isUpdatingReadLaterPreference = false }
+
+        UserDefaults.standard.set(serviceId, forKey: ReadLaterServiceCatalog.userDefaultsStorageKey)
+
+        do {
+            try await pds.upsertReadLaterServicePreference(serviceId)
+        } catch {
+            errorMessage = error.localizedDescription
+            return
+        }
+
+        await refreshGatewayPreferencesSnapshot(forceRefetch: true)
+    }
+
+    private func prefetchSidebarPublications() async {
+        for publication in subscribedUnfolderedPublications.prefix(8) {
+            try? await cacheOnlyLoadEntries(publication: publication)
+        }
+    }
+
+    private func cacheOnlyLoadEntries(publication: DiscoveredPublication) async throws {
+        guard let coordinator = readerCacheCoordinator else { return }
+        let list: [EntryListItem]
+        if let feedURL = rss.normalizedFeedURL(from: publication.publicationId) {
+            list = try await rss.entries(feedURL: feedURL)
+        } else {
+            list = try await publicationsService.listEntries(publicationId: publication.publicationId)
+        }
+        try coordinator.upsertPublicationEntries(publicationId: publication.publicationId, entries: list)
     }
 
     func publications(in folder: RepoRecord<FolderRecord>) -> [DiscoveredPublication] {
-        visiblePublications.filter { publicationPrefs[$0.publicationId]?.value.folderId == rkey(from: folder.uri) }
+        let folderRkey = rkey(from: folder.uri)
+        return subscribedPublications.filter { publication in
+            guard let viewerDID else { return false }
+            guard !viewerOwnsDiscoveredPublication(publication, viewerDid: viewerDID) else { return false }
+            return publicationPrefs[publication.publicationId]?.value.folderId == folderRkey
+        }
     }
 
     func selectPublication(_ publication: DiscoveredPublication) async {
+        unreadDeferredEntryId = nil
         selectedPublication = publication
         selectedSidebar = .publication(publication.publicationId)
         selectedSavedLink = nil
@@ -153,19 +331,78 @@ final class SocialWireAppModel {
     func loadEntries(for publication: DiscoveredPublication) async {
         isLoadingEntries = true
         defer { isLoadingEntries = false }
+
+        if let coordinator = readerCacheCoordinator,
+           let snapshot = try? coordinator.publicationEntries(publication.publicationId) {
+            entries = snapshot
+        }
+
         do {
+            let fresh: [EntryListItem]
             if let feedURL = rss.normalizedFeedURL(from: publication.publicationId) {
-                entries = try await rss.entries(feedURL: feedURL)
+                fresh = try await rss.entries(feedURL: feedURL)
             } else {
-                entries = try await publicationsService.listEntries(publicationId: publication.publicationId)
+                fresh = try await publicationsService.listEntries(publicationId: publication.publicationId)
             }
+            entries = fresh
+            try? readerCacheCoordinator?.upsertPublicationEntries(
+                publicationId: publication.publicationId,
+                entries: fresh
+            )
         } catch {
-            errorMessage = error.localizedDescription
+            if entries.isEmpty {
+                errorMessage = error.localizedDescription
+            }
         }
     }
 
+    func applyReaderFilter(_ newValue: ReaderFilter) async {
+        let old = readerFilter
+        readerFilter = newValue
+        guard old == .unread, newValue == .all else { return }
+
+        if let id = unreadDeferredEntryId {
+            await markReadIfNeededOnPDS(entryId: id)
+        } else if let open = selectedEntry?.entryId {
+            await markReadIfNeededOnPDS(entryId: open)
+        }
+        unreadDeferredEntryId = nil
+    }
+
+    func dismissReaderDetail() async {
+        if readerFilter == .unread {
+            if let id = unreadDeferredEntryId {
+                await markReadIfNeededOnPDS(entryId: id)
+            } else if let open = selectedEntry?.entryId {
+                await markReadIfNeededOnPDS(entryId: open)
+            }
+        }
+        unreadDeferredEntryId = nil
+        selectedEntry = nil
+    }
+
+    func dismissSavedLinkDetail() {
+        selectedSavedLink = nil
+    }
+
     func selectEntry(_ item: EntryListItem) async {
+        if readerFilter == .unread {
+            if let previous = unreadDeferredEntryId, previous != item.entryId {
+                await markReadIfNeededOnPDS(entryId: previous)
+            }
+            unreadDeferredEntryId = item.entryId
+        } else {
+            unreadDeferredEntryId = nil
+        }
+
         do {
+            if let coordinator = readerCacheCoordinator,
+               let cached = try coordinator.entryDetail(item.entryId) {
+                selectedEntry = cached
+            } else {
+                selectedEntry = nil
+            }
+
             let detail: EntryDetail?
             if item.entryId.hasPrefix("rss:"),
                let publication = selectedPublication,
@@ -174,10 +411,27 @@ final class SocialWireAppModel {
             } else {
                 detail = try await publicationsService.entryDetail(entryId: item.entryId)
             }
+
             selectedEntry = detail
             selectedSavedLink = nil
-            try await pds.markRead(subjectURI: item.entryId)
-            readAtByEntryId[item.entryId] = Date()
+
+            if let detail {
+                try? readerCacheCoordinator?.upsertEntryDetail(detail)
+            }
+
+            if readerFilter == .all {
+                await markReadIfNeededOnPDS(entryId: item.entryId)
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func markReadIfNeededOnPDS(entryId: String) async {
+        guard readAtByEntryId[entryId] == nil else { return }
+        do {
+            try await pds.markRead(subjectURI: entryId)
+            readAtByEntryId[entryId] = Date()
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -220,21 +474,6 @@ final class SocialWireAppModel {
             try await pds.upsertPublicationPrefs(
                 publicationId: publication.publicationId,
                 folderId: folder.map { rkey(from: $0.uri) },
-                hidden: false,
-                existing: publicationPrefs[publication.publicationId]
-            )
-            await refreshAll()
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-    }
-
-    func setHidden(_ publication: DiscoveredPublication, hidden: Bool) async {
-        do {
-            try await pds.upsertPublicationPrefs(
-                publicationId: publication.publicationId,
-                folderId: publicationPrefs[publication.publicationId]?.value.folderId,
-                hidden: hidden,
                 existing: publicationPrefs[publication.publicationId]
             )
             await refreshAll()
@@ -259,7 +498,7 @@ final class SocialWireAppModel {
     }
 
     func saveCurrentEntry() async {
-        guard let selectedEntry, let url = selectedEntry.canonicalURL else { return }
+        guard readLaterLatrConfigured, let selectedEntry, let url = selectedEntry.canonicalURL else { return }
         do {
             try await pds.saveURLToLatr(url, title: selectedEntry.title)
             savedLinks = try await pds.listMergedLatrSaves()

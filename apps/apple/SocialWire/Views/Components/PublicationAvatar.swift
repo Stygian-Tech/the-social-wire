@@ -20,12 +20,12 @@ struct PublicationAvatar: View {
             }
         }
         .frame(width: size, height: size)
-        .clipShape(RoundedRectangle(cornerRadius: min(8, size / 4), style: .continuous))
+        .clipShape(Circle())
     }
 
     private var placeholder: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: min(8, size / 4), style: .continuous)
+            Circle()
                 .fill(.secondary.opacity(0.14))
             Text(String(publication.title.prefix(1)).uppercased())
                 .font(.system(size: size * 0.42, weight: .semibold))

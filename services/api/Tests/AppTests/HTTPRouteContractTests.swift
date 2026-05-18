@@ -39,7 +39,8 @@ struct HTTPRouteContractTests {
         cacheBackend: .sqlite(path: dbPath),
         oauthPublicOrigin: nil,
         oauthIosMetadataOrigin: nil,
-        enableLegacyContentAPI: false
+        enableLegacyContentAPI: false,
+        oauthGateway: OAuthGatewayClientPolicy.permissive
       )
 
       let router = AppRouterBuilder.router(
@@ -73,7 +74,8 @@ struct HTTPRouteContractTests {
         cacheBackend: .sqlite(path: dbPath),
         oauthPublicOrigin: nil,
         oauthIosMetadataOrigin: nil,
-        enableLegacyContentAPI: false
+        enableLegacyContentAPI: false,
+        oauthGateway: OAuthGatewayClientPolicy.permissive
       )
 
       let router = AppRouterBuilder.router(
@@ -107,7 +109,8 @@ struct HTTPRouteContractTests {
         cacheBackend: .sqlite(path: dbPath),
         oauthPublicOrigin: nil,
         oauthIosMetadataOrigin: nil,
-        enableLegacyContentAPI: false
+        enableLegacyContentAPI: false,
+        oauthGateway: OAuthGatewayClientPolicy.permissive
       )
 
       let router = AppRouterBuilder.router(

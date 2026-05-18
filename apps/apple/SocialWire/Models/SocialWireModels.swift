@@ -117,6 +117,20 @@ struct FollowsResponse: Codable, Sendable {
     let cursor: String?
 }
 
+struct ActorProfileResponse: Codable, Sendable {
+    let did: String
+    let handle: String
+    let displayName: String?
+    let avatar: String?
+
+    enum CodingKeys: String, CodingKey {
+        case did
+        case handle
+        case displayName
+        case avatar
+    }
+}
+
 struct ProfileViewResponse: Codable, Sendable {
     struct Viewer: Codable, Sendable {
         let like: String?
@@ -173,15 +187,27 @@ struct PublicationPrefsRecord: Codable, Equatable, Sendable {
     }
 }
 
+struct ReadLaterConnectionPreferenceRecord: Codable, Equatable, Sendable {
+    var connectedAt: String?
+    var accountLabel: String?
+
+    enum CodingKeys: String, CodingKey {
+        case connectedAt
+        case accountLabel
+    }
+}
+
 struct PreferencesRecord: Codable, Equatable, Sendable {
     let type: String
     var readLaterService: String?
+    var readLaterConnections: [String: ReadLaterConnectionPreferenceRecord]?
     var createdAt: String
     var updatedAt: String
 
     enum CodingKeys: String, CodingKey {
         case type = "$type"
         case readLaterService
+        case readLaterConnections
         case createdAt
         case updatedAt
     }
@@ -397,14 +423,73 @@ enum ReaderFilter: String, CaseIterable, Identifiable {
 }
 
 enum SidebarSelection: Hashable {
-    case readingList
     case saved
+    /// Opened from the footer profile row (not a sidebar list tag).
     case myPublications
-    case following
-    case hidden
-    case settings
-    case folder(String)
     case publication(String)
+}
+
+/// Read-later backends users can designate (mirrors **`READ_LATER_SERVICES`** on web).
+enum ReadLaterServiceCatalog {
+    /// Same key as **`READ_LATER_SERVICE_STORAGE_KEY`** in `apps/web/src/lib/readLaterServices.ts`.
+    static let userDefaultsStorageKey = "social-wire.saved.read-later-service"
+
+    static let defaultServiceId = "latr-link"
+
+    struct Option: Identifiable, Equatable, Sendable {
+        let id: String
+        let label: String
+        /// `true` when Social Wire merges HTTPS saves from the user's PDS (`com.latr.saved.*`).
+        let connectedViaPDS: Bool
+        let loginLabel: String?
+        let loginURL: URL?
+    }
+
+    static let options: [Option] = [
+        Option(
+            id: "latr-link",
+            label: "L@tr.link",
+            connectedViaPDS: true,
+            loginLabel: nil,
+            loginURL: nil
+        ),
+        Option(
+            id: "instapaper",
+            label: "Instapaper",
+            connectedViaPDS: false,
+            loginLabel: "Log In To Instapaper",
+            loginURL: URL(string: "https://www.instapaper.com/user/login")
+        ),
+        Option(
+            id: "omnivore",
+            label: "Omnivore",
+            connectedViaPDS: false,
+            loginLabel: "Log In To Omnivore",
+            loginURL: URL(string: "https://omnivore.app/login")
+        ),
+        Option(
+            id: "readwise-reader",
+            label: "Readwise Reader",
+            connectedViaPDS: false,
+            loginLabel: "Log In To Readwise Reader",
+            loginURL: URL(string: "https://read.readwise.io/")
+        ),
+        Option(
+            id: "raindrop",
+            label: "Raindrop.io",
+            connectedViaPDS: false,
+            loginLabel: "Log In To Raindrop.io",
+            loginURL: URL(string: "https://app.raindrop.io/")
+        ),
+    ]
+
+    static func isKnownServiceId(_ raw: String) -> Bool {
+        options.contains { $0.id == raw }
+    }
+
+    static func label(for id: String) -> String {
+        options.first { $0.id == id }?.label ?? id
+    }
 }
 
 enum SocialWireError: LocalizedError {
