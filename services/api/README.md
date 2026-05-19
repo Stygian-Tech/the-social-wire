@@ -142,6 +142,10 @@ If you use a **single** hosted project for both branches, set the same ref/passw
 3. Prefer adding **`SUPABASE_DEV_DATABASE_URL`** / **`SUPABASE_PROD_DATABASE_URL`**: copy the **Session pooler** connection string from **Connect** (port **5432**). This avoids pooler auth quirks with `--password` on the CLI.
 4. Ensure the ref secret matches the project whose password you copied (dev vs prod).
 
+**Troubleshooting `network is unreachable` / IPv6 dial errors:**
+
+The secret is almost certainly a **direct** URI (`db.[ref].supabase.co`). GitHub Actions cannot reach that host over IPv6. Replace it with the **Session pooler** URI from **Connect** (host like `…pooler.supabase.com`, user `postgres.[ref]`, port **5432**). CI skips direct `DATABASE_URL` values when `SUPABASE_*_DB_PASSWORD` is also set and falls back to `supabase link` + password.
+
 CI uses the pooler because GitHub Actions typically cannot reach Supabase **direct** DB endpoints over **IPv6**.
 
 ## API reference / HTTP contract
