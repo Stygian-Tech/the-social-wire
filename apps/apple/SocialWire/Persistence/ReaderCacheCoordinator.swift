@@ -127,6 +127,19 @@ final class ReaderCacheCoordinator {
         return cached.filter { readAtByEntryId[$0.entryId] == nil }.count
     }
 
+    /// Distinct entry ids from persisted publication lists (mirrors web **`distinctCachedEntryIdsForPublications`**).
+    func distinctCachedEntryIds(publicationIds: [String]) -> [String] {
+        var seen = Set<String>()
+        var ordered: [String] = []
+        for publicationId in publicationIds {
+            guard let cached = try? publicationEntries(publicationId) else { continue }
+            for item in cached where seen.insert(item.entryId).inserted {
+                ordered.append(item.entryId)
+            }
+        }
+        return ordered
+    }
+
     // MARK: - Pruning
 
     private func prunePublicationRowsIfNeeded() throws {

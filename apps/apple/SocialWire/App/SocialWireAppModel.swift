@@ -30,6 +30,7 @@ final class SocialWireAppModel {
     var selectedSavedLink: MergedLatrSave?
     var selectedSidebar: SidebarSelection?
     var publicationSidebarTab: PublicationSidebarTab = .subscribed
+    var readerListSource: ReaderListSource = .subscribed
     var viewerProfile: ActorProfileResponse?
     var readerFilter: ReaderFilter = .all
     var isLoading = false
@@ -50,6 +51,7 @@ final class SocialWireAppModel {
         publicationsService = PublicationService(xrpc: xrpc)
         rss = RSSService()
         gateway = SocialWireGatewayClient(auth: authService)
+        applyReaderListSource(ReaderListSourceStorage.load(), persist: false)
     }
 
     /// Call once SwiftData injects **`ModelContext`** (see **`RootView`**).
@@ -116,6 +118,139 @@ final class SocialWireAppModel {
         case .subscribed: subscribedUnfolderedPublications
         case .following: followingTabPublications
         }
+    }
+
+    /// All publications in the active sidebar tab (folders + unfoldered for subscribed), for bulk read scope.
+    func publicationsForBulkRead(tab: PublicationSidebarTab) -> [DiscoveredPublication] {
+        switch tab {
+        case .subscribed:
+            publicationsForBulkRead(list: .subscribed)
+        case .following:
+            publicationsForBulkRead(list: .following)
+        }
+    }
+
+    func publicationsForBulkRead(list: ReaderListSource) -> [DiscoveredPublication] {
+        switch list {
+        case .readLater:
+            return []
+        case .subscribed:
+            var seen = Set<String>()
+            var list: [DiscoveredPublication] = []
+            for folder in folders {
+                for publication in publications(in: folder) where seen.insert(publication.publicationId).inserted {
+                    list.append(publication)
+                }
+            }
+            for publication in subscribedUnfolderedPublications where seen.insert(publication.publicationId).inserted {
+                list.append(publication)
+            }
+            return list
+        case .following:
+            return followingTabPublications
+        }
+    }
+
+    func publicationsForAllListsBulkRead() -> [DiscoveredPublication] {
+        var seen = Set<String>()
+        var merged: [DiscoveredPublication] = []
+        for publication in publicationsForBulkRead(list: .subscribed) + publicationsForBulkRead(list: .following)
+            where seen.insert(publication.publicationId).inserted {
+            merged.append(publication)
+        }
+        return merged
+    }
+
+    func cachedEntryIdsForBulkRead(publications: [DiscoveredPublication]) -> [String] {
+        let publicationIds = publications.map(\.publicationId)
+        return readerCacheCoordinator?.distinctCachedEntryIds(publicationIds: publicationIds) ?? []
+    }
+
+    func cachedEntryIds(for scope: ReaderMarkReadScope) -> [String] {
+        switch scope {
+        case .allLists:
+            cachedEntryIdsForBulkRead(publications: publicationsForAllListsBulkRead())
+        case .list(let source):
+            cachedEntryIdsForBulkRead(publications: publicationsForBulkRead(list: source))
+        case .publication(let publicationId):
+            readerCacheCoordinator?.distinctCachedEntryIds(publicationIds: [publicationId]) ?? []
+        case .entry, .unavailable:
+            []
+        }
+    }
+
+    func isMarkReadDisabled(for scope: ReaderMarkReadScope) -> Bool {
+        switch scope {
+        case .unavailable:
+            return true
+        case .entry(let entryId):
+            return readAtByEntryId[entryId] != nil
+        case .allLists, .list, .publication:
+            let entryIds = cachedEntryIds(for: scope)
+            return entryIds.isEmpty || entryIds.allSatisfy { readAtByEntryId[$0] != nil }
+        }
+    }
+
+    func markRead(for scope: ReaderMarkReadScope) async {
+        switch scope {
+        case .unavailable:
+            return
+        case .entry(let entryId):
+            await markReadIfNeededOnPDS(entryId: entryId)
+        case .allLists, .list, .publication:
+            let entryIds = cachedEntryIds(for: scope).filter { readAtByEntryId[$0] == nil }
+            guard !entryIds.isEmpty else { return }
+            for entryId in entryIds {
+                await markReadIfNeededOnPDS(entryId: entryId)
+            }
+            unreadDeferredEntryId = nil
+        }
+    }
+
+    /// Entry id for the article currently open in the reader (detail or deferred unread).
+    var focusedEntryIdForMarkRead: String? {
+        selectedEntry?.entryId ?? unreadDeferredEntryId
+    }
+
+    func markReadScope(compactPane: ReaderPane?, isCompact: Bool) -> ReaderMarkReadScope {
+        if let entryId = focusedEntryIdForMarkRead, showsEntryMarkReadInChrome(
+            compactPane: compactPane,
+            isCompact: isCompact
+        ) {
+            return .entry(entryId: entryId)
+        }
+
+        if isCompact, let compactPane {
+            switch compactPane {
+            case .lists:
+                return .allLists
+            case .publications:
+                return .list(readerListSource)
+            case .articles:
+                if let publicationId = selectedPublication?.publicationId {
+                    return .publication(publicationId: publicationId)
+                }
+                return .list(readerListSource)
+            case .reader:
+                return selectedSavedLink != nil ? .unavailable : .list(readerListSource)
+            }
+        }
+
+        if selectedSavedLink != nil {
+            return .unavailable
+        }
+        if let publicationId = selectedPublication?.publicationId {
+            return .publication(publicationId: publicationId)
+        }
+        return .list(readerListSource)
+    }
+
+    private func showsEntryMarkReadInChrome(compactPane: ReaderPane?, isCompact: Bool) -> Bool {
+        guard focusedEntryIdForMarkRead != nil else { return false }
+        if isCompact {
+            return compactPane == .reader
+        }
+        return selectedEntry != nil
     }
 
     var filteredEntries: [EntryListItem] {
@@ -202,6 +337,39 @@ final class SocialWireAppModel {
         selectedEntry = nil
         selectedSavedLink = nil
         entries = []
+    }
+
+    func selectReaderListSource(_ source: ReaderListSource) {
+        selectedEntry = nil
+        unreadDeferredEntryId = nil
+        applyReaderListSource(source, persist: true)
+    }
+
+    private func applyReaderListSource(_ source: ReaderListSource, persist: Bool) {
+        readerListSource = source
+        if persist {
+            ReaderListSourceStorage.save(source)
+        }
+
+        switch source {
+        case .readLater:
+            selectedSidebar = .saved
+            selectedPublication = nil
+            selectedSavedLink = nil
+            entries = []
+        case .subscribed:
+            publicationSidebarTab = .subscribed
+            selectedSidebar = nil
+            selectedPublication = nil
+            selectedSavedLink = nil
+            entries = []
+        case .following:
+            publicationSidebarTab = .following
+            selectedSidebar = nil
+            selectedPublication = nil
+            selectedSavedLink = nil
+            entries = []
+        }
     }
 
     func refreshAll() async {

@@ -429,6 +429,56 @@ enum SidebarSelection: Hashable {
     case publication(String)
 }
 
+/// Top-level list bucket on the compact lists pane (Read Later / Subscribed / Following).
+enum ReaderListSource: String, CaseIterable, Identifiable, Hashable {
+    case readLater = "Read Later"
+    case subscribed = "Subscribed"
+    case following = "Following"
+
+    var id: String { rawValue }
+
+    var systemImage: String {
+        switch self {
+        case .readLater: "bookmark"
+        case .subscribed: "tray.full"
+        case .following: "person.2"
+        }
+    }
+}
+
+enum ReaderListSourceStorage {
+    static let userDefaultsKey = "the-social-wire.reader-list-source.v1"
+
+    static func load() -> ReaderListSource {
+        guard let raw = UserDefaults.standard.string(forKey: userDefaultsKey),
+              let source = ReaderListSource(rawValue: raw) else {
+            return .subscribed
+        }
+        return source
+    }
+
+    static func save(_ source: ReaderListSource) {
+        UserDefaults.standard.set(source.rawValue, forKey: userDefaultsKey)
+    }
+}
+
+/// Compact-width horizontal pager: lists → publications → articles → reader (left to right).
+enum ReaderPane: Int, Hashable, CaseIterable {
+    case lists = 0
+    case publications = 1
+    case articles = 2
+    case reader = 3
+}
+
+/// Scope for the reader shell mark-read toolbar action (pane / selection aware).
+enum ReaderMarkReadScope: Equatable {
+    case allLists
+    case list(ReaderListSource)
+    case publication(publicationId: String)
+    case entry(entryId: String)
+    case unavailable
+}
+
 /// Read-later backends users can designate (mirrors **`READ_LATER_SERVICES`** on web).
 enum ReadLaterServiceCatalog {
     /// Same key as **`READ_LATER_SERVICE_STORAGE_KEY`** in `apps/web/src/lib/readLaterServices.ts`.

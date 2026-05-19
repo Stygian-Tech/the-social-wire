@@ -50,6 +50,12 @@
 		A7F3B2C1D4E560981234AB03 /* PublicationSubscriptionMatchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7F3B2C1D4E560981234AB04 /* PublicationSubscriptionMatchTests.swift */; };
 		F4796F748C4A9A6ED86D98AF /* EntryListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0E29251C0201B6466E87660 /* EntryListView.swift */; };
 		F88FA180ED904D0F3A07854B /* SidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACAD3069E9DF37307B55455F /* SidebarView.swift */; };
+		B2PROFILE01VIEW0001 /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2PROFILE01VIEW0002 /* ProfileView.swift */; };
+		B2READER01CHROME001 /* ReaderShellChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2READER01CHROME002 /* ReaderShellChrome.swift */; };
+		B2LISTSVIEW00000001 /* ListsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2LISTSVIEW00000002 /* ListsView.swift */; };
+		B2PUBSPANE000000001 /* PublicationsPaneView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2PUBSPANE000000002 /* PublicationsPaneView.swift */; };
+		B2READERSB00000001 /* ReaderSidebarColumn.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2READERSB00000002 /* ReaderSidebarColumn.swift */; };
+		B2PUBTREE000000001 /* PublicationSidebarTree.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2PUBTREE000000002 /* PublicationSidebarTree.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -110,6 +116,12 @@
 		F6DB13A8544C5DF8ADB3C0F3 /* XRPCClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XRPCClient.swift; sourceTree = "<group>"; };
 		FD2D66724B5A486EAEF66080 /* SocialWire.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = SocialWire.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		FE44AAA8BB084667EBB8EA4A /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		B2PROFILE01VIEW0002 /* ProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileView.swift; sourceTree = "<group>"; };
+		B2READER01CHROME002 /* ReaderShellChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderShellChrome.swift; sourceTree = "<group>"; };
+		B2LISTSVIEW00000002 /* ListsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListsView.swift; sourceTree = "<group>"; };
+		B2PUBSPANE000000002 /* PublicationsPaneView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicationsPaneView.swift; sourceTree = "<group>"; };
+		B2READERSB00000002 /* ReaderSidebarColumn.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderSidebarColumn.swift; sourceTree = "<group>"; };
+		B2PUBTREE000000002 /* PublicationSidebarTree.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicationSidebarTree.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -219,6 +231,12 @@
 				A817A2506AD81355BAC38AB6 /* MainSplitView.swift */,
 				A9D4258CA5A82C760A3E0E30 /* NewFolderView.swift */,
 				53212A1931468CF081E3DDC9 /* PublicationCollectionView.swift */,
+				B2PROFILE01VIEW0002 /* ProfileView.swift */,
+				B2LISTSVIEW00000002 /* ListsView.swift */,
+				B2PUBSPANE000000002 /* PublicationsPaneView.swift */,
+				B2READER01CHROME002 /* ReaderShellChrome.swift */,
+				B2READERSB00000002 /* ReaderSidebarColumn.swift */,
+				B2PUBTREE000000002 /* PublicationSidebarTree.swift */,
 				E275B426D577889172C2DFAA /* RootView.swift */,
 				E7B2EDCC73B43F0C9AF0D54B /* SavedLinksView.swift */,
 				FE44AAA8BB084667EBB8EA4A /* SettingsView.swift */,
@@ -371,6 +389,12 @@
 				6188B967405CF56BDF6F9BFC /* RootView.swift in Sources */,
 				D5CD02A4377BFB37B312DC44 /* SavedLinksView.swift in Sources */,
 				07A36A03DF556A7032E0727D /* SettingsView.swift in Sources */,
+				B2PROFILE01VIEW0001 /* ProfileView.swift in Sources */,
+				B2LISTSVIEW00000001 /* ListsView.swift in Sources */,
+				B2PUBSPANE000000001 /* PublicationsPaneView.swift in Sources */,
+				B2READER01CHROME001 /* ReaderShellChrome.swift in Sources */,
+				B2READERSB00000001 /* ReaderSidebarColumn.swift in Sources */,
+				B2PUBTREE000000001 /* PublicationSidebarTree.swift in Sources */,
 				F88FA180ED904D0F3A07854B /* SidebarView.swift in Sources */,
 				1D0EABA6327087365AB11DE7 /* SocialWireAPIEnvironment.swift in Sources */,
 				60C2C91F06F52341912E4254 /* SocialWireApp.swift in Sources */,
