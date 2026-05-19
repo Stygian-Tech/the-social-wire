@@ -38,6 +38,31 @@ apps/apple/
     PDSClientTests.swift
 ```
 
+## Gateway & Thin AppView
+
+The app uses **`SocialWireGatewayClient`** against **`SocialWireAPIEnvironment.baseURL`** for:
+
+| Route | Purpose |
+|-------|---------|
+| `GET /v1/sync/preferences` | Account preferences envelope (ETag-aware) |
+| `GET /v1/pds/cache/record` | Cached single-record reads |
+| `/v1/appview/*` | Thin AppView (when compile flag on) |
+
+### Thin AppView (optional)
+
+Add **`SOCIALWIRE_USE_THIN_APPVIEW`** to the target's **Active Compilation Conditions** to route entry **lists** through the gateway. Entry **detail** stays on author PDS via `PublicationService`.
+
+| Behaviour | Implementation |
+|-----------|----------------|
+| Entry lists | `SocialWireGatewayClient.fetchAppViewEntries` |
+| Mark read / unread | PDS first, then write-through to gateway |
+| After discovery | `gateway.enrollAuthors` (fire-and-forget) |
+| Privacy | Profile → **Purge Indexed Data** → `DELETE /v1/appview/privacy/purge` |
+
+Requires gateway **`ENABLE_THIN_APPVIEW=true`**, worker deploy, and Supabase migration. Test on **`api.testing.thesocialwire.app`** before production.
+
+See [docs/architecture/appview.md](../../docs/architecture/appview.md) and [docs/wiki/Thin-AppView.md](../../docs/wiki/Thin-AppView.md).
+
 ## ATProto OAuth Setup
 
 The app signs in with **OAuth 2.0 authorization code + PKCE** (`code_challenge_method=S256`) via `ASWebAuthenticationSession`.

@@ -11,7 +11,8 @@ enum AppRouterBuilder {
     config: AppConfig,
     httpClient: HTTPClient,
     cache: any CacheStore,
-    logger: Logger
+    logger: Logger,
+    thinAppViewStore: (any ThinAppViewStore)? = nil
   ) -> Router<AppRequestContext> {
     let router = Router(context: AppRequestContext.self)
     router.get("/health") { _, _ in ["status": "ok"] }
@@ -28,7 +29,14 @@ enum AppRouterBuilder {
     )
     let protected = router.group().add(middleware: authMiddleware)
 
-    Self.mountSyncAndOptionalLegacy(for: cache, config: config, httpClient: httpClient, logger: logger, onto: protected)
+    Self.mountSyncAndOptionalLegacy(
+      for: cache,
+      config: config,
+      httpClient: httpClient,
+      logger: logger,
+      onto: protected,
+      thinAppViewStore: thinAppViewStore
+    )
 
     return router
   }
@@ -38,10 +46,26 @@ enum AppRouterBuilder {
     config: AppConfig,
     httpClient: HTTPClient,
     logger: Logger,
-    onto protected: RouterGroup<AppRequestContext>
+    onto protected: RouterGroup<AppRequestContext>,
+    thinAppViewStore: (any ThinAppViewStore)?
   ) {
     let prefs = PreferenceSyncService(httpClient: httpClient, cache: cache, plcURL: config.atprotoPLCURL, logger: logger)
     SyncRoutes(preferenceService: prefs).register(on: protected)
+
+    if let thinAppViewStore, config.thinAppView.enabled {
+      let thinConfig = config.thinAppView
+      let indexer = ThinAppViewIndexer(store: thinAppViewStore, config: thinConfig, logger: logger)
+      let readService = ThinAppViewReadService(store: thinAppViewStore, logger: logger)
+      let enrollService = ThinAppViewEnrollService(
+        store: thinAppViewStore,
+        indexer: indexer,
+        httpClient: httpClient,
+        plcURL: config.atprotoPLCURL,
+        config: thinConfig,
+        logger: logger
+      )
+      ThinAppViewRoutes(readService: readService, enrollService: enrollService).register(on: protected)
+    }
 
     guard config.enableLegacyContentAPI else { return }
 

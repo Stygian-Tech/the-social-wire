@@ -4,6 +4,10 @@ import { Analytics } from "@vercel/analytics/react";
 import "./globals.css";
 import { Providers } from "./providers";
 import { EnvironmentBanner } from "@/components/shared/EnvironmentBanner";
+import {
+  environmentBannerHeight,
+  getAppEnv,
+} from "@/lib/appEnv";
 
 const siteUrl = (() => {
   const explicit = process.env.NEXT_PUBLIC_SITE_URL?.trim();
@@ -42,8 +46,7 @@ export const metadata: Metadata = {
   },
 };
 
-const env = process.env.NEXT_PUBLIC_APP_ENV ?? "local";
-const environmentBannerHeight = env === "prod" ? "0px" : "32px";
+const appEnv = getAppEnv();
 
 export default function RootLayout({
   children,
@@ -64,12 +67,12 @@ export default function RootLayout({
         className="min-h-full flex flex-col"
         style={
           {
-            "--environment-banner-height": environmentBannerHeight,
+            "--environment-banner-height": environmentBannerHeight(appEnv),
           } as CSSProperties
         }
       >
         <Providers>
-          <EnvironmentBanner />
+          <EnvironmentBanner appEnv={appEnv} />
           {children}
         </Providers>
         <Analytics />

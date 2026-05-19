@@ -30,6 +30,8 @@ Stores **which entry URIs the user has marked read** and **when (first read time
 
 **Fields:** `subjectUri` (at-uri), `readAt` (datetime), optional `updatedAt` (datetime).
 
+When the optional **Thin AppView** gateway index is enabled, commits to this collection are also mirrored into the gateway's derived `read_marks` table (viewer DID = repo owner) for server-side unread filtering. The PDS record remains canonical; see [docs/architecture/appview.md](../../docs/architecture/appview.md).
+
 **Example:**
 
 ```json

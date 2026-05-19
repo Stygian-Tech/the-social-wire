@@ -13,8 +13,14 @@ import {
   getEntry,
   normalizeAtRepoParam,
   repoAndPublicationFilterFromPubId,
+  publicationRepoDid,
 } from "@/lib/atprotoClient";
 import type { EntryListItem, EntryDetail } from "@/lib/atprotoClient";
+import type { ArticleListFilter } from "@/lib/entryArticleFilter";
+import {
+  isThinAppViewEnabled,
+  listEntriesFromAppView,
+} from "@/lib/thinAppViewClient";
 import {
   isRssEntryId,
   isRssPublicationId,
@@ -43,6 +49,7 @@ export async function fetchEntriesInfinitePage(args: {
   pageParam: string | undefined;
   signal?: AbortSignal;
   oauthSession: OAuthSession | undefined;
+  articleFilter?: ArticleListFilter;
   /** When set with {@link streamFirstPageToCache}, merges streamed chunks into this cache. */
   queryClient?: QueryClient;
   /**
@@ -56,6 +63,7 @@ export async function fetchEntriesInfinitePage(args: {
     pageParam,
     signal,
     oauthSession,
+    articleFilter = "all",
     queryClient,
     streamFirstPageToCache = false,
   } = args;
@@ -85,6 +93,16 @@ export async function fetchEntriesInfinitePage(args: {
       entries: json.items ?? [],
       cursor: json.nextCursor,
     };
+  }
+
+  if (isThinAppViewEnabled() && oauthSession) {
+    return listEntriesFromAppView({
+      publicationKey: normalizedKey,
+      cursor: pageParam as string | undefined,
+      filter: articleFilter,
+      oauthSession,
+      signal,
+    });
   }
 
   const key = ENTRIES_QUERY_KEY(normalizedKey);
@@ -132,13 +150,16 @@ export async function fetchEntriesInfinitePage(args: {
  * `publicationKey` is either an **author DID** (legacy discovery row) or a **publication record
  * AT-URI** (distinct publication on an account).
  */
-export function useEntries(publicationKey: string | null) {
+export function useEntries(
+  publicationKey: string | null,
+  articleFilter: ArticleListFilter = "all"
+) {
   const { session, getOAuthSession } = useAuth();
   const queryClient = useQueryClient();
   const normalizedKey = publicationKey ? normalizeAtRepoParam(publicationKey) : null;
 
   return useInfiniteQuery({
-    queryKey: ENTRIES_QUERY_KEY(normalizedKey ?? ""),
+    queryKey: [...ENTRIES_QUERY_KEY(normalizedKey ?? ""), articleFilter] as const,
     queryFn: async ({ pageParam, signal }) => {
       if (!normalizedKey) return { entries: [], cursor: undefined };
       return fetchEntriesInfinitePage({
@@ -146,8 +167,9 @@ export function useEntries(publicationKey: string | null) {
         pageParam,
         signal,
         oauthSession: getOAuthSession() ?? undefined,
+        articleFilter,
         queryClient,
-        streamFirstPageToCache: true,
+        streamFirstPageToCache: !isThinAppViewEnabled(),
       });
     },
     initialPageParam: undefined as string | undefined,

@@ -1,50 +1,60 @@
-# AppView (future)
+# AppView architecture
 
-## When would we need one?
+> **Wiki summary:** [docs/wiki/Thin-AppView.md](../wiki/Thin-AppView.md) (synced to GitHub Wiki on push to **`main`** when `docs/wiki/**` changes).
 
-Phase 1 avoids a dedicated AppView. The per-user discovery service handles finding publications by traversing each user's follow graph independently. This is sufficient for:
+Social Wire uses two distinct “AppView” concepts:
 
-- Showing a user's personalised publication list
-- Entry feeds and content delivery
+| Layer | Purpose | Status |
+|-------|---------|--------|
+| **Bluesky App View** (`public.api.bsky.app`) | Public social graph reads (`getProfile`, `getFollows`, …) | Unchanged — clients call it directly |
+| **Thin AppView** (`/v1/appview/*` on `services/api`) | GDPR-safe Level-1 entry timelines + server-side unread filtering | Implemented behind feature flags |
 
-An AppView becomes necessary only if we need **cross-user indexing**:
+The thin AppView is **not** a Bluesky proxy. It is Social Wire’s own index of `standard.site` entry collections plus a derived `read_marks` replica for unread queries. Full entry bodies and canonical read writes remain on each user’s PDS (`com.thesocialwire.entryReadState`).
 
-| Feature | Needs AppView? |
-|---------|---------------|
-| My publication list | No — derived from my follows |
-| Reading entries | No — fetched per-publication |
-| "Popular among my follows" | Yes — requires cross-user data |
-| Other users' public folder lists | Yes — requires indexing others' PDS records |
-| Federated publication discovery | Yes — requires firehose subscription |
-
-## Architecture if added
+## Data flow
 
 ```
-ATProto firehose (com.atproto.sync.subscribeRepos)
-       │
-       ▼
-AppView subscriber (Go or Swift)
-  Filters: com.thesocialwire.* events
-  Indexes into Supabase:
-    - public_folders (user_did, folder_name, ...)
-    - public_pub_prefs (user_did, publication_id, folder_id, ...)
-       │
-       ▼
-New XRPC-style query endpoints:
-  com.thesocialwire.getFolders?actor={did}
-  com.thesocialwire.getPublicationPrefs?actor={did}
+Relay / Jetstream (subscribeRepos)
+        │
+        ▼
+Fly worker (`App worker`)
+  • upsert content_items (title, publishedAt, summary, thumbnail ref)
+  • mirror entryReadState → read_marks
+  • TTL cleanup
+        │
+        ▼
+Supabase Postgres (ams) — content_items, read_marks
+        │
+        ▼
+Fly API (`App serve`) — GET /v1/appview/entries, read-mark write-through, enroll, purge
+        │
+        ├── Web (`NEXT_PUBLIC_USE_THIN_APPVIEW`)
+        └── iOS (`SOCIALWIRE_USE_THIN_APPVIEW` compile flag)
 ```
 
-## Implementation notes
+## Consistency model
 
-- The AppView should be a separate service (`services/appview/`) to keep the existing API service focused on per-user discovery and content
-- Endpoints should follow the ATProto XRPC naming convention so other clients can use them
-- The firehose subscriber can use `Postgres NOTIFY` / Supabase Realtime to push updates to connected clients
-- All indexed data is **public** — `com.thesocialwire.*` records on a user's PDS are readable by anyone with the DID
+- **Writes:** PDS first, then best-effort write-through to the index (`POST/DELETE /v1/appview/read-marks`).
+- **Ingestion:** Firehose + enrollment backfill (`POST /v1/appview/enroll`) after publication discovery.
+- **Unread UI:** Local optimistic read state remains primary; the index enables server-side unread pagination when enabled.
 
-## Decision
+## Privacy & retention
 
-Phase 1 defers the AppView. Revisit if:
-1. Discovery quality requires cross-user signals
-2. Social features (sharing reading lists, following readers) are prioritised
-3. The standard.site ecosystem grows to a scale where a global index is valuable
+- **Region:** Fly + Supabase in **`ams`** (EU).
+- **Level 1 only:** No full HTML bodies or blobs in the index.
+- **TTL defaults:** `content_items` 30 days; `read_marks` 180 days (env-configurable).
+- **User control:** `DELETE /v1/appview/privacy/purge` removes indexed read marks for the authenticated viewer.
+
+## Feature flags
+
+| Surface | Flag |
+|---------|------|
+| Gateway routes + worker | `ENABLE_THIN_APPVIEW` |
+| Web client | `NEXT_PUBLIC_USE_THIN_APPVIEW=true` |
+| iOS client | `SOCIALWIRE_USE_THIN_APPVIEW` (Swift compile condition) |
+
+When flags are off, clients continue PDS-direct `listRecords` entry loading.
+
+## Future cross-user index
+
+A separate, fuller AppView may still be added later for cross-user features (popular among follows, public folder indexes, federated discovery). That scope is **not** part of the thin AppView. See historical notes in git history for the original Phase 1 deferral rationale.

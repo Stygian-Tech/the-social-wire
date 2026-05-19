@@ -11,9 +11,11 @@ info:
 
     - **Performance caches**: short TTL blobs in **`pds_repo_record_cache`** (`Supabase`/SQLite); legacy **`discovery_cache` / `entry_cache`** persist only behind **`ENABLE_LEGACY_CONTENT_API`**.
 
+    - **Thin AppView (optional)**: Level-1 entry index + read-mark replica at **`/v1/appview/*`** when **`ENABLE_THIN_APPVIEW`** is on; ingested by a separate **`App worker`** process from Jetstream.
+
     LATRHTTPS merge APIs deliberately stay out—continue using the hosted web helpers for LATR flows.
 
-    **Legacy flag:** Setting `ENABLE_LEGACY_CONTENT_API` to `1/true/yes/on` re-registers `/discovery/**`, `/publications/**`, `/entries/**` for phased migrations only.
+    **Feature flags:** `ENABLE_LEGACY_CONTENT_API` re-registers legacy `/discovery/**`, `/publications/**`, `/entries/**`. `ENABLE_THIN_APPVIEW` registers `/v1/appview/**`.
   version: "1.0.0"
   contact:
     name: Stygian Tech
@@ -297,6 +299,162 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  # ── Thin AppView (GDPR-safe Level-1 read index) ───────────────────────────
+
+  /v1/appview/entries:
+    get:
+      operationId: listAppViewEntries
+      summary: Paginated entry timeline from the thin AppView index
+      description: |
+        **`ENABLE_THIN_APPVIEW` must be `true`** or this route responds `404`.
+
+        Returns Level-1 list rows (title, publishedAt, summary, thumbnail refs) for
+        `standard.site` entry collections. Full entry bodies remain on the author PDS.
+        Unread filtering joins the viewer's mirrored `read_marks` replica.
+      tags: [AppView]
+      parameters:
+        - name: authorDid
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Author repo DID whose entries to list.
+        - name: publicationAtUri
+          in: query
+          schema:
+            type: string
+          description: Optional publication AT-URI for `site` field scoping.
+        - name: filter
+          in: query
+          schema:
+            type: string
+            enum: [all, unread, read]
+            default: all
+        - name: cursor
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+            maximum: 100
+      responses:
+        "200":
+          description: Entry list page.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [entries]
+                properties:
+                  entries:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/EntryListItem"
+                  cursor:
+                    type: string
+                    nullable: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Route disabled when thin AppView flag is unset.
+
+  /v1/appview/read-marks:
+    post:
+      operationId: upsertAppViewReadMark
+      summary: Write-through read mark after PDS upsert
+      tags: [AppView]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [subjectUri]
+              properties:
+                subjectUri:
+                  type: string
+                readAt:
+                  type: string
+                  format: date-time
+      responses:
+        "200":
+          description: Read mark upserted.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Route disabled when thin AppView flag is unset.
+    delete:
+      operationId: deleteAppViewReadMark
+      summary: Write-through unread (delete read mark)
+      tags: [AppView]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [subjectUri]
+              properties:
+                subjectUri:
+                  type: string
+      responses:
+        "200":
+          description: Read mark deleted.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Route disabled when thin AppView flag is unset.
+
+  /v1/appview/enroll:
+    post:
+      operationId: enrollAppViewAuthors
+      summary: Backfill recent entries for followed author DIDs
+      tags: [AppView]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [authorDids]
+              properties:
+                authorDids:
+                  type: array
+                  items:
+                    type: string
+                  maxItems: 500
+      responses:
+        "200":
+          description: Backfill completed.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [indexed]
+                properties:
+                  indexed:
+                    type: integer
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Route disabled when thin AppView flag is unset.
+
+  /v1/appview/privacy/purge:
+    delete:
+      operationId: purgeAppViewPrivacyData
+      summary: Delete all indexed read marks for the authenticated viewer
+      tags: [AppView]
+      responses:
+        "200":
+          description: Viewer data purged from the index.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Route disabled when thin AppView flag is unset.
+
   # ── Discovery ──────────────────────────────────────────────────────────────
 
   /discovery/refresh:
@@ -473,3 +631,5 @@ tags:
     description: Follow graph scanning gated behind `ENABLE_LEGACY_CONTENT_API`
   - name: Content
     description: Entry feeds gated behind `ENABLE_LEGACY_CONTENT_API`
+  - name: AppView
+    description: GDPR-safe Level-1 entry index gated behind `ENABLE_THIN_APPVIEW`

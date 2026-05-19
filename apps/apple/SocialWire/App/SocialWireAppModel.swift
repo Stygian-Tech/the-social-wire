@@ -390,6 +390,14 @@ final class SocialWireAppModel {
             let prefs = try await prefsTask
             publicationPrefs = Dictionary(uniqueKeysWithValues: prefs.map { ($0.value.publicationId, $0) })
             discoveredPublications = try await standardTask
+            if SocialWireAPIEnvironment.useThinAppView {
+                let authorDids = Array(Set(discoveredPublications.map(\.authorDid)))
+                if !authorDids.isEmpty {
+                    Task(priority: .utility) {
+                        _ = try? await self.gateway.enrollAuthors(dids: authorDids)
+                    }
+                }
+            }
             rssPublications = try await skyreaderTask.compactMap { rss.discoveredPublication(from: $0) }
             publicationSubscriptions = try await subscriptionsTask
             readAtByEntryId = try await readTask
@@ -509,6 +517,15 @@ final class SocialWireAppModel {
             let fresh: [EntryListItem]
             if let feedURL = rss.normalizedFeedURL(from: publication.publicationId) {
                 fresh = try await rss.entries(feedURL: feedURL)
+            } else if SocialWireAPIEnvironment.useThinAppView {
+                let (repoDid, publicationAtUri) = repoAndPublicationFilter(from: publication.publicationId)
+                let page = try await gateway.fetchAppViewEntries(
+                    authorDid: repoDid,
+                    publicationAtUri: publicationAtUri,
+                    filter: readerFilter,
+                    cursor: nil
+                )
+                fresh = page.entries
             } else {
                 fresh = try await publicationsService.listEntries(publicationId: publication.publicationId)
             }
@@ -527,6 +544,13 @@ final class SocialWireAppModel {
     func applyReaderFilter(_ newValue: ReaderFilter) async {
         let old = readerFilter
         readerFilter = newValue
+
+        if SocialWireAPIEnvironment.useThinAppView,
+           old != newValue,
+           let publication = selectedPublication {
+            await loadEntries(for: publication)
+        }
+
         guard old == .unread, newValue == .all else { return }
 
         if let id = unreadDeferredEntryId {
@@ -598,8 +622,12 @@ final class SocialWireAppModel {
     private func markReadIfNeededOnPDS(entryId: String) async {
         guard readAtByEntryId[entryId] == nil else { return }
         do {
-            try await pds.markRead(subjectURI: entryId)
-            readAtByEntryId[entryId] = Date()
+            let readAt = Date()
+            try await pds.markRead(subjectURI: entryId, readAt: readAt)
+            readAtByEntryId[entryId] = readAt
+            if SocialWireAPIEnvironment.useThinAppView {
+                try? await gateway.upsertReadMark(subjectUri: entryId, readAt: readAt)
+            }
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -608,12 +636,28 @@ final class SocialWireAppModel {
     func toggleRead(_ item: EntryListItem) async {
         do {
             if readAtByEntryId[item.entryId] == nil {
-                try await pds.markRead(subjectURI: item.entryId)
-                readAtByEntryId[item.entryId] = Date()
+                let readAt = Date()
+                try await pds.markRead(subjectURI: item.entryId, readAt: readAt)
+                readAtByEntryId[item.entryId] = readAt
+                if SocialWireAPIEnvironment.useThinAppView {
+                    try? await gateway.upsertReadMark(subjectUri: item.entryId, readAt: readAt)
+                }
             } else {
                 try await pds.markUnread(subjectURI: item.entryId)
                 readAtByEntryId.removeValue(forKey: item.entryId)
+                if SocialWireAPIEnvironment.useThinAppView {
+                    try? await gateway.deleteReadMark(subjectUri: item.entryId)
+                }
             }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func purgeIndexedAppViewData() async {
+        guard SocialWireAPIEnvironment.useThinAppView else { return }
+        do {
+            try await gateway.purgeAppViewPrivacyData()
         } catch {
             errorMessage = error.localizedDescription
         }

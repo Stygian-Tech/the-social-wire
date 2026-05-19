@@ -3,6 +3,7 @@ import SwiftUI
 struct ProfileView: View {
     @Environment(SocialWireAppModel.self) private var appModel
     @Environment(\.dismiss) private var dismiss
+    @State private var showPurgeIndexedDataConfirm = false
 
     var body: some View {
         List {
@@ -49,6 +50,28 @@ struct ProfileView: View {
                     dismiss()
                 }
             }
+
+            if SocialWireAPIEnvironment.useThinAppView {
+                Section {
+                    Button("Purge Indexed Data", role: .destructive) {
+                        showPurgeIndexedDataConfirm = true
+                    }
+                } footer: {
+                    Text("Removes your read marks from the Social Wire index. Your PDS records are unchanged.")
+                }
+            }
+        }
+        .confirmationDialog(
+            "Purge Indexed Data?",
+            isPresented: $showPurgeIndexedDataConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Purge Indexed Data", role: .destructive) {
+                Task { await appModel.purgeIndexedAppViewData() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This deletes indexed read marks for your account on the gateway. It does not remove records on your PDS.")
         }
         .navigationTitle("Profile")
         .navigationBarTitleDisplayMode(.inline)

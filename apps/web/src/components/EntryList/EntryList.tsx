@@ -145,18 +145,18 @@ export function EntryList({
   markEntryRead,
   markEntryUnread,
 }: EntryListProps) {
+  const effectiveFilter: ArticleListFilter = useMemo(() => {
+    if (!readIndicatorsEnabled) return "all";
+    return articleFilter;
+  }, [readIndicatorsEnabled, articleFilter]);
+
   const { data, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage } =
-    useEntries(pubId);
+    useEntries(pubId, effectiveFilter);
 
   const allEntries: EntryListItem[] = useMemo(() => {
     const flat = data?.pages.flatMap((p) => p.entries) ?? [];
     return sortEntryListItemsNewestFirst(flat);
   }, [data?.pages]);
-
-  const effectiveFilter: ArticleListFilter = useMemo(() => {
-    if (!readIndicatorsEnabled) return "all";
-    return articleFilter;
-  }, [readIndicatorsEnabled, articleFilter]);
 
   const visibleEntries: EntryListItem[] = useMemo(() => {
     return filterEntriesForArticleFilter(

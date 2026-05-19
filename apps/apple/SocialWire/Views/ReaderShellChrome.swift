@@ -50,13 +50,8 @@ struct ReaderShellOverlayModifier: ViewModifier {
         appModel.markReadScope(compactPane: compactPane, isCompact: isCompact)
     }
 
-    /// All / Unread applies to article lists, not the open reader surface.
-    private var showsArticlesFilter: Bool {
-        if isCompact {
-            return compactPane == .articles
-        }
-        return appModel.selectedPublication != nil && appModel.selectedEntry == nil
-    }
+    /// Fixed height so `ContentUnavailableView` does not jump when swiping between panes.
+    private static let articlesFilterBarHeight: CGFloat = 44
 
     private var markReadDisabled: Bool {
         appModel.isMarkReadDisabled(for: markReadScope)
@@ -113,6 +108,17 @@ struct ReaderShellOverlayModifier: ViewModifier {
         }
     }
 
+    private var articlesFilterInset: some View {
+        HStack {
+            Spacer(minLength: 0)
+            ReaderFloatingFilterBar()
+            Spacer(minLength: 0)
+        }
+        .frame(height: Self.articlesFilterBarHeight)
+        .padding(.top, 6)
+        .padding(.bottom, 8)
+    }
+
     func body(content: Content) -> some View {
         content
             .toolbar {
@@ -147,15 +153,7 @@ struct ReaderShellOverlayModifier: ViewModifier {
                 }
             }
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                if showsArticlesFilter {
-                    HStack {
-                        Spacer(minLength: 0)
-                        ReaderFloatingFilterBar()
-                        Spacer(minLength: 0)
-                    }
-                    .padding(.top, 6)
-                    .padding(.bottom, 8)
-                }
+                articlesFilterInset
             }
             .confirmationDialog(
                 markReadDialogTitle,

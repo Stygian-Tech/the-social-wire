@@ -3,15 +3,8 @@
 /**
  * Environment banner — shown at the top of every page in non-production environments.
  *
- * Controlled by NEXT_PUBLIC_APP_ENV:
- *   "prod"  → no banner
- *   "dev"   → amber banner
- *   "local" → blue banner (default when env var is unset)
- *
- * Reference: https://github.com/Stygian-Tech/my-context-protocol
+ * `appEnv` is resolved on the server from `NEXT_PUBLIC_APP_ENV` / `APP_ENV` via `getAppEnv()`.
  */
-
-const env = process.env.NEXT_PUBLIC_APP_ENV ?? "local";
 
 const BANNER_CONFIG = {
   dev: {
@@ -28,10 +21,12 @@ const BANNER_CONFIG = {
   },
 } as const;
 
-export function EnvironmentBanner() {
-  if (env === "prod") return null;
+type EnvironmentBannerProps = {
+  appEnv: string;
+};
 
-  const config = BANNER_CONFIG[env as keyof typeof BANNER_CONFIG];
+export function EnvironmentBanner({ appEnv }: EnvironmentBannerProps) {
+  const config = BANNER_CONFIG[appEnv as keyof typeof BANNER_CONFIG];
   if (!config) return null;
 
   return (

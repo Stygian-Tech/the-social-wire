@@ -12,6 +12,11 @@ import type { OAuthSession } from "@atproto/oauth-client-browser";
 
 import { normalizeHttpUrlToHttps } from "@/lib/publicResourceUrl";
 import {
+  isThinAppViewEnabled,
+  writeThroughReadMark,
+  writeThroughReadMarkDelete,
+} from "@/lib/thinAppViewClient";
+import {
   resolveNativeSavedSubjectPreview,
   type NativeSavedSubjectPreview,
   parseAtUri,
@@ -914,6 +919,13 @@ export class PDSClient {
       rkey,
       record: record as unknown as Record<string, unknown>,
     });
+    if (isThinAppViewEnabled()) {
+      void writeThroughReadMark(this.oauthSession, subjectUri, readAt).catch(
+        () => {
+          /* best-effort index sync */
+        }
+      );
+    }
   }
 
   /** Best-effort delete; record may already be absent on the PDS. */
@@ -927,6 +939,13 @@ export class PDSClient {
       });
     } catch {
       /* record may already be absent */
+    }
+    if (isThinAppViewEnabled()) {
+      void writeThroughReadMarkDelete(this.oauthSession, subjectUri).catch(
+        () => {
+          /* best-effort index sync */
+        }
+      );
     }
   }
 

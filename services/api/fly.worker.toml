@@ -1,0 +1,25 @@
+# fly.worker.toml app configuration file for the thin AppView ingestion worker.
+#
+# Deploy from repo root:
+#   fly deploy ./services/api --config services/api/fly.worker.toml
+
+app = 'the-social-wire-worker-dev'
+primary_region = 'ams'
+
+[build]
+  dockerfile = 'Dockerfile'
+
+[deploy]
+  wait_timeout = '10m0s'
+
+[env]
+  ENABLE_THIN_APPVIEW = 'true'
+
+[processes]
+  worker = 'App worker'
+
+[[vm]]
+  memory = '512mb'
+  cpu_kind = 'shared'
+  cpus = 1
+  memory_mb = 512

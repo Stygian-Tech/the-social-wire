@@ -1,6 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { OAuthSession } from "@atproto/oauth-client-browser";
 import { usePDSClient } from "./usePDSClient";
 import { useAuth } from "./useAuth";
 import {
@@ -27,6 +28,14 @@ import {
   normalizedFeedUrlFromRssPublicationId,
   rssPublicationIdFromNormalizedFeedUrl,
 } from "@/lib/rssFeedCore";
+import {
+  enrollAuthorsInAppView,
+  isThinAppViewEnabled,
+} from "@/lib/thinAppViewClient";
+import {
+  enrollAuthorsInAppView,
+  isThinAppViewEnabled,
+} from "@/lib/thinAppViewClient";
 
 export type { DiscoveredPublication };
 
@@ -145,6 +154,25 @@ export function skyreaderSubscriptionsToDiscoveredPublications(
   return out;
 }
 
+/** Fire-and-forget enrollment of followed author DIDs into the thin AppView index. */
+function maybeEnrollDiscoveryAuthors(
+  oauthSession: OAuthSession | null,
+  publications: DiscoveredPublication[]
+): void {
+  if (!isThinAppViewEnabled() || !oauthSession) return;
+  const authorDids = [
+    ...new Set(
+      publications
+        .map((p) => p.authorDid?.trim())
+        .filter((did): did is string => Boolean(did))
+    ),
+  ];
+  if (authorDids.length === 0) return;
+  void enrollAuthorsInAppView(oauthSession, authorDids).catch(() => {
+    /* best-effort backfill */
+  });
+}
+
 // ── Discovery ─────────────────────────────────────────────────────────────────
 
 /**
@@ -164,6 +192,9 @@ export function useDiscovery() {
         signal,
         onProgress: (list) =>
           qc.setQueryData(DISCOVERY_QUERY_KEY(did), list),
+      }).then((list) => {
+        maybeEnrollDiscoveryAuthors(oauthSession, list);
+        return list;
       });
     },
     enabled: !!did && !!session,
@@ -189,6 +220,9 @@ export function useRefreshDiscovery() {
       return discoverPublications(did, oauthSession, {
         onProgress: (list) =>
           qc.setQueryData(DISCOVERY_QUERY_KEY(did), list),
+      }).then((list) => {
+        maybeEnrollDiscoveryAuthors(oauthSession, list);
+        return list;
       });
     },
   });

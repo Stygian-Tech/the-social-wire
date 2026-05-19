@@ -9,31 +9,11 @@
 
 import { BrowserOAuthClient, OAuthSession } from "@atproto/oauth-client-browser";
 import { buildAtprotoLoopbackClientId } from "@atproto/oauth-types";
+import { AT_PROTO_OAUTH_SCOPES } from "@/lib/atprotoOAuthScopes";
+import { normalizeAppEnv, readAppEnvRaw } from "@/lib/appEnv";
 import { BSKY_APPVIEW_PUBLIC } from "@/lib/atprotoClient";
 
-/**
- * Space-separated ATProto OAuth scopes. Must stay in sync with
- * `public/client-metadata.json` (`scope`): authorization servers reject
- * undeclared scopes.
- *
- * `atproto` is required by the ATProto OAuth profile. Repository writes for
- * Social Wire lexicons need explicit `repo:` permissions; use one scope per
- * collection with combined `action=` params (permission string syntax).
- *
- * **Re-login required after deploy:** widening scopes does not upgrade existing
- * access tokens; users must sign out and sign in again.
- */
-export const AT_PROTO_OAUTH_SCOPES = [
-  "atproto",
-  "repo:com.thesocialwire.folder?action=create&action=update&action=delete",
-  "repo:com.thesocialwire.publicationPrefs?action=create&action=update&action=delete",
-  "repo:com.thesocialwire.preferences?action=create&action=update&action=delete",
-  "repo:com.thesocialwire.entryReadState?action=create&action=update&action=delete",
-  "repo:com.latr.saved.external?action=create&action=update&action=delete",
-  "repo:com.latr.saved.item?action=create&action=update&action=delete",
-  "repo:site.standard.graph.subscription?action=create&action=update&action=delete",
-  "repo:app.skyreader.feed.subscription?action=create&action=update&action=delete",
-].join(" ");
+export { AT_PROTO_OAUTH_SCOPES } from "@/lib/atprotoOAuthScopes";
 
 /**
  * Prefer IP loopback redirects (RFC 8252); `oauth-client-browser` may redirect the
@@ -98,17 +78,24 @@ export function localOAuthCanonicalHref(
   return null;
 }
 
+function resolvedAppEnvForOAuth(): string {
+  const raw = readAppEnvRaw();
+  if (raw) return normalizeAppEnv(raw);
+  return process.env.NODE_ENV === "development" ? "local" : "prod";
+}
+
 /** Enable parameterized OAuth loopback (`http://localhost?redirect_uri=…`) for Next dev machines. */
 function shouldUseParameterizedLoopbackClientId(): boolean {
   const explicit = process.env.NEXT_PUBLIC_ATPROTO_LOOPBACK_FORCE;
   if (explicit === "0" || explicit === "false") return false;
 
-  const appEnv = process.env.NEXT_PUBLIC_APP_ENV;
+  const appEnv = resolvedAppEnvForOAuth();
   if (appEnv === "local") return true;
-  if (!appEnv && process.env.NODE_ENV === "development") return true;
+  if (appEnv === "dev" && process.env.NODE_ENV === "development") return true;
+  if (!readAppEnvRaw() && process.env.NODE_ENV === "development") return true;
 
   const force = explicit === "1" || explicit === "true";
-  return force && appEnv !== "prod" && appEnv !== "production";
+  return force && appEnv !== "prod";
 }
 
 function isLocalOAuthMode(): boolean {
@@ -173,13 +160,14 @@ export function localLoopbackCanonicalHref(currentHref: string): string | null {
 /**
  * Resolve the ATProto OAuth client ID.
  *
- * **Loopback (local OAuth to your real PDS):** when `NEXT_PUBLIC_APP_ENV === "local"`,
- * or when APP_ENV is **unset during `next dev`**, builds a parameterized `http://localhost?…`
+ * **Loopback (local OAuth to your real PDS):** when app env is `local`, or `dev` during
+ * `next dev`, or when APP_ENV is **unset during `next dev`**, builds a parameterized `http://localhost?…`
  * client ID embedding `redirect_uri=http://127.0.0.1:<port>/callback` (+ IPv6 twin) so the
  * port and path match the dev server (`@atproto/oauth-client-browser` rejects bare ports
  * for the default `"http://localhost"` ID alone).
  *
- * **Hosted OAuth:** otherwise use `NEXT_PUBLIC_ATPROTO_CLIENT_ID` or Social Wire prod metadata URL.
+ * **Hosted OAuth:** otherwise use `NEXT_PUBLIC_ATPROTO_CLIENT_ID` or same-origin
+ * `/client-metadata.json` (dynamic redirect URIs for preview/dev hosts).
  *
  * **Disabling loopback overrides:** `NEXT_PUBLIC_ATPROTO_LOOPBACK_FORCE=false` skips the parameterized client.
  */
@@ -197,10 +185,18 @@ function resolveClientId(): string {
       scope: AT_PROTO_OAUTH_SCOPES,
     });
   }
-  return (
-    process.env.NEXT_PUBLIC_ATPROTO_CLIENT_ID ??
-    "https://thesocialwire.app/client-metadata.json"
-  );
+  return resolveHostedClientId();
+}
+
+function resolveHostedClientId(): string {
+  const explicit = process.env.NEXT_PUBLIC_ATPROTO_CLIENT_ID?.trim();
+  if (explicit) return explicit;
+
+  if (typeof window !== "undefined") {
+    return `${window.location.origin}/client-metadata.json`;
+  }
+
+  return "https://thesocialwire.app/client-metadata.json";
 }
 
 let _clientPromise: Promise<BrowserOAuthClient> | null = null;

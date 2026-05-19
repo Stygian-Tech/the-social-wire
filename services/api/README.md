@@ -6,6 +6,7 @@ Swift/Hummingbird gateway that complements the Next.js web app: publishes OAuth 
 
 - **OAuth surface**: exposes `GET /oauth/client-metadata.json` (SPA/Tunnel) alongside `GET /ios-client-metadata.json`; scope literals come from **`ATProtoOAuthScopes`** so Swift + Next.js stay aligned (`apps/web/public/client-metadata.json` remains the authoring reference).
 - **Authenticated sync lanes**: forwards `Authorization` + **`DPoP`** headers verbatim to ATProto repos for `GET /v1/sync/preferences` and selective `GET /v1/pds/cache/record?collection=&rkey=` reads (short TTL SQLite/Supabase cache via `pds_repo_record_cache`).
+- **Thin AppView (optional)**: when **`ENABLE_THIN_APPVIEW=true`**, mounts **`/v1/appview/*`** for Level-1 entry timelines, read-mark write-through, enrollment backfill, and privacy purge; a separate **`App worker`** Fly process ingests Jetstream commits into **`content_items`** / **`read_marks`** (EU **`ams`**).
 - **Legacy reader APIs (migration only)**: follow-graph discovery (`DiscoveryService`) plus publication entry surfaces (`ContentService`) compile in-tree yet register **only** when `ENABLE_LEGACY_CONTENT_API=true` for phased cutovers without deleting code paths prematurely.
 
 LATRHTTPS merge APIs deliberately stay elsewhere—consume those flows through the deployed web stack.
@@ -26,6 +27,11 @@ See [`packages/lexicons/`](../../packages/lexicons/README.md) for record shapes 
 | `SQLITE_DB_PATH` | | `./social-wire.sqlite` | SQLite backing file (`APP_ENV=local`) |
 | `SUPABASE_DATABASE_URL` | ✅ (dev/prod) | — | Postgres connection URI for Supabase workloads |
 | `ENABLE_LEGACY_CONTENT_API` | | `false` | When truthy (`1`, `true`, `yes`, `on`; case insensitive), mounts `/discovery/**`, `/publications/**`, `/entries/**` |
+| `ENABLE_THIN_APPVIEW` | | `false` | When truthy, mounts `/v1/appview/*` and bootstraps `ThinAppViewStore` |
+| `THIN_APPVIEW_RELAY_WS_URL` | | Jetstream default (filtered collections) | WebSocket URL for worker firehose subscriber |
+| `THIN_APPVIEW_CONTENT_TTL_SECONDS` | | `2592000` (30 days) | `content_items.expires_at` horizon |
+| `THIN_APPVIEW_READ_MARK_TTL_SECONDS` | | `15552000` (180 days) | `read_marks` retention window |
+| `THIN_APPVIEW_MAX_ENROLL_AUTHORS` | | `500` | Max DIDs per `POST /v1/appview/enroll` |
 | `PORT` | | `8080` | Listening port (`--port` overrides) |
 | `BIND_HOST` | | `0.0.0.0` | Listen address (`--hostname` overrides) |
 | `DOTENV_PATH` | | `.env` | Optional dotenv file relative to cwd |
@@ -59,6 +65,9 @@ cd infra/docker && docker compose up
 # Native Swift runner
 cd services/api
 APP_ENV=local swift run App
+
+# Optional: Thin AppView worker (ingestion + TTL cleanup)
+APP_ENV=local ENABLE_THIN_APPVIEW=true swift run App worker
 ```
 
 - Direct HTTP: [`http://127.0.0.1:8080`](http://127.0.0.1:8080)
@@ -105,7 +114,10 @@ For optional local coverage and `llvm-cov` / `lcov` export, run `swift test --en
 Operational migrations live at the repo root for the **Supabase CLI** (and optionally the dashboard’s GitHub integration):
 
 - Legacy cache tables originate from the hosted Supabase project’s older migrations (`discovery_cache`, `entry_cache`).
-- [`supabase/migrations/20260516144500_add_pds_repo_record_cache.sql`](../../supabase/migrations/20260516144500_add_pds_repo_record_cache.sql) adds **`pds_repo_record_cache`**. Apply from the **`dev`** / **`main`** branches via [`.github/workflows/supabase.yml`](../../.github/workflows/supabase.yml) (**`supabase link`** + **`supabase db push`**), or locally with the same commands after **`supabase link`**, before pointing **`SUPABASE_DATABASE_URL`** at refreshed environments.
+- [`supabase/migrations/20260516144500_add_pds_repo_record_cache.sql`](../../supabase/migrations/20260516144500_add_pds_repo_record_cache.sql) adds **`pds_repo_record_cache`**.
+- [`supabase/migrations/20260519120000_add_thin_appview.sql`](../../supabase/migrations/20260519120000_add_thin_appview.sql) adds **`content_items`** and **`read_marks`** for the Thin AppView index.
+
+Apply from the **`dev`** / **`main`** branches via [`.github/workflows/supabase.yml`](../../.github/workflows/supabase.yml) (**`supabase link`** + **`supabase db push`**), or locally with the same commands after **`supabase link`**, before pointing **`SUPABASE_DATABASE_URL`** at refreshed environments.
 
 **GitHub Actions secrets** (repository → *Settings* → *Secrets and variables* → *Actions*):
 
@@ -132,6 +144,11 @@ Canonical description: [`packages/spec/openapi.yaml`](../../packages/spec/openap
 | `GET` | `/ios-client-metadata.json` | Native ATS metadata (`application_type=native`) |
 | `GET` | `/v1/sync/preferences` | Requires bearer + **`DPoP`** headers + valid ATProto JWT |
 | `GET` | `/v1/pds/cache/record` | Generic repo record accel (`collection`,`rkey` query params) |
+| `GET` | `/v1/appview/entries` | **`ENABLE_THIN_APPVIEW`** — Level-1 entry timeline + unread filter |
+| `POST` | `/v1/appview/read-marks` | Write-through read mark after PDS upsert |
+| `DELETE` | `/v1/appview/read-marks` | Write-through unread (delete mark) |
+| `POST` | `/v1/appview/enroll` | Backfill followed author DIDs into index |
+| `DELETE` | `/v1/appview/privacy/purge` | Delete viewer read marks from index |
 | `POST` | `/discovery/refresh` | **`ENABLE_LEGACY_CONTENT_API`** |
 | `GET` | `/discovery/{userDid}` | Legacy gated |
 | `GET` | `/publications/{pubId}/entries` | Legacy gated |
@@ -148,11 +165,21 @@ Clients (SPA / ATS)
 Hummingbird router
  ├── OAuthMetadataRoutes (/oauth/client-metadata.json, /ios-client-metadata.json)
  ├── ATProtoAuthMiddleware (JWKS verified JWT + DPoP)
- │    └── PreferenceSyncService + SyncRoutes
+ │    ├── PreferenceSyncService + SyncRoutes
+ │    └── (optional) ThinAppViewRoutes + worker firehose ingest
  └── (optional legacy) DiscoveryService + ContentService
           ▼                    ▼
-     CacheStore ───────► Supabase/SQLite
+     CacheStore / ThinAppViewStore ──► Supabase/SQLite (ams)
 ```
+
+Deploy the ingestion worker as a separate Fly process when **`ENABLE_THIN_APPVIEW`** is on:
+
+```bash
+# From repo root
+fly deploy ./services/api --config services/api/fly.worker.toml
+```
+
+See [docs/architecture/appview.md](../../docs/architecture/appview.md) and [docs/wiki/Thin-AppView.md](../../docs/wiki/Thin-AppView.md).
 
 ## Docker
 

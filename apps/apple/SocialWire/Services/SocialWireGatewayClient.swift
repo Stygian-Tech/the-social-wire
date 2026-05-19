@@ -15,6 +15,28 @@ struct SyncPreferencesEnvelope: Codable, Sendable {
     let record: PreferencesRecord?
 }
 
+struct AppViewEntryListResponse: Codable, Sendable {
+    let entries: [EntryListItem]
+    let cursor: String?
+}
+
+struct AppViewEnrollResponse: Codable, Sendable {
+    let indexed: Int
+}
+
+private struct AppViewReadMarkBody: Encodable, Sendable {
+    let subjectUri: String
+    let readAt: String
+}
+
+private struct AppViewReadMarkDeleteBody: Encodable, Sendable {
+    let subjectUri: String
+}
+
+private struct AppViewEnrollBody: Encodable, Sendable {
+    let authorDids: [String]
+}
+
 /// Authenticated calls to **`SocialWireAPIEnvironment.baseURL`** (DPoP + access JWT), mirroring PDS **`XRPCClient`** semantics.
 @MainActor
 final class SocialWireGatewayClient {
@@ -44,12 +66,123 @@ final class SocialWireGatewayClient {
         )
     }
 
+    func fetchCachedPdsRecord(collection: String, rkey: String, ifNoneMatch: String?) async throws -> GatewayHTTPResult {
+        try await authorizedGET(
+            path: "/v1/pds/cache/record",
+            query: ["collection": collection, "rkey": rkey],
+            ifNoneMatch: ifNoneMatch
+        )
+    }
+
+    func fetchAppViewEntries(
+        authorDid: String,
+        publicationAtUri: String?,
+        filter: ReaderFilter,
+        cursor: String?,
+        limit: Int = 50
+    ) async throws -> AppViewEntryListResponse {
+        var query: [String: String] = [
+            "authorDid": authorDid,
+            "filter": filter == .unread ? "unread" : "all",
+            "limit": String(limit),
+        ]
+        if let publicationAtUri, !publicationAtUri.isEmpty {
+            query["publicationAtUri"] = publicationAtUri
+        }
+        if let cursor, !cursor.isEmpty {
+            query["cursor"] = cursor
+        }
+
+        let result = try await authorizedGET(path: "/v1/appview/entries", query: query, ifNoneMatch: nil)
+        guard (200 ..< 300).contains(result.statusCode) else {
+            throw SocialWireError.badResponse("AppView entries failed (\(result.statusCode)).")
+        }
+        return try JSONDecoder().decode(AppViewEntryListResponse.self, from: result.body)
+    }
+
+    func upsertReadMark(subjectUri: String, readAt: Date) async throws {
+        let payload = try JSONEncoder().encode(
+            AppViewReadMarkBody(subjectUri: subjectUri, readAt: DateFormatters.string(from: readAt))
+        )
+        let result = try await authorizedRequest(
+            method: "POST",
+            path: "/v1/appview/read-marks",
+            query: [:],
+            body: payload,
+            contentType: "application/json"
+        )
+        guard (200 ..< 300).contains(result.statusCode) else {
+            throw SocialWireError.badResponse("AppView read-mark upsert failed (\(result.statusCode)).")
+        }
+    }
+
+    func deleteReadMark(subjectUri: String) async throws {
+        let payload = try JSONEncoder().encode(AppViewReadMarkDeleteBody(subjectUri: subjectUri))
+        let result = try await authorizedRequest(
+            method: "DELETE",
+            path: "/v1/appview/read-marks",
+            query: [:],
+            body: payload,
+            contentType: "application/json"
+        )
+        guard (200 ..< 300).contains(result.statusCode) else {
+            throw SocialWireError.badResponse("AppView read-mark delete failed (\(result.statusCode)).")
+        }
+    }
+
+    func enrollAuthors(dids: [String]) async throws -> Int {
+        let payload = try JSONEncoder().encode(AppViewEnrollBody(authorDids: dids))
+        let result = try await authorizedRequest(
+            method: "POST",
+            path: "/v1/appview/enroll",
+            query: [:],
+            body: payload,
+            contentType: "application/json"
+        )
+        guard (200 ..< 300).contains(result.statusCode) else {
+            throw SocialWireError.badResponse("AppView enroll failed (\(result.statusCode)).")
+        }
+        let decoded = try JSONDecoder().decode(AppViewEnrollResponse.self, from: result.body)
+        return decoded.indexed
+    }
+
+    func purgeAppViewPrivacyData() async throws {
+        let result = try await authorizedRequest(
+            method: "DELETE",
+            path: "/v1/appview/privacy/purge",
+            query: [:],
+            body: nil,
+            contentType: nil
+        )
+        guard (200 ..< 300).contains(result.statusCode) else {
+            throw SocialWireError.badResponse("AppView purge failed (\(result.statusCode)).")
+        }
+    }
+
     // MARK: - Private
 
     private func authorizedGET(
         path: String,
         query: [String: String],
         ifNoneMatch: String?
+    ) async throws -> GatewayHTTPResult {
+        try await authorizedRequest(
+            method: "GET",
+            path: path,
+            query: query,
+            body: nil,
+            contentType: nil,
+            ifNoneMatch: ifNoneMatch
+        )
+    }
+
+    private func authorizedRequest(
+        method: String,
+        path: String,
+        query: [String: String],
+        body: Data?,
+        contentType: String?,
+        ifNoneMatch: String? = nil
     ) async throws -> GatewayHTTPResult {
         guard var comps = URLComponents(url: baseURL.appending(path: path), resolvingAgainstBaseURL: false) else {
             throw SocialWireError.invalidURL
@@ -63,8 +196,14 @@ final class SocialWireGatewayClient {
 
         let session = try await auth.validSession()
         var request = URLRequest(url: url)
-        request.httpMethod = "GET"
+        request.httpMethod = method
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        if let body {
+            request.httpBody = body
+        }
+        if let contentType {
+            request.setValue(contentType, forHTTPHeaderField: "Content-Type")
+        }
 
         try await authorize(&request, session: session)
 
@@ -88,8 +227,14 @@ final class SocialWireGatewayClient {
 
         if [401, 400].contains(http.statusCode), http.value(forHTTPHeaderField: "DPoP-Nonce") != nil {
             var retry = URLRequest(url: url)
-            retry.httpMethod = "GET"
+            retry.httpMethod = method
             retry.setValue("application/json", forHTTPHeaderField: "Accept")
+            if let body {
+                retry.httpBody = body
+            }
+            if let contentType {
+                retry.setValue(contentType, forHTTPHeaderField: "Content-Type")
+            }
             try await authorize(&retry, session: session)
             if let trimmedNM, !trimmedNM.isEmpty {
                 retry.setValue(trimmedNM, forHTTPHeaderField: "If-None-Match")

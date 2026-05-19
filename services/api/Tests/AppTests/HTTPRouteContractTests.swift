@@ -40,6 +40,7 @@ struct HTTPRouteContractTests {
         oauthPublicOrigin: nil,
         oauthIosMetadataOrigin: nil,
         enableLegacyContentAPI: false,
+        thinAppView: .disabled,
         oauthGateway: OAuthGatewayClientPolicy.permissive
       )
 
@@ -75,6 +76,7 @@ struct HTTPRouteContractTests {
         oauthPublicOrigin: nil,
         oauthIosMetadataOrigin: nil,
         enableLegacyContentAPI: false,
+        thinAppView: .disabled,
         oauthGateway: OAuthGatewayClientPolicy.permissive
       )
 
@@ -110,6 +112,7 @@ struct HTTPRouteContractTests {
         oauthPublicOrigin: nil,
         oauthIosMetadataOrigin: nil,
         enableLegacyContentAPI: false,
+        thinAppView: .disabled,
         oauthGateway: OAuthGatewayClientPolicy.permissive
       )
 

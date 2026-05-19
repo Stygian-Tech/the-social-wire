@@ -11,12 +11,13 @@ Web (Next.js 16.2+)     iOS/iPadOS (SwiftUI)
        │                        │
        └─── ATProto OAuth ──────┘
                    │
-                   ▼
-        User's ATProto PDS  ←── direct read/write/read
-          com.thesocialwire.folder
-          com.thesocialwire.publicationPrefs
-          app.bsky.graph.follow (existing)
-          site.standard.entry
+       ┌───────────┴───────────┐
+       ▼                       ▼
+User's ATProto PDS      Social Wire gateway (optional)
+  com.thesocialwire.*     /v1/sync, /v1/appview/*
+  site.standard.*         Thin AppView index (EU ams)
+       │
+       └── Author PDS — entry bodies + canonical read state
 ```
 
 ## Monorepo Structure
@@ -27,7 +28,7 @@ the-social-wire/
     web/         # Next.js 16.2+ web client (Bun)
     apple/       # SwiftUI iOS/iPadOS app
   services/
-    api/         # Swift Package + Hummingbird 2 service; `fly.toml` + Dockerfile for Fly.io
+    api/         # Swift gateway (Hummingbird) + optional Thin AppView worker; Fly.io
   packages/
     lexicons/    # com.thesocialwire.* ATProto lexicons
     spec/        # OpenAPI 3.1 spec (service API)
@@ -37,7 +38,7 @@ the-social-wire/
     docker/      # docker-compose — builds API from services/api + Caddy + Portainer
   docs/
     architecture/
-    wiki/        # Markdown synced to GitHub Wiki (see .github/workflows/publish-wiki.yml)
+    wiki/        # Markdown synced to GitHub Wiki on push to main (see .github/workflows/publish-wiki.yml)
 ```
 
 ## Prerequisites
@@ -79,16 +80,19 @@ cd apps/web && bun run test
 ## Architecture Principles
 
 - **Protocol-first**: user data lives on the user's own ATProto PDS as published records, not in our database
-- **Direct clients**: discovery and content reads use public ATProto XRPC instead of a Social Wire API dependency
+- **PDS-canonical reads**: entry detail and read-state writes target the user's and authors' PDS repos
+- **Optional Thin AppView**: when enabled, the gateway indexes Level-1 list rows + read marks in EU Postgres for faster timelines and server-side unread filtering (see [docs/architecture/appview.md](docs/architecture/appview.md))
+- **Direct ATProto where it fits**: discovery and repo reads use public XRPC; Bluesky App View (`public.api.bsky.app`) for follows and profiles only
 - **Interoperable by design**: lexicons are public — any ATProto client can read a user's Social Wire folders
-- **No AppView required for v1**: clients can discover followed publications without cross-user indexing
 
 ## Deployment
 
 | Component | Where |
 |-----------|-------|
 | Web | Vercel (automatic from `main` / `dev` branches) |
-| API | Fly.io (`deploy.yml` — two Fly apps for prod + dev) |
+| API | Fly.io (`deploy.yml` — prod + dev apps, **`ams`**) |
+| Thin AppView worker | Fly.io separate process (`fly.worker.toml`, `App worker`) |
+| Database (index + cache) | Supabase Postgres (`supabase/migrations/`) |
 | Local API + TLS | `infra/docker` compose (builds `services/api` Dockerfile) |
 | CI/CD | GitHub Actions + Vercel + Fly |
 
@@ -100,9 +104,10 @@ See [docs/architecture/overview.md](docs/architecture/overview.md) for the full 
 - [Architecture overview](docs/architecture/overview.md)
 - [Lexicons](docs/architecture/lexicons.md)
 - [Discovery chain](docs/architecture/discovery.md)
+- [Thin AppView](docs/architecture/appview.md)
 - [Web app](apps/web/README.md)
 - [Apple app](apps/apple/README.md)
-- [Legacy service API](services/api/README.md)
+- [Gateway API](services/api/README.md)
 - [Lexicon reference](packages/lexicons/README.md)
 
 ## License

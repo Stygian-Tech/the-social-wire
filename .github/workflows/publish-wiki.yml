@@ -1,5 +1,6 @@
 name: Publish GitHub Wiki
 
+# Wiki content is production-facing: sync only from `main` (never `dev` or feature branches).
 on:
   push:
     branches: [main]
@@ -20,6 +21,7 @@ concurrency:
 
 jobs:
   wiki:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       # rsync mirrors docs/wiki into the wiki repo working tree; shallow checkout is enough.

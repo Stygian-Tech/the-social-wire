@@ -3,7 +3,21 @@ import path from "path";
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  env: {
+    NEXT_PUBLIC_APP_ENV:
+      process.env.NEXT_PUBLIC_APP_ENV ?? process.env.APP_ENV ?? "",
+  },
   allowedDevOrigins: ["127.0.0.1", "[::1]"],
+  async rewrites() {
+    return {
+      beforeFiles: [
+        {
+          source: "/client-metadata.json",
+          destination: "/api/oauth/web-client-metadata",
+        },
+      ],
+    };
+  },
   /** Dev-only: avoid ChunkLoadError when Webpack is slow to emit large route chunks after Fast Refresh. */
   webpack: (config, { dev }) => {
     if (dev && config.output && typeof config.output === "object") {

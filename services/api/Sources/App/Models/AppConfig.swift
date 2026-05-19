@@ -12,6 +12,8 @@ struct AppConfig: Sendable {
   let oauthIosMetadataOrigin: String?
   /// When `true`, keeps publication discovery/content routes online for phased migrations (default **`false`**).
   let enableLegacyContentAPI: Bool
+  /// Thin AppView read index configuration.
+  let thinAppView: ThinAppViewConfig
   /// Binds JWT access tokens from **registered OAuth clients / audiences** for hosted gateway traffic.
   let oauthGateway: OAuthGatewayClientPolicy
 
@@ -67,6 +69,7 @@ struct AppConfig: Sendable {
       oauthPublicOrigin: oauthPublicOrigin,
       oauthIosMetadataOrigin: oauthIosMetadataOrigin,
       enableLegacyContentAPI: enableLegacyContentAPI,
+      thinAppView: ThinAppViewConfig.fromEnvironment(env),
       oauthGateway: gateway
     )
   }

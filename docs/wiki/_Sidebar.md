@@ -3,6 +3,7 @@
 - [[Home]]
 - [[Monorepo-map]]
 - [[Architecture]]
+- [[Thin-AppView]]
 - [[Web-app]]
 - [[Apple-client]]
 - [[Service-API]]

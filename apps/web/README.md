@@ -28,11 +28,13 @@ Copy `.env.example` to `.env.local` or create `.env.local` manually (see **Envir
 
 | Variable | Description |
 |----------|-------------|
-| `NEXT_PUBLIC_APP_ENV` | `prod` / `dev` / `local` — banner + OAuth mode (see **Local ATProto OAuth** below); defaults to `local` in the banner when unset |
-| `NEXT_PUBLIC_ATPROTO_CLIENT_ID` | OAuth client ID for **hosted** builds: URL of discoverable `client-metadata.json` |
+| `NEXT_PUBLIC_APP_ENV` | `prod` / `dev` / `local` — banner + OAuth mode (see **Local ATProto OAuth** below). Server also reads `APP_ENV`; `next.config` forwards it to the client bundle when `NEXT_PUBLIC_*` is unset |
+| `NEXT_PUBLIC_ATPROTO_CLIENT_ID` | Optional override for hosted OAuth client ID. Default: same-origin `/client-metadata.json` (dynamic `redirect_uris` for preview/dev hosts) |
 | `NEXT_PUBLIC_ATPROTO_LOOPBACK_ORIGIN` | Optional: `http://127.0.0.1:PORT` — SSR / first-paint port fallback for loopback redirects |
 | `NEXT_PUBLIC_ATPROTO_LOOPBACK_CALLBACK_PATH` | Optional loopback redirect path (default `/callback`) |
 | `NEXT_PUBLIC_ATPROTO_LOOPBACK_FORCE` | Optional: `true` / `false` — override whether parameterized loopback OAuth is used in dev |
+| `NEXT_PUBLIC_USE_THIN_APPVIEW` | When `true`, entry **lists** load from gateway `GET /v1/appview/entries` instead of author PDS `listRecords` (entry detail stays PDS-direct) |
+| `NEXT_PUBLIC_SOCIALWIRE_API_URL` | Gateway base URL for Thin AppView and future authenticated routes (default `https://api.thesocialwire.app`) |
 
 ## Architecture
 
@@ -44,12 +46,13 @@ Authentication uses ATProto OAuth (PKCE + DPoP) via `@atproto/oauth-client-brows
 - `src/hooks/useAuth.tsx` — `AuthProvider` context; exposes `session.did`, `getAuthFetch()`, `getOAuthSession()`
 - `src/lib/pdsClient.ts` — XRPC helpers for reading/writing ATProto records on the user's PDS (`new Agent(oauthSession)`)
 - `src/lib/atprotoClient.ts` — public ATProto XRPC helpers for discovery and standard.site entry reads
+- `src/lib/thinAppViewClient.ts` — optional gateway client for Thin AppView entry lists, read-mark write-through, enrollment, purge
 
 #### Local ATProto OAuth (`next dev`)
 
-Local dev does **not** read your hosted `public/client-metadata.json`. The browser uses a **parameterized loopback** client ID (`http://localhost?redirect_uri=…&scope=…` per `@atproto/oauth-types`, RFC 8252).
+Local dev does **not** use the static prod `public/client-metadata.json` at runtime (`/client-metadata.json` is served dynamically per host). On your machine the browser uses a **parameterized loopback** client ID (`http://localhost?redirect_uri=…&scope=…` per `@atproto/oauth-types`, RFC 8252).
 
-- **When it applies:** `NEXT_PUBLIC_APP_ENV === "local"`, or **`next dev` with `NEXT_PUBLIC_APP_ENV` unset** (`NODE_ENV === "development"`). Production / `next build` bundles use `NEXT_PUBLIC_ATPROTO_CLIENT_ID` or the default `https://thesocialwire.app/client-metadata.json`.
+- **When loopback applies:** app env is `local`, or **`dev` during `next dev`**, or **`next dev` with app env unset**. Hosted preview/production use same-origin `/client-metadata.json` unless `NEXT_PUBLIC_ATPROTO_CLIENT_ID` overrides.
 - **Redirect URIs:** `http://127.0.0.1:<devPort>/callback` and `http://[::1]:<devPort>/callback`, derived from `window.location.port` when you sign in. The client may redirect **`localhost` → `127.0.0.1`** after load so IndexedDB matches the redirect origin.
 - **Overrides:** `NEXT_PUBLIC_ATPROTO_LOOPBACK_ORIGIN` (port fallback when `window` is missing), `NEXT_PUBLIC_ATPROTO_LOOPBACK_CALLBACK_PATH` (default `/callback`), `NEXT_PUBLIC_ATPROTO_LOOPBACK_FORCE=false` to force hosted client ID in dev.
 - **Callback route:** Never run idle `oauthClient.init()` concurrently on **`/callback`**, or a race can strip `#code=` / `#state=` when the OAuth client redirects `localhost → 127.0.0.1`. `AuthProvider` skips restore on that path until `handleCallback()` finishes.
@@ -73,9 +76,14 @@ Public App View (https://public.api.bsky.app — no OAuth on these calls)
   └─ com.atproto.identity.resolveHandle
   └─ app.bsky.graph.getFollows         ← merged with PDS graph when under cap
   └─ app.bsky.actor.getProfile         ← follow enrichment (useViewerProfile also uses repo profile fallback)
+
+Social Wire gateway (optional — NEXT_PUBLIC_USE_THIN_APPVIEW=true)
+  └─ GET /v1/appview/entries           ← entry list rows (Level-1 index)
+  └─ POST/DELETE /v1/appview/read-marks ← write-through after PDS read state
+  └─ POST /v1/appview/enroll           ← backfill after discovery
 ```
 
-All user organisation data (folders, publication prefs) is stored on the user's own PDS — not in the Social Wire backend. Entry bodies and discovery probes read **authors' records from their PDS endpoints**, not from a Social Wire API (see also `packages/spec/openapi.yaml` for the separate caching service used elsewhere in the monorepo).
+All user organisation data (folders, publication prefs, canonical read state) is stored on the user's own PDS. Entry **detail** always reads authors' PDS records. Entry **lists** default to author PDS `listRecords`; when Thin AppView is enabled, lists may come from the gateway index (see [docs/architecture/appview.md](../../docs/architecture/appview.md)).
 
 #### PDS-first reads vs public App View
 
@@ -96,6 +104,7 @@ Lexicon **collection** (NSID) strings used in the web client match `apps/web/src
 | `app.bsky.graph.follow` | Follow subjects read from the **viewer's** repo (canonical input to discovery) |
 | `com.thesocialwire.folder` | User-defined folders (`PDSClient.listFolders`, mutations) |
 | `com.thesocialwire.publicationPrefs` | Per-publication folder assignment and sort on the user's PDS (legacy `hidden` may still decode from old records but the client clears it on write) |
+| `com.thesocialwire.entryReadState` | Per-entry read timestamps on the viewer PDS (canonical); mirrored to gateway index when Thin AppView is enabled |
 
 JSON lexicons for Social Wire–specific records live under **`packages/lexicons/`** (`com.thesocialwire.*`).
 
@@ -121,8 +130,8 @@ These **localStorage** keys are browser-only convenience (no secrets):
 
 ### Discovery & entry lists (streaming & cache)
 
-- **Discovery:** `discoverPublications` accepts **`onProgress`**, invoked with the **full ordered list so far** each time a followed account resolves to a publication. `useDiscovery` / `useRefreshDiscovery` forward that to **`queryClient.setQueryData(DISCOVERY_QUERY_KEY(did), …)`**, so the sidebar updates incrementally while probes run. Initial call passes `[]`.
-- **Entries:** `listEntries` accepts **`onProgress`** when a non-empty page is ready (with the encoded infinite-query cursor). `useEntries` uses this **only for the first infinite page** to patch the first page into cache early on slow PDS responses.
+- **Discovery:** `discoverPublications` accepts **`onProgress`**, invoked with the **full ordered list so far** each time a followed account resolves to a publication. `useDiscovery` / `useRefreshDiscovery` forward that to **`queryClient.setQueryData(DISCOVERY_QUERY_KEY(did), …)`**, so the sidebar updates incrementally while probes run. Initial call passes `[]`. When Thin AppView is enabled, discovery completion triggers **`enrollAuthorsInAppView`** (best-effort).
+- **Entries:** Default path uses `listEntries` on author PDS with **`onProgress`** streaming on the first infinite page. When **`NEXT_PUBLIC_USE_THIN_APPVIEW=true`**, `useEntries` calls **`listEntriesFromAppView`** instead (server-side unread filter supported). **`getEntry`** / entry detail remain PDS-direct in all modes.
 
 ### Key Libraries
 
@@ -160,11 +169,12 @@ src/
     usePDSClient.ts     # Memoised PDSClient from OAuthSession
     useFolders.ts       # Folder CRUD
     usePublications.ts  # Discovery + publication prefs
-    useEntries.ts       # Entry list + entry detail
+    useEntries.ts       # Entry list + entry detail (optional Thin AppView)
   lib/
     auth.ts             # OAuth client
-    pdsClient.ts        # PDS XRPC helpers
+    pdsClient.ts        # PDS XRPC helpers (+ read-mark write-through when flag on)
     atprotoClient.ts    # Public ATProto discovery + content reads
+    thinAppViewClient.ts # Gateway Thin AppView client
     sanitize.ts         # DOMPurify wrapper
 ```
 

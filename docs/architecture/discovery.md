@@ -31,12 +31,15 @@ GET https://bsky.social/xrpc/app.bsky.graph.getFollows
 
 Clients batch followed DID checks to keep refresh latency reasonable without sending unbounded concurrent requests. Web uses settled promises; Apple uses Swift task groups.
 
-## AppView (future)
+When Thin AppView is enabled, web and iOS call **`POST /v1/appview/enroll`** with unique author DIDs after discovery completes (best-effort backfill).
 
-If cross-user discovery features are needed (e.g., "popular publications among your followed accounts"), a firehose-based AppView can be added:
+## AppView layers
 
-- Subscribes to `com.atproto.sync.subscribeRepos` firehose
-- Indexes `com.thesocialwire.*` records from across the network
-- Exposes XRPC-style query endpoints: `com.thesocialwire.getFolders`, etc.
+Social Wire uses **two** AppView concepts:
 
-Phase 1 defers this — clients handle per-user discovery without cross-user indexing.
+| Layer | Purpose | Status |
+|-------|---------|--------|
+| **Bluesky App View** (`public.api.bsky.app`) | `getFollows`, `getProfile`, handle resolution | In use — unchanged |
+| **Thin AppView** (`/v1/appview/*` on `services/api`) | Level-1 entry timelines + server-side unread | Optional, feature-flagged |
+
+A **future cross-user indexer** (popular among follows, public folder indexes, federated discovery via firehose) is a separate scope — not the thin AppView. See [appview.md](appview.md).
