@@ -32,10 +32,6 @@ import {
   enrollAuthorsInAppView,
   isThinAppViewEnabled,
 } from "@/lib/thinAppViewClient";
-import {
-  enrollAuthorsInAppView,
-  isThinAppViewEnabled,
-} from "@/lib/thinAppViewClient";
 
 export type { DiscoveredPublication };
 

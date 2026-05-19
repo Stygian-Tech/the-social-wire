@@ -125,13 +125,24 @@ Apply from the **`dev`** / **`main`** branches via [`.github/workflows/supabase.
 |--------|---------|---------|
 | `SUPABASE_ACCESS_TOKEN` | `dev`, `main` | [CLI access token](https://supabase.com/dashboard/account/tokens) for `supabase link` / `db push` |
 | `SUPABASE_DEV_PROJECT_REF` | `dev` pushes | Project ref (**Settings → General** in the Supabase dashboard) |
-| `SUPABASE_DEV_DB_PASSWORD` | `dev` pushes | Database password for that project |
+| `SUPABASE_DEV_DATABASE_URL` | `dev` pushes (preferred) | **Session pooler** URI from **Connect** (port **5432**), e.g. `postgresql://postgres.[ref]:[password]@…pooler…:5432/postgres` |
+| `SUPABASE_DEV_DB_PASSWORD` | `dev` pushes (fallback) | Database password only — must match **Project Settings → Database** for the same ref |
 | `SUPABASE_PROD_PROJECT_REF` | `main` pushes | Production project ref |
-| `SUPABASE_PROD_DB_PASSWORD` | `main` pushes | Production database password |
+| `SUPABASE_PROD_DATABASE_URL` | `main` pushes (preferred) | Session pooler URI (same format as dev) |
+| `SUPABASE_PROD_DB_PASSWORD` | `main` pushes (fallback) | Production database password |
 
 If you use a **single** hosted project for both branches, set the same ref/password in the **DEV** and **PROD** secrets. If the dashboard is also set to auto-apply the same `supabase/migrations/` tree, disable one path so migrations are not applied twice.
 
-**Workflow wiring:** pushes to **`dev`** read **`SUPABASE_DEV_PROJECT_REF`** + **`SUPABASE_DEV_DB_PASSWORD`** only; pushes to **`main`** read the **`SUPABASE_PROD_*`** pair. Each password must be the **Postgres** password from **Database** settings for the **same** project as that branch’s ref (plain password string, not a `postgres://` URI). CI uses the default **`supabase link`** (pooler) because **GitHub Actions** typically cannot reach Supabase **direct** DB endpoints over **IPv6**; use **`--skip-pooler`** only on networks with working IPv6 to the database.
+**Workflow wiring:** pushes to **`dev`** read **`SUPABASE_DEV_PROJECT_REF`** plus **`SUPABASE_DEV_DATABASE_URL`** (preferred) or **`SUPABASE_DEV_DB_PASSWORD`**; pushes to **`main`** use the **`SUPABASE_PROD_*`** pair. CI runs [`.github/workflows/supabase.yml`](../../.github/workflows/supabase.yml) via [`scripts/supabase-ci-push.sh`](../../scripts/supabase-ci-push.sh) (Supabase CLI **2.100.1** pinned).
+
+**Troubleshooting `password authentication failed` (SQLSTATE 28P01):**
+
+1. In Supabase **Project Settings → Database**, confirm the password or **reset** it.
+2. Update the matching GitHub secret (`SUPABASE_DEV_DB_PASSWORD` or `SUPABASE_PROD_DB_PASSWORD`) with the **plain password** (not a `postgres://` URI).
+3. Prefer adding **`SUPABASE_DEV_DATABASE_URL`** / **`SUPABASE_PROD_DATABASE_URL`**: copy the **Session pooler** connection string from **Connect** (port **5432**). This avoids pooler auth quirks with `--password` on the CLI.
+4. Ensure the ref secret matches the project whose password you copied (dev vs prod).
+
+CI uses the pooler because GitHub Actions typically cannot reach Supabase **direct** DB endpoints over **IPv6**.
 
 ## API reference / HTTP contract
 

@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 import Logging
 
 /// Consumes Jetstream / relay WebSocket commits and forwards them to the indexer.
@@ -35,7 +38,9 @@ actor FirehoseSubscriber {
 
     let task = URLSession.shared.webSocketTask(with: url)
     task.resume()
-    defer { task.cancel(with: .goingAway, reason: nil) }
+    defer {
+      task.cancel(with: URLSessionWebSocketTask.CloseCode.goingAway, reason: nil)
+    }
 
     logger.info("Firehose connected", metadata: ["url": .string(relayURL)])
 

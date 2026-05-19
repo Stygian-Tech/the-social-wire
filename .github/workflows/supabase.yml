@@ -7,11 +7,13 @@ on:
     paths:
       - 'supabase/**'
       - '.github/workflows/supabase.yml'
+      - 'scripts/supabase-ci-push.sh'
   push:
     branches: [main, dev]
     paths:
       - 'supabase/**'
       - '.github/workflows/supabase.yml'
+      - 'scripts/supabase-ci-push.sh'
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -33,7 +35,8 @@ jobs:
 
       - uses: supabase/setup-cli@v2
         with:
-          version: latest
+          # Pin: `version: latest` has resolved to a broken install string on some runners (shows as "v)").
+          version: 2.100.1
 
       - name: Start local Postgres & apply migrations
         run: |
@@ -57,37 +60,15 @@ jobs:
 
       - uses: supabase/setup-cli@v2
         with:
-          version: latest
+          version: 2.100.1
 
-      # GitHub only has SUPABASE_DEV_DB_PASSWORD. The Supabase CLI documents SUPABASE_DB_PASSWORD for CI;
-      # any log line that says to set SUPABASE_DB_PASSWORD is from the CLI. We export it from the GitHub
-      # secret and pass --password on link/db push so the value is explicit (avoids .env / store precedence).
       - name: Link & db push (dev Supabase project)
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           REF: ${{ secrets.SUPABASE_DEV_PROJECT_REF }}
-          SUPABASE_DEV_DB_PASSWORD: ${{ secrets.SUPABASE_DEV_DB_PASSWORD }}
-        run: |
-          set -euo pipefail
-          if [ -z "${SUPABASE_ACCESS_TOKEN:-}" ]; then
-            echo '::error::Missing repository secret SUPABASE_ACCESS_TOKEN.'
-            exit 1
-          fi
-          if [ -z "${REF:-}" ]; then
-            echo '::error::Missing repository secret SUPABASE_DEV_PROJECT_REF.'
-            exit 1
-          fi
-          if [ -z "${SUPABASE_DEV_DB_PASSWORD:-}" ]; then
-            echo '::error::Missing repository secret SUPABASE_DEV_DB_PASSWORD.'
-            exit 1
-          fi
-          echo "::notice::db push → Supabase **dev** project ref ${REF}"
-          db_pass="$(printf '%s' "$SUPABASE_DEV_DB_PASSWORD" | tr -d '\r')"
-          db_pass="${db_pass%$'\n'}"
-          export SUPABASE_DB_PASSWORD="${db_pass}"
-          unset SUPABASE_DEV_DB_PASSWORD
-          supabase link --project-ref "${REF}" --password "$db_pass" --yes
-          supabase db push --password "$db_pass" --yes
+          DATABASE_URL: ${{ secrets.SUPABASE_DEV_DATABASE_URL }}
+          DB_PASSWORD: ${{ secrets.SUPABASE_DEV_DB_PASSWORD }}
+        run: bash scripts/supabase-ci-push.sh dev
 
   push-migrations-prod:
     name: Push migrations (production)
@@ -101,32 +82,12 @@ jobs:
 
       - uses: supabase/setup-cli@v2
         with:
-          version: latest
+          version: 2.100.1
 
-      # Same as dev: CLI mentions SUPABASE_DB_PASSWORD in errors; we set it from SUPABASE_PROD_DB_PASSWORD.
       - name: Link & db push (production Supabase project)
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           REF: ${{ secrets.SUPABASE_PROD_PROJECT_REF }}
-          SUPABASE_PROD_DB_PASSWORD: ${{ secrets.SUPABASE_PROD_DB_PASSWORD }}
-        run: |
-          set -euo pipefail
-          if [ -z "${SUPABASE_ACCESS_TOKEN:-}" ]; then
-            echo '::error::Missing repository secret SUPABASE_ACCESS_TOKEN.'
-            exit 1
-          fi
-          if [ -z "${REF:-}" ]; then
-            echo '::error::Missing repository secret SUPABASE_PROD_PROJECT_REF.'
-            exit 1
-          fi
-          if [ -z "${SUPABASE_PROD_DB_PASSWORD:-}" ]; then
-            echo '::error::Missing repository secret SUPABASE_PROD_DB_PASSWORD.'
-            exit 1
-          fi
-          echo "::notice::db push → Supabase **production** project ref ${REF}"
-          db_pass="$(printf '%s' "$SUPABASE_PROD_DB_PASSWORD" | tr -d '\r')"
-          db_pass="${db_pass%$'\n'}"
-          export SUPABASE_DB_PASSWORD="${db_pass}"
-          unset SUPABASE_PROD_DB_PASSWORD
-          supabase link --project-ref "${REF}" --password "$db_pass" --yes
-          supabase db push --password "$db_pass" --yes
+          DATABASE_URL: ${{ secrets.SUPABASE_PROD_DATABASE_URL }}
+          DB_PASSWORD: ${{ secrets.SUPABASE_PROD_DB_PASSWORD }}
+        run: bash scripts/supabase-ci-push.sh prod
