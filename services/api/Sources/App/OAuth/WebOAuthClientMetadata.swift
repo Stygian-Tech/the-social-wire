@@ -8,8 +8,8 @@ enum WebOAuthClientMetadata {
 
   /// Builds JSON for **`/oauth/client-metadata.json`** on the gateway.
   ///
-  /// - **`publicOrigin`**: **`client_id`** host (must match the URL clients fetch — typically request **`Host`**).
-  /// - **`redirectOrigin`**: SPA origin for **`redirect_uris`** / **`client_uri`** when the web app is on another host.
+  /// - **`publicOrigin`**: **`client_id`** / **`client_uri`** origin (must match the URL clients fetch — typically request **`Host`**).
+  /// - **`redirectOrigin`**: SPA origin for **`redirect_uris`** when the web app is on another host.
   static func buildJSON(publicOrigin: String, redirectOrigin: String? = nil) throws -> Data {
     var trimmed = publicOrigin.trimmingCharacters(in: .whitespacesAndNewlines)
     if trimmed.hasSuffix("/") { trimmed.removeLast() }
@@ -51,7 +51,7 @@ enum WebOAuthClientMetadata {
       token_endpoint_auth_method: "none",
       dpop_bound_access_tokens: true,
       client_name: "The Social Wire",
-      client_uri: redirectBase
+      client_uri: metadataBase
     )
     let enc = JSONEncoder()
     enc.outputFormatting = [.sortedKeys]

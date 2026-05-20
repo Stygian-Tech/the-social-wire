@@ -21,6 +21,6 @@ struct WebOAuthClientMetadataTests {
     let obj = try #require(try JSONSerialization.jsonObject(with: blob) as? [String: Any])
     #expect(obj["client_id"] as? String == "https://api.example.com/oauth/client-metadata.json")
     #expect(obj["redirect_uris"] as? [String] == ["https://spa.example.com/callback"])
-    #expect(obj["client_uri"] as? String == "https://spa.example.com")
+    #expect(obj["client_uri"] as? String == "https://api.example.com")
   }
 }
