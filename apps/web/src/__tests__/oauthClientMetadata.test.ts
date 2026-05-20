@@ -4,6 +4,7 @@ import { AT_PROTO_OAUTH_SCOPES } from "@/lib/atprotoOAuthScopes";
 import {
   buildWebOAuthClientMetadata,
   gatewayWebOAuthClientMetadataUrl,
+  hostedOAuthClientIdForOrigin,
   inferGatewayApiBase,
 } from "@/lib/oauthClientMetadata";
 
@@ -27,6 +28,20 @@ describe("inferGatewayApiBase", () => {
     expect(
       inferGatewayApiBase("https://testing.thesocialwire.app")
     ).toBe("https://api.testing.thesocialwire.app");
+  });
+});
+
+describe("hostedOAuthClientIdForOrigin", () => {
+  it("uses the public API gateway for deployment-protected testing web host", () => {
+    expect(
+      hostedOAuthClientIdForOrigin("https://testing.thesocialwire.app")
+    ).toBe("https://api.testing.thesocialwire.app/oauth/client-metadata.json");
+  });
+
+  it("uses same-origin metadata for unmapped preview hosts", () => {
+    expect(
+      hostedOAuthClientIdForOrigin("https://preview.example.vercel.app")
+    ).toBe("https://preview.example.vercel.app/client-metadata.json");
   });
 });
 

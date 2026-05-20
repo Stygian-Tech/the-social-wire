@@ -20,6 +20,18 @@ export function gatewayWebOAuthClientMetadataUrl(apiBase: string): string {
   return `${apiBase.replace(/\/$/, "")}/oauth/client-metadata.json`;
 }
 
+/**
+ * Hosted OAuth `client_id` for a web origin.
+ * Uses the public API gateway when the SPA host is deployment-protected (e.g. testing.thesocialwire.app).
+ */
+export function hostedOAuthClientIdForOrigin(origin: string): string {
+  const gateway = inferGatewayApiBase(origin);
+  if (gateway) {
+    return gatewayWebOAuthClientMetadataUrl(gateway);
+  }
+  return `${origin.replace(/\/$/, "")}/client-metadata.json`;
+}
+
 /** Discoverable ATProto OAuth client metadata for the web SPA at a given origin. */
 export function buildWebOAuthClientMetadata(origin: string) {
   const base = origin.replace(/\/$/, "");

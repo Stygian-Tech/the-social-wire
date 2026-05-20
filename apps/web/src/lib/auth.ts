@@ -11,10 +11,7 @@ import { BrowserOAuthClient, OAuthSession } from "@atproto/oauth-client-browser"
 import { buildAtprotoLoopbackClientId } from "@atproto/oauth-types";
 import { AT_PROTO_OAUTH_SCOPES } from "@/lib/atprotoOAuthScopes";
 import { normalizeAppEnv, readAppEnvRaw } from "@/lib/appEnv";
-import {
-  gatewayWebOAuthClientMetadataUrl,
-  inferGatewayApiBase,
-} from "@/lib/oauthClientMetadata";
+import { hostedOAuthClientIdForOrigin } from "@/lib/oauthClientMetadata";
 import { BSKY_APPVIEW_PUBLIC } from "@/lib/atprotoClient";
 
 export { AT_PROTO_OAUTH_SCOPES } from "@/lib/atprotoOAuthScopes";
@@ -171,9 +168,10 @@ export function localLoopbackCanonicalHref(currentHref: string): string | null {
  * for the default `"http://localhost"` ID alone).
  *
  * **Hosted OAuth:** otherwise use `NEXT_PUBLIC_ATPROTO_CLIENT_ID`, same-origin
- * `/client-metadata.json` (dynamic redirect URIs for preview/dev hosts), or on **`dev`**
- * deployments the public gateway **`/oauth/client-metadata.json`** when the SPA host is
- * deployment-protected (e.g. `testing.thesocialwire.app` behind Vercel auth).
+ * `/client-metadata.json` for public preview hosts, or the public gateway
+ * **`/oauth/client-metadata.json`** when the SPA host maps to an API base (e.g.
+ * `testing.thesocialwire.app` → `api.testing.thesocialwire.app`) so PDS discovery
+ * is not blocked by Vercel deployment protection on `/client-metadata.json`.
  *
  * **Disabling loopback overrides:** `NEXT_PUBLIC_ATPROTO_LOOPBACK_FORCE=false` skips the parameterized client.
  */
@@ -199,14 +197,7 @@ function resolveHostedClientId(): string {
   if (explicit) return explicit;
 
   if (typeof window !== "undefined") {
-    const appEnv = resolvedAppEnvForOAuth();
-    if (appEnv === "dev") {
-      const gateway = inferGatewayApiBase(window.location.origin);
-      if (gateway) {
-        return gatewayWebOAuthClientMetadataUrl(gateway);
-      }
-    }
-    return `${window.location.origin}/client-metadata.json`;
+    return hostedOAuthClientIdForOrigin(window.location.origin);
   }
 
   return "https://thesocialwire.app/client-metadata.json";
