@@ -72,6 +72,33 @@ describe("thinAppViewClient", () => {
     expect(isThinAppViewEnabled()).toBe(false);
   });
 
+  it("listEntriesFromAppView sends scope params when appViewScope is provided", async () => {
+    const fetchHandler = mock(async (url: string) => {
+      expect(url).toContain("publicationScopeAtUris=");
+      expect(url).toContain("publicationSiteUrls=");
+      return new Response(
+        JSON.stringify({ entries: [], cursor: null }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      );
+    });
+
+    const { listEntriesFromAppView } = await import("@/lib/thinAppViewClient");
+    const page = await listEntriesFromAppView({
+      publicationKey: "at://did:plc:alice/site.standard.publication/main",
+      appViewScope: {
+        authorDid: "did:plc:alice",
+        publicationAtUri: "at://did:plc:alice/site.standard.publication/main",
+        publicationScopeAtUris: [
+          "at://did:plc:alice/com.standard.publication/main",
+        ],
+        publicationSiteUrls: ["https://example.offprint.app"],
+      },
+      oauthSession: { fetchHandler } as never,
+    });
+    expect(page.entries).toEqual([]);
+    expect(fetchHandler).toHaveBeenCalledTimes(1);
+  });
+
   it("listEntriesFromAppView calls gateway with author and publication params", async () => {
     const fetchHandler = mock(async (url: string) => {
       expect(url).toContain("https://api.example.test/v1/appview/entries");

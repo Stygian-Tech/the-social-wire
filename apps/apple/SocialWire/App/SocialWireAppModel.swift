@@ -40,6 +40,9 @@ final class SocialWireAppModel {
     var preferencesFromGateway: PreferencesRecord?
     /// Entry id currently open under **Unread** filter — `markRead` is deferred until navigation away.
     private var unreadDeferredEntryId: String?
+    /// AppView scope keys from **`GET /v1/publications/sidebar`** when gateway projection is active.
+    private var sidebarScopesByPublicationId: [String: PublicationAppViewScopeDTO] = [:]
+    private var usingGatewayPublicationProjection = false
     /// Read-later picker save in-flight (mirror web mutation pending state).
     var isUpdatingReadLaterPreference = false
 
@@ -67,8 +70,15 @@ final class SocialWireAppModel {
         authService.session?.did
     }
 
+    private var gatewaySubscribedUnfoldered: [DiscoveredPublication] = []
+    private var gatewayMyPublications: [DiscoveredPublication] = []
+    private var gatewayFollowingTab: [DiscoveredPublication] = []
+    private var gatewayAllPublicationRows: [DiscoveredPublication] = []
+
     var allPublicationRows: [DiscoveredPublication] {
-        discoveredPublications + rssPublications
+        usingGatewayPublicationProjection
+            ? gatewayAllPublicationRows
+            : discoveredPublications + rssPublications
     }
 
     private var subscriptionLookupKeys: Set<String> {
@@ -87,18 +97,33 @@ final class SocialWireAppModel {
     }
 
     var subscribedPublications: [DiscoveredPublication] {
-        mergeSubscribedPublications(
+        if usingGatewayPublicationProjection {
+            var merged = gatewayMyPublications + gatewaySubscribedUnfoldered
+            var ids = Set(merged.map(\.publicationId))
+            for row in gatewayAllPublicationRows {
+                guard !ids.contains(row.publicationId) else { continue }
+                guard let folderId = publicationPrefs[row.publicationId]?.value.folderId, !folderId.isEmpty else {
+                    continue
+                }
+                merged.append(row)
+                ids.insert(row.publicationId)
+            }
+            return merged
+        }
+        return mergeSubscribedPublications(
             graphSubscribed: segmentedDiscovery.graphSubscribed,
             rssPublications: rssPublications
         )
     }
 
     var myPublications: [DiscoveredPublication] {
+        if usingGatewayPublicationProjection { return gatewayMyPublications }
         guard let viewerDID else { return [] }
         return subscribedPublications.filter { viewerOwnsDiscoveredPublication($0, viewerDid: viewerDID) }
     }
 
     var subscribedUnfolderedPublications: [DiscoveredPublication] {
+        if usingGatewayPublicationProjection { return gatewaySubscribedUnfoldered }
         guard let viewerDID else { return [] }
         return subscribedPublications.filter { pub in
             guard !viewerOwnsDiscoveredPublication(pub, viewerDid: viewerDID) else { return false }
@@ -107,7 +132,8 @@ final class SocialWireAppModel {
     }
 
     var followingTabPublications: [DiscoveredPublication] {
-        filterFollowingTabPublications(
+        if usingGatewayPublicationProjection { return gatewayFollowingTab }
+        return filterFollowingTabPublications(
             followOwnedUnsubscribed: segmentedDiscovery.followOwnedUnsubscribed,
             myPublications: myPublications
         )
@@ -376,6 +402,16 @@ final class SocialWireAppModel {
         guard let viewerDID else { return }
         isLoading = true
         defer { isLoading = false }
+
+        if await refreshPublicationSidebarFromGateway(viewerDID: viewerDID) {
+            await refreshGatewayPreferencesSnapshot()
+            Task(priority: .utility) { await self.prefetchSidebarPublications() }
+            return
+        }
+
+        usingGatewayPublicationProjection = false
+        sidebarScopesByPublicationId = [:]
+
         do {
             async let foldersTask = pds.listFolders()
             async let prefsTask = pds.listPublicationPrefs()
@@ -409,6 +445,45 @@ final class SocialWireAppModel {
 
         await refreshGatewayPreferencesSnapshot()
         Task(priority: .utility) { await self.prefetchSidebarPublications() }
+    }
+
+    /// Returns true when gateway sidebar projection succeeded.
+    private func refreshPublicationSidebarFromGateway(viewerDID: String) async -> Bool {
+        do {
+            let projection = try await gateway.fetchPublicationSidebar()
+            usingGatewayPublicationProjection = true
+            sidebarScopesByPublicationId = projection.scopesByPublicationId()
+            gatewayAllPublicationRows = projection.allPublicationRows.map { $0.toDiscoveredPublication() }
+            gatewayMyPublications = projection.myPublications.map { $0.toDiscoveredPublication() }
+            gatewaySubscribedUnfoldered = projection.subscribedUnfoldered.map { $0.toDiscoveredPublication() }
+            gatewayFollowingTab = projection.followingTabPublications.map { $0.toDiscoveredPublication() }
+            discoveredPublications = gatewayAllPublicationRows.filter { $0.authorDid != "did:web:skyreader.rss" }
+            rssPublications = gatewayAllPublicationRows.filter { $0.authorDid == "did:web:skyreader.rss" }
+
+            async let foldersTask = pds.listFolders()
+            async let prefsTask = pds.listPublicationPrefs()
+            async let subscriptionsTask = pds.listPublicationSubscriptions()
+            async let readTask = pds.listEntryReadStates()
+            async let savedTask = pds.listMergedLatrSaves()
+            async let profileTask = publicationsService.fetchActorProfile(actor: viewerDID)
+
+            folders = try await foldersTask
+            let prefs = try await prefsTask
+            publicationPrefs = Dictionary(uniqueKeysWithValues: prefs.map { ($0.value.publicationId, $0) })
+            publicationSubscriptions = try await subscriptionsTask
+            readAtByEntryId = try await readTask
+            savedLinks = try await savedTask
+            viewerProfile = try? await profileTask
+
+            if SocialWireAPIEnvironment.useThinAppView, !projection.enrollAuthorDids.isEmpty {
+                Task(priority: .utility) {
+                    _ = try? await self.gateway.enrollAuthors(dids: projection.enrollAuthorDids)
+                }
+            }
+            return true
+        } catch {
+            return false
+        }
     }
 
     /// Pulls account preferences through the Swift gateway (ETag aware) — failures are non-fatal.
@@ -488,7 +563,8 @@ final class SocialWireAppModel {
 
     func publications(in folder: RepoRecord<FolderRecord>) -> [DiscoveredPublication] {
         let folderRkey = rkey(from: folder.uri)
-        return subscribedPublications.filter { publication in
+        let source = usingGatewayPublicationProjection ? gatewayAllPublicationRows : subscribedPublications
+        return source.filter { publication in
             guard let viewerDID else { return false }
             guard !viewerOwnsDiscoveredPublication(publication, viewerDid: viewerDID) else { return false }
             return publicationPrefs[publication.publicationId]?.value.folderId == folderRkey
@@ -517,15 +593,22 @@ final class SocialWireAppModel {
             let fresh: [EntryListItem]
             if let feedURL = rss.normalizedFeedURL(from: publication.publicationId) {
                 fresh = try await rss.entries(feedURL: feedURL)
-            } else if SocialWireAPIEnvironment.useThinAppView {
-                let (repoDid, publicationAtUri) = repoAndPublicationFilter(from: publication.publicationId)
+            } else if SocialWireAPIEnvironment.useThinAppView,
+                      let scope = sidebarScopesByPublicationId[publication.publicationId]
+                      ?? defaultAppViewScope(for: publication)
+            {
                 let page = try await gateway.fetchAppViewEntries(
-                    authorDid: repoDid,
-                    publicationAtUri: publicationAtUri,
+                    scope: scope,
                     filter: readerFilter,
                     cursor: nil
                 )
-                fresh = page.entries
+                if page.entries.isEmpty,
+                   scope.publicationAtUri != nil
+                {
+                    fresh = try await publicationsService.listEntries(publicationId: publication.publicationId)
+                } else {
+                    fresh = page.entries
+                }
             } else {
                 fresh = try await publicationsService.listEntries(publicationId: publication.publicationId)
             }
@@ -697,7 +780,25 @@ final class SocialWireAppModel {
     func addPublication(input: String, title: String?) async {
         do {
             let normalized = input.trimmingCharacters(in: .whitespacesAndNewlines)
-            if normalized.contains(".") || normalized.hasPrefix("http") {
+            if let resolved = try? await gateway.resolveAddPublication(input: normalized),
+               let result = resolved.result
+            {
+                switch result.kind {
+                case "standard-site":
+                    if let publicationAtUri = result.publicationAtUri {
+                        try await pds.createPublicationSubscription(publication: publicationAtUri)
+                    }
+                case "rss":
+                    if let feedUrl = result.feedUrl {
+                        try await pds.createSkyreaderSubscription(
+                            feedURL: rss.normalizeFeedURL(feedUrl),
+                            title: title ?? result.title
+                        )
+                    }
+                default:
+                    break
+                }
+            } else if normalized.contains(".") || normalized.hasPrefix("http") {
                 try await pds.createSkyreaderSubscription(feedURL: rss.normalizeFeedURL(normalized), title: title)
             } else {
                 let did = try await resolver.resolveDID(handleOrDID: normalized)
@@ -707,6 +808,16 @@ final class SocialWireAppModel {
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    private func defaultAppViewScope(for publication: DiscoveredPublication) -> PublicationAppViewScopeDTO {
+        let (repoDid, publicationAtUri) = repoAndPublicationFilter(from: publication.publicationId)
+        return PublicationAppViewScopeDTO(
+            authorDid: repoDid,
+            publicationAtUri: publicationAtUri,
+            publicationScopeAtUris: publicationAtUri.map { [$0] } ?? [],
+            publicationSiteUrls: []
+        )
     }
 
     func saveCurrentEntry() async {

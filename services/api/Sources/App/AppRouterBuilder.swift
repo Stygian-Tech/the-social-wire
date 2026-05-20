@@ -53,6 +53,18 @@ enum AppRouterBuilder {
     let prefs = PreferenceSyncService(httpClient: httpClient, cache: cache, plcURL: config.atprotoPLCURL, logger: logger)
     SyncRoutes(preferenceService: prefs).register(on: protected)
 
+    let projection = PublicationProjectionService(
+      httpClient: httpClient,
+      plcURL: config.atprotoPLCURL,
+      logger: logger
+    )
+    let resolve = PublicationResolveService(
+      httpClient: httpClient,
+      plcURL: config.atprotoPLCURL,
+      logger: logger
+    )
+    PublicationRoutes(projectionService: projection, resolveService: resolve).register(on: protected)
+
     if let thinAppViewStore, config.thinAppView.enabled {
       let thinConfig = config.thinAppView
       let indexer = ThinAppViewIndexer(store: thinAppViewStore, config: thinConfig, logger: logger)

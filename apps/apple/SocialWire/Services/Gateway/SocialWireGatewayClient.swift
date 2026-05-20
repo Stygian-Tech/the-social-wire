@@ -29,20 +29,48 @@ final class SocialWireGatewayClient {
         )
     }
 
+    func fetchPublicationSidebar() async throws -> PublicationSidebarResponseDTO {
+        let result = try await authorizedGET(path: "/v1/publications/sidebar", query: [:], ifNoneMatch: nil)
+        guard (200 ..< 300).contains(result.statusCode) else {
+            throw SocialWireError.badResponse("Publication sidebar failed (\(result.statusCode)).")
+        }
+        return try JSONDecoder().decode(PublicationSidebarResponseDTO.self, from: result.body)
+    }
+
+    func resolveAddPublication(input: String) async throws -> ResolveAddPublicationResponseDTO {
+        let payload = try JSONEncoder().encode(ResolveAddPublicationRequestBody(input: input))
+        let result = try await authorizedRequest(
+            method: "POST",
+            path: "/v1/publications/resolve",
+            query: [:],
+            body: payload,
+            contentType: "application/json"
+        )
+        guard (200 ..< 300).contains(result.statusCode) else {
+            throw SocialWireError.badResponse("Publication resolve failed (\(result.statusCode)).")
+        }
+        return try JSONDecoder().decode(ResolveAddPublicationResponseDTO.self, from: result.body)
+    }
+
     func fetchAppViewEntries(
-        authorDid: String,
-        publicationAtUri: String?,
+        scope: PublicationAppViewScopeDTO,
         filter: ReaderFilter,
         cursor: String?,
         limit: Int = 50
     ) async throws -> AppViewEntryListResponse {
         var query: [String: String] = [
-            "authorDid": authorDid,
+            "authorDid": scope.authorDid,
             "filter": filter == .unread ? "unread" : "all",
             "limit": String(limit),
         ]
-        if let publicationAtUri, !publicationAtUri.isEmpty {
+        if let publicationAtUri = scope.publicationAtUri, !publicationAtUri.isEmpty {
             query["publicationAtUri"] = publicationAtUri
+        }
+        if !scope.publicationScopeAtUris.isEmpty {
+            query["publicationScopeAtUris"] = scope.publicationScopeAtUris.joined(separator: ",")
+        }
+        if !scope.publicationSiteUrls.isEmpty {
+            query["publicationSiteUrls"] = scope.publicationSiteUrls.joined(separator: ",")
         }
         if let cursor, !cursor.isEmpty {
             query["cursor"] = cursor

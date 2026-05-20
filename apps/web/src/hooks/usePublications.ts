@@ -510,12 +510,8 @@ export function useAddPublicationFromAnyLink() {
   return useMutation({
     mutationFn: async (input: { link: string; title?: string }) => {
       if (!client) throw new Error("No PDS client — not signed in");
-      const res = await fetch("/api/resolve-add-publication", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ input: input.link }),
-      });
-      const json = (await res.json()) as {
+      const oauthSession = getOAuthSession();
+      let json: {
         kind?: unknown;
         error?: string;
         publicationAtUri?: unknown;
@@ -525,9 +521,54 @@ export function useAddPublicationFromAnyLink() {
         feedIconUrl?: unknown;
       };
 
-      const errMsg =
-        typeof json.error === "string" ? json.error : "Could not resolve link";
-      if (!res.ok) throw new Error(errMsg);
+      if (oauthSession) {
+        try {
+          const { resolveAddPublicationOnGateway } = await import(
+            "@/lib/publicationProjectionClient"
+          );
+          const gateway = await resolveAddPublicationOnGateway(
+            oauthSession,
+            input.link
+          );
+          if (gateway.error) throw new Error(gateway.error);
+          if (gateway.result?.kind === "standard-site") {
+            json = {
+              kind: "standard-site",
+              publicationAtUri: gateway.result.publicationAtUri,
+            };
+          } else if (gateway.result?.kind === "rss") {
+            json = {
+              kind: "rss",
+              feedUrl: gateway.result.feedUrl,
+              title: gateway.result.title,
+              siteUrl: gateway.result.siteUrl,
+              feedIconUrl: gateway.result.feedIconUrl,
+            };
+          } else {
+            throw new Error("Could not resolve link");
+          }
+        } catch {
+          const res = await fetch("/api/resolve-add-publication", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ input: input.link }),
+          });
+          json = (await res.json()) as typeof json;
+          const errMsg =
+            typeof json.error === "string" ? json.error : "Could not resolve link";
+          if (!res.ok) throw new Error(errMsg);
+        }
+      } else {
+        const res = await fetch("/api/resolve-add-publication", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ input: input.link }),
+        });
+        json = (await res.json()) as typeof json;
+        const errMsg =
+          typeof json.error === "string" ? json.error : "Could not resolve link";
+        if (!res.ok) throw new Error(errMsg);
+      }
 
       if (json.kind === "standard-site" && typeof json.publicationAtUri === "string") {
         await client.createPublicationSubscription({
@@ -579,7 +620,12 @@ export function useAddPublicationFromAnyLink() {
       qc.invalidateQueries({ queryKey: PUBLICATION_SUBSCRIPTIONS_QUERY_KEY });
       qc.invalidateQueries({ queryKey: SKYREADER_FEED_SUBSCRIPTIONS_QUERY_KEY });
       qc.invalidateQueries({ queryKey: ["graphSubscriptionPublications"] });
-      if (did) qc.invalidateQueries({ queryKey: DISCOVERY_QUERY_KEY(did) });
+      if (did) {
+        qc.invalidateQueries({ queryKey: DISCOVERY_QUERY_KEY(did) });
+        qc.invalidateQueries({
+          queryKey: ["publicationSidebarProjection", did],
+        });
+      }
       const oauthSession = getOAuthSession();
       if (
         result?.kind === "standard-site" &&

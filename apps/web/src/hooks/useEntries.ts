@@ -26,6 +26,8 @@ import {
   isRssPublicationId,
   normalizedFeedUrlFromRssPublicationId,
 } from "@/lib/rssFeedCore";
+import { PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY } from "@/hooks/usePublicationSidebarData";
+import { appViewScopeFromProjection } from "@/lib/publicationProjectionClient";
 import { useAuth } from "./useAuth";
 
 export type { EntryListItem, EntryDetail };
@@ -49,6 +51,7 @@ export async function fetchEntriesInfinitePage(args: {
   pageParam: string | undefined;
   signal?: AbortSignal;
   oauthSession: OAuthSession | undefined;
+  viewerDid?: string;
   articleFilter?: ArticleListFilter;
   /** When set with {@link streamFirstPageToCache}, merges streamed chunks into this cache. */
   queryClient?: QueryClient;
@@ -63,6 +66,7 @@ export async function fetchEntriesInfinitePage(args: {
     pageParam,
     signal,
     oauthSession,
+    viewerDid,
     articleFilter = "all",
     queryClient,
     streamFirstPageToCache = false,
@@ -101,9 +105,18 @@ export async function fetchEntriesInfinitePage(args: {
   }
 
   if (isThinAppViewEnabled() && oauthSession) {
+    const projection =
+      viewerDid != null
+        ? queryClient?.getQueryData<
+            import("@/lib/publicationProjectionClient").PublicationSidebarProjection
+          >(PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(viewerDid))
+        : undefined;
+    const appViewScope = appViewScopeFromProjection(projection, normalizedKey);
+
     try {
       const appViewPage = await listEntriesFromAppView({
         publicationKey: normalizedKey,
+        appViewScope,
         cursor: pageParam as string | undefined,
         filter: articleFilter,
         oauthSession,
@@ -183,6 +196,7 @@ export function useEntries(
         pageParam,
         signal,
         oauthSession: getOAuthSession() ?? undefined,
+        viewerDid: session?.did,
         articleFilter,
         queryClient,
         streamFirstPageToCache: !isThinAppViewEnabled(),

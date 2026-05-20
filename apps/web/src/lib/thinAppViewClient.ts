@@ -6,6 +6,7 @@ import {
   type EntryListItem,
 } from "@/lib/atprotoClient";
 import type { ArticleListFilter } from "@/lib/entryArticleFilter";
+import type { PublicationAppViewScope } from "@/lib/publicationProjectionClient";
 
 export function isThinAppViewEnabled(): boolean {
   return process.env.NEXT_PUBLIC_USE_THIN_APPVIEW === "true";
@@ -39,37 +40,64 @@ export type AppViewEntriesPage = {
 
 export async function listEntriesFromAppView(args: {
   publicationKey: string;
+  /** When provided (from `/v1/publications/sidebar`), skips client-side scope derivation. */
+  appViewScope?: PublicationAppViewScope;
   cursor?: string;
   limit?: number;
   filter?: ArticleListFilter;
   oauthSession: OAuthSession;
   signal?: AbortSignal;
 }): Promise<AppViewEntriesPage> {
-  const { publicationKey, cursor, limit = 50, filter = "all", oauthSession, signal } =
-    args;
-  const { repoDid, publicationAtUri } = await resolvePublicationFilterFromPubId(
+  const {
     publicationKey,
-    oauthSession
-  );
+    appViewScope,
+    cursor,
+    limit = 50,
+    filter = "all",
+    oauthSession,
+    signal,
+  } = args;
+
+  let authorDid: string;
+  let publicationAtUri: string | undefined;
+  let scopeAtUris: string[] = [];
+  let scopeSiteUrls: string[] = [];
+
+  if (appViewScope) {
+    authorDid = appViewScope.authorDid;
+    publicationAtUri = appViewScope.publicationAtUri ?? undefined;
+    scopeAtUris = appViewScope.publicationScopeAtUris;
+    scopeSiteUrls = appViewScope.publicationSiteUrls;
+  } else {
+    const resolved = await resolvePublicationFilterFromPubId(
+      publicationKey,
+      oauthSession
+    );
+    authorDid = resolved.repoDid;
+    publicationAtUri = resolved.publicationAtUri;
+    if (publicationAtUri) {
+      const scope = await buildPublicationScopeMatch(
+        publicationAtUri,
+        oauthSession
+      );
+      scopeSiteUrls = [...scope.siteUrlKeys];
+      scopeAtUris = [...scope.atUriKeys];
+    }
+  }
 
   const params = new URLSearchParams({
-    authorDid: repoDid,
+    authorDid,
     filter,
     limit: String(limit),
   });
   if (publicationAtUri) {
     params.set("publicationAtUri", publicationAtUri);
-    const scope = await buildPublicationScopeMatch(
-      publicationAtUri,
-      oauthSession
-    );
-    const siteUrls = [...scope.siteUrlKeys];
-    if (siteUrls.length > 0) {
-      params.set("publicationSiteUrls", siteUrls.join(","));
-    }
-    if (scope.atUriKeys.size > 0) {
-      params.set("publicationScopeAtUris", [...scope.atUriKeys].join(","));
-    }
+  }
+  if (scopeSiteUrls.length > 0) {
+    params.set("publicationSiteUrls", scopeSiteUrls.join(","));
+  }
+  if (scopeAtUris.length > 0) {
+    params.set("publicationScopeAtUris", scopeAtUris.join(","));
   }
   if (cursor) params.set("cursor", cursor);
 

@@ -95,6 +95,42 @@ struct HTTPRouteContractTests {
     }
   }
 
+  @Test("publications sidebar rejects unauthenticated calls")
+  func publicationsSidebarUnauthorized() async throws {
+    try await withSingletonHTTPClient { client in
+      let dbPath =
+        FileManager.default.temporaryDirectory
+          .appendingPathComponent("sw-http-\(UUID().uuidString).sqlite")
+          .path
+      defer { try? FileManager.default.removeItem(atPath: dbPath) }
+
+      let cache = try SQLiteCache(path: dbPath, logger: Logger(label: "contracts.sqlite"))
+      let config = AppConfig(
+        atprotoPLCURL: "https://plc.directory",
+        appEnv: .local,
+        cacheBackend: .sqlite(path: dbPath),
+        oauthPublicOrigin: nil,
+        oauthIosMetadataOrigin: nil,
+        enableLegacyContentAPI: false,
+        thinAppView: .disabled,
+        oauthGateway: OAuthGatewayClientPolicy.permissive
+      )
+
+      let router = AppRouterBuilder.router(
+        config: config,
+        httpClient: client,
+        cache: cache,
+        logger: Logger(label: "contracts.router")
+      )
+
+      let app = Application(router: router, configuration: .init(address: .hostname("127.0.0.1", port: 0)))
+      try await app.test(.live) { c in
+        let response = try await c.execute(uri: "/v1/publications/sidebar", method: .get)
+        #expect(response.status.code == 401)
+      }
+    }
+  }
+
   @Test("legacy discovery is absent unless ENABLE_LEGACY_CONTENT_API")
   func legacyDiscoveryAbsent() async throws {
     try await withSingletonHTTPClient { client in

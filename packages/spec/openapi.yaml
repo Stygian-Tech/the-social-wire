@@ -134,6 +134,109 @@ components:
           format: uri
           description: Link to the original entry on standard.site.
 
+    PublicationAppViewScope:
+      type: object
+      required: [authorDid, publicationScopeAtUris, publicationSiteUrls]
+      properties:
+        authorDid:
+          type: string
+        publicationAtUri:
+          type: string
+          nullable: true
+        publicationScopeAtUris:
+          type: array
+          items:
+            type: string
+        publicationSiteUrls:
+          type: array
+          items:
+            type: string
+
+    SidebarPublicationRow:
+      type: object
+      required: [publicationId, authorDid, title, discoveredAt, appViewScope]
+      properties:
+        publicationId:
+          type: string
+        subscriptionPublicationId:
+          type: string
+          nullable: true
+        authorDid:
+          type: string
+        authorHandle:
+          type: string
+          nullable: true
+        title:
+          type: string
+        iconUrl:
+          type: string
+          nullable: true
+        avatarUrl:
+          type: string
+          nullable: true
+        discoveredAt:
+          type: string
+          format: date-time
+        appViewScope:
+          $ref: "#/components/schemas/PublicationAppViewScope"
+
+    PublicationSidebarResponse:
+      type: object
+      required:
+        - viewerDid
+        - folders
+        - publicationPrefs
+        - allPublicationRows
+        - myPublications
+        - subscribedUnfoldered
+        - followingTabPublications
+        - enrollAuthorDids
+        - refreshedAt
+      properties:
+        viewerDid:
+          type: string
+        folders:
+          type: array
+          items:
+            type: object
+        publicationPrefs:
+          type: array
+          items:
+            type: object
+        allPublicationRows:
+          type: array
+          items:
+            $ref: "#/components/schemas/SidebarPublicationRow"
+        myPublications:
+          type: array
+          items:
+            $ref: "#/components/schemas/SidebarPublicationRow"
+        subscribedUnfoldered:
+          type: array
+          items:
+            $ref: "#/components/schemas/SidebarPublicationRow"
+        followingTabPublications:
+          type: array
+          items:
+            $ref: "#/components/schemas/SidebarPublicationRow"
+        enrollAuthorDids:
+          type: array
+          items:
+            type: string
+        refreshedAt:
+          type: string
+          format: date-time
+
+    ResolveAddPublicationResponse:
+      type: object
+      properties:
+        result:
+          type: object
+          nullable: true
+        error:
+          type: string
+          nullable: true
+
     CursorPage:
       type: object
       properties:
@@ -299,6 +402,73 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  # ── Publication sidebar projection ────────────────────────────────────────
+
+  /v1/publications/sidebar:
+    get:
+      operationId: getPublicationSidebar
+      summary: Unified subscribed/following publication sidebar projection
+      description: |
+        Merges follow-graph discovery, graph subscriptions, Skyreader RSS rows,
+        orphan subscription hydration, folder prefs, and per-publication AppView scope keys.
+      tags: [Publications]
+      responses:
+        "200":
+          description: Sidebar projection for the authenticated viewer.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublicationSidebarResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /v1/publications/refresh:
+    post:
+      operationId: refreshPublicationSidebar
+      summary: Recompute publication sidebar projection
+      tags: [Publications]
+      responses:
+        "200":
+          description: Refreshed sidebar projection.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, refreshedAt]
+                properties:
+                  status:
+                    type: string
+                  refreshedAt:
+                    type: string
+                    format: date-time
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /v1/publications/resolve:
+    post:
+      operationId: resolveAddPublication
+      summary: Resolve a link into a standard.site publication or RSS feed target
+      tags: [Publications]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [input]
+              properties:
+                input:
+                  type: string
+      responses:
+        "200":
+          description: Resolver outcome.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResolveAddPublicationResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
   # ── Thin AppView (GDPR-safe Level-1 read index) ───────────────────────────
 
   /v1/appview/entries:
@@ -324,6 +494,16 @@ paths:
           schema:
             type: string
           description: Optional publication AT-URI for `site` field scoping.
+        - name: publicationScopeAtUris
+          in: query
+          schema:
+            type: string
+          description: Comma-separated sibling publication AT-URIs for scoped listing.
+        - name: publicationSiteUrls
+          in: query
+          schema:
+            type: string
+          description: Comma-separated HTTPS site URL keys for scoped listing.
         - name: filter
           in: query
           schema:
@@ -631,5 +811,7 @@ tags:
     description: Follow graph scanning gated behind `ENABLE_LEGACY_CONTENT_API`
   - name: Content
     description: Entry feeds gated behind `ENABLE_LEGACY_CONTENT_API`
+  - name: Publications
+    description: Unified sidebar projection and add-publication resolver
   - name: AppView
     description: GDPR-safe Level-1 entry index gated behind `ENABLE_THIN_APPVIEW`
