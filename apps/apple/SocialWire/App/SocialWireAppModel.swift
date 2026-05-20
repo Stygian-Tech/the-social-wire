@@ -43,6 +43,14 @@ final class SocialWireAppModel {
     /// AppView scope keys from **`GET /v1/publications/sidebar`** when gateway projection is active.
     private var sidebarScopesByPublicationId: [String: PublicationAppViewScopeDTO] = [:]
     private var usingGatewayPublicationProjection = false
+    /// Set false after a 404 from `/v1/appview/*` (API deployed without `ENABLE_THIN_APPVIEW`).
+    private var appViewRoutesAvailable = true
+
+    /// Entry timelines use gateway AppView when enabled and the host exposes `/v1/appview/*`.
+    private var useAppViewEntryTimelines: Bool {
+        appViewRoutesAvailable
+            && (SocialWireAPIEnvironment.useThinAppView || usingGatewayPublicationProjection)
+    }
     /// Read-later picker save in-flight (mirror web mutation pending state).
     var isUpdatingReadLaterPreference = false
 
@@ -74,6 +82,7 @@ final class SocialWireAppModel {
     private var gatewayMyPublications: [DiscoveredPublication] = []
     private var gatewayFollowingTab: [DiscoveredPublication] = []
     private var gatewayAllPublicationRows: [DiscoveredPublication] = []
+    private var gatewayFolderMap: [String: [DiscoveredPublication]] = [:]
 
     var allPublicationRows: [DiscoveredPublication] {
         usingGatewayPublicationProjection
@@ -98,17 +107,7 @@ final class SocialWireAppModel {
 
     var subscribedPublications: [DiscoveredPublication] {
         if usingGatewayPublicationProjection {
-            var merged = gatewayMyPublications + gatewaySubscribedUnfoldered
-            var ids = Set(merged.map(\.publicationId))
-            for row in gatewayAllPublicationRows {
-                guard !ids.contains(row.publicationId) else { continue }
-                guard let folderId = publicationPrefs[row.publicationId]?.value.folderId, !folderId.isEmpty else {
-                    continue
-                }
-                merged.append(row)
-                ids.insert(row.publicationId)
-            }
-            return merged
+            return gatewaySubscribedPublicationsList()
         }
         return mergeSubscribedPublications(
             graphSubscribed: segmentedDiscovery.graphSubscribed,
@@ -339,6 +338,14 @@ final class SocialWireAppModel {
         authService.signOut()
         folders = []
         publicationPrefs = [:]
+        usingGatewayPublicationProjection = false
+        sidebarScopesByPublicationId = [:]
+        gatewaySubscribedUnfoldered = []
+        gatewayMyPublications = []
+        gatewayFollowingTab = []
+        gatewayAllPublicationRows = []
+        gatewayFolderMap = [:]
+        appViewRoutesAvailable = true
         discoveredPublications = []
         rssPublications = []
         publicationSubscriptions = []
@@ -426,7 +433,7 @@ final class SocialWireAppModel {
             let prefs = try await prefsTask
             publicationPrefs = Dictionary(uniqueKeysWithValues: prefs.map { ($0.value.publicationId, $0) })
             discoveredPublications = try await standardTask
-            if SocialWireAPIEnvironment.useThinAppView {
+            if useAppViewEntryTimelines {
                 let authorDids = Array(Set(discoveredPublications.map(\.authorDid)))
                 if !authorDids.isEmpty {
                     Task(priority: .utility) {
@@ -451,14 +458,7 @@ final class SocialWireAppModel {
     private func refreshPublicationSidebarFromGateway(viewerDID: String) async -> Bool {
         do {
             let projection = try await gateway.fetchPublicationSidebar()
-            usingGatewayPublicationProjection = true
-            sidebarScopesByPublicationId = projection.scopesByPublicationId()
-            gatewayAllPublicationRows = projection.allPublicationRows.map { $0.toDiscoveredPublication() }
-            gatewayMyPublications = projection.myPublications.map { $0.toDiscoveredPublication() }
-            gatewaySubscribedUnfoldered = projection.subscribedUnfoldered.map { $0.toDiscoveredPublication() }
-            gatewayFollowingTab = projection.followingTabPublications.map { $0.toDiscoveredPublication() }
-            discoveredPublications = gatewayAllPublicationRows.filter { $0.authorDid != "did:web:skyreader.rss" }
-            rssPublications = gatewayAllPublicationRows.filter { $0.authorDid == "did:web:skyreader.rss" }
+            applyGatewaySidebarProjection(projection)
 
             async let foldersTask = pds.listFolders()
             async let prefsTask = pds.listPublicationPrefs()
@@ -468,22 +468,59 @@ final class SocialWireAppModel {
             async let profileTask = publicationsService.fetchActorProfile(actor: viewerDID)
 
             folders = try await foldersTask
-            let prefs = try await prefsTask
-            publicationPrefs = Dictionary(uniqueKeysWithValues: prefs.map { ($0.value.publicationId, $0) })
+            if let projectionPrefs = projection.publicationPrefs, !projectionPrefs.isEmpty {
+                publicationPrefs = PublicationProjectionMapping.publicationPrefsMap(from: projectionPrefs)
+            } else {
+                let prefs = try await prefsTask
+                publicationPrefs = Dictionary(uniqueKeysWithValues: prefs.map { ($0.value.publicationId, $0) })
+            }
+            gatewayFolderMap = PublicationProjectionMapping.folderMap(
+                allRows: gatewayAllPublicationRows,
+                myPublications: gatewayMyPublications,
+                followingTab: gatewayFollowingTab,
+                publicationPrefs: publicationPrefs
+            )
+
             publicationSubscriptions = try await subscriptionsTask
             readAtByEntryId = try await readTask
             savedLinks = try await savedTask
             viewerProfile = try? await profileTask
 
-            if SocialWireAPIEnvironment.useThinAppView, !projection.enrollAuthorDids.isEmpty {
+            if useAppViewEntryTimelines, !projection.enrollAuthorDids.isEmpty {
                 Task(priority: .utility) {
-                    _ = try? await self.gateway.enrollAuthors(dids: projection.enrollAuthorDids)
+                    do {
+                        _ = try await self.gateway.enrollAuthors(dids: projection.enrollAuthorDids)
+                    } catch {
+                        self.markAppViewUnavailableIfNeeded(error)
+                    }
                 }
             }
             return true
         } catch {
+            errorMessage = "Could not load publications from the server. \(error.localizedDescription)"
             return false
         }
+    }
+
+    /// Sidebar lists come only from **`GET /v1/publications/sidebar`** — no local re-segmentation.
+    private func applyGatewaySidebarProjection(_ projection: PublicationSidebarResponseDTO) {
+        usingGatewayPublicationProjection = true
+        sidebarScopesByPublicationId = projection.scopesByPublicationId()
+        gatewayAllPublicationRows = projection.allPublicationRows.map { $0.toDiscoveredPublication() }
+        gatewayMyPublications = projection.myPublications.map { $0.toDiscoveredPublication() }
+        gatewaySubscribedUnfoldered = projection.subscribedUnfoldered.map { $0.toDiscoveredPublication() }
+        gatewayFollowingTab = projection.followingTabPublications.map { $0.toDiscoveredPublication() }
+        discoveredPublications = gatewayAllPublicationRows.filter { $0.authorDid != "did:web:skyreader.rss" }
+        rssPublications = gatewayAllPublicationRows.filter { $0.authorDid == "did:web:skyreader.rss" }
+    }
+
+    private func gatewaySubscribedPublicationsList() -> [DiscoveredPublication] {
+        var merged = gatewayMyPublications + gatewaySubscribedUnfoldered
+        var ids = Set(merged.map(\.publicationId))
+        for foldered in gatewayFolderMap.values.flatMap({ $0 }) where ids.insert(foldered.publicationId).inserted {
+            merged.append(foldered)
+        }
+        return merged
     }
 
     /// Pulls account preferences through the Swift gateway (ETag aware) — failures are non-fatal.
@@ -552,19 +589,51 @@ final class SocialWireAppModel {
 
     private func cacheOnlyLoadEntries(publication: DiscoveredPublication) async throws {
         guard let coordinator = readerCacheCoordinator else { return }
-        let list: [EntryListItem]
-        if let feedURL = rss.normalizedFeedURL(from: publication.publicationId) {
-            list = try await rss.entries(feedURL: feedURL)
-        } else {
-            list = try await publicationsService.listEntries(publicationId: publication.publicationId)
-        }
+        let list = try await fetchEntriesForPublication(publication)
         try coordinator.upsertPublicationEntries(publicationId: publication.publicationId, entries: list)
+    }
+
+    private func markAppViewUnavailableIfNeeded(_ error: Error) {
+        if case SocialWireError.appViewUnavailable = error {
+            appViewRoutesAvailable = false
+        }
+    }
+
+    private func fetchEntriesForPublication(_ publication: DiscoveredPublication) async throws -> [EntryListItem] {
+        if let feedURL = rss.normalizedFeedURL(from: publication.publicationId) {
+            return try await rss.entries(feedURL: feedURL)
+        }
+        if useAppViewEntryTimelines {
+            let scope =
+                sidebarScopesByPublicationId[publication.publicationId]
+                ?? defaultAppViewScope(for: publication)
+            do {
+                let page = try await gateway.fetchAppViewEntries(
+                    scope: scope,
+                    filter: readerFilter,
+                    cursor: nil
+                )
+                if page.entries.isEmpty, scope.publicationAtUri != nil {
+                    return try await publicationsService.listEntries(publicationId: publication.publicationId)
+                }
+                return page.entries
+            } catch {
+                markAppViewUnavailableIfNeeded(error)
+                if case SocialWireError.appViewUnavailable = error {
+                    return try await publicationsService.listEntries(publicationId: publication.publicationId)
+                }
+                throw error
+            }
+        }
+        return try await publicationsService.listEntries(publicationId: publication.publicationId)
     }
 
     func publications(in folder: RepoRecord<FolderRecord>) -> [DiscoveredPublication] {
         let folderRkey = rkey(from: folder.uri)
-        let source = usingGatewayPublicationProjection ? gatewayAllPublicationRows : subscribedPublications
-        return source.filter { publication in
+        if usingGatewayPublicationProjection {
+            return gatewayFolderMap[folderRkey] ?? []
+        }
+        return subscribedPublications.filter { publication in
             guard let viewerDID else { return false }
             guard !viewerOwnsDiscoveredPublication(publication, viewerDid: viewerDID) else { return false }
             return publicationPrefs[publication.publicationId]?.value.folderId == folderRkey
@@ -590,28 +659,7 @@ final class SocialWireAppModel {
         }
 
         do {
-            let fresh: [EntryListItem]
-            if let feedURL = rss.normalizedFeedURL(from: publication.publicationId) {
-                fresh = try await rss.entries(feedURL: feedURL)
-            } else if SocialWireAPIEnvironment.useThinAppView,
-                      let scope = sidebarScopesByPublicationId[publication.publicationId]
-                      ?? defaultAppViewScope(for: publication)
-            {
-                let page = try await gateway.fetchAppViewEntries(
-                    scope: scope,
-                    filter: readerFilter,
-                    cursor: nil
-                )
-                if page.entries.isEmpty,
-                   scope.publicationAtUri != nil
-                {
-                    fresh = try await publicationsService.listEntries(publicationId: publication.publicationId)
-                } else {
-                    fresh = page.entries
-                }
-            } else {
-                fresh = try await publicationsService.listEntries(publicationId: publication.publicationId)
-            }
+            let fresh = try await fetchEntriesForPublication(publication)
             entries = fresh
             try? readerCacheCoordinator?.upsertPublicationEntries(
                 publicationId: publication.publicationId,
@@ -628,7 +676,7 @@ final class SocialWireAppModel {
         let old = readerFilter
         readerFilter = newValue
 
-        if SocialWireAPIEnvironment.useThinAppView,
+        if useAppViewEntryTimelines,
            old != newValue,
            let publication = selectedPublication {
             await loadEntries(for: publication)
@@ -708,7 +756,7 @@ final class SocialWireAppModel {
             let readAt = Date()
             try await pds.markRead(subjectURI: entryId, readAt: readAt)
             readAtByEntryId[entryId] = readAt
-            if SocialWireAPIEnvironment.useThinAppView {
+            if useAppViewEntryTimelines {
                 try? await gateway.upsertReadMark(subjectUri: entryId, readAt: readAt)
             }
         } catch {
@@ -722,13 +770,13 @@ final class SocialWireAppModel {
                 let readAt = Date()
                 try await pds.markRead(subjectURI: item.entryId, readAt: readAt)
                 readAtByEntryId[item.entryId] = readAt
-                if SocialWireAPIEnvironment.useThinAppView {
+                if useAppViewEntryTimelines {
                     try? await gateway.upsertReadMark(subjectUri: item.entryId, readAt: readAt)
                 }
             } else {
                 try await pds.markUnread(subjectURI: item.entryId)
                 readAtByEntryId.removeValue(forKey: item.entryId)
-                if SocialWireAPIEnvironment.useThinAppView {
+                if useAppViewEntryTimelines {
                     try? await gateway.deleteReadMark(subjectUri: item.entryId)
                 }
             }
@@ -738,7 +786,7 @@ final class SocialWireAppModel {
     }
 
     func purgeIndexedAppViewData() async {
-        guard SocialWireAPIEnvironment.useThinAppView else { return }
+        guard useAppViewEntryTimelines else { return }
         do {
             try await gateway.purgeAppViewPrivacyData()
         } catch {

@@ -1,5 +1,13 @@
 import Foundation
 
+enum PublicationProjectionJSON {
+    static let decoder: JSONDecoder = {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return decoder
+    }()
+}
+
 struct PublicationAppViewScopeDTO: Codable, Equatable, Sendable {
     let authorDid: String
     let publicationAtUri: String?
@@ -21,12 +29,26 @@ struct SidebarPublicationRowDTO: Codable, Equatable, Sendable {
 
 struct PublicationSidebarResponseDTO: Codable, Sendable {
     let viewerDid: String
+    let folders: [PublicationFolderDTO]?
+    let publicationPrefs: [PublicationPrefsDTO]?
     let allPublicationRows: [SidebarPublicationRowDTO]
     let myPublications: [SidebarPublicationRowDTO]
     let subscribedUnfoldered: [SidebarPublicationRowDTO]
     let followingTabPublications: [SidebarPublicationRowDTO]
     let enrollAuthorDids: [String]
     let refreshedAt: String
+}
+
+struct PublicationFolderDTO: Codable, Sendable {
+    let uri: String
+    let rkey: String
+    let value: [String: JSONValue]?
+}
+
+struct PublicationPrefsDTO: Codable, Sendable {
+    let uri: String
+    let publicationId: String
+    let value: [String: JSONValue]?
 }
 
 struct ResolveAddPublicationRequestBody: Codable, Sendable {

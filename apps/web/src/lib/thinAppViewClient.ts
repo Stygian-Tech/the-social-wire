@@ -106,6 +106,9 @@ export async function listEntriesFromAppView(args: {
     `/v1/appview/entries?${params.toString()}`,
     { method: "GET", signal }
   );
+  if (res.status === 404) {
+    throw new Error("Thin AppView unavailable");
+  }
   if (!res.ok) {
     throw new Error(`Thin AppView entries failed (${res.status})`);
   }

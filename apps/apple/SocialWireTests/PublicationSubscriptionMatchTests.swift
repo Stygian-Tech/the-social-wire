@@ -33,15 +33,15 @@ struct PublicationSubscriptionMatchTests {
         #expect(keys.contains("at://did:plc:author/com.standard.publication/key1"))
     }
 
-    @Test("isSubscribedPublication matches author DID")
-    func isSubscribedPublicationMatchesAuthorDid() {
+    @Test("isSubscribedPublication does not match author DID to publication AT-URI")
+    func isSubscribedPublicationDoesNotMatchAuthorDidToPublicationUri() {
         let pub = makePublication(
             publicationId: "at://did:plc:author/site.standard.publication/key1",
             authorDid: "did:plc:author"
         )
         var subscriptionKeys: Set<String> = []
         addPublicationSubscriptionLookupKeys(into: &subscriptionKeys, value: "did:plc:author")
-        #expect(isSubscribedPublication(pub, subscriptionKeys: subscriptionKeys))
+        #expect(!isSubscribedPublication(pub, subscriptionKeys: subscriptionKeys))
     }
 
     @Test("following tab excludes subscribed and owned")

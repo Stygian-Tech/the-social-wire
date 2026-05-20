@@ -13,6 +13,7 @@ primary_region = 'ams'
 
 [env]
   PORT = '8080'
+  ENABLE_THIN_APPVIEW = 'true'
 
 [http_service]
   internal_port = 8080

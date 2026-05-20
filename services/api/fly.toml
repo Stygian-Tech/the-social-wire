@@ -15,6 +15,8 @@ primary_region = 'ams'
 
 [env]
   PORT = '8080'
+  # Mounts /v1/appview/* (requires SUPABASE_DATABASE_URL secret + worker ingest).
+  ENABLE_THIN_APPVIEW = 'true'
   # `/ios-client-metadata.json` derives `redirect_uris` from the request Host (`client_id` origin), reversed —
   # no separate redirect override. `OAUTH_PUBLIC_ORIGIN` applies only to `/oauth/client-metadata.json`.
 

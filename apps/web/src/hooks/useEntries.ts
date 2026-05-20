@@ -129,8 +129,12 @@ export async function fetchEntriesInfinitePage(args: {
       if (!shouldFallbackToPds) {
         return appViewPage;
       }
-    } catch {
-      if (!publicationAtUri || pageParam !== undefined) {
+    } catch (err) {
+      const unavailable =
+        err instanceof Error && err.message === "Thin AppView unavailable";
+      if (unavailable || (publicationAtUri && pageParam === undefined)) {
+        // API without ENABLE_THIN_APPVIEW (404) or empty first page — fall back to PDS.
+      } else {
         throw new Error("Thin AppView entries failed");
       }
     }

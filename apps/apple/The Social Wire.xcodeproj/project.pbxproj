@@ -51,6 +51,8 @@
 		51842B3FB4BDE2C1DB3FAB51 /* SocialWireUtilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3130A8F5508FDC17BA1F4D7 /* SocialWireUtilityTests.swift */; };
 		53FF3FE8775D5043D24554AC /* ListRecordsResponse.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF4D40C6BA967F7144E45746 /* ListRecordsResponse.swift */; };
 		5A35897686F2833D76E3D8B1 /* SocialWireGatewayClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 835D5CB0CFC3B8DB540D19C9 /* SocialWireGatewayClient.swift */; };
+		D5F9B23C0A7081633F2B9C4D /* PublicationProjectionModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4E8A12B9D6F30752E1A8B3C /* PublicationProjectionModels.swift */; };
+		F7B1D45E2C9203855B4D1E6F /* PublicationProjectionMapping.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6A0C34D1B8192744A3C0D5E /* PublicationProjectionMapping.swift */; };
 		5CDEFA80A3917714A9A5F43C /* OAuthProtectedResourceMetadata.swift in Sources */ = {isa = PBXBuildFile; fileRef = D03036A01ECBADF34A0A886B /* OAuthProtectedResourceMetadata.swift */; };
 		5DA938B9777EE08CFF54B566 /* PublicationSidebarRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29512604F4C25F90D78E2966 /* PublicationSidebarRow.swift */; };
 		60C2C91F06F52341912E4254 /* SocialWireApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4626D04E2FAAC53CB3BD8D47 /* SocialWireApp.swift */; };
@@ -188,6 +190,8 @@
 		790BCE8F4536EBE0EA5513D0 /* PublicationsPaneView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicationsPaneView.swift; sourceTree = "<group>"; };
 		82FE3413B195733008B7B609 /* ReaderShellChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderShellChrome.swift; sourceTree = "<group>"; };
 		835D5CB0CFC3B8DB540D19C9 /* SocialWireGatewayClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocialWireGatewayClient.swift; sourceTree = "<group>"; };
+		C4E8A12B9D6F30752E1A8B3C /* PublicationProjectionModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicationProjectionModels.swift; sourceTree = "<group>"; };
+		E6A0C34D1B8192744A3C0D5E /* PublicationProjectionMapping.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicationProjectionMapping.swift; sourceTree = "<group>"; };
 		87F127E4133A26571C697B26 /* ReaderListSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderListSource.swift; sourceTree = "<group>"; };
 		88DEBC5128D7E7F3B1064030 /* ListsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListsView.swift; sourceTree = "<group>"; };
 		8CEF28DD1FA763FF4700ADE2 /* SidebarSectionLabel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarSectionLabel.swift; sourceTree = "<group>"; };
@@ -376,6 +380,8 @@
 				62DAE1DD995A0F87498A8EE7 /* AppViewEntryListResponse.swift */,
 				EDD18C931D27EF6B5DCFE5C4 /* AppViewGatewayRequestBodies.swift */,
 				1CA409C8493090B1F7ED00EA /* GatewayHTTPResult.swift */,
+				E6A0C34D1B8192744A3C0D5E /* PublicationProjectionMapping.swift */,
+				C4E8A12B9D6F30752E1A8B3C /* PublicationProjectionModels.swift */,
 				835D5CB0CFC3B8DB540D19C9 /* SocialWireGatewayClient.swift */,
 				98674D592CE3FA9EB8D7BE21 /* SyncPreferencesEnvelope.swift */,
 			);
@@ -725,6 +731,8 @@
 				B2CF6B09EED045A6254FCD05 /* SocialWireAppModel.swift in Sources */,
 				BC384FB4E16957ADB079AA31 /* SocialWireError.swift in Sources */,
 				5A35897686F2833D76E3D8B1 /* SocialWireGatewayClient.swift in Sources */,
+				F7B1D45E2C9203855B4D1E6F /* PublicationProjectionMapping.swift in Sources */,
+				D5F9B23C0A7081633F2B9C4D /* PublicationProjectionModels.swift in Sources */,
 				2FFD51EA2E5CAE4202F34C85 /* StrongRef.swift in Sources */,
 				6542A7592E7F497E13017FAD /* SubscribedPublicationSidebarTree.swift in Sources */,
 				0CA6C2A1C65DB67D9E4D27EF /* SyncPreferencesEnvelope.swift in Sources */,
@@ -772,7 +780,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = "com.samclemente.the-social-wire.tests";
 				PRODUCT_NAME = SocialWireTests;
 				SDKROOT = iphoneos;
-				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) SOCIALWIRE_TESTING_API";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) SOCIALWIRE_TESTING_API SOCIALWIRE_USE_THIN_APPVIEW";
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/SocialWire.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/SocialWire";
 			};
@@ -857,7 +865,7 @@
 				ONLY_ACTIVE_ARCH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
-				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited) SOCIALWIRE_USE_THIN_APPVIEW";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 6.0;
 			};
@@ -1057,7 +1065,7 @@
 				PRODUCT_MODULE_NAME = SocialWire;
 				PRODUCT_NAME = SocialWire;
 				SDKROOT = iphoneos;
-				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) SOCIALWIRE_TESTING_API";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) SOCIALWIRE_TESTING_API SOCIALWIRE_USE_THIN_APPVIEW";
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Beta;

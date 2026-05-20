@@ -34,7 +34,10 @@ final class SocialWireGatewayClient {
         guard (200 ..< 300).contains(result.statusCode) else {
             throw SocialWireError.badResponse("Publication sidebar failed (\(result.statusCode)).")
         }
-        return try JSONDecoder().decode(PublicationSidebarResponseDTO.self, from: result.body)
+        return try PublicationProjectionJSON.decoder.decode(
+            PublicationSidebarResponseDTO.self,
+            from: result.body
+        )
     }
 
     func resolveAddPublication(input: String) async throws -> ResolveAddPublicationResponseDTO {
@@ -77,6 +80,9 @@ final class SocialWireGatewayClient {
         }
 
         let result = try await authorizedGET(path: "/v1/appview/entries", query: query, ifNoneMatch: nil)
+        if result.statusCode == 404 {
+            throw SocialWireError.appViewUnavailable
+        }
         guard (200 ..< 300).contains(result.statusCode) else {
             throw SocialWireError.badResponse("AppView entries failed (\(result.statusCode)).")
         }
@@ -122,6 +128,9 @@ final class SocialWireGatewayClient {
             body: payload,
             contentType: "application/json"
         )
+        if result.statusCode == 404 {
+            throw SocialWireError.appViewUnavailable
+        }
         guard (200 ..< 300).contains(result.statusCode) else {
             throw SocialWireError.badResponse("AppView enroll failed (\(result.statusCode)).")
         }

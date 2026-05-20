@@ -62,7 +62,6 @@ func addPublicationSubscriptionLookupKeys(into keys: inout Set<String>, value: S
     guard let at = ATURI(normalized) else { return }
 
     keys.insert(normalized)
-    keys.insert(at.repo)
     if at.collection == "site.standard.publication" {
         keys.insert("at://\(at.repo)/com.standard.publication/\(at.rkey)")
     } else if at.collection == "com.standard.publication" {

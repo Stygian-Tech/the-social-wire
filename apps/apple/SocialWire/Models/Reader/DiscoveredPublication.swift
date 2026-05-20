@@ -11,5 +11,16 @@ struct DiscoveredPublication: Identifiable, Codable, Equatable, Sendable {
     var discoveredAt: String
 
     var id: String { publicationId }
-    var displayImageURL: URL? { URL(string: iconUrl ?? avatarUrl ?? "") }
+
+    /// Publication icon first, then author avatar (matches gateway projection + web sidebar).
+    var displayImageURL: URL? {
+        for candidate in [iconUrl, avatarUrl] {
+            guard let raw = candidate?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !raw.isEmpty,
+                  let url = URL(string: raw)
+            else { continue }
+            return url
+        }
+        return nil
+    }
 }
