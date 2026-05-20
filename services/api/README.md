@@ -118,7 +118,7 @@ Operational migrations live at the repo root for the **Supabase CLI** (and optio
 - [`supabase/migrations/20260516144500_add_pds_repo_record_cache.sql`](../../supabase/migrations/20260516144500_add_pds_repo_record_cache.sql) adds **`pds_repo_record_cache`**.
 - [`supabase/migrations/20260519120000_add_thin_appview.sql`](../../supabase/migrations/20260519120000_add_thin_appview.sql) adds **`content_items`** and **`read_marks`** for the Thin AppView index.
 
-Apply from the **`dev`** / **`main`** branches via [`.github/workflows/supabase.yml`](../../.github/workflows/supabase.yml) (**`supabase link`** + **`supabase db push`**), or locally with the same commands after **`supabase link`**, before pointing **`SUPABASE_DATABASE_URL`** at refreshed environments.
+Apply from the **`dev`** / **`main`** branches via [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) (**`supabase-push-*`** jobs), or locally with the same commands after **`supabase link`**, before pointing **`SUPABASE_DATABASE_URL`** at refreshed environments.
 
 **GitHub Actions secrets** (repository → *Settings* → *Secrets and variables* → *Actions*):
 
@@ -134,7 +134,7 @@ Apply from the **`dev`** / **`main`** branches via [`.github/workflows/supabase.
 
 If you use a **single** hosted project for both branches, set the same ref/password in the **DEV** and **PROD** secrets. If the dashboard is also set to auto-apply the same `supabase/migrations/` tree, disable one path so migrations are not applied twice.
 
-**Workflow wiring:** pushes to **`dev`** read **`SUPABASE_DEV_PROJECT_REF`** plus **`SUPABASE_DEV_DATABASE_URL`** (preferred) or **`SUPABASE_DEV_DB_PASSWORD`**; pushes to **`main`** use the **`SUPABASE_PROD_*`** pair. CI runs [`.github/workflows/supabase.yml`](../../.github/workflows/supabase.yml) via [`scripts/supabase-ci-push.sh`](../../scripts/supabase-ci-push.sh) (Supabase CLI **2.100.1** pinned).
+**Workflow wiring:** pushes to **`dev`** read **`SUPABASE_DEV_PROJECT_REF`** plus **`SUPABASE_DEV_DATABASE_URL`** (preferred) or **`SUPABASE_DEV_DB_PASSWORD`**; pushes to **`main`** use the **`SUPABASE_PROD_*`** pair. CI runs [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) via [`scripts/supabase-ci-push.sh`](../../scripts/supabase-ci-push.sh) (Supabase CLI **2.100.1** pinned).
 
 **Troubleshooting `password authentication failed` (SQLSTATE 28P01):**
 

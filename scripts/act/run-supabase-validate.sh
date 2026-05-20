@@ -23,8 +23,8 @@ printf '%s' "{\"action\":\"opened\",\"repository\":{\"default_branch\":\"main\"}
 
 echo "act: supabase validate-migrations (host docker.sock mounted into job container)" >&2
 exec act pull_request \
-  -W .github/workflows/supabase.yml \
-  -j validate-migrations \
+  -W .github/workflows/ci.yml \
+  -j supabase-validate \
   -e "$EVENT" \
   --reuse \
   --container-options "--privileged -v /var/run/docker.sock:/var/run/docker.sock" \

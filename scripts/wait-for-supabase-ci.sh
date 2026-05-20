@@ -21,13 +21,13 @@ commit_touches_supabase() {
     return 1
   fi
   git diff --name-only "${SHA}^" "$SHA" | grep -Eq \
-    '^(supabase/|\.github/workflows/supabase\.yml|scripts/supabase-ci-push\.sh)'
+    '^(supabase/|\.github/workflows/ci\.yml|scripts/supabase-ci-push\.sh)'
 }
 
 supabase_run_line() {
   gh run list \
     --repo "$REPO" \
-    --workflow Supabase \
+    --workflow CI \
     --commit "$SHA" \
     --event push \
     --limit 1 \

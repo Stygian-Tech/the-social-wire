@@ -6,17 +6,14 @@ on:
   pull_request:
     branches: [main, dev]
 
-# Prefer Node 24 for JavaScript actions while GitHub migrates off Node 20.
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
-# Avoid redundant runs stacking on rapid pushes; latest run wins.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
-  # Path gates — branch protection must allow skipped jobs (or use separate workflows per surface).
   changes:
     name: Detect changed paths
     runs-on: ubuntu-latest
@@ -24,6 +21,7 @@ jobs:
       web: ${{ steps.filter.outputs.web }}
       api: ${{ steps.filter.outputs.api }}
       worker: ${{ steps.filter.outputs.worker }}
+      supabase: ${{ steps.filter.outputs.supabase }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -44,16 +42,19 @@ jobs:
               - 'services/api/**'
               - 'packages/swift/ThinAppViewCore/**'
               - 'packages/spec/openapi.yaml'
+              - 'scripts/fly-deploy-api.sh'
               - '.github/workflows/ci.yml'
             worker:
               - 'services/worker/**'
               - 'packages/swift/ThinAppViewCore/**'
               - 'supabase/**'
               - 'scripts/fly-deploy-worker.sh'
-              - 'scripts/wait-for-supabase-ci.sh'
+              - '.github/workflows/ci.yml'
+            supabase:
+              - 'supabase/**'
+              - 'scripts/supabase-ci-push.sh'
               - '.github/workflows/ci.yml'
 
-  # ── Web ───────────────────────────────────────────────────────────────────
   build-web:
     name: Build & Test Web
     needs: changes
@@ -67,7 +68,6 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
         with:
-          # Match root `packageManager` so CI doesn’t break on a future `latest`.
           bun-version: 1.3.14
 
       - name: Install dependencies
@@ -106,14 +106,11 @@ jobs:
         uses: actions/cache@v5
         with:
           path: services/api/.build
-          # Include toolchain pin: reusing .build across Swift minor bumps can corrupt incremental state.
-          key: ${{ runner.os }}-swift-api-swift-6.2.4-${{ hashFiles('services/api/Package.resolved') }}
+          key: ${{ runner.os }}-swift-api-swift-6.2.4-${{ hashFiles('services/api/Package.resolved', 'packages/swift/ThinAppViewCore/Package.resolved') }}
 
       - uses: swift-actions/setup-swift@v3
         with:
-          # Pin a minor line — `latest` has resolved inconsistently with Swiftly and can fail the version check / build.
           swift-version: "6.2.4"
-          # Ubuntu images often lack the Swiftly release signing key in gpg; verification then fails (swift-actions/setup-swift#798).
           skip-verify-signature: true
 
       - name: Test
@@ -152,34 +149,107 @@ jobs:
         working-directory: services/worker
         run: swift build
 
-  # ── Fly.io (push only: after CI jobs + Supabase migrations when applicable) ─
+  supabase-validate:
+    name: Supabase — validate migrations
+    needs: changes
+    if: needs.changes.result == 'success' && needs.changes.outputs.supabase == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: supabase/setup-cli@v2
+        with:
+          version: 2.100.1
+
+      - name: Start local Postgres & apply migrations
+        run: |
+          set -euo pipefail
+          supabase db start --yes
+          supabase db reset --local --yes --no-seed
+
+      - name: Stop local Supabase
+        if: always()
+        run: supabase stop --no-backup --yes || true
+
+  supabase-push-dev:
+    name: Supabase — push migrations (dev)
+    needs: [changes, supabase-validate]
+    if: |
+      needs.changes.result == 'success' &&
+      needs.changes.outputs.supabase == 'true' &&
+      needs.supabase-validate.result == 'success' &&
+      github.event_name == 'push' &&
+      github.ref_name == 'dev'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: supabase/setup-cli@v2
+        with:
+          version: 2.100.1
+
+      - name: Link & db push (dev Supabase project)
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          REF: ${{ secrets.SUPABASE_DEV_PROJECT_REF }}
+          DATABASE_URL: ${{ secrets.SUPABASE_DEV_DATABASE_URL }}
+          DB_PASSWORD: ${{ secrets.SUPABASE_DEV_DB_PASSWORD }}
+        run: bash scripts/supabase-ci-push.sh dev
+
+  supabase-push-prod:
+    name: Supabase — push migrations (prod)
+    needs: [changes, supabase-validate]
+    if: |
+      needs.changes.result == 'success' &&
+      needs.changes.outputs.supabase == 'true' &&
+      needs.supabase-validate.result == 'success' &&
+      github.event_name == 'push' &&
+      github.ref_name == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: supabase/setup-cli@v2
+        with:
+          version: 2.100.1
+
+      - name: Link & db push (production Supabase project)
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          REF: ${{ secrets.SUPABASE_PROD_PROJECT_REF }}
+          DATABASE_URL: ${{ secrets.SUPABASE_PROD_DATABASE_URL }}
+          DB_PASSWORD: ${{ secrets.SUPABASE_PROD_DB_PASSWORD }}
+        run: bash scripts/supabase-ci-push.sh prod
+
   deploy-api:
     name: Deploy API (Fly.io)
-    needs: [changes, build-web, test-api]
+    needs: [changes, test-api, supabase-validate, supabase-push-dev, supabase-push-prod]
     if: |
       always() &&
       github.event_name == 'push' &&
       (github.ref_name == 'main' || github.ref_name == 'dev') &&
       needs.changes.result == 'success' &&
-      needs.build-web.result != 'failure' &&
-      needs.build-web.result != 'cancelled' &&
+      needs.changes.outputs.api == 'true' &&
       needs.test-api.result != 'failure' &&
       needs.test-api.result != 'cancelled' &&
-      (needs.build-web.result == 'success' || needs.build-web.result == 'skipped') &&
-      (needs.test-api.result == 'success' || needs.test-api.result == 'skipped')
+      needs.supabase-validate.result != 'failure' &&
+      needs.supabase-validate.result != 'cancelled' &&
+      needs.supabase-push-dev.result != 'failure' &&
+      needs.supabase-push-dev.result != 'cancelled' &&
+      needs.supabase-push-prod.result != 'failure' &&
+      needs.supabase-push-prod.result != 'cancelled' &&
+      (needs.test-api.result == 'success' || needs.test-api.result == 'skipped') &&
+      (needs.supabase-validate.result == 'success' || needs.supabase-validate.result == 'skipped') &&
+      (needs.supabase-push-dev.result == 'success' || needs.supabase-push-dev.result == 'skipped') &&
+      (needs.supabase-push-prod.result == 'success' || needs.supabase-push-prod.result == 'skipped')
     runs-on: ubuntu-latest
     permissions:
-      actions: read
       contents: read
     steps:
       - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-
-      - name: Wait for Supabase migrations
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: bash scripts/wait-for-supabase-ci.sh "${{ github.sha }}"
 
       - uses: superfly/flyctl-actions/setup-flyctl@v1
 
@@ -192,32 +262,30 @@ jobs:
 
   deploy-worker:
     name: Deploy AppView Worker (Fly.io)
-    needs: [changes, build-web, test-worker]
+    needs: [changes, test-worker, supabase-validate, supabase-push-dev, supabase-push-prod]
     if: |
       always() &&
       github.event_name == 'push' &&
       (github.ref_name == 'main' || github.ref_name == 'dev') &&
       needs.changes.result == 'success' &&
       needs.changes.outputs.worker == 'true' &&
-      needs.build-web.result != 'failure' &&
-      needs.build-web.result != 'cancelled' &&
       needs.test-worker.result != 'failure' &&
       needs.test-worker.result != 'cancelled' &&
-      (needs.build-web.result == 'success' || needs.build-web.result == 'skipped') &&
-      (needs.test-worker.result == 'success' || needs.test-worker.result == 'skipped')
+      needs.supabase-validate.result != 'failure' &&
+      needs.supabase-validate.result != 'cancelled' &&
+      needs.supabase-push-dev.result != 'failure' &&
+      needs.supabase-push-dev.result != 'cancelled' &&
+      needs.supabase-push-prod.result != 'failure' &&
+      needs.supabase-push-prod.result != 'cancelled' &&
+      (needs.test-worker.result == 'success' || needs.test-worker.result == 'skipped') &&
+      (needs.supabase-validate.result == 'success' || needs.supabase-validate.result == 'skipped') &&
+      (needs.supabase-push-dev.result == 'success' || needs.supabase-push-dev.result == 'skipped') &&
+      (needs.supabase-push-prod.result == 'success' || needs.supabase-push-prod.result == 'skipped')
     runs-on: ubuntu-latest
     permissions:
-      actions: read
       contents: read
     steps:
       - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-
-      - name: Wait for Supabase migrations
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: bash scripts/wait-for-supabase-ci.sh "${{ github.sha }}"
 
       - uses: superfly/flyctl-actions/setup-flyctl@v1
 
@@ -227,14 +295,3 @@ jobs:
           FLY_WORKER_APP_DEV: ${{ secrets.FLY_WORKER_APP_DEV }}
           FLY_WORKER_APP_PROD: ${{ secrets.FLY_WORKER_APP_PROD }}
         run: bash scripts/fly-deploy-worker.sh "${{ github.ref_name }}"
-
-  # Swift API CI restored — see `services/api/README.md`
-
-  # ── iOS build (stub — wired via Xcode Cloud in Phase 1b) ──────────────────
-  # Uncomment when using a macOS runner:
-  # build-apple:
-  #   name: Build Apple
-  #   runs-on: macos-15
-  #   steps:
-  #     - uses: actions/checkout@v6
-  #     - run: xcodebuild -project 'apps/apple/The Social Wire.xcodeproj' -scheme SocialWire -destination 'platform=iOS Simulator,name=iPhone 16' build

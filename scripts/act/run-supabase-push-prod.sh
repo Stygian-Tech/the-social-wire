@@ -23,7 +23,7 @@ EVENT="$(mktemp)"
 trap 'rm -f "$EVENT"' EXIT
 printf '{"ref":"refs/heads/main","before":"%s","after":"%s","repository":{"default_branch":"main"}}\n' "$BEFORE" "$AFTER" >"$EVENT"
 if [[ "$DRY_RUN" -eq 1 ]]; then
-  exec act push -W .github/workflows/supabase.yml -j push-migrations-prod -e "$EVENT" --reuse "$@"
+  exec act push -W .github/workflows/ci.yml -j supabase-push-prod -e "$EVENT" --reuse "$@"
 else
-  exec act push -W .github/workflows/supabase.yml -j push-migrations-prod -e "$EVENT" --secret-file "$SECRETS" --reuse "$@"
+  exec act push -W .github/workflows/ci.yml -j supabase-push-prod -e "$EVENT" --secret-file "$SECRETS" --reuse "$@"
 fi
