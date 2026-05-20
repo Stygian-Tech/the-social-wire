@@ -11,7 +11,7 @@ import { BrowserOAuthClient, OAuthSession } from "@atproto/oauth-client-browser"
 import { buildAtprotoLoopbackClientId } from "@atproto/oauth-types";
 import { AT_PROTO_OAUTH_SCOPES } from "@/lib/atprotoOAuthScopes";
 import { normalizeAppEnv, readAppEnvRaw } from "@/lib/appEnv";
-import { hostedOAuthClientIdForOrigin } from "@/lib/oauthClientMetadata";
+import { resolveHostedOAuthClientId } from "@/lib/oauthClientMetadata";
 import { BSKY_APPVIEW_PUBLIC } from "@/lib/atprotoClient";
 
 export { AT_PROTO_OAUTH_SCOPES } from "@/lib/atprotoOAuthScopes";
@@ -193,13 +193,12 @@ function resolveClientId(): string {
 }
 
 function resolveHostedClientId(): string {
-  const explicit = process.env.NEXT_PUBLIC_ATPROTO_CLIENT_ID?.trim();
-  if (explicit) return explicit;
-
   if (typeof window !== "undefined") {
-    return hostedOAuthClientIdForOrigin(window.location.origin);
+    return resolveHostedOAuthClientId(window.location.origin);
   }
 
+  const explicit = process.env.NEXT_PUBLIC_ATPROTO_CLIENT_ID?.trim();
+  if (explicit) return explicit;
   return "https://thesocialwire.app/client-metadata.json";
 }
 

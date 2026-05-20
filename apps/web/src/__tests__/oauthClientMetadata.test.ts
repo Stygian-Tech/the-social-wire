@@ -6,6 +6,7 @@ import {
   gatewayWebOAuthClientMetadataUrl,
   hostedOAuthClientIdForOrigin,
   inferGatewayApiBase,
+  resolveHostedOAuthClientId,
 } from "@/lib/oauthClientMetadata";
 
 describe("buildWebOAuthClientMetadata", () => {
@@ -29,6 +30,19 @@ describe("inferGatewayApiBase", () => {
       inferGatewayApiBase("https://testing.thesocialwire.app")
     ).toBe("https://api.testing.thesocialwire.app");
   });
+
+  it("prefers the testing hostname over NEXT_PUBLIC_SOCIALWIRE_API_URL", () => {
+    const prev = process.env.NEXT_PUBLIC_SOCIALWIRE_API_URL;
+    process.env.NEXT_PUBLIC_SOCIALWIRE_API_URL = "https://api.thesocialwire.app";
+    try {
+      expect(
+        inferGatewayApiBase("https://testing.thesocialwire.app")
+      ).toBe("https://api.testing.thesocialwire.app");
+    } finally {
+      if (prev === undefined) delete process.env.NEXT_PUBLIC_SOCIALWIRE_API_URL;
+      else process.env.NEXT_PUBLIC_SOCIALWIRE_API_URL = prev;
+    }
+  });
 });
 
 describe("hostedOAuthClientIdForOrigin", () => {
@@ -42,6 +56,41 @@ describe("hostedOAuthClientIdForOrigin", () => {
     expect(
       hostedOAuthClientIdForOrigin("https://preview.example.vercel.app")
     ).toBe("https://preview.example.vercel.app/client-metadata.json");
+  });
+});
+
+describe("resolveHostedOAuthClientId", () => {
+  it("ignores NEXT_PUBLIC_ATPROTO_CLIENT_ID when testing host uses gateway metadata", () => {
+    const prevClientId = process.env.NEXT_PUBLIC_ATPROTO_CLIENT_ID;
+    const prevApi = process.env.NEXT_PUBLIC_SOCIALWIRE_API_URL;
+    process.env.NEXT_PUBLIC_ATPROTO_CLIENT_ID =
+      "https://testing.thesocialwire.app/client-metadata.json";
+    process.env.NEXT_PUBLIC_SOCIALWIRE_API_URL =
+      "https://api.testing.thesocialwire.app";
+    try {
+      expect(
+        resolveHostedOAuthClientId("https://testing.thesocialwire.app")
+      ).toBe("https://api.testing.thesocialwire.app/oauth/client-metadata.json");
+    } finally {
+      if (prevClientId === undefined) delete process.env.NEXT_PUBLIC_ATPROTO_CLIENT_ID;
+      else process.env.NEXT_PUBLIC_ATPROTO_CLIENT_ID = prevClientId;
+      if (prevApi === undefined) delete process.env.NEXT_PUBLIC_SOCIALWIRE_API_URL;
+      else process.env.NEXT_PUBLIC_SOCIALWIRE_API_URL = prevApi;
+    }
+  });
+
+  it("honors NEXT_PUBLIC_ATPROTO_CLIENT_ID on unmapped preview hosts", () => {
+    const prevClientId = process.env.NEXT_PUBLIC_ATPROTO_CLIENT_ID;
+    process.env.NEXT_PUBLIC_ATPROTO_CLIENT_ID =
+      "https://custom.example/client-metadata.json";
+    try {
+      expect(
+        resolveHostedOAuthClientId("https://preview.example.vercel.app")
+      ).toBe("https://custom.example/client-metadata.json");
+    } finally {
+      if (prevClientId === undefined) delete process.env.NEXT_PUBLIC_ATPROTO_CLIENT_ID;
+      else process.env.NEXT_PUBLIC_ATPROTO_CLIENT_ID = prevClientId;
+    }
   });
 });
 

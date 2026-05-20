@@ -2,17 +2,18 @@ import { AT_PROTO_OAUTH_SCOPES } from "@/lib/atprotoOAuthScopes";
 
 /** Public gateway URL for hosted dev OAuth when the web SPA is deployment-protected. */
 export function inferGatewayApiBase(origin?: string): string | null {
+  if (origin) {
+    try {
+      const { hostname } = new URL(origin);
+      if (hostname === "testing.thesocialwire.app") {
+        return "https://api.testing.thesocialwire.app";
+      }
+    } catch {
+      //
+    }
+  }
   const explicit = process.env.NEXT_PUBLIC_SOCIALWIRE_API_URL?.trim();
   if (explicit) return explicit.replace(/\/$/, "");
-  if (!origin) return null;
-  try {
-    const { hostname } = new URL(origin);
-    if (hostname === "testing.thesocialwire.app") {
-      return "https://api.testing.thesocialwire.app";
-    }
-  } catch {
-    //
-  }
   return null;
 }
 
@@ -30,6 +31,27 @@ export function hostedOAuthClientIdForOrigin(origin: string): string {
     return gatewayWebOAuthClientMetadataUrl(gateway);
   }
   return `${origin.replace(/\/$/, "")}/client-metadata.json`;
+}
+
+/** True when the origin must use public gateway metadata (not same-origin SPA JSON). */
+export function originUsesGatewayOAuthClientMetadata(origin: string): boolean {
+  const base = origin.replace(/\/$/, "");
+  return hostedOAuthClientIdForOrigin(origin) !== `${base}/client-metadata.json`;
+}
+
+/**
+ * Resolve hosted OAuth client_id in the browser.
+ * Gateway client_id wins over `NEXT_PUBLIC_ATPROTO_CLIENT_ID` when the SPA host is
+ * deployment-protected (e.g. testing.thesocialwire.app behind Vercel auth).
+ */
+export function resolveHostedOAuthClientId(origin: string): string {
+  const fromOrigin = hostedOAuthClientIdForOrigin(origin);
+  if (originUsesGatewayOAuthClientMetadata(origin)) {
+    return fromOrigin;
+  }
+  const explicit = process.env.NEXT_PUBLIC_ATPROTO_CLIENT_ID?.trim();
+  if (explicit) return explicit;
+  return fromOrigin;
 }
 
 /** Discoverable ATProto OAuth client metadata for the web SPA at a given origin. */
