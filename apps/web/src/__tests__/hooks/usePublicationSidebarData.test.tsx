@@ -11,8 +11,6 @@ const pub: DiscoveredPublication = {
   authorDid: "did:plc:author",
   authorHandle: "author.test",
   title: "Pub",
-  iconUrl: null,
-  avatarUrl: null,
   discoveredAt: "2026-01-01T00:00:00.000Z",
 };
 

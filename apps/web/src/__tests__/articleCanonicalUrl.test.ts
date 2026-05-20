@@ -6,13 +6,8 @@ function makeEntry(partial: Partial<EntryDetail>): EntryDetail {
   return {
     entryId: "at://did:plc:author/site.standard.document/abc",
     title: "Test",
-    summary: null,
     publishedAt: "2026-05-19T12:00:00.000Z",
-    authorDid: "did:plc:author",
-    authorHandle: "author.test",
-    embedUrl: null,
-    originalUrl: null,
-    thumbnailUrl: null,
+    contentHtml: "",
     ...partial,
   };
 }

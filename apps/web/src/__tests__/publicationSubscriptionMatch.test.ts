@@ -16,8 +16,6 @@ function makePublication(
     authorDid,
     authorHandle: "handle.test",
     title: "Title",
-    iconUrl: null,
-    avatarUrl: null,
     discoveredAt: "2026-01-01T00:00:00.000Z",
   };
 }
