@@ -257,7 +257,7 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
           <div className="flex min-w-0 flex-col gap-0.5">
             <span className="truncate font-semibold text-sm">The Social Wire</span>
             <span className="inline-flex w-fit items-center rounded-full border px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-              Alpha
+              Beta
             </span>
           </div>
           <Button

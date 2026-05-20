@@ -37,6 +37,22 @@ Test against **`api.testing.thesocialwire.app`** (`DEBUG` or `SOCIALWIRE_TESTING
 
 See [[Thin-AppView]].
 
+## Testing
+
+XCTest in `SocialWireTests/` — run **Cmd+U** in Xcode. See [apple test plan](https://github.com/Stygian-Tech/the-social-wire/blob/main/docs/test-plans/apple.md).
+
+| Area | Tests |
+|------|-------|
+| OAuth / PKCE / API env | `OAuthTests`, `ATProtoOAuthServiceTests` |
+| Utilities (AT-URI, keys, HTML) | `SocialWireUtilityTests` |
+| Subscription matching | `PublicationSubscriptionMatchTests` |
+| Reader cache | `ReaderCacheCoordinatorTests` |
+| Gateway client | `SocialWireGatewayClientTests` |
+| PDS / publications | `PDSRecordServiceTests`, `PublicationServiceTests` |
+| SwiftUI views | Manual simulator verification |
+
+Xcode Cloud is not configured in-repo.
+
 ## Related
 
 - App entrypoint: [`SocialWireApp.swift`](https://github.com/Stygian-Tech/the-social-wire/blob/main/apps/apple/SocialWire/App/SocialWireApp.swift)

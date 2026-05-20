@@ -1,0 +1,21 @@
+meta {
+  name: Get AppView Entries After Ingestion
+  type: http
+  seq: 10
+}
+
+get {
+  url: {{baseUrl}}/v1/appview/entries?authorDid={{authorDid}}&filter={{appViewFilter}}&limit={{appViewLimit}}
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}
+
+docs {
+  After the worker has ingested Jetstream commits, new `site.standard.*` entry records should appear here.
+  Run `Post AppView Enroll` first if backfilling a newly followed author.
+}

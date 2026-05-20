@@ -14,3 +14,7 @@ headers {
   Authorization: Bearer {{oauthAccessToken}}
   DPoP: {{dpopProof}}
 }
+
+docs {
+  Requires `collection` and `rkey` query params. Optional `If-None-Match` for conditional GET.
+}

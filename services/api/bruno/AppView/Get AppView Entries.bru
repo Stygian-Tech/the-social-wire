@@ -1,0 +1,21 @@
+meta {
+  name: Get AppView Entries
+  type: http
+  seq: 20
+}
+
+get {
+  url: {{baseUrl}}/v1/appview/entries?authorDid={{authorDid}}&filter={{appViewFilter}}&limit={{appViewLimit}}
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}
+
+docs {
+  Requires `ENABLE_THIN_APPVIEW=true` on the API. Lists Level-1 entry rows indexed by the worker.
+  Optional query params: `publicationAtUri`, `cursor` (add to the URL when needed).
+}

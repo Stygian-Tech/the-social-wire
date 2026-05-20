@@ -1,5 +1,25 @@
 import { AT_PROTO_OAUTH_SCOPES } from "@/lib/atprotoOAuthScopes";
 
+/** Public gateway URL for hosted dev OAuth when the web SPA is deployment-protected. */
+export function inferGatewayApiBase(origin?: string): string | null {
+  const explicit = process.env.NEXT_PUBLIC_SOCIALWIRE_API_URL?.trim();
+  if (explicit) return explicit.replace(/\/$/, "");
+  if (!origin) return null;
+  try {
+    const { hostname } = new URL(origin);
+    if (hostname === "testing.thesocialwire.app") {
+      return "https://api.testing.thesocialwire.app";
+    }
+  } catch {
+    //
+  }
+  return null;
+}
+
+export function gatewayWebOAuthClientMetadataUrl(apiBase: string): string {
+  return `${apiBase.replace(/\/$/, "")}/oauth/client-metadata.json`;
+}
+
 /** Discoverable ATProto OAuth client metadata for the web SPA at a given origin. */
 export function buildWebOAuthClientMetadata(origin: string) {
   const base = origin.replace(/\/$/, "");

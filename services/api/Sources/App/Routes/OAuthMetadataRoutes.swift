@@ -12,10 +12,9 @@ struct OAuthMetadataRoutes {
 
   func register(on router: Router<AppRequestContext>) {
     router.get("/oauth/client-metadata.json") { request, _ in
-      try Self.response(
-        oauthConfiguredOrigin: oauthPublicOrigin,
+      try Self.webMetadataResponse(
         request: request,
-        encode: WebOAuthClientMetadata.buildJSON(publicOrigin:)
+        oauthRedirectOrigin: oauthPublicOrigin
       )
     }
     router.get("/ios-client-metadata.json") { request, _ in
@@ -25,6 +24,43 @@ struct OAuthMetadataRoutes {
         encode: IosOAuthClientMetadata.buildJSON(publicOrigin:)
       )
     }
+  }
+
+  private static func webMetadataResponse(
+    request: Request,
+    oauthRedirectOrigin: String?
+  ) throws -> Response {
+    guard
+      let metadataOrigin = OAuthPublicOrigin.resolve(
+        request: request,
+        configuredOrigin: nil
+      )
+    else {
+      throw HTTPError(
+        .internalServerError,
+        message:
+          "Cannot resolve public origin for OAuth metadata. Ensure Host (and X-Forwarded-Proto behind a proxy) is set."
+      )
+    }
+
+    let redirectOrigin: String = {
+      guard let raw = oauthRedirectOrigin?.trimmingCharacters(in: .whitespacesAndNewlines),
+            !raw.isEmpty
+      else { return metadataOrigin }
+      return raw
+    }()
+
+    let data: Data
+    do {
+      data = try WebOAuthClientMetadata.buildJSON(
+        publicOrigin: metadataOrigin,
+        redirectOrigin: redirectOrigin
+      )
+    } catch {
+      throw HTTPError(.internalServerError, message: "Invalid public origin for OAuth metadata JSON.")
+    }
+
+    return try jsonResponse(data: data)
   }
 
   private static func response(
@@ -52,6 +88,10 @@ struct OAuthMetadataRoutes {
       throw HTTPError(.internalServerError, message: "Invalid public origin for OAuth metadata JSON.")
     }
 
+    return try jsonResponse(data: data)
+  }
+
+  private static func jsonResponse(data: Data) throws -> Response {
     var headers: HTTPFields = [.contentType: "application/json; charset=utf-8"]
     if let acao = HTTPField.Name("Access-Control-Allow-Origin") {
       headers[acao] = "*"

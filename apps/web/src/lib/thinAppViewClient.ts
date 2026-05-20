@@ -6,15 +6,14 @@ import {
 } from "@/lib/atprotoClient";
 import type { ArticleListFilter } from "@/lib/entryArticleFilter";
 
-const DEFAULT_GATEWAY =
-  process.env.NEXT_PUBLIC_SOCIALWIRE_API_URL ?? "https://api.thesocialwire.app";
-
 export function isThinAppViewEnabled(): boolean {
   return process.env.NEXT_PUBLIC_USE_THIN_APPVIEW === "true";
 }
 
 function gatewayBaseUrl(): string {
-  return DEFAULT_GATEWAY.replace(/\/$/, "");
+  return (
+    process.env.NEXT_PUBLIC_SOCIALWIRE_API_URL ?? "https://api.thesocialwire.app"
+  ).replace(/\/$/, "");
 }
 
 async function gatewayFetch(

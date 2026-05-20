@@ -1,0 +1,20 @@
+meta {
+  name: Delete AppView Privacy Purge
+  type: http
+  seq: 24
+}
+
+delete {
+  url: {{baseUrl}}/v1/appview/privacy/purge
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}
+
+docs {
+  Deletes all indexed read marks for the authenticated viewer. Requires `ENABLE_THIN_APPVIEW=true`.
+}

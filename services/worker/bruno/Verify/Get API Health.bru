@@ -1,0 +1,15 @@
+meta {
+  name: Get API Health
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/health
+  body: none
+  auth: none
+}
+
+docs {
+  Confirms the API gateway is reachable before exercising AppView routes that read worker-populated tables.
+}

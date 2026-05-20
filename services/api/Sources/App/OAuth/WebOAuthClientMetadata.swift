@@ -6,17 +6,27 @@ enum WebOAuthClientMetadata {
     case invalidPublicOrigin
   }
 
-  /// Builds JSON with `redirect_uris: ["{origin}/callback"]` — same semantics as deployed Next.js static asset.
-  static func buildJSON(publicOrigin: String) throws -> Data {
+  /// Builds JSON for **`/oauth/client-metadata.json`** on the gateway.
+  ///
+  /// - **`publicOrigin`**: **`client_id`** host (must match the URL clients fetch — typically request **`Host`**).
+  /// - **`redirectOrigin`**: SPA origin for **`redirect_uris`** / **`client_uri`** when the web app is on another host.
+  static func buildJSON(publicOrigin: String, redirectOrigin: String? = nil) throws -> Data {
     var trimmed = publicOrigin.trimmingCharacters(in: .whitespacesAndNewlines)
     if trimmed.hasSuffix("/") { trimmed.removeLast() }
     guard let host = URL(string: trimmed)?.host, !host.isEmpty else {
       throw BuildError.invalidPublicOrigin
     }
 
-    let base = trimmed
-    let client_id = "\(base)/oauth/client-metadata.json"
-    let redirect = "\(base)/callback"
+    var redirectTrimmed = (redirectOrigin ?? trimmed).trimmingCharacters(in: .whitespacesAndNewlines)
+    if redirectTrimmed.hasSuffix("/") { redirectTrimmed.removeLast() }
+    guard let redirectHost = URL(string: redirectTrimmed)?.host, !redirectHost.isEmpty else {
+      throw BuildError.invalidPublicOrigin
+    }
+
+    let metadataBase = trimmed
+    let redirectBase = redirectTrimmed
+    let client_id = "\(metadataBase)/oauth/client-metadata.json"
+    let redirect = "\(redirectBase)/callback"
 
     struct MetadataBody: Encodable {
       let client_id: String
@@ -41,7 +51,7 @@ enum WebOAuthClientMetadata {
       token_endpoint_auth_method: "none",
       dpop_bound_access_tokens: true,
       client_name: "The Social Wire",
-      client_uri: base
+      client_uri: redirectBase
     )
     let enc = JSONEncoder()
     enc.outputFormatting = [.sortedKeys]

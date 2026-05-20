@@ -68,13 +68,30 @@ bun run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
-### Running tests
+### Full-stack local dev (optional)
 
 ```bash
-# TypeScript / React tests
-cd apps/web && bun run test
+# API gateway
+cd services/api && cp .env.example .env && APP_ENV=local swift run App
 
-# iOS tests — Cmd+U in Xcode
+# Thin AppView worker (optional)
+cd services/worker && cp .env.example .env && APP_ENV=local ENABLE_THIN_APPVIEW=true swift run Worker
+
+# Supabase (optional — Docker)
+supabase start && supabase db reset --local
+```
+
+### Running tests
+
+See **[docs/test-plans/README.md](docs/test-plans/README.md)** for per-surface plans and PR checklists.
+
+```bash
+cd apps/web && bun test
+cd services/api && swift test
+cd services/worker && swift test
+cd packages/swift/ThinAppViewCore && swift test
+
+# iOS — Cmd+U in Xcode (see docs/test-plans/apple.md)
 ```
 
 ## Architecture Principles
@@ -100,6 +117,8 @@ See [docs/architecture/overview.md](docs/architecture/overview.md) for the full 
 
 ## Docs
 
+- **[Test plans](docs/test-plans/README.md)** — verification commands and coverage inventory
+- **[Contributing](CONTRIBUTING.md)** — PR workflow and test location conventions
 - **[GitHub Wiki](https://github.com/Stygian-Tech/the-social-wire/wiki)** — curated navigation and links into this repository
 - [Architecture overview](docs/architecture/overview.md)
 - [Lexicons](docs/architecture/lexicons.md)

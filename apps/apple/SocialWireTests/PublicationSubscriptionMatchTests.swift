@@ -1,45 +1,51 @@
-import XCTest
+import Testing
 @testable import SocialWire
 
-final class PublicationSubscriptionMatchTests: XCTestCase {
+@Suite("Publication subscription match")
+struct PublicationSubscriptionMatchTests {
     private let viewerDid = "did:plc:viewer"
 
-    func testViewerOwnsFromPublicationIdRepo() {
+    @Test("viewer owns from publicationId repo")
+    func viewerOwnsFromPublicationIdRepo() {
         let pub = makePublication(
             publicationId: "did:plc:viewer",
             authorDid: "did:plc:someone-else"
         )
-        XCTAssertTrue(viewerOwnsDiscoveredPublication(pub, viewerDid: viewerDid))
+        #expect(viewerOwnsDiscoveredPublication(pub, viewerDid: viewerDid))
     }
 
-    func testViewerOwnsFromAuthorDid() {
+    @Test("viewer owns from author DID")
+    func viewerOwnsFromAuthorDid() {
         let pub = makePublication(
             publicationId: "at://did:plc:other/site.standard.publication/pub1",
             authorDid: "did:plc:viewer"
         )
-        XCTAssertTrue(viewerOwnsDiscoveredPublication(pub, viewerDid: viewerDid))
+        #expect(viewerOwnsDiscoveredPublication(pub, viewerDid: viewerDid))
     }
 
-    func testSubscriptionMatchKeysIncludeAlternateCollection() {
+    @Test("subscription match keys include alternate collection")
+    func subscriptionMatchKeysIncludeAlternateCollection() {
         let pub = makePublication(
             publicationId: "at://did:plc:author/site.standard.publication/key1",
             authorDid: "did:plc:author"
         )
         let keys = publicationSubscriptionMatchKeys(for: pub)
-        XCTAssertTrue(keys.contains("at://did:plc:author/com.standard.publication/key1"))
+        #expect(keys.contains("at://did:plc:author/com.standard.publication/key1"))
     }
 
-    func testIsSubscribedPublicationMatchesAuthorDid() {
+    @Test("isSubscribedPublication matches author DID")
+    func isSubscribedPublicationMatchesAuthorDid() {
         let pub = makePublication(
             publicationId: "at://did:plc:author/site.standard.publication/key1",
             authorDid: "did:plc:author"
         )
         var subscriptionKeys: Set<String> = []
         addPublicationSubscriptionLookupKeys(into: &subscriptionKeys, value: "did:plc:author")
-        XCTAssertTrue(isSubscribedPublication(pub, subscriptionKeys: subscriptionKeys))
+        #expect(isSubscribedPublication(pub, subscriptionKeys: subscriptionKeys))
     }
 
-    func testFollowingTabExcludesSubscribedAndOwned() {
+    @Test("following tab excludes subscribed and owned")
+    func followingTabExcludesSubscribedAndOwned() {
         let owned = makePublication(publicationId: "did:plc:viewer", authorDid: viewerDid)
         let subscribed = makePublication(
             publicationId: "at://did:plc:alice/site.standard.publication/a",
@@ -59,18 +65,18 @@ final class PublicationSubscriptionMatchTests: XCTestCase {
             subscriptionKeys: subscriptionKeys
         )
 
-        XCTAssertEqual(segmented.graphSubscribed.map(\.publicationId), [
+        #expect(segmented.graphSubscribed.map(\.publicationId) == [
             owned.publicationId,
             subscribed.publicationId,
         ])
-        XCTAssertEqual(segmented.followOwnedUnsubscribed.map(\.publicationId), [followOnly.publicationId])
+        #expect(segmented.followOwnedUnsubscribed.map(\.publicationId) == [followOnly.publicationId])
 
         let myPubs = [owned]
         let following = filterFollowingTabPublications(
             followOwnedUnsubscribed: segmented.followOwnedUnsubscribed,
             myPublications: myPubs
         )
-        XCTAssertEqual(following.map(\.publicationId), [followOnly.publicationId])
+        #expect(following.map(\.publicationId) == [followOnly.publicationId])
     }
 
     private func makePublication(publicationId: String, authorDid: String) -> DiscoveredPublication {

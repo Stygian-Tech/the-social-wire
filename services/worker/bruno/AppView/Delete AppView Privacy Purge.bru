@@ -1,0 +1,20 @@
+meta {
+  name: Delete AppView Privacy Purge
+  type: http
+  seq: 14
+}
+
+delete {
+  url: {{baseUrl}}/v1/appview/privacy/purge
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}
+
+docs {
+  Removes all viewer read marks from the shared index. Use only on test accounts.
+}

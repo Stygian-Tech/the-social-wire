@@ -1,0 +1,29 @@
+meta {
+  name: Post AppView Read Mark
+  type: http
+  seq: 21
+}
+
+post {
+  url: {{baseUrl}}/v1/appview/read-marks
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "subjectUri": "{{entrySubjectUri}}",
+    "readAt": "{{readMarkAt}}"
+  }
+}
+
+docs {
+  Write-through read mark after upserting `com.thesocialwire.entryReadState` on the viewer PDS.
+  Requires `ENABLE_THIN_APPVIEW=true`.
+}

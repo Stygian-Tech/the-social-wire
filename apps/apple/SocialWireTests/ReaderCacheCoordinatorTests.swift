@@ -1,11 +1,12 @@
 import SwiftData
-import XCTest
+import Testing
 @testable import SocialWire
 
+@Suite("ReaderCacheCoordinator")
 @MainActor
-final class ReaderCacheCoordinatorTests: XCTestCase {
-
-    func testUnreadCachedCountsRespectReadStates() throws {
+struct ReaderCacheCoordinatorTests {
+    @Test("unread cached counts respect read states")
+    func unreadCachedCountsRespectReadStates() throws {
         let container = try ReaderSwiftDataStack.inMemoryTestContainer()
         let context = ModelContext(container)
         let coord = ReaderCacheCoordinator(modelContext: context)
@@ -31,11 +32,12 @@ final class ReaderCacheCoordinatorTests: XCTestCase {
         try coord.upsertPublicationEntries(publicationId: "pub1", entries: items)
 
         let readMap: [String: Date] = ["a": Date()]
-        XCTAssertEqual(coord.unreadCachedCount(publicationId: "pub1", readAtByEntryId: readMap), 1)
-        XCTAssertEqual(coord.unreadCachedCount(publicationId: "pub1", readAtByEntryId: [:]), 2)
+        #expect(coord.unreadCachedCount(publicationId: "pub1", readAtByEntryId: readMap) == 1)
+        #expect(coord.unreadCachedCount(publicationId: "pub1", readAtByEntryId: [:]) == 2)
     }
 
-    func testDistinctCachedEntryIdsDedupesAcrossPublications() throws {
+    @Test("distinct cached entry IDs dedupe across publications")
+    func distinctCachedEntryIdsDedupesAcrossPublications() throws {
         let container = try ReaderSwiftDataStack.inMemoryTestContainer()
         let context = ModelContext(container)
         let coord = ReaderCacheCoordinator(modelContext: context)
@@ -85,17 +87,18 @@ final class ReaderCacheCoordinatorTests: XCTestCase {
         )
 
         let ids = coord.distinctCachedEntryIds(publicationIds: ["pub-a", "pub-b"])
-        XCTAssertEqual(Set(ids), Set([sharedId, "only-a", "only-b"]))
-        XCTAssertEqual(ids.count, 3)
+        #expect(Set(ids) == Set([sharedId, "only-a", "only-b"]))
+        #expect(ids.count == 3)
     }
 
-    func testGatewayETagRoundTripThroughUpsert() throws {
+    @Test("gateway ETag round-trip through upsert")
+    func gatewayETagRoundTripThroughUpsert() throws {
         let container = try ReaderSwiftDataStack.inMemoryTestContainer()
         let context = ModelContext(container)
         let coord = ReaderCacheCoordinator(modelContext: context)
 
         try coord.upsertGatewayResponse(cacheKey: " GET /preferences ", etag: "\"v1\"", body: Data([0xDE, 0xAD]))
-        XCTAssertEqual(coord.gatewayETag(for: "GET /preferences"), "\"v1\"")
-        XCTAssertEqual(coord.gatewayCachedBody(for: "GET /preferences"), Data([0xDE, 0xAD]))
+        #expect(coord.gatewayETag(for: "GET /preferences") == "\"v1\"")
+        #expect(coord.gatewayCachedBody(for: "GET /preferences") == Data([0xDE, 0xAD]))
     }
 }

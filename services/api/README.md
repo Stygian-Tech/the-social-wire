@@ -92,8 +92,10 @@ curl -sS http://127.0.0.1:8080/oauth/client-metadata.json | jq .
 
 1. Import the folder as a Bruno collection (`bruno.json` present).
 2. Pick `local` / `dev` / `prod` environments.
-3. Populate `oauthAccessToken` **and** `dpopProof` from your OAuth session whenever hitting `/v1/*` routes.
-4. Legacy examples call out the `ENABLE_LEGACY_CONTENT_API=true` prerequisite in file names/comments.
+3. Populate `oauthAccessToken`, `dpopProof`, and route placeholders (`authorDid`, `userDid`, etc.) from your OAuth session.
+4. Folders: **Health**, **OAuth**, **Sync**, **AppView** (`ENABLE_THIN_APPVIEW=true`), **Legacy** (`ENABLE_LEGACY_CONTENT_API=true`).
+
+Worker ingestion has no HTTP surface — use [`services/worker/bruno`](../worker/bruno) to verify firehose output via the API AppView routes.
 
 Never commit bearer material—use Bruno secret variables locally.
 

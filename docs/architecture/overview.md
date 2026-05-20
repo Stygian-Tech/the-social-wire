@@ -125,3 +125,7 @@ Portainer :9000 (HTTP), :9443 (HTTPS)
 API :8080
   └── Hummingbird 2 service
 ```
+
+## Verification
+
+See [Test plans](../test-plans/README.md) for commands and coverage inventory per package.

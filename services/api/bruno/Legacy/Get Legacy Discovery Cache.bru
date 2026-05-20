@@ -5,7 +5,7 @@ meta {
 }
 
 get {
-  url: {{baseUrl}}/discovery/did:plc_placeholder
+  url: {{baseUrl}}/discovery/{{userDid}}
   body: none
   auth: none
 }
@@ -15,3 +15,6 @@ headers {
   DPoP: {{dpopProof}}
 }
 
+docs {
+  Requires `ENABLE_LEGACY_CONTENT_API=true`. Poll after `Post Legacy Discovery Refresh`.
+}

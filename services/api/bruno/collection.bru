@@ -1,0 +1,15 @@
+docs {
+  # Social Wire API
+
+  Bruno workspace for every HTTP route on `services/api`.
+
+  ## Folders
+
+  - **Health** — liveness
+  - **OAuth** — public client metadata (no auth)
+  - **Sync** — authenticated preference sync + PDS record cache
+  - **AppView** — Thin AppView read index (`ENABLE_THIN_APPVIEW=true`)
+  - **Legacy** — discovery/content cache (`ENABLE_LEGACY_CONTENT_API=true`)
+
+  Set `oauthAccessToken` and `dpopProof` from an ATProto OAuth session before calling `/v1/*` or legacy routes.
+}

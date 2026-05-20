@@ -1,0 +1,27 @@
+meta {
+  name: Delete AppView Read Mark
+  type: http
+  seq: 22
+}
+
+delete {
+  url: {{baseUrl}}/v1/appview/read-marks
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "subjectUri": "{{entrySubjectUri}}"
+  }
+}
+
+docs {
+  Write-through unread (delete mirrored read mark). Requires `ENABLE_THIN_APPVIEW=true`.
+}

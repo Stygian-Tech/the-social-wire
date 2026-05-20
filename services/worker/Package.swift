@@ -29,5 +29,18 @@ let package = Package(
         .unsafeFlags(["-warnings-as-errors"]),
       ]
     ),
+    .testTarget(
+      name: "WorkerTests",
+      dependencies: [
+        "Worker",
+        "ThinAppViewCore",
+        .product(name: "Logging", package: "swift-log"),
+      ],
+      path: "Tests/WorkerTests",
+      swiftSettings: [
+        .swiftLanguageMode(.v6),
+        .unsafeFlags(["-warnings-as-errors"]),
+      ]
+    ),
   ]
 )

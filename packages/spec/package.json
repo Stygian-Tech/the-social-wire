@@ -1,0 +1,7 @@
+{
+  "name": "@thesocialwire/spec",
+  "private": true,
+  "scripts": {
+    "test": "bun test"
+  }
+}

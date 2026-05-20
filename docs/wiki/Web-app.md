@@ -38,6 +38,19 @@ Local optimistic read state (`the-social-wire.read-state.v1`) remains primary fo
 
 See [[Thin-AppView]].
 
+## Testing
+
+Unit tests: `cd apps/web && bun test` (CI: `build-web`).
+
+| Area | Coverage |
+|------|----------|
+| `src/lib/` | All modules — see [test plan](https://github.com/Stygian-Tech/the-social-wire/blob/main/docs/test-plans/web.md) |
+| `src/hooks/` | Priority hooks (entries, sidebar, read-later, publications) |
+| `src/app/api/` | Route handler tests |
+| `src/components/` | Manual browser verification only |
+
+See [[Testing]].
+
 ## Related
 
 - Example env: [apps/web/.env.example](https://github.com/Stygian-Tech/the-social-wire/blob/main/apps/web/.env.example)

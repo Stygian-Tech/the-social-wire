@@ -6,7 +6,7 @@ struct AppConfig: Sendable {
   let atprotoPLCURL: String
   let appEnv: AppEnvironment
   let cacheBackend: CacheBackend
-  /// Overrides **`client_id`** origin for **`/oauth/client-metadata.json`** (SPA) when **`Host`** is wrong (tunnel, etc.).
+  /// SPA origin for **`redirect_uris`** on **`/oauth/client-metadata.json`** when the web app is on another host.
   let oauthPublicOrigin: String?
   /// Optional **`client_id`** origin override for **`/ios-client-metadata.json`** only — leave unset so **`client_id`**
   /// always matches **`Host`** (fixes `invalid_client_metadata` when `OAUTH_PUBLIC_ORIGIN` targets the marketing site).

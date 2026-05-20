@@ -22,6 +22,8 @@ jobs:
       api: ${{ steps.filter.outputs.api }}
       worker: ${{ steps.filter.outputs.worker }}
       supabase: ${{ steps.filter.outputs.supabase }}
+      lexicons: ${{ steps.filter.outputs.lexicons }}
+      spec: ${{ steps.filter.outputs.spec }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -53,6 +55,13 @@ jobs:
             supabase:
               - 'supabase/**'
               - 'scripts/supabase-ci-push.sh'
+              - '.github/workflows/ci.yml'
+            lexicons:
+              - 'packages/lexicons/**'
+              - '.github/workflows/ci.yml'
+            spec:
+              - 'packages/spec/**'
+              - 'services/api/Sources/App/**'
               - '.github/workflows/ci.yml'
 
   build-web:
@@ -116,6 +125,50 @@ jobs:
       - name: Test
         run: swift test
 
+  test-lexicons:
+    name: Lexicons (Package)
+    needs: changes
+    if: needs.changes.result == 'success' && needs.changes.outputs.lexicons == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/lexicons
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+        working-directory: .
+
+      - name: Test
+        run: bun test
+
+  test-spec:
+    name: OpenAPI spec (Package)
+    needs: changes
+    if: needs.changes.result == 'success' && needs.changes.outputs.spec == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/spec
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+        working-directory: .
+
+      - name: Test
+        run: bun test
+
   test-worker:
     name: Swift Worker (Package)
     needs: changes
@@ -143,6 +196,10 @@ jobs:
 
       - name: Test ThinAppViewCore
         working-directory: packages/swift/ThinAppViewCore
+        run: swift test
+
+      - name: Test Worker
+        working-directory: services/worker
         run: swift test
 
       - name: Build Worker
@@ -224,17 +281,81 @@ jobs:
           DB_PASSWORD: ${{ secrets.SUPABASE_PROD_DB_PASSWORD }}
         run: bash scripts/supabase-ci-push.sh prod
 
+  ci:
+    name: CI — required
+    needs:
+      - changes
+      - build-web
+      - test-api
+      - test-lexicons
+      - test-spec
+      - test-worker
+      - supabase-validate
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify path-filtered checks
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          WEB_FLAG: ${{ needs.changes.outputs.web }}
+          API_FLAG: ${{ needs.changes.outputs.api }}
+          WORKER_FLAG: ${{ needs.changes.outputs.worker }}
+          SUPABASE_FLAG: ${{ needs.changes.outputs.supabase }}
+          LEXICONS_FLAG: ${{ needs.changes.outputs.lexicons }}
+          SPEC_FLAG: ${{ needs.changes.outputs.spec }}
+          BUILD_WEB_RESULT: ${{ needs.build-web.result }}
+          TEST_API_RESULT: ${{ needs.test-api.result }}
+          TEST_LEXICONS_RESULT: ${{ needs.test-lexicons.result }}
+          TEST_SPEC_RESULT: ${{ needs.test-spec.result }}
+          TEST_WORKER_RESULT: ${{ needs.test-worker.result }}
+          SUPABASE_VALIDATE_RESULT: ${{ needs.supabase-validate.result }}
+        run: |
+          set -euo pipefail
+
+          fail() {
+            echo "::error::$1"
+            exit 1
+          }
+
+          if [[ "$CHANGES_RESULT" != "success" ]]; then
+            fail "Path detection failed ($CHANGES_RESULT)"
+          fi
+
+          check() {
+            local flag="$1"
+            local result="$2"
+            local name="$3"
+
+            if [[ "$flag" == "true" ]]; then
+              if [[ "$result" != "success" ]]; then
+                fail "$name must pass when its paths change (got $result)"
+              fi
+            elif [[ "$result" != "success" && "$result" != "skipped" ]]; then
+              fail "$name ended with $result"
+            fi
+          }
+
+          check "$WEB_FLAG" "$BUILD_WEB_RESULT" "Build & Test Web"
+          check "$API_FLAG" "$TEST_API_RESULT" "Swift API (Package)"
+          check "$LEXICONS_FLAG" "$TEST_LEXICONS_RESULT" "Lexicons (Package)"
+          check "$SPEC_FLAG" "$TEST_SPEC_RESULT" "OpenAPI spec (Package)"
+          check "$WORKER_FLAG" "$TEST_WORKER_RESULT" "Swift Worker (Package)"
+          check "$SUPABASE_FLAG" "$SUPABASE_VALIDATE_RESULT" "Supabase — validate migrations"
+
   deploy-api:
     name: Deploy API (Fly.io)
-    needs: [changes, test-api, supabase-validate, supabase-push-dev, supabase-push-prod]
+    needs: [changes, ci, test-api, test-spec, supabase-validate, supabase-push-dev, supabase-push-prod]
     if: |
       always() &&
       github.event_name == 'push' &&
       (github.ref_name == 'main' || github.ref_name == 'dev') &&
       needs.changes.result == 'success' &&
       needs.changes.outputs.api == 'true' &&
+      needs.ci.result == 'success' &&
       needs.test-api.result != 'failure' &&
       needs.test-api.result != 'cancelled' &&
+      needs.test-spec.result != 'failure' &&
+      needs.test-spec.result != 'cancelled' &&
       needs.supabase-validate.result != 'failure' &&
       needs.supabase-validate.result != 'cancelled' &&
       needs.supabase-push-dev.result != 'failure' &&
@@ -242,6 +363,7 @@ jobs:
       needs.supabase-push-prod.result != 'failure' &&
       needs.supabase-push-prod.result != 'cancelled' &&
       (needs.test-api.result == 'success' || needs.test-api.result == 'skipped') &&
+      (needs.test-spec.result == 'success' || needs.test-spec.result == 'skipped') &&
       (needs.supabase-validate.result == 'success' || needs.supabase-validate.result == 'skipped') &&
       (needs.supabase-push-dev.result == 'success' || needs.supabase-push-dev.result == 'skipped') &&
       (needs.supabase-push-prod.result == 'success' || needs.supabase-push-prod.result == 'skipped')
@@ -262,13 +384,14 @@ jobs:
 
   deploy-worker:
     name: Deploy AppView Worker (Fly.io)
-    needs: [changes, test-worker, supabase-validate, supabase-push-dev, supabase-push-prod]
+    needs: [changes, ci, test-worker, supabase-validate, supabase-push-dev, supabase-push-prod]
     if: |
       always() &&
       github.event_name == 'push' &&
       (github.ref_name == 'main' || github.ref_name == 'dev') &&
       needs.changes.result == 'success' &&
       needs.changes.outputs.worker == 'true' &&
+      needs.ci.result == 'success' &&
       needs.test-worker.result != 'failure' &&
       needs.test-worker.result != 'cancelled' &&
       needs.supabase-validate.result != 'failure' &&

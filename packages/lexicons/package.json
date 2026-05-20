@@ -1,0 +1,7 @@
+{
+  "name": "@thesocialwire/lexicons",
+  "private": true,
+  "scripts": {
+    "test": "bun test"
+  }
+}

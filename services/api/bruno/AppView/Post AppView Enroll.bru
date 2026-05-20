@@ -1,0 +1,30 @@
+meta {
+  name: Post AppView Enroll
+  type: http
+  seq: 23
+}
+
+post {
+  url: {{baseUrl}}/v1/appview/enroll
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "authorDids": [
+      "{{authorDid}}"
+    ]
+  }
+}
+
+docs {
+  Backfill recent entries for followed author DIDs after discovery. Requires `ENABLE_THIN_APPVIEW=true`.
+  Add more DIDs to the JSON array as needed (max 500 per request).
+}

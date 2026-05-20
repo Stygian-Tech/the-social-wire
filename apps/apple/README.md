@@ -34,8 +34,8 @@ apps/apple/
     Utilities/
       KeychainWrapper.swift       # Secure refresh token storage
   SocialWireTests/
-    KeychainWrapperTests.swift    # @Test macros, Swift Testing
-    PDSClientTests.swift
+    OAuthTests.swift              # Swift Testing (@Test)
+    SocialWireUtilityTests.swift
 ```
 
 ## Gateway & Thin AppView
@@ -77,9 +77,30 @@ Source of truth: [`SocialWire/Services/ATProtoOAuthService.swift`](SocialWire/Se
 
 ### Required URL Scheme
 
+Register URL types in **Info.plist** (generated from [`project.yml`](project.yml)):
+
+| Metadata host | Scheme |
+|---------------|--------|
+| `api.thesocialwire.app` | `app.thesocialwire.api` |
+| `api.testing.thesocialwire.app` | `app.thesocialwire.testing.api` |
+| `thesocialwire.app` | `app.thesocialwire` |
+
+Callback path: `/oauth/callback` (e.g. `app.thesocialwire.api:/oauth/callback`).
+
+### Running tests
+
+In Xcode: **Product → Test** (Cmd+U).
+
+CLI:
+
 ```sh
-xcodebuild test -scheme SocialWire -destination 'platform=iOS Simulator,id=<Simulator-UUID>'
+xcodebuild test \
+  -project "The Social Wire.xcodeproj" \
+  -scheme SocialWire \
+  -destination 'platform=iOS Simulator,name=iPhone 16'
 ```
+
+See [docs/test-plans/apple.md](../../docs/test-plans/apple.md).
 
 ## OAuth client metadata (production vs preview)
 

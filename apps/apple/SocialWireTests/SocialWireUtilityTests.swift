@@ -1,28 +1,33 @@
-import XCTest
+import Testing
 @testable import SocialWire
 
-final class SocialWireUtilityTests: XCTestCase {
-    func testATURIParsing() {
+@Suite("SocialWire utilities")
+struct SocialWireUtilityTests {
+    @Test("AT URI parsing")
+    func aturiParsing() {
         let uri = ATURI("at://did:plc:alice/site.standard.document/abc123")
-        XCTAssertEqual(uri?.repo, "did:plc:alice")
-        XCTAssertEqual(uri?.collection, "site.standard.document")
-        XCTAssertEqual(uri?.rkey, "abc123")
+        #expect(uri?.repo == "did:plc:alice")
+        #expect(uri?.collection == "site.standard.document")
+        #expect(uri?.rkey == "abc123")
     }
 
-    func testReadStateRKeyIsDeterministicBase32() {
+    @Test("read-state rkey is deterministic base32")
+    func readStateRKeyIsDeterministicBase32() {
         let first = DeterministicKeys.entryReadStateRKey(subjectURI: "at://did:plc:alice/site.standard.document/abc123")
         let second = DeterministicKeys.entryReadStateRKey(subjectURI: "at://did:plc:alice/site.standard.document/abc123")
-        XCTAssertEqual(first, second)
-        XCTAssertEqual(first.count, 52)
-        XCTAssertTrue(first.allSatisfy { "abcdefghijklmnopqrstuvwxyz234567".contains($0) })
+        #expect(first == second)
+        #expect(first.count == 52)
+        #expect(first.allSatisfy { "abcdefghijklmnopqrstuvwxyz234567".contains($0) })
     }
 
-    func testPublicURLNormalizerPromotesHTTPAndStripsBridgeNoise() {
+    @Test("PublicURLNormalizer promotes HTTP and strips bridge noise")
+    func publicURLNormalizerPromotesHTTPAndStripsBridgeNoise() {
         let normalized = PublicURLNormalizer.normalizeHttpURLToHTTPS("http://example.com/post?bridge_completed=1&x=2")
-        XCTAssertEqual(normalized, "https://example.com/post?x=2")
+        #expect(normalized == "https://example.com/post?x=2")
     }
 
-    func testLatrMergeDropsArchivedAndPairsExternalRows() {
+    @Test("L@tr merge drops archived and pairs external rows")
+    func latrMergeDropsArchivedAndPairsExternalRows() {
         let external = RepoRecord(
             uri: "at://did:plc:me/com.latr.saved.external/ext",
             cid: nil,
@@ -47,13 +52,14 @@ final class SocialWireUtilityTests: XCTestCase {
         )
 
         let rows = PDSRecordService.merge(externals: [external], items: [item])
-        XCTAssertEqual(rows.count, 1)
-        XCTAssertEqual(rows.first?.title, "Example")
+        #expect(rows.count == 1)
+        #expect(rows.first?.title == "Example")
     }
 
-    func testHTMLWrapperContainsCSP() {
+    @Test("HTML wrapper contains CSP")
+    func htmlWrapperContainsCSP() {
         let wrapped = HTMLRenderer.wrappedHTML("<p>Hello</p>")
-        XCTAssertTrue(wrapped.contains("Content-Security-Policy"))
-        XCTAssertTrue(wrapped.contains("<p>Hello</p>"))
+        #expect(wrapped.contains("Content-Security-Policy"))
+        #expect(wrapped.contains("<p>Hello</p>"))
     }
 }
