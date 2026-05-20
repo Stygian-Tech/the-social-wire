@@ -1,7 +1,7 @@
 "use client";
 
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useMemo } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMemo } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { useFolders } from "@/hooks/useFolders";
 import {
@@ -19,7 +19,11 @@ import {
   addPublicationSubscriptionLookupKeys,
   publicationSubscriptionMatchKeys,
 } from "@/lib/publicationSubscriptionMatch";
-import type { PublicationPrefsRecord, RepoRecord } from "@/lib/pdsClient";
+import {
+  COLLECTION_PUB_PREFS,
+  type PublicationPrefsRecord,
+  type RepoRecord,
+} from "@/lib/pdsClient";
 import {
   fetchPublicationSidebar,
   isPublicationProjectionEnabled,
@@ -145,16 +149,40 @@ function legacySidebarMerge(args: {
   };
 }
 
+function prefsRecordFromProjection(
+  row: PublicationSidebarProjection["publicationPrefs"][number]
+): RepoRecord<PublicationPrefsRecord> {
+  const raw = row.value;
+  const folderId =
+    typeof raw.folderId === "string" ? raw.folderId : undefined;
+  const sortOrder =
+    typeof raw.sortOrder === "number" ? raw.sortOrder : undefined;
+  const hidden = typeof raw.hidden === "boolean" ? raw.hidden : undefined;
+  const createdAt =
+    typeof raw.createdAt === "string"
+      ? raw.createdAt
+      : new Date().toISOString();
+
+  return {
+    uri: row.uri,
+    cid: typeof raw.cid === "string" ? raw.cid : "",
+    value: {
+      $type: COLLECTION_PUB_PREFS,
+      publicationId: row.publicationId,
+      folderId,
+      sortOrder,
+      hidden,
+      createdAt,
+    },
+  };
+}
+
 function projectionToSidebarState(projection: PublicationSidebarProjection) {
   const prefsMap = new Map(
     projection.publicationPrefs.map((p) => [
       p.publicationId,
-      {
-        uri: p.uri,
-        cid: undefined,
-        value: p.value as PublicationPrefsRecord,
-      } satisfies RepoRecord<PublicationPrefsRecord>,
-    ])
+      prefsRecordFromProjection(p),
+    ] as const)
   );
 
   const folderMap = new Map<string, DiscoveredPublication[]>();
@@ -267,26 +295,22 @@ export function usePublicationSidebarData() {
   const useServerProjection =
     useProjection && projectionQuery.isSuccess && projectionState != null;
 
-  const refresh = useCallback(async () => {
-    if (useServerProjection) {
-      const oauth = getOAuthSession();
-      if (!oauth) return;
-      const projection = await refreshPublicationSidebar(oauth);
-      qc.setQueryData(
-        PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(session?.did ?? ""),
-        projection
-      );
-      maybeEnrollProjectionAuthors(oauth, projection.enrollAuthorDids);
-      return;
-    }
-    await refreshDiscovery.mutateAsync();
-  }, [
-    useServerProjection,
-    getOAuthSession,
-    qc,
-    session?.did,
-    refreshDiscovery,
-  ]);
+  const refresh = useMutation({
+    mutationFn: async () => {
+      if (useServerProjection) {
+        const oauth = getOAuthSession();
+        if (!oauth) throw new Error("OAuth session required");
+        const projection = await refreshPublicationSidebar(oauth);
+        qc.setQueryData(
+          PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(session?.did ?? ""),
+          projection
+        );
+        maybeEnrollProjectionAuthors(oauth, projection.enrollAuthorDids);
+        return;
+      }
+      await refreshDiscovery.mutateAsync();
+    },
+  });
 
   const subscriptionsBlockLoading = useServerProjection
     ? projectionQuery.isLoading
