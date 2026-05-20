@@ -6,7 +6,7 @@ app = 'the-social-wire-prod'
 primary_region = 'ams'
 
 [build]
-  dockerfile = 'services/api/Dockerfile'
+  dockerfile = 'Dockerfile'
 
 [deploy]
   wait_timeout = '10m0s'
