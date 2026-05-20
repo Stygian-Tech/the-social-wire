@@ -13,6 +13,7 @@ COPY packages/swift/ThinAppViewCore/Tests packages/swift/ThinAppViewCore/Tests
 
 COPY services/worker/Package.swift services/worker/Package.resolved* services/worker/
 COPY services/worker/Sources services/worker/Sources
+COPY services/worker/Tests services/worker/Tests
 
 WORKDIR /src/services/worker
 RUN swift package resolve
