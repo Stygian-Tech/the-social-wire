@@ -13,6 +13,12 @@ struct ThinAppViewRoutes {
         throw HTTPError(.badRequest, message: "Query requires `authorDid`")
       }
       let publicationAtUri = request.uri.queryParameters.get("publicationAtUri")
+      let publicationScopeAtUris = Self.splitQueryList(
+        request.uri.queryParameters.get("publicationScopeAtUris")
+      )
+      let publicationSiteUrls = Self.splitQueryList(
+        request.uri.queryParameters.get("publicationSiteUrls")
+      )
       let filterRaw = request.uri.queryParameters.get("filter") ?? "all"
       guard let filter = EntryListFilter(rawValue: filterRaw) else {
         throw HTTPError(.badRequest, message: "Invalid `filter`")
@@ -24,6 +30,8 @@ struct ThinAppViewRoutes {
         auth: auth,
         authorDid: authorDid,
         publicationAtUri: publicationAtUri,
+        publicationScopeAtUris: publicationScopeAtUris,
+        publicationSiteUrls: publicationSiteUrls,
         filter: filter,
         cursor: cursor,
         limit: limit
@@ -56,6 +64,14 @@ struct ThinAppViewRoutes {
       try await readService.purge(auth: auth)
       return .ok
     }
+  }
+
+  private static func splitQueryList(_ raw: String?) -> [String] {
+    guard let raw else { return [] }
+    return raw
+      .split(separator: ",")
+      .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+      .filter { !$0.isEmpty }
   }
 }
 

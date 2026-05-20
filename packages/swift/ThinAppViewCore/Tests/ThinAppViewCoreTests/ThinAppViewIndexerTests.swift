@@ -39,6 +39,8 @@ struct ThinAppViewIndexerTests {
       viewerDid: "did:plc:viewer",
       authorDid: "did:plc:author",
       publicationAtUri: nil,
+      publicationScopeAtUris: [],
+      publicationSiteUrls: [],
       filter: .all,
       cursor: nil,
       limit: 10
@@ -80,6 +82,8 @@ struct ThinAppViewIndexerTests {
       viewerDid: "did:plc:viewer",
       authorDid: "did:plc:author",
       publicationAtUri: nil,
+      publicationScopeAtUris: [],
+      publicationSiteUrls: [],
       filter: .unread,
       cursor: nil,
       limit: 10
@@ -129,6 +133,8 @@ struct ThinAppViewIndexerTests {
       viewerDid: "did:plc:viewer",
       authorDid: "did:plc:author",
       publicationAtUri: nil,
+      publicationScopeAtUris: [],
+      publicationSiteUrls: [],
       filter: .all,
       cursor: nil,
       limit: 10

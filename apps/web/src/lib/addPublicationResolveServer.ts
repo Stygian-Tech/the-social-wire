@@ -4,6 +4,7 @@
  */
 
 import {
+  fetchPublicationRecordValue,
   normalizeAtRepoParam,
   parseAtUri,
   PUBLICATION_RECORD_COLLECTIONS,
@@ -213,6 +214,22 @@ export async function resolveAddPublicationInput(
   const atCandidate = normalizeAtRepoParam(input);
   if (atCandidate.startsWith("at://")) {
     const parsed = parseAtUri(atCandidate);
+    if (parsed?.collection === "app.offprint.publication") {
+      const record = await fetchPublicationRecordValue(atCandidate, undefined);
+      const innerRaw = record?.publication;
+      const inner =
+        typeof innerRaw === "string" ? innerRaw.trim() : "";
+      if (inner) {
+        return {
+          kind: "standard-site",
+          publicationAtUri: normalizeAtRepoParam(inner),
+        };
+      }
+      return {
+        error:
+          "Offprint publication record is missing its site.standard.publication reference.",
+      };
+    }
     if (parsed && PUBLICATION_RECORD_COLLECTIONS.has(parsed.collection)) {
       return {
         kind: "standard-site",

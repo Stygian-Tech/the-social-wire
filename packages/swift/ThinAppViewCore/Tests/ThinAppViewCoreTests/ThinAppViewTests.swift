@@ -46,6 +46,18 @@ struct RenderFieldExtractorTests {
       )
     )
   }
+
+  @Test("matches publication https url on document site field")
+  func publicationHttpsUrl() {
+    let pub = "at://did:plc:abc/site.standard.publication/main"
+    #expect(
+      RenderFieldExtractor.matchesPublication(
+        siteField: "https://news.offprint.app",
+        publicationAtUri: pub,
+        publicationSiteUrls: ["https://news.offprint.app"]
+      )
+    )
+  }
 }
 
 @Suite("SQLiteThinAppViewStore")
@@ -97,6 +109,8 @@ struct SQLiteThinAppViewStoreTests {
       viewerDid: "did:plc:viewer",
       authorDid: "did:plc:author",
       publicationAtUri: nil,
+      publicationScopeAtUris: [],
+      publicationSiteUrls: [],
       filter: EntryListFilter.unread,
       cursor: nil,
       limit: 10

@@ -12,7 +12,7 @@ import {
   listEntries,
   getEntry,
   normalizeAtRepoParam,
-  repoAndPublicationFilterFromPubId,
+  resolvePublicationFilterFromPubId,
   publicationRepoDid,
 } from "@/lib/atprotoClient";
 import type { EntryListItem, EntryDetail } from "@/lib/atprotoClient";
@@ -70,6 +70,11 @@ export async function fetchEntriesInfinitePage(args: {
 
   if (!normalizedKey) return { entries: [], cursor: undefined };
 
+  const { repoDid, publicationAtUri } = await resolvePublicationFilterFromPubId(
+    normalizedKey,
+    oauthSession
+  );
+
   if (isRssPublicationId(normalizedKey)) {
     const feedUrl = normalizedFeedUrlFromRssPublicationId(normalizedKey);
     if (!feedUrl) return { entries: [], cursor: undefined };
@@ -96,18 +101,29 @@ export async function fetchEntriesInfinitePage(args: {
   }
 
   if (isThinAppViewEnabled() && oauthSession) {
-    return listEntriesFromAppView({
-      publicationKey: normalizedKey,
-      cursor: pageParam as string | undefined,
-      filter: articleFilter,
-      oauthSession,
-      signal,
-    });
+    try {
+      const appViewPage = await listEntriesFromAppView({
+        publicationKey: normalizedKey,
+        cursor: pageParam as string | undefined,
+        filter: articleFilter,
+        oauthSession,
+        signal,
+      });
+      const shouldFallbackToPds =
+        appViewPage.entries.length === 0 &&
+        pageParam === undefined &&
+        Boolean(publicationAtUri);
+      if (!shouldFallbackToPds) {
+        return appViewPage;
+      }
+    } catch {
+      if (!publicationAtUri || pageParam !== undefined) {
+        throw new Error("Thin AppView entries failed");
+      }
+    }
   }
 
   const key = ENTRIES_QUERY_KEY(normalizedKey);
-  const { repoDid, publicationAtUri } =
-    repoAndPublicationFilterFromPubId(normalizedKey);
   const isFirstInfinitePage = pageParam === undefined;
   const onProgress =
     streamFirstPageToCache && queryClient && isFirstInfinitePage

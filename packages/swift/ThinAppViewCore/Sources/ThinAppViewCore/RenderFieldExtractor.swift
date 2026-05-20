@@ -43,19 +43,61 @@ public enum RenderFieldExtractor {
     return nil
   }
 
+  public static func normalizePublicationSiteUrl(_ raw: String) -> String? {
+    let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard trimmed.lowercased().hasPrefix("http://") || trimmed.lowercased().hasPrefix("https://") else {
+      return nil
+    }
+    guard var components = URLComponents(string: trimmed) else { return nil }
+    components.fragment = nil
+    components.query = nil
+    guard let url = components.url else { return nil }
+    var href = url.absoluteString
+    if href.hasSuffix("/") { href.removeLast() }
+    return href
+  }
+
+  public static func matchesPublication(
+    siteField: String?,
+    publicationAtUri: String?,
+    publicationScopeAtUris: [String] = [],
+    publicationSiteUrls: [String] = []
+  ) -> Bool {
+    let scoped = publicationAtUri != nil || !publicationScopeAtUris.isEmpty
+    guard scoped else { return true }
+    guard let siteField else { return false }
+
+    var wantAtKeys = Set<String>()
+    if let publicationAtUri {
+      wantAtKeys.formUnion(publicationFilterEquivalenceKeys(publicationAtUri: publicationAtUri))
+    }
+    for uri in publicationScopeAtUris {
+      if let key = canonicalPublicationAtUriKey(uri) {
+        wantAtKeys.insert(key)
+      }
+    }
+    if let got = canonicalPublicationAtUriKey(siteField), wantAtKeys.contains(got) {
+      return true
+    }
+
+    let wantSiteUrls = Set(publicationSiteUrls.compactMap { normalizePublicationSiteUrl($0) })
+    if let gotSite = normalizePublicationSiteUrl(siteField), wantSiteUrls.contains(gotSite) {
+      return true
+    }
+
+    return false
+  }
+
+  /// Matches web `entryRecordMatchesPublication` site equivalence keys.
+  public static func matchesPublicationAtUriOnly(siteField: String?, publicationAtUri: String) -> Bool {
+    matchesPublication(siteField: siteField, publicationAtUri: publicationAtUri, publicationSiteUrls: [])
+  }
+
   public static func createdAtDate(from record: [String: Any], fallback render: ContentRenderFields) -> Date {
     if let parsed = parseISO8601(render.publishedAt) {
       return parsed
     }
     return Date()
-  }
-
-  /// Matches web `entryRecordMatchesPublication` site equivalence keys.
-  public static func matchesPublication(siteField: String?, publicationAtUri: String) -> Bool {
-    guard let siteField else { return false }
-    let wantKeys = publicationFilterEquivalenceKeys(publicationAtUri: publicationAtUri)
-    guard let got = canonicalPublicationAtUriKey(siteField) else { return false }
-    return wantKeys.contains(got)
   }
 
   public static func canonicalPublicationAtUriKey(_ uri: String) -> String? {

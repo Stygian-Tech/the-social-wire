@@ -4,6 +4,8 @@ import {
   decodeListEntriesPageCursor,
   decodePublicationScopeListCursor,
   entryRecordMatchesPublication,
+  entryRecordMatchesPublicationScope,
+  type PublicationScopeMatch,
   normalizeAtRepoParam,
   normalizeDidForOwnershipCompare,
   parseAtUri,
@@ -333,6 +335,47 @@ describe("entryRecordMatchesPublication", () => {
   it("matches publication field alias", () => {
     expect(
       entryRecordMatchesPublication({ publication: pub }, pub)
+    ).toBe(true);
+  });
+
+  it("matches when document site is the publication https url", () => {
+    const match: PublicationScopeMatch = {
+      atUriKeys: new Set([
+        "at://did:plc:abc12/site.standard.publication/site-root",
+        "at://did:plc:abc12/com.standard.publication/site-root",
+      ]),
+      siteUrlKeys: new Set(["https://news.offprint.app"]),
+    };
+    expect(
+      entryRecordMatchesPublicationScope(
+        { site: "https://news.offprint.app", title: "Post" },
+        match
+      )
+    ).toBe(true);
+  });
+
+  it("matches documents tied to a sibling publication record with the same name", () => {
+    const currentPub =
+      "at://did:plc:author/site.standard.publication/new-offprint";
+    const legacyPub =
+      "at://did:plc:author/site.standard.publication/legacy-leaflet";
+    const match: PublicationScopeMatch = {
+      atUriKeys: new Set([
+        currentPub,
+        legacyPub,
+        "at://did:plc:author/com.standard.publication/new-offprint",
+        "at://did:plc:author/com.standard.publication/legacy-leaflet",
+      ]),
+      siteUrlKeys: new Set([
+        "https://example.offprint.app",
+        "https://example.leaflet.pub",
+      ]),
+    };
+    expect(
+      entryRecordMatchesPublicationScope(
+        { site: legacyPub, title: "Older post" },
+        match
+      )
     ).toBe(true);
   });
 });

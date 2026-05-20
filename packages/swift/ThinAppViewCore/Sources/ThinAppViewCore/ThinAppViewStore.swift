@@ -13,6 +13,8 @@ public protocol ThinAppViewStore: Actor {
     viewerDid: String,
     authorDid: String,
     publicationAtUri: String?,
+    publicationScopeAtUris: [String],
+    publicationSiteUrls: [String],
     filter: EntryListFilter,
     cursor: String?,
     limit: Int

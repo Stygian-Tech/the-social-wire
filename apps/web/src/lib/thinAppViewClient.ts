@@ -1,7 +1,8 @@
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 
 import {
-  repoAndPublicationFilterFromPubId,
+  buildPublicationScopeMatch,
+  resolvePublicationFilterFromPubId,
   type EntryListItem,
 } from "@/lib/atprotoClient";
 import type { ArticleListFilter } from "@/lib/entryArticleFilter";
@@ -46,15 +47,30 @@ export async function listEntriesFromAppView(args: {
 }): Promise<AppViewEntriesPage> {
   const { publicationKey, cursor, limit = 50, filter = "all", oauthSession, signal } =
     args;
-  const { repoDid, publicationAtUri } =
-    repoAndPublicationFilterFromPubId(publicationKey);
+  const { repoDid, publicationAtUri } = await resolvePublicationFilterFromPubId(
+    publicationKey,
+    oauthSession
+  );
 
   const params = new URLSearchParams({
     authorDid: repoDid,
     filter,
     limit: String(limit),
   });
-  if (publicationAtUri) params.set("publicationAtUri", publicationAtUri);
+  if (publicationAtUri) {
+    params.set("publicationAtUri", publicationAtUri);
+    const scope = await buildPublicationScopeMatch(
+      publicationAtUri,
+      oauthSession
+    );
+    const siteUrls = [...scope.siteUrlKeys];
+    if (siteUrls.length > 0) {
+      params.set("publicationSiteUrls", siteUrls.join(","));
+    }
+    if (scope.atUriKeys.size > 0) {
+      params.set("publicationScopeAtUris", [...scope.atUriKeys].join(","));
+    }
+  }
   if (cursor) params.set("cursor", cursor);
 
   const res = await gatewayFetch(

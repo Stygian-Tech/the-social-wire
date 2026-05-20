@@ -18,6 +18,8 @@ actor ThinAppViewReadService {
     auth: AuthContext,
     authorDid: String,
     publicationAtUri: String?,
+    publicationScopeAtUris: [String],
+    publicationSiteUrls: [String],
     filter: EntryListFilter,
     cursor: String?,
     limit: Int
@@ -26,6 +28,8 @@ actor ThinAppViewReadService {
       viewerDid: auth.did,
       authorDid: authorDid,
       publicationAtUri: publicationAtUri,
+      publicationScopeAtUris: publicationScopeAtUris,
+      publicationSiteUrls: publicationSiteUrls,
       filter: filter,
       cursor: cursor,
       limit: limit

@@ -72,13 +72,16 @@ public init(pool: PostgresClient, logger: Logger) {
     viewerDid: String,
     authorDid: String,
     publicationAtUri: String?,
+    publicationScopeAtUris: [String],
+    publicationSiteUrls: [String],
     filter: EntryListFilter,
     cursor: String?,
     limit: Int
   ) async throws -> AppViewEntryListResponse {
     let pageLimit = max(1, min(limit, 100))
     let now = Date()
-    let fetchLimit = publicationAtUri == nil ? pageLimit + 1 : (pageLimit + 1) * 4
+    let scoped = publicationAtUri != nil || !publicationScopeAtUris.isEmpty
+    let fetchLimit = scoped ? (pageLimit + 1) * 8 : pageLimit + 1
     let decodedCursor = cursor.flatMap { ThinAppViewCursor.decode($0) }
 
     let rows: PostgresRowSequence
@@ -171,7 +174,9 @@ public init(pool: PostgresClient, logger: Logger) {
     let filtered = fetched.filter { row in
       ThinAppViewQuerySupport.publicationSiteMatches(
         siteField: row.publicationSite,
-        publicationAtUri: publicationAtUri
+        publicationAtUri: publicationAtUri,
+        publicationScopeAtUris: publicationScopeAtUris,
+        publicationSiteUrls: publicationSiteUrls
       )
     }
 

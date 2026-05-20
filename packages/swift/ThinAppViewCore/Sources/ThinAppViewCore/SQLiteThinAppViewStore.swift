@@ -132,12 +132,16 @@ public init(path dbPath: String, logger: Logger) throws {
     viewerDid: String,
     authorDid: String,
     publicationAtUri: String?,
+    publicationScopeAtUris: [String],
+    publicationSiteUrls: [String],
     filter: EntryListFilter,
     cursor: String?,
     limit: Int
   ) async throws -> AppViewEntryListResponse {
     let nowIso = Self.isoString(from: Date())
     let pageLimit = max(1, min(limit, 100))
+    let scoped = publicationAtUri != nil || !publicationScopeAtUris.isEmpty
+    let fetchLimit = scoped ? (pageLimit + 1) * 8 : pageLimit + 1
 
     let rows: [(uri: String, renderJSON: String, createdAt: Date, publicationSite: String?)] =
       try await db.read { db in
@@ -168,7 +172,7 @@ public init(path dbPath: String, logger: Logger) throws {
         }
 
         sql += " ORDER BY ci.created_at DESC, ci.uri DESC LIMIT ?"
-        args.append(pageLimit + 1)
+        args.append(fetchLimit)
 
         let fetched = try Row.fetchAll(db, sql: sql, arguments: StatementArguments(args))
         return fetched.map { row in
@@ -184,7 +188,9 @@ public init(path dbPath: String, logger: Logger) throws {
     let filtered = rows.filter { row in
       ThinAppViewQuerySupport.publicationSiteMatches(
         siteField: row.publicationSite,
-        publicationAtUri: publicationAtUri
+        publicationAtUri: publicationAtUri,
+        publicationScopeAtUris: publicationScopeAtUris,
+        publicationSiteUrls: publicationSiteUrls
       )
     }
 
