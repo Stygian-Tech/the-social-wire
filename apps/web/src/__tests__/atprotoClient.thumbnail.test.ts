@@ -2,12 +2,14 @@ import { describe, it, expect, mock, beforeEach, afterEach } from "bun:test";
 import {
   resolveEntryThumbnailUrl,
   resolveEntryThumbnailUrls,
+  resetAtprotoClientCachesForTests,
 } from "@/lib/atprotoClient";
 
 describe("resolveEntryThumbnailUrl", () => {
   const originalFetch = globalThis.fetch;
 
   beforeEach(() => {
+    resetAtprotoClientCachesForTests();
     globalThis.fetch = mock(() =>
       Promise.resolve(
         new Response(

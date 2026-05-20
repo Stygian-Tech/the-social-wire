@@ -1,15 +1,67 @@
 import { describe, expect, it, mock, beforeEach, afterEach } from "bun:test";
+import { resetAtprotoClientCachesForTests } from "@/lib/atprotoClient";
 
 const ORIG_ENV = { ...process.env };
+const ORIG_FETCH = globalThis.fetch;
 
 describe("thinAppViewClient", () => {
   beforeEach(() => {
+    resetAtprotoClientCachesForTests();
     process.env.NEXT_PUBLIC_USE_THIN_APPVIEW = "true";
     process.env.NEXT_PUBLIC_SOCIALWIRE_API_URL = "https://api.example.test";
+    globalThis.fetch = mock((input: RequestInfo | URL) => {
+      const url =
+        typeof input === "string"
+          ? input
+          : input instanceof Request
+            ? input.url
+            : input.href;
+      if (url.includes("plc.directory")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              service: [
+                {
+                  id: "#atproto_pds",
+                  type: "AtprotoPersonalDataServer",
+                  serviceEndpoint: "https://pds.example.test",
+                },
+              ],
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+      if (url.includes("com.atproto.repo.getRecord")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              value: {
+                $type: "site.standard.publication",
+                name: "Example Pub",
+                url: "https://example.offprint.app",
+              },
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+        );
+      }
+      if (url.includes("com.atproto.repo.listRecords")) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ records: [] }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          })
+        );
+      }
+      return Promise.reject(new Error(`unexpected fetch: ${url}`));
+    }) as unknown as typeof fetch;
   });
 
   afterEach(() => {
     process.env = { ...ORIG_ENV };
+    globalThis.fetch = ORIG_FETCH;
+    resetAtprotoClientCachesForTests();
     mock.restore();
   });
 

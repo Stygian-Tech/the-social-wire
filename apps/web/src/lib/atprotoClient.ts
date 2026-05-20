@@ -150,6 +150,16 @@ const plcEndpointCache = new Map<string, string | null>();
 /** In-flight PLC resolution so concurrent list/thumbnail lookups share one network round-trip. */
 const plcEndpointInflight = new Map<string, Promise<string | null>>();
 
+/** Cache handle → DID for {@link resolveRepoDid} (App View resolveHandle). */
+const handleToDidCache = new Map<string, string>();
+
+/** Clears module-level memoization — for unit tests only. */
+export function resetAtprotoClientCachesForTests(): void {
+  plcEndpointCache.clear();
+  plcEndpointInflight.clear();
+  handleToDidCache.clear();
+}
+
 /**
  * Some PLC `#atproto_pds` endpoints (notably Bridgy Fed relay) answer `com.atproto.repo.listRecords`
  * but reject **`reverse=true`** with HTTP 400 — the param is valid per the lexicon on full PDSes.
@@ -190,9 +200,6 @@ async function plcPdsBaseForRepoDid(repoDid: string): Promise<string | null> {
   }
   return inflight;
 }
-
-/** Cache handle → DID for {@link resolveRepoDid} (App View resolveHandle). */
-const handleToDidCache = new Map<string, string>();
 
 /**
  * `repo` parameters must be a DID for PLC/PDS reads. Handles are resolved via public App View.
