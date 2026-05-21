@@ -1,5 +1,7 @@
 # Deploy from repo root: bash services/appview/deploy.sh dev
 # Or: fly deploy ../.. --config services/appview/fly.toml --app the-social-wire-dev-appview
+#
+# Listens on APPVIEW_PORT (8081). Do not set a Fly secret PORT=8080 — it overrides fly.toml and breaks health checks.
 
 app = 'the-social-wire-dev-appview'
 primary_region = 'ams'
@@ -12,6 +14,7 @@ primary_region = 'ams'
   wait_timeout = '10m0s'
 
 [env]
+  APPVIEW_PORT = '8081'
   PORT = '8081'
   ENABLE_THIN_APPVIEW = 'true'
 

@@ -13,6 +13,7 @@ primary_region = 'ams'
   wait_timeout = '10m0s'
 
 [env]
+  APPVIEW_PORT = '8081'
   PORT = '8081'
   ENABLE_THIN_APPVIEW = 'true'
 

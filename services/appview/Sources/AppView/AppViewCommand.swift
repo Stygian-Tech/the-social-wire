@@ -29,7 +29,11 @@ struct Serve: AsyncParsableCommand {
 
     let environment = AppEnvironmentLoader.mergeProcessWithDotenv()
     let config = AppViewServiceConfig.fromEnvironment(environment)
-    let listenPort = port ?? Int(environment["PORT"] ?? "8081") ?? 8081
+    let listenPort =
+      port
+      ?? Int(environment["APPVIEW_PORT"] ?? "")
+      ?? Int(environment["PORT"] ?? "8081")
+      ?? 8081
     let listenHost = hostname ?? environment["BIND_HOST"] ?? "0.0.0.0"
 
     guard config.thinAppView.enabled else {
