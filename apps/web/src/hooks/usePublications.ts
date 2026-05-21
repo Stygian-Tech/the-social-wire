@@ -282,7 +282,7 @@ export function useRefreshDiscovery() {
 // ── Publication prefs mutations ───────────────────────────────────────────────
 
 export function useSetPublicationFolder() {
-  const client = usePDSClient();
+  const { session, getOAuthSession } = useAuth();
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({
@@ -294,14 +294,24 @@ export function useSetPublicationFolder() {
       folderId: string | null;
       existingRkey?: string;
     }) => {
-      if (!client) throw new Error("No PDS client — not signed in");
-      return client.upsertPublicationPrefs(
-        publicationId,
-        { folderId },
-        existingRkey
+      const oauth = getOAuthSession();
+      if (!oauth) throw new Error("OAuth session required");
+      const { upsertPublicationPrefsOnGateway } = await import(
+        "@/lib/publicationProjectionClient"
       );
+      return upsertPublicationPrefsOnGateway(oauth, {
+        publicationId,
+        folderId,
+        existingRkey,
+      });
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: PUB_PREFS_QUERY_KEY }),
+    onSuccess: () => {
+      if (session?.did) {
+        qc.invalidateQueries({
+          queryKey: ["publicationSidebarProjection", session.did],
+        });
+      }
+    },
   });
 }
 
@@ -502,119 +512,46 @@ export function useRefreshSkyreaderSubscriptionIcon() {
  * `site.standard.graph.subscription` or Skyreader RSS subscription on the PDS.
  */
 export function useAddPublicationFromAnyLink() {
-  const client = usePDSClient();
   const qc = useQueryClient();
   const { session, getOAuthSession } = useAuth();
   const did = session?.did ?? null;
 
   return useMutation({
     mutationFn: async (input: { link: string; title?: string }) => {
-      if (!client) throw new Error("No PDS client — not signed in");
       const oauthSession = getOAuthSession();
-      let json: {
-        kind?: unknown;
-        error?: string;
-        publicationAtUri?: unknown;
-        feedUrl?: unknown;
-        title?: unknown;
-        siteUrl?: unknown;
-        feedIconUrl?: unknown;
-      };
-
-      if (oauthSession) {
-        try {
-          const { resolveAddPublicationOnGateway } = await import(
-            "@/lib/publicationProjectionClient"
-          );
-          const gateway = await resolveAddPublicationOnGateway(
-            oauthSession,
-            input.link
-          );
-          if (gateway.error) throw new Error(gateway.error);
-          if (gateway.result?.kind === "standard-site") {
-            json = {
-              kind: "standard-site",
-              publicationAtUri: gateway.result.publicationAtUri,
-            };
-          } else if (gateway.result?.kind === "rss") {
-            json = {
-              kind: "rss",
-              feedUrl: gateway.result.feedUrl,
-              title: gateway.result.title,
-              siteUrl: gateway.result.siteUrl,
-              feedIconUrl: gateway.result.feedIconUrl,
-            };
-          } else {
-            throw new Error("Could not resolve link");
-          }
-        } catch {
-          const res = await fetch("/api/resolve-add-publication", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ input: input.link }),
+      if (!oauthSession) throw new Error("OAuth session required");
+        const { resolveAddPublicationOnGateway, createPublicationSubscriptionOnGateway, createRssSubscriptionOnGateway } = await import(
+          "@/lib/publicationProjectionClient"
+        );
+        const gateway = await resolveAddPublicationOnGateway(
+          oauthSession,
+          input.link
+        );
+        if (gateway.error) throw new Error(gateway.error);
+        if (gateway.result?.kind === "standard-site") {
+          await createPublicationSubscriptionOnGateway(oauthSession, {
+            publication: gateway.result.publicationAtUri,
           });
-          json = (await res.json()) as typeof json;
-          const errMsg =
-            typeof json.error === "string" ? json.error : "Could not resolve link";
-          if (!res.ok) throw new Error(errMsg);
+          return {
+            kind: "standard-site" as const,
+            navigatePubId: gateway.result.publicationAtUri,
+            authorDid: publicationRepoDid(gateway.result.publicationAtUri),
+          };
         }
-      } else {
-        const res = await fetch("/api/resolve-add-publication", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ input: input.link }),
-        });
-        json = (await res.json()) as typeof json;
-        const errMsg =
-          typeof json.error === "string" ? json.error : "Could not resolve link";
-        if (!res.ok) throw new Error(errMsg);
-      }
-
-      if (json.kind === "standard-site" && typeof json.publicationAtUri === "string") {
-        await client.createPublicationSubscription({
-          publication: json.publicationAtUri,
-        });
-        return {
-          kind: "standard-site" as const,
-          navigatePubId: json.publicationAtUri,
-          authorDid: publicationRepoDid(json.publicationAtUri),
-        };
-      }
-
-      if (json.kind === "rss" && typeof json.feedUrl === "string") {
-        const normalized = normalizeRssFeedUrlInput(json.feedUrl);
-        if (!normalized) throw new Error("Invalid feed URL from resolver");
-        const resolvedTitle =
-          typeof json.title === "string" ? json.title.trim() : "";
-        const resolvedSite =
-          typeof json.siteUrl === "string" ? json.siteUrl.trim() : "";
-        const resolvedIcon =
-          typeof json.feedIconUrl === "string" ? json.feedIconUrl.trim() : "";
-        await client.createSkyreaderFeedSubscription({
-          feedUrl: normalized,
-          title:
-            input.title?.trim() ||
-            (resolvedTitle ? resolvedTitle : undefined),
-          siteUrl: resolvedSite
-            ? resolvedSite
-            : (() => {
-                try {
-                  return new URL(normalized).origin;
-                } catch {
-                  return undefined;
-                }
-              })(),
-          ...(resolvedIcon ? { customIconUrl: resolvedIcon } : {}),
-        });
-        return {
-          kind: "rss" as const,
-          navigatePubId: rssPublicationIdFromNormalizedFeedUrl(normalized),
-        };
-      }
-
-      throw new Error(
-        typeof json.error === "string" ? json.error : "Unexpected resolver response."
-      );
+        if (gateway.result?.kind === "rss") {
+          const normalized = normalizeRssFeedUrlInput(gateway.result.feedUrl);
+          if (!normalized) throw new Error("Invalid feed URL from resolver");
+          await createRssSubscriptionOnGateway(oauthSession, {
+            feedUrl: normalized,
+            title: input.title?.trim() || gateway.result.title,
+            siteUrl: gateway.result.siteUrl,
+          });
+          return {
+            kind: "rss" as const,
+            navigatePubId: rssPublicationIdFromNormalizedFeedUrl(normalized),
+          };
+        }
+        throw new Error("Could not resolve link");
     },
     onSuccess: (result) => {
       qc.invalidateQueries({ queryKey: PUBLICATION_SUBSCRIPTIONS_QUERY_KEY });

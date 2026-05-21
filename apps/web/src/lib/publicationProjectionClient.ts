@@ -1,7 +1,8 @@
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 
 import type { DiscoveredPublication } from "@/lib/atprotoClient";
-import { enrollAuthorsInAppView, isThinAppViewEnabled } from "@/lib/thinAppViewClient";
+import { enrollAuthorsInAppView } from "@/lib/thinAppViewClient";
+import { gatewayFetch } from "@/lib/socialWireGatewayClient";
 
 export type PublicationAppViewScope = {
   authorDid: string;
@@ -12,6 +13,13 @@ export type PublicationAppViewScope = {
 
 export type SidebarPublicationRow = DiscoveredPublication & {
   appViewScope: PublicationAppViewScope;
+  unreadCount?: number;
+};
+
+export type PublicationFolderSection = {
+  folderRkey: string;
+  folderUri: string;
+  publications: SidebarPublicationRow[];
 };
 
 export type PublicationSidebarProjection = {
@@ -22,12 +30,15 @@ export type PublicationSidebarProjection = {
     publicationId: string;
     value: Record<string, unknown>;
   }>;
+  /** Server-grouped folder sections when provided by gateway projection. */
+  folderSections?: PublicationFolderSection[];
   allPublicationRows: SidebarPublicationRow[];
   myPublications: SidebarPublicationRow[];
   subscribedUnfoldered: SidebarPublicationRow[];
   followingTabPublications: SidebarPublicationRow[];
   enrollAuthorDids: string[];
   refreshedAt: string;
+  unreadCountsByPublicationId?: Record<string, number>;
 };
 
 export type ResolveAddPublicationPayload =
@@ -40,30 +51,38 @@ export type ResolveAddPublicationPayload =
       feedIconUrl?: string;
     };
 
-function gatewayBaseUrl(): string {
-  return (
-    process.env.NEXT_PUBLIC_SOCIALWIRE_API_URL ?? "https://api.thesocialwire.app"
-  ).replace(/\/$/, "");
-}
+export type GatewayFolderWriteInput = {
+  name: string;
+  icon?: string;
+  iconImage?: string;
+  sortOrder?: number;
+};
 
-async function gatewayFetch(
-  oauthSession: OAuthSession,
-  path: string,
-  init?: RequestInit
-): Promise<Response> {
-  const url = `${gatewayBaseUrl()}${path.startsWith("/") ? path : `/${path}`}`;
-  return oauthSession.fetchHandler(url, {
-    ...init,
-    headers: {
-      Accept: "application/json",
-      ...(init?.headers ?? {}),
-    },
-  });
-}
+export type GatewayFolderUpdateInput = Partial<GatewayFolderWriteInput>;
 
-export function isPublicationProjectionEnabled(): boolean {
-  return process.env.NEXT_PUBLIC_USE_PUBLICATION_PROJECTION !== "false";
-}
+export type GatewayPublicationPrefsWriteInput = {
+  publicationId: string;
+  folderId?: string | null;
+  sortOrder?: number;
+  hidden?: boolean;
+  existingRkey?: string;
+};
+
+export type GatewayPublicationSubscriptionWriteInput = {
+  publication: string;
+};
+
+export type GatewayRssSubscriptionWriteInput = {
+  feedUrl: string;
+  title?: string;
+  siteUrl?: string;
+};
+
+export type GatewayMarkAllReadScope =
+  | { kind: "publication"; publicationId: string }
+  | { kind: "folder"; folderRkey: string }
+  | { kind: "subscribed" }
+  | { kind: "following" };
 
 export async function fetchPublicationSidebar(
   oauthSession: OAuthSession,
@@ -117,6 +136,142 @@ export async function resolveAddPublicationOnGateway(
   };
 }
 
+export async function createFolderOnGateway(
+  oauthSession: OAuthSession,
+  input: GatewayFolderWriteInput
+): Promise<{ uri: string; rkey: string }> {
+  const res = await gatewayFetch(oauthSession, "/v1/publications/folders", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    throw new Error(`Create folder failed (${res.status})`);
+  }
+  return (await res.json()) as { uri: string; rkey: string };
+}
+
+export async function updateFolderOnGateway(
+  oauthSession: OAuthSession,
+  rkey: string,
+  input: GatewayFolderUpdateInput
+): Promise<void> {
+  const res = await gatewayFetch(
+    oauthSession,
+    `/v1/publications/folders/${encodeURIComponent(rkey)}`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    }
+  );
+  if (!res.ok) {
+    throw new Error(`Update folder failed (${res.status})`);
+  }
+}
+
+export async function deleteFolderOnGateway(
+  oauthSession: OAuthSession,
+  rkey: string
+): Promise<void> {
+  const res = await gatewayFetch(
+    oauthSession,
+    `/v1/publications/folders/${encodeURIComponent(rkey)}`,
+    { method: "DELETE" }
+  );
+  if (!res.ok) {
+    throw new Error(`Delete folder failed (${res.status})`);
+  }
+}
+
+export async function upsertPublicationPrefsOnGateway(
+  oauthSession: OAuthSession,
+  input: GatewayPublicationPrefsWriteInput
+): Promise<{ uri: string; rkey: string }> {
+  const res = await gatewayFetch(oauthSession, "/v1/publications/prefs", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    throw new Error(`Publication prefs upsert failed (${res.status})`);
+  }
+  return (await res.json()) as { uri: string; rkey: string };
+}
+
+export async function createPublicationSubscriptionOnGateway(
+  oauthSession: OAuthSession,
+  input: GatewayPublicationSubscriptionWriteInput
+): Promise<{ uri: string; rkey: string }> {
+  const res = await gatewayFetch(oauthSession, "/v1/publications/subscriptions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    throw new Error(`Create subscription failed (${res.status})`);
+  }
+  return (await res.json()) as { uri: string; rkey: string };
+}
+
+export async function deletePublicationSubscriptionOnGateway(
+  oauthSession: OAuthSession,
+  rkey: string
+): Promise<void> {
+  const res = await gatewayFetch(
+    oauthSession,
+    `/v1/publications/subscriptions/${encodeURIComponent(rkey)}`,
+    { method: "DELETE" }
+  );
+  if (!res.ok) {
+    throw new Error(`Delete subscription failed (${res.status})`);
+  }
+}
+
+export async function createRssSubscriptionOnGateway(
+  oauthSession: OAuthSession,
+  input: GatewayRssSubscriptionWriteInput
+): Promise<{ uri: string; rkey: string }> {
+  const res = await gatewayFetch(oauthSession, "/v1/publications/rss-subscriptions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    throw new Error(`Create RSS subscription failed (${res.status})`);
+  }
+  return (await res.json()) as { uri: string; rkey: string };
+}
+
+export async function deleteRssSubscriptionOnGateway(
+  oauthSession: OAuthSession,
+  rkey: string
+): Promise<void> {
+  const res = await gatewayFetch(
+    oauthSession,
+    `/v1/publications/rss-subscriptions/${encodeURIComponent(rkey)}`,
+    { method: "DELETE" }
+  );
+  if (!res.ok) {
+    throw new Error(`Delete RSS subscription failed (${res.status})`);
+  }
+}
+
+export async function markAllReadOnGateway(
+  oauthSession: OAuthSession,
+  scope: GatewayMarkAllReadScope
+): Promise<{ marked: number }> {
+  const res = await gatewayFetch(oauthSession, "/v1/appview/mark-all-read", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ scope }),
+  });
+  if (!res.ok) {
+    throw new Error(`Mark all read failed (${res.status})`);
+  }
+  return (await res.json()) as { marked: number };
+}
+
 export function sidebarRowToDiscoveredPublication(
   row: SidebarPublicationRow
 ): DiscoveredPublication {
@@ -130,6 +285,36 @@ export function sidebarRowToDiscoveredPublication(
     avatarUrl: row.avatarUrl,
     discoveredAt: row.discoveredAt,
   };
+}
+
+export function unreadCountsMapFromProjection(
+  projection: PublicationSidebarProjection | undefined
+): Map<string, number> {
+  const map = new Map<string, number>();
+  if (!projection) return map;
+
+  const applyCount = (publicationId: string, count: number | undefined) => {
+    if (count == null || count <= 0) return;
+    map.set(publicationId, count);
+  };
+
+  for (const row of projection.allPublicationRows) {
+    const embedded = row.unreadCount;
+    const fromRecord = projection.unreadCountsByPublicationId?.[row.publicationId];
+    applyCount(row.publicationId, embedded ?? fromRecord);
+  }
+
+  if (projection.unreadCountsByPublicationId) {
+    for (const [publicationId, count] of Object.entries(
+      projection.unreadCountsByPublicationId
+    )) {
+      if (!map.has(publicationId)) {
+        applyCount(publicationId, count);
+      }
+    }
+  }
+
+  return map;
 }
 
 export function appViewScopeFromProjection(
@@ -147,7 +332,7 @@ export function maybeEnrollProjectionAuthors(
   oauthSession: OAuthSession | null,
   authorDids: string[]
 ): void {
-  if (!isThinAppViewEnabled() || !oauthSession || authorDids.length === 0) return;
+  if (!oauthSession || authorDids.length === 0) return;
   void enrollAuthorsInAppView(oauthSession, authorDids).catch(() => {
     /* enrollment is best-effort */
   });

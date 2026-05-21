@@ -35,6 +35,42 @@ enum PublicationProjectionMapping {
         return map
     }
 
+    static func folders(from rows: [PublicationFolderDTO]?) -> [RepoRecord<FolderRecord>] {
+        (rows ?? []).compactMap { row in
+            let raw = row.value ?? [:]
+            guard let name = raw["name"]?.string else { return nil }
+            let sortOrder = raw["sortOrder"].flatMap { value -> Int? in
+                if case .number(let n) = value { return Int(n) }
+                return nil
+            }
+            let createdAt = raw["createdAt"]?.string ?? row.rkey
+            return RepoRecord(
+                uri: row.uri,
+                cid: "",
+                value: FolderRecord(
+                    type: PDSRecordService.folder,
+                    name: name,
+                    sortOrder: sortOrder,
+                    icon: raw["icon"]?.string,
+                    iconImage: raw["iconImage"]?.string,
+                    createdAt: createdAt
+                )
+            )
+        }
+        .sorted { ($0.value.sortOrder ?? 0, $0.value.name) < ($1.value.sortOrder ?? 0, $1.value.name) }
+    }
+
+    static func folderMap(
+        from sections: [PublicationFolderSectionDTO]?
+    ) -> [String: [DiscoveredPublication]]? {
+        guard let sections, !sections.isEmpty else { return nil }
+        var map: [String: [DiscoveredPublication]] = [:]
+        for section in sections {
+            map[section.folderRkey] = section.publications.map { $0.toDiscoveredPublication() }
+        }
+        return map
+    }
+
     static func folderMap(
         allRows: [DiscoveredPublication],
         myPublications: [DiscoveredPublication],
@@ -55,6 +91,29 @@ enum PublicationProjectionMapping {
             folderMap[folderId, default: []].append(publication)
         }
         return folderMap
+    }
+
+    static func unreadCountsMap(from projection: PublicationSidebarResponseDTO) -> [String: Int] {
+        var map: [String: Int] = [:]
+
+        func applyCount(publicationId: String, count: Int?) {
+            guard let count, count > 0 else { return }
+            map[publicationId] = count
+        }
+
+        for row in projection.allPublicationRows {
+            let embedded = row.unreadCount
+            let fromRecord = projection.unreadCountsByPublicationId?[row.publicationId]
+            applyCount(publicationId: row.publicationId, count: embedded ?? fromRecord)
+        }
+
+        if let unreadCountsByPublicationId = projection.unreadCountsByPublicationId {
+            for (publicationId, count) in unreadCountsByPublicationId where map[publicationId] == nil {
+                applyCount(publicationId: publicationId, count: count)
+            }
+        }
+
+        return map
     }
 }
 

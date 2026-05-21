@@ -1,4 +1,5 @@
 import Foundation
+import GatewayCore
 import ThinAppViewCore
 
 /// Configuration loaded from environment variables at startup.

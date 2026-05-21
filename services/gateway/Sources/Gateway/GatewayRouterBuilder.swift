@@ -1,0 +1,51 @@
+import AsyncHTTPClient
+import Foundation
+import GatewayCore
+import Hummingbird
+import Logging
+
+enum GatewayRouterBuilder {
+  static func router(
+    config: GatewayServiceConfig,
+    httpClient: HTTPClient,
+    cache: any CacheStore,
+    logger: Logger
+  ) -> Router<GatewayRequestContext> {
+    let router = Router(context: GatewayRequestContext.self)
+    router.get("/health") { _, _ in ["status": "ok", "service": "gateway"] }
+
+    OAuthMetadataRoutes(
+      oauthPublicOrigin: config.core.oauthPublicOrigin,
+      oauthIosMetadataOrigin: config.core.oauthIosMetadataOrigin
+    ).register(on: router)
+
+    let authMiddleware = ATProtoAuthMiddleware(
+      httpClient: httpClient,
+      plcURL: config.core.atprotoPLCURL,
+      gatewayClientPolicy: config.core.oauthGateway,
+      logger: logger
+    )
+    let protected = router.group().add(middleware: authMiddleware)
+
+    let prefs = PreferenceSyncService(
+      httpClient: httpClient,
+      cache: cache,
+      plcURL: config.core.atprotoPLCURL,
+      logger: logger
+    )
+    SyncRoutes(preferenceService: prefs).register(on: protected)
+
+    let repo = ATProtoAuthenticatedRepoClient(
+      httpClient: httpClient,
+      plcURL: config.core.atprotoPLCURL,
+      logger: logger
+    )
+    PublicationWriteRoutes(repo: repo).register(on: protected)
+
+    if let appViewBase = config.appViewBaseURL {
+      AppViewProxyRoutes(baseURL: appViewBase, httpClient: httpClient).register(on: protected)
+    }
+
+    return router
+  }
+}

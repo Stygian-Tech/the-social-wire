@@ -3,9 +3,21 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 const OPENAPI_PATH = join(import.meta.dir, "../openapi.yaml");
-const API_SOURCES = join(
+const GATEWAY_SOURCES = join(
+  import.meta.dir,
+  "../../../services/gateway/Sources/Gateway"
+);
+const GATEWAY_CORE_SOURCES = join(
+  import.meta.dir,
+  "../../../packages/swift/GatewayCore/Sources/GatewayCore"
+);
+const API_SHIM_SOURCES = join(
   import.meta.dir,
   "../../../services/api/Sources/App"
+);
+const APPVIEW_SOURCES = join(
+  import.meta.dir,
+  "../../../services/appview/Sources/AppView"
 );
 
 function collectSwiftFiles(dir: string): string[] {
@@ -32,9 +44,14 @@ function extractOpenAPIPaths(yaml: string): string[] {
 }
 
 describe("OpenAPI route drift", () => {
-  it("documents paths registered in the API router sources", () => {
+  it("documents paths registered in gateway and appview router sources", () => {
     const yaml = readFileSync(OPENAPI_PATH, "utf8");
-    const routerSources = collectSwiftFiles(API_SOURCES)
+    const routerSources = [
+      ...collectSwiftFiles(GATEWAY_SOURCES),
+      ...collectSwiftFiles(GATEWAY_CORE_SOURCES),
+      ...collectSwiftFiles(APPVIEW_SOURCES),
+      ...collectSwiftFiles(API_SHIM_SOURCES),
+    ]
       .map((file) => readFileSync(file, "utf8"))
       .join("\n");
     const paths = extractOpenAPIPaths(yaml);
@@ -48,10 +65,24 @@ describe("OpenAPI route drift", () => {
       "/v1/publications/sidebar": ['"/v1/publications/sidebar"'],
       "/v1/publications/refresh": ['"/v1/publications/refresh"'],
       "/v1/publications/resolve": ['"/v1/publications/resolve"'],
+      "/v1/publications/folders": ['post("/v1/publications/folders"'],
+      "/v1/publications/folders/{rkey}": [
+        '"/v1/publications/folders/:rkey"',
+        'put("/v1/publications/folders/:rkey")',
+        'delete("/v1/publications/folders/:rkey")',
+      ],
+      "/v1/publications/prefs": ['"/v1/publications/prefs"'],
+      "/v1/publications/subscriptions": ['"/v1/publications/subscriptions"'],
+      "/v1/publications/rss-subscriptions": ['"/v1/publications/rss-subscriptions"'],
+      "/v1/reader/read-marks": ['"/v1/reader/read-marks"'],
+      "/v1/reader/mark-all-read": ['"/v1/reader/mark-all-read"'],
       "/v1/appview/entries": ['"/v1/appview/entries"'],
+      "/v1/appview/entry": ['"/v1/appview/entry"'],
+      "/v1/appview/unread-counts": ['"/v1/appview/unread-counts"'],
       "/v1/appview/read-marks": ['"/v1/appview/read-marks"'],
       "/v1/appview/enroll": ['"/v1/appview/enroll"'],
       "/v1/appview/privacy/purge": ['"/v1/appview/privacy/purge"'],
+      "/v1/appview/mark-all-read": ['"/v1/appview/mark-all-read"'],
       "/discovery/refresh": ['"/discovery/refresh"'],
       "/discovery/{userDid}": ['"/discovery/:userDid"'],
       "/publications/{pubId}/entries": ['"/publications/:pubId/entries"'],

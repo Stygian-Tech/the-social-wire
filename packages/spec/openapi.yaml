@@ -177,8 +177,28 @@ components:
         discoveredAt:
           type: string
           format: date-time
+        unreadCount:
+          type: integer
+          nullable: true
         appViewScope:
           $ref: "#/components/schemas/PublicationAppViewScope"
+
+    PublicationFolderSection:
+      type: object
+      required: [folderUri, folderRkey, name, publications, unreadCount]
+      properties:
+        folderUri:
+          type: string
+        folderRkey:
+          type: string
+        name:
+          type: string
+        publications:
+          type: array
+          items:
+            $ref: "#/components/schemas/SidebarPublicationRow"
+        unreadCount:
+          type: integer
 
     PublicationSidebarResponse:
       type: object
@@ -186,11 +206,13 @@ components:
         - viewerDid
         - folders
         - publicationPrefs
+        - folderSections
         - allPublicationRows
         - myPublications
         - subscribedUnfoldered
         - followingTabPublications
         - enrollAuthorDids
+        - totalUnreadCount
         - refreshedAt
       properties:
         viewerDid:
@@ -203,6 +225,10 @@ components:
           type: array
           items:
             type: object
+        folderSections:
+          type: array
+          items:
+            $ref: "#/components/schemas/PublicationFolderSection"
         allPublicationRows:
           type: array
           items:
@@ -223,6 +249,8 @@ components:
           type: array
           items:
             type: string
+        totalUnreadCount:
+          type: integer
         refreshedAt:
           type: string
           format: date-time
@@ -469,6 +497,221 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
+  /v1/publications/folders:
+    post:
+      operationId: createPublicationFolder
+      summary: Create a folder on the viewer PDS (gateway write-through)
+      tags: [Publications]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                sortOrder:
+                  type: integer
+      responses:
+        "201":
+          description: Folder created.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [uri, rkey]
+                properties:
+                  uri:
+                    type: string
+                  rkey:
+                    type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /v1/publications/folders/{rkey}:
+    put:
+      operationId: updatePublicationFolder
+      summary: Update a folder record
+      tags: [Publications]
+      parameters:
+        - name: rkey
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Folder updated.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    delete:
+      operationId: deletePublicationFolder
+      summary: Delete a folder record
+      tags: [Publications]
+      parameters:
+        - name: rkey
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Folder deleted.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /v1/publications/prefs:
+    put:
+      operationId: upsertPublicationPrefs
+      summary: Upsert publication preferences
+      tags: [Publications]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [publicationId]
+              properties:
+                publicationId:
+                  type: string
+                folderId:
+                  type: string
+                  nullable: true
+                sortOrder:
+                  type: integer
+                hidden:
+                  type: boolean
+                existingRkey:
+                  type: string
+      responses:
+        "200":
+          description: Preferences upserted.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /v1/publications/subscriptions:
+    post:
+      operationId: createPublicationSubscription
+      summary: Subscribe to a standard.site publication
+      tags: [Publications]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [publication]
+              properties:
+                publication:
+                  type: string
+      responses:
+        "201":
+          description: Subscription created.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /v1/publications/rss-subscriptions:
+    post:
+      operationId: createRssSubscription
+      summary: Subscribe to an RSS feed
+      tags: [Publications]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [feedUrl]
+              properties:
+                feedUrl:
+                  type: string
+                title:
+                  type: string
+                siteUrl:
+                  type: string
+      responses:
+        "201":
+          description: RSS subscription created.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /v1/reader/read-marks:
+    post:
+      operationId: upsertReaderReadMark
+      summary: Canonical read-state write on the viewer PDS
+      tags: [Reader]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [subjectUri]
+              properties:
+                subjectUri:
+                  type: string
+                readAt:
+                  type: string
+                  format: date-time
+      responses:
+        "200":
+          description: Read mark upserted.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    delete:
+      operationId: deleteReaderReadMark
+      summary: Mark entry unread on the viewer PDS
+      tags: [Reader]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [subjectUri]
+              properties:
+                subjectUri:
+                  type: string
+      responses:
+        "200":
+          description: Read mark deleted.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /v1/reader/mark-all-read:
+    post:
+      operationId: markAllReadBySubjectUris
+      summary: Bulk mark entries read by subject URI list
+      tags: [Reader]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [subjectUris]
+              properties:
+                subjectUris:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        "200":
+          description: Bulk mark completed.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [marked]
+                properties:
+                  marked:
+                    type: integer
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
   # ── Thin AppView (GDPR-safe Level-1 read index) ───────────────────────────
 
   /v1/appview/entries:
@@ -621,6 +864,102 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           description: Route disabled when thin AppView flag is unset.
+
+  /v1/appview/entry:
+    get:
+      operationId: getAppViewEntryDetail
+      summary: Entry detail from the AppView index
+      tags: [AppView]
+      parameters:
+        - name: entryId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Entry detail row.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EntryDetail"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Entry not found in index.
+
+  /v1/appview/unread-counts:
+    get:
+      operationId: getAppViewUnreadCounts
+      summary: Unread counts by publication or scope
+      tags: [AppView]
+      parameters:
+        - name: publicationIds
+          in: query
+          schema:
+            type: string
+          description: Comma-separated publication ids.
+        - name: authorDid
+          in: query
+          schema:
+            type: string
+        - name: publicationAtUri
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Unread count map.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [counts]
+                properties:
+                  counts:
+                    type: object
+                    additionalProperties:
+                      type: integer
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /v1/appview/mark-all-read:
+    post:
+      operationId: markAllReadScoped
+      summary: Mark all unread entries read for a sidebar scope
+      tags: [AppView]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [scope]
+              properties:
+                scope:
+                  type: object
+                  required: [kind]
+                  properties:
+                    kind:
+                      type: string
+                      enum: [publication, folder, subscribed, following]
+                    publicationId:
+                      type: string
+                    folderRkey:
+                      type: string
+      responses:
+        "200":
+          description: Scoped mark-all-read completed.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [marked]
+                properties:
+                  marked:
+                    type: integer
+        "401":
+          $ref: "#/components/responses/Unauthorized"
 
   /v1/appview/privacy/purge:
     delete:
@@ -812,6 +1151,8 @@ tags:
   - name: Content
     description: Entry feeds gated behind `ENABLE_LEGACY_CONTENT_API`
   - name: Publications
-    description: Unified sidebar projection and add-publication resolver
+    description: Unified sidebar projection, resolver, and gateway write-through
+  - name: Reader
+    description: Canonical PDS read-state writes via gateway
   - name: AppView
     description: GDPR-safe Level-1 entry index gated behind `ENABLE_THIN_APPVIEW`

@@ -5,29 +5,21 @@ import {
   useInfiniteQuery,
   useQuery,
   useQueryClient,
-  type InfiniteData,
   type QueryClient,
 } from "@tanstack/react-query";
-import {
-  listEntries,
-  getEntry,
-  normalizeAtRepoParam,
-  resolvePublicationFilterFromPubId,
-  publicationRepoDid,
-} from "@/lib/atprotoClient";
+import { normalizeAtRepoParam } from "@/lib/atprotoClient";
 import type { EntryListItem, EntryDetail } from "@/lib/atprotoClient";
 import type { ArticleListFilter } from "@/lib/entryArticleFilter";
 import {
+  getEntryFromAppView,
   isThinAppViewEnabled,
   listEntriesFromAppView,
 } from "@/lib/thinAppViewClient";
-import {
-  isRssEntryId,
-  isRssPublicationId,
-  normalizedFeedUrlFromRssPublicationId,
-} from "@/lib/rssFeedCore";
 import { PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY } from "@/hooks/usePublicationSidebarData";
-import { appViewScopeFromProjection } from "@/lib/publicationProjectionClient";
+import {
+  appViewScopeFromProjection,
+  type PublicationAppViewScope,
+} from "@/lib/publicationProjectionClient";
 import { useAuth } from "./useAuth";
 
 export type { EntryListItem, EntryDetail };
@@ -42,24 +34,32 @@ export type EntriesPage = { entries: EntryListItem[]; cursor?: string };
 /** Matches {@link useEntries} `staleTime` / `prefetchInfiniteQuery` for entry lists. */
 export const ENTRIES_QUERY_STALE_MS = 2 * 60_000;
 
+function requireAppViewScope(
+  projection:
+    | import("@/lib/publicationProjectionClient").PublicationSidebarProjection
+    | undefined,
+  publicationKey: string
+): PublicationAppViewScope {
+  const scope = appViewScopeFromProjection(projection, publicationKey);
+  if (!scope) {
+    throw new Error(
+      `Missing AppView scope for publication ${publicationKey}. Refresh the sidebar.`
+    );
+  }
+  return scope;
+}
+
 /**
- * Fetches a single infinite-query page of entries — shared by {@link useEntries} and
- * {@link prefetchSidebarPublicationEntries}.
+ * Fetches a single infinite-query page of entries from Thin AppView.
  */
 export async function fetchEntriesInfinitePage(args: {
   normalizedPublicationKey: string;
   pageParam: string | undefined;
   signal?: AbortSignal;
-  oauthSession: OAuthSession | undefined;
+  oauthSession: OAuthSession;
   viewerDid?: string;
   articleFilter?: ArticleListFilter;
-  /** When set with {@link streamFirstPageToCache}, merges streamed chunks into this cache. */
   queryClient?: QueryClient;
-  /**
-   * Live read tab: stream the first ATProto `listRecords` slice into the query cache.
-   * Prefetch passes false so only the final merged page is written.
-   */
-  streamFirstPageToCache?: boolean;
 }): Promise<EntriesPage> {
   const {
     normalizedPublicationKey: normalizedKey,
@@ -69,119 +69,35 @@ export async function fetchEntriesInfinitePage(args: {
     viewerDid,
     articleFilter = "all",
     queryClient,
-    streamFirstPageToCache = false,
   } = args;
 
   if (!normalizedKey) return { entries: [], cursor: undefined };
 
-  const { repoDid, publicationAtUri } = await resolvePublicationFilterFromPubId(
-    normalizedKey,
-    oauthSession
-  );
-
-  if (isRssPublicationId(normalizedKey)) {
-    const feedUrl = normalizedFeedUrlFromRssPublicationId(normalizedKey);
-    if (!feedUrl) return { entries: [], cursor: undefined };
-    const sp = new URLSearchParams({
-      url: feedUrl,
-      limit: "50",
-    });
-    const cursorPage = typeof pageParam === "string" ? pageParam : undefined;
-    if (cursorPage) sp.set("cursor", cursorPage);
-    const res = await fetch(`/api/rss-feed?${sp.toString()}`, {
-      signal,
-    });
-    if (!res.ok) {
-      throw new Error("Could not load RSS feed");
-    }
-    const json = (await res.json()) as {
-      items: EntryListItem[];
-      nextCursor?: string;
-    };
-    return {
-      entries: json.items ?? [],
-      cursor: json.nextCursor,
-    };
+  if (!isThinAppViewEnabled()) {
+    throw new Error("Thin AppView is required for entry lists");
   }
 
-  if (isThinAppViewEnabled() && oauthSession) {
-    const projection =
-      viewerDid != null
-        ? queryClient?.getQueryData<
-            import("@/lib/publicationProjectionClient").PublicationSidebarProjection
-          >(PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(viewerDid))
-        : undefined;
-    const appViewScope = appViewScopeFromProjection(projection, normalizedKey);
-
-    try {
-      const appViewPage = await listEntriesFromAppView({
-        publicationKey: normalizedKey,
-        appViewScope,
-        cursor: pageParam as string | undefined,
-        filter: articleFilter,
-        oauthSession,
-        signal,
-      });
-      const shouldFallbackToPds =
-        appViewPage.entries.length === 0 &&
-        pageParam === undefined &&
-        Boolean(publicationAtUri);
-      if (!shouldFallbackToPds) {
-        return appViewPage;
-      }
-    } catch (err) {
-      const unavailable =
-        err instanceof Error && err.message === "Thin AppView unavailable";
-      if (unavailable || (publicationAtUri && pageParam === undefined)) {
-        // API without ENABLE_THIN_APPVIEW (404) or empty first page — fall back to PDS.
-      } else {
-        throw new Error("Thin AppView entries failed");
-      }
-    }
-  }
-
-  const key = ENTRIES_QUERY_KEY(normalizedKey);
-  const isFirstInfinitePage = pageParam === undefined;
-  const onProgress =
-    streamFirstPageToCache && queryClient && isFirstInfinitePage
-      ? (payload: { entries: EntryListItem[]; cursor?: string }) => {
-          const { entries, cursor } = payload;
-          queryClient.setQueryData<InfiniteData<EntriesPage> | undefined>(
-            key,
-            (old) => {
-              const page: EntriesPage = { entries, cursor };
-              if (!old?.pages.length) {
-                return {
-                  pages: [page],
-                  pageParams: [undefined],
-                };
-              }
-              const nextPages = [...old.pages];
-              nextPages[0] = page;
-              return { ...old, pages: nextPages };
-            }
-          );
-        }
+  const projection =
+    viewerDid != null
+      ? queryClient?.getQueryData<
+          import("@/lib/publicationProjectionClient").PublicationSidebarProjection
+        >(PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(viewerDid))
       : undefined;
 
-  return listEntries(
-    repoDid,
-    pageParam as string | undefined,
-    50,
+  const appViewScope = requireAppViewScope(projection, normalizedKey);
+
+  return listEntriesFromAppView({
+    publicationKey: normalizedKey,
+    appViewScope,
+    cursor: pageParam as string | undefined,
+    filter: articleFilter,
     oauthSession,
-    {
-      signal,
-      publicationAtUri,
-      onProgress,
-    }
-  );
+    signal,
+  });
 }
 
 /**
  * Returns a paginated list of entries for a publication sidebar selection.
- *
- * `publicationKey` is either an **author DID** (legacy discovery row) or a **publication record
- * AT-URI** (distinct publication on an account).
  */
 export function useEntries(
   publicationKey: string | null,
@@ -195,15 +111,16 @@ export function useEntries(
     queryKey: [...ENTRIES_QUERY_KEY(normalizedKey ?? ""), articleFilter] as const,
     queryFn: async ({ pageParam, signal }) => {
       if (!normalizedKey) return { entries: [], cursor: undefined };
+      const oauth = getOAuthSession();
+      if (!oauth) throw new Error("OAuth session required");
       return fetchEntriesInfinitePage({
         normalizedPublicationKey: normalizedKey,
         pageParam,
         signal,
-        oauthSession: getOAuthSession() ?? undefined,
+        oauthSession: oauth,
         viewerDid: session?.did,
         articleFilter,
         queryClient,
-        streamFirstPageToCache: !isThinAppViewEnabled(),
       });
     },
     initialPageParam: undefined as string | undefined,
@@ -215,7 +132,7 @@ export function useEntries(
 }
 
 /**
- * Returns the full content for a single entry by its AT-URI.
+ * Returns entry detail from Thin AppView (`GET /v1/appview/entry`).
  */
 export function useEntry(entryId: string | null) {
   const { session, getOAuthSession } = useAuth();
@@ -225,18 +142,12 @@ export function useEntry(entryId: string | null) {
     queryKey: ENTRY_DETAIL_QUERY_KEY(normalizedId ?? ""),
     queryFn: async ({ signal }) => {
       if (!normalizedId) return null;
-      if (isRssEntryId(normalizedId)) {
-        const res = await fetch(
-          `/api/rss-feed?entryId=${encodeURIComponent(normalizedId)}`,
-          { signal }
-        );
-        if (!res.ok) return null;
-        const json = (await res.json()) as {
-          entry: EntryDetail | null;
-        };
-        return json.entry ?? null;
+      const oauth = getOAuthSession();
+      if (!oauth) throw new Error("OAuth session required");
+      if (!isThinAppViewEnabled()) {
+        throw new Error("Thin AppView is required for entry detail");
       }
-      return getEntry(normalizedId, getOAuthSession() ?? undefined);
+      return getEntryFromAppView(oauth, normalizedId, signal);
     },
     enabled: !!normalizedId && !!session,
     staleTime: 5 * 60_000,

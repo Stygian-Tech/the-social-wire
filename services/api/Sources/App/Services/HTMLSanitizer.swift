@@ -1,4 +1,5 @@
 import Foundation
+import GatewayCore
 
 /// Server-side HTML sanitization for entry content.
 ///

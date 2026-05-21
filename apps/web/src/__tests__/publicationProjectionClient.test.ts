@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   appViewScopeFromProjection,
+  unreadCountsMapFromProjection,
   type PublicationSidebarProjection,
 } from "@/lib/publicationProjectionClient";
 
@@ -43,5 +44,38 @@ describe("publicationProjectionClient", () => {
       "at://did:plc:author/com.standard.publication/pub1"
     );
     expect(scope?.publicationSiteUrls).toContain("https://example.com");
+  });
+
+  test("unreadCountsMapFromProjection prefers row unreadCount", () => {
+    const projection: PublicationSidebarProjection = {
+      viewerDid: "did:plc:viewer",
+      folders: [],
+      publicationPrefs: [],
+      allPublicationRows: [
+        {
+          publicationId: "did:plc:alice",
+          authorDid: "did:plc:alice",
+          authorHandle: "alice",
+          title: "Alice",
+          discoveredAt: "2026-01-01T00:00:00.000Z",
+          unreadCount: 4,
+          appViewScope: {
+            authorDid: "did:plc:alice",
+            publicationAtUri: null,
+            publicationScopeAtUris: [],
+            publicationSiteUrls: [],
+          },
+        },
+      ],
+      myPublications: [],
+      subscribedUnfoldered: [],
+      followingTabPublications: [],
+      enrollAuthorDids: [],
+      refreshedAt: "2026-01-01T00:00:00.000Z",
+      unreadCountsByPublicationId: { "did:plc:alice": 1 },
+    };
+
+    const map = unreadCountsMapFromProjection(projection);
+    expect(map.get("did:plc:alice")).toBe(4);
   });
 });

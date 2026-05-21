@@ -1,0 +1,15 @@
+# Deploy: fly deploy ../.. --config services/appview-worker/fly.toml
+
+app = 'the-social-wire-dev-appview-worker'
+primary_region = 'ams'
+
+[build]
+  dockerfile = 'Dockerfile'
+
+[env]
+  ENABLE_THIN_APPVIEW = 'true'
+
+[[vm]]
+  memory = '512mb'
+  cpu_kind = 'shared'
+  cpus = 1

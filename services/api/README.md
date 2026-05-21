@@ -1,4 +1,6 @@
-# Social Wire API
+# Social Wire API (compatibility shim)
+
+> **Deprecation:** New deploys should use **`services/gateway`** (OAuth, sync, PDS writes) and **`services/appview`** (sidebar projection, Thin AppView reads) with shared **`packages/swift/GatewayCore`**. This monolith remains buildable for one release so existing Fly apps and clients can migrate gradually.
 
 Swift/Hummingbird gateway that complements the Next.js web app: publishes OAuth client-metadata for every platform caller, verifies ATProto bearer tokens + DPoP proofs, and fronts short-lived `repo.getRecord` accelerators keyed by DID.
 

@@ -44,7 +44,8 @@ export function usePrefetchSidebarPublicationEntries(
     ];
 
     void (async () => {
-      const oauth = getOAuthSession() ?? undefined;
+      const oauth = getOAuthSession();
+      if (!oauth) return;
       for (let i = 0; i < normalizedIds.length; i += PREFETCH_CONCURRENCY) {
         if (cancelled) return;
         const chunk = normalizedIds.slice(i, i + PREFETCH_CONCURRENCY);
@@ -59,14 +60,15 @@ export function usePrefetchSidebarPublicationEntries(
                     pageParam,
                     signal,
                     oauthSession: oauth,
-                    streamFirstPageToCache: false,
+                    viewerDid: session.did,
+                    queryClient,
                   }),
                 initialPageParam: undefined as string | undefined,
                 getNextPageParam: (last: EntriesPage) => last.cursor,
                 staleTime: ENTRIES_QUERY_STALE_MS,
               });
             } catch {
-              /* PDS / RSS / offline — keep sidebar usable */
+              /* AppView / offline — keep sidebar usable */
             }
           })
         );

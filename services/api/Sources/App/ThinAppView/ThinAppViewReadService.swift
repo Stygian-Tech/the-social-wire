@@ -1,4 +1,5 @@
 import AsyncHTTPClient
+import GatewayCore
 import Foundation
 import Hummingbird
 import Logging

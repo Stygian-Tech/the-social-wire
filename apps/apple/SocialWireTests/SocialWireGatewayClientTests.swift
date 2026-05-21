@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import SocialWire
 
@@ -13,8 +14,8 @@ struct SocialWireGatewayClientTests {
         #expect(decoded.indexed == 42)
     }
 
-    @Test("PublicationSidebarResponseDTO decodes appViewScope")
-    func publicationSidebarDecodesScope() throws {
+    @Test("PublicationSidebarResponseDTO decodes appViewScope and unread counts")
+    func publicationSidebarDecodesScopeAndUnread() throws {
         let data = Data("""
         {
           "viewerDid": "did:plc:viewer",
@@ -23,6 +24,7 @@ struct SocialWireGatewayClientTests {
             "authorDid": "did:plc:author",
             "title": "Pub",
             "discoveredAt": "2026-01-01T00:00:00.000Z",
+            "unreadCount": 3,
             "appViewScope": {
               "authorDid": "did:plc:author",
               "publicationAtUri": "at://did:plc:author/site.standard.publication/p1",
@@ -30,16 +32,27 @@ struct SocialWireGatewayClientTests {
               "publicationSiteUrls": ["https://example.com"]
             }
           }],
+          "folderSections": [{
+            "folderRkey": "abc",
+            "folderUri": "at://did:plc:viewer/com.thesocialwire.folder/abc",
+            "publications": []
+          }],
           "myPublications": [],
           "subscribedUnfoldered": [],
           "followingTabPublications": [],
           "enrollAuthorDids": ["did:plc:author"],
-          "refreshedAt": "2026-01-01T00:00:00.000Z"
+          "refreshedAt": "2026-01-01T00:00:00.000Z",
+          "unreadCountsByPublicationId": {
+            "at://did:plc:author/site.standard.publication/p1": 3
+          }
         }
         """.utf8)
         let decoded = try JSONDecoder().decode(PublicationSidebarResponseDTO.self, from: data)
         #expect(decoded.allPublicationRows.count == 1)
-        #expect(decoded.allPublicationRows[0].appViewScope.publicationScopeAtUris.count == 1)
+        #expect(decoded.allPublicationRows[0].unreadCount == 3)
+        #expect(decoded.folderSections?.count == 1)
+        let counts = PublicationProjectionMapping.unreadCountsMap(from: decoded)
+        #expect(counts["at://did:plc:author/site.standard.publication/p1"] == 3)
     }
 
     @Test("AppViewEntryListResponse decodes entries")
@@ -50,5 +63,32 @@ struct SocialWireGatewayClientTests {
         let decoded = try JSONDecoder().decode(AppViewEntryListResponse.self, from: data)
         #expect(decoded.entries.count == 1)
         #expect(decoded.entries[0].title == "A")
+    }
+
+    @Test("AppViewEntryDetailResponse decodes entry")
+    func appViewEntryDetailResponseDecodesEntry() throws {
+        let data = Data("""
+        {"entry":{"entryId":"at://did/site.standard.document/a","title":"A","publishedAt":"2026-01-01T00:00:00.000Z","contentHtml":"<p>Hi</p>"}}
+        """.utf8)
+        let decoded = try JSONDecoder().decode(AppViewEntryDetailResponse.self, from: data)
+        #expect(decoded.entry?.title == "A")
+    }
+
+    @Test("AppViewUnreadCountsResponse decodes counts")
+    func appViewUnreadCountsResponseDecodesCounts() throws {
+        let data = Data("""
+        {"counts":{"at://did/site.standard.publication/p1":2}}
+        """.utf8)
+        let decoded = try JSONDecoder().decode(AppViewUnreadCountsResponse.self, from: data)
+        #expect(decoded.counts?["at://did/site.standard.publication/p1"] == 2)
+    }
+
+    @Test("GatewayMarkAllReadResponseDTO decodes marked count")
+    func gatewayMarkAllReadResponseDecodesMarked() throws {
+        let data = Data("""
+        {"marked": 7}
+        """.utf8)
+        let decoded = try JSONDecoder().decode(GatewayMarkAllReadResponseDTO.self, from: data)
+        #expect(decoded.marked == 7)
     }
 }

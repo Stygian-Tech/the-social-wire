@@ -1,9 +1,6 @@
-import { describe, expect, it, mock } from "bun:test";
+import { describe, expect, it } from "bun:test";
 import { renderHook } from "@testing-library/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import React from "react";
 import { useSidebarUnreadCounts } from "@/hooks/useSidebarUnreadCounts";
-import { ENTRIES_QUERY_KEY } from "@/hooks/useEntries";
 import type { DiscoveredPublication } from "@/lib/atprotoClient";
 
 const pub: DiscoveredPublication = {
@@ -15,38 +12,24 @@ const pub: DiscoveredPublication = {
   discoveredAt: "2026-01-01T00:00:00.000Z",
 };
 
-function wrapper(queryClient: QueryClient) {
-  return function Wrapper({ children }: { children: React.ReactNode }) {
-    return (
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-    );
-  };
-}
-
 describe("useSidebarUnreadCounts", () => {
-  it("counts unread entries from query cache", () => {
-    const queryClient = new QueryClient();
-    queryClient.setQueryData(ENTRIES_QUERY_KEY("did:plc:alice"), {
-      pages: [
-        {
-          entries: [
-            { entryId: "at://did:plc:alice/site.standard.document/a", title: "A" },
-            { entryId: "at://did:plc:alice/site.standard.document/b", title: "B" },
-          ],
-          cursor: undefined,
-        },
-      ],
-      pageParams: [undefined],
-    });
+  it("maps API unread counts by publication id", () => {
+    const unreadCountsByPublicationId = new Map([
+      ["did:plc:alice", 3],
+    ]);
 
-    const isEntryRead = (id: string) =>
-      id === "at://did:plc:alice/site.standard.document/a";
-
-    const { result } = renderHook(
-      () => useSidebarUnreadCounts([pub], isEntryRead),
-      { wrapper: wrapper(queryClient) }
+    const { result } = renderHook(() =>
+      useSidebarUnreadCounts([pub], unreadCountsByPublicationId)
     );
 
-    expect(result.current.get("did:plc:alice")).toBe(1);
+    expect(result.current.get("did:plc:alice")).toBe(3);
+  });
+
+  it("returns zero when no API counts are present", () => {
+    const { result } = renderHook(() =>
+      useSidebarUnreadCounts([pub], undefined)
+    );
+
+    expect(result.current.get("did:plc:alice")).toBe(0);
   });
 });

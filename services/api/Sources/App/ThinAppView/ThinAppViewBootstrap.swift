@@ -1,4 +1,5 @@
 import Foundation
+import GatewayCore
 import Logging
 import PostgresNIO
 import ThinAppViewCore

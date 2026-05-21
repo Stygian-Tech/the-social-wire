@@ -25,18 +25,27 @@ struct SidebarPublicationRowDTO: Codable, Equatable, Sendable {
     let avatarUrl: String?
     let discoveredAt: String
     let appViewScope: PublicationAppViewScopeDTO
+    let unreadCount: Int?
+}
+
+struct PublicationFolderSectionDTO: Codable, Equatable, Sendable {
+    let folderRkey: String
+    let folderUri: String
+    let publications: [SidebarPublicationRowDTO]
 }
 
 struct PublicationSidebarResponseDTO: Codable, Sendable {
     let viewerDid: String
     let folders: [PublicationFolderDTO]?
     let publicationPrefs: [PublicationPrefsDTO]?
+    let folderSections: [PublicationFolderSectionDTO]?
     let allPublicationRows: [SidebarPublicationRowDTO]
     let myPublications: [SidebarPublicationRowDTO]
     let subscribedUnfoldered: [SidebarPublicationRowDTO]
     let followingTabPublications: [SidebarPublicationRowDTO]
     let enrollAuthorDids: [String]
     let refreshedAt: String
+    let unreadCountsByPublicationId: [String: Int]?
 }
 
 struct PublicationFolderDTO: Codable, Sendable {
@@ -49,6 +58,15 @@ struct PublicationPrefsDTO: Codable, Sendable {
     let uri: String
     let publicationId: String
     let value: [String: JSONValue]?
+}
+
+struct GatewayRecordWriteResponseDTO: Codable, Sendable {
+    let uri: String
+    let rkey: String
+}
+
+struct GatewayMarkAllReadResponseDTO: Codable, Sendable {
+    let marked: Int
 }
 
 struct ResolveAddPublicationRequestBody: Codable, Sendable {

@@ -1,4 +1,5 @@
 @preconcurrency import GRDB
+import GatewayCore
 import Foundation
 import Logging
 

@@ -2,34 +2,69 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FolderRecord, rkeyFromURI } from "@/lib/pdsClient";
-import { usePDSClient } from "./usePDSClient";
+import {
+  createFolderOnGateway,
+  deleteFolderOnGateway,
+  updateFolderOnGateway,
+} from "@/lib/publicationProjectionClient";
+import { useAuth } from "./useAuth";
+import { PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY } from "./usePublicationSidebarData";
 
 export const FOLDERS_QUERY_KEY = ["folders"] as const;
 
-/**
- * Returns the user's folders from their PDS, sorted by sortOrder.
- */
+export type FolderRecordFromProjection = {
+  uri: string;
+  cid: string;
+  value: FolderRecord;
+};
+
+/** Reads folders from the gateway sidebar projection (no direct PDS list). */
 export function useFolders() {
-  const client = usePDSClient();
+  const { session, getOAuthSession } = useAuth();
+  const qc = useQueryClient();
   return useQuery({
-    queryKey: FOLDERS_QUERY_KEY,
+    queryKey: [...FOLDERS_QUERY_KEY, session?.did ?? ""] as const,
     queryFn: async () => {
-      if (!client) return [];
-      const records = await client.listFolders();
-      return records.sort(
-        (a, b) => (a.value.sortOrder ?? 0) - (b.value.sortOrder ?? 0)
+      const oauth = getOAuthSession();
+      if (!oauth) return [] as FolderRecordFromProjection[];
+      const { fetchPublicationSidebar } = await import(
+        "@/lib/publicationProjectionClient"
       );
+      const projection = await fetchPublicationSidebar(oauth);
+      return projection.folders.map((folder) => ({
+        uri: folder.uri,
+        cid: "",
+        value: {
+          $type: "com.thesocialwire.folder" as const,
+          name: String(folder.value.name ?? folder.rkey),
+          sortOrder:
+            typeof folder.value.sortOrder === "number"
+              ? folder.value.sortOrder
+              : 0,
+          icon:
+            typeof folder.value.icon === "string" ? folder.value.icon : undefined,
+          iconImage:
+            typeof folder.value.iconImage === "string"
+              ? folder.value.iconImage
+              : undefined,
+          createdAt:
+            typeof folder.value.createdAt === "string"
+              ? folder.value.createdAt
+              : new Date().toISOString(),
+        },
+      }));
     },
-    enabled: !!client,
+    enabled: !!session,
     staleTime: 30_000,
   });
 }
 
 /**
- * Creates a new folder on the user's PDS.
+ * Folder mutations go through the gateway (canonical PDS write-through).
+ * Folder reads come from the sidebar projection query.
  */
 export function useCreateFolder() {
-  const client = usePDSClient();
+  const { session, getOAuthSession } = useAuth();
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (params: {
@@ -37,47 +72,68 @@ export function useCreateFolder() {
       icon?: string;
       iconImage?: string;
     }) => {
-      if (!client) throw new Error("No PDS client — not signed in");
-      return client.createFolder(params.name, {
+      const oauth = getOAuthSession();
+      if (!oauth) throw new Error("OAuth session required");
+      return createFolderOnGateway(oauth, {
+        name: params.name,
         icon: params.icon,
         iconImage: params.iconImage,
       });
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: FOLDERS_QUERY_KEY }),
+    onSuccess: () => {
+      if (session?.did) {
+        qc.invalidateQueries({
+          queryKey: PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(session.did),
+        });
+      }
+    },
   });
 }
 
-/**
- * Renames (or updates) a folder.
- */
 export function useUpdateFolder() {
-  const client = usePDSClient();
+  const { session, getOAuthSession } = useAuth();
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (params: {
       uri: string;
       updates: Partial<Pick<FolderRecord, "name" | "sortOrder" | "icon" | "iconImage">>;
     }) => {
-      if (!client) throw new Error("No PDS client — not signed in");
+      const oauth = getOAuthSession();
+      if (!oauth) throw new Error("OAuth session required");
       const rkey = rkeyFromURI(params.uri);
-      return client.updateFolder(rkey, params.updates);
+      await updateFolderOnGateway(oauth, rkey, {
+        name: params.updates.name,
+        sortOrder: params.updates.sortOrder,
+        icon: params.updates.icon,
+        iconImage: params.updates.iconImage,
+      });
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: FOLDERS_QUERY_KEY }),
+    onSuccess: () => {
+      if (session?.did) {
+        qc.invalidateQueries({
+          queryKey: PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(session.did),
+        });
+      }
+    },
   });
 }
 
-/**
- * Deletes a folder from the user's PDS.
- */
 export function useDeleteFolder() {
-  const client = usePDSClient();
+  const { session, getOAuthSession } = useAuth();
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (uri: string) => {
-      if (!client) throw new Error("No PDS client — not signed in");
+      const oauth = getOAuthSession();
+      if (!oauth) throw new Error("OAuth session required");
       const rkey = rkeyFromURI(uri);
-      return client.deleteFolder(rkey);
+      await deleteFolderOnGateway(oauth, rkey);
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: FOLDERS_QUERY_KEY }),
+    onSuccess: () => {
+      if (session?.did) {
+        qc.invalidateQueries({
+          queryKey: PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(session.did),
+        });
+      }
+    },
   });
 }

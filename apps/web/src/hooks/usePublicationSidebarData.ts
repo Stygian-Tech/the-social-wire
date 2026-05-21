@@ -4,21 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { useFolders } from "@/hooks/useFolders";
-import {
-  useDiscovery,
-  useGraphSubscriptionPublications,
-  usePublicationPrefs,
-  usePublicationSubscriptions,
-  useRefreshDiscovery,
-  useSkyreaderFeedSubscriptions,
-  skyreaderSubscriptionsToDiscoveredPublications,
-} from "@/hooks/usePublications";
 import type { DiscoveredPublication } from "@/lib/atprotoClient";
-import { viewerOwnsDiscoveredPublication } from "@/lib/atprotoClient";
-import {
-  addPublicationSubscriptionLookupKeys,
-  publicationSubscriptionMatchKeys,
-} from "@/lib/publicationSubscriptionMatch";
 import {
   COLLECTION_PUB_PREFS,
   type PublicationPrefsRecord,
@@ -26,128 +12,18 @@ import {
 } from "@/lib/pdsClient";
 import {
   fetchPublicationSidebar,
-  isPublicationProjectionEnabled,
   maybeEnrollProjectionAuthors,
   refreshPublicationSidebar,
   sidebarRowToDiscoveredPublication,
+  unreadCountsMapFromProjection,
   type PublicationAppViewScope,
   type PublicationSidebarProjection,
   type SidebarPublicationRow,
 } from "@/lib/publicationProjectionClient";
+import { fetchAppViewUnreadCounts } from "@/lib/thinAppViewClient";
 
 export const PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY = (did: string) =>
   ["publicationSidebarProjection", did] as const;
-
-function legacySidebarMerge(args: {
-  folders: ReturnType<typeof useFolders>["data"];
-  publications: DiscoveredPublication[];
-  prefs: RepoRecord<PublicationPrefsRecord>[];
-  subscriptions: RepoRecord<{ publication?: string }>[];
-  skyreaderRecords: ReturnType<typeof useSkyreaderFeedSubscriptions>["data"];
-  graphSubscriptionRows: DiscoveredPublication[];
-  viewerDid: string | undefined;
-}) {
-  const {
-    folders = [],
-    publications = [],
-    prefs = [],
-    subscriptions = [],
-    skyreaderRecords = [],
-    graphSubscriptionRows = [],
-    viewerDid,
-  } = args;
-
-  const rssPublicationRows = skyreaderSubscriptionsToDiscoveredPublications(
-    skyreaderRecords ?? []
-  );
-
-  const prefsMap = new Map(
-    prefs.map((p) => [p.value.publicationId, p] as const)
-  );
-
-  const visiblePubs = [...publications, ...graphSubscriptionRows];
-  const allPublicationRows = [
-    ...publications,
-    ...rssPublicationRows,
-    ...graphSubscriptionRows,
-  ];
-
-  const subscriptionPublicationKeys = new Set<string>();
-  for (const subscription of subscriptions) {
-    addPublicationSubscriptionLookupKeys(
-      subscriptionPublicationKeys,
-      subscription.value.publication
-    );
-  }
-
-  const isSubscribedPublication = (pub: DiscoveredPublication) =>
-    publicationSubscriptionMatchKeys(pub).some((key) =>
-      subscriptionPublicationKeys.has(key)
-    );
-
-  const graphSubscribedPubs: DiscoveredPublication[] = [];
-  const followOwnedUnsubscribedPubs: DiscoveredPublication[] = [];
-
-  for (const pub of visiblePubs) {
-    if (viewerOwnsDiscoveredPublication(pub, viewerDid)) {
-      graphSubscribedPubs.push(pub);
-    } else if (isSubscribedPublication(pub)) {
-      graphSubscribedPubs.push(pub);
-    } else {
-      followOwnedUnsubscribedPubs.push(pub);
-    }
-  }
-
-  const subscribedPubs: DiscoveredPublication[] = [...graphSubscribedPubs];
-  const ids = new Set(graphSubscribedPubs.map((p) => p.publicationId));
-  for (const r of rssPublicationRows) {
-    if (!ids.has(r.publicationId)) {
-      subscribedPubs.push(r);
-      ids.add(r.publicationId);
-    }
-  }
-  for (const r of graphSubscriptionRows) {
-    if (!ids.has(r.publicationId)) {
-      subscribedPubs.push(r);
-      ids.add(r.publicationId);
-    }
-  }
-
-  const folderMap = new Map<string, DiscoveredPublication[]>();
-  const myPublications: DiscoveredPublication[] = [];
-  const unfolderedPubs: DiscoveredPublication[] = [];
-
-  for (const pub of subscribedPubs) {
-    if (viewerOwnsDiscoveredPublication(pub, viewerDid)) {
-      myPublications.push(pub);
-      continue;
-    }
-    const pref = prefsMap.get(pub.publicationId);
-    const folderId = pref?.value.folderId;
-    if (folderId) {
-      const list = folderMap.get(folderId) ?? [];
-      list.push(pub);
-      folderMap.set(folderId, list);
-      continue;
-    }
-    unfolderedPubs.push(pub);
-  }
-
-  const myPublicationIds = new Set(myPublications.map((p) => p.publicationId));
-  const followingTabPublications = followOwnedUnsubscribedPubs.filter(
-    (pub) => !myPublicationIds.has(pub.publicationId)
-  );
-
-  return {
-    folders,
-    prefsMap,
-    allPublicationRows,
-    folderMap,
-    myPublications,
-    unfolderedPubs,
-    followingTabPublications,
-  };
-}
 
 function prefsRecordFromProjection(
   row: PublicationSidebarProjection["publicationPrefs"][number]
@@ -186,25 +62,42 @@ function projectionToSidebarState(projection: PublicationSidebarProjection) {
   );
 
   const folderMap = new Map<string, DiscoveredPublication[]>();
+
+  if (projection.folderSections?.length) {
+    for (const section of projection.folderSections) {
+      folderMap.set(
+        section.folderRkey,
+        section.publications.map(sidebarRowToDiscoveredPublication)
+      );
+    }
+  } else {
+    const myIds = new Set(
+      projection.myPublications.map((m) => m.publicationId)
+    );
+    const followingIds = new Set(
+      projection.followingTabPublications.map((f) => f.publicationId)
+    );
+
+    for (const row of projection.allPublicationRows) {
+      const pub = sidebarRowToDiscoveredPublication(row);
+      if (myIds.has(pub.publicationId) || followingIds.has(pub.publicationId)) {
+        continue;
+      }
+      const pref = prefsMap.get(pub.publicationId);
+      const folderId = pref?.value.folderId;
+      if (!folderId) continue;
+      const list = folderMap.get(folderId) ?? [];
+      list.push(pub);
+      folderMap.set(folderId, list);
+    }
+  }
+
   const subscribed = projection.subscribedUnfoldered.map(
     sidebarRowToDiscoveredPublication
   );
   const myPublications = projection.myPublications.map(
     sidebarRowToDiscoveredPublication
   );
-
-  for (const row of projection.allPublicationRows) {
-    const pub = sidebarRowToDiscoveredPublication(row);
-    const pref = prefsMap.get(pub.publicationId);
-    const folderId = pref?.value.folderId;
-    if (!folderId) continue;
-    if (projection.myPublications.some((m) => m.publicationId === pub.publicationId)) {
-      continue;
-    }
-    const list = folderMap.get(folderId) ?? [];
-    list.push(pub);
-    folderMap.set(folderId, list);
-  }
 
   return {
     folders: projection.folders as unknown as ReturnType<typeof useFolders>["data"],
@@ -222,14 +115,14 @@ function projectionToSidebarState(projection: PublicationSidebarProjection) {
       sidebarRowToDiscoveredPublication
     ),
     enrollAuthorDids: projection.enrollAuthorDids,
+    unreadCountsByPublicationId: unreadCountsMapFromProjection(projection),
   };
 }
 
-/** Shared discovery/subscription derivation for sidebar + `/me/publications`. */
+/** Gateway-only sidebar projection for subscribed/following lists and `/me/publications`. */
 export function usePublicationSidebarData() {
   const { session, getOAuthSession } = useAuth();
   const qc = useQueryClient();
-  const useProjection = isPublicationProjectionEnabled();
 
   const projectionQuery = useQuery({
     queryKey: PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(session?.did ?? ""),
@@ -240,112 +133,89 @@ export function usePublicationSidebarData() {
       maybeEnrollProjectionAuthors(oauth, projection.enrollAuthorDids);
       return projection;
     },
-    enabled: useProjection && !!session,
+    enabled: !!session,
     staleTime: 6 * 60_000,
     retry: 1,
   });
-
-  const { data: folders = [], isLoading: foldersLoading } = useFolders();
-  const { data: publications = [], isLoading: pubsLoading } = useDiscovery();
-  const { data: prefs = [] } = usePublicationPrefs();
-  const { data: subscriptions = [], isLoading: subscriptionsLoading } =
-    usePublicationSubscriptions();
-  const { data: skyreaderRecords = [], isLoading: skyreaderSubsLoading } =
-    useSkyreaderFeedSubscriptions();
-  const refreshDiscovery = useRefreshDiscovery();
-
-  const rssPublicationRows = useMemo(
-    () => skyreaderSubscriptionsToDiscoveredPublications(skyreaderRecords),
-    [skyreaderRecords]
-  );
-
-  const { data: graphSubscriptionRows = [], isLoading: graphSubsLoading } =
-    useGraphSubscriptionPublications(subscriptions, [
-      ...publications,
-      ...rssPublicationRows,
-    ]);
-
-  const legacy = useMemo(
-    () =>
-      legacySidebarMerge({
-        folders,
-        publications,
-        prefs,
-        subscriptions,
-        skyreaderRecords,
-        graphSubscriptionRows,
-        viewerDid: session?.did,
-      }),
-    [
-      folders,
-      publications,
-      prefs,
-      subscriptions,
-      skyreaderRecords,
-      graphSubscriptionRows,
-      session?.did,
-    ]
-  );
 
   const projectionState = useMemo(() => {
     if (!projectionQuery.data) return null;
     return projectionToSidebarState(projectionQuery.data);
   }, [projectionQuery.data]);
 
-  const useServerProjection =
-    useProjection && projectionQuery.isSuccess && projectionState != null;
+  const publicationIdsForUnread = useMemo(
+    () => projectionState?.allPublicationRows.map((p) => p.publicationId) ?? [],
+    [projectionState?.allPublicationRows]
+  );
+
+  const unreadCountsQuery = useQuery({
+    queryKey: [
+      "appviewUnreadCounts",
+      session?.did ?? "",
+      publicationIdsForUnread.join("\x1e"),
+    ] as const,
+    queryFn: async ({ signal }) => {
+      const oauth = getOAuthSession();
+      if (!oauth) throw new Error("OAuth session required");
+      return fetchAppViewUnreadCounts(oauth, publicationIdsForUnread, signal);
+    },
+    enabled:
+      !!session &&
+      publicationIdsForUnread.length > 0 &&
+      projectionState != null &&
+      projectionState.unreadCountsByPublicationId.size === 0,
+    staleTime: 60_000,
+    retry: 1,
+  });
+
+  const unreadCountsByPublicationId = useMemo(() => {
+    if (!projectionState) return new Map<string, number>();
+    if (projectionState.unreadCountsByPublicationId.size > 0) {
+      return projectionState.unreadCountsByPublicationId;
+    }
+    const fromApi = unreadCountsQuery.data;
+    if (!fromApi) return projectionState.unreadCountsByPublicationId;
+    const map = new Map<string, number>();
+    for (const [publicationId, count] of Object.entries(fromApi)) {
+      if (count > 0) map.set(publicationId, count);
+    }
+    return map;
+  }, [projectionState, unreadCountsQuery.data]);
 
   const refresh = useMutation({
     mutationFn: async () => {
-      if (useServerProjection) {
-        const oauth = getOAuthSession();
-        if (!oauth) throw new Error("OAuth session required");
-        const projection = await refreshPublicationSidebar(oauth);
-        qc.setQueryData(
-          PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(session?.did ?? ""),
-          projection
-        );
-        maybeEnrollProjectionAuthors(oauth, projection.enrollAuthorDids);
-        return;
-      }
-      await refreshDiscovery.mutateAsync();
+      const oauth = getOAuthSession();
+      if (!oauth) throw new Error("OAuth session required");
+      const projection = await refreshPublicationSidebar(oauth);
+      qc.setQueryData(
+        PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(session?.did ?? ""),
+        projection
+      );
+      maybeEnrollProjectionAuthors(oauth, projection.enrollAuthorDids);
+      qc.invalidateQueries({
+        queryKey: ["appviewUnreadCounts", session?.did ?? ""],
+      });
     },
   });
 
-  const subscriptionsBlockLoading = useServerProjection
-    ? projectionQuery.isLoading
-    : subscriptionsLoading || skyreaderSubsLoading || graphSubsLoading;
-
-  const sidebarListsLoading = useServerProjection
-    ? projectionQuery.isLoading
-    : foldersLoading || pubsLoading || subscriptionsBlockLoading;
-
   return {
-    folders: useServerProjection ? (projectionState?.folders ?? []) : folders,
-    foldersLoading: useServerProjection ? false : foldersLoading,
-    prefsMap: useServerProjection ? projectionState!.prefsMap : legacy.prefsMap,
-    allPublicationRows: useServerProjection
-      ? projectionState!.allPublicationRows
-      : legacy.allPublicationRows,
-    folderMap: useServerProjection ? projectionState!.folderMap : legacy.folderMap,
-    myPublications: useServerProjection
-      ? projectionState!.myPublications
-      : legacy.myPublications,
-    unfolderedPubs: useServerProjection
-      ? projectionState!.unfolderedPubs
-      : legacy.unfolderedPubs,
-    followingTabPublications: useServerProjection
-      ? projectionState!.followingTabPublications
-      : legacy.followingTabPublications,
-    pubsLoading: useServerProjection ? projectionQuery.isLoading : pubsLoading,
-    subscriptionsBlockLoading,
-    sidebarListsLoading,
+    folders: projectionState?.folders ?? [],
+    foldersLoading: projectionQuery.isLoading,
+    prefsMap: projectionState?.prefsMap ?? new Map(),
+    allPublicationRows: projectionState?.allPublicationRows ?? [],
+    folderMap: projectionState?.folderMap ?? new Map(),
+    myPublications: projectionState?.myPublications ?? [],
+    unfolderedPubs: projectionState?.unfolderedPubs ?? [],
+    followingTabPublications: projectionState?.followingTabPublications ?? [],
+    pubsLoading: projectionQuery.isLoading,
+    subscriptionsBlockLoading: projectionQuery.isLoading,
+    sidebarListsLoading: projectionQuery.isLoading,
     refresh,
     viewerDid: session?.did,
     publicationSidebarProjection: projectionQuery.data,
-    sidebarRowsById: useServerProjection
-      ? projectionState!.sidebarRowsById
-      : undefined,
+    sidebarRowsById: projectionState?.sidebarRowsById,
+    unreadCountsByPublicationId,
+    projectionError: projectionQuery.error,
   };
 }
 

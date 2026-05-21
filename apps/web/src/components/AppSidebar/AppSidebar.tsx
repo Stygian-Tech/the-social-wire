@@ -97,6 +97,7 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
     sidebarListsLoading,
     refresh,
     viewerDid,
+    unreadCountsByPublicationId,
   } = usePublicationSidebarData();
   const { data: profile, isLoading: profileLoading } = useViewerProfile();
 
@@ -131,7 +132,7 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
 
   const publicationUnreadCounts = useSidebarUnreadCounts(
     publicationsForUnread,
-    isEntryRead
+    unreadCountsByPublicationId
   );
 
   const setPublicationsInReadShell =

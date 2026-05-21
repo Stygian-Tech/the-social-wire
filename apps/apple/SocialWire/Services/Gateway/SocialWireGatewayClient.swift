@@ -40,6 +40,20 @@ final class SocialWireGatewayClient {
         )
     }
 
+    func refreshPublicationSidebar() async throws -> PublicationSidebarResponseDTO {
+        let result = try await authorizedRequest(
+            method: "POST",
+            path: "/v1/publications/refresh",
+            query: [:],
+            body: nil,
+            contentType: nil
+        )
+        guard (200 ..< 300).contains(result.statusCode) else {
+            throw SocialWireError.badResponse("Publication refresh failed (\(result.statusCode)).")
+        }
+        return try await fetchPublicationSidebar()
+    }
+
     func resolveAddPublication(input: String) async throws -> ResolveAddPublicationResponseDTO {
         let payload = try JSONEncoder().encode(ResolveAddPublicationRequestBody(input: input))
         let result = try await authorizedRequest(
@@ -53,6 +67,119 @@ final class SocialWireGatewayClient {
             throw SocialWireError.badResponse("Publication resolve failed (\(result.statusCode)).")
         }
         return try JSONDecoder().decode(ResolveAddPublicationResponseDTO.self, from: result.body)
+    }
+
+    func createFolder(_ input: GatewayFolderWriteBody) async throws -> GatewayRecordWriteResponseDTO {
+        let payload = try JSONEncoder().encode(input)
+        let result = try await authorizedRequest(
+            method: "POST",
+            path: "/v1/publications/folders",
+            query: [:],
+            body: payload,
+            contentType: "application/json"
+        )
+        guard (200 ..< 300).contains(result.statusCode) else {
+            throw SocialWireError.badResponse("Create folder failed (\(result.statusCode)).")
+        }
+        return try JSONDecoder().decode(GatewayRecordWriteResponseDTO.self, from: result.body)
+    }
+
+    func updateFolder(rkey: String, input: GatewayFolderWriteBody) async throws {
+        let payload = try JSONEncoder().encode(input)
+        let result = try await authorizedRequest(
+            method: "PUT",
+            path: "/v1/publications/folders/\(rkey)",
+            query: [:],
+            body: payload,
+            contentType: "application/json"
+        )
+        guard (200 ..< 300).contains(result.statusCode) else {
+            throw SocialWireError.badResponse("Update folder failed (\(result.statusCode)).")
+        }
+    }
+
+    func deleteFolder(rkey: String) async throws {
+        let result = try await authorizedRequest(
+            method: "DELETE",
+            path: "/v1/publications/folders/\(rkey)",
+            query: [:],
+            body: nil,
+            contentType: nil
+        )
+        guard (200 ..< 300).contains(result.statusCode) else {
+            throw SocialWireError.badResponse("Delete folder failed (\(result.statusCode)).")
+        }
+    }
+
+    func upsertPublicationPrefs(_ input: GatewayPublicationPrefsWriteBody) async throws -> GatewayRecordWriteResponseDTO {
+        let payload = try JSONEncoder().encode(input)
+        let result = try await authorizedRequest(
+            method: "PUT",
+            path: "/v1/publications/prefs",
+            query: [:],
+            body: payload,
+            contentType: "application/json"
+        )
+        guard (200 ..< 300).contains(result.statusCode) else {
+            throw SocialWireError.badResponse("Publication prefs upsert failed (\(result.statusCode)).")
+        }
+        return try JSONDecoder().decode(GatewayRecordWriteResponseDTO.self, from: result.body)
+    }
+
+    func createPublicationSubscription(_ input: GatewayPublicationSubscriptionWriteBody) async throws -> GatewayRecordWriteResponseDTO {
+        let payload = try JSONEncoder().encode(input)
+        let result = try await authorizedRequest(
+            method: "POST",
+            path: "/v1/publications/subscriptions",
+            query: [:],
+            body: payload,
+            contentType: "application/json"
+        )
+        guard (200 ..< 300).contains(result.statusCode) else {
+            throw SocialWireError.badResponse("Create subscription failed (\(result.statusCode)).")
+        }
+        return try JSONDecoder().decode(GatewayRecordWriteResponseDTO.self, from: result.body)
+    }
+
+    func deletePublicationSubscription(rkey: String) async throws {
+        let result = try await authorizedRequest(
+            method: "DELETE",
+            path: "/v1/publications/subscriptions/\(rkey)",
+            query: [:],
+            body: nil,
+            contentType: nil
+        )
+        guard (200 ..< 300).contains(result.statusCode) else {
+            throw SocialWireError.badResponse("Delete subscription failed (\(result.statusCode)).")
+        }
+    }
+
+    func createRssSubscription(_ input: GatewayRssSubscriptionWriteBody) async throws -> GatewayRecordWriteResponseDTO {
+        let payload = try JSONEncoder().encode(input)
+        let result = try await authorizedRequest(
+            method: "POST",
+            path: "/v1/publications/rss-subscriptions",
+            query: [:],
+            body: payload,
+            contentType: "application/json"
+        )
+        guard (200 ..< 300).contains(result.statusCode) else {
+            throw SocialWireError.badResponse("Create RSS subscription failed (\(result.statusCode)).")
+        }
+        return try JSONDecoder().decode(GatewayRecordWriteResponseDTO.self, from: result.body)
+    }
+
+    func deleteRssSubscription(rkey: String) async throws {
+        let result = try await authorizedRequest(
+            method: "DELETE",
+            path: "/v1/publications/rss-subscriptions/\(rkey)",
+            query: [:],
+            body: nil,
+            contentType: nil
+        )
+        guard (200 ..< 300).contains(result.statusCode) else {
+            throw SocialWireError.badResponse("Delete RSS subscription failed (\(result.statusCode)).")
+        }
     }
 
     func fetchAppViewEntries(
@@ -89,6 +216,39 @@ final class SocialWireGatewayClient {
         return try JSONDecoder().decode(AppViewEntryListResponse.self, from: result.body)
     }
 
+    func fetchAppViewEntryDetail(entryId: String) async throws -> EntryDetail? {
+        let result = try await authorizedGET(
+            path: "/v1/appview/entry",
+            query: ["entryId": entryId],
+            ifNoneMatch: nil
+        )
+        if result.statusCode == 404 {
+            return nil
+        }
+        guard (200 ..< 300).contains(result.statusCode) else {
+            throw SocialWireError.badResponse("AppView entry detail failed (\(result.statusCode)).")
+        }
+        let decoded = try JSONDecoder().decode(AppViewEntryDetailResponse.self, from: result.body)
+        return decoded.entry
+    }
+
+    func fetchAppViewUnreadCounts(publicationIds: [String]) async throws -> [String: Int] {
+        guard !publicationIds.isEmpty else { return [:] }
+        let result = try await authorizedGET(
+            path: "/v1/appview/unread-counts",
+            query: ["publicationIds": publicationIds.joined(separator: ",")],
+            ifNoneMatch: nil
+        )
+        if result.statusCode == 404 {
+            return [:]
+        }
+        guard (200 ..< 300).contains(result.statusCode) else {
+            throw SocialWireError.badResponse("AppView unread counts failed (\(result.statusCode)).")
+        }
+        let decoded = try JSONDecoder().decode(AppViewUnreadCountsResponse.self, from: result.body)
+        return decoded.counts ?? [:]
+    }
+
     func upsertReadMark(subjectUri: String, readAt: Date) async throws {
         let payload = try JSONEncoder().encode(
             AppViewReadMarkBody(subjectUri: subjectUri, readAt: DateFormatters.string(from: readAt))
@@ -117,6 +277,25 @@ final class SocialWireGatewayClient {
         guard (200 ..< 300).contains(result.statusCode) else {
             throw SocialWireError.badResponse("AppView read-mark delete failed (\(result.statusCode)).")
         }
+    }
+
+    func markAllRead(scope: GatewayMarkAllReadScopeDTO) async throws -> Int {
+        let payload = try JSONEncoder().encode(GatewayMarkAllReadBody(scope: scope))
+        let result = try await authorizedRequest(
+            method: "POST",
+            path: "/v1/appview/mark-all-read",
+            query: [:],
+            body: payload,
+            contentType: "application/json"
+        )
+        if result.statusCode == 404 {
+            throw SocialWireError.appViewUnavailable
+        }
+        guard (200 ..< 300).contains(result.statusCode) else {
+            throw SocialWireError.badResponse("Mark all read failed (\(result.statusCode)).")
+        }
+        let decoded = try JSONDecoder().decode(GatewayMarkAllReadResponseDTO.self, from: result.body)
+        return decoded.marked
     }
 
     func enrollAuthors(dids: [String]) async throws -> Int {

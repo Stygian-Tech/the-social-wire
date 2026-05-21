@@ -1,5 +1,6 @@
 import AsyncHTTPClient
 import Foundation
+import GatewayCore
 import Hummingbird
 import Logging
 import ThinAppViewCore
@@ -56,7 +57,8 @@ enum AppRouterBuilder {
     let projection = PublicationProjectionService(
       httpClient: httpClient,
       plcURL: config.atprotoPLCURL,
-      logger: logger
+      logger: logger,
+      thinStore: thinAppViewStore
     )
     let resolve = PublicationResolveService(
       httpClient: httpClient,

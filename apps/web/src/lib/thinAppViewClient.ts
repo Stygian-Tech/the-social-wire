@@ -1,36 +1,12 @@
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 
-import {
-  buildPublicationScopeMatch,
-  resolvePublicationFilterFromPubId,
-  type EntryListItem,
-} from "@/lib/atprotoClient";
+import type { EntryListItem, EntryDetail } from "@/lib/atprotoClient";
 import type { ArticleListFilter } from "@/lib/entryArticleFilter";
 import type { PublicationAppViewScope } from "@/lib/publicationProjectionClient";
+import { gatewayFetch } from "@/lib/socialWireGatewayClient";
 
 export function isThinAppViewEnabled(): boolean {
-  return process.env.NEXT_PUBLIC_USE_THIN_APPVIEW === "true";
-}
-
-function gatewayBaseUrl(): string {
-  return (
-    process.env.NEXT_PUBLIC_SOCIALWIRE_API_URL ?? "https://api.thesocialwire.app"
-  ).replace(/\/$/, "");
-}
-
-async function gatewayFetch(
-  oauthSession: OAuthSession,
-  path: string,
-  init?: RequestInit
-): Promise<Response> {
-  const url = `${gatewayBaseUrl()}${path.startsWith("/") ? path : `/${path}`}`;
-  return oauthSession.fetchHandler(url, {
-    ...init,
-    headers: {
-      Accept: "application/json",
-      ...(init?.headers ?? {}),
-    },
-  });
+  return process.env.NEXT_PUBLIC_USE_THIN_APPVIEW !== "false";
 }
 
 export type AppViewEntriesPage = {
@@ -40,8 +16,7 @@ export type AppViewEntriesPage = {
 
 export async function listEntriesFromAppView(args: {
   publicationKey: string;
-  /** When provided (from `/v1/publications/sidebar`), skips client-side scope derivation. */
-  appViewScope?: PublicationAppViewScope;
+  appViewScope: PublicationAppViewScope;
   cursor?: string;
   limit?: number;
   filter?: ArticleListFilter;
@@ -49,7 +24,6 @@ export async function listEntriesFromAppView(args: {
   signal?: AbortSignal;
 }): Promise<AppViewEntriesPage> {
   const {
-    publicationKey,
     appViewScope,
     cursor,
     limit = 50,
@@ -58,32 +32,8 @@ export async function listEntriesFromAppView(args: {
     signal,
   } = args;
 
-  let authorDid: string;
-  let publicationAtUri: string | undefined;
-  let scopeAtUris: string[] = [];
-  let scopeSiteUrls: string[] = [];
-
-  if (appViewScope) {
-    authorDid = appViewScope.authorDid;
-    publicationAtUri = appViewScope.publicationAtUri ?? undefined;
-    scopeAtUris = appViewScope.publicationScopeAtUris;
-    scopeSiteUrls = appViewScope.publicationSiteUrls;
-  } else {
-    const resolved = await resolvePublicationFilterFromPubId(
-      publicationKey,
-      oauthSession
-    );
-    authorDid = resolved.repoDid;
-    publicationAtUri = resolved.publicationAtUri;
-    if (publicationAtUri) {
-      const scope = await buildPublicationScopeMatch(
-        publicationAtUri,
-        oauthSession
-      );
-      scopeSiteUrls = [...scope.siteUrlKeys];
-      scopeAtUris = [...scope.atUriKeys];
-    }
-  }
+  const { authorDid, publicationAtUri, publicationScopeAtUris, publicationSiteUrls } =
+    appViewScope;
 
   const params = new URLSearchParams({
     authorDid,
@@ -93,11 +43,11 @@ export async function listEntriesFromAppView(args: {
   if (publicationAtUri) {
     params.set("publicationAtUri", publicationAtUri);
   }
-  if (scopeSiteUrls.length > 0) {
-    params.set("publicationSiteUrls", scopeSiteUrls.join(","));
+  if (publicationSiteUrls.length > 0) {
+    params.set("publicationSiteUrls", publicationSiteUrls.join(","));
   }
-  if (scopeAtUris.length > 0) {
-    params.set("publicationScopeAtUris", scopeAtUris.join(","));
+  if (publicationScopeAtUris.length > 0) {
+    params.set("publicationScopeAtUris", publicationScopeAtUris.join(","));
   }
   if (cursor) params.set("cursor", cursor);
 
@@ -138,6 +88,67 @@ export async function listEntriesFromAppView(args: {
   };
 }
 
+export async function getEntryFromAppView(
+  oauthSession: OAuthSession,
+  entryId: string,
+  signal?: AbortSignal
+): Promise<EntryDetail | null> {
+  const params = new URLSearchParams({ entryId });
+  const res = await gatewayFetch(
+    oauthSession,
+    `/v1/appview/entry?${params.toString()}`,
+    { method: "GET", signal }
+  );
+  if (res.status === 404) {
+    return null;
+  }
+  if (!res.ok) {
+    throw new Error(`Thin AppView entry detail failed (${res.status})`);
+  }
+  const json = (await res.json()) as {
+    entryId: string;
+    title: string;
+    summary?: string;
+    publishedAt: string;
+    thumbnailUrl?: string;
+    contentHtml?: string;
+  };
+  return {
+    entryId: json.entryId,
+    title: json.title,
+    summary: json.summary,
+    publishedAt: json.publishedAt,
+    thumbnailUrl: json.thumbnailUrl,
+    contentHtml: json.contentHtml ?? json.summary ?? "",
+  };
+}
+
+export async function fetchAppViewUnreadCounts(
+  oauthSession: OAuthSession,
+  publicationIds: string[],
+  signal?: AbortSignal
+): Promise<Record<string, number>> {
+  if (publicationIds.length === 0) return {};
+  const params = new URLSearchParams({
+    publicationIds: publicationIds.join(","),
+  });
+  const res = await gatewayFetch(
+    oauthSession,
+    `/v1/appview/unread-counts?${params.toString()}`,
+    { method: "GET", signal }
+  );
+  if (res.status === 404) {
+    return {};
+  }
+  if (!res.ok) {
+    throw new Error(`Thin AppView unread counts failed (${res.status})`);
+  }
+  const json = (await res.json()) as {
+    counts?: Record<string, number>;
+  };
+  return json.counts ?? {};
+}
+
 export async function writeThroughReadMark(
   oauthSession: OAuthSession,
   subjectUri: string,
@@ -163,7 +174,7 @@ export async function writeThroughReadMarkDelete(
     body: JSON.stringify({ subjectUri }),
   });
   if (!res.ok) {
-    throw new Error(`Thin AppView read-mark delete failed (${res.status})`);
+    throw new Error(`Thin AppView read-mark delete failed (${res.status}`);
   }
 }
 

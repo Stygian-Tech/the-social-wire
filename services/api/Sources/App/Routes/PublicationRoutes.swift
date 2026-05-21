@@ -1,4 +1,5 @@
 import Foundation
+import GatewayCore
 import Hummingbird
 
 struct PublicationRoutes {

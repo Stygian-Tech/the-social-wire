@@ -3,6 +3,7 @@
 import ArgumentParser
 import AsyncHTTPClient
 import Foundation
+import GatewayCore
 import Hummingbird
 import Logging
 import PostgresNIO
@@ -37,8 +38,11 @@ struct Serve: AsyncParsableCommand {
     let listenPort = port ?? Int(environment["PORT"] ?? "8080") ?? 8080
     let listenHost = hostname ?? environment["BIND_HOST"] ?? "0.0.0.0"
 
+    logger.warning(
+      "services/api is a compatibility shim; deploy services/gateway and services/appview instead"
+    )
     logger.info(
-      "Starting Social Wire API",
+      "Starting Social Wire API (deprecated monolith shim)",
       metadata: [
         "env": .string(config.appEnv.rawValue),
         "backend": .string(config.cacheBackend.description),

@@ -1,5 +1,6 @@
 import AsyncHTTPClient
 import Foundation
+import GatewayCore
 import Hummingbird
 import Logging
 import ThinAppViewCore
@@ -9,11 +10,13 @@ actor PublicationProjectionService {
   private let plcURL: String
   private let logger: Logger
   private let repo: ATProtoAuthenticatedRepoClient
+  private let thinStore: (any ThinAppViewStore)?
 
-  init(httpClient: HTTPClient, plcURL: String, logger: Logger) {
+  init(httpClient: HTTPClient, plcURL: String, logger: Logger, thinStore: (any ThinAppViewStore)? = nil) {
     self.httpClient = httpClient
     self.plcURL = plcURL
     self.logger = logger
+    self.thinStore = thinStore
     self.repo = ATProtoAuthenticatedRepoClient(httpClient: httpClient, plcURL: plcURL, logger: logger)
   }
 
@@ -99,11 +102,13 @@ actor PublicationProjectionService {
       viewerDid: viewerDid,
       folders: folders,
       publicationPrefs: prefs,
+      folderSections: [],
       allPublicationRows: sidebarRows,
       myPublications: myRows,
       subscribedUnfoldered: unfolderedRows,
       followingTabPublications: followingRows,
       enrollAuthorDids: enrollAuthorDids,
+      totalUnreadCount: 0,
       refreshedAt: refreshedAt
     )
   }
@@ -185,7 +190,8 @@ actor PublicationProjectionService {
           iconUrl: row.iconUrl,
           avatarUrl: row.avatarUrl,
           discoveredAt: row.discoveredAt,
-          appViewScope: scope
+          appViewScope: scope,
+          unreadCount: nil
         )
       )
     }
