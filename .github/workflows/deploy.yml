@@ -39,16 +39,16 @@ jobs:
       - name: Deploy gateway to Fly.io
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          FLY_ORG: ${{ secrets.FLY_ORG }}
           FLY_GATEWAY_APP_DEV: ${{ secrets.FLY_GATEWAY_APP_DEV }}
           FLY_GATEWAY_APP_PROD: ${{ secrets.FLY_GATEWAY_APP_PROD }}
-          FLY_APP_DEV: ${{ secrets.FLY_APP_DEV }}
-          FLY_APP_PROD: ${{ secrets.FLY_APP_PROD }}
         run: bash scripts/fly-deploy-gateway.sh "${{ inputs.branch }}"
 
       - name: Deploy AppView to Fly.io
         if: inputs.deploy_appview
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          FLY_ORG: ${{ secrets.FLY_ORG }}
           FLY_APPVIEW_APP_DEV: ${{ secrets.FLY_APPVIEW_APP_DEV }}
           FLY_APPVIEW_APP_PROD: ${{ secrets.FLY_APPVIEW_APP_PROD }}
         run: bash scripts/fly-deploy-appview.sh "${{ inputs.branch }}"
@@ -57,10 +57,9 @@ jobs:
         if: inputs.deploy_appview_worker
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          FLY_ORG: ${{ secrets.FLY_ORG }}
           FLY_APPVIEW_WORKER_APP_DEV: ${{ secrets.FLY_APPVIEW_WORKER_APP_DEV }}
           FLY_APPVIEW_WORKER_APP_PROD: ${{ secrets.FLY_APPVIEW_WORKER_APP_PROD }}
-          FLY_WORKER_APP_DEV: ${{ secrets.FLY_WORKER_APP_DEV }}
-          FLY_WORKER_APP_PROD: ${{ secrets.FLY_WORKER_APP_PROD }}
         run: bash scripts/fly-deploy-appview-worker.sh "${{ inputs.branch }}"
 
   # ── Web deploy (Vercel handles this via its GitHub integration) ────────────

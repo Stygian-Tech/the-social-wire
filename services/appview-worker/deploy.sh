@@ -10,11 +10,12 @@ BRANCH="${1:?usage: deploy.sh dev|main}"
 
 if [ "$BRANCH" = "main" ]; then
   CONFIG="services/appview-worker/fly.prod.toml"
-  APP="${FLY_APPVIEW_WORKER_APP_PROD:-${FLY_WORKER_APP_PROD:-the-social-wire-prod-appview-worker}}"
+  APP="${FLY_APPVIEW_WORKER_APP_PROD:-the-social-wire-prod-appview-worker}"
 else
   CONFIG="services/appview-worker/fly.toml"
-  APP="${FLY_APPVIEW_WORKER_APP_DEV:-${FLY_WORKER_APP_DEV:-the-social-wire-dev-appview-worker}}"
+  APP="${FLY_APPVIEW_WORKER_APP_DEV:-the-social-wire-dev-appview-worker}"
 fi
 
 cd "$ROOT"
+bash "$ROOT/scripts/fly-ensure-app.sh" "$APP"
 exec flyctl deploy . --config "$CONFIG" --app "$APP" --remote-only

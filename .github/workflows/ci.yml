@@ -409,10 +409,9 @@ jobs:
       - name: Deploy gateway to Fly.io
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          FLY_ORG: ${{ secrets.FLY_ORG }}
           FLY_GATEWAY_APP_DEV: ${{ secrets.FLY_GATEWAY_APP_DEV }}
           FLY_GATEWAY_APP_PROD: ${{ secrets.FLY_GATEWAY_APP_PROD }}
-          FLY_APP_DEV: ${{ secrets.FLY_APP_DEV }}
-          FLY_APP_PROD: ${{ secrets.FLY_APP_PROD }}
         run: bash scripts/fly-deploy-gateway.sh "${{ github.ref_name }}"
 
   deploy-appview:
@@ -451,6 +450,7 @@ jobs:
       - name: Deploy appview to Fly.io
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          FLY_ORG: ${{ secrets.FLY_ORG }}
           FLY_APPVIEW_APP_DEV: ${{ secrets.FLY_APPVIEW_APP_DEV }}
           FLY_APPVIEW_APP_PROD: ${{ secrets.FLY_APPVIEW_APP_PROD }}
         run: bash scripts/fly-deploy-appview.sh "${{ github.ref_name }}"
@@ -488,8 +488,7 @@ jobs:
       - name: Deploy appview-worker to Fly.io
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          FLY_ORG: ${{ secrets.FLY_ORG }}
           FLY_APPVIEW_WORKER_APP_DEV: ${{ secrets.FLY_APPVIEW_WORKER_APP_DEV }}
           FLY_APPVIEW_WORKER_APP_PROD: ${{ secrets.FLY_APPVIEW_WORKER_APP_PROD }}
-          FLY_WORKER_APP_DEV: ${{ secrets.FLY_WORKER_APP_DEV }}
-          FLY_WORKER_APP_PROD: ${{ secrets.FLY_WORKER_APP_PROD }}
         run: bash scripts/fly-deploy-appview-worker.sh "${{ github.ref_name }}"

@@ -17,4 +17,5 @@ else
 fi
 
 cd "$ROOT"
+bash "$ROOT/scripts/fly-ensure-app.sh" "$APP"
 exec flyctl deploy . --config "$CONFIG" --app "$APP" --remote-only
