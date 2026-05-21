@@ -45,20 +45,23 @@ public struct GatewayInternalTrustAuthMiddleware: RouterMiddleware {
       return try await next(request, context)
     }
 
-    let pathWithQuery = Self.pathWithQuery(from: request)
+    let signedPath = GatewayInternalTrust.canonicalSignedPath(request.uri.path)
     do {
       try GatewayInternalTrust.verify(
         secret: sharedSecret,
         did: did,
         method: request.method.rawValue,
-        pathWithQuery: pathWithQuery,
+        pathWithQuery: signedPath,
         timestamp: timestamp,
         signature: signature
       )
     } catch {
       logger.warning(
         "Gateway internal trust verification failed",
-        metadata: ["error": .string("\(error)")]
+        metadata: [
+          "error": .string("\(error)"),
+          "signedPath": .string(signedPath),
+        ]
       )
       throw HTTPError(.unauthorized, message: "Invalid gateway internal trust headers")
     }
@@ -81,10 +84,4 @@ public struct GatewayInternalTrustAuthMiddleware: RouterMiddleware {
     return try await next(request, mutableContext)
   }
 
-  private static func pathWithQuery(from request: Request) -> String {
-    GatewayInternalTrust.canonicalPathWithQuery(
-      path: request.uri.path,
-      query: request.uri.query
-    )
-  }
 }

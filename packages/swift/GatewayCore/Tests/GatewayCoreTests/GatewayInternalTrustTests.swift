@@ -34,24 +34,25 @@ struct GatewayInternalTrustTests {
     )
   }
 
-  @Test("query string is included in canonical path")
-  func queryIncluded() throws {
+  @Test("query string is excluded from internal-trust HMAC")
+  func queryExcludedFromSignature() throws {
     let secret = "test-internal-secret"
     let did = "did:plc:abc123"
-    let path = "/v1/appview/unread-counts?publicationIds=pub-1,pub-2"
+    let pathOnly = "/v1/appview/unread-counts"
+    let pathWithQuery = "\(pathOnly)?publicationIds=pub-1,pub-2"
 
     let headers = try GatewayInternalTrust.signedHeaders(
       secret: secret,
       did: did,
       method: "GET",
-      pathWithQuery: path
+      pathWithQuery: pathWithQuery
     )
 
     try GatewayInternalTrust.verify(
       secret: secret,
       did: did,
       method: "GET",
-      pathWithQuery: path,
+      pathWithQuery: pathOnly,
       timestamp: headers[1].value,
       signature: headers[2].value
     )

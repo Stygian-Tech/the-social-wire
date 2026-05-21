@@ -1,6 +1,7 @@
 import AsyncHTTPClient
 import Foundation
 import GatewayCore
+import HTTPTypes
 import Hummingbird
 import NIOCore
 
@@ -70,11 +71,12 @@ struct AppViewProxyRoutes {
     method: String
   ) async throws -> Response {
     guard let auth = context.authContext else { throw HTTPError(.unauthorized) }
+    let signedPath = GatewayInternalTrust.canonicalSignedPath(path)
     let pathWithQuery = GatewayInternalTrust.canonicalPathWithQuery(
       path: path,
       query: request.uri.query
     )
-    let url = try forwardURL(baseURL: baseURL, pathWithQuery: pathWithQuery)
+    let url = "\(normalizeBase(baseURL))\(pathWithQuery)"
     var fwd = HTTPClientRequest(url: url)
     switch method {
     case "GET": fwd.method = .GET
@@ -86,13 +88,14 @@ struct AppViewProxyRoutes {
     fwd.headers.add(name: "Accept", value: "application/json")
     fwd.headers.add(name: "Authorization", value: auth.authorizationForwardingValue)
     if let dpop = auth.dpopProof { fwd.headers.add(name: "DPoP", value: dpop) }
+    Self.applyForwardedHeaders(from: request, to: &fwd)
 
     if let internalSecret {
       let signed = try GatewayInternalTrust.signedHeaders(
         secret: internalSecret,
         did: auth.did,
         method: method,
-        pathWithQuery: pathWithQuery
+        pathWithQuery: signedPath
       )
       for header in signed {
         fwd.headers.add(name: header.name, value: header.value)
@@ -120,22 +123,19 @@ struct AppViewProxyRoutes {
     return s
   }
 
-  private func forwardURL(baseURL: String, pathWithQuery: String) throws -> String {
-    guard var components = URLComponents(string: normalizeBase(baseURL)) else {
-      throw HTTPError(.badGateway, message: "Invalid AppView base URL")
+  private static func applyForwardedHeaders(from request: Request, to fwd: inout HTTPClientRequest) {
+    if let host = request.head.authority?.trimmingCharacters(in: .whitespacesAndNewlines),
+       !host.isEmpty
+    {
+      fwd.headers.add(name: "X-Forwarded-Host", value: host)
     }
-
-    if let questionMark = pathWithQuery.firstIndex(of: "?") {
-      components.path = String(pathWithQuery[..<questionMark])
-      components.percentEncodedQuery = String(pathWithQuery[pathWithQuery.index(after: questionMark)...])
+    if let protoHeader = HTTPField.Name("X-Forwarded-Proto"),
+       let proto = request.headers[protoHeader]?.trimmingCharacters(in: .whitespacesAndNewlines),
+       !proto.isEmpty
+    {
+      fwd.headers.add(name: "X-Forwarded-Proto", value: proto)
     } else {
-      components.path = pathWithQuery
-      components.percentEncodedQuery = nil
+      fwd.headers.add(name: "X-Forwarded-Proto", value: "https")
     }
-
-    guard let url = components.url?.absoluteString else {
-      throw HTTPError(.badGateway, message: "Invalid AppView forward URL")
-    }
-    return url
   }
 }

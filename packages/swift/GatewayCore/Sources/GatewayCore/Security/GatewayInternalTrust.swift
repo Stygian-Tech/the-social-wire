@@ -18,7 +18,18 @@ public enum GatewayInternalTrust {
 
   private static let skewTolerance: TimeInterval = 120
 
-  /// Normalizes `path` and optional raw query for stable HMAC input across proxy hops.
+  /// Normalizes a route path for internal-trust HMAC (query string is intentionally excluded).
+  public static func canonicalSignedPath(_ rawPath: String) -> String {
+    var path = rawPath.trimmingCharacters(in: .whitespacesAndNewlines)
+    if let questionMark = path.firstIndex(of: "?") {
+      path = String(path[..<questionMark])
+    }
+    if path.isEmpty { path = "/" }
+    if !path.hasPrefix("/") { path = "/" + path }
+    return path
+  }
+
+  /// Normalizes `path` and optional raw query for outbound AppView proxy URLs.
   ///
   /// Decodes query pairs, sorts by name/value, and re-encodes so Gateway signing and AppView
   /// verification match even when AsyncHTTPClient/Hummingbird percent-encode differently.
@@ -66,13 +77,14 @@ public enum GatewayInternalTrust {
     timestamp: Date = Date()
   ) throws -> [(name: String, value: String)] {
     let normalizedDid = try normalizedDid(did)
+    let signedPath = canonicalSignedPath(pathWithQuery)
     let unixSeconds = Int64(timestamp.timeIntervalSince1970)
     let timestampValue = String(unixSeconds)
     let signature = try sign(
       secret: secret,
       did: normalizedDid,
       method: method,
-      pathWithQuery: pathWithQuery,
+      signedPath: signedPath,
       timestamp: timestampValue
     )
     return [
@@ -106,11 +118,12 @@ public enum GatewayInternalTrust {
       throw TrustError.staleTimestamp
     }
 
+    let signedPath = canonicalSignedPath(pathWithQuery)
     let expected = try sign(
       secret: secret,
       did: normalizedDid,
       method: method,
-      pathWithQuery: pathWithQuery,
+      signedPath: signedPath,
       timestamp: String(unixSeconds)
     )
     let provided = signature.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -122,13 +135,13 @@ public enum GatewayInternalTrust {
   static func canonicalRequest(
     did: String,
     method: String,
-    pathWithQuery: String,
+    signedPath: String,
     timestamp: String
   ) -> String {
     [
       timestamp,
       method.uppercased(),
-      pathWithQuery,
+      signedPath,
       did,
     ].joined(separator: "\n")
   }
@@ -137,13 +150,13 @@ public enum GatewayInternalTrust {
     secret: String,
     did: String,
     method: String,
-    pathWithQuery: String,
+    signedPath: String,
     timestamp: String
   ) throws -> String {
     let canonical = canonicalRequest(
       did: did,
       method: method,
-      pathWithQuery: pathWithQuery,
+      signedPath: signedPath,
       timestamp: timestamp
     )
     let key = SymmetricKey(data: Data(secret.utf8))
