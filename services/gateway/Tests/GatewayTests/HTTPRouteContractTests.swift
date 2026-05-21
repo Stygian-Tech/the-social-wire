@@ -1,6 +1,7 @@
 import AsyncHTTPClient
 import Foundation
 import GatewayCore
+import HTTPTypes
 import Hummingbird
 import HummingbirdTesting
 import Logging
@@ -77,6 +78,46 @@ struct HTTPRouteContractTests {
       try await app.test(.live) { c in
         let response = try await c.execute(uri: "/v1/sync/preferences", method: .get)
         #expect(response.status.code == 401)
+      }
+    }
+  }
+
+  @Test("protected route preflight includes configured allow-origin")
+  func protectedRoutePreflight() async throws {
+    try await withSingletonHTTPClient { client in
+      let dbPath =
+        FileManager.default.temporaryDirectory
+          .appendingPathComponent("sw-http-\(UUID().uuidString).sqlite")
+          .path
+      defer { try? FileManager.default.removeItem(atPath: dbPath) }
+
+      let env: [String: String] = [
+        "APP_ENV": "local",
+        "SQLITE_DB_PATH": dbPath,
+        "OAUTH_PUBLIC_ORIGIN": "https://testing.thesocialwire.app",
+      ]
+      let config = GatewayServiceConfig.fromEnvironment(env)
+      let cache = try SQLiteCache(path: dbPath, logger: Logger(label: "contracts.sqlite"))
+      let router = GatewayRouterBuilder.router(
+        config: config,
+        httpClient: client,
+        cache: cache,
+        logger: Logger(label: "contracts.router")
+      )
+      let app = Application(router: router, configuration: .init(address: .hostname("127.0.0.1", port: 0)))
+      try await app.test(.live) { c in
+        var headers = HTTPFields()
+        headers[.origin] = "https://testing.thesocialwire.app"
+        headers[.accessControlRequestMethod] = "GET"
+        headers[.accessControlRequestHeaders] = "authorization,dpop"
+        let response = try await c.execute(
+          uri: "/v1/sync/preferences",
+          method: .options,
+          headers: headers
+        )
+        #expect(response.status == .noContent)
+        #expect(response.headers[.accessControlAllowOrigin] == "https://testing.thesocialwire.app")
+        #expect(response.headers[.accessControlAllowCredentials] == "true")
       }
     }
   }

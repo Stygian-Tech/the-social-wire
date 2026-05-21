@@ -12,6 +12,7 @@ enum GatewayRouterBuilder {
     logger: Logger
   ) -> Router<GatewayRequestContext> {
     let router = Router(context: GatewayRequestContext.self)
+    router.add(middleware: GatewayCORSPolicy.middleware(config: config.core))
     router.get("/health") { _, _ in ["status": "ok", "service": "gateway"] }
 
     OAuthMetadataRoutes(
