@@ -1,4 +1,7 @@
-# Deploy: fly deploy ../.. --config services/appview/fly.toml --app the-social-wire-dev-appview
+# fly.toml app configuration file generated for the-social-wire-dev-appview on 2026-05-21T01:25:05Z
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
 
 app = 'the-social-wire-dev-appview'
 primary_region = 'ams'
@@ -10,8 +13,8 @@ primary_region = 'ams'
   wait_timeout = '10m0s'
 
 [env]
-  PORT = '8081'
   ENABLE_THIN_APPVIEW = 'true'
+  PORT = '8081'
 
 [http_service]
   internal_port = 8081
