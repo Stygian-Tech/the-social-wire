@@ -82,11 +82,9 @@ public struct GatewayInternalTrustAuthMiddleware: RouterMiddleware {
   }
 
   private static func pathWithQuery(from request: Request) -> String {
-    var path = request.uri.path
-    if path.isEmpty { path = "/" }
-    if let query = request.uri.query, !query.isEmpty {
-      return "\(path)?\(query)"
-    }
-    return path
+    GatewayInternalTrust.canonicalPathWithQuery(
+      path: request.uri.path,
+      query: request.uri.query
+    )
   }
 }

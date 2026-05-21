@@ -18,6 +18,45 @@ public enum GatewayInternalTrust {
 
   private static let skewTolerance: TimeInterval = 120
 
+  /// Normalizes `path` and optional raw query for stable HMAC input across proxy hops.
+  ///
+  /// Decodes query pairs, sorts by name/value, and re-encodes so Gateway signing and AppView
+  /// verification match even when AsyncHTTPClient/Hummingbird percent-encode differently.
+  public static func canonicalPathWithQuery(path: String, query: String?) -> String {
+    var normalizedPath = path.trimmingCharacters(in: .whitespacesAndNewlines)
+    if normalizedPath.isEmpty { normalizedPath = "/" }
+    if !normalizedPath.hasPrefix("/") { normalizedPath = "/" + normalizedPath }
+
+    guard let query, !query.isEmpty else { return normalizedPath }
+
+    var items: [URLQueryItem] = []
+    for component in query.split(separator: "&", omittingEmptySubsequences: false) {
+      if let equalsIndex = component.firstIndex(of: "=") {
+        let nameRaw = String(component[..<equalsIndex])
+        let valueRaw = String(component[component.index(after: equalsIndex)...])
+        let name = nameRaw.removingPercentEncoding ?? nameRaw
+        let value = valueRaw.removingPercentEncoding ?? valueRaw
+        items.append(URLQueryItem(name: name, value: value))
+      } else {
+        let nameRaw = String(component)
+        let name = nameRaw.removingPercentEncoding ?? nameRaw
+        items.append(URLQueryItem(name: name, value: nil))
+      }
+    }
+
+    items.sort { lhs, rhs in
+      if lhs.name != rhs.name { return lhs.name < rhs.name }
+      return (lhs.value ?? "") < (rhs.value ?? "")
+    }
+
+    var components = URLComponents()
+    components.queryItems = items
+    guard let encodedQuery = components.percentEncodedQuery else {
+      return "\(normalizedPath)?\(query)"
+    }
+    return "\(normalizedPath)?\(encodedQuery)"
+  }
+
   /// Builds the signed header triple for an AppView-bound request.
   public static func signedHeaders(
     secret: String,

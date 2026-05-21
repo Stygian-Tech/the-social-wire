@@ -80,6 +80,22 @@ struct GatewayInternalTrustTests {
     }
   }
 
+  @Test("canonical query encoding matches across percent-encoding variants")
+  func canonicalQueryEncoding() {
+    let path = "/v1/appview/entries"
+    let encoded = GatewayInternalTrust.canonicalPathWithQuery(
+      path: path,
+      query: "authorDid=did%3Aplc%3Aabc&filter=all&limit=50"
+    )
+    let decoded = GatewayInternalTrust.canonicalPathWithQuery(
+      path: path,
+      query: "filter=all&authorDid=did:plc:abc&limit=50"
+    )
+    #expect(encoded == decoded)
+    #expect(encoded.contains("authorDid="))
+    #expect(encoded.contains("filter=all"))
+  }
+
   @Test("rejects stale timestamps")
   func rejectsStaleTimestamp() {
     let secret = "test-internal-secret"

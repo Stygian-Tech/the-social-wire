@@ -17,6 +17,8 @@ primary_region = 'ams'
   APPVIEW_PORT = '8081'
   PORT = '8081'
   ENABLE_THIN_APPVIEW = 'true'
+  # Must match gateway: fly secrets set GATEWAY_APPVIEW_INTERNAL_SECRET="<same>" --app the-social-wire-dev-appview
+  # SUPABASE_DATABASE_URL = 'postgres://...'
 
 [http_service]
   internal_port = 8081

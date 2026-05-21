@@ -70,11 +70,11 @@ struct AppViewProxyRoutes {
     method: String
   ) async throws -> Response {
     guard let auth = context.authContext else { throw HTTPError(.unauthorized) }
-    var pathWithQuery = path
-    if let query = request.uri.query, !query.isEmpty {
-      pathWithQuery += "?\(query)"
-    }
-    let url = "\(normalizeBase(baseURL))\(pathWithQuery)"
+    let pathWithQuery = GatewayInternalTrust.canonicalPathWithQuery(
+      path: path,
+      query: request.uri.query
+    )
+    let url = try forwardURL(baseURL: baseURL, pathWithQuery: pathWithQuery)
     var fwd = HTTPClientRequest(url: url)
     switch method {
     case "GET": fwd.method = .GET
@@ -118,5 +118,24 @@ struct AppViewProxyRoutes {
     var s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
     while s.hasSuffix("/") { s.removeLast() }
     return s
+  }
+
+  private func forwardURL(baseURL: String, pathWithQuery: String) throws -> String {
+    guard var components = URLComponents(string: normalizeBase(baseURL)) else {
+      throw HTTPError(.badGateway, message: "Invalid AppView base URL")
+    }
+
+    if let questionMark = pathWithQuery.firstIndex(of: "?") {
+      components.path = String(pathWithQuery[..<questionMark])
+      components.percentEncodedQuery = String(pathWithQuery[pathWithQuery.index(after: questionMark)...])
+    } else {
+      components.path = pathWithQuery
+      components.percentEncodedQuery = nil
+    }
+
+    guard let url = components.url?.absoluteString else {
+      throw HTTPError(.badGateway, message: "Invalid AppView forward URL")
+    }
+    return url
   }
 }
