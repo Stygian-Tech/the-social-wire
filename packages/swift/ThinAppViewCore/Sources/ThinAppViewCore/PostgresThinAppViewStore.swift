@@ -68,6 +68,38 @@ public init(pool: PostgresClient, logger: Logger) {
     )
   }
 
+  public func fetchContentItem(uri: String) async throws -> AppViewEntryListItem? {
+    let now = Date()
+    let rows = try await pool.query(
+      """
+      SELECT ci.uri, ci.render_json::text, ci.created_at
+      FROM content_items ci
+      WHERE ci.uri = \(uri) AND ci.expires_at > \(now)
+      LIMIT 1
+      """,
+      logger: logger
+    )
+    for try await row in rows {
+      let (uri, renderJSON, createdAt) = try row.decode((String, String, Date).self)
+      return ThinAppViewQuerySupport.entryListItems(from: [(uri, renderJSON, createdAt)]).first
+    }
+    return nil
+  }
+
+  public func hasReadMark(viewerDid: String, subjectUri: String) async throws -> Bool {
+    let rows = try await pool.query(
+      """
+      SELECT 1 AS present
+      FROM read_marks
+      WHERE viewer_did = \(viewerDid) AND subject_uri = \(subjectUri)
+      LIMIT 1
+      """,
+      logger: logger
+    )
+    for try await _ in rows { return true }
+    return false
+  }
+
   public func listEntries(
     viewerDid: String,
     authorDid: String,

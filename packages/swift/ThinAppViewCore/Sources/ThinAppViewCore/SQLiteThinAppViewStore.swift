@@ -128,6 +128,46 @@ public init(path dbPath: String, logger: Logger) throws {
     }
   }
 
+  public func fetchContentItem(uri: String) async throws -> AppViewEntryListItem? {
+    let nowIso = Self.isoString(from: Date())
+    let row: (uri: String, renderJSON: String, createdAt: Date)? = try await db.read { db in
+      guard
+        let fetched = try Row.fetchOne(
+          db,
+          sql: """
+            SELECT ci.uri, ci.render_json, ci.created_at
+            FROM content_items ci
+            WHERE ci.uri = ? AND ci.expires_at > ?
+            LIMIT 1
+            """,
+          arguments: [uri, nowIso]
+        )
+      else { return nil }
+      return (
+        uri: fetched["uri"],
+        renderJSON: fetched["render_json"],
+        createdAt: Self.date(fromIso: fetched["created_at"]) ?? Date.distantPast
+      )
+    }
+    guard let row else { return nil }
+    return ThinAppViewQuerySupport.entryListItems(from: [(row.uri, row.renderJSON, row.createdAt)]).first
+  }
+
+  public func hasReadMark(viewerDid: String, subjectUri: String) async throws -> Bool {
+    try await db.read { db in
+      try Bool.fetchOne(
+        db,
+        sql: """
+          SELECT 1
+          FROM read_marks
+          WHERE viewer_did = ? AND subject_uri = ?
+          LIMIT 1
+          """,
+        arguments: [viewerDid, subjectUri]
+      ) != nil
+    }
+  }
+
   public func listEntries(
     viewerDid: String,
     authorDid: String,

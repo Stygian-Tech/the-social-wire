@@ -9,6 +9,9 @@ public protocol ThinAppViewStore: Actor {
   func deleteReadMark(viewerDid: String, subjectUri: String) async throws
   func purgeReadMarks(viewerDid: String) async throws
 
+  func fetchContentItem(uri: String) async throws -> AppViewEntryListItem?
+  func hasReadMark(viewerDid: String, subjectUri: String) async throws -> Bool
+
   func listEntries(
     viewerDid: String,
     authorDid: String,

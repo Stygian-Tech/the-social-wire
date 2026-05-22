@@ -103,6 +103,26 @@ public struct AppViewEnrollRequest: Codable, Sendable {
 public struct AppViewReadMarkRequest: Codable, Sendable {
   public let subjectUri: String
   public let readAt: Date?
+
+  public init(subjectUri: String, readAt: Date?) {
+    self.subjectUri = subjectUri
+    self.readAt = readAt
+  }
+
+  private enum CodingKeys: String, CodingKey {
+    case subjectUri
+    case readAt
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    subjectUri = try container.decode(String.self, forKey: .subjectUri)
+    if let raw = try container.decodeIfPresent(String.self, forKey: .readAt) {
+      readAt = ThinAppViewQuerySupport.parseISO8601Date(raw)
+    } else {
+      readAt = nil
+    }
+  }
 }
 
 public struct AppViewReadMarkDeleteRequest: Codable, Sendable {

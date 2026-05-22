@@ -53,30 +53,10 @@ actor ThinAppViewReadService {
   }
 
   func entryDetail(auth: AuthContext, entryId: String) async throws -> AppViewEntryDetailResponse {
-    let list = try await store.listEntries(
-      viewerDid: auth.did,
-      authorDid: auth.did,
-      publicationAtUri: nil,
-      publicationScopeAtUris: [],
-      publicationSiteUrls: [],
-      filter: .all,
-      cursor: nil,
-      limit: 200
-    )
-    guard let item = list.entries.first(where: { $0.entryId == entryId }) else {
+    guard let item = try await store.fetchContentItem(uri: entryId) else {
       throw HTTPError(.notFound, message: "Entry not found in AppView index")
     }
-    let readList = try await store.listEntries(
-      viewerDid: auth.did,
-      authorDid: auth.did,
-      publicationAtUri: nil,
-      publicationScopeAtUris: [],
-      publicationSiteUrls: [],
-      filter: .read,
-      cursor: nil,
-      limit: 200
-    )
-    let isRead = readList.entries.contains { $0.entryId == entryId }
+    let isRead = try await store.hasReadMark(viewerDid: auth.did, subjectUri: entryId)
     return AppViewEntryDetailResponse(
       entryId: item.entryId,
       title: item.title,
