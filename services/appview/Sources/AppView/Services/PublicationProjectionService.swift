@@ -33,11 +33,13 @@ actor PublicationProjectionService {
     let prefs = try await loadPublicationPrefs(auth: auth)
     let subscriptionValues = try await loadGraphSubscriptions(auth: auth)
     let skyreaderRecords = try await loadSkyreaderSubscriptions(auth: auth)
+
     let discovered = await PublicationFollowDiscovery.discover(
       viewerDid: viewerDid,
       auth: auth,
       repo: repo,
       httpClient: httpClient,
+      plcURL: plcURL,
       logger: logger
     )
 
@@ -51,13 +53,20 @@ actor PublicationProjectionService {
     )
 
     var graphOrphanRows: [ProjectionDiscoveredRow] = []
-    for uri in orphanUris {
-      if let row = await PublicationFollowDiscovery.rowFromPublicationAtUri(
-        atUri: uri,
-        repo: repo,
-        auth: auth
-      ) {
-        graphOrphanRows.append(row)
+    await withTaskGroup(of: ProjectionDiscoveredRow?.self) { group in
+      for uri in orphanUris {
+        group.addTask {
+          await PublicationFollowDiscovery.rowFromPublicationAtUri(
+            atUri: uri,
+            repo: self.repo,
+            auth: auth,
+            httpClient: self.httpClient,
+            plcURL: self.plcURL
+          )
+        }
+      }
+      for await row in group {
+        if let row { graphOrphanRows.append(row) }
       }
     }
 
@@ -98,10 +107,16 @@ actor PublicationProjectionService {
     let allRows = discovered + rssRows + graphOrphanRows
     let enrollAuthorDids = Array(Set(allRows.map(\.authorDid).filter { !$0.isEmpty })).sorted()
 
-    let sidebarRows = try await mapRows(allRows, auth: auth, viewerDid: viewerDid)
-    let myRows = try await mapRows(myPublications, auth: auth, viewerDid: viewerDid)
-    let unfolderedRows = try await mapRows(unfoldered, auth: auth, viewerDid: viewerDid)
-    let followingRows = try await mapRows(following, auth: auth, viewerDid: viewerDid)
+    let uniqueRows = Self.uniqueRows(allRows)
+    let sidebarRowById = try await buildSidebarRowMap(
+      rows: uniqueRows,
+      auth: auth,
+      viewerDid: viewerDid
+    )
+    let sidebarRows = uniqueRows.compactMap { sidebarRowById[$0.publicationId] }
+    let myRows = myPublications.compactMap { sidebarRowById[$0.publicationId] }
+    let unfolderedRows = unfoldered.compactMap { sidebarRowById[$0.publicationId] }
+    let followingRows = following.compactMap { sidebarRowById[$0.publicationId] }
 
     var folderSections: [PublicationFolderSection] = []
     for folder in folders {
@@ -110,7 +125,7 @@ actor PublicationProjectionService {
         let prefFolder = prefsByPublicationId[row.publicationId]?.value["folderId"]?.value as? String
         return prefFolder == folderId || prefFolder == folder.rkey
       }
-      let sectionRows = try await mapRows(pubs, auth: auth, viewerDid: viewerDid)
+      let sectionRows = pubs.compactMap { sidebarRowById[$0.publicationId] }
       let sectionUnread = sectionRows.compactMap(\.unreadCount).reduce(0, +)
       let name = folder.value["name"]?.value as? String ?? folder.rkey
       folderSections.append(
@@ -197,18 +212,34 @@ actor PublicationProjectionService {
     return records.map { ($0.uri, $0.value) }
   }
 
-  private func mapRows(
-    _ rows: [ProjectionDiscoveredRow],
+  private static func uniqueRows(_ rows: [ProjectionDiscoveredRow]) -> [ProjectionDiscoveredRow] {
+    var byId: [String: ProjectionDiscoveredRow] = [:]
+    for row in rows {
+      byId[row.publicationId] = row
+    }
+    return Array(byId.values)
+  }
+
+  private func buildSidebarRowMap(
+    rows: [ProjectionDiscoveredRow],
     auth: AuthContext,
     viewerDid: String
-  ) async throws -> [SidebarPublicationRow] {
-    var out: [SidebarPublicationRow] = []
+  ) async throws -> [String: SidebarPublicationRow] {
+    var scopeCache: [String: PublicationAppViewScope] = [:]
     for row in rows {
-      let scope = await buildAppViewScope(
+      guard scopeCache[row.publicationId] == nil else { continue }
+      scopeCache[row.publicationId] = await buildAppViewScope(
         publicationId: row.publicationId,
         authorDid: row.authorDid,
         auth: auth
       )
+    }
+
+    var out: [String: SidebarPublicationRow] = [:]
+    for row in rows {
+      guard let scope = scopeCache[row.publicationId] else {
+        throw HTTPError(.internalServerError)
+      }
       let unread = try? await thinStore.listEntries(
         viewerDid: viewerDid,
         authorDid: scope.authorDid,
@@ -219,20 +250,17 @@ actor PublicationProjectionService {
         cursor: nil,
         limit: 100
       )
-      let unreadCount = unread?.entries.count
-      out.append(
-        SidebarPublicationRow(
-          publicationId: row.publicationId,
-          subscriptionPublicationId: row.subscriptionPublicationId,
-          authorDid: row.authorDid,
-          authorHandle: row.authorHandle,
-          title: row.title,
-          iconUrl: row.iconUrl,
-          avatarUrl: row.avatarUrl,
-          discoveredAt: row.discoveredAt,
-          appViewScope: scope,
-          unreadCount: unreadCount
-        )
+      out[row.publicationId] = SidebarPublicationRow(
+        publicationId: row.publicationId,
+        subscriptionPublicationId: row.subscriptionPublicationId,
+        authorDid: row.authorDid,
+        authorHandle: row.authorHandle,
+        title: row.title,
+        iconUrl: row.iconUrl,
+        avatarUrl: row.avatarUrl,
+        discoveredAt: row.discoveredAt,
+        appViewScope: scope,
+        unreadCount: unread?.entries.count
       )
     }
     return out

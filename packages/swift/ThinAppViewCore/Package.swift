@@ -10,6 +10,7 @@ let package = Package(
     .library(name: "ThinAppViewCore", targets: ["ThinAppViewCore"]),
   ],
   dependencies: [
+    .package(url: "https://github.com/swift-server/async-http-client.git", from: "1.23.0"),
     .package(url: "https://github.com/vapor/postgres-nio.git", from: "1.21.0"),
     .package(url: "https://github.com/groue/GRDB.swift.git", from: "7.10.0"),
     .package(url: "https://github.com/apple/swift-log.git", from: "1.6.0"),
@@ -20,6 +21,7 @@ let package = Package(
     .target(
       name: "ThinAppViewCore",
       dependencies: [
+        .product(name: "AsyncHTTPClient", package: "async-http-client"),
         .product(name: "PostgresNIO", package: "postgres-nio"),
         .product(name: "GRDB", package: "GRDB.swift"),
         .product(name: "Logging", package: "swift-log"),

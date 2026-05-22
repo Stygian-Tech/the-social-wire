@@ -7,7 +7,11 @@ public enum RenderFieldExtractor {
     "com.standard.publication",
   ]
 
-  public static func extractRenderFields(from record: [String: Any]) -> ContentRenderFields {
+  public static func extractRenderFields(
+    from record: [String: Any],
+    repoDid: String? = nil,
+    pdsBase: String? = nil
+  ) -> ContentRenderFields {
     let title =
       string(record["title"])
       ?? string(record["name"])
@@ -21,13 +25,34 @@ public enum RenderFieldExtractor {
       ?? ISO8601DateFormatter().string(from: Date())
 
     let summary = string(record["summary"]) ?? string(record["description"])
-    let thumbnailUrl = extractHttpsThumbnail(from: record)
+    let thumbnailUrl =
+      extractHttpsThumbnail(from: record)
+      ?? publicationImageUrl(
+        from: record,
+        keys: ["coverImage", "thumbnail", "image", "heroImage", "socialImage"],
+        repoDid: repoDid,
+        pdsBase: pdsBase
+      )
 
     return ContentRenderFields(
       title: title,
       publishedAt: publishedAt,
       summary: summary,
       thumbnailUrl: thumbnailUrl
+    )
+  }
+
+  /// Resolves a publication sidebar icon from HTTPS fields or a non-Bridgy blob URL.
+  public static func publicationIconUrl(
+    from record: [String: Any],
+    repoDid: String,
+    pdsBase: String?
+  ) -> String? {
+    publicationImageUrl(
+      from: record,
+      keys: ["icon", "iconUrl", "iconImage", "iconImageUrl", "avatar", "avatarUrl", "logo", "logoUrl", "favicon"],
+      repoDid: repoDid,
+      pdsBase: pdsBase
     )
   }
 
@@ -171,6 +196,63 @@ public enum RenderFieldExtractor {
       if let url = httpsUrl(string(thumb)) { return url }
     }
     return nil
+  }
+
+  private static func publicationImageUrl(
+    from record: [String: Any],
+    keys: [String],
+    repoDid: String?,
+    pdsBase: String?
+  ) -> String? {
+    for key in keys {
+      if let url = httpsUrl(string(record[key])) { return url }
+      if let cid = extractBlobLink(record[key]),
+         let repoDid,
+         let built = buildSyncGetBlobUrl(pdsBase: pdsBase, repoDid: repoDid, cid: cid)
+      {
+        return built
+      }
+    }
+    return nil
+  }
+
+  public static func extractBlobLink(_ value: Any?) -> String? {
+    guard let value else { return nil }
+    if let link = value as? String, !link.isEmpty { return link }
+    guard let object = value as? [String: Any] else { return nil }
+    if let link = string(object["$link"]) { return link }
+    if let ref = object["ref"] as? [String: Any], let link = string(ref["$link"]) { return link }
+    return nil
+  }
+
+  public static func buildSyncGetBlobUrl(pdsBase: String?, repoDid: String, cid: String) -> String? {
+    guard let pdsBase else { return nil }
+    let normalized = normalizePdsBase(pdsBase)
+    guard !isBridgyPdsHost(normalized) else { return nil }
+    var components = URLComponents(string: "\(normalized)/xrpc/com.atproto.sync.getBlob")!
+    components.queryItems = [
+      URLQueryItem(name: "did", value: repoDid),
+      URLQueryItem(name: "cid", value: cid),
+    ]
+    return components.url?.absoluteString
+  }
+
+  public static func faviconUrl(forSiteOrFeedUrl raw: String) -> String? {
+    guard let host = URL(string: raw.trimmingCharacters(in: .whitespacesAndNewlines))?.host else {
+      return nil
+    }
+    return "https://\(host)/favicon.ico"
+  }
+
+  private static func normalizePdsBase(_ endpoint: String) -> String {
+    var s = endpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+    while s.hasSuffix("/") { s.removeLast() }
+    return s
+  }
+
+  private static func isBridgyPdsHost(_ pdsBase: String) -> Bool {
+    guard let host = URL(string: pdsBase)?.host?.lowercased() else { return false }
+    return host == "atproto.brid.gy" || host.hasSuffix(".brid.gy")
   }
 
   private static func httpsUrl(_ raw: String?) -> String? {

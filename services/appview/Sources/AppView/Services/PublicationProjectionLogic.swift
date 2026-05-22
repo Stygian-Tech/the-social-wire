@@ -197,6 +197,8 @@ enum PublicationProjectionLogic {
 
       let icon =
         (dict["customIconUrl"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        ?? (dict["siteUrl"] as? String).flatMap { RenderFieldExtractor.faviconUrl(forSiteOrFeedUrl: $0) }
+        ?? RenderFieldExtractor.faviconUrl(forSiteOrFeedUrl: normalized)
 
       out.append(
         ProjectionDiscoveredRow(

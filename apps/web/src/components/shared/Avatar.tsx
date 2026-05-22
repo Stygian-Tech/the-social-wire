@@ -1,3 +1,7 @@
+"use client";
+
+import { useState } from "react";
+
 interface AvatarProps {
   src?: string | null;
   alt: string;
@@ -6,20 +10,23 @@ interface AvatarProps {
 }
 
 export function Avatar({ src, alt, size = 32, className = "" }: AvatarProps) {
-  if (src) {
+  const [failed, setFailed] = useState(false);
+  const showImage = Boolean(src) && !failed;
+
+  if (showImage) {
     return (
       <img
-        src={src}
+        src={src ?? undefined}
         alt={alt}
         width={size}
         height={size}
         className={`rounded-full object-cover ${className}`}
         referrerPolicy="no-referrer"
+        onError={() => setFailed(true)}
       />
     );
   }
 
-  // Fallback: initials avatar
   const initials = alt
     .split(" ")
     .slice(0, 2)

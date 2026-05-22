@@ -1,3 +1,4 @@
+import AsyncHTTPClient
 import ArgumentParser
 import Foundation
 import Logging
@@ -23,11 +24,20 @@ struct AppViewWorkerCommand: AsyncParsableCommand {
     }
 
     let backend = DatabaseBackend.fromEnvironment(environment)
+    let plcURL = environment["ATPROTO_PLC_URL"] ?? "https://plc.directory"
+    let httpClient = HTTPClient(eventLoopGroupProvider: .singleton)
+    defer { Task { try? await httpClient.shutdown() } }
 
     switch backend {
     case .sqlite(let path):
       let store = try SQLiteThinAppViewStore(path: path, logger: workerLogger)
-      try await ThinAppViewWorkerRuntime.run(store: store, config: thinConfig, logger: workerLogger)
+      try await ThinAppViewWorkerRuntime.run(
+        store: store,
+        config: thinConfig,
+        logger: workerLogger,
+        httpClient: httpClient,
+        plcURL: plcURL
+      )
 
     case .postgres(let urlString):
       let pgConfig = try makePostgresConfig(from: urlString, logger: workerLogger)
@@ -36,7 +46,13 @@ struct AppViewWorkerCommand: AsyncParsableCommand {
       try await withThrowingTaskGroup(of: Void.self) { group in
         group.addTask { await pgPool.run() }
         group.addTask {
-          try await ThinAppViewWorkerRuntime.run(store: store, config: thinConfig, logger: workerLogger)
+          try await ThinAppViewWorkerRuntime.run(
+            store: store,
+            config: thinConfig,
+            logger: workerLogger,
+            httpClient: httpClient,
+            plcURL: plcURL
+          )
         }
         try await group.next()
         group.cancelAll()

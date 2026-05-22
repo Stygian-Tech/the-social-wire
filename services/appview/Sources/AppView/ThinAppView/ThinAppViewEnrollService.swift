@@ -118,7 +118,8 @@ actor ThinAppViewEnrollService {
           rkey: parsed.rkey,
           cid: cid,
           recordJSON: recordJSON,
-          operation: "create"
+          operation: "create",
+          pdsBase: pdsBase
         )
         count += 1
       }

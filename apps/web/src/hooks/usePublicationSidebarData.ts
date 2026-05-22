@@ -14,6 +14,7 @@ import {
   fetchPublicationSidebar,
   maybeEnrollProjectionAuthors,
   refreshPublicationSidebar,
+  sidebarIncludesUnreadCounts,
   sidebarRowToDiscoveredPublication,
   unreadCountsMapFromProjection,
   type PublicationAppViewScope,
@@ -163,7 +164,7 @@ export function usePublicationSidebarData() {
       !!session &&
       publicationIdsForUnread.length > 0 &&
       projectionState != null &&
-      projectionState.unreadCountsByPublicationId.size === 0,
+      !sidebarIncludesUnreadCounts(projectionQuery.data),
     staleTime: 60_000,
     retry: 1,
   });

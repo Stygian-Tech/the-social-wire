@@ -16,6 +16,7 @@ enum PublicationFollowDiscovery {
     auth: AuthContext,
     repo: ATProtoAuthenticatedRepoClient,
     httpClient: HTTPClient,
+    plcURL: String,
     logger: Logger
   ) async -> [ProjectionDiscoveredRow] {
     var subjectDids = Set<String>()
@@ -64,7 +65,9 @@ enum PublicationFollowDiscovery {
       displayName: "My Publications",
       avatar: nil,
       repo: repo,
-      auth: auth
+      auth: auth,
+      httpClient: httpClient,
+      plcURL: plcURL
     ) {
       discovered.append(contentsOf: own)
     }
@@ -82,7 +85,9 @@ enum PublicationFollowDiscovery {
               displayName: nil,
               avatar: nil,
               repo: repo,
-              auth: nil
+              auth: nil,
+              httpClient: httpClient,
+              plcURL: plcURL
             ) ?? []
           }
         }
@@ -109,9 +114,16 @@ enum PublicationFollowDiscovery {
     displayName: String?,
     avatar: String?,
     repo: ATProtoAuthenticatedRepoClient,
-    auth: AuthContext?
+    auth: AuthContext?,
+    httpClient: HTTPClient,
+    plcURL: String
   ) async -> [ProjectionDiscoveredRow]? {
     let now = Date()
+    let pdsBase = try? await ATProtoPdsResolution.resolvePdsBase(
+      repoDid: authorDid,
+      plcBase: plcURL,
+      httpClient: httpClient
+    )
 
     for collection in PublicationLexicons.discoveryPublicationCollections {
       let page = try? await repo.listRecords(
@@ -131,7 +143,9 @@ enum PublicationFollowDiscovery {
           ?? displayName
           ?? handle
         let icon =
-          (value["icon"] as? String) ?? (value["avatar"] as? String) ?? avatar
+          RenderFieldExtractor.publicationIconUrl(from: value, repoDid: authorDid, pdsBase: pdsBase)
+          ?? avatar.flatMap { RenderFieldExtractor.publicationIconUrl(from: ["avatar": $0], repoDid: authorDid, pdsBase: pdsBase) }
+          ?? avatar
         return ProjectionDiscoveredRow(
           publicationId: record.uri,
           subscriptionPublicationId: record.uri,
@@ -175,7 +189,9 @@ enum PublicationFollowDiscovery {
   static func rowFromPublicationAtUri(
     atUri: String,
     repo: ATProtoAuthenticatedRepoClient,
-    auth: AuthContext?
+    auth: AuthContext?,
+    httpClient: HTTPClient,
+    plcURL: String
   ) async -> ProjectionDiscoveredRow? {
     let normalized = PublicationProjectionLogic.normalizeAtRepoParam(atUri)
     guard let parsed = RenderFieldExtractor.parseAtUri(normalized),
@@ -191,7 +207,13 @@ enum PublicationFollowDiscovery {
       (dict["title"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
       ?? (dict["name"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
       ?? parsed.rkey
-    let icon = (dict["icon"] as? String) ?? (dict["avatar"] as? String)
+    let pdsBase = try? await ATProtoPdsResolution.resolvePdsBase(
+      repoDid: parsed.did,
+      plcBase: plcURL,
+      httpClient: httpClient
+    )
+    let icon =
+      RenderFieldExtractor.publicationIconUrl(from: dict, repoDid: parsed.did, pdsBase: pdsBase)
 
     return ProjectionDiscoveredRow(
       publicationId: normalized,

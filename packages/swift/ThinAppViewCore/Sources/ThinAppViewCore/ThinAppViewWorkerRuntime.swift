@@ -1,3 +1,4 @@
+import AsyncHTTPClient
 import Foundation
 import Logging
 
@@ -6,9 +7,17 @@ public enum ThinAppViewWorkerRuntime {
   public static func run(
     store: any ThinAppViewStore,
     config: ThinAppViewConfig,
-    logger: Logger
+    logger: Logger,
+    httpClient: HTTPClient? = nil,
+    plcURL: String? = nil
   ) async throws {
-    let indexer = ThinAppViewIndexer(store: store, config: config, logger: logger)
+    let indexer = ThinAppViewIndexer(
+      store: store,
+      config: config,
+      logger: logger,
+      httpClient: httpClient,
+      plcURL: plcURL
+    )
     let firehose = FirehoseSubscriber(
       relayURL: config.relayWebSocketURL,
       indexer: indexer,

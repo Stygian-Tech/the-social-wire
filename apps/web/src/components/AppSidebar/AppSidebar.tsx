@@ -127,7 +127,8 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
 
   usePrefetchSidebarPublicationEntries(
     publicationsForUnread,
-    !sidebarListsLoading && !!session
+    !sidebarListsLoading && !!session,
+    selectedPubId
   );
 
   const publicationUnreadCounts = useSidebarUnreadCounts(

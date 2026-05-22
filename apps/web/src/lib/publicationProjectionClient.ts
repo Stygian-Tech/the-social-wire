@@ -317,6 +317,14 @@ export function unreadCountsMapFromProjection(
   return map;
 }
 
+/** True when sidebar rows already include per-publication unread counts from the server. */
+export function sidebarIncludesUnreadCounts(
+  projection: PublicationSidebarProjection | undefined
+): boolean {
+  if (!projection) return false;
+  return projection.allPublicationRows.some((row) => row.unreadCount != null);
+}
+
 export function appViewScopeFromProjection(
   projection: PublicationSidebarProjection | undefined,
   publicationKey: string
