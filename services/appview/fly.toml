@@ -1,7 +1,7 @@
-# Deploy from repo root: bash services/appview/deploy.sh dev
-# Or: fly deploy ../.. --config services/appview/fly.toml --app the-social-wire-dev-appview
+# fly.toml app configuration file generated for the-social-wire-dev-appview on 2026-05-21T01:25:05Z
 #
-# Listens on APPVIEW_PORT (8081). Do not set a Fly secret PORT=8080 — it overrides fly.toml and breaks health checks.
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
 
 app = 'the-social-wire-dev-appview'
 primary_region = 'ams'
@@ -14,11 +14,8 @@ primary_region = 'ams'
   wait_timeout = '10m0s'
 
 [env]
-  APPVIEW_PORT = '8081'
-  PORT = '8081'
   ENABLE_THIN_APPVIEW = 'true'
-  # Must match gateway: fly secrets set GATEWAY_APPVIEW_INTERNAL_SECRET="<same>" --app the-social-wire-dev-appview
-  # SUPABASE_DATABASE_URL = 'postgres://...'
+  PORT = '8081'
 
 [http_service]
   internal_port = 8081
