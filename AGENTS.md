@@ -10,7 +10,8 @@
 - Use a confirmation step for bulk read-state actions such as "Mark All As Read" (destructive across many entries).
 - For native iOS work, prefer pure SwiftUI with idiomatic system chrome (do not force pixel-perfect mock clones); use UIKit only when SwiftUI cannot meet the requirement or there is a clear performance justification; conform to Swift 6 strict concurrency and Apple Human Interface Guidelines. Account actions such as Log Out belong in ProfileView, opened from the sidebar toolbar avatar—not a sidebar footer.
 - Prefer independent distributed backend services (Gateway, AppView, ingestion worker) over a monolithic API, Bluesky/Blacksky-style—not one combined API/AppView process.
-- Keep web and iOS as thin consumers: sidebar/feed/folder/avatar/unread logic belongs in Gateway/AppView; do not duplicate discovery, RSS parsing, or projection rules per client. Prefer hard cutover to the server read path over long-lived client-side fallback merge logic.
+- Keep web and iOS as thin consumers: sidebar/feed/folder/avatar/unread logic belongs in Gateway/AppView; do not duplicate discovery, RSS parsing, or projection rules per client. Prefer hard cutover to the server read path over long-lived client-side fallback merge logic. Publication/folder/subscription/read-mark/mark-all-read mutations go through Gateway routes, not direct PDS XRPC from clients.
+- On web, prefer local IndexedDB image caching for publication avatars and entry thumbnails (`imageBlobCache`, `useCachedImageUrl`, `prefetchCachedImages`) so sidebar/feed images are not refetched on every render.
 
 ## Learned Workspace Facts
 

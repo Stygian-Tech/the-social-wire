@@ -21,7 +21,6 @@ export type FolderRecordFromProjection = {
 /** Reads folders from the gateway sidebar projection (no direct PDS list). */
 export function useFolders() {
   const { session, getOAuthSession } = useAuth();
-  const qc = useQueryClient();
   return useQuery({
     queryKey: [...FOLDERS_QUERY_KEY, session?.did ?? ""] as const,
     queryFn: async () => {

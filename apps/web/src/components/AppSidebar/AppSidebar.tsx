@@ -58,7 +58,7 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
   const pathname = usePathname();
   const { session, signOut } = useAuth();
   const [loggingOut, setLoggingOut] = useState(false);
-  const { selectedFolderUri, setSelectedFolderUri, isEntryRead } = useReadRoute();
+  const { selectedFolderUri, setSelectedFolderUri } = useReadRoute();
 
   const [expandedKeys, setExpandedKeys] = useState(
     () => new Set<string>([SIDEBAR_SEC_FOLDERS, SIDEBAR_SEC_PUBLICATIONS])

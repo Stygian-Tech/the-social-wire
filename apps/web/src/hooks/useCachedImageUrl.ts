@@ -4,6 +4,12 @@ import { useEffect, useState } from "react";
 
 import { fetchCachedImageObjectUrl } from "@/lib/imageBlobCache";
 
+type CachedImageState = {
+  key: string | null;
+  objectUrl: string | undefined;
+  failed: boolean;
+};
+
 /**
  * Resolves a remote image URL to a blob object URL backed by IndexedDB cache.
  */
@@ -11,40 +17,51 @@ export function useCachedImageUrl(src: string | null | undefined): {
   objectUrl: string | undefined;
   failed: boolean;
 } {
-  const [objectUrl, setObjectUrl] = useState<string | undefined>();
-  const [failed, setFailed] = useState(false);
+  const cacheKey = src?.trim() || null;
+  const [state, setState] = useState<CachedImageState>({
+    key: null,
+    objectUrl: undefined,
+    failed: false,
+  });
 
   useEffect(() => {
-    if (!src?.trim()) {
-      setObjectUrl(undefined);
-      setFailed(false);
-      return;
-    }
+    if (!cacheKey) return;
 
     let cancelled = false;
     let activeObjectUrl: string | undefined;
-    setFailed(false);
-    setObjectUrl(undefined);
 
-    void fetchCachedImageObjectUrl(src)
+    void fetchCachedImageObjectUrl(cacheKey)
       .then((url) => {
         if (cancelled) {
           if (url) URL.revokeObjectURL(url);
           return;
         }
         activeObjectUrl = url;
-        setObjectUrl(url);
-        if (!url) setFailed(true);
+        setState({
+          key: cacheKey,
+          objectUrl: url,
+          failed: !url,
+        });
       })
       .catch(() => {
-        if (!cancelled) setFailed(true);
+        if (!cancelled) {
+          setState({
+            key: cacheKey,
+            objectUrl: undefined,
+            failed: true,
+          });
+        }
       });
 
     return () => {
       cancelled = true;
       if (activeObjectUrl) URL.revokeObjectURL(activeObjectUrl);
     };
-  }, [src]);
+  }, [cacheKey]);
 
-  return { objectUrl, failed };
+  if (!cacheKey || state.key !== cacheKey) {
+    return { objectUrl: undefined, failed: false };
+  }
+
+  return { objectUrl: state.objectUrl, failed: state.failed };
 }
