@@ -4,7 +4,8 @@ import Hummingbird
 
 /// Builds the **`htu`** string DPoP proofs should target for this ingress path.
 ///
-/// Mirrors common reverse-proxy behaviour: honours `X-Forwarded-Proto` and the effective authority.
+/// RFC 9449 requires **`htu`** to omit the query string. Mirrors common reverse-proxy behaviour:
+/// honours `X-Forwarded-Proto` and the effective authority.
 public enum DPoPHtu {
   static func canonical(for request: Request) -> String? {
     let trimmedHost = trimmedAuthority(for: request) ?? trimmedHostHeader(from: request.headers)
@@ -16,10 +17,6 @@ public enum DPoPHtu {
     var pathFragment = request.uri.path
     if pathFragment.isEmpty { pathFragment = "/" }
     if !pathFragment.hasPrefix("/") { pathFragment = "/" + pathFragment }
-
-    if let query = request.uri.query, !query.isEmpty {
-      return "\(scheme)://\(authority)\(pathFragment)?\(query)"
-    }
 
     return "\(scheme)://\(authority)\(pathFragment)"
   }

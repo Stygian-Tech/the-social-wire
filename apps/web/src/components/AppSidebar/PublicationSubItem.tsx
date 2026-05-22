@@ -47,6 +47,7 @@ import {
 import { useCachedBulkReadActions } from "@/hooks/useCachedBulkReadActions";
 import { standardSiteSubscriptionTargetFromDiscovery } from "@/lib/publicationSubscriptionMatch";
 import { isRssPublicationId } from "@/lib/rssFeedCore";
+import { isDevDebugUiEnabled } from "@/lib/appEnv";
 import { recordKindFromPublication } from "@/lib/recordKindDebug";
 import { DevRecordKindBadge } from "@/components/shared/DevRecordKindBadge";
 import { cn } from "@/lib/utils";
@@ -188,6 +189,7 @@ export function PublicationSubItem({
     () => recordKindFromPublication(publication),
     [publication]
   );
+  const devRecordKindVisible = isDevDebugUiEnabled();
 
   return (
     <SidebarMenuSubItem>
@@ -200,14 +202,16 @@ export function PublicationSubItem({
             onClick={() => onSelect(publication.publicationId)}
             className={cn(
               "min-w-0 flex-1 gap-2",
-              unreadCount > 0 && "relative pr-8"
+              unreadCount > 0 && "relative pr-8",
+              devRecordKindVisible &&
+                "h-auto min-h-9 items-start overflow-visible py-1.5"
             )}
           >
             <PublicationLeadingAvatar publication={publication} />
-            <span className="flex min-w-0 flex-1 flex-col items-start gap-0.5">
+            <div className="flex min-w-0 flex-1 flex-col items-start gap-0.5">
               <span className="w-full truncate">{publication.title}</span>
               <DevRecordKindBadge info={recordKind} />
-            </span>
+            </div>
             {unreadCount > 0 ? (
               <SidebarMenuBadge
                 className="top-1/2 -translate-y-1/2"

@@ -1,7 +1,4 @@
 import Foundation
-#if canImport(FoundationNetworking)
-import FoundationNetworking
-#endif
 import Logging
 
 /// Consumes Jetstream / relay WebSocket commits and forwards them to the indexer.
@@ -32,31 +29,19 @@ actor FirehoseSubscriber {
   }
 
   private func consumeOnce() async throws {
-    guard let url = URL(string: relayURL) else {
-      throw FirehoseSubscriberError.invalidURL
+    #if canImport(WebSocketKit)
+    try await FirehoseLinuxWebSocket.consume(relayURL: relayURL, logger: logger) { text in
+      try await self.handleMessage(text)
     }
-
-    let task = URLSession.shared.webSocketTask(with: url)
-    task.resume()
-    defer {
-      task.cancel(with: URLSessionWebSocketTask.CloseCode.goingAway, reason: nil)
+    #else
+    try await FirehoseSubscriberURLSessionTransport.consume(
+      relayURL: relayURL,
+      logger: logger,
+      isCancelled: { Task.isCancelled }
+    ) { text in
+      try await self.handleMessage(text)
     }
-
-    logger.info("Firehose connected", metadata: ["url": .string(relayURL)])
-
-    while !Task.isCancelled {
-      let message = try await task.receive()
-      switch message {
-      case .string(let text):
-        try await handleMessage(text)
-      case .data(let data):
-        if let text = String(data: data, encoding: .utf8) {
-          try await handleMessage(text)
-        }
-      @unknown default:
-        continue
-      }
-    }
+    #endif
   }
 
   private func handleMessage(_ text: String) async throws {

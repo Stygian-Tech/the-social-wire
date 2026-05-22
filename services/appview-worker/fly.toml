@@ -10,6 +10,8 @@ primary_region = 'ams'
 
 [env]
   ENABLE_THIN_APPVIEW = 'true'
+  # Per-app secret (same pooler URI as gateway/appview):
+  # fly secrets set SUPABASE_DATABASE_URL='postgresql://postgres.[ref]:...' APP_ENV=dev --app the-social-wire-dev-appview-worker
 
 [[vm]]
   memory = '512mb'
