@@ -228,6 +228,57 @@ public init(pool: PostgresClient, logger: Logger) {
     return AppViewEntryListResponse(entries: items, cursor: nextCursor)
   }
 
+  public func countUnreadEntries(
+    viewerDid: String,
+    authorDid: String,
+    publicationAtUri: String?,
+    publicationScopeAtUris: [String],
+    publicationSiteUrls: [String]
+  ) async throws -> Int {
+    let now = Date()
+    let scoped = ThinAppViewQuerySupport.requiresPublicationSiteFilter(
+      publicationAtUri: publicationAtUri,
+      publicationScopeAtUris: publicationScopeAtUris
+    )
+
+    if !scoped {
+      let rows = try await pool.query(
+        """
+        SELECT COUNT(*)::int
+        FROM content_items ci
+        LEFT JOIN read_marks rm ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = ci.uri
+        WHERE ci.author_did = \(authorDid) AND ci.expires_at > \(now) AND rm.subject_uri IS NULL
+        """,
+        logger: logger
+      )
+      for try await row in rows {
+        return try row.decode(Int.self)
+      }
+      return 0
+    }
+
+    let rows = try await pool.query(
+      """
+      SELECT ci.publication_site
+      FROM content_items ci
+      LEFT JOIN read_marks rm ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = ci.uri
+      WHERE ci.author_did = \(authorDid) AND ci.expires_at > \(now) AND rm.subject_uri IS NULL
+      """,
+      logger: logger
+    )
+    var siteFields: [String?] = []
+    for try await row in rows {
+      let site: String? = try row.decode(String?.self)
+      siteFields.append(site)
+    }
+    return ThinAppViewQuerySupport.countMatchingPublicationSites(
+      siteFields: siteFields,
+      publicationAtUri: publicationAtUri,
+      publicationScopeAtUris: publicationScopeAtUris,
+      publicationSiteUrls: publicationSiteUrls
+    )
+  }
+
   public func deleteExpiredContent(before: Date) async throws -> Int {
     let rows = try await pool.query(
       "DELETE FROM content_items WHERE expires_at <= \(before) RETURNING uri",

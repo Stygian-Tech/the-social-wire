@@ -250,6 +250,62 @@ public init(path dbPath: String, logger: Logger) throws {
     return AppViewEntryListResponse(entries: items, cursor: nextCursor)
   }
 
+  public func countUnreadEntries(
+    viewerDid: String,
+    authorDid: String,
+    publicationAtUri: String?,
+    publicationScopeAtUris: [String],
+    publicationSiteUrls: [String]
+  ) async throws -> Int {
+    let nowIso = Self.isoString(from: Date())
+    let scoped = ThinAppViewQuerySupport.requiresPublicationSiteFilter(
+      publicationAtUri: publicationAtUri,
+      publicationScopeAtUris: publicationScopeAtUris
+    )
+
+    if !scoped {
+      return try await db.read { db in
+        try Int.fetchOne(
+          db,
+          sql: """
+            SELECT COUNT(*)
+            FROM content_items ci
+            LEFT JOIN read_marks rm
+              ON rm.viewer_did = ? AND rm.subject_uri = ci.uri
+            WHERE ci.author_did = ?
+              AND ci.expires_at > ?
+              AND rm.subject_uri IS NULL
+            """,
+          arguments: [viewerDid, authorDid, nowIso]
+        ) ?? 0
+      }
+    }
+
+    let siteFields: [String?] = try await db.read { db in
+      let rows = try Row.fetchAll(
+        db,
+        sql: """
+          SELECT ci.publication_site
+          FROM content_items ci
+          LEFT JOIN read_marks rm
+            ON rm.viewer_did = ? AND rm.subject_uri = ci.uri
+          WHERE ci.author_did = ?
+            AND ci.expires_at > ?
+            AND rm.subject_uri IS NULL
+          """,
+        arguments: [viewerDid, authorDid, nowIso]
+      )
+      return rows.map { $0["publication_site"] as String? }
+    }
+
+    return ThinAppViewQuerySupport.countMatchingPublicationSites(
+      siteFields: siteFields,
+      publicationAtUri: publicationAtUri,
+      publicationScopeAtUris: publicationScopeAtUris,
+      publicationSiteUrls: publicationSiteUrls
+    )
+  }
+
   public func deleteExpiredContent(before: Date) async throws -> Int {
     let beforeIso = Self.isoString(from: before)
     return try await db.write { db in

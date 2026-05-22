@@ -10,6 +10,7 @@ import {
 import { thumbnailImageSrcAttempts } from "@/lib/publicResourceUrl";
 import { cn } from "@/lib/utils";
 import type { EntryListItem } from "@/lib/atprotoClient";
+import { CachedImage } from "@/components/shared/CachedImage";
 
 interface EntryRowProps {
   entry: EntryListItem;
@@ -79,20 +80,18 @@ export function EntryRow({
           )}
         >
           {activeThumbSrc ? (
-            /* eslint-disable-next-line @next/next/no-img-element -- PDS / arbitrary publisher URLs */
-            <img
+            <CachedImage
               src={activeThumbSrc}
               alt=""
               width={48}
               height={48}
               loading="lazy"
-              decoding="async"
+              className="absolute inset-0 h-full w-full object-cover"
               onError={() => {
                 setAttemptIdx((i) =>
                   i + 1 < thumbAttempts.length ? i + 1 : thumbAttempts.length
                 );
               }}
-              className="absolute inset-0 h-full w-full object-cover"
             />
           ) : thumbsExhausted ? (
             <span

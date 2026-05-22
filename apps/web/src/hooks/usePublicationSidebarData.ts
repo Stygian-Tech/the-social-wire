@@ -1,10 +1,11 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { useFolders } from "@/hooks/useFolders";
 import type { DiscoveredPublication } from "@/lib/atprotoClient";
+import { prefetchCachedImages } from "@/lib/imageBlobCache";
 import {
   COLLECTION_PUB_PREFS,
   type PublicationPrefsRecord,
@@ -136,8 +137,24 @@ export function usePublicationSidebarData() {
     },
     enabled: !!session,
     staleTime: 6 * 60_000,
+    gcTime: 1000 * 60 * 60 * 24 * 7,
     retry: 1,
+    refetchOnWindowFocus: false,
   });
+
+  useEffect(() => {
+    const projection = projectionQuery.data;
+    if (!projection) return;
+    prefetchCachedImages(
+      projection.allPublicationRows.flatMap((row) => [
+        row.iconUrl,
+        row.avatarUrl,
+      ])
+    );
+  }, [projectionQuery.data]);
+
+  const hasCachedProjection = projectionQuery.data != null;
+  const sidebarFetching = projectionQuery.isFetching && !projectionQuery.isPending;
 
   const projectionState = useMemo(() => {
     if (!projectionQuery.data) return null;
@@ -201,16 +218,17 @@ export function usePublicationSidebarData() {
 
   return {
     folders: projectionState?.folders ?? [],
-    foldersLoading: projectionQuery.isLoading,
+    foldersLoading: projectionQuery.isPending && !hasCachedProjection,
     prefsMap: projectionState?.prefsMap ?? new Map(),
     allPublicationRows: projectionState?.allPublicationRows ?? [],
     folderMap: projectionState?.folderMap ?? new Map(),
     myPublications: projectionState?.myPublications ?? [],
     unfolderedPubs: projectionState?.unfolderedPubs ?? [],
     followingTabPublications: projectionState?.followingTabPublications ?? [],
-    pubsLoading: projectionQuery.isLoading,
-    subscriptionsBlockLoading: projectionQuery.isLoading,
-    sidebarListsLoading: projectionQuery.isLoading,
+    pubsLoading: projectionQuery.isPending && !hasCachedProjection,
+    subscriptionsBlockLoading: projectionQuery.isPending && !hasCachedProjection,
+    sidebarListsLoading: projectionQuery.isPending && !hasCachedProjection,
+    sidebarFetching,
     refresh,
     viewerDid: session?.did,
     publicationSidebarProjection: projectionQuery.data,

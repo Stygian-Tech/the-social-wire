@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   appViewScopeFromProjection,
+  sidebarIncludesUnreadCounts,
   unreadCountsMapFromProjection,
   type PublicationSidebarProjection,
 } from "@/lib/publicationProjectionClient";
@@ -77,5 +78,36 @@ describe("publicationProjectionClient", () => {
 
     const map = unreadCountsMapFromProjection(projection);
     expect(map.get("did:plc:alice")).toBe(4);
+  });
+
+  test("sidebarIncludesUnreadCounts is true when rows embed unreadCount", () => {
+    const projection: PublicationSidebarProjection = {
+      viewerDid: "did:plc:viewer",
+      folders: [],
+      publicationPrefs: [],
+      allPublicationRows: [
+        {
+          publicationId: "did:plc:alice",
+          authorDid: "did:plc:alice",
+          authorHandle: "alice",
+          title: "Alice",
+          discoveredAt: "2026-01-01T00:00:00.000Z",
+          unreadCount: 0,
+          appViewScope: {
+            authorDid: "did:plc:alice",
+            publicationAtUri: null,
+            publicationScopeAtUris: [],
+            publicationSiteUrls: [],
+          },
+        },
+      ],
+      myPublications: [],
+      subscribedUnfoldered: [],
+      followingTabPublications: [],
+      enrollAuthorDids: [],
+      refreshedAt: "2026-01-01T00:00:00.000Z",
+    };
+
+    expect(sidebarIncludesUnreadCounts(projection)).toBe(true);
   });
 });

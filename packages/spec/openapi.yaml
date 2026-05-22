@@ -432,14 +432,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                required: [status, refreshedAt]
-                properties:
-                  status:
-                    type: string
-                  refreshedAt:
-                    type: string
-                    format: date-time
+                $ref: "#/components/schemas/PublicationSidebarResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
 

@@ -51,7 +51,10 @@ final class SocialWireGatewayClient {
         guard (200 ..< 300).contains(result.statusCode) else {
             throw SocialWireError.badResponse("Publication refresh failed (\(result.statusCode)).")
         }
-        return try await fetchPublicationSidebar()
+        return try PublicationProjectionJSON.decoder.decode(
+            PublicationSidebarResponseDTO.self,
+            from: result.body
+        )
     }
 
     func resolveAddPublication(input: String) async throws -> ResolveAddPublicationResponseDTO {

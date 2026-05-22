@@ -130,6 +130,15 @@ struct SQLiteThinAppViewStoreTests {
     )
     #expect(unread.entries.count == 1)
     #expect(unread.entries.first?.entryId.contains("/two") == true)
+
+    let unreadCount = try await store.countUnreadEntries(
+      viewerDid: "did:plc:viewer",
+      authorDid: "did:plc:author",
+      publicationAtUri: nil,
+      publicationScopeAtUris: [],
+      publicationSiteUrls: []
+    )
+    #expect(unreadCount == 1)
   }
 
   @Test("fetches a single indexed entry by URI")

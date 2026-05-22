@@ -58,13 +58,37 @@ public enum ThinAppViewQuerySupport {
     publicationScopeAtUris: [String] = [],
     publicationSiteUrls: [String] = []
   ) -> Bool {
-    guard publicationAtUri != nil || !publicationScopeAtUris.isEmpty else { return true }
-    return RenderFieldExtractor.matchesPublication(
+    RenderFieldExtractor.matchesPublication(
       siteField: siteField,
       publicationAtUri: publicationAtUri,
       publicationScopeAtUris: publicationScopeAtUris,
       publicationSiteUrls: publicationSiteUrls
     )
+  }
+
+  static func requiresPublicationSiteFilter(
+    publicationAtUri: String?,
+    publicationScopeAtUris: [String]
+  ) -> Bool {
+    publicationAtUri != nil || !publicationScopeAtUris.isEmpty
+  }
+
+  static func countMatchingPublicationSites(
+    siteFields: [String?],
+    publicationAtUri: String?,
+    publicationScopeAtUris: [String],
+    publicationSiteUrls: [String]
+  ) -> Int {
+    siteFields.reduce(into: 0) { count, siteField in
+      if publicationSiteMatches(
+        siteField: siteField,
+        publicationAtUri: publicationAtUri,
+        publicationScopeAtUris: publicationScopeAtUris,
+        publicationSiteUrls: publicationSiteUrls
+      ) {
+        count += 1
+      }
+    }
   }
 }
 

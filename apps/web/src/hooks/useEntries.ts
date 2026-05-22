@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 import {
   useInfiniteQuery,
@@ -10,6 +11,7 @@ import {
 import { normalizeAtRepoParam } from "@/lib/atprotoClient";
 import type { EntryListItem, EntryDetail } from "@/lib/atprotoClient";
 import type { ArticleListFilter } from "@/lib/entryArticleFilter";
+import { prefetchCachedImages } from "@/lib/imageBlobCache";
 import {
   getEntryFromAppView,
   isThinAppViewEnabled,
@@ -107,7 +109,7 @@ export function useEntries(
   const queryClient = useQueryClient();
   const normalizedKey = publicationKey ? normalizeAtRepoParam(publicationKey) : null;
 
-  return useInfiniteQuery({
+  const query = useInfiniteQuery({
     queryKey: [...ENTRIES_QUERY_KEY(normalizedKey ?? ""), articleFilter] as const,
     queryFn: async ({ pageParam, signal }) => {
       if (!normalizedKey) return { entries: [], cursor: undefined };
@@ -129,6 +131,21 @@ export function useEntries(
     staleTime: ENTRIES_QUERY_STALE_MS,
     gcTime: 1000 * 60 * 60 * 24,
   });
+
+  useEffect(() => {
+    const pages = query.data?.pages;
+    if (!pages?.length) return;
+    prefetchCachedImages(
+      pages.flatMap((page) =>
+        page.entries.flatMap((entry) => [
+          entry.thumbnailUrl,
+          entry.thumbnailFallbackUrl,
+        ])
+      )
+    );
+  }, [query.data]);
+
+  return query;
 }
 
 /**

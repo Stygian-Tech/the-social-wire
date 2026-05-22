@@ -12,10 +12,9 @@ struct PublicationRoutes {
       return try await projectionService.sidebar(auth: auth)
     }
 
-    group.post("/v1/publications/refresh") { _, context async throws -> PublicationRefreshAcceptedResponse in
+    group.post("/v1/publications/refresh") { _, context async throws -> PublicationSidebarResponse in
       guard let auth = context.authContext else { throw HTTPError(.unauthorized) }
-      _ = try await projectionService.sidebar(auth: auth)
-      return PublicationRefreshAcceptedResponse(status: "ok", refreshedAt: Date())
+      return try await projectionService.sidebar(auth: auth)
     }
 
     group.post("/v1/publications/resolve") { request, context async throws -> ResolveAddPublicationResponse in

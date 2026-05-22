@@ -11,6 +11,9 @@ actor PublicationProjectionService {
   private let logger: Logger
   private let repo: ATProtoAuthenticatedRepoClient
   private let thinStore: any ThinAppViewStore
+  private var appViewScopeCache: [String: (scope: PublicationAppViewScope, expiresAt: Date)] = [:]
+
+  private static let appViewScopeCacheTTL: TimeInterval = 5 * 60
 
   init(
     httpClient: HTTPClient,
@@ -228,7 +231,7 @@ actor PublicationProjectionService {
     var scopeCache: [String: PublicationAppViewScope] = [:]
     for row in rows {
       guard scopeCache[row.publicationId] == nil else { continue }
-      scopeCache[row.publicationId] = await buildAppViewScope(
+      scopeCache[row.publicationId] = await cachedBuildAppViewScope(
         publicationId: row.publicationId,
         authorDid: row.authorDid,
         auth: auth
@@ -240,15 +243,12 @@ actor PublicationProjectionService {
       guard let scope = scopeCache[row.publicationId] else {
         throw HTTPError(.internalServerError)
       }
-      let unread = try? await thinStore.listEntries(
+      let unreadCount = try? await thinStore.countUnreadEntries(
         viewerDid: viewerDid,
         authorDid: scope.authorDid,
         publicationAtUri: scope.publicationAtUri,
         publicationScopeAtUris: scope.publicationScopeAtUris,
-        publicationSiteUrls: scope.publicationSiteUrls,
-        filter: .unread,
-        cursor: nil,
-        limit: 100
+        publicationSiteUrls: scope.publicationSiteUrls
       )
       out[row.publicationId] = SidebarPublicationRow(
         publicationId: row.publicationId,
@@ -260,7 +260,7 @@ actor PublicationProjectionService {
         avatarUrl: row.avatarUrl,
         discoveredAt: row.discoveredAt,
         appViewScope: scope,
-        unreadCount: unread?.entries.count
+        unreadCount: unreadCount
       )
     }
     return out
@@ -269,6 +269,27 @@ actor PublicationProjectionService {
   private func rkeyFromUri(_ uri: String) -> String? {
     guard let parsed = RenderFieldExtractor.parseAtUri(uri) else { return nil }
     return parsed.rkey
+  }
+
+  private func cachedBuildAppViewScope(
+    publicationId: String,
+    authorDid: String,
+    auth: AuthContext
+  ) async -> PublicationAppViewScope {
+    let key = PublicationProjectionLogic.normalizeAtRepoParam(publicationId)
+    if let hit = appViewScopeCache[key], hit.expiresAt > Date() {
+      return hit.scope
+    }
+    let scope = await buildAppViewScope(
+      publicationId: publicationId,
+      authorDid: authorDid,
+      auth: auth
+    )
+    appViewScopeCache[key] = (
+      scope,
+      Date().addingTimeInterval(Self.appViewScopeCacheTTL)
+    )
+    return scope
   }
 
   private func buildAppViewScope(

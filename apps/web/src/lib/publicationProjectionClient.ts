@@ -109,7 +109,7 @@ export async function refreshPublicationSidebar(
   if (!res.ok) {
     throw new Error(`Publication refresh failed (${res.status})`);
   }
-  return fetchPublicationSidebar(oauthSession, signal);
+  return (await res.json()) as PublicationSidebarProjection;
 }
 
 export async function resolveAddPublicationOnGateway(

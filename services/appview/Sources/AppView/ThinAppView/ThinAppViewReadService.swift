@@ -79,18 +79,15 @@ actor ThinAppViewReadService {
       guard let row = sidebar.allPublicationRows.first(where: { $0.publicationId == publicationId }) else {
         continue
       }
-      let unread = try await store.listEntries(
+      let unreadCount = try await store.countUnreadEntries(
         viewerDid: auth.did,
         authorDid: row.appViewScope.authorDid,
         publicationAtUri: row.appViewScope.publicationAtUri,
         publicationScopeAtUris: row.appViewScope.publicationScopeAtUris,
-        publicationSiteUrls: row.appViewScope.publicationSiteUrls,
-        filter: .unread,
-        cursor: nil,
-        limit: 500
+        publicationSiteUrls: row.appViewScope.publicationSiteUrls
       )
-      if !unread.entries.isEmpty {
-        counts[publicationId] = unread.entries.count
+      if unreadCount > 0 {
+        counts[publicationId] = unreadCount
       }
     }
     return AppViewUnreadCountsByPublicationResponse(counts: counts)
@@ -104,19 +101,16 @@ actor ThinAppViewReadService {
     publicationSiteUrls: [String]
   ) async throws -> AppViewUnreadCountsResponse {
     let did = authorDid ?? auth.did
-    let unread = try await store.listEntries(
+    let unreadCount = try await store.countUnreadEntries(
       viewerDid: auth.did,
       authorDid: did,
       publicationAtUri: publicationAtUri,
       publicationScopeAtUris: publicationScopeAtUris,
-      publicationSiteUrls: publicationSiteUrls,
-      filter: .unread,
-      cursor: nil,
-      limit: 500
+      publicationSiteUrls: publicationSiteUrls
     )
     let key = publicationAtUri ?? did
     return AppViewUnreadCountsResponse(
-      counts: [AppViewUnreadCountRow(scopeKey: key, unreadCount: unread.entries.count)]
+      counts: [AppViewUnreadCountRow(scopeKey: key, unreadCount: unreadCount)]
     )
   }
 }
