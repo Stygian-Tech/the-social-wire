@@ -1,0 +1,31 @@
+meta {
+  name: Post AppView Mark All Read
+  type: http
+  seq: 26
+}
+
+post {
+  url: {{baseUrl}}/v1/appview/mark-all-read
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "scope": {
+      "kind": "{{markAllReadScopeKind}}",
+      "publicationId": "{{publicationId}}",
+      "folderRkey": "{{folderRkey}}"
+    }
+  }
+}
+
+docs {
+  Scope kinds: `publication`, `folder`, `subscribed`, `following`.
+}

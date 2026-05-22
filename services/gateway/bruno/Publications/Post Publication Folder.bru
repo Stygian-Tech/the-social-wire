@@ -1,0 +1,28 @@
+meta {
+  name: Post Publication Folder
+  type: http
+  seq: 33
+}
+
+post {
+  url: {{baseUrl}}/v1/publications/folders
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "name": "Bruno Test Folder",
+    "sortOrder": 0
+  }
+}
+
+docs {
+  Creates a `com.thesocialwire.folder` record on the viewer PDS. Save the returned `rkey` as `folderRkey`.
+}

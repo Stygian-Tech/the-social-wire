@@ -1,0 +1,20 @@
+meta {
+  name: Get AppView Entry
+  type: http
+  seq: 25
+}
+
+get {
+  url: {{baseUrl}}/v1/appview/entry?entryId={{entryId}}
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}
+
+docs {
+  Level-1 entry detail from the Thin AppView index. Proxied to AppView when configured.
+}

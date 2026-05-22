@@ -1,0 +1,28 @@
+meta {
+  name: Post AppView Read Mark
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{appviewBaseUrl}}/v1/appview/read-marks
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "subjectUri": "at://did:plc:REPLACE_ME/site.standard.entry/REPLACE_RKEY",
+    "readAt": "2026-05-19T12:00:00.000Z"
+  }
+}
+
+docs {
+  Verifies read-mark write-through on AppView after ingestion (replace subjectUri with a row from the entries list).
+}

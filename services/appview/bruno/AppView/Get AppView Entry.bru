@@ -1,0 +1,16 @@
+meta {
+  name: Get AppView Entry
+  type: http
+  seq: 21
+}
+
+get {
+  url: {{baseUrl}}/v1/appview/entry?entryId={{entryId}}
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}

@@ -44,6 +44,7 @@ let package = Package(
       dependencies: [
         "Gateway",
         "GatewayCore",
+        .product(name: "AsyncHTTPClient", package: "async-http-client"),
         .product(name: "HummingbirdTesting", package: "hummingbird"),
         .product(name: "Logging", package: "swift-log"),
       ],

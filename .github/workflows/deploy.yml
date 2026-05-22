@@ -1,8 +1,6 @@
 name: Deploy
 
-# Automatic deploy runs at the end of CI (.github/workflows/ci.yml) so it uses the
-# pushed branch workflow — workflow_run only reads the default-branch copy of this
-# file and is easy to misconfigure across main/dev.
+# Automatic deploy runs at the end of CI (.github/workflows/ci.yml) on push to dev/main.
 on:
   workflow_dispatch:
     inputs:
@@ -13,8 +11,13 @@ on:
         options:
           - dev
           - main
-      deploy_worker:
-        description: Also deploy Thin AppView worker
+      deploy_appview:
+        description: Also deploy AppView
+        required: true
+        type: boolean
+        default: true
+      deploy_appview_worker:
+        description: Also deploy AppView worker
         required: true
         type: boolean
         default: true
@@ -23,8 +26,8 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  deploy-api:
-    name: Deploy API (Fly.io)
+  deploy-gateway:
+    name: Deploy Gateway (Fly.io)
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -33,20 +36,31 @@ jobs:
 
       - uses: superfly/flyctl-actions/setup-flyctl@v1
 
-      - name: Deploy to Fly.io
+      - name: Deploy gateway to Fly.io
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-          FLY_APP_DEV: ${{ secrets.FLY_APP_DEV }}
-          FLY_APP_PROD: ${{ secrets.FLY_APP_PROD }}
-        run: bash scripts/fly-deploy-api.sh "${{ inputs.branch }}"
+          FLY_ORG: ${{ secrets.FLY_ORG }}
+          FLY_GATEWAY_APP_DEV: ${{ secrets.FLY_GATEWAY_APP_DEV }}
+          FLY_GATEWAY_APP_PROD: ${{ secrets.FLY_GATEWAY_APP_PROD }}
+        run: bash scripts/fly-deploy-gateway.sh "${{ inputs.branch }}"
 
-      - name: Deploy worker to Fly.io
-        if: inputs.deploy_worker
+      - name: Deploy AppView to Fly.io
+        if: inputs.deploy_appview
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-          FLY_WORKER_APP_DEV: ${{ secrets.FLY_WORKER_APP_DEV }}
-          FLY_WORKER_APP_PROD: ${{ secrets.FLY_WORKER_APP_PROD }}
-        run: bash scripts/fly-deploy-worker.sh "${{ inputs.branch }}"
+          FLY_ORG: ${{ secrets.FLY_ORG }}
+          FLY_APPVIEW_APP_DEV: ${{ secrets.FLY_APPVIEW_APP_DEV }}
+          FLY_APPVIEW_APP_PROD: ${{ secrets.FLY_APPVIEW_APP_PROD }}
+        run: bash scripts/fly-deploy-appview.sh "${{ inputs.branch }}"
+
+      - name: Deploy AppView worker to Fly.io
+        if: inputs.deploy_appview_worker
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          FLY_ORG: ${{ secrets.FLY_ORG }}
+          FLY_APPVIEW_WORKER_APP_DEV: ${{ secrets.FLY_APPVIEW_WORKER_APP_DEV }}
+          FLY_APPVIEW_WORKER_APP_PROD: ${{ secrets.FLY_APPVIEW_WORKER_APP_PROD }}
+        run: bash scripts/fly-deploy-appview-worker.sh "${{ inputs.branch }}"
 
   # ── Web deploy (Vercel handles this via its GitHub integration) ────────────
   # Vercel auto-deploys on push to main (prod) and dev (preview).

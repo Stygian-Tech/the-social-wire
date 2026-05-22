@@ -46,4 +46,3 @@ CI runs `swift test` in the `test-api` job; run locally when editing this packag
 
 - [[Thin-AppView]]
 - [[Web-app]] / [[Apple-client]] — client flags and gateway usage
-- Infra: [infra/docker](https://github.com/Stygian-Tech/the-social-wire/tree/main/infra/docker)

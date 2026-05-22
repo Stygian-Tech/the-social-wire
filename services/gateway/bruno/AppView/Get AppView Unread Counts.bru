@@ -1,0 +1,20 @@
+meta {
+  name: Get AppView Unread Counts
+  type: http
+  seq: 26
+}
+
+get {
+  url: {{baseUrl}}/v1/appview/unread-counts?authorDid={{authorDid}}&publicationAtUri={{publicationAtUri}}
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}
+
+docs {
+  Scoped unread counts for sidebar badges. Alternative query: `publicationIds=id1,id2`.
+}

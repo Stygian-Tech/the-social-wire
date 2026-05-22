@@ -40,17 +40,23 @@ public struct ATProtoAuthMiddleware: RouterMiddleware {
   private let httpClient: HTTPClient
   private let plcURL: String
   private let gatewayClientPolicy: OAuthGatewayClientPolicy
+  private let supplementalJwksJSON: String?
+  private let allowDpopBoundStructuralFallback: Bool
   private let logger: Logger
 
   public init(
     httpClient: HTTPClient,
     plcURL: String,
     gatewayClientPolicy: OAuthGatewayClientPolicy,
+    supplementalJwksJSON: String? = nil,
+    allowDpopBoundStructuralFallback: Bool = false,
     logger: Logger
   ) {
     self.httpClient = httpClient
     self.plcURL = plcURL
     self.gatewayClientPolicy = gatewayClientPolicy
+    self.supplementalJwksJSON = supplementalJwksJSON
+    self.allowDpopBoundStructuralFallback = allowDpopBoundStructuralFallback
     self.logger = logger
   }
 
@@ -59,6 +65,10 @@ public struct ATProtoAuthMiddleware: RouterMiddleware {
     context: GatewayRequestContext,
     next: (Request, GatewayRequestContext) async throws -> Response
   ) async throws -> Response {
+    if context.authContext != nil {
+      return try await next(request, context)
+    }
+
     guard let authHeaderRaw = request.headers[.authorization] else {
       throw HTTPError(.unauthorized, message: "Missing Authorization header")
     }
@@ -72,17 +82,57 @@ public struct ATProtoAuthMiddleware: RouterMiddleware {
       throw HTTPError(.unauthorized, message: "Empty access token payload")
     }
 
+    guard
+      let dpopProofCandidate = Self.extractOptionalDPoPHeader(from: request)?
+        .trimmingCharacters(in: .whitespacesAndNewlines),
+      !dpopProofCandidate.isEmpty
+    else {
+      throw HTTPError(.unauthorized, message: "Missing RFC 9449 DPoP proof header")
+    }
+
     let authOutcome: OAuthAccessTokenVerifier.VerifiedAccessToken
     do {
       authOutcome = try await OAuthAccessTokenVerifier.verify(
         accessTokenJWT: accessTokenJWT,
         httpClient: httpClient,
         plcURL: plcURL,
-        logger: logger
+        logger: logger,
+        supplementalJwksJSON: supplementalJwksJSON
       )
     } catch {
-      logger.warning("Access token JWKS verification failed", metadata: ["error": "\(error)"])
-      throw HTTPError(.unauthorized, message: "Invalid or stale ATProto OAuth access token")
+      if allowDpopBoundStructuralFallback {
+        logger.info(
+          "JWKS verification failed; attempting DPoP-bound structural fallback",
+          metadata: ["error": .string("\(error)")]
+        )
+        do {
+          authOutcome = try await OAuthAccessTokenVerifier.verifyDpopBoundStructural(
+            accessTokenJWT: accessTokenJWT,
+            request: request,
+            dpopProof: dpopProofCandidate,
+            logger: logger
+          )
+        } catch {
+          logger.warning(
+            "DPoP-bound structural access token fallback failed",
+            metadata: ["error": .string("\(error)")]
+          )
+          throw HTTPError(.unauthorized, message: "Invalid or stale ATProto OAuth access token")
+        }
+      } else {
+        logger.warning(
+          "Access token JWKS verification failed",
+          metadata: [
+            "error": .string("\(error)"),
+            "hint": .string(
+              "Issuer oauth/jwks often omits access-token signing keys (e.g. bsky.social returns {\"keys\":[]}). "
+                + "Configure GATEWAY_APPVIEW_INTERNAL_SECRET for distributed fallback or "
+                + "OAUTH_ACCESS_TOKEN_SUPPLEMENTAL_JWKS_JSON when operator keys are available."
+            ),
+          ]
+        )
+        throw HTTPError(.unauthorized, message: "Invalid or stale ATProto OAuth access token")
+      }
     }
 
     do {
@@ -97,43 +147,34 @@ public struct ATProtoAuthMiddleware: RouterMiddleware {
       throw HTTPError(.forbidden)
     }
 
-    guard
-      let dpopProofCandidate = Self.extractOptionalDPoPHeader(from: request)?
-        .trimmingCharacters(in: .whitespacesAndNewlines),
-      !dpopProofCandidate.isEmpty
-    else {
-      throw HTTPError(.unauthorized, message: "Missing RFC 9449 DPoP proof header")
+    if !allowDpopBoundStructuralFallback {
+      do {
+        try DPoPProofVerifier.verify(
+          proofJWT: dpopProofCandidate,
+          request: request,
+          accessTokenJWT: accessTokenJWT,
+          accessTokenCnFJkt: authOutcome.cnfJkt
+        )
+      } catch {
+        logger.warning("DPoP verification failed", metadata: ["error": "\(error)"])
+        throw HTTPError(.unauthorized, message: "Invalid DPoP proof for this request")
+      }
     }
-
-    do {
-      try DPoPProofVerifier.verify(
-        proofJWT: dpopProofCandidate,
-        request: request,
-        accessTokenJWT: accessTokenJWT,
-        accessTokenCnFJkt: authOutcome.cnfJkt
-      )
-    } catch {
-      logger.warning("DPoP verification failed", metadata: ["error": "\(error)"])
-      throw HTTPError(.unauthorized, message: "Invalid DPoP proof for this request")
-    }
-
-    let did = authOutcome.did
-    let dpopProofStored = dpopProofCandidate
 
     let forwardingAuthorization = authHeaderRaw.trimmingCharacters(in: .whitespacesAndNewlines)
 
     var mutableContext = context
     mutableContext.authContext = AuthContext(
-      did: did,
+      did: authOutcome.did,
       authorizationForwardingValue: forwardingAuthorization,
-      dpopProof: dpopProofStored
+      dpopProof: dpopProofCandidate
     )
 
     return try await next(request, mutableContext)
   }
 
   /// Best-effort header lookup across common casings (**RFC 9449** mandates `DPoP` but intermediaries normalize differently).
-  private static func extractOptionalDPoPHeader(from request: Request) -> String? {
+  public static func extractOptionalDPoPHeader(from request: Request) -> String? {
     for label in ["DPoP", "Dpop", "dpop"] {
       guard let name = HTTPField.Name(label) else { continue }
       let proofCandidate = request.headers[name]

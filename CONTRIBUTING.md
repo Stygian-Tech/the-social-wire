@@ -16,8 +16,10 @@ Tests must live **inside the owning package**, not in a root-level `tests/` fold
 | Package | Test location |
 |---------|---------------|
 | Web | `apps/web/src/__tests__/` |
-| API | `services/api/Tests/AppTests/` |
-| Worker | `services/worker/Tests/` |
+| Gateway | `services/gateway/Tests/` |
+| AppView | `services/appview/Tests/` |
+| AppView worker | `services/appview-worker/Tests/` |
+| GatewayCore | `packages/swift/GatewayCore/Tests/` |
 | ThinAppViewCore | `packages/swift/ThinAppViewCore/Tests/` |
 | iOS | `apps/apple/SocialWireTests/` |
 | Lexicons | `packages/lexicons/__tests__/` |
@@ -48,7 +50,7 @@ Edit wiki content only under **`docs/wiki/`** in this repository. On push to `ma
 
 ## Branch protection
 
-Require the **`CI — required`** check from [.github/workflows/ci.yml](.github/workflows/ci.yml). It gates merges on path-filtered jobs (`build-web`, `test-api`, `test-lexicons`, `test-spec`, `test-worker`, `supabase-validate`).
+Require the **`CI — required`** check from [.github/workflows/ci.yml](.github/workflows/ci.yml). It gates merges on path-filtered jobs (`build-web`, `test-gateway`, `test-appview`, `test-appview-worker`, `test-lexicons`, `test-spec`, `supabase-validate`).
 
 ## License
 

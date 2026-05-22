@@ -1,18 +1,24 @@
-# Deploy: fly deploy ../.. --config services/gateway/fly.toml --app the-social-wire-dev-gateway
+# Deploy from repo root: bash services/gateway/deploy.sh dev
+# Or: fly deploy ../.. --config services/gateway/fly.toml --app the-social-wire-dev-gateway
 
 app = 'the-social-wire-dev-gateway'
 primary_region = 'ams'
 
 [build]
   dockerfile = 'Dockerfile'
+  context = '../..'
 
 [deploy]
   wait_timeout = '10m0s'
 
 [env]
   PORT = '8080'
-  # Optional: proxy sidebar reads to AppView during cutover
-  # APPVIEW_BASE_URL = 'https://appview-dev.thesocialwire.app'
+  # Required for AppView proxy + DPoP structural OAuth fallback (same value on gateway + appview):
+  # fly secrets set GATEWAY_APPVIEW_INTERNAL_SECRET="$(openssl rand -hex 32)" --app the-social-wire-dev-gateway
+  # fly secrets set GATEWAY_APPVIEW_INTERNAL_SECRET="<same>" --app the-social-wire-dev-appview
+  # APPVIEW_BASE_URL = 'https://the-social-wire-dev-appview.fly.dev'
+  # OAUTH_GATEWAY_REQUIRE_KNOWN_CLIENT = 'true'
+  # OAUTH_GATEWAY_ALLOWED_CLIENT_IDS = 'https://api.testing.thesocialwire.app/oauth/client-metadata.json'
 
 [http_service]
   internal_port = 8080

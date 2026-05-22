@@ -9,13 +9,13 @@ info:
 
     - **Authenticated sync accelerators**: `Authorization: Bearer` or `Authorization: DPoP` access JWTs forwarded to ATProto repos, guarded by cryptographic JWKS verification **and** a mandatory RFC 9449 `DPoP` proof binding (`cnf.jkt` enforced when emitted by the issuer).
 
-    - **Performance caches**: short TTL blobs in **`pds_repo_record_cache`** (`Supabase`/SQLite); legacy **`discovery_cache` / `entry_cache`** persist only behind **`ENABLE_LEGACY_CONTENT_API`**.
+    - **Performance caches**: short TTL blobs in **`pds_repo_record_cache`** (`Supabase`/SQLite).
 
-    - **Thin AppView (optional)**: Level-1 entry index + read-mark replica at **`/v1/appview/*`** when **`ENABLE_THIN_APPVIEW`** is on; ingested by a separate **`App worker`** process from Jetstream.
+    - **Thin AppView**: Level-1 entry index + read-mark replica at **`/v1/appview/*`** on the AppView service when **`ENABLE_THIN_APPVIEW`** is on; ingested by **`services/appview-worker`** from Jetstream.
 
     LATRHTTPS merge APIs deliberately stay out—continue using the hosted web helpers for LATR flows.
 
-    **Feature flags:** `ENABLE_LEGACY_CONTENT_API` re-registers legacy `/discovery/**`, `/publications/**`, `/entries/**`. `ENABLE_THIN_APPVIEW` registers `/v1/appview/**`.
+    **Feature flags:** `ENABLE_THIN_APPVIEW` registers `/v1/appview/**` on AppView.
   version: "1.0.0"
   contact:
     name: Stygian Tech
@@ -62,35 +62,6 @@ components:
           type: string
           description: Human-readable error description.
           example: Unauthorized — invalid ATProto JWT or malformed DPoP proof.
-
-    DiscoveredPublication:
-      type: object
-      required: [publicationId, authorDid, title, discoveredAt]
-      properties:
-        publicationId:
-          type: string
-          description: at-uri or canonical URL identifying the publication.
-          example: "at://did:plc:abc123/com.example.publication/main"
-        authorDid:
-          type: string
-          description: DID of the account that owns this publication.
-          example: "did:plc:abc123"
-        authorHandle:
-          type: string
-          description: Bluesky handle of the author (best-effort, may lag).
-          example: "alice.bsky.social"
-        title:
-          type: string
-          description: Display name of the publication.
-          example: "Alice's Tech Blog"
-        avatarUrl:
-          type: string
-          format: uri
-          description: Publication avatar / author avatar URL.
-        discoveredAt:
-          type: string
-          format: date-time
-          description: When this publication was last confirmed in the cache.
 
     EntryListItem:
       type: object
@@ -974,171 +945,6 @@ paths:
         "404":
           description: Route disabled when thin AppView flag is unset.
 
-  # ── Discovery ──────────────────────────────────────────────────────────────
-
-  /discovery/refresh:
-    post:
-      operationId: refreshDiscovery
-      summary: Refresh publication discovery
-      description: |
-        **`ENABLE_LEGACY_CONTENT_API` must be `true`** or this route responds `404`.
-
-        Triggers a re-scan of the authenticated user's follow graph to find
-        standard.site publications. Results are stored in the discovery cache.
-
-        This is an async operation — the endpoint returns immediately with a job
-        status. The client should poll `GET /discovery/{userDid}` to get results.
-      tags: [Discovery]
-      responses:
-        "202":
-          description: Discovery refresh accepted and running.
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [status]
-                properties:
-                  status:
-                    type: string
-                    enum: [accepted]
-                  message:
-                    type: string
-                    example: "Discovery refresh started. Poll GET /discovery/{did} for results."
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "404":
-          description: Route disabled when legacy flag is unset.
-        "500":
-          $ref: "#/components/responses/InternalError"
-
-  /discovery/{userDid}:
-    get:
-      operationId: getDiscovery
-      summary: Get cached discovery results
-      description: |
-        **`ENABLE_LEGACY_CONTENT_API` must be `true`** or this handler is not wired.
-
-        Returns the cached list of standard.site publications discovered from
-        the given user's follow graph. The caller must be authenticated as the
-        user identified by `userDid`.
-      tags: [Discovery]
-      parameters:
-        - name: userDid
-          in: path
-          required: true
-          schema:
-            type: string
-          description: The DID of the user whose discovery results to return.
-          example: "did:plc:abc123"
-      responses:
-        "200":
-          description: Cached discovery results.
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [publications]
-                properties:
-                  publications:
-                    type: array
-                    items:
-                      $ref: "#/components/schemas/DiscoveredPublication"
-                  lastRefreshedAt:
-                    type: string
-                    format: date-time
-                    description: When the discovery cache was last populated.
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "500":
-          $ref: "#/components/responses/InternalError"
-
-  # ── Content ────────────────────────────────────────────────────────────────
-
-  /publications/{pubId}/entries:
-    get:
-      operationId: getPublicationEntries
-      summary: Get paginated entry list for a publication
-      description: |
-        **`ENABLE_LEGACY_CONTENT_API` must be `true`** or this handler is unavailable.
-
-        Returns entries for the given publication sorted by publish time descending.
-        Supports cursor-based pagination.
-      tags: [Content]
-      parameters:
-        - name: pubId
-          in: path
-          required: true
-          schema:
-            type: string
-          description: URL-encoded at-uri or canonical URL of the publication.
-        - name: cursor
-          in: query
-          schema:
-            type: string
-          description: Pagination cursor from a previous response.
-        - name: limit
-          in: query
-          schema:
-            type: integer
-            minimum: 1
-            maximum: 100
-            default: 50
-          description: Maximum number of entries to return.
-      responses:
-        "200":
-          description: Paginated entry list.
-          content:
-            application/json:
-              schema:
-                allOf:
-                  - $ref: "#/components/schemas/CursorPage"
-                  - type: object
-                    required: [entries]
-                    properties:
-                      entries:
-                        type: array
-                        items:
-                          $ref: "#/components/schemas/EntryListItem"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "500":
-          $ref: "#/components/responses/InternalError"
-
-  /entries/{entryId}:
-    get:
-      operationId: getEntry
-      summary: Get a single entry with sanitized content
-      description: |
-        **`ENABLE_LEGACY_CONTENT_API` must be `true`** or this handler is unavailable.
-
-        Returns the full content for a single entry. Content is normalized to
-        safe HTML with scripts and unsafe attributes stripped.
-      tags: [Content]
-      parameters:
-        - name: entryId
-          in: path
-          required: true
-          schema:
-            type: string
-          description: URL-encoded at-uri of the entry.
-      responses:
-        "200":
-          description: Entry detail.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/EntryDetail"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "500":
-          $ref: "#/components/responses/InternalError"
-
 tags:
   - name: Health
     description: Service health
@@ -1146,10 +952,6 @@ tags:
     description: Discoverable client metadata for tunnel + hosted API origins
   - name: Sync
     description: Protected ATProto-backed reader accelerators
-  - name: Discovery
-    description: Follow graph scanning gated behind `ENABLE_LEGACY_CONTENT_API`
-  - name: Content
-    description: Entry feeds gated behind `ENABLE_LEGACY_CONTENT_API`
   - name: Publications
     description: Unified sidebar projection, resolver, and gateway write-through
   - name: Reader

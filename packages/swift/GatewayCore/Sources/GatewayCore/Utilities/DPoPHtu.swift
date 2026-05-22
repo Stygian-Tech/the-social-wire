@@ -4,23 +4,19 @@ import Hummingbird
 
 /// Builds the **`htu`** string DPoP proofs should target for this ingress path.
 ///
-/// Mirrors common reverse-proxy behaviour: honours `X-Forwarded-Proto` and the effective authority.
+/// RFC 9449 requires **`htu`** to omit the query string. Mirrors common reverse-proxy behaviour:
+/// honours `X-Forwarded-Proto` and the effective authority.
 public enum DPoPHtu {
   static func canonical(for request: Request) -> String? {
     let trimmedHost = trimmedAuthority(for: request) ?? trimmedHostHeader(from: request.headers)
     guard let authority = trimmedHost, !authority.isEmpty else { return nil }
 
-    let scheme =
-      trimmedLowercasedScheme(request.head.scheme)
-      ?? ForwardedHTTP.inferredScheme(forAuthority: authority, headers: request.headers)
+    // Prefer ingress `X-Forwarded-Proto` over the internal hop scheme (Fly terminates TLS as HTTP).
+    let scheme = ForwardedHTTP.inferredScheme(forAuthority: authority, headers: request.headers)
 
     var pathFragment = request.uri.path
     if pathFragment.isEmpty { pathFragment = "/" }
     if !pathFragment.hasPrefix("/") { pathFragment = "/" + pathFragment }
-
-    if let query = request.uri.query, !query.isEmpty {
-      return "\(scheme)://\(authority)\(pathFragment)?\(query)"
-    }
 
     return "\(scheme)://\(authority)\(pathFragment)"
   }
@@ -43,11 +39,6 @@ public enum DPoPHtu {
     return headers[hostName]?
       .trimmingCharacters(in: .whitespacesAndNewlines)
       .nilIfEmpty
-  }
-
-  private static func trimmedLowercasedScheme(_ raw: String?) -> String? {
-    guard let s = raw?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty else { return nil }
-    return s.lowercased()
   }
 
   private static func normalize(_ raw: String) -> String {

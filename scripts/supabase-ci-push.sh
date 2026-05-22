@@ -75,7 +75,7 @@ resolve_push_database_url() {
       echo "::notice::Falling back to supabase link + $(env_secret_name DB_PASSWORD) (ensure it matches the rotated database password)." >&2
       return 0
     fi
-    echo "::error::Set ${secret_name} to the session pooler URI, or set $(env_secret_name DB_PASSWORD). See services/api/README.md." >&2
+    echo "::error::Set ${secret_name} to the session pooler URI, or set $(env_secret_name DB_PASSWORD). See supabase/README.md." >&2
     exit 1
   fi
 

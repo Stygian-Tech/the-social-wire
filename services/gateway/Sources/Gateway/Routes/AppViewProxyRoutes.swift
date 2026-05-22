@@ -1,6 +1,7 @@
 import AsyncHTTPClient
 import Foundation
 import GatewayCore
+import HTTPTypes
 import Hummingbird
 import NIOCore
 
@@ -24,6 +25,7 @@ private extension HTTPResponse.Status {
 /// Forwards AppView read routes to the AppView service during distributed deployment.
 struct AppViewProxyRoutes {
   let baseURL: String
+  let internalSecret: String?
   let httpClient: HTTPClient
 
   func register(on group: RouterGroup<GatewayRequestContext>) {
@@ -69,10 +71,12 @@ struct AppViewProxyRoutes {
     method: String
   ) async throws -> Response {
     guard let auth = context.authContext else { throw HTTPError(.unauthorized) }
-    var url = "\(normalizeBase(baseURL))\(path)"
-    if let query = request.uri.query, !query.isEmpty {
-      url += "?\(query)"
-    }
+    let signedPath = GatewayInternalTrust.canonicalSignedPath(path)
+    let pathWithQuery = GatewayInternalTrust.canonicalPathWithQuery(
+      path: path,
+      query: request.uri.query
+    )
+    let url = "\(normalizeBase(baseURL))\(pathWithQuery)"
     var fwd = HTTPClientRequest(url: url)
     switch method {
     case "GET": fwd.method = .GET
@@ -84,6 +88,20 @@ struct AppViewProxyRoutes {
     fwd.headers.add(name: "Accept", value: "application/json")
     fwd.headers.add(name: "Authorization", value: auth.authorizationForwardingValue)
     if let dpop = auth.dpopProof { fwd.headers.add(name: "DPoP", value: dpop) }
+    Self.applyForwardedHeaders(from: request, to: &fwd)
+
+    if let internalSecret {
+      let signed = try GatewayInternalTrust.signedHeaders(
+        secret: internalSecret,
+        did: auth.did,
+        method: method,
+        pathWithQuery: signedPath
+      )
+      for header in signed {
+        fwd.headers.add(name: header.name, value: header.value)
+      }
+    }
+
     if method == "POST" || method == "PUT" || method == "DELETE" {
       let body = try await request.body.collect(upTo: 4 * 1024 * 1024)
       if body.readableBytes > 0 {
@@ -103,5 +121,21 @@ struct AppViewProxyRoutes {
     var s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
     while s.hasSuffix("/") { s.removeLast() }
     return s
+  }
+
+  private static func applyForwardedHeaders(from request: Request, to fwd: inout HTTPClientRequest) {
+    if let host = request.head.authority?.trimmingCharacters(in: .whitespacesAndNewlines),
+       !host.isEmpty
+    {
+      fwd.headers.add(name: "X-Forwarded-Host", value: host)
+    }
+    if let protoHeader = HTTPField.Name("X-Forwarded-Proto"),
+       let proto = request.headers[protoHeader]?.trimmingCharacters(in: .whitespacesAndNewlines),
+       !proto.isEmpty
+    {
+      fwd.headers.add(name: "X-Forwarded-Proto", value: proto)
+    } else {
+      fwd.headers.add(name: "X-Forwarded-Proto", value: "https")
+    }
   }
 }

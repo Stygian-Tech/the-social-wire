@@ -14,6 +14,7 @@ let package = Package(
     .package(url: "https://github.com/groue/GRDB.swift.git", from: "7.10.0"),
     .package(url: "https://github.com/apple/swift-log.git", from: "1.6.0"),
     .package(url: "https://github.com/apple/swift-nio-ssl.git", from: "2.25.0"),
+    .package(url: "https://github.com/vapor/websocket-kit.git", from: "2.15.0"),
   ],
   targets: [
     .target(
@@ -23,6 +24,11 @@ let package = Package(
         .product(name: "GRDB", package: "GRDB.swift"),
         .product(name: "Logging", package: "swift-log"),
         .product(name: "NIOSSL", package: "swift-nio-ssl"),
+        .product(
+          name: "WebSocketKit",
+          package: "websocket-kit",
+          condition: .when(platforms: [.linux])
+        ),
       ],
       path: "Sources/ThinAppViewCore",
       swiftSettings: [

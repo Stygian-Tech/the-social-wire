@@ -1,0 +1,15 @@
+meta {
+  name: Get AppView Health
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{appviewBaseUrl}}/health
+  body: none
+  auth: none
+}
+
+docs {
+  Confirms AppView is up. Expect `{ "status": "ok", "service": "appview" }`.
+}

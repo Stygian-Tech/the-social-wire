@@ -1,0 +1,22 @@
+# Production AppView worker (main). Dev uses fly.toml.
+#
+# Deploy: bash deploy.sh main
+
+app = 'the-social-wire-prod-appview-worker'
+primary_region = 'ams'
+
+[build]
+  dockerfile = 'Dockerfile'
+  context = '../..'
+
+[deploy]
+  wait_timeout = '10m0s'
+
+[env]
+  ENABLE_THIN_APPVIEW = 'true'
+
+[[vm]]
+  memory = '512mb'
+  cpu_kind = 'shared'
+  cpus = 1
+  memory_mb = 512

@@ -11,10 +11,6 @@ const GATEWAY_CORE_SOURCES = join(
   import.meta.dir,
   "../../../packages/swift/GatewayCore/Sources/GatewayCore"
 );
-const API_SHIM_SOURCES = join(
-  import.meta.dir,
-  "../../../services/api/Sources/App"
-);
 const APPVIEW_SOURCES = join(
   import.meta.dir,
   "../../../services/appview/Sources/AppView"
@@ -50,7 +46,6 @@ describe("OpenAPI route drift", () => {
       ...collectSwiftFiles(GATEWAY_SOURCES),
       ...collectSwiftFiles(GATEWAY_CORE_SOURCES),
       ...collectSwiftFiles(APPVIEW_SOURCES),
-      ...collectSwiftFiles(API_SHIM_SOURCES),
     ]
       .map((file) => readFileSync(file, "utf8"))
       .join("\n");
@@ -83,10 +78,6 @@ describe("OpenAPI route drift", () => {
       "/v1/appview/enroll": ['"/v1/appview/enroll"'],
       "/v1/appview/privacy/purge": ['"/v1/appview/privacy/purge"'],
       "/v1/appview/mark-all-read": ['"/v1/appview/mark-all-read"'],
-      "/discovery/refresh": ['"/discovery/refresh"'],
-      "/discovery/{userDid}": ['"/discovery/:userDid"'],
-      "/publications/{pubId}/entries": ['"/publications/:pubId/entries"'],
-      "/entries/{entryId}": ['"/entries/:entryId"'],
     };
 
     for (const path of paths) {

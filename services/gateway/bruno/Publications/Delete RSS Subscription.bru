@@ -1,0 +1,20 @@
+meta {
+  name: Delete RSS Subscription
+  type: http
+  seq: 40
+}
+
+delete {
+  url: {{baseUrl}}/v1/publications/rss-subscriptions/{{rssSubscriptionRkey}}
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}
+
+docs {
+  Deletes an RSS subscription record from the viewer PDS.
+}

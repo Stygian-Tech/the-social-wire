@@ -1,0 +1,29 @@
+meta {
+  name: Post RSS Subscription
+  type: http
+  seq: 39
+}
+
+post {
+  url: {{baseUrl}}/v1/publications/rss-subscriptions
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "feedUrl": "{{feedUrl}}",
+    "title": "Example Feed",
+    "siteUrl": "https://example.com"
+  }
+}
+
+docs {
+  Creates a Skyreader RSS subscription on the viewer PDS. Save the returned `rkey` as `rssSubscriptionRkey`.
+}

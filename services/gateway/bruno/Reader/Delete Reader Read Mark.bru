@@ -1,0 +1,27 @@
+meta {
+  name: Delete Reader Read Mark
+  type: http
+  seq: 51
+}
+
+delete {
+  url: {{baseUrl}}/v1/reader/read-marks
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "subjectUri": "{{entrySubjectUri}}"
+  }
+}
+
+docs {
+  Deletes the viewer's read-state record for an entry on the PDS.
+}

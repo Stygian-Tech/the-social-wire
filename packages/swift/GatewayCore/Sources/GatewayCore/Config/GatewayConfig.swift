@@ -11,6 +11,10 @@ public struct GatewayConfig: Sendable {
   public let oauthIosMetadataOrigin: String?
   /// Binds JWT access tokens from registered OAuth clients for hosted gateway traffic.
   public let oauthGateway: OAuthGatewayClientPolicy
+  /// Optional operator-provided JWKS JSON for OAuth access-token verification when issuer metadata omits signing keys.
+  public let oauthAccessTokenSupplementalJwksJSON: String?
+  /// Shared HMAC secret for Gateway → AppView internal trust (`GATEWAY_APPVIEW_INTERNAL_SECRET`).
+  public let gatewayAppViewInternalSecret: String?
 
   public enum AppEnvironment: String, Sendable {
     case local
@@ -33,12 +37,22 @@ public struct GatewayConfig: Sendable {
       allowedAudiences: OAuthGatewayPolicyParser.delimiterTokenSet(env["OAUTH_GATEWAY_ALLOWED_AUDIENCES"]),
       requireKnownClient: OAuthGatewayPolicyParser.truthy(env["OAUTH_GATEWAY_REQUIRE_KNOWN_CLIENT"])
     )
+    let supplementalJwksRaw =
+      env["OAUTH_ACCESS_TOKEN_SUPPLEMENTAL_JWKS_JSON"]?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let oauthAccessTokenSupplementalJwksJSON =
+      (supplementalJwksRaw?.isEmpty == false) ? supplementalJwksRaw : nil
+    let internalSecretRaw =
+      env["GATEWAY_APPVIEW_INTERNAL_SECRET"]?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let gatewayAppViewInternalSecret =
+      (internalSecretRaw?.isEmpty == false) ? internalSecretRaw : nil
     return GatewayConfig(
       atprotoPLCURL: plcURL,
       appEnv: appEnv,
       oauthPublicOrigin: oauthPublicOrigin,
       oauthIosMetadataOrigin: oauthIosMetadataOrigin,
-      oauthGateway: gateway
+      oauthGateway: gateway,
+      oauthAccessTokenSupplementalJwksJSON: oauthAccessTokenSupplementalJwksJSON,
+      gatewayAppViewInternalSecret: gatewayAppViewInternalSecret
     )
   }
 }

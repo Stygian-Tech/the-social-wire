@@ -1,0 +1,27 @@
+meta {
+  name: Post Graph Subscription
+  type: http
+  seq: 37
+}
+
+post {
+  url: {{baseUrl}}/v1/publications/subscriptions
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "publication": "{{publicationId}}"
+  }
+}
+
+docs {
+  Creates a graph subscription record on the viewer PDS. Save the returned `rkey` as `subscriptionRkey`.
+}

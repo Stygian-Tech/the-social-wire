@@ -1,0 +1,15 @@
+meta {
+  name: Get Gateway Health
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{gatewayBaseUrl}}/health
+  body: none
+  auth: none
+}
+
+docs {
+  Sanity check that the gateway stack is reachable before verifying AppView ingestion.
+}

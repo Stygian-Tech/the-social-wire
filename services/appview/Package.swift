@@ -45,6 +45,7 @@ let package = Package(
         "AppView",
         "GatewayCore",
         "ThinAppViewCore",
+        .product(name: "AsyncHTTPClient", package: "async-http-client"),
         .product(name: "HummingbirdTesting", package: "hummingbird"),
         .product(name: "Logging", package: "swift-log"),
       ],

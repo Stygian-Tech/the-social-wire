@@ -1,0 +1,20 @@
+meta {
+  name: Delete Graph Subscription
+  type: http
+  seq: 38
+}
+
+delete {
+  url: {{baseUrl}}/v1/publications/subscriptions/{{subscriptionRkey}}
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}
+
+docs {
+  Deletes a graph subscription record from the viewer PDS.
+}

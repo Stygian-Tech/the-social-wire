@@ -1,0 +1,21 @@
+meta {
+  name: Get AppView Entries After Ingestion
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{appviewBaseUrl}}/v1/appview/entries?authorDid={{authorDid}}&filter={{appViewFilter}}&limit={{appViewLimit}}
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}
+
+docs {
+  Poll after enroll or a new firehose event. Non-empty `entries` confirms worker ingestion is working.
+  Optional: add `publicationAtUri={{publicationAtUri}}` to narrow scope.
+}

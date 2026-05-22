@@ -1,0 +1,29 @@
+meta {
+  name: Post Mark All Read
+  type: http
+  seq: 52
+}
+
+post {
+  url: {{baseUrl}}/v1/reader/mark-all-read
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "subjectUris": [
+      "{{entrySubjectUri}}"
+    ]
+  }
+}
+
+docs {
+  Marks multiple entries as read on the viewer PDS in one request.
+}

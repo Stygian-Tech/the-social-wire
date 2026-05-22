@@ -1,0 +1,20 @@
+meta {
+  name: Delete Publication Folder
+  type: http
+  seq: 35
+}
+
+delete {
+  url: {{baseUrl}}/v1/publications/folders/{{folderRkey}}
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}
+
+docs {
+  Deletes a folder record from the viewer PDS.
+}

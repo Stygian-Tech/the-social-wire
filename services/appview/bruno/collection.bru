@@ -1,0 +1,13 @@
+docs {
+  # Social Wire AppView
+
+  Bruno workspace for HTTP routes on `services/appview` (publication sidebar projection + Thin AppView read index).
+
+  ## Folders
+
+  - **Health** — liveness
+  - **Publications** — sidebar, refresh, resolve
+  - **AppView** — Level-1 entry timelines, read marks, enroll, privacy purge
+
+  Requires `ENABLE_THIN_APPVIEW=true`. Set `oauthAccessToken` and `dpopProof` before calling `/v1/*`.
+}

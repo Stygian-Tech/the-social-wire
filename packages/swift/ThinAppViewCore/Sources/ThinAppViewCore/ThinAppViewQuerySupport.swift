@@ -18,6 +18,13 @@ public enum ThinAppViewCursor {
 }
 
 public enum ThinAppViewQuerySupport {
+  public static func parseISO8601Date(_ raw: String) -> Date? {
+    let fractional = ISO8601DateFormatter()
+    fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    if let date = fractional.date(from: raw) { return date }
+    return ISO8601DateFormatter().date(from: raw)
+  }
+
   static func entryListItems(from rows: [(uri: String, renderJSON: String, createdAt: Date)]) -> [AppViewEntryListItem] {
     let decoder = JSONDecoder()
     let iso = ISO8601DateFormatter()

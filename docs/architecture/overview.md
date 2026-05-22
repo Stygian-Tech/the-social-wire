@@ -88,7 +88,7 @@ When `ENABLE_THIN_APPVIEW` is enabled on the gateway, a separate Fly **worker** 
 
 Enrollment (`POST /v1/appview/enroll`) backfills followed author DIDs after client-side discovery because the global relay may miss very new repos.
 
-Full design: [appview.md](appview.md). Deployment: [services/api/README.md](../../services/api/README.md).
+Full design: [appview.md](appview.md). Deploy each service from repo root via `scripts/fly-deploy-*.sh`.
 
 ## Deployment
 
@@ -101,30 +101,21 @@ GitHub (source)
 GitHub Actions
        │
        ├─ build-web: bun install → turbo build → Vercel
-       └─ deploy-api: flyctl deploy (Fly.io, remote build)
+       ├─ deploy-gateway / deploy-appview / deploy-appview-worker → Fly.io (remote build)
+       └─ supabase-validate / supabase-push
 ```
 
 ### Environments
 
-| Environment | Branch | API hosting |
-|-------------|--------|-------------|
-| Production | `main` | Fly app from `FLY_APP_PROD` + optional worker app |
-| Development | `dev` | Fly app from `FLY_APP_DEV` + optional worker app |
-| Local | — | `swift run` / `infra/docker` compose (builds `services/api`) |
+| Environment | Branch | Backend hosting |
+|-------------|--------|-----------------|
+| Production | `main` | Fly gateway, appview, appview-worker (`*-prod-*` apps) |
+| Development | `dev` | Fly gateway, appview, appview-worker (`*-dev-*` apps) |
+| Local | — | `swift run Gateway` / `swift run AppView` / `swift run AppViewWorker` |
 
-### Local Stack
+### Local development
 
-```
-Caddy :443 (TLS)
-  ├── api.{DOMAIN}       → API :8080
-  └── portainer.{DOMAIN} → Portainer :9000
-
-Portainer :9000 (HTTP), :9443 (HTTPS)
-  └── manages Docker containers
-
-API :8080
-  └── Hummingbird 2 service
-```
+Run Swift services directly (see root README). Optional: `supabase start` for local Postgres instead of SQLite (`APP_ENV=local`).
 
 ## Verification
 

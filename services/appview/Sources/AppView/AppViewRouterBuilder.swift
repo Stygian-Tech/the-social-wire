@@ -15,13 +15,20 @@ enum AppViewRouterBuilder {
     let router = Router(context: GatewayRequestContext.self)
     router.get("/health") { _, _ in ["status": "ok", "service": "appview"] }
 
+    let internalTrustMiddleware = GatewayInternalTrustAuthMiddleware(
+      sharedSecret: config.core.gatewayAppViewInternalSecret,
+      logger: logger
+    )
     let authMiddleware = ATProtoAuthMiddleware(
       httpClient: httpClient,
       plcURL: config.core.atprotoPLCURL,
       gatewayClientPolicy: config.core.oauthGateway,
+      supplementalJwksJSON: config.core.oauthAccessTokenSupplementalJwksJSON,
       logger: logger
     )
-    let protected = router.group().add(middleware: authMiddleware)
+    let protected = router.group()
+      .add(middleware: internalTrustMiddleware)
+      .add(middleware: authMiddleware)
 
     guard config.thinAppView.enabled else { return router }
 

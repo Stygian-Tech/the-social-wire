@@ -19,11 +19,9 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       web: ${{ steps.filter.outputs.web }}
-      api: ${{ steps.filter.outputs.api }}
       gateway: ${{ steps.filter.outputs.gateway }}
       appview: ${{ steps.filter.outputs.appview }}
       appview-worker: ${{ steps.filter.outputs.appview-worker }}
-      worker: ${{ steps.filter.outputs.worker }}
       supabase: ${{ steps.filter.outputs.supabase }}
       lexicons: ${{ steps.filter.outputs.lexicons }}
       spec: ${{ steps.filter.outputs.spec }}
@@ -43,34 +41,24 @@ jobs:
               - 'bun.lock'
               - 'turbo.json'
               - '.github/workflows/ci.yml'
-            api:
-              - 'services/api/**'
-              - 'packages/swift/GatewayCore/**'
-              - 'packages/swift/ThinAppViewCore/**'
-              - 'packages/spec/openapi.yaml'
-              - 'scripts/fly-deploy-api.sh'
-              - '.github/workflows/ci.yml'
             gateway:
               - 'services/gateway/**'
               - 'packages/swift/GatewayCore/**'
               - 'packages/swift/ThinAppViewCore/**'
+              - 'scripts/fly-deploy-gateway.sh'
               - '.github/workflows/ci.yml'
             appview:
               - 'services/appview/**'
               - 'packages/swift/GatewayCore/**'
               - 'packages/swift/ThinAppViewCore/**'
               - 'supabase/**'
+              - 'scripts/fly-deploy-appview.sh'
               - '.github/workflows/ci.yml'
             appview-worker:
               - 'services/appview-worker/**'
               - 'packages/swift/ThinAppViewCore/**'
               - 'supabase/**'
-              - '.github/workflows/ci.yml'
-            worker:
-              - 'services/worker/**'
-              - 'packages/swift/ThinAppViewCore/**'
-              - 'supabase/**'
-              - 'scripts/fly-deploy-worker.sh'
+              - 'scripts/fly-deploy-appview-worker.sh'
               - '.github/workflows/ci.yml'
             supabase:
               - 'supabase/**'
@@ -81,7 +69,6 @@ jobs:
               - '.github/workflows/ci.yml'
             spec:
               - 'packages/spec/**'
-              - 'services/api/Sources/App/**'
               - 'services/gateway/Sources/Gateway/**'
               - 'services/appview/Sources/AppView/**'
               - 'packages/swift/GatewayCore/**'
@@ -200,31 +187,6 @@ jobs:
 
       - name: Test AppViewWorker
         working-directory: services/appview-worker
-        run: swift build
-
-  test-api:
-    name: Swift API shim (Package)
-    needs: changes
-    if: needs.changes.result == 'success' && needs.changes.outputs.api == 'true'
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: services/api
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Cache Swift PM build artifacts
-        uses: actions/cache@v5
-        with:
-          path: services/api/.build
-          key: ${{ runner.os }}-swift-api-swift-6.2.4-${{ hashFiles('services/api/Package.resolved', 'packages/swift/GatewayCore/Package.resolved', 'packages/swift/ThinAppViewCore/Package.resolved') }}
-
-      - uses: swift-actions/setup-swift@v3
-        with:
-          swift-version: "6.2.4"
-          skip-verify-signature: true
-
-      - name: Test compatibility shim
         run: swift test
 
   test-lexicons:
@@ -270,43 +232,6 @@ jobs:
 
       - name: Test
         run: bun test
-
-  test-worker:
-    name: Swift Worker (Package)
-    needs: changes
-    if: needs.changes.result == 'success' && needs.changes.outputs.worker == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Cache Swift PM build artifacts (ThinAppViewCore)
-        uses: actions/cache@v5
-        with:
-          path: packages/swift/ThinAppViewCore/.build
-          key: ${{ runner.os }}-swift-core-swift-6.2.4-${{ hashFiles('packages/swift/ThinAppViewCore/Package.resolved') }}
-
-      - name: Cache Swift PM build artifacts (Worker)
-        uses: actions/cache@v5
-        with:
-          path: services/worker/.build
-          key: ${{ runner.os }}-swift-worker-swift-6.2.4-${{ hashFiles('services/worker/Package.resolved', 'packages/swift/ThinAppViewCore/Package.resolved') }}
-
-      - uses: swift-actions/setup-swift@v3
-        with:
-          swift-version: "6.2.4"
-          skip-verify-signature: true
-
-      - name: Test ThinAppViewCore
-        working-directory: packages/swift/ThinAppViewCore
-        run: swift test
-
-      - name: Test Worker
-        working-directory: services/worker
-        run: swift test
-
-      - name: Build Worker
-        working-directory: services/worker
-        run: swift build
 
   supabase-validate:
     name: Supabase — validate migrations
@@ -391,10 +316,8 @@ jobs:
       - test-gateway
       - test-appview
       - test-appview-worker
-      - test-api
       - test-lexicons
       - test-spec
-      - test-worker
       - supabase-validate
     if: always()
     runs-on: ubuntu-latest
@@ -403,11 +326,9 @@ jobs:
         env:
           CHANGES_RESULT: ${{ needs.changes.result }}
           WEB_FLAG: ${{ needs.changes.outputs.web }}
-          API_FLAG: ${{ needs.changes.outputs.api }}
           GATEWAY_FLAG: ${{ needs.changes.outputs.gateway }}
           APPVIEW_FLAG: ${{ needs.changes.outputs.appview }}
           APPVIEW_WORKER_FLAG: ${{ needs.changes.outputs.appview-worker }}
-          WORKER_FLAG: ${{ needs.changes.outputs.worker }}
           SUPABASE_FLAG: ${{ needs.changes.outputs.supabase }}
           LEXICONS_FLAG: ${{ needs.changes.outputs.lexicons }}
           SPEC_FLAG: ${{ needs.changes.outputs.spec }}
@@ -415,10 +336,8 @@ jobs:
           TEST_GATEWAY_RESULT: ${{ needs.test-gateway.result }}
           TEST_APPVIEW_RESULT: ${{ needs.test-appview.result }}
           TEST_APPVIEW_WORKER_RESULT: ${{ needs.test-appview-worker.result }}
-          TEST_API_RESULT: ${{ needs.test-api.result }}
           TEST_LEXICONS_RESULT: ${{ needs.test-lexicons.result }}
           TEST_SPEC_RESULT: ${{ needs.test-spec.result }}
-          TEST_WORKER_RESULT: ${{ needs.test-worker.result }}
           SUPABASE_VALIDATE_RESULT: ${{ needs.supabase-validate.result }}
         run: |
           set -euo pipefail
@@ -450,24 +369,22 @@ jobs:
           check "$GATEWAY_FLAG" "$TEST_GATEWAY_RESULT" "Swift Gateway (Package)"
           check "$APPVIEW_FLAG" "$TEST_APPVIEW_RESULT" "Swift AppView (Package)"
           check "$APPVIEW_WORKER_FLAG" "$TEST_APPVIEW_WORKER_RESULT" "Swift AppView Worker (Package)"
-          check "$API_FLAG" "$TEST_API_RESULT" "Swift API shim (Package)"
           check "$LEXICONS_FLAG" "$TEST_LEXICONS_RESULT" "Lexicons (Package)"
           check "$SPEC_FLAG" "$TEST_SPEC_RESULT" "OpenAPI spec (Package)"
-          check "$WORKER_FLAG" "$TEST_WORKER_RESULT" "Swift Worker (Package)"
           check "$SUPABASE_FLAG" "$SUPABASE_VALIDATE_RESULT" "Supabase — validate migrations"
 
-  deploy-api:
-    name: Deploy API (Fly.io)
-    needs: [changes, ci, test-api, test-spec, supabase-validate, supabase-push-dev, supabase-push-prod]
+  deploy-gateway:
+    name: Deploy Gateway (Fly.io)
+    needs: [changes, ci, test-gateway, test-spec, supabase-validate, supabase-push-dev, supabase-push-prod]
     if: |
       always() &&
       github.event_name == 'push' &&
       (github.ref_name == 'main' || github.ref_name == 'dev') &&
       needs.changes.result == 'success' &&
-      needs.changes.outputs.api == 'true' &&
+      needs.changes.outputs.gateway == 'true' &&
       needs.ci.result == 'success' &&
-      needs.test-api.result != 'failure' &&
-      needs.test-api.result != 'cancelled' &&
+      needs.test-gateway.result != 'failure' &&
+      needs.test-gateway.result != 'cancelled' &&
       needs.test-spec.result != 'failure' &&
       needs.test-spec.result != 'cancelled' &&
       needs.supabase-validate.result != 'failure' &&
@@ -476,7 +393,7 @@ jobs:
       needs.supabase-push-dev.result != 'cancelled' &&
       needs.supabase-push-prod.result != 'failure' &&
       needs.supabase-push-prod.result != 'cancelled' &&
-      (needs.test-api.result == 'success' || needs.test-api.result == 'skipped') &&
+      (needs.test-gateway.result == 'success' || needs.test-gateway.result == 'skipped') &&
       (needs.test-spec.result == 'success' || needs.test-spec.result == 'skipped') &&
       (needs.supabase-validate.result == 'success' || needs.supabase-validate.result == 'skipped') &&
       (needs.supabase-push-dev.result == 'success' || needs.supabase-push-dev.result == 'skipped') &&
@@ -489,32 +406,36 @@ jobs:
 
       - uses: superfly/flyctl-actions/setup-flyctl@v1
 
-      - name: Deploy to Fly.io
+      - name: Deploy gateway to Fly.io
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-          FLY_APP_DEV: ${{ secrets.FLY_APP_DEV }}
-          FLY_APP_PROD: ${{ secrets.FLY_APP_PROD }}
-        run: bash scripts/fly-deploy-api.sh "${{ github.ref_name }}"
+          FLY_ORG: ${{ secrets.FLY_ORG }}
+          FLY_GATEWAY_APP_DEV: ${{ secrets.FLY_GATEWAY_APP_DEV }}
+          FLY_GATEWAY_APP_PROD: ${{ secrets.FLY_GATEWAY_APP_PROD }}
+        run: bash scripts/fly-deploy-gateway.sh "${{ github.ref_name }}"
 
-  deploy-worker:
-    name: Deploy AppView Worker (Fly.io)
-    needs: [changes, ci, test-worker, supabase-validate, supabase-push-dev, supabase-push-prod]
+  deploy-appview:
+    name: Deploy AppView (Fly.io)
+    needs: [changes, ci, test-appview, test-spec, supabase-validate, supabase-push-dev, supabase-push-prod]
     if: |
       always() &&
       github.event_name == 'push' &&
       (github.ref_name == 'main' || github.ref_name == 'dev') &&
       needs.changes.result == 'success' &&
-      needs.changes.outputs.worker == 'true' &&
+      needs.changes.outputs.appview == 'true' &&
       needs.ci.result == 'success' &&
-      needs.test-worker.result != 'failure' &&
-      needs.test-worker.result != 'cancelled' &&
+      needs.test-appview.result != 'failure' &&
+      needs.test-appview.result != 'cancelled' &&
+      needs.test-spec.result != 'failure' &&
+      needs.test-spec.result != 'cancelled' &&
       needs.supabase-validate.result != 'failure' &&
       needs.supabase-validate.result != 'cancelled' &&
       needs.supabase-push-dev.result != 'failure' &&
       needs.supabase-push-dev.result != 'cancelled' &&
       needs.supabase-push-prod.result != 'failure' &&
       needs.supabase-push-prod.result != 'cancelled' &&
-      (needs.test-worker.result == 'success' || needs.test-worker.result == 'skipped') &&
+      (needs.test-appview.result == 'success' || needs.test-appview.result == 'skipped') &&
+      (needs.test-spec.result == 'success' || needs.test-spec.result == 'skipped') &&
       (needs.supabase-validate.result == 'success' || needs.supabase-validate.result == 'skipped') &&
       (needs.supabase-push-dev.result == 'success' || needs.supabase-push-dev.result == 'skipped') &&
       (needs.supabase-push-prod.result == 'success' || needs.supabase-push-prod.result == 'skipped')
@@ -526,9 +447,48 @@ jobs:
 
       - uses: superfly/flyctl-actions/setup-flyctl@v1
 
-      - name: Deploy worker to Fly.io
+      - name: Deploy appview to Fly.io
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-          FLY_WORKER_APP_DEV: ${{ secrets.FLY_WORKER_APP_DEV }}
-          FLY_WORKER_APP_PROD: ${{ secrets.FLY_WORKER_APP_PROD }}
-        run: bash scripts/fly-deploy-worker.sh "${{ github.ref_name }}"
+          FLY_ORG: ${{ secrets.FLY_ORG }}
+          FLY_APPVIEW_APP_DEV: ${{ secrets.FLY_APPVIEW_APP_DEV }}
+          FLY_APPVIEW_APP_PROD: ${{ secrets.FLY_APPVIEW_APP_PROD }}
+        run: bash scripts/fly-deploy-appview.sh "${{ github.ref_name }}"
+
+  deploy-appview-worker:
+    name: Deploy AppView Worker (Fly.io)
+    needs: [changes, ci, test-appview-worker, supabase-validate, supabase-push-dev, supabase-push-prod]
+    if: |
+      always() &&
+      github.event_name == 'push' &&
+      (github.ref_name == 'main' || github.ref_name == 'dev') &&
+      needs.changes.result == 'success' &&
+      needs.changes.outputs.appview-worker == 'true' &&
+      needs.ci.result == 'success' &&
+      needs.test-appview-worker.result != 'failure' &&
+      needs.test-appview-worker.result != 'cancelled' &&
+      needs.supabase-validate.result != 'failure' &&
+      needs.supabase-validate.result != 'cancelled' &&
+      needs.supabase-push-dev.result != 'failure' &&
+      needs.supabase-push-dev.result != 'cancelled' &&
+      needs.supabase-push-prod.result != 'failure' &&
+      needs.supabase-push-prod.result != 'cancelled' &&
+      (needs.test-appview-worker.result == 'success' || needs.test-appview-worker.result == 'skipped') &&
+      (needs.supabase-validate.result == 'success' || needs.supabase-validate.result == 'skipped') &&
+      (needs.supabase-push-dev.result == 'success' || needs.supabase-push-dev.result == 'skipped') &&
+      (needs.supabase-push-prod.result == 'success' || needs.supabase-push-prod.result == 'skipped')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: superfly/flyctl-actions/setup-flyctl@v1
+
+      - name: Deploy appview-worker to Fly.io
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          FLY_ORG: ${{ secrets.FLY_ORG }}
+          FLY_APPVIEW_WORKER_APP_DEV: ${{ secrets.FLY_APPVIEW_WORKER_APP_DEV }}
+          FLY_APPVIEW_WORKER_APP_PROD: ${{ secrets.FLY_APPVIEW_WORKER_APP_PROD }}
+        run: bash scripts/fly-deploy-appview-worker.sh "${{ github.ref_name }}"

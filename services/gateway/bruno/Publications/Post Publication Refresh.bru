@@ -1,0 +1,20 @@
+meta {
+  name: Post Publication Refresh
+  type: http
+  seq: 31
+}
+
+post {
+  url: {{baseUrl}}/v1/publications/refresh
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}
+
+docs {
+  Recomputes the publication sidebar projection for the authenticated viewer.
+}

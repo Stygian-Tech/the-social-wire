@@ -1,0 +1,28 @@
+meta {
+  name: Put Publication Folder
+  type: http
+  seq: 34
+}
+
+put {
+  url: {{baseUrl}}/v1/publications/folders/{{folderRkey}}
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "name": "Renamed Folder",
+    "sortOrder": 1
+  }
+}
+
+docs {
+  Updates an existing folder record on the viewer PDS.
+}

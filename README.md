@@ -28,14 +28,14 @@ the-social-wire/
     web/         # Next.js 16.2+ web client (Bun)
     apple/       # SwiftUI iOS/iPadOS app
   services/
-    api/         # Swift gateway (Hummingbird) + optional Thin AppView worker; Fly.io
+    gateway/         # OAuth, sync, PDS writes, AppView proxy (Hummingbird; Fly.io)
+    appview/         # Publication sidebar + Thin AppView read index (Fly.io)
+    appview-worker/  # Jetstream ingestion for Thin AppView (Fly.io)
   packages/
     lexicons/    # com.thesocialwire.* ATProto lexicons
-    spec/        # OpenAPI 3.1 spec (service API)
+    spec/        # OpenAPI 3.1 spec (gateway + appview routes)
   supabase/
     config.toml  # Supabase CLI; migrations/ for hosted Postgres (see .github/workflows/supabase.yml)
-  infra/
-    docker/      # docker-compose — builds API from services/api + Caddy + Portainer
   docs/
     architecture/
     wiki/        # Markdown synced to GitHub Wiki on push to main (see .github/workflows/publish-wiki.yml)
@@ -46,9 +46,8 @@ the-social-wire/
 | Tool | Version |
 |------|---------|
 | [Bun](https://bun.sh) | Matches root [`package.json`](package.json) `packageManager` (currently 1.3.x) |
-| [Swift](https://swift.org/install) | 6.1+ for iOS (`apps/apple`); run `swift test` locally for `services/api` |
-| [Docker](https://docker.com) | ≥ 25 (optional; local compose stack) |
-| [Fly CLI](https://fly.io/docs/flyctl/install/) | Latest (API deploys / ops) |
+| [Swift](https://swift.org/install) | 6.1+ for iOS (`apps/apple`); run `swift test` locally for gateway/appview packages |
+| [Fly CLI](https://fly.io/docs/flyctl/install/) | Latest (Fly deploys / ops) |
 | [Xcode](https://developer.apple.com/xcode/) | 16+ (for iOS) |
 
 ## Quick Start
@@ -71,11 +70,14 @@ Open [http://localhost:3000](http://localhost:3000).
 ### Full-stack local dev (optional)
 
 ```bash
-# API gateway
-cd services/api && cp .env.example .env && APP_ENV=local swift run App
+# Gateway (OAuth, sync, writes)
+cd services/gateway && APP_ENV=local swift run Gateway
 
-# Thin AppView worker (optional)
-cd services/worker && cp .env.example .env && APP_ENV=local ENABLE_THIN_APPVIEW=true swift run Worker
+# AppView (sidebar + Thin AppView reads)
+cd services/appview && APP_ENV=local ENABLE_THIN_APPVIEW=true swift run AppView
+
+# AppView worker (Jetstream ingestion)
+cd services/appview-worker && APP_ENV=local ENABLE_THIN_APPVIEW=true swift run AppViewWorker
 
 # Supabase (optional — Docker)
 supabase start && supabase db reset --local
@@ -87,8 +89,9 @@ See **[docs/test-plans/README.md](docs/test-plans/README.md)** for per-surface p
 
 ```bash
 cd apps/web && bun test
-cd services/api && swift test
-cd services/worker && swift test
+cd services/gateway && swift test
+cd services/appview && swift test
+cd services/appview-worker && swift test
 cd packages/swift/ThinAppViewCore && swift test
 
 # iOS — Cmd+U in Xcode (see docs/test-plans/apple.md)
@@ -107,10 +110,10 @@ cd packages/swift/ThinAppViewCore && swift test
 | Component | Where |
 |-----------|-------|
 | Web | Vercel (automatic from `main` / `dev` branches) |
-| API | Fly.io (`deploy.yml` — prod + dev apps, **`ams`**) |
-| Thin AppView worker | Fly.io separate process (`fly.worker.toml`, `App worker`) |
+| Gateway | Fly.io (`the-social-wire-*-gateway`, **`ams`**) |
+| AppView | Fly.io (`the-social-wire-*-appview`, **`ams`**) |
+| AppView worker | Fly.io (`the-social-wire-*-appview-worker`, **`ams`**) |
 | Database (index + cache) | Supabase Postgres (`supabase/migrations/`) |
-| Local API + TLS | `infra/docker` compose (builds `services/api` Dockerfile) |
 | CI/CD | GitHub Actions + Vercel + Fly |
 
 See [docs/architecture/overview.md](docs/architecture/overview.md) for the full architecture narrative.
@@ -126,7 +129,7 @@ See [docs/architecture/overview.md](docs/architecture/overview.md) for the full 
 - [Thin AppView](docs/architecture/appview.md)
 - [Web app](apps/web/README.md)
 - [Apple app](apps/apple/README.md)
-- [Gateway API](services/api/README.md)
+- [OpenAPI spec](packages/spec/README.md)
 - [Lexicon reference](packages/lexicons/README.md)
 
 ## License

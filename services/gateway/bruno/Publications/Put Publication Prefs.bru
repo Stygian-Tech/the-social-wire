@@ -1,0 +1,30 @@
+meta {
+  name: Put Publication Prefs
+  type: http
+  seq: 36
+}
+
+put {
+  url: {{baseUrl}}/v1/publications/prefs
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "publicationId": "{{publicationId}}",
+    "folderId": "{{folderRkey}}",
+    "sortOrder": 0,
+    "hidden": false
+  }
+}
+
+docs {
+  Upserts `com.thesocialwire.publicationPrefs` for a publication on the viewer PDS.
+}

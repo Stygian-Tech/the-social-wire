@@ -55,8 +55,6 @@ bun-debug.log*
 coverage/
 *.lcov
 
-# Docker
-infra/docker/.env
 apps/apple/*.xcodeproj/project.xcworkspace/xcuserdata/*/UserInterfaceState.xcuserstate
 
 # Supabase CLI (local only)

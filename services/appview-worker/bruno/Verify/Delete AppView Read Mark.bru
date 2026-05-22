@@ -1,0 +1,27 @@
+meta {
+  name: Delete AppView Read Mark
+  type: http
+  seq: 6
+}
+
+delete {
+  url: {{appviewBaseUrl}}/v1/appview/read-marks
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "subjectUri": "at://did:plc:REPLACE_ME/site.standard.entry/REPLACE_RKEY"
+  }
+}
+
+docs {
+  Verifies read-mark deletion on AppView (replace subjectUri with a row from the entries list).
+}

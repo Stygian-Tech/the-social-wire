@@ -1,0 +1,28 @@
+meta {
+  name: Post Reader Read Mark
+  type: http
+  seq: 50
+}
+
+post {
+  url: {{baseUrl}}/v1/reader/read-marks
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "subjectUri": "{{entrySubjectUri}}",
+    "readAt": "{{readMarkAt}}"
+  }
+}
+
+docs {
+  Upserts `com.thesocialwire.entryReadState` on the viewer PDS (canonical read state).
+}

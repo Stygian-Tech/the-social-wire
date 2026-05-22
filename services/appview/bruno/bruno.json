@@ -1,0 +1,13 @@
+{
+  "version": "1",
+  "name": "Social Wire AppView",
+  "type": "collection",
+  "ignore": [
+    "node_modules",
+    ".git"
+  ],
+  "presets": {
+    "requestType": "http",
+    "requestUrl": "https://the-social-wire-prod-appview.fly.dev"
+  }
+}

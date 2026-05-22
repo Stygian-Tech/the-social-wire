@@ -1,0 +1,20 @@
+meta {
+  name: Get AppView Entries
+  type: http
+  seq: 20
+}
+
+get {
+  url: {{baseUrl}}/v1/appview/entries?authorDid={{authorDid}}&filter={{appViewFilter}}&limit={{appViewLimit}}
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}
+
+docs {
+  Lists Level-1 entry rows. Optional: `publicationAtUri`, `publicationScopeAtUris`, `publicationSiteUrls`, `cursor`.
+}

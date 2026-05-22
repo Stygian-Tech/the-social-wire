@@ -9,7 +9,7 @@ import Logging
 /// connection. The database file is created automatically at `dbPath`
 /// if it doesn't exist.
 ///
-/// Schema mirrors the Supabase migration in `infra/docker/`.
+/// Schema mirrors the Supabase migrations in `supabase/migrations/`.
 actor SQLiteCache: CacheStore {
 
   // Cache TTLs — same as SupabaseCache

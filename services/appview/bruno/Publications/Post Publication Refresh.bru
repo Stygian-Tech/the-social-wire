@@ -1,0 +1,16 @@
+meta {
+  name: Post Publication Refresh
+  type: http
+  seq: 11
+}
+
+post {
+  url: {{baseUrl}}/v1/publications/refresh
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}
