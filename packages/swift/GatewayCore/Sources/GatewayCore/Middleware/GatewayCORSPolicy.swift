@@ -31,9 +31,12 @@ public enum GatewayCORSPolicy {
     let origins = allowedOrigins(config: config, env: env)
     let allowOrigin = resolveAllowOrigin(origins: origins, appEnv: config.appEnv)
     let dpopHeader = HTTPField.Name("DPoP")!
+    let upstreamDpopHeader = HTTPField.Name(ATProtoUpstreamDPoP.headerName)!
     return CORSMiddleware(
       allowOrigin: allowOrigin,
-      allowHeaders: [.accept, .authorization, .contentType, .origin, .ifNoneMatch, dpopHeader],
+      allowHeaders: [
+        .accept, .authorization, .contentType, .origin, .ifNoneMatch, dpopHeader, upstreamDpopHeader,
+      ],
       allowMethods: [.get, .post, .put, .delete, .head, .options],
       allowCredentials: true,
       maxAge: .seconds(3600)

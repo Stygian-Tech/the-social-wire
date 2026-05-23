@@ -443,7 +443,12 @@ final class SocialWireGatewayClient {
             request.setValue(contentType, forHTTPHeaderField: "Content-Type")
         }
 
-        try await authorize(&request, session: session)
+        try await authorize(
+          &request,
+          session: session,
+          gatewayPath: path,
+          gatewayMethod: method
+        )
 
         let trimmedNM = trimmedEntityTag(ifNoneMatch)
         if let trimmedNM, !trimmedNM.isEmpty {
@@ -473,7 +478,12 @@ final class SocialWireGatewayClient {
             if let contentType {
                 retry.setValue(contentType, forHTTPHeaderField: "Content-Type")
             }
-            try await authorize(&retry, session: session)
+            try await authorize(
+              &retry,
+              session: session,
+              gatewayPath: path,
+              gatewayMethod: method
+            )
             if let trimmedNM, !trimmedNM.isEmpty {
                 retry.setValue(trimmedNM, forHTTPHeaderField: "If-None-Match")
             }
@@ -493,15 +503,64 @@ final class SocialWireGatewayClient {
         return initial
     }
 
-    private func authorize(_ request: inout URLRequest, session: AuthSession) async throws {
+    private func authorize(
+      _ request: inout URLRequest,
+      session: AuthSession,
+      gatewayPath: String,
+      gatewayMethod: String
+    ) async throws {
         guard let url = request.url else { throw SocialWireError.invalidURL }
-        let method = request.httpMethod ?? "GET"
+        let method = request.httpMethod ?? gatewayMethod
 
         request.setValue("DPoP \(session.accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue(
             try await auth.dpop.proof(method: method, url: url, accessToken: session.accessToken),
             forHTTPHeaderField: "DPoP"
         )
+
+        if let xrpcMethod = Self.pdsXrpcMethod(gatewayMethod: gatewayMethod, path: gatewayPath) {
+            let pdsXrpcURL = session.pdsURL
+                .appending(path: "xrpc")
+                .appending(path: xrpcMethod)
+            let upstreamProof = try await auth.dpop.proof(
+                method: method,
+                url: pdsXrpcURL,
+                accessToken: session.accessToken
+            )
+            request.setValue(upstreamProof, forHTTPHeaderField: "X-ATProto-Upstream-DPoP")
+        }
+    }
+
+    /// Maps gateway publication write routes to the PDS XRPC method they write through.
+    private static func pdsXrpcMethod(gatewayMethod: String, path: String) -> String? {
+        let method = gatewayMethod.uppercased()
+        switch method {
+        case "POST":
+            if path.hasSuffix("/subscriptions")
+                || path.hasSuffix("/rss-subscriptions")
+                || path.hasSuffix("/folders")
+            {
+                return "com.atproto.repo.createRecord"
+            }
+            if path.hasSuffix("/read-marks") || path.hasSuffix("/mark-all-read") {
+                return "com.atproto.repo.putRecord"
+            }
+        case "PUT":
+            if path.contains("/folders/") || path.hasSuffix("/prefs") {
+                return "com.atproto.repo.putRecord"
+            }
+        case "DELETE":
+            if path.contains("/subscriptions/")
+                || path.contains("/rss-subscriptions/")
+                || path.contains("/folders/")
+                || path.hasSuffix("/read-marks")
+            {
+                return "com.atproto.repo.deleteRecord"
+            }
+        default:
+            break
+        }
+        return nil
     }
 
     private func trimmedEntityTag(_ raw: String?) -> String? {

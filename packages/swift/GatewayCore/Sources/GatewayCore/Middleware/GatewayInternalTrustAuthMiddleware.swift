@@ -79,7 +79,8 @@ public struct GatewayInternalTrustAuthMiddleware: RouterMiddleware {
     mutableContext.authContext = AuthContext(
       did: did,
       authorizationForwardingValue: authHeaderRaw,
-      dpopProof: dpopProof
+      dpopProof: dpopProof,
+      upstreamDpopProof: ATProtoUpstreamDPoP.extract(from: request)
     )
     return try await next(request, mutableContext)
   }

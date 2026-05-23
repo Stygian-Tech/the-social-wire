@@ -240,21 +240,33 @@ public actor ATProtoAuthenticatedRepoClient {
     if !payload.isEmpty {
       request.headers.add(name: "Authorization", value: payload)
     }
-    if let dpop = auth.dpopProof?.trimmingCharacters(in: .whitespacesAndNewlines), !dpop.isEmpty {
+    if let dpop = pdsDpopProof(from: auth) {
       request.headers.add(name: "DPoP", value: dpop)
     }
     let bodyData = try JSONSerialization.data(withJSONObject: body)
     request.body = .bytes(ByteBuffer(data: bodyData))
 
     let reply = try await httpClient.execute(request, timeout: .seconds(25))
-    guard reply.status == .ok else {
-      logger.debug(
-        "XRPC mutate non-OK",
-        metadata: ["status": .stringConvertible(reply.status.code), "method": .string(method)]
-      )
-      throw HTTPError(.badGateway, message: "PDS \(method) failed (\(reply.status.code))")
-    }
     let frame = try await reply.body.collect(upTo: 1024 * 1024)
+    let bodyText = String(buffer: frame)
+    guard reply.status == .ok else {
+      logger.warning(
+        "XRPC mutate non-OK",
+        metadata: [
+          "status": .stringConvertible(reply.status.code),
+          "method": .string(method),
+          "body": .string(String(bodyText.prefix(512))),
+        ]
+      )
+      switch reply.status.code {
+      case 401:
+        throw HTTPError(.unauthorized, message: "PDS rejected OAuth credentials for \(method)")
+      case 403:
+        throw HTTPError(.forbidden, message: "PDS rejected repo scope for \(method)")
+      default:
+        throw HTTPError(.badGateway, message: "PDS \(method) failed (\(reply.status.code))")
+      }
+    }
     guard
       let json = try? JSONSerialization.jsonObject(with: Data(buffer: frame)) as? [String: Any]
     else { return [:] }
@@ -269,7 +281,7 @@ public actor ATProtoAuthenticatedRepoClient {
       if !payload.isEmpty {
         request.headers.add(name: "Authorization", value: payload)
       }
-      if let dpop = auth.dpopProof?.trimmingCharacters(in: .whitespacesAndNewlines), !dpop.isEmpty {
+      if let dpop = pdsDpopProof(from: auth) {
         request.headers.add(name: "DPoP", value: dpop)
       }
     }
@@ -306,5 +318,13 @@ public actor ATProtoAuthenticatedRepoClient {
       ?? (value["createdAt"] as? String)
       ?? (value["indexedAt"] as? String)
       ?? ""
+  }
+
+  private func pdsDpopProof(from auth: AuthContext) -> String? {
+    let upstream = auth.upstreamDpopProof?.trimmingCharacters(in: .whitespacesAndNewlines)
+    if let upstream, !upstream.isEmpty { return upstream }
+    let gateway = auth.dpopProof?.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let gateway, !gateway.isEmpty else { return nil }
+    return gateway
   }
 }

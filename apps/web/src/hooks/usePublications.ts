@@ -513,45 +513,45 @@ export function useRefreshSkyreaderSubscriptionIcon() {
  */
 export function useAddPublicationFromAnyLink() {
   const qc = useQueryClient();
+  const client = usePDSClient();
   const { session, getOAuthSession } = useAuth();
   const did = session?.did ?? null;
 
   return useMutation({
     mutationFn: async (input: { link: string; title?: string }) => {
-      const oauthSession = getOAuthSession();
-      if (!oauthSession) throw new Error("OAuth session required");
-        const { resolveAddPublicationOnGateway, createPublicationSubscriptionOnGateway, createRssSubscriptionOnGateway } = await import(
-          "@/lib/publicationProjectionClient"
-        );
-        const gateway = await resolveAddPublicationOnGateway(
-          oauthSession,
-          input.link
-        );
-        if (gateway.error) throw new Error(gateway.error);
-        if (gateway.result?.kind === "standard-site") {
-          await createPublicationSubscriptionOnGateway(oauthSession, {
-            publication: gateway.result.publicationAtUri,
-          });
-          return {
-            kind: "standard-site" as const,
-            navigatePubId: gateway.result.publicationAtUri,
-            authorDid: publicationRepoDid(gateway.result.publicationAtUri),
-          };
-        }
-        if (gateway.result?.kind === "rss") {
-          const normalized = normalizeRssFeedUrlInput(gateway.result.feedUrl);
-          if (!normalized) throw new Error("Invalid feed URL from resolver");
-          await createRssSubscriptionOnGateway(oauthSession, {
-            feedUrl: normalized,
-            title: input.title?.trim() || gateway.result.title,
-            siteUrl: gateway.result.siteUrl,
-          });
-          return {
-            kind: "rss" as const,
-            navigatePubId: rssPublicationIdFromNormalizedFeedUrl(normalized),
-          };
-        }
-        throw new Error("Could not resolve link");
+      if (!client) throw new Error("OAuth session required");
+      const { resolveAddPublicationOnGateway } = await import(
+        "@/lib/publicationProjectionClient"
+      );
+      const gateway = await resolveAddPublicationOnGateway(
+        getOAuthSession()!,
+        input.link
+      );
+      if (gateway.error) throw new Error(gateway.error);
+      if (gateway.result?.kind === "standard-site") {
+        await client.createPublicationSubscription({
+          publication: gateway.result.publicationAtUri,
+        });
+        return {
+          kind: "standard-site" as const,
+          navigatePubId: gateway.result.publicationAtUri,
+          authorDid: publicationRepoDid(gateway.result.publicationAtUri),
+        };
+      }
+      if (gateway.result?.kind === "rss") {
+        const normalized = normalizeRssFeedUrlInput(gateway.result.feedUrl);
+        if (!normalized) throw new Error("Invalid feed URL from resolver");
+        await client.createSkyreaderFeedSubscription({
+          feedUrl: normalized,
+          title: input.title?.trim() || gateway.result.title,
+          siteUrl: gateway.result.siteUrl,
+        });
+        return {
+          kind: "rss" as const,
+          navigatePubId: rssPublicationIdFromNormalizedFeedUrl(normalized),
+        };
+      }
+      throw new Error("Could not resolve link");
     },
     onSuccess: (result) => {
       qc.invalidateQueries({ queryKey: PUBLICATION_SUBSCRIPTIONS_QUERY_KEY });

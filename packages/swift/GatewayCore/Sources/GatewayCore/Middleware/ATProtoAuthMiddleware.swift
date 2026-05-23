@@ -9,11 +9,19 @@ public struct AuthContext: Sendable {
   public let did: String
   public let authorizationForwardingValue: String
   public let dpopProof: String?
+  /// DPoP proof bound to the viewer PDS XRPC endpoint (not the gateway ingress URL).
+  public let upstreamDpopProof: String?
 
-  public init(did: String, authorizationForwardingValue: String, dpopProof: String?) {
+  public init(
+    did: String,
+    authorizationForwardingValue: String,
+    dpopProof: String?,
+    upstreamDpopProof: String? = nil
+  ) {
     self.did = did
     self.authorizationForwardingValue = authorizationForwardingValue
     self.dpopProof = dpopProof
+    self.upstreamDpopProof = upstreamDpopProof
   }
 }
 
@@ -167,7 +175,8 @@ public struct ATProtoAuthMiddleware: RouterMiddleware {
     mutableContext.authContext = AuthContext(
       did: authOutcome.did,
       authorizationForwardingValue: forwardingAuthorization,
-      dpopProof: dpopProofCandidate
+      dpopProof: dpopProofCandidate,
+      upstreamDpopProof: ATProtoUpstreamDPoP.extract(from: request)
     )
 
     return try await next(request, mutableContext)
