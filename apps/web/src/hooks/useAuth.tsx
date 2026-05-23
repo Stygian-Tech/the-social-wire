@@ -162,12 +162,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const handleSignOut = useCallback(async () => {
-    if (session) {
-      await authSignOut(session.did);
-      oauthSessionRef.current = null;
-      setSession(null);
-      bumpOAuthReloadSeq();
-    }
+    if (!session) return;
+
+    const did = session.did;
+
+    // Drop the in-memory session first so hooks abort in-flight OAuth work
+    // before we revoke credentials at the authorization server.
+    oauthSessionRef.current = null;
+    setSession(null);
+    bumpOAuthReloadSeq();
+
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, 0);
+    });
+
+    await authSignOut(did);
   }, [bumpOAuthReloadSeq, session]);
 
   const applyOAuthSession = useCallback((oauthSession: OAuthSession) => {

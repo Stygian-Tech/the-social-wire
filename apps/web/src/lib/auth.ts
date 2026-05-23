@@ -428,10 +428,23 @@ export async function getSession(): Promise<OAuthSession | null> {
 
 /**
  * Signs the user out and clears stored session data.
+ *
+ * Server-side token revocation is best-effort (Bluesky may respond 400 for an
+ * already-invalid token); local session data is always cleared.
  */
 export async function signOut(did: string): Promise<void> {
-  const client = await getOAuthClient();
-  await client.revoke(did);
+  try {
+    const client = await getOAuthClient();
+    await client.revoke(did);
+  } catch (err) {
+    console.warn("OAuth revoke failed during sign-out", err);
+  } finally {
+    try {
+      localStorage.removeItem(ATPRO_BROWSER_OAUTH_SUB_STORAGE_KEY);
+    } catch {
+      //
+    }
+  }
 }
 
 /**

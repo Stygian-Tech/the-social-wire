@@ -77,10 +77,10 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
     setLoggingOut(true);
     try {
       await signOut();
-      router.replace("/login");
     } catch (err) {
-      console.error(err);
+      console.warn("Sign-out failed; redirecting to login", err);
     } finally {
+      router.replace("/login");
       setLoggingOut(false);
     }
   }
