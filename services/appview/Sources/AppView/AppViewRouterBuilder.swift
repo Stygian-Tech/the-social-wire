@@ -45,7 +45,19 @@ enum AppViewRouterBuilder {
     )
     PublicationRoutes(projectionService: projection, resolveService: resolve).register(on: protected)
 
-    let indexer = ThinAppViewIndexer(store: thinAppViewStore, config: config.thinAppView, logger: logger)
+    let indexer = ThinAppViewIndexer(
+      store: thinAppViewStore,
+      config: config.thinAppView,
+      logger: logger,
+      httpClient: httpClient,
+      plcURL: config.core.atprotoPLCURL,
+      rssIngestion: ThinAppViewRssIngestion(
+        store: thinAppViewStore,
+        httpClient: httpClient,
+        config: config.thinAppView,
+        logger: logger
+      )
+    )
     let readService = ThinAppViewReadService(store: thinAppViewStore, logger: logger)
     let enrollService = ThinAppViewEnrollService(
       store: thinAppViewStore,
@@ -62,6 +74,17 @@ enum AppViewRouterBuilder {
       plcURL: config.core.atprotoPLCURL,
       logger: logger
     )
+    let rssIngestion = ThinAppViewRssIngestion(
+      store: thinAppViewStore,
+      httpClient: httpClient,
+      config: config.thinAppView,
+      logger: logger
+    )
+    let skyreaderIngestionService = ThinAppViewSkyreaderIngestionService(
+      repo: repo,
+      rssIngestion: rssIngestion,
+      logger: logger
+    )
     AppViewExtendedRoutes(
       readService: readService,
       projectionService: projection,
@@ -72,6 +95,7 @@ enum AppViewRouterBuilder {
       projectionService: projection,
       readService: readService,
       enrollService: enrollService,
+      skyreaderIngestionService: skyreaderIngestionService,
       logger: logger
     )
     BootstrapStreamRoutes(bootstrapStreamService: bootstrapStream).register(on: protected)

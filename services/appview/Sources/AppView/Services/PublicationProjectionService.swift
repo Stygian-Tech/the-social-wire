@@ -157,7 +157,13 @@ actor PublicationProjectionService {
     )
 
     let allRows = discovered + rssRows + graphOrphanRows
-    let enrollAuthorDids = Array(Set(allRows.map(\.authorDid).filter { !$0.isEmpty })).sorted()
+    let enrollAuthorDids = Array(
+      Set(
+        allRows
+          .map(\.authorDid)
+          .filter { ThinAppViewEnrollBackfill.isBackfillEligibleAuthorDid($0) }
+      )
+    ).sorted()
     let uniqueRows = Self.uniqueRows(allRows)
 
     return SidebarDiscoveryContext(
@@ -539,11 +545,12 @@ actor PublicationProjectionService {
     let normalized = PublicationProjectionLogic.normalizeAtRepoParam(publicationId)
 
     if normalized.hasPrefix(PublicationLexicons.rssPublicationPrefix) {
+      let feedUrl = RssFeedIdentity.normalizedFeedUrl(fromRssPublicationId: normalized)
       return PublicationAppViewScope(
         authorDid: PublicationLexicons.rssAuthorDid,
         publicationAtUri: nil,
         publicationScopeAtUris: [],
-        publicationSiteUrls: []
+        publicationSiteUrls: feedUrl.map { [$0] } ?? []
       )
     }
 

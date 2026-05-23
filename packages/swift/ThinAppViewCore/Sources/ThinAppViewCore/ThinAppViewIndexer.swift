@@ -2,13 +2,14 @@ import AsyncHTTPClient
 import Foundation
 import Logging
 
-/// Indexes repo commits into `content_items` and `read_marks`.
+/// Indexes Skyreader feed subscriptions into the thin AppView store.
 public actor ThinAppViewIndexer {
   private let store: any ThinAppViewStore
   private let config: ThinAppViewConfig
   private let logger: Logger
   private let httpClient: HTTPClient?
   private let plcURL: String?
+  private let rssIngestion: ThinAppViewRssIngestion?
   private var pdsBaseCache: [String: String] = [:]
 
   public init(
@@ -16,13 +17,15 @@ public actor ThinAppViewIndexer {
     config: ThinAppViewConfig,
     logger: Logger,
     httpClient: HTTPClient? = nil,
-    plcURL: String? = nil
+    plcURL: String? = nil,
+    rssIngestion: ThinAppViewRssIngestion? = nil
   ) {
     self.store = store
     self.config = config
     self.logger = logger
     self.httpClient = httpClient
     self.plcURL = plcURL
+    self.rssIngestion = rssIngestion
   }
 
   public func handleCommit(
@@ -35,6 +38,16 @@ public actor ThinAppViewIndexer {
     pdsBase: String? = nil
   ) async throws {
     let record = (try JSONSerialization.jsonObject(with: recordJSON) as? [String: Any]) ?? [:]
+
+    if collection == RssFeedLexicons.skyreaderFeedSubscription {
+      if operation != "delete", let rssIngestion {
+        if let feedUrl = ThinAppViewRssIngestion.feedUrl(fromSubscriptionRecord: record) {
+          _ = try? await rssIngestion.ingestFeed(normalizedFeedUrl: feedUrl)
+        }
+      }
+      return
+    }
+
     if ThinAppViewConfig.readStateCollection == collection {
       try await handleReadStateCommit(repoDid: repoDid, rkey: rkey, record: record, operation: operation)
       return

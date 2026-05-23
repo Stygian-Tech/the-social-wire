@@ -153,6 +153,24 @@ public init(path dbPath: String, logger: Logger) throws {
     return ThinAppViewQuerySupport.entryListItems(from: [(row.uri, row.renderJSON, row.createdAt)]).first
   }
 
+  public func fetchContentRender(uri: String) async throws -> ContentRenderFields? {
+    let nowIso = Self.isoString(from: Date())
+    let renderJSON: String? = try await db.read { db in
+      try String.fetchOne(
+        db,
+        sql: """
+          SELECT ci.render_json
+          FROM content_items ci
+          WHERE ci.uri = ? AND ci.expires_at > ?
+          LIMIT 1
+          """,
+        arguments: [uri, nowIso]
+      )
+    }
+    guard let renderJSON, let data = renderJSON.data(using: .utf8) else { return nil }
+    return try? JSONDecoder().decode(ContentRenderFields.self, from: data)
+  }
+
   public func hasReadMark(viewerDid: String, subjectUri: String) async throws -> Bool {
     try await db.read { db in
       try Bool.fetchOne(
@@ -180,7 +198,11 @@ public init(path dbPath: String, logger: Logger) throws {
   ) async throws -> AppViewEntryListResponse {
     let nowIso = Self.isoString(from: Date())
     let pageLimit = max(1, min(limit, 100))
-    let scoped = publicationAtUri != nil || !publicationScopeAtUris.isEmpty
+    let scoped = ThinAppViewQuerySupport.requiresPublicationSiteFilter(
+      publicationAtUri: publicationAtUri,
+      publicationScopeAtUris: publicationScopeAtUris,
+      publicationSiteUrls: publicationSiteUrls
+    )
     let batchSize = ThinAppViewQuerySupport.scanBatchSize(
       pageLimit: pageLimit,
       scoped: scoped
@@ -331,7 +353,8 @@ public init(path dbPath: String, logger: Logger) throws {
     let nowIso = Self.isoString(from: Date())
     let scoped = ThinAppViewQuerySupport.requiresPublicationSiteFilter(
       publicationAtUri: publicationAtUri,
-      publicationScopeAtUris: publicationScopeAtUris
+      publicationScopeAtUris: publicationScopeAtUris,
+      publicationSiteUrls: publicationSiteUrls
     )
 
     if !scoped {
@@ -396,6 +419,47 @@ public init(path dbPath: String, logger: Logger) throws {
         arguments: [beforeIso]
       )
       return db.changesCount
+    }
+  }
+
+  public func listAuthorDidsForProactiveBackfill(limit: Int) async throws -> [String] {
+    let capped = max(1, min(limit, 500))
+    return try await db.read { db in
+      let rows = try Row.fetchAll(
+        db,
+        sql: """
+          SELECT author_did
+          FROM content_items
+          WHERE author_did LIKE 'did:%' AND author_did NOT LIKE 'did:web:%'
+          GROUP BY author_did
+          ORDER BY MIN(indexed_at) ASC
+          LIMIT ?
+          """,
+        arguments: [capped]
+      )
+      return rows.compactMap { $0["author_did"] as String? }
+    }
+  }
+
+  public func listRssPublicationSites(limit: Int) async throws -> [String] {
+    let capped = max(1, min(limit, 200))
+    let nowIso = Self.isoString(from: Date())
+    return try await db.read { db in
+      let rows = try Row.fetchAll(
+        db,
+        sql: """
+          SELECT publication_site
+          FROM content_items
+          WHERE author_did = ?
+            AND publication_site IS NOT NULL
+            AND expires_at > ?
+          GROUP BY publication_site
+          ORDER BY MIN(indexed_at) ASC
+          LIMIT ?
+          """,
+        arguments: [RssFeedLexicons.rssAuthorDid, nowIso, capped]
+      )
+      return rows.compactMap { $0["publication_site"] as String? }
     }
   }
 

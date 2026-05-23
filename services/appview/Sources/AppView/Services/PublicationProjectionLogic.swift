@@ -138,12 +138,11 @@ enum PublicationProjectionLogic {
   // MARK: - RSS projection
 
   static func rssPublicationId(from normalizedFeedUrl: String) -> String {
-    let data = Data(normalizedFeedUrl.utf8)
-    let b64 = data.base64EncodedString()
-      .replacingOccurrences(of: "+", with: "-")
-      .replacingOccurrences(of: "/", with: "_")
-      .replacingOccurrences(of: "=", with: "")
-    return "\(PublicationLexicons.rssPublicationPrefix)\(b64)"
+    RssFeedIdentity.rssPublicationId(from: normalizedFeedUrl)
+  }
+
+  static func normalizedFeedUrlFromRssPublicationId(_ pubId: String) -> String? {
+    RssFeedIdentity.normalizedFeedUrl(fromRssPublicationId: pubId)
   }
 
   static func normalizeRssFeedUrl(_ raw: String) -> String? {

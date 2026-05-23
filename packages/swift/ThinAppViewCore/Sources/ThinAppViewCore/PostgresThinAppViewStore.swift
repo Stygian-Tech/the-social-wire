@@ -86,6 +86,26 @@ public init(pool: PostgresClient, logger: Logger) {
     return nil
   }
 
+  public func fetchContentRender(uri: String) async throws -> ContentRenderFields? {
+    let now = Date()
+    let rows = try await pool.query(
+      """
+      SELECT ci.render_json::text
+      FROM content_items ci
+      WHERE ci.uri = \(uri) AND ci.expires_at > \(now)
+      LIMIT 1
+      """,
+      logger: logger
+    )
+    let decoder = JSONDecoder()
+    for try await row in rows {
+      let renderJSON: String = try row.decode(String.self)
+      guard let data = renderJSON.data(using: .utf8) else { return nil }
+      return try? decoder.decode(ContentRenderFields.self, from: data)
+    }
+    return nil
+  }
+
   public func hasReadMark(viewerDid: String, subjectUri: String) async throws -> Bool {
     let rows = try await pool.query(
       """
@@ -112,7 +132,11 @@ public init(pool: PostgresClient, logger: Logger) {
   ) async throws -> AppViewEntryListResponse {
     let pageLimit = max(1, min(limit, 100))
     let now = Date()
-    let scoped = publicationAtUri != nil || !publicationScopeAtUris.isEmpty
+    let scoped = ThinAppViewQuerySupport.requiresPublicationSiteFilter(
+      publicationAtUri: publicationAtUri,
+      publicationScopeAtUris: publicationScopeAtUris,
+      publicationSiteUrls: publicationSiteUrls
+    )
     let batchSize = ThinAppViewQuerySupport.scanBatchSize(
       pageLimit: pageLimit,
       scoped: scoped
@@ -310,7 +334,8 @@ public init(pool: PostgresClient, logger: Logger) {
     let now = Date()
     let scoped = ThinAppViewQuerySupport.requiresPublicationSiteFilter(
       publicationAtUri: publicationAtUri,
-      publicationScopeAtUris: publicationScopeAtUris
+      publicationScopeAtUris: publicationScopeAtUris,
+      publicationSiteUrls: publicationSiteUrls
     )
 
     if !scoped {
@@ -369,5 +394,50 @@ public init(pool: PostgresClient, logger: Logger) {
     var count = 0
     for try await _ in rows { count += 1 }
     return count
+  }
+
+  public func listAuthorDidsForProactiveBackfill(limit: Int) async throws -> [String] {
+    let capped = max(1, min(limit, 500))
+    let rows = try await pool.query(
+      """
+      SELECT author_did
+      FROM content_items
+      WHERE author_did LIKE 'did:%' AND author_did NOT LIKE 'did:web:%'
+      GROUP BY author_did
+      ORDER BY MIN(indexed_at) ASC
+      LIMIT \(capped)
+      """,
+      logger: logger
+    )
+    var authorDids: [String] = []
+    for try await row in rows {
+      let did: String = try row.decode(String.self)
+      authorDids.append(did)
+    }
+    return authorDids
+  }
+
+  public func listRssPublicationSites(limit: Int) async throws -> [String] {
+    let capped = max(1, min(limit, 200))
+    let now = Date()
+    let rows = try await pool.query(
+      """
+      SELECT publication_site
+      FROM content_items
+      WHERE author_did = \(RssFeedLexicons.rssAuthorDid)
+        AND publication_site IS NOT NULL
+        AND expires_at > \(now)
+      GROUP BY publication_site
+      ORDER BY MIN(indexed_at) ASC
+      LIMIT \(capped)
+      """,
+      logger: logger
+    )
+    var sites: [String] = []
+    for try await row in rows {
+      let site: String = try row.decode(String.self)
+      sites.append(site)
+    }
+    return sites
   }
 }

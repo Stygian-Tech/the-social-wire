@@ -113,9 +113,10 @@ public enum ThinAppViewQuerySupport {
 
   static func requiresPublicationSiteFilter(
     publicationAtUri: String?,
-    publicationScopeAtUris: [String]
+    publicationScopeAtUris: [String],
+    publicationSiteUrls: [String] = []
   ) -> Bool {
-    publicationAtUri != nil || !publicationScopeAtUris.isEmpty
+    publicationAtUri != nil || !publicationScopeAtUris.isEmpty || !publicationSiteUrls.isEmpty
   }
 
   static func countMatchingPublicationSites(

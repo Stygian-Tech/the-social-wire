@@ -41,4 +41,11 @@ struct PublicationProjectionLogicTests {
     #expect(rows[0].title == "Example")
     #expect(rows[0].authorDid == PublicationLexicons.rssAuthorDid)
   }
+
+  @Test("rss publication id decodes normalized feed url")
+  func rssPublicationIdRoundTrip() {
+    let feed = "https://example.com/feed.xml"
+    let pubId = PublicationProjectionLogic.rssPublicationId(from: feed)
+    #expect(PublicationProjectionLogic.normalizedFeedUrlFromRssPublicationId(pubId) == feed)
+  }
 }

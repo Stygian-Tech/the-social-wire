@@ -108,6 +108,7 @@ actor ThinAppViewReadService {
     guard let item = try await store.fetchContentItem(uri: entryId) else {
       throw HTTPError(.notFound, message: "Entry not found in AppView index")
     }
+    let render = try await store.fetchContentRender(uri: entryId)
     let isRead = try await store.hasReadMark(viewerDid: auth.did, subjectUri: entryId)
     return AppViewEntryDetailResponse(
       entryId: item.entryId,
@@ -116,7 +117,7 @@ actor ThinAppViewReadService {
       publishedAt: item.publishedAt,
       thumbnailUrl: item.thumbnailUrl,
       isRead: isRead,
-      contentHtml: item.summary
+      contentHtml: render?.contentHtml ?? render?.summary ?? item.summary
     )
   }
 

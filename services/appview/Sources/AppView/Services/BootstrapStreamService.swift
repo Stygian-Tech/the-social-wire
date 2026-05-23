@@ -6,6 +6,25 @@ import NIOCore
 import ThinAppViewCore
 
 enum BootstrapStreamSelection {
+  static func priorityAuthorDids(
+    from response: PublicationSidebarResponse,
+    limit: Int = 16
+  ) -> [String] {
+    var ordered: [String] = []
+    var seen = Set<String>()
+    for row in response.myPublications
+      + response.subscribedUnfoldered
+      + response.followingTabPublications
+    {
+      let authorDid = row.appViewScope.authorDid
+      guard ThinAppViewEnrollBackfill.isBackfillEligibleAuthorDid(authorDid) else { continue }
+      guard seen.insert(authorDid).inserted else { continue }
+      ordered.append(authorDid)
+      if ordered.count >= limit { break }
+    }
+    return ordered
+  }
+
   static func firstUnreadPublicationId(
     myPublications: [SidebarPublicationRow],
     subscribedUnfoldered: [SidebarPublicationRow],
@@ -40,6 +59,7 @@ struct BootstrapStreamService {
   let projectionService: PublicationProjectionService
   let readService: ThinAppViewReadService
   let enrollService: ThinAppViewEnrollService
+  let skyreaderIngestionService: ThinAppViewSkyreaderIngestionService
   let logger: Logger
 
   func writeStream(auth: AuthContext, writer: inout any ResponseBodyWriter) async throws {
@@ -55,12 +75,37 @@ struct BootstrapStreamService {
       let unreadCounts = await projectionService.unreadCountsMap(for: unreadRows)
       try await writeEvent(.unreadCounts(unreadCounts), writer: &writer)
 
-      if !priority.response.enrollAuthorDids.isEmpty {
+      let priorityAuthorDids = BootstrapStreamSelection.priorityAuthorDids(from: priority.response)
+      if !priorityAuthorDids.isEmpty {
+        do {
+          _ = try await enrollService.enroll(auth: auth, authorDids: priorityAuthorDids)
+        } catch {
+          logger.warning(
+            "Bootstrap stream priority enroll failed",
+            metadata: ["error": .string(String(describing: error))]
+          )
+        }
+      }
+
+      do {
+        _ = try await skyreaderIngestionService.ingestViewerSubscriptions(auth: auth)
+      } catch {
+        logger.warning(
+          "Bootstrap stream Skyreader RSS ingest failed",
+          metadata: ["error": .string(String(describing: error))]
+        )
+      }
+
+      let warmedAuthorDids = Set(priorityAuthorDids)
+      let remainingAuthorDids = priority.response.enrollAuthorDids.filter {
+        ThinAppViewEnrollBackfill.isBackfillEligibleAuthorDid($0) && !warmedAuthorDids.contains($0)
+      }
+      if !remainingAuthorDids.isEmpty {
         Task {
           do {
             _ = try await self.enrollService.enroll(
               auth: auth,
-              authorDids: priority.response.enrollAuthorDids
+              authorDids: remainingAuthorDids
             )
           } catch {
             self.logger.warning(
@@ -80,13 +125,29 @@ struct BootstrapStreamService {
         try await writeEvent(.selectedPublication(publicationId: selectedId), writer: &writer)
 
         if let row = BootstrapStreamSelection.row(publicationId: selectedId, in: priority.response) {
-          do {
-            _ = try await enrollService.enroll(auth: auth, authorDids: [row.appViewScope.authorDid])
-          } catch {
-            logger.warning(
-              "Bootstrap stream selected publication enroll failed",
-              metadata: ["publicationId": .string(selectedId)]
-            )
+          if row.publicationId.hasPrefix(PublicationLexicons.rssPublicationPrefix),
+             let feedUrl = PublicationProjectionLogic.normalizedFeedUrlFromRssPublicationId(row.publicationId)
+          {
+            do {
+              _ = try await skyreaderIngestionService.ingestViewerSubscriptions(
+                auth: auth,
+                priorityFeedUrls: [feedUrl]
+              )
+            } catch {
+              logger.warning(
+                "Bootstrap stream selected RSS feed ingest failed",
+                metadata: ["publicationId": .string(selectedId)]
+              )
+            }
+          } else if !warmedAuthorDids.contains(row.appViewScope.authorDid) {
+            do {
+              _ = try await enrollService.enroll(auth: auth, authorDids: [row.appViewScope.authorDid])
+            } catch {
+              logger.warning(
+                "Bootstrap stream selected publication enroll failed",
+                metadata: ["publicationId": .string(selectedId)]
+              )
+            }
           }
 
           do {

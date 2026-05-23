@@ -88,7 +88,7 @@ public enum RenderFieldExtractor {
     publicationScopeAtUris: [String] = [],
     publicationSiteUrls: [String] = []
   ) -> Bool {
-    let scoped = publicationAtUri != nil || !publicationScopeAtUris.isEmpty
+    let scoped = publicationAtUri != nil || !publicationScopeAtUris.isEmpty || !publicationSiteUrls.isEmpty
     guard scoped else { return true }
     guard let siteField else { return false }
 

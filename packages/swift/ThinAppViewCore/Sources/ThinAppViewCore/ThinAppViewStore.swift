@@ -33,4 +33,12 @@ public protocol ThinAppViewStore: Actor {
 
   func deleteExpiredContent(before: Date) async throws -> Int
   func deleteExpiredReadMarks(before: Date) async throws -> Int
+
+  /// Authors with the stalest index; used by the worker proactive backfill loop.
+  func listAuthorDidsForProactiveBackfill(limit: Int) async throws -> [String]
+
+  /// Distinct RSS feed URLs (`publication_site`) for Skyreader poll refresh.
+  func listRssPublicationSites(limit: Int) async throws -> [String]
+
+  func fetchContentRender(uri: String) async throws -> ContentRenderFields?
 }

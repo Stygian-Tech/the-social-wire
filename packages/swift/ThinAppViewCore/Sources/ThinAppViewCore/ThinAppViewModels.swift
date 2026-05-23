@@ -6,17 +6,20 @@ public struct ContentRenderFields: Codable, Sendable, Equatable {
   public let publishedAt: String
   public var summary: String?
   public var thumbnailUrl: String?
+  public var contentHtml: String?
 
   public init(
     title: String,
     publishedAt: String,
     summary: String? = nil,
-    thumbnailUrl: String? = nil
+    thumbnailUrl: String? = nil,
+    contentHtml: String? = nil
   ) {
     self.title = title
     self.publishedAt = publishedAt
     self.summary = summary
     self.thumbnailUrl = thumbnailUrl
+    self.contentHtml = contentHtml
   }
 }
 

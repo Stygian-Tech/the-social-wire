@@ -23,6 +23,11 @@ struct AppViewWorkerCommand: AsyncParsableCommand {
       throw WorkerRuntimeError.thinAppViewDisabled
     }
 
+    let proactiveExtraAuthorDids = (environment["THIN_APPVIEW_PROACTIVE_BACKFILL_AUTHOR_DIDS"] ?? "")
+      .split(separator: ",")
+      .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+      .filter { !$0.isEmpty }
+
     let backend = DatabaseBackend.fromEnvironment(environment)
     let plcURL = environment["ATPROTO_PLC_URL"] ?? "https://plc.directory"
     let httpClient = HTTPClient(eventLoopGroupProvider: .singleton)
@@ -36,7 +41,8 @@ struct AppViewWorkerCommand: AsyncParsableCommand {
         config: thinConfig,
         logger: workerLogger,
         httpClient: httpClient,
-        plcURL: plcURL
+        plcURL: plcURL,
+        proactiveExtraAuthorDids: proactiveExtraAuthorDids
       )
 
     case .postgres(let urlString):
@@ -51,7 +57,8 @@ struct AppViewWorkerCommand: AsyncParsableCommand {
             config: thinConfig,
             logger: workerLogger,
             httpClient: httpClient,
-            plcURL: plcURL
+            plcURL: plcURL,
+            proactiveExtraAuthorDids: proactiveExtraAuthorDids
           )
         }
         try await group.next()
