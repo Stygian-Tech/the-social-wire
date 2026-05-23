@@ -1,5 +1,5 @@
 import Foundation
-#if canImport(FoundationXML)
+#if !canImport(Darwin)
 import FoundationXML
 #endif
 
@@ -52,7 +52,7 @@ public final class RssFeedParser: NSObject, XMLParserDelegate, @unchecked Sendab
   }
 
   public func parse() -> ParsedRssFeed {
-    parser.parse()
+    _ = parser.parse()
     let sorted = items.sorted { $0.publishedAtISO > $1.publishedAtISO }
     return ParsedRssFeed(title: feedTitle, items: sorted)
   }
