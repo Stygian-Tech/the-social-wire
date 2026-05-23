@@ -1,6 +1,9 @@
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 
-import type { DiscoveredPublication } from "@/lib/atprotoClient";
+import {
+  type DiscoveredPublication,
+  normalizeAtRepoParam,
+} from "@/lib/atprotoClient";
 import { enrollAuthorsInAppView } from "@/lib/thinAppViewClient";
 import { gatewayFetch } from "@/lib/socialWireGatewayClient";
 
@@ -359,13 +362,33 @@ export function sidebarIncludesUnreadCounts(
   return projection.allPublicationRows.some((row) => row.unreadCount != null);
 }
 
+function sidebarPublicationRows(
+  projection: PublicationSidebarProjection
+): SidebarPublicationRow[] {
+  const byId = new Map<string, SidebarPublicationRow>();
+  const add = (row: SidebarPublicationRow) => {
+    byId.set(normalizeAtRepoParam(row.publicationId), row);
+  };
+
+  for (const row of projection.allPublicationRows) add(row);
+  for (const row of projection.myPublications) add(row);
+  for (const row of projection.subscribedUnfoldered) add(row);
+  for (const row of projection.followingTabPublications) add(row);
+  for (const section of projection.folderSections ?? []) {
+    for (const row of section.publications) add(row);
+  }
+
+  return [...byId.values()];
+}
+
 export function appViewScopeFromProjection(
   projection: PublicationSidebarProjection | undefined,
   publicationKey: string
 ): PublicationAppViewScope | undefined {
   if (!projection) return undefined;
-  const row = projection.allPublicationRows.find(
-    (r) => r.publicationId === publicationKey
+  const target = normalizeAtRepoParam(publicationKey);
+  const row = sidebarPublicationRows(projection).find(
+    (r) => normalizeAtRepoParam(r.publicationId) === target
   );
   return row?.appViewScope;
 }

@@ -8,6 +8,7 @@ export type EntryListVirtualPaneProps = {
   readIndicatorsEnabled: boolean;
   hasNextPage: boolean;
   isFetchingNextPage: boolean;
+  isFetchNextPageError?: boolean;
   fetchNextPage: () => void;
   markEntryRead: (entryId: string) => void;
   markEntryUnread: (entryId: string) => void;

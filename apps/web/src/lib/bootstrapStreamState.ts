@@ -1,5 +1,6 @@
 import type { QueryClient } from "@tanstack/react-query";
 
+import { normalizeAtRepoParam } from "@/lib/atprotoClient";
 import type { ParsedBootstrapStreamEvent } from "@/lib/bootstrapStreamModels";
 import {
   mergeSidebarProjections,
@@ -74,19 +75,20 @@ export function writeStreamedEntriesPage(
   payload: { publicationId: string; entries: EntriesPage["entries"]; cursor?: string },
   articleFilter: "all" | "unread" = "all"
 ): void {
+  const publicationKey = normalizeAtRepoParam(payload.publicationId);
   const page: EntriesPage = {
     entries: payload.entries,
     cursor: payload.cursor,
   };
   queryClient.setQueryData(
-    [...ENTRIES_QUERY_KEY(payload.publicationId), articleFilter] as const,
+    [...ENTRIES_QUERY_KEY(publicationKey), articleFilter] as const,
     {
       pages: [page],
       pageParams: [undefined],
     }
   );
   queryClient.setQueryDefaults(
-    [...ENTRIES_QUERY_KEY(payload.publicationId), articleFilter] as const,
+    [...ENTRIES_QUERY_KEY(publicationKey), articleFilter] as const,
     { staleTime: ENTRIES_QUERY_STALE_MS }
   );
 }

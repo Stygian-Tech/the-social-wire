@@ -80,6 +80,48 @@ describe("publicationProjectionClient", () => {
     expect(map.get("did:plc:alice")).toBe(4);
   });
 
+  test("appViewScopeFromProjection finds scope in folder sections", () => {
+    const projection: PublicationSidebarProjection = {
+      viewerDid: "did:plc:viewer",
+      folders: [],
+      publicationPrefs: [],
+      allPublicationRows: [],
+      myPublications: [],
+      subscribedUnfoldered: [],
+      followingTabPublications: [],
+      folderSections: [
+        {
+          folderRkey: "folder1",
+          folderUri: "at://did:plc:viewer/com.thesocialwire.folder/folder1",
+          publications: [
+            {
+              publicationId: "at://did:plc:author/site.standard.publication/pub1",
+              authorDid: "did:plc:author",
+              authorHandle: "author",
+              title: "Folder Pub",
+              discoveredAt: "2026-01-01T00:00:00.000Z",
+              appViewScope: {
+                authorDid: "did:plc:author",
+                publicationAtUri:
+                  "at://did:plc:author/site.standard.publication/pub1",
+                publicationScopeAtUris: [],
+                publicationSiteUrls: [],
+              },
+            },
+          ],
+        },
+      ],
+      enrollAuthorDids: ["did:plc:author"],
+      refreshedAt: "2026-01-01T00:00:00.000Z",
+    };
+
+    const scope = appViewScopeFromProjection(
+      projection,
+      "at://did:plc:author/site.standard.publication/pub1"
+    );
+    expect(scope?.authorDid).toBe("did:plc:author");
+  });
+
   test("sidebarIncludesUnreadCounts is true when rows embed unreadCount", () => {
     const projection: PublicationSidebarProjection = {
       viewerDid: "did:plc:viewer",

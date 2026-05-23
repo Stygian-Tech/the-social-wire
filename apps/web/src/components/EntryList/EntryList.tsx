@@ -46,8 +46,18 @@ export function EntryList({
   // full list from AppView and apply the All/Unread filter locally so tab
   // switches and context-menu marks stay in sync even when read-mark write-through
   // to AppView is still catching up.
-  const { data, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage } =
-    useEntries(pubId, "all");
+  const {
+    data,
+    isLoading,
+    isError,
+    error,
+    refetch,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isFetchNextPageError,
+    scopePending,
+  } = useEntries(pubId, "all");
 
   const allEntries: EntryListItem[] = useMemo(() => {
     const flat = data?.pages.flatMap((p) => p.entries) ?? [];
@@ -87,12 +97,27 @@ export function EntryList({
     fetchNextPage,
   ]);
 
-  if (isLoading && allEntries.length === 0) {
+  if ((isLoading || scopePending) && allEntries.length === 0) {
     return (
       <div className="space-y-2 p-4">
         {Array.from({ length: 6 }).map((_, i) => (
           <Skeleton key={i} className="h-28 w-full rounded-md" />
         ))}
+      </div>
+    );
+  }
+
+  if (isError && allEntries.length === 0) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center text-sm text-muted-foreground">
+        <p>{error instanceof Error ? error.message : "Could not load entries."}</p>
+        <button
+          type="button"
+          className="text-primary underline-offset-4 hover:underline"
+          onClick={() => void refetch()}
+        >
+          Retry
+        </button>
       </div>
     );
   }
@@ -138,6 +163,7 @@ export function EntryList({
       readIndicatorsEnabled={readIndicatorsEnabled}
       hasNextPage={hasNextPage}
       isFetchingNextPage={isFetchingNextPage}
+      isFetchNextPageError={isFetchNextPageError}
       fetchNextPage={fetchNextPage}
       markEntryRead={markEntryRead}
       markEntryUnread={markEntryUnread}

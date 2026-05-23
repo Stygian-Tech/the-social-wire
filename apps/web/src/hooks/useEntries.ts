@@ -19,6 +19,7 @@ import {
   listEntriesFromAppView,
 } from "@/lib/thinAppViewClient";
 import { PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY } from "@/hooks/usePublicationSidebarData";
+import { usePublicationSidebarProjection } from "@/hooks/usePublicationSidebarProjection";
 import {
   appViewScopeFromProjection,
   type PublicationAppViewScope,
@@ -50,6 +51,20 @@ function requireAppViewScope(
     );
   }
   return scope;
+}
+
+/** Stop pagination when the server returns an empty page without advancing the cursor. */
+export function entriesNextPageParam(
+  lastPage: EntriesPage,
+  _allPages: EntriesPage[],
+  lastPageParam: string | undefined
+): string | undefined {
+  const cursor = lastPage.cursor;
+  if (!cursor) return undefined;
+  if (lastPage.entries.length === 0 && lastPageParam === cursor) {
+    return undefined;
+  }
+  return cursor;
 }
 
 /**
@@ -120,6 +135,11 @@ export function useEntries(
   const { session, getOAuthSession } = useAuth();
   const queryClient = useQueryClient();
   const normalizedKey = publicationKey ? normalizeAtRepoParam(publicationKey) : null;
+  const projection = usePublicationSidebarProjection(session?.did);
+  const appViewScope = normalizedKey
+    ? appViewScopeFromProjection(projection, normalizedKey)
+    : undefined;
+  const scopePending = !!normalizedKey && !!session && !appViewScope;
 
   const query = useInfiniteQuery({
     queryKey: [...ENTRIES_QUERY_KEY(normalizedKey ?? ""), articleFilter] as const,
@@ -138,8 +158,8 @@ export function useEntries(
       });
     },
     initialPageParam: undefined as string | undefined,
-    getNextPageParam: (lastPage) => lastPage.cursor,
-    enabled: !!normalizedKey && !!session,
+    getNextPageParam: entriesNextPageParam,
+    enabled: !!normalizedKey && !!session && !!appViewScope,
     staleTime: ENTRIES_QUERY_STALE_MS,
     gcTime: 1000 * 60 * 60 * 24,
   });
@@ -157,7 +177,7 @@ export function useEntries(
     );
   }, [query.data]);
 
-  return query;
+  return { ...query, scopePending };
 }
 
 /**
