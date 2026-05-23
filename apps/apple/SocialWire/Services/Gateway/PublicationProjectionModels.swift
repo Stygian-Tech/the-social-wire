@@ -8,6 +8,12 @@ enum PublicationProjectionJSON {
     }()
 }
 
+enum PublicationSidebarPhase: String, Sendable {
+    case full
+    case priority
+    case folderPublications
+}
+
 struct PublicationAppViewScopeDTO: Codable, Equatable, Sendable {
     let authorDid: String
     let publicationAtUri: String?

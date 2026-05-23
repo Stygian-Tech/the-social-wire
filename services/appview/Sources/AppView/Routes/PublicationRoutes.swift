@@ -7,14 +7,16 @@ struct PublicationRoutes {
   let resolveService: PublicationResolveService
 
   func register(on group: RouterGroup<GatewayRequestContext>) {
-    group.get("/v1/publications/sidebar") { _, context async throws -> PublicationSidebarResponse in
+    group.get("/v1/publications/sidebar") { request, context async throws -> PublicationSidebarResponse in
       guard let auth = context.authContext else { throw HTTPError(.unauthorized) }
-      return try await projectionService.sidebar(auth: auth)
+      let phase = request.uri.queryParameters.get("phase")
+        .flatMap(SidebarBuildPhase.init(rawValue:)) ?? .full
+      return try await projectionService.sidebar(auth: auth, phase: phase)
     }
 
     group.post("/v1/publications/refresh") { _, context async throws -> PublicationSidebarResponse in
       guard let auth = context.authContext else { throw HTTPError(.unauthorized) }
-      return try await projectionService.sidebar(auth: auth)
+      return try await projectionService.sidebar(auth: auth, phase: .full)
     }
 
     group.post("/v1/publications/resolve") { request, context async throws -> ResolveAddPublicationResponse in

@@ -29,8 +29,18 @@ final class SocialWireGatewayClient {
         )
     }
 
-    func fetchPublicationSidebar() async throws -> PublicationSidebarResponseDTO {
-        let result = try await authorizedGET(path: "/v1/publications/sidebar", query: [:], ifNoneMatch: nil)
+    func fetchPublicationSidebar(
+        phase: PublicationSidebarPhase = .full
+    ) async throws -> PublicationSidebarResponseDTO {
+        var query: [String: String] = [:]
+        if phase != .full {
+            query["phase"] = phase.rawValue
+        }
+        let result = try await authorizedGET(
+            path: "/v1/publications/sidebar",
+            query: query,
+            ifNoneMatch: nil
+        )
         guard (200 ..< 300).contains(result.statusCode) else {
             throw SocialWireError.badResponse("Publication sidebar failed (\(result.statusCode)).")
         }

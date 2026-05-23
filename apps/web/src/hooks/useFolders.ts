@@ -29,7 +29,7 @@ export function useFolders() {
       const { fetchPublicationSidebar } = await import(
         "@/lib/publicationProjectionClient"
       );
-      const projection = await fetchPublicationSidebar(oauth);
+      const projection = await fetchPublicationSidebar(oauth, { phase: "priority" });
       return projection.folders.map((folder) => ({
         uri: folder.uri,
         cid: "",

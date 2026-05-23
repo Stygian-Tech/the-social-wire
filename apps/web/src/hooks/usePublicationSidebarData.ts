@@ -14,8 +14,8 @@ import {
 import {
   fetchPublicationSidebar,
   maybeEnrollProjectionAuthors,
+  mergeSidebarProjections,
   refreshPublicationSidebar,
-  sidebarIncludesUnreadCounts,
   sidebarRowToDiscoveredPublication,
   unreadCountsMapFromProjection,
   type PublicationAppViewScope,
@@ -121,17 +121,28 @@ function projectionToSidebarState(projection: PublicationSidebarProjection) {
   };
 }
 
+function publicationIdsFromProjection(
+  projection: PublicationSidebarProjection | undefined
+): string[] {
+  if (!projection) return [];
+  return projection.allPublicationRows.map((row) => row.publicationId);
+}
+
 /** Gateway-only sidebar projection for subscribed/following lists and `/me/publications`. */
 export function usePublicationSidebarData() {
   const { session, getOAuthSession } = useAuth();
   const qc = useQueryClient();
+  const did = session?.did ?? "";
 
-  const projectionQuery = useQuery({
-    queryKey: PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(session?.did ?? ""),
+  const priorityQuery = useQuery({
+    queryKey: [...PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(did), "priority"] as const,
     queryFn: async ({ signal }) => {
       const oauth = getOAuthSession();
       if (!oauth) throw new Error("OAuth session required");
-      const projection = await fetchPublicationSidebar(oauth, signal);
+      const projection = await fetchPublicationSidebar(oauth, {
+        phase: "priority",
+        signal,
+      });
       maybeEnrollProjectionAuthors(oauth, projection.enrollAuthorDids);
       return projection;
     },
@@ -142,63 +153,122 @@ export function usePublicationSidebarData() {
     refetchOnWindowFocus: false,
   });
 
-  useEffect(() => {
-    const projection = projectionQuery.data;
-    if (!projection) return;
-    prefetchCachedImages(
-      projection.allPublicationRows.flatMap((row) => [
-        row.iconUrl,
-        row.avatarUrl,
-      ])
-    );
-  }, [projectionQuery.data]);
-
-  const hasCachedProjection = projectionQuery.data != null;
-  const sidebarFetching = projectionQuery.isFetching && !projectionQuery.isPending;
-
-  const projectionState = useMemo(() => {
-    if (!projectionQuery.data) return null;
-    return projectionToSidebarState(projectionQuery.data);
-  }, [projectionQuery.data]);
-
-  const publicationIdsForUnread = useMemo(
-    () => projectionState?.allPublicationRows.map((p) => p.publicationId) ?? [],
-    [projectionState?.allPublicationRows]
-  );
-
-  const unreadCountsQuery = useQuery({
+  const foldersQuery = useQuery({
     queryKey: [
-      "appviewUnreadCounts",
-      session?.did ?? "",
-      publicationIdsForUnread.join("\x1e"),
+      ...PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(did),
+      "folderPublications",
     ] as const,
     queryFn: async ({ signal }) => {
       const oauth = getOAuthSession();
       if (!oauth) throw new Error("OAuth session required");
-      return fetchAppViewUnreadCounts(oauth, publicationIdsForUnread, signal);
+      return fetchPublicationSidebar(oauth, {
+        phase: "folderPublications",
+        signal,
+      });
     },
-    enabled:
-      !!session &&
-      publicationIdsForUnread.length > 0 &&
-      projectionState != null &&
-      !sidebarIncludesUnreadCounts(projectionQuery.data),
+    enabled: !!session && priorityQuery.isSuccess,
+    staleTime: 6 * 60_000,
+    gcTime: 1000 * 60 * 60 * 24 * 7,
+    retry: 1,
+    refetchOnWindowFocus: false,
+  });
+
+  const mergedProjection = useMemo(() => {
+    if (!priorityQuery.data) return undefined;
+    return mergeSidebarProjections(priorityQuery.data, foldersQuery.data);
+  }, [priorityQuery.data, foldersQuery.data]);
+
+  useEffect(() => {
+    if (!mergedProjection || !did) return;
+    qc.setQueryData(
+      PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(did),
+      mergedProjection
+    );
+  }, [mergedProjection, did, qc]);
+
+  useEffect(() => {
+    if (!mergedProjection) return;
+    prefetchCachedImages(
+      mergedProjection.allPublicationRows.flatMap((row) => [
+        row.iconUrl,
+        row.avatarUrl,
+      ])
+    );
+  }, [mergedProjection]);
+
+  const hasCachedProjection = priorityQuery.data != null;
+  const sidebarFetching =
+    (priorityQuery.isFetching && !priorityQuery.isPending) ||
+    foldersQuery.isFetching;
+
+  const projectionState = useMemo(() => {
+    if (!mergedProjection) return null;
+    return projectionToSidebarState(mergedProjection);
+  }, [mergedProjection]);
+
+  const priorityPublicationIds = useMemo(
+    () => publicationIdsFromProjection(priorityQuery.data),
+    [priorityQuery.data]
+  );
+
+  const folderPublicationIds = useMemo(() => {
+    if (!foldersQuery.data) return [];
+    return publicationIdsFromProjection(foldersQuery.data);
+  }, [foldersQuery.data]);
+
+  const priorityUnreadQuery = useQuery({
+    queryKey: [
+      "appviewUnreadCounts",
+      did,
+      "priority",
+      priorityPublicationIds.join("\x1e"),
+    ] as const,
+    queryFn: async ({ signal }) => {
+      const oauth = getOAuthSession();
+      if (!oauth) throw new Error("OAuth session required");
+      return fetchAppViewUnreadCounts(oauth, priorityPublicationIds, signal);
+    },
+    enabled: !!session && priorityPublicationIds.length > 0,
+    staleTime: 60_000,
+    retry: 1,
+  });
+
+  const folderUnreadQuery = useQuery({
+    queryKey: [
+      "appviewUnreadCounts",
+      did,
+      "folders",
+      folderPublicationIds.join("\x1e"),
+    ] as const,
+    queryFn: async ({ signal }) => {
+      const oauth = getOAuthSession();
+      if (!oauth) throw new Error("OAuth session required");
+      return fetchAppViewUnreadCounts(oauth, folderPublicationIds, signal);
+    },
+    enabled: !!session && folderPublicationIds.length > 0,
     staleTime: 60_000,
     retry: 1,
   });
 
   const unreadCountsByPublicationId = useMemo(() => {
-    if (!projectionState) return new Map<string, number>();
-    if (projectionState.unreadCountsByPublicationId.size > 0) {
-      return projectionState.unreadCountsByPublicationId;
-    }
-    const fromApi = unreadCountsQuery.data;
-    if (!fromApi) return projectionState.unreadCountsByPublicationId;
     const map = new Map<string, number>();
-    for (const [publicationId, count] of Object.entries(fromApi)) {
-      if (count > 0) map.set(publicationId, count);
+    if (projectionState?.unreadCountsByPublicationId.size) {
+      for (const [id, count] of projectionState.unreadCountsByPublicationId) {
+        if (count > 0) map.set(id, count);
+      }
+    }
+    for (const source of [priorityUnreadQuery.data, folderUnreadQuery.data]) {
+      if (!source) continue;
+      for (const [publicationId, count] of Object.entries(source)) {
+        if (count > 0) map.set(publicationId, count);
+      }
     }
     return map;
-  }, [projectionState, unreadCountsQuery.data]);
+  }, [
+    projectionState?.unreadCountsByPublicationId,
+    priorityUnreadQuery.data,
+    folderUnreadQuery.data,
+  ]);
 
   const refresh = useMutation({
     mutationFn: async () => {
@@ -206,35 +276,50 @@ export function usePublicationSidebarData() {
       if (!oauth) throw new Error("OAuth session required");
       const projection = await refreshPublicationSidebar(oauth);
       qc.setQueryData(
-        PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(session?.did ?? ""),
+        [...PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(did), "priority"],
         projection
       );
+      qc.setQueryData(
+        [...PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(did), "folderPublications"],
+        undefined
+      );
       maybeEnrollProjectionAuthors(oauth, projection.enrollAuthorDids);
-      qc.invalidateQueries({
-        queryKey: ["appviewUnreadCounts", session?.did ?? ""],
+      qc.invalidateQueries({ queryKey: ["appviewUnreadCounts", did] });
+      void qc.fetchQuery({
+        queryKey: [
+          ...PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(did),
+          "folderPublications",
+        ],
+        queryFn: () =>
+          fetchPublicationSidebar(oauth, { phase: "folderPublications" }),
       });
     },
   });
 
   return {
     folders: projectionState?.folders ?? [],
-    foldersLoading: projectionQuery.isPending && !hasCachedProjection,
+    foldersLoading: priorityQuery.isPending && !hasCachedProjection,
     prefsMap: projectionState?.prefsMap ?? new Map(),
     allPublicationRows: projectionState?.allPublicationRows ?? [],
     folderMap: projectionState?.folderMap ?? new Map(),
     myPublications: projectionState?.myPublications ?? [],
     unfolderedPubs: projectionState?.unfolderedPubs ?? [],
     followingTabPublications: projectionState?.followingTabPublications ?? [],
-    pubsLoading: projectionQuery.isPending && !hasCachedProjection,
-    subscriptionsBlockLoading: projectionQuery.isPending && !hasCachedProjection,
-    sidebarListsLoading: projectionQuery.isPending && !hasCachedProjection,
+    pubsLoading: priorityQuery.isPending && !hasCachedProjection,
+    subscriptionsBlockLoading: priorityQuery.isPending && !hasCachedProjection,
+    sidebarListsLoading: priorityQuery.isPending && !hasCachedProjection,
+    folderPublicationsLoading:
+      priorityQuery.isSuccess &&
+      (foldersQuery.isPending || foldersQuery.isFetching),
     sidebarFetching,
     refresh,
     viewerDid: session?.did,
-    publicationSidebarProjection: projectionQuery.data,
+    publicationSidebarProjection: mergedProjection,
     sidebarRowsById: projectionState?.sidebarRowsById,
     unreadCountsByPublicationId,
-    projectionError: projectionQuery.error,
+    unreadCountsLoading:
+      priorityUnreadQuery.isPending || folderUnreadQuery.isPending,
+    projectionError: priorityQuery.error ?? foldersQuery.error,
   };
 }
 

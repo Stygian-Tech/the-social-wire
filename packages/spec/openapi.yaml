@@ -410,7 +410,22 @@ paths:
       description: |
         Merges follow-graph discovery, graph subscriptions, Skyreader RSS rows,
         orphan subscription hydration, folder prefs, and per-publication AppView scope keys.
+
+        Use `phase=priority` for folders plus unfoldered/following publications (fast first paint),
+        then `phase=folderPublications` for folder contents (reuses a short-lived server discovery cache),
+        and fetch unread badges separately via `/v1/appview/unread-counts`.
       tags: [Publications]
+      parameters:
+        - name: phase
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [full, priority, folderPublications]
+          description: |
+            `priority` returns folder shells and top-level publications without folder contents.
+            `folderPublications` returns folder section publications (after a recent `priority` call).
+            Default `full` returns the complete sidebar in one response.
       responses:
         "200":
           description: Sidebar projection for the authenticated viewer.

@@ -96,6 +96,7 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
     refresh,
     viewerDid,
     unreadCountsByPublicationId,
+    folderPublicationsLoading,
   } = usePublicationSidebarData();
   const { data: profile, isLoading: profileLoading } = useViewerProfile();
 
@@ -359,6 +360,7 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
                               prefsMap={prefsMap}
                               sidebarTab="subscribed"
                               publicationUnreadCounts={publicationUnreadCounts}
+                              publicationsLoading={folderPublicationsLoading}
                             />
                           );
                         })}

@@ -9,6 +9,7 @@ import {
   SidebarMenuSub,
   SidebarMenuSubItem,
 } from "@/components/ui/sidebar";
+import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { sumUnreadForPublications } from "@/lib/unreadCounts";
 import {
@@ -43,6 +44,7 @@ interface FolderBranchProps {
   publicationUnreadCounts: Map<string, number>;
   /** Shown after the folder name (e.g. All → unfoldered) */
   nameSuffix?: string;
+  publicationsLoading?: boolean;
 }
 
 export function FolderBranch({
@@ -60,6 +62,7 @@ export function FolderBranch({
   sidebarTab,
   publicationUnreadCounts,
   nameSuffix,
+  publicationsLoading = false,
 }: FolderBranchProps) {
   const subId = `sidebar-folder-sub-${expandKey.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
   const folderUnread = sumUnreadForPublications(
@@ -116,7 +119,16 @@ export function FolderBranch({
       </SidebarReadBulkMenuWrap>
       {expanded ? (
         <SidebarMenuSub id={subId} aria-label={folder.name} className="mt-1.5">
-          {publications.length === 0 ? (
+          {publicationsLoading && publications.length === 0 ? (
+            <>
+              <SidebarMenuSubItem>
+                <Skeleton className="mx-2 h-7 w-[calc(100%-1rem)]" />
+              </SidebarMenuSubItem>
+              <SidebarMenuSubItem>
+                <Skeleton className="mx-2 h-7 w-[calc(100%-1rem)]" />
+              </SidebarMenuSubItem>
+            </>
+          ) : publications.length === 0 ? (
             <SidebarMenuSubItem>
               <span className="block min-w-0 break-words px-2 py-0.5 text-xs text-muted-foreground">
                 {emptyLabel}

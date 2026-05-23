@@ -125,23 +125,57 @@ actor ThinAppViewReadService {
     publicationIds: [String],
     projectionService: PublicationProjectionService
   ) async throws -> AppViewUnreadCountsByPublicationResponse {
-    let sidebar = try await projectionService.sidebar(auth: auth)
+    let cachedRows = await projectionService.sidebarRows(
+      for: auth.did,
+      publicationIds: publicationIds
+    )
+    let rowsById = Dictionary(uniqueKeysWithValues: cachedRows.map { ($0.publicationId, $0) })
+
     var counts: [String: Int] = [:]
-    for publicationId in publicationIds {
-      guard let row = sidebar.allPublicationRows.first(where: { $0.publicationId == publicationId }) else {
-        continue
+    await withTaskGroup(of: (String, Int)?.self) { group in
+      for publicationId in publicationIds {
+        group.addTask {
+          guard let row = rowsById[publicationId] else { return nil }
+          let unreadCount = try? await self.store.countUnreadEntries(
+            viewerDid: auth.did,
+            authorDid: row.appViewScope.authorDid,
+            publicationAtUri: row.appViewScope.publicationAtUri,
+            publicationScopeAtUris: row.appViewScope.publicationScopeAtUris,
+            publicationSiteUrls: row.appViewScope.publicationSiteUrls
+          )
+          guard let unreadCount, unreadCount > 0 else { return nil }
+          return (publicationId, unreadCount)
+        }
       }
-      let unreadCount = try await store.countUnreadEntries(
-        viewerDid: auth.did,
-        authorDid: row.appViewScope.authorDid,
-        publicationAtUri: row.appViewScope.publicationAtUri,
-        publicationScopeAtUris: row.appViewScope.publicationScopeAtUris,
-        publicationSiteUrls: row.appViewScope.publicationSiteUrls
-      )
-      if unreadCount > 0 {
-        counts[publicationId] = unreadCount
+      for await result in group {
+        if let (publicationId, count) = result {
+          counts[publicationId] = count
+        }
       }
     }
+
+    if counts.count < publicationIds.filter({ rowsById[$0] != nil }).count {
+      let missingIds = publicationIds.filter { rowsById[$0] == nil }
+      if !missingIds.isEmpty {
+        let sidebar = try await projectionService.sidebar(auth: auth, phase: .full)
+        for publicationId in missingIds {
+          guard let row = sidebar.allPublicationRows.first(where: { $0.publicationId == publicationId }) else {
+            continue
+          }
+          let unreadCount = try await store.countUnreadEntries(
+            viewerDid: auth.did,
+            authorDid: row.appViewScope.authorDid,
+            publicationAtUri: row.appViewScope.publicationAtUri,
+            publicationScopeAtUris: row.appViewScope.publicationScopeAtUris,
+            publicationSiteUrls: row.appViewScope.publicationSiteUrls
+          )
+          if unreadCount > 0 {
+            counts[publicationId] = unreadCount
+          }
+        }
+      }
+    }
+
     return AppViewUnreadCountsByPublicationResponse(counts: counts)
   }
 

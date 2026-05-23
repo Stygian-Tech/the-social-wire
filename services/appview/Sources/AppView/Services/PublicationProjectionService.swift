@@ -12,8 +12,11 @@ actor PublicationProjectionService {
   private let repo: ATProtoAuthenticatedRepoClient
   private let thinStore: any ThinAppViewStore
   private var appViewScopeCache: [String: (scope: PublicationAppViewScope, expiresAt: Date)] = [:]
+  private var discoveryCacheByViewer: [String: (context: SidebarDiscoveryContext, expiresAt: Date)] = [:]
+  private var sidebarRowCacheByViewer: [String: [String: SidebarPublicationRow]] = [:]
 
   private static let appViewScopeCacheTTL: TimeInterval = 5 * 60
+  private static let discoveryCacheTTL: TimeInterval = 2 * 60
 
   init(
     httpClient: HTTPClient,
@@ -28,9 +31,55 @@ actor PublicationProjectionService {
     self.repo = ATProtoAuthenticatedRepoClient(httpClient: httpClient, plcURL: plcURL, logger: logger)
   }
 
-  func sidebar(auth: AuthContext) async throws -> PublicationSidebarResponse {
+  func sidebar(
+    auth: AuthContext,
+    phase: SidebarBuildPhase = .full
+  ) async throws -> PublicationSidebarResponse {
+    switch phase {
+    case .full:
+      let context = try await discoverContext(auth: auth)
+      cacheDiscovery(context, viewerDid: auth.did)
+      return try await buildSidebarResponse(
+        context: context,
+        auth: auth,
+        phase: .full,
+        refreshedAt: Date()
+      )
+    case .priority:
+      let context = try await discoverContext(auth: auth)
+      cacheDiscovery(context, viewerDid: auth.did)
+      return try await buildSidebarResponse(
+        context: context,
+        auth: auth,
+        phase: .priority,
+        refreshedAt: Date()
+      )
+    case .folderPublications:
+      let context: SidebarDiscoveryContext
+      if let cached = discoveryCacheByViewer[auth.did], cached.expiresAt > Date() {
+        context = cached.context
+      } else {
+        context = try await discoverContext(auth: auth)
+        cacheDiscovery(context, viewerDid: auth.did)
+      }
+      return try await buildSidebarResponse(
+        context: context,
+        auth: auth,
+        phase: .folderPublications,
+        refreshedAt: Date()
+      )
+    }
+  }
+
+  func sidebarRows(for viewerDid: String, publicationIds: [String]) -> [SidebarPublicationRow] {
+    guard let cache = sidebarRowCacheByViewer[viewerDid] else { return [] }
+    return publicationIds.compactMap { cache[$0] }
+  }
+
+  // MARK: - Discovery
+
+  private func discoverContext(auth: AuthContext) async throws -> SidebarDiscoveryContext {
     let viewerDid = auth.did
-    let refreshedAt = Date()
 
     let folders = try await loadFolders(auth: auth)
     let prefs = try await loadPublicationPrefs(auth: auth)
@@ -109,54 +158,183 @@ actor PublicationProjectionService {
 
     let allRows = discovered + rssRows + graphOrphanRows
     let enrollAuthorDids = Array(Set(allRows.map(\.authorDid).filter { !$0.isEmpty })).sorted()
-
     let uniqueRows = Self.uniqueRows(allRows)
-    let sidebarRowById = try await buildSidebarRowMap(
-      rows: uniqueRows,
-      auth: auth,
-      viewerDid: viewerDid
-    )
-    let sidebarRows = uniqueRows.compactMap { sidebarRowById[$0.publicationId] }
-    let myRows = myPublications.compactMap { sidebarRowById[$0.publicationId] }
-    let unfolderedRows = unfoldered.compactMap { sidebarRowById[$0.publicationId] }
-    let followingRows = following.compactMap { sidebarRowById[$0.publicationId] }
 
-    var folderSections: [PublicationFolderSection] = []
-    for folder in folders {
-      let folderId = folder.uri
-      let pubs = subscribed.filter { row in
-        let prefFolder = prefsByPublicationId[row.publicationId]?.value["folderId"]?.value as? String
-        return prefFolder == folderId || prefFolder == folder.rkey
-      }
-      let sectionRows = pubs.compactMap { sidebarRowById[$0.publicationId] }
-      let sectionUnread = sectionRows.compactMap(\.unreadCount).reduce(0, +)
-      let name = folder.value["name"]?.value as? String ?? folder.rkey
-      folderSections.append(
-        PublicationFolderSection(
-          folderUri: folder.uri,
-          folderRkey: folder.rkey,
-          name: name,
-          publications: sectionRows,
-          unreadCount: sectionUnread
-        )
-      )
-    }
-
-    let totalUnread = sidebarRows.compactMap(\.unreadCount).reduce(0, +)
-
-    return PublicationSidebarResponse(
+    return SidebarDiscoveryContext(
       viewerDid: viewerDid,
       folders: folders,
-      publicationPrefs: prefs,
-      folderSections: folderSections,
-      allPublicationRows: sidebarRows,
-      myPublications: myRows,
-      subscribedUnfoldered: unfolderedRows,
-      followingTabPublications: followingRows,
+      prefs: prefs,
+      subscribed: subscribed,
+      myPublications: myPublications,
+      unfoldered: unfoldered,
+      following: following,
+      uniqueRows: uniqueRows,
       enrollAuthorDids: enrollAuthorDids,
-      totalUnreadCount: totalUnread,
-      refreshedAt: refreshedAt
+      prefsByPublicationId: prefsByPublicationId
     )
+  }
+
+  private func cacheDiscovery(_ context: SidebarDiscoveryContext, viewerDid: String) {
+    discoveryCacheByViewer[viewerDid] = (
+      context,
+      Date().addingTimeInterval(Self.discoveryCacheTTL)
+    )
+  }
+
+  private func mergeSidebarRows(
+    viewerDid: String,
+    rows: [String: SidebarPublicationRow]
+  ) {
+    var merged = sidebarRowCacheByViewer[viewerDid] ?? [:]
+    for (publicationId, row) in rows {
+      merged[publicationId] = row
+    }
+    sidebarRowCacheByViewer[viewerDid] = merged
+  }
+
+  private func buildSidebarResponse(
+    context: SidebarDiscoveryContext,
+    auth: AuthContext,
+    phase: SidebarBuildPhase,
+    refreshedAt: Date
+  ) async throws -> PublicationSidebarResponse {
+    let priorityRows = priorityDiscoveredRows(from: context)
+    let folderRows = folderDiscoveredRows(from: context)
+
+    let rowsToBuild: [ProjectionDiscoveredRow]
+    switch phase {
+    case .full:
+      rowsToBuild = context.uniqueRows
+    case .priority:
+      rowsToBuild = priorityRows
+    case .folderPublications:
+      rowsToBuild = folderRows
+    }
+
+    let sidebarRowById = try await buildSidebarRowMap(
+      rows: rowsToBuild,
+      auth: auth,
+      viewerDid: context.viewerDid,
+      includeUnreadCounts: false
+    )
+    mergeSidebarRows(viewerDid: context.viewerDid, rows: sidebarRowById)
+
+    let rowCache = sidebarRowCacheByViewer[context.viewerDid] ?? sidebarRowById
+
+    switch phase {
+    case .folderPublications:
+      let folderSections = buildFolderSections(
+        context: context,
+        sidebarRowById: rowCache,
+        includePublications: true
+      )
+      let folderPublicationRows = folderSections.flatMap(\.publications)
+      return PublicationSidebarResponse(
+        viewerDid: context.viewerDid,
+        folders: [],
+        publicationPrefs: [],
+        folderSections: folderSections,
+        allPublicationRows: folderPublicationRows,
+        myPublications: [],
+        subscribedUnfoldered: [],
+        followingTabPublications: [],
+        enrollAuthorDids: [],
+        totalUnreadCount: 0,
+        refreshedAt: refreshedAt
+      )
+    case .priority:
+      let myRows = context.myPublications.compactMap { rowCache[$0.publicationId] }
+      let unfolderedRows = context.unfoldered.compactMap { rowCache[$0.publicationId] }
+      let followingRows = context.following.compactMap { rowCache[$0.publicationId] }
+      let prioritySidebarRows = priorityRows.compactMap { rowCache[$0.publicationId] }
+      let folderSections = buildFolderSections(
+        context: context,
+        sidebarRowById: rowCache,
+        includePublications: false
+      )
+      return PublicationSidebarResponse(
+        viewerDid: context.viewerDid,
+        folders: context.folders,
+        publicationPrefs: context.prefs,
+        folderSections: folderSections,
+        allPublicationRows: prioritySidebarRows,
+        myPublications: myRows,
+        subscribedUnfoldered: unfolderedRows,
+        followingTabPublications: followingRows,
+        enrollAuthorDids: context.enrollAuthorDids,
+        totalUnreadCount: 0,
+        refreshedAt: refreshedAt
+      )
+    case .full:
+      let sidebarRows = context.uniqueRows.compactMap { rowCache[$0.publicationId] }
+      let myRows = context.myPublications.compactMap { rowCache[$0.publicationId] }
+      let unfolderedRows = context.unfoldered.compactMap { rowCache[$0.publicationId] }
+      let followingRows = context.following.compactMap { rowCache[$0.publicationId] }
+      let folderSections = buildFolderSections(
+        context: context,
+        sidebarRowById: rowCache,
+        includePublications: true
+      )
+      return PublicationSidebarResponse(
+        viewerDid: context.viewerDid,
+        folders: context.folders,
+        publicationPrefs: context.prefs,
+        folderSections: folderSections,
+        allPublicationRows: sidebarRows,
+        myPublications: myRows,
+        subscribedUnfoldered: unfolderedRows,
+        followingTabPublications: followingRows,
+        enrollAuthorDids: context.enrollAuthorDids,
+        totalUnreadCount: 0,
+        refreshedAt: refreshedAt
+      )
+    }
+  }
+
+  private func priorityDiscoveredRows(from context: SidebarDiscoveryContext) -> [ProjectionDiscoveredRow] {
+    var byId: [String: ProjectionDiscoveredRow] = [:]
+    for row in context.myPublications + context.unfoldered + context.following {
+      byId[row.publicationId] = row
+    }
+    return Array(byId.values)
+  }
+
+  private func folderDiscoveredRows(from context: SidebarDiscoveryContext) -> [ProjectionDiscoveredRow] {
+    var byId: [String: ProjectionDiscoveredRow] = [:]
+    for folder in context.folders {
+      let folderId = folder.uri
+      for row in context.subscribed {
+        let prefFolder = context.prefsByPublicationId[row.publicationId]?.value["folderId"]?.value as? String
+        guard prefFolder == folderId || prefFolder == folder.rkey else { continue }
+        byId[row.publicationId] = row
+      }
+    }
+    return Array(byId.values)
+  }
+
+  private func buildFolderSections(
+    context: SidebarDiscoveryContext,
+    sidebarRowById: [String: SidebarPublicationRow],
+    includePublications: Bool
+  ) -> [PublicationFolderSection] {
+    context.folders.map { folder in
+      let folderId = folder.uri
+      let pubs = context.subscribed.filter { row in
+        let prefFolder = context.prefsByPublicationId[row.publicationId]?.value["folderId"]?.value as? String
+        return prefFolder == folderId || prefFolder == folder.rkey
+      }
+      let sectionRows = includePublications
+        ? pubs.compactMap { sidebarRowById[$0.publicationId] }
+        : []
+      let name = folder.value["name"]?.value as? String ?? folder.rkey
+      return PublicationFolderSection(
+        folderUri: folder.uri,
+        folderRkey: folder.rkey,
+        name: name,
+        publications: sectionRows,
+        unreadCount: sectionRows.compactMap(\.unreadCount).reduce(0, +)
+      )
+    }
   }
 
   // MARK: - PDS loaders
@@ -226,16 +404,24 @@ actor PublicationProjectionService {
   private func buildSidebarRowMap(
     rows: [ProjectionDiscoveredRow],
     auth: AuthContext,
-    viewerDid: String
+    viewerDid: String,
+    includeUnreadCounts: Bool
   ) async throws -> [String: SidebarPublicationRow] {
     var scopeCache: [String: PublicationAppViewScope] = [:]
-    for row in rows {
-      guard scopeCache[row.publicationId] == nil else { continue }
-      scopeCache[row.publicationId] = await cachedBuildAppViewScope(
-        publicationId: row.publicationId,
-        authorDid: row.authorDid,
-        auth: auth
-      )
+    await withTaskGroup(of: (String, PublicationAppViewScope).self) { group in
+      for row in rows {
+        group.addTask {
+          let scope = await self.cachedBuildAppViewScope(
+            publicationId: row.publicationId,
+            authorDid: row.authorDid,
+            auth: auth
+          )
+          return (row.publicationId, scope)
+        }
+      }
+      for await (publicationId, scope) in group {
+        scopeCache[publicationId] = scope
+      }
     }
 
     var out: [String: SidebarPublicationRow] = [:]
@@ -243,13 +429,18 @@ actor PublicationProjectionService {
       guard let scope = scopeCache[row.publicationId] else {
         throw HTTPError(.internalServerError)
       }
-      let unreadCount = try? await thinStore.countUnreadEntries(
-        viewerDid: viewerDid,
-        authorDid: scope.authorDid,
-        publicationAtUri: scope.publicationAtUri,
-        publicationScopeAtUris: scope.publicationScopeAtUris,
-        publicationSiteUrls: scope.publicationSiteUrls
-      )
+      let unreadCount: Int?
+      if includeUnreadCounts {
+        unreadCount = try? await thinStore.countUnreadEntries(
+          viewerDid: viewerDid,
+          authorDid: scope.authorDid,
+          publicationAtUri: scope.publicationAtUri,
+          publicationScopeAtUris: scope.publicationScopeAtUris,
+          publicationSiteUrls: scope.publicationSiteUrls
+        )
+      } else {
+        unreadCount = nil
+      }
       out[row.publicationId] = SidebarPublicationRow(
         publicationId: row.publicationId,
         subscriptionPublicationId: row.subscriptionPublicationId,

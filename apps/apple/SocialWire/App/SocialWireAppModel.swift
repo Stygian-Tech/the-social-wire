@@ -398,28 +398,66 @@ final class SocialWireAppModel {
     }
 
     private func refreshPublicationSidebarFromGateway(viewerDID: String) async throws {
-        let projection = try await gateway.fetchPublicationSidebar()
-        applyGatewaySidebarProjection(projection)
+        let priority = try await gateway.fetchPublicationSidebar(phase: .priority)
+        applyGatewaySidebarProjection(priority)
 
         async let readTask = pds.listEntryReadStates()
         async let savedTask = pds.listMergedLatrSaves()
         async let profileTask = publicationsService.fetchActorProfile(actor: viewerDID)
+        async let folderProjectionTask = gateway.fetchPublicationSidebar(phase: .folderPublications)
 
-        readAtByEntryId = try await readTask
-        savedLinks = try await savedTask
-        viewerProfile = try? await profileTask
+        let priorityUnreadTask = Task(priority: .utility) {
+            await self.refreshSidebarUnreadCounts(
+                publicationIds: priority.allPublicationRows.map(\.publicationId)
+            )
+        }
 
-        if useAppViewEntryTimelines, !projection.enrollAuthorDids.isEmpty {
+        if useAppViewEntryTimelines, !priority.enrollAuthorDids.isEmpty {
             Task(priority: .utility) {
                 do {
-                    _ = try await self.gateway.enrollAuthors(dids: projection.enrollAuthorDids)
+                    _ = try await self.gateway.enrollAuthors(dids: priority.enrollAuthorDids)
                 } catch {
                     self.markAppViewUnavailableIfNeeded(error)
                 }
             }
         }
 
-        await refreshSidebarUnreadCounts()
+        readAtByEntryId = try await readTask
+        savedLinks = try await savedTask
+        viewerProfile = try? await profileTask
+
+        if let folderProjection = try? await folderProjectionTask {
+            mergeFolderPublications(from: folderProjection)
+            Task(priority: .utility) {
+                await self.refreshSidebarUnreadCounts(
+                    publicationIds: folderProjection.allPublicationRows.map(\.publicationId)
+                )
+            }
+        }
+
+        await priorityUnreadTask.value
+    }
+
+    private func mergeFolderPublications(from projection: PublicationSidebarResponseDTO) {
+        for (publicationId, scope) in projection.scopesByPublicationId() {
+            sidebarScopesByPublicationId[publicationId] = scope
+        }
+
+        let folderRows = projection.allPublicationRows.map { $0.toDiscoveredPublication() }
+        var seen = Set(gatewayAllPublicationRows.map(\.publicationId))
+        var mergedRows = gatewayAllPublicationRows
+        for row in folderRows where seen.insert(row.publicationId).inserted {
+            mergedRows.append(row)
+        }
+        gatewayAllPublicationRows = mergedRows
+
+        if let grouped = PublicationProjectionMapping.folderMap(from: projection.folderSections) {
+            for (folderRkey, publications) in grouped {
+                gatewayFolderMap[folderRkey] = publications
+            }
+        }
+
+        prefetchPublicationAvatarImages(folderRows)
     }
 
     private func applyGatewaySidebarProjection(_ projection: PublicationSidebarResponseDTO) {
@@ -459,12 +497,12 @@ final class SocialWireAppModel {
         return merged
     }
 
-    private func refreshSidebarUnreadCounts() async {
+    private func refreshSidebarUnreadCounts(publicationIds: [String]? = nil) async {
         guard useAppViewEntryTimelines else { return }
-        let publicationIds = gatewayAllPublicationRows.map(\.publicationId)
-        guard !publicationIds.isEmpty else { return }
+        let ids = publicationIds ?? gatewayAllPublicationRows.map(\.publicationId)
+        guard !ids.isEmpty else { return }
         do {
-            let counts = try await gateway.fetchAppViewUnreadCounts(publicationIds: publicationIds)
+            let counts = try await gateway.fetchAppViewUnreadCounts(publicationIds: ids)
             for (publicationId, count) in counts where count > 0 {
                 unreadCountsByPublicationId[publicationId] = count
             }

@@ -84,14 +84,25 @@ export type GatewayMarkAllReadScope =
   | { kind: "subscribed" }
   | { kind: "following" };
 
+export type PublicationSidebarPhase = "full" | "priority" | "folderPublications";
+
 export async function fetchPublicationSidebar(
   oauthSession: OAuthSession,
-  signal?: AbortSignal
+  options?: { phase?: PublicationSidebarPhase; signal?: AbortSignal }
 ): Promise<PublicationSidebarProjection> {
-  const res = await gatewayFetch(oauthSession, "/v1/publications/sidebar", {
-    method: "GET",
-    signal,
-  });
+  const params = new URLSearchParams();
+  if (options?.phase && options.phase !== "full") {
+    params.set("phase", options.phase);
+  }
+  const query = params.toString();
+  const res = await gatewayFetch(
+    oauthSession,
+    query ? `/v1/publications/sidebar?${query}` : "/v1/publications/sidebar",
+    {
+      method: "GET",
+      signal: options?.signal,
+    }
+  );
   if (!res.ok) {
     throw new Error(`Publication sidebar failed (${res.status})`);
   }
@@ -315,6 +326,29 @@ export function unreadCountsMapFromProjection(
   }
 
   return map;
+}
+
+export function mergeSidebarProjections(
+  priority: PublicationSidebarProjection,
+  folders: PublicationSidebarProjection | undefined
+): PublicationSidebarProjection {
+  if (!folders) return priority;
+
+  const rowById = new Map<string, SidebarPublicationRow>();
+  for (const row of priority.allPublicationRows) {
+    rowById.set(row.publicationId, row);
+  }
+  for (const row of folders.allPublicationRows) {
+    rowById.set(row.publicationId, row);
+  }
+
+  return {
+    ...priority,
+    folderSections: folders.folderSections?.length
+      ? folders.folderSections
+      : priority.folderSections,
+    allPublicationRows: [...rowById.values()],
+  };
 }
 
 /** True when sidebar rows already include per-publication unread counts from the server. */
