@@ -78,7 +78,11 @@ struct BootstrapStreamService {
       let priorityAuthorDids = BootstrapStreamSelection.priorityAuthorDids(from: priority.response)
       if !priorityAuthorDids.isEmpty {
         do {
-          _ = try await enrollService.enroll(auth: auth, authorDids: priorityAuthorDids)
+          _ = try await enrollService.enroll(
+            auth: auth,
+            authorDids: priorityAuthorDids,
+            recentOnly: true
+          )
         } catch {
           logger.warning(
             "Bootstrap stream priority enroll failed",
@@ -105,7 +109,8 @@ struct BootstrapStreamService {
           do {
             _ = try await self.enrollService.enroll(
               auth: auth,
-              authorDids: remainingAuthorDids
+              authorDids: remainingAuthorDids,
+              recentOnly: false
             )
           } catch {
             self.logger.warning(
@@ -141,7 +146,11 @@ struct BootstrapStreamService {
             }
           } else if !warmedAuthorDids.contains(row.appViewScope.authorDid) {
             do {
-              _ = try await enrollService.enroll(auth: auth, authorDids: [row.appViewScope.authorDid])
+              _ = try await enrollService.enroll(
+                auth: auth,
+                authorDids: [row.appViewScope.authorDid],
+                recentOnly: true
+              )
             } catch {
               logger.warning(
                 "Bootstrap stream selected publication enroll failed",

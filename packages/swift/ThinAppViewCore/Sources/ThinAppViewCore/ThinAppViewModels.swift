@@ -106,6 +106,18 @@ public struct AppViewEntryListResponse: Codable, Sendable {
 
 public struct AppViewEnrollRequest: Codable, Sendable {
   public let authorDids: [String]
+  public let feedUrls: [String]
+
+  public init(authorDids: [String], feedUrls: [String] = []) {
+    self.authorDids = authorDids
+    self.feedUrls = feedUrls
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    authorDids = try container.decodeIfPresent([String].self, forKey: .authorDids) ?? []
+    feedUrls = try container.decodeIfPresent([String].self, forKey: .feedUrls) ?? []
+  }
 }
 
 public struct AppViewReadMarkRequest: Codable, Sendable {

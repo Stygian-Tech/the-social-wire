@@ -314,8 +314,8 @@ final class SocialWireGatewayClient {
         return decoded.marked
     }
 
-    func enrollAuthors(dids: [String]) async throws -> Int {
-        let payload = try JSONEncoder().encode(AppViewEnrollBody(authorDids: dids))
+    func enrollAuthors(dids: [String], feedUrls: [String] = []) async throws -> Int {
+        let payload = try JSONEncoder().encode(AppViewEnrollBody(authorDids: dids, feedUrls: feedUrls))
         let result = try await authorizedRequest(
             method: "POST",
             path: "/v1/appview/enroll",

@@ -184,13 +184,14 @@ export async function writeThroughReadMarkDelete(
 
 export async function enrollAuthorsInAppView(
   oauthSession: OAuthSession,
-  authorDids: string[]
+  authorDids: string[],
+  feedUrls: string[] = []
 ): Promise<void> {
-  if (authorDids.length === 0) return;
+  if (authorDids.length === 0 && feedUrls.length === 0) return;
   const res = await gatewayFetch(oauthSession, "/v1/appview/enroll", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ authorDids }),
+    body: JSON.stringify({ authorDids, feedUrls }),
   });
   if (!res.ok) {
     throw new Error(`Thin AppView enroll failed (${res.status})`);

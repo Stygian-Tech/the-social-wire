@@ -11,6 +11,12 @@ struct AppViewReadMarkDeleteBody: Encodable, Sendable {
 
 struct AppViewEnrollBody: Encodable, Sendable {
     let authorDids: [String]
+    let feedUrls: [String]
+
+    init(authorDids: [String], feedUrls: [String] = []) {
+        self.authorDids = authorDids
+        self.feedUrls = feedUrls
+    }
 }
 
 struct GatewayFolderWriteBody: Encodable, Sendable {

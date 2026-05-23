@@ -7,6 +7,7 @@ import ThinAppViewCore
 
 actor ThinAppViewEnrollService {
   private let backfill: ThinAppViewEnrollBackfill
+  private let skyreaderIngestion: ThinAppViewSkyreaderIngestionService?
   private let config: ThinAppViewConfig
   private let logger: Logger
 
@@ -16,7 +17,8 @@ actor ThinAppViewEnrollService {
     httpClient: HTTPClient,
     plcURL: String,
     config: ThinAppViewConfig,
-    logger: Logger
+    logger: Logger,
+    skyreaderIngestion: ThinAppViewSkyreaderIngestionService? = nil
   ) {
     self.backfill = ThinAppViewEnrollBackfill(
       store: store,
@@ -26,22 +28,46 @@ actor ThinAppViewEnrollService {
       config: config,
       logger: logger
     )
+    self.skyreaderIngestion = skyreaderIngestion
     self.config = config
     self.logger = logger
   }
 
-  func enroll(auth: AuthContext, authorDids: [String]) async throws -> Int {
-    let unique = Array(
+  func enroll(
+    auth: AuthContext,
+    authorDids: [String],
+    feedUrls: [String] = [],
+    recentOnly: Bool = true
+  ) async throws -> Int {
+    let uniqueAuthors = Array(
       Set(authorDids.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty })
     )
     .prefix(config.maxEnrollAuthors)
 
-    let indexed = try await backfill.enroll(authorDids: Array(unique))
+    var indexed = 0
+    if !uniqueAuthors.isEmpty {
+      indexed += try await backfill.enroll(
+        authorDids: Array(uniqueAuthors),
+        recentOnly: recentOnly
+      )
+    }
+
+    let priorityFeedUrls = feedUrls
+      .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+      .filter { !$0.isEmpty }
+    if let skyreaderIngestion, !priorityFeedUrls.isEmpty {
+      indexed += try await skyreaderIngestion.ingestViewerSubscriptions(
+        auth: auth,
+        priorityFeedUrls: priorityFeedUrls
+      )
+    }
+
     logger.info(
       "Enrollment backfill complete",
       metadata: [
         "viewer": .string(auth.did),
-        "authors": .stringConvertible(unique.count),
+        "authors": .stringConvertible(uniqueAuthors.count),
+        "feeds": .stringConvertible(priorityFeedUrls.count),
         "records": .stringConvertible(indexed),
       ]
     )

@@ -36,7 +36,7 @@ export const ENTRY_DETAIL_QUERY_KEY = (entryId: string) =>
 export type EntriesPage = { entries: EntryListItem[]; cursor?: string };
 
 /** Matches {@link useEntries} `staleTime` / `prefetchInfiniteQuery` for entry lists. */
-export const ENTRIES_QUERY_STALE_MS = 2 * 60_000;
+export const ENTRIES_QUERY_STALE_MS = 30_000;
 
 function requireAppViewScope(
   projection:
@@ -108,7 +108,12 @@ export async function fetchEntriesInfinitePage(args: {
 
   if (!pageParam) {
     try {
-      await enrollAuthorsInAppView(oauthSession, [appViewScope.authorDid]);
+      const { authorDid, publicationSiteUrls } = appViewScope;
+      if (publicationSiteUrls.length > 0) {
+        await enrollAuthorsInAppView(oauthSession, [], publicationSiteUrls);
+      } else {
+        await enrollAuthorsInAppView(oauthSession, [authorDid]);
+      }
     } catch {
       /* best-effort backfill for recent posts missing from Jetstream index */
     }
@@ -161,6 +166,7 @@ export function useEntries(
     getNextPageParam: entriesNextPageParam,
     enabled: !!normalizedKey && !!session && !!appViewScope,
     staleTime: ENTRIES_QUERY_STALE_MS,
+    refetchOnMount: "always",
     gcTime: 1000 * 60 * 60 * 24,
   });
 

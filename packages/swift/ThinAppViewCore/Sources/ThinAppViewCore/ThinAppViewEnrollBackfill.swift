@@ -27,7 +27,8 @@ public struct ThinAppViewEnrollBackfill: Sendable {
     self.logger = logger
   }
 
-  public func enroll(authorDids: [String]) async throws -> Int {
+  /// When `recentOnly` is true, fetches only the newest page per collection (fast client refresh).
+  public func enroll(authorDids: [String], recentOnly: Bool = false) async throws -> Int {
     let unique = Array(
       Set(
         authorDids
@@ -49,7 +50,7 @@ public struct ThinAppViewEnrollBackfill: Sendable {
         guard inFlight < config.maxEnrollConcurrency, let authorDid = iterator.next() else { return }
         inFlight += 1
         group.addTask {
-          try await self.backfillAuthor(authorDid: authorDid)
+          try await self.backfillAuthor(authorDid: authorDid, recentOnly: recentOnly)
         }
       }
 
@@ -80,7 +81,7 @@ public struct ThinAppViewEnrollBackfill: Sendable {
     return true
   }
 
-  private func backfillAuthor(authorDid: String) async throws -> Int {
+  private func backfillAuthor(authorDid: String, recentOnly: Bool) async throws -> Int {
     guard
       let pds = try await ThinAppViewPdsResolution.resolvePdsBase(
         repoDid: authorDid,
@@ -94,7 +95,8 @@ public struct ThinAppViewEnrollBackfill: Sendable {
       total += try await backfillCollection(
         authorDid: authorDid,
         pdsBase: pds,
-        collection: collection
+        collection: collection,
+        recentOnly: recentOnly
       )
     }
     return total
@@ -103,7 +105,8 @@ public struct ThinAppViewEnrollBackfill: Sendable {
   private func backfillCollection(
     authorDid: String,
     pdsBase: String,
-    collection: String
+    collection: String,
+    recentOnly: Bool
   ) async throws -> Int {
     var cursor: String?
     var count = 0
@@ -156,6 +159,7 @@ public struct ThinAppViewEnrollBackfill: Sendable {
       }
 
       cursor = json["cursor"] as? String
+      if recentOnly { break }
       if count >= recordCap { break }
     } while cursor != nil
 

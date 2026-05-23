@@ -404,7 +404,7 @@ public init(pool: PostgresClient, logger: Logger) {
       FROM content_items
       WHERE author_did LIKE 'did:%' AND author_did NOT LIKE 'did:web:%'
       GROUP BY author_did
-      ORDER BY MIN(indexed_at) ASC
+      ORDER BY MAX(indexed_at) ASC
       LIMIT \(capped)
       """,
       logger: logger

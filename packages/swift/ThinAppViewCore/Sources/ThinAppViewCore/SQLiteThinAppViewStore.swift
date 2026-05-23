@@ -432,7 +432,7 @@ public init(path dbPath: String, logger: Logger) throws {
           FROM content_items
           WHERE author_did LIKE 'did:%' AND author_did NOT LIKE 'did:web:%'
           GROUP BY author_did
-          ORDER BY MIN(indexed_at) ASC
+          ORDER BY MAX(indexed_at) ASC
           LIMIT ?
           """,
         arguments: [capped]

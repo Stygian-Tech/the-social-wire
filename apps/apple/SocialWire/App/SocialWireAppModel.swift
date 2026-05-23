@@ -450,8 +450,26 @@ final class SocialWireAppModel {
                 refreshedAt: DateFormatters.string(from: Date()),
                 unreadCountsByPublicationId: nil
             ))
-        case .warning, .error, .done:
+        case .warning, .error:
             break
+        case .done:
+            if let publication = selectedPublication {
+                Task { await refreshEntriesAfterBootstrap(for: publication) }
+            }
+        }
+    }
+
+    private func refreshEntriesAfterBootstrap(for publication: DiscoveredPublication) async {
+        guard selectedPublication?.publicationId == publication.publicationId else { return }
+        await refreshPublicationIndex(for: publication)
+        do {
+            let page = try await fetchEntriesPage(for: publication, cursor: nil)
+            entries = page.entries
+            entriesNextCursor = page.cursor
+            persistPublicationEntries(publication.publicationId, entries: entries)
+            await prefetchThumbnailImages(for: page.entries)
+        } catch {
+            markAppViewUnavailableIfNeeded(error)
         }
     }
 
@@ -648,8 +666,30 @@ final class SocialWireAppModel {
 
     private static let entryPrefetchMaxEntries = 120
 
+    private func refreshPublicationIndex(for publication: DiscoveredPublication) async {
+        guard useAppViewEntryTimelines else { return }
+        guard let scope = sidebarScopesByPublicationId[publication.publicationId] else { return }
+        let feedUrls = scope.publicationSiteUrls.filter { !$0.isEmpty }
+        if !feedUrls.isEmpty {
+            do {
+                _ = try await gateway.enrollAuthors(dids: [], feedUrls: feedUrls)
+            } catch {
+                /* Skyreader subscriptions are PDS records; refresh parsed feed entries */
+            }
+            return
+        }
+        let authorDid = scope.authorDid
+        guard authorDid.hasPrefix("did:"), !authorDid.hasPrefix("did:web:") else { return }
+        do {
+            _ = try await gateway.enrollAuthors(dids: [authorDid])
+        } catch {
+            /* best-effort backfill for posts missing from Jetstream index */
+        }
+    }
+
     private func cacheOnlyLoadEntries(publication: DiscoveredPublication) async throws {
         guard let coordinator = readerCacheCoordinator else { return }
+        await refreshPublicationIndex(for: publication)
         let page = try await fetchEntriesPage(for: publication, cursor: nil, maxEntries: Self.entryPrefetchMaxEntries)
         try coordinator.upsertPublicationEntries(publicationId: publication.publicationId, entries: page.entries)
         await prefetchThumbnailImages(for: page.entries)
@@ -754,6 +794,7 @@ final class SocialWireAppModel {
         defer { isLoadingEntries = false }
 
         do {
+            await refreshPublicationIndex(for: publication)
             let page = try await fetchEntriesPage(for: publication, cursor: nil)
             entries = page.entries
             entriesNextCursor = page.cursor

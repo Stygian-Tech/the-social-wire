@@ -70,7 +70,11 @@ struct ThinAppViewRoutes {
     group.post("/v1/appview/enroll") { request, context async throws -> AppViewEnrollResponse in
       guard let auth = context.authContext else { throw HTTPError(.unauthorized) }
       let body = try await request.decode(as: AppViewEnrollRequest.self, context: context)
-      let indexed = try await enrollService.enroll(auth: auth, authorDids: body.authorDids)
+      let indexed = try await enrollService.enroll(
+        auth: auth,
+        authorDids: body.authorDids,
+        feedUrls: body.feedUrls
+      )
       return AppViewEnrollResponse(indexed: indexed)
     }
 

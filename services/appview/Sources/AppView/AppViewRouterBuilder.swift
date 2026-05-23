@@ -45,18 +45,29 @@ enum AppViewRouterBuilder {
     )
     PublicationRoutes(projectionService: projection, resolveService: resolve).register(on: protected)
 
+    let rssIngestion = ThinAppViewRssIngestion(
+      store: thinAppViewStore,
+      httpClient: httpClient,
+      config: config.thinAppView,
+      logger: logger
+    )
     let indexer = ThinAppViewIndexer(
       store: thinAppViewStore,
       config: config.thinAppView,
       logger: logger,
       httpClient: httpClient,
       plcURL: config.core.atprotoPLCURL,
-      rssIngestion: ThinAppViewRssIngestion(
-        store: thinAppViewStore,
-        httpClient: httpClient,
-        config: config.thinAppView,
-        logger: logger
-      )
+      rssIngestion: rssIngestion
+    )
+    let repo = ATProtoAuthenticatedRepoClient(
+      httpClient: httpClient,
+      plcURL: config.core.atprotoPLCURL,
+      logger: logger
+    )
+    let skyreaderIngestionService = ThinAppViewSkyreaderIngestionService(
+      repo: repo,
+      rssIngestion: rssIngestion,
+      logger: logger
     )
     let readService = ThinAppViewReadService(store: thinAppViewStore, logger: logger)
     let enrollService = ThinAppViewEnrollService(
@@ -65,26 +76,11 @@ enum AppViewRouterBuilder {
       httpClient: httpClient,
       plcURL: config.core.atprotoPLCURL,
       config: config.thinAppView,
-      logger: logger
+      logger: logger,
+      skyreaderIngestion: skyreaderIngestionService
     )
     ThinAppViewRoutes(readService: readService, enrollService: enrollService).register(on: protected)
 
-    let repo = ATProtoAuthenticatedRepoClient(
-      httpClient: httpClient,
-      plcURL: config.core.atprotoPLCURL,
-      logger: logger
-    )
-    let rssIngestion = ThinAppViewRssIngestion(
-      store: thinAppViewStore,
-      httpClient: httpClient,
-      config: config.thinAppView,
-      logger: logger
-    )
-    let skyreaderIngestionService = ThinAppViewSkyreaderIngestionService(
-      repo: repo,
-      rssIngestion: rssIngestion,
-      logger: logger
-    )
     AppViewExtendedRoutes(
       readService: readService,
       projectionService: projection,

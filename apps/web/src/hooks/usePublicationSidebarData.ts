@@ -204,6 +204,11 @@ export function usePublicationSidebarData() {
                   );
                   pendingAutoSelectPublicationIdRef.current = null;
                 }
+                void qc.invalidateQueries({
+                  predicate: (query) =>
+                    Array.isArray(query.queryKey) &&
+                    query.queryKey[0] === "entries",
+                });
               }
 
               setStreamProjection((currentStream) => {
