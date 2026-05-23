@@ -98,7 +98,6 @@ struct MainSplitView: View {
                 .tag(ReaderPane.reader)
         }
         .tabViewStyle(.page(indexDisplayMode: .never))
-        .animation(Self.compactPaneAnimation, value: compactPane)
     }
 
     private func navigateCompactPane(_ pane: ReaderPane) {
@@ -135,7 +134,7 @@ struct MainSplitView: View {
             if appModel.selectedSidebar == .myPublications {
                 PublicationCollectionView(title: "My Publications", publications: appModel.myPublications)
             } else if appModel.selectedPublication != nil {
-                EntryListView()
+                EntryListView(onOpenEntry: compact ? { navigateCompactPane(.reader) } : nil)
             } else {
                 selectPublicationPlaceholder
             }
@@ -201,7 +200,9 @@ struct MainSplitView: View {
     // MARK: - Compact pager
 
     private func setCompactPane(to pane: ReaderPane) {
-        compactPane = pane
+        withAnimation(Self.compactPaneAnimation) {
+            compactPane = pane
+        }
     }
 
     private static var compactPaneAnimation: Animation {
@@ -272,15 +273,15 @@ private struct CompactReaderSelectionHandlers: ViewModifier {
 
         content
             .onChange(of: model.selectedSidebar) { _, selection in
+                if compact, case .publication = selection {
+                    model.prepareForPublicationSelection()
+                    onNavigatePane(.articles)
+                }
                 Task { await onSidebarSelection(selection) }
             }
-            .onChange(of: model.selectedPublication?.publicationId) { _, publicationId in
-                guard compact, publicationId != nil else { return }
+            .onChange(of: model.selectedPublication?.publicationId) { oldId, publicationId in
+                guard compact, publicationId != nil, oldId != publicationId else { return }
                 onNavigatePane(.articles)
-            }
-            .onChange(of: model.selectedEntry?.entryId) { _, entryId in
-                guard compact, entryId != nil else { return }
-                onNavigatePane(.reader)
             }
             .onChange(of: model.selectedSavedLink?.id) { _, saveId in
                 guard compact, saveId != nil else { return }

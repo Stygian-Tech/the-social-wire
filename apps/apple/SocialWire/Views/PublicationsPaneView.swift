@@ -24,18 +24,12 @@ struct PublicationsPaneView: View {
                         showingAddPublication: $showingAddPublication
                     )
                 }
-                .onChange(of: model.selectedSidebar) { _, selection in
-                    guard case .publication = selection else { return }
-                    navigateToPane(.articles)
-                }
+                .readerListCanvas()
             case .following:
                 List(selection: $model.selectedSidebar) {
                     FollowingPublicationSidebarTree()
                 }
-                .onChange(of: model.selectedSidebar) { _, selection in
-                    guard case .publication = selection else { return }
-                    navigateToPane(.articles)
-                }
+                .readerListCanvas()
             }
         }
     }
@@ -66,10 +60,12 @@ struct SavedLinksListContent: View {
                             systemImage: "archivebox",
                             description: Text("Save an HTTPS article from the toolbar to queue it here as a LATR Link item.")
                         )
+                        .readerClearListRow()
                     } else {
                         ForEach(appModel.savedLinks) { save in
                             SavedLinkRow(save: save)
                                 .tag(save)
+                                .readerClearListRow()
                                 .swipeActions {
                                     Button("Archive") {
                                         Task { await appModel.archive(save) }
@@ -82,6 +78,7 @@ struct SavedLinksListContent: View {
                         }
                     }
                 }
+                .readerListCanvas()
                 .onChange(of: model.selectedSavedLink?.id) { _, saveId in
                     guard saveId != nil else { return }
                     onSelectSave?()

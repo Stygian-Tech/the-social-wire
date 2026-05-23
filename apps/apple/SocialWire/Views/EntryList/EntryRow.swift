@@ -38,23 +38,23 @@ struct EntryRow: View {
                     .foregroundStyle(.tertiary)
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 6)
     }
 
     @ViewBuilder
     private var thumbnail: some View {
+        let urls = ThumbnailImageURLAttempts.candidates(
+            primary: entry.thumbnailUrl,
+            fallback: entry.thumbnailFallbackUrl
+        )
         Group {
-            if let raw = entry.thumbnailUrl, let url = URL(string: raw) {
-                AsyncImage(url: url) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image.resizable().scaledToFill()
-                    default:
-                        thumbnailPlaceholder
-                    }
-                }
-            } else {
+            if urls.isEmpty {
                 thumbnailPlaceholder
+            } else {
+                CachedRemoteImage(urls: urls, maxPixelSize: 168) {
+                    thumbnailPlaceholder
+                }
+                .scaledToFill()
             }
         }
         .frame(width: 56, height: 56)

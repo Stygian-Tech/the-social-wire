@@ -16,9 +16,10 @@ struct DiscoveredPublication: Identifiable, Codable, Equatable, Sendable {
     var displayImageURL: URL? {
         for candidate in [iconUrl, avatarUrl] {
             guard let raw = candidate?.trimmingCharacters(in: .whitespacesAndNewlines),
-                  !raw.isEmpty,
-                  let url = URL(string: raw)
+                  !raw.isEmpty
             else { continue }
+            let normalized = PublicURLNormalizer.normalizeHttpURLToHTTPS(raw)
+            guard let url = URL(string: normalized) else { continue }
             return url
         }
         return nil

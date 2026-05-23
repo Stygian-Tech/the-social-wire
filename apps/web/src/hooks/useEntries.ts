@@ -63,6 +63,7 @@ export async function fetchEntriesInfinitePage(args: {
   viewerDid?: string;
   articleFilter?: ArticleListFilter;
   queryClient?: QueryClient;
+  maxEntries?: number;
 }): Promise<EntriesPage> {
   const {
     normalizedPublicationKey: normalizedKey,
@@ -72,6 +73,7 @@ export async function fetchEntriesInfinitePage(args: {
     viewerDid,
     articleFilter = "all",
     queryClient,
+    maxEntries,
   } = args;
 
   if (!normalizedKey) return { entries: [], cursor: undefined };
@@ -100,7 +102,8 @@ export async function fetchEntriesInfinitePage(args: {
   return listEntriesFromAppView({
     publicationKey: normalizedKey,
     appViewScope,
-    cursor: pageParam as string | undefined,
+    cursor: maxEntries == null ? (pageParam as string | undefined) : undefined,
+    maxEntries,
     filter: articleFilter,
     oauthSession,
     signal,

@@ -9,6 +9,7 @@ struct PublicationCollectionView: View {
         List {
             if publications.isEmpty {
                 ContentUnavailableView("No Publications", systemImage: "newspaper")
+                    .readerClearListRow()
             } else {
                 ForEach(publications) { publication in
                     Button {
@@ -30,12 +31,14 @@ struct PublicationCollectionView: View {
                         }
                     }
                     .buttonStyle(.plain)
+                    .readerClearListRow()
                     .contextMenu {
                         FolderAssignmentMenu(publication: publication)
                     }
                 }
             }
         }
+        .readerListCanvas()
         .navigationTitle(title)
     }
 }

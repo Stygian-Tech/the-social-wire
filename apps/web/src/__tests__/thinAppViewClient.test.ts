@@ -65,6 +65,31 @@ describe("thinAppViewClient", () => {
     expect(fetchHandler).toHaveBeenCalledTimes(1);
   });
 
+  it("listEntriesFromAppView sends maxEntries instead of cursor", async () => {
+    const fetchHandler = mock(async (url: string) => {
+      expect(url).toContain("maxEntries=120");
+      expect(url).not.toContain("cursor=");
+      return new Response(
+        JSON.stringify({ entries: [], cursor: "more" }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      );
+    });
+
+    const { listEntriesFromAppView } = await import("@/lib/thinAppViewClient");
+    await listEntriesFromAppView({
+      publicationKey: "at://did:plc:alice/site.standard.publication/main",
+      appViewScope: {
+        authorDid: "did:plc:alice",
+        publicationAtUri: "at://did:plc:alice/site.standard.publication/main",
+        publicationScopeAtUris: [],
+        publicationSiteUrls: [],
+      },
+      maxEntries: 120,
+      oauthSession: { fetchHandler } as never,
+    });
+    expect(fetchHandler).toHaveBeenCalledTimes(1);
+  });
+
   it("getEntryFromAppView fetches entry detail from gateway", async () => {
     const fetchHandler = mock(async (url: string) => {
       expect(url).toContain("/v1/appview/entry?");

@@ -13,7 +13,7 @@ struct SubscribedPublicationSidebarTree: View {
             if appModel.isLoading {
                 ProgressView()
                     .frame(maxWidth: .infinity)
-                    .listRowBackground(Color.clear)
+                    .readerClearListRow()
             } else {
                 ForEach(appModel.folders) { folder in
                     folderSection(folder)
@@ -23,6 +23,7 @@ struct SubscribedPublicationSidebarTree: View {
                 } label: {
                     Label("New Folder", systemImage: "folder.badge.plus")
                 }
+                .readerClearListRow()
             }
         } header: {
             SidebarSectionLabel(title: "Folders", unreadCount: foldersSectionUnread)
@@ -38,6 +39,7 @@ struct SubscribedPublicationSidebarTree: View {
                 } label: {
                     Label("Add Publication", systemImage: "plus.circle")
                 }
+                .readerClearListRow()
             }
         } header: {
             SidebarSectionLabel(
@@ -58,6 +60,7 @@ struct SubscribedPublicationSidebarTree: View {
                 Text("No publications in this folder.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .readerClearListRow()
             }
         } label: {
             HStack {
@@ -66,6 +69,7 @@ struct SubscribedPublicationSidebarTree: View {
                 Spacer(minLength: 6)
                 SidebarCountLabel(count: appModel.sumUnread(for: pubs))
             }
+            .readerClearListRow()
         }
         .swipeActions {
             Button("Delete", role: .destructive) {
@@ -79,6 +83,7 @@ struct SubscribedPublicationSidebarTree: View {
             publication: publication,
             unreadCount: appModel.unreadCachedBadge(for: publication)
         )
+        .readerClearListRow()
         .tag(SidebarSelection.publication(publication.publicationId))
     }
 

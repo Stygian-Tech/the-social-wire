@@ -189,13 +189,19 @@ final class SocialWireGatewayClient {
         scope: PublicationAppViewScopeDTO,
         filter: ReaderFilter,
         cursor: String?,
-        limit: Int = 50
+        limit: Int = 50,
+        maxEntries: Int? = nil
     ) async throws -> AppViewEntryListResponse {
         var query: [String: String] = [
             "authorDid": scope.authorDid,
             "filter": filter == .unread ? "unread" : "all",
             "limit": String(limit),
         ]
+        if let maxEntries {
+            query["maxEntries"] = String(maxEntries)
+        } else if let cursor, !cursor.isEmpty {
+            query["cursor"] = cursor
+        }
         if let publicationAtUri = scope.publicationAtUri, !publicationAtUri.isEmpty {
             query["publicationAtUri"] = publicationAtUri
         }
@@ -204,9 +210,6 @@ final class SocialWireGatewayClient {
         }
         if !scope.publicationSiteUrls.isEmpty {
             query["publicationSiteUrls"] = scope.publicationSiteUrls.joined(separator: ",")
-        }
-        if let cursor, !cursor.isEmpty {
-            query["cursor"] = cursor
         }
 
         let result = try await authorizedGET(path: "/v1/appview/entries", query: query, ifNoneMatch: nil)

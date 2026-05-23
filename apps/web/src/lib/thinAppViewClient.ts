@@ -19,6 +19,7 @@ export async function listEntriesFromAppView(args: {
   appViewScope: PublicationAppViewScope;
   cursor?: string;
   limit?: number;
+  maxEntries?: number;
   filter?: ArticleListFilter;
   oauthSession: OAuthSession;
   signal?: AbortSignal;
@@ -27,6 +28,7 @@ export async function listEntriesFromAppView(args: {
     appViewScope,
     cursor,
     limit = 50,
+    maxEntries,
     filter = "all",
     oauthSession,
     signal,
@@ -40,6 +42,11 @@ export async function listEntriesFromAppView(args: {
     filter,
     limit: String(limit),
   });
+  if (typeof maxEntries === "number") {
+    params.set("maxEntries", String(maxEntries));
+  } else if (cursor) {
+    params.set("cursor", cursor);
+  }
   if (publicationAtUri) {
     params.set("publicationAtUri", publicationAtUri);
   }
@@ -49,7 +56,6 @@ export async function listEntriesFromAppView(args: {
   if (publicationScopeAtUris.length > 0) {
     params.set("publicationScopeAtUris", publicationScopeAtUris.join(","));
   }
-  if (cursor) params.set("cursor", cursor);
 
   const res = await gatewayFetch(
     oauthSession,

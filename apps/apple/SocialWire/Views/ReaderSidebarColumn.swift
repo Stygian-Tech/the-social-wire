@@ -15,6 +15,7 @@ struct ReaderSidebarColumn: View {
             }
         }
         .listStyle(.sidebar)
+        .readerListCanvas()
     }
 
     private var listsSection: some View {
@@ -33,6 +34,7 @@ struct ReaderSidebarColumn: View {
                     }
                 }
                 .buttonStyle(.plain)
+                .readerClearListRow()
             }
         } header: {
             Text("Lists")
@@ -48,6 +50,7 @@ struct ReaderSidebarColumn: View {
                         Text("Nothing queued yet.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
+                            .readerClearListRow()
                     } else {
                         ForEach(appModel.savedLinks) { save in
                             Button {
@@ -56,12 +59,14 @@ struct ReaderSidebarColumn: View {
                                 SavedLinkRow(save: save)
                             }
                             .buttonStyle(.plain)
+                            .readerClearListRow()
                         }
                     }
                 } else {
                     Text("Configure L@tr Link in Profile → Settings.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                        .readerClearListRow()
                 }
             } header: {
                 Text("Read Later")

@@ -12,5 +12,6 @@ struct PublicationSidebarRow: View {
             Spacer(minLength: 6)
             SidebarCountLabel(count: unreadCount)
         }
+        .padding(.vertical, 4)
     }
 }

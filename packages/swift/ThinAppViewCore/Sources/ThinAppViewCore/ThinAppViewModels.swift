@@ -94,6 +94,11 @@ public struct AppViewEntryListItem: Codable, Sendable {
 public struct AppViewEntryListResponse: Codable, Sendable {
   public let entries: [AppViewEntryListItem]
   public let cursor: String?
+
+  public init(entries: [AppViewEntryListItem], cursor: String?) {
+    self.entries = entries
+    self.cursor = cursor
+  }
 }
 
 public struct AppViewEnrollRequest: Codable, Sendable {

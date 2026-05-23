@@ -2,7 +2,7 @@ import Foundation
 import Observation
 import SwiftData
 
-private let maxPersistedPublicationRows = 12
+private let maxPersistedPublicationRows = 32
 private let maxPersistedEntryDetailRows = 120
 private let maxPersistedGatewayKeys = 48
 private let maxStoredEntriesPerPublication = 120

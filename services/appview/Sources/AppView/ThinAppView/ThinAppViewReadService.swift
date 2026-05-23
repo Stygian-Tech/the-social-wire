@@ -35,6 +35,32 @@ actor ThinAppViewReadService {
     )
   }
 
+  func listEntriesUpTo(
+    auth: AuthContext,
+    authorDid: String,
+    publicationAtUri: String?,
+    publicationScopeAtUris: [String],
+    publicationSiteUrls: [String],
+    filter: EntryListFilter,
+    maxEntries: Int,
+    pageLimit: Int = ThinAppViewEntryPagination.defaultPageLimit
+  ) async throws -> AppViewEntryListResponse {
+    try await ThinAppViewEntryPagination.aggregate(
+      maxEntries: maxEntries
+    ) { cursor in
+      try await self.listEntries(
+        auth: auth,
+        authorDid: authorDid,
+        publicationAtUri: publicationAtUri,
+        publicationScopeAtUris: publicationScopeAtUris,
+        publicationSiteUrls: publicationSiteUrls,
+        filter: filter,
+        cursor: cursor,
+        limit: pageLimit
+      )
+    }
+  }
+
   func upsertReadMark(auth: AuthContext, subjectUri: String, readAt: Date?) async throws {
     try await store.upsertReadMark(
       viewerDid: auth.did,

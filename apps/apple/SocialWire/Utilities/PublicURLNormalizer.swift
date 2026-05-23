@@ -30,6 +30,11 @@ enum PublicURLNormalizer {
 
     static func isBridgyPDS(_ url: URL) -> Bool {
         let host = url.host()?.lowercased() ?? ""
-        return host == "atproto.brid.gy" || host.hasSuffix(".atproto.brid.gy")
+        return host == "atproto.brid.gy" || host.hasSuffix(".brid.gy")
+    }
+
+    static func isBridgySyncGetBlobURL(_ raw: String) -> Bool {
+        guard let url = URL(string: raw), isBridgyPDS(url) else { return false }
+        return url.path.contains("com.atproto.sync.getBlob")
     }
 }

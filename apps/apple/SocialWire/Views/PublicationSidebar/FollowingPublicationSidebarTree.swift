@@ -10,7 +10,7 @@ struct FollowingPublicationSidebarTree: View {
             if appModel.isLoading {
                 ProgressView()
                     .frame(maxWidth: .infinity)
-                    .listRowBackground(Color.clear)
+                    .readerClearListRow()
             } else {
                 ForEach(appModel.followingTabPublications) { publication in
                     publicationRow(publication)
@@ -29,6 +29,7 @@ struct FollowingPublicationSidebarTree: View {
             publication: publication,
             unreadCount: appModel.unreadCachedBadge(for: publication)
         )
+        .readerClearListRow()
         .tag(SidebarSelection.publication(publication.publicationId))
     }
 }

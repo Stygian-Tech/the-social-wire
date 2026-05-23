@@ -31,11 +31,16 @@ final class SocialWireAppModel {
     var readerFilter: ReaderFilter = .all
     var isLoading = false
     var isLoadingEntries = false
+    var isLoadingMoreEntries = false
     var errorMessage: String?
+    /// Next AppView page cursor for the active publication entry list (`nil` when exhausted).
+    private var entriesNextCursor: String?
     /// Lexical account preferences returned from **`GET /v1/sync/preferences`** (optional read-later hints).
     var preferencesFromGateway: PreferencesRecord?
     /// Entry id currently open under **Unread** filter — `markRead` is deferred until navigation away.
     private var unreadDeferredEntryId: String?
+    /// Bumped when publication selection clears the reader; stale `selectEntry` tasks must not reopen it.
+    private var entrySelectionGeneration = 0
     /// AppView scope keys from **`GET /v1/publications/sidebar`**.
     private var sidebarScopesByPublicationId: [String: PublicationAppViewScopeDTO] = [:]
     /// Server unread counts keyed by publication id (sidebar projection + optional refresh).
@@ -255,6 +260,11 @@ final class SocialWireAppModel {
         }
     }
 
+    var canLoadMoreEntries: Bool {
+        guard let entriesNextCursor else { return false }
+        return !entriesNextCursor.isEmpty
+    }
+
     var effectiveReadLaterServiceId: String {
         let g = preferencesFromGateway?.readLaterService?.trimmingCharacters(in: .whitespacesAndNewlines)
         if let g, ReadLaterServiceCatalog.isKnownServiceId(g) { return g }
@@ -436,6 +446,8 @@ final class SocialWireAppModel {
                 publicationPrefs: publicationPrefs
             )
         }
+
+        prefetchPublicationAvatarImages(gatewayAllPublicationRows)
     }
 
     private func gatewaySubscribedPublicationsList() -> [DiscoveredPublication] {
@@ -519,15 +531,52 @@ final class SocialWireAppModel {
     }
 
     private func prefetchSidebarPublications() async {
-        for publication in subscribedUnfolderedPublications.prefix(8) {
-            try? await cacheOnlyLoadEntries(publication: publication)
+        let publications = gatewayAllPublicationRows
+        guard !publications.isEmpty else { return }
+
+        await withTaskGroup(of: Void.self) { group in
+            var iterator = publications.makeIterator()
+            for _ in 0 ..< min(2, publications.count) {
+                guard let publication = iterator.next() else { break }
+                group.addTask {
+                    try? await self.cacheOnlyLoadEntries(publication: publication)
+                }
+            }
+            for await _ in group {
+                guard let publication = iterator.next() else { continue }
+                group.addTask {
+                    try? await self.cacheOnlyLoadEntries(publication: publication)
+                }
+            }
         }
     }
 
+    private static let entryPrefetchMaxEntries = 120
+
     private func cacheOnlyLoadEntries(publication: DiscoveredPublication) async throws {
         guard let coordinator = readerCacheCoordinator else { return }
-        let list = try await fetchEntriesForPublication(publication)
-        try coordinator.upsertPublicationEntries(publicationId: publication.publicationId, entries: list)
+        let page = try await fetchEntriesPage(for: publication, cursor: nil, maxEntries: Self.entryPrefetchMaxEntries)
+        try coordinator.upsertPublicationEntries(publicationId: publication.publicationId, entries: page.entries)
+        await prefetchThumbnailImages(for: page.entries)
+    }
+
+    private func prefetchPublicationAvatarImages(_ publications: [DiscoveredPublication]) {
+        let urls = publications.compactMap(\.displayImageURL)
+        guard !urls.isEmpty else { return }
+        Task(priority: .utility) {
+            await ImageCacheService.shared.prefetch(urls: urls, maxPixelSize: 96, concurrency: 8)
+        }
+    }
+
+    private func prefetchThumbnailImages(for entries: [EntryListItem]) async {
+        let urls = entries.flatMap {
+            ThumbnailImageURLAttempts.candidates(
+                primary: $0.thumbnailUrl,
+                fallback: $0.thumbnailFallbackUrl
+            )
+        }
+        guard !urls.isEmpty else { return }
+        await ImageCacheService.shared.prefetch(urls: urls, maxPixelSize: 168, concurrency: 8)
     }
 
     private func markAppViewUnavailableIfNeeded(_ error: Error) {
@@ -536,55 +585,110 @@ final class SocialWireAppModel {
         }
     }
 
-    private func fetchEntriesForPublication(_ publication: DiscoveredPublication) async throws -> [EntryListItem] {
+    private func fetchEntriesPage(
+        for publication: DiscoveredPublication,
+        cursor: String?,
+        maxEntries: Int? = nil
+    ) async throws -> AppViewEntryListResponse {
         guard useAppViewEntryTimelines else {
             throw SocialWireError.appViewUnavailable
         }
         guard let scope = sidebarScopesByPublicationId[publication.publicationId] else {
             throw SocialWireError.badResponse("Missing AppView scope for publication.")
         }
-        let page = try await gateway.fetchAppViewEntries(
+        return try await gateway.fetchAppViewEntries(
             scope: scope,
             filter: readerFilter,
-            cursor: nil
+            cursor: cursor,
+            maxEntries: maxEntries
         )
-        return page.entries
+    }
+
+    private func mergeEntryPages(existing: [EntryListItem], newPage: [EntryListItem]) -> [EntryListItem] {
+        guard !newPage.isEmpty else { return existing }
+        var seen = Set(existing.map(\.entryId))
+        var merged = existing
+        merged.reserveCapacity(existing.count + newPage.count)
+        for item in newPage where seen.insert(item.entryId).inserted {
+            merged.append(item)
+        }
+        return merged
+    }
+
+    private func persistPublicationEntries(_ publicationId: String, entries: [EntryListItem]) {
+        try? readerCacheCoordinator?.upsertPublicationEntries(
+            publicationId: publicationId,
+            entries: entries
+        )
     }
 
     func publications(in folder: RepoRecord<FolderRecord>) -> [DiscoveredPublication] {
         gatewayFolderMap[rkey(from: folder.uri)] ?? []
     }
 
-    func selectPublication(_ publication: DiscoveredPublication) async {
+    /// Synchronously invalidate in-flight entry loads before switching publications.
+    func prepareForPublicationSelection() {
+        entrySelectionGeneration += 1
         unreadDeferredEntryId = nil
+        selectedEntry = nil
+        selectedSavedLink = nil
+        entriesNextCursor = nil
+    }
+
+    func selectPublication(_ publication: DiscoveredPublication) async {
+        prepareForPublicationSelection()
         selectedPublication = publication
         selectedSidebar = .publication(publication.publicationId)
-        selectedSavedLink = nil
-        selectedEntry = nil
         await loadEntries(for: publication)
     }
 
     func loadEntries(for publication: DiscoveredPublication) async {
-        isLoadingEntries = true
-        defer { isLoadingEntries = false }
+        entriesNextCursor = nil
 
+        var hadCachedEntries = false
         if let coordinator = readerCacheCoordinator,
            let snapshot = try? coordinator.publicationEntries(publication.publicationId) {
             entries = snapshot
+            hadCachedEntries = !snapshot.isEmpty
+            await prefetchThumbnailImages(for: snapshot)
         }
 
+        if !hadCachedEntries {
+            isLoadingEntries = true
+        }
+        defer { isLoadingEntries = false }
+
         do {
-            let fresh = try await fetchEntriesForPublication(publication)
-            entries = fresh
-            try? readerCacheCoordinator?.upsertPublicationEntries(
-                publicationId: publication.publicationId,
-                entries: fresh
-            )
+            let page = try await fetchEntriesPage(for: publication, cursor: nil)
+            entries = page.entries
+            entriesNextCursor = page.cursor
+            persistPublicationEntries(publication.publicationId, entries: entries)
+            await prefetchThumbnailImages(for: page.entries)
         } catch {
             markAppViewUnavailableIfNeeded(error)
             if entries.isEmpty {
                 errorMessage = error.localizedDescription
             }
+        }
+    }
+
+    func loadMoreEntriesIfNeeded(for publication: DiscoveredPublication) async {
+        guard canLoadMoreEntries else { return }
+        guard !isLoadingEntries, !isLoadingMoreEntries else { return }
+        guard selectedPublication?.publicationId == publication.publicationId else { return }
+
+        isLoadingMoreEntries = true
+        defer { isLoadingMoreEntries = false }
+
+        let cursor = entriesNextCursor
+        do {
+            let page = try await fetchEntriesPage(for: publication, cursor: cursor)
+            entries = mergeEntryPages(existing: entries, newPage: page.entries)
+            entriesNextCursor = page.cursor
+            persistPublicationEntries(publication.publicationId, entries: entries)
+            await prefetchThumbnailImages(for: page.entries)
+        } catch {
+            markAppViewUnavailableIfNeeded(error)
         }
     }
 
@@ -625,6 +729,9 @@ final class SocialWireAppModel {
     }
 
     func selectEntry(_ item: EntryListItem) async {
+        entrySelectionGeneration += 1
+        let generation = entrySelectionGeneration
+
         if readerFilter == .unread {
             if let previous = unreadDeferredEntryId, previous != item.entryId {
                 await markReadIfNeeded(entryId: previous)
@@ -637,8 +744,11 @@ final class SocialWireAppModel {
         do {
             if let coordinator = readerCacheCoordinator,
                let cached = try coordinator.entryDetail(item.entryId) {
+                guard generation == entrySelectionGeneration else { return }
+                guard entries.contains(where: { $0.entryId == item.entryId }) else { return }
                 selectedEntry = cached
             } else {
+                guard generation == entrySelectionGeneration else { return }
                 selectedEntry = nil
             }
 
@@ -648,6 +758,9 @@ final class SocialWireAppModel {
             } else {
                 detail = nil
             }
+
+            guard generation == entrySelectionGeneration else { return }
+            guard entries.contains(where: { $0.entryId == item.entryId }) else { return }
 
             guard let detail else {
                 throw SocialWireError.badResponse("Entry detail unavailable.")
@@ -661,6 +774,7 @@ final class SocialWireAppModel {
                 await markReadIfNeeded(entryId: item.entryId)
             }
         } catch {
+            guard generation == entrySelectionGeneration else { return }
             markAppViewUnavailableIfNeeded(error)
             errorMessage = error.localizedDescription
         }

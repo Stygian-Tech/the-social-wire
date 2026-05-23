@@ -7,14 +7,10 @@ struct PublicationAvatar: View {
     var body: some View {
         Group {
             if let url = publication.displayImageURL {
-                AsyncImage(url: url) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image.resizable().scaledToFill()
-                    default:
-                        placeholder
-                    }
+                CachedRemoteImage(urls: [url], maxPixelSize: max(size * 3, 72)) {
+                    placeholder
                 }
+                .scaledToFill()
             } else {
                 placeholder
             }

@@ -25,8 +25,10 @@ struct ListsView: View {
                     }
                 }
                 .buttonStyle(.plain)
+                .readerClearListRow()
                 .accessibilityAddTraits(appModel.readerListSource == source ? .isSelected : [])
             }
         }
+        .readerListCanvas()
     }
 }

@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Floating All / Unread control (glass capsule) shown once at the bottom of pager / split content.
+/// All / Unread segmented control at the bottom of pager / split content.
 struct ReaderFloatingFilterBar: View {
     @Environment(SocialWireAppModel.self) private var appModel
 
@@ -18,19 +18,18 @@ struct ReaderFloatingFilterBar: View {
         .pickerStyle(.segmented)
         .controlSize(.small)
         .fixedSize(horizontal: true, vertical: false)
-        .padding(.horizontal, 4)
-        .padding(.vertical, 4)
-        .background {
-            Capsule(style: .continuous)
-                .fill(.ultraThinMaterial)
-        }
-        .overlay {
-            Capsule(style: .continuous)
-                .strokeBorder(.primary.opacity(0.08), lineWidth: 0.5)
-        }
-        .shadow(color: .black.opacity(0.14), radius: 8, y: 3)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Articles filter")
+    }
+}
+
+/// Shared layout metrics for the floating articles filter control.
+enum ReaderShellMetrics {
+    static let floatingFilterHeight: CGFloat = 32
+    /// Offset within the home-indicator band (not extra layout footer space).
+    static let floatingFilterBottomPadding: CGFloat = 2
+    static var floatingFilterScrollClearance: CGFloat {
+        floatingFilterHeight + 14
     }
 }
 
@@ -51,7 +50,14 @@ struct ReaderShellOverlayModifier: ViewModifier {
     }
 
     /// Fixed height so `ContentUnavailableView` does not jump when swiping between panes.
-    private static let articlesFilterBarHeight: CGFloat = 44
+    private static let articlesFilterBarHeight = ReaderShellMetrics.floatingFilterHeight
+
+    private var floatingFilterBar: some View {
+        ReaderFloatingFilterBar()
+            .frame(height: Self.articlesFilterBarHeight)
+            .padding(.bottom, ReaderShellMetrics.floatingFilterBottomPadding)
+            .ignoresSafeArea(.container, edges: .bottom)
+    }
 
     private var markReadDisabled: Bool {
         appModel.isMarkReadDisabled(for: markReadScope)
@@ -108,17 +114,6 @@ struct ReaderShellOverlayModifier: ViewModifier {
         }
     }
 
-    private var articlesFilterInset: some View {
-        HStack {
-            Spacer(minLength: 0)
-            ReaderFloatingFilterBar()
-            Spacer(minLength: 0)
-        }
-        .frame(height: Self.articlesFilterBarHeight)
-        .padding(.top, 6)
-        .padding(.bottom, 8)
-    }
-
     func body(content: Content) -> some View {
         content
             .toolbar {
@@ -152,8 +147,8 @@ struct ReaderShellOverlayModifier: ViewModifier {
                     }
                 }
             }
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                articlesFilterInset
+            .overlay(alignment: .bottom) {
+                floatingFilterBar
             }
             .confirmationDialog(
                 markReadDialogTitle,
@@ -175,5 +170,16 @@ struct ReaderShellOverlayModifier: ViewModifier {
 extension View {
     func readerShellOverlay(showingProfile: Binding<Bool>, compactPane: ReaderPane? = nil) -> some View {
         modifier(ReaderShellOverlayModifier(showingProfile: showingProfile, compactPane: compactPane))
+    }
+
+    /// Transparent list canvas for reader shell lists (sidebar, articles, publications pane).
+    func readerListCanvas() -> some View {
+        scrollContentBackground(.hidden)
+            .contentMargins(.bottom, ReaderShellMetrics.floatingFilterScrollClearance, for: .scrollContent)
+    }
+
+    func readerClearListRow() -> some View {
+        listRowBackground(Color.clear)
+            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
     }
 }

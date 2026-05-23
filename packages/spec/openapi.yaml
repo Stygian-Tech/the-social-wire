@@ -727,6 +727,16 @@ paths:
             type: integer
             default: 50
             maximum: 100
+          description: Page size for a single response, or the internal page size when `maxEntries` is set.
+        - name: maxEntries
+          in: query
+          schema:
+            type: integer
+            maximum: 500
+          description: |
+            When set, AppView aggregates multiple timeline pages server-side and returns up to
+            this many entries in one response. The client `cursor` is ignored. The response
+            `cursor` is present only when more entries remain beyond `maxEntries`.
       responses:
         "200":
           description: Entry list page.

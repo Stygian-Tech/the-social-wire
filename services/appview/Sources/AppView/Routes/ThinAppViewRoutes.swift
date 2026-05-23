@@ -26,6 +26,20 @@ struct ThinAppViewRoutes {
       }
       let cursor = request.uri.queryParameters.get("cursor")
       let limit = Int(request.uri.queryParameters.get("limit") ?? "50") ?? 50
+      if let maxRaw = request.uri.queryParameters.get("maxEntries"),
+         let maxEntries = Int(maxRaw)
+      {
+        return try await readService.listEntriesUpTo(
+          auth: auth,
+          authorDid: authorDid,
+          publicationAtUri: publicationAtUri,
+          publicationScopeAtUris: publicationScopeAtUris,
+          publicationSiteUrls: publicationSiteUrls,
+          filter: filter,
+          maxEntries: maxEntries,
+          pageLimit: limit
+        )
+      }
 
       return try await readService.listEntries(
         auth: auth,
