@@ -40,8 +40,8 @@ export function ControlledCreateFolderDialog({
         </DialogHeader>
         <CreateFolderFormFields
           key={formKey}
-          onCloseRequest={() => handleOpenChange(false)}
           {...fields}
+          onCloseRequest={() => handleOpenChange(false)}
         />
       </DialogContent>
     </Dialog>

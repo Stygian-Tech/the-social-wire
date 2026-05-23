@@ -10,7 +10,7 @@ export interface CreateFolderFormFieldsProps {
 }
 
 export interface ControlledCreateFolderDialogProps
-  extends CreateFolderFormFieldsProps {
+  extends Omit<CreateFolderFormFieldsProps, "onCloseRequest"> {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   description?: ReactNode;
