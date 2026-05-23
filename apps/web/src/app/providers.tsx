@@ -10,6 +10,7 @@ import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client
 import { createSyncStoragePersister } from "@tanstack/query-sync-storage-persister";
 import { AuthProvider } from "@/hooks/useAuth";
 import type { PublicationSidebarProjection } from "@/lib/publicationProjectionClient";
+import { shouldPersistSidebarProjection } from "@/lib/sidebarProjectionPersist";
 
 /** localStorage key for dehydrated React Query cache (discovery + bounded entry lists). */
 const QUERY_PERSIST_KEY = "the-social-wire.react-query.v1";
@@ -42,8 +43,7 @@ function shouldPersistSidebarProjectionQuery(query: Query): boolean {
   const key = query.queryKey;
   if (!Array.isArray(key) || key[0] !== "publicationSidebarProjection") return false;
   const data = query.state.data as PublicationSidebarProjection | undefined;
-  if (!data?.allPublicationRows?.length) return false;
-  return data.allPublicationRows.length <= 250;
+  return shouldPersistSidebarProjection(data);
 }
 
 function shouldDehydrateQuery(query: Query): boolean {

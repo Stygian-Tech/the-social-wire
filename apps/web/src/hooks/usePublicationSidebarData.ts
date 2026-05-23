@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, useIsRestoring } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { useFolders } from "@/hooks/useFolders";
@@ -123,9 +123,24 @@ function projectionToSidebarState(projection: PublicationSidebarProjection) {
 }
 
 /** Gateway bootstrap stream for subscribed/following lists and `/me/publications`. */
+function sidebarListShowsSkeleton(args: {
+  hasSidebarSnapshot: boolean;
+  isRestoring: boolean;
+  sidebarFetching: boolean;
+  itemCount: number;
+}): boolean {
+  return (
+    !args.hasSidebarSnapshot &&
+    !args.isRestoring &&
+    args.sidebarFetching &&
+    args.itemCount === 0
+  );
+}
+
 export function usePublicationSidebarData() {
   const { session, getOAuthSession } = useAuth();
   const qc = useQueryClient();
+  const isRestoring = useIsRestoring();
   const did = session?.did ?? "";
   const [streamSelectedPublicationId, setStreamSelectedPublicationId] = useState<
     string | null
@@ -136,11 +151,19 @@ export function usePublicationSidebarData() {
   const streamGenerationRef = useRef(0);
   const pendingAutoSelectPublicationIdRef = useRef<string | null>(null);
 
-  const cachedProjection = did
-    ? qc.getQueryData<PublicationSidebarProjection>(
+  const cachedProjection = useQuery({
+    queryKey: PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(did),
+    enabled: Boolean(did),
+    staleTime: Infinity,
+    gcTime: Infinity,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    queryFn: () =>
+      qc.getQueryData<PublicationSidebarProjection>(
         PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(did)
-      )
-    : undefined;
+      ),
+  }).data;
 
   const [streamProjection, setStreamProjection] = useState<
     PublicationSidebarProjection | undefined
@@ -165,9 +188,15 @@ export function usePublicationSidebarData() {
 
       const generation = ++streamGenerationRef.current;
       pendingAutoSelectPublicationIdRef.current = null;
+      const hadSidebarSnapshot = Boolean(
+        qc.getQueryData<PublicationSidebarProjection>(
+          PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(did)
+        )
+      );
+
       setSidebarFetching(true);
       setProjectionError(null);
-      setFolderPublicationsLoading(true);
+      setFolderPublicationsLoading(!hadSidebarSnapshot);
 
       try {
         await consumeBootstrapStream({
@@ -177,7 +206,7 @@ export function usePublicationSidebarData() {
             onEvent: (event) => {
               if (generation !== streamGenerationRef.current) return;
 
-              if (event.kind === "sidebarPriority") {
+              if (event.kind === "sidebarPriority" && !hadSidebarSnapshot) {
                 setFolderPublicationsLoading(true);
               }
               if (event.kind === "sidebarFolders") {
@@ -229,6 +258,9 @@ export function usePublicationSidebarData() {
                     PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(did),
                     applied.projection
                   );
+                  if (event.kind === "done") {
+                    return undefined;
+                  }
                   return applied.projection;
                 }
                 return currentStream;
@@ -279,13 +311,40 @@ export function usePublicationSidebarData() {
     );
   }, [mergedProjection]);
 
-  const hasCachedProjection = mergedProjection != null;
-  const sidebarListsLoading = !hasCachedProjection && sidebarFetching;
+  const hasSidebarSnapshot = mergedProjection != null;
+  const sidebarListsLoading =
+    !hasSidebarSnapshot && !isRestoring && sidebarFetching;
 
   const projectionState = useMemo(() => {
     if (!mergedProjection) return null;
     return projectionToSidebarState(mergedProjection);
   }, [mergedProjection]);
+
+  const folders = projectionState?.folders ?? [];
+  const unfolderedPubs = projectionState?.unfolderedPubs ?? [];
+  const followingTabPublications =
+    projectionState?.followingTabPublications ?? [];
+
+  const foldersListLoading = sidebarListShowsSkeleton({
+    hasSidebarSnapshot,
+    isRestoring,
+    sidebarFetching,
+    itemCount: folders.length,
+  });
+  const subscribedPublicationsLoading = sidebarListShowsSkeleton({
+    hasSidebarSnapshot,
+    isRestoring,
+    sidebarFetching,
+    itemCount: unfolderedPubs.length,
+  });
+  const followingPublicationsLoading = sidebarListShowsSkeleton({
+    hasSidebarSnapshot,
+    isRestoring,
+    sidebarFetching,
+    itemCount: followingTabPublications.length,
+  });
+  const folderPublicationsListLoading =
+    !hasSidebarSnapshot && !isRestoring && folderPublicationsLoading;
 
   const refresh = useMutation({
     mutationFn: async () => {
@@ -300,18 +359,22 @@ export function usePublicationSidebarData() {
   });
 
   return {
-    folders: projectionState?.folders ?? [],
-    foldersLoading: sidebarListsLoading,
+    folders,
+    foldersLoading: foldersListLoading,
+    foldersListLoading,
     prefsMap: projectionState?.prefsMap ?? new Map(),
     allPublicationRows: projectionState?.allPublicationRows ?? [],
     folderMap: projectionState?.folderMap ?? new Map(),
     myPublications: projectionState?.myPublications ?? [],
-    unfolderedPubs: projectionState?.unfolderedPubs ?? [],
-    followingTabPublications: projectionState?.followingTabPublications ?? [],
-    pubsLoading: sidebarListsLoading,
-    subscriptionsBlockLoading: sidebarListsLoading,
+    unfolderedPubs,
+    followingTabPublications,
+    pubsLoading: subscribedPublicationsLoading,
+    subscriptionsBlockLoading: subscribedPublicationsLoading,
+    subscribedPublicationsLoading,
+    followingPublicationsLoading,
     sidebarListsLoading,
-    folderPublicationsLoading,
+    folderPublicationsLoading: folderPublicationsListLoading,
+    hasSidebarSnapshot,
     sidebarFetching,
     refresh,
     viewerDid: session?.did,

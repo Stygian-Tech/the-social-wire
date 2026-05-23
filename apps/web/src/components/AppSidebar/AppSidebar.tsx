@@ -92,11 +92,13 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
     folderMap,
     unfolderedPubs,
     followingTabPublications,
-    sidebarFetching,
     refresh,
     viewerDid,
     unreadCountsByPublicationId,
     folderPublicationsLoading,
+    foldersListLoading,
+    subscribedPublicationsLoading,
+    followingPublicationsLoading,
     streamSelectedPublicationId,
   } = usePublicationSidebarData();
   const autoSelectRef = useRef<string | null>(null);
@@ -249,12 +251,6 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
     folders,
     setSelectedFolderUri,
   ]);
-
-  const subscribedPublicationsLoading =
-    sidebarFetching && unfolderedPubs.length === 0;
-  const followingPublicationsLoading =
-    sidebarFetching && followingTabPublications.length === 0;
-  const foldersListLoading = sidebarFetching && folders.length === 0;
 
   return (
     <Sidebar>

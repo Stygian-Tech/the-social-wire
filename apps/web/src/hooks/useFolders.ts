@@ -2,11 +2,29 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FolderRecord, rkeyFromURI } from "@/lib/pdsClient";
+import {
+  addOptimisticFolderToProjection,
+  createOptimisticFolderRkey,
+  removeOptimisticFolderFromProjection,
+  replaceOptimisticFolderInProjection,
+} from "@/lib/optimisticSidebarFolder";
+import type { PublicationSidebarProjection } from "@/lib/publicationProjectionClient";
 import { useAuth } from "./useAuth";
 import { usePDSClient } from "./usePDSClient";
 import { PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY } from "./usePublicationSidebarData";
 
 export const FOLDERS_QUERY_KEY = ["folders"] as const;
+
+type CreateFolderParams = {
+  name: string;
+  icon?: string;
+  iconImage?: string;
+};
+
+type CreateFolderContext = {
+  previousProjection: PublicationSidebarProjection | undefined;
+  optimisticRkey: string;
+};
 
 export type FolderRecordFromProjection = {
   uri: string;
@@ -63,11 +81,7 @@ export function useCreateFolder() {
   const { session } = useAuth();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (params: {
-      name: string;
-      icon?: string;
-      iconImage?: string;
-    }) => {
+    mutationFn: async (params: CreateFolderParams) => {
       if (!client) throw new Error("Sign in to create folders on your PDS.");
       const created = await client.createFolder(params.name, {
         icon: params.icon,
@@ -78,12 +92,67 @@ export function useCreateFolder() {
         rkey: rkeyFromURI(created.uri),
       };
     },
-    onSuccess: () => {
-      if (session?.did) {
-        qc.invalidateQueries({
-          queryKey: PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(session.did),
-        });
+    onMutate: async (params): Promise<CreateFolderContext | undefined> => {
+      const did = session?.did;
+      if (!did) return undefined;
+
+      const queryKey = PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(did);
+      await qc.cancelQueries({ queryKey });
+
+      const previousProjection =
+        qc.getQueryData<PublicationSidebarProjection>(queryKey);
+      if (!previousProjection) return undefined;
+
+      const optimisticRkey = createOptimisticFolderRkey();
+      const nextProjection = addOptimisticFolderToProjection(
+        previousProjection,
+        {
+          viewerDid: did,
+          rkey: optimisticRkey,
+          name: params.name,
+          icon: params.icon,
+          iconImage: params.iconImage,
+        }
+      );
+      if (nextProjection) {
+        qc.setQueryData(queryKey, nextProjection);
       }
+
+      return { previousProjection, optimisticRkey };
+    },
+    onError: (_error, _params, context) => {
+      const did = session?.did;
+      if (!did || !context?.optimisticRkey) return;
+
+      const queryKey = PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(did);
+      qc.setQueryData<PublicationSidebarProjection>(queryKey, (current) => {
+        if (!current) return context.previousProjection;
+        return (
+          removeOptimisticFolderFromProjection(
+            current,
+            context.optimisticRkey
+          ) ?? context.previousProjection
+        );
+      });
+    },
+    onSuccess: (created, params, context) => {
+      const did = session?.did;
+      if (!did) return;
+
+      const queryKey = PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(did);
+      if (!context?.optimisticRkey) {
+        qc.invalidateQueries({ queryKey });
+        return;
+      }
+
+      qc.setQueryData<PublicationSidebarProjection>(queryKey, (current) =>
+        replaceOptimisticFolderInProjection(
+          current,
+          context.optimisticRkey,
+          created,
+          params
+        )
+      );
     },
   });
 }
