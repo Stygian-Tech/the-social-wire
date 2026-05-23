@@ -5,7 +5,10 @@ import {
   normalizeAtRepoParam,
   type DiscoveredPublication,
 } from "@/lib/atprotoClient";
-import type { PublicationSidebarProjection } from "@/lib/publicationProjectionClient";
+import type {
+  PublicationSidebarProjection,
+  SidebarPublicationRow,
+} from "@/lib/publicationProjectionClient";
 import {
   countUnreadCachedEntries,
   getCachedEntriesForPublication,
@@ -48,6 +51,54 @@ export function countCachedReadForPublication(
 
 function publicationIdsMatch(a: string, b: string): boolean {
   return normalizeAtRepoParam(a) === normalizeAtRepoParam(b);
+}
+
+function patchSidebarRowUnreadCount(
+  row: SidebarPublicationRow,
+  normalizedPublicationId: string,
+  delta: number
+): SidebarPublicationRow {
+  if (
+    !publicationIdsMatch(row.publicationId, normalizedPublicationId) ||
+    row.unreadCount == null
+  ) {
+    return row;
+  }
+  return {
+    ...row,
+    unreadCount: applyDeltaToCount(row.unreadCount, delta),
+  };
+}
+
+function patchProjectionPublicationRows(
+  projection: PublicationSidebarProjection,
+  normalizedPublicationId: string,
+  delta: number
+): Pick<
+  PublicationSidebarProjection,
+  | "allPublicationRows"
+  | "subscribedUnfoldered"
+  | "followingTabPublications"
+  | "myPublications"
+  | "folderSections"
+> {
+  const patchRows = (rows: SidebarPublicationRow[]) =>
+    rows.map((row) =>
+      patchSidebarRowUnreadCount(row, normalizedPublicationId, delta)
+    );
+
+  return {
+    allPublicationRows: patchRows(projection.allPublicationRows ?? []),
+    subscribedUnfoldered: patchRows(projection.subscribedUnfoldered ?? []),
+    followingTabPublications: patchRows(
+      projection.followingTabPublications ?? []
+    ),
+    myPublications: patchRows(projection.myPublications ?? []),
+    folderSections: projection.folderSections?.map((section) => ({
+      ...section,
+      publications: patchRows(section.publications),
+    })),
+  };
 }
 
 export function applyPublicationUnreadCountDelta(
@@ -105,22 +156,9 @@ export function applyPublicationUnreadCountDelta(
         }
       }
 
-      const allPublicationRows = (old.allPublicationRows ?? []).map((row) => {
-        if (
-          !publicationIdsMatch(row.publicationId, normalizedPublicationId) ||
-          row.unreadCount == null
-        ) {
-          return row;
-        }
-        return {
-          ...row,
-          unreadCount: applyDeltaToCount(row.unreadCount, delta),
-        };
-      });
-
       return {
         ...old,
-        allPublicationRows,
+        ...patchProjectionPublicationRows(old, normalizedPublicationId, delta),
         unreadCountsByPublicationId,
       };
     }

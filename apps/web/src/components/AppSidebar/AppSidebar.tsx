@@ -356,6 +356,7 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
                               <FolderBranch
                                 key={f.uri}
                                 expandKey={f.uri}
+                                folderUri={f.uri}
                                 folder={f.value}
                                 isActive={selectedFolderUri === f.uri}
                                 expanded={effectiveExpandedKeys.has(f.uri)}

@@ -5,6 +5,7 @@ import { type FolderRecord, rkeyFromURI } from "@/lib/pdsClient";
 import {
   addOptimisticFolderToProjection,
   createOptimisticFolderRkey,
+  removeFolderFromSidebarProjection,
   removeOptimisticFolderFromProjection,
   replaceOptimisticFolderInProjection,
 } from "@/lib/optimisticSidebarFolder";
@@ -189,13 +190,37 @@ export function useDeleteFolder() {
       if (!client) throw new Error("Sign in to delete folders on your PDS.");
       const rkey = rkeyFromURI(uri);
       await client.deleteFolder(rkey);
+      return { uri, rkey };
     },
-    onSuccess: () => {
-      if (session?.did) {
-        qc.invalidateQueries({
-          queryKey: PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(session.did),
-        });
+    onMutate: async (uri) => {
+      const did = session?.did;
+      if (!did) return undefined;
+
+      const queryKey = PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(did);
+      await qc.cancelQueries({ queryKey });
+
+      const previousProjection =
+        qc.getQueryData<PublicationSidebarProjection>(queryKey);
+      if (!previousProjection) return undefined;
+
+      const folderRkey = rkeyFromURI(uri);
+      const nextProjection = removeFolderFromSidebarProjection(
+        previousProjection,
+        folderRkey
+      );
+      if (nextProjection) {
+        qc.setQueryData(queryKey, nextProjection);
       }
+
+      return { previousProjection };
+    },
+    onError: (_error, _uri, context) => {
+      const did = session?.did;
+      if (!did || !context?.previousProjection) return;
+      qc.setQueryData(
+        PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(did),
+        context.previousProjection
+      );
     },
   });
 }

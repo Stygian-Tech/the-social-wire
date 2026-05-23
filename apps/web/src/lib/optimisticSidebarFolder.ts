@@ -1,5 +1,8 @@
 import { COLLECTION_FOLDER } from "@/lib/pdsClient";
-import type { PublicationSidebarProjection } from "@/lib/publicationProjectionClient";
+import type {
+  PublicationSidebarProjection,
+  SidebarPublicationRow,
+} from "@/lib/publicationProjectionClient";
 
 export const OPTIMISTIC_FOLDER_RKEY_PREFIX = "optimistic-folder-";
 
@@ -163,24 +166,74 @@ export function removeOptimisticFolderFromProjection(
   optimisticRkey: string
 ): PublicationSidebarProjection | undefined {
   if (!projection) return undefined;
+  return removeFolderFromSidebarProjection(projection, optimisticRkey);
+}
+
+function publicationsInFolderSection(
+  projection: PublicationSidebarProjection,
+  folderRkey: string
+): SidebarPublicationRow[] {
+  const section = projection.folderSections?.find(
+    (entry) => entry.folderRkey === folderRkey
+  );
+  if (section) return section.publications;
+
+  const excluded = new Set([
+    ...projection.myPublications.map((row) => row.publicationId),
+    ...projection.followingTabPublications.map((row) => row.publicationId),
+  ]);
+  const rows: SidebarPublicationRow[] = [];
+
+  for (const pref of projection.publicationPrefs) {
+    const folderId =
+      typeof pref.value.folderId === "string" ? pref.value.folderId : undefined;
+    if (folderId !== folderRkey) continue;
+    const row = projection.allPublicationRows.find(
+      (entry) => entry.publicationId === pref.publicationId
+    );
+    if (!row || excluded.has(row.publicationId)) continue;
+    rows.push(row);
+  }
+
+  return rows;
+}
+
+export function removeFolderFromSidebarProjection(
+  projection: PublicationSidebarProjection | undefined,
+  folderRkey: string
+): PublicationSidebarProjection | undefined {
+  if (!projection) return undefined;
+
+  const restoredPublications = publicationsInFolderSection(
+    projection,
+    folderRkey
+  );
+  const restoredIds = new Set(
+    restoredPublications.map((row) => row.publicationId)
+  );
+  const subscribedUnfoldered = [
+    ...projection.subscribedUnfoldered.filter(
+      (row) => !restoredIds.has(row.publicationId)
+    ),
+    ...restoredPublications,
+  ];
+
+  const publicationPrefs = projection.publicationPrefs.map((pref) => {
+    const folderId =
+      typeof pref.value.folderId === "string" ? pref.value.folderId : undefined;
+    if (folderId !== folderRkey) return pref;
+    const nextValue = { ...pref.value };
+    delete nextValue.folderId;
+    return { ...pref, value: nextValue };
+  });
 
   return {
     ...projection,
-    folders: projection.folders.filter(
-      (folder) => folder.rkey !== optimisticRkey
-    ),
+    folders: projection.folders.filter((folder) => folder.rkey !== folderRkey),
     folderSections: projection.folderSections?.filter(
-      (section) => section.folderRkey !== optimisticRkey
+      (section) => section.folderRkey !== folderRkey
     ),
-    publicationPrefs: projection.publicationPrefs.map((pref) => {
-      const folderId =
-        typeof pref.value.folderId === "string"
-          ? pref.value.folderId
-          : undefined;
-      if (folderId !== optimisticRkey) return pref;
-      const nextValue = { ...pref.value };
-      delete nextValue.folderId;
-      return { ...pref, value: nextValue };
-    }),
+    subscribedUnfoldered,
+    publicationPrefs,
   };
 }

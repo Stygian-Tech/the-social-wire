@@ -66,6 +66,30 @@ describe("applyPublicationUnreadCountDelta", () => {
     expect(appview?.[publicationId]).toBe(2);
   });
 
+  it("updates unread counts across folder section rows", () => {
+    const queryClient = new QueryClient();
+    const projection = makeProjection(3);
+    projection.folderSections = [
+      {
+        folderRkey: "folder1",
+        folderUri: "at://did:plc:viewer/com.thesocialwire.folder/folder1",
+        publications: [{ ...projection.allPublicationRows[0]!, unreadCount: 3 }],
+      },
+    ];
+    queryClient.setQueryData(
+      PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(viewerDid),
+      projection
+    );
+
+    applyPublicationUnreadCountDelta(queryClient, viewerDid, publicationId, -3);
+
+    const next = queryClient.getQueryData<PublicationSidebarProjection>(
+      PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(viewerDid)
+    );
+    expect(next?.folderSections?.[0]?.publications[0]?.unreadCount).toBe(0);
+    expect(next?.unreadCountsByPublicationId?.[publicationId]).toBeUndefined();
+  });
+
   it("clamps unread counts at zero", () => {
     const queryClient = new QueryClient();
     queryClient.setQueryData(

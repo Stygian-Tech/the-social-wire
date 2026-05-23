@@ -4,15 +4,30 @@ import type { PublicationSidebarProjection } from "@/lib/publicationProjectionCl
 import {
   addOptimisticFolderToProjection,
   createOptimisticFolderRkey,
+  removeFolderFromSidebarProjection,
   removeOptimisticFolderFromProjection,
   replaceOptimisticFolderInProjection,
 } from "@/lib/optimisticSidebarFolder";
+
+const publicationRow = {
+  publicationId: "at://did:plc:author/site.standard.publication/pub1",
+  authorDid: "did:plc:author",
+  authorHandle: "author",
+  title: "Example Pub",
+  discoveredAt: "2026-01-01T00:00:00.000Z",
+  appViewScope: {
+    authorDid: "did:plc:author",
+    publicationAtUri: "at://did:plc:author/site.standard.publication/pub1",
+    publicationScopeAtUris: [],
+    publicationSiteUrls: [],
+  },
+};
 
 const baseProjection: PublicationSidebarProjection = {
   viewerDid: "did:plc:viewer",
   folders: [],
   publicationPrefs: [],
-  allPublicationRows: [],
+  allPublicationRows: [publicationRow],
   myPublications: [],
   subscribedUnfoldered: [],
   followingTabPublications: [],
@@ -115,5 +130,39 @@ describe("optimisticSidebarFolder", () => {
 
     expect(next?.folders).toEqual([]);
     expect(next?.folderSections).toBeUndefined();
+  });
+
+  test("removeFolderFromSidebarProjection restores publications to Publications", () => {
+    const projection: PublicationSidebarProjection = {
+      ...baseProjection,
+      folders: [
+        {
+          uri: "at://did:plc:viewer/com.thesocialwire.folder/folder1",
+          rkey: "folder1",
+          value: { name: "Tech" },
+        },
+      ],
+      publicationPrefs: [
+        {
+          uri: "at://did:plc:viewer/com.thesocialwire.publicationPrefs/pref1",
+          publicationId: publicationRow.publicationId,
+          value: { folderId: "folder1" },
+        },
+      ],
+      subscribedUnfoldered: [],
+      folderSections: [
+        {
+          folderRkey: "folder1",
+          folderUri: "at://did:plc:viewer/com.thesocialwire.folder/folder1",
+          publications: [publicationRow],
+        },
+      ],
+    };
+
+    const next = removeFolderFromSidebarProjection(projection, "folder1");
+
+    expect(next?.folders).toEqual([]);
+    expect(next?.subscribedUnfoldered).toHaveLength(1);
+    expect(next?.publicationPrefs[0]?.value.folderId).toBeUndefined();
   });
 });

@@ -175,6 +175,9 @@ export function ReadRouteProvider({ children }: { children: ReactNode }) {
     (entryIds: string[], options?: MarkEntriesReadOptions) => {
       if (entryIds.length === 0) return;
       const unique = [...new Set(entryIds)];
+      const bulkDeltasRef: { current: Map<string, number> | null } = {
+        current: null,
+      };
       setReadMap((prev) => {
         const readAt = new Date().toISOString();
         const next = { ...prev };
@@ -197,21 +200,21 @@ export function ReadRouteProvider({ children }: { children: ReactNode }) {
           }
         }
         if (viewerDid && options?.publications?.length) {
-          const deltas = bulkReadDeltasForPublications(
+          bulkDeltasRef.current = bulkReadDeltasForPublications(
             queryClient,
             options.publications,
             (entryId) => !prev[entryId]
           );
-          queueMicrotask(() => {
-            applyBulkPublicationUnreadCountDeltas(
-              queryClient,
-              viewerDid,
-              deltas
-            );
-          });
         }
         return next;
       });
+      if (viewerDid && bulkDeltasRef.current && bulkDeltasRef.current.size > 0) {
+        applyBulkPublicationUnreadCountDeltas(
+          queryClient,
+          viewerDid,
+          bulkDeltasRef.current
+        );
+      }
     },
     [pdsClient, queryClient, viewerDid]
   );
@@ -220,6 +223,9 @@ export function ReadRouteProvider({ children }: { children: ReactNode }) {
     (entryIds: string[], options?: MarkEntriesReadOptions) => {
       if (entryIds.length === 0) return;
       const unique = [...new Set(entryIds)];
+      const bulkDeltasRef: { current: Map<string, number> | null } = {
+        current: null,
+      };
       setReadMap((prev) => {
         const next = { ...prev };
         const removed: string[] = [];
@@ -241,21 +247,21 @@ export function ReadRouteProvider({ children }: { children: ReactNode }) {
           }
         }
         if (viewerDid && options?.publications?.length) {
-          const deltas = bulkUnreadDeltasForPublications(
+          bulkDeltasRef.current = bulkUnreadDeltasForPublications(
             queryClient,
             options.publications,
             (entryId) => Boolean(prev[entryId])
           );
-          queueMicrotask(() => {
-            applyBulkPublicationUnreadCountDeltas(
-              queryClient,
-              viewerDid,
-              deltas
-            );
-          });
         }
         return next;
       });
+      if (viewerDid && bulkDeltasRef.current && bulkDeltasRef.current.size > 0) {
+        applyBulkPublicationUnreadCountDeltas(
+          queryClient,
+          viewerDid,
+          bulkDeltasRef.current
+        );
+      }
     },
     [pdsClient, queryClient, viewerDid]
   );

@@ -22,6 +22,7 @@ import type {
   FolderRecord,
   PublicationPrefsRecord,
 } from "@/lib/pdsClient";
+import { useDeleteFolder } from "@/hooks/useFolders";
 
 export type FolderBranchDisplay = Pick<
   RepoRecord<FolderRecord>["value"],
@@ -30,6 +31,7 @@ export type FolderBranchDisplay = Pick<
 
 interface FolderBranchProps {
   expandKey: string;
+  folderUri: string;
   folder: FolderBranchDisplay;
   isActive: boolean;
   expanded: boolean;
@@ -49,6 +51,7 @@ interface FolderBranchProps {
 
 export function FolderBranch({
   expandKey,
+  folderUri,
   folder,
   isActive,
   expanded,
@@ -64,6 +67,7 @@ export function FolderBranch({
   nameSuffix,
   publicationsLoading = false,
 }: FolderBranchProps) {
+  const deleteFolder = useDeleteFolder();
   const subId = `sidebar-folder-sub-${expandKey.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
   const folderUnread = sumUnreadForPublications(
     publications,
@@ -80,6 +84,20 @@ export function FolderBranch({
             Entries that have not been loaded yet stay unchanged until you open them.
           </>
         }
+        destructiveAction={{
+          label: "Delete Folder",
+          confirmationTitle: "Delete Folder?",
+          confirmationDescription: (
+            <>
+              Delete &quot;{folder.name}&quot; and move its publications back to Publications.
+              This cannot be undone.
+            </>
+          ),
+          pending: deleteFolder.isPending,
+          onConfirm: () => {
+            deleteFolder.mutate(folderUri);
+          },
+        }}
       >
         <SidebarMenuButton
           type="button"
