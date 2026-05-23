@@ -49,7 +49,8 @@ enum GatewayRouterBuilder {
       AppViewProxyRoutes(
         baseURL: appViewBase,
         internalSecret: config.core.gatewayAppViewInternalSecret,
-        httpClient: httpClient
+        httpClient: httpClient,
+        logger: logger
       ).register(on: protected)
     }
 

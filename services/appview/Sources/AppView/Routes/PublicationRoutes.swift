@@ -16,6 +16,7 @@ struct PublicationRoutes {
 
     group.post("/v1/publications/refresh") { _, context async throws -> PublicationSidebarResponse in
       guard let auth = context.authContext else { throw HTTPError(.unauthorized) }
+      await projectionService.invalidateViewerCaches(viewerDid: auth.did)
       return try await projectionService.sidebar(auth: auth, phase: .full)
     }
 

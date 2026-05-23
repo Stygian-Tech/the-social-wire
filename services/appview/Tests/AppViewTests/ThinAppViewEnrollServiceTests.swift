@@ -78,6 +78,7 @@ struct AppViewRouteContractTests {
       config: config,
       httpClient: client,
       thinAppViewStore: store,
+      projectionCache: nil,
       logger: Logger(label: "appview.router")
     )
     let app = Application(router: router, configuration: .init(address: .hostname("127.0.0.1", port: 0)))

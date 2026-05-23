@@ -17,6 +17,7 @@ struct RootView: View {
         .background(Color(.systemBackground))
         .task {
             appModel.configureReaderPersistence(modelContext: modelContext)
+            await appModel.restoreSession()
         }
         .alert("Something went wrong", isPresented: Binding(
             get: { appModel.errorMessage != nil },

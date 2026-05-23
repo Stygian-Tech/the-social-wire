@@ -27,6 +27,7 @@ import { NewFolderDialog } from "./NewFolderDialog";
 import { AddPublicationDialog } from "./AddPublicationDialog";
 import { useAuth } from "@/hooks/useAuth";
 import { usePublicationSidebarData } from "@/hooks/usePublicationSidebarData";
+import { usePrefetchSidebarPublicationEntries } from "@/hooks/usePrefetchSidebarPublicationEntries";
 import { normalizeAtRepoParam } from "@/lib/atprotoClient";
 import { useSidebarUnreadCounts } from "@/hooks/useSidebarUnreadCounts";
 import { useReadRoute } from "@/contexts/ReadRouteContext";
@@ -100,7 +101,15 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
     subscribedPublicationsLoading,
     followingPublicationsLoading,
     streamSelectedPublicationId,
+    hasSidebarSnapshot,
   } = usePublicationSidebarData();
+
+  usePrefetchSidebarPublicationEntries(
+    allPublicationRows,
+    hasSidebarSnapshot && !!session,
+    selectedPubId ?? streamSelectedPublicationId
+  );
+
   const autoSelectRef = useRef<string | null>(null);
 
   useEffect(() => {

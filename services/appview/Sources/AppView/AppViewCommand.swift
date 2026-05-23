@@ -54,10 +54,12 @@ struct Serve: AsyncParsableCommand {
       switch config.storeBackend {
       case .sqlite(let path):
         let store = try SQLiteThinAppViewStore(path: path, logger: logger)
+        let projectionCache = try SQLiteAppViewProjectionCacheStore(path: path, logger: logger)
         let router = AppViewRouterBuilder.router(
           config: config,
           httpClient: httpClient,
           thinAppViewStore: store,
+          projectionCache: projectionCache,
           logger: logger
         )
         let app = Application(
@@ -70,10 +72,12 @@ struct Serve: AsyncParsableCommand {
         let pgConfig = try makePostgresConfig(from: urlString, logger: logger)
         let pgPool = PostgresClient(configuration: pgConfig, backgroundLogger: logger)
         let store = PostgresThinAppViewStore(pool: pgPool, logger: logger)
+        let projectionCache = PostgresAppViewProjectionCacheStore(pool: pgPool, logger: logger)
         let router = AppViewRouterBuilder.router(
           config: config,
           httpClient: httpClient,
           thinAppViewStore: store,
+          projectionCache: projectionCache,
           logger: logger
         )
         let app = Application(

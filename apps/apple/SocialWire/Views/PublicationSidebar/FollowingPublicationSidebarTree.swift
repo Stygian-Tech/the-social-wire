@@ -7,10 +7,13 @@ struct FollowingPublicationSidebarTree: View {
 
     var body: some View {
         Section(isExpanded: $publicationsExpanded) {
-            if appModel.isLoading {
-                ProgressView()
-                    .frame(maxWidth: .infinity)
-                    .readerClearListRow()
+            if appModel.followingTabPublications.isEmpty,
+               appModel.sidebarFetching,
+               !appModel.hasSidebarSnapshot
+            {
+                ForEach(0 ..< 4, id: \.self) { _ in
+                    SidebarSkeletonRow()
+                }
             } else {
                 ForEach(appModel.followingTabPublications) { publication in
                     publicationRow(publication)

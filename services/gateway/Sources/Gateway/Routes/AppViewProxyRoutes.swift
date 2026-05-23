@@ -3,6 +3,7 @@ import Foundation
 import GatewayCore
 import HTTPTypes
 import Hummingbird
+import Logging
 import NIOCore
 
 private extension HTTPResponse.Status {
@@ -27,6 +28,7 @@ struct AppViewProxyRoutes {
   let baseURL: String
   let internalSecret: String?
   let httpClient: HTTPClient
+  let logger: Logger
 
   func register(on group: RouterGroup<GatewayRequestContext>) {
     group.get("/v1/publications/sidebar") { request, context async throws -> Response in
@@ -162,13 +164,28 @@ struct AppViewProxyRoutes {
     headers[.contentType] = "application/x-ndjson"
     headers[.cacheControl] = "no-cache"
     let status = HTTPResponse.Status.from(code: Int(reply.status.code)) ?? .badGateway
+    let streamStarted = Date()
+    let byteCounter = BootstrapStreamByteCounter()
     return Response(
       status: status,
       headers: headers,
       body: ResponseBody { writer in
         for try await buffer in reply.body {
+          byteCounter.record(buffer.readableBytes)
+          byteCounter.logFirstByteIfNeeded(
+            path: path,
+            streamStarted: streamStarted,
+            logger: logger,
+            did: auth.did
+          )
           try await writer.write(buffer)
         }
+        byteCounter.logComplete(
+          path: path,
+          streamStarted: streamStarted,
+          logger: logger,
+          did: auth.did
+        )
         try await writer.finish(nil)
       }
     )
@@ -194,5 +211,61 @@ struct AppViewProxyRoutes {
     } else {
       fwd.headers.add(name: "X-Forwarded-Proto", value: "https")
     }
+  }
+}
+
+private final class BootstrapStreamByteCounter: @unchecked Sendable {
+  private let lock = NSLock()
+  private var totalBytes = 0
+  private var firstByteLogged = false
+
+  func record(_ bytes: Int) {
+    lock.withLock {
+      totalBytes += bytes
+    }
+  }
+
+  func logFirstByteIfNeeded(
+    path: String,
+    streamStarted: Date,
+    logger: Logger,
+    did: String
+  ) {
+    lock.withLock {
+      guard !firstByteLogged else { return }
+      firstByteLogged = true
+      let ttfbMs = Int(Date().timeIntervalSince(streamStarted) * 1000)
+      logger.info(
+        "AppView bootstrap stream first byte",
+        metadata: [
+          "path": .string(path),
+          "ttfbMs": .stringConvertible(ttfbMs),
+          "did": .string(did),
+        ]
+      )
+    }
+  }
+
+  func logComplete(
+    path: String,
+    streamStarted: Date,
+    logger: Logger,
+    did: String
+  ) {
+    let (totalMs, bytes) = lock.withLock {
+      (
+        Int(Date().timeIntervalSince(streamStarted) * 1000),
+        totalBytes
+      )
+    }
+    logger.info(
+      "AppView bootstrap stream complete",
+      metadata: [
+        "path": .string(path),
+        "totalMs": .stringConvertible(totalMs),
+        "totalBytes": .stringConvertible(bytes),
+        "did": .string(did),
+      ]
+    )
   }
 }

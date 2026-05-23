@@ -49,4 +49,46 @@ struct BootstrapStreamSelectionTests {
 
     #expect(selected == "pub-sub")
   }
+
+  @Test func priorityAuthorDidsDedupesEligibleAuthors() {
+    func row(publicationId: String, authorDid: String) -> SidebarPublicationRow {
+      SidebarPublicationRow(
+        publicationId: publicationId,
+        subscriptionPublicationId: nil,
+        authorDid: authorDid,
+        authorHandle: nil,
+        title: publicationId,
+        iconUrl: nil,
+        avatarUrl: nil,
+        discoveredAt: Date(),
+        appViewScope: PublicationAppViewScope(
+          authorDid: authorDid,
+          publicationAtUri: nil,
+          publicationScopeAtUris: [],
+          publicationSiteUrls: []
+        ),
+        unreadCount: nil
+      )
+    }
+
+    let response = PublicationSidebarResponse(
+      viewerDid: "did:plc:viewer",
+      folders: [],
+      publicationPrefs: [],
+      folderSections: [],
+      allPublicationRows: [],
+      myPublications: [row(publicationId: "pub-a", authorDid: "did:plc:a")],
+      subscribedUnfoldered: [
+        row(publicationId: "pub-b", authorDid: "did:plc:b"),
+        row(publicationId: "pub-c", authorDid: "did:plc:a"),
+      ],
+      followingTabPublications: [],
+      enrollAuthorDids: [],
+      totalUnreadCount: 0,
+      refreshedAt: Date()
+    )
+
+    let dids = BootstrapStreamSelection.priorityAuthorDids(from: response)
+    #expect(dids == ["did:plc:a", "did:plc:b"])
+  }
 }

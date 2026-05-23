@@ -6,6 +6,7 @@ import ThinAppViewCore
 struct ThinAppViewRoutes {
   let readService: ThinAppViewReadService
   let enrollService: ThinAppViewEnrollService
+  let projectionService: PublicationProjectionService
 
   func register(on group: RouterGroup<GatewayRequestContext>) {
     group.get("/v1/appview/entries") { request, context async throws -> AppViewEntryListResponse in
@@ -75,6 +76,7 @@ struct ThinAppViewRoutes {
         authorDids: body.authorDids,
         feedUrls: body.feedUrls
       )
+      await projectionService.invalidateViewerCaches(viewerDid: auth.did)
       return AppViewEnrollResponse(indexed: indexed)
     }
 

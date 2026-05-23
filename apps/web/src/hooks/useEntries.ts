@@ -166,7 +166,8 @@ export function useEntries(
     getNextPageParam: entriesNextPageParam,
     enabled: !!normalizedKey && !!session && !!appViewScope,
     staleTime: ENTRIES_QUERY_STALE_MS,
-    refetchOnMount: true,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
     gcTime: 1000 * 60 * 60 * 24,
   });
 

@@ -143,6 +143,37 @@ public init(pool: PostgresClient, logger: Logger) {
     )
     var dbCursor = cursor.flatMap { ThinAppViewCursor.decode($0) }
 
+    let siteKeys = AppViewProjectionCacheScopeKeys.publicationSiteKeys(
+      publicationAtUri: publicationAtUri,
+      publicationScopeAtUris: publicationScopeAtUris,
+      publicationSiteUrls: publicationSiteUrls
+    )
+    if scoped, !siteKeys.isEmpty {
+      let fetched = try await fetchSiteScopedContentBatch(
+        viewerDid: viewerDid,
+        authorDid: authorDid,
+        siteKeys: siteKeys,
+        filter: filter,
+        cursor: dbCursor,
+        limit: pageLimit + 1,
+        now: now
+      )
+      return ThinAppViewQuerySupport.buildFilteredEntryListPage(
+        pageLimit: pageLimit,
+        matches: fetched.map {
+          EntryListScanRow(
+            uri: $0.uri,
+            renderJSON: $0.renderJSON,
+            createdAt: $0.createdAt,
+            publicationSite: $0.publicationSite
+          )
+        },
+        lastScannedCreatedAt: fetched.last?.createdAt,
+        lastScannedUri: fetched.last?.uri,
+        dbHasMore: fetched.count > pageLimit
+      )
+    }
+
     if !scoped {
       let fetched = try await fetchContentBatch(
         viewerDid: viewerDid,
@@ -225,6 +256,118 @@ public init(pool: PostgresClient, logger: Logger) {
       lastScannedUri: lastScannedUri,
       dbHasMore: dbHasMore
     )
+  }
+
+  private func fetchSiteScopedContentBatch(
+    viewerDid: String,
+    authorDid: String,
+    siteKeys: [String],
+    filter: EntryListFilter,
+    cursor: (createdAt: Date, uri: String)?,
+    limit: Int,
+    now: Date
+  ) async throws -> [(uri: String, renderJSON: String, createdAt: Date, publicationSite: String?)] {
+    let rows: PostgresRowSequence
+    switch (filter, cursor) {
+    case (.all, nil):
+      rows = try await pool.query(
+        """
+        SELECT ci.uri, ci.render_json::text, ci.created_at, ci.publication_site
+        FROM content_items ci
+        LEFT JOIN read_marks rm ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = ci.uri
+        WHERE ci.author_did = \(authorDid)
+          AND ci.expires_at > \(now)
+          AND ci.publication_site = ANY(\(siteKeys))
+        ORDER BY ci.created_at DESC, ci.uri DESC
+        LIMIT \(limit)
+        """,
+        logger: logger
+      )
+    case (.unread, nil):
+      rows = try await pool.query(
+        """
+        SELECT ci.uri, ci.render_json::text, ci.created_at, ci.publication_site
+        FROM content_items ci
+        LEFT JOIN read_marks rm ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = ci.uri
+        WHERE ci.author_did = \(authorDid)
+          AND ci.expires_at > \(now)
+          AND rm.subject_uri IS NULL
+          AND ci.publication_site = ANY(\(siteKeys))
+        ORDER BY ci.created_at DESC, ci.uri DESC
+        LIMIT \(limit)
+        """,
+        logger: logger
+      )
+    case (.read, nil):
+      rows = try await pool.query(
+        """
+        SELECT ci.uri, ci.render_json::text, ci.created_at, ci.publication_site
+        FROM content_items ci
+        INNER JOIN read_marks rm ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = ci.uri
+        WHERE ci.author_did = \(authorDid)
+          AND ci.expires_at > \(now)
+          AND ci.publication_site = ANY(\(siteKeys))
+        ORDER BY ci.created_at DESC, ci.uri DESC
+        LIMIT \(limit)
+        """,
+        logger: logger
+      )
+    case (.all, let decoded?):
+      rows = try await pool.query(
+        """
+        SELECT ci.uri, ci.render_json::text, ci.created_at, ci.publication_site
+        FROM content_items ci
+        LEFT JOIN read_marks rm ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = ci.uri
+        WHERE ci.author_did = \(authorDid)
+          AND ci.expires_at > \(now)
+          AND ci.publication_site = ANY(\(siteKeys))
+          AND (ci.created_at < \(decoded.createdAt) OR (ci.created_at = \(decoded.createdAt) AND ci.uri < \(decoded.uri)))
+        ORDER BY ci.created_at DESC, ci.uri DESC
+        LIMIT \(limit)
+        """,
+        logger: logger
+      )
+    case (.unread, let decoded?):
+      rows = try await pool.query(
+        """
+        SELECT ci.uri, ci.render_json::text, ci.created_at, ci.publication_site
+        FROM content_items ci
+        LEFT JOIN read_marks rm ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = ci.uri
+        WHERE ci.author_did = \(authorDid)
+          AND ci.expires_at > \(now)
+          AND rm.subject_uri IS NULL
+          AND ci.publication_site = ANY(\(siteKeys))
+          AND (ci.created_at < \(decoded.createdAt) OR (ci.created_at = \(decoded.createdAt) AND ci.uri < \(decoded.uri)))
+        ORDER BY ci.created_at DESC, ci.uri DESC
+        LIMIT \(limit)
+        """,
+        logger: logger
+      )
+    case (.read, let decoded?):
+      rows = try await pool.query(
+        """
+        SELECT ci.uri, ci.render_json::text, ci.created_at, ci.publication_site
+        FROM content_items ci
+        INNER JOIN read_marks rm ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = ci.uri
+        WHERE ci.author_did = \(authorDid)
+          AND ci.expires_at > \(now)
+          AND ci.publication_site = ANY(\(siteKeys))
+          AND (ci.created_at < \(decoded.createdAt) OR (ci.created_at = \(decoded.createdAt) AND ci.uri < \(decoded.uri)))
+        ORDER BY ci.created_at DESC, ci.uri DESC
+        LIMIT \(limit)
+        """,
+        logger: logger
+      )
+    }
+
+    var fetched: [(uri: String, renderJSON: String, createdAt: Date, publicationSite: String?)] = []
+    for try await row in rows {
+      let (uri, renderJSON, createdAt, publicationSite) = try row.decode(
+        (String, String, Date, String?).self
+      )
+      fetched.append((uri, renderJSON, createdAt, publicationSite))
+    }
+    return fetched
   }
 
   private func fetchContentBatch(
@@ -345,6 +488,30 @@ public init(pool: PostgresClient, logger: Logger) {
         FROM content_items ci
         LEFT JOIN read_marks rm ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = ci.uri
         WHERE ci.author_did = \(authorDid) AND ci.expires_at > \(now) AND rm.subject_uri IS NULL
+        """,
+        logger: logger
+      )
+      for try await row in rows {
+        return try row.decode(Int.self)
+      }
+      return 0
+    }
+
+    let siteKeys = AppViewProjectionCacheScopeKeys.publicationSiteKeys(
+      publicationAtUri: publicationAtUri,
+      publicationScopeAtUris: publicationScopeAtUris,
+      publicationSiteUrls: publicationSiteUrls
+    )
+    if !siteKeys.isEmpty {
+      let rows = try await pool.query(
+        """
+        SELECT COUNT(*)::int
+        FROM content_items ci
+        LEFT JOIN read_marks rm ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = ci.uri
+        WHERE ci.author_did = \(authorDid)
+          AND ci.expires_at > \(now)
+          AND rm.subject_uri IS NULL
+          AND ci.publication_site = ANY(\(siteKeys))
         """,
         logger: logger
       )

@@ -357,7 +357,12 @@ final class SocialWireGatewayClient {
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.setValue("application/x-ndjson", forHTTPHeaderField: "Accept")
-        try await authorize(&request, session: session)
+        try await authorize(
+            &request,
+            session: session,
+            gatewayPath: "/v1/appview/bootstrap-stream",
+            gatewayMethod: "GET"
+        )
 
         let (bytes, response) = try await urlSession.bytes(for: request)
         guard let http = response as? HTTPURLResponse else {

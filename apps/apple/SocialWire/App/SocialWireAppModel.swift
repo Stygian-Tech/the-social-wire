@@ -15,6 +15,7 @@ final class SocialWireAppModel {
     private var readerCacheCoordinator: ReaderCacheCoordinator?
 
     private static let preferencesSyncCacheKey = "v1/sync/preferences"
+    private static let lastSelectedPublicationKey = "the-social-wire.last-selected-publication-id"
 
     var folders: [RepoRecord<FolderRecord>] = []
     var publicationPrefs: [String: RepoRecord<PublicationPrefsRecord>] = [:]
@@ -32,6 +33,12 @@ final class SocialWireAppModel {
     var isLoading = false
     var isLoadingEntries = false
     var isLoadingMoreEntries = false
+    /// Bootstrap NDJSON stream in flight (sidebar may still paint from cache).
+    var sidebarFetching = false
+    /// Folder publication rows not yet merged from stream phase two.
+    var folderPublicationsLoading = false
+    /// True once a cached or streamed sidebar snapshot has been applied this session.
+    var hasSidebarSnapshot = false
     var errorMessage: String?
     /// Next AppView page cursor for the active publication entry list (`nil` when exhausted).
     private var entriesNextCursor: String?
@@ -58,6 +65,16 @@ final class SocialWireAppModel {
     private var gatewayFollowingTab: [DiscoveredPublication] = []
     private var gatewayAllPublicationRows: [DiscoveredPublication] = []
     private var gatewayFolderMap: [String: [DiscoveredPublication]] = [:]
+    private var cachedPriorityProjection: PublicationSidebarResponseDTO?
+    private var cachedFolderSections: [PublicationFolderSectionDTO]?
+    private var cachedFolderRows: [SidebarPublicationRowDTO]?
+
+    private struct SidebarLayoutRollback {
+        let folders: [RepoRecord<FolderRecord>]
+        let folderMap: [String: [DiscoveredPublication]]
+        let subscribedUnfoldered: [DiscoveredPublication]
+        let publicationPrefs: [String: RepoRecord<PublicationPrefsRecord>]
+    }
 
     init() {
         authService = ATProtoOAuthService()
@@ -71,7 +88,12 @@ final class SocialWireAppModel {
 
     /// Call once SwiftData injects **`ModelContext`** (see **`RootView`**).
     func configureReaderPersistence(modelContext: ModelContext) {
+        guard readerCacheCoordinator == nil else { return }
         readerCacheCoordinator = ReaderCacheCoordinator(modelContext: modelContext)
+        if let viewerDid = viewerDID {
+            restoreCachedSidebarSnapshot(viewerDid: viewerDid)
+            restoreLastSelectedPublicationEntriesIfCached()
+        }
     }
 
     var isSignedIn: Bool {
@@ -191,20 +213,31 @@ final class SocialWireAppModel {
             await markReadIfNeeded(entryId: entryId)
         case .allLists, .list, .publication:
             guard useAppViewEntryTimelines else { return }
+            let entryIds = cachedEntryIds(for: scope).filter { readAtByEntryId[$0] == nil }
+            guard !entryIds.isEmpty else { return }
+
+            let readAt = Date()
+            let savedUnreadCounts = unreadCountsByPublicationId
+            let optimisticDeltas = optimisticUnreadDeltas(for: scope, entryIds: entryIds)
+            for (publicationId, delta) in optimisticDeltas {
+                applyUnreadCountDelta(publicationId: publicationId, delta: delta)
+            }
+            for entryId in entryIds {
+                readAtByEntryId[entryId] = readAt
+            }
+            unreadDeferredEntryId = nil
+
             do {
                 let scopes = gatewayMarkAllReadScopes(for: scope)
                 guard !scopes.isEmpty else { return }
-                let readAt = Date()
                 for gatewayScope in scopes {
                     _ = try await gateway.markAllRead(scope: gatewayScope)
                 }
-                let entryIds = cachedEntryIds(for: scope).filter { readAtByEntryId[$0] == nil }
-                for entryId in entryIds {
-                    readAtByEntryId[entryId] = readAt
-                }
-                unreadDeferredEntryId = nil
-                await refreshSidebarUnreadCounts()
             } catch {
+                unreadCountsByPublicationId = savedUnreadCounts
+                for entryId in entryIds {
+                    readAtByEntryId.removeValue(forKey: entryId)
+                }
                 markAppViewUnavailableIfNeeded(error)
                 errorMessage = error.localizedDescription
             }
@@ -339,6 +372,12 @@ final class SocialWireAppModel {
         viewerProfile = nil
         preferencesFromGateway = nil
         unreadDeferredEntryId = nil
+        sidebarFetching = false
+        folderPublicationsLoading = false
+        hasSidebarSnapshot = false
+        cachedPriorityProjection = nil
+        cachedFolderSections = nil
+        cachedFolderRows = nil
     }
 
     func sumUnread(for publications: [DiscoveredPublication]) -> Int {
@@ -389,11 +428,24 @@ final class SocialWireAppModel {
     func refreshAll() async {
         guard let viewerDID else { return }
         isLoading = true
-        defer { isLoading = false }
+        sidebarFetching = true
+        folderPublicationsLoading = !hasSidebarSnapshot
+        defer {
+            isLoading = false
+            sidebarFetching = false
+            folderPublicationsLoading = false
+        }
+
+        restoreCachedSidebarSnapshot(viewerDid: viewerDID)
+        restoreLastSelectedPublicationEntriesIfCached()
 
         do {
             try await refreshPublicationSidebarFromBootstrapStream(viewerDID: viewerDID)
             await refreshGatewayPreferencesSnapshot()
+            persistSidebarSnapshot(viewerDid: viewerDID)
+            Task(priority: .utility) {
+                await self.prefetchSidebarPublications()
+            }
         } catch {
             errorMessage = "Could not load publications from the server. \(error.localizedDescription)"
         }
@@ -402,6 +454,7 @@ final class SocialWireAppModel {
     private func refreshPublicationSidebarFromBootstrapStream(viewerDID: String) async throws {
         pendingStreamedEntriesPage = nil
         pendingStreamSelectedPublicationId = nil
+        let streamStarted = Date()
 
         async let readTask = pds.listEntryReadStates()
         async let savedTask = pds.listMergedLatrSaves()
@@ -409,7 +462,7 @@ final class SocialWireAppModel {
 
         try await gateway.consumeBootstrapStream { [weak self] event in
             Task { @MainActor in
-                self?.applyBootstrapStreamEvent(event)
+                self?.applyBootstrapStreamEvent(event, streamStarted: streamStarted)
             }
         }
 
@@ -417,23 +470,36 @@ final class SocialWireAppModel {
         savedLinks = try await savedTask
         viewerProfile = try? await profileTask
         await applyPendingStreamedBootstrapSelectionIfNeeded()
+        logBootstrapPhase("total", startedAt: streamStarted)
     }
 
-    private func applyBootstrapStreamEvent(_ event: BootstrapStreamEventDTO) {
+    private func logBootstrapPhase(_ phase: String, startedAt: Date) {
+        #if DEBUG
+        let ms = Int(Date().timeIntervalSince(startedAt) * 1000)
+        print("[bootstrap-perf] \(phase) +\(ms)ms")
+        #endif
+    }
+
+    private func applyBootstrapStreamEvent(_ event: BootstrapStreamEventDTO, streamStarted: Date = Date()) {
         switch event.kind {
         case .sidebarPriority:
             guard let projection = event.sidebarPriority else { return }
             applyGatewaySidebarProjection(projection)
+            hasSidebarSnapshot = true
+            folderPublicationsLoading = true
+            logBootstrapPhase("sidebarPriority", startedAt: streamStarted)
         case .unreadCounts:
             guard let counts = event.unreadCounts?.counts else { return }
             for (publicationId, count) in counts where count > 0 {
                 unreadCountsByPublicationId[publicationId] = count
             }
+            logBootstrapPhase("unreadCounts", startedAt: streamStarted)
         case .selectedPublication:
             pendingStreamSelectedPublicationId = event.selectedPublication?.publicationId
             Task { await applyPendingStreamedBootstrapSelectionIfNeeded() }
         case .entriesPage:
             pendingStreamedEntriesPage = event.entriesPage
+            logBootstrapPhase("entriesPage", startedAt: streamStarted)
             Task { await applyPendingStreamedBootstrapSelectionIfNeeded() }
         case .sidebarFolders:
             guard let payload = event.sidebarFolders else { return }
@@ -450,26 +516,12 @@ final class SocialWireAppModel {
                 refreshedAt: DateFormatters.string(from: Date()),
                 unreadCountsByPublicationId: nil
             ))
+            folderPublicationsLoading = false
+            logBootstrapPhase("sidebarFolders", startedAt: streamStarted)
         case .warning, .error:
             break
         case .done:
-            if let publication = selectedPublication {
-                Task { await refreshEntriesAfterBootstrap(for: publication) }
-            }
-        }
-    }
-
-    private func refreshEntriesAfterBootstrap(for publication: DiscoveredPublication) async {
-        guard selectedPublication?.publicationId == publication.publicationId else { return }
-        await refreshPublicationIndex(for: publication)
-        do {
-            let page = try await fetchEntriesPage(for: publication, cursor: nil)
-            entries = page.entries
-            entriesNextCursor = page.cursor
-            persistPublicationEntries(publication.publicationId, entries: entries)
-            await prefetchThumbnailImages(for: page.entries)
-        } catch {
-            markAppViewUnavailableIfNeeded(error)
+            logBootstrapPhase("done", startedAt: streamStarted)
         }
     }
 
@@ -530,12 +582,15 @@ final class SocialWireAppModel {
             for (folderRkey, publications) in grouped {
                 gatewayFolderMap[folderRkey] = publications
             }
+            cachedFolderSections = projection.folderSections
+            cachedFolderRows = projection.allPublicationRows
         }
 
         prefetchPublicationAvatarImages(folderRows)
     }
 
     private func applyGatewaySidebarProjection(_ projection: PublicationSidebarResponseDTO) {
+        cachedPriorityProjection = projection
         sidebarScopesByPublicationId = projection.scopesByPublicationId()
         unreadCountsByPublicationId = PublicationProjectionMapping.unreadCountsMap(from: projection)
 
@@ -551,6 +606,8 @@ final class SocialWireAppModel {
 
         if let grouped = PublicationProjectionMapping.folderMap(from: projection.folderSections) {
             gatewayFolderMap = grouped
+            cachedFolderSections = projection.folderSections
+            cachedFolderRows = projection.allPublicationRows
         } else {
             gatewayFolderMap = PublicationProjectionMapping.folderMap(
                 allRows: gatewayAllPublicationRows,
@@ -561,6 +618,80 @@ final class SocialWireAppModel {
         }
 
         prefetchPublicationAvatarImages(gatewayAllPublicationRows)
+    }
+
+    private func restoreCachedSidebarSnapshot(viewerDid: String) {
+        guard let coordinator = readerCacheCoordinator,
+              let body = coordinator.gatewayCachedBody(for: SidebarProjectionSnapshot.cacheKey(viewerDid: viewerDid)),
+              let snapshot = try? JSONDecoder().decode(SidebarProjectionSnapshot.self, from: body),
+              SidebarProjectionSnapshot.shouldPersist(snapshot.priority)
+        else { return }
+
+        applyGatewaySidebarProjection(snapshot.priority)
+        if let payload = SidebarProjectionSnapshotBuilder.folderPayload(
+            folderSections: snapshot.folderSections,
+            allPublicationRows: snapshot.folderAllPublicationRows ?? []
+        ) {
+            mergeFolderPublications(from: PublicationSidebarResponseDTO(
+                viewerDid: viewerDid,
+                folders: nil,
+                publicationPrefs: nil,
+                folderSections: payload.sections,
+                allPublicationRows: payload.rows,
+                myPublications: [],
+                subscribedUnfoldered: [],
+                followingTabPublications: [],
+                enrollAuthorDids: [],
+                refreshedAt: snapshot.priority.refreshedAt,
+                unreadCountsByPublicationId: nil
+            ))
+        }
+        hasSidebarSnapshot = true
+    }
+
+    private func persistSidebarSnapshot(viewerDid: String) {
+        guard let priority = cachedPriorityProjection,
+              SidebarProjectionSnapshot.shouldPersist(priority),
+              let coordinator = readerCacheCoordinator
+        else { return }
+
+        let snapshot = SidebarProjectionSnapshot(
+            priority: priority,
+            folderSections: cachedFolderSections,
+            folderAllPublicationRows: cachedFolderRows
+        )
+        guard let data = try? JSONEncoder().encode(snapshot) else { return }
+        try? coordinator.upsertGatewayResponse(
+            cacheKey: SidebarProjectionSnapshot.cacheKey(viewerDid: viewerDid),
+            etag: nil,
+            body: data
+        )
+    }
+
+    private func captureSidebarLayoutRollback() -> SidebarLayoutRollback {
+        SidebarLayoutRollback(
+            folders: folders,
+            folderMap: gatewayFolderMap,
+            subscribedUnfoldered: gatewaySubscribedUnfoldered,
+            publicationPrefs: publicationPrefs
+        )
+    }
+
+    private func restoreSidebarLayoutRollback(_ rollback: SidebarLayoutRollback) {
+        folders = rollback.folders
+        gatewayFolderMap = rollback.folderMap
+        gatewaySubscribedUnfoldered = rollback.subscribedUnfoldered
+        publicationPrefs = rollback.publicationPrefs
+    }
+
+    private func applyUnreadCountDelta(publicationId: String?, delta: Int) {
+        guard let publicationId, delta != 0 else { return }
+        let next = max(0, (unreadCountsByPublicationId[publicationId] ?? 0) + delta)
+        if next > 0 {
+            unreadCountsByPublicationId[publicationId] = next
+        } else {
+            unreadCountsByPublicationId.removeValue(forKey: publicationId)
+        }
     }
 
     private func gatewaySubscribedPublicationsList() -> [DiscoveredPublication] {
@@ -647,9 +778,19 @@ final class SocialWireAppModel {
         let publications = gatewayAllPublicationRows
         guard !publications.isEmpty else { return }
 
+        let selectedId = selectedPublication?.publicationId
+            ?? UserDefaults.standard.string(forKey: Self.lastSelectedPublicationKey)
+        var ordered = publications
+        if let selectedId,
+           let index = ordered.firstIndex(where: { $0.publicationId == selectedId })
+        {
+            let selected = ordered.remove(at: index)
+            ordered.insert(selected, at: 0)
+        }
+
         await withTaskGroup(of: Void.self) { group in
-            var iterator = publications.makeIterator()
-            for _ in 0 ..< min(2, publications.count) {
+            var iterator = ordered.makeIterator()
+            for _ in 0 ..< min(2, ordered.count) {
                 guard let publication = iterator.next() else { break }
                 group.addTask {
                     try? await self.cacheOnlyLoadEntries(publication: publication)
@@ -664,7 +805,7 @@ final class SocialWireAppModel {
         }
     }
 
-    private static let entryPrefetchMaxEntries = 120
+    private static let entryPrefetchMaxEntries = 50
 
     private func refreshPublicationIndex(for publication: DiscoveredPublication) async {
         guard useAppViewEntryTimelines else { return }
@@ -689,10 +830,13 @@ final class SocialWireAppModel {
 
     private func cacheOnlyLoadEntries(publication: DiscoveredPublication) async throws {
         guard let coordinator = readerCacheCoordinator else { return }
-        await refreshPublicationIndex(for: publication)
-        let page = try await fetchEntriesPage(for: publication, cursor: nil, maxEntries: Self.entryPrefetchMaxEntries)
+        let page = try await fetchEntriesPage(
+            for: publication,
+            cursor: nil,
+            maxEntries: Self.entryPrefetchMaxEntries
+        )
         try coordinator.upsertPublicationEntries(publicationId: publication.publicationId, entries: page.entries)
-        await prefetchThumbnailImages(for: page.entries)
+        await prefetchThumbnailImages(for: page.entries.prefix(12))
     }
 
     private func prefetchPublicationAvatarImages(_ publications: [DiscoveredPublication]) {
@@ -733,7 +877,7 @@ final class SocialWireAppModel {
         }
         return try await gateway.fetchAppViewEntries(
             scope: scope,
-            filter: readerFilter,
+            filter: .all,
             cursor: cursor,
             maxEntries: maxEntries
         )
@@ -771,13 +915,17 @@ final class SocialWireAppModel {
     }
 
     func selectPublication(_ publication: DiscoveredPublication) async {
+        UserDefaults.standard.set(
+            publication.publicationId,
+            forKey: Self.lastSelectedPublicationKey
+        )
         prepareForPublicationSelection()
         selectedPublication = publication
         selectedSidebar = .publication(publication.publicationId)
         await loadEntries(for: publication)
     }
 
-    func loadEntries(for publication: DiscoveredPublication) async {
+    func loadEntries(for publication: DiscoveredPublication, forceNetworkRefresh: Bool = false) async {
         entriesNextCursor = nil
 
         var hadCachedEntries = false
@@ -793,6 +941,13 @@ final class SocialWireAppModel {
         }
         defer { isLoadingEntries = false }
 
+        if hadCachedEntries && !forceNetworkRefresh {
+            Task(priority: .utility) {
+                await self.refreshPublicationEntriesInBackground(for: publication)
+            }
+            return
+        }
+
         do {
             await refreshPublicationIndex(for: publication)
             let page = try await fetchEntriesPage(for: publication, cursor: nil)
@@ -805,6 +960,34 @@ final class SocialWireAppModel {
             if entries.isEmpty {
                 errorMessage = error.localizedDescription
             }
+        }
+    }
+
+    private func refreshPublicationEntriesInBackground(for publication: DiscoveredPublication) async {
+        do {
+            let page = try await fetchEntriesPage(for: publication, cursor: nil)
+            entries = page.entries
+            entriesNextCursor = page.cursor
+            persistPublicationEntries(publication.publicationId, entries: entries)
+            await prefetchThumbnailImages(for: page.entries)
+        } catch {
+            markAppViewUnavailableIfNeeded(error)
+        }
+    }
+
+    private func restoreLastSelectedPublicationEntriesIfCached() {
+        guard selectedPublication == nil,
+              let publicationId = UserDefaults.standard.string(forKey: Self.lastSelectedPublicationKey),
+              !publicationId.isEmpty,
+              let coordinator = readerCacheCoordinator,
+              let snapshot = try? coordinator.publicationEntries(publicationId),
+              !snapshot.isEmpty
+        else { return }
+
+        entries = snapshot
+        if let publication = publicationMatchingId(publicationId) {
+            selectedPublication = publication
+            selectedSidebar = .publication(publicationId)
         }
     }
 
@@ -832,20 +1015,31 @@ final class SocialWireAppModel {
         let old = readerFilter
         readerFilter = newValue
 
-        if useAppViewEntryTimelines,
-           old != newValue,
-           let publication = selectedPublication {
-            await loadEntries(for: publication)
+        if old == .unread, newValue == .all {
+            if let id = unreadDeferredEntryId {
+                await markReadIfNeeded(entryId: id)
+            } else if let open = selectedEntry?.entryId {
+                await markReadIfNeeded(entryId: open)
+            }
+            unreadDeferredEntryId = nil
+            return
         }
 
-        guard old == .unread, newValue == .all else { return }
-
-        if let id = unreadDeferredEntryId {
-            await markReadIfNeeded(entryId: id)
-        } else if let open = selectedEntry?.entryId {
-            await markReadIfNeeded(entryId: open)
+        if newValue == .unread, let publication = selectedPublication {
+            await chaseUnreadPagesIfNeeded(for: publication)
         }
-        unreadDeferredEntryId = nil
+    }
+
+    func chaseUnreadPagesIfNeeded(for publication: DiscoveredPublication) async {
+        guard readerFilter == .unread else { return }
+        guard filteredEntries.isEmpty, canLoadMoreEntries else { return }
+        guard !isLoadingEntries, !isLoadingMoreEntries else { return }
+        guard selectedPublication?.publicationId == publication.publicationId else { return }
+
+        await loadMoreEntriesIfNeeded(for: publication)
+        if filteredEntries.isEmpty, canLoadMoreEntries {
+            await chaseUnreadPagesIfNeeded(for: publication)
+        }
     }
 
     func dismissReaderDetail() async {
@@ -919,15 +1113,16 @@ final class SocialWireAppModel {
     private func markReadIfNeeded(entryId: String) async {
         guard readAtByEntryId[entryId] == nil else { return }
         guard useAppViewEntryTimelines else { return }
+
+        let publicationId = selectedPublication?.publicationId
+        applyUnreadCountDelta(publicationId: publicationId, delta: -1)
+
         do {
             let readAt = Date()
             try await gateway.upsertReadMark(subjectUri: entryId, readAt: readAt)
             readAtByEntryId[entryId] = readAt
-            if let publicationId = selectedPublication?.publicationId,
-               let current = unreadCountsByPublicationId[publicationId], current > 0 {
-                unreadCountsByPublicationId[publicationId] = current - 1
-            }
         } catch {
+            applyUnreadCountDelta(publicationId: publicationId, delta: 1)
             markAppViewUnavailableIfNeeded(error)
             errorMessage = error.localizedDescription
         }
@@ -935,20 +1130,21 @@ final class SocialWireAppModel {
 
     func toggleRead(_ item: EntryListItem) async {
         guard useAppViewEntryTimelines else { return }
+        let publicationId = selectedPublication?.publicationId
+        let markingRead = readAtByEntryId[item.entryId] == nil
+        applyUnreadCountDelta(publicationId: publicationId, delta: markingRead ? -1 : 1)
+
         do {
-            if readAtByEntryId[item.entryId] == nil {
+            if markingRead {
                 let readAt = Date()
                 try await gateway.upsertReadMark(subjectUri: item.entryId, readAt: readAt)
                 readAtByEntryId[item.entryId] = readAt
-                if let publicationId = selectedPublication?.publicationId,
-                   let current = unreadCountsByPublicationId[publicationId], current > 0 {
-                    unreadCountsByPublicationId[publicationId] = current - 1
-                }
             } else {
                 try await gateway.deleteReadMark(subjectUri: item.entryId)
                 readAtByEntryId.removeValue(forKey: item.entryId)
             }
         } catch {
+            applyUnreadCountDelta(publicationId: publicationId, delta: markingRead ? 1 : -1)
             markAppViewUnavailableIfNeeded(error)
             errorMessage = error.localizedDescription
         }
@@ -964,37 +1160,88 @@ final class SocialWireAppModel {
     }
 
     func createFolder(name: String) async {
+        guard let viewerDID else { return }
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        let optimisticRkey = OptimisticSidebarMutation.createOptimisticFolderRkey()
+        let rollback = captureSidebarLayoutRollback()
+        OptimisticSidebarMutation.addOptimisticFolder(
+            folders: &folders,
+            folderMap: &gatewayFolderMap,
+            viewerDid: viewerDID,
+            rkey: optimisticRkey,
+            name: trimmed
+        )
+
         do {
-            _ = try await gateway.createFolder(GatewayFolderWriteBody(name: name))
-            await refreshAll()
+            let created = try await gateway.createFolder(GatewayFolderWriteBody(name: trimmed))
+            OptimisticSidebarMutation.replaceOptimisticFolder(
+                folders: &folders,
+                folderMap: &gatewayFolderMap,
+                publicationPrefs: &publicationPrefs,
+                optimisticRkey: optimisticRkey,
+                created: created,
+                name: trimmed
+            )
+            persistSidebarSnapshot(viewerDid: viewerDID)
         } catch {
+            restoreSidebarLayoutRollback(rollback)
             errorMessage = error.localizedDescription
         }
     }
 
     func deleteFolder(_ folder: RepoRecord<FolderRecord>) async {
+        let folderRkey = rkey(from: folder.uri)
+        let rollback = captureSidebarLayoutRollback()
+        OptimisticSidebarMutation.removeFolder(
+            folders: &folders,
+            folderMap: &gatewayFolderMap,
+            subscribedUnfoldered: &gatewaySubscribedUnfoldered,
+            publicationPrefs: &publicationPrefs,
+            folderRkey: folderRkey
+        )
+
         do {
-            try await gateway.deleteFolder(rkey: rkey(from: folder.uri))
-            await refreshAll()
+            try await gateway.deleteFolder(rkey: folderRkey)
+            if let viewerDID {
+                persistSidebarSnapshot(viewerDid: viewerDID)
+            }
         } catch {
+            restoreSidebarLayoutRollback(rollback)
             errorMessage = error.localizedDescription
         }
     }
 
     func assign(_ publication: DiscoveredPublication, to folder: RepoRecord<FolderRecord>?) async {
+        let rollback = captureSidebarLayoutRollback()
+        let toFolderRkey = folder.map { rkey(from: $0.uri) }
+        OptimisticSidebarMutation.movePublication(
+            publication: publication,
+            toFolderRkey: toFolderRkey,
+            subscribedUnfoldered: &gatewaySubscribedUnfoldered,
+            folderMap: &gatewayFolderMap,
+            publicationPrefs: &publicationPrefs,
+            myPublicationIds: Set(gatewayMyPublications.map(\.publicationId)),
+            followingPublicationIds: Set(gatewayFollowingTab.map(\.publicationId))
+        )
+
         do {
             let existing = publicationPrefs[publication.publicationId]
             _ = try await gateway.upsertPublicationPrefs(
                 GatewayPublicationPrefsWriteBody(
                     publicationId: publication.publicationId,
-                    folderId: folder.map { rkey(from: $0.uri) },
+                    folderId: toFolderRkey,
                     sortOrder: existing?.value.sortOrder,
                     hidden: existing?.value.hidden,
                     existingRkey: existing.map { rkey(from: $0.uri) }
                 )
             )
-            await refreshAll()
+            if let viewerDID {
+                persistSidebarSnapshot(viewerDid: viewerDID)
+            }
         } catch {
+            restoreSidebarLayoutRollback(rollback)
             errorMessage = error.localizedDescription
         }
     }
@@ -1100,6 +1347,36 @@ final class SocialWireAppModel {
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    private func optimisticUnreadDeltas(
+        for scope: ReaderMarkReadScope,
+        entryIds: [String]
+    ) -> [String: Int] {
+        let entryIdSet = Set(entryIds)
+        let publications: [DiscoveredPublication] = switch scope {
+        case .allLists:
+            publicationsForAllListsBulkRead()
+        case .list(let source):
+            publicationsForBulkRead(list: source)
+        case .publication(let publicationId):
+            gatewayAllPublicationRows.filter { $0.publicationId == publicationId }
+        case .entry, .unavailable:
+            []
+        }
+
+        var deltas: [String: Int] = [:]
+        guard let coordinator = readerCacheCoordinator else { return deltas }
+        for publication in publications {
+            guard let cached = try? coordinator.publicationEntries(publication.publicationId) else { continue }
+            let unread = cached.filter {
+                entryIdSet.contains($0.entryId) && readAtByEntryId[$0.entryId] == nil
+            }.count
+            if unread > 0 {
+                deltas[publication.publicationId] = -unread
+            }
+        }
+        return deltas
     }
 
     private func gatewayMarkAllReadScopes(for scope: ReaderMarkReadScope) -> [GatewayMarkAllReadScopeDTO] {

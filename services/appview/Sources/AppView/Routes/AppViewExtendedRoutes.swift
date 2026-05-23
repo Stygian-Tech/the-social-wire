@@ -79,6 +79,7 @@ struct AppViewExtendedRoutes {
           marked += 1
         }
       }
+      await projectionService.invalidateViewerCaches(viewerDid: auth.did)
       return MarkAllReadResponse(marked: marked)
     }
   }

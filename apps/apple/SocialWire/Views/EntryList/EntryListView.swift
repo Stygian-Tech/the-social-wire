@@ -28,7 +28,7 @@ struct EntryListView: View {
                                 }
                             }
                             .onAppear {
-                                guard entry.entryId == appModel.entries.last?.entryId,
+                                guard entry.entryId == appModel.filteredEntries.last?.entryId,
                                       let publication = appModel.selectedPublication
                                 else { return }
                                 Task { await appModel.loadMoreEntriesIfNeeded(for: publication) }
@@ -50,10 +50,27 @@ struct EntryListView: View {
             }
         }
         .readerListCanvas()
+        .task(id: unreadChaseTaskKey) {
+            guard appModel.readerFilter == .unread,
+                  appModel.filteredEntries.isEmpty,
+                  let publication = appModel.selectedPublication
+            else { return }
+            await appModel.chaseUnreadPagesIfNeeded(for: publication)
+        }
         .refreshable {
             if let publication = appModel.selectedPublication {
                 await appModel.loadEntries(for: publication)
             }
         }
+    }
+
+    private var unreadChaseTaskKey: String {
+        [
+            appModel.readerFilter.rawValue,
+            appModel.selectedPublication?.publicationId ?? "",
+            String(appModel.entries.count),
+            String(appModel.canLoadMoreEntries),
+            String(appModel.filteredEntries.count),
+        ].joined(separator: "|")
     }
 }

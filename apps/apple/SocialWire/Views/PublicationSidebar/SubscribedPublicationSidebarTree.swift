@@ -7,13 +7,14 @@ struct SubscribedPublicationSidebarTree: View {
     @Binding var showingAddPublication: Bool
     @State private var foldersExpanded = true
     @State private var publicationsExpanded = true
+    @State private var expandedFolderRkeys: Set<String> = []
 
     var body: some View {
         Section(isExpanded: $foldersExpanded) {
-            if appModel.isLoading {
-                ProgressView()
-                    .frame(maxWidth: .infinity)
-                    .readerClearListRow()
+            if appModel.folders.isEmpty, appModel.sidebarFetching, !appModel.hasSidebarSnapshot {
+                ForEach(0 ..< 3, id: \.self) { _ in
+                    SidebarSkeletonRow()
+                }
             } else {
                 ForEach(appModel.folders) { folder in
                     folderSection(folder)
@@ -30,7 +31,14 @@ struct SubscribedPublicationSidebarTree: View {
         }
 
         Section(isExpanded: $publicationsExpanded) {
-            if !appModel.isLoading {
+            if appModel.subscribedUnfolderedPublications.isEmpty,
+               appModel.sidebarFetching,
+               !appModel.hasSidebarSnapshot
+            {
+                ForEach(0 ..< 4, id: \.self) { _ in
+                    SidebarSkeletonRow()
+                }
+            } else {
                 ForEach(appModel.subscribedUnfolderedPublications) { publication in
                     publicationRow(publication)
                 }
@@ -51,29 +59,50 @@ struct SubscribedPublicationSidebarTree: View {
 
     @ViewBuilder
     private func folderSection(_ folder: RepoRecord<FolderRecord>) -> some View {
+        let folderRkey = rkey(from: folder.uri)
         let pubs = appModel.publications(in: folder)
-        DisclosureGroup {
-            ForEach(pubs) { publication in
-                publicationRow(publication)
-            }
-            if pubs.isEmpty {
-                Text("No publications in this folder.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .readerClearListRow()
+        let isExpanded = expandedFolderRkeys.contains(folderRkey)
+
+        Button {
+            if isExpanded {
+                expandedFolderRkeys.remove(folderRkey)
+            } else {
+                expandedFolderRkeys.insert(folderRkey)
             }
         } label: {
-            HStack {
+            HStack(spacing: 8) {
+                Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 12)
                 Text(folder.value.name)
                     .lineLimit(1)
                 Spacer(minLength: 6)
                 SidebarCountLabel(count: appModel.sumUnread(for: pubs))
             }
-            .readerClearListRow()
         }
+        .readerClearListRow()
         .swipeActions {
             Button("Delete", role: .destructive) {
                 Task { await appModel.deleteFolder(folder) }
+            }
+        }
+
+        if isExpanded {
+            if pubs.isEmpty, appModel.folderPublicationsLoading {
+                ForEach(0 ..< 2, id: \.self) { _ in
+                    SidebarSkeletonRow()
+                }
+            } else {
+                ForEach(pubs) { publication in
+                    publicationRow(publication)
+                }
+                if pubs.isEmpty {
+                    Text("No publications in this folder.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .readerClearListRow()
+                }
             }
         }
     }

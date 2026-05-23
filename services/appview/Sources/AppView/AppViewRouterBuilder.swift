@@ -10,6 +10,7 @@ enum AppViewRouterBuilder {
     config: AppViewServiceConfig,
     httpClient: HTTPClient,
     thinAppViewStore: any ThinAppViewStore,
+    projectionCache: (any AppViewProjectionCacheStore)?,
     logger: Logger
   ) -> Router<GatewayRequestContext> {
     let router = Router(context: GatewayRequestContext.self)
@@ -36,7 +37,8 @@ enum AppViewRouterBuilder {
       httpClient: httpClient,
       plcURL: config.core.atprotoPLCURL,
       logger: logger,
-      thinStore: thinAppViewStore
+      thinStore: thinAppViewStore,
+      projectionCache: projectionCache
     )
     let resolve = PublicationResolveService(
       httpClient: httpClient,
@@ -69,7 +71,11 @@ enum AppViewRouterBuilder {
       rssIngestion: rssIngestion,
       logger: logger
     )
-    let readService = ThinAppViewReadService(store: thinAppViewStore, logger: logger)
+    let readService = ThinAppViewReadService(
+      store: thinAppViewStore,
+      projectionCache: projectionCache,
+      logger: logger
+    )
     let enrollService = ThinAppViewEnrollService(
       store: thinAppViewStore,
       indexer: indexer,
@@ -79,7 +85,11 @@ enum AppViewRouterBuilder {
       logger: logger,
       skyreaderIngestion: skyreaderIngestionService
     )
-    ThinAppViewRoutes(readService: readService, enrollService: enrollService).register(on: protected)
+    ThinAppViewRoutes(
+      readService: readService,
+      enrollService: enrollService,
+      projectionService: projection
+    ).register(on: protected)
 
     AppViewExtendedRoutes(
       readService: readService,
@@ -92,6 +102,7 @@ enum AppViewRouterBuilder {
       readService: readService,
       enrollService: enrollService,
       skyreaderIngestionService: skyreaderIngestionService,
+      projectionCache: projectionCache,
       logger: logger
     )
     BootstrapStreamRoutes(bootstrapStreamService: bootstrapStream).register(on: protected)

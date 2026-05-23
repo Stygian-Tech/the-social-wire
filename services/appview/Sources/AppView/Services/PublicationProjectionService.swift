@@ -11,6 +11,7 @@ actor PublicationProjectionService {
   private let logger: Logger
   private let repo: ATProtoAuthenticatedRepoClient
   private let thinStore: any ThinAppViewStore
+  private let projectionCache: (any AppViewProjectionCacheStore)?
   private var appViewScopeCache: [String: (scope: PublicationAppViewScope, expiresAt: Date)] = [:]
   private var discoveryCacheByViewer: [String: (context: SidebarDiscoveryContext, expiresAt: Date)] = [:]
   private var sidebarRowCacheByViewer: [String: [String: SidebarPublicationRow]] = [:]
@@ -22,13 +23,22 @@ actor PublicationProjectionService {
     httpClient: HTTPClient,
     plcURL: String,
     logger: Logger,
-    thinStore: any ThinAppViewStore
+    thinStore: any ThinAppViewStore,
+    projectionCache: (any AppViewProjectionCacheStore)? = nil
   ) {
     self.httpClient = httpClient
     self.plcURL = plcURL
     self.logger = logger
     self.thinStore = thinStore
+    self.projectionCache = projectionCache
     self.repo = ATProtoAuthenticatedRepoClient(httpClient: httpClient, plcURL: plcURL, logger: logger)
+  }
+
+  func invalidateViewerCaches(viewerDid: String) async {
+    guard let projectionCache else { return }
+    try? await projectionCache.invalidateSidebarProjection(viewerDid: viewerDid)
+    try? await projectionCache.invalidateUnreadCounts(viewerDid: viewerDid, publicationId: nil)
+    try? await projectionCache.invalidateFirstPage(viewerDid: viewerDid, publicationId: nil)
   }
 
   func sidebar(
@@ -478,23 +488,36 @@ actor PublicationProjectionService {
       }
     }
 
+    var unreadByPublicationId: [String: Int] = [:]
+    if includeUnreadCounts {
+      await withTaskGroup(of: (String, Int?).self) { group in
+        for row in rows {
+          guard let scope = scopeCache[row.publicationId] else { continue }
+          group.addTask {
+            let count = try? await self.thinStore.countUnreadEntries(
+              viewerDid: viewerDid,
+              authorDid: scope.authorDid,
+              publicationAtUri: scope.publicationAtUri,
+              publicationScopeAtUris: scope.publicationScopeAtUris,
+              publicationSiteUrls: scope.publicationSiteUrls
+            )
+            return (row.publicationId, count)
+          }
+        }
+        for await (publicationId, count) in group {
+          if let count, count > 0 {
+            unreadByPublicationId[publicationId] = count
+          }
+        }
+      }
+    }
+
     var out: [String: SidebarPublicationRow] = [:]
     for row in rows {
       guard let scope = scopeCache[row.publicationId] else {
         throw HTTPError(.internalServerError)
       }
-      let unreadCount: Int?
-      if includeUnreadCounts {
-        unreadCount = try? await thinStore.countUnreadEntries(
-          viewerDid: viewerDid,
-          authorDid: scope.authorDid,
-          publicationAtUri: scope.publicationAtUri,
-          publicationScopeAtUris: scope.publicationScopeAtUris,
-          publicationSiteUrls: scope.publicationSiteUrls
-        )
-      } else {
-        unreadCount = nil
-      }
+      let unreadCount: Int? = includeUnreadCounts ? unreadByPublicationId[row.publicationId] : nil
       out[row.publicationId] = SidebarPublicationRow(
         publicationId: row.publicationId,
         subscriptionPublicationId: row.subscriptionPublicationId,

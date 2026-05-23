@@ -7,6 +7,10 @@ import { useFolders } from "@/hooks/useFolders";
 import type { DiscoveredPublication } from "@/lib/atprotoClient";
 import { consumeBootstrapStream } from "@/lib/bootstrapStreamClient";
 import {
+  markBootstrapPerf,
+  resetBootstrapPerf,
+} from "@/lib/bootstrapStreamPerf";
+import {
   applyBootstrapStreamEvent,
   writeStreamedEntriesPage,
 } from "@/lib/bootstrapStreamState";
@@ -138,7 +142,7 @@ function sidebarListShowsSkeleton(args: {
 }
 
 export function usePublicationSidebarData() {
-  const { session, getOAuthSession } = useAuth();
+  const { session, getOAuthSession, oauthSessionReloadSeq } = useAuth();
   const qc = useQueryClient();
   const isRestoring = useIsRestoring();
   const did = session?.did ?? "";
@@ -186,6 +190,11 @@ export function usePublicationSidebarData() {
       const oauth = getOAuthSession();
       if (!oauth || !did) return;
 
+      resetBootstrapPerf();
+      if (cachedProjection) {
+        markBootstrapPerf("cachedSidebarPaint");
+      }
+
       const generation = ++streamGenerationRef.current;
       pendingAutoSelectPublicationIdRef.current = null;
       const hadSidebarSnapshot = Boolean(
@@ -205,6 +214,22 @@ export function usePublicationSidebarData() {
           handlers: {
             onEvent: (event) => {
               if (generation !== streamGenerationRef.current) return;
+
+              if (event.kind === "sidebarPriority") {
+                markBootstrapPerf("sidebarPriority");
+              }
+              if (event.kind === "unreadCounts") {
+                markBootstrapPerf("unreadCounts");
+              }
+              if (event.kind === "entriesPage") {
+                markBootstrapPerf("entriesPage");
+              }
+              if (event.kind === "sidebarFolders") {
+                markBootstrapPerf("sidebarFolders");
+              }
+              if (event.kind === "done") {
+                markBootstrapPerf("done");
+              }
 
               if (event.kind === "sidebarPriority" && !hadSidebarSnapshot) {
                 setFolderPublicationsLoading(true);
@@ -286,6 +311,8 @@ export function usePublicationSidebarData() {
 
   useEffect(() => {
     if (!session) return;
+    const oauth = getOAuthSession();
+    if (!oauth) return;
     const controller = new AbortController();
     queueMicrotask(() => {
       void runBootstrapStream(controller);
@@ -294,7 +321,7 @@ export function usePublicationSidebarData() {
       controller.abort();
       streamGenerationRef.current += 1;
     };
-  }, [session, runBootstrapStream]);
+  }, [session, oauthSessionReloadSeq, runBootstrapStream, getOAuthSession]);
 
   useEffect(() => {
     if (!mergedProjection) return;

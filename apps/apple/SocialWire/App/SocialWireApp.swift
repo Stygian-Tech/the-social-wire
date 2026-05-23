@@ -19,9 +19,6 @@ struct SocialWireApp: App {
                 .environment(appModel)
                 .modelContainer(Self.readerModelContainer)
                 .tint(.indigo)
-                .task {
-                    await appModel.restoreSession()
-                }
                 .onOpenURL { url in
                     Task { await appModel.handleOAuthCallback(url) }
                 }

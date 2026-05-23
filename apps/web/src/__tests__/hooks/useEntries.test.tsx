@@ -103,6 +103,53 @@ describe("useEntries", () => {
     expect(mockFetchHandler).toHaveBeenCalled();
   });
 
+  it("does not refetch on remount when cached data is fresh", async () => {
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    qc.setQueryData(PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY("did:plc:testuser"), {
+      viewerDid: "did:plc:testuser",
+      folders: [],
+      publicationPrefs: [],
+      allPublicationRows: [
+        {
+          publicationId: "did:plc:alice",
+          authorDid: "did:plc:alice",
+          authorHandle: "alice",
+          title: "Alice",
+          discoveredAt: "2026-01-01T00:00:00.000Z",
+          appViewScope: {
+            authorDid: "did:plc:alice",
+            publicationAtUri: null,
+            publicationScopeAtUris: [],
+            publicationSiteUrls: [],
+          },
+        },
+      ],
+      myPublications: [],
+      subscribedUnfoldered: [],
+      followingTabPublications: [],
+      enrollAuthorDids: [],
+      refreshedAt: "2026-01-01T00:00:00.000Z",
+    });
+    qc.setQueryData(["entries", "did:plc:alice", "all"], {
+      pages: [{ entries: MOCK_ENTRIES, cursor: undefined }],
+      pageParams: [undefined],
+    });
+
+    function Wrapper({ children }: { children: React.ReactNode }) {
+      return <QueryClientProvider client={qc}>{children}</QueryClientProvider>;
+    }
+
+    const { unmount } = renderHook(() => useEntries("did:plc:alice"), {
+      wrapper: Wrapper,
+    });
+    unmount();
+    renderHook(() => useEntries("did:plc:alice"), { wrapper: Wrapper });
+
+    expect(mockFetchHandler).not.toHaveBeenCalled();
+  });
+
   it("returns empty pages when publicationKey is null", async () => {
     const { result } = renderHook(() => useEntries(null), {
       wrapper: makeWrapper(),
