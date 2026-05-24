@@ -47,7 +47,7 @@ describe("publicationProjectionClient", () => {
     expect(scope?.publicationSiteUrls).toContain("https://example.com");
   });
 
-  test("unreadCountsMapFromProjection prefers row unreadCount", () => {
+  test("unreadCountsMapFromProjection prefers unreadCountsByPublicationId over row embed", () => {
     const projection: PublicationSidebarProjection = {
       viewerDid: "did:plc:viewer",
       folders: [],
@@ -77,7 +77,49 @@ describe("publicationProjectionClient", () => {
     };
 
     const map = unreadCountsMapFromProjection(projection);
-    expect(map.get("did:plc:alice")).toBe(4);
+    expect(map.get("did:plc:alice")).toBe(1);
+  });
+
+  test("unreadCountsMapFromProjection includes folder section publications", () => {
+    const projection: PublicationSidebarProjection = {
+      viewerDid: "did:plc:viewer",
+      folders: [],
+      publicationPrefs: [],
+      allPublicationRows: [],
+      myPublications: [],
+      subscribedUnfoldered: [],
+      followingTabPublications: [],
+      folderSections: [
+        {
+          folderRkey: "folder1",
+          folderUri: "at://did:plc:viewer/com.thesocialwire.folder/folder1",
+          publications: [
+            {
+              publicationId: "at://did:plc:author/site.standard.publication/pub1",
+              authorDid: "did:plc:author",
+              authorHandle: "author",
+              title: "Folder Pub",
+              discoveredAt: "2026-01-01T00:00:00.000Z",
+              unreadCount: 2,
+              appViewScope: {
+                authorDid: "did:plc:author",
+                publicationAtUri:
+                  "at://did:plc:author/site.standard.publication/pub1",
+                publicationScopeAtUris: [],
+                publicationSiteUrls: [],
+              },
+            },
+          ],
+        },
+      ],
+      enrollAuthorDids: [],
+      refreshedAt: "2026-01-01T00:00:00.000Z",
+    };
+
+    const map = unreadCountsMapFromProjection(projection);
+    expect(
+      map.get("at://did:plc:author/site.standard.publication/pub1")
+    ).toBe(2);
   });
 
   test("appViewScopeFromProjection finds scope in folder sections", () => {

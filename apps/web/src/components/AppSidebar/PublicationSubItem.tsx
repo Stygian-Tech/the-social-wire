@@ -100,7 +100,11 @@ export function PublicationSubItem({
     bulkDisabled,
     applyMarkAllRead,
     applyMarkAllUnread,
-  } = useCachedBulkReadActions(bulkPublicationList);
+  } = useCachedBulkReadActions(bulkPublicationList, {
+    gatewayScopes: [
+      { kind: "publication", publicationId: publication.publicationId },
+    ],
+  });
 
   const prefs = prefsMap.get(publication.publicationId);
   const currentFolderId = prefs?.value.folderId ?? null;

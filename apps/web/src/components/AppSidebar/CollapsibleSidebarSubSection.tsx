@@ -8,6 +8,7 @@ import {
   SidebarMenuSub,
 } from "@/components/ui/sidebar";
 import type { DiscoveredPublication } from "@/lib/atprotoClient";
+import type { GatewayMarkAllReadScope } from "@/lib/publicationProjectionClient";
 import { cn } from "@/lib/utils";
 import { SidebarReadBulkMenuWrap } from "./SidebarReadBulkMenuWrap";
 import { UnreadSidebarBadge } from "./UnreadSidebarBadge";
@@ -20,6 +21,7 @@ export function CollapsibleSidebarSubSection({
   subAriaLabel,
   readBulkPublications,
   readBulkMarkAllReadConfirmation,
+  gatewayMarkAllReadScopes,
   children,
 }: {
   title: string;
@@ -30,6 +32,7 @@ export function CollapsibleSidebarSubSection({
   readBulkPublications?: DiscoveredPublication[];
   /** Required when `readBulkPublications` is provided */
   readBulkMarkAllReadConfirmation?: ReactNode;
+  gatewayMarkAllReadScopes?: GatewayMarkAllReadScope[];
   children: ReactNode;
 }) {
   const subId = `sidebar-collapsible-sub-${useId().replace(/:/g, "")}`;
@@ -63,6 +66,7 @@ export function CollapsibleSidebarSubSection({
         <SidebarReadBulkMenuWrap
           publications={readBulkPublications}
           markAllReadConfirmation={readBulkMarkAllReadConfirmation}
+          gatewayScopes={gatewayMarkAllReadScopes}
         >
           {toggleButton}
         </SidebarReadBulkMenuWrap>

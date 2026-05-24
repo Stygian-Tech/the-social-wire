@@ -23,6 +23,7 @@ import type {
   PublicationPrefsRecord,
 } from "@/lib/pdsClient";
 import { useDeleteFolder } from "@/hooks/useFolders";
+import { rkeyFromURI } from "@/lib/pdsClient";
 
 export type FolderBranchDisplay = Pick<
   RepoRecord<FolderRecord>["value"],
@@ -68,6 +69,7 @@ export function FolderBranch({
   publicationsLoading = false,
 }: FolderBranchProps) {
   const deleteFolder = useDeleteFolder();
+  const folderRkey = rkeyFromURI(folderUri);
   const subId = `sidebar-folder-sub-${expandKey.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
   const folderUnread = sumUnreadForPublications(
     publications,
@@ -78,6 +80,9 @@ export function FolderBranch({
     <SidebarMenuItem>
       <SidebarReadBulkMenuWrap
         publications={publications}
+        gatewayScopes={
+          folderRkey ? [{ kind: "folder", folderRkey }] : undefined
+        }
         markAllReadConfirmation={
           <>
             This marks every cached article in the folder &quot;{folder.name}&quot; as read.

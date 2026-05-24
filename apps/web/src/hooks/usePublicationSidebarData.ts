@@ -285,10 +285,9 @@ export function usePublicationSidebarData() {
 
               setStreamProjection((currentStream) => {
                 const baseline =
-                  currentStream ??
                   qc.getQueryData<PublicationSidebarProjection>(
                     PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(did)
-                  );
+                  ) ?? currentStream;
                 const applied = applyBootstrapStreamEvent({
                   projection: baseline,
                   event,

@@ -2,7 +2,18 @@
 
 import { useMemo } from "react";
 
-import type { DiscoveredPublication } from "@/lib/atprotoClient";
+import { normalizeAtRepoParam, type DiscoveredPublication } from "@/lib/atprotoClient";
+
+function lookupUnreadCount(
+  unreadCountsByPublicationId: Map<string, number>,
+  publicationId: string
+): number {
+  const target = normalizeAtRepoParam(publicationId);
+  for (const [key, count] of unreadCountsByPublicationId) {
+    if (normalizeAtRepoParam(key) === target) return count;
+  }
+  return unreadCountsByPublicationId.get(publicationId) ?? 0;
+}
 
 /**
  * Per-publication unread counts from gateway sidebar projection or
@@ -17,7 +28,9 @@ export function useSidebarUnreadCounts(
     for (const pub of publications) {
       map.set(
         pub.publicationId,
-        unreadCountsByPublicationId?.get(pub.publicationId) ?? 0
+        unreadCountsByPublicationId
+          ? lookupUnreadCount(unreadCountsByPublicationId, pub.publicationId)
+          : 0
       );
     }
     return map;

@@ -5,6 +5,8 @@ import type { ParsedBootstrapStreamEvent } from "@/lib/bootstrapStreamModels";
 import { dedupeEntryListItems } from "@/lib/rssFeedCore";
 import {
   mergeSidebarProjections,
+  publicationIdsFromProjection,
+  sidebarPublicationRows,
   type PublicationSidebarProjection,
 } from "@/lib/publicationProjectionClient";
 import {
@@ -74,7 +76,7 @@ export function applySidebarFoldersEvent(
     allPublicationRows: PublicationSidebarProjection["allPublicationRows"];
   }
 ): PublicationSidebarProjection {
-  return mergeSidebarProjections(projection, {
+  const merged = mergeSidebarProjections(projection, {
     ...projection,
     folderSections: payload.folderSections,
     allPublicationRows: payload.allPublicationRows,
@@ -86,6 +88,17 @@ export function applySidebarFoldersEvent(
     enrollAuthorDids: [],
     refreshedAt: projection.refreshedAt,
   });
+
+  const counts: Record<string, number> = {};
+  for (const row of sidebarPublicationRows(merged)) {
+    if (row.unreadCount != null && row.unreadCount > 0) {
+      counts[row.publicationId] = row.unreadCount;
+    }
+  }
+
+  return Object.keys(counts).length > 0
+    ? applyUnreadCountsEvent(merged, counts)
+    : merged;
 }
 
 export function writeStreamedEntriesPage(
@@ -131,7 +144,11 @@ export function applyBootstrapStreamEvent(args: {
       break;
     case "unreadCounts":
       if (projection) {
-        projection = applyUnreadCountsEvent(projection, args.event.payload.counts);
+        projection = applyUnreadCountsEvent(
+          projection,
+          args.event.payload.counts,
+          { replacePublicationIds: publicationIdsFromProjection(projection) }
+        );
       }
       break;
     case "selectedPublication":

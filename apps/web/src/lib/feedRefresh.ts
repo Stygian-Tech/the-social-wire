@@ -5,8 +5,13 @@ import {
   fetchEntriesInfinitePage,
   type EntriesPage,
 } from "@/hooks/useEntries";
+import { PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY } from "@/hooks/usePublicationSidebarData";
+import { applyUnreadCountsEvent } from "@/lib/bootstrapStreamState";
 import type { ArticleListFilter } from "@/lib/entryArticleFilter";
+import { normalizeAtRepoParam } from "@/lib/atprotoClient";
+import type { PublicationSidebarProjection } from "@/lib/publicationProjectionClient";
 import { dedupeEntryListItems } from "@/lib/rssFeedCore";
+import { fetchAppViewUnreadCounts } from "@/lib/thinAppViewClient";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 
 /** Delay after bootstrap before a one-time feed refresh (background enroll may still be running). */
@@ -41,6 +46,30 @@ export function mergeFeedFirstPageRefresh(
     pages: [mergedFirst, ...restPages],
     pageParams: [firstParam, ...restParams],
   };
+}
+
+/** Refreshes AppView unread badge for one publication after feed changes. */
+export async function refreshPublicationUnreadCount(args: {
+  queryClient: QueryClient;
+  viewerDid: string;
+  publicationId: string;
+  oauthSession: OAuthSession;
+}): Promise<void> {
+  const { queryClient, viewerDid, publicationId, oauthSession } = args;
+  try {
+    const counts = await fetchAppViewUnreadCounts(oauthSession, [publicationId]);
+    queryClient.setQueryData<PublicationSidebarProjection>(
+      PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(viewerDid),
+      (current) =>
+        current
+          ? applyUnreadCountsEvent(current, counts, {
+              replacePublicationIds: [publicationId],
+            })
+          : current
+    );
+  } catch {
+    /* best-effort badge sync */
+  }
 }
 
 export async function refreshPublicationFeedFirstPage(args: {
@@ -81,5 +110,14 @@ export async function refreshPublicationFeedFirstPage(args: {
   queryClient.setQueryData<InfiniteData<EntriesPage>>(queryKey, (current) =>
     mergeFeedFirstPageRefresh(current, freshPage)
   );
+
+  if (viewerDid) {
+    await refreshPublicationUnreadCount({
+      queryClient,
+      viewerDid,
+      publicationId: normalizeAtRepoParam(publicationKey),
+      oauthSession,
+    });
+  }
   return true;
 }

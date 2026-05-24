@@ -20,6 +20,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { useCachedBulkReadActions } from "@/hooks/useCachedBulkReadActions";
 import type { DiscoveredPublication } from "@/lib/atprotoClient";
+import type { GatewayMarkAllReadScope } from "@/lib/publicationProjectionClient";
 
 type SidebarDestructiveAction = {
   label: string;
@@ -33,6 +34,7 @@ type SidebarReadBulkMenuWrapProps = {
   publications: DiscoveredPublication[];
   /** Shown in the confirmation dialog body for Mark All As Read */
   markAllReadConfirmation: ReactNode;
+  gatewayScopes?: GatewayMarkAllReadScope[];
   children: ReactNode;
   destructiveAction?: SidebarDestructiveAction;
 };
@@ -44,6 +46,7 @@ type SidebarReadBulkMenuWrapProps = {
 export function SidebarReadBulkMenuWrap({
   publications,
   markAllReadConfirmation,
+  gatewayScopes,
   children,
   destructiveAction,
 }: SidebarReadBulkMenuWrapProps) {
@@ -51,7 +54,7 @@ export function SidebarReadBulkMenuWrap({
     bulkDisabled,
     applyMarkAllRead,
     applyMarkAllUnread,
-  } = useCachedBulkReadActions(publications);
+  } = useCachedBulkReadActions(publications, { gatewayScopes });
 
   const [markAllReadOpen, setMarkAllReadOpen] = useState(false);
   const [destructiveOpen, setDestructiveOpen] = useState(false);

@@ -312,17 +312,34 @@ export function unreadCountsMapFromProjection(
     map.set(publicationId, count);
   };
 
-  for (const row of projection.allPublicationRows) {
+  const recordCount = (
+    publicationId: string
+  ): number | undefined => {
+    const record = projection.unreadCountsByPublicationId;
+    if (!record) return undefined;
+    const target = normalizeAtRepoParam(publicationId);
+    for (const [key, count] of Object.entries(record)) {
+      if (normalizeAtRepoParam(key) === target) return count;
+    }
+    return undefined;
+  };
+
+  for (const row of sidebarPublicationRows(projection)) {
     const embedded = row.unreadCount;
-    const fromRecord = projection.unreadCountsByPublicationId?.[row.publicationId];
-    applyCount(row.publicationId, embedded ?? fromRecord);
+    const fromRecord = recordCount(row.publicationId);
+    // Prefer the projection record map — it carries optimistic deltas and tab-sync refreshes.
+    applyCount(row.publicationId, fromRecord ?? embedded);
   }
 
   if (projection.unreadCountsByPublicationId) {
     for (const [publicationId, count] of Object.entries(
       projection.unreadCountsByPublicationId
     )) {
-      if (!map.has(publicationId)) {
+      const target = normalizeAtRepoParam(publicationId);
+      const alreadyStored = [...map.keys()].some(
+        (key) => normalizeAtRepoParam(key) === target
+      );
+      if (!alreadyStored) {
         applyCount(publicationId, count);
       }
     }
@@ -362,7 +379,13 @@ export function sidebarIncludesUnreadCounts(
   return projection.allPublicationRows.some((row) => row.unreadCount != null);
 }
 
-function sidebarPublicationRows(
+export function publicationIdsFromProjection(
+  projection: PublicationSidebarProjection
+): string[] {
+  return sidebarPublicationRows(projection).map((row) => row.publicationId);
+}
+
+export function sidebarPublicationRows(
   projection: PublicationSidebarProjection
 ): SidebarPublicationRow[] {
   const byId = new Map<string, SidebarPublicationRow>();

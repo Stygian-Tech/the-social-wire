@@ -439,6 +439,7 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
                         them.
                       </>
                     }
+                    gatewayMarkAllReadScopes={[{ kind: "following" }]}
                   >
                     <PublicationMenuSubEntries
                       publications={followingTabPublications}
