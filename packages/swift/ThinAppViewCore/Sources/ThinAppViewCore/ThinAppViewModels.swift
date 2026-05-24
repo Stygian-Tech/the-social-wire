@@ -7,19 +7,23 @@ public struct ContentRenderFields: Codable, Sendable, Equatable {
   public var summary: String?
   public var thumbnailUrl: String?
   public var contentHtml: String?
+  /// Canonical article URL for RSS rows (used to collapse guid/link duplicate keys).
+  public var articleUrl: String?
 
   public init(
     title: String,
     publishedAt: String,
     summary: String? = nil,
     thumbnailUrl: String? = nil,
-    contentHtml: String? = nil
+    contentHtml: String? = nil,
+    articleUrl: String? = nil
   ) {
     self.title = title
     self.publishedAt = publishedAt
     self.summary = summary
     self.thumbnailUrl = thumbnailUrl
     self.contentHtml = contentHtml
+    self.articleUrl = articleUrl
   }
 }
 

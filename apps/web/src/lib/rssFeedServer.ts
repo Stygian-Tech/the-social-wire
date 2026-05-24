@@ -28,6 +28,7 @@ const parser = new Parser({
     item: [
       ["media:thumbnail", "mediaThumbnail", { keepArray: true }],
       ["media:content", "mediaContent", { keepArray: true }],
+      ["content:encoded", "contentEncoded"],
     ],
   },
 });
@@ -128,18 +129,95 @@ function publishedIsoFromItem(item: RssParserItemFields): string {
 function thumbnailFromItem(
   item: RssParserItemFields & Record<string, unknown>
 ): string | undefined {
-  const enc = item.enclosure?.url;
-  if (enc && /^https?:/i.test(enc)) return normalizeHttpUrlToHttps(enc);
+  const asHttps = (raw: string | undefined): string | undefined => {
+    const t = raw?.trim();
+    if (!t || !/^https?:/i.test(t)) return undefined;
+    try {
+      return normalizeHttpUrlToHttps(t);
+    } catch {
+      return undefined;
+    }
+  };
+
   const mt = item.mediaThumbnail as
     | { $?: { url?: string }; url?: string }[]
     | undefined;
   const firstThumb = Array.isArray(mt) ? mt[0] : undefined;
-  const u = firstThumb?.$?.url ?? firstThumb?.url;
-  if (u && /^https?:/i.test(u)) return normalizeHttpUrlToHttps(u);
+  const mediaThumb = asHttps(firstThumb?.$?.url ?? firstThumb?.url);
+  if (mediaThumb) return mediaThumb;
+
+  const mc = item.mediaContent as
+    | { $?: { url?: string; type?: string; medium?: string }; url?: string; type?: string; medium?: string }[]
+    | undefined;
+  const firstContent = Array.isArray(mc) ? mc[0] : undefined;
+  const mediaContentUrl = asHttps(firstContent?.$?.url ?? firstContent?.url);
+  const mediaContentType = firstContent?.$?.type ?? firstContent?.type;
+  const mediaContentMedium = firstContent?.$?.medium ?? firstContent?.medium;
+  if (
+    mediaContentUrl &&
+    acceptsMediaThumbnailUrl(mediaContentUrl, mediaContentType, mediaContentMedium)
+  ) {
+    return mediaContentUrl;
+  }
+
+  const enc = item.enclosure?.url;
+  const encType = (item.enclosure as { type?: string } | undefined)?.type;
+  if (enc && acceptsMediaThumbnailUrl(enc, encType, undefined)) {
+    return asHttps(enc);
+  }
+
   const itunesImg = item.itunes?.image;
-  if (itunesImg && /^https?:/i.test(itunesImg))
-    return normalizeHttpUrlToHttps(itunesImg);
+  if (typeof itunesImg === "string") {
+    const u = asHttps(itunesImg);
+    if (u) return u;
+  }
+
+  const html =
+    item.content?.trim() ||
+    (item as { contentEncoded?: string }).contentEncoded?.trim() ||
+    item.contentSnippet?.trim() ||
+    "";
+  const fromHtml = firstImageUrlFromHtml(html, item.link?.trim());
+  if (fromHtml) return fromHtml;
+
   return undefined;
+}
+
+function acceptsMediaThumbnailUrl(
+  url: string,
+  type: string | undefined,
+  medium: string | undefined
+): boolean {
+  const typeLower = type?.trim().toLowerCase();
+  if (typeLower?.startsWith("image/")) return true;
+  if (medium?.trim().toLowerCase() === "image") return true;
+  if (!typeLower && !medium?.trim()) {
+    try {
+      const path = new URL(url).pathname.toLowerCase();
+      return [".jpg", ".jpeg", ".png", ".gif", ".webp", ".avif", ".svg"].some(
+        (ext) => path.endsWith(ext) || path.includes(`${ext}?`)
+      );
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
+
+function firstImageUrlFromHtml(html: string, base?: string): string | undefined {
+  if (!html) return undefined;
+  const imgMatch =
+    html.match(/<img\b[^>]*\bsrc=["']([^"']+)["']/i) ??
+    html.match(/<img\b[^>]*\bsrc=([^\s>]+)/i);
+  const raw = imgMatch?.[1]?.trim();
+  if (!raw) return undefined;
+  try {
+    const resolved = base ? new URL(raw, base).href : raw;
+    if (!/^https?:/i.test(resolved)) return undefined;
+    return normalizeHttpUrlToHttps(resolved);
+  } catch {
+    return undefined;
+  }
 }
 
 function escapeHtmlText(s: string): string {

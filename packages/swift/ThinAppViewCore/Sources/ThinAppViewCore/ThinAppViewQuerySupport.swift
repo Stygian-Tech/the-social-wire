@@ -40,11 +40,10 @@ public enum ThinAppViewQuerySupport {
     lastScannedUri: String?,
     dbHasMore: Bool
   ) -> AppViewEntryListResponse {
-    let hasFullPage = matches.count > pageLimit
-    let page = hasFullPage ? Array(matches.prefix(pageLimit)) : matches
-    let items = RssFeedIdentity.dedupeEntryListItems(
-      entryListItems(from: page.map { ($0.uri, $0.renderJSON, $0.createdAt) })
-    )
+    let dedupedMatches = dedupeScanRows(matches)
+    let hasFullPage = dedupedMatches.count > pageLimit
+    let page = hasFullPage ? Array(dedupedMatches.prefix(pageLimit)) : dedupedMatches
+    let items = entryListItems(from: page.map { ($0.uri, $0.renderJSON, $0.createdAt) })
 
     let nextCursor: String?
     if hasFullPage, let last = page.last {
@@ -63,7 +62,67 @@ public enum ThinAppViewQuerySupport {
 
     return AppViewEntryListResponse(entries: items, cursor: nextCursor)
   }
-  public static func parseISO8601Date(_ raw: String) -> Date? {
+
+  static func dedupeScanRows(_ rows: [EntryListScanRow]) -> [EntryListScanRow] {
+    var seenEntryIds = Set<String>()
+    var seenCanonicalLinks = Set<String>()
+    var seenTitlePublished = Set<String>()
+    var deduped: [EntryListScanRow] = []
+    deduped.reserveCapacity(rows.count)
+    let decoder = JSONDecoder()
+    let iso = ISO8601DateFormatter()
+    iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    let isoBasic = ISO8601DateFormatter()
+
+    for row in rows {
+      guard seenEntryIds.insert(row.uri).inserted else { continue }
+
+      if let link = RssFeedIdentity.canonicalLink(
+        forEntryId: row.uri,
+        renderJSON: row.renderJSON,
+        summary: nil
+      ) {
+        if !seenCanonicalLinks.insert(link).inserted {
+          if let existingIdx = deduped.firstIndex(where: {
+            RssFeedIdentity.canonicalLink(forEntryId: $0.uri, renderJSON: $0.renderJSON, summary: nil) == link
+          }),
+             !renderHasThumbnail(deduped[existingIdx].renderJSON),
+             renderHasThumbnail(row.renderJSON)
+          {
+            deduped[existingIdx] = row
+          }
+          continue
+        }
+      } else {
+        guard
+          let data = row.renderJSON.data(using: .utf8),
+          let render = try? decoder.decode(ContentRenderFields.self, from: data)
+        else {
+          deduped.append(row)
+          continue
+        }
+        let publishedAt = iso.date(from: render.publishedAt)
+          ?? isoBasic.date(from: render.publishedAt)
+          ?? row.createdAt
+        let titleKey =
+          "\(render.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())|\(Int(publishedAt.timeIntervalSince1970))"
+        guard seenTitlePublished.insert(titleKey).inserted else { continue }
+      }
+
+      deduped.append(row)
+    }
+    return deduped
+  }
+
+  static func renderHasThumbnail(_ renderJSON: String) -> Bool {
+    guard
+      let data = renderJSON.data(using: .utf8),
+      let render = try? JSONDecoder().decode(ContentRenderFields.self, from: data)
+    else { return false }
+    return !(render.thumbnailUrl ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+  }
+
+  static func parseISO8601Date(_ raw: String) -> Date? {
     let fractional = ISO8601DateFormatter()
     fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
     if let date = fractional.date(from: raw) { return date }

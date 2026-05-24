@@ -81,33 +81,68 @@ public enum RssFeedIdentity {
     return (feedUrl, stableItemKey)
   }
 
+  /// Normalizes article URLs for dedupe (HTTPS, no query/fragment, no trailing slash).
+  public static func canonicalArticleUrl(_ raw: String) -> String? {
+    RenderFieldExtractor.normalizePublicationSiteUrl(raw) ?? normalizeFeedUrl(raw)
+  }
+
   public static func canonicalLinkFromStableItemKey(_ stableItemKey: String) -> String? {
     if stableItemKey.hasPrefix("link:") {
       let raw = String(stableItemKey.dropFirst("link:".count))
-      return normalizeFeedUrl(raw) ?? raw
+      return canonicalArticleUrl(raw)
     }
     if stableItemKey.hasPrefix("guid:") {
       let raw = String(stableItemKey.dropFirst("guid:".count))
       guard raw.lowercased().hasPrefix("http") else { return nil }
-      return normalizeFeedUrl(raw)
+      return canonicalArticleUrl(raw)
+    }
+    return nil
+  }
+
+  public static func canonicalLink(
+    forEntryId entryId: String,
+    renderJSON: String?,
+    summary: String?
+  ) -> String? {
+    if let renderJSON,
+       let data = renderJSON.data(using: .utf8),
+       let render = try? JSONDecoder().decode(ContentRenderFields.self, from: data),
+       let articleUrl = render.articleUrl?.trimmingCharacters(in: .whitespacesAndNewlines),
+       !articleUrl.isEmpty,
+       let canonical = canonicalArticleUrl(articleUrl)
+    {
+      return canonical
+    }
+
+    if entryId.hasPrefix(RssFeedLexicons.entryPrefix),
+       let decoded = decodeEntryId(entryId),
+       let link = canonicalLinkFromStableItemKey(decoded.stableItemKey)
+    {
+      return link
+    }
+
+    if let summary = summary?.trimmingCharacters(in: .whitespacesAndNewlines),
+       summary.lowercased().hasPrefix("http"),
+       let normalized = canonicalArticleUrl(summary)
+    {
+      return normalized
     }
     return nil
   }
 
   public static func canonicalLinkForEntryListItem(_ item: AppViewEntryListItem) -> String? {
-    if item.entryId.hasPrefix(RssFeedLexicons.entryPrefix),
-       let decoded = decodeEntryId(item.entryId),
-       let link = canonicalLinkFromStableItemKey(decoded.stableItemKey)
-    {
-      return link
-    }
-    if let summary = item.summary?.trimmingCharacters(in: .whitespacesAndNewlines),
-       summary.lowercased().hasPrefix("http"),
-       let normalized = normalizeFeedUrl(summary)
-    {
-      return normalized
-    }
-    return nil
+    canonicalLink(forEntryId: item.entryId, renderJSON: nil, summary: item.summary)
+  }
+
+  /// Prefers link-stable RSS entry ids over legacy guid-stable rows.
+  public static func isPreferredRssEntryURI(_ candidate: String, over incumbent: String) -> Bool {
+    let candidateUsesLink =
+      decodeEntryId(candidate).map { $0.stableItemKey.hasPrefix("link:") } ?? false
+    let incumbentUsesLink =
+      decodeEntryId(incumbent).map { $0.stableItemKey.hasPrefix("link:") } ?? false
+    if candidateUsesLink, !incumbentUsesLink { return true }
+    if incumbentUsesLink, !candidateUsesLink { return false }
+    return false
   }
 
   public static func dedupeEntryListItems(_ items: [AppViewEntryListItem]) -> [AppViewEntryListItem] {
@@ -121,7 +156,15 @@ public enum RssFeedIdentity {
       guard seenEntryIds.insert(item.entryId).inserted else { continue }
 
       if let link = canonicalLinkForEntryListItem(item) {
-        guard seenCanonicalLinks.insert(link).inserted else { continue }
+        if !seenCanonicalLinks.insert(link).inserted {
+          if let existingIdx = deduped.firstIndex(where: { canonicalLinkForEntryListItem($0) == link }),
+             (deduped[existingIdx].thumbnailUrl ?? "").isEmpty,
+             !(item.thumbnailUrl ?? "").isEmpty
+          {
+            deduped[existingIdx] = item
+          }
+          continue
+        }
       } else {
         let titleKey =
           "\(item.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())|\(Int(item.publishedAt.timeIntervalSince1970))"

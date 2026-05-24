@@ -56,6 +56,24 @@ describe("rssFeedCore", () => {
     expect(dedupeEntryListItems([linkEntry, guidEntry])).toHaveLength(1);
   });
 
+  it("dedupes article URLs that only differ by query params", () => {
+    const feed = "https://example.net/feed.xml";
+    const first = {
+      entryId: rssEntryIdFromParts(
+        feed,
+        "link:https://example.net/article?utm=1"
+      ),
+      title: "Post",
+      publishedAt: "2026-01-01T00:00:00.000Z",
+    };
+    const second = {
+      entryId: rssEntryIdFromParts(feed, "link:https://example.net/article"),
+      title: "Post",
+      publishedAt: "2026-01-01T00:00:00.000Z",
+    };
+    expect(dedupeEntryListItems([first, second])).toHaveLength(1);
+  });
+
   it("round-trips rss entry ids via stable keys", () => {
     const feed = "https://example.net/feed.xml";
     const key = stableItemKeyFromRssItem({

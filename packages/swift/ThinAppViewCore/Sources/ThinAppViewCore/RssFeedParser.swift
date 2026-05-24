@@ -38,6 +38,7 @@ public struct ParsedRssFeed: Sendable {
 
 public final class RssFeedParser: NSObject, XMLParserDelegate, @unchecked Sendable {
   private let parser: XMLParser
+  private let feedURL: String?
   private var currentElement = ""
   private var currentText = ""
   private var inItem = false
@@ -45,7 +46,8 @@ public final class RssFeedParser: NSObject, XMLParserDelegate, @unchecked Sendab
   private var item = PartialRssItem()
   private var items: [ParsedRssItem] = []
 
-  public init(data: Data) {
+  public init(data: Data, feedURL: String? = nil) {
+    self.feedURL = feedURL
     parser = XMLParser(data: data)
     super.init()
     parser.delegate = self
@@ -66,16 +68,56 @@ public final class RssFeedParser: NSObject, XMLParserDelegate, @unchecked Sendab
   ) {
     currentElement = qName ?? elementName
     currentText = ""
-    let lower = currentElement.lowercased()
-    if lower == "item" || lower == "entry" {
+    let key = elementKey(qName, elementName: elementName)
+    if key == "item" || key == "entry" {
       inItem = true
       item = PartialRssItem()
     }
-    if inItem, ["media:thumbnail", "media:content", "enclosure"].contains(lower), item.imageURL == nil {
-      item.imageURL = attributeDict["url"]
+
+    guard inItem else { return }
+
+    if isMediaThumbnail(key), item.imageURL == nil, let url = attributeDict["url"] {
+      item.imageURL = url
+      return
     }
-    if inItem, lower == "link", let href = attributeDict["href"], item.link == nil {
-      item.link = href
+
+    if isMediaContent(key) || isEnclosure(key), item.imageURL == nil {
+      let url = attributeDict["url"]
+      if RssFeedThumbnailExtractor.acceptsMediaURL(
+        url: url,
+        type: attributeDict["type"],
+        medium: attributeDict["medium"]
+      ) {
+        item.imageURL = url
+      }
+      return
+    }
+
+    if isItunesImage(key), item.imageURL == nil {
+      if let href = attributeDict["href"] {
+        item.imageURL = href
+      }
+      return
+    }
+
+    if key == "link" {
+      let rel = attributeDict["rel"]?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+      let href = attributeDict["href"]
+      if let href,
+         ["enclosure", "preview"].contains(rel ?? ""),
+         item.imageURL == nil,
+         RssFeedThumbnailExtractor.acceptsMediaURL(
+           url: href,
+           type: attributeDict["type"],
+           medium: attributeDict["medium"]
+         )
+      {
+        item.imageURL = href
+        return
+      }
+      if item.link == nil, let href, rel == nil || rel == "alternate" || rel?.isEmpty == true {
+        item.link = href
+      }
     }
   }
 
@@ -93,25 +135,29 @@ public final class RssFeedParser: NSObject, XMLParserDelegate, @unchecked Sendab
     namespaceURI: String?,
     qualifiedName qName: String?
   ) {
-    let name = (qName ?? elementName).lowercased()
+    let key = elementKey(qName, elementName: elementName)
     let text = currentText.trimmingCharacters(in: .whitespacesAndNewlines)
 
     if inItem {
-      switch name {
+      switch key {
       case "title": item.title = text
-      case "link": if item.link == nil { item.link = text }
+      case "link":
+        if item.link == nil, !text.isEmpty { item.link = text }
       case "guid", "id": item.guid = text
       case "description", "summary": item.summary = text
       case "content:encoded", "content": item.contentHTML = text
       case "pubdate", "published", "updated": item.publishedAtISO = Self.normalizedDateISO(text)
-      default: break
+      default:
+        if isItunesImage(key), item.imageURL == nil, !text.isEmpty {
+          item.imageURL = text
+        }
       }
-    } else if name == "title", feedTitle == nil {
+    } else if key == "title", feedTitle == nil {
       feedTitle = text
     }
 
-    if name == "item" || name == "entry" {
-      items.append(item.finalized())
+    if key == "item" || key == "entry" {
+      items.append(item.finalized(feedURL: feedURL))
       inItem = false
     }
     currentText = ""
@@ -131,6 +177,26 @@ public final class RssFeedParser: NSObject, XMLParserDelegate, @unchecked Sendab
     return ISO8601DateFormatter().string(from: Date())
   }
 
+  private func elementKey(_ qName: String?, elementName: String) -> String {
+    (qName ?? elementName).lowercased()
+  }
+
+  private func isMediaThumbnail(_ key: String) -> Bool {
+    key == "media:thumbnail" || key.hasSuffix(":thumbnail")
+  }
+
+  private func isMediaContent(_ key: String) -> Bool {
+    key == "media:content" || key.hasSuffix(":content")
+  }
+
+  private func isEnclosure(_ key: String) -> Bool {
+    key == "enclosure"
+  }
+
+  private func isItunesImage(_ key: String) -> Bool {
+    key == "itunes:image" || key.hasSuffix(":image")
+  }
+
   private struct PartialRssItem {
     var guid: String?
     var title: String?
@@ -140,15 +206,22 @@ public final class RssFeedParser: NSObject, XMLParserDelegate, @unchecked Sendab
     var publishedAtISO: String?
     var imageURL: String?
 
-    func finalized() -> ParsedRssItem {
-      ParsedRssItem(
+    func finalized(feedURL: String?) -> ParsedRssItem {
+      let thumbnailUrl = RssFeedThumbnailExtractor.resolveThumbnail(
+        storedURL: imageURL,
+        contentHTML: contentHTML,
+        summary: summary,
+        articleLink: link,
+        feedURL: feedURL
+      )
+      return ParsedRssItem(
         guid: guid,
         title: title?.isEmpty == false ? title! : "Untitled",
         link: link,
         summary: summary,
         contentHTML: contentHTML,
         publishedAtISO: publishedAtISO ?? ISO8601DateFormatter().string(from: Date()),
-        thumbnailUrl: imageURL
+        thumbnailUrl: thumbnailUrl
       )
     }
   }

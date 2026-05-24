@@ -16,7 +16,7 @@ public enum ThinAppViewEntryPagination {
     for item in newPage where seen.insert(item.entryId).inserted {
       merged.append(item)
     }
-    return merged
+    return RssFeedIdentity.dedupeEntryListItems(merged)
   }
 
   public struct AggregateStepResult: Sendable {

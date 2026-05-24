@@ -106,6 +106,33 @@ public init(pool: PostgresClient, logger: Logger) {
     return nil
   }
 
+  public func listContentItemsForPublicationSite(
+    authorDid: String,
+    publicationSite: String,
+    limit: Int
+  ) async throws -> [(uri: String, renderJSON: String)] {
+    let capped = max(1, min(limit, 2_000))
+    let now = Date()
+    let rows = try await pool.query(
+      """
+      SELECT ci.uri, ci.render_json::text
+      FROM content_items ci
+      WHERE ci.author_did = \(authorDid)
+        AND ci.publication_site = \(publicationSite)
+        AND ci.expires_at > \(now)
+      ORDER BY ci.created_at DESC, ci.uri DESC
+      LIMIT \(capped)
+      """,
+      logger: logger
+    )
+    var items: [(uri: String, renderJSON: String)] = []
+    for try await row in rows {
+      let (uri, renderJSON): (String, String) = try row.decode((String, String).self)
+      items.append((uri, renderJSON))
+    }
+    return items
+  }
+
   public func hasReadMark(viewerDid: String, subjectUri: String) async throws -> Bool {
     let rows = try await pool.query(
       """

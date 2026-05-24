@@ -41,4 +41,11 @@ public protocol ThinAppViewStore: Actor {
   func listRssPublicationSites(limit: Int) async throws -> [String]
 
   func fetchContentRender(uri: String) async throws -> ContentRenderFields?
+
+  /// Lists indexed rows for one RSS feed URL (Skyreader duplicate cleanup).
+  func listContentItemsForPublicationSite(
+    authorDid: String,
+    publicationSite: String,
+    limit: Int
+  ) async throws -> [(uri: String, renderJSON: String)]
 }

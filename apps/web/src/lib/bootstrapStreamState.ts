@@ -2,6 +2,7 @@ import type { QueryClient } from "@tanstack/react-query";
 
 import { normalizeAtRepoParam } from "@/lib/atprotoClient";
 import type { ParsedBootstrapStreamEvent } from "@/lib/bootstrapStreamModels";
+import { dedupeEntryListItems } from "@/lib/rssFeedCore";
 import {
   mergeSidebarProjections,
   type PublicationSidebarProjection,
@@ -77,7 +78,7 @@ export function writeStreamedEntriesPage(
 ): void {
   const publicationKey = normalizeAtRepoParam(payload.publicationId);
   const page: EntriesPage = {
-    entries: payload.entries,
+    entries: dedupeEntryListItems(payload.entries),
     cursor: payload.cursor,
   };
   queryClient.setQueryData(

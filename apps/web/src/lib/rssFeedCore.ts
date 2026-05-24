@@ -3,6 +3,7 @@
  */
 
 import { isBlockedEmbedProbeHostname } from "@/lib/embedFramePolicy";
+import { normalizePublicationSiteUrl } from "@/lib/atprotoClient";
 import { normalizeHttpUrlToHttps } from "@/lib/publicResourceUrl";
 
 export const RSS_PUBLICATION_PREFIX = "rss:" as const;
@@ -139,40 +140,39 @@ export function stableItemKeyFromRssItem(item: {
   return `fallback:${title}\n${d}`;
 }
 
+/** Normalizes article URLs for dedupe (HTTPS, no query/fragment). */
+export function canonicalArticleUrl(raw: string): string | null {
+  return normalizePublicationSiteUrl(raw);
+}
+
 export function canonicalLinkForEntryListItem(item: {
   entryId: string;
   title: string;
   summary?: string | null;
   publishedAt: string;
+  articleUrl?: string | null;
 }): string | null {
+  const articleUrl = item.articleUrl?.trim();
+  if (articleUrl) {
+    return canonicalArticleUrl(articleUrl);
+  }
+
   const decoded = rssEntryIdDecode(item.entryId);
   if (decoded) {
     if (decoded.itemKey.startsWith("link:")) {
       const raw = decoded.itemKey.slice("link:".length);
-      try {
-        return normalizeHttpUrlToHttps(raw);
-      } catch {
-        return raw;
-      }
+      return canonicalArticleUrl(raw) ?? raw;
     }
     if (decoded.itemKey.startsWith("guid:")) {
       const raw = decoded.itemKey.slice("guid:".length);
       if (/^https?:\/\//i.test(raw)) {
-        try {
-          return normalizeHttpUrlToHttps(raw);
-        } catch {
-          return raw;
-        }
+        return canonicalArticleUrl(raw) ?? raw;
       }
     }
   }
   const summary = item.summary?.trim();
   if (summary && /^https?:\/\//i.test(summary)) {
-    try {
-      return normalizeHttpUrlToHttps(summary);
-    } catch {
-      return summary;
-    }
+    return canonicalArticleUrl(summary) ?? summary;
   }
   return null;
 }
@@ -183,6 +183,7 @@ export function dedupeEntryListItems<
     title: string;
     summary?: string | null;
     publishedAt: string;
+    articleUrl?: string | null;
   },
 >(items: T[]): T[] {
   const seenEntryIds = new Set<string>();

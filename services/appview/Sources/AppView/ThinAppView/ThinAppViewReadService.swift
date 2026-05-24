@@ -33,7 +33,7 @@ actor ThinAppViewReadService {
        let page = try? JSONDecoder().decode(AppViewEntryListResponse.self, from: Data(json.utf8)),
        !page.entries.isEmpty
     {
-      return page
+      return dedupedPage(page)
     }
 
     let page = try await listEntries(
@@ -47,7 +47,7 @@ actor ThinAppViewReadService {
       limit: limit
     )
     guard !page.entries.isEmpty else { return nil }
-    return page
+    return dedupedPage(page)
   }
 
   func listEntries(
@@ -73,7 +73,7 @@ actor ThinAppViewReadService {
          ),
          let cached = try? JSONDecoder().decode(AppViewEntryListResponse.self, from: Data(json.utf8))
       {
-        return cached
+        return dedupedPage(cached)
       }
     }
 
@@ -98,7 +98,7 @@ actor ThinAppViewReadService {
          authorDid: authorDid
        ),
        !page.entries.isEmpty,
-       let data = try? JSONEncoder().encode(page),
+       let data = try? JSONEncoder().encode(dedupedPage(page)),
        let json = String(data: data, encoding: .utf8)
     {
       let expiresAt = Date().addingTimeInterval(AppViewProjectionCacheTTL.firstPageSeconds)
@@ -110,7 +110,14 @@ actor ThinAppViewReadService {
       )
     }
 
-    return page
+    return dedupedPage(page)
+  }
+
+  private func dedupedPage(_ page: AppViewEntryListResponse) -> AppViewEntryListResponse {
+    AppViewEntryListResponse(
+      entries: RssFeedIdentity.dedupeEntryListItems(page.entries),
+      cursor: page.cursor
+    )
   }
 
   func listEntriesUpTo(

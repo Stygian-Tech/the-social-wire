@@ -68,6 +68,52 @@ struct RssFeedIdentityTests {
     #expect(deduped[0].entryId == linkEntry.entryId)
   }
 
+  @Test("dedupe collapses article URLs with distinct query strings")
+  func dedupeByNormalizedArticleUrl() {
+    let feed = "https://example.com/feed.xml"
+    let first = AppViewEntryListItem(
+      entryId: RssFeedIdentity.rssEntryId(
+        normalizedFeedUrl: feed,
+        stableItemKey: "link:https://example.com/a?utm=1"
+      ),
+      title: "Post",
+      summary: nil,
+      publishedAt: Date(timeIntervalSince1970: 1),
+      thumbnailUrl: nil,
+      thumbnailFallbackUrl: nil
+    )
+    let second = AppViewEntryListItem(
+      entryId: RssFeedIdentity.rssEntryId(
+        normalizedFeedUrl: feed,
+        stableItemKey: "link:https://example.com/a"
+      ),
+      title: "Post",
+      summary: nil,
+      publishedAt: Date(timeIntervalSince1970: 1),
+      thumbnailUrl: nil,
+      thumbnailFallbackUrl: nil
+    )
+
+    #expect(RssFeedIdentity.dedupeEntryListItems([first, second]).count == 1)
+  }
+
+  @Test("canonical link prefers stored articleUrl over opaque guid key")
+  func canonicalLinkUsesArticleUrl() {
+    let feed = "https://example.com/feed.xml"
+    let guidEntryId = RssFeedIdentity.rssEntryId(normalizedFeedUrl: feed, stableItemKey: "guid:abc")
+    let render = ContentRenderFields(
+      title: "Post",
+      publishedAt: "2026-01-01T00:00:00.000Z",
+      summary: "Snippet only",
+      articleUrl: "https://example.com/a"
+    )
+    let renderJSON = String(data: try! JSONEncoder().encode(render), encoding: .utf8)!
+    #expect(
+      RssFeedIdentity.canonicalLink(forEntryId: guidEntryId, renderJSON: renderJSON, summary: nil)
+        == "https://example.com/a"
+    )
+  }
+
   @Test("blocks localhost feed fetch")
   func blockedHost() {
     #expect(!RssFeedIdentity.isFetchableFeedUrl("https://127.0.0.1/feed.xml"))

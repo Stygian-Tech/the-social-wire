@@ -33,26 +33,43 @@ public struct ThinAppViewRssIngestion: Sendable {
     guard [200, 403, 406, 415].contains(response.status.code) else { return 0 }
 
     let body = try await response.body.collect(upTo: 2 * 1024 * 1024)
-    let feed = RssFeedParser(data: Data(buffer: body)).parse()
+    let feed = RssFeedParser(data: Data(buffer: body), feedURL: normalizedFeedUrl).parse()
     let capped = Array(feed.items.prefix(config.maxRssItemsPerFeed))
     let now = Date()
     var indexed = 0
+    var canonicalToURI: [String: String] = [:]
 
     for item in capped {
       let stableKey = RssFeedIdentity.stableItemKey(from: item)
       let uri = RssFeedIdentity.rssEntryId(normalizedFeedUrl: normalizedFeedUrl, stableItemKey: stableKey)
+      if let link = item.link?.trimmingCharacters(in: .whitespacesAndNewlines),
+         !link.isEmpty,
+         let canonical = RssFeedIdentity.canonicalArticleUrl(link)
+      {
+        if let existingURI = canonicalToURI[canonical], existingURI != uri {
+          try? await store.deleteContentItem(uri: existingURI)
+        }
+        canonicalToURI[canonical] = uri
+      }
       let createdAt = RenderFieldExtractor.createdAtDate(
         from: [:],
         fallback: ContentRenderFields(title: item.title, publishedAt: item.publishedAtISO)
       )
       let listSummary = listSummary(from: item)
       let htmlBody = htmlBody(from: item)
+      let articleUrl: String? = {
+        guard let link = item.link?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !link.isEmpty
+        else { return nil }
+        return RssFeedIdentity.canonicalArticleUrl(link)
+      }()
       let render = ContentRenderFields(
         title: displayTitle(from: item),
         publishedAt: item.publishedAtISO,
         summary: listSummary,
         thumbnailUrl: item.thumbnailUrl,
-        contentHtml: htmlBody
+        contentHtml: htmlBody,
+        articleUrl: articleUrl
       )
       let indexedItem = IndexedContentItem(
         uri: uri,
@@ -68,6 +85,8 @@ public struct ThinAppViewRssIngestion: Sendable {
       try await store.upsertContentItem(indexedItem)
       indexed += 1
     }
+
+    try await cleanupDuplicatePublicationSiteRows(normalizedFeedUrl: normalizedFeedUrl)
 
     if indexed > 0 {
       logger.info(
@@ -136,5 +155,66 @@ public struct ThinAppViewRssIngestion: Sendable {
       .replacingOccurrences(of: "<", with: "&lt;")
       .replacingOccurrences(of: ">", with: "&gt;")
       .replacingOccurrences(of: "\"", with: "&quot;")
+  }
+
+  private func cleanupDuplicatePublicationSiteRows(normalizedFeedUrl: String) async throws {
+    let rows = try await store.listContentItemsForPublicationSite(
+      authorDid: RssFeedLexicons.rssAuthorDid,
+      publicationSite: normalizedFeedUrl,
+      limit: 1_000
+    )
+    guard rows.count > 1 else { return }
+
+    var canonicalToURI: [String: String] = [:]
+    var toDelete: Set<String> = []
+
+    for row in rows {
+      guard
+        let canonical = RssFeedIdentity.canonicalLink(
+          forEntryId: row.uri,
+          renderJSON: row.renderJSON,
+          summary: nil
+        )
+      else { continue }
+
+      if let existingURI = canonicalToURI[canonical] {
+        if RssFeedIdentity.isPreferredRssEntryURI(row.uri, over: existingURI) {
+          toDelete.insert(existingURI)
+          canonicalToURI[canonical] = row.uri
+        } else {
+          toDelete.insert(row.uri)
+        }
+      } else {
+        canonicalToURI[canonical] = row.uri
+      }
+    }
+
+    for uri in toDelete {
+      try await store.deleteContentItem(uri: uri)
+    }
+
+    let keptTitlePublished = Set(
+      canonicalToURI.values.compactMap { uri in
+        rows.first(where: { $0.uri == uri }).flatMap(titlePublishedKey(from:))
+      }
+    )
+    guard !keptTitlePublished.isEmpty else { return }
+
+    for row in rows {
+      guard !toDelete.contains(row.uri), !canonicalToURI.values.contains(row.uri) else { continue }
+      guard let key = titlePublishedKey(from: row), keptTitlePublished.contains(key) else { continue }
+      try await store.deleteContentItem(uri: row.uri)
+    }
+  }
+
+  private func titlePublishedKey(from row: (uri: String, renderJSON: String)) -> String? {
+    guard
+      let data = row.renderJSON.data(using: .utf8),
+      let render = try? JSONDecoder().decode(ContentRenderFields.self, from: data)
+    else { return nil }
+    let title = render.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    guard !title.isEmpty else { return nil }
+    guard let publishedAt = ThinAppViewQuerySupport.parseISO8601Date(render.publishedAt) else { return nil }
+    return "\(title)|\(Int(publishedAt.timeIntervalSince1970))"
   }
 }

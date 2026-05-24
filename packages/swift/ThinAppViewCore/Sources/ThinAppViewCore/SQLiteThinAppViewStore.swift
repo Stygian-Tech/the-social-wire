@@ -171,6 +171,37 @@ public init(path dbPath: String, logger: Logger) throws {
     return try? JSONDecoder().decode(ContentRenderFields.self, from: data)
   }
 
+  public func listContentItemsForPublicationSite(
+    authorDid: String,
+    publicationSite: String,
+    limit: Int
+  ) async throws -> [(uri: String, renderJSON: String)] {
+    let capped = max(1, min(limit, 2_000))
+    let nowIso = Self.isoString(from: Date())
+    return try await db.read { db in
+      let rows = try Row.fetchAll(
+        db,
+        sql: """
+          SELECT uri, render_json
+          FROM content_items
+          WHERE author_did = ?
+            AND publication_site = ?
+            AND expires_at > ?
+          ORDER BY created_at DESC, uri DESC
+          LIMIT ?
+          """,
+        arguments: [authorDid, publicationSite, nowIso, capped]
+      )
+      return rows.compactMap { row in
+        guard
+          let uri = row["uri"] as String?,
+          let renderJSON = row["render_json"] as String?
+        else { return nil }
+        return (uri, renderJSON)
+      }
+    }
+  }
+
   public func hasReadMark(viewerDid: String, subjectUri: String) async throws -> Bool {
     try await db.read { db in
       try Bool.fetchOne(
