@@ -446,6 +446,7 @@ final class SocialWireAppModel {
         folderPublicationsLoading = false
         hasSidebarSnapshot = false
         cachedPriorityProjection = nil
+        stopProactiveFeedRefreshLoop()
         cachedFolderSections = nil
         cachedFolderRows = nil
         sidebarExpandedKeysViewerDid = nil
@@ -576,6 +577,7 @@ final class SocialWireAppModel {
             Task(priority: .utility) {
                 await self.prefetchSidebarPublications()
             }
+            startProactiveFeedRefreshLoop()
         } catch {
             errorMessage = "Could not load publications from the server. \(error.localizedDescription)"
         }
@@ -651,6 +653,7 @@ final class SocialWireAppModel {
             break
         case .done:
             logBootstrapPhase("done", startedAt: streamStarted)
+            scheduleBootstrapFeedRefresh()
         }
     }
 
@@ -927,6 +930,9 @@ final class SocialWireAppModel {
     }
 
     private static let entryPrefetchMaxEntries = 50
+    private static let feedPostBootstrapRefreshDelay: Duration = .seconds(2.5)
+    private static let feedProactiveRefreshInterval: Duration = .seconds(45)
+    private var proactiveFeedRefreshTask: Task<Void, Never>?
 
     private func refreshPublicationIndex(for publication: DiscoveredPublication) async {
         guard useAppViewEntryTimelines else { return }
@@ -1015,6 +1021,49 @@ final class SocialWireAppModel {
         return merged
     }
 
+    /// Prepends fresh first-page posts while keeping paginated tail rows (feed-style refresh).
+    private func mergeEntryPagesAtTop(
+        existing: [EntryListItem],
+        freshFirstPage: [EntryListItem]
+    ) -> [EntryListItem] {
+        guard !freshFirstPage.isEmpty else { return existing }
+        var seen = Set(freshFirstPage.map(\.entryId))
+        var merged = freshFirstPage
+        merged.reserveCapacity(existing.count + freshFirstPage.count)
+        for item in existing where seen.insert(item.entryId).inserted {
+            merged.append(item)
+        }
+        return merged
+    }
+
+    func startProactiveFeedRefreshLoop() {
+        proactiveFeedRefreshTask?.cancel()
+        proactiveFeedRefreshTask = Task(priority: .utility) { @MainActor in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: Self.feedProactiveRefreshInterval)
+                await self.refreshActivePublicationFeedIfNeeded(skipEnroll: true)
+            }
+        }
+    }
+
+    func stopProactiveFeedRefreshLoop() {
+        proactiveFeedRefreshTask?.cancel()
+        proactiveFeedRefreshTask = nil
+    }
+
+    private func scheduleBootstrapFeedRefresh() {
+        Task(priority: .utility) {
+            try? await Task.sleep(for: Self.feedPostBootstrapRefreshDelay)
+            await self.refreshActivePublicationFeedIfNeeded(skipEnroll: false)
+        }
+    }
+
+    func refreshActivePublicationFeedIfNeeded(skipEnroll: Bool = true) async {
+        guard let publication = selectedPublication else { return }
+        guard !isLoadingEntries, !isLoadingMoreEntries else { return }
+        await refreshPublicationEntriesInBackground(for: publication, skipEnroll: skipEnroll)
+    }
+
     private func persistPublicationEntries(_ publicationId: String, entries: [EntryListItem]) {
         try? readerCacheCoordinator?.upsertPublicationEntries(
             publicationId: publicationId,
@@ -1084,11 +1133,20 @@ final class SocialWireAppModel {
         }
     }
 
-    private func refreshPublicationEntriesInBackground(for publication: DiscoveredPublication) async {
+    private func refreshPublicationEntriesInBackground(
+        for publication: DiscoveredPublication,
+        skipEnroll: Bool = true
+    ) async {
+        guard selectedPublication?.publicationId == publication.publicationId else { return }
         do {
+            if !skipEnroll {
+                await refreshPublicationIndex(for: publication)
+            }
             let page = try await fetchEntriesPage(for: publication, cursor: nil)
-            entries = page.entries
-            entriesNextCursor = page.cursor
+            entries = mergeEntryPagesAtTop(existing: entries, freshFirstPage: page.entries)
+            if entriesNextCursor == nil {
+                entriesNextCursor = page.cursor
+            }
             persistPublicationEntries(publication.publicationId, entries: entries)
             await prefetchThumbnailImages(for: page.entries)
         } catch {
@@ -1294,6 +1352,7 @@ final class SocialWireAppModel {
         }
 
         await refreshSidebarUnreadCounts()
+        await refreshActivePublicationFeedIfNeeded(skipEnroll: true)
     }
 
     private func syncEntryReadStateToPDS(subjectURI: String, readAt: Date) async {

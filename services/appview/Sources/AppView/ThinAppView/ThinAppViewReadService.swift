@@ -19,23 +19,29 @@ actor ThinAppViewReadService {
     self.logger = logger
   }
 
-  func cachedOrListedFirstPage(
+  func cachedFirstPageIfAvailable(
     auth: AuthContext,
     publicationId: String,
     scope: PublicationAppViewScope,
     limit: Int
   ) async throws -> AppViewEntryListResponse? {
-    if let projectionCache,
-       let json = try await projectionCache.cachedFirstPageJSON(
-         viewerDid: auth.did,
-         publicationId: publicationId
-       ),
-       let page = try? JSONDecoder().decode(AppViewEntryListResponse.self, from: Data(json.utf8)),
-       !page.entries.isEmpty
-    {
-      return dedupedPage(page)
-    }
+    guard let projectionCache else { return nil }
+    guard
+      let json = try await projectionCache.cachedFirstPageJSON(
+        viewerDid: auth.did,
+        publicationId: publicationId
+      ),
+      let cached = try? JSONDecoder().decode(AppViewEntryListResponse.self, from: Data(json.utf8)),
+      !cached.entries.isEmpty
+    else { return nil }
+    return dedupedPage(cached)
+  }
 
+  func liveFirstPage(
+    auth: AuthContext,
+    scope: PublicationAppViewScope,
+    limit: Int
+  ) async throws -> AppViewEntryListResponse? {
     let page = try await listEntries(
       auth: auth,
       authorDid: scope.authorDid,
@@ -44,10 +50,28 @@ actor ThinAppViewReadService {
       publicationSiteUrls: scope.publicationSiteUrls,
       filter: .all,
       cursor: nil,
-      limit: limit
+      limit: limit,
+      skipFirstPageCache: true
     )
     guard !page.entries.isEmpty else { return nil }
     return dedupedPage(page)
+  }
+
+  func cachedOrListedFirstPage(
+    auth: AuthContext,
+    publicationId: String,
+    scope: PublicationAppViewScope,
+    limit: Int
+  ) async throws -> AppViewEntryListResponse? {
+    if let cached = try await cachedFirstPageIfAvailable(
+      auth: auth,
+      publicationId: publicationId,
+      scope: scope,
+      limit: limit
+    ) {
+      return cached
+    }
+    return try await liveFirstPage(auth: auth, scope: scope, limit: limit)
   }
 
   func listEntries(
@@ -58,9 +82,10 @@ actor ThinAppViewReadService {
     publicationSiteUrls: [String],
     filter: EntryListFilter,
     cursor: String?,
-    limit: Int
+    limit: Int,
+    skipFirstPageCache: Bool = false
   ) async throws -> AppViewEntryListResponse {
-    if cursor == nil, filter == .all, let projectionCache {
+    if cursor == nil, filter == .all, !skipFirstPageCache, let projectionCache {
       if let publicationId = primaryPublicationId(
         publicationAtUri: publicationAtUri,
         publicationScopeAtUris: publicationScopeAtUris,

@@ -59,7 +59,8 @@ enum AppViewRouterBuilder {
       logger: logger,
       httpClient: httpClient,
       plcURL: config.core.atprotoPLCURL,
-      rssIngestion: rssIngestion
+      rssIngestion: rssIngestion,
+      projectionCache: projectionCache
     )
     let repo = ATProtoAuthenticatedRepoClient(
       httpClient: httpClient,

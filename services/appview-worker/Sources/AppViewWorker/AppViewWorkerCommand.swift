@@ -49,6 +49,7 @@ struct AppViewWorkerCommand: AsyncParsableCommand {
       let pgConfig = try makePostgresConfig(from: urlString, logger: workerLogger)
       let pgPool = PostgresClient(configuration: pgConfig, backgroundLogger: workerLogger)
       let store = PostgresThinAppViewStore(pool: pgPool, logger: workerLogger)
+      let projectionCache = PostgresAppViewProjectionCacheStore(pool: pgPool, logger: workerLogger)
       try await withThrowingTaskGroup(of: Void.self) { group in
         group.addTask { await pgPool.run() }
         group.addTask {
@@ -58,7 +59,8 @@ struct AppViewWorkerCommand: AsyncParsableCommand {
             logger: workerLogger,
             httpClient: httpClient,
             plcURL: plcURL,
-            proactiveExtraAuthorDids: proactiveExtraAuthorDids
+            proactiveExtraAuthorDids: proactiveExtraAuthorDids,
+            projectionCache: projectionCache
           )
         }
         try await group.next()

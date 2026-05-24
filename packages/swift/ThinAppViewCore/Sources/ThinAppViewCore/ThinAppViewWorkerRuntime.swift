@@ -10,7 +10,8 @@ public enum ThinAppViewWorkerRuntime {
     logger: Logger,
     httpClient: HTTPClient? = nil,
     plcURL: String? = nil,
-    proactiveExtraAuthorDids: [String] = []
+    proactiveExtraAuthorDids: [String] = [],
+    projectionCache: (any AppViewProjectionCacheStore)? = nil
   ) async throws {
     let indexer = ThinAppViewIndexer(
       store: store,
@@ -20,7 +21,8 @@ public enum ThinAppViewWorkerRuntime {
       plcURL: plcURL,
       rssIngestion: httpClient.map {
         ThinAppViewRssIngestion(store: store, httpClient: $0, config: config, logger: logger)
-      }
+      },
+      projectionCache: projectionCache
     )
     let firehose = FirehoseSubscriber(
       relayURL: config.relayWebSocketURL,

@@ -38,12 +38,15 @@ struct AppViewProjectionCacheTests {
     #expect(try await store.cachedUnreadCounts(viewerDid: viewerDid)?[publicationId] == 3)
     #expect(try await store.cachedFirstPageJSON(viewerDid: viewerDid, publicationId: publicationId) == #"{"entries":[]}"#)
 
+    try await store.invalidateFirstPageForAllViewers(publicationId: publicationId)
+    #expect(try await store.cachedFirstPageJSON(viewerDid: viewerDid, publicationId: publicationId) == nil)
+
     try await store.invalidateUnreadCounts(viewerDid: viewerDid, publicationId: publicationId)
     #expect(try await store.cachedUnreadCounts(viewerDid: viewerDid) == nil)
 
     let deleted = try await store.deleteExpiredProjectionCaches(
       before: Date().addingTimeInterval(7200)
     )
-    #expect(deleted >= 2)
+    #expect(deleted >= 1)
   }
 }

@@ -30,6 +30,8 @@ import {
   type SidebarPublicationRow,
 } from "@/lib/publicationProjectionClient";
 import { fetchAppViewUnreadCounts } from "@/lib/thinAppViewClient";
+import { normalizeAtRepoParam } from "@/lib/atprotoClient";
+import { queueBootstrapFeedRefresh } from "@/hooks/useProactiveFeedRefresh";
 
 export const PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY = (did: string) =>
   ["publicationSidebarProjection", did] as const;
@@ -156,6 +158,7 @@ export function usePublicationSidebarData() {
   const [projectionError, setProjectionError] = useState<Error | null>(null);
   const streamGenerationRef = useRef(0);
   const pendingAutoSelectPublicationIdRef = useRef<string | null>(null);
+  const bootstrapFeedPublicationIdRef = useRef<string | null>(null);
 
   const cachedProjection = useQuery({
     queryKey: PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(did),
@@ -204,6 +207,7 @@ export function usePublicationSidebarData() {
 
       const generation = ++streamGenerationRef.current;
       pendingAutoSelectPublicationIdRef.current = null;
+      bootstrapFeedPublicationIdRef.current = null;
 
       setSidebarFetching(true);
       setProjectionError(null);
@@ -242,9 +246,13 @@ export function usePublicationSidebarData() {
               if (event.kind === "selectedPublication") {
                 pendingAutoSelectPublicationIdRef.current =
                   event.payload.publicationId;
+                bootstrapFeedPublicationIdRef.current =
+                  event.payload.publicationId;
               }
               if (event.kind === "entriesPage") {
                 writeStreamedEntriesPage(qc, event.payload);
+                bootstrapFeedPublicationIdRef.current =
+                  event.payload.publicationId;
                 if (
                   pendingAutoSelectPublicationIdRef.current ===
                   event.payload.publicationId
@@ -258,7 +266,20 @@ export function usePublicationSidebarData() {
                   setStreamSelectedPublicationId(
                     pendingAutoSelectPublicationIdRef.current
                   );
+                  bootstrapFeedPublicationIdRef.current =
+                    bootstrapFeedPublicationIdRef.current ??
+                    pendingAutoSelectPublicationIdRef.current;
                   pendingAutoSelectPublicationIdRef.current = null;
+                }
+                if (bootstrapFeedPublicationIdRef.current) {
+                  queueBootstrapFeedRefresh({
+                    queryClient: qc,
+                    publicationKey: normalizeAtRepoParam(
+                      bootstrapFeedPublicationIdRef.current
+                    ),
+                    oauthSession: oauth,
+                    viewerDid: did,
+                  });
                 }
               }
 

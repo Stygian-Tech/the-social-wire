@@ -6,6 +6,64 @@ import Testing
 
 @Suite("ThinAppViewIndexer")
 struct ThinAppViewIndexerTests {
+  @Test("indexes document commit and clears cached first page for publication")
+  func indexesDocumentAndInvalidatesFirstPage() async throws {
+    let dbPath =
+      FileManager.default.temporaryDirectory
+        .appendingPathComponent("sw-indexer-\(UUID().uuidString).sqlite")
+        .path
+    defer { try? FileManager.default.removeItem(atPath: dbPath) }
+
+    let logger = Logger(label: "indexer.test")
+    let store = try SQLiteThinAppViewStore(path: dbPath, logger: logger)
+    let cachePath =
+      FileManager.default.temporaryDirectory
+        .appendingPathComponent("sw-indexer-cache-\(UUID().uuidString).sqlite")
+        .path
+    defer { try? FileManager.default.removeItem(atPath: cachePath) }
+    let projectionCache = try SQLiteAppViewProjectionCacheStore(path: cachePath, logger: logger)
+    let config = ThinAppViewConfig.fromEnvironment(["ENABLE_THIN_APPVIEW": "true"])
+    let publication =
+      "at://did:plc:author/site.standard.publication/main"
+    let indexer = ThinAppViewIndexer(
+      store: store,
+      config: config,
+      logger: logger,
+      projectionCache: projectionCache
+    )
+
+    try await projectionCache.storeFirstPageJSON(
+      viewerDid: "did:plc:viewer",
+      publicationId: publication,
+      jsonBody: #"{"entries":[{"entryId":"at://did:plc:author/site.standard.document/old","title":"Old","publishedAt":"2026-05-19T12:00:00.000Z"}]}"#,
+      expiresAt: Date().addingTimeInterval(3600)
+    )
+
+    let record: [String: Any] = [
+      "title": "Indexed Article",
+      "publishedAt": "2026-05-19T12:00:00.000Z",
+      "summary": "Snippet",
+      "site": publication,
+    ]
+    let recordJSON = try JSONSerialization.data(withJSONObject: record)
+
+    try await indexer.handleCommit(
+      repoDid: "did:plc:author",
+      collection: "site.standard.document",
+      rkey: "abc",
+      cid: "bafyindex",
+      recordJSON: recordJSON,
+      operation: "create"
+    )
+
+    #expect(
+      try await projectionCache.cachedFirstPageJSON(
+        viewerDid: "did:plc:viewer",
+        publicationId: publication
+      ) == nil
+    )
+  }
+
   @Test("indexes document commit into content_items")
   func indexesDocument() async throws {
     let dbPath =

@@ -10,6 +10,7 @@ public actor ThinAppViewIndexer {
   private let httpClient: HTTPClient?
   private let plcURL: String?
   private let rssIngestion: ThinAppViewRssIngestion?
+  private let projectionCache: (any AppViewProjectionCacheStore)?
   private var pdsBaseCache: [String: String] = [:]
 
   public init(
@@ -18,7 +19,8 @@ public actor ThinAppViewIndexer {
     logger: Logger,
     httpClient: HTTPClient? = nil,
     plcURL: String? = nil,
-    rssIngestion: ThinAppViewRssIngestion? = nil
+    rssIngestion: ThinAppViewRssIngestion? = nil,
+    projectionCache: (any AppViewProjectionCacheStore)? = nil
   ) {
     self.store = store
     self.config = config
@@ -26,6 +28,7 @@ public actor ThinAppViewIndexer {
     self.httpClient = httpClient
     self.plcURL = plcURL
     self.rssIngestion = rssIngestion
+    self.projectionCache = projectionCache
   }
 
   public func handleCommit(
@@ -57,7 +60,9 @@ public actor ThinAppViewIndexer {
 
     let uri = RenderFieldExtractor.buildEntryUri(did: repoDid, collection: collection, rkey: rkey)
     if operation == "delete" {
+      let publicationSite = RenderFieldExtractor.publicationSiteField(from: record)
       try await store.deleteContentItem(uri: uri)
+      await invalidateFirstPageCaches(for: publicationSite)
       return
     }
 
@@ -86,6 +91,25 @@ public actor ThinAppViewIndexer {
       expiresAt: now.addingTimeInterval(config.contentRetentionSeconds)
     )
     try await store.upsertContentItem(item)
+    await invalidateFirstPageCaches(for: item.publicationSite)
+  }
+
+  private func invalidateFirstPageCaches(for publicationSite: String?) async {
+    guard let projectionCache, let publicationSite else { return }
+    var publicationIds = RenderFieldExtractor.publicationFilterEquivalenceKeys(
+      publicationAtUri: publicationSite
+    )
+    if publicationIds.isEmpty,
+       let canonical = RenderFieldExtractor.canonicalPublicationAtUriKey(publicationSite)
+    {
+      publicationIds.insert(canonical)
+    }
+    if let normalized = RenderFieldExtractor.normalizePublicationSiteUrl(publicationSite) {
+      publicationIds.insert(normalized)
+    }
+    for publicationId in publicationIds {
+      try? await projectionCache.invalidateFirstPageForAllViewers(publicationId: publicationId)
+    }
   }
 
   private func handleReadStateCommit(

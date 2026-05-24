@@ -79,6 +79,8 @@ export async function fetchEntriesInfinitePage(args: {
   articleFilter?: ArticleListFilter;
   queryClient?: QueryClient;
   maxEntries?: number;
+  /** Skips PDS enroll on page 1 (lighter proactive refresh polls). */
+  skipEnroll?: boolean;
 }): Promise<EntriesPage> {
   const {
     normalizedPublicationKey: normalizedKey,
@@ -89,6 +91,7 @@ export async function fetchEntriesInfinitePage(args: {
     articleFilter = "all",
     queryClient,
     maxEntries,
+    skipEnroll = false,
   } = args;
 
   if (!normalizedKey) return { entries: [], cursor: undefined };
@@ -106,7 +109,7 @@ export async function fetchEntriesInfinitePage(args: {
 
   const appViewScope = requireAppViewScope(projection, normalizedKey);
 
-  if (!pageParam) {
+  if (!pageParam && !skipEnroll) {
     try {
       const { authorDid, publicationSiteUrls } = appViewScope;
       if (publicationSiteUrls.length > 0) {

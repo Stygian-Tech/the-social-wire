@@ -176,6 +176,13 @@ public actor PostgresAppViewProjectionCacheStore: AppViewProjectionCacheStore {
     }
   }
 
+  public func invalidateFirstPageForAllViewers(publicationId: String) async throws {
+    try await pool.query(
+      "DELETE FROM first_page_cache WHERE publication_id = \(publicationId)",
+      logger: logger
+    )
+  }
+
   public func deleteExpiredProjectionCaches(before: Date) async throws -> Int {
     var deleted = 0
     deleted += try await deleteExpiredRows(from: "sidebar_projection_cache", before: before)

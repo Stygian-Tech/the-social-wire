@@ -68,6 +68,19 @@ struct BootstrapStreamService {
         extra: ["publicationCount": "\(unreadCounts.count)"]
       )
 
+      let selectedId = BootstrapStreamSelection.firstUnreadPublicationId(
+        myPublications: priority.response.myPublications,
+        subscribedUnfoldered: priority.response.subscribedUnfoldered,
+        following: priority.response.followingTabPublications,
+        unreadCounts: unreadCounts
+      )
+      let selectedRow = selectedId.flatMap {
+        BootstrapStreamSelection.row(publicationId: $0, in: priority.response)
+      }
+      let selectedEnrollTask = selectedRow.map { row in
+        Task { await self.enrollAuthorForBootstrap(auth: auth, row: row) }
+      }
+
       let foldersStarted = Date()
       let folders = try await projectionService.bootstrapFolderSidebar(
         auth: auth,
@@ -81,49 +94,30 @@ struct BootstrapStreamService {
         viewerDid: auth.did
       )
 
-      let selectedId = BootstrapStreamSelection.firstUnreadPublicationId(
-        myPublications: priority.response.myPublications,
-        subscribedUnfoldered: priority.response.subscribedUnfoldered,
-        following: priority.response.followingTabPublications,
-        unreadCounts: unreadCounts
-      )
-
-      if let selectedId {
+      if let selectedId, let selectedRow {
         try await writeEvent(.selectedPublication(publicationId: selectedId), writer: &writer)
-        if let row = BootstrapStreamSelection.row(publicationId: selectedId, in: priority.response) {
-          let entriesStarted = Date()
-          if let page = try await readService.cachedOrListedFirstPage(
-            auth: auth,
-            publicationId: selectedId,
-            scope: row.appViewScope,
-            limit: 50
-          ) {
-            let payload = AppViewBootstrapEntriesPagePayload(
-              publicationId: selectedId,
-              entries: page.entries.map(Self.bootstrapEntry),
-              cursor: page.cursor
-            )
-            try await writeEvent(.entriesPage(payload), writer: &writer)
-          } else {
-            try await writeEvent(
-              .warning("Could not load first feed page for \(selectedId)."),
-              writer: &writer
-            )
-          }
-          BootstrapStreamTimings.logPhase(
-            logger,
-            phase: "selectedEntryPage",
-            startedAt: entriesStarted,
-            viewerDid: auth.did,
-            extra: ["publicationId": selectedId]
-          )
+        let entriesStarted = Date()
+        try await writeBootstrapEntriesPage(
+          auth: auth,
+          publicationId: selectedId,
+          row: selectedRow,
+          enrollTask: selectedEnrollTask,
+          writer: &writer
+        )
+        BootstrapStreamTimings.logPhase(
+          logger,
+          phase: "selectedEntryPage",
+          startedAt: entriesStarted,
+          viewerDid: auth.did,
+          extra: ["publicationId": selectedId]
+        )
 
-          scheduleSelectedPublicationWarmers(
-            auth: auth,
-            row: row,
-            priorityAuthorDids: BootstrapStreamSelection.priorityAuthorDids(from: priority.response)
-          )
-        }
+        scheduleSelectedPublicationWarmers(
+          auth: auth,
+          row: selectedRow,
+          priorityAuthorDids: BootstrapStreamSelection.priorityAuthorDids(from: priority.response),
+          skipAuthorEnroll: selectedEnrollTask != nil
+        )
       }
 
       try await writeEvent(.done(refreshedAt: refreshedAt), writer: &writer)
@@ -209,23 +203,18 @@ struct BootstrapStreamService {
       subscribedUnfoldered: snapshot.priority.subscribedUnfoldered,
       following: snapshot.priority.followingTabPublications,
       unreadCounts: unreadCounts
-    ) {
+    ),
+      let row = BootstrapStreamSelection.row(publicationId: selectedId, in: snapshot.priority)
+    {
+      let selectedEnrollTask = Task { await self.enrollAuthorForBootstrap(auth: auth, row: row) }
       try await writeEvent(.selectedPublication(publicationId: selectedId), writer: &writer)
-      if let row = BootstrapStreamSelection.row(publicationId: selectedId, in: snapshot.priority),
-         let page = try await readService.cachedOrListedFirstPage(
-           auth: auth,
-           publicationId: selectedId,
-           scope: row.appViewScope,
-           limit: 50
-         )
-      {
-        let payload = AppViewBootstrapEntriesPagePayload(
-          publicationId: selectedId,
-          entries: page.entries.map(Self.bootstrapEntry),
-          cursor: page.cursor
-        )
-        try await writeEvent(.entriesPage(payload), writer: &writer)
-      }
+      try await writeBootstrapEntriesPage(
+        auth: auth,
+        publicationId: selectedId,
+        row: row,
+        enrollTask: selectedEnrollTask,
+        writer: &writer
+      )
     }
 
     try await writeEvent(.done(refreshedAt: refreshedAt), writer: &writer)
@@ -300,17 +289,24 @@ struct BootstrapStreamService {
   private func scheduleSelectedPublicationWarmers(
     auth: AuthContext,
     row: SidebarPublicationRow,
-    priorityAuthorDids: [String]
+    priorityAuthorDids: [String],
+    skipAuthorEnroll: Bool = false
   ) {
     Task {
-      await self.warmSelectedPublication(auth: auth, row: row, priorityAuthorDids: priorityAuthorDids)
+      await self.warmSelectedPublication(
+        auth: auth,
+        row: row,
+        priorityAuthorDids: priorityAuthorDids,
+        skipAuthorEnroll: skipAuthorEnroll
+      )
     }
   }
 
   private func warmSelectedPublication(
     auth: AuthContext,
     row: SidebarPublicationRow,
-    priorityAuthorDids: [String]
+    priorityAuthorDids: [String],
+    skipAuthorEnroll: Bool = false
   ) async {
     let warmedAuthorDids = Set(priorityAuthorDids)
     if row.publicationId.hasPrefix(PublicationLexicons.rssPublicationPrefix),
@@ -327,7 +323,7 @@ struct BootstrapStreamService {
           metadata: ["publicationId": .string(row.publicationId)]
         )
       }
-    } else if !warmedAuthorDids.contains(row.appViewScope.authorDid) {
+    } else if !skipAuthorEnroll, !warmedAuthorDids.contains(row.appViewScope.authorDid) {
       do {
         _ = try await enrollService.enroll(
           auth: auth,
@@ -340,6 +336,110 @@ struct BootstrapStreamService {
           metadata: ["publicationId": .string(row.publicationId)]
         )
       }
+    }
+  }
+
+  private func writeBootstrapEntriesPage(
+    auth: AuthContext,
+    publicationId: String,
+    row: SidebarPublicationRow,
+    enrollTask: Task<Void, Never>?,
+    writer: inout any ResponseBodyWriter
+  ) async throws {
+    // If PDS backfill finished while folder sidebar loaded, prefer a fresh index read.
+    if await enrollAlreadyFinished(enrollTask),
+       let page = try await readService.liveFirstPage(auth: auth, scope: row.appViewScope, limit: 50)
+    {
+      try await emitBootstrapEntriesPage(publicationId: publicationId, page: page, writer: &writer)
+      return
+    }
+
+    // Stale-first: paint cached page 1 without blocking on PDS backfill.
+    if let page = try await readService.cachedFirstPageIfAvailable(
+      auth: auth,
+      publicationId: publicationId,
+      scope: row.appViewScope,
+      limit: 50
+    ) {
+      try await emitBootstrapEntriesPage(publicationId: publicationId, page: page, writer: &writer)
+      return
+    }
+
+    // Cold path: no cache — wait for in-flight enroll, then read the index.
+    if let enrollTask {
+      await enrollTask.value
+    } else {
+      await enrollAuthorForBootstrap(auth: auth, row: row)
+    }
+    if let page = try await readService.liveFirstPage(auth: auth, scope: row.appViewScope, limit: 50) {
+      try await emitBootstrapEntriesPage(publicationId: publicationId, page: page, writer: &writer)
+    } else {
+      try await writeEvent(
+        .warning("Could not load first feed page for \(publicationId)."),
+        writer: &writer
+      )
+    }
+  }
+
+  private func emitBootstrapEntriesPage(
+    publicationId: String,
+    page: AppViewEntryListResponse,
+    writer: inout any ResponseBodyWriter
+  ) async throws {
+    let payload = AppViewBootstrapEntriesPagePayload(
+      publicationId: publicationId,
+      entries: page.entries.map(Self.bootstrapEntry),
+      cursor: page.cursor
+    )
+    try await writeEvent(.entriesPage(payload), writer: &writer)
+  }
+
+  /// Returns true when enroll finished without waiting (used to pick live vs cached bootstrap page 1).
+  private func enrollAlreadyFinished(_ task: Task<Void, Never>?) async -> Bool {
+    guard let task else { return false }
+    return await withTaskGroup(of: Bool.self) { group in
+      group.addTask {
+        await task.value
+        return true
+      }
+      group.addTask {
+        await Task.yield()
+        return false
+      }
+      let finished = await group.next() ?? false
+      group.cancelAll()
+      return finished
+    }
+  }
+
+  /// PDS backfill for bootstrap page 1 — runs in parallel with folder sidebar when possible.
+  private func enrollAuthorForBootstrap(auth: AuthContext, row: SidebarPublicationRow) async {
+    if row.publicationId.hasPrefix(PublicationLexicons.rssPublicationPrefix),
+       let feedUrl = PublicationProjectionLogic.normalizedFeedUrlFromRssPublicationId(row.publicationId)
+    {
+      _ = try? await skyreaderIngestionService.ingestViewerSubscriptions(
+        auth: auth,
+        priorityFeedUrls: [feedUrl]
+      )
+      return
+    }
+
+    let authorDid = row.appViewScope.authorDid
+    guard ThinAppViewEnrollBackfill.isBackfillEligibleAuthorDid(authorDid) else { return }
+    do {
+      _ = try await enrollService.enroll(
+        auth: auth,
+        authorDids: [authorDid],
+        recentOnly: true
+      )
+    } catch {
+      logger.warning(
+        "Bootstrap stream pre-page enroll failed",
+        metadata: [
+          "publicationId": .string(row.publicationId),
+          "error": .string(String(describing: error)),
+        ]
+      )
     }
   }
 

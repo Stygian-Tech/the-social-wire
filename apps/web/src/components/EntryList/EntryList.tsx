@@ -3,6 +3,7 @@
 import { useEffect, useMemo } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useEntries } from "@/hooks/useEntries";
+import { useProactiveFeedRefresh } from "@/hooks/useProactiveFeedRefresh";
 import {
   sortEntryListItemsNewestFirst,
   type EntryListItem,
@@ -59,6 +60,12 @@ export function EntryList({
     isFetchNextPageError,
     scopePending,
   } = useEntries(pubId, "all");
+
+  useProactiveFeedRefresh(
+    pubId,
+    "all",
+    !isLoading && !scopePending && (data?.pages.length ?? 0) > 0
+  );
 
   const allEntries: EntryListItem[] = useMemo(() => {
     const flat = dedupeEntryListItems(data?.pages.flatMap((p) => p.entries) ?? []);

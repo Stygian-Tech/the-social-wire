@@ -246,6 +246,15 @@ public actor SQLiteAppViewProjectionCacheStore: AppViewProjectionCacheStore {
     }
   }
 
+  public func invalidateFirstPageForAllViewers(publicationId: String) async throws {
+    try await db.write { db in
+      try db.execute(
+        sql: "DELETE FROM first_page_cache WHERE publication_id = ?",
+        arguments: [publicationId]
+      )
+    }
+  }
+
   public func deleteExpiredProjectionCaches(before: Date) async throws -> Int {
     let cutoff = Self.isoString(from: before)
     return try await db.write { db in

@@ -31,6 +31,7 @@ public protocol AppViewProjectionCacheStore: Actor {
     expiresAt: Date
   ) async throws
   func invalidateFirstPage(viewerDid: String, publicationId: String?) async throws
+  func invalidateFirstPageForAllViewers(publicationId: String) async throws
 
   func deleteExpiredProjectionCaches(before: Date) async throws -> Int
 }
