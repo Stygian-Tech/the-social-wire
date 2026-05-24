@@ -13,10 +13,12 @@ public enum RenderFieldExtractor {
     pdsBase: String? = nil
   ) -> ContentRenderFields {
     let title =
-      string(record["title"])
-      ?? string(record["name"])
-      ?? slugFromPath(string(record["path"]))
-      ?? "Untitled"
+      HtmlTextDecoder.decodePlainText(
+        string(record["title"])
+          ?? string(record["name"])
+          ?? slugFromPath(string(record["path"]))
+          ?? "Untitled"
+      )
 
     let publishedAt =
       string(record["publishedAt"])
@@ -24,7 +26,8 @@ public enum RenderFieldExtractor {
       ?? string(record["indexedAt"])
       ?? ISO8601DateFormatter().string(from: Date())
 
-    let summary = string(record["summary"]) ?? string(record["description"])
+    let summary = string(record["summary"]).map(HtmlTextDecoder.decodePlainText)
+      ?? string(record["description"]).map(HtmlTextDecoder.decodePlainText)
     let thumbnailUrl =
       extractHttpsThumbnail(from: record)
       ?? publicationImageUrl(

@@ -149,8 +149,8 @@ public enum ThinAppViewQuerySupport {
 
       return AppViewEntryListItem(
         entryId: row.uri,
-        title: render.title,
-        summary: render.summary,
+        title: HtmlTextDecoder.decodePlainText(render.title),
+        summary: render.summary.map(HtmlTextDecoder.decodePlainText),
         publishedAt: publishedAt,
         thumbnailUrl: render.thumbnailUrl,
         thumbnailFallbackUrl: nil

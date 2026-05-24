@@ -8,6 +8,7 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { thumbnailImageSrcAttempts } from "@/lib/publicResourceUrl";
+import { decodeHtmlEntities } from "@/lib/decodeHtmlEntities";
 import { cn } from "@/lib/utils";
 import type { EntryListItem } from "@/lib/atprotoClient";
 import { CachedImage } from "@/components/shared/CachedImage";
@@ -43,6 +44,14 @@ export function EntryRow({
     () =>
       thumbnailImageSrcAttempts(entry.thumbnailUrl, entry.thumbnailFallbackUrl),
     [entry.thumbnailUrl, entry.thumbnailFallbackUrl]
+  );
+  const displayTitle = useMemo(
+    () => decodeHtmlEntities(entry.title),
+    [entry.title]
+  );
+  const displaySummary = useMemo(
+    () => (entry.summary ? decodeHtmlEntities(entry.summary) : undefined),
+    [entry.summary]
   );
   const [attemptIdx, setAttemptIdx] = useState(0);
 
@@ -107,11 +116,11 @@ export function EntryRow({
               showUnreadChrome ? "font-semibold" : "font-medium"
             )}
           >
-            {entry.title}
+            {displayTitle}
           </p>
-          {entry.summary && (
+          {displaySummary && (
             <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground leading-relaxed">
-              {entry.summary}
+              {displaySummary}
             </p>
           )}
           <p className="mt-1 text-xs text-muted-foreground">{formattedDate}</p>

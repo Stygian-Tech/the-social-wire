@@ -124,7 +124,7 @@ public struct ThinAppViewRssIngestion: Sendable {
   }
 
   private func displayTitle(from item: ParsedRssItem) -> String {
-    let title = item.title.trimmingCharacters(in: .whitespacesAndNewlines)
+    let title = HtmlTextDecoder.decodePlainText(item.title)
     if !title.isEmpty, title != "Untitled" { return title }
     if let link = item.link?.trimmingCharacters(in: .whitespacesAndNewlines), !link.isEmpty { return link }
     return "Untitled"
@@ -132,9 +132,9 @@ public struct ThinAppViewRssIngestion: Sendable {
 
   private func listSummary(from item: ParsedRssItem) -> String? {
     if let snippet = item.summary?.trimmingCharacters(in: .whitespacesAndNewlines), !snippet.isEmpty {
-      return snippet
+      return HtmlTextDecoder.decodePlainText(snippet)
     }
-    let title = item.title.trimmingCharacters(in: .whitespacesAndNewlines)
+    let title = HtmlTextDecoder.decodePlainText(item.title)
     if let link = item.link?.trimmingCharacters(in: .whitespacesAndNewlines), !link.isEmpty, link != title {
       return link
     }
