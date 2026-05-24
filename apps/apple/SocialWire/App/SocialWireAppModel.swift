@@ -218,10 +218,7 @@ final class SocialWireAppModel {
 
             let readAt = Date()
             let savedUnreadCounts = unreadCountsByPublicationId
-            let optimisticDeltas = optimisticUnreadDeltas(for: scope, entryIds: entryIds)
-            for (publicationId, delta) in optimisticDeltas {
-                applyUnreadCountDelta(publicationId: publicationId, delta: delta)
-            }
+            clearUnreadCounts(for: publicationsAffected(by: scope))
             for entryId in entryIds {
                 readAtByEntryId[entryId] = readAt
             }
@@ -1349,12 +1346,8 @@ final class SocialWireAppModel {
         }
     }
 
-    private func optimisticUnreadDeltas(
-        for scope: ReaderMarkReadScope,
-        entryIds: [String]
-    ) -> [String: Int] {
-        let entryIdSet = Set(entryIds)
-        let publications: [DiscoveredPublication] = switch scope {
+    private func publicationsAffected(by scope: ReaderMarkReadScope) -> [DiscoveredPublication] {
+        switch scope {
         case .allLists:
             publicationsForAllListsBulkRead()
         case .list(let source):
@@ -1364,19 +1357,12 @@ final class SocialWireAppModel {
         case .entry, .unavailable:
             []
         }
+    }
 
-        var deltas: [String: Int] = [:]
-        guard let coordinator = readerCacheCoordinator else { return deltas }
+    private func clearUnreadCounts(for publications: [DiscoveredPublication]) {
         for publication in publications {
-            guard let cached = try? coordinator.publicationEntries(publication.publicationId) else { continue }
-            let unread = cached.filter {
-                entryIdSet.contains($0.entryId) && readAtByEntryId[$0.entryId] == nil
-            }.count
-            if unread > 0 {
-                deltas[publication.publicationId] = -unread
-            }
+            unreadCountsByPublicationId.removeValue(forKey: publication.publicationId)
         }
-        return deltas
     }
 
     private func gatewayMarkAllReadScopes(for scope: ReaderMarkReadScope) -> [GatewayMarkAllReadScopeDTO] {

@@ -5,9 +5,10 @@ import {
   normalizeAtRepoParam,
   type DiscoveredPublication,
 } from "@/lib/atprotoClient";
-import type {
-  PublicationSidebarProjection,
-  SidebarPublicationRow,
+import {
+  unreadCountsMapFromProjection,
+  type PublicationSidebarProjection,
+  type SidebarPublicationRow,
 } from "@/lib/publicationProjectionClient";
 import {
   countUnreadCachedEntries,
@@ -58,10 +59,10 @@ function patchSidebarRowUnreadCount(
   normalizedPublicationId: string,
   delta: number
 ): SidebarPublicationRow {
-  if (
-    !publicationIdsMatch(row.publicationId, normalizedPublicationId) ||
-    row.unreadCount == null
-  ) {
+  if (!publicationIdsMatch(row.publicationId, normalizedPublicationId)) {
+    return row;
+  }
+  if (row.unreadCount == null && delta === 0) {
     return row;
   }
   return {
@@ -172,6 +173,40 @@ export function applyBulkPublicationUnreadCountDeltas(
 ): void {
   for (const [publicationId, delta] of deltas) {
     applyPublicationUnreadCountDelta(queryClient, viewerDid, publicationId, delta);
+  }
+}
+
+/** Clears sidebar unread badges for publications (mark-all-read marks the full AppView scope). */
+export function clearPublicationUnreadCounts(
+  queryClient: QueryClient,
+  viewerDid: string,
+  publications: DiscoveredPublication[]
+): void {
+  if (!viewerDid || publications.length === 0) return;
+
+  const projection = queryClient.getQueryData<PublicationSidebarProjection>(
+    PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(viewerDid)
+  );
+  if (!projection) return;
+
+  const countsMap = unreadCountsMapFromProjection(projection);
+  for (const pub of publications) {
+    const normalized = normalizeAtRepoParam(pub.publicationId);
+    let current = 0;
+    for (const [key, count] of countsMap) {
+      if (publicationIdsMatch(key, normalized)) {
+        current = count;
+        break;
+      }
+    }
+    if (current > 0) {
+      applyPublicationUnreadCountDelta(
+        queryClient,
+        viewerDid,
+        pub.publicationId,
+        -current
+      );
+    }
   }
 }
 

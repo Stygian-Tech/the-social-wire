@@ -28,8 +28,8 @@ import {
 import {
   applyBulkPublicationUnreadCountDeltas,
   applyPublicationUnreadCountDelta,
-  bulkReadDeltasForPublications,
   bulkUnreadDeltasForPublications,
+  clearPublicationUnreadCounts,
 } from "@/lib/optimisticUnreadCounts";
 
 export type MarkEntryReadOptions = {
@@ -175,9 +175,7 @@ export function ReadRouteProvider({ children }: { children: ReactNode }) {
     (entryIds: string[], options?: MarkEntriesReadOptions) => {
       if (entryIds.length === 0) return;
       const unique = [...new Set(entryIds)];
-      const bulkDeltasRef: { current: Map<string, number> | null } = {
-        current: null,
-      };
+      let didMarkAny = false;
       setReadMap((prev) => {
         const readAt = new Date().toISOString();
         const next = { ...prev };
@@ -189,6 +187,7 @@ export function ReadRouteProvider({ children }: { children: ReactNode }) {
           }
         }
         if (toSync.length === 0) return prev;
+        didMarkAny = true;
         if (typeof window !== "undefined") {
           saveReadState(window.localStorage, next);
         }
@@ -199,20 +198,13 @@ export function ReadRouteProvider({ children }: { children: ReactNode }) {
             });
           }
         }
-        if (viewerDid && options?.publications?.length) {
-          bulkDeltasRef.current = bulkReadDeltasForPublications(
-            queryClient,
-            options.publications,
-            (entryId) => !prev[entryId]
-          );
-        }
         return next;
       });
-      if (viewerDid && bulkDeltasRef.current && bulkDeltasRef.current.size > 0) {
-        applyBulkPublicationUnreadCountDeltas(
+      if (didMarkAny && viewerDid && options?.publications?.length) {
+        clearPublicationUnreadCounts(
           queryClient,
           viewerDid,
-          bulkDeltasRef.current
+          options.publications
         );
       }
     },

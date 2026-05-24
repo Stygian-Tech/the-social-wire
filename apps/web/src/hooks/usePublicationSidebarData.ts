@@ -342,6 +342,14 @@ export function usePublicationSidebarData() {
     return projectionToSidebarState(mergedProjection);
   }, [mergedProjection]);
 
+  // Prefer React Query cache for unread badges so optimistic mark-all-read updates
+  // are visible even while in-memory streamProjection is still active.
+  const unreadCountsByPublicationId = useMemo(
+    () =>
+      unreadCountsMapFromProjection(cachedProjection ?? mergedProjection),
+    [cachedProjection, mergedProjection]
+  );
+
   const folders = projectionState?.folders ?? [];
   const unfolderedPubs = projectionState?.unfolderedPubs ?? [];
   const followingTabPublications =
@@ -402,8 +410,7 @@ export function usePublicationSidebarData() {
     viewerDid: session?.did,
     publicationSidebarProjection: mergedProjection,
     sidebarRowsById: projectionState?.sidebarRowsById,
-    unreadCountsByPublicationId:
-      projectionState?.unreadCountsByPublicationId ?? new Map(),
+    unreadCountsByPublicationId,
     unreadCountsLoading: false,
     projectionError,
     streamSelectedPublicationId,

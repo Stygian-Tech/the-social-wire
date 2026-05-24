@@ -3,7 +3,8 @@ import { QueryClient } from "@tanstack/react-query";
 
 import { PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY } from "@/hooks/usePublicationSidebarData";
 import type { PublicationSidebarProjection } from "@/lib/publicationProjectionClient";
-import { applyPublicationUnreadCountDelta } from "@/lib/optimisticUnreadCounts";
+import { applyPublicationUnreadCountDelta, clearPublicationUnreadCounts } from "@/lib/optimisticUnreadCounts";
+import type { DiscoveredPublication } from "@/lib/atprotoClient";
 
 const viewerDid = "did:plc:viewer";
 const publicationId = "at://did:plc:author/site.standard.publication/main";
@@ -98,6 +99,31 @@ describe("applyPublicationUnreadCountDelta", () => {
     );
 
     applyPublicationUnreadCountDelta(queryClient, viewerDid, publicationId, -1);
+
+    const projection = queryClient.getQueryData<PublicationSidebarProjection>(
+      PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(viewerDid)
+    );
+    expect(projection?.allPublicationRows[0]?.unreadCount).toBe(0);
+    expect(projection?.unreadCountsByPublicationId?.[publicationId]).toBeUndefined();
+  });
+
+  it("clearPublicationUnreadCounts zeros sidebar badges for mark-all-read", () => {
+    const queryClient = new QueryClient();
+    queryClient.setQueryData(
+      PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(viewerDid),
+      makeProjection(12)
+    );
+
+    const publication: DiscoveredPublication = {
+      publicationId,
+      subscriptionPublicationId: publicationId,
+      authorDid: "did:plc:author",
+      authorHandle: "author.test",
+      title: "Main",
+      discoveredAt: "2026-01-01T00:00:00.000Z",
+    };
+
+    clearPublicationUnreadCounts(queryClient, viewerDid, [publication]);
 
     const projection = queryClient.getQueryData<PublicationSidebarProjection>(
       PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(viewerDid)
