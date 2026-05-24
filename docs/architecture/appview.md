@@ -7,9 +7,20 @@ Social Wire uses two distinct “AppView” concepts:
 | Layer | Purpose | Status |
 |-------|---------|--------|
 | **Bluesky App View** (`public.api.bsky.app`) | Public social graph reads (`getProfile`, `getFollows`, …) | Unchanged — clients call it directly |
-| **Thin AppView** (`/v1/appview/*` on `services/api`) | GDPR-safe Level-1 entry timelines + server-side unread filtering | Implemented behind feature flags |
+| **Thin AppView** (`/v1/appview/*` on **`services/appview`**, proxied by **`services/gateway`**) | GDPR-safe Level-1 entry timelines, sidebar projection, server-side unread filtering | Implemented behind feature flags |
 
 The thin AppView is **not** a Bluesky proxy. It is Social Wire’s own index of `standard.site` entry collections plus a derived `read_marks` replica for unread queries. Full entry bodies and canonical read writes remain on each user’s PDS (`com.thesocialwire.entryReadState`).
+
+## Distributed services
+
+| Service | Responsibility |
+|---------|----------------|
+| **`services/gateway`** | Public OAuth/DPoP edge, PDS write-through, sync cache, unbuffered proxy to AppView |
+| **`services/appview`** | Sidebar projection (`/v1/publications/*`), Thin AppView reads (`/v1/appview/*`), bootstrap stream, projection caches |
+| **`services/appview-worker`** | Jetstream ingestion, proactive PDS backfill, TTL cleanup |
+| **`packages/swift/ThinAppViewCore`** | Shared indexing, storage, worker runtime |
+
+Gateway→AppView trust uses **`GATEWAY_APPVIEW_INTERNAL_SECRET`** (HMAC on path only). Clients always call the gateway host.
 
 ## Data flow
 
@@ -17,26 +28,34 @@ The thin AppView is **not** a Bluesky proxy. It is Social Wire’s own index of 
 Relay / Jetstream (subscribeRepos)
         │
         ▼
-Fly worker (`App worker`)
+Fly appview-worker
   • upsert content_items (title, publishedAt, summary, thumbnail ref)
   • mirror entryReadState → read_marks
+  • proactive PDS backfill for subscribed authors
   • TTL cleanup
         │
         ▼
-Supabase Postgres (ams) — content_items, read_marks
+Supabase Postgres (ams) — content_items, read_marks, sidebar_projection_cache, …
         │
         ▼
-Fly API (`App serve`) — GET /v1/appview/entries, read-mark write-through, enroll, purge
+Fly appview — bootstrap-stream, /v1/appview/*, /v1/publications/*
+        │
+        ▼
+Fly gateway — OAuth, proxy (no buffering on bootstrap-stream)
         │
         ├── Web (`NEXT_PUBLIC_USE_THIN_APPVIEW`)
         └── iOS (`SOCIALWIRE_USE_THIN_APPVIEW` compile flag)
 ```
 
+## Initial load
+
+Authenticated **`GET /v1/appview/bootstrap-stream`** returns NDJSON events as sidebar priority rows, unread counts, first-unread publication selection, first feed page, and folder sections complete. Web and iOS consume the same contract. Cache-first repeat visits paint persisted projection cache while the stream refreshes.
+
 ## Consistency model
 
 - **Writes:** PDS first, then best-effort write-through to the index (`POST/DELETE /v1/appview/read-marks`).
-- **Ingestion:** Firehose + enrollment backfill (`POST /v1/appview/enroll`) after publication discovery.
-- **Unread UI:** Local optimistic read state remains primary; the index enables server-side unread pagination when enabled.
+- **Ingestion:** Firehose + enrollment backfill (`POST /v1/appview/enroll`) + worker proactive backfill.
+- **Unread UI:** Local optimistic read state remains primary; the index enables server-side unread pagination and sidebar badges merged with local/PDS read state.
 
 ## Privacy & retention
 
@@ -49,7 +68,7 @@ Fly API (`App serve`) — GET /v1/appview/entries, read-mark write-through, enro
 
 | Surface | Flag |
 |---------|------|
-| Gateway routes + worker | `ENABLE_THIN_APPVIEW` |
+| AppView routes + worker | `ENABLE_THIN_APPVIEW` |
 | Web client | `NEXT_PUBLIC_USE_THIN_APPVIEW=true` |
 | iOS client | `SOCIALWIRE_USE_THIN_APPVIEW` (Swift compile condition) |
 

@@ -1,6 +1,6 @@
 # Supabase
 
-Postgres migrations for the Social Wire gateway — record cache and Thin AppView index.
+Postgres migrations for the Social Wire gateway cache, AppView index, and sidebar projection caches.
 
 ## Prerequisites
 
@@ -19,17 +19,20 @@ Migrations live in `migrations/`. Each file is applied in timestamp order.
 
 ## Environment
 
-Set `SUPABASE_DATABASE_URL` in `services/api/.env` and `services/worker/.env` when `APP_ENV=dev|prod`.
+Set `SUPABASE_DATABASE_URL` on **gateway**, **appview**, and **appview-worker** when `APP_ENV=dev|prod`.
 
 Local mode (`APP_ENV=local`) uses SQLite instead — Supabase is optional for gateway-only dev.
+
+Use the **session pooler** connection string on Fly and GitHub Actions (not direct `db.*.supabase.co`).
 
 ## Key tables
 
 | Table | Used by |
 |-------|---------|
-| `pds_repo_record_cache` | `/v1/pds/cache/record` |
+| `pds_repo_record_cache` | Gateway `/v1/pds/cache/record` |
 | `content_items` | Thin AppView entry index |
 | `read_marks` | Server-side unread filtering |
+| `sidebar_projection_cache` | Stale-first sidebar/unread/first-page snapshots |
 
 ## CI
 
@@ -41,4 +44,4 @@ Use the **session pooler** connection string in GitHub Actions, not direct `db.*
 ## Related
 
 - [Supabase test plan](../docs/test-plans/supabase.md)
-- [API README](../services/api/README.md) — secrets troubleshooting
+- [Thin AppView architecture](../docs/architecture/appview.md)

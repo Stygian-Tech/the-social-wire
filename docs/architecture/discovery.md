@@ -2,36 +2,36 @@
 
 ## Overview
 
-When the user triggers a discovery refresh, the client:
+With **Thin AppView** enabled (the default production path), publication discovery and sidebar assembly happen **server-side** via AppView:
 
-1. Fetches the user's follow graph through public ATProto XRPC
-2. Checks each followed DID for `site.standard.entry` records
-3. Caches the result in client query/view state
+- **`GET /v1/appview/bootstrap-stream`** — progressive NDJSON for initial reader load
+- **`GET /v1/publications/sidebar`** — full or phased sidebar JSON (`phase=full|priority|folderPublications`)
+- **`POST /v1/publications/refresh`** — force recompute after subscription changes
 
-## Discovery Chain
+The projection merges follow-graph discovery, graph subscriptions, Skyreader RSS rows, folder prefs, and per-publication AppView scope keys. Clients paint folder/publication headers immediately and fill rows as stream events arrive.
 
-The v1 client discovery signal is intentionally direct: a followed DID is a publication if it has at least one standard.site entry record.
+## Legacy client-side discovery
+
+When Thin AppView is disabled, the web client still probes followed DIDs directly:
+
+1. Fetch follows via `app.bsky.graph.getFollows` (public App View) merged with PDS graph
+2. Check each followed DID for `site.standard.publication`, `site.standard.document`, and legacy entry collections
+3. Cache results in React Query / SwiftData
 
 ```
-GET https://bsky.social/xrpc/com.atproto.repo.listRecords
+GET https://public.api.bsky.app/xrpc/com.atproto.repo.listRecords
   ?repo={did}
-  &collection=site.standard.entry
+  &collection=site.standard.document
   &limit=1
 ```
 
-Profile metadata comes from `app.bsky.graph.getFollows`, so the UI can show handles, display names, and avatars without a Social Wire service.
-
-```
-GET https://bsky.social/xrpc/app.bsky.graph.getFollows
-  ?actor={userDid}
-  &limit=100
-```
+Profile metadata comes from `app.bsky.graph.getFollows` and `app.bsky.actor.getProfile`.
 
 ## Concurrency
 
-Clients batch followed DID checks to keep refresh latency reasonable without sending unbounded concurrent requests. Web uses settled promises; Apple uses Swift task groups.
+Legacy client probes batch followed DID checks (web: settled promises; iOS: Swift task groups).
 
-When Thin AppView is enabled, web and iOS call **`POST /v1/appview/enroll`** with unique author DIDs after discovery completes (best-effort backfill).
+When Thin AppView is enabled, web and iOS call **`POST /v1/appview/enroll`** with author DIDs after sidebar load (best-effort backfill). The appview-worker also runs **proactive PDS backfill** on a timer for subscribed authors.
 
 ## AppView layers
 
@@ -40,6 +40,6 @@ Social Wire uses **two** AppView concepts:
 | Layer | Purpose | Status |
 |-------|---------|--------|
 | **Bluesky App View** (`public.api.bsky.app`) | `getFollows`, `getProfile`, handle resolution | In use — unchanged |
-| **Thin AppView** (`/v1/appview/*` on `services/api`) | Level-1 entry timelines + server-side unread | Optional, feature-flagged |
+| **Thin AppView** (`/v1/appview/*` on **`services/appview`**) | Level-1 entry timelines + sidebar projection + server-side unread | Optional, feature-flagged |
 
 A **future cross-user indexer** (popular among follows, public folder indexes, federated discovery via firehose) is a separate scope — not the thin AppView. See [appview.md](appview.md).

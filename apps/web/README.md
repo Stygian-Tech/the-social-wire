@@ -46,7 +46,10 @@ Authentication uses ATProto OAuth (PKCE + DPoP) via `@atproto/oauth-client-brows
 - `src/hooks/useAuth.tsx` — `AuthProvider` context; exposes `session.did`, `getAuthFetch()`, `getOAuthSession()`
 - `src/lib/pdsClient.ts` — XRPC helpers for reading/writing ATProto records on the user's PDS (`new Agent(oauthSession)`)
 - `src/lib/atprotoClient.ts` — public ATProto XRPC helpers for discovery and standard.site entry reads
-- `src/lib/thinAppViewClient.ts` — optional gateway client for Thin AppView entry lists, read-mark write-through, enrollment, purge
+- `src/lib/thinAppViewClient.ts` — optional gateway client for Thin AppView entry lists, read-mark write-through, enrollment, purge, unread counts, mark-all-read
+- `src/lib/publicationProjectionClient.ts` — sidebar projection client (`/v1/publications/*`)
+- `src/lib/bootstrapStreamClient.ts` — NDJSON bootstrap stream consumer
+- `src/lib/feedRefresh.ts` — proactive first-page feed merge helpers
 
 #### Local ATProto OAuth (`next dev`)
 
@@ -78,12 +81,16 @@ Public App View (https://public.api.bsky.app — no OAuth on these calls)
   └─ app.bsky.actor.getProfile         ← follow enrichment (useViewerProfile also uses repo profile fallback)
 
 Social Wire gateway (optional — NEXT_PUBLIC_USE_THIN_APPVIEW=true)
-  └─ GET /v1/appview/entries           ← entry list rows (Level-1 index)
+  └─ GET /v1/appview/bootstrap-stream   ← initial sidebar + unread + first feed page (NDJSON)
+  └─ GET /v1/publications/sidebar       ← sidebar projection (refresh / phased load)
+  └─ GET /v1/appview/entries            ← entry list rows (Level-1 index)
+  └─ GET /v1/appview/unread-counts      ← sidebar unread badges
   └─ POST/DELETE /v1/appview/read-marks ← write-through after PDS read state
-  └─ POST /v1/appview/enroll           ← backfill after discovery
+  └─ POST /v1/appview/enroll            ← backfill after sidebar load
+  └─ POST /v1/appview/mark-all-read     ← scoped bulk read
 ```
 
-All user organisation data (folders, publication prefs, canonical read state) is stored on the user's own PDS. Entry **detail** always reads authors' PDS records. Entry **lists** default to author PDS `listRecords`; when Thin AppView is enabled, lists may come from the gateway index (see [docs/architecture/appview.md](../../docs/architecture/appview.md)).
+All user organisation data (folders, publication prefs, canonical read state) is stored on the user's own PDS. Entry **detail** always reads authors' PDS records. When Thin AppView is enabled, **initial load** uses bootstrap-stream; entry **lists** come from the gateway index with proactive first-page refresh while reading. See [docs/architecture/appview.md](../../docs/architecture/appview.md).
 
 #### PDS-first reads vs public App View
 
@@ -128,10 +135,11 @@ These **localStorage** keys are browser-only convenience (no secrets):
 
 **React Query persistence scope:** only queries that pass `shouldDehydrateQuery` are written: `["discovery", did]`, and **`["entries", authorDid]`** only when the infinite list is small (≤ 3 pages and ≤ 120 entries). Other query keys are not persisted. Persist writes are throttled (2s); max age 7 days.
 
-### Discovery & entry lists (streaming & cache)
+### Discovery, sidebar & entry lists
 
-- **Discovery:** `discoverPublications` accepts **`onProgress`**, invoked with the **full ordered list so far** each time a followed account resolves to a publication. `useDiscovery` / `useRefreshDiscovery` forward that to **`queryClient.setQueryData(DISCOVERY_QUERY_KEY(did), …)`**, so the sidebar updates incrementally while probes run. Initial call passes `[]`. When Thin AppView is enabled, discovery completion triggers **`enrollAuthorsInAppView`** (best-effort).
-- **Entries:** Default path uses `listEntries` on author PDS with **`onProgress`** streaming on the first infinite page. When **`NEXT_PUBLIC_USE_THIN_APPVIEW=true`**, `useEntries` calls **`listEntriesFromAppView`** instead (server-side unread filter supported). **`getEntry`** / entry detail remain PDS-direct in all modes.
+- **Thin AppView path (default when flag on):** `usePublicationSidebarData` consumes **`GET /v1/appview/bootstrap-stream`** for progressive sidebar, unread counts, first-unread selection, and first feed page. Sidebar folder/section expand state persists in **`the-social-wire.sidebar-expanded-keys.v1`** per viewer DID.
+- **Legacy client discovery:** `discoverPublications` with **`onProgress`** streaming still exists for PDS-direct mode; `useDiscovery` updates React Query incrementally while probes run.
+- **Entries:** When **`NEXT_PUBLIC_USE_THIN_APPVIEW=true`**, `useEntries` calls **`listEntriesFromAppView`**. **`useProactiveFeedRefresh`** polls and refocus-refreshes the active publication's first page via **`feedRefresh.ts`**. **`getEntry`** / entry detail remain PDS-direct in all modes.
 
 ### Key Libraries
 
@@ -168,13 +176,18 @@ src/
     useAuth.tsx         # Auth context
     usePDSClient.ts     # Memoised PDSClient from OAuthSession
     useFolders.ts       # Folder CRUD
-    usePublications.ts  # Discovery + publication prefs
+    usePublications.ts  # Discovery + publication prefs (legacy path)
+    usePublicationSidebarData.ts  # Bootstrap stream + sidebar projection
     useEntries.ts       # Entry list + entry detail (optional Thin AppView)
+    useProactiveFeedRefresh.ts  # Background feed first-page refresh
   lib/
     auth.ts             # OAuth client
     pdsClient.ts        # PDS XRPC helpers (+ read-mark write-through when flag on)
     atprotoClient.ts    # Public ATProto discovery + content reads
     thinAppViewClient.ts # Gateway Thin AppView client
+    publicationProjectionClient.ts # Sidebar projection client
+    bootstrapStreamClient.ts # NDJSON bootstrap stream
+    feedRefresh.ts      # Proactive first-page feed merge
     sanitize.ts         # DOMPurify wrapper
 ```
 

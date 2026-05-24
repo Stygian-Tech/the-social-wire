@@ -24,10 +24,11 @@
           ▼ (optional, feature-flagged)
    Social Wire gateway (Fly, ams)
      /v1/sync/preferences, /v1/pds/cache/record
-     /v1/appview/*  ← Thin AppView (Level-1 index + read_marks)
+     /v1/publications/* (write-through + proxied sidebar)
+     /v1/appview/*  ← Thin AppView (proxied to services/appview)
           │
           ▼
-     Supabase Postgres (content_items, read_marks, pds_repo_record_cache)
+     Supabase Postgres (content_items, read_marks, sidebar_projection_cache, pds_repo_record_cache)
 ```
 
 ## Data Ownership
@@ -84,7 +85,7 @@ See [discovery.md](discovery.md) for the detailed walkthrough.
 
 ## Thin AppView (optional)
 
-When `ENABLE_THIN_APPVIEW` is enabled on the gateway, a separate Fly **worker** process ingests Jetstream commits into `content_items` and mirrors `com.thesocialwire.entryReadState` into `read_marks`. Clients may route **entry list** queries to `GET /v1/appview/entries` while keeping **entry detail** and **read writes** on the PDS.
+When `ENABLE_THIN_APPVIEW` is enabled on AppView, the **appview-worker** process ingests Jetstream commits into `content_items` and mirrors `com.thesocialwire.entryReadState` into `read_marks`. Clients load the sidebar and first feed page via **`GET /v1/appview/bootstrap-stream`**, then paginate entry lists with `GET /v1/appview/entries`. Entry detail and read writes stay on the PDS.
 
 Enrollment (`POST /v1/appview/enroll`) backfills followed author DIDs after client-side discovery because the global relay may miss very new repos.
 

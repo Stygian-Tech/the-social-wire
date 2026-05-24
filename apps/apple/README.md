@@ -10,7 +10,7 @@ Generate or refresh the Xcode project from **`apps/apple`**: `xcodegen generate`
 
 The repository root has no **`Package.swift`** (this target is Xcode + XcodeGen, not SPM). At the repo root the Swift VS Code extension’s **“Swift: Build All”** runs **`swift build`** and fails with *Could not find Package.swift*. Use **SweetPad: Build / Build & Run** instead, after **SweetPad: Select Xcode workspace** if needed—the workspace default is **[`.vscode/settings.json`](../../.vscode/settings.json)** → **`apps/apple/The Social Wire.xcodeproj`**.
 
-For **`services/api`** Swift Package Manager work inside the same window, temporarily set **`swift.disableSwiftPackageManagerIntegration`** to **`false`** in your user settings, or open **`services/api`** as its own window / multi-root workspace entry.
+For **`services/gateway`**, **`services/appview`**, or **`services/appview-worker`** Swift Package Manager work inside the same window, temporarily set **`swift.disableSwiftPackageManagerIntegration`** to **`false`** in your user settings, or open the service directory as its own window / multi-root workspace entry.
 
 ## Project Structure
 
@@ -44,9 +44,12 @@ The app uses **`SocialWireGatewayClient`** against **`SocialWireAPIEnvironment.b
 
 | Route | Purpose |
 |-------|---------|
+| `GET /v1/appview/bootstrap-stream` | Progressive NDJSON initial reader load |
+| `GET /v1/publications/sidebar` | Sidebar projection |
 | `GET /v1/sync/preferences` | Account preferences envelope (ETag-aware) |
 | `GET /v1/pds/cache/record` | Cached single-record reads |
-| `/v1/appview/*` | Thin AppView (when compile flag on) |
+| `/v1/appview/*` | Entry lists, unread counts, read marks, enroll, mark-all-read, purge |
+| `/v1/publications/*` | Folder/subscription write-through |
 
 ### Thin AppView (optional)
 
@@ -114,7 +117,7 @@ Until that file is live on production, you can:
 
 **A. Next.js / Vercel** — Deploy **`apps/web`** to a **Vercel preview** (or staging host) so `ios-client-metadata.json` is reachable over HTTPS, then follow the steps below using that URL.
 
-**B. Swift API (local + tunnel)** — Run [`services/api`](../../services/api/README.md) (`APP_ENV=local swift run App`). Expose it with **ngrok** (or similar). For **`/ios-client-metadata.json`**, set **`OAUTH_IOS_METADATA_ORIGIN`** when **`Host`/forwarded headers** do not match the tunnel URL (**`OAUTH_PUBLIC_ORIGIN`** applies only to web **`/oauth/client-metadata.json`**). Then use `https://<tunnel>/ios-client-metadata.json` as `ATProtoOAuthClientID`.
+**B. Swift gateway (local + tunnel)** — Run **`services/gateway`** (`APP_ENV=local swift run Gateway`). Expose it with **ngrok** (or similar). For **`/ios-client-metadata.json`**, set **`OAUTH_IOS_METADATA_ORIGIN`** when **`Host`/forwarded headers** do not match the tunnel URL (**`OAUTH_PUBLIC_ORIGIN`** applies only to web **`/oauth/client-metadata.json`**). Then use `https://<tunnel>/ios-client-metadata.json` as `ATProtoOAuthClientID`.
 
 Then:
 

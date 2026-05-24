@@ -41,6 +41,7 @@ apps/web/src/__tests__/
 | `rssFeedServer.ts` | `rssFeedServer.test.ts` | Covered |
 | `sanitize.ts` | `sanitize.test.ts` | Covered |
 | `thinAppViewClient.ts` | `thinAppViewClient.test.ts` | Covered |
+| `feedRefresh.ts` | `feedRefresh.test.ts` | Covered |
 | `unreadCounts.ts` | `unreadCounts.test.ts` | Covered |
 | `auth.ts` | `auth.test.ts`, `pathnameIsOAuthCallbackRoute.test.ts` | Covered |
 | `publicationSubscriptionMatch.ts` | `publicationSubscriptionMatch.test.ts` | Covered |
@@ -58,6 +59,7 @@ apps/web/src/__tests__/
 | `useSidebarUnreadCounts.ts` | `hooks/useSidebarUnreadCounts.test.tsx` | Covered |
 | `useCachedBulkReadActions.ts` | `hooks/useCachedBulkReadActions.test.tsx` | Covered |
 | `usePublicationSidebarData.ts` | `hooks/usePublicationSidebarData.test.tsx` | Covered |
+| `useProactiveFeedRefresh.ts` | — | Covered via `feedRefresh.test.ts` |
 | `useReadLaterPreferences.ts` | `hooks/useReadLaterPreferences.test.tsx` | Covered |
 | `useLatrSaved.ts` | `hooks/useLatrSaved.test.tsx` | Covered |
 | `usePublications.ts` | `hooks/usePublications.test.tsx` | Covered |

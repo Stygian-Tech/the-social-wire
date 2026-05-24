@@ -1,12 +1,12 @@
 import type { InfiniteData, QueryClient } from "@tanstack/react-query";
 
-import { dedupeEntryListItems } from "@/lib/rssFeedCore";
 import {
   ENTRIES_QUERY_KEY,
   fetchEntriesInfinitePage,
   type EntriesPage,
 } from "@/hooks/useEntries";
 import type { ArticleListFilter } from "@/lib/entryArticleFilter";
+import { dedupeEntryListItems } from "@/lib/rssFeedCore";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 
 /** Delay after bootstrap before a one-time feed refresh (background enroll may still be running). */
@@ -78,7 +78,7 @@ export async function refreshPublicationFeedFirstPage(args: {
     skipEnroll,
   });
 
-  queryClient.setQueryData(queryKey, (current) =>
+  queryClient.setQueryData<InfiniteData<EntriesPage>>(queryKey, (current) =>
     mergeFeedFirstPageRefresh(current, freshPage)
   );
   return true;

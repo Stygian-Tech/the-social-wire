@@ -18,6 +18,7 @@ Requires Docker. Migrations live in `supabase/migrations/`.
 
 | Table | Purpose |
 |-------|---------|
+| `sidebar_projection_cache` | Stale-first sidebar/unread/first-page snapshots |
 | `pds_repo_record_cache` | Short TTL cache for `/v1/pds/cache/record` |
 | `content_items` | Thin AppView Level-1 entry index |
 | `read_marks` | Derived read state for server-side unread filtering |

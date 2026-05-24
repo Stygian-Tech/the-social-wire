@@ -3,31 +3,31 @@ openapi: "3.1.0"
 info:
   title: The Social Wire API
   description: |
-    Lightweight Swift **Social Wire gateway** that ships beside the Next.js web app:
+    HTTP contract for the Social Wire **distributed backend**:
 
-    - **OAuth client metadata** mirroring SPA + ATS clients (`/oauth/client-metadata.json`, `/ios-client-metadata.json`) with scopes sourced from **`ATProtoOAuthScopes`** so tunnel or Fly deployments expose stable discovery URLs.
+    - **`services/gateway`** (this spec's `servers` URLs) — OAuth client metadata, DPoP verification, PDS write-through, sync cache, unbuffered proxy to AppView.
+    - **`services/appview`** — publication sidebar projection (`/v1/publications/*`), Thin AppView read index (`/v1/appview/*`), bootstrap stream.
+    - **`services/appview-worker`** — Jetstream ingestion and proactive backfill (no HTTP surface).
 
-    - **Authenticated sync accelerators**: `Authorization: Bearer` or `Authorization: DPoP` access JWTs forwarded to ATProto repos, guarded by cryptographic JWKS verification **and** a mandatory RFC 9449 `DPoP` proof binding (`cnf.jkt` enforced when emitted by the issuer).
+    **OAuth client metadata** mirrors SPA + ATS clients (`/oauth/client-metadata.json`, `/ios-client-metadata.json`) with scopes from **`ATProtoOAuthScopes`**.
 
-    - **Performance caches**: short TTL blobs in **`pds_repo_record_cache`** (`Supabase`/SQLite).
+    **Authenticated routes** require `Authorization: Bearer` or `Authorization: DPoP` plus RFC 9449 `DPoP` proof binding (`cnf.jkt` when emitted by the issuer).
 
-    - **Thin AppView**: Level-1 entry index + read-mark replica at **`/v1/appview/*`** on the AppView service when **`ENABLE_THIN_APPVIEW`** is on; ingested by **`services/appview-worker`** from Jetstream.
+    **Thin AppView** (`ENABLE_THIN_APPVIEW` on AppView): Level-1 entry index, unread counts, bootstrap-stream NDJSON initial load, scoped mark-all-read. Ingested by **`services/appview-worker`**.
 
-    LATRHTTPS merge APIs deliberately stay out—continue using the hosted web helpers for LATR flows.
-
-    **Feature flags:** `ENABLE_THIN_APPVIEW` registers `/v1/appview/**` on AppView.
+    LATR HTTPS merge APIs stay on the Next.js web app — not documented here.
   version: "1.0.0"
   contact:
     name: Stygian Tech
     url: https://github.com/Stygian-Tech
 
 servers:
-  - url: https://api.thesocialwire.com
-    description: Production
-  - url: https://api-dev.thesocialwire.com
-    description: Development
+  - url: https://api.thesocialwire.app
+    description: Production gateway
+  - url: https://api.testing.thesocialwire.app
+    description: Development / testing gateway
   - url: http://localhost:8080
-    description: Local
+    description: Local gateway
 
 # ── Security ──────────────────────────────────────────────────────────────────
 

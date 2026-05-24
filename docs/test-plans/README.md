@@ -5,9 +5,10 @@ Verification guides for each surface in the monorepo. Tests live **in the owning
 | Surface | Plan | Command | CI job |
 |---------|------|---------|--------|
 | Web | [web.md](./web.md) | `cd apps/web && bun test` | `build-web` |
-| API | [api.md](./api.md) | `cd services/api && swift test` | `test-api` |
-| Worker | [worker.md](./worker.md) | `cd services/worker && swift test` | `test-worker` |
-| ThinAppViewCore | [worker.md](./worker.md#thinappviewcore) | `cd packages/swift/ThinAppViewCore && swift test` | `test-api`, `test-worker` |
+| Gateway | [api.md](./api.md) | `cd services/gateway && swift test` | `test-gateway` |
+| AppView | [appview.md](./appview.md) | `cd services/appview && swift test` | `test-appview` |
+| AppView worker | [worker.md](./worker.md) | `cd services/appview-worker && swift test` | `test-appview-worker` |
+| ThinAppViewCore | [worker.md](./worker.md#thinappviewcore) | `cd packages/swift/ThinAppViewCore && swift test` | `test-appview`, `test-appview-worker` |
 | iOS | [apple.md](./apple.md) | Xcode **Cmd+U** | Local only (Xcode Cloud deferred) |
 | Supabase | [supabase.md](./supabase.md) | `supabase db reset --local` | `supabase-validate` |
 | Lexicons | [web.md](./web.md#lexicons) | `cd packages/lexicons && bun test` | `test-lexicons` |
@@ -23,12 +24,13 @@ bun install
 # Web
 cd apps/web && bun test && cd ../..
 
-# API
-cd services/api && swift test && cd ../..
+# Backend services
+cd services/gateway && swift test && cd ../..
+cd services/appview && swift test && cd ../..
+cd services/appview-worker && swift test && cd ../..
 
-# ThinAppViewCore + Worker
+# ThinAppViewCore
 cd packages/swift/ThinAppViewCore && swift test && cd ../../..
-cd services/worker && swift test && cd ../..
 
 # Lexicons + OpenAPI drift
 cd packages/lexicons && bun test && cd ../..

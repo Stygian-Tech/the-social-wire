@@ -1,6 +1,6 @@
 # Architecture
 
-The Social Wire keeps **user organisation data on the user’s ATProto PDS** (folders, publication prefs, read state). Clients discover publications via follows and read standard.site–shaped records from authors’ repos. An optional **Thin AppView** on `services/api` accelerates entry timelines and server-side unread filtering without storing full bodies.
+The Social Wire keeps **user organisation data on the user’s ATProto PDS** (folders, publication prefs, read state). Clients discover publications via the gateway/AppView sidebar projection (Thin AppView path) or direct PDS probes (legacy). An optional **Thin AppView** on **`services/appview`** (proxied by **`services/gateway`**) accelerates entry timelines, sidebar badges, and server-side unread filtering without storing full bodies.
 
 **Read in the repo**
 
@@ -12,5 +12,6 @@ The Social Wire keeps **user organisation data on the user’s ATProto PDS** (fo
 **Wiki**
 
 - [[Thin-AppView]] — rollout, flags, routes, deployment
+- [[Service-API]] — gateway + appview + worker split
 
 Related: [[Lexicons]], [[Web-app]], [[Apple-client]], [[Service-API]].

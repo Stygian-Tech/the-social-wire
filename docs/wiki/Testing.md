@@ -9,9 +9,10 @@ Automated and manual verification for every package in the monorepo.
 | Surface | Command | CI |
 |---------|---------|-----|
 | Web | `cd apps/web && bun test` | `build-web` |
-| API | `cd services/api && swift test` | `test-api` |
-| Worker | `cd services/worker && swift test` | `test-worker` |
-| ThinAppViewCore | `cd packages/swift/ThinAppViewCore && swift test` | `test-api`, `test-worker` |
+| Gateway | `cd services/gateway && swift test` | `test-gateway` |
+| AppView | `cd services/appview && swift test` | `test-appview` |
+| AppView worker | `cd services/appview-worker && swift test` | `test-appview-worker` |
+| ThinAppViewCore | `cd packages/swift/ThinAppViewCore && swift test` | `test-appview`, `test-appview-worker` |
 | Lexicons | `cd packages/lexicons && bun test` | `test-lexicons` |
 | OpenAPI spec | `cd packages/spec && bun test` | `test-spec` |
 | iOS | Xcode **Cmd+U** | Local only |
@@ -19,14 +20,14 @@ Automated and manual verification for every package in the monorepo.
 ## Per-surface plans
 
 - [Web](https://github.com/Stygian-Tech/the-social-wire/blob/main/docs/test-plans/web.md) — Bun, MSW, lib/hooks/API routes
-- [API](https://github.com/Stygian-Tech/the-social-wire/blob/main/docs/test-plans/api.md) — Swift Testing, auth matrix, Bruno
-- [Worker](https://github.com/Stygian-Tech/the-social-wire/blob/main/docs/test-plans/worker.md) — worker CLI + ThinAppViewCore
+- [Gateway](https://github.com/Stygian-Tech/the-social-wire/blob/main/docs/test-plans/api.md) — Swift Testing, auth, Bruno
+- [AppView worker + ThinAppViewCore](https://github.com/Stygian-Tech/the-social-wire/blob/main/docs/test-plans/worker.md)
 - [Apple](https://github.com/Stygian-Tech/the-social-wire/blob/main/docs/test-plans/apple.md) — Swift Testing, OAuth checklist
 - [Supabase](https://github.com/Stygian-Tech/the-social-wire/blob/main/docs/test-plans/supabase.md) — migrations, CI validate
 
 ## Test location rule
 
-Tests live **inside the owning package** (`apps/web/src/__tests__/`, `services/api/Tests/`, etc.). See [[Contributing]].
+Tests live **inside the owning package** (`apps/web/src/__tests__/`, `services/gateway/Tests/`, etc.). See [[Contributing]].
 
 ## Out of scope
 
