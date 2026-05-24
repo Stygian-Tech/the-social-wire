@@ -5,7 +5,7 @@ struct EntryRow: View {
     let isRead: Bool
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
+        HStack(alignment: .center, spacing: 12) {
             Group {
                 if !isRead {
                     Circle()
@@ -16,7 +16,7 @@ struct EntryRow: View {
                         .frame(width: 8, height: 8)
                 }
             }
-            .frame(width: 8)
+            .frame(width: 8, height: 8)
 
             thumbnail
 

@@ -312,13 +312,60 @@ final class SocialWireAppModel {
     }
 
     func unreadCachedBadge(for publication: DiscoveredPublication) -> Int {
-        if let serverCount = unreadCountsByPublicationId[publication.publicationId], serverCount > 0 {
-            return serverCount
+        displayUnreadCount(publicationId: publication.publicationId)
+    }
+
+    /// AppView baseline adjusted for cached entries marked read locally (PDS / in-session).
+    private func displayUnreadCount(publicationId: String) -> Int {
+        guard let coordinator = readerCacheCoordinator,
+              let cached = try? coordinator.publicationEntries(publicationId),
+              !cached.isEmpty
+        else {
+            return unreadCountsByPublicationId[publicationId] ?? 0
         }
-        return readerCacheCoordinator?.unreadCachedCount(
-            publicationId: publication.publicationId,
-            readAtByEntryId: readAtByEntryId
-        ) ?? 0
+
+        let localUnread = cached.filter { readAtByEntryId[$0.entryId] == nil }.count
+        guard let baseline = unreadCountsByPublicationId[publicationId] else {
+            return localUnread
+        }
+
+        let readInCache = cached.count - localUnread
+        return max(localUnread, baseline - readInCache)
+    }
+
+    private func applyStreamUnreadCounts(_ counts: [String: Int]) {
+        let publicationIds = Set(
+            gatewayAllPublicationRows.map(\.publicationId)
+                + gatewayMyPublications.map(\.publicationId)
+                + gatewaySubscribedUnfoldered.map(\.publicationId)
+                + gatewayFollowingTab.map(\.publicationId)
+        )
+        for publicationId in publicationIds {
+            let count = counts[publicationId] ?? 0
+            if count > 0 {
+                unreadCountsByPublicationId[publicationId] = count
+            } else {
+                unreadCountsByPublicationId.removeValue(forKey: publicationId)
+            }
+        }
+        for (publicationId, count) in counts where !publicationIds.contains(publicationId) {
+            if count > 0 {
+                unreadCountsByPublicationId[publicationId] = count
+            } else {
+                unreadCountsByPublicationId.removeValue(forKey: publicationId)
+            }
+        }
+    }
+
+    private func applyFetchedUnreadCounts(_ counts: [String: Int], publicationIds: [String]) {
+        for publicationId in publicationIds {
+            let count = counts[publicationId] ?? 0
+            if count > 0 {
+                unreadCountsByPublicationId[publicationId] = count
+            } else {
+                unreadCountsByPublicationId.removeValue(forKey: publicationId)
+            }
+        }
     }
 
     func restoreSession() async {
@@ -466,6 +513,7 @@ final class SocialWireAppModel {
         readAtByEntryId = try await readTask
         savedLinks = try await savedTask
         viewerProfile = try? await profileTask
+        await refreshSidebarUnreadCounts()
         await applyPendingStreamedBootstrapSelectionIfNeeded()
         logBootstrapPhase("total", startedAt: streamStarted)
     }
@@ -487,9 +535,7 @@ final class SocialWireAppModel {
             logBootstrapPhase("sidebarPriority", startedAt: streamStarted)
         case .unreadCounts:
             guard let counts = event.unreadCounts?.counts else { return }
-            for (publicationId, count) in counts where count > 0 {
-                unreadCountsByPublicationId[publicationId] = count
-            }
+            applyStreamUnreadCounts(counts)
             logBootstrapPhase("unreadCounts", startedAt: streamStarted)
         case .selectedPublication:
             pendingStreamSelectedPublicationId = event.selectedPublication?.publicationId
@@ -535,6 +581,10 @@ final class SocialWireAppModel {
         }
 
         await selectPublication(publication)
+    }
+
+    func publication(forId publicationId: String) -> DiscoveredPublication? {
+        publicationMatchingId(publicationId)
     }
 
     private func publicationMatchingId(_ publicationId: String) -> DiscoveredPublication? {
@@ -681,16 +731,6 @@ final class SocialWireAppModel {
         publicationPrefs = rollback.publicationPrefs
     }
 
-    private func applyUnreadCountDelta(publicationId: String?, delta: Int) {
-        guard let publicationId, delta != 0 else { return }
-        let next = max(0, (unreadCountsByPublicationId[publicationId] ?? 0) + delta)
-        if next > 0 {
-            unreadCountsByPublicationId[publicationId] = next
-        } else {
-            unreadCountsByPublicationId.removeValue(forKey: publicationId)
-        }
-    }
-
     private func gatewaySubscribedPublicationsList() -> [DiscoveredPublication] {
         var merged = gatewayMyPublications + gatewaySubscribedUnfoldered
         var ids = Set(merged.map(\.publicationId))
@@ -706,9 +746,7 @@ final class SocialWireAppModel {
         guard !ids.isEmpty else { return }
         do {
             let counts = try await gateway.fetchAppViewUnreadCounts(publicationIds: ids)
-            for (publicationId, count) in counts where count > 0 {
-                unreadCountsByPublicationId[publicationId] = count
-            }
+            applyFetchedUnreadCounts(counts, publicationIds: ids)
         } catch {
             markAppViewUnavailableIfNeeded(error)
         }
@@ -833,7 +871,7 @@ final class SocialWireAppModel {
             maxEntries: Self.entryPrefetchMaxEntries
         )
         try coordinator.upsertPublicationEntries(publicationId: publication.publicationId, entries: page.entries)
-        await prefetchThumbnailImages(for: page.entries.prefix(12))
+        await prefetchThumbnailImages(for: Array(page.entries.prefix(12)))
     }
 
     private func prefetchPublicationAvatarImages(_ publications: [DiscoveredPublication]) {
@@ -1111,15 +1149,11 @@ final class SocialWireAppModel {
         guard readAtByEntryId[entryId] == nil else { return }
         guard useAppViewEntryTimelines else { return }
 
-        let publicationId = selectedPublication?.publicationId
-        applyUnreadCountDelta(publicationId: publicationId, delta: -1)
-
         do {
             let readAt = Date()
             try await gateway.upsertReadMark(subjectUri: entryId, readAt: readAt)
             readAtByEntryId[entryId] = readAt
         } catch {
-            applyUnreadCountDelta(publicationId: publicationId, delta: 1)
             markAppViewUnavailableIfNeeded(error)
             errorMessage = error.localizedDescription
         }
@@ -1127,9 +1161,7 @@ final class SocialWireAppModel {
 
     func toggleRead(_ item: EntryListItem) async {
         guard useAppViewEntryTimelines else { return }
-        let publicationId = selectedPublication?.publicationId
         let markingRead = readAtByEntryId[item.entryId] == nil
-        applyUnreadCountDelta(publicationId: publicationId, delta: markingRead ? -1 : 1)
 
         do {
             if markingRead {
@@ -1141,7 +1173,6 @@ final class SocialWireAppModel {
                 readAtByEntryId.removeValue(forKey: item.entryId)
             }
         } catch {
-            applyUnreadCountDelta(publicationId: publicationId, delta: markingRead ? 1 : -1)
             markAppViewUnavailableIfNeeded(error)
             errorMessage = error.localizedDescription
         }

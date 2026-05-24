@@ -16,7 +16,7 @@ struct RssFeedIdentityTests {
     #expect(entryId.hasPrefix(RssFeedLexicons.entryPrefix))
   }
 
-  @Test("stable item key prefers guid then link")
+  @Test("stable item key prefers normalized link over opaque guid")
   func stableItemKey() {
     let withGuid = ParsedRssItem(
       guid: "abc",
@@ -27,7 +27,7 @@ struct RssFeedIdentityTests {
       publishedAtISO: "2026-01-01T00:00:00.000Z",
       thumbnailUrl: nil
     )
-    #expect(RssFeedIdentity.stableItemKey(from: withGuid) == "guid:abc")
+    #expect(RssFeedIdentity.stableItemKey(from: withGuid) == "link:https://example.com/a")
 
     let withLink = ParsedRssItem(
       guid: nil,
@@ -39,6 +39,33 @@ struct RssFeedIdentityTests {
       thumbnailUrl: nil
     )
     #expect(RssFeedIdentity.stableItemKey(from: withLink) == "link:https://example.com/a")
+  }
+
+  @Test("dedupe entry list items by canonical article link")
+  func dedupeByLink() {
+    let feed = "https://example.com/feed.xml"
+    let linkKey = "link:https://example.com/a"
+    let guidKey = "guid:abc"
+    let linkEntry = AppViewEntryListItem(
+      entryId: RssFeedIdentity.rssEntryId(normalizedFeedUrl: feed, stableItemKey: linkKey),
+      title: "Post",
+      summary: nil,
+      publishedAt: Date(timeIntervalSince1970: 1),
+      thumbnailUrl: nil,
+      thumbnailFallbackUrl: nil
+    )
+    let guidEntry = AppViewEntryListItem(
+      entryId: RssFeedIdentity.rssEntryId(normalizedFeedUrl: feed, stableItemKey: guidKey),
+      title: "Post",
+      summary: "https://example.com/a",
+      publishedAt: Date(timeIntervalSince1970: 1),
+      thumbnailUrl: nil,
+      thumbnailFallbackUrl: nil
+    )
+
+    let deduped = RssFeedIdentity.dedupeEntryListItems([linkEntry, guidEntry])
+    #expect(deduped.count == 1)
+    #expect(deduped[0].entryId == linkEntry.entryId)
   }
 
   @Test("blocks localhost feed fetch")

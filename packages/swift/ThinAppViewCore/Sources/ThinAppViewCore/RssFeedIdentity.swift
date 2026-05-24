@@ -50,16 +50,107 @@ public enum RssFeedIdentity {
     return base64UrlToUtf8(payload)
   }
 
+  /// Prefer normalized article links over opaque GUIDs so re-polls do not mint duplicate rows.
   public static func stableItemKey(from item: ParsedRssItem) -> String {
-    if let guid = item.guid?.trimmingCharacters(in: .whitespacesAndNewlines), !guid.isEmpty {
-      return "guid:\(guid)"
+    if let linkKey = stableLinkKey(from: item.link) {
+      return linkKey
     }
-    if let link = item.link?.trimmingCharacters(in: .whitespacesAndNewlines), !link.isEmpty {
-      return "link:\(link)"
+    if let guidKey = stableGuidKey(from: item.guid) {
+      return guidKey
     }
     let title = item.title.trimmingCharacters(in: .whitespacesAndNewlines)
     let date = item.publishedAtISO.trimmingCharacters(in: .whitespacesAndNewlines)
     return "fallback:\(title)\n\(date)"
+  }
+
+  public static func decodeEntryId(_ entryId: String) -> (feedUrl: String, stableItemKey: String)? {
+    guard entryId.hasPrefix(RssFeedLexicons.entryPrefix) else { return nil }
+    let payload = String(entryId.dropFirst(RssFeedLexicons.entryPrefix.count))
+    guard let inner = base64UrlToUtf8(payload) else { return nil }
+    if let data = inner.data(using: .utf8),
+       let object = try? JSONSerialization.jsonObject(with: data) as? [String: String],
+       let feedUrl = object["f"],
+       let stableItemKey = object["k"]
+    {
+      return (feedUrl, stableItemKey)
+    }
+    guard let pipe = inner.firstIndex(of: "|") else { return nil }
+    let feedUrl = String(inner[..<pipe])
+    let stableItemKey = String(inner[inner.index(after: pipe)...])
+    guard !feedUrl.isEmpty, !stableItemKey.isEmpty else { return nil }
+    return (feedUrl, stableItemKey)
+  }
+
+  public static func canonicalLinkFromStableItemKey(_ stableItemKey: String) -> String? {
+    if stableItemKey.hasPrefix("link:") {
+      let raw = String(stableItemKey.dropFirst("link:".count))
+      return normalizeFeedUrl(raw) ?? raw
+    }
+    if stableItemKey.hasPrefix("guid:") {
+      let raw = String(stableItemKey.dropFirst("guid:".count))
+      guard raw.lowercased().hasPrefix("http") else { return nil }
+      return normalizeFeedUrl(raw)
+    }
+    return nil
+  }
+
+  public static func canonicalLinkForEntryListItem(_ item: AppViewEntryListItem) -> String? {
+    if item.entryId.hasPrefix(RssFeedLexicons.entryPrefix),
+       let decoded = decodeEntryId(item.entryId),
+       let link = canonicalLinkFromStableItemKey(decoded.stableItemKey)
+    {
+      return link
+    }
+    if let summary = item.summary?.trimmingCharacters(in: .whitespacesAndNewlines),
+       summary.lowercased().hasPrefix("http"),
+       let normalized = normalizeFeedUrl(summary)
+    {
+      return normalized
+    }
+    return nil
+  }
+
+  public static func dedupeEntryListItems(_ items: [AppViewEntryListItem]) -> [AppViewEntryListItem] {
+    var seenEntryIds = Set<String>()
+    var seenCanonicalLinks = Set<String>()
+    var seenTitlePublished = Set<String>()
+    var deduped: [AppViewEntryListItem] = []
+    deduped.reserveCapacity(items.count)
+
+    for item in items {
+      guard seenEntryIds.insert(item.entryId).inserted else { continue }
+
+      if let link = canonicalLinkForEntryListItem(item) {
+        guard seenCanonicalLinks.insert(link).inserted else { continue }
+      } else {
+        let titleKey =
+          "\(item.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())|\(Int(item.publishedAt.timeIntervalSince1970))"
+        guard seenTitlePublished.insert(titleKey).inserted else { continue }
+      }
+
+      deduped.append(item)
+    }
+    return deduped
+  }
+
+  private static func stableLinkKey(from raw: String?) -> String? {
+    guard let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else {
+      return nil
+    }
+    if let normalized = normalizeFeedUrl(trimmed) {
+      return "link:\(normalized)"
+    }
+    return "link:\(trimmed)"
+  }
+
+  private static func stableGuidKey(from raw: String?) -> String? {
+    guard let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else {
+      return nil
+    }
+    if let normalized = normalizeFeedUrl(trimmed) {
+      return "guid:\(normalized)"
+    }
+    return "guid:\(trimmed)"
   }
 
   public static func rssEntryId(normalizedFeedUrl: String, stableItemKey: String) -> String {

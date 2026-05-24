@@ -42,8 +42,8 @@ public enum ThinAppViewQuerySupport {
   ) -> AppViewEntryListResponse {
     let hasFullPage = matches.count > pageLimit
     let page = hasFullPage ? Array(matches.prefix(pageLimit)) : matches
-    let items = entryListItems(
-      from: page.map { ($0.uri, $0.renderJSON, $0.createdAt) }
+    let items = RssFeedIdentity.dedupeEntryListItems(
+      entryListItems(from: page.map { ($0.uri, $0.renderJSON, $0.createdAt) })
     )
 
     let nextCursor: String?

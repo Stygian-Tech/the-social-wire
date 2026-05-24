@@ -87,7 +87,8 @@ struct MainSplitView: View {
             PublicationsPaneView(
                 showingNewFolder: $showingNewFolder,
                 showingAddPublication: $showingAddPublication,
-                navigateToPane: navigateCompactPane
+                navigateToPane: navigateCompactPane,
+                onPublicationTap: handleCompactPublicationTap
             )
             .tag(ReaderPane.publications)
 
@@ -211,18 +212,29 @@ struct MainSplitView: View {
 
     // MARK: - Selection
 
+    private func handleCompactPublicationTap(_ publication: DiscoveredPublication) {
+        Task {
+            await appModel.selectPublication(publication)
+            navigateCompactPane(.articles)
+        }
+    }
+
     private func handleSidebarSelection(_ selection: SidebarSelection?) async {
         guard let selection else {
             if appModel.readerListSource != .readLater {
                 appModel.selectedEntry = nil
-                appModel.selectedPublication = nil
-                appModel.entries = []
+                // Compact publications pane: keep the active publication when clearing list
+                // selection so re-tapping the same row can navigate back to Articles.
+                if !(compact && compactPane == .publications) {
+                    appModel.selectedPublication = nil
+                    appModel.entries = []
+                }
             }
             return
         }
         switch selection {
         case .publication(let id):
-            if let publication = appModel.allPublicationRows.first(where: { $0.publicationId == id }) {
+            if let publication = appModel.publication(forId: id) {
                 await appModel.selectPublication(publication)
             }
         case .saved:
@@ -248,6 +260,8 @@ struct MainSplitView: View {
         if newPane == .publications, oldPane == .articles {
             appModel.selectedEntry = nil
             appModel.selectedSavedLink = nil
+            // Deselect the list row so tapping the same publication fires selection again.
+            appModel.selectedSidebar = nil
         }
         if newPane == .lists, oldPane != .lists {
             appModel.selectedEntry = nil

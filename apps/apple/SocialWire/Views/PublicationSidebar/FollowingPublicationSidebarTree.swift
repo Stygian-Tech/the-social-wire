@@ -3,6 +3,7 @@ import SwiftUI
 /// Following sources: collapsible **Publications** section only (no add-publication control).
 struct FollowingPublicationSidebarTree: View {
     @Environment(SocialWireAppModel.self) private var appModel
+    var onPublicationTap: ((DiscoveredPublication) -> Void)? = nil
     @State private var publicationsExpanded = true
 
     var body: some View {
@@ -34,5 +35,8 @@ struct FollowingPublicationSidebarTree: View {
         )
         .readerClearListRow()
         .tag(SidebarSelection.publication(publication.publicationId))
+        .onTapGesture {
+            onPublicationTap?(publication)
+        }
     }
 }

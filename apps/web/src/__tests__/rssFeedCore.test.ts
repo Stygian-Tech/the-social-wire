@@ -7,6 +7,7 @@ import {
   rssEntryIdFromParts,
   rssEntryIdDecode,
   stableItemKeyFromRssItem,
+  dedupeEntryListItems,
 } from "@/lib/rssFeedCore";
 
 describe("rssFeedCore", () => {
@@ -29,6 +30,30 @@ describe("rssFeedCore", () => {
     const id = rssPublicationIdFromNormalizedFeedUrl(u);
     expect(id.startsWith("rss:")).toBe(true);
     expect(normalizedFeedUrlFromRssPublicationId(id)).toBe(u);
+  });
+
+  it("prefers normalized link over opaque guid for stable keys", () => {
+    const key = stableItemKeyFromRssItem({
+      guid: "abc",
+      link: "http://example.net/article",
+    });
+    expect(key).toBe("link:https://example.net/article");
+  });
+
+  it("dedupes rss entries that share a canonical article link", () => {
+    const feed = "https://example.net/feed.xml";
+    const linkEntry = {
+      entryId: rssEntryIdFromParts(feed, "link:https://example.net/article"),
+      title: "Post",
+      publishedAt: "2026-01-01T00:00:00.000Z",
+    };
+    const guidEntry = {
+      entryId: rssEntryIdFromParts(feed, "guid:abc"),
+      title: "Post",
+      summary: "https://example.net/article",
+      publishedAt: "2026-01-01T00:00:00.000Z",
+    };
+    expect(dedupeEntryListItems([linkEntry, guidEntry])).toHaveLength(1);
   });
 
   it("round-trips rss entry ids via stable keys", () => {

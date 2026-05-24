@@ -5,6 +5,7 @@ struct PublicationsPaneView: View {
     @Binding var showingNewFolder: Bool
     @Binding var showingAddPublication: Bool
     var navigateToPane: (ReaderPane) -> Void
+    var onPublicationTap: ((DiscoveredPublication) -> Void)? = nil
 
     var body: some View {
         @Bindable var model = appModel
@@ -21,13 +22,14 @@ struct PublicationsPaneView: View {
                 List(selection: $model.selectedSidebar) {
                     SubscribedPublicationSidebarTree(
                         showingNewFolder: $showingNewFolder,
-                        showingAddPublication: $showingAddPublication
+                        showingAddPublication: $showingAddPublication,
+                        onPublicationTap: onPublicationTap
                     )
                 }
                 .readerListCanvas()
             case .following:
                 List(selection: $model.selectedSidebar) {
-                    FollowingPublicationSidebarTree()
+                    FollowingPublicationSidebarTree(onPublicationTap: onPublicationTap)
                 }
                 .readerListCanvas()
             }

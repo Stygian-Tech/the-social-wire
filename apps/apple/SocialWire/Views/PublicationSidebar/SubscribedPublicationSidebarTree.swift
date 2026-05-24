@@ -5,6 +5,7 @@ struct SubscribedPublicationSidebarTree: View {
     @Environment(SocialWireAppModel.self) private var appModel
     @Binding var showingNewFolder: Bool
     @Binding var showingAddPublication: Bool
+    var onPublicationTap: ((DiscoveredPublication) -> Void)? = nil
     @State private var foldersExpanded = true
     @State private var publicationsExpanded = true
     @State private var expandedFolderRkeys: Set<String> = []
@@ -114,6 +115,9 @@ struct SubscribedPublicationSidebarTree: View {
         )
         .readerClearListRow()
         .tag(SidebarSelection.publication(publication.publicationId))
+        .onTapGesture {
+            onPublicationTap?(publication)
+        }
     }
 
     private var foldersSectionUnread: Int {

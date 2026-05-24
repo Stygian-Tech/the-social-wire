@@ -7,6 +7,7 @@ import {
   sortEntryListItemsNewestFirst,
   type EntryListItem,
 } from "@/lib/atprotoClient";
+import { dedupeEntryListItems } from "@/lib/rssFeedCore";
 import {
   filterEntriesForArticleFilter,
   type ArticleListFilter,
@@ -60,7 +61,7 @@ export function EntryList({
   } = useEntries(pubId, "all");
 
   const allEntries: EntryListItem[] = useMemo(() => {
-    const flat = data?.pages.flatMap((p) => p.entries) ?? [];
+    const flat = dedupeEntryListItems(data?.pages.flatMap((p) => p.entries) ?? []);
     return sortEntryListItemsNewestFirst(flat);
   }, [data?.pages]);
 
