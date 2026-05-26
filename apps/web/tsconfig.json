@@ -19,7 +19,13 @@
       }
     ],
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@stygian/latr-record-keys": [
+        "../../node_modules/latr-packages/packages/record-keys/src/index.ts"
+      ],
+      "@stygian/latr-gateway-client": [
+        "../../node_modules/latr-packages/packages/gateway-client/src/index.ts"
+      ]
     }
   },
   "include": [

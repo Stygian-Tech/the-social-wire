@@ -30,6 +30,11 @@ import {
   latrItemRkeyFromSubjectUri,
   normalizeLatrHttpsUrl,
 } from "@/lib/latrSavedUrls";
+import {
+  legacyHexEntryReadStateRkey,
+  legacyIOSLatrExternalRkey,
+  legacyIOSLatrItemRkey,
+} from "@/lib/legacyRecordKeys";
 
 // ── Lexicon collection IDs ────────────────────────────────────────────────────
 
@@ -730,7 +735,21 @@ export class PDSClient {
       });
       prevExternal = current.data.value as unknown as LatrSavedExternalRecord;
     } catch {
-      prevExternal = null;
+      const legacyRkey = await legacyIOSLatrExternalRkey(normalizedUrl);
+      if (legacyRkey !== externalRkey) {
+        try {
+          const legacy = await this.agent.api.com.atproto.repo.getRecord({
+            repo: this.did,
+            collection: COLLECTION_LATR_SAVED_EXTERNAL,
+            rkey: legacyRkey,
+          });
+          prevExternal = legacy.data.value as unknown as LatrSavedExternalRecord;
+        } catch {
+          prevExternal = null;
+        }
+      } else {
+        prevExternal = null;
+      }
     }
 
     const titleNext =
@@ -759,6 +778,19 @@ export class PDSClient {
       rkey: externalRkey,
       record: externalRecord as unknown as Record<string, unknown>,
     });
+
+    const legacyExternalRkey = await legacyIOSLatrExternalRkey(normalizedUrl);
+    if (legacyExternalRkey !== externalRkey) {
+      try {
+        await this.agent.api.com.atproto.repo.deleteRecord({
+          repo: this.did,
+          collection: COLLECTION_LATR_SAVED_EXTERNAL,
+          rkey: legacyExternalRkey,
+        });
+      } catch {
+        /* legacy record may already be absent */
+      }
+    }
 
     const externalUri =
       `at://${this.did}/${COLLECTION_LATR_SAVED_EXTERNAL}/${externalRkey}`;
@@ -927,6 +959,7 @@ export class PDSClient {
       rkey,
       record: record as unknown as Record<string, unknown>,
     });
+    await this.deleteLegacyEntryReadStateKeys(subjectUri, keepRkey: rkey);
     if (isThinAppViewEnabled()) {
       void writeThroughReadMark(this.oauthSession, subjectUri, readAt).catch(
         () => {
@@ -939,6 +972,7 @@ export class PDSClient {
   /** Best-effort delete; record may already be absent on the PDS. */
   async deleteEntryReadState(subjectUri: string): Promise<void> {
     const rkey = await latrItemRkeyFromSubjectUri(subjectUri);
+    await this.deleteLegacyEntryReadStateKeys(subjectUri, keepRkey: null);
     try {
       await this.agent.api.com.atproto.repo.deleteRecord({
         repo: this.did,
@@ -987,6 +1021,29 @@ export class PDSClient {
       return await resolveNativeSavedSubjectPreview(subjectUri, this.oauthSession);
     } catch {
       return null;
+    }
+  }
+
+  /** Removes legacy hex / iOS-prefixed read-state keys after canonical write or delete. */
+  private async deleteLegacyEntryReadStateKeys(
+    subjectUri: string,
+    keepRkey: string | null
+  ): Promise<void> {
+    const legacyKeys = [
+      await legacyHexEntryReadStateRkey(subjectUri),
+      await legacyIOSLatrItemRkey(subjectUri),
+    ];
+    for (const legacyRkey of legacyKeys) {
+      if (keepRkey != null && legacyRkey === keepRkey) continue;
+      try {
+        await this.agent.api.com.atproto.repo.deleteRecord({
+          repo: this.did,
+          collection: COLLECTION_ENTRY_READ_STATE,
+          rkey: legacyRkey,
+        });
+      } catch {
+        /* legacy record may already be absent */
+      }
     }
   }
 }

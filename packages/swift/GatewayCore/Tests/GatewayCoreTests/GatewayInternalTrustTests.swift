@@ -1,7 +1,6 @@
 import Foundation
+import GatewayTrustKit
 import Testing
-
-@testable import GatewayCore
 
 @Suite("GatewayInternalTrust")
 struct GatewayInternalTrustTests {

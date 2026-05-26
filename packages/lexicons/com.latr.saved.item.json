@@ -35,6 +35,37 @@
           "lastOpenedAt": {
             "type": "string",
             "format": "datetime"
+          },
+          "linkedWebUrl": {
+            "type": "string",
+            "format": "uri",
+            "maxLength": 8192,
+            "description": "Optional public HTTP(S) page used to scrape Open Graph metadata for native saved subjects."
+          },
+          "previewTitle": {
+            "type": "string",
+            "maxLength": 2048,
+            "description": "Cached page / og:title."
+          },
+          "previewExcerpt": {
+            "type": "string",
+            "maxLength": 8192,
+            "description": "Cached description (e.g. og:description)."
+          },
+          "previewSite": {
+            "type": "string",
+            "maxLength": 512,
+            "description": "Cached site label (e.g. og:site_name)."
+          },
+          "previewImage": {
+            "type": "string",
+            "format": "uri",
+            "description": "Cached preview image URL (e.g. og:image)."
+          },
+          "previewAuthor": {
+            "type": "string",
+            "maxLength": 512,
+            "description": "Cached author from page metadata when available."
           }
         }
       }

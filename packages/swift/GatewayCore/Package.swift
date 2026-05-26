@@ -10,6 +10,8 @@ let package = Package(
     .library(name: "GatewayCore", targets: ["GatewayCore"]),
   ],
   dependencies: [
+    .package(url: "https://github.com/Stygian-Tech/atproto-auth-kit.git", branch: "main"),
+    .package(url: "https://github.com/Stygian-Tech/gateway-trust-kit.git", branch: "main"),
     .package(path: "../ThinAppViewCore"),
     .package(url: "https://github.com/hummingbird-project/hummingbird.git", from: "2.6.0"),
     .package(url: "https://github.com/vapor/jwt-kit.git", from: "5.0.0"),
@@ -21,6 +23,8 @@ let package = Package(
     .target(
       name: "GatewayCore",
       dependencies: [
+        .product(name: "ATProtoAuthKit", package: "atproto-auth-kit"),
+        .product(name: "GatewayTrustKit", package: "gateway-trust-kit"),
         .product(name: "ThinAppViewCore", package: "ThinAppViewCore"),
         .product(name: "Hummingbird", package: "hummingbird"),
         .product(name: "JWTKit", package: "jwt-kit"),
@@ -38,6 +42,8 @@ let package = Package(
       name: "GatewayCoreTests",
       dependencies: [
         "GatewayCore",
+        .product(name: "ATProtoAuthKit", package: "atproto-auth-kit"),
+        .product(name: "GatewayTrustKit", package: "gateway-trust-kit"),
         .product(name: "AsyncHTTPClient", package: "async-http-client"),
         .product(name: "Hummingbird", package: "hummingbird"),
         .product(name: "Logging", package: "swift-log"),

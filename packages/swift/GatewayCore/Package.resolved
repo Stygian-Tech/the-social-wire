@@ -1,5 +1,5 @@
 {
-  "originHash" : "e2de24051ef4d562481e5f72541b3923ce46ba218700555a0239950e9c692239",
+  "originHash" : "20c35f38c786325b52350b70aaa7327e0c44cbcfefc1f7fb985827d29ac38423",
   "pins" : [
     {
       "identity" : "async-http-client",
@@ -8,6 +8,33 @@
       "state" : {
         "revision" : "3a5b74a58782c3b4c1f0bc75e9b67b10c2494e8f",
         "version" : "1.33.1"
+      }
+    },
+    {
+      "identity" : "atproto-auth-kit",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/Stygian-Tech/atproto-auth-kit.git",
+      "state" : {
+        "branch" : "main",
+        "revision" : "76b391eb41775d4ccc5d5195f066694cb3cddf76"
+      }
+    },
+    {
+      "identity" : "atproto-primitive-kit",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/Stygian-Tech/atproto-primitive-kit.git",
+      "state" : {
+        "branch" : "main",
+        "revision" : "1105fb3c008a1048c40b9d1b71cc2cc8e51319b0"
+      }
+    },
+    {
+      "identity" : "gateway-trust-kit",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/Stygian-Tech/gateway-trust-kit.git",
+      "state" : {
+        "branch" : "main",
+        "revision" : "b1508e6bc5f5224aa440304f15365a4a2fdc7596"
       }
     },
     {

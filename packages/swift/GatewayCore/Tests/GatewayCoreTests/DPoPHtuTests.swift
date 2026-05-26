@@ -1,4 +1,4 @@
-@testable import GatewayCore
+import ATProtoAuthKit
 import HTTPTypes
 import Hummingbird
 import NIOCore

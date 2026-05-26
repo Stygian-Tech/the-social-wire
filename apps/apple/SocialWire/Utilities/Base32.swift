@@ -1,7 +1,7 @@
 import Foundation
 
 enum Base32 {
-    private static let alphabet = Array("abcdefghijklmnopqrstuvwxyz234567")
+    private static let alphabet = Array("ABCDEFGHIJKLMNOPQRSTUVWXYZ234567")
 
     static func encode(_ data: Data) -> String {
         var output = ""

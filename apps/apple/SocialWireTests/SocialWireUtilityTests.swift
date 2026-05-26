@@ -13,12 +13,28 @@ struct SocialWireUtilityTests {
     }
 
     @Test("read-state rkey is deterministic base32")
-    func readStateRKeyIsDeterministicBase32() {
-        let first = DeterministicKeys.entryReadStateRKey(subjectURI: "at://did:plc:alice/site.standard.document/abc123")
-        let second = DeterministicKeys.entryReadStateRKey(subjectURI: "at://did:plc:alice/site.standard.document/abc123")
+    func readStateRKeyIsDeterministicBase32() throws {
+        let subjectURI = "at://did:plc:alice/site.standard.document/abc123"
+        let first = DeterministicKeys.entryReadStateRKey(subjectURI: subjectURI)
+        let second = DeterministicKeys.entryReadStateRKey(subjectURI: subjectURI)
         #expect(first == second)
-        #expect(first.count == 52)
-        #expect(first.allSatisfy { "abcdefghijklmnopqrstuvwxyz234567".contains($0) })
+        #expect(first == "JPFAJWZIZ7VWQJ3CR2L7PEPRNZBZ6LJ7MKKO3RKWB642BF64NBXQ")
+        #expect(first.allSatisfy { "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567".contains($0) })
+    }
+
+    @Test("L@tr external rkey matches canonical base32")
+    func latrExternalRKeyMatchesCanonical() {
+        let rkey = DeterministicKeys.latrExternalRKey(normalizedURL: "https://example.com/article")
+        #expect(rkey == "MMSTQKIENDT2HHAGGI6J4OXJR4YQOLLEDS5TP2RXSF7VNO7LKU4Q")
+    }
+
+    @Test("legacy iOS keys are detectable for read-repair")
+    func legacyIOSKeysAreDetectable() {
+        let subjectURI = "at://did:plc:alice/site.standard.document/abc123"
+        let canonical = DeterministicKeys.entryReadStateRKey(subjectURI: subjectURI)
+        let legacy = DeterministicKeys.legacyIOSLatrItemRKey(subjectURI: subjectURI)
+        #expect(canonical != legacy)
+        #expect(legacy == canonical.lowercased())
     }
 
     @Test("PublicURLNormalizer promotes HTTP and strips bridge noise")
