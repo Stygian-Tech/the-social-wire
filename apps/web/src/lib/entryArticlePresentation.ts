@@ -1,3 +1,5 @@
+import { isPoorIframeEmbedTarget } from "@/lib/savedLinkEmbedUrl";
+
 /** RSS summaries and short excerpts should not block live-site iframe reading. */
 export function isSubstantialArticleBody(html: string): boolean {
   const trimmed = html.trim();
@@ -20,7 +22,8 @@ export function resolveEntryArticlePresentation(args: {
   const substantial = isSubstantialArticleBody(args.contentHtml);
   if (substantial) return "html";
   const embedTarget = args.embedUrl?.trim() || args.originalUrl?.trim();
-  if (embedTarget) return "embed";
+  if (embedTarget && !isPoorIframeEmbedTarget(embedTarget)) return "embed";
+  if (embedTarget && args.contentHtml.trim()) return "html";
   if (args.contentHtml.trim()) return "html";
   return null;
 }

@@ -7,6 +7,11 @@ import {
   getCachedEmbedProbeFrameable,
   setCachedEmbedProbeFrameable,
 } from "@/lib/embedProbeCache";
+import {
+  isCachedUnstableEmbed,
+  markUnstableEmbed,
+  registerIframeLoadEvent,
+} from "@/lib/embedIframeStability";
 import { sanitizeEmbedUrlForIframe } from "@/lib/publicResourceUrl";
 import { cn } from "@/lib/utils";
 
@@ -30,6 +35,26 @@ function BlockedEmbedMessage({ href }: { href: string }) {
       >
         <ExternalLink className="size-4 shrink-0" aria-hidden />
         Open
+      </a>
+    </div>
+  );
+}
+
+function UnstableEmbedMessage({ href }: { href: string }) {
+  return (
+    <div className="flex min-h-[200px] flex-col items-center justify-center gap-3 px-4 py-6 text-center text-sm text-muted-foreground">
+      <p>
+        This page keeps reloading when embedded (common with some React sites). Open it in a new
+        tab to read.
+      </p>
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-flex min-h-[44px] items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium text-primary hover:underline"
+      >
+        <ExternalLink className="size-4 shrink-0" aria-hidden />
+        Open in New Tab
       </a>
     </div>
   );
@@ -72,15 +97,31 @@ function EntryArticleEmbedInner({
   const cachedFrameable = getCachedEmbedProbeFrameable(iframeSrc);
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
+  const [unstableEmbed, setUnstableEmbed] = useState(() =>
+    isCachedUnstableEmbed(iframeSrc)
+  );
   /** `null` = probe in progress; `true` = headers say framing is blocked. */
   const [probeBlocksEmbed, setProbeBlocksEmbed] = useState<boolean | null>(() =>
     cachedFrameable === undefined ? null : !cachedFrameable
   );
 
+  const loadTimestampsRef = useRef<number[]>([]);
+
   const handleLoad = useCallback(() => {
+    const { timestamps, unstable } = registerIframeLoadEvent(
+      loadTimestampsRef.current
+    );
+    loadTimestampsRef.current = timestamps;
+    if (unstable) {
+      markUnstableEmbed(iframeSrc);
+      setUnstableEmbed(true);
+      setLoaded(true);
+      setFailed(false);
+      return;
+    }
     setLoaded(true);
     setFailed(false);
-  }, []);
+  }, [iframeSrc]);
 
   const handleError = useCallback(() => {
     setFailed(true);
@@ -125,10 +166,11 @@ function EntryArticleEmbedInner({
     };
   }, [iframeSrc]);
 
-  const showIframe = probeBlocksEmbed === false && !failed;
+  const showIframe = probeBlocksEmbed === false && !failed && !unstableEmbed;
   const showBusyOverlay =
     !loaded &&
     !failed &&
+    !unstableEmbed &&
     (probeBlocksEmbed === null || showIframe);
 
   return (
@@ -145,6 +187,8 @@ function EntryArticleEmbedInner({
       ) : null}
       {probeBlocksEmbed === true ? (
         <BlockedEmbedMessage href={iframeSrc} />
+      ) : unstableEmbed ? (
+        <UnstableEmbedMessage href={iframeSrc} />
       ) : failed ? (
         <IframeLoadFailedMessage href={iframeSrc} />
       ) : showIframe ? (

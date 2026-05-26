@@ -36,6 +36,9 @@ export function useAccountPreferences() {
     },
     enabled: !!session,
     staleTime: 30_000,
+    retry: 1,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 }
 
