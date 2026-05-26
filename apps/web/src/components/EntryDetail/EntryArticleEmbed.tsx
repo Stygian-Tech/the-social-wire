@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ExternalLink } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { OEmbedArticleView } from "@/components/EntryDetail/OEmbedArticleView";
 import {
   getCachedEmbedProbeFrameable,
   setCachedEmbedProbeFrameable,
@@ -12,6 +13,8 @@ import {
   markUnstableEmbed,
   registerIframeLoadEvent,
 } from "@/lib/embedIframeStability";
+import { fetchOEmbedForPage } from "@/lib/oEmbedClient";
+import { getCachedOEmbed } from "@/lib/oEmbedCache";
 import { sanitizeEmbedUrlForIframe } from "@/lib/publicResourceUrl";
 import { cn } from "@/lib/utils";
 
@@ -80,27 +83,98 @@ function IframeLoadFailedMessage({ href }: { href: string }) {
   );
 }
 
-/** iframe embed of the canonical article URL with sandbox defaults and loading UI. */
+/** Article embed: oEmbed first, then sandboxed iframe with load-storm protection. */
 export function EntryArticleEmbed(props: EntryArticleEmbedProps) {
-  const iframeSrc = useMemo(
-    () => sanitizeEmbedUrlForIframe(props.url),
-    [props.url]
-  );
-  return <EntryArticleEmbedInner key={iframeSrc} {...props} iframeSrc={iframeSrc} />;
+  const pageUrl = useMemo(() => sanitizeEmbedUrlForIframe(props.url), [props.url]);
+  return <EntryArticleEmbedInner key={pageUrl} {...props} pageUrl={pageUrl} />;
 }
+
+type OEmbedPhase = "pending" | "hit" | "miss";
 
 function EntryArticleEmbedInner({
   title,
   className,
+  pageUrl,
+}: Omit<EntryArticleEmbedProps, "url"> & { pageUrl: string }) {
+  const cachedOEmbed = getCachedOEmbed(pageUrl);
+  const [oembedPhase, setOembedPhase] = useState<OEmbedPhase>(() => {
+    if (!cachedOEmbed) return "pending";
+    return cachedOEmbed.status === "hit" ? "hit" : "miss";
+  });
+  const [oembedPayload, setOembedPayload] = useState(
+    () => (cachedOEmbed?.status === "hit" ? cachedOEmbed.oembed : null)
+  );
+
+  const oembedGeneration = useRef(0);
+
+  useEffect(() => {
+    if (cachedOEmbed) return;
+
+    const gen = ++oembedGeneration.current;
+    const ac = new AbortController();
+
+    void (async () => {
+      const result = await fetchOEmbedForPage(pageUrl, ac.signal);
+      if (gen !== oembedGeneration.current || ac.signal.aborted) return;
+      if (result.ok) {
+        setOembedPayload(result.oembed);
+        setOembedPhase("hit");
+      } else {
+        setOembedPhase("miss");
+      }
+    })();
+
+    return () => {
+      ac.abort();
+    };
+  }, [pageUrl, cachedOEmbed]);
+
+  if (oembedPhase === "pending") {
+    return (
+      <div
+        className={cn(
+          "relative flex min-h-0 w-full flex-1 flex-col overflow-hidden",
+          className
+        )}
+      >
+        <Skeleton className="min-h-0 h-full w-full rounded-none" />
+      </div>
+    );
+  }
+
+  if (oembedPhase === "hit" && oembedPayload) {
+    return (
+      <div
+        className={cn(
+          "relative flex min-h-0 w-full flex-1 flex-col overflow-hidden",
+          className
+        )}
+      >
+        <OEmbedArticleView oembed={oembedPayload} pageUrl={pageUrl} />
+      </div>
+    );
+  }
+
+  return (
+    <IframeArticleEmbed title={title} className={className} iframeSrc={pageUrl} />
+  );
+}
+
+function IframeArticleEmbed({
+  title,
+  className,
   iframeSrc,
-}: Omit<EntryArticleEmbedProps, "url"> & { iframeSrc: string }) {
+}: {
+  title: string;
+  className?: string;
+  iframeSrc: string;
+}) {
   const cachedFrameable = getCachedEmbedProbeFrameable(iframeSrc);
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
   const [unstableEmbed, setUnstableEmbed] = useState(() =>
     isCachedUnstableEmbed(iframeSrc)
   );
-  /** `null` = probe in progress; `true` = headers say framing is blocked. */
   const [probeBlocksEmbed, setProbeBlocksEmbed] = useState<boolean | null>(() =>
     cachedFrameable === undefined ? null : !cachedFrameable
   );
