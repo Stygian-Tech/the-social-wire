@@ -3,7 +3,7 @@ import {
   LATR_API_KEY_HEADER,
   LATR_CLIENT_ID_HEADER,
   LATR_UPSTREAM_DPOP_HEADER,
-} from "@stygian/latr-gateway-client";
+} from "latr-packages/gateway-client";
 
 import {
   createUpstreamDpopProof,

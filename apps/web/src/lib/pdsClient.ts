@@ -959,7 +959,7 @@ export class PDSClient {
       rkey,
       record: record as unknown as Record<string, unknown>,
     });
-    await this.deleteLegacyEntryReadStateKeys(subjectUri, keepRkey: rkey);
+    await this.deleteLegacyEntryReadStateKeys(subjectUri, rkey);
     if (isThinAppViewEnabled()) {
       void writeThroughReadMark(this.oauthSession, subjectUri, readAt).catch(
         () => {
@@ -972,7 +972,7 @@ export class PDSClient {
   /** Best-effort delete; record may already be absent on the PDS. */
   async deleteEntryReadState(subjectUri: string): Promise<void> {
     const rkey = await latrItemRkeyFromSubjectUri(subjectUri);
-    await this.deleteLegacyEntryReadStateKeys(subjectUri, keepRkey: null);
+    await this.deleteLegacyEntryReadStateKeys(subjectUri, null);
     try {
       await this.agent.api.com.atproto.repo.deleteRecord({
         repo: this.did,

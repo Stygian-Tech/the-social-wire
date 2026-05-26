@@ -9,7 +9,7 @@ import {
   latrFingerprintHex,
   latrItemRkeyFromSubjectUri,
   sha256Utf8,
-} from "@stygian/latr-record-keys";
+} from "latr-packages/record-keys";
 
 import { normalizeHttpUrlToHttps } from "@/lib/publicResourceUrl";
 
