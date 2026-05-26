@@ -214,7 +214,7 @@ export function SavedLinksBrowser({ mode }: SavedLinksBrowserProps) {
       return (
         <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto overscroll-y-contain p-3">
           {Array.from({ length: 6 }).map((_, i) => (
-            <Skeleton key={i} className="h-20 w-full shrink-0 rounded-md" />
+            <Skeleton key={i} className="h-36 w-full shrink-0 rounded-md" />
           ))}
         </div>
       );
@@ -248,34 +248,31 @@ export function SavedLinksBrowser({ mode }: SavedLinksBrowserProps) {
               type="button"
               onClick={() => setSelectedRowId(id)}
               className={cn(
-                "flex w-full gap-3 border-b px-4 py-3 text-left transition-colors hover:bg-muted/50",
+                "flex w-full flex-col border-b text-left transition-colors hover:bg-muted/50",
                 resolvedSelectedRowId === id && "bg-muted"
               )}
             >
-              {row.image ? (
-                <>
-                  {/* eslint-disable-next-line @next/next/no-img-element -- user/PDS supplied OpenGraph URLs are not Next image domains. */}
-                  <img
-                    src={row.image}
-                    alt=""
-                    className="mt-0.5 size-12 shrink-0 rounded-md border border-border object-cover"
-                    loading="lazy"
-                  />
-                </>
-              ) : (
-                <span
-                  className="mt-0.5 size-12 shrink-0 rounded-md border border-border bg-muted/40"
-                  aria-hidden
-                />
-              )}
-              <div className="min-w-0 flex-1">
+              <div className="relative aspect-[16/9] w-full shrink-0 overflow-hidden bg-muted/40">
+                {row.image ? (
+                  <>
+                    {/* eslint-disable-next-line @next/next/no-img-element -- user/PDS supplied OpenGraph URLs are not Next image domains. */}
+                    <img
+                      src={row.image}
+                      alt=""
+                      className="absolute inset-0 size-full object-cover"
+                      loading="lazy"
+                    />
+                  </>
+                ) : null}
                 <div
-                  className="mb-1.5"
+                  className="absolute left-2 top-2 z-10 max-w-[calc(100%-1rem)]"
                   onClick={(e) => e.stopPropagation()}
                   onKeyDown={(e) => e.stopPropagation()}
                 >
-                  <SavedLinkPublicationChip row={row} />
+                  <SavedLinkPublicationChip row={row} overlay />
                 </div>
+              </div>
+              <div className="min-w-0 px-4 py-3">
                 <p className="line-clamp-2 text-sm font-medium leading-snug">
                   {rowTitle(row)}
                 </p>

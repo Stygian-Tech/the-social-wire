@@ -8,9 +8,11 @@ import { cn } from "@/lib/utils";
 type Props = {
   row: MergedLatrSave;
   className?: string;
+  /** Semi-opaque styling for overlay on thumbnail images. */
+  overlay?: boolean;
 };
 
-export function SavedLinkPublicationChip({ row, className }: Props) {
+export function SavedLinkPublicationChip({ row, className, overlay }: Props) {
   const publication = useSavedLinkPublication(row);
   if (!publication) return null;
 
@@ -27,7 +29,10 @@ export function SavedLinkPublicationChip({ row, className }: Props) {
   );
 
   const chipClassName = cn(
-    "inline-flex max-w-full min-w-0 items-center gap-1.5 rounded-full border border-border bg-muted/40 px-2.5 py-1 text-xs font-medium text-foreground",
+    "inline-flex max-w-full min-w-0 items-center gap-1.5 rounded-full border border-border px-2.5 py-1 text-xs font-medium text-foreground",
+    overlay
+      ? "border-border/60 bg-background/90 shadow-sm backdrop-blur-sm"
+      : "bg-muted/40",
     className
   );
 
