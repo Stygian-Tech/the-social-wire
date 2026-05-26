@@ -208,17 +208,19 @@ export function EntryRow({
       </button>
       <div className="absolute right-2 top-1/2 z-10 -translate-y-1/2">
         <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              className="size-8 opacity-100 md:opacity-0 md:group-hover/entry-row:opacity-100"
-              aria-label="Article Actions"
-              onClick={(event) => event.stopPropagation()}
-            >
-              <MoreHorizontal className="size-4" />
-            </Button>
+          <DropdownMenuTrigger
+            render={
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                className="size-8 opacity-100 md:opacity-0 md:group-hover/entry-row:opacity-100"
+                aria-label="Article Actions"
+                onClick={(event) => event.stopPropagation()}
+              />
+            }
+          >
+            <MoreHorizontal className="size-4" />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="min-w-[11rem]">
             <EntryRowActions
