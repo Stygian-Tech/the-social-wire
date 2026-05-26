@@ -30,6 +30,10 @@ import {
   resolveSavedLinkEmbedUrl,
   stableSavedLinkIframeSrc,
 } from "@/lib/savedLinkEmbedUrl";
+import {
+  articleListCardButtonClassName,
+  articleListCardWrapperClassName,
+} from "@/lib/articleListCardStyles";
 import { cn } from "@/lib/utils";
 
 export type SavedLinksBrowserMode = "active" | "archived";
@@ -212,9 +216,9 @@ export function SavedLinksBrowser({ mode }: SavedLinksBrowserProps) {
 
     if (isLoading) {
       return (
-        <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto overscroll-y-contain p-3">
+        <div className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto overscroll-y-contain p-2 pt-2">
           {Array.from({ length: 6 }).map((_, i) => (
-            <Skeleton key={i} className="h-36 w-full shrink-0 rounded-md" />
+            <Skeleton key={i} className="h-36 w-full shrink-0 rounded-lg" />
           ))}
         </div>
       );
@@ -239,19 +243,18 @@ export function SavedLinksBrowser({ mode }: SavedLinksBrowserProps) {
     }
 
     return (
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain pt-2">
         {data.map((row) => {
           const id = rowId(row);
           return (
-            <button
-              key={id}
-              type="button"
-              onClick={() => setSelectedRowId(id)}
-              className={cn(
-                "flex w-full flex-col border-b text-left transition-colors hover:bg-muted/50",
-                resolvedSelectedRowId === id && "bg-muted"
-              )}
-            >
+            <div key={id} className={articleListCardWrapperClassName}>
+              <button
+                type="button"
+                onClick={() => setSelectedRowId(id)}
+                className={articleListCardButtonClassName({
+                  isSelected: resolvedSelectedRowId === id,
+                })}
+              >
               <div className="relative aspect-[16/9] w-full shrink-0 overflow-hidden bg-muted/40">
                 {row.image ? (
                   <>
@@ -290,6 +293,7 @@ export function SavedLinksBrowser({ mode }: SavedLinksBrowserProps) {
                 />
               </div>
             </button>
+            </div>
           );
         })}
       </div>

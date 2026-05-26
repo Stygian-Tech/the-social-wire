@@ -133,7 +133,7 @@ export function EntryListVirtualPane({
   const virtualizer = useVirtualizer({
     count: virtualCount,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => 248,
+    estimateSize: () => 254,
     overscan: 5,
   });
 
@@ -143,7 +143,7 @@ export function EntryListVirtualPane({
     <div
       ref={parentRef}
       data-entry-list-scroll
-      className="h-full overflow-y-auto overscroll-y-contain"
+      className="h-full overflow-y-auto overscroll-y-contain pt-2"
     >
       <div
         style={{ height: virtualizer.getTotalSize() }}
@@ -166,7 +166,7 @@ export function EntryListVirtualPane({
                   transform: `translateY(${virtualItem.start}px)`,
                   height: virtualItem.size,
                 }}
-                className="flex items-center justify-center border-b border-transparent p-4"
+                className="flex items-center justify-center px-2 pb-1.5"
               >
                 {isFetchNextPageError ? (
                   <Button

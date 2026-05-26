@@ -107,9 +107,9 @@ export function EntryList({
 
   if ((isLoading || scopePending) && allEntries.length === 0) {
     return (
-      <div className="space-y-2 p-4">
+      <div className="space-y-1.5 p-2">
         {Array.from({ length: 6 }).map((_, i) => (
-          <Skeleton key={i} className="h-36 w-full rounded-md" />
+          <Skeleton key={i} className="h-36 w-full rounded-lg" />
         ))}
       </div>
     );
@@ -147,7 +147,7 @@ export function EntryList({
     return (
       <div className="space-y-2 p-4">
         {Array.from({ length: 4 }).map((_, i) => (
-          <Skeleton key={i} className="h-36 w-full rounded-md" />
+          <Skeleton key={i} className="h-36 w-full rounded-lg" />
         ))}
       </div>
     );

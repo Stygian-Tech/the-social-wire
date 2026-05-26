@@ -21,6 +21,10 @@ import { cn } from "@/lib/utils";
 import type { EntryListItem } from "@/lib/atprotoClient";
 import { CachedImage } from "@/components/shared/CachedImage";
 import {
+  articleListCardButtonClassName,
+  articleListCardWrapperClassName,
+} from "@/lib/articleListCardStyles";
+import {
   useEntryIsLatrSaved,
   useSaveReadLaterEntryMutation,
 } from "@/hooks/useLatrSaved";
@@ -142,15 +146,14 @@ export function EntryRow({
   const showThumb = Boolean(activeThumbSrc) && !thumbsExhausted;
 
   const rowButton = (
-    <div className="group/entry-row relative flex w-full">
+    <div className={cn("group/entry-row relative", articleListCardWrapperClassName)}>
       <button
         type="button"
         onClick={() => onSelect(entry.entryId)}
-        className={cn(
-          "flex w-full flex-col border-b text-left transition-colors hover:bg-muted/50",
-          isSelected && "bg-muted",
-          readIndicatorsEnabled && isRead && "opacity-80"
-        )}
+        className={articleListCardButtonClassName({
+          isSelected,
+          subdued: readIndicatorsEnabled && isRead,
+        })}
       >
         <div className="relative aspect-[16/9] w-full shrink-0 overflow-hidden bg-muted/40">
           {showThumb && activeThumbSrc ? (
