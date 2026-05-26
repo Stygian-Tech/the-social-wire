@@ -2,6 +2,8 @@ import { describe, expect, it } from "bun:test";
 import {
   isSubstantialArticleBody,
   resolveEntryArticlePresentation,
+  lockedEntryArticlePresentation,
+  clearLockedEntryArticlePresentationsForTests,
 } from "@/lib/entryArticlePresentation";
 
 describe("entryArticlePresentation", () => {
@@ -31,5 +33,23 @@ describe("entryArticlePresentation", () => {
         originalUrl: "https://example.com/article",
       })
     ).toBe("html");
+  });
+
+  it("locks presentation per entry id across later inputs", () => {
+    clearLockedEntryArticlePresentationsForTests();
+    const entryId = "at://did:plc:alice/site.standard.document/entry1";
+    expect(
+      lockedEntryArticlePresentation(entryId, {
+        contentHtml: "<p>Short summary.</p>",
+        originalUrl: "https://example.com/article",
+      })
+    ).toBe("embed");
+    const long = `<p>${"word ".repeat(80)}</p>`;
+    expect(
+      lockedEntryArticlePresentation(entryId, {
+        contentHtml: long,
+        originalUrl: "https://example.com/article",
+      })
+    ).toBe("embed");
   });
 });

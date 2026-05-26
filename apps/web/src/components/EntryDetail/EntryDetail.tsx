@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo } from "react";
 import { ExternalLink } from "lucide-react";
 import { EntryArticleEmbed } from "@/components/EntryDetail/EntryArticleEmbed";
 import { EntrySocialToolbar } from "@/components/EntryDetail/EntrySocialToolbar";
@@ -8,7 +8,7 @@ import { DevRecordKindBadge } from "@/components/shared/DevRecordKindBadge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useEntry } from "@/hooks/useEntries";
 import {
-  resolveEntryArticlePresentation,
+  lockedEntryArticlePresentation,
   type EntryArticlePresentation,
 } from "@/lib/entryArticlePresentation";
 import { recordKindFromEntryId } from "@/lib/recordKindDebug";
@@ -22,32 +22,19 @@ interface EntryDetailProps {
 
 export function EntryDetail({ entryId }: EntryDetailProps) {
   const { data: entry, isLoading, error } = useEntry(entryId);
-  const [presentation, setPresentation] = useState<EntryArticlePresentation | null>(
-    null
-  );
-  const presentationEntryIdRef = useRef<string | null>(null);
 
   const safeHTML = useMemo(
     () => sanitizeHTMLWithLinks(entry?.contentHtml ?? ""),
     [entry?.contentHtml]
   );
 
-  useEffect(() => {
-    if (presentationEntryIdRef.current === entryId) return;
-    presentationEntryIdRef.current = entryId;
-    setPresentation(null);
-  }, [entryId]);
-
-  useEffect(() => {
-    if (!entry || presentation !== null) return;
-    setPresentation(
-      resolveEntryArticlePresentation({
+  const presentation: EntryArticlePresentation | null = entry
+    ? lockedEntryArticlePresentation(entryId, {
         contentHtml: safeHTML,
         embedUrl: entry.embedUrl,
         originalUrl: entry.originalUrl,
       })
-    );
-  }, [entry, presentation, safeHTML]);
+    : null;
 
   const showEmbed = presentation === "embed" && Boolean(entry?.embedUrl);
 

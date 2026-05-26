@@ -125,7 +125,9 @@ class PdsDirectReadLaterProvider implements ReadLaterProvider {
     await this.pdsClient.saveHttpsReadLater(url, options);
   }
 
-  async saveNativeSubject(_subjectUri: string, _linkedWebUrl?: string): Promise<void> {
+  async saveNativeSubject(subjectUri: string, linkedWebUrl?: string): Promise<void> {
+    void subjectUri;
+    void linkedWebUrl;
     throw new Error(
       "Native subject saves require the latr-gateway read-later provider"
     );

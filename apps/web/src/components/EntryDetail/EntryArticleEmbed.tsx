@@ -90,9 +90,7 @@ function EntryArticleEmbedInner({
   const probeGeneration = useRef(0);
 
   useEffect(() => {
-    const cached = getCachedEmbedProbeFrameable(iframeSrc);
-    if (cached !== undefined) {
-      setProbeBlocksEmbed(!cached);
+    if (getCachedEmbedProbeFrameable(iframeSrc) !== undefined) {
       return;
     }
 

@@ -24,3 +24,30 @@ export function resolveEntryArticlePresentation(args: {
   if (args.contentHtml.trim()) return "html";
   return null;
 }
+
+const lockedPresentationByEntryId = new Map<
+  string,
+  EntryArticlePresentation | null
+>();
+
+/** Locks embed vs HTML for an entry so later refetches do not flip presentation. */
+export function lockedEntryArticlePresentation(
+  entryId: string,
+  args: {
+    contentHtml: string;
+    embedUrl?: string;
+    originalUrl?: string;
+  }
+): EntryArticlePresentation | null {
+  if (lockedPresentationByEntryId.has(entryId)) {
+    return lockedPresentationByEntryId.get(entryId) ?? null;
+  }
+  const mode = resolveEntryArticlePresentation(args);
+  lockedPresentationByEntryId.set(entryId, mode);
+  return mode;
+}
+
+/** @internal Test helper */
+export function clearLockedEntryArticlePresentationsForTests(): void {
+  lockedPresentationByEntryId.clear();
+}
