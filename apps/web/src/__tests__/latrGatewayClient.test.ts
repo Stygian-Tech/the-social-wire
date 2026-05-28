@@ -1,8 +1,40 @@
-import { describe, expect, it, mock } from "bun:test";
+import { afterEach, describe, expect, it, mock } from "bun:test";
 
-import { latrGatewayFetch } from "@/lib/latrGatewayClient";
+import {
+  LATR_OFFICIAL_CLIENT_HEADER,
+  latrGatewayFetch,
+} from "@/lib/latrGatewayClient";
+
+const originalCredential = process.env.NEXT_PUBLIC_LATR_GATEWAY_CLIENT_CREDENTIAL;
+
+afterEach(() => {
+  if (originalCredential === undefined) {
+    delete process.env.NEXT_PUBLIC_LATR_GATEWAY_CLIENT_CREDENTIAL;
+  } else {
+    process.env.NEXT_PUBLIC_LATR_GATEWAY_CLIENT_CREDENTIAL = originalCredential;
+  }
+});
 
 describe("latrGatewayFetch", () => {
+  it("sends official client credential header when configured", async () => {
+    process.env.NEXT_PUBLIC_LATR_GATEWAY_CLIENT_CREDENTIAL = "dGVzdC1zb2NpYWwtd2lyZQ==";
+
+    const fetchHandler = mock(async (_url: string, init?: RequestInit) => {
+      const headers = new Headers(init?.headers);
+      expect(headers.get(LATR_OFFICIAL_CLIENT_HEADER)).toBe(
+        "dGVzdC1zb2NpYWwtd2lyZQ=="
+      );
+      return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    });
+
+    const oauthSession = { fetchHandler } as never;
+
+    await latrGatewayFetch(oauthSession, "/v1/latr/og-preview?url=https://example.com", {
+      method: "GET",
+    });
+    expect(fetchHandler).toHaveBeenCalledTimes(1);
+  });
+
   it("retries once when the gateway returns a DPoP nonce challenge", async () => {
     const fetchHandler = mock(async () => {
       if (fetchHandler.mock.calls.length === 1) {

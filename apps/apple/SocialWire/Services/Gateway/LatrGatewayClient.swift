@@ -157,6 +157,10 @@ final class LatrGatewayClient {
             forHTTPHeaderField: "DPoP"
         )
 
+        if let credential = LatrGatewayEnvironment.officialClientCredential {
+            request.setValue(credential, forHTTPHeaderField: LatrGatewayEnvironment.officialClientHeaderName)
+        }
+
         if let xrpcMethod = Self.pdsXrpcMethod(gatewayMethod: gatewayMethod, path: gatewayPath) {
             let pdsXrpcURL = session.pdsURL
                 .appending(path: "xrpc")

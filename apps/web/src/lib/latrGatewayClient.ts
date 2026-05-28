@@ -1,7 +1,5 @@
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 import {
-  LATR_API_KEY_HEADER,
-  LATR_CLIENT_ID_HEADER,
   LATR_UPSTREAM_DPOP_HEADER,
 } from "latr-packages/gateway-client";
 
@@ -11,11 +9,10 @@ import {
 } from "@/lib/latrGatewayUpstreamDpop";
 import { latrGatewayBaseUrl } from "@/lib/latrGatewayUrl";
 
-export {
-  LATR_API_KEY_HEADER,
-  LATR_CLIENT_ID_HEADER,
-  LATR_UPSTREAM_DPOP_HEADER,
-};
+/** Official first-party credential for latr-gateway (`LATR_GATEWAY_OFFICIAL_CLIENT_CREDENTIALS`). */
+export const LATR_OFFICIAL_CLIENT_HEADER = "X-Latr-Official-Client";
+
+export { LATR_UPSTREAM_DPOP_HEADER };
 
 export { latrGatewayBaseUrl } from "@/lib/latrGatewayUrl";
 
@@ -29,14 +26,12 @@ async function buildLatrGatewayRequestHeaders(
   method: string,
   gatewayPath: string
 ): Promise<Record<string, string>> {
-  const clientId = process.env.NEXT_PUBLIC_LATR_GATEWAY_CLIENT_ID?.trim();
-  const apiKey = process.env.NEXT_PUBLIC_LATR_GATEWAY_API_KEY?.trim();
+  const clientCredential = process.env.NEXT_PUBLIC_LATR_GATEWAY_CLIENT_CREDENTIAL?.trim();
   const headers: Record<string, string> = {
     Accept: "application/json",
   };
-  if (clientId && apiKey) {
-    headers[LATR_CLIENT_ID_HEADER] = clientId;
-    headers[LATR_API_KEY_HEADER] = apiKey;
+  if (clientCredential) {
+    headers[LATR_OFFICIAL_CLIENT_HEADER] = clientCredential;
   }
 
   const upstream = pdsXrpcMethodForGatewayRequest(method, gatewayPath);
