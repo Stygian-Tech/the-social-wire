@@ -17,7 +17,10 @@ private extension HTTPResponse.Status {
     case 401: .unauthorized
     case 403: .forbidden
     case 404: .notFound
+    case 500: .internalServerError
     case 502: .badGateway
+    case 503: .serviceUnavailable
+    case 504: .gatewayTimeout
     default: nil
     }
   }

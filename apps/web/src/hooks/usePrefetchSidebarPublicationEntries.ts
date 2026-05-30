@@ -57,6 +57,8 @@ async function prefetchPublicationFirstPage(args: {
         viewerDid,
         articleFilter: PREFETCH_ARTICLE_FILTER,
         queryClient,
+        // Sidebar already enrolls authors after bootstrap; skip per-prefetch enroll to avoid AppView DB stampedes.
+        skipEnroll: true,
       }),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: entriesNextPageParam,

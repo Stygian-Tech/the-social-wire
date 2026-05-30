@@ -31,7 +31,7 @@ public func makePostgresConfig(
   var tls = TLSConfiguration.makeClientConfiguration()
   tls.certificateVerification = .none
 
-  return PostgresClient.Configuration(
+  var config = PostgresClient.Configuration(
     host: host,
     port: port,
     username: username,
@@ -39,4 +39,12 @@ public func makePostgresConfig(
     database: database,
     tls: .prefer(tls)
   )
+
+  // Supabase session pooler caps concurrent clients (often 15 shared across services).
+  // PostgresNIO defaults to 20 — stay under the pool limit via POSTGRES_MAX_CONNECTIONS.
+  let maxConnections =
+    ProcessInfo.processInfo.environment["POSTGRES_MAX_CONNECTIONS"].flatMap(Int.init) ?? 8
+  config.options.maximumConnections = max(1, maxConnections)
+
+  return config
 }
