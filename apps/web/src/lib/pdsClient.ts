@@ -11,7 +11,7 @@ import { Agent } from "@atproto/api";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 
 import {
-  enrichSparseLatrSaveRow,
+  resolveLatrSaveRowDisplay,
 } from "@/lib/latrSaveMetadataBackfill";
 import { normalizeHttpUrlToHttps } from "@/lib/publicResourceUrl";
 import {
@@ -20,8 +20,6 @@ import {
   writeThroughReadMarkDelete,
 } from "@/lib/thinAppViewClient";
 import {
-  resolveNativeSavedSubjectPreview,
-  type NativeSavedSubjectPreview,
   parseAtUri,
   PUBLICATION_RECORD_COLLECTIONS,
 } from "@/lib/atprotoClient";
@@ -247,11 +245,11 @@ function mergeLatrSaveMetadata(
   item: LatrSavedItemRecord
 ): LatrSaveMetadata {
   return {
-    title: external?.title?.trim() || item.previewTitle?.trim() || undefined,
-    excerpt: external?.excerpt?.trim() || item.previewExcerpt?.trim() || undefined,
-    image: external?.image?.trim() || item.previewImage?.trim() || undefined,
-    site: external?.site?.trim() || item.previewSite?.trim() || undefined,
-    author: external?.author?.trim() || item.previewAuthor?.trim() || undefined,
+    title: item.previewTitle?.trim() || external?.title?.trim() || undefined,
+    excerpt: item.previewExcerpt?.trim() || external?.excerpt?.trim() || undefined,
+    image: item.previewImage?.trim() || external?.image?.trim() || undefined,
+    site: item.previewSite?.trim() || external?.site?.trim() || undefined,
+    author: item.previewAuthor?.trim() || external?.author?.trim() || undefined,
     publishedAt: external?.publishedAt?.trim() || undefined,
     language: external?.language?.trim() || undefined,
     linkedWebUrl: item.linkedWebUrl?.trim() || undefined,
@@ -1123,40 +1121,17 @@ export class PDSClient {
       state
     );
     return Promise.all(
-      rows.map(async (row): Promise<MergedLatrSave> => {
-        let enriched = row;
-        if (row.kind === "native") {
-          const preview = await this.resolveNativePreview(row.subjectUri);
-          if (preview) {
-            enriched = {
-              ...enriched,
-              ...preview,
-              title: enriched.title?.trim() || preview.title,
-              excerpt: enriched.excerpt?.trim() || preview.excerpt,
-              image: enriched.image?.trim() || preview.image,
-            };
-          }
-        }
-        return enrichSparseLatrSaveRow(this.oauthSession, enriched, {
+      rows.map((row) =>
+        resolveLatrSaveRowDisplay(this.oauthSession, row, {
           reconcileToPds: false,
-        });
-      })
+        })
+      )
     );
   }
 
   /** @deprecated Use listMergedLatrSaves. */
   async listMergedLatrHttpsSaves(): Promise<MergedLatrSave[]> {
     return this.listMergedLatrSaves();
-  }
-
-  private async resolveNativePreview(
-    subjectUri: string
-  ): Promise<NativeSavedSubjectPreview | null> {
-    try {
-      return await resolveNativeSavedSubjectPreview(subjectUri, this.oauthSession);
-    } catch {
-      return null;
-    }
   }
 
   /** Removes legacy hex / iOS-prefixed read-state keys after canonical write or delete. */

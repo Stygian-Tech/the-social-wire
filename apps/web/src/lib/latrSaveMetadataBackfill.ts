@@ -1,5 +1,6 @@
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 
+import { resolveNativeSavedSubjectPreview } from "@/lib/atprotoClient";
 import {
   isLatrGatewayAuthRejected,
 } from "@/lib/latrGatewayCredentials";
@@ -15,35 +16,77 @@ function latrGatewayMutationsEnabled(): boolean {
   return flag !== "pds-direct";
 }
 
-function hostnameFromUrl(raw: string | undefined): string | null {
-  if (!raw?.trim()) return null;
-  try {
-    return new URL(raw.trim()).hostname.toLowerCase();
-  } catch {
-    return null;
-  }
-}
-
-/** True when card fields are missing or only hostname placeholders remain. */
-export function isLatrSaveMetadataSparse(row: MergedLatrSave): boolean {
-  const hasImage = Boolean(row.image?.trim());
-  const title = row.title?.trim();
-  if (!title) return true;
-  if (!hasImage) return true;
-
-  const url = backfillUrlForLatrSave(row);
-  const host = hostnameFromUrl(url ?? undefined);
-  if (host && title.toLowerCase() === host) return true;
-
-  return false;
-}
-
 /** HTTPS URL the Latr gateway can scrape for OG metadata. */
 export function backfillUrlForLatrSave(row: MergedLatrSave): string | null {
   if (row.kind === "external") {
     return row.url?.trim() || row.normalizedUrl?.trim() || null;
   }
   return row.linkedWebUrl?.trim() || row.url?.trim() || null;
+}
+
+/** Mirrors L@tr.link `isWeakPreviewTitle` — hostname, site label, slug, etc. */
+export function isWeakLatrSaveTitle(
+  title: string,
+  siteLabel: string | undefined,
+  linkedWebUrl: string
+): boolean {
+  const trimmed = title.trim();
+  if (!trimmed) return true;
+
+  let hostname: string | undefined;
+  try {
+    hostname = new URL(linkedWebUrl).hostname.replace(/^www\./i, "");
+  } catch {
+    hostname = undefined;
+  }
+
+  const lower = trimmed.toLowerCase();
+  if (siteLabel && lower === siteLabel.trim().toLowerCase()) return true;
+  if (hostname && lower === hostname.toLowerCase()) return true;
+  if (hostname && lower === `www.${hostname}`.toLowerCase()) return true;
+
+  const genericTitles = ["home", "homepage", "the verge", "verge", "news", "latest"];
+  if (genericTitles.includes(lower)) return true;
+
+  try {
+    if (trimmed === linkedWebUrl.trim()) return true;
+    if (new URL(trimmed).href === new URL(linkedWebUrl).href) return true;
+  } catch {
+    /* title is not a URL */
+  }
+
+  try {
+    const parts = new URL(linkedWebUrl).pathname.split("/").filter(Boolean);
+    const last = parts[parts.length - 1];
+    if (last) {
+      const slugTitle = last
+        .replace(/_/g, "-")
+        .split("-")
+        .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(" ");
+      if (trimmed.toLowerCase() === slugTitle.toLowerCase()) return true;
+    }
+  } catch {
+    /* ignore */
+  }
+
+  return false;
+}
+
+/** True when OG backfill may improve titles and/or thumbnails. */
+export function needsLatrSaveOgBackfill(row: MergedLatrSave): boolean {
+  const url = backfillUrlForLatrSave(row);
+  if (!url) return false;
+
+  const title = row.title?.trim();
+  if (!title) return true;
+  if (!row.image?.trim()) return true;
+  return isWeakLatrSaveTitle(title, row.site, url);
+}
+
+/** @deprecated Use {@link needsLatrSaveOgBackfill}. */
+export function isLatrSaveMetadataSparse(row: MergedLatrSave): boolean {
+  return needsLatrSaveOgBackfill(row);
 }
 
 function parseOgPreviewResponse(
@@ -96,20 +139,34 @@ export async function fetchLatrOgPreview(
   }
 }
 
+/** Merge OG preview fields like L@tr.link `backfillPreviewFromOpenGraph`. */
 export function mergeLatrSaveBackfillMetadata(
   row: MergedLatrSave,
   backfill: LatrSaveMetadata
 ): MergedLatrSave {
+  const linkedWebUrl = backfillUrlForLatrSave(row) ?? backfill.linkedWebUrl;
+  const weakTitle =
+    linkedWebUrl && row.title?.trim()
+      ? isWeakLatrSaveTitle(row.title, row.site, linkedWebUrl)
+      : !row.title?.trim();
+  const missingImage = !row.image?.trim();
+
   return {
     ...row,
-    title: row.title?.trim() || backfill.title,
+    title:
+      (weakTitle ? backfill.title : undefined) ||
+      row.title?.trim() ||
+      backfill.title,
     excerpt: row.excerpt?.trim() || backfill.excerpt,
-    image: row.image?.trim() || backfill.image,
+    image:
+      (missingImage ? backfill.image : undefined) ||
+      row.image?.trim() ||
+      backfill.image,
     site: row.site?.trim() || backfill.site,
     author: row.author?.trim() || backfill.author,
     publishedAt: row.publishedAt?.trim() || backfill.publishedAt,
     language: row.language?.trim() || backfill.language,
-    linkedWebUrl: row.linkedWebUrl?.trim() || backfill.linkedWebUrl,
+    linkedWebUrl: row.linkedWebUrl?.trim() || backfill.linkedWebUrl || linkedWebUrl,
   };
 }
 
@@ -181,19 +238,54 @@ export async function enrichSparseLatrSaveRow(
   row: MergedLatrSave,
   options: { reconcileToPds?: boolean } = {}
 ): Promise<MergedLatrSave> {
-  if (!isLatrSaveMetadataSparse(row)) return row;
+  return resolveLatrSaveRowDisplay(oauthSession, row, options);
+}
 
-  const url = backfillUrlForLatrSave(row);
+/**
+ * Resolve saved-link card metadata for display (aligned with L@tr.link
+ * `resolveSubjectPreviewForRow`).
+ */
+export async function resolveLatrSaveRowDisplay(
+  oauthSession: OAuthSession,
+  row: MergedLatrSave,
+  options: { reconcileToPds?: boolean } = {}
+): Promise<MergedLatrSave> {
   let enriched = row;
 
-  if (url) {
-    const preview = await fetchLatrOgPreview(oauthSession, url);
-    if (preview) {
-      enriched = mergeLatrSaveBackfillMetadata(enriched, preview);
+  if (row.kind === "native") {
+    try {
+      const preview = await resolveNativeSavedSubjectPreview(
+        row.subjectUri,
+        oauthSession
+      );
+      if (preview) {
+        enriched = {
+          ...enriched,
+          ...(preview.url ? { url: preview.url } : {}),
+          ...(preview.url && !enriched.linkedWebUrl
+            ? { linkedWebUrl: preview.url }
+            : {}),
+          title: enriched.title?.trim() || preview.title,
+          excerpt: enriched.excerpt?.trim() || preview.excerpt,
+          image: enriched.image?.trim() || preview.image,
+        };
+      }
+    } catch {
+      /* ignore subject resolution failures */
     }
   }
 
-  if (options.reconcileToPds && isLatrSaveMetadataSparse(enriched)) {
+  if (needsLatrSaveOgBackfill(enriched)) {
+    const url = backfillUrlForLatrSave(enriched);
+    if (url) {
+      const preview = await fetchLatrOgPreview(oauthSession, url);
+      if (preview) {
+        enriched = mergeLatrSaveBackfillMetadata(enriched, preview);
+      }
+    }
+  }
+
+  if (options.reconcileToPds && needsLatrSaveOgBackfill(enriched)) {
     void reconcileSparseLatrSaveOnGateway(oauthSession, enriched);
   }
 
