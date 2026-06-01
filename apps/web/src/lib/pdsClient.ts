@@ -13,6 +13,7 @@ import type { OAuthSession } from "@atproto/oauth-client-browser";
 import {
   resolveLatrSaveRowDisplay,
 } from "@/lib/latrSaveMetadataBackfill";
+import { listLatrSavedItemsViaGateway } from "@/lib/latrGatewaySaves";
 import { normalizeHttpUrlToHttps } from "@/lib/publicResourceUrl";
 import {
   isThinAppViewEnabled,
@@ -345,6 +346,77 @@ export function mergeExternalsAndItemsToHttpsRows(
   }
 
   return deduped;
+}
+
+/**
+ * Build merged saved-link rows from gateway `GET /v1/latr/saves` item records.
+ * External wrapper URLs come from item preview / linkedWebUrl fields (no direct PDS list).
+ */
+export function mergedLatrSavesFromGatewayItems(
+  items: RepoRecord<LatrSavedItemRecord>[]
+): MergedLatrSave[] {
+  const rows: MergedLatrSave[] = [];
+
+  for (const itemRec of items) {
+    const { subjectUri, savedAt } = itemRec.value;
+    const m = subjectUri.indexOf(LATR_EXTERNAL_SUBJECT_MARKER);
+    if (m < 0) {
+      const metadata = mergeLatrSaveMetadata(undefined, itemRec.value);
+      rows.push({
+        kind: "native",
+        savedAt,
+        itemRkey: rkeyFromURI(itemRec.uri),
+        itemUri: itemRec.uri,
+        subjectUri,
+        ...(itemRec.value.state ? { state: itemRec.value.state } : {}),
+        ...metadata,
+      });
+      continue;
+    }
+
+    const externalRkey = subjectUri.slice(m + LATR_EXTERNAL_SUBJECT_MARKER.length);
+    const linked = itemRec.value.linkedWebUrl?.trim();
+    const normalized = linked ? normalizeLatrHttpsUrl(linked) : null;
+    const metadata = mergeLatrSaveMetadata(undefined, itemRec.value);
+
+    rows.push({
+      kind: "external",
+      normalizedUrl: normalized ?? linked ?? subjectUri,
+      url: linked ?? normalized ?? subjectUri,
+      savedAt,
+      externalRkey,
+      itemRkey: rkeyFromURI(itemRec.uri),
+      externalUri: subjectUri,
+      itemUri: itemRec.uri,
+      subjectUri,
+      ...(itemRec.value.state ? { state: itemRec.value.state } : {}),
+      ...metadata,
+    });
+  }
+
+  rows.sort((a, b) => {
+    const ta = Date.parse(a.savedAt);
+    const tb = Date.parse(b.savedAt);
+    return (Number.isNaN(tb) ? 0 : tb) - (Number.isNaN(ta) ? 0 : ta);
+  });
+
+  const seen = new Set<string>();
+  const deduped: MergedLatrSave[] = [];
+  for (const row of rows) {
+    const k =
+      row.kind === "external"
+        ? `external:${row.normalizedUrl.toLowerCase()}`
+        : `native:${row.subjectUri}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    deduped.push(row);
+  }
+
+  return deduped;
+}
+
+function latrReadLaterUsesGateway(): boolean {
+  return process.env.NEXT_PUBLIC_LATR_READ_LATER_PROVIDER?.trim() !== "pds-direct";
 }
 
 // ── Client class ──────────────────────────────────────────────────────────────
@@ -1113,15 +1185,26 @@ export class PDSClient {
     options: { state?: LatrSaveListState; signal?: AbortSignal } = {}
   ): Promise<MergedLatrSave[]> {
     const { state = "active", signal } = options;
-    const externals = await this.listLatrSavedExternals(signal);
-    const items = await this.listLatrSavedItems(signal);
+
+    const rows = latrReadLaterUsesGateway()
+      ? mergedLatrSavesFromGatewayItems(
+          await listLatrSavedItemsViaGateway(this.oauthSession, { signal })
+        )
+      : filterMergedLatrSavesByState(
+          mergeExternalsAndItemsToHttpsRows(
+            await this.listLatrSavedExternals(signal),
+            await this.listLatrSavedItems(signal)
+          ),
+          state
+        );
+
+    const filtered = latrReadLaterUsesGateway()
+      ? filterMergedLatrSavesByState(rows, state)
+      : rows;
+
     signal?.throwIfAborted();
-    const rows = filterMergedLatrSavesByState(
-      mergeExternalsAndItemsToHttpsRows(externals, items),
-      state
-    );
     return Promise.all(
-      rows.map((row) =>
+      filtered.map((row) =>
         resolveLatrSaveRowDisplay(this.oauthSession, row, {
           reconcileToPds: false,
         })

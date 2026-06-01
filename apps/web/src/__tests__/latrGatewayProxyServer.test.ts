@@ -54,6 +54,16 @@ describe("latrGatewayProxyServer", () => {
     });
   });
 
+  it("prefers official credential when split developer env is also set", () => {
+    process.env.LATR_GATEWAY_CLIENT_ID = "the-social-wire-web";
+    process.env.LATR_GATEWAY_API_KEY = "lk_test_key";
+    process.env.LATR_GATEWAY_CLIENT_CREDENTIAL = "dGVzdA==";
+
+    expect(buildLatrGatewayServerAuthHeaders()).toEqual({
+      "X-Latr-Official-Client": "dGVzdA==",
+    });
+  });
+
   it("documents server-side env names", () => {
     expect(latrGatewayServerCredentialsHelpText()).toContain("LATR_GATEWAY_CLIENT_ID");
   });

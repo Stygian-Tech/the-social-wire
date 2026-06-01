@@ -63,8 +63,11 @@ describe("buildLatrGatewayCredentialDiagnostics", () => {
     ) as unknown as typeof fetch;
 
     const diagnostics = await buildLatrGatewayCredentialDiagnostics();
+    expect(diagnostics.authMode).toBe("official-client");
     expect(
-      diagnostics.warnings.some((warning) => warning.includes("take precedence"))
+      diagnostics.warnings.some((warning) =>
+        warning.includes("official credential takes precedence")
+      )
     ).toBe(true);
   });
 });

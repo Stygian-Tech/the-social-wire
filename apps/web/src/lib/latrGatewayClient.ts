@@ -8,9 +8,9 @@ import {
 import {
   isLatrGatewayAuthRejected,
   isLatrGatewayInvalidClientCredentialResponse,
-  latrGatewayCredentialsHelpText,
   markLatrGatewayAuthRejected,
 } from "@/lib/latrGatewayCredentials";
+import { latrGatewayErrorMessage } from "@/lib/latrGatewayErrors";
 import {
   createSaveUpstreamDpopProofPool,
   createUpstreamDpopProof,
@@ -142,10 +142,7 @@ async function noteInvalidClientCredential(res: Response): Promise<void> {
 async function readGatewayError(res: Response): Promise<string> {
   try {
     const body = (await res.json()) as { message?: string; error?: string };
-    if (isLatrGatewayInvalidClientCredentialResponse(res.status, body)) {
-      return latrGatewayCredentialsHelpText();
-    }
-    return body.message ?? body.error ?? `Gateway error (${res.status})`;
+    return latrGatewayErrorMessage(res.status, body);
   } catch {
     return `Gateway error (${res.status})`;
   }

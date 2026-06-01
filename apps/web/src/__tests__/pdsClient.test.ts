@@ -18,6 +18,7 @@ import {
   COLLECTION_ENTRY_READ_STATE,
   COLLECTION_SKYREADER_FEED_SUBSCRIPTION,
   mergeExternalsAndItemsToHttpsRows,
+  mergedLatrSavesFromGatewayItems,
   filterMergedLatrSavesByState,
   entryReadStateRkeyFromSubjectUri,
   type LatrSavedExternalRecord,
@@ -231,6 +232,33 @@ describe("filterMergedLatrSavesByState", () => {
     expect(filterMergedLatrSavesByState(rows, "archived")).toEqual([
       row("archived"),
     ]);
+  });
+});
+
+describe("mergedLatrSavesFromGatewayItems", () => {
+  const did = "did:plc:testuser";
+  const extUri = `at://${did}/${COLLECTION_LATR_SAVED_EXTERNAL}/EXTKEYXYZ`;
+
+  it("builds external rows from item preview fields without listing externals on PDS", () => {
+    const rows = mergedLatrSavesFromGatewayItems([
+      {
+        uri: `at://${did}/${COLLECTION_LATR_SAVED_ITEM}/item1`,
+        cid: "cid",
+        value: {
+          $type: COLLECTION_LATR_SAVED_ITEM,
+          subjectUri: extUri,
+          savedAt: "2026-06-01T12:00:00.000Z",
+          linkedWebUrl: "https://example.com/foo",
+          previewTitle: "Example",
+        },
+      },
+    ]);
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].kind).toBe("external");
+    if (rows[0].kind !== "external") throw new Error("Expected external row");
+    expect(rows[0].normalizedUrl).toBe("https://example.com/foo");
+    expect(rows[0].title).toBe("Example");
   });
 });
 

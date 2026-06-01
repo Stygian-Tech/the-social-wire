@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
+import { getAppEnv } from "@/lib/appEnv";
 import {
   buildLatrGatewayServerAuthHeaders,
   hasLatrGatewayServerCredentials,
@@ -66,7 +67,19 @@ async function proxyLatrGateway(
     if (value) responseHeaders.set(name, value);
   }
 
-  return new NextResponse(upstream.body, {
+  const upstreamText = await upstream.text();
+  if (upstream.status >= 400 && getAppEnv() !== "prod") {
+    try {
+      const upstreamError = (JSON.parse(upstreamText) as { error?: string }).error?.trim();
+      if (upstreamError) {
+        responseHeaders.set("X-Latr-Upstream-Error", upstreamError);
+      }
+    } catch {
+      /* ignore non-JSON bodies */
+    }
+  }
+
+  return new NextResponse(upstreamText, {
     status: upstream.status,
     headers: responseHeaders,
   });

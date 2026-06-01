@@ -595,8 +595,9 @@ final class SocialWireAppModel {
         let streamStarted = Date()
 
         async let readTask = pds.listEntryReadStates()
-        async let savedTask = pds.listMergedLatrSaves(state: .active)
-        async let archivedTask = pds.listMergedLatrSaves(state: .archived)
+        let latrListGateway = readLaterLatrConfigured ? latrGateway : nil
+        async let savedTask = pds.listMergedLatrSaves(state: .active, latrGateway: latrListGateway)
+        async let archivedTask = pds.listMergedLatrSaves(state: .archived, latrGateway: latrListGateway)
         async let profileTask = publicationsService.fetchActorProfile(actor: viewerDID)
 
         try await gateway.consumeBootstrapStream { [weak self] event in
@@ -1531,8 +1532,9 @@ final class SocialWireAppModel {
 
     func refreshSavedLinks() async {
         do {
-            savedLinks = try await pds.listMergedLatrSaves(state: .active)
-            archivedSavedLinks = try await pds.listMergedLatrSaves(state: .archived)
+            let latrListGateway = readLaterLatrConfigured ? latrGateway : nil
+            savedLinks = try await pds.listMergedLatrSaves(state: .active, latrGateway: latrListGateway)
+            archivedSavedLinks = try await pds.listMergedLatrSaves(state: .archived, latrGateway: latrListGateway)
         } catch {
             errorMessage = error.localizedDescription
         }

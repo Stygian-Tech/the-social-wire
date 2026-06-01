@@ -68,6 +68,16 @@ final class LatrGatewayClient {
         try await patchSaveState(itemRkey: itemRkey, state: "unread")
     }
 
+    func listSavedItems() async throws -> [RepoRecord<LatrSavedItemRecord>] {
+        let data = try await authorizedRequestData(
+            method: "GET",
+            path: "/v1/latr/saves",
+            body: nil
+        )
+        let decoded = try JSONDecoder().decode(LatrGatewaySavedItemsResponse.self, from: data)
+        return decoded.records
+    }
+
     private func patchSaveState(itemRkey: String, state: String) async throws {
         let encodedRkey = itemRkey.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? itemRkey
         try await authorizedRequest(
@@ -78,6 +88,10 @@ final class LatrGatewayClient {
     }
 
     private func authorizedRequest(method: String, path: String, body: Data?) async throws {
+        _ = try await authorizedRequestData(method: method, path: path, body: body)
+    }
+
+    private func authorizedRequestData(method: String, path: String, body: Data?) async throws -> Data {
         guard var comps = URLComponents(url: baseURL.appending(path: path), resolvingAgainstBaseURL: false) else {
             throw SocialWireError.invalidURL
         }
@@ -127,10 +141,11 @@ final class LatrGatewayClient {
             }
             await auth.dpop.updateNonce(from: retryHttp)
             try validateResponse(retryHttp, data: retryData)
-            return
+            return retryData
         }
 
         try validateResponse(http, data: data)
+        return data
     }
 
     private func validateResponse(_ http: HTTPURLResponse, data: Data) throws {
@@ -169,8 +184,12 @@ final class LatrGatewayClient {
             let pdsXrpcURL = session.pdsURL
                 .appending(path: "xrpc")
                 .appending(path: xrpcMethod)
+            let upstreamHTTPMethod = Self.pdsXrpcHTTPMethod(
+                gatewayMethod: gatewayMethod,
+                path: gatewayPath
+            )
             let upstreamProof = try await auth.dpop.proof(
-                method: method,
+                method: upstreamHTTPMethod,
                 url: pdsXrpcURL,
                 accessToken: session.accessToken
             )
@@ -178,8 +197,19 @@ final class LatrGatewayClient {
         }
     }
 
+    private static func pdsXrpcHTTPMethod(gatewayMethod: String, path: String) -> String {
+        let method = gatewayMethod.uppercased()
+        if method == "GET", path == "/v1/latr/saves" {
+            return "GET"
+        }
+        return "POST"
+    }
+
     private static func pdsXrpcMethod(gatewayMethod: String, path: String) -> String? {
         let method = gatewayMethod.uppercased()
+        if method == "GET", path == "/v1/latr/saves" {
+            return "com.atproto.repo.listRecords"
+        }
         if method == "POST" && path == "/v1/latr/saves" {
             return "com.atproto.repo.createRecord"
         }
@@ -200,4 +230,8 @@ private struct LatrGatewayErrorBody: Decodable {
     var resolvedMessage: String? {
         message ?? error
     }
+}
+
+private struct LatrGatewaySavedItemsResponse: Decodable {
+    let records: [RepoRecord<LatrSavedItemRecord>]
 }

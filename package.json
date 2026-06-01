@@ -22,7 +22,7 @@
     "turbo": "2.9.14"
   },
   "dependencies": {
-    "latr-packages": "github:Stygian-Tech/latr-packages#a14bc23393b28f78466de09ee3710671d60e17a7"
+    "latr-packages": "github:Stygian-Tech/latr-packages#a526ae3"
   },
   "packageManager": "bun@1.3.14"
 }

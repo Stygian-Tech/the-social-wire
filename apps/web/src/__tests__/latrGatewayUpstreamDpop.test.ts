@@ -32,6 +32,13 @@ describe("pdsXrpcMethodForGatewayRequest", () => {
       httpMethod: "POST",
     });
   });
+
+  it("maps GET /v1/latr/saves to listRecords", () => {
+    expect(pdsXrpcMethodForGatewayRequest("GET", "/v1/latr/saves")).toEqual({
+      xrpcMethod: "com.atproto.repo.listRecords",
+      httpMethod: "GET",
+    });
+  });
 });
 
 describe("pdsXrpcMethodForSocialWireGatewayRequest", () => {

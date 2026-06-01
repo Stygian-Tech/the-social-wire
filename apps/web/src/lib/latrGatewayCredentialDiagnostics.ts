@@ -10,6 +10,7 @@ import {
   hasLatrGatewayServerCredentials,
   latrGatewayServerCredentialsHelpText,
   latrGatewayUpstreamBaseUrl,
+  resolveLatrGatewayServerAuthMode,
 } from "@/lib/latrGatewayProxyServer";
 
 const LATR_OFFICIAL_CLIENT_HEADER = "X-Latr-Official-Client";
@@ -59,16 +60,7 @@ function redactApiKeyHint(apiKey: string | undefined): string | null {
 }
 
 function resolveAuthMode(): LatrGatewayCredentialAuthMode {
-  const clientId = process.env.LATR_GATEWAY_CLIENT_ID?.trim();
-  const apiKey = process.env.LATR_GATEWAY_API_KEY?.trim();
-  if (clientId && apiKey) return "split-developer";
-
-  const rawOfficial =
-    process.env.LATR_GATEWAY_CLIENT_CREDENTIAL?.trim() ??
-    process.env.LATR_GATEWAY_OFFICIAL_CLIENT_CREDENTIALS?.trim();
-  if (rawOfficial) return "official-client";
-
-  return "none";
+  return resolveLatrGatewayServerAuthMode();
 }
 
 function collectWarnings(args: {
@@ -97,7 +89,7 @@ function collectWarnings(args: {
   }
   if (clientId && apiKey && rawOfficial) {
     warnings.push(
-      "Both split developer headers and official credential env vars are set; split headers take precedence."
+      "Both split developer headers and official credential env vars are set; official credential takes precedence."
     );
   }
   if (

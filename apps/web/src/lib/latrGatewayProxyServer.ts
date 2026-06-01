@@ -1,4 +1,4 @@
-import { buildDeveloperGatewayHeaders } from "latr-packages/gateway-client";
+import { buildDeveloperGatewayHeaders, LATR_API_KEY_HEADER, LATR_CLIENT_ID_HEADER } from "latr-packages/gateway-client";
 
 import { getAppEnv } from "@/lib/appEnv";
 import { normalizeLatrGatewayOfficialCredential } from "@/lib/latrGatewayOfficialCredential";
@@ -74,24 +74,35 @@ export function hasLatrGatewayServerCredentials(): boolean {
 
 export function latrGatewayServerCredentialsHelpText(): string {
   return (
-    "Configure LATR_GATEWAY_CLIENT_ID and LATR_GATEWAY_API_KEY (preferred) or " +
-    "LATR_GATEWAY_CLIENT_CREDENTIAL (bare base64 or the-social-wire-web=… from Fly secrets) " +
-    "on the web server for Preview and Production. Testing uses " +
-    "https://api.testing.latr.link — credentials must match that gateway host."
+    "Set LATR_GATEWAY_CLIENT_CREDENTIAL to the `the-social-wire-web=…` entry from " +
+    "api.testing.latr.link Fly secrets (official credential), or LATR_GATEWAY_CLIENT_ID + " +
+    "LATR_GATEWAY_API_KEY issued for that same gateway host. Configure on Vercel for " +
+    "Preview and Production. If both official and split env vars exist, official wins."
   );
+}
+
+export type LatrGatewayServerAuthMode = "official-client" | "split-developer" | "none";
+
+export function resolveLatrGatewayServerAuthMode(): LatrGatewayServerAuthMode {
+  const headers = buildLatrGatewayServerAuthHeaders();
+  if (headers[LATR_OFFICIAL_CLIENT_HEADER]) return "official-client";
+  if (headers[LATR_CLIENT_ID_HEADER] && headers[LATR_API_KEY_HEADER]) {
+    return "split-developer";
+  }
+  return "none";
 }
 
 /** Server-injected L@tr gateway client auth headers (never sent from the browser). */
 export function buildLatrGatewayServerAuthHeaders(): Record<string, string> {
+  const clientCredential = readServerOfficialCredential();
+  if (clientCredential) {
+    return { [LATR_OFFICIAL_CLIENT_HEADER]: clientCredential };
+  }
+
   const clientId = readServerClientId();
   const apiKey = readServerApiKey();
   if (clientId && apiKey) {
     return buildDeveloperGatewayHeaders({ clientId, apiKey });
-  }
-
-  const clientCredential = readServerOfficialCredential();
-  if (clientCredential) {
-    return { [LATR_OFFICIAL_CLIENT_HEADER]: clientCredential };
   }
 
   return {};

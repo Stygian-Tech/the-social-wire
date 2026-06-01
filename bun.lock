@@ -5,7 +5,7 @@
     "": {
       "name": "the-social-wire",
       "dependencies": {
-        "latr-packages": "github:Stygian-Tech/latr-packages#a14bc23393b28f78466de09ee3710671d60e17a7",
+        "latr-packages": "github:Stygian-Tech/latr-packages#a526ae3",
       },
       "devDependencies": {
         "turbo": "2.9.14",
@@ -1064,7 +1064,7 @@
 
     "language-tags": ["language-tags@1.0.9", "", { "dependencies": { "language-subtag-registry": "^0.3.20" } }, "sha512-MbjN408fEndfiQXbFQ1vnd+1NoLDsnQW41410oQBXiyXDMYH5z505juWa4KUE1LqxRC7DgOgZDbKLxHIwm27hA=="],
 
-    "latr-packages": ["latr-packages@github:Stygian-Tech/latr-packages#a14bc23", {}, "Stygian-Tech-latr-packages-a14bc23", "sha512-7TGtYnQBnWShPZKXF7nZ/0LgMr4+wPhhpnM65d1sR6ceASZ14rpZ3HPh4eyDVXzXC7h+RUQC8Bgwk+rX163Vwg=="],
+    "latr-packages": ["latr-packages@github:Stygian-Tech/latr-packages#a526ae3", {}, "Stygian-Tech-latr-packages-a526ae3", "sha512-xbsgJR+3TYmL+pX2S+uJ+8oRh85BPL1xyPLk/ZXH7xiKE34utmbIt+Az1XH9mV70i7v0tksmcf0jHjmmuN0s3A=="],
 
     "levn": ["levn@0.4.1", "", { "dependencies": { "prelude-ls": "^1.2.1", "type-check": "~0.4.0" } }, "sha512-+bT2uH4E5LGE7h/n3evcS/sQlJXCpIp6ym8OWJ5eV6+67Dsql/LaaT7qJBAt2rzfoa/5QBGBhxDix1dMt2kQKQ=="],
 
