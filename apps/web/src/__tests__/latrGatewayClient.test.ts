@@ -58,8 +58,9 @@ describe("latrGatewayFetch", () => {
     let proxyCalls = 0;
     let nonceCounter = 0;
 
-    const fetchMock = mock(async (url: string) => {
-      if (url.includes("/v1/latr/saves")) {
+    const fetchMock = mock(async (...args: Parameters<typeof fetch>) => {
+      const [url] = args;
+      if (String(url).includes("/v1/latr/saves")) {
         proxyCalls += 1;
         if (proxyCalls === 1) {
           return new Response(JSON.stringify({ error: "Unauthorized" }), {
