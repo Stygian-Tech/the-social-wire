@@ -2,104 +2,63 @@ import { afterEach, describe, expect, it, mock } from "bun:test";
 
 import { resetLatrGatewayAuthRejectedForTests } from "@/lib/latrGatewayCredentials";
 import {
-  LATR_API_KEY_HEADER,
   LATR_CLIENT_ID_HEADER,
   LATR_OFFICIAL_CLIENT_HEADER,
+  LATR_UPSTREAM_DPOP_HEADER,
   latrGatewayFetch,
 } from "@/lib/latrGatewayClient";
-
-const originalCredential = process.env.NEXT_PUBLIC_LATR_GATEWAY_CLIENT_CREDENTIAL;
-const originalClientId = process.env.NEXT_PUBLIC_LATR_GATEWAY_CLIENT_ID;
-const originalApiKey = process.env.NEXT_PUBLIC_LATR_GATEWAY_API_KEY;
+import { LATR_GATEWAY_PROXY_PREFIX } from "@/lib/latrGatewayProxyPath";
 
 afterEach(() => {
   resetLatrGatewayAuthRejectedForTests();
-  if (originalCredential === undefined) {
-    delete process.env.NEXT_PUBLIC_LATR_GATEWAY_CLIENT_CREDENTIAL;
-  } else {
-    process.env.NEXT_PUBLIC_LATR_GATEWAY_CLIENT_CREDENTIAL = originalCredential;
-  }
-  if (originalClientId === undefined) {
-    delete process.env.NEXT_PUBLIC_LATR_GATEWAY_CLIENT_ID;
-  } else {
-    process.env.NEXT_PUBLIC_LATR_GATEWAY_CLIENT_ID = originalClientId;
-  }
-  if (originalApiKey === undefined) {
-    delete process.env.NEXT_PUBLIC_LATR_GATEWAY_API_KEY;
-  } else {
-    process.env.NEXT_PUBLIC_LATR_GATEWAY_API_KEY = originalApiKey;
-  }
 });
 
 describe("latrGatewayFetch", () => {
-  it("returns 403 without calling fetch when credentials are missing", async () => {
-    delete process.env.NEXT_PUBLIC_LATR_GATEWAY_CLIENT_CREDENTIAL;
-    delete process.env.NEXT_PUBLIC_LATR_GATEWAY_CLIENT_ID;
-    delete process.env.NEXT_PUBLIC_LATR_GATEWAY_API_KEY;
-
-    const fetchHandler = mock(async () => {
-      throw new Error("fetch should not run");
-    });
-    const oauthSession = { fetchHandler } as never;
-
-    const res = await latrGatewayFetch(
-      oauthSession,
-      "/v1/latr/og-preview?url=https://example.com",
-      { method: "GET" }
-    );
-
-    expect(res.status).toBe(403);
-    expect(fetchHandler).toHaveBeenCalledTimes(0);
-  });
-
-  it("sends official client credential header when configured", async () => {
-    process.env.NEXT_PUBLIC_LATR_GATEWAY_CLIENT_CREDENTIAL = "dGVzdC1zb2NpYWwtd2lyZQ==";
-
-    const fetchHandler = mock(async (_url: string, init?: RequestInit) => {
+  it("calls the same-origin proxy without client credential headers", async () => {
+    const fetchMock = mock(async (url: string, init?: RequestInit) => {
+      expect(url).toBe(`${LATR_GATEWAY_PROXY_PREFIX}/v1/latr/og-preview?url=https://example.com`);
       const headers = new Headers(init?.headers);
-      expect(headers.get(LATR_OFFICIAL_CLIENT_HEADER)).toBe(
-        "dGVzdC1zb2NpYWwtd2lyZQ=="
-      );
+      expect(headers.get("Authorization")).toBe("DPoP access-token");
+      expect(headers.get("DPoP")).toBe("gateway-dpop-proof");
+      expect(headers.get(LATR_CLIENT_ID_HEADER)).toBeNull();
+      expect(headers.get(LATR_OFFICIAL_CLIENT_HEADER)).toBeNull();
       return new Response(JSON.stringify({ ok: true }), { status: 200 });
     });
+    globalThis.fetch = fetchMock as typeof fetch;
 
-    const oauthSession = { fetchHandler } as never;
+    const oauthSession = {
+      getTokenSet: async () => ({
+        access_token: "access-token",
+        token_type: "DPoP",
+      }),
+      server: {
+        dpopKey: {
+          bareJwk: { kty: "EC", crv: "P-256", x: "x", y: "y" },
+          algorithms: ["ES256"],
+          createJwt: async () => "gateway-dpop-proof",
+        },
+        dpopNonces: {
+          get: async () => undefined,
+          set: async () => {},
+        },
+        serverMetadata: { dpop_signing_alg_values_supported: ["ES256"] },
+      },
+    } as never;
 
     await latrGatewayFetch(oauthSession, "/v1/latr/og-preview?url=https://example.com", {
       method: "GET",
     });
-    expect(fetchHandler).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("sends split developer headers when client id and api key are configured", async () => {
-    delete process.env.NEXT_PUBLIC_LATR_GATEWAY_CLIENT_CREDENTIAL;
-    process.env.NEXT_PUBLIC_LATR_GATEWAY_CLIENT_ID = "the-social-wire-web";
-    process.env.NEXT_PUBLIC_LATR_GATEWAY_API_KEY = "lk_test_key";
-
-    const fetchHandler = mock(async (_url: string, init?: RequestInit) => {
-      const headers = new Headers(init?.headers);
-      expect(headers.get(LATR_CLIENT_ID_HEADER)).toBe("the-social-wire-web");
-      expect(headers.get(LATR_API_KEY_HEADER)).toBe("lk_test_key");
-      return new Response(JSON.stringify({ ok: true }), { status: 200 });
-    });
-
-    const oauthSession = { fetchHandler } as never;
-
-    await latrGatewayFetch(oauthSession, "/v1/latr/og-preview?url=https://example.com", {
-      method: "GET",
-    });
-    expect(fetchHandler).toHaveBeenCalledTimes(1);
-  });
-
-  it("retries once when the gateway returns a DPoP nonce challenge", async () => {
-    process.env.NEXT_PUBLIC_LATR_GATEWAY_CLIENT_CREDENTIAL = "dGVzdC1zb2NpYWwtd2lyZQ==";
-    let gatewayCalls = 0;
+  it("retries once when the proxy returns a DPoP nonce challenge", async () => {
+    let proxyCalls = 0;
     let nonceCounter = 0;
 
-    const fetchHandler = mock(async (url: string) => {
+    const fetchMock = mock(async (url: string, init?: RequestInit) => {
       if (url.includes("/v1/latr/saves")) {
-        gatewayCalls += 1;
-        if (gatewayCalls === 1) {
+        proxyCalls += 1;
+        if (proxyCalls === 1) {
           return new Response(JSON.stringify({ error: "Unauthorized" }), {
             status: 401,
             headers: { "DPoP-Nonce": "fresh-nonce" },
@@ -114,11 +73,15 @@ describe("latrGatewayFetch", () => {
         headers: { "DPoP-Nonce": `pds-nonce-${nonceCounter}` },
       });
     });
+    globalThis.fetch = fetchMock as typeof fetch;
 
     const oauthSession = {
-      fetchHandler,
+      getTokenSet: async () => ({
+        access_token: "access-token",
+        token_type: "DPoP",
+      }),
       getTokenInfo: async () => ({ aud: "https://jellybaby.us-east.host.bsky.network" }),
-      getTokenSet: async () => ({ access_token: "access-token" }),
+      fetchHandler: fetchMock,
       server: {
         dpopNonces: {
           get: async () => undefined,
@@ -127,7 +90,7 @@ describe("latrGatewayFetch", () => {
         dpopKey: {
           bareJwk: { kty: "EC", crv: "P-256", x: "x", y: "y" },
           algorithms: ["ES256"],
-          createJwt: async () => "upstream-proof",
+          createJwt: async () => "gateway-dpop-proof",
         },
         serverMetadata: { dpop_signing_alg_values_supported: ["ES256"] },
       },
@@ -140,7 +103,14 @@ describe("latrGatewayFetch", () => {
     });
 
     expect(res.status).toBe(200);
-    expect(gatewayCalls).toBe(2);
+    expect(proxyCalls).toBe(2);
     expect(nonceCounter).toBe(6);
+
+    const saveCall = fetchMock.mock.calls.find(([url]) =>
+      String(url).includes("/v1/latr/saves")
+    );
+    expect(saveCall).toBeDefined();
+    const saveHeaders = new Headers(saveCall?.[1]?.headers);
+    expect(saveHeaders.get(LATR_UPSTREAM_DPOP_HEADER)).toBeTruthy();
   });
 });

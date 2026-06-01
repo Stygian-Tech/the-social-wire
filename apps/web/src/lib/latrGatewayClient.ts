@@ -1,13 +1,11 @@
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 import {
-  buildDeveloperGatewayHeaders,
   LATR_API_KEY_HEADER,
   LATR_CLIENT_ID_HEADER,
   LATR_UPSTREAM_DPOP_HEADER,
 } from "latr-packages/gateway-client";
 
 import {
-  hasLatrGatewayClientCredentials,
   isLatrGatewayAuthRejected,
   isLatrGatewayInvalidClientCredentialResponse,
   latrGatewayCredentialsHelpText,
@@ -18,9 +16,14 @@ import {
   createUpstreamDpopProof,
   pdsXrpcMethodForGatewayRequest,
 } from "@/lib/latrGatewayUpstreamDpop";
+import { latrGatewayProxyPath } from "@/lib/latrGatewayProxyPath";
 import { latrGatewayBaseUrl } from "@/lib/latrGatewayUrl";
+import {
+  buildLatrGatewayUserAuthHeaders,
+  captureGatewayDpopNonceFromResponse,
+} from "@/lib/latrGatewayUserAuth";
 
-/** Legacy official first-party credential header (internal apps during migration). */
+/** Legacy official first-party credential header (server proxy only). */
 export const LATR_OFFICIAL_CLIENT_HEADER = "X-Latr-Official-Client";
 
 export {
@@ -55,22 +58,23 @@ async function buildUpstreamDpopHeader(
   );
 }
 
-async function buildLatrGatewayRequestHeaders(
+async function buildLatrGatewayProxyRequestHeaders(
   oauthSession: OAuthSession,
   method: string,
-  gatewayPath: string
+  gatewayPath: string,
+  gatewayUrl: string,
+  options: { dpopNonce?: string } = {}
 ): Promise<Record<string, string>> {
-  const clientId = process.env.NEXT_PUBLIC_LATR_GATEWAY_CLIENT_ID?.trim();
-  const apiKey = process.env.NEXT_PUBLIC_LATR_GATEWAY_API_KEY?.trim();
-  const clientCredential = process.env.NEXT_PUBLIC_LATR_GATEWAY_CLIENT_CREDENTIAL?.trim();
+  const userAuth = await buildLatrGatewayUserAuthHeaders(
+    oauthSession,
+    method,
+    gatewayUrl,
+    options
+  );
   const headers: Record<string, string> = {
     Accept: "application/json",
+    ...userAuth,
   };
-  if (clientId && apiKey) {
-    Object.assign(headers, buildDeveloperGatewayHeaders({ clientId, apiKey }));
-  } else if (clientCredential) {
-    headers[LATR_OFFICIAL_CLIENT_HEADER] = clientCredential;
-  }
 
   const upstreamProof = await buildUpstreamDpopHeader(
     oauthSession,
@@ -83,38 +87,37 @@ async function buildLatrGatewayRequestHeaders(
   return headers;
 }
 
+function gatewayPathOnly(path: string): string {
+  const normalized = path.startsWith("/") ? path : `/${path}`;
+  return normalized.split("?", 1)[0] ?? normalized;
+}
+
 export async function latrGatewayFetch(
   oauthSession: OAuthSession,
   path: string,
   init?: RequestInit,
   attempt = 0
 ): Promise<Response> {
-  if (!hasLatrGatewayClientCredentials()) {
-    return new Response(
-      JSON.stringify({
-        error: "missing_client_credential",
-        message: latrGatewayCredentialsHelpText(),
-      }),
-      { status: 403, headers: { "Content-Type": "application/json" } }
-    );
-  }
-
   const gatewayPath = path.startsWith("/") ? path : `/${path}`;
-  const url = `${latrGatewayBaseUrl()}${gatewayPath}`;
+  const gatewayUrl = `${latrGatewayBaseUrl()}${gatewayPath}`;
+  const proxyUrl = latrGatewayProxyPath(gatewayPath);
   const method = init?.method ?? "GET";
-  const baseHeaders = await buildLatrGatewayRequestHeaders(
+  const baseHeaders = await buildLatrGatewayProxyRequestHeaders(
     oauthSession,
     method,
-    gatewayPath
+    gatewayPathOnly(gatewayPath),
+    gatewayUrl
   );
 
-  const res = await oauthSession.fetchHandler(url, {
+  const res = await fetch(proxyUrl, {
     ...init,
     headers: {
       ...baseHeaders,
       ...(init?.headers ?? {}),
     },
   });
+
+  await captureGatewayDpopNonceFromResponse(oauthSession, gatewayUrl, res);
 
   if (attempt === 0 && shouldRetryLatrGatewayDpopNonce(res)) {
     return latrGatewayFetch(oauthSession, path, init, attempt + 1);
@@ -140,9 +143,6 @@ async function readGatewayError(res: Response): Promise<string> {
   try {
     const body = (await res.json()) as { message?: string; error?: string };
     if (isLatrGatewayInvalidClientCredentialResponse(res.status, body)) {
-      return latrGatewayCredentialsHelpText();
-    }
-    if (body.error === "missing_client_credential") {
       return latrGatewayCredentialsHelpText();
     }
     return body.message ?? body.error ?? `Gateway error (${res.status})`;

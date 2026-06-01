@@ -1,7 +1,6 @@
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 
 import {
-  hasLatrGatewayClientCredentials,
   isLatrGatewayAuthRejected,
 } from "@/lib/latrGatewayCredentials";
 import { latrGatewayJson } from "@/lib/latrGatewayClient";
@@ -78,11 +77,7 @@ export async function fetchLatrOgPreview(
   oauthSession: OAuthSession,
   url: string
 ): Promise<LatrSaveMetadata | null> {
-  if (
-    !latrGatewayMutationsEnabled() ||
-    !hasLatrGatewayClientCredentials() ||
-    isLatrGatewayAuthRejected()
-  ) {
+  if (!latrGatewayMutationsEnabled() || isLatrGatewayAuthRejected()) {
     return null;
   }
 
@@ -144,11 +139,7 @@ export async function reconcileSparseLatrSaveOnGateway(
   oauthSession: OAuthSession,
   row: MergedLatrSave
 ): Promise<void> {
-  if (
-    !latrGatewayMutationsEnabled() ||
-    !hasLatrGatewayClientCredentials() ||
-    isLatrGatewayAuthRejected()
-  ) {
+  if (!latrGatewayMutationsEnabled() || isLatrGatewayAuthRejected()) {
     return;
   }
   if (reconciledItemRkeys.has(row.itemRkey)) return;
