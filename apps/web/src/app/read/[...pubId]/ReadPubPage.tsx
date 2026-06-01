@@ -5,6 +5,10 @@ import { ChevronLeft } from "lucide-react";
 import { EntryList } from "@/components/EntryList/EntryList";
 import { EntryDetail } from "@/components/EntryDetail/EntryDetail";
 import { DevRecordKindBadge } from "@/components/shared/DevRecordKindBadge";
+import {
+  READER_LIST_COLUMN_WIDTH_KEY,
+  ResizableListColumn,
+} from "@/components/shared/ResizableListColumn";
 import { Button } from "@/components/ui/button";
 import { useReadRoute } from "@/contexts/ReadRouteContext";
 import { recordKindFromPubId } from "@/lib/recordKindDebug";
@@ -81,12 +85,9 @@ export default function ReadPubPage({ pubId }: { pubId: string }) {
   return (
     <div className="flex h-full min-h-0 max-h-full flex-1 flex-col overflow-hidden md:flex-row md:items-stretch">
       {/* Article list — desktop: beside publications sidebar; mobile: full width until an entry opens */}
-      <aside
-        className={cn(
-          "flex min-h-0 min-w-0 flex-col overflow-hidden border-r bg-muted/20",
-          "w-full flex-1 md:h-full md:w-72 md:shrink-0 md:flex-none",
-          selectedEntryId && "hidden md:flex"
-        )}
+      <ResizableListColumn
+        storageKey={READER_LIST_COLUMN_WIDTH_KEY}
+        hiddenOnMobile={Boolean(selectedEntryId)}
       >
         <div className="shrink-0 border-b px-3 py-2">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -108,7 +109,7 @@ export default function ReadPubPage({ pubId }: { pubId: string }) {
             markEntryUnread={markEntryUnreadForPub}
           />
         </div>
-      </aside>
+      </ResizableListColumn>
 
       {/* Entry detail */}
       <div
