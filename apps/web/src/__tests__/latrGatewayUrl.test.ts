@@ -4,6 +4,7 @@ import {
   DEFAULT_PROD_LATR_GATEWAY_URL,
   DEFAULT_TEST_LATR_GATEWAY_URL,
   latrGatewayBaseUrl,
+  latrGatewayBaseUrlForHostname,
   LOCAL_LATR_GATEWAY_URL,
 } from "@/lib/latrGatewayUrl";
 
@@ -86,6 +87,12 @@ describe("latrGatewayBaseUrl", () => {
       () => {
         expect(latrGatewayBaseUrl()).toBe("https://custom.example");
       }
+    );
+  });
+
+  it("maps testing.thesocialwire.app to api.testing.latr.link", () => {
+    expect(latrGatewayBaseUrlForHostname("testing.thesocialwire.app")).toBe(
+      DEFAULT_TEST_LATR_GATEWAY_URL
     );
   });
 });

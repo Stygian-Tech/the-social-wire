@@ -43,6 +43,17 @@ describe("latrGatewayProxyServer", () => {
     });
   });
 
+  it("extracts bare credential from client-id=base64 env pairs", () => {
+    delete process.env.LATR_GATEWAY_CLIENT_ID;
+    delete process.env.LATR_GATEWAY_API_KEY;
+    process.env.LATR_GATEWAY_CLIENT_CREDENTIAL =
+      "the-social-wire-web=dGVzdC1zZWNyZXQ=";
+
+    expect(buildLatrGatewayServerAuthHeaders()).toEqual({
+      "X-Latr-Official-Client": "dGVzdC1zZWNyZXQ=",
+    });
+  });
+
   it("documents server-side env names", () => {
     expect(latrGatewayServerCredentialsHelpText()).toContain("LATR_GATEWAY_CLIENT_ID");
   });
