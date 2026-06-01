@@ -12,6 +12,10 @@ import {
   COLLECTION_FOLDER,
   COLLECTION_PUB_PREFS,
   COLLECTION_PREFERENCES,
+  LEGACY_COLLECTION_FOLDER,
+  LEGACY_COLLECTION_PUB_PREFS,
+  LEGACY_COLLECTION_PREFERENCES,
+  LEGACY_COLLECTION_ENTRY_READ_STATE,
   COLLECTION_STANDARD_SITE_SUBSCRIPTION,
   COLLECTION_LATR_SAVED_EXTERNAL,
   COLLECTION_LATR_SAVED_ITEM,
@@ -28,7 +32,7 @@ import {
 
 describe("rkeyFromURI", () => {
   it("extracts rkey from an at-uri", () => {
-    const uri = "at://did:plc:alice123/com.thesocialwire.folder/3lmn4op56qr7s";
+    const uri = "at://did:plc:alice123/app.thesocialwire.folder/3lmn4op56qr7s";
     expect(rkeyFromURI(uri)).toBe("3lmn4op56qr7s");
   });
 
@@ -37,22 +41,42 @@ describe("rkeyFromURI", () => {
   });
 
   it("handles at-uri for publicationPrefs", () => {
-    const uri = `at://did:plc:bob/com.thesocialwire.publicationPrefs/abc123`;
+    const uri = `at://did:plc:bob/app.thesocialwire.publicationPrefs/abc123`;
     expect(rkeyFromURI(uri)).toBe("abc123");
   });
 });
 
 describe("collection constants", () => {
   it("folder collection ID matches lexicon", () => {
-    expect(COLLECTION_FOLDER).toBe("com.thesocialwire.folder");
+    expect(COLLECTION_FOLDER).toBe("app.thesocialwire.folder");
   });
 
   it("publicationPrefs collection ID matches lexicon", () => {
-    expect(COLLECTION_PUB_PREFS).toBe("com.thesocialwire.publicationPrefs");
+    expect(COLLECTION_PUB_PREFS).toBe("app.thesocialwire.publicationPrefs");
   });
 
   it("preferences collection ID matches lexicon", () => {
-    expect(COLLECTION_PREFERENCES).toBe("com.thesocialwire.preferences");
+    expect(COLLECTION_PREFERENCES).toBe("app.thesocialwire.preferences");
+  });
+
+  it("legacy folder collection ID is preserved for migration", () => {
+    expect(LEGACY_COLLECTION_FOLDER).toBe("com.thesocialwire.folder");
+  });
+
+  it("legacy publicationPrefs collection ID is preserved for migration", () => {
+    expect(LEGACY_COLLECTION_PUB_PREFS).toBe(
+      "com.thesocialwire.publicationPrefs"
+    );
+  });
+
+  it("legacy preferences collection ID is preserved for migration", () => {
+    expect(LEGACY_COLLECTION_PREFERENCES).toBe("com.thesocialwire.preferences");
+  });
+
+  it("legacy entryReadState collection ID is preserved for migration", () => {
+    expect(LEGACY_COLLECTION_ENTRY_READ_STATE).toBe(
+      "com.thesocialwire.entryReadState"
+    );
   });
 
   it("standard.site subscription collection ID matches lexicon", () => {
@@ -69,7 +93,7 @@ describe("collection constants", () => {
 
   it("entryReadState collection ID matches lexicon", () => {
     expect(COLLECTION_ENTRY_READ_STATE).toBe(
-      "com.thesocialwire.entryReadState"
+      "app.thesocialwire.entryReadState"
     );
   });
 

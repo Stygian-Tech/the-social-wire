@@ -73,7 +73,7 @@ describe("applyPublicationUnreadCountDelta", () => {
     projection.folderSections = [
       {
         folderRkey: "folder1",
-        folderUri: "at://did:plc:viewer/com.thesocialwire.folder/folder1",
+        folderUri: "at://did:plc:viewer/app.thesocialwire.folder/folder1",
         publications: [{ ...projection.allPublicationRows[0]!, unreadCount: 3 }],
       },
     ];

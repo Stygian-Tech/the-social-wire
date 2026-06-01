@@ -9,6 +9,7 @@ import {
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 import { createSyncStoragePersister } from "@tanstack/query-sync-storage-persister";
 import { AuthProvider } from "@/hooks/useAuth";
+import { LexiconMigrationRunner } from "@/hooks/useLexiconMigration";
 import type { PublicationSidebarProjection } from "@/lib/publicationProjectionClient";
 import { shouldPersistSidebarProjection } from "@/lib/sidebarProjectionPersist";
 
@@ -97,7 +98,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
         },
       }}
     >
-      <AuthProvider>{children}</AuthProvider>
+      <AuthProvider>
+        <LexiconMigrationRunner />
+        {children}
+      </AuthProvider>
     </PersistQueryClientProvider>
   );
 }

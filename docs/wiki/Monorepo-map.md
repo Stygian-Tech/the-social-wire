@@ -12,7 +12,7 @@ the-social-wire/
     appview/          # Sidebar projection + Thin AppView reads (Fly.io)
     appview-worker/   # Jetstream ingestion (Fly.io)
   packages/
-    lexicons/     # com.thesocialwire.* (and related) lexicons
+    lexicons/     # app.thesocialwire.* (and related) lexicons
     spec/         # OpenAPI for HTTP surfaces (/v1/appview, /v1/sync, …)
   supabase/
     migrations/   # Postgres (pds_repo_record_cache, content_items, read_marks, …)

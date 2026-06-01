@@ -40,9 +40,12 @@ import {
 
 // ── Lexicon collection IDs ────────────────────────────────────────────────────
 
-export const COLLECTION_FOLDER = "com.thesocialwire.folder";
-export const COLLECTION_PUB_PREFS = "com.thesocialwire.publicationPrefs";
-export const COLLECTION_PREFERENCES = "com.thesocialwire.preferences";
+export const COLLECTION_FOLDER = "app.thesocialwire.folder";
+export const COLLECTION_PUB_PREFS = "app.thesocialwire.publicationPrefs";
+export const COLLECTION_PREFERENCES = "app.thesocialwire.preferences";
+export const LEGACY_COLLECTION_FOLDER = "com.thesocialwire.folder";
+export const LEGACY_COLLECTION_PUB_PREFS = "com.thesocialwire.publicationPrefs";
+export const LEGACY_COLLECTION_PREFERENCES = "com.thesocialwire.preferences";
 export const COLLECTION_STANDARD_SITE_SUBSCRIPTION =
   "site.standard.graph.subscription";
 /** Skyreader RSS/Atom subscriptions (writes require OAuth repo scope). */
@@ -51,10 +54,25 @@ export const COLLECTION_SKYREADER_FEED_SUBSCRIPTION =
 export const COLLECTION_LATR_SAVED_EXTERNAL = "com.latr.saved.external";
 export const COLLECTION_LATR_SAVED_ITEM = "com.latr.saved.item";
 /** Per-entry feed read positions (subject AT-URI + read timestamps). */
-export const COLLECTION_ENTRY_READ_STATE = "com.thesocialwire.entryReadState";
+export const COLLECTION_ENTRY_READ_STATE = "app.thesocialwire.entryReadState";
+export const LEGACY_COLLECTION_ENTRY_READ_STATE =
+  "com.thesocialwire.entryReadState";
 export const PREFERENCES_RKEY = "self";
 
-/** Sidebar pseudo-folder URI (not a real `com.thesocialwire.folder` record). */
+export const LEGACY_LEXICON_COLLECTIONS: ReadonlyArray<{
+  legacy: string;
+  current: string;
+}> = [
+  { legacy: LEGACY_COLLECTION_FOLDER, current: COLLECTION_FOLDER },
+  { legacy: LEGACY_COLLECTION_PUB_PREFS, current: COLLECTION_PUB_PREFS },
+  { legacy: LEGACY_COLLECTION_PREFERENCES, current: COLLECTION_PREFERENCES },
+  {
+    legacy: LEGACY_COLLECTION_ENTRY_READ_STATE,
+    current: COLLECTION_ENTRY_READ_STATE,
+  },
+];
+
+/** Sidebar pseudo-folder URI (not a real `app.thesocialwire.folder` record). */
 export const PSEUDO_FOLDER_MY_URI = "__my__";
 
 // ── Record types ──────────────────────────────────────────────────────────────
@@ -171,7 +189,7 @@ export interface LatrSaveMetadata {
   linkedWebUrl?: string;
 }
 
-/** PDS `com.thesocialwire.entryReadState` record shape. */
+/** PDS `app.thesocialwire.entryReadState` record shape. */
 export interface EntryReadStateRecord {
   $type: typeof COLLECTION_ENTRY_READ_STATE;
   subjectUri: string;
@@ -436,6 +454,11 @@ export class PDSClient {
     this.agent = new Agent(oauthSession);
     this.did = did;
     this.oauthSession = oauthSession;
+  }
+
+  /** Authenticated viewer DID (for one-shot migration guards). */
+  get viewerDid(): string {
+    return this.did;
   }
 
   // ── Folders ──────────────────────────────────────────────────────────────
@@ -1217,6 +1240,76 @@ export class PDSClient {
     return this.listMergedLatrSaves();
   }
 
+  /**
+   * Copies legacy `com.thesocialwire.*` records into `app.thesocialwire.*` and deletes the old rows.
+   * No-op when legacy collections are empty.
+   */
+  async migrateLegacyLexiconsIfNeeded(): Promise<LexiconMigrationSummary> {
+    const summary = emptyLexiconMigrationSummary();
+
+    for (const { legacy, current } of LEGACY_LEXICON_COLLECTIONS) {
+      const probe = await this.agent.api.com.atproto.repo.listRecords({
+        repo: this.did,
+        collection: legacy,
+        limit: 1,
+      });
+      if (!probe.data.records?.length) continue;
+
+      let cursor: string | undefined;
+      do {
+        const page = await this.agent.api.com.atproto.repo.listRecords({
+          repo: this.did,
+          collection: legacy,
+          limit: 100,
+          cursor,
+        });
+
+        for (const record of page.data.records ?? []) {
+          const rkey = rkeyFromURI(record.uri);
+          const targetRkey =
+            legacy === LEGACY_COLLECTION_PREFERENCES ? PREFERENCES_RKEY : rkey;
+
+          let exists = false;
+          try {
+            await this.agent.api.com.atproto.repo.getRecord({
+              repo: this.did,
+              collection: current,
+              rkey: targetRkey,
+            });
+            exists = true;
+          } catch {
+            exists = false;
+          }
+
+          if (!exists) {
+            const migrated = {
+              ...(record.value as Record<string, unknown>),
+              $type: current,
+            };
+            await this.agent.api.com.atproto.repo.putRecord({
+              repo: this.did,
+              collection: current,
+              rkey: targetRkey,
+              record: migrated,
+            });
+            incrementLexiconMigrationCopied(summary, legacy);
+          }
+
+          await this.agent.api.com.atproto.repo.deleteRecord({
+            repo: this.did,
+            collection: legacy,
+            rkey,
+          });
+          incrementLexiconMigrationDeleted(summary, legacy);
+        }
+
+        cursor = page.data.cursor;
+      } while (cursor);
+    }
+
+    return summary;
+  }
+
   /** Removes legacy hex / iOS-prefixed read-state keys after canonical write or delete. */
   private async deleteLegacyEntryReadStateKeys(
     subjectUri: string,
@@ -1245,13 +1338,92 @@ export class PDSClient {
 
 /**
  * Extracts the rkey from an at-uri.
- * at://did:plc:xxx/com.thesocialwire.folder/rkey → "rkey"
+ * at://did:plc:xxx/app.thesocialwire.folder/rkey → "rkey"
  */
 export function rkeyFromURI(uri: string): string {
   return uri.split("/").pop() ?? uri;
 }
 
-/** Deterministic `com.thesocialwire.entryReadState` rkey from an entry AT-URI. */
+export interface LexiconMigrationSummary {
+  foldersCopied: number;
+  publicationPrefsCopied: number;
+  preferencesCopied: number;
+  entryReadStateCopied: number;
+  foldersDeleted: number;
+  publicationPrefsDeleted: number;
+  preferencesDeleted: number;
+  entryReadStateDeleted: number;
+}
+
+export function lexiconMigrationChanged(
+  summary: LexiconMigrationSummary
+): boolean {
+  return (
+    summary.foldersCopied > 0 ||
+    summary.publicationPrefsCopied > 0 ||
+    summary.preferencesCopied > 0 ||
+    summary.entryReadStateCopied > 0 ||
+    summary.foldersDeleted > 0 ||
+    summary.publicationPrefsDeleted > 0 ||
+    summary.preferencesDeleted > 0 ||
+    summary.entryReadStateDeleted > 0
+  );
+}
+
+function emptyLexiconMigrationSummary(): LexiconMigrationSummary {
+  return {
+    foldersCopied: 0,
+    publicationPrefsCopied: 0,
+    preferencesCopied: 0,
+    entryReadStateCopied: 0,
+    foldersDeleted: 0,
+    publicationPrefsDeleted: 0,
+    preferencesDeleted: 0,
+    entryReadStateDeleted: 0,
+  };
+}
+
+function incrementLexiconMigrationCopied(
+  summary: LexiconMigrationSummary,
+  legacyCollection: string
+): void {
+  switch (legacyCollection) {
+    case LEGACY_COLLECTION_FOLDER:
+      summary.foldersCopied += 1;
+      break;
+    case LEGACY_COLLECTION_PUB_PREFS:
+      summary.publicationPrefsCopied += 1;
+      break;
+    case LEGACY_COLLECTION_PREFERENCES:
+      summary.preferencesCopied += 1;
+      break;
+    case LEGACY_COLLECTION_ENTRY_READ_STATE:
+      summary.entryReadStateCopied += 1;
+      break;
+  }
+}
+
+function incrementLexiconMigrationDeleted(
+  summary: LexiconMigrationSummary,
+  legacyCollection: string
+): void {
+  switch (legacyCollection) {
+    case LEGACY_COLLECTION_FOLDER:
+      summary.foldersDeleted += 1;
+      break;
+    case LEGACY_COLLECTION_PUB_PREFS:
+      summary.publicationPrefsDeleted += 1;
+      break;
+    case LEGACY_COLLECTION_PREFERENCES:
+      summary.preferencesDeleted += 1;
+      break;
+    case LEGACY_COLLECTION_ENTRY_READ_STATE:
+      summary.entryReadStateDeleted += 1;
+      break;
+  }
+}
+
+/** Deterministic `app.thesocialwire.entryReadState` rkey from an entry AT-URI. */
 export async function entryReadStateRkeyFromSubjectUri(
   subjectUri: string
 ): Promise<string> {

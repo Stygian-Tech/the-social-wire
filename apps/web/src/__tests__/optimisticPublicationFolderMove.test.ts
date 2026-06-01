@@ -24,7 +24,7 @@ const baseProjection: PublicationSidebarProjection = {
   viewerDid: "did:plc:viewer",
   folders: [
     {
-      uri: "at://did:plc:viewer/com.thesocialwire.folder/folder1",
+      uri: "at://did:plc:viewer/app.thesocialwire.folder/folder1",
       rkey: "folder1",
       value: { name: "Tech" },
     },
@@ -39,7 +39,7 @@ const baseProjection: PublicationSidebarProjection = {
   folderSections: [
     {
       folderRkey: "folder1",
-      folderUri: "at://did:plc:viewer/com.thesocialwire.folder/folder1",
+      folderUri: "at://did:plc:viewer/app.thesocialwire.folder/folder1",
       publications: [],
     },
   ],
@@ -81,13 +81,13 @@ describe("optimisticPublicationFolderMove", () => {
       moved,
       publicationRow.publicationId,
       {
-        uri: "at://did:plc:viewer/com.thesocialwire.publicationPrefs/pref1",
+        uri: "at://did:plc:viewer/app.thesocialwire.publicationPrefs/pref1",
         rkey: "pref1",
       }
     );
 
     expect(next?.publicationPrefs[0]?.uri).toBe(
-      "at://did:plc:viewer/com.thesocialwire.publicationPrefs/pref1"
+      "at://did:plc:viewer/app.thesocialwire.publicationPrefs/pref1"
     );
   });
 });

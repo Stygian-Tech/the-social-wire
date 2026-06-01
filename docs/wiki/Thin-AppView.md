@@ -12,7 +12,7 @@ Social Wire’s **GDPR-safe Level-1 read index** — optional, feature-flagged, 
 | **Thin AppView** (`/v1/appview/*` on **`services/appview`**, proxied by **`services/gateway`**) | Level-1 entry timelines, unread counts, bootstrap stream, scoped mark-all-read |
 | **Publication sidebar** (`/v1/publications/*` on **`services/appview`**, proxied by gateway) | Server-side discovery, folders, subscriptions, RSS rows, unread badges |
 
-The thin index stores **list-row fields only** (title, `publishedAt`, summary, thumbnail URL refs) for `standard.site` entry collections. **Full entry bodies** and **canonical read writes** stay on each user’s PDS (`com.thesocialwire.entryReadState`).
+The thin index stores **list-row fields only** (title, `publishedAt`, summary, thumbnail URL refs) for `standard.site` entry collections. **Full entry bodies** and **canonical read writes** stay on each user’s PDS (`app.thesocialwire.entryReadState`).
 
 ## Data flow
 

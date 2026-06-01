@@ -9,10 +9,10 @@ public static let contentCollections: [String] = [
     "com.standard.entry",
   ]
 
-public static let readStateCollection = "com.thesocialwire.entryReadState"
+public static let readStateCollection = "app.thesocialwire.entryReadState"
 
 public static let defaultRelayWebSocketURL =
-    "wss://jetstream2.us-east.bsky.network/subscribe?wantedCollections=site.standard.document&wantedCollections=com.standard.document&wantedCollections=site.standard.entry&wantedCollections=com.standard.entry&wantedCollections=com.thesocialwire.entryReadState&wantedCollections=app.skyreader.feed.subscription"
+    "wss://jetstream2.us-east.bsky.network/subscribe?wantedCollections=site.standard.document&wantedCollections=com.standard.document&wantedCollections=site.standard.entry&wantedCollections=com.standard.entry&wantedCollections=app.thesocialwire.entryReadState&wantedCollections=app.skyreader.feed.subscription"
 
 public let enabled: Bool
 public let relayWebSocketURL: String

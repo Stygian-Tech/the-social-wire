@@ -71,7 +71,7 @@ struct PreferenceSyncServiceTests {
     await #expect(throws: HTTPError.self) {
       _ = try await service.genericCachedRecordGET(
         auth: auth,
-        collection: "com.thesocialwire.preferences",
+        collection: "app.thesocialwire.preferences",
         rkey: "",
         ifNoneMatch: nil
       )

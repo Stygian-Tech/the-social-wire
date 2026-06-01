@@ -62,7 +62,7 @@ struct OAuthTests {
         #expect(fields["redirect_uri"] == ATProtoOAuthConfig.redirectURI)
         #expect(fields["state"] == "st")
         #expect(fields["login_hint"] == "did:plc:test")
-        #expect(fields["scope"]?.contains("repo:com.thesocialwire.entryReadState") == true)
+        #expect(fields["scope"]?.contains("repo:app.thesocialwire.entryReadState") == true)
     }
 
     @Test("PKCE challenge is stable for verifier")

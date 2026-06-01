@@ -36,7 +36,16 @@ const LATR_COLLECTIONS = new Set([
   "com.latr.saved.item",
 ]);
 
-const SOCIALWIRE_COLLECTION_PREFIX = "com.thesocialwire.";
+const SOCIALWIRE_COLLECTION_PREFIXES = [
+  "app.thesocialwire.",
+  "com.thesocialwire.",
+] as const;
+
+function isSocialWireCollection(collection: string): boolean {
+  return SOCIALWIRE_COLLECTION_PREFIXES.some((prefix) =>
+    collection.startsWith(prefix)
+  );
+}
 
 const BSKY_COLLECTION_PREFIX = "app.bsky.";
 
@@ -49,7 +58,7 @@ function isStandardSiteCollection(collection: string): boolean {
 function sourceForCollection(collection: string): RecordSourceKind {
   if (isStandardSiteCollection(collection)) return "standard.site";
   if (LATR_COLLECTIONS.has(collection)) return "L@tr.link";
-  if (collection.startsWith(SOCIALWIRE_COLLECTION_PREFIX)) return "thesocialwire";
+  if (isSocialWireCollection(collection)) return "thesocialwire";
   if (collection.startsWith(BSKY_COLLECTION_PREFIX)) return "bluesky";
   return "unknown";
 }

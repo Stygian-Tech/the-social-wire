@@ -10,17 +10,17 @@ The only data we write to the user's PDS is what the protocol doesn't already ha
 
 | Lexicon | Purpose |
 |---------|---------|
-| `com.thesocialwire.folder` | A named folder for organizing publications |
-| `com.thesocialwire.publicationPrefs` | Folder assignment, sort order, and visibility for a discovered publication |
-| `com.thesocialwire.preferences` | Account-level Social Wire preferences, including the configured read-later service |
-| `com.thesocialwire.entryReadState` | Per-entry read/unread sync for the feed reader: subject entry AT-URI + read timestamp only |
+| `app.thesocialwire.folder` | A named folder for organizing publications |
+| `app.thesocialwire.publicationPrefs` | Folder assignment, sort order, and visibility for a discovered publication |
+| `app.thesocialwire.preferences` | Account-level Social Wire preferences, including the configured read-later service |
+| `app.thesocialwire.entryReadState` | Per-entry read/unread sync for the feed reader: subject entry AT-URI + read timestamp only |
 | `com.latr.saved.external` | L@tr (latr.link) wrapper for normalized HTTPS URLs (read-later interoperability) |
 | `com.latr.saved.item` | L@tr read-later queue item pointing at `subjectUri` (external wrapper or ATProto record) |
 | `app.skyreader.feed.subscription` | RSS/Atom subscriptions (Skyreader-compatible) on the user's PDS; see [`app/skyreader/feed/subscription.json`](app/skyreader/feed/subscription.json) |
 
 All records are public by default (ATProto repos are public). Any client that can read a PDS can see a user's Social Wire folders and preferences.
 
-### `com.thesocialwire.entryReadState` (read positions)
+### `app.thesocialwire.entryReadState` (read positions)
 
 Stores **which entry URIs the user has marked read** and **when (first read time)**—for syncing unread state across clients. This is **not** a private analytics log: treat it as preference data comparable to other Social Wire repo records.
 
@@ -36,7 +36,7 @@ When the optional **Thin AppView** gateway index is enabled, commits to this col
 
 ```json
 {
-  "$type": "com.thesocialwire.entryReadState",
+  "$type": "app.thesocialwire.entryReadState",
   "subjectUri": "at://did:plc:abc123/site.standard.document/xyz",
   "readAt": "2026-05-12T20:00:00.000Z",
   "updatedAt": "2026-05-12T20:00:00.000Z"
@@ -51,7 +51,7 @@ When the optional **Thin AppView** gateway index is enabled, commits to this col
 
 ## Lexicons
 
-### `com.thesocialwire.folder`
+### `app.thesocialwire.folder`
 
 A named folder in the user's sidebar.
 
@@ -70,7 +70,7 @@ A named folder in the user's sidebar.
 **Example:**
 ```json
 {
-  "$type": "com.thesocialwire.folder",
+  "$type": "app.thesocialwire.folder",
   "name": "Tech",
   "sortOrder": 0,
   "icon": "💻",
@@ -80,7 +80,7 @@ A named folder in the user's sidebar.
 
 ---
 
-### `com.thesocialwire.preferences`
+### `app.thesocialwire.preferences`
 
 Account-level preferences for The Social Wire. This record is keyed as `self`
 and stores non-sensitive configuration such as the read-later service used by
@@ -89,7 +89,7 @@ and stores non-sensitive configuration such as the read-later service used by
 Do not store third-party API tokens, passwords, refresh tokens, or secrets in
 this record. ATProto repo records are public by default.
 
-### `com.thesocialwire.publicationPrefs`
+### `app.thesocialwire.publicationPrefs`
 
 Organizational preferences for a discovered publication. The publication list itself comes from the user's follows — this record only stores what the protocol doesn't capture.
 
@@ -100,7 +100,7 @@ Organizational preferences for a discovered publication. The publication list it
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `publicationId` | string | ✅ | at-uri or canonical URL of the publication |
-| `folderId` | string | | rkey of the `com.thesocialwire.folder` record to assign this publication to |
+| `folderId` | string | | rkey of the `app.thesocialwire.folder` record to assign this publication to |
 | `sortOrder` | integer | | Position within the folder (or in "All Publications") |
 | `hidden` | boolean | | If `true`, exclude from the sidebar |
 | `createdAt` | datetime | ✅ | ISO 8601 creation timestamp |
@@ -108,7 +108,7 @@ Organizational preferences for a discovered publication. The publication list it
 **Example:**
 ```json
 {
-  "$type": "com.thesocialwire.publicationPrefs",
+  "$type": "app.thesocialwire.publicationPrefs",
   "publicationId": "at://did:plc:abc123/com.example.publication/main",
   "folderId": "3jxxxxxxxxxxxx2",
   "sortOrder": 1,
@@ -127,16 +127,16 @@ Use the standard ATProto `com.atproto.repo.*` XRPC methods:
 // List all folders for a user
 await agent.api.com.atproto.repo.listRecords({
   repo: did,
-  collection: "com.thesocialwire.folder",
+  collection: "app.thesocialwire.folder",
 });
 
 // Create a folder
 await agent.api.com.atproto.repo.putRecord({
   repo: did,
-  collection: "com.thesocialwire.folder",
+  collection: "app.thesocialwire.folder",
   rkey: TID.nextStr(),
   record: {
-    $type: "com.thesocialwire.folder",
+    $type: "app.thesocialwire.folder",
     name: "Tech",
     sortOrder: 0,
     createdAt: new Date().toISOString(),
@@ -146,7 +146,7 @@ await agent.api.com.atproto.repo.putRecord({
 // Delete a folder
 await agent.api.com.atproto.repo.deleteRecord({
   repo: did,
-  collection: "com.thesocialwire.folder",
+  collection: "app.thesocialwire.folder",
   rkey: folderRkey,
 });
 ```
@@ -157,5 +157,5 @@ await agent.api.com.atproto.repo.deleteRecord({
 
 - Lexicon IDs are **stable**. Existing fields will not be removed or have their types changed.
 - New **optional** fields may be added in minor revisions.
-- Breaking changes require a new lexicon ID (e.g. `com.thesocialwire.folder#v2`).
+- Breaking changes require a new lexicon ID (e.g. `app.thesocialwire.folder#v2`).
 - Material lexicon revisions are summarized in [CHANGELOG.md](./CHANGELOG.md).

@@ -15,7 +15,7 @@ actor PreferenceSyncService {
   private let plcURL: String
   private let logger: Logger
 
-  private static let preferencesCollection = "com.thesocialwire.preferences"
+  private static let preferencesCollection = PublicationLexicons.preferences
   private static let preferencesRKey = "self"
 
   init(httpClient: HTTPClient, cache: any CacheStore, plcURL: String, logger: Logger) {

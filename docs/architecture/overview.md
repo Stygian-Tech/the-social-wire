@@ -17,7 +17,7 @@
    User's ATProto PDS               Public ATProto XRPC
    (user-controlled)                (Bluesky App View + author PDS)
           │                                │
-   com.thesocialwire.*                     ├── Discovery (follows)
+   app.thesocialwire.*                     ├── Discovery (follows)
    app.bsky.graph.follow                   ├── Profiles
           │                                └── Author repo reads (default)
           │
@@ -38,12 +38,12 @@ The Social Wire follows a protocol-first ownership model:
 | Data | Where | Who owns it |
 |------|-------|-------------|
 | Follow graph | `app.bsky.graph.follow` on user's PDS | User |
-| Folders | `com.thesocialwire.folder` on user's PDS | User |
-| Publication folder assignment | `com.thesocialwire.publicationPrefs` on user's PDS | User |
+| Folders | `app.thesocialwire.folder` on user's PDS | User |
+| Publication folder assignment | `app.thesocialwire.publicationPrefs` on user's PDS | User |
 | Entry list rows (default) | Author PDS `listRecords` on `site.standard.*` / `com.standard.*` | Authors |
 | Entry list rows (optional) | Gateway Thin AppView `content_items` index | Derived (Level-1 only) |
 | Entry detail / bodies | Author PDS `getRecord` | Authors |
-| Read state (canonical) | `com.thesocialwire.entryReadState` on viewer PDS | User |
+| Read state (canonical) | `app.thesocialwire.entryReadState` on viewer PDS | User |
 | Read marks in index (optional) | Gateway `read_marks` — write-through + firehose mirror | Derived |
 
 User organisation data and canonical read writes remain on the PDS. When the Thin AppView is disabled or unavailable, clients fall back to direct author-PDS entry listing. See [appview.md](appview.md).
@@ -85,7 +85,7 @@ See [discovery.md](discovery.md) for the detailed walkthrough.
 
 ## Thin AppView (optional)
 
-When `ENABLE_THIN_APPVIEW` is enabled on AppView, the **appview-worker** process ingests Jetstream commits into `content_items` and mirrors `com.thesocialwire.entryReadState` into `read_marks`. Clients load the sidebar and first feed page via **`GET /v1/appview/bootstrap-stream`**, then paginate entry lists with `GET /v1/appview/entries`. Entry detail and read writes stay on the PDS.
+When `ENABLE_THIN_APPVIEW` is enabled on AppView, the **appview-worker** process ingests Jetstream commits into `content_items` and mirrors `app.thesocialwire.entryReadState` into `read_marks`. Clients load the sidebar and first feed page via **`GET /v1/appview/bootstrap-stream`**, then paginate entry lists with `GET /v1/appview/entries`. Entry detail and read writes stay on the PDS.
 
 Enrollment (`POST /v1/appview/enroll`) backfills followed author DIDs after client-side discovery because the global relay may miss very new repos.
 

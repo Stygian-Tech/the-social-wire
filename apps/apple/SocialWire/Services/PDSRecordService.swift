@@ -2,14 +2,19 @@ import Foundation
 
 @MainActor
 final class PDSRecordService {
-    nonisolated static let folder = "com.thesocialwire.folder"
-    nonisolated static let publicationPrefs = "com.thesocialwire.publicationPrefs"
-    nonisolated static let preferences = "com.thesocialwire.preferences"
+    nonisolated static let folder = "app.thesocialwire.folder"
+    nonisolated static let publicationPrefs = "app.thesocialwire.publicationPrefs"
+    nonisolated static let preferences = "app.thesocialwire.preferences"
     nonisolated static let standardSiteSubscription = "site.standard.graph.subscription"
     nonisolated static let skyreaderFeedSubscription = "app.skyreader.feed.subscription"
     nonisolated static let latrSavedExternal = "com.latr.saved.external"
     nonisolated static let latrSavedItem = "com.latr.saved.item"
-    nonisolated static let entryReadState = "com.thesocialwire.entryReadState"
+    nonisolated static let entryReadState = "app.thesocialwire.entryReadState"
+
+    nonisolated static let legacyFolder = "com.thesocialwire.folder"
+    nonisolated static let legacyPublicationPrefs = "com.thesocialwire.publicationPrefs"
+    nonisolated static let legacyPreferences = "com.thesocialwire.preferences"
+    nonisolated static let legacyEntryReadState = "com.thesocialwire.entryReadState"
 
     nonisolated private static let preferencesRKey = "self"
 

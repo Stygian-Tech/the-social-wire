@@ -2,14 +2,14 @@
 
 The Social Wire uses two custom ATProto lexicons for storing user data. Both lexicons are public — any ATProto client can read a user's Social Wire records.
 
-## `com.thesocialwire.folder`
+## `app.thesocialwire.folder`
 
 A named group for organising publication subscriptions.
 
 ```json
 {
   "lexicon": 1,
-  "id": "com.thesocialwire.folder",
+  "id": "app.thesocialwire.folder",
   "defs": {
     "main": {
       "type": "record",
@@ -35,7 +35,7 @@ A named group for organising publication subscriptions.
 - `iconImage` is an optional image URL for custom folder icons (Phase 1b feature). Clients fall back to `icon` if not present.
 - `sortOrder` controls the order in the sidebar; clients assign sequential integers.
 
-## `com.thesocialwire.publicationPrefs`
+## `app.thesocialwire.publicationPrefs`
 
 User display preferences for a discovered publication.
 
@@ -44,7 +44,7 @@ The publication list itself is derived from `app.bsky.graph.follow` records (alr
 ```json
 {
   "lexicon": 1,
-  "id": "com.thesocialwire.publicationPrefs",
+  "id": "app.thesocialwire.publicationPrefs",
   "defs": {
     "main": {
       "type": "record",
@@ -53,7 +53,7 @@ The publication list itself is derived from `app.bsky.graph.follow` records (alr
         "required": ["publicationId", "createdAt"],
         "properties": {
           "publicationId": { "type": "string", "description": "at-uri or canonical URL of the publication" },
-          "folderId":      { "type": "string", "description": "rkey of the com.thesocialwire.folder record" },
+          "folderId":      { "type": "string", "description": "rkey of the app.thesocialwire.folder record" },
           "sortOrder":     { "type": "integer", "default": 0 },
           "hidden":        { "type": "boolean", "default": false },
           "createdAt":     { "type": "string", "format": "datetime" }
@@ -77,7 +77,7 @@ Any ATProto client can list a user's Social Wire records:
 ```http
 GET https://{pds-host}/xrpc/com.atproto.repo.listRecords
   ?repo={did}
-  &collection=com.thesocialwire.folder
+  &collection=app.thesocialwire.folder
   &limit=100
 ```
 
@@ -86,6 +86,6 @@ This demonstrates the interoperability principle — no Social Wire-specific API
 ## Versioning
 
 Lexicons follow the ATProto versioning convention:
-- Breaking changes require a new lexicon ID (e.g. `com.thesocialwire.folderV2`)
+- Breaking changes require a new lexicon ID (e.g. `app.thesocialwire.folderV2`)
 - Non-breaking additions (new optional fields) can be added to the existing ID
 - The `$type` field in records always reflects the current lexicon ID

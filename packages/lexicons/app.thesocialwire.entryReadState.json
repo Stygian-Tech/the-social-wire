@@ -1,6 +1,6 @@
 {
   "lexicon": 1,
-  "id": "com.thesocialwire.entryReadState",
+  "id": "app.thesocialwire.entryReadState",
   "defs": {
     "main": {
       "type": "record",

@@ -1,6 +1,6 @@
 {
   "lexicon": 1,
-  "id": "com.thesocialwire.preferences",
+  "id": "app.thesocialwire.preferences",
   "defs": {
     "main": {
       "type": "record",

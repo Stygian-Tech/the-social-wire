@@ -1,6 +1,6 @@
 {
   "lexicon": 1,
-  "id": "com.thesocialwire.publicationPrefs",
+  "id": "app.thesocialwire.publicationPrefs",
   "defs": {
     "main": {
       "type": "record",
@@ -16,7 +16,7 @@
           },
           "folderId": {
             "type": "string",
-            "description": "The rkey (TID) of the com.thesocialwire.folder record this publication is assigned to. Omit or set to null to leave the publication in 'All Publications'."
+            "description": "The rkey (TID) of the app.thesocialwire.folder record this publication is assigned to. Omit or set to null to leave the publication in 'All Publications'."
           },
           "sortOrder": {
             "type": "integer",

@@ -9,7 +9,7 @@ public enum DeterministicKeys {
     return String(ms, radix: 32).lowercased()
   }
 
-  /// Deterministic `com.thesocialwire.entryReadState` rkey — full RFC 4648 base32 (uppercase), SHA-256(subjectURI).
+  /// Deterministic `app.thesocialwire.entryReadState` rkey — full RFC 4648 base32 (uppercase), SHA-256(subjectURI).
   public static func entryReadStateRKey(subjectURI: String) -> String {
     digestKey(for: subjectURI)
   }

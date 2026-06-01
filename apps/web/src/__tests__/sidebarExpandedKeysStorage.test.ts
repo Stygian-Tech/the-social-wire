@@ -72,7 +72,7 @@ describe("sidebarExpandedKeysStorage", () => {
   });
 
   it("migrates legacy folder uri keys to rkey keys", () => {
-    const uri = "at://did:plc:viewer/com.thesocialwire.folder/abc123";
+    const uri = "at://did:plc:viewer/app.thesocialwire.folder/abc123";
     const keys = new Set([SIDEBAR_SEC_FOLDERS, uri]);
     const migrated = migrateLegacyFolderUriExpandKeys(keys, [uri]);
     expect(migrated).toEqual(new Set([SIDEBAR_SEC_FOLDERS, folderExpandKey("abc123")]));

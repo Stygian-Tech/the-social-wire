@@ -92,7 +92,7 @@ describe("publicationProjectionClient", () => {
       folderSections: [
         {
           folderRkey: "folder1",
-          folderUri: "at://did:plc:viewer/com.thesocialwire.folder/folder1",
+          folderUri: "at://did:plc:viewer/app.thesocialwire.folder/folder1",
           publications: [
             {
               publicationId: "at://did:plc:author/site.standard.publication/pub1",
@@ -134,7 +134,7 @@ describe("publicationProjectionClient", () => {
       folderSections: [
         {
           folderRkey: "folder1",
-          folderUri: "at://did:plc:viewer/com.thesocialwire.folder/folder1",
+          folderUri: "at://did:plc:viewer/app.thesocialwire.folder/folder1",
           publications: [
             {
               publicationId: "at://did:plc:author/site.standard.publication/pub1",

@@ -29,4 +29,4 @@ CREATE INDEX IF NOT EXISTS idx_read_marks_viewer_created
   ON read_marks (viewer_did, created_at DESC);
 
 COMMENT ON TABLE content_items IS 'Level-1 timeline index for standard.site entry collections; TTL via expires_at.';
-COMMENT ON TABLE read_marks IS 'Derived read/unread marks mirrored from com.thesocialwire.entryReadState; purgeable per viewer.';
+COMMENT ON TABLE read_marks IS 'Derived read/unread marks mirrored from app.thesocialwire.entryReadState; purgeable per viewer.';

@@ -50,7 +50,7 @@ export function useFolders() {
         uri: folder.uri,
         cid: "",
         value: {
-          $type: "com.thesocialwire.folder" as const,
+          $type: "app.thesocialwire.folder" as const,
           name: String(folder.value.name ?? folder.rkey),
           sortOrder:
             typeof folder.value.sortOrder === "number"

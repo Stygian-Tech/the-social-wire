@@ -66,8 +66,8 @@ Sign in with a **real** handle; tokens are issued by your PDS. There is **no OAu
 
 ```
 User's PDS (OAuth session — canonical for repo + graph on the viewer's repo)
-  └─ com.thesocialwire.folder           ← useFolders / useCreateFolder
-  └─ com.thesocialwire.publicationPrefs ← usePublicationPrefs / useSetPublicationFolder
+  └─ app.thesocialwire.folder           ← useFolders / useCreateFolder
+  └─ app.thesocialwire.publicationPrefs ← usePublicationPrefs / useSetPublicationFolder
   └─ app.bsky.graph.follow              ← discoverPublications (canonical follow subjects)
 
 Author repos (PLC-resolved PDS; com.atproto.repo.* — not the App View relay)
@@ -109,15 +109,15 @@ Lexicon **collection** (NSID) strings used in the web client match `apps/web/src
 | `site.standard.entry` | Legacy entry collection; discovery and listing (backward compatibility) |
 | `com.standard.entry` | Alternate legacy entry collection for listing |
 | `app.bsky.graph.follow` | Follow subjects read from the **viewer's** repo (canonical input to discovery) |
-| `com.thesocialwire.folder` | User-defined folders (`PDSClient.listFolders`, mutations) |
-| `com.thesocialwire.publicationPrefs` | Per-publication folder assignment and sort on the user's PDS (legacy `hidden` may still decode from old records but the client clears it on write) |
-| `com.thesocialwire.entryReadState` | Per-entry read timestamps on the viewer PDS (canonical); mirrored to gateway index when Thin AppView is enabled |
+| `app.thesocialwire.folder` | User-defined folders (`PDSClient.listFolders`, mutations) |
+| `app.thesocialwire.publicationPrefs` | Per-publication folder assignment and sort on the user's PDS (legacy `hidden` may still decode from old records but the client clears it on write) |
+| `app.thesocialwire.entryReadState` | Per-entry read timestamps on the viewer PDS (canonical); mirrored to gateway index when Thin AppView is enabled |
 
-JSON lexicons for Social Wire–specific records live under **`packages/lexicons/`** (`com.thesocialwire.*`).
+JSON lexicons for Social Wire–specific records live under **`packages/lexicons/`** (`app.thesocialwire.*`).
 
 ### Sidebar folders & pseudo-folders
 
-Real folders are `com.thesocialwire.folder` records with AT-URIs. The sidebar also uses a **pseudo-folder** sentinel for **My Publications** (not stored on the PDS). `__my__` is exported from `pdsClient.ts`; `__all__` is display-only in `AppSidebar.tsx`.
+Real folders are `app.thesocialwire.folder` records with AT-URIs. The sidebar also uses a **pseudo-folder** sentinel for **My Publications** (not stored on the PDS). `__my__` is exported from `pdsClient.ts`; `__all__` is display-only in `AppSidebar.tsx`.
 
 | Sentinel | Constant / usage | Behavior |
 |----------|------------------|----------|

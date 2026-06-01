@@ -329,7 +329,7 @@ paths:
   /v1/sync/preferences:
     get:
       operationId: getPreferencesEnvelope
-      summary: Canonical `com.thesocialwire.preferences` envelope
+      summary: Canonical `app.thesocialwire.preferences` envelope
       description: |
         Proxies cached `repo.getRecord` results for lexical `preferences` keyed by DID (token `sub`).
         Supports `If-None-Match` using the lexical `cid` as the weak validator when available.

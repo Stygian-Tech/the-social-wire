@@ -9,7 +9,7 @@ Social Wire uses two distinct “AppView” concepts:
 | **Bluesky App View** (`public.api.bsky.app`) | Public social graph reads (`getProfile`, `getFollows`, …) | Unchanged — clients call it directly |
 | **Thin AppView** (`/v1/appview/*` on **`services/appview`**, proxied by **`services/gateway`**) | GDPR-safe Level-1 entry timelines, sidebar projection, server-side unread filtering | Implemented behind feature flags |
 
-The thin AppView is **not** a Bluesky proxy. It is Social Wire’s own index of `standard.site` entry collections plus a derived `read_marks` replica for unread queries. Full entry bodies and canonical read writes remain on each user’s PDS (`com.thesocialwire.entryReadState`).
+The thin AppView is **not** a Bluesky proxy. It is Social Wire’s own index of `standard.site` entry collections plus a derived `read_marks` replica for unread queries. Full entry bodies and canonical read writes remain on each user’s PDS (`app.thesocialwire.entryReadState`).
 
 ## Distributed services
 

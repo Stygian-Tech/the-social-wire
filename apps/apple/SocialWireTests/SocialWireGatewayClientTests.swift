@@ -34,7 +34,7 @@ struct SocialWireGatewayClientTests {
           }],
           "folderSections": [{
             "folderRkey": "abc",
-            "folderUri": "at://did:plc:viewer/com.thesocialwire.folder/abc",
+            "folderUri": "at://did:plc:viewer/app.thesocialwire.folder/abc",
             "publications": []
           }],
           "myPublications": [],

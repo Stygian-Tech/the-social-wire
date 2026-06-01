@@ -14,7 +14,7 @@ Web (Next.js 16.2+)     iOS/iPadOS (SwiftUI)
        ┌───────────┴───────────┐
        ▼                       ▼
 User's ATProto PDS      Social Wire gateway (optional)
-  com.thesocialwire.*     /v1/sync, /v1/appview/*
+  app.thesocialwire.*     /v1/sync, /v1/appview/*
   site.standard.*         Thin AppView index (EU ams)
        │
        └── Author PDS — entry bodies + canonical read state
@@ -32,7 +32,7 @@ the-social-wire/
     appview/         # Publication sidebar + Thin AppView read index (Fly.io)
     appview-worker/  # Jetstream ingestion for Thin AppView (Fly.io)
   packages/
-    lexicons/    # com.thesocialwire.* ATProto lexicons
+    lexicons/    # app.thesocialwire.* ATProto lexicons
     spec/        # OpenAPI 3.1 spec (gateway + appview routes)
   supabase/
     config.toml  # Supabase CLI; migrations/ for hosted Postgres (see .github/workflows/supabase.yml)

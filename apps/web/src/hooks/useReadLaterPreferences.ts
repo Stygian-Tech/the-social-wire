@@ -79,7 +79,7 @@ export function useSetReadLaterServicePreference() {
         uri: "",
         cid: "",
         value: {
-          $type: "com.thesocialwire.preferences",
+          $type: "app.thesocialwire.preferences",
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
           readLaterService: serviceId,

@@ -93,7 +93,7 @@ describe("optimisticSidebarFolder", () => {
       ],
       publicationPrefs: [
         {
-          uri: "at://did:plc:viewer/com.thesocialwire.publicationPrefs/pref1",
+          uri: "at://did:plc:viewer/app.thesocialwire.publicationPrefs/pref1",
           publicationId: "at://did:plc:author/site.standard.publication/pub1",
           value: { folderId: optimisticRkey },
         },
@@ -104,7 +104,7 @@ describe("optimisticSidebarFolder", () => {
       withPref,
       optimisticRkey,
       {
-        uri: "at://did:plc:viewer/com.thesocialwire.folder/folder1",
+        uri: "at://did:plc:viewer/app.thesocialwire.folder/folder1",
         rkey: "folder1",
       },
       { name: "Tech" }
@@ -137,14 +137,14 @@ describe("optimisticSidebarFolder", () => {
       ...baseProjection,
       folders: [
         {
-          uri: "at://did:plc:viewer/com.thesocialwire.folder/folder1",
+          uri: "at://did:plc:viewer/app.thesocialwire.folder/folder1",
           rkey: "folder1",
           value: { name: "Tech" },
         },
       ],
       publicationPrefs: [
         {
-          uri: "at://did:plc:viewer/com.thesocialwire.publicationPrefs/pref1",
+          uri: "at://did:plc:viewer/app.thesocialwire.publicationPrefs/pref1",
           publicationId: publicationRow.publicationId,
           value: { folderId: "folder1" },
         },
@@ -153,7 +153,7 @@ describe("optimisticSidebarFolder", () => {
       folderSections: [
         {
           folderRkey: "folder1",
-          folderUri: "at://did:plc:viewer/com.thesocialwire.folder/folder1",
+          folderUri: "at://did:plc:viewer/app.thesocialwire.folder/folder1",
           publications: [publicationRow],
         },
       ],

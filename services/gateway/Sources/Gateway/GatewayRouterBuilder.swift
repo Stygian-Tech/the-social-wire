@@ -36,13 +36,12 @@ enum GatewayRouterBuilder {
       plcURL: config.core.atprotoPLCURL,
       logger: logger
     )
-    SyncRoutes(preferenceService: prefs).register(on: protected)
-
     let repo = ATProtoAuthenticatedRepoClient(
       httpClient: httpClient,
       plcURL: config.core.atprotoPLCURL,
       logger: logger
     )
+    SyncRoutes(preferenceService: prefs, repo: repo).register(on: protected)
     PublicationWriteRoutes(repo: repo).register(on: protected)
 
     if let appViewBase = config.appViewBaseURL {
