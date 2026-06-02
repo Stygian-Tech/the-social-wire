@@ -108,18 +108,12 @@ function rowSubtitle(row: MergedLatrSave): string {
 function SavedLinkRowActions({
   row,
   isArchivedView,
-  archivePending,
-  unarchivePending,
-  deletePending,
   onArchive,
   onUnarchive,
   onDelete,
 }: {
   row: MergedLatrSave;
   isArchivedView: boolean;
-  archivePending: boolean;
-  unarchivePending: boolean;
-  deletePending: boolean;
   onArchive: (row: MergedLatrSave) => void;
   onUnarchive: (row: MergedLatrSave) => void;
   onDelete: (row: MergedLatrSave) => void;
@@ -129,7 +123,6 @@ function SavedLinkRowActions({
       {isArchivedView ? (
         <ContextMenuItem
           className="gap-2"
-          disabled={unarchivePending}
           onClick={() => onUnarchive(row)}
         >
           <ArchiveRestore className="size-4" />
@@ -138,7 +131,6 @@ function SavedLinkRowActions({
       ) : (
         <ContextMenuItem
           className="gap-2"
-          disabled={archivePending}
           onClick={() => onArchive(row)}
         >
           <Archive className="size-4" />
@@ -149,7 +141,6 @@ function SavedLinkRowActions({
       <ContextMenuItem
         variant="destructive"
         className="gap-2"
-        disabled={deletePending}
         onClick={() => onDelete(row)}
       >
         <Trash2 className="size-4" />
@@ -369,9 +360,6 @@ export function SavedLinksBrowser({ mode }: SavedLinksBrowserProps) {
                   <SavedLinkRowActions
                     row={row}
                     isArchivedView={isArchivedView}
-                    archivePending={archiveMut.isPending}
-                    unarchivePending={unarchiveMut.isPending}
-                    deletePending={deleteMut.isPending}
                     onArchive={handleArchive}
                     onUnarchive={handleUnarchive}
                     onDelete={handleDelete}
@@ -470,7 +458,6 @@ export function SavedLinksBrowser({ mode }: SavedLinksBrowserProps) {
                       variant="outline"
                       size="sm"
                       className="gap-1.5"
-                      disabled={unarchiveMut.isPending}
                       onClick={() => handleUnarchive(selectedRow)}
                       title="Unarchive Read Later Item"
                     >
@@ -483,7 +470,6 @@ export function SavedLinksBrowser({ mode }: SavedLinksBrowserProps) {
                       variant="outline"
                       size="sm"
                       className="gap-1.5"
-                      disabled={archiveMut.isPending}
                       onClick={() => handleArchive(selectedRow)}
                       title="Archive Read Later Item"
                     >
@@ -496,7 +482,6 @@ export function SavedLinksBrowser({ mode }: SavedLinksBrowserProps) {
                     variant="destructive"
                     size="sm"
                     className="gap-1.5"
-                    disabled={deleteMut.isPending}
                     onClick={() => handleDelete(selectedRow)}
                     title="Remove from Read Later"
                   >

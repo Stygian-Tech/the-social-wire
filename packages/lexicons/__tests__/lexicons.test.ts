@@ -27,7 +27,7 @@ describe("lexicon JSON schemas", () => {
     const names = files.map((f) => f.split("/").pop());
     expect(names).toContain("app.thesocialwire.folder.json");
     expect(names).toContain("app.thesocialwire.entryReadState.json");
-    expect(names).toContain("com.latr.saved.external.json");
+    expect(names).toContain("link.latr.saved.external.json");
   });
 
   for (const file of files) {

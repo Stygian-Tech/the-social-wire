@@ -1,10 +1,10 @@
 {
   "lexicon": 1,
-  "id": "com.latr.saved.item",
+  "id": "link.latr.saved.item",
   "defs": {
     "main": {
       "type": "record",
-      "description": "Declares that this user saved a subject (ATProto record or com.latr.saved.external wrapper) for read-later.",
+      "description": "Declares that this user saved a subject (ATProto record or link.latr.saved.external wrapper) for read-later.",
       "key": "any",
       "record": {
         "type": "object",

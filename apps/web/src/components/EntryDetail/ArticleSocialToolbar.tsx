@@ -22,8 +22,8 @@ import {
 import { Label } from "@/components/ui/label";
 import { useEntrySocial } from "@/hooks/useEntrySocial";
 import {
-  useHttpsUrlIsLatrSaved,
-  useSaveHttpsReadLaterMutation,
+  useEntryIsLatrSaved,
+  useSaveReadLaterEntryMutation,
 } from "@/hooks/useLatrSaved";
 import { useConfiguredReadLaterService } from "@/hooks/useReadLaterPreferences";
 import { isLatrPdsReadLaterService } from "@/lib/readLaterServices";
@@ -57,8 +57,8 @@ export function ArticleSocialToolbar({
   } = useEntrySocial(entry);
 
   const canonUrl = entry ? canonicalArticleHttpsUrl(entry) : null;
-  const alreadyLatrSaved = useHttpsUrlIsLatrSaved(canonUrl ?? null);
-  const saveLaterMut = useSaveHttpsReadLaterMutation();
+  const alreadyLatrSaved = useEntryIsLatrSaved(entry?.entryId ?? "", canonUrl ?? null);
+  const saveLaterMut = useSaveReadLaterEntryMutation();
   const { serviceId: configuredReadLaterId } =
     useConfiguredReadLaterService();
   const latrReadLaterWritesEnabled = isLatrPdsReadLaterService(configuredReadLaterId);
@@ -79,8 +79,6 @@ export function ArticleSocialToolbar({
     toggleRepostMutation.isPending ||
     replyMutation.isPending ||
     viewerQuery.isLoading;
-
-  const savingLater = saveLaterMut.isPending;
 
   const disabledHint = hasLinkedPost
     ? undefined
@@ -207,7 +205,6 @@ export function ArticleSocialToolbar({
             size="sm"
             disabled={
               busySocial ||
-              savingLater ||
               alreadyLatrSaved ||
               !canonUrl ||
               !latrReadLaterWritesEnabled
@@ -221,9 +218,9 @@ export function ArticleSocialToolbar({
                   : "Save Canonical URL to PDS Read Later (L@tr Compatible)"
             }
             onClick={() => {
-              if (!canonUrl) return;
               saveLaterMut.mutate({
-                url: canonUrl,
+                entryId: entry.entryId,
+                url: canonUrl ?? undefined,
                 title: entry.title?.trim() || undefined,
               });
             }}

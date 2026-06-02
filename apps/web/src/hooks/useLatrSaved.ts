@@ -3,14 +3,29 @@
 import { useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { resolveNativeSavedSubjectPreview } from "@/lib/atprotoClient";
+import {
+  applyOptimisticLatrSaveArchive,
+  applyOptimisticLatrSaveDelete,
+  applyOptimisticLatrSaveInsert,
+  applyOptimisticLatrSaveUnarchive,
+  invalidateLatrSaveQueries,
+  LATR_ARCHIVED_QUERY_KEY,
+  LATR_SAVED_QUERY_KEY,
+  restoreLatrSaveQueries,
+  snapshotLatrSaveQueries,
+} from "@/lib/latrSavedMutations";
 import type { LatrSaveListState, MergedLatrSave } from "@/lib/pdsClient";
+import {
+  buildOptimisticExternalLatrSave,
+  buildOptimisticNativeLatrSave,
+} from "@/lib/optimisticLatrSaves";
 import { normalizeLatrHttpsUrl } from "@/lib/latrSavedUrls";
+import { resolveReadLaterSaveTarget } from "@/lib/readLaterSaveTarget";
 import { createReadLaterProvider } from "@/lib/readLaterProvider";
 import { useAuth } from "./useAuth";
 import { usePDSClient } from "./usePDSClient";
 
-export const LATR_SAVED_QUERY_KEY = ["latrSavedHttps"] as const;
-export const LATR_ARCHIVED_QUERY_KEY = ["latrArchivedHttps"] as const;
+export { LATR_ARCHIVED_QUERY_KEY, LATR_SAVED_QUERY_KEY };
 
 function useReadLaterProvider() {
   const client = usePDSClient();
@@ -43,13 +58,9 @@ export function useLatrMergedHttpsSaves(state: LatrSaveListState = "active") {
   });
 }
 
-function invalidateLatrSaveQueries(qc: ReturnType<typeof useQueryClient>) {
-  void qc.invalidateQueries({ queryKey: LATR_SAVED_QUERY_KEY });
-  void qc.invalidateQueries({ queryKey: LATR_ARCHIVED_QUERY_KEY });
-}
-
 export function useSaveHttpsReadLaterMutation() {
   const provider = useReadLaterProvider();
+  const { session } = useAuth();
   const qc = useQueryClient();
 
   return useMutation({
@@ -64,7 +75,27 @@ export function useSaveHttpsReadLaterMutation() {
         excerpt: params.excerpt,
       });
     },
-    onSuccess: () => invalidateLatrSaveQueries(qc),
+    onMutate: async (params) => {
+      const did = session?.did;
+      if (!did) return undefined;
+
+      const snapshot = await snapshotLatrSaveQueries(qc);
+      try {
+        const row = await buildOptimisticExternalLatrSave(did, params.url, {
+          title: params.title,
+          excerpt: params.excerpt,
+        });
+        applyOptimisticLatrSaveInsert(qc, row);
+      } catch {
+        restoreLatrSaveQueries(qc, snapshot);
+        return undefined;
+      }
+      return snapshot;
+    },
+    onError: (_error, _params, context) => {
+      restoreLatrSaveQueries(qc, context);
+    },
+    onSettled: () => invalidateLatrSaveQueries(qc),
   });
 }
 
@@ -77,7 +108,15 @@ export function useDeleteLatrSaveMutation() {
       if (!provider) throw new Error("No read-later provider — not signed in");
       return provider.deleteSaveItem(itemRkey);
     },
-    onSuccess: () => invalidateLatrSaveQueries(qc),
+    onMutate: async (itemRkey) => {
+      const snapshot = await snapshotLatrSaveQueries(qc);
+      applyOptimisticLatrSaveDelete(qc, itemRkey);
+      return snapshot;
+    },
+    onError: (_error, _params, context) => {
+      restoreLatrSaveQueries(qc, context);
+    },
+    onSettled: () => invalidateLatrSaveQueries(qc),
   });
 }
 
@@ -90,7 +129,15 @@ export function useArchiveLatrSaveMutation() {
       if (!provider) throw new Error("No read-later provider — not signed in");
       return provider.archiveSaveItem(itemRkey);
     },
-    onSuccess: () => invalidateLatrSaveQueries(qc),
+    onMutate: async (itemRkey) => {
+      const snapshot = await snapshotLatrSaveQueries(qc);
+      applyOptimisticLatrSaveArchive(qc, itemRkey);
+      return snapshot;
+    },
+    onError: (_error, _params, context) => {
+      restoreLatrSaveQueries(qc, context);
+    },
+    onSettled: () => invalidateLatrSaveQueries(qc),
   });
 }
 
@@ -103,7 +150,15 @@ export function useUnarchiveLatrSaveMutation() {
       if (!provider) throw new Error("No read-later provider — not signed in");
       return provider.unarchiveSaveItem(itemRkey);
     },
-    onSuccess: () => invalidateLatrSaveQueries(qc),
+    onMutate: async (itemRkey) => {
+      const snapshot = await snapshotLatrSaveQueries(qc);
+      applyOptimisticLatrSaveUnarchive(qc, itemRkey);
+      return snapshot;
+    },
+    onError: (_error, _params, context) => {
+      restoreLatrSaveQueries(qc, context);
+    },
+    onSettled: () => invalidateLatrSaveQueries(qc),
   });
 }
 
@@ -117,7 +172,27 @@ export function useDeleteHttpsReadLaterMutation() {
       if (!provider) throw new Error("No read-later provider — not signed in");
       return provider.deleteHttpsUrl(normalizedUrl);
     },
-    onSuccess: () => invalidateLatrSaveQueries(qc),
+    onMutate: async (normalizedUrl) => {
+      const snapshot = await snapshotLatrSaveQueries(qc);
+      const active = qc.getQueryData<MergedLatrSave[]>(LATR_SAVED_QUERY_KEY);
+      const archived = qc.getQueryData<MergedLatrSave[]>(LATR_ARCHIVED_QUERY_KEY);
+      const normalized = normalizeLatrHttpsUrl(normalizedUrl.trim());
+      const row =
+        active?.find(
+          (entry) => entry.kind === "external" && entry.normalizedUrl === normalized
+        ) ??
+        archived?.find(
+          (entry) => entry.kind === "external" && entry.normalizedUrl === normalized
+        );
+      if (row) {
+        applyOptimisticLatrSaveDelete(qc, row.itemRkey);
+      }
+      return snapshot;
+    },
+    onError: (_error, _params, context) => {
+      restoreLatrSaveQueries(qc, context);
+    },
+    onSettled: () => invalidateLatrSaveQueries(qc),
   });
 }
 
@@ -131,13 +206,28 @@ export function useArchiveHttpsReadLaterMutation() {
       if (!provider) throw new Error("No read-later provider — not signed in");
       return provider.archiveHttpsUrl(normalizedUrl);
     },
-    onSuccess: () => invalidateLatrSaveQueries(qc),
+    onMutate: async (normalizedUrl) => {
+      const snapshot = await snapshotLatrSaveQueries(qc);
+      const active = qc.getQueryData<MergedLatrSave[]>(LATR_SAVED_QUERY_KEY);
+      const normalized = normalizeLatrHttpsUrl(normalizedUrl.trim());
+      const row = active?.find(
+        (entry) => entry.kind === "external" && entry.normalizedUrl === normalized
+      );
+      if (row) {
+        applyOptimisticLatrSaveArchive(qc, row.itemRkey);
+      }
+      return snapshot;
+    },
+    onError: (_error, _params, context) => {
+      restoreLatrSaveQueries(qc, context);
+    },
+    onSettled: () => invalidateLatrSaveQueries(qc),
   });
 }
 
 export function useSaveReadLaterEntryMutation() {
   const provider = useReadLaterProvider();
-  const { getOAuthSession } = useAuth();
+  const { session, getOAuthSession } = useAuth();
   const qc = useQueryClient();
 
   return useMutation({
@@ -149,29 +239,56 @@ export function useSaveReadLaterEntryMutation() {
     }) => {
       if (!provider) throw new Error("No read-later provider — not signed in");
 
+      const target = resolveReadLaterSaveTarget(params);
       const saveOptions = {
-        title: params.title,
-        excerpt: params.excerpt,
+        title: target.title,
+        excerpt: target.excerpt,
       };
 
-      const explicitUrl = params.url?.trim();
-      if (explicitUrl) {
-        return provider.saveHttpsUrl(explicitUrl, saveOptions);
+      if (target.kind === "external") {
+        return provider.saveHttpsUrl(target.url, saveOptions);
       }
 
-      const oauthSession = getOAuthSession();
-      const preview = oauthSession
-        ? await resolveNativeSavedSubjectPreview(params.entryId, oauthSession)
-        : null;
-      const linkedWebUrl = preview?.url?.trim();
-
-      if (linkedWebUrl) {
-        return provider.saveHttpsUrl(linkedWebUrl, saveOptions);
+      let linkedWebUrl = target.linkedWebUrl;
+      if (!linkedWebUrl) {
+        const oauthSession = getOAuthSession();
+        const preview = oauthSession
+          ? await resolveNativeSavedSubjectPreview(target.subjectUri, oauthSession)
+          : null;
+        linkedWebUrl = preview?.url?.trim();
       }
 
-      return provider.saveNativeSubject(params.entryId);
+      return provider.saveNativeSubject(target.subjectUri, linkedWebUrl);
     },
-    onSuccess: () => invalidateLatrSaveQueries(qc),
+    onMutate: async (params) => {
+      const did = session?.did;
+      if (!did) return undefined;
+
+      const snapshot = await snapshotLatrSaveQueries(qc);
+      const target = resolveReadLaterSaveTarget(params);
+      try {
+        const row =
+          target.kind === "external"
+            ? await buildOptimisticExternalLatrSave(did, target.url, {
+                title: target.title,
+                excerpt: target.excerpt,
+              })
+            : await buildOptimisticNativeLatrSave(did, target.subjectUri, {
+                title: target.title,
+                excerpt: target.excerpt,
+                linkedWebUrl: target.linkedWebUrl,
+              });
+        applyOptimisticLatrSaveInsert(qc, row);
+      } catch {
+        restoreLatrSaveQueries(qc, snapshot);
+        return undefined;
+      }
+      return snapshot;
+    },
+    onError: (_error, _params, context) => {
+      restoreLatrSaveQueries(qc, context);
+    },
+    onSettled: () => invalidateLatrSaveQueries(qc),
   });
 }
 

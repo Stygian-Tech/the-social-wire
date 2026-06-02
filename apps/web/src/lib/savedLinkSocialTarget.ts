@@ -1,9 +1,11 @@
 import type { EntryDetail } from "@/lib/atprotoClient";
 import { normalizeAtRepoParam, parseAtUri } from "@/lib/atprotoClient";
-import { COLLECTION_LATR_SAVED_EXTERNAL } from "@/lib/pdsClient";
+import { isLatrExternalSubjectUri } from "@/lib/latrCollections";
 import type { MergedLatrSave } from "@/lib/pdsClient";
 import { resolveSavedLinkEmbedUrl } from "@/lib/savedLinkEmbedUrl";
 import { normalizeHttpUrlToHttps } from "@/lib/publicResourceUrl";
+
+export { isLatrExternalSubjectUri };
 
 const ORIGINAL_ENTRY_COLLECTIONS = new Set([
   "site.standard.document",
@@ -23,10 +25,6 @@ export function originalEntryIdFromLatrSave(row: MergedLatrSave): string | null 
   const subjectUri = normalizeAtRepoParam(row.subjectUri);
   if (!isOriginalEntryContentUri(subjectUri)) return null;
   return subjectUri;
-}
-
-export function isLatrExternalSubjectUri(subjectUri: string): boolean {
-  return subjectUri.includes(`/${COLLECTION_LATR_SAVED_EXTERNAL}/`);
 }
 
 /**

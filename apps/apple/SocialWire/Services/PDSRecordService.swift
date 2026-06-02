@@ -7,8 +7,10 @@ final class PDSRecordService {
     nonisolated static let preferences = "app.thesocialwire.preferences"
     nonisolated static let standardSiteSubscription = "site.standard.graph.subscription"
     nonisolated static let skyreaderFeedSubscription = "app.skyreader.feed.subscription"
-    nonisolated static let latrSavedExternal = "com.latr.saved.external"
-    nonisolated static let latrSavedItem = "com.latr.saved.item"
+    nonisolated static let latrSavedExternal = "link.latr.saved.external"
+    nonisolated static let latrSavedItem = "link.latr.saved.item"
+    nonisolated static let legacyLatrSavedExternal = "com.latr.saved.external"
+    nonisolated static let legacyLatrSavedItem = "com.latr.saved.item"
     nonisolated static let entryReadState = "app.thesocialwire.entryReadState"
 
     nonisolated static let legacyFolder = "com.thesocialwire.folder"

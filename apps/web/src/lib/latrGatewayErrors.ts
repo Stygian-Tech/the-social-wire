@@ -52,7 +52,7 @@ export function latrGatewayErrorPresentation(
     return {
       headline: "PDS rejected the L@tr write.",
       detail:
-        "Confirm OAuth scopes include com.latr.saved.*, then sign out and back in.",
+        "Confirm OAuth scopes include link.latr.saved.* (and legacy com.latr.saved.* during migration), then sign out and back in.",
     };
   }
 

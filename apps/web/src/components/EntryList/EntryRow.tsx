@@ -62,8 +62,7 @@ function EntryRowActions({
   const alreadySaved = useEntryIsLatrSaved(entry.entryId);
   const Item = variant === "context" ? ContextMenuItem : DropdownMenuItem;
 
-  const saveDisabled =
-    !latrReadLaterWritesEnabled || alreadySaved || saveLaterMut.isPending;
+  const saveDisabled = !latrReadLaterWritesEnabled || alreadySaved;
 
   return (
     <>

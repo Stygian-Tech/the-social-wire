@@ -51,8 +51,20 @@ export const COLLECTION_STANDARD_SITE_SUBSCRIPTION =
 /** Skyreader RSS/Atom subscriptions (writes require OAuth repo scope). */
 export const COLLECTION_SKYREADER_FEED_SUBSCRIPTION =
   "app.skyreader.feed.subscription";
-export const COLLECTION_LATR_SAVED_EXTERNAL = "com.latr.saved.external";
-export const COLLECTION_LATR_SAVED_ITEM = "com.latr.saved.item";
+import {
+  COLLECTION_LATR_SAVED_EXTERNAL,
+  COLLECTION_LATR_SAVED_ITEM,
+  LEGACY_COLLECTION_LATR_SAVED_EXTERNAL,
+  LEGACY_COLLECTION_LATR_SAVED_ITEM,
+  parseLatrExternalSubject,
+} from "@/lib/latrCollections";
+
+export {
+  COLLECTION_LATR_SAVED_EXTERNAL,
+  COLLECTION_LATR_SAVED_ITEM,
+  LEGACY_COLLECTION_LATR_SAVED_EXTERNAL,
+  LEGACY_COLLECTION_LATR_SAVED_ITEM,
+} from "@/lib/latrCollections";
 /** Per-entry feed read positions (subject AT-URI + read timestamps). */
 export const COLLECTION_ENTRY_READ_STATE = "app.thesocialwire.entryReadState";
 export const LEGACY_COLLECTION_ENTRY_READ_STATE =
@@ -294,7 +306,37 @@ export interface RepoRecord<T> {
   value: T;
 }
 
-const LATR_EXTERNAL_SUBJECT_MARKER = `/${COLLECTION_LATR_SAVED_EXTERNAL}/`;
+const LATR_SAVED_EXTERNAL_COLLECTIONS = [
+  COLLECTION_LATR_SAVED_EXTERNAL,
+  LEGACY_COLLECTION_LATR_SAVED_EXTERNAL,
+] as const;
+
+const LATR_SAVED_ITEM_COLLECTIONS = [
+  COLLECTION_LATR_SAVED_ITEM,
+  LEGACY_COLLECTION_LATR_SAVED_ITEM,
+] as const;
+
+async function listRepoRecords<T>(
+  agent: Agent,
+  repoDid: string,
+  collection: string,
+  signal?: AbortSignal
+): Promise<RepoRecord<T>[]> {
+  const all: RepoRecord<T>[] = [];
+  let cursor: string | undefined;
+  do {
+    signal?.throwIfAborted();
+    const response = await agent.api.com.atproto.repo.listRecords({
+      repo: repoDid,
+      collection,
+      limit: 100,
+      cursor,
+    });
+    all.push(...(response.data.records as unknown as RepoRecord<T>[]));
+    cursor = response.data.cursor ?? undefined;
+  } while (cursor);
+  return all;
+}
 
 /**
  * Pairs queue items with HTTPS external wrappers and keeps native ATProto subjects as rows.
@@ -311,8 +353,8 @@ export function mergeExternalsAndItemsToHttpsRows(
 
   for (const itemRec of items) {
     const { subjectUri, savedAt } = itemRec.value;
-    const m = subjectUri.indexOf(LATR_EXTERNAL_SUBJECT_MARKER);
-    if (m < 0) {
+    const externalSubject = parseLatrExternalSubject(subjectUri);
+    if (!externalSubject) {
       const metadata = mergeLatrSaveMetadata(undefined, itemRec.value);
       rows.push({
         kind: "native",
@@ -325,7 +367,7 @@ export function mergeExternalsAndItemsToHttpsRows(
       });
       continue;
     }
-    const externalRkey = subjectUri.slice(m + LATR_EXTERNAL_SUBJECT_MARKER.length);
+    const { externalRkey } = externalSubject;
 
     const ext = externalsByRkey.get(externalRkey);
     if (!ext) continue;
@@ -377,8 +419,8 @@ export function mergedLatrSavesFromGatewayItems(
 
   for (const itemRec of items) {
     const { subjectUri, savedAt } = itemRec.value;
-    const m = subjectUri.indexOf(LATR_EXTERNAL_SUBJECT_MARKER);
-    if (m < 0) {
+    const externalSubject = parseLatrExternalSubject(subjectUri);
+    if (!externalSubject) {
       const metadata = mergeLatrSaveMetadata(undefined, itemRec.value);
       rows.push({
         kind: "native",
@@ -392,7 +434,7 @@ export function mergedLatrSavesFromGatewayItems(
       continue;
     }
 
-    const externalRkey = subjectUri.slice(m + LATR_EXTERNAL_SUBJECT_MARKER.length);
+    const { externalRkey } = externalSubject;
     const linked = itemRec.value.linkedWebUrl?.trim();
     const normalized = linked ? normalizeLatrHttpsUrl(linked) : null;
     const metadata = mergeLatrSaveMetadata(undefined, itemRec.value);
@@ -829,49 +871,41 @@ export class PDSClient {
     return { uri: updated.data.uri, cid: updated.data.cid };
   }
 
-  // ── L@tr read-later (`com.latr.saved.*`) ──────────────────────────────────
+  // ── L@tr read-later (`link.latr.saved.*`) ─────────────────────────────────
 
   async listLatrSavedExternals(signal?: AbortSignal): Promise<RepoRecord<LatrSavedExternalRecord>[]> {
-    const all: RepoRecord<LatrSavedExternalRecord>[] = [];
-    let cursor: string | undefined;
-    do {
-      signal?.throwIfAborted();
-      const response = await this.agent.api.com.atproto.repo.listRecords({
-        repo: this.did,
-        collection: COLLECTION_LATR_SAVED_EXTERNAL,
-        limit: 100,
-        cursor,
-      });
-      all.push(
-        ...(response.data.records as unknown as RepoRecord<LatrSavedExternalRecord>[])
-      );
-      cursor = response.data.cursor ?? undefined;
-    } while (cursor);
-    return all;
+    const byRkey = new Map<string, RepoRecord<LatrSavedExternalRecord>>();
+    for (const collection of LATR_SAVED_EXTERNAL_COLLECTIONS) {
+      for (const record of await listRepoRecords<LatrSavedExternalRecord>(
+        this.agent,
+        this.did,
+        collection,
+        signal
+      )) {
+        byRkey.set(rkeyFromURI(record.uri), record);
+      }
+    }
+    return [...byRkey.values()];
   }
 
   async listLatrSavedItems(signal?: AbortSignal): Promise<RepoRecord<LatrSavedItemRecord>[]> {
-    const all: RepoRecord<LatrSavedItemRecord>[] = [];
-    let cursor: string | undefined;
-    do {
-      signal?.throwIfAborted();
-      const response = await this.agent.api.com.atproto.repo.listRecords({
-        repo: this.did,
-        collection: COLLECTION_LATR_SAVED_ITEM,
-        limit: 100,
-        cursor,
-      });
-      all.push(
-        ...(response.data.records as unknown as RepoRecord<LatrSavedItemRecord>[])
-      );
-      cursor = response.data.cursor ?? undefined;
-    } while (cursor);
-    return all;
+    const byRkey = new Map<string, RepoRecord<LatrSavedItemRecord>>();
+    for (const collection of LATR_SAVED_ITEM_COLLECTIONS) {
+      for (const record of await listRepoRecords<LatrSavedItemRecord>(
+        this.agent,
+        this.did,
+        collection,
+        signal
+      )) {
+        byRkey.set(rkeyFromURI(record.uri), record);
+      }
+    }
+    return [...byRkey.values()];
   }
 
   /**
    * Idempotent HTTPS read-later slot (deterministic repo keys aligned with latr-link):
-   * upserts `com.latr.saved.external` plus a `com.latr.saved.item` pointing at its AT URI.
+   * upserts `link.latr.saved.external` plus a `link.latr.saved.item` pointing at its AT URI.
    */
   async saveHttpsReadLater(
     displayUrlHttps: string,
@@ -1069,15 +1103,14 @@ export class PDSClient {
 
     if (!prevItem) return;
 
-    const m = prevItem.subjectUri.indexOf(LATR_EXTERNAL_SUBJECT_MARKER);
-    if (m < 0) return;
+    const externalSubject = parseLatrExternalSubject(prevItem.subjectUri);
+    if (!externalSubject) return;
 
-    const externalRkey = prevItem.subjectUri.slice(m + LATR_EXTERNAL_SUBJECT_MARKER.length);
     try {
       await this.agent.api.com.atproto.repo.deleteRecord({
         repo: this.did,
-        collection: COLLECTION_LATR_SAVED_EXTERNAL,
-        rkey: externalRkey,
+        collection: externalSubject.collection,
+        rkey: externalSubject.externalRkey,
       });
     } catch {
       /* best-effort */

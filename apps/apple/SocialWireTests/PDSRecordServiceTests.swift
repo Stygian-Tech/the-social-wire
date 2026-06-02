@@ -10,8 +10,8 @@ struct PDSRecordServiceTests {
         #expect(PDSRecordService.publicationPrefs == "app.thesocialwire.publicationPrefs")
         #expect(PDSRecordService.preferences == "app.thesocialwire.preferences")
         #expect(PDSRecordService.entryReadState == "app.thesocialwire.entryReadState")
-        #expect(PDSRecordService.latrSavedExternal == "com.latr.saved.external")
-        #expect(PDSRecordService.latrSavedItem == "com.latr.saved.item")
+        #expect(PDSRecordService.latrSavedExternal == "link.latr.saved.external")
+        #expect(PDSRecordService.latrSavedItem == "link.latr.saved.item")
         #expect(PDSRecordService.standardSiteSubscription == "site.standard.graph.subscription")
         #expect(PDSRecordService.skyreaderFeedSubscription == "app.skyreader.feed.subscription")
     }

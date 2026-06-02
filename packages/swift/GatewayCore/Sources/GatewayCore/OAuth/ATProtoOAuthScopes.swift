@@ -16,6 +16,8 @@ public enum ATProtoOAuthScopes {
       "repo:com.thesocialwire.publicationPrefs?action=create&action=update&action=delete",
       "repo:com.thesocialwire.preferences?action=create&action=update&action=delete",
       "repo:com.thesocialwire.entryReadState?action=create&action=update&action=delete",
+      "repo:link.latr.saved.external?action=create&action=update&action=delete",
+      "repo:link.latr.saved.item?action=create&action=update&action=delete",
       "repo:com.latr.saved.external?action=create&action=update&action=delete",
       "repo:com.latr.saved.item?action=create&action=update&action=delete",
       "repo:site.standard.graph.subscription?action=create&action=update&action=delete",

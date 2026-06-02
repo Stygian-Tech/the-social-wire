@@ -14,8 +14,8 @@ The only data we write to the user's PDS is what the protocol doesn't already ha
 | `app.thesocialwire.publicationPrefs` | Folder assignment, sort order, and visibility for a discovered publication |
 | `app.thesocialwire.preferences` | Account-level Social Wire preferences, including the configured read-later service |
 | `app.thesocialwire.entryReadState` | Per-entry read/unread sync for the feed reader: subject entry AT-URI + read timestamp only |
-| `com.latr.saved.external` | L@tr (latr.link) wrapper for normalized HTTPS URLs (read-later interoperability) |
-| `com.latr.saved.item` | L@tr read-later queue item pointing at `subjectUri` (external wrapper or ATProto record) |
+| `link.latr.saved.external` | L@tr (latr.link) wrapper for normalized HTTPS URLs (read-later interoperability) |
+| `link.latr.saved.item` | L@tr read-later queue item pointing at `subjectUri` (external wrapper or ATProto record) |
 | `app.skyreader.feed.subscription` | RSS/Atom subscriptions (Skyreader-compatible) on the user's PDS; see [`app/skyreader/feed/subscription.json`](app/skyreader/feed/subscription.json) |
 
 All records are public by default (ATProto repos are public). Any client that can read a PDS can see a user's Social Wire folders and preferences.
@@ -45,7 +45,7 @@ When the optional **Thin AppView** gateway index is enabled, commits to this col
 
 ### L@tr (read-later) compatibility
 
-[L@tr / latr-link](https://tangled.org/samclemente.me/latr-link/) defines **`com.latr.saved.external`** and **`com.latr.saved.item`** so read-later slots live entirely on the user’s PDS. The Social Wire **reads and writes** the same collections (deterministic keys and URL normalization aligned with upstream L@tr) so items saved here appear alongside other L@tr clients during OAuth-scoped **`com.atproto.repo.*`** access.
+[L@tr / latr-link](https://tangled.org/samclemente.me/latr-link/) defines **`link.latr.saved.external`** and **`link.latr.saved.item`** (legacy **`com.latr.*`**) so read-later slots live entirely on the user’s PDS. The Social Wire **reads and writes** the same collections (deterministic keys and URL normalization aligned with upstream L@tr) so items saved here appear alongside other L@tr clients during OAuth-scoped **`com.atproto.repo.*`** access.
 
 ---
 

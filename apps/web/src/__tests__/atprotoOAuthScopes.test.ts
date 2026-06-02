@@ -20,6 +20,7 @@ describe("atprotoOAuthScopes", () => {
     expect(AT_PROTO_OAUTH_SCOPES).toContain("app.thesocialwire.folder");
     expect(AT_PROTO_OAUTH_SCOPES).toContain("app.thesocialwire.entryReadState");
     expect(AT_PROTO_OAUTH_SCOPES).toContain("com.thesocialwire.folder");
+    expect(AT_PROTO_OAUTH_SCOPES).toContain("link.latr.saved.external");
     expect(AT_PROTO_OAUTH_SCOPES).toContain("com.latr.saved.external");
     expect(AT_PROTO_OAUTH_SCOPES).toContain("app.skyreader.feed.subscription");
   });

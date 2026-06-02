@@ -3,6 +3,12 @@ import {
   parseAtUri,
   PUBLICATION_RECORD_COLLECTIONS,
 } from "@/lib/atprotoClient";
+import {
+  COLLECTION_LATR_SAVED_EXTERNAL,
+  COLLECTION_LATR_SAVED_ITEM,
+  LEGACY_COLLECTION_LATR_SAVED_EXTERNAL,
+  LEGACY_COLLECTION_LATR_SAVED_ITEM,
+} from "@/lib/latrCollections";
 import type { MergedLatrSave } from "@/lib/pdsClient";
 import {
   isRssEntryId,
@@ -32,8 +38,10 @@ const STANDARD_SITE_COLLECTION_PREFIXES = [
 ] as const;
 
 const LATR_COLLECTIONS = new Set([
-  "com.latr.saved.external",
-  "com.latr.saved.item",
+  COLLECTION_LATR_SAVED_EXTERNAL,
+  COLLECTION_LATR_SAVED_ITEM,
+  LEGACY_COLLECTION_LATR_SAVED_EXTERNAL,
+  LEGACY_COLLECTION_LATR_SAVED_ITEM,
 ]);
 
 const SOCIALWIRE_COLLECTION_PREFIXES = [
@@ -57,7 +65,7 @@ function isStandardSiteCollection(collection: string): boolean {
 
 function sourceForCollection(collection: string): RecordSourceKind {
   if (isStandardSiteCollection(collection)) return "standard.site";
-  if (LATR_COLLECTIONS.has(collection)) return "L@tr.link";
+  if ((LATR_COLLECTIONS as Set<string>).has(collection)) return "L@tr.link";
   if (isSocialWireCollection(collection)) return "thesocialwire";
   if (collection.startsWith(BSKY_COLLECTION_PREFIX)) return "bluesky";
   return "unknown";
@@ -179,8 +187,8 @@ export function recordKindFromLatrSave(row: MergedLatrSave): RecordKindInfo {
   if (row.kind === "external") {
     return {
       source: "L@tr.link",
-      collection: "com.latr.saved.external",
-      detail: `HTTPS wrapper + com.latr.saved.item · ${row.itemUri}`,
+      collection: COLLECTION_LATR_SAVED_EXTERNAL,
+      detail: `HTTPS wrapper + ${COLLECTION_LATR_SAVED_ITEM} · ${row.itemUri}`,
     };
   }
 
@@ -188,7 +196,7 @@ export function recordKindFromLatrSave(row: MergedLatrSave): RecordKindInfo {
   if (fromSubject) {
     return {
       ...fromSubject,
-      collection: "com.latr.saved.item",
+      collection: COLLECTION_LATR_SAVED_ITEM,
       detail: `Native queue item · ${row.itemUri} → ${row.subjectUri}`,
     };
   }

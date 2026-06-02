@@ -1,5 +1,6 @@
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 
+import { COLLECTION_LATR_SAVED_EXTERNAL } from "@/lib/latrCollections";
 import { latrGatewayJson } from "@/lib/latrGatewayClient";
 import {
   latrExternalRkeyFromNormalizedUrl,
@@ -134,7 +135,7 @@ class LatrGatewayReadLaterProvider implements ReadLaterProvider {
     const n = normalizeLatrHttpsUrl(normalizedUrl.trim());
     if (!n) throw new Error("Cannot resolve save — normalized URL missing");
     const externalRkey = await latrExternalRkeyFromNormalizedUrl(n);
-    const externalUri = `at://${this.viewerDid}/com.latr.saved.external/${externalRkey}`;
+    const externalUri = `at://${this.viewerDid}/${COLLECTION_LATR_SAVED_EXTERNAL}/${externalRkey}`;
     return latrItemRkeyFromSubjectUri(externalUri);
   }
 }
