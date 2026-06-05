@@ -1,0 +1,22 @@
+meta {
+  name: Get L@tr Saves
+  type: http
+  seq: 10
+}
+
+get {
+  url: {{baseUrl}}/v1/latr/saves
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: DPoP {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+  X-Latr-Gateway-DPoP: {{latrGatewayDpopProof}}
+  X-ATProto-Upstream-DPoP: {{upstreamDpopProof}}
+}
+
+docs {
+  Proxies to the external L@tr Gateway for native iOS clients. Requires `LATR_IOS_PROXY_*` secrets on the Social Wire Gateway host (not web Vercel `LATR_GATEWAY_*`).
+}

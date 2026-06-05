@@ -46,7 +46,7 @@ struct SocialWireUtilityTests {
     @Test("L@tr merge pairs external rows and filter splits active vs archived")
     func latrMergePairsExternalRowsAndFilterSplitsActiveVsArchived() {
         let activeExternal = RepoRecord(
-            uri: "at://did:plc:me/com.latr.saved.external/ext-active",
+            uri: "at://did:plc:me/\(PDSRecordService.latrSavedExternal)/ext-active",
             cid: nil,
             value: LatrSavedExternalRecord(
                 type: PDSRecordService.latrSavedExternal,
@@ -60,7 +60,7 @@ struct SocialWireUtilityTests {
             )
         )
         let archivedExternal = RepoRecord(
-            uri: "at://did:plc:me/com.latr.saved.external/ext-archived",
+            uri: "at://did:plc:me/\(PDSRecordService.latrSavedExternal)/ext-archived",
             cid: nil,
             value: LatrSavedExternalRecord(
                 type: PDSRecordService.latrSavedExternal,
@@ -72,21 +72,21 @@ struct SocialWireUtilityTests {
             )
         )
         let activeItem = RepoRecord(
-            uri: "at://did:plc:me/com.latr.saved.item/item-active",
+            uri: "at://did:plc:me/\(PDSRecordService.latrSavedItem)/item-active",
             cid: nil,
             value: LatrSavedItemRecord(
                 type: PDSRecordService.latrSavedItem,
-                subjectUri: "at://did:plc:me/com.latr.saved.external/ext-active",
+                subjectUri: "at://did:plc:me/\(PDSRecordService.latrSavedExternal)/ext-active",
                 savedAt: "2026-05-16T01:00:00.000Z",
                 state: "unread"
             )
         )
         let archivedItem = RepoRecord(
-            uri: "at://did:plc:me/com.latr.saved.item/item-archived",
+            uri: "at://did:plc:me/\(PDSRecordService.latrSavedItem)/item-archived",
             cid: nil,
             value: LatrSavedItemRecord(
                 type: PDSRecordService.latrSavedItem,
-                subjectUri: "at://did:plc:me/com.latr.saved.external/ext-archived",
+                subjectUri: "at://did:plc:me/\(PDSRecordService.latrSavedExternal)/ext-archived",
                 savedAt: "2026-05-16T02:00:00.000Z",
                 state: "archived",
                 previewExcerpt: "Preview excerpt"

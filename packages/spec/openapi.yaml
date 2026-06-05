@@ -1001,6 +1001,122 @@ paths:
         "404":
           description: Route disabled when thin AppView flag is unset.
 
+  # ── L@tr read-later proxy (Social Wire Gateway iOS proxy) ─────────────────
+
+  /v1/latr/saves:
+    get:
+      operationId: listLatrSaves
+      summary: List L@tr saved items with gateway enrichment
+      description: |
+        Proxies to the external L@tr Gateway for native iOS clients. Requires viewer OAuth DPoP on this host,
+        `X-Latr-Gateway-DPoP` bound to the upstream L@tr URL, and optional
+        `X-ATProto-Upstream-DPoP` for PDS listRecords write-through.
+        Server injects L@tr credentials from `LATR_IOS_PROXY_*` Fly/runtime secrets (distinct from web
+        Vercel `LATR_GATEWAY_*`); clients must not ship API keys.
+      tags: [Latr]
+      responses:
+        "200":
+          description: Saved item records with preview enrichment.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [records]
+                properties:
+                  records:
+                    type: array
+                    items:
+                      type: object
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          description: L@tr iOS proxy credentials (`LATR_IOS_PROXY_*`) not configured on this host.
+    post:
+      operationId: createLatrSave
+      summary: Save a URL or native subject via L@tr Gateway
+      tags: [Latr]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: Save created.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          description: L@tr iOS proxy credentials (`LATR_IOS_PROXY_*`) not configured on this host.
+
+  /v1/latr/saves/{rkey}/state:
+    patch:
+      operationId: patchLatrSaveState
+      summary: Archive or unarchive a saved item
+      tags: [Latr]
+      parameters:
+        - name: rkey
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [state]
+              properties:
+                state:
+                  type: string
+                  enum: [archived, unread]
+      responses:
+        "200":
+          description: State updated.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          description: L@tr iOS proxy credentials (`LATR_IOS_PROXY_*`) not configured on this host.
+
+  /v1/latr/saves/{rkey}:
+    delete:
+      operationId: deleteLatrSave
+      summary: Delete a saved item
+      tags: [Latr]
+      parameters:
+        - name: rkey
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          description: L@tr iOS proxy credentials (`LATR_IOS_PROXY_*`) not configured on this host.
+
+  /v1/latr/og-preview:
+    get:
+      operationId: getLatrOgPreview
+      summary: Fetch OG preview metadata for a URL
+      tags: [Latr]
+      parameters:
+        - name: url
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Preview metadata.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          description: L@tr iOS proxy credentials (`LATR_IOS_PROXY_*`) not configured on this host.
+
 tags:
   - name: Health
     description: Service health
@@ -1014,3 +1130,5 @@ tags:
     description: Canonical PDS read-state writes via gateway
   - name: AppView
     description: GDPR-safe Level-1 entry index gated behind `ENABLE_THIN_APPVIEW`
+  - name: Latr
+    description: Authenticated L@tr read-later iOS proxy (`LATR_IOS_PROXY_*` server credentials)

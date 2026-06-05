@@ -7,6 +7,8 @@ struct GatewayServiceConfig: Sendable {
   let cacheBackend: CacheBackend
   /// When set, `GET /v1/publications/sidebar` is proxied to this AppView service base URL.
   let appViewBaseURL: String?
+  /// When set, `/v1/latr/*` is proxied to the external L@tr Gateway using iOS-proxy server credentials.
+  let latrIosProxy: LatrIosProxyCredentials.Config?
 
   enum CacheBackend: Sendable {
     case sqlite(path: String)
@@ -29,6 +31,12 @@ struct GatewayServiceConfig: Sendable {
     }
     let appViewRaw = env["APPVIEW_BASE_URL"]?.trimmingCharacters(in: .whitespacesAndNewlines)
     let appViewBaseURL = (appViewRaw?.isEmpty == false) ? appViewRaw : nil
-    return GatewayServiceConfig(core: core, cacheBackend: backend, appViewBaseURL: appViewBaseURL)
+    let latrIosProxy = LatrIosProxyCredentials.Config.fromEnvironment(env)
+    return GatewayServiceConfig(
+      core: core,
+      cacheBackend: backend,
+      appViewBaseURL: appViewBaseURL,
+      latrIosProxy: latrIosProxy
+    )
   }
 }

@@ -333,9 +333,15 @@ final class SocialWireAppModel {
         displayUnreadCount(publicationId: publication.publicationId)
     }
 
-  /// AppView baseline adjusted optimistically when entries are marked read/unread locally.
+  /// AppView baseline reconciled with cached feed rows and local read state.
   private func displayUnreadCount(publicationId: String) -> Int {
-    unreadCountsByPublicationId[publicationId] ?? 0
+    let serverCount = unreadCountsByPublicationId[publicationId] ?? 0
+    let cachedEntryIds = readerCacheCoordinator?.distinctCachedEntryIds(publicationIds: [publicationId]) ?? []
+    return EffectiveUnreadCount.effectivePublicationUnreadCount(
+      serverCount: serverCount,
+      cachedEntryIds: cachedEntryIds,
+      isEntryRead: { readAtByEntryId[$0] != nil }
+    )
   }
 
   private func adjustUnreadCount(publicationId: String, delta: Int) {
@@ -1013,7 +1019,7 @@ final class SocialWireAppModel {
         }
         return try await gateway.fetchAppViewEntries(
             scope: scope,
-            filter: .all,
+            filter: readerFilter,
             cursor: cursor,
             maxEntries: maxEntries
         )
@@ -1104,9 +1110,16 @@ final class SocialWireAppModel {
         await loadEntries(for: publication)
     }
 
+    func refreshPublication(_ publication: DiscoveredPublication) async {
+        if selectedPublication?.publicationId == publication.publicationId {
+            await loadEntries(for: publication, forceNetworkRefresh: true)
+        } else {
+            await refreshPublicationIndex(for: publication)
+        }
+    }
+
     func loadEntries(for publication: DiscoveredPublication, forceNetworkRefresh: Bool = false) async {
         entriesNextCursor = nil
-
         var hadCachedEntries = false
         if let coordinator = readerCacheCoordinator,
            let snapshot = try? coordinator.publicationEntries(publication.publicationId) {
@@ -1214,7 +1227,12 @@ final class SocialWireAppModel {
         }
 
         if newValue == .unread, let publication = selectedPublication {
-            await chaseUnreadPagesIfNeeded(for: publication)
+            entries = []
+            entriesNextCursor = nil
+            await loadEntries(for: publication, forceNetworkRefresh: true)
+            if filteredEntries.isEmpty, canLoadMoreEntries {
+                await chaseUnreadPagesIfNeeded(for: publication)
+            }
         }
     }
 
@@ -1540,6 +1558,29 @@ final class SocialWireAppModel {
         }
     }
 
+    private func applyOptimisticLatrArchive(_ save: MergedLatrSave) {
+        savedLinks.removeAll { $0.id == save.id }
+        if !archivedSavedLinks.contains(where: { $0.id == save.id }) {
+            var archived = save
+            archived = archived.withState("archived")
+            archivedSavedLinks.insert(archived, at: 0)
+        }
+    }
+
+    private func applyOptimisticLatrUnarchive(_ save: MergedLatrSave) {
+        archivedSavedLinks.removeAll { $0.id == save.id }
+        if !savedLinks.contains(where: { $0.id == save.id }) {
+            var active = save
+            active = active.withState("unread")
+            savedLinks.insert(active, at: 0)
+        }
+    }
+
+    private func applyOptimisticLatrDelete(_ save: MergedLatrSave) {
+        savedLinks.removeAll { $0.id == save.id }
+        archivedSavedLinks.removeAll { $0.id == save.id }
+    }
+
     func saveCurrentEntry() async {
         guard readLaterLatrConfigured, let selectedEntry else { return }
         await saveEntry(
@@ -1555,7 +1596,8 @@ final class SocialWireAppModel {
             if let url {
                 try await latrGateway.saveURL(url, title: title, excerpt: excerpt)
             } else {
-                try await latrGateway.saveNativeSubject(subjectURI: entryId, linkedWebURL: nil)
+                let linked = selectedEntry?.canonicalURL?.absoluteString
+                try await latrGateway.saveNativeSubject(subjectURI: entryId, linkedWebURL: linked)
             }
             await refreshSavedLinks()
         } catch {
@@ -1564,36 +1606,99 @@ final class SocialWireAppModel {
     }
 
     func archive(_ save: MergedLatrSave) async {
+        let snapshotActive = savedLinks
+        let snapshotArchived = archivedSavedLinks
+        applyOptimisticLatrArchive(save)
+        if selectedSavedLink?.id == save.id {
+            selectedSavedLink = nil
+        }
         do {
             try await latrGateway.archiveSave(itemRkey: save.itemRkey)
             await refreshSavedLinks()
-            if selectedSavedLink?.id == save.id {
-                selectedSavedLink = nil
-            }
         } catch {
+            savedLinks = snapshotActive
+            archivedSavedLinks = snapshotArchived
             errorMessage = error.localizedDescription
         }
     }
 
     func unarchive(_ save: MergedLatrSave) async {
+        let snapshotActive = savedLinks
+        let snapshotArchived = archivedSavedLinks
+        applyOptimisticLatrUnarchive(save)
+        if selectedSavedLink?.id == save.id {
+            selectedSavedLink = nil
+        }
         do {
             try await latrGateway.unarchiveSave(itemRkey: save.itemRkey)
             await refreshSavedLinks()
-            if selectedSavedLink?.id == save.id {
-                selectedSavedLink = nil
-            }
         } catch {
+            savedLinks = snapshotActive
+            archivedSavedLinks = snapshotArchived
             errorMessage = error.localizedDescription
         }
     }
 
     func delete(_ save: MergedLatrSave) async {
+        let snapshotActive = savedLinks
+        let snapshotArchived = archivedSavedLinks
+        applyOptimisticLatrDelete(save)
+        if selectedSavedLink?.id == save.id {
+            selectedSavedLink = nil
+        }
         do {
             try await latrGateway.deleteSave(itemRkey: save.itemRkey)
             await refreshSavedLinks()
-            if selectedSavedLink?.id == save.id {
-                selectedSavedLink = nil
+        } catch {
+            savedLinks = snapshotActive
+            archivedSavedLinks = snapshotArchived
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func savedLinkSocialEntry(for save: MergedLatrSave) async -> EntryDetail? {
+        if let originalEntryId = SavedLinkSocialTarget.originalEntryId(from: save) {
+            if let cached = try? readerCacheCoordinator?.entryDetail(originalEntryId) {
+                return cached
             }
+            if let detail = try? await gateway.fetchAppViewEntryDetail(entryId: originalEntryId) {
+                return detail
+            }
+            if let detail = try? await publicationsService.entryDetail(entryId: originalEntryId) {
+                return detail
+            }
+        }
+        return SavedLinkSocialTarget.fallbackEntryDetail(from: save)
+    }
+
+    func quoteEntry(_ entry: EntryDetail, text: String) async throws {
+        try await publicationsService.createQuote(text: text, entry: entry)
+    }
+
+    func replyToEntry(_ entry: EntryDetail, text: String) async throws {
+        try await publicationsService.createReply(text: text, entry: entry)
+    }
+
+    func likeEntry(_ entry: EntryDetail) async {
+        do {
+            try await publicationsService.createLike(entry: entry)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func repostEntry(_ entry: EntryDetail) async {
+        do {
+            try await publicationsService.createRepost(entry: entry)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func replyToCurrentEntry(text: String) async {
+        guard let selectedEntry else { return }
+        do {
+            try await publicationsService.createReply(text: text, entry: selectedEntry)
         } catch {
             errorMessage = error.localizedDescription
         }

@@ -139,6 +139,56 @@ struct HTTPRouteContractTests {
       }
     }
   }
+
+  @Test("latr saves route is absent without LATR_IOS_PROXY_URL")
+  func latrSavesAbsentWithoutConfig() async throws {
+    try await withSingletonHTTPClient { client in
+      let dbPath =
+        FileManager.default.temporaryDirectory
+          .appendingPathComponent("sw-http-\(UUID().uuidString).sqlite")
+          .path
+      defer { try? FileManager.default.removeItem(atPath: dbPath) }
+
+      let router = try gatewayRouter(client: client, dbPath: dbPath)
+      let app = Application(router: router, configuration: .init(address: .hostname("127.0.0.1", port: 0)))
+      try await app.test(.live) { c in
+        let response = try await c.execute(uri: "/v1/latr/saves", method: .get)
+        #expect(response.status.code == 404)
+      }
+    }
+  }
+
+  @Test("latr saves rejects unauthenticated calls when configured")
+  func latrSavesUnauthorizedWhenConfigured() async throws {
+    try await withSingletonHTTPClient { client in
+      let dbPath =
+        FileManager.default.temporaryDirectory
+          .appendingPathComponent("sw-http-\(UUID().uuidString).sqlite")
+          .path
+      defer { try? FileManager.default.removeItem(atPath: dbPath) }
+
+      let env: [String: String] = [
+        "APP_ENV": "local",
+        "SQLITE_DB_PATH": dbPath,
+        "LATR_IOS_PROXY_URL": "https://api.testing.latr.link",
+        "LATR_IOS_PROXY_CLIENT_ID": "the-social-wire-ios",
+        "LATR_IOS_PROXY_API_KEY": "test-key",
+      ]
+      let config = GatewayServiceConfig.fromEnvironment(env)
+      let cache = try SQLiteCache(path: dbPath, logger: Logger(label: "contracts.sqlite"))
+      let router = GatewayRouterBuilder.router(
+        config: config,
+        httpClient: client,
+        cache: cache,
+        logger: Logger(label: "contracts.router")
+      )
+      let app = Application(router: router, configuration: .init(address: .hostname("127.0.0.1", port: 0)))
+      try await app.test(.live) { c in
+        let response = try await c.execute(uri: "/v1/latr/saves", method: .get)
+        #expect(response.status.code == 401)
+      }
+    }
+  }
 }
 
 @Suite("ATProtoAuthMiddleware")

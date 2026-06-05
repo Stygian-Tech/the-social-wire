@@ -57,7 +57,10 @@ struct PublicationSubscriptionMatchTests {
         )
 
         var subscriptionKeys: Set<String> = []
-        addPublicationSubscriptionLookupKeys(into: &subscriptionKeys, value: "did:plc:alice")
+        addPublicationSubscriptionLookupKeys(
+            into: &subscriptionKeys,
+            value: "at://did:plc:alice/site.standard.publication/a"
+        )
 
         let segmented = segmentDiscoveryPublications(
             [owned, subscribed, followOnly],

@@ -79,6 +79,10 @@ describe("OpenAPI route drift", () => {
       "/v1/appview/enroll": ['"/v1/appview/enroll"'],
       "/v1/appview/privacy/purge": ['"/v1/appview/privacy/purge"'],
       "/v1/appview/mark-all-read": ['"/v1/appview/mark-all-read"'],
+      "/v1/latr/saves": ['"/v1/latr/saves"'],
+      "/v1/latr/saves/{rkey}/state": ['"/v1/latr/saves/:rkey/state"'],
+      "/v1/latr/saves/{rkey}": ['"/v1/latr/saves/:rkey"'],
+      "/v1/latr/og-preview": ['"/v1/latr/og-preview"'],
     };
 
     for (const path of paths) {

@@ -119,6 +119,13 @@ struct SubscribedPublicationSidebarTree: View {
         .onTapGesture {
             onPublicationTap?(publication)
         }
+        .contextMenu {
+            Button {
+                Task { await appModel.refreshPublication(publication) }
+            } label: {
+                Label("Refresh Publication", systemImage: "arrow.clockwise")
+            }
+        }
     }
 
     private var foldersSectionUnread: Int {

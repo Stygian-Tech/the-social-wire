@@ -1,21 +1,24 @@
 import Foundation
 
-/// Authenticated L@tr Link gateway mutations (`/v1/latr/saves*`) with upstream PDS DPoP.
+/// Authenticated L@tr Link saves via Social Wire Gateway proxy (`/v1/latr/saves*`) with upstream PDS DPoP.
 @MainActor
 final class LatrGatewayClient {
     private static let upstreamDPoPHeader = "X-ATProto-Upstream-DPoP"
 
     private let auth: ATProtoOAuthService
-    private let baseURL: URL
+    private let transportBaseURL: URL
+    private let proofBaseURL: URL
     private let urlSession: URLSession
 
     init(
         auth: ATProtoOAuthService,
-        baseURL: URL = LatrGatewayEnvironment.baseURL,
+        transportBaseURL: URL = LatrGatewayEnvironment.transportBaseURL,
+        proofBaseURL: URL = LatrGatewayEnvironment.proofBaseURL,
         urlSession: URLSession = .shared
     ) {
         self.auth = auth
-        self.baseURL = baseURL
+        self.transportBaseURL = transportBaseURL
+        self.proofBaseURL = proofBaseURL
         self.urlSession = urlSession
     }
 
@@ -92,7 +95,7 @@ final class LatrGatewayClient {
     }
 
     private func authorizedRequestData(method: String, path: String, body: Data?) async throws -> Data {
-        guard var comps = URLComponents(url: baseURL.appending(path: path), resolvingAgainstBaseURL: false) else {
+        guard var comps = URLComponents(url: transportBaseURL.appending(path: path), resolvingAgainstBaseURL: false) else {
             throw SocialWireError.invalidURL
         }
         guard let url = comps.url else {
@@ -163,21 +166,32 @@ final class LatrGatewayClient {
         gatewayPath: String,
         gatewayMethod: String
     ) async throws {
-        guard let url = request.url else { throw SocialWireError.invalidURL }
+        guard let transportURL = request.url else { throw SocialWireError.invalidURL }
         let method = request.httpMethod ?? gatewayMethod
 
         request.setValue("DPoP \(session.accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue(
-            try await auth.dpop.proof(method: method, url: url, accessToken: session.accessToken),
+            try await auth.dpop.proof(method: method, url: transportURL, accessToken: session.accessToken),
             forHTTPHeaderField: "DPoP"
         )
 
-        if let clientId = LatrGatewayEnvironment.developerClientId,
-           let apiKey = LatrGatewayEnvironment.developerApiKey {
-            request.setValue(clientId, forHTTPHeaderField: LatrGatewayEnvironment.clientIdHeaderName)
-            request.setValue(apiKey, forHTTPHeaderField: LatrGatewayEnvironment.apiKeyHeaderName)
-        } else if let credential = LatrGatewayEnvironment.officialClientCredential {
-            request.setValue(credential, forHTTPHeaderField: LatrGatewayEnvironment.officialClientHeaderName)
+        if LatrGatewayEnvironment.usesDirectExternalGateway {
+            if let clientId = LatrGatewayEnvironment.developerClientId,
+               let apiKey = LatrGatewayEnvironment.developerApiKey
+            {
+                request.setValue(clientId, forHTTPHeaderField: "X-Latr-Client-Id")
+                request.setValue(apiKey, forHTTPHeaderField: "X-Latr-API-Key")
+            } else if let credential = LatrGatewayEnvironment.officialClientCredential {
+                request.setValue(credential, forHTTPHeaderField: "X-Latr-Official-Client")
+            }
+        } else {
+            let latrProofURL = proofBaseURL.appending(path: gatewayPath)
+            let latrProof = try await auth.dpop.proof(
+                method: method,
+                url: latrProofURL,
+                accessToken: session.accessToken
+            )
+            request.setValue(latrProof, forHTTPHeaderField: LatrGatewayEnvironment.latrGatewayDPoPHeaderName)
         }
 
         if let xrpcMethod = Self.pdsXrpcMethod(gatewayMethod: gatewayMethod, path: gatewayPath) {

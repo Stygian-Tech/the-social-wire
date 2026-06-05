@@ -129,6 +129,24 @@ final class PublicationService {
         try await xrpc.createRecord(collection: "app.bsky.feed.repost", record: record)
     }
 
+    func createReply(text: String, entry: EntryDetail) async throws {
+        guard let uri = entry.bskyPostUri, let cid = entry.bskyPostCid else { throw SocialWireError.unsupported }
+        let subject: [String: JSONValue] = [
+            "uri": .string(uri),
+            "cid": .string(cid),
+        ]
+        let record: [String: JSONValue] = [
+            "$type": .string("app.bsky.feed.post"),
+            "text": .string(text),
+            "createdAt": .string(DateFormatters.string()),
+            "reply": .object([
+                "root": .object(subject),
+                "parent": .object(subject),
+            ]),
+        ]
+        try await xrpc.putRecord(collection: "app.bsky.feed.post", rkey: DeterministicKeys.generateTID(), record: record)
+    }
+
     /// All publication records on an author's repo (matches API `PublicationFollowDiscovery.discoverAuthor`).
     private func publicationRecords(for follow: FollowProfile) async -> [DiscoveredPublication] {
         var seen = Set<String>()

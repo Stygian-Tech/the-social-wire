@@ -80,4 +80,29 @@ enum MergedLatrSave: Identifiable, Codable, Equatable, Hashable, Sendable {
         case .native(let save): save.state
         }
     }
+
+    var linkedWebUrl: String? {
+        switch self {
+        case .external(let save): save.linkedWebUrl
+        case .native(let save): save.linkedWebUrl
+        }
+    }
+
+    var subjectUri: String? {
+        switch self {
+        case .external(let save): save.subjectUri
+        case .native(let save): save.subjectUri
+        }
+    }
+
+    func withState(_ state: String) -> MergedLatrSave {
+        switch self {
+        case .external(var save):
+            save.state = state
+            return .external(save)
+        case .native(var save):
+            save.state = state
+            return .native(save)
+        }
+    }
 }

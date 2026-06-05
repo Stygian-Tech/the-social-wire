@@ -53,6 +53,14 @@ enum GatewayRouterBuilder {
       ).register(on: protected)
     }
 
+    if let latrIosProxy = config.latrIosProxy {
+      LatrProxyRoutes(
+        config: latrIosProxy,
+        httpClient: httpClient,
+        logger: logger
+      ).register(on: protected)
+    }
+
     return router
   }
 }

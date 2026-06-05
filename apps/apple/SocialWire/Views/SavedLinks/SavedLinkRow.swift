@@ -1,11 +1,25 @@
 import SwiftUI
 
 struct SavedLinkRow: View {
+    @Environment(SocialWireAppModel.self) private var appModel
     let save: MergedLatrSave
+
+    private var publicationChip: SavedLinkPublicationChipModel? {
+        SavedLinkPublicationResolver.resolve(
+            for: save,
+            sidebarPublications: appModel.allPublicationRows
+        )
+    }
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            thumbnail
+            ZStack(alignment: .bottomLeading) {
+                thumbnail
+                if let publicationChip {
+                    SavedLinkPublicationChip(model: publicationChip)
+                        .padding(4)
+                }
+            }
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(save.title)
@@ -53,7 +67,7 @@ struct SavedLinkRow: View {
         var parts: [String] = []
         if let site = save.site, !site.isEmpty {
             parts.append(site)
-        } else if let host = save.url?.host {
+        } else if let host = SavedLinkEmbedURL.previewURL(for: save)?.host {
             parts.append(host)
         }
         if let author = save.author, !author.isEmpty {

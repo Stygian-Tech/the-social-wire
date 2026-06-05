@@ -1,53 +1,66 @@
 import Foundation
 
-/// Base URL and client credentials for L@tr / LatrKit gateway mutations (save/archive/delete enrichment).
+/// L@tr read-later gateway transport and DPoP proof targets.
 enum LatrGatewayEnvironment {
-    private static let localBaseURLString = "http://127.0.0.1:8080"
-    private static let testBaseURLString = "https://api.testing.latr.link"
-    private static let prodBaseURLString = "https://api.latr.link"
-    private static let legacyDevBaseURLString = "https://latr-link-dev-gateway.fly.dev"
-    private static let legacyProdBaseURLString = "https://latr-link-prod-gateway.fly.dev"
+    private static let testProofBaseURLString = "https://api.testing.latr.link"
+    private static let prodProofBaseURLString = "https://api.latr.link"
 
-    static let clientIdHeaderName = "X-Latr-Client-Id"
-    static let apiKeyHeaderName = "X-Latr-API-Key"
-    static let officialClientHeaderName = "X-Latr-Official-Client"
+    static let latrGatewayDPoPHeaderName = "X-Latr-Gateway-DPoP"
 
-    static var baseURLString: String {
-        if let configured = ProcessInfo.processInfo.environment["LATR_GATEWAY_URL"]?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !configured.isEmpty {
+    /// External L@tr Gateway URL used when minting `X-Latr-Gateway-DPoP` proofs (`htu`).
+    static var proofBaseURLString: String {
+        if let configured = ProcessInfo.processInfo.environment["LATR_GATEWAY_URL"]?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+            !configured.isEmpty
+        {
             return configured.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         }
 
         #if DEBUG || SOCIALWIRE_TESTING_API
-        return testBaseURLString
+        return testProofBaseURLString
         #else
-        return prodBaseURLString
+        return prodProofBaseURLString
         #endif
     }
 
-    static var baseURL: URL {
-        guard let url = URL(string: baseURLString) else {
-            preconditionFailure("Invalid L@tr gateway base URL.")
+    static var proofBaseURL: URL {
+        guard let url = URL(string: proofBaseURLString) else {
+            preconditionFailure("Invalid L@tr gateway proof base URL.")
         }
         return url
     }
 
-    /// Split developer credentials from latrkit.dev (preferred for third-party clients).
+    /// Where HTTP requests are sent. Production iOS uses the Social Wire Gateway proxy.
+    static var transportBaseURL: URL {
+        if usesDirectExternalGateway {
+            return proofBaseURL
+        }
+        return SocialWireAPIEnvironment.baseURL
+    }
+
+    /// Debug-only bypass of the Social Wire proxy (requires local L@tr credentials).
+    static var usesDirectExternalGateway: Bool {
+        #if DEBUG
+        return ProcessInfo.processInfo.environment["SOCIALWIRE_LATR_DIRECT"] == "1"
+        #else
+        return false
+        #endif
+    }
+
+    /// Split developer credentials — only used with `SOCIALWIRE_LATR_DIRECT=1`.
     static var developerClientId: String? {
-        trimmedEnv("LATR_GATEWAY_CLIENT_ID")
+        guard usesDirectExternalGateway else { return nil }
+        return trimmedEnv("LATR_GATEWAY_CLIENT_ID")
     }
 
     static var developerApiKey: String? {
-        trimmedEnv("LATR_GATEWAY_API_KEY")
+        guard usesDirectExternalGateway else { return nil }
+        return trimmedEnv("LATR_GATEWAY_API_KEY")
     }
 
-    /// Base64 official client credential (`the-social-wire-web` in latr-gateway env). Legacy fallback.
     static var officialClientCredential: String? {
-        trimmedEnv("LATR_GATEWAY_CLIENT_CREDENTIAL")
-    }
-
-    static var hasDeveloperCredentials: Bool {
-        developerClientId != nil && developerApiKey != nil
+        guard usesDirectExternalGateway else { return nil }
+        return trimmedEnv("LATR_GATEWAY_CLIENT_CREDENTIAL")
     }
 
     private static func trimmedEnv(_ key: String) -> String? {
