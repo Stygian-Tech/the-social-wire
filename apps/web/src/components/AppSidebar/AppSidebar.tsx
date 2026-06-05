@@ -274,7 +274,7 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
               alt=""
               width={24}
               height={24}
-              className="shrink-0 rounded-md"
+              className="shrink-0 rounded"
             />
             <span className="truncate font-semibold text-sm">The Social Wire</span>
             <span className="inline-flex shrink-0 items-center rounded-full border px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">

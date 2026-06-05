@@ -34,7 +34,7 @@ export default function LoginPage() {
               alt=""
               width={56}
               height={56}
-              className="rounded-2xl"
+              className="rounded-xl"
               priority
             />
           </div>
