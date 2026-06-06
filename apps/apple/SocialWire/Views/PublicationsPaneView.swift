@@ -108,5 +108,8 @@ struct SavedLinksListContent: View {
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .contentMargins(.bottom, 12, for: .scrollContent)
+        .task(id: appModel.readerListSource) {
+            await appModel.refreshSavedLinks()
+        }
     }
 }

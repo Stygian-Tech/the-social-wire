@@ -113,6 +113,7 @@
 		B90E0A4EBB2A42126DD20F38 /* AuthorizationServerMetadata.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACB65DC6C9E1565C56E472FA /* AuthorizationServerMetadata.swift */; };
 		B92A807B98D8C28817D1F5E8 /* MergedLatrSave.swift in Sources */ = {isa = PBXBuildFile; fileRef = D917173A3647380576D97E11 /* MergedLatrSave.swift */; };
 		BBC5B7992E3A037FE467E47E /* EntryParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = BEF02ED115C3001F51A64E83 /* EntryParser.swift */; };
+		F1A2B3C42D5E6F708192A3B4 /* LatrRecordParsing.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1A2B3C32D5E6F708192A3B4 /* LatrRecordParsing.swift */; };
 		BC384FB4E16957ADB079AA31 /* SocialWireError.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD7ADB21501F70AA450A5970 /* SocialWireError.swift */; };
 		BE1F51061AF7CE4707CC379D /* EntryReadStateRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1AF4B3C2F8DFE0F7A346552 /* EntryReadStateRecord.swift */; };
 		C07C541533070183B0E8CBA6 /* ListsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88DEBC5128D7E7F3B1064030 /* ListsView.swift */; };
@@ -252,6 +253,7 @@
 		BD211A0A5A30AEB22D4208B5 /* EntryRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntryRow.swift; sourceTree = "<group>"; };
 		BEDC414BCD7B16ED47CBAFAC /* StrongRef.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StrongRef.swift; sourceTree = "<group>"; };
 		BEF02ED115C3001F51A64E83 /* EntryParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntryParser.swift; sourceTree = "<group>"; };
+		F1A2B3C32D5E6F708192A3B4 /* LatrRecordParsing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LatrRecordParsing.swift; sourceTree = "<group>"; };
 		C124F8DE5136EBE88B5612AA /* PDSRecordServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PDSRecordServiceTests.swift; sourceTree = "<group>"; };
 		C1A9B9BE874CE1FA64480824 /* EntryDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntryDetailView.swift; sourceTree = "<group>"; };
 		C1E2228B2B771C16232F970D /* ReaderSidebarColumn.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderSidebarColumn.swift; sourceTree = "<group>"; };
@@ -538,6 +540,7 @@
 			isa = PBXGroup;
 			children = (
 				BEF02ED115C3001F51A64E83 /* EntryParser.swift */,
+				F1A2B3C32D5E6F708192A3B4 /* LatrRecordParsing.swift */,
 			);
 			path = Parsing;
 			sourceTree = "<group>";
@@ -732,6 +735,7 @@
 				0873A522B6EFFDEB4140D9DA /* EntryListItem.swift in Sources */,
 				EB4E7885F9E27362B3A2983C /* EntryListView.swift in Sources */,
 				BBC5B7992E3A037FE467E47E /* EntryParser.swift in Sources */,
+				F1A2B3C42D5E6F708192A3B4 /* LatrRecordParsing.swift in Sources */,
 				BE1F51061AF7CE4707CC379D /* EntryReadStateRecord.swift in Sources */,
 				611DCE74DA5F07E64C056058 /* EntryRow.swift in Sources */,
 				64F8915A931463C05C356113 /* FolderAssignmentMenu.swift in Sources */,

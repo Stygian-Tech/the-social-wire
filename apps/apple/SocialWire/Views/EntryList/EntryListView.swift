@@ -2,11 +2,14 @@ import SwiftUI
 
 struct EntryListView: View {
     @Environment(SocialWireAppModel.self) private var appModel
-    var onEntryOpened: (() -> Void)? = nil
+    var navigationEpoch: (() -> UInt)? = nil
+    var onEntryOpened: ((UInt) -> Void)? = nil
 
     var body: some View {
         List {
-            if appModel.isLoadingEntries && appModel.filteredEntries.isEmpty {
+            if appModel.filteredEntries.isEmpty,
+               appModel.selectedPublication != nil,
+               (appModel.isLoadingEntries || appModel.sidebarFetching) {
                 ProgressView()
                     .frame(maxWidth: .infinity)
                     .readerClearListRow()
@@ -17,7 +20,8 @@ struct EntryListView: View {
                 Section("Articles") {
                     ForEach(appModel.filteredEntries) { entry in
                         Button {
-                            Task { await openEntry(entry) }
+                            let epoch = navigationEpoch?() ?? 0
+                            Task { await openEntry(entry, navigationEpoch: epoch) }
                         } label: {
                             EntryRow(entry: entry, isRead: appModel.readAtByEntryId[entry.entryId] != nil)
                                 .readerFullWidthTapLabel()
@@ -79,10 +83,10 @@ struct EntryListView: View {
         }
     }
 
-    private func openEntry(_ entry: EntryListItem) async {
+    private func openEntry(_ entry: EntryListItem, navigationEpoch: UInt) async {
         await appModel.selectEntry(entry)
         guard appModel.selectedEntry?.entryId == entry.entryId else { return }
-        onEntryOpened?()
+        onEntryOpened?(navigationEpoch)
     }
 
     private var unreadChaseTaskKey: String {

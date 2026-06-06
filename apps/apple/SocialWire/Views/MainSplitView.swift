@@ -5,6 +5,8 @@ struct MainSplitView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var columnVisibility = NavigationSplitViewVisibility.all
     @State private var compactPane: ReaderPane = .publications
+    /// Bumped on every compact pane change so async tap handlers can skip stale pager moves.
+    @State private var compactNavigationEpoch: UInt = 0
     @State private var showingAddPublication = false
     @State private var showingNewFolder = false
     @State private var showingProfile = false
@@ -32,9 +34,10 @@ struct MainSplitView: View {
             .modifier(CompactReaderSelectionHandlers(
                 compact: compact,
                 compactPane: $compactPane,
+                compactNavigationEpoch: $compactNavigationEpoch,
+                compactUsesArticlesPane: compactUsesArticlesPane,
                 onSidebarSelection: handleSidebarSelection,
-                onCompactPaneChange: handleCompactPaneChange,
-                onNavigatePane: navigateCompactPane
+                onCompactPaneChange: handleCompactPaneChange
             ))
     }
 
@@ -108,9 +111,9 @@ struct MainSplitView: View {
 
     /// Subscribed / Following: lists → publications → articles → reader (tags 0…3).
     private var compactFourPaneTabView: some View {
-        TabView(selection: $compactPane) {
+        compactTabView {
             ListsView(onListSourceTap: openListSource)
-                .tag(ReaderPane.lists)
+                .tag(0)
 
             PublicationsPaneView(
                 showingNewFolder: $showingNewFolder,
@@ -118,21 +121,20 @@ struct MainSplitView: View {
                 onPublicationTap: openPublication,
                 onSavedLinkTap: openSavedLink
             )
-            .tag(ReaderPane.publications)
+            .tag(1)
 
             articlesColumn
-                .tag(ReaderPane.articles)
+                .tag(2)
 
             readerColumn
-                .tag(ReaderPane.reader)
+                .tag(3)
         }
-        .tabViewStyle(.page(indexDisplayMode: .never))
         .id("compact-four-pane")
     }
 
     /// Read Later / Archive: lists → saved links → reader (contiguous tags 0…2).
     private var compactThreePaneTabView: some View {
-        TabView(selection: compactThreePaneTabSelection) {
+        compactTabView {
             ListsView(onListSourceTap: openListSource)
                 .tag(0)
 
@@ -147,20 +149,43 @@ struct MainSplitView: View {
             readerColumn
                 .tag(2)
         }
-        .tabViewStyle(.page(indexDisplayMode: .never))
         .id("compact-three-pane")
     }
 
-    private var compactThreePaneTabSelection: Binding<Int> {
+    private func compactTabView<Content: View>(
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        TabView(selection: compactTabSelection) {
+            content()
+        }
+        .tabViewStyle(.page(indexDisplayMode: .never))
+        .animation(.easeInOut(duration: 0.28), value: compactPane)
+    }
+
+    private var compactTabSelection: Binding<Int> {
         Binding(
-            get: { compactPane.compactTabTag(usesArticlesPane: false) },
+            get: { compactPane.compactTabTag(usesArticlesPane: compactUsesArticlesPane) },
             set: { newTag in
-                compactPane = ReaderPane.fromCompactTabTag(newTag, usesArticlesPane: false)
+                let clamped = min(max(newTag, 0), compactUsesArticlesPane ? 3 : 2)
+                let newPane = ReaderPane.fromCompactTabTag(
+                    clamped,
+                    usesArticlesPane: compactUsesArticlesPane
+                )
+                guard newPane != compactPane else { return }
+                compactPane = newPane
             }
         )
     }
 
-    private func navigateCompactPane(_ pane: ReaderPane, animated: Bool = false) {
+    private func navigateCompactPane(
+        _ pane: ReaderPane,
+        animated: Bool = false,
+        afterEpoch requestedEpoch: UInt? = nil
+    ) {
+        guard CompactReaderNavigation.shouldCompleteDeferredNavigation(
+            requestedEpoch: requestedEpoch ?? compactNavigationEpoch,
+            currentEpoch: compactNavigationEpoch
+        ) else { return }
         setCompactPane(to: pane, animated: animated)
     }
 
@@ -190,7 +215,15 @@ struct MainSplitView: View {
         if appModel.selectedSidebar == .myPublications {
             PublicationCollectionView(title: "My Publications", publications: appModel.myPublications)
         } else if appModel.selectedPublication != nil {
-            EntryListView(onEntryOpened: compact ? { navigateCompactPane(.reader, animated: true) } : nil)
+            EntryListView(
+                navigationEpoch: compact ? { compactNavigationEpoch } : nil,
+                onEntryOpened: compact ? { epoch in
+                    navigateCompactPane(.reader, animated: true, afterEpoch: epoch)
+                } : nil
+            )
+        } else if appModel.sidebarFetching {
+            ProgressView()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             selectPublicationPlaceholder
         }
@@ -262,13 +295,15 @@ struct MainSplitView: View {
     }
 
     private func openPublication(_ publication: DiscoveredPublication) {
+        let epoch = compactNavigationEpoch
         Task {
             if appModel.selectedPublication?.publicationId != publication.publicationId {
                 await appModel.selectPublication(publication)
             }
             navigateCompactPane(
                 CompactReaderNavigation.paneAfterPublication(appModel.readerListSource),
-                animated: true
+                animated: true,
+                afterEpoch: epoch
             )
         }
     }
@@ -346,9 +381,10 @@ private struct CompactReaderSelectionHandlers: ViewModifier {
     @Environment(SocialWireAppModel.self) private var appModel
     let compact: Bool
     @Binding var compactPane: ReaderPane
+    @Binding var compactNavigationEpoch: UInt
+    let compactUsesArticlesPane: Bool
     let onSidebarSelection: (SidebarSelection?) async -> Void
     let onCompactPaneChange: (ReaderPane, ReaderPane) -> Void
-    let onNavigatePane: (ReaderPane, Bool) -> Void
 
     func body(content: Content) -> some View {
         @Bindable var model = appModel
@@ -356,22 +392,6 @@ private struct CompactReaderSelectionHandlers: ViewModifier {
         content
             .onChange(of: model.selectedSidebar) { _, selection in
                 Task { await onSidebarSelection(selection) }
-            }
-            .onChange(of: model.selectedEntry?.entryId) { _, entryId in
-                guard compact, entryId != nil else { return }
-                guard CompactReaderNavigation.shouldAdvanceToReader(
-                    compactPane: compactPane,
-                    hasDetailSelection: true
-                ) else { return }
-                onNavigatePane(.reader, true)
-            }
-            .onChange(of: model.selectedSavedLink?.id) { _, saveId in
-                guard compact, saveId != nil else { return }
-                guard CompactReaderNavigation.shouldAdvanceToReader(
-                    compactPane: compactPane,
-                    hasDetailSelection: true
-                ) else { return }
-                onNavigatePane(.reader, true)
             }
             .onChange(of: model.readerListSource) { _, source in
                 guard compact else { return }
@@ -382,10 +402,23 @@ private struct CompactReaderSelectionHandlers: ViewModifier {
                     compactPane = remapped
                 }
             }
+            .onChange(of: compactUsesArticlesPane) { _, usesArticlesPane in
+                guard compact else { return }
+                if let normalized = CompactReaderNavigation.normalizedPaneAfterLayoutChange(
+                    compactPane: compactPane,
+                    usesArticlesPane: usesArticlesPane
+                ) {
+                    compactPane = normalized
+                }
+            }
             .onChange(of: compactPane) { oldPane, newPane in
                 guard compact else { return }
+                guard oldPane != newPane else { return }
+                compactNavigationEpoch &+= 1
                 // Defer side effects so `TabView` page transitions can settle first.
                 Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(320))
+                    guard compactPane == newPane else { return }
                     onCompactPaneChange(oldPane, newPane)
                 }
             }

@@ -118,6 +118,24 @@ final class XRPCClient {
         return try await publicGet(base, method: "com.atproto.repo.listRecords", query: query)
     }
 
+    func listAuthorizedGenericRecords(
+        collection: String,
+        limit: Int = 100,
+        cursor: String? = nil
+    ) async throws -> GenericListRecordsResponse {
+        let session = try await auth.validSession()
+        return try await authorizedGet(
+            session.pdsURL,
+            method: "com.atproto.repo.listRecords",
+            query: [
+                "repo": session.did,
+                "collection": collection,
+                "limit": String(limit),
+                "cursor": cursor,
+            ]
+        )
+    }
+
     func listGenericRecords(repo: String, collection: String, limit: Int = 50, cursor: String? = nil, reverse: Bool? = nil) async throws -> GenericListRecordsResponse {
         let base = try await resolver.resolvePDSURL(did: repo)
         return try await publicGet(

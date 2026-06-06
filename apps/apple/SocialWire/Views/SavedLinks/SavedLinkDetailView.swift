@@ -112,6 +112,7 @@ struct SavedLinkDetailView: View {
 
 struct SavedLinkToolbar: View {
     @Environment(SocialWireAppModel.self) private var appModel
+    @Environment(\.openURL) private var openURL
 
     let save: MergedLatrSave
     let entry: EntryDetail?
@@ -128,7 +129,9 @@ struct SavedLinkToolbar: View {
                     }
                     .buttonStyle(.bordered)
 
-                    Link(destination: url) {
+                    Button {
+                        openURL(url)
+                    } label: {
                         Label("Open", systemImage: "safari")
                     }
                     .buttonStyle(.bordered)

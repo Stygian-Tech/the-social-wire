@@ -110,11 +110,31 @@ struct SocialWireUtilityTests {
         #expect(archivedOnly.first?.excerpt == "Preview excerpt")
     }
 
-    @Test("HTML wrapper contains CSP")
+    @Test("HTML wrapper contains CSP and readable colors")
     func htmlWrapperContainsCSP() {
-        let wrapped = HTMLRenderer.wrappedHTML("<p>Hello</p>")
+        let wrapped = HTMLRenderer.wrappedHTML("<p>Hello</p>", colorScheme: .light)
         #expect(wrapped.contains("Content-Security-Policy"))
         #expect(wrapped.contains("<p>Hello</p>"))
+        #expect(wrapped.contains("#1C1C1E"))
+    }
+
+    @Test("HTML wrapper uses light text in dark mode")
+    func htmlWrapperUsesLightTextInDarkMode() {
+        let wrapped = HTMLRenderer.wrappedHTML("<p>Hello</p>", colorScheme: .dark)
+        #expect(wrapped.contains("#F5F5F7"))
+        #expect(wrapped.contains("!important"))
+    }
+
+    @Test("prepareArticleBody repairs escaped RSS summary HTML")
+    func prepareArticleBodyRepairsEscapedRssSummary() {
+        let repaired = HTMLRenderer.prepareArticleBody("<p>&lt;p&gt;Hello&lt;/p&gt;</p>")
+        #expect(repaired == "<p>Hello</p>")
+    }
+
+    @Test("prepareArticleBody wraps plain text")
+    func prepareArticleBodyWrapsPlainText() {
+        let wrapped = HTMLRenderer.prepareArticleBody("Line one\n\nLine two")
+        #expect(wrapped == "<p>Line one</p><p>Line two</p>")
     }
 
     @Test("sidebar expanded keys persist per viewer did")

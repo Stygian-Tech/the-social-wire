@@ -244,8 +244,10 @@ final class SocialWireGatewayClient {
         guard (200 ..< 300).contains(result.statusCode) else {
             throw SocialWireError.badResponse("AppView entry detail failed (\(result.statusCode)).")
         }
-        let decoded = try JSONDecoder().decode(AppViewEntryDetailResponse.self, from: result.body)
-        return decoded.entry
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let dto = try decoder.decode(AppViewEntryDetailDTO.self, from: result.body)
+        return dto.toEntryDetail()
     }
 
     func fetchAppViewUnreadCounts(publicationIds: [String]) async throws -> [String: Int] {
@@ -474,6 +476,9 @@ final class SocialWireGatewayClient {
         )
 
         if [401, 400].contains(http.statusCode), http.value(forHTTPHeaderField: "DPoP-Nonce") != nil {
+            if Self.pdsXrpcMethod(gatewayMethod: method, path: path) != nil {
+                await auth.dpop.advancePdsDpopNonce(session: session, urlSession: urlSession)
+            }
             var retry = URLRequest(url: url)
             retry.httpMethod = method
             retry.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -527,6 +532,7 @@ final class SocialWireGatewayClient {
             let pdsXrpcURL = session.pdsURL
                 .appending(path: "xrpc")
                 .appending(path: xrpcMethod)
+            await auth.dpop.advancePdsDpopNonce(session: session, urlSession: urlSession)
             let upstreamProof = try await auth.dpop.proof(
                 method: method,
                 url: pdsXrpcURL,

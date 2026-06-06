@@ -84,6 +84,9 @@ struct ReaderSidebarColumn: View {
                 Text(appModel.readerListSource == .archive ? "Archive" : "Read Later")
             }
         }
+        .task(id: appModel.readerListSource) {
+            await appModel.refreshSavedLinks()
+        }
     }
 
     private var publicationSidebarList: some View {

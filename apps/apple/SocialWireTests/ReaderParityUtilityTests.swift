@@ -146,11 +146,19 @@ struct CompactReaderNavigationTests {
         #expect(remapped == .publications)
     }
 
-    @Test("programmatic detail advances only when not already on reader")
-    func programmaticDetailAdvancement() {
-        #expect(CompactReaderNavigation.shouldAdvanceToReader(compactPane: .articles, hasDetailSelection: true))
-        #expect(!CompactReaderNavigation.shouldAdvanceToReader(compactPane: .reader, hasDetailSelection: true))
-        #expect(!CompactReaderNavigation.shouldAdvanceToReader(compactPane: .articles, hasDetailSelection: false))
+    @Test("deferred navigation completes only when epoch is unchanged")
+    func deferredNavigationEpochGate() {
+        #expect(CompactReaderNavigation.shouldCompleteDeferredNavigation(requestedEpoch: 2, currentEpoch: 2))
+        #expect(!CompactReaderNavigation.shouldCompleteDeferredNavigation(requestedEpoch: 2, currentEpoch: 3))
+    }
+
+    @Test("layout change normalizes articles pane in three-pane mode")
+    func layoutChangeNormalizesArticlesPane() {
+        let normalized = CompactReaderNavigation.normalizedPaneAfterLayoutChange(
+            compactPane: .articles,
+            usesArticlesPane: false
+        )
+        #expect(normalized == .publications)
     }
 }
 

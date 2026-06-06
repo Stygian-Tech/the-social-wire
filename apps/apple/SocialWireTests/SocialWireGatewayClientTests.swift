@@ -128,13 +128,18 @@ struct SocialWireGatewayClientTests {
         #expect(decoded.entries[0].originalUrl == "https://example.com/a")
     }
 
-    @Test("AppViewEntryDetailResponse decodes entry")
-    func appViewEntryDetailResponseDecodesEntry() throws {
+    @Test("AppViewEntryDetailDTO decodes flat AppView entry payload")
+    func appViewEntryDetailDTODecodesFlatPayload() throws {
         let data = Data("""
-        {"entry":{"entryId":"at://did/site.standard.document/a","title":"A","publishedAt":"2026-01-01T00:00:00.000Z","contentHtml":"<p>Hi</p>"}}
+        {"entryId":"at://did/site.standard.document/a","title":"A","publishedAt":"2026-01-01T00:00:00.000Z","contentHtml":"<p>Hi</p>","originalUrl":"https://example.com/a","isRead":false}
         """.utf8)
-        let decoded = try JSONDecoder().decode(AppViewEntryDetailResponse.self, from: data)
-        #expect(decoded.entry?.title == "A")
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let dto = try decoder.decode(AppViewEntryDetailDTO.self, from: data)
+        let entry = dto.toEntryDetail()
+        #expect(entry.title == "A")
+        #expect(entry.contentHtml == "<p>Hi</p>")
+        #expect(entry.embedUrl == "https://example.com/a")
     }
 
     @Test("AppViewUnreadCountsResponse decodes counts")

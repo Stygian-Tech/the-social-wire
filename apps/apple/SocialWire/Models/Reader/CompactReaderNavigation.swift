@@ -62,11 +62,20 @@ enum CompactReaderNavigation {
         return .publications
     }
 
-    /// Whether a programmatic detail selection should advance the compact pager.
-    static func shouldAdvanceToReader(
-        compactPane: ReaderPane,
-        hasDetailSelection: Bool
+    /// Whether an async tap handler should still animate the pager after awaiting work.
+    static func shouldCompleteDeferredNavigation(
+        requestedEpoch: UInt,
+        currentEpoch: UInt
     ) -> Bool {
-        hasDetailSelection && compactPane != .reader
+        requestedEpoch == currentEpoch
+    }
+
+    /// Normalize pane when switching between three- and four-pane compact layouts.
+    static func normalizedPaneAfterLayoutChange(
+        compactPane: ReaderPane,
+        usesArticlesPane: Bool
+    ) -> ReaderPane? {
+        guard !usesArticlesPane, compactPane == .articles else { return nil }
+        return .publications
     }
 }

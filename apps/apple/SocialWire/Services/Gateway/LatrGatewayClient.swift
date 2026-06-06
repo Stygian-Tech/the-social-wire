@@ -78,7 +78,7 @@ final class LatrGatewayClient {
             body: nil
         )
         let decoded = try JSONDecoder().decode(LatrGatewaySavedItemsResponse.self, from: data)
-        return decoded.records
+        return decoded.records ?? []
     }
 
     private func patchSaveState(itemRkey: String, state: String) async throws {
@@ -125,6 +125,7 @@ final class LatrGatewayClient {
         await auth.dpop.updateNonce(from: http)
 
         if [401, 400].contains(http.statusCode), http.value(forHTTPHeaderField: "DPoP-Nonce") != nil {
+            await auth.dpop.advancePdsDpopNonce(session: session, urlSession: urlSession)
             var retry = URLRequest(url: url)
             retry.httpMethod = method
             retry.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -202,6 +203,7 @@ final class LatrGatewayClient {
                 gatewayMethod: gatewayMethod,
                 path: gatewayPath
             )
+            await auth.dpop.advancePdsDpopNonce(session: session, urlSession: urlSession)
             let upstreamProof = try await auth.dpop.proof(
                 method: upstreamHTTPMethod,
                 url: pdsXrpcURL,
@@ -247,5 +249,5 @@ private struct LatrGatewayErrorBody: Decodable {
 }
 
 private struct LatrGatewaySavedItemsResponse: Decodable {
-    let records: [RepoRecord<LatrSavedItemRecord>]
+    let records: [RepoRecord<LatrSavedItemRecord>]?
 }

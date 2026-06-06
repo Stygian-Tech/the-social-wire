@@ -155,8 +155,6 @@ final class SocialWireAppModel {
         switch list {
         case .readLater, .archive:
             return []
-        case .archive:
-            return []
         case .subscribed:
             var seen = Set<String>()
             var list: [DiscoveredPublication] = []
@@ -577,6 +575,7 @@ final class SocialWireAppModel {
             selectedPublication = nil
             selectedSavedLink = nil
             entries = []
+            Task { await refreshSavedLinks() }
         case .subscribed:
             publicationSidebarTab = .subscribed
             selectedSidebar = nil
@@ -609,8 +608,10 @@ final class SocialWireAppModel {
 
         do {
             try await refreshPublicationSidebarFromBootstrapStream(viewerDID: viewerDID)
-            await refreshGatewayPreferencesSnapshot()
             persistSidebarSnapshot(viewerDid: viewerDID)
+            Task(priority: .utility) { [weak self] in
+                await self?.refreshGatewayPreferencesSnapshot()
+            }
             Task(priority: .utility) {
                 await self.prefetchSidebarPublications()
             }
@@ -625,25 +626,28 @@ final class SocialWireAppModel {
         pendingStreamSelectedPublicationId = nil
         let streamStarted = Date()
 
-        async let readTask = pds.listEntryReadStates()
-        let latrListGateway = latrGateway
-        async let savedTask = pds.listMergedLatrSaves(state: .active, latrGateway: latrListGateway)
-        async let archivedTask = pds.listMergedLatrSaves(state: .archived, latrGateway: latrListGateway)
-        async let profileTask = publicationsService.fetchActorProfile(actor: viewerDID)
-
         try await gateway.consumeBootstrapStream { [weak self] event in
             Task { @MainActor in
                 self?.applyBootstrapStreamEvent(event, streamStarted: streamStarted)
             }
         }
 
-        mergeReadAtByEntryId(try await readTask)
-        savedLinks = try await savedTask
-        archivedSavedLinks = try await archivedTask
+        await applyPendingStreamedBootstrapSelectionIfNeeded()
+        logBootstrapPhase("streamReady", startedAt: streamStarted)
+
+        Task(priority: .utility) { [weak self] in
+            await self?.hydrateViewerStateAfterBootstrap(viewerDID: viewerDID)
+        }
+    }
+
+    private func hydrateViewerStateAfterBootstrap(viewerDID: String) async {
+        async let readTask = pds.listEntryReadStates()
+        async let profileTask = publicationsService.fetchActorProfile(actor: viewerDID)
+
+        mergeReadAtByEntryId((try? await readTask) ?? [:])
+        await refreshSavedLinks()
         viewerProfile = try? await profileTask
         await refreshSidebarUnreadCounts()
-        await applyPendingStreamedBootstrapSelectionIfNeeded()
-        logBootstrapPhase("total", startedAt: streamStarted)
     }
 
     private func logBootstrapPhase(_ phase: String, startedAt: Date) {
@@ -661,6 +665,7 @@ final class SocialWireAppModel {
             hasSidebarSnapshot = true
             folderPublicationsLoading = true
             logBootstrapPhase("sidebarPriority", startedAt: streamStarted)
+            Task { await applyPendingStreamedBootstrapSelectionIfNeeded() }
         case .unreadCounts:
             guard let counts = event.unreadCounts?.counts else { return }
             applyStreamUnreadCounts(counts)
@@ -689,27 +694,41 @@ final class SocialWireAppModel {
             ))
             folderPublicationsLoading = false
             logBootstrapPhase("sidebarFolders", startedAt: streamStarted)
+            Task { await applyPendingStreamedBootstrapSelectionIfNeeded() }
         case .warning, .error:
             break
         case .done:
+            isLoading = false
+            sidebarFetching = false
+            folderPublicationsLoading = false
             logBootstrapPhase("done", startedAt: streamStarted)
             scheduleBootstrapFeedRefresh()
+            Task { await applyPendingStreamedBootstrapSelectionIfNeeded() }
         }
     }
 
     private func applyPendingStreamedBootstrapSelectionIfNeeded() async {
-        guard selectedPublication == nil else { return }
         guard let publicationId = pendingStreamSelectedPublicationId else { return }
         guard let publication = publicationMatchingId(publicationId) else { return }
 
+        let matchesCurrentSelection = selectedPublication.map {
+            PublicationUnreadCountLookup.publicationIdsMatch($0.publicationId, publicationId)
+        } ?? false
+
         if let page = pendingStreamedEntriesPage,
            PublicationUnreadCountLookup.publicationIdsMatch(page.publicationId, publicationId) {
+            guard !matchesCurrentSelection || entries.isEmpty else {
+                pendingStreamedEntriesPage = nil
+                pendingStreamSelectedPublicationId = nil
+                return
+            }
             applyStreamedPublicationSelection(publication: publication, entries: page.entries, cursor: page.cursor)
             pendingStreamedEntriesPage = nil
             pendingStreamSelectedPublicationId = nil
             return
         }
 
+        guard selectedPublication == nil else { return }
         await selectPublication(publication)
     }
 
@@ -726,7 +745,13 @@ final class SocialWireAppModel {
     }
 
     private func publicationMatchingId(_ publicationId: String) -> DiscoveredPublication? {
-        for publication in gatewayAllPublicationRows + subscribedPublications + followingTabPublications {
+        var seen = Set<String>()
+        let candidates = gatewayAllPublicationRows
+            + myPublications
+            + subscribedUnfolderedPublications
+            + subscribedPublications
+            + followingTabPublications
+        for publication in candidates where seen.insert(publication.publicationId).inserted {
             if PublicationUnreadCountLookup.publicationIdsMatch(publication.publicationId, publicationId) {
                 return publication
             }
@@ -1626,12 +1651,19 @@ final class SocialWireAppModel {
         )
     }
 
-    func saveEntry(entryId: String, url: URL?, title: String?, excerpt: String? = nil) async {
+    func saveEntry(
+        entryId: String,
+        url: URL?,
+        title: String?,
+        excerpt: String? = nil,
+        linkedWebURL: String? = nil
+    ) async {
         do {
             if let url {
                 try await latrGateway.saveURL(url, title: title, excerpt: excerpt)
             } else {
-                let linked = selectedEntry?.canonicalURL?.absoluteString
+                let linked = linkedWebURL
+                    ?? selectedEntry?.canonicalURL?.absoluteString
                 try await latrGateway.saveNativeSubject(subjectURI: entryId, linkedWebURL: linked)
             }
             await refreshSavedLinks()
@@ -1648,7 +1680,7 @@ final class SocialWireAppModel {
             selectedSavedLink = nil
         }
         do {
-            try await latrGateway.archiveSave(itemRkey: save.itemRkey)
+            try await pds.updateLatrSaveState(save, state: "archived")
             await refreshSavedLinks()
         } catch {
             savedLinks = snapshotActive
@@ -1665,7 +1697,7 @@ final class SocialWireAppModel {
             selectedSavedLink = nil
         }
         do {
-            try await latrGateway.unarchiveSave(itemRkey: save.itemRkey)
+            try await pds.updateLatrSaveState(save, state: "unread")
             await refreshSavedLinks()
         } catch {
             savedLinks = snapshotActive
@@ -1682,7 +1714,7 @@ final class SocialWireAppModel {
             selectedSavedLink = nil
         }
         do {
-            try await latrGateway.deleteSave(itemRkey: save.itemRkey)
+            try await pds.deleteLatrSave(save)
             await refreshSavedLinks()
         } catch {
             savedLinks = snapshotActive

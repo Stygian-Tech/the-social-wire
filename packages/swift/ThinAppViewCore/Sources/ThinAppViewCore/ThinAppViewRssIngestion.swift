@@ -146,9 +146,14 @@ public struct ThinAppViewRssIngestion: Sendable {
       return html
     }
     if let snippet = item.summary?.trimmingCharacters(in: .whitespacesAndNewlines), !snippet.isEmpty {
+      if looksLikeHTML(snippet) { return snippet }
       return "<p>\(escapeHtml(snippet))</p>"
     }
     return "<p></p>"
+  }
+
+  private func looksLikeHTML(_ text: String) -> Bool {
+    text.range(of: #"<[a-zA-Z][^>]*>"#, options: .regularExpression) != nil
   }
 
   private func escapeHtml(_ text: String) -> String {
