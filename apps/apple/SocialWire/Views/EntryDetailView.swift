@@ -139,7 +139,6 @@ struct ArticleToolbar: View {
                     Label("Save", systemImage: "bookmark")
                 }
                 .buttonStyle(.bordered)
-                .disabled(!appModel.readLaterLatrConfigured)
 
                 Button {
                     showingQuote = true

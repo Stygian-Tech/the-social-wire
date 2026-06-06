@@ -46,46 +46,39 @@ struct ReaderSidebarColumn: View {
         List {
             listsSection
             Section {
-                if appModel.readLaterLatrConfigured {
-                    if appModel.currentSavedLinks.isEmpty {
-                        Text(appModel.readerListSource == .archive ? "Nothing archived yet." : "Nothing queued yet.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .readerClearListRow()
-                    } else {
-                        ForEach(appModel.currentSavedLinks) { save in
-                            Button {
-                                appModel.selectedSavedLink = save
-                            } label: {
-                                SavedLinkRow(
-                                    save: save,
-                                    isSelected: appModel.selectedSavedLink?.id == save.id
-                                )
-                            }
-                            .buttonStyle(.plain)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .readerFullWidthCardRow()
-                            .contextMenu {
-                                if appModel.readerListSource == .archive {
-                                    Button("Unarchive") {
-                                        Task { await appModel.unarchive(save) }
-                                    }
-                                } else {
-                                    Button("Archive") {
-                                        Task { await appModel.archive(save) }
-                                    }
-                                }
-                                Button("Delete", role: .destructive) {
-                                    Task { await appModel.delete(save) }
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    Text("Configure L@tr Link in Profile → Settings.")
+                if appModel.currentSavedLinks.isEmpty {
+                    Text(appModel.readerListSource == .archive ? "Nothing archived yet." : "Nothing queued yet.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .readerClearListRow()
+                } else {
+                    ForEach(appModel.currentSavedLinks) { save in
+                        Button {
+                            appModel.selectedSavedLink = save
+                        } label: {
+                            SavedLinkRow(
+                                save: save,
+                                isSelected: appModel.selectedSavedLink?.id == save.id
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .readerClearListRow()
+                        .contextMenu {
+                            if appModel.readerListSource == .archive {
+                                Button("Unarchive") {
+                                    Task { await appModel.unarchive(save) }
+                                }
+                            } else {
+                                Button("Archive") {
+                                    Task { await appModel.archive(save) }
+                                }
+                            }
+                            Button("Delete", role: .destructive) {
+                                Task { await appModel.delete(save) }
+                            }
+                        }
+                    }
                 }
             } header: {
                 Text(appModel.readerListSource == .archive ? "Archive" : "Read Later")

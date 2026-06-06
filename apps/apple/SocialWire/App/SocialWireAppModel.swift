@@ -59,8 +59,6 @@ final class SocialWireAppModel {
     private var unreadCountsByPublicationId: [String: Int] = [:]
     /// Set false after a 404 from `/v1/appview/*` (API deployed without `ENABLE_THIN_APPVIEW`).
     private var appViewRoutesAvailable = true
-    /// Read-later picker save in-flight (mirror web mutation pending state).
-    var isUpdatingReadLaterPreference = false
 
     /// Pending streamed feed page until sidebar rows are ready.
     private var pendingStreamedEntriesPage: BootstrapEntriesPagePayloadDTO?
@@ -326,16 +324,7 @@ final class SocialWireAppModel {
     }
 
     var effectiveReadLaterServiceId: String {
-        let g = preferencesFromGateway?.readLaterService?.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let g, ReadLaterServiceCatalog.isKnownServiceId(g) { return g }
-        let stored = UserDefaults.standard.string(forKey: ReadLaterServiceCatalog.userDefaultsStorageKey)?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        if let stored, ReadLaterServiceCatalog.isKnownServiceId(stored) { return stored }
-        return ReadLaterServiceCatalog.defaultServiceId
-    }
-
-    var readLaterLatrConfigured: Bool {
-        ReadLaterServiceCatalog.isLatrPdsReadLaterService(effectiveReadLaterServiceId)
+        ReadLaterServiceCatalog.defaultServiceId
     }
 
     func unreadCachedBadge(for publication: DiscoveredPublication) -> Int {
@@ -637,7 +626,7 @@ final class SocialWireAppModel {
         let streamStarted = Date()
 
         async let readTask = pds.listEntryReadStates()
-        let latrListGateway = readLaterLatrConfigured ? latrGateway : nil
+        let latrListGateway = latrGateway
         async let savedTask = pds.listMergedLatrSaves(state: .active, latrGateway: latrListGateway)
         async let archivedTask = pds.listMergedLatrSaves(state: .archived, latrGateway: latrListGateway)
         async let profileTask = publicationsService.fetchActorProfile(actor: viewerDID)
@@ -934,28 +923,6 @@ final class SocialWireAppModel {
             return
         }
         preferencesFromGateway = envelope.record
-        if let raw = envelope.record?.readLaterService?.trimmingCharacters(in: .whitespacesAndNewlines),
-           ReadLaterServiceCatalog.isKnownServiceId(raw)
-        {
-            UserDefaults.standard.set(raw, forKey: ReadLaterServiceCatalog.userDefaultsStorageKey)
-        }
-    }
-
-    func selectReadLaterService(_ serviceId: String) async {
-        guard ReadLaterServiceCatalog.isKnownServiceId(serviceId) else { return }
-        isUpdatingReadLaterPreference = true
-        defer { isUpdatingReadLaterPreference = false }
-
-        UserDefaults.standard.set(serviceId, forKey: ReadLaterServiceCatalog.userDefaultsStorageKey)
-
-        do {
-            try await pds.upsertReadLaterServicePreference(serviceId)
-        } catch {
-            errorMessage = error.localizedDescription
-            return
-        }
-
-        await refreshGatewayPreferencesSnapshot(forceRefetch: true)
     }
 
     private func prefetchSidebarPublications() async {
@@ -1619,7 +1586,7 @@ final class SocialWireAppModel {
 
     func refreshSavedLinks() async {
         do {
-            let latrListGateway = readLaterLatrConfigured ? latrGateway : nil
+            let latrListGateway = latrGateway
             savedLinks = try await pds.listMergedLatrSaves(state: .active, latrGateway: latrListGateway)
             archivedSavedLinks = try await pds.listMergedLatrSaves(state: .archived, latrGateway: latrListGateway)
         } catch {
@@ -1651,7 +1618,7 @@ final class SocialWireAppModel {
     }
 
     func saveCurrentEntry() async {
-        guard readLaterLatrConfigured, let selectedEntry else { return }
+        guard let selectedEntry else { return }
         await saveEntry(
             entryId: selectedEntry.entryId,
             url: selectedEntry.canonicalURL,
@@ -1660,7 +1627,6 @@ final class SocialWireAppModel {
     }
 
     func saveEntry(entryId: String, url: URL?, title: String?, excerpt: String? = nil) async {
-        guard readLaterLatrConfigured else { return }
         do {
             if let url {
                 try await latrGateway.saveURL(url, title: title, excerpt: excerpt)

@@ -17,3 +17,16 @@ export function articleListCardButtonClassName(options: {
     options.subdued && "opacity-80"
   );
 }
+
+/** Read Later / Archive saved-link rows — border only, no card fill. */
+export function savedLinkListCardButtonClassName(options: {
+  isSelected?: boolean;
+}): string {
+  return cn(
+    "flex w-full flex-col overflow-hidden rounded-lg border border-border/70 text-left",
+    "transition-[border-color,box-shadow,opacity]",
+    "hover:border-border hover:[box-shadow:var(--purple-glow-hover)]",
+    "dark:border-border/55",
+    options.isSelected && "border-border/90 ring-1 ring-border/30",
+  );
+}

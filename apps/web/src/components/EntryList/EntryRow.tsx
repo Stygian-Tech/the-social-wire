@@ -28,8 +28,6 @@ import {
   useEntryIsLatrSaved,
   useSaveReadLaterEntryMutation,
 } from "@/hooks/useLatrSaved";
-import { useConfiguredReadLaterService } from "@/hooks/useReadLaterPreferences";
-import { isLatrPdsReadLaterService } from "@/lib/readLaterServices";
 
 interface EntryRowProps {
   entry: EntryListItem;
@@ -57,12 +55,10 @@ function EntryRowActions({
   variant: "context" | "dropdown";
 }) {
   const saveLaterMut = useSaveReadLaterEntryMutation();
-  const { serviceId: configuredReadLaterId } = useConfiguredReadLaterService();
-  const latrReadLaterWritesEnabled = isLatrPdsReadLaterService(configuredReadLaterId);
   const alreadySaved = useEntryIsLatrSaved(entry.entryId);
   const Item = variant === "context" ? ContextMenuItem : DropdownMenuItem;
 
-  const saveDisabled = !latrReadLaterWritesEnabled || alreadySaved;
+  const saveDisabled = alreadySaved;
 
   return (
     <>

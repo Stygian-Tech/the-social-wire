@@ -25,8 +25,6 @@ import {
   useEntryIsLatrSaved,
   useSaveReadLaterEntryMutation,
 } from "@/hooks/useLatrSaved";
-import { useConfiguredReadLaterService } from "@/hooks/useReadLaterPreferences";
-import { isLatrPdsReadLaterService } from "@/lib/readLaterServices";
 import type { EntryDetail } from "@/lib/atprotoClient";
 import { canonicalArticleHttpsUrl } from "@/lib/articleCanonicalUrl";
 import { cn } from "@/lib/utils";
@@ -59,9 +57,6 @@ export function ArticleSocialToolbar({
   const canonUrl = entry ? canonicalArticleHttpsUrl(entry) : null;
   const alreadyLatrSaved = useEntryIsLatrSaved(entry?.entryId ?? "", canonUrl ?? null);
   const saveLaterMut = useSaveReadLaterEntryMutation();
-  const { serviceId: configuredReadLaterId } =
-    useConfiguredReadLaterService();
-  const latrReadLaterWritesEnabled = isLatrPdsReadLaterService(configuredReadLaterId);
 
   const [repostOpen, setRepostOpen] = useState(false);
   const [quoteOpen, setQuoteOpen] = useState(false);
@@ -203,19 +198,12 @@ export function ArticleSocialToolbar({
           <Button
             variant={alreadyLatrSaved ? "secondary" : "outline"}
             size="sm"
-            disabled={
-              busySocial ||
-              alreadyLatrSaved ||
-              !canonUrl ||
-              !latrReadLaterWritesEnabled
-            }
+            disabled={busySocial || alreadyLatrSaved || !canonUrl}
             className="h-11 min-h-[44px] justify-center gap-1.5 px-2 sm:h-7 sm:min-h-0 sm:justify-start sm:px-2.5"
             title={
-              !latrReadLaterWritesEnabled
-                ? "Choose L@tr Link in Read Later Settings to save HTTPS articles to your PDS."
-                : alreadyLatrSaved
-                  ? "Already in Read Later"
-                  : "Save Canonical URL to PDS Read Later (L@tr Compatible)"
+              alreadyLatrSaved
+                ? "Already in Read Later"
+                : "Save Canonical URL to PDS Read Later (L@tr Compatible)"
             }
             onClick={() => {
               saveLaterMut.mutate({

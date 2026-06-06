@@ -37,7 +37,6 @@ struct EntryListView: View {
                                 } label: {
                                     Label("Save", systemImage: "bookmark")
                                 }
-                                .disabled(!appModel.readLaterLatrConfigured)
 
                                 Button(appModel.readAtByEntryId[entry.entryId] == nil ? "Mark As Read" : "Mark As Unread") {
                                     Task { await appModel.toggleRead(entry) }

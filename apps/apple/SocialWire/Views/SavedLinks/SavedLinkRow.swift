@@ -21,6 +21,7 @@ struct SavedLinkRow: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(save.title)
                         .font(.headline)
+                        .foregroundStyle(isSelected ? Color.accentColor : Color.primary)
                         .lineLimit(2)
 
                     if let excerpt = save.excerpt, !excerpt.isEmpty {
@@ -38,16 +39,7 @@ struct SavedLinkRow: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(isSelected ? Color.accentColor.opacity(0.12) : Color(.secondarySystemGroupedBackground))
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(isSelected ? Color.accentColor.opacity(0.35) : Color(.separator).opacity(0.35), lineWidth: 1)
-        }
+        .padding(.vertical, 6)
     }
 
     @ViewBuilder

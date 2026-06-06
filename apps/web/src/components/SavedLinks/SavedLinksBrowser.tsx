@@ -6,10 +6,8 @@ import {
   ArchiveRestore,
   ChevronLeft,
   ExternalLink,
-  Settings,
   Trash2,
 } from "lucide-react";
-import { useRouter } from "next/navigation";
 import { EntryArticleEmbed } from "@/components/EntryDetail/EntryArticleEmbed";
 import { DevRecordKindBadge } from "@/components/shared/DevRecordKindBadge";
 import { ListColumnError } from "@/components/shared/ListColumnError";
@@ -34,8 +32,6 @@ import {
   useLatrMergedHttpsSaves,
   useUnarchiveLatrSaveMutation,
 } from "@/hooks/useLatrSaved";
-import { useConfiguredReadLaterService } from "@/hooks/useReadLaterPreferences";
-import { READ_LATER_SERVICES, isLatrPdsReadLaterService } from "@/lib/readLaterServices";
 import type { LatrSaveListState, MergedLatrSave } from "@/lib/pdsClient";
 import { recordKindFromLatrSave } from "@/lib/recordKindDebug";
 import {
@@ -155,22 +151,14 @@ interface SavedLinksBrowserProps {
 }
 
 export function SavedLinksBrowser({ mode }: SavedLinksBrowserProps) {
-  const router = useRouter();
   const listState: LatrSaveListState = mode === "archived" ? "archived" : "active";
   const { data = [], isLoading, isError, error } = useLatrMergedHttpsSaves(listState);
   const archiveMut = useArchiveLatrSaveMutation();
   const unarchiveMut = useUnarchiveLatrSaveMutation();
   const deleteMut = useDeleteLatrSaveMutation();
-  const {
-    service: configuredService,
-    serviceId,
-  } = useConfiguredReadLaterService();
-  const configuredServiceIsLatr = isLatrPdsReadLaterService(serviceId);
-  const configuredServiceLabel =
-    READ_LATER_SERVICES.find((s) => s.id === serviceId)?.label ??
-    configuredService.label;
 
   const isArchivedView = mode === "archived";
+  const listHeaderLabel = isArchivedView ? "Archive" : "Saved";
   const emptyListMessage = isArchivedView ? "Nothing archived" : "Nothing saved";
   const backLabel = isArchivedView ? "Back to Archived Links" : "Back to Saved Links";
 
@@ -223,54 +211,15 @@ export function SavedLinksBrowser({ mode }: SavedLinksBrowserProps) {
     ? stableSavedLinkIframeSrc(selectedRow)
     : undefined;
 
-  const detailEmptyMessage =
-    !configuredService.connected ? (
-      <p>Connect your read-later service to preview saves here.</p>
-    ) : !configuredServiceIsLatr ? (
-      <p>
-        This layout will show an embedded preview when supported for your provider.
-      </p>
-    ) : isLoading ? (
-      <p>Loading…</p>
-    ) : data.length === 0 ? (
-      <p>{emptyListMessage}</p>
-    ) : (
-      <p>Select an article</p>
-    );
+  const detailEmptyMessage = isLoading ? (
+    <p>Loading…</p>
+  ) : data.length === 0 ? (
+    <p>{emptyListMessage}</p>
+  ) : (
+    <p>Select an article</p>
+  );
 
   const listPane = (() => {
-    if (!configuredService.connected) {
-      return (
-        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-4 text-center md:p-6">
-          <div className="max-w-lg space-y-2">
-            <h2 className="text-sm font-medium">
-              Connect {configuredServiceLabel}
-            </h2>
-            <p className="text-sm text-muted-foreground">
-              Log in to {configuredServiceLabel} to load saved links from that service.
-            </p>
-          </div>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => router.push("/saved/settings")}
-          >
-            Read Later Settings
-          </Button>
-        </div>
-      );
-    }
-
-    if (!configuredServiceIsLatr) {
-      return (
-        <div className="flex min-h-0 flex-1 items-center justify-center p-8 text-center text-sm text-muted-foreground">
-          List view for this read-later provider is not available yet. Open a saved link from{" "}
-          {configuredServiceLabel} elsewhere, or switch to L@tr.link or LatrKit in settings.
-        </div>
-      );
-    }
-
     if (isLoading) {
       return (
         <div className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto overscroll-y-contain p-2 pt-2">
@@ -379,21 +328,10 @@ export function SavedLinksBrowser({ mode }: SavedLinksBrowserProps) {
         storageKey={READER_LIST_COLUMN_WIDTH_KEY}
         hiddenOnMobile={Boolean(resolvedSelectedRowId)}
       >
-        <div className="flex shrink-0 items-center justify-between gap-2 border-b px-3 py-2">
+        <div className="flex shrink-0 items-center border-b px-3 py-2">
           <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-            {isArchivedView ? "Archive" : configuredServiceLabel}
+            {listHeaderLabel}
           </p>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            className="size-8 shrink-0"
-            aria-label="Open Read Later Settings"
-            title="Open Read Later Settings"
-            onClick={() => router.push("/saved/settings")}
-          >
-            <Settings className="size-4" />
-          </Button>
         </div>
         {listPane}
       </ResizableListColumn>
