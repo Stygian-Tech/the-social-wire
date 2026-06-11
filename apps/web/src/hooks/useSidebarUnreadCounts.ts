@@ -1,17 +1,10 @@
 "use client";
 
-import { useMemo } from "react";
-import { useQueryClient } from "@tanstack/react-query";
-
-import {
-  effectivePublicationUnreadCount,
-  lookupUnreadCountInMap,
-} from "@/lib/unreadCounts";
 import type { DiscoveredPublication } from "@/lib/atprotoClient";
+import { useSidebarUnreadController } from "@/hooks/useSidebarUnreadController";
 
 /**
- * Per-publication unread counts merging AppView baseline with local read state
- * for cached feed rows (via {@link usePublicationSidebarData}).
+ * @deprecated Prefer {@link useSidebarUnreadController}.
  */
 export function useSidebarUnreadCounts(
   publications: DiscoveredPublication[],
@@ -20,28 +13,9 @@ export function useSidebarUnreadCounts(
     isEntryRead?: (entryId: string) => boolean;
   }
 ): Map<string, number> {
-  const queryClient = useQueryClient();
-  const isEntryRead = options?.isEntryRead;
-
-  return useMemo(() => {
-    const map = new Map<string, number>();
-    for (const pub of publications) {
-      const serverCount = unreadCountsByPublicationId
-        ? lookupUnreadCountInMap(unreadCountsByPublicationId, pub.publicationId)
-        : 0;
-      map.set(
-        pub.publicationId,
-        isEntryRead
-          ? effectivePublicationUnreadCount(
-              serverCount,
-              queryClient,
-              pub.publicationId,
-              isEntryRead,
-              { capRaiseToServerCount: true }
-            )
-          : serverCount
-      );
-    }
-    return map;
-  }, [publications, unreadCountsByPublicationId, isEntryRead, queryClient]);
+  return useSidebarUnreadController({
+    publications,
+    unreadCountsByPublicationId,
+    isEntryRead: options?.isEntryRead,
+  });
 }

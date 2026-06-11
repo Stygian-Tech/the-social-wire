@@ -12,8 +12,13 @@ struct SubscribedPublicationSidebarTree: View {
     var body: some View {
         @Bindable var model = appModel
 
+        let tree = appModel.sidebarTreeViewModel
+
         Section(isExpanded: $model.sidebarFoldersSectionExpanded) {
-            if appModel.folders.isEmpty, appModel.sidebarFetching, !appModel.hasSidebarSnapshot {
+            if appModel.folders.isEmpty,
+               tree.loadingFlags.sidebarFetching,
+               !tree.loadingFlags.hasSidebarSnapshot
+            {
                 ForEach(0 ..< 3, id: \.self) { _ in
                     SidebarSkeletonRow()
                 }
@@ -29,7 +34,7 @@ struct SubscribedPublicationSidebarTree: View {
                 .readerClearListRow()
             }
         } header: {
-            SidebarSectionLabel(title: "Folders", unreadCount: appModel.foldersSectionUnreadCount)
+            SidebarSectionLabel(title: "Folders", unreadCount: tree.foldersSectionUnread)
         }
         .onChange(of: model.sidebarFoldersSectionExpanded) { _, _ in
             appModel.noteSidebarExpandedPresentationChanged()
@@ -37,8 +42,8 @@ struct SubscribedPublicationSidebarTree: View {
 
         Section(isExpanded: $model.sidebarPublicationsSectionExpanded) {
             if appModel.subscribedUnfolderedPublications.isEmpty,
-               appModel.sidebarFetching,
-               !appModel.hasSidebarSnapshot
+               tree.loadingFlags.sidebarFetching,
+               !tree.loadingFlags.hasSidebarSnapshot
             {
                 ForEach(0 ..< 4, id: \.self) { _ in
                     SidebarSkeletonRow()
@@ -57,7 +62,7 @@ struct SubscribedPublicationSidebarTree: View {
         } header: {
             SidebarSectionLabel(
                 title: "Publications",
-                unreadCount: appModel.subscribedUnfolderedSectionUnreadCount
+                unreadCount: tree.publicationsSectionUnread
             )
         }
         .onChange(of: model.sidebarPublicationsSectionExpanded) { _, _ in
@@ -104,7 +109,7 @@ struct SubscribedPublicationSidebarTree: View {
                 Text(folder.value.name)
                     .lineLimit(1)
                 Spacer(minLength: 6)
-                SidebarCountLabel(count: appModel.folderUnreadCount(rkey: folderRkey))
+                SidebarCountLabel(count: tree.folderUnread(rkey: folderRkey))
             }
             .readerFullWidthTapLabel()
         }
@@ -116,7 +121,7 @@ struct SubscribedPublicationSidebarTree: View {
         }
 
         if isExpanded {
-            if pubs.isEmpty, appModel.folderPublicationsLoading {
+            if pubs.isEmpty, tree.loadingFlags.folderPublicationsLoading {
                 ForEach(0 ..< 2, id: \.self) { _ in
                     SidebarSkeletonRow()
                 }
@@ -141,7 +146,7 @@ struct SubscribedPublicationSidebarTree: View {
         } label: {
             PublicationSidebarRow(
                 publication: publication,
-                unreadCount: appModel.unreadCachedBadge(for: publication)
+                unreadCount: tree.unreadCount(for: publication)
             )
             .readerFullWidthTapLabel()
         }

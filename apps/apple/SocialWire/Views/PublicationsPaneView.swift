@@ -32,7 +32,12 @@ struct PublicationsPaneView: View {
             }
         }
         .refreshable {
-            await appModel.refreshAll()
+            switch appModel.readerListSource {
+            case .readLater, .archive:
+                await appModel.refreshSavedLinks()
+            case .subscribed, .following:
+                await appModel.refreshSidebarProjection()
+            }
             refreshFeedback += 1
         }
         .sensoryFeedback(.impact(flexibility: .soft), trigger: refreshFeedback)

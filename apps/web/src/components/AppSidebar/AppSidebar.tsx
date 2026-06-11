@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
-import { ChevronRight, LogOut, RefreshCw, Bookmark, Archive } from "lucide-react";
+import { LogOut, RefreshCw, Bookmark, Archive } from "lucide-react";
 import iconSrc from "@/app/icon.png";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -18,39 +18,35 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  SidebarMenuSub,
-  SidebarMenuSubItem,
   SidebarResizeHandle,
   SIDEBAR_GLASS_ICON,
 } from "@/components/ui/sidebar";
 import { Avatar } from "@/components/shared/Avatar";
-import { FolderBranch } from "./FolderBranch";
-import { NewFolderDialog } from "./NewFolderDialog";
-import { AddPublicationDialog } from "./AddPublicationDialog";
+import { SidebarFoldersSection } from "./SidebarFoldersSection";
+import { SidebarPublicationsSection } from "./SidebarPublicationsSection";
 import { useAuth } from "@/hooks/useAuth";
-import { usePublicationSidebarData } from "@/hooks/usePublicationSidebarData";
+import {
+  useSidebarBootstrap,
+  useSidebarProjection,
+} from "@/contexts/PublicationSidebarContext";
 import { usePrefetchSidebarPublicationEntries } from "@/hooks/usePrefetchSidebarPublicationEntries";
 import { useCrossClientReadSync } from "@/hooks/useCrossClientReadSync";
 import { normalizeAtRepoParam } from "@/lib/atprotoClient";
-import { useSidebarUnreadCounts } from "@/hooks/useSidebarUnreadCounts";
-import { useReadRoute } from "@/contexts/ReadRouteContext";
+import { useSidebarUnreadController } from "@/hooks/useSidebarUnreadController";
+import { useReadState } from "@/contexts/ReadStateContext";
+import { useSidebarChrome } from "@/contexts/SidebarChromeContext";
 import { useReadSidebarScopeOptional } from "@/contexts/ReadSidebarScopeContext";
 import { useViewerProfile } from "@/hooks/useViewerProfile";
 import { rkeyFromURI } from "@/lib/pdsClient";
 import { type DiscoveredPublication, viewerOwnsDiscoveredPublication } from "@/lib/atprotoClient";
 import { sumUnreadForPublications } from "@/lib/unreadCounts";
 import { cn } from "@/lib/utils";
-import { SidebarReadBulkMenuWrap } from "./SidebarReadBulkMenuWrap";
 import {
   SIDEBAR_SEC_FOLDERS,
   SIDEBAR_SEC_PUBLICATIONS,
 } from "./appSidebarConstants";
 import { folderExpandKey } from "@/lib/sidebarExpandedKeysStorage";
-import { CollapsibleSidebarSubSection } from "./CollapsibleSidebarSubSection";
-import { PublicationMenuSubEntries } from "./PublicationMenuSubEntries";
 import { PublicationTabs } from "./PublicationTabs";
-import { SidebarSubMenuSkeletonRows } from "./SidebarSubMenuSkeletonRows";
-import { UnreadSidebarBadge } from "./UnreadSidebarBadge";
 
 interface AppSidebarProps {
   selectedPubId: string | null;
@@ -70,8 +66,8 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
     sidebarExpandedKeys,
     toggleSidebarExpandedKey,
     syncSidebarFolderExpandKeys,
-    isEntryRead,
-  } = useReadRoute();
+  } = useSidebarChrome();
+  const { isEntryRead, readEpoch } = useReadState();
 
   async function handleLogout() {
     setLoggingOut(true);
@@ -92,17 +88,20 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
     folderMap,
     unfolderedPubs,
     followingTabPublications,
-    refresh,
-    viewerDid,
     unreadCountsByPublicationId,
-    folderPublicationsLoading,
+  } = useSidebarProjection();
+  const {
+    viewerDid,
+    refresh,
+    folderPublicationsLoading: folderPublicationsListLoading,
     foldersListLoading,
     subscribedPublicationsLoading,
     followingPublicationsLoading,
     streamSelectedPublicationId,
     hasSidebarSnapshot,
     bootstrapStreamComplete,
-  } = usePublicationSidebarData();
+  } = useSidebarBootstrap();
+  const folderPublicationsLoading = folderPublicationsListLoading;
 
   useCrossClientReadSync();
 
@@ -148,11 +147,12 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
     return list;
   }, [publicationTab, folders, folderMap, unfolderedPubs, followingTabPublications]);
 
-  const publicationUnreadCounts = useSidebarUnreadCounts(
-    publicationsForUnread,
+  const publicationUnreadCounts = useSidebarUnreadController({
+    publications: publicationsForUnread,
     unreadCountsByPublicationId,
-    { isEntryRead }
-  );
+    isEntryRead,
+    readEpoch,
+  });
 
   const setPublicationsInReadShell =
     useReadSidebarScopeOptional()?.setPublicationsInSidebarTab;
@@ -340,87 +340,38 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
             <SidebarMenu className="gap-4">
               {publicationTab === "subscribed" ? (
                 <>
-                  <SidebarMenuItem>
-                    <SidebarReadBulkMenuWrap
-                      publications={allFolderedPublicationsForBulk}
-                      markAllReadConfirmation={
-                        <>
-                          This marks every cached article across all folders as read.
-                          Entries that have not been loaded yet stay unchanged until you open
-                          them.
-                        </>
-                      }
-                    >
-                      <SidebarMenuButton
-                        type="button"
-                        onClick={() => toggleSidebarExpandedKey(SIDEBAR_SEC_FOLDERS)}
-                        aria-expanded={effectiveExpandedKeys.has(SIDEBAR_SEC_FOLDERS)}
-                        className={cn(
-                          "gap-2",
-                          foldersSectionUnread > 0 && "relative pr-8"
-                        )}
-                      >
-                        <ChevronRight
-                          className={cn(
-                            "size-4 shrink-0 transition-transform",
-                            effectiveExpandedKeys.has(SIDEBAR_SEC_FOLDERS) && "rotate-90"
-                          )}
-                          aria-hidden
-                        />
-                        <span className="min-w-0 flex-1 truncate text-left text-xs font-medium">
-                          Folders
-                        </span>
-                        <UnreadSidebarBadge count={foldersSectionUnread} />
-                      </SidebarMenuButton>
-                    </SidebarReadBulkMenuWrap>
-                    {effectiveExpandedKeys.has(SIDEBAR_SEC_FOLDERS) ? (
-                      <SidebarMenuSub
-                        aria-label="Folders"
-                        className="mt-1.5"
-                      >
-                        {foldersListLoading ? (
-                          <SidebarSubMenuSkeletonRows count={2} />
-                        ) : (
-                          folders.map((f) => {
-                            const rkey = rkeyFromURI(f.uri);
-                            const expandKey = folderExpandKey(rkey);
-                            return (
-                              <FolderBranch
-                                key={f.uri}
-                                expandKey={expandKey}
-                                folderUri={f.uri}
-                                folder={f.value}
-                                isActive={selectedFolderUri === f.uri}
-                                expanded={effectiveExpandedKeys.has(expandKey)}
-                                onToggleExpanded={() =>
-                                  toggleSidebarExpandedKey(expandKey)
-                                }
-                                publications={folderMap.get(rkey) ?? []}
-                                emptyLabel="No publications in this folder."
-                                selectedPubId={selectedPubId}
-                                onSelectPub={onSelectPub}
-                                folders={folders}
-                                prefsMap={prefsMap}
-                                sidebarTab="subscribed"
-                                publicationUnreadCounts={publicationUnreadCounts}
-                                publicationsLoading={folderPublicationsLoading}
-                              />
-                            );
-                          })
-                        )}
-                        <SidebarMenuItem>
-                          <NewFolderDialog />
-                        </SidebarMenuItem>
-                      </SidebarMenuSub>
-                    ) : null}
-                  </SidebarMenuItem>
-                  <CollapsibleSidebarSubSection
-                    title="Publications"
-                    unreadCount={publicationsSectionUnread}
-                    expanded={effectiveExpandedKeys.has(SIDEBAR_SEC_PUBLICATIONS)}
-                    onToggle={() => toggleSidebarExpandedKey(SIDEBAR_SEC_PUBLICATIONS)}
-                    subAriaLabel="Subscribed Publications"
-                    readBulkPublications={unfolderedPubs}
+                  <SidebarFoldersSection
+                    folders={folders}
+                    folderMap={folderMap}
+                    foldersListLoading={foldersListLoading}
+                    folderPublicationsLoading={folderPublicationsLoading}
+                    foldersSectionUnread={foldersSectionUnread}
+                    effectiveExpandedKeys={effectiveExpandedKeys}
+                    selectedFolderUri={selectedFolderUri}
+                    selectedPubId={selectedPubId}
+                    onSelectPub={onSelectPub}
+                    onToggleSection={() =>
+                      toggleSidebarExpandedKey(SIDEBAR_SEC_FOLDERS)
+                    }
+                    onToggleFolder={toggleSidebarExpandedKey}
+                    prefsMap={prefsMap}
+                    publicationUnreadCounts={publicationUnreadCounts}
+                    allFolderedPublicationsForBulk={allFolderedPublicationsForBulk}
+                  />
+                  <SidebarPublicationsSection
+                    publications={unfolderedPubs}
+                    publicationUnreadCounts={publicationUnreadCounts}
+                    publicationsSectionUnread={publicationsSectionUnread}
+                    effectiveExpandedKeys={effectiveExpandedKeys}
+                    selectedPubId={selectedPubId}
+                    onSelectPub={onSelectPub}
+                    onToggleSection={() =>
+                      toggleSidebarExpandedKey(SIDEBAR_SEC_PUBLICATIONS)
+                    }
+                    folders={folders}
+                    prefsMap={prefsMap}
+                    sidebarTab="subscribed"
+                    listLoading={subscribedPublicationsLoading}
                     readBulkMarkAllReadConfirmation={
                       <>
                         This marks every cached article in Publications (sources not in a
@@ -428,59 +379,32 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
                         until you open them.
                       </>
                     }
-                  >
-                    <PublicationMenuSubEntries
-                      publications={unfolderedPubs}
-                      publicationUnreadCounts={publicationUnreadCounts}
-                      selectedPubId={selectedPubId}
-                      onSelectPub={onSelectPub}
-                      folders={folders}
-                      prefsMap={prefsMap}
-                      sidebarTab="subscribed"
-                      listLoading={subscribedPublicationsLoading}
-                    />
-                    {!subscribedPublicationsLoading ? (
-                      <SidebarMenuSubItem className="p-0">
-                        <AddPublicationDialog />
-                      </SidebarMenuSubItem>
-                    ) : null}
-                  </CollapsibleSidebarSubSection>
+                  />
                 </>
               ) : (
-                <>
-                  <CollapsibleSidebarSubSection
-                    title="Publications"
-                    unreadCount={publicationsSectionUnread}
-                    expanded={effectiveExpandedKeys.has(SIDEBAR_SEC_PUBLICATIONS)}
-                    onToggle={() => toggleSidebarExpandedKey(SIDEBAR_SEC_PUBLICATIONS)}
-                    subAriaLabel="Publications From Followed Accounts"
-                    readBulkPublications={followingTabPublications}
-                    readBulkMarkAllReadConfirmation={
-                      <>
-                        This marks every cached article from publications you follow as read.
-                        Entries that have not been loaded yet stay unchanged until you open
-                        them.
-                      </>
-                    }
-                    gatewayMarkAllReadScopes={[{ kind: "following" }]}
-                  >
-                    <PublicationMenuSubEntries
-                      publications={followingTabPublications}
-                      publicationUnreadCounts={publicationUnreadCounts}
-                      selectedPubId={selectedPubId}
-                      onSelectPub={onSelectPub}
-                      folders={folders}
-                      prefsMap={prefsMap}
-                      sidebarTab="following"
-                      listLoading={followingPublicationsLoading}
-                    />
-                    {!followingPublicationsLoading ? (
-                      <SidebarMenuSubItem className="p-0">
-                        <AddPublicationDialog />
-                      </SidebarMenuSubItem>
-                    ) : null}
-                  </CollapsibleSidebarSubSection>
-                </>
+                <SidebarPublicationsSection
+                  publications={followingTabPublications}
+                  publicationUnreadCounts={publicationUnreadCounts}
+                  publicationsSectionUnread={publicationsSectionUnread}
+                  effectiveExpandedKeys={effectiveExpandedKeys}
+                  selectedPubId={selectedPubId}
+                  onSelectPub={onSelectPub}
+                  onToggleSection={() =>
+                    toggleSidebarExpandedKey(SIDEBAR_SEC_PUBLICATIONS)
+                  }
+                  folders={folders}
+                  prefsMap={prefsMap}
+                  sidebarTab="following"
+                  listLoading={followingPublicationsLoading}
+                  readBulkMarkAllReadConfirmation={
+                    <>
+                      This marks every cached article from publications you follow as read.
+                      Entries that have not been loaded yet stay unchanged until you open
+                      them.
+                    </>
+                  }
+                  gatewayMarkAllReadScopes={[{ kind: "following" }]}
+                />
               )}
             </SidebarMenu>
           </SidebarGroup>

@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { AppSidebar } from "@/components/AppSidebar/AppSidebar";
+import { PublicationSidebarProvider } from "@/contexts/PublicationSidebarContext";
 import { ReadRouteProvider } from "@/contexts/ReadRouteContext";
 import { useAuth } from "@/hooks/useAuth";
 import {
@@ -36,6 +37,7 @@ export default function MeLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <SidebarProvider className="h-[calc(100svh-var(--environment-banner-height,0px))] min-h-[calc(100svh-var(--environment-banner-height,0px))] max-h-[calc(100svh-var(--environment-banner-height,0px))] overflow-hidden overscroll-none">
+      <PublicationSidebarProvider>
       <ReadRouteProvider>
         <AppSidebar selectedPubId={null} onSelectPub={(pubId) => router.push(`/read/${encodeURIComponent(pubId)}`)} />
         <SidebarInset className="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -47,6 +49,7 @@ export default function MeLayout({ children }: { children: React.ReactNode }) {
           <main className="flex min-h-0 flex-1 overflow-hidden">{children}</main>
         </SidebarInset>
       </ReadRouteProvider>
+      </PublicationSidebarProvider>
     </SidebarProvider>
   );
 }

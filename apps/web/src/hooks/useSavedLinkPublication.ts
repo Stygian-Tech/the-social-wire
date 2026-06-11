@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 
-import { usePublicationSidebarData } from "@/hooks/usePublicationSidebarData";
+import { useSidebarProjection } from "@/contexts/PublicationSidebarContext";
 import type { MergedLatrSave } from "@/lib/pdsClient";
 import { sidebarPublicationRows } from "@/lib/publicationProjectionClient";
 import {
@@ -13,7 +13,7 @@ import {
 export function useSavedLinkPublication(
   row: MergedLatrSave | null
 ): SavedLinkPublication | null {
-  const { publicationSidebarProjection } = usePublicationSidebarData();
+  const { publicationSidebarProjection } = useSidebarProjection();
 
   return useMemo(() => {
     if (!row) return null;

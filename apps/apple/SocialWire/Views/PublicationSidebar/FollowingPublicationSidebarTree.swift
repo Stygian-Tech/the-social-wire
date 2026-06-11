@@ -7,11 +7,12 @@ struct FollowingPublicationSidebarTree: View {
 
     var body: some View {
         @Bindable var model = appModel
+        let tree = appModel.sidebarTreeViewModel
 
         Section(isExpanded: $model.sidebarPublicationsSectionExpanded) {
             if appModel.followingTabPublications.isEmpty,
-               appModel.sidebarFetching,
-               !appModel.hasSidebarSnapshot
+               tree.loadingFlags.sidebarFetching,
+               !tree.loadingFlags.hasSidebarSnapshot
             {
                 ForEach(0 ..< 4, id: \.self) { _ in
                     SidebarSkeletonRow()
@@ -24,7 +25,7 @@ struct FollowingPublicationSidebarTree: View {
         } header: {
             SidebarSectionLabel(
                 title: "Publications",
-                unreadCount: appModel.followingSectionUnreadCount
+                unreadCount: tree.followingSectionUnread
             )
         }
         .onChange(of: model.sidebarPublicationsSectionExpanded) { _, _ in
@@ -39,7 +40,7 @@ struct FollowingPublicationSidebarTree: View {
         } label: {
             PublicationSidebarRow(
                 publication: publication,
-                unreadCount: appModel.unreadCachedBadge(for: publication)
+                unreadCount: tree.unreadCount(for: publication)
             )
             .readerFullWidthTapLabel()
         }

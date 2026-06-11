@@ -5,7 +5,7 @@ import {
   fetchEntriesInfinitePage,
   type EntriesPage,
 } from "@/hooks/useEntries";
-import { PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY } from "@/hooks/usePublicationSidebarData";
+import { PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY } from "@/lib/sidebarQueryKeys";
 import { applyUnreadCountsEvent } from "@/lib/bootstrapStreamState";
 import type { ArticleListFilter } from "@/lib/entryArticleFilter";
 import { normalizeAtRepoParam } from "@/lib/atprotoClient";

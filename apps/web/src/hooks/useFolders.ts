@@ -13,7 +13,7 @@ import { migrateStoredSidebarFolderExpandKey } from "@/lib/sidebarExpandedKeysSt
 import type { PublicationSidebarProjection } from "@/lib/publicationProjectionClient";
 import { useAuth } from "./useAuth";
 import { usePDSClient } from "./usePDSClient";
-import { PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY } from "./usePublicationSidebarData";
+import { PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY } from "@/lib/sidebarQueryKeys";
 
 export const FOLDERS_QUERY_KEY = ["folders"] as const;
 

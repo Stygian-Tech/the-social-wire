@@ -7,13 +7,16 @@ import { AddPublicationDialog } from "@/components/AppSidebar/AddPublicationDial
 import { Avatar } from "@/components/shared/Avatar";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { usePublicationSidebarData } from "@/hooks/usePublicationSidebarData";
+import {
+  useSidebarBootstrap,
+  useSidebarProjection,
+} from "@/contexts/PublicationSidebarContext";
 import { cn } from "@/lib/utils";
 
 export default function MyPublicationsPage() {
   const router = useRouter();
-  const { myPublications, sidebarListsLoading, refresh } =
-    usePublicationSidebarData();
+  const { myPublications } = useSidebarProjection();
+  const { sidebarListsLoading, refresh } = useSidebarBootstrap();
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto overscroll-y-contain p-4 md:p-6">

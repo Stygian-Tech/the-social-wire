@@ -110,6 +110,17 @@ export function sumUnreadForPublications(
   return sum;
 }
 
+/** True when the entry (or any row) is present in the TanStack entries cache. */
+export function publicationEntryIsCached(
+  queryClient: QueryClient,
+  publicationId: string,
+  entryId: string
+): boolean {
+  return getCachedEntriesForPublication(queryClient, publicationId).some(
+    (entry) => entry.entryId === entryId
+  );
+}
+
 /** Cached entry rows for a publication (any article-list filter variant). */
 export function getCachedEntriesForPublication(
   queryClient: QueryClient,

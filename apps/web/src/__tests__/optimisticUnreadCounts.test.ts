@@ -41,15 +41,12 @@ function makeProjection(unreadCount: number): PublicationSidebarProjection {
 }
 
 describe("applyPublicationUnreadCountDelta", () => {
-  it("decrements embedded sidebar and appview unread counts", () => {
+  it("decrements embedded sidebar projection unread counts", () => {
     const queryClient = new QueryClient();
     queryClient.setQueryData(
       PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(viewerDid),
       makeProjection(3)
     );
-    queryClient.setQueryData(["appviewUnreadCounts", viewerDid, ""], {
-      [publicationId]: 3,
-    });
 
     applyPublicationUnreadCountDelta(queryClient, viewerDid, publicationId, -1);
 
@@ -58,13 +55,6 @@ describe("applyPublicationUnreadCountDelta", () => {
     );
     expect(projection?.allPublicationRows[0]?.unreadCount).toBe(2);
     expect(projection?.unreadCountsByPublicationId?.[publicationId]).toBe(2);
-
-    const appview = queryClient.getQueryData<Record<string, number>>([
-      "appviewUnreadCounts",
-      viewerDid,
-      "",
-    ]);
-    expect(appview?.[publicationId]).toBe(2);
   });
 
   it("updates unread counts across folder section rows", () => {

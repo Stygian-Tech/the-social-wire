@@ -32,6 +32,35 @@ struct PublicationUnreadCountLookupTests {
     }
 }
 
+@MainActor
+@Suite("SidebarUnreadController")
+struct SidebarUnreadControllerTests {
+    @Test("displayCount memoizes until read revision bumps")
+    func displayCountMemoizes() {
+        let controller = SidebarUnreadController()
+        controller.unreadCountsByPublicationId = ["pub-a": 2]
+        let first = controller.displayCount(
+            publicationId: "pub-a",
+            readAtByEntryId: [:],
+            coordinator: nil
+        )
+        let second = controller.displayCount(
+            publicationId: "pub-a",
+            readAtByEntryId: [:],
+            coordinator: nil
+        )
+        #expect(first == 2)
+        #expect(second == 2)
+        controller.bumpReadRevision()
+        let third = controller.displayCount(
+            publicationId: "pub-a",
+            readAtByEntryId: ["entry-1": Date()],
+            coordinator: nil
+        )
+        #expect(third == 2)
+    }
+}
+
 @Suite("EffectiveUnreadCount")
 struct EffectiveUnreadCountTests {
     @Test("reconciles server count with cached read rows")

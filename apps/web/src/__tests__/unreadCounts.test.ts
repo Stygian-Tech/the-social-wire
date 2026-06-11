@@ -9,6 +9,7 @@ import {
   distinctCachedEntryIdsForPublications,
   effectivePublicationUnreadCount,
   flattenCachedInfiniteEntries,
+  publicationEntryIsCached,
   sumUnreadForPublications,
 } from "@/lib/unreadCounts";
 
@@ -193,6 +194,26 @@ describe("effectivePublicationUnreadCount", () => {
         capRaiseToServerCount: true,
       })
     ).toBe(4);
+  });
+
+  it("detects when an entry is present in the entries cache", () => {
+    const publicationId =
+      "at://did:plc:author/site.standard.publication/main";
+    const entryId = "at://did:plc:author/site.standard.document/abc";
+    const queryClient = mockQueryClientWithEntries(publicationId, [
+      makeEntry(entryId),
+    ]);
+
+    expect(
+      publicationEntryIsCached(queryClient, publicationId, entryId)
+    ).toBe(true);
+    expect(
+      publicationEntryIsCached(
+        queryClient,
+        publicationId,
+        "at://did:plc:author/site.standard.document/other"
+      )
+    ).toBe(false);
   });
 });
 

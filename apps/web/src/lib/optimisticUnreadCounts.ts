@@ -1,6 +1,6 @@
 import type { QueryClient } from "@tanstack/react-query";
 
-import { PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY } from "@/hooks/usePublicationSidebarData";
+import { PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY } from "@/lib/sidebarQueryKeys";
 import {
   normalizeAtRepoParam,
   type DiscoveredPublication,
@@ -110,25 +110,6 @@ export function applyPublicationUnreadCountDelta(
 ): void {
   if (!viewerDid || !publicationId || delta === 0) return;
   const normalizedPublicationId = normalizeAtRepoParam(publicationId);
-
-  queryClient.setQueriesData<Record<string, number>>(
-    { queryKey: ["appviewUnreadCounts", viewerDid] },
-    (old) => {
-      if (!old) return old;
-      const next = { ...old };
-      const existingKey = Object.keys(next).find((key) =>
-        publicationIdsMatch(key, normalizedPublicationId)
-      );
-      const updated = applyDeltaToCount(
-        existingKey ? next[existingKey] : undefined,
-        delta
-      );
-      if (existingKey) delete next[existingKey];
-      if (updated === 0) return next;
-      next[normalizedPublicationId] = updated;
-      return next;
-    }
-  );
 
   queryClient.setQueryData<PublicationSidebarProjection>(
     PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(viewerDid),

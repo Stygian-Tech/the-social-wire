@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 import { AppSidebar } from "@/components/AppSidebar/AppSidebar";
+import { PublicationSidebarProvider } from "@/contexts/PublicationSidebarContext";
 import { ReadRouteProvider } from "@/contexts/ReadRouteContext";
 import { ReadSidebarScopeProvider } from "@/contexts/ReadSidebarScopeContext";
 import {
@@ -63,6 +64,7 @@ export default function ReadLayout({ children }: { children: React.ReactNode }) 
 
   return (
     <SidebarProvider className="h-[calc(100svh-var(--environment-banner-height,0px))] min-h-[calc(100svh-var(--environment-banner-height,0px))] max-h-[calc(100svh-var(--environment-banner-height,0px))] overflow-hidden overscroll-none">
+      <PublicationSidebarProvider>
       <ReadRouteProvider>
         <ReadSidebarScopeProvider>
           <ClosePublicationsSheetOnMobilePubRoute selectedPubId={selectedPubId} />
@@ -80,6 +82,7 @@ export default function ReadLayout({ children }: { children: React.ReactNode }) 
           </SidebarInset>
         </ReadSidebarScopeProvider>
       </ReadRouteProvider>
+      </PublicationSidebarProvider>
     </SidebarProvider>
   );
 }

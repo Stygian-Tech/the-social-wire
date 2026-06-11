@@ -1,13 +1,13 @@
 "use client";
 
 import { useEffect } from "react";
+import { useSidebarBootstrap } from "@/contexts/PublicationSidebarContext";
 import { useReadRoute } from "@/contexts/ReadRouteContext";
-import { usePublicationSidebarData } from "@/hooks/usePublicationSidebarData";
 
 /** Pull PDS read markers and AppView unread baselines when the tab becomes visible again. */
 export function useCrossClientReadSync() {
   const { syncReadStateFromPDS } = useReadRoute();
-  const { refreshUnreadCountsFromAppView } = usePublicationSidebarData();
+  const { refreshUnreadCountsFromAppView } = useSidebarBootstrap();
 
   useEffect(() => {
     if (typeof document === "undefined") return;

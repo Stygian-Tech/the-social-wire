@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { memo, useCallback, useMemo, useState } from "react";
 import {
   BookmarkPlus,
   BookmarkX,
@@ -77,7 +77,7 @@ interface PublicationSubItemProps {
   sidebarTab: PublicationSidebarTab;
 }
 
-export function PublicationSubItem({
+function PublicationSubItemInner({
   publication,
   unreadCount,
   isSelected,
@@ -421,6 +421,8 @@ export function PublicationSubItem({
     </SidebarMenuSubItem>
   );
 }
+
+export const PublicationSubItem = memo(PublicationSubItemInner);
 
 function PublicationLeadingAvatar({
   publication,

@@ -173,6 +173,16 @@ enum PublicationUnreadCountLookup {
         }
     }
 
+    static func cacheKeys(for publicationId: String) -> [String] {
+        var keys = Set<String>()
+        keys.insert(publicationId)
+        keys.insert(normalizeATRepoParam(publicationId))
+        if let canonical = canonicalPublicationAtUriKey(publicationId) {
+            keys.insert(canonical)
+        }
+        return Array(keys)
+    }
+
     @MainActor
     static func distinctCachedEntryIds(
         coordinator: ReaderCacheCoordinator?,
@@ -181,10 +191,8 @@ enum PublicationUnreadCountLookup {
         guard let coordinator else { return [] }
         var cacheKeys = Set<String>()
         for publicationId in publicationIds {
-            cacheKeys.insert(publicationId)
-            cacheKeys.insert(normalizeATRepoParam(publicationId))
-            if let canonical = canonicalPublicationAtUriKey(publicationId) {
-                cacheKeys.insert(canonical)
+            for key in cacheKeys(for: publicationId) {
+                cacheKeys.insert(key)
             }
         }
         return coordinator.distinctCachedEntryIds(publicationIds: Array(cacheKeys))
