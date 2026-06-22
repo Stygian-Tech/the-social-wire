@@ -142,26 +142,10 @@ public struct ThinAppViewRssIngestion: Sendable {
   }
 
   private func htmlBody(from item: ParsedRssItem) -> String {
-    if let html = item.contentHTML?.trimmingCharacters(in: .whitespacesAndNewlines), !html.isEmpty {
-      return html
-    }
-    if let snippet = item.summary?.trimmingCharacters(in: .whitespacesAndNewlines), !snippet.isEmpty {
-      if looksLikeHTML(snippet) { return snippet }
-      return "<p>\(escapeHtml(snippet))</p>"
-    }
-    return "<p></p>"
-  }
-
-  private func looksLikeHTML(_ text: String) -> Bool {
-    text.range(of: #"<[a-zA-Z][^>]*>"#, options: .regularExpression) != nil
-  }
-
-  private func escapeHtml(_ text: String) -> String {
-    text
-      .replacingOccurrences(of: "&", with: "&amp;")
-      .replacingOccurrences(of: "<", with: "&lt;")
-      .replacingOccurrences(of: ">", with: "&gt;")
-      .replacingOccurrences(of: "\"", with: "&quot;")
+    RssHtmlBodyFormatter.htmlBody(
+      contentHTML: item.contentHTML,
+      summary: item.summary
+    )
   }
 
   private func cleanupDuplicatePublicationSiteRows(normalizedFeedUrl: String) async throws {

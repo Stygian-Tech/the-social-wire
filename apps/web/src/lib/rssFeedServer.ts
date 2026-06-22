@@ -228,14 +228,42 @@ function escapeHtmlText(s: string): string {
     .replace(/"/g, "&quot;");
 }
 
+function looksLikeHtml(s: string): boolean {
+  return /<[a-zA-Z][^>]*>/.test(s);
+}
+
+export function plainTextRssBodyToHtml(text: string): string {
+  const normalized = text
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .trim();
+  if (!normalized) return "<p></p>";
+
+  return normalized
+    .split(/\n{2,}/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean)
+    .map((paragraph) => {
+      const lines = paragraph
+        .split(/\n/)
+        .map((line) => escapeHtmlText(line.trim()))
+        .filter(Boolean);
+      return lines.length > 0 ? `<p>${lines.join("<br />")}</p>` : "";
+    })
+    .filter(Boolean)
+    .join("");
+}
+
 function htmlBodyFromItem(item: RssParserItemFields): string {
   const raw =
     (item as { contentEncoded?: string }).contentEncoded?.trim() ||
     item.content?.trim() ||
     "";
-  if (raw) return raw;
+  if (raw) return looksLikeHtml(raw) ? raw : plainTextRssBodyToHtml(raw);
   const snippet = item.contentSnippet?.trim() || "";
-  if (snippet) return `<p>${escapeHtmlText(snippet)}</p>`;
+  if (snippet) {
+    return looksLikeHtml(snippet) ? snippet : plainTextRssBodyToHtml(snippet);
+  }
   return "<p></p>";
 }
 

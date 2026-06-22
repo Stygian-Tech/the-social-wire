@@ -2,6 +2,7 @@ import { describe, it, expect } from "bun:test";
 import {
   feedBrandingFromParsed,
   parseRssFeedXml,
+  plainTextRssBodyToHtml,
   rssItemsSortedNewestFirst,
   rssParserItemToDetail,
   rssParserItemToListItem,
@@ -80,5 +81,11 @@ describe("rssFeedServer", () => {
     expect(detail.contentHtml).toContain("Full publisher article body.");
     expect(detail.contentHtml).not.toContain("Short summary only.");
     expect(detail.embedUrl).toBe("https://example.com/full-post");
+  });
+
+  it("formats plain RSS bodies into readable paragraphs", () => {
+    expect(
+      plainTextRssBodyToHtml("First line\nsecond line\n\nSecond paragraph")
+    ).toBe("<p>First line<br />second line</p><p>Second paragraph</p>");
   });
 });
