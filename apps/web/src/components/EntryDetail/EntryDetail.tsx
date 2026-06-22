@@ -109,14 +109,14 @@ export function EntryDetail({ entryId }: EntryDetailProps) {
           </p>
         ) : (
           <div
-            className="prose prose-sm dark:prose-invert max-w-none"
+            className="prose prose-sm dark:prose-invert flow-root max-w-none [&_img]:h-auto [&_img]:max-w-full"
             // Safe: content is sanitized before rendering.
             dangerouslySetInnerHTML={{ __html: safeHTML }}
           />
         )}
       </div>
 
-      <div className="order-2 shrink-0 md:order-1">
+      <div className="relative z-10 order-2 clear-both shrink-0 bg-background/95 md:order-1 md:bg-transparent">
         <div className="mb-1 flex flex-wrap items-center gap-2">
           <DevRecordKindBadge info={recordKindFromEntryId(entry.entryId)} />
         </div>
