@@ -8,15 +8,24 @@ export function isPocketReaderHostname(hostname: string): boolean {
     h === "getpocket.com" ||
     h.endsWith(".getpocket.com") ||
     h === "readitlaterlist.com" ||
-    h.endsWith(".pocket.com") ||
-    h === "pckt.it" ||
-    h === "pkt.cool"
+    h.endsWith(".pocket.com")
+  );
+}
+
+function isPocketReaderWrapperUrl(url: URL): boolean {
+  if (!isPocketReaderHostname(url.hostname)) return false;
+  const path = url.pathname.toLowerCase();
+  return (
+    path === "/read" ||
+    path.startsWith("/read/") ||
+    path === "/saved" ||
+    path.startsWith("/saved/")
   );
 }
 
 export function isPoorIframeEmbedTarget(rawUrl: string): boolean {
   try {
-    return isPocketReaderHostname(new URL(rawUrl.trim()).hostname);
+    return isPocketReaderWrapperUrl(new URL(rawUrl.trim()));
   } catch {
     return false;
   }

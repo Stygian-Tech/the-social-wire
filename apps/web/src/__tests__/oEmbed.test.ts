@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
 import {
+  extractStandardSiteArticleAtUriFromHtml,
   extractOEmbedEndpointFromHtml,
   isUsableOEmbedResponse,
   isVideoEmbedIframeSrc,
@@ -20,6 +21,26 @@ describe("oEmbed helpers", () => {
     expect(extractOEmbedEndpointFromHtml(html)).toBe(
       "https://publish.example/oembed?format=json"
     );
+  });
+
+  it("extracts standard.site article AT URI from head metadata", () => {
+    const html = `
+      <html><head>
+        <meta name="at-uri" content="at://did:plc:author/site.standard.document/post123" />
+      </head><body>
+        <meta name="at-uri" content="at://did:plc:wrong/site.standard.document/body" />
+      </body></html>`;
+    expect(extractStandardSiteArticleAtUriFromHtml(html)).toBe(
+      "at://did:plc:author/site.standard.document/post123"
+    );
+  });
+
+  it("ignores non-standard.site AT URI head metadata", () => {
+    const html = `
+      <html><head>
+        <meta name="at-uri" content="at://did:plc:author/app.bsky.feed.post/post123" />
+      </head></html>`;
+    expect(extractStandardSiteArticleAtUriFromHtml(html)).toBe(null);
   });
 
   it("builds WordPress oEmbed endpoint from origin", () => {

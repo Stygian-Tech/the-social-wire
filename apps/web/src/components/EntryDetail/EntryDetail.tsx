@@ -99,6 +99,7 @@ export function EntryDetail({ entryId }: EntryDetailProps) {
               url={entry.embedUrl!}
               title={entry.title}
               className="min-h-0 flex-1"
+              expectedAtUri={entry.entryId}
               fallbackContent={
                 safeHTML.trim() ? (
                   <div
@@ -112,17 +113,19 @@ export function EntryDetail({ entryId }: EntryDetailProps) {
           </div>
         ) : null}
 
-        {!showEmbed && !safeHTML.trim() ? (
-          <p className="text-sm text-muted-foreground">
-            No embed URL or HTML body is available for this entry.
-          </p>
-        ) : (
-          <div
-            className="prose prose-sm dark:prose-invert flow-root max-w-none [&_img]:h-auto [&_img]:max-w-full"
-            // Safe: content is sanitized before rendering.
-            dangerouslySetInnerHTML={{ __html: safeHTML }}
-          />
-        )}
+        {!showEmbed ? (
+          !safeHTML.trim() ? (
+            <p className="text-sm text-muted-foreground">
+              No embed URL or HTML body is available for this entry.
+            </p>
+          ) : (
+            <div
+              className="prose prose-sm dark:prose-invert flow-root max-w-none [&_img]:h-auto [&_img]:max-w-full"
+              // Safe: content is sanitized before rendering.
+              dangerouslySetInnerHTML={{ __html: safeHTML }}
+            />
+          )
+        ) : null}
       </div>
 
       <div className="relative z-10 order-2 clear-both shrink-0 bg-background/95 md:sticky md:top-[52px] md:z-20 md:order-1 md:-mx-6 md:border-b md:bg-background/95 md:px-6 md:pt-3 md:backdrop-blur-md lg:-mx-8 lg:px-8">

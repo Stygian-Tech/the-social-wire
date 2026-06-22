@@ -1,8 +1,13 @@
 import type { OEmbedResponse } from "@/lib/oEmbed";
 
 export type CachedOEmbedLookup =
-  | { status: "hit"; oembed: OEmbedResponse; canonicalUrl: string }
-  | { status: "miss" };
+  | {
+      status: "hit";
+      oembed: OEmbedResponse;
+      canonicalUrl: string;
+      pageAtUri?: string;
+    }
+  | { status: "miss"; pageAtUri?: string };
 
 const oEmbedCache = new Map<string, CachedOEmbedLookup>();
 

@@ -7,13 +7,20 @@ import {
 import type { MergedLatrSave } from "@/lib/pdsClient";
 
 describe("savedLinkEmbedUrl", () => {
-  it("detects Pocket reader hosts", () => {
+  it("only treats actual Pocket reader wrappers as poor iframe targets", () => {
     expect(isPocketReaderHostname("getpocket.com")).toBe(true);
     expect(isPocketReaderHostname("app.getpocket.com")).toBe(true);
-    expect(isPocketReaderHostname("pckt.it")).toBe(true);
+    expect(isPocketReaderHostname("pckt.it")).toBe(false);
     expect(isPoorIframeEmbedTarget("https://getpocket.com/read/123456")).toBe(
       true
     );
+    expect(isPoorIframeEmbedTarget("https://example.leaflet.pub/post")).toBe(
+      false
+    );
+    expect(isPoorIframeEmbedTarget("https://notes.offprint.app/a/hello")).toBe(
+      false
+    );
+    expect(isPoorIframeEmbedTarget("https://pckt.it/article")).toBe(false);
     expect(isPoorIframeEmbedTarget("https://example.com/article")).toBe(false);
   });
 

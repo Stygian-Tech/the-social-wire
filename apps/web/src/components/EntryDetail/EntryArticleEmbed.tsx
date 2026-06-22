@@ -25,6 +25,7 @@ interface EntryArticleEmbedProps {
   title: string;
   className?: string;
   fallbackContent?: ReactNode;
+  expectedAtUri?: string;
 }
 
 function EmbedUnavailableMessage({
@@ -86,6 +87,7 @@ function EntryArticleEmbedInner({
   title,
   className,
   fallbackContent,
+  expectedAtUri,
   pageUrl,
 }: Omit<EntryArticleEmbedProps, "url"> & { pageUrl: string }) {
   const cachedOEmbed = getCachedOEmbed(pageUrl);
@@ -96,6 +98,7 @@ function EntryArticleEmbedInner({
   const [oembedPayload, setOembedPayload] = useState(
     () => (cachedOEmbed?.status === "hit" ? cachedOEmbed.oembed : null)
   );
+  const [pageAtUri, setPageAtUri] = useState(cachedOEmbed?.pageAtUri);
 
   const oembedGeneration = useRef(0);
 
@@ -110,8 +113,10 @@ function EntryArticleEmbedInner({
       if (gen !== oembedGeneration.current || ac.signal.aborted) return;
       if (result.ok) {
         setOembedPayload(result.oembed);
+        setPageAtUri(result.pageAtUri);
         setOembedPhase("hit");
       } else {
+        setPageAtUri(result.pageAtUri);
         setOembedPhase("miss");
       }
     })();
@@ -153,6 +158,8 @@ function EntryArticleEmbedInner({
       className={className}
       iframeSrc={pageUrl}
       fallbackContent={fallbackContent}
+      expectedAtUri={expectedAtUri}
+      pageAtUri={pageAtUri}
     />
   );
 }
@@ -162,11 +169,15 @@ function IframeArticleEmbed({
   className,
   iframeSrc,
   fallbackContent,
+  expectedAtUri,
+  pageAtUri,
 }: {
   title: string;
   className?: string;
   iframeSrc: string;
   fallbackContent?: ReactNode;
+  expectedAtUri?: string;
+  pageAtUri?: string;
 }) {
   const cachedFrameable = getCachedEmbedProbeFrameable(iframeSrc);
   const [loaded, setLoaded] = useState(false);
@@ -245,6 +256,13 @@ function IframeArticleEmbed({
     !failed &&
     !unstableEmbed &&
     (probeBlocksEmbed === null || showIframe);
+  const normalizedExpectedAtUri = expectedAtUri?.trim();
+  const normalizedPageAtUri = pageAtUri?.trim();
+  const verifiedFallbackContent =
+    !normalizedExpectedAtUri ||
+    normalizedExpectedAtUri === normalizedPageAtUri
+      ? fallbackContent
+      : undefined;
 
   return (
     <div
@@ -263,21 +281,21 @@ function IframeArticleEmbed({
           href={iframeSrc}
           message="This site blocks embedding."
           linkLabel="Open"
-          fallbackContent={fallbackContent}
+          fallbackContent={verifiedFallbackContent}
         />
       ) : unstableEmbed ? (
         <EmbedUnavailableMessage
           href={iframeSrc}
           message="This page keeps reloading when embedded. Open it in a new tab to read."
           linkLabel="Open in New Tab"
-          fallbackContent={fallbackContent}
+          fallbackContent={verifiedFallbackContent}
         />
       ) : failed ? (
         <EmbedUnavailableMessage
           href={iframeSrc}
           message="This page cannot be embedded. Open it in a new tab or read the saved content below."
           linkLabel="Open in New Tab"
-          fallbackContent={fallbackContent}
+          fallbackContent={verifiedFallbackContent}
         />
       ) : showIframe ? (
         <iframe

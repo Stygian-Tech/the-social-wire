@@ -20,11 +20,21 @@ export type OEmbedResponse = {
 };
 
 export type OEmbedLookupResult =
-  | { ok: true; oembed: OEmbedResponse; canonicalUrl: string }
-  | { ok: false; reason: "invalid" | "not_found" | "unusable" | "fetch_failed" };
+  | { ok: true; oembed: OEmbedResponse; canonicalUrl: string; pageAtUri?: string }
+  | {
+      ok: false;
+      reason: "invalid" | "not_found" | "unusable" | "fetch_failed";
+      pageAtUri?: string;
+    };
 
 const OEMBED_LINK_RE =
   /<link\b[^>]*\btype=["']application\/json\+oembed["'][^>]*>/gi;
+const HEAD_RE = /<head\b[^>]*>([\s\S]*?)<\/head>/i;
+const HEAD_AT_URI_TAG_RE = /<(?:meta|link)\b[^>]*>/gi;
+const STANDARD_SITE_ARTICLE_COLLECTIONS = new Set([
+  "site.standard.document",
+  "site.standard.entry",
+]);
 
 function readLinkAttr(tag: string, name: string): string | null {
   const re = new RegExp(`\\b${name}\\s*=\\s*(["'])([^"']*)\\1`, "i");
@@ -46,6 +56,59 @@ export function extractOEmbedEndpointFromHtml(html: string): string | null {
     } catch {
       continue;
     }
+  }
+  return null;
+}
+
+function headHtml(html: string): string {
+  const m = html.match(HEAD_RE);
+  return m?.[1] ?? html.slice(0, 64_000);
+}
+
+function standardSiteArticleAtUri(value: string | null): string | null {
+  if (!value) return null;
+  const decoded = value.trim();
+  const m = decoded.match(
+    /^at:\/\/([^/\s"'<>]+)\/([^/\s"'<>]+)\/([^/\s"'<>?#]+)$/i
+  );
+  if (!m) return null;
+  const collection = m[2];
+  if (!STANDARD_SITE_ARTICLE_COLLECTIONS.has(collection)) return null;
+  return `at://${m[1]}/${collection}/${m[3]}`;
+}
+
+function tagNamesStandardSiteAtUri(tag: string): boolean {
+  for (const attr of ["name", "property", "itemprop", "rel"]) {
+    const value = readLinkAttr(tag, attr)?.toLowerCase();
+    if (!value) continue;
+    if (
+      value === "at-uri" ||
+      value === "at:uri" ||
+      value === "atproto:uri" ||
+      value === "atproto-uri" ||
+      value === "standard-site-at-uri" ||
+      value === "standard.site.at-uri"
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** Extracts the standard.site article AT URI advertised by publisher `<head>` metadata. */
+export function extractStandardSiteArticleAtUriFromHtml(
+  html: string
+): string | null {
+  const head = headHtml(html);
+  HEAD_AT_URI_TAG_RE.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = HEAD_AT_URI_TAG_RE.exec(head)) !== null) {
+    const tag = m[0];
+    if (!tagNamesStandardSiteAtUri(tag)) continue;
+    const atUri =
+      standardSiteArticleAtUri(readLinkAttr(tag, "content")) ??
+      standardSiteArticleAtUri(readLinkAttr(tag, "href"));
+    if (atUri) return atUri;
   }
   return null;
 }

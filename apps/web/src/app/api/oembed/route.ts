@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 
 import { validateHttpsEmbedProbeTarget } from "@/lib/embedFramePolicy";
 import {
+  extractStandardSiteArticleAtUriFromHtml,
   extractOEmbedEndpointFromHtml,
   isUsableOEmbedResponse,
   oEmbedRequestUrl,
@@ -56,9 +57,15 @@ async function fetchOEmbedFromEndpoint(
   }
 }
 
-async function resolveOEmbed(pageHref: string): Promise<OEmbedResponse | null> {
+async function resolveOEmbed(pageHref: string): Promise<{
+  oembed: OEmbedResponse | null;
+  pageAtUri?: string;
+}> {
   const html = await fetchPageHtml(pageHref);
   const endpoints: string[] = [];
+  const pageAtUri = html
+    ? extractStandardSiteArticleAtUriFromHtml(html) ?? undefined
+    : undefined;
 
   if (html) {
     const discovered = extractOEmbedEndpointFromHtml(html);
@@ -77,11 +84,11 @@ async function resolveOEmbed(pageHref: string): Promise<OEmbedResponse | null> {
     seen.add(endpoint);
     const oembed = await fetchOEmbedFromEndpoint(endpoint, pageHref);
     if (oembed && isUsableOEmbedResponse(oembed)) {
-      return oembed;
+      return { oembed, pageAtUri };
     }
   }
 
-  return null;
+  return { oembed: null, pageAtUri };
 }
 
 export async function GET(req: NextRequest) {
@@ -103,14 +110,15 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const oembed = await resolveOEmbed(validated.url.href);
+    const { oembed, pageAtUri } = await resolveOEmbed(validated.url.href);
     if (!oembed) {
-      return NextResponse.json({ ok: false, reason: "not_found" });
+      return NextResponse.json({ ok: false, reason: "not_found", pageAtUri });
     }
     return NextResponse.json({
       ok: true,
       oembed,
       canonicalUrl: validated.url.href,
+      pageAtUri,
     });
   } catch {
     return NextResponse.json({ ok: false, reason: "fetch_failed" });

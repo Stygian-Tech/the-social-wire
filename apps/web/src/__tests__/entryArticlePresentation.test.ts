@@ -35,6 +35,28 @@ describe("entryArticlePresentation", () => {
     ).toBe("embed");
   });
 
+  it("does not treat CMS-looking hosts as an inline-content shortcut", () => {
+    const long = `<p>${"word ".repeat(80)}</p>`;
+    expect(
+      resolveEntryArticlePresentation({
+        contentHtml: long,
+        originalUrl: "https://pckt.it/article",
+      })
+    ).toBe("embed");
+    expect(
+      resolveEntryArticlePresentation({
+        contentHtml: long,
+        originalUrl: "https://example.leaflet.pub/post",
+      })
+    ).toBe("embed");
+    expect(
+      resolveEntryArticlePresentation({
+        contentHtml: long,
+        originalUrl: "https://notes.offprint.app/a/post",
+      })
+    ).toBe("embed");
+  });
+
   it("uses substantial record HTML when no live-site URL is available", () => {
     const long = `<p>${"word ".repeat(80)}</p>`;
     expect(
