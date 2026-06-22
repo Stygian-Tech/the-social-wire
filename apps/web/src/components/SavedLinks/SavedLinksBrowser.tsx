@@ -363,8 +363,7 @@ export function SavedLinksBrowser({ mode }: SavedLinksBrowserProps) {
         className={cn(
           "flex min-h-0 min-w-0 flex-1 flex-col md:h-full md:overflow-hidden",
           !resolvedSelectedRowId && "hidden md:flex",
-          resolvedSelectedRowId &&
-            "overflow-x-hidden overflow-y-auto overscroll-y-contain md:overflow-hidden"
+          resolvedSelectedRowId && "overflow-hidden"
         )}
       >
         {selectedRow ? (
@@ -451,56 +450,56 @@ export function SavedLinksBrowser({ mode }: SavedLinksBrowserProps) {
                   </Button>
                 </div>
               </div>
-              <SavedLinkSocialToolbar
-                row={selectedRow}
-                className="mt-1 px-2 md:px-0"
-                extraActions={
-                  <>
-                    {isArchivedView ? (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="h-11 min-h-[44px] justify-center gap-1.5 px-2 md:hidden"
-                        onClick={() => handleUnarchive(selectedRow)}
-                        title="Unarchive Read Later Item"
-                        aria-label="Unarchive Read Later Item"
-                      >
-                        <ArchiveRestore className="size-5 shrink-0" />
-                        <span className="sr-only">Unarchive</span>
-                      </Button>
-                    ) : (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="h-11 min-h-[44px] justify-center gap-1.5 px-2 md:hidden"
-                        onClick={() => handleArchive(selectedRow)}
-                        title="Archive Read Later Item"
-                        aria-label="Archive Read Later Item"
-                      >
-                        <Archive className="size-5 shrink-0" />
-                        <span className="sr-only">Archive</span>
-                      </Button>
-                    )}
+            </div>
+            <SavedLinkSocialToolbar
+              row={selectedRow}
+              className="mt-1 px-2 md:px-4"
+              extraActions={
+                <>
+                  {isArchivedView ? (
                     <Button
                       type="button"
-                      variant="destructive"
+                      variant="outline"
                       size="sm"
                       className="h-11 min-h-[44px] justify-center gap-1.5 px-2 md:hidden"
-                      onClick={() => handleDelete(selectedRow)}
-                      title="Remove from Read Later"
-                      aria-label="Remove from Read Later"
+                      onClick={() => handleUnarchive(selectedRow)}
+                      title="Unarchive Read Later Item"
+                      aria-label="Unarchive Read Later Item"
                     >
-                      <Trash2 className="size-5 shrink-0" />
-                      <span className="sr-only">Delete</span>
+                      <ArchiveRestore className="size-5 shrink-0" />
+                      <span className="sr-only">Unarchive</span>
                     </Button>
-                  </>
-                }
-              />
-            </div>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-11 min-h-[44px] justify-center gap-1.5 px-2 md:hidden"
+                      onClick={() => handleArchive(selectedRow)}
+                      title="Archive Read Later Item"
+                      aria-label="Archive Read Later Item"
+                    >
+                      <Archive className="size-5 shrink-0" />
+                      <span className="sr-only">Archive</span>
+                    </Button>
+                  )}
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    size="sm"
+                    className="h-11 min-h-[44px] justify-center gap-1.5 px-2 md:hidden"
+                    onClick={() => handleDelete(selectedRow)}
+                    title="Remove from Read Later"
+                    aria-label="Remove from Read Later"
+                  >
+                    <Trash2 className="size-5 shrink-0" />
+                    <span className="sr-only">Delete</span>
+                  </Button>
+                </>
+              }
+            />
 
-            <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-3 py-2 pb-[calc(env(safe-area-inset-bottom)+5.75rem)] sm:px-4 md:pb-2">
+            <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden overscroll-y-contain px-3 py-2 pb-[calc(env(safe-area-inset-bottom)+5.75rem)] sm:px-4 md:pb-2">
               {selectedIframeSrc ? (
                 <EntryArticleEmbed
                   url={selectedIframeSrc}
