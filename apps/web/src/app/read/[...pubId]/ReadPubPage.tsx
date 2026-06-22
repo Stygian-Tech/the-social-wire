@@ -89,9 +89,9 @@ export default function ReadPubPage({ pubId }: { pubId: string }) {
         storageKey={READER_LIST_COLUMN_WIDTH_KEY}
         hiddenOnMobile={Boolean(selectedEntryId)}
       >
-        <div className="shrink-0 border-b px-3 py-2">
+        <div className="shrink-0 border-b bg-background/75 px-3 py-2 backdrop-blur-md">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            <p className="text-[11px] font-bold uppercase tracking-wide text-[var(--purple-foreground)]">
               Articles
             </p>
             <DevRecordKindBadge info={publicationKind} />
@@ -120,18 +120,18 @@ export default function ReadPubPage({ pubId }: { pubId: string }) {
       >
         {selectedEntryId ? (
           <>
-            <div className="bg-background sticky top-0 z-10 flex min-h-[44px] shrink-0 items-center gap-2 border-b px-1 py-0 md:hidden">
+            <div className="sticky top-0 z-10 flex min-h-[52px] shrink-0 items-center gap-2 border-b bg-background/90 px-1.5 py-1 backdrop-blur-md md:hidden">
               <Button
                 type="button"
                 variant="ghost"
                 size="icon-sm"
-                className="size-11 shrink-0 rounded-lg"
+                className="size-11 shrink-0"
                 aria-label="Back to Articles"
                 onClick={handleBackToList}
               >
                 <ChevronLeft className="size-5" />
               </Button>
-              <span className="text-sm font-medium text-muted-foreground">
+              <span className="text-sm font-semibold text-[var(--purple-foreground)]">
                 Articles
               </span>
             </div>

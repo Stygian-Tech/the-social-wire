@@ -267,7 +267,7 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
 
   return (
     <Sidebar>
-      <SidebarHeader className="border-b px-4 py-3">
+      <SidebarHeader className="border-b bg-sidebar/85 px-4 py-3 backdrop-blur-md">
         <div className="flex min-w-0 items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-2">
             <Image
@@ -277,8 +277,8 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
               height={24}
               className="shrink-0 rounded"
             />
-            <span className="truncate font-semibold text-sm">The Social Wire</span>
-            <span className="inline-flex shrink-0 items-center rounded-full border px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+            <span className="truncate text-sm font-bold text-sidebar-foreground">The Social Wire</span>
+            <span className="inline-flex shrink-0 items-center rounded-full border border-[var(--purple-border)] bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold text-[var(--purple-foreground)]">
               Beta
             </span>
           </div>
@@ -298,7 +298,7 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
       </SidebarHeader>
 
       <SidebarContent className="overflow-hidden">
-        <div className="shrink-0 border-b border-sidebar-border bg-sidebar">
+        <div className="shrink-0 border-b border-sidebar-border bg-sidebar/85 backdrop-blur-md">
           <SidebarGroup>
             <SidebarGroupLabel>Read Later</SidebarGroupLabel>
             <SidebarMenu className="gap-1.5">
@@ -411,7 +411,7 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
         </div>
       </SidebarContent>
 
-      <SidebarFooter className="border-t px-2 py-3">
+      <SidebarFooter className="border-t bg-sidebar/85 px-2 py-3 backdrop-blur-md">
         <SidebarMenu className="gap-2 px-2">
           {profileLoading ? (
             <SidebarMenuItem>

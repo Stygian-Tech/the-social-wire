@@ -29,10 +29,10 @@ export function SavedLinkPublicationChip({ row, className, overlay }: Props) {
   );
 
   const chipClassName = cn(
-    "inline-flex max-w-full min-w-0 items-center gap-1.5 rounded-full border border-border px-2.5 py-1 text-xs font-medium text-foreground",
+    "inline-flex max-w-full min-w-0 items-center gap-1.5 rounded-full border border-[var(--purple-border)] px-2.5 py-1 text-xs font-semibold text-[var(--purple-foreground)]",
     overlay
-      ? "border-border/60 bg-background/90 shadow-sm backdrop-blur-sm"
-      : "bg-muted/40",
+      ? "bg-background/92 shadow-sm backdrop-blur-sm"
+      : "bg-primary/10",
     className
   );
 
@@ -42,7 +42,7 @@ export function SavedLinkPublicationChip({ row, className, overlay }: Props) {
         href={publication.homepageUrl}
         target="_blank"
         rel="noopener noreferrer"
-        className={cn(chipClassName, "transition-colors hover:bg-muted/70")}
+        className={cn(chipClassName, "transition-colors hover:bg-accent/70")}
         title={`Open ${publication.name}`}
       >
         {chip}

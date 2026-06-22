@@ -42,10 +42,10 @@ export default function ArchiveLayout({ children }: { children: React.ReactNode 
       <ReadRouteProvider>
         <AppSidebar selectedPubId={null} onSelectPub={(pubId) => router.push(`/read/${encodeURIComponent(pubId)}`)} />
         <SidebarInset className="flex min-h-0 flex-1 flex-col overflow-hidden">
-          <header className="flex h-11 min-h-11 shrink-0 items-center gap-1 border-b px-2 sm:h-10 sm:min-h-10 sm:gap-2 sm:px-3 md:px-4">
+          <header className="flex min-h-14 shrink-0 items-center gap-1 border-b bg-background/85 px-2 py-1.5 backdrop-blur-md sm:min-h-12 sm:gap-2 sm:px-3 md:px-4">
             <SidebarTrigger className="h-11 w-11 min-h-[44px] min-w-[44px] shrink-0 -ml-0.5 sm:h-8 sm:w-8 sm:min-h-0 sm:min-w-0 sm:-ml-1" />
             <Separator orientation="vertical" className="h-4" />
-            <span className="truncate px-2 text-sm font-medium text-muted-foreground">
+            <span className="truncate px-2 text-sm font-semibold text-[var(--purple-foreground)]">
               Archive
             </span>
           </header>

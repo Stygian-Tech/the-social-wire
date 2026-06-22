@@ -328,8 +328,8 @@ export function SavedLinksBrowser({ mode }: SavedLinksBrowserProps) {
         storageKey={READER_LIST_COLUMN_WIDTH_KEY}
         hiddenOnMobile={Boolean(resolvedSelectedRowId)}
       >
-        <div className="flex shrink-0 items-center border-b px-3 py-2">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+        <div className="flex shrink-0 items-center border-b bg-background/75 px-3 py-2 backdrop-blur-md">
+          <p className="text-[11px] font-bold uppercase tracking-wide text-[var(--purple-foreground)]">
             {listHeaderLabel}
           </p>
         </div>
@@ -346,14 +346,14 @@ export function SavedLinksBrowser({ mode }: SavedLinksBrowserProps) {
       >
         {selectedRow ? (
           <>
-            <div className="bg-background sticky top-0 z-10 shrink-0 border-b px-1 py-1 md:static md:z-0 md:px-4 md:py-2">
+            <div className="sticky top-0 z-10 shrink-0 border-b bg-background/90 px-1.5 py-1.5 backdrop-blur-md md:static md:z-0 md:bg-background/75 md:px-4 md:py-2">
               <div className="flex min-h-[44px] flex-wrap items-center gap-2 md:min-h-0 md:flex-nowrap">
                 <div className="flex min-h-[44px] min-w-0 flex-1 items-center gap-1 md:min-h-0">
                   <Button
                     type="button"
                     variant="ghost"
                     size="icon-sm"
-                    className="size-11 shrink-0 rounded-lg md:hidden"
+                    className="size-11 shrink-0 md:hidden"
                     aria-label={backLabel}
                     onClick={() => setSelectedRowId(null)}
                   >
@@ -374,7 +374,7 @@ export function SavedLinksBrowser({ mode }: SavedLinksBrowserProps) {
                     />
                   </div>
                 </div>
-                <div className="flex w-full shrink-0 items-center justify-end gap-2 px-2 pb-2 md:w-auto md:px-0 md:pb-0">
+                <div className="grid w-full shrink-0 grid-cols-3 gap-2 px-2 pb-2 md:flex md:w-auto md:items-center md:justify-end md:px-0 md:pb-0">
                   {selectedUrl ? (
                     <a
                       href={selectedUrl}
@@ -383,7 +383,7 @@ export function SavedLinksBrowser({ mode }: SavedLinksBrowserProps) {
                       className={buttonVariants({
                         variant: "outline",
                         size: "sm",
-                        className: "gap-1.5",
+                        className: "min-w-0 gap-1.5",
                       })}
                     >
                       <ExternalLink className="size-3.5" />
@@ -395,7 +395,7 @@ export function SavedLinksBrowser({ mode }: SavedLinksBrowserProps) {
                       type="button"
                       variant="outline"
                       size="sm"
-                      className="gap-1.5"
+                      className="min-w-0 gap-1.5"
                       onClick={() => handleUnarchive(selectedRow)}
                       title="Unarchive Read Later Item"
                     >
@@ -407,7 +407,7 @@ export function SavedLinksBrowser({ mode }: SavedLinksBrowserProps) {
                       type="button"
                       variant="outline"
                       size="sm"
-                      className="gap-1.5"
+                      className="min-w-0 gap-1.5"
                       onClick={() => handleArchive(selectedRow)}
                       title="Archive Read Later Item"
                     >
@@ -419,7 +419,7 @@ export function SavedLinksBrowser({ mode }: SavedLinksBrowserProps) {
                     type="button"
                     variant="destructive"
                     size="sm"
-                    className="gap-1.5"
+                    className="min-w-0 gap-1.5"
                     onClick={() => handleDelete(selectedRow)}
                     title="Remove from Read Later"
                   >
@@ -431,7 +431,7 @@ export function SavedLinksBrowser({ mode }: SavedLinksBrowserProps) {
               <SavedLinkSocialToolbar row={selectedRow} className="mt-1 px-2 md:px-0" />
             </div>
 
-            <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-4 py-2">
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-3 py-2 sm:px-4">
               {selectedIframeSrc ? (
                 <EntryArticleEmbed
                   url={selectedIframeSrc}

@@ -32,12 +32,12 @@ export function ReadArticleFilterBar() {
   const [markAllReadOpen, setMarkAllReadOpen] = useState(false);
 
   return (
-    <div className="ml-auto flex shrink-0 items-center gap-2">
+    <div className="ml-auto flex min-w-0 flex-1 items-center justify-end gap-2 sm:flex-none">
       <Button
             type="button"
             variant="outline"
             size="sm"
-            className="h-7 shrink-0 px-2 text-[11px] font-medium"
+            className="min-w-0 flex-1 px-2 text-[11px] sm:flex-none"
             disabled={bulkDisabled}
             title={
               bulkDisabled
@@ -81,7 +81,7 @@ export function ReadArticleFilterBar() {
       <div
         role="tablist"
         aria-label="Articles filter"
-        className="flex shrink-0 rounded-md border border-border/80 bg-background p-0.5"
+        className="flex shrink-0 rounded-2xl border border-border/80 bg-card/90 p-1 shadow-sm"
       >
         <button
           type="button"
@@ -89,10 +89,10 @@ export function ReadArticleFilterBar() {
           id="read-shell-filter-all"
           aria-selected={articleListFilter === "all"}
           className={cn(
-            "rounded px-2 py-1 text-[11px] font-medium transition-colors",
+            "min-h-7 rounded-xl px-3 py-1 text-[11px] font-semibold transition-colors",
             articleListFilter === "all"
-              ? "bg-muted text-foreground"
-              : "text-muted-foreground hover:bg-muted/60"
+              ? "bg-primary text-primary-foreground shadow-sm"
+              : "text-muted-foreground hover:bg-accent/70 hover:text-accent-foreground"
           )}
           onClick={() => setArticleListFilter("all")}
         >
@@ -104,10 +104,10 @@ export function ReadArticleFilterBar() {
           id="read-shell-filter-unread"
           aria-selected={articleListFilter === "unread"}
           className={cn(
-            "rounded px-2 py-1 text-[11px] font-medium transition-colors",
+            "min-h-7 rounded-xl px-3 py-1 text-[11px] font-semibold transition-colors",
             articleListFilter === "unread"
-              ? "bg-muted text-foreground"
-              : "text-muted-foreground hover:bg-muted/60"
+              ? "bg-primary text-primary-foreground shadow-sm"
+              : "text-muted-foreground hover:bg-accent/70 hover:text-accent-foreground"
           )}
           onClick={() => setArticleListFilter("unread")}
         >

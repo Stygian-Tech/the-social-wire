@@ -121,7 +121,7 @@ export function ResizableListColumn({
   return (
     <aside
       className={cn(
-        "relative flex min-h-0 min-w-0 flex-col overflow-hidden border-r bg-muted/20",
+        "relative flex min-h-0 min-w-0 flex-col overflow-hidden border-r bg-background/55 backdrop-blur-sm",
         "w-full flex-1 md:h-full md:shrink-0 md:flex-none md:w-[var(--list-column-width)]",
         hiddenOnMobile && "hidden md:flex",
         className

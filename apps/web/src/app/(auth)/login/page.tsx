@@ -4,6 +4,8 @@ import { useState, FormEvent } from "react";
 import Image from "next/image";
 import { useAuth } from "@/hooks/useAuth";
 import iconSrc from "@/app/icon.png";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 export default function LoginPage() {
   const { signIn } = useAuth();
@@ -26,7 +28,7 @@ export default function LoginPage() {
 
   return (
     <div className="flex min-h-[calc(100svh-var(--environment-banner-height,0px))] flex-1 items-center justify-center bg-background p-4">
-      <div className="w-full max-w-sm space-y-8">
+      <div className="flex w-full max-w-sm flex-col gap-8 rounded-3xl border border-border/80 bg-card/88 p-5 shadow-[var(--soft-elevation)] backdrop-blur-md sm:p-6">
         <div className="text-center">
           <div className="mb-4 flex justify-center">
             <Image
@@ -34,25 +36,25 @@ export default function LoginPage() {
               alt=""
               width={56}
               height={56}
-              className="rounded-xl"
+              className="rounded-2xl shadow-[0_10px_28px_-18px_var(--primary)]"
               priority
             />
           </div>
-          <h1 className="text-2xl font-bold tracking-tight">The Social Wire</h1>
+          <h1 className="text-2xl font-black tracking-tight text-[var(--purple-foreground)]">The Social Wire</h1>
           <p className="mt-2 text-sm text-muted-foreground">
             Sign in with your Bluesky or ATProto account
           </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
+        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          <div className="flex flex-col gap-2">
             <label
               htmlFor="handle"
               className="text-sm font-medium leading-none"
             >
               Handle
             </label>
-            <input
+            <Input
               id="handle"
               type="text"
               value={handle}
@@ -64,7 +66,7 @@ export default function LoginPage() {
               spellCheck={false}
               required
               disabled={isPending}
-              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+              className="h-11"
             />
           </div>
 
@@ -72,13 +74,13 @@ export default function LoginPage() {
             <p className="text-sm text-destructive">{error}</p>
           )}
 
-          <button
+          <Button
             type="submit"
             disabled={isPending || !handle.trim()}
-            className="inline-flex h-10 w-full items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground ring-offset-background transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
+            className="h-11 w-full"
           >
             {isPending ? "Signing In…" : "Continue with ATProto"}
-          </button>
+          </Button>
         </form>
 
         <p className="text-center text-xs text-muted-foreground">
