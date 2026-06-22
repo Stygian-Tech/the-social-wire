@@ -1,0 +1,31 @@
+{
+  "name": "The Social Wire",
+  "short_name": "Social Wire",
+  "description": "A reader for the standard.site publishing ecosystem",
+  "id": "/",
+  "start_url": "/read",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0a0a0a",
+  "theme_color": "#0a0a0a",
+  "icons": [
+    {
+      "src": "/icons/social-wire-icon-dark-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/social-wire-icon-dark-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/social-wire-icon-maskable-dark-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

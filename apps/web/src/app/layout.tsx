@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import type { Viewport } from "next";
 import type { CSSProperties } from "react";
 import { Analytics } from "@vercel/analytics/react";
 import "./globals.css";
@@ -20,6 +21,11 @@ const siteUrl = (() => {
   return "https://thesocialwire.app";
 })();
 
+const lightInstallIcon = "/icons/social-wire-icon-light-512.png";
+const darkInstallIcon = "/icons/social-wire-icon-dark-512.png";
+const lightAppleTouchIcon = "/icons/social-wire-apple-touch-light.png";
+const darkAppleTouchIcon = "/icons/social-wire-apple-touch-dark.png";
+
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   title: "The Social Wire",
@@ -33,10 +39,33 @@ export const metadata: Metadata = {
   icons: {
     icon: [
       { url: "/favicon.ico", sizes: "any" },
-      { url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
-      { url: "/icons/icon-512.png", sizes: "512x512", type: "image/png" },
+      {
+        url: lightInstallIcon,
+        sizes: "512x512",
+        type: "image/png",
+        media: "(prefers-color-scheme: light)",
+      },
+      {
+        url: darkInstallIcon,
+        sizes: "512x512",
+        type: "image/png",
+        media: "(prefers-color-scheme: dark)",
+      },
     ],
-    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
+    apple: [
+      {
+        url: lightAppleTouchIcon,
+        sizes: "180x180",
+        type: "image/png",
+        media: "(prefers-color-scheme: light)",
+      },
+      {
+        url: darkAppleTouchIcon,
+        sizes: "180x180",
+        type: "image/png",
+        media: "(prefers-color-scheme: dark)",
+      },
+    ],
   },
   openGraph: {
     type: "website",
@@ -60,6 +89,14 @@ export const metadata: Metadata = {
   },
 };
 
+export const viewport: Viewport = {
+  colorScheme: "light dark",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
+    { media: "(prefers-color-scheme: dark)", color: "#0a0a0a" },
+  ],
+};
+
 const appEnv = getAppEnv();
 
 export default function RootLayout({
@@ -70,6 +107,26 @@ export default function RootLayout({
   return (
     <html lang="en" className="h-full antialiased" suppressHydrationWarning>
       <head>
+        <link
+          rel="manifest"
+          href="/manifest-light.webmanifest"
+          media="(prefers-color-scheme: light)"
+        />
+        <link
+          rel="manifest"
+          href="/manifest-dark.webmanifest"
+          media="(prefers-color-scheme: dark)"
+        />
+        <link
+          rel="apple-touch-icon"
+          href={lightAppleTouchIcon}
+          media="(prefers-color-scheme: light)"
+        />
+        <link
+          rel="apple-touch-icon"
+          href={darkAppleTouchIcon}
+          media="(prefers-color-scheme: dark)"
+        />
         <script
           id="dark-mode"
           dangerouslySetInnerHTML={{
