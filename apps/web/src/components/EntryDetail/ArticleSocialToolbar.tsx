@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import {
   BookmarkPlus,
   Check,
@@ -38,12 +38,14 @@ interface ArticleSocialToolbarProps {
   entry: EntryDetail | null;
   className?: string;
   showReadLaterSave?: boolean;
+  extraActions?: ReactNode;
 }
 
 export function ArticleSocialToolbar({
   entry,
   className,
   showReadLaterSave = true,
+  extraActions,
 }: ArticleSocialToolbarProps) {
   const {
     viewerQuery,
@@ -243,6 +245,8 @@ export function ArticleSocialToolbar({
             </span>
           </a>
         ) : null}
+
+        {extraActions}
 
         {!hasLinkedPost ? (
           <p className="w-full text-[11px] leading-snug text-muted-foreground max-md:hidden sm:text-xs">

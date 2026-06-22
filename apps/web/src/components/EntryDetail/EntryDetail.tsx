@@ -99,6 +99,15 @@ export function EntryDetail({ entryId }: EntryDetailProps) {
               url={entry.embedUrl!}
               title={entry.title}
               className="min-h-0 flex-1"
+              fallbackContent={
+                safeHTML.trim() ? (
+                  <div
+                    className="prose prose-sm dark:prose-invert flow-root max-w-none [&_img]:h-auto [&_img]:max-w-full"
+                    // Safe: content is sanitized before rendering.
+                    dangerouslySetInnerHTML={{ __html: safeHTML }}
+                  />
+                ) : undefined
+              }
             />
           </div>
         ) : null}

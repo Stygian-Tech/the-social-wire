@@ -24,6 +24,20 @@ export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   title: "The Social Wire",
   description: "A reader for the standard.site publishing ecosystem",
+  applicationName: "The Social Wire",
+  appleWebApp: {
+    capable: true,
+    title: "The Social Wire",
+    statusBarStyle: "black-translucent",
+  },
+  icons: {
+    icon: [
+      { url: "/favicon.ico", sizes: "any" },
+      { url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icons/icon-512.png", sizes: "512x512", type: "image/png" },
+    ],
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
+  },
   openGraph: {
     type: "website",
     title: "The Social Wire",

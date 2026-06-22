@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ExternalLink } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { OEmbedArticleView } from "@/components/EntryDetail/OEmbedArticleView";
@@ -24,12 +24,43 @@ interface EntryArticleEmbedProps {
   url: string;
   title: string;
   className?: string;
+  fallbackContent?: ReactNode;
 }
 
-function BlockedEmbedMessage({ href }: { href: string }) {
+function EmbedUnavailableMessage({
+  href,
+  message,
+  linkLabel,
+  fallbackContent,
+}: {
+  href: string;
+  message: string;
+  linkLabel: string;
+  fallbackContent?: ReactNode;
+}) {
+  if (fallbackContent) {
+    return (
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5">
+        <div className="mb-5 rounded-xl border border-border bg-muted/35 p-4 text-sm text-muted-foreground">
+          <p>{message}</p>
+          <a
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-3 inline-flex min-h-[44px] items-center gap-1.5 rounded-md py-2 text-sm font-medium text-primary hover:underline"
+          >
+            <ExternalLink className="size-4 shrink-0" aria-hidden />
+            {linkLabel}
+          </a>
+        </div>
+        {fallbackContent}
+      </div>
+    );
+  }
+
   return (
     <div className="flex min-h-[200px] flex-col items-center justify-center gap-3 px-4 py-6 text-center text-sm text-muted-foreground">
-      <p>This site blocks embedding.</p>
+      <p>{message}</p>
       <a
         href={href}
         target="_blank"
@@ -37,47 +68,7 @@ function BlockedEmbedMessage({ href }: { href: string }) {
         className="inline-flex min-h-[44px] items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium text-primary hover:underline"
       >
         <ExternalLink className="size-4 shrink-0" aria-hidden />
-        Open
-      </a>
-    </div>
-  );
-}
-
-function UnstableEmbedMessage({ href }: { href: string }) {
-  return (
-    <div className="flex min-h-[200px] flex-col items-center justify-center gap-3 px-4 py-6 text-center text-sm text-muted-foreground">
-      <p>
-        This page keeps reloading when embedded (common with some React sites). Open it in a new
-        tab to read.
-      </p>
-      <a
-        href={href}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="inline-flex min-h-[44px] items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium text-primary hover:underline"
-      >
-        <ExternalLink className="size-4 shrink-0" aria-hidden />
-        Open in New Tab
-      </a>
-    </div>
-  );
-}
-
-function IframeLoadFailedMessage({ href }: { href: string }) {
-  return (
-    <div className="flex min-h-[200px] flex-col items-center justify-center gap-3 px-4 py-6 text-center text-sm text-muted-foreground">
-      <p>
-        This page cannot be embedded (the site may block iframes). Open it in a new tab or read the
-        full content below.
-      </p>
-      <a
-        href={href}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="inline-flex min-h-[44px] items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium text-primary hover:underline"
-      >
-        <ExternalLink className="size-4 shrink-0" aria-hidden />
-        Open in New Tab
+        {linkLabel}
       </a>
     </div>
   );
@@ -94,6 +85,7 @@ type OEmbedPhase = "pending" | "hit" | "miss";
 function EntryArticleEmbedInner({
   title,
   className,
+  fallbackContent,
   pageUrl,
 }: Omit<EntryArticleEmbedProps, "url"> & { pageUrl: string }) {
   const cachedOEmbed = getCachedOEmbed(pageUrl);
@@ -156,7 +148,12 @@ function EntryArticleEmbedInner({
   }
 
   return (
-    <IframeArticleEmbed title={title} className={className} iframeSrc={pageUrl} />
+    <IframeArticleEmbed
+      title={title}
+      className={className}
+      iframeSrc={pageUrl}
+      fallbackContent={fallbackContent}
+    />
   );
 }
 
@@ -164,10 +161,12 @@ function IframeArticleEmbed({
   title,
   className,
   iframeSrc,
+  fallbackContent,
 }: {
   title: string;
   className?: string;
   iframeSrc: string;
+  fallbackContent?: ReactNode;
 }) {
   const cachedFrameable = getCachedEmbedProbeFrameable(iframeSrc);
   const [loaded, setLoaded] = useState(false);
@@ -260,11 +259,26 @@ function IframeArticleEmbed({
         </div>
       ) : null}
       {probeBlocksEmbed === true ? (
-        <BlockedEmbedMessage href={iframeSrc} />
+        <EmbedUnavailableMessage
+          href={iframeSrc}
+          message="This site blocks embedding."
+          linkLabel="Open"
+          fallbackContent={fallbackContent}
+        />
       ) : unstableEmbed ? (
-        <UnstableEmbedMessage href={iframeSrc} />
+        <EmbedUnavailableMessage
+          href={iframeSrc}
+          message="This page keeps reloading when embedded. Open it in a new tab to read."
+          linkLabel="Open in New Tab"
+          fallbackContent={fallbackContent}
+        />
       ) : failed ? (
-        <IframeLoadFailedMessage href={iframeSrc} />
+        <EmbedUnavailableMessage
+          href={iframeSrc}
+          message="This page cannot be embedded. Open it in a new tab or read the saved content below."
+          linkLabel="Open in New Tab"
+          fallbackContent={fallbackContent}
+        />
       ) : showIframe ? (
         <iframe
           title={`Embedded article: ${title}`}

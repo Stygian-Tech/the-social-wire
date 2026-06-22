@@ -210,6 +210,29 @@ export function SavedLinksBrowser({ mode }: SavedLinksBrowserProps) {
   const selectedIframeSrc = selectedRow
     ? stableSavedLinkIframeSrc(selectedRow)
     : undefined;
+  const selectedFallbackContent = selectedRow ? (
+    <article className="space-y-3">
+      {selectedRow.image ? (
+        // eslint-disable-next-line @next/next/no-img-element -- saved-link thumbnails are remote publisher metadata.
+        <img
+          src={selectedRow.image}
+          alt=""
+          className="max-h-72 w-full rounded-lg object-cover"
+        />
+      ) : null}
+      <div className="space-y-1">
+        <h2 className="text-xl font-semibold tracking-tight text-foreground">
+          {rowTitle(selectedRow)}
+        </h2>
+        <p className="text-sm text-muted-foreground">{rowSubtitle(selectedRow)}</p>
+      </div>
+      {selectedRow.excerpt ? (
+        <p className="max-w-3xl text-base leading-7 text-foreground/85">
+          {selectedRow.excerpt}
+        </p>
+      ) : null}
+    </article>
+  ) : undefined;
 
   const detailEmptyMessage = isLoading ? (
     <p>Loading…</p>
@@ -374,7 +397,7 @@ export function SavedLinksBrowser({ mode }: SavedLinksBrowserProps) {
                     />
                   </div>
                 </div>
-                <div className="grid w-full shrink-0 grid-cols-3 gap-2 px-2 pb-2 md:flex md:w-auto md:items-center md:justify-end md:px-0 md:pb-0">
+                <div className="grid w-full shrink-0 grid-cols-3 gap-2 px-2 pb-2 max-md:hidden md:flex md:w-auto md:items-center md:justify-end md:px-0 md:pb-0">
                   {selectedUrl ? (
                     <a
                       href={selectedUrl}
@@ -428,15 +451,62 @@ export function SavedLinksBrowser({ mode }: SavedLinksBrowserProps) {
                   </Button>
                 </div>
               </div>
-              <SavedLinkSocialToolbar row={selectedRow} className="mt-1 px-2 md:px-0" />
+              <SavedLinkSocialToolbar
+                row={selectedRow}
+                className="mt-1 px-2 md:px-0"
+                extraActions={
+                  <>
+                    {isArchivedView ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-11 min-h-[44px] justify-center gap-1.5 px-2 md:hidden"
+                        onClick={() => handleUnarchive(selectedRow)}
+                        title="Unarchive Read Later Item"
+                        aria-label="Unarchive Read Later Item"
+                      >
+                        <ArchiveRestore className="size-5 shrink-0" />
+                        <span className="sr-only">Unarchive</span>
+                      </Button>
+                    ) : (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-11 min-h-[44px] justify-center gap-1.5 px-2 md:hidden"
+                        onClick={() => handleArchive(selectedRow)}
+                        title="Archive Read Later Item"
+                        aria-label="Archive Read Later Item"
+                      >
+                        <Archive className="size-5 shrink-0" />
+                        <span className="sr-only">Archive</span>
+                      </Button>
+                    )}
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      size="sm"
+                      className="h-11 min-h-[44px] justify-center gap-1.5 px-2 md:hidden"
+                      onClick={() => handleDelete(selectedRow)}
+                      title="Remove from Read Later"
+                      aria-label="Remove from Read Later"
+                    >
+                      <Trash2 className="size-5 shrink-0" />
+                      <span className="sr-only">Delete</span>
+                    </Button>
+                  </>
+                }
+              />
             </div>
 
-            <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-3 py-2 sm:px-4">
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-3 py-2 pb-[calc(env(safe-area-inset-bottom)+5.75rem)] sm:px-4 md:pb-2">
               {selectedIframeSrc ? (
                 <EntryArticleEmbed
                   url={selectedIframeSrc}
                   title={embedTitle}
                   className="min-h-[40vh] flex-1 border border-border md:min-h-0"
+                  fallbackContent={selectedFallbackContent}
                 />
               ) : (
                 <div className="flex min-h-[40vh] flex-1 items-center justify-center rounded-md border border-border p-8 text-center text-sm text-muted-foreground">

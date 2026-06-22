@@ -41,7 +41,8 @@ public enum RenderFieldExtractor {
       title: title,
       publishedAt: publishedAt,
       summary: summary,
-      thumbnailUrl: thumbnailUrl
+      thumbnailUrl: thumbnailUrl,
+      articleUrl: articleUrl(from: record)
     )
   }
 
@@ -186,6 +187,46 @@ public enum RenderFieldExtractor {
     guard let path else { return nil }
     let parts = path.split(separator: "/").map(String.init).filter { !$0.isEmpty }
     return parts.last
+  }
+
+  private static func articleUrl(from record: [String: Any]) -> String? {
+    for key in ["url", "externalUrl", "canonicalUrl", "href", "permalink"] {
+      if let normalized = normalizeArticleUrl(string(record[key])) {
+        return normalized
+      }
+    }
+
+    guard
+      let site = string(record["site"]),
+      let base = normalizePublicationSiteUrl(site),
+      let path = string(record["path"])
+    else {
+      return nil
+    }
+
+    if let normalized = normalizeArticleUrl(path) {
+      return normalized
+    }
+
+    let cleanPath = path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+    guard !cleanPath.isEmpty else { return base }
+    return normalizeArticleUrl("\(base)/\(cleanPath)")
+  }
+
+  private static func normalizeArticleUrl(_ raw: String?) -> String? {
+    guard let raw else { return nil }
+    let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard trimmed.lowercased().hasPrefix("http://") || trimmed.lowercased().hasPrefix("https://") else {
+      return nil
+    }
+    guard var components = URLComponents(string: trimmed) else { return nil }
+    components.fragment = nil
+    guard let url = components.url else { return nil }
+    var href = url.absoluteString
+    if href.lowercased().hasPrefix("http://") {
+      href = "https://" + href.dropFirst("http://".count)
+    }
+    return href
   }
 
   private static func extractHttpsThumbnail(from record: [String: Any]) -> String? {

@@ -8,7 +8,7 @@ import {
   useQueryClient,
   type QueryClient,
 } from "@tanstack/react-query";
-import { normalizeAtRepoParam } from "@/lib/atprotoClient";
+import { getEntry, normalizeAtRepoParam, parseAtUri } from "@/lib/atprotoClient";
 import type { EntryListItem, EntryDetail } from "@/lib/atprotoClient";
 import type { ArticleListFilter } from "@/lib/entryArticleFilter";
 import { prefetchCachedImages } from "@/lib/imageBlobCache";
@@ -37,6 +37,18 @@ export type EntriesPage = { entries: EntryListItem[]; cursor?: string };
 
 /** Matches {@link useEntries} `staleTime` / `prefetchInfiniteQuery` for entry lists. */
 export const ENTRIES_QUERY_STALE_MS = 30_000;
+
+const STANDARD_SITE_ENTRY_COLLECTIONS = new Set([
+  "site.standard.document",
+  "site.standard.entry",
+  "com.standard.document",
+  "com.standard.entry",
+]);
+
+function isStandardSiteEntryId(entryId: string): boolean {
+  const parsed = parseAtUri(entryId);
+  return parsed ? STANDARD_SITE_ENTRY_COLLECTIONS.has(parsed.collection) : false;
+}
 
 function requireAppViewScope(
   projection:
@@ -206,7 +218,23 @@ export function useEntry(entryId: string | null) {
       if (!isThinAppViewEnabled()) {
         throw new Error("Thin AppView is required for entry detail");
       }
-      return getEntryFromAppView(oauth, normalizedId, signal);
+      const appViewEntry = await getEntryFromAppView(oauth, normalizedId, signal);
+      if (
+        appViewEntry &&
+        !appViewEntry.embedUrl &&
+        !appViewEntry.originalUrl &&
+        isStandardSiteEntryId(normalizedId)
+      ) {
+        const directEntry = await getEntry(normalizedId, oauth);
+        if (directEntry?.embedUrl || directEntry?.originalUrl) {
+          return {
+            ...appViewEntry,
+            originalUrl: directEntry.originalUrl ?? appViewEntry.originalUrl,
+            embedUrl: directEntry.embedUrl ?? directEntry.originalUrl,
+          };
+        }
+      }
+      return appViewEntry;
     },
     enabled: !!normalizedId && !!session,
     staleTime: 5 * 60_000,

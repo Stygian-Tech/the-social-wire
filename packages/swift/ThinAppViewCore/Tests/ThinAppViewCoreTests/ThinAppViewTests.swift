@@ -17,6 +17,27 @@ struct RenderFieldExtractorTests {
     #expect(fields.summary == "Snippet")
   }
 
+  @Test("extracts articleUrl from direct standard.site URL fields")
+  func extractDirectArticleUrl() {
+    let fields = RenderFieldExtractor.extractRenderFields(from: [
+      "title": "Hello",
+      "publishedAt": "2026-05-19T12:00:00.000Z",
+      "url": "http://example.com/posts/hello#comments",
+    ])
+    #expect(fields.articleUrl == "https://example.com/posts/hello")
+  }
+
+  @Test("builds articleUrl from HTTPS site and path")
+  func extractArticleUrlFromSitePath() {
+    let fields = RenderFieldExtractor.extractRenderFields(from: [
+      "title": "Hello",
+      "publishedAt": "2026-05-19T12:00:00.000Z",
+      "site": "https://example.com/",
+      "path": "/posts/hello",
+    ])
+    #expect(fields.articleUrl == "https://example.com/posts/hello")
+  }
+
   @Test("matches publication site equivalence keys")
   func publicationEquivalence() {
     let pub = "at://did:plc:abc/site.standard.publication/main"
