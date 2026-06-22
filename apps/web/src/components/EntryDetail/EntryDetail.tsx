@@ -116,7 +116,7 @@ export function EntryDetail({ entryId }: EntryDetailProps) {
         )}
       </div>
 
-      <div className="relative z-10 order-2 clear-both shrink-0 bg-background/95 md:order-1 md:bg-transparent">
+      <div className="relative z-10 order-2 clear-both shrink-0 bg-background/95 md:sticky md:top-[52px] md:z-20 md:order-1 md:-mx-6 md:border-b md:bg-background/95 md:px-6 md:pt-3 md:backdrop-blur-md lg:-mx-8 lg:px-8">
         <div className="mb-1 flex flex-wrap items-center gap-2">
           <DevRecordKindBadge info={recordKindFromEntryId(entry.entryId)} />
         </div>

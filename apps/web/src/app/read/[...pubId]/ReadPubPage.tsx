@@ -120,12 +120,12 @@ export default function ReadPubPage({ pubId }: { pubId: string }) {
       >
         {selectedEntryId ? (
           <>
-            <div className="sticky top-0 z-10 flex min-h-[52px] shrink-0 items-center gap-2 border-b bg-background/90 px-1.5 py-1 backdrop-blur-md md:hidden">
+            <div className="sticky top-0 z-30 flex min-h-[52px] shrink-0 items-center gap-2 border-b bg-background/90 px-1.5 py-1 backdrop-blur-md md:px-3">
               <Button
                 type="button"
                 variant="ghost"
                 size="icon-sm"
-                className="size-11 shrink-0"
+                className="size-11 shrink-0 md:hidden"
                 aria-label="Back to Articles"
                 onClick={handleBackToList}
               >
