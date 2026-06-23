@@ -79,7 +79,7 @@ export function ArticleSocialToolbar({
 
   const disabledHint = hasLinkedPost
     ? undefined
-    : "No Bluesky post is linked on the original record (bskyPostRef). Like, Reply, and Repost need a linked app.bsky.feed.post.";
+    : "Like, Reply, and Repost need a Bluesky post linked to this article.";
 
   const submitQuote = () => {
     const text = quoteText.trim();
@@ -206,7 +206,7 @@ export function ArticleSocialToolbar({
             title={
               alreadyLatrSaved
                 ? "Already in Read Later"
-                : "Save Canonical URL to PDS Read Later (L@tr Compatible)"
+                : "Save Original Article to Read Later"
             }
             onClick={() => {
               saveLaterMut.mutate({
@@ -250,12 +250,8 @@ export function ArticleSocialToolbar({
 
         {!hasLinkedPost ? (
           <p className="w-full text-[11px] leading-snug text-muted-foreground max-md:hidden sm:text-xs">
-            Like, Reply, and Repost need a linked Bluesky post on the original
-            record (
-            <code className="rounded bg-muted px-1 py-0.5 text-[10px]">
-              bskyPostRef
-            </code>
-            ). Quote works here.
+            Like, Reply, and Repost need a Bluesky post linked to this article.
+            Quote works here.
           </p>
         ) : null}
       </div>
@@ -269,16 +265,18 @@ export function ArticleSocialToolbar({
               undo a repost anytime from this toolbar.
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter className="flex flex-row justify-end gap-2 border-0 bg-transparent p-0 pt-2">
+          <DialogFooter className="mx-0 mb-0 grid grid-cols-2 gap-2 border-0 bg-transparent p-0 pt-2 sm:flex sm:flex-row sm:justify-end">
             <Button
               variant="outline"
               size="sm"
+              className="min-w-24"
               onClick={() => setRepostOpen(false)}
             >
               Cancel
             </Button>
             <Button
               size="sm"
+              className="min-w-24"
               disabled={toggleRepostMutation.isPending}
               onClick={confirmRepost}
             >
@@ -293,8 +291,7 @@ export function ArticleSocialToolbar({
           <DialogHeader>
             <DialogTitle>Reply</DialogTitle>
             <DialogDescription>
-              Posts a reply to the Bluesky post linked on the original article
-              record.
+              Posts a reply to the Bluesky conversation for this article.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-2 py-2">
@@ -308,16 +305,18 @@ export function ArticleSocialToolbar({
               className="flex min-h-[100px] w-full resize-y rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
             />
           </div>
-          <DialogFooter className="flex flex-row justify-end gap-2 border-0 bg-transparent p-0 pt-2">
+          <DialogFooter className="mx-0 mb-0 grid grid-cols-2 gap-2 border-0 bg-transparent p-0 pt-2 sm:flex sm:flex-row sm:justify-end">
             <Button
               variant="outline"
               size="sm"
+              className="min-w-24"
               onClick={() => setReplyOpen(false)}
             >
               Cancel
             </Button>
             <Button
               size="sm"
+              className="min-w-28"
               disabled={!replyText.trim() || replyMutation.isPending}
               onClick={submitReply}
             >
@@ -333,8 +332,8 @@ export function ArticleSocialToolbar({
             <DialogTitle>Quote Post</DialogTitle>
             <DialogDescription>
               {hasLinkedPost
-                ? "Posts a quote of the linked Bluesky record."
-                : "Posts your text with an external link card to this article's canonical URL."}
+                ? "Shares your comment with the Bluesky post for this article."
+                : "Shares your comment with a link card for the original article."}
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-2 py-2">
@@ -348,16 +347,18 @@ export function ArticleSocialToolbar({
               className="flex min-h-[100px] w-full resize-y rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
             />
           </div>
-          <DialogFooter className="flex flex-row justify-end gap-2 border-0 bg-transparent p-0 pt-2">
+          <DialogFooter className="mx-0 mb-0 grid grid-cols-2 gap-2 border-0 bg-transparent p-0 pt-2 sm:flex sm:flex-row sm:justify-end">
             <Button
               variant="outline"
               size="sm"
+              className="min-w-24"
               onClick={() => setQuoteOpen(false)}
             >
               Cancel
             </Button>
             <Button
               size="sm"
+              className="min-w-28"
               disabled={!quoteText.trim() || quoteMutation.isPending}
               onClick={submitQuote}
             >
