@@ -2,7 +2,7 @@
 # Or: fly deploy ../.. --config services/appview-worker/fly.toml --app the-social-wire-dev-appview-worker
 
 app = 'the-social-wire-dev-appview-worker'
-primary_region = 'ams'
+primary_region = 'ord'
 
 [build]
   dockerfile = 'Dockerfile'

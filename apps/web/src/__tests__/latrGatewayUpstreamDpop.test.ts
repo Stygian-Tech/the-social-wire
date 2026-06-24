@@ -42,6 +42,42 @@ describe("pdsXrpcMethodForGatewayRequest", () => {
 });
 
 describe("pdsXrpcMethodForSocialWireGatewayRequest", () => {
+  it("maps bootstrap stream to listRecords for PDS-backed sidebar discovery", () => {
+    expect(
+      pdsXrpcMethodForSocialWireGatewayRequest(
+        "GET",
+        "/v1/appview/bootstrap-stream"
+      )
+    ).toEqual({
+      xrpcMethod: "com.atproto.repo.listRecords",
+      httpMethod: "GET",
+    });
+  });
+
+  it("maps publication sidebar reads to listRecords", () => {
+    expect(
+      pdsXrpcMethodForSocialWireGatewayRequest(
+        "GET",
+        "/v1/publications/sidebar?phase=priority"
+      )
+    ).toEqual({
+      xrpcMethod: "com.atproto.repo.listRecords",
+      httpMethod: "GET",
+    });
+  });
+
+  it("maps publication refresh to listRecords", () => {
+    expect(
+      pdsXrpcMethodForSocialWireGatewayRequest(
+        "POST",
+        "/v1/publications/refresh"
+      )
+    ).toEqual({
+      xrpcMethod: "com.atproto.repo.listRecords",
+      httpMethod: "GET",
+    });
+  });
+
   it("does not require upstream DPoP for mark-all-read", () => {
     expect(
       pdsXrpcMethodForSocialWireGatewayRequest(

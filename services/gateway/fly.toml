@@ -2,7 +2,7 @@
 # Or: fly deploy ../.. --config services/gateway/fly.toml --app the-social-wire-dev-gateway
 
 app = 'the-social-wire-dev-gateway'
-primary_region = 'ams'
+primary_region = 'ord'
 
 [build]
   dockerfile = 'Dockerfile'

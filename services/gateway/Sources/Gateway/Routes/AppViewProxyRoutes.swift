@@ -153,6 +153,11 @@ struct AppViewProxyRoutes {
     fwd.headers.add(name: "Accept", value: "application/x-ndjson")
     fwd.headers.add(name: "Authorization", value: auth.authorizationForwardingValue)
     if let dpop = auth.dpopProof { fwd.headers.add(name: "DPoP", value: dpop) }
+    if let upstream = auth.upstreamDpopProof?.trimmingCharacters(in: .whitespacesAndNewlines),
+       !upstream.isEmpty
+    {
+      fwd.headers.add(name: ATProtoUpstreamDPoP.headerName, value: upstream)
+    }
     Self.applyForwardedHeaders(from: request, to: &fwd)
 
     if let internalSecret {

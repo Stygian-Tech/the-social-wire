@@ -8,7 +8,17 @@ MATCH_ALL=0
 
 case "${GITHUB_EVENT_NAME:-}" in
   pull_request)
-    BASE="${GITHUB_EVENT_PULL_REQUEST_BASE_SHA:?}"
+    BASE="${GITHUB_EVENT_PULL_REQUEST_BASE_SHA:-}"
+    if [ -z "$BASE" ] && [ -n "${GITHUB_EVENT_PATH:-}" ] && [ -f "$GITHUB_EVENT_PATH" ]; then
+      BASE="$(node -e "const fs=require('fs'); const event=JSON.parse(fs.readFileSync(process.env.GITHUB_EVENT_PATH,'utf8')); process.stdout.write(event.pull_request?.base?.sha || '')")"
+    fi
+    if [ -z "$BASE" ] && [ -n "${GITHUB_BASE_REF:-}" ]; then
+      BASE="$(git merge-base "HEAD" "origin/${GITHUB_BASE_REF}")"
+    fi
+    if [ -z "$BASE" ]; then
+      echo "Unable to determine pull request base SHA; matching all paths." >&2
+      MATCH_ALL=1
+    fi
     ;;
   push)
     BASE="${GITHUB_EVENT_BEFORE:-}"
