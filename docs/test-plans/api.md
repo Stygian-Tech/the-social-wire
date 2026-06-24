@@ -44,7 +44,7 @@ Populate `oauthAccessToken` and `dpopProof` from a real OAuth session. Never com
 ## Manual verification
 
 - [ ] `curl /health` returns 200
-- [ ] `GET /oauth/client-metadata.json` matches web scopes
+- [ ] `GET /oauth-client-metadata.json` matches web scopes
 - [ ] Authenticated `GET /v1/sync/preferences` with real token
 - [ ] AppView proxy routes return data when `APPVIEW_BASE_URL` is set
 

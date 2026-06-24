@@ -168,10 +168,10 @@ export function localLoopbackCanonicalHref(currentHref: string): string | null {
  * for the default `"http://localhost"` ID alone).
  *
  * **Hosted OAuth:** otherwise use `NEXT_PUBLIC_ATPROTO_CLIENT_ID`, same-origin
- * `/client-metadata.json` for public preview hosts, or the public gateway
- * **`/oauth/client-metadata.json`** when the SPA host maps to an API base (e.g.
+ * `/oauth-client-metadata.json` for public preview hosts, or the public gateway
+ * **`/oauth-client-metadata.json`** when the SPA host maps to an API base (e.g.
  * `testing.thesocialwire.app` → `api.testing.thesocialwire.app`) so PDS discovery
- * is not blocked by Vercel deployment protection on `/client-metadata.json`.
+ * is not blocked by Vercel deployment protection.
  *
  * **Disabling loopback overrides:** `NEXT_PUBLIC_ATPROTO_LOOPBACK_FORCE=false` skips the parameterized client.
  */
@@ -199,7 +199,7 @@ function resolveHostedClientId(): string {
 
   const explicit = process.env.NEXT_PUBLIC_ATPROTO_CLIENT_ID?.trim();
   if (explicit) return explicit;
-  return "https://thesocialwire.app/client-metadata.json";
+  return "https://thesocialwire.app/oauth-client-metadata.json";
 }
 
 let _clientPromise: Promise<BrowserOAuthClient> | null = null;

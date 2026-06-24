@@ -13,6 +13,10 @@ const nextConfig: NextConfig = {
     return {
       beforeFiles: [
         {
+          source: "/oauth-client-metadata.json",
+          destination: "/api/oauth/web-client-metadata",
+        },
+        {
           source: "/client-metadata.json",
           destination: "/api/oauth/web-client-metadata",
         },
@@ -36,6 +40,10 @@ const nextConfig: NextConfig = {
   },
   async headers() {
     return [
+      {
+        source: "/oauth-client-metadata.json",
+        headers: [{ key: "Access-Control-Allow-Origin", value: "*" }],
+      },
       {
         source: "/client-metadata.json",
         headers: [{ key: "Access-Control-Allow-Origin", value: "*" }],

@@ -110,14 +110,14 @@ See [docs/test-plans/apple.md](../../docs/test-plans/apple.md).
 | Variable | Description |
 |----------|-------------|
 | `ATPROTO_PLC_URL` | PLC directory URL (default: `https://plc.directory`) |
-| `ATPROTO_CLIENT_ID` | Discoverable OAuth **`client_id`** URL used as `client_id` in authorize/token requests (code fallback: `https://thesocialwire.com/client-metadata.json`). Prefer aligning with hosted prod (`https://thesocialwire.app/client-metadata.json`, same origin as [`client-metadata.json`](../../apps/web/public/client-metadata.json)) or whichever **`ios-client-metadata.json`** / tunnel metadata URL your deployment publishes — mismatched `client_id`/redirect URIs break OAuth. |
+| `ATPROTO_CLIENT_ID` | Discoverable OAuth **`client_id`** URL used as `client_id` in authorize/token requests. Prefer aligning with hosted prod (`https://thesocialwire.app/oauth-client-metadata.json`) or whichever **`ios-client-metadata.json`** / tunnel metadata URL your deployment publishes — mismatched `client_id`/redirect URIs break OAuth. |
 | `ATPROTO_APPVIEW_PUBLIC` | Optional Bluesky App View base for handle resolution (default `https://public.api.bsky.app`). |
 
 Until that file is live on production, you can:
 
 **A. Next.js / Vercel** — Deploy **`apps/web`** to a **Vercel preview** (or staging host) so `ios-client-metadata.json` is reachable over HTTPS, then follow the steps below using that URL.
 
-**B. Swift gateway (local + tunnel)** — Run **`services/gateway`** (`APP_ENV=local swift run Gateway`). Expose it with **ngrok** (or similar). For **`/ios-client-metadata.json`**, set **`OAUTH_IOS_METADATA_ORIGIN`** when **`Host`/forwarded headers** do not match the tunnel URL (**`OAUTH_PUBLIC_ORIGIN`** applies only to web **`/oauth/client-metadata.json`**). Then use `https://<tunnel>/ios-client-metadata.json` as `ATProtoOAuthClientID`.
+**B. Swift gateway (local + tunnel)** — Run **`services/gateway`** (`APP_ENV=local swift run Gateway`). Expose it with **ngrok** (or similar). For **`/ios-client-metadata.json`**, set **`OAUTH_IOS_METADATA_ORIGIN`** when **`Host`/forwarded headers** do not match the tunnel URL (**`OAUTH_PUBLIC_ORIGIN`** applies only to web **`/oauth-client-metadata.json`**). Then use `https://<tunnel>/ios-client-metadata.json` as `ATProtoOAuthClientID`.
 
 Then:
 

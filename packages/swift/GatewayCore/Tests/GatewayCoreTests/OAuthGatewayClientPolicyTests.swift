@@ -35,7 +35,7 @@ struct OAuthGatewayClientPolicyTests {
 
   @Test("requireKnownClient accepts matching client_id")
   func acceptsClientId() throws {
-    let allowed = "https://thesocialwire.app/client-metadata.json"
+    let allowed = "https://thesocialwire.app/oauth-client-metadata.json"
     let policy = OAuthGatewayClientPolicy(
       allowedClientIds: [allowed],
       allowedAudiences: [],

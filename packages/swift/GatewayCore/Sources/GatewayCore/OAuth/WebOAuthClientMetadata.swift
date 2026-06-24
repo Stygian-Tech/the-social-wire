@@ -1,12 +1,13 @@
 import Foundation
 
-/// ATProto **`application_type: web`** client metadata aligned with [`apps/web/public/client-metadata.json`].
+/// ATProto **`application_type: web`** client metadata aligned with the web-hosted
+/// `/oauth-client-metadata.json` route.
 public enum WebOAuthClientMetadata {
   enum BuildError: Error {
     case invalidPublicOrigin
   }
 
-  /// Builds JSON for **`/oauth/client-metadata.json`** on the gateway.
+  /// Builds JSON for **`/oauth-client-metadata.json`** on the gateway.
   ///
   /// - **`publicOrigin`**: **`client_id`** / **`client_uri`** origin (must match the URL clients fetch — typically request **`Host`**).
   /// - **`redirectOrigin`**: SPA origin for **`redirect_uris`** when the web app is on another host.
@@ -25,7 +26,7 @@ public enum WebOAuthClientMetadata {
 
     let metadataBase = trimmed
     let redirectBase = redirectTrimmed
-    let client_id = "\(metadataBase)/oauth/client-metadata.json"
+    let client_id = "\(metadataBase)/oauth-client-metadata.json"
     let redirect = "\(redirectBase)/callback"
 
     struct MetadataBody: Encodable {

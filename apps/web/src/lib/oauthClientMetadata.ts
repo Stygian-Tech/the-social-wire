@@ -12,13 +12,11 @@ export function inferGatewayApiBase(origin?: string): string | null {
       //
     }
   }
-  const explicit = process.env.NEXT_PUBLIC_SOCIALWIRE_API_URL?.trim();
-  if (explicit) return explicit.replace(/\/$/, "");
   return null;
 }
 
 export function gatewayWebOAuthClientMetadataUrl(apiBase: string): string {
-  return `${apiBase.replace(/\/$/, "")}/oauth/client-metadata.json`;
+  return `${apiBase.replace(/\/$/, "")}/oauth-client-metadata.json`;
 }
 
 /**
@@ -30,13 +28,13 @@ export function hostedOAuthClientIdForOrigin(origin: string): string {
   if (gateway) {
     return gatewayWebOAuthClientMetadataUrl(gateway);
   }
-  return `${origin.replace(/\/$/, "")}/client-metadata.json`;
+  return `${origin.replace(/\/$/, "")}/oauth-client-metadata.json`;
 }
 
 /** True when the origin must use public gateway metadata (not same-origin SPA JSON). */
 export function originUsesGatewayOAuthClientMetadata(origin: string): boolean {
   const base = origin.replace(/\/$/, "");
-  return hostedOAuthClientIdForOrigin(origin) !== `${base}/client-metadata.json`;
+  return hostedOAuthClientIdForOrigin(origin) !== `${base}/oauth-client-metadata.json`;
 }
 
 /**
@@ -58,7 +56,7 @@ export function resolveHostedOAuthClientId(origin: string): string {
 export function buildWebOAuthClientMetadata(origin: string) {
   const base = origin.replace(/\/$/, "");
   return {
-    client_id: `${base}/client-metadata.json`,
+    client_id: `${base}/oauth-client-metadata.json`,
     application_type: "web",
     grant_types: ["authorization_code", "refresh_token"],
     response_types: ["code"],

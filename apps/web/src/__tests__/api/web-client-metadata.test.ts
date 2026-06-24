@@ -24,6 +24,6 @@ describe("GET /api/oauth/web-client-metadata", () => {
     );
     const response = await GET(request);
     const body = (await response.json()) as { client_id: string };
-    expect(body.client_id).toBe("https://preview.example/client-metadata.json");
+    expect(body.client_id).toBe("https://preview.example/oauth-client-metadata.json");
   });
 });

@@ -15,6 +15,12 @@ public struct OAuthMetadataRoutes: Sendable {
   }
 
   public func register(on router: Router<GatewayRequestContext>) {
+    router.get("/oauth-client-metadata.json") { request, _ in
+      try Self.webMetadataResponse(
+        request: request,
+        oauthRedirectOrigin: oauthPublicOrigin
+      )
+    }
     router.get("/oauth/client-metadata.json") { request, _ in
       try Self.webMetadataResponse(
         request: request,
@@ -81,7 +87,7 @@ public struct OAuthMetadataRoutes: Sendable {
       throw HTTPError(
         .internalServerError,
         message:
-          "Cannot resolve public origin for OAuth metadata. For /ios-client-metadata.json ensure Host (and X-Forwarded-Proto behind a proxy) or set OAUTH_IOS_METADATA_ORIGIN; for /oauth/client-metadata.json set OAUTH_PUBLIC_ORIGIN if needed."
+          "Cannot resolve public origin for OAuth metadata. For /ios-client-metadata.json ensure Host (and X-Forwarded-Proto behind a proxy) or set OAUTH_IOS_METADATA_ORIGIN; for /oauth-client-metadata.json set OAUTH_PUBLIC_ORIGIN if needed."
       )
     }
 

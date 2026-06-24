@@ -29,7 +29,7 @@ Copy `.env.example` to `.env.local` or create `.env.local` manually (see **Envir
 | Variable | Description |
 |----------|-------------|
 | `NEXT_PUBLIC_APP_ENV` | `prod` / `dev` / `local` — banner + OAuth mode (see **Local ATProto OAuth** below). Server also reads `APP_ENV`; `next.config` forwards it to the client bundle when `NEXT_PUBLIC_*` is unset |
-| `NEXT_PUBLIC_ATPROTO_CLIENT_ID` | Optional override for hosted OAuth client ID. Default: same-origin `/client-metadata.json` (dynamic `redirect_uris` for preview/dev hosts) |
+| `NEXT_PUBLIC_ATPROTO_CLIENT_ID` | Optional override for hosted OAuth client ID. Default: same-origin `/oauth-client-metadata.json` (dynamic `redirect_uris` for preview/dev hosts) |
 | `NEXT_PUBLIC_ATPROTO_LOOPBACK_ORIGIN` | Optional: `http://127.0.0.1:PORT` — SSR / first-paint port fallback for loopback redirects |
 | `NEXT_PUBLIC_ATPROTO_LOOPBACK_CALLBACK_PATH` | Optional loopback redirect path (default `/callback`) |
 | `NEXT_PUBLIC_ATPROTO_LOOPBACK_FORCE` | Optional: `true` / `false` — override whether parameterized loopback OAuth is used in dev |
@@ -53,9 +53,9 @@ Authentication uses ATProto OAuth (PKCE + DPoP) via `@atproto/oauth-client-brows
 
 #### Local ATProto OAuth (`next dev`)
 
-Local dev does **not** use the static prod `public/client-metadata.json` at runtime (`/client-metadata.json` is served dynamically per host). On your machine the browser uses a **parameterized loopback** client ID (`http://localhost?redirect_uri=…&scope=…` per `@atproto/oauth-types`, RFC 8252).
+Local dev does **not** use the static prod `public/client-metadata.json` at runtime (`/oauth-client-metadata.json` is served dynamically per host). On your machine the browser uses a **parameterized loopback** client ID (`http://localhost?redirect_uri=…&scope=…` per `@atproto/oauth-types`, RFC 8252).
 
-- **When loopback applies:** app env is `local`, or **`dev` during `next dev`**, or **`next dev` with app env unset**. Hosted preview/production use same-origin `/client-metadata.json` unless `NEXT_PUBLIC_ATPROTO_CLIENT_ID` overrides.
+- **When loopback applies:** app env is `local`, or **`dev` during `next dev`**, or **`next dev` with app env unset**. Hosted preview/production use same-origin `/oauth-client-metadata.json` unless `NEXT_PUBLIC_ATPROTO_CLIENT_ID` overrides.
 - **Redirect URIs:** `http://127.0.0.1:<devPort>/callback` and `http://[::1]:<devPort>/callback`, derived from `window.location.port` when you sign in. The client may redirect **`localhost` → `127.0.0.1`** after load so IndexedDB matches the redirect origin.
 - **Overrides:** `NEXT_PUBLIC_ATPROTO_LOOPBACK_ORIGIN` (port fallback when `window` is missing), `NEXT_PUBLIC_ATPROTO_LOOPBACK_CALLBACK_PATH` (default `/callback`), `NEXT_PUBLIC_ATPROTO_LOOPBACK_FORCE=false` to force hosted client ID in dev.
 - **Callback route:** Never run idle `oauthClient.init()` concurrently on **`/callback`**, or a race can strip `#code=` / `#state=` when the OAuth client redirects `localhost → 127.0.0.1`. `AuthProvider` skips restore on that path until `handleCallback()` finishes.

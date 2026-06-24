@@ -1,10 +1,10 @@
 import { isLatrGatewayInvalidClientCredentialResponse } from "@/lib/latrGatewayCredentials";
 
 export const SOCIALWIRE_TESTING_OAUTH_CLIENT_ID =
-  "https://api.testing.thesocialwire.app/oauth/client-metadata.json";
+  "https://api.testing.thesocialwire.app/oauth-client-metadata.json";
 
 export const SOCIALWIRE_PROD_OAUTH_CLIENT_ID =
-  "https://api.thesocialwire.app/oauth/client-metadata.json";
+  "https://api.thesocialwire.app/oauth-client-metadata.json";
 
 export function latrGatewayErrorMessage(
   status: number,

@@ -5,7 +5,7 @@ import ThinAppViewCore
 public struct GatewayConfig: Sendable {
   public let atprotoPLCURL: String
   public let appEnv: AppEnvironment
-  /// SPA origin for **`redirect_uris`** on **`/oauth/client-metadata.json`** when the web app is on another host.
+  /// SPA origin for **`redirect_uris`** on **`/oauth-client-metadata.json`** when the web app is on another host.
   public let oauthPublicOrigin: String?
   /// Optional **`client_id`** origin override for **`/ios-client-metadata.json`** only.
   public let oauthIosMetadataOrigin: String?

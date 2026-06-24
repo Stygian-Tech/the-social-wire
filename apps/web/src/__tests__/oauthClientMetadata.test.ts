@@ -15,7 +15,7 @@ describe("buildWebOAuthClientMetadata", () => {
       "https://preview.example.vercel.app"
     );
     expect(metadata.client_id).toBe(
-      "https://preview.example.vercel.app/client-metadata.json"
+      "https://preview.example.vercel.app/oauth-client-metadata.json"
     );
     expect(metadata.redirect_uris).toEqual([
       "https://preview.example.vercel.app/callback",
@@ -49,13 +49,27 @@ describe("hostedOAuthClientIdForOrigin", () => {
   it("uses the public API gateway for deployment-protected testing web host", () => {
     expect(
       hostedOAuthClientIdForOrigin("https://testing.thesocialwire.app")
-    ).toBe("https://api.testing.thesocialwire.app/oauth/client-metadata.json");
+    ).toBe("https://api.testing.thesocialwire.app/oauth-client-metadata.json");
   });
 
   it("uses same-origin metadata for unmapped preview hosts", () => {
     expect(
       hostedOAuthClientIdForOrigin("https://preview.example.vercel.app")
-    ).toBe("https://preview.example.vercel.app/client-metadata.json");
+    ).toBe("https://preview.example.vercel.app/oauth-client-metadata.json");
+  });
+
+  it("uses same-origin metadata for prod even when API base env is set", () => {
+    const prevApi = process.env.NEXT_PUBLIC_SOCIALWIRE_API_URL;
+    process.env.NEXT_PUBLIC_SOCIALWIRE_API_URL =
+      "https://api.thesocialwire.app";
+    try {
+      expect(
+        hostedOAuthClientIdForOrigin("https://thesocialwire.app")
+      ).toBe("https://thesocialwire.app/oauth-client-metadata.json");
+    } finally {
+      if (prevApi === undefined) delete process.env.NEXT_PUBLIC_SOCIALWIRE_API_URL;
+      else process.env.NEXT_PUBLIC_SOCIALWIRE_API_URL = prevApi;
+    }
   });
 });
 
@@ -64,13 +78,13 @@ describe("resolveHostedOAuthClientId", () => {
     const prevClientId = process.env.NEXT_PUBLIC_ATPROTO_CLIENT_ID;
     const prevApi = process.env.NEXT_PUBLIC_SOCIALWIRE_API_URL;
     process.env.NEXT_PUBLIC_ATPROTO_CLIENT_ID =
-      "https://testing.thesocialwire.app/client-metadata.json";
+      "https://testing.thesocialwire.app/oauth-client-metadata.json";
     process.env.NEXT_PUBLIC_SOCIALWIRE_API_URL =
       "https://api.testing.thesocialwire.app";
     try {
       expect(
         resolveHostedOAuthClientId("https://testing.thesocialwire.app")
-      ).toBe("https://api.testing.thesocialwire.app/oauth/client-metadata.json");
+      ).toBe("https://api.testing.thesocialwire.app/oauth-client-metadata.json");
     } finally {
       if (prevClientId === undefined) delete process.env.NEXT_PUBLIC_ATPROTO_CLIENT_ID;
       else process.env.NEXT_PUBLIC_ATPROTO_CLIENT_ID = prevClientId;
@@ -98,6 +112,6 @@ describe("gatewayWebOAuthClientMetadataUrl", () => {
   it("builds the gateway discoverable client_id URL", () => {
     expect(
       gatewayWebOAuthClientMetadataUrl("https://api.testing.thesocialwire.app")
-    ).toBe("https://api.testing.thesocialwire.app/oauth/client-metadata.json");
+    ).toBe("https://api.testing.thesocialwire.app/oauth-client-metadata.json");
   });
 });

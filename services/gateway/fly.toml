@@ -18,7 +18,7 @@ primary_region = 'ord'
   # fly secrets set GATEWAY_APPVIEW_INTERNAL_SECRET="<same>" --app the-social-wire-dev-appview
   # APPVIEW_BASE_URL = 'https://the-social-wire-dev-appview.fly.dev'
   # OAUTH_GATEWAY_REQUIRE_KNOWN_CLIENT = 'true'
-  # OAUTH_GATEWAY_ALLOWED_CLIENT_IDS = 'https://api.testing.thesocialwire.app/oauth/client-metadata.json'
+  # OAUTH_GATEWAY_ALLOWED_CLIENT_IDS = 'https://api.testing.thesocialwire.app/oauth-client-metadata.json'
 
 [http_service]
   internal_port = 8080

@@ -53,6 +53,7 @@ describe("OpenAPI route drift", () => {
 
     const routePatterns: Record<string, string[]> = {
       "/health": ['get("/health")'],
+      "/oauth-client-metadata.json": ['"/oauth-client-metadata.json"'],
       "/oauth/client-metadata.json": ['"/oauth/client-metadata.json"'],
       "/ios-client-metadata.json": ['"/ios-client-metadata.json"'],
       "/v1/sync/preferences": ['"/v1/sync/preferences"'],

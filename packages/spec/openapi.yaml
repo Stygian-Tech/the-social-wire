@@ -9,7 +9,7 @@ info:
     - **`services/appview`** — publication sidebar projection (`/v1/publications/*`), Thin AppView read index (`/v1/appview/*`), bootstrap stream.
     - **`services/appview-worker`** — Jetstream ingestion and proactive backfill (no HTTP surface).
 
-    **OAuth client metadata** mirrors SPA + ATS clients (`/oauth/client-metadata.json`, `/ios-client-metadata.json`) with scopes from **`ATProtoOAuthScopes`**.
+    **OAuth client metadata** mirrors SPA + ATS clients (`/oauth-client-metadata.json`, `/ios-client-metadata.json`) with scopes from **`ATProtoOAuthScopes`**.
 
     **Authenticated routes** require `Authorization: Bearer` or `Authorization: DPoP` plus RFC 9449 `DPoP` proof binding (`cnf.jkt` when emitted by the issuer).
 
@@ -294,13 +294,29 @@ paths:
                     type: string
                     example: ok
 
-  /oauth/client-metadata.json:
+  /oauth-client-metadata.json:
     get:
       operationId: getOAuthWebClientMetadata
       summary: Web OAuth discoverable metadata
       description: |
         Same semantic fields as [`apps/web/public/client-metadata.json`](/apps/web/public/client-metadata.json).
-        Hosted under `/oauth/` so multiple metadata documents can coexist on one origin.
+        Hosted at the conventional OAuth client metadata path.
+      security: []
+      tags: [OAuth]
+      responses:
+        "200":
+          description: Web client registration JSON (`application_type: web`).
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /oauth/client-metadata.json:
+    get:
+      operationId: getOAuthWebClientMetadataLegacy
+      summary: Legacy web OAuth discoverable metadata alias
+      description: |
+        Backward-compatible alias for `/oauth-client-metadata.json`.
       security: []
       tags: [OAuth]
       responses:
