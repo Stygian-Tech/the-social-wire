@@ -475,6 +475,23 @@ export function mergedLatrSavesFromGatewayItems(
   return deduped;
 }
 
+export function mergeGatewayItemsWithExternalRecords(
+  items: RepoRecord<LatrSavedItemRecord>[],
+  externals: RepoRecord<LatrSavedExternalRecord>[]
+): MergedLatrSave[] {
+  const hydrated = mergeExternalsAndItemsToHttpsRows(externals, items);
+  const fallback = mergedLatrSavesFromGatewayItems(items);
+  const hydratedSubjects = new Set(hydrated.map((row) => row.subjectUri));
+  return [
+    ...hydrated,
+    ...fallback.filter((row) => !hydratedSubjects.has(row.subjectUri)),
+  ].sort((a, b) => {
+    const ta = Date.parse(a.savedAt);
+    const tb = Date.parse(b.savedAt);
+    return (Number.isNaN(tb) ? 0 : tb) - (Number.isNaN(ta) ? 0 : ta);
+  });
+}
+
 function latrReadLaterUsesGateway(): boolean {
   return process.env.NEXT_PUBLIC_LATR_READ_LATER_PROVIDER?.trim() !== "pds-direct";
 }
@@ -1245,8 +1262,12 @@ export class PDSClient {
     let rows: MergedLatrSave[];
     if (latrReadLaterUsesGateway()) {
       try {
-        rows = mergedLatrSavesFromGatewayItems(
-          await listLatrSavedItemsViaGateway(this.oauthSession, { signal })
+        const items = await listLatrSavedItemsViaGateway(this.oauthSession, {
+          signal,
+        });
+        rows = mergeGatewayItemsWithExternalRecords(
+          items,
+          await this.listLatrSavedExternals(signal)
         );
       } catch {
         rows = mergeExternalsAndItemsToHttpsRows(

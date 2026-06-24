@@ -22,6 +22,7 @@ import {
   COLLECTION_ENTRY_READ_STATE,
   COLLECTION_SKYREADER_FEED_SUBSCRIPTION,
   mergeExternalsAndItemsToHttpsRows,
+  mergeGatewayItemsWithExternalRecords,
   mergedLatrSavesFromGatewayItems,
   filterMergedLatrSavesByState,
   entryReadStateRkeyFromSubjectUri,
@@ -283,6 +284,73 @@ describe("mergedLatrSavesFromGatewayItems", () => {
     if (rows[0].kind !== "external") throw new Error("Expected external row");
     expect(rows[0].normalizedUrl).toBe("https://example.com/foo");
     expect(rows[0].title).toBe("Example");
+  });
+});
+
+describe("mergeGatewayItemsWithExternalRecords", () => {
+  const did = "did:plc:testuser";
+  const extUri = `at://${did}/${COLLECTION_LATR_SAVED_EXTERNAL}/EXTKEYXYZ`;
+
+  it("hydrates sparse gateway external items from PDS external wrappers", () => {
+    const rows = mergeGatewayItemsWithExternalRecords(
+      [
+        {
+          uri: `at://${did}/${COLLECTION_LATR_SAVED_ITEM}/item1`,
+          cid: "cid",
+          value: {
+            $type: COLLECTION_LATR_SAVED_ITEM,
+            subjectUri: extUri,
+            savedAt: "2026-06-01T12:00:00.000Z",
+          },
+        },
+      ],
+      [
+        {
+          uri: extUri,
+          cid: "extcid",
+          value: {
+            $type: COLLECTION_LATR_SAVED_EXTERNAL,
+            url: "https://example.com/foo?utm_source=x",
+            normalizedUrl: "https://example.com/foo",
+            fingerprint: "abc",
+            createdAt: "2026-01-01T00:00:00.000Z",
+            title: "Hydrated title",
+          },
+        },
+      ]
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].kind).toBe("external");
+    if (rows[0].kind !== "external") throw new Error("Expected external row");
+    expect(rows[0].url).toBe("https://example.com/foo?utm_source=x");
+    expect(rows[0].normalizedUrl).toBe("https://example.com/foo");
+    expect(rows[0].title).toBe("Hydrated title");
+  });
+
+  it("falls back to gateway preview fields when the external wrapper is absent", () => {
+    const rows = mergeGatewayItemsWithExternalRecords(
+      [
+        {
+          uri: `at://${did}/${COLLECTION_LATR_SAVED_ITEM}/item1`,
+          cid: "cid",
+          value: {
+            $type: COLLECTION_LATR_SAVED_ITEM,
+            subjectUri: extUri,
+            savedAt: "2026-06-01T12:00:00.000Z",
+            linkedWebUrl: "https://example.com/foo",
+            previewTitle: "Preview title",
+          },
+        },
+      ],
+      []
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].kind).toBe("external");
+    if (rows[0].kind !== "external") throw new Error("Expected external row");
+    expect(rows[0].url).toBe("https://example.com/foo");
+    expect(rows[0].title).toBe("Preview title");
   });
 });
 
