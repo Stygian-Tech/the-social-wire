@@ -94,6 +94,16 @@ enum PublicationProjectionLogic {
     return !left.isDisjoint(with: right)
   }
 
+  static func prefsByPublicationId(
+    _ prefs: [PublicationPrefsRecordDTO]
+  ) -> [String: PublicationPrefsRecordDTO] {
+    var byPublicationId: [String: PublicationPrefsRecordDTO] = [:]
+    for pref in prefs.sorted(by: { $0.uri < $1.uri }) {
+      byPublicationId[pref.publicationId] = pref
+    }
+    return byPublicationId
+  }
+
   static func addPublicationSubscriptionLookupKeys(into keys: inout Set<String>, value: String?) {
     guard let value else { return }
     let normalized = normalizeAtRepoParam(value)

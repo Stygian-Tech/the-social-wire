@@ -166,9 +166,7 @@ actor PublicationProjectionService {
       PublicationProjectionLogic.viewerOwnsPublication($0, viewerDid: viewerDid)
     }
 
-    let prefsByPublicationId = Dictionary(
-      uniqueKeysWithValues: prefs.map { ($0.publicationId, $0) }
-    )
+    let prefsByPublicationId = PublicationProjectionLogic.prefsByPublicationId(prefs)
 
     let unfoldered = subscribed.filter { row in
       guard !PublicationProjectionLogic.viewerOwnsPublication(row, viewerDid: viewerDid) else {

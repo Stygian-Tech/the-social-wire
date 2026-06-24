@@ -30,6 +30,26 @@ struct PublicationProjectionLogicTests {
     #expect(PublicationProjectionLogic.publicationIdsMatch(canonical, alias))
   }
 
+  @Test("duplicate publication prefs do not crash lookup map")
+  func duplicatePublicationPrefsUseHighestUri() {
+    let first = PublicationPrefsRecordDTO(
+      uri: "at://did:plc:viewer/app.thesocialwire.publicationPrefs/aaa",
+      publicationId: "did:plc:23cnpffmuf4vkpsnwhgyvljw",
+      value: ["folderId": AnyCodable("old")]
+    )
+    let second = PublicationPrefsRecordDTO(
+      uri: "at://did:plc:viewer/app.thesocialwire.publicationPrefs/zzz",
+      publicationId: "did:plc:23cnpffmuf4vkpsnwhgyvljw",
+      value: ["folderId": AnyCodable("new")]
+    )
+
+    let map = PublicationProjectionLogic.prefsByPublicationId([second, first])
+
+    #expect(map.count == 1)
+    #expect(map["did:plc:23cnpffmuf4vkpsnwhgyvljw"]?.uri == second.uri)
+    #expect(map["did:plc:23cnpffmuf4vkpsnwhgyvljw"]?.value["folderId"]?.value as? String == "new")
+  }
+
   @Test("subscription keys include cross-lexicon publication aliases")
   func subscriptionAliasKeys() {
     var keys = Set<String>()
