@@ -12,6 +12,7 @@ primary_region = 'ord'
   wait_timeout = '10m0s'
 
 [env]
+  POSTGRES_MAX_CONNECTIONS = '2'
   PORT = '8080'
   # Required for AppView proxy + DPoP structural OAuth fallback (same value on gateway + appview):
   # fly secrets set GATEWAY_APPVIEW_INTERNAL_SECRET="$(openssl rand -hex 32)" --app the-social-wire-dev-gateway

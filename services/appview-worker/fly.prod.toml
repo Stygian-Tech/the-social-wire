@@ -14,6 +14,7 @@ primary_region = 'ams'
 
 [env]
   ENABLE_THIN_APPVIEW = 'true'
+  POSTGRES_MAX_CONNECTIONS = '2'
 
 [[vm]]
   memory = '512mb'

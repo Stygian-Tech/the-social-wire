@@ -1,30 +1,16 @@
-import { beforeEach, describe, expect, it, mock } from "bun:test";
-import { renderHook } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
+import { cleanup, renderHook } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import React from "react";
 import { useCachedBulkReadActions } from "@/hooks/useCachedBulkReadActions";
 import type { DiscoveredPublication } from "@/lib/atprotoClient";
 import { ENTRIES_QUERY_KEY } from "@/hooks/useEntries";
+import * as AuthHook from "@/hooks/useAuth";
+import * as ReadRouteContext from "@/contexts/ReadRouteContext";
 
 const markEntriesRead = mock(() => {});
 const markEntriesUnread = mock(() => {});
-
-mock.module("@/contexts/ReadRouteContext", () => ({
-  useReadRoute: () => ({
-    markEntriesRead,
-    markEntriesUnread,
-  }),
-}));
-
-mock.module("@/hooks/useAuth", () => ({
-  useAuth: () => ({
-    getOAuthSession: () => null,
-  }),
-}));
-
-mock.module("@/hooks/useEntriesCacheEpoch", () => ({
-  useEntriesCacheEpoch: () => 0,
-}));
+let restoreHookSpies: (() => void) | undefined;
 
 const pub: DiscoveredPublication = {
   publicationId: "did:plc:alice",
@@ -39,6 +25,23 @@ describe("useCachedBulkReadActions", () => {
   beforeEach(() => {
     markEntriesRead.mockClear();
     markEntriesUnread.mockClear();
+    const readRouteSpy = spyOn(ReadRouteContext, "useReadRoute").mockReturnValue({
+      markEntriesRead,
+      markEntriesUnread,
+    } as unknown as ReturnType<typeof ReadRouteContext.useReadRoute>);
+    const authSpy = spyOn(AuthHook, "useAuth").mockReturnValue({
+      getOAuthSession: () => null,
+    } as ReturnType<typeof AuthHook.useAuth>);
+    restoreHookSpies = () => {
+      authSpy.mockRestore();
+      readRouteSpy.mockRestore();
+    };
+  });
+
+  afterEach(() => {
+    cleanup();
+    restoreHookSpies?.();
+    restoreHookSpies = undefined;
   });
 
   it("disables bulk actions when cache is empty", () => {
