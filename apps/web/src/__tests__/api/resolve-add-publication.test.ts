@@ -1,12 +1,27 @@
-import { describe, expect, it, mock } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import { POST } from "@/app/api/resolve-add-publication/route";
+import * as ResolveServer from "@/lib/addPublicationResolveServer";
 
-mock.module("@/lib/addPublicationResolveServer", () => ({
-  resolveAddPublicationInput: async (input: string) => {
+let restoreResolverSpy: (() => void) | undefined;
+
+beforeEach(() => {
+  const resolverSpy = spyOn(
+    ResolveServer,
+    "resolveAddPublicationInput"
+  ).mockImplementation(async (input: string) => {
     if (input === "bad") return { error: "not found" };
-    return { kind: "rss", feedUrl: "https://example.com/feed.xml" };
-  },
-}));
+    return {
+      kind: "rss" as const,
+      feedUrl: "https://example.com/feed.xml",
+    };
+  });
+  restoreResolverSpy = () => resolverSpy.mockRestore();
+});
+
+afterEach(() => {
+  restoreResolverSpy?.();
+  restoreResolverSpy = undefined;
+});
 
 describe("POST /api/resolve-add-publication", () => {
   it("returns 400 for invalid JSON", async () => {
