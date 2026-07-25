@@ -13,6 +13,7 @@ primary_region = 'ams'
   wait_timeout = '10m0s'
 
 [env]
+  POSTGRES_MAX_CONNECTIONS = '2'
   PORT = '8080'
 
 [http_service]

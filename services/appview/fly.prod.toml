@@ -16,6 +16,7 @@ primary_region = 'ams'
   APPVIEW_PORT = '8081'
   PORT = '8081'
   ENABLE_THIN_APPVIEW = 'true'
+  POSTGRES_MAX_CONNECTIONS = '2'
 
 [http_service]
   internal_port = 8081

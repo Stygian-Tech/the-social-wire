@@ -6,6 +6,7 @@ primary_region = 'ord'
   context = '../..'
 
 [env]
+  POSTGRES_MAX_CONNECTIONS = '2'
   PORT = '8083'
   OPERATIONS_TELEMETRY_ENABLED = 'true'
   OPERATIONS_RECOVERY_ENABLED = 'false'
