@@ -1,10 +1,40 @@
-import { BrowserOAuthClient, type OAuthSession } from "@atproto/oauth-client-browser"
+import {
+  BrowserOAuthClient,
+  OAuthResponseError,
+  TokenInvalidError,
+  TokenRefreshError,
+  TokenRevokedError,
+  type OAuthSession,
+} from "@atproto/oauth-client-browser"
 import { buildAtprotoLoopbackClientId } from "@atproto/oauth-types"
 import { operationsOAuthClientMetadataUrl } from "@/lib/operations-oauth-client-metadata"
 
 export const OPERATIONS_OAUTH_SCOPE = "atproto"
 const storedDidKey = "@@atproto/oauth-client-browser(sub)"
 let clientPromise: Promise<BrowserOAuthClient> | undefined
+type SessionInvalidationListener = (did: string, cause: unknown) => void
+const sessionInvalidationListeners = new Set<SessionInvalidationListener>()
+
+function notifySessionInvalidated(did: string, cause: unknown) {
+  window.localStorage.removeItem(storedDidKey)
+  sessionInvalidationListeners.forEach((listener) => listener(did, cause))
+}
+
+export function onOAuthSessionInvalidated(listener: SessionInvalidationListener) {
+  sessionInvalidationListeners.add(listener)
+  return () => {
+    sessionInvalidationListeners.delete(listener)
+  }
+}
+
+export function isTerminalOAuthSessionError(error: unknown) {
+  return (
+    error instanceof TokenRefreshError ||
+    error instanceof TokenRevokedError ||
+    error instanceof TokenInvalidError ||
+    (error instanceof OAuthResponseError && error.status === 400)
+  )
+}
 
 function isLocal() {
   return typeof window !== "undefined" && ["localhost", "127.0.0.1"].includes(window.location.hostname)
@@ -34,6 +64,7 @@ export function getOAuthClient() {
       clientId: clientId(),
       handleResolver: "https://bsky.social",
       responseMode: isLocal() ? "query" : "fragment",
+      onDelete: (did, cause) => notifySessionInvalidated(did, cause),
     })
   return clientPromise
 }
@@ -63,11 +94,16 @@ export async function endSession(did: string) {
   try {
     await (await getOAuthClient()).revoke(did)
   } finally {
-    localStorage.removeItem(storedDidKey)
+    window.localStorage.removeItem(storedDidKey)
   }
 }
 
-export function authFetch(session: OAuthSession, url: string, init?: RequestInit) {
-  return session.fetchHandler(url, init)
+export async function authFetch(session: OAuthSession, url: string, init?: RequestInit) {
+  try {
+    return await session.fetchHandler(url, init)
+  } catch (error) {
+    if (isTerminalOAuthSessionError(error)) notifySessionInvalidated(session.did, error)
+    throw error
+  }
 }
 export type { OAuthSession }

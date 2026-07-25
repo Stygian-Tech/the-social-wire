@@ -1,12 +1,19 @@
 "use client"
 import * as React from "react"
-import { beginSignIn, endSession, restoreSession, type OAuthSession } from "@/lib/auth"
+import {
+  beginSignIn,
+  endSession,
+  onOAuthSessionInvalidated,
+  restoreSession,
+  type OAuthSession,
+} from "@/lib/auth"
 import { isConfiguredOperatorDid } from "@/lib/operator-access"
 
 type AuthState = {
   session: OAuthSession | null
   loading: boolean
   forbidden: boolean
+  sessionExpired: boolean
   setForbidden: (value: boolean) => void
   signIn: (handle: string) => Promise<void>
   signOut: () => Promise<void>
@@ -18,6 +25,16 @@ export function OperationsAuthProvider({ children }: { children: React.ReactNode
   const [session, setSession] = React.useState<OAuthSession | null>(null)
   const [loading, setLoading] = React.useState(!demo)
   const [forbidden, setForbiddenState] = React.useState(false)
+  const [sessionExpired, setSessionExpired] = React.useState(false)
+  React.useEffect(
+    () =>
+      onOAuthSessionInvalidated(() => {
+        setSession(null)
+        setForbiddenState(false)
+        setSessionExpired(true)
+      }),
+    [],
+  )
   React.useEffect(() => {
     if (demo) return
     void restoreSession()
@@ -25,6 +42,7 @@ export function OperationsAuthProvider({ children }: { children: React.ReactNode
         if (!restored) return
         if (isConfiguredOperatorDid(restored.did)) {
           setSession(restored)
+          setSessionExpired(false)
           return
         }
         setForbiddenState(true)
@@ -35,6 +53,7 @@ export function OperationsAuthProvider({ children }: { children: React.ReactNode
   const setForbidden = React.useCallback(
     (value: boolean) => {
       setForbiddenState(value)
+      if (value) setSessionExpired(false)
       if (value && session) {
         setSession(null)
         void endSession(session.did).catch(() => undefined)
@@ -47,18 +66,23 @@ export function OperationsAuthProvider({ children }: { children: React.ReactNode
       session,
       loading,
       forbidden,
+      sessionExpired,
       setForbidden,
-      signIn: beginSignIn,
+      signIn: async (handle) => {
+        setSessionExpired(false)
+        await beginSignIn(handle)
+      },
       signOut: async () => {
         try {
           if (session) await endSession(session.did)
         } finally {
           setSession(null)
           setForbiddenState(false)
+          setSessionExpired(false)
         }
       },
     }),
-    [session, loading, forbidden, setForbidden],
+    [session, loading, forbidden, sessionExpired, setForbidden],
   )
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }

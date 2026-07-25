@@ -40,11 +40,16 @@ public func makePostgresConfig(
     tls: .prefer(tls)
   )
 
-  // Supabase session pooler caps concurrent clients (often 15 shared across services).
-  // PostgresNIO defaults to 20 — stay under the pool limit via POSTGRES_MAX_CONNECTIONS.
-  let maxConnections =
-    ProcessInfo.processInfo.environment["POSTGRES_MAX_CONNECTIONS"].flatMap(Int.init) ?? 8
-  config.options.maximumConnections = max(1, maxConnections)
+  config.options.maximumConnections = postgresMaximumConnections()
 
   return config
+}
+
+func postgresMaximumConnections(
+  environment: [String: String] = ProcessInfo.processInfo.environment
+) -> Int {
+  // Supabase session pooler caps concurrent clients (often 15 shared across services).
+  // Keep a safe per-process default even if deployed configuration drifts or omits the override.
+  let configured = environment["POSTGRES_MAX_CONNECTIONS"].flatMap(Int.init) ?? 2
+  return max(1, configured)
 }

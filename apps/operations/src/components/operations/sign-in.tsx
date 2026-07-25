@@ -8,7 +8,7 @@ import { useOperationsAuth } from "@/lib/auth-context"
 import { operatorAccessConfigured } from "@/lib/operator-access"
 
 export function OperatorSignIn() {
-  const { signIn, forbidden } = useOperationsAuth()
+  const { signIn, forbidden, sessionExpired } = useOperationsAuth()
   const accessConfigured = operatorAccessConfigured()
   const [handle, setHandle] = useState("")
   const [busy, setBusy] = useState(false)
@@ -50,6 +50,13 @@ export function OperatorSignIn() {
             className="mt-3 rounded-md border border-destructive/30 bg-danger-surface p-2 text-xs text-destructive"
           >
             This DID is authenticated but not authorized for operations.
+          </p>
+        ) : sessionExpired ? (
+          <p
+            role="alert"
+            className="mt-3 rounded-md border border-warning/30 bg-warning-surface p-2 text-xs text-warning"
+          >
+            Your operator session expired. Sign in again to resume live operations data.
           </p>
         ) : null}
         <form onSubmit={submit} className="mt-5">
