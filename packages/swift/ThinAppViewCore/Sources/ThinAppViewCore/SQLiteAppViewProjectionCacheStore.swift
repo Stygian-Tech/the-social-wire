@@ -52,6 +52,10 @@ public actor SQLiteAppViewProjectionCacheStore: AppViewProjectionCacheStore {
         ON unread_counts_cache (viewer_did, expires_at);
       """)
     try db.execute(sql: """
+      CREATE INDEX IF NOT EXISTS idx_unread_counts_cache_cleanup
+        ON unread_counts_cache (expires_at, viewer_did, publication_id);
+      """)
+    try db.execute(sql: """
       CREATE TABLE IF NOT EXISTS first_page_cache (
         viewer_did TEXT NOT NULL,
         publication_id TEXT NOT NULL,
@@ -65,20 +69,35 @@ public actor SQLiteAppViewProjectionCacheStore: AppViewProjectionCacheStore {
       CREATE INDEX IF NOT EXISTS idx_first_page_cache_viewer_expires
         ON first_page_cache (viewer_did, expires_at);
       """)
+    try db.execute(sql: """
+      CREATE INDEX IF NOT EXISTS idx_first_page_cache_cleanup
+        ON first_page_cache (expires_at, viewer_did, publication_id);
+      """)
   }
 
-  public func cachedSidebarProjectionJSON(viewerDid: String) async throws -> String? {
+  public func sidebarProjectionCacheEntry(
+    viewerDid: String
+  ) async throws -> AppViewProjectionCacheEntry<String>? {
     try await db.read { db in
-      try String.fetchOne(
+      guard let row = try Row.fetchOne(
         db,
         sql: """
-          SELECT json_body
+          SELECT json_body, cached_at, expires_at
           FROM sidebar_projection_cache
           WHERE viewer_did = ?
             AND expires_at > ?
           LIMIT 1
-          """,
+        """,
         arguments: [viewerDid, Self.isoString(from: Date())]
+      ) else { return nil }
+      guard
+        let cachedAt = Self.date(fromIso: row["cached_at"]),
+        let expiresAt = Self.date(fromIso: row["expires_at"])
+      else { return nil }
+      return AppViewProjectionCacheEntry(
+        value: row["json_body"],
+        cachedAt: cachedAt,
+        expiresAt: expiresAt
       )
     }
   }
@@ -113,12 +132,14 @@ public actor SQLiteAppViewProjectionCacheStore: AppViewProjectionCacheStore {
     }
   }
 
-  public func cachedUnreadCounts(viewerDid: String) async throws -> [String: Int]? {
+  public func unreadCountsCacheEntry(
+    viewerDid: String
+  ) async throws -> AppViewProjectionCacheEntry<[String: Int]>? {
     try await db.read { db in
       let rows = try Row.fetchAll(
         db,
         sql: """
-          SELECT publication_id, unread_count
+          SELECT publication_id, unread_count, cached_at, expires_at
           FROM unread_counts_cache
           WHERE viewer_did = ?
             AND expires_at > ?
@@ -127,13 +148,26 @@ public actor SQLiteAppViewProjectionCacheStore: AppViewProjectionCacheStore {
       )
       var counts: [String: Int] = [:]
       var sawRow = false
+      var oldestCachedAt: Date?
+      var earliestExpiresAt: Date?
       for row in rows {
         sawRow = true
         let publicationId: String = row["publication_id"]
         let unreadCount: Int = row["unread_count"]
         counts[publicationId] = max(0, unreadCount)
+        guard
+          let cachedAt = Self.date(fromIso: row["cached_at"]),
+          let expiresAt = Self.date(fromIso: row["expires_at"])
+        else { continue }
+        oldestCachedAt = min(oldestCachedAt ?? cachedAt, cachedAt)
+        earliestExpiresAt = min(earliestExpiresAt ?? expiresAt, expiresAt)
       }
-      return sawRow ? counts : nil
+      guard sawRow, let oldestCachedAt, let earliestExpiresAt else { return nil }
+      return AppViewProjectionCacheEntry(
+        value: counts,
+        cachedAt: oldestCachedAt,
+        expiresAt: earliestExpiresAt
+      )
     }
   }
 
@@ -181,19 +215,31 @@ public actor SQLiteAppViewProjectionCacheStore: AppViewProjectionCacheStore {
     }
   }
 
-  public func cachedFirstPageJSON(viewerDid: String, publicationId: String) async throws -> String? {
+  public func firstPageCacheEntry(
+    viewerDid: String,
+    publicationId: String
+  ) async throws -> AppViewProjectionCacheEntry<String>? {
     try await db.read { db in
-      try String.fetchOne(
+      guard let row = try Row.fetchOne(
         db,
         sql: """
-          SELECT json_body
+          SELECT json_body, cached_at, expires_at
           FROM first_page_cache
           WHERE viewer_did = ?
             AND publication_id = ?
             AND expires_at > ?
           LIMIT 1
-          """,
+        """,
         arguments: [viewerDid, publicationId, Self.isoString(from: Date())]
+      ) else { return nil }
+      guard
+        let cachedAt = Self.date(fromIso: row["cached_at"]),
+        let expiresAt = Self.date(fromIso: row["expires_at"])
+      else { return nil }
+      return AppViewProjectionCacheEntry(
+        value: row["json_body"],
+        cachedAt: cachedAt,
+        expiresAt: expiresAt
       )
     }
   }
@@ -255,12 +301,32 @@ public actor SQLiteAppViewProjectionCacheStore: AppViewProjectionCacheStore {
     }
   }
 
-  public func deleteExpiredProjectionCaches(before: Date) async throws -> Int {
+  public func invalidateAllProjectionCaches() async throws {
+    try await db.write { db in
+      try db.execute(sql: "DELETE FROM sidebar_projection_cache")
+      try db.execute(sql: "DELETE FROM unread_counts_cache")
+      try db.execute(sql: "DELETE FROM first_page_cache")
+    }
+  }
+
+  public func deleteExpiredProjectionCaches(before: Date, batchSize: Int) async throws -> Int {
     let cutoff = Self.isoString(from: before)
+    let batchSize = max(1, min(batchSize, 10_000))
     return try await db.write { db in
       var deleted = 0
       for table in ["sidebar_projection_cache", "unread_counts_cache", "first_page_cache"] {
-        try db.execute(sql: "DELETE FROM \(table) WHERE expires_at <= ?", arguments: [cutoff])
+        try db.execute(
+          sql: """
+            DELETE FROM \(table)
+            WHERE rowid IN (
+              SELECT rowid FROM \(table)
+              WHERE expires_at <= ?
+              ORDER BY expires_at, rowid
+              LIMIT ?
+            )
+            """,
+          arguments: [cutoff, batchSize]
+        )
         deleted += db.changesCount
       }
       return deleted
@@ -269,5 +335,9 @@ public actor SQLiteAppViewProjectionCacheStore: AppViewProjectionCacheStore {
 
   private static func isoString(from date: Date) -> String {
     ISO8601DateFormatter().string(from: date)
+  }
+
+  private static func date(fromIso value: String) -> Date? {
+    ISO8601DateFormatter().date(from: value)
   }
 }

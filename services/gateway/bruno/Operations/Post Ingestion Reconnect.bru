@@ -1,0 +1,22 @@
+meta {
+  name: Reconnect Operations Jetstream
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/v1/operations/ingestion/reconnect
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+  Idempotency-Key: {{operationsIdempotencyKey}}
+  Content-Type: application/json
+}
+
+body:json {
+  { "idempotencyKey": "{{operationsIdempotencyKey}}", "expectedVersion": {{operationsStreamVersion}}, "environmentConfirmation": "{{operationsEnvironmentConfirmation}}" }
+}

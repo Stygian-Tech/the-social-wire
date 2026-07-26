@@ -12,8 +12,12 @@ primary_region = 'ord'
   wait_timeout = '10m0s'
 
 [env]
+  APP_ENV = 'dev'
   POSTGRES_MAX_CONNECTIONS = '2'
   PORT = '8080'
+  OPERATIONS_BASE_URL = 'https://the-social-wire-dev-operations.fly.dev'
+  OAUTH_OPERATIONS_ORIGIN = 'https://operations.testing.thesocialwire.app'
+  OAUTH_OPERATIONS_CLIENT_ID = 'https://api.testing.thesocialwire.app/operations-oauth-client-metadata.json'
   # Required for AppView proxy + DPoP structural OAuth fallback (same value on gateway + appview):
   # fly secrets set GATEWAY_APPVIEW_INTERNAL_SECRET="$(openssl rand -hex 32)" --app the-social-wire-dev-gateway
   # fly secrets set GATEWAY_APPVIEW_INTERNAL_SECRET="<same>" --app the-social-wire-dev-appview
@@ -33,7 +37,7 @@ primary_region = 'ord'
     timeout = '10s'
     grace_period = '1m0s'
     method = 'GET'
-    path = '/health'
+    path = '/readyz'
 
 [[vm]]
   memory = '1gb'

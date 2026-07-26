@@ -1,0 +1,21 @@
+meta {
+  name: Get Operations Gap Investigation
+  type: http
+  seq: 19
+}
+
+get {
+  url: {{baseUrl}}/v1/operations/gaps/{{operationsGapId}}/investigation
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}
+
+docs {
+  Correlates retained worker events, error spans, service starts, and alerts around a detected gap.
+  Cause assessments are confidence-qualified and include explicit telemetry limitations.
+}

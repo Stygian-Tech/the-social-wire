@@ -11,10 +11,12 @@ public actor PostgresAppViewProjectionCacheStore: AppViewProjectionCacheStore {
     self.logger = logger
   }
 
-  public func cachedSidebarProjectionJSON(viewerDid: String) async throws -> String? {
+  public func sidebarProjectionCacheEntry(
+    viewerDid: String
+  ) async throws -> AppViewProjectionCacheEntry<String>? {
     let rows = try await pool.query(
       """
-      SELECT json_body::text
+      SELECT json_body::text, cached_at, expires_at
       FROM sidebar_projection_cache
       WHERE viewer_did = \(viewerDid)
         AND expires_at > NOW()
@@ -23,7 +25,12 @@ public actor PostgresAppViewProjectionCacheStore: AppViewProjectionCacheStore {
       logger: logger
     )
     for try await row in rows {
-      return try row.decode(String.self)
+      let (json, cachedAt, expiresAt) = try row.decode((String, Date, Date).self)
+      return AppViewProjectionCacheEntry(
+        value: json,
+        cachedAt: cachedAt,
+        expiresAt: expiresAt
+      )
     }
     return nil
   }
@@ -55,10 +62,12 @@ public actor PostgresAppViewProjectionCacheStore: AppViewProjectionCacheStore {
     )
   }
 
-  public func cachedUnreadCounts(viewerDid: String) async throws -> [String: Int]? {
+  public func unreadCountsCacheEntry(
+    viewerDid: String
+  ) async throws -> AppViewProjectionCacheEntry<[String: Int]>? {
     let rows = try await pool.query(
       """
-      SELECT publication_id, unread_count
+      SELECT publication_id, unread_count, cached_at, expires_at
       FROM unread_counts_cache
       WHERE viewer_did = \(viewerDid)
         AND expires_at > NOW()
@@ -67,12 +76,23 @@ public actor PostgresAppViewProjectionCacheStore: AppViewProjectionCacheStore {
     )
     var counts: [String: Int] = [:]
     var sawRow = false
+    var oldestCachedAt: Date?
+    var earliestExpiresAt: Date?
     for try await row in rows {
       sawRow = true
-      let (publicationId, unreadCount) = try row.decode((String, Int).self)
+      let (publicationId, unreadCount, cachedAt, expiresAt) = try row.decode(
+        (String, Int, Date, Date).self
+      )
       counts[publicationId] = max(0, unreadCount)
+      oldestCachedAt = min(oldestCachedAt ?? cachedAt, cachedAt)
+      earliestExpiresAt = min(earliestExpiresAt ?? expiresAt, expiresAt)
     }
-    return sawRow ? counts : nil
+    guard sawRow, let oldestCachedAt, let earliestExpiresAt else { return nil }
+    return AppViewProjectionCacheEntry(
+      value: counts,
+      cachedAt: oldestCachedAt,
+      expiresAt: earliestExpiresAt
+    )
   }
 
   public func storeUnreadCounts(
@@ -118,10 +138,13 @@ public actor PostgresAppViewProjectionCacheStore: AppViewProjectionCacheStore {
     }
   }
 
-  public func cachedFirstPageJSON(viewerDid: String, publicationId: String) async throws -> String? {
+  public func firstPageCacheEntry(
+    viewerDid: String,
+    publicationId: String
+  ) async throws -> AppViewProjectionCacheEntry<String>? {
     let rows = try await pool.query(
       """
-      SELECT json_body::text
+      SELECT json_body::text, cached_at, expires_at
       FROM first_page_cache
       WHERE viewer_did = \(viewerDid)
         AND publication_id = \(publicationId)
@@ -131,7 +154,12 @@ public actor PostgresAppViewProjectionCacheStore: AppViewProjectionCacheStore {
       logger: logger
     )
     for try await row in rows {
-      return try row.decode(String.self)
+      let (json, cachedAt, expiresAt) = try row.decode((String, Date, Date).self)
+      return AppViewProjectionCacheEntry(
+        value: json,
+        cachedAt: cachedAt,
+        expiresAt: expiresAt
+      )
     }
     return nil
   }
@@ -184,22 +212,42 @@ public actor PostgresAppViewProjectionCacheStore: AppViewProjectionCacheStore {
     )
   }
 
-  public func deleteExpiredProjectionCaches(before: Date) async throws -> Int {
+  public func invalidateAllProjectionCaches() async throws {
+    try await pool.query("DELETE FROM sidebar_projection_cache", logger: logger)
+    try await pool.query("DELETE FROM unread_counts_cache", logger: logger)
+    try await pool.query("DELETE FROM first_page_cache", logger: logger)
+  }
+
+  public func deleteExpiredProjectionCaches(before: Date, batchSize: Int) async throws -> Int {
+    let batchSize = max(1, min(batchSize, 10_000))
     var deleted = 0
-    deleted += try await deleteExpiredRows(from: "sidebar_projection_cache", before: before)
-    deleted += try await deleteExpiredRows(from: "unread_counts_cache", before: before)
-    deleted += try await deleteExpiredRows(from: "first_page_cache", before: before)
+    deleted += try await deleteExpiredRows(
+      from: "sidebar_projection_cache", before: before, batchSize: batchSize)
+    deleted += try await deleteExpiredRows(
+      from: "unread_counts_cache", before: before, batchSize: batchSize)
+    deleted += try await deleteExpiredRows(
+      from: "first_page_cache", before: before, batchSize: batchSize)
     return deleted
   }
 
-  private func deleteExpiredRows(from table: String, before: Date) async throws -> Int {
+  private func deleteExpiredRows(
+    from table: String,
+    before: Date,
+    batchSize: Int
+  ) async throws -> Int {
     var deleted = 0
     switch table {
     case "sidebar_projection_cache":
       let rows = try await pool.query(
         """
-        DELETE FROM sidebar_projection_cache
-        WHERE expires_at <= \(before)
+        WITH doomed AS (
+          SELECT ctid FROM sidebar_projection_cache
+          WHERE expires_at <= \(before)
+          ORDER BY expires_at, viewer_did
+          LIMIT \(batchSize)
+        )
+        DELETE FROM sidebar_projection_cache AS target USING doomed
+        WHERE target.ctid = doomed.ctid
         RETURNING 1
         """,
         logger: logger
@@ -208,8 +256,14 @@ public actor PostgresAppViewProjectionCacheStore: AppViewProjectionCacheStore {
     case "unread_counts_cache":
       let rows = try await pool.query(
         """
-        DELETE FROM unread_counts_cache
-        WHERE expires_at <= \(before)
+        WITH doomed AS (
+          SELECT ctid FROM unread_counts_cache
+          WHERE expires_at <= \(before)
+          ORDER BY expires_at, viewer_did, publication_id
+          LIMIT \(batchSize)
+        )
+        DELETE FROM unread_counts_cache AS target USING doomed
+        WHERE target.ctid = doomed.ctid
         RETURNING 1
         """,
         logger: logger
@@ -218,8 +272,14 @@ public actor PostgresAppViewProjectionCacheStore: AppViewProjectionCacheStore {
     case "first_page_cache":
       let rows = try await pool.query(
         """
-        DELETE FROM first_page_cache
-        WHERE expires_at <= \(before)
+        WITH doomed AS (
+          SELECT ctid FROM first_page_cache
+          WHERE expires_at <= \(before)
+          ORDER BY expires_at, viewer_did, publication_id
+          LIMIT \(batchSize)
+        )
+        DELETE FROM first_page_cache AS target USING doomed
+        WHERE target.ctid = doomed.ctid
         RETURNING 1
         """,
         logger: logger

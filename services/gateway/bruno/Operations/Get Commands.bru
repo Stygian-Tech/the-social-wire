@@ -1,0 +1,26 @@
+meta {
+  name: Get Operations Commands
+  type: http
+  seq: 27
+}
+
+get {
+  url: {{baseUrl}}/v1/operations/commands?limit=50
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}
+
+tests {
+  test("returns an environment-scoped command page", function() {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body).to.have.property("commands");
+    expect(body).to.have.property("totalCount");
+    expect(body.commands.every((command) => typeof command.environment === "string")).to.equal(true);
+  });
+}

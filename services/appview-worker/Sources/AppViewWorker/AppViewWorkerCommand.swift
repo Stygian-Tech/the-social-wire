@@ -19,7 +19,9 @@ struct AppViewWorkerCommand: AsyncParsableCommand {
     let workerLogger = logger
 
     let environment = RuntimeEnvironment.mergeProcessWithDotenv()
+    let operationsEnvironment = try OperationsConfiguration.requireEnvironment(environment)
     let thinConfig = ThinAppViewConfig.fromEnvironment(environment)
+    let tapConfiguration = try TapConsumerConfiguration.fromEnvironment(environment)
     let operationsConfig = OperationsConfiguration.fromEnvironment(environment)
     guard thinConfig.enabled else {
       throw WorkerRuntimeError.thinAppViewDisabled
@@ -30,7 +32,7 @@ struct AppViewWorkerCommand: AsyncParsableCommand {
       .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
       .filter { !$0.isEmpty }
 
-    let backend = DatabaseBackend.fromEnvironment(environment)
+    let backend = try DatabaseBackend.fromEnvironment(environment)
     let plcURL = environment["ATPROTO_PLC_URL"] ?? "https://plc.directory"
     let httpClient = HTTPClient(eventLoopGroupProvider: .singleton)
     defer { Task { try? await httpClient.shutdown() } }
@@ -38,7 +40,12 @@ struct AppViewWorkerCommand: AsyncParsableCommand {
     switch backend {
     case .sqlite(let path):
       let store = try SQLiteThinAppViewStore(path: path, logger: workerLogger)
-      let operationsStore = try SQLiteOperationsStore(path: path, logger: workerLogger)
+      let operationsStore = try SQLiteOperationsStore(
+        path: path,
+        environment: operationsEnvironment,
+        backfillFingerprintSecret: operationsConfig.backfillFingerprintSecret,
+        logger: workerLogger
+      )
       try await ThinAppViewWorkerRuntime.run(
         store: store,
         config: thinConfig,
@@ -47,7 +54,8 @@ struct AppViewWorkerCommand: AsyncParsableCommand {
         plcURL: plcURL,
         proactiveExtraAuthorDids: proactiveExtraAuthorDids,
         operationsStore: operationsStore,
-        operationsConfig: operationsConfig
+        operationsConfig: operationsConfig,
+        tapConfiguration: tapConfiguration
       )
 
     case .postgres(let urlString):
@@ -55,7 +63,12 @@ struct AppViewWorkerCommand: AsyncParsableCommand {
       let pgPool = PostgresClient(configuration: pgConfig, backgroundLogger: workerLogger)
       let store = PostgresThinAppViewStore(pool: pgPool, logger: workerLogger)
       let projectionCache = PostgresAppViewProjectionCacheStore(pool: pgPool, logger: workerLogger)
-      let operationsStore = PostgresOperationsStore(pool: pgPool, logger: workerLogger)
+      let operationsStore = PostgresOperationsStore(
+        pool: pgPool,
+        environment: operationsEnvironment,
+        backfillFingerprintSecret: operationsConfig.backfillFingerprintSecret,
+        logger: workerLogger
+      )
       try await withThrowingTaskGroup(of: Void.self) { group in
         group.addTask { await pgPool.run() }
         group.addTask {
@@ -68,7 +81,8 @@ struct AppViewWorkerCommand: AsyncParsableCommand {
             proactiveExtraAuthorDids: proactiveExtraAuthorDids,
             projectionCache: projectionCache,
             operationsStore: operationsStore,
-            operationsConfig: operationsConfig
+            operationsConfig: operationsConfig,
+            tapConfiguration: tapConfiguration
           )
         }
         try await group.next()

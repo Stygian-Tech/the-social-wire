@@ -5,16 +5,16 @@ enum ThinAppViewProjectionCacheWarmer {
   static func invalidateViewerSubscriptionCaches(
     projectionCache: any AppViewProjectionCacheStore,
     viewerDid: String
-  ) async {
-    try? await projectionCache.invalidateSidebarProjection(viewerDid: viewerDid)
-    try? await projectionCache.invalidateUnreadCounts(viewerDid: viewerDid, publicationId: nil)
+  ) async throws {
+    try await projectionCache.invalidateSidebarProjection(viewerDid: viewerDid)
+    try await projectionCache.invalidateUnreadCounts(viewerDid: viewerDid, publicationId: nil)
   }
 
   static func invalidateFirstPageKeys(
     projectionCache: any AppViewProjectionCacheStore,
     viewerDid: String,
     publicationId: String
-  ) async {
+  ) async throws {
     var keys = RenderFieldExtractor.publicationFilterEquivalenceKeys(publicationAtUri: publicationId)
     if keys.isEmpty {
       keys.insert(publicationId)
@@ -26,8 +26,8 @@ enum ThinAppViewProjectionCacheWarmer {
       keys.insert(normalized)
     }
     for key in keys {
-      try? await projectionCache.invalidateFirstPage(viewerDid: viewerDid, publicationId: key)
-      try? await projectionCache.invalidateFirstPage(
+      try await projectionCache.invalidateFirstPage(viewerDid: viewerDid, publicationId: key)
+      try await projectionCache.invalidateFirstPage(
         viewerDid: AppViewProjectionCacheViewerKeys.sharedFirstPage,
         publicationId: key
       )
@@ -40,21 +40,19 @@ enum ThinAppViewProjectionCacheWarmer {
     viewerDid: String,
     normalizedFeedUrl: String,
     limit: Int = 50
-  ) async {
+  ) async throws {
     let publicationId = RssFeedIdentity.rssPublicationId(from: normalizedFeedUrl)
-    guard
-      let page = try? await store.listEntries(
-        viewerDid: viewerDid,
-        authorDid: RssFeedLexicons.rssAuthorDid,
-        publicationAtUri: nil,
-        publicationScopeAtUris: [],
-        publicationSiteUrls: [normalizedFeedUrl],
-        filter: .all,
-        cursor: nil,
-        limit: limit
-      ),
-      !page.entries.isEmpty
-    else { return }
+    let page = try await store.listEntries(
+      viewerDid: viewerDid,
+      authorDid: RssFeedLexicons.rssAuthorDid,
+      publicationAtUri: nil,
+      publicationScopeAtUris: [],
+      publicationSiteUrls: [normalizedFeedUrl],
+      filter: .all,
+      cursor: nil,
+      limit: limit
+    )
+    guard !page.entries.isEmpty else { return }
 
     let response = AppViewEntryListResponse(
       entries: RssFeedIdentity.dedupeEntryListItems(page.entries),
@@ -68,7 +66,7 @@ enum ThinAppViewProjectionCacheWarmer {
     else { return }
 
     let expiresAt = Date().addingTimeInterval(AppViewProjectionCacheTTL.firstPageSeconds)
-    try? await projectionCache.storeFirstPageJSON(
+    try await projectionCache.storeFirstPageJSON(
       viewerDid: AppViewProjectionCacheViewerKeys.sharedFirstPage,
       publicationId: publicationId,
       jsonBody: json,

@@ -249,6 +249,663 @@ components:
           type: string
           description: Opaque pagination cursor. Pass to the next request to get the next page. Absent on the last page.
 
+    OperationsEnvironment:
+      type: string
+      enum: [dev, prod]
+
+    OperationsEvidenceMetadata:
+      type: object
+      additionalProperties: false
+      required: [source, accuracy, generatedAt, ageSeconds, validUntil]
+      properties:
+        source:
+          type: string
+          description: Stable name of the instrument or store that produced this evidence.
+        accuracy:
+          type: string
+          enum: [exact, sampled, estimated, unavailable]
+        generatedAt: { type: string, format: date-time }
+        indexedThrough: { type: [string, "null"], format: date-time }
+        ageSeconds: { type: number, minimum: 0 }
+        validUntil: { type: string, format: date-time }
+        coverage:
+          type: [number, "null"]
+          minimum: 0
+          maximum: 1
+        lastSuccessfulAt: { type: [string, "null"], format: date-time }
+        degradedReason:
+          type: [string, "null"]
+          description: Required by convention when accuracy is unavailable or coverage is partial.
+
+    OperationsCapability:
+      type: object
+      additionalProperties: false
+      required: [enabled]
+      properties:
+        enabled: { type: boolean }
+        disabledReason: { type: [string, "null"] }
+
+    OperationsCapabilities:
+      type: object
+      additionalProperties: false
+      required: [environment, telemetry, recovery, recoveryModes, alertDelivery, eventStream, generatedAt]
+      properties:
+        environment: { $ref: "#/components/schemas/OperationsEnvironment" }
+        telemetry: { $ref: "#/components/schemas/OperationsCapability" }
+        recovery: { $ref: "#/components/schemas/OperationsCapability" }
+        recoveryModes: { $ref: "#/components/schemas/OperationsRecoveryModeCapabilities" }
+        alertDelivery: { $ref: "#/components/schemas/OperationsCapability" }
+        eventStream: { $ref: "#/components/schemas/OperationsEventStreamCapability" }
+        generatedAt: { type: string, format: date-time }
+
+    OperationsRecoveryModeCapabilities:
+      type: object
+      additionalProperties: false
+      required: [tapVerifiedResync, jetstreamReplay, pdsReconciliation]
+      properties:
+        tapVerifiedResync: { $ref: "#/components/schemas/OperationsCapability" }
+        jetstreamReplay: { $ref: "#/components/schemas/OperationsCapability" }
+        pdsReconciliation: { $ref: "#/components/schemas/OperationsCapability" }
+
+    OperationsEventStreamCapability:
+      type: object
+      additionalProperties: false
+      required: [enabled, path, retryMilliseconds, fallbackPollMilliseconds]
+      properties:
+        enabled: { type: boolean }
+        disabledReason: { type: [string, "null"] }
+        path: { type: string, const: /v1/operations/events/stream }
+        retryMilliseconds: { type: integer, minimum: 1000 }
+        fallbackPollMilliseconds: { type: integer, minimum: 1000 }
+
+    OperationsLifecycleCounts:
+      type: object
+      additionalProperties: false
+      required: [activeGaps, activeBackfills, attentionBackfills, completedBackfills, unresolvedAlerts]
+      properties:
+        activeGaps: { type: integer, minimum: 0 }
+        activeBackfills: { type: integer, minimum: 0 }
+        attentionBackfills: { type: integer, minimum: 0 }
+        completedBackfills: { type: integer, minimum: 0 }
+        unresolvedAlerts: { type: integer, minimum: 0 }
+
+    OperationsServiceState:
+      type: object
+      additionalProperties: false
+      required: [service, environment, instanceId, liveness, readiness, freshness, completeness, dependencyState, startedAt, heartbeatAt]
+      properties:
+        service: { type: string }
+        environment: { $ref: "#/components/schemas/OperationsEnvironment" }
+        instanceId: { type: string }
+        liveness: { type: string, enum: [healthy, degraded, unhealthy, unknown] }
+        readiness: { type: string, enum: [healthy, degraded, unhealthy, unknown] }
+        freshness: { type: string, enum: [healthy, degraded, unhealthy, unknown] }
+        completeness: { type: string, enum: [healthy, degraded, unhealthy, unknown] }
+        dependencyState:
+          type: object
+          additionalProperties: { type: string }
+        version: { type: [string, "null"] }
+        startedAt: { type: string, format: date-time }
+        heartbeatAt: { type: string, format: date-time }
+
+    IngestionStreamState:
+      type: object
+      additionalProperties: false
+      required: [environment, source, connectionState, queueDepth, heartbeatAt, version]
+      properties:
+        environment: { $ref: "#/components/schemas/OperationsEnvironment" }
+        source: { type: string }
+        connectionState: { type: string, enum: [connected, disconnected, reconnecting, unknown] }
+        connectedAt: { type: [string, "null"], format: date-time }
+        lastDisconnectAt: { type: [string, "null"], format: date-time }
+        lastDisconnectReason: { type: [string, "null"] }
+        lastReceivedCursor: { type: [integer, "null"], format: int64 }
+        lastReceivedEventAt: { type: [string, "null"], format: date-time }
+        lastReceivedAt: { type: [string, "null"], format: date-time }
+        lastCommittedCursor: { type: [integer, "null"], format: int64 }
+        lastCommittedEventAt: { type: [string, "null"], format: date-time }
+        lastCommittedAt: { type: [string, "null"], format: date-time }
+        queueDepth: { type: integer, minimum: 0 }
+        queueCapacity: { type: [integer, "null"], minimum: 0 }
+        queueOverflowTotal: { type: [integer, "null"], format: int64, minimum: 0 }
+        queueEvidence:
+          anyOf:
+            - { $ref: "#/components/schemas/OperationsEvidenceMetadata" }
+            - { type: "null" }
+        transportHeartbeatAt: { type: [string, "null"], format: date-time }
+        lastIndexedMutationAt: { type: [string, "null"], format: date-time }
+        projectionWatermark: { type: [string, "null"] }
+        validationWatermark: { type: [string, "null"] }
+        heartbeatAt: { type: string, format: date-time }
+        version: { type: integer, minimum: 0 }
+
+    JetstreamEndpointState:
+      type: object
+      additionalProperties: false
+      required: [id, environment, displayName, host, role, connectionState, connectionAttempts, failoverCount, updatedAt, version]
+      properties:
+        id: { type: string }
+        environment: { $ref: "#/components/schemas/OperationsEnvironment" }
+        displayName: { type: string }
+        host: { type: string }
+        role: { type: string, enum: [active, standby] }
+        connectionState: { type: string, enum: [connected, disconnected, reconnecting, unknown] }
+        lastConnectedAt: { type: [string, "null"], format: date-time }
+        lastDisconnectedAt: { type: [string, "null"], format: date-time }
+        lastError: { type: [string, "null"] }
+        connectionAttempts: { type: integer, minimum: 0 }
+        failoverCount: { type: integer, minimum: 0 }
+        updatedAt: { type: string, format: date-time }
+        version: { type: integer, minimum: 0 }
+
+    OperationsCommand:
+      type: object
+      additionalProperties: false
+      required: [id, environment, action, status, requestedByDid, createdAt, updatedAt, version]
+      properties:
+        id: { type: string }
+        environment: { $ref: "#/components/schemas/OperationsEnvironment" }
+        action: { type: string, enum: [reconnect_jetstream] }
+        status: { type: string, enum: [queued, running, completed, failed] }
+        requestedByDid: { type: string }
+        auditNote: { type: [string, "null"] }
+        claimedBy: { type: [string, "null"] }
+        leaseExpiresAt: { type: [string, "null"], format: date-time }
+        failureReason: { type: [string, "null"] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        completedAt: { type: [string, "null"], format: date-time }
+        version: { type: integer, minimum: 0 }
+
+    IngestionGap:
+      type: object
+      additionalProperties: false
+      required: [id, environment, source, reason, status, collections, detectedAt, updatedAt, discoveredCount, processedCount, failedCount, reconciledCount, version]
+      properties:
+        id: { type: string }
+        environment: { $ref: "#/components/schemas/OperationsEnvironment" }
+        source: { type: string }
+        startCursor: { type: [integer, "null"], format: int64 }
+        endCursor: { type: [integer, "null"], format: int64 }
+        startTime: { type: [string, "null"], format: date-time }
+        endTime: { type: [string, "null"], format: date-time }
+        reason: { type: string }
+        status:
+          type: string
+          enum: [suspected, confirmed, backfill_queued, backfilling, verification_required, resolved, ignored]
+        collections:
+          type: array
+          items: { type: string }
+        detectedAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        backfillJobId: { type: [string, "null"] }
+        discoveredCount: { type: integer, minimum: 0 }
+        processedCount: { type: integer, minimum: 0 }
+        failedCount: { type: integer, minimum: 0 }
+        reconciledCount: { type: integer, minimum: 0 }
+        version: { type: integer, minimum: 0 }
+
+    BackfillAuthorResult:
+      type: object
+      additionalProperties: false
+      required: [did, collection, discoveredCount, processedCount, failedCount, capped, truncated, status]
+      properties:
+        did: { type: string, pattern: "^did:" }
+        collection: { type: string }
+        discoveredCount: { type: integer, minimum: 0 }
+        processedCount: { type: integer, minimum: 0 }
+        failedCount: { type: integer, minimum: 0 }
+        capped: { type: boolean }
+        truncated: { type: boolean }
+        status: { type: string, enum: [succeeded, partial, failed, cancelled, unsupported] }
+        error:
+          type: [string, "null"]
+          description: Normalized bounded error category; never a raw upstream response.
+
+    BackfillJob:
+      type: object
+      additionalProperties: false
+      required: [id, environment, sourceMode, status, collections, authorDids, authorResults, batchSize, rateLimit, maxConcurrency, estimatedCount, processedCount, failedCount, reconciledCount, requestedByDid, createdAt, updatedAt, version, verificationStatus, scopeTruncated]
+      properties:
+        id: { type: string }
+        environment: { $ref: "#/components/schemas/OperationsEnvironment" }
+        gapId: { type: [string, "null"] }
+        sourceMode: { type: string, enum: [tap_verified_resync, jetstream_replay, pds_reconciliation] }
+        status: { type: string, enum: [queued, running, paused, completed, failed, cancelled] }
+        startCursor: { type: [integer, "null"], format: int64 }
+        endCursor: { type: [integer, "null"], format: int64 }
+        checkpointCursor: { type: [integer, "null"], format: int64 }
+        collections:
+          type: array
+          items: { type: string }
+        authorDids:
+          type: array
+          items: { type: string }
+        authorResults:
+          type: array
+          items: { $ref: "#/components/schemas/BackfillAuthorResult" }
+        batchSize: { type: integer, minimum: 1 }
+        rateLimit: { type: integer, minimum: 1 }
+        maxConcurrency: { type: integer, minimum: 1 }
+        estimatedCount: { type: integer, minimum: 0 }
+        processedCount: { type: integer, minimum: 0 }
+        failedCount: { type: integer, minimum: 0 }
+        reconciledCount: { type: integer, minimum: 0 }
+        requestedByDid: { type: string }
+        auditNote: { type: [string, "null"] }
+        failureReason: { type: [string, "null"] }
+        leaseOwner: { type: [string, "null"] }
+        leaseExpiresAt: { type: [string, "null"], format: date-time }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        completedAt: { type: [string, "null"], format: date-time }
+        version: { type: integer, minimum: 0 }
+        verificationStatus: { type: string, enum: [pending, required, verified, failed] }
+        verificationReason: { type: [string, "null"] }
+        scopeTruncated: { type: boolean }
+        validationWatermark: { type: [string, "null"] }
+
+    OperationsAlert:
+      type: object
+      additionalProperties: false
+      required: [id, environment, rule, conditionKey, severity, status, summary, evidence, runbookSlug, openedAt, updatedAt, deliveryAttempts, version]
+      properties:
+        id: { type: string }
+        environment: { $ref: "#/components/schemas/OperationsEnvironment" }
+        rule: { type: string }
+        conditionKey:
+          type: string
+          description: Stable bounded key for one concrete alert condition within a rule.
+        severity: { type: string }
+        status: { type: string, enum: [open, acknowledged, resolved] }
+        summary: { type: string }
+        evidence:
+          type: object
+          additionalProperties: { type: string }
+        runbookSlug: { type: string }
+        openedAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        acknowledgedByDid: { type: [string, "null"] }
+        resolvedByDid: { type: [string, "null"] }
+        deliveryAttempts: { type: integer, minimum: 0 }
+        lastDeliveryError: { type: [string, "null"] }
+        nextDeliveryAt: { type: [string, "null"], format: date-time }
+        deliveryDeadLetteredAt: { type: [string, "null"], format: date-time }
+        version: { type: integer, minimum: 0 }
+
+    TraceSpan:
+      type: object
+      additionalProperties: false
+      required: [id, environment, traceId, service, name, startedAt, durationMs, status, attributes, expiresAt]
+      properties:
+        id: { type: string }
+        environment: { $ref: "#/components/schemas/OperationsEnvironment" }
+        traceId: { type: string }
+        parentSpanId: { type: [string, "null"] }
+        service: { type: string }
+        name: { type: string }
+        startedAt: { type: string, format: date-time }
+        durationMs: { type: number, minimum: 0 }
+        status: { type: string }
+        attributes:
+          type: object
+          additionalProperties: { type: string }
+        expiresAt: { type: string, format: date-time }
+
+    OperationsMetricRollup:
+      type: object
+      additionalProperties: false
+      required: [environment, bucketStart, metricName, dimensions, sampleCount, valueSum]
+      properties:
+        environment: { $ref: "#/components/schemas/OperationsEnvironment" }
+        bucketStart: { type: string, format: date-time }
+        metricName: { type: string }
+        dimensions:
+          type: object
+          additionalProperties: { type: string }
+        sampleCount: { type: integer, minimum: 0 }
+        valueSum: { type: number }
+        valueMin: { type: [number, "null"] }
+        valueMax: { type: [number, "null"] }
+
+    DatabaseTableRecordCount:
+      type: object
+      additionalProperties: false
+      required: [schema, table, estimatedRecords]
+      properties:
+        schema: { type: string }
+        table: { type: string }
+        estimatedRecords: { type: integer, format: int64, minimum: 0 }
+
+    DatabaseObservabilitySnapshot:
+      type: object
+      additionalProperties: false
+      required: [databaseSizeBytes, activeConnections, maxConnections, transactionsTotal, estimatedRecords, topTables, connectedBackends, activeQueries, observedAt, evidenceAgeSeconds]
+      properties:
+        databaseSizeBytes: { type: integer, format: int64, minimum: 0 }
+        activeConnections: { type: integer, format: int64, minimum: 0 }
+        maxConnections: { type: integer, format: int64, minimum: 0 }
+        transactionsTotal: { type: integer, format: int64, minimum: 0 }
+        estimatedRecords: { type: integer, format: int64, minimum: 0 }
+        cacheHitRatio: { type: [number, "null"], minimum: 0, maximum: 1 }
+        statsResetAt: { type: [string, "null"], format: date-time }
+        topTables:
+          type: array
+          items: { $ref: "#/components/schemas/DatabaseTableRecordCount" }
+        connectedBackends: { type: integer, format: int64, minimum: 0 }
+        activeQueries: { type: integer, format: int64, minimum: 0 }
+        transactionRatePerSecond: { type: [number, "null"], minimum: 0 }
+        observedAt: { type: string, format: date-time }
+        evidenceAgeSeconds: { type: number, minimum: 0 }
+
+    OperationsOverviewEvidence:
+      type: object
+      required: [services, ingestion, database]
+      properties:
+        services: { $ref: "#/components/schemas/OperationsEvidenceMetadata" }
+        ingestion: { $ref: "#/components/schemas/OperationsEvidenceMetadata" }
+        database: { $ref: "#/components/schemas/OperationsEvidenceMetadata" }
+      additionalProperties: { $ref: "#/components/schemas/OperationsEvidenceMetadata" }
+
+    OperationsOverview:
+      type: object
+      additionalProperties: false
+      required: [services, ingestionSources, jetstreamEndpoints, commands, gaps, backfills, alerts, recentTraces, metricRollups, refreshedAt, evidence, capabilities, counts]
+      properties:
+        services:
+          type: array
+          items: { $ref: "#/components/schemas/OperationsServiceState" }
+        ingestion: { anyOf: [{ $ref: "#/components/schemas/IngestionStreamState" }, { type: "null" }] }
+        ingestionSources:
+          type: array
+          description: Source-specific Tap, Jetstream, RSS, projection repair, and cache maintenance state.
+          items: { $ref: "#/components/schemas/IngestionStreamState" }
+        jetstreamEndpoints:
+          type: array
+          items: { $ref: "#/components/schemas/JetstreamEndpointState" }
+        commands:
+          type: array
+          items: { $ref: "#/components/schemas/OperationsCommand" }
+        gaps:
+          type: array
+          description: Active rows only; resolved and ignored gaps are excluded.
+          items: { $ref: "#/components/schemas/IngestionGap" }
+        backfills:
+          type: array
+          description: Active rows only; failed, cancelled, and completed jobs are excluded.
+          items: { $ref: "#/components/schemas/BackfillJob" }
+        alerts:
+          type: array
+          items: { $ref: "#/components/schemas/OperationsAlert" }
+        recentTraces:
+          type: array
+          items: { $ref: "#/components/schemas/TraceSpan" }
+        metricRollups:
+          type: array
+          items: { $ref: "#/components/schemas/OperationsMetricRollup" }
+        database: { anyOf: [{ $ref: "#/components/schemas/DatabaseObservabilitySnapshot" }, { type: "null" }] }
+        refreshedAt: { type: string, format: date-time }
+        evidence: { $ref: "#/components/schemas/OperationsOverviewEvidence" }
+        capabilities: { $ref: "#/components/schemas/OperationsCapabilities" }
+        counts: { $ref: "#/components/schemas/OperationsLifecycleCounts" }
+
+    OperationsMutationRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, idempotencyKey]
+      properties:
+        expectedVersion: { type: integer, minimum: 0 }
+        idempotencyKey: { type: string, minLength: 1, maxLength: 128, pattern: "^\\S+$" }
+        auditNote: { type: [string, "null"], maxLength: 280 }
+        environmentConfirmation: { type: [string, "null"] }
+
+    GapMutationRequest:
+      type: object
+      additionalProperties: false
+      required: [status, expectedVersion, idempotencyKey]
+      properties:
+        status:
+          type: string
+          enum: [suspected, confirmed, backfill_queued, backfilling, verification_required, resolved, ignored]
+        expectedVersion: { type: integer, minimum: 0 }
+        idempotencyKey: { type: string, minLength: 1, maxLength: 128, pattern: "^\\S+$" }
+        auditNote: { type: [string, "null"], maxLength: 280 }
+        environmentConfirmation: { type: [string, "null"] }
+
+    BackfillDryRunRequest:
+      type: object
+      additionalProperties: false
+      required: [sourceMode, collections, authorDids, batchSize, rateLimit, maxConcurrency]
+      properties:
+        gapId: { type: [string, "null"] }
+        sourceMode: { type: string, enum: [tap_verified_resync, jetstream_replay, pds_reconciliation] }
+        startCursor: { type: [integer, "null"], format: int64 }
+        endCursor: { type: [integer, "null"], format: int64 }
+        collections:
+          type: array
+          minItems: 1
+          maxItems: 16
+          items: { type: string }
+        authorDids:
+          type: array
+          items: { type: string, pattern: "^did:" }
+        batchSize: { type: integer, minimum: 1, maximum: 10000 }
+        rateLimit: { type: integer, minimum: 1, maximum: 5000 }
+        maxConcurrency: { type: integer, minimum: 1, maximum: 16 }
+
+    BackfillDryRunResponse:
+      type: object
+      additionalProperties: false
+      required: [estimatedCount, estimatedDurationSeconds, conflicts, unresolvedDeletesWarning, requestFingerprint, validUntil, methodology, confidence, estimateKind]
+      properties:
+        estimatedCount: { type: integer, minimum: 0 }
+        estimatedDurationSeconds: { type: integer, minimum: 0 }
+        snapshotEndCursor: { type: [integer, "null"], format: int64 }
+        conflicts:
+          type: array
+          items: { type: string }
+        unresolvedDeletesWarning: { type: boolean }
+        requestFingerprint:
+          type: string
+          description: Short-lived signed fingerprint binding job creation to this dry run.
+        validUntil: { type: string, format: date-time }
+        methodology: { type: string }
+        confidence:
+          type: string
+          description: Human-readable confidence classification backed by the selected methodology.
+        estimateKind: { type: string, enum: [observed, modeled] }
+        uncertainty:
+          type: [object, "null"]
+          additionalProperties: false
+          required: [lowerBound, upperBound]
+          properties:
+            lowerBound: { type: integer, minimum: 0 }
+            upperBound: { type: integer, minimum: 0 }
+
+    CreateBackfillRequest:
+      type: object
+      additionalProperties: false
+      required: [dryRun, expectedEstimate, requestFingerprint, idempotencyKey]
+      properties:
+        dryRun: { $ref: "#/components/schemas/BackfillDryRunRequest" }
+        expectedEstimate: { type: integer, minimum: 0 }
+        requestFingerprint: { type: string }
+        idempotencyKey: { type: string, minLength: 1, maxLength: 128, pattern: "^\\S+$" }
+        expectedGapVersion: { type: [integer, "null"], minimum: 0 }
+        auditNote: { type: [string, "null"], maxLength: 280 }
+        environmentConfirmation: { type: [string, "null"] }
+
+    GapCauseAssessment:
+      type: object
+      additionalProperties: false
+      required: [title, confidence, summary, evidenceIds, limitations]
+      properties:
+        title: { type: string }
+        confidence: { type: string, enum: [high, medium, low, insufficient] }
+        summary: { type: string }
+        evidenceIds: { type: array, items: { type: string } }
+        limitations: { type: array, items: { type: string } }
+
+    GapInvestigationEvidence:
+      type: object
+      additionalProperties: false
+      required: [id, kind, occurredAt, service, title, detail, attributes]
+      properties:
+        id: { type: string }
+        kind: { type: string, enum: [gap, stream, indexing, service, alert, trace] }
+        occurredAt: { type: string, format: date-time }
+        service: { type: string }
+        title: { type: string }
+        detail: { type: string }
+        attributes:
+          type: object
+          additionalProperties: { type: string }
+        traceId: { type: [string, "null"] }
+
+    GapInvestigation:
+      type: object
+      additionalProperties: false
+      required: [gap, windowStart, windowEnd, assessment, evidence, recommendedActions]
+      properties:
+        gap: { $ref: "#/components/schemas/IngestionGap" }
+        windowStart: { type: string, format: date-time }
+        windowEnd: { type: string, format: date-time }
+        assessment: { $ref: "#/components/schemas/GapCauseAssessment" }
+        evidence:
+          type: array
+          items: { $ref: "#/components/schemas/GapInvestigationEvidence" }
+        recommendedActions: { type: array, items: { type: string } }
+
+    OperationsServiceListResponse:
+      type: object
+      additionalProperties: false
+      required: [services, evidence]
+      properties:
+        services:
+          type: array
+          items: { $ref: "#/components/schemas/OperationsServiceState" }
+        evidence: { $ref: "#/components/schemas/OperationsEvidenceMetadata" }
+
+    OperationsIngestionResponse:
+      type: object
+      additionalProperties: false
+      required: [sources, evidence]
+      properties:
+        state:
+          anyOf:
+            - { $ref: "#/components/schemas/IngestionStreamState" }
+            - { type: "null" }
+        sources:
+          type: array
+          items: { $ref: "#/components/schemas/IngestionStreamState" }
+        evidence: { $ref: "#/components/schemas/OperationsEvidenceMetadata" }
+
+    OperationsAppViewResponse:
+      type: object
+      additionalProperties: false
+      required: [services, evidence]
+      properties:
+        services:
+          type: array
+          items: { $ref: "#/components/schemas/OperationsServiceState" }
+        evidence: { $ref: "#/components/schemas/OperationsEvidenceMetadata" }
+
+    EndpointPage:
+      type: object
+      additionalProperties: false
+      required: [endpoints, totalCount, evidence]
+      properties:
+        endpoints:
+          type: array
+          items: { $ref: "#/components/schemas/JetstreamEndpointState" }
+        nextCursor: { type: [string, "null"] }
+        totalCount: { type: integer, minimum: 0 }
+        evidence: { $ref: "#/components/schemas/OperationsEvidenceMetadata" }
+
+    CommandPage:
+      type: object
+      additionalProperties: false
+      required: [commands, totalCount, evidence]
+      properties:
+        commands:
+          type: array
+          items: { $ref: "#/components/schemas/OperationsCommand" }
+        nextCursor: { type: [string, "null"] }
+        totalCount: { type: integer, minimum: 0 }
+        evidence: { $ref: "#/components/schemas/OperationsEvidenceMetadata" }
+
+    GapPage:
+      type: object
+      additionalProperties: false
+      required: [gaps, totalCount, evidence]
+      properties:
+        gaps:
+          type: array
+          items: { $ref: "#/components/schemas/IngestionGap" }
+        nextCursor: { type: [string, "null"] }
+        totalCount: { type: integer, minimum: 0 }
+        evidence: { $ref: "#/components/schemas/OperationsEvidenceMetadata" }
+
+    BackfillPage:
+      type: object
+      additionalProperties: false
+      required: [backfills, totalCount, evidence]
+      properties:
+        backfills:
+          type: array
+          items: { $ref: "#/components/schemas/BackfillJob" }
+        nextCursor: { type: [string, "null"] }
+        totalCount: { type: integer, minimum: 0 }
+        evidence: { $ref: "#/components/schemas/OperationsEvidenceMetadata" }
+
+    AlertPage:
+      type: object
+      additionalProperties: false
+      required: [alerts, totalCount, evidence]
+      properties:
+        alerts:
+          type: array
+          items: { $ref: "#/components/schemas/OperationsAlert" }
+        nextCursor: { type: [string, "null"] }
+        totalCount: { type: integer, minimum: 0 }
+        evidence: { $ref: "#/components/schemas/OperationsEvidenceMetadata" }
+
+    OperationsMetricsResponse:
+      type: object
+      additionalProperties: false
+      required: [rollups, evidence]
+      properties:
+        rollups:
+          type: array
+          description: Closed one-minute buckets only; absent buckets are not synthesized as zero.
+          items: { $ref: "#/components/schemas/OperationsMetricRollup" }
+        evidence: { $ref: "#/components/schemas/OperationsEvidenceMetadata" }
+
+    TracePage:
+      type: object
+      additionalProperties: false
+      required: [traces, totalCount, truncated, evidence]
+      properties:
+        traces:
+          type: array
+          items: { $ref: "#/components/schemas/TraceSpan" }
+        nextCursor: { type: [string, "null"] }
+        totalCount: { type: integer, minimum: 0 }
+        truncated: { type: boolean }
+        evidence: { $ref: "#/components/schemas/OperationsEvidenceMetadata" }
+
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Must exactly match the request body's idempotencyKey value.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+        pattern: "^\\S+$"
+
   responses:
     Unauthorized:
       description: Missing/invalid bearer token **or** DPoP mismatch.
@@ -264,6 +921,42 @@ components:
             $ref: "#/components/schemas/Error"
     InternalError:
       description: Unexpected server error.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    BadRequest:
+      description: Request validation failed.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Forbidden:
+      description: Authenticated DID is not authorized for this environment.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Conflict:
+      description: The requested state transition is illegal or overlaps active work.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    RateLimited:
+      description: The bounded recovery or diagnostic rate limit has been reached.
+      headers:
+        Retry-After:
+          schema: { type: string }
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    ServiceUnavailable:
+      description: The required capability or dependency is unavailable.
+      headers:
+        Retry-After:
+          schema: { type: string }
       content:
         application/json:
           schema:
@@ -365,6 +1058,21 @@ paths:
       responses:
         "200":
           description: "Native client registration JSON (`application_type: native`)."
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /operations-oauth-client-metadata.json:
+    get:
+      operationId: getOAuthOperationsClientMetadata
+      summary: Operations console OAuth metadata
+      description: Public identity-only OAuth metadata for the deployment-protected Operations console.
+      security: []
+      tags: [OAuth]
+      responses:
+        "200":
+          description: "Operations web client registration JSON (`scope: atproto`)."
           content:
             application/json:
               schema:
@@ -692,6 +1400,13 @@ paths:
         `unreadCounts` payload:
         `{ counts, replacePublicationIds?, generation?, accuracy?, countedAt? }`. Clients should apply
         newer generations only; `exact` counts may replace same-generation `estimated` counts.
+
+        `entriesPage` payload:
+        `{ publicationId, entries, cursor?, source, cachedAt?, expiresAt? }`, where `source` is
+        `live_projection`, `projection_cache`, or `unavailable`. Cached pages always retain the
+        original `cachedAt` and `expiresAt`; clients must reject cached payloads without both.
+        The `done.source` value is the least-current source emitted by the stream, so a cached or
+        unavailable entries page cannot be reported as a wholly live bootstrap.
       tags: [AppView]
       responses:
         "200":
@@ -1109,11 +1824,96 @@ paths:
   /v1/operations/overview:
     get:
       operationId: getOperationsOverview
-      summary: Aggregated operator overview
+      summary: Lightweight evidence-backed operator overview
       tags: [Operations]
       responses:
-        "200": { description: Service, ingestion, gap, backfill, alert, and trace overview. }
-        "403": { description: Authenticated DID is not in `OPERATIONS_OPERATOR_DIDS`. }
+        "200":
+          description: Current service evidence, capabilities, and lifecycle counts with bounded active previews.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OperationsOverview" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
+  /v1/operations/capabilities:
+    get:
+      operationId: getOperationsCapabilities
+      summary: Read environment-specific telemetry, recovery, and alert-delivery capabilities
+      tags: [Operations]
+      responses:
+        "200":
+          description: Machine-readable capability flags and truthful disabled reasons.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OperationsCapabilities" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/operations/metrics:
+    get:
+      operationId: getOperationsMetrics
+      summary: Query bounded closed one-minute metric buckets
+      tags: [Operations]
+      parameters:
+        - { name: from, in: query, required: true, schema: { type: string, format: date-time } }
+        - { name: to, in: query, required: true, schema: { type: string, format: date-time } }
+        - name: metric
+          in: query
+          required: false
+          schema: { type: string }
+          description: Optional stable metric name; arbitrary SQL or route strings are never accepted.
+        - name: collection
+          in: query
+          required: false
+          schema: { type: string, maxLength: 256 }
+        - name: resolution
+          in: query
+          required: true
+          schema: { type: string, const: 1m }
+      responses:
+        "200":
+          description: Real metric rollups and their evidence envelope.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OperationsMetricsResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
+  /v1/operations/events/stream:
+    get:
+      operationId: streamOperationsEvents
+      summary: Resume the authenticated Operations change stream
+      tags: [Operations]
+      parameters:
+        - name: after
+          in: query
+          required: false
+          schema: { type: integer, format: int64, minimum: 0 }
+          description: Last-seen durable Operations change-event cursor.
+        - name: Last-Event-ID
+          in: header
+          required: false
+          schema: { type: integer, format: int64, minimum: 0 }
+      responses:
+        "200":
+          description: Server-sent service, ingestion, job, gap, alert, command, and capability changes.
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-cache }
+          content:
+            text/event-stream:
+              schema: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "410":
+          description: Resume cursor fell outside retained event history; refetch the visible route.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
 
   /v1/operations/services:
     get:
@@ -1121,15 +1921,94 @@ paths:
       summary: Service health states
       tags: [Operations]
       responses:
-        "200": { description: Service heartbeat and dependency states. }
+        "200":
+          description: Service heartbeat and successful dependency probe states. Expired evidence is Unknown.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OperationsServiceListResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
 
   /v1/operations/ingestion:
     get:
       operationId: getOperationsIngestion
-      summary: Jetstream cursor and gap state
+      summary: Source-separated ingestion state
       tags: [Operations]
       responses:
-        "200": { description: Received/committed cursor state and recent gaps. }
+        "200":
+          description: Tap, Jetstream, RSS, and projection-repair observations without blending trust boundaries.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OperationsIngestionResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/operations/ingestion/endpoints:
+    get:
+      operationId: listOperationsIngestionEndpoints
+      summary: List observed ingestion endpoint states
+      tags: [Operations]
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 250, default: 100 }
+        - { name: before, in: query, required: false, schema: { type: string } }
+      responses:
+        "200":
+          description: Environment-scoped endpoint state page with observed transport evidence.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EndpointPage" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/operations/commands:
+    get:
+      operationId: listOperationsCommands
+      summary: List durable operator commands
+      tags: [Operations]
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 250, default: 100 }
+        - { name: before, in: query, required: false, schema: { type: string } }
+      responses:
+        "200":
+          description: Environment-scoped command page with durable status and outcome evidence.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CommandPage" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/operations/ingestion/reconnect:
+    post:
+      operationId: reconnectOperationsJetstream
+      summary: Queue an audited Jetstream reconnect and required post-connect gap assessment
+      tags: [Operations]
+      parameters:
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OperationsMutationRequest" }
+      responses:
+        "202":
+          description: Reconnect command accepted; completion requires transport connection, progress, and gap assessment.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OperationsCommand" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
 
   /v1/operations/appview:
     get:
@@ -1137,15 +2016,38 @@ paths:
       summary: AppView operational state
       tags: [Operations]
       responses:
-        "200": { description: AppView service state and sampled traces. }
+        "200":
+          description: Current AppView and gateway service heartbeat evidence.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OperationsAppViewResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
 
   /v1/operations/gaps:
     get:
       operationId: listOperationsGaps
       summary: List ingestion gaps
       tags: [Operations]
+      parameters:
+        - name: view
+          in: query
+          required: false
+          schema: { type: string, enum: [active, history, all], default: active }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 250, default: 100 }
+        - { name: before, in: query, required: false, schema: { type: string } }
       responses:
-        "200": { description: Gap lifecycle rows. }
+        "200":
+          description: Environment-scoped gap page. Active excludes resolved and ignored before the SQL limit.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GapPage" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
 
   /v1/operations/gaps/{id}:
     patch:
@@ -1154,41 +2056,111 @@ paths:
       tags: [Operations]
       parameters:
         - { name: id, in: path, required: true, schema: { type: string } }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              type: object
-              required: [status]
-              properties:
-                status: { type: string, enum: [suspected, confirmed, backfill_queued, backfilling, resolved, ignored] }
+            schema: { $ref: "#/components/schemas/GapMutationRequest" }
       responses:
-        "200": { description: Updated gap. }
+        "200":
+          description: Updated gap after a legal compare-and-set transition.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/IngestionGap" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
+  /v1/operations/gaps/{id}/investigation:
+    get:
+      operationId: investigateOperationsGap
+      summary: Correlate retained operational evidence around an ingestion gap
+      tags: [Operations]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Qualified cause assessment, evidence timeline, limitations, and next checks.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GapInvestigation" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   /v1/operations/backfills/dry-run:
     post:
       operationId: dryRunOperationsBackfill
       summary: Estimate a bounded recovery job
       tags: [Operations]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BackfillDryRunRequest" }
       responses:
-        "200": { description: Estimated records, duration, snapshot end, and conflicts. }
+        "200":
+          description: Observed scope or explicitly modeled estimate, uncertainty, conflicts, and signed short-lived fingerprint.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BackfillDryRunResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
 
   /v1/operations/backfills:
     get:
       operationId: listOperationsBackfills
       summary: List recovery jobs
       tags: [Operations]
+      parameters:
+        - name: view
+          in: query
+          required: false
+          schema: { type: string, enum: [active, needs_attention, history, all], default: active }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 250, default: 100 }
+        - { name: before, in: query, required: false, schema: { type: string } }
       responses:
-        "200": { description: Recovery jobs. }
+        "200":
+          description: Lifecycle-filtered recovery jobs, filtered before the SQL limit.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BackfillPage" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
     post:
       operationId: createOperationsBackfill
       summary: Queue a dry-run-confirmed recovery job
       tags: [Operations]
+      parameters:
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateBackfillRequest" }
       responses:
-        "200": { description: Queued recovery job. }
-        "409": { description: Dry-run estimate changed and must be reviewed again. }
-        "503": { description: Recovery mutations are disabled. }
+        "201":
+          description: Job, gap link, and audit record created atomically.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BackfillJob" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
 
   /v1/operations/backfills/{id}:
     get:
@@ -1198,7 +2170,14 @@ paths:
       parameters:
         - { name: id, in: path, required: true, schema: { type: string } }
       responses:
-        "200": { description: Recovery job and progress. }
+        "200":
+          description: Recovery job, truthful progress, and durable checkpoint.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BackfillJob" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   /v1/operations/backfills/{id}/pause:
     post:
@@ -1207,8 +2186,24 @@ paths:
       tags: [Operations]
       parameters:
         - { name: id, in: path, required: true, schema: { type: string } }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OperationsMutationRequest" }
       responses:
-        "200": { description: Paused recovery job. }
+        "200":
+          description: Paused recovery job after the current committed batch.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BackfillJob" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
 
   /v1/operations/backfills/{id}/resume:
     post:
@@ -1217,8 +2212,24 @@ paths:
       tags: [Operations]
       parameters:
         - { name: id, in: path, required: true, schema: { type: string } }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OperationsMutationRequest" }
       responses:
-        "200": { description: Requeued recovery job. }
+        "200":
+          description: Requeued recovery job from its last successfully committed event.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BackfillJob" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
 
   /v1/operations/backfills/{id}/cancel:
     post:
@@ -1227,16 +2238,49 @@ paths:
       tags: [Operations]
       parameters:
         - { name: id, in: path, required: true, schema: { type: string } }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OperationsMutationRequest" }
       responses:
-        "200": { description: Cancelled recovery job. }
+        "200":
+          description: Cancelled recovery job; any linked gap is returned to an actionable state.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BackfillJob" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
 
   /v1/operations/alerts:
     get:
       operationId: listOperationsAlerts
       summary: List persisted alerts and delivery state
       tags: [Operations]
+      parameters:
+        - name: view
+          in: query
+          required: false
+          schema: { type: string, enum: [active, history, all], default: active }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 250, default: 100 }
+        - { name: before, in: query, required: false, schema: { type: string } }
       responses:
-        "200": { description: Alert lifecycle rows. }
+        "200":
+          description: Condition-keyed, environment-scoped alert lifecycle page.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AlertPage" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
 
   /v1/operations/alerts/{id}/acknowledge:
     post:
@@ -1245,8 +2289,23 @@ paths:
       tags: [Operations]
       parameters:
         - { name: id, in: path, required: true, schema: { type: string } }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OperationsMutationRequest" }
       responses:
-        "200": { description: Acknowledged alert. }
+        "200":
+          description: Acknowledged alert after a legal compare-and-set transition.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OperationsAlert" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
 
   /v1/operations/alerts/{id}/resolve:
     post:
@@ -1255,8 +2314,50 @@ paths:
       tags: [Operations]
       parameters:
         - { name: id, in: path, required: true, schema: { type: string } }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OperationsMutationRequest" }
       responses:
-        "200": { description: Resolved alert. }
+        "200":
+          description: Resolved alert after a legal compare-and-set transition.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OperationsAlert" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /v1/operations/alerts/{id}/retry:
+    post:
+      operationId: retryOperationsAlertDelivery
+      summary: Retry delivery for a failed or dead-lettered alert
+      tags: [Operations]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OperationsMutationRequest" }
+      responses:
+        "202":
+          description: Alert delivery retry queued with bounded backoff state reset.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OperationsAlert" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
 
   /v1/operations/traces:
     get:
@@ -1264,9 +2365,22 @@ paths:
       summary: Filter sampled traces
       tags: [Operations]
       parameters:
-        - { name: traceId, in: query, required: false, schema: { type: string } }
+        - { name: from, in: query, required: false, schema: { type: string, format: date-time } }
+        - { name: to, in: query, required: false, schema: { type: string, format: date-time } }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 500, default: 100 }
+        - { name: before, in: query, required: false, schema: { type: string } }
       responses:
-        "200": { description: Sampled trace spans. }
+        "200":
+          description: Environment-scoped sampled successes and retained errors.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TracePage" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
 
   /v1/operations/traces/{traceId}:
     get:
@@ -1276,7 +2390,14 @@ paths:
       parameters:
         - { name: traceId, in: path, required: true, schema: { type: string } }
       responses:
-        "200": { description: Correlated trace spans. }
+        "200":
+          description: Correlated trace spans.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TracePage" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
 
 tags:
   - name: Health

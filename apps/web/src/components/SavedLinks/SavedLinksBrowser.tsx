@@ -1,13 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import {
-  Archive,
-  ArchiveRestore,
-  ChevronLeft,
-  ExternalLink,
-  Trash2,
-} from "lucide-react";
+import { Archive, ArchiveRestore, ChevronLeft, ExternalLink, Trash2 } from "lucide-react";
 import { EntryArticleEmbed } from "@/components/EntryDetail/EntryArticleEmbed";
 import { DevRecordKindBadge } from "@/components/shared/DevRecordKindBadge";
 import { ListColumnError } from "@/components/shared/ListColumnError";
@@ -17,11 +11,10 @@ import {
 } from "@/components/shared/ResizableListColumn";
 import { SavedLinkPublicationChip } from "@/components/SavedLinks/SavedLinkPublicationChip";
 import { SavedLinkSocialToolbar } from "@/components/SavedLinks/SavedLinkSocialToolbar";
+import { SavedLinkRowActions } from "@/components/SavedLinks/SavedLinkRowActions";
 import {
   ContextMenu,
   ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuSeparator,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -55,7 +48,9 @@ function hostnamePreview(urlStr: string): string {
 }
 
 function rowId(row: MergedLatrSave): string {
-  return row.kind === "external" ? `external:${row.normalizedUrl}` : `native:${row.itemUri}`;
+  return row.kind === "external"
+    ? `external:${row.normalizedUrl}`
+    : `native:${row.itemUri}`;
 }
 
 function rowUrl(row: MergedLatrSave): string | undefined {
@@ -101,66 +96,31 @@ function rowSubtitle(row: MergedLatrSave): string {
   return parts.join(" · ");
 }
 
-function SavedLinkRowActions({
-  row,
-  isArchivedView,
-  onArchive,
-  onUnarchive,
-  onDelete,
-}: {
-  row: MergedLatrSave;
-  isArchivedView: boolean;
-  onArchive: (row: MergedLatrSave) => void;
-  onUnarchive: (row: MergedLatrSave) => void;
-  onDelete: (row: MergedLatrSave) => void;
-}) {
-  return (
-    <>
-      {isArchivedView ? (
-        <ContextMenuItem
-          className="gap-2"
-          onClick={() => onUnarchive(row)}
-        >
-          <ArchiveRestore className="size-4" />
-          Unarchive
-        </ContextMenuItem>
-      ) : (
-        <ContextMenuItem
-          className="gap-2"
-          onClick={() => onArchive(row)}
-        >
-          <Archive className="size-4" />
-          Archive
-        </ContextMenuItem>
-      )}
-      <ContextMenuSeparator />
-      <ContextMenuItem
-        variant="destructive"
-        className="gap-2"
-        onClick={() => onDelete(row)}
-      >
-        <Trash2 className="size-4" />
-        Delete
-      </ContextMenuItem>
-    </>
-  );
-}
-
 interface SavedLinksBrowserProps {
   mode: SavedLinksBrowserMode;
 }
 
 export function SavedLinksBrowser({ mode }: SavedLinksBrowserProps) {
-  const listState: LatrSaveListState = mode === "archived" ? "archived" : "active";
-  const { data = [], isLoading, isError, error } = useLatrMergedHttpsSaves(listState);
+  const listState: LatrSaveListState =
+    mode === "archived" ? "archived" : "active";
+  const {
+    data = [],
+    isLoading,
+    isError,
+    error,
+  } = useLatrMergedHttpsSaves(listState);
   const archiveMut = useArchiveLatrSaveMutation();
   const unarchiveMut = useUnarchiveLatrSaveMutation();
   const deleteMut = useDeleteLatrSaveMutation();
 
   const isArchivedView = mode === "archived";
   const listHeaderLabel = isArchivedView ? "Archive" : "Saved";
-  const emptyListMessage = isArchivedView ? "Nothing archived" : "Nothing saved";
-  const backLabel = isArchivedView ? "Back to Archived Links" : "Back to Saved Links";
+  const emptyListMessage = isArchivedView
+    ? "Nothing archived"
+    : "Nothing saved";
+  const backLabel = isArchivedView
+    ? "Back to Archived Links"
+    : "Back to Saved Links";
 
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
 
@@ -171,22 +131,19 @@ export function SavedLinksBrowser({ mode }: SavedLinksBrowserProps) {
 
   const selectedRow = useMemo(
     () => data.find((r) => rowId(r) === resolvedSelectedRowId) ?? null,
-    [data, resolvedSelectedRowId]
+    [data, resolvedSelectedRowId],
   );
 
-  const clearSelectionIfNeeded = useCallback(
-    (row: MergedLatrSave) => {
-      setSelectedRowId((prev) => (prev === rowId(row) ? null : prev));
-    },
-    []
-  );
+  const clearSelectionIfNeeded = useCallback((row: MergedLatrSave) => {
+    setSelectedRowId((prev) => (prev === rowId(row) ? null : prev));
+  }, []);
 
   const handleDelete = useCallback(
     (row: MergedLatrSave) => {
       deleteMut.mutate(row.itemRkey);
       clearSelectionIfNeeded(row);
     },
-    [clearSelectionIfNeeded, deleteMut]
+    [clearSelectionIfNeeded, deleteMut],
   );
 
   const handleArchive = useCallback(
@@ -194,7 +151,7 @@ export function SavedLinksBrowser({ mode }: SavedLinksBrowserProps) {
       archiveMut.mutate(row.itemRkey);
       clearSelectionIfNeeded(row);
     },
-    [archiveMut, clearSelectionIfNeeded]
+    [archiveMut, clearSelectionIfNeeded],
   );
 
   const handleUnarchive = useCallback(
@@ -202,7 +159,7 @@ export function SavedLinksBrowser({ mode }: SavedLinksBrowserProps) {
       unarchiveMut.mutate(row.itemRkey);
       clearSelectionIfNeeded(row);
     },
-    [clearSelectionIfNeeded, unarchiveMut]
+    [clearSelectionIfNeeded, unarchiveMut],
   );
 
   const embedTitle = selectedRow ? rowTitle(selectedRow) : "";
@@ -224,7 +181,9 @@ export function SavedLinksBrowser({ mode }: SavedLinksBrowserProps) {
         <h2 className="text-xl font-semibold tracking-tight text-foreground">
           {rowTitle(selectedRow)}
         </h2>
-        <p className="text-sm text-muted-foreground">{rowSubtitle(selectedRow)}</p>
+        <p className="text-sm text-muted-foreground">
+          {rowSubtitle(selectedRow)}
+        </p>
       </div>
       {selectedRow.excerpt ? (
         <p className="max-w-3xl text-base leading-7 text-foreground/85">
@@ -363,7 +322,7 @@ export function SavedLinksBrowser({ mode }: SavedLinksBrowserProps) {
         className={cn(
           "flex min-h-0 min-w-0 flex-1 flex-col md:h-full md:overflow-hidden",
           !resolvedSelectedRowId && "hidden md:flex",
-          resolvedSelectedRowId && "overflow-hidden"
+          resolvedSelectedRowId && "overflow-hidden",
         )}
       >
         {selectedRow ? (
@@ -386,7 +345,9 @@ export function SavedLinksBrowser({ mode }: SavedLinksBrowserProps) {
                       row={selectedRow}
                       className="mb-1.5 md:hidden"
                     />
-                    <p className="truncate text-sm font-medium leading-snug">{embedTitle}</p>
+                    <p className="truncate text-sm font-medium leading-snug">
+                      {embedTitle}
+                    </p>
                     <p className="truncate text-[11px] text-muted-foreground">
                       {rowSubtitle(selectedRow)}
                     </p>

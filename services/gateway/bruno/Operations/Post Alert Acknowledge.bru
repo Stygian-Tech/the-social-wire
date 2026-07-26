@@ -13,9 +13,10 @@ post {
 headers {
   Authorization: Bearer {{oauthAccessToken}}
   DPoP: {{dpopProof}}
+  Idempotency-Key: {{operationsIdempotencyKey}}
   Content-Type: application/json
 }
 
 body:json {
-  { "auditNote": "Acknowledge after reviewing current evidence", "environmentConfirmation": "{{operationsEnvironmentConfirmation}}" }
+  { "expectedVersion": {{operationsAlertVersion}}, "idempotencyKey": "{{operationsIdempotencyKey}}", "auditNote": "Acknowledge after reviewing current evidence", "environmentConfirmation": "{{operationsEnvironmentConfirmation}}" }
 }

@@ -12,9 +12,9 @@ public struct RequestTraceMiddleware: RouterMiddleware {
   private let telemetry: OperationsTelemetryBuffer?
 
   public init(
-    service: String = "unknown",
-    environment: String = "unknown",
-    instanceId: String = "unknown",
+    service: String,
+    environment: String,
+    instanceId: String,
     telemetry: OperationsTelemetryBuffer? = nil
   ) {
     self.service = service
@@ -48,15 +48,33 @@ public struct RequestTraceMiddleware: RouterMiddleware {
       if let traceHeader { response.headers[traceHeader] = mutableContext.traceContext.traceparent }
       return response
     } catch {
-      await record(request: request, context: mutableContext, startedAt: startedAt, duration: Date().timeIntervalSince(startedAt), statusCode: 500, errorType: OperationsRedactor.errorCategory(error))
+      let statusCode = Self.statusCode(for: error)
+      let errorType = statusCode >= 500 ? OperationsRedactor.errorCategory(error) : nil
+      await record(
+        request: request,
+        context: mutableContext,
+        startedAt: startedAt,
+        duration: Date().timeIntervalSince(startedAt),
+        statusCode: statusCode,
+        errorType: errorType
+      )
+      if var httpError = error as? HTTPError {
+        if let requestHeader { httpError.headers[requestHeader] = mutableContext.requestId }
+        if let traceHeader { httpError.headers[traceHeader] = mutableContext.traceContext.traceparent }
+        throw httpError
+      }
       throw error
     }
+  }
+
+  static func statusCode(for error: any Error) -> Int {
+    (error as? any HTTPResponseError)?.status.code ?? 500
   }
 
   private static func safeRequestId(_ value: String) -> String? {
     let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty, trimmed.count <= 128,
-          trimmed.unicodeScalars.allSatisfy({ $0.isASCII && !$0.properties.isWhitespace })
+          trimmed.unicodeScalars.allSatisfy({ $0.value >= 0x21 && $0.value <= 0x7E })
     else { return nil }
     return trimmed
   }
@@ -81,11 +99,12 @@ public struct RequestTraceMiddleware: RouterMiddleware {
     ]
     _ = await telemetry.enqueue(.metric(.init(name: "socialwire.http.server.requests_total", value: 1, dimensions: dimensions)))
     _ = await telemetry.enqueue(.metric(.init(name: "socialwire.http.server.duration_seconds", value: duration, dimensions: dimensions)))
-    let isError = statusCode >= 500 || errorType != nil
+    let isError = statusCode >= 500
     if context.traceContext.sampled || isError {
       var attributes = dimensions
       if let errorType { attributes["error_type"] = errorType }
       _ = await telemetry.enqueue(.span(.init(
+        environment: environment,
         traceId: context.traceContext.traceId,
         parentSpanId: nil,
         service: service,
@@ -97,25 +116,45 @@ public struct RequestTraceMiddleware: RouterMiddleware {
         expiresAt: startedAt.addingTimeInterval(isError ? 30 * 86_400 : 7 * 86_400)
       )))
     }
-    _ = await telemetry.enqueue(.event(.init(
-      service: service,
-      environment: environment,
-      instanceId: instanceId,
-      name: service == "appview" ? "appview.request.completed" : "\(service).request.completed",
-      requestId: context.requestId,
-      traceId: context.traceContext.traceId,
-      attributes: dimensions
-    )))
   }
 
-  private static func routeTemplate(_ path: String) -> String {
+  static func routeTemplate(_ path: String) -> String {
     var components = path.split(separator: "/").map(String.init)
-    guard components.count >= 4, components[0] == "v1", components[1] == "operations" else {
-      return String(path.prefix(160))
+    guard components.count >= 2, components[0] == "v1" else {
+      return Self.normalizedFallbackPath(path)
     }
-    if ["gaps", "backfills", "alerts", "traces"].contains(components[2]) {
+
+    if
+      components.count >= 4,
+      components[1] == "operations",
+      ["gaps", "backfills", "alerts", "traces"].contains(components[2])
+    {
       components[3] = ":id"
+    } else if
+      components.count >= 4,
+      components[1] == "publications",
+      ["folders", "subscriptions", "rss-subscriptions"].contains(components[2])
+    {
+      components[3] = ":rkey"
+    } else if
+      components.count >= 4,
+      components[1] == "latr",
+      components[2] == "saves"
+    {
+      components[3] = ":rkey"
     }
     return "/" + components.joined(separator: "/")
+  }
+
+  private static func normalizedFallbackPath(_ path: String) -> String {
+    let normalized = path.split(separator: "/").prefix(6).map { component -> String in
+      let value = String(component)
+      if value.count > 48 || value.hasPrefix("did:") || value.hasPrefix("at:") {
+        return ":id"
+      }
+      return value
+    }
+    let result = "/" + normalized.joined(separator: "/")
+    return String(result.prefix(160))
   }
 }

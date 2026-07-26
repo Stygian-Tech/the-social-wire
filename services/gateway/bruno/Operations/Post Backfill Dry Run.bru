@@ -19,3 +19,15 @@ headers {
 body:json {
   { "gapId": "{{operationsGapId}}", "sourceMode": "jetstream_replay", "startCursor": 1747487745123000, "endCursor": 1747487750123000, "collections": ["site.standard.document"], "authorDids": [], "batchSize": 1000, "rateLimit": 500, "maxConcurrency": 4 }
 }
+
+tests {
+  test("returns a signed, expiring, truthfully classified estimate", function() {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body.requestFingerprint).to.match(/^v1\./);
+    expect(body.validUntil).to.be.a("string");
+    expect(["observed", "modeled"]).to.include(body.estimateKind);
+    expect(body.methodology).to.be.a("string");
+    expect(body.confidence).to.be.a("string");
+  });
+}

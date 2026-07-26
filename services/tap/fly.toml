@@ -1,0 +1,33 @@
+app = 'the-social-wire-dev-tap'
+primary_region = 'ord'
+
+[build]
+  dockerfile = 'Dockerfile'
+  context = '../..'
+
+[env]
+  TAP_ENV = 'dev'
+  TAP_BIND = ':2480'
+  TAP_COLLECTION_FILTERS = 'site.standard.document,site.standard.entry'
+  TAP_DISABLE_ACKS = 'false'
+  TAP_FULL_NETWORK = 'false'
+  TAP_NO_REPLAY = 'false'
+  TAP_LOG_LEVEL = 'info'
+  # Indigo Tap defaults to 32 connections; the shared Supavisor session pool allows 15.
+  TAP_MAX_DB_CONNS = '1'
+  # Repo CARs are held in memory during resync; serialize them to bound peak memory.
+  TAP_RESYNC_PARALLELISM = '1'
+  TAP_METRICS_LISTEN = ':2481'
+  TAP_RELAY_URL = 'https://relay1.us-east.bsky.network'
+
+[checks.health]
+  type = 'tcp'
+  port = 2480
+  interval = '15s'
+  timeout = '5s'
+  grace_period = '30s'
+
+[[vm]]
+  memory = '2gb'
+  cpu_kind = 'shared'
+  cpus = 1

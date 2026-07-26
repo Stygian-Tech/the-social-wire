@@ -13,9 +13,19 @@ post {
 headers {
   Authorization: Bearer {{oauthAccessToken}}
   DPoP: {{dpopProof}}
+  Idempotency-Key: {{operationsIdempotencyKey}}
   Content-Type: application/json
 }
 
 body:json {
-  { "dryRun": { "gapId": "{{operationsGapId}}", "sourceMode": "jetstream_replay", "startCursor": 1747487745123000, "endCursor": 1747487750123000, "collections": ["site.standard.document"], "authorDids": [], "batchSize": 1000, "rateLimit": 500, "maxConcurrency": 4 }, "expectedEstimate": 1250, "auditNote": "Recover confirmed operations gap", "environmentConfirmation": "{{operationsEnvironmentConfirmation}}" }
+  { "dryRun": { "gapId": "{{operationsGapId}}", "sourceMode": "jetstream_replay", "startCursor": 1747487745123000, "endCursor": 1747487750123000, "collections": ["site.standard.document"], "authorDids": [], "batchSize": 1000, "rateLimit": 500, "maxConcurrency": 1 }, "expectedEstimate": 1250, "requestFingerprint": "{{operationsRequestFingerprint}}", "expectedGapVersion": {{operationsGapVersion}}, "idempotencyKey": "{{operationsIdempotencyKey}}", "environmentConfirmation": "{{operationsEnvironmentConfirmation}}" }
+}
+
+tests {
+  test("atomically queues the dry-run-bound job", function() {
+    expect(res.getStatus()).to.equal(201);
+    const body = res.getBody();
+    expect(body.status).to.equal("queued");
+    expect(body).to.have.property("version");
+  });
 }

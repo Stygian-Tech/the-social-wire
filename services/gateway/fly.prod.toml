@@ -13,8 +13,12 @@ primary_region = 'ams'
   wait_timeout = '10m0s'
 
 [env]
+  APP_ENV = 'prod'
   POSTGRES_MAX_CONNECTIONS = '2'
   PORT = '8080'
+  OPERATIONS_BASE_URL = 'https://the-social-wire-prod-operations.fly.dev'
+  OAUTH_OPERATIONS_ORIGIN = 'https://operations.thesocialwire.app'
+  OAUTH_OPERATIONS_CLIENT_ID = 'https://api.thesocialwire.app/operations-oauth-client-metadata.json'
 
 [http_service]
   internal_port = 8080
@@ -28,7 +32,7 @@ primary_region = 'ams'
     timeout = '10s'
     grace_period = '1m0s'
     method = 'GET'
-    path = '/health'
+    path = '/readyz'
 
 [[vm]]
   memory = '1gb'

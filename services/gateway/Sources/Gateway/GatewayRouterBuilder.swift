@@ -31,7 +31,8 @@ enum GatewayRouterBuilder {
 
     OAuthMetadataRoutes(
       oauthPublicOrigin: config.core.oauthPublicOrigin,
-      oauthIosMetadataOrigin: config.core.oauthIosMetadataOrigin
+      oauthIosMetadataOrigin: config.core.oauthIosMetadataOrigin,
+      oauthOperationsOrigin: config.core.oauthOperationsOrigin
     ).register(on: router)
 
     let authMiddleware = ATProtoAuthMiddleware(

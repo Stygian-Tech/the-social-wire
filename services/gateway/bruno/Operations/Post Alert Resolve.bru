@@ -13,9 +13,10 @@ post {
 headers {
   Authorization: Bearer {{oauthAccessToken}}
   DPoP: {{dpopProof}}
+  Idempotency-Key: {{operationsIdempotencyKey}}
   Content-Type: application/json
 }
 
 body:json {
-  { "auditNote": "Resolve after validating service recovery", "environmentConfirmation": "{{operationsEnvironmentConfirmation}}" }
+  { "expectedVersion": {{operationsAlertVersion}}, "idempotencyKey": "{{operationsIdempotencyKey}}", "auditNote": "Resolve after validating service recovery", "environmentConfirmation": "{{operationsEnvironmentConfirmation}}" }
 }

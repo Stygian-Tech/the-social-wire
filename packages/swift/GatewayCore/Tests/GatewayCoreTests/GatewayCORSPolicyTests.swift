@@ -37,4 +37,20 @@ struct GatewayCORSPolicyTests {
     )
     #expect(origins == ["https://preview.example.test"])
   }
+
+  @Test("Operations origin is always allowed")
+  func operationsOrigin() {
+    let config = GatewayConfig.fromEnvironment([
+      "APP_ENV": "dev",
+      "OAUTH_OPERATIONS_ORIGIN": "https://operations.testing.thesocialwire.app",
+    ])
+    let origins = GatewayCORSPolicy.allowedOrigins(
+      config: config,
+      env: ["CORS_ALLOWED_ORIGINS": "https://testing.thesocialwire.app"]
+    )
+    #expect(origins == [
+      "https://operations.testing.thesocialwire.app",
+      "https://testing.thesocialwire.app",
+    ])
+  }
 }

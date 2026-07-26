@@ -1,0 +1,24 @@
+meta {
+  name: Get Operations Backfills Needing Attention
+  type: http
+  seq: 24
+}
+
+get {
+  url: {{baseUrl}}/v1/operations/backfills?view=needs_attention&limit=50
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}
+
+tests {
+  test("returns failed and cancelled jobs only", function() {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body.backfills.every((job) => ["failed", "cancelled"].includes(job.status))).to.equal(true);
+  });
+}

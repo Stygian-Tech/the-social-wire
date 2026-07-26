@@ -6,6 +6,7 @@ import { FolderBranch } from "./FolderBranch";
 import { NewFolderDialog } from "./NewFolderDialog";
 import { SidebarReadBulkMenuWrap } from "./SidebarReadBulkMenuWrap";
 import { SidebarSubMenuSkeletonRows } from "./SidebarSubMenuSkeletonRows";
+import { SidebarSectionUnreadBadge } from "./SidebarSectionUnreadBadge";
 import { folderExpandKey } from "@/lib/sidebarExpandedKeysStorage";
 import type { DiscoveredPublication } from "@/lib/atprotoClient";
 import type {
@@ -14,22 +15,7 @@ import type {
   RepoRecord,
 } from "@/lib/pdsClient";
 import { rkeyFromURI } from "@/lib/pdsClient";
-import {
-  SidebarMenuItem,
-  SidebarMenuSub,
-} from "@/components/ui/sidebar";
-
-function SectionUnreadBadge({ count }: { count: number }) {
-  if (count <= 0) return null;
-  return (
-    <span
-      className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-lg bg-primary/10 px-1 text-xs font-bold text-[var(--purple-foreground)] tabular-nums"
-      aria-label={`${count} unread`}
-    >
-      {count}
-    </span>
-  );
-}
+import { SidebarMenuItem, SidebarMenuSub } from "@/components/ui/sidebar";
 
 export type SidebarFoldersSectionProps = {
   folders: RepoRecord<FolderRecord>[];
@@ -75,7 +61,7 @@ function SidebarFoldersSectionInner({
       >
         <div className="flex h-6 w-full min-w-0 items-center gap-2 pl-2 pr-1 text-xs font-medium text-sidebar-foreground/70">
           <span className="min-w-0 flex-1 truncate">Folders</span>
-          <SectionUnreadBadge count={foldersSectionUnread} />
+          <SidebarSectionUnreadBadge count={foldersSectionUnread} />
         </div>
       </SidebarReadBulkMenuWrap>
       <SidebarMenuSub aria-label="Folders">

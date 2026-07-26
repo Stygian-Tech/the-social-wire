@@ -1,0 +1,26 @@
+meta {
+  name: Get Operations Capabilities
+  type: http
+  seq: 20
+}
+
+get {
+  url: {{baseUrl}}/v1/operations/capabilities
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}
+
+tests {
+  test("returns capability evidence", function() {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body).to.have.property("environment");
+    expect(body).to.have.property("telemetry");
+    expect(body).to.have.property("recovery");
+  });
+}

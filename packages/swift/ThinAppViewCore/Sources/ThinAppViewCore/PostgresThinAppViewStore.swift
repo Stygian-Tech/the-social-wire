@@ -1,5 +1,6 @@
 import Foundation
 import Logging
+import OperationsCore
 import PostgresNIO
 
 public actor PostgresThinAppViewStore: ThinAppViewStore {
@@ -9,6 +10,11 @@ public actor PostgresThinAppViewStore: ThinAppViewStore {
 public init(pool: PostgresClient, logger: Logger) {
     self.pool = pool
     self.logger = logger
+  }
+
+  public func ping() async throws {
+    let rows = try await pool.query("SELECT 1", logger: logger)
+    for try await _ in rows { return }
   }
 
   public func upsertContentItem(_ item: IndexedContentItem) async throws {
@@ -38,6 +44,41 @@ public init(pool: PostgresClient, logger: Logger) {
       "DELETE FROM content_items WHERE uri = \(uri)",
       logger: logger
     )
+  }
+
+  public func deleteContentItems(authorDid: String) async throws -> Int {
+    let rows = try await pool.query(
+      "DELETE FROM content_items WHERE author_did = \(authorDid) RETURNING 1",
+      logger: logger
+    )
+    var deleted = 0
+    for try await _ in rows { deleted += 1 }
+    return deleted
+  }
+
+  public func fetchContentIdentity(uri: String) async throws -> IndexedContentIdentity? {
+    let rows = try await pool.query(
+      """
+      SELECT uri, cid, author_did, collection
+      FROM content_items
+      WHERE uri = \(uri)
+        AND expires_at > NOW()
+      LIMIT 1
+      """,
+      logger: logger
+    )
+    for try await row in rows {
+      let (storedUri, cid, authorDid, collection) = try row.decode(
+        (String, String, String, String).self
+      )
+      return IndexedContentIdentity(
+        uri: storedUri,
+        cid: cid,
+        authorDid: authorDid,
+        collection: collection
+      )
+    }
+    return nil
   }
 
   public func upsertReadMark(viewerDid: String, subjectUri: String, createdAt: Date) async throws {
@@ -852,9 +893,20 @@ public init(pool: PostgresClient, logger: Logger) {
     return counters
   }
 
-  public func deleteExpiredContent(before: Date) async throws -> Int {
+  public func deleteExpiredContent(before: Date, batchSize: Int) async throws -> Int {
+    let batchSize = max(1, min(batchSize, 10_000))
     let rows = try await pool.query(
-      "DELETE FROM content_items WHERE expires_at <= \(before) RETURNING uri",
+      """
+      WITH doomed AS (
+        SELECT ctid FROM content_items
+        WHERE expires_at <= \(before)
+        ORDER BY expires_at, uri
+        LIMIT \(batchSize)
+      )
+      DELETE FROM content_items AS target USING doomed
+      WHERE target.ctid = doomed.ctid
+      RETURNING target.uri
+      """,
       logger: logger
     )
     var count = 0
@@ -862,17 +914,176 @@ public init(pool: PostgresClient, logger: Logger) {
     return count
   }
 
-  public func deleteExpiredReadMarks(before: Date) async throws -> Int {
+  public func deleteExpiredReadMarks(before: Date, batchSize: Int) async throws -> Int {
+    let batchSize = max(1, min(batchSize, 10_000))
     let rows = try await pool.query(
-      "DELETE FROM read_marks WHERE created_at <= \(before) RETURNING subject_uri",
+      """
+      WITH doomed AS (
+        SELECT ctid FROM read_marks
+        WHERE created_at <= \(before)
+        ORDER BY created_at, viewer_did, subject_uri
+        LIMIT \(batchSize)
+      )
+      DELETE FROM read_marks AS target USING doomed
+      WHERE target.ctid = doomed.ctid
+      RETURNING target.subject_uri
+      """,
       logger: logger
     )
     var count = 0
     for try await _ in rows { count += 1 }
     return count
+  }
+
+  public func deleteExpiredTapEventReceipts(
+    environment: String,
+    before: Date,
+    batchSize: Int
+  ) async throws -> Int {
+    let batchSize = max(1, min(batchSize, 10_000))
+    let rows = try await pool.query(
+      """
+      WITH doomed AS (
+        SELECT ctid FROM appview_tap_event_receipts
+        WHERE environment = \(environment) AND expires_at <= \(before)
+        ORDER BY expires_at, event_id
+        LIMIT \(batchSize)
+      )
+      DELETE FROM appview_tap_event_receipts AS target USING doomed
+      WHERE target.ctid = doomed.ctid
+      RETURNING 1
+      """,
+      logger: logger
+    )
+    var deleted = 0
+    for try await _ in rows { deleted += 1 }
+    return deleted
+  }
+
+  public func deleteExpiredProjectionRepairs(
+    environment: String,
+    before: Date,
+    batchSize: Int
+  ) async throws -> Int {
+    let batchSize = max(1, min(batchSize, 10_000))
+    let rows = try await pool.query(
+      """
+      WITH doomed AS (
+        SELECT ctid FROM appview_projection_repair_outbox
+        WHERE environment = \(environment) AND status = 'failed' AND expires_at <= \(before)
+        ORDER BY expires_at, id
+        LIMIT \(batchSize)
+      )
+      DELETE FROM appview_projection_repair_outbox AS target USING doomed
+      WHERE target.ctid = doomed.ctid
+      RETURNING 1
+      """,
+      logger: logger
+    )
+    var deleted = 0
+    for try await _ in rows { deleted += 1 }
+    return deleted
+  }
+
+  public func desiredTapRepositoryScope(limit: Int) async throws -> TapDesiredRepositoryScope {
+    let limit = max(1, min(limit, 10_000))
+    let scanBatchSize = 500
+    var repoDids: [String] = []
+    var after = ""
+    while repoDids.count <= limit {
+      let rows = try await pool.query(
+        """
+        SELECT DISTINCT author_did
+        FROM appview_publication_scopes
+        WHERE author_did > \(after)
+        ORDER BY author_did
+        LIMIT \(scanBatchSize)
+        """,
+        logger: logger
+      )
+      var page: [String] = []
+      for try await row in rows {
+        page.append(try row.decode(String.self))
+      }
+      guard let last = page.last else { break }
+      repoDids.append(contentsOf: page.filter(ATProtoRepositoryDIDValidator.isValid))
+      after = last
+      if page.count < scanBatchSize { break }
+    }
+    return TapDesiredRepositoryScope(
+      repoDids: Array(repoDids.prefix(limit)),
+      truncated: repoDids.count > limit
+    )
+  }
+
+  public func registeredTapRepositoryDids(environment: String) async throws -> [String] {
+    let rows = try await pool.query(
+      """
+      SELECT repo_did
+      FROM appview_tap_repository_registrations
+      WHERE environment = \(environment) AND is_registered = TRUE
+      ORDER BY repo_did
+      """,
+      logger: logger
+    )
+    var repoDids: [String] = []
+    for try await row in rows {
+      repoDids.append(try row.decode(String.self))
+    }
+    return repoDids
+  }
+
+  public func markTapRepositoriesRegistered(
+    environment: String,
+    repoDids: [String],
+    at: Date
+  ) async throws {
+    guard !repoDids.isEmpty else { return }
+    try await pool.withTransaction(logger: logger) { connection in
+      for repoDid in repoDids {
+        try await connection.query(
+          """
+          INSERT INTO appview_tap_repository_registrations
+            (environment, repo_did, is_registered, registered_at, removed_at, updated_at)
+          VALUES (\(environment), \(repoDid), TRUE, \(at), NULL, \(at))
+          ON CONFLICT (environment, repo_did) DO UPDATE SET
+            is_registered = TRUE,
+            registered_at = EXCLUDED.registered_at,
+            removed_at = NULL,
+            updated_at = EXCLUDED.updated_at
+          """,
+          logger: logger
+        )
+      }
+    }
+  }
+
+  public func markTapRepositoriesRemoved(
+    environment: String,
+    repoDids: [String],
+    at: Date
+  ) async throws {
+    guard !repoDids.isEmpty else { return }
+    try await pool.withTransaction(logger: logger) { connection in
+      for repoDid in repoDids {
+        try await connection.query(
+          """
+          INSERT INTO appview_tap_repository_registrations
+            (environment, repo_did, is_registered, registered_at, removed_at, updated_at)
+          VALUES (\(environment), \(repoDid), FALSE, NULL, \(at), \(at))
+          ON CONFLICT (environment, repo_did) DO UPDATE SET
+            is_registered = FALSE,
+            removed_at = EXCLUDED.removed_at,
+            updated_at = EXCLUDED.updated_at
+          """,
+          logger: logger
+        )
+      }
+    }
   }
 
   public func recordIngestionCheckpoint(
+    environment: String,
     source: String,
     repoDid: String,
     collection: String,
@@ -883,10 +1094,10 @@ public init(pool: PostgresClient, logger: Logger) {
     try await pool.query(
       """
       INSERT INTO appview_ingestion_checkpoints
-        (source, repo_did, collection, cursor, event_time, observed_at)
+        (environment, source, repo_did, collection, cursor, event_time, observed_at)
       VALUES
-        (\(source), \(repoDid), \(collection), \(cursor), \(eventTime), \(observedAt))
-      ON CONFLICT (source, repo_did, collection)
+        (\(environment), \(source), \(repoDid), \(collection), \(cursor), \(eventTime), \(observedAt))
+      ON CONFLICT (environment, source, repo_did, collection)
       DO UPDATE SET
         cursor = EXCLUDED.cursor,
         event_time = EXCLUDED.event_time,
@@ -894,6 +1105,474 @@ public init(pool: PostgresClient, logger: Logger) {
       """,
       logger: logger
     )
+  }
+
+  public func fetchTapRepositorySyncState(
+    environment: String,
+    repoDid: String
+  ) async throws -> TapRepositorySyncState? {
+    let rows = try await pool.query(
+      """
+      SELECT repo_rev, account_status, pds_base, last_event_id, last_event_live,
+             parity_status, matched_event_count, mismatched_event_count,
+             last_mismatch, last_indexed_at, last_validated_at, updated_at
+      FROM appview_tap_repo_state
+      WHERE environment = \(environment)
+        AND repo_did = \(repoDid)
+      LIMIT 1
+      """,
+      logger: logger
+    )
+    for try await row in rows {
+      let decoded = try row.decode(
+        (
+          String?, String, String?, Int64?, Bool, String, Int64, Int64,
+          String?, Date?, Date?, Date
+        ).self
+      )
+      guard
+        let accountStatus = TapAccountStatus(rawValue: decoded.1),
+        let parityStatus = TapParityStatus(rawValue: decoded.5)
+      else { return nil }
+      return TapRepositorySyncState(
+        environment: environment,
+        repoDid: repoDid,
+        repoRev: decoded.0,
+        accountStatus: accountStatus,
+        pdsBase: decoded.2,
+        lastEventId: decoded.3,
+        lastEventLive: decoded.4,
+        parityStatus: parityStatus,
+        matchedEventCount: decoded.6,
+        mismatchedEventCount: decoded.7,
+        lastMismatch: decoded.8,
+        lastIndexedAt: decoded.9,
+        lastValidatedAt: decoded.10,
+        updatedAt: decoded.11
+      )
+    }
+    return nil
+  }
+
+  public func upsertTapRepositorySyncState(_ state: TapRepositorySyncState) async throws {
+    try await pool.query(
+      """
+      INSERT INTO appview_tap_repo_state
+        (environment, repo_did, repo_rev, account_status, pds_base,
+         last_event_id, last_event_live, parity_status, matched_event_count,
+         mismatched_event_count, last_mismatch, last_indexed_at,
+         last_validated_at, updated_at)
+      VALUES
+        (\(state.environment), \(state.repoDid), \(state.repoRev),
+         \(state.accountStatus.rawValue), \(state.pdsBase), \(state.lastEventId),
+         \(state.lastEventLive), \(state.parityStatus.rawValue),
+         \(state.matchedEventCount), \(state.mismatchedEventCount),
+         \(state.lastMismatch), \(state.lastIndexedAt), \(state.lastValidatedAt),
+         \(state.updatedAt))
+      ON CONFLICT (environment, repo_did)
+      DO UPDATE SET
+        repo_rev = EXCLUDED.repo_rev,
+        account_status = EXCLUDED.account_status,
+        pds_base = EXCLUDED.pds_base,
+        last_event_id = EXCLUDED.last_event_id,
+        last_event_live = EXCLUDED.last_event_live,
+        parity_status = EXCLUDED.parity_status,
+        matched_event_count = EXCLUDED.matched_event_count,
+        mismatched_event_count = EXCLUDED.mismatched_event_count,
+        last_mismatch = EXCLUDED.last_mismatch,
+        last_indexed_at = EXCLUDED.last_indexed_at,
+        last_validated_at = EXCLUDED.last_validated_at,
+        updated_at = EXCLUDED.updated_at
+      """,
+      logger: logger
+    )
+  }
+
+  public func hasProcessedTapEvent(environment: String, eventId: Int64) async throws -> Bool {
+    let rows = try await pool.query(
+      """
+      SELECT EXISTS(
+        SELECT 1 FROM appview_tap_event_receipts
+        WHERE environment = \(environment) AND event_id = \(eventId)
+      )
+      """,
+      logger: logger
+    )
+    for try await row in rows { return try row.decode(Bool.self) }
+    return false
+  }
+
+  public func commitTapEvent(
+    state: TapRepositorySyncState,
+    eventId: Int64,
+    eventType: String,
+    parityEvidence: TapParityEventEvidence?,
+    processedAt: Date
+  ) async throws {
+    try await pool.withTransaction(logger: logger) { connection in
+      try await connection.query(
+        """
+        INSERT INTO appview_tap_repo_state
+          (environment, repo_did, repo_rev, account_status, pds_base,
+           last_event_id, last_event_live, parity_status, matched_event_count,
+           mismatched_event_count, last_mismatch, last_indexed_at,
+           last_validated_at, updated_at)
+        VALUES
+          (\(state.environment), \(state.repoDid), \(state.repoRev),
+           \(state.accountStatus.rawValue), \(state.pdsBase), \(state.lastEventId),
+           \(state.lastEventLive), \(state.parityStatus.rawValue),
+           \(state.matchedEventCount), \(state.mismatchedEventCount),
+           \(state.lastMismatch), \(state.lastIndexedAt), \(state.lastValidatedAt),
+           \(state.updatedAt))
+        ON CONFLICT (environment, repo_did)
+        DO UPDATE SET
+          repo_rev = EXCLUDED.repo_rev,
+          account_status = EXCLUDED.account_status,
+          pds_base = EXCLUDED.pds_base,
+          last_event_id = EXCLUDED.last_event_id,
+          last_event_live = EXCLUDED.last_event_live,
+          parity_status = EXCLUDED.parity_status,
+          matched_event_count = EXCLUDED.matched_event_count,
+          mismatched_event_count = EXCLUDED.mismatched_event_count,
+          last_mismatch = EXCLUDED.last_mismatch,
+          last_indexed_at = EXCLUDED.last_indexed_at,
+          last_validated_at = EXCLUDED.last_validated_at,
+          updated_at = EXCLUDED.updated_at
+        """,
+        logger: logger
+      )
+      let expiresAt = processedAt.addingTimeInterval(30 * 86_400)
+      try await connection.query(
+        """
+        INSERT INTO appview_tap_event_receipts
+          (environment, event_id, repo_did, event_type, processed_at, expires_at)
+        VALUES
+          (\(state.environment), \(eventId), \(state.repoDid), \(eventType),
+           \(processedAt), \(expiresAt))
+        ON CONFLICT (environment, event_id) DO NOTHING
+        """,
+        logger: logger
+      )
+      if let parityEvidence {
+        if let mismatchKind = parityEvidence.mismatchKind {
+          try await connection.query(
+            """
+            INSERT INTO appview_tap_parity_discrepancies
+              (environment, event_id, repo_did, uri, collection, mismatch_kind,
+               expected_cid, observed_cid, status, opened_at)
+            VALUES
+              (\(state.environment), \(eventId), \(state.repoDid), \(parityEvidence.uri),
+               \(parityEvidence.collection), \(mismatchKind), \(parityEvidence.expectedCid),
+               \(parityEvidence.observedCid), 'open', \(processedAt))
+            ON CONFLICT (environment, event_id) DO NOTHING
+            """,
+            logger: logger
+          )
+        } else {
+          try await connection.query(
+            """
+            UPDATE appview_tap_parity_discrepancies
+            SET status = 'resolved', resolved_at = \(processedAt), resolution_event_id = \(eventId)
+            WHERE environment = \(state.environment) AND repo_did = \(state.repoDid)
+              AND uri = \(parityEvidence.uri) AND status = 'open'
+            """,
+            logger: logger
+          )
+        }
+        let countRows = try await connection.query(
+          """
+          SELECT COUNT(*)::bigint FROM appview_tap_parity_discrepancies
+          WHERE environment = \(state.environment) AND repo_did = \(state.repoDid)
+            AND status = 'open'
+          """,
+          logger: logger
+        )
+        var openCount: Int64 = 0
+        for try await row in countRows { openCount = try row.decode(Int64.self) }
+        let aggregateStatus = openCount == 0 ? TapParityStatus.matched : .mismatch
+        try await connection.query(
+          """
+          UPDATE appview_tap_repo_state
+          SET parity_status = \(aggregateStatus.rawValue),
+              last_mismatch = CASE WHEN \(openCount) = 0 THEN NULL ELSE last_mismatch END
+          WHERE environment = \(state.environment) AND repo_did = \(state.repoDid)
+          """,
+          logger: logger
+        )
+      }
+    }
+  }
+
+  public func listTapParityDiscrepancies(
+    environment: String,
+    repoDid: String
+  ) async throws -> [TapParityDiscrepancy] {
+    let rows = try await pool.query(
+      """
+      SELECT event_id, uri, collection, mismatch_kind, expected_cid, observed_cid,
+             status, opened_at, resolved_at, resolution_event_id
+      FROM appview_tap_parity_discrepancies
+      WHERE environment = \(environment) AND repo_did = \(repoDid)
+      ORDER BY event_id
+      """,
+      logger: logger
+    )
+    var discrepancies: [TapParityDiscrepancy] = []
+    for try await row in rows {
+      let value = try row.decode(
+        (Int64, String, String, String, String?, String?, String, Date, Date?, Int64?).self
+      )
+      guard let status = TapParityDiscrepancyStatus(rawValue: value.6) else { continue }
+      discrepancies.append(
+        TapParityDiscrepancy(
+          environment: environment,
+          eventId: value.0,
+          repoDid: repoDid,
+          uri: value.1,
+          collection: value.2,
+          mismatchKind: value.3,
+          expectedCid: value.4,
+          observedCid: value.5,
+          status: status,
+          openedAt: value.7,
+          resolvedAt: value.8,
+          resolutionEventId: value.9
+        )
+      )
+    }
+    return discrepancies
+  }
+
+  public func applyTapContentMutation(
+    _ mutation: TapContentMutation,
+    environment: String,
+    eventId: Int64,
+    repoRev: String,
+    eventTime: Date,
+    observedAt: Date
+  ) async throws {
+    try await pool.withTransaction(logger: logger) { connection in
+      let publicationSite: String?
+      let action: String
+      switch mutation {
+      case .upsert(let item):
+        publicationSite = item.publicationSite
+        action = "upsert"
+        let renderJSON = try item.render.encodedJSON()
+        try await connection.query(
+          """
+          INSERT INTO content_items
+            (uri, cid, author_did, collection, created_at, indexed_at,
+             publication_site, render_json, expires_at)
+          VALUES
+            (\(item.uri), \(item.cid), \(item.authorDid), \(item.collection),
+             \(item.createdAt), \(item.indexedAt), \(item.publicationSite),
+             \(renderJSON)::jsonb, \(item.expiresAt))
+          ON CONFLICT (uri) DO UPDATE SET
+            cid = EXCLUDED.cid,
+            author_did = EXCLUDED.author_did,
+            collection = EXCLUDED.collection,
+            created_at = EXCLUDED.created_at,
+            indexed_at = EXCLUDED.indexed_at,
+            publication_site = EXCLUDED.publication_site,
+            render_json = EXCLUDED.render_json,
+            expires_at = EXCLUDED.expires_at
+          """,
+          logger: logger
+        )
+      case .delete(let uri, _, _):
+        var existingSite: String?
+        let rows = try await connection.query(
+          "SELECT publication_site FROM content_items WHERE uri = \(uri) LIMIT 1",
+          logger: logger
+        )
+        for try await row in rows {
+          existingSite = try row.decode(String?.self)
+        }
+        publicationSite = existingSite
+        action = "delete"
+        try await connection.query(
+          "DELETE FROM content_items WHERE uri = \(uri)",
+          logger: logger
+        )
+      }
+
+      try await connection.query(
+        """
+        INSERT INTO appview_ingestion_checkpoints
+          (environment, source, repo_did, collection, cursor, event_time, observed_at)
+        VALUES
+          (\(environment), 'tap', \(mutation.authorDid), \(mutation.collection), \(String(eventId)),
+           \(eventTime), \(observedAt))
+        ON CONFLICT (environment, source, repo_did, collection) DO UPDATE SET
+          cursor = EXCLUDED.cursor,
+          event_time = EXCLUDED.event_time,
+          observed_at = EXCLUDED.observed_at
+        """,
+        logger: logger
+      )
+
+      let repairId = "\(environment):\(eventId)"
+      let expiresAt = observedAt.addingTimeInterval(30 * 86_400)
+      try await connection.query(
+        """
+        INSERT INTO appview_projection_repair_outbox
+          (id, environment, event_id, uri, author_did, publication_site, action,
+           status, attempts, next_attempt_at, created_at, updated_at, expires_at)
+        VALUES
+          (\(repairId), \(environment), \(eventId), \(mutation.uri),
+           \(mutation.authorDid), \(publicationSite), \(action), 'queued', 0,
+           \(observedAt), \(observedAt), \(observedAt), \(expiresAt))
+        ON CONFLICT (environment, event_id) DO NOTHING
+        """,
+        logger: logger
+      )
+      _ = repoRev
+    }
+  }
+
+  public func projectionRepairBacklog(
+    environment: String,
+    at: Date
+  ) async throws -> AppViewProjectionRepairBacklogSnapshot {
+    let rows = try await pool.query(
+      """
+      SELECT
+        COUNT(*) FILTER (WHERE status = 'queued')::bigint,
+        COUNT(*) FILTER (WHERE status = 'running')::bigint,
+        COUNT(*) FILTER (WHERE status = 'failed')::bigint,
+        MIN(created_at) FILTER (WHERE status IN ('queued', 'running', 'failed'))
+      FROM appview_projection_repair_outbox
+      WHERE environment = \(environment)
+      """,
+      logger: logger
+    )
+    for try await row in rows {
+      let decoded = try row.decode((Int64, Int64, Int64, Date?).self)
+      guard let queuedCount = Int(exactly: decoded.0),
+        let runningCount = Int(exactly: decoded.1),
+        let failedCount = Int(exactly: decoded.2)
+      else {
+        throw AppViewProjectionRepairError.invalidBacklogEvidence
+      }
+      let hasActionableRepairs = queuedCount > 0 || runningCount > 0 || failedCount > 0
+      guard queuedCount >= 0, runningCount >= 0, failedCount >= 0 else {
+        throw AppViewProjectionRepairError.invalidBacklogEvidence
+      }
+      if hasActionableRepairs {
+        guard let oldestActionableAt = decoded.3, oldestActionableAt <= at else {
+          throw AppViewProjectionRepairError.invalidBacklogEvidence
+        }
+      } else if decoded.3 != nil {
+        throw AppViewProjectionRepairError.invalidBacklogEvidence
+      }
+      return AppViewProjectionRepairBacklogSnapshot(
+        environment: environment,
+        queuedCount: queuedCount,
+        runningCount: runningCount,
+        failedCount: failedCount,
+        oldestActionableAt: decoded.3,
+        oldestActionableAgeSeconds: decoded.3.map { at.timeIntervalSince($0) },
+        observedAt: at
+      )
+    }
+    throw AppViewProjectionRepairError.invalidBacklogEvidence
+  }
+
+  public func claimProjectionRepair(
+    environment: String,
+    workerId: String,
+    leaseUntil: Date,
+    at: Date
+  ) async throws -> AppViewProjectionRepair? {
+    let rows = try await pool.query(
+      """
+      WITH candidate AS (
+        SELECT id
+        FROM appview_projection_repair_outbox
+        WHERE environment = \(environment)
+          AND ((status = 'queued' AND next_attempt_at <= \(at))
+            OR (status = 'running' AND lease_until <= \(at)))
+        ORDER BY created_at ASC
+        FOR UPDATE SKIP LOCKED
+        LIMIT 1
+      )
+      UPDATE appview_projection_repair_outbox AS repair
+      SET status = 'running', lease_owner = \(workerId), lease_until = \(leaseUntil),
+          updated_at = \(at)
+      FROM candidate
+      WHERE repair.environment = \(environment) AND repair.id = candidate.id
+      RETURNING repair.id, repair.environment, repair.event_id, repair.uri,
+                repair.author_did, repair.publication_site, repair.action, repair.attempts
+      """,
+      logger: logger
+    )
+    for try await row in rows {
+      let decoded = try row.decode(
+        (String, String, Int64, String, String, String?, String, Int).self
+      )
+      return AppViewProjectionRepair(
+        id: decoded.0,
+        environment: decoded.1,
+        eventId: decoded.2,
+        uri: decoded.3,
+        authorDid: decoded.4,
+        publicationSite: decoded.5,
+        action: decoded.6,
+        attempts: decoded.7,
+        leaseOwner: workerId,
+        leaseUntil: leaseUntil
+      )
+    }
+    return nil
+  }
+
+  public func completeProjectionRepair(
+    environment: String,
+    id: String,
+    workerId: String
+  ) async throws {
+    let rows = try await pool.query(
+      """
+      DELETE FROM appview_projection_repair_outbox
+      WHERE environment = \(environment) AND id = \(id)
+        AND status = 'running' AND lease_owner = \(workerId)
+      RETURNING 1
+      """,
+      logger: logger
+    )
+    var deleted = false
+    for try await _ in rows { deleted = true }
+    guard deleted else { throw AppViewProjectionRepairError.staleLease }
+  }
+
+  public func failProjectionRepair(
+    environment: String,
+    id: String,
+    workerId: String,
+    errorCategory: String,
+    retryAt: Date,
+    at: Date
+  ) async throws {
+    let rows = try await pool.query(
+      """
+      UPDATE appview_projection_repair_outbox
+      SET attempts = attempts + 1,
+          status = CASE WHEN attempts + 1 >= 5 THEN 'failed' ELSE 'queued' END,
+          lease_owner = NULL,
+          lease_until = NULL,
+          next_attempt_at = \(retryAt),
+          last_error = \(errorCategory),
+          updated_at = \(at)
+      WHERE environment = \(environment) AND id = \(id)
+        AND status = 'running' AND lease_owner = \(workerId)
+      RETURNING 1
+      """,
+      logger: logger
+    )
+    var updated = false
+    for try await _ in rows { updated = true }
+    guard updated else { throw AppViewProjectionRepairError.staleLease }
   }
 
   public func listAuthorDidsForProactiveBackfill(limit: Int) async throws -> [String] {

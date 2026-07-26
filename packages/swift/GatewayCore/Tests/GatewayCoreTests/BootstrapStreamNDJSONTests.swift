@@ -87,4 +87,70 @@ struct BootstrapStreamNDJSONTests {
     #expect(decoded.unreadCounts?.accuracy == "exact")
     #expect(decoded.unreadCounts?.countedAt == countedAt)
   }
+
+  @Test("entries page requires and preserves cache provenance")
+  func entriesPageProvenanceRoundTrips() throws {
+    let cachedAt = Date(timeIntervalSince1970: 1_800_000_000)
+    let expiresAt = cachedAt.addingTimeInterval(300)
+    let event = AppViewBootstrapStreamEvent.entriesPage(
+      AppViewBootstrapEntriesPagePayload(
+        publicationId: "pub-a",
+        entries: [],
+        cursor: nil,
+        source: .projectionCache,
+        cachedAt: cachedAt,
+        expiresAt: expiresAt
+      )
+    )
+
+    let data = try AppViewBootstrapStreamNDJSON.encodeLine(event)
+    let decoder = JSONDecoder()
+    decoder.dateDecodingStrategy = .iso8601
+    let decoded = try decoder.decode(
+      AppViewBootstrapStreamEvent.self,
+      from: Data(data.dropLast())
+    )
+    #expect(decoded.entriesPage?.source == .projectionCache)
+    #expect(decoded.entriesPage?.cachedAt == cachedAt)
+    #expect(decoded.entriesPage?.expiresAt == expiresAt)
+
+    let ungrounded = #"{"kind":"entriesPage","entriesPage":{"publicationId":"pub-a","entries":[]}}"#
+    #expect(throws: DecodingError.self) {
+      try decoder.decode(AppViewBootstrapStreamEvent.self, from: Data(ungrounded.utf8))
+    }
+  }
+
+  @Test("done provenance distinguishes cached evidence and remains backward-compatible")
+  func doneProvenanceRoundTrips() throws {
+    let refreshedAt = Date(timeIntervalSince1970: 1_800_000_000)
+    let event = AppViewBootstrapStreamEvent.done(
+      refreshedAt: refreshedAt,
+      source: .projectionCache
+    )
+    let encoded = try AppViewBootstrapStreamNDJSON.encodeLine(event)
+    let line = Data(encoded.dropLast())
+    let decoder = JSONDecoder()
+    decoder.dateDecodingStrategy = .iso8601
+    let decoded = try decoder.decode(AppViewBootstrapStreamEvent.self, from: line)
+    #expect(decoded.done?.refreshedAt == refreshedAt)
+    #expect(decoded.done?.source == .projectionCache)
+
+    let legacy = #"{"kind":"done","done":{"refreshedAt":"2027-01-15T08:00:00Z"}}"#
+    let legacyDecoded = try decoder.decode(
+      AppViewBootstrapStreamEvent.self,
+      from: Data(legacy.utf8)
+    )
+    #expect(legacyDecoded.done?.source == nil)
+
+    let unavailable = AppViewBootstrapStreamEvent.done(
+      refreshedAt: refreshedAt,
+      source: .unavailable
+    )
+    let unavailableLine = try AppViewBootstrapStreamNDJSON.encodeLine(unavailable)
+    let unavailableDecoded = try decoder.decode(
+      AppViewBootstrapStreamEvent.self,
+      from: Data(unavailableLine.dropLast())
+    )
+    #expect(unavailableDecoded.done?.source == .unavailable)
+  }
 }

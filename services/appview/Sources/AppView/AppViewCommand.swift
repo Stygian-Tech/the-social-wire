@@ -29,6 +29,7 @@ struct Serve: AsyncParsableCommand {
     logger.logLevel = .info
 
     let environment = AppEnvironmentLoader.mergeProcessWithDotenv()
+    let operationsEnvironment = try OperationsConfiguration.requireEnvironment(environment)
     let config = AppViewServiceConfig.fromEnvironment(environment)
     let operationsConfig = OperationsConfiguration.fromEnvironment(environment)
     let listenPort =
@@ -57,9 +58,22 @@ struct Serve: AsyncParsableCommand {
       case .sqlite(let path):
         let store = try SQLiteThinAppViewStore(path: path, logger: logger)
         let projectionCache = try SQLiteAppViewProjectionCacheStore(path: path, logger: logger)
-        let operationsStore = try SQLiteOperationsStore(path: path, logger: logger)
+        let operationsStore = try SQLiteOperationsStore(
+          path: path,
+          environment: operationsEnvironment,
+          backfillFingerprintSecret: operationsConfig.backfillFingerprintSecret,
+          logger: logger
+        )
         let telemetry = OperationsTelemetryBuffer(store: operationsStore, logger: logger)
-        let heartbeat = OperationsHeartbeatJob(store: operationsStore, service: "appview", environment: operationsConfig.environment, instanceId: operationsConfig.instanceId, logger: logger)
+        let heartbeat = OperationsHeartbeatJob(
+          store: operationsStore,
+          service: "appview",
+          environment: operationsConfig.environment,
+          instanceId: operationsConfig.instanceId,
+          dependencyProbe: appViewDependencyProbe(store: store),
+          telemetry: telemetry,
+          logger: logger
+        )
         let router = AppViewRouterBuilder.router(
           config: config,
           httpClient: httpClient,
@@ -88,9 +102,22 @@ struct Serve: AsyncParsableCommand {
         let pgPool = PostgresClient(configuration: pgConfig, backgroundLogger: logger)
         let store = PostgresThinAppViewStore(pool: pgPool, logger: logger)
         let projectionCache = PostgresAppViewProjectionCacheStore(pool: pgPool, logger: logger)
-        let operationsStore = PostgresOperationsStore(pool: pgPool, logger: logger)
+        let operationsStore = PostgresOperationsStore(
+          pool: pgPool,
+          environment: operationsEnvironment,
+          backfillFingerprintSecret: operationsConfig.backfillFingerprintSecret,
+          logger: logger
+        )
         let telemetry = OperationsTelemetryBuffer(store: operationsStore, logger: logger)
-        let heartbeat = OperationsHeartbeatJob(store: operationsStore, service: "appview", environment: operationsConfig.environment, instanceId: operationsConfig.instanceId, logger: logger)
+        let heartbeat = OperationsHeartbeatJob(
+          store: operationsStore,
+          service: "appview",
+          environment: operationsConfig.environment,
+          instanceId: operationsConfig.instanceId,
+          dependencyProbe: appViewDependencyProbe(store: store),
+          telemetry: telemetry,
+          logger: logger
+        )
         let router = AppViewRouterBuilder.router(
           config: config,
           httpClient: httpClient,
@@ -120,6 +147,29 @@ struct Serve: AsyncParsableCommand {
     }
     try? await httpClient.shutdown()
     if let serverError { throw serverError }
+  }
+}
+
+private func appViewDependencyProbe(
+  store: any ThinAppViewStore
+) -> OperationsServiceDependencyProbe {
+  {
+    try await store.ping()
+    let observedAt = Date()
+    return OperationsServiceProbeResult(
+      liveness: .healthy,
+      readiness: .healthy,
+      freshness: .unknown,
+      completeness: .unknown,
+      dependencyState: [
+        "appview_database": "ready",
+        "projection_freshness": "unmeasured",
+        "projection_completeness": "unknown",
+      ],
+      requiredDependencyKeys: ["appview_database"],
+      observedAt: observedAt,
+      validUntil: observedAt.addingTimeInterval(30)
+    )
   }
 }
 

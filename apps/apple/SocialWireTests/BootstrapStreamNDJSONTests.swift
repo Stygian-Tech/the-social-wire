@@ -40,6 +40,22 @@ struct BootstrapStreamNDJSONTests {
         #expect(events[0].unreadCounts?.countedAt == "2026-01-01T00:00:00.000Z")
     }
 
+    @Test func entriesPageRequiresAndPreservesEvidence() {
+        let cached = """
+        {"kind":"entriesPage","entriesPage":{"publicationId":"pub-a","entries":[],"source":"projection_cache","cachedAt":"2026-01-01T00:00:00.000Z","expiresAt":"2026-01-01T00:05:00.000Z"}}
+        """
+        let events = BootstrapStreamNDJSON.parseLines(cached)
+        #expect(events.count == 1)
+        #expect(events[0].entriesPage?.source == .projectionCache)
+        #expect(events[0].entriesPage?.cachedAt == "2026-01-01T00:00:00.000Z")
+        #expect(events[0].entriesPage?.expiresAt == "2026-01-01T00:05:00.000Z")
+
+        let ungrounded = """
+        {"kind":"entriesPage","entriesPage":{"publicationId":"pub-a","entries":[]}}
+        """
+        #expect(BootstrapStreamNDJSON.parseLines(ungrounded).isEmpty)
+    }
+
     @Test func firstUnreadUsesPriorityOrder() {
         let subscribed = SidebarPublicationRowDTO(
             publicationId: "pub-sub",

@@ -27,8 +27,11 @@ public struct RssFeedFetchMetadata: Sendable {
 
 /// Persistence for thin AppView `content_items` and `read_marks`.
 public protocol ThinAppViewStore: Actor {
+  func ping() async throws
   func upsertContentItem(_ item: IndexedContentItem) async throws
   func deleteContentItem(uri: String) async throws
+  func deleteContentItems(authorDid: String) async throws -> Int
+  func fetchContentIdentity(uri: String) async throws -> IndexedContentIdentity?
 
   func upsertReadMark(viewerDid: String, subjectUri: String, createdAt: Date) async throws
   func deleteReadMark(viewerDid: String, subjectUri: String) async throws
@@ -97,16 +100,96 @@ public protocol ThinAppViewStore: Actor {
     readAt: Date
   ) async throws -> [AppViewUnreadCounter]
 
-  func deleteExpiredContent(before: Date) async throws -> Int
-  func deleteExpiredReadMarks(before: Date) async throws -> Int
+  func deleteExpiredContent(before: Date, batchSize: Int) async throws -> Int
+  func deleteExpiredReadMarks(before: Date, batchSize: Int) async throws -> Int
+  func deleteExpiredTapEventReceipts(
+    environment: String,
+    before: Date,
+    batchSize: Int
+  ) async throws -> Int
+  func deleteExpiredProjectionRepairs(
+    environment: String,
+    before: Date,
+    batchSize: Int
+  ) async throws -> Int
+
+  func desiredTapRepositoryScope(limit: Int) async throws -> TapDesiredRepositoryScope
+  func registeredTapRepositoryDids(environment: String) async throws -> [String]
+  func markTapRepositoriesRegistered(
+    environment: String,
+    repoDids: [String],
+    at: Date
+  ) async throws
+  func markTapRepositoriesRemoved(
+    environment: String,
+    repoDids: [String],
+    at: Date
+  ) async throws
 
   func recordIngestionCheckpoint(
+    environment: String,
     source: String,
     repoDid: String,
     collection: String,
     cursor: String?,
     eventTime: Date?,
     observedAt: Date
+  ) async throws
+
+  func fetchTapRepositorySyncState(
+    environment: String,
+    repoDid: String
+  ) async throws -> TapRepositorySyncState?
+
+  func upsertTapRepositorySyncState(_ state: TapRepositorySyncState) async throws
+
+  func hasProcessedTapEvent(environment: String, eventId: Int64) async throws -> Bool
+
+  /// Persists the event receipt and repository evidence in one database transaction.
+  func commitTapEvent(
+    state: TapRepositorySyncState,
+    eventId: Int64,
+    eventType: String,
+    parityEvidence: TapParityEventEvidence?,
+    processedAt: Date
+  ) async throws
+
+  func listTapParityDiscrepancies(
+    environment: String,
+    repoDid: String
+  ) async throws -> [TapParityDiscrepancy]
+
+  /// Atomically applies authoritative Tap content, advances its checkpoint, and enqueues repair.
+  func applyTapContentMutation(
+    _ mutation: TapContentMutation,
+    environment: String,
+    eventId: Int64,
+    repoRev: String,
+    eventTime: Date,
+    observedAt: Date
+  ) async throws
+
+  func projectionRepairBacklog(
+    environment: String,
+    at: Date
+  ) async throws -> AppViewProjectionRepairBacklogSnapshot
+
+  func claimProjectionRepair(
+    environment: String,
+    workerId: String,
+    leaseUntil: Date,
+    at: Date
+  ) async throws -> AppViewProjectionRepair?
+
+  func completeProjectionRepair(environment: String, id: String, workerId: String) async throws
+
+  func failProjectionRepair(
+    environment: String,
+    id: String,
+    workerId: String,
+    errorCategory: String,
+    retryAt: Date,
+    at: Date
   ) async throws
 
   /// Authors with the stalest index; used by the worker proactive backfill loop.

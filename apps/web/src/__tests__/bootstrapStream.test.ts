@@ -80,6 +80,24 @@ describe("bootstrapStreamClient", () => {
       expect(events[0].payload.countedAt).toBe("2026-01-01T00:00:00.000Z");
     }
   });
+
+  it("requires and preserves entries page evidence", () => {
+    const events = parseNdjsonLinesForTest(
+      '{"kind":"entriesPage","entriesPage":{"publicationId":"pub-a","entries":[],"source":"projection_cache","cachedAt":"2026-01-01T00:00:00.000Z","expiresAt":"2026-01-01T00:05:00.000Z"}}\n'
+    );
+    expect(events).toHaveLength(1);
+    expect(events[0]?.kind).toBe("entriesPage");
+    if (events[0]?.kind === "entriesPage") {
+      expect(events[0].payload.source).toBe("projection_cache");
+      expect(events[0].payload.cachedAt).toBe("2026-01-01T00:00:00.000Z");
+      expect(events[0].payload.expiresAt).toBe("2026-01-01T00:05:00.000Z");
+    }
+
+    const ungrounded = parseNdjsonLinesForTest(
+      '{"kind":"entriesPage","entriesPage":{"publicationId":"pub-a","entries":[]}}\n'
+    );
+    expect(ungrounded).toHaveLength(0);
+  });
 });
 
 describe("bootstrapStreamState", () => {

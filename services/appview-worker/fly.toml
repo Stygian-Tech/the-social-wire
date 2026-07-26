@@ -9,10 +9,16 @@ primary_region = 'ord'
   context = '../..'
 
 [env]
+  APP_ENV = 'dev'
   ENABLE_THIN_APPVIEW = 'true'
   POSTGRES_MAX_CONNECTIONS = '2'
+  OPERATIONS_RECOVERY_ENABLED = 'true'
+  # Dev remains in shadow mode until the parity and cutover gates pass.
+  TAP_CONSUMER_MODE = 'shadow'
+  TAP_BASE_URL = 'http://the-social-wire-dev-tap.internal:2480'
   # Per-app secret (same pooler URI as gateway/appview):
-  # fly secrets set SUPABASE_DATABASE_URL='postgresql://postgres.[ref]:...' APP_ENV=dev --app the-social-wire-dev-appview-worker
+  # fly secrets set SUPABASE_DATABASE_URL='postgresql://postgres.[ref]:...' --app the-social-wire-dev-appview-worker
+  # TAP_ADMIN_PASSWORD must match the environment-specific Tap app before shadow mode is enabled.
 
 [[vm]]
   memory = '512mb'

@@ -46,11 +46,24 @@ public struct AppViewBootstrapEntriesPagePayload: Codable, Sendable, Equatable {
   public let publicationId: String
   public let entries: [AppViewBootstrapEntryListItem]
   public let cursor: String?
+  public let source: AppViewBootstrapEvidenceSource
+  public let cachedAt: Date?
+  public let expiresAt: Date?
 
-  public init(publicationId: String, entries: [AppViewBootstrapEntryListItem], cursor: String?) {
+  public init(
+    publicationId: String,
+    entries: [AppViewBootstrapEntryListItem],
+    cursor: String?,
+    source: AppViewBootstrapEvidenceSource,
+    cachedAt: Date? = nil,
+    expiresAt: Date? = nil
+  ) {
     self.publicationId = publicationId
     self.entries = entries
     self.cursor = cursor
+    self.source = source
+    self.cachedAt = cachedAt
+    self.expiresAt = expiresAt
   }
 }
 
@@ -133,10 +146,19 @@ public struct AppViewBootstrapMessagePayload: Codable, Sendable, Equatable {
 
 public struct AppViewBootstrapDonePayload: Codable, Sendable, Equatable {
   public let refreshedAt: Date
+  /// Optional so clients can continue decoding events produced before provenance was published.
+  public let source: AppViewBootstrapEvidenceSource?
 
-  public init(refreshedAt: Date) {
+  public init(refreshedAt: Date, source: AppViewBootstrapEvidenceSource? = nil) {
     self.refreshedAt = refreshedAt
+    self.source = source
   }
+}
+
+public enum AppViewBootstrapEvidenceSource: String, Codable, Sendable, Equatable {
+  case liveProjection = "live_projection"
+  case projectionCache = "projection_cache"
+  case unavailable
 }
 
 public struct AppViewBootstrapStreamEvent: Codable, Sendable {
@@ -222,8 +244,11 @@ public struct AppViewBootstrapStreamEvent: Codable, Sendable {
     Self(kind: .error, error: .init(message: message))
   }
 
-  public static func done(refreshedAt: Date) -> Self {
-    Self(kind: .done, done: .init(refreshedAt: refreshedAt))
+  public static func done(
+    refreshedAt: Date,
+    source: AppViewBootstrapEvidenceSource? = nil
+  ) -> Self {
+    Self(kind: .done, done: .init(refreshedAt: refreshedAt, source: source))
   }
 }
 

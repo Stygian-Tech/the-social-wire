@@ -1,0 +1,17 @@
+meta {
+  name: Stream Operations Events
+  type: http
+  seq: 22
+}
+
+get {
+  url: {{baseUrl}}/v1/operations/events/stream
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+  Accept: text/event-stream
+}
