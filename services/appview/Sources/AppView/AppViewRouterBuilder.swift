@@ -23,6 +23,7 @@ enum AppViewRouterBuilder {
     router.get("/health") { _, _ in ["status": "ok", "service": "appview"] }
     router.get("/livez") { _, _ in ["status": "live", "service": "appview"] }
     router.get("/readyz") { _, _ async throws -> [String: String] in
+      try await thinAppViewStore.ping()
       try await operationsStore?.ping()
       return ["status": "ready", "service": "appview"]
     }

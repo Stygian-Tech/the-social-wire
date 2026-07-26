@@ -101,7 +101,7 @@ When flags are off, clients continue PDS-direct entry loading (legacy paths may 
 | `APPVIEW_BASE_URL` | gateway | Internal AppView base URL for proxy routes |
 | `GATEWAY_APPVIEW_INTERNAL_SECRET` | gateway + appview | HMAC trust for gateway→AppView proxy |
 | `SUPABASE_DATABASE_URL` | gateway, appview, appview-worker | Postgres (session pooler on Fly/CI) |
-| `THIN_APPVIEW_RELAY_WS_URL` | appview-worker | Jetstream-compatible WebSocket URL |
+| `THIN_APPVIEW_RELAY_WS_URLS` | appview-worker | Ordered, comma-separated Jetstream WebSocket URLs for active/passive failover (`THIN_APPVIEW_RELAY_WS_URL` remains a compatible single-primary override) |
 | `THIN_APPVIEW_PROACTIVE_BACKFILL_ENABLED` | appview-worker | Periodic PDS backfill for subscribed authors |
 | `THIN_APPVIEW_CONTENT_TTL_SECONDS` | appview-worker | `content_items.expires_at` horizon |
 | `THIN_APPVIEW_READ_MARK_TTL_SECONDS` | appview-worker | `read_marks` retention |

@@ -41,6 +41,15 @@ struct BootstrapEntriesPagePayloadDTO: Codable, Sendable {
     let publicationId: String
     let entries: [EntryListItem]
     let cursor: String?
+    let source: BootstrapEvidenceSourceDTO
+    let cachedAt: String?
+    let expiresAt: String?
+}
+
+enum BootstrapEvidenceSourceDTO: String, Codable, Sendable {
+    case liveProjection = "live_projection"
+    case projectionCache = "projection_cache"
+    case unavailable
 }
 
 struct BootstrapSidebarFoldersPayloadDTO: Codable, Sendable {
@@ -65,6 +74,7 @@ struct BootstrapMessagePayloadDTO: Codable, Sendable {
 
 struct BootstrapDonePayloadDTO: Codable, Sendable {
     let refreshedAt: String
+    let source: BootstrapEvidenceSourceDTO?
 }
 
 enum BootstrapStreamSelection {

@@ -107,6 +107,11 @@ filter_changed appview-worker \
   'scripts/fly-deploy-appview-worker.sh' \
   '.github/workflows/ci.yml'
 
+filter_changed tap \
+  'services/tap/**' \
+  'scripts/fly-deploy-tap.sh' \
+  '.github/workflows/ci.yml'
+
 filter_changed supabase \
   'supabase/**' \
   'scripts/supabase-ci-push.sh' \

@@ -1,0 +1,16 @@
+{
+  "$schema": "https://turborepo.dev/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    "build": {
+      "env": [
+        "APP_ENV",
+        "NEXT_PUBLIC_APP_ENV",
+        "OPERATIONS_OPERATOR_DIDS",
+        "NEXT_PUBLIC_OPERATIONS_DEMO_MODE",
+        "NEXT_PUBLIC_OPERATIONS_GATEWAY_ORIGIN",
+        "NEXT_PUBLIC_OPERATIONS_OPERATOR_DIDS"
+      ]
+    }
+  }
+}

@@ -9,6 +9,7 @@ public struct OperationsConfiguration: Sendable {
   public let operatorDids: Set<String>
   public let webhookURL: String?
   public let webhookSecret: String?
+  public let backfillFingerprintSecret: String?
   public let replayRewindMicroseconds: Int64
   public let disconnectAlertSeconds: TimeInterval
   public let idleAlertSeconds: TimeInterval
@@ -38,11 +39,13 @@ public struct OperationsConfiguration: Sendable {
       enabled: truthy(environment["OPERATIONS_TELEMETRY_ENABLED"], defaultValue: true),
       recoveryEnabled: truthy(environment["OPERATIONS_RECOVERY_ENABLED"]),
       alertDeliveryEnabled: truthy(environment["OPERATIONS_ALERT_DELIVERY_ENABLED"]),
-      environment: environment["APP_ENV"] ?? "local",
+      environment: nonEmpty(environment["APP_ENV"]) ?? "__missing__",
       instanceId: environment["FLY_MACHINE_ID"] ?? ProcessInfo.processInfo.hostName,
       operatorDids: operatorDids,
       webhookURL: nonEmpty(environment["OPERATIONS_ALERT_WEBHOOK_URL"]),
       webhookSecret: nonEmpty(environment["OPERATIONS_ALERT_WEBHOOK_SECRET"]),
+      backfillFingerprintSecret: nonEmpty(environment["OPERATIONS_BACKFILL_FINGERPRINT_SECRET"])
+        ?? nonEmpty(environment["GATEWAY_OPERATIONS_INTERNAL_SECRET"]),
       replayRewindMicroseconds: int64(environment["OPERATIONS_REPLAY_REWIND_MICROSECONDS"], 5_000_000),
       disconnectAlertSeconds: seconds(environment["OPERATIONS_DISCONNECT_ALERT_SECONDS"], 120),
       idleAlertSeconds: seconds(environment["OPERATIONS_IDLE_ALERT_SECONDS"], 300),
@@ -61,6 +64,17 @@ public struct OperationsConfiguration: Sendable {
       responseFreshnessSeconds: seconds(environment["OPERATIONS_RESPONSE_FRESHNESS_SECONDS"], 300),
       responseFreshnessRatio: ratio(environment["OPERATIONS_RESPONSE_FRESHNESS_RATIO"], 0.05)
     )
+  }
+
+  public static func requireEnvironment(_ environment: [String: String]) throws -> String {
+    try requireEnvironment(environment["APP_ENV"])
+  }
+
+  public static func requireEnvironment(_ value: String?) throws -> String {
+    guard let value = nonEmpty(value)?.lowercased(), ["dev", "prod"].contains(value) else {
+      throw OperationsConfigurationError.invalidOrMissingEnvironment
+    }
+    return value
   }
 
   private static func truthy(_ value: String?, defaultValue: Bool = false) -> Bool {
@@ -94,4 +108,8 @@ public struct OperationsConfiguration: Sendable {
     guard let value, let parsed = Double(value), parsed > 0, parsed <= 1 else { return fallback }
     return parsed
   }
+}
+
+public enum OperationsConfigurationError: Error, Sendable, Equatable {
+  case invalidOrMissingEnvironment
 }

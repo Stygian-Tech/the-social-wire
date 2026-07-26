@@ -1,0 +1,24 @@
+meta {
+  name: Get Operations Gap History
+  type: http
+  seq: 26
+}
+
+get {
+  url: {{baseUrl}}/v1/operations/gaps?view=history&limit=50
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}
+
+tests {
+  test("returns terminal gaps only", function() {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body.gaps.every((gap) => ["resolved", "ignored"].includes(gap.status))).to.equal(true);
+  });
+}

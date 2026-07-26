@@ -13,6 +13,7 @@ primary_region = 'ams'
   wait_timeout = '10m0s'
 
 [env]
+  APP_ENV = 'prod'
   APPVIEW_PORT = '8081'
   PORT = '8081'
   ENABLE_THIN_APPVIEW = 'true'
@@ -30,7 +31,7 @@ primary_region = 'ams'
     timeout = '10s'
     grace_period = '1m0s'
     method = 'GET'
-    path = '/health'
+    path = '/readyz'
 
 [[vm]]
   memory = '1gb'

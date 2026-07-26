@@ -15,10 +15,17 @@ public enum GatewayCORSPolicy {
     {
       origins.append(oauth)
     }
+    if let operations = config.oauthOperationsOrigin?.trimmingCharacters(in: .whitespacesAndNewlines),
+       !operations.isEmpty
+    {
+      origins.append(operations)
+    }
     if config.appEnv == .local {
       origins.append(contentsOf: [
         "http://localhost:3000",
         "http://127.0.0.1:3000",
+        "http://localhost:3001",
+        "http://127.0.0.1:3001",
       ])
     }
     return Array(Set(origins)).sorted()
@@ -31,15 +38,20 @@ public enum GatewayCORSPolicy {
     let origins = allowedOrigins(config: config, env: env)
     let allowOrigin = resolveAllowOrigin(origins: origins, appEnv: config.appEnv)
     let dpopHeader = HTTPField.Name("DPoP")!
+    let requestIdHeader = HTTPField.Name("X-Request-ID")!
+    let traceparentHeader = HTTPField.Name("traceparent")!
+    let idempotencyKeyHeader = HTTPField.Name("Idempotency-Key")!
+    let lastEventIdHeader = HTTPField.Name("Last-Event-ID")!
     let upstreamDpopHeader = HTTPField.Name(ATProtoUpstreamDPoP.headerName)!
     let latrGatewayDpopHeader = HTTPField.Name(LatrGatewayUpstreamDPoP.headerName)!
     return CORSMiddleware(
       allowOrigin: allowOrigin,
       allowHeaders: [
         .accept, .authorization, .contentType, .origin, .ifNoneMatch,
-        dpopHeader, upstreamDpopHeader, latrGatewayDpopHeader,
+        dpopHeader, requestIdHeader, traceparentHeader, idempotencyKeyHeader, lastEventIdHeader,
+        upstreamDpopHeader, latrGatewayDpopHeader,
       ],
-      allowMethods: [.get, .post, .put, .delete, .head, .options],
+      allowMethods: [.get, .post, .put, .patch, .delete, .head, .options],
       allowCredentials: true,
       maxAge: .seconds(3600)
     )

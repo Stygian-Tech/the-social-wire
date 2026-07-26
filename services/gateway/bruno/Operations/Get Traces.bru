@@ -5,9 +5,18 @@ meta {
 }
 
 get {
-  url: {{baseUrl}}/v1/operations/traces
+  url: {{baseUrl}}/v1/operations/traces?limit=100
   body: none
   auth: none
+}
+
+tests {
+  test("returns a paginated trace response", function() {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body).to.have.property("traces");
+    expect(body).to.have.property("totalCount");
+  });
 }
 
 headers {

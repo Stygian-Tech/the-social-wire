@@ -1,83 +1,514 @@
 "use client"
 
-import { useQuery } from "@tanstack/react-query"
-import { Activity, Bell, BookOpenText, CalendarDays, ChevronDown, CircleDot, ExternalLink, LayoutDashboard, RefreshCw, Route, Server, Settings2, Waypoints } from "lucide-react"
-import Link from "next/link"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { Activity } from "lucide-react"
 import { useRouter } from "next/navigation"
-import { useEffect, useState } from "react"
-import { BackfillSheet } from "@/components/operations/backfill-sheet"
-import { HealthStrip } from "@/components/operations/health-strip"
-import { OperatorActionDialog } from "@/components/operations/operator-action-dialog"
+import { useCallback, useEffect, useRef, useState } from "react"
+import { BackfillSheet } from "@/components/operations/backfills/backfill-sheet"
+import { OperationsDataStatus } from "@/components/operations/dashboard/operations-data-status"
+import { OverviewSkeleton } from "@/components/operations/dashboard/overview-skeleton"
+import { GapInvestigationSheet } from "@/components/operations/gaps/gap-investigation-sheet"
+import { OperationsLoadingScreen } from "@/components/operations/shell/operations-loading-screen"
+import { MobileOperationsNav } from "@/components/operations/shell/operations-mobile-nav"
+import { operationsNav } from "@/components/operations/shell/operations-navigation"
+import { OperationsPageHeading } from "@/components/operations/shell/operations-page-heading"
+import { OperationsRouteContent } from "@/components/operations/shell/operations-route-content"
+import { OperationsTopBar } from "@/components/operations/shell/operations-top-bar"
+import type { Runbook } from "@/components/operations/shell/operations-view-types"
 import { OperatorSignIn } from "@/components/operations/sign-in"
-import { Sparkline } from "@/components/operations/sparkline"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Progress } from "@/components/ui/progress"
-import { Select } from "@/components/ui/select"
-import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader, SidebarInset, SidebarNavButton, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar"
-import { Skeleton } from "@/components/ui/skeleton"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Tooltip } from "@/components/ui/tooltip"
+import { Toast } from "@/components/ui/toast"
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarHeader,
+  SidebarInset,
+  SidebarNavButton,
+  SidebarProvider,
+  SidebarTrigger,
+} from "@/components/ui/sidebar"
+import { operationsEnvironment } from "@/lib/app-environment"
 import { useOperationsAuth } from "@/lib/auth-context"
-import { fetchOverview, OperationsForbiddenError } from "@/lib/operations-api"
-import type { Backfill, EnvironmentName, Gap, Overview, Span } from "@/lib/operations-types"
-
-const nav = [
-  ["overview", "Overview", LayoutDashboard], ["ingestion", "Ingestion", Settings2], ["appview", "AppView", Server], ["gaps", "Gaps", Waypoints], ["backfills", "Backfills", RefreshCw], ["alerts", "Alerts", Bell], ["runbooks", "Runbooks", BookOpenText],
-] as const
-const collectionRows = [
-  ["site.standard.document", 512, 78, 3, 593, 74, 220, 980, 0.01], ["site.standard.entry", 1264, 193, 6, 1463, 96, 310, 1210, 0.02], ["app.skyreader.feed.subscription", 852, 41, 1, 894, 62, 190, 760, 0], ["site.standard.graph.subscription", 274, 12, 0, 286, 28, 160, 540, 0],
-] as const
-
-type Runbook = { slug: string; title: string; body: string }
+import {
+  fetchAlerts,
+  fetchBackfills,
+  fetchCommands,
+  fetchGaps,
+  fetchIngestionEndpoints,
+  fetchMetrics,
+  fetchOverview,
+  fetchRecentTraces,
+  OperationsForbiddenError,
+  type BackfillListView,
+  type AlertListView,
+  type GapListView,
+} from "@/lib/operations-api"
+import type { Gap, Overview, PageInfo } from "@/lib/operations-types"
+import { eventAffectsRoute, eventAffectsSupportData } from "@/lib/operations-event-routing"
+import { useDocumentVisibility } from "@/lib/use-document-visibility"
+import { type EventStreamState, useOperationsEventStream } from "@/lib/use-operations-event-stream"
+import { nextOperationsPage, previousOperationsPage } from "@/lib/operations-pagination"
+import {
+  DEFAULT_LIVE_FALLBACK_POLL_MILLISECONDS,
+  liveRoutePollInterval,
+} from "@/lib/operations-refresh-policy"
+import { useVisibilityAwareClock } from "@/lib/use-visibility-aware-clock"
 
 export function OperationsConsole({ section, runbooks }: { section: string[]; runbooks: Runbook[] }) {
   const router = useRouter()
+  const queryClient = useQueryClient()
   const auth = useOperationsAuth()
   const demo = process.env.NEXT_PUBLIC_OPERATIONS_DEMO_MODE === "1"
-  const [environment, setEnvironment] = useState<EnvironmentName>("development")
+  const environment = operationsEnvironment()
+  const visible = useDocumentVisibility()
+  const now = useVisibilityAwareClock(visible)
+  const referenceTime = new Date(now).toISOString()
+  const eventStreamStateRef = useRef<EventStreamState>("disabled")
+  const fallbackPollMillisecondsRef = useRef(DEFAULT_LIVE_FALLBACK_POLL_MILLISECONDS)
   const [autoRefresh, setAutoRefresh] = useState(true)
+  const [demoSessionActive, setDemoSessionActive] = useState(true)
   const [selectedGap, setSelectedGap] = useState<Gap>()
-  const [drawerDismissed, setDrawerDismissed] = useState(false)
+  const [investigationGap, setInvestigationGap] = useState<Gap>()
+  const [refreshNotice, setRefreshNotice] = useState<{
+    title: string
+    description: string
+    tone: "success" | "error"
+  }>()
+  const [pagination, setPagination] = useState<{
+    route: string
+    cursor?: string
+    history: Array<string | undefined>
+  }>({ route: "overview", history: [] })
   const current = section[0] || "overview"
-  const overview = useQuery({ queryKey: ["operations-overview", environment], queryFn: () => fetchOverview(auth.session, environment), enabled: demo || Boolean(auth.session), refetchInterval: autoRefresh ? 15_000 : false, placeholderData: (previous) => previous })
-  useEffect(() => { if (overview.error instanceof OperationsForbiddenError) auth.setForbidden(true) }, [overview.error, auth])
-  if (auth.loading) return <LoadingScreen />
-  if (!demo && !auth.session) return <OperatorSignIn />
-  const data = overview.data
-  const effectiveSelectedGap = selectedGap ?? (demo && !drawerDismissed ? data?.gaps[0] : undefined)
-  return <SidebarProvider><Sidebar><SidebarHeader><div className="flex min-w-0 items-center gap-2"><span className="grid size-7 shrink-0 place-items-center text-primary"><Activity className="size-5" /></span><div className="min-w-0"><p className="truncate text-xs font-semibold">The Social Wire</p><p className="ops-label">Operations</p></div></div></SidebarHeader><SidebarContent><nav aria-label="Operations"><div className="grid gap-1">{nav.map(([key, label, Icon]) => <SidebarNavButton key={key} active={current === key} icon={<Icon className="size-3.5" />} onClick={() => router.push(key === "overview" ? "/" : `/${key}`)}>{label}</SidebarNavButton>)}</div></nav></SidebarContent><SidebarFooter><SidebarTrigger /></SidebarFooter></Sidebar><SidebarInset><TopBar environment={environment} setEnvironment={setEnvironment} autoRefresh={autoRefresh} setAutoRefresh={setAutoRefresh} refreshedAt={data?.refreshedAt} onRefresh={() => overview.refetch()} operator={auth.session?.did ?? "did:plc:demo-operator"} /><MobileNav current={current} /><div className="p-3 sm:p-4"><PageHeading current={current} />{overview.isLoading || !data ? <OverviewSkeleton /> : <RouteContent current={current} traceId={section[1]} data={data} environment={environment} runbooks={runbooks} onSelectGap={(gap) => { setSelectedGap(gap); setDrawerDismissed(false) }} />}{overview.error && !(overview.error instanceof OperationsForbiddenError) ? <p role="alert" className="mt-3 text-xs text-destructive">{overview.error.message}</p> : null}</div></SidebarInset><BackfillSheet key={`${environment}-${effectiveSelectedGap?.id ?? "none"}`} gap={effectiveSelectedGap} environment={environment} open={Boolean(effectiveSelectedGap)} onOpenChange={(open) => { if (!open) { setSelectedGap(undefined); setDrawerDismissed(true) } }} /></SidebarProvider>
+  const gapView: GapListView = section[1] === "history" ? "history" : "active"
+  const backfillView: BackfillListView =
+    section[1] === "needs_attention" || section[1] === "history" ? section[1] : "active"
+  const alertView: AlertListView = section[1] === "history" ? "history" : "active"
+  const routeKey =
+    current === "gaps"
+      ? `${current}/${gapView}`
+      : current === "backfills"
+        ? `${current}/${backfillView}`
+        : current === "alerts"
+          ? `${current}/${alertView}`
+          : current
+  const listCursor = pagination.route === routeKey ? pagination.cursor : undefined
+  const cursorHistory = pagination.route === routeKey ? pagination.history : []
+  const detailRoute =
+    current === "ingestion" ||
+    current === "gaps" ||
+    current === "backfills" ||
+    current === "alerts" ||
+    current === "appview" ||
+    current === "commands" ||
+    current === "endpoints"
+  const historyRoute =
+    (current === "gaps" && gapView === "history") ||
+    (current === "backfills" && backfillView === "history") ||
+    (current === "alerts" && alertView === "history")
+  const chartRoute = current === "overview" || current === "ingestion"
+  const supportRoute = current === "overview" || current === "ingestion" || (current === "alerts" && alertView === "active")
+  const authenticated = demo || Boolean(auth.session)
+
+  const overview = useQuery({
+    queryKey: ["operations-overview", environment],
+    queryFn: () => fetchOverview(auth.session),
+    enabled: authenticated,
+    refetchInterval: () =>
+      autoRefresh && visible && eventStreamStateRef.current !== "live"
+        ? fallbackPollMillisecondsRef.current
+        : false,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
+    staleTime: 4_000,
+    placeholderData: (previous) => previous,
+  })
+  const detail = useQuery({
+    queryKey: ["operations-route", environment, routeKey, listCursor],
+    queryFn: async () => {
+      if (current === "ingestion")
+        return { kind: "gaps" as const, response: await fetchGaps(auth.session, "active") }
+      if (current === "gaps")
+        return { kind: "gaps" as const, response: await fetchGaps(auth.session, gapView, listCursor) }
+      if (current === "backfills")
+        return {
+          kind: "backfills" as const,
+          response: await fetchBackfills(auth.session, backfillView, listCursor),
+        }
+      if (current === "alerts")
+        return {
+          kind: "alerts" as const,
+          response: await fetchAlerts(auth.session, alertView, listCursor),
+        }
+      if (current === "appview")
+        return {
+          kind: "traces" as const,
+          response: await fetchRecentTraces(auth.session, listCursor),
+        }
+      if (current === "commands")
+        return { kind: "commands" as const, response: await fetchCommands(auth.session, listCursor) }
+      if (current === "endpoints")
+        return {
+          kind: "endpoints" as const,
+          response: await fetchIngestionEndpoints(auth.session, listCursor),
+        }
+      return { kind: "none" as const }
+    },
+    enabled: authenticated && detailRoute && (current !== "appview" || Boolean(overview.data)),
+    refetchInterval: () =>
+      liveRoutePollInterval({
+        autoRefresh,
+        visible,
+        eventStreamState: eventStreamStateRef.current,
+        fallbackMilliseconds: fallbackPollMillisecondsRef.current,
+      }),
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: !historyRoute,
+    staleTime: 4_000,
+  })
+  const support = useQuery({
+    queryKey: ["operations-support", environment],
+    queryFn: async () => {
+      const [commands, endpoints] = await Promise.all([
+        fetchCommands(auth.session),
+        fetchIngestionEndpoints(auth.session),
+      ])
+      return { commands, endpoints }
+    },
+    enabled: authenticated && supportRoute,
+    refetchInterval: () =>
+      liveRoutePollInterval({
+        autoRefresh,
+        visible,
+        eventStreamState: eventStreamStateRef.current,
+        fallbackMilliseconds: fallbackPollMillisecondsRef.current,
+      }),
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
+    staleTime: 4_000,
+    placeholderData: (previous) => previous,
+  })
+  const metrics = useQuery({
+    queryKey: ["operations-metrics", environment],
+    queryFn: () => fetchMetrics(auth.session),
+    enabled: authenticated && chartRoute,
+    refetchInterval: autoRefresh && visible ? 60_000 : false,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
+    staleTime: 55_000,
+    placeholderData: (previous) => previous,
+  })
+  const handleOperationsEvent = useCallback((event: Parameters<typeof eventAffectsRoute>[0]) => {
+    void queryClient.invalidateQueries({ queryKey: ["operations-overview", environment] })
+    if (detailRoute && eventAffectsRoute(event, routeKey))
+      void queryClient.invalidateQueries({ queryKey: ["operations-route", environment, routeKey] })
+    if (supportRoute && eventAffectsSupportData(event))
+      void queryClient.invalidateQueries({ queryKey: ["operations-support", environment] })
+  }, [detailRoute, environment, queryClient, routeKey, supportRoute])
+  const handleEventStreamSnapshot = useCallback(async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["operations-overview", environment] }),
+      ...(detailRoute
+        ? [queryClient.invalidateQueries({ queryKey: ["operations-route", environment, routeKey] })]
+        : []),
+      ...(supportRoute
+        ? [queryClient.invalidateQueries({ queryKey: ["operations-support", environment] })]
+        : []),
+    ])
+  }, [detailRoute, environment, queryClient, routeKey, supportRoute])
+  const eventStreamState = useOperationsEventStream({
+    enabled: autoRefresh && visible && Boolean(overview.data?.capabilities?.eventStream?.enabled),
+    session: auth.session,
+    path: overview.data?.capabilities?.eventStream?.path ?? "/v1/operations/events/stream",
+    retryMilliseconds: overview.data?.capabilities?.eventStream?.retryMilliseconds,
+    onEvent: handleOperationsEvent,
+    onLive: handleEventStreamSnapshot,
+    onCursorExpired: handleEventStreamSnapshot,
+  })
+  useEffect(() => {
+    eventStreamStateRef.current = eventStreamState
+    fallbackPollMillisecondsRef.current = Math.max(
+      1_000,
+      overview.data?.capabilities?.eventStream?.fallbackPollMilliseconds ??
+        DEFAULT_LIVE_FALLBACK_POLL_MILLISECONDS,
+    )
+  }, [eventStreamState, overview.data?.capabilities?.eventStream?.fallbackPollMilliseconds])
+
+  useEffect(() => {
+    if (overview.error instanceof OperationsForbiddenError) auth.setForbidden(true)
+  }, [overview.error, auth])
+
+  if (auth.loading) return <OperationsLoadingScreen />
+  if (!auth.session && (!demo || !demoSessionActive)) return <OperatorSignIn />
+
+  const data = mergeMetricsData(
+    mergeSupportData(mergeDetailData(overview.data, detail.data), support.data),
+    metrics.data,
+  )
+  const page = current === "ingestion" ? undefined : detailPage(detail.data)
+  const routeEvidenceLoading =
+    (detailRoute && detail.isLoading && !detail.data) ||
+    (chartRoute && metrics.isLoading && !metrics.data) ||
+    (supportRoute && support.isLoading && !support.data)
+  const recoveryEnabled = !demo && (data?.capabilities?.recovery.enabled ?? false)
+  const selectedGapEvidence = selectedGap
+    ? data?.gaps?.find((candidate) => candidate.id === selectedGap.id) ?? selectedGap
+    : undefined
+
+  return (
+    <SidebarProvider>
+      <Sidebar>
+        <SidebarHeader>
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="grid size-7 shrink-0 place-items-center text-primary">
+              <Activity className="size-5" />
+            </span>
+            <div className="min-w-0">
+              <p className="truncate text-xs font-semibold">The Social Wire</p>
+              <p className="ops-label">Operations</p>
+            </div>
+          </div>
+        </SidebarHeader>
+        <SidebarContent>
+          <nav aria-label="Operations">
+            <div className="grid gap-1">
+              {operationsNav.map(([key, label, Icon]) => (
+                <SidebarNavButton
+                  key={key}
+                  active={current === key}
+                  icon={<Icon className="size-3.5" />}
+                  onClick={() => router.push(key === "overview" ? "/" : `/${key}`)}
+                >
+                  {label}
+                </SidebarNavButton>
+              ))}
+            </div>
+          </nav>
+        </SidebarContent>
+        <SidebarFooter>
+          <SidebarTrigger />
+        </SidebarFooter>
+      </Sidebar>
+      <SidebarInset>
+        <OperationsTopBar
+          environment={environment}
+          autoRefresh={autoRefresh}
+          setAutoRefresh={setAutoRefresh}
+          refreshedAt={data?.refreshedAt}
+          refreshing={overview.isFetching || detail.isFetching || metrics.isFetching || support.isFetching}
+          onRefresh={() => {
+            void Promise.all([
+              overview.refetch(),
+              ...(detailRoute ? [detail.refetch()] : []),
+              ...(chartRoute ? [metrics.refetch()] : []),
+              ...(supportRoute ? [support.refetch()] : []),
+            ]).then((results) => {
+              const failed = results.find((result) => result.isError)
+              setRefreshNotice(
+                failed
+                  ? {
+                      title: "Refresh Failed",
+                      description: failed.error?.message ?? "Fresh operational evidence could not be loaded.",
+                      tone: "error",
+                    }
+                  : {
+                      title: "Refresh Complete",
+                      description: "The visible route reloaded its current evidence successfully.",
+                      tone: "success",
+                    },
+              )
+            })
+          }}
+          operator={auth.session?.did ?? "did:plc:demo-operator"}
+          overview={data}
+          demo={demo}
+          referenceTime={referenceTime}
+          onSignOut={async () => {
+            await auth.signOut()
+            if (demo) setDemoSessionActive(false)
+          }}
+        />
+        <OperationsDataStatus
+          overview={data}
+          autoRefresh={autoRefresh}
+          requestFailed={overview.isError}
+          detailFallback={
+            (detailRoute && detail.isError) ||
+            (chartRoute && metrics.isError) ||
+            (supportRoute && support.isError)
+          }
+          eventStreamState={eventStreamState}
+          now={now}
+        />
+        <MobileOperationsNav current={current} />
+        <div className="min-w-0 p-3 sm:p-4">
+          <OperationsPageHeading current={current} />
+          {overview.isLoading || !data || routeEvidenceLoading ? (
+            <OverviewSkeleton />
+          ) : (
+            <OperationsRouteContent
+              current={current}
+              traceId={section[1]}
+              lifecycleView={section[1]}
+              data={data}
+              environment={environment}
+              runbooks={runbooks}
+              onSelectGap={setSelectedGap}
+              onInvestigateGap={setInvestigationGap}
+              recoveryEnabled={recoveryEnabled}
+              operatorMutationsEnabled={!demo}
+              referenceTime={referenceTime}
+            />
+          )}
+          {detailRoute && (page?.nextCursor || cursorHistory.length > 0 || page?.totalCount !== undefined) ? (
+            <nav aria-label={`${current} pagination`} className="mt-3 flex items-center justify-end gap-2 text-[10px]">
+              {page?.totalCount !== undefined ? (
+                <span className="mr-auto text-muted-foreground">{page.totalCount.toLocaleString()} total</span>
+              ) : null}
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={cursorHistory.length === 0 || detail.isFetching}
+                onClick={() => {
+                  setPagination((state) => previousOperationsPage(state, routeKey))
+                }}
+              >
+                Previous
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={!page?.nextCursor || detail.isFetching}
+                onClick={() => {
+                  setPagination(nextOperationsPage(routeKey, page!.nextCursor!, listCursor, cursorHistory))
+                }}
+              >
+                Next
+              </Button>
+            </nav>
+          ) : null}
+          {overview.error && !(overview.error instanceof OperationsForbiddenError) ? (
+            <p role="alert" className="mt-3 text-xs text-destructive">
+              {overview.error.message}
+            </p>
+          ) : null}
+        </div>
+      </SidebarInset>
+      <BackfillSheet
+        key={`${environment}-${selectedGapEvidence?.id ?? "none"}`}
+        gap={selectedGapEvidence}
+        environment={environment}
+        open={Boolean(selectedGapEvidence)}
+        mutationsEnabled={recoveryEnabled}
+        recoveryModes={data?.capabilities.recoveryModes}
+        onOpenChange={(open) => {
+          if (!open) setSelectedGap(undefined)
+        }}
+      />
+      <GapInvestigationSheet
+        gap={investigationGap}
+        open={Boolean(investigationGap)}
+        mutationsEnabled={recoveryEnabled}
+        onOpenChange={(open) => {
+          if (!open) setInvestigationGap(undefined)
+        }}
+        onBackfill={(gap) => {
+          setInvestigationGap(undefined)
+          setSelectedGap(gap)
+        }}
+      />
+      {refreshNotice ? <Toast {...refreshNotice} onClose={() => setRefreshNotice(undefined)} /> : null}
+    </SidebarProvider>
+  )
 }
 
-function TopBar({ environment, setEnvironment, autoRefresh, setAutoRefresh, refreshedAt, onRefresh, operator }: { environment: EnvironmentName; setEnvironment: (value: EnvironmentName) => void; autoRefresh: boolean; setAutoRefresh: (value: boolean) => void; refreshedAt?: string; onRefresh: () => void; operator: string }) {
-  return <header className="sticky top-0 z-30 flex min-h-12 flex-wrap items-center gap-x-4 gap-y-2 border-b bg-background/95 px-3 py-2 backdrop-blur sm:px-4"><div className="flex items-center gap-2"><span className="ops-label normal-case tracking-normal">Environment</span><Select value={environment} onChange={(event) => setEnvironment(event.target.value as EnvironmentName)}><option value="development">Development</option><option value="production">Production</option></Select></div><div className="hidden h-7 border-l sm:block" /><div className="flex items-center gap-2 text-xs"><span>System State</span><Badge tone="success"><CircleDot className="mr-1 size-2.5" /> Healthy</Badge></div><div className="ml-auto flex items-center gap-3"><div className="hidden items-center gap-2 lg:flex"><span className="ops-label normal-case tracking-normal">Time Range</span><Button variant="outline"><span>Last 15 minutes</span><CalendarDays /></Button></div><label className="flex items-center gap-1.5 text-[10px]"><span>Auto-refresh</span><button type="button" role="switch" aria-checked={autoRefresh} onClick={() => setAutoRefresh(!autoRefresh)} className={`relative h-4 w-7 rounded-full border ${autoRefresh ? "bg-primary" : "bg-muted"}`}><span className={`absolute top-0.5 size-2.5 rounded-full bg-white transition-[left] ${autoRefresh ? "left-3.5" : "left-0.5"}`} /></button></label><div className="hidden text-right text-[9px] text-muted-foreground xl:block"><p>Last refreshed</p><p>{refreshedAt ? new Date(refreshedAt).toLocaleString() : "—"}</p></div><Tooltip label="Refresh Now"><Button variant="ghost" size="icon" onClick={onRefresh}><RefreshCw /></Button></Tooltip><div className="hidden items-center gap-2 border-l pl-3 md:flex"><span className="grid size-7 place-items-center rounded-full bg-primary text-[10px] text-primary-foreground">OP</span><div className="max-w-32"><p className="truncate text-[10px] font-medium">Operator</p><p className="truncate text-[9px] text-muted-foreground">{operator}</p></div><ChevronDown className="size-3" /></div></div></header>
+type DetailData =
+  | { kind: "gaps"; response: Awaited<ReturnType<typeof fetchGaps>> }
+  | { kind: "backfills"; response: Awaited<ReturnType<typeof fetchBackfills>> }
+  | { kind: "alerts"; response: Awaited<ReturnType<typeof fetchAlerts>> }
+  | { kind: "traces"; response: Awaited<ReturnType<typeof fetchRecentTraces>> }
+  | { kind: "commands"; response: Awaited<ReturnType<typeof fetchCommands>> }
+  | { kind: "endpoints"; response: Awaited<ReturnType<typeof fetchIngestionEndpoints>> }
+  | { kind: "none" }
+  | undefined
+
+function mergeDetailData(overview: Overview | undefined, detail: DetailData) {
+  if (!overview || !detail) return overview
+  if (detail.kind === "gaps")
+    return {
+      ...overview,
+      gaps: detail.response.gaps,
+      evidence: { ...overview.evidence, gaps: detail.response.evidence },
+    }
+  if (detail.kind === "backfills")
+    return {
+      ...overview,
+      backfills: detail.response.backfills,
+      evidence: { ...overview.evidence, backfills: detail.response.evidence },
+    }
+  if (detail.kind === "alerts")
+    return {
+      ...overview,
+      alerts: detail.response.alerts,
+      evidence: { ...overview.evidence, alerts: detail.response.evidence },
+    }
+  if (detail.kind === "traces")
+    return {
+      ...overview,
+      recentTraces: detail.response.traces,
+      evidence: { ...overview.evidence, traces: detail.response.evidence },
+    }
+  if (detail.kind === "commands")
+    return {
+      ...overview,
+      commands: detail.response.commands,
+      evidence: { ...overview.evidence, commands: detail.response.evidence },
+    }
+  if (detail.kind === "endpoints")
+    return {
+      ...overview,
+      jetstreamEndpoints: detail.response.endpoints,
+      evidence: { ...overview.evidence, endpoints: detail.response.evidence },
+    }
+  return overview
 }
 
-function MobileNav({ current }: { current: string }) { return <nav aria-label="Mobile Operations" className="flex overflow-x-auto border-b p-2 md:hidden">{nav.map(([key, label]) => <Link key={key} href={key === "overview" ? "/" : `/${key}`} className={`rounded-md px-3 py-1.5 text-[11px] ${current === key ? "bg-accent text-accent-foreground" : "text-muted-foreground"}`}>{label}</Link>)}</nav> }
-function PageHeading({ current }: { current: string }) { const label = nav.find(([key]) => key === current)?.[1] ?? (current === "traces" ? "Trace Detail" : "Overview"); return <div className="mb-3 flex items-center gap-3"><h1 className="text-lg font-semibold tracking-tight">{label}</h1>{current === "overview" ? <Button variant="link" size="sm"><Route /> Open in Trace / Metrics Explorer <ExternalLink /></Button> : null}</div> }
-
-function RouteContent({ current, traceId, data, environment, runbooks, onSelectGap }: { current: string; traceId?: string; data: Overview; environment: EnvironmentName; runbooks: Runbook[]; onSelectGap: (gap: Gap) => void }) {
-  if (current === "ingestion") return <div className="grid gap-3"><LiveStream data={data} /><CollectionTable /><GapsTable gaps={data.gaps} onSelect={onSelectGap} /></div>
-  if (current === "appview") return <div className="grid gap-3"><RequestTable spans={data.recentTraces} /><ServiceTable data={data} /></div>
-  if (current === "gaps") return <GapsTable gaps={data.gaps} onSelect={onSelectGap} expanded />
-  if (current === "backfills") return <BackfillsTable backfills={data.backfills} environment={environment} expanded />
-  if (current === "alerts") return <AlertsTable data={data} environment={environment} />
-  if (current === "runbooks") return <Runbooks runbooks={runbooks} />
-  if (current === "traces") return <TraceDetail span={data.recentTraces.find((span) => span.traceId === traceId) ?? data.recentTraces[0]} />
-  return <div className="grid gap-3"><HealthStrip overview={data} /><LiveStream data={data} /><CollectionTable /><RequestTable spans={data.recentTraces} /><CollectionHealth /><div className="grid gap-3 xl:grid-cols-2"><GapsTable gaps={data.gaps} onSelect={onSelectGap} /><BackfillsTable backfills={data.backfills} environment={environment} /></div></div>
+function mergeSupportData(
+  overview: Overview | undefined,
+  support:
+    | {
+        commands: Awaited<ReturnType<typeof fetchCommands>>
+        endpoints: Awaited<ReturnType<typeof fetchIngestionEndpoints>>
+      }
+    | undefined,
+) {
+  if (!overview || !support) return overview
+  return {
+    ...overview,
+    commands: support.commands.commands,
+    jetstreamEndpoints: support.endpoints.endpoints,
+    evidence: {
+      ...overview.evidence,
+      commands: support.commands.evidence,
+      endpoints: support.endpoints.evidence,
+    },
+  }
 }
 
-function Section({ title, action, children }: { title: React.ReactNode; action?: React.ReactNode; children: React.ReactNode }) { return <section className="ops-panel min-w-0 overflow-hidden"><header className="flex min-h-9 items-center justify-between border-b px-3"><h2 className="text-xs font-semibold">{title}</h2>{action}</header>{children}</section> }
-function LiveStream({ data }: { data: Overview }) { const state = data.ingestion; const delta = (state?.lastReceivedCursor ?? 0) - (state?.lastCommittedCursor ?? 0); const metrics = [["Jetstream Instance", "dev-js-03"], ["Connection Duration", "2d 14h 32m 11s"], ["Replay Cursor", String((state?.lastCommittedCursor ?? 0) - 5_000_000)], ["Last Received (μs)", String(state?.lastReceivedCursor ?? "—")], ["Last Committed (μs)", String(state?.lastCommittedCursor ?? "—")], ["Cursor Delta", `${delta.toLocaleString()} μs`], ["R→C p50 / p95", "410 ms / 1.82 s"], ["In-Flight", String(state?.queueDepth ?? 0)], ["Reconnect Reason", state?.lastDisconnectReason ?? "—"]]; return <Section title={<span className="flex items-center gap-2">Live Stream / Consumers <Badge tone="success">● Connected</Badge></span>}><div className="grid grid-cols-2 divide-x divide-y sm:grid-cols-3 xl:grid-cols-9 xl:divide-y-0">{metrics.map(([label, value]) => <div key={label} className="min-w-0 p-3"><p className="text-[9px] text-muted-foreground">{label}</p><p className="mt-1 truncate font-mono text-[10px]">{value}</p></div>)}</div></Section> }
-function CollectionTable() { return <Section title="Events / sec by Bounded Collection / Operation (top)"><Table><TableHeader><TableRow>{["Collection", "Create (eps)", "Update (eps)", "Delete (eps)", "All Ops (eps)", "In-Flight", "p50 (ms) R→C", "p95 (ms) R→C", "Errors (eps)"].map((head) => <TableHead key={head}>{head}</TableHead>)}</TableRow></TableHeader><TableBody>{collectionRows.map((row) => <TableRow key={row[0]}>{row.map((cell, index) => <TableCell key={index} className={index === 0 ? "font-mono" : "font-mono tabular-nums"}>{cell}{index > 0 && index < 5 ? <Sparkline /> : null}</TableCell>)}</TableRow>)}</TableBody></Table></Section> }
-function RequestTable({ spans }: { spans: Span[] }) { return <Section title={<span>AppView Request <span className="ml-2 text-[9px] font-normal text-muted-foreground">Showing recent correlated requests (last 15m)</span></span>} action={<Link href="/appview" className="text-[10px] text-primary">View all requests <ExternalLink className="inline size-3" /></Link>}><Table><TableHeader><TableRow>{["Time", "Request ID", "Trace ID", "Route", "Status", "Total Latency", "Auth", "Cache", "DB Time", "Rows", "Resp Freshness", "View Trace"].map((head) => <TableHead key={head}>{head}</TableHead>)}</TableRow></TableHeader><TableBody>{spans.slice(0, 5).map((span) => <TableRow key={span.id}><TableCell className="font-mono">{new Date(span.startedAt).toLocaleTimeString()}</TableCell><TableCell className="font-mono">{span.id}</TableCell><TableCell className="font-mono">{span.traceId.slice(0, 16)}</TableCell><TableCell className="max-w-64 truncate font-mono">{span.attributes.route ?? span.name}</TableCell><TableCell><span className={span.status === "error" ? "text-destructive" : "ops-success"}>{span.status === "error" ? "500" : span.status}</span></TableCell><TableCell className="font-mono">{span.durationMs.toLocaleString()} ms</TableCell><TableCell>JWT</TableCell><TableCell>{span.attributes.cache_outcome?.toUpperCase() ?? "MISS"}</TableCell><TableCell className="font-mono">{Math.round(span.durationMs * 0.12)} ms</TableCell><TableCell>{span.name.includes("entries") ? 50 : 4}</TableCell><TableCell>&lt; 1s</TableCell><TableCell><Link href={`/traces/${span.traceId}`} className="text-primary">View Trace <ExternalLink className="inline size-3" /></Link></TableCell></TableRow>)}</TableBody></Table></Section> }
-function CollectionHealth() { return <Section title="Collection Health (per bounded collection)"><Table><TableHeader><TableRow>{["Collection", "Accepted (eps)", "Filtered (eps)", "Failed (eps)", "p95 Commit Time (ms)", "Newest-Event Age", "Lag (s)", "Status"].map((head) => <TableHead key={head}>{head}</TableHead>)}</TableRow></TableHeader><TableBody>{collectionRows.map((row, index) => <TableRow key={row[0]}><TableCell className="font-mono">{row[0]}</TableCell><TableCell>{row[4].toLocaleString()} <Sparkline /></TableCell><TableCell>{12 + index * 8} <Sparkline /></TableCell><TableCell>{row[8]} <Sparkline tone={index < 2 ? "warning" : "primary"} /></TableCell><TableCell>{row[7].toLocaleString()}</TableCell><TableCell>{(2.1 - index * 0.5).toFixed(1)}s</TableCell><TableCell>{(2.1 - index * 0.5).toFixed(1)}</TableCell><TableCell><span className={index < 2 ? "ops-warning" : "ops-success"}>{index < 2 ? "At Risk" : "Good"}</span></TableCell></TableRow>)}</TableBody></Table></Section> }
-function GapsTable({ gaps, onSelect, expanded }: { gaps: Gap[]; onSelect: (gap: Gap) => void; expanded?: boolean }) { return <Section title={`Known Gaps (${gaps.length})`} action={!expanded ? <Link href="/gaps" className="text-[10px] text-primary">View all gaps <ExternalLink className="inline size-3" /></Link> : undefined}><Table><TableHeader><TableRow>{["Status", "Cursor / Time Range (μs)", "Reason", "Detected", "Affected Collections", "Action"].map((head) => <TableHead key={head}>{head}</TableHead>)}</TableRow></TableHeader><TableBody>{gaps.map((gap) => <TableRow key={gap.id}><TableCell><Badge tone={gap.status === "confirmed" ? "danger" : gap.status === "backfilling" ? "warning" : "neutral"}>{gap.status}</Badge></TableCell><TableCell className="font-mono">{gap.startCursor ?? "—"} ..<br />{gap.endCursor ?? "—"}</TableCell><TableCell>{gap.reason.replaceAll("_", " ")}</TableCell><TableCell>{new Date(gap.detectedAt).toLocaleString()}</TableCell><TableCell>{gap.collections.length}</TableCell><TableCell><Button size="sm" variant="outline" onClick={() => onSelect(gap)}>Backfill</Button></TableCell></TableRow>)}</TableBody></Table></Section> }
-function BackfillsTable({ backfills, environment, expanded }: { backfills: Backfill[]; environment: EnvironmentName; expanded?: boolean }) { return <Section title={`Active Backfills (${backfills.length})`} action={!expanded ? <Link href="/backfills" className="text-[10px] text-primary">View all backfills <ExternalLink className="inline size-3" /></Link> : undefined}><Table><TableHeader><TableRow>{["Backfill ID", "Collection", "Range (μs)", "Progress", "Processed", "Rate", "Checkpoint (μs)", "Action"].map((head) => <TableHead key={head}>{head}</TableHead>)}</TableRow></TableHeader><TableBody>{backfills.map((job) => { const progress = job.estimatedCount ? Math.round(job.processedCount / job.estimatedCount * 100) : job.status === "completed" ? 100 : 0; const action = job.status === "running" ? "pause" : job.status === "paused" ? "resume" : undefined; return <TableRow key={job.id}><TableCell className="font-mono">{job.id}</TableCell><TableCell className="font-mono">{job.collections[0] ?? "PDS reconciliation"}</TableCell><TableCell className="font-mono">{job.startCursor ?? "—"} ..<br />{job.endCursor ?? "—"}</TableCell><TableCell><span className="font-mono">{progress}%</span><Progress value={progress} className="mt-1 w-20" /></TableCell><TableCell className="font-mono">{job.processedCount.toLocaleString()}</TableCell><TableCell>{job.status === "running" ? `${job.rateLimit} rps` : "—"}</TableCell><TableCell className="font-mono">{job.checkpointCursor ?? "—"}</TableCell><TableCell>{action ? <MutationActionButton environment={environment} path={`/v1/operations/backfills/${job.id}/${action}`} label={action === "pause" ? "Pause" : "Resume"} /> : <Badge>{job.status}</Badge>}</TableCell></TableRow> })}</TableBody></Table></Section> }
-function AlertsTable({ data, environment }: { data: Overview; environment: EnvironmentName }) { return <Section title={`Operational Alerts (${data.alerts.length})`}><Table><TableHeader><TableRow>{["Severity", "Status", "Rule", "Summary", "Opened", "Delivery", "Runbook", "Action"].map((head) => <TableHead key={head}>{head}</TableHead>)}</TableRow></TableHeader><TableBody>{data.alerts.map((alert) => { const action = alert.status === "open" ? "acknowledge" : alert.status === "acknowledged" ? "resolve" : undefined; return <TableRow key={alert.id}><TableCell><Badge tone={alert.severity === "critical" ? "danger" : "warning"}>{alert.severity}</Badge></TableCell><TableCell>{alert.status}</TableCell><TableCell className="font-mono">{alert.rule}</TableCell><TableCell>{alert.summary}</TableCell><TableCell>{new Date(alert.openedAt).toLocaleString()}</TableCell><TableCell>{alert.lastDeliveryError ? <span className="text-destructive">Failed</span> : `${alert.deliveryAttempts} attempt${alert.deliveryAttempts === 1 ? "" : "s"}`}</TableCell><TableCell><Link href={`/runbooks#${alert.runbookSlug}`} className="text-primary">Open Runbook</Link></TableCell><TableCell>{action ? <MutationActionButton environment={environment} path={`/v1/operations/alerts/${alert.id}/${action}`} label={action === "acknowledge" ? "Acknowledge" : "Resolve"} /> : <Badge tone="success">Resolved</Badge>}</TableCell></TableRow> })}</TableBody></Table></Section> }
-const MutationActionButton = OperatorActionDialog
-function ServiceTable({ data }: { data: Overview }) { return <Section title="Service State"><Table><TableHeader><TableRow>{["Service", "Instance", "Liveness", "Readiness", "Freshness", "Completeness", "Version", "Heartbeat"].map((head) => <TableHead key={head}>{head}</TableHead>)}</TableRow></TableHeader><TableBody>{data.services.map((service) => <TableRow key={`${service.service}-${service.instanceId}`}><TableCell className="font-medium">{service.service}</TableCell><TableCell className="font-mono">{service.instanceId}</TableCell><TableCell>{service.liveness}</TableCell><TableCell>{service.readiness}</TableCell><TableCell>{service.freshness}</TableCell><TableCell>{service.completeness}</TableCell><TableCell className="font-mono">{service.version ?? "—"}</TableCell><TableCell>{new Date(service.heartbeatAt).toLocaleTimeString()}</TableCell></TableRow>)}</TableBody></Table></Section> }
-function Runbooks({ runbooks }: { runbooks: Runbook[] }) { return <section className="ops-panel divide-y">{runbooks.map((runbook, index) => <article id={runbook.slug} key={runbook.slug} className="grid gap-3 p-4 sm:grid-cols-[32px_1fr]"><span className="grid size-7 place-items-center rounded-md bg-muted font-mono text-[10px]">{String(index + 1).padStart(2, "0")}</span><div><h2 className="text-xs font-semibold">{runbook.title}</h2><div className="mt-2 whitespace-pre-line text-[11px] leading-5 text-muted-foreground">{runbook.body}</div></div></article>)}</section> }
-function TraceDetail({ span }: { span?: Span }) { if (!span) return <p className="text-xs text-muted-foreground">No trace found.</p>; return <div className="grid gap-3 lg:grid-cols-[1fr_320px]"><Section title={<span className="font-mono">Trace {span.traceId}</span>}><div className="p-4"><div className="relative ml-2 border-l pl-5">{["gateway.request", "gateway.appview.proxy", "appview.auth", "appview.cache.lookup", "appview.db.query", span.name].map((name, index) => <div key={`${name}-${index}`} className="relative mb-4 rounded-md border p-3 text-xs"><span className="absolute -left-[27px] top-3 size-3 rounded-full border-2 border-primary bg-background" /><div className="flex justify-between"><span className="font-mono">{name}</span><span className="font-mono text-muted-foreground">{Math.round(span.durationMs / (index + 1))} ms</span></div><Progress value={Math.max(8, 100 - index * 14)} className="mt-2" /></div>)}</div></div></Section><Section title="Span Attributes"><dl className="divide-y text-[11px]">{Object.entries(span.attributes).map(([key, value]) => <div key={key} className="grid grid-cols-2 gap-2 p-3"><dt className="font-mono text-muted-foreground">{key}</dt><dd className="break-all font-mono">{value}</dd></div>)}</dl></Section></div> }
-function OverviewSkeleton() { return <div className="grid gap-3"><Skeleton className="h-24" /><Skeleton className="h-36" /><Skeleton className="h-52" /><Skeleton className="h-48" /></div> }
-function LoadingScreen() { return <main className="grid min-h-svh place-items-center"><div className="text-center"><Activity className="mx-auto size-6 animate-pulse text-primary" /><p className="mt-2 text-xs text-muted-foreground">Restoring operator session…</p></div></main> }
+function mergeMetricsData(
+  overview: Overview | undefined,
+  metrics: Awaited<ReturnType<typeof fetchMetrics>> | undefined,
+) {
+  if (!overview || !metrics) return overview
+  return {
+    ...overview,
+    metricRollups: metrics.rollups,
+    evidence: { ...overview.evidence, metrics: metrics.evidence },
+  }
+}
+
+function detailPage(detail: DetailData): PageInfo | undefined {
+  if (!detail || detail.kind === "none") return undefined
+  return { nextCursor: detail.response.nextCursor ?? undefined, totalCount: detail.response.totalCount }
+}

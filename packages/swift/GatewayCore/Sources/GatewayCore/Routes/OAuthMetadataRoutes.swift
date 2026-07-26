@@ -8,10 +8,16 @@ import NIOCore
 public struct OAuthMetadataRoutes: Sendable {
   public let oauthPublicOrigin: String?
   public let oauthIosMetadataOrigin: String?
+  public let oauthOperationsOrigin: String?
 
-  public init(oauthPublicOrigin: String?, oauthIosMetadataOrigin: String?) {
+  public init(
+    oauthPublicOrigin: String?,
+    oauthIosMetadataOrigin: String?,
+    oauthOperationsOrigin: String?
+  ) {
     self.oauthPublicOrigin = oauthPublicOrigin
     self.oauthIosMetadataOrigin = oauthIosMetadataOrigin
+    self.oauthOperationsOrigin = oauthOperationsOrigin
   }
 
   public func register(on router: Router<GatewayRequestContext>) {
@@ -33,6 +39,39 @@ public struct OAuthMetadataRoutes: Sendable {
         request: request,
         encode: IosOAuthClientMetadata.buildJSON(publicOrigin:)
       )
+    }
+    router.get("/operations-oauth-client-metadata.json") { request, _ in
+      try Self.operationsMetadataResponse(
+        request: request,
+        oauthRedirectOrigin: oauthOperationsOrigin
+      )
+    }
+  }
+
+  private static func operationsMetadataResponse(
+    request: Request,
+    oauthRedirectOrigin: String?
+  ) throws -> Response {
+    guard
+      let metadataOrigin = OAuthPublicOrigin.resolve(request: request, configuredOrigin: nil),
+      let redirectOrigin = oauthRedirectOrigin?.trimmingCharacters(in: .whitespacesAndNewlines),
+      !redirectOrigin.isEmpty
+    else {
+      throw HTTPError(
+        .internalServerError,
+        message: "Cannot resolve Operations OAuth metadata origins. Set OAUTH_OPERATIONS_ORIGIN."
+      )
+    }
+
+    do {
+      return try jsonResponse(
+        data: OperationsOAuthClientMetadata.buildJSON(
+          publicOrigin: metadataOrigin,
+          redirectOrigin: redirectOrigin
+        )
+      )
+    } catch {
+      throw HTTPError(.internalServerError, message: "Invalid Operations OAuth metadata origin.")
     }
   }
 

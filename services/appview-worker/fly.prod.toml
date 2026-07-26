@@ -13,8 +13,13 @@ primary_region = 'ams'
   wait_timeout = '10m0s'
 
 [env]
+  APP_ENV = 'prod'
   ENABLE_THIN_APPVIEW = 'true'
   POSTGRES_MAX_CONNECTIONS = '2'
+  OPERATIONS_RECOVERY_ENABLED = 'false'
+  # Production remains disabled until the dev parity gate and production Tap provisioning pass.
+  TAP_CONSUMER_MODE = 'disabled'
+  TAP_BASE_URL = 'http://the-social-wire-prod-tap.internal:2480'
 
 [[vm]]
   memory = '512mb'

@@ -1,17 +1,16 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { BookmarkPlus, Check, MoreHorizontal } from "lucide-react";
+import { MoreHorizontal } from "lucide-react";
+import { EntryRowActions } from "@/components/EntryList/EntryRowActions";
 import {
   ContextMenu,
   ContextMenuContent,
-  ContextMenuItem,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
@@ -24,10 +23,6 @@ import {
   articleListCardButtonClassName,
   articleListCardWrapperClassName,
 } from "@/lib/articleListCardStyles";
-import {
-  useEntryIsLatrSaved,
-  useSaveReadLaterEntryMutation,
-} from "@/hooks/useLatrSaved";
 
 interface EntryRowProps {
   entry: EntryListItem;
@@ -37,69 +32,6 @@ interface EntryRowProps {
   readIndicatorsEnabled: boolean;
   onMarkEntryRead: (entryId: string) => void;
   onMarkEntryUnread: (entryId: string) => void;
-}
-
-function EntryRowActions({
-  entry,
-  isRead,
-  readIndicatorsEnabled,
-  onMarkEntryRead,
-  onMarkEntryUnread,
-  variant,
-}: {
-  entry: EntryListItem;
-  isRead: boolean;
-  readIndicatorsEnabled: boolean;
-  onMarkEntryRead: (entryId: string) => void;
-  onMarkEntryUnread: (entryId: string) => void;
-  variant: "context" | "dropdown";
-}) {
-  const saveLaterMut = useSaveReadLaterEntryMutation();
-  const alreadySaved = useEntryIsLatrSaved(entry.entryId);
-  const Item = variant === "context" ? ContextMenuItem : DropdownMenuItem;
-
-  const saveDisabled = alreadySaved;
-
-  return (
-    <>
-      <Item
-        className="gap-2"
-        disabled={saveDisabled}
-        onClick={() => {
-          saveLaterMut.mutate({
-            entryId: entry.entryId,
-            url: entry.originalUrl,
-            title: entry.title,
-            excerpt: entry.summary,
-          });
-        }}
-      >
-        {alreadySaved ? (
-          <Check className="size-4 text-emerald-600" />
-        ) : (
-          <BookmarkPlus className="size-4" />
-        )}
-        {alreadySaved ? "Saved" : "Save"}
-      </Item>
-      {readIndicatorsEnabled ? (
-        !isRead ? (
-          <Item
-            className="gap-2"
-            onClick={() => onMarkEntryRead(entry.entryId)}
-          >
-            Mark As Read
-          </Item>
-        ) : (
-          <Item
-            className="gap-2"
-            onClick={() => onMarkEntryUnread(entry.entryId)}
-          >
-            Mark As Unread
-          </Item>
-        )
-      ) : null}
-    </>
-  );
 }
 
 export function EntryRow({
@@ -115,22 +47,23 @@ export function EntryRow({
   const formattedDate = date.toLocaleDateString(undefined, {
     month: "short",
     day: "numeric",
-    year: date.getFullYear() !== new Date().getFullYear() ? "numeric" : undefined,
+    year:
+      date.getFullYear() !== new Date().getFullYear() ? "numeric" : undefined,
   });
 
   const showUnreadChrome = readIndicatorsEnabled && !isRead;
   const thumbAttempts = useMemo(
     () =>
       thumbnailImageSrcAttempts(entry.thumbnailUrl, entry.thumbnailFallbackUrl),
-    [entry.thumbnailUrl, entry.thumbnailFallbackUrl]
+    [entry.thumbnailUrl, entry.thumbnailFallbackUrl],
   );
   const displayTitle = useMemo(
     () => decodeHtmlEntities(entry.title),
-    [entry.title]
+    [entry.title],
   );
   const displaySummary = useMemo(
     () => (entry.summary ? decodeHtmlEntities(entry.summary) : undefined),
-    [entry.summary]
+    [entry.summary],
   );
   const [attemptIdx, setAttemptIdx] = useState(0);
 
@@ -143,7 +76,12 @@ export function EntryRow({
   const showThumb = Boolean(activeThumbSrc) && !thumbsExhausted;
 
   const rowButton = (
-    <div className={cn("group/entry-row relative", articleListCardWrapperClassName)}>
+    <div
+      className={cn(
+        "group/entry-row relative",
+        articleListCardWrapperClassName,
+      )}
+    >
       <div
         role="button"
         tabIndex={0}
@@ -169,7 +107,7 @@ export function EntryRow({
               className="absolute inset-0 size-full object-cover"
               onError={() => {
                 setAttemptIdx((i) =>
-                  i + 1 < thumbAttempts.length ? i + 1 : thumbAttempts.length
+                  i + 1 < thumbAttempts.length ? i + 1 : thumbAttempts.length,
                 );
               }}
             />
@@ -215,7 +153,7 @@ export function EntryRow({
           <p
             className={cn(
               "line-clamp-2 text-sm leading-snug",
-              showUnreadChrome ? "font-semibold" : "font-medium"
+              showUnreadChrome ? "font-semibold" : "font-medium",
             )}
           >
             {displayTitle}
@@ -225,7 +163,9 @@ export function EntryRow({
               {displaySummary}
             </p>
           ) : null}
-          <p className="mt-1 text-[11px] text-muted-foreground">{formattedDate}</p>
+          <p className="mt-1 text-[11px] text-muted-foreground">
+            {formattedDate}
+          </p>
         </div>
       </div>
     </div>

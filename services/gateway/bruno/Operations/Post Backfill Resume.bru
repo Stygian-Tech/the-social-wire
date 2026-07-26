@@ -13,9 +13,10 @@ post {
 headers {
   Authorization: Bearer {{oauthAccessToken}}
   DPoP: {{dpopProof}}
+  Idempotency-Key: {{operationsIdempotencyKey}}
   Content-Type: application/json
 }
 
 body:json {
-  { "auditNote": "Resume after validating backfill conditions", "environmentConfirmation": "{{operationsEnvironmentConfirmation}}" }
+  { "expectedVersion": {{operationsBackfillVersion}}, "idempotencyKey": "{{operationsIdempotencyKey}}", "auditNote": "Resume after validating backfill conditions", "environmentConfirmation": "{{operationsEnvironmentConfirmation}}" }
 }

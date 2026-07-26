@@ -11,28 +11,16 @@ import {
   SidebarProvider,
   SidebarInset,
   SidebarTrigger,
-  useSidebar,
 } from "@/components/ui/sidebar";
 import { normalizeAtRepoParam } from "@/lib/atprotoClient";
 import { ReadArticleFilterBar } from "@/app/read/ReadArticleFilterBar";
+import { ClosePublicationsSheetOnMobilePubRoute } from "@/app/read/ClosePublicationsSheetOnMobilePubRoute";
 
-function ClosePublicationsSheetOnMobilePubRoute({
-  selectedPubId,
+export default function ReadLayout({
+  children,
 }: {
-  selectedPubId: string | null;
+  children: React.ReactNode;
 }) {
-  const { isMobile, setOpenMobile } = useSidebar();
-
-  useEffect(() => {
-    if (isMobile && selectedPubId) {
-      setOpenMobile(false);
-    }
-  }, [isMobile, selectedPubId, setOpenMobile]);
-
-  return null;
-}
-
-export default function ReadLayout({ children }: { children: React.ReactNode }) {
   const { session, isLoading } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
@@ -64,22 +52,28 @@ export default function ReadLayout({ children }: { children: React.ReactNode }) 
   return (
     <SidebarProvider className="h-[calc(100svh-var(--environment-banner-height,0px))] min-h-[calc(100svh-var(--environment-banner-height,0px))] max-h-[calc(100svh-var(--environment-banner-height,0px))] overflow-hidden overscroll-none">
       <PublicationSidebarProvider>
-      <ReadRouteProvider>
-        <ReadSidebarScopeProvider>
-          <ClosePublicationsSheetOnMobilePubRoute selectedPubId={selectedPubId} />
-          <AppSidebar
-            selectedPubId={selectedPubId}
-            onSelectPub={(pubId) => router.push(`/read/${encodeURIComponent(pubId)}`)}
-          />
-          <SidebarInset className="flex min-h-0 flex-1 flex-col overflow-hidden">
-            <header className="flex min-h-14 shrink-0 flex-wrap items-center gap-2 border-b bg-background/85 px-2 py-1.5 backdrop-blur-md sm:min-h-12 sm:flex-nowrap sm:gap-2 sm:px-3 md:px-4">
-              <SidebarTrigger className="h-11 w-11 min-h-[44px] min-w-[44px] shrink-0 -ml-0.5 rounded-md border-0 bg-transparent shadow-none hover:bg-muted/50 aria-expanded:bg-muted/50 sm:h-8 sm:w-8 sm:min-h-0 sm:min-w-0 sm:-ml-1" />
-              <ReadArticleFilterBar />
-            </header>
-            <main className="flex min-h-0 flex-1 overflow-hidden">{children}</main>
-          </SidebarInset>
-        </ReadSidebarScopeProvider>
-      </ReadRouteProvider>
+        <ReadRouteProvider>
+          <ReadSidebarScopeProvider>
+            <ClosePublicationsSheetOnMobilePubRoute
+              selectedPubId={selectedPubId}
+            />
+            <AppSidebar
+              selectedPubId={selectedPubId}
+              onSelectPub={(pubId) =>
+                router.push(`/read/${encodeURIComponent(pubId)}`)
+              }
+            />
+            <SidebarInset className="flex min-h-0 flex-1 flex-col overflow-hidden">
+              <header className="flex min-h-14 shrink-0 flex-wrap items-center gap-2 border-b bg-background/85 px-2 py-1.5 backdrop-blur-md sm:min-h-12 sm:flex-nowrap sm:gap-2 sm:px-3 md:px-4">
+                <SidebarTrigger className="h-11 w-11 min-h-[44px] min-w-[44px] shrink-0 -ml-0.5 rounded-md border-0 bg-transparent shadow-none hover:bg-muted/50 aria-expanded:bg-muted/50 sm:h-8 sm:w-8 sm:min-h-0 sm:min-w-0 sm:-ml-1" />
+                <ReadArticleFilterBar />
+              </header>
+              <main className="flex min-h-0 flex-1 overflow-hidden">
+                {children}
+              </main>
+            </SidebarInset>
+          </ReadSidebarScopeProvider>
+        </ReadRouteProvider>
       </PublicationSidebarProvider>
     </SidebarProvider>
   );

@@ -4,7 +4,7 @@ on:
   push:
     branches: [main, dev]
   pull_request:
-    branches: [main, dev]
+    branches: [main]
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -27,6 +27,7 @@ jobs:
       gateway: ${{ steps.filter.outputs.gateway }}
       appview: ${{ steps.filter.outputs.appview }}
       appview-worker: ${{ steps.filter.outputs.appview-worker }}
+      tap: ${{ steps.filter.outputs.tap }}
       supabase: ${{ steps.filter.outputs.supabase }}
       lexicons: ${{ steps.filter.outputs.lexicons }}
       spec: ${{ steps.filter.outputs.spec }}
@@ -96,6 +97,7 @@ jobs:
       - name: Build
         run: bunx turbo build --filter=operations
         env:
+          APP_ENV: dev
           NEXT_PUBLIC_OPERATIONS_DEMO_MODE: 1
 
   test-gateway:
@@ -176,6 +178,16 @@ jobs:
       - name: Test AppViewWorker
         working-directory: services/appview-worker
         run: swift test
+
+  test-tap-image:
+    name: Tap (Pinned Image)
+    needs: changes
+    if: needs.changes.result == 'success' && needs.changes.outputs.tap == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Build pinned Tap image
+        run: docker build --file services/tap/Dockerfile --tag the-social-wire-tap:test .
 
   test-operations:
     name: Swift Operations (Swift Package)
@@ -340,6 +352,7 @@ jobs:
       - test-gateway
       - test-appview
       - test-appview-worker
+      - test-tap-image
       - test-operations
       - test-lexicons
       - test-spec
@@ -356,6 +369,7 @@ jobs:
           GATEWAY_FLAG: ${{ needs.changes.outputs.gateway }}
           APPVIEW_FLAG: ${{ needs.changes.outputs.appview }}
           APPVIEW_WORKER_FLAG: ${{ needs.changes.outputs.appview-worker }}
+          TAP_FLAG: ${{ needs.changes.outputs.tap }}
           SUPABASE_FLAG: ${{ needs.changes.outputs.supabase }}
           LEXICONS_FLAG: ${{ needs.changes.outputs.lexicons }}
           SPEC_FLAG: ${{ needs.changes.outputs.spec }}
@@ -364,6 +378,7 @@ jobs:
           TEST_GATEWAY_RESULT: ${{ needs.test-gateway.result }}
           TEST_APPVIEW_RESULT: ${{ needs.test-appview.result }}
           TEST_APPVIEW_WORKER_RESULT: ${{ needs.test-appview-worker.result }}
+          TEST_TAP_IMAGE_RESULT: ${{ needs.test-tap-image.result }}
           TEST_OPERATIONS_RESULT: ${{ needs.test-operations.result }}
           TEST_LEXICONS_RESULT: ${{ needs.test-lexicons.result }}
           TEST_SPEC_RESULT: ${{ needs.test-spec.result }}
@@ -400,12 +415,14 @@ jobs:
           check "$GATEWAY_FLAG" "$TEST_GATEWAY_RESULT" "Swift Gateway (Package)"
           check "$APPVIEW_FLAG" "$TEST_APPVIEW_RESULT" "Swift AppView (Package)"
           check "$APPVIEW_WORKER_FLAG" "$TEST_APPVIEW_WORKER_RESULT" "Swift AppView Worker (Package)"
+          check "$TAP_FLAG" "$TEST_TAP_IMAGE_RESULT" "Tap (Pinned Image)"
           check "$LEXICONS_FLAG" "$TEST_LEXICONS_RESULT" "Lexicons (Package)"
           check "$SPEC_FLAG" "$TEST_SPEC_RESULT" "OpenAPI spec (Package)"
           check "$SUPABASE_FLAG" "$SUPABASE_VALIDATE_RESULT" "Supabase — validate migrations"
 
   deploy-gateway:
     name: Deploy Gateway (Fly.io)
+    timeout-minutes: 20
     needs: [changes, ci, test-gateway, test-spec, supabase-validate, supabase-push-dev, supabase-push-prod]
     if: |
       always() &&
@@ -447,6 +464,7 @@ jobs:
 
   deploy-appview:
     name: Deploy AppView (Fly.io)
+    timeout-minutes: 20
     needs: [changes, ci, test-appview, test-spec, supabase-validate, supabase-push-dev, supabase-push-prod]
     if: |
       always() &&
@@ -488,7 +506,8 @@ jobs:
 
   deploy-appview-worker:
     name: Deploy AppView Worker (Fly.io)
-    needs: [changes, ci, test-appview-worker, supabase-validate, supabase-push-dev, supabase-push-prod]
+    timeout-minutes: 20
+    needs: [changes, ci, test-appview-worker, deploy-tap, supabase-validate, supabase-push-dev, supabase-push-prod]
     if: |
       always() &&
       github.event_name == 'push' &&
@@ -498,6 +517,8 @@ jobs:
       needs.ci.result == 'success' &&
       needs.test-appview-worker.result != 'failure' &&
       needs.test-appview-worker.result != 'cancelled' &&
+      needs.deploy-tap.result != 'failure' &&
+      needs.deploy-tap.result != 'cancelled' &&
       needs.supabase-validate.result != 'failure' &&
       needs.supabase-validate.result != 'cancelled' &&
       needs.supabase-push-dev.result != 'failure' &&
@@ -505,6 +526,7 @@ jobs:
       needs.supabase-push-prod.result != 'failure' &&
       needs.supabase-push-prod.result != 'cancelled' &&
       (needs.test-appview-worker.result == 'success' || needs.test-appview-worker.result == 'skipped') &&
+      (needs.deploy-tap.result == 'success' || needs.deploy-tap.result == 'skipped') &&
       (needs.supabase-validate.result == 'success' || needs.supabase-validate.result == 'skipped') &&
       (needs.supabase-push-dev.result == 'success' || needs.supabase-push-dev.result == 'skipped') &&
       (needs.supabase-push-prod.result == 'success' || needs.supabase-push-prod.result == 'skipped')
@@ -524,13 +546,39 @@ jobs:
           FLY_APPVIEW_WORKER_APP_PROD: ${{ secrets.FLY_APPVIEW_WORKER_APP_PROD }}
         run: bash scripts/fly-deploy-appview-worker.sh "${{ github.ref_name }}"
 
+  deploy-tap:
+    name: Deploy Tap (Fly.io)
+    timeout-minutes: 20
+    needs: [changes, ci, test-tap-image]
+    if: |
+      always() &&
+      github.event_name == 'push' &&
+      github.ref_name == 'dev' &&
+      needs.changes.result == 'success' &&
+      needs.changes.outputs.tap == 'true' &&
+      needs.ci.result == 'success' &&
+      needs.test-tap-image.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+      - uses: superfly/flyctl-actions/setup-flyctl@v1
+      - name: Deploy Tap to Fly.io
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          FLY_ORG: ${{ secrets.FLY_ORG }}
+        run: bash scripts/fly-deploy-tap.sh "${{ github.ref_name }}"
+
+  # Production stays manual until the Tap shadow/burn-in and release-approval gates pass.
   deploy-operations:
     name: Deploy Operations (Fly.io)
+    timeout-minutes: 20
     needs: [changes, ci, test-operations, supabase-validate, supabase-push-dev, supabase-push-prod]
     if: |
       always() &&
       github.event_name == 'push' &&
-      (github.ref_name == 'main' || github.ref_name == 'dev') &&
+      github.ref_name == 'dev' &&
       needs.changes.result == 'success' &&
       needs.changes.outputs.operations_service == 'true' &&
       needs.ci.result == 'success' &&
@@ -553,4 +601,5 @@ jobs:
           FLY_ORG: ${{ secrets.FLY_ORG }}
           FLY_OPERATIONS_APP_DEV: ${{ secrets.FLY_OPERATIONS_APP_DEV }}
           FLY_OPERATIONS_APP_PROD: ${{ secrets.FLY_OPERATIONS_APP_PROD }}
+          SUPABASE_DATABASE_URL: ${{ secrets.SUPABASE_DEV_DATABASE_URL }}
         run: bash scripts/fly-deploy-operations.sh "${{ github.ref_name }}"

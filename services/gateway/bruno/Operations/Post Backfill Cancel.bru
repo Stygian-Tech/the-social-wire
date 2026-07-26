@@ -13,9 +13,10 @@ post {
 headers {
   Authorization: Bearer {{oauthAccessToken}}
   DPoP: {{dpopProof}}
+  Idempotency-Key: {{operationsIdempotencyKey}}
   Content-Type: application/json
 }
 
 body:json {
-  { "auditNote": "Cancel after confirming recovery should stop", "environmentConfirmation": "{{operationsEnvironmentConfirmation}}" }
+  { "expectedVersion": {{operationsBackfillVersion}}, "idempotencyKey": "{{operationsIdempotencyKey}}", "auditNote": "Cancel after confirming recovery should stop", "environmentConfirmation": "{{operationsEnvironmentConfirmation}}" }
 }

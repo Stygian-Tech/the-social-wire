@@ -15,6 +15,11 @@ export type BootstrapStreamEventKind =
   | "error"
   | "done";
 
+export type BootstrapEvidenceSource =
+  | "live_projection"
+  | "projection_cache"
+  | "unavailable";
+
 export type BootstrapStreamEvent = {
   kind: BootstrapStreamEventKind;
   sidebarPriority?: PublicationSidebarProjection;
@@ -40,6 +45,9 @@ export type BootstrapStreamEvent = {
     publicationId: string;
     entries: EntryListItem[];
     cursor?: string;
+    source: BootstrapEvidenceSource;
+    cachedAt?: string;
+    expiresAt?: string;
   };
   sidebarFolders?: {
     folderSections: NonNullable<PublicationSidebarProjection["folderSections"]>;
@@ -47,7 +55,7 @@ export type BootstrapStreamEvent = {
   };
   warning?: { message: string };
   error?: { message: string };
-  done?: { refreshedAt: string };
+  done?: { refreshedAt: string; source?: BootstrapEvidenceSource };
 };
 
 export type ParsedBootstrapStreamEvent =
@@ -82,6 +90,9 @@ export type ParsedBootstrapStreamEvent =
         publicationId: string;
         entries: EntryListItem[];
         cursor?: string;
+        source: BootstrapEvidenceSource;
+        cachedAt?: string;
+        expiresAt?: string;
       };
     }
   | {
@@ -93,7 +104,29 @@ export type ParsedBootstrapStreamEvent =
     }
   | { kind: "warning"; payload: { message: string } }
   | { kind: "error"; payload: { message: string } }
-  | { kind: "done"; payload: { refreshedAt: string } };
+  | {
+      kind: "done";
+      payload: { refreshedAt: string; source?: BootstrapEvidenceSource };
+    };
+
+function isEvidenceSource(value: unknown): value is BootstrapEvidenceSource {
+  return (
+    value === "live_projection" ||
+    value === "projection_cache" ||
+    value === "unavailable"
+  );
+}
+
+function hasValidEntriesPageEvidence(
+  payload: NonNullable<BootstrapStreamEvent["entriesPage"]>
+): boolean {
+  if (!isEvidenceSource(payload.source)) return false;
+  if (payload.source !== "projection_cache") return true;
+  if (!payload.cachedAt || !payload.expiresAt) return false;
+  const cachedAt = Date.parse(payload.cachedAt);
+  const expiresAt = Date.parse(payload.expiresAt);
+  return Number.isFinite(cachedAt) && Number.isFinite(expiresAt) && cachedAt < expiresAt;
+}
 
 export function parseBootstrapStreamEvent(
   raw: BootstrapStreamEvent
@@ -112,7 +145,7 @@ export function parseBootstrapStreamEvent(
       if (!raw.selectedPublication) return null;
       return { kind: "selectedPublication", payload: raw.selectedPublication };
     case "entriesPage":
-      if (!raw.entriesPage) return null;
+      if (!raw.entriesPage || !hasValidEntriesPageEvidence(raw.entriesPage)) return null;
       return { kind: "entriesPage", payload: raw.entriesPage };
     case "sidebarFolders":
       if (!raw.sidebarFolders) return null;

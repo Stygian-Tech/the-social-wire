@@ -1,0 +1,29 @@
+meta {
+  name: Retry Operations Alert Delivery
+  type: http
+  seq: 23
+}
+
+post {
+  url: {{baseUrl}}/v1/operations/alerts/{{operationsAlertId}}/retry
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+  Idempotency-Key: {{operationsIdempotencyKey}}
+  Content-Type: application/json
+}
+
+body:json {
+  { "expectedVersion": {{operationsAlertVersion}}, "idempotencyKey": "{{operationsIdempotencyKey}}", "auditNote": "Retry the persisted alert delivery", "environmentConfirmation": "{{operationsEnvironmentConfirmation}}" }
+}
+
+tests {
+  test("returns the updated alert", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody()).to.have.property("version");
+  });
+}

@@ -8,14 +8,14 @@ struct BootstrapStreamSelectionTests {
     let my = SidebarPublicationRow(
       publicationId: "pub-my",
       subscriptionPublicationId: nil as String?,
-      authorDid: "did:plc:a",
+      authorDid: "did:plc:aaaaaaaaaaaaaaaaaaaaaaaa",
       authorHandle: nil as String?,
       title: "Mine",
       iconUrl: nil as String?,
       avatarUrl: nil as String?,
       discoveredAt: Date(),
       appViewScope: PublicationAppViewScope(
-        authorDid: "did:plc:a",
+        authorDid: "did:plc:aaaaaaaaaaaaaaaaaaaaaaaa",
         publicationAtUri: nil as String?,
         publicationScopeAtUris: [],
         publicationSiteUrls: []
@@ -25,14 +25,14 @@ struct BootstrapStreamSelectionTests {
     let subscribed = SidebarPublicationRow(
       publicationId: "pub-sub",
       subscriptionPublicationId: nil as String?,
-      authorDid: "did:plc:b",
+      authorDid: "did:plc:bbbbbbbbbbbbbbbbbbbbbbbb",
       authorHandle: nil as String?,
       title: "Sub",
       iconUrl: nil as String?,
       avatarUrl: nil as String?,
       discoveredAt: Date(),
       appViewScope: PublicationAppViewScope(
-        authorDid: "did:plc:b",
+        authorDid: "did:plc:bbbbbbbbbbbbbbbbbbbbbbbb",
         publicationAtUri: nil as String?,
         publicationScopeAtUris: [],
         publicationSiteUrls: []
@@ -77,10 +77,12 @@ struct BootstrapStreamSelectionTests {
       publicationPrefs: [],
       folderSections: [],
       allPublicationRows: [],
-      myPublications: [row(publicationId: "pub-a", authorDid: "did:plc:a")],
+      myPublications: [
+        row(publicationId: "pub-a", authorDid: "did:plc:aaaaaaaaaaaaaaaaaaaaaaaa")
+      ],
       subscribedUnfoldered: [
-        row(publicationId: "pub-b", authorDid: "did:plc:b"),
-        row(publicationId: "pub-c", authorDid: "did:plc:a"),
+        row(publicationId: "pub-b", authorDid: "did:plc:bbbbbbbbbbbbbbbbbbbbbbbb"),
+        row(publicationId: "pub-c", authorDid: "did:plc:aaaaaaaaaaaaaaaaaaaaaaaa"),
       ],
       followingTabPublications: [],
       enrollAuthorDids: [],
@@ -89,6 +91,9 @@ struct BootstrapStreamSelectionTests {
     )
 
     let dids = BootstrapStreamSelection.priorityAuthorDids(from: response)
-    #expect(dids == ["did:plc:a", "did:plc:b"])
+    #expect(dids == [
+      "did:plc:aaaaaaaaaaaaaaaaaaaaaaaa",
+      "did:plc:bbbbbbbbbbbbbbbbbbbbbbbb",
+    ])
   }
 }

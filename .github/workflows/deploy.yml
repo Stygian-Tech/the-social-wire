@@ -21,6 +21,11 @@ on:
         required: true
         type: boolean
         default: true
+      deploy_tap:
+        description: Deploy the environment-isolated Tap service before the worker
+        required: true
+        type: boolean
+        default: false
       deploy_operations:
         description: Also deploy operations control plane
         required: true
@@ -58,6 +63,13 @@ jobs:
           FLY_APPVIEW_APP_PROD: ${{ secrets.FLY_APPVIEW_APP_PROD }}
         run: bash scripts/fly-deploy-appview.sh "${{ inputs.branch }}"
 
+      - name: Deploy Tap to Fly.io
+        if: inputs.deploy_tap
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          FLY_ORG: ${{ secrets.FLY_ORG }}
+        run: bash scripts/fly-deploy-tap.sh "${{ inputs.branch }}"
+
       - name: Deploy AppView worker to Fly.io
         if: inputs.deploy_appview_worker
         env:
@@ -74,6 +86,7 @@ jobs:
           FLY_ORG: ${{ secrets.FLY_ORG }}
           FLY_OPERATIONS_APP_DEV: ${{ secrets.FLY_OPERATIONS_APP_DEV }}
           FLY_OPERATIONS_APP_PROD: ${{ secrets.FLY_OPERATIONS_APP_PROD }}
+          SUPABASE_DATABASE_URL: ${{ inputs.branch == 'main' && secrets.SUPABASE_PROD_DATABASE_URL || secrets.SUPABASE_DEV_DATABASE_URL }}
         run: bash scripts/fly-deploy-operations.sh "${{ inputs.branch }}"
 
   # ── Web deploy (Vercel handles this via its GitHub integration) ────────────

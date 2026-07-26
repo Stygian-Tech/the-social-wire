@@ -5,18 +5,7 @@ import { SidebarMenuItem, SidebarMenuSub } from "@/components/ui/sidebar";
 import type { DiscoveredPublication } from "@/lib/atprotoClient";
 import type { GatewayMarkAllReadScope } from "@/lib/publicationProjectionClient";
 import { SidebarReadBulkMenuWrap } from "./SidebarReadBulkMenuWrap";
-
-function SectionUnreadBadge({ count }: { count: number }) {
-  if (count <= 0) return null;
-  return (
-    <span
-      className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-lg bg-primary/10 px-1 text-xs font-bold text-[var(--purple-foreground)] tabular-nums"
-      aria-label={`${count} unread`}
-    >
-      {count}
-    </span>
-  );
-}
+import { SidebarSectionUnreadBadge } from "./SidebarSectionUnreadBadge";
 
 export function CollapsibleSidebarSubSection({
   title,
@@ -43,10 +32,8 @@ export function CollapsibleSidebarSubSection({
       className="flex h-6 w-full min-w-0 items-center gap-2 pl-2 pr-1 text-xs font-medium text-sidebar-foreground/70"
       aria-controls={subId}
     >
-      <span className="min-w-0 flex-1 truncate">
-        {title}
-      </span>
-      <SectionUnreadBadge count={unreadCount} />
+      <span className="min-w-0 flex-1 truncate">{title}</span>
+      <SidebarSectionUnreadBadge count={unreadCount} />
     </div>
   );
 

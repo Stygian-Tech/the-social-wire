@@ -38,6 +38,9 @@ struct AppViewProjectionCacheTests {
     #expect(try await store.cachedUnreadCounts(viewerDid: viewerDid)?[publicationId] == 3)
     #expect(try await store.cachedUnreadCounts(viewerDid: viewerDid)?["pub-zero"] == 0)
     #expect(try await store.cachedFirstPageJSON(viewerDid: viewerDid, publicationId: publicationId) == #"{"entries":[]}"#)
+    let sidebarEvidence = try await store.sidebarProjectionCacheEntry(viewerDid: viewerDid)
+    #expect(sidebarEvidence?.source == .projectionCache)
+    #expect(sidebarEvidence?.cachedAt ?? .distantFuture < sidebarEvidence?.expiresAt ?? .distantPast)
 
     try await store.invalidateFirstPageForAllViewers(publicationId: publicationId)
     #expect(try await store.cachedFirstPageJSON(viewerDid: viewerDid, publicationId: publicationId) == nil)
@@ -49,7 +52,8 @@ struct AppViewProjectionCacheTests {
     #expect(try await store.cachedUnreadCounts(viewerDid: viewerDid) == nil)
 
     let deleted = try await store.deleteExpiredProjectionCaches(
-      before: Date().addingTimeInterval(7200)
+      before: Date().addingTimeInterval(7200),
+      batchSize: 1_000
     )
     #expect(deleted >= 1)
   }

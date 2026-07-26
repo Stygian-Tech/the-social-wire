@@ -13,9 +13,10 @@ patch {
 headers {
   Authorization: Bearer {{oauthAccessToken}}
   DPoP: {{dpopProof}}
+  Idempotency-Key: {{operationsIdempotencyKey}}
   Content-Type: application/json
 }
 
 body:json {
-  { "status": "confirmed", "auditNote": "Confirm after reviewing cursor evidence", "environmentConfirmation": "{{operationsEnvironmentConfirmation}}" }
+  { "status": "confirmed", "expectedVersion": {{operationsGapVersion}}, "idempotencyKey": "{{operationsIdempotencyKey}}", "auditNote": "Confirm after reviewing cursor evidence", "environmentConfirmation": "{{operationsEnvironmentConfirmation}}" }
 }

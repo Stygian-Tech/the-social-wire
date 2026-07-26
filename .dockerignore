@@ -1,0 +1,11 @@
+.git
+**/.build
+**/.next
+**/node_modules
+**/.env
+**/.env.*
+!**/.env.example
+**/*.xcresult
+**/DerivedData
+**/coverage
+.DS_Store

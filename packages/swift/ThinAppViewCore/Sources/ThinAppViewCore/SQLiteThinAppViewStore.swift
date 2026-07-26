@@ -1,6 +1,7 @@
 @preconcurrency import GRDB
 import Foundation
 import Logging
+import OperationsCore
 
 public actor SQLiteThinAppViewStore: ThinAppViewStore {
   private let db: DatabasePool
@@ -15,6 +16,10 @@ public init(path dbPath: String, logger: Logger) throws {
       try Self.migrate(db)
     }
     logger.info("SQLiteThinAppViewStore initialised", metadata: ["path": .string(dbPath)])
+  }
+
+  public func ping() async throws {
+    _ = try await db.read { database in try Int.fetchOne(database, sql: "SELECT 1") }
   }
 
   private static func migrate(_ db: Database) throws {
@@ -65,22 +70,148 @@ public init(path dbPath: String, logger: Logger) throws {
       CREATE INDEX IF NOT EXISTS idx_read_marks_viewer_created
         ON read_marks (viewer_did, created_at DESC);
       """)
+    try db.execute(sql: """
+      CREATE INDEX IF NOT EXISTS idx_read_marks_cleanup
+        ON read_marks (created_at, viewer_did, subject_uri);
+      """)
 
     try db.execute(sql: """
       CREATE TABLE IF NOT EXISTS appview_ingestion_checkpoints (
+        environment TEXT NOT NULL,
         source TEXT NOT NULL,
         repo_did TEXT NOT NULL,
         collection TEXT NOT NULL,
         cursor TEXT,
         event_time TEXT,
         observed_at TEXT NOT NULL,
-        PRIMARY KEY (source, repo_did, collection)
+        PRIMARY KEY (environment, source, repo_did, collection)
       );
       """)
+
+    try migrateIngestionCheckpointEnvironmentIfNeeded(db)
 
     try db.execute(sql: """
       CREATE INDEX IF NOT EXISTS idx_appview_ingestion_checkpoints_observed
         ON appview_ingestion_checkpoints (observed_at);
+      """)
+
+    try db.execute(sql: """
+      CREATE TABLE IF NOT EXISTS appview_tap_repo_state (
+        environment TEXT NOT NULL,
+        repo_did TEXT NOT NULL,
+        repo_rev TEXT,
+        account_status TEXT NOT NULL,
+        pds_base TEXT,
+        last_event_id INTEGER,
+        last_event_live INTEGER,
+        parity_status TEXT NOT NULL,
+        matched_event_count INTEGER NOT NULL DEFAULT 0,
+        mismatched_event_count INTEGER NOT NULL DEFAULT 0,
+        last_mismatch TEXT,
+        last_indexed_at TEXT,
+        last_validated_at TEXT,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (environment, repo_did)
+      );
+      """)
+
+    try db.execute(sql: """
+      CREATE INDEX IF NOT EXISTS idx_appview_tap_repo_state_parity
+        ON appview_tap_repo_state (environment, parity_status, updated_at DESC);
+      """)
+
+    try db.execute(sql: """
+      CREATE TABLE IF NOT EXISTS appview_tap_parity_discrepancies (
+        environment TEXT NOT NULL,
+        event_id INTEGER NOT NULL,
+        repo_did TEXT NOT NULL,
+        uri TEXT NOT NULL,
+        collection TEXT NOT NULL,
+        mismatch_kind TEXT NOT NULL,
+        expected_cid TEXT,
+        observed_cid TEXT,
+        status TEXT NOT NULL,
+        opened_at TEXT NOT NULL,
+        resolved_at TEXT,
+        resolution_event_id INTEGER,
+        PRIMARY KEY (environment, event_id)
+      );
+      """)
+
+    try db.execute(sql: """
+      CREATE INDEX IF NOT EXISTS idx_appview_tap_parity_discrepancies_open
+        ON appview_tap_parity_discrepancies (environment, repo_did, uri, opened_at)
+        WHERE status = 'open';
+      """)
+
+    try db.execute(sql: """
+      CREATE TABLE IF NOT EXISTS appview_tap_event_receipts (
+        environment TEXT NOT NULL,
+        event_id INTEGER NOT NULL,
+        repo_did TEXT NOT NULL,
+        event_type TEXT NOT NULL,
+        processed_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        PRIMARY KEY (environment, event_id)
+      );
+      """)
+
+    try db.execute(sql: """
+      CREATE INDEX IF NOT EXISTS idx_appview_tap_event_receipts_environment_expires
+        ON appview_tap_event_receipts (environment, expires_at, event_id);
+      """)
+
+    try db.execute(sql: """
+      CREATE TABLE IF NOT EXISTS appview_tap_repository_registrations (
+        environment TEXT NOT NULL,
+        repo_did TEXT NOT NULL,
+        is_registered INTEGER NOT NULL,
+        registered_at TEXT,
+        removed_at TEXT,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (environment, repo_did)
+      );
+      """)
+
+    try db.execute(sql: """
+      CREATE INDEX IF NOT EXISTS idx_appview_tap_repository_registrations_active
+        ON appview_tap_repository_registrations (environment, repo_did)
+        WHERE is_registered = 1;
+      """)
+
+    try db.execute(sql: """
+      CREATE TABLE IF NOT EXISTS appview_projection_repair_outbox (
+        environment TEXT NOT NULL,
+        id TEXT NOT NULL,
+        event_id INTEGER NOT NULL,
+        uri TEXT NOT NULL,
+        author_did TEXT NOT NULL,
+        publication_site TEXT,
+        action TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'queued',
+        attempts INTEGER NOT NULL DEFAULT 0,
+        lease_owner TEXT,
+        lease_until TEXT,
+        next_attempt_at TEXT NOT NULL,
+        last_error TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        PRIMARY KEY (environment, id),
+        UNIQUE (environment, event_id)
+      );
+      """)
+
+    try migrateProjectionRepairEnvironmentPrimaryKeyIfNeeded(db)
+
+    try db.execute(sql: """
+      CREATE INDEX IF NOT EXISTS idx_appview_projection_repair_claim
+        ON appview_projection_repair_outbox
+          (environment, status, next_attempt_at, lease_until, created_at);
+      """)
+    try db.execute(sql: """
+      CREATE INDEX IF NOT EXISTS idx_appview_projection_repair_cleanup
+        ON appview_projection_repair_outbox (environment, status, expires_at, id);
       """)
 
     try db.execute(sql: """
@@ -149,6 +280,91 @@ public init(path dbPath: String, logger: Logger) throws {
       """)
   }
 
+  /// SQLite cannot add a column to an existing primary key. Rebuild the legacy table while
+  /// quarantining its unscoped evidence instead of silently assigning it to the active environment.
+  private static func migrateIngestionCheckpointEnvironmentIfNeeded(_ db: Database) throws {
+    let columns = try Row.fetchAll(
+      db,
+      sql: "PRAGMA table_info(appview_ingestion_checkpoints)"
+    ).map { row -> String in row["name"] }
+    guard !columns.contains("environment") else { return }
+
+    try db.execute(sql: """
+      ALTER TABLE appview_ingestion_checkpoints
+        RENAME TO appview_ingestion_checkpoints_legacy_unscoped;
+      """)
+    try db.execute(sql: """
+      CREATE TABLE appview_ingestion_checkpoints (
+        environment TEXT NOT NULL,
+        source TEXT NOT NULL,
+        repo_did TEXT NOT NULL,
+        collection TEXT NOT NULL,
+        cursor TEXT,
+        event_time TEXT,
+        observed_at TEXT NOT NULL,
+        PRIMARY KEY (environment, source, repo_did, collection)
+      );
+      """)
+    try db.execute(sql: """
+      INSERT INTO appview_ingestion_checkpoints
+        (environment, source, repo_did, collection, cursor, event_time, observed_at)
+      SELECT '__legacy_unscoped__', source, repo_did, collection, cursor, event_time, observed_at
+      FROM appview_ingestion_checkpoints_legacy_unscoped;
+      """)
+    try db.execute(sql: "DROP TABLE appview_ingestion_checkpoints_legacy_unscoped;")
+  }
+
+  /// Early development builds used a global outbox id primary key. Rebuild it as an
+  /// environment-scoped identifier so SQLite has the same isolation contract as Postgres.
+  private static func migrateProjectionRepairEnvironmentPrimaryKeyIfNeeded(
+    _ db: Database
+  ) throws {
+    let primaryKeyColumns = try Row.fetchAll(
+      db,
+      sql: "PRAGMA table_info(appview_projection_repair_outbox)"
+    ).compactMap { row -> (position: Int, name: String)? in
+      let position: Int = row["pk"]
+      guard position > 0 else { return nil }
+      return (position, row["name"])
+    }.sorted { $0.position < $1.position }.map(\.name)
+    guard primaryKeyColumns != ["environment", "id"] else { return }
+
+    try db.execute(sql: """
+      ALTER TABLE appview_projection_repair_outbox
+        RENAME TO appview_projection_repair_outbox_legacy;
+      CREATE TABLE appview_projection_repair_outbox (
+        environment TEXT NOT NULL,
+        id TEXT NOT NULL,
+        event_id INTEGER NOT NULL,
+        uri TEXT NOT NULL,
+        author_did TEXT NOT NULL,
+        publication_site TEXT,
+        action TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'queued',
+        attempts INTEGER NOT NULL DEFAULT 0,
+        lease_owner TEXT,
+        lease_until TEXT,
+        next_attempt_at TEXT NOT NULL,
+        last_error TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        PRIMARY KEY (environment, id),
+        UNIQUE (environment, event_id)
+      );
+      INSERT INTO appview_projection_repair_outbox (
+        environment, id, event_id, uri, author_did, publication_site, action, status,
+        attempts, lease_owner, lease_until, next_attempt_at, last_error, created_at,
+        updated_at, expires_at
+      )
+      SELECT environment, id, event_id, uri, author_did, publication_site, action, status,
+        attempts, lease_owner, lease_until, next_attempt_at, last_error, created_at,
+        updated_at, expires_at
+      FROM appview_projection_repair_outbox_legacy;
+      DROP TABLE appview_projection_repair_outbox_legacy;
+      """)
+  }
+
   public func upsertContentItem(_ item: IndexedContentItem) async throws {
     let renderJSON = try item.render.encodedJSON()
     let createdAt = Self.isoString(from: item.createdAt)
@@ -188,6 +404,39 @@ public init(path dbPath: String, logger: Logger) throws {
   public func deleteContentItem(uri: String) async throws {
     try await db.write { db in
       try db.execute(sql: "DELETE FROM content_items WHERE uri = ?", arguments: [uri])
+    }
+  }
+
+  public func deleteContentItems(authorDid: String) async throws -> Int {
+    try await db.write { db in
+      try db.execute(
+        sql: "DELETE FROM content_items WHERE author_did = ?",
+        arguments: [authorDid]
+      )
+      return db.changesCount
+    }
+  }
+
+  public func fetchContentIdentity(uri: String) async throws -> IndexedContentIdentity? {
+    let nowIso = Self.isoString(from: Date())
+    return try await db.read { db in
+      guard let row = try Row.fetchOne(
+        db,
+        sql: """
+          SELECT uri, cid, author_did, collection
+          FROM content_items
+          WHERE uri = ?
+            AND expires_at > ?
+          LIMIT 1
+          """,
+        arguments: [uri, nowIso]
+      ) else { return nil }
+      return IndexedContentIdentity(
+        uri: row["uri"],
+        cid: row["cid"],
+        authorDid: row["author_did"],
+        collection: row["collection"]
+      )
     }
   }
 
@@ -865,29 +1114,190 @@ public init(path dbPath: String, logger: Logger) throws {
     }
   }
 
-  public func deleteExpiredContent(before: Date) async throws -> Int {
+  public func deleteExpiredContent(before: Date, batchSize: Int) async throws -> Int {
     let beforeIso = Self.isoString(from: before)
+    let batchSize = max(1, min(batchSize, 10_000))
     return try await db.write { db in
       try db.execute(
-        sql: "DELETE FROM content_items WHERE expires_at <= ?",
-        arguments: [beforeIso]
+        sql: """
+          DELETE FROM content_items
+          WHERE rowid IN (
+            SELECT rowid FROM content_items
+            WHERE expires_at <= ?
+            ORDER BY expires_at, uri
+            LIMIT ?
+          )
+          """,
+        arguments: [beforeIso, batchSize]
       )
       return db.changesCount
     }
   }
 
-  public func deleteExpiredReadMarks(before: Date) async throws -> Int {
+  public func deleteExpiredReadMarks(before: Date, batchSize: Int) async throws -> Int {
     let beforeIso = Self.isoString(from: before)
+    let batchSize = max(1, min(batchSize, 10_000))
     return try await db.write { db in
       try db.execute(
-        sql: "DELETE FROM read_marks WHERE created_at <= ?",
-        arguments: [beforeIso]
+        sql: """
+          DELETE FROM read_marks
+          WHERE rowid IN (
+            SELECT rowid FROM read_marks
+            WHERE created_at <= ?
+            ORDER BY created_at, viewer_did, subject_uri
+            LIMIT ?
+          )
+          """,
+        arguments: [beforeIso, batchSize]
       )
       return db.changesCount
+    }
+  }
+
+  public func deleteExpiredTapEventReceipts(
+    environment: String,
+    before: Date,
+    batchSize: Int
+  ) async throws -> Int {
+    let batchSize = max(1, min(batchSize, 10_000))
+    return try await db.write { db in
+      try db.execute(
+        sql: """
+          DELETE FROM appview_tap_event_receipts
+          WHERE rowid IN (
+            SELECT rowid FROM appview_tap_event_receipts
+            WHERE environment = ? AND expires_at <= ?
+            ORDER BY expires_at, event_id
+            LIMIT ?
+          )
+          """,
+        arguments: [environment, Self.isoString(from: before), batchSize]
+      )
+      return db.changesCount
+    }
+  }
+
+  public func deleteExpiredProjectionRepairs(
+    environment: String,
+    before: Date,
+    batchSize: Int
+  ) async throws -> Int {
+    let batchSize = max(1, min(batchSize, 10_000))
+    return try await db.write { db in
+      try db.execute(
+        sql: """
+          DELETE FROM appview_projection_repair_outbox
+          WHERE rowid IN (
+            SELECT rowid FROM appview_projection_repair_outbox
+            WHERE environment = ? AND status = 'failed' AND expires_at <= ?
+            ORDER BY expires_at, id
+            LIMIT ?
+          )
+          """,
+        arguments: [environment, Self.isoString(from: before), batchSize]
+      )
+      return db.changesCount
+    }
+  }
+
+  public func desiredTapRepositoryScope(limit: Int) async throws -> TapDesiredRepositoryScope {
+    let limit = max(1, min(limit, 10_000))
+    return try await db.read { db in
+      let scanBatchSize = 500
+      var rows: [String] = []
+      var after = ""
+      while rows.count <= limit {
+        let page = try String.fetchAll(
+          db,
+          sql: """
+            SELECT DISTINCT author_did
+            FROM appview_publication_scopes
+            WHERE author_did > ?
+            ORDER BY author_did
+            LIMIT ?
+            """,
+          arguments: [after, scanBatchSize]
+        )
+        guard let last = page.last else { break }
+        rows.append(contentsOf: page.filter(ATProtoRepositoryDIDValidator.isValid))
+        after = last
+        if page.count < scanBatchSize { break }
+      }
+      return TapDesiredRepositoryScope(
+        repoDids: Array(rows.prefix(limit)),
+        truncated: rows.count > limit
+      )
+    }
+  }
+
+  public func registeredTapRepositoryDids(environment: String) async throws -> [String] {
+    try await db.read { db in
+      try String.fetchAll(
+        db,
+        sql: """
+          SELECT repo_did
+          FROM appview_tap_repository_registrations
+          WHERE environment = ? AND is_registered = 1
+          ORDER BY repo_did
+          """,
+        arguments: [environment]
+      )
+    }
+  }
+
+  public func markTapRepositoriesRegistered(
+    environment: String,
+    repoDids: [String],
+    at: Date
+  ) async throws {
+    guard !repoDids.isEmpty else { return }
+    let timestamp = Self.isoString(from: at)
+    try await db.write { db in
+      for repoDid in repoDids {
+        try db.execute(
+          sql: """
+            INSERT INTO appview_tap_repository_registrations
+              (environment, repo_did, is_registered, registered_at, removed_at, updated_at)
+            VALUES (?, ?, 1, ?, NULL, ?)
+            ON CONFLICT (environment, repo_did) DO UPDATE SET
+              is_registered = 1,
+              registered_at = excluded.registered_at,
+              removed_at = NULL,
+              updated_at = excluded.updated_at
+            """,
+          arguments: [environment, repoDid, timestamp, timestamp]
+        )
+      }
+    }
+  }
+
+  public func markTapRepositoriesRemoved(
+    environment: String,
+    repoDids: [String],
+    at: Date
+  ) async throws {
+    guard !repoDids.isEmpty else { return }
+    let timestamp = Self.isoString(from: at)
+    try await db.write { db in
+      for repoDid in repoDids {
+        try db.execute(
+          sql: """
+            INSERT INTO appview_tap_repository_registrations
+              (environment, repo_did, is_registered, registered_at, removed_at, updated_at)
+            VALUES (?, ?, 0, NULL, ?, ?)
+            ON CONFLICT (environment, repo_did) DO UPDATE SET
+              is_registered = 0,
+              removed_at = excluded.removed_at,
+              updated_at = excluded.updated_at
+            """,
+          arguments: [environment, repoDid, timestamp, timestamp]
+        )
+      }
     }
   }
 
   public func recordIngestionCheckpoint(
+    environment: String,
     source: String,
     repoDid: String,
     collection: String,
@@ -901,14 +1311,15 @@ public init(path dbPath: String, logger: Logger) throws {
       try db.execute(
         sql: """
           INSERT INTO appview_ingestion_checkpoints
-            (source, repo_did, collection, cursor, event_time, observed_at)
-          VALUES (?, ?, ?, ?, ?, ?)
-          ON CONFLICT (source, repo_did, collection) DO UPDATE SET
+            (environment, source, repo_did, collection, cursor, event_time, observed_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT (environment, source, repo_did, collection) DO UPDATE SET
             cursor = excluded.cursor,
             event_time = excluded.event_time,
             observed_at = excluded.observed_at
           """,
         arguments: [
+          environment,
           source,
           repoDid,
           collection,
@@ -917,6 +1328,493 @@ public init(path dbPath: String, logger: Logger) throws {
           observedAtIso,
         ]
       )
+    }
+  }
+
+  public func fetchTapRepositorySyncState(
+    environment: String,
+    repoDid: String
+  ) async throws -> TapRepositorySyncState? {
+    try await db.read { db in
+      guard let row = try Row.fetchOne(
+        db,
+        sql: """
+          SELECT repo_rev, account_status, pds_base, last_event_id, last_event_live,
+                 parity_status, matched_event_count, mismatched_event_count,
+                 last_mismatch, last_indexed_at, last_validated_at, updated_at
+          FROM appview_tap_repo_state
+          WHERE environment = ? AND repo_did = ?
+          LIMIT 1
+          """,
+        arguments: [environment, repoDid]
+      ) else { return nil }
+      guard
+        let accountStatus = TapAccountStatus(rawValue: row["account_status"]),
+        let parityStatus = TapParityStatus(rawValue: row["parity_status"]),
+        let updatedAt = Self.date(fromIso: row["updated_at"])
+      else { return nil }
+      let liveInteger: Int? = row["last_event_live"]
+      return TapRepositorySyncState(
+        environment: environment,
+        repoDid: repoDid,
+        repoRev: row["repo_rev"],
+        accountStatus: accountStatus,
+        pdsBase: row["pds_base"],
+        lastEventId: row["last_event_id"],
+        lastEventLive: liveInteger.map { $0 != 0 } ?? false,
+        parityStatus: parityStatus,
+        matchedEventCount: row["matched_event_count"],
+        mismatchedEventCount: row["mismatched_event_count"],
+        lastMismatch: row["last_mismatch"],
+        lastIndexedAt: (row["last_indexed_at"] as String?).flatMap(Self.date(fromIso:)),
+        lastValidatedAt: (row["last_validated_at"] as String?).flatMap(Self.date(fromIso:)),
+        updatedAt: updatedAt
+      )
+    }
+  }
+
+  public func upsertTapRepositorySyncState(_ state: TapRepositorySyncState) async throws {
+    try await db.write { db in
+      try db.execute(
+        sql: """
+          INSERT INTO appview_tap_repo_state
+            (environment, repo_did, repo_rev, account_status, pds_base,
+             last_event_id, last_event_live, parity_status, matched_event_count,
+             mismatched_event_count, last_mismatch, last_indexed_at,
+             last_validated_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT (environment, repo_did) DO UPDATE SET
+            repo_rev = excluded.repo_rev,
+            account_status = excluded.account_status,
+            pds_base = excluded.pds_base,
+            last_event_id = excluded.last_event_id,
+            last_event_live = excluded.last_event_live,
+            parity_status = excluded.parity_status,
+            matched_event_count = excluded.matched_event_count,
+            mismatched_event_count = excluded.mismatched_event_count,
+            last_mismatch = excluded.last_mismatch,
+            last_indexed_at = excluded.last_indexed_at,
+            last_validated_at = excluded.last_validated_at,
+            updated_at = excluded.updated_at
+          """,
+        arguments: [
+          state.environment,
+          state.repoDid,
+          state.repoRev,
+          state.accountStatus.rawValue,
+          state.pdsBase,
+          state.lastEventId,
+          state.lastEventLive ? 1 : 0,
+          state.parityStatus.rawValue,
+          state.matchedEventCount,
+          state.mismatchedEventCount,
+          state.lastMismatch,
+          state.lastIndexedAt.map(Self.isoString(from:)),
+          state.lastValidatedAt.map(Self.isoString(from:)),
+          Self.isoString(from: state.updatedAt),
+        ]
+      )
+    }
+  }
+
+  public func hasProcessedTapEvent(environment: String, eventId: Int64) async throws -> Bool {
+    try await db.read { db in
+      try Bool.fetchOne(
+        db,
+        sql: """
+          SELECT EXISTS(
+            SELECT 1 FROM appview_tap_event_receipts
+            WHERE environment = ? AND event_id = ?
+          )
+          """,
+        arguments: [environment, eventId]
+      ) ?? false
+    }
+  }
+
+  public func commitTapEvent(
+    state: TapRepositorySyncState,
+    eventId: Int64,
+    eventType: String,
+    parityEvidence: TapParityEventEvidence?,
+    processedAt: Date
+  ) async throws {
+    try await db.write { db in
+      try db.execute(
+        sql: """
+          INSERT INTO appview_tap_repo_state
+            (environment, repo_did, repo_rev, account_status, pds_base,
+             last_event_id, last_event_live, parity_status, matched_event_count,
+             mismatched_event_count, last_mismatch, last_indexed_at,
+             last_validated_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT (environment, repo_did) DO UPDATE SET
+            repo_rev = excluded.repo_rev,
+            account_status = excluded.account_status,
+            pds_base = excluded.pds_base,
+            last_event_id = excluded.last_event_id,
+            last_event_live = excluded.last_event_live,
+            parity_status = excluded.parity_status,
+            matched_event_count = excluded.matched_event_count,
+            mismatched_event_count = excluded.mismatched_event_count,
+            last_mismatch = excluded.last_mismatch,
+            last_indexed_at = excluded.last_indexed_at,
+            last_validated_at = excluded.last_validated_at,
+            updated_at = excluded.updated_at
+          """,
+        arguments: Self.tapStateArguments(state)
+      )
+      try db.execute(
+        sql: """
+          INSERT INTO appview_tap_event_receipts
+            (environment, event_id, repo_did, event_type, processed_at, expires_at)
+          VALUES (?, ?, ?, ?, ?, ?)
+          ON CONFLICT (environment, event_id) DO NOTHING
+          """,
+        arguments: [
+          state.environment,
+          eventId,
+          state.repoDid,
+          eventType,
+          Self.isoString(from: processedAt),
+          Self.isoString(from: processedAt.addingTimeInterval(30 * 86_400)),
+        ]
+      )
+      if let parityEvidence {
+        if let mismatchKind = parityEvidence.mismatchKind {
+          try db.execute(
+            sql: """
+              INSERT INTO appview_tap_parity_discrepancies
+                (environment, event_id, repo_did, uri, collection, mismatch_kind,
+                 expected_cid, observed_cid, status, opened_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'open', ?)
+              ON CONFLICT (environment, event_id) DO NOTHING
+              """,
+            arguments: [
+              state.environment, eventId, state.repoDid, parityEvidence.uri,
+              parityEvidence.collection, mismatchKind, parityEvidence.expectedCid,
+              parityEvidence.observedCid, Self.isoString(from: processedAt),
+            ]
+          )
+        } else {
+          try db.execute(
+            sql: """
+              UPDATE appview_tap_parity_discrepancies
+              SET status = 'resolved', resolved_at = ?, resolution_event_id = ?
+              WHERE environment = ? AND repo_did = ? AND uri = ? AND status = 'open'
+              """,
+            arguments: [
+              Self.isoString(from: processedAt), eventId, state.environment, state.repoDid,
+              parityEvidence.uri,
+            ]
+          )
+        }
+        let openCount = try Int.fetchOne(
+          db,
+          sql: """
+            SELECT COUNT(*) FROM appview_tap_parity_discrepancies
+            WHERE environment = ? AND repo_did = ? AND status = 'open'
+            """,
+          arguments: [state.environment, state.repoDid]
+        ) ?? 0
+        try db.execute(
+          sql: """
+            UPDATE appview_tap_repo_state
+            SET parity_status = ?,
+                last_mismatch = CASE WHEN ? = 0 THEN NULL ELSE last_mismatch END
+            WHERE environment = ? AND repo_did = ?
+            """,
+          arguments: [
+            openCount == 0 ? TapParityStatus.matched.rawValue : TapParityStatus.mismatch.rawValue,
+            openCount, state.environment, state.repoDid,
+          ]
+        )
+      }
+    }
+  }
+
+  public func listTapParityDiscrepancies(
+    environment: String,
+    repoDid: String
+  ) async throws -> [TapParityDiscrepancy] {
+    try await db.read { db in
+      try Row.fetchAll(
+        db,
+        sql: """
+          SELECT event_id, uri, collection, mismatch_kind, expected_cid, observed_cid,
+                 status, opened_at, resolved_at, resolution_event_id
+          FROM appview_tap_parity_discrepancies
+          WHERE environment = ? AND repo_did = ?
+          ORDER BY event_id
+          """,
+        arguments: [environment, repoDid]
+      ).compactMap { row in
+        guard
+          let status = TapParityDiscrepancyStatus(rawValue: row["status"]),
+          let openedAt = Self.date(fromIso: row["opened_at"])
+        else { return nil }
+        let resolvedRaw: String? = row["resolved_at"]
+        return TapParityDiscrepancy(
+          environment: environment,
+          eventId: row["event_id"],
+          repoDid: repoDid,
+          uri: row["uri"],
+          collection: row["collection"],
+          mismatchKind: row["mismatch_kind"],
+          expectedCid: row["expected_cid"],
+          observedCid: row["observed_cid"],
+          status: status,
+          openedAt: openedAt,
+          resolvedAt: resolvedRaw.flatMap(Self.date(fromIso:)),
+          resolutionEventId: row["resolution_event_id"]
+        )
+      }
+    }
+  }
+
+  public func applyTapContentMutation(
+    _ mutation: TapContentMutation,
+    environment: String,
+    eventId: Int64,
+    repoRev: String,
+    eventTime: Date,
+    observedAt: Date
+  ) async throws {
+    try await db.write { db in
+      let publicationSite: String?
+      let action: String
+      switch mutation {
+      case .upsert(let item):
+        publicationSite = item.publicationSite
+        action = "upsert"
+        try db.execute(
+          sql: """
+            INSERT INTO content_items
+              (uri, cid, author_did, collection, created_at, indexed_at,
+               publication_site, render_json, expires_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (uri) DO UPDATE SET
+              cid = excluded.cid,
+              author_did = excluded.author_did,
+              collection = excluded.collection,
+              created_at = excluded.created_at,
+              indexed_at = excluded.indexed_at,
+              publication_site = excluded.publication_site,
+              render_json = excluded.render_json,
+              expires_at = excluded.expires_at
+            """,
+          arguments: [
+            item.uri,
+            item.cid,
+            item.authorDid,
+            item.collection,
+            Self.isoString(from: item.createdAt),
+            Self.isoString(from: item.indexedAt),
+            item.publicationSite,
+            try item.render.encodedJSON(),
+            Self.isoString(from: item.expiresAt),
+          ]
+        )
+      case .delete(let uri, _, _):
+        publicationSite = try String.fetchOne(
+          db,
+          sql: "SELECT publication_site FROM content_items WHERE uri = ?",
+          arguments: [uri]
+        )
+        action = "delete"
+        try db.execute(sql: "DELETE FROM content_items WHERE uri = ?", arguments: [uri])
+      }
+
+      try db.execute(
+        sql: """
+          INSERT INTO appview_ingestion_checkpoints
+            (environment, source, repo_did, collection, cursor, event_time, observed_at)
+          VALUES (?, 'tap', ?, ?, ?, ?, ?)
+          ON CONFLICT (environment, source, repo_did, collection) DO UPDATE SET
+            cursor = excluded.cursor,
+            event_time = excluded.event_time,
+            observed_at = excluded.observed_at
+          """,
+        arguments: [
+          environment,
+          mutation.authorDid,
+          mutation.collection,
+          String(eventId),
+          Self.isoString(from: eventTime),
+          Self.isoString(from: observedAt),
+        ]
+      )
+
+      let repairId = "\(environment):\(eventId)"
+      let nowIso = Self.isoString(from: observedAt)
+      try db.execute(
+        sql: """
+          INSERT INTO appview_projection_repair_outbox
+            (id, environment, event_id, uri, author_did, publication_site, action,
+             status, attempts, next_attempt_at, created_at, updated_at, expires_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', 0, ?, ?, ?, ?)
+          ON CONFLICT (environment, event_id) DO NOTHING
+          """,
+        arguments: [
+          repairId,
+          environment,
+          eventId,
+          mutation.uri,
+          mutation.authorDid,
+          publicationSite,
+          action,
+          nowIso,
+          nowIso,
+          nowIso,
+          Self.isoString(from: observedAt.addingTimeInterval(30 * 86_400)),
+        ]
+      )
+      _ = repoRev
+    }
+  }
+
+  public func projectionRepairBacklog(
+    environment: String,
+    at: Date
+  ) async throws -> AppViewProjectionRepairBacklogSnapshot {
+    try await db.read { db in
+      guard let row = try Row.fetchOne(
+        db,
+        sql: """
+          SELECT
+            COUNT(CASE WHEN status = 'queued' THEN 1 END) AS queued_count,
+            COUNT(CASE WHEN status = 'running' THEN 1 END) AS running_count,
+            COUNT(CASE WHEN status = 'failed' THEN 1 END) AS failed_count,
+            MIN(CASE WHEN status IN ('queued', 'running', 'failed') THEN created_at END)
+              AS oldest_actionable_at
+          FROM appview_projection_repair_outbox
+          WHERE environment = ?
+          """,
+        arguments: [environment]
+      ) else {
+        throw AppViewProjectionRepairError.invalidBacklogEvidence
+      }
+
+      let queuedCount: Int = row["queued_count"]
+      let runningCount: Int = row["running_count"]
+      let failedCount: Int = row["failed_count"]
+      let hasActionableRepairs = queuedCount > 0 || runningCount > 0 || failedCount > 0
+      let oldestRaw: String? = row["oldest_actionable_at"]
+      let oldestActionableAt = oldestRaw.flatMap(Self.date(fromIso:))
+
+      guard queuedCount >= 0, runningCount >= 0, failedCount >= 0 else {
+        throw AppViewProjectionRepairError.invalidBacklogEvidence
+      }
+      if hasActionableRepairs {
+        guard oldestRaw != nil, let oldestActionableAt, oldestActionableAt <= at else {
+          throw AppViewProjectionRepairError.invalidBacklogEvidence
+        }
+      } else if oldestRaw != nil {
+        throw AppViewProjectionRepairError.invalidBacklogEvidence
+      }
+
+      return AppViewProjectionRepairBacklogSnapshot(
+        environment: environment,
+        queuedCount: queuedCount,
+        runningCount: runningCount,
+        failedCount: failedCount,
+        oldestActionableAt: oldestActionableAt,
+        oldestActionableAgeSeconds: oldestActionableAt.map { at.timeIntervalSince($0) },
+        observedAt: at
+      )
+    }
+  }
+
+  public func claimProjectionRepair(
+    environment: String,
+    workerId: String,
+    leaseUntil: Date,
+    at: Date
+  ) async throws -> AppViewProjectionRepair? {
+    try await db.write { db in
+      let atIso = Self.isoString(from: at)
+      guard let row = try Row.fetchOne(
+        db,
+        sql: """
+          SELECT id, environment, event_id, uri, author_did, publication_site,
+                 action, attempts
+          FROM appview_projection_repair_outbox
+          WHERE environment = ?
+            AND ((status = 'queued' AND next_attempt_at <= ?)
+              OR (status = 'running' AND lease_until <= ?))
+          ORDER BY created_at ASC
+          LIMIT 1
+          """,
+        arguments: [environment, atIso, atIso]
+      ) else { return nil }
+      let id: String = row["id"]
+      try db.execute(
+        sql: """
+          UPDATE appview_projection_repair_outbox
+          SET status = 'running', lease_owner = ?, lease_until = ?, updated_at = ?
+          WHERE environment = ? AND id = ?
+          """,
+        arguments: [workerId, Self.isoString(from: leaseUntil), atIso, environment, id]
+      )
+      return AppViewProjectionRepair(
+        id: id,
+        environment: row["environment"],
+        eventId: row["event_id"],
+        uri: row["uri"],
+        authorDid: row["author_did"],
+        publicationSite: row["publication_site"],
+        action: row["action"],
+        attempts: row["attempts"],
+        leaseOwner: workerId,
+        leaseUntil: leaseUntil
+      )
+    }
+  }
+
+  public func completeProjectionRepair(
+    environment: String,
+    id: String,
+    workerId: String
+  ) async throws {
+    try await db.write { db in
+      try db.execute(
+        sql: """
+          DELETE FROM appview_projection_repair_outbox
+          WHERE environment = ? AND id = ? AND status = 'running' AND lease_owner = ?
+          """,
+        arguments: [environment, id, workerId]
+      )
+      guard db.changesCount == 1 else { throw AppViewProjectionRepairError.staleLease }
+    }
+  }
+
+  public func failProjectionRepair(
+    environment: String,
+    id: String,
+    workerId: String,
+    errorCategory: String,
+    retryAt: Date,
+    at: Date
+  ) async throws {
+    try await db.write { db in
+      try db.execute(
+        sql: """
+          UPDATE appview_projection_repair_outbox
+          SET attempts = attempts + 1,
+              status = CASE WHEN attempts + 1 >= 5 THEN 'failed' ELSE 'queued' END,
+              lease_owner = NULL,
+              lease_until = NULL,
+              next_attempt_at = ?,
+              last_error = ?,
+              updated_at = ?
+          WHERE environment = ? AND id = ? AND status = 'running' AND lease_owner = ?
+          """,
+        arguments: [
+          Self.isoString(from: retryAt), errorCategory, Self.isoString(from: at),
+          environment, id, workerId,
+        ]
+      )
+      guard db.changesCount == 1 else { throw AppViewProjectionRepairError.staleLease }
     }
   }
 
@@ -1319,6 +2217,25 @@ public init(path dbPath: String, logger: Logger) throws {
       throw ThinAppViewStoreError.encodingFailed
     }
     return try JSONDecoder().decode([String].self, from: data)
+  }
+
+  private static func tapStateArguments(_ state: TapRepositorySyncState) -> StatementArguments {
+    [
+      state.environment,
+      state.repoDid,
+      state.repoRev,
+      state.accountStatus.rawValue,
+      state.pdsBase,
+      state.lastEventId,
+      state.lastEventLive ? 1 : 0,
+      state.parityStatus.rawValue,
+      state.matchedEventCount,
+      state.mismatchedEventCount,
+      state.lastMismatch,
+      state.lastIndexedAt.map(isoString(from:)),
+      state.lastValidatedAt.map(isoString(from:)),
+      isoString(from: state.updatedAt),
+    ]
   }
 
   private static func isoString(from date: Date) -> String {

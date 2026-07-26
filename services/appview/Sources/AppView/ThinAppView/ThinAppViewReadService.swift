@@ -24,18 +24,28 @@ actor ThinAppViewReadService {
     publicationId: String,
     scope: PublicationAppViewScope,
     limit: Int
-  ) async throws -> AppViewEntryListResponse? {
+  ) async throws -> AppViewProjectionCacheEntry<AppViewEntryListResponse>? {
     guard let projectionCache else { return nil }
     guard
-      let json = try await cachedFirstPageJSON(
+      let entry = try await firstPageCacheEntry(
         projectionCache: projectionCache,
         viewerDid: auth.did,
         publicationId: publicationId
       ),
-      let cached = try? JSONDecoder().decode(AppViewEntryListResponse.self, from: Data(json.utf8)),
+      let cached = try? JSONDecoder().decode(
+        AppViewEntryListResponse.self,
+        from: Data(entry.value.utf8)
+      ),
       !cached.entries.isEmpty
     else { return nil }
-    return dedupedPage(cached)
+    _ = scope
+    _ = limit
+    return AppViewProjectionCacheEntry(
+      value: dedupedPage(cached),
+      cachedAt: entry.cachedAt,
+      expiresAt: entry.expiresAt,
+      source: entry.source
+    )
   }
 
   func liveFirstPage(
@@ -70,7 +80,7 @@ actor ThinAppViewReadService {
       scope: scope,
       limit: limit
     ) {
-      return cached
+      return cached.value
     }
     return try await liveFirstPage(auth: auth, scope: scope, limit: limit)
   }
@@ -93,12 +103,15 @@ actor ThinAppViewReadService {
         publicationSiteUrls: publicationSiteUrls,
         authorDid: authorDid
       ),
-         let json = try await cachedFirstPageJSON(
+         let entry = try await firstPageCacheEntry(
            projectionCache: projectionCache,
            viewerDid: auth.did,
            publicationId: publicationId
          ),
-         let cached = try? JSONDecoder().decode(AppViewEntryListResponse.self, from: Data(json.utf8))
+         let cached = try? JSONDecoder().decode(
+           AppViewEntryListResponse.self,
+           from: Data(entry.value.utf8)
+         )
       {
         return dedupedPage(cached)
       }
@@ -361,18 +374,18 @@ actor ThinAppViewReadService {
     try await projectionCache?.invalidateUnreadCounts(viewerDid: viewerDid, publicationId: nil)
   }
 
-  private func cachedFirstPageJSON(
+  private func firstPageCacheEntry(
     projectionCache: any AppViewProjectionCacheStore,
     viewerDid: String,
     publicationId: String
-  ) async throws -> String? {
-    if let viewerJSON = try await projectionCache.cachedFirstPageJSON(
+  ) async throws -> AppViewProjectionCacheEntry<String>? {
+    if let viewerEntry = try await projectionCache.firstPageCacheEntry(
       viewerDid: viewerDid,
       publicationId: publicationId
     ) {
-      return viewerJSON
+      return viewerEntry
     }
-    return try await projectionCache.cachedFirstPageJSON(
+    return try await projectionCache.firstPageCacheEntry(
       viewerDid: AppViewProjectionCacheViewerKeys.sharedFirstPage,
       publicationId: publicationId
     )

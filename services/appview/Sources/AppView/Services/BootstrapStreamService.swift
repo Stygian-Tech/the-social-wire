@@ -18,23 +18,30 @@ struct BootstrapStreamService {
     case folders(AppViewBootstrapSidebarFoldersPayload)
   }
 
+  private struct EntriesPageEvidence: Sendable {
+    let source: AppViewBootstrapEvidenceSource
+    let cachedAt: Date?
+  }
+
   func writeStream(auth: AuthContext, writer: inout any ResponseBodyWriter) async throws {
     let streamStarted = Date()
     let refreshedAt = Date()
+    var cachedEvidenceAt: Date?
     do {
       if let cached = try await loadFreshCachedSnapshot(viewerDid: auth.did) {
+        cachedEvidenceAt = cached.cachedAt
         try await emitCachedBootstrap(
           auth: auth,
-          snapshot: cached,
-          refreshedAt: refreshedAt,
+          snapshot: cached.snapshot,
+          refreshedAt: cached.cachedAt,
           writer: &writer
         )
         scheduleBackgroundWarmers(
           auth: auth,
-          priority: cached.priority,
-          enrollAuthorDids: cached.priority.enrollAuthorDids
+          priority: cached.snapshot.priority,
+          enrollAuthorDids: cached.snapshot.priority.enrollAuthorDids
         )
-        scheduleBackgroundRefresh(auth: auth, priority: cached.priority)
+        scheduleBackgroundRefresh(auth: auth, priority: cached.snapshot.priority)
         BootstrapStreamTimings.logPhase(
           logger,
           phase: "totalCached",
@@ -68,6 +75,8 @@ struct BootstrapStreamService {
       var selectedRow: SidebarPublicationRow?
       var selectedEnrollTask: Task<Void, Never>?
       var emittedSelectedEntries = false
+      var completionSource = AppViewBootstrapEvidenceSource.liveProjection
+      var cachedEntriesEvidenceAt: Date?
       var priorityExactCountsTask: Task<PublicationProjectionService.UnreadCounterSnapshot, Never>?
       var folderExactCountsTask: Task<PublicationProjectionService.UnreadCounterSnapshot, Never>?
 
@@ -140,12 +149,20 @@ struct BootstrapStreamService {
               emittedSelectedEntries = true
               try await writeEvent(.selectedPublication(publicationId: selectedId), writer: &writer)
               let entriesStarted = Date()
-              try await writeBootstrapEntriesPage(
+              let entriesEvidence = try await writeBootstrapEntriesPage(
                 auth: auth,
                 publicationId: selectedId,
                 row: selectedRow,
                 enrollTask: selectedEnrollTask,
                 writer: &writer
+              )
+              completionSource = BootstrapStreamCompletionEvidence.combined(
+                completionSource,
+                entriesEvidence.source
+              )
+              cachedEntriesEvidenceAt = BootstrapStreamCompletionEvidence.oldest(
+                cachedEntriesEvidenceAt,
+                entriesEvidence.cachedAt
               )
               BootstrapStreamTimings.logPhase(
                 logger,
@@ -224,12 +241,20 @@ struct BootstrapStreamService {
       if !emittedSelectedEntries, let selectedId, let selectedRow {
         try await writeEvent(.selectedPublication(publicationId: selectedId), writer: &writer)
         let entriesStarted = Date()
-        try await writeBootstrapEntriesPage(
+        let entriesEvidence = try await writeBootstrapEntriesPage(
           auth: auth,
           publicationId: selectedId,
           row: selectedRow,
           enrollTask: selectedEnrollTask,
           writer: &writer
+        )
+        completionSource = BootstrapStreamCompletionEvidence.combined(
+          completionSource,
+          entriesEvidence.source
+        )
+        cachedEntriesEvidenceAt = BootstrapStreamCompletionEvidence.oldest(
+          cachedEntriesEvidenceAt,
+          entriesEvidence.cachedAt
         )
         BootstrapStreamTimings.logPhase(
           logger,
@@ -275,7 +300,15 @@ struct BootstrapStreamService {
         )
       }
 
-      try await writeEvent(.done(refreshedAt: refreshedAt), writer: &writer)
+      try await writeEvent(
+        .done(
+          refreshedAt: completionSource == .projectionCache
+            ? cachedEntriesEvidenceAt ?? refreshedAt
+            : refreshedAt,
+          source: completionSource
+        ),
+        writer: &writer
+      )
 
       let cacheExpires = Date().addingTimeInterval(AppViewProjectionCacheTTL.sidebarSeconds)
       let unreadExpires = Date().addingTimeInterval(AppViewProjectionCacheTTL.unreadCountsSeconds)
@@ -318,17 +351,31 @@ struct BootstrapStreamService {
         metadata: ["error": .string(String(describing: error))]
       )
       try await writeEvent(.error(error.localizedDescription), writer: &writer)
-      try await writeEvent(.done(refreshedAt: refreshedAt), writer: &writer)
+      try await writeEvent(
+        BootstrapStreamCompletionEvidence.failed(
+          attemptedAt: refreshedAt,
+          cachedAt: cachedEvidenceAt
+        ),
+        writer: &writer
+      )
     }
     try await writer.finish(nil)
   }
 
-  private func loadFreshCachedSnapshot(viewerDid: String) async throws -> BootstrapSidebarCacheSnapshot? {
+  private func loadFreshCachedSnapshot(
+    viewerDid: String
+  ) async throws -> (snapshot: BootstrapSidebarCacheSnapshot, cachedAt: Date)? {
     guard let projectionCache else { return nil }
-    guard let json = try await projectionCache.cachedSidebarProjectionJSON(viewerDid: viewerDid) else {
+    guard let entry = try await projectionCache.sidebarProjectionCacheEntry(viewerDid: viewerDid) else {
       return nil
     }
-    return try? JSONDecoder().decode(BootstrapSidebarCacheSnapshot.self, from: Data(json.utf8))
+    guard
+      let snapshot = try? JSONDecoder().decode(
+        BootstrapSidebarCacheSnapshot.self,
+        from: Data(entry.value.utf8)
+      )
+    else { return nil }
+    return (snapshot, entry.cachedAt)
   }
 
   private func emitCachedBootstrap(
@@ -388,7 +435,7 @@ struct BootstrapStreamService {
     {
       let selectedEnrollTask = Task { await self.enrollAuthorForBootstrap(auth: auth, row: row) }
       try await writeEvent(.selectedPublication(publicationId: selectedId), writer: &writer)
-      try await writeBootstrapEntriesPage(
+      _ = try await writeBootstrapEntriesPage(
         auth: auth,
         publicationId: selectedId,
         row: row,
@@ -411,7 +458,10 @@ struct BootstrapStreamService {
       )
     }
 
-    try await writeEvent(.done(refreshedAt: refreshedAt), writer: &writer)
+    try await writeEvent(
+      .done(refreshedAt: refreshedAt, source: .projectionCache),
+      writer: &writer
+    )
   }
 
   private func scheduleBackgroundRefresh(auth: AuthContext, priority: PublicationSidebarResponse) {
@@ -559,24 +609,38 @@ struct BootstrapStreamService {
     row: SidebarPublicationRow,
     enrollTask: Task<Void, Never>?,
     writer: inout any ResponseBodyWriter
-  ) async throws {
+  ) async throws -> EntriesPageEvidence {
     // If PDS backfill finished while folder sidebar loaded, prefer a fresh index read.
     if await enrollAlreadyFinished(enrollTask),
        let page = try await readService.liveFirstPage(auth: auth, scope: row.appViewScope, limit: 50)
     {
-      try await emitBootstrapEntriesPage(publicationId: publicationId, page: page, writer: &writer)
-      return
+      try await emitBootstrapEntriesPage(
+        publicationId: publicationId,
+        page: page,
+        source: .liveProjection,
+        writer: &writer
+      )
+      return EntriesPageEvidence(source: .liveProjection, cachedAt: nil)
     }
 
     // Stale-first: paint cached page 1 without blocking on PDS backfill.
-    if let page = try await readService.cachedFirstPageIfAvailable(
+    if let cached = try await readService.cachedFirstPageIfAvailable(
       auth: auth,
       publicationId: publicationId,
       scope: row.appViewScope,
       limit: 50
     ) {
-      try await emitBootstrapEntriesPage(publicationId: publicationId, page: page, writer: &writer)
-      return
+      let cachedSource = AppViewBootstrapEvidenceSource(rawValue: cached.source.rawValue)
+        ?? .unavailable
+      try await emitBootstrapEntriesPage(
+        publicationId: publicationId,
+        page: cached.value,
+        source: cachedSource,
+        cachedAt: cached.cachedAt,
+        expiresAt: cached.expiresAt,
+        writer: &writer
+      )
+      return EntriesPageEvidence(source: cachedSource, cachedAt: cached.cachedAt)
     }
 
     // Cold path: do not block the stream on PDS enroll — client refreshes feed after `done`.
@@ -588,8 +652,10 @@ struct BootstrapStreamService {
     try await emitBootstrapEntriesPage(
       publicationId: publicationId,
       page: AppViewEntryListResponse(entries: [], cursor: nil),
+      source: .unavailable,
       writer: &writer
     )
+    return EntriesPageEvidence(source: .unavailable, cachedAt: nil)
   }
 
   /// Stale-first unread map for cached bootstrap; fresh replacement is emitted by `emitCachedBootstrap`.
@@ -634,12 +700,18 @@ struct BootstrapStreamService {
   private func emitBootstrapEntriesPage(
     publicationId: String,
     page: AppViewEntryListResponse,
+    source: AppViewBootstrapEvidenceSource,
+    cachedAt: Date? = nil,
+    expiresAt: Date? = nil,
     writer: inout any ResponseBodyWriter
   ) async throws {
     let payload = AppViewBootstrapEntriesPagePayload(
       publicationId: publicationId,
       entries: page.entries.map(Self.bootstrapEntry),
-      cursor: page.cursor
+      cursor: page.cursor,
+      source: source,
+      cachedAt: cachedAt,
+      expiresAt: expiresAt
     )
     try await writeEvent(.entriesPage(payload), writer: &writer)
   }
@@ -748,5 +820,35 @@ struct BootstrapStreamService {
     var buffer = ByteBuffer()
     buffer.writeBytes(line)
     try await writer.write(buffer)
+  }
+}
+
+enum BootstrapStreamCompletionEvidence {
+  static func oldest(_ current: Date?, _ next: Date?) -> Date? {
+    switch (current, next) {
+    case (.none, .none): nil
+    case (.some(let current), .none): current
+    case (.none, .some(let next)): next
+    case (.some(let current), .some(let next)): min(current, next)
+    }
+  }
+
+  static func combined(
+    _ current: AppViewBootstrapEvidenceSource,
+    _ next: AppViewBootstrapEvidenceSource
+  ) -> AppViewBootstrapEvidenceSource {
+    if current == .unavailable || next == .unavailable { return .unavailable }
+    if current == .projectionCache || next == .projectionCache { return .projectionCache }
+    return .liveProjection
+  }
+
+  static func failed(
+    attemptedAt: Date,
+    cachedAt: Date?
+  ) -> AppViewBootstrapStreamEvent {
+    .done(
+      refreshedAt: cachedAt ?? attemptedAt,
+      source: cachedAt == nil ? .unavailable : .projectionCache
+    )
   }
 }

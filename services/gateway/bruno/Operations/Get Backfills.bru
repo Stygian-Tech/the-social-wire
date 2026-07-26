@@ -5,9 +5,19 @@ meta {
 }
 
 get {
-  url: {{baseUrl}}/v1/operations/backfills
+  url: {{baseUrl}}/v1/operations/backfills?view=active&limit=50
   body: none
   auth: none
+}
+
+tests {
+  test("returns active backfills only", function() {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body).to.have.property("backfills");
+    expect(body).to.have.property("totalCount");
+    expect(body.backfills.every((job) => ["queued", "running", "paused"].includes(job.status))).to.equal(true);
+  });
 }
 
 headers {

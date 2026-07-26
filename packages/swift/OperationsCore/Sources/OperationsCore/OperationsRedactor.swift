@@ -1,5 +1,6 @@
 import Crypto
 import Foundation
+import PostgresNIO
 
 public enum OperationsRedactor {
   private static let prohibitedKeys = [
@@ -26,10 +27,35 @@ public enum OperationsRedactor {
   }
 
   public static func errorCategory(_ error: Error) -> String {
+    if let postgresError = postgresError(error),
+       let sqlState = postgresError.serverInfo?[.sqlState] {
+      let identifiers = [
+        postgresError.serverInfo?[.tableName],
+        postgresError.serverInfo?[.columnName],
+      ].compactMap { $0 }.map(sanitizeIdentifier)
+      return (["postgres", sqlState.lowercased()] + identifiers).joined(separator: "_")
+    }
     let typeName = String(reflecting: type(of: error)).split(separator: ".").last.map(String.init) ?? "unknown"
     let bounded = typeName.unicodeScalars.map { scalar in
       CharacterSet.alphanumerics.contains(scalar) ? Character(String(scalar)) : "_"
     }
     return String(String(bounded).prefix(64)).lowercased()
+  }
+
+  private static func postgresError(_ error: Error) -> PSQLError? {
+    if let postgresError = error as? PSQLError { return postgresError }
+    guard let transactionError = error as? PostgresTransactionError else { return nil }
+    return [
+      transactionError.closureError,
+      transactionError.commitError,
+      transactionError.beginError,
+      transactionError.rollbackError,
+    ].compactMap { $0 }.lazy.compactMap(postgresError).first
+  }
+
+  private static func sanitizeIdentifier(_ value: String) -> String {
+    String(value.unicodeScalars.map { scalar in
+      CharacterSet.alphanumerics.contains(scalar) ? Character(String(scalar)) : "_"
+    }.prefix(32)).lowercased()
   }
 }

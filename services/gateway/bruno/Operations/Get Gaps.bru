@@ -5,9 +5,19 @@ meta {
 }
 
 get {
-  url: {{baseUrl}}/v1/operations/gaps
+  url: {{baseUrl}}/v1/operations/gaps?view=active&limit=50
   body: none
   auth: none
+}
+
+tests {
+  test("returns active gaps only", function() {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body).to.have.property("gaps");
+    expect(body).to.have.property("totalCount");
+    expect(body.gaps.every((gap) => !["resolved", "ignored"].includes(gap.status))).to.equal(true);
+  });
 }
 
 headers {

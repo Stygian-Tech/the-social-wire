@@ -2,6 +2,13 @@ import AsyncHTTPClient
 import Foundation
 import Logging
 
+enum ThinAppViewIndexingOutcome: Equatable, Sendable {
+  case projectionMutation
+  case skipped
+
+  var didMutateProjection: Bool { self == .projectionMutation }
+}
+
 /// Indexes Skyreader feed subscriptions into the thin AppView store.
 public actor ThinAppViewIndexer {
   private let store: any ThinAppViewStore
@@ -40,41 +47,86 @@ public actor ThinAppViewIndexer {
     operation: String,
     pdsBase: String? = nil,
     ingestionSource: String? = nil,
+    ingestionEnvironment: String? = nil,
+    repoRev: String? = nil,
     cursor: String? = nil,
     eventTime: Date? = nil
   ) async throws {
+    _ = try await handleCommitWithOutcome(
+      repoDid: repoDid,
+      collection: collection,
+      rkey: rkey,
+      cid: cid,
+      recordJSON: recordJSON,
+      operation: operation,
+      pdsBase: pdsBase,
+      ingestionSource: ingestionSource,
+      ingestionEnvironment: ingestionEnvironment,
+      repoRev: repoRev,
+      cursor: cursor,
+      eventTime: eventTime
+    )
+  }
+
+  func handleCommitWithOutcome(
+    repoDid: String,
+    collection: String,
+    rkey: String,
+    cid: String,
+    recordJSON: Data,
+    operation: String,
+    pdsBase: String? = nil,
+    ingestionSource: String? = nil,
+    ingestionEnvironment: String? = nil,
+    repoRev: String? = nil,
+    cursor: String? = nil,
+    eventTime: Date? = nil
+  ) async throws -> ThinAppViewIndexingOutcome {
     let record = (try JSONSerialization.jsonObject(with: recordJSON) as? [String: Any]) ?? [:]
 
     if collection == RssFeedLexicons.skyreaderFeedSubscription {
-      await handleSkyreaderSubscriptionCommit(
+      return try await handleSkyreaderSubscriptionCommit(
         repoDid: repoDid,
         record: record,
         operation: operation
       )
-      return
     }
 
     if collection == ThinAppViewConfig.graphSubscriptionCollection {
-      await handleGraphSubscriptionCommit(
+      return try await handleGraphSubscriptionCommit(
         repoDid: repoDid,
         record: record,
         operation: operation
       )
-      return
     }
 
-    guard ThinAppViewConfig.contentCollections.contains(collection) else { return }
+    guard ThinAppViewConfig.contentCollections.contains(collection) else { return .skipped }
 
     let uri = RenderFieldExtractor.buildEntryUri(did: repoDid, collection: collection, rkey: rkey)
     if operation == "delete" {
+      if ingestionSource == "tap",
+         let ingestionEnvironment,
+         let eventId = cursor.flatMap(Int64.init)
+      {
+        let now = Date()
+        try await store.applyTapContentMutation(
+          .delete(uri: uri, authorDid: repoDid, collection: collection),
+          environment: ingestionEnvironment,
+          eventId: eventId,
+          repoRev: repoRev ?? "",
+          eventTime: eventTime ?? now,
+          observedAt: now
+        )
+        return .projectionMutation
+      }
       let publicationSite = RenderFieldExtractor.publicationSiteField(from: record)
       try await store.deleteContentItem(uri: uri)
-      try? await store.markUnreadCountersDirtyForContent(
+      try await store.markUnreadCountersDirtyForContent(
         authorDid: repoDid,
         publicationSite: publicationSite
       )
-      await invalidateFirstPageCaches(for: publicationSite)
-      return
+      try await invalidateFirstPageCaches(for: publicationSite)
+      return .projectionMutation
     }
 
     let resolvedPds: String?
@@ -101,45 +153,89 @@ public actor ThinAppViewIndexer {
       render: render,
       expiresAt: now.addingTimeInterval(config.contentRetentionSeconds)
     )
+    if ingestionSource == "tap",
+       let ingestionEnvironment,
+       let eventId = cursor.flatMap(Int64.init)
+    {
+      try await store.applyTapContentMutation(
+        .upsert(item),
+        environment: ingestionEnvironment,
+        eventId: eventId,
+        repoRev: repoRev ?? "",
+        eventTime: eventTime ?? now,
+        observedAt: now
+      )
+      return .projectionMutation
+    }
     let itemAlreadyIndexed = try await store.fetchContentItem(uri: uri) != nil
     try await store.upsertContentItem(item)
     if itemAlreadyIndexed {
-      try? await store.markUnreadCountersDirtyForContent(
+      try await store.markUnreadCountersDirtyForContent(
         authorDid: repoDid,
         publicationSite: item.publicationSite
       )
     } else {
-      try? await store.incrementUnreadCountersForContentItem(item)
+      try await store.incrementUnreadCountersForContentItem(item)
     }
-    await invalidateFirstPageCaches(for: item.publicationSite)
+    try await invalidateFirstPageCaches(for: item.publicationSite)
+    return .projectionMutation
+  }
+
+  /// Applies authoritative account lifecycle evidence from Tap.
+  public func handleIdentity(
+    repoDid: String,
+    status: TapAccountStatus,
+    isActive: Bool
+  ) async throws {
+    _ = try await handleIdentityWithOutcome(
+      repoDid: repoDid,
+      status: status,
+      isActive: isActive
+    )
+  }
+
+  func handleIdentityWithOutcome(
+    repoDid: String,
+    status: TapAccountStatus,
+    isActive: Bool
+  ) async throws -> ThinAppViewIndexingOutcome {
+    pdsBaseCache.removeValue(forKey: repoDid)
+    guard !isActive || !status.isActive else { return .skipped }
+    _ = try await store.deleteContentItems(authorDid: repoDid)
+    try await projectionCache?.invalidateAllProjectionCaches()
+    return .projectionMutation
   }
 
   private func handleSkyreaderSubscriptionCommit(
     repoDid: String,
     record: [String: Any],
     operation: String
-  ) async {
+  ) async throws -> ThinAppViewIndexingOutcome {
     let normalizedFeedUrl = ThinAppViewRssIngestion.feedUrl(fromSubscriptionRecord: record)
+    var didMutateProjection = false
 
     if operation != "delete", let normalizedFeedUrl, let rssIngestion {
-      _ = try? await rssIngestion.ingestFeed(normalizedFeedUrl: normalizedFeedUrl)
+      _ = try await rssIngestion.ingestFeed(normalizedFeedUrl: normalizedFeedUrl)
+      didMutateProjection = true
     }
 
-    guard let projectionCache else { return }
+    guard let projectionCache else {
+      return didMutateProjection ? .projectionMutation : .skipped
+    }
 
-    await ThinAppViewProjectionCacheWarmer.invalidateViewerSubscriptionCaches(
+    try await ThinAppViewProjectionCacheWarmer.invalidateViewerSubscriptionCaches(
       projectionCache: projectionCache,
       viewerDid: repoDid
     )
 
     if let normalizedFeedUrl {
-      await ThinAppViewProjectionCacheWarmer.invalidateFirstPageKeys(
+      try await ThinAppViewProjectionCacheWarmer.invalidateFirstPageKeys(
         projectionCache: projectionCache,
         viewerDid: repoDid,
         publicationId: RssFeedIdentity.rssPublicationId(from: normalizedFeedUrl)
       )
       if operation != "delete" {
-        await ThinAppViewProjectionCacheWarmer.warmRssFirstPage(
+        try await ThinAppViewProjectionCacheWarmer.warmRssFirstPage(
           store: store,
           projectionCache: projectionCache,
           viewerDid: repoDid,
@@ -147,16 +243,17 @@ public actor ThinAppViewIndexer {
         )
       }
     }
+    return .projectionMutation
   }
 
   private func handleGraphSubscriptionCommit(
     repoDid: String,
     record: [String: Any],
     operation: String
-  ) async {
-    guard let projectionCache else { return }
+  ) async throws -> ThinAppViewIndexingOutcome {
+    guard let projectionCache else { return .skipped }
 
-    await ThinAppViewProjectionCacheWarmer.invalidateViewerSubscriptionCaches(
+    try await ThinAppViewProjectionCacheWarmer.invalidateViewerSubscriptionCaches(
       projectionCache: projectionCache,
       viewerDid: repoDid
     )
@@ -166,15 +263,16 @@ public actor ThinAppViewIndexer {
          .trimmingCharacters(in: .whitespacesAndNewlines),
        !publication.isEmpty
     {
-      await ThinAppViewProjectionCacheWarmer.invalidateFirstPageKeys(
+      try await ThinAppViewProjectionCacheWarmer.invalidateFirstPageKeys(
         projectionCache: projectionCache,
         viewerDid: repoDid,
         publicationId: publication
       )
     }
+    return .projectionMutation
   }
 
-  private func invalidateFirstPageCaches(for publicationSite: String?) async {
+  private func invalidateFirstPageCaches(for publicationSite: String?) async throws {
     guard let projectionCache, let publicationSite else { return }
     var publicationIds = RenderFieldExtractor.publicationFilterEquivalenceKeys(
       publicationAtUri: publicationSite
@@ -192,7 +290,7 @@ public actor ThinAppViewIndexer {
       publicationIds.insert(RssFeedIdentity.rssPublicationId(from: normalized))
     }
     for publicationId in publicationIds {
-      try? await projectionCache.invalidateFirstPageForAllViewers(publicationId: publicationId)
+      try await projectionCache.invalidateFirstPageForAllViewers(publicationId: publicationId)
     }
   }
 

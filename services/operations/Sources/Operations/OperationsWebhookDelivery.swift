@@ -8,23 +8,34 @@ import OperationsCore
 struct OperationsWebhookDelivery: Sendable {
   let url: String
   let secret: String
-  let httpClient: HTTPClient
   let logger: Logger
+  private let send: @Sendable (HTTPClientRequest) async throws -> Int
+
+  init(url: String, secret: String, httpClient: HTTPClient, logger: Logger) {
+    self.url = url
+    self.secret = secret
+    self.logger = logger
+    self.send = { request in
+      let response = try await httpClient.execute(request, timeout: .seconds(15))
+      _ = try await response.body.collect(upTo: 64 * 1_024)
+      return Int(response.status.code)
+    }
+  }
+
+  init(
+    url: String,
+    secret: String,
+    logger: Logger,
+    send: @escaping @Sendable (HTTPClientRequest) async throws -> Int
+  ) {
+    self.url = url
+    self.secret = secret
+    self.logger = logger
+    self.send = send
+  }
 
   func deliver(_ alert: OperationsAlert) async throws {
-    var lastError: Error?
-    for attempt in 0..<5 {
-      do {
-        try await deliverOnce(alert)
-        return
-      } catch {
-        lastError = error
-        guard attempt < 4 else { break }
-        let delayMilliseconds = 250 * (1 << attempt)
-        try? await Task.sleep(for: .milliseconds(delayMilliseconds))
-      }
-    }
-    throw lastError ?? WebhookDeliveryError.rejected
+    try await deliverOnce(alert)
   }
 
   private func deliverOnce(_ alert: OperationsAlert) async throws {
@@ -38,8 +49,8 @@ struct OperationsWebhookDelivery: Sendable {
     request.headers.add(name: "Content-Type", value: "application/json")
     request.headers.add(name: "X-Social-Wire-Signature", value: "sha256=\(signature)")
     request.body = .bytes(ByteBuffer(data: body))
-    let response = try await httpClient.execute(request, timeout: .seconds(15))
-    guard (200..<300).contains(Int(response.status.code)) else {
+    let statusCode = try await send(request)
+    guard (200..<300).contains(statusCode) else {
       logger.warning("Operations alert webhook rejected", metadata: ["status_class": .string("non_2xx")])
       throw WebhookDeliveryError.rejected
     }
