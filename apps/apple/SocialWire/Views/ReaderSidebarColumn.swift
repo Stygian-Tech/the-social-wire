@@ -22,24 +22,10 @@ struct ReaderSidebarColumn: View {
 
     private var listsSection: some View {
         Section {
-            ForEach(ReaderListSource.allCases) { source in
-                Button {
+            ForEach(appModel.visibleReaderListSources) { source in
+                ReaderTopLevelFeedRow(source: source) {
                     appModel.selectReaderListSource(source)
-                } label: {
-                    HStack {
-                        Label(source.rawValue, systemImage: source.systemImage)
-                        Spacer(minLength: 8)
-                        if appModel.readerListSource == source {
-                            Image(systemName: "checkmark")
-                                .foregroundStyle(Color.accentColor)
-                                .accessibilityHidden(true)
-                        }
-                    }
-                    .readerFullWidthTapLabel()
                 }
-                .buttonStyle(.plain)
-                .readerClearListRow()
-                .accessibilityAddTraits(appModel.readerListSource == source ? .isSelected : [])
             }
         } header: {
             Text("Lists")
@@ -49,14 +35,40 @@ struct ReaderSidebarColumn: View {
     private var savedLinksSidebarList: some View {
         List {
             listsSection
+            if !appModel.currentSavedFeedSources.isEmpty {
+                Section("Publications") {
+                    ForEach(appModel.currentSavedFeedSources) { source in
+                        Button {
+                            appModel.selectSavedFeedSource(source)
+                        } label: {
+                            HStack {
+                                SavedLinkPublicationChip(model: source.model)
+                                Spacer(minLength: 8)
+                                SidebarCountLabel(
+                                    count: source.count,
+                                    accessibilityDescription: "saved articles"
+                                )
+                            }
+                            .readerFullWidthTapLabel()
+                        }
+                        .buttonStyle(.plain)
+                        .readerClearListRow()
+                        .accessibilityAddTraits(
+                            appModel.selectedSavedSourceKey == source.id
+                                ? .isSelected
+                                : []
+                        )
+                    }
+                }
+            }
             Section {
-                if appModel.currentSavedLinks.isEmpty {
+                if appModel.filteredCurrentSavedLinks.isEmpty {
                     Text(appModel.readerListSource == .archive ? "Nothing archived yet." : "Nothing queued yet.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .readerClearListRow()
                 } else {
-                    ForEach(appModel.currentSavedLinks) { save in
+                    ForEach(appModel.filteredCurrentSavedLinks) { save in
                         Button {
                             appModel.selectedSavedLink = save
                         } label: {

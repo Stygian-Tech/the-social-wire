@@ -10,6 +10,7 @@ struct MergedLatrExternalSave: Codable, Equatable, Hashable, Sendable {
     var itemUri: String
     var subjectUri: String
     var state: String?
+    var lastOpenedAt: String?
     var title: String?
     var excerpt: String?
     var image: String?

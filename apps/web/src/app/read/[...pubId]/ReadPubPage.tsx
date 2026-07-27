@@ -13,10 +13,19 @@ import { Button } from "@/components/ui/button";
 import { useReadRoute } from "@/contexts/ReadRouteContext";
 import { recordKindFromPubId } from "@/lib/recordKindDebug";
 import { cn } from "@/lib/utils";
+import type { AggregateAppViewFeed } from "@/lib/thinAppViewClient";
 
-export default function ReadPubPage({ pubId }: { pubId: string }) {
+export default function ReadPubPage({
+  pubId,
+  aggregateFeed,
+  title = "Articles",
+}: {
+  pubId?: string;
+  aggregateFeed?: AggregateAppViewFeed;
+  title?: string;
+}) {
   const [selectedEntryId, setSelectedEntryId] = useState<string | null>(null);
-  const publicationKind = recordKindFromPubId(pubId);
+  const publicationKind = pubId ? recordKindFromPubId(pubId) : null;
   const {
     markEntryRead,
     markEntryUnread,
@@ -31,7 +40,10 @@ export default function ReadPubPage({ pubId }: { pubId: string }) {
     filterRef.current = articleListFilter;
   });
 
-  const markOptions = useMemo(() => ({ publicationId: pubId }), [pubId]);
+  const markOptions = useMemo(
+    () => (pubId ? { publicationId: pubId } : undefined),
+    [pubId],
+  );
 
   const markEntryReadForPub = useCallback(
     (entryId: string) => markEntryRead(entryId, markOptions),
@@ -58,7 +70,7 @@ export default function ReadPubPage({ pubId }: { pubId: string }) {
         markEntryReadForPub(selectedRef.current);
       }
     };
-  }, [pubId, markEntryReadForPub]);
+  }, [aggregateFeed?.id, aggregateFeed?.kind, pubId, markEntryReadForPub]);
 
   const handleSelectEntry = useCallback(
     (entryId: string) => {
@@ -92,14 +104,17 @@ export default function ReadPubPage({ pubId }: { pubId: string }) {
         <div className="shrink-0 border-b bg-background/75 px-3 py-2 backdrop-blur-md">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <p className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
-              Articles
+              {title}
             </p>
-            <DevRecordKindBadge info={publicationKind} />
+            {publicationKind ? (
+              <DevRecordKindBadge info={publicationKind} />
+            ) : null}
           </div>
         </div>
         <div className="min-h-0 flex-1 overflow-hidden">
           <EntryList
             pubId={pubId}
+            aggregateFeed={aggregateFeed}
             selectedEntryId={selectedEntryId}
             onSelectEntry={handleSelectEntry}
             isEntryRead={isEntryRead}
@@ -132,7 +147,7 @@ export default function ReadPubPage({ pubId }: { pubId: string }) {
                 <ChevronLeft className="size-5" />
               </Button>
               <span className="text-sm font-semibold text-foreground">
-                Articles
+                {title}
               </span>
             </div>
             <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden overscroll-y-contain">

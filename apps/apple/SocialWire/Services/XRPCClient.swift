@@ -57,6 +57,9 @@ final class XRPCClient {
         func parseRepoRecordOptional(_ data: Data, _ http: HTTPURLResponse) throws -> RepoRecord<Value>? {
             if http.statusCode == 404 { return nil }
             guard (200 ..< 300).contains(http.statusCode) else {
+                if http.statusCode == 401 {
+                    auth.invalidateSessionAfterUnauthorizedResponse()
+                }
                 throw SocialWireError.badResponse("XRPC request failed with HTTP \(http.statusCode).")
             }
             return try jsonDecoder.decode(RepoRecord<Value>.self, from: data)
@@ -202,7 +205,18 @@ final class XRPCClient {
         if [400, 401].contains(http.statusCode), http.value(forHTTPHeaderField: "DPoP-Nonce") != nil {
             var retry = request
             try await sign(&retry, session: session)
-            return try await send(retry)
+            let (retryData, retryResponse) = try await URLSession.shared.data(for: retry)
+            guard let retryHttp = retryResponse as? HTTPURLResponse else {
+                throw SocialWireError.badResponse("Missing response.")
+            }
+            await auth.dpop.updateNonce(from: retryHttp)
+            if retryHttp.statusCode == 401 {
+                auth.invalidateSessionAfterUnauthorizedResponse()
+            }
+            return try decode(data: retryData, response: retryHttp)
+        }
+        if http.statusCode == 401 {
+            auth.invalidateSessionAfterUnauthorizedResponse()
         }
         return try decode(data: data, response: http)
     }

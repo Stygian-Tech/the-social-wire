@@ -23,6 +23,8 @@ import {
   articleListCardButtonClassName,
   articleListCardWrapperClassName,
 } from "@/lib/articleListCardStyles";
+import { PublicationChip } from "@/components/shared/PublicationChip";
+import { useSidebarProjection } from "@/contexts/PublicationSidebarContext";
 
 interface EntryRowProps {
   entry: EntryListItem;
@@ -66,6 +68,12 @@ export function EntryRow({
     [entry.summary],
   );
   const [attemptIdx, setAttemptIdx] = useState(0);
+  const { allPublicationRows } = useSidebarProjection();
+  const publication = entry.publicationId
+    ? allPublicationRows.find(
+        (row) => row.publicationId === entry.publicationId,
+      )
+    : undefined;
 
   const activeThumbSrc =
     thumbAttempts.length > 0 && attemptIdx < thumbAttempts.length
@@ -114,9 +122,25 @@ export function EntryRow({
           ) : thumbsExhausted ? (
             <span className="absolute inset-0 bg-muted/30" aria-hidden />
           ) : null}
+          {publication ? (
+            <div
+              className="absolute left-2 top-2 z-10 max-w-[calc(100%-1rem)]"
+              onClick={(event) => event.stopPropagation()}
+              onKeyDown={(event) => event.stopPropagation()}
+            >
+              <PublicationChip
+                publication={{
+                  name: publication.title,
+                  faviconUrl:
+                    publication.iconUrl ?? publication.avatarUrl,
+                }}
+                overlay
+              />
+            </div>
+          ) : null}
           {showUnreadChrome ? (
             <span
-              className="absolute left-2 top-2 size-2 rounded-full bg-primary ring-2 ring-background"
+              className="absolute right-2 top-2 size-2 rounded-full bg-primary ring-2 ring-background"
               aria-hidden
             />
           ) : null}

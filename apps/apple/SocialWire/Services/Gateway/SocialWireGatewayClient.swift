@@ -17,10 +17,6 @@ final class SocialWireGatewayClient {
         self.urlSession = urlSession
     }
 
-    func warmGatewayDpopNonce() async {
-        _ = try? await fetchSyncPreferences(ifNoneMatch: nil)
-    }
-
     func fetchSyncPreferences(ifNoneMatch: String?) async throws -> GatewayHTTPResult {
         try await authorizedGET(path: "/v1/sync/preferences", query: [:], ifNoneMatch: ifNoneMatch)
     }
@@ -236,6 +232,31 @@ final class SocialWireGatewayClient {
         return try JSONDecoder().decode(AppViewEntryListResponse.self, from: result.body)
     }
 
+    func fetchAggregateAppViewFeed(
+        kind: String,
+        id: String? = nil,
+        filter: ReaderFilter,
+        cursor: String?,
+        limit: Int = 50
+    ) async throws -> AppViewEntryListResponse {
+        var query: [String: String] = [
+            "kind": kind,
+            "filter": filter == .unread ? "unread" : "all",
+            "limit": String(limit),
+        ]
+        if let id, !id.isEmpty { query["id"] = id }
+        if let cursor, !cursor.isEmpty { query["cursor"] = cursor }
+        let result = try await authorizedGET(
+            path: "/v1/appview/feed",
+            query: query,
+            ifNoneMatch: nil
+        )
+        guard (200 ..< 300).contains(result.statusCode) else {
+            throw SocialWireError.badResponse("Aggregate AppView feed failed (\(result.statusCode)).")
+        }
+        return try JSONDecoder().decode(AppViewEntryListResponse.self, from: result.body)
+    }
+
     func fetchAppViewEntryDetail(entryId: String) async throws -> EntryDetail? {
         let result = try await authorizedGET(
             path: "/v1/appview/entry",
@@ -403,6 +424,9 @@ final class SocialWireGatewayClient {
             await auth.dpop.updateNonce(from: http)
         }
 
+        if http.statusCode == 401 {
+            auth.invalidateSessionAfterUnauthorizedResponse()
+        }
         guard (200 ..< 300).contains(http.statusCode) else {
             throw SocialWireError.badResponse("Bootstrap stream failed (\(http.statusCode)).")
         }
@@ -524,6 +548,9 @@ final class SocialWireGatewayClient {
                 throw SocialWireError.badResponse("Missing gateway response.")
             }
             await auth.dpop.updateNonce(from: retryHttp)
+            if retryHttp.statusCode == 401 {
+                auth.invalidateSessionAfterUnauthorizedResponse()
+            }
             return GatewayHTTPResult(
                 statusCode: retryHttp.statusCode,
                 etagHeader: retryHttp.value(forHTTPHeaderField: "ETag"),
@@ -531,6 +558,9 @@ final class SocialWireGatewayClient {
             )
         }
 
+        if http.statusCode == 401 {
+            auth.invalidateSessionAfterUnauthorizedResponse()
+        }
         return initial
     }
 

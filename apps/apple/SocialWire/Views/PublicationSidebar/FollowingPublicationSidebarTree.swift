@@ -25,7 +25,7 @@ struct FollowingPublicationSidebarTree: View {
         } header: {
             SidebarSectionLabel(
                 title: "Publications",
-                unreadCount: tree.followingSectionUnread
+                unreadCount: 0
             )
         }
         .onChange(of: model.sidebarPublicationsSectionExpanded) { _, _ in

@@ -162,7 +162,7 @@ describe("effectivePublicationUnreadCount", () => {
     ).toBe(1);
   });
 
-  it("does not raise a known zero AppView baseline from cached rows", () => {
+  it("raises a known zero baseline when newly cached unread rows arrive", () => {
     const publicationId =
       "at://did:plc:author/site.standard.publication/main";
     const unreadId = "at://did:plc:author/site.standard.document/unread";
@@ -174,7 +174,7 @@ describe("effectivePublicationUnreadCount", () => {
       effectivePublicationUnreadCount(0, queryClient, publicationId, () => false, {
         capRaiseToServerCount: true,
       })
-    ).toBe(0);
+    ).toBe(1);
   });
 
   it("does not raise above server baseline when capRaiseToServerCount is set", () => {

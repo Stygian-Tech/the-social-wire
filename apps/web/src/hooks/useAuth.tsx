@@ -11,8 +11,9 @@ import React, {
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 import {
   createAuthFetch,
+  clearStoredOAuthSessionHint,
   getSession,
-  getStoredOAuthDid,
+  onOAuthSessionInvalidated,
   localLoopbackCanonicalHref,
   pathnameIsOAuthCallbackRoute,
   signIn as authSignIn,
@@ -113,15 +114,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return true;
       }
 
-      const storedDid = getStoredOAuthDid();
-      setSession(storedDid ? { did: storedDid } : null);
+      clearStoredOAuthSessionHint();
+      setSession(null);
       return false;
     } catch {
-      const storedDid = getStoredOAuthDid();
-      setSession(storedDid ? { did: storedDid } : null);
+      clearStoredOAuthSessionHint();
+      setSession(null);
       return false;
     }
   }, [bumpOAuthReloadSeq]);
+
+  useEffect(
+    () =>
+      onOAuthSessionInvalidated(() => {
+        oauthSessionRef.current = null;
+        setSession(null);
+        setIsLoading(false);
+        bumpOAuthReloadSeq();
+      }),
+    [bumpOAuthReloadSeq]
+  );
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -140,18 +152,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     let cancelled = false;
 
     void (async () => {
-      const storedDid = getStoredOAuthDid();
-      if (storedDid && !cancelled) {
-        setSession({ did: storedDid });
-      }
-
-      if (!cancelled) setIsLoading(false);
-
       const oauthSession = await getSession();
       if (!cancelled && oauthSession) {
         oauthSessionRef.current = oauthSession;
         setSession({ did: oauthSession.did });
         setOAuthSessionReloadSeq((n) => n + 1);
+      } else if (!cancelled) {
+        clearStoredOAuthSessionHint();
+        setSession(null);
       }
     })()
       .catch((err) => {

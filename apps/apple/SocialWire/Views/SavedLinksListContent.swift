@@ -12,7 +12,28 @@ struct SavedLinksListContent: View {
 
     var body: some View {
         List {
-            if appModel.currentSavedLinks.isEmpty {
+            if !appModel.currentSavedFeedSources.isEmpty {
+                Section("Publications") {
+                    ForEach(appModel.currentSavedFeedSources) { source in
+                        Button {
+                            appModel.selectSavedFeedSource(source)
+                        } label: {
+                            HStack {
+                                SavedLinkPublicationChip(model: source.model)
+                                Spacer(minLength: 8)
+                                SidebarCountLabel(
+                                    count: source.count,
+                                    accessibilityDescription: "saved articles"
+                                )
+                            }
+                            .readerFullWidthTapLabel()
+                        }
+                        .buttonStyle(.plain)
+                        .readerClearListRow()
+                    }
+                }
+            }
+            if appModel.filteredCurrentSavedLinks.isEmpty {
                 ContentUnavailableView(
                     isArchivedView ? "Nothing Archived Yet" : "Nothing Queued Yet",
                     systemImage: isArchivedView ? "archivebox" : "bookmark",
@@ -24,7 +45,7 @@ struct SavedLinksListContent: View {
                 )
                 .readerClearListRow()
             } else {
-                ForEach(appModel.currentSavedLinks) { save in
+                ForEach(appModel.filteredCurrentSavedLinks) { save in
                     Button {
                         if let onSavedLinkTap {
                             onSavedLinkTap(save)

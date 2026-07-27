@@ -146,6 +146,8 @@ public struct AppViewEntryListItem: Codable, Sendable {
   public let thumbnailFallbackUrl: String?
   /// Canonical article HTTPS URL when indexed (RSS link, render `articleUrl`, etc.).
   public let originalUrl: String?
+  /// Canonical viewer-scoped publication identity for aggregate-feed presentation.
+  public let publicationId: String?
 
   public init(
     entryId: String,
@@ -154,7 +156,8 @@ public struct AppViewEntryListItem: Codable, Sendable {
     publishedAt: Date,
     thumbnailUrl: String? = nil,
     thumbnailFallbackUrl: String? = nil,
-    originalUrl: String? = nil
+    originalUrl: String? = nil,
+    publicationId: String? = nil
   ) {
     self.entryId = entryId
     self.title = title
@@ -163,6 +166,20 @@ public struct AppViewEntryListItem: Codable, Sendable {
     self.thumbnailUrl = thumbnailUrl
     self.thumbnailFallbackUrl = thumbnailFallbackUrl
     self.originalUrl = originalUrl
+    self.publicationId = publicationId
+  }
+
+  public func withPublicationId(_ publicationId: String) -> AppViewEntryListItem {
+    AppViewEntryListItem(
+      entryId: entryId,
+      title: title,
+      summary: summary,
+      publishedAt: publishedAt,
+      thumbnailUrl: thumbnailUrl,
+      thumbnailFallbackUrl: thumbnailFallbackUrl,
+      originalUrl: originalUrl,
+      publicationId: publicationId
+    )
   }
 }
 

@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct EntryRow: View {
+    @Environment(SocialWireAppModel.self) private var appModel
     let entry: EntryListItem
     let isRead: Bool
 
@@ -22,6 +23,16 @@ struct EntryRow: View {
             thumbnail
 
             VStack(alignment: .leading, spacing: 4) {
+                if let publicationId = entry.publicationId,
+                   let publication = appModel.publication(forId: publicationId) {
+                    SavedLinkPublicationChip(
+                        model: SavedLinkPublicationChipModel(
+                            name: publication.title,
+                            faviconURL: publication.displayImageURLs.first,
+                            homepageURL: nil
+                        )
+                    )
+                }
                 Text(entry.title)
                     .font(.headline)
                     .foregroundStyle(isRead ? .secondary : .primary)

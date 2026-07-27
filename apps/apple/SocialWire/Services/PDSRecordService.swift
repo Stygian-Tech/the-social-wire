@@ -99,10 +99,32 @@ final class PDSRecordService {
             type: Self.preferences,
             readLaterService: serviceId,
             readLaterConnections: prev?.readLaterConnections,
+            visibleFeeds: prev?.visibleFeeds,
+            showTopLevelFeedUnreadCounts: prev?.showTopLevelFeedUnreadCounts,
             createdAt: prev?.createdAt ?? now,
             updatedAt: now
         )
         try await xrpc.putRecord(collection: Self.preferences, rkey: Self.preferencesRKey, record: record)
+    }
+
+    func upsertFeedDisplayPreferences(_ preferences: ReaderFeedPreferences) async throws {
+        let current = try await getPreferences()
+        let prev = current?.value
+        let now = DateFormatters.string()
+        let record = PreferencesRecord(
+            type: Self.preferences,
+            readLaterService: prev?.readLaterService,
+            readLaterConnections: prev?.readLaterConnections,
+            visibleFeeds: preferences.visibleFeeds.map(\.preferenceKey),
+            showTopLevelFeedUnreadCounts: preferences.showTopLevelFeedUnreadCounts,
+            createdAt: prev?.createdAt ?? now,
+            updatedAt: now
+        )
+        try await xrpc.putRecord(
+            collection: Self.preferences,
+            rkey: Self.preferencesRKey,
+            record: record
+        )
     }
 
     func listMergedLatrSaves(
@@ -323,6 +345,7 @@ final class PDSRecordService {
                     itemUri: item.uri,
                     subjectUri: item.value.subjectUri,
                     state: item.value.state,
+                    lastOpenedAt: item.value.lastOpenedAt,
                     title: metadata.title,
                     excerpt: metadata.excerpt,
                     url: metadata.linkedWebUrl,
@@ -354,6 +377,7 @@ final class PDSRecordService {
                 itemUri: item.uri,
                 subjectUri: item.value.subjectUri,
                 state: item.value.state,
+                lastOpenedAt: item.value.lastOpenedAt,
                 title: metadata.title,
                 excerpt: metadata.excerpt,
                 image: metadata.image,
@@ -387,6 +411,7 @@ final class PDSRecordService {
                     itemUri: item.uri,
                     subjectUri: item.value.subjectUri,
                     state: item.value.state,
+                    lastOpenedAt: item.value.lastOpenedAt,
                     title: metadata.title,
                     excerpt: metadata.excerpt,
                     url: metadata.linkedWebUrl,
@@ -419,6 +444,7 @@ final class PDSRecordService {
                 itemUri: item.uri,
                 subjectUri: item.value.subjectUri,
                 state: item.value.state,
+                lastOpenedAt: item.value.lastOpenedAt,
                 title: metadata.title,
                 excerpt: metadata.excerpt,
                 image: metadata.image,

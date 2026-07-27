@@ -32,6 +32,23 @@
               "raindrop": { "type": "ref", "ref": "#connection" }
             }
           },
+          "visibleFeeds": {
+            "type": "array",
+            "description": "Ordered top-level reader feeds shown in clients. At least one value must be retained by clients.",
+            "items": {
+              "type": "string",
+              "knownValues": [
+                "readLater",
+                "archive",
+                "subscribed",
+                "following"
+              ]
+            }
+          },
+          "showTopLevelFeedUnreadCounts": {
+            "type": "boolean",
+            "description": "Whether aggregate unread badges are shown on top-level reader feeds."
+          },
           "createdAt": {
             "type": "string",
             "format": "datetime",

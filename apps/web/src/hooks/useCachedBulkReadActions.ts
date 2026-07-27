@@ -30,7 +30,10 @@ export function useCachedBulkReadActions(
     return distinctCachedEntryIdsForPublications(queryClient, publications);
   }, [queryClient, publications, entriesEpoch]);
 
-  const bulkDisabled = cachedEntryIds.length === 0;
+  const bulkDisabled =
+    cachedEntryIds.length === 0 &&
+    publications.length === 0 &&
+    (options?.gatewayScopes?.length ?? 0) === 0;
 
   const applyMarkAllRead = useCallback(() => {
     markEntriesRead(cachedEntryIds, {

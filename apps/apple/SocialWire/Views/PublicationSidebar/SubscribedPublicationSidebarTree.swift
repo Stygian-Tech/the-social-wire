@@ -34,7 +34,7 @@ struct SubscribedPublicationSidebarTree: View {
                 .readerClearListRow()
             }
         } header: {
-            SidebarSectionLabel(title: "Folders", unreadCount: tree.foldersSectionUnread)
+            SidebarSectionLabel(title: "Folders", unreadCount: 0)
         }
         .onChange(of: model.sidebarFoldersSectionExpanded) { _, _ in
             appModel.noteSidebarExpandedPresentationChanged()
@@ -62,7 +62,7 @@ struct SubscribedPublicationSidebarTree: View {
         } header: {
             SidebarSectionLabel(
                 title: "Publications",
-                unreadCount: tree.publicationsSectionUnread
+                unreadCount: 0
             )
         }
         .onChange(of: model.sidebarPublicationsSectionExpanded) { _, _ in
@@ -100,21 +100,31 @@ struct SubscribedPublicationSidebarTree: View {
         let pubs = appModel.publications(in: folder)
         let isExpanded = appModel.sidebarExpandedFolderRkeys.contains(folderRkey)
 
-        Button {
-            appModel.toggleSidebarFolderExpanded(rkey: folderRkey)
-        } label: {
-            HStack(spacing: 8) {
+        HStack(spacing: 4) {
+            Button {
+                appModel.toggleSidebarFolderExpanded(rkey: folderRkey)
+            } label: {
                 Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
-                    .frame(width: 12)
+                    .frame(width: 28, height: 28)
                     .accessibilityHidden(true)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("\(isExpanded ? "Collapse" : "Expand") \(folder.value.name)")
+
+            Button {
+                Task { await appModel.selectFolderFeed(folderRkey: folderRkey) }
+            } label: {
+                HStack(spacing: 8) {
                 Text(folder.value.name)
                     .lineLimit(1)
                 Spacer(minLength: 6)
                 SidebarCountLabel(count: tree.folderUnread(rkey: folderRkey))
+                }
+                .readerFullWidthTapLabel()
             }
-            .readerFullWidthTapLabel()
+            .buttonStyle(.plain)
         }
         .readerClearListRow()
         .swipeActions {

@@ -9,6 +9,38 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
+            Section("Visible Feeds") {
+                ForEach(ReaderListSource.allCases) { source in
+                    let isVisible = appModel.visibleReaderListSources.contains(source)
+                    Toggle(
+                        source.rawValue,
+                        isOn: Binding(
+                            get: { isVisible },
+                            set: { value in
+                                Task {
+                                    await appModel.setFeedVisible(source, visible: value)
+                                }
+                            }
+                        )
+                    )
+                    .disabled(isVisible && appModel.visibleReaderListSources.count == 1)
+                }
+            }
+
+            Section("Unread Counts") {
+                Toggle(
+                    "Show Feed Unread Counts",
+                    isOn: Binding(
+                        get: { appModel.showTopLevelFeedUnreadCounts },
+                        set: { value in
+                            Task {
+                                await appModel.setShowTopLevelFeedUnreadCounts(value)
+                            }
+                        }
+                    )
+                )
+            }
+
             Section("Account") {
                 LabeledContent("DID", value: appModel.viewerDID ?? "")
             }

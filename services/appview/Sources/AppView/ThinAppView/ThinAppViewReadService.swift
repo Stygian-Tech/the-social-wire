@@ -212,6 +212,64 @@ actor ThinAppViewReadService {
     }
   }
 
+  func listFeed(
+    auth: AuthContext,
+    publications: [SidebarPublicationRow],
+    filter: EntryListFilter,
+    cursor: String?,
+    limit: Int
+  ) async throws -> AppViewEntryListResponse {
+    let pageLimit = max(1, min(limit, 100))
+    var candidates: [AppViewEntryListItem] = []
+    var sourceHasMore = false
+
+    for publication in publications {
+      let scope = publication.appViewScope
+      let readFloorAt: Date?
+      if filter == .unread {
+        readFloorAt = try await store.readFloor(
+          viewerDid: auth.did,
+          publicationId: publication.publicationId
+        )
+      } else {
+        readFloorAt = nil
+      }
+      let page = try await store.listEntries(
+        viewerDid: auth.did,
+        authorDid: scope.authorDid,
+        publicationAtUri: scope.publicationAtUri,
+        publicationScopeAtUris: scope.publicationScopeAtUris,
+        publicationSiteUrls: scope.publicationSiteUrls,
+        filter: filter,
+        cursor: cursor,
+        limit: min(100, pageLimit + 1),
+        readFloorAt: readFloorAt
+      )
+      candidates.append(
+        contentsOf: page.entries.map {
+          $0.withPublicationId(publication.publicationId)
+        }
+      )
+      sourceHasMore = sourceHasMore || page.cursor != nil
+    }
+
+    candidates.sort {
+      if $0.publishedAt != $1.publishedAt {
+        return $0.publishedAt > $1.publishedAt
+      }
+      return $0.entryId > $1.entryId
+    }
+    let deduped = RssFeedIdentity.dedupeEntryListItems(candidates)
+    let hasMore = sourceHasMore || deduped.count > pageLimit
+    let entries = Array(deduped.prefix(pageLimit))
+    let nextCursor = hasMore
+      ? entries.last.map {
+        ThinAppViewCursor.encode(createdAt: $0.publishedAt, uri: $0.entryId)
+      }
+      : nil
+    return AppViewEntryListResponse(entries: entries, cursor: nextCursor)
+  }
+
   func upsertReadMark(auth: AuthContext, subjectUri: String, readAt: Date?) async throws {
     let alreadyRead = try? await store.hasReadMark(viewerDid: auth.did, subjectUri: subjectUri)
     try await store.upsertReadMark(

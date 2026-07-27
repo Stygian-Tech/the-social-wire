@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Archive, ArchiveRestore, ChevronLeft, ExternalLink, Trash2 } from "lucide-react";
 import { EntryArticleEmbed } from "@/components/EntryDetail/EntryArticleEmbed";
 import { DevRecordKindBadge } from "@/components/shared/DevRecordKindBadge";
@@ -10,6 +11,9 @@ import {
   ResizableListColumn,
 } from "@/components/shared/ResizableListColumn";
 import { SavedLinkPublicationChip } from "@/components/SavedLinks/SavedLinkPublicationChip";
+import { useSidebarProjection } from "@/contexts/PublicationSidebarContext";
+import { sidebarPublicationRows } from "@/lib/publicationProjectionClient";
+import { savedFeedSourceKey } from "@/lib/savedFeedSources";
 import { SavedLinkSocialToolbar } from "@/components/SavedLinks/SavedLinkSocialToolbar";
 import { SavedLinkRowActions } from "@/components/SavedLinks/SavedLinkRowActions";
 import {
@@ -101,6 +105,9 @@ interface SavedLinksBrowserProps {
 }
 
 export function SavedLinksBrowser({ mode }: SavedLinksBrowserProps) {
+  const searchParams = useSearchParams();
+  const sourceFilter = searchParams.get("source");
+  const { publicationSidebarProjection } = useSidebarProjection();
   const listState: LatrSaveListState =
     mode === "archived" ? "archived" : "active";
   const {
@@ -109,6 +116,23 @@ export function SavedLinksBrowser({ mode }: SavedLinksBrowserProps) {
     isError,
     error,
   } = useLatrMergedHttpsSaves(listState);
+  const sidebarRows = useMemo(
+    () =>
+      publicationSidebarProjection
+        ? sidebarPublicationRows(publicationSidebarProjection)
+        : [],
+    [publicationSidebarProjection],
+  );
+  const filteredData = useMemo(
+    () =>
+      sourceFilter
+        ? data.filter(
+            (row) =>
+              savedFeedSourceKey(row, sidebarRows) === sourceFilter,
+          )
+        : data,
+    [data, sidebarRows, sourceFilter],
+  );
   const archiveMut = useArchiveLatrSaveMutation();
   const unarchiveMut = useUnarchiveLatrSaveMutation();
   const deleteMut = useDeleteLatrSaveMutation();
@@ -125,13 +149,16 @@ export function SavedLinksBrowser({ mode }: SavedLinksBrowserProps) {
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
 
   const resolvedSelectedRowId =
-    selectedRowId !== null && data.some((r) => rowId(r) === selectedRowId)
+    selectedRowId !== null &&
+    filteredData.some((r) => rowId(r) === selectedRowId)
       ? selectedRowId
       : null;
 
   const selectedRow = useMemo(
-    () => data.find((r) => rowId(r) === resolvedSelectedRowId) ?? null,
-    [data, resolvedSelectedRowId],
+    () =>
+      filteredData.find((r) => rowId(r) === resolvedSelectedRowId) ??
+      null,
+    [filteredData, resolvedSelectedRowId],
   );
 
   const clearSelectionIfNeeded = useCallback((row: MergedLatrSave) => {
@@ -231,7 +258,7 @@ export function SavedLinksBrowser({ mode }: SavedLinksBrowserProps) {
 
     return (
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain pt-2">
-        {data.map((row) => {
+        {filteredData.map((row) => {
           const id = rowId(row);
           const card = (
             <button

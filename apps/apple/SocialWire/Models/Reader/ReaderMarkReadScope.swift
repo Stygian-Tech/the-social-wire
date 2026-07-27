@@ -4,7 +4,21 @@ import Foundation
 enum ReaderMarkReadScope: Equatable {
     case allLists
     case list(ReaderListSource)
+    case folder(folderRkey: String)
     case publication(publicationId: String)
     case entry(entryId: String)
     case unavailable
+
+    static func selectedFeed(_ selection: FeedSelection) -> ReaderMarkReadScope {
+        switch selection {
+        case .topLevel(let source):
+            .list(source)
+        case .folder(let folderRkey):
+            .folder(folderRkey: folderRkey)
+        case .publication(let publicationId):
+            .publication(publicationId: publicationId)
+        case .savedSource:
+            .unavailable
+        }
+    }
 }

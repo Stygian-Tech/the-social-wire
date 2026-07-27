@@ -98,6 +98,8 @@ export interface EntryListItem {
   thumbnailFallbackUrl?: string;
   /** Canonical article HTTPS URL when the Thin AppView index knows one. */
   originalUrl?: string;
+  /** Canonical publication identity supplied for aggregate feeds. */
+  publicationId?: string;
 }
 
 export interface EntryDetail {

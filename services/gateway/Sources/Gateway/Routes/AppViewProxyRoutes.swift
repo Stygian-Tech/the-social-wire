@@ -46,6 +46,9 @@ struct AppViewProxyRoutes {
     group.get("/v1/appview/entries") { request, context async throws -> Response in
       try await forward(request: request, context: context, path: "/v1/appview/entries", method: "GET")
     }
+    group.get("/v1/appview/feed") { request, context async throws -> Response in
+      try await forward(request: request, context: context, path: "/v1/appview/feed", method: "GET")
+    }
     group.get("/v1/appview/entry") { request, context async throws -> Response in
       try await forward(request: request, context: context, path: "/v1/appview/entry", method: "GET")
     }

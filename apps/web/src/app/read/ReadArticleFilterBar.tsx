@@ -25,9 +25,13 @@ export function ReadArticleFilterBar() {
     articleListFilter,
   } = useReadRoute();
 
-  const { publicationsInSidebarTab } = useReadSidebarScope();
+  const { activeFeedScope } = useReadSidebarScope();
   const { bulkDisabled, applyMarkAllRead } =
-    useCachedBulkReadActions(publicationsInSidebarTab);
+    useCachedBulkReadActions(activeFeedScope.publications, {
+      gatewayScopes: activeFeedScope.gatewayScope
+        ? [activeFeedScope.gatewayScope]
+        : [],
+    });
 
   const [markAllReadOpen, setMarkAllReadOpen] = useState(false);
 
@@ -53,8 +57,8 @@ export function ReadArticleFilterBar() {
               <DialogHeader>
                 <DialogTitle>Mark All As Read?</DialogTitle>
                 <DialogDescription>
-                  This marks every cached article for sources in your current sidebar tab as read.
-                  Entries that have not been loaded yet stay unchanged until you open them.
+                  This marks every unread article in the selected feed as read.
+                  Cached articles update immediately while the full feed is updated on your account.
                 </DialogDescription>
               </DialogHeader>
               <DialogFooter>

@@ -44,7 +44,7 @@ describe("useCachedBulkReadActions", () => {
     restoreHookSpies = undefined;
   });
 
-  it("disables bulk actions when cache is empty", () => {
+  it("keeps server-scoped bulk actions enabled when cache is empty", () => {
     const queryClient = new QueryClient();
     const wrapper = ({ children }: { children: React.ReactNode }) => (
       <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
@@ -55,7 +55,7 @@ describe("useCachedBulkReadActions", () => {
       { wrapper }
     );
 
-    expect(result.current.bulkDisabled).toBe(true);
+    expect(result.current.bulkDisabled).toBe(false);
     expect(result.current.cachedEntryIds).toEqual([]);
   });
 

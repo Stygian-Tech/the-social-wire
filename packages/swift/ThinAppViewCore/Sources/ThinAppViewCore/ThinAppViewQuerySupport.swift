@@ -1,12 +1,12 @@
 import Foundation
 
 public enum ThinAppViewCursor {
-  static func encode(createdAt: Date, uri: String) -> String {
+  public static func encode(createdAt: Date, uri: String) -> String {
     let iso = ISO8601DateFormatter().string(from: createdAt)
     return "\(iso)|\(uri)"
   }
 
-  static func decode(_ cursor: String) -> (createdAt: Date, uri: String)? {
+  public static func decode(_ cursor: String) -> (createdAt: Date, uri: String)? {
     guard let pipe = cursor.firstIndex(of: "|") else { return nil }
     let iso = String(cursor[..<pipe])
     let uri = String(cursor[cursor.index(after: pipe)...])

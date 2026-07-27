@@ -22,6 +22,8 @@ docs {
   Event order: `sidebarPriority` → `unreadCounts` → optional `selectedPublication` →
   optional `entriesPage` (first unread publication) → repeated `sidebarSection` slices →
   legacy `sidebarFolders` → `done`.
+  Cache hits emit `sidebarSection` and `sidebarFolders` immediately after `sidebarPriority`,
+  before refreshing unread counts.
 
   New clients should prefer `sidebarSection` payloads over monolithic `sidebarFolders`.
   `unreadCounts` events include `generation`, `accuracy`, and `countedAt`.

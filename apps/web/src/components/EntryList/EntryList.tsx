@@ -2,7 +2,10 @@
 
 import { useEffect, useMemo } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useEntries } from "@/hooks/useEntries";
+import {
+  useAggregateFeedEntries,
+  useEntries,
+} from "@/hooks/useEntries";
 import { useProactiveFeedRefresh } from "@/hooks/useProactiveFeedRefresh";
 import {
   sortEntryListItemsNewestFirst,
@@ -14,11 +17,13 @@ import {
   type ArticleListFilter,
 } from "@/lib/entryArticleFilter";
 import { EntryListVirtualPane } from "./EntryListVirtualPane";
+import type { AggregateAppViewFeed } from "@/lib/thinAppViewClient";
 
 export type { ArticleListFilter };
 
 interface EntryListProps {
-  pubId: string;
+  pubId?: string;
+  aggregateFeed?: AggregateAppViewFeed;
   selectedEntryId: string | null;
   onSelectEntry: (entryId: string) => void;
   isEntryRead: (entryId: string) => boolean;
@@ -31,6 +36,7 @@ interface EntryListProps {
 
 export function EntryList({
   pubId,
+  aggregateFeed,
   selectedEntryId,
   onSelectEntry,
   isEntryRead,
@@ -59,18 +65,44 @@ export function EntryList({
     isFetchingNextPage,
     isFetchNextPageError,
     scopePending,
-  } = useEntries(pubId, "all");
+  } = useEntries(pubId ?? null, "all");
+  const aggregateQuery = useAggregateFeedEntries(
+    aggregateFeed ?? null,
+    "all",
+  );
+  const activeData = aggregateFeed ? aggregateQuery.data : data;
+  const activeLoading = aggregateFeed ? aggregateQuery.isLoading : isLoading;
+  const activeIsError = aggregateFeed ? aggregateQuery.isError : isError;
+  const activeError = aggregateFeed ? aggregateQuery.error : error;
+  const activeRefetch = aggregateFeed ? aggregateQuery.refetch : refetch;
+  const activeFetchNextPage = aggregateFeed
+    ? aggregateQuery.fetchNextPage
+    : fetchNextPage;
+  const activeHasNextPage = aggregateFeed
+    ? aggregateQuery.hasNextPage
+    : hasNextPage;
+  const activeIsFetchingNextPage = aggregateFeed
+    ? aggregateQuery.isFetchingNextPage
+    : isFetchingNextPage;
+  const activeIsFetchNextPageError = aggregateFeed
+    ? aggregateQuery.isFetchNextPageError
+    : isFetchNextPageError;
 
   useProactiveFeedRefresh(
-    pubId,
+    pubId ?? null,
     "all",
-    !isLoading && !scopePending && (data?.pages.length ?? 0) > 0
+    !aggregateFeed &&
+      !isLoading &&
+      !scopePending &&
+      (data?.pages.length ?? 0) > 0
   );
 
   const allEntries: EntryListItem[] = useMemo(() => {
-    const flat = dedupeEntryListItems(data?.pages.flatMap((p) => p.entries) ?? []);
+    const flat = dedupeEntryListItems(
+      activeData?.pages.flatMap((p) => p.entries) ?? [],
+    );
     return sortEntryListItemsNewestFirst(flat);
-  }, [data?.pages]);
+  }, [activeData?.pages]);
 
   const visibleEntries: EntryListItem[] = useMemo(() => {
     return filterEntriesForArticleFilter(
@@ -82,27 +114,30 @@ export function EntryList({
 
   /** Remount only when the user changes publication/filter; data churn must not reset scroll. */
   const virtualPaneKey = useMemo(() => {
-    return `${pubId}:${effectiveFilter}`;
-  }, [pubId, effectiveFilter]);
+    return `${pubId ?? `${aggregateFeed?.kind}:${aggregateFeed?.id ?? ""}`}:${effectiveFilter}`;
+  }, [aggregateFeed?.id, aggregateFeed?.kind, pubId, effectiveFilter]);
 
   useEffect(() => {
     if (effectiveFilter !== "unread" || !readIndicatorsEnabled) return;
-    if (!hasNextPage || isFetchingNextPage) return;
+    if (!activeHasNextPage || activeIsFetchingNextPage) return;
     if (visibleEntries.length > 0) return;
-    if (allEntries.length === 0 || isLoading) return;
-    void fetchNextPage();
+    if (allEntries.length === 0 || activeLoading) return;
+    void activeFetchNextPage();
   }, [
     effectiveFilter,
     readIndicatorsEnabled,
-    hasNextPage,
-    isFetchingNextPage,
+    activeHasNextPage,
+    activeIsFetchingNextPage,
     visibleEntries.length,
     allEntries.length,
-    isLoading,
-    fetchNextPage,
+    activeLoading,
+    activeFetchNextPage,
   ]);
 
-  if ((isLoading || scopePending) && allEntries.length === 0) {
+  if (
+    (activeLoading || (!aggregateFeed && scopePending)) &&
+    allEntries.length === 0
+  ) {
     return (
       <div className="space-y-1.5 p-2">
         {Array.from({ length: 6 }).map((_, i) => (
@@ -112,14 +147,18 @@ export function EntryList({
     );
   }
 
-  if (isError && allEntries.length === 0) {
+  if (activeIsError && allEntries.length === 0) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center text-sm text-muted-foreground">
-        <p>{error instanceof Error ? error.message : "Could not load entries."}</p>
+        <p>
+          {activeError instanceof Error
+            ? activeError.message
+            : "Could not load entries."}
+        </p>
         <button
           type="button"
           className="text-primary underline-offset-4 hover:underline"
-          onClick={() => void refetch()}
+          onClick={() => void activeRefetch()}
         >
           Retry
         </button>
@@ -139,7 +178,7 @@ export function EntryList({
     effectiveFilter === "unread" &&
     visibleEntries.length === 0 &&
     allEntries.length > 0 &&
-    (hasNextPage || isFetchingNextPage)
+    (activeHasNextPage || activeIsFetchingNextPage)
   ) {
     return (
       <div className="space-y-2 p-4">
@@ -166,10 +205,10 @@ export function EntryList({
       onSelectEntry={onSelectEntry}
       isEntryRead={isEntryRead}
       readIndicatorsEnabled={readIndicatorsEnabled}
-      hasNextPage={hasNextPage}
-      isFetchingNextPage={isFetchingNextPage}
-      isFetchNextPageError={isFetchNextPageError}
-      fetchNextPage={fetchNextPage}
+      hasNextPage={activeHasNextPage}
+      isFetchingNextPage={activeIsFetchingNextPage}
+      isFetchNextPageError={activeIsFetchNextPageError}
+      fetchNextPage={activeFetchNextPage}
       markEntryRead={markEntryRead}
       markEntryUnread={markEntryUnread}
     />

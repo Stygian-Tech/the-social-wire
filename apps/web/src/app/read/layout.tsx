@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { Suspense, useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 import { AppSidebar } from "@/components/AppSidebar/AppSidebar";
@@ -57,12 +57,14 @@ export default function ReadLayout({
             <ClosePublicationsSheetOnMobilePubRoute
               selectedPubId={selectedPubId}
             />
-            <AppSidebar
-              selectedPubId={selectedPubId}
-              onSelectPub={(pubId) =>
-                router.push(`/read/${encodeURIComponent(pubId)}`)
-              }
-            />
+            <Suspense fallback={null}>
+              <AppSidebar
+                selectedPubId={selectedPubId}
+                onSelectPub={(pubId) =>
+                  router.push(`/read/${encodeURIComponent(pubId)}`)
+                }
+              />
+            </Suspense>
             <SidebarInset className="flex min-h-0 flex-1 flex-col overflow-hidden">
               <header className="flex min-h-14 shrink-0 flex-wrap items-center gap-2 border-b bg-background/85 px-2 py-1.5 backdrop-blur-md sm:min-h-12 sm:flex-nowrap sm:gap-2 sm:px-3 md:px-4">
                 <SidebarTrigger className="h-11 w-11 min-h-[44px] min-w-[44px] shrink-0 -ml-0.5 rounded-md border-0 bg-transparent shadow-none hover:bg-muted/50 aria-expanded:bg-muted/50 sm:h-8 sm:w-8 sm:min-h-0 sm:min-w-0 sm:-ml-1" />

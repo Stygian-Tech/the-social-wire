@@ -5,7 +5,6 @@ import { ChevronRight } from "lucide-react";
 import { SidebarReadBulkMenuWrap } from "./SidebarReadBulkMenuWrap";
 import {
   SidebarMenuBadge,
-  SidebarMenuButton,
   SidebarMenuItem,
   SidebarMenuSub,
   SidebarMenuSubItem,
@@ -40,6 +39,7 @@ interface FolderBranchProps {
   isActive: boolean;
   expanded: boolean;
   onToggleExpanded: () => void;
+  onSelectFolder: () => void;
   publications: DiscoveredPublication[];
   emptyLabel: string;
   selectedPubId: string | null;
@@ -60,6 +60,7 @@ export function FolderBranch({
   isActive,
   expanded,
   onToggleExpanded,
+  onSelectFolder,
   publications,
   emptyLabel,
   selectedPubId,
@@ -115,16 +116,20 @@ export function FolderBranch({
             },
           }}
         >
-          <SidebarMenuButton
-            type="button"
-            isActive={isActive}
-            onClick={onToggleExpanded}
+          <div
+            className={cn(
+              "flex h-8 w-full min-w-0 items-center rounded-md",
+              isActive && "bg-sidebar-accent text-sidebar-accent-foreground",
+              folderUnread > 0 && "relative pr-8",
+            )}
+          >
+            <button
+              type="button"
+              onClick={onToggleExpanded}
+              className="flex size-8 shrink-0 items-center justify-center rounded-md hover:bg-sidebar-accent"
             aria-expanded={expanded}
             aria-controls={subId}
-            className={cn(
-              "gap-2",
-              folderUnread > 0 && "relative pr-8"
-            )}
+              aria-label={`${expanded ? "Collapse" : "Expand"} ${folder.name}`}
           >
             <ChevronRight
               className={cn(
@@ -133,6 +138,12 @@ export function FolderBranch({
               )}
               aria-hidden
             />
+            </button>
+            <button
+              type="button"
+              onClick={onSelectFolder}
+              className="flex min-w-0 flex-1 items-center gap-2 text-left"
+            >
             <FolderIconGlyph
               icon={folder.icon}
               iconImage={folder.iconImage}
@@ -149,7 +160,8 @@ export function FolderBranch({
                 {folderUnread}
               </SidebarMenuBadge>
             ) : null}
-          </SidebarMenuButton>
+            </button>
+          </div>
         </SidebarReadBulkMenuWrap>
         {expanded ? (
           <SidebarMenuSub id={subId} aria-label={folder.name} className="mt-0.5 pl-5">

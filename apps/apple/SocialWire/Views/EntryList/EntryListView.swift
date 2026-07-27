@@ -10,7 +10,7 @@ struct EntryListView: View {
     var body: some View {
         List {
             if appModel.filteredEntries.isEmpty,
-               appModel.selectedPublication != nil,
+               appModel.hasSelectedArticleFeed,
                (appModel.isLoadingEntries || appModel.sidebarFetching) {
                 ProgressView()
                     .frame(maxWidth: .infinity)
@@ -52,12 +52,11 @@ struct EntryListView: View {
                                 }
                             }
                             .onAppear {
-                                guard entry.entryId == appModel.filteredEntries.last?.entryId,
-                                      let publication = appModel.selectedPublication
-                                else { return }
+                                guard entry.entryId == appModel.filteredEntries.last?.entryId else {
+                                    return
+                                }
                                 Task {
-                                    await appModel.loadMoreEntriesIfNeeded(
-                                        for: publication,
+                                    await appModel.loadMoreSelectedFeedIfNeeded(
                                         triggeredByEntryId: entry.entryId
                                     )
                                 }
@@ -87,9 +86,7 @@ struct EntryListView: View {
             await appModel.chaseUnreadPagesIfNeeded(for: publication)
         }
         .refreshable {
-            if let publication = appModel.selectedPublication {
-                await appModel.loadEntries(for: publication)
-            }
+            await appModel.refreshSelectedArticleFeed()
             refreshFeedback += 1
         }
         .sensoryFeedback(.impact(flexibility: .soft), trigger: refreshFeedback)
@@ -106,6 +103,7 @@ struct EntryListView: View {
         [
             appModel.readerFilter.rawValue,
             appModel.selectedPublication?.publicationId ?? "",
+            String(describing: appModel.feedSelection),
             String(appModel.entries.count),
             String(appModel.canLoadMoreEntries),
             String(appModel.filteredEntries.count),
