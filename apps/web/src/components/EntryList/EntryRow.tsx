@@ -122,17 +122,9 @@ export function EntryRow({
           ) : thumbsExhausted ? (
             <span className="absolute inset-0 bg-muted/30" aria-hidden />
           ) : null}
-          {showUnreadChrome ? (
-            <span
-              className="absolute left-2 top-2 size-2 rounded-full bg-primary ring-2 ring-background"
-              aria-hidden
-            />
-          ) : null}
-        </div>
-        <div className="relative min-w-0 px-4 py-3 pr-10">
           {publication ? (
             <div
-              className="mb-2 max-w-full"
+              className="absolute left-2 top-2 z-10 max-w-[calc(100%-1rem)]"
               onClick={(event) => event.stopPropagation()}
               onKeyDown={(event) => event.stopPropagation()}
             >
@@ -142,9 +134,18 @@ export function EntryRow({
                   faviconUrl:
                     publication.iconUrl ?? publication.avatarUrl,
                 }}
+                overlay
               />
             </div>
           ) : null}
+          {showUnreadChrome ? (
+            <span
+              className="absolute right-2 top-2 size-2 rounded-full bg-primary ring-2 ring-background"
+              aria-hidden
+            />
+          ) : null}
+        </div>
+        <div className="relative min-w-0 px-4 py-3 pr-10">
           <div className="absolute right-1 top-2 z-10">
             <DropdownMenu>
               <DropdownMenuTrigger
