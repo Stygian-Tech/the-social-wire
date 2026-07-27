@@ -12,29 +12,9 @@ struct ListsView: View {
     var body: some View {
         List {
             ForEach(appModel.visibleReaderListSources) { source in
-                Button {
+                ReaderTopLevelFeedRow(source: source) {
                     onListSourceTap(source)
-                } label: {
-                    HStack {
-                        Label(source.rawValue, systemImage: source.systemImage)
-                        Spacer(minLength: 8)
-                        if appModel.showTopLevelFeedUnreadCounts {
-                            SidebarCountLabel(
-                                count: appModel.topLevelUnreadCount(for: source),
-                                accessibilityDescription: "unread articles"
-                            )
-                        }
-                        if appModel.isTopLevelFeedSelected(source) {
-                            Image(systemName: "checkmark")
-                                .foregroundStyle(Color.accentColor)
-                                .accessibilityHidden(true)
-                        }
-                    }
-                    .readerFullWidthTapLabel()
                 }
-                .buttonStyle(.plain)
-                .readerClearListRow()
-                .accessibilityAddTraits(appModel.isTopLevelFeedSelected(source) ? .isSelected : [])
             }
         }
         .readerListCanvas()

@@ -45,4 +45,11 @@ enum ReaderListSource: String, CaseIterable, Codable, Identifiable, Hashable {
         case .subscribed, .following: true
         }
     }
+
+    var supportsMarkAllReadContextMenu: Bool {
+        switch self {
+        case .subscribed, .following: true
+        case .readLater, .archive: false
+        }
+    }
 }

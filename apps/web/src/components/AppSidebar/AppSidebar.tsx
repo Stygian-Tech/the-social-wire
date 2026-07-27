@@ -398,6 +398,8 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
             subscribedUnread={subscribedUnread}
             followingUnread={followingUnread}
             showUnreadCounts={showTopLevelCounts}
+            subscribedPublications={subscribedPublications}
+            followingPublications={followingTabPublications}
             visibleTabs={[
               ...(visible.has("subscribed") ? ["subscribed" as const] : []),
               ...(visible.has("following") ? ["following" as const] : []),

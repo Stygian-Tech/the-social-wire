@@ -9,8 +9,10 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
+import type { DiscoveredPublication } from "@/lib/atprotoClient";
 import type { PublicationTab } from "./appSidebarConstants";
 import { SidebarMenuBadge } from "@/components/ui/sidebar";
+import { SidebarReadBulkMenuWrap } from "./SidebarReadBulkMenuWrap";
 
 export function PublicationTabs({
   activeTab,
@@ -19,6 +21,8 @@ export function PublicationTabs({
   followingUnread = 0,
   showUnreadCounts = true,
   visibleTabs = ["subscribed", "following"],
+  subscribedPublications = [],
+  followingPublications = [],
 }: {
   activeTab: PublicationTab | null;
   onTabChange: (tab: PublicationTab) => void;
@@ -26,41 +30,61 @@ export function PublicationTabs({
   followingUnread?: number;
   showUnreadCounts?: boolean;
   visibleTabs?: PublicationTab[];
+  subscribedPublications?: DiscoveredPublication[];
+  followingPublications?: DiscoveredPublication[];
 }) {
   return (
     <SidebarGroup className="pb-1 pt-1">
       <SidebarGroupLabel>Feeds</SidebarGroupLabel>
       <SidebarMenu className="gap-0.5" role="tablist" aria-label="Publication Source">
-        {visibleTabs.includes("subscribed") ? <SidebarMenuItem>
-          <SidebarMenuButton
-            type="button"
-            role="tab"
-            aria-selected={activeTab === "subscribed"}
-            isActive={activeTab === "subscribed"}
-            onClick={() => onTabChange("subscribed")}
-          >
-            <Rss />
-            <span>Subscribed</span>
-            {showUnreadCounts && subscribedUnread > 0 ? (
-              <SidebarMenuBadge>{subscribedUnread}</SidebarMenuBadge>
-            ) : null}
-          </SidebarMenuButton>
-        </SidebarMenuItem> : null}
-        {visibleTabs.includes("following") ? <SidebarMenuItem>
-          <SidebarMenuButton
-            type="button"
-            role="tab"
-            aria-selected={activeTab === "following"}
-            isActive={activeTab === "following"}
-            onClick={() => onTabChange("following")}
-          >
-            <Users />
-            <span>Following</span>
-            {showUnreadCounts && followingUnread > 0 ? (
-              <SidebarMenuBadge>{followingUnread}</SidebarMenuBadge>
-            ) : null}
-          </SidebarMenuButton>
-        </SidebarMenuItem> : null}
+        {visibleTabs.includes("subscribed") ? (
+          <SidebarMenuItem>
+            <SidebarReadBulkMenuWrap
+              publications={subscribedPublications}
+              gatewayScopes={[{ kind: "subscribed" }]}
+              markAllReadConfirmation="This marks every unread article in Subscribed as read."
+              showMarkAllUnread={false}
+            >
+              <SidebarMenuButton
+                type="button"
+                role="tab"
+                aria-selected={activeTab === "subscribed"}
+                isActive={activeTab === "subscribed"}
+                onClick={() => onTabChange("subscribed")}
+              >
+                <Rss />
+                <span>Subscribed</span>
+                {showUnreadCounts && subscribedUnread > 0 ? (
+                  <SidebarMenuBadge>{subscribedUnread}</SidebarMenuBadge>
+                ) : null}
+              </SidebarMenuButton>
+            </SidebarReadBulkMenuWrap>
+          </SidebarMenuItem>
+        ) : null}
+        {visibleTabs.includes("following") ? (
+          <SidebarMenuItem>
+            <SidebarReadBulkMenuWrap
+              publications={followingPublications}
+              gatewayScopes={[{ kind: "following" }]}
+              markAllReadConfirmation="This marks every unread article in Following as read."
+              showMarkAllUnread={false}
+            >
+              <SidebarMenuButton
+                type="button"
+                role="tab"
+                aria-selected={activeTab === "following"}
+                isActive={activeTab === "following"}
+                onClick={() => onTabChange("following")}
+              >
+                <Users />
+                <span>Following</span>
+                {showUnreadCounts && followingUnread > 0 ? (
+                  <SidebarMenuBadge>{followingUnread}</SidebarMenuBadge>
+                ) : null}
+              </SidebarMenuButton>
+            </SidebarReadBulkMenuWrap>
+          </SidebarMenuItem>
+        ) : null}
       </SidebarMenu>
     </SidebarGroup>
   );

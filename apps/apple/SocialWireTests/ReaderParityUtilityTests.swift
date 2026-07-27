@@ -34,6 +34,14 @@ struct UnifiedFeedSelectionTests {
         )
     }
 
+    @Test("top-level read context menus exclude saved feeds")
+    func topLevelReadContextMenuAvailability() {
+        #expect(ReaderListSource.subscribed.supportsMarkAllReadContextMenu)
+        #expect(ReaderListSource.following.supportsMarkAllReadContextMenu)
+        #expect(!ReaderListSource.readLater.supportsMarkAllReadContextMenu)
+        #expect(!ReaderListSource.archive.supportsMarkAllReadContextMenu)
+    }
+
     @Test("preference decoding defaults additive fields and preserves order")
     func preferenceDefaultsAndFallback() {
         let defaults = ReaderFeedPreferences(record: nil)

@@ -42,6 +42,7 @@ type SidebarReadBulkMenuWrapProps = {
   markAllReadConfirmation: ReactNode;
   gatewayScopes?: GatewayMarkAllReadScope[];
   children: ReactNode;
+  showMarkAllUnread?: boolean;
   menuActions?: SidebarMenuAction[];
   destructiveAction?: SidebarDestructiveAction;
 };
@@ -55,6 +56,7 @@ export function SidebarReadBulkMenuWrap({
   markAllReadConfirmation,
   gatewayScopes,
   children,
+  showMarkAllUnread = true,
   menuActions,
   destructiveAction,
 }: SidebarReadBulkMenuWrapProps) {
@@ -81,14 +83,18 @@ export function SidebarReadBulkMenuWrap({
           >
             Mark All As Read
           </ContextMenuItem>
-          <ContextMenuSeparator />
-          <ContextMenuItem
-            disabled={bulkDisabled}
-            className="gap-2"
-            onClick={() => applyMarkAllUnread()}
-          >
-            Mark All As Unread
-          </ContextMenuItem>
+          {showMarkAllUnread ? (
+            <>
+              <ContextMenuSeparator />
+              <ContextMenuItem
+                disabled={bulkDisabled}
+                className="gap-2"
+                onClick={() => applyMarkAllUnread()}
+              >
+                Mark All As Unread
+              </ContextMenuItem>
+            </>
+          ) : null}
           {menuActions?.length ? (
             <>
               <ContextMenuSeparator />

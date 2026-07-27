@@ -23,29 +23,9 @@ struct ReaderSidebarColumn: View {
     private var listsSection: some View {
         Section {
             ForEach(appModel.visibleReaderListSources) { source in
-                Button {
+                ReaderTopLevelFeedRow(source: source) {
                     appModel.selectReaderListSource(source)
-                } label: {
-                    HStack {
-                        Label(source.rawValue, systemImage: source.systemImage)
-                        Spacer(minLength: 8)
-                        if appModel.showTopLevelFeedUnreadCounts {
-                            SidebarCountLabel(
-                                count: appModel.topLevelUnreadCount(for: source),
-                                accessibilityDescription: "unread articles"
-                            )
-                        }
-                        if appModel.isTopLevelFeedSelected(source) {
-                            Image(systemName: "checkmark")
-                                .foregroundStyle(Color.accentColor)
-                                .accessibilityHidden(true)
-                        }
-                    }
-                    .readerFullWidthTapLabel()
                 }
-                .buttonStyle(.plain)
-                .readerClearListRow()
-                .accessibilityAddTraits(appModel.isTopLevelFeedSelected(source) ? .isSelected : [])
             }
         } header: {
             Text("Lists")
