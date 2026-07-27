@@ -79,10 +79,6 @@ final class SidebarUnreadController {
             in: unreadCountsByPublicationId,
             publicationId: publicationId
         )
-        guard serverCount > 0 else {
-            displayMemo[publicationId] = 0
-            return 0
-        }
         let cachedEntryIds = PublicationUnreadCountLookup.distinctCachedEntryIds(
             coordinator: coordinator,
             publicationIds: [publicationId]

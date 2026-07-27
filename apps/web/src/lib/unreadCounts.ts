@@ -79,7 +79,7 @@ export function effectivePublicationUnreadCount(
   const cachedUnread = countUnreadCachedEntries(cached, isEntryRead);
   const cachedRead = countCachedReadEntries(cached, isEntryRead);
   const reconciled = Math.max(cachedUnread, serverCount - cachedRead);
-  if (options?.capRaiseToServerCount) {
+  if (options?.capRaiseToServerCount && serverCount > 0) {
     return Math.min(reconciled, serverCount);
   }
   return reconciled;
@@ -138,14 +138,30 @@ export function getCachedEntriesForPublication(
   publicationId: string
 ): EntryListItem[] {
   const normalized = normalizeAtRepoParam(publicationId);
-  const queries = queryClient.getQueriesData<InfiniteData<EntriesPage>>({
+  const publicationQueries = queryClient.getQueriesData<InfiniteData<EntriesPage>>({
     queryKey: ENTRIES_QUERY_KEY(normalized),
+  });
+  const aggregateQueries = queryClient.getQueriesData<InfiniteData<EntriesPage>>({
+    queryKey: ["aggregateEntries"],
   });
   const seen = new Set<string>();
   const out: EntryListItem[] = [];
-  for (const [, data] of queries) {
+  for (const [, data] of publicationQueries) {
     for (const entry of flattenCachedInfiniteEntries(data)) {
       if (seen.has(entry.entryId)) continue;
+      seen.add(entry.entryId);
+      out.push(entry);
+    }
+  }
+  for (const [, data] of aggregateQueries) {
+    for (const entry of flattenCachedInfiniteEntries(data)) {
+      if (
+        !entry.publicationId ||
+        normalizeAtRepoParam(entry.publicationId) !== normalized ||
+        seen.has(entry.entryId)
+      ) {
+        continue;
+      }
       seen.add(entry.entryId);
       out.push(entry);
     }

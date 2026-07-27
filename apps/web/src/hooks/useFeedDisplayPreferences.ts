@@ -27,13 +27,22 @@ export function useFeedDisplayPreferences() {
   const accountPreferences = useAccountPreferences();
   const [optimistic, setOptimistic] =
     useState<FeedDisplayPreferences | null>(null);
-  const cached = useMemo(
-    () =>
-      session && typeof window !== "undefined"
-        ? loadCachedFeedDisplayPreferences(window.localStorage, session.did)
-        : null,
-    [session],
-  );
+  const [cached, setCached] = useState<FeedDisplayPreferences | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled) return;
+      setCached(
+        session && typeof window !== "undefined"
+          ? loadCachedFeedDisplayPreferences(window.localStorage, session.did)
+          : null,
+      );
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [session]);
 
   const serverPreferences = accountPreferences.data?.value;
   const preferences = useMemo(

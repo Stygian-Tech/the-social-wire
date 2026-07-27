@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import { onOAuthSessionInvalidated } from "@/lib/auth";
 
 const ORIG_ENV = { ...process.env };
 const ORIG_FETCH = globalThis.fetch;
@@ -137,5 +138,48 @@ describe("gatewayFetch", () => {
       "gateway-dpop-proof",
       "gateway-dpop-proof:fresh-gateway-nonce",
     ]);
+  });
+
+  it("invalidates the session after a final gateway 401", async () => {
+    globalThis.fetch = mock(async () =>
+      new Response(JSON.stringify({ error: "invalid_token" }), { status: 401 })
+    ) as unknown as typeof fetch;
+    const invalidations: string[] = [];
+    const unsubscribe = onOAuthSessionInvalidated((did) => {
+      invalidations.push(did);
+    });
+    const oauthSession = {
+      did: "did:plc:viewer",
+      getTokenSet: async () => ({
+        access_token: "expired-access-token",
+        token_type: "DPoP",
+      }),
+      getTokenInfo: async () => ({ aud: "https://pds.example" }),
+      server: {
+        dpopKey: {
+          bareJwk: { kty: "EC", crv: "P-256", x: "x", y: "y" },
+          algorithms: ["ES256"],
+          createJwt: async () => "gateway-dpop-proof",
+        },
+        dpopNonces: {
+          get: async () => undefined,
+          set: async () => {},
+        },
+        serverMetadata: { dpop_signing_alg_values_supported: ["ES256"] },
+      },
+    } as never;
+
+    try {
+      const { gatewayFetch } = await import("@/lib/socialWireGatewayClient");
+      const response = await gatewayFetch(
+        oauthSession,
+        "/v1/appview/entries",
+      );
+
+      expect(response.status).toBe(401);
+      expect(invalidations).toEqual(["did:plc:viewer"]);
+    } finally {
+      unsubscribe();
+    }
   });
 });

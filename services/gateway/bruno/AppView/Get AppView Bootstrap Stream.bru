@@ -22,6 +22,8 @@ docs {
   Returns `application/x-ndjson` — one JSON object per line, in order:
   `sidebarPriority`, `unreadCounts`, optional `selectedPublication`, optional `entriesPage`,
   repeated `sidebarSection` slices, legacy `sidebarFolders`, optional `warning`/`error`, then `done`.
+  Cache hits may emit `sidebarSection` and `sidebarFolders` immediately after
+  `sidebarPriority`, before refreshing unread counts.
   `unreadCounts` events include `generation`, `accuracy`, and `countedAt`; `sidebarSection`
   events may include `sectionGeneration`.
 

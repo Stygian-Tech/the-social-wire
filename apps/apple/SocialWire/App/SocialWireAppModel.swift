@@ -845,6 +845,7 @@ final class SocialWireAppModel {
                 ? page.entries
                 : mergeEntryPages(existing: entries, newPage: page.entries)
             entriesNextCursor = page.cursor
+            persistAggregateEntriesByPublication(page.entries)
             await prefetchThumbnailImages(for: page.entries)
         } catch {
             markAppViewUnavailableIfNeeded(error)
@@ -948,7 +949,6 @@ final class SocialWireAppModel {
         }
 
         do {
-            await gateway.warmGatewayDpopNonce()
             try await refreshPublicationSidebarFromBootstrapStream(viewerDID: viewerDID)
             await restorePersistedFeedSelectionIfPossible()
             bootstrapCompletedAt = Date()
@@ -1564,6 +1564,8 @@ final class SocialWireAppModel {
             maxEntries: Self.entryPrefetchMaxEntries
         )
         try coordinator.upsertPublicationEntries(publicationId: publication.publicationId, entries: page.entries)
+        sidebarUnread.bumpCacheRevision()
+        refreshSidebarUnreadSumCaches()
         await prefetchThumbnailImages(for: Array(page.entries.prefix(12)))
     }
 
@@ -1670,6 +1672,26 @@ final class SocialWireAppModel {
             publicationId: publicationId,
             entries: entries
         )
+        sidebarUnread.bumpCacheRevision()
+        refreshSidebarUnreadSumCaches()
+    }
+
+    private func persistAggregateEntriesByPublication(_ entries: [EntryListItem]) {
+        guard let readerCacheCoordinator else { return }
+        let grouped = Dictionary(grouping: entries) { $0.publicationId }
+        var wroteEntries = false
+        for (publicationId, publicationEntries) in grouped {
+            guard let publicationId, !publicationId.isEmpty else { continue }
+            if (try? readerCacheCoordinator.upsertPublicationEntries(
+                publicationId: publicationId,
+                entries: publicationEntries
+            )) != nil {
+                wroteEntries = true
+            }
+        }
+        guard wroteEntries else { return }
+        sidebarUnread.bumpCacheRevision()
+        refreshSidebarUnreadSumCaches()
     }
 
     func publications(in folder: RepoRecord<FolderRecord>) -> [DiscoveredPublication] {

@@ -106,12 +106,14 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
     bootstrapStreamComplete,
   } = useSidebarBootstrap();
   const folderPublicationsLoading = folderPublicationsListLoading;
-  const secondaryReaderSyncEnabled = hasSidebarSnapshot && bootstrapStreamComplete;
+  const sidebarDependentDataEnabled = hasSidebarSnapshot && !!session;
+  const secondaryReaderSyncEnabled =
+    sidebarDependentDataEnabled && bootstrapStreamComplete;
   const { data: savedLinks = [] } = useLatrMergedHttpsSaves("active", {
-    enabled: secondaryReaderSyncEnabled,
+    enabled: sidebarDependentDataEnabled,
   });
   const { data: archivedLinks = [] } = useLatrMergedHttpsSaves("archived", {
-    enabled: secondaryReaderSyncEnabled,
+    enabled: sidebarDependentDataEnabled,
   });
   const { preferences: feedPreferences } = useFeedDisplayPreferences();
   const savedSidebarRows = useMemo(

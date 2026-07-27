@@ -84,7 +84,7 @@ describe("useSidebarUnreadCounts", () => {
     expect(result.current.get("did:plc:alice")).toBe(0);
   });
 
-  it("does not inflate known zero counts from cached entries", () => {
+  it("reflects newly cached unread entries after a known zero count", () => {
     const queryClient = new QueryClient();
     const entry: EntryListItem = {
       entryId: "at://did:plc:alice/site.standard.document/1",
@@ -111,6 +111,49 @@ describe("useSidebarUnreadCounts", () => {
       }
     );
 
+    expect(result.current.get("did:plc:alice")).toBe(1);
+  });
+
+  it("reflects publication rows loaded through an aggregate feed", async () => {
+    const queryClient = new QueryClient();
+    const unreadCountsByPublicationId = new Map([["did:plc:alice", 0]]);
+    const { result } = renderHook(
+      () =>
+        useSidebarUnreadController({
+          publications: [pub],
+          unreadCountsByPublicationId,
+          isEntryRead: () => false,
+        }),
+      {
+        wrapper: ({ children }) => (
+          <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+        ),
+      },
+    );
+
     expect(result.current.get("did:plc:alice")).toBe(0);
+
+    queryClient.setQueryData(
+      ["aggregateEntries", "subscribed:", "all"],
+      {
+        pages: [
+          {
+            entries: [
+              {
+                entryId: "at://did:plc:alice/site.standard.document/new",
+                publicationId: "did:plc:alice",
+                title: "New",
+                publishedAt: "2026-01-02T00:00:00.000Z",
+              },
+            ],
+            cursor: undefined,
+          },
+        ],
+        pageParams: [undefined],
+      },
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(result.current.get("did:plc:alice")).toBe(1);
   });
 });

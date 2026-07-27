@@ -4,7 +4,10 @@ import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 function isEntriesListQueryKey(key: unknown): boolean {
-  return Array.isArray(key) && key[0] === "entries";
+  return (
+    Array.isArray(key) &&
+    (key[0] === "entries" || key[0] === "aggregateEntries")
+  );
 }
 
 /**

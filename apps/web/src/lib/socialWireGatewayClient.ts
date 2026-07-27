@@ -9,6 +9,10 @@ import {
   buildLatrGatewayUserAuthHeaders,
   captureGatewayDpopNonceFromResponse,
 } from "@/lib/latrGatewayUserAuth";
+import {
+  invalidateOAuthSession,
+  isTerminalOAuthSessionError,
+} from "@/lib/auth";
 
 export function gatewayBaseUrl(): string {
   return (
@@ -49,6 +53,29 @@ export async function gatewayFetch(
   attempt = 0,
   gatewayDpopNonce?: string
 ): Promise<Response> {
+  try {
+    return await gatewayFetchAttempt(
+      oauthSession,
+      path,
+      init,
+      attempt,
+      gatewayDpopNonce
+    );
+  } catch (error) {
+    if (isTerminalOAuthSessionError(error)) {
+      invalidateOAuthSession(oauthSession.did, error);
+    }
+    throw error;
+  }
+}
+
+async function gatewayFetchAttempt(
+  oauthSession: OAuthSession,
+  path: string,
+  init?: RequestInit,
+  attempt = 0,
+  gatewayDpopNonce?: string
+): Promise<Response> {
   const gatewayPath = path.startsWith("/") ? path : `/${path}`;
   const url = `${gatewayBaseUrl()}${gatewayPath}`;
   const method = init?.method ?? "GET";
@@ -63,7 +90,7 @@ export async function gatewayFetch(
   }
 
   if (!canManuallySignGatewayRequest(oauthSession)) {
-    return oauthSession.fetchHandler(url, {
+    const response = await oauthSession.fetchHandler(url, {
       ...init,
       headers: {
         Accept: "application/json",
@@ -71,6 +98,16 @@ export async function gatewayFetch(
         ...(init?.headers ?? {}),
       },
     });
+    if (
+      response.status === 401 &&
+      !response.headers.get("DPoP-Nonce")?.trim()
+    ) {
+      invalidateOAuthSession(
+        oauthSession.did,
+        new Error(`Gateway request failed with ${response.status}`)
+      );
+    }
+    return response;
   }
 
   const userAuthHeaders = await buildLatrGatewayUserAuthHeaders(
@@ -101,12 +138,19 @@ export async function gatewayFetch(
     const retryNonce =
       res.headers.get("DPoP-Nonce")?.trim() ??
       res.headers.get("dpop-nonce")?.trim();
-    return gatewayFetch(
+    return gatewayFetchAttempt(
       oauthSession,
       path,
       init,
       attempt + 1,
       retryNonce
+    );
+  }
+
+  if (res.status === 401) {
+    invalidateOAuthSession(
+      oauthSession.did,
+      new Error(`Gateway request failed with ${res.status}`)
     );
   }
 

@@ -17,10 +17,6 @@ final class SocialWireGatewayClient {
         self.urlSession = urlSession
     }
 
-    func warmGatewayDpopNonce() async {
-        _ = try? await fetchSyncPreferences(ifNoneMatch: nil)
-    }
-
     func fetchSyncPreferences(ifNoneMatch: String?) async throws -> GatewayHTTPResult {
         try await authorizedGET(path: "/v1/sync/preferences", query: [:], ifNoneMatch: ifNoneMatch)
     }
@@ -428,6 +424,9 @@ final class SocialWireGatewayClient {
             await auth.dpop.updateNonce(from: http)
         }
 
+        if http.statusCode == 401 {
+            auth.invalidateSessionAfterUnauthorizedResponse()
+        }
         guard (200 ..< 300).contains(http.statusCode) else {
             throw SocialWireError.badResponse("Bootstrap stream failed (\(http.statusCode)).")
         }
@@ -549,6 +548,9 @@ final class SocialWireGatewayClient {
                 throw SocialWireError.badResponse("Missing gateway response.")
             }
             await auth.dpop.updateNonce(from: retryHttp)
+            if retryHttp.statusCode == 401 {
+                auth.invalidateSessionAfterUnauthorizedResponse()
+            }
             return GatewayHTTPResult(
                 statusCode: retryHttp.statusCode,
                 etagHeader: retryHttp.value(forHTTPHeaderField: "ETag"),
@@ -556,6 +558,9 @@ final class SocialWireGatewayClient {
             )
         }
 
+        if http.statusCode == 401 {
+            auth.invalidateSessionAfterUnauthorizedResponse()
+        }
         return initial
     }
 

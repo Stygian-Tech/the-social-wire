@@ -7,7 +7,14 @@
  * - DPoP signing: handled automatically by OAuthSession.fetchHandler
  */
 
-import { BrowserOAuthClient, OAuthSession } from "@atproto/oauth-client-browser";
+import {
+  BrowserOAuthClient,
+  OAuthResponseError,
+  OAuthSession,
+  TokenInvalidError,
+  TokenRefreshError,
+  TokenRevokedError,
+} from "@atproto/oauth-client-browser";
 import { buildAtprotoLoopbackClientId } from "@atproto/oauth-types";
 import { AT_PROTO_OAUTH_SCOPES } from "@/lib/atprotoOAuthScopes";
 import { normalizeAppEnv, readAppEnvRaw } from "@/lib/appEnv";
@@ -209,6 +216,67 @@ const OAUTH_CLIENT_LOAD_TIMEOUT_MS = 10_000;
 export const OAUTH_CALLBACK_TIMEOUT_MS = 20_000;
 const SESSION_RESTORE_TIMEOUT_MS = 8_000;
 const OAUTH_FETCH_DEADLINE_MS = 90_000;
+type OAuthSessionInvalidationListener = (did: string, cause: unknown) => void;
+const oauthSessionInvalidationListeners =
+  new Set<OAuthSessionInvalidationListener>();
+
+export function clearStoredOAuthSessionHint(): void {
+  try {
+    localStorage.removeItem(ATPRO_BROWSER_OAUTH_SUB_STORAGE_KEY);
+  } catch {
+    //
+  }
+}
+
+export function invalidateOAuthSession(did: string, cause: unknown): void {
+  clearStoredOAuthSessionHint();
+  for (const listener of oauthSessionInvalidationListeners) {
+    listener(did, cause);
+  }
+}
+
+export function onOAuthSessionInvalidated(
+  listener: OAuthSessionInvalidationListener
+): () => void {
+  oauthSessionInvalidationListeners.add(listener);
+  return () => {
+    oauthSessionInvalidationListeners.delete(listener);
+  };
+}
+
+export function isTerminalOAuthSessionError(error: unknown): boolean {
+  return (
+    error instanceof TokenRefreshError ||
+    error instanceof TokenRevokedError ||
+    error instanceof TokenInvalidError ||
+    (error instanceof OAuthResponseError && error.status === 400)
+  );
+}
+
+export async function authenticatedOAuthFetch(
+  session: OAuthSession,
+  url: string,
+  init?: RequestInit
+): Promise<Response> {
+  try {
+    const response = await session.fetchHandler(url, init);
+    if (
+      response.status === 401 &&
+      !response.headers.get("DPoP-Nonce")?.trim()
+    ) {
+      invalidateOAuthSession(
+        session.did,
+        new Error(`Authenticated request failed with ${response.status}`)
+      );
+    }
+    return response;
+  } catch (error) {
+    if (isTerminalOAuthSessionError(error)) {
+      invalidateOAuthSession(session.did, error);
+    }
+    throw error;
+  }
+}
 
 async function raceWithTimeout<T>(
   promise: Promise<T>,
@@ -268,7 +336,7 @@ function maybeClearStaleOAuthRoutingHint(err: unknown): void {
   if (!err.message.includes("timed out")) return;
   /** `oauth-client-browser` persists `sub` so `restore()` retries; timeouts often mean wedge on refresh. */
   try {
-    localStorage.removeItem(ATPRO_BROWSER_OAUTH_SUB_STORAGE_KEY);
+    clearStoredOAuthSessionHint();
   } catch {
     //
   }
@@ -303,6 +371,7 @@ export async function getOAuthClient(): Promise<BrowserOAuthClient> {
       handleResolver: BSKY_APPVIEW_PUBLIC,
       fetch: createFetchWithDeadline(OAUTH_FETCH_DEADLINE_MS),
       responseMode: resolveOAuthResponseMode(),
+      onDelete: (did, cause) => invalidateOAuthSession(did, cause),
     });
     _clientPromise = raceWithTimeout(
       load,
@@ -413,6 +482,10 @@ export async function getSession(): Promise<OAuthSession | null> {
       if (!result) return null;
       return result.session ?? null;
     } catch (err) {
+      if (isTerminalOAuthSessionError(err)) {
+        const did = getStoredOAuthDid();
+        if (did) invalidateOAuthSession(did, err);
+      }
       maybeClearStaleOAuthRoutingHint(err);
       return null;
     }
@@ -440,7 +513,7 @@ export async function signOut(did: string): Promise<void> {
     console.warn("OAuth revoke failed during sign-out", err);
   } finally {
     try {
-      localStorage.removeItem(ATPRO_BROWSER_OAUTH_SUB_STORAGE_KEY);
+      clearStoredOAuthSessionHint();
     } catch {
       //
     }
@@ -459,5 +532,5 @@ export async function signOut(did: string): Promise<void> {
 export function createAuthFetch(
   session: OAuthSession
 ): (url: string, init?: RequestInit) => Promise<Response> {
-  return (url, init) => session.fetchHandler(url, init);
+  return (url, init) => authenticatedOAuthFetch(session, url, init);
 }

@@ -386,6 +386,16 @@ struct BootstrapStreamService {
   ) async throws {
     try await writeEvent(.sidebarPriority(snapshot.priority), writer: &writer)
 
+    if let folders = snapshot.folderPayload {
+      try await writeSidebarSections(
+        folders,
+        unreadCounts: nil,
+        refreshedAt: refreshedAt,
+        writer: &writer
+      )
+      try await writeEvent(.sidebarFolders(folders), writer: &writer)
+    }
+
     let unreadRows = Self.cachedBootstrapUnreadRows(from: snapshot)
     let unreadPublicationIds = unreadRows.map(\.publicationId)
     let counterSnapshot = await projectionService.unreadCounterSnapshot(
@@ -414,16 +424,6 @@ struct BootstrapStreamService {
       ),
       writer: &writer
     )
-
-    if let folders = snapshot.folderPayload {
-      try await writeSidebarSections(
-        folders,
-        unreadCounts: nil,
-        refreshedAt: refreshedAt,
-        writer: &writer
-      )
-      try await writeEvent(.sidebarFolders(folders), writer: &writer)
-    }
 
     if let selectedId = BootstrapStreamSelection.firstUnreadPublicationId(
       myPublications: snapshot.priority.myPublications,

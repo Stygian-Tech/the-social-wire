@@ -195,9 +195,18 @@ final class ATProtoOAuthService: NSObject, ASWebAuthenticationPresentationContex
         if current.expiresAt.timeIntervalSinceNow > 60 {
             return current
         }
-        let tokens = try await refreshTokens(refreshToken: current.refreshToken, tokenEndpoint: current.tokenEndpoint)
-        persist(did: current.did, pdsURL: current.pdsURL, tokenEndpoint: current.tokenEndpoint, tokens: tokens)
-        return session ?? current
+        do {
+            let tokens = try await refreshTokens(refreshToken: current.refreshToken, tokenEndpoint: current.tokenEndpoint)
+            persist(did: current.did, pdsURL: current.pdsURL, tokenEndpoint: current.tokenEndpoint, tokens: tokens)
+            return session ?? current
+        } catch {
+            clearSession()
+            throw SocialWireError.notAuthenticated
+        }
+    }
+
+    func invalidateSessionAfterUnauthorizedResponse() {
+        clearSession()
     }
 
     nonisolated func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {

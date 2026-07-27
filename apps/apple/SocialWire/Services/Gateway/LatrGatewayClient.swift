@@ -154,6 +154,9 @@ final class LatrGatewayClient {
 
     private func validateResponse(_ http: HTTPURLResponse, data: Data) throws {
         guard (200 ..< 300).contains(http.statusCode) else {
+            if http.statusCode == 401 {
+                auth.invalidateSessionAfterUnauthorizedResponse()
+            }
             if let message = try? JSONDecoder().decode(LatrGatewayErrorBody.self, from: data).resolvedMessage {
                 throw SocialWireError.badResponse(message)
             }

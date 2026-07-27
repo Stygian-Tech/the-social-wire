@@ -150,6 +150,16 @@ struct EffectiveUnreadCountTests {
         )
         #expect(count == 4)
     }
+
+    @Test("raises a cleared baseline when newly cached unread entries arrive")
+    func cachedUnreadRaisesClearedBaseline() {
+        let count = EffectiveUnreadCount.effectivePublicationUnreadCount(
+            serverCount: 0,
+            cachedEntryIds: ["new-entry"],
+            isEntryRead: { _ in false }
+        )
+        #expect(count == 1)
+    }
 }
 
 @Suite("ArticlePresentationResolver")
