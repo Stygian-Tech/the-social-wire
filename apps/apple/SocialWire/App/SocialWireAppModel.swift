@@ -27,7 +27,9 @@ final class SocialWireAppModel {
     var selectedPublication: DiscoveredPublication?
     var selectedEntry: EntryDetail?
     var selectedSavedLink: MergedLatrSave?
+    var selectedSavedSourceKey: String?
     var selectedSidebar: SidebarSelection?
+    var feedSelection: FeedSelection = .topLevel(.subscribed)
     var publicationSidebarTab: PublicationSidebarTab = .subscribed
     var readerListSource: ReaderListSource = .subscribed
     var sidebarFoldersSectionExpanded = true
@@ -49,6 +51,7 @@ final class SocialWireAppModel {
     private var entriesNextCursor: String?
     /// Lexical account preferences returned from **`GET /v1/sync/preferences`** (optional read-later hints).
     var preferencesFromGateway: PreferencesRecord?
+    var feedPreferences: ReaderFeedPreferences = .defaults
     /// Entry id currently open under **Unread** filter — `markRead` is deferred until navigation away.
     private var unreadDeferredEntryId: String?
     /// Bumped when publication selection clears the reader; stale `selectEntry` tasks must not reopen it.
@@ -86,6 +89,7 @@ final class SocialWireAppModel {
     private let bootstrapCoordinator = BootstrapStreamCoordinator()
     private var bootstrapSawSidebarSection = false
     private var bootstrapCompletedAt: Date?
+    private var pendingRestoredFeedSelection: FeedSelection?
     private(set) var sidebarTreeViewModel = SidebarTreeViewModel(
         folders: [],
         folderPublications: [:],
@@ -138,6 +142,37 @@ final class SocialWireAppModel {
 
     var viewerDID: String? {
         authService.session?.did
+    }
+
+    var visibleReaderListSources: [ReaderListSource] {
+        feedPreferences.visibleFeeds
+    }
+
+    var showTopLevelFeedUnreadCounts: Bool {
+        feedPreferences.showTopLevelFeedUnreadCounts
+    }
+
+    func isTopLevelFeedSelected(_ source: ReaderListSource) -> Bool {
+        feedSelection == .topLevel(source)
+    }
+
+    func topLevelUnreadCount(for source: ReaderListSource) -> Int {
+        switch source {
+        case .readLater:
+            savedLinks.filter { save in
+                guard let subjectUri = save.subjectUri else { return true }
+                return readAtByEntryId[subjectUri] == nil && save.lastOpenedAt == nil
+            }.count
+        case .archive:
+            archivedSavedLinks.filter { save in
+                guard let subjectUri = save.subjectUri else { return true }
+                return readAtByEntryId[subjectUri] == nil && save.lastOpenedAt == nil
+            }.count
+        case .subscribed:
+            sumUnread(for: subscribedPublications)
+        case .following:
+            sumUnread(for: followingTabPublications)
+        }
     }
 
     private var useAppViewEntryTimelines: Bool {
@@ -350,6 +385,33 @@ final class SocialWireAppModel {
         return !entriesNextCursor.isEmpty
     }
 
+    var hasSelectedArticleFeed: Bool {
+        if selectedPublication != nil { return true }
+        switch feedSelection {
+        case .topLevel(.subscribed), .topLevel(.following), .folder:
+            return true
+        default:
+            return false
+        }
+    }
+
+    func refreshSelectedArticleFeed() async {
+        if let publication = selectedPublication {
+            await loadEntries(for: publication, forceNetworkRefresh: true)
+            return
+        }
+        switch feedSelection {
+        case .topLevel(.subscribed):
+            await loadAggregateFeed(kind: "subscribed")
+        case .topLevel(.following):
+            await loadAggregateFeed(kind: "following")
+        case .folder(let rkey):
+            await loadAggregateFeed(kind: "folder", id: rkey)
+        default:
+            break
+        }
+    }
+
     var effectiveReadLaterServiceId: String {
         ReadLaterServiceCatalog.defaultServiceId
     }
@@ -557,9 +619,12 @@ final class SocialWireAppModel {
         selectedEntry = nil
         selectedPublication = nil
         selectedSavedLink = nil
+        selectedSavedSourceKey = nil
         selectedSidebar = nil
+        feedSelection = .topLevel(.subscribed)
         viewerProfile = nil
         preferencesFromGateway = nil
+        feedPreferences = .defaults
         unreadDeferredEntryId = nil
         sidebarFetching = false
         folderPublicationsLoading = false
@@ -689,11 +754,12 @@ final class SocialWireAppModel {
         selectedPublication = nil
         selectedEntry = nil
         selectedSavedLink = nil
+        selectedSavedSourceKey = nil
         entries = []
     }
 
     func selectReaderListSource(_ source: ReaderListSource) {
-        guard readerListSource != source else { return }
+        guard readerListSource != source || feedSelection != .topLevel(source) else { return }
         selectedEntry = nil
         unreadDeferredEntryId = nil
         applyReaderListSource(source, persist: true)
@@ -701,8 +767,13 @@ final class SocialWireAppModel {
 
     private func applyReaderListSource(_ source: ReaderListSource, persist: Bool) {
         readerListSource = source
+        feedSelection = .topLevel(source)
+        selectedSavedSourceKey = nil
         if persist {
             ReaderListSourceStorage.save(source)
+            if let viewerDID {
+                FeedSelectionStorage.save(feedSelection, viewerDid: viewerDID)
+            }
         }
 
         switch source {
@@ -718,13 +789,132 @@ final class SocialWireAppModel {
             selectedPublication = nil
             selectedSavedLink = nil
             entries = []
+            if persist {
+                Task { await loadAggregateFeed(kind: "subscribed") }
+            }
         case .following:
             publicationSidebarTab = .following
             selectedSidebar = nil
             selectedPublication = nil
             selectedSavedLink = nil
             entries = []
+            if persist {
+                Task { await loadAggregateFeed(kind: "following") }
+            }
         }
+    }
+
+    func selectFolderFeed(folderRkey: String) async {
+        prepareForPublicationSelection()
+        readerListSource = .subscribed
+        publicationSidebarTab = .subscribed
+        feedSelection = .folder(folderRkey)
+        if let viewerDID {
+            FeedSelectionStorage.save(feedSelection, viewerDid: viewerDID)
+        }
+        selectedSidebar = nil
+        selectedPublication = nil
+        entries = []
+        await loadAggregateFeed(kind: "folder", id: folderRkey)
+    }
+
+    private func loadAggregateFeed(
+        kind: String,
+        id: String? = nil,
+        cursor: String? = nil
+    ) async {
+        if cursor == nil {
+            entriesNextCursor = nil
+            entriesPaginationTriggeredForEntryId = nil
+            isLoadingEntries = true
+        } else {
+            isLoadingMoreEntries = true
+        }
+        defer {
+            if cursor == nil { isLoadingEntries = false }
+            else { isLoadingMoreEntries = false }
+        }
+        do {
+            let page = try await gateway.fetchAggregateAppViewFeed(
+                kind: kind,
+                id: id,
+                filter: readerFilter,
+                cursor: cursor
+            )
+            entries = cursor == nil
+                ? page.entries
+                : mergeEntryPages(existing: entries, newPage: page.entries)
+            entriesNextCursor = page.cursor
+            await prefetchThumbnailImages(for: page.entries)
+        } catch {
+            markAppViewUnavailableIfNeeded(error)
+            if entries.isEmpty { errorMessage = error.localizedDescription }
+        }
+    }
+
+    func loadMoreSelectedFeedIfNeeded(triggeredByEntryId entryId: String) async {
+        guard entriesPaginationTriggeredForEntryId != entryId else { return }
+        entriesPaginationTriggeredForEntryId = entryId
+        guard let cursor = entriesNextCursor,
+              !isLoadingEntries,
+              !isLoadingMoreEntries
+        else { return }
+        switch feedSelection {
+        case .topLevel(.subscribed):
+            await loadAggregateFeed(kind: "subscribed", cursor: cursor)
+        case .topLevel(.following):
+            await loadAggregateFeed(kind: "following", cursor: cursor)
+        case .folder(let rkey):
+            await loadAggregateFeed(kind: "folder", id: rkey, cursor: cursor)
+        default:
+            entriesPaginationTriggeredForEntryId = nil
+        }
+    }
+
+    func setFeedVisible(_ source: ReaderListSource, visible: Bool) async {
+        var next = feedPreferences.visibleFeeds
+        if visible {
+            if !next.contains(source) { next.append(source) }
+        } else {
+            guard next.count > 1 else { return }
+            next.removeAll { $0 == source }
+        }
+        feedPreferences = ReaderFeedPreferences(
+            visibleFeeds: next,
+            showTopLevelFeedUnreadCounts: feedPreferences.showTopLevelFeedUnreadCounts
+        )
+        if let viewerDID {
+            ReaderFeedPreferencesStorage.save(feedPreferences, viewerDid: viewerDID)
+        }
+        if feedSelection == .topLevel(source), !visible,
+           let replacement = nextVisibleReaderFeed(after: source, among: next) {
+            selectReaderListSource(replacement)
+        }
+        try? await pds.upsertFeedDisplayPreferences(feedPreferences)
+    }
+
+    func setShowTopLevelFeedUnreadCounts(_ show: Bool) async {
+        feedPreferences.showTopLevelFeedUnreadCounts = show
+        if let viewerDID {
+            ReaderFeedPreferencesStorage.save(feedPreferences, viewerDid: viewerDID)
+        }
+        try? await pds.upsertFeedDisplayPreferences(feedPreferences)
+    }
+
+    private func nextVisibleReaderFeed(
+        after source: ReaderListSource,
+        among visible: [ReaderListSource]
+    ) -> ReaderListSource? {
+        guard let start = ReaderListSource.allCases.firstIndex(of: source) else {
+            return visible.first
+        }
+        for offset in 1 ... ReaderListSource.allCases.count {
+            let candidate = ReaderListSource.allCases[
+                (start + offset) % ReaderListSource.allCases.count
+            ]
+            if visible.contains(candidate) { return candidate }
+        }
+        return visible.first
     }
 
     func refreshAll() async {
@@ -735,6 +925,15 @@ final class SocialWireAppModel {
     /// Bootstrap stream + sidebar snapshot only (pull-to-refresh on Publications pane).
     func refreshSidebarProjection() async {
         guard let viewerDID else { return }
+        if let cachedFeedPreferences = ReaderFeedPreferencesStorage.load(viewerDid: viewerDID) {
+            feedPreferences = cachedFeedPreferences
+            if case let .topLevel(source) = feedSelection,
+               !feedPreferences.visibleFeeds.contains(source),
+               let replacement = feedPreferences.visibleFeeds.first {
+                applyReaderListSource(replacement, persist: true)
+            }
+        }
+        pendingRestoredFeedSelection = FeedSelectionStorage.load(viewerDid: viewerDID)
         loadSidebarExpandedKeys(for: viewerDID)
         isLoading = true
         sidebarFetching = true
@@ -751,6 +950,7 @@ final class SocialWireAppModel {
         do {
             await gateway.warmGatewayDpopNonce()
             try await refreshPublicationSidebarFromBootstrapStream(viewerDID: viewerDID)
+            await restorePersistedFeedSelectionIfPossible()
             bootstrapCompletedAt = Date()
             persistSidebarSnapshot(viewerDid: viewerDID)
             Task(priority: .utility) { [weak self] in
@@ -1269,6 +1469,10 @@ final class SocialWireAppModel {
             return
         }
         preferencesFromGateway = envelope.record
+        feedPreferences = ReaderFeedPreferences(record: envelope.record)
+        if let viewerDID {
+            ReaderFeedPreferencesStorage.save(feedPreferences, viewerDid: viewerDID)
+        }
     }
 
     private func prefetchSidebarPublicationsLimited() async {
@@ -1489,6 +1693,10 @@ final class SocialWireAppModel {
         prepareForPublicationSelection()
         selectedPublication = publication
         selectedSidebar = .publication(publication.publicationId)
+        feedSelection = .publication(publication.publicationId)
+        if let viewerDID {
+            FeedSelectionStorage.save(feedSelection, viewerDid: viewerDID)
+        }
         await loadEntries(for: publication)
     }
 
@@ -1616,12 +1824,14 @@ final class SocialWireAppModel {
             return
         }
 
-        if newValue == .unread, let publication = selectedPublication {
+        if newValue == .unread {
             entries = []
             entriesNextCursor = nil
             entriesPaginationTriggeredForEntryId = nil
-            await loadEntries(for: publication, forceNetworkRefresh: true)
-            if filteredEntries.isEmpty, canLoadMoreEntries {
+            await refreshSelectedArticleFeed()
+            if let publication = selectedPublication,
+               filteredEntries.isEmpty,
+               canLoadMoreEntries {
                 await chaseUnreadPagesIfNeeded(for: publication)
             }
         }
@@ -1936,6 +2146,89 @@ final class SocialWireAppModel {
 
     var currentSavedLinks: [MergedLatrSave] {
         readerListSource == .archive ? archivedSavedLinks : savedLinks
+    }
+
+    var filteredCurrentSavedLinks: [MergedLatrSave] {
+        guard let selectedSavedSourceKey else { return currentSavedLinks }
+        return currentSavedLinks.filter {
+            savedFeedSourceKey(for: $0) == selectedSavedSourceKey
+        }
+    }
+
+    var currentSavedFeedSources: [SavedFeedSource] {
+        var models: [String: SavedLinkPublicationChipModel] = [:]
+        var counts: [String: Int] = [:]
+        for save in currentSavedLinks {
+            guard let key = savedFeedSourceKey(for: save),
+                  let model = resolvedSavedLinkPublicationChip(for: save)
+            else { continue }
+            models[key] = model
+            counts[key, default: 0] += 1
+        }
+        return models.map { key, model in
+            SavedFeedSource(id: key, model: model, count: counts[key] ?? 0)
+        }
+        .sorted { $0.model.name.localizedCaseInsensitiveCompare($1.model.name) == .orderedAscending }
+    }
+
+    func selectSavedFeedSource(_ source: SavedFeedSource) {
+        selectedSavedSourceKey = source.id
+        selectedSavedLink = nil
+        feedSelection = .savedSource(readerListSource, source.id)
+        if let viewerDID {
+            FeedSelectionStorage.save(feedSelection, viewerDid: viewerDID)
+        }
+    }
+
+    private func restorePersistedFeedSelectionIfPossible() async {
+        guard let selection = pendingRestoredFeedSelection else { return }
+        switch selection {
+        case .topLevel(let source):
+            guard feedPreferences.visibleFeeds.contains(source) else {
+                pendingRestoredFeedSelection = nil
+                return
+            }
+            pendingRestoredFeedSelection = nil
+            applyReaderListSource(source, persist: true)
+        case .folder(let folderRkey):
+            guard folders.contains(where: { rkey(from: $0.uri) == folderRkey }) else {
+                pendingRestoredFeedSelection = nil
+                return
+            }
+            pendingRestoredFeedSelection = nil
+            await selectFolderFeed(folderRkey: folderRkey)
+        case .publication(let publicationId):
+            guard let publication = publication(forId: publicationId) else {
+                pendingRestoredFeedSelection = nil
+                return
+            }
+            pendingRestoredFeedSelection = nil
+            await selectPublication(publication)
+        case .savedSource(let source, let sourceId):
+            guard source == .readLater || source == .archive,
+                  feedPreferences.visibleFeeds.contains(source)
+            else {
+                pendingRestoredFeedSelection = nil
+                return
+            }
+            applyReaderListSource(source, persist: true)
+            await refreshSavedLinks()
+            guard let savedSource = currentSavedFeedSources.first(where: { $0.id == sourceId }) else {
+                pendingRestoredFeedSelection = nil
+                return
+            }
+            pendingRestoredFeedSelection = nil
+            selectSavedFeedSource(savedSource)
+        }
+    }
+
+    private func savedFeedSourceKey(for save: MergedLatrSave) -> String? {
+        guard let chip = resolvedSavedLinkPublicationChip(for: save) else { return nil }
+        if let host = chip.homepageURL?.host?.lowercased() {
+            return "site:\(host.replacingOccurrences(of: "^www\\.", with: "", options: .regularExpression))"
+        }
+        let normalized = chip.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return normalized.isEmpty ? nil : "site:\(normalized)"
     }
 
     func refreshSavedLinks() async {

@@ -10,19 +10,28 @@ import {
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
 import type { PublicationTab } from "./appSidebarConstants";
+import { SidebarMenuBadge } from "@/components/ui/sidebar";
 
 export function PublicationTabs({
   activeTab,
   onTabChange,
+  subscribedUnread = 0,
+  followingUnread = 0,
+  showUnreadCounts = true,
+  visibleTabs = ["subscribed", "following"],
 }: {
-  activeTab: PublicationTab;
+  activeTab: PublicationTab | null;
   onTabChange: (tab: PublicationTab) => void;
+  subscribedUnread?: number;
+  followingUnread?: number;
+  showUnreadCounts?: boolean;
+  visibleTabs?: PublicationTab[];
 }) {
   return (
     <SidebarGroup className="pb-1 pt-1">
       <SidebarGroupLabel>Feeds</SidebarGroupLabel>
       <SidebarMenu className="gap-0.5" role="tablist" aria-label="Publication Source">
-        <SidebarMenuItem>
+        {visibleTabs.includes("subscribed") ? <SidebarMenuItem>
           <SidebarMenuButton
             type="button"
             role="tab"
@@ -32,9 +41,12 @@ export function PublicationTabs({
           >
             <Rss />
             <span>Subscribed</span>
+            {showUnreadCounts && subscribedUnread > 0 ? (
+              <SidebarMenuBadge>{subscribedUnread}</SidebarMenuBadge>
+            ) : null}
           </SidebarMenuButton>
-        </SidebarMenuItem>
-        <SidebarMenuItem>
+        </SidebarMenuItem> : null}
+        {visibleTabs.includes("following") ? <SidebarMenuItem>
           <SidebarMenuButton
             type="button"
             role="tab"
@@ -44,8 +56,11 @@ export function PublicationTabs({
           >
             <Users />
             <span>Following</span>
+            {showUnreadCounts && followingUnread > 0 ? (
+              <SidebarMenuBadge>{followingUnread}</SidebarMenuBadge>
+            ) : null}
           </SidebarMenuButton>
-        </SidebarMenuItem>
+        </SidebarMenuItem> : null}
       </SidebarMenu>
     </SidebarGroup>
   );

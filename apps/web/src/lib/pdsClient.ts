@@ -135,6 +135,8 @@ export interface PreferencesRecord {
       ReadLaterConnectionPreference
     >
   >;
+  visibleFeeds?: Array<"readLater" | "archive" | "subscribed" | "following">;
+  showTopLevelFeedUnreadCounts?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -197,6 +199,7 @@ export type MergedLatrSave =
       itemUri: string;
       subjectUri: string;
       state?: "unread" | "archived";
+      lastOpenedAt?: string;
       title?: string;
       excerpt?: string;
       image?: string;
@@ -213,6 +216,7 @@ export type MergedLatrSave =
       itemUri: string;
       subjectUri: string;
       state?: "unread" | "archived";
+      lastOpenedAt?: string;
       title?: string;
       excerpt?: string;
       url?: string;
@@ -338,6 +342,7 @@ export function mergeExternalsAndItemsToHttpsRows(
         itemUri: itemRec.uri,
         subjectUri,
         ...(itemRec.value.state ? { state: itemRec.value.state } : {}),
+        ...(itemRec.value.lastOpenedAt ? { lastOpenedAt: itemRec.value.lastOpenedAt } : {}),
         ...metadata,
       });
       continue;
@@ -358,6 +363,7 @@ export function mergeExternalsAndItemsToHttpsRows(
       itemUri: itemRec.uri,
       subjectUri,
       ...(itemRec.value.state ? { state: itemRec.value.state } : {}),
+      ...(itemRec.value.lastOpenedAt ? { lastOpenedAt: itemRec.value.lastOpenedAt } : {}),
       ...mergeLatrSaveMetadata(ext.value, itemRec.value),
     });
   }
@@ -404,6 +410,7 @@ export function mergedLatrSavesFromGatewayItems(
         itemUri: itemRec.uri,
         subjectUri,
         ...(itemRec.value.state ? { state: itemRec.value.state } : {}),
+        ...(itemRec.value.lastOpenedAt ? { lastOpenedAt: itemRec.value.lastOpenedAt } : {}),
         ...metadata,
       });
       continue;
@@ -425,6 +432,7 @@ export function mergedLatrSavesFromGatewayItems(
       itemUri: itemRec.uri,
       subjectUri,
       ...(itemRec.value.state ? { state: itemRec.value.state } : {}),
+      ...(itemRec.value.lastOpenedAt ? { lastOpenedAt: itemRec.value.lastOpenedAt } : {}),
       ...metadata,
     });
   }
@@ -834,7 +842,13 @@ export class PDSClient {
 
   async upsertPreferences(
     updates: Partial<
-      Pick<PreferencesRecord, "readLaterService" | "readLaterConnections">
+      Pick<
+        PreferencesRecord,
+        | "readLaterService"
+        | "readLaterConnections"
+        | "visibleFeeds"
+        | "showTopLevelFeedUnreadCounts"
+      >
     >,
     existing: RepoRecord<PreferencesRecord> | null | undefined = undefined
   ): Promise<{ uri: string; cid: string }> {
@@ -848,6 +862,13 @@ export class PDSClient {
       ...(prev?.readLaterService ? { readLaterService: prev.readLaterService } : {}),
       ...(prev?.readLaterConnections
         ? { readLaterConnections: prev.readLaterConnections }
+        : {}),
+      ...(prev?.visibleFeeds ? { visibleFeeds: prev.visibleFeeds } : {}),
+      ...(prev?.showTopLevelFeedUnreadCounts !== undefined
+        ? {
+            showTopLevelFeedUnreadCounts:
+              prev.showTopLevelFeedUnreadCounts,
+          }
         : {}),
       ...updates,
     };

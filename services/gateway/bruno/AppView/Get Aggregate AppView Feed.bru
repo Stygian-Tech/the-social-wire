@@ -1,0 +1,20 @@
+meta {
+  name: Get Aggregate AppView Feed
+  type: http
+  seq: 21
+}
+
+get {
+  url: {{baseUrl}}/v1/appview/feed?kind=subscribed&filter={{appViewFilter}}&limit={{appViewLimit}}
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}
+
+docs {
+  Gateway proxy for the viewer-scoped aggregate AppView feed.
+}

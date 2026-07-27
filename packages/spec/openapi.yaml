@@ -86,6 +86,9 @@ components:
           description: |
             Canonical article HTTPS URL when known (RSS link, render `articleUrl`, etc.).
             Omitted for entries without a resolvable web permalink.
+        publicationId:
+          type: string
+          description: Viewer-scoped canonical publication identity, present for aggregate feeds.
         isRead:
           type: boolean
           default: false
@@ -1425,6 +1428,65 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           description: Route disabled when thin AppView flag is unset.
+
+  /v1/appview/feed:
+    get:
+      operationId: listAggregateAppViewFeed
+      summary: Paginated viewer-scoped aggregate feed
+      description: |
+        Resolves publication membership from the authenticated viewer's sidebar projection.
+        Clients cannot provide arbitrary publication scopes.
+      tags: [AppView]
+      parameters:
+        - name: kind
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [subscribed, following, folder, publication]
+        - name: id
+          in: query
+          schema:
+            type: string
+          description: Required folder rkey/URI or publication ID for matching feed kinds.
+        - name: filter
+          in: query
+          schema:
+            type: string
+            enum: [all, unread, read]
+            default: all
+        - name: cursor
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+            maximum: 100
+      responses:
+        "200":
+          description: Globally ordered aggregate entry page.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [entries]
+                properties:
+                  entries:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/EntryListItem"
+                  cursor:
+                    type: string
+                    nullable: true
+        "400":
+          description: Invalid feed kind or missing required identifier.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Feed is not available to the authenticated viewer.
 
   /v1/appview/entries:
     get:

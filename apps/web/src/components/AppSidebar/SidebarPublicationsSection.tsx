@@ -18,7 +18,6 @@ import { SidebarMenuSubItem } from "@/components/ui/sidebar";
 export type SidebarPublicationsSectionProps = {
   publications: DiscoveredPublication[];
   publicationUnreadCounts: Map<string, number>;
-  publicationsSectionUnread: number;
   selectedPubId: string | null;
   onSelectPub: (pubId: string) => void;
   folders: RepoRecord<FolderRecord>[];
@@ -32,7 +31,6 @@ export type SidebarPublicationsSectionProps = {
 function SidebarPublicationsSectionInner({
   publications,
   publicationUnreadCounts,
-  publicationsSectionUnread,
   selectedPubId,
   onSelectPub,
   folders,
@@ -50,7 +48,7 @@ function SidebarPublicationsSectionInner({
   return (
     <CollapsibleSidebarSubSection
       title="Publications"
-      unreadCount={publicationsSectionUnread}
+      unreadCount={0}
       subAriaLabel={subAriaLabel}
       readBulkPublications={publications}
       readBulkMarkAllReadConfirmation={readBulkMarkAllReadConfirmation}

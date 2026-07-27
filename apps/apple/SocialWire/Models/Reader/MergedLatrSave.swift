@@ -111,6 +111,13 @@ enum MergedLatrSave: Identifiable, Codable, Equatable, Hashable, Sendable {
         }
     }
 
+    var lastOpenedAt: String? {
+        switch self {
+        case .external(let save): save.lastOpenedAt
+        case .native(let save): save.lastOpenedAt
+        }
+    }
+
     var linkedWebUrl: String? {
         switch self {
         case .external(let save): save.linkedWebUrl

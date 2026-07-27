@@ -23,6 +23,8 @@ import {
   articleListCardButtonClassName,
   articleListCardWrapperClassName,
 } from "@/lib/articleListCardStyles";
+import { PublicationChip } from "@/components/shared/PublicationChip";
+import { useSidebarProjection } from "@/contexts/PublicationSidebarContext";
 
 interface EntryRowProps {
   entry: EntryListItem;
@@ -66,6 +68,12 @@ export function EntryRow({
     [entry.summary],
   );
   const [attemptIdx, setAttemptIdx] = useState(0);
+  const { allPublicationRows } = useSidebarProjection();
+  const publication = entry.publicationId
+    ? allPublicationRows.find(
+        (row) => row.publicationId === entry.publicationId,
+      )
+    : undefined;
 
   const activeThumbSrc =
     thumbAttempts.length > 0 && attemptIdx < thumbAttempts.length
@@ -122,6 +130,21 @@ export function EntryRow({
           ) : null}
         </div>
         <div className="relative min-w-0 px-4 py-3 pr-10">
+          {publication ? (
+            <div
+              className="mb-2 max-w-full"
+              onClick={(event) => event.stopPropagation()}
+              onKeyDown={(event) => event.stopPropagation()}
+            >
+              <PublicationChip
+                publication={{
+                  name: publication.title,
+                  faviconUrl:
+                    publication.iconUrl ?? publication.avatarUrl,
+                }}
+              />
+            </div>
+          ) : null}
           <div className="absolute right-1 top-2 z-10">
             <DropdownMenu>
               <DropdownMenuTrigger

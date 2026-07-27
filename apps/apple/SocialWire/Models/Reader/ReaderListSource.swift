@@ -1,13 +1,32 @@
 import Foundation
 
 /// Top-level list bucket on the compact lists pane (Read Later / Archive / Subscribed / Following).
-enum ReaderListSource: String, CaseIterable, Identifiable, Hashable {
+enum ReaderListSource: String, CaseIterable, Codable, Identifiable, Hashable {
     case readLater = "Read Later"
     case archive = "Archive"
     case subscribed = "Subscribed"
     case following = "Following"
 
     var id: String { rawValue }
+
+    var preferenceKey: String {
+        switch self {
+        case .readLater: "readLater"
+        case .archive: "archive"
+        case .subscribed: "subscribed"
+        case .following: "following"
+        }
+    }
+
+    init?(preferenceKey: String) {
+        switch preferenceKey {
+        case "readLater": self = .readLater
+        case "archive": self = .archive
+        case "subscribed": self = .subscribed
+        case "following": self = .following
+        default: return nil
+        }
+    }
 
     var systemImage: String {
         switch self {

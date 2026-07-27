@@ -2,8 +2,60 @@ import Foundation
 import Testing
 @testable import SocialWire
 
+@Suite("Unified feed selection")
+struct UnifiedFeedSelectionTests {
+    @Test("selection cases remain exclusive")
+    func selectionCasesRemainDistinct() {
+        let selections: Set<FeedSelection> = [
+            .topLevel(.subscribed),
+            .folder("folder-one"),
+            .publication("at://did:plc:example/site.standard.publication/main"),
+            .savedSource(.readLater, "site:example.com"),
+        ]
+
+        #expect(selections.count == 4)
+        #expect(FeedSelection.topLevel(.following).topLevelSource == .following)
+        #expect(FeedSelection.folder("folder-one").topLevelSource == nil)
+    }
+
+    @Test("preference decoding defaults additive fields and preserves order")
+    func preferenceDefaultsAndFallback() {
+        let defaults = ReaderFeedPreferences(record: nil)
+        #expect(defaults.visibleFeeds == ReaderListSource.allCases)
+        #expect(defaults.showTopLevelFeedUnreadCounts)
+
+        let record = PreferencesRecord(
+            type: "app.thesocialwire.preferences",
+            readLaterService: nil,
+            readLaterConnections: nil,
+            visibleFeeds: ["following", "readLater"],
+            showTopLevelFeedUnreadCounts: false,
+            createdAt: "2026-07-26T00:00:00Z",
+            updatedAt: "2026-07-26T00:00:00Z"
+        )
+        let preferences = ReaderFeedPreferences(record: record)
+        #expect(preferences.visibleFeeds == [.following, .readLater])
+        #expect(!preferences.showTopLevelFeedUnreadCounts)
+    }
+}
+
 @Suite("PublicationUnreadCountLookup")
 struct PublicationUnreadCountLookupTests {
+    @Test("top-level sums count each publication once")
+    func aggregateSumsDeduplicateMembers() {
+        let publication = DiscoveredPublication(
+            publicationId: "at://did:plc:abc/site.standard.publication/main",
+            subscriptionPublicationId: nil,
+            authorDid: "did:plc:abc",
+            authorHandle: "",
+            title: "Example",
+            iconUrl: nil,
+            avatarUrl: nil,
+            discoveredAt: "2026-07-26T00:00:00Z"
+        )
+        #expect(sumUnreadCount(for: [publication, publication]) { _ in 4 } == 4)
+    }
+
     @Test("lookup matches URL-encoded publication ids")
     func lookupMatchesEncodedPublicationIds() {
         let canonical = "at://did:plc:abc/site.standard.publication/rkey1"

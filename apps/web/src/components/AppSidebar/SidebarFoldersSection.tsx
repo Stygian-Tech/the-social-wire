@@ -6,7 +6,6 @@ import { FolderBranch } from "./FolderBranch";
 import { NewFolderDialog } from "./NewFolderDialog";
 import { SidebarReadBulkMenuWrap } from "./SidebarReadBulkMenuWrap";
 import { SidebarSubMenuSkeletonRows } from "./SidebarSubMenuSkeletonRows";
-import { SidebarSectionUnreadBadge } from "./SidebarSectionUnreadBadge";
 import { folderExpandKey } from "@/lib/sidebarExpandedKeysStorage";
 import type { DiscoveredPublication } from "@/lib/atprotoClient";
 import type {
@@ -22,12 +21,12 @@ export type SidebarFoldersSectionProps = {
   folderMap: Map<string, DiscoveredPublication[]>;
   foldersListLoading: boolean;
   folderPublicationsLoading: boolean;
-  foldersSectionUnread: number;
   effectiveExpandedKeys: Set<string>;
   selectedFolderUri: string | null;
   selectedPubId: string | null;
   onSelectPub: (pubId: string) => void;
   onToggleFolder: (expandKey: string) => void;
+  onSelectFolder: (folderUri: string, folderRkey: string) => void;
   prefsMap: Map<string, RepoRecord<PublicationPrefsRecord>>;
   publicationUnreadCounts: Map<string, number>;
   allFolderedPublicationsForBulk: DiscoveredPublication[];
@@ -38,12 +37,12 @@ function SidebarFoldersSectionInner({
   folderMap,
   foldersListLoading,
   folderPublicationsLoading,
-  foldersSectionUnread,
   effectiveExpandedKeys,
   selectedFolderUri,
   selectedPubId,
   onSelectPub,
   onToggleFolder,
+  onSelectFolder,
   prefsMap,
   publicationUnreadCounts,
   allFolderedPublicationsForBulk,
@@ -61,7 +60,6 @@ function SidebarFoldersSectionInner({
       >
         <div className="flex h-6 w-full min-w-0 items-center gap-2 pl-2 pr-1 text-xs font-medium text-sidebar-foreground/70">
           <span className="min-w-0 flex-1 truncate">Folders</span>
-          <SidebarSectionUnreadBadge count={foldersSectionUnread} />
         </div>
       </SidebarReadBulkMenuWrap>
       <SidebarMenuSub aria-label="Folders">
@@ -77,9 +75,12 @@ function SidebarFoldersSectionInner({
                 expandKey={expandKey}
                 folderUri={f.uri}
                 folder={f.value}
-                isActive={selectedFolderUri === f.uri}
+                isActive={
+                  selectedFolderUri === f.uri || selectedFolderUri === rkey
+                }
                 expanded={effectiveExpandedKeys.has(expandKey)}
                 onToggleExpanded={() => onToggleFolder(expandKey)}
+                onSelectFolder={() => onSelectFolder(f.uri, rkey)}
                 publications={folderMap.get(rkey) ?? []}
                 emptyLabel="No publications in this folder."
                 selectedPubId={selectedPubId}

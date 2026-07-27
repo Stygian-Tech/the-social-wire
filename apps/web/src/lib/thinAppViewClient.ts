@@ -18,6 +18,11 @@ export type AppViewEntriesPage = {
   cursor?: string;
 };
 
+export type AggregateAppViewFeed = {
+  kind: "subscribed" | "following" | "folder" | "publication";
+  id?: string;
+};
+
 export type AppViewUnreadCountsResponse = {
   counts: Record<string, number>;
   generation?: number;
@@ -106,6 +111,70 @@ export async function listEntriesFromAppView(args: {
         publishedAt: row.publishedAt,
         thumbnailUrl: row.thumbnailUrl,
         thumbnailFallbackUrl: row.thumbnailFallbackUrl,
+        ...(normalizedOriginal ? { originalUrl: normalizedOriginal } : {}),
+      };
+    }),
+    cursor: json.cursor,
+  };
+}
+
+export async function listAggregateFeedFromAppView(args: {
+  feed: AggregateAppViewFeed;
+  cursor?: string;
+  limit?: number;
+  filter?: ArticleListFilter;
+  oauthSession: OAuthSession;
+  signal?: AbortSignal;
+}): Promise<AppViewEntriesPage> {
+  const {
+    feed,
+    cursor,
+    limit = 50,
+    filter = "all",
+    oauthSession,
+    signal,
+  } = args;
+  const params = new URLSearchParams({
+    kind: feed.kind,
+    filter,
+    limit: String(limit),
+  });
+  if (feed.id) params.set("id", feed.id);
+  if (cursor) params.set("cursor", cursor);
+  const res = await gatewayFetch(
+    oauthSession,
+    `/v1/appview/feed?${params.toString()}`,
+    { method: "GET", signal },
+  );
+  if (!res.ok) {
+    throw new Error(`Aggregate AppView feed failed (${res.status})`);
+  }
+  const json = (await res.json()) as {
+    entries?: Array<{
+      entryId: string;
+      title: string;
+      summary?: string;
+      publishedAt: string;
+      thumbnailUrl?: string;
+      thumbnailFallbackUrl?: string;
+      originalUrl?: string;
+      publicationId?: string;
+    }>;
+    cursor?: string;
+  };
+  return {
+    entries: (json.entries ?? []).map((row) => {
+      const normalizedOriginal = row.originalUrl?.trim()
+        ? normalizeHttpUrlToHttps(row.originalUrl)
+        : undefined;
+      return {
+        entryId: row.entryId,
+        title: row.title,
+        summary: row.summary,
+        publishedAt: row.publishedAt,
+        thumbnailUrl: row.thumbnailUrl,
+        thumbnailFallbackUrl: row.thumbnailFallbackUrl,
+        publicationId: row.publicationId,
         ...(normalizedOriginal ? { originalUrl: normalizedOriginal } : {}),
       };
     }),

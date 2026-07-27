@@ -111,7 +111,11 @@ export function sumUnreadForPublications(
   publicationUnreadCounts: Map<string, number>
 ): number {
   let sum = 0;
+  const seen = new Set<string>();
   for (const pub of publications) {
+    const key = normalizeAtRepoParam(pub.publicationId);
+    if (seen.has(key)) continue;
+    seen.add(key);
     sum += lookupUnreadCountInMap(publicationUnreadCounts, pub.publicationId);
   }
   return sum;

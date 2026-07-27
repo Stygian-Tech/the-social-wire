@@ -11,20 +11,20 @@ struct ListsView: View {
 
     var body: some View {
         List {
-            ForEach(ReaderListSource.allCases) { source in
+            ForEach(appModel.visibleReaderListSources) { source in
                 Button {
                     onListSourceTap(source)
                 } label: {
                     HStack {
                         Label(source.rawValue, systemImage: source.systemImage)
                         Spacer(minLength: 8)
-                        if source == .readLater {
+                        if appModel.showTopLevelFeedUnreadCounts {
                             SidebarCountLabel(
-                                count: appModel.savedLinks.count,
-                                accessibilityDescription: "saved links"
+                                count: appModel.topLevelUnreadCount(for: source),
+                                accessibilityDescription: "unread articles"
                             )
                         }
-                        if appModel.readerListSource == source {
+                        if appModel.isTopLevelFeedSelected(source) {
                             Image(systemName: "checkmark")
                                 .foregroundStyle(Color.accentColor)
                                 .accessibilityHidden(true)
@@ -34,7 +34,7 @@ struct ListsView: View {
                 }
                 .buttonStyle(.plain)
                 .readerClearListRow()
-                .accessibilityAddTraits(appModel.readerListSource == source ? .isSelected : [])
+                .accessibilityAddTraits(appModel.isTopLevelFeedSelected(source) ? .isSelected : [])
             }
         }
         .readerListCanvas()

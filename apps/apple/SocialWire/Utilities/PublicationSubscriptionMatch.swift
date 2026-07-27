@@ -142,7 +142,12 @@ func sumUnreadCount(
     for publications: [DiscoveredPublication],
     unreadCount: (DiscoveredPublication) -> Int
 ) -> Int {
-    publications.reduce(0) { $0 + unreadCount($1) }
+    var seen: Set<String> = []
+    return publications.reduce(0) { total, publication in
+        let key = normalizeATRepoParam(publication.publicationId)
+        guard seen.insert(key).inserted else { return total }
+        return total + unreadCount(publication)
+    }
 }
 
 /// Unread-count map keys (mirrors web `lookupUnreadCountInMap` — normalized equality only).

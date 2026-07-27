@@ -211,7 +211,7 @@ struct MainSplitView: View {
     private var articlesColumn: some View {
         if appModel.selectedSidebar == .myPublications {
             PublicationCollectionView(title: "My Publications", publications: appModel.myPublications)
-        } else if appModel.selectedPublication != nil {
+        } else if appModel.hasSelectedArticleFeed {
             EntryListView(
                 navigationEpoch: compact ? { compactNavigationEpoch } : nil,
                 onEntryOpened: compact ? { epoch in
@@ -288,7 +288,11 @@ struct MainSplitView: View {
 
     private func openListSource(_ source: ReaderListSource) {
         appModel.selectReaderListSource(source)
-        navigateCompactPane(CompactReaderNavigation.paneAfterListSource(source), animated: true)
+        let target: ReaderPane =
+            source.compactUsesArticlesPane
+                ? .articles
+                : CompactReaderNavigation.paneAfterListSource(source)
+        navigateCompactPane(target, animated: true)
     }
 
     private func openPublication(_ publication: DiscoveredPublication) {
@@ -320,8 +324,10 @@ struct MainSplitView: View {
                 // Compact publications pane: keep the active publication when clearing list
                 // selection so re-tapping the same row can navigate back to Articles.
                 if !(compact && compactPane == .publications) {
-                    appModel.selectedPublication = nil
-                    appModel.entries = []
+                    if case .publication = appModel.feedSelection {
+                        appModel.selectedPublication = nil
+                        appModel.entries = []
+                    }
                 }
             }
             return

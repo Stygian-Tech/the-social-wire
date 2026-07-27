@@ -17,6 +17,8 @@ import {
   enrollAuthorsInAppView,
   isThinAppViewEnabled,
   listEntriesFromAppView,
+  listAggregateFeedFromAppView,
+  type AggregateAppViewFeed,
 } from "@/lib/thinAppViewClient";
 import { PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY } from "@/hooks/usePublicationSidebarData";
 import { usePublicationSidebarProjection } from "@/hooks/usePublicationSidebarProjection";
@@ -216,6 +218,36 @@ export function useEntries(
   }, [query.data]);
 
   return { ...query, scopePending };
+}
+
+export function useAggregateFeedEntries(
+  feed: AggregateAppViewFeed | null,
+  articleFilter: ArticleListFilter = "all",
+) {
+  const { session, getOAuthSession } = useAuth();
+  const queryKey = feed ? `${feed.kind}:${feed.id ?? ""}` : "";
+  return useInfiniteQuery({
+    queryKey: ["aggregateEntries", queryKey, articleFilter] as const,
+    queryFn: async ({ pageParam, signal }) => {
+      if (!feed) return { entries: [], cursor: undefined };
+      const oauth = getOAuthSession();
+      if (!oauth) throw new Error("OAuth session required");
+      return listAggregateFeedFromAppView({
+        feed,
+        cursor: pageParam,
+        filter: articleFilter,
+        oauthSession: oauth,
+        signal,
+      });
+    },
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: entriesNextPageParam,
+    enabled: !!feed && !!session,
+    staleTime: ENTRIES_QUERY_STALE_MS,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+    gcTime: 1000 * 60 * 60 * 24,
+  });
 }
 
 /**

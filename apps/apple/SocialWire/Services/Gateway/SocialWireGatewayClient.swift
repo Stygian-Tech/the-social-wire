@@ -236,6 +236,31 @@ final class SocialWireGatewayClient {
         return try JSONDecoder().decode(AppViewEntryListResponse.self, from: result.body)
     }
 
+    func fetchAggregateAppViewFeed(
+        kind: String,
+        id: String? = nil,
+        filter: ReaderFilter,
+        cursor: String?,
+        limit: Int = 50
+    ) async throws -> AppViewEntryListResponse {
+        var query: [String: String] = [
+            "kind": kind,
+            "filter": filter == .unread ? "unread" : "all",
+            "limit": String(limit),
+        ]
+        if let id, !id.isEmpty { query["id"] = id }
+        if let cursor, !cursor.isEmpty { query["cursor"] = cursor }
+        let result = try await authorizedGET(
+            path: "/v1/appview/feed",
+            query: query,
+            ifNoneMatch: nil
+        )
+        guard (200 ..< 300).contains(result.statusCode) else {
+            throw SocialWireError.badResponse("Aggregate AppView feed failed (\(result.statusCode)).")
+        }
+        return try JSONDecoder().decode(AppViewEntryListResponse.self, from: result.body)
+    }
+
     func fetchAppViewEntryDetail(entryId: String) async throws -> EntryDetail? {
         let result = try await authorizedGET(
             path: "/v1/appview/entry",
