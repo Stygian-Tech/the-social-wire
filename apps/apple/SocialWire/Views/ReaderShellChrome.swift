@@ -105,6 +105,11 @@ struct ReaderShellOverlayModifier: ViewModifier {
                     Large publication backlogs may require more than one pass.
                     """
             }
+        case .folder:
+            return """
+                This marks every unread article in this folder as read on your account. \
+                Large folder backlogs may require more than one pass.
+                """
         case .publication:
             return """
                 This marks every unread article in this publication as read on your account. \

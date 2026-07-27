@@ -260,6 +260,8 @@ final class SocialWireAppModel {
             cachedEntryIdsForBulkRead(publications: publicationsForAllListsBulkRead())
         case .list(let source):
             cachedEntryIdsForBulkRead(publications: publicationsForBulkRead(list: source))
+        case .folder(let folderRkey):
+            cachedEntryIdsForBulkRead(publications: gatewayFolderMap[folderRkey] ?? [])
         case .publication(let publicationId):
             PublicationUnreadCountLookup.distinctCachedEntryIds(
                 coordinator: readerCacheCoordinator,
@@ -276,7 +278,7 @@ final class SocialWireAppModel {
             return true
         case .entry(let entryId):
             return readAtByEntryId[entryId] != nil
-        case .allLists, .list, .publication:
+        case .allLists, .list, .folder, .publication:
             return !bulkScopeHasUnread(scope)
         }
     }
@@ -295,7 +297,7 @@ final class SocialWireAppModel {
             return
         case .entry(let entryId):
             await markReadIfNeeded(entryId: entryId)
-        case .allLists, .list, .publication:
+        case .allLists, .list, .folder, .publication:
             guard useAppViewEntryTimelines else { return }
             let scopes = gatewayMarkAllReadScopes(for: scope)
             guard !scopes.isEmpty else { return }
@@ -343,26 +345,24 @@ final class SocialWireAppModel {
         if isCompact, let compactPane {
             switch compactPane {
             case .lists:
-                return .allLists
+                return selectedFeedMarkReadScope
             case .publications:
-                return .list(readerListSource)
+                return selectedFeedMarkReadScope
             case .articles:
-                if let publicationId = selectedPublication?.publicationId {
-                    return .publication(publicationId: publicationId)
-                }
-                return .list(readerListSource)
+                return selectedFeedMarkReadScope
             case .reader:
-                return selectedSavedLink != nil ? .unavailable : .list(readerListSource)
+                return selectedSavedLink != nil ? .unavailable : selectedFeedMarkReadScope
             }
         }
 
         if selectedSavedLink != nil {
             return .unavailable
         }
-        if let publicationId = selectedPublication?.publicationId {
-            return .publication(publicationId: publicationId)
-        }
-        return .list(readerListSource)
+        return selectedFeedMarkReadScope
+    }
+
+    private var selectedFeedMarkReadScope: ReaderMarkReadScope {
+        ReaderMarkReadScope.selectedFeed(feedSelection)
     }
 
     private func showsEntryMarkReadInChrome(compactPane: ReaderPane?, isCompact: Bool) -> Bool {
@@ -2427,6 +2427,8 @@ final class SocialWireAppModel {
             publicationsForAllListsBulkRead()
         case .list(let source):
             publicationsForBulkRead(list: source)
+        case .folder(let folderRkey):
+            gatewayFolderMap[folderRkey] ?? []
         case .publication(let publicationId):
             gatewayAllPublicationRows.filter { $0.publicationId == publicationId }
         case .entry, .unavailable:
@@ -2456,6 +2458,8 @@ final class SocialWireAppModel {
             [.following]
         case .list(.readLater), .list(.archive):
             []
+        case .folder(let folderRkey):
+            [.folder(folderRkey: folderRkey)]
         case .publication(let publicationId):
             [.publication(publicationId: publicationId)]
         case .entry, .unavailable:

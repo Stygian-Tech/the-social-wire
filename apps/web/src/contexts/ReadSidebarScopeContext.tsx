@@ -11,11 +11,18 @@ import {
 } from "react";
 
 import type { DiscoveredPublication } from "@/lib/atprotoClient";
+import type { GatewayMarkAllReadScope } from "@/lib/publicationProjectionClient";
 
 type ReadSidebarScopeValue = {
-  publicationsInSidebarTab: DiscoveredPublication[];
-  setPublicationsInSidebarTab: Dispatch<
-    SetStateAction<DiscoveredPublication[]>
+  activeFeedScope: {
+    publications: DiscoveredPublication[];
+    gatewayScope: GatewayMarkAllReadScope | null;
+  };
+  setActiveFeedScope: Dispatch<
+    SetStateAction<{
+      publications: DiscoveredPublication[];
+      gatewayScope: GatewayMarkAllReadScope | null;
+    }>
   >;
 };
 
@@ -24,16 +31,20 @@ const ReadSidebarScopeContext = createContext<ReadSidebarScopeValue | null>(
 );
 
 export function ReadSidebarScopeProvider({ children }: { children: ReactNode }) {
-  const [publicationsInSidebarTab, setPublicationsInSidebarTab] = useState<
-    DiscoveredPublication[]
-  >([]);
+  const [activeFeedScope, setActiveFeedScope] = useState<{
+    publications: DiscoveredPublication[];
+    gatewayScope: GatewayMarkAllReadScope | null;
+  }>({
+    publications: [],
+    gatewayScope: null,
+  });
 
   const value = useMemo(
     (): ReadSidebarScopeValue => ({
-      publicationsInSidebarTab,
-      setPublicationsInSidebarTab,
+      activeFeedScope,
+      setActiveFeedScope,
     }),
-    [publicationsInSidebarTab, setPublicationsInSidebarTab]
+    [activeFeedScope, setActiveFeedScope]
   );
 
   return (

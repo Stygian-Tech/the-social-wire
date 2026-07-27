@@ -18,6 +18,22 @@ struct UnifiedFeedSelectionTests {
         #expect(FeedSelection.folder("folder-one").topLevelSource == nil)
     }
 
+    @Test("mark-all-read follows the exclusive feed selection")
+    func markAllReadScopeMatchesSelection() {
+        #expect(
+            ReaderMarkReadScope.selectedFeed(.topLevel(.subscribed))
+                == .list(.subscribed)
+        )
+        #expect(
+            ReaderMarkReadScope.selectedFeed(.folder("product"))
+                == .folder(folderRkey: "product")
+        )
+        #expect(
+            ReaderMarkReadScope.selectedFeed(.publication("at://did:plc:alice/site.standard.publication/main"))
+                == .publication(publicationId: "at://did:plc:alice/site.standard.publication/main")
+        )
+    }
+
     @Test("preference decoding defaults additive fields and preserves order")
     func preferenceDefaultsAndFallback() {
         let defaults = ReaderFeedPreferences(record: nil)

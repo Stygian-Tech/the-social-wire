@@ -49,6 +49,7 @@ import {
 import { sidebarPublicationRows } from "@/lib/publicationProjectionClient";
 import { savedFeedSources } from "@/lib/savedFeedSources";
 import { SavedFeedSourcesSection } from "./SavedFeedSourcesSection";
+import { activeReadFeedScope } from "@/lib/activeReadFeedScope";
 
 interface AppSidebarProps {
   selectedPubId: string | null;
@@ -175,23 +176,57 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
     readEpoch,
   });
 
-  const setPublicationsInReadShell =
-    useReadSidebarScopeOptional()?.setPublicationsInSidebarTab;
+  const setActiveReadFeedScope =
+    useReadSidebarScopeOptional()?.setActiveFeedScope;
 
   useEffect(() => {
-    if (!setPublicationsInReadShell) return;
-    setPublicationsInReadShell((prev) => {
+    if (!setActiveReadFeedScope) return;
+
+    const folderRkey = searchParams.get("folder");
+    const selectedPublication = selectedPubId
+      ? allPublicationRows.find(
+          (publication) => publication.publicationId === selectedPubId,
+        )
+      : undefined;
+    const next = activeReadFeedScope({
+      folderRkey,
+      folderPublications: folderRkey ? (folderMap.get(folderRkey) ?? []) : [],
+      selectedPublication,
+      selectedTopLevelFeed:
+        searchParams.get("feed") === "following" ? "following" : "subscribed",
+      subscribedPublications,
+      followingPublications: followingTabPublications,
+    });
+
+    setActiveReadFeedScope((prev) => {
       if (
-        prev.length === publicationsForUnread.length &&
-        prev.every(
-          (p, i) => p.publicationId === publicationsForUnread[i]?.publicationId
+        prev.gatewayScope?.kind === next.gatewayScope.kind &&
+        (prev.gatewayScope?.kind !== "publication" ||
+          next.gatewayScope.kind !== "publication" ||
+          prev.gatewayScope.publicationId === next.gatewayScope.publicationId) &&
+        (prev.gatewayScope?.kind !== "folder" ||
+          next.gatewayScope.kind !== "folder" ||
+          prev.gatewayScope.folderRkey === next.gatewayScope.folderRkey) &&
+        prev.publications.length === next.publications.length &&
+        prev.publications.every(
+          (publication, index) =>
+            publication.publicationId ===
+            next.publications[index]?.publicationId,
         )
       ) {
         return prev;
       }
-      return publicationsForUnread;
+      return next;
     });
-  }, [publicationsForUnread, setPublicationsInReadShell]);
+  }, [
+    allPublicationRows,
+    folderMap,
+    followingTabPublications,
+    searchParams,
+    selectedPubId,
+    setActiveReadFeedScope,
+    subscribedPublications,
+  ]);
 
   const allFolderedPublicationsForBulk = useMemo(() => {
     const seen = new Set<string>();
