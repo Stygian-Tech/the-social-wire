@@ -82,4 +82,19 @@ describe("ReadRouteProvider", () => {
       "following"
     );
   });
+
+  it("shares article list column visibility across the read shell", async () => {
+    const { result } = renderHook(() => useReadRoute(), {
+      wrapper: makeWrapper(),
+    });
+    await act(async () => {});
+
+    expect(result.current.isArticleListColumnOpen).toBe(true);
+
+    act(() => {
+      result.current.setIsArticleListColumnOpen(false);
+    });
+
+    expect(result.current.isArticleListColumnOpen).toBe(false);
+  });
 });

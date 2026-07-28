@@ -1,10 +1,12 @@
 "use client";
 
 import { useState } from "react";
+import { List, ListCollapse } from "lucide-react";
 
 import { useReadRoute } from "@/contexts/ReadRouteContext";
 import { useReadSidebarScope } from "@/contexts/ReadSidebarScopeContext";
 import { useCachedBulkReadActions } from "@/hooks/useCachedBulkReadActions";
+import { useIsTabletPortrait } from "@/hooks/use-tablet-portrait";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -23,7 +25,10 @@ export function ReadArticleFilterBar() {
   const {
     setArticleListFilter,
     articleListFilter,
+    isArticleListColumnOpen,
+    setIsArticleListColumnOpen,
   } = useReadRoute();
+  const isTabletPortrait = useIsTabletPortrait();
 
   const { activeFeedScope } = useReadSidebarScope();
   const { bulkDisabled, applyMarkAllRead } =
@@ -37,6 +42,28 @@ export function ReadArticleFilterBar() {
 
   return (
     <div className="ml-auto flex min-w-0 flex-1 items-center justify-end gap-2 sm:flex-none">
+      {isTabletPortrait ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="min-h-11 shrink-0 gap-1.5 rounded-md border-0 bg-transparent px-2 text-[11px] font-semibold text-muted-foreground shadow-none hover:bg-muted/50 hover:text-foreground"
+          aria-label={
+            isArticleListColumnOpen ? "Hide Articles" : "Show Articles"
+          }
+          aria-pressed={!isArticleListColumnOpen}
+          onClick={() =>
+            setIsArticleListColumnOpen(!isArticleListColumnOpen)
+          }
+        >
+          {isArticleListColumnOpen ? (
+            <ListCollapse aria-hidden="true" className="size-4" />
+          ) : (
+            <List aria-hidden="true" className="size-4" />
+          )}
+          {isArticleListColumnOpen ? "Hide Articles" : "Show Articles"}
+        </Button>
+      ) : null}
       <Button
             type="button"
             variant="ghost"
