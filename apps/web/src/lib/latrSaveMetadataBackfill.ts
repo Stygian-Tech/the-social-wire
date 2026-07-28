@@ -206,7 +206,9 @@ export function mergeLatrSaveBackfillMetadata(
 
 const reconciledItemRkeys = new Set<string>();
 
-const OG_PREVIEW_MAX_CONCURRENT = 2;
+// PDS DPoP nonces are single-use. Keep proof minting and gateway consumption
+// ordered until LatrKit has attested the session for each preview request.
+const OG_PREVIEW_MAX_CONCURRENT = 1;
 let ogPreviewInFlight = 0;
 const ogPreviewWaiters: Array<() => void> = [];
 

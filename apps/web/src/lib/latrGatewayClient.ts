@@ -41,6 +41,11 @@ type SessionWithTokenInfo = OAuthSession & {
   getTokenInfo(): Promise<{ aud: string }>;
 };
 
+const PDS_SESSION_ATTESTATION_PATHS = new Set([
+  "/v1/latr/discover/at-uri",
+  "/v1/latr/og-preview",
+]);
+
 function shouldRetryLatrGatewayDpopNonce(res: Response): boolean {
   if (res.status !== 401 && res.status !== 400) return false;
   return Boolean(res.headers.get("DPoP-Nonce")?.trim());
@@ -51,6 +56,14 @@ async function buildUpstreamDpopHeader(
   method: string,
   gatewayPath: string
 ): Promise<string | undefined> {
+  if (method === "GET" && PDS_SESSION_ATTESTATION_PATHS.has(gatewayPath)) {
+    return createUpstreamDpopProof(
+      oauthSession,
+      "com.atproto.server.getSession",
+      "GET"
+    );
+  }
+
   if (method === "GET" && gatewayPath === "/v1/latr/saves") {
     const tokenInfo = await (oauthSession as SessionWithTokenInfo).getTokenInfo();
     const pdsBase = tokenInfo.aud.replace(/\/$/, "");

@@ -176,15 +176,23 @@ describe("latrSaveMetadataBackfill", () => {
       value: new URL("https://testing.thesocialwire.app/saved"),
     });
 
-    const fetchMock = mock(async () =>
-      new Response(
+    let gatewayCalls = 0;
+    const fetchMock = mock(async (url: string) => {
+      if (url.startsWith("https://jellybaby.us-east.host.bsky.network/xrpc/")) {
+        return new Response(JSON.stringify({ records: [] }), {
+          status: 200,
+          headers: { "DPoP-Nonce": "pds-nonce" },
+        });
+      }
+      gatewayCalls += 1;
+      return new Response(
         JSON.stringify({
           error: "invalid_token",
           message: "Access token signature could not be verified for this route",
         }),
         { status: 401 }
-      )
-    );
+      );
+    });
     globalThis.fetch = fetchMock as unknown as typeof fetch;
 
     const oauthSession = {
@@ -192,6 +200,10 @@ describe("latrSaveMetadataBackfill", () => {
         access_token: "access-token",
         token_type: "DPoP",
       }),
+      getTokenInfo: async () => ({
+        aud: "https://jellybaby.us-east.host.bsky.network",
+      }),
+      fetchHandler: fetchMock as unknown as typeof fetch,
       server: {
         dpopKey: {
           bareJwk: { kty: "EC", crv: "P-256", x: "x", y: "y" },
@@ -212,6 +224,7 @@ describe("latrSaveMetadataBackfill", () => {
     expect(
       await fetchLatrOgPreview(oauthSession, "https://example.com/b")
     ).toBeNull();
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(gatewayCalls).toBe(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });
