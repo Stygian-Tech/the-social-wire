@@ -35,11 +35,22 @@ describe("latrGatewayFetch", () => {
     const dpopClaims: Array<Record<string, string | number>> = [];
 
     const fetchMock = mock(async (url: string, init?: RequestInit) => {
+      if (url.startsWith("https://jellybaby.us-east.host.bsky.network/xrpc/")) {
+        expect(url).toContain("/xrpc/com.atproto.repo.listRecords?");
+        return new Response(JSON.stringify({ records: [] }), {
+          status: 200,
+          headers: { "DPoP-Nonce": "pds-nonce" },
+        });
+      }
+
       expect(url).toBe(`${LATR_GATEWAY_PROXY_PREFIX}/v1/latr/og-preview?url=https://example.com`);
       const headers = new Headers(init?.headers);
       expect(headers.get("Authorization")).toBe("DPoP access-token");
       expect(headers.get("DPoP")).toBe("same-origin-dpop-proof");
       expect(headers.get(LATR_GATEWAY_DPOP_HEADER)).toBe("latr-dpop-proof");
+      expect(headers.get(LATR_UPSTREAM_DPOP_HEADER)).toBe(
+        "pds-session-attestation-proof"
+      );
       expect(headers.get(LATR_CLIENT_ID_HEADER)).toBeNull();
       expect(headers.get(LATR_OFFICIAL_CLIENT_HEADER)).toBeNull();
       return new Response(JSON.stringify({ ok: true }), { status: 200 });
@@ -51,12 +62,22 @@ describe("latrGatewayFetch", () => {
         access_token: "access-token",
         token_type: "DPoP",
       }),
+      getTokenInfo: async () => ({
+        aud: "https://jellybaby.us-east.host.bsky.network",
+      }),
+      fetchHandler: fetchMock as unknown as typeof fetch,
       server: {
         dpopKey: {
           bareJwk: { kty: "EC", crv: "P-256", x: "x", y: "y" },
           algorithms: ["ES256"],
           createJwt: async (_header: unknown, claims: Record<string, string | number>) => {
             dpopClaims.push(claims);
+            if (
+              claims.htu ===
+              "https://jellybaby.us-east.host.bsky.network/xrpc/com.atproto.server.getSession"
+            ) {
+              return "pds-session-attestation-proof";
+            }
             return String(claims.htu).startsWith("https://api.testing.latr.link/")
               ? "latr-dpop-proof"
               : "same-origin-dpop-proof";
@@ -73,7 +94,7 @@ describe("latrGatewayFetch", () => {
     await latrGatewayFetch(oauthSession, "/v1/latr/og-preview?url=https://example.com", {
       method: "GET",
     });
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(dpopClaims[0]?.htm).toBe("GET");
     expect(dpopClaims[0]?.htu).toBe(
       "https://testing.thesocialwire.app/api/latr-gateway/v1/latr/og-preview"
@@ -84,6 +105,12 @@ describe("latrGatewayFetch", () => {
       "https://api.testing.latr.link/v1/latr/og-preview"
     );
     expect(dpopClaims[1]?.ath).toBeTruthy();
+    expect(dpopClaims[2]?.htm).toBe("GET");
+    expect(dpopClaims[2]?.htu).toBe(
+      "https://jellybaby.us-east.host.bsky.network/xrpc/com.atproto.server.getSession"
+    );
+    expect(dpopClaims[2]?.nonce).toBe("pds-nonce");
+    expect(dpopClaims[2]?.ath).toBeTruthy();
   });
 
   it("retries once when the proxy returns a DPoP nonce challenge", async () => {

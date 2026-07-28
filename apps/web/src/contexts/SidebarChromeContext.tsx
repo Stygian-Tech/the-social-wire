@@ -30,6 +30,8 @@ export type SidebarChromeContextValue = {
   setSelectedFolderUri: (uri: string | null) => void;
   articleListFilter: ArticleListFilter;
   setArticleListFilter: (filter: ArticleListFilter) => void;
+  isArticleListColumnOpen: boolean;
+  setIsArticleListColumnOpen: (isOpen: boolean) => void;
   publicationTab: PublicationTab;
   setPublicationTab: (tab: PublicationTab) => void;
   sidebarExpandedKeys: Set<string>;
@@ -55,6 +57,7 @@ export function SidebarChromeProvider({ children }: { children: ReactNode }) {
   const [selectedFolderUri, setSelectedFolderUri] = useState<string | null>(null);
   const [articleListFilter, setArticleListFilter] =
     useState<ArticleListFilter>("all");
+  const [isArticleListColumnOpen, setIsArticleListColumnOpen] = useState(true);
   const [publicationTab, setPublicationTabState] =
     useState<PublicationTab>(loadInitialPublicationTab);
   const [sidebarExpandedKeysByViewer, setSidebarExpandedKeysByViewer] =
@@ -152,6 +155,8 @@ export function SidebarChromeProvider({ children }: { children: ReactNode }) {
       setSelectedFolderUri,
       articleListFilter,
       setArticleListFilter,
+      isArticleListColumnOpen,
+      setIsArticleListColumnOpen,
       publicationTab,
       setPublicationTab,
       sidebarExpandedKeys,
@@ -161,6 +166,7 @@ export function SidebarChromeProvider({ children }: { children: ReactNode }) {
     [
       selectedFolderUri,
       articleListFilter,
+      isArticleListColumnOpen,
       publicationTab,
       sidebarExpandedKeys,
       toggleSidebarExpandedKey,

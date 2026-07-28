@@ -11,6 +11,8 @@ import {
 } from "@/components/shared/ResizableListColumn";
 import { Button } from "@/components/ui/button";
 import { useReadRoute } from "@/contexts/ReadRouteContext";
+import { useIsTabletPortrait } from "@/hooks/use-tablet-portrait";
+import { shouldShowArticleListColumn } from "@/lib/readerColumnVisibility";
 import { recordKindFromPubId } from "@/lib/recordKindDebug";
 import { cn } from "@/lib/utils";
 import type { AggregateAppViewFeed } from "@/lib/thinAppViewClient";
@@ -31,7 +33,13 @@ export default function ReadPubPage({
     markEntryUnread,
     isEntryRead,
     articleListFilter,
+    isArticleListColumnOpen,
   } = useReadRoute();
+  const isTabletPortrait = useIsTabletPortrait();
+  const showsArticleListColumn = shouldShowArticleListColumn({
+    isTabletPortrait,
+    isOpenInTabletPortrait: isArticleListColumnOpen,
+  });
 
   const selectedRef = useRef<string | null>(null);
   const filterRef = useRef(articleListFilter);
@@ -100,6 +108,7 @@ export default function ReadPubPage({
       <ResizableListColumn
         storageKey={READER_LIST_COLUMN_WIDTH_KEY}
         hiddenOnMobile={Boolean(selectedEntryId)}
+        className={!showsArticleListColumn ? "md:hidden" : undefined}
       >
         <div className="shrink-0 border-b bg-background/75 px-3 py-2 backdrop-blur-md">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
