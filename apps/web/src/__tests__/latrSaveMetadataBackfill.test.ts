@@ -5,6 +5,7 @@ import {
   fetchLatrOgPreview,
   isLatrSaveMetadataSparse,
   isWeakLatrSaveTitle,
+  mergeLatrExternalSubjectPreview,
   mergeLatrSaveBackfillMetadata,
   needsLatrSaveOgBackfill,
   resetLatrOgPreviewAuthRejectedForTests,
@@ -168,6 +169,35 @@ describe("latrSaveMetadataBackfill", () => {
     expect(merged.excerpt).toBe("Preview excerpt");
     expect(merged.image).toBe("https://existing/thumb.jpg");
     expect(merged.site).toBe("Example");
+  });
+
+  it("hydrates sparse gateway items from their enriched external wrapper", () => {
+    const merged = mergeLatrExternalSubjectPreview(
+      {
+        ...externalRow,
+        normalizedUrl: externalRow.subjectUri,
+        url: externalRow.subjectUri,
+      },
+      {
+        url: "https://example.com/article?utm_source=reader",
+        normalizedUrl: "https://example.com/article",
+        title: "Canonical wrapper title",
+        excerpt: "Persisted on-protocol excerpt",
+        image: "https://cdn.example/article.jpg",
+        site: "Example",
+        author: "Ada",
+      }
+    );
+
+    expect(merged.kind).toBe("external");
+    if (merged.kind !== "external") throw new Error("Expected external row");
+    expect(merged.url).toBe(
+      "https://example.com/article?utm_source=reader"
+    );
+    expect(merged.normalizedUrl).toBe("https://example.com/article");
+    expect(merged.linkedWebUrl).toBe("https://example.com/article");
+    expect(merged.title).toBe("Canonical wrapper title");
+    expect(merged.image).toBe("https://cdn.example/article.jpg");
   });
 
   it("skips later OG preview requests after the gateway rejects auth", async () => {

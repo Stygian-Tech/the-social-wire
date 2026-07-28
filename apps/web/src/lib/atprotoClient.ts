@@ -128,6 +128,18 @@ export interface NativeSavedSubjectPreview {
   image?: string;
 }
 
+export interface LatrExternalSavedSubjectPreview {
+  url: string;
+  normalizedUrl: string;
+  title?: string;
+  excerpt?: string;
+  image?: string;
+  site?: string;
+  author?: string;
+  publishedAt?: string;
+  language?: string;
+}
+
 interface FollowProfile {
   did: string;
   handle: string;
@@ -967,6 +979,56 @@ export async function resolveNativeSavedSubjectPreview(
     url: normalizeHttpUrlToHttps(embedResolved),
     ...(fields.title ? { title: fields.title } : {}),
     ...(fields.summary ? { excerpt: fields.summary } : {}),
+  };
+}
+
+/**
+ * Reads Open Graph fields already persisted on a L@tr external-wrapper record.
+ * This resolves protocol data only; it does not scrape or enrich the linked page.
+ */
+export async function resolveLatrExternalSavedSubjectPreview(
+  subjectUri: string,
+  oauthSession?: OAuthSession
+): Promise<LatrExternalSavedSubjectPreview | null> {
+  const parsed = parseAtUri(subjectUri);
+  if (
+    !parsed ||
+    (parsed.collection !== "link.latr.saved.external" &&
+      parsed.collection !== "com.latr.saved.external")
+  ) {
+    return null;
+  }
+
+  const raw = (await getRecordOnAuthorRepo(
+    parsed.did,
+    parsed.collection,
+    parsed.rkey,
+    oauthSession
+  )) as Record<string, unknown> | null;
+  if (!raw) return null;
+
+  const url = extractHttpsUrl(str(raw.url), str(raw.normalizedUrl));
+  const normalizedUrl = extractHttpsUrl(str(raw.normalizedUrl), str(raw.url));
+  if (!url || !normalizedUrl) return null;
+
+  const title = str(raw.title)?.trim();
+  const excerpt = str(raw.excerpt)?.trim();
+  const image = extractHttpsUrl(str(raw.image));
+  const site = str(raw.site)?.trim();
+  const author = str(raw.author)?.trim();
+  const publishedAt = str(raw.publishedAt)?.trim();
+  const language = str(raw.language)?.trim();
+
+  return {
+    url: normalizeHttpUrlToHttps(url),
+    normalizedUrl: normalizeHttpUrlToHttps(normalizedUrl),
+    ...(title ? { title } : {}),
+    ...(excerpt ? { excerpt } : {}),
+    ...(image ? { image: normalizeHttpUrlToHttps(image) } : {}),
+    ...(site ? { site } : {}),
+    ...(author ? { author } : {}),
+    ...(publishedAt ? { publishedAt } : {}),
+    ...(language ? { language } : {}),
   };
 }
 

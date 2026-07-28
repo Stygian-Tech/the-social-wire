@@ -1,6 +1,10 @@
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 
-import { resolveNativeSavedSubjectPreview } from "@/lib/atprotoClient";
+import {
+  resolveLatrExternalSavedSubjectPreview,
+  resolveNativeSavedSubjectPreview,
+  type LatrExternalSavedSubjectPreview,
+} from "@/lib/atprotoClient";
 import {
   isLatrGatewayAuthRejected,
 } from "@/lib/latrGatewayCredentials";
@@ -204,6 +208,24 @@ export function mergeLatrSaveBackfillMetadata(
   };
 }
 
+/** Merge the canonical, already-enriched L@tr wrapper into its saved-item edge. */
+export function mergeLatrExternalSubjectPreview(
+  row: MergedLatrSave,
+  preview: LatrExternalSavedSubjectPreview
+): MergedLatrSave {
+  if (row.kind !== "external") return row;
+
+  return mergeLatrSaveBackfillMetadata(
+    {
+      ...row,
+      url: preview.url,
+      normalizedUrl: preview.normalizedUrl,
+      linkedWebUrl: row.linkedWebUrl?.trim() || preview.normalizedUrl,
+    },
+    preview
+  );
+}
+
 const reconciledItemRkeys = new Set<string>();
 
 // PDS DPoP nonces are single-use. Keep proof minting and gateway consumption
@@ -288,7 +310,19 @@ export async function resolveLatrSaveRowDisplay(
 ): Promise<MergedLatrSave> {
   let enriched = row;
 
-  if (row.kind === "native") {
+  if (row.kind === "external") {
+    try {
+      const preview = await resolveLatrExternalSavedSubjectPreview(
+        row.subjectUri,
+        oauthSession
+      );
+      if (preview) {
+        enriched = mergeLatrExternalSubjectPreview(enriched, preview);
+      }
+    } catch {
+      /* ignore protocol wrapper resolution failures */
+    }
+  } else {
     try {
       const preview = await resolveNativeSavedSubjectPreview(
         row.subjectUri,
