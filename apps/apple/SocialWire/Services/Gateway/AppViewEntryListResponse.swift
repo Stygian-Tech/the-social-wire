@@ -68,3 +68,10 @@ struct AppViewUnreadCountsResponse: Codable, Sendable {
     let accuracy: String?
     let countedAt: String?
 }
+
+struct AppViewErrorEnvelopeDTO: Codable, Sendable {
+    let error: String
+    let message: String
+    let requestId: String
+    let retryable: Bool
+}

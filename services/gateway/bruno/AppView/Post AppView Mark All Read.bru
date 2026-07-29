@@ -27,5 +27,6 @@ body:json {
 }
 
 docs {
-  Marks all unread entries in a scope as read by updating AppView read floors and counters. Scope kinds: `publication`, `folder`, `subscribed`, `following`.
+  Marks all unread entries in a scope with atomic tuple watermarks. Success
+  returns `marked`, `confirmedAt`, `boundaries`, and `unreadCounts`.
 }

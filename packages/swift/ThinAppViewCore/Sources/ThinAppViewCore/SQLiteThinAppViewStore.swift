@@ -273,10 +273,32 @@ public init(path dbPath: String, logger: Logger) throws {
         viewer_did TEXT NOT NULL,
         publication_id TEXT NOT NULL,
         read_floor_at TEXT NOT NULL,
+        read_floor_uri TEXT,
         generation INTEGER NOT NULL,
         updated_at TEXT NOT NULL,
         PRIMARY KEY (viewer_did, publication_id)
       );
+      """)
+
+    let floorColumns = try Row.fetchAll(
+      db,
+      sql: "PRAGMA table_info(appview_publication_read_floors)"
+    ).map { row -> String in row["name"] }
+    if !floorColumns.contains("read_floor_uri") {
+      try db.execute(
+        sql: "ALTER TABLE appview_publication_read_floors ADD COLUMN read_floor_uri TEXT"
+      )
+    }
+
+    try db.execute(sql: """
+      CREATE TABLE IF NOT EXISTS appview_unread_overrides (
+        viewer_did TEXT NOT NULL,
+        subject_uri TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (viewer_did, subject_uri)
+      );
+      CREATE INDEX IF NOT EXISTS idx_appview_unread_overrides_cleanup
+        ON appview_unread_overrides (created_at, viewer_did, subject_uri);
       """)
   }
 
@@ -451,6 +473,10 @@ public init(path dbPath: String, logger: Logger) throws {
           """,
         arguments: [viewerDid, subjectUri, createdAtIso]
       )
+      try db.execute(
+        sql: "DELETE FROM appview_unread_overrides WHERE viewer_did = ? AND subject_uri = ?",
+        arguments: [viewerDid, subjectUri]
+      )
     }
   }
 
@@ -463,20 +489,47 @@ public init(path dbPath: String, logger: Logger) throws {
     }
   }
 
+  public func markEntryUnread(
+    viewerDid: String,
+    subjectUri: String,
+    createdAt: Date
+  ) async throws {
+    let createdAtIso = Self.isoString(from: createdAt)
+    try await db.write { db in
+      try db.execute(
+        sql: "DELETE FROM read_marks WHERE viewer_did = ? AND subject_uri = ?",
+        arguments: [viewerDid, subjectUri]
+      )
+      try db.execute(
+        sql: """
+          INSERT INTO appview_unread_overrides (viewer_did, subject_uri, created_at)
+          VALUES (?, ?, ?)
+          ON CONFLICT (viewer_did, subject_uri) DO UPDATE SET created_at = excluded.created_at
+          """,
+        arguments: [viewerDid, subjectUri, createdAtIso]
+      )
+    }
+  }
+
   public func purgeReadMarks(viewerDid: String) async throws {
     try await db.write { db in
       try db.execute(sql: "DELETE FROM read_marks WHERE viewer_did = ?", arguments: [viewerDid])
+      try db.execute(
+        sql: "DELETE FROM appview_unread_overrides WHERE viewer_did = ?",
+        arguments: [viewerDid]
+      )
     }
   }
 
   public func fetchContentItem(uri: String) async throws -> AppViewEntryListItem? {
     let nowIso = Self.isoString(from: Date())
-    let row: (uri: String, renderJSON: String, createdAt: Date)? = try await db.read { db in
+    let row: (uri: String, renderJSON: String, createdAt: Date, publicationSite: String?)? =
+      try await db.read { db in
       guard
         let fetched = try Row.fetchOne(
           db,
           sql: """
-            SELECT ci.uri, ci.render_json, ci.created_at
+            SELECT ci.uri, ci.render_json, ci.created_at, ci.publication_site
             FROM content_items ci
             WHERE ci.uri = ? AND ci.expires_at > ?
             LIMIT 1
@@ -487,11 +540,18 @@ public init(path dbPath: String, logger: Logger) throws {
       return (
         uri: fetched["uri"],
         renderJSON: fetched["render_json"],
-        createdAt: Self.date(fromIso: fetched["created_at"]) ?? Date.distantPast
+        createdAt: Self.date(fromIso: fetched["created_at"]) ?? Date.distantPast,
+        publicationSite: fetched["publication_site"]
       )
     }
     guard let row else { return nil }
-    return ThinAppViewQuerySupport.entryListItems(from: [(row.uri, row.renderJSON, row.createdAt)]).first
+    let item = ThinAppViewQuerySupport.entryListItems(
+      from: [(row.uri, row.renderJSON, row.createdAt)]
+    ).first
+    if let publicationSite = row.publicationSite {
+      return item?.withPublicationId(publicationSite)
+    }
+    return item
   }
 
   public func fetchContentRender(uri: String) async throws -> ContentRenderFields? {
@@ -558,6 +618,51 @@ public init(path dbPath: String, logger: Logger) throws {
     }
   }
 
+  public func readStates(
+    viewerDid: String,
+    entries: [AppViewEntryListItem]
+  ) async throws -> [String: Bool] {
+    guard !entries.isEmpty else { return [:] }
+    let entryIds = Array(Set(entries.map(\.entryId))).sorted()
+    let publicationIds = Array(Set(entries.compactMap(\.publicationId))).sorted()
+    return try await db.read { db in
+      let entryPlaceholders = entryIds.map { _ in "?" }.joined(separator: ", ")
+      let readRows = try String.fetchAll(
+        db,
+        sql: """
+          SELECT subject_uri FROM read_marks
+          WHERE viewer_did = ? AND subject_uri IN (\(entryPlaceholders))
+          """,
+        arguments: StatementArguments([viewerDid] + entryIds)
+      )
+      let overrideRows = try String.fetchAll(
+        db,
+        sql: """
+          SELECT subject_uri FROM appview_unread_overrides
+          WHERE viewer_did = ? AND subject_uri IN (\(entryPlaceholders))
+          """,
+        arguments: StatementArguments([viewerDid] + entryIds)
+      )
+      let explicitReads = Set(readRows)
+      let unreadOverrides = Set(overrideRows)
+      let floors = try Self.readBoundaries(
+        viewerDid: viewerDid,
+        publicationIds: publicationIds,
+        db: db
+      )
+      return Dictionary(uniqueKeysWithValues: entries.map { entry in
+        let covered = entry.publicationId
+          .flatMap { floors[$0] }?
+          .contains(createdAt: entry.feedPositionAt, entryId: entry.entryId) ?? false
+        return (
+          entry.entryId,
+          explicitReads.contains(entry.entryId)
+            || (covered && !unreadOverrides.contains(entry.entryId))
+        )
+      })
+    }
+  }
+
   public func listEntries(
     viewerDid: String,
     authorDid: String,
@@ -567,7 +672,7 @@ public init(path dbPath: String, logger: Logger) throws {
     filter: EntryListFilter,
     cursor: String?,
     limit: Int,
-    readFloorAt: Date?
+    readBoundary: ReadWatermarkBoundary?
   ) async throws -> AppViewEntryListResponse {
     let nowIso = Self.isoString(from: Date())
     let pageLimit = max(1, min(limit, 100))
@@ -590,7 +695,7 @@ public init(path dbPath: String, logger: Logger) throws {
         cursor: dbCursor,
         limit: batchSize,
         nowIso: nowIso,
-        readFloorAt: readFloorAt
+        readBoundary: readBoundary
       )
       return ThinAppViewQuerySupport.buildFilteredEntryListPage(
         pageLimit: pageLimit,
@@ -621,7 +726,7 @@ public init(path dbPath: String, logger: Logger) throws {
         cursor: dbCursor,
         limit: batchSize,
         nowIso: nowIso,
-        readFloorAt: readFloorAt
+        readBoundary: readBoundary
       )
       if fetched.isEmpty {
         dbHasMore = false
@@ -675,7 +780,7 @@ public init(path dbPath: String, logger: Logger) throws {
     cursor: (createdAt: Date, uri: String)?,
     limit: Int,
     nowIso: String,
-    readFloorAt: Date?
+    readBoundary: ReadWatermarkBoundary?
   ) async throws -> [(uri: String, renderJSON: String, createdAt: Date, publicationSite: String?)] {
     try await db.read { db in
       let joinClause: String
@@ -687,12 +792,16 @@ public init(path dbPath: String, logger: Logger) throws {
 
           LEFT JOIN read_marks rm
             ON rm.viewer_did = ? AND rm.subject_uri = ci.uri
+          LEFT JOIN appview_unread_overrides uo
+            ON uo.viewer_did = ? AND uo.subject_uri = ci.uri
         """
       case .read:
         joinClause = """
 
-          INNER JOIN read_marks rm
+          LEFT JOIN read_marks rm
             ON rm.viewer_did = ? AND rm.subject_uri = ci.uri
+          LEFT JOIN appview_unread_overrides uo
+            ON uo.viewer_did = ? AND uo.subject_uri = ci.uri
         """
       }
       var sql = """
@@ -705,7 +814,7 @@ public init(path dbPath: String, logger: Logger) throws {
 
       var args: [DatabaseValueConvertible?] = []
       if filter != .all {
-        args.append(viewerDid)
+        args.append(contentsOf: [viewerDid, viewerDid])
       }
       args.append(contentsOf: [authorDid, nowIso])
 
@@ -714,12 +823,48 @@ public init(path dbPath: String, logger: Logger) throws {
         break
       case .unread:
         sql += " AND rm.subject_uri IS NULL"
-        if let readFloorAt {
-          sql += " AND ci.created_at > ?"
-          args.append(Self.isoString(from: readFloorAt))
+        if let readBoundary {
+          let floorIso = Self.isoString(from: readBoundary.createdAt)
+          if let entryId = readBoundary.entryId {
+            sql += """
+               AND (
+                 ci.created_at > ?
+                 OR (ci.created_at = ? AND ci.uri > ?)
+                 OR uo.subject_uri IS NOT NULL
+               )
+              """
+            args.append(contentsOf: [floorIso, floorIso, entryId])
+          } else {
+            sql += " AND (ci.created_at > ? OR uo.subject_uri IS NOT NULL)"
+            args.append(floorIso)
+          }
         }
       case .read:
-        break
+        if let readBoundary {
+          let floorIso = Self.isoString(from: readBoundary.createdAt)
+          if let entryId = readBoundary.entryId {
+            sql += """
+               AND (
+                 rm.subject_uri IS NOT NULL
+                 OR (
+                   uo.subject_uri IS NULL
+                   AND (ci.created_at < ? OR (ci.created_at = ? AND ci.uri <= ?))
+                 )
+               )
+              """
+            args.append(contentsOf: [floorIso, floorIso, entryId])
+          } else {
+            sql += """
+               AND (
+                 rm.subject_uri IS NOT NULL
+                 OR (uo.subject_uri IS NULL AND ci.created_at <= ?)
+               )
+              """
+            args.append(floorIso)
+          }
+        } else {
+          sql += " AND rm.subject_uri IS NOT NULL"
+        }
       }
 
       if let decoded = cursor {
@@ -918,7 +1063,10 @@ public init(path dbPath: String, logger: Logger) throws {
   ) async throws -> [AppViewUnreadCounter] {
     guard !scopes.isEmpty else { return [] }
     let exactCounts = try await countUnreadEntriesBatch(viewerDid: viewerDid, scopes: scopes)
-    let floors = try await readFloors(viewerDid: viewerDid, publicationIds: scopes.map(\.publicationId))
+    let boundaries = try await readBoundaries(
+      viewerDid: viewerDid,
+      publicationIds: scopes.map(\.publicationId)
+    )
     let countedAt = Date()
     let countedAtIso = Self.isoString(from: countedAt)
     let generation = AppViewUnreadCounterSupport.generation(for: countedAt)
@@ -926,11 +1074,11 @@ public init(path dbPath: String, logger: Logger) throws {
 
     for scope in scopes {
       let count: Int
-      if let floor = floors[scope.publicationId] {
-        count = try await countUnreadEntriesAfterFloor(
+      if let boundary = boundaries[scope.publicationId] {
+        count = try await countUnreadEntriesAfterBoundary(
           viewerDid: viewerDid,
           scope: scope,
-          readFloorAt: floor
+          readBoundary: boundary
         )
       } else {
         count = exactCounts[scope.publicationId] ?? 0
@@ -971,12 +1119,13 @@ public init(path dbPath: String, logger: Logger) throws {
     let countedAt = Self.isoString(from: Date())
     try await db.write { db in
       for scope in scopes {
-        if let floor = try Self.readFloor(
+        if let boundary = try Self.readBoundary(
           viewerDid: scope.viewerDid,
           publicationId: scope.publicationId,
           db: db
         ),
-          item.createdAt <= floor
+          boundary.contains(createdAt: item.createdAt, entryId: item.uri),
+          try !Self.hasUnreadOverride(viewerDid: scope.viewerDid, subjectUri: item.uri, db: db)
         {
           continue
         }
@@ -1048,15 +1197,6 @@ public init(path dbPath: String, logger: Logger) throws {
     let countedAt = Self.isoString(from: Date())
     try await db.write { db in
       for scope in scopes {
-        if let floor = try Self.readFloor(
-          viewerDid: viewerDid,
-          publicationId: scope.publicationId,
-          db: db
-        ),
-          content.createdAt <= floor
-        {
-          continue
-        }
         try Self.adjustUnreadCounter(
           viewerDid: viewerDid,
           publicationId: scope.publicationId,
@@ -1071,46 +1211,95 @@ public init(path dbPath: String, logger: Logger) throws {
 
   public func markAllReadCounters(
     viewerDid: String,
-    publicationIds: [String],
+    scopes: [PublicationUnreadScope],
     readAt: Date
-  ) async throws -> [AppViewUnreadCounter] {
-    let uniqueIds = Array(Set(publicationIds)).sorted()
-    guard !uniqueIds.isEmpty else { return [] }
+  ) async throws -> (counters: [AppViewUnreadCounter], boundaries: [ReadWatermarkBoundary]) {
+    let uniqueScopes = Dictionary(scopes.map { ($0.publicationId, $0) }, uniquingKeysWith: { first, _ in first })
+      .values
+      .sorted { $0.publicationId < $1.publicationId }
+    guard !uniqueScopes.isEmpty else { return ([], []) }
     let generation = AppViewUnreadCounterSupport.generation(for: readAt)
     let readAtIso = Self.isoString(from: readAt)
-    let counters = uniqueIds.map {
-      AppViewUnreadCounter(
-        publicationId: $0,
-        unreadCount: 0,
-        generation: generation,
-        accuracy: .estimated,
-        dirty: true,
-        countedAt: readAt
-      )
-    }
-    try await db.write { db in
-      for counter in counters {
+    return try await db.write { db in
+      var counters: [AppViewUnreadCounter] = []
+      var boundaries: [ReadWatermarkBoundary] = []
+      for scope in uniqueScopes {
+        let requested = try Self.newestBoundary(scope: scope, fallback: readAt, db: db)
+        let existing = try Self.readBoundary(
+          viewerDid: viewerDid,
+          publicationId: scope.publicationId,
+          db: db
+        )
+        let shouldClearCoveredOverrides = existing.map { !$0.isAfter(requested) } ?? true
+        let confirmed = existing.map { requested.isAfter($0) ? requested : $0 } ?? requested
+        var counter = AppViewUnreadCounter(
+          publicationId: scope.publicationId,
+          unreadCount: 0,
+          generation: generation,
+          accuracy: .exact,
+          dirty: false,
+          countedAt: readAt
+        )
         try db.execute(
           sql: """
             INSERT INTO appview_publication_read_floors
-              (viewer_did, publication_id, read_floor_at, generation, updated_at)
-            VALUES (?, ?, ?, ?, ?)
+              (viewer_did, publication_id, read_floor_at, read_floor_uri, generation, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
             ON CONFLICT (viewer_did, publication_id) DO UPDATE SET
               read_floor_at = excluded.read_floor_at,
+              read_floor_uri = excluded.read_floor_uri,
               generation = excluded.generation,
               updated_at = excluded.updated_at
             """,
-          arguments: [viewerDid, counter.publicationId, readAtIso, generation, readAtIso]
+          arguments: [
+            viewerDid,
+            scope.publicationId,
+            Self.isoString(from: confirmed.createdAt),
+            confirmed.entryId,
+            generation,
+            readAtIso,
+          ]
         )
-        try Self.upsertUnreadCounter(counter, viewerDid: viewerDid, countedAtIso: readAtIso, db: db)
+        if shouldClearCoveredOverrides {
+          try Self.deleteCoveredUnreadOverrides(
+            viewerDid: viewerDid,
+            scope: scope,
+            boundary: confirmed,
+            db: db
+          )
+        }
+        if shouldClearCoveredOverrides {
+          try Self.upsertUnreadCounter(
+            counter,
+            viewerDid: viewerDid,
+            countedAtIso: readAtIso,
+            db: db
+          )
+        } else if let row = try Row.fetchOne(
+          db,
+          sql: """
+            SELECT publication_id, unread_count, generation, accuracy, dirty, counted_at
+            FROM appview_unread_counters
+            WHERE viewer_did = ? AND publication_id = ?
+            LIMIT 1
+            """,
+          arguments: [viewerDid, scope.publicationId]
+        ), let stored = Self.unreadCounter(from: row) {
+          counter = stored
+        }
+        counters.append(counter)
+        boundaries.append(confirmed)
       }
+      return (counters, boundaries)
     }
-    return counters
   }
 
-  public func readFloor(viewerDid: String, publicationId: String) async throws -> Date? {
+  public func readBoundary(
+    viewerDid: String,
+    publicationId: String
+  ) async throws -> ReadWatermarkBoundary? {
     try await db.read { db in
-      try Self.readFloor(viewerDid: viewerDid, publicationId: publicationId, db: db)
+      try Self.readBoundary(viewerDid: viewerDid, publicationId: publicationId, db: db)
     }
   }
 
@@ -1932,41 +2121,46 @@ public init(path dbPath: String, logger: Logger) throws {
     }
   }
 
-  private func readFloors(
+  private func readBoundaries(
     viewerDid: String,
     publicationIds: [String]
-  ) async throws -> [String: Date] {
+  ) async throws -> [String: ReadWatermarkBoundary] {
     let uniqueIds = Array(Set(publicationIds)).sorted()
     guard !uniqueIds.isEmpty else { return [:] }
     return try await db.read { db in
       let rows = try Row.fetchAll(
         db,
         sql: """
-          SELECT publication_id, read_floor_at
+          SELECT publication_id, read_floor_at, read_floor_uri
           FROM appview_publication_read_floors
           WHERE viewer_did = ?
             AND publication_id IN (\(uniqueIds.map { _ in "?" }.joined(separator: ", ")))
           """,
         arguments: StatementArguments([viewerDid] + uniqueIds)
       )
-      var floors: [String: Date] = [:]
+      var boundaries: [String: ReadWatermarkBoundary] = [:]
       for row in rows {
         let publicationId: String = row["publication_id"]
         if let floor = Self.date(fromIso: row["read_floor_at"]) {
-          floors[publicationId] = floor
+          boundaries[publicationId] = ReadWatermarkBoundary(
+            publicationId: publicationId,
+            createdAt: floor,
+            entryId: row["read_floor_uri"]
+          )
         }
       }
-      return floors
+      return boundaries
     }
   }
 
-  private func countUnreadEntriesAfterFloor(
+  private func countUnreadEntriesAfterBoundary(
     viewerDid: String,
     scope: PublicationUnreadScope,
-    readFloorAt: Date
+    readBoundary: ReadWatermarkBoundary
   ) async throws -> Int {
     let nowIso = Self.isoString(from: Date())
-    let floorIso = Self.isoString(from: readFloorAt)
+    let floorIso = Self.isoString(from: readBoundary.createdAt)
+    let uriFloor = readBoundary.entryId
     let scoped = ThinAppViewQuerySupport.requiresPublicationSiteFilter(
       publicationAtUri: scope.publicationAtUri,
       publicationScopeAtUris: scope.publicationScopeAtUris,
@@ -1986,13 +2180,22 @@ public init(path dbPath: String, logger: Logger) throws {
             FROM content_items ci
             LEFT JOIN read_marks rm
               ON rm.viewer_did = ? AND rm.subject_uri = ci.uri
+            LEFT JOIN appview_unread_overrides uo
+              ON uo.viewer_did = ? AND uo.subject_uri = ci.uri
             WHERE ci.author_did = ?
               AND ci.expires_at > ?
-              AND ci.created_at > ?
+              AND (
+                ci.created_at > ?
+                OR (? IS NOT NULL AND ci.created_at = ? AND ci.uri > ?)
+                OR uo.subject_uri IS NOT NULL
+              )
               AND ci.publication_site IN (\(siteKeys.map { _ in "?" }.joined(separator: ", ")))
               AND rm.subject_uri IS NULL
             """,
-          arguments: StatementArguments([viewerDid, scope.authorDid, nowIso, floorIso] + siteKeys)
+          arguments: StatementArguments(
+            [viewerDid, viewerDid, scope.authorDid, nowIso, floorIso, uriFloor, floorIso, uriFloor]
+              + siteKeys
+          )
         ) ?? 0
       }
     }
@@ -2005,12 +2208,21 @@ public init(path dbPath: String, logger: Logger) throws {
           FROM content_items ci
           LEFT JOIN read_marks rm
             ON rm.viewer_did = ? AND rm.subject_uri = ci.uri
+          LEFT JOIN appview_unread_overrides uo
+            ON uo.viewer_did = ? AND uo.subject_uri = ci.uri
           WHERE ci.author_did = ?
             AND ci.expires_at > ?
-            AND ci.created_at > ?
+            AND (
+              ci.created_at > ?
+              OR (? IS NOT NULL AND ci.created_at = ? AND ci.uri > ?)
+              OR uo.subject_uri IS NOT NULL
+            )
             AND rm.subject_uri IS NULL
           """,
-        arguments: [viewerDid, scope.authorDid, nowIso, floorIso]
+        arguments: [
+          viewerDid, viewerDid, scope.authorDid, nowIso,
+          floorIso, uriFloor, floorIso, uriFloor,
+        ]
       )
       return rows.map { $0["publication_site"] as String? }
     }
@@ -2184,15 +2396,15 @@ public init(path dbPath: String, logger: Logger) throws {
     )
   }
 
-  private static func readFloor(
+  private static func readBoundary(
     viewerDid: String,
     publicationId: String,
     db: Database
-  ) throws -> Date? {
-    guard let raw = try String.fetchOne(
+  ) throws -> ReadWatermarkBoundary? {
+    guard let row = try Row.fetchOne(
       db,
       sql: """
-        SELECT read_floor_at
+        SELECT read_floor_at, read_floor_uri
         FROM appview_publication_read_floors
         WHERE viewer_did = ? AND publication_id = ?
         LIMIT 1
@@ -2201,7 +2413,156 @@ public init(path dbPath: String, logger: Logger) throws {
     ) else {
       return nil
     }
-    return date(fromIso: raw)
+    guard let createdAt = date(fromIso: row["read_floor_at"]) else { return nil }
+    return ReadWatermarkBoundary(
+      publicationId: publicationId,
+      createdAt: createdAt,
+      entryId: row["read_floor_uri"]
+    )
+  }
+
+  private static func readBoundaries(
+    viewerDid: String,
+    publicationIds: [String],
+    db: Database
+  ) throws -> [String: ReadWatermarkBoundary] {
+    let uniqueIds = Array(Set(publicationIds)).sorted()
+    guard !uniqueIds.isEmpty else { return [:] }
+    let rows = try Row.fetchAll(
+      db,
+      sql: """
+        SELECT publication_id, read_floor_at, read_floor_uri
+        FROM appview_publication_read_floors
+        WHERE viewer_did = ?
+          AND publication_id IN (\(uniqueIds.map { _ in "?" }.joined(separator: ", ")))
+        """,
+      arguments: StatementArguments([viewerDid] + uniqueIds)
+    )
+    return Dictionary(uniqueKeysWithValues: rows.compactMap { row in
+      let publicationId: String = row["publication_id"]
+      guard let createdAt = date(fromIso: row["read_floor_at"]) else { return nil }
+      return (
+        publicationId,
+        ReadWatermarkBoundary(
+          publicationId: publicationId,
+          createdAt: createdAt,
+          entryId: row["read_floor_uri"]
+        )
+      )
+    })
+  }
+
+  private static func hasUnreadOverride(
+    viewerDid: String,
+    subjectUri: String,
+    db: Database
+  ) throws -> Bool {
+    try Bool.fetchOne(
+      db,
+      sql: """
+        SELECT 1 FROM appview_unread_overrides
+        WHERE viewer_did = ? AND subject_uri = ?
+        LIMIT 1
+        """,
+      arguments: [viewerDid, subjectUri]
+    ) != nil
+  }
+
+  private static func newestBoundary(
+    scope: PublicationUnreadScope,
+    fallback: Date,
+    db: Database
+  ) throws -> ReadWatermarkBoundary {
+    let scoped = ThinAppViewQuerySupport.requiresPublicationSiteFilter(
+      publicationAtUri: scope.publicationAtUri,
+      publicationScopeAtUris: scope.publicationScopeAtUris,
+      publicationSiteUrls: scope.publicationSiteUrls
+    )
+    let siteKeys = AppViewProjectionCacheScopeKeys.publicationSiteKeys(
+      publicationAtUri: scope.publicationAtUri,
+      publicationScopeAtUris: scope.publicationScopeAtUris,
+      publicationSiteUrls: scope.publicationSiteUrls
+    )
+    if scoped, siteKeys.isEmpty {
+      return ReadWatermarkBoundary(
+        publicationId: scope.publicationId,
+        createdAt: fallback,
+        entryId: nil
+      )
+    }
+    let siteClause = scoped
+      ? " AND publication_site IN (\(siteKeys.map { _ in "?" }.joined(separator: ", ")))"
+      : ""
+    let rows = try Row.fetchAll(
+      db,
+      sql: """
+        SELECT uri, created_at
+        FROM content_items
+        WHERE author_did = ? AND created_at <= ?
+          \(siteClause)
+        ORDER BY created_at DESC, uri DESC
+        LIMIT 1
+        """,
+      arguments: StatementArguments(
+        [scope.authorDid, isoString(from: fallback)] + siteKeys
+      )
+    )
+    if let row = rows.first {
+      let uri: String = row["uri"]
+      let createdAt = date(fromIso: row["created_at"]) ?? fallback
+      return ReadWatermarkBoundary(
+        publicationId: scope.publicationId,
+        createdAt: createdAt,
+        entryId: uri
+      )
+    }
+    return ReadWatermarkBoundary(
+      publicationId: scope.publicationId,
+      createdAt: fallback,
+      entryId: nil
+    )
+  }
+
+  private static func deleteCoveredUnreadOverrides(
+    viewerDid: String,
+    scope: PublicationUnreadScope,
+    boundary: ReadWatermarkBoundary,
+    db: Database
+  ) throws {
+    let rows = try Row.fetchAll(
+      db,
+      sql: """
+        SELECT uo.subject_uri, ci.created_at, ci.publication_site
+        FROM appview_unread_overrides uo
+        INNER JOIN content_items ci ON ci.uri = uo.subject_uri
+        WHERE uo.viewer_did = ? AND ci.author_did = ?
+        """,
+      arguments: [viewerDid, scope.authorDid]
+    )
+    let covered = rows.compactMap { row -> String? in
+      let subjectUri: String = row["subject_uri"]
+      let createdAt = date(fromIso: row["created_at"]) ?? .distantFuture
+      let publicationSite: String? = row["publication_site"]
+      guard boundary.contains(createdAt: createdAt, entryId: subjectUri) else { return nil }
+      guard ThinAppViewQuerySupport.publicationSiteMatches(
+        siteField: publicationSite,
+        publicationAtUri: scope.publicationAtUri,
+        publicationScopeAtUris: scope.publicationScopeAtUris,
+        publicationSiteUrls: scope.publicationSiteUrls
+      ) else {
+        return nil
+      }
+      return subjectUri
+    }
+    guard !covered.isEmpty else { return }
+    try db.execute(
+      sql: """
+        DELETE FROM appview_unread_overrides
+        WHERE viewer_did = ?
+          AND subject_uri IN (\(covered.map { _ in "?" }.joined(separator: ", ")))
+        """,
+      arguments: StatementArguments([viewerDid] + covered)
+    )
   }
 
   private static func jsonString(_ values: [String]) throws -> String {

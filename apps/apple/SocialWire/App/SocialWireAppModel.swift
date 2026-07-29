@@ -841,6 +841,7 @@ final class SocialWireAppModel {
                 filter: readerFilter,
                 cursor: cursor
             )
+            applyAuthoritativeReadState(from: page.entries)
             entries = cursor == nil
                 ? page.entries
                 : mergeEntryPages(existing: entries, newPage: page.entries)
@@ -1605,12 +1606,21 @@ final class SocialWireAppModel {
         guard let scope = sidebarScopesByPublicationId[publication.publicationId] else {
             throw SocialWireError.badResponse("Missing AppView scope for publication.")
         }
-        return try await gateway.fetchAppViewEntries(
+        let page = try await gateway.fetchAppViewEntries(
             scope: scope,
             filter: readerFilter,
             cursor: cursor,
             maxEntries: maxEntries
         )
+        applyAuthoritativeReadState(from: page.entries)
+        return page
+    }
+
+    private func applyAuthoritativeReadState(from pageEntries: [EntryListItem]) {
+        let confirmedAt = Date.distantPast
+        for entry in pageEntries where entry.isRead && readAtByEntryId[entry.entryId] == nil {
+            readAtByEntryId[entry.entryId] = confirmedAt
+        }
     }
 
     private func mergeEntryPages(existing: [EntryListItem], newPage: [EntryListItem]) -> [EntryListItem] {

@@ -35,10 +35,15 @@ public protocol ThinAppViewStore: Actor {
 
   func upsertReadMark(viewerDid: String, subjectUri: String, createdAt: Date) async throws
   func deleteReadMark(viewerDid: String, subjectUri: String) async throws
+  func markEntryUnread(viewerDid: String, subjectUri: String, createdAt: Date) async throws
   func purgeReadMarks(viewerDid: String) async throws
 
   func fetchContentItem(uri: String) async throws -> AppViewEntryListItem?
   func hasReadMark(viewerDid: String, subjectUri: String) async throws -> Bool
+  func readStates(
+    viewerDid: String,
+    entries: [AppViewEntryListItem]
+  ) async throws -> [String: Bool]
 
   func listEntries(
     viewerDid: String,
@@ -49,10 +54,10 @@ public protocol ThinAppViewStore: Actor {
     filter: EntryListFilter,
     cursor: String?,
     limit: Int,
-    readFloorAt: Date?
+    readBoundary: ReadWatermarkBoundary?
   ) async throws -> AppViewEntryListResponse
 
-  func readFloor(viewerDid: String, publicationId: String) async throws -> Date?
+  func readBoundary(viewerDid: String, publicationId: String) async throws -> ReadWatermarkBoundary?
 
   func countUnreadEntries(
     viewerDid: String,
@@ -96,9 +101,9 @@ public protocol ThinAppViewStore: Actor {
 
   func markAllReadCounters(
     viewerDid: String,
-    publicationIds: [String],
+    scopes: [PublicationUnreadScope],
     readAt: Date
-  ) async throws -> [AppViewUnreadCounter]
+  ) async throws -> (counters: [AppViewUnreadCounter], boundaries: [ReadWatermarkBoundary])
 
   func deleteExpiredContent(before: Date, batchSize: Int) async throws -> Int
   func deleteExpiredReadMarks(before: Date, batchSize: Int) async throws -> Int
@@ -231,7 +236,7 @@ public extension ThinAppViewStore {
       filter: filter,
       cursor: cursor,
       limit: limit,
-      readFloorAt: nil
+      readBoundary: nil
     )
   }
 }

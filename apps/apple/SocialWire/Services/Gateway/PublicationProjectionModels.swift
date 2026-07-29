@@ -73,6 +73,15 @@ struct GatewayRecordWriteResponseDTO: Codable, Sendable {
 
 struct GatewayMarkAllReadResponseDTO: Codable, Sendable {
     let marked: Int
+    let confirmedAt: String
+    let boundaries: [GatewayReadWatermarkBoundaryDTO]
+    let unreadCounts: [String: Int]
+}
+
+struct GatewayReadWatermarkBoundaryDTO: Codable, Sendable {
+    let publicationId: String
+    let createdAt: String
+    let entryId: String?
 }
 
 struct ResolveAddPublicationRequestBody: Codable, Sendable {

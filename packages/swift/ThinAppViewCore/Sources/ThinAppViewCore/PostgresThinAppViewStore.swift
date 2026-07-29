@@ -82,14 +82,23 @@ public init(pool: PostgresClient, logger: Logger) {
   }
 
   public func upsertReadMark(viewerDid: String, subjectUri: String, createdAt: Date) async throws {
-    try await pool.query(
-      """
-      INSERT INTO read_marks (viewer_did, subject_uri, created_at)
-      VALUES (\(viewerDid), \(subjectUri), \(createdAt))
-      ON CONFLICT (viewer_did, subject_uri) DO UPDATE SET created_at = EXCLUDED.created_at
-      """,
-      logger: logger
-    )
+    try await pool.withTransaction(logger: logger) { connection in
+      try await connection.query(
+        """
+        INSERT INTO read_marks (viewer_did, subject_uri, created_at)
+        VALUES (\(viewerDid), \(subjectUri), \(createdAt))
+        ON CONFLICT (viewer_did, subject_uri) DO UPDATE SET created_at = EXCLUDED.created_at
+        """,
+        logger: logger
+      )
+      try await connection.query(
+        """
+        DELETE FROM appview_unread_overrides
+        WHERE viewer_did = \(viewerDid) AND subject_uri = \(subjectUri)
+        """,
+        logger: logger
+      )
+    }
   }
 
   public func deleteReadMark(viewerDid: String, subjectUri: String) async throws {
@@ -102,18 +111,49 @@ public init(pool: PostgresClient, logger: Logger) {
     )
   }
 
+  public func markEntryUnread(
+    viewerDid: String,
+    subjectUri: String,
+    createdAt: Date
+  ) async throws {
+    try await pool.withTransaction(logger: logger) { connection in
+      try await connection.query(
+        """
+        DELETE FROM read_marks
+        WHERE viewer_did = \(viewerDid) AND subject_uri = \(subjectUri)
+        """,
+        logger: logger
+      )
+      try await connection.query(
+        """
+        INSERT INTO appview_unread_overrides (viewer_did, subject_uri, created_at)
+        VALUES (\(viewerDid), \(subjectUri), \(createdAt))
+        ON CONFLICT (viewer_did, subject_uri)
+        DO UPDATE SET created_at = EXCLUDED.created_at
+        """,
+        logger: logger
+      )
+    }
+  }
+
   public func purgeReadMarks(viewerDid: String) async throws {
-    try await pool.query(
-      "DELETE FROM read_marks WHERE viewer_did = \(viewerDid)",
-      logger: logger
-    )
+    try await pool.withTransaction(logger: logger) { connection in
+      try await connection.query(
+        "DELETE FROM read_marks WHERE viewer_did = \(viewerDid)",
+        logger: logger
+      )
+      try await connection.query(
+        "DELETE FROM appview_unread_overrides WHERE viewer_did = \(viewerDid)",
+        logger: logger
+      )
+    }
   }
 
   public func fetchContentItem(uri: String) async throws -> AppViewEntryListItem? {
     let now = Date()
     let rows = try await pool.query(
       """
-      SELECT ci.uri, ci.render_json::text, ci.created_at
+      SELECT ci.uri, ci.render_json::text, ci.created_at, ci.publication_site
       FROM content_items ci
       WHERE ci.uri = \(uri) AND ci.expires_at > \(now)
       LIMIT 1
@@ -121,8 +161,16 @@ public init(pool: PostgresClient, logger: Logger) {
       logger: logger
     )
     for try await row in rows {
-      let (uri, renderJSON, createdAt) = try row.decode((String, String, Date).self)
-      return ThinAppViewQuerySupport.entryListItems(from: [(uri, renderJSON, createdAt)]).first
+      let (uri, renderJSON, createdAt, publicationSite) = try row.decode(
+        (String, String, Date, String?).self
+      )
+      let item = ThinAppViewQuerySupport.entryListItems(
+        from: [(uri, renderJSON, createdAt)]
+      ).first
+      if let publicationSite {
+        return item?.withPublicationId(publicationSite)
+      }
+      return item
     }
     return nil
   }
@@ -188,6 +236,51 @@ public init(pool: PostgresClient, logger: Logger) {
     return false
   }
 
+  public func readStates(
+    viewerDid: String,
+    entries: [AppViewEntryListItem]
+  ) async throws -> [String: Bool] {
+    guard !entries.isEmpty else { return [:] }
+    let entryIds = Array(Set(entries.map(\.entryId))).sorted()
+    let publicationIds = Array(Set(entries.compactMap(\.publicationId))).sorted()
+    let readRows = try await pool.query(
+      """
+      SELECT subject_uri FROM read_marks
+      WHERE viewer_did = \(viewerDid) AND subject_uri = ANY(\(entryIds))
+      """,
+      logger: logger
+    )
+    var explicitReads = Set<String>()
+    for try await row in readRows {
+      explicitReads.insert(try row.decode(String.self))
+    }
+    let overrideRows = try await pool.query(
+      """
+      SELECT subject_uri FROM appview_unread_overrides
+      WHERE viewer_did = \(viewerDid) AND subject_uri = ANY(\(entryIds))
+      """,
+      logger: logger
+    )
+    var unreadOverrides = Set<String>()
+    for try await row in overrideRows {
+      unreadOverrides.insert(try row.decode(String.self))
+    }
+    let boundaries = try await readBoundaries(
+      viewerDid: viewerDid,
+      publicationIds: publicationIds
+    )
+    return Dictionary(uniqueKeysWithValues: entries.map { entry in
+      let covered = entry.publicationId
+        .flatMap { boundaries[$0] }?
+        .contains(createdAt: entry.feedPositionAt, entryId: entry.entryId) ?? false
+      return (
+        entry.entryId,
+        explicitReads.contains(entry.entryId)
+          || (covered && !unreadOverrides.contains(entry.entryId))
+      )
+    })
+  }
+
   public func listEntries(
     viewerDid: String,
     authorDid: String,
@@ -197,7 +290,7 @@ public init(pool: PostgresClient, logger: Logger) {
     filter: EntryListFilter,
     cursor: String?,
     limit: Int,
-    readFloorAt: Date?
+    readBoundary: ReadWatermarkBoundary?
   ) async throws -> AppViewEntryListResponse {
     let pageLimit = max(1, min(limit, 100))
     let now = Date()
@@ -226,7 +319,7 @@ public init(pool: PostgresClient, logger: Logger) {
         cursor: dbCursor,
         limit: pageLimit + 1,
         now: now,
-        readFloorAt: readFloorAt
+        readBoundary: readBoundary
       )
       return ThinAppViewQuerySupport.buildFilteredEntryListPage(
         pageLimit: pageLimit,
@@ -252,7 +345,7 @@ public init(pool: PostgresClient, logger: Logger) {
         cursor: dbCursor,
         limit: batchSize,
         now: now,
-        readFloorAt: readFloorAt
+        readBoundary: readBoundary
       )
       return ThinAppViewQuerySupport.buildFilteredEntryListPage(
         pageLimit: pageLimit,
@@ -283,7 +376,7 @@ public init(pool: PostgresClient, logger: Logger) {
         cursor: dbCursor,
         limit: batchSize,
         now: now,
-        readFloorAt: readFloorAt
+        readBoundary: readBoundary
       )
       if fetched.isEmpty {
         dbHasMore = false
@@ -338,10 +431,12 @@ public init(pool: PostgresClient, logger: Logger) {
     cursor: (createdAt: Date, uri: String)?,
     limit: Int,
     now: Date,
-    readFloorAt: Date?
+    readBoundary: ReadWatermarkBoundary?
   ) async throws -> [(uri: String, renderJSON: String, createdAt: Date, publicationSite: String?)] {
     let rows: PostgresRowSequence
-    let unreadFloor = readFloorAt ?? Date(timeIntervalSince1970: 0)
+    let unreadFloor = readBoundary?.createdAt ?? Date(timeIntervalSince1970: 0)
+    let unreadFloorUri = readBoundary?.entryId
+    let hasReadBoundary = readBoundary != nil
     switch (filter, cursor) {
     case (.all, nil):
       rows = try await pool.query(
@@ -362,10 +457,16 @@ public init(pool: PostgresClient, logger: Logger) {
         SELECT ci.uri, ci.render_json::text, ci.created_at, ci.publication_site
         FROM content_items ci
         LEFT JOIN read_marks rm ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = ci.uri
+        LEFT JOIN appview_unread_overrides uo ON uo.viewer_did = \(viewerDid) AND uo.subject_uri = ci.uri
         WHERE ci.author_did = \(authorDid)
           AND ci.expires_at > \(now)
           AND rm.subject_uri IS NULL
-          AND ci.created_at > \(unreadFloor)
+          AND (
+            \(hasReadBoundary) = FALSE
+            OR ci.created_at > \(unreadFloor)
+            OR (\(unreadFloorUri) IS NOT NULL AND ci.created_at = \(unreadFloor) AND ci.uri > \(unreadFloorUri))
+            OR uo.subject_uri IS NOT NULL
+          )
           AND ci.publication_site = ANY(\(siteKeys))
         ORDER BY ci.created_at DESC, ci.uri DESC
         LIMIT \(limit)
@@ -377,9 +478,21 @@ public init(pool: PostgresClient, logger: Logger) {
         """
         SELECT ci.uri, ci.render_json::text, ci.created_at, ci.publication_site
         FROM content_items ci
-        INNER JOIN read_marks rm ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = ci.uri
+        LEFT JOIN read_marks rm ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = ci.uri
+        LEFT JOIN appview_unread_overrides uo ON uo.viewer_did = \(viewerDid) AND uo.subject_uri = ci.uri
         WHERE ci.author_did = \(authorDid)
           AND ci.expires_at > \(now)
+          AND (
+            rm.subject_uri IS NOT NULL
+            OR (
+              \(hasReadBoundary) = TRUE
+              AND uo.subject_uri IS NULL
+              AND (
+                ci.created_at < \(unreadFloor)
+                OR (ci.created_at = \(unreadFloor) AND (\(unreadFloorUri) IS NULL OR ci.uri <= \(unreadFloorUri)))
+              )
+            )
+          )
           AND ci.publication_site = ANY(\(siteKeys))
         ORDER BY ci.created_at DESC, ci.uri DESC
         LIMIT \(limit)
@@ -406,10 +519,16 @@ public init(pool: PostgresClient, logger: Logger) {
         SELECT ci.uri, ci.render_json::text, ci.created_at, ci.publication_site
         FROM content_items ci
         LEFT JOIN read_marks rm ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = ci.uri
+        LEFT JOIN appview_unread_overrides uo ON uo.viewer_did = \(viewerDid) AND uo.subject_uri = ci.uri
         WHERE ci.author_did = \(authorDid)
           AND ci.expires_at > \(now)
           AND rm.subject_uri IS NULL
-          AND ci.created_at > \(unreadFloor)
+          AND (
+            \(hasReadBoundary) = FALSE
+            OR ci.created_at > \(unreadFloor)
+            OR (\(unreadFloorUri) IS NOT NULL AND ci.created_at = \(unreadFloor) AND ci.uri > \(unreadFloorUri))
+            OR uo.subject_uri IS NOT NULL
+          )
           AND ci.publication_site = ANY(\(siteKeys))
           AND (ci.created_at < \(decoded.createdAt) OR (ci.created_at = \(decoded.createdAt) AND ci.uri < \(decoded.uri)))
         ORDER BY ci.created_at DESC, ci.uri DESC
@@ -422,9 +541,21 @@ public init(pool: PostgresClient, logger: Logger) {
         """
         SELECT ci.uri, ci.render_json::text, ci.created_at, ci.publication_site
         FROM content_items ci
-        INNER JOIN read_marks rm ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = ci.uri
+        LEFT JOIN read_marks rm ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = ci.uri
+        LEFT JOIN appview_unread_overrides uo ON uo.viewer_did = \(viewerDid) AND uo.subject_uri = ci.uri
         WHERE ci.author_did = \(authorDid)
           AND ci.expires_at > \(now)
+          AND (
+            rm.subject_uri IS NOT NULL
+            OR (
+              \(hasReadBoundary) = TRUE
+              AND uo.subject_uri IS NULL
+              AND (
+                ci.created_at < \(unreadFloor)
+                OR (ci.created_at = \(unreadFloor) AND (\(unreadFloorUri) IS NULL OR ci.uri <= \(unreadFloorUri)))
+              )
+            )
+          )
           AND ci.publication_site = ANY(\(siteKeys))
           AND (ci.created_at < \(decoded.createdAt) OR (ci.created_at = \(decoded.createdAt) AND ci.uri < \(decoded.uri)))
         ORDER BY ci.created_at DESC, ci.uri DESC
@@ -451,10 +582,12 @@ public init(pool: PostgresClient, logger: Logger) {
     cursor: (createdAt: Date, uri: String)?,
     limit: Int,
     now: Date,
-    readFloorAt: Date?
+    readBoundary: ReadWatermarkBoundary?
   ) async throws -> [(uri: String, renderJSON: String, createdAt: Date, publicationSite: String?)] {
     let rows: PostgresRowSequence
-    let unreadFloor = readFloorAt ?? Date(timeIntervalSince1970: 0)
+    let unreadFloor = readBoundary?.createdAt ?? Date(timeIntervalSince1970: 0)
+    let unreadFloorUri = readBoundary?.entryId
+    let hasReadBoundary = readBoundary != nil
     switch (filter, cursor) {
     case (.all, nil):
       rows = try await pool.query(
@@ -473,8 +606,14 @@ public init(pool: PostgresClient, logger: Logger) {
         SELECT ci.uri, ci.render_json::text, ci.created_at, ci.publication_site
         FROM content_items ci
         LEFT JOIN read_marks rm ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = ci.uri
+        LEFT JOIN appview_unread_overrides uo ON uo.viewer_did = \(viewerDid) AND uo.subject_uri = ci.uri
         WHERE ci.author_did = \(authorDid) AND ci.expires_at > \(now) AND rm.subject_uri IS NULL
-          AND ci.created_at > \(unreadFloor)
+          AND (
+            \(hasReadBoundary) = FALSE
+            OR ci.created_at > \(unreadFloor)
+            OR (\(unreadFloorUri) IS NOT NULL AND ci.created_at = \(unreadFloor) AND ci.uri > \(unreadFloorUri))
+            OR uo.subject_uri IS NOT NULL
+          )
         ORDER BY ci.created_at DESC, ci.uri DESC
         LIMIT \(limit)
         """,
@@ -485,8 +624,20 @@ public init(pool: PostgresClient, logger: Logger) {
         """
         SELECT ci.uri, ci.render_json::text, ci.created_at, ci.publication_site
         FROM content_items ci
-        INNER JOIN read_marks rm ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = ci.uri
+        LEFT JOIN read_marks rm ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = ci.uri
+        LEFT JOIN appview_unread_overrides uo ON uo.viewer_did = \(viewerDid) AND uo.subject_uri = ci.uri
         WHERE ci.author_did = \(authorDid) AND ci.expires_at > \(now)
+          AND (
+            rm.subject_uri IS NOT NULL
+            OR (
+              \(hasReadBoundary) = TRUE
+              AND uo.subject_uri IS NULL
+              AND (
+                ci.created_at < \(unreadFloor)
+                OR (ci.created_at = \(unreadFloor) AND (\(unreadFloorUri) IS NULL OR ci.uri <= \(unreadFloorUri)))
+              )
+            )
+          )
         ORDER BY ci.created_at DESC, ci.uri DESC
         LIMIT \(limit)
         """,
@@ -510,8 +661,14 @@ public init(pool: PostgresClient, logger: Logger) {
         SELECT ci.uri, ci.render_json::text, ci.created_at, ci.publication_site
         FROM content_items ci
         LEFT JOIN read_marks rm ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = ci.uri
+        LEFT JOIN appview_unread_overrides uo ON uo.viewer_did = \(viewerDid) AND uo.subject_uri = ci.uri
         WHERE ci.author_did = \(authorDid) AND ci.expires_at > \(now) AND rm.subject_uri IS NULL
-          AND ci.created_at > \(unreadFloor)
+          AND (
+            \(hasReadBoundary) = FALSE
+            OR ci.created_at > \(unreadFloor)
+            OR (\(unreadFloorUri) IS NOT NULL AND ci.created_at = \(unreadFloor) AND ci.uri > \(unreadFloorUri))
+            OR uo.subject_uri IS NOT NULL
+          )
           AND (ci.created_at < \(decoded.createdAt) OR (ci.created_at = \(decoded.createdAt) AND ci.uri < \(decoded.uri)))
         ORDER BY ci.created_at DESC, ci.uri DESC
         LIMIT \(limit)
@@ -523,8 +680,20 @@ public init(pool: PostgresClient, logger: Logger) {
         """
         SELECT ci.uri, ci.render_json::text, ci.created_at, ci.publication_site
         FROM content_items ci
-        INNER JOIN read_marks rm ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = ci.uri
+        LEFT JOIN read_marks rm ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = ci.uri
+        LEFT JOIN appview_unread_overrides uo ON uo.viewer_did = \(viewerDid) AND uo.subject_uri = ci.uri
         WHERE ci.author_did = \(authorDid) AND ci.expires_at > \(now)
+          AND (
+            rm.subject_uri IS NOT NULL
+            OR (
+              \(hasReadBoundary) = TRUE
+              AND uo.subject_uri IS NULL
+              AND (
+                ci.created_at < \(unreadFloor)
+                OR (ci.created_at = \(unreadFloor) AND (\(unreadFloorUri) IS NULL OR ci.uri <= \(unreadFloorUri)))
+              )
+            )
+          )
           AND (ci.created_at < \(decoded.createdAt) OR (ci.created_at = \(decoded.createdAt) AND ci.uri < \(decoded.uri)))
         ORDER BY ci.created_at DESC, ci.uri DESC
         LIMIT \(limit)
@@ -739,18 +908,21 @@ public init(pool: PostgresClient, logger: Logger) {
   ) async throws -> [AppViewUnreadCounter] {
     guard !scopes.isEmpty else { return [] }
     let exactCounts = try await countUnreadEntriesBatch(viewerDid: viewerDid, scopes: scopes)
-    let floors = try await readFloors(viewerDid: viewerDid, publicationIds: scopes.map(\.publicationId))
+    let boundaries = try await readBoundaries(
+      viewerDid: viewerDid,
+      publicationIds: scopes.map(\.publicationId)
+    )
     let countedAt = Date()
     let generation = AppViewUnreadCounterSupport.generation(for: countedAt)
     var counters: [AppViewUnreadCounter] = []
 
     for scope in scopes {
       let count: Int
-      if let floor = floors[scope.publicationId] {
-        count = try await countUnreadEntriesAfterFloor(
+      if let boundary = boundaries[scope.publicationId] {
+        count = try await countUnreadEntriesAfterBoundary(
           viewerDid: viewerDid,
           scope: scope,
-          readFloorAt: floor
+          readBoundary: boundary
         )
       } else {
         count = exactCounts[scope.publicationId] ?? 0
@@ -782,8 +954,12 @@ public init(pool: PostgresClient, logger: Logger) {
     let generation = AppViewUnreadCounterSupport.generation()
     let countedAt = Date()
     for scope in scopes {
-      if let floor = try await readFloor(viewerDid: scope.viewerDid, publicationId: scope.publicationId),
-         item.createdAt <= floor
+      if let boundary = try await readBoundary(
+        viewerDid: scope.viewerDid,
+        publicationId: scope.publicationId
+      ),
+         boundary.contains(createdAt: item.createdAt, entryId: item.uri),
+         !(try await hasUnreadOverride(viewerDid: scope.viewerDid, subjectUri: item.uri))
       {
         continue
       }
@@ -840,11 +1016,6 @@ public init(pool: PostgresClient, logger: Logger) {
     let generation = AppViewUnreadCounterSupport.generation()
     let countedAt = Date()
     for scope in scopes {
-      if let floor = try await readFloor(viewerDid: viewerDid, publicationId: scope.publicationId),
-         content.createdAt <= floor
-      {
-        continue
-      }
       try await adjustUnreadCounter(
         viewerDid: viewerDid,
         publicationId: scope.publicationId,
@@ -857,40 +1028,192 @@ public init(pool: PostgresClient, logger: Logger) {
 
   public func markAllReadCounters(
     viewerDid: String,
-    publicationIds: [String],
+    scopes: [PublicationUnreadScope],
     readAt: Date
-  ) async throws -> [AppViewUnreadCounter] {
-    let uniqueIds = Array(Set(publicationIds)).sorted()
-    guard !uniqueIds.isEmpty else { return [] }
+  ) async throws -> (counters: [AppViewUnreadCounter], boundaries: [ReadWatermarkBoundary]) {
+    let uniqueScopes = Dictionary(scopes.map { ($0.publicationId, $0) }, uniquingKeysWith: { first, _ in first })
+      .values
+      .sorted { $0.publicationId < $1.publicationId }
+    guard !uniqueScopes.isEmpty else { return ([], []) }
     let generation = AppViewUnreadCounterSupport.generation(for: readAt)
-    var counters: [AppViewUnreadCounter] = []
-    for publicationId in uniqueIds {
-      try await pool.query(
-        """
-        INSERT INTO appview_publication_read_floors
-          (viewer_did, publication_id, read_floor_at, generation, updated_at)
-        VALUES
-          (\(viewerDid), \(publicationId), \(readAt), \(generation), \(readAt))
-        ON CONFLICT (viewer_did, publication_id)
-        DO UPDATE SET
-          read_floor_at = EXCLUDED.read_floor_at,
-          generation = EXCLUDED.generation,
-          updated_at = EXCLUDED.updated_at
-        """,
-        logger: logger
-      )
-      let counter = AppViewUnreadCounter(
-        publicationId: publicationId,
-        unreadCount: 0,
-        generation: generation,
-        accuracy: .estimated,
-        dirty: true,
-        countedAt: readAt
-      )
-      try await upsertUnreadCounter(counter, viewerDid: viewerDid)
-      counters.append(counter)
+    return try await pool.withTransaction(logger: logger) { connection in
+      var counters: [AppViewUnreadCounter] = []
+      var boundaries: [ReadWatermarkBoundary] = []
+      for scope in uniqueScopes {
+        let lockRows = try await connection.query(
+          """
+          SELECT pg_advisory_xact_lock(
+            hashtextextended(\(viewerDid + "\u{0}" + scope.publicationId), 0)
+          )
+          """,
+          logger: logger
+        )
+        for try await _ in lockRows {}
+        let scoped = ThinAppViewQuerySupport.requiresPublicationSiteFilter(
+          publicationAtUri: scope.publicationAtUri,
+          publicationScopeAtUris: scope.publicationScopeAtUris,
+          publicationSiteUrls: scope.publicationSiteUrls
+        )
+        let siteKeys = AppViewProjectionCacheScopeKeys.publicationSiteKeys(
+          publicationAtUri: scope.publicationAtUri,
+          publicationScopeAtUris: scope.publicationScopeAtUris,
+          publicationSiteUrls: scope.publicationSiteUrls
+        )
+        var requested = ReadWatermarkBoundary(
+          publicationId: scope.publicationId,
+          createdAt: readAt,
+          entryId: nil
+        )
+        if !scoped || !siteKeys.isEmpty {
+          let rows: PostgresRowSequence
+          if scoped {
+            rows = try await connection.query(
+              """
+              SELECT uri, created_at
+              FROM content_items
+              WHERE author_did = \(scope.authorDid)
+                AND created_at <= \(readAt)
+                AND publication_site = ANY(\(siteKeys))
+              ORDER BY created_at DESC, uri DESC
+              LIMIT 1
+              """,
+              logger: logger
+            )
+          } else {
+            rows = try await connection.query(
+              """
+              SELECT uri, created_at
+              FROM content_items
+              WHERE author_did = \(scope.authorDid) AND created_at <= \(readAt)
+              ORDER BY created_at DESC, uri DESC
+              LIMIT 1
+              """,
+              logger: logger
+            )
+          }
+          for try await row in rows {
+            let (uri, createdAt) = try row.decode((String, Date).self)
+            requested = ReadWatermarkBoundary(
+              publicationId: scope.publicationId,
+              createdAt: createdAt,
+              entryId: uri
+            )
+          }
+        }
+        let existingRows = try await connection.query(
+          """
+          SELECT read_floor_at, read_floor_uri
+          FROM appview_publication_read_floors
+          WHERE viewer_did = \(viewerDid) AND publication_id = \(scope.publicationId)
+          FOR UPDATE
+          """,
+          logger: logger
+        )
+        var existing: ReadWatermarkBoundary?
+        for try await row in existingRows {
+          let (createdAt, entryId) = try row.decode((Date, String?).self)
+          existing = ReadWatermarkBoundary(
+            publicationId: scope.publicationId,
+            createdAt: createdAt,
+            entryId: entryId
+          )
+        }
+        let shouldClearCoveredOverrides = existing.map { !$0.isAfter(requested) } ?? true
+        let confirmed = existing.map { requested.isAfter($0) ? requested : $0 } ?? requested
+        try await connection.query(
+          """
+          INSERT INTO appview_publication_read_floors
+            (viewer_did, publication_id, read_floor_at, read_floor_uri, generation, updated_at)
+          VALUES
+            (\(viewerDid), \(scope.publicationId), \(confirmed.createdAt), \(confirmed.entryId), \(generation), \(readAt))
+          ON CONFLICT (viewer_did, publication_id)
+          DO UPDATE SET
+            read_floor_at = EXCLUDED.read_floor_at,
+            read_floor_uri = EXCLUDED.read_floor_uri,
+            generation = EXCLUDED.generation,
+            updated_at = EXCLUDED.updated_at
+          """,
+          logger: logger
+        )
+        let overrideRows = try await connection.query(
+          """
+          SELECT uo.subject_uri, ci.created_at, ci.publication_site
+          FROM appview_unread_overrides uo
+          INNER JOIN content_items ci ON ci.uri = uo.subject_uri
+          WHERE uo.viewer_did = \(viewerDid) AND ci.author_did = \(scope.authorDid)
+          """,
+          logger: logger
+        )
+        var coveredOverrides: [String] = []
+        for try await row in overrideRows {
+          let (subjectUri, createdAt, publicationSite) = try row.decode(
+            (String, Date, String?).self
+          )
+          guard confirmed.contains(createdAt: createdAt, entryId: subjectUri) else { continue }
+          guard ThinAppViewQuerySupport.publicationSiteMatches(
+            siteField: publicationSite,
+            publicationAtUri: scope.publicationAtUri,
+            publicationScopeAtUris: scope.publicationScopeAtUris,
+            publicationSiteUrls: scope.publicationSiteUrls
+          ) else {
+            continue
+          }
+          coveredOverrides.append(subjectUri)
+        }
+        if shouldClearCoveredOverrides, !coveredOverrides.isEmpty {
+          try await connection.query(
+            """
+            DELETE FROM appview_unread_overrides
+            WHERE viewer_did = \(viewerDid) AND subject_uri = ANY(\(coveredOverrides))
+            """,
+            logger: logger
+          )
+        }
+        var counter = AppViewUnreadCounter(
+          publicationId: scope.publicationId,
+          unreadCount: 0,
+          generation: generation,
+          accuracy: .exact,
+          dirty: false,
+          countedAt: readAt
+        )
+        if shouldClearCoveredOverrides {
+          try await connection.query(
+            """
+            INSERT INTO appview_unread_counters
+              (viewer_did, publication_id, unread_count, generation, accuracy, dirty, counted_at)
+            VALUES
+              (\(viewerDid), \(scope.publicationId), 0, \(generation), \(counter.accuracy.rawValue), FALSE, \(readAt))
+            ON CONFLICT (viewer_did, publication_id) DO UPDATE SET
+              unread_count = 0,
+              generation = EXCLUDED.generation,
+              accuracy = EXCLUDED.accuracy,
+              dirty = FALSE,
+              counted_at = EXCLUDED.counted_at
+            """,
+            logger: logger
+          )
+        } else {
+          let counterRows = try await connection.query(
+            """
+            SELECT publication_id, unread_count, generation, accuracy, dirty, counted_at
+            FROM appview_unread_counters
+            WHERE viewer_did = \(viewerDid) AND publication_id = \(scope.publicationId)
+            LIMIT 1
+            """,
+            logger: logger
+          )
+          for try await row in counterRows {
+            if let stored = try Self.unreadCounter(from: row) {
+              counter = stored
+            }
+          }
+        }
+        counters.append(counter)
+        boundaries.append(confirmed)
+      }
+      return (counters, boundaries)
     }
-    return counters
   }
 
   public func deleteExpiredContent(before: Date, batchSize: Int) async throws -> Int {
@@ -1703,33 +2026,42 @@ public init(pool: PostgresClient, logger: Logger) {
     return scopes
   }
 
-  private func readFloors(
+  private func readBoundaries(
     viewerDid: String,
     publicationIds: [String]
-  ) async throws -> [String: Date] {
+  ) async throws -> [String: ReadWatermarkBoundary] {
     let uniqueIds = Array(Set(publicationIds)).sorted()
     guard !uniqueIds.isEmpty else { return [:] }
     let rows = try await pool.query(
       """
-      SELECT publication_id, read_floor_at
+      SELECT publication_id, read_floor_at, read_floor_uri
       FROM appview_publication_read_floors
       WHERE viewer_did = \(viewerDid)
         AND publication_id = ANY(\(uniqueIds))
       """,
       logger: logger
     )
-    var floors: [String: Date] = [:]
+    var boundaries: [String: ReadWatermarkBoundary] = [:]
     for try await row in rows {
-      let (publicationId, readFloorAt): (String, Date) = try row.decode((String, Date).self)
-      floors[publicationId] = readFloorAt
+      let (publicationId, createdAt, entryId) = try row.decode(
+        (String, Date, String?).self
+      )
+      boundaries[publicationId] = ReadWatermarkBoundary(
+        publicationId: publicationId,
+        createdAt: createdAt,
+        entryId: entryId
+      )
     }
-    return floors
+    return boundaries
   }
 
-  public func readFloor(viewerDid: String, publicationId: String) async throws -> Date? {
+  public func readBoundary(
+    viewerDid: String,
+    publicationId: String
+  ) async throws -> ReadWatermarkBoundary? {
     let rows = try await pool.query(
       """
-      SELECT read_floor_at
+      SELECT read_floor_at, read_floor_uri
       FROM appview_publication_read_floors
       WHERE viewer_did = \(viewerDid)
         AND publication_id = \(publicationId)
@@ -1738,15 +2070,20 @@ public init(pool: PostgresClient, logger: Logger) {
       logger: logger
     )
     for try await row in rows {
-      return try row.decode(Date.self)
+      let (createdAt, entryId) = try row.decode((Date, String?).self)
+      return ReadWatermarkBoundary(
+        publicationId: publicationId,
+        createdAt: createdAt,
+        entryId: entryId
+      )
     }
     return nil
   }
 
-  private func countUnreadEntriesAfterFloor(
+  private func countUnreadEntriesAfterBoundary(
     viewerDid: String,
     scope: PublicationUnreadScope,
-    readFloorAt: Date
+    readBoundary: ReadWatermarkBoundary
   ) async throws -> Int {
     let now = Date()
     let scoped = ThinAppViewQuerySupport.requiresPublicationSiteFilter(
@@ -1765,9 +2102,18 @@ public init(pool: PostgresClient, logger: Logger) {
         SELECT COUNT(*)::int
         FROM content_items ci
         LEFT JOIN read_marks rm ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = ci.uri
+        LEFT JOIN appview_unread_overrides uo ON uo.viewer_did = \(viewerDid) AND uo.subject_uri = ci.uri
         WHERE ci.author_did = \(scope.authorDid)
           AND ci.expires_at > \(now)
-          AND ci.created_at > \(readFloorAt)
+          AND (
+            ci.created_at > \(readBoundary.createdAt)
+            OR (
+              \(readBoundary.entryId) IS NOT NULL
+              AND ci.created_at = \(readBoundary.createdAt)
+              AND ci.uri > \(readBoundary.entryId)
+            )
+            OR uo.subject_uri IS NOT NULL
+          )
           AND ci.publication_site = ANY(\(siteKeys))
           AND rm.subject_uri IS NULL
         """,
@@ -1784,9 +2130,18 @@ public init(pool: PostgresClient, logger: Logger) {
       SELECT ci.publication_site
       FROM content_items ci
       LEFT JOIN read_marks rm ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = ci.uri
+      LEFT JOIN appview_unread_overrides uo ON uo.viewer_did = \(viewerDid) AND uo.subject_uri = ci.uri
       WHERE ci.author_did = \(scope.authorDid)
         AND ci.expires_at > \(now)
-        AND ci.created_at > \(readFloorAt)
+        AND (
+          ci.created_at > \(readBoundary.createdAt)
+          OR (
+            \(readBoundary.entryId) IS NOT NULL
+            AND ci.created_at = \(readBoundary.createdAt)
+            AND ci.uri > \(readBoundary.entryId)
+          )
+          OR uo.subject_uri IS NOT NULL
+        )
         AND rm.subject_uri IS NULL
       """,
       logger: logger
@@ -1804,6 +2159,23 @@ public init(pool: PostgresClient, logger: Logger) {
         publicationSiteUrls: scope.publicationSiteUrls
       )
       : siteFields.count
+  }
+
+  private func hasUnreadOverride(
+    viewerDid: String,
+    subjectUri: String
+  ) async throws -> Bool {
+    let rows = try await pool.query(
+      """
+      SELECT 1
+      FROM appview_unread_overrides
+      WHERE viewer_did = \(viewerDid) AND subject_uri = \(subjectUri)
+      LIMIT 1
+      """,
+      logger: logger
+    )
+    for try await _ in rows { return true }
+    return false
   }
 
   private func contentCounterFields(
