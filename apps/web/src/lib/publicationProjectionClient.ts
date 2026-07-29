@@ -280,7 +280,7 @@ export async function deleteRssSubscriptionOnGateway(
 export async function markAllReadOnGateway(
   oauthSession: OAuthSession,
   scope: GatewayMarkAllReadScope
-): Promise<{ marked: number }> {
+): Promise<GatewayMarkAllReadResponse> {
   const res = await gatewayFetch(oauthSession, "/v1/appview/mark-all-read", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -289,8 +289,19 @@ export async function markAllReadOnGateway(
   if (!res.ok) {
     throw new Error(`Mark all read failed (${res.status})`);
   }
-  return (await res.json()) as { marked: number };
+  return (await res.json()) as GatewayMarkAllReadResponse;
 }
+
+export type GatewayMarkAllReadResponse = {
+  marked: number;
+  confirmedAt: string;
+  boundaries: Array<{
+    publicationId: string;
+    createdAt: string;
+    entryId?: string;
+  }>;
+  unreadCounts: Record<string, number>;
+};
 
 export function sidebarRowToDiscoveredPublication(
   row: SidebarPublicationRow

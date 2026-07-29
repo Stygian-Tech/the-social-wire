@@ -16,6 +16,7 @@ headers {
 }
 
 docs {
-  Requires `ENABLE_THIN_APPVIEW=true` on the API. Lists Level-1 entry rows indexed by the worker.
-  Optional query params: `publicationAtUri`, `cursor` (add to the URL when needed).
+  Requires `ENABLE_THIN_APPVIEW=true` on the API. Lists Level-1 entry rows with
+  authoritative `isRead`. The gateway preserves AppView status, error envelope,
+  and `X-Request-ID`.
 }

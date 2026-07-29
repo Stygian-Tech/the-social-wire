@@ -30,6 +30,62 @@ export type AppViewUnreadCountsResponse = {
   countedAt?: string;
 };
 
+export class AppViewRequestError extends Error {
+  readonly status: number;
+  readonly requestId?: string;
+  readonly retryable: boolean;
+
+  constructor(args: {
+    message: string;
+    status: number;
+    requestId?: string;
+    retryable?: boolean;
+  }) {
+    super(args.message);
+    this.name = "AppViewRequestError";
+    this.status = args.status;
+    this.requestId = args.requestId;
+    this.retryable = args.retryable === true;
+  }
+}
+
+export function shouldRetryAppViewRequest(
+  failureCount: number,
+  error: unknown
+): boolean {
+  return (
+    failureCount < 1 &&
+    error instanceof AppViewRequestError &&
+    error.retryable
+  );
+}
+
+async function appViewResponseError(
+  res: Response,
+  fallback: string
+): Promise<AppViewRequestError> {
+  const requestId = res.headers.get("X-Request-ID") ?? undefined;
+  let message = `${fallback} (${res.status})`;
+  let retryable = false;
+  try {
+    const envelope = (await res.json()) as {
+      message?: string;
+      requestId?: string;
+      retryable?: boolean;
+    };
+    message = envelope.message?.trim() || message;
+    retryable = envelope.retryable === true;
+    return new AppViewRequestError({
+      message,
+      status: res.status,
+      requestId: envelope.requestId ?? requestId,
+      retryable,
+    });
+  } catch {
+    return new AppViewRequestError({ message, status: res.status, requestId });
+  }
+}
+
 export async function listEntriesFromAppView(args: {
   publicationKey: string;
   appViewScope: PublicationAppViewScope;
@@ -78,11 +134,8 @@ export async function listEntriesFromAppView(args: {
     `/v1/appview/entries?${params.toString()}`,
     { method: "GET", signal }
   );
-  if (res.status === 404) {
-    throw new Error("Thin AppView unavailable");
-  }
   if (!res.ok) {
-    throw new Error(`Thin AppView entries failed (${res.status})`);
+    throw await appViewResponseError(res, "Thin AppView entries failed");
   }
 
   const json = (await res.json()) as {
@@ -94,6 +147,7 @@ export async function listEntriesFromAppView(args: {
       thumbnailUrl?: string;
       thumbnailFallbackUrl?: string;
       originalUrl?: string;
+      isRead: boolean;
     }>;
     cursor?: string;
   };
@@ -111,6 +165,7 @@ export async function listEntriesFromAppView(args: {
         publishedAt: row.publishedAt,
         thumbnailUrl: row.thumbnailUrl,
         thumbnailFallbackUrl: row.thumbnailFallbackUrl,
+        isRead: row.isRead,
         ...(normalizedOriginal ? { originalUrl: normalizedOriginal } : {}),
       };
     }),
@@ -147,7 +202,7 @@ export async function listAggregateFeedFromAppView(args: {
     { method: "GET", signal },
   );
   if (!res.ok) {
-    throw new Error(`Aggregate AppView feed failed (${res.status})`);
+    throw await appViewResponseError(res, "Aggregate AppView feed failed");
   }
   const json = (await res.json()) as {
     entries?: Array<{
@@ -159,6 +214,7 @@ export async function listAggregateFeedFromAppView(args: {
       thumbnailFallbackUrl?: string;
       originalUrl?: string;
       publicationId?: string;
+      isRead: boolean;
     }>;
     cursor?: string;
   };
@@ -175,6 +231,7 @@ export async function listAggregateFeedFromAppView(args: {
         thumbnailUrl: row.thumbnailUrl,
         thumbnailFallbackUrl: row.thumbnailFallbackUrl,
         publicationId: row.publicationId,
+        isRead: row.isRead,
         ...(normalizedOriginal ? { originalUrl: normalizedOriginal } : {}),
       };
     }),

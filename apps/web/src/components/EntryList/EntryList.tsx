@@ -105,10 +105,13 @@ export function EntryList({
   }, [activeData?.pages]);
 
   const visibleEntries: EntryListItem[] = useMemo(() => {
+    const authoritativeReadIds = new Set(
+      allEntries.filter((entry) => entry.isRead).map((entry) => entry.entryId)
+    );
     return filterEntriesForArticleFilter(
       allEntries,
       effectiveFilter,
-      isEntryRead
+      (entryId) => isEntryRead(entryId) || authoritativeReadIds.has(entryId)
     );
   }, [allEntries, effectiveFilter, isEntryRead]);
 

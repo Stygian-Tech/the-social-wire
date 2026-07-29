@@ -43,6 +43,7 @@ enum AppViewRouterBuilder {
       logger: logger
     )
     let protected = router.group()
+      .add(middleware: AppViewFeedErrorMiddleware())
       .add(middleware: internalTrustMiddleware)
       .add(middleware: authMiddleware)
 

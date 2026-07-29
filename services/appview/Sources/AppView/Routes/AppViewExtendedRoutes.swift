@@ -50,7 +50,14 @@ struct AppViewExtendedRoutes {
       let sidebar = try await projectionService.sidebar(auth: auth)
       let rows = Self.rows(for: body.scope, sidebar: sidebar)
       let result = try await readService.markAllRead(auth: auth, rows: rows)
-      return MarkAllReadResponse(marked: result.marked)
+      return MarkAllReadResponse(
+        marked: result.marked,
+        confirmedAt: result.confirmedAt,
+        boundaries: result.boundaries,
+        unreadCounts: Dictionary(
+          uniqueKeysWithValues: result.counters.map { ($0.publicationId, $0.unreadCount) }
+        )
+      )
     }
   }
 
@@ -156,4 +163,7 @@ struct ScopedMarkAllReadScope: Codable, Sendable {
 
 struct MarkAllReadResponse: Codable, Sendable, ResponseEncodable {
   let marked: Int
+  let confirmedAt: Date
+  let boundaries: [ReadWatermarkBoundary]
+  let unreadCounts: [String: Int]
 }

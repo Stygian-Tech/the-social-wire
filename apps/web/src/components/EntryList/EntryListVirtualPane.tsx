@@ -222,7 +222,7 @@ export function EntryListVirtualPane({
                 entry={entry}
                 isSelected={selectedEntryId === entry.entryId}
                 onSelect={onSelectEntry}
-                isRead={isEntryRead(entry.entryId)}
+                isRead={entry.isRead === true || isEntryRead(entry.entryId)}
                 readIndicatorsEnabled={readIndicatorsEnabled}
                 onMarkEntryRead={markEntryRead}
                 onMarkEntryUnread={markEntryUnread}

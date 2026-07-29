@@ -1,7 +1,11 @@
 "use client";
 
 import { useCallback, useMemo } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import {
+  useQueryClient,
+  type InfiniteData,
+  type QueryKey,
+} from "@tanstack/react-query";
 
 import { useAuth } from "@/hooks/useAuth";
 import { useReadRoute } from "@/contexts/ReadRouteContext";
@@ -12,6 +16,7 @@ import {
 } from "@/lib/publicationProjectionClient";
 import { distinctCachedEntryIdsForPublications } from "@/lib/unreadCounts";
 import type { DiscoveredPublication } from "@/lib/atprotoClient";
+import type { EntriesPage } from "@/hooks/useEntries";
 
 export function useCachedBulkReadActions(
   publications: DiscoveredPublication[],
@@ -23,6 +28,7 @@ export function useCachedBulkReadActions(
   const {
     markEntriesRead,
     markEntriesUnread,
+    isEntryRead,
   } = useReadRoute();
 
   const cachedEntryIds = useMemo(() => {
@@ -36,10 +42,31 @@ export function useCachedBulkReadActions(
     (options?.gatewayScopes?.length ?? 0) === 0;
 
   const applyMarkAllRead = useCallback(() => {
+    const entryWasRead = isEntryRead ?? (() => false);
+    const previouslyRead = cachedEntryIds.filter(entryWasRead);
+    const newlyRead = cachedEntryIds.filter((entryId) => !entryWasRead(entryId));
+    const cacheSnapshots = queryClient.getQueriesData<InfiniteData<EntriesPage>>({
+      predicate: ({ queryKey }) =>
+        queryKey[0] === "entries" || queryKey[0] === "aggregateEntries",
+    });
     markEntriesRead(cachedEntryIds, {
       publications,
       syncToAppView: false,
     });
+    for (const [queryKey, data] of cacheSnapshots) {
+      if (!data) continue;
+      queryClient.setQueryData<InfiniteData<EntriesPage>>(queryKey, {
+        ...data,
+        pages: data.pages.map((page) => ({
+          ...page,
+          entries: page.entries.map((entry) =>
+            cachedEntryIds.includes(entry.entryId)
+              ? { ...entry, isRead: true }
+              : entry
+          ),
+        })),
+      });
+    }
     const oauth = getOAuthSession();
     const scopes =
       options?.gatewayScopes ??
@@ -48,9 +75,27 @@ export function useCachedBulkReadActions(
         publicationId: publication.publicationId,
       }));
     if (oauth && scopes.length > 0) {
-      for (const scope of scopes) {
-        void markAllReadOnGateway(oauth, scope).catch(() => {
-          /* best-effort AppView scope mark-all-read */
+      void Promise.all(scopes.map((scope) => markAllReadOnGateway(oauth, scope))).catch(() => {
+        for (const [queryKey, snapshot] of cacheSnapshots) {
+          queryClient.setQueryData(queryKey as QueryKey, snapshot);
+        }
+        markEntriesUnread(newlyRead, { publications });
+        if (previouslyRead.length > 0) {
+          markEntriesRead(previouslyRead, {
+            publications,
+            syncToAppView: false,
+          });
+        }
+      });
+    } else if (scopes.length > 0) {
+      for (const [queryKey, snapshot] of cacheSnapshots) {
+        queryClient.setQueryData(queryKey as QueryKey, snapshot);
+      }
+      markEntriesUnread(newlyRead, { publications });
+      if (previouslyRead.length > 0) {
+        markEntriesRead(previouslyRead, {
+          publications,
+          syncToAppView: false,
         });
       }
     }
@@ -60,6 +105,9 @@ export function useCachedBulkReadActions(
     publications,
     getOAuthSession,
     options?.gatewayScopes,
+    isEntryRead,
+    markEntriesUnread,
+    queryClient,
   ]);
 
   const applyMarkAllUnread = useCallback(() => {

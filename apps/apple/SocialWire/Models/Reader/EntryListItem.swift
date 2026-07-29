@@ -10,6 +10,7 @@ struct EntryListItem: Identifiable, Codable, Equatable, Sendable {
     var thumbnailFallbackUrl: String?
     var originalUrl: String?
     var publicationId: String?
+    var isRead: Bool
 
     var id: String { entryId }
 
@@ -26,7 +27,8 @@ struct EntryListItem: Identifiable, Codable, Equatable, Sendable {
         thumbnailUrl: String?,
         thumbnailFallbackUrl: String?,
         originalUrl: String? = nil,
-        publicationId: String? = nil
+        publicationId: String? = nil,
+        isRead: Bool = false
     ) {
         self.entryId = entryId
         self.title = title
@@ -37,6 +39,7 @@ struct EntryListItem: Identifiable, Codable, Equatable, Sendable {
         self.thumbnailFallbackUrl = thumbnailFallbackUrl
         self.originalUrl = originalUrl
         self.publicationId = publicationId
+        self.isRead = isRead
     }
 
     enum CodingKeys: String, CodingKey {
@@ -49,6 +52,7 @@ struct EntryListItem: Identifiable, Codable, Equatable, Sendable {
         case thumbnailFallbackUrl
         case originalUrl
         case publicationId
+        case isRead
     }
 
     init(from decoder: Decoder) throws {
@@ -63,6 +67,7 @@ struct EntryListItem: Identifiable, Codable, Equatable, Sendable {
         thumbnailFallbackUrl = try container.decodeIfPresent(String.self, forKey: .thumbnailFallbackUrl)
         originalUrl = try container.decodeIfPresent(String.self, forKey: .originalUrl)
         publicationId = try container.decodeIfPresent(String.self, forKey: .publicationId)
+        isRead = try container.decodeIfPresent(Bool.self, forKey: .isRead) ?? false
     }
 
     func encode(to encoder: Encoder) throws {
@@ -76,6 +81,7 @@ struct EntryListItem: Identifiable, Codable, Equatable, Sendable {
         try container.encodeIfPresent(thumbnailFallbackUrl, forKey: .thumbnailFallbackUrl)
         try container.encodeIfPresent(originalUrl, forKey: .originalUrl)
         try container.encodeIfPresent(publicationId, forKey: .publicationId)
+        try container.encode(isRead, forKey: .isRead)
     }
 
     static func formatDisplayPublishedAt(_ raw: String) -> String {

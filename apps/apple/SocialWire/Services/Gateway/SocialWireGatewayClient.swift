@@ -222,12 +222,12 @@ final class SocialWireGatewayClient {
             query["publicationSiteUrls"] = scope.publicationSiteUrls.joined(separator: ",")
         }
 
-        let result = try await authorizedGET(path: "/v1/appview/entries", query: query, ifNoneMatch: nil)
+        let result = try await authorizedFeedGET(path: "/v1/appview/entries", query: query)
         if result.statusCode == 404 {
             throw SocialWireError.appViewUnavailable
         }
         guard (200 ..< 300).contains(result.statusCode) else {
-            throw SocialWireError.badResponse("AppView entries failed (\(result.statusCode)).")
+            throw appViewFeedError(result, fallback: "AppView entries failed")
         }
         return try JSONDecoder().decode(AppViewEntryListResponse.self, from: result.body)
     }
@@ -246,13 +246,12 @@ final class SocialWireGatewayClient {
         ]
         if let id, !id.isEmpty { query["id"] = id }
         if let cursor, !cursor.isEmpty { query["cursor"] = cursor }
-        let result = try await authorizedGET(
+        let result = try await authorizedFeedGET(
             path: "/v1/appview/feed",
-            query: query,
-            ifNoneMatch: nil
+            query: query
         )
         guard (200 ..< 300).contains(result.statusCode) else {
-            throw SocialWireError.badResponse("Aggregate AppView feed failed (\(result.statusCode)).")
+            throw appViewFeedError(result, fallback: "Aggregate AppView feed failed")
         }
         return try JSONDecoder().decode(AppViewEntryListResponse.self, from: result.body)
     }
@@ -333,7 +332,7 @@ final class SocialWireGatewayClient {
         }
     }
 
-    func markAllRead(scope: GatewayMarkAllReadScopeDTO) async throws -> Int {
+    func markAllRead(scope: GatewayMarkAllReadScopeDTO) async throws -> GatewayMarkAllReadResponseDTO {
         let payload = try JSONEncoder().encode(GatewayMarkAllReadBody(scope: scope))
         let result = try await authorizedRequest(
             method: "POST",
@@ -348,8 +347,7 @@ final class SocialWireGatewayClient {
         guard (200 ..< 300).contains(result.statusCode) else {
             throw SocialWireError.badResponse("Mark all read failed (\(result.statusCode)).")
         }
-        let decoded = try JSONDecoder().decode(GatewayMarkAllReadResponseDTO.self, from: result.body)
-        return decoded.marked
+        return try JSONDecoder().decode(GatewayMarkAllReadResponseDTO.self, from: result.body)
     }
 
     func enrollAuthors(dids: [String], feedUrls: [String] = []) async throws -> Int {
@@ -466,6 +464,33 @@ final class SocialWireGatewayClient {
         )
     }
 
+    private func authorizedFeedGET(
+        path: String,
+        query: [String: String]
+    ) async throws -> GatewayHTTPResult {
+        let first = try await authorizedGET(path: path, query: query, ifNoneMatch: nil)
+        guard !(200 ..< 300).contains(first.statusCode),
+              let envelope = try? JSONDecoder().decode(AppViewErrorEnvelopeDTO.self, from: first.body),
+              envelope.retryable
+        else {
+            return first
+        }
+        return try await authorizedGET(path: path, query: query, ifNoneMatch: nil)
+    }
+
+    private func appViewFeedError(
+        _ result: GatewayHTTPResult,
+        fallback: String
+    ) -> SocialWireError {
+        if let envelope = try? JSONDecoder().decode(AppViewErrorEnvelopeDTO.self, from: result.body) {
+            return .badResponse(
+                "\(envelope.message) Request ID: \(envelope.requestId)"
+            )
+        }
+        let requestId = result.requestIdHeader.map { " Request ID: \($0)" } ?? ""
+        return .badResponse("\(fallback) (\(result.statusCode)).\(requestId)")
+    }
+
     private func authorizedRequest(
         method: String,
         path: String,
@@ -517,6 +542,7 @@ final class SocialWireGatewayClient {
         let initial = GatewayHTTPResult(
             statusCode: http.statusCode,
             etagHeader: http.value(forHTTPHeaderField: "ETag"),
+            requestIdHeader: http.value(forHTTPHeaderField: "X-Request-ID"),
             body: firstData
         )
 
@@ -554,6 +580,7 @@ final class SocialWireGatewayClient {
             return GatewayHTTPResult(
                 statusCode: retryHttp.statusCode,
                 etagHeader: retryHttp.value(forHTTPHeaderField: "ETag"),
+                requestIdHeader: retryHttp.value(forHTTPHeaderField: "X-Request-ID"),
                 body: retryData
             )
         }

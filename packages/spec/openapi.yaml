@@ -63,9 +63,30 @@ components:
           description: Human-readable error description.
           example: Unauthorized — invalid ATProto JWT or malformed DPoP proof.
 
+    AppViewFeedError:
+      type: object
+      required: [error, message, requestId, retryable]
+      properties:
+        error:
+          type: string
+          enum:
+            - invalid_request
+            - unauthorized
+            - forbidden
+            - feed_unavailable
+            - feed_dependency_unavailable
+            - feed_deadline_exceeded
+            - feed_internal_error
+        message:
+          type: string
+        requestId:
+          type: string
+        retryable:
+          type: boolean
+
     EntryListItem:
       type: object
-      required: [entryId, title, publishedAt]
+      required: [entryId, title, publishedAt, isRead]
       properties:
         entryId:
           type: string
@@ -1483,10 +1504,26 @@ paths:
                     nullable: true
         "400":
           description: Invalid feed kind or missing required identifier.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AppViewFeedError" }
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":
           description: Feed is not available to the authenticated viewer.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AppViewFeedError" }
+        "503":
+          description: Transient database or dependency failure after one bounded server retry.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AppViewFeedError" }
+        "504":
+          description: Feed request deadline exceeded.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AppViewFeedError" }
 
   /v1/appview/entries:
     get:
@@ -1565,8 +1602,23 @@ paths:
                     nullable: true
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "400":
+          description: Invalid cursor, filter, limit, or maxEntries.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AppViewFeedError" }
         "404":
           description: Route disabled when thin AppView flag is unset.
+        "503":
+          description: Transient database or dependency failure after one bounded server retry.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AppViewFeedError" }
+        "504":
+          description: Feed request deadline exceeded.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AppViewFeedError" }
 
   /v1/appview/read-marks:
     post:
@@ -1747,10 +1799,25 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [marked]
+                required: [marked, confirmedAt, boundaries, unreadCounts]
                 properties:
                   marked:
                     type: integer
+                  confirmedAt:
+                    type: string
+                    format: date-time
+                  boundaries:
+                    type: array
+                    items:
+                      type: object
+                      required: [publicationId, createdAt]
+                      properties:
+                        publicationId: { type: string }
+                        createdAt: { type: string, format: date-time }
+                        entryId: { type: string, nullable: true }
+                  unreadCounts:
+                    type: object
+                    additionalProperties: { type: integer, minimum: 0 }
         "401":
           $ref: "#/components/responses/Unauthorized"
 
