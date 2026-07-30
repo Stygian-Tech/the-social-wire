@@ -51,4 +51,4 @@ Populate `oauthAccessToken` and `dpopProof` from a real OAuth session. Never com
 ## Related
 
 - [AppView test plan](./appview.md)
-- [AppView worker test plan](./worker.md)
+- [Charybdis test plan](./worker.md)

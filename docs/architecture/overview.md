@@ -84,7 +84,7 @@ See [discovery.md](discovery.md) for the detailed walkthrough.
 
 ## Thin AppView (optional)
 
-When `ENABLE_THIN_APPVIEW` is enabled on AppView, the **appview-worker** process ingests Jetstream commits into `content_items`. Clients load the sidebar and first feed page via **`GET /v1/appview/bootstrap-stream`**, then paginate entry lists with `GET /v1/appview/entries`. Entry detail stays on the author PDS; feed read writes go to AppView read-mark and mark-all-read routes.
+When `ENABLE_THIN_APPVIEW` is enabled on AppView, **Charybdis** (the `appview-worker` process) ingests Jetstream commits into `content_items`. Clients load the sidebar and first feed page via **`GET /v1/appview/bootstrap-stream`**, then paginate entry lists with `GET /v1/appview/entries`. Entry detail stays on the author PDS; feed read writes go to AppView read-mark and mark-all-read routes.
 
 Enrollment (`POST /v1/appview/enroll`) backfills followed author DIDs after client-side discovery because the global relay may miss very new repos.
 
@@ -109,8 +109,8 @@ GitHub Actions
 
 | Environment | Branch | Backend hosting |
 |-------------|--------|-----------------|
-| Production | `main` | Fly gateway, appview, appview-worker (`*-prod-*` apps) |
-| Development | `dev` | Fly gateway, appview, appview-worker (`*-dev-*` apps) |
+| Production | `main` | Fly gateway, appview, and Charybdis (`*-prod-*` apps; Charybdis retains the `appview-worker` app ID) |
+| Development | `dev` | Fly gateway, appview, and Charybdis (`*-dev-*` apps; Charybdis retains the `appview-worker` app ID) |
 | Local | — | `swift run Gateway` / `swift run AppView` / `swift run AppViewWorker` |
 
 ### Local development

@@ -10,7 +10,7 @@ Distributed Swift/Hummingbird backend under **`services/gateway`**, **`services/
 |---------|------|---------------|
 | **Gateway** | OAuth metadata, DPoP verification, PDS write-through, sync cache, AppView proxy | `/health`, `/oauth/*`, `/v1/sync/*`, `/v1/pds/cache/*`, `/v1/publications/folders|prefs|subscriptions|…`, `/v1/reader/*`, proxied `/v1/publications/sidebar|refresh|resolve`, proxied `/v1/appview/*` |
 | **AppView** | Sidebar projection, Thin AppView read index, bootstrap stream | `/v1/publications/sidebar|refresh|resolve`, `/v1/appview/*` (when **`ENABLE_THIN_APPVIEW`**) |
-| **AppView worker** | Jetstream ingestion, proactive backfill, TTL cleanup | No HTTP API |
+| **Charybdis** | Jetstream ingestion, proactive backfill, TTL cleanup | No HTTP API |
 
 Gateway→AppView calls use **`GATEWAY_APPVIEW_INTERNAL_SECRET`** HMAC trust headers so AppView can skip JWT re-verification on proxied requests. Clients always hit the **gateway** host (`api.thesocialwire.app` / `api.testing.thesocialwire.app`).
 
@@ -25,7 +25,7 @@ cd services/gateway && APP_ENV=local APPVIEW_BASE_URL=http://127.0.0.1:8081 swif
 # AppView (sidebar + Thin AppView reads)
 cd services/appview && APP_ENV=local ENABLE_THIN_APPVIEW=true swift run AppView
 
-# AppView worker (Jetstream ingestion — optional locally)
+# Charybdis (Jetstream ingestion — optional locally)
 cd services/appview-worker && APP_ENV=local ENABLE_THIN_APPVIEW=true swift run AppViewWorker
 
 swift test   # per service directory

@@ -105,7 +105,7 @@ public enum GapInvestigationBuilder {
       return GapCauseAssessment(
         title: "Worker instance restart",
         confidence: .medium,
-        summary: "An AppView worker instance started inside the gap window, making a restart or deployment a plausible contributor.",
+        summary: "Charybdis started inside the gap window, making a restart or deployment a plausible contributor.",
         evidenceIds: [restart.id],
         limitations: [persistentLimitation, "The current service-state record does not distinguish a deployment from an infrastructure restart."]
       )

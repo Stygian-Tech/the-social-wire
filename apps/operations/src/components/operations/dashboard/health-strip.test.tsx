@@ -19,7 +19,7 @@ describe("HealthStrip", () => {
     render(<HealthStrip overview={demoOverview} />)
 
     expect(screen.getByText("4 / 4 required services report healthy")).toBeTruthy()
-    expect(screen.getByText(/3 active gaps · 1 \/ 1 projection workers complete/)).toBeTruthy()
+    expect(screen.getByText(/3 active gaps · 1 \/ 1 Charybdis projections complete/)).toBeTruthy()
     expect(screen.getAllByText("Degraded").length).toBeGreaterThan(0)
   })
 
@@ -34,7 +34,7 @@ describe("HealthStrip", () => {
       />,
     )
 
-    expect(screen.getByText(/jetstream transport heartbeat .* worker freshness healthy/)).toBeTruthy()
+    expect(screen.getByText(/jetstream transport heartbeat .* Charybdis freshness healthy/)).toBeTruthy()
     expect(screen.getByText("Good")).toBeTruthy()
   })
 

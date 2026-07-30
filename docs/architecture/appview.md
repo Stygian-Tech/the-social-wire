@@ -17,7 +17,7 @@ The thin AppView is **not** a Bluesky proxy. It is Social Wire’s own index of 
 |---------|----------------|
 | **`services/gateway`** | Public OAuth/DPoP edge, PDS write-through, sync cache, unbuffered proxy to AppView |
 | **`services/appview`** | Sidebar projection (`/v1/publications/*`), Thin AppView reads (`/v1/appview/*`), bootstrap stream, projection caches |
-| **`services/appview-worker`** | Jetstream ingestion, proactive PDS backfill, TTL cleanup |
+| **Charybdis** (`services/appview-worker`) | Jetstream ingestion, proactive PDS backfill, TTL cleanup |
 | **`packages/swift/ThinAppViewCore`** | Shared indexing, storage, worker runtime |
 
 Gateway→AppView trust uses **`GATEWAY_APPVIEW_INTERNAL_SECRET`** (HMAC on path only). Clients always call the gateway host.
@@ -28,7 +28,7 @@ Gateway→AppView trust uses **`GATEWAY_APPVIEW_INTERNAL_SECRET`** (HMAC on path
 Relay / Jetstream (subscribeRepos)
         │
         ▼
-Fly appview-worker
+Fly Charybdis (`appview-worker` compatibility identity)
   • upsert content_items (title, publishedAt, summary, thumbnail ref)
   • proactive PDS backfill for subscribed authors
   • TTL cleanup

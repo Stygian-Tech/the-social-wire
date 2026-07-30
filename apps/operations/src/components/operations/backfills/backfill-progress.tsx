@@ -77,7 +77,7 @@ export function BackfillProgress({ job, refreshing }: { job: Backfill; refreshin
         <Alert variant="warning" className="mt-4">
           <AlertTitle>Run Finished; Estimate Did Not Match</AlertTitle>
           <AlertDescription>
-            The worker finished the bounded scan after observing {progress.observedCount!.toLocaleString()} matching
+            Charybdis finished the bounded scan after observing {progress.observedCount!.toLocaleString()} matching
             records. The dry-run estimate was ~{progress.estimatedCount!.toLocaleString()}. Completion describes the
             scan state, not fulfillment of the estimate.
           </AlertDescription>
@@ -86,9 +86,9 @@ export function BackfillProgress({ job, refreshing }: { job: Backfill; refreshin
 
       {waitingForWorker ? (
         <Alert variant="warning" className="mt-4">
-          <AlertTitle>Waiting for Worker</AlertTitle>
+          <AlertTitle>Waiting for Charybdis</AlertTitle>
           <AlertDescription>
-            This job is queued but has not been claimed. Check the AppView Worker and its Operations database
+            This job is queued but has not been claimed. Check Charybdis and its Operations database
             configuration if this state persists.
           </AlertDescription>
         </Alert>
@@ -172,8 +172,8 @@ export function BackfillProgress({ job, refreshing }: { job: Backfill; refreshin
       <section className="mt-4">
         <h3 className="text-xs font-semibold">Checkpoint</h3>
         <dl className="mt-2 divide-y rounded-md border text-[10px]">
-          <BackfillDetail label="Cursor" value={job.checkpointCursor?.toLocaleString() ?? "Waiting for worker"} mono />
-          <BackfillDetail label="Worker" value={job.leaseOwner ?? "Not claimed yet"} mono />
+          <BackfillDetail label="Cursor" value={job.checkpointCursor?.toLocaleString() ?? "Waiting for Charybdis"} mono />
+          <BackfillDetail label="Charybdis Instance" value={job.leaseOwner ?? "Not claimed yet"} mono />
           <BackfillDetail
             label="Lease Expires"
             value={job.leaseExpiresAt ? new Date(job.leaseExpiresAt).toLocaleString() : "—"}

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Deploy services/appview-worker to Fly.io for dev or main.
+# Deploy Charybdis from services/appview-worker to Fly.io for dev or main.
 #
 # Requires: FLY_API_TOKEN, FLY_APPVIEW_WORKER_APP_* (or FLY_WORKER_APP_*).
 # Usage: bash scripts/fly-deploy-appview-worker.sh dev|main
@@ -13,5 +13,5 @@ if [ -z "${FLY_API_TOKEN:-}" ]; then
 fi
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-echo "::notice::Fly appview-worker deploy (${BRANCH})"
+echo "::notice::Fly Charybdis deploy (${BRANCH}; appview-worker compatibility ID)"
 exec bash "$ROOT/services/appview-worker/deploy.sh" "$BRANCH"

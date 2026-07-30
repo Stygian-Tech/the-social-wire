@@ -33,10 +33,10 @@ Import `services/appview/bruno/` for direct AppView routes (sidebar, bootstrap s
 
 - [ ] `GET /v1/publications/sidebar` with authenticated token
 - [ ] `GET /v1/appview/bootstrap-stream` streams NDJSON events
-- [ ] Enroll + timeline when appview-worker is running
+- [ ] Enroll + timeline when Charybdis (`appview-worker`) is running
 
 ## Related
 
 - [Gateway test plan](./api.md)
-- [AppView worker test plan](./worker.md)
+- [Charybdis test plan](./worker.md)
 - [Thin AppView architecture](../architecture/appview.md)

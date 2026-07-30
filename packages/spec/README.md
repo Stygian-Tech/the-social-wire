@@ -17,7 +17,7 @@ Bruno collections for manual verification:
 
 - `services/gateway/bruno/` — gateway routes (OAuth, sync, publications, reader, AppView proxy)
 - `services/appview/bruno/` — AppView routes (sidebar + Thin AppView index)
-- `services/appview-worker/bruno/` — post-ingestion verification (worker has no HTTP API)
+- `services/appview-worker/bruno/` — Charybdis post-ingestion verification (the service has no HTTP API)
 
 ## Server URLs
 

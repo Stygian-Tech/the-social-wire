@@ -1,6 +1,6 @@
 # The Social Wire wiki
 
-Reader for the [standard.site](https://standard.site) publishing ecosystem on ATProto — web ([Next.js](https://nextjs.org/)), SwiftUI on iOS/iPadOS, and distributed Swift/Hummingbird services (**`services/gateway`**, **`services/appview`**, **`services/appview-worker`**).
+Reader for the [standard.site](https://standard.site) publishing ecosystem on ATProto — web ([Next.js](https://nextjs.org/)), SwiftUI on iOS/iPadOS, and distributed Swift/Hummingbird services (**Gateway**, **AppView**, and **Charybdis** at `services/appview-worker`).
 
 **Canonical repository:** [Stygian-Tech/the-social-wire](https://github.com/Stygian-Tech/the-social-wire)  
 **License:** [MIT](https://github.com/Stygian-Tech/the-social-wire/blob/main/LICENSE)

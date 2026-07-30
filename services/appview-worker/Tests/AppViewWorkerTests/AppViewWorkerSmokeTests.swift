@@ -1,6 +1,6 @@
 import Testing
 
-@Test("appview-worker package resolves")
-func appviewWorkerPackageResolves() {
+@Test("Charybdis package resolves through the stable AppViewWorker product")
+func charybdisPackageResolves() {
   #expect(true)
 }

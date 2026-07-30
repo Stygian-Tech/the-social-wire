@@ -19,7 +19,7 @@ bun install
 | Web | [apps/web/README.md](https://github.com/Stygian-Tech/the-social-wire/blob/main/apps/web/README.md) |
 | Gateway | `services/gateway` — `APP_ENV=local swift run Gateway` |
 | AppView | `services/appview` — `APP_ENV=local ENABLE_THIN_APPVIEW=true swift run AppView` |
-| AppView worker | `services/appview-worker` — `APP_ENV=local ENABLE_THIN_APPVIEW=true swift run AppViewWorker` |
+| Charybdis | `services/appview-worker` — `APP_ENV=local ENABLE_THIN_APPVIEW=true swift run AppViewWorker` |
 | iOS | [apps/apple/README.md](https://github.com/Stygian-Tech/the-social-wire/blob/main/apps/apple/README.md) |
 
 ## Tests before PR

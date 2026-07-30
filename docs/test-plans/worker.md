@@ -1,8 +1,10 @@
-# AppView worker test plan
+# Charybdis test plan
 
 **Package:** `services/appview-worker`  
 **Shared library:** `packages/swift/ThinAppViewCore`  
 **CI:** `test-appview-worker`
+
+The legacy package path, executable product, CI key, Fly app names, and `appview-worker` telemetry identity remain stable for compatibility.
 
 ## Commands
 

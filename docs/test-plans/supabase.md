@@ -38,8 +38,8 @@ Push to `dev` or `main` triggers `scripts/supabase-ci-push.sh` when `supabase/**
 ## Manual verification
 
 - [ ] `supabase db reset --local` succeeds after adding a migration
-- [ ] API connects with `SUPABASE_DATABASE_URL` when `APP_ENV=dev|prod` on gateway, appview, and appview-worker
-- [ ] AppView worker ingests into `content_items` after firehose connect
+- [ ] API connects with `SUPABASE_DATABASE_URL` when `APP_ENV=dev|prod` on gateway, appview, and Charybdis (`appview-worker`)
+- [ ] Charybdis ingests into `content_items` after firehose connect
 
 ## Related
 

@@ -10,7 +10,7 @@ the-social-wire/
   services/
     gateway/          # OAuth, sync, PDS writes, AppView proxy (Fly.io)
     appview/          # Sidebar projection + Thin AppView reads (Fly.io)
-    appview-worker/   # Jetstream ingestion (Fly.io)
+    appview-worker/   # Charybdis: Jetstream ingestion (Fly.io)
   packages/
     lexicons/     # app.thesocialwire.* (and related) lexicons
     spec/         # OpenAPI for HTTP surfaces (/v1/appview, /v1/sync, …)

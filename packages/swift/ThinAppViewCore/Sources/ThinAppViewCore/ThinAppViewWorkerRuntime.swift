@@ -69,7 +69,7 @@ public enum ThinAppViewWorkerRuntime {
       logger: logger
     )
 
-    logger.info("Starting thin AppView worker")
+    logger.info("Starting Charybdis")
 
     try await withThrowingTaskGroup(of: Void.self) { group in
       if tapConfiguration?.mode != .authoritative {

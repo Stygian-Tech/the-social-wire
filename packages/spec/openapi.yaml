@@ -7,13 +7,13 @@ info:
 
     - **`services/gateway`** (this spec's `servers` URLs) — OAuth client metadata, DPoP verification, PDS write-through, sync cache, unbuffered proxy to AppView.
     - **`services/appview`** — publication sidebar projection (`/v1/publications/*`), Thin AppView read index (`/v1/appview/*`), bootstrap stream.
-    - **`services/appview-worker`** — Jetstream ingestion and proactive backfill (no HTTP surface).
+    - **Charybdis** (`services/appview-worker`) — Jetstream ingestion and proactive backfill (no HTTP surface).
 
     **OAuth client metadata** mirrors SPA + ATS clients (`/oauth-client-metadata.json`, `/ios-client-metadata.json`) with scopes from **`ATProtoOAuthScopes`**.
 
     **Authenticated routes** require `Authorization: Bearer` or `Authorization: DPoP` plus RFC 9449 `DPoP` proof binding (`cnf.jkt` when emitted by the issuer).
 
-    **Thin AppView** (`ENABLE_THIN_APPVIEW` on AppView): Level-1 entry index, unread counts, bootstrap-stream NDJSON initial load, scoped mark-all-read. Ingested by **`services/appview-worker`**.
+    **Thin AppView** (`ENABLE_THIN_APPVIEW` on AppView): Level-1 entry index, unread counts, bootstrap-stream NDJSON initial load, scoped mark-all-read. Ingested by **Charybdis** (`services/appview-worker`).
 
     LATR HTTPS merge APIs stay on the Next.js web app — not documented here.
   version: "1.0.0"

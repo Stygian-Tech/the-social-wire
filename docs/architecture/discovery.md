@@ -31,7 +31,7 @@ Profile metadata comes from `app.bsky.graph.getFollows` and `app.bsky.actor.getP
 
 Legacy client probes batch followed DID checks (web: settled promises; iOS: Swift task groups).
 
-When Thin AppView is enabled, web and iOS call **`POST /v1/appview/enroll`** with author DIDs after sidebar load (best-effort backfill). The appview-worker also runs **proactive PDS backfill** on a timer for subscribed authors.
+When Thin AppView is enabled, web and iOS call **`POST /v1/appview/enroll`** with author DIDs after sidebar load (best-effort backfill). Charybdis (`appview-worker`) also runs **proactive PDS backfill** on a timer for subscribed authors.
 
 ## AppView layers
 

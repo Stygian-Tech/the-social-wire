@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHeader, TableRow } from "@/components/ui/table"
 import { effectiveServiceHealth, healthLabel, serviceHeartbeatIsFresh, type HealthDimension } from "@/lib/observability-values"
 import type { Health, Overview, ServiceState } from "@/lib/operations-types"
+import { serviceDisplayName } from "@/lib/service-display-name"
 
 const dimensions: HealthDimension[] = ["liveness", "readiness", "freshness", "completeness"]
 
@@ -40,7 +41,7 @@ export function ServiceTable({ data, referenceTime = data.refreshedAt }: { data:
             {data.services.map((service) => (
               <article key={`${service.service}-${service.instanceId}`} className="rounded-md border bg-background p-3">
                 <header className="flex items-start justify-between gap-3">
-                  <h3 className="text-xs font-semibold">{service.service}</h3>
+                  <h3 className="text-xs font-semibold">{serviceDisplayName(service.service)}</h3>
                   <span className="break-all font-mono text-[9px] text-muted-foreground">{service.instanceId}</span>
                 </header>
                 <dl className="mt-3 grid grid-cols-2 gap-3 text-[10px]">
@@ -59,7 +60,7 @@ export function ServiceTable({ data, referenceTime = data.refreshedAt }: { data:
               <TableBody>
                 {data.services.map((service) => (
                   <TableRow key={`${service.service}-${service.instanceId}`}>
-                    <TableCell className="font-medium">{service.service}</TableCell>
+                    <TableCell className="font-medium">{serviceDisplayName(service.service)}</TableCell>
                     <TableCell className="font-mono">{service.instanceId}</TableCell>
                     {dimensions.map((dimension) => (
                       <TableCell key={dimension}><HealthBadge state={effectiveServiceHealth(service, dimension, referenceTime)} /></TableCell>

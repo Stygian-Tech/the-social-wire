@@ -13,3 +13,10 @@ test("ages service status badges to Unknown after heartbeat evidence expires", (
   expect(screen.getAllByText(/expired/i).length).toBeGreaterThan(0)
   expect(screen.queryByText("Fresh")).toBeNull()
 })
+
+test("renders the stable appview-worker service identity as Charybdis", () => {
+  render(<ServiceTable data={demoOverview} />)
+
+  expect(screen.getAllByText("Charybdis")).toHaveLength(2)
+  expect(screen.queryByText("appview-worker")).toBeNull()
+})

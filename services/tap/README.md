@@ -2,7 +2,7 @@
 
 This service packages Bluesky's Tap at the pinned Indigo commit in `Dockerfile`. It runs in
 acknowledgement mode, uses a dynamically managed repository boundary, and only requests registered
-Social Wire content collections. It is private-network infrastructure; the AppView worker connects through
+Social Wire content collections. It is private-network infrastructure; Charybdis connects through
 the environment-specific `*.internal` hostname.
 
 Tap authority is deliberately limited to `site.standard.document` and `site.standard.entry` until
@@ -15,7 +15,7 @@ Required Fly secrets, set independently on each Tap app:
 - `TAP_DATABASE_URL`: an environment-isolated PostgreSQL database URL owned by Tap.
 - `TAP_ADMIN_PASSWORD`: a unique random password used for `/channel` and `/repos/*` Basic auth.
 
-Set the same `TAP_ADMIN_PASSWORD` on the matching AppView worker. The worker uses:
+Set the same `TAP_ADMIN_PASSWORD` on the matching Charybdis deployment. The service uses:
 
 - `TAP_CONSUMER_MODE=shadow` during parity burn-in. `authoritative` is a guarded cutover mode.
 - `TAP_BASE_URL=http://the-social-wire-{dev|prod}-tap.internal:2480`.

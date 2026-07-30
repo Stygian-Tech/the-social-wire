@@ -2,7 +2,7 @@
 import PackageDescription
 
 let package = Package(
-  name: "SocialWireAppViewWorker",
+  name: "SocialWireCharybdis",
   platforms: [
     .macOS(.v14)
   ],
