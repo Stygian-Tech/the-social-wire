@@ -1,16 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronLeft } from "lucide-react";
 import { EntryList } from "@/components/EntryList/EntryList";
 import { EntryDetail } from "@/components/EntryDetail/EntryDetail";
+import { ReaderPaneHeader } from "@/components/EntryDetail/ReaderPaneHeader";
 import { DevRecordKindBadge } from "@/components/shared/DevRecordKindBadge";
 import {
   READER_LIST_COLUMN_WIDTH_KEY,
   ResizableListColumn,
 } from "@/components/shared/ResizableListColumn";
-import { Button } from "@/components/ui/button";
 import { useReadRoute } from "@/contexts/ReadRouteContext";
+import { useEntry } from "@/hooks/useEntries";
 import { useIsTabletPortrait } from "@/hooks/use-tablet-portrait";
 import { shouldShowArticleListColumn } from "@/lib/readerColumnVisibility";
 import { recordKindFromPubId } from "@/lib/recordKindDebug";
@@ -27,6 +27,7 @@ export default function ReadPubPage({
   title?: string;
 }) {
   const [selectedEntryId, setSelectedEntryId] = useState<string | null>(null);
+  const { data: selectedEntry } = useEntry(selectedEntryId);
   const publicationKind = pubId ? recordKindFromPubId(pubId) : null;
   const {
     markEntryRead,
@@ -144,21 +145,11 @@ export default function ReadPubPage({
       >
         {selectedEntryId ? (
           <>
-            <div className="sticky top-0 z-30 flex min-h-[52px] shrink-0 items-center gap-2 border-b bg-background/90 px-1.5 py-1 backdrop-blur-md md:px-3">
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                className="size-11 shrink-0 md:hidden"
-                aria-label="Back to Articles"
-                onClick={handleBackToList}
-              >
-                <ChevronLeft className="size-5" />
-              </Button>
-              <span className="text-sm font-semibold text-foreground">
-                {title}
-              </span>
-            </div>
+            <ReaderPaneHeader
+              entry={selectedEntry}
+              fallbackTitle="Loading Article…"
+              onBack={handleBackToList}
+            />
             <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden overscroll-y-contain">
               <EntryDetail entryId={selectedEntryId} />
             </div>

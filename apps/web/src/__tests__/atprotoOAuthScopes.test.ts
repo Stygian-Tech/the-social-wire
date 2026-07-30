@@ -1,7 +1,13 @@
 import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { AT_PROTO_OAUTH_SCOPES } from "@/lib/atprotoOAuthScopes";
+import {
+  AT_PROTO_OAUTH_SCOPES,
+  BLUESKY_SOCIAL_REPO_SCOPES,
+  SKYREADER_REPO_SCOPES,
+  SOCIAL_WIRE_REPO_SCOPES,
+  STANDARD_SITE_REPO_SCOPES,
+} from "@/lib/atprotoOAuthScopes";
 
 describe("atprotoOAuthScopes", () => {
   it("matches public client-metadata.json scope string", () => {
@@ -31,5 +37,30 @@ describe("atprotoOAuthScopes", () => {
     expect(AT_PROTO_OAUTH_SCOPES).toContain("link.latr.saved.external");
     expect(AT_PROTO_OAUTH_SCOPES).toContain("com.latr.saved.external");
     expect(AT_PROTO_OAUTH_SCOPES).toContain("app.skyreader.feed.subscription");
+    expect(AT_PROTO_OAUTH_SCOPES).toContain(
+      "site.standard.graph.recommend"
+    );
+  });
+
+  it("defines collection-level permissions by feature", () => {
+    expect(AT_PROTO_OAUTH_SCOPES).not.toContain("transition:generic");
+    expect(
+      AT_PROTO_OAUTH_SCOPES.split(" ")
+        .filter((scope) => scope !== "atproto")
+        .every((scope) => scope.startsWith("repo:"))
+    ).toBe(true);
+    expect(SOCIAL_WIRE_REPO_SCOPES).toHaveLength(6);
+    expect(
+      BLUESKY_SOCIAL_REPO_SCOPES.every((scope) =>
+        scope.startsWith("repo:app.bsky.")
+      )
+    ).toBe(true);
+    expect(STANDARD_SITE_REPO_SCOPES).toEqual([
+      "repo:site.standard.graph.subscription?action=create&action=update&action=delete",
+      "repo:site.standard.graph.recommend?action=create&action=delete",
+    ]);
+    expect(SKYREADER_REPO_SCOPES).toEqual([
+      "repo:app.skyreader.feed.subscription?action=create&action=update&action=delete",
+    ]);
   });
 });
