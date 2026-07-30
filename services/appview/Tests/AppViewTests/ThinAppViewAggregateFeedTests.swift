@@ -8,6 +8,18 @@ import ThinAppViewCore
 
 @Suite("Thin AppView aggregate feeds")
 struct ThinAppViewAggregateFeedTests {
+  @Test("subscribed performance metrics use only deidentified aggregate dimensions")
+  func deidentifiedMetricDimensions() {
+    let dimensions = ThinAppViewReadService.subscribedFeedMetricDimensions(
+      pageKind: "pagination"
+    )
+
+    #expect(dimensions == [
+      "feed_kind": "subscribed",
+      "page_kind": "pagination",
+    ])
+  }
+
   @Test("globally orders member publications and emits publication identity")
   func globalOrderingAndPublicationIdentity() async throws {
     let logger = Logger(label: "aggregate-feed.test")

@@ -206,7 +206,7 @@ export function EntryList({
       cursor,
       request: () => {
         if (aggregateFeed?.kind === "subscribed") {
-          markSubscribedPaginationTriggered(cursor);
+          markSubscribedPaginationTriggered();
         }
         return activeFetchNextPage();
       },

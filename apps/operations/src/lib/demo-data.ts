@@ -11,7 +11,7 @@ const demoCollections = [
 
 export function demoMetricRollups(reference = new Date()): MetricRollup[] {
   const lastCompletedMinute = Math.floor(reference.getTime() / 60_000) * 60_000 - 60_000
-  return demoCollections.flatMap((collection, collectionIndex) =>
+  const collectionRollups = demoCollections.flatMap((collection, collectionIndex) =>
     Array.from({ length: 15 }, (_, minuteIndex) => {
       const bucketStart = new Date(lastCompletedMinute - (14 - minuteIndex) * 60_000).toISOString()
     const variation = 1 + Math.sin(minuteIndex * (0.45 + collectionIndex * 0.08) + collectionIndex) * 0.12
@@ -90,6 +90,71 @@ export function demoMetricRollups(reference = new Date()): MetricRollup[] {
       return [...operationRollups, lagRollup, ...failureRollups]
     }).flat(),
   )
+  const feedRollups = (["first_page", "pagination"] as const).flatMap((pageKind, pageIndex) =>
+    Array.from({ length: 15 }, (_, minuteIndex) => {
+      const bucketStart = new Date(lastCompletedMinute - (14 - minuteIndex) * 60_000).toISOString()
+      const sampleCount = pageIndex === 0 ? 30 : 18
+      const durationSeconds =
+        (pageIndex === 0 ? 0.18 : 0.11) * (1 + Math.sin(minuteIndex * 0.4 + pageIndex) * 0.12)
+      const rowsScanned = pageIndex === 0 ? 190 : 150
+      const rowsReturned = 50
+      const payloadBytes = pageIndex === 0 ? 18_400 : 17_900
+      const dimensions = { feed_kind: "subscribed", page_kind: pageKind }
+      return [
+        {
+          environment: "dev",
+          bucketStart,
+          metricName: "socialwire.appview.feed.query_duration_seconds",
+          dimensions,
+          sampleCount,
+          valueSum: sampleCount * durationSeconds,
+          valueMin: durationSeconds * 0.7,
+          valueMax: durationSeconds * 1.45,
+        },
+        {
+          environment: "dev",
+          bucketStart,
+          metricName: "socialwire.appview.feed.rows_scanned",
+          dimensions,
+          sampleCount,
+          valueSum: sampleCount * rowsScanned,
+          valueMin: rowsScanned,
+          valueMax: rowsScanned,
+        },
+        {
+          environment: "dev",
+          bucketStart,
+          metricName: "socialwire.appview.feed.rows_returned",
+          dimensions,
+          sampleCount,
+          valueSum: sampleCount * rowsReturned,
+          valueMin: rowsReturned,
+          valueMax: rowsReturned,
+        },
+        {
+          environment: "dev",
+          bucketStart,
+          metricName: "socialwire.appview.feed.duplicates_suppressed",
+          dimensions,
+          sampleCount,
+          valueSum: sampleCount * pageIndex,
+          valueMin: pageIndex,
+          valueMax: pageIndex,
+        },
+        {
+          environment: "dev",
+          bucketStart,
+          metricName: "socialwire.appview.feed.payload_bytes",
+          dimensions,
+          sampleCount,
+          valueSum: sampleCount * payloadBytes,
+          valueMin: payloadBytes * 0.95,
+          valueMax: payloadBytes * 1.05,
+        },
+      ] satisfies MetricRollup[]
+    }).flat(),
+  )
+  return [...collectionRollups, ...feedRollups]
 }
 
 export const demoOverview: Overview = {

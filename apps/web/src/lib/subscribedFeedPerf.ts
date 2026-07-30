@@ -1,7 +1,8 @@
 const PERF_FLAG = "the-social-wire.perf.subscribed";
 
+// Local-only diagnostics. Operations consumes deidentified AppView rollups; do
+// not add a browser telemetry transport or identifying dimensions here.
 type SubscribedFeedPerfSample = {
-  cursor: string;
   triggeredAt: number;
   renderedAt?: number;
   appendedRows?: number;
@@ -23,11 +24,11 @@ function enabled(): boolean {
   }
 }
 
-export function markSubscribedPaginationTriggered(cursor: string): void {
+export function markSubscribedPaginationTriggered(): void {
   if (!enabled()) return;
   const triggerMarkName = `subscribed-feed-pagination-${markSequence += 1}-trigger`;
   performance.mark(triggerMarkName);
-  pending = { cursor, triggeredAt: performance.now(), triggerMarkName };
+  pending = { triggeredAt: performance.now(), triggerMarkName };
   samples.push(pending);
 }
 
@@ -53,7 +54,6 @@ export function markSubscribedRowsRendered(args: {
     );
   }
   console.debug("[subscribed-feed-perf]", {
-    cursor: pending.cursor,
     paginationToRowsMs: Math.round(pending.renderedAt - pending.triggeredAt),
     mergeDurationMs: Math.round(args.mergeDurationMs * 100) / 100,
     appendedRows: args.appendedRows,

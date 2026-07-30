@@ -337,10 +337,7 @@ actor ThinAppViewReadService {
     pageKind: String
   ) async {
     guard let telemetry else { return }
-    let dimensions = [
-      "feed_kind": "subscribed",
-      "page_kind": pageKind,
-    ]
+    let dimensions = Self.subscribedFeedMetricDimensions(pageKind: pageKind)
     _ = await telemetry.enqueue(
       .metric(
         .init(
@@ -388,6 +385,13 @@ actor ThinAppViewReadService {
         )
       )
     }
+  }
+
+  static func subscribedFeedMetricDimensions(pageKind: String) -> [String: String] {
+    [
+      "feed_kind": "subscribed",
+      "page_kind": pageKind,
+    ]
   }
 
   func upsertReadMark(auth: AuthContext, subjectUri: String, readAt: Date?) async throws {
