@@ -10,8 +10,8 @@ public enum IosOAuthClientMetadata {
     case invalidPublicOrigin
   }
 
-  /// Space-separated scopes — kept in sync with web `client-metadata.json` via `ATProtoOAuthScopes`.
-  static var scope: String { ATProtoOAuthScopes.scope }
+  /// Space-separated collection permissions used by the native client.
+  static var scope: String { ATProtoOAuthScopes.iosScope }
 
   /// Reversed domain labels for ATProto native redirect scheme hosts.
   static func nativeURLScheme(host: String) -> String {

@@ -4,15 +4,12 @@ import { useMemo } from "react";
 import { ExternalLink } from "lucide-react";
 import { ArticleContent } from "@/components/EntryDetail/ArticleContent";
 import { EntryArticleEmbed } from "@/components/EntryDetail/EntryArticleEmbed";
-import { EntrySocialToolbar } from "@/components/EntryDetail/EntrySocialToolbar";
-import { DevRecordKindBadge } from "@/components/shared/DevRecordKindBadge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useEntry } from "@/hooks/useEntries";
 import {
   lockedEntryArticlePresentation,
   type EntryArticlePresentation,
 } from "@/lib/entryArticlePresentation";
-import { recordKindFromEntryId } from "@/lib/recordKindDebug";
 import { normalizeHttpUrlToHttps } from "@/lib/publicResourceUrl";
 import { sanitizeHTMLWithLinks } from "@/lib/sanitize";
 import { cn } from "@/lib/utils";
@@ -70,7 +67,7 @@ export function EntryDetail({ entryId }: EntryDetailProps) {
   return (
     <article
       className={cn(
-        "flex min-h-0 w-full max-w-none flex-1 scroll-pb-[calc(env(safe-area-inset-bottom)+6.25rem)] flex-col px-3 pt-1 pb-[calc(env(safe-area-inset-bottom)+6.25rem)] sm:px-4 sm:pt-2 md:px-6 lg:px-8",
+        "flex min-h-0 w-full max-w-none flex-1 flex-col px-3 pb-8 pt-1 sm:px-4 sm:pt-2 md:px-6 lg:px-8",
         showEmbed ? "md:pb-2" : "md:pb-8 lg:pb-10"
       )}
     >
@@ -121,15 +118,6 @@ export function EntryDetail({ entryId }: EntryDetailProps) {
         ) : null}
       </div>
 
-      <div className="relative z-10 order-2 clear-both shrink-0 bg-background/95 md:sticky md:top-0 md:z-20 md:order-1 md:-mx-6 md:border-b md:bg-background/95 md:px-6 md:pt-2 md:backdrop-blur-md lg:-mx-8 lg:px-8">
-        <div className="flex flex-wrap items-center gap-1.5">
-          <DevRecordKindBadge info={recordKindFromEntryId(entry.entryId)} />
-        </div>
-        <EntrySocialToolbar
-          entry={entry}
-          className={cn(showEmbed ? "md:!mb-0" : undefined)}
-        />
-      </div>
     </article>
   );
 }

@@ -17,11 +17,13 @@ type ReadSidebarScopeValue = {
   activeFeedScope: {
     publications: DiscoveredPublication[];
     gatewayScope: GatewayMarkAllReadScope | null;
+    displayName: string;
   };
   setActiveFeedScope: Dispatch<
     SetStateAction<{
       publications: DiscoveredPublication[];
       gatewayScope: GatewayMarkAllReadScope | null;
+      displayName: string;
     }>
   >;
 };
@@ -34,9 +36,11 @@ export function ReadSidebarScopeProvider({ children }: { children: ReactNode }) 
   const [activeFeedScope, setActiveFeedScope] = useState<{
     publications: DiscoveredPublication[];
     gatewayScope: GatewayMarkAllReadScope | null;
+    displayName: string;
   }>({
     publications: [],
     gatewayScope: null,
+    displayName: "",
   });
 
   const value = useMemo(

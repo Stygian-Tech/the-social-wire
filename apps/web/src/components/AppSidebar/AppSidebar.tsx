@@ -185,6 +185,10 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
     if (!setActiveReadFeedScope) return;
 
     const folderRkey = searchParams.get("folder");
+    const folderName = folderRkey
+      ? folders.find((folder) => rkeyFromURI(folder.uri) === folderRkey)?.value
+          .name
+      : undefined;
     const selectedPublication = selectedPubId
       ? allPublicationRows.find(
           (publication) => publication.publicationId === selectedPubId,
@@ -192,6 +196,7 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
       : undefined;
     const next = activeReadFeedScope({
       folderRkey,
+      folderName,
       folderPublications: folderRkey ? (folderMap.get(folderRkey) ?? []) : [],
       selectedPublication,
       selectedTopLevelFeed:
@@ -203,6 +208,7 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
     setActiveReadFeedScope((prev) => {
       if (
         prev.gatewayScope?.kind === next.gatewayScope.kind &&
+        prev.displayName === next.displayName &&
         (prev.gatewayScope?.kind !== "publication" ||
           next.gatewayScope.kind !== "publication" ||
           prev.gatewayScope.publicationId === next.gatewayScope.publicationId) &&
@@ -222,6 +228,7 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
     });
   }, [
     allPublicationRows,
+    folders,
     folderMap,
     followingTabPublications,
     searchParams,

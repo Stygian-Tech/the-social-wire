@@ -26,6 +26,13 @@ struct WebOAuthScopesParityTests {
     let data = try Data(contentsOf: url)
     let obj = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
     let webScope = try #require(obj["scope"] as? String)
-    #expect(webScope == ATProtoOAuthScopes.scope)
+    #expect(webScope == ATProtoOAuthScopes.webScope)
+  }
+
+  @Test("Recommend permission is limited to the web client that exposes the action")
+  func recommendPermissionIsClientSpecific() {
+    let recommend = "repo:site.standard.graph.recommend?action=create&action=delete"
+    #expect(ATProtoOAuthScopes.webScope.contains(recommend))
+    #expect(!ATProtoOAuthScopes.iosScope.contains(recommend))
   }
 }

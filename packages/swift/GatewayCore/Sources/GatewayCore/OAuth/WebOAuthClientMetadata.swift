@@ -48,7 +48,7 @@ public enum WebOAuthClientMetadata {
       grant_types: ["authorization_code", "refresh_token"],
       response_types: ["code"],
       redirect_uris: [redirect],
-      scope: ATProtoOAuthScopes.scope,
+      scope: ATProtoOAuthScopes.webScope,
       token_endpoint_auth_method: "none",
       dpop_bound_access_tokens: true,
       client_name: "The Social Wire",
