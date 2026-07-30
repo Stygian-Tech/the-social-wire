@@ -6,15 +6,24 @@ enum HTMLRenderer {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return "" }
 
+        let structured: String
         if let repaired = repairedEscapedHtmlWrapper(trimmed) {
-            return repaired
+            structured = repaired
+        } else if !looksLikeHTML(trimmed) {
+            structured = plainTextParagraphs(trimmed)
+        } else {
+            structured = trimmed
         }
 
-        if !trimmed.contains("<") {
-            return plainTextParagraphs(trimmed)
-        }
-
-        return trimmed
+        return linkifyBareURLs(
+            normalizeMediaElements(
+                normalizeLinkAttributes(
+                    stripUnsafeMarkup(
+                        replaceBlockedEmbeds(structured)
+                    )
+                )
+            )
+        )
     }
 
     static func wrappedHTML(_ html: String, colorScheme: ColorScheme) -> String {
@@ -39,44 +48,70 @@ enum HTMLRenderer {
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="color-scheme" content="light dark">
-        <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https: data:; style-src 'unsafe-inline'; font-src data:;">
+        <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https: data:; media-src https:; style-src 'unsafe-inline'; font-src data:;">
         <style>
-          /* Mirrors the web reading view (Tailwind `prose prose-sm`): system font stack,
-             ~1.7 line-height, the same heading scale, and full-measure body (no max-width). */
+          /* Mirrors the web `.article-content` reader treatment. */
           :root { color-scheme: light dark; }
+          *, *::before, *::after { box-sizing: border-box; max-width: 100%; }
           body {
             font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", sans-serif;
             font-size: 16px;
             color: \(palette.text);
             background: transparent;
-            line-height: 1.7142857;
+            line-height: 1.75;
             padding: 4px 16px 32px;
-            margin: 0;
-            max-width: none;
-            overflow-wrap: break-word;
+            margin: 0 auto;
+            width: 100%;
+            max-width: 72ch;
+            overflow-wrap: anywhere;
             -webkit-text-size-adjust: 100%;
           }
           h1, h2, h3, h4, h5, h6 {
             color: \(palette.text);
-            font-weight: 600;
-            line-height: 1.3;
+            font-weight: 650;
+            line-height: 1.25;
             margin: 1.6em 0 0.6em;
           }
-          h1 { font-size: 1.9em; line-height: 1.2; }
+          h1 { font-size: 1.875em; }
           h2 { font-size: 1.5em; }
           h3 { font-size: 1.25em; }
-          h4 { font-size: 1.05em; }
-          h1:first-child, h2:first-child, h3:first-child { margin-top: 0; }
+          h4, h5, h6 { font-size: 1.0625em; }
+          h1:first-child, h2:first-child, h3:first-child,
+          h4:first-child, h5:first-child, h6:first-child { margin-top: 0; }
           p, li, span, div, td, th, blockquote, figcaption, label {
             color: \(palette.text);
           }
-          p { margin: 0 0 1.14em; }
-          ul, ol { margin: 0 0 1.14em; padding-left: 1.6em; }
-          li { margin: 0.35em 0; }
-          a, a:visited { color: \(palette.link); text-decoration: underline; }
-          img, video { max-width: 100%; height: auto; border-radius: 8px; margin: 1.14em 0; }
-          figure { margin: 1.14em 0; }
-          figcaption { font-size: 0.85em; color: \(palette.muted); text-align: center; }
+          p, ul, ol, dl, blockquote, pre, table, figure, audio, video {
+            margin: 0 0 1.15em;
+          }
+          ul, ol { padding-left: 1.6em; }
+          li { margin: 0.3em 0; padding-left: 0.2em; }
+          li > ul, li > ol { margin: 0.35em 0; }
+          dt { font-weight: 650; }
+          dd { margin: 0.25em 0 0.9em 1.25em; }
+          a, a:visited {
+            color: \(palette.link);
+            text-decoration: underline;
+            text-decoration-thickness: 0.1em;
+            text-underline-offset: 0.22em;
+          }
+          img, video {
+            display: block;
+            width: auto;
+            max-width: 100%;
+            height: auto;
+            border-radius: 10px;
+            margin-inline: auto;
+          }
+          video, audio { width: 100%; }
+          figure { margin-inline: 0; }
+          figure > img, figure > video { margin-bottom: 0.5em; }
+          figcaption, caption {
+            font-size: 0.875em;
+            line-height: 1.5;
+            color: \(palette.muted);
+            text-align: center;
+          }
           pre, code, kbd, samp {
             font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
             background: \(palette.codeBackground);
@@ -86,22 +121,42 @@ enum HTMLRenderer {
           }
           pre {
             overflow-x: auto;
-            white-space: pre-wrap;
-            padding: 12px 14px;
-            margin: 1.14em 0;
+            white-space: pre;
+            padding: 0.8em 1em;
+            line-height: 1.6;
           }
           code { padding: 0.1em 0.3em; }
           pre code { padding: 0; background: transparent; font-size: 1em; }
           blockquote {
-            border-left: 3px solid \(palette.muted);
-            margin: 1.14em 0;
+            border-left: 3px solid \(palette.link);
             padding-left: 1em;
             color: \(palette.muted);
             font-style: italic;
           }
-          table { border-collapse: collapse; width: 100%; margin: 1.14em 0; font-size: 0.9em; }
-          th, td { border: 1px solid \(palette.border); padding: 6px 8px; }
-          hr { border: none; border-top: 1px solid \(palette.border); margin: 1.7em 0; }
+          table {
+            display: block;
+            width: 100%;
+            overflow-x: auto;
+            border-collapse: collapse;
+            font-size: 0.9em;
+          }
+          th, td {
+            min-width: 8rem;
+            border: 1px solid \(palette.border);
+            padding: 0.5em 0.7em;
+            text-align: left;
+            vertical-align: top;
+          }
+          th { background: \(palette.codeBackground); font-weight: 650; }
+          hr { border: none; border-top: 1px solid \(palette.border); margin: 1.75em 0; }
+          .embedded-media-fallback {
+            border: 1px solid \(palette.border);
+            border-radius: 10px;
+            background: \(palette.codeBackground);
+            padding: 0.85em 1em;
+            text-align: center;
+          }
+          body > :last-child { margin-bottom: 0; }
           \(darkOverrides)
         </style>
         </head>
@@ -150,6 +205,243 @@ enum HTMLRenderer {
                 return "<p>\(lines)</p>"
             }
             .joined()
+    }
+
+    private static func looksLikeHTML(_ text: String) -> Bool {
+        text.range(of: #"<[a-zA-Z][^>]*>"#, options: .regularExpression) != nil
+    }
+
+    private static func replaceBlockedEmbeds(_ html: String) -> String {
+        let containers = replacingMatches(
+            in: html,
+            pattern: #"<(?:iframe|object)\b[^>]*>[\s\S]*?</(?:iframe|object)\s*>"#
+        ) { safeEmbeddedMediaLink(from: $0) }
+
+        return replacingMatches(
+            in: containers,
+            pattern: #"<(?:iframe|embed|object)\b[^>]*\/?>"#
+        ) { safeEmbeddedMediaLink(from: $0) }
+    }
+
+    private static func safeEmbeddedMediaLink(from tag: String) -> String {
+        guard let rawSource = firstAttribute(named: "src", in: tag)
+            ?? firstAttribute(named: "data", in: tag),
+            let url = normalizedHTTPSURL(unescapeHtmlEntities(rawSource))
+        else { return "" }
+
+        return """
+        <p class="embedded-media-fallback"><a href="\(escapeHtml(url))">Open Embedded Media</a></p>
+        """
+    }
+
+    private static func stripUnsafeMarkup(_ html: String) -> String {
+        let withoutContainers = html
+            .replacingOccurrences(
+                of: #"<(?:script|style)\b[^>]*>[\s\S]*?</(?:script|style)\s*>"#,
+                with: "",
+                options: [.regularExpression, .caseInsensitive]
+            )
+            .replacingOccurrences(
+                of: #"<\/?(?:form|input|button|textarea|select|option)\b[^>]*>"#,
+                with: "",
+                options: [.regularExpression, .caseInsensitive]
+            )
+            .replacingOccurrences(
+                of: #"<(?:object|embed)\b[^>]*\/?>"#,
+                with: "",
+                options: [.regularExpression, .caseInsensitive]
+            )
+
+        return withoutContainers
+            .replacingOccurrences(
+                of: #"\s+on[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)"#,
+                with: "",
+                options: [.regularExpression, .caseInsensitive]
+            )
+            .replacingOccurrences(
+                of: #"\s+style\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)"#,
+                with: "",
+                options: [.regularExpression, .caseInsensitive]
+            )
+    }
+
+    private static func normalizeMediaElements(_ html: String) -> String {
+        replacingMatches(in: html, pattern: #"<(?:audio|video|source)\b[^>]*>"#) { tag in
+            let safeURLs = normalizeMediaURLAttributes(in: tag)
+            guard safeURLs.range(
+                of: #"^<\s*(?:audio|video)\b"#,
+                options: [.regularExpression, .caseInsensitive]
+            ) != nil else { return safeURLs }
+
+            let cleaned = safeURLs
+                .replacingOccurrences(
+                    of: #"\s+autoplay(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+))?"#,
+                    with: "",
+                    options: [.regularExpression, .caseInsensitive]
+                )
+                .replacingOccurrences(
+                    of: #"\s+controls(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+))?"#,
+                    with: "",
+                    options: [.regularExpression, .caseInsensitive]
+                )
+                .replacingOccurrences(
+                    of: #"\s+preload(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+))?"#,
+                    with: "",
+                    options: [.regularExpression, .caseInsensitive]
+                )
+            return cleaned.dropLast() + #" controls preload="metadata">"#
+        }
+    }
+
+    private static func normalizeLinkAttributes(_ html: String) -> String {
+        replacingMatches(
+            in: html,
+            pattern: #"\s+href\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)"#
+        ) { attribute in
+            guard let rawValue = firstAttribute(named: "href", in: attribute) else { return "" }
+            let decoded = unescapeHtmlEntities(rawValue)
+            if let normalized = normalizedHTTPSURL(decoded) {
+                return #" href="\#(escapeHtml(normalized))""#
+            }
+            let lowered = decoded.lowercased()
+            if lowered.hasPrefix("mailto:") || decoded.hasPrefix("#") {
+                return #" href="\#(escapeHtml(decoded))""#
+            }
+            return ""
+        }
+    }
+
+    private static func normalizeMediaURLAttributes(in tag: String) -> String {
+        replacingMatches(
+            in: tag,
+            pattern: #"\s+(?:src|poster)\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)"#
+        ) { attribute in
+            let name = attribute.range(
+                of: #"\bsrc\b"#,
+                options: [.regularExpression, .caseInsensitive]
+            ) != nil ? "src" : "poster"
+            guard let rawValue = firstAttribute(named: name, in: attribute),
+                  let normalized = normalizedHTTPSURL(unescapeHtmlEntities(rawValue))
+            else { return "" }
+            return #" \#(name)="\#(escapeHtml(normalized))""#
+        }
+    }
+
+    private static func linkifyBareURLs(_ html: String) -> String {
+        guard let tagRegex = try? NSRegularExpression(pattern: #"<[^>]*>"#) else { return html }
+        let fullRange = NSRange(html.startIndex..<html.endIndex, in: html)
+        let matches = tagRegex.matches(in: html, range: fullRange)
+        var output = ""
+        var cursor = html.startIndex
+        var protectedTags: [String] = []
+
+        for match in matches {
+            guard let range = Range(match.range, in: html) else { continue }
+            let text = String(html[cursor..<range.lowerBound])
+            output += protectedTags.isEmpty ? linkifyText(text) : text
+
+            let tag = String(html[range])
+            updateProtectedTags(&protectedTags, for: tag)
+            output += tag
+            cursor = range.upperBound
+        }
+
+        let remainder = String(html[cursor...])
+        output += protectedTags.isEmpty ? linkifyText(remainder) : remainder
+        return output
+    }
+
+    private static func updateProtectedTags(_ tags: inout [String], for rawTag: String) {
+        let protectedNames = ["a", "code", "pre", "kbd", "samp"]
+        for name in protectedNames {
+            if rawTag.range(
+                of: #"^<\s*/\s*\#(name)\b"#,
+                options: [.regularExpression, .caseInsensitive]
+            ) != nil {
+                if let index = tags.lastIndex(of: name) {
+                    tags.remove(at: index)
+                }
+                return
+            }
+            if rawTag.range(
+                of: #"^<\s*\#(name)\b"#,
+                options: [.regularExpression, .caseInsensitive]
+            ) != nil, !rawTag.hasSuffix("/>") {
+                tags.append(name)
+                return
+            }
+        }
+    }
+
+    private static func linkifyText(_ text: String) -> String {
+        replacingMatches(
+            in: text,
+            pattern: #"(?:https?://|www\.)[^\s<]+"#
+        ) { match in
+            let (url, trailing) = splitTrailingPunctuation(match)
+            let href = url.lowercased().hasPrefix("www.") ? "https://\(url)" : url
+            return #"<a href="\#(escapeHtml(href))">\#(url)</a>\#(trailing)"#
+        }
+    }
+
+    private static func splitTrailingPunctuation(_ value: String) -> (String, String) {
+        var url = value
+        var trailing = ""
+        while let last = url.last, ".,!?;:".contains(last) {
+            trailing.insert(last, at: trailing.startIndex)
+            url.removeLast()
+        }
+        while url.last == ")",
+              url.filter({ $0 == ")" }).count > url.filter({ $0 == "(" }).count
+        {
+            trailing.insert(")", at: trailing.startIndex)
+            url.removeLast()
+        }
+        return (url, trailing)
+    }
+
+    private static func replacingMatches(
+        in value: String,
+        pattern: String,
+        transform: (String) -> String
+    ) -> String {
+        guard let regex = try? NSRegularExpression(
+            pattern: pattern,
+            options: [.caseInsensitive]
+        ) else { return value }
+
+        var result = value
+        let fullRange = NSRange(value.startIndex..<value.endIndex, in: value)
+        for match in regex.matches(in: value, range: fullRange).reversed() {
+            guard let sourceRange = Range(match.range, in: value),
+                  let resultRange = Range(match.range, in: result)
+            else { continue }
+            result.replaceSubrange(resultRange, with: transform(String(value[sourceRange])))
+        }
+        return result
+    }
+
+    private static func firstAttribute(named name: String, in tag: String) -> String? {
+        guard let regex = try? NSRegularExpression(
+            pattern: #"\b\#(name)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))"#,
+            options: [.caseInsensitive]
+        ) else { return nil }
+        let range = NSRange(tag.startIndex..<tag.endIndex, in: tag)
+        guard let match = regex.firstMatch(in: tag, range: range) else { return nil }
+        for index in 1..<match.numberOfRanges where match.range(at: index).location != NSNotFound {
+            guard let capture = Range(match.range(at: index), in: tag) else { continue }
+            return String(tag[capture])
+        }
+        return nil
+    }
+
+    private static func normalizedHTTPSURL(_ raw: String) -> String? {
+        guard var components = URLComponents(string: raw.trimmingCharacters(in: .whitespacesAndNewlines)),
+              let scheme = components.scheme?.lowercased(),
+              scheme == "http" || scheme == "https"
+        else { return nil }
+        components.scheme = "https"
+        return components.url?.absoluteString
     }
 
     /// Repairs legacy RSS rows that stored HTML summaries as escaped markup inside a single `<p>`.

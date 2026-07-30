@@ -164,7 +164,7 @@
   html {
     @apply font-sans;
   }
-  .prose a,
+  .article-content a,
   a[data-hypertext="true"] {
     color: var(--purple-foreground);
     text-decoration-line: underline;
@@ -172,9 +172,185 @@
     text-decoration-thickness: 0.1em;
     text-underline-offset: 0.22em;
   }
-  .prose a:hover,
+  .article-content a:hover,
   a[data-hypertext="true"]:hover {
     color: var(--primary);
     text-decoration-color: var(--primary);
+  }
+}
+
+@layer components {
+  .article-content {
+    width: 100%;
+    max-width: 72ch;
+    margin-inline: auto;
+    color: var(--foreground);
+    font-size: 1rem;
+    line-height: 1.75;
+    overflow-wrap: anywhere;
+  }
+
+  .article-content :where(*) {
+    box-sizing: border-box;
+    max-width: 100%;
+  }
+
+  .article-content :where(h1, h2, h3, h4, h5, h6) {
+    margin-block: 1.6em 0.6em;
+    color: var(--foreground);
+    font-weight: 650;
+    line-height: 1.25;
+    text-wrap: balance;
+  }
+
+  .article-content :where(h1) {
+    font-size: 1.875em;
+  }
+
+  .article-content :where(h2) {
+    font-size: 1.5em;
+  }
+
+  .article-content :where(h3) {
+    font-size: 1.25em;
+  }
+
+  .article-content :where(h4, h5, h6) {
+    font-size: 1.0625em;
+  }
+
+  .article-content :where(h1, h2, h3, h4, h5, h6):first-child {
+    margin-top: 0;
+  }
+
+  .article-content :where(p, ul, ol, dl, blockquote, pre, table, figure, audio, video) {
+    margin-block: 0 1.15em;
+  }
+
+  .article-content :where(ul, ol) {
+    padding-left: 1.6em;
+  }
+
+  .article-content :where(ul) {
+    list-style: disc;
+  }
+
+  .article-content :where(ol) {
+    list-style: decimal;
+  }
+
+  .article-content :where(li) {
+    margin-block: 0.3em;
+    padding-left: 0.2em;
+  }
+
+  .article-content :where(li > ul, li > ol) {
+    margin-block: 0.35em;
+  }
+
+  .article-content :where(dt) {
+    font-weight: 650;
+  }
+
+  .article-content :where(dd) {
+    margin: 0.25em 0 0.9em 1.25em;
+  }
+
+  .article-content :where(blockquote) {
+    border-left: 3px solid var(--purple-border);
+    padding-left: 1em;
+    color: var(--muted-foreground);
+    font-style: italic;
+  }
+
+  .article-content :where(img, video) {
+    display: block;
+    width: auto;
+    height: auto;
+    margin-inline: auto;
+    border-radius: var(--radius-lg);
+  }
+
+  .article-content :where(video, audio) {
+    width: 100%;
+  }
+
+  .article-content :where(figure) {
+    margin-inline: 0;
+  }
+
+  .article-content :where(figure > img, figure > video) {
+    margin-bottom: 0.5em;
+  }
+
+  .article-content :where(figcaption, caption) {
+    color: var(--muted-foreground);
+    font-size: 0.875em;
+    line-height: 1.5;
+    text-align: center;
+  }
+
+  .article-content :where(pre, code, kbd, samp) {
+    border-radius: var(--radius-md);
+    background: var(--muted);
+    font-family: var(--font-mono);
+    font-size: 0.875em;
+  }
+
+  .article-content :where(code, kbd, samp) {
+    padding: 0.12em 0.32em;
+  }
+
+  .article-content :where(pre) {
+    max-width: 100%;
+    overflow-x: auto;
+    padding: 0.8em 1em;
+    line-height: 1.6;
+    white-space: pre;
+  }
+
+  .article-content :where(pre code) {
+    padding: 0;
+    background: transparent;
+    font-size: 1em;
+  }
+
+  .article-content :where(table) {
+    display: block;
+    width: 100%;
+    overflow-x: auto;
+    border-collapse: collapse;
+    font-size: 0.9em;
+  }
+
+  .article-content :where(th, td) {
+    min-width: 8rem;
+    border: 1px solid var(--border);
+    padding: 0.5em 0.7em;
+    text-align: left;
+    vertical-align: top;
+  }
+
+  .article-content :where(th) {
+    background: var(--muted);
+    font-weight: 650;
+  }
+
+  .article-content :where(hr) {
+    margin-block: 1.75em;
+    border: 0;
+    border-top: 1px solid var(--border);
+  }
+
+  .article-content :where(.embedded-media-fallback) {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: color-mix(in oklch, var(--muted) 60%, transparent);
+    padding: 0.85em 1em;
+    text-align: center;
+  }
+
+  .article-content > :last-child {
+    margin-bottom: 0;
   }
 }
