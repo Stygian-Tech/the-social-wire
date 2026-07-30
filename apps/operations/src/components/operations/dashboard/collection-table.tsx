@@ -54,7 +54,7 @@ export function CollectionTable({
                 points={row.allOperationsRate}
                 title="Indexed Events/sec."
                 unit="indexed events per second"
-                source="AppView Worker indexed-mutation rollups"
+                source="Charybdis indexed-mutation rollups"
                 format={formatIndexedRate}
                 refreshedAt={refreshedAt}
                 referenceTime={referenceTime}

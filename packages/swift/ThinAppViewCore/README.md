@@ -33,5 +33,5 @@ See [docs/architecture/appview.md](../../docs/architecture/appview.md) and [docs
 
 ## Related
 
-- [AppView worker test plan](../../docs/test-plans/worker.md)
+- [Charybdis test plan](../../docs/test-plans/worker.md)
 - [AppView test plan](../../docs/test-plans/appview.md)

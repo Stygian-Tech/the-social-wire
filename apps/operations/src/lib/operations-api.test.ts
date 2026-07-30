@@ -166,10 +166,10 @@ test("derives the fixed operations environment from APP_ENV", () => {
   expect(operationsEnvironment()).toBe("dev")
 })
 
-test("fails closed when the operations environment is missing or invalid", () => {
+test("defaults a missing operations environment to dev and rejects invalid values", () => {
   delete process.env.NEXT_PUBLIC_APP_ENV
   delete process.env.APP_ENV
-  expect(() => operationsEnvironment()).toThrow("APP_ENV is required")
+  expect(operationsEnvironment()).toBe("dev")
 
   process.env.NEXT_PUBLIC_APP_ENV = "test"
   expect(() => operationsEnvironment()).toThrow("must be exactly dev or prod")

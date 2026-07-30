@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Deploy AppView worker from monorepo root (Docker build context = repo root).
+# Deploy Charybdis from monorepo root (Docker build context = repo root).
 #
 # Usage: bash deploy.sh dev|main
 set -euo pipefail

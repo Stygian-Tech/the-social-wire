@@ -65,14 +65,14 @@ export function HealthStrip({ overview, referenceTime = overview.refreshedAt }: 
       note:
         transportAge === null
           ? "No valid transport heartbeat reported"
-          : `${overview.ingestion?.source ?? "Ingestion source"} transport heartbeat ${transportAge.toFixed(1)}s ago · worker freshness ${workerFreshness.state}`,
+          : `${overview.ingestion?.source ?? "Ingestion source"} transport heartbeat ${transportAge.toFixed(1)}s ago · Charybdis freshness ${workerFreshness.state}`,
       icon: Clock3,
       warning: !ingestionFresh,
     },
     {
       label: "Projection Completeness",
       value: projectionsComplete ? "Complete" : projectionCompleteness.state === "unknown" ? "Unknown" : "At Risk",
-      note: `${activeGaps} active gaps · ${projectionCompleteness.healthy} / ${projectionCompleteness.total} projection workers complete`,
+      note: `${activeGaps} active gaps · ${projectionCompleteness.healthy} / ${projectionCompleteness.total} Charybdis projections complete`,
       icon: Database,
       warning: !projectionsComplete,
     },

@@ -8,9 +8,9 @@ import ThinAppViewCore
 
 @main
 @available(macOS 10.15, macCatalyst 13, iOS 13, tvOS 13, watchOS 6, *)
-struct AppViewWorkerCommand: AsyncParsableCommand {
+struct CharybdisCommand: AsyncParsableCommand {
   static let configuration = CommandConfiguration(
-    abstract: "The Social Wire AppView ingestion worker"
+    abstract: "Charybdis, The Social Wire ingestion service"
   )
 
   mutating func run() async throws {
@@ -96,6 +96,6 @@ enum WorkerRuntimeError: Error, CustomStringConvertible {
   case thinAppViewDisabled
 
   var description: String {
-    "ENABLE_THIN_APPVIEW must be true to run the worker."
+    "ENABLE_THIN_APPVIEW must be true to run Charybdis."
   }
 }

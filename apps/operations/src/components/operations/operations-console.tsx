@@ -107,7 +107,7 @@ export function OperationsConsole({ section, runbooks }: { section: string[]; ru
     (current === "gaps" && gapView === "history") ||
     (current === "backfills" && backfillView === "history") ||
     (current === "alerts" && alertView === "history")
-  const chartRoute = current === "overview" || current === "ingestion"
+  const chartRoute = current === "overview" || current === "ingestion" || current === "appview"
   const supportRoute = current === "overview" || current === "ingestion" || (current === "alerts" && alertView === "active")
   const authenticated = demo || Boolean(auth.session)
 

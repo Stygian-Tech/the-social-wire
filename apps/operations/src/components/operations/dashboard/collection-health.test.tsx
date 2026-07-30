@@ -6,7 +6,7 @@ import { demoOverview } from "@/lib/demo-data"
 afterEach(cleanup)
 
 const metricsEvidence = {
-  source: "AppView Worker metric rollups",
+  source: "Charybdis metric rollups",
   accuracy: "exact" as const,
   generatedAt: demoOverview.refreshedAt,
   ageSeconds: 0,

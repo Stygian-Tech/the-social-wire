@@ -16,5 +16,8 @@ headers {
 }
 
 docs {
-  Lists Level-1 entry rows. Optional: `publicationAtUri`, `publicationScopeAtUris`, `publicationSiteUrls`, `cursor`.
+  Lists Level-1 entry rows with required authoritative `isRead`. Optional:
+  `publicationAtUri`, `publicationScopeAtUris`, `publicationSiteUrls`, `cursor`.
+  Invalid cursor/limit/maxEntries returns the AppView error envelope with
+  `requestId` and `retryable`.
 }

@@ -68,10 +68,10 @@ describe("BackfillProgress", () => {
       />,
     )
 
-    expect(screen.getByText("Waiting for Worker")).toBeTruthy()
+    expect(screen.getByText("Waiting for Charybdis")).toBeTruthy()
     expect(
       screen.getByText(
-        "This job is queued but has not been claimed. Check the AppView Worker and its Operations database configuration if this state persists.",
+        "This job is queued but has not been claimed. Check Charybdis and its Operations database configuration if this state persists.",
       ),
     ).toBeTruthy()
   })

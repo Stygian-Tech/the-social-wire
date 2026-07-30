@@ -90,19 +90,27 @@ public struct RequestTraceMiddleware: RouterMiddleware {
     guard let telemetry else { return }
     let route = Self.routeTemplate(request.uri.path)
     let statusClass = "\(statusCode / 100)xx"
-    let dimensions = [
+    var dimensions = [
       "service": service,
       "environment": environment,
       "route_template": route,
       "method": request.method.rawValue,
       "status_class": statusClass,
     ]
+    if let feedKind = Self.feedKind(request) {
+      dimensions["feed_kind"] = feedKind
+      dimensions["page_kind"] = request.uri.queryParameters.get("cursor") == nil
+        ? "first_page"
+        : "pagination"
+    }
     _ = await telemetry.enqueue(.metric(.init(name: "socialwire.http.server.requests_total", value: 1, dimensions: dimensions)))
     _ = await telemetry.enqueue(.metric(.init(name: "socialwire.http.server.duration_seconds", value: duration, dimensions: dimensions)))
     let isError = statusCode >= 500
     if context.traceContext.sampled || isError {
       var attributes = dimensions
       if let errorType { attributes["error_type"] = errorType }
+      attributes["request_id"] = context.requestId
+      attributes["deployment_instance"] = instanceId
       _ = await telemetry.enqueue(.span(.init(
         environment: environment,
         traceId: context.traceContext.traceId,
@@ -144,6 +152,19 @@ public struct RequestTraceMiddleware: RouterMiddleware {
       components[3] = ":rkey"
     }
     return "/" + components.joined(separator: "/")
+  }
+
+  private static func feedKind(_ request: Request) -> String? {
+    switch request.uri.path {
+    case "/v1/appview/feed":
+      let allowed = Set(["subscribed", "following", "folder", "publication"])
+      let raw = request.uri.queryParameters.get("kind") ?? "invalid"
+      return allowed.contains(raw) ? raw : "invalid"
+    case "/v1/appview/entries":
+      return "publication"
+    default:
+      return nil
+    }
   }
 
   private static func normalizedFallbackPath(_ path: String) -> String {

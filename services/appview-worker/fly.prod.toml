@@ -1,4 +1,4 @@
-# Production AppView worker (main). Dev uses fly.toml.
+# Production Charybdis (main). Dev uses fly.toml.
 #
 # Deploy: bash deploy.sh main
 

@@ -51,7 +51,7 @@ describe("CollectionTable", () => {
     )
 
     expect(screen.getByText("1 failed events/sec")).toBeTruthy()
-    expect(screen.getAllByText(/Source: AppView Worker indexed-mutation rollups/)).toHaveLength(
+    expect(screen.getAllByText(/Source: Charybdis indexed-mutation rollups/)).toHaveLength(
       MONITORED_COLLECTIONS.length,
     )
     for (const collection of MONITORED_COLLECTIONS)

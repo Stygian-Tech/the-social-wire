@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Create Fly.io apps for Social Wire gateway, appview, appview-worker, and operations (dev + prod).
+# Create Fly.io apps for Social Wire gateway, appview, Charybdis, and operations (dev + prod).
 #
 # Prereqs: flyctl installed and logged in (`fly auth login`), or `FLY_API_TOKEN` in CI.
 # Optional: FLY_ORG=your-org-name (else uses flyctl default org).
@@ -35,4 +35,4 @@ bash "$ROOT/scripts/fly-ensure-app.sh" "$OPERATIONS_PROD"
 echo ""
 echo "==> Done."
 echo "Next: fly secrets set on each app (SUPABASE_DATABASE_URL, APP_ENV, ENABLE_THIN_APPVIEW, APPVIEW_BASE_URL on gateway, operations HMAC/operator/webhook secrets, …)."
-echo "Deploy: CI on push, or run the gateway, appview, appview-worker, and operations deploy scripts for dev."
+echo "Deploy: CI on push, or run the gateway, appview, Charybdis (appview-worker), and operations deploy scripts for dev."

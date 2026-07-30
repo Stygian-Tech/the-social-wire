@@ -18,6 +18,7 @@ import {
   isThinAppViewEnabled,
   listEntriesFromAppView,
   listAggregateFeedFromAppView,
+  shouldRetryAppViewRequest,
   type AggregateAppViewFeed,
 } from "@/lib/thinAppViewClient";
 import { PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY } from "@/hooks/usePublicationSidebarData";
@@ -202,6 +203,7 @@ export function useEntries(
     refetchOnMount: false,
     refetchOnWindowFocus: false,
     gcTime: 1000 * 60 * 60 * 24,
+    retry: shouldRetryAppViewRequest,
   });
 
   useEffect(() => {
@@ -247,6 +249,7 @@ export function useAggregateFeedEntries(
     refetchOnMount: false,
     refetchOnWindowFocus: false,
     gcTime: 1000 * 60 * 60 * 24,
+    retry: shouldRetryAppViewRequest,
   });
 }
 

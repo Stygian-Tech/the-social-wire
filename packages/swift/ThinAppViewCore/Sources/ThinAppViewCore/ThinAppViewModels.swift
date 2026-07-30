@@ -67,6 +67,38 @@ public struct ReadMarkRow: Sendable {
   public let createdAt: Date
 }
 
+public struct ReadWatermarkBoundary: Codable, Sendable, Equatable {
+  public let publicationId: String
+  public let createdAt: Date
+  public let entryId: String?
+
+  public init(publicationId: String, createdAt: Date, entryId: String?) {
+    self.publicationId = publicationId
+    self.createdAt = createdAt
+    self.entryId = entryId
+  }
+
+  public func contains(createdAt candidateDate: Date, entryId candidateId: String) -> Bool {
+    if candidateDate != createdAt {
+      return candidateDate < createdAt
+    }
+    guard let entryId else { return true }
+    return candidateId <= entryId
+  }
+
+  public func isAfter(_ other: ReadWatermarkBoundary) -> Bool {
+    if createdAt != other.createdAt {
+      return createdAt > other.createdAt
+    }
+    switch (entryId, other.entryId) {
+    case (nil, nil): return false
+    case (nil, _): return true
+    case (_, nil): return false
+    case let (lhs?, rhs?): return lhs > rhs
+    }
+  }
+}
+
 public enum AppViewUnreadCounterAccuracy: String, Codable, Sendable, Equatable {
   case estimated
   case exact
@@ -148,6 +180,10 @@ public struct AppViewEntryListItem: Codable, Sendable {
   public let originalUrl: String?
   /// Canonical viewer-scoped publication identity for aggregate-feed presentation.
   public let publicationId: String?
+  /// Canonical database ordering position used by AppView cursors and read watermarks.
+  public let feedPositionAt: Date
+  /// Server-authoritative read state, including read watermarks and explicit unread overrides.
+  public let isRead: Bool
 
   public init(
     entryId: String,
@@ -157,7 +193,9 @@ public struct AppViewEntryListItem: Codable, Sendable {
     thumbnailUrl: String? = nil,
     thumbnailFallbackUrl: String? = nil,
     originalUrl: String? = nil,
-    publicationId: String? = nil
+    publicationId: String? = nil,
+    feedPositionAt: Date? = nil,
+    isRead: Bool = false
   ) {
     self.entryId = entryId
     self.title = title
@@ -167,6 +205,8 @@ public struct AppViewEntryListItem: Codable, Sendable {
     self.thumbnailFallbackUrl = thumbnailFallbackUrl
     self.originalUrl = originalUrl
     self.publicationId = publicationId
+    self.feedPositionAt = feedPositionAt ?? publishedAt
+    self.isRead = isRead
   }
 
   public func withPublicationId(_ publicationId: String) -> AppViewEntryListItem {
@@ -178,7 +218,24 @@ public struct AppViewEntryListItem: Codable, Sendable {
       thumbnailUrl: thumbnailUrl,
       thumbnailFallbackUrl: thumbnailFallbackUrl,
       originalUrl: originalUrl,
-      publicationId: publicationId
+      publicationId: publicationId,
+      feedPositionAt: feedPositionAt,
+      isRead: isRead
+    )
+  }
+
+  public func withReadState(_ isRead: Bool) -> AppViewEntryListItem {
+    AppViewEntryListItem(
+      entryId: entryId,
+      title: title,
+      summary: summary,
+      publishedAt: publishedAt,
+      thumbnailUrl: thumbnailUrl,
+      thumbnailFallbackUrl: thumbnailFallbackUrl,
+      originalUrl: originalUrl,
+      publicationId: publicationId,
+      feedPositionAt: feedPositionAt,
+      isRead: isRead
     )
   }
 }
@@ -190,6 +247,38 @@ public struct AppViewEntryListResponse: Codable, Sendable {
   public init(entries: [AppViewEntryListItem], cursor: String?) {
     self.entries = entries
     self.cursor = cursor
+  }
+}
+
+public struct AppViewAggregatePageDiagnostics: Sendable, Equatable {
+  public let rowsScanned: Int
+  public let rowsReturned: Int
+  public let duplicatesSuppressed: Int
+  public let queryDuration: TimeInterval
+
+  public init(
+    rowsScanned: Int,
+    rowsReturned: Int,
+    duplicatesSuppressed: Int,
+    queryDuration: TimeInterval
+  ) {
+    self.rowsScanned = rowsScanned
+    self.rowsReturned = rowsReturned
+    self.duplicatesSuppressed = duplicatesSuppressed
+    self.queryDuration = queryDuration
+  }
+}
+
+public struct AppViewAggregatePageResult: Sendable {
+  public let response: AppViewEntryListResponse
+  public let diagnostics: AppViewAggregatePageDiagnostics
+
+  public init(
+    response: AppViewEntryListResponse,
+    diagnostics: AppViewAggregatePageDiagnostics
+  ) {
+    self.response = response
+    self.diagnostics = diagnostics
   }
 }
 

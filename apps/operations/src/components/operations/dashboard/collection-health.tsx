@@ -73,7 +73,7 @@ export function CollectionHealth({
                     points={row.averageCommitMilliseconds}
                     title="Average Database Commit Duration"
                     unit="milliseconds"
-                    source="AppView Worker database-write duration rollups"
+                    source="Charybdis database-write duration rollups"
                     format={formatMilliseconds}
                     refreshedAt={refreshedAt}
                     referenceTime={referenceTime}
@@ -85,7 +85,7 @@ export function CollectionHealth({
                     points={row.averageLagSeconds}
                     title="Average Event Lag"
                     unit="seconds"
-                    source="AppView Worker committed-event lag rollups"
+                    source="Charybdis committed-event lag rollups"
                     format={formatSeconds}
                     refreshedAt={refreshedAt}
                     referenceTime={referenceTime}

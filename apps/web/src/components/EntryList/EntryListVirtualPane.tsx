@@ -10,6 +10,10 @@ import {
   shouldFillViewportFetch,
   shouldScrollNearEndFetch,
 } from "@/lib/entryListPaginationTriggers";
+import {
+  loadEntryListScrollOffset,
+  saveEntryListScrollOffset,
+} from "@/lib/entryListScrollState";
 
 /**
  * Isolated virtual list so we can remount it when the filter changes and reset
@@ -25,13 +29,15 @@ export function EntryListVirtualPane({
   isFetchingNextPage,
   isFetchNextPageError,
   fetchNextPage,
+  scrollStateKey,
+  publicationById,
   markEntryRead,
   markEntryUnread,
 }: EntryListVirtualPaneProps) {
   const parentRef = useRef<HTMLDivElement>(null);
   const loaderNodeRef = useRef<HTMLDivElement | null>(null);
   const observerRef = useRef<IntersectionObserver | null>(null);
-  const scrollTopRef = useRef(0);
+  const scrollTopRef = useRef(loadEntryListScrollOffset(scrollStateKey));
   const fetchNextPageRef = useRef(fetchNextPage);
   fetchNextPageRef.current = fetchNextPage;
   const hasNextPageRef = useRef(hasNextPage);
@@ -107,16 +113,20 @@ export function EntryListVirtualPane({
     scrollTopRef.current = root.scrollTop;
     const rememberScrollTop = () => {
       scrollTopRef.current = root.scrollTop;
+      saveEntryListScrollOffset(scrollStateKey, root.scrollTop);
     };
     root.addEventListener("scroll", rememberScrollTop, { passive: true });
-    return () => root.removeEventListener("scroll", rememberScrollTop);
-  }, []);
+    return () => {
+      saveEntryListScrollOffset(scrollStateKey, scrollTopRef.current);
+      root.removeEventListener("scroll", rememberScrollTop);
+    };
+  }, [scrollStateKey]);
 
   useLayoutEffect(() => {
     const root = parentRef.current;
     if (!root) return;
     root.scrollTop = scrollTopRef.current;
-  }, [visibleEntries]);
+  }, [scrollStateKey, visibleEntries]);
 
   useEffect(() => {
     const root = parentRef.current;
@@ -222,10 +232,15 @@ export function EntryListVirtualPane({
                 entry={entry}
                 isSelected={selectedEntryId === entry.entryId}
                 onSelect={onSelectEntry}
-                isRead={isEntryRead(entry.entryId)}
+                isRead={entry.isRead === true || isEntryRead(entry.entryId)}
                 readIndicatorsEnabled={readIndicatorsEnabled}
                 onMarkEntryRead={markEntryRead}
                 onMarkEntryUnread={markEntryUnread}
+                publication={
+                  entry.publicationId
+                    ? publicationById.get(entry.publicationId)
+                    : undefined
+                }
               />
             </div>
           );

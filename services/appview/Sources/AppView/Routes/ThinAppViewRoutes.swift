@@ -10,37 +10,72 @@ struct ThinAppViewRoutes {
 
   func register(on group: RouterGroup<GatewayRequestContext>) {
     group.get("/v1/appview/feed") { request, context async throws -> AppViewEntryListResponse in
-      guard let auth = context.authContext else { throw HTTPError(.unauthorized) }
+      guard let auth = context.authContext else {
+        throw Self.feedError(.unauthorized, message: "Authentication is required.", requestId: context.requestId)
+      }
       guard let kindRaw = request.uri.queryParameters.get("kind"),
             let kind = AggregateFeedKind(rawValue: kindRaw)
       else {
-        throw HTTPError(.badRequest, message: "Query requires a valid `kind`")
+        throw Self.invalidRequest("Query requires a valid `kind`", requestId: context.requestId)
       }
       let id = request.uri.queryParameters.get("id")
       if kind.requiresId, id?.isEmpty != false {
-        throw HTTPError(.badRequest, message: "Query requires `id` for this feed kind")
+        throw Self.invalidRequest("Query requires `id` for this feed kind", requestId: context.requestId)
       }
       let filterRaw = request.uri.queryParameters.get("filter") ?? "all"
       guard let filter = EntryListFilter(rawValue: filterRaw) else {
-        throw HTTPError(.badRequest, message: "Invalid `filter`")
+        throw Self.invalidRequest("Invalid `filter`", requestId: context.requestId)
       }
-      let sidebar = try await projectionService.sidebar(auth: auth)
-      guard let publications = Self.publications(for: kind, id: id, sidebar: sidebar) else {
-        throw HTTPError(.notFound, message: "Feed is not available to this viewer")
-      }
-      return try await readService.listFeed(
-        auth: auth,
-        publications: publications,
-        filter: filter,
-        cursor: request.uri.queryParameters.get("cursor"),
-        limit: Int(request.uri.queryParameters.get("limit") ?? "50") ?? 50
+      let cursor = try Self.validatedCursor(
+        request.uri.queryParameters.get("cursor"),
+        requestId: context.requestId
       )
+      let limit = try Self.validatedInteger(
+        request.uri.queryParameters.get("limit"),
+        name: "limit",
+        defaultValue: 50,
+        range: 1...100,
+        requestId: context.requestId
+      )
+      return try await AppViewFeedExecution.run(requestId: context.requestId) {
+        if kind == .subscribed {
+          if let page = try await readService.listSubscribedFeed(
+            auth: auth,
+            filter: filter,
+            cursor: cursor,
+            limit: limit
+          ) {
+            return page
+          }
+          _ = try await projectionService.sidebar(auth: auth)
+          return try await readService.listSubscribedFeed(
+            auth: auth,
+            filter: filter,
+            cursor: cursor,
+            limit: limit
+          ) ?? AppViewEntryListResponse(entries: [], cursor: nil)
+        }
+
+        let sidebar = try await projectionService.sidebar(auth: auth)
+        guard let publications = Self.publications(for: kind, id: id, sidebar: sidebar) else {
+          throw HTTPError(.notFound, message: "Feed is not available to this viewer")
+        }
+        return try await readService.listFeed(
+          auth: auth,
+          publications: publications,
+          filter: filter,
+          cursor: cursor,
+          limit: limit
+        )
+      }
     }
 
     group.get("/v1/appview/entries") { request, context async throws -> AppViewEntryListResponse in
-      guard let auth = context.authContext else { throw HTTPError(.unauthorized) }
+      guard let auth = context.authContext else {
+        throw Self.feedError(.unauthorized, message: "Authentication is required.", requestId: context.requestId)
+      }
       guard let authorDid = request.uri.queryParameters.get("authorDid") else {
-        throw HTTPError(.badRequest, message: "Query requires `authorDid`")
+        throw Self.invalidRequest("Query requires `authorDid`", requestId: context.requestId)
       }
       let publicationAtUri = request.uri.queryParameters.get("publicationAtUri")
       let publicationScopeAtUris = Self.splitQueryList(
@@ -51,35 +86,50 @@ struct ThinAppViewRoutes {
       )
       let filterRaw = request.uri.queryParameters.get("filter") ?? "all"
       guard let filter = EntryListFilter(rawValue: filterRaw) else {
-        throw HTTPError(.badRequest, message: "Invalid `filter`")
+        throw Self.invalidRequest("Invalid `filter`", requestId: context.requestId)
       }
-      let cursor = request.uri.queryParameters.get("cursor")
-      let limit = Int(request.uri.queryParameters.get("limit") ?? "50") ?? 50
-      if let maxRaw = request.uri.queryParameters.get("maxEntries"),
-         let maxEntries = Int(maxRaw)
-      {
-        return try await readService.listEntriesUpTo(
+      let cursor = try Self.validatedCursor(
+        request.uri.queryParameters.get("cursor"),
+        requestId: context.requestId
+      )
+      let limit = try Self.validatedInteger(
+        request.uri.queryParameters.get("limit"),
+        name: "limit",
+        defaultValue: 50,
+        range: 1...100,
+        requestId: context.requestId
+      )
+      let maxEntries = try Self.validatedOptionalInteger(
+        request.uri.queryParameters.get("maxEntries"),
+        name: "maxEntries",
+        range: 1...ThinAppViewEntryPagination.maxAggregateEntries,
+        requestId: context.requestId
+      )
+      return try await AppViewFeedExecution.run(requestId: context.requestId) {
+        if let maxEntries {
+          return try await readService.listEntriesUpTo(
+            auth: auth,
+            authorDid: authorDid,
+            publicationAtUri: publicationAtUri,
+            publicationScopeAtUris: publicationScopeAtUris,
+            publicationSiteUrls: publicationSiteUrls,
+            filter: filter,
+            maxEntries: maxEntries,
+            pageLimit: limit
+          )
+        }
+
+        return try await readService.listEntries(
           auth: auth,
           authorDid: authorDid,
           publicationAtUri: publicationAtUri,
           publicationScopeAtUris: publicationScopeAtUris,
           publicationSiteUrls: publicationSiteUrls,
           filter: filter,
-          maxEntries: maxEntries,
-          pageLimit: limit
+          cursor: cursor,
+          limit: limit
         )
       }
-
-      return try await readService.listEntries(
-        auth: auth,
-        authorDid: authorDid,
-        publicationAtUri: publicationAtUri,
-        publicationScopeAtUris: publicationScopeAtUris,
-        publicationSiteUrls: publicationSiteUrls,
-        filter: filter,
-        cursor: cursor,
-        limit: limit
-      )
     }
 
     group.post("/v1/appview/read-marks") { request, context async throws -> HTTPResponse.Status in
@@ -121,6 +171,59 @@ struct ThinAppViewRoutes {
       .split(separator: ",")
       .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
       .filter { !$0.isEmpty }
+  }
+
+  static func validatedCursor(_ raw: String?, requestId: String) throws -> String? {
+    guard let raw else { return nil }
+    guard !raw.isEmpty, ThinAppViewCursor.decode(raw) != nil else {
+      throw invalidRequest("Invalid `cursor`", requestId: requestId)
+    }
+    return raw
+  }
+
+  static func validatedInteger(
+    _ raw: String?,
+    name: String,
+    defaultValue: Int,
+    range: ClosedRange<Int>,
+    requestId: String
+  ) throws -> Int {
+    guard let raw else { return defaultValue }
+    guard let value = Int(raw), range.contains(value) else {
+      throw invalidRequest("Invalid `\(name)`", requestId: requestId)
+    }
+    return value
+  }
+
+  static func validatedOptionalInteger(
+    _ raw: String?,
+    name: String,
+    range: ClosedRange<Int>,
+    requestId: String
+  ) throws -> Int? {
+    guard let raw else { return nil }
+    guard let value = Int(raw), range.contains(value) else {
+      throw invalidRequest("Invalid `\(name)`", requestId: requestId)
+    }
+    return value
+  }
+
+  private static func invalidRequest(_ message: String, requestId: String) -> AppViewFeedError {
+    feedError(.badRequest, message: message, requestId: requestId)
+  }
+
+  private static func feedError(
+    _ status: HTTPResponse.Status,
+    message: String,
+    requestId: String
+  ) -> AppViewFeedError {
+    AppViewFeedError(
+      status: status,
+      code: status == .unauthorized ? "unauthorized" : "invalid_request",
+      message: message,
+      requestId: requestId,
+      retryable: false
+    )
   }
 
   private static func publications(

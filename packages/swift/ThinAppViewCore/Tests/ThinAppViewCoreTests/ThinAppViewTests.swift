@@ -209,10 +209,18 @@ struct SQLiteThinAppViewStoreTests {
 
     _ = try await store.markAllReadCounters(
       viewerDid: "did:plc:viewer",
-      publicationIds: [publicationId],
+      scopes: [
+        PublicationUnreadScope(
+          publicationId: publicationId,
+          authorDid: "did:plc:author",
+          publicationAtUri: publicationId,
+          publicationScopeAtUris: [],
+          publicationSiteUrls: []
+        )
+      ],
       readAt: floor
     )
-    let readFloorAt = try await store.readFloor(
+    let readBoundary = try await store.readBoundary(
       viewerDid: "did:plc:viewer",
       publicationId: publicationId
     )
@@ -226,7 +234,7 @@ struct SQLiteThinAppViewStoreTests {
       filter: .unread,
       cursor: nil,
       limit: 10,
-      readFloorAt: readFloorAt
+      readBoundary: readBoundary
     )
 
     #expect(unread.entries.map(\.entryId) == [newerUri])
@@ -403,7 +411,15 @@ struct SQLiteThinAppViewStoreTests {
 
     _ = try await store.markAllReadCounters(
       viewerDid: viewerDid,
-      publicationIds: [publicationId],
+      scopes: [
+        PublicationUnreadScope(
+          publicationId: publicationId,
+          authorDid: authorDid,
+          publicationAtUri: publicationId,
+          publicationScopeAtUris: [],
+          publicationSiteUrls: []
+        )
+      ],
       readAt: now.addingTimeInterval(60)
     )
     #expect(try await store.fetchUnreadCounters(viewerDid: viewerDid, publicationIds: [publicationId]).first?.unreadCount == 0)
@@ -685,5 +701,114 @@ struct SQLiteThinAppViewStoreTests {
     )
 
     #expect(page.entries.map(\.title) == ["RSS"])
+  }
+
+  @Test("watermark tuple covers late rows and explicit unread until a newer bulk action")
+  func watermarkTupleAndUnreadOverride() async throws {
+    let dbPath =
+      FileManager.default.temporaryDirectory
+        .appendingPathComponent("sw-appview-\(UUID().uuidString).sqlite")
+        .path
+    defer { try? FileManager.default.removeItem(atPath: dbPath) }
+
+    let store = try SQLiteThinAppViewStore(path: dbPath, logger: Logger(label: "appview.test"))
+    let viewerDid = "did:plc:viewer"
+    let authorDid = "did:plc:author"
+    let publicationId = "at://did:plc:author/site.standard.publication/main"
+    let timestamp = ISO8601DateFormatter().date(from: "2027-07-28T20:00:00Z") ?? Date()
+    let scope = PublicationUnreadScope(
+      publicationId: publicationId,
+      authorDid: authorDid,
+      publicationAtUri: publicationId,
+      publicationScopeAtUris: [],
+      publicationSiteUrls: []
+    )
+
+    func item(_ suffix: String, at createdAt: Date = timestamp) -> IndexedContentItem {
+      let uri = "at://did:plc:author/site.standard.document/\(suffix)"
+      return IndexedContentItem(
+        uri: uri,
+        cid: "bafy-\(suffix)",
+        authorDid: authorDid,
+        collection: "site.standard.document",
+        createdAt: createdAt,
+        indexedAt: timestamp,
+        publicationSite: publicationId,
+        render: ContentRenderFields(
+          title: suffix,
+          publishedAt: ISO8601DateFormatter().string(from: createdAt)
+        ),
+        expiresAt: timestamp.addingTimeInterval(3600)
+      )
+    }
+
+    try await store.upsertContentItem(item("a"))
+    try await store.upsertContentItem(item("b"))
+    _ = try await store.markAllReadCounters(
+      viewerDid: viewerDid,
+      scopes: [scope],
+      readAt: timestamp.addingTimeInterval(1)
+    )
+
+    try await store.upsertContentItem(item("older", at: timestamp.addingTimeInterval(-60)))
+    try await store.upsertContentItem(item("c"))
+    let all = try await store.listEntries(
+      viewerDid: viewerDid,
+      authorDid: authorDid,
+      publicationAtUri: publicationId,
+      publicationScopeAtUris: [],
+      publicationSiteUrls: [],
+      filter: .all,
+      cursor: nil,
+      limit: 10,
+      readBoundary: nil
+    )
+    let states = try await store.readStates(
+      viewerDid: viewerDid,
+      entries: all.entries.map { $0.withPublicationId(publicationId) }
+    )
+    #expect(states["at://did:plc:author/site.standard.document/a"] == true)
+    #expect(states["at://did:plc:author/site.standard.document/b"] == true)
+    #expect(states["at://did:plc:author/site.standard.document/older"] == true)
+    #expect(states["at://did:plc:author/site.standard.document/c"] == false)
+
+    let b = "at://did:plc:author/site.standard.document/b"
+    try await store.markEntryUnread(viewerDid: viewerDid, subjectUri: b, createdAt: timestamp)
+    let bItem = all.entries.first { $0.entryId == b }!.withPublicationId(publicationId)
+    _ = try await store.refreshUnreadCounters(viewerDid: viewerDid, scopes: [scope])
+    #expect(try await store.readStates(viewerDid: viewerDid, entries: [bItem])[b] == false)
+    let unreadOverrideCounters = try await store.fetchUnreadCounters(
+      viewerDid: viewerDid,
+      publicationIds: [publicationId]
+    )
+    #expect(unreadOverrideCounters.first?.unreadCount == 2)
+
+    _ = try await store.markAllReadCounters(
+      viewerDid: viewerDid,
+      scopes: [scope],
+      readAt: timestamp.addingTimeInterval(-120)
+    )
+    #expect(try await store.readStates(viewerDid: viewerDid, entries: [bItem])[b] == false)
+    let staleBulkCounters = try await store.fetchUnreadCounters(
+      viewerDid: viewerDid,
+      publicationIds: [publicationId]
+    )
+    #expect(staleBulkCounters.first?.unreadCount == 2)
+
+    _ = try await store.markAllReadCounters(
+      viewerDid: viewerDid,
+      scopes: [scope],
+      readAt: timestamp.addingTimeInterval(2)
+    )
+    #expect(try await store.readStates(viewerDid: viewerDid, entries: [bItem])[b] == true)
+    let newerBulkCounters = try await store.fetchUnreadCounters(
+      viewerDid: viewerDid,
+      publicationIds: [publicationId]
+    )
+    #expect(newerBulkCounters.first?.unreadCount == 0)
+    #expect(
+      try await store.readBoundary(viewerDid: viewerDid, publicationId: publicationId)?.entryId
+        == "at://did:plc:author/site.standard.document/c"
+    )
   }
 }

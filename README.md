@@ -30,7 +30,7 @@ the-social-wire/
   services/
     gateway/         # OAuth, sync, PDS writes, AppView proxy (Hummingbird; Fly.io)
     appview/         # Publication sidebar + Thin AppView read index (Fly.io)
-    appview-worker/  # Jetstream ingestion for Thin AppView (Fly.io)
+    appview-worker/  # Charybdis: Jetstream ingestion for Thin AppView (Fly.io)
   packages/
     lexicons/    # app.thesocialwire.* ATProto lexicons
     spec/        # OpenAPI 3.1 spec (gateway + appview routes)
@@ -76,7 +76,7 @@ cd services/gateway && APP_ENV=local swift run Gateway
 # AppView (sidebar + Thin AppView reads)
 cd services/appview && APP_ENV=local ENABLE_THIN_APPVIEW=true swift run AppView
 
-# AppView worker (Jetstream ingestion)
+# Charybdis (Jetstream ingestion)
 cd services/appview-worker && APP_ENV=local ENABLE_THIN_APPVIEW=true swift run AppViewWorker
 
 # Supabase (optional — Docker)
@@ -112,9 +112,11 @@ cd packages/swift/ThinAppViewCore && swift test
 | Web | Vercel (automatic from `main` / `dev` branches) |
 | Gateway | Fly.io (`the-social-wire-*-gateway`, **`ams`**) |
 | AppView | Fly.io (`the-social-wire-*-appview`, **`ams`**) |
-| AppView worker | Fly.io (`the-social-wire-*-appview-worker`, **`ams`**) |
+| Charybdis | Fly.io (`the-social-wire-*-appview-worker`, **`ams`**) |
 | Database (index + cache) | Supabase Postgres (`supabase/migrations/`) |
 | CI/CD | GitHub Actions + Vercel + Fly |
+
+Charybdis retains the `appview-worker` directory, executable, Fly app names, CI identifiers, and telemetry service key for deployment and historical-observability compatibility.
 
 See [docs/architecture/overview.md](docs/architecture/overview.md) for the full architecture narrative.
 

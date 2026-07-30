@@ -13,6 +13,7 @@ import { OperationsCommandsTable } from "@/components/operations/dashboard/opera
 import { RequestTable } from "@/components/operations/dashboard/request-table"
 import { Runbooks } from "@/components/operations/runbooks"
 import { ServiceTable } from "@/components/operations/dashboard/service-table"
+import { SubscribedFeedPerformance } from "@/components/operations/dashboard/subscribed-feed-performance"
 import { TraceDetail } from "@/components/operations/traces/trace-detail"
 import type { Runbook } from "@/components/operations/shell/operations-view-types"
 import { metricWindowReference } from "@/lib/collection-metrics"
@@ -68,6 +69,7 @@ export function OperationsRouteContent({
     return (
       <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3">
         <RequestTable spans={data.recentTraces ?? []} refreshedAt={data.refreshedAt} expanded />
+        <SubscribedFeedPerformance metricRollups={data.metricRollups ?? []} />
         <DatabaseObservability overview={data} referenceTime={referenceTime} />
         <ServiceTable data={data} referenceTime={referenceTime} />
       </div>

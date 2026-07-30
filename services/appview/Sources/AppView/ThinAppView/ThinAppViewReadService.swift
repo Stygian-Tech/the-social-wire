@@ -2,20 +2,24 @@ import Foundation
 import GatewayCore
 import Hummingbird
 import Logging
+import OperationsCore
 import ThinAppViewCore
 
 actor ThinAppViewReadService {
   private let store: any ThinAppViewStore
   private let projectionCache: (any AppViewProjectionCacheStore)?
+  private let telemetry: OperationsTelemetryBuffer?
   private let logger: Logger
 
   init(
     store: any ThinAppViewStore,
     projectionCache: (any AppViewProjectionCacheStore)? = nil,
+    telemetry: OperationsTelemetryBuffer? = nil,
     logger: Logger
   ) {
     self.store = store
     self.projectionCache = projectionCache
+    self.telemetry = telemetry
     self.logger = logger
   }
 
@@ -113,7 +117,11 @@ actor ThinAppViewReadService {
            from: Data(entry.value.utf8)
          )
       {
-        return dedupedPage(cached)
+        return try await authoritativePage(
+          cached,
+          viewerDid: auth.did,
+          publicationId: publicationId
+        )
       }
     }
 
@@ -123,11 +131,14 @@ actor ThinAppViewReadService {
       publicationSiteUrls: publicationSiteUrls,
       authorDid: authorDid
     )
-    let readFloorAt: Date?
-    if filter == .unread, let publicationId {
-      readFloorAt = try await store.readFloor(viewerDid: auth.did, publicationId: publicationId)
+    let readBoundary: ReadWatermarkBoundary?
+    if filter != .all, let publicationId {
+      readBoundary = try await store.readBoundary(
+        viewerDid: auth.did,
+        publicationId: publicationId
+      )
     } else {
-      readFloorAt = nil
+      readBoundary = nil
     }
 
     let page = try await store.listEntries(
@@ -139,7 +150,7 @@ actor ThinAppViewReadService {
       filter: filter,
       cursor: cursor,
       limit: limit,
-      readFloorAt: readFloorAt
+      readBoundary: readBoundary
     )
 
     if cursor == nil,
@@ -164,13 +175,38 @@ actor ThinAppViewReadService {
       )
     }
 
-    return dedupedPage(page)
+    return try await authoritativePage(
+      page,
+      viewerDid: auth.did,
+      publicationId: publicationId
+    )
   }
 
   private func dedupedPage(_ page: AppViewEntryListResponse) -> AppViewEntryListResponse {
     AppViewEntryListResponse(
       entries: RssFeedIdentity.dedupeEntryListItems(page.entries),
       cursor: page.cursor
+    )
+  }
+
+  private func authoritativePage(
+    _ page: AppViewEntryListResponse,
+    viewerDid: String,
+    publicationId: String?
+  ) async throws -> AppViewEntryListResponse {
+    let neutral = dedupedPage(page)
+    let scopedEntries = neutral.entries.map { entry in
+      if let publicationId {
+        return entry.withPublicationId(publicationId)
+      }
+      return entry
+    }
+    let states = try await store.readStates(viewerDid: viewerDid, entries: scopedEntries)
+    return AppViewEntryListResponse(
+      entries: scopedEntries.map {
+        $0.withReadState(states[$0.entryId] ?? false)
+      },
+      cursor: neutral.cursor
     )
   }
 
@@ -225,14 +261,14 @@ actor ThinAppViewReadService {
 
     for publication in publications {
       let scope = publication.appViewScope
-      let readFloorAt: Date?
-      if filter == .unread {
-        readFloorAt = try await store.readFloor(
+      let readBoundary: ReadWatermarkBoundary?
+      if filter != .all {
+        readBoundary = try await store.readBoundary(
           viewerDid: auth.did,
           publicationId: publication.publicationId
         )
       } else {
-        readFloorAt = nil
+        readBoundary = nil
       }
       let page = try await store.listEntries(
         viewerDid: auth.did,
@@ -243,7 +279,7 @@ actor ThinAppViewReadService {
         filter: filter,
         cursor: cursor,
         limit: min(100, pageLimit + 1),
-        readFloorAt: readFloorAt
+        readBoundary: readBoundary
       )
       candidates.append(
         contentsOf: page.entries.map {
@@ -270,8 +306,99 @@ actor ThinAppViewReadService {
     return AppViewEntryListResponse(entries: entries, cursor: nextCursor)
   }
 
+  func listSubscribedFeed(
+    auth: AuthContext,
+    filter: EntryListFilter,
+    cursor: String?,
+    limit: Int
+  ) async throws -> AppViewEntryListResponse? {
+    let scopes = try await store.publicationScopes(
+      viewerDid: auth.did,
+      sectionKey: "subscribed"
+    )
+    guard !scopes.isEmpty else { return nil }
+
+    let result = try await store.listAggregateEntries(
+      viewerDid: auth.did,
+      scopes: scopes,
+      filter: filter,
+      cursor: cursor,
+      limit: limit
+    )
+    await recordSubscribedFeedMetrics(
+      result: result,
+      pageKind: cursor == nil ? "first_page" : "pagination"
+    )
+    return result.response
+  }
+
+  private func recordSubscribedFeedMetrics(
+    result: AppViewAggregatePageResult,
+    pageKind: String
+  ) async {
+    guard let telemetry else { return }
+    let dimensions = Self.subscribedFeedMetricDimensions(pageKind: pageKind)
+    _ = await telemetry.enqueue(
+      .metric(
+        .init(
+          name: "socialwire.appview.feed.query_duration_seconds",
+          value: result.diagnostics.queryDuration,
+          dimensions: dimensions
+        )
+      )
+    )
+    _ = await telemetry.enqueue(
+      .metric(
+        .init(
+          name: "socialwire.appview.feed.rows_scanned",
+          value: Double(result.diagnostics.rowsScanned),
+          dimensions: dimensions
+        )
+      )
+    )
+    _ = await telemetry.enqueue(
+      .metric(
+        .init(
+          name: "socialwire.appview.feed.rows_returned",
+          value: Double(result.diagnostics.rowsReturned),
+          dimensions: dimensions
+        )
+      )
+    )
+    _ = await telemetry.enqueue(
+      .metric(
+        .init(
+          name: "socialwire.appview.feed.duplicates_suppressed",
+          value: Double(result.diagnostics.duplicatesSuppressed),
+          dimensions: dimensions
+        )
+      )
+    )
+    if let payload = try? JSONEncoder().encode(result.response) {
+      _ = await telemetry.enqueue(
+        .metric(
+          .init(
+            name: "socialwire.appview.feed.payload_bytes",
+            value: Double(payload.count),
+            dimensions: dimensions
+          )
+        )
+      )
+    }
+  }
+
+  static func subscribedFeedMetricDimensions(pageKind: String) -> [String: String] {
+    [
+      "feed_kind": "subscribed",
+      "page_kind": pageKind,
+    ]
+  }
+
   func upsertReadMark(auth: AuthContext, subjectUri: String, readAt: Date?) async throws {
-    let alreadyRead = try? await store.hasReadMark(viewerDid: auth.did, subjectUri: subjectUri)
+    let alreadyRead = try? await authoritativeReadState(
+      viewerDid: auth.did,
+      subjectUri: subjectUri
+    )
     try await store.upsertReadMark(
       viewerDid: auth.did,
       subjectUri: subjectUri,
@@ -288,8 +415,15 @@ actor ThinAppViewReadService {
   }
 
   func deleteReadMark(auth: AuthContext, subjectUri: String) async throws {
-    let wasRead = try? await store.hasReadMark(viewerDid: auth.did, subjectUri: subjectUri)
-    try await store.deleteReadMark(viewerDid: auth.did, subjectUri: subjectUri)
+    let wasRead = try? await authoritativeReadState(
+      viewerDid: auth.did,
+      subjectUri: subjectUri
+    )
+    try await store.markEntryUnread(
+      viewerDid: auth.did,
+      subjectUri: subjectUri,
+      createdAt: Date()
+    )
     if wasRead == true {
       try? await store.adjustUnreadCountersForReadState(
         viewerDid: auth.did,
@@ -298,6 +432,16 @@ actor ThinAppViewReadService {
       )
     }
     try await invalidateReadStateCaches(viewerDid: auth.did)
+  }
+
+  private func authoritativeReadState(
+    viewerDid: String,
+    subjectUri: String
+  ) async throws -> Bool {
+    guard let item = try await store.fetchContentItem(uri: subjectUri) else {
+      return try await store.hasReadMark(viewerDid: viewerDid, subjectUri: subjectUri)
+    }
+    return try await store.readStates(viewerDid: viewerDid, entries: [item])[subjectUri] ?? false
   }
 
   func purge(auth: AuthContext) async throws {
@@ -311,7 +455,7 @@ actor ThinAppViewReadService {
       throw HTTPError(.notFound, message: "Entry not found in AppView index")
     }
     let render = try await store.fetchContentRender(uri: entryId)
-    let isRead = try await store.hasReadMark(viewerDid: auth.did, subjectUri: entryId)
+    let isRead = try await store.readStates(viewerDid: auth.did, entries: [item])[entryId] ?? false
     let originalUrl = RssFeedIdentity.originalArticleURL(
       forEntryId: entryId,
       render: render,
@@ -391,20 +535,35 @@ actor ThinAppViewReadService {
   func markAllRead(
     auth: AuthContext,
     rows: [SidebarPublicationRow]
-  ) async throws -> (counters: [AppViewUnreadCounter], marked: Int) {
+  ) async throws -> (
+    counters: [AppViewUnreadCounter],
+    boundaries: [ReadWatermarkBoundary],
+    confirmedAt: Date,
+    marked: Int
+  ) {
     let publicationIds = rows.map(\.publicationId)
     let existing = (try? await store.fetchUnreadCounters(
       viewerDid: auth.did,
       publicationIds: publicationIds
     )) ?? []
     let marked = existing.reduce(0) { $0 + $1.unreadCount }
-    let counters = try await store.markAllReadCounters(
+    let confirmedAt = Date()
+    let scopes = rows.map {
+      PublicationUnreadScope(
+        publicationId: $0.publicationId,
+        authorDid: $0.appViewScope.authorDid,
+        publicationAtUri: $0.appViewScope.publicationAtUri,
+        publicationScopeAtUris: $0.appViewScope.publicationScopeAtUris,
+        publicationSiteUrls: $0.appViewScope.publicationSiteUrls
+      )
+    }
+    let confirmed = try await store.markAllReadCounters(
       viewerDid: auth.did,
-      publicationIds: publicationIds,
-      readAt: Date()
+      scopes: scopes,
+      readAt: confirmedAt
     )
     try await projectionCache?.invalidateUnreadCounts(viewerDid: auth.did, publicationId: nil)
-    return (counters, marked)
+    return (confirmed.counters, confirmed.boundaries, confirmedAt, marked)
   }
 
   func unreadCounts(

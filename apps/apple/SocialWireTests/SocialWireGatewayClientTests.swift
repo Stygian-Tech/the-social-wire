@@ -120,12 +120,13 @@ struct SocialWireGatewayClientTests {
     @Test("AppViewEntryListResponse decodes entries")
     func appViewEntryListResponseDecodesEntries() throws {
         let data = Data("""
-        {"entries":[{"entryId":"at://did/site.standard.document/a","title":"A","publishedAt":"2026-01-01T00:00:00.000Z","originalUrl":"https://example.com/a"}],"cursor":null}
+        {"entries":[{"entryId":"at://did/site.standard.document/a","title":"A","publishedAt":"2026-01-01T00:00:00.000Z","originalUrl":"https://example.com/a","isRead":true}],"cursor":null}
         """.utf8)
         let decoded = try JSONDecoder().decode(AppViewEntryListResponse.self, from: data)
         #expect(decoded.entries.count == 1)
         #expect(decoded.entries[0].title == "A")
         #expect(decoded.entries[0].originalUrl == "https://example.com/a")
+        #expect(decoded.entries[0].isRead)
     }
 
     @Test("AppViewEntryDetailDTO decodes flat AppView entry payload")
@@ -154,12 +155,23 @@ struct SocialWireGatewayClientTests {
         #expect(decoded.countedAt == "2026-01-01T00:00:00.000Z")
     }
 
-    @Test("GatewayMarkAllReadResponseDTO decodes marked count")
+    @Test("GatewayMarkAllReadResponseDTO decodes confirmed boundaries")
     func gatewayMarkAllReadResponseDecodesMarked() throws {
         let data = Data("""
-        {"marked": 7}
+        {
+          "marked": 7,
+          "confirmedAt": "2026-07-28T20:00:00.000Z",
+          "boundaries": [{
+            "publicationId": "at://did/site.standard.publication/main",
+            "createdAt": "2026-07-28T19:59:00.000Z",
+            "entryId": "at://did/site.standard.document/latest"
+          }],
+          "unreadCounts": {"at://did/site.standard.publication/main": 0}
+        }
         """.utf8)
         let decoded = try JSONDecoder().decode(GatewayMarkAllReadResponseDTO.self, from: data)
         #expect(decoded.marked == 7)
+        #expect(decoded.boundaries.first?.entryId == "at://did/site.standard.document/latest")
+        #expect(decoded.unreadCounts["at://did/site.standard.publication/main"] == 0)
     }
 }

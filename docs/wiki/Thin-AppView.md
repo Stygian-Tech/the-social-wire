@@ -20,7 +20,7 @@ The thin index stores **list-row fields only** (title, `publishedAt`, summary, t
 Jetstream / relay (subscribeRepos)
         │
         ▼
-Fly appview-worker — firehose ingest, proactive PDS backfill, TTL cleanup
+Fly Charybdis (`appview-worker`) — firehose ingest, proactive PDS backfill, TTL cleanup
         │
         ▼
 Supabase Postgres (ams) — content_items, read_marks, sidebar_projection_cache, …
@@ -87,7 +87,7 @@ Local dev mirrors tables in SQLite via `ThinAppViewStore` / gateway cache stores
 | Surface | Flag | Default |
 |---------|------|---------|
 | AppView HTTP routes | `ENABLE_THIN_APPVIEW` | off |
-| AppView worker ingest | `ENABLE_THIN_APPVIEW=true` on worker Fly app | off |
+| Charybdis ingest | `ENABLE_THIN_APPVIEW=true` on worker Fly app | off |
 | Web client | `NEXT_PUBLIC_USE_THIN_APPVIEW=true` | off |
 | iOS client | `SOCIALWIRE_USE_THIN_APPVIEW` (Swift compile condition) | off |
 
@@ -114,14 +114,14 @@ Three independent apps from repo root (`scripts/fly-deploy-*.sh` / per-service `
 |-----|--------|---------|
 | Gateway | `services/gateway/fly.toml` | `swift run Gateway` |
 | AppView | `services/appview/fly.toml` | `swift run AppView` |
-| AppView worker | `services/appview-worker/fly.toml` | `swift run AppViewWorker` |
+| Charybdis | `services/appview-worker/fly.toml` | `swift run AppViewWorker` |
 
 All use **`primary_region = ams`** (EU co-location with Supabase).
 
 **Rollout checklist**
 
 1. Apply Supabase migrations on dev, then prod.
-2. Deploy appview-worker with `ENABLE_THIN_APPVIEW=true`.
+2. Deploy Charybdis through the stable `appview-worker` deployment with `ENABLE_THIN_APPVIEW=true`.
 3. Deploy appview with `ENABLE_THIN_APPVIEW=true`.
 4. Deploy gateway with `APPVIEW_BASE_URL` + shared internal secret.
 5. Enable web flag on Vercel preview → validate → prod.

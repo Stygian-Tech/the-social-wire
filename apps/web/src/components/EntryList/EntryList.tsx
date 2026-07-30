@@ -1,6 +1,12 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+} from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   useAggregateFeedEntries,
@@ -18,6 +24,15 @@ import {
 } from "@/lib/entryArticleFilter";
 import { EntryListVirtualPane } from "./EntryListVirtualPane";
 import type { AggregateAppViewFeed } from "@/lib/thinAppViewClient";
+import {
+  mergeAggregateEntryPagesCached,
+} from "@/lib/aggregateEntryPages";
+import {
+  markSubscribedPaginationTriggered,
+  markSubscribedRowsRendered,
+} from "@/lib/subscribedFeedPerf";
+import { useSidebarProjection } from "@/contexts/PublicationSidebarContext";
+import { CursorSingleFlight } from "@/lib/cursorSingleFlight";
 
 export type { ArticleListFilter };
 
@@ -32,6 +47,13 @@ interface EntryListProps {
   articleFilter: ArticleListFilter;
   markEntryRead: (entryId: string) => void;
   markEntryUnread: (entryId: string) => void;
+}
+
+function virtualFeedIdentity(
+  aggregateFeed: AggregateAppViewFeed | undefined,
+  pubId: string | undefined,
+): string {
+  return pubId ?? `${aggregateFeed?.kind}:${aggregateFeed?.id ?? ""}`;
 }
 
 export function EntryList({
@@ -87,6 +109,21 @@ export function EntryList({
   const activeIsFetchNextPageError = aggregateFeed
     ? aggregateQuery.isFetchNextPageError
     : isFetchNextPageError;
+  const { allPublicationRows } = useSidebarProjection();
+
+  const publicationById = useMemo(() => {
+    const map = new Map<
+      string,
+      { name: string; faviconUrl?: string }
+    >();
+    for (const publication of allPublicationRows) {
+      map.set(publication.publicationId, {
+        name: publication.title,
+        faviconUrl: publication.iconUrl ?? publication.avatarUrl ?? undefined,
+      });
+    }
+    return map;
+  }, [allPublicationRows]);
 
   useProactiveFeedRefresh(
     pubId ?? null,
@@ -97,32 +134,98 @@ export function EntryList({
       (data?.pages.length ?? 0) > 0
   );
 
-  const allEntries: EntryListItem[] = useMemo(() => {
+  const aggregateAccumulator = useMemo(() => {
+    if (!aggregateFeed) return undefined;
+    return mergeAggregateEntryPagesCached(aggregateQuery.data?.pages ?? []);
+  }, [aggregateFeed, aggregateQuery.data?.pages]);
+  const aggregateEntries = aggregateAccumulator?.entries ?? [];
+
+  const publicationEntries: EntryListItem[] = useMemo(() => {
     const flat = dedupeEntryListItems(
-      activeData?.pages.flatMap((p) => p.entries) ?? [],
+      data?.pages.flatMap((p) => p.entries) ?? [],
     );
     return sortEntryListItemsNewestFirst(flat);
-  }, [activeData?.pages]);
+  }, [data?.pages]);
+
+  const allEntries = aggregateFeed ? aggregateEntries : publicationEntries;
+
+  const previousAggregateEntryCountRef = useRef({
+    feedKey: virtualFeedIdentity(aggregateFeed, pubId),
+    count: 0,
+  });
+  useLayoutEffect(() => {
+    if (aggregateFeed?.kind !== "subscribed") return;
+    const feedKey = virtualFeedIdentity(aggregateFeed, pubId);
+    const previous =
+      previousAggregateEntryCountRef.current.feedKey === feedKey
+        ? previousAggregateEntryCountRef.current.count
+        : 0;
+    const appendedRows =
+      aggregateEntries.length - previous;
+    previousAggregateEntryCountRef.current = {
+      feedKey,
+      count: aggregateEntries.length,
+    };
+    markSubscribedRowsRendered({
+      appendedRows,
+      mergeDurationMs: aggregateAccumulator?.mergeDurationMs ?? 0,
+    });
+  }, [aggregateAccumulator, aggregateFeed, aggregateEntries.length, pubId]);
 
   const visibleEntries: EntryListItem[] = useMemo(() => {
+    const authoritativeReadIds = new Set(
+      allEntries.filter((entry) => entry.isRead).map((entry) => entry.entryId)
+    );
     return filterEntriesForArticleFilter(
       allEntries,
       effectiveFilter,
-      isEntryRead
+      (entryId) => isEntryRead(entryId) || authoritativeReadIds.has(entryId)
     );
   }, [allEntries, effectiveFilter, isEntryRead]);
 
   /** Remount only when the user changes publication/filter; data churn must not reset scroll. */
   const virtualPaneKey = useMemo(() => {
-    return `${pubId ?? `${aggregateFeed?.kind}:${aggregateFeed?.id ?? ""}`}:${effectiveFilter}`;
-  }, [aggregateFeed?.id, aggregateFeed?.kind, pubId, effectiveFilter]);
+    return `${virtualFeedIdentity(aggregateFeed, pubId)}:${effectiveFilter}`;
+  }, [aggregateFeed, pubId, effectiveFilter]);
+
+  const nextPageRequestRef = useRef(new CursorSingleFlight());
+
+  useEffect(() => {
+    nextPageRequestRef.current.reset();
+  }, [virtualPaneKey]);
+
+  const fetchNextPageOnce = useCallback((): Promise<unknown> => {
+    const cursor =
+      activeData?.pages[activeData.pages.length - 1]?.cursor ?? "__first_page__";
+    if (!activeHasNextPage || activeIsFetchingNextPage) {
+      return Promise.resolve();
+    }
+
+    return nextPageRequestRef.current.run({
+      feedKey: virtualPaneKey,
+      cursor,
+      request: () => {
+        if (aggregateFeed?.kind === "subscribed") {
+          markSubscribedPaginationTriggered();
+        }
+        return activeFetchNextPage();
+      },
+    });
+  }, [
+    activeData,
+    activeFetchNextPage,
+    activeHasNextPage,
+    activeIsFetchingNextPage,
+    aggregateFeed?.kind,
+    virtualPaneKey,
+  ]);
 
   useEffect(() => {
     if (effectiveFilter !== "unread" || !readIndicatorsEnabled) return;
     if (!activeHasNextPage || activeIsFetchingNextPage) return;
     if (visibleEntries.length > 0) return;
     if (allEntries.length === 0 || activeLoading) return;
-    void activeFetchNextPage();
+    void fetchNextPageOnce();
   }, [
     effectiveFilter,
     readIndicatorsEnabled,
@@ -131,7 +234,7 @@ export function EntryList({
     visibleEntries.length,
     allEntries.length,
     activeLoading,
-    activeFetchNextPage,
+    fetchNextPageOnce,
   ]);
 
   if (
@@ -208,7 +311,9 @@ export function EntryList({
       hasNextPage={activeHasNextPage}
       isFetchingNextPage={activeIsFetchingNextPage}
       isFetchNextPageError={activeIsFetchNextPageError}
-      fetchNextPage={activeFetchNextPage}
+      fetchNextPage={fetchNextPageOnce}
+      scrollStateKey={virtualPaneKey}
+      publicationById={publicationById}
       markEntryRead={markEntryRead}
       markEntryUnread={markEntryUnread}
     />

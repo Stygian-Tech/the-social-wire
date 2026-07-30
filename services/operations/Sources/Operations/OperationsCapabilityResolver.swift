@@ -26,14 +26,14 @@ struct OperationsCapabilityResolver: Sendable {
     } else if !fingerprintReady {
       prerequisiteReason = "The backfill fingerprint signing secret is unavailable."
     } else if worker == nil {
-      prerequisiteReason = "No AppView worker capability evidence is available."
+      prerequisiteReason = "No Charybdis capability evidence is available."
     } else if let worker, now.timeIntervalSince(worker.heartbeatAt) > 15 {
-      prerequisiteReason = "The AppView worker capability evidence has expired."
+      prerequisiteReason = "Charybdis capability evidence has expired."
     } else if let worker,
       worker.dependencyState["operations_database"] != "ready"
         || worker.dependencyState["appview_database"] != "ready"
     {
-      prerequisiteReason = "The AppView worker database dependencies are not ready."
+      prerequisiteReason = "Charybdis database dependencies are not ready."
     } else {
       prerequisiteReason = nil
     }

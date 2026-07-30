@@ -17,7 +17,7 @@ on:
         type: boolean
         default: true
       deploy_appview_worker:
-        description: Also deploy AppView worker
+        description: Also deploy Charybdis
         required: true
         type: boolean
         default: true
@@ -70,7 +70,7 @@ jobs:
           FLY_ORG: ${{ secrets.FLY_ORG }}
         run: bash scripts/fly-deploy-tap.sh "${{ inputs.branch }}"
 
-      - name: Deploy AppView worker to Fly.io
+      - name: Deploy Charybdis to Fly.io
         if: inputs.deploy_appview_worker
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}

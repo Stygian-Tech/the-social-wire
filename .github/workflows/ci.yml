@@ -157,7 +157,7 @@ jobs:
         run: swift test
 
   test-appview-worker:
-    name: Swift AppView Worker (Swift Package)
+    name: Swift Charybdis (Swift Package)
     needs: changes
     if: needs.changes.result == 'success' && needs.changes.outputs.appview-worker == 'true'
     runs-on: ubuntu-latest
@@ -414,7 +414,7 @@ jobs:
           check "$OPERATIONS_SERVICE_FLAG" "$TEST_OPERATIONS_RESULT" "Swift Operations (Package)"
           check "$GATEWAY_FLAG" "$TEST_GATEWAY_RESULT" "Swift Gateway (Package)"
           check "$APPVIEW_FLAG" "$TEST_APPVIEW_RESULT" "Swift AppView (Package)"
-          check "$APPVIEW_WORKER_FLAG" "$TEST_APPVIEW_WORKER_RESULT" "Swift AppView Worker (Package)"
+          check "$APPVIEW_WORKER_FLAG" "$TEST_APPVIEW_WORKER_RESULT" "Swift Charybdis (Package)"
           check "$TAP_FLAG" "$TEST_TAP_IMAGE_RESULT" "Tap (Pinned Image)"
           check "$LEXICONS_FLAG" "$TEST_LEXICONS_RESULT" "Lexicons (Package)"
           check "$SPEC_FLAG" "$TEST_SPEC_RESULT" "OpenAPI spec (Package)"
@@ -505,7 +505,7 @@ jobs:
         run: bash scripts/fly-deploy-appview.sh "${{ github.ref_name }}"
 
   deploy-appview-worker:
-    name: Deploy AppView Worker (Fly.io)
+    name: Deploy Charybdis (Fly.io)
     timeout-minutes: 20
     needs: [changes, ci, test-appview-worker, deploy-tap, supabase-validate, supabase-push-dev, supabase-push-prod]
     if: |
@@ -538,7 +538,7 @@ jobs:
 
       - uses: superfly/flyctl-actions/setup-flyctl@v1
 
-      - name: Deploy AppView Worker to Fly.io
+      - name: Deploy Charybdis to Fly.io
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
           FLY_ORG: ${{ secrets.FLY_ORG }}

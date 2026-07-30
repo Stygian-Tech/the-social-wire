@@ -135,6 +135,16 @@ struct AppViewProxyRoutes {
     let reply = try await httpClient.execute(fwd, timeout: .seconds(60))
     var headers = HTTPFields()
     headers[.contentType] = "application/json"
+    if let requestId = reply.headers.first(name: "X-Request-ID"),
+       let requestIdHeader = HTTPField.Name("X-Request-ID")
+    {
+      headers[requestIdHeader] = requestId
+    }
+    if let traceparent = reply.headers.first(name: "traceparent"),
+       let traceHeader = HTTPField.Name("traceparent")
+    {
+      headers[traceHeader] = traceparent
+    }
     let body = try await reply.body.collect(upTo: 8 * 1024 * 1024)
     let status = HTTPResponse.Status.from(code: Int(reply.status.code)) ?? .badGateway
     return Response(status: status, headers: headers, body: .init(byteBuffer: body))

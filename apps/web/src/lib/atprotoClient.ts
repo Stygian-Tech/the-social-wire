@@ -100,6 +100,8 @@ export interface EntryListItem {
   originalUrl?: string;
   /** Canonical publication identity supplied for aggregate feeds. */
   publicationId?: string;
+  /** Authoritative AppView read state before local optimistic overrides. */
+  isRead?: boolean;
 }
 
 export interface EntryDetail {

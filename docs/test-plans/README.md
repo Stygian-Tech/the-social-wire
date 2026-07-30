@@ -7,7 +7,7 @@ Verification guides for each surface in the monorepo. Tests live **in the owning
 | Web | [web.md](./web.md) | `cd apps/web && bun test` | `build-web` |
 | Gateway | [api.md](./api.md) | `cd services/gateway && swift test` | `test-gateway` |
 | AppView | [appview.md](./appview.md) | `cd services/appview && swift test` | `test-appview` |
-| AppView worker | [worker.md](./worker.md) | `cd services/appview-worker && swift test` | `test-appview-worker` |
+| Charybdis | [worker.md](./worker.md) | `cd services/appview-worker && swift test` | `test-appview-worker` |
 | ThinAppViewCore | [worker.md](./worker.md#thinappviewcore) | `cd packages/swift/ThinAppViewCore && swift test` | `test-appview`, `test-appview-worker` |
 | iOS | [apple.md](./apple.md) | Xcode **Cmd+U** | Local only (Xcode Cloud deferred) |
 | Supabase | [supabase.md](./supabase.md) | `supabase db reset --local` | `supabase-validate` |

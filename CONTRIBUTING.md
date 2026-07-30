@@ -18,7 +18,7 @@ Tests must live **inside the owning package**, not in a root-level `tests/` fold
 | Web | `apps/web/src/__tests__/` |
 | Gateway | `services/gateway/Tests/` |
 | AppView | `services/appview/Tests/` |
-| AppView worker | `services/appview-worker/Tests/` |
+| Charybdis | `services/appview-worker/Tests/` |
 | GatewayCore | `packages/swift/GatewayCore/Tests/` |
 | ThinAppViewCore | `packages/swift/ThinAppViewCore/Tests/` |
 | iOS | `apps/apple/SocialWireTests/` |
