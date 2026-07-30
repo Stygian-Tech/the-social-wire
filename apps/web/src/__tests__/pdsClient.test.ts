@@ -27,6 +27,7 @@ import {
   type LatrSavedItemRecord,
   PSEUDO_FOLDER_MY_URI,
 } from "@/lib/pdsClient";
+import { STANDARD_SITE_RECOMMEND_COLLECTION } from "@/lib/standardSiteRecommendation";
 
 describe("rkeyFromURI", () => {
   it("extracts rkey from an at-uri", () => {
@@ -74,6 +75,12 @@ describe("collection constants", () => {
   it("standard.site subscription collection ID matches lexicon", () => {
     expect(COLLECTION_STANDARD_SITE_SUBSCRIPTION).toBe(
       "site.standard.graph.subscription"
+    );
+  });
+
+  it("standard.site recommend collection ID matches lexicon", () => {
+    expect(STANDARD_SITE_RECOMMEND_COLLECTION).toBe(
+      "site.standard.graph.recommend"
     );
   });
 

@@ -44,6 +44,7 @@ describe("activeReadFeedScope", () => {
       activeReadFeedScope({
         ...common,
         folderRkey: "product",
+        folderName: "Product",
         selectedTopLevelFeed: "subscribed",
       }).gatewayScope,
     ).toEqual({ kind: "folder", folderRkey: "product" });
@@ -55,5 +56,37 @@ describe("activeReadFeedScope", () => {
         selectedTopLevelFeed: "subscribed",
       }).gatewayScope,
     ).toEqual({ kind: "publication", publicationId: "following" });
+  });
+
+  it("provides the visible name for each selection", () => {
+    const common = {
+      folderPublications: [subscribed],
+      subscribedPublications: [subscribed],
+      followingPublications: [following],
+    };
+
+    expect(
+      activeReadFeedScope({
+        ...common,
+        folderRkey: "product",
+        folderName: "Product",
+        selectedTopLevelFeed: "subscribed",
+      }).displayName,
+    ).toBe("Product");
+    expect(
+      activeReadFeedScope({
+        ...common,
+        folderRkey: null,
+        selectedPublication: following,
+        selectedTopLevelFeed: "subscribed",
+      }).displayName,
+    ).toBe("Following");
+    expect(
+      activeReadFeedScope({
+        ...common,
+        folderRkey: null,
+        selectedTopLevelFeed: "subscribed",
+      }).displayName,
+    ).toBe("Subscribed");
   });
 });

@@ -28,6 +28,11 @@ import {
 import {
   legacyIOSLatrExternalRkey,
 } from "@/lib/legacyRecordKeys";
+import {
+  STANDARD_SITE_RECOMMEND_COLLECTION,
+  standardSiteRecommendDocumentUri,
+  type StandardSiteRecommendRecord,
+} from "@/lib/standardSiteRecommendation";
 
 // ── Lexicon collection IDs ────────────────────────────────────────────────────
 
@@ -651,6 +656,56 @@ export class PDSClient {
       repo: this.did,
       collection: COLLECTION_STANDARD_SITE_SUBSCRIPTION,
       rkey,
+    });
+  }
+
+  async listStandardSiteRecommendations(): Promise<
+    RepoRecord<StandardSiteRecommendRecord>[]
+  > {
+    const all: RepoRecord<StandardSiteRecommendRecord>[] = [];
+    let cursor: string | undefined;
+    do {
+      const response = await this.agent.api.com.atproto.repo.listRecords({
+        repo: this.did,
+        collection: STANDARD_SITE_RECOMMEND_COLLECTION,
+        limit: 100,
+        cursor,
+      });
+      all.push(
+        ...(response.data.records as unknown as RepoRecord<StandardSiteRecommendRecord>[])
+      );
+      cursor = response.data.cursor ?? undefined;
+    } while (cursor);
+    return all;
+  }
+
+  async createStandardSiteRecommendation(
+    document: string
+  ): Promise<{ uri: string; cid: string }> {
+    const normalizedDocument = standardSiteRecommendDocumentUri(document);
+    if (!normalizedDocument) {
+      throw new Error(
+        "Recommendations require a site.standard.document AT-URI"
+      );
+    }
+    const record: StandardSiteRecommendRecord = {
+      $type: STANDARD_SITE_RECOMMEND_COLLECTION,
+      document: normalizedDocument,
+      createdAt: new Date().toISOString(),
+    };
+    const response = await this.agent.api.com.atproto.repo.createRecord({
+      repo: this.did,
+      collection: STANDARD_SITE_RECOMMEND_COLLECTION,
+      record: record as unknown as Record<string, unknown>,
+    });
+    return { uri: response.data.uri, cid: response.data.cid };
+  }
+
+  async deleteStandardSiteRecommendation(uriOrRkey: string): Promise<void> {
+    await this.agent.api.com.atproto.repo.deleteRecord({
+      repo: this.did,
+      collection: STANDARD_SITE_RECOMMEND_COLLECTION,
+      rkey: rkeyFromURI(uriOrRkey),
     });
   }
 

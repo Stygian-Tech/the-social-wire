@@ -7,8 +7,10 @@ import {
   Heart,
   Link2,
   MessageSquareQuote,
+  MoreHorizontal,
   Reply,
   Repeat,
+  ThumbsUp,
 } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
@@ -19,12 +21,20 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Label } from "@/components/ui/label";
 import { useEntrySocial } from "@/hooks/useEntrySocial";
 import {
   useEntryIsLatrSaved,
   useSaveReadLaterEntryMutation,
 } from "@/hooks/useLatrSaved";
+import { useStandardSiteRecommendation } from "@/hooks/useStandardSiteRecommendation";
 import type { EntryDetail } from "@/lib/atprotoClient";
 import { canonicalArticleHttpsUrl } from "@/lib/articleCanonicalUrl";
 import { cn } from "@/lib/utils";
@@ -45,6 +55,7 @@ interface ArticleSocialToolbarProps {
   className?: string;
   showReadLaterSave?: boolean;
   extraActions?: ReactNode;
+  variant?: "toolbar" | "menu";
 }
 
 export function ArticleSocialToolbar({
@@ -52,6 +63,7 @@ export function ArticleSocialToolbar({
   className,
   showReadLaterSave = true,
   extraActions,
+  variant = "toolbar",
 }: ArticleSocialToolbarProps) {
   const {
     viewerQuery,
@@ -65,6 +77,9 @@ export function ArticleSocialToolbar({
   const canonUrl = entry ? canonicalArticleHttpsUrl(entry) : null;
   const alreadyLatrSaved = useEntryIsLatrSaved(entry?.entryId ?? "", canonUrl ?? null);
   const saveLaterMut = useSaveReadLaterEntryMutation();
+  const standardSiteRecommendation = useStandardSiteRecommendation(
+    entry?.entryId
+  );
 
   const [repostOpen, setRepostOpen] = useState(false);
   const [quoteOpen, setQuoteOpen] = useState(false);
@@ -143,18 +158,123 @@ export function ArticleSocialToolbar({
 
   return (
     <>
-      <div
-        className={cn(
-          "-mx-1 w-full border-b border-border pb-3 mb-2 sm:-mx-0 sm:pb-3.5 sm:mb-3 md:mb-1 md:pb-2",
-          "max-md:fixed max-md:inset-x-0 max-md:bottom-0 max-md:z-40 max-md:mx-0 max-md:mb-0 max-md:flex max-md:w-screen max-md:flex-nowrap max-md:items-center max-md:gap-2 max-md:overflow-x-auto max-md:border-b-0 max-md:border-t max-md:bg-background/95 max-md:px-3 max-md:pt-2 max-md:pb-[calc(env(safe-area-inset-bottom)+2.5rem)] max-md:shadow-[0_-16px_36px_-28px_oklch(0_0_0/0.55)] max-md:backdrop-blur-md max-md:[scrollbar-width:none] max-md:[&::-webkit-scrollbar]:hidden",
-          "max-md:[&>button]:h-11 max-md:[&>button]:min-h-[44px] max-md:[&>button]:min-w-[44px] max-md:[&>button]:flex-1 max-md:[&>button]:basis-0 max-md:[&>button]:px-0",
-          "max-md:[&>a]:h-11 max-md:[&>a]:min-h-[44px] max-md:[&>a]:min-w-[44px] max-md:[&>a]:flex-1 max-md:[&>a]:basis-0 max-md:[&>a]:px-0",
-          "md:flex md:flex-wrap md:items-center md:gap-2",
-          className
-        )}
-        role="toolbar"
-        aria-label="Article Sharing and Reactions"
-      >
+      {variant === "menu" ? (
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                className={cn("size-9 shrink-0", className)}
+                aria-label="Article Actions"
+              />
+            }
+          >
+            <MoreHorizontal className="size-4" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="min-w-52">
+            <DropdownMenuItem
+              disabled={!hasLinkedPost || busySocial}
+              onClick={() => toggleLikeMutation.mutate({ likeUri })}
+            >
+              <Heart className={cn(liked && "fill-current text-red-600")} />
+              {liked ? "Unlike" : "Like"}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              disabled={!hasLinkedPost || busySocial}
+              onClick={() => setReplyOpen(true)}
+            >
+              <Reply />
+              Reply
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              disabled={!hasLinkedPost || busySocial}
+              onClick={() => {
+                if (reposted) {
+                  toggleRepostMutation.mutate({ repostUri });
+                } else {
+                  setRepostOpen(true);
+                }
+              }}
+            >
+              <Repeat />
+              {reposted ? "Undo Repost" : "Repost"}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setQuoteOpen(true)}>
+              <MessageSquareQuote />
+              Quote Post
+            </DropdownMenuItem>
+            {standardSiteRecommendation.applicable ? (
+              <DropdownMenuItem
+                disabled={
+                  standardSiteRecommendation.isLoading ||
+                  standardSiteRecommendation.toggleMutation.isPending
+                }
+                onClick={() =>
+                  standardSiteRecommendation.toggleMutation.mutate()
+                }
+              >
+                <ThumbsUp
+                  className={cn(
+                    standardSiteRecommendation.recommended &&
+                      "fill-current text-primary"
+                  )}
+                />
+                {standardSiteRecommendation.recommended
+                  ? "Remove Recommendation"
+                  : "Recommend"}
+              </DropdownMenuItem>
+            ) : null}
+            {canonUrl ? <DropdownMenuSeparator /> : null}
+            {showReadLaterSave && canonUrl ? (
+              <DropdownMenuItem
+                disabled={busySocial || alreadyLatrSaved}
+                onClick={() => {
+                  saveLaterMut.mutate({
+                    entryId: entry.entryId,
+                    url: canonUrl,
+                    title: entry.title?.trim() || undefined,
+                  });
+                }}
+              >
+                {alreadyLatrSaved ? (
+                  <Check className="text-emerald-600" />
+                ) : (
+                  <BookmarkPlus />
+                )}
+                {alreadyLatrSaved ? "Saved to Read Later" : "Save to Read Later"}
+              </DropdownMenuItem>
+            ) : null}
+            {canonUrl ? (
+              <DropdownMenuItem
+                render={
+                  <a
+                    href={shareArticleUrl(entry)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  />
+                }
+              >
+                <Link2 />
+                Open Original Article
+              </DropdownMenuItem>
+            ) : null}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ) : (
+        <div
+          className={cn(
+            "-mx-1 w-full border-b border-border pb-3 mb-2 sm:-mx-0 sm:pb-3.5 sm:mb-3 md:mb-1 md:pb-2",
+            "max-md:fixed max-md:inset-x-0 max-md:bottom-0 max-md:z-40 max-md:mx-0 max-md:mb-0 max-md:flex max-md:w-screen max-md:flex-nowrap max-md:items-center max-md:gap-2 max-md:overflow-x-auto max-md:border-b-0 max-md:border-t max-md:bg-background/95 max-md:px-3 max-md:pt-2 max-md:pb-[calc(env(safe-area-inset-bottom)+2.5rem)] max-md:shadow-[0_-16px_36px_-28px_oklch(0_0_0/0.55)] max-md:backdrop-blur-md max-md:[scrollbar-width:none] max-md:[&::-webkit-scrollbar]:hidden",
+            "max-md:[&>button]:h-11 max-md:[&>button]:min-h-[44px] max-md:[&>button]:min-w-[44px] max-md:[&>button]:flex-1 max-md:[&>button]:basis-0 max-md:[&>button]:px-0",
+            "max-md:[&>a]:h-11 max-md:[&>a]:min-h-[44px] max-md:[&>a]:min-w-[44px] max-md:[&>a]:flex-1 max-md:[&>a]:basis-0 max-md:[&>a]:px-0",
+            "md:flex md:flex-wrap md:items-center md:gap-2",
+            className
+          )}
+          role="toolbar"
+          aria-label="Article Sharing and Reactions"
+        >
         <Button
           variant={liked ? "secondary" : "outline"}
           size="sm"
@@ -224,6 +344,39 @@ export function ArticleSocialToolbar({
           <span className="sr-only text-xs font-medium md:not-sr-only md:text-sm">Quote</span>
         </Button>
 
+        {standardSiteRecommendation.applicable ? (
+          <Button
+            variant={
+              standardSiteRecommendation.recommended ? "secondary" : "outline"
+            }
+            size="sm"
+            disabled={
+              standardSiteRecommendation.isLoading ||
+              standardSiteRecommendation.toggleMutation.isPending
+            }
+            className="h-11 min-h-[44px] justify-center gap-1.5 px-2 sm:h-7 sm:min-h-0 sm:justify-start sm:px-2.5"
+            title={
+              standardSiteRecommendation.recommended
+                ? "Remove Recommendation"
+                : "Recommend This Article"
+            }
+            onClick={() => standardSiteRecommendation.toggleMutation.mutate()}
+          >
+            <ThumbsUp
+              className={cn(
+                "size-5 shrink-0 sm:size-3.5",
+                standardSiteRecommendation.recommended &&
+                  "fill-current text-primary"
+              )}
+            />
+            <span className="sr-only text-xs font-medium md:not-sr-only md:text-sm">
+              {standardSiteRecommendation.recommended
+                ? "Recommended"
+                : "Recommend"}
+            </span>
+          </Button>
+        ) : null}
+
         {showReadLaterSave && canonUrl ? (
           <Button
             variant={alreadyLatrSaved ? "secondary" : "outline"}
@@ -281,7 +434,8 @@ export function ArticleSocialToolbar({
             Quote works here.
           </p>
         ) : null}
-      </div>
+        </div>
+      )}
 
       <Dialog open={repostOpen} onOpenChange={handleRepostOpenChange}>
         <DialogContent showCloseButton className="sm:max-w-md">

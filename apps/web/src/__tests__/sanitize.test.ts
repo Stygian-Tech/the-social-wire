@@ -5,7 +5,11 @@
  */
 
 import { describe, it, expect } from "bun:test";
-import { sanitizeHTML, sanitizeHTMLWithLinks } from "@/lib/sanitize";
+import {
+  prepareArticleHTML,
+  sanitizeHTML,
+  sanitizeHTMLWithLinks,
+} from "@/lib/sanitize";
 
 describe("sanitizeHTML", () => {
   it("passes through safe HTML unchanged", () => {
@@ -54,6 +58,19 @@ describe("sanitizeHTML", () => {
     expect(result).toContain("https://example.com/img.png");
   });
 
+  it("allows controlled HTTPS audio and video without autoplay", () => {
+    const input =
+      '<video src="https://example.com/movie.mp4" autoplay></video>' +
+      '<audio><source src="https://example.com/audio.mp3"></audio>';
+    const result = sanitizeHTML(input);
+    expect(result).toContain("<video");
+    expect(result).toContain("<audio");
+    expect(result).toContain("<source");
+    expect(result).toContain("controls");
+    expect(result).toContain('preload="metadata"');
+    expect(result).not.toContain("autoplay");
+  });
+
   it("upgrades http img src to https (mixed content defense)", () => {
     const input =
       '<img src="http://atproto.brid.gy/xrpc/com.atproto.sync.getBlob?did=x&cid=y" alt="" />';
@@ -94,5 +111,77 @@ describe("sanitizeHTMLWithLinks", () => {
     const result = sanitizeHTMLWithLinks(input);
     expect(result).not.toContain("<script");
     expect(result).toContain("https://ok.com");
+  });
+
+  it("normalizes plain text into paragraphs and linkifies bare URLs", () => {
+    const result = sanitizeHTMLWithLinks(
+      "First line\nsecond line\n\nVisit https://example.com/docs."
+    );
+    expect(result).toContain("<p>First line<br>second line</p>");
+    expect(result).toContain(
+      '<a href="https://example.com/docs" target="_blank" rel="noopener noreferrer">https://example.com/docs</a>.'
+    );
+  });
+
+  it("repairs escaped article markup before sanitizing", () => {
+    const result = sanitizeHTMLWithLinks(
+      "<p>&lt;h2&gt;Heading&lt;/h2&gt;&lt;p&gt;Body&lt;/p&gt;</p>"
+    );
+    expect(result).toContain("<h2>Heading</h2>");
+    expect(result).toContain("<p>Body</p>");
+    expect(result).not.toContain("&lt;h2&gt;");
+  });
+
+  it("linkifies www URLs but preserves anchors and code samples", () => {
+    const result = sanitizeHTMLWithLinks(
+      '<p>www.example.com <a href="https://linked.example">https://linked.example</a></p>' +
+        "<pre>https://code.example</pre>"
+    );
+    expect(result).toContain('<a href="https://www.example.com"');
+    expect(result.match(/href="https:\/\/linked\.example"/g)).toHaveLength(1);
+    expect(result).toContain("<pre>https://code.example</pre>");
+  });
+
+  it("keeps balanced URL parentheses and leaves sentence punctuation outside", () => {
+    const result = sanitizeHTMLWithLinks(
+      "Read https://example.com/article_(reader), then continue."
+    );
+    expect(result).toContain(
+      'href="https://example.com/article_(reader)"'
+    );
+    expect(result).toContain("</a>, then continue.");
+  });
+
+  it("replaces blocked embeds with safe external links", () => {
+    const result = sanitizeHTMLWithLinks(
+      '<iframe src="http://video.example/watch/1"></iframe>' +
+        '<embed src="javascript:alert(1)">'
+    );
+    expect(result).not.toContain("<iframe");
+    expect(result).not.toContain("<embed");
+    expect(result).not.toContain("javascript:");
+    expect(result).toContain("Open Embedded Media");
+    expect(result).toContain('href="https://video.example/watch/1"');
+  });
+
+  it("gracefully normalizes malformed publisher HTML", () => {
+    const result = sanitizeHTMLWithLinks(
+      "<div><p>Readable <strong>content<script>evil()</script><p>Next"
+    );
+    expect(result).not.toContain("<script");
+    expect(result).not.toContain("evil");
+    expect(result).toContain("Readable");
+    expect(result).toContain("Next");
+  });
+});
+
+describe("prepareArticleHTML", () => {
+  it("removes duplicate media controls before applying safe defaults", () => {
+    const result = prepareArticleHTML(
+      '<video controls="controls" preload="auto" autoplay src="https://example.com/v.mp4"></video>'
+    );
+    expect(result.match(/\bcontrols\b/g)).toHaveLength(1);
+    expect(result).toContain('preload="metadata"');
+    expect(result).not.toContain("autoplay");
   });
 });

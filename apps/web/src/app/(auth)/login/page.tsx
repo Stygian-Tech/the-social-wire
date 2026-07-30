@@ -5,7 +5,7 @@ import Image from "next/image";
 import { useAuth } from "@/hooks/useAuth";
 import iconSrc from "@/app/icon.png";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { LoginHandleTypeahead } from "@/components/LoginHandleTypeahead";
 
 export default function LoginPage() {
   const { signIn } = useAuth();
@@ -54,19 +54,10 @@ export default function LoginPage() {
             >
               Handle
             </label>
-            <Input
-              id="handle"
-              type="text"
+            <LoginHandleTypeahead
               value={handle}
-              onChange={(e) => setHandle(e.target.value)}
-              placeholder="you.bsky.social"
-              autoCapitalize="none"
-              autoCorrect="off"
-              autoComplete="username"
-              spellCheck={false}
-              required
+              onValueChange={setHandle}
               disabled={isPending}
-              className="h-11"
             />
           </div>
 

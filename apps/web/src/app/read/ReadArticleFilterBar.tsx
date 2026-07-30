@@ -39,6 +39,8 @@ export function ReadArticleFilterBar() {
     });
 
   const [markAllReadOpen, setMarkAllReadOpen] = useState(false);
+  const markAllReadDisabled =
+    bulkDisabled || !activeFeedScope.displayName.trim();
 
   return (
     <div className="ml-auto flex min-w-0 flex-1 items-center justify-end gap-2 sm:flex-none">
@@ -69,12 +71,7 @@ export function ReadArticleFilterBar() {
             variant="ghost"
             size="sm"
             className="min-w-0 flex-1 rounded-md border-0 bg-transparent px-2 text-[11px] font-semibold text-muted-foreground shadow-none hover:bg-muted/50 hover:text-foreground sm:flex-none"
-            disabled={bulkDisabled}
-            title={
-              bulkDisabled
-                ? "No cached articles yet — open publications or wait for the sidebar to prefetch"
-                : undefined
-            }
+            disabled={markAllReadDisabled}
             onClick={() => setMarkAllReadOpen(true)}
           >
             Mark All As Read
@@ -84,8 +81,11 @@ export function ReadArticleFilterBar() {
               <DialogHeader>
                 <DialogTitle>Mark All As Read?</DialogTitle>
                 <DialogDescription>
-                  This marks every unread article in the selected feed as read.
-                  Cached articles update immediately while the full feed is updated on your account.
+                  This marks every unread article in{" "}
+                  <span className="font-medium text-foreground">
+                    {activeFeedScope.displayName}
+                  </span>{" "}
+                  as read.
                 </DialogDescription>
               </DialogHeader>
               <DialogFooter>
@@ -98,7 +98,7 @@ export function ReadArticleFilterBar() {
                 </Button>
                 <Button
                   type="button"
-                  disabled={bulkDisabled}
+                  disabled={markAllReadDisabled}
                   onClick={() => {
                     applyMarkAllRead();
                     setMarkAllReadOpen(false);
