@@ -104,8 +104,13 @@ struct SocialWireUtilityTests {
     func htmlWrapperContainsCSP() {
         let wrapped = HTMLRenderer.wrappedHTML("<p>Hello</p>", colorScheme: .light)
         #expect(wrapped.contains("Content-Security-Policy"))
+        #expect(wrapped.contains("media-src https:"))
         #expect(wrapped.contains("<p>Hello</p>"))
         #expect(wrapped.contains("#1C1C1E"))
+        #expect(wrapped.contains("max-width: 72ch"))
+        #expect(wrapped.contains("overflow-x: auto"))
+        #expect(wrapped.contains("white-space: pre"))
+        #expect(wrapped.contains("video, audio { width: 100%; }"))
     }
 
     @Test("HTML wrapper uses light text in dark mode")
@@ -125,6 +130,70 @@ struct SocialWireUtilityTests {
     func prepareArticleBodyWrapsPlainText() {
         let wrapped = HTMLRenderer.prepareArticleBody("Line one\n\nLine two")
         #expect(wrapped == "<p>Line one</p><p>Line two</p>")
+    }
+
+    @Test("prepareArticleBody linkifies bare URLs outside links and code")
+    func prepareArticleBodyLinkifiesBareURLs() {
+        let wrapped = HTMLRenderer.prepareArticleBody(
+            """
+            <p>Visit www.example.com or <a href="https://linked.example">https://linked.example</a>.</p>
+            <pre>https://code.example</pre>
+            """
+        )
+        #expect(wrapped.contains(#"<a href="https://www.example.com">www.example.com</a>"#))
+        #expect(wrapped.components(separatedBy: #"href="https://linked.example""#).count == 2)
+        #expect(wrapped.contains("<pre>https://code.example</pre>"))
+    }
+
+    @Test("prepareArticleBody keeps URL punctuation outside links")
+    func prepareArticleBodyKeepsURLPunctuationOutsideLinks() {
+        let wrapped = HTMLRenderer.prepareArticleBody(
+            "Read https://example.com/article_(reader), then continue."
+        )
+        #expect(wrapped.contains(#"href="https://example.com/article_(reader)""#))
+        #expect(wrapped.contains("</a>, then continue."))
+    }
+
+    @Test("prepareArticleBody replaces embeds with safe external links")
+    func prepareArticleBodyReplacesEmbeds() {
+        let wrapped = HTMLRenderer.prepareArticleBody(
+            """
+            <iframe src="http://video.example/watch/1"></iframe>
+            <embed src="javascript:alert(1)">
+            """
+        )
+        #expect(!wrapped.contains("<iframe"))
+        #expect(!wrapped.contains("<embed"))
+        #expect(!wrapped.contains("javascript:"))
+        #expect(wrapped.contains("Open Embedded Media"))
+        #expect(wrapped.contains(#"href="https://video.example/watch/1""#))
+    }
+
+    @Test("prepareArticleBody applies safe media defaults")
+    func prepareArticleBodyAppliesSafeMediaDefaults() {
+        let wrapped = HTMLRenderer.prepareArticleBody(
+            #"<video controls preload="auto" autoplay src="http://example.com/video.mp4" poster="javascript:evil()"></video><audio src="javascript:evil()"></audio>"#
+        )
+        #expect(!wrapped.contains("autoplay"))
+        #expect(wrapped.components(separatedBy: "controls").count == 3)
+        #expect(wrapped.contains(#"preload="metadata""#))
+        #expect(wrapped.contains(#"src="https://example.com/video.mp4""#))
+        #expect(!wrapped.contains("javascript:"))
+    }
+
+    @Test("prepareArticleBody strips executable publisher markup")
+    func prepareArticleBodyStripsExecutableMarkup() {
+        let wrapped = HTMLRenderer.prepareArticleBody(
+            #"<style>body { display: none }</style><p style="color:red" onclick="evil()">Body</p><a href="javascript:evil()">Unsafe</a><script>evil()</script>"#
+        )
+        #expect(!wrapped.contains("<style"))
+        #expect(!wrapped.contains("style="))
+        #expect(!wrapped.contains("onclick"))
+        #expect(!wrapped.contains("<script"))
+        #expect(!wrapped.contains("evil()"))
+        #expect(!wrapped.contains("javascript:"))
+        #expect(wrapped.contains("<a>Unsafe</a>"))
+        #expect(wrapped.contains("<p>Body</p>"))
     }
 
     @Test("sidebar expanded keys persist per viewer did")
