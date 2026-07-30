@@ -91,6 +91,7 @@ enum AppViewRouterBuilder {
     let readService = ThinAppViewReadService(
       store: thinAppViewStore,
       projectionCache: projectionCache,
+      telemetry: telemetry,
       logger: logger
     )
     let enrollService = ThinAppViewEnrollService(

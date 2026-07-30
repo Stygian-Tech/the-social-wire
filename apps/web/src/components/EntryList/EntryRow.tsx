@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 import { MoreHorizontal } from "lucide-react";
 import { EntryRowActions } from "@/components/EntryList/EntryRowActions";
 import {
@@ -24,7 +24,6 @@ import {
   articleListCardWrapperClassName,
 } from "@/lib/articleListCardStyles";
 import { PublicationChip } from "@/components/shared/PublicationChip";
-import { useSidebarProjection } from "@/contexts/PublicationSidebarContext";
 
 interface EntryRowProps {
   entry: EntryListItem;
@@ -34,9 +33,10 @@ interface EntryRowProps {
   readIndicatorsEnabled: boolean;
   onMarkEntryRead: (entryId: string) => void;
   onMarkEntryUnread: (entryId: string) => void;
+  publication?: { name: string; faviconUrl?: string };
 }
 
-export function EntryRow({
+export const EntryRow = memo(function EntryRow({
   entry,
   isSelected,
   onSelect,
@@ -44,6 +44,7 @@ export function EntryRow({
   readIndicatorsEnabled,
   onMarkEntryRead,
   onMarkEntryUnread,
+  publication,
 }: EntryRowProps) {
   const date = new Date(entry.publishedAt);
   const formattedDate = date.toLocaleDateString(undefined, {
@@ -68,13 +69,6 @@ export function EntryRow({
     [entry.summary],
   );
   const [attemptIdx, setAttemptIdx] = useState(0);
-  const { allPublicationRows } = useSidebarProjection();
-  const publication = entry.publicationId
-    ? allPublicationRows.find(
-        (row) => row.publicationId === entry.publicationId,
-      )
-    : undefined;
-
   const activeThumbSrc =
     thumbAttempts.length > 0 && attemptIdx < thumbAttempts.length
       ? thumbAttempts[attemptIdx]
@@ -130,9 +124,8 @@ export function EntryRow({
             >
               <PublicationChip
                 publication={{
-                  name: publication.title,
-                  faviconUrl:
-                    publication.iconUrl ?? publication.avatarUrl,
+                  name: publication.name,
+                  faviconUrl: publication.faviconUrl,
                 }}
                 overlay
               />
@@ -212,4 +205,4 @@ export function EntryRow({
       </ContextMenuContent>
     </ContextMenu>
   );
-}
+});

@@ -38,6 +38,24 @@ struct ThinAppViewRoutes {
         requestId: context.requestId
       )
       return try await AppViewFeedExecution.run(requestId: context.requestId) {
+        if kind == .subscribed {
+          if let page = try await readService.listSubscribedFeed(
+            auth: auth,
+            filter: filter,
+            cursor: cursor,
+            limit: limit
+          ) {
+            return page
+          }
+          _ = try await projectionService.sidebar(auth: auth)
+          return try await readService.listSubscribedFeed(
+            auth: auth,
+            filter: filter,
+            cursor: cursor,
+            limit: limit
+          ) ?? AppViewEntryListResponse(entries: [], cursor: nil)
+        }
+
         let sidebar = try await projectionService.sidebar(auth: auth)
         guard let publications = Self.publications(for: kind, id: id, sidebar: sidebar) else {
           throw HTTPError(.notFound, message: "Feed is not available to this viewer")

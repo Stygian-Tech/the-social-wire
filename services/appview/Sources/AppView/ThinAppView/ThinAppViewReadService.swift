@@ -2,20 +2,24 @@ import Foundation
 import GatewayCore
 import Hummingbird
 import Logging
+import OperationsCore
 import ThinAppViewCore
 
 actor ThinAppViewReadService {
   private let store: any ThinAppViewStore
   private let projectionCache: (any AppViewProjectionCacheStore)?
+  private let telemetry: OperationsTelemetryBuffer?
   private let logger: Logger
 
   init(
     store: any ThinAppViewStore,
     projectionCache: (any AppViewProjectionCacheStore)? = nil,
+    telemetry: OperationsTelemetryBuffer? = nil,
     logger: Logger
   ) {
     self.store = store
     self.projectionCache = projectionCache
+    self.telemetry = telemetry
     self.logger = logger
   }
 
@@ -300,6 +304,90 @@ actor ThinAppViewReadService {
       }
       : nil
     return AppViewEntryListResponse(entries: entries, cursor: nextCursor)
+  }
+
+  func listSubscribedFeed(
+    auth: AuthContext,
+    filter: EntryListFilter,
+    cursor: String?,
+    limit: Int
+  ) async throws -> AppViewEntryListResponse? {
+    let scopes = try await store.publicationScopes(
+      viewerDid: auth.did,
+      sectionKey: "subscribed"
+    )
+    guard !scopes.isEmpty else { return nil }
+
+    let result = try await store.listAggregateEntries(
+      viewerDid: auth.did,
+      scopes: scopes,
+      filter: filter,
+      cursor: cursor,
+      limit: limit
+    )
+    await recordSubscribedFeedMetrics(
+      result: result,
+      pageKind: cursor == nil ? "first_page" : "pagination"
+    )
+    return result.response
+  }
+
+  private func recordSubscribedFeedMetrics(
+    result: AppViewAggregatePageResult,
+    pageKind: String
+  ) async {
+    guard let telemetry else { return }
+    let dimensions = [
+      "feed_kind": "subscribed",
+      "page_kind": pageKind,
+    ]
+    _ = await telemetry.enqueue(
+      .metric(
+        .init(
+          name: "socialwire.appview.feed.query_duration_seconds",
+          value: result.diagnostics.queryDuration,
+          dimensions: dimensions
+        )
+      )
+    )
+    _ = await telemetry.enqueue(
+      .metric(
+        .init(
+          name: "socialwire.appview.feed.rows_scanned",
+          value: Double(result.diagnostics.rowsScanned),
+          dimensions: dimensions
+        )
+      )
+    )
+    _ = await telemetry.enqueue(
+      .metric(
+        .init(
+          name: "socialwire.appview.feed.rows_returned",
+          value: Double(result.diagnostics.rowsReturned),
+          dimensions: dimensions
+        )
+      )
+    )
+    _ = await telemetry.enqueue(
+      .metric(
+        .init(
+          name: "socialwire.appview.feed.duplicates_suppressed",
+          value: Double(result.diagnostics.duplicatesSuppressed),
+          dimensions: dimensions
+        )
+      )
+    )
+    if let payload = try? JSONEncoder().encode(result.response) {
+      _ = await telemetry.enqueue(
+        .metric(
+          .init(
+            name: "socialwire.appview.feed.payload_bytes",
+            value: Double(payload.count),
+            dimensions: dimensions
+          )
+        )
+      )
+    }
   }
 
   func upsertReadMark(auth: AuthContext, subjectUri: String, readAt: Date?) async throws {

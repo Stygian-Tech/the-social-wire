@@ -250,6 +250,38 @@ public struct AppViewEntryListResponse: Codable, Sendable {
   }
 }
 
+public struct AppViewAggregatePageDiagnostics: Sendable, Equatable {
+  public let rowsScanned: Int
+  public let rowsReturned: Int
+  public let duplicatesSuppressed: Int
+  public let queryDuration: TimeInterval
+
+  public init(
+    rowsScanned: Int,
+    rowsReturned: Int,
+    duplicatesSuppressed: Int,
+    queryDuration: TimeInterval
+  ) {
+    self.rowsScanned = rowsScanned
+    self.rowsReturned = rowsReturned
+    self.duplicatesSuppressed = duplicatesSuppressed
+    self.queryDuration = queryDuration
+  }
+}
+
+public struct AppViewAggregatePageResult: Sendable {
+  public let response: AppViewEntryListResponse
+  public let diagnostics: AppViewAggregatePageDiagnostics
+
+  public init(
+    response: AppViewEntryListResponse,
+    diagnostics: AppViewAggregatePageDiagnostics
+  ) {
+    self.response = response
+    self.diagnostics = diagnostics
+  }
+}
+
 public struct AppViewEnrollRequest: Codable, Sendable {
   public let authorDids: [String]
   public let feedUrls: [String]

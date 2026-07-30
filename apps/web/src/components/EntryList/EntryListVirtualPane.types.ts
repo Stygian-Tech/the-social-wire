@@ -9,7 +9,12 @@ export type EntryListVirtualPaneProps = {
   hasNextPage: boolean;
   isFetchingNextPage: boolean;
   isFetchNextPageError?: boolean;
-  fetchNextPage: () => void;
+  fetchNextPage: () => Promise<unknown>;
+  scrollStateKey: string;
+  publicationById: ReadonlyMap<
+    string,
+    { name: string; faviconUrl?: string }
+  >;
   markEntryRead: (entryId: string) => void;
   markEntryUnread: (entryId: string) => void;
 };

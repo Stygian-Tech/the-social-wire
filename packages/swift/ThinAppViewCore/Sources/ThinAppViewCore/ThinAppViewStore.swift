@@ -57,6 +57,19 @@ public protocol ThinAppViewStore: Actor {
     readBoundary: ReadWatermarkBoundary?
   ) async throws -> AppViewEntryListResponse
 
+  func publicationScopes(
+    viewerDid: String,
+    sectionKey: String
+  ) async throws -> [AppViewPublicationScope]
+
+  func listAggregateEntries(
+    viewerDid: String,
+    scopes: [AppViewPublicationScope],
+    filter: EntryListFilter,
+    cursor: String?,
+    limit: Int
+  ) async throws -> AppViewAggregatePageResult
+
   func readBoundary(viewerDid: String, publicationId: String) async throws -> ReadWatermarkBoundary?
 
   func countUnreadEntries(
