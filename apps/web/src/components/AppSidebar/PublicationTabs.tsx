@@ -19,7 +19,8 @@ export function PublicationTabs({
   onTabChange,
   subscribedUnread = 0,
   followingUnread = 0,
-  showUnreadCounts = true,
+  showSubscribedUnreadCount = true,
+  showFollowingUnreadCount = true,
   visibleTabs = ["subscribed", "following"],
   subscribedPublications = [],
   followingPublications = [],
@@ -28,7 +29,8 @@ export function PublicationTabs({
   onTabChange: (tab: PublicationTab) => void;
   subscribedUnread?: number;
   followingUnread?: number;
-  showUnreadCounts?: boolean;
+  showSubscribedUnreadCount?: boolean;
+  showFollowingUnreadCount?: boolean;
   visibleTabs?: PublicationTab[];
   subscribedPublications?: DiscoveredPublication[];
   followingPublications?: DiscoveredPublication[];
@@ -54,7 +56,7 @@ export function PublicationTabs({
               >
                 <Rss />
                 <span>Subscribed</span>
-                {showUnreadCounts && subscribedUnread > 0 ? (
+                {showSubscribedUnreadCount && subscribedUnread > 0 ? (
                   <SidebarMenuBadge>{subscribedUnread}</SidebarMenuBadge>
                 ) : null}
               </SidebarMenuButton>
@@ -78,7 +80,7 @@ export function PublicationTabs({
               >
                 <Users />
                 <span>Following</span>
-                {showUnreadCounts && followingUnread > 0 ? (
+                {showFollowingUnreadCount && followingUnread > 0 ? (
                   <SidebarMenuBadge>{followingUnread}</SidebarMenuBadge>
                 ) : null}
               </SidebarMenuButton>

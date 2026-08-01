@@ -1,24 +1,19 @@
 "use client";
 
 import { Switch } from "@/components/ui/switch";
+import { AppearanceSettingsSection } from "@/components/Account/AppearanceSettingsSection";
 import { useFeedDisplayPreferences } from "@/hooks/useFeedDisplayPreferences";
 import {
   TOP_LEVEL_FEEDS,
-  type TopLevelFeed,
+  TOP_LEVEL_FEED_LABELS,
 } from "@/lib/feedPreferences";
-
-const FEED_LABELS: Record<TopLevelFeed, string> = {
-  readLater: "Read Later",
-  archive: "Archive",
-  subscribed: "Subscribed",
-  following: "Following",
-};
 
 export function FeedSettingsSection() {
   const {
     preferences,
     setFeedVisible,
-    setShowTopLevelFeedUnreadCounts,
+    setFeedUnreadCountVisible,
+    setRssArticleOpenInReader,
     isPending,
     error,
   } = useFeedDisplayPreferences();
@@ -31,57 +26,80 @@ export function FeedSettingsSection() {
     >
       <div className="mx-auto flex w-full max-w-2xl flex-col gap-6">
         <header>
-          <h1
+          <h2
             id="settings-heading"
             className="text-xl font-black tracking-tight"
           >
             Settings
-          </h1>
+          </h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Choose which top-level feeds appear in the reader.
+            Customize the app&apos;s appearance and choose which top-level feeds appear.
           </p>
         </header>
+        <AppearanceSettingsSection />
         <section className="rounded-2xl border bg-card p-4 shadow-[var(--soft-elevation)]">
-          <h2 className="text-sm font-bold">Visible Feeds</h2>
+          <h2 className="text-sm font-bold">RSS Articles</h2>
+          <div className="mt-3 flex min-h-12 items-center justify-between gap-4">
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-foreground">
+                Open in Reader
+              </p>
+              <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
+                Render feed content inside The Social Wire using your appearance
+                settings. Turn this off to open the original publisher page.
+              </p>
+            </div>
+            <Switch
+              className="shrink-0"
+              checked={preferences.rssArticleOpenMode === "reader"}
+              disabled={isPending}
+              onCheckedChange={setRssArticleOpenInReader}
+              aria-label="Open RSS Articles in Reader"
+            />
+          </div>
+        </section>
+        <section className="rounded-2xl border bg-card p-4 shadow-[var(--soft-elevation)]">
+          <h2 className="text-sm font-bold">Feed Display</h2>
+          <div className="mt-3 grid grid-cols-[minmax(0,1fr)_5.5rem_5.5rem] items-center border-b pb-2 text-xs font-semibold text-muted-foreground">
+            <span>Feed</span>
+            <span className="justify-self-center">Show Feed</span>
+            <span className="justify-self-center">Show Count</span>
+          </div>
           <div className="mt-3 divide-y">
             {TOP_LEVEL_FEEDS.map((feed) => {
-              const checked = preferences.visibleFeeds.includes(feed);
+              const feedVisible = preferences.visibleFeeds.includes(feed);
+              const countVisible =
+                preferences.feedsWithUnreadCounts.includes(feed);
               const finalVisible =
-                checked && preferences.visibleFeeds.length === 1;
+                feedVisible && preferences.visibleFeeds.length === 1;
               return (
-                <label
+                <div
                   key={feed}
-                  className="flex min-h-12 items-center justify-between gap-4 py-2 text-sm"
+                  className="grid min-h-12 grid-cols-[minmax(0,1fr)_5.5rem_5.5rem] items-center py-2 text-sm"
                 >
-                  <span>{FEED_LABELS[feed]}</span>
+                  <span>{TOP_LEVEL_FEED_LABELS[feed]}</span>
                   <Switch
-                    checked={checked}
+                    className="justify-self-center"
+                    checked={feedVisible}
                     disabled={isPending || finalVisible}
                     onCheckedChange={(value) =>
                       setFeedVisible(feed, value)
                     }
-                    aria-label={`Show ${FEED_LABELS[feed]}`}
+                    aria-label={`Show ${TOP_LEVEL_FEED_LABELS[feed]}`}
                   />
-                </label>
+                  <Switch
+                    className="justify-self-center"
+                    checked={countVisible}
+                    disabled={isPending || !feedVisible}
+                    onCheckedChange={(value) =>
+                      setFeedUnreadCountVisible(feed, value)
+                    }
+                    aria-label={`Show ${TOP_LEVEL_FEED_LABELS[feed]} Count`}
+                  />
+                </div>
               );
             })}
           </div>
-        </section>
-        <section className="rounded-2xl border bg-card p-4 shadow-[var(--soft-elevation)]">
-          <label className="flex min-h-12 items-center justify-between gap-4 text-sm">
-            <span>
-              <span className="block font-bold">Show Feed Unread Counts</span>
-              <span className="block text-xs text-muted-foreground">
-                Controls badges on the four top-level feeds.
-              </span>
-            </span>
-            <Switch
-              checked={preferences.showTopLevelFeedUnreadCounts}
-              disabled={isPending}
-              onCheckedChange={setShowTopLevelFeedUnreadCounts}
-              aria-label="Show Feed Unread Counts"
-            />
-          </label>
         </section>
         {error ? (
           <p role="alert" className="text-sm text-destructive">

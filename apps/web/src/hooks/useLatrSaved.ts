@@ -14,7 +14,10 @@ import {
   restoreLatrSaveQueries,
   snapshotLatrSaveQueries,
 } from "@/lib/latrSavedMutations";
-import type { LatrSaveListState, MergedLatrSave } from "@/lib/pdsClient";
+import {
+  type LatrSaveListState,
+  type MergedLatrSave,
+} from "@/lib/pdsClient";
 import {
   buildOptimisticExternalLatrSave,
   buildOptimisticNativeLatrSave,
@@ -22,6 +25,10 @@ import {
 import { normalizeLatrHttpsUrl } from "@/lib/latrSavedUrls";
 import { resolveReadLaterSaveTarget } from "@/lib/readLaterSaveTarget";
 import { createReadLaterProvider } from "@/lib/readLaterProvider";
+import {
+  dummyLatrSavesForState,
+  isDummyReaderDataEnabled,
+} from "@/lib/dummyReaderData";
 import { useAuth } from "./useAuth";
 import { usePDSClient } from "./usePDSClient";
 
@@ -48,13 +55,18 @@ export function useLatrMergedHttpsSaves(
   options?: { enabled?: boolean }
 ) {
   const client = usePDSClient();
+  const dummyReaderDataEnabled = isDummyReaderDataEnabled();
   return useQuery({
     queryKey: latrSavesQueryKey(state),
     queryFn: async ({ signal }): Promise<MergedLatrSave[]> => {
+      if (dummyReaderDataEnabled) {
+        return dummyLatrSavesForState(state);
+      }
       if (!client) return [];
       return client.listMergedLatrSaves({ state, signal });
     },
-    enabled: !!client && (options?.enabled ?? true),
+    enabled:
+      (dummyReaderDataEnabled || !!client) && (options?.enabled ?? true),
     staleTime: 15_000,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
@@ -65,6 +77,7 @@ export function useSaveHttpsReadLaterMutation() {
   const provider = useReadLaterProvider();
   const { session } = useAuth();
   const qc = useQueryClient();
+  const dummyReaderDataEnabled = isDummyReaderDataEnabled();
 
   return useMutation({
     mutationFn: async (params: {
@@ -72,6 +85,7 @@ export function useSaveHttpsReadLaterMutation() {
       title?: string;
       excerpt?: string;
     }) => {
+      if (dummyReaderDataEnabled) return;
       if (!provider) throw new Error("No read-later provider — not signed in");
       return provider.saveHttpsUrl(params.url, {
         title: params.title,
@@ -98,16 +112,20 @@ export function useSaveHttpsReadLaterMutation() {
     onError: (_error, _params, context) => {
       restoreLatrSaveQueries(qc, context);
     },
-    onSettled: () => invalidateLatrSaveQueries(qc),
+    onSettled: () => {
+      if (!dummyReaderDataEnabled) invalidateLatrSaveQueries(qc);
+    },
   });
 }
 
 export function useDeleteLatrSaveMutation() {
   const provider = useReadLaterProvider();
   const qc = useQueryClient();
+  const dummyReaderDataEnabled = isDummyReaderDataEnabled();
 
   return useMutation({
     mutationFn: async (itemRkey: string) => {
+      if (dummyReaderDataEnabled) return;
       if (!provider) throw new Error("No read-later provider — not signed in");
       return provider.deleteSaveItem(itemRkey);
     },
@@ -119,16 +137,20 @@ export function useDeleteLatrSaveMutation() {
     onError: (_error, _params, context) => {
       restoreLatrSaveQueries(qc, context);
     },
-    onSettled: () => invalidateLatrSaveQueries(qc),
+    onSettled: () => {
+      if (!dummyReaderDataEnabled) invalidateLatrSaveQueries(qc);
+    },
   });
 }
 
 export function useArchiveLatrSaveMutation() {
   const provider = useReadLaterProvider();
   const qc = useQueryClient();
+  const dummyReaderDataEnabled = isDummyReaderDataEnabled();
 
   return useMutation({
     mutationFn: async (itemRkey: string) => {
+      if (dummyReaderDataEnabled) return;
       if (!provider) throw new Error("No read-later provider — not signed in");
       return provider.archiveSaveItem(itemRkey);
     },
@@ -140,16 +162,20 @@ export function useArchiveLatrSaveMutation() {
     onError: (_error, _params, context) => {
       restoreLatrSaveQueries(qc, context);
     },
-    onSettled: () => invalidateLatrSaveQueries(qc),
+    onSettled: () => {
+      if (!dummyReaderDataEnabled) invalidateLatrSaveQueries(qc);
+    },
   });
 }
 
 export function useUnarchiveLatrSaveMutation() {
   const provider = useReadLaterProvider();
   const qc = useQueryClient();
+  const dummyReaderDataEnabled = isDummyReaderDataEnabled();
 
   return useMutation({
     mutationFn: async (itemRkey: string) => {
+      if (dummyReaderDataEnabled) return;
       if (!provider) throw new Error("No read-later provider — not signed in");
       return provider.unarchiveSaveItem(itemRkey);
     },
@@ -161,7 +187,9 @@ export function useUnarchiveLatrSaveMutation() {
     onError: (_error, _params, context) => {
       restoreLatrSaveQueries(qc, context);
     },
-    onSettled: () => invalidateLatrSaveQueries(qc),
+    onSettled: () => {
+      if (!dummyReaderDataEnabled) invalidateLatrSaveQueries(qc);
+    },
   });
 }
 

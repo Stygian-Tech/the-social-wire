@@ -10,7 +10,6 @@ import { ReadSidebarScopeProvider } from "@/contexts/ReadSidebarScopeContext";
 import {
   SidebarProvider,
   SidebarInset,
-  SidebarTrigger,
 } from "@/components/ui/sidebar";
 import { normalizeAtRepoParam } from "@/lib/atprotoClient";
 import { ReadArticleFilterBar } from "@/app/read/ReadArticleFilterBar";
@@ -50,7 +49,10 @@ export default function ReadLayout({
   }
 
   return (
-    <SidebarProvider className="h-[calc(100svh-var(--environment-banner-height,0px))] min-h-[calc(100svh-var(--environment-banner-height,0px))] max-h-[calc(100svh-var(--environment-banner-height,0px))] overflow-hidden overscroll-none">
+    <SidebarProvider
+      defaultWidthPx={208}
+      className="mx-auto h-[calc(100svh-var(--environment-banner-height,0px))] min-h-[calc(100svh-var(--environment-banner-height,0px))] max-h-[calc(100svh-var(--environment-banner-height,0px))] max-w-[70rem] overflow-hidden overscroll-none"
+    >
       <PublicationSidebarProvider>
         <ReadRouteProvider>
           <ReadSidebarScopeProvider>
@@ -65,11 +67,8 @@ export default function ReadLayout({
                 }
               />
             </Suspense>
-            <SidebarInset className="flex min-h-0 flex-1 flex-col overflow-hidden">
-              <header className="flex min-h-14 shrink-0 flex-wrap items-center gap-2 border-b bg-background/85 px-2 py-1.5 backdrop-blur-md sm:min-h-12 sm:flex-nowrap sm:gap-2 sm:px-3 md:px-4">
-                <SidebarTrigger className="h-11 w-11 min-h-[44px] min-w-[44px] shrink-0 -ml-0.5 rounded-md border-0 bg-transparent shadow-none hover:bg-muted/50 aria-expanded:bg-muted/50 sm:h-8 sm:w-8 sm:min-h-0 sm:min-w-0 sm:-ml-1" />
-                <ReadArticleFilterBar />
-              </header>
+            <SidebarInset className="flex min-h-0 flex-1 flex-col overflow-hidden pb-16 md:pb-0 lg:mr-64">
+              <ReadArticleFilterBar />
               <main className="flex min-h-0 flex-1 overflow-hidden">
                 {children}
               </main>

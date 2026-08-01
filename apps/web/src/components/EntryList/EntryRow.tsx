@@ -1,27 +1,21 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { MoreHorizontal } from "lucide-react";
+import { EntryCardActionMenu } from "@/components/EntryList/EntryCardActionMenu";
 import { EntryRowActions } from "@/components/EntryList/EntryRowActions";
 import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Button } from "@/components/ui/button";
 import { thumbnailImageSrcAttempts } from "@/lib/publicResourceUrl";
 import { decodeHtmlEntities } from "@/lib/decodeHtmlEntities";
 import { cn } from "@/lib/utils";
 import type { EntryListItem } from "@/lib/atprotoClient";
 import { CachedImage } from "@/components/shared/CachedImage";
 import {
-  articleListCardButtonClassName,
-  articleListCardWrapperClassName,
+  articleListCardHorizontalWrapperClassName,
+  articleListRowButtonClassName,
 } from "@/lib/articleListCardStyles";
 import { PublicationChip } from "@/components/shared/PublicationChip";
 import { useSidebarProjection } from "@/contexts/PublicationSidebarContext";
@@ -29,7 +23,7 @@ import { useSidebarProjection } from "@/contexts/PublicationSidebarContext";
 interface EntryRowProps {
   entry: EntryListItem;
   isSelected: boolean;
-  onSelect: (entryId: string) => void;
+  onSelect: (entryId: string, entry?: EntryListItem) => void;
   isRead: boolean;
   readIndicatorsEnabled: boolean;
   onMarkEntryRead: (entryId: string) => void;
@@ -87,30 +81,30 @@ export function EntryRow({
     <div
       className={cn(
         "group/entry-row relative",
-        articleListCardWrapperClassName,
+        articleListCardHorizontalWrapperClassName,
       )}
     >
       <div
         role="button"
         tabIndex={0}
-        onClick={() => onSelect(entry.entryId)}
+        onClick={() => onSelect(entry.entryId, entry)}
         onKeyDown={(event) => {
           if (event.key !== "Enter" && event.key !== " ") return;
           event.preventDefault();
-          onSelect(entry.entryId);
+          onSelect(entry.entryId, entry);
         }}
-        className={articleListCardButtonClassName({
+        className={articleListRowButtonClassName({
           isSelected,
           subdued: readIndicatorsEnabled && isRead,
         })}
       >
-        <div className="relative aspect-[16/9] w-full shrink-0 overflow-hidden bg-muted/40">
+        <div className="relative aspect-[1.08] w-full shrink-0 self-center overflow-hidden rounded-md border border-border/70 bg-muted/40">
           {showThumb && activeThumbSrc ? (
             <CachedImage
               src={activeThumbSrc}
               alt=""
-              width={640}
-              height={360}
+              width={192}
+              height={178}
               loading="lazy"
               className="absolute inset-0 size-full object-cover"
               onError={() => {
@@ -122,22 +116,6 @@ export function EntryRow({
           ) : thumbsExhausted ? (
             <span className="absolute inset-0 bg-muted/30" aria-hidden />
           ) : null}
-          {publication ? (
-            <div
-              className="absolute left-2 top-2 z-10 max-w-[calc(100%-1rem)]"
-              onClick={(event) => event.stopPropagation()}
-              onKeyDown={(event) => event.stopPropagation()}
-            >
-              <PublicationChip
-                publication={{
-                  name: publication.title,
-                  faviconUrl:
-                    publication.iconUrl ?? publication.avatarUrl,
-                }}
-                overlay
-              />
-            </div>
-          ) : null}
           {showUnreadChrome ? (
             <span
               className="absolute right-2 top-2 size-2 rounded-full bg-primary ring-2 ring-background"
@@ -145,51 +123,37 @@ export function EntryRow({
             />
           ) : null}
         </div>
-        <div className="relative min-w-0 px-4 py-3 pr-10">
-          <div className="absolute right-1 top-2 z-10">
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                render={
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-sm"
-                    className="size-8 opacity-100 md:opacity-0 md:group-hover/entry-row:opacity-100"
-                    aria-label="Article Actions"
-                    onClick={(event) => event.stopPropagation()}
-                  />
-                }
-              >
-                <MoreHorizontal className="size-4" />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="min-w-[11rem]">
-                <EntryRowActions
-                  entry={entry}
-                  isRead={isRead}
-                  readIndicatorsEnabled={readIndicatorsEnabled}
-                  onMarkEntryRead={onMarkEntryRead}
-                  onMarkEntryUnread={onMarkEntryUnread}
-                  variant="dropdown"
-                />
-              </DropdownMenuContent>
-            </DropdownMenu>
+        <div className="flex min-w-0 flex-col gap-1">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+            {publication ? (
+              <PublicationChip
+                publication={{
+                  name: publication.title,
+                  faviconUrl: publication.iconUrl ?? publication.avatarUrl,
+                }}
+                className="max-w-[12rem] border-0 bg-transparent px-0 py-0 text-foreground/80"
+              />
+            ) : null}
+            {publication ? <span aria-hidden>•</span> : null}
+            <span>{formattedDate}</span>
           </div>
           <p
             className={cn(
-              "line-clamp-2 text-sm leading-snug",
-              showUnreadChrome ? "font-semibold" : "font-medium",
+              "line-clamp-2 text-base font-semibold leading-snug text-foreground underline-offset-4 group-hover/entry-row:underline",
+              showUnreadChrome && "font-bold",
+              !displaySummary && "pr-8",
             )}
           >
             {displayTitle}
           </p>
           {displaySummary ? (
-            <p className="mt-1 line-clamp-2 text-xs leading-snug text-muted-foreground">
+            <p className="line-clamp-2 pr-8 text-sm leading-5 text-muted-foreground">
               {displaySummary}
             </p>
           ) : null}
-          <p className="mt-1 text-[11px] text-muted-foreground">
-            {formattedDate}
-          </p>
+          <div className="absolute bottom-2.5 right-2.5 flex items-center">
+            <EntryCardActionMenu entry={entry} />
+          </div>
         </div>
       </div>
     </div>

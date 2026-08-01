@@ -8,6 +8,7 @@ import {
 } from "@tanstack/react-query";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 import { AuthProvider } from "@/hooks/useAuth";
+import { AppearanceProvider } from "@/hooks/useAppearance";
 import { LexiconMigrationRunner } from "@/hooks/useLexiconMigration";
 import { createIndexedDbQueryPersister } from "@/lib/indexedDbQueryPersister";
 import type { PublicationSidebarProjection } from "@/lib/publicationProjectionClient";
@@ -79,20 +80,22 @@ export function Providers({ children }: { children: React.ReactNode }) {
   );
 
   return (
-    <PersistQueryClientProvider
-      client={queryClient}
-      persistOptions={{
-        persister,
-        maxAge: QUERY_PERSIST_MAX_AGE_MS,
-        dehydrateOptions: {
-          shouldDehydrateQuery,
-        },
-      }}
-    >
-      <AuthProvider>
-        <LexiconMigrationRunner />
-        {children}
-      </AuthProvider>
-    </PersistQueryClientProvider>
+    <AppearanceProvider>
+      <PersistQueryClientProvider
+        client={queryClient}
+        persistOptions={{
+          persister,
+          maxAge: QUERY_PERSIST_MAX_AGE_MS,
+          dehydrateOptions: {
+            shouldDehydrateQuery,
+          },
+        }}
+      >
+        <AuthProvider>
+          <LexiconMigrationRunner />
+          {children}
+        </AuthProvider>
+      </PersistQueryClientProvider>
+    </AppearanceProvider>
   );
 }

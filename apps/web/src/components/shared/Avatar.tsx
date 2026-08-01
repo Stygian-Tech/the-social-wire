@@ -13,8 +13,9 @@ interface AvatarProps {
 
 export function Avatar({ src, alt, size = 32, className = "" }: AvatarProps) {
   const { objectUrl, failed: cacheFailed } = useCachedImageUrl(src);
-  const [loadFailed, setLoadFailed] = useState(false);
-  const showImage = Boolean(objectUrl) && !cacheFailed && !loadFailed;
+  const [failedObjectUrl, setFailedObjectUrl] = useState<string | null>(null);
+  const showImage =
+    Boolean(objectUrl) && !cacheFailed && failedObjectUrl !== objectUrl;
 
   if (showImage) {
     return (
@@ -26,7 +27,7 @@ export function Avatar({ src, alt, size = 32, className = "" }: AvatarProps) {
         height={size}
         className={`rounded-full object-cover ${className}`}
         referrerPolicy="no-referrer"
-        onError={() => setLoadFailed(true)}
+        onError={() => setFailedObjectUrl(objectUrl ?? null)}
       />
     );
   }

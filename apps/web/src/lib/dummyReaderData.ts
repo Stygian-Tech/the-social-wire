@@ -1,17 +1,38 @@
 import type { EntryDetail, EntryListItem } from "@/lib/atprotoClient";
+import {
+  COLLECTION_LATR_SAVED_ITEM,
+  type LatrSavedItemRecord,
+  type MergedLatrSave,
+  type RepoRecord,
+} from "@/lib/pdsClient";
 import type {
   PublicationSidebarProjection,
   SidebarPublicationRow,
 } from "@/lib/publicationProjectionClient";
+import {
+  rssEntryIdFromParts,
+  rssPublicationIdFromNormalizedFeedUrl,
+} from "@/lib/rssFeedCore";
+import type { AggregateAppViewFeed } from "@/lib/thinAppViewClient";
 import type { ViewerProfileSlice } from "@/hooks/useViewerProfile";
+import { getAppEnv } from "@/lib/appEnv";
 
 export const DUMMY_VIEWER_DID = "did:plc:socialwire-dummy-viewer";
 
 export function isDummyReaderDataEnabled(): boolean {
-  return process.env.NEXT_PUBLIC_USE_DUMMY_DATA === "true";
+  return (
+    getAppEnv() === "local" ||
+    process.env.NEXT_PUBLIC_USE_DUMMY_DATA === "true"
+  );
 }
 
 const now = "2026-07-06T12:00:00.000Z";
+const rssNotebookFeedUrl = "https://notebook.example/feeds/updates.xml";
+const mockThumbnailUrls = [
+  "/mock-reader/thumbnail-violet.svg",
+  "/mock-reader/thumbnail-coral.svg",
+  "/mock-reader/thumbnail-blue.svg",
+] as const;
 
 const folderSeeds = [
   { rkey: "industry", name: "Industry", icon: "briefcase" },
@@ -177,13 +198,12 @@ const publicationSeeds: PublicationSeed[] = [
   },
   {
     key: "rss-notebook",
-    publicationId:
-      "rss:https%3A%2F%2Fnotebook.example%2Ffeeds%2Fupdates.xml",
+    publicationId: rssPublicationIdFromNormalizedFeedUrl(rssNotebookFeedUrl),
     authorDid: "did:web:skyreader.rss",
     authorHandle: "notebook.example",
     title: "RSS Notebook",
     tab: "following",
-    unreadCount: 2,
+    unreadCount: 4,
     topics: ["feed parsing", "syndication", "metadata"],
   },
 ];
@@ -202,12 +222,15 @@ function scope(authorDid: string, publicationAtUri: string) {
 }
 
 function rowFromSeed(seed: PublicationSeed): SidebarPublicationRow {
+  const seedIndex = publicationSeeds.indexOf(seed);
   return {
     publicationId: seed.publicationId,
     subscriptionPublicationId: seed.publicationId,
     authorDid: seed.authorDid,
     authorHandle: seed.authorHandle,
     title: seed.title,
+    iconUrl: mockThumbnailUrls[seedIndex % mockThumbnailUrls.length],
+    avatarUrl: mockThumbnailUrls[seedIndex % mockThumbnailUrls.length],
     discoveredAt: now,
     appViewScope: scope(seed.authorDid, seed.publicationId),
     unreadCount: seed.unreadCount,
@@ -309,6 +332,40 @@ const entryTemplates = [
   },
 ];
 
+const rssEntrySeeds: Array<{
+  title: string;
+  summary?: string;
+  thumbnailIndex?: number;
+}> = [
+  {
+    title: "A field guide to calmer RSS reading",
+    summary:
+      "A practical look at feed discovery, readable summaries, and the small metadata choices that make a mixed-source timeline feel coherent.",
+    thumbnailIndex: 0,
+  },
+  {
+    title:
+      "What a very long syndicated headline does when the publisher sends the whole thought as the title",
+    summary:
+      "This sample intentionally pairs a long headline with a longer excerpt so wrapping, variable card height, and vertically centered thumbnail placement are all visible at once.",
+    thumbnailIndex: 1,
+  },
+  {
+    title: "A short RSS update",
+    summary: "Brief notes from a publisher that keeps its feed concise.",
+    thumbnailIndex: 2,
+  },
+  {
+    title: "When a feed item arrives without artwork",
+    summary:
+      "Not every RSS or Atom entry includes a usable enclosure, media thumbnail, or Open Graph image. The card should remain balanced when only text metadata is available.",
+  },
+  {
+    title: "Release notes from the syndication desk",
+    thumbnailIndex: 0,
+  },
+];
+
 function slug(value: string): string {
   return value
     .toLowerCase()
@@ -317,6 +374,27 @@ function slug(value: string): string {
 }
 
 function dummyEntriesForSeed(seed: PublicationSeed): EntryListItem[] {
+  if (seed.key === "rss-notebook") {
+    return rssEntrySeeds.map((entry, index) => {
+      const publishedDate = new Date(Date.UTC(2026, 6, 6 - index, 16 - index, 30));
+      const originalUrl = mockArticleUrl(entry.title, entry.summary ?? "");
+      return {
+        entryId: rssEntryIdFromParts(
+          rssNotebookFeedUrl,
+          `link:${originalUrl}`,
+        ),
+        title: entry.title,
+        ...(entry.summary ? { summary: entry.summary } : {}),
+        publishedAt: publishedDate.toISOString(),
+        originalUrl,
+        ...(entry.thumbnailIndex !== undefined
+          ? { thumbnailUrl: mockThumbnailUrls[entry.thumbnailIndex] }
+          : {}),
+        publicationId: seed.publicationId,
+      };
+    });
+  }
+
   if (seed.key === "social-wire-digest") {
     return [
       {
@@ -325,7 +403,12 @@ function dummyEntriesForSeed(seed: PublicationSeed): EntryListItem[] {
         summary:
           "A focused digest of product changes across reader startup, saved links, and compact navigation.",
         publishedAt: "2026-07-06T08:00:00.000Z",
-        originalUrl: "https://thesocialwire.local/digest/morning-wire",
+        originalUrl: mockArticleUrl(
+          "Morning wire: reader cache, bulk read state, and mobile panes",
+          "A focused digest of product changes across reader startup, saved links, and compact navigation.",
+        ),
+        thumbnailUrl: mockThumbnailUrls[0],
+        publicationId: seed.publicationId,
       },
       {
         entryId: `at://${seed.authorDid}/site.standard.document/appview-ops`,
@@ -333,7 +416,12 @@ function dummyEntriesForSeed(seed: PublicationSeed): EntryListItem[] {
         summary:
           "Gateway checks, projection cache invalidation, and read mark sync risks to keep in view.",
         publishedAt: "2026-07-03T19:10:00.000Z",
-        originalUrl: "https://thesocialwire.local/digest/appview-ops",
+        originalUrl: mockArticleUrl(
+          "AppView operations notes for the week",
+          "Gateway checks, projection cache invalidation, and read mark sync risks to keep in view.",
+        ),
+        thumbnailUrl: mockThumbnailUrls[2],
+        publicationId: seed.publicationId,
       },
       ...entryTemplates.slice(2).map((template, index) =>
         entryFromTemplate(seed, template, index + 2)
@@ -354,13 +442,28 @@ function entryFromTemplate(
   const topic = seed.topics[index % seed.topics.length];
   const publishedDate = new Date(Date.UTC(2026, 6, 6 - index, 14 - index, 0, 0));
   const title = template.title.replace("{topic}", topic);
+  const originalUrl = mockArticleUrl(title, template.summary);
+  const entryId =
+    seed.authorDid === "did:web:skyreader.rss"
+      ? rssEntryIdFromParts(rssNotebookFeedUrl, `link:${originalUrl}`)
+      : `at://${seed.authorDid}/site.standard.document/${slug(seed.key)}-${index + 1}`;
   return {
-    entryId: `at://${seed.authorDid}/site.standard.document/${slug(seed.key)}-${index + 1}`,
+    entryId,
     title,
     summary: template.summary,
     publishedAt: publishedDate.toISOString(),
-    originalUrl: `https://${seed.authorHandle}/articles/${slug(title)}`,
+    originalUrl,
+    thumbnailUrl:
+      mockThumbnailUrls[
+        (publicationSeeds.indexOf(seed) + index) % mockThumbnailUrls.length
+      ],
+    publicationId: seed.publicationId,
   };
+}
+
+function mockArticleUrl(title: string, summary: string): string {
+  const params = new URLSearchParams({ title, summary });
+  return `/mock-reader/article.html?${params.toString()}`;
 }
 
 const entriesByPublicationId: Record<string, EntryListItem[]> =
@@ -391,8 +494,126 @@ export function dummyEntriesForPublication(publicationId: string): EntryListItem
   return entriesByPublicationId[publicationId] ?? [];
 }
 
+export function dummyEntriesForAggregateFeed(
+  feed: AggregateAppViewFeed,
+): EntryListItem[] {
+  const seeds =
+    feed.kind === "folder"
+      ? publicationSeeds.filter((seed) => seed.folderRkey === feed.id)
+      : feed.kind === "publication"
+        ? publicationSeeds.filter((seed) => seed.publicationId === feed.id)
+        : publicationSeeds.filter((seed) => seed.tab === feed.kind);
+
+  return seeds
+    .flatMap((seed) => dummyEntriesForPublication(seed.publicationId))
+    .sort((left, right) => {
+      const published =
+        Date.parse(right.publishedAt) - Date.parse(left.publishedAt);
+      return published || left.entryId.localeCompare(right.entryId);
+    });
+}
+
 export function dummyEntryDetail(entryId: string): EntryDetail | null {
   return entryDetailsById[entryId] ?? null;
+}
+
+function dummyExternalSave(args: {
+  key: string;
+  title: string;
+  excerpt: string;
+  site: string;
+  state: "unread" | "archived";
+  thumbnailIndex: number;
+}): MergedLatrSave {
+  const url = mockArticleUrl(args.title, args.excerpt);
+  const externalUri = `at://${DUMMY_VIEWER_DID}/link.latr.saved.external/${args.key}`;
+  return {
+    kind: "external",
+    normalizedUrl: url,
+    url,
+    savedAt: now,
+    externalRkey: args.key,
+    itemRkey: `item-${args.key}`,
+    externalUri,
+    itemUri: `at://${DUMMY_VIEWER_DID}/link.latr.saved.item/item-${args.key}`,
+    subjectUri: externalUri,
+    state: args.state,
+    title: args.title,
+    excerpt: args.excerpt,
+    site: args.site,
+    image: mockThumbnailUrls[args.thumbnailIndex % mockThumbnailUrls.length],
+    author: "Social Wire Design Desk",
+    publishedAt: "2026-07-05T15:00:00.000Z",
+  };
+}
+
+export const dummyLatrSaves: MergedLatrSave[] = [
+  dummyExternalSave({
+    key: "reader-layout",
+    title: "A calmer three-column reader for busy news days",
+    excerpt:
+      "Notes on balancing feeds, publications, and a dense central article stream.",
+    site: "Interface Notes",
+    state: "unread",
+    thumbnailIndex: 0,
+  }),
+  dummyExternalSave({
+    key: "portable-reading",
+    title: "Portable reading lists without another closed platform",
+    excerpt:
+      "A product sketch for keeping saved links attached to portable identity.",
+    site: "The Standard",
+    state: "unread",
+    thumbnailIndex: 1,
+  }),
+  dummyExternalSave({
+    key: "archive-review",
+    title: "What the archive should remember",
+    excerpt:
+      "A short review of metadata, provenance, and useful resurfacing patterns.",
+    site: "Research Desk",
+    state: "archived",
+    thumbnailIndex: 2,
+  }),
+];
+
+export function dummyLatrSavesForState(
+  state: "active" | "archived" | "all",
+): MergedLatrSave[] {
+  if (state === "all") return dummyLatrSaves;
+  return dummyLatrSaves.filter((row) =>
+    state === "archived" ? row.state === "archived" : row.state !== "archived",
+  );
+}
+
+export function dummyLatrGatewaySavedItemsResponse(): {
+  records: RepoRecord<LatrSavedItemRecord>[];
+} {
+  return {
+    records: dummyLatrSaves.map((row) => ({
+      uri: row.itemUri,
+      cid: `bafydummy${row.itemRkey}`,
+      value: {
+        $type: COLLECTION_LATR_SAVED_ITEM,
+        subjectUri: row.subjectUri,
+        savedAt: row.savedAt,
+        ...(row.state ? { state: row.state } : {}),
+        ...(row.lastOpenedAt ? { lastOpenedAt: row.lastOpenedAt } : {}),
+        ...(rowUrlForGatewaySample(row)
+          ? { linkedWebUrl: rowUrlForGatewaySample(row) }
+          : {}),
+        ...(row.title ? { previewTitle: row.title } : {}),
+        ...(row.excerpt ? { previewExcerpt: row.excerpt } : {}),
+        ...(row.site ? { previewSite: row.site } : {}),
+        ...(row.image ? { previewImage: row.image } : {}),
+        ...(row.author ? { previewAuthor: row.author } : {}),
+      },
+    })),
+  };
+}
+
+function rowUrlForGatewaySample(row: MergedLatrSave): string | undefined {
+  return row.kind === "external" ? row.url : row.url ?? row.linkedWebUrl;
 }
 
 export const dummyViewerProfile: ViewerProfileSlice = {

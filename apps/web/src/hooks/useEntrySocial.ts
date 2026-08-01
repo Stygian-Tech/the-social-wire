@@ -161,30 +161,22 @@ export function useEntrySocial(entry: EntryDetail | null) {
     onSuccess: invalidateViewer,
   });
 
-  const quoteMutation = useMutation({
+  const postMutation = useMutation({
     mutationFn: async (text: string) => {
       const oauth = getOAuthSession();
       if (!oauth) throw new Error("Not signed in");
       await requireBskyRepoScope(oauth, "app.bsky.feed.post", "create");
+      const shouldLikeLinkedPost = !!(uri && cid && !viewerQuery.data?.likeUri);
+      if (shouldLikeLinkedPost) {
+        await requireBskyRepoScope(oauth, "app.bsky.feed.like", "create");
+      }
       const agent = createOAuthAgent(oauth);
       const shareUrl = entry ? canonicalArticleHttpsUrl(entry) : null;
       if (!shareUrl) throw new Error("No canonical article URL for this entry");
       const title = externalCardTitle(entry);
       const description = externalCardDescription(entry);
-
-      if (uri && cid) {
-        await agent.post({
-          text,
-          embed: {
-            $type: "app.bsky.embed.record",
-            record: { uri, cid },
-          },
-        });
-        return;
-      }
-
       const thumb = await uploadExternalCardThumb(agent, entry);
-      await agent.post({
+      const postPromise = agent.post({
         text,
         embed: {
           $type: "app.bsky.embed.external",
@@ -199,8 +191,12 @@ export function useEntrySocial(entry: EntryDetail | null) {
           },
         },
       });
+      const likePromise = shouldLikeLinkedPost
+        ? agent.like(uri, cid)
+        : Promise.resolve();
+      await Promise.all([postPromise, likePromise]);
     },
-    onSuccess: invalidateViewer,
+    onSettled: invalidateViewer,
   });
 
   const replyMutation = useMutation({
@@ -224,7 +220,7 @@ export function useEntrySocial(entry: EntryDetail | null) {
     viewerQuery,
     toggleLikeMutation,
     toggleRepostMutation,
-    quoteMutation,
+    postMutation,
     replyMutation,
     hasLinkedPost: !!(uri && cid),
   };

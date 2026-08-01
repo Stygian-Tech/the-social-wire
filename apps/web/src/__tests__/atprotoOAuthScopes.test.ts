@@ -8,6 +8,7 @@ import {
   SOCIAL_WIRE_REPO_SCOPES,
   STANDARD_SITE_REPO_SCOPES,
 } from "@/lib/atprotoOAuthScopes";
+import { USER_INPUT_REPO_SCOPES } from "@/lib/userInputFeedback";
 
 describe("atprotoOAuthScopes", () => {
   it("matches public client-metadata.json scope string", () => {
@@ -40,6 +41,8 @@ describe("atprotoOAuthScopes", () => {
     expect(AT_PROTO_OAUTH_SCOPES).toContain(
       "site.standard.graph.recommend"
     );
+    expect(AT_PROTO_OAUTH_SCOPES).toContain("app.userinput.discussion");
+    expect(AT_PROTO_OAUTH_SCOPES).toContain("app.userinput.upvote");
   });
 
   it("defines collection-level permissions by feature", () => {
@@ -61,6 +64,10 @@ describe("atprotoOAuthScopes", () => {
     ]);
     expect(SKYREADER_REPO_SCOPES).toEqual([
       "repo:app.skyreader.feed.subscription?action=create&action=update&action=delete",
+    ]);
+    expect(USER_INPUT_REPO_SCOPES).toEqual([
+      "repo:app.userinput.discussion?action=create",
+      "repo:app.userinput.upvote?action=create&action=update",
     ]);
   });
 });

@@ -15,7 +15,7 @@ type CachedImageRow = {
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 
-const inFlightImageFetches = new Map<string, Promise<string | undefined>>();
+const inFlightImageFetches = new Map<string, Promise<Blob | undefined>>();
 
 function openImageCacheDb(): Promise<IDBDatabase> {
   if (typeof indexedDB === "undefined") {
@@ -84,6 +84,15 @@ async function writeCachedBlob(url: string, blob: Blob): Promise<void> {
   }
 }
 
+function imageFetchUrl(url: string): string {
+  if (typeof window === "undefined") return url;
+  try {
+    return new URL(url, window.location.href).href;
+  } catch {
+    return url;
+  }
+}
+
 async function trimImageCache(): Promise<void> {
   try {
     const db = await openImageCacheDb();
@@ -121,7 +130,7 @@ function normalizeImageCacheKey(raw: string): string | null {
 function isSameOriginImageUrl(url: string): boolean {
   if (typeof window === "undefined") return false;
   try {
-    return new URL(url).origin === window.location.origin;
+    return new URL(url, window.location.href).origin === window.location.origin;
   } catch {
     return false;
   }
@@ -135,6 +144,7 @@ export function isDirectImageLoadUrl(url: string): boolean {
 
 /** Cross-origin images must use `<img src>`; only same-origin may use fetch + IndexedDB. */
 export function shouldUseDirectImageSrc(normalizedUrl: string): boolean {
+  if (normalizedUrl.startsWith("/mock-reader/")) return true;
   if (typeof window === "undefined") {
     try {
       const parsed = new URL(normalizedUrl);
@@ -169,16 +179,22 @@ export async function fetchCachedImageObjectUrl(
     return url;
   }
 
+  const blob = await fetchCachedImageBlob(url, signal);
+  return blob ? URL.createObjectURL(blob) : undefined;
+}
+
+async function fetchCachedImageBlob(
+  url: string,
+  signal?: AbortSignal,
+): Promise<Blob | undefined> {
   const inFlight = inFlightImageFetches.get(url);
   if (inFlight) return inFlight;
 
-  const fetchPromise = (async (): Promise<string | undefined> => {
+  const fetchPromise = (async (): Promise<Blob | undefined> => {
     const cached = await readCachedBlob(url);
-    if (cached) {
-      return URL.createObjectURL(cached);
-    }
+    if (cached) return cached;
 
-    const res = await fetch(url, {
+    const res = await fetch(imageFetchUrl(url), {
       signal,
       referrerPolicy: "no-referrer",
       cache: "force-cache",
@@ -189,7 +205,7 @@ export async function fetchCachedImageObjectUrl(
     if (blob.size === 0) return undefined;
 
     void writeCachedBlob(url, blob);
-    return URL.createObjectURL(blob);
+    return blob;
   })();
 
   inFlightImageFetches.set(url, fetchPromise);
@@ -208,6 +224,8 @@ export function prefetchCachedImages(urls: Iterable<string | null | undefined>):
     if (!url || !isSameOriginImageUrl(url)) continue;
     void fetchCachedImageObjectUrl(raw).then((objectUrl) => {
       if (objectUrl?.startsWith("blob:")) URL.revokeObjectURL(objectUrl);
+    }).catch(() => {
+      /* best-effort prefetch */
     });
   }
 }

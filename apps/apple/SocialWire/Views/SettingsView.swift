@@ -9,36 +9,39 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
-            Section("Visible Feeds") {
+            Section("Feed Display") {
                 ForEach(ReaderListSource.allCases) { source in
                     let isVisible = appModel.visibleReaderListSources.contains(source)
-                    Toggle(
-                        source.rawValue,
-                        isOn: Binding(
-                            get: { isVisible },
-                            set: { value in
-                                Task {
-                                    await appModel.setFeedVisible(source, visible: value)
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(source.rawValue)
+                            .font(.headline)
+                        Toggle(
+                            "Show Feed",
+                            isOn: Binding(
+                                get: { appModel.visibleReaderListSources.contains(source) },
+                                set: { value in
+                                    Task {
+                                        await appModel.setFeedVisible(source, visible: value)
+                                    }
                                 }
-                            }
+                            )
                         )
-                    )
-                    .disabled(isVisible && appModel.visibleReaderListSources.count == 1)
+                        .disabled(isVisible && appModel.visibleReaderListSources.count == 1)
+                        Toggle(
+                            "Show Count",
+                            isOn: Binding(
+                                get: { appModel.showsTopLevelFeedUnreadCount(for: source) },
+                                set: { value in
+                                    Task {
+                                        await appModel.setFeedUnreadCountVisible(source, visible: value)
+                                    }
+                                }
+                            )
+                        )
+                        .disabled(!isVisible)
+                    }
+                    .padding(.vertical, 4)
                 }
-            }
-
-            Section("Unread Counts") {
-                Toggle(
-                    "Show Feed Unread Counts",
-                    isOn: Binding(
-                        get: { appModel.showTopLevelFeedUnreadCounts },
-                        set: { value in
-                            Task {
-                                await appModel.setShowTopLevelFeedUnreadCounts(value)
-                            }
-                        }
-                    )
-                )
             }
 
             Section("Account") {

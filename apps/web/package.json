@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev --webpack",
+    "dev:mock": "NEXT_PUBLIC_USE_DUMMY_DATA=true next dev --webpack",
     "dev:turbo": "next dev --turbopack",
     "build": "next build",
     "start": "next start",

@@ -10,6 +10,7 @@ import {
 import { usePDSClient } from "@/hooks/usePDSClient";
 import { useAuth } from "@/hooks/useAuth";
 import type { PreferencesRecord, RepoRecord } from "@/lib/pdsClient";
+import { isDummyReaderDataEnabled } from "@/lib/dummyReaderData";
 import {
   DEFAULT_FEED_DISPLAY_PREFERENCES,
   TOP_LEVEL_FEEDS,
@@ -66,13 +67,16 @@ export function useFeedDisplayPreferences() {
 
   const mutation = useMutation({
     mutationFn: async (next: FeedDisplayPreferences) => {
+      if (isDummyReaderDataEnabled()) return next;
       if (!client) throw new Error("PDS session required");
       const existing = accountPreferences.data ?? null;
       await client.upsertPreferences(
         {
           visibleFeeds: next.visibleFeeds,
+          feedsWithUnreadCounts: next.feedsWithUnreadCounts,
+          rssArticleOpenMode: next.rssArticleOpenMode,
           showTopLevelFeedUnreadCounts:
-            next.showTopLevelFeedUnreadCounts,
+            next.feedsWithUnreadCounts.length > 0,
         },
         existing,
       );
@@ -81,6 +85,7 @@ export function useFeedDisplayPreferences() {
     onMutate: async (next) => {
       const normalized = normalizeFeedDisplayPreferences(next);
       setOptimistic(normalized);
+      setCached(normalized);
       if (session && typeof window !== "undefined") {
         saveCachedFeedDisplayPreferences(
           window.localStorage,
@@ -101,8 +106,10 @@ export function useFeedDisplayPreferences() {
             updatedAt: new Date().toISOString(),
             ...previous?.value,
             visibleFeeds: normalized.visibleFeeds,
+            feedsWithUnreadCounts: normalized.feedsWithUnreadCounts,
+            rssArticleOpenMode: normalized.rssArticleOpenMode,
             showTopLevelFeedUnreadCounts:
-              normalized.showTopLevelFeedUnreadCounts,
+              normalized.feedsWithUnreadCounts.length > 0,
           },
         }),
       );
@@ -130,16 +137,41 @@ export function useFeedDisplayPreferences() {
       mutation.mutate({
         ...preferences,
         visibleFeeds,
+        feedsWithUnreadCounts: visible
+          ? preferences.feedsWithUnreadCounts
+          : preferences.feedsWithUnreadCounts.filter(
+              (candidate) => candidate !== feed,
+            ),
       });
     },
     [mutation, preferences],
   );
 
-  const setShowTopLevelFeedUnreadCounts = useCallback(
-    (show: boolean) => {
+  const setFeedUnreadCountVisible = useCallback(
+    (feed: TopLevelFeed, show: boolean) => {
+      if (!preferences.visibleFeeds.includes(feed)) return;
+      const feedsWithUnreadCounts = show
+        ? TOP_LEVEL_FEEDS.filter(
+            (candidate) =>
+              candidate === feed ||
+              preferences.feedsWithUnreadCounts.includes(candidate),
+          )
+        : preferences.feedsWithUnreadCounts.filter(
+            (candidate) => candidate !== feed,
+          );
       mutation.mutate({
         ...preferences,
-        showTopLevelFeedUnreadCounts: show,
+        feedsWithUnreadCounts,
+      });
+    },
+    [mutation, preferences],
+  );
+
+  const setRssArticleOpenInReader = useCallback(
+    (openInReader: boolean) => {
+      mutation.mutate({
+        ...preferences,
+        rssArticleOpenMode: openInReader ? "reader" : "original",
       });
     },
     [mutation, preferences],
@@ -148,7 +180,8 @@ export function useFeedDisplayPreferences() {
   return {
     preferences,
     setFeedVisible,
-    setShowTopLevelFeedUnreadCounts,
+    setFeedUnreadCountVisible,
+    setRssArticleOpenInReader,
     isPending: mutation.isPending,
     error: mutation.error,
   };

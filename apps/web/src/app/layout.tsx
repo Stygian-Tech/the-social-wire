@@ -9,6 +9,11 @@ import {
   environmentBannerHeight,
   getAppEnv,
 } from "@/lib/appEnv";
+import {
+  BOLD_TEXT_STORAGE_KEY,
+  FONT_STORAGE_KEY,
+  THEME_STORAGE_KEY,
+} from "@/lib/appearance";
 
 const siteUrl = (() => {
   const explicit = process.env.NEXT_PUBLIC_SITE_URL?.trim();
@@ -98,9 +103,9 @@ export default function RootLayout({
     <html lang="en" className="h-full antialiased" suppressHydrationWarning>
       <head>
         <script
-          id="dark-mode"
+          id="appearance"
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var root=document.documentElement;var media=window.matchMedia("(prefers-color-scheme: dark)");function apply(){var dark=media.matches;root.classList.toggle("dark",dark);root.style.colorScheme=dark?"dark":"light";}apply();if(typeof media.addEventListener==="function"){media.addEventListener("change",apply);}else if(typeof media.addListener==="function"){media.addListener(apply);}}catch(e){}})();`,
+            __html: `(function(){try{var p=localStorage.getItem(${JSON.stringify(THEME_STORAGE_KEY)});var theme=p==="light"||p==="dark"?p:"system";var f=localStorage.getItem(${JSON.stringify(FONT_STORAGE_KEY)});var font=f==="serif"||f==="mono"?f:"sans";var bold=localStorage.getItem(${JSON.stringify(BOLD_TEXT_STORAGE_KEY)})==="1";var systemDark=window.matchMedia("(prefers-color-scheme: dark)").matches;var computed=theme==="dark"||theme==="system"&&systemDark?"dark":"light";var root=document.documentElement;root.classList.toggle("dark",computed==="dark");root.classList.toggle("light",computed==="light");root.dataset.theme=theme;root.dataset.computedTheme=computed;root.dataset.font=font;root.dataset.boldText=bold?"true":"false";root.style.colorScheme=computed;}catch(e){}})();`,
           }}
         />
       </head>

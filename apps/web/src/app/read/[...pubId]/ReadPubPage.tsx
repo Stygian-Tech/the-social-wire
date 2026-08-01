@@ -1,53 +1,36 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { EntryList } from "@/components/EntryList/EntryList";
-import { EntryDetail } from "@/components/EntryDetail/EntryDetail";
-import { ReaderPaneHeader } from "@/components/EntryDetail/ReaderPaneHeader";
+import { RssArticleReaderDialog } from "@/components/EntryDetail/RssArticleReaderDialog";
 import { DevRecordKindBadge } from "@/components/shared/DevRecordKindBadge";
-import {
-  READER_LIST_COLUMN_WIDTH_KEY,
-  ResizableListColumn,
-} from "@/components/shared/ResizableListColumn";
 import { useReadRoute } from "@/contexts/ReadRouteContext";
-import { useEntry } from "@/hooks/useEntries";
-import { useIsTabletPortrait } from "@/hooks/use-tablet-portrait";
-import { shouldShowArticleListColumn } from "@/lib/readerColumnVisibility";
 import { recordKindFromPubId } from "@/lib/recordKindDebug";
-import { cn } from "@/lib/utils";
+import { entryOpenTarget } from "@/lib/entryOpenTarget";
+import type { EntryListItem } from "@/lib/atprotoClient";
 import type { AggregateAppViewFeed } from "@/lib/thinAppViewClient";
+import { useFeedDisplayPreferences } from "@/hooks/useFeedDisplayPreferences";
 
 export default function ReadPubPage({
   pubId,
   aggregateFeed,
-  title = "Articles",
 }: {
   pubId?: string;
   aggregateFeed?: AggregateAppViewFeed;
-  title?: string;
 }) {
-  const [selectedEntryId, setSelectedEntryId] = useState<string | null>(null);
-  const { data: selectedEntry } = useEntry(selectedEntryId);
+  const [rssReaderEntry, setRssReaderEntry] = useState<{
+    entryId: string;
+    title: string;
+    url: string;
+  } | null>(null);
   const publicationKind = pubId ? recordKindFromPubId(pubId) : null;
+  const { preferences } = useFeedDisplayPreferences();
   const {
     markEntryRead,
     markEntryUnread,
     isEntryRead,
     articleListFilter,
-    isArticleListColumnOpen,
   } = useReadRoute();
-  const isTabletPortrait = useIsTabletPortrait();
-  const showsArticleListColumn = shouldShowArticleListColumn({
-    isTabletPortrait,
-    isOpenInTabletPortrait: isArticleListColumnOpen,
-  });
-
-  const selectedRef = useRef<string | null>(null);
-  const filterRef = useRef(articleListFilter);
-  useEffect(() => {
-    selectedRef.current = selectedEntryId;
-    filterRef.current = articleListFilter;
-  });
 
   const markOptions = useMemo(
     () => (pubId ? { publicationId: pubId } : undefined),
@@ -64,68 +47,62 @@ export default function ReadPubPage({
     [markEntryUnread, markOptions]
   );
 
-  const prevFilterRef = useRef(articleListFilter);
-  useEffect(() => {
-    const prev = prevFilterRef.current;
-    if (prev === "unread" && articleListFilter === "all" && selectedEntryId) {
-      markEntryReadForPub(selectedEntryId);
-    }
-    prevFilterRef.current = articleListFilter;
-  }, [articleListFilter, selectedEntryId, markEntryReadForPub]);
-
-  useEffect(() => {
-    return () => {
-      if (filterRef.current === "unread" && selectedRef.current) {
-        markEntryReadForPub(selectedRef.current);
-      }
-    };
-  }, [aggregateFeed?.id, aggregateFeed?.kind, pubId, markEntryReadForPub]);
-
   const handleSelectEntry = useCallback(
-    (entryId: string) => {
-      if (articleListFilter === "unread") {
-        if (selectedEntryId && selectedEntryId !== entryId) {
-          markEntryReadForPub(selectedEntryId);
+    (entryId: string, entry?: EntryListItem) => {
+      if (!entry) return;
+      const target = entryOpenTarget(entry, preferences.rssArticleOpenMode);
+      if (!target) return;
+
+      if (target.kind === "rssReader") {
+        if (
+          articleListFilter === "unread" &&
+          rssReaderEntry &&
+          rssReaderEntry.entryId !== entryId
+        ) {
+          markEntryReadForPub(rssReaderEntry.entryId);
         }
-        setSelectedEntryId(entryId);
+        setRssReaderEntry({
+          entryId,
+          title: entry?.title ?? "RSS Article",
+          url: target.url,
+        });
+        if (articleListFilter !== "unread") {
+          markEntryReadForPub(entryId);
+        }
         return;
       }
-      setSelectedEntryId(entryId);
+
       markEntryReadForPub(entryId);
+      window.open(target.url, "_blank", "noopener,noreferrer");
     },
-    [markEntryReadForPub, articleListFilter, selectedEntryId]
+    [
+      articleListFilter,
+      markEntryReadForPub,
+      preferences.rssArticleOpenMode,
+      rssReaderEntry,
+    ],
   );
 
-  const handleBackToList = useCallback(() => {
-    if (articleListFilter === "unread" && selectedEntryId) {
-      markEntryReadForPub(selectedEntryId);
+  const closeRssReader = useCallback(() => {
+    if (articleListFilter === "unread" && rssReaderEntry) {
+      markEntryReadForPub(rssReaderEntry.entryId);
     }
-    setSelectedEntryId(null);
-  }, [articleListFilter, selectedEntryId, markEntryReadForPub]);
+    setRssReaderEntry(null);
+  }, [articleListFilter, markEntryReadForPub, rssReaderEntry]);
 
   return (
-    <div className="flex h-full min-h-0 max-h-full flex-1 flex-col overflow-hidden md:flex-row md:items-stretch">
-      {/* Article list — desktop: beside publications sidebar; mobile: full width until an entry opens */}
-      <ResizableListColumn
-        storageKey={READER_LIST_COLUMN_WIDTH_KEY}
-        hiddenOnMobile={Boolean(selectedEntryId)}
-        className={!showsArticleListColumn ? "md:hidden" : undefined}
-      >
-        <div className="shrink-0 border-b bg-background/75 px-3 py-2 backdrop-blur-md">
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <p className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
-              {title}
-            </p>
-            {publicationKind ? (
-              <DevRecordKindBadge info={publicationKind} />
-            ) : null}
+    <>
+      <div className="mx-auto flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden bg-background">
+        {publicationKind ? (
+          <div className="shrink-0 px-3 pt-2">
+            <DevRecordKindBadge info={publicationKind} />
           </div>
-        </div>
+        ) : null}
         <div className="min-h-0 flex-1 overflow-hidden">
           <EntryList
             pubId={pubId}
             aggregateFeed={aggregateFeed}
-            selectedEntryId={selectedEntryId}
+            selectedEntryId={rssReaderEntry?.entryId ?? null}
             onSelectEntry={handleSelectEntry}
             isEntryRead={isEntryRead}
             readIndicatorsEnabled
@@ -134,32 +111,14 @@ export default function ReadPubPage({
             markEntryUnread={markEntryUnreadForPub}
           />
         </div>
-      </ResizableListColumn>
-
-      {/* Entry detail */}
-      <div
-        className={cn(
-          "flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden md:h-full",
-          !selectedEntryId && "hidden md:flex"
-        )}
-      >
-        {selectedEntryId ? (
-          <>
-            <ReaderPaneHeader
-              entry={selectedEntry}
-              fallbackTitle="Loading Article…"
-              onBack={handleBackToList}
-            />
-            <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden overscroll-y-contain">
-              <EntryDetail entryId={selectedEntryId} />
-            </div>
-          </>
-        ) : (
-          <div className="hidden flex-1 items-center justify-center p-8 text-center text-sm text-muted-foreground md:flex">
-            Select an Article from the List
-          </div>
-        )}
       </div>
-    </div>
+      <RssArticleReaderDialog
+        open={rssReaderEntry !== null}
+        entryId={rssReaderEntry?.entryId ?? null}
+        originalUrl={rssReaderEntry?.url ?? null}
+        title={rssReaderEntry?.title ?? ""}
+        onClose={closeRssReader}
+      />
+    </>
   );
 }

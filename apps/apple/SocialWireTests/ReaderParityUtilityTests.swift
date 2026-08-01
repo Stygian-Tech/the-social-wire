@@ -46,7 +46,7 @@ struct UnifiedFeedSelectionTests {
     func preferenceDefaultsAndFallback() {
         let defaults = ReaderFeedPreferences(record: nil)
         #expect(defaults.visibleFeeds == ReaderListSource.allCases)
-        #expect(defaults.showTopLevelFeedUnreadCounts)
+        #expect(defaults.feedsWithUnreadCounts == ReaderListSource.allCases)
 
         let record = PreferencesRecord(
             type: "app.thesocialwire.preferences",
@@ -54,12 +54,28 @@ struct UnifiedFeedSelectionTests {
             readLaterConnections: nil,
             visibleFeeds: ["following", "readLater"],
             showTopLevelFeedUnreadCounts: false,
+            feedsWithUnreadCounts: nil,
+            rssArticleOpenMode: nil,
             createdAt: "2026-07-26T00:00:00Z",
             updatedAt: "2026-07-26T00:00:00Z"
         )
         let preferences = ReaderFeedPreferences(record: record)
         #expect(preferences.visibleFeeds == [.following, .readLater])
-        #expect(!preferences.showTopLevelFeedUnreadCounts)
+        #expect(preferences.feedsWithUnreadCounts.isEmpty)
+
+        let perFeedRecord = PreferencesRecord(
+            type: "app.thesocialwire.preferences",
+            readLaterService: nil,
+            readLaterConnections: nil,
+            visibleFeeds: ["following", "readLater"],
+            showTopLevelFeedUnreadCounts: true,
+            feedsWithUnreadCounts: ["following", "archive"],
+            rssArticleOpenMode: nil,
+            createdAt: "2026-07-26T00:00:00Z",
+            updatedAt: "2026-07-26T00:00:00Z"
+        )
+        let perFeedPreferences = ReaderFeedPreferences(record: perFeedRecord)
+        #expect(perFeedPreferences.feedsWithUnreadCounts == [.following])
     }
 }
 

@@ -12,6 +12,7 @@ import {
   MOCK_ENTRIES,
   MOCK_ENTRY_DETAIL,
 } from "../mocks/handlers/service";
+import { dummyPublicationSidebarProjection } from "@/lib/dummyReaderData";
 
 const ORIG_ENV = { ...process.env };
 
@@ -101,6 +102,25 @@ describe("useEntries", () => {
     expect(entries).toHaveLength(MOCK_ENTRIES.length);
     expect(entries[0].title).toBe("First Post");
     expect(mockFetchHandler).toHaveBeenCalled();
+  });
+
+  it("uses dummy entries without an AppView request in local", async () => {
+    process.env.NEXT_PUBLIC_APP_ENV = "local";
+    process.env.NEXT_PUBLIC_USE_DUMMY_DATA = "false";
+    const publication =
+      dummyPublicationSidebarProjection.subscribedUnfoldered[0];
+    expect(publication).toBeDefined();
+
+    const { result } = renderHook(
+      () => useEntries(publication!.publicationId),
+      { wrapper: makeWrapper() },
+    );
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    const entries = result.current.data?.pages.flatMap((page) => page.entries);
+    expect(entries?.length).toBeGreaterThan(0);
+    expect(mockFetchHandler.mock.calls.map(([url]) => url)).toEqual([]);
   });
 
   it("does not refetch on remount when cached data is fresh", async () => {

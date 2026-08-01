@@ -24,6 +24,7 @@ import {
 import { PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY } from "@/hooks/usePublicationSidebarData";
 import { usePublicationSidebarProjection } from "@/hooks/usePublicationSidebarProjection";
 import {
+  dummyEntriesForAggregateFeed,
   dummyEntriesForPublication,
   dummyEntryDetail,
   isDummyReaderDataEnabled,
@@ -194,6 +195,18 @@ export function useEntries(
       });
     },
     initialPageParam: undefined as string | undefined,
+    initialData:
+      dummyReaderDataEnabled && normalizedKey
+        ? {
+            pages: [
+              {
+                entries: dummyEntriesForPublication(normalizedKey),
+                cursor: undefined,
+              },
+            ],
+            pageParams: [undefined],
+          }
+        : undefined,
     getNextPageParam: entriesNextPageParam,
     enabled:
       !!normalizedKey &&
@@ -227,11 +240,18 @@ export function useAggregateFeedEntries(
   articleFilter: ArticleListFilter = "all",
 ) {
   const { session, getOAuthSession } = useAuth();
+  const dummyReaderDataEnabled = isDummyReaderDataEnabled();
   const queryKey = feed ? `${feed.kind}:${feed.id ?? ""}` : "";
   return useInfiniteQuery({
     queryKey: ["aggregateEntries", queryKey, articleFilter] as const,
     queryFn: async ({ pageParam, signal }) => {
       if (!feed) return { entries: [], cursor: undefined };
+      if (dummyReaderDataEnabled) {
+        return {
+          entries: dummyEntriesForAggregateFeed(feed),
+          cursor: undefined,
+        };
+      }
       const oauth = getOAuthSession();
       if (!oauth) throw new Error("OAuth session required");
       return listAggregateFeedFromAppView({
@@ -243,6 +263,18 @@ export function useAggregateFeedEntries(
       });
     },
     initialPageParam: undefined as string | undefined,
+    initialData:
+      dummyReaderDataEnabled && feed
+        ? {
+            pages: [
+              {
+                entries: dummyEntriesForAggregateFeed(feed),
+                cursor: undefined,
+              },
+            ],
+            pageParams: [undefined],
+          }
+        : undefined,
     getNextPageParam: entriesNextPageParam,
     enabled: !!feed && !!session,
     staleTime: ENTRIES_QUERY_STALE_MS,

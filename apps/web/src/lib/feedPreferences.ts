@@ -8,15 +8,25 @@ export const TOP_LEVEL_FEEDS = [
 ] as const;
 
 export type TopLevelFeed = (typeof TOP_LEVEL_FEEDS)[number];
+export type RssArticleOpenMode = "reader" | "original";
+
+export const TOP_LEVEL_FEED_LABELS: Record<TopLevelFeed, string> = {
+  readLater: "Read Later",
+  archive: "Archive",
+  subscribed: "Subscribed",
+  following: "Following",
+};
 
 export type FeedDisplayPreferences = {
   visibleFeeds: TopLevelFeed[];
-  showTopLevelFeedUnreadCounts: boolean;
+  feedsWithUnreadCounts: TopLevelFeed[];
+  rssArticleOpenMode: RssArticleOpenMode;
 };
 
 export const DEFAULT_FEED_DISPLAY_PREFERENCES: FeedDisplayPreferences = {
   visibleFeeds: [...TOP_LEVEL_FEEDS],
-  showTopLevelFeedUnreadCounts: true,
+  feedsWithUnreadCounts: [...TOP_LEVEL_FEEDS],
+  rssArticleOpenMode: "reader",
 };
 
 const STORAGE_PREFIX = "the-social-wire.feed-display.v1";
@@ -28,11 +38,20 @@ function isTopLevelFeed(value: unknown): value is TopLevelFeed {
   );
 }
 
+export function isRssArticleOpenMode(
+  value: unknown,
+): value is RssArticleOpenMode {
+  return value === "reader" || value === "original";
+}
+
 export function normalizeFeedDisplayPreferences(
   value:
     | Pick<
         PreferencesRecord,
-        "visibleFeeds" | "showTopLevelFeedUnreadCounts"
+        | "visibleFeeds"
+        | "showTopLevelFeedUnreadCounts"
+        | "feedsWithUnreadCounts"
+        | "rssArticleOpenMode"
       >
     | FeedDisplayPreferences
     | null
@@ -41,15 +60,39 @@ export function normalizeFeedDisplayPreferences(
   const visible = Array.from(
     new Set((value?.visibleFeeds ?? []).filter(isTopLevelFeed)),
   );
+  const visibleFeeds =
+    visible.length > 0
+      ? visible
+      : [...DEFAULT_FEED_DISPLAY_PREFERENCES.visibleFeeds];
+  const legacyShowCounts =
+    value && "showTopLevelFeedUnreadCounts" in value
+      ? value.showTopLevelFeedUnreadCounts
+      : undefined;
+  const requestedCountFeeds = Array.isArray(value?.feedsWithUnreadCounts)
+    ? value.feedsWithUnreadCounts.filter(isTopLevelFeed)
+    : (legacyShowCounts ?? true)
+      ? visibleFeeds
+      : [];
+  const requestedCountFeedSet = new Set(requestedCountFeeds);
   return {
-    visibleFeeds:
-      visible.length > 0
-        ? visible
-        : [...DEFAULT_FEED_DISPLAY_PREFERENCES.visibleFeeds],
-    showTopLevelFeedUnreadCounts:
-      value?.showTopLevelFeedUnreadCounts ??
-      DEFAULT_FEED_DISPLAY_PREFERENCES.showTopLevelFeedUnreadCounts,
+    visibleFeeds,
+    feedsWithUnreadCounts: TOP_LEVEL_FEEDS.filter(
+      (feed) => visibleFeeds.includes(feed) && requestedCountFeedSet.has(feed),
+    ),
+    rssArticleOpenMode: isRssArticleOpenMode(value?.rssArticleOpenMode)
+      ? value.rssArticleOpenMode
+      : DEFAULT_FEED_DISPLAY_PREFERENCES.rssArticleOpenMode,
   };
+}
+
+export function feedDisplaysUnreadCount(
+  preferences: FeedDisplayPreferences,
+  feed: TopLevelFeed,
+): boolean {
+  return (
+    preferences.visibleFeeds.includes(feed) &&
+    preferences.feedsWithUnreadCounts.includes(feed)
+  );
 }
 
 export function nextVisibleFeed(

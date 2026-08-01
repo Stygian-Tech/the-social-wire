@@ -101,6 +101,8 @@ final class PDSRecordService {
             readLaterConnections: prev?.readLaterConnections,
             visibleFeeds: prev?.visibleFeeds,
             showTopLevelFeedUnreadCounts: prev?.showTopLevelFeedUnreadCounts,
+            feedsWithUnreadCounts: prev?.feedsWithUnreadCounts,
+            rssArticleOpenMode: prev?.rssArticleOpenMode,
             createdAt: prev?.createdAt ?? now,
             updatedAt: now
         )
@@ -116,7 +118,9 @@ final class PDSRecordService {
             readLaterService: prev?.readLaterService,
             readLaterConnections: prev?.readLaterConnections,
             visibleFeeds: preferences.visibleFeeds.map(\.preferenceKey),
-            showTopLevelFeedUnreadCounts: preferences.showTopLevelFeedUnreadCounts,
+            showTopLevelFeedUnreadCounts: !preferences.feedsWithUnreadCounts.isEmpty,
+            feedsWithUnreadCounts: preferences.feedsWithUnreadCounts.map(\.preferenceKey),
+            rssArticleOpenMode: prev?.rssArticleOpenMode,
             createdAt: prev?.createdAt ?? now,
             updatedAt: now
         )

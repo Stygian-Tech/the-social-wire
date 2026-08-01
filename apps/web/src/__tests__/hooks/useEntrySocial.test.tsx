@@ -110,7 +110,7 @@ describe("useEntrySocial", () => {
     globalThis.fetch = originalFetch;
   });
 
-  it("creates a quote post when the OAuth grant includes Bluesky post access", async () => {
+  it("creates a full link post when the OAuth grant includes Bluesky post access", async () => {
     getTokenInfoMock.mockResolvedValueOnce({
       scope:
         "atproto repo:app.bsky.feed.post?action=create&action=delete",
@@ -123,7 +123,7 @@ describe("useEntrySocial", () => {
       wrapper: makeWrapper(),
     });
 
-    await result.current.quoteMutation.mutateAsync("Worth reading");
+    await result.current.postMutation.mutateAsync("Worth reading");
 
     expect(postMock).toHaveBeenCalledTimes(1);
     const postedRecord = postMock.mock.calls[0]?.[0] as unknown;
@@ -169,7 +169,7 @@ describe("useEntrySocial", () => {
       }
     );
 
-    await result.current.quoteMutation.mutateAsync("Worth reading");
+    await result.current.postMutation.mutateAsync("Worth reading");
 
     expect(uploadBlobMock).toHaveBeenCalledTimes(1);
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -199,7 +199,7 @@ describe("useEntrySocial", () => {
     });
 
     await expect(
-      result.current.quoteMutation.mutateAsync("Worth reading")
+      result.current.postMutation.mutateAsync("Worth reading")
     ).rejects.toThrow("posting permission needs to be refreshed");
     expect(postMock).not.toHaveBeenCalled();
   });
@@ -227,6 +227,43 @@ describe("useEntrySocial", () => {
     expect(likeMock).toHaveBeenCalledWith(
       "at://did:plc:author/app.bsky.feed.post/root",
       "bafyreigood"
+    );
+  });
+
+  it("uses the full link embed and likes an unliked linked post while posting", async () => {
+    getTokenInfoMock.mockResolvedValue({
+      scope:
+        "atproto repo:app.bsky.feed.post?action=create repo:app.bsky.feed.like?action=create&action=delete",
+      iss: "https://pds.example",
+      aud: "https://pds.example",
+      sub: "did:plc:me",
+    });
+
+    const linkedEntry: EntryDetail = {
+      ...entry,
+      bskyPostUri: "at://did:plc:author/app.bsky.feed.post/root",
+      bskyPostCid: "bafyreigood",
+    };
+    const { result } = renderHook(() => useEntrySocial(linkedEntry), {
+      wrapper: makeWrapper(),
+    });
+
+    await result.current.postMutation.mutateAsync("Worth reading");
+
+    expect(postMock.mock.calls[0]?.[0]).toMatchObject({
+      text: "Worth reading",
+      embed: {
+        $type: "app.bsky.embed.external",
+        external: {
+          uri: "https://example.com/a-good-article",
+          title: "A good article",
+          description: "A useful summary from the publisher.",
+        },
+      },
+    });
+    expect(likeMock).toHaveBeenCalledWith(
+      linkedEntry.bskyPostUri,
+      linkedEntry.bskyPostCid
     );
   });
 });

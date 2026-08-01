@@ -1,4 +1,5 @@
 import { LATR_REPO_OAUTH_SCOPES } from "@/lib/latrCollections";
+import { USER_INPUT_REPO_SCOPES } from "@/lib/userInputFeedback";
 
 /**
  * Space-separated ATProto OAuth scopes. Must stay in sync with
@@ -55,4 +56,5 @@ export const AT_PROTO_OAUTH_SCOPES = [
   STANDARD_SITE_SUBSCRIPTION_REPO_SCOPE,
   ...SKYREADER_REPO_SCOPES,
   STANDARD_SITE_RECOMMEND_REPO_SCOPE,
+  ...USER_INPUT_REPO_SCOPES,
 ].join(" ");

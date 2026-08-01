@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 320" role="img" aria-label="Abstract violet editorial thumbnail">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#171126"/>
+      <stop offset="1" stop-color="#6d3bd1"/>
+    </linearGradient>
+  </defs>
+  <rect width="480" height="320" fill="url(#bg)"/>
+  <circle cx="382" cy="70" r="104" fill="#c7a8ff" opacity=".34"/>
+  <path d="M-20 272C78 179 155 158 240 202s154 43 260-62v180H-20Z" fill="#f3efff" opacity=".19"/>
+  <rect x="40" y="52" width="182" height="18" rx="9" fill="#fff" opacity=".9"/>
+  <rect x="40" y="86" width="284" height="11" rx="5.5" fill="#fff" opacity=".48"/>
+  <rect x="40" y="108" width="232" height="11" rx="5.5" fill="#fff" opacity=".33"/>
+</svg>

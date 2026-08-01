@@ -73,6 +73,7 @@ function useSidebar() {
 
 function SidebarProvider({
   defaultOpen = true,
+  defaultWidthPx = SIDEBAR_WIDTH_DEFAULT_PX,
   open: openProp,
   onOpenChange: setOpenProp,
   className,
@@ -81,13 +82,14 @@ function SidebarProvider({
   ...props
 }: React.ComponentProps<"div"> & {
   defaultOpen?: boolean
+  defaultWidthPx?: number
   open?: boolean
   onOpenChange?: (open: boolean) => void
 }) {
   const isMobile = useIsMobile()
   const [openMobile, setOpenMobile] = React.useState(false)
   const [sidebarWidthPx, setSidebarWidthPx] = React.useState(
-    SIDEBAR_WIDTH_DEFAULT_PX
+    defaultWidthPx
   )
   const [sidebarResizing, setSidebarResizing] = React.useState(false)
 
