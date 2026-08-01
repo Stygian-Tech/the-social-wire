@@ -1,7 +1,10 @@
 import { describe, expect, it } from "bun:test";
 import { fireEvent, render } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { ReactNode } from "react";
 
 import { EntryListVirtualPane } from "@/components/EntryList/EntryListVirtualPane";
+import { AuthProvider } from "@/hooks/useAuth";
 import type { EntryListItem } from "@/lib/atprotoClient";
 
 const globalWithResizeObserver = globalThis as typeof globalThis & {
@@ -43,10 +46,22 @@ function renderPane(entries: EntryListItem[]) {
 
 describe("EntryListVirtualPane scroll stability", () => {
   it("preserves scrollTop when visible entries update without remounting", () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    function Wrapper({ children }: { children: ReactNode }) {
+      return (
+        <QueryClientProvider client={queryClient}>
+          <AuthProvider>{children}</AuthProvider>
+        </QueryClientProvider>
+      );
+    }
     const initialEntries = Array.from({ length: 12 }, (_, index) =>
       makeEntry(index)
     );
-    const { container, rerender } = render(renderPane(initialEntries));
+    const { container, rerender } = render(renderPane(initialEntries), {
+      wrapper: Wrapper,
+    });
     const scrollRoot = container.querySelector(
       "[data-entry-list-scroll]"
     ) as HTMLDivElement;

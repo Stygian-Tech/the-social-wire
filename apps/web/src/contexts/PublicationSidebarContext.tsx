@@ -597,6 +597,12 @@ export function useSidebarProjection() {
   );
 }
 
+/** Publication rows for components that may also render outside the reader shell. */
+export function useOptionalSidebarPublicationRows() {
+  const context = useContext(PublicationSidebarContext);
+  return context?.projectionState?.allPublicationRows ?? [];
+}
+
 /** Bootstrap stream lifecycle, loading flags, and refresh actions. */
 export function useSidebarBootstrap(): SidebarBootstrapState {
   return usePublicationSidebarContext().bootstrap;

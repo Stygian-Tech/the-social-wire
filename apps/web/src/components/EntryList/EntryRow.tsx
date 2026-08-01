@@ -18,7 +18,7 @@ import {
   articleListRowButtonClassName,
 } from "@/lib/articleListCardStyles";
 import { PublicationChip } from "@/components/shared/PublicationChip";
-import { useSidebarProjection } from "@/contexts/PublicationSidebarContext";
+import { useOptionalSidebarPublicationRows } from "@/contexts/PublicationSidebarContext";
 
 interface EntryRowProps {
   entry: EntryListItem;
@@ -62,7 +62,7 @@ export function EntryRow({
     [entry.summary],
   );
   const [attemptIdx, setAttemptIdx] = useState(0);
-  const { allPublicationRows } = useSidebarProjection();
+  const allPublicationRows = useOptionalSidebarPublicationRows();
   const publication = entry.publicationId
     ? allPublicationRows.find(
         (row) => row.publicationId === entry.publicationId,

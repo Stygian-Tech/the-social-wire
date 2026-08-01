@@ -21,8 +21,40 @@ export function RssArticleReaderDialog({
   title: string;
   onClose: () => void;
 }) {
-  const dialogRef = useRef<HTMLDialogElement>(null);
   const entryQuery = useEntry(open ? entryId : null);
+
+  return (
+    <RssArticleReaderDialogView
+      open={open}
+      entryId={entryId}
+      originalUrl={originalUrl}
+      title={title}
+      onClose={onClose}
+      entryQuery={entryQuery}
+    />
+  );
+}
+
+export function RssArticleReaderDialogView({
+  open,
+  entryId,
+  originalUrl,
+  title,
+  onClose,
+  entryQuery,
+}: {
+  open: boolean;
+  entryId: string | null;
+  originalUrl: string | null;
+  title: string;
+  onClose: () => void;
+  entryQuery: {
+    data?: { contentHtml?: string; summary?: string } | null;
+    isLoading: boolean;
+    error: unknown;
+  };
+}) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
   const safeHTML = useMemo(
     () =>
       sanitizeHTMLWithLinks(
