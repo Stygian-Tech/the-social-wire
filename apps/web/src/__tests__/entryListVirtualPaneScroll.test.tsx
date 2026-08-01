@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { beforeAll, describe, expect, it } from "bun:test";
 import { fireEvent, render } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
@@ -18,6 +18,17 @@ if (!globalWithResizeObserver.ResizeObserver) {
     disconnect() {}
   };
 }
+
+beforeAll(() => {
+  Object.defineProperty(globalThis, "Element", {
+    configurable: true,
+    value: window.Element,
+  });
+  Object.defineProperty(globalThis, "HTMLElement", {
+    configurable: true,
+    value: window.HTMLElement,
+  });
+});
 
 function makeEntry(index: number): EntryListItem {
   return {

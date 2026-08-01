@@ -74,6 +74,7 @@ type PublicationSidebarContextValue = {
 
 const PublicationSidebarContext =
   createContext<PublicationSidebarContextValue | null>(null);
+const EMPTY_PUBLICATION_ROWS: SidebarProjectionState["allPublicationRows"] = [];
 
 const RECENT_BOOTSTRAP_REUSE_MS = 30_000;
 const bootstrapCompletedAtByDid = new Map<string, number>();
@@ -600,7 +601,7 @@ export function useSidebarProjection() {
 /** Publication rows for components that may also render outside the reader shell. */
 export function useOptionalSidebarPublicationRows() {
   const context = useContext(PublicationSidebarContext);
-  return context?.projectionState?.allPublicationRows ?? [];
+  return context?.projectionState?.allPublicationRows ?? EMPTY_PUBLICATION_ROWS;
 }
 
 /** Bootstrap stream lifecycle, loading flags, and refresh actions. */

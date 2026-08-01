@@ -26,7 +26,9 @@ public enum ATProtoOAuthScopes {
   ]
 
   private static let webOnlyScopes = [
-    "repo:site.standard.graph.recommend?action=create&action=delete"
+    "repo:site.standard.graph.recommend?action=create&action=delete",
+    "repo:app.userinput.discussion?action=create",
+    "repo:app.userinput.upvote?action=create&action=update",
   ]
 
   static let webScope = (sharedScopes + webOnlyScopes).joined(separator: " ")

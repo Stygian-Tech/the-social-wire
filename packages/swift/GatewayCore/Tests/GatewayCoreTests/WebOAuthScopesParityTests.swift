@@ -35,4 +35,14 @@ struct WebOAuthScopesParityTests {
     #expect(ATProtoOAuthScopes.webScope.contains(recommend))
     #expect(!ATProtoOAuthScopes.iosScope.contains(recommend))
   }
+
+  @Test("UserInput permissions are limited to the web client that exposes feedback")
+  func userInputPermissionsAreClientSpecific() {
+    let discussion = "repo:app.userinput.discussion?action=create"
+    let upvote = "repo:app.userinput.upvote?action=create&action=update"
+    #expect(ATProtoOAuthScopes.webScope.contains(discussion))
+    #expect(ATProtoOAuthScopes.webScope.contains(upvote))
+    #expect(!ATProtoOAuthScopes.iosScope.contains(discussion))
+    #expect(!ATProtoOAuthScopes.iosScope.contains(upvote))
+  }
 }
