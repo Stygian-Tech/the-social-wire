@@ -114,7 +114,7 @@ actor PublicationResolveService {
     }
     let siteOrigin = PublicationResolveURLLogic.siteOriginURL(for: pageUrl)
 
-    let candidate = await withTaskGroup(of: URLResolutionCandidate?.self) { group in
+    let candidate = await withTaskGroup(of: URLResolutionCandidate?.self) { group -> URLResolutionCandidate? in
       group.addTask { [self] in
         guard let publication = await self.tryWellKnownPublication(origin: siteOrigin) else { return nil }
         return .standardSite(publication)
@@ -259,7 +259,7 @@ actor PublicationResolveService {
     }
 
     let normalizedCandidates = Array(Set(candidates.compactMap(PublicationProjectionLogic.normalizeRssFeedUrl)))
-    return await withTaskGroup(of: String?.self) { group in
+    return await withTaskGroup(of: String?.self) { group -> String? in
       for candidate in normalizedCandidates {
         group.addTask { [self] in
           await self.looksLikeRssFeed(candidate) ? candidate : nil
