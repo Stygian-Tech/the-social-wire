@@ -92,11 +92,21 @@ assert_no_volumes() {
   fi
 }
 
-wait_for_started() {
+ensure_started() {
   local app="$1" machine_id="$2"
   local attempt state
+  state="$(
+    flyctl machine list --app "$app" --json |
+      jq -r --arg machine "$machine_id" '.[] | select(.id == $machine) | .state'
+  )"
+  if [[ "$state" != "started" ]]; then
+    flyctl machine start "$machine_id" --app "$app"
+  fi
   for attempt in $(seq 1 36); do
-    state="$(flyctl machine status "$machine_id" --app "$app" --json | jq -r '.state')"
+    state="$(
+      flyctl machine list --app "$app" --json |
+        jq -r --arg machine "$machine_id" '.[] | select(.id == $machine) | .state'
+    )"
     [[ "$state" == "started" ]] && return 0
     sleep 5
   done
@@ -104,9 +114,37 @@ wait_for_started() {
   return 1
 }
 
+clone_into_target() {
+  local app="$1" old_id="$2"
+  local before_ids new_machines attempt
+  before_ids="$(flyctl machine list --app "$app" --json | jq '[.[].id]')"
+  flyctl machine clone "$old_id" --app "$app" --region "$TARGET_REGION" --detach >/dev/null
+  for attempt in $(seq 1 20); do
+    new_machines="$(
+      flyctl machine list --app "$app" --json |
+        jq --argjson before "$before_ids" --arg region "$TARGET_REGION" '
+          [.[] as $machine
+            | $machine
+            | select(($before | index($machine.id)) == null and $machine.region == $region)]
+        '
+    )"
+    if [[ "$(jq 'length' <<<"$new_machines")" -eq 1 ]]; then
+      jq -c '.[0]' <<<"$new_machines"
+      return 0
+    fi
+    if [[ "$(jq 'length' <<<"$new_machines")" -gt 1 ]]; then
+      echo "Refusing $app: multiple replacement Machines appeared during clone." >&2
+      return 1
+    fi
+    sleep 2
+  done
+  echo "Could not identify the IAH replacement cloned from $old_id in $app." >&2
+  return 1
+}
+
 verify_http_service() {
   local app="$1" machine_id="$2" stage="$3"
-  wait_for_started "$app" "$machine_id"
+  ensure_started "$app" "$machine_id"
   flyctl checks list --app "$app" --json | jq -e '
     length > 0 and all(.[]; ((.status // "") | ascii_downcase) == "passing")
   ' >/dev/null
@@ -150,13 +188,12 @@ migrate_machine() {
   if is_singleton_consumer "$app"; then
     verify_singleton_evidence "$app" "$old_id" before_old_stop
     flyctl machine stop "$old_id" --app "$app"
-    replacement_json="$(flyctl machine clone "$old_id" --app "$app" --region "$TARGET_REGION" --json)"
+    replacement_json="$(clone_into_target "$app" "$old_id")"
     replacement_id="$(jq -r '.id' <<<"$replacement_json")"
-    flyctl machine start "$replacement_id" --app "$app"
-    wait_for_started "$app" "$replacement_id"
+    ensure_started "$app" "$replacement_id"
     verify_singleton_evidence "$app" "$replacement_id" after_replacement_start
   else
-    replacement_json="$(flyctl machine clone "$old_id" --app "$app" --region "$TARGET_REGION" --json)"
+    replacement_json="$(clone_into_target "$app" "$old_id")"
     replacement_id="$(jq -r '.id' <<<"$replacement_json")"
     verify_http_service "$app" "$replacement_id" before_old_stop
     flyctl machine stop "$old_id" --app "$app"

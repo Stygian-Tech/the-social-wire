@@ -548,6 +548,7 @@ public init(pool: PostgresClient, logger: Logger) {
     let kind = selector.kind.rawValue
     let feedId = selector.id
     let isPublication = selector.kind == .publication
+    let databaseStartedAt = Date()
 
     let rows = try await pool.query(
       """
@@ -683,7 +684,8 @@ public init(pool: PostgresClient, logger: Logger) {
           ThinAppViewCursor.encode(createdAt: $0.feedPositionAt, uri: $0.entryId)
         } : nil
       ),
-      membershipUpdatedAt: membershipUpdatedAt
+      membershipUpdatedAt: membershipUpdatedAt,
+      databaseDurationMilliseconds: Date().timeIntervalSince(databaseStartedAt) * 1_000
     )
   }
 
@@ -2638,7 +2640,7 @@ public init(pool: PostgresClient, logger: Logger) {
         "viewer_did": scope.viewerDid,
         "publication_id": scope.publicationId,
         "author_did": scope.authorDid,
-        "publication_at_uri": scope.publicationAtUri ?? NSNull(),
+        "publication_at_uri": scope.publicationAtUri.map { $0 as Any } ?? NSNull(),
         "publication_scope_at_uris": scope.publicationScopeAtUris,
         "publication_site_urls": scope.publicationSiteUrls,
         "scope_keys": scope.scopeKeys,

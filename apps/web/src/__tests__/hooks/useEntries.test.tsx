@@ -23,6 +23,12 @@ const mockFetchHandler = mock(async (url: string) => {
       { status: 200, headers: { "Content-Type": "application/json" } }
     );
   }
+  if (url.includes("/v1/appview/enroll")) {
+    return new Response(JSON.stringify({ indexed: 0 }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
   if (url.includes("/v1/appview/entry")) {
     return new Response(
       JSON.stringify(MOCK_ENTRY_DETAIL),
@@ -187,6 +193,19 @@ describe("useEntries", () => {
           String(url).includes("/v1/appview/feed")
         )
       ).toBe(true)
+    );
+    await waitFor(() =>
+      expect(
+        mockFetchHandler.mock.calls.some(([url]) =>
+          String(url).includes("/v1/appview/enroll")
+        )
+      ).toBe(true)
+    );
+    const requestPaths = mockFetchHandler.mock.calls.map(([url]) => String(url));
+    expect(
+      requestPaths.findIndex((url) => url.includes("/v1/appview/feed"))
+    ).toBeLessThan(
+      requestPaths.findIndex((url) => url.includes("/v1/appview/enroll"))
     );
   });
 

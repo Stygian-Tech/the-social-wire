@@ -1497,6 +1497,7 @@ paths:
             X-AppView-Membership-Updated-At:
               schema: { type: string, format: date-time }
             Server-Timing:
+              description: Database and total AppView feed duration (`db;dur`, `appview_feed;dur`).
               schema: { type: string }
           content:
             application/json:

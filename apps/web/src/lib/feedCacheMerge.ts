@@ -18,14 +18,29 @@ export function mergeFeedFirstPageRefresh(
   const carryOver = firstPage.entries.filter(
     (entry) => !freshIds.has(entry.entryId)
   );
+  const mergedFirstPageEntries = dedupeEntryListItems([
+    ...freshPage.entries,
+    ...carryOver,
+  ]);
+  const seenEntryIds = new Set(
+    mergedFirstPageEntries.map((entry) => entry.entryId)
+  );
+  const dedupedRestPages = restPages.map((page) => ({
+    ...page,
+    entries: page.entries.filter((entry) => {
+      if (seenEntryIds.has(entry.entryId)) return false;
+      seenEntryIds.add(entry.entryId);
+      return true;
+    }),
+  }));
 
   return {
     pages: [
       {
-        entries: dedupeEntryListItems([...freshPage.entries, ...carryOver]),
+        entries: mergedFirstPageEntries,
         cursor: freshPage.cursor ?? firstPage.cursor,
       },
-      ...restPages,
+      ...dedupedRestPages,
     ],
     pageParams: [firstParam, ...restParams],
   };

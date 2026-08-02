@@ -62,7 +62,12 @@ struct ThinAppViewRoutes {
             )
           }
           if page == nil {
-            let hasProjection = repaired || (try await readService.hasFeedProjection(auth: auth))
+            let hasProjection: Bool
+            if repaired {
+              hasProjection = true
+            } else {
+              hasProjection = try await readService.hasFeedProjection(auth: auth)
+            }
             if hasProjection {
               throw AppViewFeedError(
                 status: .notFound,
@@ -264,7 +269,8 @@ struct ThinAppViewRoutes {
     headers[HTTPField.Name("X-AppView-Membership-Updated-At")!] =
       page.membershipUpdatedAt.ISO8601Format()
     headers[HTTPField.Name("Server-Timing")!] = String(
-      format: "appview_feed;dur=%.1f",
+      format: "db;dur=%.1f, appview_feed;dur=%.1f",
+      page.databaseDurationMilliseconds,
       durationMilliseconds
     )
     return Response(status: .ok, headers: headers, body: .init(byteBuffer: .init(data: data)))

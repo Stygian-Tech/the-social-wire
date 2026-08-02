@@ -300,7 +300,8 @@ export function useEntries(
     };
     const enrollAndMerge = async () => {
       const feedUrl = normalizedFeedUrlFromRssPublicationId(normalizedKey);
-      const authorDid = parseAtUri(normalizedKey)?.did;
+      const authorDid = parseAtUri(normalizedKey)?.did
+        ?? (normalizedKey.startsWith("did:") ? normalizedKey : undefined);
       if (feedUrl) {
         await enrollAuthorsInAppView(oauth, [], [feedUrl]);
       } else if (authorDid) {
@@ -427,6 +428,13 @@ export function useAggregateFeedEntries(
     const cacheHit = !query.isFetchedAfterMount;
     void recordClientPerformance(oauth, {
       event: cacheHit ? "cached_feed_paint" : "uncached_feed_paint",
+      durationMs: performance.now() - paintStartedRef.current,
+      feedType: "aggregate",
+      cacheState: cacheHit ? "hit" : "miss",
+      outcome: "success",
+    }).catch(() => undefined);
+    void recordClientPerformance(oauth, {
+      event: "feed_switch",
       durationMs: performance.now() - paintStartedRef.current,
       feedType: "aggregate",
       cacheState: cacheHit ? "hit" : "miss",

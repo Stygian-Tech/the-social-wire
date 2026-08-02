@@ -923,6 +923,7 @@ public init(path dbPath: String, logger: Logger) throws {
     cursor: String?,
     limit: Int
   ) async throws -> AppViewFeedPage? {
+    let databaseStartedAt = Date()
     let projection: (updatedAt: Date, scopes: [PublicationUnreadScope])? = try await db.read { db in
       let updatedAtRaw: String?
       let scopeRows: [Row]
@@ -1013,7 +1014,8 @@ public init(path dbPath: String, logger: Logger) throws {
         },
         cursor: response.cursor
       ),
-      membershipUpdatedAt: projection.updatedAt
+      membershipUpdatedAt: projection.updatedAt,
+      databaseDurationMilliseconds: Date().timeIntervalSince(databaseStartedAt) * 1_000
     )
   }
 

@@ -53,4 +53,30 @@ describe("mergeFeedFirstPageRefresh", () => {
     expect(merged.pages).toHaveLength(1);
     expect(merged.pages[0]?.entries).toHaveLength(1);
   });
+
+  it("removes refreshed rows from cached tail pages", () => {
+    const existing: InfiniteData<EntriesPage> = {
+      pages: [
+        { entries: [entry("a", "A")], cursor: "page2" },
+        { entries: [entry("b", "B"), entry("c", "C")] },
+      ],
+      pageParams: [undefined, "page2"],
+    };
+    const fresh: EntriesPage = {
+      entries: [entry("new", "New"), entry("b", "B updated")],
+      cursor: "page2",
+    };
+
+    const merged = mergeFeedFirstPageRefresh(existing, fresh);
+
+    expect(merged.pages[0]?.entries.map((item) => item.entryId)).toEqual([
+      "new",
+      "b",
+      "a",
+    ]);
+    expect(merged.pages[1]?.entries.map((item) => item.entryId)).toEqual([
+      "c",
+    ]);
+    expect(merged.pageParams).toEqual([undefined, "page2"]);
+  });
 });
