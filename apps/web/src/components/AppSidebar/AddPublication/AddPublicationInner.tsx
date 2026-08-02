@@ -8,9 +8,16 @@ import { DialogClose, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/useAuth";
-import { useAddPublicationFromAnyLink } from "@/hooks/usePublications";
+import {
+  useAddPublicationFromAnyLink,
+  useResolvePublicationForAdd,
+} from "@/hooks/usePublications";
 import { usePDSClient } from "@/hooks/usePDSClient";
 import { useViewerProfile } from "@/hooks/useViewerProfile";
+import {
+  addPublicationSubmitAction,
+  type ResolvedPublicationSearch,
+} from "@/lib/addPublicationFlow";
 import {
   looksLikeOAuthScopeOrSessionError,
   looksLikeStaleOAuthStorageError,
@@ -33,11 +40,13 @@ export function AddPublicationInner({ onCloseRequest }: AddPublicationInnerProps
 
   const [link, setLink] = useState("");
   const [title, setTitle] = useState("");
+  const [resolved, setResolved] = useState<ResolvedPublicationSearch | null>(null);
   const [finishing, setFinishing] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [showScopeReconnect, setShowScopeReconnect] = useState(false);
 
   const addPublication = useAddPublicationFromAnyLink();
+  const resolvePublication = useResolvePublicationForAdd();
 
   const { data: profile } = useViewerProfile();
   const authorizeSeedHandle = useMemo(() => {
@@ -57,9 +66,16 @@ export function AddPublicationInner({ onCloseRequest }: AddPublicationInnerProps
 
     setFinishing(true);
     try {
+      const action = addPublicationSubmitAction({ input: link, resolved });
+      if (action.kind === "resolve") {
+        const publication = await resolvePublication.mutateAsync(action.input);
+        setResolved({ input: action.input, publication });
+        return;
+      }
       const result = await addPublication.mutateAsync({
-        link: link.trim(),
+        link: action.input,
         title: title.trim() || undefined,
+        resolved: action.publication,
       });
       onCloseRequest();
       router.push(`/read/${encodeURIComponent(result.navigatePubId)}`);
@@ -99,7 +115,10 @@ export function AddPublicationInner({ onCloseRequest }: AddPublicationInnerProps
     }
   }
 
-  const pending = finishing || addPublication.isPending;
+  const pending =
+    finishing || addPublication.isPending || resolvePublication.isPending;
+  const resolvedPublication =
+    resolved?.input === link.trim() ? resolved.publication : null;
 
   return (
     <>
@@ -171,20 +190,43 @@ export function AddPublicationInner({ onCloseRequest }: AddPublicationInnerProps
           ) : null}
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-1.5">
-              <Label htmlFor={linkId}>Link</Label>
+              <Label htmlFor={linkId}>Publication Link</Label>
               <Input
                 id={linkId}
-                type="text"
+                placeholder="https://a.blog/about, alice.bsky.social, or publication AT-URI"
+                value={link}
+                onChange={(event) => {
+                  setLink(event.target.value);
+                  setResolved(null);
+                  setSubmitError(null);
+                }}
                 autoCapitalize="none"
                 autoCorrect="off"
                 spellCheck={false}
-                placeholder="https://a.blog/about, alice.bsky.social, or publication AT-URI"
-                value={link}
-                onChange={(e) => setLink(e.target.value)}
                 autoFocus={!showScopeReconnect}
                 required
               />
             </div>
+            {resolvedPublication ? (
+              <div className="rounded-lg border bg-muted/35 p-3" role="status">
+                <p className="text-sm font-medium text-foreground">
+                  {resolvedPublication.kind === "standard-site"
+                    ? "standard.site Publication Found"
+                    : "RSS Feed Found"}
+                </p>
+                <p className="mt-1 break-all text-xs text-muted-foreground">
+                  {resolvedPublication.kind === "standard-site"
+                    ? resolvedPublication.publicationAtUri
+                    : resolvedPublication.title || resolvedPublication.feedUrl}
+                </p>
+                {resolvedPublication.kind === "rss" &&
+                resolvedPublication.title ? (
+                  <p className="mt-1 break-all text-[11px] text-muted-foreground/80">
+                    {resolvedPublication.feedUrl}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
             <div className="space-y-1.5">
               <Label htmlFor={titleId}>Title (Optional)</Label>
               <Input
@@ -211,7 +253,13 @@ export function AddPublicationInner({ onCloseRequest }: AddPublicationInnerProps
                 disabled={!link.trim() || pending}
                 className={cn(buttonVariants())}
               >
-                {pending ? "Adding…" : "Add"}
+                {resolvePublication.isPending
+                  ? "Finding…"
+                  : addPublication.isPending
+                    ? "Adding…"
+                    : resolvedPublication
+                      ? "Add Publication"
+                      : "Find Publication"}
               </button>
             </DialogFooter>
           </form>

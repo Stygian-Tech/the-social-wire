@@ -6,6 +6,7 @@ import {
   useQuery,
   useQueryClient,
   type InfiniteData,
+  type QueryClient,
 } from "@tanstack/react-query";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 import { usePDSClient } from "./usePDSClient";
@@ -52,9 +53,9 @@ import {
   reconcilePublicationPrefAfterWrite,
 } from "@/lib/optimisticPublicationFolderMove";
 import {
-  appViewScopeFromProjection,
   refreshPublicationSidebar,
   type PublicationSidebarProjection,
+  type ResolveAddPublicationPayload,
 } from "@/lib/publicationProjectionClient";
 
 export type { DiscoveredPublication };
@@ -69,28 +70,19 @@ export const SKYREADER_FEED_SUBSCRIPTIONS_QUERY_KEY = [
 export const DISCOVERY_QUERY_KEY = (did: string) =>
   ["discovery", "publications-v2", did] as const;
 
-const ADD_PUBLICATION_REFRESH_ATTEMPTS = 4;
-const ADD_PUBLICATION_REFRESH_RETRY_MS = 450;
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function refreshSidebarUntilPublicationVisible(args: {
+async function refreshSidebarAfterAddingPublication(args: {
   oauthSession: OAuthSession;
-  publicationId: string;
+  viewerDid: string | null;
+  queryClient: QueryClient;
 }): Promise<PublicationSidebarProjection> {
-  let lastProjection: PublicationSidebarProjection | null = null;
-  for (let attempt = 0; attempt < ADD_PUBLICATION_REFRESH_ATTEMPTS; attempt++) {
-    if (attempt > 0) await delay(ADD_PUBLICATION_REFRESH_RETRY_MS);
-    const projection = await refreshPublicationSidebar(args.oauthSession);
-    lastProjection = projection;
-    if (appViewScopeFromProjection(projection, args.publicationId)) {
-      return projection;
-    }
+  const projection = await refreshPublicationSidebar(args.oauthSession);
+  if (args.viewerDid) {
+    args.queryClient.setQueryData(
+      PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(args.viewerDid),
+      projection
+    );
   }
-  if (lastProjection) return lastProjection;
-  return refreshPublicationSidebar(args.oauthSession);
+  return projection;
 }
 
 // ── Publication prefs ─────────────────────────────────────────────────────────
@@ -602,57 +594,65 @@ export function useAddPublicationFromAnyLink() {
   const did = session?.did ?? null;
 
   return useMutation({
-    mutationFn: async (input: { link: string; title?: string }) => {
+    mutationFn: async (input: {
+      link: string;
+      title?: string;
+      resolved?: ResolveAddPublicationPayload;
+    }) => {
       if (!client) throw new Error("OAuth session required");
       const oauth = getOAuthSession();
       if (!oauth) throw new Error("OAuth session required");
       const { resolveAddPublicationOnGateway } = await import(
         "@/lib/publicationProjectionClient"
       );
-      const gateway = await resolveAddPublicationOnGateway(
-        oauth,
-        input.link
-      );
-      if (gateway.error) throw new Error(gateway.error);
-      if (gateway.result?.kind === "standard-site") {
-        await client.createPublicationSubscription({
-          publication: gateway.result.publicationAtUri,
-        });
-        const projection = await refreshSidebarUntilPublicationVisible({
-          oauthSession: oauth,
-          publicationId: gateway.result.publicationAtUri,
-        });
-        if (did) {
-          qc.setQueryData(
-            PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(did),
-            projection
+      const resolved = input.resolved;
+      const gatewayResult = resolved
+        ? resolved
+        : await resolveAddPublicationOnGateway(oauth, input.link).then(
+            (gateway) => {
+              if (gateway.error) throw new Error(gateway.error);
+              if (!gateway.result) throw new Error("Could not resolve link");
+              return gateway.result;
+            }
           );
-        }
+      if (gatewayResult.kind === "standard-site") {
+        await client.createPublicationSubscription({
+          publication: gatewayResult.publicationAtUri,
+        });
+        void refreshSidebarAfterAddingPublication({
+          oauthSession: oauth,
+          viewerDid: did,
+          queryClient: qc,
+        }).catch(() => {
+          if (did) {
+            void qc.invalidateQueries({
+              queryKey: PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(did),
+            });
+          }
+        });
         return {
           kind: "standard-site" as const,
-          navigatePubId: gateway.result.publicationAtUri,
-          authorDid: publicationRepoDid(gateway.result.publicationAtUri),
+          navigatePubId: gatewayResult.publicationAtUri,
+          authorDid: publicationRepoDid(gatewayResult.publicationAtUri),
         };
       }
-      if (gateway.result?.kind === "rss") {
-        const normalized = normalizeRssFeedUrlInput(gateway.result.feedUrl);
+      if (gatewayResult.kind === "rss") {
+        const normalized = normalizeRssFeedUrlInput(gatewayResult.feedUrl);
         if (!normalized) throw new Error("Invalid feed URL from resolver");
         await client.createSkyreaderFeedSubscription({
           feedUrl: normalized,
-          title: input.title?.trim() || gateway.result.title,
-          siteUrl: gateway.result.siteUrl,
+          title: input.title?.trim() || gatewayResult.title,
+          siteUrl: gatewayResult.siteUrl,
         });
-        await enrollAuthorsInAppView(oauth, [], [normalized]);
         const navigatePubId = rssPublicationIdFromNormalizedFeedUrl(normalized);
-        const projection = await refreshSidebarUntilPublicationVisible({
-          oauthSession: oauth,
-          publicationId: navigatePubId,
-        });
-        if (did) {
-          qc.setQueryData(
-            PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(did),
-            projection
-          );
+        void (async () => {
+          await enrollAuthorsInAppView(oauth, [], [normalized]);
+          await refreshSidebarAfterAddingPublication({
+            oauthSession: oauth,
+            viewerDid: did,
+            queryClient: qc,
+          });
+          if (!did) return;
           const firstPage = await fetchEntriesInfinitePage({
             normalizedPublicationKey: navigatePubId,
             pageParam: undefined,
@@ -665,7 +665,13 @@ export function useAddPublicationFromAnyLink() {
             [...ENTRIES_QUERY_KEY(navigatePubId), "all"],
             { pages: [firstPage], pageParams: [undefined] }
           );
-        }
+        })().catch(() => {
+          if (did) {
+            void qc.invalidateQueries({
+              queryKey: PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(did),
+            });
+          }
+        });
         return {
           kind: "rss" as const,
           navigatePubId,
@@ -679,9 +685,6 @@ export function useAddPublicationFromAnyLink() {
       qc.invalidateQueries({ queryKey: ["graphSubscriptionPublications"] });
       if (did) {
         qc.invalidateQueries({ queryKey: DISCOVERY_QUERY_KEY(did) });
-        qc.invalidateQueries({
-          queryKey: ["publicationSidebarProjection", did],
-        });
       }
       const oauthSession = getOAuthSession();
       if (
@@ -699,6 +702,24 @@ export function useAddPublicationFromAnyLink() {
           },
         ]);
       }
+    },
+  });
+}
+
+export function useResolvePublicationForAdd() {
+  const { getOAuthSession } = useAuth();
+
+  return useMutation({
+    mutationFn: async (input: string): Promise<ResolveAddPublicationPayload> => {
+      const oauth = getOAuthSession();
+      if (!oauth) throw new Error("OAuth session required");
+      const { resolveAddPublicationOnGateway } = await import(
+        "@/lib/publicationProjectionClient"
+      );
+      const response = await resolveAddPublicationOnGateway(oauth, input);
+      if (response.error) throw new Error(response.error);
+      if (!response.result) throw new Error("Could not resolve publication");
+      return response.result;
     },
   });
 }

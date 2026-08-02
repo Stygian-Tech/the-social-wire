@@ -18,7 +18,7 @@ export function useLoginHandleSuggestions(value: string) {
   const query = loginHandleSearchQuery(debouncedValue);
   return useQuery({
     queryKey: ["loginHandleTypeahead", query],
-    queryFn: () => searchLoginHandles(query ?? ""),
+    queryFn: ({ signal }) => searchLoginHandles(query ?? "", signal),
     enabled: !!query,
     staleTime: 60_000,
     placeholderData: (previous) => previous,

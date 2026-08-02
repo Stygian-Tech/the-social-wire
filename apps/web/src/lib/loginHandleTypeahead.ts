@@ -1,4 +1,4 @@
-import { createPublicAppViewAgent } from "@/lib/atprotoClient";
+export const ACTOR_TYPEAHEAD_SERVICE_URL = "https://typeahead.waow.tech";
 
 export interface LoginHandleSuggestion {
   did: string;
@@ -11,7 +11,8 @@ export function loginHandleSearchQuery(value: string): string | null {
   const query = value.trim().replace(/^@/, "");
   if (
     query.length < 2 ||
-    query.startsWith("did:") ||
+    query.includes(":") ||
+    query.includes("/") ||
     /\s/.test(query)
   ) {
     return null;
@@ -20,17 +21,26 @@ export function loginHandleSearchQuery(value: string): string | null {
 }
 
 export async function searchLoginHandles(
-  value: string
+  value: string,
+  signal?: AbortSignal
 ): Promise<LoginHandleSuggestion[]> {
   const query = loginHandleSearchQuery(value);
   if (!query) return [];
 
-  const response =
-    await createPublicAppViewAgent().api.app.bsky.actor.searchActorsTypeahead({
-      q: query,
-      limit: 6,
-    });
-  return response.data.actors.map((actor) => ({
+  const url = new URL(
+    "/xrpc/app.bsky.actor.searchActorsTypeahead",
+    ACTOR_TYPEAHEAD_SERVICE_URL
+  );
+  url.searchParams.set("q", query);
+  url.searchParams.set("limit", "6");
+  const response = await fetch(url, { signal });
+  if (!response.ok) {
+    throw new Error(`Actor typeahead failed (${response.status})`);
+  }
+  const data = (await response.json()) as {
+    actors?: LoginHandleSuggestion[];
+  };
+  return (data.actors ?? []).map((actor) => ({
     did: actor.did,
     handle: actor.handle,
     displayName: actor.displayName,
