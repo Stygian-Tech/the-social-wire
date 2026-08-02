@@ -87,6 +87,7 @@ export function EntryRow({
       <div
         role="button"
         tabIndex={0}
+        data-at-uri={entry.entryId}
         onClick={() => onSelect(entry.entryId, entry)}
         onKeyDown={(event) => {
           if (event.key !== "Enter" && event.key !== " ") return;
