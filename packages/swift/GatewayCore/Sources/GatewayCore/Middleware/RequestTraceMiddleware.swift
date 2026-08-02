@@ -93,6 +93,7 @@ public struct RequestTraceMiddleware: RouterMiddleware {
     var dimensions = [
       "service": service,
       "environment": environment,
+      "deployment_region": Self.deploymentRegion,
       "route_template": route,
       "method": request.method.rawValue,
       "status_class": statusClass,
@@ -105,6 +106,19 @@ public struct RequestTraceMiddleware: RouterMiddleware {
     }
     _ = await telemetry.enqueue(.metric(.init(name: "socialwire.http.server.requests_total", value: 1, dimensions: dimensions)))
     _ = await telemetry.enqueue(.metric(.init(name: "socialwire.http.server.duration_seconds", value: duration, dimensions: dimensions)))
+    if route == "/v1/appview/feed" || route == "/v1/appview/entries" {
+      let durationMs = duration * 1_000
+      for upperBound in [50, 100, 150, 250, 500, 1_000, 2_000, 5_000]
+      where durationMs <= Double(upperBound) {
+        var bucketDimensions = dimensions
+        bucketDimensions["le_ms"] = String(upperBound)
+        _ = await telemetry.enqueue(.metric(.init(
+          name: "socialwire.appview.feed.duration_bucket",
+          value: 1,
+          dimensions: bucketDimensions
+        )))
+      }
+    }
     let isError = statusCode >= 500
     if context.traceContext.sampled || isError {
       var attributes = dimensions
@@ -177,5 +191,9 @@ public struct RequestTraceMiddleware: RouterMiddleware {
     }
     let result = "/" + normalized.joined(separator: "/")
     return String(result.prefix(160))
+  }
+
+  private static var deploymentRegion: String {
+    ProcessInfo.processInfo.environment["FLY_REGION"] == "iah" ? "iah" : "unknown"
   }
 }

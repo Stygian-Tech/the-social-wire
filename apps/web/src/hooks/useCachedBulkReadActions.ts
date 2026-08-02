@@ -24,7 +24,7 @@ export function useCachedBulkReadActions(
 ) {
   const queryClient = useQueryClient();
   const entriesEpoch = useEntriesCacheEpoch();
-  const { getOAuthSession } = useAuth();
+  const { session, getOAuthSession } = useAuth();
   const {
     markEntriesRead,
     markEntriesUnread,
@@ -33,8 +33,10 @@ export function useCachedBulkReadActions(
 
   const cachedEntryIds = useMemo(() => {
     void entriesEpoch;
-    return distinctCachedEntryIdsForPublications(queryClient, publications);
-  }, [queryClient, publications, entriesEpoch]);
+    return session?.did
+      ? distinctCachedEntryIdsForPublications(queryClient, session.did, publications)
+      : [];
+  }, [queryClient, publications, entriesEpoch, session?.did]);
 
   const bulkDisabled =
     cachedEntryIds.length === 0 &&

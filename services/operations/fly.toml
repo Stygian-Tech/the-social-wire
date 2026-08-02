@@ -1,5 +1,5 @@
 app = 'the-social-wire-dev-operations'
-primary_region = 'ord'
+primary_region = 'iah'
 
 [build]
   dockerfile = 'Dockerfile'

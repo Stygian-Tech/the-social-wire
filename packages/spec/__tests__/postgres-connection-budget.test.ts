@@ -3,22 +3,24 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const repositoryRoot = join(import.meta.dir, "../../..");
-const databaseClientConfigs = [
-  "services/gateway/fly.toml",
-  "services/gateway/fly.prod.toml",
-  "services/appview/fly.toml",
-  "services/appview/fly.prod.toml",
-  "services/appview-worker/fly.toml",
-  "services/appview-worker/fly.prod.toml",
-  "services/operations/fly.toml",
-  "services/operations/fly.prod.toml",
-];
+const databaseClientConfigs = new Map([
+  ["services/gateway/fly.toml", 2],
+  ["services/gateway/fly.prod.toml", 2],
+  ["services/appview/fly.toml", 2],
+  ["services/appview/fly.prod.toml", 8],
+  ["services/appview-worker/fly.toml", 2],
+  ["services/appview-worker/fly.prod.toml", 2],
+  ["services/operations/fly.toml", 2],
+  ["services/operations/fly.prod.toml", 2],
+]);
 
 describe("Postgres connection budgets", () => {
   it("keeps every Fly database client below the shared Supabase session limit", () => {
-    for (const path of databaseClientConfigs) {
+    for (const [path, connections] of databaseClientConfigs) {
       const config = readFileSync(join(repositoryRoot, path), "utf8");
-      expect(config).toContain("POSTGRES_MAX_CONNECTIONS = '2'");
+      expect(config).toContain(
+        `POSTGRES_MAX_CONNECTIONS = '${connections}'`
+      );
     }
   });
 });

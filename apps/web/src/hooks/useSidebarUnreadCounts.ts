@@ -11,11 +11,13 @@ export function useSidebarUnreadCounts(
   unreadCountsByPublicationId: Map<string, number> | undefined,
   options?: {
     isEntryRead?: (entryId: string) => boolean;
+    viewerDid?: string;
   }
 ): Map<string, number> {
   return useSidebarUnreadController({
     publications,
     unreadCountsByPublicationId,
     isEntryRead: options?.isEntryRead,
+    viewerDid: options?.viewerDid,
   });
 }

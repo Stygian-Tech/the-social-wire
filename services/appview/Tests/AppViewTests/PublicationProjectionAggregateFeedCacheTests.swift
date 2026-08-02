@@ -58,7 +58,7 @@ struct PublicationProjectionAggregateFeedCacheTests {
     try await cache.storeSidebarProjectionJSON(
       viewerDid: viewerDid,
       jsonBody: json,
-      expiresAt: Date().addingTimeInterval(60)
+      expiresAt: Date().addingTimeInterval(-60)
     )
 
     let service = PublicationProjectionService(
@@ -68,16 +68,23 @@ struct PublicationProjectionAggregateFeedCacheTests {
       thinStore: store,
       projectionCache: cache
     )
-    let sidebar = try await service.aggregateFeedSidebar(
-      auth: AuthContext(
-        did: viewerDid,
-        authorizationForwardingValue: "DPoP token",
-        dpopProof: "proof"
-      )
+    #expect(await service.rebuildFeedProjectionFromCachedSidebar(viewerDid: viewerDid))
+    let folder = try await store.listFeedEntries(
+      viewerDid: viewerDid,
+      selector: AppViewFeedSelector(kind: .folder, id: "news"),
+      filter: .all,
+      cursor: nil,
+      limit: 50
     )
-
-    #expect(sidebar.folderSections.first?.publications.map(\.publicationId) == [row.publicationId])
-    #expect(sidebar.allPublicationRows.map(\.publicationId) == [row.publicationId])
+    #expect(folder != nil)
+    let publication = try await store.listFeedEntries(
+      viewerDid: viewerDid,
+      selector: AppViewFeedSelector(kind: .publication, id: row.publicationId),
+      filter: .all,
+      cursor: nil,
+      limit: 50
+    )
+    #expect(publication != nil)
     try await client.shutdown()
   }
 

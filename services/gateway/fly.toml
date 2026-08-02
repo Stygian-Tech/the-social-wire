@@ -2,7 +2,7 @@
 # Or: fly deploy ../.. --config services/gateway/fly.toml --app the-social-wire-dev-gateway
 
 app = 'the-social-wire-dev-gateway'
-primary_region = 'ord'
+primary_region = 'iah'
 
 [build]
   dockerfile = 'Dockerfile'
@@ -15,13 +15,13 @@ primary_region = 'ord'
   APP_ENV = 'dev'
   POSTGRES_MAX_CONNECTIONS = '2'
   PORT = '8080'
-  OPERATIONS_BASE_URL = 'https://the-social-wire-dev-operations.fly.dev'
+  APPVIEW_BASE_URL = 'http://the-social-wire-dev-appview.internal:8081'
+  OPERATIONS_BASE_URL = 'http://the-social-wire-dev-operations.internal:8083'
   OAUTH_OPERATIONS_ORIGIN = 'https://operations.testing.thesocialwire.app'
   OAUTH_OPERATIONS_CLIENT_ID = 'https://api.testing.thesocialwire.app/operations-oauth-client-metadata.json'
   # Required for AppView proxy + DPoP structural OAuth fallback (same value on gateway + appview):
   # fly secrets set GATEWAY_APPVIEW_INTERNAL_SECRET="$(openssl rand -hex 32)" --app the-social-wire-dev-gateway
   # fly secrets set GATEWAY_APPVIEW_INTERNAL_SECRET="<same>" --app the-social-wire-dev-appview
-  # APPVIEW_BASE_URL = 'https://the-social-wire-dev-appview.fly.dev'
   # OAUTH_GATEWAY_REQUIRE_KNOWN_CLIENT = 'true'
   # OAUTH_GATEWAY_ALLOWED_CLIENT_IDS = 'https://api.testing.thesocialwire.app/oauth-client-metadata.json'
 

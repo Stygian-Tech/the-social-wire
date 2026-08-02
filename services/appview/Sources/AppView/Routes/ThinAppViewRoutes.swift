@@ -1,5 +1,6 @@
 import Foundation
 import GatewayCore
+import HTTPTypes
 import Hummingbird
 import ThinAppViewCore
 
@@ -9,12 +10,12 @@ struct ThinAppViewRoutes {
   let projectionService: PublicationProjectionService
 
   func register(on group: RouterGroup<GatewayRequestContext>) {
-    group.get("/v1/appview/feed") { request, context async throws -> AppViewEntryListResponse in
+    group.get("/v1/appview/feed") { request, context async throws -> Response in
       guard let auth = context.authContext else {
         throw Self.feedError(.unauthorized, message: "Authentication is required.", requestId: context.requestId)
       }
       guard let kindRaw = request.uri.queryParameters.get("kind"),
-            let kind = AggregateFeedKind(rawValue: kindRaw)
+            let kind = AppViewFeedKind(rawValue: kindRaw)
       else {
         throw Self.invalidRequest("Query requires a valid `kind`", requestId: context.requestId)
       }
@@ -37,17 +38,61 @@ struct ThinAppViewRoutes {
         range: 1...100,
         requestId: context.requestId
       )
+      let selector = AppViewFeedSelector(kind: kind, id: id)
       return try await AppViewFeedExecution.run(requestId: context.requestId) {
-        let sidebar = try await projectionService.aggregateFeedSidebar(auth: auth)
-        guard let publications = Self.publications(for: kind, id: id, sidebar: sidebar) else {
-          throw HTTPError(.notFound, message: "Feed is not available to this viewer")
-        }
-        return try await readService.listFeed(
+        let startedAt = Date()
+        var page = try await readService.listFeed(
           auth: auth,
-          publications: publications,
+          selector: selector,
           filter: filter,
           cursor: cursor,
           limit: limit
+        )
+        if page == nil {
+          let repaired = await projectionService.rebuildFeedProjectionFromCachedSidebar(
+            viewerDid: auth.did
+          )
+          if repaired {
+            page = try await readService.listFeed(
+              auth: auth,
+              selector: selector,
+              filter: filter,
+              cursor: cursor,
+              limit: limit
+            )
+          }
+          if page == nil {
+            let hasProjection = repaired || (try await readService.hasFeedProjection(auth: auth))
+            if hasProjection {
+              throw AppViewFeedError(
+                status: .notFound,
+                code: "feed_unavailable",
+                message: "Feed is not available to this viewer.",
+                requestId: context.requestId,
+                retryable: false
+              )
+            }
+            throw AppViewFeedError(
+              status: .serviceUnavailable,
+              code: "feed_projection_warming",
+              message: "The viewer feed projection is warming.",
+              requestId: context.requestId,
+              retryable: true
+            )
+          }
+        }
+        guard let page else {
+          throw AppViewFeedError(
+            status: .serviceUnavailable,
+            code: "feed_projection_warming",
+            message: "The viewer feed projection is warming.",
+            requestId: context.requestId,
+            retryable: true
+          )
+        }
+        return try Self.feedResponse(
+          page: page,
+          durationMilliseconds: Date().timeIntervalSince(startedAt) * 1_000
         )
       }
     }
@@ -208,49 +253,21 @@ struct ThinAppViewRoutes {
     )
   }
 
-  private static func publications(
-    for kind: AggregateFeedKind,
-    id: String?,
-    sidebar: PublicationSidebarResponse
-  ) -> [SidebarPublicationRow]? {
-    let rows: [SidebarPublicationRow]
-    switch kind {
-    case .subscribed:
-      rows =
-        sidebar.myPublications
-        + sidebar.subscribedUnfoldered
-        + sidebar.folderSections.flatMap(\.publications)
-    case .following:
-      rows = sidebar.followingTabPublications
-    case .folder:
-      guard let id,
-            let folder = sidebar.folderSections.first(where: {
-              $0.folderRkey == id || $0.folderUri == id
-            })
-      else { return nil }
-      rows = folder.publications
-    case .publication:
-      guard let id,
-            let publication = sidebar.allPublicationRows.first(where: {
-              PublicationProjectionLogic.publicationIdsMatch($0.publicationId, id)
-            })
-      else { return nil }
-      rows = [publication]
-    }
-
-    var seen = Set<String>()
-    return rows.filter { seen.insert($0.publicationId).inserted }
-  }
-}
-
-private enum AggregateFeedKind: String {
-  case subscribed
-  case following
-  case folder
-  case publication
-
-  var requiresId: Bool {
-    self == .folder || self == .publication
+  private static func feedResponse(
+    page: AppViewFeedPage,
+    durationMilliseconds: Double
+  ) throws -> Response {
+    let data = try JSONEncoder().encode(page.response)
+    var headers = HTTPFields()
+    headers[.contentType] = "application/json"
+    headers[HTTPField.Name("X-AppView-Feed-Source")!] = "materialized_projection"
+    headers[HTTPField.Name("X-AppView-Membership-Updated-At")!] =
+      page.membershipUpdatedAt.ISO8601Format()
+    headers[HTTPField.Name("Server-Timing")!] = String(
+      format: "appview_feed;dur=%.1f",
+      durationMilliseconds
+    )
+    return Response(status: .ok, headers: headers, body: .init(byteBuffer: .init(data: data)))
   }
 }
 

@@ -3,7 +3,7 @@
 # Deploy: bash deploy.sh main
 
 app = 'the-social-wire-prod-appview-worker'
-primary_region = 'ams'
+primary_region = 'iah'
 
 [build]
   dockerfile = 'Dockerfile'

@@ -1,6 +1,6 @@
 # Thin AppView
 
-Social Wire’s **GDPR-safe Level-1 read index** — optional, feature-flagged, and distinct from the Bluesky **`public.api.bsky.app`** App View.
+Social Wire’s **data-minimized Level-1 read index** — optional, feature-flagged, and distinct from the Bluesky **`public.api.bsky.app`** App View.
 
 **Canonical design doc (repo):** [docs/architecture/appview.md](https://github.com/Stygian-Tech/the-social-wire/blob/main/docs/architecture/appview.md)
 
@@ -23,7 +23,7 @@ Jetstream / relay (subscribeRepos)
 Fly Charybdis (`appview-worker`) — firehose ingest, proactive PDS backfill, TTL cleanup
         │
         ▼
-Supabase Postgres (ams) — content_items, read_marks, sidebar_projection_cache, …
+Supabase Postgres (AWS us-east-1) — content_items, read_marks, sidebar_projection_cache, …
         │
         ▼
 Fly appview — /v1/appview/*, /v1/publications/*
@@ -108,15 +108,20 @@ When flags are off, clients continue PDS-direct entry loading (legacy paths may 
 
 ## Deployment (Fly)
 
-Three independent apps from repo root (`scripts/fly-deploy-*.sh` / per-service `deploy.sh`):
+Five independent apps per environment from repo root (`scripts/fly-deploy-*.sh` / per-service `deploy.sh`):
 
 | App | Config | Command |
 |-----|--------|---------|
 | Gateway | `services/gateway/fly.toml` | `swift run Gateway` |
 | AppView | `services/appview/fly.toml` | `swift run AppView` |
 | Charybdis | `services/appview-worker/fly.toml` | `swift run AppViewWorker` |
+| Operations | `services/operations/fly.toml` | `swift run Operations` |
+| Tap | `services/tap/fly.toml` | pinned Indigo Tap image |
 
-All use **`primary_region = ams`** (EU co-location with Supabase).
+Development and production Gateway, AppView, Charybdis, Operations, and Tap use
+**`primary_region = iah`**. Gateway reaches AppView and Operations over Fly private
+`.internal` addresses, and Charybdis reaches Tap the same way. Supabase/Postgres
+remains in AWS **`us-east-1`** through the session pooler.
 
 **Rollout checklist**
 
@@ -149,10 +154,11 @@ See [[Apple-client]].
 
 ## Privacy
 
-- **Region:** Fly + Supabase in **`ams`**
+- **Region:** all Fly compute is in **`iah`**; Supabase/Postgres is in AWS **`us-east-1`**; data residency is the United States
 - **Retention:** TTL on indexed rows (configurable)
 - **Logging:** routes log `{ method, path, status, latency_ms }` only — no `Authorization` / `DPoP` bodies
 - **User control:** Purge endpoint + iOS Profile action
+- **Authority:** user-authored records remain on the PDS and indexed projections are rebuildable
 
 ## Related
 

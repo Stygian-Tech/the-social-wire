@@ -455,6 +455,98 @@ struct SQLiteThinAppViewStoreTests {
     #expect(reconciled.first?.accuracy == .exact)
   }
 
+  @Test("materialized feed selectors distinguish empty unknown and publication feeds")
+  func materializedFeedSelectors() async throws {
+    let dbPath = FileManager.default.temporaryDirectory
+      .appendingPathComponent("sw-appview-\(UUID().uuidString).sqlite").path
+    defer { try? FileManager.default.removeItem(atPath: dbPath) }
+
+    let store = try SQLiteThinAppViewStore(path: dbPath, logger: Logger(label: "appview.test"))
+    let now = Date()
+    let viewerDid = "did:plc:viewer"
+    let publicationId = "at://did:plc:author/site.standard.publication/main"
+    let scope = AppViewUnreadCounterSupport.publicationScope(
+      viewerDid: viewerDid,
+      publicationId: publicationId,
+      authorDid: "did:plc:author",
+      publicationAtUri: publicationId,
+      publicationScopeAtUris: [],
+      publicationSiteUrls: [],
+      sectionKeys: ["subscribed:unfoldered"],
+      updatedAt: now
+    )
+    try await store.replaceViewerFeedProjection(
+      viewerDid: viewerDid,
+      scopes: [scope],
+      feeds: [
+        AppViewViewerFeed(viewerDid: viewerDid, kind: .subscribed, feedId: "", updatedAt: now),
+        AppViewViewerFeed(viewerDid: viewerDid, kind: .following, feedId: "", updatedAt: now),
+        AppViewViewerFeed(viewerDid: viewerDid, kind: .folder, feedId: "empty", updatedAt: now),
+      ],
+      memberships: [
+        AppViewFeedPublication(
+          viewerDid: viewerDid,
+          kind: .subscribed,
+          feedId: "",
+          publicationId: publicationId
+        ),
+      ]
+    )
+    let entryId = "at://did:plc:author/site.standard.document/one"
+    try await store.upsertContentItem(IndexedContentItem(
+      uri: entryId,
+      cid: "bafyone",
+      authorDid: "did:plc:author",
+      collection: "site.standard.document",
+      createdAt: now,
+      indexedAt: now,
+      publicationSite: publicationId,
+      render: ContentRenderFields(
+        title: "One",
+        publishedAt: ISO8601DateFormatter().string(from: now)
+      ),
+      expiresAt: now.addingTimeInterval(3_600)
+    ))
+    try await store.upsertReadMark(viewerDid: viewerDid, subjectUri: entryId, createdAt: now)
+
+    let subscribed = try await store.listFeedEntries(
+      viewerDid: viewerDid,
+      selector: AppViewFeedSelector(kind: .subscribed),
+      filter: .all,
+      cursor: nil,
+      limit: 50
+    )
+    #expect(subscribed?.response.entries.map(\.entryId) == [entryId])
+    #expect(subscribed?.response.entries.first?.isRead == true)
+
+    let publication = try await store.listFeedEntries(
+      viewerDid: viewerDid,
+      selector: AppViewFeedSelector(kind: .publication, id: publicationId),
+      filter: .all,
+      cursor: nil,
+      limit: 50
+    )
+    #expect(publication?.response.entries.map(\.entryId) == [entryId])
+
+    let empty = try await store.listFeedEntries(
+      viewerDid: viewerDid,
+      selector: AppViewFeedSelector(kind: .folder, id: "at://did:plc:viewer/app.thesocialwire.folder/empty"),
+      filter: .all,
+      cursor: nil,
+      limit: 50
+    )
+    #expect(empty?.response.entries.isEmpty == true)
+
+    let unknown = try await store.listFeedEntries(
+      viewerDid: viewerDid,
+      selector: AppViewFeedSelector(kind: .folder, id: "missing"),
+      filter: .all,
+      cursor: nil,
+      limit: 50
+    )
+    #expect(unknown == nil)
+  }
+
   @Test("indexer content upsert increments materialized counters once")
   func indexerContentUpsertIncrementsCountersOnce() async throws {
     let dbPath =

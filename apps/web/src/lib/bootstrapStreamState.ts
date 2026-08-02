@@ -395,6 +395,7 @@ export function applySidebarFoldersEvent(
 
 export function writeStreamedEntriesPage(
   queryClient: QueryClient,
+  viewerDid: string,
   payload: { publicationId: string; entries: EntriesPage["entries"]; cursor?: string },
   articleFilter: "all" | "unread" = "all"
 ): void {
@@ -404,14 +405,14 @@ export function writeStreamedEntriesPage(
     cursor: payload.cursor,
   };
   queryClient.setQueryData(
-    [...ENTRIES_QUERY_KEY(publicationKey), articleFilter] as const,
+    [...ENTRIES_QUERY_KEY(viewerDid, publicationKey), articleFilter] as const,
     {
       pages: [page],
       pageParams: [undefined],
     }
   );
   queryClient.setQueryDefaults(
-    [...ENTRIES_QUERY_KEY(publicationKey), articleFilter] as const,
+    [...ENTRIES_QUERY_KEY(viewerDid, publicationKey), articleFilter] as const,
     { staleTime: ENTRIES_QUERY_STALE_MS }
   );
 }

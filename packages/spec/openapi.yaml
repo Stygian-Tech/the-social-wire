@@ -74,6 +74,7 @@ components:
             - unauthorized
             - forbidden
             - feed_unavailable
+            - feed_projection_warming
             - feed_dependency_unavailable
             - feed_deadline_exceeded
             - feed_internal_error
@@ -1455,8 +1456,9 @@ paths:
       operationId: listAggregateAppViewFeed
       summary: Paginated viewer-scoped aggregate feed
       description: |
-        Resolves publication membership from the authenticated viewer's sidebar projection.
-        Clients cannot provide arbitrary publication scopes.
+        Validates publication membership against the authenticated viewer's materialized
+        feed projection and executes one globally ordered indexed content query. It never
+        performs PDS discovery, publication resolution, RSS fetch, or enrollment.
       tags: [AppView]
       parameters:
         - name: kind
@@ -1489,6 +1491,13 @@ paths:
       responses:
         "200":
           description: Globally ordered aggregate entry page.
+          headers:
+            X-AppView-Feed-Source:
+              schema: { type: string, enum: [materialized_projection] }
+            X-AppView-Membership-Updated-At:
+              schema: { type: string, format: date-time }
+            Server-Timing:
+              schema: { type: string }
           content:
             application/json:
               schema:
@@ -1515,7 +1524,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/AppViewFeedError" }
         "503":
-          description: Transient database or dependency failure after one bounded server retry.
+          description: Transient database failure or `feed_projection_warming` when no materialization/cache exists.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/AppViewFeedError" }
@@ -1524,6 +1533,39 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/AppViewFeedError" }
+
+  /v1/telemetry/client-performance:
+    post:
+      operationId: recordClientPerformance
+      summary: Record bounded reader performance telemetry
+      description: |
+        Accepts allowlisted aggregate measurements only. DIDs, publication IDs, URLs,
+        entry IDs, titles, and arbitrary dimensions are not accepted.
+      tags: [Telemetry]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [event, durationMs, feedType, cacheState, outcome, environment]
+              properties:
+                event:
+                  type: string
+                  enum: [cached_feed_paint, uncached_feed_paint, feed_switch, fresh_merge, feed_error]
+                durationMs: { type: number, minimum: 0, maximum: 60000 }
+                feedType: { type: string, enum: [aggregate, publication] }
+                cacheState: { type: string, enum: [hit, miss] }
+                outcome: { type: string, enum: [success, error] }
+                environment: { type: string, enum: [local, dev, test, production] }
+      responses:
+        "202":
+          description: Sample accepted into the bounded telemetry buffer.
+        "400":
+          description: Invalid or non-allowlisted sample.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
 
   /v1/appview/entries:
     get:

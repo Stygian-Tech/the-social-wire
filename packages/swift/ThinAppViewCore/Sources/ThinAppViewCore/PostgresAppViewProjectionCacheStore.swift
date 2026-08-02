@@ -35,6 +35,25 @@ public actor PostgresAppViewProjectionCacheStore: AppViewProjectionCacheStore {
     return nil
   }
 
+  public func sidebarProjectionCacheEntryIncludingExpired(
+    viewerDid: String
+  ) async throws -> AppViewProjectionCacheEntry<String>? {
+    let rows = try await pool.query(
+      """
+      SELECT json_body::text, cached_at, expires_at
+      FROM sidebar_projection_cache
+      WHERE viewer_did = \(viewerDid)
+      LIMIT 1
+      """,
+      logger: logger
+    )
+    for try await row in rows {
+      let (json, cachedAt, expiresAt) = try row.decode((String, Date, Date).self)
+      return AppViewProjectionCacheEntry(value: json, cachedAt: cachedAt, expiresAt: expiresAt)
+    }
+    return nil
+  }
+
   public func storeSidebarProjectionJSON(
     viewerDid: String,
     jsonBody: String,

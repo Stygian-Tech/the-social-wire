@@ -79,7 +79,7 @@ async function prefetchPublicationFirstPage(args: {
 
   await queryClient.prefetchInfiniteQuery({
     queryKey: [
-      ...ENTRIES_QUERY_KEY(normalizedPublicationId),
+      ...ENTRIES_QUERY_KEY(viewerDid, normalizedPublicationId),
       PREFETCH_ARTICLE_FILTER,
     ] as const,
     queryFn: ({ pageParam, signal: querySignal }) =>

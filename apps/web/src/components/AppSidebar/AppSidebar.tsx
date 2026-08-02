@@ -206,6 +206,7 @@ export function AppSidebar({
       : SERVER_PUBLICATION_UNREAD_COUNTS,
     isEntryRead: clientHydrated ? isEntryRead : undefined,
     readEpoch,
+    viewerDid: session?.did,
   });
 
   const setActiveReadFeedScope =

@@ -243,7 +243,7 @@ function PublicationSidebarProviderInner({
                   event.payload.publicationId;
               }
               if (event.kind === "entriesPage") {
-                writeStreamedEntriesPage(qc, event.payload);
+                writeStreamedEntriesPage(qc, did, event.payload);
                 bootstrapFeedPublicationIdRef.current =
                   event.payload.publicationId;
                 if (

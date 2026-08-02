@@ -91,24 +91,30 @@ actor PublicationProjectionService {
     }
   }
 
-  /// Aggregate feeds only need publication membership. Reuse the materialized
-  /// bootstrap projection so opening a feed never waits on PDS discovery.
-  func aggregateFeedSidebar(auth: AuthContext) async throws -> PublicationSidebarResponse {
+  /// Repairs feed membership from the stale sidebar projection without contacting a PDS.
+  func rebuildFeedProjectionFromCachedSidebar(viewerDid: String) async -> Bool {
     if let projectionCache,
-       let entry = try? await projectionCache.sidebarProjectionCacheEntry(viewerDid: auth.did),
+       let entry = try? await projectionCache.sidebarProjectionCacheEntryIncludingExpired(
+         viewerDid: viewerDid
+       ),
        let snapshot = try? JSONDecoder().decode(
          BootstrapSidebarCacheSnapshot.self,
          from: Data(entry.value.utf8)
-       )
+      )
     {
       let priority = snapshot.priority
-      guard let folders = snapshot.folderPayload else { return priority }
-      return PublicationSidebarResponse(
+      let folders = snapshot.folderPayload
+      var allRowsById: [String: SidebarPublicationRow] = [:]
+      for row in priority.allPublicationRows + (folders?.allPublicationRows ?? []) {
+        allRowsById[row.publicationId] = row
+      }
+      let allRows = Array(allRowsById.values)
+      let response = PublicationSidebarResponse(
         viewerDid: priority.viewerDid,
         folders: priority.folders,
         publicationPrefs: priority.publicationPrefs,
-        folderSections: folders.folderSections,
-        allPublicationRows: folders.allPublicationRows,
+        folderSections: folders?.folderSections ?? priority.folderSections,
+        allPublicationRows: allRows,
         myPublications: priority.myPublications,
         subscribedUnfoldered: priority.subscribedUnfoldered,
         followingTabPublications: priority.followingTabPublications,
@@ -116,8 +122,15 @@ actor PublicationProjectionService {
         totalUnreadCount: priority.totalUnreadCount,
         refreshedAt: priority.refreshedAt
       )
+      do {
+        try await storePublicationScopes(from: response, replaceAll: true)
+        return true
+      } catch {
+        logger.warning("Failed to rebuild feed projection from sidebar cache")
+        return false
+      }
     }
-    return try await sidebar(auth: auth)
+    return false
   }
 
   func sidebarRow(for viewerDid: String, publicationId: String) -> SidebarPublicationRow? {
@@ -629,13 +642,76 @@ actor PublicationProjectionService {
         updatedAt: now
       )
     }
-    if replaceAll {
-      try await thinStore.replacePublicationScopes(
+    let topLevelSubscribed = AppViewViewerFeed(
+      viewerDid: response.viewerDid,
+      kind: .subscribed,
+      feedId: "",
+      updatedAt: now
+    )
+    let topLevelFollowing = AppViewViewerFeed(
+      viewerDid: response.viewerDid,
+      kind: .following,
+      feedId: "",
+      updatedAt: now
+    )
+    let folderFeeds = response.folderSections.map {
+      AppViewViewerFeed(
         viewerDid: response.viewerDid,
-        scopes: scopes
+        kind: .folder,
+        feedId: $0.folderRkey,
+        updatedAt: now
+      )
+    }
+    let subscribedRows = response.myPublications
+      + response.subscribedUnfoldered
+      + response.folderSections.flatMap(\.publications)
+    let subscribedMemberships = subscribedRows.map {
+      AppViewFeedPublication(
+        viewerDid: response.viewerDid,
+        kind: .subscribed,
+        feedId: "",
+        publicationId: $0.publicationId
+      )
+    }
+    let followingMemberships = response.followingTabPublications.map {
+      AppViewFeedPublication(
+        viewerDid: response.viewerDid,
+        kind: .following,
+        feedId: "",
+        publicationId: $0.publicationId
+      )
+    }
+    let folderMemberships = response.folderSections.flatMap { section in
+      section.publications.map {
+        AppViewFeedPublication(
+          viewerDid: response.viewerDid,
+          kind: .folder,
+          feedId: section.folderRkey,
+          publicationId: $0.publicationId
+        )
+      }
+    }
+    let feeds = [topLevelSubscribed, topLevelFollowing] + folderFeeds
+    var membershipsByKey: [String: AppViewFeedPublication] = [:]
+    for membership in subscribedMemberships + followingMemberships + folderMemberships {
+      let key = "\(membership.kind.rawValue):\(membership.feedId):\(membership.publicationId)"
+      membershipsByKey[key] = membership
+    }
+    let memberships = Array(membershipsByKey.values)
+    if replaceAll {
+      try await thinStore.replaceViewerFeedProjection(
+        viewerDid: response.viewerDid,
+        scopes: scopes,
+        feeds: feeds,
+        memberships: memberships
       )
     } else {
-      try await thinStore.upsertPublicationScopes(scopes)
+      try await thinStore.upsertViewerFeedProjection(
+        viewerDid: response.viewerDid,
+        scopes: scopes,
+        feeds: feeds,
+        memberships: memberships
+      )
     }
   }
 

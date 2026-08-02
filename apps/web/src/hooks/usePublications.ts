@@ -662,7 +662,7 @@ export function useAddPublicationFromAnyLink() {
             skipEnroll: true,
           });
           qc.setQueryData<InfiniteData<EntriesPage>>(
-            [...ENTRIES_QUERY_KEY(navigatePubId), "all"],
+            [...ENTRIES_QUERY_KEY(did, navigatePubId), "all"],
             { pages: [firstPage], pageParams: [undefined] }
           );
         })().catch(() => {

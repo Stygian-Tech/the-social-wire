@@ -132,7 +132,8 @@ struct AppViewProxyRoutes {
         fwd.headers.add(name: "Content-Type", value: "application/json")
       }
     }
-    let reply = try await httpClient.execute(fwd, timeout: .seconds(60))
+    let upstreamTimeout: TimeAmount = path == "/v1/appview/feed" ? .seconds(3) : .seconds(60)
+    let reply = try await httpClient.execute(fwd, timeout: upstreamTimeout)
     var headers = HTTPFields()
     headers[.contentType] = "application/json"
     if let requestId = reply.headers.first(name: "X-Request-ID"),
@@ -144,6 +145,17 @@ struct AppViewProxyRoutes {
        let traceHeader = HTTPField.Name("traceparent")
     {
       headers[traceHeader] = traceparent
+    }
+    for headerName in [
+      "X-AppView-Feed-Source",
+      "X-AppView-Membership-Updated-At",
+      "Server-Timing",
+    ] {
+      if let value = reply.headers.first(name: headerName),
+         let fieldName = HTTPField.Name(headerName)
+      {
+        headers[fieldName] = value
+      }
     }
     let body = try await reply.body.collect(upTo: 8 * 1024 * 1024)
     let status = HTTPResponse.Status.from(code: Int(reply.status.code)) ?? .badGateway

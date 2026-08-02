@@ -7,7 +7,7 @@ Social Wire uses two distinct “AppView” concepts:
 | Layer | Purpose | Status |
 |-------|---------|--------|
 | **Bluesky App View** (`public.api.bsky.app`) | Public social graph reads (`getProfile`, `getFollows`, …) | Unchanged — clients call it directly |
-| **Thin AppView** (`/v1/appview/*` on **`services/appview`**, proxied by **`services/gateway`**) | GDPR-safe Level-1 entry timelines, sidebar projection, server-side unread filtering | Implemented behind feature flags |
+| **Thin AppView** (`/v1/appview/*` on **`services/appview`**, proxied by **`services/gateway`**) | Data-minimized Level-1 entry timelines, sidebar projection, server-side unread filtering | Implemented behind feature flags |
 
 The thin AppView is **not** a Bluesky proxy. It is Social Wire’s own index of `standard.site` entry collections plus AppView-owned `read_marks` for unread queries. Full entry bodies remain on each author’s PDS; feed read/unread state is local-first in clients and synchronized to Social Wire AppView, not written as ATProto repo records.
 
@@ -34,7 +34,7 @@ Fly Charybdis (`appview-worker` compatibility identity)
   • TTL cleanup
         │
         ▼
-Supabase Postgres (ams) — content_items, read_marks, sidebar_projection_cache, …
+Supabase Postgres (AWS us-east-1) — content_items, read_marks, sidebar_projection_cache, …
         │
         ▼
 Fly appview — bootstrap-stream, /v1/appview/*, /v1/publications/*
@@ -58,10 +58,11 @@ Authenticated **`GET /v1/appview/bootstrap-stream`** returns NDJSON events as si
 
 ## Privacy & retention
 
-- **Region:** Fly + Supabase in **`ams`** (EU).
+- **Region:** all Fly compute is in **`iah`**; Supabase/Postgres remains in AWS **`us-east-1`**. Data residency is the United States.
 - **Level 1 only:** No full HTML bodies or blobs in the index.
 - **TTL defaults:** `content_items` 30 days; `read_marks` 180 days (env-configurable).
 - **User control:** `DELETE /v1/appview/privacy/purge` removes indexed read marks for the authenticated viewer.
+- **Authority:** user-authored organization and preference records remain on the user's PDS; AppView projections are rebuildable.
 
 ## Feature flags
 

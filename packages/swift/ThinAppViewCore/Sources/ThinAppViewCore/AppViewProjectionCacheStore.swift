@@ -41,6 +41,9 @@ public protocol AppViewProjectionCacheStore: Actor {
   func sidebarProjectionCacheEntry(
     viewerDid: String
   ) async throws -> AppViewProjectionCacheEntry<String>?
+  func sidebarProjectionCacheEntryIncludingExpired(
+    viewerDid: String
+  ) async throws -> AppViewProjectionCacheEntry<String>?
   func storeSidebarProjectionJSON(
     viewerDid: String,
     jsonBody: String,
@@ -78,6 +81,12 @@ public protocol AppViewProjectionCacheStore: Actor {
 }
 
 public extension AppViewProjectionCacheStore {
+  func sidebarProjectionCacheEntryIncludingExpired(
+    viewerDid: String
+  ) async throws -> AppViewProjectionCacheEntry<String>? {
+    try await sidebarProjectionCacheEntry(viewerDid: viewerDid)
+  }
+
   func cachedSidebarProjectionJSON(viewerDid: String) async throws -> String? {
     try await sidebarProjectionCacheEntry(viewerDid: viewerDid)?.value
   }

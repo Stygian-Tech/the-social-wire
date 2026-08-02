@@ -110,7 +110,7 @@ export function ReadStateProvider({ children }: { children: ReactNode }) {
           const publicationId = options.publicationId;
           queueMicrotask(() => {
             if (
-              publicationEntryIsCached(queryClient, publicationId, entryId)
+              publicationEntryIsCached(queryClient, viewerDid, publicationId, entryId)
             ) {
               return;
             }
@@ -143,7 +143,7 @@ export function ReadStateProvider({ children }: { children: ReactNode }) {
           const publicationId = options.publicationId;
           queueMicrotask(() => {
             if (
-              publicationEntryIsCached(queryClient, publicationId, entryId)
+              publicationEntryIsCached(queryClient, viewerDid, publicationId, entryId)
             ) {
               return;
             }
@@ -229,6 +229,7 @@ export function ReadStateProvider({ children }: { children: ReactNode }) {
         if (viewerDid && options?.publications?.length) {
           bulkDeltasRef.current = bulkUnreadDeltasForPublications(
             queryClient,
+            viewerDid,
             options.publications,
             (entryId) => Boolean(prev[entryId])
           );

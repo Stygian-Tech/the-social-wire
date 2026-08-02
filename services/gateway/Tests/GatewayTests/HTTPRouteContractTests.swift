@@ -87,6 +87,28 @@ struct HTTPRouteContractTests {
     }
   }
 
+  @Test("client performance telemetry rejects unauthenticated calls")
+  func clientPerformanceTelemetryUnauthorized() async throws {
+    try await withSingletonHTTPClient { client in
+      let dbPath = FileManager.default.temporaryDirectory
+        .appendingPathComponent("sw-http-\(UUID().uuidString).sqlite").path
+      defer { try? FileManager.default.removeItem(atPath: dbPath) }
+
+      let router = try gatewayRouter(client: client, dbPath: dbPath)
+      let app = Application(
+        router: router,
+        configuration: .init(address: .hostname("127.0.0.1", port: 0))
+      )
+      try await app.test(.live) { client in
+        let response = try await client.execute(
+          uri: "/v1/telemetry/client-performance",
+          method: .post
+        )
+        #expect(response.status == .unauthorized)
+      }
+    }
+  }
+
   @Test("operations overview is absent without OPERATIONS_BASE_URL")
   func operationsOverviewAbsentWithoutBaseURL() async throws {
     try await withSingletonHTTPClient { client in

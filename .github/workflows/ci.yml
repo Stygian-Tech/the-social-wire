@@ -40,6 +40,9 @@ jobs:
         id: filter
         run: bash scripts/ci-detect-changes.sh
 
+      - name: Verify Fly regions
+        run: bash scripts/verify-fly-regions.sh
+
   build-web:
     name: Build & Test Web
     needs: changes

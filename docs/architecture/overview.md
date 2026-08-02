@@ -22,13 +22,13 @@
           │                                └── Author repo reads (default)
           │
           ▼ (optional, feature-flagged)
-   Social Wire gateway (Fly, ams)
+   Social Wire gateway (Fly, iah)
      /v1/sync/preferences, /v1/pds/cache/record
      /v1/publications/* (write-through + proxied sidebar)
      /v1/appview/*  ← Thin AppView (proxied to services/appview)
           │
           ▼
-     Supabase Postgres (content_items, read_marks, sidebar_projection_cache, pds_repo_record_cache)
+     Supabase Postgres (AWS us-east-1; content_items, read_marks, sidebar_projection_cache, pds_repo_record_cache)
 ```
 
 ## Data Ownership
@@ -94,6 +94,12 @@ Full design: [appview.md](appview.md). Deploy each service from repo root via `s
 
 ### Infrastructure
 
+All development and production Fly compute (Gateway, AppView, Charybdis, Operations,
+and Tap) runs in Houston (`iah`). Supabase/Postgres remains in AWS `us-east-1` and is
+reached through the session pooler. Service-to-service Fly traffic uses private
+`.internal` addresses; only browser/client ingress uses public gateway domains. Data
+residency for both compute and database projections is the United States.
+
 ```
 GitHub (source)
        │
@@ -109,8 +115,8 @@ GitHub Actions
 
 | Environment | Branch | Backend hosting |
 |-------------|--------|-----------------|
-| Production | `main` | Fly gateway, appview, and Charybdis (`*-prod-*` apps; Charybdis retains the `appview-worker` app ID) |
-| Development | `dev` | Fly gateway, appview, and Charybdis (`*-dev-*` apps; Charybdis retains the `appview-worker` app ID) |
+| Production | `main` | Fly Gateway, AppView, Charybdis, Operations, and Tap (`*-prod-*`, all in `iah`) |
+| Development | `dev` | Fly Gateway, AppView, Charybdis, Operations, and Tap (`*-dev-*`, all in `iah`) |
 | Local | — | `swift run Gateway` / `swift run AppView` / `swift run AppViewWorker` |
 
 ### Local development

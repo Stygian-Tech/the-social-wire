@@ -280,6 +280,26 @@ actor ThinAppViewReadService {
     )
   }
 
+  func listFeed(
+    auth: AuthContext,
+    selector: AppViewFeedSelector,
+    filter: EntryListFilter,
+    cursor: String?,
+    limit: Int
+  ) async throws -> AppViewFeedPage? {
+    try await store.listFeedEntries(
+      viewerDid: auth.did,
+      selector: selector,
+      filter: filter,
+      cursor: cursor,
+      limit: limit
+    )
+  }
+
+  func hasFeedProjection(auth: AuthContext) async throws -> Bool {
+    try await store.hasViewerFeedProjection(viewerDid: auth.did)
+  }
+
   func upsertReadMark(auth: AuthContext, subjectUri: String, readAt: Date?) async throws {
     let alreadyRead = try? await authoritativeReadState(
       viewerDid: auth.did,

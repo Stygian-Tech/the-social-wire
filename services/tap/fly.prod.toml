@@ -1,5 +1,5 @@
 app = 'the-social-wire-prod-tap'
-primary_region = 'ams'
+primary_region = 'iah'
 
 [build]
   dockerfile = 'Dockerfile'

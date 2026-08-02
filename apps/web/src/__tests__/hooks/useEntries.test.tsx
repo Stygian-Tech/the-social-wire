@@ -17,7 +17,7 @@ import { dummyPublicationSidebarProjection } from "@/lib/dummyReaderData";
 const ORIG_ENV = { ...process.env };
 
 const mockFetchHandler = mock(async (url: string) => {
-  if (url.includes("/v1/appview/entries")) {
+  if (url.includes("/v1/appview/feed")) {
     return new Response(
       JSON.stringify({ entries: MOCK_ENTRIES, cursor: undefined }),
       { status: 200, headers: { "Content-Type": "application/json" } }
@@ -28,6 +28,9 @@ const mockFetchHandler = mock(async (url: string) => {
       JSON.stringify(MOCK_ENTRY_DETAIL),
       { status: 200, headers: { "Content-Type": "application/json" } }
     );
+  }
+  if (url.includes("/v1/telemetry/client-performance")) {
+    return new Response(null, { status: 202 });
   }
   return new Response("not found", { status: 404 });
 });
@@ -123,7 +126,7 @@ describe("useEntries", () => {
     expect(mockFetchHandler.mock.calls.map(([url]) => url)).toEqual([]);
   });
 
-  it("does not refetch on remount when cached data is fresh", async () => {
+  it("keeps cached rows visible while refreshing on remount", async () => {
     const qc = new QueryClient({
       defaultOptions: { queries: { retry: false } },
     });
@@ -152,10 +155,13 @@ describe("useEntries", () => {
       enrollAuthorDids: [],
       refreshedAt: "2026-01-01T00:00:00.000Z",
     });
-    qc.setQueryData(["entries", "did:plc:alice", "all"], {
+    qc.setQueryData(
+      ["entries", "did:plc:testuser", "did:plc:alice", "all"],
+      {
       pages: [{ entries: MOCK_ENTRIES, cursor: undefined }],
       pageParams: [undefined],
-    });
+      }
+    );
 
     function Wrapper({ children }: { children: React.ReactNode }) {
       return <QueryClientProvider client={qc}>{children}</QueryClientProvider>;
@@ -167,7 +173,21 @@ describe("useEntries", () => {
     unmount();
     renderHook(() => useEntries("did:plc:alice"), { wrapper: Wrapper });
 
-    expect(mockFetchHandler).not.toHaveBeenCalled();
+    expect(
+      qc.getQueryData([
+        "entries",
+        "did:plc:testuser",
+        "did:plc:alice",
+        "all",
+      ])
+    ).toBeDefined();
+    await waitFor(() =>
+      expect(
+        mockFetchHandler.mock.calls.some(([url]) =>
+          String(url).includes("/v1/appview/feed")
+        )
+      ).toBe(true)
+    );
   });
 
   it("returns empty pages when publicationKey is null", async () => {

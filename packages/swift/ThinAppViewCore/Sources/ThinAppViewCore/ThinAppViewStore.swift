@@ -65,6 +65,16 @@ public protocol ThinAppViewStore: Actor {
     limit: Int
   ) async throws -> AppViewEntryListResponse
 
+  func listFeedEntries(
+    viewerDid: String,
+    selector: AppViewFeedSelector,
+    filter: EntryListFilter,
+    cursor: String?,
+    limit: Int
+  ) async throws -> AppViewFeedPage?
+
+  func hasViewerFeedProjection(viewerDid: String) async throws -> Bool
+
   func readBoundary(viewerDid: String, publicationId: String) async throws -> ReadWatermarkBoundary?
 
   func countUnreadEntries(
@@ -85,6 +95,20 @@ public protocol ThinAppViewStore: Actor {
   func replacePublicationScopes(
     viewerDid: String,
     scopes: [AppViewPublicationScope]
+  ) async throws
+
+  func upsertViewerFeedProjection(
+    viewerDid: String,
+    scopes: [AppViewPublicationScope],
+    feeds: [AppViewViewerFeed],
+    memberships: [AppViewFeedPublication]
+  ) async throws
+
+  func replaceViewerFeedProjection(
+    viewerDid: String,
+    scopes: [AppViewPublicationScope],
+    feeds: [AppViewViewerFeed],
+    memberships: [AppViewFeedPublication]
   ) async throws
 
   func fetchUnreadCounters(
