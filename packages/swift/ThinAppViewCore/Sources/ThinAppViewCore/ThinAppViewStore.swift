@@ -57,6 +57,14 @@ public protocol ThinAppViewStore: Actor {
     readBoundary: ReadWatermarkBoundary?
   ) async throws -> AppViewEntryListResponse
 
+  func listFeedEntries(
+    viewerDid: String,
+    scopes: [PublicationUnreadScope],
+    filter: EntryListFilter,
+    cursor: String?,
+    limit: Int
+  ) async throws -> AppViewEntryListResponse
+
   func readBoundary(viewerDid: String, publicationId: String) async throws -> ReadWatermarkBoundary?
 
   func countUnreadEntries(
@@ -217,6 +225,49 @@ public protocol ThinAppViewStore: Actor {
 }
 
 public extension ThinAppViewStore {
+  func listFeedEntries(
+    viewerDid: String,
+    scopes: [PublicationUnreadScope],
+    filter: EntryListFilter,
+    cursor: String?,
+    limit: Int
+  ) async throws -> AppViewEntryListResponse {
+    let pageLimit = max(1, min(limit, 100))
+    var candidates: [AppViewEntryListItem] = []
+    var sourceHasMore = false
+    for scope in scopes {
+      let boundary = filter == .all
+        ? nil
+        : try await readBoundary(viewerDid: viewerDid, publicationId: scope.publicationId)
+      let page = try await listEntries(
+        viewerDid: viewerDid,
+        authorDid: scope.authorDid,
+        publicationAtUri: scope.publicationAtUri,
+        publicationScopeAtUris: scope.publicationScopeAtUris,
+        publicationSiteUrls: scope.publicationSiteUrls,
+        filter: filter,
+        cursor: cursor,
+        limit: min(100, pageLimit + 1),
+        readBoundary: boundary
+      )
+      candidates.append(contentsOf: page.entries.map { $0.withPublicationId(scope.publicationId) })
+      sourceHasMore = sourceHasMore || page.cursor != nil
+    }
+    candidates.sort {
+      $0.feedPositionAt == $1.feedPositionAt
+        ? $0.entryId > $1.entryId
+        : $0.feedPositionAt > $1.feedPositionAt
+    }
+    let entries = Array(candidates.prefix(pageLimit))
+    let hasMore = sourceHasMore || candidates.count > pageLimit
+    return AppViewEntryListResponse(
+      entries: entries,
+      cursor: hasMore ? entries.last.map {
+        ThinAppViewCursor.encode(createdAt: $0.feedPositionAt, uri: $0.entryId)
+      } : nil
+    )
+  }
+
   func listEntries(
     viewerDid: String,
     authorDid: String,

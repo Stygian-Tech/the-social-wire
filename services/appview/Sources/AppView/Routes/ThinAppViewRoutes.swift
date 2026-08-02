@@ -38,7 +38,7 @@ struct ThinAppViewRoutes {
         requestId: context.requestId
       )
       return try await AppViewFeedExecution.run(requestId: context.requestId) {
-        let sidebar = try await projectionService.sidebar(auth: auth)
+        let sidebar = try await projectionService.aggregateFeedSidebar(auth: auth)
         guard let publications = Self.publications(for: kind, id: id, sidebar: sidebar) else {
           throw HTTPError(.notFound, message: "Feed is not available to this viewer")
         }

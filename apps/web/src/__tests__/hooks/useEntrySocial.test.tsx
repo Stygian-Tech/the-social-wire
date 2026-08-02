@@ -113,7 +113,7 @@ describe("useEntrySocial", () => {
   it("creates a full link post when the OAuth grant includes Bluesky post access", async () => {
     getTokenInfoMock.mockResolvedValueOnce({
       scope:
-        "atproto repo:app.bsky.feed.post?action=create&action=delete",
+        "atproto include:app.bsky.authCreatePosts?aud=did:web:api.bsky.app%23bsky_appview",
       iss: "https://pds.example",
       aud: "https://pds.example",
       sub: "did:plc:me",
@@ -233,7 +233,7 @@ describe("useEntrySocial", () => {
   it("uses the full link embed and likes an unliked linked post while posting", async () => {
     getTokenInfoMock.mockResolvedValue({
       scope:
-        "atproto repo:app.bsky.feed.post?action=create repo:app.bsky.feed.like?action=create&action=delete",
+        "atproto include:app.bsky.authCreatePosts?aud=did:web:api.bsky.app%23bsky_appview repo:app.bsky.feed.like?action=create",
       iss: "https://pds.example",
       aud: "https://pds.example",
       sub: "did:plc:me",

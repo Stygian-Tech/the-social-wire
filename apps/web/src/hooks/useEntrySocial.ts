@@ -74,12 +74,25 @@ function scopeAllowsRepoAction(
   collection: BskyRepoCollection,
   action: "create" | "delete"
 ): boolean {
+  const [scopeName, query = ""] = scopeToken.split("?");
+  if (
+    scopeName === "include:app.bsky.authCreatePosts" &&
+    collection === "app.bsky.feed.post" &&
+    action === "create"
+  ) {
+    return true;
+  }
+  if (
+    scopeName === "include:app.bsky.authDeleteContent" &&
+    action === "delete"
+  ) {
+    return true;
+  }
   if (scopeToken === `repo:${collection}` || scopeToken === "repo:*") {
     return true;
   }
 
-  const [repoScope, query = ""] = scopeToken.split("?");
-  if (repoScope !== `repo:${collection}`) return false;
+  if (scopeName !== `repo:${collection}`) return false;
   if (!query) return true;
 
   const params = new URLSearchParams(query);

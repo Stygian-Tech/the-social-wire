@@ -56,8 +56,13 @@ describe("UserInput feedback", () => {
     );
   });
 
-  it("requires both UserInput write permissions", async () => {
+  it("accepts the UserInput permission set and legacy granular permissions", async () => {
     const permitted = {
+      getTokenInfo: async () => ({
+        scope: "atproto include:app.userinput.authFull",
+      }),
+    };
+    const granularPermissions = {
       getTokenInfo: async () => ({
         scope:
           "atproto repo:app.userinput.discussion?action=create repo:app.userinput.upvote?action=create&action=update",
@@ -69,6 +74,9 @@ describe("UserInput feedback", () => {
 
     await expect(
       requireUserInputFeedbackScopes(permitted as never)
+    ).resolves.toBeUndefined();
+    await expect(
+      requireUserInputFeedbackScopes(granularPermissions as never)
     ).resolves.toBeUndefined();
     await expect(
       requireUserInputFeedbackScopes(staleSession as never)

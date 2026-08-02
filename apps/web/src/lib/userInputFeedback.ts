@@ -10,10 +10,7 @@ export const USER_INPUT_BOARD_URI =
 export const USER_INPUT_DISCUSSION_COLLECTION = "app.userinput.discussion";
 export const USER_INPUT_UPVOTE_COLLECTION = "app.userinput.upvote";
 
-export const USER_INPUT_REPO_SCOPES = [
-  "repo:app.userinput.discussion?action=create",
-  "repo:app.userinput.upvote?action=create&action=update",
-] as const;
+export const USER_INPUT_OAUTH_SCOPE = "include:app.userinput.authFull";
 
 export const USER_INPUT_REAUTH_MESSAGE =
   "Your session does not include feedback permissions yet. Sign out and sign back in, then try again.";
@@ -70,6 +67,7 @@ export async function requireUserInputFeedbackScopes(
 ): Promise<void> {
   const info = await session.getTokenInfo("auto");
   const scopes = String(info.scope ?? "").split(/\s+/).filter(Boolean);
+  if (scopes.includes(USER_INPUT_OAUTH_SCOPE)) return;
   const hasDiscussionCreate = scopes.some((scope) =>
     scopeAllowsRepoAction(scope, USER_INPUT_DISCUSSION_COLLECTION, "create")
   );

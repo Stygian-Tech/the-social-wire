@@ -1,7 +1,10 @@
 import Foundation
 
 public enum AppViewProjectionCacheTTL {
-  public static let sidebarSeconds: TimeInterval = 5 * 60
+  // Sidebar membership is invalidated on mutations and refreshed in the
+  // background by bootstrap. Keep it available across an active session so
+  // aggregate feeds do not fall off a five-minute latency cliff.
+  public static let sidebarSeconds: TimeInterval = 60 * 60
   public static let unreadCountsSeconds: TimeInterval = 2 * 60
   public static let firstPageSeconds: TimeInterval = 5 * 60
 }

@@ -16,18 +16,20 @@ final class ATProtoOAuthService: NSObject, ASWebAuthenticationPresentationContex
         "repo:com.thesocialwire.folder?action=create&action=update&action=delete",
         "repo:com.thesocialwire.publicationPrefs?action=create&action=update&action=delete",
         "repo:com.thesocialwire.preferences?action=create&action=update&action=delete",
+        "include:app.bsky.authCreatePosts?aud=did:web:api.bsky.app%23bsky_appview",
+        "include:app.bsky.authDeleteContent?aud=did:web:api.bsky.app%23bsky_appview",
+        "repo:app.bsky.feed.like?action=create",
+        "repo:app.bsky.feed.repost?action=create",
         "repo:link.latr.saved.external?action=create&action=update&action=delete",
         "repo:link.latr.saved.item?action=create&action=update&action=delete",
         "repo:com.latr.saved.external?action=create&action=update&action=delete",
         "repo:com.latr.saved.item?action=create&action=update&action=delete",
-        "repo:site.standard.graph.subscription?action=create&action=update&action=delete",
         "repo:app.skyreader.feed.subscription?action=create&action=update&action=delete",
-        // Bluesky social actions (quote/reply use putRecord; like/repost use create + delete to toggle).
+        "repo:site.standard.graph.subscription?action=create&action=update&action=delete",
+        // Quote/reply edits use putRecord; create/delete are covered by the Bluesky permission sets.
         // NOTE: the published client metadata at `/ios-client-metadata.json` must list these same
         // scopes or the authorization server will reject the broadened request (returns 403 on write).
-        "repo:app.bsky.feed.post?action=create&action=update&action=delete",
-        "repo:app.bsky.feed.like?action=create&action=delete",
-        "repo:app.bsky.feed.repost?action=create&action=delete"
+        "repo:app.bsky.feed.post?action=update"
     ].joined(separator: " ")
 
     private(set) var session: AuthSession?

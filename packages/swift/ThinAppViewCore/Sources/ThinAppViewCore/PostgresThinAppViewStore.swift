@@ -423,6 +423,112 @@ public init(pool: PostgresClient, logger: Logger) {
     )
   }
 
+  public func listFeedEntries(
+    viewerDid: String,
+    scopes: [PublicationUnreadScope],
+    filter: EntryListFilter,
+    cursor: String?,
+    limit: Int
+  ) async throws -> AppViewEntryListResponse {
+    let pageLimit = max(1, min(limit, 100))
+    let publicationIds = Array(Set(scopes.map(\.publicationId))).sorted()
+    guard !publicationIds.isEmpty else {
+      return AppViewEntryListResponse(entries: [], cursor: nil)
+    }
+
+    let now = Date()
+    let decodedCursor = cursor.flatMap(ThinAppViewCursor.decode)
+    let hasCursor = decodedCursor != nil
+    let cursorAt = decodedCursor?.createdAt ?? now
+    let cursorUri = decodedCursor?.uri ?? ""
+    let includeAll = filter == .all
+    let includeUnread = filter == .unread
+    let includeRead = filter == .read
+    let rows = try await pool.query(
+      """
+      SELECT ci.uri, ci.render_json::text, ci.created_at, scope.publication_id
+      FROM appview_publication_scopes scope
+      JOIN content_items ci
+        ON ci.author_did = scope.author_did
+       AND (
+         jsonb_array_length(scope.scope_keys) = 0
+         OR (ci.publication_site IS NOT NULL AND scope.scope_keys ? ci.publication_site)
+       )
+      LEFT JOIN appview_publication_read_floors floor
+        ON floor.viewer_did = scope.viewer_did
+       AND floor.publication_id = scope.publication_id
+      LEFT JOIN read_marks rm
+        ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = ci.uri
+      LEFT JOIN appview_unread_overrides uo
+        ON uo.viewer_did = \(viewerDid) AND uo.subject_uri = ci.uri
+      WHERE scope.viewer_did = \(viewerDid)
+        AND scope.publication_id = ANY(\(publicationIds))
+        AND ci.expires_at > \(now)
+        AND (
+        \(includeAll)
+        OR (
+          \(includeUnread)
+          AND rm.subject_uri IS NULL
+          AND (
+            floor.read_floor_at IS NULL
+            OR ci.created_at > floor.read_floor_at
+            OR (
+              floor.read_floor_uri IS NOT NULL
+              AND ci.created_at = floor.read_floor_at
+              AND ci.uri > floor.read_floor_uri
+            )
+            OR uo.subject_uri IS NOT NULL
+          )
+        )
+        OR (
+          \(includeRead)
+          AND (
+            rm.subject_uri IS NOT NULL
+            OR (
+              floor.read_floor_at IS NOT NULL
+              AND uo.subject_uri IS NULL
+              AND (
+                ci.created_at < floor.read_floor_at
+                OR (
+                  ci.created_at = floor.read_floor_at
+                  AND (floor.read_floor_uri IS NULL OR ci.uri <= floor.read_floor_uri)
+                )
+              )
+            )
+          )
+        )
+      )
+        AND (
+          \(hasCursor) = FALSE
+          OR ci.created_at < \(cursorAt)
+          OR (ci.created_at = \(cursorAt) AND ci.uri < \(cursorUri))
+        )
+      ORDER BY ci.created_at DESC, ci.uri DESC
+      LIMIT \(pageLimit + 1)
+      """,
+      logger: logger
+    )
+
+    var entries: [AppViewEntryListItem] = []
+    for try await row in rows {
+      let (uri, renderJSON, createdAt, publicationId) = try row.decode(
+        (String, String, Date, String).self
+      )
+      guard let entry = ThinAppViewQuerySupport.entryListItems(
+        from: [(uri, renderJSON, createdAt)]
+      ).first else { continue }
+      entries.append(entry.withPublicationId(publicationId))
+    }
+    let hasMore = entries.count > pageLimit
+    let pageEntries = Array(entries.prefix(pageLimit))
+    return AppViewEntryListResponse(
+      entries: pageEntries,
+      cursor: hasMore ? pageEntries.last.map {
+        ThinAppViewCursor.encode(createdAt: $0.feedPositionAt, uri: $0.entryId)
+      } : nil
+    )
+  }
+
   private func fetchSiteScopedContentBatch(
     viewerDid: String,
     authorDid: String,

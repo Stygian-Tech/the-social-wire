@@ -91,6 +91,35 @@ actor PublicationProjectionService {
     }
   }
 
+  /// Aggregate feeds only need publication membership. Reuse the materialized
+  /// bootstrap projection so opening a feed never waits on PDS discovery.
+  func aggregateFeedSidebar(auth: AuthContext) async throws -> PublicationSidebarResponse {
+    if let projectionCache,
+       let entry = try? await projectionCache.sidebarProjectionCacheEntry(viewerDid: auth.did),
+       let snapshot = try? JSONDecoder().decode(
+         BootstrapSidebarCacheSnapshot.self,
+         from: Data(entry.value.utf8)
+       )
+    {
+      let priority = snapshot.priority
+      guard let folders = snapshot.folderPayload else { return priority }
+      return PublicationSidebarResponse(
+        viewerDid: priority.viewerDid,
+        folders: priority.folders,
+        publicationPrefs: priority.publicationPrefs,
+        folderSections: folders.folderSections,
+        allPublicationRows: folders.allPublicationRows,
+        myPublications: priority.myPublications,
+        subscribedUnfoldered: priority.subscribedUnfoldered,
+        followingTabPublications: priority.followingTabPublications,
+        enrollAuthorDids: priority.enrollAuthorDids,
+        totalUnreadCount: priority.totalUnreadCount,
+        refreshedAt: priority.refreshedAt
+      )
+    }
+    return try await sidebar(auth: auth)
+  }
+
   func sidebarRow(for viewerDid: String, publicationId: String) -> SidebarPublicationRow? {
     guard let cache = sidebarRowCacheByViewer[viewerDid] else { return nil }
     if let hit = cache[publicationId] { return hit }
