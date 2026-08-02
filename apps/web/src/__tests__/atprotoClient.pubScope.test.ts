@@ -5,6 +5,7 @@ import {
   decodePublicationScopeListCursor,
   entryRecordMatchesPublication,
   entryRecordMatchesPublicationScope,
+  type EntryListItem,
   type PublicationScopeMatch,
   normalizeAtRepoParam,
   normalizeDidForOwnershipCompare,
@@ -486,5 +487,23 @@ describe("sortEntryListItemsNewestFirst", () => {
     };
     const sorted = sortEntryListItemsNewestFirst([a, b, c]);
     expect(sorted.map((e) => e.entryId)).toEqual([b.entryId, c.entryId, a.entryId]);
+  });
+
+  it("does not crash on feed dates persisted from Swift's default encoder", () => {
+    const older = {
+      entryId: "at://did/x/site.standard.document/older",
+      title: "Older",
+      publishedAt: 725_760_000,
+    } as unknown as EntryListItem;
+    const newer = {
+      entryId: "at://did/x/site.standard.document/newer",
+      title: "Newer",
+      publishedAt: 757_382_400,
+    } as unknown as EntryListItem;
+
+    expect(sortEntryListItemsNewestFirst([older, newer])).toEqual([
+      newer,
+      older,
+    ]);
   });
 });

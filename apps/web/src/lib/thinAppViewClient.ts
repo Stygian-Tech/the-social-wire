@@ -1,5 +1,6 @@
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 
+import { normalizeAppViewPublishedAt } from "@/lib/appViewPublishedAt";
 import type { EntryListItem, EntryDetail } from "@/lib/atprotoClient";
 import type { ArticleListFilter } from "@/lib/entryArticleFilter";
 import type {
@@ -143,7 +144,7 @@ export async function listEntriesFromAppView(args: {
       entryId: string;
       title: string;
       summary?: string;
-      publishedAt: string;
+      publishedAt: unknown;
       thumbnailUrl?: string;
       thumbnailFallbackUrl?: string;
       originalUrl?: string;
@@ -162,7 +163,7 @@ export async function listEntriesFromAppView(args: {
         entryId: row.entryId,
         title: row.title,
         summary: row.summary,
-        publishedAt: row.publishedAt,
+        publishedAt: normalizeAppViewPublishedAt(row.publishedAt),
         thumbnailUrl: row.thumbnailUrl,
         thumbnailFallbackUrl: row.thumbnailFallbackUrl,
         isRead: row.isRead,
@@ -209,7 +210,7 @@ export async function listAggregateFeedFromAppView(args: {
       entryId: string;
       title: string;
       summary?: string;
-      publishedAt: string;
+      publishedAt: unknown;
       thumbnailUrl?: string;
       thumbnailFallbackUrl?: string;
       originalUrl?: string;
@@ -227,7 +228,7 @@ export async function listAggregateFeedFromAppView(args: {
         entryId: row.entryId,
         title: row.title,
         summary: row.summary,
-        publishedAt: row.publishedAt,
+        publishedAt: normalizeAppViewPublishedAt(row.publishedAt),
         thumbnailUrl: row.thumbnailUrl,
         thumbnailFallbackUrl: row.thumbnailFallbackUrl,
         publicationId: row.publicationId,
@@ -260,7 +261,7 @@ export async function getEntryFromAppView(
     entryId: string;
     title: string;
     summary?: string;
-    publishedAt: string;
+    publishedAt: unknown;
     thumbnailUrl?: string;
     thumbnailFallbackUrl?: string;
     contentHtml?: string;
@@ -274,7 +275,7 @@ export async function getEntryFromAppView(
     entryId: json.entryId,
     title: json.title,
     summary: json.summary,
-    publishedAt: json.publishedAt,
+    publishedAt: normalizeAppViewPublishedAt(json.publishedAt),
     contentHtml: json.contentHtml ?? json.summary ?? "",
     thumbnailUrl: json.thumbnailUrl,
     thumbnailFallbackUrl: json.thumbnailFallbackUrl,

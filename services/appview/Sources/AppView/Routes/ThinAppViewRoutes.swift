@@ -262,7 +262,9 @@ struct ThinAppViewRoutes {
     page: AppViewFeedPage,
     durationMilliseconds: Double
   ) throws -> Response {
-    let data = try JSONEncoder().encode(page.response)
+    let encoder = JSONEncoder()
+    encoder.dateEncodingStrategy = .iso8601
+    let data = try encoder.encode(page.response)
     var headers = HTTPFields()
     headers[.contentType] = "application/json"
     headers[HTTPField.Name("X-AppView-Feed-Source")!] = "materialized_projection"
