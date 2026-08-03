@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 import { EntryCardActionMenu } from "@/components/EntryList/EntryCardActionMenu";
 import { EntryRowActions } from "@/components/EntryList/EntryRowActions";
 import {
@@ -28,9 +28,10 @@ interface EntryRowProps {
   readIndicatorsEnabled: boolean;
   onMarkEntryRead: (entryId: string) => void;
   onMarkEntryUnread: (entryId: string) => void;
+  publication?: { name: string; faviconUrl?: string };
 }
 
-export function EntryRow({
+export const EntryRow = memo(function EntryRow({
   entry,
   isSelected,
   onSelect,
@@ -38,6 +39,7 @@ export function EntryRow({
   readIndicatorsEnabled,
   onMarkEntryRead,
   onMarkEntryUnread,
+  publication: publicationOverride,
 }: EntryRowProps) {
   const date = new Date(entry.publishedAt);
   const formattedDate = date.toLocaleDateString(undefined, {
@@ -63,12 +65,20 @@ export function EntryRow({
   );
   const [attemptIdx, setAttemptIdx] = useState(0);
   const allPublicationRows = useOptionalSidebarPublicationRows();
-  const publication = entry.publicationId
+  const sidebarPublication = entry.publicationId
     ? allPublicationRows.find(
         (row) => row.publicationId === entry.publicationId,
       )
     : undefined;
-
+  const publication =
+    publicationOverride ??
+    (sidebarPublication
+      ? {
+          name: sidebarPublication.title,
+          faviconUrl:
+            sidebarPublication.iconUrl ?? sidebarPublication.avatarUrl,
+        }
+      : undefined);
   const activeThumbSrc =
     thumbAttempts.length > 0 && attemptIdx < thumbAttempts.length
       ? thumbAttempts[attemptIdx]
@@ -129,8 +139,8 @@ export function EntryRow({
             {publication ? (
               <PublicationChip
                 publication={{
-                  name: publication.title,
-                  faviconUrl: publication.iconUrl ?? publication.avatarUrl,
+                  name: publication.name,
+                  faviconUrl: publication.faviconUrl,
                 }}
                 className="max-w-[12rem] border-0 bg-transparent px-0 py-0 text-foreground/80"
               />
@@ -177,4 +187,4 @@ export function EntryRow({
       </ContextMenuContent>
     </ContextMenu>
   );
-}
+});

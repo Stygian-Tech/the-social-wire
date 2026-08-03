@@ -703,6 +703,202 @@ public init(pool: PostgresClient, logger: Logger) {
     return false
   }
 
+  public func publicationScopes(
+    viewerDid: String,
+    sectionKey: String
+  ) async throws -> [AppViewPublicationScope] {
+    let rows = try await pool.query(
+      """
+      SELECT viewer_did, publication_id, author_did, publication_at_uri,
+             publication_scope_at_uris::text, publication_site_urls::text,
+             scope_keys::text, section_keys::text, updated_at
+      FROM appview_publication_scopes
+      WHERE viewer_did = \(viewerDid)
+        AND section_keys ? \(sectionKey)
+      ORDER BY publication_id
+      """,
+      logger: logger
+    )
+    var scopes: [AppViewPublicationScope] = []
+    for try await row in rows {
+      if let scope = try Self.publicationScope(from: row) {
+        scopes.append(scope)
+      }
+    }
+    return scopes
+  }
+
+  public func listAggregateEntries(
+    viewerDid: String,
+    scopes: [AppViewPublicationScope],
+    filter: EntryListFilter,
+    cursor: String?,
+    limit: Int
+  ) async throws -> AppViewAggregatePageResult {
+    let startedAt = Date()
+    let pageLimit = max(1, min(limit, 100))
+    let batchSize = max(100, min(1_000, pageLimit * 4))
+    let sortedScopes = scopes.sorted { $0.publicationId < $1.publicationId }
+    guard !sortedScopes.isEmpty else {
+      return AppViewAggregatePageResult(
+        response: AppViewEntryListResponse(entries: [], cursor: nil),
+        diagnostics: AppViewAggregatePageDiagnostics(
+          rowsScanned: 0,
+          rowsReturned: 0,
+          duplicatesSuppressed: 0,
+          queryDuration: Date().timeIntervalSince(startedAt)
+        )
+      )
+    }
+
+    var databaseCursor = cursor.flatMap(ThinAppViewCursor.decode)
+    var matches: [AppViewEntryListItem] = []
+    var rowsScanned = 0
+    var duplicatesSuppressed = 0
+    var databaseHasMore = false
+    var lastScanned: (createdAt: Date, uri: String)?
+
+    while matches.count <= pageLimit {
+      let rows = try await fetchAggregateContentBatch(
+        scopes: sortedScopes,
+        cursor: databaseCursor,
+        limit: batchSize
+      )
+      rowsScanned += rows.count
+      databaseHasMore = rows.count == batchSize
+      if let last = rows.last {
+        lastScanned = (last.createdAt, last.uri)
+      }
+
+      let scopedEntries = rows.compactMap { row -> AppViewEntryListItem? in
+        guard let scope = AggregateFeedQuerySupport.matchingScope(for: row, scopes: sortedScopes) else {
+          return nil
+        }
+        return AggregateFeedQuerySupport.entry(from: row, publicationId: scope.publicationId)
+      }
+      let states = try await readStates(viewerDid: viewerDid, entries: scopedEntries)
+      let filtered = AggregateFeedQuerySupport.filteredByReadState(
+        scopedEntries,
+        states: states,
+        filter: filter
+      )
+      let deduped = AggregateFeedQuerySupport.deduplicated(matches + filtered)
+      matches = deduped.entries
+      duplicatesSuppressed += deduped.duplicatesSuppressed
+
+      if matches.count > pageLimit || !databaseHasMore { break }
+      guard let lastScanned else { break }
+      databaseCursor = lastScanned
+    }
+
+    let response = AggregateFeedQuerySupport.response(
+      matches: matches,
+      pageLimit: pageLimit,
+      lastScanned: lastScanned,
+      databaseHasMore: databaseHasMore
+    )
+    return AppViewAggregatePageResult(
+      response: response,
+      diagnostics: AppViewAggregatePageDiagnostics(
+        rowsScanned: rowsScanned,
+        rowsReturned: response.entries.count,
+        duplicatesSuppressed: duplicatesSuppressed,
+        queryDuration: Date().timeIntervalSince(startedAt)
+      )
+    )
+  }
+
+  private func fetchAggregateContentBatch(
+    scopes: [AppViewPublicationScope],
+    cursor: (createdAt: Date, uri: String)?,
+    limit: Int
+  ) async throws -> [AggregateFeedDatabaseRow] {
+    let authorDids = Array(Set(scopes.map(\.authorDid))).sorted()
+    let unscopedAuthorDids = Array(Set(scopes.filter(\.scopeKeys.isEmpty).map(\.authorDid))).sorted()
+    let scopeKeys = Array(Set(scopes.flatMap(\.scopeKeys))).sorted()
+    guard !authorDids.isEmpty else { return [] }
+    let now = Date()
+    let rows: PostgresRowSequence
+    if let cursor {
+      rows = try await pool.query(
+        """
+        SELECT ci.uri, ci.author_did, ci.publication_site, ci.created_at,
+               COALESCE(ci.render_json->>'title', ''),
+               ci.render_json->>'publishedAt',
+               ci.render_json->>'summary',
+               ci.render_json->>'thumbnailUrl',
+               ci.render_json->>'articleUrl'
+        FROM content_items ci
+        WHERE ci.author_did = ANY(\(authorDids))
+          AND ci.expires_at > \(now)
+          AND (
+            ci.author_did = ANY(\(unscopedAuthorDids))
+            OR ci.publication_site = ANY(\(scopeKeys))
+          )
+          AND (
+            ci.created_at < \(cursor.createdAt)
+            OR (ci.created_at = \(cursor.createdAt) AND ci.uri < \(cursor.uri))
+          )
+        ORDER BY ci.created_at DESC, ci.uri DESC
+        LIMIT \(limit)
+        """,
+        logger: logger
+      )
+    } else {
+      rows = try await pool.query(
+        """
+        SELECT ci.uri, ci.author_did, ci.publication_site, ci.created_at,
+               COALESCE(ci.render_json->>'title', ''),
+               ci.render_json->>'publishedAt',
+               ci.render_json->>'summary',
+               ci.render_json->>'thumbnailUrl',
+               ci.render_json->>'articleUrl'
+        FROM content_items ci
+        WHERE ci.author_did = ANY(\(authorDids))
+          AND ci.expires_at > \(now)
+          AND (
+            ci.author_did = ANY(\(unscopedAuthorDids))
+            OR ci.publication_site = ANY(\(scopeKeys))
+          )
+        ORDER BY ci.created_at DESC, ci.uri DESC
+        LIMIT \(limit)
+        """,
+        logger: logger
+      )
+    }
+
+    var fetched: [AggregateFeedDatabaseRow] = []
+    for try await row in rows {
+      let (
+        uri,
+        authorDid,
+        publicationSite,
+        createdAt,
+        title,
+        publishedAt,
+        summary,
+        thumbnailUrl,
+        articleUrl
+      ) = try row.decode(
+        (String, String, String?, Date, String, String?, String?, String?, String?).self
+      )
+      fetched.append(
+        AggregateFeedDatabaseRow(
+          uri: uri,
+          authorDid: authorDid,
+          publicationSite: publicationSite,
+          createdAt: createdAt,
+          title: title,
+          publishedAt: publishedAt,
+          summary: summary,
+          thumbnailUrl: thumbnailUrl,
+          articleUrl: articleUrl
+        )
+      )
+    }
+    return fetched
+  }
+
   private func fetchSiteScopedContentBatch(
     viewerDid: String,
     authorDid: String,

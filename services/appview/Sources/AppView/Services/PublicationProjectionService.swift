@@ -603,9 +603,11 @@ actor PublicationProjectionService {
 
     for row in response.myPublications {
       addSectionKey(row.publicationId, "my", &sectionKeysByPublicationId)
+      addSectionKey(row.publicationId, "subscribed", &sectionKeysByPublicationId)
     }
     for row in response.subscribedUnfoldered {
       addSectionKey(row.publicationId, "subscribed:unfoldered", &sectionKeysByPublicationId)
+      addSectionKey(row.publicationId, "subscribed", &sectionKeysByPublicationId)
     }
     for row in response.followingTabPublications {
       addSectionKey(row.publicationId, "following", &sectionKeysByPublicationId)
@@ -613,6 +615,7 @@ actor PublicationProjectionService {
     for section in response.folderSections {
       for row in section.publications {
         addSectionKey(row.publicationId, "folder:\(section.folderRkey)", &sectionKeysByPublicationId)
+        addSectionKey(row.publicationId, "subscribed", &sectionKeysByPublicationId)
       }
     }
     for row in response.allPublicationRows where sectionKeysByPublicationId[row.publicationId] == nil {

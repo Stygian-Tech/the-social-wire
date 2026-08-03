@@ -6,6 +6,7 @@ import type { ReactNode } from "react";
 import { EntryListVirtualPane } from "@/components/EntryList/EntryListVirtualPane";
 import { AuthProvider } from "@/hooks/useAuth";
 import type { EntryListItem } from "@/lib/atprotoClient";
+import { clearEntryListScrollOffsetsForTests } from "@/lib/entryListScrollState";
 
 const globalWithResizeObserver = globalThis as typeof globalThis & {
   ResizeObserver?: new (callback: ResizeObserverCallback) => ResizeObserver;
@@ -38,7 +39,7 @@ function makeEntry(index: number): EntryListItem {
   };
 }
 
-function renderPane(entries: EntryListItem[]) {
+function renderPane(entries: EntryListItem[], scrollStateKey = "test-feed") {
   return (
     <EntryListVirtualPane
       visibleEntries={entries}
@@ -48,7 +49,9 @@ function renderPane(entries: EntryListItem[]) {
       readIndicatorsEnabled
       hasNextPage={false}
       isFetchingNextPage={false}
-      fetchNextPage={() => {}}
+      fetchNextPage={() => Promise.resolve()}
+      scrollStateKey={scrollStateKey}
+      publicationById={new Map()}
       markEntryRead={() => {}}
       markEntryUnread={() => {}}
     />
@@ -83,5 +86,23 @@ describe("EntryListVirtualPane scroll stability", () => {
     rerender(renderPane([makeEntry(100), ...initialEntries]));
 
     expect(scrollRoot.scrollTop).toBe(320);
+  });
+
+  it("restores a feed scroll offset after the pane remounts", () => {
+    clearEntryListScrollOffsetsForTests();
+    const entries = Array.from({ length: 12 }, (_, index) => makeEntry(index));
+    const first = render(renderPane(entries, "subscribed:all"));
+    const firstRoot = first.container.querySelector(
+      "[data-entry-list-scroll]"
+    ) as HTMLDivElement;
+    firstRoot.scrollTop = 480;
+    fireEvent.scroll(firstRoot);
+    first.unmount();
+
+    const second = render(renderPane(entries, "subscribed:all"));
+    const restoredRoot = second.container.querySelector(
+      "[data-entry-list-scroll]"
+    ) as HTMLDivElement;
+    expect(restoredRoot.scrollTop).toBe(480);
   });
 });

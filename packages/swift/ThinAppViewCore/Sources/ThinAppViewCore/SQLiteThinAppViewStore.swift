@@ -58,6 +58,16 @@ public init(path dbPath: String, logger: Logger) throws {
       """)
 
     try db.execute(sql: """
+      CREATE INDEX IF NOT EXISTS idx_content_items_author_created_uri
+        ON content_items (author_did, created_at DESC, uri DESC);
+      """)
+
+    try db.execute(sql: """
+      CREATE INDEX IF NOT EXISTS idx_content_items_author_site_created_uri
+        ON content_items (author_did, publication_site, created_at DESC, uri DESC);
+      """)
+
+    try db.execute(sql: """
       CREATE TABLE IF NOT EXISTS read_marks (
         viewer_did TEXT NOT NULL,
         subject_uri TEXT NOT NULL,
@@ -276,6 +286,11 @@ public init(path dbPath: String, logger: Logger) throws {
     try db.execute(sql: """
       CREATE INDEX IF NOT EXISTS idx_appview_feed_publications_scope
         ON appview_feed_publications (viewer_did, feed_kind, feed_id, publication_id);
+      """)
+
+    try db.execute(sql: """
+      CREATE INDEX IF NOT EXISTS idx_appview_publication_scopes_viewer
+        ON appview_publication_scopes (viewer_did);
       """)
 
     try db.execute(sql: """
@@ -799,6 +814,180 @@ public init(path dbPath: String, logger: Logger) throws {
       lastScannedUri: lastScannedUri,
       dbHasMore: dbHasMore
     )
+  }
+
+  public func publicationScopes(
+    viewerDid: String,
+    sectionKey: String
+  ) async throws -> [AppViewPublicationScope] {
+    try await db.read { db in
+      let rows = try Row.fetchAll(
+        db,
+        sql: """
+          SELECT viewer_did, publication_id, author_did, publication_at_uri,
+                 publication_scope_at_uris, publication_site_urls, scope_keys,
+                 section_keys, updated_at
+          FROM appview_publication_scopes
+          WHERE viewer_did = ?
+          ORDER BY publication_id
+          """,
+        arguments: [viewerDid]
+      )
+      return rows
+        .compactMap(Self.publicationScope(from:))
+        .filter { $0.sectionKeys.contains(sectionKey) }
+    }
+  }
+
+  public func listAggregateEntries(
+    viewerDid: String,
+    scopes: [AppViewPublicationScope],
+    filter: EntryListFilter,
+    cursor: String?,
+    limit: Int
+  ) async throws -> AppViewAggregatePageResult {
+    let startedAt = Date()
+    let pageLimit = max(1, min(limit, 100))
+    let batchSize = max(100, min(1_000, pageLimit * 4))
+    let sortedScopes = scopes.sorted { $0.publicationId < $1.publicationId }
+    guard !sortedScopes.isEmpty else {
+      return AppViewAggregatePageResult(
+        response: AppViewEntryListResponse(entries: [], cursor: nil),
+        diagnostics: AppViewAggregatePageDiagnostics(
+          rowsScanned: 0,
+          rowsReturned: 0,
+          duplicatesSuppressed: 0,
+          queryDuration: Date().timeIntervalSince(startedAt)
+        )
+      )
+    }
+
+    var databaseCursor = cursor.flatMap(ThinAppViewCursor.decode)
+    var matches: [AppViewEntryListItem] = []
+    var rowsScanned = 0
+    var duplicatesSuppressed = 0
+    var databaseHasMore = false
+    var lastScanned: (createdAt: Date, uri: String)?
+
+    while matches.count <= pageLimit {
+      let rows = try await fetchAggregateContentBatch(
+        scopes: sortedScopes,
+        cursor: databaseCursor,
+        limit: batchSize
+      )
+      rowsScanned += rows.count
+      databaseHasMore = rows.count == batchSize
+      if let last = rows.last {
+        lastScanned = (last.createdAt, last.uri)
+      }
+
+      let scopedEntries = rows.compactMap { row -> AppViewEntryListItem? in
+        guard let scope = AggregateFeedQuerySupport.matchingScope(for: row, scopes: sortedScopes) else {
+          return nil
+        }
+        return AggregateFeedQuerySupport.entry(from: row, publicationId: scope.publicationId)
+      }
+      let states = try await readStates(viewerDid: viewerDid, entries: scopedEntries)
+      let filtered = AggregateFeedQuerySupport.filteredByReadState(
+        scopedEntries,
+        states: states,
+        filter: filter
+      )
+      let deduped = AggregateFeedQuerySupport.deduplicated(matches + filtered)
+      matches = deduped.entries
+      duplicatesSuppressed += deduped.duplicatesSuppressed
+
+      if matches.count > pageLimit || !databaseHasMore { break }
+      guard let lastScanned else { break }
+      databaseCursor = lastScanned
+    }
+
+    let response = AggregateFeedQuerySupport.response(
+      matches: matches,
+      pageLimit: pageLimit,
+      lastScanned: lastScanned,
+      databaseHasMore: databaseHasMore
+    )
+    return AppViewAggregatePageResult(
+      response: response,
+      diagnostics: AppViewAggregatePageDiagnostics(
+        rowsScanned: rowsScanned,
+        rowsReturned: response.entries.count,
+        duplicatesSuppressed: duplicatesSuppressed,
+        queryDuration: Date().timeIntervalSince(startedAt)
+      )
+    )
+  }
+
+  private func fetchAggregateContentBatch(
+    scopes: [AppViewPublicationScope],
+    cursor: (createdAt: Date, uri: String)?,
+    limit: Int
+  ) async throws -> [AggregateFeedDatabaseRow] {
+    let authorDids = Array(Set(scopes.map(\.authorDid))).sorted()
+    let unscopedAuthorDids = Array(Set(scopes.filter(\.scopeKeys.isEmpty).map(\.authorDid))).sorted()
+    let scopeKeys = Array(Set(scopes.flatMap(\.scopeKeys))).sorted()
+    guard !authorDids.isEmpty else { return [] }
+
+    return try await db.read { db in
+      var sql = """
+        SELECT ci.uri, ci.author_did, ci.publication_site, ci.created_at,
+               COALESCE(json_extract(ci.render_json, '$.title'), '') AS title,
+               json_extract(ci.render_json, '$.publishedAt') AS published_at,
+               json_extract(ci.render_json, '$.summary') AS summary,
+               json_extract(ci.render_json, '$.thumbnailUrl') AS thumbnail_url,
+               json_extract(ci.render_json, '$.articleUrl') AS article_url
+        FROM content_items ci
+        WHERE ci.author_did IN (\(authorDids.map { _ in "?" }.joined(separator: ", ")))
+          AND ci.expires_at > ?
+        """
+      var arguments: [DatabaseValueConvertible?] = authorDids
+      arguments.append(Self.isoString(from: Date()))
+
+      if !unscopedAuthorDids.isEmpty || !scopeKeys.isEmpty {
+        var membershipPredicates: [String] = []
+        if !unscopedAuthorDids.isEmpty {
+          membershipPredicates.append(
+            "ci.author_did IN (\(unscopedAuthorDids.map { _ in "?" }.joined(separator: ", ")))"
+          )
+          arguments.append(contentsOf: unscopedAuthorDids)
+        }
+        if !scopeKeys.isEmpty {
+          membershipPredicates.append(
+            "ci.publication_site IN (\(scopeKeys.map { _ in "?" }.joined(separator: ", ")))"
+          )
+          arguments.append(contentsOf: scopeKeys)
+        }
+        sql += " AND (\(membershipPredicates.joined(separator: " OR ")))"
+      }
+
+      if let cursor {
+        let cursorIso = Self.isoString(from: cursor.createdAt)
+        sql += " AND (ci.created_at < ? OR (ci.created_at = ? AND ci.uri < ?))"
+        arguments.append(contentsOf: [cursorIso, cursorIso, cursor.uri])
+      }
+      sql += " ORDER BY ci.created_at DESC, ci.uri DESC LIMIT ?"
+      arguments.append(limit)
+
+      return try Row.fetchAll(
+        db,
+        sql: sql,
+        arguments: StatementArguments(arguments)
+      ).compactMap { row in
+        guard let createdAt = Self.date(fromIso: row["created_at"]) else { return nil }
+        return AggregateFeedDatabaseRow(
+          uri: row["uri"],
+          authorDid: row["author_did"],
+          publicationSite: row["publication_site"],
+          createdAt: createdAt,
+          title: row["title"],
+          publishedAt: row["published_at"],
+          summary: row["summary"],
+          thumbnailUrl: row["thumbnail_url"],
+          articleUrl: row["article_url"]
+        )
+      }
+    }
   }
 
   private func fetchContentBatch(
