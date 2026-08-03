@@ -167,16 +167,22 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Cache Swift PM build artifacts (AppViewWorker)
+      - name: Cache Swift PM build artifacts (ThinAppViewCore + AppViewWorker)
         uses: actions/cache@v5
         with:
-          path: services/appview-worker/.build
+          path: |
+            packages/swift/ThinAppViewCore/.build
+            services/appview-worker/.build
           key: ${{ runner.os }}-swift-appview-worker-swift-6.2.4-${{ hashFiles('services/appview-worker/Package.resolved', 'packages/swift/ThinAppViewCore/Package.resolved') }}
 
       - uses: swift-actions/setup-swift@v3
         with:
           swift-version: "6.2.4"
           skip-verify-signature: true
+
+      - name: Test ThinAppViewCore
+        working-directory: packages/swift/ThinAppViewCore
+        run: swift test
 
       - name: Test AppViewWorker
         working-directory: services/appview-worker
@@ -218,7 +224,7 @@ jobs:
         run: swift test
 
   test-lexicons:
-    name: Lexicons (Swift Package)
+    name: Lexicons (Bun Package)
     needs: changes
     if: needs.changes.result == 'success' && needs.changes.outputs.lexicons == 'true'
     runs-on: ubuntu-latest

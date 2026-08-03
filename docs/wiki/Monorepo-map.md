@@ -7,13 +7,17 @@ the-social-wire/
   apps/
     web/          # Next.js web client (Bun)
     apple/        # SwiftUI iOS/iPadOS
+    operations/   # Next.js operator console (Bun)
   services/
     gateway/          # OAuth, sync, PDS writes, AppView proxy (Fly.io)
     appview/          # Sidebar projection + Thin AppView reads (Fly.io)
     appview-worker/   # Charybdis: Jetstream ingestion (Fly.io)
+    operations/       # Operator control plane (Fly.io)
+    tap/              # Pinned Indigo Tap image (Fly.io)
   packages/
     lexicons/     # app.thesocialwire.* (and related) lexicons
     spec/         # OpenAPI for HTTP surfaces (/v1/appview, /v1/sync, …)
+    swift/        # GatewayCore, OperationsCore, ThinAppViewCore
   supabase/
     migrations/   # Postgres (pds_repo_record_cache, content_items, read_marks, …)
   docs/
@@ -24,4 +28,4 @@ the-social-wire/
 **Pointers**
 
 - [Root README](https://github.com/Stygian-Tech/the-social-wire/blob/main/README.md)
-- [[Thin-AppView]] — optional read index rollout
+- [[Thin-AppView]] — read index, routes, and rollout

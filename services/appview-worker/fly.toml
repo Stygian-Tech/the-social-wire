@@ -1,5 +1,5 @@
 # Deploy from repo root: bash services/appview-worker/deploy.sh dev
-# Or: fly deploy ../.. --config services/appview-worker/fly.toml --app the-social-wire-dev-appview-worker
+# Or from repo root: flyctl deploy . --config services/appview-worker/fly.toml --app the-social-wire-dev-appview-worker --local-only
 
 app = 'the-social-wire-dev-appview-worker'
 primary_region = 'iah'

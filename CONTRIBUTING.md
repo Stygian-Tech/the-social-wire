@@ -16,11 +16,14 @@ Tests must live **inside the owning package**, not in a root-level `tests/` fold
 | Package | Test location |
 |---------|---------------|
 | Web | `apps/web/src/__tests__/` |
+| Operations UI | colocated `*.test.ts` / `*.test.tsx` under `apps/operations/src/` |
 | Gateway | `services/gateway/Tests/` |
 | AppView | `services/appview/Tests/` |
 | Charybdis | `services/appview-worker/Tests/` |
+| Operations service | `services/operations/Tests/` |
 | GatewayCore | `packages/swift/GatewayCore/Tests/` |
 | ThinAppViewCore | `packages/swift/ThinAppViewCore/Tests/` |
+| OperationsCore | `packages/swift/OperationsCore/Tests/` |
 | iOS | `apps/apple/SocialWireTests/` |
 | Lexicons | `packages/lexicons/__tests__/` |
 | OpenAPI spec | `packages/spec/__tests__/` |
@@ -50,7 +53,7 @@ Edit wiki content only under **`docs/wiki/`** in this repository. On push to `ma
 
 ## Branch protection
 
-Require the **`CI — required`** check from [.github/workflows/ci.yml](.github/workflows/ci.yml). It gates merges on path-filtered jobs (`build-web`, `test-gateway`, `test-appview`, `test-appview-worker`, `test-lexicons`, `test-spec`, `supabase-validate`).
+Require the **`CI — Required`** check from [.github/workflows/ci.yml](.github/workflows/ci.yml). It gates merges on path-filtered jobs (`build-web`, `build-operations`, `test-gateway`, `test-appview`, `test-appview-worker`, `test-operations`, `test-tap-image`, `test-lexicons`, `test-spec`, and `supabase-validate`).
 
 ## License
 

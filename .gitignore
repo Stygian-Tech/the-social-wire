@@ -62,6 +62,9 @@ supabase/.branches
 supabase/.temp
 supabase/.env
 
+# Production database migration artifacts
+.migration-artifacts/
+
 # nektos/act — keep `.actrc` committed (non-interactive defaults); ignore real secrets only
 scripts/act/.secrets
 /.secrets

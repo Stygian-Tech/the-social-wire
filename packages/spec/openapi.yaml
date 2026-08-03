@@ -7,15 +7,16 @@ info:
 
     - **`services/gateway`** (this spec's `servers` URLs) — OAuth client metadata, DPoP verification, PDS write-through, sync cache, unbuffered proxy to AppView.
     - **`services/appview`** — publication sidebar projection (`/v1/publications/*`), Thin AppView read index (`/v1/appview/*`), bootstrap stream.
-    - **Charybdis** (`services/appview-worker`) — Jetstream ingestion and proactive backfill (no HTTP surface).
+    - **Charybdis** (`services/appview-worker`) — Jetstream/Tap ingestion, Skyreader RSS polling, proactive backfill, and cleanup (no HTTP surface).
+    - **`services/operations`** — operator-only observability and recovery control plane, proxied by Gateway.
 
     **OAuth client metadata** mirrors SPA + ATS clients (`/oauth-client-metadata.json`, `/ios-client-metadata.json`) with scopes from **`ATProtoOAuthScopes`**.
 
     **Authenticated routes** require `Authorization: Bearer` or `Authorization: DPoP` plus RFC 9449 `DPoP` proof binding (`cnf.jkt` when emitted by the issuer).
 
-    **Thin AppView** (`ENABLE_THIN_APPVIEW` on AppView): Level-1 entry index, unread counts, bootstrap-stream NDJSON initial load, scoped mark-all-read. Ingested by **Charybdis** (`services/appview-worker`).
+    **Thin AppView** (`ENABLE_THIN_APPVIEW` on AppView): data-minimized entry index and detail, unread counts, bootstrap-stream NDJSON initial load, scoped mark-all-read. Ingested by **Charybdis** (`services/appview-worker`).
 
-    LATR HTTPS merge APIs stay on the Next.js web app — not documented here.
+    Native L@tr proxy routes (`/v1/latr/*`) are documented here. The web app's same-origin Next.js `/api/latr-gateway` proxy is a separate surface.
   version: "1.0.0"
   contact:
     name: Stygian Tech
@@ -117,20 +118,27 @@ components:
 
     EntryDetail:
       type: object
-      required: [entryId, title, publishedAt, contentHtml]
+      required: [entryId, title, publishedAt, isRead]
       properties:
         entryId:
           type: string
         title:
           type: string
+        summary:
+          type: string
         publishedAt:
           type: string
           format: date-time
+        thumbnailUrl:
+          type: string
+          format: uri
+        isRead:
+          type: boolean
         contentHtml:
           type: string
           description: |
-            Sanitized HTML content of the entry. Scripts and unsafe attributes have
-            been stripped. Images are allowed with validated URLs.
+            Indexed HTML when available (notably RSS feed content), otherwise a
+            summary-derived body may be returned. Clients must sanitize before rendering.
         originalUrl:
           type: string
           format: uri
@@ -1400,7 +1408,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
-  # ── Thin AppView (GDPR-safe Level-1 read index) ───────────────────────────
+  # ── Thin AppView (data-minimized read index) ──────────────────────────────
 
   /v1/appview/bootstrap-stream:
     get:
@@ -1666,7 +1674,7 @@ paths:
   /v1/appview/read-marks:
     post:
       operationId: upsertAppViewReadMark
-      summary: Write-through read mark after PDS upsert
+      summary: Upsert AppView read mark
       tags: [AppView]
       requestBody:
         required: true
@@ -1690,7 +1698,7 @@ paths:
           description: Route disabled when thin AppView flag is unset.
     delete:
       operationId: deleteAppViewReadMark
-      summary: Write-through unread (delete read mark)
+      summary: Delete AppView read mark
       tags: [AppView]
       requestBody:
         required: true
@@ -1713,7 +1721,7 @@ paths:
   /v1/appview/enroll:
     post:
       operationId: enrollAppViewAuthors
-      summary: Backfill recent entries for followed author DIDs
+      summary: Backfill recent author records and ingest RSS feeds
       tags: [AppView]
       requestBody:
         required: true
@@ -1721,13 +1729,17 @@ paths:
           application/json:
             schema:
               type: object
-              required: [authorDids]
               properties:
                 authorDids:
                   type: array
                   items:
                     type: string
                   maxItems: 500
+                feedUrls:
+                  type: array
+                  items:
+                    type: string
+                    format: uri
       responses:
         "200":
           description: Backfill completed.
@@ -2581,7 +2593,7 @@ tags:
   - name: Publications
     description: Unified sidebar projection, resolver, and gateway write-through
   - name: AppView
-    description: GDPR-safe Level-1 entry index gated behind `ENABLE_THIN_APPVIEW`
+    description: Data-minimized entry index gated behind `ENABLE_THIN_APPVIEW`
   - name: Latr
     description: Authenticated L@tr read-later iOS proxy (`LATR_IOS_PROXY_*` server credentials)
   - name: Operations

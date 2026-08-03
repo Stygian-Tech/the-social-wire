@@ -1,13 +1,13 @@
 # Supabase
 
-Postgres migrations for the Social Wire gateway cache, AppView index, and sidebar projection caches.
+Postgres migrations for the Social Wire gateway cache, AppView/Charybdis projections, Operations control plane, and Tap/recovery telemetry.
 
 ## Prerequisites
 
 - [Supabase CLI](https://supabase.com/docs/guides/cli)
 - Docker (for `supabase start`)
 
-## Local development
+## Local migration validation
 
 ```bash
 # From repo root
@@ -19,9 +19,9 @@ Migrations live in `migrations/`. Each file is applied in timestamp order.
 
 ## Environment
 
-Set `SUPABASE_DATABASE_URL` on **gateway**, **appview**, and **appview-worker** when `APP_ENV=dev|prod`.
+Set `SUPABASE_DATABASE_URL` independently on **gateway**, **appview**, **appview-worker**, and **operations** in hosted environments.
 
-Local mode (`APP_ENV=local`) uses SQLite instead — Supabase is optional for gateway-only dev.
+Gateway, AppView, and Charybdis use SQLite under `APP_ENV=local`; the Operations service requires `APP_ENV=dev|prod` plus Postgres. The local Supabase stack above validates migrations and can provide a development Postgres URL, but it is not selected automatically by `APP_ENV=local`.
 
 Use the **session pooler** connection string on Fly and GitHub Actions (not direct `db.*.supabase.co`).
 
@@ -32,7 +32,12 @@ Use the **session pooler** connection string on Fly and GitHub Actions (not dire
 | `pds_repo_record_cache` | Gateway `/v1/pds/cache/record` |
 | `content_items` | Thin AppView entry index |
 | `read_marks` | Server-side unread filtering |
-| `sidebar_projection_cache` | Stale-first sidebar/unread/first-page snapshots |
+| `sidebar_projection_cache`, `unread_counts_cache`, `first_page_cache` | Stale-first bootstrap projection slices |
+| `appview_publication_scopes`, `appview_unread_counters`, `appview_viewer_feeds`, `appview_feed_publications` | Materialized scope, unread, and aggregate-feed state |
+| `appview_ingestion_*`, `appview_backfill_jobs`, `appview_recovery_failures`, `appview_projection_repair_outbox` | Ingestion checkpoints, gaps, recovery, and repair |
+| `appview_tap_*` | Tap registrations, receipts, repository state, and parity discrepancies |
+| `rss_feed_fetch_metadata` | Skyreader RSS polling metadata |
+| `operations_*` | Operator state, alerts, commands, events, audits, metrics, and traces |
 
 ## CI
 

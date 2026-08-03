@@ -1,0 +1,29 @@
+meta {
+  name: Patch L@tr Save State
+  type: http
+  seq: 30
+}
+
+patch {
+  url: {{baseUrl}}/v1/latr/saves/{{latrItemRkey}}/state
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: DPoP {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+  X-Latr-Gateway-DPoP: {{latrGatewayDpopProof}}
+  X-ATProto-Upstream-DPoP: {{upstreamDpopProof}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "state": "archived"
+  }
+}
+
+docs {
+  Archives a L@tr item through the native gateway proxy. Use `state: unread` to unarchive. Set `latrItemRkey` to the saved-item record key.
+}

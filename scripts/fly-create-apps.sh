@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Create Fly.io apps for Social Wire gateway, appview, Charybdis, and operations (dev + prod).
+# Create Fly.io apps for Social Wire gateway, appview, Charybdis, operations, and Tap (dev + prod).
 #
 # Prereqs: flyctl installed and logged in (`fly auth login`), or `FLY_API_TOKEN` in CI.
 # Optional: FLY_ORG=your-org-name (else uses flyctl default org).
@@ -21,6 +21,8 @@ WORKER_DEV="${FLY_APPVIEW_WORKER_APP_DEV:-the-social-wire-dev-appview-worker}"
 WORKER_PROD="${FLY_APPVIEW_WORKER_APP_PROD:-the-social-wire-prod-appview-worker}"
 OPERATIONS_DEV="${FLY_OPERATIONS_APP_DEV:-the-social-wire-dev-operations}"
 OPERATIONS_PROD="${FLY_OPERATIONS_APP_PROD:-the-social-wire-prod-operations}"
+TAP_DEV="the-social-wire-dev-tap"
+TAP_PROD="the-social-wire-prod-tap"
 
 echo "==> Ensuring Fly apps exist"
 bash "$ROOT/scripts/fly-ensure-app.sh" "$GATEWAY_DEV"
@@ -31,8 +33,10 @@ bash "$ROOT/scripts/fly-ensure-app.sh" "$WORKER_DEV"
 bash "$ROOT/scripts/fly-ensure-app.sh" "$WORKER_PROD"
 bash "$ROOT/scripts/fly-ensure-app.sh" "$OPERATIONS_DEV"
 bash "$ROOT/scripts/fly-ensure-app.sh" "$OPERATIONS_PROD"
+bash "$ROOT/scripts/fly-ensure-app.sh" "$TAP_DEV"
+bash "$ROOT/scripts/fly-ensure-app.sh" "$TAP_PROD"
 
 echo ""
 echo "==> Done."
-echo "Next: fly secrets set on each app (SUPABASE_DATABASE_URL, APP_ENV, ENABLE_THIN_APPVIEW, APPVIEW_BASE_URL on gateway, operations HMAC/operator/webhook secrets, …)."
-echo "Deploy: CI on push, or run the gateway, appview, Charybdis (appview-worker), and operations deploy scripts for dev."
+echo "Next: set per-app runtime secrets: SUPABASE_DATABASE_URL where used; shared Gateway/AppView and Gateway/Operations HMAC secrets; Operations operator/webhook secrets; and environment-matched TAP_DATABASE_URL/TAP_ADMIN_PASSWORD."
+echo "Deploy: CI on push, or run the gateway, appview, Charybdis (appview-worker), operations, and Tap deploy scripts for dev."

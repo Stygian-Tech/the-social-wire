@@ -2,7 +2,7 @@
 
 **Package:** `apps/web`  
 **Runner:** Bun test (`bunfig.toml` — jsdom, preload `src/__tests__/setup.ts`)  
-**CI:** `build-web` → `turbo test --filter=web`
+**CI:** `build-web` → typecheck, lint, Bun tests, and Next.js production build
 
 ## Commands
 
@@ -16,53 +16,25 @@ bun test --coverage   # optional local coverage report
 
 ```
 apps/web/src/__tests__/
-  *.test.ts           # lib module tests
+  *.test.ts(x)        # libraries and targeted components
   hooks/*.test.tsx    # React hook tests (Testing Library renderHook)
   api/*.test.ts       # Next.js route handler tests
+  contexts/*.test.tsx # reader/sidebar state providers
   mocks/              # MSW server + handlers
 ```
 
-## Module inventory (`src/lib/`)
+## Coverage inventory
 
-| Module | Test file | Status |
-|--------|-----------|--------|
-| `appEnv.ts` | `appEnv.test.ts` | Covered |
-| `atprotoClient.ts` | `atprotoClient.*.test.ts` | Covered |
-| `addPublicationResolveServer.ts` | `addPublicationResolveServer.test.ts` | Covered |
-| `embedFramePolicy.ts` | `embedFramePolicy.test.ts` | Covered |
-| `entryArticleFilter.ts` | `entryArticleFilter.test.ts` | Covered |
-| `entryReadStateStorage.ts` | `entryReadStateStorage.test.ts` | Covered |
-| `latrSavedUrls.ts` | `latrSavedUrls.test.ts` | Covered |
-| `oauthClientMetadata.ts` | `oauthClientMetadata.test.ts` | Covered |
-| `oauthSessionSignals.ts` | `oauthSessionSignals.test.ts` | Covered |
-| `pdsClient.ts` | `pdsClient.test.ts` | Covered |
-| `publicResourceUrl.ts` | `publicResourceUrl.test.ts` | Covered |
-| `rssFeedCore.ts` | `rssFeedCore.test.ts` | Covered |
-| `rssFeedServer.ts` | `rssFeedServer.test.ts` | Covered |
-| `sanitize.ts` | `sanitize.test.ts` | Covered |
-| `thinAppViewClient.ts` | `thinAppViewClient.test.ts` | Covered |
-| `feedRefresh.ts` | `feedRefresh.test.ts` | Covered |
-| `unreadCounts.ts` | `unreadCounts.test.ts` | Covered |
-| `auth.ts` | `auth.test.ts`, `pathnameIsOAuthCallbackRoute.test.ts` | Covered |
-| `publicationSubscriptionMatch.ts` | `publicationSubscriptionMatch.test.ts` | Covered |
-| `readLaterServices.ts` | `readLaterServices.test.ts` | Covered |
-| `articleCanonicalUrl.ts` | `articleCanonicalUrl.test.ts` | Covered |
-| `atprotoOAuthScopes.ts` | `atprotoOAuthScopes.test.ts` | Covered |
-| `utils.ts` | — | Trivial helpers; covered indirectly |
+The suite is intentionally colocated and grows with the owning code. Representative areas:
 
-## Hooks (`src/hooks/`)
-
-| Hook | Test file | Status |
-|------|-----------|--------|
-| `useEntries.ts` | `hooks/useEntries.test.tsx` | Covered |
-| `usePublications.ts` (useDiscovery) | `hooks/useDiscovery.test.tsx` | Partial |
-| `useSidebarUnreadCounts.ts` | `hooks/useSidebarUnreadCounts.test.tsx` | Covered |
-| `useCachedBulkReadActions.ts` | `hooks/useCachedBulkReadActions.test.tsx` | Covered |
-| `usePublicationSidebarData.ts` | `hooks/usePublicationSidebarData.test.tsx` | Covered |
-| `useProactiveFeedRefresh.ts` | — | Covered via `feedRefresh.test.ts` |
-| `useReadLaterPreferences.ts` | `hooks/useReadLaterPreferences.test.tsx` | Covered |
-| `useLatrSaved.ts` | `hooks/useLatrSaved.test.tsx` | Covered |
-| `usePublications.ts` | `hooks/usePublications.test.tsx` | Covered |
+| Area | Examples |
+|------|----------|
+| Auth and OAuth | `auth`, scopes, client metadata, callback/session expiry |
+| AppView reader | bootstrap state, feeds/detail, pagination, prefetch, unread counts, optimistic read state |
+| Sidebar/publications | projection client/provider, discovery compatibility, folders, subscriptions, tabs, persistence |
+| L@tr | gateway proxy/DPoP, saves and metadata backfill, archive/open targets, saved-link social/publication resolution |
+| Article presentation | sanitization, oEmbed/iframe policies, canonical URLs, reader-mode selection, thumbnails |
+| Components/contexts | entry rows/actions, sidebar/header/navigation, appearance, tabs, ReadRoute context |
 
 ## API routes (`src/app/api/`)
 
@@ -72,10 +44,13 @@ apps/web/src/__tests__/
 | `resolve-add-publication` | `api/resolve-add-publication.test.ts` |
 | `rss-feed` | `api/rss-feed.test.ts` |
 | `embed-frame` | `api/embed-frame.test.ts` |
+| `oembed` | `api/oembed.test.ts` |
+| `bluesky-card-thumb` | `api/bluesky-card-thumb.test.ts` |
+| `latr-gateway/[...path]` | `api/latr-gateway.test.ts` |
 
 ## Components
 
-UI components under `src/components/` are **not** unit-tested. Verify layout and interactions manually in the browser.
+Targeted components are tested with Testing Library. Responsive layout, browser navigation, and full OAuth/PDS/AppView interaction still require manual verification.
 
 ## MSW
 
@@ -90,4 +65,5 @@ Schema validation tests live in `packages/lexicons/__tests__/`. CI job: **`test-
 - [ ] Sign in with loopback OAuth on `localhost`
 - [ ] Subscribe to a publication (standard.site or RSS)
 - [ ] Mark entry read/unread; confirm sidebar badges
-- [ ] Thin AppView flag: entry list loads from gateway when enabled
+- [ ] Bootstrap, aggregate/scoped feeds, and flat entry detail load through the gateway
+- [ ] `/saved` and `/archive` load L@tr items and keep archive/delete state consistent

@@ -1,0 +1,337 @@
+THE SOCIAL WIRE - RAILWAY DEV ENVIRONMENT VARIABLES
+===================================================
+
+Railway project: The Social Wire
+Railway environment: dev
+
+This file lists the application variables required for the Railway Dev environment.
+It intentionally contains no real secret values.
+
+Status labels:
+  ALREADY SET     Present in Railway Dev now.
+  USER INPUT      A real value still needs to be supplied.
+  GENERATED       Create a unique Dev-only secret; never copy the Production value.
+  OPTIONAL        Leave unset unless the described feature is enabled.
+  RAILWAY MANAGED Railway creates this automatically; do not set it by hand.
+
+
+VALUES STILL NEEDED FROM AN OPERATOR
+====================================
+
+1. Operator DID allowlist
+
+   Set the same comma-delimited DID list in both locations:
+
+   Operations Web:
+     NEXT_PUBLIC_OPERATIONS_OPERATOR_DIDS=did:plc:...
+
+   Ops:
+     OPERATIONS_OPERATOR_DIDS=did:plc:...
+
+   The Operations Web value controls client-side visibility. The Ops value is the
+   authoritative server-side authorization check.
+
+2. L@tr Link credentials for the Web frontend
+
+   Set one of these credential forms on Web:
+
+   Preferred:
+     LATR_GATEWAY_CLIENT_CREDENTIAL=<Dev official client credential>
+
+   Or, instead of the preferred variable:
+     LATR_GATEWAY_CLIENT_ID=<Dev client ID>
+     LATR_GATEWAY_API_KEY=<Dev API key>
+
+3. L@tr Link credentials for the iOS proxy routes
+
+   Set one of these credential forms on Gateway:
+
+   Preferred:
+     LATR_IOS_PROXY_CLIENT_CREDENTIAL=<Dev official client credential>
+
+   Or, instead of the preferred variable:
+     LATR_IOS_PROXY_CLIENT_ID=<Dev client ID>
+     LATR_IOS_PROXY_API_KEY=<Dev API key>
+
+The core Web, Gateway, App View, worker, Tap, and Postgres configuration is already
+present. The three items above are needed for Operations access and complete L@tr
+functionality.
+
+
+POSTGRES SERVICE: Postgres
+==========================
+
+No application variables need to be entered manually on this service.
+
+RAILWAY MANAGED:
+  DATABASE_URL
+  PGHOST
+  PGPORT
+  PGDATABASE
+  PGUSER
+  PGPASSWORD
+  POSTGRES_DB
+  POSTGRES_USER
+  POSTGRES_PASSWORD
+  PGDATA
+
+DATABASE_PUBLIC_URL is Railway-managed and exists only while a public TCP proxy is
+enabled. Application services must use the private DATABASE_URL reference instead.
+Do not keep a public Postgres TCP proxy enabled after migration work.
+
+
+WEB FRONTEND SERVICE: Web
+=========================
+
+ALREADY SET:
+  APP_ENV=dev
+  NEXT_PUBLIC_APP_ENV=dev
+  PORT=3000
+  NEXT_PUBLIC_USE_THIN_APPVIEW=true
+  NEXT_PUBLIC_SITE_URL=https://web-dev-88e4.up.railway.app
+  NEXT_PUBLIC_SOCIALWIRE_API_URL=https://gateway-dev-4009.up.railway.app
+
+USER INPUT FOR L@TR:
+  LATR_GATEWAY_CLIENT_CREDENTIAL=<secret>
+
+OR use both of these instead:
+  LATR_GATEWAY_CLIENT_ID=<Dev client ID>
+  LATR_GATEWAY_API_KEY=<Dev API key>
+
+OPTIONAL:
+  LATR_GATEWAY_URL=https://api.testing.latr.link
+
+The L@tr URL can remain unset because APP_ENV=dev selects the testing gateway by
+default. L@tr secrets must never use a NEXT_PUBLIC_ prefix.
+
+Do not set NEXT_PUBLIC_ATPROTO_CLIENT_ID for the Railway Dev host. Hosted Dev uses
+the Web service's same-origin /oauth-client-metadata.json document by default.
+
+
+OPERATIONS FRONTEND SERVICE: Operations Web
+============================================
+
+ALREADY SET:
+  APP_ENV=dev
+  NEXT_PUBLIC_APP_ENV=dev
+  PORT=3001
+  NEXT_PUBLIC_OPERATIONS_DEMO_MODE=0
+  NEXT_PUBLIC_OPERATIONS_GATEWAY_ORIGIN=https://gateway-dev-4009.up.railway.app
+
+USER INPUT:
+  NEXT_PUBLIC_OPERATIONS_OPERATOR_DIDS=<comma-delimited operator DIDs>
+
+Keep NEXT_PUBLIC_OPERATIONS_DEMO_MODE=0 on every deployed instance.
+
+
+TAP SERVICE: Tap
+================
+
+ALREADY SET:
+  TAP_ENV=dev
+  TAP_BIND=:2480
+  TAP_METRICS_LISTEN=:2481
+  TAP_DATABASE_URL=${{Postgres.DATABASE_URL}}
+  TAP_COLLECTION_FILTERS=site.standard.document,site.standard.entry
+  TAP_DISABLE_ACKS=false
+  TAP_FULL_NETWORK=false
+  TAP_NO_REPLAY=false
+  TAP_LOG_LEVEL=info
+  TAP_MAX_DB_CONNS=1
+  TAP_RESYNC_PARALLELISM=1
+  TAP_RELAY_URL=https://relay1.us-east.bsky.network
+
+GENERATED, ALREADY SET:
+  TAP_ADMIN_PASSWORD=<unique Dev secret>
+
+TAP_ADMIN_PASSWORD must be exactly identical on Tap and Charybdis.
+
+
+INGESTION WORKER SERVICE: Charybdis
+====================================
+
+ALREADY SET:
+  APP_ENV=dev
+  ENABLE_THIN_APPVIEW=true
+  POSTGRES_MAX_CONNECTIONS=2
+  SUPABASE_DATABASE_URL=${{Postgres.DATABASE_URL}}
+  TAP_BASE_URL=http://tap.railway.internal:2480
+  TAP_CONSUMER_MODE=shadow
+  OPERATIONS_RECOVERY_ENABLED=true
+
+GENERATED, ALREADY SET:
+  TAP_ADMIN_PASSWORD=<same Dev secret as Tap>
+
+The SUPABASE_DATABASE_URL name is retained by the application code, but its value
+is the private Railway Postgres reference. Do not put the old Supabase URL here.
+Keep TAP_CONSUMER_MODE=shadow until the Tap parity gate is explicitly passed.
+
+
+PUBLIC API SERVICE: Gateway
+===========================
+
+ALREADY SET:
+  APP_ENV=dev
+  PORT=8080
+  POSTGRES_MAX_CONNECTIONS=2
+  SUPABASE_DATABASE_URL=${{Postgres.DATABASE_URL}}
+  APPVIEW_BASE_URL=http://app-view.railway.internal:8081
+  OPERATIONS_BASE_URL=http://ops.railway.internal:8083
+  OAUTH_PUBLIC_ORIGIN=https://web-dev-88e4.up.railway.app
+  OAUTH_OPERATIONS_ORIGIN=https://operations-web-dev.up.railway.app
+  OAUTH_OPERATIONS_CLIENT_ID=https://gateway-dev-4009.up.railway.app/operations-oauth-client-metadata.json
+
+GENERATED, ALREADY SET:
+  GATEWAY_APPVIEW_INTERNAL_SECRET=<unique Dev secret>
+  GATEWAY_OPERATIONS_INTERNAL_SECRET=<different unique Dev secret>
+
+The App View secret must be exactly identical on Gateway and App View.
+The Operations secret must be exactly identical on Gateway and Ops.
+
+USER INPUT FOR L@TR IOS PROXY:
+  LATR_IOS_PROXY_URL=https://api.testing.latr.link
+  LATR_IOS_PROXY_CLIENT_CREDENTIAL=<secret>
+
+OR use both of these instead of LATR_IOS_PROXY_CLIENT_CREDENTIAL:
+  LATR_IOS_PROXY_CLIENT_ID=<Dev client ID>
+  LATR_IOS_PROXY_API_KEY=<Dev API key>
+
+OPTIONAL OAUTH/CORS HARDENING:
+  CORS_ALLOWED_ORIGINS=https://web-dev-88e4.up.railway.app,https://operations-web-dev.up.railway.app
+  OAUTH_IOS_METADATA_ORIGIN=https://gateway-dev-4009.up.railway.app
+  OAUTH_GATEWAY_REQUIRE_KNOWN_CLIENT=false
+
+The CORS variable is optional because Gateway currently derives both origins from
+OAUTH_PUBLIC_ORIGIN and OAUTH_OPERATIONS_ORIGIN. Leave the known-client switch false
+for Dev unless every accepted Web, Operations, and iOS client ID is explicitly added
+to OAUTH_GATEWAY_ALLOWED_CLIENT_IDS.
+
+
+APP VIEW SERVICE: App View
+==========================
+
+ALREADY SET:
+  APP_ENV=dev
+  PORT=8081
+  APPVIEW_PORT=8081
+  ENABLE_THIN_APPVIEW=true
+  POSTGRES_MAX_CONNECTIONS=8
+  SUPABASE_DATABASE_URL=${{Postgres.DATABASE_URL}}
+
+GENERATED, ALREADY SET:
+  GATEWAY_APPVIEW_INTERNAL_SECRET=<same Dev secret as Gateway>
+
+The remaining THIN_APPVIEW_* retention, enrollment, backfill, RSS polling, and relay
+variables have safe code defaults and are not required for startup.
+
+
+OPERATIONS API SERVICE: Ops
+===========================
+
+ALREADY SET:
+  APP_ENV=dev
+  PORT=8083
+  POSTGRES_MAX_CONNECTIONS=2
+  SUPABASE_DATABASE_URL=${{Postgres.DATABASE_URL}}
+  OPERATIONS_TELEMETRY_ENABLED=true
+  OPERATIONS_RECOVERY_ENABLED=true
+  OPERATIONS_ALERT_DELIVERY_ENABLED=false
+
+GENERATED, ALREADY SET:
+  GATEWAY_OPERATIONS_INTERNAL_SECRET=<same Dev secret as Gateway>
+
+USER INPUT:
+  OPERATIONS_OPERATOR_DIDS=<same comma-delimited DIDs as Operations Web>
+
+OPTIONAL ALERT DELIVERY:
+  OPERATIONS_ALERT_WEBHOOK_URL=<HTTPS webhook URL>
+  OPERATIONS_ALERT_WEBHOOK_SECRET=<unique signing secret>
+
+Only set both alert variables if OPERATIONS_ALERT_DELIVERY_ENABLED=true. Keep alert
+delivery false during the Dev migration rehearsal unless alerts are intentionally
+routed to a non-production destination.
+
+
+SHARED SECRET PAIRING RULES
+===========================
+
+Generate independent Dev values with a cryptographically secure generator such as:
+  openssl rand -hex 32
+
+Pair 1:
+  Gateway.GATEWAY_APPVIEW_INTERNAL_SECRET
+  App View.GATEWAY_APPVIEW_INTERNAL_SECRET
+
+Pair 2:
+  Gateway.GATEWAY_OPERATIONS_INTERNAL_SECRET
+  Ops.GATEWAY_OPERATIONS_INTERNAL_SECRET
+
+Pair 3:
+  Tap.TAP_ADMIN_PASSWORD
+  Charybdis.TAP_ADMIN_PASSWORD
+
+Each pair must match internally. The three pairs must be different from one another
+and different from their Production equivalents.
+
+
+RAILWAY-GENERATED VARIABLES
+===========================
+
+Do not manually create or copy variables whose names begin with RAILWAY_. Railway
+injects project, environment, service, private-domain, public-domain, and volume
+metadata separately for each service instance.
+
+
+IF DEV CUSTOM DOMAINS REPLACE THE TEMPORARY RAILWAY DOMAINS
+===========================================================
+
+Update these values together:
+
+Web:
+  NEXT_PUBLIC_SITE_URL=<Dev Web origin>
+  NEXT_PUBLIC_SOCIALWIRE_API_URL=<Dev Gateway origin>
+
+Operations Web:
+  NEXT_PUBLIC_OPERATIONS_GATEWAY_ORIGIN=<Dev Gateway origin>
+
+Gateway:
+  OAUTH_PUBLIC_ORIGIN=<Dev Web origin>
+  OAUTH_OPERATIONS_ORIGIN=<Dev Operations Web origin>
+  OAUTH_OPERATIONS_CLIENT_ID=<Dev Gateway origin>/operations-oauth-client-metadata.json
+  OAUTH_IOS_METADATA_ORIGIN=<Dev Gateway origin>
+
+If CORS_ALLOWED_ORIGINS is set, replace its origins at the same time. Domain changes
+also require Railway domain attachment, DNS, and certificate activation; variables
+alone do not route traffic.
+
+
+MIGRATION-ONLY OPERATOR SHELL VARIABLES
+=======================================
+
+These do not belong on any Railway service. Export them only in the trusted shell
+that runs scripts/migrate-supabase-to-railway.sh:
+
+  SUPABASE_SOURCE_DATABASE_URL=<Supabase direct or session-pooler URL on port 5432>
+  RAILWAY_ENVIRONMENT=dev
+  MIGRATION_ARTIFACT_DIR=.migration-artifacts/supabase-to-railway-dev
+  MIGRATION_WRITERS_PAUSED=YES
+  MIGRATION_CONFIRM_TARGET_RESET=The Social Wire/dev/Postgres
+  MIGRATION_VERIFY_CHECKSUMS=1
+
+Never use the Supabase transaction pooler on port 6543 for pg_dump or pg_restore.
+Never store SUPABASE_SOURCE_DATABASE_URL in Railway Dev application services.
+
+
+STARTUP ORDER AFTER THE MIGRATION REHEARSAL
+===========================================
+
+The database-writing Dev services are currently stopped intentionally. After the
+restore and verification pass, redeploy them in this order:
+
+  1. Tap
+  2. App View
+  3. Ops
+  4. Gateway
+  5. Charybdis
+
+Web and Operations Web can remain running throughout the database rehearsal.

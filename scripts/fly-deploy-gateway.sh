@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Deploy services/gateway to Fly.io for dev or main.
 #
-# Requires: FLY_API_TOKEN, FLY_GATEWAY_APP_DEV / FLY_GATEWAY_APP_PROD (or FLY_APP_*).
+# Requires: FLY_API_TOKEN and optional FLY_GATEWAY_APP_DEV / FLY_GATEWAY_APP_PROD overrides.
 # Usage: bash scripts/fly-deploy-gateway.sh dev|main
 set -euo pipefail
 

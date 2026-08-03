@@ -20,3 +20,15 @@ Set `NEXT_PUBLIC_OPERATIONS_DEMO_MODE=1` for the explicit local demo dataset. No
 Deploy Development and Production as separate Vercel projects rooted at `apps/operations`. Production must configure `APP_ENV=prod`; an unset Vercel deployment defaults to `dev`. Configure the corresponding Gateway origin and operator DID allowlist per project; the console does not switch environments at runtime. Hosted deployments use the public Gateway's `/operations-oauth-client-metadata.json` document so OAuth works when the Vercel UI deployment is protected. The same-origin `/operations-client-metadata.json` route remains available as a fallback.
 
 Backfill creation is dry-run-first. Operator notes are optional; every mutation carries idempotency and expected-version evidence, and Production additionally requires the exact `PRODUCTION` confirmation. Authorization is enforced by the operations service DID allowlist.
+
+## Testing
+
+From the monorepo root:
+
+```sh
+bun install
+bunx turbo typecheck lint test --filter=operations
+APP_ENV=dev NEXT_PUBLIC_OPERATIONS_DEMO_MODE=1 bunx turbo build --filter=operations
+```
+
+CI runs the same checks in **`build-operations`**. Swift control-plane and Tap verification commands are in the [Operations and Tap test plan](../../docs/test-plans/operations.md).

@@ -1,18 +1,10 @@
-import { afterEach, beforeAll, describe, expect, it, mock } from "bun:test";
+import { afterEach, beforeAll, describe, expect, it } from "bun:test";
 import { cleanup, render } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 
 import { AuthProvider } from "@/hooks/useAuth";
 import type { EntryListItem } from "@/lib/atprotoClient";
-
-mock.module("@/components/EntryList/EntryCardActionMenu", () => ({
-  EntryCardActionMenu: () => null,
-}));
-
-mock.module("@/components/EntryList/EntryRowActions", () => ({
-  EntryRowActions: () => null,
-}));
 
 beforeAll(() => {
   Object.defineProperty(globalThis, "Element", {

@@ -21,7 +21,7 @@
    app.bsky.graph.follow                   ├── Profiles
           │                                └── Author repo reads (default)
           │
-          ▼ (optional, feature-flagged)
+          ▼ (authenticated read path)
    Social Wire gateway (Fly, iah)
      /v1/sync/preferences, /v1/pds/cache/record
      /v1/publications/* (write-through + proxied sidebar)
@@ -40,12 +40,12 @@ The Social Wire follows a protocol-first ownership model:
 | Follow graph | `app.bsky.graph.follow` on user's PDS | User |
 | Folders | `app.thesocialwire.folder` on user's PDS | User |
 | Publication folder assignment | `app.thesocialwire.publicationPrefs` on user's PDS | User |
-| Entry list rows (default) | Author PDS `listRecords` on `site.standard.*` / `com.standard.*` | Authors |
-| Entry list rows (optional) | Gateway Thin AppView `content_items` index | Derived (Level-1 only) |
-| Entry detail / bodies | Author PDS `getRecord` | Authors |
+| standard.site source records | Author PDS `site.standard.document` / `site.standard.entry` | Authors |
+| Entry lists and indexed detail | Gateway Thin AppView `content_items` | Derived; TTL-bound |
+| RSS entry bodies | Parsed feed content in `content_items.render_json` when supplied | Derived; TTL-bound |
 | Read state | Client local cache + Social Wire AppView `read_marks`/read floors | User-visible derived state |
 
-User organisation data remains on the PDS. Feed read/unread state is not written to ATProto repo records. When the Thin AppView is disabled or unavailable, clients fall back to direct author-PDS entry listing. See [appview.md](appview.md).
+User organisation data remains on the PDS. Feed read/unread state is not written to ATProto repo records. Current clients require AppView for feeds and entry detail; a disabled or unavailable AppView produces an unavailable read path rather than a long-lived PDS-direct list fallback. See [appview.md](appview.md).
 
 ## Auth Flow
 
@@ -56,16 +56,19 @@ User enters handle
 Resolve DID via bsky.social / PLC directory
        │
        ▼
-Fetch PDS metadata (authorization_endpoint)
+Discover the PDS protected-resource metadata and authorization issuer
        │
        ▼
-Redirect to PDS /oauth/authorize (PKCE + DPoP)
+Submit a pushed authorization request (PAR) with PKCE + DPoP
+       │
+       ▼
+Redirect to the discovered authorization endpoint with request_uri
        │
        ▼
 User approves on PDS
        │
        ▼
-Callback: exchange code → DPoP-bound access token + refresh token
+Callback: exchange code at the discovered token endpoint → DPoP-bound tokens
        │
        ├─── access token (memory) → PDS XRPC writes (via Agent/client)
        │
@@ -74,17 +77,17 @@ Callback: exchange code → DPoP-bound access token + refresh token
 
 ## Direct ATProto Reads
 
-Clients use public ATProto XRPC to determine if followed accounts publish standard.site entries:
+Public ATProto reads still support identity, follows, profiles, direct user-record writes, and narrow publisher-record enrichment. The legacy discovery path probes author PDSes as follows:
 
 1. Fetch follows via `app.bsky.graph.getFollows`
 2. Probe each followed DID with `com.atproto.repo.listRecords?collection=site.standard.entry`
-3. Load entry lists and detail through `com.atproto.repo.listRecords` and `com.atproto.repo.getRecord`
+3. Read `site.standard.*` records with `com.atproto.repo.listRecords` / `getRecord` when direct enrichment is needed
 
 See [discovery.md](discovery.md) for the detailed walkthrough.
 
-## Thin AppView (optional)
+## Thin AppView
 
-When `ENABLE_THIN_APPVIEW` is enabled on AppView, **Charybdis** (the `appview-worker` process) ingests Jetstream commits into `content_items`. Clients load the sidebar and first feed page via **`GET /v1/appview/bootstrap-stream`**, then paginate entry lists with `GET /v1/appview/entries`. Entry detail stays on the author PDS; feed read writes go to AppView read-mark and mark-all-read routes.
+With `ENABLE_THIN_APPVIEW` enabled on AppView, **Charybdis** (the `appview-worker` process) ingests standard.site commits from Jetstream or the environment-matched Tap service, polls subscribed Skyreader RSS feeds, and writes derived `content_items`. Clients load the sidebar and first feed page via **`GET /v1/appview/bootstrap-stream`**, paginate publication lists with `GET /v1/appview/entries` and aggregate feeds with `GET /v1/appview/feed`, and load indexed detail through `GET /v1/appview/entry`. Web performs only narrow author-PDS URL/embed enrichment when indexed standard.site detail lacks a usable destination. Feed read writes go to AppView read-mark and mark-all-read routes. The separate Operations service records environment-scoped health, gaps, recovery jobs, and audited operator actions.
 
 Enrollment (`POST /v1/appview/enroll`) backfills followed author DIDs after client-side discovery because the global relay may miss very new repos.
 
@@ -106,8 +109,10 @@ GitHub (source)
        ▼ push to main / dev
 GitHub Actions
        │
-       ├─ build-web: bun install → turbo build → Vercel
-       ├─ deploy-gateway / deploy-appview / deploy-appview-worker → Fly.io (remote build)
+       ├─ build-web / build-operations → Vercel projects
+       ├─ test-gateway / test-appview / test-appview-worker / test-operations / test-tap-image
+       ├─ deploy-gateway / deploy-appview / deploy-appview-worker → Fly.io
+       ├─ deploy-operations / deploy-tap → Fly.io development; production is manual
        └─ supabase-validate / supabase-push
 ```
 
@@ -115,13 +120,13 @@ GitHub Actions
 
 | Environment | Branch | Backend hosting |
 |-------------|--------|-----------------|
-| Production | `main` | Fly Gateway, AppView, Charybdis, Operations, and Tap (`*-prod-*`, all in `iah`) |
-| Development | `dev` | Fly Gateway, AppView, Charybdis, Operations, and Tap (`*-dev-*`, all in `iah`) |
-| Local | — | `swift run Gateway` / `swift run AppView` / `swift run AppViewWorker` |
+| Production | `main` | Fly Gateway, AppView, and Charybdis auto-deploy on matching path changes; Operations and Tap require manual rollout (all `iah`) |
+| Development | `dev` | Fly Gateway, AppView, Charybdis, Operations, and Tap auto-deploy on matching path changes (all `iah`) |
+| Local | — | Gateway/AppView/Charybdis use `APP_ENV=local` + SQLite; Operations uses `APP_ENV=dev` + a development Postgres URL |
 
 ### Local development
 
-Run Swift services directly (see root README). Optional: `supabase start` for local Postgres instead of SQLite (`APP_ENV=local`).
+Run Swift services directly (see root README) with AppView and Charybdis pointed at the same explicit SQLite file. Under `APP_ENV=local`, services use SQLite; `supabase start` is for applying and validating Postgres migrations, not a runtime replacement for local service storage.
 
 ## Verification
 

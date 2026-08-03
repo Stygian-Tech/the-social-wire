@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Deploy Charybdis from services/appview-worker to Fly.io for dev or main.
 #
-# Requires: FLY_API_TOKEN, FLY_APPVIEW_WORKER_APP_* (or FLY_WORKER_APP_*).
+# Requires: FLY_API_TOKEN and optional FLY_APPVIEW_WORKER_APP_DEV / FLY_APPVIEW_WORKER_APP_PROD overrides.
 # Usage: bash scripts/fly-deploy-appview-worker.sh dev|main
 set -euo pipefail
 

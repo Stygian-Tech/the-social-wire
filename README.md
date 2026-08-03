@@ -13,11 +13,12 @@ Web (Next.js 16.2+)     iOS/iPadOS (SwiftUI)
                    │
        ┌───────────┴───────────┐
        ▼                       ▼
-User's ATProto PDS      Social Wire gateway (optional)
-  app.thesocialwire.*     /v1/sync, /v1/appview/*
-  site.standard.*         Thin AppView index (EU ams)
-       │
-       └── Author PDS — entry bodies
+User's ATProto PDS      Social Wire gateway (Fly, iah)
+  app.thesocialwire.*     /v1/sync, /v1/publications/*
+  link.latr.saved.*       /v1/appview/*, /v1/latr/*
+                               │
+                               └── AppView + Charybdis
+                                   Postgres (AWS us-east-1)
 ```
 
 ## Monorepo Structure
@@ -25,17 +26,21 @@ User's ATProto PDS      Social Wire gateway (optional)
 ```
 the-social-wire/
   apps/
-    web/         # Next.js 16.2+ web client (Bun)
-    apple/       # SwiftUI iOS/iPadOS app
+    web/             # Next.js 16.2+ reader (Bun)
+    apple/           # SwiftUI iOS/iPadOS app
+    operations/      # Next.js operator console (Bun)
   services/
     gateway/         # OAuth, sync, PDS writes, AppView proxy (Hummingbird; Fly.io)
     appview/         # Publication sidebar + Thin AppView read index (Fly.io)
     appview-worker/  # Charybdis: Jetstream ingestion for Thin AppView (Fly.io)
+    operations/      # Operations control plane (Fly.io)
+    tap/             # Pinned Indigo Tap image (Fly.io)
   packages/
-    lexicons/    # app.thesocialwire.* ATProto lexicons
-    spec/        # OpenAPI 3.1 spec (gateway + appview routes)
+    lexicons/        # app.thesocialwire.* and L@tr ATProto lexicons
+    spec/            # OpenAPI 3.1 spec
+    swift/           # GatewayCore, OperationsCore, ThinAppViewCore
   supabase/
-    config.toml  # Supabase CLI; migrations/ for hosted Postgres (see .github/workflows/supabase.yml)
+    config.toml      # Supabase CLI; migrations run from .github/workflows/ci.yml
   docs/
     architecture/
     wiki/        # Markdown synced to GitHub Wiki on push to main (see .github/workflows/publish-wiki.yml)
@@ -46,7 +51,7 @@ the-social-wire/
 | Tool | Version |
 |------|---------|
 | [Bun](https://bun.sh) | Matches root [`package.json`](package.json) `packageManager` (currently 1.3.x) |
-| [Swift](https://swift.org/install) | 6.1+ for iOS (`apps/apple`); run `swift test` locally for gateway/appview packages |
+| [Swift](https://swift.org/install) | 6.2+ for service/package test parity (CI uses 6.2.4) |
 | [Fly CLI](https://fly.io/docs/flyctl/install/) | Latest (Fly deploys / ops) |
 | [Xcode](https://developer.apple.com/xcode/) | 16+ (for iOS) |
 
@@ -70,16 +75,17 @@ Open [http://localhost:3000](http://localhost:3000).
 ### Full-stack local dev (optional)
 
 ```bash
+# Run each service in a separate terminal.
 # Gateway (OAuth, sync, writes)
-cd services/gateway && APP_ENV=local swift run Gateway
+(cd services/gateway && APP_ENV=local APPVIEW_BASE_URL=http://127.0.0.1:8081 GATEWAY_APPVIEW_INTERNAL_SECRET=local-development-only swift run Gateway)
 
 # AppView (sidebar + Thin AppView reads)
-cd services/appview && APP_ENV=local ENABLE_THIN_APPVIEW=true swift run AppView
+(cd services/appview && APP_ENV=local ENABLE_THIN_APPVIEW=true SQLITE_DB_PATH=/tmp/the-social-wire-appview.sqlite GATEWAY_APPVIEW_INTERNAL_SECRET=local-development-only swift run AppView)
 
 # Charybdis (Jetstream ingestion)
-cd services/appview-worker && APP_ENV=local ENABLE_THIN_APPVIEW=true swift run AppViewWorker
+(cd services/appview-worker && APP_ENV=local ENABLE_THIN_APPVIEW=true SQLITE_DB_PATH=/tmp/the-social-wire-appview.sqlite swift run AppViewWorker)
 
-# Supabase (optional — Docker)
+# Migration validation (optional — Docker; local services above use SQLite)
 supabase start && supabase db reset --local
 ```
 
@@ -88,11 +94,15 @@ supabase start && supabase db reset --local
 See **[docs/test-plans/README.md](docs/test-plans/README.md)** for per-surface plans and PR checklists.
 
 ```bash
-cd apps/web && bun test
-cd services/gateway && swift test
-cd services/appview && swift test
-cd services/appview-worker && swift test
-cd packages/swift/ThinAppViewCore && swift test
+(cd apps/web && bun test)
+(cd apps/operations && bun test)
+(cd packages/swift/GatewayCore && swift test)
+(cd services/gateway && swift test)
+(cd services/appview && swift test)
+(cd packages/swift/ThinAppViewCore && swift test)
+(cd services/appview-worker && swift test)
+(cd packages/swift/OperationsCore && swift test)
+(cd services/operations && swift test)
 
 # iOS — Cmd+U in Xcode (see docs/test-plans/apple.md)
 ```
@@ -101,7 +111,7 @@ cd packages/swift/ThinAppViewCore && swift test
 
 - **Protocol-first where data is portable**: folders, publication preferences, subscriptions, and read-later records live on the user's own ATProto PDS
 - **AppView-owned read state**: feed read/unread state is local-first in clients and synchronized to Social Wire AppView for counters and unread filtering
-- **Optional Thin AppView**: when enabled, the gateway indexes Level-1 list rows and AppView read marks in EU Postgres for faster timelines and server-side unread filtering (see [docs/architecture/appview.md](docs/architecture/appview.md))
+- **Thin AppView read path**: signed-in clients load bootstrap data, feeds, and entry detail through the gateway-backed AppView; standard.site bodies remain authoritative on publisher PDSes, while RSS feed bodies may be retained in the derived index (see [docs/architecture/appview.md](docs/architecture/appview.md))
 - **Direct ATProto where it fits**: discovery and repo reads use public XRPC; Bluesky App View (`public.api.bsky.app`) for follows and profiles only
 - **Interoperable by design**: lexicons are public — any ATProto client can read a user's Social Wire folders
 
@@ -109,10 +119,11 @@ cd packages/swift/ThinAppViewCore && swift test
 
 | Component | Where |
 |-----------|-------|
-| Web | Vercel (automatic from `main` / `dev` branches) |
-| Gateway | Fly.io (`the-social-wire-*-gateway`, **`ams`**) |
-| AppView | Fly.io (`the-social-wire-*-appview`, **`ams`**) |
-| Charybdis | Fly.io (`the-social-wire-*-appview-worker`, **`ams`**) |
+| Web + Operations UI | Separate Vercel projects (automatic from `main` / `dev`) |
+| Gateway | Fly.io (`the-social-wire-*-gateway`, **`iah`**) |
+| AppView | Fly.io (`the-social-wire-*-appview`, **`iah`**) |
+| Charybdis | Fly.io (`the-social-wire-*-appview-worker`, **`iah`**) |
+| Operations + Tap | Fly.io (development automatic; production rollout is manual, **`iah`**) |
 | Database (index + cache) | Supabase Postgres (`supabase/migrations/`) |
 | CI/CD | GitHub Actions + Vercel + Fly |
 

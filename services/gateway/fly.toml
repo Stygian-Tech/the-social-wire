@@ -1,5 +1,5 @@
 # Deploy from repo root: bash services/gateway/deploy.sh dev
-# Or: fly deploy ../.. --config services/gateway/fly.toml --app the-social-wire-dev-gateway
+# Or from repo root: flyctl deploy . --config services/gateway/fly.toml --app the-social-wire-dev-gateway --local-only
 
 app = 'the-social-wire-dev-gateway'
 primary_region = 'iah'

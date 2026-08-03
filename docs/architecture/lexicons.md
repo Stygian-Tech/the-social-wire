@@ -1,78 +1,29 @@
 # ATProto Lexicons
 
-The Social Wire uses two custom ATProto lexicons for storing user data. Both lexicons are public — any ATProto client can read a user's Social Wire records.
+The Social Wire keeps portable, user-authored state on the viewer's ATProto PDS. The canonical JSON schemas tracked in this repository live under [`packages/lexicons/`](../../packages/lexicons/).
 
-## `app.thesocialwire.folder`
+## Tracked schemas
 
-A named group for organising publication subscriptions.
+| Collection | Purpose |
+|------------|---------|
+| `app.thesocialwire.folder` | Named publication folder with order and optional icon fields |
+| `app.thesocialwire.publicationPrefs` | Per-publication folder assignment and ordering |
+| `app.thesocialwire.preferences` | Account-level, non-secret Social Wire preferences |
+| `app.skyreader.feed.subscription` | Skyreader-compatible RSS/Atom subscription |
+| `link.latr.saved.external` | L@tr wrapper for a normalized external URL |
+| `link.latr.saved.item` | L@tr saved-item record pointing to an external wrapper or ATProto subject |
 
-```json
-{
-  "lexicon": 1,
-  "id": "app.thesocialwire.folder",
-  "defs": {
-    "main": {
-      "type": "record",
-      "key": "tid",
-      "record": {
-        "required": ["name", "createdAt"],
-        "properties": {
-          "name":      { "type": "string", "maxLength": 128 },
-          "sortOrder": { "type": "integer", "default": 0 },
-          "icon":      { "type": "string", "maxLength": 128, "description": "emoji or short icon name" },
-          "iconImage": { "type": "string", "format": "uri", "description": "optional custom image URL" },
-          "createdAt": { "type": "string", "format": "datetime" }
-        }
-      }
-    }
-  }
-}
-```
+The clients also interoperate with externally defined collections such as `site.standard.graph.subscription`; that schema is not redefined in `packages/lexicons`.
 
-### Design decisions
+Feed read/unread state is not an ATProto repo collection in the current product. Clients keep an immediate local cache and write authenticated read marks and scoped read floors to Social Wire AppView.
 
-- `icon` allows an emoji or a short icon name (e.g. `"💻"` or `"tech"`). Clients choose how to render it; the default is a folder SVG.
-- `iconImage` is an optional image URL for custom folder icons (Phase 1b feature). Clients fall back to `icon` if not present.
-- `sortOrder` controls the order in the sidebar; clients assign sequential integers.
+## Ownership and privacy
 
-## `app.thesocialwire.publicationPrefs`
+ATProto repo records are public by default. Folder names, publication preferences, subscriptions, and L@tr saved-item records must not contain passwords, API keys, refresh tokens, or other secrets. Social Wire's derived AppView rows can be rebuilt; the viewer PDS remains authoritative for user-authored records.
 
-User display preferences for a discovered publication.
+## Reading and writing records
 
-The publication list itself is derived from `app.bsky.graph.follow` records (already in the protocol). This record only stores what isn't in the protocol: folder placement and display flags.
-
-```json
-{
-  "lexicon": 1,
-  "id": "app.thesocialwire.publicationPrefs",
-  "defs": {
-    "main": {
-      "type": "record",
-      "key": "tid",
-      "record": {
-        "required": ["publicationId", "createdAt"],
-        "properties": {
-          "publicationId": { "type": "string", "description": "at-uri or canonical URL of the publication" },
-          "folderId":      { "type": "string", "description": "rkey of the app.thesocialwire.folder record" },
-          "sortOrder":     { "type": "integer", "default": 0 },
-          "hidden":        { "type": "boolean", "default": false },
-          "createdAt":     { "type": "string", "format": "datetime" }
-        }
-      }
-    }
-  }
-}
-```
-
-### Design decisions
-
-- Publications with **no `publicationPrefs` record** appear in "All Publications" (uncategorised, visible by default).
-- **No subscription record** is needed — following an account via `app.bsky.graph.follow` already expresses "I want to read this person." This avoids duplicating intent.
-- `hidden: true` lets users hide a publication from the sidebar without unfollowing.
-
-## Reading records via the ATProto API
-
-Any ATProto client can list a user's Social Wire records:
+Clients use standard `com.atproto.repo.*` XRPC methods with an OAuth session bound to the viewer PDS:
 
 ```http
 GET https://{pds-host}/xrpc/com.atproto.repo.listRecords
@@ -81,11 +32,13 @@ GET https://{pds-host}/xrpc/com.atproto.repo.listRecords
   &limit=100
 ```
 
-This demonstrates the interoperability principle — no Social Wire-specific API is needed to read user preferences.
+The web client normally writes user-authored records directly to the PDS. The current iOS app uses Gateway publication write-through routes and supplies the required upstream PDS-bound DPoP proof.
 
 ## Versioning
 
-Lexicons follow the ATProto versioning convention:
-- Breaking changes require a new lexicon ID (e.g. `app.thesocialwire.folderV2`)
-- Non-breaking additions (new optional fields) can be added to the existing ID
-- The `$type` field in records always reflects the current lexicon ID
+- Existing lexicon IDs and field types remain stable.
+- Compatible revisions add optional fields.
+- Breaking changes require a new lexicon ID.
+- L@tr schemas are drift-tested against the pinned `latr-packages` dependency.
+
+See the [package reference](../../packages/lexicons/README.md) for field tables, examples, test commands, and the versioning policy.
