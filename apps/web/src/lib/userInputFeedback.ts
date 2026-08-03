@@ -56,10 +56,16 @@ function scopeAllowsRepoAction(
   action: "create" | "update"
 ): boolean {
   const [repoScope, query = ""] = scopeToken.split("?");
-  if (repoScope !== `repo:${collection}`) return false;
-  if (!query) return true;
-
   const params = new URLSearchParams(query);
+  const hasCollection =
+    repoScope === `repo:${collection}` ||
+    repoScope === "repo:*" ||
+    (repoScope === "repo" &&
+      params
+        .getAll("collection")
+        .some((value) => value === collection || value === "*"));
+  if (!hasCollection) return false;
+
   const actions = params.getAll("action");
   return actions.length === 0 || actions.includes(action);
 }
@@ -69,16 +75,20 @@ function scopeName(scopeToken: string): string {
 }
 
 function scopeAllowsBlobMimeType(scopeToken: string, mimeType: string): boolean {
-  const name = scopeName(scopeToken);
-  if (!name.startsWith("blob:")) return false;
-
-  const pattern = name.slice("blob:".length);
-  const [patternType, patternSubtype] = pattern.split("/");
+  const [name, query = ""] = scopeToken.split("?");
+  const patterns = name.startsWith("blob:")
+    ? [name.slice("blob:".length)]
+    : name === "blob"
+      ? new URLSearchParams(query).getAll("accept")
+      : [];
   const [mimeTypeType, mimeTypeSubtype] = mimeType.split("/");
-  return (
-    (patternType === "*" || patternType === mimeTypeType) &&
-    (patternSubtype === "*" || patternSubtype === mimeTypeSubtype)
-  );
+  return patterns.some((pattern) => {
+    const [patternType, patternSubtype] = pattern.split("/");
+    return (
+      (patternType === "*" || patternType === mimeTypeType) &&
+      (patternSubtype === "*" || patternSubtype === mimeTypeSubtype)
+    );
+  });
 }
 
 export async function requireUserInputFeedbackScopes(
