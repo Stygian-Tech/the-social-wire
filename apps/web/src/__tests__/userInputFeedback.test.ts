@@ -66,7 +66,7 @@ describe("UserInput feedback", () => {
     );
   });
 
-  it("accepts parameterized permission sets and discussion-only granular permissions", async () => {
+  it("accepts permission sets plus direct and expanded repo permissions", async () => {
     const permitted = {
       getTokenInfo: async () => ({
         scope:
@@ -78,6 +78,12 @@ describe("UserInput feedback", () => {
         scope: "atproto repo:app.userinput.discussion?action=create",
       }),
     };
+    const expandedPermissionSet = {
+      getTokenInfo: async () => ({
+        scope:
+          "atproto repo?collection=app.userinput.ban&collection=app.userinput.discussion&collection=app.userinput.reply",
+      }),
+    };
     const staleSession = {
       getTokenInfo: async () => ({ scope: "atproto" }),
     };
@@ -87,6 +93,9 @@ describe("UserInput feedback", () => {
     ).resolves.toBeUndefined();
     await expect(
       requireUserInputFeedbackScopes(granularPermissions as never)
+    ).resolves.toBeUndefined();
+    await expect(
+      requireUserInputFeedbackScopes(expandedPermissionSet as never)
     ).resolves.toBeUndefined();
     await expect(
       requireUserInputFeedbackScopes(staleSession as never)
@@ -104,12 +113,24 @@ describe("UserInput feedback", () => {
         scope: `atproto include:app.userinput.authFull ${USER_INPUT_BLOB_OAUTH_SCOPE}`,
       }),
     };
+    const withExpandedBlobAccess = {
+      getTokenInfo: async () => ({
+        scope:
+          "atproto repo?collection=app.userinput.discussion blob?accept=image%2F*&accept=video%2F*",
+      }),
+    };
 
     await expect(
       requireUserInputFeedbackScopes(withoutBlobAccess as never, ["image/png"])
     ).rejects.toThrow(USER_INPUT_REAUTH_MESSAGE);
     await expect(
       requireUserInputFeedbackScopes(withBlobAccess as never, [
+        "image/png",
+        "image/jpeg",
+      ])
+    ).resolves.toBeUndefined();
+    await expect(
+      requireUserInputFeedbackScopes(withExpandedBlobAccess as never, [
         "image/png",
         "image/jpeg",
       ])
