@@ -502,15 +502,17 @@ actor ThinAppViewReadService {
       }
     }
 
-    var snapshot = await projectionService.unreadCounterSnapshot(
+    let snapshot = await projectionService.unreadCounterSnapshot(
       for: rowsForCounters,
       viewerDid: auth.did
     )
     if snapshot.dirty || !snapshot.missingPublicationIds.isEmpty {
-      snapshot = await projectionService.refreshUnreadCounterSnapshot(
-        for: rowsForCounters,
-        viewerDid: auth.did
-      )
+      Task {
+        _ = await projectionService.refreshUnreadCounterSnapshot(
+          for: rowsForCounters,
+          viewerDid: auth.did
+        )
+      }
     }
 
     if let projectionCache, !snapshot.counts.isEmpty {
