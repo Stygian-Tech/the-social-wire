@@ -182,7 +182,11 @@ describe("GET /api/latr-gateway/[...path]", () => {
       return new Response(JSON.stringify({ ok: true }), { status: 200 });
     }) as unknown as typeof fetch;
 
-    for (const headers of [{ "X-Forwarded-Proto": "ftp" }, {}]) {
+    const headerCases: HeadersInit[] = [
+      { "X-Forwarded-Proto": "ftp" },
+      {},
+    ];
+    for (const headers of headerCases) {
       const req = new NextRequest(
         "http://localhost:3000/api/latr-gateway/v1/latr/saves",
         { headers }
