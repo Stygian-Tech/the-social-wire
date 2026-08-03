@@ -178,8 +178,8 @@ describe("latrGatewayFetch", () => {
 
     expect(res.status).toBe(200);
     expect(proxyCalls).toBe(2);
-    // L@tr writes deterministic saved-item rkeys with putRecord.
-    expect(nonceCounter).toBe(2);
+    // Each request gets two createRecord and two putRecord proofs, including the retry.
+    expect(nonceCounter).toBe(8);
 
     const saveCall = fetchMock.mock.calls.find(([url]) =>
       String(url).includes("/v1/latr/saves")
@@ -199,16 +199,17 @@ describe("latrGatewayFetch", () => {
     expect(latrBoundClaims[1]?.nonce).toBe("fresh-nonce");
   });
 
-  it("signs GET saves upstream DPoP for the concrete listRecords URL", async () => {
+  it("signs GET saves with a PDS-bound proof pool for paginated listRecords", async () => {
     Object.defineProperty(globalThis, "location", {
       configurable: true,
       value: new URL("https://testing.thesocialwire.app/saved"),
     });
     const dpopClaims: Array<Record<string, string | number>> = [];
+    let pdsNonceCounter = 0;
 
     const fetchMock = mock(async (_url: string, init?: RequestInit) => {
       const headers = new Headers(init?.headers);
-      expect(headers.get(LATR_UPSTREAM_DPOP_HEADER)).toBe("list-records-proof");
+      expect(headers.get(LATR_UPSTREAM_DPOP_HEADER)?.split(",")).toHaveLength(8);
       return new Response(JSON.stringify({ records: [] }), { status: 200 });
     });
     globalThis.fetch = fetchMock as unknown as typeof fetch;
@@ -222,11 +223,13 @@ describe("latrGatewayFetch", () => {
       getTokenInfo: async () => ({
         aud: "https://jellybaby.us-east.host.bsky.network",
       }),
-      fetchHandler: async () =>
-        new Response(JSON.stringify({ records: [] }), {
+      fetchHandler: async () => {
+        pdsNonceCounter += 1;
+        return new Response(JSON.stringify({ records: [] }), {
           status: 200,
-          headers: { "DPoP-Nonce": "pds-nonce" },
-        }),
+          headers: { "DPoP-Nonce": `pds-nonce-${pdsNonceCounter}` },
+        });
+      },
       server: {
         dpopKey: {
           bareJwk: { kty: "EC", crv: "P-256", x: "x", y: "y" },
@@ -248,13 +251,18 @@ describe("latrGatewayFetch", () => {
 
     await latrGatewayFetch(oauthSession, "/v1/latr/saves", { method: "GET" });
 
-    const upstreamClaims = dpopClaims.find((claims) =>
+    const upstreamClaims = dpopClaims.filter((claims) =>
       String(claims.htu).endsWith("/xrpc/com.atproto.repo.listRecords")
     );
-    expect(upstreamClaims?.htm).toBe("GET");
-    expect(upstreamClaims?.htu).toBe(
-      "https://jellybaby.us-east.host.bsky.network/xrpc/com.atproto.repo.listRecords"
-    );
-    expect(upstreamClaims?.nonce).toBe("pds-nonce");
+    expect(upstreamClaims).toHaveLength(8);
+    expect(
+      upstreamClaims.every(
+        (claims) =>
+          claims.htm === "GET" &&
+          claims.htu ===
+            "https://jellybaby.us-east.host.bsky.network/xrpc/com.atproto.repo.listRecords"
+      )
+    ).toBe(true);
+    expect(new Set(upstreamClaims.map((claims) => claims.nonce)).size).toBe(8);
   });
 });

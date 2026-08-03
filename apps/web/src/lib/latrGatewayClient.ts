@@ -12,9 +12,10 @@ import {
 } from "@/lib/latrGatewayCredentials";
 import { latrGatewayErrorMessage } from "@/lib/latrGatewayErrors";
 import {
+  createSaveUpstreamDpopProofPool,
   createUpstreamDpopProof,
+  createUpstreamDpopProofPool,
   pdsXrpcMethodForGatewayRequest,
-  refreshPdsDpopNonce,
 } from "latr-packages/gateway-client";
 import { latrGatewayProxyPath } from "@/lib/latrGatewayProxyPath";
 import {
@@ -23,7 +24,6 @@ import {
   latrGatewayProxyAuthUrl,
 } from "@/lib/latrGatewayUserAuth";
 import { latrGatewayBaseUrl } from "@/lib/latrGatewayUrl";
-import { COLLECTION_LATR_SAVED_ITEM } from "@/lib/latrCollections";
 
 /** Legacy official first-party credential header (server proxy only). */
 export const LATR_OFFICIAL_CLIENT_HEADER = "X-Latr-Official-Client";
@@ -36,10 +36,6 @@ export {
 };
 
 export { latrGatewayBaseUrl } from "@/lib/latrGatewayUrl";
-
-type SessionWithTokenInfo = OAuthSession & {
-  getTokenInfo(): Promise<{ aud: string }>;
-};
 
 const PDS_SESSION_ATTESTATION_PATHS = new Set([
   "/v1/latr/discover/at-uri",
@@ -65,34 +61,20 @@ async function buildUpstreamDpopHeader(
   }
 
   if (method === "GET" && gatewayPath === "/v1/latr/saves") {
-    const tokenInfo = await (oauthSession as SessionWithTokenInfo).getTokenInfo();
-    const pdsBase = tokenInfo.aud.replace(/\/$/, "");
-    const params = new URLSearchParams({
-      repo: oauthSession.did,
-      collection: COLLECTION_LATR_SAVED_ITEM,
-      limit: "100",
-    });
-    const { DPoP } = await buildLatrGatewayUserAuthHeaders(
+    return createUpstreamDpopProofPool(
       oauthSession,
-      "GET",
-      `${pdsBase}/xrpc/com.atproto.repo.listRecords?${params}`,
-      {
-        dpopNonce: await refreshPdsDpopNonce(
-          oauthSession,
-          "com.atproto.repo.listRecords",
-          "GET"
-        ),
-      }
+      [
+        {
+          xrpcMethod: "com.atproto.repo.listRecords",
+          httpMethod: "GET",
+          count: 8,
+        },
+      ]
     );
-    return DPoP;
   }
 
   if (method === "POST" && gatewayPath === "/v1/latr/saves") {
-    return createUpstreamDpopProof(
-      oauthSession,
-      "com.atproto.repo.putRecord",
-      "POST"
-    );
+    return createSaveUpstreamDpopProofPool(oauthSession);
   }
 
   const upstream = pdsXrpcMethodForGatewayRequest(method, gatewayPath);
