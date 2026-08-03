@@ -1,6 +1,6 @@
 import Foundation
 
-/// Environment-driven configuration for the GDPR-safe thin AppView index.
+/// Environment-driven configuration for the data-minimized Thin AppView index.
 public struct ThinAppViewConfig: Sendable {
 public static let canonicalContentCollections: [String] = [
     "site.standard.document",

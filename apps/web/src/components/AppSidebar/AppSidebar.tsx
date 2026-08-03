@@ -1,12 +1,9 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
-import { LogOut, RefreshCw, Bookmark, Archive } from "lucide-react";
-import iconSrc from "@/app/icon.png";
-import { Button } from "@/components/ui/button";
+import { LogOut, Bookmark, Archive } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Sidebar,
@@ -14,7 +11,6 @@ import {
   SidebarFooter,
   SidebarGroup,
   SidebarGroupLabel,
-  SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
@@ -42,7 +38,10 @@ import { sumUnreadForPublications } from "@/lib/unreadCounts";
 import { PublicationTabs } from "./PublicationTabs";
 import { ReadLaterSidebarBadge } from "./ReadLaterSidebarBadge";
 import { useFeedDisplayPreferences } from "@/hooks/useFeedDisplayPreferences";
+import { defaultSidebarExpandedKeys } from "@/lib/sidebarExpandedKeysStorage";
 import {
+  DEFAULT_FEED_DISPLAY_PREFERENCES,
+  feedDisplaysUnreadCount,
   nextVisibleFeed,
   type TopLevelFeed,
 } from "@/lib/feedPreferences";
@@ -50,17 +49,35 @@ import { sidebarPublicationRows } from "@/lib/publicationProjectionClient";
 import { savedFeedSources } from "@/lib/savedFeedSources";
 import { SavedFeedSourcesSection } from "./SavedFeedSourcesSection";
 import { activeReadFeedScope } from "@/lib/activeReadFeedScope";
+import { useClientHydrated } from "@/hooks/useClientHydrated";
+import { AllFeedSidebarButton } from "./AllFeedSidebarButton";
+import {
+  currentAppSidebarFeed,
+  isAllFeedRouteSelected,
+} from "./appSidebarFeedSelection";
+import { MobileFeedNavigation } from "./MobileFeedNavigation";
+import { FeedbackDialog } from "./FeedbackDialog";
+import { AppSidebarBrandHeader } from "./AppSidebarBrandHeader";
 
 interface AppSidebarProps {
   selectedPubId: string | null;
   onSelectPub: (pubId: string) => void;
+  showPublicationsRail?: boolean;
 }
 
-export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
+const SERVER_SIDEBAR_EXPANDED_KEYS = defaultSidebarExpandedKeys();
+const SERVER_PUBLICATION_UNREAD_COUNTS = new Map<string, number>();
+
+export function AppSidebar({
+  selectedPubId,
+  onSelectPub,
+  showPublicationsRail = true,
+}: AppSidebarProps) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { session, signOut } = useAuth();
+  const clientHydrated = useClientHydrated();
   const [loggingOut, setLoggingOut] = useState(false);
   const {
     selectedFolderUri,
@@ -96,7 +113,6 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
     publicationSidebarProjection,
   } = useSidebarProjection();
   const {
-    refresh,
     folderPublicationsLoading: folderPublicationsListLoading,
     foldersListLoading,
     subscribedPublicationsLoading,
@@ -131,6 +147,18 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
     [activeSavedRows, savedSidebarRows],
   );
   const selectedSavedSource = searchParams.get("source");
+  const selectedFolderRkey = searchParams.get("folder");
+  const currentFeed = currentAppSidebarFeed({
+    pathname,
+    feedParam: searchParams.get("feed"),
+    folderParam: selectedFolderRkey,
+    publicationTab,
+  });
+  const allFeedSelected = isAllFeedRouteSelected({
+    pathname,
+    sourceParam: selectedSavedSource,
+    folderParam: selectedFolderRkey,
+  });
 
   useCrossClientReadSync(secondaryReaderSyncEnabled);
 
@@ -173,9 +201,12 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
 
   const publicationUnreadCounts = useSidebarUnreadController({
     publications: publicationsForUnread,
-    unreadCountsByPublicationId,
-    isEntryRead,
+    unreadCountsByPublicationId: clientHydrated
+      ? unreadCountsByPublicationId
+      : SERVER_PUBLICATION_UNREAD_COUNTS,
+    isEntryRead: clientHydrated ? isEntryRead : undefined,
     readEpoch,
+    viewerDid: session?.did,
   });
 
   const setActiveReadFeedScope =
@@ -184,7 +215,7 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
   useEffect(() => {
     if (!setActiveReadFeedScope) return;
 
-    const folderRkey = searchParams.get("folder");
+    const folderRkey = selectedFolderRkey;
     const folderName = folderRkey
       ? folders.find((folder) => rkeyFromURI(folder.uri) === folderRkey)?.value
           .name
@@ -200,7 +231,7 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
       folderPublications: folderRkey ? (folderMap.get(folderRkey) ?? []) : [],
       selectedPublication,
       selectedTopLevelFeed:
-        searchParams.get("feed") === "following" ? "following" : "subscribed",
+        currentFeed === "following" ? "following" : "subscribed",
       subscribedPublications,
       followingPublications: followingTabPublications,
     });
@@ -231,8 +262,9 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
     folders,
     folderMap,
     followingTabPublications,
-    searchParams,
     selectedPubId,
+    selectedFolderRkey,
+    currentFeed,
     setActiveReadFeedScope,
     subscribedPublications,
   ]);
@@ -252,7 +284,9 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
     return list;
   }, [folders, folderMap]);
 
-  const effectiveExpandedKeys = sidebarExpandedKeys;
+  const effectiveExpandedKeys = clientHydrated
+    ? sidebarExpandedKeys
+    : SERVER_SIDEBAR_EXPANDED_KEYS;
 
   useEffect(() => {
     syncSidebarFolderExpandKeys(folders.map((f) => f.uri));
@@ -263,31 +297,20 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
     setSelectedFolderUri(null);
   }, [selectedPubId, setSelectedFolderUri]);
 
-  const selectedFeed =
-    pathname.startsWith("/saved") && !selectedSavedSource
-      ? "readLater"
-      : pathname.startsWith("/archive") && !selectedSavedSource
-        ? "archive"
-        : pathname === "/read" && !searchParams.get("folder")
-          ? searchParams.get("feed") === "following"
-            ? "following"
-            : "subscribed"
-          : null;
-
   useEffect(() => {
-    if (!selectedFeed) return;
-    if (feedPreferences.visibleFeeds.includes(selectedFeed)) return;
+    if (!currentFeed) return;
+    if (feedPreferences.visibleFeeds.includes(currentFeed)) return;
     const replacement = nextVisibleFeed(
-      selectedFeed,
+      currentFeed,
       feedPreferences.visibleFeeds,
     );
     if (replacement === "readLater") router.replace("/saved");
     else if (replacement === "archive") router.replace("/archive");
     else router.replace(`/read?feed=${replacement}`);
-  }, [feedPreferences.visibleFeeds, router, selectedFeed]);
+  }, [currentFeed, feedPreferences.visibleFeeds, router]);
 
-  const showTopLevelCounts =
-    feedPreferences.showTopLevelFeedUnreadCounts;
+  const showFeedCount = (feed: TopLevelFeed) =>
+    clientHydrated && feedDisplaysUnreadCount(feedPreferences, feed);
   const subscribedUnread = sumUnreadForPublications(
     subscribedPublications,
     publicationUnreadCounts,
@@ -302,58 +325,46 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
   const archiveUnread = archivedLinks.filter(
     (row) => !isEntryRead(row.subjectUri) && !row.lastOpenedAt,
   ).length;
-  const visible = new Set<TopLevelFeed>(feedPreferences.visibleFeeds);
+  const displayedReadLaterUnread = showFeedCount("readLater")
+    ? readLaterUnread
+    : 0;
+  const displayedArchiveUnread = showFeedCount("archive") ? archiveUnread : 0;
+  const visible = new Set<TopLevelFeed>(
+    clientHydrated
+      ? feedPreferences.visibleFeeds
+      : DEFAULT_FEED_DISPLAY_PREFERENCES.visibleFeeds,
+  );
 
-  const selectPublicationTab = (tab: "subscribed" | "following") => {
-    setPublicationTab(tab);
+  const selectTopLevelFeed = (feed: TopLevelFeed) => {
     setSelectedFolderUri(null);
-    router.push(`/read?feed=${tab}`);
+    if (feed === "readLater") {
+      router.push("/saved");
+      return;
+    }
+    if (feed === "archive") {
+      router.push("/archive");
+      return;
+    }
+    setPublicationTab(feed);
+    router.push(`/read?feed=${feed}`);
   };
 
   useEffect(() => {
-    if (selectedFeed === "subscribed" || selectedFeed === "following") {
-      setPublicationTab(selectedFeed);
+    if (currentFeed === "subscribed" || currentFeed === "following") {
+      setPublicationTab(currentFeed);
     }
-  }, [selectedFeed, setPublicationTab]);
+  }, [currentFeed, setPublicationTab]);
 
   return (
-    <Sidebar>
-      <SidebarHeader className="border-b bg-sidebar/85 px-4 py-3 backdrop-blur-md">
-        <div className="flex min-w-0 items-center justify-between gap-2">
-          <div className="flex min-w-0 items-center gap-2">
-            <Image
-              src={iconSrc}
-              alt=""
-              width={24}
-              height={24}
-              className="shrink-0 rounded"
-            />
-            <div className="flex min-w-0 flex-col items-start gap-0.5">
-              <span className="truncate text-sm font-bold leading-tight text-sidebar-foreground">
-                The Social Wire
-              </span>
-              <span className="inline-flex shrink-0 items-center rounded-full border border-[var(--purple-border)] bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold leading-none text-[var(--purple-foreground)]">
-                Beta
-              </span>
-            </div>
-          </div>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            className="size-8 shrink-0 rounded-md border-0 bg-transparent shadow-none hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground"
-            onClick={() => refresh.mutate()}
-            disabled={refresh.isPending}
-            title="Refresh Publications"
-          >
-            <RefreshCw
-              className={`h-3.5 w-3.5 ${refresh.isPending ? "animate-spin" : ""}`}
-            />
-          </Button>
-        </div>
-      </SidebarHeader>
+    <>
+    <Sidebar
+      className="transition-[width] [&_[data-slot=sidebar-inner]]:bg-background"
+      style={{ left: "max(0px, calc((100vw - 70rem) / 2))" }}
+    >
+      <AppSidebarBrandHeader />
 
       <SidebarContent className="overflow-y-auto overflow-x-hidden">
-        <div className="shrink-0 bg-sidebar/85 backdrop-blur-md">
+        <div className="shrink-0">
           {visible.has("readLater") || visible.has("archive") ? (
           <SidebarGroup className="pb-1">
             <SidebarGroupLabel>Read Later</SidebarGroupLabel>
@@ -362,16 +373,14 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
                 <SidebarMenuButton
                   type="button"
                   tooltip="Read Later Links"
-                  isActive={
-                    pathname.startsWith("/saved") && !selectedSavedSource
-                  }
-                  onClick={() => router.push("/saved")}
-                  className={readLaterUnread > 0 ? "relative pr-8" : undefined}
+                  isActive={currentFeed === "readLater"}
+                  onClick={() => selectTopLevelFeed("readLater")}
+                  className={displayedReadLaterUnread > 0 ? "relative pr-8" : undefined}
                 >
                   <Bookmark />
                   <span>Saved</span>
                   <ReadLaterSidebarBadge
-                    count={showTopLevelCounts ? readLaterUnread : 0}
+                    count={displayedReadLaterUnread}
                   />
                 </SidebarMenuButton>
               </SidebarMenuItem> : null}
@@ -379,16 +388,14 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
                 <SidebarMenuButton
                   type="button"
                   tooltip="Archived Read Later Links"
-                  isActive={
-                    pathname.startsWith("/archive") && !selectedSavedSource
-                  }
-                  onClick={() => router.push("/archive")}
-                  className={archiveUnread > 0 ? "relative pr-8" : undefined}
+                  isActive={currentFeed === "archive"}
+                  onClick={() => selectTopLevelFeed("archive")}
+                  className={displayedArchiveUnread > 0 ? "relative pr-8" : undefined}
                 >
                   <Archive />
                   <span>Archive</span>
                   <ReadLaterSidebarBadge
-                    count={showTopLevelCounts ? archiveUnread : 0}
+                    count={displayedArchiveUnread}
                   />
                 </SidebarMenuButton>
               </SidebarMenuItem> : null}
@@ -397,14 +404,15 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
           ) : null}
           <PublicationTabs
             activeTab={
-              selectedFeed === "subscribed" || selectedFeed === "following"
-                ? selectedFeed
+              currentFeed === "subscribed" || currentFeed === "following"
+                ? currentFeed
                 : null
             }
-            onTabChange={selectPublicationTab}
+            onTabChange={selectTopLevelFeed}
             subscribedUnread={subscribedUnread}
             followingUnread={followingUnread}
-            showUnreadCounts={showTopLevelCounts}
+            showSubscribedUnreadCount={showFeedCount("subscribed")}
+            showFollowingUnreadCount={showFeedCount("following")}
             subscribedPublications={subscribedPublications}
             followingPublications={followingTabPublications}
             visibleTabs={[
@@ -413,8 +421,21 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
             ]}
           />
         </div>
-        <div className="flex min-w-0 flex-col gap-0 group-data-[collapsible=icon]:overflow-hidden">
-          <SidebarGroup className="px-2 pb-2 pt-2">
+        {showPublicationsRail ? (
+        <div className="flex min-w-0 flex-col gap-0 group-data-[collapsible=icon]:overflow-hidden lg:fixed lg:bottom-0 lg:right-[max(0px,calc((100vw-70rem)/2))] lg:top-[var(--environment-banner-height,0px)] lg:z-30 lg:w-64 lg:overflow-y-auto lg:border-l lg:border-sidebar-border/70 lg:bg-background">
+          <div className="hidden min-h-12 shrink-0 items-end px-4 pb-1 lg:flex">
+            <p className="text-base font-bold text-sidebar-foreground">
+              Publications
+            </p>
+          </div>
+          <SidebarGroup className="px-3 pb-4 pt-1">
+            {currentFeed ? (
+              <AllFeedSidebarButton
+                feed={currentFeed}
+                isActive={allFeedSelected}
+                onSelect={selectTopLevelFeed}
+              />
+            ) : null}
             <SidebarMenu className="gap-2">
               {pathname.startsWith("/saved") ||
               pathname.startsWith("/archive") ? (
@@ -427,7 +448,7 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
                     )
                   }
                 />
-              ) : publicationTab === "subscribed" ? (
+              ) : currentFeed === "subscribed" ? (
                 <>
                   <SidebarFoldersSection
                     folders={folders}
@@ -492,9 +513,17 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
             </SidebarMenu>
           </SidebarGroup>
         </div>
+        ) : null}
       </SidebarContent>
 
-      <SidebarFooter className="border-t bg-sidebar/85 px-2 py-2 backdrop-blur-md">
+      <div className="px-3 pb-2">
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <FeedbackDialog />
+          </SidebarMenuItem>
+        </SidebarMenu>
+      </div>
+      <SidebarFooter className="border-t border-sidebar-border/70 px-2 py-3">
         <SidebarMenu className="gap-0.5 px-1">
           {profileLoading ? (
             <SidebarMenuItem>
@@ -549,5 +578,11 @@ export function AppSidebar({ selectedPubId, onSelectPub }: AppSidebarProps) {
       </SidebarFooter>
       <SidebarResizeHandle />
     </Sidebar>
+    <MobileFeedNavigation
+      currentFeed={currentFeed}
+      visibleFeeds={visible}
+      onSelect={selectTopLevelFeed}
+    />
+    </>
   );
 }

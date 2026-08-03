@@ -1,7 +1,10 @@
-import { describe, expect, it } from "bun:test";
+import { beforeAll, describe, expect, it } from "bun:test";
 import { fireEvent, render } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { ReactNode } from "react";
 
 import { EntryListVirtualPane } from "@/components/EntryList/EntryListVirtualPane";
+import { AuthProvider } from "@/hooks/useAuth";
 import type { EntryListItem } from "@/lib/atprotoClient";
 import { clearEntryListScrollOffsetsForTests } from "@/lib/entryListScrollState";
 
@@ -16,6 +19,17 @@ if (!globalWithResizeObserver.ResizeObserver) {
     disconnect() {}
   };
 }
+
+beforeAll(() => {
+  Object.defineProperty(globalThis, "Element", {
+    configurable: true,
+    value: window.Element,
+  });
+  Object.defineProperty(globalThis, "HTMLElement", {
+    configurable: true,
+    value: window.HTMLElement,
+  });
+});
 
 function makeEntry(index: number): EntryListItem {
   return {
@@ -44,12 +58,29 @@ function renderPane(entries: EntryListItem[], scrollStateKey = "test-feed") {
   );
 }
 
+function createWrapper() {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+
+  return function Wrapper({ children }: { children: ReactNode }) {
+    return (
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>{children}</AuthProvider>
+      </QueryClientProvider>
+    );
+  };
+}
+
 describe("EntryListVirtualPane scroll stability", () => {
   it("preserves scrollTop when visible entries update without remounting", () => {
+    const Wrapper = createWrapper();
     const initialEntries = Array.from({ length: 12 }, (_, index) =>
       makeEntry(index)
     );
-    const { container, rerender } = render(renderPane(initialEntries));
+    const { container, rerender } = render(renderPane(initialEntries), {
+      wrapper: Wrapper,
+    });
     const scrollRoot = container.querySelector(
       "[data-entry-list-scroll]"
     ) as HTMLDivElement;
@@ -64,8 +95,11 @@ describe("EntryListVirtualPane scroll stability", () => {
 
   it("restores a feed scroll offset after the pane remounts", () => {
     clearEntryListScrollOffsetsForTests();
+    const Wrapper = createWrapper();
     const entries = Array.from({ length: 12 }, (_, index) => makeEntry(index));
-    const first = render(renderPane(entries, "subscribed:all"));
+    const first = render(renderPane(entries, "subscribed:all"), {
+      wrapper: Wrapper,
+    });
     const firstRoot = first.container.querySelector(
       "[data-entry-list-scroll]"
     ) as HTMLDivElement;
@@ -73,7 +107,9 @@ describe("EntryListVirtualPane scroll stability", () => {
     fireEvent.scroll(firstRoot);
     first.unmount();
 
-    const second = render(renderPane(entries, "subscribed:all"));
+    const second = render(renderPane(entries, "subscribed:all"), {
+      wrapper: Wrapper,
+    });
     const restoredRoot = second.container.querySelector(
       "[data-entry-list-scroll]"
     ) as HTMLDivElement;

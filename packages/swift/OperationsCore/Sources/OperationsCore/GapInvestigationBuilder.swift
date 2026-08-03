@@ -40,7 +40,7 @@ public enum GapInvestigationBuilder {
       recommendedActions.append("Open the correlated error trace and inspect its recorded attributes.")
     }
     if assessment.confidence != .high {
-      recommendedActions.append("Compare the window with Fly deployment and machine restart history; deployment events are not yet ingested here.")
+      recommendedActions.append("Compare the window with Railway deployment and replica restart history; deployment events are not yet ingested here.")
     }
 
     return GapInvestigation(

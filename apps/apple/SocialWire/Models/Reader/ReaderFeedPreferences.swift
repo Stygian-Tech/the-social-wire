@@ -2,27 +2,79 @@ import Foundation
 
 struct ReaderFeedPreferences: Codable, Equatable, Sendable {
     var visibleFeeds: [ReaderListSource]
-    var showTopLevelFeedUnreadCounts: Bool
+    var feedsWithUnreadCounts: [ReaderListSource]
 
     static let defaults = ReaderFeedPreferences(
         visibleFeeds: ReaderListSource.allCases,
-        showTopLevelFeedUnreadCounts: true
+        feedsWithUnreadCounts: ReaderListSource.allCases
     )
 
-    init(visibleFeeds: [ReaderListSource], showTopLevelFeedUnreadCounts: Bool) {
+    init(visibleFeeds: [ReaderListSource], feedsWithUnreadCounts: [ReaderListSource]) {
         let unique = visibleFeeds.reduce(into: [ReaderListSource]()) { result, source in
             if !result.contains(source) { result.append(source) }
         }
-        self.visibleFeeds = unique.isEmpty ? ReaderListSource.allCases : unique
-        self.showTopLevelFeedUnreadCounts = showTopLevelFeedUnreadCounts
+        let normalizedVisibleFeeds = unique.isEmpty ? ReaderListSource.allCases : unique
+        self.visibleFeeds = normalizedVisibleFeeds
+        self.feedsWithUnreadCounts = ReaderListSource.allCases.filter { source in
+            normalizedVisibleFeeds.contains(source) && feedsWithUnreadCounts.contains(source)
+        }
     }
 
     init(record: PreferencesRecord?) {
+        let visibleFeeds = record?.visibleFeeds?.compactMap(ReaderListSource.init(preferenceKey:))
+            ?? ReaderListSource.allCases
+        let feedsWithUnreadCounts: [ReaderListSource]
+        if let stored = record?.feedsWithUnreadCounts {
+            feedsWithUnreadCounts = stored.compactMap(ReaderListSource.init(preferenceKey:))
+        } else {
+            feedsWithUnreadCounts = (record?.showTopLevelFeedUnreadCounts ?? true)
+                ? visibleFeeds
+                : []
+        }
         self.init(
-            visibleFeeds: record?.visibleFeeds?.compactMap(ReaderListSource.init(preferenceKey:))
-                ?? ReaderListSource.allCases,
-            showTopLevelFeedUnreadCounts: record?.showTopLevelFeedUnreadCounts ?? true
+            visibleFeeds: visibleFeeds,
+            feedsWithUnreadCounts: feedsWithUnreadCounts
         )
+    }
+
+    func showsUnreadCount(for source: ReaderListSource) -> Bool {
+        visibleFeeds.contains(source) && feedsWithUnreadCounts.contains(source)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case visibleFeeds
+        case feedsWithUnreadCounts
+        case showTopLevelFeedUnreadCounts
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let visibleFeeds = try container.decodeIfPresent([ReaderListSource].self, forKey: .visibleFeeds)
+            ?? ReaderListSource.allCases
+        let feedsWithUnreadCounts: [ReaderListSource]
+        if let stored = try container.decodeIfPresent(
+            [ReaderListSource].self,
+            forKey: .feedsWithUnreadCounts
+        ) {
+            feedsWithUnreadCounts = stored
+        } else {
+            let legacyShowCounts = try container.decodeIfPresent(
+                Bool.self,
+                forKey: .showTopLevelFeedUnreadCounts
+            ) ?? true
+            feedsWithUnreadCounts = legacyShowCounts ? visibleFeeds : []
+        }
+        self.init(
+            visibleFeeds: visibleFeeds,
+            feedsWithUnreadCounts: feedsWithUnreadCounts
+        )
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(visibleFeeds, forKey: .visibleFeeds)
+        try container.encode(feedsWithUnreadCounts, forKey: .feedsWithUnreadCounts)
+        try container.encode(!feedsWithUnreadCounts.isEmpty, forKey: .showTopLevelFeedUnreadCounts)
     }
 }
 

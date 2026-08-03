@@ -1,6 +1,6 @@
 # Thin AppView
 
-Social Wire’s **GDPR-safe Level-1 read index** — optional, feature-flagged, and distinct from the Bluesky **`public.api.bsky.app`** App View.
+Social Wire’s **data-minimized read index** — the current signed-in client read path, server feature-gated, and distinct from the Bluesky **`public.api.bsky.app`** App View.
 
 **Canonical design doc (repo):** [docs/architecture/appview.md](https://github.com/Stygian-Tech/the-social-wire/blob/main/docs/architecture/appview.md)
 
@@ -9,27 +9,27 @@ Social Wire’s **GDPR-safe Level-1 read index** — optional, feature-flagged, 
 | Layer | Role |
 |-------|------|
 | **Bluesky App View** | Public social graph (`getProfile`, `getFollows`, …) — **unchanged** |
-| **Thin AppView** (`/v1/appview/*` on **`services/appview`**, proxied by **`services/gateway`**) | Level-1 entry timelines, unread counts, bootstrap stream, scoped mark-all-read |
+| **Thin AppView** (`/v1/appview/*` on **`services/appview`**, proxied by **`services/gateway`**) | Entry timelines and detail, unread counts, bootstrap stream, scoped mark-all-read |
 | **Publication sidebar** (`/v1/publications/*` on **`services/appview`**, proxied by gateway) | Server-side discovery, folders, subscriptions, RSS rows, unread badges |
 
-The thin index stores **list-row fields only** (title, `publishedAt`, summary, thumbnail URL refs) for `standard.site` entry collections. **Full entry bodies** stay on each author’s PDS. Feed read/unread state is local-first in clients and synchronized to Social Wire AppView, not written as ATProto repo records.
+For `standard.site`, the index stores render/detail fields (title, `publishedAt`, summary, thumbnail and canonical URL references) while the source records remain authoritative on each author’s PDS. Skyreader RSS ingestion may retain feed-provided content HTML. Feed read/unread state is local-first in clients and synchronized to Social Wire AppView, not written as ATProto repo records.
 
 ## Data flow
 
 ```
-Jetstream / relay (subscribeRepos)
+Jetstream / environment-matched Tap
         │
         ▼
-Fly Charybdis (`appview-worker`) — firehose ingest, proactive PDS backfill, TTL cleanup
+Railway Charybdis (`appview-worker`) — ATProto ingest, Skyreader RSS polling, proactive PDS backfill, TTL cleanup
         │
         ▼
-Supabase Postgres (ams) — content_items, read_marks, sidebar_projection_cache, …
+Railway Postgres — content_items, read_marks, sidebar/unread/first-page caches, …
         │
         ▼
-Fly appview — /v1/appview/*, /v1/publications/*
+Railway AppView — /v1/appview/*, /v1/publications/*
         │
         ▼
-Fly gateway — OAuth/DPoP, PDS write-through, unbuffered AppView proxy
+Railway Gateway — OAuth/DPoP, PDS write-through, unbuffered AppView proxy
         │
         ├── Web (NEXT_PUBLIC_USE_THIN_APPVIEW)
         └── iOS (SOCIALWIRE_USE_THIN_APPVIEW)
@@ -49,11 +49,12 @@ All routes require ATProto OAuth (`Authorization: Bearer` or `DPoP` + `DPoP` pro
 |--------|------|---------|
 | `GET` | `/v1/appview/bootstrap-stream` | Progressive NDJSON initial load (sidebar, unread, first page) |
 | `GET` | `/v1/appview/entries` | Paginated timeline (`authorDid`, scope keys, `filter=all\|unread\|read`, optional `maxEntries`) |
-| `GET` | `/v1/appview/entry` | Level-1 entry detail from index |
+| `GET` | `/v1/appview/feed` | Aggregate Subscribed, Following, folder, or publication feed |
+| `GET` | `/v1/appview/entry` | Flat indexed entry-detail object |
 | `GET` | `/v1/appview/unread-counts` | Unread badges by publication or scope |
 | `POST` | `/v1/appview/read-marks` | Upsert AppView read mark |
 | `DELETE` | `/v1/appview/read-marks` | Delete AppView read mark |
-| `POST` | `/v1/appview/enroll` | Backfill recent entries for author DIDs (max 500) |
+| `POST` | `/v1/appview/enroll` | Backfill recent author records (`authorDids`) and/or ingest subscribed RSS feeds (`feedUrls`) |
 | `POST` | `/v1/appview/mark-all-read` | Scoped mark-all-read (publication, folder, subscribed, following) |
 | `DELETE` | `/v1/appview/privacy/purge` | Delete all indexed read marks for the authenticated viewer |
 
@@ -65,19 +66,21 @@ All routes require ATProto OAuth (`Authorization: Bearer` or `DPoP` + `DPoP` pro
 | `POST` | `/v1/publications/refresh` | Recompute sidebar projection |
 | `POST` | `/v1/publications/resolve` | Resolve Add Publication input |
 
-Gateway write-through (PDS repo records): `/v1/publications/folders`, `/prefs`, `/subscriptions`, `/rss-subscriptions`.
+Gateway exposes PDS write-through routes at `/v1/publications/folders`, `/prefs`, `/subscriptions`, and `/rss-subscriptions`. The web client normally writes these records directly to the viewer PDS; the current iOS app uses the Gateway routes with an upstream PDS-bound DPoP proof.
 
 OpenAPI: [packages/spec/openapi.yaml](https://github.com/Stygian-Tech/the-social-wire/blob/main/packages/spec/openapi.yaml)
 
 ## Database
 
-Migrations under [`supabase/migrations/`](https://github.com/Stygian-Tech/the-social-wire/tree/main/supabase/migrations):
+Migrations under [`database/migrations/`](https://github.com/Stygian-Tech/the-social-wire/tree/main/database/migrations):
 
 | Table | Purpose |
 |-------|---------|
-| `content_items` | Level-1 timeline rows keyed by entry AT-URI |
+| `content_items` | Data-minimized standard.site rows and parsed RSS content rows keyed by entry URI |
 | `read_marks` | AppView unread state per `(viewer_did, subject_uri)` |
-| `sidebar_projection_cache` | Stale-first sidebar/unread/first-page snapshots per viewer |
+| `sidebar_projection_cache` | Stale-first sidebar payloads per viewer |
+| `unread_counts_cache` | Stale-first unread-count payloads per viewer |
+| `first_page_cache` | Stale-first first-feed-page payloads per viewer |
 | `pds_repo_record_cache` | Short TTL sync accelerator (gateway) |
 
 Local dev mirrors tables in SQLite via `ThinAppViewStore` / gateway cache stores.
@@ -87,11 +90,11 @@ Local dev mirrors tables in SQLite via `ThinAppViewStore` / gateway cache stores
 | Surface | Flag | Default |
 |---------|------|---------|
 | AppView HTTP routes | `ENABLE_THIN_APPVIEW` | off |
-| Charybdis ingest | `ENABLE_THIN_APPVIEW=true` on worker Fly app | off |
-| Web client | `NEXT_PUBLIC_USE_THIN_APPVIEW=true` | off |
-| iOS client | `SOCIALWIRE_USE_THIN_APPVIEW` (Swift compile condition) | off |
+| Charybdis ingest | `ENABLE_THIN_APPVIEW=true` on Charybdis | off |
+| Web client | `NEXT_PUBLIC_USE_THIN_APPVIEW` | on unless explicitly `false` |
+| iOS client | AppView route availability | on until a route returns unavailable; the compile flag currently gates Profile purge UI |
 
-When flags are off, clients continue PDS-direct entry loading (legacy paths may require **`ENABLE_LEGACY_CONTENT_API`** on older gateway builds — not the default).
+When the server flag is off, AppView routes are unavailable. Current web and iOS builds do not offer a complete PDS-direct feed/detail fallback; legacy gateway `/discovery` and `/entries` routes are separately gated by **`ENABLE_LEGACY_CONTENT_API`** and are not the default path.
 
 ## Environment
 
@@ -100,39 +103,47 @@ When flags are off, clients continue PDS-direct entry loading (legacy paths may 
 | `ENABLE_THIN_APPVIEW` | appview, appview-worker | Mount `/v1/appview/*` and enable store bootstrap |
 | `APPVIEW_BASE_URL` | gateway | Internal AppView base URL for proxy routes |
 | `GATEWAY_APPVIEW_INTERNAL_SECRET` | gateway + appview | HMAC trust for gateway→AppView proxy |
-| `SUPABASE_DATABASE_URL` | gateway, appview, appview-worker | Postgres (session pooler on Fly/CI) |
+| `DATABASE_URL` | gateway, appview, appview-worker, operations | Railway Postgres private connection URL |
 | `THIN_APPVIEW_RELAY_WS_URLS` | appview-worker | Ordered, comma-separated Jetstream WebSocket URLs for active/passive failover (`THIN_APPVIEW_RELAY_WS_URL` remains a compatible single-primary override) |
+| `TAP_BASE_URL` / `TAP_CONSUMER_MODE` | appview-worker | Environment-scoped Tap endpoint and shadow/authoritative transport mode |
 | `THIN_APPVIEW_PROACTIVE_BACKFILL_ENABLED` | appview-worker | Periodic PDS backfill for subscribed authors |
 | `THIN_APPVIEW_CONTENT_TTL_SECONDS` | appview-worker | `content_items.expires_at` horizon |
 | `THIN_APPVIEW_READ_MARK_TTL_SECONDS` | appview-worker | `read_marks` retention |
 
-## Deployment (Fly)
+## Deployment (Railway)
 
-Three independent apps from repo root (`scripts/fly-deploy-*.sh` / per-service `deploy.sh`):
+Railway deploys seven independent services per environment from repository-level config-as-code files:
 
-| App | Config | Command |
-|-----|--------|---------|
-| Gateway | `services/gateway/fly.toml` | `swift run Gateway` |
-| AppView | `services/appview/fly.toml` | `swift run AppView` |
-| Charybdis | `services/appview-worker/fly.toml` | `swift run AppViewWorker` |
+| Service | Config |
+|---------|--------|
+| Web | `railway/web.json` |
+| Operations Web | `railway/operations-web.json` |
+| Gateway | `railway/gateway.json` |
+| AppView | `railway/appview.json` |
+| Charybdis | `railway/charybdis.json` |
+| Operations | `railway/operations.json` |
+| Tap | `railway/tap.json` |
 
-All use **`primary_region = ams`** (EU co-location with Supabase).
+Development tracks `dev`; production tracks `main`. Gateway reaches AppView and
+Operations over Railway private domains, and Charybdis reaches Tap the same way.
+All hosted services use their environment's Railway Postgres service.
 
 **Rollout checklist**
 
-1. Apply Supabase migrations on dev, then prod.
-2. Deploy Charybdis through the stable `appview-worker` deployment with `ENABLE_THIN_APPVIEW=true`.
-3. Deploy appview with `ENABLE_THIN_APPVIEW=true`.
-4. Deploy gateway with `APPVIEW_BASE_URL` + shared internal secret.
-5. Enable web flag on Vercel preview → validate → prod.
-6. Ship iOS with `SOCIALWIRE_USE_THIN_APPVIEW` on testing builds first.
+1. Confirm Gateway's pre-deploy migration command succeeds against the environment's Railway Postgres service.
+2. Deploy Charybdis with `ENABLE_THIN_APPVIEW=true`.
+3. Deploy AppView with `ENABLE_THIN_APPVIEW=true`.
+4. Deploy Gateway with `APPVIEW_BASE_URL` + shared internal secret.
+5. Ensure the web deployment does not explicitly set `NEXT_PUBLIC_USE_THIN_APPVIEW=false`, then validate preview and production.
+6. Validate iOS against the testing gateway before App Store rollout.
 
 ## Client integration
 
 ### Web
 
 - **Initial load:** `usePublicationSidebarData` → `GET /v1/appview/bootstrap-stream`
-- **Entry lists:** `useEntries` → `GET /v1/appview/entries`; **`useProactiveFeedRefresh`** polls/refocus-refreshes the active feed
+- **Entry lists and aggregate feeds:** `useEntries` → `GET /v1/appview/entries` or `/v1/appview/feed`; **`useProactiveFeedRefresh`** polls/refocus-refreshes the active feed
+- **Entry detail:** `useEntry` → `GET /v1/appview/entry`, with narrow author-PDS URL/embed enrichment for incomplete standard.site detail
 - **Sidebar:** `publicationProjectionClient` / `socialWireGatewayClient`
 - **Read state:** local optimistic cache + AppView read marks/read floors; scoped mark-all-read via gateway
 - Env: `NEXT_PUBLIC_SOCIALWIRE_API_URL` (default `https://api.thesocialwire.app`)
@@ -142,17 +153,18 @@ See [[Web-app]].
 ### iOS
 
 - **Initial load:** same bootstrap-stream NDJSON contract as web
-- `SocialWireGatewayClient` — sidebar, appview entries, read marks, enroll, mark-all-read, purge
+- `SocialWireGatewayClient` — sidebar, AppView feeds and entry detail, read marks, enroll, mark-all-read, purge
 - Profile → **Purge Indexed Data** (confirmation step)
 
 See [[Apple-client]].
 
 ## Privacy
 
-- **Region:** Fly + Supabase in **`ams`**
+- **Region:** compute and Postgres placement are Railway environment settings; verify those settings directly before making data-residency claims
 - **Retention:** TTL on indexed rows (configurable)
 - **Logging:** routes log `{ method, path, status, latency_ms }` only — no `Authorization` / `DPoP` bodies
 - **User control:** Purge endpoint + iOS Profile action
+- **Authority:** user-authored records remain on the PDS and indexed projections are rebuildable
 
 ## Related
 

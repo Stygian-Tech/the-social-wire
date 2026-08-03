@@ -1,5 +1,4 @@
 import AsyncHTTPClient
-import GatewayCore
 import Foundation
 import GatewayCore
 import Hummingbird
@@ -9,6 +8,11 @@ import ThinAppViewCore
 /// Resolves pasted links into standard.site publication AT-URIs or RSS feed URLs.
 /// Mirrors web `addPublicationResolveServer.ts` (subset sufficient for client parity).
 actor PublicationResolveService {
+  private enum URLResolutionCandidate: Sendable {
+    case standardSite(String)
+    case rss(String)
+  }
+
   private let httpClient: HTTPClient
   private let plcURL: String
   private let logger: Logger
@@ -108,23 +112,37 @@ actor PublicationResolveService {
     guard let pageUrl = URL(string: normalized) else {
       return ResolveAddPublicationResponse(result: nil, error: "invalid url")
     }
+    let siteOrigin = PublicationResolveURLLogic.siteOriginURL(for: pageUrl)
 
-    if let publication = await tryWellKnownPublication(origin: pageUrl) {
+    let candidate = await withTaskGroup(of: URLResolutionCandidate?.self) { group -> URLResolutionCandidate? in
+      group.addTask { [self] in
+        guard let publication = await self.tryWellKnownPublication(origin: siteOrigin) else { return nil }
+        return .standardSite(publication)
+      }
+      group.addTask { [self] in
+        guard let feedURL = await self.discoverRssFromPageUrl(pageUrl) else { return nil }
+        return .rss(feedURL)
+      }
+
+      for await result in group {
+        if let result {
+          group.cancelAll()
+          return result
+        }
+      }
+      return nil
+    }
+
+    switch candidate {
+    case .some(.standardSite(let publication)):
       return ResolveAddPublicationResponse(result: .standardSite(publicationAtUri: publication), error: nil)
-    }
-
-    if await looksLikeRssFeed(normalized) {
+    case .some(.rss(let fromPage)):
       return ResolveAddPublicationResponse(
-        result: .rss(feedUrl: normalized, title: nil, siteUrl: pageUrl.host, feedIconUrl: nil),
+        result: .rss(feedUrl: fromPage, title: nil, siteUrl: siteOrigin.absoluteString, feedIconUrl: nil),
         error: nil
       )
-    }
-
-    if let fromPage = await discoverRssFromPageUrl(pageUrl) {
-      return ResolveAddPublicationResponse(
-        result: .rss(feedUrl: fromPage, title: nil, siteUrl: pageUrl.host, feedIconUrl: nil),
-        error: nil
-      )
+    case .none:
+      break
     }
 
     return ResolveAddPublicationResponse(
@@ -142,13 +160,39 @@ actor PublicationResolveService {
       )
     else { return nil }
 
-    for collection in PublicationLexicons.discoveryPublicationCollections {
-      let page = try? await repo.listRecords(auth: auth, repo: did, collection: collection, limit: 1, reverse: true)
-      if let uri = page?.records.first?.uri {
-        return uri
+    return await withTaskGroup(of: (Int, String?).self) { group in
+      for (index, collection) in PublicationLexicons.discoveryPublicationCollections.enumerated() {
+        group.addTask { [self] in
+          let uri = await self.firstPublicationRecordUri(
+            repoDid: did,
+            collection: collection,
+            auth: auth
+          )
+          return (index, uri)
+        }
       }
+
+      var matches: [(Int, String)] = []
+      for await (index, uri) in group {
+        if let uri { matches.append((index, uri)) }
+      }
+      return matches.min(by: { $0.0 < $1.0 })?.1
     }
-    return nil
+  }
+
+  private func firstPublicationRecordUri(
+    repoDid: String,
+    collection: String,
+    auth: AuthContext?
+  ) async -> String? {
+    let page = try? await repo.listRecords(
+      auth: auth,
+      repo: repoDid,
+      collection: collection,
+      limit: 1,
+      reverse: true
+    )
+    return page?.records.first?.uri
   }
 
   private func tryWellKnownPublication(origin: URL) async -> String? {
@@ -201,18 +245,34 @@ actor PublicationResolveService {
     else { return nil }
 
     let html = String(buffer: body)
-    for href in collectAlternateFeedHrefs(html: html, base: pageUrl) {
-      guard let norm = PublicationProjectionLogic.normalizeRssFeedUrl(href) else { continue }
-      if await looksLikeRssFeed(norm) { return norm }
+    let lower = html.lowercased()
+    if lower.contains("<rss") || lower.contains("<feed") || lower.contains("<channel") {
+      return PublicationProjectionLogic.normalizeRssFeedUrl(pageUrl.absoluteString)
     }
 
+    var candidates = collectAlternateFeedHrefs(html: html, base: pageUrl)
     for path in ["/feed", "/feed.xml", "/rss", "/rss.xml", "/atom.xml", "/feeds/rss"] {
       guard let guess = URL(string: path, relativeTo: pageUrl)?.absoluteString,
             let norm = PublicationProjectionLogic.normalizeRssFeedUrl(guess)
       else { continue }
-      if await looksLikeRssFeed(norm) { return norm }
+      candidates.append(norm)
     }
-    return nil
+
+    let normalizedCandidates = Array(Set(candidates.compactMap(PublicationProjectionLogic.normalizeRssFeedUrl)))
+    return await withTaskGroup(of: String?.self) { group -> String? in
+      for candidate in normalizedCandidates {
+        group.addTask { [self] in
+          await self.looksLikeRssFeed(candidate) ? candidate : nil
+        }
+      }
+      for await result in group {
+        if let result {
+          group.cancelAll()
+          return result
+        }
+      }
+      return nil
+    }
   }
 
   private func collectAlternateFeedHrefs(html: String, base: URL) -> [String] {

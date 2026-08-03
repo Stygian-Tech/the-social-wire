@@ -90,6 +90,35 @@ describe("thinAppViewClient", () => {
     expect(fetchHandler).toHaveBeenCalledTimes(1);
   });
 
+  it("normalizes numeric Swift dates returned by the aggregate feed", async () => {
+    const fetchHandler = mock(async (url: string) => {
+      expect(url).toContain("/v1/appview/feed?");
+      return new Response(
+        JSON.stringify({
+          entries: [
+            {
+              entryId: "at://did:plc:alice/site.standard.document/entry1",
+              title: "Indexed",
+              publishedAt: 725_760_000,
+              isRead: false,
+            },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      );
+    });
+
+    const { listAggregateFeedFromAppView } = await import(
+      "@/lib/thinAppViewClient"
+    );
+    const page = await listAggregateFeedFromAppView({
+      feed: { kind: "subscribed" },
+      oauthSession: { fetchHandler } as never,
+    });
+
+    expect(page.entries[0]?.publishedAt).toBe("2024-01-01T00:00:00.000Z");
+  });
+
   it("getEntryFromAppView fetches entry detail from gateway", async () => {
     const fetchHandler = mock(async (url: string) => {
       expect(url).toContain("/v1/appview/entry?");

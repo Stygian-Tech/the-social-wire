@@ -162,11 +162,19 @@ export function EntryListVirtualPane({
   const virtualizer = useVirtualizer({
     count: virtualCount,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => 254,
+    estimateSize: () => 130,
+    initialRect: { width: 0, height: 800 },
+    gap: 8,
     overscan: 5,
   });
 
   const items = virtualizer.getVirtualItems();
+  const firstItem = items[0];
+  const lastItem = items.at(-1);
+  const paddingTop = firstItem?.start ?? 0;
+  const paddingBottom = lastItem
+    ? Math.max(0, virtualizer.getTotalSize() - lastItem.end)
+    : 0;
 
   return (
     <div
@@ -175,8 +183,8 @@ export function EntryListVirtualPane({
       className="h-full overflow-y-auto overscroll-y-contain pt-2"
     >
       <div
-        style={{ height: virtualizer.getTotalSize() }}
-        className="relative w-full"
+        style={{ paddingTop, paddingBottom }}
+        className="flex w-full flex-col gap-2"
       >
         {items.map((virtualItem) => {
           const isLoaderRow = virtualItem.index === visibleEntries.length;
@@ -188,14 +196,9 @@ export function EntryListVirtualPane({
                 ref={loaderRef}
                 data-entry-list-loader
                 style={{
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
-                  width: "100%",
-                  transform: `translateY(${virtualItem.start}px)`,
                   height: virtualItem.size,
                 }}
-                className="flex items-center justify-center px-2 pb-1.5"
+                className="flex w-full items-center justify-center px-2"
               >
                 {isFetchNextPageError ? (
                   <Button
@@ -217,14 +220,8 @@ export function EntryListVirtualPane({
           return (
             <div
               key={entry.entryId}
-              style={{
-                position: "absolute",
-                top: 0,
-                left: 0,
-                width: "100%",
-                transform: `translateY(${virtualItem.start}px)`,
-              }}
               ref={virtualizer.measureElement}
+              className="w-full"
               data-index={virtualItem.index}
               data-entry-id={entry.entryId}
             >

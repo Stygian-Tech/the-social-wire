@@ -1,6 +1,6 @@
 # ThinAppViewCore
 
-Shared Swift package for the optional Thin AppView read index — used by **`services/appview`** (read routes, sidebar projection) and **Charybdis** at `services/appview-worker` (firehose ingestion, proactive backfill).
+Shared Swift package for the Thin AppView read index — used by **`services/appview`** (read routes, sidebar projection) and **Charybdis** at `services/appview-worker` (Jetstream/Tap ingestion, RSS polling, proactive backfill).
 
 **Package:** [packages/swift/ThinAppViewCore](https://github.com/Stygian-Tech/the-social-wire/tree/main/packages/swift/ThinAppViewCore)  
 **Architecture:** [[Thin-AppView]]
@@ -23,7 +23,7 @@ cd packages/swift/ThinAppViewCore
 swift test
 ```
 
-Also runs in CI **`test-appview`** and **`test-appview-worker`** jobs.
+Runs explicitly in the CI **`charybdis`** job.
 
 ## Related
 

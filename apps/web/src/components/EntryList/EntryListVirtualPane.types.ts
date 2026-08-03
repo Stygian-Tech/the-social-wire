@@ -3,7 +3,7 @@ import type { EntryListItem } from "@/lib/atprotoClient";
 export type EntryListVirtualPaneProps = {
   visibleEntries: EntryListItem[];
   selectedEntryId: string | null;
-  onSelectEntry: (entryId: string) => void;
+  onSelectEntry: (entryId: string, entry?: EntryListItem) => void;
   isEntryRead: (entryId: string) => boolean;
   readIndicatorsEnabled: boolean;
   hasNextPage: boolean;

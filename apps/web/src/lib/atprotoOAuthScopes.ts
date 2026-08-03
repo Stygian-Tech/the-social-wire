@@ -1,12 +1,14 @@
 import { LATR_REPO_OAUTH_SCOPES } from "@/lib/latrCollections";
+import { USER_INPUT_OAUTH_SCOPE } from "@/lib/userInputFeedback";
 
 /**
  * Space-separated ATProto OAuth scopes. Must stay in sync with
  * `public/client-metadata.json` (`scope`) for API parity tests: authorization
  * servers reject undeclared scopes.
  *
- * `atproto` is required by the ATProto OAuth profile. Repository writes for
- * Social Wire lexicons need explicit `repo:` permissions.
+ * `atproto` is required by the ATProto OAuth profile. Prefer published
+ * application permission sets so PDS consent screens can group permissions by
+ * product. Keep explicit `repo:` grants only where no suitable set exists.
  *
  * During the `com.thesocialwire.*` → `app.thesocialwire.*` transition, legacy
  * non-read-state repo scopes remain so clients can delete old records after migration.
@@ -26,22 +28,18 @@ export const SOCIAL_WIRE_REPO_SCOPES = [
   "repo:com.thesocialwire.preferences?action=create&action=update&action=delete",
 ] as const;
 
+export const BLUESKY_SOCIAL_PERMISSION_SCOPES = [
+  "include:app.bsky.authCreatePosts?aud=did:web:api.bsky.app%23bsky_appview",
+  "include:app.bsky.authDeleteContent?aud=did:web:api.bsky.app%23bsky_appview",
+] as const;
+
 export const BLUESKY_SOCIAL_REPO_SCOPES = [
-  "repo:app.bsky.feed.post?action=create&action=delete",
-  "repo:app.bsky.feed.like?action=create&action=delete",
-  "repo:app.bsky.feed.repost?action=create&action=delete",
+  "repo:app.bsky.feed.like?action=create",
+  "repo:app.bsky.feed.repost?action=create",
 ] as const;
 
-export const STANDARD_SITE_SUBSCRIPTION_REPO_SCOPE =
-  "repo:site.standard.graph.subscription?action=create&action=update&action=delete";
-
-export const STANDARD_SITE_RECOMMEND_REPO_SCOPE =
-  "repo:site.standard.graph.recommend?action=create&action=delete";
-
-export const STANDARD_SITE_REPO_SCOPES = [
-  STANDARD_SITE_SUBSCRIPTION_REPO_SCOPE,
-  STANDARD_SITE_RECOMMEND_REPO_SCOPE,
-] as const;
+export const STANDARD_SITE_SOCIAL_PERMISSION_SCOPE =
+  "include:site.standard.authSocial";
 
 export const SKYREADER_REPO_SCOPES = [
   "repo:app.skyreader.feed.subscription?action=create&action=update&action=delete",
@@ -50,9 +48,10 @@ export const SKYREADER_REPO_SCOPES = [
 export const AT_PROTO_OAUTH_SCOPES = [
   "atproto",
   ...SOCIAL_WIRE_REPO_SCOPES,
+  ...BLUESKY_SOCIAL_PERMISSION_SCOPES,
   ...BLUESKY_SOCIAL_REPO_SCOPES,
   ...LATR_REPO_OAUTH_SCOPES,
-  STANDARD_SITE_SUBSCRIPTION_REPO_SCOPE,
+  STANDARD_SITE_SOCIAL_PERMISSION_SCOPE,
   ...SKYREADER_REPO_SCOPES,
-  STANDARD_SITE_RECOMMEND_REPO_SCOPE,
+  USER_INPUT_OAUTH_SCOPE,
 ].join(" ");

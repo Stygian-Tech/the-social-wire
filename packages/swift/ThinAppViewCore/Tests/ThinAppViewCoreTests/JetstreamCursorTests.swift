@@ -379,7 +379,7 @@ struct BoundedSequentialMessagePumpTests {
     }, onFailure: { _ in })
     #expect(pump.enqueue("first"))
     #expect(pump.enqueue("second"))
-    try await Task.sleep(for: .milliseconds(100))
+    await pump.waitUntilIdle()
     #expect(await ordered.snapshot() == ["first", "second"])
   }
 

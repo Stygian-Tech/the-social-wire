@@ -261,6 +261,34 @@ public init(path dbPath: String, logger: Logger) throws {
       """)
 
     try db.execute(sql: """
+      CREATE TABLE IF NOT EXISTS appview_viewer_feeds (
+        viewer_did TEXT NOT NULL,
+        feed_kind TEXT NOT NULL,
+        feed_id TEXT NOT NULL DEFAULT '',
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (viewer_did, feed_kind, feed_id)
+      );
+      """)
+
+    try db.execute(sql: """
+      CREATE TABLE IF NOT EXISTS appview_feed_publications (
+        viewer_did TEXT NOT NULL,
+        feed_kind TEXT NOT NULL,
+        feed_id TEXT NOT NULL DEFAULT '',
+        publication_id TEXT NOT NULL,
+        PRIMARY KEY (viewer_did, feed_kind, feed_id, publication_id),
+        FOREIGN KEY (viewer_did, feed_kind, feed_id)
+          REFERENCES appview_viewer_feeds (viewer_did, feed_kind, feed_id)
+          ON DELETE CASCADE
+      );
+      """)
+
+    try db.execute(sql: """
+      CREATE INDEX IF NOT EXISTS idx_appview_feed_publications_scope
+        ON appview_feed_publications (viewer_did, feed_kind, feed_id, publication_id);
+      """)
+
+    try db.execute(sql: """
       CREATE INDEX IF NOT EXISTS idx_appview_publication_scopes_viewer
         ON appview_publication_scopes (viewer_did);
       """)
@@ -1077,6 +1105,124 @@ public init(path dbPath: String, logger: Logger) throws {
     }
   }
 
+  public func listFeedEntries(
+    viewerDid: String,
+    selector: AppViewFeedSelector,
+    filter: EntryListFilter,
+    cursor: String?,
+    limit: Int
+  ) async throws -> AppViewFeedPage? {
+    let databaseStartedAt = Date()
+    let projection: (updatedAt: Date, scopes: [PublicationUnreadScope])? = try await db.read { db in
+      let updatedAtRaw: String?
+      let scopeRows: [Row]
+      if selector.kind == .publication {
+        updatedAtRaw = try String.fetchOne(
+          db,
+          sql: """
+            SELECT updated_at
+            FROM appview_publication_scopes
+            WHERE viewer_did = ?
+              AND (
+                publication_id = ? OR publication_at_uri = ?
+                OR EXISTS (SELECT 1 FROM json_each(scope_keys) WHERE value = ?)
+              )
+            ORDER BY updated_at DESC
+            LIMIT 1
+            """,
+          arguments: [viewerDid, selector.id, selector.id, selector.id]
+        )
+        scopeRows = try Row.fetchAll(
+          db,
+          sql: """
+            SELECT viewer_did, publication_id, author_did, publication_at_uri,
+                   publication_scope_at_uris, publication_site_urls, scope_keys,
+                   section_keys, updated_at
+            FROM appview_publication_scopes
+            WHERE viewer_did = ?
+              AND (
+                publication_id = ? OR publication_at_uri = ?
+                OR EXISTS (SELECT 1 FROM json_each(scope_keys) WHERE value = ?)
+              )
+            """,
+          arguments: [viewerDid, selector.id, selector.id, selector.id]
+        )
+      } else {
+        updatedAtRaw = try String.fetchOne(
+          db,
+          sql: """
+            SELECT updated_at FROM appview_viewer_feeds
+            WHERE viewer_did = ? AND feed_kind = ? AND feed_id = ?
+            LIMIT 1
+            """,
+          arguments: [viewerDid, selector.kind.rawValue, selector.id]
+        )
+        scopeRows = try Row.fetchAll(
+          db,
+          sql: """
+            SELECT scope.viewer_did, scope.publication_id, scope.author_did,
+                   scope.publication_at_uri, scope.publication_scope_at_uris,
+                   scope.publication_site_urls, scope.scope_keys, scope.section_keys,
+                   scope.updated_at
+            FROM appview_feed_publications membership
+            JOIN appview_publication_scopes scope
+              ON scope.viewer_did = membership.viewer_did
+             AND scope.publication_id = membership.publication_id
+            WHERE membership.viewer_did = ?
+              AND membership.feed_kind = ?
+              AND membership.feed_id = ?
+            """,
+          arguments: [viewerDid, selector.kind.rawValue, selector.id]
+        )
+      }
+      guard let updatedAtRaw, let updatedAt = Self.date(fromIso: updatedAtRaw) else { return nil }
+      let scopes = scopeRows.compactMap(Self.publicationScope(from:)).map { scope in
+        PublicationUnreadScope(
+          publicationId: scope.publicationId,
+          authorDid: scope.authorDid,
+          publicationAtUri: scope.publicationAtUri,
+          publicationScopeAtUris: scope.publicationScopeAtUris,
+          publicationSiteUrls: scope.publicationSiteUrls
+        )
+      }
+      return (updatedAt, scopes)
+    }
+    guard let projection else { return nil }
+    let response = try await listFeedEntries(
+      viewerDid: viewerDid,
+      scopes: projection.scopes,
+      filter: filter,
+      cursor: cursor,
+      limit: limit
+    )
+    let states = try await readStates(viewerDid: viewerDid, entries: response.entries)
+    return AppViewFeedPage(
+      response: AppViewEntryListResponse(
+        entries: response.entries.map {
+          $0.withReadState(states[$0.entryId] ?? false)
+        },
+        cursor: response.cursor
+      ),
+      membershipUpdatedAt: projection.updatedAt,
+      databaseDurationMilliseconds: Date().timeIntervalSince(databaseStartedAt) * 1_000
+    )
+  }
+
+  public func hasViewerFeedProjection(viewerDid: String) async throws -> Bool {
+    try await db.read { db in
+      try Bool.fetchOne(
+        db,
+        sql: """
+          SELECT 1 FROM appview_viewer_feeds WHERE viewer_did = ?
+          UNION ALL
+          SELECT 1 FROM appview_publication_scopes WHERE viewer_did = ?
+          LIMIT 1
+          """,
+        arguments: [viewerDid, viewerDid]
+      ) != nil
+    }
+  }
+
   public func countUnreadEntries(
     viewerDid: String,
     authorDid: String,
@@ -1224,6 +1370,51 @@ public init(path dbPath: String, logger: Logger) throws {
       )
     }
     try await upsertPublicationScopes(scopes)
+  }
+
+  public func upsertViewerFeedProjection(
+    viewerDid: String,
+    scopes: [AppViewPublicationScope],
+    feeds: [AppViewViewerFeed],
+    memberships: [AppViewFeedPublication]
+  ) async throws {
+    try await db.write { db in
+      try Self.writeViewerFeedProjection(
+        scopes: scopes,
+        feeds: feeds,
+        memberships: memberships,
+        db: db
+      )
+    }
+    _ = viewerDid
+  }
+
+  public func replaceViewerFeedProjection(
+    viewerDid: String,
+    scopes: [AppViewPublicationScope],
+    feeds: [AppViewViewerFeed],
+    memberships: [AppViewFeedPublication]
+  ) async throws {
+    try await db.write { db in
+      try db.execute(
+        sql: "DELETE FROM appview_feed_publications WHERE viewer_did = ?",
+        arguments: [viewerDid]
+      )
+      try db.execute(
+        sql: "DELETE FROM appview_viewer_feeds WHERE viewer_did = ?",
+        arguments: [viewerDid]
+      )
+      try db.execute(
+        sql: "DELETE FROM appview_publication_scopes WHERE viewer_did = ?",
+        arguments: [viewerDid]
+      )
+      try Self.writeViewerFeedProjection(
+        scopes: scopes,
+        feeds: feeds,
+        memberships: memberships,
+        db: db
+      )
+    }
   }
 
   public func fetchUnreadCounters(
@@ -2752,6 +2943,76 @@ public init(path dbPath: String, logger: Logger) throws {
         """,
       arguments: StatementArguments([viewerDid] + covered)
     )
+  }
+
+  private static func writeViewerFeedProjection(
+    scopes: [AppViewPublicationScope],
+    feeds: [AppViewViewerFeed],
+    memberships: [AppViewFeedPublication],
+    db: Database
+  ) throws {
+    for scope in scopes {
+      try db.execute(
+        sql: """
+          INSERT INTO appview_publication_scopes
+            (viewer_did, publication_id, author_did, publication_at_uri,
+             publication_scope_at_uris, publication_site_urls, scope_keys,
+             section_keys, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT (viewer_did, publication_id) DO UPDATE SET
+            author_did = excluded.author_did,
+            publication_at_uri = excluded.publication_at_uri,
+            publication_scope_at_uris = excluded.publication_scope_at_uris,
+            publication_site_urls = excluded.publication_site_urls,
+            scope_keys = excluded.scope_keys,
+            section_keys = excluded.section_keys,
+            updated_at = excluded.updated_at
+          """,
+        arguments: [
+          scope.viewerDid,
+          scope.publicationId,
+          scope.authorDid,
+          scope.publicationAtUri,
+          try jsonString(scope.publicationScopeAtUris),
+          try jsonString(scope.publicationSiteUrls),
+          try jsonString(scope.scopeKeys),
+          try jsonString(scope.sectionKeys),
+          isoString(from: scope.updatedAt),
+        ]
+      )
+    }
+    for feed in feeds where feed.kind != .publication {
+      try db.execute(
+        sql: """
+          INSERT INTO appview_viewer_feeds (viewer_did, feed_kind, feed_id, updated_at)
+          VALUES (?, ?, ?, ?)
+          ON CONFLICT (viewer_did, feed_kind, feed_id)
+          DO UPDATE SET updated_at = excluded.updated_at
+          """,
+        arguments: [
+          feed.viewerDid,
+          feed.kind.rawValue,
+          feed.feedId,
+          isoString(from: feed.updatedAt),
+        ]
+      )
+    }
+    for membership in memberships where membership.kind != .publication {
+      try db.execute(
+        sql: """
+          INSERT INTO appview_feed_publications
+            (viewer_did, feed_kind, feed_id, publication_id)
+          VALUES (?, ?, ?, ?)
+          ON CONFLICT (viewer_did, feed_kind, feed_id, publication_id) DO NOTHING
+          """,
+        arguments: [
+          membership.viewerDid,
+          membership.kind.rawValue,
+          membership.feedId,
+          membership.publicationId,
+        ]
+      )
+    }
   }
 
   private static func jsonString(_ values: [String]) throws -> String {

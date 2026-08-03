@@ -25,6 +25,7 @@ Use scheme **SocialWire-TestFlight** for TestFlight builds; **SocialWire** for A
 ```
 apps/apple/SocialWireTests/
   OAuthTests.swift
+  BootstrapStreamNDJSONTests.swift
   SocialWireUtilityTests.swift
   PublicationSubscriptionMatchTests.swift
   ReaderCacheCoordinatorTests.swift
@@ -34,6 +35,7 @@ apps/apple/SocialWireTests/
   PublicationServiceTests.swift
   LatrGatewayClientTests.swift
   ReaderParityUtilityTests.swift
+  SavedLinkPublicationResolverTests.swift
 ```
 
 ## API environment
@@ -42,15 +44,18 @@ apps/apple/SocialWireTests/
 |-------|---------|
 | Debug | `https://api.testing.thesocialwire.app` |
 | Release | `https://api.thesocialwire.app` |
-| TestFlight (Release, no DEBUG) | Set `SOCIALWIRE_TESTING_API` for testing host |
+| Beta / SocialWire-TestFlight | `project.yml` sets `SOCIALWIRE_TESTING_API`; uses the testing host |
+
+Both public API hosts are Railway Gateway custom domains. Do not substitute a generated `*.up.railway.app` URL without also registering its reversed-host callback scheme and publishing matching client metadata.
 
 ## Manual OAuth checklist
 
 - [ ] `client_id` matches hosted `ios-client-metadata.json` for active API host
+- [ ] Debug/Beta metadata stays on `api.testing.thesocialwire.app`; Release metadata stays on `api.thesocialwire.app`
 - [ ] URL scheme matches reversed FQDN (e.g. `app.thesocialwire.api:/oauth/callback`)
 - [ ] Sign in completes; Keychain holds refresh token
 - [ ] Gateway sync preferences load after auth
-- [ ] Thin AppView lists load when `SOCIALWIRE_USE_THIN_APPVIEW` is set
+- [ ] Bootstrap, AppView lists, and flat entry detail load through the active gateway host
 
 ## Components / views
 
@@ -69,24 +74,25 @@ Functional parity with `apps/web` (native SwiftUI chrome; not pixel-matched layo
 | All / Unread filter | `ReadArticleFilterBar.tsx` | `ReaderShellChrome` | Done — deferred mark-read on Unread |
 | Unread badges | `effectivePublicationUnreadCount` | `EffectiveUnreadCount`, `SocialWireAppModel.displayUnreadCount` | Done — server baseline reconciled with cached rows and local read state |
 | Mark all read | `useCachedBulkReadActions.ts` | `SocialWireAppModel.markRead(for:)` | Done — scoped `.alert` confirmation |
-| Read-state sync | `useCrossClientReadSync.ts` | `syncCrossClientReadState` | Done — foreground PDS merge + unread refresh |
-| L@tr saves list | `useLatrMergedHttpsSaves` | `PDSRecordService.listMergedLatrSaves` | Done — via Social Wire Gateway `/v1/latr/saves` proxy |
-| L@tr mutations | `useLatrSaved.ts` | `LatrGatewayClient`, `SocialWireAppModel` | Done — optimistic archive/delete/unarchive |
+| Read-state sync | `useCrossClientReadSync.ts` | `syncCrossClientReadState` | Done — foreground AppView unread/feed refresh |
+| L@tr saves list | `useLatrMergedHttpsSaves` | `PDSRecordService.listMergedLatrSaves` | Done — canonical + legacy viewer-PDS records merged client-side |
+| L@tr save mutation | `useLatrSaved.ts` | `LatrGatewayClient`, `SocialWireAppModel` | Done — new URL/subject saves through `/v1/latr/saves` |
+| L@tr archive/delete | `useLatrSaved.ts` | `PDSRecordService`, `SocialWireAppModel` | Done — optimistic UI + direct viewer-PDS item writes/deletes |
 | Saved / Archive UI | `SavedLinksBrowser.tsx` | `SavedLinksListContent`, `SavedLinkDetailView` | Done — publication chip, embed URL, optimistic mutations |
 | Article presentation | `entryArticlePresentation.ts` | `ArticlePresentationResolver`, `EntryDetailView` | Done — HTML vs web preview with per-entry lock |
 | Feed social actions | `EntrySocialToolbar.tsx` | `ArticleToolbar`, `SavedLinkToolbar` | Done — Reply/Like/Repost/Quote on feed and saved Bluesky subjects |
-| Read-later settings | `/saved/settings` | `SettingsView`, `ReadLaterServiceCatalog` | Done — L@tr Link functional; third-party prefs only |
-| L@tr credentials | Vercel `/api/latr-gateway` (`LATR_GATEWAY_*`) | Social Wire Gateway `/v1/latr/*` (`LATR_IOS_PROXY_*`) | Done — secrets server-side only |
+| Read-later settings | `/saved/settings` | `SettingsView` | Done — no provider selector; web redirects to `/saved`, iOS settings cover feed display/account |
+| L@tr save credentials | Railway Web `/api/latr-gateway` (`LATR_GATEWAY_*`) | Railway Social Wire Gateway `/v1/latr/*` (`LATR_IOS_PROXY_*`) | Done — secrets server-side only |
 
-### L@tr Gateway transport
+### L@tr save transport
 
-iOS must **not** ship L@tr API credentials. Requests go to `SocialWireAPIEnvironment.baseURL` (`/v1/latr/saves*`). The client sends:
+iOS must **not** ship L@tr API credentials. New save requests go to `SocialWireAPIEnvironment.baseURL` (`POST /v1/latr/saves`). The client sends:
 
 - `Authorization` + gateway-bound `DPoP` (Social Wire Gateway `htu`)
 - `X-Latr-Gateway-DPoP` (external L@tr Gateway `htu`; forwarded as outbound `DPoP`)
 - `X-ATProto-Upstream-DPoP` (PDS write-through)
 
-The **Social Wire Gateway** injects L@tr credentials from **`LATR_IOS_PROXY_URL`**, **`LATR_IOS_PROXY_CLIENT_ID`**, **`LATR_IOS_PROXY_API_KEY`**, or **`LATR_IOS_PROXY_CLIENT_CREDENTIAL`** on Fly/runtime secrets. These are separate from the **web** Vercel proxy secrets (`LATR_GATEWAY_*` on the Next.js host). Legacy `LATR_GATEWAY_*` names on the gateway are deprecated aliases.
+The **Social Wire Gateway** injects L@tr credentials from **`LATR_IOS_PROXY_URL`**, **`LATR_IOS_PROXY_CLIENT_ID`**, **`LATR_IOS_PROXY_API_KEY`**, or **`LATR_IOS_PROXY_CLIENT_CREDENTIAL`** in the matching Railway Gateway service. These are separate from the **web** proxy variables (`LATR_GATEWAY_*`) on the matching Railway Web service. Legacy `LATR_GATEWAY_*` names on Gateway are deprecated aliases. The current app model lists saved items and performs archive/unarchive/delete directly through `PDSRecordService`, so those operations do not use the triple-DPoP proxy path.
 
 ## Related
 

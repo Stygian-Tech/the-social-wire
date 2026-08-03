@@ -15,6 +15,7 @@ const pub: DiscoveredPublication = {
   title: "Alice",
   discoveredAt: "2026-01-01T00:00:00.000Z",
 };
+const viewerDid = "did:plc:viewer";
 
 function renderWithClient<T>(callback: () => T) {
   const queryClient = new QueryClient();
@@ -53,7 +54,7 @@ describe("useSidebarUnreadCounts", () => {
       title: "One",
       publishedAt: "2026-01-01T00:00:00.000Z",
     };
-    queryClient.setQueryData(ENTRIES_QUERY_KEY("did:plc:alice"), {
+    queryClient.setQueryData(ENTRIES_QUERY_KEY(viewerDid, "did:plc:alice"), {
       pages: [{ entries: [entry], cursor: undefined }],
       pageParams: [undefined],
     });
@@ -69,6 +70,7 @@ describe("useSidebarUnreadCounts", () => {
           unreadCountsByPublicationId,
           isEntryRead,
           readEpoch,
+          viewerDid,
         }),
       {
         initialProps: { readEpoch: 0 },
@@ -91,10 +93,13 @@ describe("useSidebarUnreadCounts", () => {
       title: "One",
       publishedAt: "2026-01-01T00:00:00.000Z",
     };
-    queryClient.setQueryData([...ENTRIES_QUERY_KEY("did:plc:alice"), "all"], {
+    queryClient.setQueryData(
+      [...ENTRIES_QUERY_KEY(viewerDid, "did:plc:alice"), "all"],
+      {
       pages: [{ entries: [entry], cursor: undefined }],
       pageParams: [undefined],
-    });
+      }
+    );
 
     const unreadCountsByPublicationId = new Map([["did:plc:alice", 0]]);
     const { result } = renderHook(
@@ -103,6 +108,7 @@ describe("useSidebarUnreadCounts", () => {
           publications: [pub],
           unreadCountsByPublicationId,
           isEntryRead: () => false,
+          viewerDid,
         }),
       {
         wrapper: ({ children }) => (
@@ -123,6 +129,7 @@ describe("useSidebarUnreadCounts", () => {
           publications: [pub],
           unreadCountsByPublicationId,
           isEntryRead: () => false,
+          viewerDid,
         }),
       {
         wrapper: ({ children }) => (
@@ -134,7 +141,7 @@ describe("useSidebarUnreadCounts", () => {
     expect(result.current.get("did:plc:alice")).toBe(0);
 
     queryClient.setQueryData(
-      ["aggregateEntries", "subscribed:", "all"],
+      ["aggregateEntries", viewerDid, "subscribed", "", "all"],
       {
         pages: [
           {

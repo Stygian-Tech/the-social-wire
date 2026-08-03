@@ -31,21 +31,23 @@ function optimisticUnreadCountsGeneration(
 
 export function countCachedUnreadForPublication(
   queryClient: QueryClient,
+  viewerDid: string,
   publicationId: string,
   isEntryRead: (entryId: string) => boolean
 ): number {
   return countUnreadCachedEntries(
-    getCachedEntriesForPublication(queryClient, publicationId),
+    getCachedEntriesForPublication(queryClient, viewerDid, publicationId),
     isEntryRead
   );
 }
 
 export function countCachedReadForPublication(
   queryClient: QueryClient,
+  viewerDid: string,
   publicationId: string,
   isEntryRead: (entryId: string) => boolean
 ): number {
-  const entries = getCachedEntriesForPublication(queryClient, publicationId);
+  const entries = getCachedEntriesForPublication(queryClient, viewerDid, publicationId);
   const seen = new Set<string>();
   let count = 0;
   for (const entry of entries) {
@@ -202,6 +204,7 @@ export function clearPublicationUnreadCounts(
 
 export function bulkReadDeltasForPublications(
   queryClient: QueryClient,
+  viewerDid: string,
   publications: DiscoveredPublication[],
   isEntryRead: (entryId: string) => boolean
 ): Map<string, number> {
@@ -209,6 +212,7 @@ export function bulkReadDeltasForPublications(
   for (const pub of publications) {
     const unread = countCachedUnreadForPublication(
       queryClient,
+      viewerDid,
       pub.publicationId,
       isEntryRead
     );
@@ -221,6 +225,7 @@ export function bulkReadDeltasForPublications(
 
 export function bulkUnreadDeltasForPublications(
   queryClient: QueryClient,
+  viewerDid: string,
   publications: DiscoveredPublication[],
   isEntryRead: (entryId: string) => boolean
 ): Map<string, number> {
@@ -228,6 +233,7 @@ export function bulkUnreadDeltasForPublications(
   for (const pub of publications) {
     const read = countCachedReadForPublication(
       queryClient,
+      viewerDid,
       pub.publicationId,
       isEntryRead
     );

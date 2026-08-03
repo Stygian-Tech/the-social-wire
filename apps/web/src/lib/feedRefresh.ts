@@ -10,9 +10,11 @@ import { applyUnreadCountsEvent } from "@/lib/bootstrapStreamState";
 import type { ArticleListFilter } from "@/lib/entryArticleFilter";
 import { normalizeAtRepoParam } from "@/lib/atprotoClient";
 import type { PublicationSidebarProjection } from "@/lib/publicationProjectionClient";
-import { dedupeEntryListItems } from "@/lib/rssFeedCore";
 import { fetchAppViewUnreadCounts } from "@/lib/thinAppViewClient";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
+import { mergeFeedFirstPageRefresh } from "@/lib/feedCacheMerge";
+
+export { mergeFeedFirstPageRefresh } from "@/lib/feedCacheMerge";
 
 /** Delay after bootstrap before a one-time feed refresh (background enroll may still be running). */
 export const FEED_POST_BOOTSTRAP_REFRESH_MS = 1_000;
@@ -24,30 +26,6 @@ export const FEED_PROACTIVE_REFRESH_INTERVAL_MS = 45_000;
  * Merges a fresh first page into an infinite-query cache — new posts prepend without
  * dropping paginated tail pages (social-feed style).
  */
-export function mergeFeedFirstPageRefresh(
-  existing: InfiniteData<EntriesPage> | undefined,
-  freshPage: EntriesPage
-): InfiniteData<EntriesPage> {
-  if (!existing?.pages.length) {
-    return { pages: [freshPage], pageParams: [undefined] };
-  }
-
-  const [firstPage, ...restPages] = existing.pages;
-  const [firstParam, ...restParams] = existing.pageParams;
-
-  const freshIds = new Set(freshPage.entries.map((entry) => entry.entryId));
-  const carryOver = firstPage.entries.filter((entry) => !freshIds.has(entry.entryId));
-  const mergedFirst: EntriesPage = {
-    entries: dedupeEntryListItems([...freshPage.entries, ...carryOver]),
-    cursor: freshPage.cursor ?? firstPage.cursor,
-  };
-
-  return {
-    pages: [mergedFirst, ...restPages],
-    pageParams: [firstParam, ...restParams],
-  };
-}
-
 /** Refreshes AppView unread badge for one publication after feed changes. */
 export async function refreshPublicationUnreadCount(args: {
   queryClient: QueryClient;
@@ -97,7 +75,11 @@ export async function refreshPublicationFeedFirstPage(args: {
     signal,
   } = args;
 
-  const queryKey = [...ENTRIES_QUERY_KEY(publicationKey), articleFilter] as const;
+  if (!viewerDid) return false;
+  const queryKey = [
+    ...ENTRIES_QUERY_KEY(viewerDid, publicationKey),
+    articleFilter,
+  ] as const;
   const existing = queryClient.getQueryData<InfiniteData<EntriesPage>>(queryKey);
   if (!existing?.pages.length) return false;
 

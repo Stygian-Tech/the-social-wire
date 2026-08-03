@@ -40,7 +40,7 @@ interface EntryListProps {
   pubId?: string;
   aggregateFeed?: AggregateAppViewFeed;
   selectedEntryId: string | null;
-  onSelectEntry: (entryId: string) => void;
+  onSelectEntry: (entryId: string, entry?: EntryListItem) => void;
   isEntryRead: (entryId: string) => boolean;
   readIndicatorsEnabled: boolean;
   /** When false, read/unread visuals are suppressed without changing persisted state. */

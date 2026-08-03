@@ -1,17 +1,18 @@
 "use client";
 
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import {
   BookmarkPlus,
   Check,
   Heart,
   Link2,
-  MessageSquareQuote,
   MoreHorizontal,
   Reply,
   Repeat,
+  Send,
   ThumbsUp,
 } from "lucide-react";
+import { articleSocialMenuActions } from "@/components/EntryDetail/articleSocialMenuActions";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Dialog,
@@ -69,7 +70,7 @@ export function ArticleSocialToolbar({
     viewerQuery,
     toggleLikeMutation,
     toggleRepostMutation,
-    quoteMutation,
+    postMutation,
     replyMutation,
     hasLinkedPost,
   } = useEntrySocial(entry);
@@ -82,20 +83,34 @@ export function ArticleSocialToolbar({
   );
 
   const [repostOpen, setRepostOpen] = useState(false);
-  const [quoteOpen, setQuoteOpen] = useState(false);
+  const [postOpen, setPostOpen] = useState(false);
   const [replyOpen, setReplyOpen] = useState(false);
-  const [quoteText, setQuoteText] = useState("");
+  const [postText, setPostText] = useState("");
   const [replyText, setReplyText] = useState("");
+  const mountedRef = useRef(false);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   const likeUri = viewerQuery.data?.likeUri;
   const repostUri = viewerQuery.data?.repostUri;
   const liked = !!likeUri;
   const reposted = !!repostUri;
+  const menuActions = articleSocialMenuActions({
+    hasLinkedPost,
+    hasCanonicalUrl: !!canonUrl,
+    showReadLaterSave,
+    alreadyLatrSaved,
+  });
 
   const busySocial =
     toggleLikeMutation.isPending ||
     toggleRepostMutation.isPending ||
-    quoteMutation.isPending ||
+    postMutation.isPending ||
     replyMutation.isPending ||
     viewerQuery.isLoading;
 
@@ -103,33 +118,41 @@ export function ArticleSocialToolbar({
     ? undefined
     : "Like, Reply, and Repost need a Bluesky post linked to this article.";
   const replyError = mutationErrorMessage(replyMutation.error);
-  const quoteError = mutationErrorMessage(quoteMutation.error);
+  const postError = mutationErrorMessage(postMutation.error);
   const repostError = mutationErrorMessage(toggleRepostMutation.error);
 
   const handleReplyOpenChange = (open: boolean) => {
+    if (!mountedRef.current) return;
     setReplyOpen(open);
-    replyMutation.reset();
-    if (!open) setReplyText("");
+    if (open) {
+      replyMutation.reset();
+      setReplyText("");
+    }
   };
 
-  const handleQuoteOpenChange = (open: boolean) => {
-    setQuoteOpen(open);
-    quoteMutation.reset();
-    if (!open) setQuoteText("");
+  const handlePostOpenChange = (open: boolean) => {
+    if (!mountedRef.current) return;
+    setPostOpen(open);
+    if (open) {
+      postMutation.reset();
+      setPostText("");
+    }
   };
 
   const handleRepostOpenChange = (open: boolean) => {
+    if (!mountedRef.current) return;
     setRepostOpen(open);
-    toggleRepostMutation.reset();
+    if (open) toggleRepostMutation.reset();
   };
 
-  const submitQuote = () => {
-    const text = quoteText.trim();
+  const submitPost = () => {
+    const text = postText.trim();
     if (!text) return;
-    quoteMutation.mutate(text, {
+    postMutation.mutate(text, {
       onSuccess: () => {
-        setQuoteOpen(false);
-        setQuoteText("");
+        if (!mountedRef.current) return;
+        setPostOpen(false);
+        setPostText("");
       },
     });
   };
@@ -139,6 +162,7 @@ export function ArticleSocialToolbar({
     if (!text) return;
     replyMutation.mutate(text, {
       onSuccess: () => {
+        if (!mountedRef.current) return;
         setReplyOpen(false);
         setReplyText("");
       },
@@ -149,7 +173,9 @@ export function ArticleSocialToolbar({
     toggleRepostMutation.mutate(
       { repostUri },
       {
-        onSuccess: () => setRepostOpen(false),
+        onSuccess: () => {
+          if (mountedRef.current) setRepostOpen(false);
+        },
       }
     );
   };
@@ -174,37 +200,43 @@ export function ArticleSocialToolbar({
             <MoreHorizontal className="size-4" />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="min-w-52">
-            <DropdownMenuItem
-              disabled={!hasLinkedPost || busySocial}
-              onClick={() => toggleLikeMutation.mutate({ likeUri })}
-            >
-              <Heart className={cn(liked && "fill-current text-red-600")} />
-              {liked ? "Unlike" : "Like"}
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              disabled={!hasLinkedPost || busySocial}
-              onClick={() => setReplyOpen(true)}
-            >
-              <Reply />
-              Reply
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              disabled={!hasLinkedPost || busySocial}
-              onClick={() => {
-                if (reposted) {
-                  toggleRepostMutation.mutate({ repostUri });
-                } else {
-                  setRepostOpen(true);
-                }
-              }}
-            >
-              <Repeat />
-              {reposted ? "Undo Repost" : "Repost"}
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setQuoteOpen(true)}>
-              <MessageSquareQuote />
-              Quote Post
-            </DropdownMenuItem>
+            {menuActions.showLinkedPostActions ? (
+              <>
+                <DropdownMenuItem
+                  disabled={busySocial}
+                  onClick={() => toggleLikeMutation.mutate({ likeUri })}
+                >
+                  <Heart className={cn(liked && "fill-current text-red-600")} />
+                  {liked ? "Unlike" : "Like"}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  disabled={busySocial}
+                  onClick={() => setReplyOpen(true)}
+                >
+                  <Reply />
+                  Reply
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  disabled={busySocial}
+                  onClick={() => {
+                    if (reposted) {
+                      toggleRepostMutation.mutate({ repostUri });
+                    } else {
+                      setRepostOpen(true);
+                    }
+                  }}
+                >
+                  <Repeat />
+                  {reposted ? "Undo Repost" : "Repost"}
+                </DropdownMenuItem>
+              </>
+            ) : null}
+            {menuActions.showPost ? (
+              <DropdownMenuItem onClick={() => setPostOpen(true)}>
+                <Send />
+                Post
+              </DropdownMenuItem>
+            ) : null}
             {standardSiteRecommendation.applicable ? (
               <DropdownMenuItem
                 disabled={
@@ -227,26 +259,22 @@ export function ArticleSocialToolbar({
               </DropdownMenuItem>
             ) : null}
             {canonUrl ? <DropdownMenuSeparator /> : null}
-            {showReadLaterSave && canonUrl ? (
+            {menuActions.showSaveToReadLater ? (
               <DropdownMenuItem
-                disabled={busySocial || alreadyLatrSaved}
+                disabled={busySocial}
                 onClick={() => {
                   saveLaterMut.mutate({
                     entryId: entry.entryId,
-                    url: canonUrl,
+                    url: canonUrl ?? undefined,
                     title: entry.title?.trim() || undefined,
                   });
                 }}
               >
-                {alreadyLatrSaved ? (
-                  <Check className="text-emerald-600" />
-                ) : (
-                  <BookmarkPlus />
-                )}
-                {alreadyLatrSaved ? "Saved to Read Later" : "Save to Read Later"}
+                <BookmarkPlus />
+                Save to Read Later
               </DropdownMenuItem>
             ) : null}
-            {canonUrl ? (
+            {menuActions.showOpenOriginal ? (
               <DropdownMenuItem
                 render={
                   <a
@@ -337,11 +365,11 @@ export function ArticleSocialToolbar({
           variant="outline"
           size="sm"
           className="h-11 min-h-[44px] justify-center gap-1.5 px-2 sm:h-7 sm:min-h-0 sm:justify-start sm:px-2.5"
-          title="Quote Post"
-          onClick={() => setQuoteOpen(true)}
+          title="Post"
+          onClick={() => setPostOpen(true)}
         >
-          <MessageSquareQuote className="size-5 shrink-0 sm:size-3.5" />
-          <span className="sr-only text-xs font-medium md:not-sr-only md:text-sm">Quote</span>
+          <Send className="size-5 shrink-0 sm:size-3.5" />
+          <span className="sr-only text-xs font-medium md:not-sr-only md:text-sm">Post</span>
         </Button>
 
         {standardSiteRecommendation.applicable ? (
@@ -431,7 +459,7 @@ export function ArticleSocialToolbar({
         {!hasLinkedPost ? (
           <p className="w-full text-[11px] leading-snug text-muted-foreground max-md:hidden sm:text-xs">
             Like, Reply, and Repost need a Bluesky post linked to this article.
-            Quote works here.
+            Post works here.
           </p>
         ) : null}
         </div>
@@ -517,29 +545,29 @@ export function ArticleSocialToolbar({
         </DialogContent>
       </Dialog>
 
-      <Dialog open={quoteOpen} onOpenChange={handleQuoteOpenChange}>
+      <Dialog open={postOpen} onOpenChange={handlePostOpenChange}>
         <DialogContent showCloseButton className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Quote Post</DialogTitle>
+            <DialogTitle>Post</DialogTitle>
             <DialogDescription>
-              {hasLinkedPost
-                ? "Shares your comment with the Bluesky post for this article."
-                : "Shares your comment with a link card for the original article."}
+              Shares your comment with a full link card for the original
+              article.
+              {hasLinkedPost ? " Posting also likes the source post." : ""}
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-2 py-2">
-            <Label htmlFor="quote-text">Comment</Label>
+            <Label htmlFor="post-text">Comment</Label>
             <textarea
-              id="quote-text"
-              value={quoteText}
-              onChange={(e) => setQuoteText(e.target.value)}
+              id="post-text"
+              value={postText}
+              onChange={(e) => setPostText(e.target.value)}
               placeholder="Add your thoughts..."
               rows={4}
               className="flex min-h-[100px] w-full resize-y rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
             />
-            {quoteError ? (
+            {postError ? (
               <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                {quoteError}
+                {postError}
               </p>
             ) : null}
           </div>
@@ -548,17 +576,17 @@ export function ArticleSocialToolbar({
               variant="outline"
               size="sm"
               className="min-w-24"
-              onClick={() => handleQuoteOpenChange(false)}
+              onClick={() => handlePostOpenChange(false)}
             >
               Cancel
             </Button>
             <Button
               size="sm"
               className="min-w-28"
-              disabled={!quoteText.trim() || quoteMutation.isPending}
-              onClick={submitQuote}
+              disabled={!postText.trim() || postMutation.isPending}
+              onClick={submitPost}
             >
-              Post Quote
+              Post
             </Button>
           </DialogFooter>
         </DialogContent>

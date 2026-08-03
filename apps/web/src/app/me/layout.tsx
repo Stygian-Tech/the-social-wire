@@ -2,6 +2,7 @@
 
 import { Suspense, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { AccountHeader } from "@/components/Account/AccountHeader";
 import { AppSidebar } from "@/components/AppSidebar/AppSidebar";
 import { PublicationSidebarProvider } from "@/contexts/PublicationSidebarContext";
 import { ReadRouteProvider } from "@/contexts/ReadRouteContext";
@@ -9,9 +10,7 @@ import { useAuth } from "@/hooks/useAuth";
 import {
   SidebarInset,
   SidebarProvider,
-  SidebarTrigger,
 } from "@/components/ui/sidebar";
-import { Separator } from "@/components/ui/separator";
 
 export default function MeLayout({ children }: { children: React.ReactNode }) {
   const { session, isLoading } = useAuth();
@@ -36,18 +35,20 @@ export default function MeLayout({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <SidebarProvider className="h-[calc(100svh-var(--environment-banner-height,0px))] min-h-[calc(100svh-var(--environment-banner-height,0px))] max-h-[calc(100svh-var(--environment-banner-height,0px))] overflow-hidden overscroll-none">
+    <SidebarProvider defaultWidthPx={224} className="mx-auto h-[calc(100svh-var(--environment-banner-height,0px))] min-h-[calc(100svh-var(--environment-banner-height,0px))] max-h-[calc(100svh-var(--environment-banner-height,0px))] max-w-[70rem] overflow-hidden overscroll-none">
       <PublicationSidebarProvider>
       <ReadRouteProvider>
         <Suspense fallback={null}>
-          <AppSidebar selectedPubId={null} onSelectPub={(pubId) => router.push(`/read/${encodeURIComponent(pubId)}`)} />
+          <AppSidebar
+            selectedPubId={null}
+            onSelectPub={(pubId) =>
+              router.push(`/read/${encodeURIComponent(pubId)}`)
+            }
+            showPublicationsRail={false}
+          />
         </Suspense>
-        <SidebarInset className="flex min-h-0 flex-1 flex-col overflow-hidden">
-          <header className="flex min-h-14 shrink-0 items-center gap-1 border-b bg-background/85 px-2 py-1.5 backdrop-blur-md sm:min-h-12 sm:gap-2 sm:px-3 md:px-4">
-            <SidebarTrigger className="h-11 w-11 min-h-[44px] min-w-[44px] shrink-0 -ml-0.5 sm:h-8 sm:w-8 sm:min-h-0 sm:min-w-0 sm:-ml-1" />
-            <Separator orientation="vertical" className="h-4" />
-            <span className="truncate px-2 text-sm font-semibold text-foreground">Your Account</span>
-          </header>
+        <SidebarInset className="flex min-h-0 flex-1 flex-col overflow-hidden pb-16 md:pb-0 lg:mr-64 lg:border-r lg:border-sidebar-border/70">
+          <AccountHeader />
           <main className="flex min-h-0 flex-1 overflow-hidden">{children}</main>
         </SidebarInset>
       </ReadRouteProvider>

@@ -256,54 +256,52 @@ actor ThinAppViewReadService {
     limit: Int
   ) async throws -> AppViewEntryListResponse {
     let pageLimit = max(1, min(limit, 100))
-    var candidates: [AppViewEntryListItem] = []
-    var sourceHasMore = false
-
-    for publication in publications {
+    let scopes = publications.map { publication in
       let scope = publication.appViewScope
-      let readBoundary: ReadWatermarkBoundary?
-      if filter != .all {
-        readBoundary = try await store.readBoundary(
-          viewerDid: auth.did,
-          publicationId: publication.publicationId
-        )
-      } else {
-        readBoundary = nil
-      }
-      let page = try await store.listEntries(
-        viewerDid: auth.did,
+      return PublicationUnreadScope(
+        publicationId: publication.publicationId,
         authorDid: scope.authorDid,
         publicationAtUri: scope.publicationAtUri,
         publicationScopeAtUris: scope.publicationScopeAtUris,
-        publicationSiteUrls: scope.publicationSiteUrls,
-        filter: filter,
-        cursor: cursor,
-        limit: min(100, pageLimit + 1),
-        readBoundary: readBoundary
+        publicationSiteUrls: scope.publicationSiteUrls
       )
-      candidates.append(
-        contentsOf: page.entries.map {
-          $0.withPublicationId(publication.publicationId)
-        }
-      )
-      sourceHasMore = sourceHasMore || page.cursor != nil
     }
-
-    candidates.sort {
-      if $0.publishedAt != $1.publishedAt {
-        return $0.publishedAt > $1.publishedAt
-      }
-      return $0.entryId > $1.entryId
-    }
-    let deduped = RssFeedIdentity.dedupeEntryListItems(candidates)
-    let hasMore = sourceHasMore || deduped.count > pageLimit
+    let page = try await store.listFeedEntries(
+      viewerDid: auth.did,
+      scopes: scopes,
+      filter: filter,
+      cursor: cursor,
+      limit: min(100, pageLimit + 1)
+    )
+    let deduped = RssFeedIdentity.dedupeEntryListItems(page.entries)
     let entries = Array(deduped.prefix(pageLimit))
-    let nextCursor = hasMore
-      ? entries.last.map {
-        ThinAppViewCursor.encode(createdAt: $0.publishedAt, uri: $0.entryId)
-      }
-      : nil
-    return AppViewEntryListResponse(entries: entries, cursor: nextCursor)
+    let hasMore = page.cursor != nil || deduped.count > pageLimit
+    return AppViewEntryListResponse(
+      entries: entries,
+      cursor: hasMore ? entries.last.map {
+        ThinAppViewCursor.encode(createdAt: $0.feedPositionAt, uri: $0.entryId)
+      } : nil
+    )
+  }
+
+  func listFeed(
+    auth: AuthContext,
+    selector: AppViewFeedSelector,
+    filter: EntryListFilter,
+    cursor: String?,
+    limit: Int
+  ) async throws -> AppViewFeedPage? {
+    try await store.listFeedEntries(
+      viewerDid: auth.did,
+      selector: selector,
+      filter: filter,
+      cursor: cursor,
+      limit: limit
+    )
+  }
+
+  func hasFeedProjection(auth: AuthContext) async throws -> Bool {
+    try await store.hasViewerFeedProjection(viewerDid: auth.did)
   }
 
   func listSubscribedFeed(

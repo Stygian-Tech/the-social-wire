@@ -5,14 +5,14 @@ import { resolve } from "node:path";
 const migration = readFileSync(
   resolve(
     import.meta.dir,
-    "../../../supabase/migrations/20260730010000_subscribed_feed_membership_index.sql"
+    "../../../database/migrations/20260730010000_subscribed_feed_membership_index.sql"
   ),
   "utf8"
 );
 const keysetIndexesMigration = readFileSync(
   resolve(
     import.meta.dir,
-    "../../../supabase/migrations/20260523180000_add_appview_projection_caches.sql"
+    "../../../database/migrations/20260523180000_add_appview_projection_caches.sql"
   ),
   "utf8"
 );

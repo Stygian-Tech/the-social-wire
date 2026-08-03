@@ -26,8 +26,8 @@ struct GatewayServiceConfig: Sendable {
     case .local:
       backend = .sqlite(path: env["SQLITE_DB_PATH"] ?? "./social-wire.sqlite")
     case .dev, .prod:
-      guard let dbURL = env["SUPABASE_DATABASE_URL"], !dbURL.isEmpty else {
-        fatalError("SUPABASE_DATABASE_URL is required for APP_ENV=\(core.appEnv.rawValue)")
+      guard let dbURL = env["DATABASE_URL"], !dbURL.isEmpty else {
+        fatalError("DATABASE_URL is required for APP_ENV=\(core.appEnv.rawValue)")
       }
       backend = .postgres(url: dbURL)
     }

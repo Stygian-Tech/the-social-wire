@@ -7,15 +7,16 @@ info:
 
     - **`services/gateway`** (this spec's `servers` URLs) — OAuth client metadata, DPoP verification, PDS write-through, sync cache, unbuffered proxy to AppView.
     - **`services/appview`** — publication sidebar projection (`/v1/publications/*`), Thin AppView read index (`/v1/appview/*`), bootstrap stream.
-    - **Charybdis** (`services/appview-worker`) — Jetstream ingestion and proactive backfill (no HTTP surface).
+    - **Charybdis** (`services/appview-worker`) — Jetstream/Tap ingestion, Skyreader RSS polling, proactive backfill, and cleanup (no HTTP surface).
+    - **`services/operations`** — operator-only observability and recovery control plane, proxied by Gateway.
 
     **OAuth client metadata** mirrors SPA + ATS clients (`/oauth-client-metadata.json`, `/ios-client-metadata.json`) with scopes from **`ATProtoOAuthScopes`**.
 
     **Authenticated routes** require `Authorization: Bearer` or `Authorization: DPoP` plus RFC 9449 `DPoP` proof binding (`cnf.jkt` when emitted by the issuer).
 
-    **Thin AppView** (`ENABLE_THIN_APPVIEW` on AppView): Level-1 entry index, unread counts, bootstrap-stream NDJSON initial load, scoped mark-all-read. Ingested by **Charybdis** (`services/appview-worker`).
+    **Thin AppView** (`ENABLE_THIN_APPVIEW` on AppView): data-minimized entry index and detail, unread counts, bootstrap-stream NDJSON initial load, scoped mark-all-read. Ingested by **Charybdis** (`services/appview-worker`).
 
-    LATR HTTPS merge APIs stay on the Next.js web app — not documented here.
+    Native L@tr proxy routes (`/v1/latr/*`) are documented here. The web app's same-origin Next.js `/api/latr-gateway` proxy is a separate surface.
   version: "1.0.0"
   contact:
     name: Stygian Tech
@@ -74,6 +75,7 @@ components:
             - unauthorized
             - forbidden
             - feed_unavailable
+            - feed_projection_warming
             - feed_dependency_unavailable
             - feed_deadline_exceeded
             - feed_internal_error
@@ -116,20 +118,27 @@ components:
 
     EntryDetail:
       type: object
-      required: [entryId, title, publishedAt, contentHtml]
+      required: [entryId, title, publishedAt, isRead]
       properties:
         entryId:
           type: string
         title:
           type: string
+        summary:
+          type: string
         publishedAt:
           type: string
           format: date-time
+        thumbnailUrl:
+          type: string
+          format: uri
+        isRead:
+          type: boolean
         contentHtml:
           type: string
           description: |
-            Sanitized HTML content of the entry. Scripts and unsafe attributes have
-            been stripped. Images are allowed with validated URLs.
+            Indexed HTML when available (notably RSS feed content), otherwise a
+            summary-derived body may be returned. Clients must sanitize before rendering.
         originalUrl:
           type: string
           format: uri
@@ -1399,7 +1408,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
-  # ── Thin AppView (GDPR-safe Level-1 read index) ───────────────────────────
+  # ── Thin AppView (data-minimized read index) ──────────────────────────────
 
   /v1/appview/bootstrap-stream:
     get:
@@ -1455,8 +1464,9 @@ paths:
       operationId: listAggregateAppViewFeed
       summary: Paginated viewer-scoped aggregate feed
       description: |
-        Resolves publication membership from the authenticated viewer's sidebar projection.
-        Clients cannot provide arbitrary publication scopes.
+        Validates publication membership against the authenticated viewer's materialized
+        feed projection and executes one globally ordered indexed content query. It never
+        performs PDS discovery, publication resolution, RSS fetch, or enrollment.
       tags: [AppView]
       parameters:
         - name: kind
@@ -1489,6 +1499,14 @@ paths:
       responses:
         "200":
           description: Globally ordered aggregate entry page.
+          headers:
+            X-AppView-Feed-Source:
+              schema: { type: string, enum: [materialized_projection] }
+            X-AppView-Membership-Updated-At:
+              schema: { type: string, format: date-time }
+            Server-Timing:
+              description: Database and total AppView feed duration (`db;dur`, `appview_feed;dur`).
+              schema: { type: string }
           content:
             application/json:
               schema:
@@ -1515,7 +1533,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/AppViewFeedError" }
         "503":
-          description: Transient database or dependency failure after one bounded server retry.
+          description: Transient database failure or `feed_projection_warming` when no materialization/cache exists.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/AppViewFeedError" }
@@ -1524,6 +1542,39 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/AppViewFeedError" }
+
+  /v1/telemetry/client-performance:
+    post:
+      operationId: recordClientPerformance
+      summary: Record bounded reader performance telemetry
+      description: |
+        Accepts allowlisted aggregate measurements only. DIDs, publication IDs, URLs,
+        entry IDs, titles, and arbitrary dimensions are not accepted.
+      tags: [Telemetry]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [event, durationMs, feedType, cacheState, outcome, environment]
+              properties:
+                event:
+                  type: string
+                  enum: [cached_feed_paint, uncached_feed_paint, feed_switch, fresh_merge, feed_error]
+                durationMs: { type: number, minimum: 0, maximum: 60000 }
+                feedType: { type: string, enum: [aggregate, publication] }
+                cacheState: { type: string, enum: [hit, miss] }
+                outcome: { type: string, enum: [success, error] }
+                environment: { type: string, enum: [local, dev, test, production] }
+      responses:
+        "202":
+          description: Sample accepted into the bounded telemetry buffer.
+        "400":
+          description: Invalid or non-allowlisted sample.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
 
   /v1/appview/entries:
     get:
@@ -1623,7 +1674,7 @@ paths:
   /v1/appview/read-marks:
     post:
       operationId: upsertAppViewReadMark
-      summary: Write-through read mark after PDS upsert
+      summary: Upsert AppView read mark
       tags: [AppView]
       requestBody:
         required: true
@@ -1647,7 +1698,7 @@ paths:
           description: Route disabled when thin AppView flag is unset.
     delete:
       operationId: deleteAppViewReadMark
-      summary: Write-through unread (delete read mark)
+      summary: Delete AppView read mark
       tags: [AppView]
       requestBody:
         required: true
@@ -1670,7 +1721,7 @@ paths:
   /v1/appview/enroll:
     post:
       operationId: enrollAppViewAuthors
-      summary: Backfill recent entries for followed author DIDs
+      summary: Backfill recent author records and ingest RSS feeds
       tags: [AppView]
       requestBody:
         required: true
@@ -1678,13 +1729,17 @@ paths:
           application/json:
             schema:
               type: object
-              required: [authorDids]
               properties:
                 authorDids:
                   type: array
                   items:
                     type: string
                   maxItems: 500
+                feedUrls:
+                  type: array
+                  items:
+                    type: string
+                    format: uri
       responses:
         "200":
           description: Backfill completed.
@@ -1844,8 +1899,8 @@ paths:
         Proxies to the external L@tr Gateway for native iOS clients. Requires viewer OAuth DPoP on this host,
         `X-Latr-Gateway-DPoP` bound to the upstream L@tr URL, and optional
         `X-ATProto-Upstream-DPoP` for PDS listRecords write-through.
-        Server injects L@tr credentials from `LATR_IOS_PROXY_*` Fly/runtime secrets (distinct from web
-        Vercel `LATR_GATEWAY_*`); clients must not ship API keys.
+        Server injects L@tr credentials from the Social Wire Gateway's `LATR_IOS_PROXY_*` Railway
+        variables (distinct from the web frontend's `LATR_GATEWAY_*`); clients must not ship API keys.
       tags: [Latr]
       responses:
         "200":
@@ -2538,7 +2593,7 @@ tags:
   - name: Publications
     description: Unified sidebar projection, resolver, and gateway write-through
   - name: AppView
-    description: GDPR-safe Level-1 entry index gated behind `ENABLE_THIN_APPVIEW`
+    description: Data-minimized entry index gated behind `ENABLE_THIN_APPVIEW`
   - name: Latr
     description: Authenticated L@tr read-later iOS proxy (`LATR_IOS_PROXY_*` server credentials)
   - name: Operations

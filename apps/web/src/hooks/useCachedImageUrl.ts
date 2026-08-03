@@ -15,7 +15,8 @@ type CachedImageState = {
 
 /**
  * Resolves a remote image URL for display.
- * Cross-origin URLs (e.g. cdn.bsky.app) use direct `<img src>`; same-origin uses IndexedDB blob cache.
+ * Bluesky CDN URLs use the same-origin image proxy + IndexedDB cache. Other
+ * cross-origin URLs use direct `<img src>` when browser CORS prevents caching.
  */
 export function useCachedImageUrl(src: string | null | undefined): {
   objectUrl: string | undefined;

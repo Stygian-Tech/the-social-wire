@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 320" role="img" aria-label="Abstract coral editorial thumbnail">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="1" x2="1" y2="0">
+      <stop stop-color="#3b1523"/>
+      <stop offset="1" stop-color="#e65f54"/>
+    </linearGradient>
+  </defs>
+  <rect width="480" height="320" fill="url(#bg)"/>
+  <rect x="298" y="-40" width="136" height="410" rx="68" fill="#ffd1bd" opacity=".25" transform="rotate(24 366 165)"/>
+  <circle cx="104" cy="242" r="94" fill="#ffb690" opacity=".3"/>
+  <rect x="38" y="46" width="238" height="18" rx="9" fill="#fff" opacity=".9"/>
+  <rect x="38" y="82" width="310" height="11" rx="5.5" fill="#fff" opacity=".43"/>
+  <rect x="38" y="104" width="190" height="11" rx="5.5" fill="#fff" opacity=".3"/>
+</svg>

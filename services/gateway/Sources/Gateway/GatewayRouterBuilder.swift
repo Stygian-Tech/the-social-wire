@@ -59,6 +59,10 @@ enum GatewayRouterBuilder {
     )
     SyncRoutes(preferenceService: prefs, repo: repo).register(on: protected)
     PublicationWriteRoutes(repo: repo).register(on: protected)
+    ClientPerformanceTelemetryRoutes(
+      telemetry: telemetry,
+      environment: telemetryEnvironment
+    ).register(on: protected)
 
     if let appViewBase = config.appViewBaseURL {
       AppViewProxyRoutes(

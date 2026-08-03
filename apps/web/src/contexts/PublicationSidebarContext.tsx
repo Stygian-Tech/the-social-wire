@@ -74,6 +74,7 @@ type PublicationSidebarContextValue = {
 
 const PublicationSidebarContext =
   createContext<PublicationSidebarContextValue | null>(null);
+const EMPTY_PUBLICATION_ROWS: SidebarProjectionState["allPublicationRows"] = [];
 
 const RECENT_BOOTSTRAP_REUSE_MS = 30_000;
 const bootstrapCompletedAtByDid = new Map<string, number>();
@@ -242,7 +243,7 @@ function PublicationSidebarProviderInner({
                   event.payload.publicationId;
               }
               if (event.kind === "entriesPage") {
-                writeStreamedEntriesPage(qc, event.payload);
+                writeStreamedEntriesPage(qc, did, event.payload);
                 bootstrapFeedPublicationIdRef.current =
                   event.payload.publicationId;
                 if (
@@ -595,6 +596,12 @@ export function useSidebarProjection() {
       unreadCountsByPublicationId,
     ]
   );
+}
+
+/** Publication rows for components that may also render outside the reader shell. */
+export function useOptionalSidebarPublicationRows() {
+  const context = useContext(PublicationSidebarContext);
+  return context?.projectionState?.allPublicationRows ?? EMPTY_PUBLICATION_ROWS;
 }
 
 /** Bootstrap stream lifecycle, loading flags, and refresh actions. */

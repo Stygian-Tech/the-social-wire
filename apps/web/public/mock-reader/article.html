@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Local Mock Article</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: ui-serif, Georgia, Cambria, "Times New Roman", serif;
+        background: Canvas;
+        color: CanvasText;
+      }
+      body {
+        margin: 0 auto;
+        max-width: 44rem;
+        padding: clamp(4rem, 10vw, 7rem) clamp(1.5rem, 6vw, 4rem);
+      }
+      .eyebrow {
+        font: 700 0.75rem/1.4 ui-sans-serif, system-ui, sans-serif;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        opacity: 0.55;
+      }
+      h1 {
+        margin: 0.75rem 0 1.25rem;
+        font-size: clamp(2.25rem, 7vw, 4.75rem);
+        line-height: 0.98;
+        letter-spacing: -0.04em;
+      }
+      p {
+        font-size: 1.14rem;
+        line-height: 1.75;
+      }
+      .dek {
+        font-size: 1.35rem;
+        line-height: 1.5;
+        opacity: 0.72;
+      }
+      hr {
+        width: 4rem;
+        margin: 2.5rem 0;
+        border: 0;
+        border-top: 3px solid #7556d8;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="eyebrow">Local Social Wire Mock</div>
+    <h1 id="title">A Local Article</h1>
+    <p class="dek" id="summary">
+      This page is served entirely by the local web application.
+    </p>
+    <hr />
+    <p>
+      The mock reader lets the layout, typography, navigation, unread state, and
+      dialog behavior be reviewed without OAuth, Gateway, AppView, a PDS, or an
+      external publisher.
+    </p>
+    <p>
+      It deliberately includes enough body copy to exercise scrolling and the
+      floating reader controls while keeping the fixture deterministic.
+    </p>
+    <script>
+      const params = new URLSearchParams(window.location.search);
+      const title = params.get("title");
+      const summary = params.get("summary");
+      if (title) {
+        document.title = title;
+        document.querySelector("#title").textContent = title;
+      }
+      if (summary) document.querySelector("#summary").textContent = summary;
+    </script>
+  </body>
+</html>

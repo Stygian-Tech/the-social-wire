@@ -12,7 +12,7 @@ The only data we write to the user's PDS is what the protocol doesn't already ha
 |---------|---------|
 | `app.thesocialwire.folder` | A named folder for organizing publications |
 | `app.thesocialwire.publicationPrefs` | Folder assignment, sort order, and visibility for a discovered publication |
-| `app.thesocialwire.preferences` | Account-level Social Wire preferences, including the configured read-later service |
+| `app.thesocialwire.preferences` | Account-level Social Wire preferences; legacy provider fields remain compatible, while current clients always use L@tr Link |
 | `link.latr.saved.external` | L@tr (latr.link) wrapper for normalized HTTPS URLs (read-later interoperability) |
 | `link.latr.saved.item` | L@tr read-later queue item pointing at `subjectUri` (external wrapper or ATProto record) |
 | `app.skyreader.feed.subscription` | RSS/Atom subscriptions (Skyreader-compatible) on the user's PDS; see [`app/skyreader/feed/subscription.json`](app/skyreader/feed/subscription.json) |
@@ -61,8 +61,9 @@ A named folder in the user's sidebar.
 ### `app.thesocialwire.preferences`
 
 Account-level preferences for The Social Wire. This record is keyed as `self`
-and stores non-sensitive configuration such as the read-later service used by
-`/saved`.
+and stores non-sensitive reader configuration. Its older read-later provider
+fields remain schema-compatible, but current clients expose no provider selector
+and always use L@tr Link for `/saved`.
 
 Do not store third-party API tokens, passwords, refresh tokens, or secrets in
 this record. ATProto repo records are public by default.

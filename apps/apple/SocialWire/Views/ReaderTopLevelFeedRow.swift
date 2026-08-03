@@ -40,7 +40,7 @@ struct ReaderTopLevelFeedRow: View {
             HStack {
                 Label(source.rawValue, systemImage: source.systemImage)
                 Spacer(minLength: 8)
-                if appModel.showTopLevelFeedUnreadCounts {
+                if appModel.showsTopLevelFeedUnreadCount(for: source) {
                     SidebarCountLabel(
                         count: appModel.topLevelUnreadCount(for: source),
                         accessibilityDescription: "unread articles"

@@ -2,7 +2,7 @@
 
 **Package:** `services/appview`  
 **Runner:** Swift Testing (`swift test`)  
-**CI:** `test-appview`
+**CI:** `appview`
 
 ## Commands
 
@@ -23,7 +23,7 @@ services/appview/Tests/AppViewTests/
 
 ## Bruno (manual HTTP)
 
-Import `services/appview/bruno/` for direct AppView routes (sidebar, bootstrap stream, entries, enroll). In production, clients hit the same paths via the gateway proxy.
+Import `services/appview/bruno/` for direct AppView routes (sidebar, bootstrap stream, aggregate/scoped feeds, flat entry detail, read marks, and enroll). In production, clients hit the same paths via the gateway proxy.
 
 ## Feature flags in tests
 
@@ -33,7 +33,8 @@ Import `services/appview/bruno/` for direct AppView routes (sidebar, bootstrap s
 
 - [ ] `GET /v1/publications/sidebar` with authenticated token
 - [ ] `GET /v1/appview/bootstrap-stream` streams NDJSON events
-- [ ] Enroll + timeline when Charybdis (`appview-worker`) is running
+- [ ] `GET /v1/appview/feed`, `/entries`, and `/entry` return the documented shapes
+- [ ] Enroll `authorDids` and `feedUrls`, then confirm timelines while Charybdis is running
 
 ## Related
 

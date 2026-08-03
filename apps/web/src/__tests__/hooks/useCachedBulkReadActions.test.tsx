@@ -21,6 +21,7 @@ const pub: DiscoveredPublication = {
   title: "Alice",
   discoveredAt: "2026-01-01T00:00:00.000Z",
 };
+const viewerDid = "did:plc:viewer";
 
 describe("useCachedBulkReadActions", () => {
   beforeEach(() => {
@@ -34,6 +35,7 @@ describe("useCachedBulkReadActions", () => {
       isEntryRead,
     } as unknown as ReturnType<typeof ReadRouteContext.useReadRoute>);
     const authSpy = spyOn(AuthHook, "useAuth").mockReturnValue({
+      session: { did: viewerDid },
       getOAuthSession: () => null,
     } as ReturnType<typeof AuthHook.useAuth>);
     restoreHookSpies = () => {
@@ -66,7 +68,7 @@ describe("useCachedBulkReadActions", () => {
   it("marks cached entries read without per-entry AppView sync", () => {
     const queryClient = new QueryClient();
     const entryId = "at://did:plc:alice/site.standard.document/one";
-    queryClient.setQueryData([...ENTRIES_QUERY_KEY(pub.publicationId), "all"], {
+    queryClient.setQueryData([...ENTRIES_QUERY_KEY(viewerDid, pub.publicationId), "all"], {
       pages: [
         {
           entries: [
@@ -103,7 +105,10 @@ describe("useCachedBulkReadActions", () => {
     const previouslyReadId = "at://did:plc:alice/site.standard.document/read";
     const newlyReadId = "at://did:plc:alice/site.standard.document/unread";
     isEntryRead.mockImplementation((entryId) => entryId === previouslyReadId);
-    const queryKey = [...ENTRIES_QUERY_KEY(pub.publicationId), "all"] as const;
+    const queryKey = [
+      ...ENTRIES_QUERY_KEY(viewerDid, pub.publicationId),
+      "all",
+    ] as const;
     queryClient.setQueryData(queryKey, {
       pages: [
         {

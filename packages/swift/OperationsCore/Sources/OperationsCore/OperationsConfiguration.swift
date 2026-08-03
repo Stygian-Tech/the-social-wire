@@ -40,7 +40,7 @@ public struct OperationsConfiguration: Sendable {
       recoveryEnabled: truthy(environment["OPERATIONS_RECOVERY_ENABLED"]),
       alertDeliveryEnabled: truthy(environment["OPERATIONS_ALERT_DELIVERY_ENABLED"]),
       environment: nonEmpty(environment["APP_ENV"]) ?? "__missing__",
-      instanceId: environment["FLY_MACHINE_ID"] ?? ProcessInfo.processInfo.hostName,
+      instanceId: environment["RAILWAY_REPLICA_ID"] ?? ProcessInfo.processInfo.hostName,
       operatorDids: operatorDids,
       webhookURL: nonEmpty(environment["OPERATIONS_ALERT_WEBHOOK_URL"]),
       webhookSecret: nonEmpty(environment["OPERATIONS_ALERT_WEBHOOK_SECRET"]),

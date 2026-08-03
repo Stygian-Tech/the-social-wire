@@ -423,6 +423,286 @@ public init(pool: PostgresClient, logger: Logger) {
     )
   }
 
+  public func listFeedEntries(
+    viewerDid: String,
+    scopes: [PublicationUnreadScope],
+    filter: EntryListFilter,
+    cursor: String?,
+    limit: Int
+  ) async throws -> AppViewEntryListResponse {
+    let pageLimit = max(1, min(limit, 100))
+    let publicationIds = Array(Set(scopes.map(\.publicationId))).sorted()
+    guard !publicationIds.isEmpty else {
+      return AppViewEntryListResponse(entries: [], cursor: nil)
+    }
+
+    let now = Date()
+    let decodedCursor = cursor.flatMap(ThinAppViewCursor.decode)
+    let hasCursor = decodedCursor != nil
+    let cursorAt = decodedCursor?.createdAt ?? now
+    let cursorUri = decodedCursor?.uri ?? ""
+    let includeAll = filter == .all
+    let includeUnread = filter == .unread
+    let includeRead = filter == .read
+    let rows = try await pool.query(
+      """
+      SELECT ci.uri, ci.render_json::text, ci.created_at, scope.publication_id
+      FROM appview_publication_scopes scope
+      JOIN content_items ci
+        ON ci.author_did = scope.author_did
+       AND (
+         jsonb_array_length(scope.scope_keys) = 0
+         OR (ci.publication_site IS NOT NULL AND scope.scope_keys ? ci.publication_site)
+       )
+      LEFT JOIN appview_publication_read_floors floor
+        ON floor.viewer_did = scope.viewer_did
+       AND floor.publication_id = scope.publication_id
+      LEFT JOIN read_marks rm
+        ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = ci.uri
+      LEFT JOIN appview_unread_overrides uo
+        ON uo.viewer_did = \(viewerDid) AND uo.subject_uri = ci.uri
+      WHERE scope.viewer_did = \(viewerDid)
+        AND scope.publication_id = ANY(\(publicationIds))
+        AND ci.expires_at > \(now)
+        AND (
+        \(includeAll)
+        OR (
+          \(includeUnread)
+          AND rm.subject_uri IS NULL
+          AND (
+            floor.read_floor_at IS NULL
+            OR ci.created_at > floor.read_floor_at
+            OR (
+              floor.read_floor_uri IS NOT NULL
+              AND ci.created_at = floor.read_floor_at
+              AND ci.uri > floor.read_floor_uri
+            )
+            OR uo.subject_uri IS NOT NULL
+          )
+        )
+        OR (
+          \(includeRead)
+          AND (
+            rm.subject_uri IS NOT NULL
+            OR (
+              floor.read_floor_at IS NOT NULL
+              AND uo.subject_uri IS NULL
+              AND (
+                ci.created_at < floor.read_floor_at
+                OR (
+                  ci.created_at = floor.read_floor_at
+                  AND (floor.read_floor_uri IS NULL OR ci.uri <= floor.read_floor_uri)
+                )
+              )
+            )
+          )
+        )
+      )
+        AND (
+          \(hasCursor) = FALSE
+          OR ci.created_at < \(cursorAt)
+          OR (ci.created_at = \(cursorAt) AND ci.uri < \(cursorUri))
+        )
+      ORDER BY ci.created_at DESC, ci.uri DESC
+      LIMIT \(pageLimit + 1)
+      """,
+      logger: logger
+    )
+
+    var entries: [AppViewEntryListItem] = []
+    for try await row in rows {
+      let (uri, renderJSON, createdAt, publicationId) = try row.decode(
+        (String, String, Date, String).self
+      )
+      guard let entry = ThinAppViewQuerySupport.entryListItems(
+        from: [(uri, renderJSON, createdAt)]
+      ).first else { continue }
+      entries.append(entry.withPublicationId(publicationId))
+    }
+    let hasMore = entries.count > pageLimit
+    let pageEntries = Array(entries.prefix(pageLimit))
+    return AppViewEntryListResponse(
+      entries: pageEntries,
+      cursor: hasMore ? pageEntries.last.map {
+        ThinAppViewCursor.encode(createdAt: $0.feedPositionAt, uri: $0.entryId)
+      } : nil
+    )
+  }
+
+  public func listFeedEntries(
+    viewerDid: String,
+    selector: AppViewFeedSelector,
+    filter: EntryListFilter,
+    cursor: String?,
+    limit: Int
+  ) async throws -> AppViewFeedPage? {
+    let pageLimit = max(1, min(limit, 100))
+    let now = Date()
+    let decodedCursor = cursor.flatMap(ThinAppViewCursor.decode)
+    let hasCursor = decodedCursor != nil
+    let cursorAt = decodedCursor?.createdAt ?? now
+    let cursorUri = decodedCursor?.uri ?? ""
+    let includeAll = filter == .all
+    let includeUnread = filter == .unread
+    let includeRead = filter == .read
+    let kind = selector.kind.rawValue
+    let feedId = selector.id
+    let isPublication = selector.kind == .publication
+    let databaseStartedAt = Date()
+
+    let rows = try await pool.query(
+      """
+      WITH feed_definition AS (
+        SELECT MAX(updated_at) AS updated_at
+        FROM (
+          SELECT vf.updated_at
+          FROM appview_viewer_feeds vf
+          WHERE \(isPublication) = FALSE
+            AND vf.viewer_did = \(viewerDid)
+            AND vf.feed_kind = \(kind)
+            AND vf.feed_id = \(feedId)
+          UNION ALL
+          SELECT scope.updated_at
+          FROM appview_publication_scopes scope
+          WHERE \(isPublication) = TRUE
+            AND scope.viewer_did = \(viewerDid)
+            AND (
+              scope.publication_id = \(feedId)
+              OR scope.publication_at_uri = \(feedId)
+              OR scope.scope_keys ? \(feedId)
+            )
+        ) definitions
+      ), matching_scopes AS (
+        SELECT DISTINCT scope.*
+        FROM appview_publication_scopes scope
+        LEFT JOIN appview_feed_publications membership
+          ON membership.viewer_did = scope.viewer_did
+         AND membership.publication_id = scope.publication_id
+         AND membership.feed_kind = \(kind)
+         AND membership.feed_id = \(feedId)
+        WHERE scope.viewer_did = \(viewerDid)
+          AND (
+            (\(isPublication) = FALSE AND membership.publication_id IS NOT NULL)
+            OR (
+              \(isPublication) = TRUE
+              AND (
+                scope.publication_id = \(feedId)
+                OR scope.publication_at_uri = \(feedId)
+                OR scope.scope_keys ? \(feedId)
+              )
+            )
+          )
+      ), candidates AS (
+        SELECT
+          ci.uri,
+          ci.render_json::text AS render_json,
+          ci.created_at,
+          scope.publication_id,
+          CASE
+            WHEN uo.subject_uri IS NOT NULL THEN FALSE
+            WHEN rm.subject_uri IS NOT NULL THEN TRUE
+            WHEN floor.read_floor_at IS NULL THEN FALSE
+            WHEN ci.created_at < floor.read_floor_at THEN TRUE
+            WHEN ci.created_at = floor.read_floor_at
+              AND (floor.read_floor_uri IS NULL OR ci.uri <= floor.read_floor_uri) THEN TRUE
+            ELSE FALSE
+          END AS is_read,
+          ROW_NUMBER() OVER (
+            PARTITION BY COALESCE(NULLIF(ci.render_json->>'articleUrl', ''), ci.uri)
+            ORDER BY ci.created_at DESC, ci.uri DESC
+          ) AS duplicate_rank
+        FROM matching_scopes scope
+        JOIN content_items ci
+          ON ci.author_did = scope.author_did
+         AND (
+           jsonb_array_length(scope.scope_keys) = 0
+           OR (ci.publication_site IS NOT NULL AND scope.scope_keys ? ci.publication_site)
+         )
+        LEFT JOIN appview_publication_read_floors floor
+          ON floor.viewer_did = scope.viewer_did
+         AND floor.publication_id = scope.publication_id
+        LEFT JOIN read_marks rm
+          ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = ci.uri
+        LEFT JOIN appview_unread_overrides uo
+          ON uo.viewer_did = \(viewerDid) AND uo.subject_uri = ci.uri
+        WHERE ci.expires_at > \(now)
+          AND (
+            \(hasCursor) = FALSE
+            OR ci.created_at < \(cursorAt)
+            OR (ci.created_at = \(cursorAt) AND ci.uri < \(cursorUri))
+          )
+      ), page AS (
+        SELECT uri, render_json, created_at, publication_id, is_read
+        FROM candidates
+        WHERE duplicate_rank = 1
+          AND (
+            \(includeAll)
+            OR (\(includeUnread) AND is_read = FALSE)
+            OR (\(includeRead) AND is_read = TRUE)
+          )
+        ORDER BY created_at DESC, uri DESC
+        LIMIT \(pageLimit + 1)
+      )
+      SELECT
+        definition.updated_at,
+        page.uri,
+        page.render_json,
+        page.created_at,
+        page.publication_id,
+        page.is_read
+      FROM feed_definition definition
+      LEFT JOIN LATERAL (
+        SELECT * FROM page ORDER BY created_at DESC, uri DESC
+      ) page ON TRUE
+      WHERE definition.updated_at IS NOT NULL
+      ORDER BY page.created_at DESC NULLS LAST, page.uri DESC NULLS LAST
+      """,
+      logger: logger
+    )
+
+    var membershipUpdatedAt: Date?
+    var entries: [AppViewEntryListItem] = []
+    for try await row in rows {
+      let (updatedAt, uri, renderJSON, createdAt, publicationId, isRead) = try row.decode(
+        (Date, String?, String?, Date?, String?, Bool?).self
+      )
+      membershipUpdatedAt = updatedAt
+      guard let uri, let renderJSON, let createdAt, let publicationId,
+            let entry = ThinAppViewQuerySupport.entryListItems(
+              from: [(uri, renderJSON, createdAt)]
+            ).first
+      else { continue }
+      entries.append(entry.withPublicationId(publicationId).withReadState(isRead ?? false))
+    }
+    guard let membershipUpdatedAt else { return nil }
+    let hasMore = entries.count > pageLimit
+    let pageEntries = Array(entries.prefix(pageLimit))
+    return AppViewFeedPage(
+      response: AppViewEntryListResponse(
+        entries: pageEntries,
+        cursor: hasMore ? pageEntries.last.map {
+          ThinAppViewCursor.encode(createdAt: $0.feedPositionAt, uri: $0.entryId)
+        } : nil
+      ),
+      membershipUpdatedAt: membershipUpdatedAt,
+      databaseDurationMilliseconds: Date().timeIntervalSince(databaseStartedAt) * 1_000
+    )
+  }
+
+  public func hasViewerFeedProjection(viewerDid: String) async throws -> Bool {
+    let rows = try await pool.query(
+      """
+      SELECT 1 FROM appview_viewer_feeds WHERE viewer_did = \(viewerDid)
+      UNION ALL
+      SELECT 1 FROM appview_publication_scopes WHERE viewer_did = \(viewerDid)
+      LIMIT 1
+      """,
+      logger: logger
+    )
+    for try await _ in rows { return true }
+    return false
+  }
+
   public func publicationScopes(
     viewerDid: String,
     sectionKey: String
@@ -1023,45 +1303,90 @@ public init(pool: PostgresClient, logger: Logger) {
 
   public func upsertPublicationScopes(_ scopes: [AppViewPublicationScope]) async throws {
     guard !scopes.isEmpty else { return }
-    for scope in scopes {
-      let publicationScopeAtUrisJSON = try Self.jsonString(scope.publicationScopeAtUris)
-      let publicationSiteUrlsJSON = try Self.jsonString(scope.publicationSiteUrls)
-      let scopeKeysJSON = try Self.jsonString(scope.scopeKeys)
-      let sectionKeysJSON = try Self.jsonString(scope.sectionKeys)
-      try await pool.query(
-        """
-        INSERT INTO appview_publication_scopes
-          (viewer_did, publication_id, author_did, publication_at_uri,
-           publication_scope_at_uris, publication_site_urls, scope_keys,
-           section_keys, updated_at)
-        VALUES
-          (\(scope.viewerDid), \(scope.publicationId), \(scope.authorDid), \(scope.publicationAtUri),
-           \(publicationScopeAtUrisJSON)::jsonb, \(publicationSiteUrlsJSON)::jsonb,
-           \(scopeKeysJSON)::jsonb, \(sectionKeysJSON)::jsonb, \(scope.updatedAt))
-        ON CONFLICT (viewer_did, publication_id)
-        DO UPDATE SET
-          author_did = EXCLUDED.author_did,
-          publication_at_uri = EXCLUDED.publication_at_uri,
-          publication_scope_at_uris = EXCLUDED.publication_scope_at_uris,
-          publication_site_urls = EXCLUDED.publication_site_urls,
-          scope_keys = EXCLUDED.scope_keys,
-          section_keys = EXCLUDED.section_keys,
-          updated_at = EXCLUDED.updated_at
-        """,
-        logger: logger
-      )
-    }
+    let scopesJSON = try Self.publicationScopesJSON(scopes)
+    try await pool.query(Self.upsertPublicationScopesQuery(scopesJSON), logger: logger)
   }
 
   public func replacePublicationScopes(
     viewerDid: String,
     scopes: [AppViewPublicationScope]
   ) async throws {
-    try await pool.query(
-      "DELETE FROM appview_publication_scopes WHERE viewer_did = \(viewerDid)",
-      logger: logger
-    )
-    try await upsertPublicationScopes(scopes)
+    let scopesJSON = try Self.publicationScopesJSON(scopes)
+    try await pool.withTransaction(logger: logger) { connection in
+      try await connection.query(
+        "DELETE FROM appview_publication_scopes WHERE viewer_did = \(viewerDid)",
+        logger: logger
+      )
+      if !scopes.isEmpty {
+        try await connection.query(
+          Self.upsertPublicationScopesQuery(scopesJSON),
+          logger: logger
+        )
+      }
+    }
+  }
+
+  public func upsertViewerFeedProjection(
+    viewerDid: String,
+    scopes: [AppViewPublicationScope],
+    feeds: [AppViewViewerFeed],
+    memberships: [AppViewFeedPublication]
+  ) async throws {
+    let scopesJSON = try Self.publicationScopesJSON(scopes)
+    let feedsJSON = try Self.viewerFeedsJSON(feeds)
+    let membershipsJSON = try Self.feedMembershipsJSON(memberships)
+    try await pool.withTransaction(logger: logger) { connection in
+      if !scopes.isEmpty {
+        try await connection.query(Self.upsertPublicationScopesQuery(scopesJSON), logger: logger)
+      }
+      if !feeds.isEmpty {
+        try await connection.query(Self.upsertViewerFeedsQuery(feedsJSON), logger: logger)
+      }
+      if !memberships.isEmpty {
+        try await connection.query(
+          Self.upsertFeedMembershipsQuery(membershipsJSON),
+          logger: logger
+        )
+      }
+    }
+    _ = viewerDid
+  }
+
+  public func replaceViewerFeedProjection(
+    viewerDid: String,
+    scopes: [AppViewPublicationScope],
+    feeds: [AppViewViewerFeed],
+    memberships: [AppViewFeedPublication]
+  ) async throws {
+    let scopesJSON = try Self.publicationScopesJSON(scopes)
+    let feedsJSON = try Self.viewerFeedsJSON(feeds)
+    let membershipsJSON = try Self.feedMembershipsJSON(memberships)
+    try await pool.withTransaction(logger: logger) { connection in
+      try await connection.query(
+        "DELETE FROM appview_feed_publications WHERE viewer_did = \(viewerDid)",
+        logger: logger
+      )
+      try await connection.query(
+        "DELETE FROM appview_viewer_feeds WHERE viewer_did = \(viewerDid)",
+        logger: logger
+      )
+      try await connection.query(
+        "DELETE FROM appview_publication_scopes WHERE viewer_did = \(viewerDid)",
+        logger: logger
+      )
+      if !scopes.isEmpty {
+        try await connection.query(Self.upsertPublicationScopesQuery(scopesJSON), logger: logger)
+      }
+      if !feeds.isEmpty {
+        try await connection.query(Self.upsertViewerFeedsQuery(feedsJSON), logger: logger)
+      }
+      if !memberships.isEmpty {
+        try await connection.query(
+          Self.upsertFeedMembershipsQuery(membershipsJSON),
+          logger: logger
+        )
+      }
+    }
   }
 
   public func fetchUnreadCounters(
@@ -2503,6 +2828,117 @@ public init(pool: PostgresClient, logger: Logger) {
       throw ThinAppViewStoreError.encodingFailed
     }
     return string
+  }
+
+  private static func publicationScopesJSON(_ scopes: [AppViewPublicationScope]) throws -> String {
+    try jsonObjectString(scopes.map { scope in
+      [
+        "viewer_did": scope.viewerDid,
+        "publication_id": scope.publicationId,
+        "author_did": scope.authorDid,
+        "publication_at_uri": scope.publicationAtUri.map { $0 as Any } ?? NSNull(),
+        "publication_scope_at_uris": scope.publicationScopeAtUris,
+        "publication_site_urls": scope.publicationSiteUrls,
+        "scope_keys": scope.scopeKeys,
+        "section_keys": scope.sectionKeys,
+        "updated_epoch": scope.updatedAt.timeIntervalSince1970,
+      ] as [String: Any]
+    })
+  }
+
+  private static func viewerFeedsJSON(_ feeds: [AppViewViewerFeed]) throws -> String {
+    try jsonObjectString(feeds.map { feed in
+      [
+        "viewer_did": feed.viewerDid,
+        "feed_kind": feed.kind.rawValue,
+        "feed_id": feed.feedId,
+        "updated_epoch": feed.updatedAt.timeIntervalSince1970,
+      ] as [String: Any]
+    })
+  }
+
+  private static func feedMembershipsJSON(_ memberships: [AppViewFeedPublication]) throws -> String {
+    try jsonObjectString(memberships.map { membership in
+      [
+        "viewer_did": membership.viewerDid,
+        "feed_kind": membership.kind.rawValue,
+        "feed_id": membership.feedId,
+        "publication_id": membership.publicationId,
+      ]
+    })
+  }
+
+  private static func jsonObjectString(_ value: Any) throws -> String {
+    let data = try JSONSerialization.data(withJSONObject: value)
+    guard let string = String(data: data, encoding: .utf8) else {
+      throw ThinAppViewStoreError.encodingFailed
+    }
+    return string
+  }
+
+  private static func upsertPublicationScopesQuery(_ json: String) -> PostgresQuery {
+    """
+    INSERT INTO appview_publication_scopes
+      (viewer_did, publication_id, author_did, publication_at_uri,
+       publication_scope_at_uris, publication_site_urls, scope_keys,
+       section_keys, updated_at)
+    SELECT
+      record.viewer_did, record.publication_id, record.author_did,
+      record.publication_at_uri, record.publication_scope_at_uris,
+      record.publication_site_urls, record.scope_keys, record.section_keys,
+      to_timestamp(record.updated_epoch)
+    FROM jsonb_to_recordset(\(json)::jsonb) AS record(
+      viewer_did text,
+      publication_id text,
+      author_did text,
+      publication_at_uri text,
+      publication_scope_at_uris jsonb,
+      publication_site_urls jsonb,
+      scope_keys jsonb,
+      section_keys jsonb,
+      updated_epoch double precision
+    )
+    ON CONFLICT (viewer_did, publication_id)
+    DO UPDATE SET
+      author_did = EXCLUDED.author_did,
+      publication_at_uri = EXCLUDED.publication_at_uri,
+      publication_scope_at_uris = EXCLUDED.publication_scope_at_uris,
+      publication_site_urls = EXCLUDED.publication_site_urls,
+      scope_keys = EXCLUDED.scope_keys,
+      section_keys = EXCLUDED.section_keys,
+      updated_at = EXCLUDED.updated_at
+    """
+  }
+
+  private static func upsertViewerFeedsQuery(_ json: String) -> PostgresQuery {
+    """
+    INSERT INTO appview_viewer_feeds (viewer_did, feed_kind, feed_id, updated_at)
+    SELECT record.viewer_did, record.feed_kind, record.feed_id,
+           to_timestamp(record.updated_epoch)
+    FROM jsonb_to_recordset(\(json)::jsonb) AS record(
+      viewer_did text,
+      feed_kind text,
+      feed_id text,
+      updated_epoch double precision
+    )
+    ON CONFLICT (viewer_did, feed_kind, feed_id)
+    DO UPDATE SET updated_at = EXCLUDED.updated_at
+    """
+  }
+
+  private static func upsertFeedMembershipsQuery(_ json: String) -> PostgresQuery {
+    """
+    INSERT INTO appview_feed_publications
+      (viewer_did, feed_kind, feed_id, publication_id)
+    SELECT record.viewer_did, record.feed_kind, record.feed_id, record.publication_id
+    FROM jsonb_to_recordset(\(json)::jsonb) AS record(
+      viewer_did text,
+      feed_kind text,
+      feed_id text,
+      publication_id text
+    )
+    ON CONFLICT (viewer_did, feed_kind, feed_id, publication_id) DO NOTHING
+    """
   }
 
   private static func stringArray(fromJSON raw: String) throws -> [String] {

@@ -33,6 +33,11 @@ import {
   standardSiteRecommendDocumentUri,
   type StandardSiteRecommendRecord,
 } from "@/lib/standardSiteRecommendation";
+import {
+  USER_INPUT_DISCUSSION_COLLECTION,
+  USER_INPUT_UPVOTE_COLLECTION,
+  type UserInputStrongRef,
+} from "@/lib/userInputFeedback";
 
 // ── Lexicon collection IDs ────────────────────────────────────────────────────
 
@@ -142,6 +147,10 @@ export interface PreferencesRecord {
   >;
   visibleFeeds?: Array<"readLater" | "archive" | "subscribed" | "following">;
   showTopLevelFeedUnreadCounts?: boolean;
+  feedsWithUnreadCounts?: Array<
+    "readLater" | "archive" | "subscribed" | "following"
+  >;
+  rssArticleOpenMode?: "reader" | "original";
   createdAt: string;
   updatedAt: string;
 }
@@ -506,6 +515,41 @@ export class PDSClient {
   /** Authenticated viewer DID (for one-shot migration guards). */
   get viewerDid(): string {
     return this.did;
+  }
+
+  async createUserInputFeedback(input: {
+    board: UserInputStrongRef;
+    title: string;
+    body?: string;
+    tags?: string[];
+  }): Promise<{ uri: string; cid: string }> {
+    const createdAt = new Date().toISOString();
+    const response = await this.agent.api.com.atproto.repo.createRecord({
+      repo: this.did,
+      collection: USER_INPUT_DISCUSSION_COLLECTION,
+      record: {
+        $type: USER_INPUT_DISCUSSION_COLLECTION,
+        space: input.board,
+        title: input.title,
+        ...(input.body ? { body: input.body } : {}),
+        ...(input.tags?.length ? { tags: input.tags } : {}),
+        createdAt,
+      },
+    });
+    const discussion = { uri: response.data.uri, cid: response.data.cid };
+
+    await this.agent.api.com.atproto.repo.putRecord({
+      repo: this.did,
+      collection: USER_INPUT_UPVOTE_COLLECTION,
+      rkey: rkeyFromURI(discussion.uri),
+      record: {
+        $type: USER_INPUT_UPVOTE_COLLECTION,
+        subject: discussion,
+        createdAt: new Date().toISOString(),
+      },
+    }).catch(() => undefined);
+
+    return discussion;
   }
 
   // ── Folders ──────────────────────────────────────────────────────────────
@@ -903,6 +947,8 @@ export class PDSClient {
         | "readLaterConnections"
         | "visibleFeeds"
         | "showTopLevelFeedUnreadCounts"
+        | "feedsWithUnreadCounts"
+        | "rssArticleOpenMode"
       >
     >,
     existing: RepoRecord<PreferencesRecord> | null | undefined = undefined
@@ -924,6 +970,12 @@ export class PDSClient {
             showTopLevelFeedUnreadCounts:
               prev.showTopLevelFeedUnreadCounts,
           }
+        : {}),
+      ...(prev?.feedsWithUnreadCounts
+        ? { feedsWithUnreadCounts: prev.feedsWithUnreadCounts }
+        : {}),
+      ...(prev?.rssArticleOpenMode
+        ? { rssArticleOpenMode: prev.rssArticleOpenMode }
         : {}),
       ...updates,
     };

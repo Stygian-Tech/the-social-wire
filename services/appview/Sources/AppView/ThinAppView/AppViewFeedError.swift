@@ -104,27 +104,29 @@ enum AppViewFeedErrorClassifier {
 }
 
 enum AppViewFeedExecution {
-  private static let requestDeadline: Duration = .seconds(25)
+  private static let requestDeadline: Duration = .seconds(2)
 
   static func run<T: Sendable>(
     requestId: String,
     operation: @Sendable @escaping () async throws -> T
   ) async throws -> T {
     do {
-      return try await withDeadline(requestId: requestId, operation: operation)
+      return try await withDeadline(requestId: requestId) {
+        do {
+          return try await operation()
+        } catch {
+          try Task.checkCancellation()
+          let classified = AppViewFeedErrorClassifier.classify(error, requestId: requestId)
+          guard classified.retryable, classified.status == .serviceUnavailable else {
+            throw classified
+          }
+          try await Task.sleep(for: .milliseconds(Int.random(in: 40...120)))
+          return try await operation()
+        }
+      }
     } catch {
       try Task.checkCancellation()
-      let classified = AppViewFeedErrorClassifier.classify(error, requestId: requestId)
-      guard classified.retryable, classified.status == .serviceUnavailable else {
-        throw classified
-      }
-      try await Task.sleep(for: .milliseconds(Int.random(in: 40...120)))
-      do {
-        return try await withDeadline(requestId: requestId, operation: operation)
-      } catch {
-        try Task.checkCancellation()
-        throw AppViewFeedErrorClassifier.classify(error, requestId: requestId)
-      }
+      throw AppViewFeedErrorClassifier.classify(error, requestId: requestId)
     }
   }
 

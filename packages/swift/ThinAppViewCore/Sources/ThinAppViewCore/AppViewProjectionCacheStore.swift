@@ -1,7 +1,10 @@
 import Foundation
 
 public enum AppViewProjectionCacheTTL {
-  public static let sidebarSeconds: TimeInterval = 5 * 60
+  // Sidebar membership is invalidated on mutations and refreshed in the
+  // background by bootstrap. Keep it available across an active session so
+  // aggregate feeds do not fall off a five-minute latency cliff.
+  public static let sidebarSeconds: TimeInterval = 60 * 60
   public static let unreadCountsSeconds: TimeInterval = 2 * 60
   public static let firstPageSeconds: TimeInterval = 5 * 60
 }
@@ -36,6 +39,9 @@ public struct AppViewProjectionCacheEntry<Value: Sendable>: Sendable {
 
 public protocol AppViewProjectionCacheStore: Actor {
   func sidebarProjectionCacheEntry(
+    viewerDid: String
+  ) async throws -> AppViewProjectionCacheEntry<String>?
+  func sidebarProjectionCacheEntryIncludingExpired(
     viewerDid: String
   ) async throws -> AppViewProjectionCacheEntry<String>?
   func storeSidebarProjectionJSON(
@@ -75,6 +81,12 @@ public protocol AppViewProjectionCacheStore: Actor {
 }
 
 public extension AppViewProjectionCacheStore {
+  func sidebarProjectionCacheEntryIncludingExpired(
+    viewerDid: String
+  ) async throws -> AppViewProjectionCacheEntry<String>? {
+    try await sidebarProjectionCacheEntry(viewerDid: viewerDid)
+  }
+
   func cachedSidebarProjectionJSON(viewerDid: String) async throws -> String? {
     try await sidebarProjectionCacheEntry(viewerDid: viewerDid)?.value
   }

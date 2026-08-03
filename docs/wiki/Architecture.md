@@ -1,6 +1,6 @@
 # Architecture
 
-The Social Wire keeps **user organisation data on the user’s ATProto PDS** (folders, publication prefs, read state). Clients discover publications via the gateway/AppView sidebar projection (Thin AppView path) or direct PDS probes (legacy). An optional **Thin AppView** on **`services/appview`** (proxied by **`services/gateway`**) accelerates entry timelines, sidebar badges, and server-side unread filtering without storing full bodies.
+The Social Wire keeps **user-authored organisation data on the user’s ATProto PDS** (folders, publication preferences, subscriptions, and L@tr records). Feed read state is local-first and synchronized to AppView. Current clients discover and read through the gateway/AppView projection; direct PDS probes remain for compatibility and narrow enrichment. **Thin AppView** on **`services/appview`** (proxied by **`services/gateway`**) serves timelines, indexed detail, sidebar badges, and server-side unread filtering. Standard.site records remain authoritative on author PDSes; RSS rows may retain feed-provided HTML.
 
 **Read in the repo**
 

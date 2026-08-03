@@ -102,6 +102,32 @@ public actor SQLiteAppViewProjectionCacheStore: AppViewProjectionCacheStore {
     }
   }
 
+  public func sidebarProjectionCacheEntryIncludingExpired(
+    viewerDid: String
+  ) async throws -> AppViewProjectionCacheEntry<String>? {
+    try await db.read { db in
+      guard let row = try Row.fetchOne(
+        db,
+        sql: """
+          SELECT json_body, cached_at, expires_at
+          FROM sidebar_projection_cache
+          WHERE viewer_did = ?
+          LIMIT 1
+          """,
+        arguments: [viewerDid]
+      ) else { return nil }
+      guard
+        let cachedAt = Self.date(fromIso: row["cached_at"]),
+        let expiresAt = Self.date(fromIso: row["expires_at"])
+      else { return nil }
+      return AppViewProjectionCacheEntry(
+        value: row["json_body"],
+        cachedAt: cachedAt,
+        expiresAt: expiresAt
+      )
+    }
+  }
+
   public func storeSidebarProjectionJSON(
     viewerDid: String,
     jsonBody: String,

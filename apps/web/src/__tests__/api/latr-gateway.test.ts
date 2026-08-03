@@ -9,10 +9,11 @@ const ORIG_ENV = {
   LATR_GATEWAY_CLIENT_ID: process.env.LATR_GATEWAY_CLIENT_ID,
   LATR_GATEWAY_API_KEY: process.env.LATR_GATEWAY_API_KEY,
   LATR_GATEWAY_URL: process.env.LATR_GATEWAY_URL,
-  VERCEL_URL: process.env.VERCEL_URL,
+  RAILWAY_PUBLIC_DOMAIN: process.env.RAILWAY_PUBLIC_DOMAIN,
   NEXT_PUBLIC_SITE_URL: process.env.NEXT_PUBLIC_SITE_URL,
   NEXT_PUBLIC_APP_ENV: process.env.NEXT_PUBLIC_APP_ENV,
   APP_ENV: process.env.APP_ENV,
+  NEXT_PUBLIC_USE_DUMMY_DATA: process.env.NEXT_PUBLIC_USE_DUMMY_DATA,
 };
 
 function restoreEnv(): void {
@@ -28,12 +29,37 @@ afterEach(() => {
 });
 
 describe("GET /api/latr-gateway/[...path]", () => {
+  it("serves the gateway response shape locally when credentials are unavailable", async () => {
+    delete process.env.LATR_GATEWAY_CLIENT_CREDENTIAL;
+    delete process.env.LATR_GATEWAY_CLIENT_ID;
+    delete process.env.LATR_GATEWAY_API_KEY;
+    process.env.NEXT_PUBLIC_APP_ENV = "local";
+    process.env.NEXT_PUBLIC_USE_DUMMY_DATA = "true";
+    const fetchMock = mock(async () => new Response(null, { status: 500 }));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const request = new NextRequest(
+      "http://localhost:3000/api/latr-gateway/v1/latr/saves?sample=local",
+    );
+    const response = await GET(request, {
+      params: Promise.resolve({ path: ["v1", "latr", "saves"] }),
+    });
+    const body = (await response.json()) as { records?: unknown[] };
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("X-Social-Wire-Local-Sample")).toBe(
+      "latr-gateway",
+    );
+    expect(body.records?.length).toBeGreaterThan(0);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("forwards user auth headers to the hosted upstream and keeps credentials server-only", async () => {
     process.env.LATR_GATEWAY_CLIENT_CREDENTIAL = "the-social-wire-web=official-secret";
     delete process.env.LATR_GATEWAY_CLIENT_ID;
     delete process.env.LATR_GATEWAY_API_KEY;
     delete process.env.LATR_GATEWAY_URL;
-    process.env.VERCEL_URL = "testing.thesocialwire.app";
+    process.env.RAILWAY_PUBLIC_DOMAIN = "testing.thesocialwire.app";
     process.env.NEXT_PUBLIC_APP_ENV = "test";
 
     let upstreamUrl: string | URL | Request | undefined;
@@ -75,14 +101,14 @@ describe("GET /api/latr-gateway/[...path]", () => {
       "https://api.testing.latr.link/v1/latr/saves?limit=25"
     );
     expect(upstreamHeaders.get("Authorization")).toBe("Bearer user-token");
-    expect(upstreamHeaders.get("DPoP")).toBe("same-origin-proof");
+    expect(upstreamHeaders.get("DPoP")).toBe("latr-gateway-proof");
     expect(upstreamHeaders.get("X-Latr-Forwarded-Authorization")).toBe(
       "Bearer user-token"
     );
     expect(upstreamHeaders.get("X-Latr-Forwarded-DPoP")).toBe(
       "same-origin-proof"
     );
-    expect(upstreamHeaders.get("X-Latr-Gateway-DPoP")).toBe("latr-gateway-proof");
+    expect(upstreamHeaders.get("X-Latr-Gateway-DPoP")).toBeNull();
     expect(upstreamHeaders.get("X-ATProto-Upstream-DPoP")).toBe("pds-proof");
     expect(upstreamHeaders.get("X-Forwarded-Host")).toBe(
       "testing.thesocialwire.app"
@@ -105,7 +131,7 @@ describe("GET /api/latr-gateway/[...path]", () => {
     delete process.env.LATR_GATEWAY_CLIENT_ID;
     delete process.env.LATR_GATEWAY_API_KEY;
     delete process.env.LATR_GATEWAY_URL;
-    process.env.VERCEL_URL = "testing.thesocialwire.app";
+    process.env.RAILWAY_PUBLIC_DOMAIN = "testing.thesocialwire.app";
     process.env.NEXT_PUBLIC_APP_ENV = "test";
 
     globalThis.fetch = mock(async () =>

@@ -12,21 +12,31 @@ import {
   MOCK_ENTRIES,
   MOCK_ENTRY_DETAIL,
 } from "../mocks/handlers/service";
+import { dummyPublicationSidebarProjection } from "@/lib/dummyReaderData";
 
 const ORIG_ENV = { ...process.env };
 
 const mockFetchHandler = mock(async (url: string) => {
-  if (url.includes("/v1/appview/entries")) {
+  if (url.includes("/v1/appview/feed")) {
     return new Response(
       JSON.stringify({ entries: MOCK_ENTRIES, cursor: undefined }),
       { status: 200, headers: { "Content-Type": "application/json" } }
     );
+  }
+  if (url.includes("/v1/appview/enroll")) {
+    return new Response(JSON.stringify({ indexed: 0 }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
   }
   if (url.includes("/v1/appview/entry")) {
     return new Response(
       JSON.stringify(MOCK_ENTRY_DETAIL),
       { status: 200, headers: { "Content-Type": "application/json" } }
     );
+  }
+  if (url.includes("/v1/telemetry/client-performance")) {
+    return new Response(null, { status: 202 });
   }
   return new Response("not found", { status: 404 });
 });
@@ -103,7 +113,26 @@ describe("useEntries", () => {
     expect(mockFetchHandler).toHaveBeenCalled();
   });
 
-  it("does not refetch on remount when cached data is fresh", async () => {
+  it("uses dummy entries without an AppView request in local", async () => {
+    process.env.NEXT_PUBLIC_APP_ENV = "local";
+    process.env.NEXT_PUBLIC_USE_DUMMY_DATA = "false";
+    const publication =
+      dummyPublicationSidebarProjection.subscribedUnfoldered[0];
+    expect(publication).toBeDefined();
+
+    const { result } = renderHook(
+      () => useEntries(publication!.publicationId),
+      { wrapper: makeWrapper() },
+    );
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    const entries = result.current.data?.pages.flatMap((page) => page.entries);
+    expect(entries?.length).toBeGreaterThan(0);
+    expect(mockFetchHandler.mock.calls.map(([url]) => url)).toEqual([]);
+  });
+
+  it("keeps cached rows visible while refreshing on remount", async () => {
     const qc = new QueryClient({
       defaultOptions: { queries: { retry: false } },
     });
@@ -132,10 +161,13 @@ describe("useEntries", () => {
       enrollAuthorDids: [],
       refreshedAt: "2026-01-01T00:00:00.000Z",
     });
-    qc.setQueryData(["entries", "did:plc:alice", "all"], {
+    qc.setQueryData(
+      ["entries", "did:plc:testuser", "did:plc:alice", "all"],
+      {
       pages: [{ entries: MOCK_ENTRIES, cursor: undefined }],
       pageParams: [undefined],
-    });
+      }
+    );
 
     function Wrapper({ children }: { children: React.ReactNode }) {
       return <QueryClientProvider client={qc}>{children}</QueryClientProvider>;
@@ -147,7 +179,34 @@ describe("useEntries", () => {
     unmount();
     renderHook(() => useEntries("did:plc:alice"), { wrapper: Wrapper });
 
-    expect(mockFetchHandler).not.toHaveBeenCalled();
+    expect(
+      qc.getQueryData([
+        "entries",
+        "did:plc:testuser",
+        "did:plc:alice",
+        "all",
+      ])
+    ).toBeDefined();
+    await waitFor(() =>
+      expect(
+        mockFetchHandler.mock.calls.some(([url]) =>
+          String(url).includes("/v1/appview/feed")
+        )
+      ).toBe(true)
+    );
+    await waitFor(() =>
+      expect(
+        mockFetchHandler.mock.calls.some(([url]) =>
+          String(url).includes("/v1/appview/enroll")
+        )
+      ).toBe(true)
+    );
+    const requestPaths = mockFetchHandler.mock.calls.map(([url]) => String(url));
+    expect(
+      requestPaths.findIndex((url) => url.includes("/v1/appview/feed"))
+    ).toBeLessThan(
+      requestPaths.findIndex((url) => url.includes("/v1/appview/enroll"))
+    );
   });
 
   it("returns empty pages when publicationKey is null", async () => {

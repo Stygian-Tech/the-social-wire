@@ -69,11 +69,12 @@ export type EffectivePublicationUnreadCountOptions = {
 export function effectivePublicationUnreadCount(
   serverCount: number,
   queryClient: QueryClient,
+  viewerDid: string,
   publicationId: string,
   isEntryRead: (entryId: string) => boolean,
   options?: EffectivePublicationUnreadCountOptions
 ): number {
-  const cached = getCachedEntriesForPublication(queryClient, publicationId);
+  const cached = getCachedEntriesForPublication(queryClient, viewerDid, publicationId);
   if (cached.length === 0) return serverCount;
 
   const cachedUnread = countUnreadCachedEntries(cached, isEntryRead);
@@ -124,10 +125,11 @@ export function sumUnreadForPublications(
 /** True when the entry (or any row) is present in the TanStack entries cache. */
 export function publicationEntryIsCached(
   queryClient: QueryClient,
+  viewerDid: string,
   publicationId: string,
   entryId: string
 ): boolean {
-  return getCachedEntriesForPublication(queryClient, publicationId).some(
+  return getCachedEntriesForPublication(queryClient, viewerDid, publicationId).some(
     (entry) => entry.entryId === entryId
   );
 }
@@ -135,14 +137,15 @@ export function publicationEntryIsCached(
 /** Cached entry rows for a publication (any article-list filter variant). */
 export function getCachedEntriesForPublication(
   queryClient: QueryClient,
+  viewerDid: string,
   publicationId: string
 ): EntryListItem[] {
   const normalized = normalizeAtRepoParam(publicationId);
   const publicationQueries = queryClient.getQueriesData<InfiniteData<EntriesPage>>({
-    queryKey: ENTRIES_QUERY_KEY(normalized),
+    queryKey: ENTRIES_QUERY_KEY(viewerDid, normalized),
   });
   const aggregateQueries = queryClient.getQueriesData<InfiniteData<EntriesPage>>({
-    queryKey: ["aggregateEntries"],
+    queryKey: ["aggregateEntries", viewerDid],
   });
   const seen = new Set<string>();
   const out: EntryListItem[] = [];
@@ -174,12 +177,14 @@ export function getCachedEntriesForPublication(
  */
 export function distinctCachedEntryIdsForPublications(
   queryClient: QueryClient,
+  viewerDid: string,
   publications: Array<{ publicationId: string }>
 ): string[] {
   const seen = new Set<string>();
   for (const pub of publications) {
     for (const entry of getCachedEntriesForPublication(
       queryClient,
+      viewerDid,
       pub.publicationId
     )) {
       seen.add(entry.entryId);

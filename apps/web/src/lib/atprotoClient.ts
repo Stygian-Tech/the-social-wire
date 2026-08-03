@@ -7,6 +7,8 @@
 import { Agent } from "@atproto/api";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 
+import { normalizeAppViewPublishedAt } from "@/lib/appViewPublishedAt";
+
 import {
   isBridgyAtprotoPdsEndpoint,
   normalizeHttpUrlToHttps,
@@ -1108,7 +1110,9 @@ export function sortEntryListItemsNewestFirst(
   entries: EntryListItem[]
 ): EntryListItem[] {
   return [...entries].sort((a, b) => {
-    const byTime = b.publishedAt.localeCompare(a.publishedAt);
+    const byTime = normalizeAppViewPublishedAt(b.publishedAt).localeCompare(
+      normalizeAppViewPublishedAt(a.publishedAt)
+    );
     if (byTime !== 0) return byTime;
     return a.entryId.localeCompare(b.entryId);
   });

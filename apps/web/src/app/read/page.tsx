@@ -21,7 +21,6 @@ function ReadIndexContent() {
       <ReadPubPage
         key={`folder:${folder}`}
         aggregateFeed={{ kind: "folder", id: folder }}
-        title="Articles"
       />
     );
   }
@@ -30,7 +29,6 @@ function ReadIndexContent() {
     <ReadPubPage
       key={kind}
       aggregateFeed={{ kind }}
-      title={kind === "following" ? "Following" : "Subscribed"}
     />
   );
 }

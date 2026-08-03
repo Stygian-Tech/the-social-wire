@@ -2,7 +2,7 @@
 
 **Package:** `services/gateway`  
 **Runner:** Swift Testing (`swift test`)  
-**CI:** `test-gateway`
+**CI:** `gateway`
 
 ## Commands
 
@@ -33,13 +33,13 @@ GatewayCore tests live in `packages/swift/GatewayCore/Tests/` (DPoP, internal tr
 
 ## Bruno (manual HTTP)
 
-Import `services/gateway/bruno/` as a Bruno collection. Folders: **Health**, **OAuth**, **Sync**, **Publications**, **Reader**, **AppView** (proxy smoke).
+Import `services/gateway/bruno/` as a Bruno collection. Folders: **Health**, **OAuth**, **Sync**, **Publications**, **AppView**, **Latr**, **Operations**, and **Telemetry**.
 
 Populate `oauthAccessToken` and `dpopProof` from a real OAuth session. Never commit tokens.
 
 ## OpenAPI drift
 
-`packages/spec/__tests__/openapi-routes.test.ts` asserts documented paths exist in gateway, GatewayCore, and appview router sources. CI job: **`test-spec`**.
+`packages/spec/__tests__/openapi-routes.test.ts` asserts documented paths exist in Gateway, GatewayCore, AppView, and Operations router sources. CI job: **`spec`**.
 
 ## Manual verification
 

@@ -1,0 +1,19 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "build": {
+    "builder": "DOCKERFILE",
+    "dockerfilePath": "/services/operations/Dockerfile",
+    "watchPatterns": [
+      "/services/operations/**",
+      "/packages/swift/GatewayCore/**",
+      "/packages/swift/ThinAppViewCore/**",
+      "/packages/swift/OperationsCore/**",
+      "/railway/operations.json"
+    ]
+  },
+  "deploy": {
+    "healthcheckPath": "/readyz",
+    "healthcheckTimeout": 600,
+    "restartPolicyType": "ALWAYS"
+  }
+}

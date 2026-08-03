@@ -1,4 +1,4 @@
-FROM swift:6.1-jammy AS builder
+FROM swift:6.2.4-jammy AS builder
 WORKDIR /src
 RUN apt-get update && apt-get install -y --no-install-recommends libsqlite3-dev libxml2-dev && rm -rf /var/lib/apt/lists/*
 COPY packages/swift/ThinAppViewCore packages/swift/ThinAppViewCore

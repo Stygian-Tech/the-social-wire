@@ -8,6 +8,6 @@
   ],
   "presets": {
     "requestType": "http",
-    "requestUrl": "https://the-social-wire-prod-appview.fly.dev"
+    "requestUrl": "https://api.thesocialwire.app"
   }
 }

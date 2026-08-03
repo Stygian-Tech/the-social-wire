@@ -1,6 +1,6 @@
 # Lexicons
 
-ATProto lexicon JSON under `packages/lexicons` — Social Wire prefs, read-later interoperability (`com.latr.*`), Skyreader subscriptions, etc.
+ATProto lexicon JSON under `packages/lexicons` — Social Wire preferences, read-later interoperability (`link.latr.*`; legacy `com.latr.*` compatibility), Skyreader subscriptions, and related records.
 
 **Reference**
 

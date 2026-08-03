@@ -9,14 +9,13 @@
     "build": "turbo build",
     "dev": "turbo dev",
     "dev:web": "bun --cwd apps/web dev",
+    "dev:web:mock": "bun --cwd apps/web dev:mock",
     "locks:freeze-text": "bun install --save-text-lockfile --frozen-lockfile --lockfile-only",
     "lint": "turbo lint",
     "typecheck": "turbo typecheck",
     "test": "turbo test",
     "clean": "turbo clean",
-    "act:ci": "bash scripts/act/run-ci.sh",
-    "act:supabase": "bash scripts/act/run-supabase-validate.sh",
-    "act:all": "bash scripts/act/run-all.sh"
+    "act:ci": "bash scripts/act/run-ci.sh"
   },
   "devDependencies": {
     "turbo": "2.9.14"

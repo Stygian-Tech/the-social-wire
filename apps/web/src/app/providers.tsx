@@ -8,13 +8,14 @@ import {
 } from "@tanstack/react-query";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 import { AuthProvider } from "@/hooks/useAuth";
+import { AppearanceProvider } from "@/hooks/useAppearance";
 import { LexiconMigrationRunner } from "@/hooks/useLexiconMigration";
 import { createIndexedDbQueryPersister } from "@/lib/indexedDbQueryPersister";
 import type { PublicationSidebarProjection } from "@/lib/publicationProjectionClient";
 import { shouldPersistSidebarProjection } from "@/lib/sidebarProjectionPersist";
 
 /** IndexedDB key for dehydrated React Query cache (discovery + bounded entry lists). */
-const QUERY_PERSIST_KEY = "the-social-wire.react-query.v1";
+const QUERY_PERSIST_KEY = "the-social-wire.react-query.v2";
 
 /** Drop persisted payload older than this (ms). */
 const QUERY_PERSIST_MAX_AGE_MS = 1000 * 60 * 60 * 24 * 7; // 7 days
@@ -26,10 +27,18 @@ function shouldPersistDiscoveryQuery(query: Query): boolean {
   return Array.isArray(key) && key[0] === "discovery";
 }
 
-/** Avoid large localStorage writes: persist `["entries", did]` only when small. */
+/** Persist successful viewer-scoped feed pages only when they remain bounded. */
 function shouldPersistEntriesQuery(query: Query): boolean {
   const key = query.queryKey;
-  if (!Array.isArray(key) || key[0] !== "entries") return false;
+  if (
+    !Array.isArray(key) ||
+    (key[0] !== "entries" && key[0] !== "aggregateEntries") ||
+    typeof key[1] !== "string" ||
+    key[1].length === 0 ||
+    query.state.status !== "success"
+  ) {
+    return false;
+  }
   const data = query.state.data as InfiniteData<EntryListPage> | undefined;
   if (!data?.pages?.length) return false;
   const pageCount = data.pages.length;
@@ -37,7 +46,7 @@ function shouldPersistEntriesQuery(query: Query): boolean {
     (n, p) => n + (p.entries?.length ?? 0),
     0
   );
-  return pageCount <= 3 && totalEntries <= 120;
+  return pageCount <= 3 && totalEntries <= 150;
 }
 
 function shouldPersistSidebarProjectionQuery(query: Query): boolean {
@@ -79,20 +88,22 @@ export function Providers({ children }: { children: React.ReactNode }) {
   );
 
   return (
-    <PersistQueryClientProvider
-      client={queryClient}
-      persistOptions={{
-        persister,
-        maxAge: QUERY_PERSIST_MAX_AGE_MS,
-        dehydrateOptions: {
-          shouldDehydrateQuery,
-        },
-      }}
-    >
-      <AuthProvider>
-        <LexiconMigrationRunner />
-        {children}
-      </AuthProvider>
-    </PersistQueryClientProvider>
+    <AppearanceProvider>
+      <PersistQueryClientProvider
+        client={queryClient}
+        persistOptions={{
+          persister,
+          maxAge: QUERY_PERSIST_MAX_AGE_MS,
+          dehydrateOptions: {
+            shouldDehydrateQuery,
+          },
+        }}
+      >
+        <AuthProvider>
+          <LexiconMigrationRunner />
+          {children}
+        </AuthProvider>
+      </PersistQueryClientProvider>
+    </AppearanceProvider>
   );
 }

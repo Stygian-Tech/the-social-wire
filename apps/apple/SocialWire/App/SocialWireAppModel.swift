@@ -148,8 +148,8 @@ final class SocialWireAppModel {
         feedPreferences.visibleFeeds
     }
 
-    var showTopLevelFeedUnreadCounts: Bool {
-        feedPreferences.showTopLevelFeedUnreadCounts
+    func showsTopLevelFeedUnreadCount(for source: ReaderListSource) -> Bool {
+        feedPreferences.showsUnreadCount(for: source)
     }
 
     func isTopLevelFeedSelected(_ source: ReaderListSource) -> Bool {
@@ -883,7 +883,9 @@ final class SocialWireAppModel {
         }
         feedPreferences = ReaderFeedPreferences(
             visibleFeeds: next,
-            showTopLevelFeedUnreadCounts: feedPreferences.showTopLevelFeedUnreadCounts
+            feedsWithUnreadCounts: visible
+                ? feedPreferences.feedsWithUnreadCounts
+                : feedPreferences.feedsWithUnreadCounts.filter { $0 != source }
         )
         if let viewerDID {
             ReaderFeedPreferencesStorage.save(feedPreferences, viewerDid: viewerDID)
@@ -895,8 +897,17 @@ final class SocialWireAppModel {
         try? await pds.upsertFeedDisplayPreferences(feedPreferences)
     }
 
-    func setShowTopLevelFeedUnreadCounts(_ show: Bool) async {
-        feedPreferences.showTopLevelFeedUnreadCounts = show
+    func setFeedUnreadCountVisible(_ source: ReaderListSource, visible: Bool) async {
+        guard feedPreferences.visibleFeeds.contains(source) else { return }
+        let feedsWithUnreadCounts = visible
+            ? ReaderListSource.allCases.filter {
+                $0 == source || feedPreferences.feedsWithUnreadCounts.contains($0)
+            }
+            : feedPreferences.feedsWithUnreadCounts.filter { $0 != source }
+        feedPreferences = ReaderFeedPreferences(
+            visibleFeeds: feedPreferences.visibleFeeds,
+            feedsWithUnreadCounts: feedsWithUnreadCounts
+        )
         if let viewerDID {
             ReaderFeedPreferencesStorage.save(feedPreferences, viewerDid: viewerDID)
         }

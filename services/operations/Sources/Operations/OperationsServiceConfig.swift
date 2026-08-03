@@ -24,8 +24,8 @@ struct OperationsServiceConfig: Sendable {
     case .local:
       fatalError("APP_ENV=local is not a valid persisted Operations environment; use APP_ENV=dev")
     case .dev, .prod:
-      guard let url = environment["SUPABASE_DATABASE_URL"], !url.isEmpty else {
-        fatalError("SUPABASE_DATABASE_URL is required for the operations service")
+      guard let url = environment["DATABASE_URL"], !url.isEmpty else {
+        fatalError("DATABASE_URL is required for the operations service")
       }
       database = .postgres(url: url)
     }

@@ -64,6 +64,8 @@ struct OAuthTests {
         #expect(fields["login_hint"] == "did:plc:test")
         #expect(fields["scope"]?.contains("repo:app.thesocialwire.entryReadState") == false)
         #expect(fields["scope"]?.contains("repo:com.thesocialwire.entryReadState") == false)
+        #expect(fields["scope"]?.contains("include:app.bsky.authCreatePosts") == true)
+        #expect(fields["scope"]?.contains("include:app.bsky.authDeleteContent") == true)
     }
 
     @Test("PKCE challenge is stable for verifier")

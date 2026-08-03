@@ -18,6 +18,7 @@ const makeEntry = (entryId: string): EntryListItem => ({
   title: "T",
   publishedAt: "2026-01-01T00:00:00.000Z",
 });
+const viewerDid = "did:plc:viewer";
 
 describe("flattenCachedInfiniteEntries", () => {
   it("returns empty for undefined or empty pages", () => {
@@ -68,14 +69,29 @@ describe("distinctCachedEntryIdsForPublications", () => {
     const e2 = makeEntry("at://did/a/site.standard.entry/2");
     const eDup = makeEntry("at://did/a/site.standard.entry/1");
     const store = new Map<string, InfiniteData<EntriesPage>>();
-    store.set(JSON.stringify([...ENTRIES_QUERY_KEY(pubDid), "all"]), {
+    store.set(JSON.stringify([...ENTRIES_QUERY_KEY(viewerDid, pubDid), "all"]), {
       pages: [{ entries: [e1, e2], cursor: undefined }],
       pageParams: [undefined],
     });
-    store.set(JSON.stringify([...ENTRIES_QUERY_KEY(otherDid), "unread"]), {
+    store.set(JSON.stringify([...ENTRIES_QUERY_KEY(viewerDid, otherDid), "unread"]), {
       pages: [{ entries: [eDup], cursor: undefined }],
       pageParams: [undefined],
     });
+    store.set(
+      JSON.stringify([
+        ...ENTRIES_QUERY_KEY("did:plc:other-viewer", pubDid),
+        "all",
+      ]),
+      {
+        pages: [
+          {
+            entries: [makeEntry("at://did/a/site.standard.entry/private")],
+            cursor: undefined,
+          },
+        ],
+        pageParams: [undefined],
+      }
+    );
     const queryClient = {
       getQueriesData: <T,>({ queryKey }: { queryKey: readonly unknown[] }) => {
         const prefix = JSON.stringify(queryKey).slice(0, -1);
@@ -88,7 +104,7 @@ describe("distinctCachedEntryIdsForPublications", () => {
         return out;
       },
     } as unknown as import("@tanstack/react-query").QueryClient;
-    const ids = distinctCachedEntryIdsForPublications(queryClient, [
+    const ids = distinctCachedEntryIdsForPublications(queryClient, viewerDid, [
       { publicationId: pubDid },
       { publicationId: otherDid },
     ]);
@@ -100,7 +116,7 @@ describe("distinctCachedEntryIdsForPublications", () => {
       getQueriesData: () => [],
     } as unknown as import("@tanstack/react-query").QueryClient;
     expect(
-      distinctCachedEntryIdsForPublications(queryClient, [
+      distinctCachedEntryIdsForPublications(queryClient, viewerDid, [
         { publicationId: "did:plc:none" },
       ])
     ).toEqual([]);
@@ -114,7 +130,7 @@ describe("effectivePublicationUnreadCount", () => {
   ) {
     const store = new Map<string, InfiniteData<EntriesPage>>();
     for (const filter of ["all", "unread"]) {
-      store.set(JSON.stringify([...ENTRIES_QUERY_KEY(publicationId), filter]), {
+      store.set(JSON.stringify([...ENTRIES_QUERY_KEY(viewerDid, publicationId), filter]), {
         pages: [{ entries, cursor: undefined }],
         pageParams: [undefined],
       });
@@ -145,7 +161,7 @@ describe("effectivePublicationUnreadCount", () => {
     const isRead = (id: string) => id === readId;
 
     expect(
-      effectivePublicationUnreadCount(5, queryClient, publicationId, isRead)
+      effectivePublicationUnreadCount(5, queryClient, viewerDid, publicationId, isRead)
     ).toBe(4);
   });
 
@@ -158,7 +174,7 @@ describe("effectivePublicationUnreadCount", () => {
     ]);
 
     expect(
-      effectivePublicationUnreadCount(0, queryClient, publicationId, () => false)
+      effectivePublicationUnreadCount(0, queryClient, viewerDid, publicationId, () => false)
     ).toBe(1);
   });
 
@@ -171,7 +187,7 @@ describe("effectivePublicationUnreadCount", () => {
     ]);
 
     expect(
-      effectivePublicationUnreadCount(0, queryClient, publicationId, () => false, {
+      effectivePublicationUnreadCount(0, queryClient, viewerDid, publicationId, () => false, {
         capRaiseToServerCount: true,
       })
     ).toBe(1);
@@ -187,7 +203,7 @@ describe("effectivePublicationUnreadCount", () => {
     );
 
     expect(
-      effectivePublicationUnreadCount(3, queryClient, publicationId, () => false, {
+      effectivePublicationUnreadCount(3, queryClient, viewerDid, publicationId, () => false, {
         capRaiseToServerCount: true,
       })
     ).toBe(3);
@@ -205,7 +221,7 @@ describe("effectivePublicationUnreadCount", () => {
     const isRead = (id: string) => id === readId;
 
     expect(
-      effectivePublicationUnreadCount(5, queryClient, publicationId, isRead, {
+      effectivePublicationUnreadCount(5, queryClient, viewerDid, publicationId, isRead, {
         capRaiseToServerCount: true,
       })
     ).toBe(4);
@@ -220,11 +236,12 @@ describe("effectivePublicationUnreadCount", () => {
     ]);
 
     expect(
-      publicationEntryIsCached(queryClient, publicationId, entryId)
+      publicationEntryIsCached(queryClient, viewerDid, publicationId, entryId)
     ).toBe(true);
     expect(
       publicationEntryIsCached(
         queryClient,
+        viewerDid,
         publicationId,
         "at://did:plc:author/site.standard.document/other"
       )

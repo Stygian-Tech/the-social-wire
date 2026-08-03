@@ -17,9 +17,12 @@ bun install
 | Area | Setup |
 |------|-------|
 | Web | [apps/web/README.md](https://github.com/Stygian-Tech/the-social-wire/blob/main/apps/web/README.md) |
+| Operations UI | [apps/operations/README.md](https://github.com/Stygian-Tech/the-social-wire/blob/main/apps/operations/README.md) |
 | Gateway | `services/gateway` — `APP_ENV=local swift run Gateway` |
 | AppView | `services/appview` — `APP_ENV=local ENABLE_THIN_APPVIEW=true swift run AppView` |
 | Charybdis | `services/appview-worker` — `APP_ENV=local ENABLE_THIN_APPVIEW=true swift run AppViewWorker` |
+| Operations service | `services/operations` — `APP_ENV=dev DATABASE_URL=… swift run Operations` |
+| Tap | [services/tap/README.md](https://github.com/Stygian-Tech/the-social-wire/blob/main/services/tap/README.md) |
 | iOS | [apps/apple/README.md](https://github.com/Stygian-Tech/the-social-wire/blob/main/apps/apple/README.md) |
 
 ## Tests before PR

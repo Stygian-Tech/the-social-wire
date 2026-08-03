@@ -1,7 +1,7 @@
 docs {
   # Social Wire Gateway
 
-  Bruno workspace for HTTP routes on `services/gateway` (OAuth, sync, PDS writes, AppView proxy).
+  Bruno workspace for HTTP routes on `services/gateway` (OAuth, sync, PDS writes, AppView/Operations proxies, L@tr, and telemetry).
 
   ## Folders
 
@@ -9,8 +9,10 @@ docs {
   - **OAuth** — public client metadata (no auth)
   - **Sync** — authenticated preference sync + PDS record cache
   - **Publications** — sidebar projection (proxied to AppView when `APPVIEW_BASE_URL` is set) and PDS write-through
-  - **Reader** — canonical entry read-state writes on the viewer PDS
   - **AppView** — Thin AppView routes proxied to AppView when configured (including NDJSON bootstrap stream)
+  - **Latr** — native L@tr proxy routes (requires gateway, L@tr, and sometimes upstream-PDS DPoP proofs)
+  - **Operations** — operator-only control-plane routes proxied to the Operations service
+  - **Telemetry** — authenticated client performance telemetry
 
   Set `oauthAccessToken` and `dpopProof` from an ATProto OAuth session before calling `/v1/*`.
 }

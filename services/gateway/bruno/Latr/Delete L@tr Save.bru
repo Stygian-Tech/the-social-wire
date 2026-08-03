@@ -1,0 +1,22 @@
+meta {
+  name: Delete L@tr Save
+  type: http
+  seq: 40
+}
+
+delete {
+  url: {{baseUrl}}/v1/latr/saves/{{latrItemRkey}}
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: DPoP {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+  X-Latr-Gateway-DPoP: {{latrGatewayDpopProof}}
+  X-ATProto-Upstream-DPoP: {{upstreamDpopProof}}
+}
+
+docs {
+  Deletes one saved item through the native gateway proxy. Set `latrItemRkey` to the saved-item record key.
+}

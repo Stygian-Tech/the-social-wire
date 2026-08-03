@@ -34,7 +34,7 @@ struct DatabaseBackendTests {
   @Test("deployed worker refuses an unscoped environment")
   func deployedWorkerRequiresEnvironment() {
     #expect(throws: DatabaseBackendConfigurationError.missingAppEnvironment) {
-      try DatabaseBackend.fromEnvironment(["FLY_APP_NAME": "worker"])
+      try DatabaseBackend.fromEnvironment(["RAILWAY_SERVICE_NAME": "worker"])
     }
   }
 
@@ -52,7 +52,7 @@ struct DatabaseBackendTests {
     let url = "postgresql://example.invalid/database"
     let backend = try DatabaseBackend.fromEnvironment([
       "APP_ENV": "prod",
-      "SUPABASE_DATABASE_URL": url,
+      "DATABASE_URL": url,
     ])
     guard case .postgres(let configuredURL) = backend else {
       Issue.record("Expected Postgres")

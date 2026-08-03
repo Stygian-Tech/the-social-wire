@@ -68,6 +68,18 @@ final class BoundedSequentialMessagePump: @unchecked Sendable {
     return true
   }
 
+  /// Waits for the messages currently accepted by the pump to finish processing.
+  /// Callers should stop enqueueing before awaiting this method.
+  func waitUntilIdle() async {
+    _ = await currentTail()?.result
+  }
+
+  private func currentTail() -> Task<Void, Never>? {
+    lock.lock()
+    defer { lock.unlock() }
+    return tail
+  }
+
   private func completedOne() {
     lock.lock()
     pending = max(0, pending - 1)

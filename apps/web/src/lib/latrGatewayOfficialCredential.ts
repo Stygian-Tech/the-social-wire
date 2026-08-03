@@ -1,4 +1,4 @@
-/** Official gateway client id registered on latr-gateway Fly secrets. */
+/** Official gateway client id registered by the L@tr gateway deployment. */
 export const THE_SOCIAL_WIRE_WEB_CLIENT_ID = "the-social-wire-web";
 
 const CLIENT_ID_PATTERN = /^[a-z0-9][a-z0-9.-]*$/i;

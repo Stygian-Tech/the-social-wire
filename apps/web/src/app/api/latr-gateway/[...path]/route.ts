@@ -3,6 +3,10 @@ import { NextResponse } from "next/server";
 
 import { getAppEnv } from "@/lib/appEnv";
 import {
+  dummyLatrGatewaySavedItemsResponse,
+  isDummyReaderDataEnabled,
+} from "@/lib/dummyReaderData";
+import {
   buildLatrGatewayServerAuthHeaders,
   hasLatrGatewayServerCredentials,
   LATR_FORWARDED_AUTHORIZATION_HEADER,
@@ -29,6 +33,18 @@ async function proxyLatrGateway(
   request: NextRequest,
   context: RouteContext
 ): Promise<NextResponse> {
+  const { path } = await context.params;
+  if (
+    request.method === "GET" &&
+    path.join("/") === "v1/latr/saves" &&
+    getAppEnv() !== "prod" &&
+    isDummyReaderDataEnabled()
+  ) {
+    return NextResponse.json(dummyLatrGatewaySavedItemsResponse(), {
+      headers: { "X-Social-Wire-Local-Sample": "latr-gateway" },
+    });
+  }
+
   if (!hasLatrGatewayServerCredentials()) {
     return NextResponse.json(
       {
@@ -39,7 +55,6 @@ async function proxyLatrGateway(
     );
   }
 
-  const { path } = await context.params;
   const upstreamPath = `/${path.join("/")}${request.nextUrl.search}`;
   const upstreamUrl = `${latrGatewayUpstreamBaseUrl()}${upstreamPath}`;
 
@@ -51,10 +66,14 @@ async function proxyLatrGateway(
       headers.set("Authorization", value);
       headers.set(LATR_FORWARDED_AUTHORIZATION_HEADER, value);
     } else if (name === "dpop") {
-      headers.set("DPoP", value);
+      // Preserve the browser-to-Web proof for deployments that reconstruct the
+      // original public proxy URL, but do not leave it as the proof for the
+      // Web-to-L@tr hop. That proof is bound to this same-origin proxy URL.
       headers.set(LATR_FORWARDED_DPOP_HEADER, value);
     } else if (name === LATR_GATEWAY_UPSTREAM_DPOP_HEADER) {
-      headers.set(LATR_GATEWAY_UPSTREAM_DPOP_HEADER, value);
+      // The browser minted this proof for the concrete api.*.latr.link URL.
+      // L@tr verifies its primary DPoP header against that upstream request.
+      headers.set("DPoP", value);
     } else if (name === "x-atproto-upstream-dpop") {
       headers.set("X-ATProto-Upstream-DPoP", value);
     } else if (name === "content-type") {

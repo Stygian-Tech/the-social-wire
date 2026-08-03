@@ -23,7 +23,7 @@ export function MyPublicationsSection() {
       className="flex scroll-mt-16 flex-col gap-5 p-4 md:p-6"
       aria-labelledby="publications-heading"
     >
-      <header className="flex shrink-0 flex-wrap items-start justify-between gap-3">
+      <header className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
         <div className="flex min-w-0 flex-col gap-1">
           <h1
             id="publications-heading"
@@ -36,7 +36,7 @@ export function MyPublicationsSection() {
             reader.
           </p>
         </div>
-        <div className="flex shrink-0 flex-wrap items-center gap-2">
+        <div className="flex shrink-0 flex-nowrap items-center gap-2">
           <Button
             type="button"
             variant="ghost"

@@ -1,0 +1,22 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "build": {
+    "builder": "DOCKERFILE",
+    "dockerfilePath": "/services/gateway/Dockerfile",
+    "watchPatterns": [
+      "/services/gateway/**",
+      "/packages/swift/GatewayCore/**",
+      "/packages/swift/ThinAppViewCore/**",
+      "/packages/swift/OperationsCore/**",
+      "/database/migrations/**",
+      "/scripts/apply-database-migrations.sh",
+      "/railway/gateway.json"
+    ]
+  },
+  "deploy": {
+    "preDeployCommand": "/usr/local/bin/apply-database-migrations",
+    "healthcheckPath": "/readyz",
+    "healthcheckTimeout": 600,
+    "restartPolicyType": "ALWAYS"
+  }
+}

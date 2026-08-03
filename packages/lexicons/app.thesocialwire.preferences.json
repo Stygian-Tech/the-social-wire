@@ -47,7 +47,25 @@
           },
           "showTopLevelFeedUnreadCounts": {
             "type": "boolean",
-            "description": "Whether aggregate unread badges are shown on top-level reader feeds."
+            "description": "Legacy global switch for aggregate unread badges. New clients use feedsWithUnreadCounts."
+          },
+          "feedsWithUnreadCounts": {
+            "type": "array",
+            "description": "Top-level reader feeds whose unread badges are shown. Values should also appear in visibleFeeds.",
+            "items": {
+              "type": "string",
+              "knownValues": [
+                "readLater",
+                "archive",
+                "subscribed",
+                "following"
+              ]
+            }
+          },
+          "rssArticleOpenMode": {
+            "type": "string",
+            "knownValues": ["reader", "original"],
+            "description": "Whether RSS articles open in The Social Wire's native feed-content reader or on the publisher's original site."
           },
           "createdAt": {
             "type": "string",
