@@ -28,6 +28,7 @@ public enum ATProtoOAuthScopes {
     "include:site.standard.authSocial",
     "repo:app.skyreader.feed.subscription?action=create&action=update&action=delete",
     "include:app.userinput.authFull",
+    "blob:*/*",
   ]
 
   private static let iosOnlyScopes = [

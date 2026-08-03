@@ -3,6 +3,7 @@
 import { useEffect, useId, useState } from "react";
 import { ExternalLink, MessageSquarePlus } from "lucide-react";
 
+import { FeedbackPhotoPicker } from "@/components/AppSidebar/FeedbackPhotoPicker";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -44,6 +45,7 @@ export function FeedbackDialog() {
   const [title, setTitle] = useState("");
   const [details, setDetails] = useState("");
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [photos, setPhotos] = useState<File[]>([]);
   const [board, setBoard] = useState<UserInputBoardReference | null>(null);
   const [tagsLoading, setTagsLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -56,6 +58,7 @@ export function FeedbackDialog() {
       setTitle("");
       setDetails("");
       setSelectedTags([]);
+      setPhotos([]);
       setBoard(null);
       setTagsLoading(!localPreview);
       setSubmitting(false);
@@ -109,13 +112,17 @@ export function FeedbackDialog() {
 
       const oauth = getOAuthSession();
       if (!oauth || !client) throw new Error("Sign in to send feedback.");
-      await requireUserInputFeedbackScopes(oauth);
+      await requireUserInputFeedbackScopes(
+        oauth,
+        photos.map((photo) => photo.type)
+      );
       const activeBoard = board ?? (await fetchUserInputBoardReference());
       const discussion = await client.createUserInputFeedback({
         board: activeBoard,
         title: trimmedTitle,
         ...(trimmedDetails ? { body: trimmedDetails } : {}),
         ...(selectedTags.length ? { tags: selectedTags } : {}),
+        ...(photos.length ? { photos } : {}),
       });
       setResult({
         local: false,
@@ -238,6 +245,11 @@ export function FeedbackDialog() {
                   </div>
                 </fieldset>
               ) : null}
+              <FeedbackPhotoPicker
+                photos={photos}
+                onPhotosChange={setPhotos}
+                disabled={submitting}
+              />
               {localPreview ? (
                 <p className="rounded-xl border border-border/70 bg-muted/45 px-3 py-2 text-sm text-muted-foreground">
                   Local mode is offline. Submit will preview the success state

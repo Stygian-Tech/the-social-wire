@@ -9,7 +9,10 @@ import {
   SOCIAL_WIRE_REPO_SCOPES,
   STANDARD_SITE_SOCIAL_PERMISSION_SCOPE,
 } from "@/lib/atprotoOAuthScopes";
-import { USER_INPUT_OAUTH_SCOPE } from "@/lib/userInputFeedback";
+import {
+  USER_INPUT_BLOB_OAUTH_SCOPE,
+  USER_INPUT_OAUTH_SCOPE,
+} from "@/lib/userInputFeedback";
 
 describe("atprotoOAuthScopes", () => {
   it("matches public client-metadata.json scope string", () => {
@@ -50,7 +53,9 @@ describe("atprotoOAuthScopes", () => {
         .filter((scope) => scope !== "atproto")
         .every(
           (scope) =>
-            scope.startsWith("repo:") || scope.startsWith("include:")
+            scope.startsWith("repo:") ||
+            scope.startsWith("include:") ||
+            scope.startsWith("blob:")
         )
     ).toBe(true);
     expect(SOCIAL_WIRE_REPO_SCOPES).toHaveLength(6);
@@ -71,5 +76,6 @@ describe("atprotoOAuthScopes", () => {
       "repo:app.skyreader.feed.subscription?action=create&action=update&action=delete",
     ]);
     expect(USER_INPUT_OAUTH_SCOPE).toBe("include:app.userinput.authFull");
+    expect(USER_INPUT_BLOB_OAUTH_SCOPE).toBe("blob:*/*");
   });
 });

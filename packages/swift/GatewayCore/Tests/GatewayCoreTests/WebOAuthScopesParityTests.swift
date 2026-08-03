@@ -56,6 +56,8 @@ struct WebOAuthScopesParityTests {
     let userInput = "include:app.userinput.authFull"
     #expect(ATProtoOAuthScopes.webScope.contains(userInput))
     #expect(!ATProtoOAuthScopes.iosScope.contains(userInput))
+    #expect(ATProtoOAuthScopes.webScope.contains("blob:*/*"))
+    #expect(!ATProtoOAuthScopes.iosScope.contains("blob:*/*"))
   }
 
   @Test("Bluesky actions use published application permission sets")

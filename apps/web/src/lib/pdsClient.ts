@@ -34,6 +34,7 @@ import {
   type StandardSiteRecommendRecord,
 } from "@/lib/standardSiteRecommendation";
 import {
+  MAX_USER_INPUT_PHOTOS,
   USER_INPUT_DISCUSSION_COLLECTION,
   USER_INPUT_UPVOTE_COLLECTION,
   type UserInputStrongRef,
@@ -522,8 +523,20 @@ export class PDSClient {
     title: string;
     body?: string;
     tags?: string[];
+    photos?: File[];
   }): Promise<{ uri: string; cid: string }> {
     const createdAt = new Date().toISOString();
+    const photos = (input.photos ?? [])
+      .filter((photo) => photo.type.startsWith("image/"))
+      .slice(0, MAX_USER_INPUT_PHOTOS);
+    const images = photos.length
+      ? await Promise.all(
+          photos.map(async (photo) => ({
+            image: (await this.agent.uploadBlob(photo)).data.blob,
+            alt: photo.name,
+          }))
+        )
+      : [];
     const response = await this.agent.api.com.atproto.repo.createRecord({
       repo: this.did,
       collection: USER_INPUT_DISCUSSION_COLLECTION,
@@ -533,6 +546,7 @@ export class PDSClient {
         title: input.title,
         ...(input.body ? { body: input.body } : {}),
         ...(input.tags?.length ? { tags: input.tags } : {}),
+        ...(images.length ? { images } : {}),
         createdAt,
       },
     });
