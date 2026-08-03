@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import type { DiscoveredPublication } from "@/lib/atprotoClient";
 import {
   addPublicationSubscriptionLookupKeys,
+  publicationIdsMatch,
   publicationSubscriptionMatchKeys,
   standardSiteSubscriptionTargetFromDiscovery,
 } from "@/lib/publicationSubscriptionMatch";
@@ -85,5 +86,20 @@ describe("publicationSubscriptionMatch", () => {
     expect(
       publicationSubscriptionMatchKeys(pubB).some((k) => subKeys.has(k))
     ).toBe(true);
+  });
+
+  it("matches encoded publication ids and collection aliases", () => {
+    expect(
+      publicationIdsMatch(
+        "at%3A%2F%2Fdid%3Aplc%3Aauthor%2Fsite.standard.publication%2Fkey1",
+        "at://did:plc:author/com.standard.publication/key1"
+      )
+    ).toBe(true);
+    expect(
+      publicationIdsMatch(
+        "rss:https%3A%2F%2Fexample.com%2Ffeed.xml",
+        "rss:https%3A%2F%2Fexample.com%2Fother.xml"
+      )
+    ).toBe(false);
   });
 });

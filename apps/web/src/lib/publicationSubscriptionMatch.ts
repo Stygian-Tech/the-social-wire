@@ -50,6 +50,18 @@ export function addPublicationSubscriptionLookupKeys(
   }
 }
 
+/** Matches canonical, URL-encoded, and legacy collection aliases for one publication. */
+export function publicationIdsMatch(lhs: string, rhs: string): boolean {
+  const lookupKeys = (value: string) => {
+    const keys = new Set<string>([normalizeAtRepoParam(value)]);
+    addPublicationSubscriptionLookupKeys(keys, value);
+    return new Set([...keys].map(normalizeAtRepoParam));
+  };
+
+  const left = lookupKeys(lhs);
+  return [...lookupKeys(rhs)].some((key) => left.has(key));
+}
+
 /** Keys used to match a discovered publication against `site.standard.graph.subscription.publication`. */
 export function publicationSubscriptionMatchKeys(pub: DiscoveredPublication): string[] {
   const keys = new Set<string>();

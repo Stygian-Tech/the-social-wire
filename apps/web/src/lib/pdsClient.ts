@@ -861,7 +861,7 @@ export class PDSClient {
 
   async upsertPublicationPrefs(
     publicationId: string,
-    updates: Partial<Pick<PublicationPrefsRecord, "sortOrder">> & {
+    updates: Partial<Pick<PublicationPrefsRecord, "sortOrder" | "hidden">> & {
       folderId?: string | null;
     },
     existingRkey?: string
@@ -892,7 +892,7 @@ export class PDSClient {
       $type: COLLECTION_PUB_PREFS,
       publicationId,
       sortOrder,
-      hidden: false,
+      hidden: updates.hidden ?? prev?.hidden ?? false,
       createdAt: prev?.createdAt ?? new Date().toISOString(),
       ...(folderId !== undefined ? { folderId } : {}),
     };

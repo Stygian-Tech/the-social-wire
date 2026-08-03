@@ -108,6 +108,23 @@ enum PublicationProjectionLogic {
     return byPublicationId
   }
 
+  static func filterHiddenPublications(
+    _ rows: [ProjectionDiscoveredRow],
+    prefs: [PublicationPrefsRecordDTO]
+  ) -> [ProjectionDiscoveredRow] {
+    let effectivePrefs = Array(prefsByPublicationId(prefs).values)
+    let hiddenPublicationIds = effectivePrefs.compactMap { pref -> String? in
+      guard pref.value["hidden"]?.value as? Bool == true else { return nil }
+      return pref.publicationId
+    }
+    guard !hiddenPublicationIds.isEmpty else { return rows }
+    return rows.filter { row in
+      !hiddenPublicationIds.contains {
+        publicationIdsMatch(row.publicationId, $0)
+      }
+    }
+  }
+
   static func addPublicationSubscriptionLookupKeys(into keys: inout Set<String>, value: String?) {
     guard let value else { return }
     let normalized = normalizeAtRepoParam(value)

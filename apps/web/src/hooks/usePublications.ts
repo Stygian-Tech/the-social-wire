@@ -24,12 +24,14 @@ import {
 import {
   COLLECTION_SKYREADER_FEED_SUBSCRIPTION,
   COLLECTION_STANDARD_SITE_SUBSCRIPTION,
+  type PDSClient,
   type RepoRecord,
   rkeyFromURI,
   type SkyreaderFeedSubscriptionRecord,
 } from "@/lib/pdsClient";
 import {
   addPublicationSubscriptionLookupKeys,
+  publicationIdsMatch,
   publicationSubscriptionMatchKeys,
   standardSiteSubscriptionTargetFromDiscovery,
 } from "@/lib/publicationSubscriptionMatch";
@@ -57,6 +59,10 @@ import {
   type PublicationSidebarProjection,
   type ResolveAddPublicationPayload,
 } from "@/lib/publicationProjectionClient";
+import {
+  removePublicationFromEntryCaches,
+  removePublicationFromSidebarProjection,
+} from "@/lib/publicationUnsubscribeCache";
 
 export type { DiscoveredPublication };
 
@@ -83,6 +89,44 @@ async function refreshSidebarAfterAddingPublication(args: {
     );
   }
   return projection;
+}
+
+type PublicationVisibilityRollback = () => Promise<void>;
+
+async function preparePublicationVisibility(args: {
+  client: PDSClient;
+  publicationId: string;
+  hidden: boolean;
+}): Promise<PublicationVisibilityRollback> {
+  const prefs = await args.client.listPublicationPrefs();
+  const existing = prefs
+    .filter((row) =>
+      publicationIdsMatch(row.value.publicationId, args.publicationId)
+    )
+    .sort((lhs, rhs) => lhs.uri.localeCompare(rhs.uri))
+    .at(-1);
+  const previousHidden = existing?.value.hidden ?? false;
+
+  if (previousHidden === args.hidden) return async () => undefined;
+
+  const written = await args.client.upsertPublicationPrefs(
+    existing?.value.publicationId ?? args.publicationId,
+    { hidden: args.hidden },
+    existing ? rkeyFromURI(existing.uri) : undefined
+  );
+  const writtenRkey = rkeyFromURI(written.uri);
+
+  return async () => {
+    if (!existing) {
+      await args.client.deletePublicationPrefs(writtenRkey);
+      return;
+    }
+    await args.client.upsertPublicationPrefs(
+      existing.value.publicationId,
+      { hidden: previousHidden },
+      writtenRkey
+    );
+  };
 }
 
 // ── Publication prefs ─────────────────────────────────────────────────────────
@@ -410,9 +454,20 @@ export function useSubscribeToPublication() {
           "This account does not expose a standard.site publication record we can subscribe to."
         );
       }
-      await client.createPublicationSubscription({ publication: target });
+      const rollbackVisibility = await preparePublicationVisibility({
+        client,
+        publicationId: publication.publicationId,
+        hidden: false,
+      });
+      try {
+        await client.createPublicationSubscription({ publication: target });
+      } catch (error) {
+        await rollbackVisibility().catch(() => undefined);
+        throw error;
+      }
     },
     onSuccess: () => {
+      qc.invalidateQueries({ queryKey: PUB_PREFS_QUERY_KEY });
       qc.invalidateQueries({ queryKey: PUBLICATION_SUBSCRIPTIONS_QUERY_KEY });
       if (did) qc.invalidateQueries({ queryKey: DISCOVERY_QUERY_KEY(did) });
     },
@@ -422,7 +477,7 @@ export function useSubscribeToPublication() {
 export function useUnsubscribePublication() {
   const client = usePDSClient();
   const qc = useQueryClient();
-  const { session } = useAuth();
+  const { session, getOAuthSession } = useAuth();
   const did = session?.did ?? null;
 
   return useMutation({
@@ -434,48 +489,104 @@ export function useUnsubscribePublication() {
       if (!client) throw new Error("No PDS client — not signed in");
 
       const subUri = publication.subscriptionPublicationId?.trim();
+      let subscriptionKind: "rss" | "standard" | null = null;
+      let subscriptionRkey: string | null = null;
       if (subUri) {
         const parsed = parseAtUri(normalizeAtRepoParam(subUri));
         if (parsed?.collection === COLLECTION_SKYREADER_FEED_SUBSCRIPTION) {
-          await client.deleteSkyreaderFeedSubscription(parsed.rkey);
-          return;
+          subscriptionKind = "rss";
+          subscriptionRkey = parsed.rkey;
         }
         if (parsed?.collection === COLLECTION_STANDARD_SITE_SUBSCRIPTION) {
-          await client.deletePublicationSubscription(parsed.rkey);
-          return;
+          subscriptionKind = "standard";
+          subscriptionRkey = parsed.rkey;
         }
       }
 
-      const subs = await qc.fetchQuery({
-        queryKey: PUBLICATION_SUBSCRIPTIONS_QUERY_KEY,
-        queryFn: () => client.listPublicationSubscriptions(),
-      });
+      if (!subscriptionKind) {
+        const subs = await qc.fetchQuery({
+          queryKey: PUBLICATION_SUBSCRIPTIONS_QUERY_KEY,
+          queryFn: () => client.listPublicationSubscriptions(),
+        });
 
-      const matchKeys = new Set(publicationSubscriptionMatchKeys(publication));
-      for (const row of subs) {
-        const pubRef = row.value.publication?.trim();
-        if (!pubRef) continue;
-        const expanded = new Set<string>();
-        addPublicationSubscriptionLookupKeys(expanded, pubRef);
-        let matched = false;
-        for (const k of expanded) {
-          if (matchKeys.has(k)) {
-            matched = true;
+        const matchKeys = new Set(publicationSubscriptionMatchKeys(publication));
+        for (const row of subs) {
+          const pubRef = row.value.publication?.trim();
+          if (!pubRef) continue;
+          const expanded = new Set<string>();
+          addPublicationSubscriptionLookupKeys(expanded, pubRef);
+          let matched = false;
+          for (const k of expanded) {
+            if (matchKeys.has(k)) {
+              matched = true;
+              break;
+            }
+          }
+          if (matched) {
+            subscriptionKind = "standard";
+            subscriptionRkey = rkeyFromURI(row.uri);
             break;
           }
         }
-        if (matched) {
-          await client.deletePublicationSubscription(rkeyFromURI(row.uri));
-          return;
-        }
       }
 
-      throw new Error("No subscription record found for this publication.");
+      if (!subscriptionKind || !subscriptionRkey) {
+        throw new Error("No subscription record found for this publication.");
+      }
+
+      if (subscriptionKind === "rss") {
+        await client.deleteSkyreaderFeedSubscription(subscriptionRkey);
+        return;
+      }
+
+      const rollbackVisibility = await preparePublicationVisibility({
+        client,
+        publicationId: publication.publicationId,
+        hidden: true,
+      });
+      try {
+        await client.deletePublicationSubscription(subscriptionRkey);
+      } catch (error) {
+        await rollbackVisibility().catch(() => undefined);
+        throw error;
+      }
     },
-    onSuccess: () => {
+    onSuccess: (_result, { publication }) => {
+      if (did) {
+        const sidebarQueryKey = PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(did);
+        qc.setQueryData<PublicationSidebarProjection>(
+          sidebarQueryKey,
+          (current) =>
+            removePublicationFromSidebarProjection(
+              current,
+              publication.publicationId
+            )
+        );
+        removePublicationFromEntryCaches(qc, did, publication);
+      }
+
+      qc.invalidateQueries({ queryKey: PUB_PREFS_QUERY_KEY });
       qc.invalidateQueries({ queryKey: PUBLICATION_SUBSCRIPTIONS_QUERY_KEY });
       qc.invalidateQueries({ queryKey: SKYREADER_FEED_SUBSCRIPTIONS_QUERY_KEY });
       if (did) qc.invalidateQueries({ queryKey: DISCOVERY_QUERY_KEY(did) });
+
+      const oauth = getOAuthSession();
+      if (!oauth || !did) return;
+      void refreshPublicationSidebar(oauth)
+        .then((projection) => {
+          qc.setQueryData(
+            PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(did),
+            projection
+          );
+          removePublicationFromEntryCaches(qc, did, publication);
+          return qc.invalidateQueries({
+            predicate: ({ queryKey }) =>
+              queryKey[0] === "aggregateEntries" && queryKey[1] === did,
+          });
+        })
+        .catch(() => {
+          /* The optimistic eviction remains until the next authoritative refresh. */
+        });
     },
   });
 }
@@ -616,9 +727,19 @@ export function useAddPublicationFromAnyLink() {
             }
           );
       if (gatewayResult.kind === "standard-site") {
-        await client.createPublicationSubscription({
-          publication: gatewayResult.publicationAtUri,
+        const rollbackVisibility = await preparePublicationVisibility({
+          client,
+          publicationId: gatewayResult.publicationAtUri,
+          hidden: false,
         });
+        try {
+          await client.createPublicationSubscription({
+            publication: gatewayResult.publicationAtUri,
+          });
+        } catch (error) {
+          await rollbackVisibility().catch(() => undefined);
+          throw error;
+        }
         void refreshSidebarAfterAddingPublication({
           oauthSession: oauth,
           viewerDid: did,

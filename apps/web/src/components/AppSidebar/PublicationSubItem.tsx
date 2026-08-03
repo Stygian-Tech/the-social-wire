@@ -130,6 +130,7 @@ function PublicationSubItemInner({
             folders={folders}
             prefsMap={prefsMap}
             sidebarTab={sidebarTab}
+            isSelected={isSelected}
             onHapticSuccess={hapticSuccess}
           />
         ) : null}

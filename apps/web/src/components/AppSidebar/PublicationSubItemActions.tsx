@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   BookmarkPlus,
   BookmarkX,
@@ -56,13 +57,15 @@ export function PublicationSubItemActions({
   folders,
   prefsMap,
   sidebarTab,
+  isSelected,
   onHapticSuccess,
 }: Pick<
   PublicationSubItemProps,
-  "publication" | "folders" | "prefsMap" | "sidebarTab"
+  "publication" | "folders" | "prefsMap" | "sidebarTab" | "isSelected"
 > & {
   onHapticSuccess: () => void;
 }) {
+  const router = useRouter();
   const setFolder = useSetPublicationFolder();
   const subscribe = useSubscribeToPublication();
   const unsubscribe = useUnsubscribePublication();
@@ -126,11 +129,12 @@ export function PublicationSubItemActions({
     try {
       await unsubscribe.mutateAsync({ publication });
       setUnsubscribeDialogOpen(false);
+      if (isSelected) router.replace("/read?feed=subscribed");
       onHapticSuccess();
     } catch (e) {
       notifyMutationFailure("Could not unsubscribe", e);
     }
-  }, [unsubscribe, publication, onHapticSuccess]);
+  }, [isSelected, onHapticSuccess, publication, router, unsubscribe]);
 
   const handleRefreshSkyreaderFavicon = useCallback(async () => {
     try {

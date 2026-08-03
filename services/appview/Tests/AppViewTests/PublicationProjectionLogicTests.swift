@@ -50,6 +50,73 @@ struct PublicationProjectionLogicTests {
     #expect(map["did:plc:23cnpffmuf4vkpsnwhgyvljw"]?.value["folderId"]?.value as? String == "new")
   }
 
+  @Test("hidden publication prefs exclude canonical and aliased rows")
+  func hiddenPublicationPrefsExcludeRows() {
+    let hidden = PublicationPrefsRecordDTO(
+      uri: "at://did:plc:viewer/app.thesocialwire.publicationPrefs/pref1",
+      publicationId: "at://did:plc:author/site.standard.publication/pub1",
+      value: ["hidden": AnyCodable(true)]
+    )
+    let rows = [
+      ProjectionDiscoveredRow(
+        publicationId: "at://did:plc:author/com.standard.publication/pub1",
+        subscriptionPublicationId: nil,
+        authorDid: "did:plc:author",
+        authorHandle: "author.test",
+        title: "Hidden",
+        iconUrl: nil,
+        avatarUrl: nil,
+        discoveredAt: Date()
+      ),
+      ProjectionDiscoveredRow(
+        publicationId: "did:plc:visible",
+        subscriptionPublicationId: nil,
+        authorDid: "did:plc:visible",
+        authorHandle: "visible.test",
+        title: "Visible",
+        iconUrl: nil,
+        avatarUrl: nil,
+        discoveredAt: Date()
+      ),
+    ]
+
+    let filtered = PublicationProjectionLogic.filterHiddenPublications(rows, prefs: [hidden])
+
+    #expect(filtered.map(\.publicationId) == ["did:plc:visible"])
+  }
+
+  @Test("newest publication preference can unhide an older duplicate")
+  func newestPublicationPrefCanUnhideDuplicate() {
+    let publicationId = "did:plc:publication"
+    let olderHidden = PublicationPrefsRecordDTO(
+      uri: "at://did:plc:viewer/app.thesocialwire.publicationPrefs/aaa",
+      publicationId: publicationId,
+      value: ["hidden": AnyCodable(true)]
+    )
+    let newerVisible = PublicationPrefsRecordDTO(
+      uri: "at://did:plc:viewer/app.thesocialwire.publicationPrefs/zzz",
+      publicationId: publicationId,
+      value: ["hidden": AnyCodable(false)]
+    )
+    let row = ProjectionDiscoveredRow(
+      publicationId: publicationId,
+      subscriptionPublicationId: nil,
+      authorDid: publicationId,
+      authorHandle: "publication.test",
+      title: "Visible",
+      iconUrl: nil,
+      avatarUrl: nil,
+      discoveredAt: Date()
+    )
+
+    let filtered = PublicationProjectionLogic.filterHiddenPublications(
+      [row],
+      prefs: [newerVisible, olderHidden]
+    )
+
+    #expect(filtered == [row])
+  }
+
   @Test("subscription keys include cross-lexicon publication aliases")
   func subscriptionAliasKeys() {
     var keys = Set<String>()

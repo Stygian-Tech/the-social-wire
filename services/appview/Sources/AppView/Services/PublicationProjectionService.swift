@@ -203,7 +203,14 @@ actor PublicationProjectionService {
       }
     }
 
-    let visibleDiscovery = discovered + graphOrphanRows
+    let visibleDiscovery = PublicationProjectionLogic.filterHiddenPublications(
+      discovered + graphOrphanRows,
+      prefs: prefs
+    )
+    let visibleRssRows = PublicationProjectionLogic.filterHiddenPublications(
+      rssRows,
+      prefs: prefs
+    )
     let segmented = PublicationProjectionLogic.segmentDiscovery(
       visibleDiscovery,
       viewerDid: viewerDid,
@@ -212,8 +219,11 @@ actor PublicationProjectionService {
 
     let subscribed = PublicationProjectionLogic.mergeSubscribed(
       graphSubscribed: segmented.graphSubscribed,
-      rssRows: rssRows,
-      graphOrphanRows: graphOrphanRows
+      rssRows: visibleRssRows,
+      graphOrphanRows: PublicationProjectionLogic.filterHiddenPublications(
+        graphOrphanRows,
+        prefs: prefs
+      )
     )
 
     let myPublications = subscribed.filter {
@@ -242,7 +252,7 @@ actor PublicationProjectionService {
       following = []
     }
 
-    let allRows = discovered + rssRows + graphOrphanRows
+    let allRows = visibleDiscovery + visibleRssRows
     let enrollAuthorDids = Array(
       Set(
         allRows
