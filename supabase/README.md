@@ -42,7 +42,10 @@ Use the **session pooler** connection string on Fly and GitHub Actions (not dire
 ## CI
 
 - **`supabase-validate`** — `supabase db reset --local` when `supabase/**` changes
-- **`supabase-push-dev/prod`** — applies migrations on push to `dev` / `main`
+- **`supabase-push-prod`** — applies migrations to production on push to `main`
+
+Development uses Railway Postgres. Apply these same checked-in migrations to that database during
+provisioning or migration work; CI does not push `dev` migrations to the retired Supabase project.
 
 Use the **session pooler** connection string in GitHub Actions, not direct `db.*.supabase.co`.
 

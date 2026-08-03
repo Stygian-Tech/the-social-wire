@@ -29,7 +29,10 @@ Requires Docker. Migrations live in `supabase/migrations/`. Gateway, AppView, an
 ## CI
 
 - **`supabase-validate`** — `db reset --local` on PR/push when `supabase/**` changes
-- **`supabase-push-dev/prod`** — applies migrations on push to `dev` / `main`
+- **`supabase-push-prod`** — applies migrations to production on push to `main`
+
+Development uses Railway Postgres and the same checked-in migration history. CI no longer writes to
+the retired Supabase Dev project.
 
 GitHub Actions must use the **session pooler** `DATABASE_URL`, not direct `db.*.supabase.co`.
 

@@ -97,23 +97,23 @@ Full design: [appview.md](appview.md). Deploy each service from repo root via `s
 
 ### Infrastructure
 
-All development and production Fly compute (Gateway, AppView, Charybdis, Operations,
-and Tap) runs in Houston (`iah`). Supabase/Postgres remains in AWS `us-east-1` and is
-reached through the session pooler. Service-to-service Fly traffic uses private
-`.internal` addresses; only browser/client ingress uses public gateway domains. Data
-residency for both compute and database projections is the United States.
+Production Fly compute (Gateway, AppView, Charybdis, Operations, and Tap) runs in
+Houston (`iah`). Production Supabase/Postgres remains in AWS `us-east-1` and is reached
+through the session pooler. Development runs as an isolated Railway environment with
+Railway Postgres; the retired Fly Dev apps are scaled to zero and Vercel skips the
+`dev` branch. Service-to-service traffic stays on each platform's private network.
 
 ```
 GitHub (source)
        │
-       ▼ push to main / dev
+       ▼ push to main or dev
 GitHub Actions
        │
-       ├─ build-web / build-operations → Vercel projects
+       ├─ build-web / build-operations and service/package tests
        ├─ test-gateway / test-appview / test-appview-worker / test-operations / test-tap-image
-       ├─ deploy-gateway / deploy-appview / deploy-appview-worker → Fly.io
-       ├─ deploy-operations / deploy-tap → Fly.io development; production is manual
-       └─ supabase-validate / supabase-push
+       ├─ main → Vercel production, Fly production, Supabase production migration push
+       ├─ dev → Railway Development through Railway's Git integration
+       └─ supabase-validate → local migration validation on both branches
 ```
 
 ### Environments
@@ -121,7 +121,7 @@ GitHub Actions
 | Environment | Branch | Backend hosting |
 |-------------|--------|-----------------|
 | Production | `main` | Fly Gateway, AppView, and Charybdis auto-deploy on matching path changes; Operations and Tap require manual rollout (all `iah`) |
-| Development | `dev` | Fly Gateway, AppView, Charybdis, Operations, and Tap auto-deploy on matching path changes (all `iah`) |
+| Development | `dev` | Railway Web, Operations Web, Gateway, AppView, Charybdis, Operations, Tap, and Postgres; Vercel ignores the branch and Fly Dev is scaled to zero |
 | Local | — | Gateway/AppView/Charybdis use `APP_ENV=local` + SQLite; Operations uses `APP_ENV=dev` + a development Postgres URL |
 
 ### Local development

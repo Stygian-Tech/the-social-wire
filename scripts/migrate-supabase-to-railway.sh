@@ -46,6 +46,8 @@ SOURCE_COUNTS_PATH="$ARTIFACT_DIR/source-counts.tsv"
 TARGET_COUNTS_PATH="$ARTIFACT_DIR/target-counts.tsv"
 SOURCE_CHECKSUMS_PATH="$ARTIFACT_DIR/source-checksums.tsv"
 TARGET_CHECKSUMS_PATH="$ARTIFACT_DIR/target-checksums.tsv"
+UNVALIDATED_CHECKS_DROP_PATH="$ARTIFACT_DIR/drop-unvalidated-checks.sql"
+UNVALIDATED_CHECKS_ADD_PATH="$ARTIFACT_DIR/restore-unvalidated-checks.sql"
 RESTORE_JOBS="${MIGRATION_RESTORE_JOBS:-2}"
 CREATED_PROXY_ID=""
 
@@ -181,6 +183,52 @@ compare_schema_contract() {
   fi
 }
 
+collect_unvalidated_check_constraints() {
+  psql "$SOURCE_DATABASE_URL" -X -v ON_ERROR_STOP=1 -Atq \
+    -c "SELECT format(
+          'ALTER TABLE %I.%I DROP CONSTRAINT IF EXISTS %I;',
+          namespace.nspname, relation.relname, constraint_row.conname)
+        FROM pg_constraint AS constraint_row
+        JOIN pg_class AS relation ON relation.oid = constraint_row.conrelid
+        JOIN pg_namespace AS namespace ON namespace.oid = relation.relnamespace
+        WHERE constraint_row.contype = 'c'
+          AND NOT constraint_row.convalidated
+          AND namespace.nspname = 'public'
+        ORDER BY relation.relname, constraint_row.conname" \
+    >"$UNVALIDATED_CHECKS_DROP_PATH"
+
+  psql "$SOURCE_DATABASE_URL" -X -v ON_ERROR_STOP=1 -Atq \
+    -c "SELECT format(
+          'ALTER TABLE %I.%I ADD CONSTRAINT %I %s NOT VALID;',
+          namespace.nspname,
+          relation.relname,
+          constraint_row.conname,
+          regexp_replace(pg_get_constraintdef(constraint_row.oid, true), ' NOT VALID$', ''))
+        FROM pg_constraint AS constraint_row
+        JOIN pg_class AS relation ON relation.oid = constraint_row.conrelid
+        JOIN pg_namespace AS namespace ON namespace.oid = relation.relnamespace
+        WHERE constraint_row.contype = 'c'
+          AND NOT constraint_row.convalidated
+          AND namespace.nspname = 'public'
+        ORDER BY relation.relname, constraint_row.conname" \
+    >"$UNVALIDATED_CHECKS_ADD_PATH"
+}
+
+drop_unvalidated_check_constraints() {
+  collect_unvalidated_check_constraints
+  if [ -s "$UNVALIDATED_CHECKS_DROP_PATH" ]; then
+    notice "Temporarily dropping source-unvalidated check constraints on Railway"
+    psql "$TARGET_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f "$UNVALIDATED_CHECKS_DROP_PATH"
+  fi
+}
+
+restore_unvalidated_check_constraints() {
+  if [ -s "$UNVALIDATED_CHECKS_ADD_PATH" ]; then
+    notice "Restoring source-unvalidated check constraints on Railway"
+    psql "$TARGET_DATABASE_URL" -X -v ON_ERROR_STOP=1 -f "$UNVALIDATED_CHECKS_ADD_PATH"
+  fi
+}
+
 check_for_unsupported_source_data() {
   local custom_schemas large_objects
   custom_schemas="$(psql_scalar "$SOURCE_DATABASE_URL" \
@@ -260,15 +308,42 @@ collect_checksums() {
   local database_url="$1"
   local tables_file="$2"
   local output_file="$3"
-  local temporary_output table checksum
+  local temporary_output table checksum float_columns column type_name send_function
+  local canonical_expression
   temporary_output="${output_file}.tmp"
   : >"$temporary_output"
   while IFS= read -r table; do
     [ -n "$table" ] || continue
     validate_table_name "$table"
+    canonical_expression="to_jsonb(t)"
+    float_columns="$(psql_scalar "$database_url" \
+      "SELECT attribute.attname || E'\\t' || type_row.typname
+       FROM pg_attribute AS attribute
+       JOIN pg_class AS relation ON relation.oid = attribute.attrelid
+       JOIN pg_namespace AS namespace ON namespace.oid = relation.relnamespace
+       JOIN pg_type AS type_row ON type_row.oid = attribute.atttypid
+       WHERE namespace.nspname = 'public'
+         AND relation.relname = '$table'
+         AND attribute.attnum > 0
+         AND NOT attribute.attisdropped
+         AND type_row.typname IN ('float4', 'float8')
+       ORDER BY attribute.attnum")"
+    while IFS=$'\t' read -r column type_name; do
+      [ -n "$column" ] || continue
+      validate_table_name "$column"
+      case "$type_name" in
+        float4) send_function="float4send" ;;
+        float8) send_function="float8send" ;;
+        *) fail "unsupported floating-point type for checksum: $type_name" ;;
+      esac
+      # PostgreSQL major releases may render the same floating-point bits
+      # differently through JSON. Replace float JSON values with their stable
+      # wire representation before hashing the otherwise canonical row JSON.
+      canonical_expression="($canonical_expression - '$column') || jsonb_build_object('$column', CASE WHEN t.\"$column\" IS NULL THEN NULL ELSE encode(pg_catalog.$send_function(t.\"$column\"), 'hex') END)"
+    done <<<"$float_columns"
     checksum="$({
       echo "SET TIME ZONE 'UTC';"
-      echo "COPY (SELECT md5(to_jsonb(t)::text) AS row_hash FROM public.\"$table\" AS t ORDER BY row_hash) TO STDOUT;"
+      echo "COPY (SELECT md5(($canonical_expression)::text) AS row_hash FROM public.\"$table\" AS t ORDER BY row_hash) TO STDOUT;"
     } | psql "$database_url" -X -v ON_ERROR_STOP=1 -q | sha256sum | awk '{print $1}')"
     printf '%s\t%s\n' "$table" "$checksum" >>"$temporary_output"
   done <"$tables_file"
@@ -337,17 +412,27 @@ restore_data() {
   notice "Truncating Railway application tables"
   truncate_target_tables
 
+  # NOT VALID constraints may intentionally coexist with legacy rows that predate
+  # the constraint. PostgreSQL still enforces them for COPY, so reproduce the
+  # source's validation state around the restore instead of rewriting history.
+  drop_unvalidated_check_constraints
+
   notice "Restoring data to Railway with $RESTORE_JOBS jobs"
-  pg_restore \
-    --dbname="$TARGET_DATABASE_URL" \
-    --format=custom \
-    --data-only \
-    --no-owner \
-    --no-acl \
-    --disable-triggers \
-    --jobs="$RESTORE_JOBS" \
-    --exit-on-error \
-    "$ARCHIVE_PATH"
+  if ! pg_restore \
+      --dbname="$TARGET_DATABASE_URL" \
+      --format=custom \
+      --data-only \
+      --no-owner \
+      --no-acl \
+      --disable-triggers \
+      --jobs="$RESTORE_JOBS" \
+      --exit-on-error \
+      "$ARCHIVE_PATH"; then
+    restore_unvalidated_check_constraints
+    fail "Railway data restore failed"
+  fi
+
+  restore_unvalidated_check_constraints
 
   notice "Refreshing Railway query-planner statistics"
   psql "$TARGET_DATABASE_URL" -X -v ON_ERROR_STOP=1 -c "ANALYZE"

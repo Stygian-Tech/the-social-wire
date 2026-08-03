@@ -113,7 +113,10 @@ Confirm there are no CI jobs applying migrations and no operator backfills in pr
 
 The `migrate` command creates a temporary Railway TCP proxy if one does not exist, removes only the
 proxy it created on exit, truncates all source-owned public tables in one transaction, restores the
-data, resets dumped sequences, runs `ANALYZE`, and compares exact row counts.
+data, resets dumped sequences, runs `ANALYZE`, and compares exact row counts. It temporarily drops
+and recreates source-unvalidated `public` check constraints as `NOT VALID`; PostgreSQL otherwise
+enforces those constraints during `COPY` even when the source legitimately retains older rows that
+predate the constraint.
 
 ```bash
 export SUPABASE_SOURCE_DATABASE_URL='postgresql://...'
@@ -124,9 +127,10 @@ export MIGRATION_VERIFY_CHECKSUMS=1
 bash scripts/migrate-supabase-to-railway.sh migrate
 ```
 
-`MIGRATION_VERIFY_CHECKSUMS=1` performs a full content scan and sort for every table. It is slower
-than row-count verification but should be enabled for final cutover. The script never prints either
-database URL.
+`MIGRATION_VERIFY_CHECKSUMS=1` performs a full content scan and sort for every table. Floating-point
+columns are hashed from their stable PostgreSQL wire bytes so equal values remain comparable across
+PostgreSQL major versions even when JSON number rendering changes. It is slower than row-count
+verification but should be enabled for final cutover. The script never prints either database URL.
 
 ### 3. Start Railway in dependency order
 

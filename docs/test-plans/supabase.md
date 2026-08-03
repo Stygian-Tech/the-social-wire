@@ -1,7 +1,7 @@
 # Supabase test plan
 
 **Location:** `supabase/`  
-**CI:** `supabase-validate`, `supabase-push-dev`, `supabase-push-prod`
+**CI:** `supabase-validate`, `supabase-push-prod`
 
 ## Commands
 
@@ -34,9 +34,9 @@ When `ENABLE_THIN_APPVIEW=true`, migrations define:
 
 See [docs/architecture/appview.md](../architecture/appview.md).
 
-## CI push (dev/prod)
+## CI push (production)
 
-Push to `dev` or `main` triggers `scripts/supabase-ci-push.sh` when `supabase/**` changes. GitHub Actions must use the **session pooler** `DATABASE_URL`, not direct `db.*.supabase.co`.
+Push to `main` triggers `scripts/supabase-ci-push.sh prod` when `supabase/**` changes. GitHub Actions must use the **session pooler** `DATABASE_URL`, not direct `db.*.supabase.co`. Development uses Railway Postgres and is migrated or provisioned explicitly rather than pushed to the retired Supabase Dev project.
 
 ## Manual verification
 

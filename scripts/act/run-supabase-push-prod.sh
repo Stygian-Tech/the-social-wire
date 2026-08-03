@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Simulates a push to main / dev for Supabase migration push jobs.
+# Simulates a push to main for the production Supabase migration job.
 # Usage: bash scripts/act/run-supabase-push-prod.sh [-- act flags…]
 #   -n / --dryrun — resolve workflow steps only (no containers, no secrets file needed).
 set -euo pipefail

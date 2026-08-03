@@ -119,13 +119,11 @@ See **[docs/test-plans/README.md](docs/test-plans/README.md)** for per-surface p
 
 | Component | Where |
 |-----------|-------|
-| Web + Operations UI | Separate Vercel projects (automatic from `main` / `dev`) |
-| Gateway | Fly.io (`the-social-wire-*-gateway`, **`iah`**) |
-| AppView | Fly.io (`the-social-wire-*-appview`, **`iah`**) |
-| Charybdis | Fly.io (`the-social-wire-*-appview-worker`, **`iah`**) |
-| Operations + Tap | Fly.io (development automatic; production rollout is manual, **`iah`**) |
-| Database (index + cache) | Supabase Postgres (`supabase/migrations/`) |
-| CI/CD | GitHub Actions + Vercel + Fly |
+| Web + Operations UI | Production on Vercel from `main`; Development on Railway from `dev` |
+| Gateway, AppView, Charybdis | Production on Fly.io (`the-social-wire-prod-*`, **`iah`**); Development on Railway |
+| Operations + Tap | Production rollout on Fly.io is manual; Development runs on Railway |
+| Database (index + cache) | Production Supabase Postgres; Development Railway Postgres (`supabase/migrations/`) |
+| CI/CD | GitHub Actions plus platform Git integrations; Vercel skips `dev` |
 
 Charybdis retains the `appview-worker` directory, executable, Fly app names, CI identifiers, and telemetry service key for deployment and historical-observability compatibility.
 

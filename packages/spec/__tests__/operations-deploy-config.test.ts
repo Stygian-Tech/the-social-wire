@@ -34,16 +34,19 @@ describe("Operations deployment database configuration", () => {
     );
   });
 
-  it("uses the development database URL for automatic dev deploys", () => {
-    expect(continuousIntegration).toContain(
-      "SUPABASE_DATABASE_URL: ${{ secrets.SUPABASE_DEV_DATABASE_URL }}"
-    );
+  it("does not deploy to the retired Fly or Supabase development projects", () => {
+    expect(continuousIntegration).not.toContain("supabase-push-dev:");
+    expect(continuousIntegration).not.toContain("deploy-operations:");
+    expect(continuousIntegration).not.toContain("SUPABASE_DEV_DATABASE_URL");
   });
 
-  it("selects the matching database URL for manual branch deploys", () => {
+  it("keeps manual Fly deploys production-only", () => {
     expect(manualDeploy).toContain(
-      "SUPABASE_DATABASE_URL: ${{ inputs.branch == 'main' && secrets.SUPABASE_PROD_DATABASE_URL || secrets.SUPABASE_DEV_DATABASE_URL }}"
+      "SUPABASE_DATABASE_URL: ${{ secrets.SUPABASE_PROD_DATABASE_URL }}"
     );
+    expect(manualDeploy).not.toContain("SUPABASE_DEV_DATABASE_URL");
+    expect(manualDeploy).not.toContain("inputs.branch");
+    expect(manualDeploy).toContain("fly-deploy-operations.sh main");
   });
 
   it("budgets Fly connection pools below the shared Supabase session limit", () => {
