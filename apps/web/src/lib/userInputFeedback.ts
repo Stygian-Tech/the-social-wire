@@ -11,6 +11,8 @@ export const USER_INPUT_DISCUSSION_COLLECTION = "app.userinput.discussion";
 export const USER_INPUT_UPVOTE_COLLECTION = "app.userinput.upvote";
 
 export const USER_INPUT_OAUTH_SCOPE = "include:app.userinput.authFull";
+export const USER_INPUT_BLOB_OAUTH_SCOPE = "blob:*/*";
+export const MAX_USER_INPUT_PHOTOS = 4;
 
 export const USER_INPUT_REAUTH_MESSAGE =
   "Your session does not include feedback permissions yet. Sign out and sign back in, then try again.";
@@ -62,20 +64,41 @@ function scopeAllowsRepoAction(
   return actions.length === 0 || actions.includes(action);
 }
 
+function scopeName(scopeToken: string): string {
+  return scopeToken.split("?", 1)[0] ?? scopeToken;
+}
+
+function scopeAllowsBlobMimeType(scopeToken: string, mimeType: string): boolean {
+  const name = scopeName(scopeToken);
+  if (!name.startsWith("blob:")) return false;
+
+  const pattern = name.slice("blob:".length);
+  const [patternType, patternSubtype] = pattern.split("/");
+  const [mimeTypeType, mimeTypeSubtype] = mimeType.split("/");
+  return (
+    (patternType === "*" || patternType === mimeTypeType) &&
+    (patternSubtype === "*" || patternSubtype === mimeTypeSubtype)
+  );
+}
+
 export async function requireUserInputFeedbackScopes(
-  session: Pick<OAuthSession, "getTokenInfo">
+  session: Pick<OAuthSession, "getTokenInfo">,
+  photoMimeTypes: readonly string[] = []
 ): Promise<void> {
   const info = await session.getTokenInfo("auto");
   const scopes = String(info.scope ?? "").split(/\s+/).filter(Boolean);
-  if (scopes.includes(USER_INPUT_OAUTH_SCOPE)) return;
+  const hasPermissionSet = scopes.some(
+    (scope) => scopeName(scope) === USER_INPUT_OAUTH_SCOPE
+  );
   const hasDiscussionCreate = scopes.some((scope) =>
     scopeAllowsRepoAction(scope, USER_INPUT_DISCUSSION_COLLECTION, "create")
   );
-  const hasUpvoteCreate = scopes.some((scope) =>
-    scopeAllowsRepoAction(scope, USER_INPUT_UPVOTE_COLLECTION, "create")
+  const hasPhotoAccess = photoMimeTypes.every((mimeType) =>
+    scopes.some((scope) => scopeAllowsBlobMimeType(scope, mimeType))
   );
 
-  if (!hasDiscussionCreate || !hasUpvoteCreate) {
+  // The initial upvote is best-effort and must not prevent a discussion write.
+  if ((!hasPermissionSet && !hasDiscussionCreate) || !hasPhotoAccess) {
     throw new Error(USER_INPUT_REAUTH_MESSAGE);
   }
 }
