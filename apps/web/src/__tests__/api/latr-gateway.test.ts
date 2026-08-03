@@ -101,14 +101,14 @@ describe("GET /api/latr-gateway/[...path]", () => {
       "https://api.testing.latr.link/v1/latr/saves?limit=25"
     );
     expect(upstreamHeaders.get("Authorization")).toBe("Bearer user-token");
-    expect(upstreamHeaders.get("DPoP")).toBe("same-origin-proof");
+    expect(upstreamHeaders.get("DPoP")).toBe("latr-gateway-proof");
     expect(upstreamHeaders.get("X-Latr-Forwarded-Authorization")).toBe(
       "Bearer user-token"
     );
     expect(upstreamHeaders.get("X-Latr-Forwarded-DPoP")).toBe(
       "same-origin-proof"
     );
-    expect(upstreamHeaders.get("X-Latr-Gateway-DPoP")).toBe("latr-gateway-proof");
+    expect(upstreamHeaders.get("X-Latr-Gateway-DPoP")).toBeNull();
     expect(upstreamHeaders.get("X-ATProto-Upstream-DPoP")).toBe("pds-proof");
     expect(upstreamHeaders.get("X-Forwarded-Host")).toBe(
       "testing.thesocialwire.app"

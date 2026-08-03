@@ -66,10 +66,14 @@ async function proxyLatrGateway(
       headers.set("Authorization", value);
       headers.set(LATR_FORWARDED_AUTHORIZATION_HEADER, value);
     } else if (name === "dpop") {
-      headers.set("DPoP", value);
+      // Preserve the browser-to-Web proof for deployments that reconstruct the
+      // original public proxy URL, but do not leave it as the proof for the
+      // Web-to-L@tr hop. That proof is bound to this same-origin proxy URL.
       headers.set(LATR_FORWARDED_DPOP_HEADER, value);
     } else if (name === LATR_GATEWAY_UPSTREAM_DPOP_HEADER) {
-      headers.set(LATR_GATEWAY_UPSTREAM_DPOP_HEADER, value);
+      // The browser minted this proof for the concrete api.*.latr.link URL.
+      // L@tr verifies its primary DPoP header against that upstream request.
+      headers.set("DPoP", value);
     } else if (name === "x-atproto-upstream-dpop") {
       headers.set("X-ATProto-Upstream-DPoP", value);
     } else if (name === "content-type") {
