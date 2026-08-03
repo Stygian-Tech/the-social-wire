@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
@@ -29,6 +31,42 @@ function authorizationScheme(value: string | null): string {
   return separator > 0 ? trimmed.slice(0, separator) : "present";
 }
 
+function firstHeaderValue(value: string | null): string | undefined {
+  const first = value?.split(",", 1)[0]?.trim();
+  return first || undefined;
+}
+
+function forwardedProto(request: NextRequest): string {
+  const forwarded = firstHeaderValue(
+    request.headers.get("x-forwarded-proto")
+  )?.toLowerCase();
+  if (forwarded === "http" || forwarded === "https") return forwarded;
+  return request.nextUrl.protocol.replace(":", "");
+}
+
+function publicRequestHost(request: NextRequest): string {
+  return (
+    firstHeaderValue(request.headers.get("x-forwarded-host")) ??
+    request.nextUrl.host
+  );
+}
+
+function requestId(request: NextRequest): string {
+  return (
+    firstHeaderValue(request.headers.get("x-request-id")) ??
+    firstHeaderValue(request.headers.get("x-railway-request-id")) ??
+    randomUUID()
+  );
+}
+
+function responseErrorCode(body: string): string | undefined {
+  try {
+    return (JSON.parse(body) as { error?: string }).error?.trim();
+  } catch {
+    return undefined;
+  }
+}
+
 async function proxyLatrGateway(
   request: NextRequest,
   context: RouteContext
@@ -57,6 +95,11 @@ async function proxyLatrGateway(
 
   const upstreamPath = `/${path.join("/")}${request.nextUrl.search}`;
   const upstreamUrl = `${latrGatewayUpstreamBaseUrl()}${upstreamPath}`;
+  const upstreamOrigin = new URL(upstreamUrl).origin;
+  const upstreamForwardedHost = new URL(upstreamUrl).host;
+  const publicForwardedProto = forwardedProto(request);
+  const browserFacingHost = publicRequestHost(request);
+  const originalUri = request.nextUrl.pathname + request.nextUrl.search;
 
   const headers = new Headers();
   for (const name of LATR_GATEWAY_PROXY_FORWARDED_REQUEST_HEADERS) {
@@ -84,9 +127,12 @@ async function proxyLatrGateway(
       headers.set(name, value);
     }
   }
-  headers.set("X-Forwarded-Host", request.nextUrl.host);
-  headers.set("X-Forwarded-Proto", request.nextUrl.protocol.replace(":", ""));
-  headers.set("X-Original-URI", request.nextUrl.pathname + request.nextUrl.search);
+  // L@tr combines these forwarded values when reconstructing the URL bound to
+  // its primary DPoP proof. Keep Railway's browser-facing scheme, but use the
+  // concrete L@tr authority rather than the Social Wire proxy authority.
+  headers.set("X-Forwarded-Host", upstreamForwardedHost);
+  headers.set("X-Forwarded-Proto", publicForwardedProto);
+  headers.set("X-Original-URI", originalUri);
   for (const [name, value] of Object.entries(buildLatrGatewayServerAuthHeaders())) {
     headers.set(name, value);
   }
@@ -135,6 +181,23 @@ async function proxyLatrGateway(
   }
 
   const upstreamText = await upstream.text();
+  const upstreamError = responseErrorCode(upstreamText);
+  if (upstreamError === "invalid_dpop") {
+    console.warn("[latr-gateway] upstream invalid_dpop", {
+      requestId: requestId(request),
+      method: request.method,
+      proxyPath: request.nextUrl.pathname,
+      upstreamOrigin,
+      forwardedProto: publicForwardedProto,
+      forwardedHost: upstreamForwardedHost,
+      browserFacingHost,
+      proofHeaders: {
+        browserToWeb: request.headers.has("dpop"),
+        latrGateway: request.headers.has(LATR_GATEWAY_UPSTREAM_DPOP_HEADER),
+        viewerPds: request.headers.has("x-atproto-upstream-dpop"),
+      },
+    });
+  }
   if (upstream.status >= 400 && getAppEnv() !== "prod") {
     responseHeaders.set(
       "X-Latr-Proxy-Auth-Debug",
@@ -142,13 +205,8 @@ async function proxyLatrGateway(
         .map(([key, value]) => `${key}:${value}`)
         .join(";")
     );
-    try {
-      const upstreamError = (JSON.parse(upstreamText) as { error?: string }).error?.trim();
-      if (upstreamError) {
-        responseHeaders.set("X-Latr-Upstream-Error", upstreamError);
-      }
-    } catch {
-      /* ignore non-JSON bodies */
+    if (upstreamError) {
+      responseHeaders.set("X-Latr-Upstream-Error", upstreamError);
     }
   }
 
