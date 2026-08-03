@@ -9,16 +9,16 @@ the-social-wire/
     apple/        # SwiftUI iOS/iPadOS
     operations/   # Next.js operator console (Bun)
   services/
-    gateway/          # OAuth, sync, PDS writes, AppView proxy (Fly.io)
-    appview/          # Sidebar projection + Thin AppView reads (Fly.io)
-    appview-worker/   # Charybdis: Jetstream ingestion (Fly.io)
-    operations/       # Operator control plane (Fly.io)
-    tap/              # Pinned Indigo Tap image (Fly.io)
+    gateway/          # OAuth, sync, PDS writes, AppView proxy (Railway)
+    appview/          # Sidebar projection + Thin AppView reads (Railway)
+    appview-worker/   # Charybdis: Jetstream ingestion (Railway)
+    operations/       # Operator control plane (Railway)
+    tap/              # Pinned Indigo Tap image (Railway)
   packages/
     lexicons/     # app.thesocialwire.* (and related) lexicons
     spec/         # OpenAPI for HTTP surfaces (/v1/appview, /v1/sync, …)
     swift/        # GatewayCore, OperationsCore, ThinAppViewCore
-  supabase/
+  database/
     migrations/   # Postgres (pds_repo_record_cache, content_items, read_marks, …)
   docs/
     architecture/ # narrative docs (overview, discovery, appview, lexicons)

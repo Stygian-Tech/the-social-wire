@@ -1,4 +1,4 @@
-FROM swift:6.1-jammy AS builder
+FROM swift:6.2.4-jammy AS builder
 
 WORKDIR /src
 

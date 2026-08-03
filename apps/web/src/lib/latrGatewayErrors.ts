@@ -33,7 +33,7 @@ export function latrGatewayErrorPresentation(
     return {
       headline: "L@tr gateway rejected the server app credential.",
       detail:
-        "On Vercel, set LATR_GATEWAY_CLIENT_CREDENTIAL (or matching LATR_GATEWAY_CLIENT_ID + LATR_GATEWAY_API_KEY) for api.testing.latr.link.",
+        "On the Railway Web service, set LATR_GATEWAY_CLIENT_CREDENTIAL (or matching LATR_GATEWAY_CLIENT_ID + LATR_GATEWAY_API_KEY) for the active api.*.latr.link gateway.",
     };
   }
 

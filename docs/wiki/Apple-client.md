@@ -35,7 +35,7 @@ The current `SocialWireAppModel` uses AppView routes while they are available:
 - Scoped **Mark All As Read** via `POST /v1/appview/mark-all-read`
 - When `SOCIALWIRE_USE_THIN_APPVIEW` is compiled in, **Profile → Purge Indexed Data** calls `DELETE /v1/appview/privacy/purge`
 
-Test against **`api.testing.thesocialwire.app`** (`DEBUG` or `SOCIALWIRE_TESTING_API`) before production.
+Test against **`api.testing.thesocialwire.app`** (`DEBUG` or `SOCIALWIRE_TESTING_API`) before production. It and **`api.thesocialwire.app`** are the stable custom domains for the testing and production Railway Gateway services; generated Railway service domains are not native OAuth client IDs.
 
 See [[Thin-AppView]].
 
@@ -62,6 +62,8 @@ Xcode Cloud is not configured in-repo.
 Native sign-in resolves the PDS, follows ATProto protected-resource and authorization-server metadata, submits a PKCE request through mandatory PAR, and exchanges/refreshes tokens at the discovered token endpoint. PAR and token requests carry DPoP proofs and retry nonce challenges. The native redirect is the reversed metadata host with one slash, such as `app.thesocialwire.api:/oauth/callback`.
 
 `SocialWireAPIEnvironment.iosClientMetadataURL` is the default `client_id`; an `ATProtoOAuthClientID` Info value can override it. Debug and XcodeGen Beta builds use the testing API, while Release uses production.
+
+Gateway `/ios-client-metadata.json` is authoritative for native OAuth. Its client ID, reversed-host redirect scheme, the app's registered URL type, and the active Railway custom domain must agree.
 
 ## Reader navigation and L@tr
 

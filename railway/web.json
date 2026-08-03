@@ -1,0 +1,21 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "build": {
+    "builder": "RAILPACK",
+    "buildCommand": "bun run turbo run build --filter=web...",
+    "watchPatterns": [
+      "/apps/web/**",
+      "/packages/**",
+      "/package.json",
+      "/bun.lock",
+      "/turbo.json",
+      "/railway/web.json"
+    ]
+  },
+  "deploy": {
+    "startCommand": "bun --cwd apps/web start",
+    "healthcheckPath": "/",
+    "healthcheckTimeout": 300,
+    "restartPolicyType": "ALWAYS"
+  }
+}

@@ -1899,8 +1899,8 @@ paths:
         Proxies to the external L@tr Gateway for native iOS clients. Requires viewer OAuth DPoP on this host,
         `X-Latr-Gateway-DPoP` bound to the upstream L@tr URL, and optional
         `X-ATProto-Upstream-DPoP` for PDS listRecords write-through.
-        Server injects L@tr credentials from `LATR_IOS_PROXY_*` Fly/runtime secrets (distinct from web
-        Vercel `LATR_GATEWAY_*`); clients must not ship API keys.
+        Server injects L@tr credentials from the Social Wire Gateway's `LATR_IOS_PROXY_*` Railway
+        variables (distinct from the web frontend's `LATR_GATEWAY_*`); clients must not ship API keys.
       tags: [Latr]
       responses:
         "200":

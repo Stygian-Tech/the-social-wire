@@ -2,9 +2,9 @@
 
 **Package:** `services/appview-worker`  
 **Shared library:** `packages/swift/ThinAppViewCore`  
-**CI:** `test-appview-worker`
+**CI:** `charybdis`
 
-The legacy package path, executable product, CI key, Fly app names, and `appview-worker` telemetry identity remain stable for compatibility.
+The source directory, executable product, and `appview-worker` telemetry identity remain stable while Railway names the deployed service Charybdis.
 
 ## Commands
 

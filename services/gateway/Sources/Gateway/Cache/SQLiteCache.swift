@@ -5,14 +5,14 @@ import Logging
 
 /// SQLite-backed implementation of `CacheStore`.
 ///
-/// Used in `local` mode so the service runs without a Supabase/Postgres
+/// Used in `local` mode so the service runs without hosted Postgres
 /// connection. The database file is created automatically at `dbPath`
 /// if it doesn't exist.
 ///
-/// Schema mirrors the Supabase migrations in `supabase/migrations/`.
+/// Schema mirrors the Postgres migrations in `database/migrations/`.
 actor SQLiteCache: CacheStore {
 
-  // Cache TTLs — same as SupabaseCache
+  // Cache TTLs — same as PostgresCache
   static let discoveryTTL: TimeInterval = 6 * 60 * 60   // 6 hours
   static let entryTTL: TimeInterval     = 30 * 60        // 30 minutes
 

@@ -28,7 +28,7 @@ Gateway→AppView trust uses **`GATEWAY_APPVIEW_INTERNAL_SECRET`** (HMAC on path
 Relay / Jetstream (subscribeRepos)
         │
         ▼
-Fly Charybdis (`appview-worker` compatibility identity)
+Railway Charybdis (`appview-worker` source directory)
   • consume Jetstream or environment-scoped Tap
   • poll enrolled Skyreader RSS feed URLs
   • upsert content_items (title, publishedAt, summary, thumbnail ref)
@@ -36,13 +36,13 @@ Fly Charybdis (`appview-worker` compatibility identity)
   • TTL cleanup
         │
         ▼
-Supabase Postgres (AWS us-east-1) — content_items, read_marks, sidebar/unread/first-page caches, …
+Railway Postgres — content_items, read_marks, sidebar/unread/first-page caches, …
         │
         ▼
-Fly appview — bootstrap-stream, /v1/appview/*, /v1/publications/*
+Railway AppView — bootstrap-stream, /v1/appview/*, /v1/publications/*
         │
         ▼
-Fly gateway — OAuth, proxy (no buffering on bootstrap-stream)
+Railway Gateway — OAuth, proxy (no buffering on bootstrap-stream)
         │
         ├── Web (`NEXT_PUBLIC_USE_THIN_APPVIEW`)
         └── iOS (`SOCIALWIRE_USE_THIN_APPVIEW` compile flag)
@@ -60,7 +60,7 @@ Authenticated **`GET /v1/appview/bootstrap-stream`** returns NDJSON events as si
 
 ## Privacy & retention
 
-- **Region:** all Fly compute is in **`iah`**; Supabase/Postgres remains in AWS **`us-east-1`**. Data residency is the United States.
+- **Region:** compute and Postgres placement are Railway environment settings. Verify those settings directly before making data-residency claims.
 - **Data-minimized index:** standard.site indexing extracts render/detail fields rather than blobs or complete repo records; RSS ingestion may retain the feed-provided HTML body.
 - **TTL defaults:** `content_items` 30 days; `read_marks` 180 days (env-configurable).
 - **User control:** `DELETE /v1/appview/privacy/purge` removes indexed read marks for the authenticated viewer.

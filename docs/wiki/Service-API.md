@@ -32,7 +32,7 @@ First-party clients only on hosted deploys (`OAUTH_GATEWAY_*` allowlists).
 (cd services/appview-worker && APP_ENV=local ENABLE_THIN_APPVIEW=true SQLITE_DB_PATH=/tmp/the-social-wire-appview.sqlite swift run AppViewWorker)
 
 # Operations control plane
-(cd services/operations && APP_ENV=dev SUPABASE_DATABASE_URL='postgresql://…' swift run Operations)
+(cd services/operations && APP_ENV=dev DATABASE_URL='postgresql://…' swift run Operations)
 
 # Tests run from each service/package directory with `swift test`.
 ```
@@ -49,12 +49,12 @@ Set **`APPVIEW_BASE_URL`** on Gateway and point local AppView plus Charybdis at 
 
 | Job | Package |
 |-----|---------|
-| `test-gateway` | `services/gateway` |
-| `test-appview` | `services/appview` |
-| `test-appview-worker` | `services/appview-worker` |
-| `test-operations` | `packages/swift/OperationsCore` + `services/operations` |
-| `test-tap-image` | Pinned `services/tap/Dockerfile` image build |
-| `test-spec` | OpenAPI drift vs gateway + appview route sources |
+| `gateway` | `services/gateway` |
+| `appview` | `services/appview` |
+| `charybdis` | `services/appview-worker` |
+| `operations` | `packages/swift/OperationsCore` + `services/operations` |
+| `tap` | Pinned `services/tap/Dockerfile` image build |
+| `spec` | OpenAPI drift vs gateway + appview route sources |
 
 ## Related
 

@@ -194,6 +194,17 @@ public struct RequestTraceMiddleware: RouterMiddleware {
   }
 
   private static var deploymentRegion: String {
-    ProcessInfo.processInfo.environment["FLY_REGION"] == "iah" ? "iah" : "unknown"
+    normalizedDeploymentRegion(ProcessInfo.processInfo.environment["RAILWAY_REPLICA_REGION"])
+  }
+
+  private static func normalizedDeploymentRegion(_ value: String?) -> String {
+    guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else {
+      return "unknown"
+    }
+    let allowed = value.unicodeScalars.filter {
+      CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_")).contains($0)
+    }
+    let normalized = String(String.UnicodeScalarView(allowed))
+    return normalized.isEmpty ? "unknown" : String(normalized.prefix(32))
   }
 }

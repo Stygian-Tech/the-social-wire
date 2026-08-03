@@ -20,16 +20,16 @@ For `standard.site`, the index stores render/detail fields (title, `publishedAt`
 Jetstream / environment-matched Tap
         │
         ▼
-Fly Charybdis (`appview-worker`) — ATProto ingest, Skyreader RSS polling, proactive PDS backfill, TTL cleanup
+Railway Charybdis (`appview-worker`) — ATProto ingest, Skyreader RSS polling, proactive PDS backfill, TTL cleanup
         │
         ▼
-Supabase Postgres (AWS us-east-1) — content_items, read_marks, sidebar/unread/first-page caches, …
+Railway Postgres — content_items, read_marks, sidebar/unread/first-page caches, …
         │
         ▼
-Fly appview — /v1/appview/*, /v1/publications/*
+Railway AppView — /v1/appview/*, /v1/publications/*
         │
         ▼
-Fly gateway — OAuth/DPoP, PDS write-through, unbuffered AppView proxy
+Railway Gateway — OAuth/DPoP, PDS write-through, unbuffered AppView proxy
         │
         ├── Web (NEXT_PUBLIC_USE_THIN_APPVIEW)
         └── iOS (SOCIALWIRE_USE_THIN_APPVIEW)
@@ -72,7 +72,7 @@ OpenAPI: [packages/spec/openapi.yaml](https://github.com/Stygian-Tech/the-social
 
 ## Database
 
-Migrations under [`supabase/migrations/`](https://github.com/Stygian-Tech/the-social-wire/tree/main/supabase/migrations):
+Migrations under [`database/migrations/`](https://github.com/Stygian-Tech/the-social-wire/tree/main/database/migrations):
 
 | Table | Purpose |
 |-------|---------|
@@ -90,7 +90,7 @@ Local dev mirrors tables in SQLite via `ThinAppViewStore` / gateway cache stores
 | Surface | Flag | Default |
 |---------|------|---------|
 | AppView HTTP routes | `ENABLE_THIN_APPVIEW` | off |
-| Charybdis ingest | `ENABLE_THIN_APPVIEW=true` on worker Fly app | off |
+| Charybdis ingest | `ENABLE_THIN_APPVIEW=true` on Charybdis | off |
 | Web client | `NEXT_PUBLIC_USE_THIN_APPVIEW` | on unless explicitly `false` |
 | iOS client | AppView route availability | on until a route returns unavailable; the compile flag currently gates Profile purge UI |
 
@@ -103,36 +103,37 @@ When the server flag is off, AppView routes are unavailable. Current web and iOS
 | `ENABLE_THIN_APPVIEW` | appview, appview-worker | Mount `/v1/appview/*` and enable store bootstrap |
 | `APPVIEW_BASE_URL` | gateway | Internal AppView base URL for proxy routes |
 | `GATEWAY_APPVIEW_INTERNAL_SECRET` | gateway + appview | HMAC trust for gateway→AppView proxy |
-| `SUPABASE_DATABASE_URL` | gateway, appview, appview-worker | Postgres (session pooler on Fly/CI) |
+| `DATABASE_URL` | gateway, appview, appview-worker, operations | Railway Postgres private connection URL |
 | `THIN_APPVIEW_RELAY_WS_URLS` | appview-worker | Ordered, comma-separated Jetstream WebSocket URLs for active/passive failover (`THIN_APPVIEW_RELAY_WS_URL` remains a compatible single-primary override) |
 | `TAP_BASE_URL` / `TAP_CONSUMER_MODE` | appview-worker | Environment-scoped Tap endpoint and shadow/authoritative transport mode |
 | `THIN_APPVIEW_PROACTIVE_BACKFILL_ENABLED` | appview-worker | Periodic PDS backfill for subscribed authors |
 | `THIN_APPVIEW_CONTENT_TTL_SECONDS` | appview-worker | `content_items.expires_at` horizon |
 | `THIN_APPVIEW_READ_MARK_TTL_SECONDS` | appview-worker | `read_marks` retention |
 
-## Deployment (Fly)
+## Deployment (Railway)
 
-Five independent apps per environment from repo root (`scripts/fly-deploy-*.sh` / per-service `deploy.sh`):
+Railway deploys seven independent services per environment from repository-level config-as-code files:
 
-| App | Config | Command |
-|-----|--------|---------|
-| Gateway | `services/gateway/fly.toml` | `swift run Gateway` |
-| AppView | `services/appview/fly.toml` | `swift run AppView` |
-| Charybdis | `services/appview-worker/fly.toml` | `swift run AppViewWorker` |
-| Operations | `services/operations/fly.toml` | `swift run Operations` |
-| Tap | `services/tap/fly.toml` | pinned Indigo Tap image |
+| Service | Config |
+|---------|--------|
+| Web | `railway/web.json` |
+| Operations Web | `railway/operations-web.json` |
+| Gateway | `railway/gateway.json` |
+| AppView | `railway/appview.json` |
+| Charybdis | `railway/charybdis.json` |
+| Operations | `railway/operations.json` |
+| Tap | `railway/tap.json` |
 
-Development and production Gateway, AppView, Charybdis, Operations, and Tap use
-**`primary_region = iah`**. Gateway reaches AppView and Operations over Fly private
-`.internal` addresses, and Charybdis reaches Tap the same way. Supabase/Postgres
-remains in AWS **`us-east-1`** through the session pooler.
+Development tracks `dev`; production tracks `main`. Gateway reaches AppView and
+Operations over Railway private domains, and Charybdis reaches Tap the same way.
+All hosted services use their environment's Railway Postgres service.
 
 **Rollout checklist**
 
-1. Apply Supabase migrations on dev, then prod.
-2. Deploy Charybdis through the stable `appview-worker` deployment with `ENABLE_THIN_APPVIEW=true`.
-3. Deploy appview with `ENABLE_THIN_APPVIEW=true`.
-4. Deploy gateway with `APPVIEW_BASE_URL` + shared internal secret.
+1. Confirm Gateway's pre-deploy migration command succeeds against the environment's Railway Postgres service.
+2. Deploy Charybdis with `ENABLE_THIN_APPVIEW=true`.
+3. Deploy AppView with `ENABLE_THIN_APPVIEW=true`.
+4. Deploy Gateway with `APPVIEW_BASE_URL` + shared internal secret.
 5. Ensure the web deployment does not explicitly set `NEXT_PUBLIC_USE_THIN_APPVIEW=false`, then validate preview and production.
 6. Validate iOS against the testing gateway before App Store rollout.
 
@@ -159,7 +160,7 @@ See [[Apple-client]].
 
 ## Privacy
 
-- **Region:** all Fly compute is in **`iah`**; Supabase/Postgres is in AWS **`us-east-1`**; data residency is the United States
+- **Region:** compute and Postgres placement are Railway environment settings; verify those settings directly before making data-residency claims
 - **Retention:** TTL on indexed rows (configurable)
 - **Logging:** routes log `{ method, path, status, latency_ms }` only — no `Authorization` / `DPoP` bodies
 - **User control:** Purge endpoint + iOS Profile action

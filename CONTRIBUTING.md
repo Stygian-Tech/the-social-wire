@@ -53,7 +53,7 @@ Edit wiki content only under **`docs/wiki/`** in this repository. On push to `ma
 
 ## Branch protection
 
-Require the **`CI — Required`** check from [.github/workflows/ci.yml](.github/workflows/ci.yml). It gates merges on path-filtered jobs (`build-web`, `build-operations`, `test-gateway`, `test-appview`, `test-appview-worker`, `test-operations`, `test-tap-image`, `test-lexicons`, `test-spec`, and `supabase-validate`).
+Require the **`CI — Required`** check from [.github/workflows/ci.yml](.github/workflows/ci.yml). It gates merges on path-filtered jobs for `web`, `operations-web`, `gateway`, `appview`, `charybdis`, `operations`, `tap`, `lexicons`, and `spec`. Railway deployment remains independent and is handled by Railway's GitHub integration.
 
 ## License
 

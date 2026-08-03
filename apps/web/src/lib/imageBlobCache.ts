@@ -123,7 +123,17 @@ async function trimImageCache(): Promise<void> {
 function normalizeImageCacheKey(raw: string): string | null {
   const trimmed = raw.trim();
   if (!trimmed) return null;
-  return normalizeHttpUrlToHttps(trimmed);
+  const normalized = normalizeHttpUrlToHttps(trimmed);
+  try {
+    const url = new URL(normalized);
+    if (url.hostname.toLowerCase() === "cdn.bsky.app") {
+      const params = new URLSearchParams({ url: url.href });
+      return `/api/bluesky-card-thumb?${params}`;
+    }
+  } catch {
+    // Root-relative and malformed URLs continue through the normal cache path.
+  }
+  return normalized;
 }
 
 /** IndexedDB blob caching uses `fetch()`, which requires CORS. Most CDNs omit ACAO. */
@@ -174,7 +184,8 @@ export async function fetchCachedImageObjectUrl(
   const url = normalizeImageCacheKey(rawUrl);
   if (!url) return undefined;
 
-  // Cross-origin `<img src>` does not need CORS; `fetch()` does (e.g. cdn.bsky.app avatars).
+  // Cross-origin `<img src>` does not need CORS; `fetch()` does. Known Bluesky CDN
+  // URLs are normalized to the same-origin image proxy before reaching this branch.
   if (shouldUseDirectImageSrc(url)) {
     return url;
   }

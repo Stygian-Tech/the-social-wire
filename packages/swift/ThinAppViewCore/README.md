@@ -25,7 +25,7 @@ cd packages/swift/ThinAppViewCore
 swift test
 ```
 
-CI runs this explicitly in the **`test-appview-worker`** job.
+CI runs this explicitly in the **`charybdis`** job.
 
 ## Architecture
 

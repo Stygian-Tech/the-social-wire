@@ -2,7 +2,7 @@
 
 **Package:** `services/gateway`  
 **Runner:** Swift Testing (`swift test`)  
-**CI:** `test-gateway`
+**CI:** `gateway`
 
 ## Commands
 
@@ -39,7 +39,7 @@ Populate `oauthAccessToken` and `dpopProof` from a real OAuth session. Never com
 
 ## OpenAPI drift
 
-`packages/spec/__tests__/openapi-routes.test.ts` asserts documented paths exist in Gateway, GatewayCore, AppView, and Operations router sources. CI job: **`test-spec`**.
+`packages/spec/__tests__/openapi-routes.test.ts` asserts documented paths exist in Gateway, GatewayCore, AppView, and Operations router sources. CI job: **`spec`**.
 
 ## Manual verification
 

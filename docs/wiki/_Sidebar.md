@@ -11,7 +11,7 @@
 - [[Lexicons]]
 - [[Testing]]
 - [[Contributing]]
-- [[Supabase]]
+- [[Database]]
 
 ### Repository
 

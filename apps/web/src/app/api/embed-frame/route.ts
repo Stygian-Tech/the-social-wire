@@ -14,16 +14,16 @@ function embeddingHostHintsFromRequest(req: NextRequest): string[] {
   const host = rawHost.split(":")[0]?.trim().toLowerCase();
   if (host) hints.add(host);
 
-  const vercelRaw = process.env.VERCEL_URL?.trim().toLowerCase();
-  if (vercelRaw) {
+  const railwayRaw = process.env.RAILWAY_PUBLIC_DOMAIN?.trim().toLowerCase();
+  if (railwayRaw) {
     try {
-      const vc = vercelRaw.includes("://")
-        ? new URL(vercelRaw).hostname
-        : vercelRaw.split(":")[0]?.trim();
-      if (vc) hints.add(vc.toLowerCase());
+      const railwayHost = railwayRaw.includes("://")
+        ? new URL(railwayRaw).hostname
+        : railwayRaw.split(":")[0]?.trim();
+      if (railwayHost) hints.add(railwayHost.toLowerCase());
     } catch {
-      const vc = vercelRaw.split(":")[0]?.trim();
-      if (vc) hints.add(vc);
+      const railwayHost = railwayRaw.split(":")[0]?.trim();
+      if (railwayHost) hints.add(railwayHost);
     }
   }
   return [...hints];

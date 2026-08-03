@@ -5,7 +5,7 @@ import { join } from "node:path";
 const migration = readFileSync(
   join(
     import.meta.dir,
-    "../../../supabase/migrations/20260722213000_operations_trust_hardening.sql"
+    "../../../database/migrations/20260722213000_operations_trust_hardening.sql"
   ),
   "utf8"
 );

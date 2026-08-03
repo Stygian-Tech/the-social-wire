@@ -100,7 +100,7 @@ struct OperationsHeartbeatJobTests {
     )
     let operationsConfig = OperationsConfiguration.fromEnvironment([
       "APP_ENV": "test",
-      "FLY_MACHINE_ID": "test-worker",
+      "RAILWAY_REPLICA_ID": "test-worker",
     ])
     let tapConfig = TapConsumerConfiguration(
       mode: .authoritative,

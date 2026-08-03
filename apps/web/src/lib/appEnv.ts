@@ -18,12 +18,13 @@ export function normalizeAppEnv(raw: string): AppEnv {
 /**
  * Resolved deployment label for banners and server layout.
  * Unset during `next dev` defaults to `local`; production builds default to `prod`.
+ * Hosted non-production builds must set `APP_ENV=dev` explicitly.
  */
 export function getAppEnv(): AppEnv {
   const raw = readAppEnvRaw();
   if (raw) return normalizeAppEnv(raw);
   if (process.env.NODE_ENV === "development") return "local";
-  if (process.env.VERCEL_ENV === "production") return "prod";
+  if (process.env.NODE_ENV === "production") return "prod";
   return "dev";
 }
 

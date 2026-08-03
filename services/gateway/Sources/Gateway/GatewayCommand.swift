@@ -36,7 +36,7 @@ struct Serve: AsyncParsableCommand {
     let config = GatewayServiceConfig.fromEnvironment(environment)
     let operationsConfig = OperationsConfiguration.fromEnvironment(environment)
     let listenPort = port ?? Int(environment["PORT"] ?? "8080") ?? 8080
-    let listenHost = hostname ?? environment["BIND_HOST"] ?? "0.0.0.0"
+    let listenHost = hostname ?? environment["BIND_HOST"] ?? "::"
 
     logger.info(
       "Starting Social Wire Gateway",
@@ -98,7 +98,7 @@ struct Serve: AsyncParsableCommand {
       case .postgres(let urlString):
         let pgConfig = try makePostgresConfig(from: urlString, logger: logger)
         let pgPool = PostgresClient(configuration: pgConfig, backgroundLogger: logger)
-        let cache = SupabaseCache(pool: pgPool, logger: logger)
+        let cache = PostgresCache(pool: pgPool, logger: logger)
         let operationsStore = PostgresOperationsStore(
           pool: pgPool,
           environment: operationsEnvironment,

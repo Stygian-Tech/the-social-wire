@@ -20,7 +20,7 @@ struct ClientPerformanceTelemetryRoutes {
         throw HTTPError(.badRequest, message: "Invalid client performance sample")
       }
 
-      let region = ProcessInfo.processInfo.environment["FLY_REGION"] == "iah" ? "iah" : "unknown"
+      let region = Self.deploymentRegion()
       let dimensions = [
         "event": body.event.rawValue,
         "feed_type": body.feedType,
@@ -46,5 +46,22 @@ struct ClientPerformanceTelemetryRoutes {
       }
       return .accepted
     }
+  }
+
+  private static func deploymentRegion(
+    environment: [String: String] = ProcessInfo.processInfo.environment
+  ) -> String {
+    guard
+      let value = environment["RAILWAY_REPLICA_REGION"]?
+        .trimmingCharacters(in: .whitespacesAndNewlines),
+      !value.isEmpty
+    else {
+      return "unknown"
+    }
+    let allowed = value.unicodeScalars.filter {
+      CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_")).contains($0)
+    }
+    let normalized = String(String.UnicodeScalarView(allowed))
+    return normalized.isEmpty ? "unknown" : String(normalized.prefix(32))
   }
 }

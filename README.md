@@ -13,7 +13,7 @@ Web (Next.js 16.2+)     iOS/iPadOS (SwiftUI)
                    │
        ┌───────────┴───────────┐
        ▼                       ▼
-User's ATProto PDS      Social Wire gateway (Fly, iah)
+User's ATProto PDS      Social Wire gateway (Railway)
   app.thesocialwire.*     /v1/sync, /v1/publications/*
   link.latr.saved.*       /v1/appview/*, /v1/latr/*
                                │
@@ -30,17 +30,17 @@ the-social-wire/
     apple/           # SwiftUI iOS/iPadOS app
     operations/      # Next.js operator console (Bun)
   services/
-    gateway/         # OAuth, sync, PDS writes, AppView proxy (Hummingbird; Fly.io)
-    appview/         # Publication sidebar + Thin AppView read index (Fly.io)
-    appview-worker/  # Charybdis: Jetstream ingestion for Thin AppView (Fly.io)
-    operations/      # Operations control plane (Fly.io)
-    tap/             # Pinned Indigo Tap image (Fly.io)
+    gateway/         # OAuth, sync, PDS writes, AppView proxy (Hummingbird; Railway)
+    appview/         # Publication sidebar + Thin AppView read index (Railway)
+    appview-worker/  # Charybdis: Jetstream ingestion for Thin AppView (Railway)
+    operations/      # Operations control plane (Railway)
+    tap/             # Pinned Indigo Tap image (Railway)
   packages/
     lexicons/        # app.thesocialwire.* and L@tr ATProto lexicons
     spec/            # OpenAPI 3.1 spec
     swift/           # GatewayCore, OperationsCore, ThinAppViewCore
-  supabase/
-    config.toml      # Supabase CLI; migrations run from .github/workflows/ci.yml
+  database/
+    migrations/      # Provider-neutral Postgres migration history
   docs/
     architecture/
     wiki/        # Markdown synced to GitHub Wiki on push to main (see .github/workflows/publish-wiki.yml)
@@ -52,7 +52,7 @@ the-social-wire/
 |------|---------|
 | [Bun](https://bun.sh) | Matches root [`package.json`](package.json) `packageManager` (currently 1.3.x) |
 | [Swift](https://swift.org/install) | 6.2+ for service/package test parity (CI uses 6.2.4) |
-| [Fly CLI](https://fly.io/docs/flyctl/install/) | Latest (Fly deploys / ops) |
+| [Railway CLI](https://docs.railway.com/guides/cli) | Latest (hosted operations and migration access) |
 | [Xcode](https://developer.apple.com/xcode/) | 16+ (for iOS) |
 
 ## Quick Start
@@ -86,7 +86,7 @@ Open [http://localhost:3000](http://localhost:3000).
 (cd services/appview-worker && APP_ENV=local ENABLE_THIN_APPVIEW=true SQLITE_DB_PATH=/tmp/the-social-wire-appview.sqlite swift run AppViewWorker)
 
 # Migration validation (optional — Docker; local services above use SQLite)
-supabase start && supabase db reset --local
+DATABASE_URL='postgresql://…' bash scripts/apply-database-migrations.sh
 ```
 
 ### Running tests
@@ -119,13 +119,13 @@ See **[docs/test-plans/README.md](docs/test-plans/README.md)** for per-surface p
 
 | Component | Where |
 |-----------|-------|
-| Web + Operations UI | Production on Vercel from `main`; Development on Railway from `dev` |
-| Gateway, AppView, Charybdis | Production on Fly.io (`the-social-wire-prod-*`, **`iah`**); Development on Railway |
-| Operations + Tap | Production rollout on Fly.io is manual; Development runs on Railway |
-| Database (index + cache) | Production Supabase Postgres; Development Railway Postgres (`supabase/migrations/`) |
-| CI/CD | GitHub Actions plus platform Git integrations; Vercel skips `dev` |
+| Web + Operations UI | Railway |
+| Gateway, AppView, Charybdis | Railway |
+| Operations + Tap | Railway |
+| Database (index + cache) | Railway Postgres (`database/migrations/`) |
+| CI/CD | GitHub Actions validates source; Railway deploys through its Git integration |
 
-Charybdis retains the `appview-worker` directory, executable, Fly app names, CI identifiers, and telemetry service key for deployment and historical-observability compatibility.
+Charybdis retains the `appview-worker` directory, executable, and telemetry service key for compatibility.
 
 See [docs/architecture/overview.md](docs/architecture/overview.md) for the full architecture narrative.
 

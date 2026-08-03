@@ -2,7 +2,7 @@
 
 **Package:** `services/appview`  
 **Runner:** Swift Testing (`swift test`)  
-**CI:** `test-appview`
+**CI:** `appview`
 
 ## Commands
 

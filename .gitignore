@@ -13,9 +13,6 @@ dist/
 .build/
 *.o
 
-# Vercel (Next.js) local link metadata — never commit
-.vercel/
-
 # Swift build artifacts
 .build/
 *.xcuserdata
@@ -57,14 +54,10 @@ coverage/
 
 apps/apple/*.xcodeproj/project.xcworkspace/xcuserdata/*/UserInterfaceState.xcuserstate
 
-# Supabase CLI (local only)
-supabase/.branches
-supabase/.temp
-supabase/.env
-
 # Production database migration artifacts
-.migration-artifacts/
 
-# nektos/act — keep `.actrc` committed (non-interactive defaults); ignore real secrets only
-scripts/act/.secrets
+# Railway CLI project/service link metadata
+.railway/
+
+# Local secret files
 /.secrets

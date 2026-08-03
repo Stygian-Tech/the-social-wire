@@ -178,7 +178,7 @@ export function interpretProbeResponse(
     message,
     interpretation:
       message ??
-      `Unexpected gateway response (${status}); check upstream URL and Fly secrets.`,
+      `Unexpected gateway response (${status}); check the upstream URL and hosted service variables.`,
   };
 }
 

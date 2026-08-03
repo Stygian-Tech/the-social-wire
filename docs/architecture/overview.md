@@ -6,7 +6,7 @@
 ┌─────────────────────────────────────────────────────────────────┐
 │                         Clients                                  │
 │                                                                  │
-│   Web (Next.js 16.2+, Vercel)    iOS/iPadOS (SwiftUI, App Store)│
+│  Web (Next.js 16.2+, Railway)   iOS/iPadOS (SwiftUI, App Store) │
 │          │                                    │                  │
 │          └──────── ATProto OAuth (PKCE+DPoP) ─┘                 │
 └────────────────────────────┬────────────────────────────────────┘
@@ -22,13 +22,13 @@
           │                                └── Author repo reads (default)
           │
           ▼ (authenticated read path)
-   Social Wire gateway (Fly, iah)
+   Social Wire Gateway (Railway)
      /v1/sync/preferences, /v1/pds/cache/record
      /v1/publications/* (write-through + proxied sidebar)
      /v1/appview/*  ← Thin AppView (proxied to services/appview)
           │
           ▼
-     Supabase Postgres (AWS us-east-1; content_items, read_marks, sidebar_projection_cache, pds_repo_record_cache)
+     Railway Postgres (content_items, read_marks, sidebar_projection_cache, pds_repo_record_cache)
 ```
 
 ## Data Ownership
@@ -91,17 +91,15 @@ With `ENABLE_THIN_APPVIEW` enabled on AppView, **Charybdis** (the `appview-worke
 
 Enrollment (`POST /v1/appview/enroll`) backfills followed author DIDs after client-side discovery because the global relay may miss very new repos.
 
-Full design: [appview.md](appview.md). Deploy each service from repo root via `scripts/fly-deploy-*.sh`.
+Full design: [appview.md](appview.md). Railway deploys each service from its config in [`railway/`](../../railway/README.md).
 
 ## Deployment
 
 ### Infrastructure
 
-Production Fly compute (Gateway, AppView, Charybdis, Operations, and Tap) runs in
-Houston (`iah`). Production Supabase/Postgres remains in AWS `us-east-1` and is reached
-through the session pooler. Development runs as an isolated Railway environment with
-Railway Postgres; the retired Fly Dev apps are scaled to zero and Vercel skips the
-`dev` branch. Service-to-service traffic stays on each platform's private network.
+Development and production run as isolated Railway environments. Web, Operations Web,
+Gateway, AppView, Charybdis, Operations, Tap, and Railway Postgres deploy in each
+environment. Service-to-service traffic uses Railway private networking.
 
 ```
 GitHub (source)
@@ -109,24 +107,26 @@ GitHub (source)
        ▼ push to main or dev
 GitHub Actions
        │
-       ├─ build-web / build-operations and service/package tests
-       ├─ test-gateway / test-appview / test-appview-worker / test-operations / test-tap-image
-       ├─ main → Vercel production, Fly production, Supabase production migration push
-       ├─ dev → Railway Development through Railway's Git integration
-       └─ supabase-validate → local migration validation on both branches
+       ├─ web / operations-web
+       ├─ gateway / appview / charybdis / operations / tap
+       └─ lexicons / spec → CI — Required
 ```
+
+Railway's GitHub integration deploys the environment that tracks each branch after source
+changes. GitHub Actions validates the repository but does not deploy infrastructure.
+Gateway's Railway pre-deploy command applies pending database migrations before startup.
 
 ### Environments
 
 | Environment | Branch | Backend hosting |
 |-------------|--------|-----------------|
-| Production | `main` | Fly Gateway, AppView, and Charybdis auto-deploy on matching path changes; Operations and Tap require manual rollout (all `iah`) |
-| Development | `dev` | Railway Web, Operations Web, Gateway, AppView, Charybdis, Operations, Tap, and Postgres; Vercel ignores the branch and Fly Dev is scaled to zero |
+| Production | `main` | Railway Web, Operations Web, Gateway, AppView, Charybdis, Operations, Tap, and Postgres |
+| Development | `dev` | Railway Web, Operations Web, Gateway, AppView, Charybdis, Operations, Tap, and Postgres |
 | Local | — | Gateway/AppView/Charybdis use `APP_ENV=local` + SQLite; Operations uses `APP_ENV=dev` + a development Postgres URL |
 
 ### Local development
 
-Run Swift services directly (see root README) with AppView and Charybdis pointed at the same explicit SQLite file. Under `APP_ENV=local`, services use SQLite; `supabase start` is for applying and validating Postgres migrations, not a runtime replacement for local service storage.
+Run Swift services directly (see root README) with AppView and Charybdis pointed at the same explicit SQLite file. Under `APP_ENV=local`, Gateway, AppView, and Charybdis use SQLite. Operations requires `APP_ENV=dev` or `prod` and a Postgres `DATABASE_URL`.
 
 ## Verification
 

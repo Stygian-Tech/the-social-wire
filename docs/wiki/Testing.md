@@ -8,19 +8,19 @@ Automated and manual verification for every package in the monorepo.
 
 | Surface | Command | CI |
 |---------|---------|-----|
-| Web | `cd apps/web && bun test` | `build-web` |
-| Operations UI | `cd apps/operations && bun test` | `build-operations` |
-| GatewayCore | `cd packages/swift/GatewayCore && swift test` | `test-gateway` |
-| Gateway | `cd services/gateway && swift test` | `test-gateway` |
-| AppView | `cd services/appview && swift test` | `test-appview` |
-| Charybdis | `cd services/appview-worker && swift test` | `test-appview-worker` |
-| ThinAppViewCore | `cd packages/swift/ThinAppViewCore && swift test` | `test-appview-worker` |
-| OperationsCore | `cd packages/swift/OperationsCore && swift test` | `test-operations` |
-| Operations service | `cd services/operations && swift test` | `test-operations` |
-| Tap image | `docker build --file services/tap/Dockerfile --tag the-social-wire-tap:test .` | `test-tap-image` |
-| Supabase | `supabase db reset --local` | `supabase-validate` |
-| Lexicons | `cd packages/lexicons && bun test` | `test-lexicons` |
-| OpenAPI spec | `cd packages/spec && bun test` | `test-spec` |
+| Web | `cd apps/web && bun test` | `web` |
+| Operations UI | `cd apps/operations && bun test` | `operations-web` |
+| GatewayCore | `cd packages/swift/GatewayCore && swift test` | `gateway` |
+| Gateway | `cd services/gateway && swift test` | `gateway` |
+| AppView | `cd services/appview && swift test` | `appview` |
+| Charybdis | `cd services/appview-worker && swift test` | `charybdis` |
+| ThinAppViewCore | `cd packages/swift/ThinAppViewCore && swift test` | `charybdis` |
+| OperationsCore | `cd packages/swift/OperationsCore && swift test` | `operations` |
+| Operations service | `cd services/operations && swift test` | `operations` |
+| Tap image | `docker build --file services/tap/Dockerfile --tag the-social-wire-tap:test .` | `tap` |
+| Database migrations | `DATABASE_URL=… bash scripts/apply-database-migrations.sh` | Railway pre-deploy + local validation |
+| Lexicons | `cd packages/lexicons && bun test` | `lexicons` |
+| OpenAPI spec | `cd packages/spec && bun test` | `spec` |
 | iOS | Xcode **Cmd+U** | Local only |
 
 ## Per-surface plans
@@ -30,7 +30,7 @@ Automated and manual verification for every package in the monorepo.
 - [Charybdis + ThinAppViewCore](https://github.com/Stygian-Tech/the-social-wire/blob/main/docs/test-plans/worker.md)
 - [Apple](https://github.com/Stygian-Tech/the-social-wire/blob/main/docs/test-plans/apple.md) — Swift Testing, OAuth checklist
 - [Operations + Tap](https://github.com/Stygian-Tech/the-social-wire/blob/main/docs/test-plans/operations.md)
-- [Supabase](https://github.com/Stygian-Tech/the-social-wire/blob/main/docs/test-plans/supabase.md) — migrations, CI validate
+- [Database migrations](https://github.com/Stygian-Tech/the-social-wire/blob/main/docs/test-plans/database.md) — explicit local validation
 
 ## Test location rule
 

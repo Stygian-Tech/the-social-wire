@@ -65,21 +65,25 @@ filter_changed web \
   'package.json' \
   'bun.lock' \
   'turbo.json' \
+  'railway/web.json' \
   '.github/workflows/ci.yml'
 
-filter_changed operations \
+filter_changed operations_web \
   'apps/operations/**' \
+  'packages/**' \
   'docs/runbooks/operations/**' \
   'package.json' \
   'bun.lock' \
   'turbo.json' \
+  'railway/operations-web.json' \
   '.github/workflows/ci.yml'
 
-filter_changed operations_service \
+filter_changed operations \
   'services/operations/**' \
+  'packages/swift/GatewayCore/**' \
+  'packages/swift/ThinAppViewCore/**' \
   'packages/swift/OperationsCore/**' \
-  'supabase/**' \
-  'scripts/fly-deploy-operations.sh' \
+  'railway/operations.json' \
   '.github/workflows/ci.yml'
 
 filter_changed gateway \
@@ -87,7 +91,9 @@ filter_changed gateway \
   'packages/swift/GatewayCore/**' \
   'packages/swift/ThinAppViewCore/**' \
   'packages/swift/OperationsCore/**' \
-  'scripts/fly-deploy-gateway.sh' \
+  'database/migrations/**' \
+  'scripts/apply-database-migrations.sh' \
+  'railway/gateway.json' \
   '.github/workflows/ci.yml'
 
 filter_changed appview \
@@ -95,36 +101,35 @@ filter_changed appview \
   'packages/swift/GatewayCore/**' \
   'packages/swift/ThinAppViewCore/**' \
   'packages/swift/OperationsCore/**' \
-  'supabase/**' \
-  'scripts/fly-deploy-appview.sh' \
+  'railway/appview.json' \
   '.github/workflows/ci.yml'
 
-filter_changed appview-worker \
+filter_changed charybdis \
   'services/appview-worker/**' \
   'packages/swift/ThinAppViewCore/**' \
   'packages/swift/OperationsCore/**' \
-  'supabase/**' \
-  'scripts/fly-deploy-appview-worker.sh' \
+  'railway/charybdis.json' \
   '.github/workflows/ci.yml'
 
 filter_changed tap \
   'services/tap/**' \
-  'scripts/fly-deploy-tap.sh' \
-  '.github/workflows/ci.yml'
-
-filter_changed supabase \
-  'supabase/**' \
-  'scripts/supabase-ci-push.sh' \
+  'railway/tap.json' \
   '.github/workflows/ci.yml'
 
 filter_changed lexicons \
   'packages/lexicons/**' \
+  'package.json' \
+  'bun.lock' \
   '.github/workflows/ci.yml'
 
 filter_changed spec \
   'packages/spec/**' \
+  'railway/**' \
+  '**/migrations/**' \
   'services/gateway/Sources/Gateway/**' \
   'services/appview/Sources/AppView/**' \
   'services/operations/Sources/Operations/**' \
   'packages/swift/GatewayCore/**' \
+  'package.json' \
+  'bun.lock' \
   '.github/workflows/ci.yml'

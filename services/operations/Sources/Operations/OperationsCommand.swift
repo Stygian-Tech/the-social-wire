@@ -23,7 +23,7 @@ struct OperationsCommand: AsyncParsableCommand {
     let environment = AppEnvironmentLoader.mergeProcessWithDotenv()
     let config = OperationsServiceConfig.fromEnvironment(environment)
     let port = port ?? Int(environment["PORT"] ?? "8083") ?? 8083
-    let host = hostname ?? environment["BIND_HOST"] ?? "0.0.0.0"
+    let host = hostname ?? environment["BIND_HOST"] ?? "::"
     let httpClient = HTTPClient(eventLoopGroupProvider: .singleton)
     defer { Task { try? await httpClient.shutdown() } }
 

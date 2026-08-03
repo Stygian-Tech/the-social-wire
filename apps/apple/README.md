@@ -74,7 +74,7 @@ The current reader uses AppView routes while they are available. `SocialWireAppM
 | After discovery | `gateway.enrollAuthors` (fire-and-forget) |
 | Privacy | With `SOCIALWIRE_USE_THIN_APPVIEW` compiled in, Profile → **Purge Indexed Data** calls `DELETE /v1/appview/privacy/purge` |
 
-The backend requires **`ENABLE_THIN_APPVIEW=true`**, a running worker, and applied database migrations. Test on **`api.testing.thesocialwire.app`** before production.
+The backend requires **`ENABLE_THIN_APPVIEW=true`**, a running worker, and applied database migrations. The testing and production API domains are stable custom domains for their Railway Gateway services; test on **`api.testing.thesocialwire.app`** before production.
 
 See [docs/architecture/appview.md](../../docs/architecture/appview.md) and [docs/wiki/Thin-AppView.md](../../docs/wiki/Thin-AppView.md).
 
@@ -126,21 +126,24 @@ See [docs/test-plans/apple.md](../../docs/test-plans/apple.md).
 - Reader chrome is hosted once by `MainSplitView`: profile, refresh, and scoped **Mark All As Read** actions are in the toolbar. Feed sources show an **All / Unread** segmented filter; saved-link sources do not.
 - Read Later and Archive use L@tr saved links. New saves go through the L@tr gateway proxy; list/archive/unarchive/delete use viewer-PDS records in the current app model.
 
-## OAuth client metadata (production vs preview)
+## OAuth client metadata (production vs development)
 
-The resolver currently uses `https://public.api.bsky.app` for handles and `https://plc.directory` for DID documents. The OAuth `client_id` defaults to `SocialWireAPIEnvironment.iosClientMetadataURL`. An **`ATProtoOAuthClientID`** string in the app's Info dictionary overrides that URL for tunnels or previews.
+The resolver currently uses `https://public.api.bsky.app` for handles and `https://plc.directory` for DID documents. The OAuth `client_id` defaults to `SocialWireAPIEnvironment.iosClientMetadataURL`. An **`ATProtoOAuthClientID`** string in the app's Info dictionary overrides that URL for local tunnels or another explicitly registered host.
 
-For alternate metadata during development, you can:
+Normal builds use Gateway metadata on the Railway custom domains:
 
-**A. Next.js / Vercel** — Deploy **`apps/web`** to a **Vercel preview** (or staging host) so `ios-client-metadata.json` is reachable over HTTPS, then follow the steps below using that URL.
+| Build | Client metadata | Redirect scheme |
+|-------|-----------------|-----------------|
+| Debug / Beta | `https://api.testing.thesocialwire.app/ios-client-metadata.json` | `app.thesocialwire.testing.api` |
+| Release | `https://api.thesocialwire.app/ios-client-metadata.json` | `app.thesocialwire.api` |
 
-**B. Swift gateway (local + tunnel)** — Run **`services/gateway`** (`APP_ENV=local swift run Gateway`). Expose it with **ngrok** (or similar). For **`/ios-client-metadata.json`**, set **`OAUTH_IOS_METADATA_ORIGIN`** when **`Host`/forwarded headers** do not match the tunnel URL (**`OAUTH_PUBLIC_ORIGIN`** applies only to web **`/oauth-client-metadata.json`**). Then use `https://<tunnel>/ios-client-metadata.json` as `ATProtoOAuthClientID`.
+Generated `*.up.railway.app` domains are deployment diagnostics, not native OAuth identities. Keeping the custom domains stable avoids adding a new reversed-host URL scheme for every deployment.
 
-Then:
+For a local Gateway tunnel, run **`services/gateway`** (`APP_ENV=local swift run Gateway`) and expose it over HTTPS. Set **`OAUTH_IOS_METADATA_ORIGIN`** when forwarded host headers do not match the tunnel URL (`OAUTH_PUBLIC_ORIGIN` applies only to web metadata), then:
 
-1. Ensure **client metadata** matches that URL: for Vercel/Next, deploy a matching `public/ios-client-metadata.json`; for Swift Gateway, `GET /ios-client-metadata.json` returns `redirect_uris` derived from **`client_id` host labels reversed** (same rule ATProto validates).
+1. Confirm Gateway `GET /ios-client-metadata.json` returns a `client_id` for that exact HTTPS host and a `redirect_uri` derived from its reversed host labels.
 2. In the iOS target **Info** plist, add **`ATProtoOAuthClientID`** (string) with that same metadata URL.
-3. Under **URL Types**, include every scheme the app uses: production API metadata → **`app.thesocialwire.api`**; testing API → **`app.thesocialwire.testing.api`**; marketing-site metadata (`thesocialwire.app`) → **`app.thesocialwire`** (see generated **URL Types** in [`project.yml`](project.yml)).
+3. Add the tunnel's reversed-host scheme under **URL Types** before testing. The checked-in schemes cover production API metadata → **`app.thesocialwire.api`**, testing API metadata → **`app.thesocialwire.testing.api`**, and marketing-site metadata → **`app.thesocialwire`** (see [`project.yml`](project.yml)).
 
 With no plist override, the app uses **`SocialWireAPIEnvironment`**: Release uses **`https://api.thesocialwire.app/ios-client-metadata.json`**; Debug and the XcodeGen **Beta** configuration use **`https://api.testing.thesocialwire.app/...`** and scheme **`app.thesocialwire.testing.api`**. `project.yml` adds `SOCIALWIRE_TESTING_API` to Beta automatically.
 

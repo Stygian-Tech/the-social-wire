@@ -9,7 +9,7 @@ const ORIG_ENV = {
   LATR_GATEWAY_CLIENT_ID: process.env.LATR_GATEWAY_CLIENT_ID,
   LATR_GATEWAY_API_KEY: process.env.LATR_GATEWAY_API_KEY,
   LATR_GATEWAY_URL: process.env.LATR_GATEWAY_URL,
-  VERCEL_URL: process.env.VERCEL_URL,
+  RAILWAY_PUBLIC_DOMAIN: process.env.RAILWAY_PUBLIC_DOMAIN,
   NEXT_PUBLIC_SITE_URL: process.env.NEXT_PUBLIC_SITE_URL,
   NEXT_PUBLIC_APP_ENV: process.env.NEXT_PUBLIC_APP_ENV,
   APP_ENV: process.env.APP_ENV,
@@ -59,7 +59,7 @@ describe("GET /api/latr-gateway/[...path]", () => {
     delete process.env.LATR_GATEWAY_CLIENT_ID;
     delete process.env.LATR_GATEWAY_API_KEY;
     delete process.env.LATR_GATEWAY_URL;
-    process.env.VERCEL_URL = "testing.thesocialwire.app";
+    process.env.RAILWAY_PUBLIC_DOMAIN = "testing.thesocialwire.app";
     process.env.NEXT_PUBLIC_APP_ENV = "test";
 
     let upstreamUrl: string | URL | Request | undefined;
@@ -131,7 +131,7 @@ describe("GET /api/latr-gateway/[...path]", () => {
     delete process.env.LATR_GATEWAY_CLIENT_ID;
     delete process.env.LATR_GATEWAY_API_KEY;
     delete process.env.LATR_GATEWAY_URL;
-    process.env.VERCEL_URL = "testing.thesocialwire.app";
+    process.env.RAILWAY_PUBLIC_DOMAIN = "testing.thesocialwire.app";
     process.env.NEXT_PUBLIC_APP_ENV = "test";
 
     globalThis.fetch = mock(async () =>

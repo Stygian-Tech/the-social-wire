@@ -127,7 +127,7 @@ public struct OperationsHeartbeatJob: Sendable {
         freshness: freshness,
         completeness: completeness,
         dependencyState: dependencies,
-        version: ProcessInfo.processInfo.environment["FLY_IMAGE_REF"],
+        version: ProcessInfo.processInfo.environment["RAILWAY_DEPLOYMENT_ID"],
         startedAt: startedAt,
         heartbeatAt: now()
       )

@@ -21,7 +21,7 @@ public enum DatabaseBackend: Sendable {
       return .sqlite(path: env["SQLITE_DB_PATH"] ?? "./social-wire.sqlite")
 
     default:
-      guard let dbURL = env["SUPABASE_DATABASE_URL"], !dbURL.isEmpty else {
+      guard let dbURL = env["DATABASE_URL"], !dbURL.isEmpty else {
         throw DatabaseBackendConfigurationError.missingDatabaseURL(environment: appEnv)
       }
       return .postgres(url: dbURL)
@@ -41,7 +41,7 @@ public enum DatabaseBackendConfigurationError: Error, Equatable, CustomStringCon
     case .invalidAppEnvironment(let value):
       return "APP_ENV must be local, dev, or prod (received \(value))."
     case .missingDatabaseURL(let environment):
-      return "SUPABASE_DATABASE_URL is required for APP_ENV=\(environment)."
+      return "DATABASE_URL is required for APP_ENV=\(environment)."
     }
   }
 }

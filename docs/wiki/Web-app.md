@@ -44,6 +44,8 @@ NEXT_PUBLIC_SOCIALWIRE_API_URL=https://api.thesocialwire.app
 
 Local optimistic read state remains primary for UI; AppView enables server-side unread pagination and sidebar badges.
 
+Signed-in read marks are also synchronized to deterministic `app.thesocialwire.entryReadState` records on the viewer's PDS so web and Apple clients can reconcile state across devices.
+
 See [[Thin-AppView]].
 
 ## Read Later and Archive
@@ -52,7 +54,7 @@ See [[Thin-AppView]].
 
 ## Testing
 
-Unit tests: `cd apps/web && bun test` (CI: `build-web`).
+Unit tests: `cd apps/web && bun test` (CI: `web`).
 
 | Area | Coverage |
 |------|----------|
@@ -62,6 +64,17 @@ Unit tests: `cd apps/web && bun test` (CI: `build-web`).
 | `src/components/` | Targeted component tests plus manual browser verification |
 
 See [[Testing]].
+
+## Railway environments
+
+The Web and Gateway services use stable custom domains even though Railway also assigns generated service URLs:
+
+| Environment | Web | Gateway | OAuth client metadata |
+|-------------|-----|---------|-----------------------|
+| Development | `https://testing.thesocialwire.app` | `https://api.testing.thesocialwire.app` | Web `/oauth-client-metadata.json` |
+| Production | `https://thesocialwire.app` | `https://api.thesocialwire.app` | Web `/oauth-client-metadata.json` |
+
+Set `NEXT_PUBLIC_APP_ENV`, `NEXT_PUBLIC_SITE_URL`, and `NEXT_PUBLIC_SOCIALWIRE_API_URL` from the matching row. Both hosted Web environments serve same-origin OAuth metadata. OAuth client IDs, redirect URIs, Gateway CORS, and `OAUTH_PUBLIC_ORIGIN` must use these custom domains rather than generated `*.up.railway.app` URLs.
 
 ## Related
 

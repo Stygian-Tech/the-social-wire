@@ -7,7 +7,7 @@ const openapi = readFileSync(resolve(root, "packages/spec/openapi.yaml"), "utf8"
 const migration = readFileSync(
   resolve(
     root,
-    "supabase/migrations/20260728200000_appview_read_watermark_boundaries.sql"
+    "database/migrations/20260728200000_appview_read_watermark_boundaries.sql"
   ),
   "utf8"
 );

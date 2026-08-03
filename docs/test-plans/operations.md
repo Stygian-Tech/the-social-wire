@@ -19,14 +19,16 @@ docker build --file services/tap/Dockerfile --tag the-social-wire-tap:test .
 
 | Job | Coverage |
 |-----|----------|
-| `build-operations` | Operations UI typecheck, lint, tests, and production build |
-| `test-operations` | `OperationsCore` and `services/operations` Swift Testing suites |
-| `test-tap-image` | Pinned Tap Docker image builds from the monorepo context |
+| `operations-web` | Operations UI typecheck, lint, tests, and production build |
+| `operations` | `OperationsCore` and `services/operations` Swift Testing suites |
+| `tap` | Pinned Tap Docker image builds from the monorepo context |
 
 ## Manual checks
 
 - [ ] Demo mode renders dashboard, gaps, backfills, traces, and runbooks without credentials
 - [ ] Hosted OAuth uses the environment's Gateway metadata and operator DID allowlist
+- [ ] Railway Development maps `operations.testing.thesocialwire.app` to `api.testing.thesocialwire.app`; Production maps `operations.thesocialwire.app` to `api.thesocialwire.app`
+- [ ] Gateway metadata redirects to the matching Operations custom domain, never a generated `*.up.railway.app` domain
 - [ ] Production mutations require the exact `PRODUCTION` confirmation and preserve audit evidence
 - [ ] Charybdis can reach the environment-matched Tap private hostname with authenticated readiness evidence
 

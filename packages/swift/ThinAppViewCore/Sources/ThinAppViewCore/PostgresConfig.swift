@@ -16,7 +16,7 @@ public func makePostgresConfig(
     let host = url.host,
     !host.isEmpty
   else {
-    logger.critical("SUPABASE_DATABASE_URL is not a valid URL", metadata: ["url": .string(urlString)])
+    logger.critical("DATABASE_URL is not a valid URL", metadata: ["url": .string(urlString)])
     throw PostgresConfigError.invalidURL(urlString)
   }
 
@@ -48,8 +48,8 @@ public func makePostgresConfig(
 func postgresMaximumConnections(
   environment: [String: String] = ProcessInfo.processInfo.environment
 ) -> Int {
-  // Supabase session pooler caps concurrent clients (often 15 shared across services).
-  // Keep a safe per-process default even if deployed configuration drifts or omits the override.
+  // Keep a conservative per-process default so colocated services leave headroom in the
+  // Railway Postgres connection budget even when an override is omitted.
   let configured = environment["POSTGRES_MAX_CONNECTIONS"].flatMap(Int.init) ?? 2
   return max(1, configured)
 }

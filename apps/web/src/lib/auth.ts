@@ -174,11 +174,8 @@ export function localLoopbackCanonicalHref(currentHref: string): string | null {
  * port and path match the dev server (`@atproto/oauth-client-browser` rejects bare ports
  * for the default `"http://localhost"` ID alone).
  *
- * **Hosted OAuth:** otherwise use `NEXT_PUBLIC_ATPROTO_CLIENT_ID`, same-origin
- * `/oauth-client-metadata.json` for public preview hosts, or the public gateway
- * **`/oauth-client-metadata.json`** when the SPA host maps to an API base (e.g.
- * `testing.thesocialwire.app` → `api.testing.thesocialwire.app`) so PDS discovery
- * is not blocked by Vercel deployment protection.
+ * **Hosted OAuth:** otherwise use `NEXT_PUBLIC_ATPROTO_CLIENT_ID` or the Railway
+ * web service's same-origin `/oauth-client-metadata.json` route.
  *
  * **Disabling loopback overrides:** `NEXT_PUBLIC_ATPROTO_LOOPBACK_FORCE=false` skips the parameterized client.
  */

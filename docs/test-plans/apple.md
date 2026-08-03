@@ -46,9 +46,12 @@ apps/apple/SocialWireTests/
 | Release | `https://api.thesocialwire.app` |
 | Beta / SocialWire-TestFlight | `project.yml` sets `SOCIALWIRE_TESTING_API`; uses the testing host |
 
+Both public API hosts are Railway Gateway custom domains. Do not substitute a generated `*.up.railway.app` URL without also registering its reversed-host callback scheme and publishing matching client metadata.
+
 ## Manual OAuth checklist
 
 - [ ] `client_id` matches hosted `ios-client-metadata.json` for active API host
+- [ ] Debug/Beta metadata stays on `api.testing.thesocialwire.app`; Release metadata stays on `api.thesocialwire.app`
 - [ ] URL scheme matches reversed FQDN (e.g. `app.thesocialwire.api:/oauth/callback`)
 - [ ] Sign in completes; Keychain holds refresh token
 - [ ] Gateway sync preferences load after auth
@@ -79,7 +82,7 @@ Functional parity with `apps/web` (native SwiftUI chrome; not pixel-matched layo
 | Article presentation | `entryArticlePresentation.ts` | `ArticlePresentationResolver`, `EntryDetailView` | Done — HTML vs web preview with per-entry lock |
 | Feed social actions | `EntrySocialToolbar.tsx` | `ArticleToolbar`, `SavedLinkToolbar` | Done — Reply/Like/Repost/Quote on feed and saved Bluesky subjects |
 | Read-later settings | `/saved/settings` | `SettingsView` | Done — no provider selector; web redirects to `/saved`, iOS settings cover feed display/account |
-| L@tr save credentials | Vercel `/api/latr-gateway` (`LATR_GATEWAY_*`) | Social Wire Gateway `/v1/latr/*` (`LATR_IOS_PROXY_*`) | Done — secrets server-side only |
+| L@tr save credentials | Railway Web `/api/latr-gateway` (`LATR_GATEWAY_*`) | Railway Social Wire Gateway `/v1/latr/*` (`LATR_IOS_PROXY_*`) | Done — secrets server-side only |
 
 ### L@tr save transport
 
@@ -89,7 +92,7 @@ iOS must **not** ship L@tr API credentials. New save requests go to `SocialWireA
 - `X-Latr-Gateway-DPoP` (external L@tr Gateway `htu`; forwarded as outbound `DPoP`)
 - `X-ATProto-Upstream-DPoP` (PDS write-through)
 
-The **Social Wire Gateway** injects L@tr credentials from **`LATR_IOS_PROXY_URL`**, **`LATR_IOS_PROXY_CLIENT_ID`**, **`LATR_IOS_PROXY_API_KEY`**, or **`LATR_IOS_PROXY_CLIENT_CREDENTIAL`** on Fly/runtime secrets. These are separate from the **web** Vercel proxy secrets (`LATR_GATEWAY_*` on the Next.js host). Legacy `LATR_GATEWAY_*` names on the gateway are deprecated aliases. The current app model lists saved items and performs archive/unarchive/delete directly through `PDSRecordService`, so those operations do not use the triple-DPoP proxy path.
+The **Social Wire Gateway** injects L@tr credentials from **`LATR_IOS_PROXY_URL`**, **`LATR_IOS_PROXY_CLIENT_ID`**, **`LATR_IOS_PROXY_API_KEY`**, or **`LATR_IOS_PROXY_CLIENT_CREDENTIAL`** in the matching Railway Gateway service. These are separate from the **web** proxy variables (`LATR_GATEWAY_*`) on the matching Railway Web service. Legacy `LATR_GATEWAY_*` names on Gateway are deprecated aliases. The current app model lists saved items and performs archive/unarchive/delete directly through `PDSRecordService`, so those operations do not use the triple-DPoP proxy path.
 
 ## Related
 

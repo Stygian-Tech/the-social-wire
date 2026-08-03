@@ -28,12 +28,13 @@ Copy `.env.example` to `.env.local` or create `.env.local` manually (see **Envir
 | Variable | Description |
 |----------|-------------|
 | `NEXT_PUBLIC_APP_ENV` | `prod` / `dev` / `local` — banner + OAuth mode (see **Local ATProto OAuth** below). Server also reads `APP_ENV`; `next.config` forwards it to the client bundle when `NEXT_PUBLIC_*` is unset |
-| `NEXT_PUBLIC_ATPROTO_CLIENT_ID` | Optional override for hosted OAuth client ID. Default: same-origin `/oauth-client-metadata.json` (dynamic `redirect_uris` for preview/dev hosts) |
+| `NEXT_PUBLIC_ATPROTO_CLIENT_ID` | Optional override for a nonstandard hosted OAuth client ID. Railway Development and Production default to same-origin `/oauth-client-metadata.json` |
 | `NEXT_PUBLIC_ATPROTO_LOOPBACK_ORIGIN` | Optional: `http://127.0.0.1:PORT` — SSR / first-paint port fallback for loopback redirects |
 | `NEXT_PUBLIC_ATPROTO_LOOPBACK_CALLBACK_PATH` | Optional loopback redirect path (default `/callback`) |
 | `NEXT_PUBLIC_ATPROTO_LOOPBACK_FORCE` | Optional: `true` / `false` — override whether parameterized loopback OAuth is used in dev |
 | `NEXT_PUBLIC_USE_THIN_APPVIEW` | AppView read path switch. It is enabled unless explicitly set to `false`; current entry lists and detail require AppView routes |
 | `NEXT_PUBLIC_SOCIALWIRE_API_URL` | Social Wire gateway base URL for authenticated sidebar, AppView, and sync routes (default `https://api.thesocialwire.app`) |
+| `NEXT_PUBLIC_SITE_URL` | Canonical public Web origin for metadata and absolute URLs; set to the environment's Railway custom domain |
 
 ## Architecture
 
@@ -54,7 +55,7 @@ Authentication uses ATProto OAuth (PKCE + DPoP) via `@atproto/oauth-client-brows
 
 Local dev does **not** use the static prod `public/client-metadata.json` at runtime (`/oauth-client-metadata.json` is served dynamically per host). On your machine the browser uses a **parameterized loopback** client ID (`http://localhost?redirect_uri=…&scope=…` per `@atproto/oauth-types`, RFC 8252).
 
-- **When loopback applies:** app env is `local`, or **`dev` during `next dev`**, or **`next dev` with app env unset**. Hosted preview/production use same-origin `/oauth-client-metadata.json` unless `NEXT_PUBLIC_ATPROTO_CLIENT_ID` overrides.
+- **When loopback applies:** app env is `local`, or **`dev` during `next dev`**, or **`next dev` with app env unset**. Hosted Railway Development and Production use the Web service's same-origin `/oauth-client-metadata.json` unless `NEXT_PUBLIC_ATPROTO_CLIENT_ID` intentionally overrides it.
 - **Redirect URIs:** `http://127.0.0.1:<devPort>/callback` and `http://[::1]:<devPort>/callback`, derived from `window.location.port` when you sign in. The client may redirect **`localhost` → `127.0.0.1`** after load so IndexedDB matches the redirect origin.
 - **Overrides:** `NEXT_PUBLIC_ATPROTO_LOOPBACK_ORIGIN` (port fallback when `window` is missing), `NEXT_PUBLIC_ATPROTO_LOOPBACK_CALLBACK_PATH` (default `/callback`), `NEXT_PUBLIC_ATPROTO_LOOPBACK_FORCE=false` to force hosted client ID in dev.
 - **Callback route:** Never run idle `oauthClient.init()` concurrently on **`/callback`**, or a race can strip `#code=` / `#state=` when the OAuth client redirects `localhost → 127.0.0.1`. `AuthProvider` skips restore on that path until `handleCallback()` finishes.
@@ -114,7 +115,7 @@ Lexicon **collection** (NSID) strings used in the web client match `apps/web/src
 | `app.thesocialwire.folder` | User-defined folders (`PDSClient.listFolders`, mutations) |
 | `app.thesocialwire.publicationPrefs` | Per-publication folder assignment and sort on the user's PDS (legacy `hidden` may still decode from old records but the client clears it on write) |
 
-Feed read/unread state is not stored in ATProto repo records. Clients keep a local cache for immediate UI and write authenticated read marks to Social Wire AppView.
+Feed read/unread state is local-first for immediate UI. Signed-in clients dual-write AppView read marks and deterministic `app.thesocialwire.entryReadState` records to the viewer's PDS, then reconcile both sources during cross-client sync.
 
 JSON lexicons for Social Wire–specific records live under **`packages/lexicons/`** (`app.thesocialwire.*`).
 
@@ -227,7 +228,14 @@ bun run typecheck
 
 ## Deployment
 
-The web app deploys to Vercel. Set `NEXT_PUBLIC_APP_ENV=prod` in production.
+Development and Production are separate Railway services built from `apps/web`:
+
+| Environment | Web origin | `NEXT_PUBLIC_APP_ENV` | `NEXT_PUBLIC_SOCIALWIRE_API_URL` |
+|-------------|------------|-----------------------|----------------------------------|
+| Development | `https://testing.thesocialwire.app` | `dev` | `https://api.testing.thesocialwire.app` |
+| Production | `https://thesocialwire.app` | `prod` | `https://api.thesocialwire.app` |
+
+Set `NEXT_PUBLIC_SITE_URL` to the Web origin in the same row. The public domains are Railway custom domains and are the stable OAuth/CORS identities; do not publish generated `*.up.railway.app` URLs as OAuth client IDs. Each Web service serves same-origin metadata: Development redirects to `https://testing.thesocialwire.app/callback`, and Production redirects to `https://thesocialwire.app/callback`. The matching Gateway's `OAUTH_PUBLIC_ORIGIN` and CORS configuration must use that Web origin. Server-only L@tr credentials belong on the matching Railway Web service.
 
 Environment banners:
 - **`local`** — blue banner ("Running locally")

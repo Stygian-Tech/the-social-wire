@@ -17,7 +17,14 @@ Set `NEXT_PUBLIC_OPERATIONS_DEMO_MODE=1` for the explicit local demo dataset. No
 - `NEXT_PUBLIC_OPERATIONS_GATEWAY_ORIGIN` — The single Gateway origin for this deployment.
 - `NEXT_PUBLIC_OPERATIONS_DEMO_MODE` — Explicit demo mode; never enable in a deployed operator console.
 
-Production deploys to the Vercel project rooted at `apps/operations`; Development deploys in the isolated Railway `dev` environment. Production must configure `APP_ENV=prod`, while Railway Development uses `APP_ENV=dev`. Configure the corresponding Gateway origin and operator DID allowlist per environment; the console does not switch environments at runtime. Hosted deployments use the public Gateway's `/operations-oauth-client-metadata.json` document so OAuth works when the UI deployment is protected. The same-origin `/operations-client-metadata.json` route remains available as a fallback.
+Development and Production are separate Railway services built from `apps/operations`. Configure each service with its fixed environment and matching public Gateway custom domain:
+
+| Environment | Console origin | `APP_ENV` | `NEXT_PUBLIC_OPERATIONS_GATEWAY_ORIGIN` |
+|-------------|----------------|-----------|-----------------------------------------|
+| Development | `https://operations.testing.thesocialwire.app` | `dev` | `https://api.testing.thesocialwire.app` |
+| Production | `https://operations.thesocialwire.app` | `prod` | `https://api.thesocialwire.app` |
+
+The custom domains point at the corresponding Railway services; generated `*.up.railway.app` domains are deployment diagnostics, not OAuth client origins. Hosted OAuth uses `${NEXT_PUBLIC_OPERATIONS_GATEWAY_ORIGIN}/operations-oauth-client-metadata.json`, whose redirect URI must match the console origin above. The same-origin `/operations-client-metadata.json` route remains a local-development fallback. Configure the operator DID allowlist independently in each environment; the console does not switch environments at runtime.
 
 Backfill creation is dry-run-first. Operator notes are optional; every mutation carries idempotency and expected-version evidence, and Production additionally requires the exact `PRODUCTION` confirmation. Authorization is enforced by the operations service DID allowlist.
 
@@ -31,4 +38,4 @@ bunx turbo typecheck lint test --filter=operations
 APP_ENV=dev NEXT_PUBLIC_OPERATIONS_DEMO_MODE=1 bunx turbo build --filter=operations
 ```
 
-CI runs the same checks in **`build-operations`**. Swift control-plane and Tap verification commands are in the [Operations and Tap test plan](../../docs/test-plans/operations.md).
+CI runs the same checks in **`operations-web`**. Swift control-plane and Tap verification commands are in the [Operations and Tap test plan](../../docs/test-plans/operations.md).

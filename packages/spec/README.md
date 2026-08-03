@@ -33,7 +33,7 @@ bun test
 
 Asserts documented paths exist in gateway, GatewayCore, AppView, and Operations router sources.
 
-CI job: **`test-spec`** (path filter includes `packages/spec/**` and route sources).
+CI job: **`spec`** (path filter includes `packages/spec/**` and route sources).
 
 ## Related
 

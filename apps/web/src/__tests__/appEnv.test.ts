@@ -15,14 +15,12 @@ const saved = {
   NEXT_PUBLIC_APP_ENV: env.NEXT_PUBLIC_APP_ENV,
   APP_ENV: env.APP_ENV,
   NODE_ENV: env.NODE_ENV,
-  VERCEL_ENV: env.VERCEL_ENV,
 };
 
 afterEach(() => {
   env.NEXT_PUBLIC_APP_ENV = saved.NEXT_PUBLIC_APP_ENV;
   env.APP_ENV = saved.APP_ENV;
   env.NODE_ENV = saved.NODE_ENV;
-  env.VERCEL_ENV = saved.VERCEL_ENV;
 });
 
 describe("getAppEnv", () => {
@@ -43,6 +41,13 @@ describe("getAppEnv", () => {
     delete env.APP_ENV;
     env.NODE_ENV = "development";
     expect(getAppEnv()).toBe("local");
+  });
+
+  it("defaults to prod for an unset production build", () => {
+    delete env.NEXT_PUBLIC_APP_ENV;
+    delete env.APP_ENV;
+    env.NODE_ENV = "production";
+    expect(getAppEnv()).toBe("prod");
   });
 });
 

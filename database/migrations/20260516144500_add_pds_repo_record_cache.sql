@@ -1,4 +1,4 @@
--- PDS-record cache backing `SupabaseCache.cachedPdsRepoRecord` / `storePdsRepoRecordPayload`.
+-- PDS-record cache backing `PostgresCache.cachedPdsRepoRecord` / `storePdsRepoRecordPayload`.
 -- Safe to apply on projects that already have discovery + entry caches; only adds the new table.
 
 CREATE TABLE IF NOT EXISTS pds_repo_record_cache (

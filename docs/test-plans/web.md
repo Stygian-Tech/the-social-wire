@@ -2,7 +2,7 @@
 
 **Package:** `apps/web`  
 **Runner:** Bun test (`bunfig.toml` — jsdom, preload `src/__tests__/setup.ts`)  
-**CI:** `build-web` → typecheck, lint, Bun tests, and Next.js production build
+**CI:** `web` → typecheck, lint, Bun tests, and Next.js production build
 
 ## Commands
 
@@ -58,11 +58,13 @@ Network mocks live in `src/__tests__/mocks/`. Handlers mirror gateway and PDS XR
 
 ## Lexicons
 
-Schema validation tests live in `packages/lexicons/__tests__/`. CI job: **`test-lexicons`**. See [README](../../packages/lexicons/README.md).
+Schema validation tests live in `packages/lexicons/__tests__/`. CI job: **`lexicons`**. See [README](../../packages/lexicons/README.md).
 
 ## Manual verification
 
 - [ ] Sign in with loopback OAuth on `localhost`
+- [ ] Sign in on Railway Development through `testing.thesocialwire.app`; confirm the client ID is its same-origin `/oauth-client-metadata.json` and returns to `/callback`
+- [ ] Confirm Production metadata and redirects remain on `thesocialwire.app`, and neither environment publishes a generated `*.up.railway.app` OAuth identity
 - [ ] Subscribe to a publication (standard.site or RSS)
 - [ ] Mark entry read/unread; confirm sidebar badges
 - [ ] Bootstrap, aggregate/scoped feeds, and flat entry detail load through the gateway

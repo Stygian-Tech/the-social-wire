@@ -129,6 +129,7 @@ TAP SERVICE: Tap
 
 ALREADY SET:
   TAP_ENV=dev
+  PORT=2480
   TAP_BIND=:2480
   TAP_METRICS_LISTEN=:2481
   TAP_DATABASE_URL=${{Postgres.DATABASE_URL}}
@@ -154,16 +155,16 @@ ALREADY SET:
   APP_ENV=dev
   ENABLE_THIN_APPVIEW=true
   POSTGRES_MAX_CONNECTIONS=2
-  SUPABASE_DATABASE_URL=${{Postgres.DATABASE_URL}}
-  TAP_BASE_URL=http://tap.railway.internal:2480
+  DATABASE_URL=${{Postgres.DATABASE_URL}}
+  TAP_BASE_URL=http://${{Tap.RAILWAY_PRIVATE_DOMAIN}}:${{Tap.PORT}}
   TAP_CONSUMER_MODE=shadow
   OPERATIONS_RECOVERY_ENABLED=true
 
 GENERATED, ALREADY SET:
   TAP_ADMIN_PASSWORD=<same Dev secret as Tap>
 
-The SUPABASE_DATABASE_URL name is retained by the application code, but its value
-is the private Railway Postgres reference. Do not put the old Supabase URL here.
+Use Railway's private Postgres reference. Do not use DATABASE_PUBLIC_URL for
+application traffic.
 Keep TAP_CONSUMER_MODE=shadow until the Tap parity gate is explicitly passed.
 
 
@@ -174,9 +175,9 @@ ALREADY SET:
   APP_ENV=dev
   PORT=8080
   POSTGRES_MAX_CONNECTIONS=2
-  SUPABASE_DATABASE_URL=${{Postgres.DATABASE_URL}}
-  APPVIEW_BASE_URL=http://app-view.railway.internal:8081
-  OPERATIONS_BASE_URL=http://ops.railway.internal:8083
+  DATABASE_URL=${{Postgres.DATABASE_URL}}
+  APPVIEW_BASE_URL=http://${{App View.RAILWAY_PRIVATE_DOMAIN}}:${{App View.PORT}}
+  OPERATIONS_BASE_URL=http://${{Ops.RAILWAY_PRIVATE_DOMAIN}}:${{Ops.PORT}}
   OAUTH_PUBLIC_ORIGIN=https://web-dev-88e4.up.railway.app
   OAUTH_OPERATIONS_ORIGIN=https://operations-web-dev.up.railway.app
   OAUTH_OPERATIONS_CLIENT_ID=https://gateway-dev-4009.up.railway.app/operations-oauth-client-metadata.json
@@ -213,10 +214,9 @@ APP VIEW SERVICE: App View
 ALREADY SET:
   APP_ENV=dev
   PORT=8081
-  APPVIEW_PORT=8081
   ENABLE_THIN_APPVIEW=true
   POSTGRES_MAX_CONNECTIONS=8
-  SUPABASE_DATABASE_URL=${{Postgres.DATABASE_URL}}
+  DATABASE_URL=${{Postgres.DATABASE_URL}}
 
 GENERATED, ALREADY SET:
   GATEWAY_APPVIEW_INTERNAL_SECRET=<same Dev secret as Gateway>
@@ -232,7 +232,7 @@ ALREADY SET:
   APP_ENV=dev
   PORT=8083
   POSTGRES_MAX_CONNECTIONS=2
-  SUPABASE_DATABASE_URL=${{Postgres.DATABASE_URL}}
+  DATABASE_URL=${{Postgres.DATABASE_URL}}
   OPERATIONS_TELEMETRY_ENABLED=true
   OPERATIONS_RECOVERY_ENABLED=true
   OPERATIONS_ALERT_DELIVERY_ENABLED=false
@@ -303,35 +303,3 @@ Gateway:
 If CORS_ALLOWED_ORIGINS is set, replace its origins at the same time. Domain changes
 also require Railway domain attachment, DNS, and certificate activation; variables
 alone do not route traffic.
-
-
-MIGRATION-ONLY OPERATOR SHELL VARIABLES
-=======================================
-
-These do not belong on any Railway service. Export them only in the trusted shell
-that runs scripts/migrate-supabase-to-railway.sh:
-
-  SUPABASE_SOURCE_DATABASE_URL=<Supabase direct or session-pooler URL on port 5432>
-  RAILWAY_ENVIRONMENT=dev
-  MIGRATION_ARTIFACT_DIR=.migration-artifacts/supabase-to-railway-dev
-  MIGRATION_WRITERS_PAUSED=YES
-  MIGRATION_CONFIRM_TARGET_RESET=The Social Wire/dev/Postgres
-  MIGRATION_VERIFY_CHECKSUMS=1
-
-Never use the Supabase transaction pooler on port 6543 for pg_dump or pg_restore.
-Never store SUPABASE_SOURCE_DATABASE_URL in Railway Dev application services.
-
-
-STARTUP ORDER AFTER THE MIGRATION REHEARSAL
-===========================================
-
-The database-writing Dev services are currently stopped intentionally. After the
-restore and verification pass, redeploy them in this order:
-
-  1. Tap
-  2. App View
-  3. Ops
-  4. Gateway
-  5. Charybdis
-
-Web and Operations Web can remain running throughout the database rehearsal.
