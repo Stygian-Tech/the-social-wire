@@ -58,18 +58,23 @@ function renderPane(entries: EntryListItem[], scrollStateKey = "test-feed") {
   );
 }
 
+function createWrapper() {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+
+  return function Wrapper({ children }: { children: ReactNode }) {
+    return (
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>{children}</AuthProvider>
+      </QueryClientProvider>
+    );
+  };
+}
+
 describe("EntryListVirtualPane scroll stability", () => {
   it("preserves scrollTop when visible entries update without remounting", () => {
-    const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
-    function Wrapper({ children }: { children: ReactNode }) {
-      return (
-        <QueryClientProvider client={queryClient}>
-          <AuthProvider>{children}</AuthProvider>
-        </QueryClientProvider>
-      );
-    }
+    const Wrapper = createWrapper();
     const initialEntries = Array.from({ length: 12 }, (_, index) =>
       makeEntry(index)
     );
@@ -90,8 +95,11 @@ describe("EntryListVirtualPane scroll stability", () => {
 
   it("restores a feed scroll offset after the pane remounts", () => {
     clearEntryListScrollOffsetsForTests();
+    const Wrapper = createWrapper();
     const entries = Array.from({ length: 12 }, (_, index) => makeEntry(index));
-    const first = render(renderPane(entries, "subscribed:all"));
+    const first = render(renderPane(entries, "subscribed:all"), {
+      wrapper: Wrapper,
+    });
     const firstRoot = first.container.querySelector(
       "[data-entry-list-scroll]"
     ) as HTMLDivElement;
@@ -99,7 +107,9 @@ describe("EntryListVirtualPane scroll stability", () => {
     fireEvent.scroll(firstRoot);
     first.unmount();
 
-    const second = render(renderPane(entries, "subscribed:all"));
+    const second = render(renderPane(entries, "subscribed:all"), {
+      wrapper: Wrapper,
+    });
     const restoredRoot = second.container.querySelector(
       "[data-entry-list-scroll]"
     ) as HTMLDivElement;
