@@ -7,6 +7,7 @@ import WebSocketKit
 
 /// Jetstream consumer for Linux hosts where Foundation `URLSession` WebSockets use libcurl without `wss` support.
 enum FirehoseLinuxWebSocket {
+  static let maxFrameSize = 2 * 1_024 * 1_024
   private static let pingInterval = TimeAmount.seconds(15)
   private static let pongTimeout: TimeInterval = 35
   private static let watchdogPollInterval: TimeInterval = 5
@@ -22,13 +23,18 @@ enum FirehoseLinuxWebSocket {
   ) async throws {
     let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
     let socketBox = WebSocketBox()
+    let clientConfiguration = WebSocketClient.Configuration(maxFrameSize: maxFrameSize)
 
     do {
       try await withTaskCancellationHandler {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
           let resumed = ContinuationGuard()
 
-          WebSocket.connect(to: relayURL, on: group) { ws in
+          WebSocket.connect(
+            to: relayURL,
+            configuration: clientConfiguration,
+            on: group
+          ) { ws in
             socketBox.set(ws)
             Task { await onConnected() }
             let pongDeadline = WebSocketPongDeadline(connectedAt: Date())
