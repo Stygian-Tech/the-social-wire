@@ -17,6 +17,10 @@ import {
   saveSidebarPublicationTab,
 } from "@/lib/sidebarPublicationTabStorage";
 import {
+  loadArticleListFilter,
+  saveArticleListFilter,
+} from "@/lib/articleListFilterStorage";
+import {
   defaultSidebarExpandedKeys,
   folderExpandKey,
   loadSidebarExpandedKeys,
@@ -55,7 +59,7 @@ function loadExpandedKeysForViewer(did: string): Set<string> {
 
 export function SidebarChromeProvider({ children }: { children: ReactNode }) {
   const [selectedFolderUri, setSelectedFolderUri] = useState<string | null>(null);
-  const [articleListFilter, setArticleListFilter] =
+  const [articleListFilter, setArticleListFilterState] =
     useState<ArticleListFilter>("all");
   const [isArticleListColumnOpen, setIsArticleListColumnOpen] = useState(true);
   const [publicationTab, setPublicationTabState] =
@@ -77,6 +81,7 @@ export function SidebarChromeProvider({ children }: { children: ReactNode }) {
     if (typeof window === "undefined") return;
     queueMicrotask(() => {
       setPublicationTabState(loadSidebarPublicationTab(window.localStorage));
+      setArticleListFilterState(loadArticleListFilter(window.localStorage));
     });
   }, []);
 
@@ -97,6 +102,13 @@ export function SidebarChromeProvider({ children }: { children: ReactNode }) {
     setPublicationTabState(tab);
     if (typeof window !== "undefined") {
       saveSidebarPublicationTab(window.localStorage, tab);
+    }
+  }, []);
+
+  const setArticleListFilter = useCallback((filter: ArticleListFilter) => {
+    setArticleListFilterState(filter);
+    if (typeof window !== "undefined") {
+      saveArticleListFilter(window.localStorage, filter);
     }
   }, []);
 
@@ -166,6 +178,7 @@ export function SidebarChromeProvider({ children }: { children: ReactNode }) {
     [
       selectedFolderUri,
       articleListFilter,
+      setArticleListFilter,
       isArticleListColumnOpen,
       publicationTab,
       sidebarExpandedKeys,
