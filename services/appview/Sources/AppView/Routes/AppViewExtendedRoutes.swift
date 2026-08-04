@@ -56,7 +56,26 @@ struct AppViewExtendedRoutes {
         sidebar = try await projectionService.sidebar(auth: auth)
       }
       let rows = Self.rows(for: body.scope, sidebar: sidebar)
-      let result = try await readService.markAllRead(auth: auth, rows: rows)
+      let result: (
+        counters: [AppViewUnreadCounter],
+        boundaries: [ReadWatermarkBoundary],
+        confirmedAt: Date,
+        marked: Int
+      )
+      do {
+        result = try await readService.markAllRead(auth: auth, rows: rows)
+      } catch {
+        context.logger.error(
+          "mark-all-read failed",
+          metadata: [
+            "did": .string(auth.did),
+            "scopeKind": .string(body.scope.kind),
+            "rowCount": .stringConvertible(rows.count),
+            "error": .string("\(error)"),
+          ]
+        )
+        throw error
+      }
       return MarkAllReadResponse(
         marked: result.marked,
         confirmedAt: result.confirmedAt,
