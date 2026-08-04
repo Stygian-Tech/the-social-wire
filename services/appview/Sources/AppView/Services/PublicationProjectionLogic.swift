@@ -168,6 +168,15 @@ enum PublicationProjectionLogic {
     return false
   }
 
+  /// `false` for the bare-DID pseudo-publication `PublicationFollowDiscovery.discoverAuthor`
+  /// synthesizes when an author has content records but no `site.standard.publication`
+  /// container (`subscriptionPublicationId == nil`). That row has no real AT-URI or site to
+  /// scope by, so `buildAppViewScope` resolves it to an unscoped filter that matches *every*
+  /// item the author has ever published — auto-subscribing to it must be avoided.
+  static func isAddressablePublication(_ row: ProjectionDiscoveredRow) -> Bool {
+    row.subscriptionPublicationId != nil
+  }
+
   static func publicationRepoDid(_ publicationId: String) -> String {
     let normalized = normalizeAtRepoParam(publicationId)
     if let parsed = RenderFieldExtractor.parseAtUri(normalized),
@@ -205,7 +214,7 @@ enum PublicationProjectionLogic {
     var graphSubscribed: [ProjectionDiscoveredRow] = []
     var followOwnedUnsubscribed: [ProjectionDiscoveredRow] = []
     for row in discovered {
-      if viewerOwnsPublication(row, viewerDid: viewerDid) {
+      if viewerOwnsPublication(row, viewerDid: viewerDid) && isAddressablePublication(row) {
         graphSubscribed.append(row)
       } else if isSubscribedPublication(row, subscriptionKeys: subscriptionKeys) {
         graphSubscribed.append(row)
