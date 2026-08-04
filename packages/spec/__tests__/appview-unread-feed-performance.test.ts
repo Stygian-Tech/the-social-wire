@@ -75,4 +75,16 @@ describe("AppView unread feed performance", () => {
     expect(markAllQuery).toContain("SELECT COUNT(*)::int");
     expect(markAllQuery).not.toContain("shouldClearCoveredOverrides");
   });
+
+  test("binds optional read-boundary checks with an explicit boolean type", () => {
+    expect(postgresStore).toContain("\\(hasUnreadFloorUri) = TRUE");
+    expect(postgresStore).toContain("\\(hasConfirmedEntryId) = TRUE");
+    expect(postgresStore).toContain("\\(hasReadBoundaryEntryId) = TRUE");
+    expect(postgresStore).not.toContain("\\(unreadFloorUri) IS NOT NULL");
+    expect(postgresStore).not.toContain("\\(unreadFloorUri) IS NULL");
+    expect(postgresStore).not.toContain("\\(confirmed.entryId) IS NOT NULL");
+    expect(postgresStore).not.toContain(
+      "\\(readBoundary.entryId) IS NOT NULL"
+    );
+  });
 });

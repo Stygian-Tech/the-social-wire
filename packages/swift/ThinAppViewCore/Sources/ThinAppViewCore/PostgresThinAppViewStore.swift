@@ -942,6 +942,7 @@ public init(pool: PostgresClient, logger: Logger) {
     let unreadFloor = readBoundary?.createdAt ?? Date(timeIntervalSince1970: 0)
     let unreadFloorUri = readBoundary?.entryId
     let hasReadBoundary = readBoundary != nil
+    let hasUnreadFloorUri = unreadFloorUri != nil
     switch (filter, cursor) {
     case (.all, nil):
       rows = try await pool.query(
@@ -969,7 +970,7 @@ public init(pool: PostgresClient, logger: Logger) {
           AND (
             \(hasReadBoundary) = FALSE
             OR ci.created_at > \(unreadFloor)
-            OR (\(unreadFloorUri) IS NOT NULL AND ci.created_at = \(unreadFloor) AND ci.uri > \(unreadFloorUri))
+            OR (\(hasUnreadFloorUri) = TRUE AND ci.created_at = \(unreadFloor) AND ci.uri > \(unreadFloorUri))
             OR uo.subject_uri IS NOT NULL
           )
           AND ci.publication_site = ANY(\(siteKeys))
@@ -994,7 +995,7 @@ public init(pool: PostgresClient, logger: Logger) {
               AND uo.subject_uri IS NULL
               AND (
                 ci.created_at < \(unreadFloor)
-                OR (ci.created_at = \(unreadFloor) AND (\(unreadFloorUri) IS NULL OR ci.uri <= \(unreadFloorUri)))
+                OR (ci.created_at = \(unreadFloor) AND (\(hasUnreadFloorUri) = FALSE OR ci.uri <= \(unreadFloorUri)))
               )
             )
           )
@@ -1031,7 +1032,7 @@ public init(pool: PostgresClient, logger: Logger) {
           AND (
             \(hasReadBoundary) = FALSE
             OR ci.created_at > \(unreadFloor)
-            OR (\(unreadFloorUri) IS NOT NULL AND ci.created_at = \(unreadFloor) AND ci.uri > \(unreadFloorUri))
+            OR (\(hasUnreadFloorUri) = TRUE AND ci.created_at = \(unreadFloor) AND ci.uri > \(unreadFloorUri))
             OR uo.subject_uri IS NOT NULL
           )
           AND ci.publication_site = ANY(\(siteKeys))
@@ -1057,7 +1058,7 @@ public init(pool: PostgresClient, logger: Logger) {
               AND uo.subject_uri IS NULL
               AND (
                 ci.created_at < \(unreadFloor)
-                OR (ci.created_at = \(unreadFloor) AND (\(unreadFloorUri) IS NULL OR ci.uri <= \(unreadFloorUri)))
+                OR (ci.created_at = \(unreadFloor) AND (\(hasUnreadFloorUri) = FALSE OR ci.uri <= \(unreadFloorUri)))
               )
             )
           )
@@ -1093,6 +1094,7 @@ public init(pool: PostgresClient, logger: Logger) {
     let unreadFloor = readBoundary?.createdAt ?? Date(timeIntervalSince1970: 0)
     let unreadFloorUri = readBoundary?.entryId
     let hasReadBoundary = readBoundary != nil
+    let hasUnreadFloorUri = unreadFloorUri != nil
     switch (filter, cursor) {
     case (.all, nil):
       rows = try await pool.query(
@@ -1116,7 +1118,7 @@ public init(pool: PostgresClient, logger: Logger) {
           AND (
             \(hasReadBoundary) = FALSE
             OR ci.created_at > \(unreadFloor)
-            OR (\(unreadFloorUri) IS NOT NULL AND ci.created_at = \(unreadFloor) AND ci.uri > \(unreadFloorUri))
+            OR (\(hasUnreadFloorUri) = TRUE AND ci.created_at = \(unreadFloor) AND ci.uri > \(unreadFloorUri))
             OR uo.subject_uri IS NOT NULL
           )
         ORDER BY ci.created_at DESC, ci.uri DESC
@@ -1139,7 +1141,7 @@ public init(pool: PostgresClient, logger: Logger) {
               AND uo.subject_uri IS NULL
               AND (
                 ci.created_at < \(unreadFloor)
-                OR (ci.created_at = \(unreadFloor) AND (\(unreadFloorUri) IS NULL OR ci.uri <= \(unreadFloorUri)))
+                OR (ci.created_at = \(unreadFloor) AND (\(hasUnreadFloorUri) = FALSE OR ci.uri <= \(unreadFloorUri)))
               )
             )
           )
@@ -1171,7 +1173,7 @@ public init(pool: PostgresClient, logger: Logger) {
           AND (
             \(hasReadBoundary) = FALSE
             OR ci.created_at > \(unreadFloor)
-            OR (\(unreadFloorUri) IS NOT NULL AND ci.created_at = \(unreadFloor) AND ci.uri > \(unreadFloorUri))
+            OR (\(hasUnreadFloorUri) = TRUE AND ci.created_at = \(unreadFloor) AND ci.uri > \(unreadFloorUri))
             OR uo.subject_uri IS NOT NULL
           )
           AND (ci.created_at < \(decoded.createdAt) OR (ci.created_at = \(decoded.createdAt) AND ci.uri < \(decoded.uri)))
@@ -1195,7 +1197,7 @@ public init(pool: PostgresClient, logger: Logger) {
               AND uo.subject_uri IS NULL
               AND (
                 ci.created_at < \(unreadFloor)
-                OR (ci.created_at = \(unreadFloor) AND (\(unreadFloorUri) IS NULL OR ci.uri <= \(unreadFloorUri)))
+                OR (ci.created_at = \(unreadFloor) AND (\(hasUnreadFloorUri) = FALSE OR ci.uri <= \(unreadFloorUri)))
               )
             )
           )
@@ -1671,6 +1673,7 @@ public init(pool: PostgresClient, logger: Logger) {
           )
         }
         let confirmed = existing.map { requested.isAfter($0) ? requested : $0 } ?? requested
+        let hasConfirmedEntryId = confirmed.entryId != nil
         try await connection.query(
           """
           INSERT INTO appview_publication_read_floors
@@ -1740,7 +1743,7 @@ public init(pool: PostgresClient, logger: Logger) {
                 AND (
                   ci.created_at > \(confirmed.createdAt)
                   OR (
-                    \(confirmed.entryId) IS NOT NULL
+                    \(hasConfirmedEntryId) = TRUE
                     AND ci.created_at = \(confirmed.createdAt)
                     AND ci.uri > \(confirmed.entryId)
                   )
@@ -1765,7 +1768,7 @@ public init(pool: PostgresClient, logger: Logger) {
                 AND (
                   ci.created_at > \(confirmed.createdAt)
                   OR (
-                    \(confirmed.entryId) IS NOT NULL
+                    \(hasConfirmedEntryId) = TRUE
                     AND ci.created_at = \(confirmed.createdAt)
                     AND ci.uri > \(confirmed.entryId)
                   )
@@ -2697,6 +2700,7 @@ public init(pool: PostgresClient, logger: Logger) {
     readBoundary: ReadWatermarkBoundary
   ) async throws -> Int {
     let now = Date()
+    let hasReadBoundaryEntryId = readBoundary.entryId != nil
     let scoped = ThinAppViewQuerySupport.requiresPublicationSiteFilter(
       publicationAtUri: scope.publicationAtUri,
       publicationScopeAtUris: scope.publicationScopeAtUris,
@@ -2719,7 +2723,7 @@ public init(pool: PostgresClient, logger: Logger) {
           AND (
             ci.created_at > \(readBoundary.createdAt)
             OR (
-              \(readBoundary.entryId) IS NOT NULL
+              \(hasReadBoundaryEntryId) = TRUE
               AND ci.created_at = \(readBoundary.createdAt)
               AND ci.uri > \(readBoundary.entryId)
             )
@@ -2747,7 +2751,7 @@ public init(pool: PostgresClient, logger: Logger) {
         AND (
           ci.created_at > \(readBoundary.createdAt)
           OR (
-            \(readBoundary.entryId) IS NOT NULL
+            \(hasReadBoundaryEntryId) = TRUE
             AND ci.created_at = \(readBoundary.createdAt)
             AND ci.uri > \(readBoundary.entryId)
           )
