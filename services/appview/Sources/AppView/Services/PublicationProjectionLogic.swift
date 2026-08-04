@@ -247,6 +247,17 @@ enum PublicationProjectionLogic {
     return followOwnedUnsubscribed.filter { !myIds.contains($0.publicationId) }
   }
 
+  /// Publications whose content items should be materialized into the viewer's top-level
+  /// "subscribed" feed. Deliberately excludes `myPublications`: those rows drive the sidebar's
+  /// "My Publications" management section, but a viewer's own authored content shouldn't be
+  /// mixed into their reading feed just because they own or are subscribed to it.
+  static func subscribedFeedMembershipRows(
+    subscribedUnfoldered: [SidebarPublicationRow],
+    folderSections: [PublicationFolderSection]
+  ) -> [SidebarPublicationRow] {
+    subscribedUnfoldered + folderSections.flatMap(\.publications)
+  }
+
   // MARK: - RSS projection
 
   static func rssPublicationId(from normalizedFeedUrl: String) -> String {

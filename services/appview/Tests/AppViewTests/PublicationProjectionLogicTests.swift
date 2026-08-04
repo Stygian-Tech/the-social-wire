@@ -155,6 +155,49 @@ struct PublicationProjectionLogicTests {
     #expect(segmented.followOwnedUnsubscribed.map(\.publicationId) == [looseContentRow.publicationId])
   }
 
+  @Test("subscribed feed membership excludes the viewer's own publications")
+  func subscribedFeedMembershipExcludesOwnPublications() {
+    func row(_ id: String) -> SidebarPublicationRow {
+      SidebarPublicationRow(
+        publicationId: id,
+        subscriptionPublicationId: id,
+        authorDid: "did:plc:author-\(id)",
+        authorHandle: nil,
+        title: id,
+        iconUrl: nil,
+        avatarUrl: nil,
+        discoveredAt: Date(),
+        appViewScope: PublicationAppViewScope(
+          authorDid: "did:plc:author-\(id)",
+          publicationAtUri: nil,
+          publicationScopeAtUris: [],
+          publicationSiteUrls: []
+        ),
+        unreadCount: nil
+      )
+    }
+    let unfoldered = [row("unfoldered1")]
+    let folderSections = [
+      PublicationFolderSection(
+        folderUri: "at://did:plc:viewer/app.thesocialwire.folder/f1",
+        folderRkey: "f1",
+        name: "Folder",
+        publications: [row("foldered1")],
+        unreadCount: 0
+      ),
+    ]
+
+    let membership = PublicationProjectionLogic.subscribedFeedMembershipRows(
+      subscribedUnfoldered: unfoldered,
+      folderSections: folderSections
+    )
+
+    // Real fix under test is upstream (myPublications is never passed in here at all —
+    // see PublicationProjectionService.storePublicationScopes), but this locks the
+    // contract: subscribed feed membership is exactly unfoldered + foldered rows.
+    #expect(Set(membership.map(\.publicationId)) == ["unfoldered1", "foldered1"])
+  }
+
   @Test("subscription keys include cross-lexicon publication aliases")
   func subscriptionAliasKeys() {
     var keys = Set<String>()

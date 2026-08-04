@@ -675,9 +675,10 @@ actor PublicationProjectionService {
         updatedAt: now
       )
     }
-    let subscribedRows = response.myPublications
-      + response.subscribedUnfoldered
-      + response.folderSections.flatMap(\.publications)
+    let subscribedRows = PublicationProjectionLogic.subscribedFeedMembershipRows(
+      subscribedUnfoldered: response.subscribedUnfoldered,
+      folderSections: response.folderSections
+    )
     let subscribedMemberships = subscribedRows.map {
       AppViewFeedPublication(
         viewerDid: response.viewerDid,
