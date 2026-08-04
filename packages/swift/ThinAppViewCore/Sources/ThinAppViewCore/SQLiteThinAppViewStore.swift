@@ -1670,6 +1670,18 @@ public init(path dbPath: String, logger: Logger) throws {
         counters.append(counter)
         boundaries.append(confirmed)
       }
+      // Mirrors PostgresThinAppViewStore: overrides whose content_items row has
+      // TTL-expired can never match the per-scope INNER JOIN above, so they would
+      // otherwise linger and resurrect stale unread state when the same
+      // deterministic URI is re-indexed.
+      try db.execute(
+        sql: """
+          DELETE FROM appview_unread_overrides
+          WHERE viewer_did = ?
+            AND subject_uri NOT IN (SELECT uri FROM content_items)
+          """,
+        arguments: [viewerDid]
+      )
       return (counters, boundaries)
     }
   }

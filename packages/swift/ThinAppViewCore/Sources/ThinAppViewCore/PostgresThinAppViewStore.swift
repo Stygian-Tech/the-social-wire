@@ -1735,6 +1735,22 @@ public init(pool: PostgresClient, logger: Logger) {
         counters.append(counter)
         boundaries.append(confirmed)
       }
+      // Overrides whose content_items row has since TTL-expired (deleteExpiredContent)
+      // can never be matched by the per-scope INNER JOIN above, so mark-all-read could
+      // never clear them. They are dead data — every feed/read-state query joins
+      // content_items, so an orphan cannot surface on its own — but RSS entries are
+      // re-indexed under the same deterministic `rssentry:` URI, which resurrects the
+      // stale override and makes an already-read article pop back as unread.
+      try await connection.query(
+        """
+        DELETE FROM appview_unread_overrides uo
+        WHERE uo.viewer_did = \(viewerDid)
+          AND NOT EXISTS (
+            SELECT 1 FROM content_items ci WHERE ci.uri = uo.subject_uri
+          )
+        """,
+        logger: logger
+      )
       return (counters, boundaries)
     }
   }

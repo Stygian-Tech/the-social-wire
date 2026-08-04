@@ -903,4 +903,96 @@ struct SQLiteThinAppViewStoreTests {
         == "at://did:plc:author/site.standard.document/c"
     )
   }
+
+  @Test("mark-all-read clears unread overrides orphaned by content TTL expiry")
+  func markAllReadClearsOrphanedUnreadOverrides() async throws {
+    let dbPath =
+      FileManager.default.temporaryDirectory
+        .appendingPathComponent("sw-appview-\(UUID().uuidString).sqlite")
+        .path
+    defer { try? FileManager.default.removeItem(atPath: dbPath) }
+
+    let store = try SQLiteThinAppViewStore(path: dbPath, logger: Logger(label: "appview.test"))
+    let viewerDid = "did:plc:viewer"
+    let authorDid = "did:plc:author"
+    let publicationId = "at://did:plc:author/site.standard.publication/main"
+    let timestamp = ISO8601DateFormatter().date(from: "2027-07-28T20:00:00Z") ?? Date()
+    let scope = PublicationUnreadScope(
+      publicationId: publicationId,
+      authorDid: authorDid,
+      publicationAtUri: publicationId,
+      publicationScopeAtUris: [],
+      publicationSiteUrls: []
+    )
+    let uri = "at://did:plc:author/site.standard.document/expiring"
+
+    try await store.upsertContentItem(
+      IndexedContentItem(
+        uri: uri,
+        cid: "bafy-expiring",
+        authorDid: authorDid,
+        collection: "site.standard.document",
+        createdAt: timestamp,
+        indexedAt: timestamp,
+        publicationSite: publicationId,
+        render: ContentRenderFields(
+          title: "expiring",
+          publishedAt: ISO8601DateFormatter().string(from: timestamp)
+        ),
+        // Already past its TTL so the cleanup job below removes it.
+        expiresAt: timestamp.addingTimeInterval(-1)
+      )
+    )
+    try await store.markEntryUnread(
+      viewerDid: viewerDid,
+      subjectUri: uri,
+      createdAt: timestamp
+    )
+
+    // Content TTL-expires while the explicit unread override survives, leaving the
+    // override orphaned — the per-scope INNER JOIN on content_items can no longer see it.
+    _ = try await store.deleteExpiredContent(before: timestamp, batchSize: 100)
+
+    _ = try await store.markAllReadCounters(
+      viewerDid: viewerDid,
+      scopes: [scope],
+      readAt: timestamp.addingTimeInterval(60)
+    )
+
+    // Re-indexing under the same deterministic URI must not resurrect the stale
+    // override: the entry is covered by the newer read floor and stays read.
+    try await store.upsertContentItem(
+      IndexedContentItem(
+        uri: uri,
+        cid: "bafy-expiring",
+        authorDid: authorDid,
+        collection: "site.standard.document",
+        createdAt: timestamp,
+        indexedAt: timestamp,
+        publicationSite: publicationId,
+        render: ContentRenderFields(
+          title: "expiring",
+          publishedAt: ISO8601DateFormatter().string(from: timestamp)
+        ),
+        expiresAt: timestamp.addingTimeInterval(3600)
+      )
+    )
+
+    let reindexed = try await store.listEntries(
+      viewerDid: viewerDid,
+      authorDid: authorDid,
+      publicationAtUri: publicationId,
+      publicationScopeAtUris: [],
+      publicationSiteUrls: [],
+      filter: .all,
+      cursor: nil,
+      limit: 10,
+      readBoundary: nil
+    )
+    let states = try await store.readStates(
+      viewerDid: viewerDid,
+      entries: reindexed.entries.map { $0.withPublicationId(publicationId) }
+    )
+    #expect(states[uri] == true)
+  }
 }
