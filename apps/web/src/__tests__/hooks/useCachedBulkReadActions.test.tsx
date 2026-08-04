@@ -1,12 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
-import { cleanup, renderHook } from "@testing-library/react";
+import { cleanup, renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import React from "react";
 import { useCachedBulkReadActions } from "@/hooks/useCachedBulkReadActions";
 import type { DiscoveredPublication } from "@/lib/atprotoClient";
 import { ENTRIES_QUERY_KEY } from "@/hooks/useEntries";
+import { PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY } from "@/lib/sidebarQueryKeys";
 import * as AuthHook from "@/hooks/useAuth";
 import * as ReadRouteContext from "@/contexts/ReadRouteContext";
+import * as PublicationProjectionClient from "@/lib/publicationProjectionClient";
 
 const markEntriesRead = mock(() => {});
 const markEntriesUnread = mock(() => {});
@@ -148,5 +150,48 @@ describe("useCachedBulkReadActions", () => {
       publications: [pub],
       syncToAppView: false,
     });
+  });
+
+  it("invalidates the sidebar projection cache once the gateway confirms mark-all-read", async () => {
+    const queryClient = new QueryClient();
+    // Simulate a stale persisted projection sitting in the cache — the bug this
+    // guards against is this staying stale forever after a successful mark-all-read.
+    queryClient.setQueryData(
+      PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(viewerDid),
+      { stale: true }
+    );
+    const authSpy = spyOn(AuthHook, "useAuth").mockReturnValue({
+      session: { did: viewerDid },
+      getOAuthSession: () => ({}) as never,
+    } as ReturnType<typeof AuthHook.useAuth>);
+    const gatewaySpy = spyOn(
+      PublicationProjectionClient,
+      "markAllReadOnGateway"
+    ).mockResolvedValue({} as never);
+
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    );
+    const { result } = renderHook(
+      () =>
+        useCachedBulkReadActions([pub], {
+          gatewayScopes: [{ kind: "subscribed" }],
+        }),
+      { wrapper }
+    );
+
+    result.current.applyMarkAllRead();
+
+    await waitFor(() => expect(gatewaySpy).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(
+        queryClient.getQueryState(
+          PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(viewerDid)
+        )?.isInvalidated
+      ).toBe(true)
+    );
+
+    authSpy.mockRestore();
+    gatewaySpy.mockRestore();
   });
 });

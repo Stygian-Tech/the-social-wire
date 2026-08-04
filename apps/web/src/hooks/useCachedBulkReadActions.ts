@@ -15,6 +15,7 @@ import {
   type GatewayMarkAllReadScope,
 } from "@/lib/publicationProjectionClient";
 import { distinctCachedEntryIdsForPublications } from "@/lib/unreadCounts";
+import { PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY } from "@/lib/sidebarQueryKeys";
 import type { DiscoveredPublication } from "@/lib/atprotoClient";
 import type { EntriesPage } from "@/hooks/useEntries";
 
@@ -77,18 +78,31 @@ export function useCachedBulkReadActions(
         publicationId: publication.publicationId,
       }));
     if (oauth && scopes.length > 0) {
-      void Promise.all(scopes.map((scope) => markAllReadOnGateway(oauth, scope))).catch(() => {
-        for (const [queryKey, snapshot] of cacheSnapshots) {
-          queryClient.setQueryData(queryKey as QueryKey, snapshot);
-        }
-        markEntriesUnread(newlyRead, { publications });
-        if (previouslyRead.length > 0) {
-          markEntriesRead(previouslyRead, {
-            publications,
-            syncToAppView: false,
-          });
-        }
-      });
+      void Promise.all(scopes.map((scope) => markAllReadOnGateway(oauth, scope)))
+        .then(() => {
+          // The optimistic clearPublicationUnreadCounts patch above (via
+          // markEntriesRead) only lives in memory and can be lost to a reload
+          // before the persisted IndexedDB snapshot catches up (persist writes
+          // are throttled). Force a refetch against the now-confirmed server
+          // state so the sidebar badge can't get stuck showing a stale count.
+          if (session?.did) {
+            void queryClient.invalidateQueries({
+              queryKey: PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(session.did),
+            });
+          }
+        })
+        .catch(() => {
+          for (const [queryKey, snapshot] of cacheSnapshots) {
+            queryClient.setQueryData(queryKey as QueryKey, snapshot);
+          }
+          markEntriesUnread(newlyRead, { publications });
+          if (previouslyRead.length > 0) {
+            markEntriesRead(previouslyRead, {
+              publications,
+              syncToAppView: false,
+            });
+          }
+        });
     } else if (scopes.length > 0) {
       for (const [queryKey, snapshot] of cacheSnapshots) {
         queryClient.setQueryData(queryKey as QueryKey, snapshot);
@@ -110,6 +124,7 @@ export function useCachedBulkReadActions(
     isEntryRead,
     markEntriesUnread,
     queryClient,
+    session?.did,
   ]);
 
   const applyMarkAllUnread = useCallback(() => {
