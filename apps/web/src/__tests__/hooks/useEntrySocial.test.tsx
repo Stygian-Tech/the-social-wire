@@ -186,6 +186,24 @@ describe("useEntrySocial", () => {
     });
   });
 
+  it("accepts an expanded aggregate repo permission set for Bluesky post access", async () => {
+    getTokenInfoMock.mockResolvedValueOnce({
+      scope:
+        "atproto repo?collection=app.bsky.feed.post&collection=app.bsky.feed.like&action=create",
+      iss: "https://pds.example",
+      aud: "https://pds.example",
+      sub: "did:plc:me",
+    });
+
+    const { result } = renderHook(() => useEntrySocial(entry), {
+      wrapper: makeWrapper(),
+    });
+
+    await result.current.postMutation.mutateAsync("Worth reading");
+
+    expect(postMock).toHaveBeenCalledTimes(1);
+  });
+
   it("fails before writing when the OAuth grant is missing Bluesky post access", async () => {
     getTokenInfoMock.mockResolvedValueOnce({
       scope: "atproto repo:app.thesocialwire.folder?action=create",
