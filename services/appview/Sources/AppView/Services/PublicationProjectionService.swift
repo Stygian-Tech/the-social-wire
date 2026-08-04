@@ -91,46 +91,55 @@ actor PublicationProjectionService {
     }
   }
 
+  /// Reconstructs a sidebar response from the durable, cross-restart, cross-replica Postgres
+  /// projection cache — no PDS/PLC calls. Used to serve hot paths (mark-all-read, unread-count
+  /// lookups for publications not yet warm in this process's in-memory caches) without falling
+  /// back to a live `discoverContext` pass, which fans out to every followed author's PDS and
+  /// can take tens of seconds (or blow through the Gateway's proxy timeout) for viewers who
+  /// follow many accounts.
+  func cachedSidebarResponse(viewerDid: String) async -> PublicationSidebarResponse? {
+    guard let projectionCache,
+          let entry = try? await projectionCache.sidebarProjectionCacheEntryIncludingExpired(
+            viewerDid: viewerDid
+          ),
+          let snapshot = try? JSONDecoder().decode(
+            BootstrapSidebarCacheSnapshot.self,
+            from: Data(entry.value.utf8)
+          )
+    else {
+      return nil
+    }
+    let priority = snapshot.priority
+    let folders = snapshot.folderPayload
+    var allRowsById: [String: SidebarPublicationRow] = [:]
+    for row in priority.allPublicationRows + (folders?.allPublicationRows ?? []) {
+      allRowsById[row.publicationId] = row
+    }
+    return PublicationSidebarResponse(
+      viewerDid: priority.viewerDid,
+      folders: priority.folders,
+      publicationPrefs: priority.publicationPrefs,
+      folderSections: folders?.folderSections ?? priority.folderSections,
+      allPublicationRows: Array(allRowsById.values),
+      myPublications: priority.myPublications,
+      subscribedUnfoldered: priority.subscribedUnfoldered,
+      followingTabPublications: priority.followingTabPublications,
+      enrollAuthorDids: priority.enrollAuthorDids,
+      totalUnreadCount: priority.totalUnreadCount,
+      refreshedAt: priority.refreshedAt
+    )
+  }
+
   /// Repairs feed membership from the stale sidebar projection without contacting a PDS.
   func rebuildFeedProjectionFromCachedSidebar(viewerDid: String) async -> Bool {
-    if let projectionCache,
-       let entry = try? await projectionCache.sidebarProjectionCacheEntryIncludingExpired(
-         viewerDid: viewerDid
-       ),
-       let snapshot = try? JSONDecoder().decode(
-         BootstrapSidebarCacheSnapshot.self,
-         from: Data(entry.value.utf8)
-      )
-    {
-      let priority = snapshot.priority
-      let folders = snapshot.folderPayload
-      var allRowsById: [String: SidebarPublicationRow] = [:]
-      for row in priority.allPublicationRows + (folders?.allPublicationRows ?? []) {
-        allRowsById[row.publicationId] = row
-      }
-      let allRows = Array(allRowsById.values)
-      let response = PublicationSidebarResponse(
-        viewerDid: priority.viewerDid,
-        folders: priority.folders,
-        publicationPrefs: priority.publicationPrefs,
-        folderSections: folders?.folderSections ?? priority.folderSections,
-        allPublicationRows: allRows,
-        myPublications: priority.myPublications,
-        subscribedUnfoldered: priority.subscribedUnfoldered,
-        followingTabPublications: priority.followingTabPublications,
-        enrollAuthorDids: priority.enrollAuthorDids,
-        totalUnreadCount: priority.totalUnreadCount,
-        refreshedAt: priority.refreshedAt
-      )
-      do {
-        try await storePublicationScopes(from: response, replaceAll: true)
-        return true
-      } catch {
-        logger.warning("Failed to rebuild feed projection from sidebar cache")
-        return false
-      }
+    guard let response = await cachedSidebarResponse(viewerDid: viewerDid) else { return false }
+    do {
+      try await storePublicationScopes(from: response, replaceAll: true)
+      return true
+    } catch {
+      logger.warning("Failed to rebuild feed projection from sidebar cache")
+      return false
     }
-    return false
   }
 
   func sidebarRow(for viewerDid: String, publicationId: String) -> SidebarPublicationRow? {

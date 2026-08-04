@@ -47,7 +47,14 @@ struct AppViewExtendedRoutes {
     group.post("/v1/appview/mark-all-read") { request, context async throws -> MarkAllReadResponse in
       guard let auth = context.authContext else { throw HTTPError(.unauthorized) }
       let body = try await request.decode(as: ScopedMarkAllReadRequest.self, context: context)
-      let sidebar = try await projectionService.sidebar(auth: auth)
+      let sidebar: PublicationSidebarResponse
+      if let cached = await projectionService.cachedSidebarResponse(viewerDid: auth.did) {
+        sidebar = cached
+      } else {
+        // No durable projection yet for this viewer (e.g. first request ever) — only then
+        // pay for a live discovery pass across every followed author's PDS.
+        sidebar = try await projectionService.sidebar(auth: auth)
+      }
       let rows = Self.rows(for: body.scope, sidebar: sidebar)
       let result = try await readService.markAllRead(auth: auth, rows: rows)
       return MarkAllReadResponse(

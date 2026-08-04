@@ -487,7 +487,24 @@ actor ThinAppViewReadService {
     var rowsForCounters = publicationIds.compactMap { resolvedRows[$0] }
 
     if rowsForCounters.count < publicationIds.count {
-      let missingIds = publicationIds.filter { resolvedRows[$0] == nil }
+      var missingIds = publicationIds.filter { rowsById[$0] == nil }
+      if !missingIds.isEmpty {
+        // Try the durable, cross-restart projection cache before paying for a live
+        // discovery pass — the in-memory sidebarRow cache misses on every cold process
+        // (deploys, restarts, a different replica), which otherwise turns a routine
+        // unread-count refresh into a full live PDS re-crawl that can time out.
+        if let cachedSidebar = await projectionService.cachedSidebarResponse(viewerDid: auth.did) {
+          for publicationId in missingIds {
+            guard let row = cachedSidebar.allPublicationRows.first(where: {
+              PublicationProjectionLogic.publicationIdsMatch($0.publicationId, publicationId)
+            }) else {
+              continue
+            }
+            rowsById[publicationId] = row
+          }
+          missingIds = publicationIds.filter { rowsById[$0] == nil }
+        }
+      }
       if !missingIds.isEmpty {
         let sidebar = try await projectionService.sidebar(auth: auth, phase: .full)
         for publicationId in missingIds {
@@ -498,8 +515,8 @@ actor ThinAppViewReadService {
           }
           rowsById[publicationId] = row
         }
-        rowsForCounters = publicationIds.compactMap { rowsById[$0] }
       }
+      rowsForCounters = publicationIds.compactMap { rowsById[$0] }
     }
 
     let snapshot = await projectionService.unreadCounterSnapshot(
