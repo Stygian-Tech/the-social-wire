@@ -88,14 +88,17 @@ function scopeAllowsRepoAction(
   ) {
     return true;
   }
-  if (scopeToken === `repo:${collection}` || scopeToken === "repo:*") {
-    return true;
-  }
-
-  if (scopeName !== `repo:${collection}`) return false;
-  if (!query) return true;
 
   const params = new URLSearchParams(query);
+  const hasCollection =
+    scopeName === `repo:${collection}` ||
+    scopeName === "repo:*" ||
+    (scopeName === "repo" &&
+      params
+        .getAll("collection")
+        .some((value) => value === collection || value === "*"));
+  if (!hasCollection) return false;
+
   const actions = params.getAll("action");
   return actions.length === 0 || actions.includes(action);
 }
