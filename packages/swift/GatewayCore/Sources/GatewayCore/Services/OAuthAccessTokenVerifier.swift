@@ -21,9 +21,14 @@ private actor JWKSVerificationCache {
   /// JWKS content can rotate; a shorter TTL keeps rotation windows reasonable while still
   /// collapsing bursts onto a single upstream fetch.
   private let jwksContentTTL: TimeInterval = 300
+  /// Guessed JWKS endpoints that don't exist for a given issuer (404) won't start existing
+  /// moments later; a short negative TTL still collapses request bursts onto one failed probe
+  /// instead of one failed probe per request, without masking a real fix for very long.
+  private let negativeContentTTL: TimeInterval = 60
 
   private var discoveryCache: [String: Entry<[OAuthAccessTokenVerifier.JwksTarget]>] = [:]
   private var contentCache: [String: Entry<String>] = [:]
+  private var negativeContentCache: [String: Date] = [:]
 
   func cachedTargets(forKey key: String) -> [OAuthAccessTokenVerifier.JwksTarget]? {
     guard let entry = discoveryCache[key], entry.expiresAt > Date() else { return nil }
@@ -41,6 +46,16 @@ private actor JWKSVerificationCache {
 
   func storeContent(_ json: String, forURL url: String) {
     contentCache[url] = Entry(value: json, expiresAt: Date().addingTimeInterval(jwksContentTTL))
+    negativeContentCache[url] = nil
+  }
+
+  func recentlyFailed(forURL url: String) -> Bool {
+    guard let expiresAt = negativeContentCache[url] else { return false }
+    return expiresAt > Date()
+  }
+
+  func storeFailure(forURL url: String) {
+    negativeContentCache[url] = Date().addingTimeInterval(negativeContentTTL)
   }
 
   func invalidateContent(forURL url: String) {
@@ -267,12 +282,18 @@ public enum OAuthAccessTokenVerifier {
       await JWKSVerificationCache.shared.invalidateContent(forURL: url)
     }
 
+    if await JWKSVerificationCache.shared.recentlyFailed(forURL: url) {
+      probeError = VerifyError.jwksFetch(nil)
+      return nil
+    }
+
     var probeRequest = HTTPClientRequest(url: url)
     probeRequest.headers.add(name: "Accept", value: "application/json")
 
     let jwksResponse = try await httpClient.execute(probeRequest, timeout: .seconds(10))
     guard jwksResponse.status == .ok else {
       probeError = VerifyError.jwksFetch(Int(jwksResponse.status.code))
+      await JWKSVerificationCache.shared.storeFailure(forURL: url)
       return nil
     }
 
