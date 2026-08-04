@@ -144,7 +144,7 @@ describe("gatewayFetch", () => {
     const gatewayNonces = new Map<string, string>();
     const nonceClaimsSeen: (string | undefined)[] = [];
     let calls = 0;
-    const fetchMock = mock(async (_url: string, init?: RequestInit) => {
+    const fetchMock = mock(async () => {
       calls += 1;
       const call = calls;
       return new Response(JSON.stringify({ ok: true, call }), {

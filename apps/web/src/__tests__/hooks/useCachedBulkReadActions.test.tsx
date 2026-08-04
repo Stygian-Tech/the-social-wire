@@ -163,7 +163,7 @@ describe("useCachedBulkReadActions", () => {
     const authSpy = spyOn(AuthHook, "useAuth").mockReturnValue({
       session: { did: viewerDid },
       getOAuthSession: () => ({}) as never,
-    } as ReturnType<typeof AuthHook.useAuth>);
+    } as unknown as ReturnType<typeof AuthHook.useAuth>);
     const gatewaySpy = spyOn(
       PublicationProjectionClient,
       "markAllReadOnGateway"
@@ -201,7 +201,7 @@ describe("useCachedBulkReadActions", () => {
     const authSpy = spyOn(AuthHook, "useAuth").mockReturnValue({
       session: { did: viewerDid },
       getOAuthSession: () => ({}) as never,
-    } as ReturnType<typeof AuthHook.useAuth>);
+    } as unknown as ReturnType<typeof AuthHook.useAuth>);
     // Simulates a background prefetch landing while the gateway call is in flight —
     // this entry was never part of the synchronous cachedEntryIds snapshot.
     const gatewaySpy = spyOn(

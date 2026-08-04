@@ -26,6 +26,7 @@ export function useCachedBulkReadActions(
   const queryClient = useQueryClient();
   const entriesEpoch = useEntriesCacheEpoch();
   const { session, getOAuthSession } = useAuth();
+  const viewerDid = session?.did;
   const {
     markEntriesRead,
     markEntriesUnread,
@@ -34,10 +35,10 @@ export function useCachedBulkReadActions(
 
   const cachedEntryIds = useMemo(() => {
     void entriesEpoch;
-    return session?.did
-      ? distinctCachedEntryIdsForPublications(queryClient, session.did, publications)
+    return viewerDid
+      ? distinctCachedEntryIdsForPublications(queryClient, viewerDid, publications)
       : [];
-  }, [queryClient, publications, entriesEpoch, session?.did]);
+  }, [queryClient, publications, entriesEpoch, viewerDid]);
 
   const bulkDisabled =
     cachedEntryIds.length === 0 &&
@@ -80,7 +81,7 @@ export function useCachedBulkReadActions(
     if (oauth && scopes.length > 0) {
       void Promise.all(scopes.map((scope) => markAllReadOnGateway(oauth, scope)))
         .then(() => {
-          if (!session?.did) return;
+          if (!viewerDid) return;
           // Entries that landed in the cache between the initial snapshot and
           // the gateway confirming (e.g. a background prefetch mid-flight)
           // never got an explicit local read mark. effectivePublicationUnreadCount
@@ -89,7 +90,7 @@ export function useCachedBulkReadActions(
           // now covers them. Re-snapshot and mark whatever's cached now.
           const settledEntryIds = distinctCachedEntryIdsForPublications(
             queryClient,
-            session.did,
+            viewerDid,
             publications
           );
           if (settledEntryIds.length > 0) {
@@ -104,7 +105,7 @@ export function useCachedBulkReadActions(
           // are throttled). Force a refetch against the now-confirmed server
           // state so the sidebar badge can't get stuck showing a stale count.
           void queryClient.invalidateQueries({
-            queryKey: PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(session.did),
+            queryKey: PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(viewerDid),
           });
         })
         .catch(() => {
@@ -140,7 +141,7 @@ export function useCachedBulkReadActions(
     isEntryRead,
     markEntriesUnread,
     queryClient,
-    session?.did,
+    viewerDid,
   ]);
 
   const applyMarkAllUnread = useCallback(() => {

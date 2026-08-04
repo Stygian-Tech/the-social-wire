@@ -20,6 +20,7 @@ import {
 import { dedupeEntryListItems } from "@/lib/rssFeedCore";
 import {
   filterEntriesForArticleFilter,
+  shouldShowNoUnreadEntriesState,
   type ArticleListFilter,
 } from "@/lib/entryArticleFilter";
 import { EntryListVirtualPane } from "./EntryListVirtualPane";
@@ -278,21 +279,13 @@ export function EntryList({
   }
 
   if (
-    effectiveFilter === "unread" &&
-    visibleEntries.length === 0 &&
-    allEntries.length > 0 &&
-    (activeHasNextPage || activeIsFetchingNextPage)
+    shouldShowNoUnreadEntriesState({
+      effectiveFilter,
+      visibleEntryCount: visibleEntries.length,
+      hasNextPage: activeHasNextPage,
+      isFetchingNextPage: activeIsFetchingNextPage,
+    })
   ) {
-    return (
-      <div className="space-y-2 p-4">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <Skeleton key={i} className="h-36 w-full rounded-lg" />
-        ))}
-      </div>
-    );
-  }
-
-  if (effectiveFilter === "unread" && visibleEntries.length === 0) {
     return (
       <div className="flex h-full items-center justify-center p-8 text-center text-sm text-muted-foreground">
         No unread entries for this publication.
