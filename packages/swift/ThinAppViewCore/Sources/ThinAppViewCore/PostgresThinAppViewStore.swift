@@ -1561,11 +1561,13 @@ public init(pool: PostgresClient, logger: Logger) {
       var counters: [AppViewUnreadCounter] = []
       var boundaries: [ReadWatermarkBoundary] = []
       for scope in uniqueScopes {
+        // Two-key overload combines independent hashes of viewerDid/publicationId — avoids
+        // concatenating them with a delimiter, which previously used a literal NUL byte
+        // ("\u{0}") that Postgres text parameters can never contain (sqlState 22021:
+        // "invalid byte sequence for encoding UTF8: 0x00"), failing this query on every call.
         let lockRows = try await connection.query(
           """
-          SELECT pg_advisory_xact_lock(
-            hashtextextended(\(viewerDid + "\u{0}" + scope.publicationId), 0)
-          )
+          SELECT pg_advisory_xact_lock(hashtext(\(viewerDid)), hashtext(\(scope.publicationId)))
           """,
           logger: logger
         )
