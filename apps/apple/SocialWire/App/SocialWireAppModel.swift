@@ -846,7 +846,9 @@ final class SocialWireAppModel {
                 ? page.entries
                 : mergeEntryPages(existing: entries, newPage: page.entries)
             entriesNextCursor = page.cursor
-            persistAggregateEntriesByPublication(page.entries)
+            if readerFilter == .all {
+                persistAggregateEntriesByPublication(page.entries)
+            }
             await prefetchThumbnailImages(for: page.entries)
         } catch {
             markAppViewUnavailableIfNeeded(error)
@@ -1573,6 +1575,7 @@ final class SocialWireAppModel {
         let page = try await fetchEntriesPage(
             for: publication,
             cursor: nil,
+            filter: .all,
             maxEntries: Self.entryPrefetchMaxEntries
         )
         try coordinator.upsertPublicationEntries(publicationId: publication.publicationId, entries: page.entries)
@@ -1609,6 +1612,7 @@ final class SocialWireAppModel {
     private func fetchEntriesPage(
         for publication: DiscoveredPublication,
         cursor: String?,
+        filter: ReaderFilter? = nil,
         maxEntries: Int? = nil
     ) async throws -> AppViewEntryListResponse {
         guard useAppViewEntryTimelines else {
@@ -1619,7 +1623,7 @@ final class SocialWireAppModel {
         }
         let page = try await gateway.fetchAppViewEntries(
             scope: scope,
-            filter: readerFilter,
+            filter: filter ?? readerFilter,
             cursor: cursor,
             maxEntries: maxEntries
         )
@@ -1767,7 +1771,7 @@ final class SocialWireAppModel {
         }
         defer { isLoadingEntries = false }
 
-        if hadCachedEntries && !forceNetworkRefresh {
+        if hadCachedEntries && !forceNetworkRefresh && readerFilter == .all {
             Task(priority: .utility) {
                 await self.refreshPublicationEntriesInBackground(for: publication)
             }
@@ -1779,7 +1783,9 @@ final class SocialWireAppModel {
             let page = try await fetchEntriesPage(for: publication, cursor: nil)
             entries = page.entries
             entriesNextCursor = page.cursor
-            persistPublicationEntries(publication.publicationId, entries: entries)
+            if readerFilter == .all {
+                persistPublicationEntries(publication.publicationId, entries: entries)
+            }
             await prefetchThumbnailImages(for: page.entries)
         } catch {
             markAppViewUnavailableIfNeeded(error)
@@ -1799,11 +1805,16 @@ final class SocialWireAppModel {
                 await refreshPublicationIndex(for: publication)
             }
             let page = try await fetchEntriesPage(for: publication, cursor: nil)
-            entries = mergeEntryPagesAtTop(existing: entries, freshFirstPage: page.entries)
-            if entriesNextCursor == nil {
+            if readerFilter == .unread {
+                entries = page.entries
                 entriesNextCursor = page.cursor
+            } else {
+                entries = mergeEntryPagesAtTop(existing: entries, freshFirstPage: page.entries)
+                if entriesNextCursor == nil {
+                    entriesNextCursor = page.cursor
+                }
+                persistPublicationEntries(publication.publicationId, entries: entries)
             }
-            persistPublicationEntries(publication.publicationId, entries: entries)
             await prefetchThumbnailImages(for: page.entries)
         } catch {
             markAppViewUnavailableIfNeeded(error)
@@ -1843,7 +1854,9 @@ final class SocialWireAppModel {
             let page = try await fetchEntriesPage(for: publication, cursor: cursor)
             entries = mergeEntryPages(existing: entries, newPage: page.entries)
             entriesNextCursor = page.cursor
-            persistPublicationEntries(publication.publicationId, entries: entries)
+            if readerFilter == .all {
+                persistPublicationEntries(publication.publicationId, entries: entries)
+            }
             await prefetchThumbnailImages(for: page.entries)
         } catch {
             if entryId != nil {
@@ -1855,6 +1868,7 @@ final class SocialWireAppModel {
 
     func applyReaderFilter(_ newValue: ReaderFilter) async {
         let old = readerFilter
+        guard old != newValue else { return }
         readerFilter = newValue
 
         if old == .unread, newValue == .all {
@@ -1864,32 +1878,11 @@ final class SocialWireAppModel {
                 await markReadIfNeeded(entryId: open)
             }
             unreadDeferredEntryId = nil
-            return
         }
 
-        if newValue == .unread {
-            entries = []
-            entriesNextCursor = nil
-            entriesPaginationTriggeredForEntryId = nil
-            await refreshSelectedArticleFeed()
-            if let publication = selectedPublication,
-               filteredEntries.isEmpty,
-               canLoadMoreEntries {
-                await chaseUnreadPagesIfNeeded(for: publication)
-            }
-        }
-    }
-
-    func chaseUnreadPagesIfNeeded(for publication: DiscoveredPublication) async {
-        guard readerFilter == .unread else { return }
-        guard filteredEntries.isEmpty, canLoadMoreEntries else { return }
-        guard !isLoadingEntries, !isLoadingMoreEntries else { return }
-        guard selectedPublication?.publicationId == publication.publicationId else { return }
-
-        await loadMoreEntriesIfNeeded(for: publication)
-        if filteredEntries.isEmpty, canLoadMoreEntries {
-            await chaseUnreadPagesIfNeeded(for: publication)
-        }
+        entriesNextCursor = nil
+        entriesPaginationTriggeredForEntryId = nil
+        await refreshSelectedArticleFeed()
     }
 
     func dismissReaderDetail() async {

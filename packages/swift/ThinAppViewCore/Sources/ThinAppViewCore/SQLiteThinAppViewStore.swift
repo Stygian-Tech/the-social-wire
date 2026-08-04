@@ -1610,16 +1610,7 @@ public init(path dbPath: String, logger: Logger) throws {
           publicationId: scope.publicationId,
           db: db
         )
-        let shouldClearCoveredOverrides = existing.map { !$0.isAfter(requested) } ?? true
         let confirmed = existing.map { requested.isAfter($0) ? requested : $0 } ?? requested
-        var counter = AppViewUnreadCounter(
-          publicationId: scope.publicationId,
-          unreadCount: 0,
-          generation: generation,
-          accuracy: .exact,
-          dirty: false,
-          countedAt: readAt
-        )
         try db.execute(
           sql: """
             INSERT INTO appview_publication_read_floors
@@ -1640,33 +1631,79 @@ public init(path dbPath: String, logger: Logger) throws {
             readAtIso,
           ]
         )
-        if shouldClearCoveredOverrides {
-          try Self.deleteCoveredUnreadOverrides(
-            viewerDid: viewerDid,
-            scope: scope,
-            boundary: confirmed,
-            db: db
-          )
+        try Self.deleteCoveredUnreadOverrides(
+          viewerDid: viewerDid,
+          scope: scope,
+          boundary: confirmed,
+          createdBeforeOrAt: readAtIso,
+          db: db
+        )
+        let nowIso = Self.isoString(from: Date())
+        let scoped = ThinAppViewQuerySupport.requiresPublicationSiteFilter(
+          publicationAtUri: scope.publicationAtUri,
+          publicationScopeAtUris: scope.publicationScopeAtUris,
+          publicationSiteUrls: scope.publicationSiteUrls
+        )
+        let siteKeys = AppViewProjectionCacheScopeKeys.publicationSiteKeys(
+          publicationAtUri: scope.publicationAtUri,
+          publicationScopeAtUris: scope.publicationScopeAtUris,
+          publicationSiteUrls: scope.publicationSiteUrls
+        )
+        let floorIso = Self.isoString(from: confirmed.createdAt)
+        let unreadCount: Int
+        if scoped, siteKeys.isEmpty {
+          unreadCount = 0
+        } else {
+          var sql = """
+            SELECT COUNT(*)
+            FROM content_items ci
+            LEFT JOIN read_marks rm
+              ON rm.viewer_did = ? AND rm.subject_uri = ci.uri
+            LEFT JOIN appview_unread_overrides uo
+              ON uo.viewer_did = ? AND uo.subject_uri = ci.uri
+            WHERE ci.author_did = ?
+              AND ci.expires_at > ?
+              AND (
+                ci.created_at > ?
+                OR (? IS NOT NULL AND ci.created_at = ? AND ci.uri > ?)
+                OR uo.subject_uri IS NOT NULL
+              )
+              AND rm.subject_uri IS NULL
+            """
+          var arguments: [DatabaseValueConvertible?] = [
+            viewerDid,
+            viewerDid,
+            scope.authorDid,
+            nowIso,
+            floorIso,
+            confirmed.entryId,
+            floorIso,
+            confirmed.entryId,
+          ]
+          if scoped {
+            sql += " AND ci.publication_site IN (\(siteKeys.map { _ in "?" }.joined(separator: ", ")))"
+            arguments.append(contentsOf: siteKeys)
+          }
+          unreadCount = try Int.fetchOne(
+            db,
+            sql: sql,
+            arguments: StatementArguments(arguments)
+          ) ?? 0
         }
-        if shouldClearCoveredOverrides {
-          try Self.upsertUnreadCounter(
-            counter,
-            viewerDid: viewerDid,
-            countedAtIso: readAtIso,
-            db: db
-          )
-        } else if let row = try Row.fetchOne(
-          db,
-          sql: """
-            SELECT publication_id, unread_count, generation, accuracy, dirty, counted_at
-            FROM appview_unread_counters
-            WHERE viewer_did = ? AND publication_id = ?
-            LIMIT 1
-            """,
-          arguments: [viewerDid, scope.publicationId]
-        ), let stored = Self.unreadCounter(from: row) {
-          counter = stored
-        }
+        let counter = AppViewUnreadCounter(
+          publicationId: scope.publicationId,
+          unreadCount: unreadCount,
+          generation: generation,
+          accuracy: .exact,
+          dirty: false,
+          countedAt: readAt
+        )
+        try Self.upsertUnreadCounter(
+          counter,
+          viewerDid: viewerDid,
+          countedAtIso: readAtIso,
+          db: db
+        )
         counters.append(counter)
         boundaries.append(confirmed)
       }
@@ -1678,9 +1715,10 @@ public init(path dbPath: String, logger: Logger) throws {
         sql: """
           DELETE FROM appview_unread_overrides
           WHERE viewer_did = ?
+            AND created_at <= ?
             AND subject_uri NOT IN (SELECT uri FROM content_items)
           """,
-        arguments: [viewerDid]
+        arguments: [viewerDid, readAtIso]
       )
       return (counters, boundaries)
     }
@@ -2919,6 +2957,7 @@ public init(path dbPath: String, logger: Logger) throws {
     viewerDid: String,
     scope: PublicationUnreadScope,
     boundary: ReadWatermarkBoundary,
+    createdBeforeOrAt: String,
     db: Database
   ) throws {
     let rows = try Row.fetchAll(
@@ -2927,9 +2966,11 @@ public init(path dbPath: String, logger: Logger) throws {
         SELECT uo.subject_uri, ci.created_at, ci.publication_site
         FROM appview_unread_overrides uo
         INNER JOIN content_items ci ON ci.uri = uo.subject_uri
-        WHERE uo.viewer_did = ? AND ci.author_did = ?
+        WHERE uo.viewer_did = ?
+          AND uo.created_at <= ?
+          AND ci.author_did = ?
         """,
-      arguments: [viewerDid, scope.authorDid]
+      arguments: [viewerDid, createdBeforeOrAt, scope.authorDid]
     )
     let covered = rows.compactMap { row -> String? in
       let subjectUri: String = row["subject_uri"]

@@ -995,4 +995,109 @@ struct SQLiteThinAppViewStoreTests {
     )
     #expect(states[uri] == true)
   }
+
+  @Test("mark-all-read clears live overrides when the retained watermark is newer")
+  func markAllReadClearsOverridesBelowRetainedWatermark() async throws {
+    let dbPath =
+      FileManager.default.temporaryDirectory
+        .appendingPathComponent("sw-appview-\(UUID().uuidString).sqlite")
+        .path
+    defer { try? FileManager.default.removeItem(atPath: dbPath) }
+
+    let store = try SQLiteThinAppViewStore(path: dbPath, logger: Logger(label: "appview.test"))
+    let viewerDid = "did:plc:viewer"
+    let authorDid = "did:plc:author"
+    let publicationId = "at://did:plc:author/site.standard.publication/main"
+    let timestamp = ISO8601DateFormatter().date(from: "2027-07-28T20:00:00Z") ?? Date()
+    let scope = PublicationUnreadScope(
+      publicationId: publicationId,
+      authorDid: authorDid,
+      publicationAtUri: publicationId,
+      publicationScopeAtUris: [],
+      publicationSiteUrls: []
+    )
+
+    func item(_ suffix: String, createdAt: Date, expiresAt: Date) -> IndexedContentItem {
+      IndexedContentItem(
+        uri: "at://did:plc:author/site.standard.document/\(suffix)",
+        cid: "bafy-\(suffix)",
+        authorDid: authorDid,
+        collection: "site.standard.document",
+        createdAt: createdAt,
+        indexedAt: timestamp,
+        publicationSite: publicationId,
+        render: ContentRenderFields(
+          title: suffix,
+          publishedAt: ISO8601DateFormatter().string(from: createdAt)
+        ),
+        expiresAt: expiresAt
+      )
+    }
+
+    let olderUri = "at://did:plc:author/site.standard.document/older"
+    let newerUri = "at://did:plc:author/site.standard.document/newer"
+    try await store.upsertContentItem(
+      item(
+        "older",
+        createdAt: timestamp,
+        expiresAt: timestamp.addingTimeInterval(3_600)
+      )
+    )
+    try await store.upsertContentItem(
+      item(
+        "newer",
+        createdAt: timestamp.addingTimeInterval(120),
+        expiresAt: timestamp.addingTimeInterval(180)
+      )
+    )
+
+    _ = try await store.markAllReadCounters(
+      viewerDid: viewerDid,
+      scopes: [scope],
+      readAt: timestamp.addingTimeInterval(150)
+    )
+    try await store.markEntryUnread(
+      viewerDid: viewerDid,
+      subjectUri: olderUri,
+      createdAt: timestamp.addingTimeInterval(160)
+    )
+    _ = try await store.refreshUnreadCounters(viewerDid: viewerDid, scopes: [scope])
+
+    _ = try await store.deleteExpiredContent(
+      before: timestamp.addingTimeInterval(200),
+      batchSize: 100
+    )
+    _ = try await store.markAllReadCounters(
+      viewerDid: viewerDid,
+      scopes: [scope],
+      readAt: timestamp.addingTimeInterval(210)
+    )
+
+    let remaining = try await store.listEntries(
+      viewerDid: viewerDid,
+      authorDid: authorDid,
+      publicationAtUri: publicationId,
+      publicationScopeAtUris: [],
+      publicationSiteUrls: [],
+      filter: .all,
+      cursor: nil,
+      limit: 10,
+      readBoundary: nil
+    )
+    let states = try await store.readStates(
+      viewerDid: viewerDid,
+      entries: remaining.entries.map { $0.withPublicationId(publicationId) }
+    )
+    let counters = try await store.fetchUnreadCounters(
+      viewerDid: viewerDid,
+      publicationIds: [publicationId]
+    )
+
+    #expect(states[olderUri] == true)
+    #expect(counters.first?.unreadCount == 0)
+    #expect(
+      try await store.readBoundary(viewerDid: viewerDid, publicationId: publicationId)?.entryId
+        == newerUri
+    )
+  }
 }

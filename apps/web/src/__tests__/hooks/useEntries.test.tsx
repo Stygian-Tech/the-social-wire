@@ -113,6 +113,35 @@ describe("useEntries", () => {
     expect(mockFetchHandler).toHaveBeenCalled();
   });
 
+  it("requests an authoritative unread page from AppView", async () => {
+    const { result } = renderHook(
+      () => useEntries("did:plc:alice", "unread"),
+      { wrapper: makeWrapper() }
+    );
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    await waitFor(() =>
+      expect(
+        mockFetchHandler.mock.calls.some(([url]) => {
+          const requestUrl = new URL(String(url));
+          return (
+            requestUrl.pathname === "/v1/appview/feed" &&
+            requestUrl.searchParams.get("filter") === "unread"
+          );
+        })
+      ).toBe(true)
+    );
+    expect(
+      mockFetchHandler.mock.calls.filter(([url]) => {
+        const requestUrl = new URL(String(url));
+        return (
+          requestUrl.pathname === "/v1/appview/feed" &&
+          requestUrl.searchParams.get("filter") === "unread"
+        );
+      })
+    ).toHaveLength(1);
+  });
+
   it("uses dummy entries without an AppView request in local", async () => {
     process.env.NEXT_PUBLIC_APP_ENV = "local";
     process.env.NEXT_PUBLIC_USE_DUMMY_DATA = "false";

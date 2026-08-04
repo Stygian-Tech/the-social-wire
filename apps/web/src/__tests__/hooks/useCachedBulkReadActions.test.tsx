@@ -160,6 +160,14 @@ describe("useCachedBulkReadActions", () => {
       PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(viewerDid),
       { stale: true }
     );
+    const unreadQueryKey = [
+      ...ENTRIES_QUERY_KEY(viewerDid, pub.publicationId),
+      "unread",
+    ] as const;
+    queryClient.setQueryData(unreadQueryKey, {
+      pages: [{ entries: [], cursor: undefined }],
+      pageParams: [undefined],
+    });
     const authSpy = spyOn(AuthHook, "useAuth").mockReturnValue({
       session: { did: viewerDid },
       getOAuthSession: () => ({}) as never,
@@ -190,6 +198,7 @@ describe("useCachedBulkReadActions", () => {
         )?.isInvalidated
       ).toBe(true)
     );
+    expect(queryClient.getQueryState(unreadQueryKey)?.isInvalidated).toBe(true);
 
     authSpy.mockRestore();
     gatewaySpy.mockRestore();

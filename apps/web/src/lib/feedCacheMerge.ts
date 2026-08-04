@@ -2,6 +2,7 @@ import type { InfiniteData } from "@tanstack/react-query";
 
 import type { EntriesPage } from "@/hooks/useEntries";
 import { dedupeEntryListItems } from "@/lib/rssFeedCore";
+import type { ArticleListFilter } from "@/lib/entryArticleFilter";
 
 /** Merge a fresh first page without dropping cached tail pages or their page params. */
 export function mergeFeedFirstPageRefresh(
@@ -44,4 +45,31 @@ export function mergeFeedFirstPageRefresh(
     ],
     pageParams: [firstParam, ...restParams],
   };
+}
+
+/** Seed an unread query from already-painted All rows while its server page loads. */
+export function unreadFeedPlaceholder(
+  allFeed: InfiniteData<EntriesPage, string | undefined> | undefined
+): InfiniteData<EntriesPage, string | undefined> | undefined {
+  if (!allFeed?.pages.length) return undefined;
+  const entries = dedupeEntryListItems(
+    allFeed.pages.flatMap((page) => page.entries)
+  ).filter((entry) => !entry.isRead);
+  if (entries.length === 0) return undefined;
+  return {
+    pages: [{ entries, cursor: undefined }],
+    pageParams: [undefined],
+  };
+}
+
+/** Unread pages are authoritative snapshots; cached tail pages may now be read. */
+export function mergeFeedRefreshForFilter(
+  existing: InfiniteData<EntriesPage> | undefined,
+  freshPage: EntriesPage,
+  articleFilter: ArticleListFilter
+): InfiniteData<EntriesPage> {
+  if (articleFilter === "unread") {
+    return { pages: [freshPage], pageParams: [undefined] };
+  }
+  return mergeFeedFirstPageRefresh(existing, freshPage);
 }

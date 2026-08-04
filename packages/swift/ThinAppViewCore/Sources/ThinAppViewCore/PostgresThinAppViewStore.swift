@@ -572,9 +572,16 @@ public init(pool: PostgresClient, logger: Logger) {
               OR scope.scope_keys ? \(feedId)
             )
         ) definitions
-      ), matching_scopes AS (
-        SELECT DISTINCT scope.*
+      ), matching_scope_keys AS (
+        SELECT DISTINCT
+          keys.viewer_did,
+          keys.publication_id,
+          keys.author_did,
+          keys.scope_key
         FROM appview_publication_scopes scope
+        JOIN appview_publication_scope_keys keys
+          ON keys.viewer_did = scope.viewer_did
+         AND keys.publication_id = scope.publication_id
         LEFT JOIN appview_feed_publications membership
           ON membership.viewer_did = scope.viewer_did
          AND membership.publication_id = scope.publication_id
@@ -592,45 +599,67 @@ public init(pool: PostgresClient, logger: Logger) {
               )
             )
           )
-      ), candidates AS (
+      ), matched_content AS (
         SELECT
-          ci.uri,
-          ci.render_json::text AS render_json,
-          ci.created_at,
+          scope.viewer_did,
           scope.publication_id,
-          CASE
-            WHEN uo.subject_uri IS NOT NULL THEN FALSE
-            WHEN rm.subject_uri IS NOT NULL THEN TRUE
-            WHEN floor.read_floor_at IS NULL THEN FALSE
-            WHEN ci.created_at < floor.read_floor_at THEN TRUE
-            WHEN ci.created_at = floor.read_floor_at
-              AND (floor.read_floor_uri IS NULL OR ci.uri <= floor.read_floor_uri) THEN TRUE
-            ELSE FALSE
-          END AS is_read,
-          ROW_NUMBER() OVER (
-            PARTITION BY COALESCE(NULLIF(ci.render_json->>'articleUrl', ''), ci.uri)
-            ORDER BY ci.created_at DESC, ci.uri DESC
-          ) AS duplicate_rank
-        FROM matching_scopes scope
+          ci.uri,
+          ci.render_json,
+          ci.created_at
+        FROM matching_scope_keys scope
         JOIN content_items ci
           ON ci.author_did = scope.author_did
-         AND (
-           jsonb_array_length(scope.scope_keys) = 0
-           OR (ci.publication_site IS NOT NULL AND scope.scope_keys ? ci.publication_site)
-         )
-        LEFT JOIN appview_publication_read_floors floor
-          ON floor.viewer_did = scope.viewer_did
-         AND floor.publication_id = scope.publication_id
-        LEFT JOIN read_marks rm
-          ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = ci.uri
-        LEFT JOIN appview_unread_overrides uo
-          ON uo.viewer_did = \(viewerDid) AND uo.subject_uri = ci.uri
-        WHERE ci.expires_at > \(now)
+         AND ci.publication_site = scope.scope_key
+        WHERE scope.scope_key <> ''
+          AND ci.expires_at > \(now)
           AND (
             \(hasCursor) = FALSE
             OR ci.created_at < \(cursorAt)
             OR (ci.created_at = \(cursorAt) AND ci.uri < \(cursorUri))
           )
+        UNION ALL
+        SELECT
+          scope.viewer_did,
+          scope.publication_id,
+          ci.uri,
+          ci.render_json,
+          ci.created_at
+        FROM matching_scope_keys scope
+        JOIN content_items ci ON ci.author_did = scope.author_did
+        WHERE scope.scope_key = ''
+          AND ci.expires_at > \(now)
+          AND (
+            \(hasCursor) = FALSE
+            OR ci.created_at < \(cursorAt)
+            OR (ci.created_at = \(cursorAt) AND ci.uri < \(cursorUri))
+          )
+      ), candidates AS (
+        SELECT
+          content.uri,
+          content.render_json::text AS render_json,
+          content.created_at,
+          content.publication_id,
+          CASE
+            WHEN uo.subject_uri IS NOT NULL THEN FALSE
+            WHEN rm.subject_uri IS NOT NULL THEN TRUE
+            WHEN floor.read_floor_at IS NULL THEN FALSE
+            WHEN content.created_at < floor.read_floor_at THEN TRUE
+            WHEN content.created_at = floor.read_floor_at
+              AND (floor.read_floor_uri IS NULL OR content.uri <= floor.read_floor_uri) THEN TRUE
+            ELSE FALSE
+          END AS is_read,
+          ROW_NUMBER() OVER (
+            PARTITION BY COALESCE(NULLIF(content.render_json->>'articleUrl', ''), content.uri)
+            ORDER BY content.created_at DESC, content.uri DESC
+          ) AS duplicate_rank
+        FROM matched_content content
+        LEFT JOIN appview_publication_read_floors floor
+          ON floor.viewer_did = content.viewer_did
+         AND floor.publication_id = content.publication_id
+        LEFT JOIN read_marks rm
+          ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = content.uri
+        LEFT JOIN appview_unread_overrides uo
+          ON uo.viewer_did = \(viewerDid) AND uo.subject_uri = content.uri
       ), page AS (
         SELECT uri, render_json, created_at, publication_id, is_read
         FROM candidates
@@ -1641,7 +1670,6 @@ public init(pool: PostgresClient, logger: Logger) {
             entryId: entryId
           )
         }
-        let shouldClearCoveredOverrides = existing.map { !$0.isAfter(requested) } ?? true
         let confirmed = existing.map { requested.isAfter($0) ? requested : $0 } ?? requested
         try await connection.query(
           """
@@ -1663,7 +1691,9 @@ public init(pool: PostgresClient, logger: Logger) {
           SELECT uo.subject_uri, ci.created_at, ci.publication_site
           FROM appview_unread_overrides uo
           INNER JOIN content_items ci ON ci.uri = uo.subject_uri
-          WHERE uo.viewer_did = \(viewerDid) AND ci.author_did = \(scope.authorDid)
+          WHERE uo.viewer_did = \(viewerDid)
+            AND uo.created_at <= \(readAt)
+            AND ci.author_did = \(scope.authorDid)
           """,
           logger: logger
         )
@@ -1683,7 +1713,7 @@ public init(pool: PostgresClient, logger: Logger) {
           }
           coveredOverrides.append(subjectUri)
         }
-        if shouldClearCoveredOverrides, !coveredOverrides.isEmpty {
+        if !coveredOverrides.isEmpty {
           try await connection.query(
             """
             DELETE FROM appview_unread_overrides
@@ -1692,46 +1722,87 @@ public init(pool: PostgresClient, logger: Logger) {
             logger: logger
           )
         }
-        var counter = AppViewUnreadCounter(
+        var unreadCount = 0
+        if !scoped || !siteKeys.isEmpty {
+          let now = Date()
+          let unreadRows: PostgresRowSequence
+          if scoped {
+            unreadRows = try await connection.query(
+              """
+              SELECT COUNT(*)::int
+              FROM content_items ci
+              LEFT JOIN read_marks rm
+                ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = ci.uri
+              LEFT JOIN appview_unread_overrides uo
+                ON uo.viewer_did = \(viewerDid) AND uo.subject_uri = ci.uri
+              WHERE ci.author_did = \(scope.authorDid)
+                AND ci.expires_at > \(now)
+                AND (
+                  ci.created_at > \(confirmed.createdAt)
+                  OR (
+                    \(confirmed.entryId) IS NOT NULL
+                    AND ci.created_at = \(confirmed.createdAt)
+                    AND ci.uri > \(confirmed.entryId)
+                  )
+                  OR uo.subject_uri IS NOT NULL
+                )
+                AND ci.publication_site = ANY(\(siteKeys))
+                AND rm.subject_uri IS NULL
+              """,
+              logger: logger
+            )
+          } else {
+            unreadRows = try await connection.query(
+              """
+              SELECT COUNT(*)::int
+              FROM content_items ci
+              LEFT JOIN read_marks rm
+                ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = ci.uri
+              LEFT JOIN appview_unread_overrides uo
+                ON uo.viewer_did = \(viewerDid) AND uo.subject_uri = ci.uri
+              WHERE ci.author_did = \(scope.authorDid)
+                AND ci.expires_at > \(now)
+                AND (
+                  ci.created_at > \(confirmed.createdAt)
+                  OR (
+                    \(confirmed.entryId) IS NOT NULL
+                    AND ci.created_at = \(confirmed.createdAt)
+                    AND ci.uri > \(confirmed.entryId)
+                  )
+                  OR uo.subject_uri IS NOT NULL
+                )
+                AND rm.subject_uri IS NULL
+              """,
+              logger: logger
+            )
+          }
+          for try await row in unreadRows {
+            unreadCount = try row.decode(Int.self)
+          }
+        }
+        let counter = AppViewUnreadCounter(
           publicationId: scope.publicationId,
-          unreadCount: 0,
+          unreadCount: unreadCount,
           generation: generation,
           accuracy: .exact,
           dirty: false,
           countedAt: readAt
         )
-        if shouldClearCoveredOverrides {
-          try await connection.query(
-            """
-            INSERT INTO appview_unread_counters
-              (viewer_did, publication_id, unread_count, generation, accuracy, dirty, counted_at)
-            VALUES
-              (\(viewerDid), \(scope.publicationId), 0, \(generation), \(counter.accuracy.rawValue), FALSE, \(readAt))
-            ON CONFLICT (viewer_did, publication_id) DO UPDATE SET
-              unread_count = 0,
-              generation = EXCLUDED.generation,
-              accuracy = EXCLUDED.accuracy,
-              dirty = FALSE,
-              counted_at = EXCLUDED.counted_at
-            """,
-            logger: logger
-          )
-        } else {
-          let counterRows = try await connection.query(
-            """
-            SELECT publication_id, unread_count, generation, accuracy, dirty, counted_at
-            FROM appview_unread_counters
-            WHERE viewer_did = \(viewerDid) AND publication_id = \(scope.publicationId)
-            LIMIT 1
-            """,
-            logger: logger
-          )
-          for try await row in counterRows {
-            if let stored = try Self.unreadCounter(from: row) {
-              counter = stored
-            }
-          }
-        }
+        try await connection.query(
+          """
+          INSERT INTO appview_unread_counters
+            (viewer_did, publication_id, unread_count, generation, accuracy, dirty, counted_at)
+          VALUES
+            (\(viewerDid), \(scope.publicationId), \(unreadCount), \(generation), \(counter.accuracy.rawValue), FALSE, \(readAt))
+          ON CONFLICT (viewer_did, publication_id) DO UPDATE SET
+            unread_count = EXCLUDED.unread_count,
+            generation = EXCLUDED.generation,
+            accuracy = EXCLUDED.accuracy,
+            dirty = FALSE,
+            counted_at = EXCLUDED.counted_at
+          """,
+          logger: logger
+        )
         counters.append(counter)
         boundaries.append(confirmed)
       }
@@ -1745,6 +1816,7 @@ public init(pool: PostgresClient, logger: Logger) {
         """
         DELETE FROM appview_unread_overrides uo
         WHERE uo.viewer_did = \(viewerDid)
+          AND uo.created_at <= \(readAt)
           AND NOT EXISTS (
             SELECT 1 FROM content_items ci WHERE ci.uri = uo.subject_uri
           )

@@ -13,7 +13,10 @@ import { getEntry, normalizeAtRepoParam, parseAtUri } from "@/lib/atprotoClient"
 import type { EntryListItem, EntryDetail } from "@/lib/atprotoClient";
 import type { ArticleListFilter } from "@/lib/entryArticleFilter";
 import { prefetchCachedImages } from "@/lib/imageBlobCache";
-import { mergeFeedFirstPageRefresh } from "@/lib/feedCacheMerge";
+import {
+  mergeFeedRefreshForFilter,
+  unreadFeedPlaceholder,
+} from "@/lib/feedCacheMerge";
 import {
   getEntryFromAppView,
   enrollAuthorsInAppView,
@@ -183,6 +186,18 @@ export function useEntries(
             pageParams: [undefined],
           }
         : undefined,
+    placeholderData:
+      articleFilter === "unread"
+        ? () =>
+            unreadFeedPlaceholder(
+              queryClient.getQueryData<
+                InfiniteData<EntriesPage, string | undefined>
+              >([
+                ...ENTRIES_QUERY_KEY(viewerDid, normalizedKey ?? ""),
+                "all",
+              ])
+            )
+        : undefined,
     getNextPageParam: entriesNextPageParam,
     enabled:
       !!normalizedKey &&
@@ -210,7 +225,13 @@ export function useEntries(
   }, [query.data]);
 
   useEffect(() => {
-    if (dummyReaderDataEnabled || !query.isSuccess || !normalizedKey || !viewerDid) return;
+    if (
+      dummyReaderDataEnabled ||
+      !query.isSuccess ||
+      query.isPlaceholderData ||
+      !normalizedKey ||
+      !viewerDid
+    ) return;
     if (telemetryKeyRef.current === paintKey) return;
     telemetryKeyRef.current = paintKey;
     const oauth = getOAuthSession();
@@ -237,6 +258,7 @@ export function useEntries(
     normalizedKey,
     paintKey,
     query.isFetchedAfterMount,
+    query.isPlaceholderData,
     query.isSuccess,
     viewerDid,
   ]);
@@ -260,6 +282,7 @@ export function useEntries(
     if (
       dummyReaderDataEnabled ||
       !query.isSuccess ||
+      query.isPlaceholderData ||
       !normalizedKey ||
       !viewerDid
     ) {
@@ -274,7 +297,7 @@ export function useEntries(
     const mergePage = (freshPage: EntriesPage) => {
       queryClient.setQueryData<InfiniteData<EntriesPage>>(
         entriesQueryKey,
-        (current) => mergeFeedFirstPageRefresh(current, freshPage)
+        (current) => mergeFeedRefreshForFilter(current, freshPage, articleFilter)
       );
     };
     const refreshRestoredCache = async () => {
@@ -315,7 +338,7 @@ export function useEntries(
       mergePage(freshPage);
     };
     void refreshRestoredCache()
-      .then(enrollAndMerge)
+      .then(() => articleFilter === "all" ? enrollAndMerge() : undefined)
       .catch(() => {
         /* enrollment and its post-index merge are best effort */
       });
@@ -326,6 +349,7 @@ export function useEntries(
     getOAuthSession,
     normalizedKey,
     query.isFetchedAfterMount,
+    query.isPlaceholderData,
     query.isSuccess,
     queryClient,
     viewerDid,
@@ -333,7 +357,14 @@ export function useEntries(
 
   useEffect(() => {
     const pageCount = query.data?.pages.length ?? 0;
-    if (pageCount === 0 || pageCount >= 3 || !query.hasNextPage || query.isFetchingNextPage) {
+    if (
+      articleFilter !== "all" ||
+      query.isPlaceholderData ||
+      pageCount === 0 ||
+      pageCount >= 3 ||
+      !query.hasNextPage ||
+      query.isFetchingNextPage
+    ) {
       return;
     }
     const run = () => void fetchNextPage();
@@ -344,10 +375,12 @@ export function useEntries(
     const handle = globalThis.setTimeout(run, 250);
     return () => globalThis.clearTimeout(handle);
   }, [
+    articleFilter,
     query.data?.pages.length,
     fetchNextPage,
     query.hasNextPage,
     query.isFetchingNextPage,
+    query.isPlaceholderData,
   ]);
 
   return { ...query, scopePending: false };
@@ -409,6 +442,18 @@ export function useAggregateFeedEntries(
             pageParams: [undefined],
           }
         : undefined,
+    placeholderData:
+      articleFilter === "unread" && feed
+        ? () =>
+            unreadFeedPlaceholder(
+              queryClient.getQueryData<
+                InfiniteData<EntriesPage, string | undefined>
+              >([
+                ...AGGREGATE_ENTRIES_QUERY_KEY(viewerDid, feed),
+                "all",
+              ])
+            )
+        : undefined,
     getNextPageParam: entriesNextPageParam,
     enabled: !!feed && !!session,
     staleTime: ENTRIES_QUERY_STALE_MS,
@@ -420,7 +465,13 @@ export function useAggregateFeedEntries(
   const { fetchNextPage } = query;
 
   useEffect(() => {
-    if (dummyReaderDataEnabled || !query.isSuccess || !feed || !viewerDid) return;
+    if (
+      dummyReaderDataEnabled ||
+      !query.isSuccess ||
+      query.isPlaceholderData ||
+      !feed ||
+      !viewerDid
+    ) return;
     if (telemetryKeyRef.current === paintKey) return;
     telemetryKeyRef.current = paintKey;
     const oauth = getOAuthSession();
@@ -446,6 +497,7 @@ export function useAggregateFeedEntries(
     dummyReaderDataEnabled,
     paintKey,
     query.isFetchedAfterMount,
+    query.isPlaceholderData,
     query.isSuccess,
     viewerDid,
   ]);
@@ -471,6 +523,7 @@ export function useAggregateFeedEntries(
       !feed ||
       !viewerDid ||
       !query.data?.pages.length ||
+      query.isPlaceholderData ||
       query.isFetchedAfterMount
     ) {
       return;
@@ -489,7 +542,7 @@ export function useAggregateFeedEntries(
       .then((freshPage) => {
         queryClient.setQueryData<InfiniteData<EntriesPage>>(
           aggregateQueryKey,
-          (current) => mergeFeedFirstPageRefresh(current, freshPage)
+          (current) => mergeFeedRefreshForFilter(current, freshPage, articleFilter)
         );
         void recordClientPerformance(oauth, {
           event: "fresh_merge",
@@ -510,13 +563,21 @@ export function useAggregateFeedEntries(
     getOAuthSession,
     query.data?.pages.length,
     query.isFetchedAfterMount,
+    query.isPlaceholderData,
     queryClient,
     viewerDid,
   ]);
 
   useEffect(() => {
     const pageCount = query.data?.pages.length ?? 0;
-    if (pageCount === 0 || pageCount >= 3 || !query.hasNextPage || query.isFetchingNextPage) {
+    if (
+      articleFilter !== "all" ||
+      query.isPlaceholderData ||
+      pageCount === 0 ||
+      pageCount >= 3 ||
+      !query.hasNextPage ||
+      query.isFetchingNextPage
+    ) {
       return;
     }
     const run = () => void fetchNextPage();
@@ -527,10 +588,12 @@ export function useAggregateFeedEntries(
     const handle = globalThis.setTimeout(run, 250);
     return () => globalThis.clearTimeout(handle);
   }, [
+    articleFilter,
     query.data?.pages.length,
     fetchNextPage,
     query.hasNextPage,
     query.isFetchingNextPage,
+    query.isPlaceholderData,
   ]);
 
   return query;

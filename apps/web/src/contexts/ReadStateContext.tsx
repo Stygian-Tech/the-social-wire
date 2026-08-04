@@ -9,7 +9,10 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import {
+  useQueryClient,
+  type InfiniteData,
+} from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import {
   loadReadState,
@@ -29,6 +32,7 @@ import {
   writeThroughReadMarkDelete,
 } from "@/lib/thinAppViewClient";
 import { publicationEntryIsCached } from "@/lib/unreadCounts";
+import type { EntriesPage } from "@/hooks/useEntries";
 
 export type MarkEntryReadOptions = {
   publicationId?: string;
@@ -89,11 +93,22 @@ export function ReadStateProvider({ children }: { children: ReactNode }) {
       if (!isThinAppViewEnabled()) return;
       const oauth = getOAuthSession();
       if (!oauth) return;
-      void writeThroughReadMarkDelete(oauth, entryId).catch(() => {
-        /* best-effort AppView sync */
-      });
+      void writeThroughReadMarkDelete(oauth, entryId)
+        .then(() => {
+          if (!viewerDid) return;
+          return queryClient.invalidateQueries({
+            predicate: ({ queryKey }) =>
+              (queryKey[0] === "entries" ||
+                queryKey[0] === "aggregateEntries") &&
+              queryKey[1] === viewerDid &&
+              queryKey[queryKey.length - 1] === "unread",
+          });
+        })
+        .catch(() => {
+          /* best-effort AppView sync */
+        });
     },
-    [getOAuthSession]
+    [getOAuthSession, queryClient, viewerDid]
   );
 
   const markEntryRead = useCallback(
@@ -131,6 +146,30 @@ export function ReadStateProvider({ children }: { children: ReactNode }) {
 
   const markEntryUnread = useCallback(
     (entryId: string, options?: MarkEntryReadOptions) => {
+      if (viewerDid) {
+        queryClient.setQueriesData<InfiniteData<EntriesPage>>(
+          {
+            predicate: ({ queryKey }) =>
+              (queryKey[0] === "entries" ||
+                queryKey[0] === "aggregateEntries") &&
+              queryKey[1] === viewerDid,
+          },
+          (current) =>
+            current
+              ? {
+                  ...current,
+                  pages: current.pages.map((page) => ({
+                    ...page,
+                    entries: page.entries.map((entry) =>
+                      entry.entryId === entryId
+                        ? { ...entry, isRead: false }
+                        : entry
+                    ),
+                  })),
+                }
+              : current
+        );
+      }
       setReadMap((prev) => {
         if (!prev[entryId]) return prev;
         const next = { ...prev };
@@ -207,6 +246,31 @@ export function ReadStateProvider({ children }: { children: ReactNode }) {
     (entryIds: string[], options?: MarkEntriesReadOptions) => {
       if (entryIds.length === 0) return;
       const unique = [...new Set(entryIds)];
+      const unreadIds = new Set(unique);
+      if (viewerDid) {
+        queryClient.setQueriesData<InfiniteData<EntriesPage>>(
+          {
+            predicate: ({ queryKey }) =>
+              (queryKey[0] === "entries" ||
+                queryKey[0] === "aggregateEntries") &&
+              queryKey[1] === viewerDid,
+          },
+          (current) =>
+            current
+              ? {
+                  ...current,
+                  pages: current.pages.map((page) => ({
+                    ...page,
+                    entries: page.entries.map((entry) =>
+                      unreadIds.has(entry.entryId)
+                        ? { ...entry, isRead: false }
+                        : entry
+                    ),
+                  })),
+                }
+              : current
+        );
+      }
       const bulkDeltasRef: { current: Map<string, number> | null } = {
         current: null,
       };

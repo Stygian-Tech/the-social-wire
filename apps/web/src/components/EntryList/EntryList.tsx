@@ -73,10 +73,8 @@ export function EntryList({
     return articleFilter;
   }, [readIndicatorsEnabled, articleFilter]);
 
-  // Read/unread is tracked client-side (`ReadRouteContext`). Always fetch the
-  // full list from AppView and apply the All/Unread filter locally so tab
-  // switches and context-menu marks stay in sync even when read-mark write-through
-  // to AppView is still catching up.
+  // AppView performs the bounded unread scan. The local read-state overlay still
+  // suppresses rows immediately while read-mark write-through catches up.
   const {
     data,
     isLoading,
@@ -88,10 +86,10 @@ export function EntryList({
     isFetchingNextPage,
     isFetchNextPageError,
     scopePending,
-  } = useEntries(pubId ?? null, "all");
+  } = useEntries(pubId ?? null, effectiveFilter);
   const aggregateQuery = useAggregateFeedEntries(
     aggregateFeed ?? null,
-    "all",
+    effectiveFilter,
   );
   const activeData = aggregateFeed ? aggregateQuery.data : data;
   const activeLoading = aggregateFeed ? aggregateQuery.isLoading : isLoading;
@@ -130,6 +128,7 @@ export function EntryList({
     pubId ?? null,
     "all",
     !aggregateFeed &&
+      effectiveFilter === "all" &&
       !isLoading &&
       !scopePending &&
       (data?.pages.length ?? 0) > 0
@@ -221,23 +220,6 @@ export function EntryList({
     virtualPaneKey,
   ]);
 
-  useEffect(() => {
-    if (effectiveFilter !== "unread" || !readIndicatorsEnabled) return;
-    if (!activeHasNextPage || activeIsFetchingNextPage) return;
-    if (visibleEntries.length > 0) return;
-    if (allEntries.length === 0 || activeLoading) return;
-    void fetchNextPageOnce();
-  }, [
-    effectiveFilter,
-    readIndicatorsEnabled,
-    activeHasNextPage,
-    activeIsFetchingNextPage,
-    visibleEntries.length,
-    allEntries.length,
-    activeLoading,
-    fetchNextPageOnce,
-  ]);
-
   if (
     (activeLoading || (!aggregateFeed && scopePending)) &&
     allEntries.length === 0
@@ -273,7 +255,9 @@ export function EntryList({
   if (allEntries.length === 0) {
     return (
       <div className="flex h-full items-center justify-center p-8 text-center text-sm text-muted-foreground">
-        No entries found for this publication.
+        {effectiveFilter === "unread"
+          ? "No unread entries for this publication."
+          : "No entries found for this publication."}
       </div>
     );
   }

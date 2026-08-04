@@ -107,6 +107,13 @@ export function useCachedBulkReadActions(
           void queryClient.invalidateQueries({
             queryKey: PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(viewerDid),
           });
+          void queryClient.invalidateQueries({
+            predicate: ({ queryKey }) =>
+              (queryKey[0] === "entries" ||
+                queryKey[0] === "aggregateEntries") &&
+              queryKey[1] === viewerDid &&
+              queryKey[queryKey.length - 1] === "unread",
+          });
         })
         .catch(() => {
           for (const [queryKey, snapshot] of cacheSnapshots) {
