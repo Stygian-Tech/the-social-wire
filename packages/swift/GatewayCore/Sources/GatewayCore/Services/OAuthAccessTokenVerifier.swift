@@ -4,6 +4,50 @@ import Hummingbird
 import JWTKit
 import Logging
 
+/// Caches ATProto issuer discovery (PLC directory + `.well-known` probes) and fetched JWKS
+/// documents so bursts of concurrent requests (e.g. bulk unread-mark writes) don't each redo
+/// the full multi-hop discovery chain — that fan-out is what trips upstream rate limits (429s)
+/// and inflates per-request latency enough to stall connection pools under load.
+private actor JWKSVerificationCache {
+  private struct Entry<Value: Sendable>: Sendable {
+    let value: Value
+    let expiresAt: Date
+  }
+
+  static let shared = JWKSVerificationCache()
+
+  /// Issuer discovery rarely changes; a longer TTL avoids re-probing PLC + well-known endpoints.
+  private let discoveryTTL: TimeInterval = 600
+  /// JWKS content can rotate; a shorter TTL keeps rotation windows reasonable while still
+  /// collapsing bursts onto a single upstream fetch.
+  private let jwksContentTTL: TimeInterval = 300
+
+  private var discoveryCache: [String: Entry<[OAuthAccessTokenVerifier.JwksTarget]>] = [:]
+  private var contentCache: [String: Entry<String>] = [:]
+
+  func cachedTargets(forKey key: String) -> [OAuthAccessTokenVerifier.JwksTarget]? {
+    guard let entry = discoveryCache[key], entry.expiresAt > Date() else { return nil }
+    return entry.value
+  }
+
+  func storeTargets(_ targets: [OAuthAccessTokenVerifier.JwksTarget], forKey key: String) {
+    discoveryCache[key] = Entry(value: targets, expiresAt: Date().addingTimeInterval(discoveryTTL))
+  }
+
+  func cachedContent(forURL url: String) -> String? {
+    guard let entry = contentCache[url], entry.expiresAt > Date() else { return nil }
+    return entry.value
+  }
+
+  func storeContent(_ json: String, forURL url: String) {
+    contentCache[url] = Entry(value: json, expiresAt: Date().addingTimeInterval(jwksContentTTL))
+  }
+
+  func invalidateContent(forURL url: String) {
+    contentCache[url] = nil
+  }
+}
+
 /// Verifies ATProto OAuth access JWTs (`issuer` metadata → JWKS) using JWTKit's `JWTKeyCollection`.
 public enum OAuthAccessTokenVerifier {
   /// Cryptographically verified JWT access token slice used for **`AuthContext`** + optional first-party gateway binding.
@@ -60,16 +104,27 @@ public enum OAuthAccessTokenVerifier {
       throw VerifyError.missingIssuerClaim
     }
 
-    let baseCandidates = try await issuerBases(
-      issuerClaim: issuerClaim,
-      subjectDid: payload.sub.value,
-      plcURL: plcURL,
-      httpClient: httpClient
-    )
-    guard !baseCandidates.isEmpty else { throw VerifyError.unsupportedIssuerForm }
+    let discoveryKey = "\(issuerClaim)#\(payload.sub.value)"
+    let discoveredTargets: [JwksTarget]
+    if let cached = await JWKSVerificationCache.shared.cachedTargets(forKey: discoveryKey) {
+      discoveredTargets = cached
+    } else {
+      let baseCandidates = try await issuerBases(
+        issuerClaim: issuerClaim,
+        subjectDid: payload.sub.value,
+        plcURL: plcURL,
+        httpClient: httpClient
+      )
+      guard !baseCandidates.isEmpty else { throw VerifyError.unsupportedIssuerForm }
 
-    let jwksTargets = supplementalJwksTargets(from: supplementalJwksJSON)
-      + (try await collectJwksURLs(httpClient: httpClient, issuerBases: baseCandidates))
+      let collected = try await collectJwksURLs(httpClient: httpClient, issuerBases: baseCandidates)
+      if !collected.isEmpty {
+        await JWKSVerificationCache.shared.storeTargets(collected, forKey: discoveryKey)
+      }
+      discoveredTargets = collected
+    }
+
+    let jwksTargets = supplementalJwksTargets(from: supplementalJwksJSON) + discoveredTargets
     guard !jwksTargets.isEmpty else { throw VerifyError.noJwksCandidates }
 
     logger.debug(
@@ -166,7 +221,7 @@ public enum OAuthAccessTokenVerifier {
     )
   }
 
-  private enum JwksTarget: Sendable {
+  fileprivate enum JwksTarget: Sendable {
     case remote(String)
     case inline(String, source: String)
 
@@ -198,6 +253,20 @@ public enum OAuthAccessTokenVerifier {
   ) async throws -> VerifiedAccessToken? {
     guard URL(string: url) != nil else { return nil }
 
+    if let cachedJSON = await JWKSVerificationCache.shared.cachedContent(forURL: url) {
+      if let verified = try await verifyAgainstJWKSJSON(
+        accessTokenJWT: accessTokenJWT,
+        jwksJSON: cachedJSON,
+        source: url,
+        logger: logger,
+        probeError: &probeError
+      ) {
+        return verified
+      }
+      // Cached keys may be stale (rotation) — fall through and fetch a fresh copy below.
+      await JWKSVerificationCache.shared.invalidateContent(forURL: url)
+    }
+
     var probeRequest = HTTPClientRequest(url: url)
     probeRequest.headers.add(name: "Accept", value: "application/json")
 
@@ -213,6 +282,8 @@ public enum OAuthAccessTokenVerifier {
       probeError = VerifyError.jwksMissing
       return nil
     }
+
+    await JWKSVerificationCache.shared.storeContent(decodedJWKSString, forURL: url)
 
     return try await verifyAgainstJWKSJSON(
       accessTokenJWT: accessTokenJWT,
