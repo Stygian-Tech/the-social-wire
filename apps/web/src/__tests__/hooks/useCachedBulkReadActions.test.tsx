@@ -194,4 +194,62 @@ describe("useCachedBulkReadActions", () => {
     authSpy.mockRestore();
     gatewaySpy.mockRestore();
   });
+
+  it("marks entries that landed in cache mid-flight once the gateway confirms", async () => {
+    const queryClient = new QueryClient();
+    const lateEntryId = "at://did:plc:alice/site.standard.document/late";
+    const authSpy = spyOn(AuthHook, "useAuth").mockReturnValue({
+      session: { did: viewerDid },
+      getOAuthSession: () => ({}) as never,
+    } as ReturnType<typeof AuthHook.useAuth>);
+    // Simulates a background prefetch landing while the gateway call is in flight —
+    // this entry was never part of the synchronous cachedEntryIds snapshot.
+    const gatewaySpy = spyOn(
+      PublicationProjectionClient,
+      "markAllReadOnGateway"
+    ).mockImplementation(async () => {
+      queryClient.setQueryData(
+        [...ENTRIES_QUERY_KEY(viewerDid, pub.publicationId), "all"],
+        {
+          pages: [
+            {
+              entries: [
+                {
+                  entryId: lateEntryId,
+                  title: "Late",
+                  publishedAt: "2026-01-01T00:00:00.000Z",
+                },
+              ],
+              cursor: undefined,
+            },
+          ],
+          pageParams: [undefined],
+        }
+      );
+      return {} as never;
+    });
+
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    );
+    const { result } = renderHook(
+      () =>
+        useCachedBulkReadActions([pub], {
+          gatewayScopes: [{ kind: "subscribed" }],
+        }),
+      { wrapper }
+    );
+
+    result.current.applyMarkAllRead();
+
+    await waitFor(() =>
+      expect(markEntriesRead).toHaveBeenLastCalledWith([lateEntryId], {
+        publications: [pub],
+        syncToAppView: false,
+      })
+    );
+
+    authSpy.mockRestore();
+    gatewaySpy.mockRestore();
+  });
 });

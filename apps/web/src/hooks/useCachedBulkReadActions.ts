@@ -80,16 +80,32 @@ export function useCachedBulkReadActions(
     if (oauth && scopes.length > 0) {
       void Promise.all(scopes.map((scope) => markAllReadOnGateway(oauth, scope)))
         .then(() => {
+          if (!session?.did) return;
+          // Entries that landed in the cache between the initial snapshot and
+          // the gateway confirming (e.g. a background prefetch mid-flight)
+          // never got an explicit local read mark. effectivePublicationUnreadCount
+          // still counts those against isEntryRead, so without this they keep
+          // showing up as unread even though the server's mark-all-read floor
+          // now covers them. Re-snapshot and mark whatever's cached now.
+          const settledEntryIds = distinctCachedEntryIdsForPublications(
+            queryClient,
+            session.did,
+            publications
+          );
+          if (settledEntryIds.length > 0) {
+            markEntriesRead(settledEntryIds, {
+              publications,
+              syncToAppView: false,
+            });
+          }
           // The optimistic clearPublicationUnreadCounts patch above (via
           // markEntriesRead) only lives in memory and can be lost to a reload
           // before the persisted IndexedDB snapshot catches up (persist writes
           // are throttled). Force a refetch against the now-confirmed server
           // state so the sidebar badge can't get stuck showing a stale count.
-          if (session?.did) {
-            void queryClient.invalidateQueries({
-              queryKey: PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(session.did),
-            });
-          }
+          void queryClient.invalidateQueries({
+            queryKey: PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(session.did),
+          });
         })
         .catch(() => {
           for (const [queryKey, snapshot] of cacheSnapshots) {
