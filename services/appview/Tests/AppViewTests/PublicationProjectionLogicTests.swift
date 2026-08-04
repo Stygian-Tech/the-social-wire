@@ -117,6 +117,44 @@ struct PublicationProjectionLogicTests {
     #expect(filtered == [row])
   }
 
+  @Test("viewer's bare-DID content fallback does not auto-subscribe to their whole repo")
+  func ownedContentFallbackRowIsNotAutoSubscribed() {
+    let viewerDid = "did:plc:viewer"
+    // Mirrors PublicationFollowDiscovery.discoverAuthor's discoveryContentCollections
+    // fallback: a viewer with loose site.standard.document records but no
+    // site.standard.publication container gets a bare-DID pseudo-publication row with
+    // no subscriptionPublicationId (nothing addressable to subscribe to).
+    let looseContentRow = ProjectionDiscoveredRow(
+      publicationId: viewerDid,
+      subscriptionPublicationId: nil,
+      authorDid: viewerDid,
+      authorHandle: "You",
+      title: "My Publications",
+      iconUrl: nil,
+      avatarUrl: nil,
+      discoveredAt: Date()
+    )
+    let realPublicationRow = ProjectionDiscoveredRow(
+      publicationId: "at://did:plc:viewer/site.standard.publication/pub1",
+      subscriptionPublicationId: "at://did:plc:viewer/site.standard.publication/pub1",
+      authorDid: viewerDid,
+      authorHandle: "You",
+      title: "My Real Site",
+      iconUrl: nil,
+      avatarUrl: nil,
+      discoveredAt: Date()
+    )
+
+    let segmented = PublicationProjectionLogic.segmentDiscovery(
+      [looseContentRow, realPublicationRow],
+      viewerDid: viewerDid,
+      subscriptionKeys: []
+    )
+
+    #expect(segmented.graphSubscribed.map(\.publicationId) == [realPublicationRow.publicationId])
+    #expect(segmented.followOwnedUnsubscribed.map(\.publicationId) == [looseContentRow.publicationId])
+  }
+
   @Test("subscription keys include cross-lexicon publication aliases")
   func subscriptionAliasKeys() {
     var keys = Set<String>()
