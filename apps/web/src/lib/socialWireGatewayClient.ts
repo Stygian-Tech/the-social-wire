@@ -46,6 +46,32 @@ function shouldRetryGatewayDpopNonce(res: Response): boolean {
   return Boolean(res.headers.get("DPoP-Nonce")?.trim());
 }
 
+/**
+ * Manually-signed requests read the cached DPoP nonce, mint a proof, and only refresh the
+ * cache once the response comes back. Concurrent callers (e.g. bulk mark-read/unread, which
+ * fire one write per entry) all read the same stale nonce before any of them return, so the
+ * gateway accepts one and rejects the rest with 400. Serializing dispatch per gateway origin
+ * makes each request observe the previous one's refreshed nonce instead of racing it.
+ */
+const gatewayOriginQueues = new Map<string, Promise<unknown>>();
+
+function enqueueForGatewayOrigin<T>(origin: string, task: () => Promise<T>): Promise<T> {
+  const prior = gatewayOriginQueues.get(origin) ?? Promise.resolve();
+  const settled = prior.then(
+    () => undefined,
+    () => undefined
+  );
+  const result = settled.then(task);
+  gatewayOriginQueues.set(
+    origin,
+    result.then(
+      () => undefined,
+      () => undefined
+    )
+  );
+  return result;
+}
+
 export async function gatewayFetch(
   oauthSession: OAuthSession,
   path: string,
@@ -53,14 +79,13 @@ export async function gatewayFetch(
   attempt = 0,
   gatewayDpopNonce?: string
 ): Promise<Response> {
+  const run = () =>
+    gatewayFetchAttempt(oauthSession, path, init, attempt, gatewayDpopNonce);
   try {
-    return await gatewayFetchAttempt(
-      oauthSession,
-      path,
-      init,
-      attempt,
-      gatewayDpopNonce
-    );
+    if (attempt === 0 && canManuallySignGatewayRequest(oauthSession)) {
+      return await enqueueForGatewayOrigin(gatewayBaseUrl(), run);
+    }
+    return await run();
   } catch (error) {
     if (isTerminalOAuthSessionError(error)) {
       invalidateOAuthSession(oauthSession.did, error);

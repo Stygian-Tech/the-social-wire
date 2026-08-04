@@ -140,6 +140,64 @@ describe("gatewayFetch", () => {
     ]);
   });
 
+  it("serializes concurrent manually-signed requests so each sees the prior response's nonce", async () => {
+    const gatewayNonces = new Map<string, string>();
+    const nonceClaimsSeen: (string | undefined)[] = [];
+    let calls = 0;
+    const fetchMock = mock(async (_url: string, init?: RequestInit) => {
+      calls += 1;
+      const call = calls;
+      return new Response(JSON.stringify({ ok: true, call }), {
+        status: 200,
+        headers: { "DPoP-Nonce": `nonce-${call}` },
+      });
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const oauthSession = {
+      did: "did:plc:viewer",
+      getTokenSet: async () => ({
+        access_token: "access-token",
+        token_type: "DPoP",
+      }),
+      getTokenInfo: async () => ({ aud: "https://pds.example" }),
+      fetchHandler: async () =>
+        new Response(JSON.stringify({ records: [] }), { status: 200 }),
+      server: {
+        dpopKey: {
+          bareJwk: { kty: "EC", crv: "P-256", x: "x", y: "y" },
+          algorithms: ["ES256"],
+          createJwt: async (
+            _header: unknown,
+            claims: Record<string, string | number>
+          ) => {
+            nonceClaimsSeen.push(claims.nonce as string | undefined);
+            return "gateway-dpop-proof";
+          },
+        },
+        dpopNonces: {
+          get: async (origin: string) => gatewayNonces.get(origin),
+          set: async (origin: string, nonce: string) => {
+            gatewayNonces.set(origin, nonce);
+          },
+        },
+        serverMetadata: { dpop_signing_alg_values_supported: ["ES256"] },
+      },
+    } as never;
+
+    const { gatewayFetch } = await import("@/lib/socialWireGatewayClient");
+    await Promise.all([
+      gatewayFetch(oauthSession, "/v1/appview/read-marks", { method: "POST" }),
+      gatewayFetch(oauthSession, "/v1/appview/read-marks", { method: "POST" }),
+      gatewayFetch(oauthSession, "/v1/appview/read-marks", { method: "POST" }),
+    ]);
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    // Each request after the first observes the nonce the prior response minted —
+    // none of them race on a stale/missing nonce.
+    expect(nonceClaimsSeen).toEqual([undefined, "nonce-1", "nonce-2"]);
+  });
+
   it("invalidates the session after a final gateway 401", async () => {
     globalThis.fetch = mock(async () =>
       new Response(JSON.stringify({ error: "invalid_token" }), { status: 401 })
