@@ -44,8 +44,16 @@ actor ThinAppViewReadService {
     else { return nil }
     _ = scope
     _ = limit
+    // Cached pages are serialized pre-read-state (shared across viewers, so
+    // every entry carries isRead: false); re-resolve per viewer or bootstrap
+    // re-emits already-read entries as unread until the cache TTL expires.
+    let page = try await authoritativePage(
+      cached,
+      viewerDid: auth.did,
+      publicationId: publicationId
+    )
     return AppViewProjectionCacheEntry(
-      value: dedupedPage(cached),
+      value: page,
       cachedAt: entry.cachedAt,
       expiresAt: entry.expiresAt,
       source: entry.source
