@@ -43,12 +43,25 @@ actor PublicationProjectionService {
     self.repo = ATProtoAuthenticatedRepoClient(httpClient: httpClient, plcURL: plcURL, logger: logger)
   }
 
+  /// Drops exactly the caches a viewer-initiated refresh needs rebuilt.
+  ///
+  /// Scoped deliberately. Unread counts and cached first pages are *not* cleared: the sidebar
+  /// response carries neither, so dropping them did nothing for this request and cold-started the
+  /// viewer's next feed load. `appViewScopeCache` is keyed by publication rather than by viewer,
+  /// so only the entries this viewer is known to reference are evicted. `discoveryCacheByViewer`
+  /// is left intact so the Following tab survives until the background full-discovery pass
+  /// replaces it — see `refreshPrioritySidebar`.
   func invalidateViewerCaches(viewerDid: String) async {
+    if let rows = sidebarRowCacheByViewer[viewerDid] {
+      for key in rows.keys {
+        appViewScopeCache.removeValue(
+          forKey: PublicationProjectionLogic.normalizeAtRepoParam(key)
+        )
+      }
+    }
     sidebarRowCacheByViewer.removeValue(forKey: viewerDid)
     guard let projectionCache else { return }
     try? await projectionCache.invalidateSidebarProjection(viewerDid: viewerDid)
-    try? await projectionCache.invalidateUnreadCounts(viewerDid: viewerDid, publicationId: nil)
-    try? await projectionCache.invalidateFirstPage(viewerDid: viewerDid, publicationId: nil)
   }
 
   func sidebar(
@@ -338,6 +351,57 @@ actor PublicationProjectionService {
       refreshedAt: Date(),
       includeUnreadCounts: false
     )
+  }
+
+  /// Viewer-initiated refresh, sized for a request path.
+  ///
+  /// Rebuilds folders, prefs, subscriptions and RSS rows live while skipping the follow-graph
+  /// discovery fan-out, which walks up to 500 authors' PDSes and is what pushed this endpoint past
+  /// the Gateway's 60s proxy timeout. The Following tab is carried over from the discovery cache
+  /// (see the `includeFollowDiscovery == false` fallback in `discoverContext`) and is refreshed out
+  /// of band by `refreshFullDiscoveryAndPersist`.
+  ///
+  /// Returns the priority tier, so folder sections come back without their publications. Callers
+  /// must merge this into an existing projection rather than replacing one.
+  func refreshPrioritySidebar(auth: AuthContext) async throws -> PublicationSidebarResponse {
+    let context = try await discoverContext(auth: auth, includeFollowDiscovery: false)
+    cacheDiscovery(context, viewerDid: auth.did)
+    return try await buildSidebarResponse(
+      context: context,
+      auth: auth,
+      phase: .priority,
+      refreshedAt: Date(),
+      includeUnreadCounts: false
+    )
+  }
+
+  /// Full follow-graph discovery plus a durable projection-cache write, for running off the
+  /// request path. Shared by bootstrap and by `POST /v1/publications/refresh` so that a refresh
+  /// leaves the cross-replica cache warm instead of deleting it and never writing it back.
+  func refreshFullDiscoveryAndPersist(auth: AuthContext) async {
+    do {
+      _ = try await refreshFullDiscoverySidebar(auth: auth)
+      let refreshed = try await bootstrapPrioritySidebar(auth: auth)
+      let folders = try await bootstrapFolderSidebar(auth: auth, context: refreshed.context)
+      guard let projectionCache else { return }
+      let snapshot = BootstrapSidebarCacheSnapshot(
+        priority: refreshed.response,
+        folderPayload: folders
+      )
+      guard let data = try? JSONEncoder().encode(snapshot),
+            let json = String(data: data, encoding: .utf8)
+      else { return }
+      try? await projectionCache.storeSidebarProjectionJSON(
+        viewerDid: auth.did,
+        jsonBody: json,
+        expiresAt: Date().addingTimeInterval(AppViewProjectionCacheTTL.sidebarSeconds)
+      )
+    } catch {
+      logger.warning(
+        "Background sidebar refresh failed",
+        metadata: ["error": .string(String(describing: error))]
+      )
+    }
   }
 
   func bootstrapFolderSidebar(

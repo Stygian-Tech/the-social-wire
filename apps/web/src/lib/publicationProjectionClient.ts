@@ -118,6 +118,14 @@ export async function fetchPublicationSidebar(
   return (await res.json()) as PublicationSidebarProjection;
 }
 
+/**
+ * Drops the viewer's server-side projection caches and returns the rebuilt **priority tier**.
+ *
+ * Folder sections come back without their publications, and the Following tab may be a carried-over
+ * snapshot, because the server pushes full follow-graph discovery into a background pass. Merge the
+ * result into the existing projection with `applySidebarPriorityEvent` — replacing a cached
+ * projection with this payload wholesale empties every folder in the sidebar.
+ */
 export async function refreshPublicationSidebar(
   oauthSession: OAuthSession,
   signal?: AbortSignal

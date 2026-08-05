@@ -1230,11 +1230,18 @@ paths:
   /v1/publications/refresh:
     post:
       operationId: refreshPublicationSidebar
-      summary: Recompute publication sidebar projection
+      summary: Drop cached sidebar projection and rebuild the priority tier
+      description: >-
+        Invalidates the viewer's server-side projection caches and returns the rebuilt priority
+        tier. Full follow-graph discovery runs in the background after the response is sent, so
+        `folderSections` come back without their `publications` and `followingTabPublications` may
+        be a carried-over snapshot. Clients must merge this payload into an existing projection
+        rather than replacing one, and should follow it with a bootstrap stream to populate the
+        folder tier.
       tags: [Publications]
       responses:
         "200":
-          description: Refreshed sidebar projection.
+          description: Rebuilt priority-tier sidebar projection.
           content:
             application/json:
               schema:
