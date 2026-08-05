@@ -24,6 +24,11 @@ struct GraphSubscriptionProjection: Sendable, Equatable {
 enum PublicationProjectionLogic {
   private static let atUriPathPattern = #"^at://([^/]+)/([^/]+)/([^/]+)$"#
 
+  /// Compiled once. `publicationIdsMatch` runs this per lookup key per row per hidden pref, so
+  /// recompiling per call put tens of thousands of regex compilations on the projection actor's
+  /// serial executor during a sidebar build.
+  private static let atUriPathRegex = try? NSRegularExpression(pattern: atUriPathPattern)
+
   static func normalizeAtRepoParam(_ raw: String) -> String {
     var s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
     if s.hasPrefix("@") {
@@ -73,7 +78,7 @@ enum PublicationProjectionLogic {
   }
 
   private static func decodeAtUriAuthorityAndCollection(_ uri: String) -> String? {
-    guard let regex = try? NSRegularExpression(pattern: atUriPathPattern) else { return nil }
+    guard let regex = atUriPathRegex else { return nil }
     let range = NSRange(uri.startIndex..., in: uri)
     guard
       let match = regex.firstMatch(in: uri, range: range),

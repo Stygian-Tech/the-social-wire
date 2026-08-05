@@ -54,6 +54,7 @@ import {
   applyPublicationFolderMoveToProjection,
   reconcilePublicationPrefAfterWrite,
 } from "@/lib/optimisticPublicationFolderMove";
+import { applySidebarPriorityEvent } from "@/lib/bootstrapStreamState";
 import {
   refreshPublicationSidebar,
   type PublicationSidebarProjection,
@@ -83,9 +84,11 @@ async function refreshSidebarAfterAddingPublication(args: {
 }): Promise<PublicationSidebarProjection> {
   const projection = await refreshPublicationSidebar(args.oauthSession);
   if (args.viewerDid) {
-    args.queryClient.setQueryData(
+    // Merged, not replaced: the refresh response is the priority tier, so its folder sections
+    // carry no publications and would blank every folder if written over the cached projection.
+    args.queryClient.setQueryData<PublicationSidebarProjection>(
       PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(args.viewerDid),
-      projection
+      (current) => applySidebarPriorityEvent(current, projection)
     );
   }
   return projection;
@@ -574,9 +577,11 @@ export function useUnsubscribePublication() {
       if (!oauth || !did) return;
       void refreshPublicationSidebar(oauth)
         .then((projection) => {
-          qc.setQueryData(
+          // Priority-tier payload — merge so folder contents survive. See
+          // `refreshPublicationSidebar`.
+          qc.setQueryData<PublicationSidebarProjection>(
             PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(did),
-            projection
+            (current) => applySidebarPriorityEvent(current, projection)
           );
           removePublicationFromEntryCaches(qc, did, publication);
           return qc.invalidateQueries({

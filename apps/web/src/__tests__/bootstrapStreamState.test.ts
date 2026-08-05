@@ -141,6 +141,54 @@ describe("applySidebarFoldersEvent", () => {
     });
   });
 
+  it("keeps folder contents when a refresh returns folder sections with no publications", () => {
+    // POST /v1/publications/refresh returns the priority tier, which builds folder sections
+    // without their publications. Replacing the cached projection with that payload would empty
+    // every folder in the sidebar, so the merge has to preserve the cached contents.
+    const alpha = row("pub-a", "Alpha", 7);
+    const beta = row("pub-b", "Beta", 1);
+    const cached = minimalProjection({
+      allPublicationRows: [alpha, beta],
+      subscribedUnfoldered: [alpha],
+      followingTabPublications: [beta],
+      folderSections: [
+        {
+          folderRkey: "folder1",
+          folderUri: "at://did:plc:viewer/app.thesocialwire.folder/folder1",
+          publications: [beta],
+        },
+      ],
+    });
+
+    const refreshed = minimalProjection({
+      refreshedAt: "2026-01-02T00:00:00.000Z",
+      allPublicationRows: [row("pub-a", "Alpha Renamed", 3)],
+      subscribedUnfoldered: [row("pub-a", "Alpha Renamed", 3)],
+      followingTabPublications: [],
+      folderSections: [
+        {
+          folderRkey: "folder1",
+          folderUri: "at://did:plc:viewer/app.thesocialwire.folder/folder1",
+          publications: [],
+        },
+      ],
+      unreadCountsByPublicationId: undefined,
+    });
+
+    const merged = applySidebarPriorityEvent(cached, refreshed);
+
+    expect(
+      merged.folderSections?.[0]?.publications.map((item) => item.title)
+    ).toEqual(["Beta"]);
+    // The carried-over Following tab must survive a refresh that omits it.
+    expect(merged.followingTabPublications.map((item) => item.title)).toEqual([
+      "Beta",
+    ]);
+    expect(merged.subscribedUnfoldered.map((item) => item.title)).toEqual([
+      "Alpha Renamed",
+    ]);
+  });
+
   it("merges folder layout without overwriting unreadCounts from the prior unreadCounts event", () => {
     const base = applyUnreadCountsEvent(minimalProjection(), {
       "rss:https://example.com/feed.xml": 5,

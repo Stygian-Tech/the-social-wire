@@ -418,37 +418,8 @@ struct BootstrapStreamService {
   }
 
   private func scheduleBackgroundRefresh(auth: AuthContext, priority: PublicationSidebarResponse) {
-    Task {
-      do {
-        _ = try await self.projectionService.refreshFullDiscoverySidebar(auth: auth)
-        let refreshed = try await self.projectionService.bootstrapPrioritySidebar(auth: auth)
-        let folders = try await self.projectionService.bootstrapFolderSidebar(
-          auth: auth,
-          context: refreshed.context
-        )
-        guard let projectionCache else { return }
-        let cacheExpires = Date().addingTimeInterval(AppViewProjectionCacheTTL.sidebarSeconds)
-        let snapshot = BootstrapSidebarCacheSnapshot(
-          priority: refreshed.response,
-          folderPayload: folders
-        )
-        if let data = try? JSONEncoder().encode(snapshot),
-           let json = String(data: data, encoding: .utf8)
-        {
-          try? await projectionCache.storeSidebarProjectionJSON(
-            viewerDid: auth.did,
-            jsonBody: json,
-            expiresAt: cacheExpires
-          )
-        }
-        _ = priority
-      } catch {
-        self.logger.warning(
-          "Background sidebar refresh failed",
-          metadata: ["error": .string(String(describing: error))]
-        )
-      }
-    }
+    _ = priority
+    Task { await self.projectionService.refreshFullDiscoveryAndPersist(auth: auth) }
   }
 
   private func scheduleBackgroundWarmers(

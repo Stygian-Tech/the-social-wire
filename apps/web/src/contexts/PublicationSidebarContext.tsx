@@ -427,8 +427,11 @@ function PublicationSidebarProviderInner({
       if (dummyReaderDataEnabled) return;
       const oauth = getOAuthSession();
       if (!oauth) throw new Error("OAuth session required");
-      const projection = await refreshPublicationSidebar(oauth);
-      qc.setQueryData(PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(did), projection);
+      // The POST only drops the viewer's server-side caches now; the bootstrap stream that follows
+      // is what produces the content, painting priority rows first and filling folders as they
+      // land. Applying the POST's own payload here as well would rebuild the same projection twice
+      // and stall every other gateway request behind it for the duration.
+      await refreshPublicationSidebar(oauth);
       setStreamProjection(undefined);
       const controller = new AbortController();
       await runBootstrapStream(controller, { force: true });
