@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
 import { cleanup, renderHook, waitFor } from "@testing-library/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  QueryClient,
+  QueryClientProvider,
+  QueryObserver,
+} from "@tanstack/react-query";
 import React from "react";
 import { useCachedBulkReadActions } from "@/hooks/useCachedBulkReadActions";
 import type { DiscoveredPublication } from "@/lib/atprotoClient";
@@ -160,6 +164,8 @@ describe("useCachedBulkReadActions", () => {
       PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(viewerDid),
       { stale: true }
     );
+    // An unread feed cache with no mounted observer: invalidation can never
+    // refetch it (useEntries sets refetchOnMount: false), so it must be removed.
     const unreadQueryKey = [
       ...ENTRIES_QUERY_KEY(viewerDid, pub.publicationId),
       "unread",
@@ -168,6 +174,25 @@ describe("useCachedBulkReadActions", () => {
       pages: [{ entries: [], cursor: undefined }],
       pageParams: [undefined],
     });
+    // An unread feed with a live observer (the currently open feed) must be
+    // kept and refetched instead.
+    const activeUnreadQueryKey = [
+      "aggregateEntries",
+      viewerDid,
+      "subscribed",
+      "",
+      "unread",
+    ] as const;
+    const activeUnreadFetch = mock(async () => ({
+      pages: [{ entries: [], cursor: undefined }],
+      pageParams: [undefined],
+    }));
+    const activeObserver = new QueryObserver(queryClient, {
+      queryKey: activeUnreadQueryKey,
+      queryFn: activeUnreadFetch,
+    });
+    const unsubscribeActiveObserver = activeObserver.subscribe(() => {});
+    await waitFor(() => expect(activeUnreadFetch).toHaveBeenCalledTimes(1));
     const authSpy = spyOn(AuthHook, "useAuth").mockReturnValue({
       session: { did: viewerDid },
       getOAuthSession: () => ({}) as never,
@@ -198,8 +223,13 @@ describe("useCachedBulkReadActions", () => {
         )?.isInvalidated
       ).toBe(true)
     );
-    expect(queryClient.getQueryState(unreadQueryKey)?.isInvalidated).toBe(true);
+    // The observer-less unread cache is gone entirely — not just invalidated.
+    expect(queryClient.getQueryState(unreadQueryKey)).toBeUndefined();
+    // The observed unread feed survives and refetches.
+    await waitFor(() => expect(activeUnreadFetch).toHaveBeenCalledTimes(2));
+    expect(queryClient.getQueryState(activeUnreadQueryKey)).toBeDefined();
 
+    unsubscribeActiveObserver();
     authSpy.mockRestore();
     gatewaySpy.mockRestore();
   });

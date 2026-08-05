@@ -107,13 +107,22 @@ export function useCachedBulkReadActions(
           void queryClient.invalidateQueries({
             queryKey: PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(viewerDid),
           });
-          void queryClient.invalidateQueries({
-            predicate: ({ queryKey }) =>
-              (queryKey[0] === "entries" ||
-                queryKey[0] === "aggregateEntries") &&
-              queryKey[1] === viewerDid &&
-              queryKey[queryKey.length - 1] === "unread",
+          // Invalidation alone only refetches *active* queries, and useEntries
+          // opts out of refetchOnMount/refetchOnWindowFocus — so an invalidated
+          // unread feed that isn't currently mounted would be served verbatim
+          // from cache the next time the user opens it. Drop inactive unread
+          // caches outright; the mounted one (if any) refetches via the
+          // invalidation below.
+          const isUnreadFeedQuery = ({ queryKey }: { queryKey: QueryKey }) =>
+            (queryKey[0] === "entries" ||
+              queryKey[0] === "aggregateEntries") &&
+            queryKey[1] === viewerDid &&
+            queryKey[queryKey.length - 1] === "unread";
+          queryClient.removeQueries({
+            predicate: isUnreadFeedQuery,
+            type: "inactive",
           });
+          void queryClient.invalidateQueries({ predicate: isUnreadFeedQuery });
         })
         .catch(() => {
           for (const [queryKey, snapshot] of cacheSnapshots) {
