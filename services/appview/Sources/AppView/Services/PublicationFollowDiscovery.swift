@@ -9,7 +9,7 @@ import ThinAppViewCore
 enum PublicationFollowDiscovery {
   private static let maxFollows = 500
   private static let followPageLimit = 100
-  private static let discoveryBatchSize = 25
+  private static let discoveryConcurrency = 25
 
   static func discover(
     viewerDid: String,
@@ -73,29 +73,38 @@ enum PublicationFollowDiscovery {
     }
 
     let others = subjects.filter { $0 != viewerDid }
-    var idx = 0
-    while idx < others.count {
-      let batch = Array(others[idx ..< min(idx + discoveryBatchSize, others.count)])
-      await withTaskGroup(of: [ProjectionDiscoveredRow].self) { group in
-        for did in batch {
-          group.addTask {
-            await discoverAuthor(
-              authorDid: did,
-              handle: did,
-              displayName: nil,
-              avatar: nil,
-              repo: repo,
-              auth: nil,
-              httpClient: httpClient,
-              plcURL: plcURL
-            ) ?? []
-          }
-        }
-        for await rows in group {
-          discovered.append(contentsOf: rows)
+
+    // Sliding window rather than sequential batches. Batching waited for all 25 authors to settle
+    // before starting the next 25, so a single unreachable PDS held its whole batch open for the
+    // full timeout; across 500 follows that head-of-line blocking dominated the request.
+    func discoveryTask(for did: String) -> @Sendable () async -> [ProjectionDiscoveredRow] {
+      {
+        await discoverAuthor(
+          authorDid: did,
+          handle: did,
+          displayName: nil,
+          avatar: nil,
+          repo: repo,
+          auth: nil,
+          httpClient: httpClient,
+          plcURL: plcURL
+        ) ?? []
+      }
+    }
+
+    await withTaskGroup(of: [ProjectionDiscoveredRow].self) { group in
+      var next = 0
+      while next < min(discoveryConcurrency, others.count) {
+        group.addTask(operation: discoveryTask(for: others[next]))
+        next += 1
+      }
+      while let rows = await group.next() {
+        discovered.append(contentsOf: rows)
+        if next < others.count {
+          group.addTask(operation: discoveryTask(for: others[next]))
+          next += 1
         }
       }
-      idx += discoveryBatchSize
     }
 
     // Dedupe by publicationId, sort by title

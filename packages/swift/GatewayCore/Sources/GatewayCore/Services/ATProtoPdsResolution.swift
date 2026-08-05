@@ -2,6 +2,44 @@ import AsyncHTTPClient
 import Foundation
 import NIOCore
 
+/// Process-wide cache of PLC `#atproto_pds` lookups.
+///
+/// Every authenticated repo read resolves the repo's PDS before issuing its XRPC call, so an
+/// uncached resolver doubles the request count of every read and points the extra half at a single
+/// rate-limited host. A sidebar rebuild touching a few hundred distinct DIDs was issuing thousands
+/// of PLC lookups per request.
+///
+/// Failures are cached only briefly, and transient upstream failures are not cached at all — see
+/// `ATProtoPdsResolution.resolvePdsBase`.
+actor PdsBaseResolutionCache {
+  static let shared = PdsBaseResolutionCache()
+
+  private var entries: [String: (base: String?, expiresAt: Date)] = [:]
+  private static let resolvedTTL: TimeInterval = 30 * 60
+  private static let unresolvedTTL: TimeInterval = 60
+
+  /// Returns `.some(base)` on a cache hit (where `base` may itself be nil for a cached negative),
+  /// and `nil` when the DID is not cached.
+  func cached(_ did: String) -> (String?)? {
+    guard let hit = entries[did], hit.expiresAt > Date() else { return nil }
+    return .some(hit.base)
+  }
+
+  func store(_ did: String, base: String?) {
+    let ttl = base == nil ? Self.unresolvedTTL : Self.resolvedTTL
+    entries[did] = (base, Date().addingTimeInterval(ttl))
+  }
+}
+
+/// Raised when PLC could not be consulted, as distinct from PLC answering "this DID has no PDS".
+public struct ATProtoPdsResolutionUnavailable: Error, Sendable {
+  public let status: UInt
+
+  public init(status: UInt) {
+    self.status = status
+  }
+}
+
 /// PLC → `#atproto_pds` resolution and small ATProto HTTP quirks shared by repo readers.
 /// Mirrors `apps/web/src/lib/atprotoClient.ts` behavior for PDS base URL and Bridgy `listRecords` params.
 public enum ATProtoPdsResolution: Sendable {
@@ -41,20 +79,38 @@ public enum ATProtoPdsResolution: Sendable {
     timeout: TimeAmount = .seconds(15)
   ) async throws -> String? {
     guard repoDid.hasPrefix("did:") else { return nil }
+
+    if let hit = await PdsBaseResolutionCache.shared.cached(repoDid) { return hit }
+
     let encoded = repoDid.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? repoDid
     let root = normalizePdsBase(plcBase)
     var request = HTTPClientRequest(url: "\(root)/\(encoded)")
     request.headers.add(name: "Accept", value: "application/json")
 
     let response = try await httpClient.execute(request, timeout: timeout)
-    guard response.status == .ok else { return nil }
+
+    // A throttled or broken PLC is not evidence that the DID has no PDS. Callers treat a nil base
+    // as "this repo is unreachable" and drop the row, so caching a 429 as a negative would make
+    // publications vanish from sidebars for the length of the TTL.
+    guard response.status != .tooManyRequests, response.status.code < 500 else {
+      throw ATProtoPdsResolutionUnavailable(status: response.status.code)
+    }
+
+    guard response.status == .ok else {
+      await PdsBaseResolutionCache.shared.store(repoDid, base: nil)
+      return nil
+    }
 
     let body = try await response.body.collect(upTo: 64 * 1024)
     guard
       let json = try? JSONSerialization.jsonObject(with: Data(buffer: body)) as? [String: Any],
       let base = parsePdsEndpointFromPlcDoc(json)
-    else { return nil }
+    else {
+      await PdsBaseResolutionCache.shared.store(repoDid, base: nil)
+      return nil
+    }
 
+    await PdsBaseResolutionCache.shared.store(repoDid, base: base)
     return base
   }
 

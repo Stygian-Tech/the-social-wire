@@ -47,7 +47,15 @@ struct Serve: AsyncParsableCommand {
       ]
     )
 
-    let httpClient = HTTPClient(eventLoopGroupProvider: .singleton)
+    // Projection rebuilds fan out across a handful of hosts (PLC, the large shared PDSes, the
+    // public relay), so the default 8-connections-per-host soft limit caps the whole pipeline no
+    // matter how wide its task groups are.
+    var httpConfiguration = HTTPClient.Configuration()
+    httpConfiguration.connectionPool.concurrentHTTP1ConnectionsPerHostSoftLimit = 50
+    let httpClient = HTTPClient(
+      eventLoopGroupProvider: .singleton,
+      configuration: httpConfiguration
+    )
     var serverError: Error?
     do {
       switch config.storeBackend {
