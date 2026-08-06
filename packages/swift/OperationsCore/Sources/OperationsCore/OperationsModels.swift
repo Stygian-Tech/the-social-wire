@@ -984,6 +984,30 @@ public struct OperationsLifecycleCounts: Codable, Sendable, Equatable {
   }
 }
 
+/// Viewer population observed in the AppView's rebuildable projections.
+///
+/// There is no user registry — accounts live on their PDS — so these counts describe viewers the
+/// AppView currently holds projections for, and activity is the recency of those projection
+/// writes (sidebar resolve, feed membership refresh), not a session or login record.
+public struct OperationsViewerCounts: Codable, Sendable, Equatable {
+  public let knownViewers: Int
+  public let activeViewers7d: Int
+  public let activeViewers30d: Int
+  public let observedAt: Date
+
+  public init(
+    knownViewers: Int = 0,
+    activeViewers7d: Int = 0,
+    activeViewers30d: Int = 0,
+    observedAt: Date = Date()
+  ) {
+    self.knownViewers = knownViewers
+    self.activeViewers7d = activeViewers7d
+    self.activeViewers30d = activeViewers30d
+    self.observedAt = observedAt
+  }
+}
+
 public enum GapListView: String, Codable, Sendable {
   case active
   case history
@@ -1031,6 +1055,7 @@ public struct OperationsOverview: Codable, Sendable {
   public let evidence: [String: OperationsEvidenceMetadata]
   public let capabilities: OperationsCapabilities?
   public let counts: OperationsLifecycleCounts
+  public let viewers: OperationsViewerCounts?
 
   public init(
     services: [OperationsServiceState],
@@ -1047,7 +1072,8 @@ public struct OperationsOverview: Codable, Sendable {
     refreshedAt: Date,
     evidence: [String: OperationsEvidenceMetadata] = [:],
     capabilities: OperationsCapabilities? = nil,
-    counts: OperationsLifecycleCounts = OperationsLifecycleCounts()
+    counts: OperationsLifecycleCounts = OperationsLifecycleCounts(),
+    viewers: OperationsViewerCounts? = nil
   ) {
     self.services = services
     self.ingestion = ingestion
@@ -1064,5 +1090,6 @@ public struct OperationsOverview: Codable, Sendable {
     self.evidence = evidence
     self.capabilities = capabilities
     self.counts = counts
+    self.viewers = viewers
   }
 }

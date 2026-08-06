@@ -130,6 +130,18 @@ struct SQLiteOperationsStoreTests {
     #expect(audits.first?.outcome == "queued")
   }
 
+  @Test("Overview omits viewer counts when the store cannot observe AppView projections")
+  func overviewOmitsViewerCountsWithoutAppViewProjections() async throws {
+    let url = FileManager.default.temporaryDirectory
+      .appendingPathComponent("operations-\(UUID().uuidString).sqlite")
+    defer { try? FileManager.default.removeItem(at: url) }
+    let store = try SQLiteOperationsStore(
+      path: url.path, environment: "dev", logger: Logger(label: "operations.test"))
+
+    let overview = try await store.overview(at: Date())
+    #expect(overview.viewers == nil)
+  }
+
   @Test("Received and committed cursors advance independently and never regress")
   func checkpointsDoNotRegress() async throws {
     let url = FileManager.default.temporaryDirectory

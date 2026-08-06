@@ -278,6 +278,12 @@ export type DatabaseObservabilitySnapshot = {
   observedAt: string
   evidenceAgeSeconds: number
 }
+export type ViewerCounts = {
+  knownViewers: number
+  activeViewers7d: number
+  activeViewers30d: number
+  observedAt: string
+}
 export type Overview = {
   services: ServiceState[]
   ingestion?: StreamState
@@ -294,6 +300,7 @@ export type Overview = {
   evidence: OverviewEvidence
   capabilities: OperationsCapabilities
   counts: OperationsCounts
+  viewers?: ViewerCounts
 }
 export type BackfillDryRun = {
   gapId?: string
