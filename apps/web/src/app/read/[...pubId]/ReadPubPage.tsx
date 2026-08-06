@@ -103,7 +103,11 @@ export default function ReadPubPage({
 
       // The AppView has no indexed URL for this entry, so fall back to the author's PDS. Claim
       // the tab synchronously — after an `await` the user gesture is gone and Safari blocks it.
-      const pendingTab = window.open("", "_blank", "noopener,noreferrer");
+      // `noopener`/`noreferrer` in the features string make window.open return null, which would
+      // lose the handle we need to navigate it, so sever the opener by hand instead. The tab is
+      // still about:blank here, so it inherits our origin and the assignment sticks.
+      const pendingTab = window.open("", "_blank");
+      if (pendingTab) pendingTab.opener = null;
       setResolvingEntryId(entryId);
       void (async () => {
         let resolvedUrl: string | undefined;
