@@ -107,14 +107,18 @@ type OpenedTab = { closed: boolean; location: { href: string } };
 function stubWindowOpen(): { tabs: OpenedTab[]; restore: () => void } {
   const original = window.open;
   const tabs: OpenedTab[] = [];
-  window.open = (() => {
+  window.open = ((_url?: string | URL, _target?: string, features?: string) => {
     const tab: OpenedTab = { closed: false, location: { href: "" } };
     tabs.push(tab);
+    // Browsers return null when the features string asks for noopener/noreferrer, so a caller
+    // that needs the handle to navigate the tab later must not pass them.
+    if (features && /\bno(opener|referrer)\b/.test(features)) return null;
     return {
       close: () => {
         tab.closed = true;
       },
       location: tab.location,
+      opener: window as Window | null,
     } as unknown as Window;
   }) as typeof window.open;
   return {
