@@ -15,6 +15,14 @@ describe("entryOpenTarget", () => {
     });
   });
 
+  it("has no target for standard.site articles the AppView could not index a URL for", () => {
+    expect(
+      entryOpenTarget({
+        entryId: "at://did:plc:author/site.standard.document/article",
+      }),
+    ).toBeNull();
+  });
+
   it("opens Skyreader RSS articles in the native reader", () => {
     expect(
       entryOpenTarget({

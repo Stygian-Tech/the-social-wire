@@ -23,6 +23,8 @@ import { useOptionalSidebarPublicationRows } from "@/contexts/PublicationSidebar
 interface EntryRowProps {
   entry: EntryListItem;
   isSelected: boolean;
+  /** True while the row's destination is being resolved from the PDS after a click. */
+  isResolving?: boolean;
   onSelect: (entryId: string, entry?: EntryListItem) => void;
   isRead: boolean;
   readIndicatorsEnabled: boolean;
@@ -34,6 +36,7 @@ interface EntryRowProps {
 export const EntryRow = memo(function EntryRow({
   entry,
   isSelected,
+  isResolving = false,
   onSelect,
   isRead,
   readIndicatorsEnabled,
@@ -98,16 +101,20 @@ export const EntryRow = memo(function EntryRow({
         role="button"
         tabIndex={0}
         data-at-uri={entry.entryId}
+        aria-busy={isResolving || undefined}
         onClick={() => onSelect(entry.entryId, entry)}
         onKeyDown={(event) => {
           if (event.key !== "Enter" && event.key !== " ") return;
           event.preventDefault();
           onSelect(entry.entryId, entry);
         }}
-        className={articleListRowButtonClassName({
-          isSelected,
-          subdued: readIndicatorsEnabled && isRead,
-        })}
+        className={cn(
+          articleListRowButtonClassName({
+            isSelected,
+            subdued: readIndicatorsEnabled && isRead,
+          }),
+          isResolving && "opacity-70",
+        )}
       >
         <div className="relative aspect-[1.08] w-full shrink-0 self-center overflow-hidden rounded-md border border-border/70 bg-muted/40">
           {showThumb && activeThumbSrc ? (

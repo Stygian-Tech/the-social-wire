@@ -38,6 +38,78 @@ struct RenderFieldExtractorTests {
     #expect(fields.articleUrl == "https://example.com/posts/hello")
   }
 
+  @Test("builds articleUrl from a resolved base when site is an AT-URI")
+  func extractArticleUrlFromAtUriSite() {
+    let record: [String: Any] = [
+      "title": "Hello",
+      "publishedAt": "2026-05-19T12:00:00.000Z",
+      "site": "at://did:plc:author/site.standard.publication/main",
+      "path": "posts/hello",
+    ]
+    #expect(RenderFieldExtractor.articleUrl(from: record) == nil)
+    #expect(
+      RenderFieldExtractor.articleUrl(from: record, publicationSiteBase: "https://example.com/")
+        == "https://example.com/posts/hello"
+    )
+  }
+
+  @Test("builds articleUrl when site is a ref object")
+  func extractArticleUrlFromRefSite() {
+    let record: [String: Any] = [
+      "title": "Hello",
+      "publishedAt": "2026-05-19T12:00:00.000Z",
+      "site": ["uri": "https://example.com"],
+      "path": "/posts/hello",
+    ]
+    #expect(RenderFieldExtractor.articleUrl(from: record) == "https://example.com/posts/hello")
+  }
+
+  @Test("direct URL fields win over a resolved publication base")
+  func directArticleUrlWinsOverBase() {
+    let record: [String: Any] = [
+      "title": "Hello",
+      "publishedAt": "2026-05-19T12:00:00.000Z",
+      "url": "https://canonical.example/posts/hello",
+      "site": "at://did:plc:author/site.standard.publication/main",
+      "path": "/posts/other",
+    ]
+    #expect(
+      RenderFieldExtractor.articleUrl(from: record, publicationSiteBase: "https://example.com")
+        == "https://canonical.example/posts/hello"
+    )
+  }
+
+  @Test("absolute path ignores the resolved publication base")
+  func absolutePathIgnoresBase() {
+    let record: [String: Any] = [
+      "title": "Hello",
+      "publishedAt": "2026-05-19T12:00:00.000Z",
+      "site": "at://did:plc:author/site.standard.publication/main",
+      "path": "https://elsewhere.example/posts/hello",
+    ]
+    #expect(
+      RenderFieldExtractor.articleUrl(from: record, publicationSiteBase: "https://example.com")
+        == "https://elsewhere.example/posts/hello"
+    )
+  }
+
+  @Test("resolves a publication record site base from its URL keys")
+  func publicationSiteBaseFromRecord() {
+    #expect(
+      RenderFieldExtractor.publicationSiteBaseUrl(fromPublicationRecord: ["url": "https://example.com/"])
+        == "https://example.com"
+    )
+    #expect(
+      RenderFieldExtractor.publicationSiteBaseUrl(fromPublicationRecord: ["homepage": "https://example.com"])
+        == "https://example.com"
+    )
+    #expect(
+      RenderFieldExtractor.publicationSiteBaseUrl(
+        fromPublicationRecord: ["site": "at://did:plc:author/site.standard.publication/main"]
+      ) == nil
+    )
+  }
+
   @Test("matches publication site equivalence keys")
   func publicationEquivalence() {
     let pub = "at://did:plc:abc/site.standard.publication/main"

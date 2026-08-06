@@ -72,6 +72,16 @@ public enum RenderFieldExtractor {
     return nil
   }
 
+  /// Resolves the HTTPS base a publication record serves its documents from.
+  public static func publicationSiteBaseUrl(fromPublicationRecord value: [String: Any]) -> String? {
+    for key in ["url", "siteUrl", "site", "homepage"] {
+      if let raw = string(value[key]), let normalized = normalizePublicationSiteUrl(raw) {
+        return normalized
+      }
+    }
+    return nil
+  }
+
   public static func normalizePublicationSiteUrl(_ raw: String) -> String? {
     let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
     guard trimmed.lowercased().hasPrefix("http://") || trimmed.lowercased().hasPrefix("https://") else {
@@ -189,30 +199,24 @@ public enum RenderFieldExtractor {
     "at://\(did)/\(collection)/\(rkey)"
   }
 
-  // MARK: - Private
-
-  private static func string(_ value: Any?) -> String? {
-    guard let s = value as? String else { return nil }
-    let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
-    return trimmed.isEmpty ? nil : trimmed
-  }
-
-  private static func slugFromPath(_ path: String?) -> String? {
-    guard let path else { return nil }
-    let parts = path.split(separator: "/").map(String.init).filter { !$0.isEmpty }
-    return parts.last
-  }
-
-  private static func articleUrl(from record: [String: Any]) -> String? {
+  /// Builds the hosted article URL for a standard.site document.
+  ///
+  /// `site` is frequently an AT-URI reference to the publication record rather than an HTTPS
+  /// base, so callers that can resolve the publication pass `publicationSiteBase`.
+  public static func articleUrl(
+    from record: [String: Any],
+    publicationSiteBase: String? = nil
+  ) -> String? {
     for key in ["url", "externalUrl", "canonicalUrl", "href", "permalink"] {
       if let normalized = normalizeArticleUrl(string(record[key])) {
         return normalized
       }
     }
 
+    let siteBase = publicationSiteField(from: record).flatMap(normalizePublicationSiteUrl)
+      ?? publicationSiteBase.flatMap(normalizePublicationSiteUrl)
     guard
-      let site = string(record["site"]),
-      let base = normalizePublicationSiteUrl(site),
+      let base = siteBase,
       let path = string(record["path"])
     else {
       return nil
@@ -225,6 +229,20 @@ public enum RenderFieldExtractor {
     let cleanPath = path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
     guard !cleanPath.isEmpty else { return base }
     return normalizeArticleUrl("\(base)/\(cleanPath)")
+  }
+
+  // MARK: - Private
+
+  private static func string(_ value: Any?) -> String? {
+    guard let s = value as? String else { return nil }
+    let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
+    return trimmed.isEmpty ? nil : trimmed
+  }
+
+  private static func slugFromPath(_ path: String?) -> String? {
+    guard let path else { return nil }
+    let parts = path.split(separator: "/").map(String.init).filter { !$0.isEmpty }
+    return parts.last
   }
 
   private static func normalizeArticleUrl(_ raw: String?) -> String? {
