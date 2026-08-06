@@ -362,6 +362,19 @@ components:
         completedBackfills: { type: integer, minimum: 0 }
         unresolvedAlerts: { type: integer, minimum: 0 }
 
+    OperationsViewerCounts:
+      type: object
+      additionalProperties: false
+      description: >-
+        Viewers the AppView holds rebuildable projections for. Accounts live on their PDS, so this
+        is not a registration count, and activity reflects projection write recency.
+      required: [knownViewers, activeViewers7d, activeViewers30d, observedAt]
+      properties:
+        knownViewers: { type: integer, minimum: 0 }
+        activeViewers7d: { type: integer, minimum: 0 }
+        activeViewers30d: { type: integer, minimum: 0 }
+        observedAt: { type: string, format: date-time }
+
     OperationsServiceState:
       type: object
       additionalProperties: false
@@ -681,6 +694,7 @@ components:
         evidence: { $ref: "#/components/schemas/OperationsOverviewEvidence" }
         capabilities: { $ref: "#/components/schemas/OperationsCapabilities" }
         counts: { $ref: "#/components/schemas/OperationsLifecycleCounts" }
+        viewers: { anyOf: [{ $ref: "#/components/schemas/OperationsViewerCounts" }, { type: "null" }] }
 
     OperationsMutationRequest:
       type: object

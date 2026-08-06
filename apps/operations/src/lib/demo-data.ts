@@ -595,6 +595,12 @@ export const demoOverview: Overview = {
     completedBackfills: 2,
     unresolvedAlerts: 2,
   },
+  viewers: {
+    knownViewers: 1284,
+    activeViewers7d: 412,
+    activeViewers30d: 906,
+    observedAt: iso(),
+  },
   evidence: {
     overview: {
       source: "Synthetic demo fixture",

@@ -32,7 +32,11 @@ import { Toast } from "@/components/ui/toast"
 import { useOperationsAuth } from "@/lib/auth-context"
 import { isBackfillTerminal } from "@/lib/backfill-lifecycle"
 import { dryRunBackfill, fetchBackfill, operationsRequest } from "@/lib/operations-api"
-import { canQueueBackfill, type BackfillReadinessInput } from "@/lib/operations-policy"
+import {
+  canQueueBackfill,
+  preferredRecoveryMode,
+  type BackfillReadinessInput,
+} from "@/lib/operations-policy"
 import type {
   Backfill,
   BackfillDryRun,
@@ -66,15 +70,20 @@ export function BackfillSheet({
   const [auditNote, setAuditNote] = useState("")
   const [reviewed, setReviewed] = useState(false)
   const [productionConfirmation, setProductionConfirmation] = useState("")
-  const [sourceMode, setSourceMode] = useState<BackfillDryRun["sourceMode"]>("tap_verified_resync")
+  const [chosenSourceMode, setChosenSourceMode] = useState<BackfillDryRun["sourceMode"] | null>(null)
   const [authorDidInput, setAuthorDidInput] = useState("")
   const [batchSize, setBatchSize] = useState(1000)
   const [rateLimit, setRateLimit] = useState(500)
   const [maxConcurrency, setMaxConcurrency] = useState(2)
   const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID())
-  const [collections, setCollections] = useState<string[]>(() =>
-    initialBackfillCollections(gap?.collections ?? [], "tap_verified_resync"),
-  )
+  const [chosenCollections, setChosenCollections] = useState<string[] | null>(null)
+  // Capabilities load after mount, and `tap_verified_resync` is reported disabled unconditionally,
+  // so opening on it would leave both dry-run and queue disabled with nothing the operator could
+  // change. Default to an enabled mode until they pick one; fall back so its reason stays visible.
+  const sourceMode =
+    chosenSourceMode ?? preferredRecoveryMode(recoveryModes) ?? "tap_verified_resync"
+  const collections =
+    chosenCollections ?? initialBackfillCollections(gap?.collections ?? [], sourceMode)
   const [createdJobId, setCreatedJobId] = useState<string>()
   const [notification, setNotification] = useState<{ title: string; description: string; tone: "success" | "error" }>()
   const [validationTime, setValidationTime] = useState(() => Date.now())
@@ -123,13 +132,15 @@ export function BackfillSheet({
   )
   const changeSourceMode = (value: string) => {
     const mode = value as BackfillDryRun["sourceMode"]
-    setSourceMode(mode)
-    setCollections((current) => current.filter((collection) => recoveryCollectionOptions(mode).includes(collection)))
+    setChosenSourceMode(mode)
+    setChosenCollections(
+      collections.filter((collection) => recoveryCollectionOptions(mode).includes(collection)),
+    )
     dryRun.reset()
     setReviewed(false)
   }
   const changeCollections = (value: string[]) => {
-    setCollections(value)
+    setChosenCollections(value)
     dryRun.reset()
     setReviewed(false)
   }

@@ -18,6 +18,7 @@ public actor ThinAppViewIndexer {
   private let plcURL: String?
   private let rssIngestion: ThinAppViewRssIngestion?
   private let projectionCache: (any AppViewProjectionCacheStore)?
+  private let publicationSiteResolver: (any PublicationSiteBaseResolving)?
   private var pdsBaseCache: [String: String] = [:]
 
   public init(
@@ -29,6 +30,30 @@ public actor ThinAppViewIndexer {
     rssIngestion: ThinAppViewRssIngestion? = nil,
     projectionCache: (any AppViewProjectionCacheStore)? = nil
   ) {
+    self.init(
+      store: store,
+      config: config,
+      logger: logger,
+      httpClient: httpClient,
+      plcURL: plcURL,
+      rssIngestion: rssIngestion,
+      projectionCache: projectionCache,
+      publicationSiteResolver: httpClient.flatMap { client in
+        plcURL.map { LivePublicationSiteBaseResolver(httpClient: client, plcBase: $0) }
+      }
+    )
+  }
+
+  init(
+    store: any ThinAppViewStore,
+    config: ThinAppViewConfig,
+    logger: Logger,
+    httpClient: HTTPClient? = nil,
+    plcURL: String? = nil,
+    rssIngestion: ThinAppViewRssIngestion? = nil,
+    projectionCache: (any AppViewProjectionCacheStore)? = nil,
+    publicationSiteResolver: (any PublicationSiteBaseResolving)?
+  ) {
     self.store = store
     self.config = config
     self.logger = logger
@@ -36,6 +61,7 @@ public actor ThinAppViewIndexer {
     self.plcURL = plcURL
     self.rssIngestion = rssIngestion
     self.projectionCache = projectionCache
+    self.publicationSiteResolver = publicationSiteResolver
   }
 
   public func handleCommit(
@@ -135,11 +161,18 @@ public actor ThinAppViewIndexer {
     } else {
       resolvedPds = await resolvePdsBase(for: repoDid)
     }
-    let render = RenderFieldExtractor.extractRenderFields(
+    var render = RenderFieldExtractor.extractRenderFields(
       from: record,
       repoDid: repoDid,
       pdsBase: resolvedPds
     )
+    let publicationSite = RenderFieldExtractor.publicationSiteField(from: record)
+    if render.articleUrl == nil, let publicationSite {
+      render.articleUrl = await resolvedArticleUrl(
+        from: record,
+        publicationSite: publicationSite
+      )
+    }
     let createdAt = RenderFieldExtractor.createdAtDate(from: record, fallback: render)
     let now = Date()
     let item = IndexedContentItem(
@@ -149,7 +182,7 @@ public actor ThinAppViewIndexer {
       collection: collection,
       createdAt: createdAt,
       indexedAt: now,
-      publicationSite: RenderFieldExtractor.publicationSiteField(from: record),
+      publicationSite: publicationSite,
       render: render,
       expiresAt: now.addingTimeInterval(config.contentRetentionSeconds)
     )
@@ -292,6 +325,19 @@ public actor ThinAppViewIndexer {
     for publicationId in publicationIds {
       try await projectionCache.invalidateFirstPageForAllViewers(publicationId: publicationId)
     }
+  }
+
+  /// Recovers the hosted article URL when the document references its publication by AT-URI.
+  private func resolvedArticleUrl(
+    from record: [String: Any],
+    publicationSite: String
+  ) async -> String? {
+    guard
+      let publicationSiteResolver,
+      RenderFieldExtractor.parseAtUri(publicationSite) != nil,
+      let base = await publicationSiteResolver.siteBase(forPublicationAtUri: publicationSite)
+    else { return nil }
+    return RenderFieldExtractor.articleUrl(from: record, publicationSiteBase: base)
   }
 
   private func resolvePdsBase(for repoDid: String) async -> String? {

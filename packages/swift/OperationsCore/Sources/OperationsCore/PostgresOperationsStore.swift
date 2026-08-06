@@ -34,6 +34,46 @@ public actor PostgresOperationsStore: OperationsStore {
     for try await _ in rows { return }
   }
 
+  /// Counts viewers the AppView holds projections for.
+  ///
+  /// `appview_viewer_feeds` and `appview_publication_scopes` are the two viewer-keyed projection
+  /// tables written whenever a viewer's sidebar resolves, so their union is the AppView's view of
+  /// the user population. They are small (one row per viewer feed / viewer publication) and both
+  /// carry `updated_at`, unlike `read_marks`, which would need a full scan to count viewers.
+  /// The AppView tables are absent on deployments that point Operations at a separate database, so
+  /// a missing relation degrades to `nil` rather than failing the overview.
+  public func fetchViewerCounts(at: Date) async throws -> OperationsViewerCounts? {
+    let rows = try await pool.query(
+      """
+      WITH viewer_activity AS (
+        SELECT viewer_did, MAX(updated_at) AS last_seen_at
+        FROM (
+          SELECT viewer_did, updated_at FROM appview_viewer_feeds
+          UNION ALL
+          SELECT viewer_did, updated_at FROM appview_publication_scopes
+        ) viewers
+        GROUP BY viewer_did
+      )
+      SELECT
+        COUNT(*)::bigint,
+        COUNT(*) FILTER (WHERE last_seen_at >= \(at.addingTimeInterval(-7 * 86_400)))::bigint,
+        COUNT(*) FILTER (WHERE last_seen_at >= \(at.addingTimeInterval(-30 * 86_400)))::bigint
+      FROM viewer_activity
+      """,
+      logger: logger
+    )
+    for try await row in rows {
+      let value = try row.decode((Int64, Int64, Int64).self)
+      return OperationsViewerCounts(
+        knownViewers: Int(value.0),
+        activeViewers7d: Int(value.1),
+        activeViewers30d: Int(value.2),
+        observedAt: at
+      )
+    }
+    return nil
+  }
+
   public func fetchDatabaseObservability() async throws -> DatabaseObservabilitySnapshot? {
     let observedAt = Date()
     let summaryRows = try await pool.query(

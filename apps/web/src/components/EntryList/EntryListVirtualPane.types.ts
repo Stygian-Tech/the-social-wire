@@ -3,6 +3,8 @@ import type { EntryListItem } from "@/lib/atprotoClient";
 export type EntryListVirtualPaneProps = {
   visibleEntries: EntryListItem[];
   selectedEntryId: string | null;
+  /** Entry whose destination is being resolved from the PDS after a click. */
+  resolvingEntryId?: string | null;
   onSelectEntry: (entryId: string, entry?: EntryListItem) => void;
   isEntryRead: (entryId: string) => boolean;
   readIndicatorsEnabled: boolean;

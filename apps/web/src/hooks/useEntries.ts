@@ -9,7 +9,11 @@ import {
   type InfiniteData,
   type QueryClient,
 } from "@tanstack/react-query";
-import { getEntry, normalizeAtRepoParam, parseAtUri } from "@/lib/atprotoClient";
+import { normalizeAtRepoParam, parseAtUri } from "@/lib/atprotoClient";
+import {
+  isStandardSiteEntryId,
+  resolveEntryOpenUrlFromPds,
+} from "@/lib/resolveEntryOpenUrl";
 import type { EntryListItem, EntryDetail } from "@/lib/atprotoClient";
 import type { ArticleListFilter } from "@/lib/entryArticleFilter";
 import { prefetchCachedImages } from "@/lib/imageBlobCache";
@@ -50,18 +54,6 @@ export type EntriesPage = { entries: EntryListItem[]; cursor?: string };
 
 /** Matches {@link useEntries} `staleTime` / `prefetchInfiniteQuery` for entry lists. */
 export const ENTRIES_QUERY_STALE_MS = 30_000;
-
-const STANDARD_SITE_ENTRY_COLLECTIONS = new Set([
-  "site.standard.document",
-  "site.standard.entry",
-  "com.standard.document",
-  "com.standard.entry",
-]);
-
-function isStandardSiteEntryId(entryId: string): boolean {
-  const parsed = parseAtUri(entryId);
-  return parsed ? STANDARD_SITE_ENTRY_COLLECTIONS.has(parsed.collection) : false;
-}
 
 /** Stop pagination when the server returns an empty page without advancing the cursor. */
 export function entriesNextPageParam(
@@ -626,12 +618,12 @@ export function useEntry(entryId: string | null) {
         !appViewEntry.originalUrl &&
         isStandardSiteEntryId(normalizedId)
       ) {
-        const directEntry = await getEntry(normalizedId, oauth);
-        if (directEntry?.embedUrl || directEntry?.originalUrl) {
+        const directUrl = await resolveEntryOpenUrlFromPds(normalizedId, oauth);
+        if (directUrl) {
           return {
             ...appViewEntry,
-            originalUrl: directEntry.originalUrl ?? appViewEntry.originalUrl,
-            embedUrl: directEntry.embedUrl ?? directEntry.originalUrl,
+            originalUrl: appViewEntry.originalUrl ?? directUrl,
+            embedUrl: directUrl,
           };
         }
       }

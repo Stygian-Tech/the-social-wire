@@ -41,6 +41,8 @@ interface EntryListProps {
   pubId?: string;
   aggregateFeed?: AggregateAppViewFeed;
   selectedEntryId: string | null;
+  /** Entry whose destination is being resolved from the PDS after a click. */
+  resolvingEntryId?: string | null;
   onSelectEntry: (entryId: string, entry?: EntryListItem) => void;
   isEntryRead: (entryId: string) => boolean;
   readIndicatorsEnabled: boolean;
@@ -61,6 +63,7 @@ export function EntryList({
   pubId,
   aggregateFeed,
   selectedEntryId,
+  resolvingEntryId = null,
   onSelectEntry,
   isEntryRead,
   readIndicatorsEnabled,
@@ -282,6 +285,7 @@ export function EntryList({
       key={virtualPaneKey}
       visibleEntries={visibleEntries}
       selectedEntryId={selectedEntryId}
+      resolvingEntryId={resolvingEntryId}
       onSelectEntry={onSelectEntry}
       isEntryRead={isEntryRead}
       readIndicatorsEnabled={readIndicatorsEnabled}

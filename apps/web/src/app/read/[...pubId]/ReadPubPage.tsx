@@ -6,10 +6,12 @@ import { RssArticleReaderDialog } from "@/components/EntryDetail/RssArticleReade
 import { DevRecordKindBadge } from "@/components/shared/DevRecordKindBadge";
 import { useReadRoute } from "@/contexts/ReadRouteContext";
 import { recordKindFromPubId } from "@/lib/recordKindDebug";
-import { entryOpenTarget } from "@/lib/entryOpenTarget";
+import { entryOpenTarget, type EntryOpenTarget } from "@/lib/entryOpenTarget";
+import { resolveEntryOpenUrlFromPds } from "@/lib/resolveEntryOpenUrl";
 import type { EntryListItem } from "@/lib/atprotoClient";
 import type { AggregateAppViewFeed } from "@/lib/thinAppViewClient";
 import { useFeedDisplayPreferences } from "@/hooks/useFeedDisplayPreferences";
+import { useAuth } from "@/hooks/useAuth";
 
 export default function ReadPubPage({
   pubId,
@@ -23,8 +25,13 @@ export default function ReadPubPage({
     title: string;
     url: string;
   } | null>(null);
+  const [resolvingEntryId, setResolvingEntryId] = useState<string | null>(null);
+  const [openFailureMessage, setOpenFailureMessage] = useState<string | null>(
+    null,
+  );
   const publicationKind = pubId ? recordKindFromPubId(pubId) : null;
   const { preferences } = useFeedDisplayPreferences();
+  const { getOAuthSession } = useAuth();
   const {
     markEntryRead,
     markEntryUnread,
@@ -47,13 +54,15 @@ export default function ReadPubPage({
     [markEntryUnread, markOptions]
   );
 
-  const handleSelectEntry = useCallback(
-    (entryId: string, entry?: EntryListItem) => {
-      if (!entry) return;
-      const target = entryOpenTarget(entry, preferences.rssArticleOpenMode);
-      if (!target) return;
-
+  const openEntryTarget = useCallback(
+    (
+      entryId: string,
+      entry: EntryListItem,
+      target: EntryOpenTarget,
+      pendingTab?: Window | null,
+    ) => {
       if (target.kind === "rssReader") {
+        pendingTab?.close();
         if (
           articleListFilter === "unread" &&
           rssReaderEntry &&
@@ -63,7 +72,7 @@ export default function ReadPubPage({
         }
         setRssReaderEntry({
           entryId,
-          title: entry?.title ?? "RSS Article",
+          title: entry.title ?? "RSS Article",
           url: target.url,
         });
         if (articleListFilter !== "unread") {
@@ -73,13 +82,58 @@ export default function ReadPubPage({
       }
 
       markEntryReadForPub(entryId);
+      if (pendingTab) {
+        pendingTab.location.href = target.url;
+        return;
+      }
       window.open(target.url, "_blank", "noopener,noreferrer");
     },
+    [articleListFilter, markEntryReadForPub, rssReaderEntry],
+  );
+
+  const handleSelectEntry = useCallback(
+    (entryId: string, entry?: EntryListItem) => {
+      if (!entry) return;
+      setOpenFailureMessage(null);
+      const target = entryOpenTarget(entry, preferences.rssArticleOpenMode);
+      if (target) {
+        openEntryTarget(entryId, entry, target);
+        return;
+      }
+
+      // The AppView has no indexed URL for this entry, so fall back to the author's PDS. Claim
+      // the tab synchronously — after an `await` the user gesture is gone and Safari blocks it.
+      const pendingTab = window.open("", "_blank", "noopener,noreferrer");
+      setResolvingEntryId(entryId);
+      void (async () => {
+        let resolvedUrl: string | undefined;
+        try {
+          resolvedUrl = await resolveEntryOpenUrlFromPds(
+            entryId,
+            getOAuthSession() ?? undefined,
+          );
+        } finally {
+          setResolvingEntryId(null);
+        }
+
+        const resolvedTarget = resolvedUrl
+          ? entryOpenTarget(
+              { ...entry, originalUrl: resolvedUrl },
+              preferences.rssArticleOpenMode,
+            )
+          : null;
+        if (!resolvedTarget) {
+          pendingTab?.close();
+          setOpenFailureMessage("Couldn't Find A Link For This Article.");
+          return;
+        }
+        openEntryTarget(entryId, entry, resolvedTarget, pendingTab);
+      })();
+    },
     [
-      articleListFilter,
-      markEntryReadForPub,
+      getOAuthSession,
+      openEntryTarget,
       preferences.rssArticleOpenMode,
-      rssReaderEntry,
     ],
   );
 
@@ -98,11 +152,30 @@ export default function ReadPubPage({
             <DevRecordKindBadge info={publicationKind} />
           </div>
         ) : null}
+        {openFailureMessage ? (
+          <div className="shrink-0 px-3 pt-2">
+            <div
+              role="status"
+              aria-live="polite"
+              className="flex items-center justify-between gap-3 rounded-xl border border-border bg-muted/35 px-4 py-3 text-sm text-muted-foreground"
+            >
+              <span>{openFailureMessage}</span>
+              <button
+                type="button"
+                className="shrink-0 text-primary underline-offset-4 hover:underline"
+                onClick={() => setOpenFailureMessage(null)}
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+        ) : null}
         <div className="min-h-0 flex-1 overflow-hidden">
           <EntryList
             pubId={pubId}
             aggregateFeed={aggregateFeed}
             selectedEntryId={rssReaderEntry?.entryId ?? null}
+            resolvingEntryId={resolvingEntryId}
             onSelectEntry={handleSelectEntry}
             isEntryRead={isEntryRead}
             readIndicatorsEnabled

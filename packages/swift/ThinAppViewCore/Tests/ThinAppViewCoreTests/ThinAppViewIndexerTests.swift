@@ -6,6 +6,107 @@ import Testing
 
 @Suite("ThinAppViewIndexer")
 struct ThinAppViewIndexerTests {
+  private actor StubPublicationSiteResolver: PublicationSiteBaseResolving {
+    private let base: String?
+    private(set) var lookups: [String] = []
+
+    init(base: String?) {
+      self.base = base
+    }
+
+    func siteBase(forPublicationAtUri atUri: String) async -> String? {
+      lookups.append(atUri)
+      return base
+    }
+
+    func lookupCount() -> Int { lookups.count }
+  }
+
+  @Test("resolves articleUrl for documents that reference their publication by AT-URI")
+  func resolvesArticleUrlFromPublicationRecord() async throws {
+    let dbPath =
+      FileManager.default.temporaryDirectory
+        .appendingPathComponent("sw-indexer-\(UUID().uuidString).sqlite")
+        .path
+    defer { try? FileManager.default.removeItem(atPath: dbPath) }
+
+    let logger = Logger(label: "indexer.test")
+    let store = try SQLiteThinAppViewStore(path: dbPath, logger: logger)
+    let config = ThinAppViewConfig.fromEnvironment(["ENABLE_THIN_APPVIEW": "true"])
+    let publication = "at://did:plc:author/site.standard.publication/main"
+    let resolver = StubPublicationSiteResolver(base: "https://example.com")
+    let indexer = ThinAppViewIndexer(
+      store: store,
+      config: config,
+      logger: logger,
+      publicationSiteResolver: resolver
+    )
+
+    for (rkey, path) in [("one", "/posts/one"), ("two", "posts/two")] {
+      let recordJSON = try JSONSerialization.data(withJSONObject: [
+        "title": "Article \(rkey)",
+        "publishedAt": "2026-05-19T12:00:00.000Z",
+        "site": publication,
+        "path": path,
+      ])
+      try await indexer.handleCommit(
+        repoDid: "did:plc:author",
+        collection: "site.standard.document",
+        rkey: rkey,
+        cid: "bafy\(rkey)",
+        recordJSON: recordJSON,
+        operation: "create"
+      )
+    }
+
+    let first = try await store.fetchContentItem(
+      uri: "at://did:plc:author/site.standard.document/one"
+    )
+    #expect(first?.originalUrl == "https://example.com/posts/one")
+    let second = try await store.fetchContentItem(
+      uri: "at://did:plc:author/site.standard.document/two"
+    )
+    #expect(second?.originalUrl == "https://example.com/posts/two")
+    // The publication is resolved per document, but the resolver caches across them.
+    #expect(await resolver.lookupCount() == 2)
+    #expect(await resolver.lookups.allSatisfy { $0 == publication })
+  }
+
+  @Test("indexes documents without a resolver and leaves articleUrl empty")
+  func indexesWithoutResolver() async throws {
+    let dbPath =
+      FileManager.default.temporaryDirectory
+        .appendingPathComponent("sw-indexer-\(UUID().uuidString).sqlite")
+        .path
+    defer { try? FileManager.default.removeItem(atPath: dbPath) }
+
+    let logger = Logger(label: "indexer.test")
+    let store = try SQLiteThinAppViewStore(path: dbPath, logger: logger)
+    let config = ThinAppViewConfig.fromEnvironment(["ENABLE_THIN_APPVIEW": "true"])
+    let indexer = ThinAppViewIndexer(store: store, config: config, logger: logger)
+
+    let recordJSON = try JSONSerialization.data(withJSONObject: [
+      "title": "Unresolvable",
+      "publishedAt": "2026-05-19T12:00:00.000Z",
+      "site": "at://did:plc:author/site.standard.publication/main",
+      "path": "/posts/one",
+    ])
+    try await indexer.handleCommit(
+      repoDid: "did:plc:author",
+      collection: "site.standard.document",
+      rkey: "one",
+      cid: "bafyone",
+      recordJSON: recordJSON,
+      operation: "create"
+    )
+
+    let item = try await store.fetchContentItem(
+      uri: "at://did:plc:author/site.standard.document/one"
+    )
+    #expect(item?.title == "Unresolvable")
+    #expect(item?.originalUrl == nil)
+  }
+
   @Test("indexes document commit and clears cached first page for publication")
   func indexesDocumentAndInvalidatesFirstPage() async throws {
     let dbPath =

@@ -3,6 +3,7 @@ import Foundation
 public protocol OperationsStore: Actor {
   func ping() async throws
   func fetchDatabaseObservability() async throws -> DatabaseObservabilitySnapshot?
+  func fetchViewerCounts(at: Date) async throws -> OperationsViewerCounts?
   func upsertServiceState(_ state: OperationsServiceState) async throws
   func listServiceStates() async throws -> [OperationsServiceState]
 
@@ -155,6 +156,8 @@ public protocol OperationsStore: Actor {
 extension OperationsStore {
   public func fetchDatabaseObservability() async throws -> DatabaseObservabilitySnapshot? { nil }
 
+  public func fetchViewerCounts(at: Date) async throws -> OperationsViewerCounts? { nil }
+
   public func recordTelemetryBatch(_ signals: [OperationsTelemetrySignal]) async throws {
     for signal in signals {
       switch signal {
@@ -172,6 +175,7 @@ extension OperationsStore {
     async let services = listServiceStates()
     async let streamStates = listStreamStates()
     async let database = fetchDatabaseObservability()
+    async let viewers = fetchViewerCounts(at: at)
     async let counts = lifecycleCounts()
     let resolvedServices = try await services
     let resolvedStreamStates = try await streamStates
@@ -180,6 +184,7 @@ extension OperationsStore {
     let ingestion = OperationsEvidenceResolver.ingestionAuthority(
       services: resolvedServices, streams: resolvedStreamStates, at: at)
     let databaseSnapshot = try? await database
+    let viewerCounts = try? await viewers
     var evidence: [String: OperationsEvidenceMetadata] = [
       "services": serviceEvidence,
       "ingestion": ingestion.evidence,
@@ -208,7 +213,8 @@ extension OperationsStore {
       refreshedAt: at,
       evidence: evidence,
       capabilities: capabilities,
-      counts: resolvedCounts
+      counts: resolvedCounts,
+      viewers: viewerCounts ?? nil
     )
   }
 }

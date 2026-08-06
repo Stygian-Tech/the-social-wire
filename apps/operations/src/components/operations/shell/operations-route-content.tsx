@@ -15,6 +15,7 @@ import { Runbooks } from "@/components/operations/runbooks"
 import { ServiceTable } from "@/components/operations/dashboard/service-table"
 import { SubscribedFeedPerformance } from "@/components/operations/dashboard/subscribed-feed-performance"
 import { TraceDetail } from "@/components/operations/traces/trace-detail"
+import { UserCounts } from "@/components/operations/dashboard/user-counts"
 import type { Runbook } from "@/components/operations/shell/operations-view-types"
 import { metricWindowReference } from "@/lib/collection-metrics"
 import type { EnvironmentName, Gap, Overview } from "@/lib/operations-types"
@@ -120,6 +121,7 @@ export function OperationsRouteContent({
   return (
     <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3">
       <HealthStrip overview={data} referenceTime={referenceTime} />
+      <UserCounts overview={data} referenceTime={referenceTime} />
       <CapabilityStatus overview={data} />
       <EvidenceInventory overview={data} referenceTime={referenceTime} />
       <LiveStream data={data} environment={environment} mutationsEnabled={recoveryEnabled} referenceTime={referenceTime} />

@@ -22,6 +22,7 @@ import {
 export function EntryListVirtualPane({
   visibleEntries,
   selectedEntryId,
+  resolvingEntryId = null,
   onSelectEntry,
   isEntryRead,
   readIndicatorsEnabled,
@@ -228,6 +229,7 @@ export function EntryListVirtualPane({
               <EntryRow
                 entry={entry}
                 isSelected={selectedEntryId === entry.entryId}
+                isResolving={resolvingEntryId === entry.entryId}
                 onSelect={onSelectEntry}
                 isRead={entry.isRead === true || isEntryRead(entry.entryId)}
                 readIndicatorsEnabled={readIndicatorsEnabled}

@@ -39,6 +39,8 @@ Railway Gateway — OAuth/DPoP, PDS write-through, unbuffered AppView proxy
 
 **Consistency:** clients update local read state immediately, then write AppView read marks or scoped read floors. Firehose, enrollment, and proactive backfill keep content rows current.
 
+**Repairing stale rows:** `POST /v1/appview/enroll` with `authorDids` re-indexes an author's recent records on demand — the manual lever when a projection change (for example newly resolvable standard.site article URLs) needs to reach rows indexed before the change shipped. Proactive backfill reaches every author on its own cycle, and the `content_items` TTL eventually expires the rest.
+
 ## HTTP routes
 
 All routes require ATProto OAuth (`Authorization: Bearer` or `DPoP` + `DPoP` proof) unless noted. **`ENABLE_THIN_APPVIEW=true`** on AppView registers `/v1/appview/*`; gateway always exposes OAuth metadata and proxies AppView when **`APPVIEW_BASE_URL`** is set.
