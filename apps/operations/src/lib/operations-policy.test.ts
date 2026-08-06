@@ -4,6 +4,7 @@ import {
   canQueueBackfill,
   filterTraces,
   jetstreamStateForOverview,
+  preferredRecoveryMode,
   productionConfirmationMatches,
 } from "@/lib/operations-policy"
 import type { Span } from "@/lib/operations-types"
@@ -32,6 +33,34 @@ describe("operations mutation safeguards", () => {
     expect(canQueueBackfill({ ...ready, dryRunConflictFree: false })).toBe(false)
     expect(canQueueBackfill({ ...ready, reviewed: false })).toBe(false)
     expect(canQueueBackfill({ ...ready, pending: true })).toBe(false)
+  })
+
+  test("never opens on a recovery mode the service reports disabled", () => {
+    const disabled = { enabled: false, disabledReason: "unavailable" }
+    const enabled = { enabled: true }
+    expect(
+      preferredRecoveryMode({
+        tapVerifiedResync: disabled,
+        jetstreamReplay: enabled,
+        pdsReconciliation: enabled,
+      }),
+    ).toBe("jetstream_replay")
+    expect(
+      preferredRecoveryMode({
+        tapVerifiedResync: disabled,
+        jetstreamReplay: disabled,
+        pdsReconciliation: enabled,
+      }),
+    ).toBe("pds_reconciliation")
+    // Nothing enabled leaves the selection alone so the disabled reason stays on screen.
+    expect(
+      preferredRecoveryMode({
+        tapVerifiedResync: disabled,
+        jetstreamReplay: disabled,
+        pdsReconciliation: disabled,
+      }),
+    ).toBeUndefined()
+    expect(preferredRecoveryMode(undefined)).toBeUndefined()
   })
 
   test("reports the exact unmet backfill requirements", () => {
