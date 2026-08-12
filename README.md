@@ -18,7 +18,8 @@ User's ATProto PDS      Social Wire gateway (Railway)
   link.latr.saved.*       /v1/appview/*, /v1/latr/*
                                │
                                └── AppView + Charybdis
-                                   Postgres (AWS us-east-1)
+                                   Redis (disposable cache/leases)
+                                   Postgres (durable derived state)
 ```
 
 ## Monorepo Structure
@@ -38,7 +39,7 @@ the-social-wire/
   packages/
     lexicons/        # app.thesocialwire.* and L@tr ATProto lexicons
     spec/            # OpenAPI 3.1 spec
-    swift/           # GatewayCore, OperationsCore, ThinAppViewCore
+    swift/           # GatewayCore, OperationsCore, SocialWireRedis, ThinAppViewCore
   database/
     migrations/      # Provider-neutral Postgres migration history
   docs/
@@ -97,6 +98,7 @@ See **[docs/test-plans/README.md](docs/test-plans/README.md)** for per-surface p
 (cd apps/web && bun test)
 (cd apps/operations && bun test)
 (cd packages/swift/GatewayCore && swift test)
+(cd packages/swift/SocialWireRedis && swift test)
 (cd services/gateway && swift test)
 (cd services/appview && swift test)
 (cd packages/swift/ThinAppViewCore && swift test)
@@ -112,6 +114,7 @@ See **[docs/test-plans/README.md](docs/test-plans/README.md)** for per-surface p
 - **Protocol-first where data is portable**: folders, publication preferences, subscriptions, and read-later records live on the user's own ATProto PDS
 - **AppView-owned read state**: feed read/unread state is local-first in clients and synchronized to Social Wire AppView for counters and unread filtering
 - **Thin AppView read path**: signed-in clients load bootstrap data, feeds, and entry detail through the gateway-backed AppView; standard.site bodies remain authoritative on publisher PDSes, while RSS feed bodies may be retained in the derived index (see [docs/architecture/appview.md](docs/architecture/appview.md))
+- **Disposable acceleration**: hosted projection/PDS caches, PLC coalescing, RSS leases, and reusable ranking sets use Redis; PDS/Postgres remain authoritative (see [docs/architecture/redis.md](docs/architecture/redis.md))
 - **Direct ATProto where it fits**: discovery and repo reads use public XRPC; Bluesky App View (`public.api.bsky.app`) for follows and profiles only
 - **Interoperable by design**: lexicons are public — any ATProto client can read a user's Social Wire folders
 
@@ -122,7 +125,8 @@ See **[docs/test-plans/README.md](docs/test-plans/README.md)** for per-surface p
 | Web + Operations UI | Railway |
 | Gateway, AppView, Charybdis | Railway |
 | Operations + Tap | Railway |
-| Database (index + cache) | Railway Postgres (`database/migrations/`) |
+| Durable index/state | Railway Postgres (`database/migrations/`) |
+| Disposable cache/coordination | Private Railway Redis |
 | CI/CD | GitHub Actions validates source; Railway deploys through its Git integration |
 
 Charybdis retains the `appview-worker` directory, executable, and telemetry service key for compatibility.
@@ -138,6 +142,7 @@ See [docs/architecture/overview.md](docs/architecture/overview.md) for the full 
 - [Lexicons](docs/architecture/lexicons.md)
 - [Discovery chain](docs/architecture/discovery.md)
 - [Thin AppView](docs/architecture/appview.md)
+- [Redis cache and coordination](docs/architecture/redis.md)
 - [Web app](apps/web/README.md)
 - [Apple app](apps/apple/README.md)
 - [OpenAPI spec](packages/spec/README.md)

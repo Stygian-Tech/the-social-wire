@@ -2,6 +2,7 @@ import AsyncHTTPClient
 import Foundation
 import NIOCore
 import NIOHTTP1
+import SocialWireRedis
 import Testing
 
 @testable import ThinAppViewCore
@@ -81,6 +82,44 @@ struct PDSDiagnosticNetworkSafetyTests {
     }
   }
 
+  @Test("cached unsafe endpoints are revalidated before use")
+  func cachedResolutionRejectsUnsafeEndpoint() async throws {
+    let cache = InMemoryPDSResolutionCache()
+    let did = "did:plc:cachedunsafeaaaaaaaa"
+    await cache.storeResolved(did: did, endpoint: "http://127.0.0.1:3000", now: Date())
+
+    await #expect(throws: ThinAppViewPdsResolutionError.unsafeServiceEndpoint) {
+      _ = try await ThinAppViewPdsResolution.resolvePdsBase(
+        repoDid: did,
+        plcBase: "https://plc.directory",
+        transport: StubPDSHTTPTransport(responses: []),
+        endpointPolicy: .publicHTTPS,
+        cache: cache
+      )
+    }
+  }
+
+  @Test("PLC transient failures are not negative cached")
+  func transientResolutionIsNotCached() async throws {
+    let cache = InMemoryPDSResolutionCache()
+    let did = "did:plc:transientaaaaaaaaaaa"
+    let transport = StubPDSHTTPTransport(responses: [Self.response(status: .serviceUnavailable, body: "")])
+
+    await #expect(throws: ThinAppViewPdsResolutionError.transientStatus(503)) {
+      _ = try await ThinAppViewPdsResolution.resolvePdsBase(
+        repoDid: did,
+        plcBase: "https://plc.directory",
+        transport: transport,
+        endpointPolicy: .publicHTTPS,
+        cache: cache
+      )
+    }
+    guard case .miss = try await cache.lookup(did: did) else {
+      Issue.record("A transient PLC failure must not create a negative cache entry")
+      return
+    }
+  }
+
   @Test("non-success response bodies are consumed only to the configured bound")
   func boundedErrorBodyDrain() async throws {
     let probe = ResponseBodyProbe()
@@ -135,6 +174,16 @@ struct PDSDiagnosticNetworkSafetyTests {
 
 @Suite("PDS listRecords cursor safety")
 struct PDSListRecordsCursorSafetyTests {
+  @Test("retries without reverse only for the explicit unsupported-pagination response")
+  func reverseCompatibility() {
+    let unsupported = Data(#"{"error":"InvalidRequest","message":"reverse not supported yet"}"#.utf8)
+    #expect(PDSListRecordsCompatibility.requiresForwardPagination(statusCode: 400, body: unsupported))
+
+    let unrelated = Data(#"{"error":"InvalidRequest","message":"repo not found"}"#.utf8)
+    #expect(!PDSListRecordsCompatibility.requiresForwardPagination(statusCode: 400, body: unrelated))
+    #expect(!PDSListRecordsCompatibility.requiresForwardPagination(statusCode: 500, body: unsupported))
+  }
+
   @Test("missing cursor ends pagination and valid cursors advance")
   func validCursorStates() {
     #expect(

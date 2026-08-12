@@ -24,7 +24,13 @@ public enum ThinAppViewWorkerRuntime {
       httpClient: httpClient,
       plcURL: plcURL,
       rssIngestion: httpClient.map {
-        ThinAppViewRssIngestion(store: store, httpClient: $0, config: config, logger: logger)
+        ThinAppViewRssIngestion(
+          store: store,
+          httpClient: $0,
+          config: config,
+          logger: logger,
+          projectionCache: projectionCache
+        )
       },
       projectionCache: projectionCache
     )
@@ -161,7 +167,8 @@ public enum ThinAppViewWorkerRuntime {
           store: store,
           httpClient: httpClient,
           config: config,
-          logger: logger
+          logger: logger,
+          projectionCache: projectionCache
         )
         let rssPoll = ThinAppViewRssFeedPollJob(
           store: store,

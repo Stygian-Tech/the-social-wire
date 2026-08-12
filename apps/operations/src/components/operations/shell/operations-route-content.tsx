@@ -11,6 +11,7 @@ import { HealthStrip } from "@/components/operations/dashboard/health-strip"
 import { LiveStream } from "@/components/operations/dashboard/live-stream"
 import { OperationsCommandsTable } from "@/components/operations/dashboard/operations-commands-table"
 import { RequestTable } from "@/components/operations/dashboard/request-table"
+import { RedisObservability } from "@/components/operations/dashboard/redis-observability"
 import { Runbooks } from "@/components/operations/runbooks"
 import { ServiceTable } from "@/components/operations/dashboard/service-table"
 import { SubscribedFeedPerformance } from "@/components/operations/dashboard/subscribed-feed-performance"
@@ -71,6 +72,7 @@ export function OperationsRouteContent({
       <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3">
         <RequestTable spans={data.recentTraces ?? []} refreshedAt={data.refreshedAt} expanded />
         <SubscribedFeedPerformance metricRollups={data.metricRollups ?? []} />
+        <RedisObservability metricRollups={data.metricRollups ?? []} />
         <DatabaseObservability overview={data} referenceTime={referenceTime} />
         <ServiceTable data={data} referenceTime={referenceTime} />
       </div>

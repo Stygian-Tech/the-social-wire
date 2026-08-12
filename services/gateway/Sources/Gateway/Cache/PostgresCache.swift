@@ -6,7 +6,7 @@ import PostgresNIO
 /// Reads and writes to the hosted Postgres cache tables.
 /// This is not the source of truth for any user data — it is a performance cache only.
 /// Used in `dev` and `prod` environments; `SQLiteCache` is used for `local`.
-actor PostgresCache: CacheStore {
+actor PostgresCache: PdsRepoRecordCacheStore {
   private let pool: PostgresClient
   private let logger: Logger
 

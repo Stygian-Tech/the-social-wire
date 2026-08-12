@@ -86,11 +86,16 @@ filter_changed operations \
   'railway/operations.json' \
   '.github/workflows/ci.yml'
 
+filter_changed redis \
+  'packages/swift/SocialWireRedis/**' \
+  '.github/workflows/ci.yml'
+
 filter_changed gateway \
   'services/gateway/**' \
   'packages/swift/GatewayCore/**' \
   'packages/swift/ThinAppViewCore/**' \
   'packages/swift/OperationsCore/**' \
+  'packages/swift/SocialWireRedis/**' \
   'database/migrations/**' \
   'scripts/apply-database-migrations.sh' \
   'railway/gateway.json' \
@@ -101,6 +106,7 @@ filter_changed appview \
   'packages/swift/GatewayCore/**' \
   'packages/swift/ThinAppViewCore/**' \
   'packages/swift/OperationsCore/**' \
+  'packages/swift/SocialWireRedis/**' \
   'railway/appview.json' \
   '.github/workflows/ci.yml'
 
@@ -108,6 +114,7 @@ filter_changed charybdis \
   'services/appview-worker/**' \
   'packages/swift/ThinAppViewCore/**' \
   'packages/swift/OperationsCore/**' \
+  'packages/swift/SocialWireRedis/**' \
   'railway/charybdis.json' \
   '.github/workflows/ci.yml'
 

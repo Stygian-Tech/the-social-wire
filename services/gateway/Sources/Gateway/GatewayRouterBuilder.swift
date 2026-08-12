@@ -9,7 +9,7 @@ enum GatewayRouterBuilder {
   static func router(
     config: GatewayServiceConfig,
     httpClient: HTTPClient,
-    cache: any CacheStore,
+    cache: any PdsRepoRecordCacheStore,
     operationsStore: (any OperationsStore)? = nil,
     telemetry: OperationsTelemetryBuffer? = nil,
     telemetryEnvironment: String = "unknown",

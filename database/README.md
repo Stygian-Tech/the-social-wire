@@ -1,6 +1,6 @@
 # Database migrations
 
-Provider-neutral Postgres migrations for the Social Wire gateway cache, AppView/Charybdis projections, Operations control plane, and Tap/recovery telemetry. Railway Postgres is the canonical hosted database.
+Provider-neutral Postgres migrations for durable/rebuildable AppView and Charybdis state, the Operations control plane, Tap/recovery telemetry, and temporary cache rollback tables. Railway Postgres is the canonical hosted durable database; Redis cache data is disposable.
 
 ## Prerequisites
 
@@ -25,10 +25,10 @@ Gateway, AppView, and Charybdis use SQLite under `APP_ENV=local`; the Operations
 
 | Table | Used by |
 |-------|---------|
-| `pds_repo_record_cache` | Gateway `/v1/pds/cache/record` |
+| `pds_repo_record_cache` | Rollback-only hosted cache table after Redis cutover; SQLite/Postgres backend compatibility |
 | `content_items` | Thin AppView entry index |
 | `read_marks` | Server-side unread filtering |
-| `sidebar_projection_cache`, `unread_counts_cache`, `first_page_cache` | Stale-first bootstrap projection slices |
+| `sidebar_projection_cache`, `unread_counts_cache`, `first_page_cache` | Rollback-only hosted cache tables after Redis cutover; SQLite/Postgres backend compatibility |
 | `appview_publication_scopes`, `appview_unread_counters`, `appview_viewer_feeds`, `appview_feed_publications` | Materialized scope, unread, and aggregate-feed state |
 | `appview_ingestion_*`, `appview_backfill_jobs`, `appview_recovery_failures`, `appview_projection_repair_outbox` | Ingestion checkpoints, gaps, recovery, and repair |
 | `appview_tap_*` | Tap registrations, receipts, repository state, and parity discrepancies |
@@ -43,3 +43,4 @@ GitHub Actions does not mutate hosted databases. The Gateway Railway deployment 
 
 - [Database test plan](../docs/test-plans/database.md)
 - [Thin AppView architecture](../docs/architecture/appview.md)
+- [Redis ownership and rollback](../docs/architecture/redis.md)

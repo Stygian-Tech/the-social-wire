@@ -1,6 +1,6 @@
 # ThinAppViewCore
 
-Shared Swift package for the **Thin AppView** read index — data-minimized standard.site rows, RSS content rows, derived read marks, and projection caches in Postgres/SQLite.
+Shared Swift package for the **Thin AppView** read index — data-minimized standard.site rows, RSS content rows, derived read marks, and Redis/Postgres/SQLite projection cache implementations.
 
 Consumed by:
 
@@ -13,7 +13,7 @@ Consumed by:
 |------|-------|
 | Indexing | `ThinAppViewIndexer`, `RenderFieldExtractor` |
 | Storage | `SQLiteThinAppViewStore`, `PostgresThinAppViewStore`, `ThinAppViewStore` |
-| Projection cache | `AppViewProjectionCacheStore`, `SQLiteAppViewProjectionCacheStore`, `PostgresAppViewProjectionCacheStore` |
+| Projection cache | `AppViewProjectionCacheStore`, `RedisAppViewProjectionCacheStore`, SQLite/Postgres rollback implementations, `RedisProjectionCacheRuntime` |
 | Worker | `ThinAppViewWorkerRuntime`, `FirehoseSubscriber`, Tap consumers, `ThinAppViewRssFeedPollJob`, `ThinAppViewTtlCleanupJob`, `ThinAppViewProactiveBackfillJob` |
 | Config | `ThinAppViewConfig`, `RuntimeEnvironment`, `PostgresConfig` |
 | Query | `ThinAppViewQuerySupport`, `ThinAppViewModels` |
@@ -29,7 +29,7 @@ CI runs this explicitly in the **`charybdis`** job.
 
 ## Architecture
 
-See [docs/architecture/appview.md](../../../docs/architecture/appview.md) and [docs/wiki/Thin-AppView.md](../../../docs/wiki/Thin-AppView.md).
+See [docs/architecture/appview.md](../../../docs/architecture/appview.md), [docs/architecture/redis.md](../../../docs/architecture/redis.md), and [docs/wiki/Thin-AppView.md](../../../docs/wiki/Thin-AppView.md).
 
 ## Related
 

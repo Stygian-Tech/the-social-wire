@@ -16,27 +16,14 @@ enum CacheStorePdsTTLs {
   static let genericWriteHorizon: TimeInterval = 20 * 60
 }
 
-/// Shared cache interface for SQLite + Postgres implementations.
-protocol CacheStore: Actor {
+struct PdsRepoRecordRefreshLease: Sendable, Equatable {
+  let key: String
+  let owner: String
+  let ttlMilliseconds: Int
+}
 
-  // MARK: - Discovery cache
-
-  func cachedPublications(
-    for userDID: String
-  ) async throws -> (publications: [DiscoveredPublication], lastRefreshedAt: Date?)?
-
-  func storePublications(
-    _ publications: [DiscoveredPublication],
-    for userDID: String
-  ) async throws
-
-  // MARK: - Entry cache
-
-  func cachedEntry(for entryURI: String) async throws -> EntryDetail?
-
-  func storeEntry(_ entry: EntryDetail) async throws
-
-  // MARK: - Generic **`com.atproto.repo.getRecord`** JSON blobs
+/// Focused cache interface for short-lived `com.atproto.repo.getRecord` JSON blobs.
+protocol PdsRepoRecordCacheStore: Actor {
 
   func cachedPdsRepoRecord(ownerDid: String, scopeKey: String) async throws -> PdsCachedRepoRecordPayload?
 
@@ -48,4 +35,27 @@ protocol CacheStore: Actor {
     cachedAt: Date,
     expiresAt: Date
   ) async throws
+
+  func acquirePdsRefreshLease(ownerDid: String, scopeKey: String) async -> PdsRepoRecordRefreshLease?
+  func renewPdsRefreshLease(_ lease: PdsRepoRecordRefreshLease) async -> Bool
+  func releasePdsRefreshLease(_ lease: PdsRepoRecordRefreshLease) async
+}
+
+extension PdsRepoRecordCacheStore {
+  func acquirePdsRefreshLease(ownerDid: String, scopeKey: String) async -> PdsRepoRecordRefreshLease? {
+    PdsRepoRecordRefreshLease(
+      key: "local:\(ownerDid):\(scopeKey)",
+      owner: UUID().uuidString.lowercased(),
+      ttlMilliseconds: 15_000
+    )
+  }
+
+  func releasePdsRefreshLease(_ lease: PdsRepoRecordRefreshLease) async {
+    _ = lease
+  }
+
+  func renewPdsRefreshLease(_ lease: PdsRepoRecordRefreshLease) async -> Bool {
+    _ = lease
+    return true
+  }
 }

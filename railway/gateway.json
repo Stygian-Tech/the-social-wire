@@ -8,6 +8,7 @@
       "/packages/swift/GatewayCore/**",
       "/packages/swift/ThinAppViewCore/**",
       "/packages/swift/OperationsCore/**",
+      "/packages/swift/SocialWireRedis/**",
       "/database/migrations/**",
       "/scripts/apply-database-migrations.sh",
       "/railway/gateway.json"

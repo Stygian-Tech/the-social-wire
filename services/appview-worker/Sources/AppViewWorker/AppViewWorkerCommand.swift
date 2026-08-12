@@ -46,6 +46,28 @@ struct CharybdisCommand: AsyncParsableCommand {
         backfillFingerprintSecret: operationsConfig.backfillFingerprintSecret,
         logger: workerLogger
       )
+      let telemetry = OperationsTelemetryBuffer(store: operationsStore, logger: workerLogger)
+      let cacheBackend = try AppViewProjectionCacheBackend.fromEnvironment(
+        environment,
+        default: .sqlite
+      )
+      let redisRuntime = cacheBackend == .redis
+        ? RedisProjectionCacheRuntime.make(
+          environment: environment,
+          appEnvironment: operationsEnvironment,
+          logger: workerLogger,
+          telemetry: RedisOperationsTelemetryAdapter.sink(
+            telemetry: operationsConfig.enabled ? telemetry : nil,
+            service: "charybdis"
+          )
+        )
+        : nil
+      let projectionCache: (any AppViewProjectionCacheStore)? = if cacheBackend == .redis {
+        redisRuntime?.store
+      } else {
+        try SQLiteAppViewProjectionCacheStore(path: path, logger: workerLogger)
+      }
+      await redisRuntime?.installResolutionCache()
       try await ThinAppViewWorkerRuntime.run(
         store: store,
         config: thinConfig,
@@ -53,22 +75,43 @@ struct CharybdisCommand: AsyncParsableCommand {
         httpClient: httpClient,
         plcURL: plcURL,
         proactiveExtraAuthorDids: proactiveExtraAuthorDids,
+        projectionCache: projectionCache,
         operationsStore: operationsStore,
         operationsConfig: operationsConfig,
         tapConfiguration: tapConfiguration
       )
+      await redisRuntime?.shutdown()
 
     case .postgres(let urlString):
       let pgConfig = try makePostgresConfig(from: urlString, logger: workerLogger)
       let pgPool = PostgresClient(configuration: pgConfig, backgroundLogger: workerLogger)
       let store = PostgresThinAppViewStore(pool: pgPool, logger: workerLogger)
-      let projectionCache = PostgresAppViewProjectionCacheStore(pool: pgPool, logger: workerLogger)
       let operationsStore = PostgresOperationsStore(
         pool: pgPool,
         environment: operationsEnvironment,
         backfillFingerprintSecret: operationsConfig.backfillFingerprintSecret,
         logger: workerLogger
       )
+      let telemetry = OperationsTelemetryBuffer(store: operationsStore, logger: workerLogger)
+      let cacheBackend = try AppViewProjectionCacheBackend.fromEnvironment(
+        environment,
+        default: .postgres
+      )
+      let redisRuntime = cacheBackend == .redis
+        ? RedisProjectionCacheRuntime.make(
+          environment: environment,
+          appEnvironment: operationsEnvironment,
+          logger: workerLogger,
+          telemetry: RedisOperationsTelemetryAdapter.sink(
+            telemetry: operationsConfig.enabled ? telemetry : nil,
+            service: "charybdis"
+          )
+        )
+        : nil
+      let projectionCache: (any AppViewProjectionCacheStore)? = cacheBackend == .redis
+        ? redisRuntime?.store
+        : PostgresAppViewProjectionCacheStore(pool: pgPool, logger: workerLogger)
+      await redisRuntime?.installResolutionCache()
       try await withThrowingTaskGroup(of: Void.self) { group in
         group.addTask { await pgPool.run() }
         group.addTask {
@@ -88,6 +131,7 @@ struct CharybdisCommand: AsyncParsableCommand {
         try await group.next()
         group.cancelAll()
       }
+      await redisRuntime?.shutdown()
     }
   }
 }

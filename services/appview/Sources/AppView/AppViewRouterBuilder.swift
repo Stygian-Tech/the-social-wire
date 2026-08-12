@@ -54,7 +54,8 @@ enum AppViewRouterBuilder {
       plcURL: config.core.atprotoPLCURL,
       logger: logger,
       thinStore: thinAppViewStore,
-      projectionCache: projectionCache
+      projectionCache: projectionCache,
+      telemetry: telemetry
     )
     let resolve = PublicationResolveService(
       httpClient: httpClient,
@@ -67,7 +68,8 @@ enum AppViewRouterBuilder {
       store: thinAppViewStore,
       httpClient: httpClient,
       config: config.thinAppView,
-      logger: logger
+      logger: logger,
+      projectionCache: projectionCache
     )
     let indexer = ThinAppViewIndexer(
       store: thinAppViewStore,
@@ -120,6 +122,7 @@ enum AppViewRouterBuilder {
       enrollService: enrollService,
       skyreaderIngestionService: skyreaderIngestionService,
       projectionCache: projectionCache,
+      telemetry: telemetry,
       logger: logger
     )
     BootstrapStreamRoutes(bootstrapStreamService: bootstrapStream).register(on: protected)

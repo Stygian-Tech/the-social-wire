@@ -1,6 +1,7 @@
 import AsyncHTTPClient
 import Foundation
 import Logging
+import OperationsCore
 
 /// Periodically re-backfills authors already present in the index to fill firehose gaps and deepen history.
 public struct ThinAppViewProactiveBackfillJob: Sendable {
@@ -58,7 +59,7 @@ public struct ThinAppViewProactiveBackfillJob: Sendable {
     } catch {
       logger.warning(
         "Proactive backfill author lookup failed",
-        metadata: ["error": .string(String(describing: error))]
+        metadata: ["error_type": .string(OperationsRedactor.errorCategory(error))]
       )
     }
 
@@ -79,7 +80,7 @@ public struct ThinAppViewProactiveBackfillJob: Sendable {
     } catch {
       logger.warning(
         "Proactive AppView backfill failed",
-        metadata: ["error": .string(String(describing: error))]
+        metadata: ["error_type": .string(OperationsRedactor.errorCategory(error))]
       )
     }
   }

@@ -92,13 +92,17 @@ enum TapChannelTransport {
             )
             logger.info("Tap acknowledgement channel connected")
             socket.onText { _, text in
-              guard pump.enqueue(text) else {
+              switch pump.enqueue(text) {
+              case .accepted:
+                break
+              case .saturated:
                 resumed.resumeOnce(
                   continuation,
                   with: .failure(TapChannelTransportError.queueOverflow)
                 )
                 socketBox.close()
-                return
+              case .stopped:
+                break
               }
             }
             socket.onClose.whenComplete { _ in

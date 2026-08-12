@@ -156,6 +156,77 @@ struct PublicationProjectionAggregateFeedCacheTests {
     try await client.shutdown()
   }
 
+  @Test("partial unread cache hits preserve known values and rebuild only missing publications")
+  func partialUnreadCacheHit() async throws {
+    let logger = Logger(label: "unread-partial-cache.test")
+    let storePath = FileManager.default.temporaryDirectory
+      .appendingPathComponent("unread-partial-store-\(UUID().uuidString).sqlite").path
+    let cachePath = FileManager.default.temporaryDirectory
+      .appendingPathComponent("unread-partial-cache-\(UUID().uuidString).sqlite").path
+    defer {
+      try? FileManager.default.removeItem(atPath: storePath)
+      try? FileManager.default.removeItem(atPath: cachePath)
+    }
+
+    let store = try SQLiteThinAppViewStore(path: storePath, logger: logger)
+    let cache = try SQLiteAppViewProjectionCacheStore(path: cachePath, logger: logger)
+    let client = HTTPClient(eventLoopGroupProvider: .singleton)
+    let viewerDid = "did:plc:viewer"
+    let known = publication(id: "at://did:plc:known/site.standard.publication/main")
+    let missing = publication(id: "at://did:plc:missing/site.standard.publication/main")
+    try await cache.storeUnreadCounts(
+      viewerDid: viewerDid,
+      counts: [known.publicationId: 7],
+      expiresAt: Date().addingTimeInterval(120)
+    )
+
+    let now = Date()
+    try await store.upsertPublicationScopes([
+      AppViewUnreadCounterSupport.publicationScope(
+        viewerDid: viewerDid,
+        publicationId: missing.publicationId,
+        authorDid: missing.authorDid,
+        publicationAtUri: missing.publicationId,
+        publicationScopeAtUris: [],
+        publicationSiteUrls: [],
+        sectionKeys: [],
+        updatedAt: now
+      )
+    ])
+    let item = IndexedContentItem(
+      uri: "at://did:plc:missing/site.standard.document/one",
+      cid: "bafymissing",
+      authorDid: missing.authorDid,
+      collection: "site.standard.document",
+      createdAt: now,
+      indexedAt: now,
+      publicationSite: missing.publicationId,
+      render: ContentRenderFields(
+        title: "Missing publication entry",
+        publishedAt: ISO8601DateFormatter().string(from: now)
+      ),
+      expiresAt: now.addingTimeInterval(3_600)
+    )
+    try await store.upsertContentItem(item)
+    try await store.incrementUnreadCountersForContentItem(item)
+
+    let service = PublicationProjectionService(
+      httpClient: client,
+      plcURL: "http://127.0.0.1:1",
+      logger: logger,
+      thinStore: store,
+      projectionCache: cache
+    )
+    let snapshot = await service.cachedUnreadCounterSnapshot(
+      for: [known, missing],
+      viewerDid: viewerDid
+    )
+
+    #expect(snapshot.counts[known.publicationId] == 7)
+    #expect(snapshot.counts[missing.publicationId] == 1)
+    try await client.shutdown()
+  }
+
   private func publication(id: String) -> SidebarPublicationRow {
     let authorDid = String(id.split(separator: "/")[2])
     return SidebarPublicationRow(

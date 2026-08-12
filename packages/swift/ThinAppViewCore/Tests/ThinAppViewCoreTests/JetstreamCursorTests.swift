@@ -377,8 +377,8 @@ struct BoundedSequentialMessagePumpTests {
       if value == "first" { try await Task.sleep(for: .milliseconds(25)) }
       await ordered.append(value)
     }, onFailure: { _ in })
-    #expect(pump.enqueue("first"))
-    #expect(pump.enqueue("second"))
+    #expect(pump.enqueue("first") == .accepted)
+    #expect(pump.enqueue("second") == .accepted)
     await pump.waitUntilIdle()
     #expect(await ordered.snapshot() == ["first", "second"])
   }
@@ -387,7 +387,8 @@ struct BoundedSequentialMessagePumpTests {
     let pump = BoundedSequentialMessagePump(capacity: 1, handleMessage: { _ in
       try await Task.sleep(for: .milliseconds(100))
     }, onFailure: { _ in })
-    #expect(pump.enqueue("first"))
-    #expect(!pump.enqueue("overflow"))
+    #expect(pump.enqueue("first") == .accepted)
+    #expect(pump.enqueue("overflow") == .saturated)
+    #expect(pump.enqueue("after-overflow") == .stopped)
   }
 }

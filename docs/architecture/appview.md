@@ -16,7 +16,7 @@ The thin AppView is **not** a Bluesky proxy. It is Social Wire’s own index of 
 | Service | Responsibility |
 |---------|----------------|
 | **`services/gateway`** | Public OAuth/DPoP edge, PDS write-through, sync cache, unbuffered proxy to AppView |
-| **`services/appview`** | Sidebar projection (`/v1/publications/*`), Thin AppView reads (`/v1/appview/*`), bootstrap stream, projection caches |
+| **`services/appview`** | Sidebar projection (`/v1/publications/*`), Thin AppView reads (`/v1/appview/*`), bootstrap stream, Redis projection cache |
 | **Charybdis** (`services/appview-worker`) | Jetstream/Tap ingestion, Skyreader RSS polling, proactive PDS backfill, TTL cleanup |
 | **`packages/swift/ThinAppViewCore`** | Shared indexing, storage, worker runtime |
 
@@ -36,7 +36,9 @@ Railway Charybdis (`appview-worker` source directory)
   • TTL cleanup
         │
         ▼
-Railway Postgres — content_items, read_marks, sidebar/unread/first-page caches, …
+Railway Postgres — content_items, read marks/floors, materialized counters, ingestion/repair state
+        │
+Private Railway Redis — sidebar/unread/first-page caches, PLC cache, RSS leases
         │
         ▼
 Railway AppView — bootstrap-stream, /v1/appview/*, /v1/publications/*
@@ -51,6 +53,8 @@ Railway Gateway — OAuth, proxy (no buffering on bootstrap-stream)
 ## Initial load
 
 Authenticated **`GET /v1/appview/bootstrap-stream`** returns NDJSON events as sidebar priority rows, per-folder `sidebarSection` slices, unread counts, first-unread publication selection, first feed page, and a legacy `sidebarFolders` payload for older clients. Web and iOS consume the same contract. Cache-first repeat visits paint persisted projection cache while the stream refreshes.
+
+Hosted cache behavior and rollout are documented in [redis.md](redis.md). Local services keep SQLite defaults; hosted services retain Postgres cache tables only for rollback while Redis mode is active.
 
 ## Consistency model
 

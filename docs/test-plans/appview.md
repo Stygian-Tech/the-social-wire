@@ -25,6 +25,18 @@ services/appview/Tests/AppViewTests/
 
 Import `services/appview/bruno/` for direct AppView routes (sidebar, bootstrap stream, aggregate/scoped feeds, flat entry detail, read marks, and enroll). In production, clients hit the same paths via the gateway proxy.
 
+## Redis cache and coordination
+
+```bash
+cd packages/swift/SocialWireRedis
+swift test
+
+# CI supplies a pinned redis:8.2.8-alpine service for live integration coverage.
+REDIS_INTEGRATION_URL=redis://127.0.0.1:6379 swift test
+```
+
+The integration suite covers PEXPIRE round trips, independent-client lease contention, owner-safe Lua release, SCAN/UNLINK invalidation, sorted-set ranking, and flush/rebuild behavior. Service suites cover stale-first projection responses, partial unread state, first-page read-state re-resolution, and fail-open cache selection.
+
 ## Feature flags in tests
 
 - `ENABLE_THIN_APPVIEW=true` — Thin AppView route suites use SQLite backend

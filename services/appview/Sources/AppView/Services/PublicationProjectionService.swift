@@ -3,6 +3,7 @@ import Foundation
 import GatewayCore
 import Hummingbird
 import Logging
+import OperationsCore
 import ThinAppViewCore
 
 actor PublicationProjectionService {
@@ -12,6 +13,7 @@ actor PublicationProjectionService {
   private let repo: ATProtoAuthenticatedRepoClient
   private let thinStore: any ThinAppViewStore
   private let projectionCache: (any AppViewProjectionCacheStore)?
+  private let telemetry: OperationsTelemetryBuffer?
   private var appViewScopeCache: [String: (scope: PublicationAppViewScope, expiresAt: Date)] = [:]
   private var discoveryCacheByViewer: [String: (context: SidebarDiscoveryContext, expiresAt: Date)] = [:]
   private var sidebarRowCacheByViewer: [String: [String: SidebarPublicationRow]] = [:]
@@ -33,13 +35,15 @@ actor PublicationProjectionService {
     plcURL: String,
     logger: Logger,
     thinStore: any ThinAppViewStore,
-    projectionCache: (any AppViewProjectionCacheStore)? = nil
+    projectionCache: (any AppViewProjectionCacheStore)? = nil,
+    telemetry: OperationsTelemetryBuffer? = nil
   ) {
     self.httpClient = httpClient
     self.plcURL = plcURL
     self.logger = logger
     self.thinStore = thinStore
     self.projectionCache = projectionCache
+    self.telemetry = telemetry
     self.repo = ATProtoAuthenticatedRepoClient(httpClient: httpClient, plcURL: plcURL, logger: logger)
   }
 
@@ -499,6 +503,109 @@ actor PublicationProjectionService {
     )
   }
 
+  /// Reads known per-publication Redis values first and reconstructs only missing keys from the
+  /// durable materialized counters. A cold contender waits briefly for the lease holder, then
+  /// falls back to Postgres so Redis coordination can never become a response dependency.
+  func cachedUnreadCounterSnapshot(
+    for rows: [SidebarPublicationRow],
+    viewerDid: String
+  ) async -> UnreadCounterSnapshot {
+    guard let projectionCache, !rows.isEmpty else {
+      return await unreadCounterSnapshot(for: rows, viewerDid: viewerDid)
+    }
+
+    var rowsById: [String: SidebarPublicationRow] = [:]
+    for row in rows where rowsById[row.publicationId] == nil {
+      rowsById[row.publicationId] = row
+    }
+    let publicationIds = Array(rowsById.keys).sorted()
+    var cachedCounts: [String: Int] = [:]
+    var cachedAt: Date?
+    var stale = false
+
+    let applyLookup = { (lookup: AppViewProjectionCacheLookup<[String: Int]>) in
+      switch lookup {
+      case .fresh(let entry):
+        cachedCounts.merge(entry.value) { _, latest in latest }
+        cachedAt = entry.cachedAt
+      case .stale(let entry):
+        cachedCounts.merge(entry.value) { _, latest in latest }
+        cachedAt = entry.cachedAt
+        stale = true
+      case .miss:
+        break
+      }
+    }
+
+    if let lookup = try? await projectionCache.unreadCountsCacheLookup(
+      viewerDid: viewerDid,
+      publicationIds: publicationIds,
+      now: Date()
+    ) {
+      applyLookup(lookup)
+    }
+
+    var missingIds = publicationIds.filter { cachedCounts[$0] == nil }
+    var lease: AppViewProjectionRefreshLease?
+    if !missingIds.isEmpty {
+      lease = await projectionCache.acquireRefreshLease(
+        domain: "unread",
+        resource: viewerDid,
+        ttl: 10
+      )
+      if lease == nil {
+        try? await Task.sleep(for: .milliseconds(250))
+        if let lookup = try? await projectionCache.unreadCountsCacheLookup(
+          viewerDid: viewerDid,
+          publicationIds: missingIds,
+          now: Date()
+        ) {
+          applyLookup(lookup)
+        }
+        missingIds = publicationIds.filter { cachedCounts[$0] == nil }
+      }
+    }
+
+    let missingRows = missingIds.compactMap { rowsById[$0] }
+    let reconstructed = missingRows.isEmpty
+      ? nil
+      : await unreadCounterSnapshot(for: missingRows, viewerDid: viewerDid)
+    if let reconstructed {
+      cachedCounts.merge(reconstructed.counts) { known, _ in known }
+      if !reconstructed.counts.isEmpty {
+        try? await projectionCache.storeUnreadCounts(
+          viewerDid: viewerDid,
+          counts: reconstructed.counts,
+          expiresAt: Date().addingTimeInterval(AppViewProjectionCacheTTL.unreadCountsSeconds)
+        )
+      }
+    }
+    if let lease {
+      await projectionCache.releaseRefreshLease(lease)
+    }
+
+    let needsRefresh = stale
+      || reconstructed?.dirty == true
+      || !(reconstructed?.missingPublicationIds.isEmpty ?? true)
+    if needsRefresh {
+      Task {
+        _ = await self.refreshUnreadCounterSnapshot(for: rows, viewerDid: viewerDid)
+      }
+    }
+
+    let now = Date()
+    let cachedGeneration = cachedAt.map(AppViewUnreadCounterSupport.generation(for:)) ?? 0
+    let countedAt = max(cachedAt ?? .distantPast, reconstructed?.countedAt ?? .distantPast)
+    return UnreadCounterSnapshot(
+      counts: cachedCounts,
+      generation: max(cachedGeneration, reconstructed?.generation ?? 0),
+      accuracy: cachedAt == nil && reconstructed?.accuracy == .exact ? .exact : .estimated,
+      countedAt: countedAt == .distantPast ? now : countedAt,
+      dirty: reconstructed?.dirty ?? false,
+      missingPublicationIds: reconstructed?.missingPublicationIds ?? []
+    )
+  }
+
   func refreshUnreadCounterSnapshot(
     for rows: [SidebarPublicationRow],
     viewerDid: String
@@ -506,9 +613,47 @@ actor PublicationProjectionService {
     guard !rows.isEmpty else {
       return await unreadCounterSnapshot(for: rows, viewerDid: viewerDid)
     }
+    let rebuildStarted = Date()
+    let prior = await unreadCounterSnapshot(for: rows, viewerDid: viewerDid)
+    let reason = !prior.missingPublicationIds.isEmpty ? "missing" : prior.dirty ? "dirty" : "refresh"
     let scopes = unreadScopes(from: rows)
+    let lease = await projectionCache?.acquireRefreshLease(
+      domain: "unread",
+      resource: viewerDid,
+      ttl: 10
+    )
+    guard projectionCache == nil || lease != nil else {
+      return await unreadCounterSnapshot(for: rows, viewerDid: viewerDid)
+    }
+    let renewal = lease.flatMap { lease in
+      projectionCache.map { refreshLeaseRenewal(lease, projectionCache: $0) }
+    }
+    defer {
+      renewal?.cancel()
+      if let lease, let projectionCache {
+        Task { await projectionCache.releaseRefreshLease(lease) }
+      }
+    }
     _ = try? await thinStore.refreshUnreadCounters(viewerDid: viewerDid, scopes: scopes)
-    return await unreadCounterSnapshot(for: rows, viewerDid: viewerDid)
+    recordMetric(
+      name: "socialwire.appview.unread.recomputes_total",
+      value: 1,
+      dimensions: ["reason": reason]
+    )
+    recordMetric(
+      name: "socialwire.appview.cache.rebuild.duration_seconds",
+      value: Date().timeIntervalSince(rebuildStarted),
+      dimensions: ["cache_type": "unread"]
+    )
+    let snapshot = await unreadCounterSnapshot(for: rows, viewerDid: viewerDid)
+    if let projectionCache, !snapshot.counts.isEmpty {
+      try? await projectionCache.storeUnreadCounts(
+        viewerDid: viewerDid,
+        counts: snapshot.counts,
+        expiresAt: Date().addingTimeInterval(AppViewProjectionCacheTTL.unreadCountsSeconds)
+      )
+    }
+    return snapshot
   }
 
   private func unreadScopes(from rows: [SidebarPublicationRow]) -> [PublicationUnreadScope] {
@@ -520,6 +665,29 @@ actor PublicationProjectionService {
         publicationScopeAtUris: $0.appViewScope.publicationScopeAtUris,
         publicationSiteUrls: $0.appViewScope.publicationSiteUrls
       )
+    }
+  }
+
+  private func recordMetric(name: String, value: Double, dimensions: [String: String]) {
+    guard let telemetry else { return }
+    Task {
+      _ = await telemetry.enqueue(.metric(
+        OperationsMetricSample(name: name, value: value, dimensions: dimensions)
+      ))
+    }
+  }
+
+  private func refreshLeaseRenewal(
+    _ lease: AppViewProjectionRefreshLease,
+    projectionCache: any AppViewProjectionCacheStore
+  ) -> Task<Void, Never> {
+    Task {
+      let interval = max(1, lease.ttlMilliseconds / 3)
+      while !Task.isCancelled {
+        try? await Task.sleep(for: .milliseconds(interval))
+        guard !Task.isCancelled else { return }
+        guard await projectionCache.renewRefreshLease(lease) else { return }
+      }
     }
   }
 
