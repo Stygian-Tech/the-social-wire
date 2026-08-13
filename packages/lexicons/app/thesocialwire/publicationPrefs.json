@@ -12,10 +12,12 @@
         "properties": {
           "publicationId": {
             "type": "string",
+            "maxLength": 8192,
             "description": "The at-uri or canonical URL identifying the publication. Used to correlate this prefs record with a discovered publication."
           },
           "folderId": {
             "type": "string",
+            "maxLength": 512,
             "description": "The rkey (TID) of the app.thesocialwire.folder record this publication is assigned to. Omit or set to null to leave the publication in 'All Publications'."
           },
           "sortOrder": {
@@ -31,6 +33,7 @@
           "createdAt": {
             "type": "string",
             "format": "datetime",
+            "maxLength": 64,
             "description": "ISO 8601 timestamp when this prefs record was created."
           }
         }

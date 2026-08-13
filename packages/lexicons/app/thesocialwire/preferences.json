@@ -12,6 +12,7 @@
         "properties": {
           "readLaterService": {
             "type": "string",
+            "maxLength": 32,
             "knownValues": [
               "latr-link",
               "latrkit",
@@ -37,6 +38,7 @@
             "description": "Ordered top-level reader feeds shown in clients. At least one value must be retained by clients.",
             "items": {
               "type": "string",
+              "maxLength": 32,
               "knownValues": [
                 "readLater",
                 "archive",
@@ -54,6 +56,7 @@
             "description": "Top-level reader feeds whose unread badges are shown. Values should also appear in visibleFeeds.",
             "items": {
               "type": "string",
+              "maxLength": 32,
               "knownValues": [
                 "readLater",
                 "archive",
@@ -64,17 +67,20 @@
           },
           "rssArticleOpenMode": {
             "type": "string",
+            "maxLength": 16,
             "knownValues": ["reader", "original"],
             "description": "Whether RSS articles open in The Social Wire's native feed-content reader or on the publisher's original site."
           },
           "createdAt": {
             "type": "string",
             "format": "datetime",
+            "maxLength": 64,
             "description": "ISO 8601 timestamp when this preferences record was created."
           },
           "updatedAt": {
             "type": "string",
             "format": "datetime",
+            "maxLength": 64,
             "description": "ISO 8601 timestamp when this preferences record was last updated."
           }
         }
@@ -87,10 +93,12 @@
         "connectedAt": {
           "type": "string",
           "format": "datetime",
+          "maxLength": 64,
           "description": "ISO 8601 timestamp when the provider was connected."
         },
         "accountLabel": {
           "type": "string",
+          "maxLength": 320,
           "description": "User-visible account identifier, such as a username or email. Do not store credentials."
         }
       }
