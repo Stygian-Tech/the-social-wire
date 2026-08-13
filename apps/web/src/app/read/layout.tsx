@@ -68,7 +68,9 @@ export default function ReadLayout({
               />
             </Suspense>
             <SidebarInset className="flex min-h-0 flex-1 flex-col overflow-hidden pb-16 md:pb-0 lg:mr-64">
-              <ReadArticleFilterBar />
+              <Suspense fallback={null}>
+                <ReadArticleFilterBar />
+              </Suspense>
               <main className="flex min-h-0 flex-1 overflow-hidden">
                 {children}
               </main>
