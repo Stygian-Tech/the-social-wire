@@ -32,6 +32,7 @@ import { Toast } from "@/components/ui/toast"
 import { useOperationsAuth } from "@/lib/auth-context"
 import { isBackfillTerminal } from "@/lib/backfill-lifecycle"
 import { dryRunBackfill, fetchBackfill, operationsRequest } from "@/lib/operations-api"
+import { operationsXrpc } from "@/lib/operations-xrpc"
 import {
   canQueueBackfill,
   preferredRecoveryMode,
@@ -152,7 +153,7 @@ export function BackfillSheet({
     mutationFn: () => {
       if (!dryRun.data || !dryRunIsCurrent)
         throw new Error("Run a current signed dry run before queueing recovery.")
-      return operationsRequest<Backfill>(session, "/v1/operations/backfills", {
+      return operationsRequest<Backfill>(session, operationsXrpc.createBackfill, {
         method: "POST",
         body: JSON.stringify({
           dryRun: request,

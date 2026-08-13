@@ -18,7 +18,7 @@ final class SocialWireGatewayClient {
     }
 
     func fetchSyncPreferences(ifNoneMatch: String?) async throws -> GatewayHTTPResult {
-        try await authorizedGET(path: "/v1/sync/preferences", query: [:], ifNoneMatch: ifNoneMatch)
+        try await authorizedGET(path: SocialWireXRPCMethod.getPreferences, query: [:], ifNoneMatch: ifNoneMatch)
     }
 
     func fetchCachedPdsRecord(collection: String, rkey: String, ifNoneMatch: String?) async throws -> GatewayHTTPResult {
@@ -37,7 +37,7 @@ final class SocialWireGatewayClient {
             query["phase"] = phase.rawValue
         }
         let result = try await authorizedGET(
-            path: "/v1/publications/sidebar",
+            path: SocialWireXRPCMethod.getSidebar,
             query: query,
             ifNoneMatch: nil
         )
@@ -53,7 +53,7 @@ final class SocialWireGatewayClient {
     func refreshPublicationSidebar() async throws -> PublicationSidebarResponseDTO {
         let result = try await authorizedRequest(
             method: "POST",
-            path: "/v1/publications/refresh",
+            path: SocialWireXRPCMethod.refreshSidebar,
             query: [:],
             body: nil,
             contentType: nil
@@ -71,7 +71,7 @@ final class SocialWireGatewayClient {
         let payload = try JSONEncoder().encode(ResolveAddPublicationRequestBody(input: input))
         let result = try await authorizedRequest(
             method: "POST",
-            path: "/v1/publications/resolve",
+            path: SocialWireXRPCMethod.resolvePublication,
             query: [:],
             body: payload,
             contentType: "application/json"
@@ -222,7 +222,7 @@ final class SocialWireGatewayClient {
             query["publicationSiteUrls"] = scope.publicationSiteUrls.joined(separator: ",")
         }
 
-        let result = try await authorizedFeedGET(path: "/v1/appview/entries", query: query)
+        let result = try await authorizedFeedGET(path: SocialWireXRPCMethod.listEntries, query: query)
         if result.statusCode == 404 {
             throw SocialWireError.appViewUnavailable
         }
@@ -247,7 +247,7 @@ final class SocialWireGatewayClient {
         if let id, !id.isEmpty { query["id"] = id }
         if let cursor, !cursor.isEmpty { query["cursor"] = cursor }
         let result = try await authorizedFeedGET(
-            path: "/v1/appview/feed",
+            path: SocialWireXRPCMethod.getFeed,
             query: query
         )
         guard (200 ..< 300).contains(result.statusCode) else {
@@ -258,7 +258,7 @@ final class SocialWireGatewayClient {
 
     func fetchAppViewEntryDetail(entryId: String) async throws -> EntryDetail? {
         let result = try await authorizedGET(
-            path: "/v1/appview/entry",
+            path: SocialWireXRPCMethod.getEntry,
             query: ["entryId": entryId],
             ifNoneMatch: nil
         )
@@ -284,7 +284,7 @@ final class SocialWireGatewayClient {
             )
         }
         let result = try await authorizedGET(
-            path: "/v1/appview/unread-counts",
+            path: SocialWireXRPCMethod.getUnreadCounts,
             query: ["publicationIds": publicationIds.joined(separator: ",")],
             ifNoneMatch: nil
         )
@@ -308,7 +308,7 @@ final class SocialWireGatewayClient {
         )
         let result = try await authorizedRequest(
             method: "POST",
-            path: "/v1/appview/read-marks",
+            path: SocialWireXRPCMethod.putReadMark,
             query: [:],
             body: payload,
             contentType: "application/json"
@@ -321,8 +321,8 @@ final class SocialWireGatewayClient {
     func deleteReadMark(subjectUri: String) async throws {
         let payload = try JSONEncoder().encode(AppViewReadMarkDeleteBody(subjectUri: subjectUri))
         let result = try await authorizedRequest(
-            method: "DELETE",
-            path: "/v1/appview/read-marks",
+            method: "POST",
+            path: SocialWireXRPCMethod.deleteReadMark,
             query: [:],
             body: payload,
             contentType: "application/json"
@@ -336,7 +336,7 @@ final class SocialWireGatewayClient {
         let payload = try JSONEncoder().encode(GatewayMarkAllReadBody(scope: scope))
         let result = try await authorizedRequest(
             method: "POST",
-            path: "/v1/appview/mark-all-read",
+            path: SocialWireXRPCMethod.markAllRead,
             query: [:],
             body: payload,
             contentType: "application/json"
@@ -354,7 +354,7 @@ final class SocialWireGatewayClient {
         let payload = try JSONEncoder().encode(AppViewEnrollBody(authorDids: dids, feedUrls: feedUrls))
         let result = try await authorizedRequest(
             method: "POST",
-            path: "/v1/appview/enroll",
+            path: SocialWireXRPCMethod.enrollSources,
             query: [:],
             body: payload,
             contentType: "application/json"
@@ -371,8 +371,8 @@ final class SocialWireGatewayClient {
 
     func purgeAppViewPrivacyData() async throws {
         let result = try await authorizedRequest(
-            method: "DELETE",
-            path: "/v1/appview/privacy/purge",
+            method: "POST",
+            path: SocialWireXRPCMethod.purgeViewerData,
             query: [:],
             body: nil,
             contentType: nil

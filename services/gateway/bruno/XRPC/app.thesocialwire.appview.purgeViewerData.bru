@@ -1,0 +1,20 @@
+meta {
+  name: XRPC app.thesocialwire.appview.purgeViewerData
+  type: http
+  seq: 24
+}
+
+post {
+  url: {{baseUrl}}/xrpc/app.thesocialwire.appview.purgeViewerData
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}
+
+docs {
+  Deletes all indexed read marks for the authenticated viewer. Requires `ENABLE_THIN_APPVIEW=true`.
+}

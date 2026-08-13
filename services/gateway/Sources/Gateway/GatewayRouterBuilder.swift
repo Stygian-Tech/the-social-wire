@@ -17,7 +17,10 @@ enum GatewayRouterBuilder {
     logger: Logger
   ) -> Router<GatewayRequestContext> {
     let router = Router(context: GatewayRequestContext.self)
-    router.add(middleware: RequestTraceMiddleware(service: "gateway", environment: telemetryEnvironment, instanceId: telemetryInstanceId, telemetry: telemetry))
+    router.add(
+      middleware: RequestTraceMiddleware(
+        service: "gateway", environment: telemetryEnvironment, instanceId: telemetryInstanceId,
+        telemetry: telemetry))
     router.add(middleware: GatewayCORSPolicy.middleware(config: config.core))
     router.get("/health") { _, _ in ["status": "ok", "service": "gateway"] }
     router.get("/livez") { _, _ in ["status": "live", "service": "gateway"] }
@@ -41,10 +44,13 @@ enum GatewayRouterBuilder {
       gatewayClientPolicy: config.core.oauthGateway,
       supplementalJwksJSON: config.core.oauthAccessTokenSupplementalJwksJSON,
       allowDpopBoundStructuralFallback:
-        config.core.gatewayAppViewInternalSecret != nil || config.core.gatewayOperationsInternalSecret != nil,
+        config.core.gatewayAppViewInternalSecret != nil
+        || config.core.gatewayOperationsInternalSecret != nil,
       logger: logger
     )
-    let protected = router.group().add(middleware: authMiddleware)
+    let protected = router.group()
+      .add(middleware: XRPCErrorMiddleware())
+      .add(middleware: authMiddleware)
 
     let prefs = PreferenceSyncService(
       httpClient: httpClient,

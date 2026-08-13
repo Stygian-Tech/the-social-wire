@@ -56,12 +56,13 @@ struct HTTPRouteContractTests {
     try await withSingletonHTTPClient { client in
       let dbPath =
         FileManager.default.temporaryDirectory
-          .appendingPathComponent("sw-http-\(UUID().uuidString).sqlite")
-          .path
+        .appendingPathComponent("sw-http-\(UUID().uuidString).sqlite")
+        .path
       defer { try? FileManager.default.removeItem(atPath: dbPath) }
 
       let router = try gatewayRouter(client: client, dbPath: dbPath)
-      let app = Application(router: router, configuration: .init(address: .hostname("127.0.0.1", port: 0)))
+      let app = Application(
+        router: router, configuration: .init(address: .hostname("127.0.0.1", port: 0)))
       try await app.test(.live) { c in
         let response = try await c.execute(uri: "/health", method: .get)
         #expect(response.status == .ok)
@@ -74,15 +75,65 @@ struct HTTPRouteContractTests {
     try await withSingletonHTTPClient { client in
       let dbPath =
         FileManager.default.temporaryDirectory
-          .appendingPathComponent("sw-http-\(UUID().uuidString).sqlite")
-          .path
+        .appendingPathComponent("sw-http-\(UUID().uuidString).sqlite")
+        .path
       defer { try? FileManager.default.removeItem(atPath: dbPath) }
 
       let router = try gatewayRouter(client: client, dbPath: dbPath)
-      let app = Application(router: router, configuration: .init(address: .hostname("127.0.0.1", port: 0)))
+      let app = Application(
+        router: router, configuration: .init(address: .hostname("127.0.0.1", port: 0)))
       try await app.test(.live) { c in
         let response = try await c.execute(uri: "/v1/sync/preferences", method: .get)
         #expect(response.status.code == 401)
+      }
+    }
+  }
+
+  @Test("XRPC sync query is registered and protected")
+  func xrpcSyncUnauthorized() async throws {
+    try await withSingletonHTTPClient { client in
+      let dbPath = FileManager.default.temporaryDirectory
+        .appendingPathComponent("sw-http-xrpc-\(UUID().uuidString).sqlite").path
+      defer { try? FileManager.default.removeItem(atPath: dbPath) }
+
+      let router = try gatewayRouter(client: client, dbPath: dbPath)
+      let app = Application(
+        router: router, configuration: .init(address: .hostname("127.0.0.1", port: 0)))
+      try await app.test(.live) { testClient in
+        let response = try await testClient.execute(
+          uri: "/xrpc/app.thesocialwire.sync.getPreferences",
+          method: .get
+        )
+        #expect(response.status == .unauthorized)
+      }
+    }
+  }
+
+  @Test("XRPC AppView methods are registered when proxy is configured")
+  func xrpcAppViewRoutesRegistered() async throws {
+    try await withSingletonHTTPClient { client in
+      let dbPath = FileManager.default.temporaryDirectory
+        .appendingPathComponent("sw-http-xrpc-proxy-\(UUID().uuidString).sqlite").path
+      defer { try? FileManager.default.removeItem(atPath: dbPath) }
+
+      let router = try gatewayRouter(
+        client: client,
+        dbPath: dbPath,
+        appViewBaseURL: "https://appview.example"
+      )
+      let app = Application(
+        router: router, configuration: .init(address: .hostname("127.0.0.1", port: 0)))
+      try await app.test(.live) { testClient in
+        let query = try await testClient.execute(
+          uri: "/xrpc/app.thesocialwire.appview.getFeed",
+          method: .get
+        )
+        #expect(query.status == .unauthorized)
+        let procedure = try await testClient.execute(
+          uri: "/xrpc/app.thesocialwire.appview.deleteReadMark",
+          method: .post
+        )
+        #expect(procedure.status == .unauthorized)
       }
     }
   }
@@ -114,12 +165,13 @@ struct HTTPRouteContractTests {
     try await withSingletonHTTPClient { client in
       let dbPath =
         FileManager.default.temporaryDirectory
-          .appendingPathComponent("sw-http-\(UUID().uuidString).sqlite")
-          .path
+        .appendingPathComponent("sw-http-\(UUID().uuidString).sqlite")
+        .path
       defer { try? FileManager.default.removeItem(atPath: dbPath) }
 
       let router = try gatewayRouter(client: client, dbPath: dbPath)
-      let app = Application(router: router, configuration: .init(address: .hostname("127.0.0.1", port: 0)))
+      let app = Application(
+        router: router, configuration: .init(address: .hostname("127.0.0.1", port: 0)))
       try await app.test(.live) { c in
         let response = try await c.execute(uri: "/v1/operations/overview", method: .get)
         #expect(response.status == .notFound)
@@ -132,8 +184,8 @@ struct HTTPRouteContractTests {
     try await withSingletonHTTPClient { client in
       let dbPath =
         FileManager.default.temporaryDirectory
-          .appendingPathComponent("sw-http-\(UUID().uuidString).sqlite")
-          .path
+        .appendingPathComponent("sw-http-\(UUID().uuidString).sqlite")
+        .path
       defer { try? FileManager.default.removeItem(atPath: dbPath) }
 
       let router = try gatewayRouter(
@@ -141,10 +193,40 @@ struct HTTPRouteContractTests {
         dbPath: dbPath,
         operationsBaseURL: "https://operations.example"
       )
-      let app = Application(router: router, configuration: .init(address: .hostname("127.0.0.1", port: 0)))
+      let app = Application(
+        router: router, configuration: .init(address: .hostname("127.0.0.1", port: 0)))
       try await app.test(.live) { c in
         let response = try await c.execute(uri: "/v1/operations/overview", method: .get)
         #expect(response.status == .unauthorized)
+      }
+    }
+  }
+
+  @Test("Operations XRPC queries and procedures are registered and protected")
+  func operationsXRPCRoutesRegistered() async throws {
+    try await withSingletonHTTPClient { client in
+      let dbPath = FileManager.default.temporaryDirectory
+        .appendingPathComponent("sw-http-operations-xrpc-\(UUID().uuidString).sqlite").path
+      defer { try? FileManager.default.removeItem(atPath: dbPath) }
+
+      let router = try gatewayRouter(
+        client: client,
+        dbPath: dbPath,
+        operationsBaseURL: "https://operations.example"
+      )
+      let app = Application(
+        router: router, configuration: .init(address: .hostname("127.0.0.1", port: 0)))
+      try await app.test(.live) { testClient in
+        let query = try await testClient.execute(
+          uri: "/xrpc/app.thesocialwire.operations.getGapInvestigation?id=gap-1",
+          method: .get
+        )
+        #expect(query.status == .unauthorized)
+        let procedure = try await testClient.execute(
+          uri: "/xrpc/app.thesocialwire.operations.pauseBackfill",
+          method: .post
+        )
+        #expect(procedure.status == .unauthorized)
       }
     }
   }
@@ -154,8 +236,8 @@ struct HTTPRouteContractTests {
     try await withSingletonHTTPClient { client in
       let dbPath =
         FileManager.default.temporaryDirectory
-          .appendingPathComponent("sw-http-\(UUID().uuidString).sqlite")
-          .path
+        .appendingPathComponent("sw-http-\(UUID().uuidString).sqlite")
+        .path
       defer { try? FileManager.default.removeItem(atPath: dbPath) }
 
       let router = try gatewayRouter(
@@ -163,7 +245,8 @@ struct HTTPRouteContractTests {
         dbPath: dbPath,
         operationsBaseURL: "https://operations.example"
       )
-      let app = Application(router: router, configuration: .init(address: .hostname("127.0.0.1", port: 0)))
+      let app = Application(
+        router: router, configuration: .init(address: .hostname("127.0.0.1", port: 0)))
       try await app.test(.live) { c in
         let response = try await c.execute(
           uri: "/v1/operations/ingestion/reconnect",
@@ -179,8 +262,8 @@ struct HTTPRouteContractTests {
     try await withSingletonHTTPClient { client in
       let dbPath =
         FileManager.default.temporaryDirectory
-          .appendingPathComponent("sw-http-\(UUID().uuidString).sqlite")
-          .path
+        .appendingPathComponent("sw-http-\(UUID().uuidString).sqlite")
+        .path
       defer { try? FileManager.default.removeItem(atPath: dbPath) }
 
       let env: [String: String] = [
@@ -197,7 +280,8 @@ struct HTTPRouteContractTests {
         cache: cache,
         logger: Logger(label: "contracts.router")
       )
-      let app = Application(router: router, configuration: .init(address: .hostname("127.0.0.1", port: 0)))
+      let app = Application(
+        router: router, configuration: .init(address: .hostname("127.0.0.1", port: 0)))
       try await app.test(.live) { c in
         var headers = HTTPFields()
         headers[.origin] = "https://operations.testing.thesocialwire.app"
@@ -210,7 +294,9 @@ struct HTTPRouteContractTests {
           headers: headers
         )
         #expect(response.status == .noContent)
-        #expect(response.headers[.accessControlAllowOrigin] == "https://operations.testing.thesocialwire.app")
+        #expect(
+          response.headers[.accessControlAllowOrigin]
+            == "https://operations.testing.thesocialwire.app")
         #expect(response.headers[.accessControlAllowCredentials] == "true")
         let allowedHeaders = Set(
           (response.headers[.accessControlAllowHeaders] ?? "")
@@ -218,14 +304,15 @@ struct HTTPRouteContractTests {
             .split(separator: ",")
             .map { $0.trimmingCharacters(in: .whitespaces) }
         )
-        #expect(allowedHeaders.isSuperset(of: [
-          "authorization",
-          "dpop",
-          "idempotency-key",
-          "last-event-id",
-          "traceparent",
-          "x-request-id",
-        ]))
+        #expect(
+          allowedHeaders.isSuperset(of: [
+            "authorization",
+            "dpop",
+            "idempotency-key",
+            "last-event-id",
+            "traceparent",
+            "x-request-id",
+          ]))
         let allowedMethods = Set(
           (response.headers[.accessControlAllowMethods] ?? "")
             .lowercased()
@@ -242,12 +329,13 @@ struct HTTPRouteContractTests {
     try await withSingletonHTTPClient { client in
       let dbPath =
         FileManager.default.temporaryDirectory
-          .appendingPathComponent("sw-http-\(UUID().uuidString).sqlite")
-          .path
+        .appendingPathComponent("sw-http-\(UUID().uuidString).sqlite")
+        .path
       defer { try? FileManager.default.removeItem(atPath: dbPath) }
 
       let router = try gatewayRouter(client: client, dbPath: dbPath, appViewBaseURL: nil)
-      let app = Application(router: router, configuration: .init(address: .hostname("127.0.0.1", port: 0)))
+      let app = Application(
+        router: router, configuration: .init(address: .hostname("127.0.0.1", port: 0)))
       try await app.test(.live) { c in
         let response = try await c.execute(uri: "/v1/publications/sidebar", method: .get)
         #expect(response.status.code == 404)
@@ -260,12 +348,13 @@ struct HTTPRouteContractTests {
     try await withSingletonHTTPClient { client in
       let dbPath =
         FileManager.default.temporaryDirectory
-          .appendingPathComponent("sw-http-\(UUID().uuidString).sqlite")
-          .path
+        .appendingPathComponent("sw-http-\(UUID().uuidString).sqlite")
+        .path
       defer { try? FileManager.default.removeItem(atPath: dbPath) }
 
       let router = try gatewayRouter(client: client, dbPath: dbPath)
-      let app = Application(router: router, configuration: .init(address: .hostname("127.0.0.1", port: 0)))
+      let app = Application(
+        router: router, configuration: .init(address: .hostname("127.0.0.1", port: 0)))
       try await app.test(.live) { c in
         let response = try await c.execute(uri: "/v1/latr/saves", method: .get)
         #expect(response.status.code == 404)
@@ -278,8 +367,8 @@ struct HTTPRouteContractTests {
     try await withSingletonHTTPClient { client in
       let dbPath =
         FileManager.default.temporaryDirectory
-          .appendingPathComponent("sw-http-\(UUID().uuidString).sqlite")
-          .path
+        .appendingPathComponent("sw-http-\(UUID().uuidString).sqlite")
+        .path
       defer { try? FileManager.default.removeItem(atPath: dbPath) }
 
       let env: [String: String] = [
@@ -297,7 +386,8 @@ struct HTTPRouteContractTests {
         cache: cache,
         logger: Logger(label: "contracts.router")
       )
-      let app = Application(router: router, configuration: .init(address: .hostname("127.0.0.1", port: 0)))
+      let app = Application(
+        router: router, configuration: .init(address: .hostname("127.0.0.1", port: 0)))
       try await app.test(.live) { c in
         let response = try await c.execute(uri: "/v1/latr/saves", method: .get)
         #expect(response.status.code == 401)
@@ -320,7 +410,8 @@ struct HTTPRouteContractTests {
     upstream.add(name: "content-type", value: "application/problem+json")
     upstream.add(name: "retry-after", value: "15")
     upstream.add(name: "x-request-id", value: "request-123")
-    upstream.add(name: "traceparent", value: "00-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-bbbbbbbbbbbbbbbb-01")
+    upstream.add(
+      name: "traceparent", value: "00-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-bbbbbbbbbbbbbbbb-01")
     upstream.add(name: "x-accel-buffering", value: "no")
     upstream.add(name: "connection", value: "close")
 
@@ -348,8 +439,8 @@ struct ATProtoAuthMiddlewareTests {
     let client = HTTPClient(eventLoopGroupProvider: .singleton)
     let dbPath =
       FileManager.default.temporaryDirectory
-        .appendingPathComponent("sw-auth-\(UUID().uuidString).sqlite")
-        .path
+      .appendingPathComponent("sw-auth-\(UUID().uuidString).sqlite")
+      .path
     defer { try? FileManager.default.removeItem(atPath: dbPath) }
 
     let cache = try SQLiteCache(path: dbPath, logger: Logger(label: "auth.sqlite"))
@@ -363,7 +454,8 @@ struct ATProtoAuthMiddlewareTests {
       cache: cache,
       logger: Logger(label: "auth.router")
     )
-    let app = Application(router: router, configuration: .init(address: .hostname("127.0.0.1", port: 0)))
+    let app = Application(
+      router: router, configuration: .init(address: .hostname("127.0.0.1", port: 0)))
     try await app.test(.live) { c in
       let response = try await c.execute(uri: "/v1/sync/preferences", method: .get)
       #expect(response.status.code == 401)

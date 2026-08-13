@@ -9,8 +9,11 @@ struct AppViewFeedErrorMiddleware: RouterMiddleware {
     context: GatewayRequestContext,
     next: (Request, GatewayRequestContext) async throws -> Response
   ) async throws -> Response {
-    guard request.uri.path == "/v1/appview/feed"
-      || request.uri.path == "/v1/appview/entries"
+    guard
+      request.uri.path == "/v1/appview/feed"
+        || request.uri.path == "/v1/appview/entries"
+        || request.uri.path == "/xrpc/app.thesocialwire.appview.getFeed"
+        || request.uri.path == "/xrpc/app.thesocialwire.appview.listEntries"
     else {
       return try await next(request, context)
     }

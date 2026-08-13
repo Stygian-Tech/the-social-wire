@@ -1,0 +1,21 @@
+meta {
+  name: XRPC app.thesocialwire.appview.getFeed
+  type: http
+  seq: 21
+}
+
+get {
+  url: {{baseUrl}}/xrpc/app.thesocialwire.appview.getFeed?kind=subscribed&filter={{appViewFilter}}&limit={{appViewLimit}}
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}
+
+docs {
+  Lists a viewer-scoped aggregate feed. Use `kind=folder&id=<rkey>` or
+  `kind=publication&id=<publicationId>` for scoped feeds.
+}

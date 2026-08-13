@@ -1,0 +1,16 @@
+meta {
+  name: Get Overview (XRPC)
+  type: http
+  seq: 102
+}
+
+get {
+  url: {{baseUrl}}/xrpc/app.thesocialwire.operations.getOverview
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}

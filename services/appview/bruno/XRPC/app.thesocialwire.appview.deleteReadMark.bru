@@ -1,0 +1,23 @@
+meta {
+  name: XRPC app.thesocialwire.appview.deleteReadMark
+  type: http
+  seq: 24
+}
+
+post {
+  url: {{baseUrl}}/xrpc/app.thesocialwire.appview.deleteReadMark
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "subjectUri": "{{entrySubjectUri}}"
+  }
+}

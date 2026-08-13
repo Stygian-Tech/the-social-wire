@@ -1,0 +1,28 @@
+meta {
+  name: XRPC app.thesocialwire.appview.deleteReadMark
+  type: http
+  seq: 22
+}
+
+post {
+  url: {{baseUrl}}/xrpc/app.thesocialwire.appview.deleteReadMark
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "subjectUri": "{{entrySubjectUri}}"
+  }
+}
+
+docs {
+  Deletes a Social Wire AppView read mark. Protocol read-state records are not written.
+  Requires `ENABLE_THIN_APPVIEW=true`.
+}

@@ -1,0 +1,22 @@
+meta {
+  name: Retry Alert (XRPC)
+  type: http
+  seq: 125
+}
+
+post {
+  url: {{baseUrl}}/xrpc/app.thesocialwire.operations.retryAlert
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+  Idempotency-Key: {{operationsIdempotencyKey}}
+  Content-Type: application/json
+}
+
+body:json {
+  { "id": "{{operationsAlertId}}", "expectedVersion": {{operationsAlertVersion}}, "idempotencyKey": "{{operationsIdempotencyKey}}", "auditNote": "Retry after review", "environmentConfirmation": "{{operationsEnvironmentConfirmation}}" }
+}

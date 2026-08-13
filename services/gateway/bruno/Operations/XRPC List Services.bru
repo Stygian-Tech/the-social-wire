@@ -1,0 +1,16 @@
+meta {
+  name: List Services (XRPC)
+  type: http
+  seq: 103
+}
+
+get {
+  url: {{baseUrl}}/xrpc/app.thesocialwire.operations.listServices
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}

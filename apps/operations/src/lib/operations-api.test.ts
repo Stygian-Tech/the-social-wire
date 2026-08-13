@@ -440,6 +440,43 @@ test("enforces the exact non-default mutation success statuses", async () => {
   ).resolves.toEqual(alert)
 })
 
+test("validates XRPC operator mutation responses through legacy contracts", async () => {
+  delete process.env.NEXT_PUBLIC_OPERATIONS_DEMO_MODE
+  process.env.NEXT_PUBLIC_APP_ENV = "dev"
+  const backfill = demoOverview.backfills[0]!
+  const alert = demoOverview.alerts[0]!
+  const gap = demoOverview.gaps[0]!
+
+  await expect(
+    operationsRequest(
+      jsonSession({ ...backfill, status: undefined }),
+      "/xrpc/app.thesocialwire.operations.pauseBackfill",
+      { method: "POST", body: JSON.stringify({ id: backfill.id }) },
+    ),
+  ).rejects.toThrow("Operations backfill failed runtime contract validation")
+  await expect(
+    operationsRequest(
+      jsonSession({ ...alert, status: undefined }),
+      "/xrpc/app.thesocialwire.operations.acknowledgeAlert",
+      { method: "POST", body: JSON.stringify({ id: alert.id }) },
+    ),
+  ).rejects.toThrow("Operations alert failed runtime contract validation")
+  await expect(
+    operationsRequest(
+      jsonSession({ ...gap, status: undefined }),
+      "/xrpc/app.thesocialwire.operations.updateGap",
+      { method: "POST", body: JSON.stringify({ id: gap.id }) },
+    ),
+  ).rejects.toThrow("Operations gap failed runtime contract validation")
+  await expect(
+    operationsRequest(
+      jsonSession(alert),
+      "/xrpc/app.thesocialwire.operations.retryAlert",
+      { method: "POST", body: JSON.stringify({ id: alert.id }) },
+    ),
+  ).rejects.toThrow("contract requires 202")
+})
+
 test("rejects incomplete dry-run estimates before they can be fingerprint-bound", () => {
   delete process.env.NEXT_PUBLIC_OPERATIONS_DEMO_MODE
   expect(

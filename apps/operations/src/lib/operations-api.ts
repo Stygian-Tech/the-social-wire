@@ -2,6 +2,7 @@ import type { OAuthSession } from "@/lib/auth"
 import { authFetch } from "@/lib/auth"
 import { operationsEnvironment } from "@/lib/app-environment"
 import { demoGapInvestigation, demoMetricRollups, demoOverview } from "@/lib/demo-data"
+import { operationsXrpc } from "@/lib/operations-xrpc"
 import type {
   AlertListResponse,
   AppViewOperationsResponse,
@@ -43,6 +44,8 @@ const demoEvidence = (source: string) => ({
   degradedReason: "Demo values are illustrative and do not describe a deployed service.",
 })
 export async function operationsRequest<T>(session: OAuthSession | null, path: string, init?: RequestInit): Promise<T> {
+  const requestedPath = path
+  path = legacyOperationsContractPath(path, init)
   if (process.env.NEXT_PUBLIC_OPERATIONS_DEMO_MODE === "1") {
     if ((init?.method ?? "GET").toUpperCase() !== "GET") throw new DemoReadOnlyError()
     await new Promise((resolve) => setTimeout(resolve, 80))
@@ -166,7 +169,7 @@ export async function operationsRequest<T>(session: OAuthSession | null, path: s
   headers.set("X-Request-ID", requestId())
   headers.set("traceparent", traceparent())
   if (init?.body) headers.set("Content-Type", "application/json")
-  const response = await authFetch(session, `${gatewayOrigin()}${path}`, { ...init, headers })
+  const response = await authFetch(session, `${gatewayOrigin()}${requestedPath}`, { ...init, headers })
   if (response.status === 403) throw new OperationsForbiddenError()
   if (!response.ok) {
     const payload = await response.json().catch(() => undefined) as { message?: string; error?: string } | undefined
@@ -197,6 +200,11 @@ export async function operationsRequest<T>(session: OAuthSession | null, path: s
     assertBackfill(payload, operationsEnvironment())
   if (/^\/v1\/operations\/alerts\/[^/?]+\/(acknowledge|resolve|retry)$/.test(path))
     assertAlert(payload, operationsEnvironment())
+  if (
+    /^\/v1\/operations\/gaps\/[^/?]+$/.test(path) &&
+    (init?.method ?? "GET").toUpperCase() === "POST"
+  )
+    assertGap(payload, operationsEnvironment())
   if (path === "/v1/operations/ingestion/reconnect")
     assertCommand(payload, operationsEnvironment())
   if (/^\/v1\/operations\/gaps\/[^/?]+\/investigation$/.test(path))
@@ -204,33 +212,33 @@ export async function operationsRequest<T>(session: OAuthSession | null, path: s
   return payload as T
 }
 export const fetchOverview = (session: OAuthSession | null) =>
-  operationsRequest<Overview>(session, "/v1/operations/overview")
+  operationsRequest<Overview>(session, operationsXrpc.getOverview)
 export const fetchServices = async (session: OAuthSession | null) => {
-  const response = await operationsRequest<ServiceListResponse>(session, "/v1/operations/services")
+  const response = await operationsRequest<ServiceListResponse>(session, operationsXrpc.listServices)
   assertServiceResponse(response)
   return response
 }
 export const fetchIngestion = async (session: OAuthSession | null) => {
-  const response = await operationsRequest<IngestionResponse>(session, "/v1/operations/ingestion")
+  const response = await operationsRequest<IngestionResponse>(session, operationsXrpc.getIngestion)
   assertIngestionResponse(response)
   return response
 }
 export const fetchAppViewOperations = async (session: OAuthSession | null) => {
-  const response = await operationsRequest<AppViewOperationsResponse>(session, "/v1/operations/appview")
+  const response = await operationsRequest<AppViewOperationsResponse>(session, operationsXrpc.getAppView)
   assertServiceResponse(response)
   return response
 }
 export const fetchBackfill = (session: OAuthSession | null, backfillId: string) =>
-  operationsRequest<Backfill>(session, `/v1/operations/backfills/${encodeURIComponent(backfillId)}`)
+  operationsRequest<Backfill>(session, `${operationsXrpc.getBackfill}?id=${encodeURIComponent(backfillId)}`)
 export const fetchGapInvestigation = (session: OAuthSession | null, gapId: string) =>
-  operationsRequest<GapInvestigation>(session, `/v1/operations/gaps/${encodeURIComponent(gapId)}/investigation`)
+  operationsRequest<GapInvestigation>(session, `${operationsXrpc.getGapInvestigation}?id=${encodeURIComponent(gapId)}`)
 export const fetchTraceSpans = (session: OAuthSession | null, traceId: string) =>
   validatedTracePage(
-    operationsRequest<TraceListResponse>(session, `/v1/operations/traces/${encodeURIComponent(traceId)}`),
+    operationsRequest<TraceListResponse>(session, `${operationsXrpc.getTrace}?traceId=${encodeURIComponent(traceId)}`),
   )
 export const fetchRecentTraces = (session: OAuthSession | null, before?: string) => {
   return validatedTracePage(
-    operationsRequest<TraceListResponse>(session, listPath("/v1/operations/traces", { before })),
+    operationsRequest<TraceListResponse>(session, listPath(operationsXrpc.listTraces, { before })),
   )
 }
 export async function fetchMetrics(session: OAuthSession | null, reference = new Date()) {
@@ -243,7 +251,7 @@ export async function fetchMetrics(session: OAuthSession | null, reference = new
   })
   const response = await operationsRequest<MetricListResponse>(
     session,
-    `/v1/operations/metrics?${parameters}`,
+    `${operationsXrpc.listMetrics}?${parameters}`,
   )
   if (!isRecord(response) || !Array.isArray(response.rollups))
     throw new Error("Operations metrics response failed runtime contract validation")
@@ -252,7 +260,7 @@ export async function fetchMetrics(session: OAuthSession | null, reference = new
   return response
 }
 export const dryRunBackfill = async (session: OAuthSession | null, request: BackfillDryRun) => {
-  const response = await operationsRequest<DryRunResult>(session, "/v1/operations/backfills/dry-run", {
+  const response = await operationsRequest<DryRunResult>(session, operationsXrpc.dryRunBackfill, {
     method: "POST",
     body: JSON.stringify(request),
   })
@@ -266,7 +274,7 @@ export type AlertListView = "active" | "history" | "all"
 export const fetchGaps = async (session: OAuthSession | null, view: GapListView = "active", before?: string) => {
   const response = await operationsRequest<GapListResponse>(
     session,
-    listPath("/v1/operations/gaps", { view, before }),
+    listPath(operationsXrpc.listGaps, { view, before }),
   )
   assertListResponse(response, "gaps")
   return response
@@ -278,7 +286,7 @@ export const fetchBackfills = async (
 ) => {
   const response = await operationsRequest<BackfillListResponse>(
     session,
-    listPath("/v1/operations/backfills", { view, before }),
+    listPath(operationsXrpc.listBackfills, { view, before }),
   )
   assertListResponse(response, "backfills")
   return response
@@ -286,7 +294,7 @@ export const fetchBackfills = async (
 export const fetchAlerts = async (session: OAuthSession | null, view: AlertListView = "active", before?: string) => {
   const response = await operationsRequest<AlertListResponse>(
     session,
-    listPath("/v1/operations/alerts", { view, before }),
+    listPath(operationsXrpc.listAlerts, { view, before }),
   )
   assertListResponse(response, "alerts")
   return response
@@ -294,7 +302,7 @@ export const fetchAlerts = async (session: OAuthSession | null, view: AlertListV
 export const fetchCommands = async (session: OAuthSession | null, before?: string) => {
   const response = await operationsRequest<CommandListResponse>(
     session,
-    listPath("/v1/operations/commands", { before }),
+    listPath(operationsXrpc.listCommands, { before }),
   )
   assertListResponse(response, "commands")
   return response
@@ -302,7 +310,7 @@ export const fetchCommands = async (session: OAuthSession | null, before?: strin
 export const fetchIngestionEndpoints = async (session: OAuthSession | null, before?: string) => {
   const response = await operationsRequest<EndpointListResponse>(
     session,
-    listPath("/v1/operations/ingestion/endpoints", { before }),
+    listPath(operationsXrpc.listIngestionEndpoints, { before }),
   )
   assertListResponse(response, "endpoints")
   return response
@@ -392,6 +400,72 @@ function listPath(path: string, options: { before?: string; view?: string } = {}
   if (options.before) parameters.set("before", options.before)
   if (options.view) parameters.set("view", options.view)
   return `${path}?${parameters}`
+}
+
+function legacyOperationsContractPath(path: string, init?: RequestInit) {
+  const url = new URL(path, "https://operations.invalid")
+  const name = url.pathname.split(".").at(-1)
+  const query = url.search
+  const id = url.searchParams.get("id")
+  const traceId = url.searchParams.get("traceId")
+  const method = (init?.method ?? "GET").toUpperCase()
+  const inputId = procedureInputId(init?.body)
+  const queryPaths: Record<string, string> = {
+    getCapabilities: "/v1/operations/capabilities",
+    getOverview: "/v1/operations/overview",
+    listServices: "/v1/operations/services",
+    getIngestion: "/v1/operations/ingestion",
+    listIngestionEndpoints: "/v1/operations/ingestion/endpoints",
+    listCommands: "/v1/operations/commands",
+    getAppView: "/v1/operations/appview",
+    listGaps: "/v1/operations/gaps",
+    listBackfills: "/v1/operations/backfills",
+    listAlerts: "/v1/operations/alerts",
+    listMetrics: "/v1/operations/metrics",
+    listTraces: "/v1/operations/traces",
+  }
+  const procedurePaths: Record<string, string> = {
+    reconnectIngestion: "/v1/operations/ingestion/reconnect",
+    dryRunBackfill: "/v1/operations/backfills/dry-run",
+    createBackfill: "/v1/operations/backfills",
+  }
+  if (name === "getGapInvestigation" && id)
+    return `/v1/operations/gaps/${encodeURIComponent(id)}/investigation`
+  if (name === "getBackfill" && id)
+    return `/v1/operations/backfills/${encodeURIComponent(id)}`
+  if (name === "getTrace" && traceId)
+    return `/v1/operations/traces/${encodeURIComponent(traceId)}`
+  if (name === "updateGap" && inputId)
+    return `/v1/operations/gaps/${encodeURIComponent(inputId)}`
+  const backfillAction = {
+    pauseBackfill: "pause",
+    resumeBackfill: "resume",
+    cancelBackfill: "cancel",
+  }[name ?? ""]
+  if (backfillAction && inputId)
+    return `/v1/operations/backfills/${encodeURIComponent(inputId)}/${backfillAction}`
+  const alertAction = {
+    acknowledgeAlert: "acknowledge",
+    resolveAlert: "resolve",
+    retryAlert: "retry",
+  }[name ?? ""]
+  if (alertAction && inputId)
+    return `/v1/operations/alerts/${encodeURIComponent(inputId)}/${alertAction}`
+  const mapped = queryPaths[name ?? ""]
+  if (mapped && method === "GET") return `${mapped}${query}`
+  const procedurePath = procedurePaths[name ?? ""]
+  if (procedurePath && method === "POST") return procedurePath
+  return path
+}
+
+function procedureInputId(body: BodyInit | null | undefined) {
+  if (typeof body !== "string") return undefined
+  try {
+    const value = JSON.parse(body) as { id?: unknown }
+    return typeof value.id === "string" && value.id.length > 0 ? value.id : undefined
+  } catch {
+    return undefined
+  }
 }
 
 function expectedOperationsSuccessStatus(path: string, method = "GET") {

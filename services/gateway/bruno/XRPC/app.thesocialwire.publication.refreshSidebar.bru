@@ -1,0 +1,20 @@
+meta {
+  name: XRPC app.thesocialwire.publication.refreshSidebar
+  type: http
+  seq: 31
+}
+
+post {
+  url: {{baseUrl}}/xrpc/app.thesocialwire.publication.refreshSidebar
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}
+
+docs {
+  Recomputes the publication sidebar projection for the authenticated viewer.
+}

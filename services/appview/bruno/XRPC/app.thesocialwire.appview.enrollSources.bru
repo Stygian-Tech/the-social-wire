@@ -1,0 +1,29 @@
+meta {
+  name: XRPC app.thesocialwire.appview.enrollSources
+  type: http
+  seq: 25
+}
+
+post {
+  url: {{baseUrl}}/xrpc/app.thesocialwire.appview.enrollSources
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "authorDids": [
+      "{{authorDid}}"
+    ]
+  }
+}
+
+docs {
+  Backfill recent entries for followed author DIDs (max 500 per request).
+}

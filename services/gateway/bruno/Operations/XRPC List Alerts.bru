@@ -1,0 +1,16 @@
+meta {
+  name: List Alerts (XRPC)
+  type: http
+  seq: 112
+}
+
+get {
+  url: {{baseUrl}}/xrpc/app.thesocialwire.operations.listAlerts?view=active&limit=100
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}

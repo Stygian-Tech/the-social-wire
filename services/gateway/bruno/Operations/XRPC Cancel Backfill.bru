@@ -1,0 +1,22 @@
+meta {
+  name: Cancel Backfill (XRPC)
+  type: http
+  seq: 122
+}
+
+post {
+  url: {{baseUrl}}/xrpc/app.thesocialwire.operations.cancelBackfill
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+  Idempotency-Key: {{operationsIdempotencyKey}}
+  Content-Type: application/json
+}
+
+body:json {
+  { "id": "{{operationsBackfillId}}", "expectedVersion": {{operationsBackfillVersion}}, "idempotencyKey": "{{operationsIdempotencyKey}}", "auditNote": "Cancel after review", "environmentConfirmation": "{{operationsEnvironmentConfirmation}}" }
+}

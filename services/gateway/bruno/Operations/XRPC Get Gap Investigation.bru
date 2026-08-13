@@ -1,0 +1,16 @@
+meta {
+  name: Get Gap Investigation (XRPC)
+  type: http
+  seq: 109
+}
+
+get {
+  url: {{baseUrl}}/xrpc/app.thesocialwire.operations.getGapInvestigation?id={{operationsGapId}}
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}

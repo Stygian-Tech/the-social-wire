@@ -1,0 +1,16 @@
+meta {
+  name: Get Backfill (XRPC)
+  type: http
+  seq: 111
+}
+
+get {
+  url: {{baseUrl}}/xrpc/app.thesocialwire.operations.getBackfill?id={{operationsBackfillId}}
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}

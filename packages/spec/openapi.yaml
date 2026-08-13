@@ -1,4 +1,5 @@
 openapi: "3.1.0"
+x-tsw-endpoint-manifest: "./endpoint-manifest.json"
 
 info:
   title: The Social Wire API
@@ -1170,6 +1171,47 @@ paths:
         "502":
           $ref: "#/components/responses/InternalError"
 
+  /v1/sync/migrate-lexicons:
+    post:
+      operationId: migrateLegacySocialWireLexicons
+      summary: Migrate legacy Social Wire records on the viewer PDS
+      description: |
+        Copies legacy `com.thesocialwire.*` folder, publication-preference, and
+        account-preference records to their canonical `app.thesocialwire.*`
+        collections when a canonical record does not already exist, then deletes
+        the legacy records. Repeated calls are safe and return zero counts when no
+        migration remains.
+      tags: [Sync]
+      responses:
+        "200":
+          description: Per-collection copy and deletion counts.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [summary]
+                properties:
+                  summary:
+                    type: object
+                    required:
+                      - foldersCopied
+                      - publicationPrefsCopied
+                      - preferencesCopied
+                      - foldersDeleted
+                      - publicationPrefsDeleted
+                      - preferencesDeleted
+                    properties:
+                      foldersCopied: { type: integer, minimum: 0 }
+                      publicationPrefsCopied: { type: integer, minimum: 0 }
+                      preferencesCopied: { type: integer, minimum: 0 }
+                      foldersDeleted: { type: integer, minimum: 0 }
+                      publicationPrefsDeleted: { type: integer, minimum: 0 }
+                      preferencesDeleted: { type: integer, minimum: 0 }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "502":
+          $ref: "#/components/responses/InternalError"
+
   /v1/pds/cache/record:
     get:
       operationId: getCachedRepoRecordBlob
@@ -1404,6 +1446,23 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
+  /v1/publications/subscriptions/{rkey}:
+    delete:
+      operationId: deletePublicationSubscription
+      summary: Delete a standard.site subscription from the viewer PDS
+      tags: [Publications]
+      parameters:
+        - name: rkey
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Subscription deleted.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
   /v1/publications/rss-subscriptions:
     post:
       operationId: createRssSubscription
@@ -1426,6 +1485,23 @@ paths:
       responses:
         "201":
           description: RSS subscription created.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /v1/publications/rss-subscriptions/{rkey}:
+    delete:
+      operationId: deleteRssSubscription
+      summary: Delete a Skyreader RSS subscription from the viewer PDS
+      tags: [Publications]
+      parameters:
+        - name: rkey
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: RSS subscription deleted.
         "401":
           $ref: "#/components/responses/Unauthorized"
 
@@ -1900,11 +1976,15 @@ paths:
   /v1/appview/privacy/purge:
     delete:
       operationId: purgeAppViewPrivacyData
-      summary: Delete all indexed read marks for the authenticated viewer
+      summary: Delete explicit read marks and unread overrides for the authenticated viewer
+      description: |
+        Deletes rows from `read_marks` and `appview_unread_overrides`. It does not
+        delete content rows, publication scopes, viewer feed membership, materialized
+        counters, or bulk-read floors.
       tags: [AppView]
       responses:
         "200":
-          description: Viewer data purged from the index.
+          description: Explicit viewer read marks and unread overrides deleted.
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":

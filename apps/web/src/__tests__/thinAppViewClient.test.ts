@@ -92,7 +92,7 @@ describe("thinAppViewClient", () => {
 
   it("normalizes numeric Swift dates returned by the aggregate feed", async () => {
     const fetchHandler = mock(async (url: string) => {
-      expect(url).toContain("/v1/appview/feed?");
+      expect(url).toContain("/xrpc/app.thesocialwire.appview.getFeed?");
       return new Response(
         JSON.stringify({
           entries: [
@@ -121,7 +121,7 @@ describe("thinAppViewClient", () => {
 
   it("getEntryFromAppView fetches entry detail from gateway", async () => {
     const fetchHandler = mock(async (url: string) => {
-      expect(url).toContain("/v1/appview/entry?");
+      expect(url).toContain("/xrpc/app.thesocialwire.appview.getEntry?");
       expect(url).toContain("entryId=");
       return new Response(
         JSON.stringify({
@@ -153,7 +153,9 @@ describe("thinAppViewClient", () => {
 
   it("writeThroughReadMark posts subjectUri and readAt", async () => {
     const fetchHandler = mock(async (url: string, init?: RequestInit) => {
-      expect(url).toBe("https://api.example.test/v1/appview/read-marks");
+      expect(url).toBe(
+        "https://api.example.test/xrpc/app.thesocialwire.appview.putReadMark"
+      );
       expect(init?.method).toBe("POST");
       const body = JSON.parse(String(init?.body));
       expect(body.subjectUri).toBe("at://did:plc:alice/site.standard.entry/rkey1");
@@ -172,7 +174,9 @@ describe("thinAppViewClient", () => {
 
   it("fetchAppViewUnreadCounts returns count snapshot metadata", async () => {
     const fetchHandler = mock(async (url: string) => {
-      expect(url).toContain("/v1/appview/unread-counts?");
+      expect(url).toContain(
+        "/xrpc/app.thesocialwire.appview.getUnreadCounts?"
+      );
       expect(url).toContain("publicationIds=");
       return new Response(
         JSON.stringify({

@@ -1,0 +1,22 @@
+meta {
+  name: XRPC app.thesocialwire.appview.listEntries
+  type: http
+  seq: 20
+}
+
+get {
+  url: {{baseUrl}}/xrpc/app.thesocialwire.appview.listEntries?authorDid={{authorDid}}&filter={{appViewFilter}}&limit={{appViewLimit}}
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}
+
+docs {
+  Requires `ENABLE_THIN_APPVIEW=true` on the API. Lists Level-1 entry rows with
+  authoritative `isRead`. The gateway preserves AppView status, error envelope,
+  and `X-Request-ID`.
+}

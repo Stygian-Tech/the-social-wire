@@ -6,6 +6,7 @@ import { TableCell, TableRow } from "@/components/ui/table"
 import { allowedBackfillActions } from "@/lib/backfill-lifecycle"
 import { backfillProgressEvidence, backfillRateLimitLabel } from "@/lib/backfill-progress"
 import type { Backfill, EnvironmentName } from "@/lib/operations-types"
+import { operationsXrpc } from "@/lib/operations-xrpc"
 
 function jobProgress(job: Backfill) {
   const progress = backfillProgressEvidence(job)
@@ -37,7 +38,8 @@ export function BackfillActions({
         <OperatorActionDialog
           key={action}
           environment={environment}
-          path={`/v1/operations/backfills/${encodeURIComponent(job.id)}/${action}`}
+          path={action === "pause" ? operationsXrpc.pauseBackfill : action === "resume" ? operationsXrpc.resumeBackfill : operationsXrpc.cancelBackfill}
+          subjectId={job.id}
           label={action === "pause" ? "Pause" : action === "resume" ? "Resume" : "Cancel"}
           targetLabel={`backfill ${job.id}`}
           expectedVersion={job.version}

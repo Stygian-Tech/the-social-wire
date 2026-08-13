@@ -1,0 +1,16 @@
+meta {
+  name: List Gaps (XRPC)
+  type: http
+  seq: 108
+}
+
+get {
+  url: {{baseUrl}}/xrpc/app.thesocialwire.operations.listGaps?view=active&limit=100
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}

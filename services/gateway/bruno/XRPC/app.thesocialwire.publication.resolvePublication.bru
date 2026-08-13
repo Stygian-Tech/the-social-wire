@@ -1,0 +1,27 @@
+meta {
+  name: XRPC app.thesocialwire.publication.resolvePublication
+  type: http
+  seq: 32
+}
+
+post {
+  url: {{baseUrl}}/xrpc/app.thesocialwire.publication.resolvePublication
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "input": "{{resolveInput}}"
+  }
+}
+
+docs {
+  Resolves a URL, handle, or AT-URI into a standard.site publication or RSS feed target.
+}

@@ -9,6 +9,7 @@ import {
   elapsedSeconds,
 } from "@/lib/observability-values"
 import { jetstreamStateForOverview } from "@/lib/operations-policy"
+import { operationsXrpc } from "@/lib/operations-xrpc"
 import type { EnvironmentName, Overview } from "@/lib/operations-types"
 
 function formatDuration(seconds: number | null) {
@@ -100,7 +101,7 @@ export function LiveStream({
         ) : (
           <OperatorActionDialog
             environment={environment}
-            path="/v1/operations/ingestion/reconnect"
+            path={operationsXrpc.reconnectIngestion}
             label="Reconnect Jetstream"
             auditNoteRequired={false}
             expectedVersion={jetstreamState?.version}

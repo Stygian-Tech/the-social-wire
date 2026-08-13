@@ -1,0 +1,20 @@
+meta {
+  name: XRPC app.thesocialwire.appview.getEntry
+  type: http
+  seq: 25
+}
+
+get {
+  url: {{baseUrl}}/xrpc/app.thesocialwire.appview.getEntry?entryId={{entryId}}
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}
+
+docs {
+  Level-1 entry detail from the Thin AppView index. Proxied to AppView when configured.
+}

@@ -1,0 +1,16 @@
+meta {
+  name: List Ingestion Endpoints (XRPC)
+  type: http
+  seq: 105
+}
+
+get {
+  url: {{baseUrl}}/xrpc/app.thesocialwire.operations.listIngestionEndpoints?limit=100
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}

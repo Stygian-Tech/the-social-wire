@@ -1,0 +1,22 @@
+meta {
+  name: Create Backfill (XRPC)
+  type: http
+  seq: 119
+}
+
+post {
+  url: {{baseUrl}}/xrpc/app.thesocialwire.operations.createBackfill
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+  Idempotency-Key: {{operationsIdempotencyKey}}
+  Content-Type: application/json
+}
+
+body:json {
+  { "dryRun": { "sourceMode": "jetstream", "collections": [], "authorDids": [], "batchSize": 100, "rateLimit": 100, "maxConcurrency": 1 }, "expectedEstimate": 0, "requestFingerprint": "{{operationsBackfillFingerprint}}", "idempotencyKey": "{{operationsIdempotencyKey}}", "environmentConfirmation": "{{operationsEnvironmentConfirmation}}" }
+}

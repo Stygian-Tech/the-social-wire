@@ -1,0 +1,16 @@
+meta {
+  name: Get Capabilities (XRPC)
+  type: http
+  seq: 101
+}
+
+get {
+  url: {{baseUrl}}/xrpc/app.thesocialwire.operations.getCapabilities
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}

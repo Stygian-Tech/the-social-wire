@@ -13,6 +13,7 @@ struct OperationsProxyRoutes {
   let httpClient: HTTPClient
 
   func register(on group: RouterGroup<GatewayRequestContext>) {
+    registerXRPC(on: group)
     get("/v1/operations/overview", path: "/v1/operations/overview", on: group)
     get("/v1/operations/capabilities", path: "/v1/operations/capabilities", on: group)
     get("/v1/operations/metrics", path: "/v1/operations/metrics", on: group)
@@ -82,6 +83,31 @@ struct OperationsProxyRoutes {
         path: "/v1/operations/traces/\(traceId)",
         method: "GET"
       )
+    }
+  }
+
+  /// XRPC methods are forwarded without REST path translation so the Operations service remains
+  /// the single authority for parameter decoding, validation, and declared error behavior.
+  private func registerXRPC(on group: RouterGroup<GatewayRequestContext>) {
+    let queries = [
+      "getCapabilities", "getOverview", "listServices", "getIngestion",
+      "listIngestionEndpoints", "listCommands", "getAppView", "listGaps",
+      "getGapInvestigation", "listBackfills", "getBackfill", "listAlerts",
+      "listMetrics", "listTraces", "getTrace",
+    ]
+    for method in queries {
+      let path = "/xrpc/app.thesocialwire.operations.\(method)"
+      get(RouterPath(path), path: path, on: group)
+    }
+
+    let procedures = [
+      "reconnectIngestion", "updateGap", "dryRunBackfill", "createBackfill",
+      "pauseBackfill", "resumeBackfill", "cancelBackfill", "acknowledgeAlert",
+      "resolveAlert", "retryAlert",
+    ]
+    for method in procedures {
+      let path = "/xrpc/app.thesocialwire.operations.\(method)"
+      post(RouterPath(path), path: path, on: group)
     }
   }
 

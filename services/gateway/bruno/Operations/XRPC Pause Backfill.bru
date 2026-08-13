@@ -1,0 +1,22 @@
+meta {
+  name: Pause Backfill (XRPC)
+  type: http
+  seq: 120
+}
+
+post {
+  url: {{baseUrl}}/xrpc/app.thesocialwire.operations.pauseBackfill
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+  Idempotency-Key: {{operationsIdempotencyKey}}
+  Content-Type: application/json
+}
+
+body:json {
+  { "id": "{{operationsBackfillId}}", "expectedVersion": {{operationsBackfillVersion}}, "idempotencyKey": "{{operationsIdempotencyKey}}", "auditNote": "Pause after review", "environmentConfirmation": "{{operationsEnvironmentConfirmation}}" }
+}

@@ -37,6 +37,7 @@ enum OperationsRouterBuilder {
       logger: logger
     )
     let protected = router.group()
+      .add(middleware: OperationsXRPCErrorMiddleware())
       .add(middleware: internalTrust)
       .add(middleware: auth)
       .add(middleware: OperatorAuthorizationMiddleware(allowedDids: config.operations.operatorDids))

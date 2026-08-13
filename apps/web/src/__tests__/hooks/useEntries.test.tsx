@@ -17,7 +17,7 @@ import { dummyPublicationSidebarProjection } from "@/lib/dummyReaderData";
 const ORIG_ENV = { ...process.env };
 
 const mockFetchHandler = mock(async (url: string) => {
-  if (url.includes("/v1/appview/feed")) {
+  if (url.includes("/xrpc/app.thesocialwire.appview.getFeed")) {
     return new Response(
       JSON.stringify({ entries: MOCK_ENTRIES, cursor: undefined }),
       { status: 200, headers: { "Content-Type": "application/json" } }
@@ -29,7 +29,7 @@ const mockFetchHandler = mock(async (url: string) => {
       headers: { "Content-Type": "application/json" },
     });
   }
-  if (url.includes("/v1/appview/entry")) {
+  if (url.includes("/xrpc/app.thesocialwire.appview.getEntry")) {
     return new Response(
       JSON.stringify(MOCK_ENTRY_DETAIL),
       { status: 200, headers: { "Content-Type": "application/json" } }
@@ -125,7 +125,7 @@ describe("useEntries", () => {
         mockFetchHandler.mock.calls.some(([url]) => {
           const requestUrl = new URL(String(url));
           return (
-            requestUrl.pathname === "/v1/appview/feed" &&
+            requestUrl.pathname === "/xrpc/app.thesocialwire.appview.getFeed" &&
             requestUrl.searchParams.get("filter") === "unread"
           );
         })
@@ -135,7 +135,7 @@ describe("useEntries", () => {
       mockFetchHandler.mock.calls.filter(([url]) => {
         const requestUrl = new URL(String(url));
         return (
-          requestUrl.pathname === "/v1/appview/feed" &&
+          requestUrl.pathname === "/xrpc/app.thesocialwire.appview.getFeed" &&
           requestUrl.searchParams.get("filter") === "unread"
         );
       })
@@ -219,22 +219,22 @@ describe("useEntries", () => {
     await waitFor(() =>
       expect(
         mockFetchHandler.mock.calls.some(([url]) =>
-          String(url).includes("/v1/appview/feed")
+          String(url).includes("/xrpc/app.thesocialwire.appview.getFeed")
         )
       ).toBe(true)
     );
     await waitFor(() =>
       expect(
         mockFetchHandler.mock.calls.some(([url]) =>
-          String(url).includes("/v1/appview/enroll")
+          String(url).includes("/xrpc/app.thesocialwire.appview.enrollSources")
         )
       ).toBe(true)
     );
     const requestPaths = mockFetchHandler.mock.calls.map(([url]) => String(url));
     expect(
-      requestPaths.findIndex((url) => url.includes("/v1/appview/feed"))
+      requestPaths.findIndex((url) => url.includes("/xrpc/app.thesocialwire.appview.getFeed"))
     ).toBeLessThan(
-      requestPaths.findIndex((url) => url.includes("/v1/appview/enroll"))
+      requestPaths.findIndex((url) => url.includes("/xrpc/app.thesocialwire.appview.enrollSources"))
     );
   });
 

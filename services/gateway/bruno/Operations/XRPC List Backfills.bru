@@ -1,0 +1,16 @@
+meta {
+  name: List Backfills (XRPC)
+  type: http
+  seq: 110
+}
+
+get {
+  url: {{baseUrl}}/xrpc/app.thesocialwire.operations.listBackfills?view=active&limit=100
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}

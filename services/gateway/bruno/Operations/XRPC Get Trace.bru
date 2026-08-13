@@ -1,0 +1,16 @@
+meta {
+  name: Get Trace (XRPC)
+  type: http
+  seq: 115
+}
+
+get {
+  url: {{baseUrl}}/xrpc/app.thesocialwire.operations.getTrace?traceId={{operationsTraceId}}
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}

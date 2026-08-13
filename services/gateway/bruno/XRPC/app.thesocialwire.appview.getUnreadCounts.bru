@@ -1,0 +1,21 @@
+meta {
+  name: XRPC app.thesocialwire.appview.getUnreadCounts
+  type: http
+  seq: 26
+}
+
+get {
+  url: {{baseUrl}}/xrpc/app.thesocialwire.appview.getUnreadCounts?authorDid={{authorDid}}&publicationAtUri={{publicationAtUri}}
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}
+
+docs {
+  Scoped unread counts for sidebar badges. Alternative query: `publicationIds=id1,id2`.
+  Response is `{ counts, generation?, accuracy?, countedAt? }`; clients should ignore older generations.
+}

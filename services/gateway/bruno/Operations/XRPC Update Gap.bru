@@ -1,0 +1,22 @@
+meta {
+  name: Update Gap (XRPC)
+  type: http
+  seq: 117
+}
+
+post {
+  url: {{baseUrl}}/xrpc/app.thesocialwire.operations.updateGap
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+  Idempotency-Key: {{operationsIdempotencyKey}}
+  Content-Type: application/json
+}
+
+body:json {
+  { "id": "{{operationsGapId}}", "status": "acknowledged", "expectedVersion": {{operationsGapVersion}}, "idempotencyKey": "{{operationsIdempotencyKey}}", "auditNote": "Update after review", "environmentConfirmation": "{{operationsEnvironmentConfirmation}}" }
+}
