@@ -82,6 +82,7 @@ filter_changed operations \
   'services/operations/**' \
   'packages/swift/GatewayCore/**' \
   'packages/swift/ThinAppViewCore/**' \
+  'packages/swift/SocialWireRedis/**' \
   'packages/swift/OperationsCore/**' \
   'railway/operations.json' \
   '.github/workflows/ci.yml'
