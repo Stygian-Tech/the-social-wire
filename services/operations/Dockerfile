@@ -2,6 +2,7 @@ FROM swift:6.2.4-jammy AS builder
 WORKDIR /src
 RUN apt-get update && apt-get install -y --no-install-recommends libsqlite3-dev libxml2-dev && rm -rf /var/lib/apt/lists/*
 COPY packages/swift/ThinAppViewCore packages/swift/ThinAppViewCore
+COPY packages/swift/SocialWireRedis packages/swift/SocialWireRedis
 COPY packages/swift/GatewayCore packages/swift/GatewayCore
 COPY packages/swift/OperationsCore packages/swift/OperationsCore
 COPY services/operations services/operations

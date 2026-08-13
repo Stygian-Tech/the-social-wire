@@ -7,6 +7,7 @@
       "/services/operations/**",
       "/packages/swift/GatewayCore/**",
       "/packages/swift/ThinAppViewCore/**",
+      "/packages/swift/SocialWireRedis/**",
       "/packages/swift/OperationsCore/**",
       "/railway/operations.json"
     ]
