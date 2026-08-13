@@ -30,20 +30,33 @@ actor ThinAppViewReadService {
     limit: Int
   ) async throws -> AppViewProjectionCacheEntry<AppViewEntryListResponse>? {
     guard let projectionCache else { return nil }
+    let lookup = try await firstPageCacheLookup(
+      projectionCache: projectionCache,
+      viewerDid: auth.did,
+      publicationId: publicationId
+    )
+    let entry: AppViewProjectionCacheEntry<String>
+    let stale: Bool
+    switch lookup {
+    case .fresh(let cached):
+      entry = cached
+      stale = false
+    case .stale(let cached):
+      entry = cached
+      stale = true
+    case .miss:
+      return nil
+    }
     guard
-      let entry = try await firstPageCacheEntry(
-        projectionCache: projectionCache,
-        viewerDid: auth.did,
-        publicationId: publicationId
-      ),
       let cached = try? JSONDecoder().decode(
         AppViewEntryListResponse.self,
         from: Data(entry.value.utf8)
       ),
       !cached.entries.isEmpty
     else { return nil }
-    _ = scope
-    _ = limit
+    if stale {
+      scheduleFirstPageRefresh(auth: auth, publicationId: publicationId, scope: scope, limit: limit)
+    }
     // Cached pages are serialized pre-read-state (shared across viewers, so
     // every entry carries isRead: false); re-resolve per viewer or bootstrap
     // re-emits already-read entries as unread until the cache TTL expires.
@@ -55,7 +68,8 @@ actor ThinAppViewReadService {
     return AppViewProjectionCacheEntry(
       value: page,
       cachedAt: entry.cachedAt,
-      expiresAt: entry.expiresAt,
+      freshUntil: entry.freshUntil,
+      hardExpiresAt: entry.hardExpiresAt,
       source: entry.source
     )
   }
@@ -108,28 +122,70 @@ actor ThinAppViewReadService {
     limit: Int,
     skipFirstPageCache: Bool = false
   ) async throws -> AppViewEntryListResponse {
-    if cursor == nil, filter == .all, !skipFirstPageCache, let projectionCache {
+    if cursor == nil, filter == .all, !skipFirstPageCache {
       if let publicationId = primaryPublicationId(
         publicationAtUri: publicationAtUri,
         publicationScopeAtUris: publicationScopeAtUris,
         publicationSiteUrls: publicationSiteUrls,
         authorDid: authorDid
       ),
-         let entry = try await firstPageCacheEntry(
-           projectionCache: projectionCache,
-           viewerDid: auth.did,
-           publicationId: publicationId
-         ),
-         let cached = try? JSONDecoder().decode(
-           AppViewEntryListResponse.self,
-           from: Data(entry.value.utf8)
+         let cached = try await cachedFirstPageIfAvailable(
+           auth: auth,
+           publicationId: publicationId,
+           scope: PublicationAppViewScope(
+             authorDid: authorDid,
+             publicationAtUri: publicationAtUri,
+             publicationScopeAtUris: publicationScopeAtUris,
+             publicationSiteUrls: publicationSiteUrls
+           ),
+           limit: limit
          )
       {
-        return try await authoritativePage(
-          cached,
-          viewerDid: auth.did,
-          publicationId: publicationId
-        )
+        return cached.value
+      }
+    }
+
+    var firstPageLease: AppViewProjectionRefreshLease?
+    if cursor == nil,
+       filter == .all,
+       !skipFirstPageCache,
+       let projectionCache,
+       let publicationId = primaryPublicationId(
+         publicationAtUri: publicationAtUri,
+         publicationScopeAtUris: publicationScopeAtUris,
+         publicationSiteUrls: publicationSiteUrls,
+         authorDid: authorDid
+       )
+    {
+      firstPageLease = await projectionCache.acquireRefreshLease(
+        domain: "firstpage",
+        resource: publicationId,
+        ttl: 10
+      )
+      if firstPageLease == nil {
+        try? await Task.sleep(for: .milliseconds(250))
+        if let cached = try await cachedFirstPageIfAvailable(
+          auth: auth,
+          publicationId: publicationId,
+          scope: PublicationAppViewScope(
+            authorDid: authorDid,
+            publicationAtUri: publicationAtUri,
+            publicationScopeAtUris: publicationScopeAtUris,
+            publicationSiteUrls: publicationSiteUrls
+          ),
+          limit: limit
+        ) {
+          return cached.value
+        }
+      }
+    }
+    let firstPageRenewal = firstPageLease.flatMap { lease in
+      projectionCache.map { refreshLeaseRenewal(lease, projectionCache: $0) }
+    }
+    defer {
+      firstPageRenewal?.cancel()
+      if let firstPageLease, let projectionCache {
+        Task { await projectionCache.releaseRefreshLease(firstPageLease) }
       }
     }
 
@@ -149,6 +205,7 @@ actor ThinAppViewReadService {
       readBoundary = nil
     }
 
+    let rebuildStarted = Date()
     let page = try await store.listEntries(
       viewerDid: auth.did,
       authorDid: authorDid,
@@ -176,10 +233,15 @@ actor ThinAppViewReadService {
     {
       let expiresAt = Date().addingTimeInterval(AppViewProjectionCacheTTL.firstPageSeconds)
       try? await projectionCache.storeFirstPageJSON(
-        viewerDid: AppViewProjectionCacheViewerKeys.sharedFirstPage,
+        viewerDid: auth.did,
         publicationId: publicationId,
         jsonBody: json,
         expiresAt: expiresAt
+      )
+      recordMetric(
+        name: "socialwire.appview.cache.rebuild.duration_seconds",
+        value: Date().timeIntervalSince(rebuildStarted),
+        dimensions: ["cache_type": "first_page"]
       )
     }
 
@@ -195,6 +257,15 @@ actor ThinAppViewReadService {
       entries: RssFeedIdentity.dedupeEntryListItems(page.entries),
       cursor: page.cursor
     )
+  }
+
+  private func recordMetric(name: String, value: Double, dimensions: [String: String]) {
+    guard let telemetry else { return }
+    Task {
+      _ = await telemetry.enqueue(.metric(
+        OperationsMetricSample(name: name, value: value, dimensions: dimensions)
+      ))
+    }
   }
 
   private func authoritativePage(
@@ -417,7 +488,7 @@ actor ThinAppViewReadService {
         delta: -1
       )
     }
-    try await invalidateReadStateCaches(viewerDid: auth.did)
+    try await invalidateReadStateCaches(viewerDid: auth.did, subjectUri: subjectUri)
   }
 
   func deleteReadMark(auth: AuthContext, subjectUri: String) async throws {
@@ -437,7 +508,7 @@ actor ThinAppViewReadService {
         delta: 1
       )
     }
-    try await invalidateReadStateCaches(viewerDid: auth.did)
+    try await invalidateReadStateCaches(viewerDid: auth.did, subjectUri: subjectUri)
   }
 
   private func authoritativeReadState(
@@ -527,7 +598,7 @@ actor ThinAppViewReadService {
       rowsForCounters = publicationIds.compactMap { rowsById[$0] }
     }
 
-    let snapshot = await projectionService.unreadCounterSnapshot(
+    let snapshot = await projectionService.cachedUnreadCounterSnapshot(
       for: rowsForCounters,
       viewerDid: auth.did
     )
@@ -587,7 +658,12 @@ actor ThinAppViewReadService {
       scopes: scopes,
       readAt: confirmedAt
     )
-    try await projectionCache?.invalidateUnreadCounts(viewerDid: auth.did, publicationId: nil)
+    for publicationId in Set(rows.map(\.publicationId)) {
+      try await projectionCache?.invalidateUnreadCounts(
+        viewerDid: auth.did,
+        publicationId: publicationId
+      )
+    }
     return (confirmed.counters, confirmed.boundaries, confirmedAt, marked)
   }
 
@@ -612,25 +688,79 @@ actor ThinAppViewReadService {
     )
   }
 
-  private func invalidateReadStateCaches(viewerDid: String) async throws {
-    try await projectionCache?.invalidateUnreadCounts(viewerDid: viewerDid, publicationId: nil)
+  private func invalidateReadStateCaches(viewerDid: String, subjectUri: String) async throws {
+    let publicationId = try? await store.fetchContentItem(uri: subjectUri)?.publicationId
+    try await projectionCache?.invalidateUnreadCounts(
+      viewerDid: viewerDid,
+      publicationId: publicationId ?? nil
+    )
   }
 
-  private func firstPageCacheEntry(
+  private func firstPageCacheLookup(
     projectionCache: any AppViewProjectionCacheStore,
     viewerDid: String,
     publicationId: String
-  ) async throws -> AppViewProjectionCacheEntry<String>? {
-    if let viewerEntry = try await projectionCache.firstPageCacheEntry(
+  ) async throws -> AppViewProjectionCacheLookup<String> {
+    let viewerLookup = try await projectionCache.firstPageCacheLookup(
       viewerDid: viewerDid,
       publicationId: publicationId
-    ) {
-      return viewerEntry
-    }
-    return try await projectionCache.firstPageCacheEntry(
-      viewerDid: AppViewProjectionCacheViewerKeys.sharedFirstPage,
-      publicationId: publicationId
     )
+    switch viewerLookup {
+    case .fresh, .stale:
+      return viewerLookup
+    case .miss:
+      return try await projectionCache.firstPageCacheLookup(
+        viewerDid: AppViewProjectionCacheViewerKeys.sharedFirstPage,
+        publicationId: publicationId
+      )
+    }
+  }
+
+  private func scheduleFirstPageRefresh(
+    auth: AuthContext,
+    publicationId: String,
+    scope: PublicationAppViewScope,
+    limit: Int
+  ) {
+    Task {
+      guard let projectionCache = self.projectionCache,
+            let lease = await projectionCache.acquireRefreshLease(
+              domain: "firstpage",
+              resource: publicationId,
+              ttl: 10
+            )
+      else { return }
+      let renewal = self.refreshLeaseRenewal(lease, projectionCache: projectionCache)
+      defer {
+        renewal.cancel()
+        Task { await projectionCache.releaseRefreshLease(lease) }
+      }
+      _ = try? await self.listEntries(
+        auth: auth,
+        authorDid: scope.authorDid,
+        publicationAtUri: scope.publicationAtUri,
+        publicationScopeAtUris: scope.publicationScopeAtUris,
+        publicationSiteUrls: scope.publicationSiteUrls,
+        filter: .all,
+        cursor: nil,
+        limit: limit,
+        skipFirstPageCache: true
+      )
+    }
+  }
+
+  private func refreshLeaseRenewal(
+    _ lease: AppViewProjectionRefreshLease,
+    projectionCache: any AppViewProjectionCacheStore
+  ) -> Task<Void, Never> {
+    Task {
+      let interval = max(1, lease.ttlMilliseconds / 3)
+      while !Task.isCancelled {
+        try? await Task.sleep(for: .milliseconds(interval))
+        guard !Task.isCancelled else { return }
+        guard await projectionCache.renewRefreshLease(lease) else { return }
+      }
+    }
   }
 
   private func primaryPublicationId(

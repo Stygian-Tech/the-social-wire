@@ -6,6 +6,7 @@ Verification guides for each surface in the monorepo. Tests live **in the owning
 |---------|------|---------|--------|
 | Web | [web.md](./web.md) | `cd apps/web && bun test` | `web` |
 | Operations UI | [operations.md](./operations.md) | `cd apps/operations && bun test` | `operations-web` |
+| SocialWireRedis | [appview.md](./appview.md#redis-cache-and-coordination) | `cd packages/swift/SocialWireRedis && swift test` | `redis` |
 | GatewayCore | [api.md](./api.md) | `cd packages/swift/GatewayCore && swift test` | `gateway` |
 | Gateway | [api.md](./api.md) | `cd services/gateway && swift test` | `gateway` |
 | AppView | [appview.md](./appview.md) | `cd services/appview && swift test` | `appview` |
@@ -33,6 +34,7 @@ cd apps/web && bun test && cd ../..
 cd apps/operations && bun test && cd ../..
 
 # Backend services
+cd packages/swift/SocialWireRedis && swift test && cd ../../..
 cd packages/swift/GatewayCore && swift test && cd ../../..
 cd services/gateway && swift test && cd ../..
 cd services/appview && swift test && cd ../..

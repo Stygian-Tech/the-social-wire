@@ -1,0 +1,16 @@
+meta {
+  name: List Traces (XRPC)
+  type: http
+  seq: 114
+}
+
+get {
+  url: {{baseUrl}}/xrpc/app.thesocialwire.operations.listTraces?limit=100
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}

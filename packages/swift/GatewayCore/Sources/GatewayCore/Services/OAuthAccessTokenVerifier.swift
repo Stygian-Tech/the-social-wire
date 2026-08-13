@@ -372,6 +372,12 @@ public enum OAuthAccessTokenVerifier {
     plcURL: String,
     httpClient: HTTPClient
   ) async throws -> [String] {
+    guard
+      issuerClaim.hasPrefix("http://") || issuerClaim.hasPrefix("https://") || issuerClaim.hasPrefix("did:")
+    else {
+      throw VerifyError.unsupportedIssuerForm
+    }
+
     var bases: [String] = []
 
     if issuerClaim.hasPrefix("http://") || issuerClaim.hasPrefix("https://") {

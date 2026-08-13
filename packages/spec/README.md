@@ -1,8 +1,16 @@
 # OpenAPI spec
 
-HTTP contract for the Social Wire distributed backend (`services/gateway`, `services/appview`, and `services/operations`).
+OpenAPI compatibility contract and transport manifest for the Social Wire
+distributed backend (`services/gateway`, `services/appview`, and
+`services/operations`). Lexicon-defined service XRPC schemas live under
+`packages/lexicons/app/thesocialwire/`.
 
 **File:** [`openapi.yaml`](./openapi.yaml) (OpenAPI 3.1)
+
+[`endpoint-manifest.json`](./endpoint-manifest.json) is the authoritative transport classification
+for every documented operation plus Next.js BFF and private Tap surfaces. `xrpc-migration` entries
+name the exact Lexicon NSID; operational, metadata, streaming, media, ATProto-repository,
+foreign-service, and vendor-owned HTTP endpoints remain explicitly classified outside XRPC.
 
 ## Purpose
 
@@ -31,7 +39,10 @@ cd packages/spec
 bun test
 ```
 
-Asserts documented paths exist in gateway, GatewayCore, AppView, and Operations router sources.
+Asserts documented paths exist in gateway, GatewayCore, AppView, and Operations
+router sources, verifies every directly registered literal `/v1/*` path in the
+reverse direction, and checks that the endpoint manifest classifies every
+OpenAPI operation exactly once.
 
 CI job: **`spec`** (path filter includes `packages/spec/**` and route sources).
 

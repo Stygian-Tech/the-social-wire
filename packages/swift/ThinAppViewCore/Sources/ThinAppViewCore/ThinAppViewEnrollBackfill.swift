@@ -507,6 +507,7 @@ public struct ThinAppViewEnrollBackfill: Sendable {
     var issues: [PDSReconciliationIssue] = []
     var truncated = false
     var rateLimitRetries: [PDSRateLimitRetryEvidence] = []
+    var includeReverse = true
 
     pageLoop: repeat {
       try Task.checkCancellation()
@@ -521,10 +522,12 @@ public struct ThinAppViewEnrollBackfill: Sendable {
           pdsBase: pdsBase,
           collection: collection,
           cursor: cursor,
+          includeReverse: includeReverse,
           options: options,
           transport: transport
         )
         response = result.response
+        includeReverse = result.usedReverse
         rateLimitRetries.append(contentsOf: result.rateLimitRetries)
       } catch let error as PDSListRecordsError {
         rateLimitRetries.append(contentsOf: error.rateLimitRetries)
@@ -649,11 +652,13 @@ public struct ThinAppViewEnrollBackfill: Sendable {
     pdsBase: String,
     collection: String,
     cursor: String?,
+    includeReverse: Bool,
     options: PDSReconciliationOptions,
     transport: any PDSHTTPTransport
   ) async throws -> PDSListRecordsPageResponse {
     var attempts = 0
     var rateLimitRetries: [PDSRateLimitRetryEvidence] = []
+    var useReverse = includeReverse
     while true {
       try Task.checkCancellation()
       var components = URLComponents(
@@ -663,8 +668,9 @@ public struct ThinAppViewEnrollBackfill: Sendable {
         URLQueryItem(name: "repo", value: authorDid),
         URLQueryItem(name: "collection", value: collection),
         URLQueryItem(name: "limit", value: "50"),
-        URLQueryItem(name: "reverse", value: "true"),
-      ] + (cursor.map { [URLQueryItem(name: "cursor", value: $0)] } ?? [])
+      ]
+        + (useReverse ? [URLQueryItem(name: "reverse", value: "true")] : [])
+        + (cursor.map { [URLQueryItem(name: "cursor", value: $0)] } ?? [])
       guard let url = components?.url else {
         throw PDSListRecordsError(
           issue: .init(kind: .requestFailed, detail: "invalid_list_records_url"),
@@ -699,6 +705,28 @@ public struct ThinAppViewEnrollBackfill: Sendable {
         try await Task.sleep(for: .seconds(evidence.appliedDelaySeconds))
         continue
       }
+      if response.status == .badRequest, useReverse {
+        let body: ByteBuffer
+        do {
+          body = try await response.body.collect(upTo: 16 * 1_024)
+        } catch {
+          throw PDSListRecordsError(
+            issue: .init(kind: .unexpectedStatus, detail: "http_400"),
+            rateLimitRetries: rateLimitRetries
+          )
+        }
+        if PDSListRecordsCompatibility.requiresForwardPagination(
+          statusCode: response.status.code,
+          body: Data(buffer: body)
+        ) {
+          useReverse = false
+          continue
+        }
+        throw PDSListRecordsError(
+          issue: .init(kind: .unexpectedStatus, detail: "http_400"),
+          rateLimitRetries: rateLimitRetries
+        )
+      }
       guard response.status == .ok else {
         try await HTTPResponseBodyDrain.drainOrCancel(response.body)
         throw PDSListRecordsError(
@@ -708,7 +736,8 @@ public struct ThinAppViewEnrollBackfill: Sendable {
       }
       return PDSListRecordsPageResponse(
         response: response,
-        rateLimitRetries: rateLimitRetries
+        rateLimitRetries: rateLimitRetries,
+        usedReverse: useReverse
       )
     }
   }
@@ -727,6 +756,18 @@ public struct ThinAppViewEnrollBackfill: Sendable {
 private struct PDSListRecordsPageResponse {
   let response: HTTPClientResponse
   let rateLimitRetries: [PDSRateLimitRetryEvidence]
+  let usedReverse: Bool
+}
+
+enum PDSListRecordsCompatibility {
+  static func requiresForwardPagination(statusCode: UInt, body: Data) -> Bool {
+    guard statusCode == 400,
+          let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
+          (json["error"] as? String)?.lowercased() == "invalidrequest",
+          let message = (json["message"] as? String)?.lowercased()
+    else { return false }
+    return message.contains("reverse") && message.contains("not supported")
+  }
 }
 
 private struct PDSListRecordsError: Error {

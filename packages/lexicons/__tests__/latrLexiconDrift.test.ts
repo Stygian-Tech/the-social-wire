@@ -9,7 +9,7 @@ const canonicalLexicon = join(
 );
 const socialWireLexicon = join(
   import.meta.dir,
-  "../link.latr.saved.item.json"
+  "../link/latr/saved/item.json"
 );
 
 describe("link.latr.saved.item lexicon drift", () => {

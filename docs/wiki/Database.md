@@ -17,8 +17,8 @@ Migrations live in `database/migrations/`. Gateway, AppView, and Charybdis use S
 
 | Table | Purpose |
 |-------|---------|
-| `sidebar_projection_cache`, `unread_counts_cache`, `first_page_cache` | Stale-first bootstrap slices |
-| `pds_repo_record_cache` | Short TTL cache for `/v1/pds/cache/record` |
+| `sidebar_projection_cache`, `unread_counts_cache`, `first_page_cache` | Rollback-only hosted tables after Redis cutover; local/explicit Postgres backend compatibility |
+| `pds_repo_record_cache` | Rollback-only hosted table after Redis cutover; local/explicit Postgres backend compatibility |
 | `content_items` | Thin AppView standard.site and RSS entry index |
 | `read_marks` | Derived read state for server-side unread filtering |
 | `appview_*` | Materialized scopes/feeds/unread state plus ingestion, repair, recovery, and Tap parity |
@@ -34,3 +34,4 @@ GitHub Actions does not mutate hosted databases. Gateway's Railway pre-deploy co
 - [[Thin-AppView]]
 - [[Service-API]]
 - [[Testing]]
+- [[Redis]]

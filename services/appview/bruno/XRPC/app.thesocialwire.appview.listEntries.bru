@@ -1,0 +1,23 @@
+meta {
+  name: XRPC app.thesocialwire.appview.listEntries
+  type: http
+  seq: 20
+}
+
+get {
+  url: {{baseUrl}}/xrpc/app.thesocialwire.appview.listEntries?authorDid={{authorDid}}&filter={{appViewFilter}}&limit={{appViewLimit}}
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}
+
+docs {
+  Lists Level-1 entry rows with required authoritative `isRead`. Optional:
+  `publicationAtUri`, `publicationScopeAtUris`, `publicationSiteUrls`, `cursor`.
+  Invalid cursor/limit/maxEntries returns the AppView error envelope with
+  `requestId` and `retryable`.
+}

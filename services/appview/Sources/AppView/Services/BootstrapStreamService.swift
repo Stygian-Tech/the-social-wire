@@ -3,6 +3,7 @@ import GatewayCore
 import Hummingbird
 import Logging
 import NIOCore
+import OperationsCore
 import ThinAppViewCore
 
 struct BootstrapStreamService {
@@ -11,6 +12,7 @@ struct BootstrapStreamService {
   let enrollService: ThinAppViewEnrollService
   let skyreaderIngestionService: ThinAppViewSkyreaderIngestionService
   let projectionCache: (any AppViewProjectionCacheStore)?
+  let telemetry: OperationsTelemetryBuffer?
   let logger: Logger
 
   private enum SidebarBootstrapChunk: Sendable {
@@ -28,7 +30,7 @@ struct BootstrapStreamService {
     let refreshedAt = Date()
     var cachedEvidenceAt: Date?
     do {
-      if let cached = try await loadFreshCachedSnapshot(viewerDid: auth.did) {
+      if let cached = try await loadCachedSnapshot(viewerDid: auth.did) {
         cachedEvidenceAt = cached.cachedAt
         try await emitCachedBootstrap(
           auth: auth,
@@ -41,7 +43,9 @@ struct BootstrapStreamService {
           priority: cached.snapshot.priority,
           enrollAuthorDids: cached.snapshot.priority.enrollAuthorDids
         )
-        scheduleBackgroundRefresh(auth: auth, priority: cached.snapshot.priority)
+        if cached.stale {
+          scheduleBackgroundRefresh(auth: auth, priority: cached.snapshot.priority)
+        }
         BootstrapStreamTimings.logPhase(
           logger,
           phase: "totalCached",
@@ -50,6 +54,35 @@ struct BootstrapStreamService {
         )
         try await writer.finish(nil)
         return
+      }
+
+      let coldLease = await projectionCache?.acquireRefreshLease(
+        domain: "sidebar",
+        resource: auth.did,
+        ttl: 30
+      )
+      if projectionCache != nil, coldLease == nil {
+        try? await Task.sleep(for: .milliseconds(250))
+        if let cached = try await loadCachedSnapshot(viewerDid: auth.did) {
+          cachedEvidenceAt = cached.cachedAt
+          try await emitCachedBootstrap(
+            auth: auth,
+            snapshot: cached.snapshot,
+            refreshedAt: cached.cachedAt,
+            writer: &writer
+          )
+          try await writer.finish(nil)
+          return
+        }
+      }
+      let coldRenewal = coldLease.flatMap { lease in
+        projectionCache.map { refreshLeaseRenewal(lease, projectionCache: $0) }
+      }
+      defer {
+        coldRenewal?.cancel()
+        if let coldLease, let projectionCache {
+          Task { await projectionCache.releaseRefreshLease(coldLease) }
+        }
       }
 
       let priorityStarted = Date()
@@ -81,7 +114,7 @@ struct BootstrapStreamService {
       try await withThrowingTaskGroup(of: SidebarBootstrapChunk.self) { group in
         group.addTask {
           .unreadCounts(
-            await projectionService.unreadCounterSnapshot(
+            await projectionService.cachedUnreadCounterSnapshot(
               for: unreadRows,
               viewerDid: auth.did
             )
@@ -200,7 +233,7 @@ struct BootstrapStreamService {
       var folderUnreadCounts: [String: Int] = [:]
       if !folderUnreadRows.isEmpty {
         let folderUnreadStarted = Date()
-        let folderSnapshot = await projectionService.unreadCounterSnapshot(
+        let folderSnapshot = await projectionService.cachedUnreadCounterSnapshot(
           for: folderUnreadRows,
           viewerDid: auth.did
         )
@@ -332,12 +365,20 @@ struct BootstrapStreamService {
     try await writer.finish(nil)
   }
 
-  private func loadFreshCachedSnapshot(
+  private func loadCachedSnapshot(
     viewerDid: String
-  ) async throws -> (snapshot: BootstrapSidebarCacheSnapshot, cachedAt: Date)? {
+  ) async throws -> (snapshot: BootstrapSidebarCacheSnapshot, cachedAt: Date, stale: Bool)? {
     guard let projectionCache else { return nil }
-    guard let entry = try await projectionCache.sidebarProjectionCacheEntry(viewerDid: viewerDid) else {
-      return nil
+    let entry: AppViewProjectionCacheEntry<String>
+    let stale: Bool
+    switch try await projectionCache.sidebarProjectionCacheLookup(viewerDid: viewerDid) {
+    case .fresh(let cached):
+      entry = cached
+      stale = false
+    case .stale(let cached):
+      entry = cached
+      stale = true
+    case .miss: return nil
     }
     guard
       let snapshot = try? JSONDecoder().decode(
@@ -345,7 +386,7 @@ struct BootstrapStreamService {
         from: Data(entry.value.utf8)
       )
     else { return nil }
-    return (snapshot, entry.cachedAt)
+    return (snapshot, entry.cachedAt, stale)
   }
 
   private func emitCachedBootstrap(
@@ -368,7 +409,7 @@ struct BootstrapStreamService {
 
     let unreadRows = Self.cachedBootstrapUnreadRows(from: snapshot)
     let unreadPublicationIds = unreadRows.map(\.publicationId)
-    let counterSnapshot = await projectionService.unreadCounterSnapshot(
+    let counterSnapshot = await projectionService.cachedUnreadCounterSnapshot(
       for: unreadRows,
       viewerDid: auth.did
     )
@@ -419,7 +460,48 @@ struct BootstrapStreamService {
 
   private func scheduleBackgroundRefresh(auth: AuthContext, priority: PublicationSidebarResponse) {
     _ = priority
-    Task { await self.projectionService.refreshFullDiscoveryAndPersist(auth: auth) }
+    Task {
+      let rebuildStarted = Date()
+      let lease = await self.projectionCache?.acquireRefreshLease(
+        domain: "sidebar",
+        resource: auth.did,
+        ttl: 30
+      )
+      guard self.projectionCache == nil || lease != nil else { return }
+      let renewal = lease.flatMap { lease in
+        self.projectionCache.map { self.refreshLeaseRenewal(lease, projectionCache: $0) }
+      }
+      defer {
+        renewal?.cancel()
+        if let lease, let projectionCache = self.projectionCache {
+          Task { await projectionCache.releaseRefreshLease(lease) }
+        }
+      }
+      await self.projectionService.refreshFullDiscoveryAndPersist(auth: auth)
+      if let telemetry = self.telemetry {
+        _ = await telemetry.enqueue(.metric(
+          OperationsMetricSample(
+            name: "socialwire.appview.cache.rebuild.duration_seconds",
+            value: Date().timeIntervalSince(rebuildStarted),
+            dimensions: ["cache_type": "sidebar"]
+          )
+        ))
+      }
+    }
+  }
+
+  private func refreshLeaseRenewal(
+    _ lease: AppViewProjectionRefreshLease,
+    projectionCache: any AppViewProjectionCacheStore
+  ) -> Task<Void, Never> {
+    Task {
+      let interval = max(1, lease.ttlMilliseconds / 3)
+      while !Task.isCancelled {
+        try? await Task.sleep(for: .milliseconds(interval))
+        guard !Task.isCancelled else { return }
+        guard await projectionCache.renewRefreshLease(lease) else { return }
+      }
+    }
   }
 
   private func scheduleBackgroundWarmers(

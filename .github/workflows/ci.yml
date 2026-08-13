@@ -24,6 +24,7 @@ jobs:
     outputs:
       web: ${{ steps.filter.outputs.web }}
       operations_web: ${{ steps.filter.outputs.operations_web }}
+      redis: ${{ steps.filter.outputs.redis }}
       gateway: ${{ steps.filter.outputs.gateway }}
       appview: ${{ steps.filter.outputs.appview }}
       charybdis: ${{ steps.filter.outputs.charybdis }}
@@ -101,8 +102,9 @@ jobs:
         with:
           path: |
             packages/swift/GatewayCore/.build
+            packages/swift/SocialWireRedis/.build
             services/gateway/.build
-          key: ${{ runner.os }}-swift-gateway-6.2.4-${{ hashFiles('services/gateway/Package.resolved', 'packages/swift/GatewayCore/Package.resolved', 'packages/swift/ThinAppViewCore/Package.resolved') }}
+          key: ${{ runner.os }}-swift-gateway-6.2.4-${{ hashFiles('services/gateway/Package.resolved', 'packages/swift/GatewayCore/Package.resolved', 'packages/swift/ThinAppViewCore/Package.resolved', 'packages/swift/SocialWireRedis/Package.resolved') }}
       - uses: swift-actions/setup-swift@v3
         with:
           swift-version: "6.2.4"
@@ -114,6 +116,33 @@ jobs:
         working-directory: services/gateway
         run: swift test
 
+  redis:
+    name: SocialWire Redis
+    needs: changes
+    if: needs.changes.result == 'success' && needs.changes.outputs.redis == 'true'
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:8.2.8-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 2s
+          --health-timeout 2s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: swift-actions/setup-swift@v3
+        with:
+          swift-version: "6.2.4"
+          skip-verify-signature: true
+      - name: Test Redis package and integration
+        working-directory: packages/swift/SocialWireRedis
+        run: swift test
+        env:
+          REDIS_INTEGRATION_URL: redis://127.0.0.1:6379
+
   appview:
     name: AppView
     needs: changes
@@ -124,8 +153,10 @@ jobs:
       - name: Cache AppView
         uses: actions/cache@v5
         with:
-          path: services/appview/.build
-          key: ${{ runner.os }}-swift-appview-6.2.4-${{ hashFiles('services/appview/Package.resolved', 'packages/swift/GatewayCore/Package.resolved', 'packages/swift/ThinAppViewCore/Package.resolved') }}
+          path: |
+            packages/swift/SocialWireRedis/.build
+            services/appview/.build
+          key: ${{ runner.os }}-swift-appview-6.2.4-${{ hashFiles('services/appview/Package.resolved', 'packages/swift/GatewayCore/Package.resolved', 'packages/swift/ThinAppViewCore/Package.resolved', 'packages/swift/SocialWireRedis/Package.resolved') }}
       - uses: swift-actions/setup-swift@v3
         with:
           swift-version: "6.2.4"
@@ -146,8 +177,9 @@ jobs:
         with:
           path: |
             packages/swift/ThinAppViewCore/.build
+            packages/swift/SocialWireRedis/.build
             services/appview-worker/.build
-          key: ${{ runner.os }}-swift-charybdis-6.2.4-${{ hashFiles('services/appview-worker/Package.resolved', 'packages/swift/ThinAppViewCore/Package.resolved') }}
+          key: ${{ runner.os }}-swift-charybdis-6.2.4-${{ hashFiles('services/appview-worker/Package.resolved', 'packages/swift/ThinAppViewCore/Package.resolved', 'packages/swift/SocialWireRedis/Package.resolved') }}
       - uses: swift-actions/setup-swift@v3
         with:
           swift-version: "6.2.4"
@@ -232,6 +264,7 @@ jobs:
       - changes
       - web
       - operations-web
+      - redis
       - gateway
       - appview
       - charybdis
@@ -247,6 +280,7 @@ jobs:
           CHANGES_RESULT: ${{ needs.changes.result }}
           WEB_FLAG: ${{ needs.changes.outputs.web }}
           OPERATIONS_WEB_FLAG: ${{ needs.changes.outputs.operations_web }}
+          REDIS_FLAG: ${{ needs.changes.outputs.redis }}
           GATEWAY_FLAG: ${{ needs.changes.outputs.gateway }}
           APPVIEW_FLAG: ${{ needs.changes.outputs.appview }}
           CHARYBDIS_FLAG: ${{ needs.changes.outputs.charybdis }}
@@ -256,6 +290,7 @@ jobs:
           SPEC_FLAG: ${{ needs.changes.outputs.spec }}
           WEB_RESULT: ${{ needs.web.result }}
           OPERATIONS_WEB_RESULT: ${{ needs.operations-web.result }}
+          REDIS_RESULT: ${{ needs.redis.result }}
           GATEWAY_RESULT: ${{ needs.gateway.result }}
           APPVIEW_RESULT: ${{ needs.appview.result }}
           CHARYBDIS_RESULT: ${{ needs.charybdis.result }}
@@ -290,6 +325,7 @@ jobs:
 
           check "$WEB_FLAG" "$WEB_RESULT" "Web"
           check "$OPERATIONS_WEB_FLAG" "$OPERATIONS_WEB_RESULT" "Operations Web"
+          check "$REDIS_FLAG" "$REDIS_RESULT" "SocialWire Redis"
           check "$GATEWAY_FLAG" "$GATEWAY_RESULT" "Gateway"
           check "$APPVIEW_FLAG" "$APPVIEW_RESULT" "AppView"
           check "$CHARYBDIS_FLAG" "$CHARYBDIS_RESULT" "Charybdis"

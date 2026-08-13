@@ -1,0 +1,22 @@
+meta {
+  name: Dry Run Backfill (XRPC)
+  type: http
+  seq: 118
+}
+
+post {
+  url: {{baseUrl}}/xrpc/app.thesocialwire.operations.dryRunBackfill
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+  Idempotency-Key: {{operationsIdempotencyKey}}
+  Content-Type: application/json
+}
+
+body:json {
+  { "sourceMode": "jetstream", "collections": [], "authorDids": [], "batchSize": 100, "rateLimit": 100, "maxConcurrency": 1 }
+}

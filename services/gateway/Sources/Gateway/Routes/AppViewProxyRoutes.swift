@@ -6,8 +6,8 @@ import Hummingbird
 import Logging
 import NIOCore
 
-private extension HTTPResponse.Status {
-  static func from(code: Int) -> HTTPResponse.Status? {
+extension HTTPResponse.Status {
+  fileprivate static func from(code: Int) -> HTTPResponse.Status? {
     switch code {
     case 200: .ok
     case 201: .created
@@ -35,25 +35,73 @@ struct AppViewProxyRoutes {
 
   func register(on group: RouterGroup<GatewayRequestContext>) {
     group.get("/v1/publications/sidebar") { request, context async throws -> Response in
-      try await forward(request: request, context: context, path: "/v1/publications/sidebar", method: "GET")
+      try await forward(
+        request: request, context: context, path: "/v1/publications/sidebar", method: "GET")
+    }
+    group.get("/xrpc/app.thesocialwire.publication.getSidebar") {
+      request, context async throws -> Response in
+      try await forward(
+        request: request, context: context, path: "/xrpc/app.thesocialwire.publication.getSidebar",
+        method: "GET")
     }
     group.post("/v1/publications/refresh") { request, context async throws -> Response in
-      try await forward(request: request, context: context, path: "/v1/publications/refresh", method: "POST")
+      try await forward(
+        request: request, context: context, path: "/v1/publications/refresh", method: "POST")
+    }
+    group.post("/xrpc/app.thesocialwire.publication.refreshSidebar") {
+      request, context async throws -> Response in
+      try await forward(
+        request: request, context: context,
+        path: "/xrpc/app.thesocialwire.publication.refreshSidebar", method: "POST")
     }
     group.post("/v1/publications/resolve") { request, context async throws -> Response in
-      try await forward(request: request, context: context, path: "/v1/publications/resolve", method: "POST")
+      try await forward(
+        request: request, context: context, path: "/v1/publications/resolve", method: "POST")
+    }
+    group.post("/xrpc/app.thesocialwire.publication.resolvePublication") {
+      request, context async throws -> Response in
+      try await forward(
+        request: request, context: context,
+        path: "/xrpc/app.thesocialwire.publication.resolvePublication", method: "POST")
     }
     group.get("/v1/appview/entries") { request, context async throws -> Response in
-      try await forward(request: request, context: context, path: "/v1/appview/entries", method: "GET")
+      try await forward(
+        request: request, context: context, path: "/v1/appview/entries", method: "GET")
+    }
+    group.get("/xrpc/app.thesocialwire.appview.listEntries") {
+      request, context async throws -> Response in
+      try await forward(
+        request: request, context: context, path: "/xrpc/app.thesocialwire.appview.listEntries",
+        method: "GET")
     }
     group.get("/v1/appview/feed") { request, context async throws -> Response in
       try await forward(request: request, context: context, path: "/v1/appview/feed", method: "GET")
     }
+    group.get("/xrpc/app.thesocialwire.appview.getFeed") {
+      request, context async throws -> Response in
+      try await forward(
+        request: request, context: context, path: "/xrpc/app.thesocialwire.appview.getFeed",
+        method: "GET")
+    }
     group.get("/v1/appview/entry") { request, context async throws -> Response in
-      try await forward(request: request, context: context, path: "/v1/appview/entry", method: "GET")
+      try await forward(
+        request: request, context: context, path: "/v1/appview/entry", method: "GET")
+    }
+    group.get("/xrpc/app.thesocialwire.appview.getEntry") {
+      request, context async throws -> Response in
+      try await forward(
+        request: request, context: context, path: "/xrpc/app.thesocialwire.appview.getEntry",
+        method: "GET")
     }
     group.get("/v1/appview/unread-counts") { request, context async throws -> Response in
-      try await forward(request: request, context: context, path: "/v1/appview/unread-counts", method: "GET")
+      try await forward(
+        request: request, context: context, path: "/v1/appview/unread-counts", method: "GET")
+    }
+    group.get("/xrpc/app.thesocialwire.appview.getUnreadCounts") {
+      request, context async throws -> Response in
+      try await forward(
+        request: request, context: context, path: "/xrpc/app.thesocialwire.appview.getUnreadCounts",
+        method: "GET")
     }
     group.get("/v1/appview/bootstrap-stream") { request, context async throws -> Response in
       try await forwardStreaming(
@@ -64,19 +112,54 @@ struct AppViewProxyRoutes {
       )
     }
     group.post("/v1/appview/read-marks") { request, context async throws -> Response in
-      try await forward(request: request, context: context, path: "/v1/appview/read-marks", method: "POST")
+      try await forward(
+        request: request, context: context, path: "/v1/appview/read-marks", method: "POST")
+    }
+    group.post("/xrpc/app.thesocialwire.appview.putReadMark") {
+      request, context async throws -> Response in
+      try await forward(
+        request: request, context: context, path: "/xrpc/app.thesocialwire.appview.putReadMark",
+        method: "POST")
     }
     group.delete("/v1/appview/read-marks") { request, context async throws -> Response in
-      try await forward(request: request, context: context, path: "/v1/appview/read-marks", method: "DELETE")
+      try await forward(
+        request: request, context: context, path: "/v1/appview/read-marks", method: "DELETE")
+    }
+    group.post("/xrpc/app.thesocialwire.appview.deleteReadMark") {
+      request, context async throws -> Response in
+      try await forward(
+        request: request, context: context, path: "/xrpc/app.thesocialwire.appview.deleteReadMark",
+        method: "POST")
     }
     group.post("/v1/appview/enroll") { request, context async throws -> Response in
-      try await forward(request: request, context: context, path: "/v1/appview/enroll", method: "POST")
+      try await forward(
+        request: request, context: context, path: "/v1/appview/enroll", method: "POST")
+    }
+    group.post("/xrpc/app.thesocialwire.appview.enrollSources") {
+      request, context async throws -> Response in
+      try await forward(
+        request: request, context: context, path: "/xrpc/app.thesocialwire.appview.enrollSources",
+        method: "POST")
     }
     group.delete("/v1/appview/privacy/purge") { request, context async throws -> Response in
-      try await forward(request: request, context: context, path: "/v1/appview/privacy/purge", method: "DELETE")
+      try await forward(
+        request: request, context: context, path: "/v1/appview/privacy/purge", method: "DELETE")
+    }
+    group.post("/xrpc/app.thesocialwire.appview.purgeViewerData") {
+      request, context async throws -> Response in
+      try await forward(
+        request: request, context: context, path: "/xrpc/app.thesocialwire.appview.purgeViewerData",
+        method: "POST")
     }
     group.post("/v1/appview/mark-all-read") { request, context async throws -> Response in
-      try await forward(request: request, context: context, path: "/v1/appview/mark-all-read", method: "POST")
+      try await forward(
+        request: request, context: context, path: "/v1/appview/mark-all-read", method: "POST")
+    }
+    group.post("/xrpc/app.thesocialwire.appview.markAllRead") {
+      request, context async throws -> Response in
+      try await forward(
+        request: request, context: context, path: "/xrpc/app.thesocialwire.appview.markAllRead",
+        method: "POST")
     }
   }
 
@@ -107,7 +190,7 @@ struct AppViewProxyRoutes {
     fwd.headers.add(name: "traceparent", value: context.traceContext.traceparent)
     if let dpop = auth.dpopProof { fwd.headers.add(name: "DPoP", value: dpop) }
     if let upstream = auth.upstreamDpopProof?.trimmingCharacters(in: .whitespacesAndNewlines),
-       !upstream.isEmpty
+      !upstream.isEmpty
     {
       fwd.headers.add(name: ATProtoUpstreamDPoP.headerName, value: upstream)
     }
@@ -132,17 +215,18 @@ struct AppViewProxyRoutes {
         fwd.headers.add(name: "Content-Type", value: "application/json")
       }
     }
-    let upstreamTimeout: TimeAmount = path == "/v1/appview/feed" ? .seconds(3) : .seconds(60)
+    let feedPaths = ["/v1/appview/feed", "/xrpc/app.thesocialwire.appview.getFeed"]
+    let upstreamTimeout: TimeAmount = feedPaths.contains(path) ? .seconds(3) : .seconds(60)
     let reply = try await httpClient.execute(fwd, timeout: upstreamTimeout)
     var headers = HTTPFields()
     headers[.contentType] = "application/json"
     if let requestId = reply.headers.first(name: "X-Request-ID"),
-       let requestIdHeader = HTTPField.Name("X-Request-ID")
+      let requestIdHeader = HTTPField.Name("X-Request-ID")
     {
       headers[requestIdHeader] = requestId
     }
     if let traceparent = reply.headers.first(name: "traceparent"),
-       let traceHeader = HTTPField.Name("traceparent")
+      let traceHeader = HTTPField.Name("traceparent")
     {
       headers[traceHeader] = traceparent
     }
@@ -152,7 +236,7 @@ struct AppViewProxyRoutes {
       "Server-Timing",
     ] {
       if let value = reply.headers.first(name: headerName),
-         let fieldName = HTTPField.Name(headerName)
+        let fieldName = HTTPField.Name(headerName)
       {
         headers[fieldName] = value
       }
@@ -183,7 +267,7 @@ struct AppViewProxyRoutes {
     fwd.headers.add(name: "traceparent", value: context.traceContext.traceparent)
     if let dpop = auth.dpopProof { fwd.headers.add(name: "DPoP", value: dpop) }
     if let upstream = auth.upstreamDpopProof?.trimmingCharacters(in: .whitespacesAndNewlines),
-       !upstream.isEmpty
+      !upstream.isEmpty
     {
       fwd.headers.add(name: ATProtoUpstreamDPoP.headerName, value: upstream)
     }
@@ -239,15 +323,16 @@ struct AppViewProxyRoutes {
     return s
   }
 
-  private static func applyForwardedHeaders(from request: Request, to fwd: inout HTTPClientRequest) {
+  private static func applyForwardedHeaders(from request: Request, to fwd: inout HTTPClientRequest)
+  {
     if let host = request.head.authority?.trimmingCharacters(in: .whitespacesAndNewlines),
-       !host.isEmpty
+      !host.isEmpty
     {
       fwd.headers.add(name: "X-Forwarded-Host", value: host)
     }
     if let protoHeader = HTTPField.Name("X-Forwarded-Proto"),
-       let proto = request.headers[protoHeader]?.trimmingCharacters(in: .whitespacesAndNewlines),
-       !proto.isEmpty
+      let proto = request.headers[protoHeader]?.trimmingCharacters(in: .whitespacesAndNewlines),
+      !proto.isEmpty
     {
       fwd.headers.add(name: "X-Forwarded-Proto", value: proto)
     } else {

@@ -27,19 +27,28 @@ struct OperationsRoutes {
   }
 
   func register(on group: RouterGroup<GatewayRequestContext>) {
-    group.get("/v1/operations/capabilities") { _, _ async -> OperationsCapabilities in
+    register(on: group, xrpc: false)
+    register(on: group, xrpc: true)
+  }
+
+  private func register(on group: RouterGroup<GatewayRequestContext>, xrpc: Bool) {
+    func route(_ legacy: String, _ method: String) -> RouterPath {
+      RouterPath(xrpc ? "/xrpc/app.thesocialwire.operations.\(method)" : legacy)
+    }
+
+    group.get(route("/v1/operations/capabilities", "getCapabilities")) { _, _ async -> OperationsCapabilities in
       await capabilityResolver.resolve()
     }
-    group.get("/v1/operations/overview") { _, _ async throws -> OperationsOverview in
+    group.get(route("/v1/operations/overview", "getOverview")) { _, _ async throws -> OperationsOverview in
       try await store.overview(capabilities: await capabilityResolver.resolve())
     }
-    group.get("/v1/operations/services") { _, _ async throws -> OperationsServiceListResponse in
+    group.get(route("/v1/operations/services", "listServices")) { _, _ async throws -> OperationsServiceListResponse in
       let services = try await store.listServiceStates()
       return OperationsServiceListResponse(
         services: services,
         evidence: OperationsEvidenceResolver.services(services))
     }
-    group.get("/v1/operations/ingestion") { _, _ async throws -> IngestionResponse in
+    group.get(route("/v1/operations/ingestion", "getIngestion")) { _, _ async throws -> IngestionResponse in
       async let serviceStates = store.listServiceStates()
       async let streamStates = store.listStreamStates()
       let services = try await serviceStates
@@ -49,7 +58,7 @@ struct OperationsRoutes {
       return IngestionResponse(
         state: authority.state, sources: sources, evidence: authority.evidence)
     }
-    group.get("/v1/operations/ingestion/endpoints") {
+    group.get(route("/v1/operations/ingestion/endpoints", "listIngestionEndpoints")) {
       request, _ async throws -> EndpointListResponse in
       let page = try await store.listJetstreamEndpoints(
         limit: try Self.limit(request),
@@ -61,7 +70,7 @@ struct OperationsRoutes {
           totalCount: page.totalCount, indexedThrough: page.items.map(\.updatedAt).min(),
           validitySeconds: 45, emptyReason: "No Jetstream endpoint observations are available."))
     }
-    group.get("/v1/operations/commands") {
+    group.get(route("/v1/operations/commands", "listCommands")) {
       request, _ async throws -> CommandListResponse in
       let page = try await store.listCommands(
         limit: try Self.limit(request),
@@ -74,7 +83,7 @@ struct OperationsRoutes {
           totalCount: page.totalCount, indexedThrough: observedAt, validitySeconds: 5,
           emptyReason: "No command records are available.", generatedAt: observedAt))
     }
-    group.post("/v1/operations/ingestion/reconnect") {
+    group.post(route("/v1/operations/ingestion/reconnect", "reconnectIngestion")) {
       request, context async throws -> EditedResponse<OperationsWorkerCommand> in
       guard let operatorDid = context.authContext?.did else { throw HTTPError(.unauthorized) }
       let audit = mutationAuditScope(
@@ -104,7 +113,7 @@ struct OperationsRoutes {
       return EditedResponse(status: .accepted, response: command)
     }
 
-    group.get("/v1/operations/appview") { _, _ async throws -> AppViewOperationsResponse in
+    group.get(route("/v1/operations/appview", "getAppView")) { _, _ async throws -> AppViewOperationsResponse in
       let services = try await store.listServiceStates().filter {
           $0.service == "appview" || $0.service == "gateway"
         }
@@ -115,7 +124,7 @@ struct OperationsRoutes {
           source: "operations_service_state.appview"))
     }
 
-    group.get("/v1/operations/gaps") { request, _ async throws -> GapListResponse in
+    group.get(route("/v1/operations/gaps", "listGaps")) { request, _ async throws -> GapListResponse in
       let view: GapListView
       switch request.uri.queryParameters.get("view") ?? "active" {
       case "active": view = .active
@@ -134,22 +143,23 @@ struct OperationsRoutes {
           totalCount: page.totalCount, indexedThrough: observedAt, validitySeconds: 5,
           emptyReason: "No gap records exist in this lifecycle view.", generatedAt: observedAt))
     }
-    group.get("/v1/operations/gaps/:id/investigation") {
-      _, context async throws -> GapInvestigation in
-      guard let id = context.parameters.get("id") else { throw HTTPError(.badRequest) }
+    group.get(route("/v1/operations/gaps/:id/investigation", "getGapInvestigation")) {
+      request, context async throws -> GapInvestigation in
+      guard let id = Self.resourceId(request, context: context) else { throw HTTPError(.badRequest, message: "id is required") }
       guard let investigation = try await store.investigateGap(id: id) else {
         throw HTTPError(.notFound)
       }
       return investigation
     }
-    group.patch("/v1/operations/gaps/:id") { request, context async throws -> IngestionGap in
+    let updateGap: @Sendable (Request, GatewayRequestContext) async throws -> IngestionGap = {
+      request, context in
       guard let operatorDid = context.authContext?.did else { throw HTTPError(.unauthorized) }
-      guard let id = context.parameters.get("id") else { throw HTTPError(.badRequest) }
+      let body = try await request.decode(as: GapUpdateRequest.self, context: context)
+      guard let id = xrpc ? body.id : context.parameters.get("id") else { throw HTTPError(.badRequest, message: "id is required") }
       let audit = mutationAuditScope(
         request: request, operatorDid: operatorDid, requestId: context.requestId,
         action: "gap.mutation_attempt", targetType: "gap", targetId: id)
       return try await auditedMutation(audit) {
-        let body = try await request.decode(as: GapUpdateRequest.self, context: context)
         audit.update(
           action: "gap.\(body.status.rawValue)", idempotencyKey: body.idempotencyKey,
           expectedVersion: body.expectedVersion, note: body.auditNote)
@@ -165,15 +175,20 @@ struct OperationsRoutes {
           requestId: context.requestId, note: body.auditNote, at: Date())
       }
     }
+    if xrpc {
+      group.post(route("/v1/operations/gaps/:id", "updateGap"), use: updateGap)
+    } else {
+      group.patch(route("/v1/operations/gaps/:id", "updateGap"), use: updateGap)
+    }
 
-    group.post("/v1/operations/backfills/dry-run") {
+    group.post(route("/v1/operations/backfills/dry-run", "dryRunBackfill")) {
       request, context async throws -> BackfillDryRunResponse in
       let body = try await request.decode(as: BackfillDryRunRequest.self, context: context)
       let normalized = try Self.validate(body)
       try Self.requireMode(normalized.sourceMode, capabilities: await capabilityResolver.resolve())
       return try await store.estimateBackfill(normalized)
     }
-    group.get("/v1/operations/backfills") { request, _ async throws -> BackfillListResponse in
+    group.get(route("/v1/operations/backfills", "listBackfills")) { request, _ async throws -> BackfillListResponse in
       let view: BackfillListView
       switch request.uri.queryParameters.get("view") ?? "active" {
       case "active": view = .active
@@ -193,7 +208,7 @@ struct OperationsRoutes {
           totalCount: page.totalCount, indexedThrough: observedAt, validitySeconds: 5,
           emptyReason: "No backfill jobs exist in this lifecycle view.", generatedAt: observedAt))
     }
-    group.post("/v1/operations/backfills") {
+    group.post(route("/v1/operations/backfills", "createBackfill")) {
       request, context async throws -> EditedResponse<BackfillJob> in
       guard let operatorDid = context.authContext?.did else { throw HTTPError(.unauthorized) }
       let audit = mutationAuditScope(
@@ -232,16 +247,16 @@ struct OperationsRoutes {
       }
       return EditedResponse(status: .created, response: job)
     }
-    group.get("/v1/operations/backfills/:id") { _, context async throws -> BackfillJob in
-      guard let id = context.parameters.get("id") else { throw HTTPError(.badRequest) }
+    group.get(route("/v1/operations/backfills/:id", "getBackfill")) { request, context async throws -> BackfillJob in
+      guard let id = Self.resourceId(request, context: context) else { throw HTTPError(.badRequest, message: "id is required") }
       guard let job = try await store.fetchBackfill(id: id) else { throw HTTPError(.notFound) }
       return job
     }
-    registerBackfillAction("pause", status: .paused, on: group)
-    registerBackfillAction("resume", status: .queued, on: group)
-    registerBackfillAction("cancel", status: .cancelled, on: group)
+    registerBackfillAction("pause", method: "pauseBackfill", status: .paused, xrpc: xrpc, on: group)
+    registerBackfillAction("resume", method: "resumeBackfill", status: .queued, xrpc: xrpc, on: group)
+    registerBackfillAction("cancel", method: "cancelBackfill", status: .cancelled, xrpc: xrpc, on: group)
 
-    group.get("/v1/operations/alerts") { request, _ async throws -> AlertListResponse in
+    group.get(route("/v1/operations/alerts", "listAlerts")) { request, _ async throws -> AlertListResponse in
       let view: AlertListView
       switch request.uri.queryParameters.get("view") ?? "active" {
       case "active": view = .active
@@ -260,18 +275,17 @@ struct OperationsRoutes {
           totalCount: page.totalCount, indexedThrough: observedAt, validitySeconds: 5,
           emptyReason: "No alerts exist in this lifecycle view.", generatedAt: observedAt))
     }
-    registerAlertAction("acknowledge", status: .acknowledged, on: group)
-    registerAlertAction("resolve", status: .resolved, on: group)
-    group.post("/v1/operations/alerts/:id/retry") {
+    registerAlertAction("acknowledge", method: "acknowledgeAlert", status: .acknowledged, xrpc: xrpc, on: group)
+    registerAlertAction("resolve", method: "resolveAlert", status: .resolved, xrpc: xrpc, on: group)
+    group.post(route("/v1/operations/alerts/:id/retry", "retryAlert")) {
       request, context async throws -> EditedResponse<OperationsAlert> in
       guard let operatorDid = context.authContext?.did else { throw HTTPError(.unauthorized) }
-      guard let id = context.parameters.get("id") else { throw HTTPError(.badRequest) }
+      let mutation = try await request.decode(as: OperatorMutationRequest.self, context: context)
+      guard let id = xrpc ? mutation.id : context.parameters.get("id") else { throw HTTPError(.badRequest, message: "id is required") }
       let audit = mutationAuditScope(
         request: request, operatorDid: operatorDid, requestId: context.requestId,
         action: "alert.delivery_retry", targetType: "alert", targetId: id)
       let alert = try await auditedMutation(audit) {
-        let mutation = try await request.decode(
-          as: OperatorMutationRequest.self, context: context)
         audit.update(
           idempotencyKey: mutation.idempotencyKey,
           expectedVersion: mutation.expectedVersion,
@@ -289,7 +303,7 @@ struct OperationsRoutes {
       return EditedResponse(status: .accepted, response: alert)
     }
 
-    group.get("/v1/operations/metrics") { request, _ async throws -> MetricListResponse in
+    group.get(route("/v1/operations/metrics", "listMetrics")) { request, _ async throws -> MetricListResponse in
       let query = try Self.metricQuery(request)
       let rollups = try await store.listMetricRollups(
         startAt: query.from, endAt: query.to, metricName: query.metric,
@@ -314,7 +328,7 @@ struct OperationsRoutes {
       return MetricListResponse(rollups: rollups, evidence: evidence)
     }
 
-    group.get("/v1/operations/traces") { request, _ async throws -> TraceListResponse in
+    group.get(route("/v1/operations/traces", "listTraces")) { request, _ async throws -> TraceListResponse in
       let now = Date()
       let from = try Self.optionalDate(request.uri.queryParameters.get("from"))
         ?? now.addingTimeInterval(-15 * 60)
@@ -334,9 +348,10 @@ struct OperationsRoutes {
           generatedAt: generatedAt,
           emptyReason: "No traces exist in the requested range."))
     }
-    group.get("/v1/operations/traces/:traceId") { _, context async throws -> TraceListResponse in
+    group.get(route("/v1/operations/traces/:traceId", "getTrace")) { request, context async throws -> TraceListResponse in
+      let traceId = request.uri.queryParameters.get("traceId") ?? context.parameters.get("traceId")
       let items = try await store.listTraceSpans(
-        limit: 500, traceId: context.parameters.get("traceId"))
+        limit: 500, traceId: traceId)
       guard !items.isEmpty else { throw HTTPError(.notFound, message: "Trace not found") }
       let generatedAt = Date()
       let truncated = items.count == 500
@@ -349,6 +364,7 @@ struct OperationsRoutes {
           truncatedReason: "Trace detail reached the 500-span safety limit."))
     }
 
+    guard !xrpc else { return }
     group.get("/v1/operations/events/stream") { request, _ async throws -> Response in
       let capabilities = await capabilityResolver.resolve()
       try Self.require(capabilities.eventStream)
@@ -393,19 +409,23 @@ struct OperationsRoutes {
 
   private func registerBackfillAction(
     _ action: String,
+    method: String,
     status: BackfillJobStatus,
+    xrpc: Bool,
     on group: RouterGroup<GatewayRequestContext>
   ) {
-    group.post("/v1/operations/backfills/:id/\(action)") {
+    let path = xrpc
+      ? RouterPath("/xrpc/app.thesocialwire.operations.\(method)")
+      : RouterPath("/v1/operations/backfills/:id/\(action)")
+    group.post(path) {
       request, context async throws -> BackfillJob in
       guard let operatorDid = context.authContext?.did else { throw HTTPError(.unauthorized) }
-      guard let id = context.parameters.get("id") else { throw HTTPError(.badRequest) }
+      let mutation = try await request.decode(as: OperatorMutationRequest.self, context: context)
+      guard let id = xrpc ? mutation.id : context.parameters.get("id") else { throw HTTPError(.badRequest, message: "id is required") }
       let audit = mutationAuditScope(
         request: request, operatorDid: operatorDid, requestId: context.requestId,
         action: "backfill.\(action)", targetType: "backfill", targetId: id)
       return try await auditedMutation(audit) {
-        let mutation = try await request.decode(
-          as: OperatorMutationRequest.self, context: context)
         audit.update(
           idempotencyKey: mutation.idempotencyKey,
           expectedVersion: mutation.expectedVersion,
@@ -426,19 +446,23 @@ struct OperationsRoutes {
 
   private func registerAlertAction(
     _ action: String,
+    method: String,
     status: OperationsAlertStatus,
+    xrpc: Bool,
     on group: RouterGroup<GatewayRequestContext>
   ) {
-    group.post("/v1/operations/alerts/:id/\(action)") {
+    let path = xrpc
+      ? RouterPath("/xrpc/app.thesocialwire.operations.\(method)")
+      : RouterPath("/v1/operations/alerts/:id/\(action)")
+    group.post(path) {
       request, context async throws -> OperationsAlert in
       guard let operatorDid = context.authContext?.did else { throw HTTPError(.unauthorized) }
-      guard let id = context.parameters.get("id") else { throw HTTPError(.badRequest) }
+      let mutation = try await request.decode(as: OperatorMutationRequest.self, context: context)
+      guard let id = xrpc ? mutation.id : context.parameters.get("id") else { throw HTTPError(.badRequest, message: "id is required") }
       let audit = mutationAuditScope(
         request: request, operatorDid: operatorDid, requestId: context.requestId,
         action: "alert.\(action)", targetType: "alert", targetId: id)
       return try await auditedMutation(audit) {
-        let mutation = try await request.decode(
-          as: OperatorMutationRequest.self, context: context)
         audit.update(
           idempotencyKey: mutation.idempotencyKey,
           expectedVersion: mutation.expectedVersion,
@@ -550,6 +574,7 @@ struct OperationsRoutes {
 
   private func validate(_ request: GapUpdateRequest) throws {
     try validate(OperatorMutationRequest(
+      id: nil,
       auditNote: request.auditNote,
       environmentConfirmation: request.environmentConfirmation,
       idempotencyKey: request.idempotencyKey,
@@ -558,6 +583,7 @@ struct OperationsRoutes {
 
   private func validate(_ request: ReconnectJetstreamRequest) throws {
     try validate(OperatorMutationRequest(
+      id: nil,
       auditNote: request.auditNote,
       environmentConfirmation: request.environmentConfirmation,
       idempotencyKey: request.idempotencyKey,
@@ -626,6 +652,13 @@ struct OperationsRoutes {
       throw HTTPError(.badRequest, message: "limit is outside the supported range")
     }
     return value
+  }
+
+  private static func resourceId(
+    _ request: Request,
+    context: GatewayRequestContext
+  ) -> String? {
+    request.uri.queryParameters.get("id") ?? context.parameters.get("id")
   }
 
   static func paginationCursor(_ rawValue: String?) throws -> String? {
@@ -805,6 +838,7 @@ struct OperationsRoutes {
 }
 
 struct GapUpdateRequest: Codable, Sendable {
+  let id: String?
   let status: IngestionGapStatus
   let auditNote: String?
   let environmentConfirmation: String?
@@ -813,6 +847,7 @@ struct GapUpdateRequest: Codable, Sendable {
 }
 
 struct OperatorMutationRequest: Codable, Sendable {
+  let id: String?
   let auditNote: String?
   let environmentConfirmation: String?
   let idempotencyKey: String

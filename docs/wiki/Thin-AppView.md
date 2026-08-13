@@ -23,7 +23,9 @@ Jetstream / environment-matched Tap
 Railway Charybdis (`appview-worker`) — ATProto ingest, Skyreader RSS polling, proactive PDS backfill, TTL cleanup
         │
         ▼
-Railway Postgres — content_items, read_marks, sidebar/unread/first-page caches, …
+Railway Postgres — content_items, read marks/floors, materialized counters, ingestion/repair state
+        │
+Private Railway Redis — sidebar/unread/first-page caches, PLC cache, RSS leases
         │
         ▼
 Railway AppView — /v1/appview/*, /v1/publications/*
@@ -36,6 +38,8 @@ Railway Gateway — OAuth/DPoP, PDS write-through, unbuffered AppView proxy
 ```
 
 **Initial reader load:** authenticated NDJSON **`GET /v1/appview/bootstrap-stream`** (gateway proxies AppView without buffering) — progressive sidebar priority, per-folder `sidebarSection` slices, unread counts, first-unread selection, first feed page. Repeat visits paint persisted cache while the stream refreshes.
+
+See [[Redis]] for cache TTLs, failure semantics, ranking primitives, and the Development-first rollout.
 
 **Consistency:** clients update local read state immediately, then write AppView read marks or scoped read floors. Firehose, enrollment, and proactive backfill keep content rows current.
 

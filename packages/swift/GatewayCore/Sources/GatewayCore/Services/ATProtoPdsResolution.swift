@@ -1,35 +1,7 @@
 import AsyncHTTPClient
 import Foundation
 import NIOCore
-
-/// Process-wide cache of PLC `#atproto_pds` lookups.
-///
-/// Every authenticated repo read resolves the repo's PDS before issuing its XRPC call, so an
-/// uncached resolver doubles the request count of every read and points the extra half at a single
-/// rate-limited host. A sidebar rebuild touching a few hundred distinct DIDs was issuing thousands
-/// of PLC lookups per request.
-///
-/// Failures are cached only briefly, and transient upstream failures are not cached at all — see
-/// `ATProtoPdsResolution.resolvePdsBase`.
-actor PdsBaseResolutionCache {
-  static let shared = PdsBaseResolutionCache()
-
-  private var entries: [String: (base: String?, expiresAt: Date)] = [:]
-  private static let resolvedTTL: TimeInterval = 30 * 60
-  private static let unresolvedTTL: TimeInterval = 60
-
-  /// Returns `.some(base)` on a cache hit (where `base` may itself be nil for a cached negative),
-  /// and `nil` when the DID is not cached.
-  func cached(_ did: String) -> (String?)? {
-    guard let hit = entries[did], hit.expiresAt > Date() else { return nil }
-    return .some(hit.base)
-  }
-
-  func store(_ did: String, base: String?) {
-    let ttl = base == nil ? Self.unresolvedTTL : Self.resolvedTTL
-    entries[did] = (base, Date().addingTimeInterval(ttl))
-  }
-}
+import SocialWireRedis
 
 /// Raised when PLC could not be consulted, as distinct from PLC answering "this DID has no PDS".
 public struct ATProtoPdsResolutionUnavailable: Error, Sendable {
@@ -76,11 +48,42 @@ public enum ATProtoPdsResolution: Sendable {
     repoDid: String,
     plcBase: String,
     httpClient: HTTPClient,
-    timeout: TimeAmount = .seconds(15)
+    timeout: TimeAmount = .seconds(15),
+    cache explicitCache: (any PDSResolutionCache)? = nil
   ) async throws -> String? {
     guard repoDid.hasPrefix("did:") else { return nil }
 
-    if let hit = await PdsBaseResolutionCache.shared.cached(repoDid) { return hit }
+    let cache = if let explicitCache {
+      explicitCache
+    } else {
+      await PDSResolutionCacheRegistry.shared.current()
+    }
+
+    var heldLease: RedisLease?
+    do {
+      switch try await cache.lookup(did: repoDid) {
+      case .fresh(let endpoint):
+        return validatedCachedEndpoint(endpoint)
+      case .stale(let endpoint):
+        guard let lease = try await cache.acquireLease(did: repoDid, ttl: 15) else {
+          return validatedCachedEndpoint(endpoint)
+        }
+        heldLease = lease
+      case .miss:
+        if let lease = try await cache.acquireLease(did: repoDid, ttl: 15) {
+          heldLease = lease
+        } else if let contender = try await waitForContender(cache: cache, did: repoDid) {
+          return validatedCachedEndpoint(contender)
+        }
+      }
+    } catch {
+      // Redis is an acceleration dependency. Resolution continues directly against PLC.
+    }
+    defer {
+      if let heldLease {
+        Task { await cache.releaseLease(heldLease) }
+      }
+    }
 
     let encoded = repoDid.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? repoDid
     let root = normalizePdsBase(plcBase)
@@ -97,21 +100,50 @@ public enum ATProtoPdsResolution: Sendable {
     }
 
     guard response.status == .ok else {
-      await PdsBaseResolutionCache.shared.store(repoDid, base: nil)
+      try? await cache.storeUnresolved(did: repoDid, now: Date())
       return nil
     }
 
     let body = try await response.body.collect(upTo: 64 * 1024)
     guard
       let json = try? JSONSerialization.jsonObject(with: Data(buffer: body)) as? [String: Any],
-      let base = parsePdsEndpointFromPlcDoc(json)
+      let parsed = parsePdsEndpointFromPlcDoc(json),
+      let base = validatedCachedEndpoint(parsed)
     else {
-      await PdsBaseResolutionCache.shared.store(repoDid, base: nil)
+      try? await cache.storeUnresolved(did: repoDid, now: Date())
       return nil
     }
 
-    await PdsBaseResolutionCache.shared.store(repoDid, base: base)
+    try? await cache.storeResolved(did: repoDid, endpoint: base, now: Date())
     return base
+  }
+
+  private static func waitForContender(
+    cache: any PDSResolutionCache,
+    did: String
+  ) async throws -> String?? {
+    for _ in 0..<5 {
+      try await Task.sleep(for: .milliseconds(50))
+      switch try await cache.lookup(did: did) {
+      case .fresh(let endpoint), .stale(let endpoint): return .some(endpoint)
+      case .miss: continue
+      }
+    }
+    return nil
+  }
+
+  private static func validatedCachedEndpoint(_ endpoint: String?) -> String? {
+    guard let endpoint else { return nil }
+    let normalized = normalizePdsBase(endpoint)
+    guard let components = URLComponents(string: normalized),
+          components.scheme?.lowercased() == "https",
+          components.host != nil,
+          components.user == nil,
+          components.password == nil,
+          components.query == nil,
+          components.fragment == nil
+    else { return nil }
+    return normalized
   }
 
   /// `repo` must be a DID for PDS reads; resolves handles via public App View.

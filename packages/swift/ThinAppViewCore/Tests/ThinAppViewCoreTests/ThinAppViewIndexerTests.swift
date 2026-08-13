@@ -1,5 +1,6 @@
 import Foundation
 import Logging
+import SocialWireRedis
 import Testing
 
 @testable import ThinAppViewCore
@@ -208,6 +209,48 @@ struct ThinAppViewIndexerTests {
     #expect(all.entries.first?.title == "Indexed Article")
   }
 
+  @Test("indexes document when the disposable projection cache is unavailable")
+  func indexesDocumentWhenProjectionCacheIsUnavailable() async throws {
+    let dbPath = FileManager.default.temporaryDirectory
+      .appendingPathComponent("sw-indexer-cache-outage-\(UUID().uuidString).sqlite")
+      .path
+    defer { try? FileManager.default.removeItem(atPath: dbPath) }
+
+    let logger = Logger(label: "indexer.cache-outage.test")
+    let store = try SQLiteThinAppViewStore(path: dbPath, logger: logger)
+    let projectionCache = RedisAppViewProjectionCacheStore(
+      commands: UnavailableIndexerRedisCommands(),
+      environment: "test",
+      logger: logger
+    )
+    let config = ThinAppViewConfig.fromEnvironment(["ENABLE_THIN_APPVIEW": "true"])
+    let indexer = ThinAppViewIndexer(
+      store: store,
+      config: config,
+      logger: logger,
+      projectionCache: projectionCache
+    )
+    let recordJSON = try JSONSerialization.data(withJSONObject: [
+      "title": "Durably Indexed",
+      "publishedAt": "2026-08-12T21:41:07.000Z",
+      "site": "at://did:plc:author/site.standard.publication/main",
+    ])
+
+    try await indexer.handleCommit(
+      repoDid: "did:plc:author",
+      collection: "site.standard.document",
+      rkey: "cache-outage",
+      cid: "bafycacheoutage",
+      recordJSON: recordJSON,
+      operation: "create"
+    )
+
+    let indexed = try await store.fetchContentItem(
+      uri: "at://did:plc:author/site.standard.document/cache-outage"
+    )
+    #expect(indexed?.title == "Durably Indexed")
+  }
+
   @Test("delete operation removes content item")
   func deletesContent() async throws {
     let dbPath =
@@ -374,6 +417,22 @@ struct ThinAppViewIndexerTests {
     )
     #expect(cached?.contains("RSS Item") == true)
   }
+}
+
+private actor UnavailableIndexerRedisCommands: RedisCommandClient {
+  struct Unavailable: Error {}
+
+  func get(_ key: String) throws -> Data? { throw Unavailable() }
+  func set(_ key: String, value: Data, expirationMilliseconds: Int) throws { throw Unavailable() }
+  func setIfAbsent(_ key: String, value: Data, expirationMilliseconds: Int) throws -> Bool {
+    throw Unavailable()
+  }
+  func delete(_ keys: [String]) throws -> Int { throw Unavailable() }
+  func execute(command: String, arguments: [RedisCommandValue]) throws -> RedisCommandValue {
+    throw Unavailable()
+  }
+  func ping() throws { throw Unavailable() }
+  func shutdown() {}
 }
 
 @Suite("ThinAppViewQuerySupport")

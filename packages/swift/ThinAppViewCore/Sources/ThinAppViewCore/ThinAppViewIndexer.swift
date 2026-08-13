@@ -20,6 +20,8 @@ public actor ThinAppViewIndexer {
   private let projectionCache: (any AppViewProjectionCacheStore)?
   private let publicationSiteResolver: (any PublicationSiteBaseResolving)?
   private var pdsBaseCache: [String: String] = [:]
+  private var lastProjectionCacheFailureLogAt = Date.distantPast
+  private static let projectionCacheFailureLogCooldown: TimeInterval = 60
 
   public init(
     store: any ThinAppViewStore,
@@ -151,7 +153,7 @@ public actor ThinAppViewIndexer {
         authorDid: repoDid,
         publicationSite: publicationSite
       )
-      try await invalidateFirstPageCaches(for: publicationSite)
+      await invalidateFirstPageCaches(for: publicationSite)
       return .projectionMutation
     }
 
@@ -210,7 +212,7 @@ public actor ThinAppViewIndexer {
     } else {
       try await store.incrementUnreadCountersForContentItem(item)
     }
-    try await invalidateFirstPageCaches(for: item.publicationSite)
+    await invalidateFirstPageCaches(for: item.publicationSite)
     return .projectionMutation
   }
 
@@ -235,7 +237,11 @@ public actor ThinAppViewIndexer {
     pdsBaseCache.removeValue(forKey: repoDid)
     guard !isActive || !status.isActive else { return .skipped }
     _ = try await store.deleteContentItems(authorDid: repoDid)
-    try await projectionCache?.invalidateAllProjectionCaches()
+    if let projectionCache {
+      await bestEffortProjectionCacheMutation(operation: "invalidate_all") {
+        try await projectionCache.invalidateAllProjectionCaches()
+      }
+    }
     return .projectionMutation
   }
 
@@ -256,24 +262,25 @@ public actor ThinAppViewIndexer {
       return didMutateProjection ? .projectionMutation : .skipped
     }
 
-    try await ThinAppViewProjectionCacheWarmer.invalidateViewerSubscriptionCaches(
-      projectionCache: projectionCache,
-      viewerDid: repoDid
-    )
-
-    if let normalizedFeedUrl {
-      try await ThinAppViewProjectionCacheWarmer.invalidateFirstPageKeys(
+    await bestEffortProjectionCacheMutation(operation: "refresh_skyreader_subscription") {
+      try await ThinAppViewProjectionCacheWarmer.invalidateViewerSubscriptionCaches(
         projectionCache: projectionCache,
-        viewerDid: repoDid,
-        publicationId: RssFeedIdentity.rssPublicationId(from: normalizedFeedUrl)
+        viewerDid: repoDid
       )
-      if operation != "delete" {
-        try await ThinAppViewProjectionCacheWarmer.warmRssFirstPage(
-          store: store,
+      if let normalizedFeedUrl {
+        try await ThinAppViewProjectionCacheWarmer.invalidateFirstPageKeys(
           projectionCache: projectionCache,
           viewerDid: repoDid,
-          normalizedFeedUrl: normalizedFeedUrl
+          publicationId: RssFeedIdentity.rssPublicationId(from: normalizedFeedUrl)
         )
+        if operation != "delete" {
+          try await ThinAppViewProjectionCacheWarmer.warmRssFirstPage(
+            store: store,
+            projectionCache: projectionCache,
+            viewerDid: repoDid,
+            normalizedFeedUrl: normalizedFeedUrl
+          )
+        }
       }
     }
     return .projectionMutation
@@ -286,26 +293,27 @@ public actor ThinAppViewIndexer {
   ) async throws -> ThinAppViewIndexingOutcome {
     guard let projectionCache else { return .skipped }
 
-    try await ThinAppViewProjectionCacheWarmer.invalidateViewerSubscriptionCaches(
-      projectionCache: projectionCache,
-      viewerDid: repoDid
-    )
-
-    if operation != "delete",
-       let publication = (record["publication"] as? String)?
-         .trimmingCharacters(in: .whitespacesAndNewlines),
-       !publication.isEmpty
-    {
-      try await ThinAppViewProjectionCacheWarmer.invalidateFirstPageKeys(
+    await bestEffortProjectionCacheMutation(operation: "refresh_graph_subscription") {
+      try await ThinAppViewProjectionCacheWarmer.invalidateViewerSubscriptionCaches(
         projectionCache: projectionCache,
-        viewerDid: repoDid,
-        publicationId: publication
+        viewerDid: repoDid
       )
+      if operation != "delete",
+         let publication = (record["publication"] as? String)?
+           .trimmingCharacters(in: .whitespacesAndNewlines),
+         !publication.isEmpty
+      {
+        try await ThinAppViewProjectionCacheWarmer.invalidateFirstPageKeys(
+          projectionCache: projectionCache,
+          viewerDid: repoDid,
+          publicationId: publication
+        )
+      }
     }
     return .projectionMutation
   }
 
-  private func invalidateFirstPageCaches(for publicationSite: String?) async throws {
+  private func invalidateFirstPageCaches(for publicationSite: String?) async {
     guard let projectionCache, let publicationSite else { return }
     var publicationIds = RenderFieldExtractor.publicationFilterEquivalenceKeys(
       publicationAtUri: publicationSite
@@ -323,7 +331,31 @@ public actor ThinAppViewIndexer {
       publicationIds.insert(RssFeedIdentity.rssPublicationId(from: normalized))
     }
     for publicationId in publicationIds {
-      try await projectionCache.invalidateFirstPageForAllViewers(publicationId: publicationId)
+      await bestEffortProjectionCacheMutation(operation: "invalidate_first_page") {
+        try await projectionCache.invalidateFirstPageForAllViewers(publicationId: publicationId)
+      }
+    }
+  }
+
+  private func bestEffortProjectionCacheMutation(
+    operation: String,
+    _ mutation: () async throws -> Void
+  ) async {
+    do {
+      try await mutation()
+    } catch {
+      let now = Date()
+      guard now.timeIntervalSince(lastProjectionCacheFailureLogAt) >= Self.projectionCacheFailureLogCooldown else {
+        return
+      }
+      lastProjectionCacheFailureLogAt = now
+      logger.warning(
+        "Projection cache unavailable; continuing ingestion",
+        metadata: [
+          "operation": .string(operation),
+          "error_type": .string(String(describing: type(of: error)).lowercased()),
+        ]
+      )
     }
   }
 

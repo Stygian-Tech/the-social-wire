@@ -9,6 +9,7 @@ import type {
 } from "@/lib/publicationProjectionClient";
 import { normalizeHttpUrlToHttps } from "@/lib/publicResourceUrl";
 import { gatewayFetch } from "@/lib/socialWireGatewayClient";
+import { socialWireXrpc } from "@/lib/socialWireXrpc";
 
 export function isThinAppViewEnabled(): boolean {
   return process.env.NEXT_PUBLIC_USE_THIN_APPVIEW !== "false";
@@ -132,7 +133,7 @@ export async function listEntriesFromAppView(args: {
 
   const res = await gatewayFetch(
     oauthSession,
-    `/v1/appview/entries?${params.toString()}`,
+    `${socialWireXrpc.listEntries}?${params.toString()}`,
     { method: "GET", signal }
   );
   if (!res.ok) {
@@ -199,7 +200,7 @@ export async function listAggregateFeedFromAppView(args: {
   if (cursor) params.set("cursor", cursor);
   const res = await gatewayFetch(
     oauthSession,
-    `/v1/appview/feed?${params.toString()}`,
+    `${socialWireXrpc.getFeed}?${params.toString()}`,
     { method: "GET", signal },
   );
   if (!res.ok) {
@@ -248,7 +249,7 @@ export async function getEntryFromAppView(
   const params = new URLSearchParams({ entryId });
   const res = await gatewayFetch(
     oauthSession,
-    `/v1/appview/entry?${params.toString()}`,
+    `${socialWireXrpc.getEntry}?${params.toString()}`,
     { method: "GET", signal }
   );
   if (res.status === 404) {
@@ -296,7 +297,7 @@ export async function fetchAppViewUnreadCounts(
   });
   const res = await gatewayFetch(
     oauthSession,
-    `/v1/appview/unread-counts?${params.toString()}`,
+    `${socialWireXrpc.getUnreadCounts}?${params.toString()}`,
     { method: "GET", signal }
   );
   if (res.status === 404) {
@@ -324,7 +325,7 @@ export async function writeThroughReadMark(
   subjectUri: string,
   readAt: string
 ): Promise<void> {
-  const res = await gatewayFetch(oauthSession, "/v1/appview/read-marks", {
+  const res = await gatewayFetch(oauthSession, socialWireXrpc.putReadMark, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ subjectUri, readAt }),
@@ -338,8 +339,8 @@ export async function writeThroughReadMarkDelete(
   oauthSession: OAuthSession,
   subjectUri: string
 ): Promise<void> {
-  const res = await gatewayFetch(oauthSession, "/v1/appview/read-marks", {
-    method: "DELETE",
+  const res = await gatewayFetch(oauthSession, socialWireXrpc.deleteReadMark, {
+    method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ subjectUri }),
   });
@@ -354,7 +355,7 @@ export async function enrollAuthorsInAppView(
   feedUrls: string[] = []
 ): Promise<void> {
   if (authorDids.length === 0 && feedUrls.length === 0) return;
-  const res = await gatewayFetch(oauthSession, "/v1/appview/enroll", {
+  const res = await gatewayFetch(oauthSession, socialWireXrpc.enrollSources, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ authorDids, feedUrls }),
@@ -367,8 +368,8 @@ export async function enrollAuthorsInAppView(
 export async function purgeThinAppViewData(
   oauthSession: OAuthSession
 ): Promise<void> {
-  const res = await gatewayFetch(oauthSession, "/v1/appview/privacy/purge", {
-    method: "DELETE",
+  const res = await gatewayFetch(oauthSession, socialWireXrpc.purgeViewerData, {
+    method: "POST",
   });
   if (!res.ok) {
     throw new Error(`Thin AppView purge failed (${res.status})`);

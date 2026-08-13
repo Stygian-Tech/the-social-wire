@@ -1,0 +1,22 @@
+meta {
+  name: Post Lexicon Migration
+  type: http
+  seq: 12
+}
+
+post {
+  url: {{baseUrl}}/v1/sync/migrate-lexicons
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}
+
+docs {
+  Copies legacy `com.thesocialwire.*` folders, publication preferences, and
+  account preferences into canonical `app.thesocialwire.*` records, then
+  deletes the legacy rows. Repeated calls are safe.
+}

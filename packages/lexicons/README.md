@@ -1,6 +1,6 @@
 # The Social Wire — ATProto Lexicons
 
-This package contains the ATProto lexicon definitions for The Social Wire. These schemas define the record types that clients write to a user's PDS (Personal Data Server) to store their reading preferences.
+This package is the repository's single canonical location for ATProto Lexicon definitions used by The Social Wire. Every schema lives at the path derived from its NSID, such as `app.thesocialwire.folder` at [`app/thesocialwire/folder.json`](app/thesocialwire/folder.json). It includes record schemas and the XRPC query/procedure contracts implemented by the distributed services.
 
 ## Design philosophy
 

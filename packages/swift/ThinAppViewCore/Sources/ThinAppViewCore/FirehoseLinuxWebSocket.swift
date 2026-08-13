@@ -79,11 +79,15 @@ enum FirehoseLinuxWebSocket {
             logger.info("Firehose connected", metadata: ["url": .string(relayURL)])
 
             ws.onText { _, text in
-              guard pump.enqueue(text) else {
+              switch pump.enqueue(text) {
+              case .accepted:
+                break
+              case .saturated:
                 logger.warning("Firehose message pump saturated; reconnecting")
                 resumed.resumeOnce(continuation, with: .failure(FirehoseQueueOverflowError()))
                 socketBox.close()
-                return
+              case .stopped:
+                break
               }
             }
 

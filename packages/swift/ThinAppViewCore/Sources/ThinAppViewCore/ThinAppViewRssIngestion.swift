@@ -9,21 +9,48 @@ public struct ThinAppViewRssIngestion: Sendable {
   private let httpClient: HTTPClient
   private let config: ThinAppViewConfig
   private let logger: Logger
+  private let projectionCache: (any AppViewProjectionCacheStore)?
 
   public init(
     store: any ThinAppViewStore,
     httpClient: HTTPClient,
     config: ThinAppViewConfig,
-    logger: Logger
+    logger: Logger,
+    projectionCache: (any AppViewProjectionCacheStore)? = nil
   ) {
     self.store = store
     self.httpClient = httpClient
     self.config = config
     self.logger = logger
+    self.projectionCache = projectionCache
   }
 
   public func ingestFeed(normalizedFeedUrl: String) async throws -> Int {
     guard RssFeedIdentity.isFetchableFeedUrl(normalizedFeedUrl) else { return 0 }
+
+    let lease = await projectionCache?.acquireRefreshLease(
+      domain: "rss",
+      resource: normalizedFeedUrl,
+      ttl: 120
+    )
+    if projectionCache != nil, lease == nil {
+      return 0
+    }
+    let renewal = lease.map { lease in
+      Task {
+        while !Task.isCancelled {
+          try? await Task.sleep(for: .seconds(40))
+          guard !Task.isCancelled else { return }
+          guard await projectionCache?.renewRefreshLease(lease) == true else { return }
+        }
+      }
+    }
+    defer {
+      renewal?.cancel()
+      if let lease, let projectionCache {
+        Task { await projectionCache.releaseRefreshLease(lease) }
+      }
+    }
 
     let metadata = try? await store.fetchRssFeedMetadata(normalizedFeedUrl: normalizedFeedUrl)
     let polledAt = Date()
@@ -155,7 +182,6 @@ public struct ThinAppViewRssIngestion: Sendable {
       logger.info(
         "Indexed RSS feed",
         metadata: [
-          "feedUrl": .string(normalizedFeedUrl),
           "items": .stringConvertible(indexed),
         ]
       )

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 
 const ROOT = join(import.meta.dir, "..");
 
@@ -24,10 +24,10 @@ describe("lexicon JSON schemas", () => {
   );
 
   it("includes expected Social Wire collections", () => {
-    const names = files.map((f) => f.split("/").pop());
-    expect(names).toContain("app.thesocialwire.folder.json");
-    expect(names).not.toContain("app.thesocialwire.entryReadState.json");
-    expect(names).toContain("link.latr.saved.external.json");
+    const ids = files.map((file) => JSON.parse(readFileSync(file, "utf8")).id);
+    expect(ids).toContain("app.thesocialwire.folder");
+    expect(ids).not.toContain("app.thesocialwire.entryReadState");
+    expect(ids).toContain("link.latr.saved.external");
   });
 
   for (const file of files) {
@@ -41,6 +41,7 @@ describe("lexicon JSON schemas", () => {
       expect(json.lexicon).toBe(1);
       expect(json.id).toBeTruthy();
       expect(json.defs).toBeTruthy();
+      expect(relative(ROOT, file)).toBe(`${json.id!.replaceAll(".", "/")}.json`);
     });
   }
 });

@@ -7,6 +7,7 @@
       "/services/appview-worker/**",
       "/packages/swift/ThinAppViewCore/**",
       "/packages/swift/OperationsCore/**",
+      "/packages/swift/SocialWireRedis/**",
       "/railway/charybdis.json"
     ]
   },

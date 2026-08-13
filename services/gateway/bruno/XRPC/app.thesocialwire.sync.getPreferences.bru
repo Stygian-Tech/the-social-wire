@@ -1,0 +1,20 @@
+meta {
+  name: XRPC app.thesocialwire.sync.getPreferences
+  type: http
+  seq: 10
+}
+
+get {
+  url: {{baseUrl}}/xrpc/app.thesocialwire.sync.getPreferences
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}
+
+docs {
+  Optional: send `If-None-Match` with a prior ETag for conditional GET.
+}

@@ -8,10 +8,12 @@ The Social Wire keeps **user-authored organisation data on the user’s ATProto 
 - [Discovery chain](https://github.com/Stygian-Tech/the-social-wire/blob/main/docs/architecture/discovery.md)
 - [Lexicons (architecture)](https://github.com/Stygian-Tech/the-social-wire/blob/main/docs/architecture/lexicons.md)
 - [AppView architecture](https://github.com/Stygian-Tech/the-social-wire/blob/main/docs/architecture/appview.md) — Thin AppView vs Bluesky App View vs future cross-user index
+- [Redis cache and coordination](https://github.com/Stygian-Tech/the-social-wire/blob/main/docs/architecture/redis.md) — disposable hosted caches, leases, ranking primitives, rollout
 
 **Wiki**
 
 - [[Thin-AppView]] — rollout, flags, routes, deployment
 - [[Service-API]] — gateway + appview + worker split
+- [[Redis]] — cache ownership, key policy, failure behavior, and rollout
 
 Related: [[Lexicons]], [[Web-app]], [[Apple-client]], [[Service-API]].

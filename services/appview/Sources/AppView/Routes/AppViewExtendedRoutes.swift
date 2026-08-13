@@ -8,88 +8,101 @@ struct AppViewExtendedRoutes {
   let projectionService: PublicationProjectionService
 
   func register(on group: RouterGroup<GatewayRequestContext>) {
-    group.get("/v1/appview/entry") { request, context async throws -> AppViewEntryDetailResponse in
-      guard let auth = context.authContext else { throw HTTPError(.unauthorized) }
-      guard let entryId = request.uri.queryParameters.get("entryId") else {
-        throw HTTPError(.badRequest, message: "Query requires `entryId`")
+    for path in ["/v1/appview/entry", "/xrpc/app.thesocialwire.appview.getEntry"] as [RouterPath] {
+      group.get(path) { request, context async throws -> AppViewEntryDetailResponse in
+        guard let auth = context.authContext else { throw HTTPError(.unauthorized) }
+        guard let entryId = request.uri.queryParameters.get("entryId") else {
+          throw HTTPError(.badRequest, message: "Query requires `entryId`")
+        }
+        return try await readService.entryDetail(auth: auth, entryId: entryId)
       }
-      return try await readService.entryDetail(auth: auth, entryId: entryId)
     }
 
-    group.get("/v1/appview/unread-counts") { request, context async throws -> AppViewUnreadCountsByPublicationResponse in
-      guard let auth = context.authContext else { throw HTTPError(.unauthorized) }
-      if let rawIds = request.uri.queryParameters.get("publicationIds") {
-        let publicationIds = Self.splitQueryList(rawIds)
-        return try await readService.unreadCountsByPublicationIds(
+    for path in ["/v1/appview/unread-counts", "/xrpc/app.thesocialwire.appview.getUnreadCounts"]
+      as [RouterPath]
+    {
+      group.get(path) { request, context async throws -> AppViewUnreadCountsByPublicationResponse in
+        guard let auth = context.authContext else { throw HTTPError(.unauthorized) }
+        if let rawIds = request.uri.queryParameters.get("publicationIds") {
+          let publicationIds = Self.splitQueryList(rawIds)
+          return try await readService.unreadCountsByPublicationIds(
+            auth: auth,
+            publicationIds: publicationIds,
+            projectionService: projectionService
+          )
+        }
+        let authorDid = request.uri.queryParameters.get("authorDid")
+        let publicationAtUri = request.uri.queryParameters.get("publicationAtUri")
+        let scopeUris = Self.splitQueryList(
+          request.uri.queryParameters.get("publicationScopeAtUris"))
+        let siteUrls = Self.splitQueryList(request.uri.queryParameters.get("publicationSiteUrls"))
+        let scoped = try await readService.unreadCounts(
           auth: auth,
-          publicationIds: publicationIds,
-          projectionService: projectionService
+          authorDid: authorDid,
+          publicationAtUri: publicationAtUri,
+          publicationScopeAtUris: scopeUris,
+          publicationSiteUrls: siteUrls
         )
+        var map: [String: Int] = [:]
+        for row in scoped.counts {
+          map[row.scopeKey] = row.unreadCount
+        }
+        return AppViewUnreadCountsByPublicationResponse(counts: map)
       }
-      let authorDid = request.uri.queryParameters.get("authorDid")
-      let publicationAtUri = request.uri.queryParameters.get("publicationAtUri")
-      let scopeUris = Self.splitQueryList(request.uri.queryParameters.get("publicationScopeAtUris"))
-      let siteUrls = Self.splitQueryList(request.uri.queryParameters.get("publicationSiteUrls"))
-      let scoped = try await readService.unreadCounts(
-        auth: auth,
-        authorDid: authorDid,
-        publicationAtUri: publicationAtUri,
-        publicationScopeAtUris: scopeUris,
-        publicationSiteUrls: siteUrls
-      )
-      var map: [String: Int] = [:]
-      for row in scoped.counts {
-        map[row.scopeKey] = row.unreadCount
-      }
-      return AppViewUnreadCountsByPublicationResponse(counts: map)
     }
 
-    group.post("/v1/appview/mark-all-read") { request, context async throws -> MarkAllReadResponse in
-      guard let auth = context.authContext else { throw HTTPError(.unauthorized) }
-      let body = try await request.decode(as: ScopedMarkAllReadRequest.self, context: context)
-      let sidebar: PublicationSidebarResponse
-      if let cached = await projectionService.cachedSidebarResponse(viewerDid: auth.did) {
-        sidebar = cached
-      } else {
-        // No durable projection yet for this viewer (e.g. first request ever) — only then
-        // pay for a live discovery pass across every followed author's PDS.
-        sidebar = try await projectionService.sidebar(auth: auth)
-      }
-      let rows = Self.rows(for: body.scope, sidebar: sidebar)
-      let result: (
-        counters: [AppViewUnreadCounter],
-        boundaries: [ReadWatermarkBoundary],
-        confirmedAt: Date,
-        marked: Int
-      )
-      do {
-        result = try await readService.markAllRead(auth: auth, rows: rows)
-      } catch {
-        context.logger.error(
-          "mark-all-read failed",
-          metadata: [
-            "did": .string(auth.did),
-            "scopeKind": .string(body.scope.kind),
-            "rowCount": .stringConvertible(rows.count),
-            "error": .string("\(error)"),
-          ]
+    for path in ["/v1/appview/mark-all-read", "/xrpc/app.thesocialwire.appview.markAllRead"]
+      as [RouterPath]
+    {
+      group.post(path) { request, context async throws -> MarkAllReadResponse in
+        guard let auth = context.authContext else { throw HTTPError(.unauthorized) }
+        let body = try await request.decode(as: ScopedMarkAllReadRequest.self, context: context)
+        let sidebar: PublicationSidebarResponse
+        if let cached = await projectionService.cachedSidebarResponse(viewerDid: auth.did) {
+          sidebar = cached
+        } else {
+          // No durable projection yet for this viewer (e.g. first request ever) — only then
+          // pay for a live discovery pass across every followed author's PDS.
+          sidebar = try await projectionService.sidebar(auth: auth)
+        }
+        let rows = Self.rows(for: body.scope, sidebar: sidebar)
+        let result:
+          (
+            counters: [AppViewUnreadCounter],
+            boundaries: [ReadWatermarkBoundary],
+            confirmedAt: Date,
+            marked: Int
+          )
+        do {
+          result = try await readService.markAllRead(auth: auth, rows: rows)
+        } catch {
+          context.logger.error(
+            "mark-all-read failed",
+            metadata: [
+              "did": .string(auth.did),
+              "scopeKind": .string(body.scope.kind),
+              "rowCount": .stringConvertible(rows.count),
+              "error": .string("\(error)"),
+            ]
+          )
+          throw error
+        }
+        return MarkAllReadResponse(
+          marked: result.marked,
+          confirmedAt: result.confirmedAt,
+          boundaries: result.boundaries,
+          unreadCounts: Dictionary(
+            uniqueKeysWithValues: result.counters.map { ($0.publicationId, $0.unreadCount) }
+          )
         )
-        throw error
       }
-      return MarkAllReadResponse(
-        marked: result.marked,
-        confirmedAt: result.confirmedAt,
-        boundaries: result.boundaries,
-        unreadCounts: Dictionary(
-          uniqueKeysWithValues: result.counters.map { ($0.publicationId, $0.unreadCount) }
-        )
-      )
     }
   }
 
   private static func splitQueryList(_ raw: String?) -> [String] {
     guard let raw else { return [] }
-    return raw
+    return
+      raw
       .split(separator: ",")
       .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
       .filter { !$0.isEmpty }

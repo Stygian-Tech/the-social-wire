@@ -1,7 +1,6 @@
 import Foundation
 import GatewayCore
 import HTTPTypes
-import GatewayCore
 import Hummingbird
 
 struct SyncRoutes {
@@ -10,18 +9,22 @@ struct SyncRoutes {
 
   func register(on group: RouterGroup<GatewayRequestContext>) {
 
-    group.get("/v1/sync/preferences") { request, context async throws -> Response in
-      guard let auth = context.authContext else {
-        throw HTTPError(.unauthorized, message: "Missing auth context")
+    for path in ["/v1/sync/preferences", "/xrpc/app.thesocialwire.sync.getPreferences"]
+      as [RouterPath]
+    {
+      group.get(path) { request, context async throws -> Response in
+        guard let auth = context.authContext else {
+          throw HTTPError(.unauthorized, message: "Missing auth context")
+        }
+
+        _ = try await LexiconMigration.migrateLegacyLexiconsIfNeeded(repo: repo, auth: auth)
+
+        let ifNoneMatchHeader = SyncRoutes.ifNoneMatch(from: request)
+        return try await preferenceService.preferencesResponse(
+          auth: auth,
+          ifNoneMatch: ifNoneMatchHeader
+        )
       }
-
-      _ = try await LexiconMigration.migrateLegacyLexiconsIfNeeded(repo: repo, auth: auth)
-
-      let ifNoneMatchHeader = SyncRoutes.ifNoneMatch(from: request)
-      return try await preferenceService.preferencesResponse(
-        auth: auth,
-        ifNoneMatch: ifNoneMatchHeader
-      )
     }
 
     group.post("/v1/sync/migrate-lexicons") { _, context async throws -> LexiconMigrationResponse in
@@ -58,7 +61,7 @@ struct SyncRoutes {
     for cand in candidates {
       guard let name = HTTPField.Name(cand) else { continue }
       if let probe = request.headers[name]?.trimmingCharacters(in: .whitespacesAndNewlines),
-         !probe.isEmpty
+        !probe.isEmpty
       {
         return probe
       }

@@ -1,0 +1,22 @@
+meta {
+  name: Resume Backfill (XRPC)
+  type: http
+  seq: 121
+}
+
+post {
+  url: {{baseUrl}}/xrpc/app.thesocialwire.operations.resumeBackfill
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+  Idempotency-Key: {{operationsIdempotencyKey}}
+  Content-Type: application/json
+}
+
+body:json {
+  { "id": "{{operationsBackfillId}}", "expectedVersion": {{operationsBackfillVersion}}, "idempotencyKey": "{{operationsIdempotencyKey}}", "auditNote": "Resume after review", "environmentConfirmation": "{{operationsEnvironmentConfirmation}}" }
+}

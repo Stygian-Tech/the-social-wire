@@ -10,7 +10,7 @@ import Logging
 /// if it doesn't exist.
 ///
 /// Schema mirrors the Postgres migrations in `database/migrations/`.
-actor SQLiteCache: CacheStore {
+actor SQLiteCache: PdsRepoRecordCacheStore {
 
   // Cache TTLs — same as PostgresCache
   static let discoveryTTL: TimeInterval = 6 * 60 * 60   // 6 hours

@@ -1,0 +1,20 @@
+{
+  "lexicon": 1,
+  "id": "app.thesocialwire.defs",
+  "defs": {
+    "jsonObject": { "type": "object", "description": "A forward-compatible Social Wire response object. Method-specific fields are documented by the service contract and may be extended without breaking older clients." },
+    "error": {
+      "type": "object",
+      "required": ["error", "message"],
+      "properties": {
+        "error": { "type": "string", "maxLength": 100 },
+        "message": { "type": "string", "maxLength": 2000 }
+      }
+    },
+    "publicationIds": {
+      "type": "array",
+      "maxLength": 1000,
+      "items": { "type": "string", "maxLength": 2048 }
+    }
+  }
+}

@@ -78,6 +78,27 @@ describe("pdsXrpcMethodForSocialWireGatewayRequest", () => {
     });
   });
 
+  it("maps XRPC publication projection methods to listRecords", () => {
+    expect(
+      pdsXrpcMethodForSocialWireGatewayRequest(
+        "GET",
+        "/xrpc/app.thesocialwire.publication.getSidebar?phase=priority"
+      )
+    ).toEqual({
+      xrpcMethod: "com.atproto.repo.listRecords",
+      httpMethod: "GET",
+    });
+    expect(
+      pdsXrpcMethodForSocialWireGatewayRequest(
+        "POST",
+        "/xrpc/app.thesocialwire.publication.refreshSidebar"
+      )
+    ).toEqual({
+      xrpcMethod: "com.atproto.repo.listRecords",
+      httpMethod: "GET",
+    });
+  });
+
   it("does not require upstream DPoP for mark-all-read", () => {
     expect(
       pdsXrpcMethodForSocialWireGatewayRequest(

@@ -6,6 +6,7 @@ import {
 } from "@/lib/atprotoClient";
 import { enrollAuthorsInAppView } from "@/lib/thinAppViewClient";
 import { gatewayFetch } from "@/lib/socialWireGatewayClient";
+import { socialWireXrpc } from "@/lib/socialWireXrpc";
 
 export type PublicationAppViewScope = {
   authorDid: string;
@@ -106,7 +107,7 @@ export async function fetchPublicationSidebar(
   const query = params.toString();
   const res = await gatewayFetch(
     oauthSession,
-    query ? `/v1/publications/sidebar?${query}` : "/v1/publications/sidebar",
+    query ? `${socialWireXrpc.getSidebar}?${query}` : socialWireXrpc.getSidebar,
     {
       method: "GET",
       signal: options?.signal,
@@ -130,7 +131,7 @@ export async function refreshPublicationSidebar(
   oauthSession: OAuthSession,
   signal?: AbortSignal
 ): Promise<PublicationSidebarProjection> {
-  const res = await gatewayFetch(oauthSession, "/v1/publications/refresh", {
+  const res = await gatewayFetch(oauthSession, socialWireXrpc.refreshSidebar, {
     method: "POST",
     signal,
   });
@@ -145,7 +146,7 @@ export async function resolveAddPublicationOnGateway(
   input: string,
   signal?: AbortSignal
 ): Promise<{ result?: ResolveAddPublicationPayload; error?: string }> {
-  const res = await gatewayFetch(oauthSession, "/v1/publications/resolve", {
+  const res = await gatewayFetch(oauthSession, socialWireXrpc.resolvePublication, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ input }),
@@ -289,7 +290,7 @@ export async function markAllReadOnGateway(
   oauthSession: OAuthSession,
   scope: GatewayMarkAllReadScope
 ): Promise<GatewayMarkAllReadResponse> {
-  const res = await gatewayFetch(oauthSession, "/v1/appview/mark-all-read", {
+  const res = await gatewayFetch(oauthSession, socialWireXrpc.markAllRead, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ scope }),

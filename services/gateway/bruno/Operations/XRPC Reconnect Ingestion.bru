@@ -1,0 +1,22 @@
+meta {
+  name: Reconnect Ingestion (XRPC)
+  type: http
+  seq: 116
+}
+
+post {
+  url: {{baseUrl}}/xrpc/app.thesocialwire.operations.reconnectIngestion
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+  Idempotency-Key: {{operationsIdempotencyKey}}
+  Content-Type: application/json
+}
+
+body:json {
+  { "expectedVersion": {{operationsStreamVersion}}, "idempotencyKey": "{{operationsIdempotencyKey}}", "auditNote": "Reconnect after reviewing current evidence", "environmentConfirmation": "{{operationsEnvironmentConfirmation}}" }
+}

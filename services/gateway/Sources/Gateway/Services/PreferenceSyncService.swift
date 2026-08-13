@@ -1,7 +1,6 @@
 import AsyncHTTPClient
 import GatewayCore
 import Foundation
-import GatewayCore
 import HTTPTypes
 import Hummingbird
 import Logging
@@ -11,14 +10,14 @@ import NIOCore
 actor PreferenceSyncService {
   private struct PreferenceRecordNotFound: Error {}
   private let httpClient: HTTPClient
-  private let cache: any CacheStore
+  private let cache: any PdsRepoRecordCacheStore
   private let plcURL: String
   private let logger: Logger
 
   private static let preferencesCollection = PublicationLexicons.preferences
   private static let preferencesRKey = "self"
 
-  init(httpClient: HTTPClient, cache: any CacheStore, plcURL: String, logger: Logger) {
+  init(httpClient: HTTPClient, cache: any PdsRepoRecordCacheStore, plcURL: String, logger: Logger) {
     self.httpClient = httpClient
     self.cache = cache
     self.plcURL = plcURL
@@ -49,10 +48,29 @@ actor PreferenceSyncService {
       return earlyExit
     }
 
-    if let warm = try await cache.cachedPdsRepoRecord(ownerDid: auth.did, scopeKey: scope),
-       Date().timeIntervalSince(warm.cachedAt) < CacheStorePdsTTLs.genericRecordTTL
-    {
+    if let warm = try await cache.cachedPdsRepoRecord(ownerDid: auth.did, scopeKey: scope) {
+      if Date().timeIntervalSince(warm.cachedAt) < CacheStorePdsTTLs.genericRecordTTL {
+        return serializeRawBlob(snapshot: warm, ifNoneMatch: ifNoneMatch)
+      }
+      scheduleRefresh(
+        auth: auth,
+        scope: scope,
+        collection: collection,
+        rkey: rkey
+      )
       return serializeRawBlob(snapshot: warm, ifNoneMatch: ifNoneMatch)
+    }
+
+    let refreshLease = await acquireColdRefreshLease(auth: auth, scope: scope)
+    if refreshLease == nil,
+       let warmed = try await waitForContendedRefresh(ownerDid: auth.did, scope: scope)
+    {
+      return serializeRawBlob(snapshot: warmed, ifNoneMatch: ifNoneMatch)
+    }
+    let renewal = refreshLease.map(startLeaseRenewal)
+    defer {
+      renewal?.cancel()
+      releaseRefreshLease(refreshLease)
     }
 
     guard
@@ -90,10 +108,29 @@ actor PreferenceSyncService {
       return early304
     }
 
-    if let warm = try await cache.cachedPdsRepoRecord(ownerDid: auth.did, scopeKey: scope),
-       Date().timeIntervalSince(warm.cachedAt) < CacheStorePdsTTLs.preferencesCachedPayloadTTL
-    {
+    if let warm = try await cache.cachedPdsRepoRecord(ownerDid: auth.did, scopeKey: scope) {
+      if Date().timeIntervalSince(warm.cachedAt) < CacheStorePdsTTLs.preferencesCachedPayloadTTL {
+        return try finalizePreferences(snapshot: warm, ifNoneMatch: ifNoneMatch)
+      }
+      scheduleRefresh(
+        auth: auth,
+        scope: scope,
+        collection: Self.preferencesCollection,
+        rkey: Self.preferencesRKey
+      )
       return try finalizePreferences(snapshot: warm, ifNoneMatch: ifNoneMatch)
+    }
+
+    let refreshLease = await acquireColdRefreshLease(auth: auth, scope: scope)
+    if refreshLease == nil,
+       let warmed = try await waitForContendedRefresh(ownerDid: auth.did, scope: scope)
+    {
+      return try finalizePreferences(snapshot: warmed, ifNoneMatch: ifNoneMatch)
+    }
+    let renewal = refreshLease.map(startLeaseRenewal)
+    defer {
+      renewal?.cancel()
+      releaseRefreshLease(refreshLease)
     }
 
     guard
@@ -128,10 +165,7 @@ actor PreferenceSyncService {
       expiresAt: Date().addingTimeInterval(CacheStorePdsTTLs.preferencesWriteHorizon)
     )
 
-    logger.debug(
-      "Preferences cache rewarmed",
-      metadata: ["did": .string(auth.did)]
-    )
+    logger.debug("Preferences cache rewarmed")
 
     let snapshot = PdsCachedRepoRecordPayload(
       cid: livePayload.cid,
@@ -171,6 +205,87 @@ actor PreferenceSyncService {
   private struct LiveSnapshot {
     let cid: String?
     let jsonBlob: String
+  }
+
+  private func acquireColdRefreshLease(
+    auth: AuthContext,
+    scope: String
+  ) async -> PdsRepoRecordRefreshLease? {
+    await cache.acquirePdsRefreshLease(ownerDid: auth.did, scopeKey: scope)
+  }
+
+  private func releaseRefreshLease(_ lease: PdsRepoRecordRefreshLease?) {
+    guard let lease else { return }
+    Task { await self.cache.releasePdsRefreshLease(lease) }
+  }
+
+  private func waitForContendedRefresh(
+    ownerDid: String,
+    scope: String
+  ) async throws -> PdsCachedRepoRecordPayload? {
+    try? await Task.sleep(for: .milliseconds(250))
+    return try await cache.cachedPdsRepoRecord(ownerDid: ownerDid, scopeKey: scope)
+  }
+
+  private func scheduleRefresh(
+    auth: AuthContext,
+    scope: String,
+    collection: String,
+    rkey: String
+  ) {
+    Task {
+      guard let lease = await self.cache.acquirePdsRefreshLease(
+        ownerDid: auth.did,
+        scopeKey: scope
+      ) else { return }
+      let renewal = self.startLeaseRenewal(lease)
+      defer {
+        renewal.cancel()
+        Task { await self.cache.releasePdsRefreshLease(lease) }
+      }
+      do {
+        guard let pds = try await ATProtoPdsResolution.resolvePdsBase(
+          repoDid: auth.did,
+          plcBase: self.plcURL,
+          httpClient: self.httpClient
+        ) else { return }
+        let live = try await self.fetchRecord(
+          repo: auth.did,
+          pdsHost: pds,
+          collection: collection,
+          rkey: rkey,
+          auth: auth
+        )
+        let now = Date()
+        try await self.cache.storePdsRepoRecordPayload(
+          ownerDid: auth.did,
+          scopeKey: scope,
+          cid: live.cid,
+          jsonBody: live.jsonBlob,
+          cachedAt: now,
+          expiresAt: now.addingTimeInterval(
+            collection == Self.preferencesCollection
+              ? CacheStorePdsTTLs.preferencesWriteHorizon
+              : CacheStorePdsTTLs.genericWriteHorizon
+          )
+        )
+      } catch {
+        self.logger.warning("PDS cache background refresh failed", metadata: [
+          "error_category": .string("upstream_or_cache")
+        ])
+      }
+    }
+  }
+
+  private func startLeaseRenewal(_ lease: PdsRepoRecordRefreshLease) -> Task<Void, Never> {
+    Task {
+      let interval = max(1, lease.ttlMilliseconds / 3)
+      while !Task.isCancelled {
+        try? await Task.sleep(for: .milliseconds(interval))
+        guard !Task.isCancelled else { return }
+        guard await self.cache.renewPdsRefreshLease(lease) else { return }
+      }
+    }
   }
 
   private func currentCID(for did: String, scope: String) async throws -> String? {

@@ -1,0 +1,22 @@
+meta {
+  name: Acknowledge Alert (XRPC)
+  type: http
+  seq: 123
+}
+
+post {
+  url: {{baseUrl}}/xrpc/app.thesocialwire.operations.acknowledgeAlert
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+  Idempotency-Key: {{operationsIdempotencyKey}}
+  Content-Type: application/json
+}
+
+body:json {
+  { "id": "{{operationsAlertId}}", "expectedVersion": {{operationsAlertVersion}}, "idempotencyKey": "{{operationsIdempotencyKey}}", "auditNote": "Acknowledge after review", "environmentConfirmation": "{{operationsEnvironmentConfirmation}}" }
+}

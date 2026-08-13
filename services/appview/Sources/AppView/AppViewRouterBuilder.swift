@@ -19,7 +19,10 @@ enum AppViewRouterBuilder {
     logger: Logger
   ) -> Router<GatewayRequestContext> {
     let router = Router(context: GatewayRequestContext.self)
-    router.add(middleware: RequestTraceMiddleware(service: "appview", environment: telemetryEnvironment, instanceId: telemetryInstanceId, telemetry: telemetry))
+    router.add(
+      middleware: RequestTraceMiddleware(
+        service: "appview", environment: telemetryEnvironment, instanceId: telemetryInstanceId,
+        telemetry: telemetry))
     router.get("/health") { _, _ in ["status": "ok", "service": "appview"] }
     router.get("/livez") { _, _ in ["status": "live", "service": "appview"] }
     router.get("/readyz") { _, _ async throws -> [String: String] in
@@ -43,6 +46,7 @@ enum AppViewRouterBuilder {
       logger: logger
     )
     let protected = router.group()
+      .add(middleware: XRPCErrorMiddleware())
       .add(middleware: AppViewFeedErrorMiddleware())
       .add(middleware: internalTrustMiddleware)
       .add(middleware: authMiddleware)
@@ -54,20 +58,23 @@ enum AppViewRouterBuilder {
       plcURL: config.core.atprotoPLCURL,
       logger: logger,
       thinStore: thinAppViewStore,
-      projectionCache: projectionCache
+      projectionCache: projectionCache,
+      telemetry: telemetry
     )
     let resolve = PublicationResolveService(
       httpClient: httpClient,
       plcURL: config.core.atprotoPLCURL,
       logger: logger
     )
-    PublicationRoutes(projectionService: projection, resolveService: resolve).register(on: protected)
+    PublicationRoutes(projectionService: projection, resolveService: resolve).register(
+      on: protected)
 
     let rssIngestion = ThinAppViewRssIngestion(
       store: thinAppViewStore,
       httpClient: httpClient,
       config: config.thinAppView,
-      logger: logger
+      logger: logger,
+      projectionCache: projectionCache
     )
     let indexer = ThinAppViewIndexer(
       store: thinAppViewStore,
@@ -120,6 +127,7 @@ enum AppViewRouterBuilder {
       enrollService: enrollService,
       skyreaderIngestionService: skyreaderIngestionService,
       projectionCache: projectionCache,
+      telemetry: telemetry,
       logger: logger
     )
     BootstrapStreamRoutes(bootstrapStreamService: bootstrapStream).register(on: protected)

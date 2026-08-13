@@ -17,7 +17,7 @@ the-social-wire/
   packages/
     lexicons/     # app.thesocialwire.* (and related) lexicons
     spec/         # OpenAPI for HTTP surfaces (/v1/appview, /v1/sync, …)
-    swift/        # GatewayCore, OperationsCore, ThinAppViewCore
+    swift/        # GatewayCore, OperationsCore, SocialWireRedis, ThinAppViewCore
   database/
     migrations/   # Postgres (pds_repo_record_cache, content_items, read_marks, …)
   docs/
@@ -29,3 +29,4 @@ the-social-wire/
 
 - [Root README](https://github.com/Stygian-Tech/the-social-wire/blob/main/README.md)
 - [[Thin-AppView]] — read index, routes, and rollout
+- [[Redis]] — disposable cache, coordination, ranking, and rollout

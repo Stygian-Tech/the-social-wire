@@ -32,6 +32,7 @@ export function OperatorActionDialog({
   disabledReason,
   destructive = false,
   targetLabel,
+  subjectId,
 }: {
   environment: EnvironmentName
   path: string
@@ -42,6 +43,7 @@ export function OperatorActionDialog({
   disabledReason?: string
   destructive?: boolean
   targetLabel?: string
+  subjectId?: string
 }) {
   const { session } = useOperationsAuth()
   const queryClient = useQueryClient()
@@ -56,6 +58,7 @@ export function OperatorActionDialog({
       operationsRequest(session, path, {
         method: "POST",
         body: JSON.stringify({
+          id: subjectId,
           auditNote: auditNote.trim() || undefined,
           environmentConfirmation: confirmation || undefined,
           idempotencyKey,

@@ -5,6 +5,7 @@ import { OperatorActionDialog } from "@/components/operations/operator-action-di
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHeader, TableRow } from "@/components/ui/table"
 import { jetstreamStateForOverview } from "@/lib/operations-policy"
+import { operationsXrpc } from "@/lib/operations-xrpc"
 import type { Alert, EnvironmentName, Overview } from "@/lib/operations-types"
 
 const reconnectRules = new Set([
@@ -52,7 +53,7 @@ function AlertActions({
         ) : (
           <OperatorActionDialog
             environment={environment}
-            path="/v1/operations/ingestion/reconnect"
+            path={operationsXrpc.reconnectIngestion}
             label="Reconnect Jetstream"
             targetLabel={`for alert ${alert.id}`}
             expectedVersion={jetstreamState?.version}
@@ -68,7 +69,8 @@ function AlertActions({
       {alert.lastDeliveryError ? (
         <OperatorActionDialog
           environment={environment}
-          path={`/v1/operations/alerts/${encodeURIComponent(alert.id)}/retry`}
+          path={operationsXrpc.retryAlert}
+          subjectId={alert.id}
           label="Retry Delivery"
           targetLabel={`for alert ${alert.id}`}
           expectedVersion={alert.version}
@@ -79,7 +81,8 @@ function AlertActions({
       {lifecycleAction ? (
         <OperatorActionDialog
           environment={environment}
-          path={`/v1/operations/alerts/${encodeURIComponent(alert.id)}/${lifecycleAction}`}
+          path={lifecycleAction === "acknowledge" ? operationsXrpc.acknowledgeAlert : operationsXrpc.resolveAlert}
+          subjectId={alert.id}
           label={lifecycleLabel}
           targetLabel={`alert ${alert.id}`}
           expectedVersion={alert.version}

@@ -1,0 +1,16 @@
+meta {
+  name: List Metrics (XRPC)
+  type: http
+  seq: 113
+}
+
+get {
+  url: {{baseUrl}}/xrpc/app.thesocialwire.operations.listMetrics?from={{operationsMetricsFrom}}&to={{operationsMetricsTo}}
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}

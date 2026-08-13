@@ -28,7 +28,8 @@
      /v1/appview/*  ← Thin AppView (proxied to services/appview)
           │
           ▼
-     Railway Postgres (content_items, read_marks, sidebar_projection_cache, pds_repo_record_cache)
+     Railway Redis (projection/PDS caches, PLC/RSS leases, ranking primitives)
+     Railway Postgres (content_items, read state, ingest/repair/Operations state)
 ```
 
 ## Data Ownership
@@ -44,6 +45,7 @@ The Social Wire follows a protocol-first ownership model:
 | Entry lists and indexed detail | Gateway Thin AppView `content_items` | Derived; TTL-bound |
 | RSS entry bodies | Parsed feed content in `content_items.render_json` when supplied | Derived; TTL-bound |
 | Read state | Client local cache + Social Wire AppView `read_marks`/read floors | User-visible derived state |
+| Hosted caches and leases | Private Railway Redis | Disposable and rebuildable |
 
 User organisation data remains on the PDS. Feed read/unread state is not written to ATProto repo records. Current clients require AppView for feeds and entry detail; a disabled or unavailable AppView produces an unavailable read path rather than a long-lived PDS-direct list fallback. See [appview.md](appview.md).
 
@@ -91,14 +93,14 @@ With `ENABLE_THIN_APPVIEW` enabled on AppView, **Charybdis** (the `appview-worke
 
 Enrollment (`POST /v1/appview/enroll`) backfills followed author DIDs after client-side discovery because the global relay may miss very new repos.
 
-Full design: [appview.md](appview.md). Railway deploys each service from its config in [`railway/`](../../railway/README.md).
+Full designs: [appview.md](appview.md) and [redis.md](redis.md). Railway deploys each service from its config in [`railway/`](../../railway/README.md).
 
 ## Deployment
 
 ### Infrastructure
 
 Development and production run as isolated Railway environments. Web, Operations Web,
-Gateway, AppView, Charybdis, Operations, Tap, and Railway Postgres deploy in each
+Gateway, AppView, Charybdis, Operations, Tap, Railway Postgres, and a private disposable Redis deploy in each
 environment. Service-to-service traffic uses Railway private networking.
 
 ```

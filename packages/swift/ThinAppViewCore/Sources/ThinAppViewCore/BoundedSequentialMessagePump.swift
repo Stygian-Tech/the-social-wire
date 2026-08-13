@@ -12,6 +12,12 @@ public struct BoundedQueueObservation: Sendable, Equatable {
   }
 }
 
+enum BoundedMessageEnqueueResult: Sendable, Equatable {
+  case accepted
+  case saturated
+  case stopped
+}
+
 /// A bounded FIFO for callback-based transports. Saturation is reported synchronously so callers reconnect.
 final class BoundedSequentialMessagePump: @unchecked Sendable {
   private let lock = NSLock()
@@ -36,14 +42,22 @@ final class BoundedSequentialMessagePump: @unchecked Sendable {
     self.onObservation = onObservation
   }
 
-  func enqueue(_ message: String) -> Bool {
+  func enqueue(_ message: String) -> BoundedMessageEnqueueResult {
     lock.lock()
-    guard pending < capacity, !failed else {
+    guard !failed else {
       dropped += 1
       let observation = observationLocked()
       lock.unlock()
       onObservation(observation)
-      return false
+      return .stopped
+    }
+    guard pending < capacity else {
+      failed = true
+      dropped += 1
+      let observation = observationLocked()
+      lock.unlock()
+      onObservation(observation)
+      return .saturated
     }
     pending += 1
     let observation = observationLocked()
@@ -65,7 +79,7 @@ final class BoundedSequentialMessagePump: @unchecked Sendable {
     }
     lock.unlock()
     onObservation(observation)
-    return true
+    return .accepted
   }
 
   /// Waits for the messages currently accepted by the pump to finish processing.

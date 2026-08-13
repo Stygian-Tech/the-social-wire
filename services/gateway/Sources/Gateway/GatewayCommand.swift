@@ -56,7 +56,6 @@ struct Serve: AsyncParsableCommand {
     do {
       switch config.cacheBackend {
       case .sqlite(let path):
-        let cache = try SQLiteCache(path: path, logger: logger)
         let operationsStore = try SQLiteOperationsStore(
           path: path,
           environment: operationsEnvironment,
@@ -64,6 +63,27 @@ struct Serve: AsyncParsableCommand {
           logger: logger
         )
         let telemetry = OperationsTelemetryBuffer(store: operationsStore, logger: logger)
+        let pdsCacheBackend = try GatewayPdsCacheBackend.selected(
+          from: environment,
+          default: .sqlite
+        )
+        let redisRuntime = pdsCacheBackend == .redis
+          ? RedisPdsRepoRecordCacheRuntime.make(
+            environment: environment,
+            appEnvironment: config.core.appEnv.rawValue,
+            logger: logger,
+            telemetry: RedisOperationsTelemetryAdapter.sink(
+              telemetry: operationsConfig.enabled ? telemetry : nil,
+              service: "gateway"
+            )
+          )
+          : nil
+        let cache: any PdsRepoRecordCacheStore = if pdsCacheBackend == .redis {
+          redisRuntime?.store ?? UnavailablePdsRepoRecordCacheStore()
+        } else {
+          try SQLiteCache(path: path, logger: logger)
+        }
+        await redisRuntime?.installResolutionCache()
         let heartbeat = OperationsHeartbeatJob(
           store: operationsStore,
           service: "gateway",
@@ -94,11 +114,11 @@ struct Serve: AsyncParsableCommand {
           try await group.next()
           group.cancelAll()
         }
+        await redisRuntime?.shutdown()
 
       case .postgres(let urlString):
         let pgConfig = try makePostgresConfig(from: urlString, logger: logger)
         let pgPool = PostgresClient(configuration: pgConfig, backgroundLogger: logger)
-        let cache = PostgresCache(pool: pgPool, logger: logger)
         let operationsStore = PostgresOperationsStore(
           pool: pgPool,
           environment: operationsEnvironment,
@@ -106,6 +126,25 @@ struct Serve: AsyncParsableCommand {
           logger: logger
         )
         let telemetry = OperationsTelemetryBuffer(store: operationsStore, logger: logger)
+        let pdsCacheBackend = try GatewayPdsCacheBackend.selected(
+          from: environment,
+          default: .postgres
+        )
+        let redisRuntime = pdsCacheBackend == .redis
+          ? RedisPdsRepoRecordCacheRuntime.make(
+            environment: environment,
+            appEnvironment: config.core.appEnv.rawValue,
+            logger: logger,
+            telemetry: RedisOperationsTelemetryAdapter.sink(
+              telemetry: operationsConfig.enabled ? telemetry : nil,
+              service: "gateway"
+            )
+          )
+          : nil
+        let cache: any PdsRepoRecordCacheStore = pdsCacheBackend == .redis
+          ? redisRuntime?.store ?? UnavailablePdsRepoRecordCacheStore()
+          : PostgresCache(pool: pgPool, logger: logger)
+        await redisRuntime?.installResolutionCache()
         let heartbeat = OperationsHeartbeatJob(
           store: operationsStore,
           service: "gateway",
@@ -137,6 +176,7 @@ struct Serve: AsyncParsableCommand {
           try await group.next()
           group.cancelAll()
         }
+        await redisRuntime?.shutdown()
       }
     } catch {
       serverError = error

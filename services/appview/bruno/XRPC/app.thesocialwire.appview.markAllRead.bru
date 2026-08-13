@@ -1,0 +1,32 @@
+meta {
+  name: XRPC app.thesocialwire.appview.markAllRead
+  type: http
+  seq: 26
+}
+
+post {
+  url: {{baseUrl}}/xrpc/app.thesocialwire.appview.markAllRead
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "scope": {
+      "kind": "{{markAllReadScopeKind}}",
+      "publicationId": "{{publicationId}}",
+      "folderRkey": "{{folderRkey}}"
+    }
+  }
+}
+
+docs {
+  Scope kinds: `publication`, `folder`, `subscribed`, `following`.
+  Success returns `marked`, `confirmedAt`, tuple `boundaries`, and `unreadCounts`.
+}

@@ -3,6 +3,7 @@ import type { OAuthSession } from "@atproto/oauth-client-browser";
 import type { PreferencesRecord, RepoRecord } from "@/lib/pdsClient";
 import { COLLECTION_PREFERENCES } from "@/lib/pdsClient";
 import { gatewayFetch } from "@/lib/socialWireGatewayClient";
+import { socialWireXrpc } from "@/lib/socialWireXrpc";
 
 export type SyncPreferencesEnvelope = {
   etag?: string | null;
@@ -17,7 +18,7 @@ export async function fetchSyncPreferences(
   viewerDid: string,
   ifNoneMatch?: string | null
 ): Promise<RepoRecord<PreferencesRecord> | null> {
-  const res = await gatewayFetch(oauthSession, "/v1/sync/preferences", {
+  const res = await gatewayFetch(oauthSession, socialWireXrpc.getPreferences, {
     method: "GET",
     headers: ifNoneMatch ? { "If-None-Match": ifNoneMatch } : undefined,
   });

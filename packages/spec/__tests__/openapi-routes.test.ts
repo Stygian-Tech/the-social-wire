@@ -71,6 +71,7 @@ describe("OpenAPI route drift", () => {
       "/ios-client-metadata.json": ['"/ios-client-metadata.json"'],
       "/operations-oauth-client-metadata.json": ['"/operations-oauth-client-metadata.json"'],
       "/v1/sync/preferences": ['"/v1/sync/preferences"'],
+      "/v1/sync/migrate-lexicons": ['"/v1/sync/migrate-lexicons"'],
       "/v1/pds/cache/record": ['"/v1/pds/cache/record"'],
       "/v1/publications/sidebar": ['"/v1/publications/sidebar"'],
       "/v1/publications/refresh": ['"/v1/publications/refresh"'],
@@ -83,7 +84,9 @@ describe("OpenAPI route drift", () => {
       ],
       "/v1/publications/prefs": ['"/v1/publications/prefs"'],
       "/v1/publications/subscriptions": ['"/v1/publications/subscriptions"'],
+      "/v1/publications/subscriptions/{rkey}": ['"/v1/publications/subscriptions/:rkey"'],
       "/v1/publications/rss-subscriptions": ['"/v1/publications/rss-subscriptions"'],
+      "/v1/publications/rss-subscriptions/{rkey}": ['"/v1/publications/rss-subscriptions/:rkey"'],
       "/v1/appview/entries": ['"/v1/appview/entries"'],
       "/v1/appview/feed": ['"/v1/appview/feed"'],
       "/v1/appview/entry": ['"/v1/appview/entry"'],
@@ -129,6 +132,28 @@ describe("OpenAPI route drift", () => {
       const patterns = routePatterns[path];
       expect(patterns).toBeDefined();
       expect(patterns!.some((p) => routerSources.includes(p))).toBe(true);
+    }
+  });
+
+  it("documents every directly registered literal /v1 path", () => {
+    const documented = new Set(extractOpenAPIPaths(readFileSync(OPENAPI_PATH, "utf8")));
+    const routeFiles = [
+      ...collectSwiftFiles(GATEWAY_SOURCES),
+      ...collectSwiftFiles(GATEWAY_CORE_SOURCES),
+      ...collectSwiftFiles(APPVIEW_SOURCES),
+      ...collectSwiftFiles(OPERATIONS_SOURCES),
+    ];
+    const directlyRegistered = routeFiles.flatMap((file) => {
+      const source = readFileSync(file, "utf8");
+      return [...source.matchAll(/(?:group|router)\.(?:get|post|put|delete|patch)\("([^"]+)"/g)]
+        .map((match) => match[1]!)
+        .filter((path) => path.startsWith("/v1/") && !path.includes("\\("))
+        .map((path) => path.replace(/:([A-Za-z][A-Za-z0-9_]*)/g, "{$1}"));
+    });
+
+    expect(directlyRegistered.length).toBeGreaterThan(0);
+    for (const path of directlyRegistered) {
+      expect(documented.has(path), path).toBe(true);
     }
   });
 

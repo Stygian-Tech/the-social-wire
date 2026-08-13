@@ -1,0 +1,16 @@
+meta {
+  name: XRPC app.thesocialwire.appview.getEntry
+  type: http
+  seq: 21
+}
+
+get {
+  url: {{baseUrl}}/xrpc/app.thesocialwire.appview.getEntry?entryId={{entryId}}
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}

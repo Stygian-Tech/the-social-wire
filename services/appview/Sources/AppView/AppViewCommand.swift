@@ -61,7 +61,6 @@ struct Serve: AsyncParsableCommand {
       switch config.storeBackend {
       case .sqlite(let path):
         let store = try SQLiteThinAppViewStore(path: path, logger: logger)
-        let projectionCache = try SQLiteAppViewProjectionCacheStore(path: path, logger: logger)
         let operationsStore = try SQLiteOperationsStore(
           path: path,
           environment: operationsEnvironment,
@@ -69,6 +68,27 @@ struct Serve: AsyncParsableCommand {
           logger: logger
         )
         let telemetry = OperationsTelemetryBuffer(store: operationsStore, logger: logger)
+        let cacheBackend = try AppViewProjectionCacheBackend.fromEnvironment(
+          environment,
+          default: .sqlite
+        )
+        let redisRuntime = cacheBackend == .redis
+          ? RedisProjectionCacheRuntime.make(
+            environment: environment,
+            appEnvironment: config.core.appEnv.rawValue,
+            logger: logger,
+            telemetry: RedisOperationsTelemetryAdapter.sink(
+              telemetry: operationsConfig.enabled ? telemetry : nil,
+              service: "appview"
+            )
+          )
+          : nil
+        let projectionCache: (any AppViewProjectionCacheStore)? = if cacheBackend == .redis {
+          redisRuntime?.store
+        } else {
+          try SQLiteAppViewProjectionCacheStore(path: path, logger: logger)
+        }
+        await redisRuntime?.installResolutionCache()
         let heartbeat = OperationsHeartbeatJob(
           store: operationsStore,
           service: "appview",
@@ -97,15 +117,16 @@ struct Serve: AsyncParsableCommand {
           group.addTask { try await app.run() }
           if operationsConfig.enabled { group.addTask { await telemetry.runForever() } }
           if operationsConfig.enabled { group.addTask { await heartbeat.runForever() } }
+          if let redisRuntime { group.addTask { await redisRuntime.runInfoSampling() } }
           try await group.next()
           group.cancelAll()
         }
+        await redisRuntime?.shutdown()
 
       case .postgres(let urlString):
         let pgConfig = try makePostgresConfig(from: urlString, logger: logger)
         let pgPool = PostgresClient(configuration: pgConfig, backgroundLogger: logger)
         let store = PostgresThinAppViewStore(pool: pgPool, logger: logger)
-        let projectionCache = PostgresAppViewProjectionCacheStore(pool: pgPool, logger: logger)
         let operationsStore = PostgresOperationsStore(
           pool: pgPool,
           environment: operationsEnvironment,
@@ -113,6 +134,25 @@ struct Serve: AsyncParsableCommand {
           logger: logger
         )
         let telemetry = OperationsTelemetryBuffer(store: operationsStore, logger: logger)
+        let cacheBackend = try AppViewProjectionCacheBackend.fromEnvironment(
+          environment,
+          default: .postgres
+        )
+        let redisRuntime = cacheBackend == .redis
+          ? RedisProjectionCacheRuntime.make(
+            environment: environment,
+            appEnvironment: config.core.appEnv.rawValue,
+            logger: logger,
+            telemetry: RedisOperationsTelemetryAdapter.sink(
+              telemetry: operationsConfig.enabled ? telemetry : nil,
+              service: "appview"
+            )
+          )
+          : nil
+        let projectionCache: (any AppViewProjectionCacheStore)? = cacheBackend == .redis
+          ? redisRuntime?.store
+          : PostgresAppViewProjectionCacheStore(pool: pgPool, logger: logger)
+        await redisRuntime?.installResolutionCache()
         let heartbeat = OperationsHeartbeatJob(
           store: operationsStore,
           service: "appview",
@@ -142,9 +182,11 @@ struct Serve: AsyncParsableCommand {
           group.addTask { try await app.run() }
           if operationsConfig.enabled { group.addTask { await telemetry.runForever() } }
           if operationsConfig.enabled { group.addTask { await heartbeat.runForever() } }
+          if let redisRuntime { group.addTask { await redisRuntime.runInfoSampling() } }
           try await group.next()
           group.cancelAll()
         }
+        await redisRuntime?.shutdown()
       }
     } catch {
       serverError = error
