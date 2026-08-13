@@ -1,83 +1,90 @@
 # Web app
 
-Next.js client under `apps/web`.
+The production web reader is [thesocialwire.app](https://thesocialwire.app). It supports desktop and mobile layouts with the same four lists described in [[Getting-started]].
 
-**Setup and internals**
+## Web-only capabilities
 
-- [apps/web/README.md](https://github.com/Stygian-Tech/the-social-wire/blob/main/apps/web/README.md)
+The web client currently includes several controls that are not exposed in the Apple client:
 
-Includes ATProto OAuth (hosted vs loopback dev), PDS vs Bluesky App View usage, env vars, and testing commands.
+- System, Light, and Dark themes;
+- Sans, Serif, and Mono reader fonts plus Bold Text;
+- an RSS **Open in Reader** preference;
+- standard.site **Recommend** actions where supported; and
+- a public UserInput feedback form with optional images.
+
+Like, Reply, and Repost require a compatible Bluesky post linked to the article. **Post** can create a new post when no linked post exists.
+
+## Routes
+
+- `/read` — Subscribed, Following, folders, publications, and articles
+- `/saved` — active L@tr Link queue
+- `/archive` — archived saved links
+- `/me` — My Publications and account settings
+- `/login` and `/callback` — ATProto OAuth
+
+`/saved/settings` is a compatibility redirect to `/saved`; there is no read-later provider selector.
+
+## Developer setup
+
+The Next.js client lives under `apps/web` and uses Bun.
+
+```bash
+bun install
+cd apps/web
+cp .env.example .env.local
+bun run dev
+```
+
+Open [http://localhost:3000](http://localhost:3000). Local `next dev` uses ATProto's parameterized loopback OAuth client; it does not bypass OAuth or require committed secrets.
+
+The full setup, environment, and OAuth reference is [apps/web/README.md](https://github.com/Stygian-Tech/the-social-wire/blob/main/apps/web/README.md).
 
 ## Data sources
 
-| Data | Path |
-|------|------|
-| **Initial load** | `GET /v1/appview/bootstrap-stream` (NDJSON) — sidebar slices, unread counts, first-unread selection, first feed page |
-| Sidebar refresh / resolve | `GET/POST /v1/publications/sidebar|refresh|resolve` via `publicationProjectionClient` |
-| Folders, prefs, subscriptions | Direct viewer-PDS writes through `PDSClient`; sidebar reads come from the gateway projection |
-| Entry **lists** | `GET /v1/appview/feed` for aggregate/current feeds; `GET /v1/appview/entries` for scoped publication rows and prefetches |
-| Entry **detail** | `GET /v1/appview/entry`; a narrow author-PDS read may recover a missing original/embed URL |
-| Read state | Local `the-social-wire.read-state.v1` for optimistic UI + AppView read marks |
-| Mark all read | `POST /v1/appview/mark-all-read` (scoped read floor/counter update) |
+| Data | Current path |
+|------|--------------|
+| Initial load | `GET /v1/appview/bootstrap-stream` NDJSON |
+| Sidebar refresh and resolve | Hosted `/v1/publications/*`; the current checkout migrates eligible calls to pending Gateway XRPC methods |
+| Folders, preferences, subscriptions | Direct viewer-PDS writes through the OAuth session |
+| Entry lists and detail | Hosted `/v1/appview/feed`, `/entries`, and flat `/entry`; the current checkout adds pending XRPC equivalents |
+| Read state | Browser local storage for immediate UI plus AppView read marks/floors |
+| Read Later and Archive | Same-origin `/api/latr-gateway` backed by L@tr Link, with limited direct-PDS fallback |
 
-## AppView read path
+Current web and Apple clients do not create `app.thesocialwire.entryReadState` records. Cross-client refresh asks AppView for current unread baselines.
 
-The current reader requires the gateway, AppView, worker, and database migrations. The web switch defaults on; explicitly setting it to `false` is only useful when diagnosing a deployment without AppView routes:
-
-```bash
-# apps/web/.env.local
-NEXT_PUBLIC_USE_THIN_APPVIEW=true
-NEXT_PUBLIC_SOCIALWIRE_API_URL=https://api.thesocialwire.app
-```
+## Important modules
 
 | Module | Role |
 |--------|------|
-| `usePublicationSidebarData` | Bootstrap stream + sidebar projection cache |
-| `useEntries` | AppView publication/aggregate infinite queries and flat entry detail |
-| `useProactiveFeedRefresh` | Background/refocus refresh of active publication feed |
-| `lib/feedRefresh.ts` | Merge first-page refresh without invalidating pagination |
-| `lib/thinAppViewClient.ts` | AppView entries, unread counts, read marks, enroll |
-| `lib/publicationProjectionClient.ts` | Sidebar JSON client |
-| `lib/pdsClient.ts` | Direct viewer-PDS XRPC for folders, preferences, subscriptions, and local L@tr assembly/fallbacks |
+| `PublicationSidebarProvider` / `usePublicationSidebarData` | Bootstrap stream and sidebar projection state |
+| `useEntries` | AppView publication and aggregate infinite queries |
+| `useProactiveFeedRefresh` | Visible-feed background and focus refresh |
+| `thinAppViewClient.ts` | AppView feed, detail, unread, mutation, enrollment, and purge client |
+| `publicationProjectionClient.ts` | Publication projection client |
+| `pdsClient.ts` | Viewer-PDS folders, preferences, subscriptions, and L@tr compatibility |
+| `entryReadStateStorage.ts` | Browser-local optimistic read map |
 
-**Proactive feed refresh:** while a publication is open and the tab is visible, the client periodically refetches the first feed page and merges new rows (post-bootstrap enroll runs once; ongoing polls skip enroll).
+Persisted browser caches include a bounded TanStack Query snapshot in IndexedDB, local read state, sidebar expansion state scoped by viewer DID, and a local image blob cache. They contain no OAuth secrets and are rebuildable.
 
-Local optimistic read state remains primary for UI; AppView enables server-side unread pagination and sidebar badges.
+## Environment
 
-Signed-in read marks are also synchronized to deterministic `app.thesocialwire.entryReadState` records on the viewer's PDS so web and Apple clients can reconcile state across devices.
+| Environment | Web | Gateway |
+|-------------|-----|---------|
+| Development | `https://testing.thesocialwire.app` | `https://api.testing.thesocialwire.app` |
+| Production | `https://thesocialwire.app` | `https://api.thesocialwire.app` |
 
-See [[Thin-AppView]].
+Set `NEXT_PUBLIC_APP_ENV`, `NEXT_PUBLIC_SITE_URL`, and `NEXT_PUBLIC_SOCIALWIRE_API_URL` from the same row. Hosted OAuth metadata is same-origin. Generated Railway domains must not be used as public OAuth identities.
 
-## Read Later and Archive
+## Verification
 
-`/saved` and `/archive` are sibling destinations using the same three-pane reader shell. `/saved/settings` redirects to `/saved`; the UI does not offer a read-later provider selector. L@tr Link is the default: lists use the same-origin `/api/latr-gateway` proxy, and mutations use that proxy with the direct-PDS fallbacks implemented by the web provider.
+```bash
+cd apps/web
+bun test
+bun run typecheck
+bun run lint
+bun run build
+```
 
-## Testing
+See [[Testing]] and the [web test plan](https://github.com/Stygian-Tech/the-social-wire/blob/main/docs/test-plans/web.md).
 
-Unit tests: `cd apps/web && bun test` (CI: `web`).
-
-| Area | Coverage |
-|------|----------|
-| `src/lib/` | Broad helper coverage — see [test plan](https://github.com/Stygian-Tech/the-social-wire/blob/main/docs/test-plans/web.md) |
-| `src/hooks/` | Entries, sidebar, bootstrap stream, proactive refresh, read-later |
-| `src/app/api/` | Route handler tests |
-| `src/components/` | Targeted component tests plus manual browser verification |
-
-See [[Testing]].
-
-## Railway environments
-
-The Web and Gateway services use stable custom domains even though Railway also assigns generated service URLs:
-
-| Environment | Web | Gateway | OAuth client metadata |
-|-------------|-----|---------|-----------------------|
-| Development | `https://testing.thesocialwire.app` | `https://api.testing.thesocialwire.app` | Web `/oauth-client-metadata.json` |
-| Production | `https://thesocialwire.app` | `https://api.thesocialwire.app` | Web `/oauth-client-metadata.json` |
-
-Set `NEXT_PUBLIC_APP_ENV`, `NEXT_PUBLIC_SITE_URL`, and `NEXT_PUBLIC_SOCIALWIRE_API_URL` from the matching row. Both hosted Web environments serve same-origin OAuth metadata. OAuth client IDs, redirect URIs, Gateway CORS, and `OAUTH_PUBLIC_ORIGIN` must use these custom domains rather than generated `*.up.railway.app` URLs.
-
-## Related
-
-- Example env: [apps/web/.env.example](https://github.com/Stygian-Tech/the-social-wire/blob/main/apps/web/.env.example)
-- Hosted OAuth metadata: [client-metadata.json](https://github.com/Stygian-Tech/the-social-wire/blob/main/apps/web/public/client-metadata.json)
-- [[Service-API]] — gateway + appview routes and deployment
+Related: [[Reading-and-organizing]], [[Read-Later-and-Archive]], [[Service-API]], [[Thin-AppView]].

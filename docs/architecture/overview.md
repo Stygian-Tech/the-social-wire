@@ -1,5 +1,10 @@
 # Architecture Overview
 
+> **Release status:** the current checkout adds Lexicon-defined Social Wire XRPC
+> aliases and client calls, but both public Gateway environments still return
+> `404` for them as of 2026-08-12. The deployed application continues to use the
+> retained `/v1/*` routes until the backend and clients ship together.
+
 ## System Components
 
 ```
@@ -24,8 +29,8 @@
           ▼ (authenticated read path)
    Social Wire Gateway (Railway)
      /v1/sync/preferences, /v1/pds/cache/record
-     /v1/publications/* (write-through + proxied sidebar)
-     /v1/appview/*  ← Thin AppView (proxied to services/appview)
+     /xrpc/app.thesocialwire.* (eligible JSON queries/procedures)
+     /v1/* compatibility, write-through, streams, L@tr, telemetry
           │
           ▼
      Railway Redis (projection/PDS caches, PLC/RSS leases, ranking primitives)
@@ -89,9 +94,22 @@ See [discovery.md](discovery.md) for the detailed walkthrough.
 
 ## Thin AppView
 
-With `ENABLE_THIN_APPVIEW` enabled on AppView, **Charybdis** (the `appview-worker` process) ingests standard.site commits from Jetstream or the environment-matched Tap service, polls subscribed Skyreader RSS feeds, and writes derived `content_items`. Clients load the sidebar and first feed page via **`GET /v1/appview/bootstrap-stream`**, paginate publication lists with `GET /v1/appview/entries` and aggregate feeds with `GET /v1/appview/feed`, and load indexed detail through `GET /v1/appview/entry`. Web performs only narrow author-PDS URL/embed enrichment when indexed standard.site detail lacks a usable destination. Feed read writes go to AppView read-mark and mark-all-read routes. The separate Operations service records environment-scoped health, gaps, recovery jobs, and audited operator actions.
+With `ENABLE_THIN_APPVIEW` enabled on AppView, **Charybdis** (the
+`appview-worker` process) ingests standard.site commits from Jetstream or the
+environment-matched Tap service, polls subscribed Skyreader RSS feeds, and
+writes derived `content_items`. Clients load the sidebar and first feed page via
+**`GET /v1/appview/bootstrap-stream`**, then use Lexicon-defined
+`app.thesocialwire.publication.*` and `app.thesocialwire.appview.*` XRPC methods
+for eligible JSON reads and mutations. Compatibility `/v1/*` routes remain
+documented in OpenAPI. Web performs only narrow author-PDS URL/embed enrichment
+when indexed standard.site detail lacks a usable destination. The separate
+Operations service records environment-scoped health, gaps, recovery jobs, and
+audited operator actions through its own XRPC namespace and compatibility
+routes.
 
-Enrollment (`POST /v1/appview/enroll`) backfills followed author DIDs after client-side discovery because the global relay may miss very new repos.
+Enrollment (`app.thesocialwire.appview.enrollSources`, with a
+`POST /v1/appview/enroll` compatibility route) backfills followed author DIDs
+after client-side discovery because the global relay may miss very new repos.
 
 Full designs: [appview.md](appview.md) and [redis.md](redis.md). Railway deploys each service from its config in [`railway/`](../../railway/README.md).
 
@@ -99,9 +117,12 @@ Full designs: [appview.md](appview.md) and [redis.md](redis.md). Railway deploys
 
 ### Infrastructure
 
-Development and production run as isolated Railway environments. Web, Operations Web,
-Gateway, AppView, Charybdis, Operations, Tap, Railway Postgres, and a private disposable Redis deploy in each
-environment. Service-to-service traffic uses Railway private networking.
+Development and production run as isolated Railway environments. Web,
+Operations Web, Gateway, AppView, Charybdis, Operations, Tap, and Railway
+Postgres deploy in each environment. A private disposable Redis is currently
+selected by Gateway, AppView, and Charybdis in both environments; Postgres cache
+tables remain available as rollback backends. Service-to-service traffic uses
+Railway private networking.
 
 ```
 GitHub (source)
@@ -124,11 +145,15 @@ Gateway's Railway pre-deploy command applies pending database migrations before 
 |-------------|--------|-----------------|
 | Production | `main` | Railway Web, Operations Web, Gateway, AppView, Charybdis, Operations, Tap, and Postgres |
 | Development | `dev` | Railway Web, Operations Web, Gateway, AppView, Charybdis, Operations, Tap, and Postgres |
-| Local | — | Gateway/AppView/Charybdis use `APP_ENV=local` + SQLite; Operations uses `APP_ENV=dev` + a development Postgres URL |
+| Local | — | Web runs in local mode; Swift service integration uses `APP_ENV=dev` plus an isolated disposable Postgres URL |
 
 ### Local development
 
-Run Swift services directly (see root README) with AppView and Charybdis pointed at the same explicit SQLite file. Under `APP_ENV=local`, Gateway, AppView, and Charybdis use SQLite. Operations requires `APP_ENV=dev` or `prod` and a Postgres `DATABASE_URL`.
+Run Swift services directly as described in the root README, with Gateway,
+AppView, and Charybdis pointed at the same isolated disposable Postgres database.
+SQLite backends remain implemented, but all three process entry points currently
+share the Operations `APP_ENV=dev|prod` guard, so `APP_ENV=local` startup is not
+runnable.
 
 ## Verification
 

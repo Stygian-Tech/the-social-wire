@@ -1,63 +1,106 @@
-# Service API
+# Services and API
 
-Distributed backend under **`services/gateway`**, **`services/appview`**, **`services/appview-worker`**, **`services/operations`**, and **`services/tap`**.
+Clients call the public **Gateway** host. AppView, Operations, Tap, databases, and most worker traffic stay on Railway private networking.
 
-**HTTP contract:** [packages/spec/openapi.yaml](https://github.com/Stygian-Tech/the-social-wire/blob/main/packages/spec/openapi.yaml)
+**Machine-readable contracts:**
+[OpenAPI](https://github.com/Stygian-Tech/the-social-wire/blob/main/packages/spec/openapi.yaml),
+[endpoint transport manifest](https://github.com/Stygian-Tech/the-social-wire/blob/main/packages/spec/endpoint-manifest.json),
+and [service Lexicons](https://github.com/Stygian-Tech/the-social-wire/tree/main/packages/lexicons/app/thesocialwire).
 
-## Surfaces
+The current checkout implements a migration of eligible authenticated JSON
+queries and procedures to `/xrpc/app.thesocialwire.*`, with `/v1/*`
+compatibility routes retained. **Release status:** as verified on 2026-08-12,
+both public Gateway environments still return `404` for these Social Wire XRPC
+methods while protected `/v1` routes are registered. Until the XRPC changes are
+committed, deployed, and smoke-tested, `/v1/*` is the current hosted contract.
 
-| Service | Role | Public routes |
-|---------|------|---------------|
-| **Gateway** | OAuth metadata, DPoP verification, PDS write-through, sync cache, AppView/Operations proxies | `/health`, `/oauth/*`, `/v1/sync/*`, `/v1/pds/cache/*`, `/v1/publications/*`, `/v1/latr/*`, `/v1/telemetry/*`, proxied `/v1/appview/*` and `/v1/operations/*` |
-| **AppView** | Sidebar projection, Thin AppView read index, bootstrap stream | `/v1/publications/sidebar|refresh|resolve`, `/v1/appview/*` (when **`ENABLE_THIN_APPVIEW`**) |
-| **Charybdis** | Jetstream/Tap ingestion, Skyreader RSS polling, proactive backfill, TTL cleanup | No HTTP API |
-| **Operations** | Operator-only observability, gaps, backfills, traces, and audited controls | Internal operations routes proxied through Gateway |
-| **Tap** | Pinned Indigo Tap synchronization service used by Charybdis | Private authenticated Tap API |
+Streaming, health/readiness, OAuth metadata, telemetry, PDS write-through,
+L@tr, and vendor-owned transports stay HTTP rather than being forced into XRPC.
+The endpoint manifest records the intended transport per operation.
 
-Gateway→AppView calls use **`GATEWAY_APPVIEW_INTERNAL_SECRET`** HMAC trust headers so AppView can skip JWT re-verification on proxied requests. Clients always hit the **gateway** host (`api.thesocialwire.app` / `api.testing.thesocialwire.app`).
+## Service boundaries
 
-First-party clients only on hosted deploys (`OAUTH_GATEWAY_*` allowlists).
+| Service | Role | HTTP surface |
+|---------|------|--------------|
+| **Gateway** | OAuth metadata, DPoP verification, sync/PDS acceleration, publication write-through, AppView/L@tr/Operations proxy | Public health/metadata and `/v1/*`; pending source also registers `/xrpc/app.thesocialwire.*` |
+| **AppView** | Sidebar projection, indexed reads, unread state, bootstrap stream | Private `/v1/publications/*` and `/v1/appview/*`; pending source adds XRPC aliases |
+| **Charybdis** | Jetstream/Tap ingestion, RSS polling, backfill, repair, TTL cleanup | No application HTTP API |
+| **Operations** | Operator evidence and controlled recovery | Private `/v1/operations/*`, proxied by Gateway; pending source adds Operations XRPC aliases |
+| **Tap** | Pinned Indigo repository synchronization | Private authenticated Tap API |
 
-## Local development
+## Gateway compatibility route groups
+
+| Group | Purpose |
+|-------|---------|
+| OAuth metadata | Web, Apple, and Operations client registrations |
+| `/v1/sync/*` | Preferences envelope and legacy Social Wire lexicon migration |
+| `/v1/pds/cache/*` | Short-lived single-record read acceleration |
+| `/v1/publications/*` | Sidebar proxy, resolve/refresh, and native PDS write-through |
+| `/v1/appview/*` | Bootstrap, feeds, entry detail, unread counts, read mutations, enrollment, purge |
+| `/v1/latr/*` | Native L@tr Link list/save/preview proxy |
+| `/v1/telemetry/*` | Bounded, deidentified client-performance samples |
+| `/v1/operations/*` | Operator-only control-plane proxy |
+
+Examples in the pending XRPC surface include
+`app.thesocialwire.sync.getPreferences`,
+`app.thesocialwire.publication.getSidebar`,
+`app.thesocialwire.appview.getFeed`, and
+`app.thesocialwire.operations.getOverview`. Query inputs use the URL query
+string; procedures use JSON request bodies. XRPC errors use the standard
+`{"error":"Name","message":"..."}` envelope.
+
+AppView proxy routes mount only when `APPVIEW_BASE_URL` is configured. Operations routes require `OPERATIONS_BASE_URL` and a distinct `GATEWAY_OPERATIONS_INTERNAL_SECRET`. Native L@tr routes mount only when the server-side `LATR_IOS_PROXY_*` credentials are configured.
+
+Gateway→AppView trust uses `GATEWAY_APPVIEW_INTERNAL_SECRET`, with HMAC over the request path. Gateway→Operations uses its separate Operations secret. External clients must never send or know either internal secret.
+
+## Authentication and authorization
+
+Authenticated routes accept an ATProto OAuth access token and a request-bound RFC 9449 DPoP proof. A gateway-bound DPoP proof cannot be forwarded to a PDS or L@tr origin; native write-through paths use distinct upstream proof headers.
+
+Known-client enforcement is conditional on `OAUTH_GATEWAY_REQUIRE_KNOWN_CLIENT`. When enabled, token claims must match the configured client-ID and/or audience allowlists. Operations routes additionally enforce `OPERATIONS_OPERATOR_DIDS`.
+
+## Local integration
+
+The current Gateway, AppView, and Charybdis executables reject `APP_ENV=local` through the shared Operations environment guard even though SQLite backends remain implemented. Use an isolated disposable Postgres database and `APP_ENV=dev` until that mismatch is fixed.
 
 ```bash
-# Run each long-lived service in a separate terminal.
-# Gateway (OAuth, sync, writes, AppView proxy)
-(cd services/gateway && APP_ENV=local APPVIEW_BASE_URL=http://127.0.0.1:8081 GATEWAY_APPVIEW_INTERNAL_SECRET=local-development-only swift run Gateway)
+# Apply migrations to a disposable database first.
+DATABASE_URL='postgresql://…' bash scripts/apply-database-migrations.sh
 
-# AppView (sidebar + Thin AppView reads)
-(cd services/appview && APP_ENV=local ENABLE_THIN_APPVIEW=true SQLITE_DB_PATH=/tmp/the-social-wire-appview.sqlite GATEWAY_APPVIEW_INTERNAL_SECRET=local-development-only swift run AppView)
+# Terminal 1: AppView
+cd services/appview
+APP_ENV=dev DATABASE_URL='postgresql://…' ENABLE_THIN_APPVIEW=true \
+  GATEWAY_APPVIEW_INTERNAL_SECRET=local-development-only swift run AppView
 
-# Charybdis (Jetstream ingestion — optional locally)
-(cd services/appview-worker && APP_ENV=local ENABLE_THIN_APPVIEW=true SQLITE_DB_PATH=/tmp/the-social-wire-appview.sqlite swift run AppViewWorker)
+# Terminal 2: Gateway
+cd services/gateway
+APP_ENV=dev DATABASE_URL='postgresql://…' \
+  APPVIEW_BASE_URL=http://127.0.0.1:8081 \
+  GATEWAY_APPVIEW_INTERNAL_SECRET=local-development-only swift run Gateway
 
-# Operations control plane
-(cd services/operations && APP_ENV=dev DATABASE_URL='postgresql://…' swift run Operations)
-
-# Tests run from each service/package directory with `swift test`.
+# Terminal 3: Charybdis (optional; connects to live public ingestion by default)
+cd services/appview-worker
+APP_ENV=dev DATABASE_URL='postgresql://…' ENABLE_THIN_APPVIEW=true \
+  TAP_CONSUMER_MODE=disabled swift run AppViewWorker
 ```
 
-Set **`APPVIEW_BASE_URL`** on Gateway and point local AppView plus Charybdis at the same absolute **`SQLITE_DB_PATH`** so worker ingestion is visible to reads. Gateway/AppView/Charybdis local mode uses SQLite; Operations is intentionally environment-scoped and requires Postgres.
+Use the same disposable database for these three processes. Do not point local runs at hosted Development or Production data. Charybdis consumes external Jetstream traffic unless you explicitly configure an isolated source, so start it only when that effect is intended.
 
 ## Bruno collections
 
-- `services/gateway/bruno/` — gateway routes + AppView proxy smoke tests
-- `services/appview/bruno/` — AppView-only routes (sidebar, bootstrap stream, entries)
-- `services/appview-worker/bruno/` — post-ingestion verification notes (worker has no HTTP)
+- `services/gateway/bruno/` — public Gateway, XRPC, compatibility, mutation, health, and metadata requests
+- `services/appview/bruno/` — direct AppView XRPC and compatibility routes
+- `services/appview-worker/bruno/` — post-ingestion verification notes; the worker has no HTTP API
 
-## CI
+## Verification
 
-| Job | Package |
-|-----|---------|
-| `gateway` | `services/gateway` |
+| CI job | Packages |
+|--------|----------|
+| `redis` | `packages/swift/SocialWireRedis` with Redis integration service |
+| `gateway` | `packages/swift/GatewayCore`, `services/gateway` |
 | `appview` | `services/appview` |
-| `charybdis` | `services/appview-worker` |
-| `operations` | `packages/swift/OperationsCore` + `services/operations` |
-| `tap` | Pinned `services/tap/Dockerfile` image build |
-| `spec` | OpenAPI drift vs gateway + appview route sources |
+| `charybdis` | `packages/swift/ThinAppViewCore`, `services/appview-worker` |
+| `operations` | `packages/swift/OperationsCore`, `services/operations` |
+| `spec` | OpenAPI contract/drift tests |
 
-## Related
-
-- [[Thin-AppView]] — flags, routes, deployment
-- [[ThinAppViewCore]] — shared indexing library
-- [[Web-app]] / [[Apple-client]] — client integration
+Related: [[Thin-AppView]], [[Operations]], [[Deployment-and-environments]], [[Web-app]], [[Apple-client]].

@@ -6,6 +6,7 @@ on:
     branches: [main]
     paths:
       - "docs/wiki/**"
+      - "scripts/check-wiki-links.sh"
       - ".github/workflows/publish-wiki.yml"
   workflow_dispatch:
 
@@ -26,6 +27,9 @@ jobs:
     steps:
       # rsync mirrors docs/wiki into the wiki repo working tree; shallow checkout is enough.
       - uses: actions/checkout@v6
+
+      - name: Check wiki links and navigation
+        run: bash scripts/check-wiki-links.sh
 
       # --delete removes wiki pages/files not present under docs/wiki/. Wiki edits committed only on
       # the wiki remote (and never mirrored here) will be wiped on the next sync unless excluded or added to docs/wiki/.

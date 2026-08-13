@@ -14,13 +14,18 @@ Web (Next.js 16.2+)     iOS/iPadOS (SwiftUI)
        ┌───────────┴───────────┐
        ▼                       ▼
 User's ATProto PDS      Social Wire gateway (Railway)
-  app.thesocialwire.*     /v1/sync, /v1/publications/*
-  link.latr.saved.*       /v1/appview/*, /v1/latr/*
+  app.thesocialwire.*     /xrpc/app.thesocialwire.* + compatibility /v1/*
+  link.latr.saved.*       bootstrap stream, PDS write-through, /v1/latr/*
                                │
                                └── AppView + Charybdis
                                    Redis (disposable cache/leases)
                                    Postgres (durable derived state)
 ```
+
+The current checkout adds Lexicon-defined `/xrpc/app.thesocialwire.*` aliases
+and migrates eligible clients to them. As verified on 2026-08-12, those aliases
+are not yet registered on the public Testing or Production gateways; deployed
+clients still use the retained `/v1/*` contract until the migration ships.
 
 ## Monorepo Structure
 
@@ -37,14 +42,14 @@ the-social-wire/
     operations/      # Operations control plane (Railway)
     tap/             # Pinned Indigo Tap image (Railway)
   packages/
-    lexicons/        # app.thesocialwire.* and L@tr ATProto lexicons
-    spec/            # OpenAPI 3.1 spec
+    lexicons/        # record schemas plus app.thesocialwire.* service XRPC lexicons
+    spec/            # OpenAPI 3.1 compatibility contract + endpoint manifest
     swift/           # GatewayCore, OperationsCore, SocialWireRedis, ThinAppViewCore
   database/
     migrations/      # Provider-neutral Postgres migration history
   docs/
     architecture/
-    wiki/        # Markdown synced to GitHub Wiki on push to main (see .github/workflows/publish-wiki.yml)
+    wiki/        # Canonical public wiki Markdown (GitHub sync; manual Lichen publish)
 ```
 
 ## Prerequisites
@@ -75,19 +80,24 @@ Open [http://localhost:3000](http://localhost:3000).
 
 ### Full-stack local dev (optional)
 
+The service executables currently accept only `APP_ENV=dev|prod` because their
+shared Operations namespace rejects `local`. Use an isolated disposable Postgres
+database for local integration; never point these commands at a hosted
+Development or Production database.
+
 ```bash
-# Run each service in a separate terminal.
+# Apply migrations to an isolated disposable Postgres database first.
+DATABASE_URL='postgresql://…' bash scripts/apply-database-migrations.sh
+
+# Run each service in a separate terminal with the same disposable DATABASE_URL.
 # Gateway (OAuth, sync, writes)
-(cd services/gateway && APP_ENV=local APPVIEW_BASE_URL=http://127.0.0.1:8081 GATEWAY_APPVIEW_INTERNAL_SECRET=local-development-only swift run Gateway)
+(cd services/gateway && APP_ENV=dev DATABASE_URL='postgresql://…' APPVIEW_BASE_URL=http://127.0.0.1:8081 GATEWAY_APPVIEW_INTERNAL_SECRET=local-development-only swift run Gateway)
 
 # AppView (sidebar + Thin AppView reads)
-(cd services/appview && APP_ENV=local ENABLE_THIN_APPVIEW=true SQLITE_DB_PATH=/tmp/the-social-wire-appview.sqlite GATEWAY_APPVIEW_INTERNAL_SECRET=local-development-only swift run AppView)
+(cd services/appview && APP_ENV=dev DATABASE_URL='postgresql://…' ENABLE_THIN_APPVIEW=true GATEWAY_APPVIEW_INTERNAL_SECRET=local-development-only swift run AppView)
 
 # Charybdis (Jetstream ingestion)
-(cd services/appview-worker && APP_ENV=local ENABLE_THIN_APPVIEW=true SQLITE_DB_PATH=/tmp/the-social-wire-appview.sqlite swift run AppViewWorker)
-
-# Migration validation (optional — Docker; local services above use SQLite)
-DATABASE_URL='postgresql://…' bash scripts/apply-database-migrations.sh
+(cd services/appview-worker && APP_ENV=dev DATABASE_URL='postgresql://…' ENABLE_THIN_APPVIEW=true TAP_CONSUMER_MODE=disabled swift run AppViewWorker)
 ```
 
 ### Running tests
@@ -114,7 +124,7 @@ See **[docs/test-plans/README.md](docs/test-plans/README.md)** for per-surface p
 - **Protocol-first where data is portable**: folders, publication preferences, subscriptions, and read-later records live on the user's own ATProto PDS
 - **AppView-owned read state**: feed read/unread state is local-first in clients and synchronized to Social Wire AppView for counters and unread filtering
 - **Thin AppView read path**: signed-in clients load bootstrap data, feeds, and entry detail through the gateway-backed AppView; standard.site bodies remain authoritative on publisher PDSes, while RSS feed bodies may be retained in the derived index (see [docs/architecture/appview.md](docs/architecture/appview.md))
-- **Disposable acceleration**: hosted projection/PDS caches, PLC coalescing, RSS leases, and reusable ranking sets use Redis; PDS/Postgres remain authoritative (see [docs/architecture/redis.md](docs/architecture/redis.md))
+- **Disposable acceleration**: projection/PDS caches, PLC coalescing, RSS leases, and reusable ranking sets can use Redis; PDS/Postgres remain authoritative. Development and Production currently select Redis, while Postgres cache tables remain the rollback backend (see [docs/architecture/redis.md](docs/architecture/redis.md))
 - **Direct ATProto where it fits**: discovery and repo reads use public XRPC; Bluesky App View (`public.api.bsky.app`) for follows and profiles only
 - **Interoperable by design**: lexicons are public — any ATProto client can read a user's Social Wire folders
 
@@ -126,7 +136,7 @@ See **[docs/test-plans/README.md](docs/test-plans/README.md)** for per-surface p
 | Gateway, AppView, Charybdis | Railway |
 | Operations + Tap | Railway |
 | Durable index/state | Railway Postgres (`database/migrations/`) |
-| Disposable cache/coordination | Private Railway Redis |
+| Optional disposable cache/coordination | Private Railway Redis (currently selected in Development and Production) |
 | CI/CD | GitHub Actions validates source; Railway deploys through its Git integration |
 
 Charybdis retains the `appview-worker` directory, executable, and telemetry service key for compatibility.
@@ -138,6 +148,7 @@ See [docs/architecture/overview.md](docs/architecture/overview.md) for the full 
 - **[Test plans](docs/test-plans/README.md)** — verification commands and coverage inventory
 - **[Contributing](CONTRIBUTING.md)** — PR workflow and test location conventions
 - **[GitHub Wiki](https://github.com/Stygian-Tech/the-social-wire/wiki)** — curated navigation and links into this repository
+- **[Lichen Wiki](https://lichen.wiki/@samclemente.me/the-social-wire)** — public user and developer documentation; publish from `docs/wiki/`
 - [Architecture overview](docs/architecture/overview.md)
 - [Lexicons](docs/architecture/lexicons.md)
 - [Discovery chain](docs/architecture/discovery.md)

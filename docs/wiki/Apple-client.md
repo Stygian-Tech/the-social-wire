@@ -1,78 +1,85 @@
-# Apple client
+# Apple app
 
-SwiftUI app under `apps/apple`.
+The native SwiftUI client supports iPhone and iPad on iOS/iPadOS 17 or later. The repository does not currently publish an App Store or TestFlight download URL, so this page documents the source build and the implemented client behavior.
 
-**Setup, OAuth, tests**
+## Navigation
 
-- [apps/apple/README.md](https://github.com/Stygian-Tech/the-social-wire/blob/main/apps/apple/README.md)
+- On iPhone, Subscribed and Following use **Lists → Publications → Articles → Reader**.
+- Read Later and Archive use **Lists → Saved Links → Reader** with no article-list pane or All/Unread filter.
+- On iPad, `NavigationSplitView` presents the same hierarchy in columns.
+- The profile avatar opens **Profile**, which contains My Publications, Settings, Log Out, and Purge Indexed Data.
 
-Covers Xcode/XcodeGen, PKCE OAuth flow, URL scheme, API environment (`SocialWireAPIEnvironment`), and architecture overview.
+Pull to refresh gives subtle impact feedback. Confirmed saves, deletes, and mark-all-read actions give success feedback.
+
+## Current Apple capabilities
+
+- Add standard.site or RSS/Atom publications under Subscribed.
+- Create/delete folders and organize subscribed publications.
+- Filter feed articles by All or Unread and use scoped Mark All As Read.
+- Save articles to L@tr Link; archive, unarchive, share, open, or delete saved links.
+- Like, reply to, repost, quote, or share when the original article has a compatible social subject.
+- Choose visible top-level lists and which list counts appear.
+- Purge the signed-in viewer's explicit AppView read marks and unread overrides after confirmation. Bulk-read floors and other projection rows currently remain.
+
+The web-only theme/font/RSS-reader controls, standard.site Recommend action, and UserInput feedback form are not currently exposed in the Apple UI.
+
+## Developer setup
+
+The Xcode/XcodeGen project lives under `apps/apple`; it is not a root Swift package.
+
+```bash
+cd apps/apple
+xcodegen generate
+open "The Social Wire.xcodeproj"
+```
+
+Use the `SocialWire` scheme for normal Debug/Release builds and `SocialWire-TestFlight` for the Beta/TestFlight configuration. New top-level Swift files may require regenerating the project.
+
+Full setup: [apps/apple/README.md](https://github.com/Stygian-Tech/the-social-wire/blob/main/apps/apple/README.md).
 
 ## Gateway usage
 
-The app calls **`SocialWireAPIEnvironment.baseURL`** for first-party accelerators:
+The current checkout migrates eligible JSON queries and procedures to
+Lexicon-defined `/xrpc/app.thesocialwire.*` methods. Those aliases are not yet
+registered on the public gateways as of 2026-08-12; the table therefore names
+the current hosted `/v1/*` and HTTP-only stream/cache surfaces.
 
 | Route | Purpose |
 |-------|---------|
-| `GET /v1/appview/bootstrap-stream` | Progressive NDJSON initial reader load (same contract as web) |
-| `GET /v1/publications/sidebar` | Sidebar projection (when not using bootstrap stream path) |
+| `GET /v1/appview/bootstrap-stream` | Progressive initial reader load |
+| `GET /v1/publications/sidebar` | Sidebar projection outside bootstrap |
 | `GET /v1/sync/preferences` | Account preferences envelope |
 | `GET /v1/pds/cache/record` | Cached single-record reads |
-| **`/v1/appview/feed`, `/entries`, `/entry`** | Aggregate/scoped lists and flat entry detail |
-| Other **`/v1/appview/*`** | Unread counts, read marks, enroll, mark-all-read, purge |
-| **`/v1/publications/*`** | Sidebar refresh/resolve and folder/subscription PDS write-through |
+| `/v1/appview/feed`, `/entries`, `/entry` | Aggregate/scoped lists and flat entry detail |
+| Other `/v1/appview/*` | Counts, read marks, enrollment, mark-all-read, purge |
+| `/v1/publications/*` | Resolve plus folder/subscription PDS write-through |
+| `/v1/latr/*` | L@tr list/save proxy; archive/unarchive/delete use direct viewer-PDS writes in the current app model |
 
-Legacy `/discovery` and `/entries` require **`ENABLE_LEGACY_CONTENT_API`** — not the default iOS path.
+The reader uses AppView for normal entry lists and detail. It does not fall back to an author-PDS body read during normal navigation. Current read state is AppView-backed with a local SwiftData cache; the client does not create `app.thesocialwire.entryReadState` PDS records.
 
-## AppView reader path
+## OAuth environments
 
-The current `SocialWireAppModel` uses AppView routes while they are available:
+Native sign-in follows protected-resource and authorization-server discovery, mandatory PAR, PKCE, and DPoP nonce retries. The client ID, metadata response, redirect URI, and registered URL scheme must match.
 
-- Initial load consumes bootstrap-stream NDJSON events
-- `fetchAggregateAppViewFeed` / `fetchAppViewEntries` load entry lists
-- `fetchAppViewEntryDetail` loads flat entry detail; normal article navigation has no author-PDS detail fallback
-- Read/unread toggles write AppView read marks with local optimistic state
-- Scoped **Mark All As Read** via `POST /v1/appview/mark-all-read`
-- When `SOCIALWIRE_USE_THIN_APPVIEW` is compiled in, **Profile → Purge Indexed Data** calls `DELETE /v1/appview/privacy/purge`
+| Build | Metadata | Redirect scheme |
+|-------|----------|-----------------|
+| Debug / Beta | `https://api.testing.thesocialwire.app/ios-client-metadata.json` | `app.thesocialwire.testing.api` |
+| Release | `https://api.thesocialwire.app/ios-client-metadata.json` | `app.thesocialwire.api` |
 
-Test against **`api.testing.thesocialwire.app`** (`DEBUG` or `SOCIALWIRE_TESTING_API`) before production. It and **`api.thesocialwire.app`** are the stable custom domains for the testing and production Railway Gateway services; generated Railway service domains are not native OAuth client IDs.
-
-See [[Thin-AppView]].
+Generated Railway domains are diagnostics, not native OAuth identities. TestFlight is normally a Release-style archive unless the `SocialWire-TestFlight` Beta configuration supplies `SOCIALWIRE_TESTING_API`.
 
 ## Testing
 
-Swift Testing suites in `SocialWireTests/` run with **Cmd+U** in Xcode. See [apple test plan](https://github.com/Stygian-Tech/the-social-wire/blob/main/docs/test-plans/apple.md).
+Swift Testing suites under `apps/apple/SocialWireTests` run with **Cmd+U** or:
 
-| Area | Tests |
-|------|-------|
-| OAuth / PKCE / API env | `OAuthTests`, `ATProtoOAuthServiceTests` |
-| Utilities (AT-URI, keys, HTML) | `SocialWireUtilityTests` |
-| Subscription matching | `PublicationSubscriptionMatchTests` |
-| Reader cache | `ReaderCacheCoordinatorTests` |
-| Gateway client | `SocialWireGatewayClientTests` |
-| PDS / publications | `PDSRecordServiceTests`, `PublicationServiceTests` |
-| Bootstrap stream | `BootstrapStreamNDJSONTests` |
-| Saved-link publication matching | `SavedLinkPublicationResolverTests` |
-| SwiftUI views | Manual simulator verification |
+```bash
+cd apps/apple
+xcodebuild test \
+  -project "The Social Wire.xcodeproj" \
+  -scheme SocialWire \
+  -destination 'platform=iOS Simulator,name=iPhone 16'
+```
 
-Xcode Cloud is not configured in-repo.
+Xcode Cloud and macOS GitHub Actions are not configured. See the [Apple test plan](https://github.com/Stygian-Tech/the-social-wire/blob/main/docs/test-plans/apple.md).
 
-## OAuth
-
-Native sign-in resolves the PDS, follows ATProto protected-resource and authorization-server metadata, submits a PKCE request through mandatory PAR, and exchanges/refreshes tokens at the discovered token endpoint. PAR and token requests carry DPoP proofs and retry nonce challenges. The native redirect is the reversed metadata host with one slash, such as `app.thesocialwire.api:/oauth/callback`.
-
-`SocialWireAPIEnvironment.iosClientMetadataURL` is the default `client_id`; an `ATProtoOAuthClientID` Info value can override it. Debug and XcodeGen Beta builds use the testing API, while Release uses production.
-
-Gateway `/ios-client-metadata.json` is authoritative for native OAuth. Its client ID, reversed-host redirect scheme, the app's registered URL type, and the active Railway custom domain must agree.
-
-## Reader navigation and L@tr
-
-- iPhone uses a page-style horizontal pager: Subscribed/Following are **Lists → Publications → Articles → Reader**; Read Later/Archive are **Lists → Saved Links → Reader**.
-- iPad uses three columns for feed sources and two for saved-link sources.
-- Shared reader chrome owns profile, refresh, scoped **Mark All As Read**, and the feed-only **All / Unread** filter.
-- New L@tr saves use the Social Wire/L@tr gateway path. The current app model lists, archives, unarchives, and deletes saved records directly on the viewer PDS. There is no read-later provider selector.
-
-## Related
-
-- App entrypoint: [`SocialWireApp.swift`](https://github.com/Stygian-Tech/the-social-wire/blob/main/apps/apple/SocialWire/App/SocialWireApp.swift)
-- [[Service-API]] — gateway + appview deploy and env vars
+Related: [[Getting-started]], [[Reading-and-organizing]], [[Account-settings-and-privacy]], [[Service-API]].

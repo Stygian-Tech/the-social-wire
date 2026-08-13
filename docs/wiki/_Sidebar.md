@@ -1,17 +1,34 @@
-### Wiki
+### Start Here
 
 - [[Home]]
-- [[Monorepo-map]]
-- [[Architecture]]
-- [[Thin-AppView]]
-- [[ThinAppViewCore]]
+- [[Getting-started]]
+
+### User Guide
+
+- [[Reading-and-organizing]]
+- [[Read-Later-and-Archive]]
+- [[Account-settings-and-privacy]]
+- [Public Feedback](https://userinput.app/s/did:plc:qy5pluw2bsuq2x6albsgkvx3/3mrzw42so4j2h?lang=en)
 - [[Web-app]]
 - [[Apple-client]]
+
+### Developers
+
+- [[Monorepo-map]]
+- [[Architecture]]
 - [[Service-API]]
+- [[Thin-AppView]]
+- [[ThinAppViewCore]]
 - [[Lexicons]]
+- [[Database]]
+- [[Redis]]
 - [[Testing]]
 - [[Contributing]]
-- [[Database]]
+
+### Operators
+
+- [[Deployment-and-environments]]
+- [[Operations]]
 
 ### Repository
 

@@ -46,10 +46,16 @@ Authentication uses ATProto OAuth (PKCE + DPoP) via `@atproto/oauth-client-brows
 - `src/hooks/useAuth.tsx` — `AuthProvider` context; exposes `session.did`, `getAuthFetch()`, `getOAuthSession()`
 - `src/lib/pdsClient.ts` — XRPC helpers for reading/writing ATProto records on the user's PDS (`new Agent(oauthSession)`)
 - `src/lib/atprotoClient.ts` — public ATProto XRPC helpers for discovery and standard.site entry reads
-- `src/lib/thinAppViewClient.ts` — gateway client for AppView feeds/detail, read marks, enrollment, purge, unread counts, and mark-all-read
-- `src/lib/publicationProjectionClient.ts` — sidebar projection client (`/v1/publications/*`)
+- `src/lib/socialWireXrpc.ts` — Lexicon NSIDs and authenticated XRPC transport helper
+- `src/lib/thinAppViewClient.ts` — gateway XRPC client for AppView feeds/detail, read marks, enrollment, purge, unread counts, and mark-all-read
+- `src/lib/publicationProjectionClient.ts` — XRPC sidebar projection client
 - `src/lib/bootstrapStreamClient.ts` — NDJSON bootstrap stream consumer
 - `src/lib/feedRefresh.ts` — proactive first-page feed merge helpers
+
+The XRPC client migration described here is present in the current checkout but
+is not registered on the public Testing or Production gateways as of
+2026-08-12. Hosted clients continue to use the retained `/v1/*` routes until the
+matching Gateway/AppView deployment ships.
 
 #### Local ATProto OAuth (`next dev`)
 
@@ -83,17 +89,11 @@ Public App View (https://public.api.bsky.app — no OAuth on these calls)
 
 Social Wire gateway (default read path)
   └─ GET /v1/appview/bootstrap-stream   ← initial sidebar + unread + first feed page (NDJSON)
-  └─ GET /v1/publications/sidebar       ← sidebar projection (refresh / phased load)
-  └─ GET /v1/appview/entries            ← scoped publication rows and prefetches
-  └─ GET /v1/appview/feed               ← aggregate/publication entry list rows
-  └─ GET /v1/appview/entry              ← flat entry detail
-  └─ GET /v1/appview/unread-counts      ← sidebar unread badges
-  └─ POST/DELETE /v1/appview/read-marks ← AppView read state
-  └─ POST /v1/appview/enroll            ← backfill after sidebar load
-  └─ POST /v1/appview/mark-all-read     ← scoped bulk read
+  └─ /xrpc/app.thesocialwire.publication.* ← sidebar projection/refresh/resolve
+  └─ /xrpc/app.thesocialwire.appview.*     ← feeds, detail, unread state, enrollment
 ```
 
-All user organisation data (folders, publication prefs, subscriptions) is stored on the user's own PDS; web mutations write those records directly with the OAuth session. Feed read/unread state is local-first and synchronized to Social Wire AppView. Initial load uses bootstrap-stream, entry lists come from the gateway index, and entry detail uses `GET /v1/appview/entry`. For standard.site rows that lack an original/embed URL, the detail hook may read the author record only to recover that URL. See [docs/architecture/appview.md](../../docs/architecture/appview.md).
+All user organisation data (folders, publication prefs, subscriptions) is stored on the user's own PDS; web mutations write those records directly with the OAuth session. Feed read/unread state is local-first and synchronized to Social Wire AppView. Initial load stays on the HTTP NDJSON bootstrap stream; eligible JSON reads and mutations use Lexicon-defined Social Wire XRPC methods. Compatibility `/v1/*` aliases remain documented in OpenAPI. For standard.site rows that lack an original/embed URL, the detail hook may read the author record only to recover that URL. See [docs/architecture/appview.md](../../docs/architecture/appview.md).
 
 #### PDS-first reads vs public App View
 
@@ -115,7 +115,10 @@ Lexicon **collection** (NSID) strings used in the web client match `apps/web/src
 | `app.thesocialwire.folder` | User-defined folders (`PDSClient.listFolders`, mutations) |
 | `app.thesocialwire.publicationPrefs` | Per-publication folder assignment and sort on the user's PDS (legacy `hidden` may still decode from old records but the client clears it on write) |
 
-Feed read/unread state is local-first for immediate UI. Signed-in clients dual-write AppView read marks and deterministic `app.thesocialwire.entryReadState` records to the viewer's PDS, then reconcile both sources during cross-client sync.
+Feed read/unread state is local-first for immediate UI and synchronized to
+Social Wire AppView for unread filtering and counts. The current web and Apple
+clients do not create `app.thesocialwire.entryReadState` records on the viewer's
+PDS.
 
 JSON lexicons for Social Wire–specific records live under **`packages/lexicons/`** (`app.thesocialwire.*`).
 
@@ -199,6 +202,7 @@ src/
     atprotoClient.ts    # Public ATProto discovery + content reads
     thinAppViewClient.ts # Gateway Thin AppView client
     publicationProjectionClient.ts # Sidebar projection client
+    socialWireXrpc.ts   # Social Wire NSIDs + authenticated XRPC transport
     bootstrapStreamClient.ts # NDJSON bootstrap stream
     feedRefresh.ts      # Proactive first-page feed merge
     sanitize.ts         # DOMPurify wrapper

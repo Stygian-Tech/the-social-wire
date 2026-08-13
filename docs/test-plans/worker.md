@@ -44,7 +44,10 @@ The worker executable delegates to `ThinAppViewWorkerRuntime` from ThinAppViewCo
 - `AppViewProjectionCacheStore` — sidebar/unread snapshot caches
 - `ThinAppViewQuerySupport` — pagination SQL
 
-Postgres store tests are integration-level; local dev uses SQLite via `APP_ENV=local`.
+Postgres store tests are integration-level. SQLite remains covered directly in
+package tests, but the current Charybdis entry point rejects `APP_ENV=local`
+through its shared Operations environment guard. Runnable service integration
+uses `APP_ENV=dev` with an isolated disposable Postgres database.
 
 ## Worker tests
 
@@ -56,8 +59,8 @@ Postgres store tests are integration-level; local dev uses SQLite via `APP_ENV=l
 
 The worker has no HTTP surface. Verify via gateway/AppView routes:
 
-1. Start AppView and Charybdis with the same absolute `SQLITE_DB_PATH` (see the root README).
-2. Enroll `authorDids` and/or `feedUrls` via `POST /v1/appview/enroll`, then leave Charybdis running for Jetstream/Tap and RSS poll ingestion.
+1. Apply migrations to an isolated disposable Postgres database, then start AppView and Charybdis with the same `DATABASE_URL` (see the root README).
+2. Enroll `authorDids` and/or `feedUrls` with `app.thesocialwire.appview.enrollSources` (or its `/v1/appview/enroll` compatibility route), then leave Charybdis running for Jetstream/Tap and RSS poll ingestion.
 3. Use Bruno `services/gateway/bruno/AppView/` or `services/appview/bruno/` to confirm timeline rows appear.
 
 ## Related

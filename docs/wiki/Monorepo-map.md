@@ -16,17 +16,30 @@ the-social-wire/
     tap/              # Pinned Indigo Tap image (Railway)
   packages/
     lexicons/     # app.thesocialwire.* (and related) lexicons
-    spec/         # OpenAPI for HTTP surfaces (/v1/appview, /v1/sync, …)
+    spec/         # OpenAPI compatibility contract + endpoint transport manifest
     swift/        # GatewayCore, OperationsCore, SocialWireRedis, ThinAppViewCore
   database/
     migrations/   # Postgres (pds_repo_record_cache, content_items, read_marks, …)
   docs/
     architecture/ # narrative docs (overview, discovery, appview, lexicons)
-    wiki/         # markdown synced to GitHub Wiki on push to main (publish-wiki.yml)
+    runbooks/      # operator incident, recovery, and Tap cutover procedures
+    test-plans/    # per-surface verification expectations
+    wiki/         # canonical public wiki Markdown (GitHub sync; manual Lichen publish)
+  railway/        # one config-as-code file per deployed service
+  scripts/        # CI change detection, migration runner, and benchmarks
+  .github/workflows/
+                  # required CI plus main-only GitHub Wiki publication
 ```
+
+The four shared Swift packages are `GatewayCore`, `OperationsCore`,
+`SocialWireRedis`, and `ThinAppViewCore`. Each has its own `Package.swift` and is
+tested from its own directory; there is no root Swift package.
 
 **Pointers**
 
 - [Root README](https://github.com/Stygian-Tech/the-social-wire/blob/main/README.md)
 - [[Thin-AppView]] — read index, routes, and rollout
 - [[Redis]] — disposable cache, coordination, ranking, and rollout
+- [[Deployment-and-environments]] — Railway services and environment boundaries
+- [[Operations]] — operator console, control plane, Tap, and runbooks
+- [[Testing]] — package commands and CI ownership

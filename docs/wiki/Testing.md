@@ -10,6 +10,7 @@ Automated and manual verification for every package in the monorepo.
 |---------|---------|-----|
 | Web | `cd apps/web && bun test` | `web` |
 | Operations UI | `cd apps/operations && bun test` | `operations-web` |
+| SocialWireRedis | `cd packages/swift/SocialWireRedis && swift test` | `redis` |
 | GatewayCore | `cd packages/swift/GatewayCore && swift test` | `gateway` |
 | Gateway | `cd services/gateway && swift test` | `gateway` |
 | AppView | `cd services/appview && swift test` | `appview` |
@@ -36,9 +37,19 @@ Automated and manual verification for every package in the monorepo.
 
 Tests live **inside the owning package** (`apps/web/src/__tests__/`, `services/gateway/Tests/`, etc.). See [[Contributing]].
 
+## Full CI gate
+
+The single `.github/workflows/ci.yml` workflow detects changed paths and runs the relevant Web, Operations Web, Redis, Gateway, AppView, Charybdis, Operations, Tap, Lexicon, and OpenAPI jobs. **CI — Required** is the aggregate branch-protection check. OpenAPI drift coverage checks both documented-to-source mappings and every directly registered literal `/v1/*` source path. GitHub Actions validates source only; Railway's Git integration is responsible for deployments.
+
+Documentation-only changes should still run the wiki integrity checker and
+`git diff --check`. The main-only publish workflow runs the same checker before
+syncing `docs/wiki/` to the GitHub Wiki.
+
 ## Out of scope
 
-Playwright E2E, macOS GitHub Actions, and Xcode Cloud are not configured in this repository.
+Playwright E2E, macOS GitHub Actions, Xcode Cloud, and enforced coverage
+thresholds are not configured in this repository. The Web package offers an
+optional local `bun test --coverage` report.
 
 ## Related
 

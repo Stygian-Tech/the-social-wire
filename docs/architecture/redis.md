@@ -4,10 +4,16 @@ Redis is an optional, disposable acceleration layer for hosted Gateway, AppView,
 
 ## Runtime selection
 
-| Service | Flag | Local default | Hosted pre-cutover default |
+| Service | Flag | Configured local backend | Hosted default |
 |---|---|---|---|
 | Gateway PDS records | `GATEWAY_PDS_CACHE_BACKEND=sqlite\|postgres\|redis` | `sqlite` | `postgres` |
 | AppView and Charybdis projections | `APPVIEW_CACHE_BACKEND=sqlite\|postgres\|redis` | `sqlite` | `postgres` |
+
+The SQLite selection remains implemented and covered in package tests, but the
+current Gateway, AppView, and Charybdis entry points reject `APP_ENV=local`
+through the shared Operations environment guard. Runnable local service
+integration uses `APP_ENV=dev` plus isolated disposable Postgres until that
+mismatch is fixed.
 
 `REDIS_URL` accepts `redis://` and `rediss://`. Redis selection without a usable URL installs an unavailable/fail-open cache: reads reconstruct from PDS/Postgres, writes and invalidations continue durably, and readiness remains based on durable dependencies. Pool defaults are 1–8 connections with a 250 ms command timeout. The circuit opens after three consecutive command failures, probes after five seconds, and backs off to at most 30 seconds.
 
@@ -39,16 +45,25 @@ RSS fetch metadata, ETags, backoff, and error counts remain durable. A 120-secon
 
 ## Ranking primitives
 
-`SocialWireRedis` exposes global and viewer-circle sorted-set scopes, one-hour/24-hour/seven-day windows, finite-score candidates, upsert/remove/top/trim/expiry operations, and Redis lexical member ordering for deterministic equal-score ties. Sets are disposable and rebuildable. TSW-46 does not add feed routes, ranking weights, moderation rules, client navigation, or production selection. Redis Streams and queues are out of scope.
+`SocialWireRedis` exposes global and viewer-circle sorted-set scopes, one-hour/24-hour/seven-day windows, finite-score candidates, upsert/remove/top/trim/expiry operations, and Redis lexical member ordering for deterministic equal-score ties. Sets are disposable and rebuildable. The package does not add feed routes, ranking weights, moderation rules, or client navigation; the current product feed does not depend on these ranking sets. Redis Streams and queues are out of scope.
 
 ## Operations and failure drills
 
 Operations consumes the existing generic metrics API. Metrics contain bounded service/operation/cache/outcome/error/recompute dimensions only. The AppView panel shows fresh/stale/miss/malformed/fallback counts, average and maximum command duration, locks and contention, errors/circuit state, unread recomputation, and 60-second Redis expiration/eviction/memory samples. These rollups are not percentile distributions and must not be labeled p95.
 
-Flushing Redis should cause automatic reconstruction. Stopping Redis should preserve correct 2xx reads where durable sources are available, successful durable mutations, and healthy readiness. Postgres cache tables remain during rollout solely as a rollback target; Redis mode neither reads nor writes them.
+Flushing Redis should cause automatic reconstruction. Stopping Redis should preserve correct 2xx reads where durable sources are available, successful durable mutations, and healthy readiness. Postgres cache tables are active wherever an environment selects Postgres and remain a rollback target while that environment selects Redis; Redis mode neither reads nor writes them.
 
-## Development-first rollout
+## Current hosted selection and rollout discipline
 
-Provision a private Development Redis in the same US West region as compute/Postgres, set `REDIS_URL=${{Redis.REDIS_URL}}` on Gateway, App View, and Charybdis, and configure `allkeys-lru`. Deploy initially with both backend flags still `postgres`; capture a one-hour baseline, switch Gateway first, then AppView and Charybdis together. Exercise concurrency, flush, and outage drills and soak for at least 24 hours. Production must not be provisioned or changed until the Development evidence is reviewed and explicitly approved.
+As verified on 2026-08-12, Development and Production each have a private Redis
+and set `REDIS_URL` on Gateway, App View, and Charybdis. Gateway selects
+`GATEWAY_PDS_CACHE_BACKEND=redis`; App View and Charybdis select
+`APPVIEW_CACHE_BACKEND=redis` in both environments. Postgres remains durable and
+its cache tables remain the rollback target.
+
+Future Redis versions, policy changes, and selector changes still move through
+Development first: capture a baseline, exercise concurrency/flush/outage drills,
+complete authenticated QA and a soak, review the evidence, and only then change
+Production.
 
 Rollback switches the affected backend flag to `postgres` and invalidates only `sidebar_projection_cache`, `unread_counts_cache`, `first_page_cache`, and `pds_repo_record_cache` before rollback traffic, because those rows stopped receiving writes during Redis mode. Preserve Redis diagnostics and never alter durable content, read-state, RSS metadata, ingestion, repair, or Operations tables.

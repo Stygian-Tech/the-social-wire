@@ -27,25 +27,32 @@ GatewayCore tests live in `packages/swift/GatewayCore/Tests/` (DPoP, internal tr
 
 | Case | Expected | Test |
 |------|----------|------|
-| No `Authorization` on `/v1/*` | 401 | GatewayCore middleware tests |
+| No `Authorization` on protected `/xrpc/*` or `/v1/*` | 401 | GatewayCore middleware tests |
 | Missing / invalid DPoP | 401 | GatewayCore middleware tests |
 | Valid Bearer + DPoP | 200 on protected routes | `HTTPRouteContractTests` |
 
 ## Bruno (manual HTTP)
 
-Import `services/gateway/bruno/` as a Bruno collection. Folders: **Health**, **OAuth**, **Sync**, **Publications**, **AppView**, **Latr**, **Operations**, and **Telemetry**.
+Import `services/gateway/bruno/` as a Bruno collection. Folders include
+**Health**, **OAuth**, **Sync**, **Publications**, **AppView**, **XRPC**,
+**Latr**, **Operations**, and **Telemetry**. Operations and AppView folders also
+contain focused XRPC requests where applicable.
 
 Populate `oauthAccessToken` and `dpopProof` from a real OAuth session. Never commit tokens.
 
 ## OpenAPI drift
 
-`packages/spec/__tests__/openapi-routes.test.ts` asserts documented paths exist in Gateway, GatewayCore, AppView, and Operations router sources. CI job: **`spec`**.
+`packages/spec/__tests__/openapi-routes.test.ts` asserts documented paths exist
+in Gateway, GatewayCore, AppView, and Operations router sources and reverse-checks
+every directly registered literal `/v1/*` path. The endpoint-manifest test
+classifies every OpenAPI operation and validates XRPC NSID mappings. CI job:
+**`spec`**.
 
 ## Manual verification
 
 - [ ] `curl /health` returns 200
 - [ ] `GET /oauth-client-metadata.json` matches web scopes
-- [ ] Authenticated `GET /v1/sync/preferences` with real token
+- [ ] Authenticated `GET /xrpc/app.thesocialwire.sync.getPreferences` with real token
 - [ ] AppView proxy routes return data when `APPVIEW_BASE_URL` is set
 
 ## Related

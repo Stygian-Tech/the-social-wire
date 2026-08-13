@@ -51,6 +51,15 @@ apps/apple/
 
 The app uses **`SocialWireGatewayClient`** against **`SocialWireAPIEnvironment.baseURL`** for:
 
+Eligible JSON queries and procedures use the Lexicon-defined
+`/xrpc/app.thesocialwire.*` surface through `SocialWireXRPCMethod`. The table
+below names the equivalent compatibility routes and the HTTP-only stream/cache
+surfaces.
+
+This migration is present in the current checkout but is not registered on the
+public Testing or Production gateways as of 2026-08-12. Do not distribute a
+client containing these calls before the matching backend deployment.
+
 | Route | Purpose |
 |-------|---------|
 | `GET /v1/appview/bootstrap-stream` | Progressive NDJSON initial reader load |
@@ -63,7 +72,10 @@ The app uses **`SocialWireGatewayClient`** against **`SocialWireAPIEnvironment.b
 
 ### AppView reader path
 
-The current reader uses AppView routes while they are available. `SocialWireAppModel` loads entry lists from `/v1/appview/feed` or `/entries`, and detail from `/v1/appview/entry`; there is no author-PDS detail fallback in normal article navigation.
+The current reader uses AppView routes while they are available.
+`SocialWireAppModel` loads entry lists and detail through the corresponding
+AppView XRPC methods; there is no author-PDS detail fallback in normal article
+navigation.
 
 | Behaviour | Implementation |
 |-----------|----------------|
@@ -72,7 +84,7 @@ The current reader uses AppView routes while they are available. `SocialWireAppM
 | Entry detail | `SocialWireGatewayClient.fetchAppViewEntryDetail` |
 | Mark read / unread | AppView read-mark routes with local optimistic state |
 | After discovery | `gateway.enrollAuthors` (fire-and-forget) |
-| Privacy | With `SOCIALWIRE_USE_THIN_APPVIEW` compiled in, Profile → **Purge Indexed Data** calls `DELETE /v1/appview/privacy/purge` |
+| Privacy | With `SOCIALWIRE_USE_THIN_APPVIEW` compiled in, Profile → **Purge Indexed Data** calls `app.thesocialwire.appview.purgeViewerData`; it currently removes explicit read marks and unread overrides only |
 
 The backend requires **`ENABLE_THIN_APPVIEW=true`**, a running worker, and applied database migrations. The testing and production API domains are stable custom domains for their Railway Gateway services; test on **`api.testing.thesocialwire.app`** before production.
 
@@ -139,7 +151,12 @@ Normal builds use Gateway metadata on the Railway custom domains:
 
 Generated `*.up.railway.app` domains are deployment diagnostics, not native OAuth identities. Keeping the custom domains stable avoids adding a new reversed-host URL scheme for every deployment.
 
-For a local Gateway tunnel, run **`services/gateway`** (`APP_ENV=local swift run Gateway`) and expose it over HTTPS. Set **`OAUTH_IOS_METADATA_ORIGIN`** when forwarded host headers do not match the tunnel URL (`OAUTH_PUBLIC_ORIGIN` applies only to web metadata), then:
+For a local Gateway tunnel, run **`services/gateway`** with `APP_ENV=dev` and an
+isolated disposable Postgres `DATABASE_URL`, then expose it over HTTPS. The
+current shared Operations environment guard rejects `APP_ENV=local` even though
+a SQLite backend remains implemented. Set **`OAUTH_IOS_METADATA_ORIGIN`** when
+forwarded host headers do not match the tunnel URL (`OAUTH_PUBLIC_ORIGIN`
+applies only to web metadata), then:
 
 1. Confirm Gateway `GET /ios-client-metadata.json` returns a `client_id` for that exact HTTPS host and a `redirect_uri` derived from its reversed host labels.
 2. In the iOS target **Info** plist, add **`ATProtoOAuthClientID`** (string) with that same metadata URL.

@@ -23,7 +23,10 @@ services/appview/Tests/AppViewTests/
 
 ## Bruno (manual HTTP)
 
-Import `services/appview/bruno/` for direct AppView routes (sidebar, bootstrap stream, aggregate/scoped feeds, flat entry detail, read marks, and enroll). In production, clients hit the same paths via the gateway proxy.
+Import `services/appview/bruno/` for direct AppView XRPC and compatibility routes
+(sidebar, bootstrap stream, aggregate/scoped feeds, flat entry detail, read
+marks, and enroll). In production, clients hit the same operations through the
+gateway proxy.
 
 ## Redis cache and coordination
 
@@ -43,9 +46,9 @@ The integration suite covers PEXPIRE round trips, independent-client lease conte
 
 ## Manual verification
 
-- [ ] `GET /v1/publications/sidebar` with authenticated token
+- [ ] `GET /xrpc/app.thesocialwire.publication.getSidebar` with authenticated token
 - [ ] `GET /v1/appview/bootstrap-stream` streams NDJSON events
-- [ ] `GET /v1/appview/feed`, `/entries`, and `/entry` return the documented shapes
+- [ ] AppView `getFeed`, `listEntries`, and `getEntry` XRPC queries return the documented shapes
 - [ ] Enroll `authorDids` and `feedUrls`, then confirm timelines while Charybdis is running
 
 ## Related

@@ -22,6 +22,7 @@ Tests must live **inside the owning package**, not in a root-level `tests/` fold
 | Charybdis | `services/appview-worker/Tests/` |
 | Operations service | `services/operations/Tests/` |
 | GatewayCore | `packages/swift/GatewayCore/Tests/` |
+| SocialWireRedis | `packages/swift/SocialWireRedis/Tests/` |
 | ThinAppViewCore | `packages/swift/ThinAppViewCore/Tests/` |
 | OperationsCore | `packages/swift/OperationsCore/Tests/` |
 | iOS | `apps/apple/SocialWireTests/` |
@@ -37,7 +38,13 @@ Tests must live **inside the owning package**, not in a root-level `tests/` fold
 
 ## Wiki edits
 
-Edit wiki content only under **`docs/wiki/`** in this repository. On push to `main`, [publish-wiki.yml](.github/workflows/publish-wiki.yml) syncs to GitHub Wiki (edits made only on GitHub Wiki are overwritten).
+Edit wiki content only under **`docs/wiki/`** in this repository. On push to
+`main`, [publish-wiki.yml](.github/workflows/publish-wiki.yml) validates the wiki
+and syncs it to GitHub Wiki. The public
+[Lichen wiki](https://lichen.wiki/@samclemente.me/the-social-wire) is currently
+published separately from the same source; see
+[docs/wiki/Contributing.md](docs/wiki/Contributing.md). Edits made only on either
+hosted wiki can drift or be overwritten, so make the source change here first.
 
 ## Documentation
 
@@ -53,7 +60,7 @@ Edit wiki content only under **`docs/wiki/`** in this repository. On push to `ma
 
 ## Branch protection
 
-Require the **`CI — Required`** check from [.github/workflows/ci.yml](.github/workflows/ci.yml). It gates merges on path-filtered jobs for `web`, `operations-web`, `gateway`, `appview`, `charybdis`, `operations`, `tap`, `lexicons`, and `spec`. Railway deployment remains independent and is handled by Railway's GitHub integration.
+Require the **`CI — Required`** check from [.github/workflows/ci.yml](.github/workflows/ci.yml). It gates merges on path-filtered jobs for `web`, `operations-web`, `redis`, `gateway`, `appview`, `charybdis`, `operations`, `tap`, `lexicons`, and `spec`. Railway deployment remains independent and is handled by Railway's GitHub integration.
 
 ## License
 

@@ -1,19 +1,52 @@
 # Architecture
 
-The Social Wire keeps **user-authored organisation data on the user’s ATProto PDS** (folders, publication preferences, subscriptions, and L@tr records). Feed read state is local-first and synchronized to AppView. Current clients discover and read through the gateway/AppView projection; direct PDS probes remain for compatibility and narrow enrichment. **Thin AppView** on **`services/appview`** (proxied by **`services/gateway`**) serves timelines, indexed detail, sidebar badges, and server-side unread filtering. Standard.site records remain authoritative on author PDSes; RSS rows may retain feed-provided HTML.
+The Social Wire separates portable user records from rebuildable application projections.
 
-**Read in the repo**
+| Layer | Responsibility |
+|-------|----------------|
+| **Web and Apple clients** | ATProto sign-in, direct or gateway-assisted PDS writes, local cache, reader UI |
+| **Gateway** | Public OAuth/DPoP edge, sync acceleration, publication writes for native clients, L@tr/Operations proxies, unbuffered AppView proxy |
+| **AppView** | Publication sidebar, indexed timelines/detail, unread state, bootstrap stream |
+| **Charybdis** | Jetstream/Tap ingestion, RSS polling, backfill, repair, and retention cleanup |
+| **Operations** | Operator-only health, evidence, gaps, alerts, traces, and controlled recovery |
+| **Tap** | Private, environment-scoped repository synchronization for covered collections |
 
-- [Overview](https://github.com/Stygian-Tech/the-social-wire/blob/main/docs/architecture/overview.md)
+## Data ownership
+
+- The viewer's PDS is authoritative for folders, publication preferences, standard.site and RSS subscriptions, account preferences, and L@tr records.
+- Publisher PDSes are authoritative for `site.standard.document` and `site.standard.entry` records.
+- Railway Postgres contains derived content, read marks/floors, materialized feeds and counts, ingestion/repair state, RSS metadata, and Operations evidence.
+- Private Redis is an optional disposable acceleration layer. It never replaces PDS or Postgres authority.
+- Browser storage and Apple SwiftData caches are per-device and rebuildable.
+
+Current clients write individual read marks and bulk-read boundaries to AppView, not to an `app.thesocialwire.entryReadState` PDS collection. Local state provides immediate UI while the server provides unread pagination and cross-client count refreshes.
+
+## Request path
+
+```text
+Web / iOS / iPadOS
+        |
+        +---- viewer PDS: portable user records
+        |
+        +---- public ATProto: identity, graph, publisher records
+        |
+        `---- Gateway: authenticated Social Wire routes
+                  |
+                  +---- AppView ---- Postgres
+                  |         `------ optional Redis cache
+                  +---- Operations
+                  `---- L@tr Gateway
+
+Jetstream or Tap ---- Charybdis ---- Postgres
+RSS/Atom feeds -----------^             `---- optional Redis leases/cache
+```
+
+## Canonical deep dives
+
+- [Architecture overview](https://github.com/Stygian-Tech/the-social-wire/blob/main/docs/architecture/overview.md)
 - [Discovery chain](https://github.com/Stygian-Tech/the-social-wire/blob/main/docs/architecture/discovery.md)
-- [Lexicons (architecture)](https://github.com/Stygian-Tech/the-social-wire/blob/main/docs/architecture/lexicons.md)
-- [AppView architecture](https://github.com/Stygian-Tech/the-social-wire/blob/main/docs/architecture/appview.md) — Thin AppView vs Bluesky App View vs future cross-user index
-- [Redis cache and coordination](https://github.com/Stygian-Tech/the-social-wire/blob/main/docs/architecture/redis.md) — disposable hosted caches, leases, ranking primitives, rollout
+- [Lexicon architecture](https://github.com/Stygian-Tech/the-social-wire/blob/main/docs/architecture/lexicons.md)
+- [AppView architecture](https://github.com/Stygian-Tech/the-social-wire/blob/main/docs/architecture/appview.md)
+- [Redis cache and coordination](https://github.com/Stygian-Tech/the-social-wire/blob/main/docs/architecture/redis.md)
 
-**Wiki**
-
-- [[Thin-AppView]] — rollout, flags, routes, deployment
-- [[Service-API]] — gateway + appview + worker split
-- [[Redis]] — cache ownership, key policy, failure behavior, and rollout
-
-Related: [[Lexicons]], [[Web-app]], [[Apple-client]], [[Service-API]].
+Related: [[Thin-AppView]], [[Service-API]], [[Database]], [[Redis]], [[Lexicons]].
