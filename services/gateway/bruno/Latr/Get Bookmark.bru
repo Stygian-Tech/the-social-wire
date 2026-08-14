@@ -1,11 +1,11 @@
 meta {
-  name: Delete L@tr Save
+  name: Get Bookmark
   type: http
-  seq: 40
+  seq: 20
 }
 
-delete {
-  url: {{baseUrl}}/v1/latr/saves/{{latrItemRkey}}
+get {
+  url: {{baseUrl}}/xrpc/link.latr.bookmarks.getBookmark?subject=https%3A%2F%2Fexample.com%2Farticle
   body: none
   auth: none
 }
@@ -18,5 +18,5 @@ headers {
 }
 
 docs {
-  Deletes one saved item through the native gateway proxy. Set `latrItemRkey` to the saved-item record key.
+  Looks up the exact generic bookmark subject.
 }

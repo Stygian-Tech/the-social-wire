@@ -16,8 +16,8 @@ import {
  * During the `com.thesocialwire.*` → `app.thesocialwire.*` transition, legacy
  * non-read-state repo scopes remain so clients can delete old records after migration.
  *
- * L@tr read-later uses canonical `link.latr.saved.*` with legacy `com.latr.*`
- * scopes retained for one-time repo migration.
+ * L@tr uses community bookmarks plus `link.latr.bookmarks.metadata`; legacy
+ * wrapper collections retain delete-only grants for one-time migration.
  *
  * **Re-login required after deploy:** widening scopes does not upgrade existing
  * access tokens; users must sign out and sign in again.

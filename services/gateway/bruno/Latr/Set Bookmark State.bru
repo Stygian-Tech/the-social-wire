@@ -1,0 +1,26 @@
+meta {
+  name: Set Bookmark State
+  type: http
+  seq: 40
+}
+
+patch {
+  url: {{baseUrl}}/xrpc/link.latr.bookmarks.setState
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: DPoP {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+  X-Latr-Gateway-DPoP: {{latrGatewayDpopProof}}
+  X-ATProto-Upstream-DPoP: {{upstreamDpopProof}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "bookmarkUri": "{{latrBookmarkUri}}",
+    "state": "archived"
+  }
+}

@@ -15,6 +15,7 @@ import type { ReactNode } from "react";
 import { ReadRouteProvider } from "@/contexts/ReadRouteContext";
 import * as AuthHook from "@/hooks/useAuth";
 import type { EntryListItem } from "@/lib/atprotoClient";
+import * as ResolveEntryOpenURL from "@/lib/resolveEntryOpenUrl";
 
 beforeAll(() => {
   Object.defineProperty(globalThis, "Element", {
@@ -28,6 +29,9 @@ beforeAll(() => {
 });
 
 let restoreAuthSpy: (() => void) | undefined;
+let resolveEntryOpenUrlFromPds: ReturnType<
+  typeof spyOn<typeof ResolveEntryOpenURL, "resolveEntryOpenUrlFromPds">
+>;
 
 beforeEach(() => {
   window.localStorage.clear();
@@ -36,6 +40,10 @@ beforeEach(() => {
     getOAuthSession: () => null,
   } as ReturnType<typeof AuthHook.useAuth>);
   restoreAuthSpy = () => authSpy.mockRestore();
+  resolveEntryOpenUrlFromPds = spyOn(
+    ResolveEntryOpenURL,
+    "resolveEntryOpenUrlFromPds",
+  ).mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -43,6 +51,7 @@ afterEach(() => {
   window.localStorage.clear();
   restoreAuthSpy?.();
   restoreAuthSpy = undefined;
+  resolveEntryOpenUrlFromPds.mockRestore();
 });
 
 /** standard.site entry the AppView could not index a hosted URL for. */
@@ -51,15 +60,6 @@ const unresolvedEntry: EntryListItem = {
   title: "Standard Site Article",
   publishedAt: "2026-01-01T00:00:00.000Z",
 };
-
-const resolveEntryOpenUrlFromPds = mock(
-  async (): Promise<string | undefined> => undefined,
-);
-
-mock.module("@/lib/resolveEntryOpenUrl", () => ({
-  resolveEntryOpenUrlFromPds,
-  isStandardSiteEntryId: () => true,
-}));
 
 mock.module("@/components/EntryList/EntryList", () => ({
   EntryList: ({

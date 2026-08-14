@@ -2,7 +2,12 @@
 
 import { useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { resolveNativeSavedSubjectPreview } from "@/lib/atprotoClient";
+
+import {
+  LATR_BOOKMARK_CONTRACT_VERSION,
+  LatrBookmarksClient,
+  migrateLegacyBookmarks,
+} from "@/lib/latrBookmarks";
 import {
   applyOptimisticLatrSaveArchive,
   applyOptimisticLatrSaveDelete,
@@ -14,17 +19,11 @@ import {
   restoreLatrSaveQueries,
   snapshotLatrSaveQueries,
 } from "@/lib/latrSavedMutations";
-import {
-  type LatrSaveListState,
-  type MergedLatrSave,
-} from "@/lib/pdsClient";
-import {
-  buildOptimisticExternalLatrSave,
-  buildOptimisticNativeLatrSave,
-} from "@/lib/optimisticLatrSaves";
+import type { LatrSaveListState, MergedLatrSave } from "@/lib/pdsClient";
+import { buildOptimisticBookmarkRow } from "@/lib/optimisticLatrSaves";
 import { normalizeLatrHttpsUrl } from "@/lib/latrSavedUrls";
-import { resolveReadLaterSaveTarget } from "@/lib/readLaterSaveTarget";
 import { createReadLaterProvider } from "@/lib/readLaterProvider";
+import { resolveReadLaterSaveTarget } from "@/lib/readLaterSaveTarget";
 import {
   dummyLatrSavesForState,
   isDummyReaderDataEnabled,
@@ -34,16 +33,25 @@ import { usePDSClient } from "./usePDSClient";
 
 export { LATR_ARCHIVED_QUERY_KEY, LATR_SAVED_QUERY_KEY };
 
-function useReadLaterProvider() {
-  const client = usePDSClient();
-  const { session, getOAuthSession } = useAuth();
+const MIGRATION_QUERY_KEY = "latrBookmarkMigration";
 
+function migrationStorageKey(did: string): string {
+  return `the-social-wire.latr-migration.${LATR_BOOKMARK_CONTRACT_VERSION}.${did}`;
+}
+
+function useReadLaterClients() {
+  const pdsClient = usePDSClient();
+  const { session, getOAuthSession } = useAuth();
   return useMemo(() => {
-    if (!client || !session) return null;
+    if (!pdsClient || !session) return null;
     const oauthSession = getOAuthSession();
     if (!oauthSession) return null;
-    return createReadLaterProvider(oauthSession, client, session.did);
-  }, [client, session, getOAuthSession]);
+    return {
+      did: session.did,
+      bookmarks: new LatrBookmarksClient(oauthSession),
+      provider: createReadLaterProvider(oauthSession, pdsClient, session.did),
+    };
+  }, [getOAuthSession, pdsClient, session]);
 }
 
 function latrSavesQueryKey(state: LatrSaveListState) {
@@ -54,213 +62,143 @@ export function useLatrMergedHttpsSaves(
   state: LatrSaveListState = "active",
   options?: { enabled?: boolean }
 ) {
-  const client = usePDSClient();
+  const clients = useReadLaterClients();
   const dummyReaderDataEnabled = isDummyReaderDataEnabled();
-  return useQuery({
+  const enabled = options?.enabled ?? true;
+  const migration = useQuery({
+    queryKey: [MIGRATION_QUERY_KEY, clients?.did, LATR_BOOKMARK_CONTRACT_VERSION],
+    queryFn: async () => {
+      if (!clients || typeof window === "undefined") return null;
+      const key = migrationStorageKey(clients.did);
+      if (window.localStorage.getItem(key) === "complete") return null;
+      const summary = await migrateLegacyBookmarks(clients.bookmarks);
+      if (!summary.hasConflicts) window.localStorage.setItem(key, "complete");
+      return summary;
+    },
+    enabled: enabled && !dummyReaderDataEnabled && Boolean(clients),
+    retry: false,
+    staleTime: Infinity,
+  });
+  const listQuery = useQuery({
     queryKey: latrSavesQueryKey(state),
-    queryFn: async ({ signal }): Promise<MergedLatrSave[]> => {
-      if (dummyReaderDataEnabled) {
-        return dummyLatrSavesForState(state);
-      }
-      if (!client) return [];
-      return client.listMergedLatrSaves({ state, signal });
+    queryFn: async (): Promise<MergedLatrSave[]> => {
+      if (dummyReaderDataEnabled) return dummyLatrSavesForState(state);
+      return clients?.bookmarks.listAll(state) ?? [];
     },
     enabled:
-      (dummyReaderDataEnabled || !!client) && (options?.enabled ?? true),
+      enabled &&
+      (dummyReaderDataEnabled || (Boolean(clients) && migration.isSuccess)),
     staleTime: 15_000,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
   });
+  return {
+    ...listQuery,
+    isLoading: migration.isLoading || listQuery.isLoading,
+    isError: migration.isError || listQuery.isError,
+    error: migration.error ?? listQuery.error,
+    migrationWarning: migration.data?.hasConflicts
+      ? `${migration.data.skippedConflict} legacy bookmark conflict${migration.data.skippedConflict === 1 ? " was" : "s were"} left unchanged and will be retried later.`
+      : null,
+  };
 }
 
 export function useSaveHttpsReadLaterMutation() {
-  const provider = useReadLaterProvider();
-  const { session } = useAuth();
+  const clients = useReadLaterClients();
   const qc = useQueryClient();
-  const dummyReaderDataEnabled = isDummyReaderDataEnabled();
-
+  const dummy = isDummyReaderDataEnabled();
   return useMutation({
-    mutationFn: async (params: {
-      url: string;
-      title?: string;
-      excerpt?: string;
-    }) => {
-      if (dummyReaderDataEnabled) return;
-      if (!provider) throw new Error("No read-later provider — not signed in");
-      return provider.saveHttpsUrl(params.url, {
-        title: params.title,
-        excerpt: params.excerpt,
-      });
+    mutationFn: async (params: { url: string; title?: string; excerpt?: string }) => {
+      if (dummy) return;
+      if (!clients) throw new Error("No read-later provider — not signed in");
+      await clients.provider.saveSubject(params.url.trim());
     },
     onMutate: async (params) => {
-      const did = session?.did;
-      if (!did) return undefined;
-
       const snapshot = await snapshotLatrSaveQueries(qc);
-      try {
-        const row = await buildOptimisticExternalLatrSave(did, params.url, {
-          title: params.title,
-          excerpt: params.excerpt,
-        });
-        applyOptimisticLatrSaveInsert(qc, row);
-      } catch {
-        restoreLatrSaveQueries(qc, snapshot);
-        return undefined;
-      }
+      applyOptimisticLatrSaveInsert(qc, buildOptimisticBookmarkRow(params.url, params));
       return snapshot;
     },
-    onError: (_error, _params, context) => {
-      restoreLatrSaveQueries(qc, context);
+    onError: (_error, _params, context) => restoreLatrSaveQueries(qc, context),
+    onSettled: () => { if (!dummy) invalidateLatrSaveQueries(qc); },
+  });
+}
+
+function useBookmarkMutation(action: "delete" | "archive" | "unarchive") {
+  const clients = useReadLaterClients();
+  const qc = useQueryClient();
+  const dummy = isDummyReaderDataEnabled();
+  return useMutation({
+    mutationFn: async (bookmarkUri: string) => {
+      if (dummy) return;
+      if (!clients) throw new Error("No read-later provider — not signed in");
+      if (action === "delete") return clients.provider.deleteSaveItem(bookmarkUri);
+      if (action === "archive") return clients.provider.archiveSaveItem(bookmarkUri);
+      return clients.provider.unarchiveSaveItem(bookmarkUri);
     },
-    onSettled: () => {
-      if (!dummyReaderDataEnabled) invalidateLatrSaveQueries(qc);
+    onMutate: async (bookmarkUri) => {
+      const snapshot = await snapshotLatrSaveQueries(qc);
+      if (action === "delete") applyOptimisticLatrSaveDelete(qc, bookmarkUri);
+      else if (action === "archive") applyOptimisticLatrSaveArchive(qc, bookmarkUri);
+      else applyOptimisticLatrSaveUnarchive(qc, bookmarkUri);
+      return snapshot;
     },
+    onError: (_error, _params, context) => restoreLatrSaveQueries(qc, context),
+    onSettled: () => { if (!dummy) invalidateLatrSaveQueries(qc); },
   });
 }
 
 export function useDeleteLatrSaveMutation() {
-  const provider = useReadLaterProvider();
-  const qc = useQueryClient();
-  const dummyReaderDataEnabled = isDummyReaderDataEnabled();
-
-  return useMutation({
-    mutationFn: async (itemRkey: string) => {
-      if (dummyReaderDataEnabled) return;
-      if (!provider) throw new Error("No read-later provider — not signed in");
-      return provider.deleteSaveItem(itemRkey);
-    },
-    onMutate: async (itemRkey) => {
-      const snapshot = await snapshotLatrSaveQueries(qc);
-      applyOptimisticLatrSaveDelete(qc, itemRkey);
-      return snapshot;
-    },
-    onError: (_error, _params, context) => {
-      restoreLatrSaveQueries(qc, context);
-    },
-    onSettled: () => {
-      if (!dummyReaderDataEnabled) invalidateLatrSaveQueries(qc);
-    },
-  });
+  return useBookmarkMutation("delete");
 }
 
 export function useArchiveLatrSaveMutation() {
-  const provider = useReadLaterProvider();
-  const qc = useQueryClient();
-  const dummyReaderDataEnabled = isDummyReaderDataEnabled();
-
-  return useMutation({
-    mutationFn: async (itemRkey: string) => {
-      if (dummyReaderDataEnabled) return;
-      if (!provider) throw new Error("No read-later provider — not signed in");
-      return provider.archiveSaveItem(itemRkey);
-    },
-    onMutate: async (itemRkey) => {
-      const snapshot = await snapshotLatrSaveQueries(qc);
-      applyOptimisticLatrSaveArchive(qc, itemRkey);
-      return snapshot;
-    },
-    onError: (_error, _params, context) => {
-      restoreLatrSaveQueries(qc, context);
-    },
-    onSettled: () => {
-      if (!dummyReaderDataEnabled) invalidateLatrSaveQueries(qc);
-    },
-  });
+  return useBookmarkMutation("archive");
 }
 
 export function useUnarchiveLatrSaveMutation() {
-  const provider = useReadLaterProvider();
-  const qc = useQueryClient();
-  const dummyReaderDataEnabled = isDummyReaderDataEnabled();
-
-  return useMutation({
-    mutationFn: async (itemRkey: string) => {
-      if (dummyReaderDataEnabled) return;
-      if (!provider) throw new Error("No read-later provider — not signed in");
-      return provider.unarchiveSaveItem(itemRkey);
-    },
-    onMutate: async (itemRkey) => {
-      const snapshot = await snapshotLatrSaveQueries(qc);
-      applyOptimisticLatrSaveUnarchive(qc, itemRkey);
-      return snapshot;
-    },
-    onError: (_error, _params, context) => {
-      restoreLatrSaveQueries(qc, context);
-    },
-    onSettled: () => {
-      if (!dummyReaderDataEnabled) invalidateLatrSaveQueries(qc);
-    },
-  });
+  return useBookmarkMutation("unarchive");
 }
 
 /** @deprecated Prefer useDeleteLatrSaveMutation. */
 export function useDeleteHttpsReadLaterMutation() {
-  const provider = useReadLaterProvider();
+  const mutation = useDeleteLatrSaveMutation();
   const qc = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (normalizedUrl: string) => {
-      if (!provider) throw new Error("No read-later provider — not signed in");
-      return provider.deleteHttpsUrl(normalizedUrl);
+  return {
+    ...mutation,
+    mutate: (url: string) => {
+      const normalized = normalizeLatrHttpsUrl(url);
+      const rows = [
+        ...(qc.getQueryData<MergedLatrSave[]>(LATR_SAVED_QUERY_KEY) ?? []),
+        ...(qc.getQueryData<MergedLatrSave[]>(LATR_ARCHIVED_QUERY_KEY) ?? []),
+      ];
+      const row = rows.find(
+        (candidate) => candidate.kind === "external" && candidate.normalizedUrl === normalized
+      );
+      if (row) mutation.mutate(row.itemRkey);
     },
-    onMutate: async (normalizedUrl) => {
-      const snapshot = await snapshotLatrSaveQueries(qc);
-      const active = qc.getQueryData<MergedLatrSave[]>(LATR_SAVED_QUERY_KEY);
-      const archived = qc.getQueryData<MergedLatrSave[]>(LATR_ARCHIVED_QUERY_KEY);
-      const normalized = normalizeLatrHttpsUrl(normalizedUrl.trim());
-      const row =
-        active?.find(
-          (entry) => entry.kind === "external" && entry.normalizedUrl === normalized
-        ) ??
-        archived?.find(
-          (entry) => entry.kind === "external" && entry.normalizedUrl === normalized
-        );
-      if (row) {
-        applyOptimisticLatrSaveDelete(qc, row.itemRkey);
-      }
-      return snapshot;
-    },
-    onError: (_error, _params, context) => {
-      restoreLatrSaveQueries(qc, context);
-    },
-    onSettled: () => invalidateLatrSaveQueries(qc),
-  });
+  };
 }
 
 /** @deprecated Prefer useArchiveLatrSaveMutation. */
 export function useArchiveHttpsReadLaterMutation() {
-  const provider = useReadLaterProvider();
+  const mutation = useArchiveLatrSaveMutation();
   const qc = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (normalizedUrl: string) => {
-      if (!provider) throw new Error("No read-later provider — not signed in");
-      return provider.archiveHttpsUrl(normalizedUrl);
-    },
-    onMutate: async (normalizedUrl) => {
-      const snapshot = await snapshotLatrSaveQueries(qc);
-      const active = qc.getQueryData<MergedLatrSave[]>(LATR_SAVED_QUERY_KEY);
-      const normalized = normalizeLatrHttpsUrl(normalizedUrl.trim());
-      const row = active?.find(
-        (entry) => entry.kind === "external" && entry.normalizedUrl === normalized
+  return {
+    ...mutation,
+    mutate: (url: string) => {
+      const normalized = normalizeLatrHttpsUrl(url);
+      const rows = qc.getQueryData<MergedLatrSave[]>(LATR_SAVED_QUERY_KEY) ?? [];
+      const row = rows.find(
+        (candidate) => candidate.kind === "external" && candidate.normalizedUrl === normalized
       );
-      if (row) {
-        applyOptimisticLatrSaveArchive(qc, row.itemRkey);
-      }
-      return snapshot;
+      if (row) mutation.mutate(row.itemRkey);
     },
-    onError: (_error, _params, context) => {
-      restoreLatrSaveQueries(qc, context);
-    },
-    onSettled: () => invalidateLatrSaveQueries(qc),
-  });
+  };
 }
 
 export function useSaveReadLaterEntryMutation() {
-  const provider = useReadLaterProvider();
-  const { session, getOAuthSession } = useAuth();
+  const clients = useReadLaterClients();
   const qc = useQueryClient();
-
   return useMutation({
     mutationFn: async (params: {
       entryId: string;
@@ -268,98 +206,41 @@ export function useSaveReadLaterEntryMutation() {
       title?: string;
       excerpt?: string;
     }) => {
-      if (!provider) throw new Error("No read-later provider — not signed in");
-
+      if (!clients) throw new Error("No read-later provider — not signed in");
       const target = resolveReadLaterSaveTarget(params);
-      const saveOptions = {
-        title: target.title,
-        excerpt: target.excerpt,
-      };
-
-      if (target.kind === "external") {
-        return provider.saveHttpsUrl(target.url, saveOptions);
-      }
-
-      let linkedWebUrl = target.linkedWebUrl;
-      if (!linkedWebUrl) {
-        const oauthSession = getOAuthSession();
-        const preview = oauthSession
-          ? await resolveNativeSavedSubjectPreview(target.subjectUri, oauthSession)
-          : null;
-        linkedWebUrl = preview?.url?.trim();
-      }
-
-      return provider.saveNativeSubject(target.subjectUri, linkedWebUrl);
+      if (!target.subject) throw new Error("Cannot save an empty bookmark subject");
+      await clients.provider.saveSubject(target.subject);
     },
     onMutate: async (params) => {
-      const did = session?.did;
-      if (!did) return undefined;
-
       const snapshot = await snapshotLatrSaveQueries(qc);
       const target = resolveReadLaterSaveTarget(params);
-      try {
-        const row =
-          target.kind === "external"
-            ? await buildOptimisticExternalLatrSave(did, target.url, {
-                title: target.title,
-                excerpt: target.excerpt,
-              })
-            : await buildOptimisticNativeLatrSave(did, target.subjectUri, {
-                title: target.title,
-                excerpt: target.excerpt,
-                linkedWebUrl: target.linkedWebUrl,
-              });
-        applyOptimisticLatrSaveInsert(qc, row);
-      } catch {
-        restoreLatrSaveQueries(qc, snapshot);
-        return undefined;
-      }
+      applyOptimisticLatrSaveInsert(qc, buildOptimisticBookmarkRow(target.subject, target));
       return snapshot;
     },
-    onError: (_error, _params, context) => {
-      restoreLatrSaveQueries(qc, context);
-    },
+    onError: (_error, _params, context) => restoreLatrSaveQueries(qc, context),
     onSettled: () => invalidateLatrSaveQueries(qc),
   });
 }
 
-/**
- * Whether an entry is already in the active read-later list (HTTPS URL or native subject).
- */
 export function useEntryIsLatrSaved(
   entryId: string,
   displayUrlHttps?: string | null
 ): boolean {
-  const { data: merged } = useLatrMergedHttpsSaves("active");
-  const normalizedUrl = displayUrlHttps?.trim()
-    ? normalizeLatrHttpsUrl(displayUrlHttps)
-    : null;
-  return useMemo(() => {
-    if (!merged?.length) return false;
-    return merged.some((row) => {
-      if (row.kind === "native" && row.subjectUri === entryId) return true;
-      if (
-        row.kind === "external" &&
-        normalizedUrl &&
-        row.normalizedUrl === normalizedUrl
-      ) {
-        return true;
-      }
-      return false;
-    });
-  }, [entryId, merged, normalizedUrl]);
+  const { data } = useLatrMergedHttpsSaves("active");
+  const subject = displayUrlHttps?.trim() || entryId.trim();
+  return useMemo(
+    () => Boolean(subject && data?.some((row) => row.subjectUri === subject)),
+    [data, subject]
+  );
 }
 
-/**
- * Client-only: whether merged read-later rows already include this HTTPS URL string.
- */
-export function useHttpsUrlIsLatrSaved(displayUrlHttps: string | null | undefined): boolean {
-  const { data: merged } = useLatrMergedHttpsSaves("active");
-  const n = displayUrlHttps?.trim()
-    ? normalizeLatrHttpsUrl(displayUrlHttps)
-    : null;
-  return useMemo(() => {
-    if (!n || !merged?.length) return false;
-    return merged.some((row) => row.kind === "external" && row.normalizedUrl === n);
-  }, [n, merged]);
+export function useHttpsUrlIsLatrSaved(
+  displayUrlHttps: string | null | undefined
+): boolean {
+  const { data } = useLatrMergedHttpsSaves("active");
+  const subject = displayUrlHttps?.trim();
+  return useMemo(
+    () => Boolean(subject && data?.some((row) => row.subjectUri === subject)),
+    [data, subject]
+  );
 }

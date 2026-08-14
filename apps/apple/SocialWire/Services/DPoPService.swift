@@ -49,10 +49,16 @@ actor DPoPService {
         nonceByOrigin[originKey(for: url)] = nonce
     }
 
+    func updateNonce(_ nonce: String, for url: URL) {
+        let trimmed = nonce.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        nonceByOrigin[originKey(for: url)] = trimmed
+    }
+
     /// Advances the viewer PDS DPoP nonce chain before minting upstream write proofs (RFC 9449 single-use nonces).
     func advancePdsDpopNonce(
         session: AuthSession,
-        collection: String = "link.latr.saved.item",
+        collection: String = "community.lexicon.bookmarks.bookmark",
         urlSession: URLSession = .shared
     ) async {
         var listComponents = URLComponents(

@@ -1,0 +1,25 @@
+meta {
+  name: Delete Bookmark
+  type: http
+  seq: 50
+}
+
+post {
+  url: {{baseUrl}}/xrpc/link.latr.bookmarks.deleteBookmark
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: DPoP {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+  X-Latr-Gateway-DPoP: {{latrGatewayDpopProof}}
+  X-ATProto-Upstream-DPoP: {{upstreamDpopProof}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "bookmarkUri": "{{latrBookmarkUri}}"
+  }
+}

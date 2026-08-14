@@ -15,7 +15,7 @@ methods while protected `/v1` routes are registered. Until the XRPC changes are
 committed, deployed, and smoke-tested, `/v1/*` is the current hosted contract.
 
 Streaming, health/readiness, OAuth metadata, telemetry, PDS write-through,
-L@tr, and vendor-owned transports stay HTTP rather than being forced into XRPC.
+and vendor-owned transports stay HTTP. L@tr exposes its foreign bookmark XRPC surface unchanged.
 The endpoint manifest records the intended transport per operation.
 
 ## Service boundaries
@@ -37,7 +37,7 @@ The endpoint manifest records the intended transport per operation.
 | `/v1/pds/cache/*` | Short-lived single-record read acceleration |
 | `/v1/publications/*` | Sidebar proxy, resolve/refresh, and native PDS write-through |
 | `/v1/appview/*` | Bootstrap, feeds, entry detail, unread counts, read mutations, enrollment, purge |
-| `/v1/latr/*` | Native L@tr Link list/save/preview proxy |
+| `/xrpc/link.latr.bookmarks.*` | Native L@tr bookmark queries, mutations, and migration proxy |
 | `/v1/telemetry/*` | Bounded, deidentified client-performance samples |
 | `/v1/operations/*` | Operator-only control-plane proxy |
 
@@ -49,7 +49,7 @@ Examples in the pending XRPC surface include
 string; procedures use JSON request bodies. XRPC errors use the standard
 `{"error":"Name","message":"..."}` envelope.
 
-AppView proxy routes mount only when `APPVIEW_BASE_URL` is configured. Operations routes require `OPERATIONS_BASE_URL` and a distinct `GATEWAY_OPERATIONS_INTERNAL_SECRET`. Native L@tr routes mount only when the server-side `LATR_IOS_PROXY_*` credentials are configured.
+AppView proxy routes mount only when `APPVIEW_BASE_URL` is configured. Operations routes require `OPERATIONS_BASE_URL` and a distinct `GATEWAY_OPERATIONS_INTERNAL_SECRET`. Native L@tr XRPC routes mount only when the server-side `LATR_IOS_PROXY_*` credentials are configured.
 
 Gateway→AppView trust uses `GATEWAY_APPVIEW_INTERNAL_SECRET`, with HMAC over the request path. Gateway→Operations uses its separate Operations secret. External clients must never send or know either internal secret.
 

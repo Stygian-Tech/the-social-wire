@@ -1,9 +1,12 @@
 import Foundation
+import LatrKit
 
-/// Authenticated L@tr Link saves via Social Wire Gateway proxy (`/v1/latr/saves*`) with upstream PDS DPoP.
+/// Bookmark XRPC client routed through the Social Wire Gateway. Application credentials remain
+/// server-side; the native client supplies gateway-, L@tr-, and PDS-bound DPoP proofs.
 @MainActor
 final class LatrGatewayClient {
     private static let upstreamDPoPHeader = "X-ATProto-Upstream-DPoP"
+    private static let contractVersion = "link.latr.bookmarks.v1"
 
     private let auth: ATProtoOAuthService
     private let transportBaseURL: URL
@@ -22,239 +25,281 @@ final class LatrGatewayClient {
         self.urlSession = urlSession
     }
 
-    func saveURL(_ url: URL, title: String?, excerpt: String?) async throws {
-        var body: [String: String] = [
-            "kind": "url",
-            "url": url.absoluteString,
-        ]
-        if let title, !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            body["title"] = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-        if let excerpt, !excerpt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            body["excerpt"] = excerpt.trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-        try await authorizedRequest(
-            method: "POST",
-            path: "/v1/latr/saves",
-            body: try JSONEncoder().encode(body)
-        )
+    func listBookmarks() async throws -> [MergedLatrSave] {
+        var cursor: String?
+        var rows: [MergedLatrSave] = []
+        repeat {
+            var query = [URLQueryItem(name: "limit", value: "50")]
+            if let cursor { query.append(URLQueryItem(name: "cursor", value: cursor)) }
+            let data = try await request(
+                method: "GET",
+                xrpc: .listBookmarks,
+                query: query
+            )
+            let page = try JSONDecoder().decode(LatrListBookmarksOutput.self, from: data)
+            rows.append(contentsOf: page.bookmarks.map(Self.row))
+            cursor = page.cursor?.trimmingCharacters(in: .whitespacesAndNewlines)
+            if cursor?.isEmpty == true { cursor = nil }
+        } while cursor != nil
+        return rows.sorted { $0.savedAt > $1.savedAt }
     }
 
-    func saveNativeSubject(subjectURI: String, linkedWebURL: String?) async throws {
-        var body: [String: String] = [
-            "kind": "subject",
-            "subjectUri": subjectURI,
-        ]
-        if let linkedWebURL, !linkedWebURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            body["linkedWebUrl"] = linkedWebURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-        try await authorizedRequest(
-            method: "POST",
-            path: "/v1/latr/saves",
-            body: try JSONEncoder().encode(body)
-        )
-    }
-
-    func deleteSave(itemRkey: String) async throws {
-        try await authorizedRequest(
-            method: "DELETE",
-            path: "/v1/latr/saves/\(itemRkey.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? itemRkey)",
-            body: nil
-        )
-    }
-
-    func archiveSave(itemRkey: String) async throws {
-        try await patchSaveState(itemRkey: itemRkey, state: "archived")
-    }
-
-    func unarchiveSave(itemRkey: String) async throws {
-        try await patchSaveState(itemRkey: itemRkey, state: "unread")
-    }
-
-    func listSavedItems() async throws -> [RepoRecord<LatrSavedItemRecord>] {
-        let data = try await authorizedRequestData(
+    func bookmark(subject: String) async throws -> MergedLatrSave? {
+        let data = try await request(
             method: "GET",
-            path: "/v1/latr/saves",
-            body: nil
+            xrpc: .getBookmark,
+            query: [URLQueryItem(name: "subject", value: subject)]
         )
-        let decoded = try JSONDecoder().decode(LatrGatewaySavedItemsResponse.self, from: data)
-        return decoded.records ?? []
+        return try JSONDecoder().decode(LatrGetBookmarkOutput.self, from: data).bookmark.map(Self.row)
     }
 
-    private func patchSaveState(itemRkey: String, state: String) async throws {
-        let encodedRkey = itemRkey.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? itemRkey
-        try await authorizedRequest(
+    func save(subject: String) async throws {
+        _ = try await request(
+            method: "POST",
+            xrpc: .saveBookmark,
+            body: try JSONEncoder().encode(LatrSaveBookmarkInput(subject: subject))
+        )
+    }
+
+    func archive(bookmarkURI: String) async throws {
+        try await setState(bookmarkURI: bookmarkURI, state: .archived)
+    }
+
+    func unarchive(bookmarkURI: String) async throws {
+        try await setState(bookmarkURI: bookmarkURI, state: .unread)
+    }
+
+    func delete(bookmarkURI: String) async throws {
+        _ = try await request(
+            method: "POST",
+            xrpc: .deleteBookmark,
+            body: try JSONEncoder().encode(LatrDeleteBookmarkInput(bookmarkUri: bookmarkURI))
+        )
+    }
+
+    /// Runs once per viewer and contract version. Completion is persisted only after the final
+    /// cursor succeeds; conflicts deliberately remain retryable on a later load.
+    func migrateLegacyIfNeeded(viewerDID: String) async throws -> Int {
+        let key = "the-social-wire.latr-migration.\(Self.contractVersion).\(viewerDID)"
+        guard !UserDefaults.standard.bool(forKey: key) else { return 0 }
+        var cursor: String?
+        var conflicts = 0
+        repeat {
+            let input = LatrMigrateBookmarksInput(limit: 25, cursor: cursor)
+            var body = try JSONSerialization.jsonObject(with: JSONEncoder().encode(input)) as? [String: Any] ?? [:]
+            body["upstreamDpopProof"] = try await upstreamProofPool(for: .migrateBookmarks)
+            let data = try await request(
+                method: "POST",
+                xrpc: .migrateBookmarks,
+                body: try JSONSerialization.data(withJSONObject: body),
+                bodyCarriesUpstreamProof: true
+            )
+            let page = try JSONDecoder().decode(LatrBookmarkMigrationResult.self, from: data)
+            guard page.ok else {
+                throw SocialWireError.badResponse("L@tr legacy bookmark migration did not complete.")
+            }
+            conflicts += page.skippedConflict
+            cursor = page.cursor?.trimmingCharacters(in: .whitespacesAndNewlines)
+            if cursor?.isEmpty == true { cursor = nil }
+        } while cursor != nil
+        if conflicts == 0 { UserDefaults.standard.set(true, forKey: key) }
+        return conflicts
+    }
+
+    private func setState(bookmarkURI: String, state: SavedItemState) async throws {
+        _ = try await request(
             method: "PATCH",
-            path: "/v1/latr/saves/\(encodedRkey)/state",
-            body: try JSONEncoder().encode(["state": state])
+            xrpc: .setBookmarkState,
+            body: try JSONEncoder().encode(
+                LatrSetBookmarkStateInput(bookmarkUri: bookmarkURI, state: state)
+            )
         )
     }
 
-    private func authorizedRequest(method: String, path: String, body: Data?) async throws {
-        _ = try await authorizedRequestData(method: method, path: path, body: body)
-    }
-
-    private func authorizedRequestData(method: String, path: String, body: Data?) async throws -> Data {
-        guard let comps = URLComponents(url: transportBaseURL.appending(path: path), resolvingAgainstBaseURL: false) else {
-            throw SocialWireError.invalidURL
-        }
-        guard let url = comps.url else {
-            throw SocialWireError.invalidURL
-        }
-
+    private func request(
+        method: String,
+        xrpc: LatrXRPCMethod,
+        query: [URLQueryItem] = [],
+        body: Data? = nil,
+        bodyCarriesUpstreamProof: Bool = false
+    ) async throws -> Data {
+        var components = URLComponents(
+            url: transportBaseURL.appending(path: "xrpc/\(xrpc.nsid)"),
+            resolvingAgainstBaseURL: false
+        )
+        components?.queryItems = query.isEmpty ? nil : query
+        guard let url = components?.url else { throw SocialWireError.invalidURL }
         let session = try await auth.validSession()
-        var request = URLRequest(url: url)
-        request.httpMethod = method
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        if let body {
-            request.httpBody = body
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        func signedRequest() async throws -> URLRequest {
+            var request = URLRequest(url: url)
+            request.httpMethod = method
+            request.setValue("application/json", forHTTPHeaderField: "Accept")
+            if let body {
+                request.httpBody = body
+                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            }
+            request.setValue("DPoP \(session.accessToken)", forHTTPHeaderField: "Authorization")
+            request.setValue(
+                try await auth.dpop.proof(method: method, url: url, accessToken: session.accessToken),
+                forHTTPHeaderField: "DPoP"
+            )
+            if LatrGatewayEnvironment.usesDirectExternalGateway {
+                if let clientID = LatrGatewayEnvironment.developerClientId,
+                   let apiKey = LatrGatewayEnvironment.developerApiKey
+                {
+                    request.setValue(clientID, forHTTPHeaderField: "X-Latr-Client-Id")
+                    request.setValue(apiKey, forHTTPHeaderField: "X-Latr-API-Key")
+                } else if let credential = LatrGatewayEnvironment.officialClientCredential {
+                    request.setValue(credential, forHTTPHeaderField: "X-Latr-Official-Client")
+                }
+            } else {
+                let latrURL = proofBaseURL.appending(path: "xrpc/\(xrpc.nsid)")
+                request.setValue(
+                    try await auth.dpop.proof(method: method, url: latrURL, accessToken: session.accessToken),
+                    forHTTPHeaderField: LatrGatewayEnvironment.latrGatewayDPoPHeaderName
+                )
+            }
+            if !bodyCarriesUpstreamProof {
+                request.setValue(
+                    try await upstreamProofPool(for: xrpc),
+                    forHTTPHeaderField: Self.upstreamDPoPHeader
+                )
+            }
+            return request
         }
 
-        try await authorize(
-            &request,
-            session: session,
-            gatewayPath: path,
-            gatewayMethod: method
-        )
-
-        let (data, response) = try await urlSession.data(for: request)
+        let initial = try await signedRequest()
+        let (data, response) = try await urlSession.data(for: initial)
         guard let http = response as? HTTPURLResponse else {
             throw SocialWireError.badResponse("Missing L@tr gateway response.")
         }
-        await auth.dpop.updateNonce(from: http)
-
-        if [401, 400].contains(http.statusCode), http.value(forHTTPHeaderField: "DPoP-Nonce") != nil {
-            await auth.dpop.advancePdsDpopNonce(session: session, urlSession: urlSession)
-            var retry = URLRequest(url: url)
-            retry.httpMethod = method
-            retry.setValue("application/json", forHTTPHeaderField: "Accept")
-            if let body {
-                retry.httpBody = body
-                retry.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            }
-            try await authorize(
-                &retry,
-                session: session,
-                gatewayPath: path,
-                gatewayMethod: method
-            )
+        await captureNonce(from: http, xrpc: xrpc)
+        if [400, 401].contains(http.statusCode), http.value(forHTTPHeaderField: "DPoP-Nonce") != nil {
+            let retry = try await signedRequest()
             let (retryData, retryResponse) = try await urlSession.data(for: retry)
-            guard let retryHttp = retryResponse as? HTTPURLResponse else {
+            guard let retryHTTP = retryResponse as? HTTPURLResponse else {
                 throw SocialWireError.badResponse("Missing L@tr gateway response.")
             }
-            await auth.dpop.updateNonce(from: retryHttp)
-            try validateResponse(retryHttp, data: retryData)
+            await captureNonce(from: retryHTTP, xrpc: xrpc)
+            try validate(retryHTTP, data: retryData)
             return retryData
         }
-
-        try validateResponse(http, data: data)
+        try validate(http, data: data)
         return data
     }
 
-    private func validateResponse(_ http: HTTPURLResponse, data: Data) throws {
-        guard (200 ..< 300).contains(http.statusCode) else {
-            if http.statusCode == 401 {
-                auth.invalidateSessionAfterUnauthorizedResponse()
-            }
-            if let message = try? JSONDecoder().decode(LatrGatewayErrorBody.self, from: data).resolvedMessage {
-                throw SocialWireError.badResponse(message)
-            }
-            throw SocialWireError.badResponse("L@tr gateway request failed (\(http.statusCode)).")
-        }
-    }
-
-    private func authorize(
-        _ request: inout URLRequest,
-        session: AuthSession,
-        gatewayPath: String,
-        gatewayMethod: String
-    ) async throws {
-        guard let transportURL = request.url else { throw SocialWireError.invalidURL }
-        let method = request.httpMethod ?? gatewayMethod
-
-        request.setValue("DPoP \(session.accessToken)", forHTTPHeaderField: "Authorization")
-        request.setValue(
-            try await auth.dpop.proof(method: method, url: transportURL, accessToken: session.accessToken),
-            forHTTPHeaderField: "DPoP"
+    private func captureNonce(from response: HTTPURLResponse, xrpc: LatrXRPCMethod) async {
+        await auth.dpop.updateNonce(from: response)
+        guard !LatrGatewayEnvironment.usesDirectExternalGateway,
+              let nonce = response.value(forHTTPHeaderField: "DPoP-Nonce")
+        else { return }
+        await auth.dpop.updateNonce(
+            nonce,
+            for: proofBaseURL.appending(path: "xrpc/\(xrpc.nsid)")
         )
+    }
 
-        if LatrGatewayEnvironment.usesDirectExternalGateway {
-            if let clientId = LatrGatewayEnvironment.developerClientId,
-               let apiKey = LatrGatewayEnvironment.developerApiKey
-            {
-                request.setValue(clientId, forHTTPHeaderField: "X-Latr-Client-Id")
-                request.setValue(apiKey, forHTTPHeaderField: "X-Latr-API-Key")
-            } else if let credential = LatrGatewayEnvironment.officialClientCredential {
-                request.setValue(credential, forHTTPHeaderField: "X-Latr-Official-Client")
+    private func upstreamProofPool(for method: LatrXRPCMethod) async throws -> String {
+        let session = try await auth.validSession()
+        let specs = Self.proofSpecs(for: method)
+        var proofs: [String] = []
+        for spec in specs {
+            let url = session.pdsURL.appending(path: "xrpc/\(spec.nsid)")
+            for _ in 0 ..< spec.count {
+                await auth.dpop.advancePdsDpopNonce(session: session, urlSession: urlSession)
+                proofs.append(
+                    try await auth.dpop.proof(
+                        method: spec.httpMethod,
+                        url: url,
+                        accessToken: session.accessToken
+                    )
+                )
             }
-        } else {
-            let latrProofURL = proofBaseURL.appending(path: gatewayPath)
-            let latrProof = try await auth.dpop.proof(
-                method: method,
-                url: latrProofURL,
-                accessToken: session.accessToken
-            )
-            request.setValue(latrProof, forHTTPHeaderField: LatrGatewayEnvironment.latrGatewayDPoPHeaderName)
         }
+        return proofs.joined(separator: ",")
+    }
 
-        if let xrpcMethod = Self.pdsXrpcMethod(gatewayMethod: gatewayMethod, path: gatewayPath) {
-            let pdsXrpcURL = session.pdsURL
-                .appending(path: "xrpc")
-                .appending(path: xrpcMethod)
-            let upstreamHTTPMethod = Self.pdsXrpcHTTPMethod(
-                gatewayMethod: gatewayMethod,
-                path: gatewayPath
-            )
-            await auth.dpop.advancePdsDpopNonce(session: session, urlSession: urlSession)
-            let upstreamProof = try await auth.dpop.proof(
-                method: upstreamHTTPMethod,
-                url: pdsXrpcURL,
-                accessToken: session.accessToken
-            )
-            request.setValue(upstreamProof, forHTTPHeaderField: Self.upstreamDPoPHeader)
+    nonisolated static func proofSpecs(for method: LatrXRPCMethod) -> [(nsid: String, httpMethod: String, count: Int)] {
+        switch method {
+        case .listBookmarks:
+            [("com.atproto.repo.listRecords", "GET", 9)]
+        case .getBookmark:
+            [("com.atproto.repo.listRecords", "GET", 8), ("com.atproto.repo.getRecord", "GET", 1)]
+        case .saveBookmark:
+            [("com.atproto.repo.listRecords", "GET", 8), ("com.atproto.repo.getRecord", "GET", 2), ("com.atproto.repo.applyWrites", "POST", 1)]
+        case .setBookmarkState, .deleteBookmark:
+            [("com.atproto.repo.getRecord", "GET", 2), ("com.atproto.repo.applyWrites", "POST", 1)]
+        case .migrateBookmarks:
+            [("com.atproto.repo.listRecords", "GET", 40), ("com.atproto.repo.getRecord", "GET", 25), ("com.atproto.repo.applyWrites", "POST", 25)]
+        default:
+            []
         }
     }
 
-    private static func pdsXrpcHTTPMethod(gatewayMethod: String, path: String) -> String {
-        let method = gatewayMethod.uppercased()
-        if method == "GET", path == "/v1/latr/saves" {
-            return "GET"
+    private func validate(_ response: HTTPURLResponse, data: Data) throws {
+        guard (200 ..< 300).contains(response.statusCode) else {
+            if response.statusCode == 401 { auth.invalidateSessionAfterUnauthorizedResponse() }
+            let error = try? JSONDecoder().decode(LatrXRPCErrorBody.self, from: data)
+            throw SocialWireError.badResponse(error?.message ?? error?.error ?? "L@tr gateway request failed (\(response.statusCode)).")
         }
-        return "POST"
     }
 
-    private static func pdsXrpcMethod(gatewayMethod: String, path: String) -> String? {
-        let method = gatewayMethod.uppercased()
-        if method == "GET", path == "/v1/latr/saves" {
-            return "com.atproto.repo.listRecords"
+    private static func row(_ view: BookmarkView) -> MergedLatrSave {
+        let subject = view.value.subject
+        let state = view.metadataRecord?.value.state?.rawValue ?? "unread"
+        let common = (
+            savedAt: view.value.createdAt,
+            itemRkey: view.uri,
+            itemUri: view.uri,
+            subjectUri: subject,
+            state: state,
+            lastOpenedAt: view.metadataRecord?.value.lastOpenedAt,
+            title: view.preview?.title,
+            excerpt: view.preview?.description,
+            image: view.preview?.image,
+            site: view.preview?.siteName,
+            author: view.preview?.author
+        )
+        if let url = URL(string: subject), ["http", "https"].contains(url.scheme?.lowercased() ?? "") {
+            return .external(MergedLatrExternalSave(
+                normalizedUrl: subject,
+                url: subject,
+                savedAt: common.savedAt,
+                externalRkey: "",
+                itemRkey: common.itemRkey,
+                externalUri: subject,
+                itemUri: common.itemUri,
+                subjectUri: common.subjectUri,
+                state: common.state,
+                lastOpenedAt: common.lastOpenedAt,
+                title: common.title,
+                excerpt: common.excerpt,
+                image: common.image,
+                site: common.site,
+                author: common.author,
+                publishedAt: nil,
+                language: nil,
+                linkedWebUrl: nil,
+                rowSubtitle: nil
+            ))
         }
-        if method == "POST" && path == "/v1/latr/saves" {
-            // L@tr saved items use deterministic rkeys (URL/subject-derived), so the gateway writes
-            // them upstream with putRecord — not createRecord. Bind the upstream DPoP proof's `htu`
-            // to putRecord to match the endpoint the gateway actually calls, otherwise the PDS
-            // rejects the write with `invalid_dpop_proof: DPoP "htu" mismatch`.
-            return "com.atproto.repo.putRecord"
-        }
-        if method == "PATCH", path.contains("/v1/latr/saves/"), path.hasSuffix("/state") {
-            return "com.atproto.repo.putRecord"
-        }
-        if method == "DELETE", path.hasPrefix("/v1/latr/saves/") {
-            return "com.atproto.repo.deleteRecord"
-        }
-        return nil
+        return .native(MergedLatrNativeSave(
+            savedAt: common.savedAt,
+            itemRkey: common.itemRkey,
+            itemUri: common.itemUri,
+            subjectUri: common.subjectUri,
+            state: common.state,
+            lastOpenedAt: common.lastOpenedAt,
+            title: common.title,
+            excerpt: common.excerpt,
+            image: common.image,
+            site: common.site,
+            author: common.author,
+            publishedAt: nil,
+            language: nil,
+            linkedWebUrl: nil,
+            rowSubtitle: nil
+        ))
     }
-}
-
-private struct LatrGatewayErrorBody: Decodable {
-    var message: String?
-    var error: String?
-
-    var resolvedMessage: String? {
-        message ?? error
-    }
-}
-
-private struct LatrGatewaySavedItemsResponse: Decodable {
-    let records: [RepoRecord<LatrSavedItemRecord>]?
 }

@@ -1,11 +1,11 @@
 meta {
-  name: Patch L@tr Save State
+  name: Save Bookmark
   type: http
   seq: 30
 }
 
-patch {
-  url: {{baseUrl}}/v1/latr/saves/{{latrItemRkey}}/state
+post {
+  url: {{baseUrl}}/xrpc/link.latr.bookmarks.saveBookmark
   body: json
   auth: none
 }
@@ -20,10 +20,6 @@ headers {
 
 body:json {
   {
-    "state": "archived"
+    "subject": "https://example.com/article"
   }
-}
-
-docs {
-  Archives a L@tr item through the native gateway proxy. Use `state: unread` to unarchive. Set `latrItemRkey` to the saved-item record key.
 }

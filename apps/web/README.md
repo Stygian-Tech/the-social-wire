@@ -151,7 +151,7 @@ These browser-side keys are convenience caches (no secrets):
 
 ### Read Later and Archive
 
-`/saved` and `/archive` are sibling reader destinations that reuse the three-pane shell and article embed. `/saved/settings` redirects to `/saved`; there is no provider selector in the current UI. L@tr Link is the default provider: lists use the same-origin L@tr gateway proxy, and mutations use that proxy with a limited direct-PDS fallback where implemented.
+`/saved` and `/archive` are sibling reader destinations that reuse the three-pane shell and article embed. `/saved/settings` redirects to `/saved`; there is no provider selector. All reads, mutations, and lazy migration use the same-origin `link.latr.bookmarks.*` XRPC proxy with no direct-PDS fallback.
 
 ### Key Libraries
 

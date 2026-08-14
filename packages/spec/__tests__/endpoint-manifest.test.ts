@@ -43,7 +43,7 @@ describe("endpoint transport manifest", () => {
     expect(byPath.get("GET /v1/appview/bootstrap-stream")).toBe("stream");
     expect(byPath.get("GET /v1/operations/events/stream")).toBe("stream");
     expect(byPath.get("GET /api/bluesky-card-thumb")).toBe("media-proxy");
-    expect(byPath.get("GET /v1/latr/saves")).toBe("foreign-rest");
+    expect(byPath.get("GET /xrpc/link.latr.bookmarks.listBookmarks")).toBe("foreign-xrpc");
     expect(byPath.get("POST /channel")).toBe("vendor-private-rest");
   });
 });

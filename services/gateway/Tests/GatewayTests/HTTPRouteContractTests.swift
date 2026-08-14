@@ -343,8 +343,8 @@ struct HTTPRouteContractTests {
     }
   }
 
-  @Test("latr saves route is absent without LATR_IOS_PROXY_URL")
-  func latrSavesAbsentWithoutConfig() async throws {
+  @Test("L@tr bookmark XRPC routes are absent without LATR_IOS_PROXY_URL")
+  func latrBookmarksAbsentWithoutConfig() async throws {
     try await withSingletonHTTPClient { client in
       let dbPath =
         FileManager.default.temporaryDirectory
@@ -356,14 +356,15 @@ struct HTTPRouteContractTests {
       let app = Application(
         router: router, configuration: .init(address: .hostname("127.0.0.1", port: 0)))
       try await app.test(.live) { c in
-        let response = try await c.execute(uri: "/v1/latr/saves", method: .get)
+        let response = try await c.execute(
+          uri: "/xrpc/link.latr.bookmarks.listBookmarks", method: .get)
         #expect(response.status.code == 404)
       }
     }
   }
 
-  @Test("latr saves rejects unauthenticated calls when configured")
-  func latrSavesUnauthorizedWhenConfigured() async throws {
+  @Test("all L@tr bookmark XRPC routes reject unauthenticated calls when configured")
+  func latrBookmarksUnauthorizedWhenConfigured() async throws {
     try await withSingletonHTTPClient { client in
       let dbPath =
         FileManager.default.temporaryDirectory
@@ -389,8 +390,18 @@ struct HTTPRouteContractTests {
       let app = Application(
         router: router, configuration: .init(address: .hostname("127.0.0.1", port: 0)))
       try await app.test(.live) { c in
-        let response = try await c.execute(uri: "/v1/latr/saves", method: .get)
-        #expect(response.status.code == 401)
+        let routes: [(String, HTTPRequest.Method)] = [
+          ("/xrpc/link.latr.bookmarks.listBookmarks?limit=25&cursor=next", .get),
+          ("/xrpc/link.latr.bookmarks.getBookmark?subject=https%3A%2F%2Fexample.com", .get),
+          ("/xrpc/link.latr.bookmarks.saveBookmark", .post),
+          ("/xrpc/link.latr.bookmarks.setState", .patch),
+          ("/xrpc/link.latr.bookmarks.deleteBookmark", .post),
+          ("/xrpc/link.latr.bookmarks.migrateLegacy", .post),
+        ]
+        for (uri, method) in routes {
+          let response = try await c.execute(uri: uri, method: method)
+          #expect(response.status.code == 401)
+        }
       }
     }
   }

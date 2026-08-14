@@ -4,9 +4,9 @@ The Social Wire uses [L@tr Link](https://latr.link) as its read-later system. Th
 
 ## Save an article
 
-Use **Save** or **Save to Read Later** from an article row or reader toolbar. The item appears under **Read Later**. Saving a normal web URL creates interoperable `link.latr.saved.external` and `link.latr.saved.item` records; native ATProto subjects can be represented directly by the saved-item record.
+Use **Save** or **Save to Read Later** from an article row or reader toolbar. The item appears under **Read Later**. The encountered HTTPS article URL is saved as the `community.lexicon.bookmarks.bookmark` subject whenever available; an AT URI is used only when no web URL exists.
 
-The saved-item record lives on your PDS. Preview metadata such as the title, excerpt, image, site, or author can be supplied by L@tr enrichment and may also be retained on the wrapper for consistent display.
+The bookmark and its `link.latr.bookmarks.metadata` record live on your PDS. Preview metadata such as title, excerpt, image, site, or author is derived by L@tr and returned directly by the bookmark XRPC response.
 
 ## Read Later versus Archive
 
@@ -24,10 +24,10 @@ When a saved URL matches a publication already known to your sidebar, The Social
 
 ## Social actions
 
-If a saved item points back to a Bluesky or other compatible ATProto subject, like, reply, repost, and quote actions target that original record. They never target the `link.latr.saved.item` queue record.
+If a bookmark subject is a compatible AT URI, like, reply, repost, and quote actions target that original record. They never target the bookmark record itself.
 
 ## Portability and privacy
 
-L@tr records are ATProto repo records and are public by default. Other clients using the same lexicons and OAuth permissions can read or update the same queue. Do not place secrets in saved-item notes or tags.
+Bookmark records are public by default. Other clients using the same lexicons and OAuth permissions can read or update the same queue. Do not place secrets in notes or tags.
 
 Related: [[Getting-started]], [[Account-settings-and-privacy]], [[Lexicons]].

@@ -216,32 +216,44 @@
     {
       "surface": "openapi",
       "method": "GET",
-      "path": "/v1/latr/saves",
-      "classification": "foreign-rest"
-    },
-    {
-      "surface": "openapi",
-      "method": "POST",
-      "path": "/v1/latr/saves",
-      "classification": "foreign-rest"
-    },
-    {
-      "surface": "openapi",
-      "method": "PATCH",
-      "path": "/v1/latr/saves/{rkey}/state",
-      "classification": "foreign-rest"
-    },
-    {
-      "surface": "openapi",
-      "method": "DELETE",
-      "path": "/v1/latr/saves/{rkey}",
-      "classification": "foreign-rest"
+      "path": "/xrpc/link.latr.bookmarks.listBookmarks",
+      "classification": "foreign-xrpc",
+      "xrpcNsid": "link.latr.bookmarks.listBookmarks"
     },
     {
       "surface": "openapi",
       "method": "GET",
-      "path": "/v1/latr/og-preview",
-      "classification": "foreign-rest"
+      "path": "/xrpc/link.latr.bookmarks.getBookmark",
+      "classification": "foreign-xrpc",
+      "xrpcNsid": "link.latr.bookmarks.getBookmark"
+    },
+    {
+      "surface": "openapi",
+      "method": "POST",
+      "path": "/xrpc/link.latr.bookmarks.saveBookmark",
+      "classification": "foreign-xrpc",
+      "xrpcNsid": "link.latr.bookmarks.saveBookmark"
+    },
+    {
+      "surface": "openapi",
+      "method": "PATCH",
+      "path": "/xrpc/link.latr.bookmarks.setState",
+      "classification": "foreign-xrpc",
+      "xrpcNsid": "link.latr.bookmarks.setState"
+    },
+    {
+      "surface": "openapi",
+      "method": "POST",
+      "path": "/xrpc/link.latr.bookmarks.deleteBookmark",
+      "classification": "foreign-xrpc",
+      "xrpcNsid": "link.latr.bookmarks.deleteBookmark"
+    },
+    {
+      "surface": "openapi",
+      "method": "POST",
+      "path": "/xrpc/link.latr.bookmarks.migrateLegacy",
+      "classification": "foreign-xrpc",
+      "xrpcNsid": "link.latr.bookmarks.migrateLegacy"
     },
     {
       "surface": "openapi",

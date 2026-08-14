@@ -24,38 +24,53 @@ struct LatrProxyRoutes {
   ]
 
   func register(on group: RouterGroup<GatewayRequestContext>) {
-    group.get("/v1/latr/saves") { request, context async throws -> Response in
-      try await forward(request: request, context: context, path: "/v1/latr/saves", method: "GET")
-    }
-    group.post("/v1/latr/saves") { request, context async throws -> Response in
-      try await forward(request: request, context: context, path: "/v1/latr/saves", method: "POST")
-    }
-    group.patch("/v1/latr/saves/:rkey/state") { request, context async throws -> Response in
-      guard let rkey = context.coreContext.parameters.get("rkey") else {
-        throw HTTPError(.badRequest, message: "Missing rkey")
-      }
-      let encoded = rkey.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? rkey
-      return try await forward(
+    group.get("/xrpc/link.latr.bookmarks.listBookmarks") { request, context async throws -> Response in
+      try await forward(
         request: request,
         context: context,
-        path: "/v1/latr/saves/\(encoded)/state",
+        path: "/xrpc/link.latr.bookmarks.listBookmarks",
+        method: "GET"
+      )
+    }
+    group.get("/xrpc/link.latr.bookmarks.getBookmark") { request, context async throws -> Response in
+      try await forward(
+        request: request,
+        context: context,
+        path: "/xrpc/link.latr.bookmarks.getBookmark",
+        method: "GET"
+      )
+    }
+    group.post("/xrpc/link.latr.bookmarks.saveBookmark") { request, context async throws -> Response in
+      try await forward(
+        request: request,
+        context: context,
+        path: "/xrpc/link.latr.bookmarks.saveBookmark",
+        method: "POST"
+      )
+    }
+    group.patch("/xrpc/link.latr.bookmarks.setState") { request, context async throws -> Response in
+      try await forward(
+        request: request,
+        context: context,
+        path: "/xrpc/link.latr.bookmarks.setState",
         method: "PATCH"
       )
     }
-    group.delete("/v1/latr/saves/:rkey") { request, context async throws -> Response in
-      guard let rkey = context.coreContext.parameters.get("rkey") else {
-        throw HTTPError(.badRequest, message: "Missing rkey")
-      }
-      let encoded = rkey.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? rkey
-      return try await forward(
+    group.post("/xrpc/link.latr.bookmarks.deleteBookmark") { request, context async throws -> Response in
+      try await forward(
         request: request,
         context: context,
-        path: "/v1/latr/saves/\(encoded)",
-        method: "DELETE"
+        path: "/xrpc/link.latr.bookmarks.deleteBookmark",
+        method: "POST"
       )
     }
-    group.get("/v1/latr/og-preview") { request, context async throws -> Response in
-      try await forward(request: request, context: context, path: "/v1/latr/og-preview", method: "GET")
+    group.post("/xrpc/link.latr.bookmarks.migrateLegacy") { request, context async throws -> Response in
+      try await forward(
+        request: request,
+        context: context,
+        path: "/xrpc/link.latr.bookmarks.migrateLegacy",
+        method: "POST"
+      )
     }
   }
 

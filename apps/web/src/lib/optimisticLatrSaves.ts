@@ -14,6 +14,34 @@ export type LatrSaveCacheSnapshot = {
   previousArchived?: MergedLatrSave[];
 };
 
+export function buildOptimisticBookmarkRow(
+  subject: string,
+  options?: { title?: string; excerpt?: string }
+): MergedLatrSave {
+  const trimmedSubject = subject.trim();
+  const normalizedUrl = normalizeLatrHttpsUrl(trimmedSubject);
+  const optimisticUri = `optimistic:${crypto.randomUUID()}`;
+  const shared = {
+    savedAt: new Date().toISOString(),
+    itemRkey: optimisticUri,
+    itemUri: optimisticUri,
+    subjectUri: trimmedSubject,
+    state: "unread" as const,
+    ...(options?.title?.trim() ? { title: options.title.trim() } : {}),
+    ...(options?.excerpt?.trim() ? { excerpt: options.excerpt.trim() } : {}),
+  };
+  return normalizedUrl
+    ? {
+        kind: "external",
+        normalizedUrl,
+        url: trimmedSubject,
+        externalRkey: "",
+        externalUri: trimmedSubject,
+        ...shared,
+      }
+    : { kind: "native", ...shared };
+}
+
 function sortLatrSavesBySavedAt(rows: MergedLatrSave[]): MergedLatrSave[] {
   return [...rows].sort((a, b) => {
     const ta = Date.parse(a.savedAt);

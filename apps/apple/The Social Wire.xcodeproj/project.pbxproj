@@ -6,6 +6,10 @@
 	objectVersion = 70;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		4ACEF26B02142492FF584D6D /* LatrKit in Frameworks */ = {isa = PBXBuildFile; productRef = 26B55D90F0C452BAA7012BEB /* LatrKit */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		AB00A5C393196D730DEF1541 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -35,6 +39,17 @@
 		229220E12FD767000059A5B2 /* SocialWire */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (2292215D2FD767010059A5B2 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = SocialWire; sourceTree = "<group>"; };
 		2292216A2FD767330059A5B2 /* SocialWireTests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = SocialWireTests; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		A7A6A5A4A3A2A1A09F9E9D9C /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				4ACEF26B02142492FF584D6D /* LatrKit in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
 		48339A63ED68EAFC1D2E67BD /* Products */ = {
@@ -84,6 +99,7 @@
 			buildConfigurationList = 738C8C41394ABE51738347D4 /* Build configuration list for PBXNativeTarget "SocialWire" */;
 			buildPhases = (
 				729100AB196052EDE8373417 /* Sources */,
+				A7A6A5A4A3A2A1A09F9E9D9C /* Frameworks */,
 				43489C18BD2F27B62C0825F6 /* Resources */,
 			);
 			buildRules = (
@@ -95,6 +111,7 @@
 			);
 			name = SocialWire;
 			packageProductDependencies = (
+				26B55D90F0C452BAA7012BEB /* LatrKit */,
 			);
 			productName = SocialWire;
 			productReference = FD2D66724B5A486EAEF66080 /* SocialWire.app */;
@@ -129,6 +146,9 @@
 			);
 			mainGroup = 5C5D93659B367ACAE4A49B84;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				B6B5B4B3B2B1B0AFAEADACAB /* XCRemoteSwiftPackageReference "latr-kit" */,
+			);
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
@@ -517,6 +537,25 @@
 			defaultConfigurationName = Beta;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		B6B5B4B3B2B1B0AFAEADACAB /* XCRemoteSwiftPackageReference "latr-kit" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/Stygian-Tech/latr-kit.git";
+			requirement = {
+				kind = revision;
+				revision = 286d3273bb2f5e971d2571bbc2c1158bbcc43f1b;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		26B55D90F0C452BAA7012BEB /* LatrKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = B6B5B4B3B2B1B0AFAEADACAB /* XCRemoteSwiftPackageReference "latr-kit" */;
+			productName = LatrKit;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 38BA5FEBCF13D8CA54C3FFA9 /* Project object */;
 }

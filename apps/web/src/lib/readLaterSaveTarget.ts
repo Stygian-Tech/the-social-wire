@@ -1,23 +1,12 @@
-import { isOriginalEntryContentUri } from "@/lib/savedLinkSocialTarget";
-
-export type ReadLaterSaveTarget =
-  | {
-      kind: "native";
-      subjectUri: string;
-      linkedWebUrl?: string;
-      title?: string;
-      excerpt?: string;
-    }
-  | {
-      kind: "external";
-      url: string;
-      title?: string;
-      excerpt?: string;
-    };
+export type ReadLaterSaveTarget = {
+  subject: string;
+  title?: string;
+  excerpt?: string;
+};
 
 /**
- * Prefer native `link.latr.saved.item` subjects for indexed ATProto entries
- * (standard.site documents/entries). Plain HTTPS saves stay external wrappers.
+ * Community bookmarks store the encountered HTTPS article URL whenever one is
+ * available. AT URIs are retained only when no web URL exists.
  */
 export function resolveReadLaterSaveTarget(params: {
   entryId: string;
@@ -25,31 +14,8 @@ export function resolveReadLaterSaveTarget(params: {
   title?: string;
   excerpt?: string;
 }): ReadLaterSaveTarget {
-  const entryId = params.entryId.trim();
-  const linkedWebUrl = params.url?.trim() || undefined;
-
-  if (entryId && isOriginalEntryContentUri(entryId)) {
-    return {
-      kind: "native",
-      subjectUri: entryId,
-      linkedWebUrl,
-      title: params.title,
-      excerpt: params.excerpt,
-    };
-  }
-
-  if (linkedWebUrl) {
-    return {
-      kind: "external",
-      url: linkedWebUrl,
-      title: params.title,
-      excerpt: params.excerpt,
-    };
-  }
-
   return {
-    kind: "native",
-    subjectUri: entryId,
+    subject: params.url?.trim() || params.entryId.trim(),
     title: params.title,
     excerpt: params.excerpt,
   };

@@ -17,7 +17,7 @@ info:
 
     **Thin AppView** (`ENABLE_THIN_APPVIEW` on AppView): data-minimized entry index and detail, unread counts, bootstrap-stream NDJSON initial load, scoped mark-all-read. Ingested by **Charybdis** (`services/appview-worker`).
 
-    Native L@tr proxy routes (`/v1/latr/*`) are documented here. The web app's same-origin Next.js `/api/latr-gateway` proxy is a separate surface.
+    Native L@tr bookmark XRPC proxy routes are documented here. The web app's same-origin Next.js `/api/latr-gateway` proxy is a separate surface.
   version: "1.0.0"
   contact:
     name: Stygian Tech
@@ -1990,121 +1990,112 @@ paths:
         "404":
           description: Route disabled when thin AppView flag is unset.
 
-  # ── L@tr read-later proxy (Social Wire Gateway iOS proxy) ─────────────────
+  # ── L@tr bookmark XRPC proxy (Social Wire Gateway iOS proxy) ───────────────
 
-  /v1/latr/saves:
+  /xrpc/link.latr.bookmarks.listBookmarks:
     get:
-      operationId: listLatrSaves
-      summary: List L@tr saved items with gateway enrichment
+      operationId: listLatrBookmarks
+      summary: List community bookmarks with metadata and preview enrichment
       description: |
-        Proxies to the external L@tr Gateway for native iOS clients. Requires viewer OAuth DPoP on this host,
-        `X-Latr-Gateway-DPoP` bound to the upstream L@tr URL, and optional
-        `X-ATProto-Upstream-DPoP` for PDS listRecords write-through.
-        Server injects L@tr credentials from the Social Wire Gateway's `LATR_IOS_PROXY_*` Railway
-        variables (distinct from the web frontend's `LATR_GATEWAY_*`); clients must not ship API keys.
-      tags: [Latr]
-      responses:
-        "200":
-          description: Saved item records with preview enrichment.
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [records]
-                properties:
-                  records:
-                    type: array
-                    items:
-                      type: object
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "503":
-          description: L@tr iOS proxy credentials (`LATR_IOS_PROXY_*`) not configured on this host.
-    post:
-      operationId: createLatrSave
-      summary: Save a URL or native subject via L@tr Gateway
-      tags: [Latr]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-      responses:
-        "200":
-          description: Save created.
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "503":
-          description: L@tr iOS proxy credentials (`LATR_IOS_PROXY_*`) not configured on this host.
-
-  /v1/latr/saves/{rkey}/state:
-    patch:
-      operationId: patchLatrSaveState
-      summary: Archive or unarchive a saved item
+        Proxies the foreign XRPC NSID to L@tr. Requires viewer OAuth/DPoP,
+        L@tr-bound DPoP, and the endpoint-specific PDS proof pool.
       tags: [Latr]
       parameters:
-        - name: rkey
-          in: path
-          required: true
-          schema:
-            type: string
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100 } }
+        - { name: cursor, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: Bookmark page with optional continuation cursor.
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /xrpc/link.latr.bookmarks.getBookmark:
+    get:
+      operationId: getLatrBookmark
+      summary: Look up an exact generic bookmark subject
+      tags: [Latr]
+      parameters:
+        - { name: subject, in: query, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Matching bookmark, when present. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /xrpc/link.latr.bookmarks.saveBookmark:
+    post:
+      operationId: saveLatrBookmark
+      summary: Save an HTTPS or AT URI subject as a community bookmark
+      tags: [Latr]
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [state]
+              required: [subject]
               properties:
+                subject: { type: string }
+                tags: { type: array, items: { type: string } }
+      responses:
+        "200": { description: Created or existing bookmark view. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /xrpc/link.latr.bookmarks.setState:
+    patch:
+      operationId: setLatrBookmarkState
+      summary: Archive or unarchive bookmark metadata
+      tags: [Latr]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [bookmarkUri, state]
+              properties:
+                bookmarkUri: { type: string }
                 state:
                   type: string
                   enum: [archived, unread]
       responses:
-        "200":
-          description: State updated.
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "503":
-          description: L@tr iOS proxy credentials (`LATR_IOS_PROXY_*`) not configured on this host.
+        "200": { description: State updated. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
 
-  /v1/latr/saves/{rkey}:
-    delete:
-      operationId: deleteLatrSave
-      summary: Delete a saved item
+  /xrpc/link.latr.bookmarks.deleteBookmark:
+    post:
+      operationId: deleteLatrBookmark
+      summary: Delete a bookmark and matching L@tr metadata
       tags: [Latr]
-      parameters:
-        - name: rkey
-          in: path
-          required: true
-          schema:
-            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [bookmarkUri]
+              properties:
+                bookmarkUri: { type: string }
       responses:
-        "204":
-          description: Deleted.
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "503":
-          description: L@tr iOS proxy credentials (`LATR_IOS_PROXY_*`) not configured on this host.
+        "200": { description: Bookmark and metadata deleted. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
 
-  /v1/latr/og-preview:
-    get:
-      operationId: getLatrOgPreview
-      summary: Fetch OG preview metadata for a URL
+  /xrpc/link.latr.bookmarks.migrateLegacy:
+    post:
+      operationId: migrateLatrLegacyBookmarks
+      summary: Retry-safe page of legacy wrapper migration
       tags: [Latr]
-      parameters:
-        - name: url
-          in: query
-          required: true
-          schema:
-            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [upstreamDpopProof]
+              properties:
+                limit: { type: integer, minimum: 1, maximum: 100 }
+                cursor: { type: string }
+                upstreamDpopProof: { type: string }
       responses:
-        "200":
-          description: Preview metadata.
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "503":
-          description: L@tr iOS proxy credentials (`LATR_IOS_PROXY_*`) not configured on this host.
+        "200": { description: Migration counts and optional continuation cursor. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
 
   /v1/operations/overview:
     get:

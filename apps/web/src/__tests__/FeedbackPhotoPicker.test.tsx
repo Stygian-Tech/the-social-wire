@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, describe, expect, it } from "bun:test";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { useState } from "react";
 
 import { FeedbackPhotoPicker } from "@/components/AppSidebar/FeedbackPhotoPicker";
@@ -36,7 +36,11 @@ describe("FeedbackPhotoPicker", () => {
     fireEvent.change(input, { target: { files } });
 
     expect(screen.getByText("4 of 4")).toBeDefined();
-    expect(screen.getAllByRole("listitem")).toHaveLength(4);
+    expect(
+      within(screen.getByRole("list", { name: "Attached Photos" })).getAllByRole(
+        "listitem",
+      ),
+    ).toHaveLength(4);
     expect(screen.queryByText("five.png")).toBeNull();
     expect(screen.queryByText("notes.txt")).toBeNull();
   });

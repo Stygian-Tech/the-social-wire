@@ -12,6 +12,8 @@ import {
 } from "@/lib/latrGatewayCredentials";
 import { latrGatewayErrorMessage } from "@/lib/latrGatewayErrors";
 import {
+  bookmarkUpstreamProofPlanForGatewayRequest,
+  createBookmarkUpstreamDpopProofPool,
   createSaveUpstreamDpopProofPool,
   createUpstreamDpopProof,
   createUpstreamDpopProofPool,
@@ -52,6 +54,19 @@ async function buildUpstreamDpopHeader(
   method: string,
   gatewayPath: string
 ): Promise<string | undefined> {
+  const bookmarkPlan = bookmarkUpstreamProofPlanForGatewayRequest(
+    method,
+    gatewayPath
+  );
+  if (bookmarkPlan?.transport === "header") {
+    return createBookmarkUpstreamDpopProofPool(
+      oauthSession,
+      method,
+      gatewayPath
+    );
+  }
+  if (bookmarkPlan?.transport === "body") return undefined;
+
   if (method === "GET" && PDS_SESSION_ATTESTATION_PATHS.has(gatewayPath)) {
     return createUpstreamDpopProof(
       oauthSession,

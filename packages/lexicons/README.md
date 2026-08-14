@@ -13,8 +13,8 @@ The only data we write to the user's PDS is what the protocol doesn't already ha
 | `app.thesocialwire.folder` | A named folder for organizing publications |
 | `app.thesocialwire.publicationPrefs` | Folder assignment, sort order, and visibility for a discovered publication |
 | `app.thesocialwire.preferences` | Account-level Social Wire preferences; legacy provider fields remain compatible, while current clients always use L@tr Link |
-| `link.latr.saved.external` | L@tr (latr.link) wrapper for normalized HTTPS URLs (read-later interoperability) |
-| `link.latr.saved.item` | L@tr read-later queue item pointing at `subjectUri` (external wrapper or ATProto record) |
+| `community.lexicon.bookmarks.bookmark` | Canonical bookmark record containing a generic HTTPS or AT-URI subject, timestamp, and tags |
+| `link.latr.bookmarks.metadata` | L@tr-owned archive state, note, and last-opened metadata for a community bookmark |
 | `app.skyreader.feed.subscription` | RSS/Atom subscriptions (Skyreader-compatible) on the user's PDS; see [`app/skyreader/feed/subscription.json`](app/skyreader/feed/subscription.json) |
 
 All records are public by default (ATProto repos are public). Any client that can read a PDS can see a user's Social Wire folders and preferences.
@@ -23,7 +23,7 @@ Feed read/unread state is not stored in ATProto repo records. Clients keep a loc
 
 ### L@tr (read-later) compatibility
 
-[L@tr / latr-link](https://tangled.org/samclemente.me/latr-link/) defines **`link.latr.saved.external`** and **`link.latr.saved.item`** (legacy **`com.latr.*`**) so read-later slots live entirely on the user’s PDS. The Social Wire **reads and writes** the same collections (deterministic keys and URL normalization aligned with upstream L@tr) so items saved here appear alongside other L@tr clients during OAuth-scoped **`com.atproto.repo.*`** access.
+[L@tr / latr-link](https://tangled.org/samclemente.me/latr-link/) exposes the six **`link.latr.bookmarks.*`** XRPC methods used by The Social Wire. Community bookmarks are authoritative for subject, timestamp, and tags; **`link.latr.bookmarks.metadata`** preserves Archive, notes, and last-opened state. The older **`link.latr.saved.*`** and **`com.latr.saved.*`** collections remain delete-only migration inputs during the compatibility window and are never used for new writes.
 
 ---
 

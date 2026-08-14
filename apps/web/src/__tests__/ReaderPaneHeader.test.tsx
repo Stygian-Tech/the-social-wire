@@ -17,6 +17,7 @@ mock.module("@/components/EntryDetail/ArticleSocialToolbar", () => ({
 }));
 
 mock.module("@/components/ui/button", () => ({
+  buttonVariants: () => "",
   Button: ({
     children,
     ...props

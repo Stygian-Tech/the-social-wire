@@ -1,11 +1,11 @@
 meta {
-  name: Get L@tr Saves
+  name: List Bookmarks
   type: http
   seq: 10
 }
 
 get {
-  url: {{baseUrl}}/v1/latr/saves
+  url: {{baseUrl}}/xrpc/link.latr.bookmarks.listBookmarks?limit=50
   body: none
   auth: none
 }
@@ -18,5 +18,5 @@ headers {
 }
 
 docs {
-  Proxies to the external L@tr Gateway for native iOS clients. Requires `LATR_IOS_PROXY_*` variables on the Social Wire Gateway service (distinct from the web frontend's `LATR_GATEWAY_*`).
+  Lists one bookmark page. Repeat with the returned cursor until exhausted.
 }

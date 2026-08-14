@@ -9,7 +9,7 @@ struct GatewayServiceConfig: Sendable {
   let appViewBaseURL: String?
   /// Dedicated control-plane origin for `/v1/operations/*`.
   let operationsBaseURL: String?
-  /// When set, `/v1/latr/*` is proxied to the external L@tr Gateway using iOS-proxy server credentials.
+  /// When set, `link.latr.bookmarks.*` XRPC is proxied to L@tr using iOS server credentials.
   let latrIosProxy: LatrIosProxyCredentials.Config?
 
   enum CacheBackend: Sendable {

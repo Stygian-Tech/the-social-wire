@@ -136,7 +136,7 @@ See [docs/test-plans/apple.md](../../docs/test-plans/apple.md).
 - **iPhone / compact width:** a page-style horizontal `TabView`. Subscribed and Following use **Lists → Publications → Articles → Reader**. Read Later and Archive use **Lists → Saved Links → Reader** with contiguous three-pane tags.
 - **iPad / regular width:** `NavigationSplitView` uses three columns for Subscribed/Following (combined lists/publications sidebar, articles, reader) and two for Read Later/Archive (combined lists/saved-links sidebar, reader).
 - Reader chrome is hosted once by `MainSplitView`: profile, refresh, and scoped **Mark All As Read** actions are in the toolbar. Feed sources show an **All / Unread** segmented filter; saved-link sources do not.
-- Read Later and Archive use L@tr saved links. New saves go through the L@tr gateway proxy; list/archive/unarchive/delete use viewer-PDS records in the current app model.
+- Read Later and Archive use `link.latr.bookmarks.*` through the Social Wire Gateway for list/save/archive/unarchive/delete and lazy legacy migration.
 
 ## OAuth client metadata (production vs development)
 

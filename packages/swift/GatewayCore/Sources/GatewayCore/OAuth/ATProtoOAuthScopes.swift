@@ -18,10 +18,12 @@ public enum ATProtoOAuthScopes {
     "include:app.bsky.authDeleteContent?aud=did:web:api.bsky.app%23bsky_appview",
     "repo:app.bsky.feed.like?action=create",
     "repo:app.bsky.feed.repost?action=create",
-    "repo:link.latr.saved.external?action=create&action=update&action=delete",
-    "repo:link.latr.saved.item?action=create&action=update&action=delete",
-    "repo:com.latr.saved.external?action=create&action=update&action=delete",
-    "repo:com.latr.saved.item?action=create&action=update&action=delete",
+    "repo:community.lexicon.bookmarks.bookmark?action=create&action=update&action=delete",
+    "repo:link.latr.bookmarks.metadata?action=create&action=update&action=delete",
+    "repo:link.latr.saved.external?action=delete",
+    "repo:link.latr.saved.item?action=delete",
+    "repo:com.latr.saved.external?action=delete",
+    "repo:com.latr.saved.item?action=delete",
   ]
 
   private static let webOnlyScopes = [

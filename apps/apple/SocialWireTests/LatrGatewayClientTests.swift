@@ -1,10 +1,11 @@
 import Foundation
+import LatrKit
 import Testing
 @testable import SocialWire
 
 @Suite("LatrGatewayEnvironment")
 struct LatrGatewayEnvironmentTests {
-    @Test("shipping builds use Social Wire Gateway transport, not direct L@tr credentials")
+    @Test("shipping builds use Social Wire Gateway transport")
     func shippingUsesGatewayTransport() {
         #expect(LatrGatewayEnvironment.usesDirectExternalGateway == false)
         #expect(LatrGatewayEnvironment.developerClientId == nil)
@@ -21,78 +22,31 @@ struct LatrGatewayEnvironmentTests {
     }
 }
 
-@Suite("LatrGatewayClient pdsXrpc mapping")
-struct LatrGatewayClientMappingTests {
-    @Test("maps list saves to repo.listRecords")
-    func listSavesMapping() {
-        #expect(LatrGatewayClientTestsHelper.pdsXrpcMethod(gatewayMethod: "GET", path: "/v1/latr/saves") == "com.atproto.repo.listRecords")
+@Suite("L@tr bookmark proof pools")
+struct LatrBookmarkProofPoolTests {
+    @Test("all six NSIDs use the finalized ordered proof budgets")
+    func proofBudgets() {
+        #expect(total(.listBookmarks) == 9)
+        #expect(total(.getBookmark) == 9)
+        #expect(total(.saveBookmark) == 11)
+        #expect(total(.setBookmarkState) == 3)
+        #expect(total(.deleteBookmark) == 3)
+        #expect(total(.migrateBookmarks) == 90)
     }
 
-    @Test("maps create save to repo.createRecord")
-    func createSaveMapping() {
-        #expect(LatrGatewayClientTestsHelper.pdsXrpcMethod(gatewayMethod: "POST", path: "/v1/latr/saves") == "com.atproto.repo.createRecord")
+    @Test("migration ends with the applyWrites proof pool")
+    func migrationOrdering() {
+        let specs = LatrGatewayClient.proofSpecs(for: .migrateBookmarks)
+        #expect(specs.map(\.nsid) == [
+            "com.atproto.repo.listRecords",
+            "com.atproto.repo.getRecord",
+            "com.atproto.repo.applyWrites",
+        ])
+        #expect(specs.last?.httpMethod == "POST")
+        #expect(specs.last?.count == 25)
     }
 
-    @Test("maps archive to repo.putRecord")
-    func patchSaveMapping() {
-        #expect(
-            LatrGatewayClientTestsHelper.pdsXrpcMethod(
-                gatewayMethod: "PATCH",
-                path: "/v1/latr/saves/abc/state"
-            ) == "com.atproto.repo.putRecord"
-        )
-    }
-
-    @Test("maps delete to repo.deleteRecord")
-    func deleteSaveMapping() {
-        #expect(
-            LatrGatewayClientTestsHelper.pdsXrpcMethod(
-                gatewayMethod: "DELETE",
-                path: "/v1/latr/saves/abc"
-            ) == "com.atproto.repo.deleteRecord"
-        )
-    }
-}
-
-@Suite("PDSRecordService L@tr merge")
-struct LatrMergeTests {
-    @Test("mergeFromGatewayItems preserves linkedWebUrl on native saves")
-    func nativeLinkedWebUrl() {
-        let item = RepoRecord(
-            uri: "at://did:plc:viewer/link.latr.saved.item/item1",
-            cid: "cid",
-            value: LatrSavedItemRecord(
-                type: "link.latr.saved.item",
-                subjectUri: "at://did:plc:author/app.bsky.feed.post/abc",
-                savedAt: "2026-01-01T00:00:00.000Z",
-                state: "unread",
-                linkedWebUrl: "https://example.com/post",
-                previewTitle: "Title"
-            )
-        )
-        let merged = PDSRecordService.mergeFromGatewayItems([item])
-        #expect(merged.count == 1)
-        #expect(merged[0].linkedWebUrl == "https://example.com/post")
-        #expect(merged[0].title == "Title")
-    }
-}
-
-/// Exposes private mapping helpers for unit tests.
-enum LatrGatewayClientTestsHelper {
-    static func pdsXrpcMethod(gatewayMethod: String, path: String) -> String? {
-        let method = gatewayMethod.uppercased()
-        if method == "GET", path == "/v1/latr/saves" {
-            return "com.atproto.repo.listRecords"
-        }
-        if method == "POST" && path == "/v1/latr/saves" {
-            return "com.atproto.repo.createRecord"
-        }
-        if method == "PATCH", path.contains("/v1/latr/saves/"), path.hasSuffix("/state") {
-            return "com.atproto.repo.putRecord"
-        }
-        if method == "DELETE", path.hasPrefix("/v1/latr/saves/") {
-            return "com.atproto.repo.deleteRecord"
-        }
-        return nil
+    private func total(_ method: LatrXRPCMethod) -> Int {
+        LatrGatewayClient.proofSpecs(for: method).reduce(0) { $0 + $1.count }
     }
 }

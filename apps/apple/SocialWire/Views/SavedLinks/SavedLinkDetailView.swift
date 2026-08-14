@@ -16,7 +16,11 @@ struct SavedLinkDetailView: View {
     }
 
     private var previewURL: URL? {
-        SavedLinkEmbedURL.previewURL(for: save)
+        if let directURL = SavedLinkEmbedURL.previewURL(for: save) {
+            return directURL
+        }
+        guard save.subjectUri?.hasPrefix("at://") == true else { return nil }
+        return socialEntry?.canonicalURL
     }
 
     var body: some View {
@@ -26,6 +30,7 @@ struct SavedLinkDetailView: View {
                     SavedLinkToolbar(
                         save: save,
                         entry: socialEntry,
+                        resolvedURL: url,
                         isArchivedView: isArchivedView,
                         showingQuote: $showingQuote,
                         showingReply: $showingReply

@@ -1,7 +1,7 @@
 import Foundation
 import GatewayCore
 
-/// Server-side L@tr credentials for the Social Wire Gateway **iOS proxy** (`/v1/latr/*`).
+/// Server-side L@tr credentials for the Social Wire Gateway bookmark XRPC proxy.
 ///
 /// These are distinct from the web frontend's `/api/latr-gateway` variables
 /// (`LATR_GATEWAY_*`). Both paths talk to the external L@tr Gateway, but the

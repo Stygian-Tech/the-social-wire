@@ -75,24 +75,25 @@ Functional parity with `apps/web` (native SwiftUI chrome; not pixel-matched layo
 | Unread badges | `effectivePublicationUnreadCount` | `EffectiveUnreadCount`, `SocialWireAppModel.displayUnreadCount` | Done — server baseline reconciled with cached rows and local read state |
 | Mark all read | `useCachedBulkReadActions.ts` | `SocialWireAppModel.markRead(for:)` | Done — scoped `.alert` confirmation |
 | Read-state sync | `useCrossClientReadSync.ts` | `syncCrossClientReadState` | Done — foreground AppView unread/feed refresh |
-| L@tr saves list | `useLatrMergedHttpsSaves` | `PDSRecordService.listMergedLatrSaves` | Done — canonical + legacy viewer-PDS records merged client-side |
-| L@tr save mutation | `useLatrSaved.ts` | `LatrGatewayClient`, `SocialWireAppModel` | Done — new URL/subject saves through `/v1/latr/saves` |
-| L@tr archive/delete | `useLatrSaved.ts` | `PDSRecordService`, `SocialWireAppModel` | Done — optimistic UI + direct viewer-PDS item writes/deletes |
+| L@tr bookmarks list | `useLatrSaved.ts` | `LatrGatewayClient`, `SocialWireAppModel` | Done — cursor-exhaustive `link.latr.bookmarks.listBookmarks` through Gateway |
+| L@tr save mutation | `useLatrSaved.ts` | `LatrGatewayClient`, `SocialWireAppModel` | Done — generic HTTPS/AT-URI subjects through `link.latr.bookmarks.saveBookmark` |
+| L@tr archive/delete | `useLatrSaved.ts` | `LatrGatewayClient`, `SocialWireAppModel` | Done — optimistic UI plus `setState`/`deleteBookmark` by bookmark URI |
+| L@tr legacy migration | `useLatrSaved.ts` | `LatrGatewayClient`, `SocialWireAppModel` | Done — retry-safe cursor exhaustion before first authenticated list; conflicts remain retryable |
 | Saved / Archive UI | `SavedLinksBrowser.tsx` | `SavedLinksListContent`, `SavedLinkDetailView` | Done — publication chip, embed URL, optimistic mutations |
 | Article presentation | `entryArticlePresentation.ts` | `ArticlePresentationResolver`, `EntryDetailView` | Done — HTML vs web preview with per-entry lock |
 | Feed social actions | `EntrySocialToolbar.tsx` | `ArticleToolbar`, `SavedLinkToolbar` | Done — Reply/Like/Repost/Quote on feed and saved Bluesky subjects |
 | Read-later settings | `/saved/settings` | `SettingsView` | Done — no provider selector; web redirects to `/saved`, iOS settings cover feed display/account |
-| L@tr save credentials | Railway Web `/api/latr-gateway` (`LATR_GATEWAY_*`) | Railway Social Wire Gateway `/v1/latr/*` (`LATR_IOS_PROXY_*`) | Done — secrets server-side only |
+| L@tr credentials | Railway Web `/api/latr-gateway` (`LATR_GATEWAY_*`) | Railway Social Wire Gateway `/xrpc/link.latr.bookmarks.*` (`LATR_IOS_PROXY_*`) | Done — secrets server-side only |
 
 ### L@tr save transport
 
-iOS must **not** ship L@tr API credentials. New save requests go to `SocialWireAPIEnvironment.baseURL` (`POST /v1/latr/saves`). The client sends:
+iOS must **not** ship L@tr API credentials. All six bookmark NSIDs go to `SocialWireAPIEnvironment.baseURL` under `/xrpc/`. The client sends:
 
 - `Authorization` + gateway-bound `DPoP` (Social Wire Gateway `htu`)
 - `X-Latr-Gateway-DPoP` (external L@tr Gateway `htu`; forwarded as outbound `DPoP`)
 - `X-ATProto-Upstream-DPoP` (PDS write-through)
 
-The **Social Wire Gateway** injects L@tr credentials from **`LATR_IOS_PROXY_URL`**, **`LATR_IOS_PROXY_CLIENT_ID`**, **`LATR_IOS_PROXY_API_KEY`**, or **`LATR_IOS_PROXY_CLIENT_CREDENTIAL`** in the matching Railway Gateway service. These are separate from the **web** proxy variables (`LATR_GATEWAY_*`) on the matching Railway Web service. Legacy `LATR_GATEWAY_*` names on Gateway are deprecated aliases. The current app model lists saved items and performs archive/unarchive/delete directly through `PDSRecordService`, so those operations do not use the triple-DPoP proxy path.
+The **Social Wire Gateway** injects L@tr credentials from **`LATR_IOS_PROXY_URL`**, **`LATR_IOS_PROXY_CLIENT_ID`**, **`LATR_IOS_PROXY_API_KEY`**, or **`LATR_IOS_PROXY_CLIENT_CREDENTIAL`** in the matching Railway Gateway service. These are separate from the **web** proxy variables (`LATR_GATEWAY_*`) on the matching Railway Web service. Legacy `LATR_GATEWAY_*` names on Gateway are deprecated aliases. List/get use GET, save/delete/migration use POST, and archive/unarchive uses PATCH. Migration carries its PDS proof pool in the body; the other methods forward upstream proof headers.
 
 ## Related
 

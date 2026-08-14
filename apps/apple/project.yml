@@ -18,6 +18,10 @@ settings:
     CURRENT_PROJECT_VERSION: 1
     DEVELOPMENT_TEAM: G39TU2R26A
     CODE_SIGN_STYLE: Automatic
+packages:
+  LatrKit:
+    url: https://github.com/Stygian-Tech/latr-kit.git
+    revision: 286d3273bb2f5e971d2571bbc2c1158bbcc43f1b
 targets:
   SocialWire:
     type: application
@@ -26,6 +30,8 @@ targets:
       - path: SocialWire
       # `.xcassets` outside this folder — e.g. `apps/apple/Media.xcassets` — will NOT be merged in; move it under
       # `SocialWire/` or add a second `- path:` entry with `type: folder.assetcatalog`, then run `xcodegen generate`.
+    dependencies:
+      - package: LatrKit
     info:
       path: SocialWire/Info.plist
       properties:

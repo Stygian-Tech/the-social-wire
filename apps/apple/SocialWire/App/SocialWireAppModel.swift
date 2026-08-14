@@ -14,6 +14,7 @@ final class SocialWireAppModel {
     private let gateway: SocialWireGatewayClient
     private let latrGateway: LatrGatewayClient
     private var readerCacheCoordinator: ReaderCacheCoordinator?
+    private var attemptedBookmarkMigration = false
 
     private static let preferencesSyncCacheKey = "v1/sync/preferences"
     private static let lastSelectedPublicationKey = "the-social-wire.last-selected-publication-id"
@@ -2269,9 +2270,22 @@ final class SocialWireAppModel {
 
     func refreshSavedLinks() async {
         do {
-            let latrListGateway = latrGateway
-            savedLinks = try await pds.listMergedLatrSaves(state: .active, latrGateway: latrListGateway)
-            archivedSavedLinks = try await pds.listMergedLatrSaves(state: .archived, latrGateway: latrListGateway)
+            if !attemptedBookmarkMigration, let viewerDID {
+                attemptedBookmarkMigration = true
+                do {
+                    let conflicts = try await latrGateway.migrateLegacyIfNeeded(viewerDID: viewerDID)
+                    if conflicts > 0 {
+                        errorMessage = "\(conflicts) legacy bookmark conflict\(conflicts == 1 ? " was" : "s were") left unchanged and will be retried later."
+                    }
+                } catch {
+                    attemptedBookmarkMigration = false
+                    errorMessage = error.localizedDescription
+                    return
+                }
+            }
+            let bookmarks = try await latrGateway.listBookmarks()
+            savedLinks = bookmarks.filter { ($0.state ?? "unread") != "archived" }
+            archivedSavedLinks = bookmarks.filter { ($0.state ?? "unread") == "archived" }
         } catch {
             // Passive refresh (runs on pane appear and after mutations). Keep whatever links are
             // already shown and don't interrupt navigation with a modal alert.
@@ -2318,13 +2332,10 @@ final class SocialWireAppModel {
         linkedWebURL: String? = nil
     ) async {
         do {
-            if let url {
-                try await latrGateway.saveURL(url, title: title, excerpt: excerpt)
-            } else {
-                let linked = linkedWebURL
-                    ?? selectedEntry?.canonicalURL?.absoluteString
-                try await latrGateway.saveNativeSubject(subjectURI: entryId, linkedWebURL: linked)
-            }
+            let subject = url?.absoluteString
+                ?? linkedWebURL?.trimmingCharacters(in: .whitespacesAndNewlines)
+                ?? entryId
+            try await latrGateway.save(subject: subject)
             await refreshSavedLinks()
         } catch {
             errorMessage = "Couldn't save this article to Read Later. \(error.localizedDescription)"
@@ -2339,7 +2350,7 @@ final class SocialWireAppModel {
             selectedSavedLink = nil
         }
         do {
-            try await pds.updateLatrSaveState(save, state: "archived")
+            try await latrGateway.archive(bookmarkURI: save.itemRkey)
             await refreshSavedLinks()
         } catch {
             savedLinks = snapshotActive
@@ -2356,7 +2367,7 @@ final class SocialWireAppModel {
             selectedSavedLink = nil
         }
         do {
-            try await pds.updateLatrSaveState(save, state: "unread")
+            try await latrGateway.unarchive(bookmarkURI: save.itemRkey)
             await refreshSavedLinks()
         } catch {
             savedLinks = snapshotActive
@@ -2373,7 +2384,7 @@ final class SocialWireAppModel {
             selectedSavedLink = nil
         }
         do {
-            try await pds.deleteLatrSave(save)
+            try await latrGateway.delete(bookmarkURI: save.itemRkey)
             await refreshSavedLinks()
         } catch {
             savedLinks = snapshotActive

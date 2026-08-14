@@ -48,7 +48,7 @@ The full setup, environment, and OAuth reference is [apps/web/README.md](https:/
 | Folders, preferences, subscriptions | Direct viewer-PDS writes through the OAuth session |
 | Entry lists and detail | Hosted `/v1/appview/feed`, `/entries`, and flat `/entry`; the current checkout adds pending XRPC equivalents |
 | Read state | Browser local storage for immediate UI plus AppView read marks/floors |
-| Read Later and Archive | Same-origin `/api/latr-gateway` backed by L@tr Link, with limited direct-PDS fallback |
+| Read Later and Archive | Same-origin `/api/latr-gateway/xrpc/link.latr.bookmarks.*` backed by L@tr Link |
 
 Current web and Apple clients do not create `app.thesocialwire.entryReadState` records. Cross-client refresh asks AppView for current unread baselines.
 
@@ -61,7 +61,7 @@ Current web and Apple clients do not create `app.thesocialwire.entryReadState` r
 | `useProactiveFeedRefresh` | Visible-feed background and focus refresh |
 | `thinAppViewClient.ts` | AppView feed, detail, unread, mutation, enrollment, and purge client |
 | `publicationProjectionClient.ts` | Publication projection client |
-| `pdsClient.ts` | Viewer-PDS folders, preferences, subscriptions, and L@tr compatibility |
+| `pdsClient.ts` | Viewer-PDS folders, preferences, subscriptions, and legacy migration compatibility |
 | `entryReadStateStorage.ts` | Browser-local optimistic read map |
 
 Persisted browser caches include a bounded TanStack Query snapshot in IndexedDB, local read state, sidebar expansion state scoped by viewer DID, and a local image blob cache. They contain no OAuth secrets and are rebuildable.

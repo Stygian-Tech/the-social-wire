@@ -6,6 +6,7 @@ struct SavedLinkToolbar: View {
 
     let save: MergedLatrSave
     let entry: EntryDetail?
+    let resolvedURL: URL?
     let isArchivedView: Bool
     @Binding var showingQuote: Bool
     @Binding var showingReply: Bool
@@ -16,7 +17,7 @@ struct SavedLinkToolbar: View {
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                if let url = SavedLinkEmbedURL.previewURL(for: save) {
+                if let url = resolvedURL {
                     ShareLink(item: url) {
                         Label("Share", systemImage: "square.and.arrow.up")
                     }

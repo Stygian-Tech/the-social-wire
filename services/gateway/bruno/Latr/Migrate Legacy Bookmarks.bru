@@ -1,0 +1,29 @@
+meta {
+  name: Migrate Legacy Bookmarks
+  type: http
+  seq: 60
+}
+
+post {
+  url: {{baseUrl}}/xrpc/link.latr.bookmarks.migrateLegacy
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: DPoP {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+  X-Latr-Gateway-DPoP: {{latrGatewayDpopProof}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "limit": 25,
+    "upstreamDpopProof": "{{upstreamDpopProof}}"
+  }
+}
+
+docs {
+  Migration carries the larger ordered PDS proof pool in the body.
+}

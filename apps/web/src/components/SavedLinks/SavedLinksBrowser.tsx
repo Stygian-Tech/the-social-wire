@@ -22,6 +22,7 @@ import {
   useUnarchiveLatrSaveMutation,
 } from "@/hooks/useLatrSaved";
 import { useFeedDisplayPreferences } from "@/hooks/useFeedDisplayPreferences";
+import { useAuth } from "@/hooks/useAuth";
 import {
   articleListCardWrapperClassName,
   articleListRowButtonClassName,
@@ -30,6 +31,7 @@ import type { LatrSaveListState, MergedLatrSave } from "@/lib/pdsClient";
 import { sidebarPublicationRows } from "@/lib/publicationProjectionClient";
 import { savedFeedSourceKey } from "@/lib/savedFeedSources";
 import { savedLinkOpenTarget } from "@/lib/savedLinkOpenTarget";
+import { resolveEntryOpenUrlFromPds } from "@/lib/resolveEntryOpenUrl";
 
 export type SavedLinksBrowserMode = "active" | "archived";
 
@@ -65,7 +67,7 @@ export function SavedLinksBrowser({ mode }: { mode: SavedLinksBrowserMode }) {
   const { publicationSidebarProjection } = useSidebarProjection();
   const listState: LatrSaveListState =
     mode === "archived" ? "archived" : "active";
-  const { data = [], isLoading, isError, error } =
+  const { data = [], isLoading, isError, error, migrationWarning } =
     useLatrMergedHttpsSaves(listState);
   const sidebarRows = useMemo(
     () =>
@@ -87,6 +89,7 @@ export function SavedLinksBrowser({ mode }: { mode: SavedLinksBrowserMode }) {
   const unarchiveMutation = useUnarchiveLatrSaveMutation();
   const deleteMutation = useDeleteLatrSaveMutation();
   const { preferences } = useFeedDisplayPreferences();
+  const { getOAuthSession } = useAuth();
   const [rssReader, setRssReader] = useState<{
     row: MergedLatrSave;
     entryId: string;
@@ -131,14 +134,31 @@ export function SavedLinksBrowser({ mode }: { mode: SavedLinksBrowserMode }) {
         sidebarRows,
         preferences.rssArticleOpenMode,
       );
-      if (!target) return;
+      if (!target) {
+        const subject = row.subjectUri.trim();
+        if (!subject.startsWith("at://")) return;
+        const pendingTab = window.open("", "_blank");
+        if (pendingTab) pendingTab.opener = null;
+        void resolveEntryOpenUrlFromPds(
+          subject,
+          getOAuthSession() ?? undefined,
+        ).then((resolvedUrl) => {
+          if (!resolvedUrl) {
+            pendingTab?.close();
+            return;
+          }
+          if (pendingTab) pendingTab.location.href = resolvedUrl;
+          else window.open(resolvedUrl, "_blank", "noopener,noreferrer");
+        });
+        return;
+      }
       if (target.kind === "rssReader") {
         setRssReader({ row, entryId: target.entryId, url: target.url });
         return;
       }
       window.open(target.url, "_blank", "noopener,noreferrer");
     },
-    [preferences.rssArticleOpenMode, sidebarRows],
+    [getOAuthSession, preferences.rssArticleOpenMode, sidebarRows],
   );
 
   let content;
@@ -264,6 +284,14 @@ export function SavedLinksBrowser({ mode }: { mode: SavedLinksBrowserMode }) {
   return (
     <>
       <div className="mx-auto flex h-full min-h-0 w-full max-w-3xl flex-1 flex-col overflow-hidden border-x border-border/70 bg-background">
+        {migrationWarning ? (
+          <div
+            role="status"
+            className="border-b border-amber-500/30 bg-amber-500/10 px-4 py-2 text-sm text-amber-900 dark:text-amber-200"
+          >
+            {migrationWarning}
+          </div>
+        ) : null}
         {content}
       </div>
       <RssArticleReaderDialog

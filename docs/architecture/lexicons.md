@@ -10,8 +10,8 @@ The Social Wire keeps portable, user-authored state on the viewer's ATProto PDS.
 | `app.thesocialwire.publicationPrefs` | Per-publication folder assignment and ordering |
 | `app.thesocialwire.preferences` | Account-level, non-secret Social Wire preferences |
 | `app.skyreader.feed.subscription` | Skyreader-compatible RSS/Atom subscription |
-| `link.latr.saved.external` | L@tr wrapper for a normalized external URL |
-| `link.latr.saved.item` | L@tr saved-item record pointing to an external wrapper or ATProto subject |
+| `community.lexicon.bookmarks.bookmark` | Authoritative generic bookmark subject, timestamp, and tags |
+| `link.latr.bookmarks.metadata` | L@tr archive state, note, and last-opened metadata |
 
 The clients also interoperate with externally defined collections such as `site.standard.graph.subscription`; that schema is not redefined in `packages/lexicons`.
 
@@ -19,7 +19,7 @@ Feed read/unread state is not an ATProto repo collection in the current product.
 
 ## Ownership and privacy
 
-ATProto repo records are public by default. Folder names, publication preferences, subscriptions, and L@tr saved-item records must not contain passwords, API keys, refresh tokens, or other secrets. Social Wire's derived AppView rows can be rebuilt; the viewer PDS remains authoritative for user-authored records.
+ATProto repo records are public by default. Folder names, publication preferences, subscriptions, bookmarks, and L@tr metadata must not contain passwords, API keys, refresh tokens, or other secrets. Social Wire's derived AppView rows can be rebuilt; the viewer PDS remains authoritative for user-authored records.
 
 ## Reading and writing records
 
@@ -39,6 +39,6 @@ The web client normally writes user-authored records directly to the PDS. The cu
 - Existing lexicon IDs and field types remain stable.
 - Compatible revisions add optional fields.
 - Breaking changes require a new lexicon ID.
-- L@tr schemas are drift-tested against the pinned `latr-packages` dependency.
+- L@tr XRPC and metadata schemas are drift-tested against the immutable `latr-packages` revision.
 
 See the [package reference](../../packages/lexicons/README.md) for field tables, examples, test commands, and the versioning policy.
