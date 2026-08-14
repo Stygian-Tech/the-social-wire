@@ -1,12 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { useAuth } from "@/hooks/useAuth";
 import { usePDSClient } from "@/hooks/usePDSClient";
-import {
-  latrLexiconMigrationChanged,
-  migrateLatrLexiconsViaGateway,
-} from "@/lib/latrLexiconMigration";
 import { lexiconMigrationChanged } from "@/lib/pdsClient";
 
 const completedMigrationDids = new Set<string>();
@@ -15,11 +10,11 @@ const inFlightMigrationDids = new Set<string>();
 /**
  * Runs one-time PDS lexicon migration after OAuth session restore.
  * Copies legacy `com.thesocialwire.*` rows to `app.thesocialwire.*` and deletes the old records.
- * Also migrates legacy `com.latr.*` read-later rows to `link.latr.*` via the L@tr gateway.
+ * L@tr bookmark migration is owned by the authenticated Read Later load through
+ * `link.latr.bookmarks.migrateLegacy`.
  */
 export function LexiconMigrationRunner() {
   const client = usePDSClient();
-  const { getOAuthSession } = useAuth();
   const migratedForDidRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -46,13 +41,6 @@ export function LexiconMigrationRunner() {
           console.info("Migrated legacy Social Wire lexicons", summary);
         }
 
-        const oauthSession = getOAuthSession();
-        if (oauthSession) {
-          const latrSummary = await migrateLatrLexiconsViaGateway(oauthSession);
-          if (latrLexiconMigrationChanged(latrSummary)) {
-            console.info("Migrated legacy L@tr lexicons", latrSummary);
-          }
-        }
         completedMigrationDids.add(did);
       } catch (err) {
         console.warn("Legacy lexicon migration failed:", err);
@@ -61,7 +49,7 @@ export function LexiconMigrationRunner() {
         inFlightMigrationDids.delete(did);
       }
     })();
-  }, [client, getOAuthSession]);
+  }, [client]);
 
   return null;
 }
