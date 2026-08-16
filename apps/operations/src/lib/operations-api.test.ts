@@ -9,6 +9,7 @@ import {
   fetchCommands,
   fetchGapInvestigation,
   fetchIngestion,
+  fetchIngestionDurability,
   fetchIngestionIncidents,
   fetchIngestionEndpoints,
   fetchRecentTraces,
@@ -20,6 +21,7 @@ import {
 } from "@/lib/operations-api"
 import type { OAuthSession } from "@/lib/auth"
 import { demoGapInvestigation, demoOverview } from "@/lib/demo-data"
+import type { IngestionDurability, JetstreamDurabilityCheckpoint } from "@/lib/operations-types"
 
 const evidence = demoOverview.evidence.overview
 
@@ -351,6 +353,66 @@ test("validates evidence on direct service, ingestion, and AppView responses", a
   expect(fetchServices(jsonSession({ services: demoOverview.services }))).rejects.toThrow(
     "Operations evidence failed runtime contract validation",
   )
+})
+
+test("validates generation-scoped durable inbox evidence with rolling-deploy compatibility", async () => {
+  delete process.env.NEXT_PUBLIC_OPERATIONS_DEMO_MODE
+  process.env.NEXT_PUBLIC_APP_ENV = "dev"
+  const inbox = {
+    pending: 1,
+    leased: 2,
+    retrying: 3,
+    applied: 4,
+    deadLetters: 0,
+    total: 10,
+    oldestPendingAt: demoOverview.refreshedAt,
+    oldestPendingAgeSeconds: 5,
+  }
+  const checkpoint = {
+    environment: "dev",
+    sourceGeneration: "v2-us-west-1",
+    sourceHost: "jetstream.us-west.bsky.network",
+    streamNSID: "network.bsky.jetstream.subscribeEvents",
+    filterFingerprint: "filters-v1",
+    cursorKind: "jetstream_v2_seq",
+    replayState: "live",
+    replayBytesDownloaded: 0,
+    replayRetryCount: 0,
+    replayRangeResumeCount: 0,
+    intakeHeartbeatAt: demoOverview.refreshedAt,
+    updatedAt: demoOverview.refreshedAt,
+  } satisfies JetstreamDurabilityCheckpoint
+  const durability = {
+    environment: "dev",
+    checkpoints: [checkpoint],
+    inbox,
+    inboxBySourceGeneration: { "v2-us-west-1": inbox },
+    incidents: { open: 0, recovering: 0, verificationRequired: 0, resolved: 0, ignored: 0 },
+    replayBytesRolling24Hours: 0,
+    generatedAt: demoOverview.refreshedAt,
+  } satisfies IngestionDurability
+
+  await expect(fetchIngestionDurability(jsonSession(durability))).resolves.toEqual(durability)
+
+  const legacyCheckpoint: Record<string, unknown> = { ...checkpoint }
+  delete legacyCheckpoint.intakeHeartbeatAt
+  const legacyDurability: Record<string, unknown> = {
+    ...durability,
+    checkpoints: [legacyCheckpoint],
+  }
+  delete legacyDurability.inboxBySourceGeneration
+  await expect(fetchIngestionDurability(jsonSession(legacyDurability))).resolves.toEqual(
+    legacyDurability as unknown as IngestionDurability,
+  )
+
+  await expect(fetchIngestionDurability(jsonSession({
+    ...durability,
+    checkpoints: [{ ...checkpoint, intakeHeartbeatAt: "not-a-date" }],
+  }))).rejects.toThrow("Operations durability checkpoint failed runtime contract validation")
+  await expect(fetchIngestionDurability(jsonSession({
+    ...durability,
+    inboxBySourceGeneration: { "v2-us-west-1": { ...inbox, pending: -1 } },
+  }))).rejects.toThrow("Operations inbox metrics failed runtime contract validation")
 })
 
 test("requires trace truncation and evidence metadata", () => {

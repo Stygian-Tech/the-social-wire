@@ -3,6 +3,7 @@ import {
   effectiveConnectionState,
   elapsedSeconds,
   overallSystemHealth,
+  overviewIngestionConnectionState,
   serviceHealthEvidence,
 } from "@/lib/observability-values"
 import { demoOverview } from "@/lib/demo-data"
@@ -154,6 +155,98 @@ describe("observability values", () => {
         generatedAt: demoOverview.refreshedAt,
       },
     })).toBe("healthy")
+  })
+
+  it("uses current durable checkpoint evidence for Jetstream V2 inbox authority health", () => {
+    const services = allHealthyServices().map((service) => service.service === "appview-worker"
+      ? { ...service, dependencyState: { ...service.dependencyState, ingestion_authority: "jetstream_v2_inbox" } }
+      : service)
+    expect(overallSystemHealth({
+      ...demoOverview,
+      services,
+      ingestion: undefined,
+      alerts: [],
+      counts: { ...demoOverview.counts, activeGaps: 0, unresolvedAlerts: 0 },
+      evidence: {
+        ...demoOverview.evidence,
+        ingestion: {
+          ...demoOverview.evidence.ingestion,
+          source: "appview_jetstream_checkpoints",
+          accuracy: "exact",
+          validUntil: demoOverview.refreshedAt,
+        },
+      },
+      durability: {
+        environment: "dev",
+        checkpoints: [{
+          environment: "dev",
+          sourceGeneration: "v2-us-west-1",
+          sourceHost: "jetstream.us-west.bsky.network",
+          streamNSID: "network.bsky.jetstream.subscribeEvents",
+          filterFingerprint: "filters-v1",
+          cursorKind: "jetstream_v2_seq",
+          replayState: "live",
+          replayBytesDownloaded: 0,
+          replayRetryCount: 0,
+          replayRangeResumeCount: 0,
+          intakeHeartbeatAt: demoOverview.refreshedAt,
+          updatedAt: demoOverview.refreshedAt,
+        }],
+        inbox: { pending: 0, leased: 0, retrying: 0, applied: 0, deadLetters: 0, total: 0 },
+        incidents: { open: 0, recovering: 0, verificationRequired: 0, resolved: 0, ignored: 0 },
+        replayBytesRolling24Hours: 0,
+        generatedAt: demoOverview.refreshedAt,
+      },
+    })).toBe("healthy")
+  })
+
+  it("prefers a synthesized disconnected V2 state over fresh checkpoint fallback", () => {
+    const services = allHealthyServices()
+    const lastDisconnectAt = new Date(new Date(demoOverview.refreshedAt).getTime() - 120_000).toISOString()
+    const overview = {
+      ...demoOverview,
+      services,
+      ingestion: {
+        ...demoOverview.ingestion!,
+        source: "jetstream_v2_inbox",
+        connectionState: "disconnected" as const,
+        lastDisconnectAt,
+      },
+      alerts: [],
+      counts: { ...demoOverview.counts, activeGaps: 0, unresolvedAlerts: 0 },
+      evidence: {
+        ...demoOverview.evidence,
+        ingestion: {
+          ...demoOverview.evidence.ingestion,
+          source: "appview_jetstream_checkpoints",
+          accuracy: "exact" as const,
+          validUntil: demoOverview.refreshedAt,
+        },
+      },
+      durability: {
+        environment: "dev" as const,
+        checkpoints: [{
+          environment: "dev" as const,
+          sourceGeneration: "v2-us-west-1",
+          sourceHost: "jetstream.us-west.bsky.network",
+          streamNSID: "network.bsky.jetstream.subscribeEvents",
+          filterFingerprint: "filters-v1",
+          cursorKind: "jetstream_v2_seq" as const,
+          replayState: "failed" as const,
+          replayBytesDownloaded: 0,
+          replayRetryCount: 1,
+          replayRangeResumeCount: 0,
+          updatedAt: demoOverview.refreshedAt,
+        }],
+        inbox: { pending: 0, leased: 0, retrying: 0, applied: 0, deadLetters: 0, total: 0 },
+        incidents: { open: 0, recovering: 0, verificationRequired: 0, resolved: 0, ignored: 0 },
+        replayBytesRolling24Hours: 0,
+        generatedAt: demoOverview.refreshedAt,
+      },
+    }
+
+    expect(overviewIngestionConnectionState(overview)).toBe("disconnected")
+    expect(overallSystemHealth(overview)).toBe("unhealthy")
   })
 
   it("uses the normal 60 second and recovery 15 minute inbox age budgets", () => {

@@ -67,4 +67,24 @@ describe("AlertsTable actions", () => {
 
     expect(screen.getAllByRole("button", { name: "Reconnect Jetstream for alert alert-jetstream" })[0]?.hasAttribute("disabled")).toBe(false)
   })
+
+  it("does not offer legacy reconnect when Jetstream V2 inbox is authoritative", () => {
+    const jetstream = { ...demoOverview.ingestion!, source: "jetstream", version: 7 }
+    const services = demoOverview.services.map((service) => service.service === "appview-worker"
+      ? { ...service, dependencyState: { ...service.dependencyState, ingestion_authority: "jetstream_v2_inbox" } }
+      : service)
+    renderAlerts(
+      { ...baseAlert, id: "alert-v2-authority", rule: "jetstream_disconnected" },
+      {
+        ...demoOverview,
+        services,
+        ingestion: { ...demoOverview.ingestion!, source: "jetstream_v2_inbox" },
+        ingestionSources: [jetstream],
+      },
+    )
+
+    expect(screen.queryByRole("button", {
+      name: "Reconnect Jetstream for alert alert-v2-authority",
+    })).toBeNull()
+  })
 })

@@ -141,4 +141,83 @@ describe("LiveStream", () => {
 
     expect(screen.getByRole("button", { name: /Reconnect Jetstream/ }).hasAttribute("disabled")).toBe(false)
   })
+
+  it("presents durable Jetstream V2 inbox authority without legacy cursor semantics", () => {
+    const services = demoOverview.services.map((service) => service.service === "appview-worker"
+      ? {
+          ...service,
+          dependencyState: {
+            ...service.dependencyState,
+            ingestion_authority: "jetstream_v2_inbox",
+            jetstream_v2_source_generation: "v2-us-west-1",
+          },
+        }
+      : service)
+    renderStream({
+      ...demoOverview,
+      services,
+      ingestion: undefined,
+      ingestionSources: [{ ...demoOverview.ingestion!, source: "jetstream", version: 7 }],
+      evidence: {
+        ...demoOverview.evidence,
+        ingestion: {
+          ...demoOverview.evidence.ingestion,
+          source: "appview_jetstream_checkpoints",
+          accuracy: "exact",
+          validUntil: demoOverview.refreshedAt,
+        },
+      },
+      durability: {
+        environment: "dev",
+        checkpoints: [
+          {
+            environment: "dev",
+            sourceGeneration: "retired-v2-generation",
+            sourceHost: "jetstream2.us-east.bsky.network",
+            streamNSID: "network.bsky.jetstream.subscribeEvents",
+            filterFingerprint: "retired-filters",
+            cursorKind: "jetstream_v2_seq",
+            lastStagedSequence: 9_999,
+            lastAppliedSequence: 9_998,
+            replayState: "live",
+            replayBytesDownloaded: 0,
+            replayRetryCount: 0,
+            replayRangeResumeCount: 0,
+            updatedAt: new Date(new Date(demoOverview.refreshedAt).getTime() + 1_000).toISOString(),
+          },
+          {
+            environment: "dev",
+            sourceGeneration: "v2-us-west-1",
+            sourceHost: "jetstream.us-west.bsky.network",
+            streamNSID: "network.bsky.jetstream.subscribeEvents",
+            filterFingerprint: "filters-v1",
+            cursorKind: "jetstream_v2_seq",
+            lastStagedSequence: 2_100,
+            lastAppliedSequence: 2_000,
+            replayState: "live",
+            replayBytesDownloaded: 0,
+            replayRetryCount: 0,
+            replayRangeResumeCount: 0,
+            intakeHeartbeatAt: demoOverview.refreshedAt,
+            updatedAt: demoOverview.refreshedAt,
+          },
+        ],
+        inbox: { pending: 0, leased: 0, retrying: 0, applied: 2_000, deadLetters: 0, total: 2_000 },
+        incidents: { open: 0, recovering: 0, verificationRequired: 0, resolved: 0, ignored: 0 },
+        replayBytesRolling24Hours: 0,
+        generatedAt: demoOverview.refreshedAt,
+      },
+    })
+
+    expect(screen.getByText("Jetstream V2 Inbox · authoritative")).toBeTruthy()
+    expect(screen.getByText("V2 Inbox Staged Sequence")).toBeTruthy()
+    expect(screen.getByText("V2 Inbox Applied Sequence")).toBeTruthy()
+    expect(screen.getByText("2,100")).toBeTruthy()
+    expect(screen.getByText("2,000")).toBeTruthy()
+    expect(screen.queryByText("9,999")).toBeNull()
+    expect(screen.queryByText("9,998")).toBeNull()
+    expect(screen.queryByText("Legacy V1 Received Cursor (μs)")).toBeNull()
+    expect(screen.queryByText("Legacy V1 Committed Cursor (μs)")).toBeNull()
+    expect(screen.queryByRole("button", { name: /Reconnect Jetstream/ })).toBeNull()
+  })
 })

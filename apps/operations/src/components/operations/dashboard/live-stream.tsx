@@ -7,8 +7,15 @@ import {
   boundedNonNegativeInteger,
   effectiveConnectionState,
   elapsedSeconds,
+  overviewIngestionConnectionState,
 } from "@/lib/observability-values"
-import { jetstreamStateForOverview } from "@/lib/operations-policy"
+import {
+  ingestionAuthoritySource,
+  ingestionSourceLabel,
+  isJetstreamV2InboxSource,
+  jetstreamStateForOverview,
+  jetstreamV2CheckpointForOverview,
+} from "@/lib/operations-policy"
 import { operationsXrpc } from "@/lib/operations-xrpc"
 import type { EnvironmentName, Overview } from "@/lib/operations-types"
 
@@ -30,11 +37,6 @@ function formatTimestamp(value?: string) {
   return Number.isFinite(timestamp.getTime()) ? timestamp.toLocaleString() : "Invalid timestamp"
 }
 
-function sourceLabel(source: string) {
-  if (source.toLowerCase().includes("jetstream")) return `${source} · unverified supplemental`
-  return source
-}
-
 export function LiveStream({
   data,
   environment,
@@ -47,18 +49,20 @@ export function LiveStream({
   referenceTime?: string
 }) {
   const state = data.ingestion
+  const authoritySource = ingestionAuthoritySource(data)
+  const v2InboxAuthority = isJetstreamV2InboxSource(authoritySource)
+  const v2Checkpoint = v2InboxAuthority ? jetstreamV2CheckpointForOverview(data) : undefined
   const jetstreamState = jetstreamStateForOverview(data)
-  const receivedCursor = boundedNonNegativeInteger(state?.lastReceivedCursor)
-  const committedCursor = boundedNonNegativeInteger(state?.lastCommittedCursor)
-  const connectionState = effectiveConnectionState({
-    connectionState: state?.connectionState,
-    transportHeartbeatAt: state?.transportHeartbeatAt,
-    lastDisconnectedAt: state?.lastDisconnectAt,
-    referenceTime,
-  })
+  const receivedCursor = boundedNonNegativeInteger(
+    state?.lastReceivedCursor ?? (v2InboxAuthority ? v2Checkpoint?.lastStagedSequence : undefined),
+  )
+  const committedCursor = boundedNonNegativeInteger(
+    state?.lastCommittedCursor ?? (v2InboxAuthority ? v2Checkpoint?.lastAppliedSequence : undefined),
+  )
+  const referenceMs = new Date(referenceTime).getTime()
+  const connectionState = overviewIngestionConnectionState(data, referenceTime)
   const connectionTone =
     connectionState === "connected" ? "success" : connectionState === "unknown" ? "neutral" : "danger"
-  const referenceMs = new Date(referenceTime).getTime()
   const queueValidUntilMs = state?.queueEvidence?.validUntil
     ? new Date(state.queueEvidence.validUntil).getTime()
     : Number.NaN
@@ -69,13 +73,13 @@ export function LiveStream({
     queueValidUntilMs >= referenceMs
   const queueEvidenceExpired = state?.queueEvidence?.accuracy === "exact" && !queueEvidenceCurrent
   const metrics = [
-    ["Source", state?.source === "jetstream" ? "Jetstream · unverified supplemental" : (state?.source ?? "—")],
+    ["Source", authoritySource ? ingestionSourceLabel(authoritySource) : "—"],
     ["Connected Since", formatTimestamp(state?.connectedAt)],
     ["Connection Duration", formatDuration(elapsedSeconds(state?.connectedAt, referenceTime))],
-    ["Legacy V1 Received Cursor (μs)", receivedCursor?.toLocaleString() ?? "—"],
-    ["Legacy V1 Committed Cursor (μs)", committedCursor?.toLocaleString() ?? "—"],
-    ["Last Received Event", formatTimestamp(state?.lastReceivedEventAt)],
-    ["Last Committed Event", formatTimestamp(state?.lastCommittedEventAt)],
+    [v2InboxAuthority ? "V2 Inbox Staged Sequence" : "Legacy V1 Received Cursor (μs)", receivedCursor?.toLocaleString() ?? "—"],
+    [v2InboxAuthority ? "V2 Inbox Applied Sequence" : "Legacy V1 Committed Cursor (μs)", committedCursor?.toLocaleString() ?? "—"],
+    ["Last Received Event", formatTimestamp(state?.lastReceivedEventAt ?? (v2InboxAuthority ? v2Checkpoint?.lastStagedEventAt : undefined))],
+    ["Last Committed Event", formatTimestamp(state?.lastCommittedEventAt ?? (v2InboxAuthority ? v2Checkpoint?.lastAppliedEventAt : undefined))],
     ...(queueEvidenceCurrent && state?.queueCapacity !== undefined
       ? [["Processing Queue", `${boundedNonNegativeInteger(state.queueDepth)?.toLocaleString() ?? "—"} / ${boundedNonNegativeInteger(state.queueCapacity)?.toLocaleString() ?? "—"}`]]
       : []),
@@ -94,7 +98,7 @@ export function LiveStream({
         </span>
       }
       action={
-        reconnectActive ? (
+        v2InboxAuthority ? undefined : reconnectActive ? (
           <Badge tone="warning">Reconnect {reconnect.status}</Badge>
         ) : (
           <OperatorActionDialog
@@ -144,7 +148,7 @@ export function LiveStream({
               return (
                 <article key={source.source} className="min-w-0 bg-background p-3">
                   <div className="flex items-start justify-between gap-2">
-                    <h4 className="break-all font-mono text-[10px] font-semibold">{sourceLabel(source.source)}</h4>
+                    <h4 className="break-all font-mono text-[10px] font-semibold">{ingestionSourceLabel(source.source)}</h4>
                     <Badge
                       tone={sourceState === "connected" ? "success" : sourceState === "unknown" ? "neutral" : "danger"}
                     >
