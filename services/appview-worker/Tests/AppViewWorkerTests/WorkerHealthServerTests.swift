@@ -31,6 +31,23 @@ struct WorkerHealthServerTests {
       readinessProbe: { throw ProbeError.unavailable }
     )
     #expect(unavailable.status == .serviceUnavailable)
+    #expect(unavailable.readinessFailure == String(reflecting: ProbeError.self))
+
+    let categorizedFailures: [(WorkerReadinessError, String)] = [
+      (.missingIngestionHeartbeat, "missing_ingestion_heartbeat"),
+      (.staleIngestionHeartbeat, "stale_ingestion_heartbeat"),
+      (.ingestionTransportUnhealthy, "ingestion_transport_unhealthy"),
+      (.ingestionFreshnessUnhealthy, "ingestion_freshness_unhealthy"),
+      (.ingestionCompletenessUnhealthy, "ingestion_completeness_unhealthy"),
+    ]
+    for (error, expectedCategory) in categorizedFailures {
+      let categorized = await WorkerHealthResponseBuilder.response(
+        method: .GET,
+        uri: "/readyz",
+        readinessProbe: { throw error }
+      )
+      #expect(categorized.readinessFailure == expectedCategory)
+    }
   }
 
   @Test("readiness rejects stale or unhealthy ingestion evidence")
@@ -53,7 +70,7 @@ struct WorkerHealthServerTests {
     }
 
     let unhealthy = serviceState(heartbeatAt: now, readiness: .degraded)
-    await #expect(throws: WorkerReadinessError.ingestionUnhealthy) {
+    await #expect(throws: WorkerReadinessError.ingestionTransportUnhealthy) {
       try await WorkerReadinessProbe(
         databaseProbe: {},
         serviceStateProbe: { unhealthy },
@@ -66,7 +83,7 @@ struct WorkerHealthServerTests {
       readiness: .healthy,
       freshness: .degraded
     )
-    await #expect(throws: WorkerReadinessError.ingestionUnhealthy) {
+    await #expect(throws: WorkerReadinessError.ingestionFreshnessUnhealthy) {
       try await WorkerReadinessProbe(
         databaseProbe: {},
         serviceStateProbe: { staleProjection },
@@ -79,7 +96,7 @@ struct WorkerHealthServerTests {
       readiness: .healthy,
       completeness: .degraded
     )
-    await #expect(throws: WorkerReadinessError.ingestionUnhealthy) {
+    await #expect(throws: WorkerReadinessError.ingestionCompletenessUnhealthy) {
       try await WorkerReadinessProbe(
         databaseProbe: {},
         serviceStateProbe: { incompleteProjection },
