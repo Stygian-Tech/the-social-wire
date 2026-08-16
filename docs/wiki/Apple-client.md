@@ -79,6 +79,6 @@ xcodebuild test \
   -destination 'platform=iOS Simulator,name=iPhone 16'
 ```
 
-Xcode Cloud and macOS GitHub Actions are not configured. See the [Apple test plan](https://github.com/Stygian-Tech/the-social-wire/blob/main/docs/test-plans/apple.md).
+GitHub Actions runs the app's Swift Testing suite with code coverage on a macOS iOS Simulator. See the [Apple test plan](https://github.com/Stygian-Tech/the-social-wire/blob/main/docs/test-plans/apple.md).
 
 Related: [[Getting-started]], [[Reading-and-organizing]], [[Account-settings-and-privacy]], [[Service-API]].

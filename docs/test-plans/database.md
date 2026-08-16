@@ -1,7 +1,7 @@
 # Database migration test plan
 
 **Location:** `database/`
-**Automation:** explicit local or platform migration step; not GitHub Actions
+**Automation:** GitHub Actions applies the migrator image to an empty disposable PostgreSQL database twice; Railway applies the same image per environment.
 
 ## Commands
 
@@ -12,7 +12,7 @@ DATABASE_URL='postgresql://…' bash scripts/apply-database-migrations.sh
 
 ## What to validate
 
-Run the migration script against a disposable Postgres database before merging. This is **not** SQL unit testing; it catches broken migrations before Railway's pre-deploy migration step.
+Run the migration script against a disposable Postgres database before merging. CI performs the same empty-database and idempotence checks; this catches broken migrations before Railway's migration service runs.
 
 ## Application tables
 

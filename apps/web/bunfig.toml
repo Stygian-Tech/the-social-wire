@@ -4,3 +4,7 @@ environment = "jsdom"
 
 # Path aliases (mirrors tsconfig.json paths)
 preload = ["./src/__tests__/setup.ts"]
+
+# CI enforces the measured baseline and prevents silent coverage regressions.
+coverageSkipTestFiles = true
+coverageThreshold = { line = 0.70, function = 0.68 }

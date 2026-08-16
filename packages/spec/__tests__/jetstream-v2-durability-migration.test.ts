@@ -21,6 +21,12 @@ const sqliteOperationsStore = readFileSync(
 )
 
 describe("Jetstream V2 durable ingestion migration", () => {
+  it("keeps Supabase role grants optional on provider-neutral Postgres", () => {
+    expect(migration).toContain("SELECT 1 FROM pg_roles WHERE rolname = 'anon'")
+    expect(migration).toContain("SELECT 1 FROM pg_roles WHERE rolname = 'service_role'")
+    expect(migration).not.toContain("FROM anon, authenticated")
+  })
+
   it("binds checkpoints to an exact source identity and stages events idempotently", () => {
     expect(migration).toContain("PRIMARY KEY (environment, source_generation)")
     expect(migration).toContain("source_host TEXT NOT NULL")

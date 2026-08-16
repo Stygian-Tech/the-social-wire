@@ -8,7 +8,7 @@ Run from the monorepo root:
 
 ```bash
 bun install
-(cd apps/operations && bun run typecheck && bun run lint && bun test)
+(cd apps/operations && bun run typecheck && bun run lint && bun run test:coverage)
 (cd apps/operations && APP_ENV=dev NEXT_PUBLIC_OPERATIONS_DEMO_MODE=1 bun run build)
 (cd packages/swift/OperationsCore && swift test)
 (cd services/operations && swift test)
@@ -19,9 +19,13 @@ bun install
 
 | Job | Coverage |
 |-----|----------|
-| `operations-web` | Operations UI typecheck, lint, tests, and production build |
-| `operations` | `OperationsCore` and `services/operations` Swift Testing suites |
-| `jetstream-ingest` | Go tests, vet, and the Jetstream V2 image build |
+| `operations-web` | Operations UI typecheck, lint, coverage-gated tests, and production build |
+| `operations` | `OperationsCore` and `services/operations` Swift Testing suites plus the production image build |
+| `jetstream-ingest` | Race-enabled Go unit and live-Postgres integration tests, statement coverage gate, vet, and the Jetstream V2 image build |
+
+The Operations UI coverage command also checks `coverage-inventory-allowlist.txt`.
+Every production module currently absent from LCOV is reviewed there; a newly
+unloaded module or a stale entry fails CI.
 
 ## Manual checks
 

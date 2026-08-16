@@ -2,7 +2,7 @@
 
 **Package:** `apps/apple`  
 Xcode **Cmd+U** runs Swift Testing suites (`import Testing`, `@Test`, `#expect`) — not XCTest.  
-**CI:** Local only — Xcode Cloud and macOS GitHub Actions are **out of scope** for this repo (configure separately).
+**CI:** `apple` on the GitHub-hosted macOS 26 runner, with Xcode code coverage enabled.
 
 ## Commands
 
@@ -15,7 +15,8 @@ xcodegen generate   # if project.yml changed
 xcodebuild test \
   -project "The Social Wire.xcodeproj" \
   -scheme SocialWire \
-  -destination 'platform=iOS Simulator,name=iPhone 16'
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=latest' \
+  -enableCodeCoverage YES
 ```
 
 Use scheme **SocialWire-TestFlight** for TestFlight builds; **SocialWire** for App Store.

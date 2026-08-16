@@ -26,12 +26,12 @@ struct LegacyJetstreamAuthorityLeaseTests {
       await LegacyJetstreamAuthorityLease.runForever(
         store: store,
         ownerID: "worker",
-        leaseSeconds: 0.15,
-        minimumLeaseSeconds: 0.05,
+        leaseSeconds: 0.9,
+        minimumLeaseSeconds: 0.3,
         contentionSleepSeconds: 0.01,
         logger: Logger(label: "legacy-authority.test")
-      ) { _ in
-        await state.started()
+      ) { lease in
+        await state.started(lease: lease)
         while !Task.isCancelled {
           try? await Task.sleep(for: .milliseconds(5))
         }
@@ -46,13 +46,7 @@ struct LegacyJetstreamAuthorityLeaseTests {
       fencingToken: external.fencingToken, at: Date())
     try await waitUntil { await state.isActive() }
 
-    let workerLease = try #require(await store.acquireIngestionLeaderLease(
-      name: LegacyJetstreamAuthorityLease.leaseName,
-      sourceGeneration: LegacyJetstreamAuthorityLease.sourceGeneration,
-      ownerID: "worker",
-      leaseUntil: Date().addingTimeInterval(0.15),
-      at: Date()
-    ))
+    let workerLease = try #require(await state.currentLease())
     try await store.releaseIngestionLeaderLease(
       name: workerLease.name, ownerID: workerLease.ownerID,
       fencingToken: workerLease.fencingToken, at: Date())
@@ -202,15 +196,18 @@ struct LegacyJetstreamAuthorityLeaseTests {
 private actor AuthorityState {
   private var active = false
   private var starts = 0
+  private var lease: IngestionLeaderLease?
 
-  func started() {
+  func started(lease: IngestionLeaderLease?) {
     active = true
     starts += 1
+    self.lease = lease
   }
 
   func stopped() { active = false }
   func isActive() -> Bool { active }
   func startCount() -> Int { starts }
+  func currentLease() -> IngestionLeaderLease? { lease }
 }
 
 private actor FenceControl {

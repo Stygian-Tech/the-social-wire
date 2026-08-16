@@ -5,7 +5,6 @@
     "buildCommand": "bun run turbo run build --filter=operations...",
     "watchPatterns": [
       "/apps/operations/**",
-      "/packages/**",
       "/docs/runbooks/operations/**",
       "/package.json",
       "/bun.lock",

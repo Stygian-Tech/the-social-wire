@@ -272,7 +272,15 @@ AFTER INSERT OR UPDATE ON appview_ingestion_incidents
 FOR EACH ROW EXECUTE FUNCTION operations_capture_change_event('ingestion_incident');
 
 DO $$
-DECLARE table_name TEXT;
+DECLARE
+  table_name TEXT;
+  has_anon BOOLEAN := EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon');
+  has_authenticated BOOLEAN := EXISTS (
+    SELECT 1 FROM pg_roles WHERE rolname = 'authenticated'
+  );
+  has_service_role BOOLEAN := EXISTS (
+    SELECT 1 FROM pg_roles WHERE rolname = 'service_role'
+  );
 BEGIN
   FOREACH table_name IN ARRAY ARRAY[
     'appview_jetstream_checkpoints', 'appview_ingestion_inbox',
@@ -281,8 +289,18 @@ BEGIN
     'appview_ingestion_reconciliation_requests'
   ] LOOP
     EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', table_name);
-    EXECUTE format('REVOKE ALL ON TABLE %I FROM anon, authenticated', table_name);
-    EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE %I TO service_role', table_name);
+    IF has_anon THEN
+      EXECUTE format('REVOKE ALL ON TABLE %I FROM anon', table_name);
+    END IF;
+    IF has_authenticated THEN
+      EXECUTE format('REVOKE ALL ON TABLE %I FROM authenticated', table_name);
+    END IF;
+    IF has_service_role THEN
+      EXECUTE format(
+        'GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE %I TO service_role',
+        table_name
+      );
+    END IF;
   END LOOP;
 END $$;
 

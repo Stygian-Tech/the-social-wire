@@ -30,12 +30,14 @@ describe("CI workflow configuration", () => {
     for (const job of [
       "web",
       "operations-web",
+      "apple",
       "gateway",
       "appview",
       "charybdis",
       "operations",
       "jetstream-ingest",
       "database-migrator",
+      "docs",
     ]) {
       expect(workflow).toContain(`  ${job}:`);
     }
@@ -48,8 +50,35 @@ describe("CI workflow configuration", () => {
     expect(workflow).toContain("name: CI — Required");
   });
 
+  it("tests merge previews once and supports merge queues", () => {
+    const triggerBlock = workflow.slice(0, workflow.indexOf("\nenv:"));
+    expect(triggerBlock).toContain("pull_request:");
+    expect(triggerBlock).toContain("merge_group:");
+    expect(triggerBlock).toContain("workflow_dispatch:");
+    expect(triggerBlock).not.toContain("push:");
+  });
+
+  it("passes event SHAs into path detection and enforces coverage", () => {
+    expect(workflow).toContain("GITHUB_EVENT_BEFORE: ${{ github.event.before }}");
+    expect(workflow).toContain("GITHUB_EVENT_PULL_REQUEST_BASE_SHA:");
+    expect(workflow).toContain("bun --cwd apps/web run test:coverage");
+    expect(workflow).toContain("bun --cwd apps/operations run test:coverage");
+    expect(workflow).toContain("go test -race -coverprofile=");
+  });
+
+  it("tests deployment-shaped artifacts and migrations", () => {
+    expect(workflow).toContain("Build Gateway production image");
+    expect(workflow).toContain("Build AppView production image");
+    expect(workflow).toContain("Build Charybdis production image");
+    expect(workflow).toContain("Build Operations production image");
+    expect(workflow).toContain("Apply migrations from empty and verify idempotence");
+    expect(workflow).toContain("Test iOS app with coverage");
+  });
+
   it("leaves deployments to the platform integration", () => {
-    expect(workflow).toContain("Railway deploys from its GitHub integration");
+    expect(workflow).toContain(
+      "Railway deploys protected branch merges from its GitHub integration",
+    );
     expect(
       existsSync(join(repositoryRoot, ".github/workflows/deploy.yml")),
     ).toBe(false);
@@ -104,6 +133,7 @@ describe("CI workflow configuration", () => {
     for (const filter of [
       "web",
       "operations_web",
+      "apple",
       "gateway",
       "appview",
       "charybdis",
@@ -112,6 +142,7 @@ describe("CI workflow configuration", () => {
       "database_migrator",
       "lexicons",
       "spec",
+      "docs",
     ]) {
       expect(pathFilters).toContain(`filter_changed ${filter}`);
     }
