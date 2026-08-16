@@ -32,10 +32,14 @@ Change the source generation whenever the host, cursor kind, stream NSID, or
 collection filter changes. Startup rejects a checkpoint whose saved identity
 does not exactly match its configured generation.
 
-`GET /healthz` is liveness. `GET /readyz` is successful while PostgreSQL, the
-fenced leader lease, and the V2 process are active. A replay-budget pause keeps
-the service ready so Railway does not restart a healthy controlled pause;
-`GET /status` exposes the pause plus non-secret cursor and progress state.
+`GET /healthz` is liveness. `GET /startupz` succeeds after PostgreSQL connects.
+`GET /readyz` is successful while PostgreSQL, the fenced leader lease, and the
+V2 process are active. A replay-budget pause keeps the service ready so Railway
+does not restart a healthy controlled pause; `GET /status` exposes the pause
+plus non-secret cursor and progress state. Railway deploys against `/startupz`
+so a replacement can stay alive while the previous replica releases its fenced
+lease; the replacement retries acquisition and `/readyz` remains unavailable
+until it becomes the active consumer.
 
 ## Local verification
 

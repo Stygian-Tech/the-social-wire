@@ -21,6 +21,12 @@ func TestHealthAndReadinessEndpoints(t *testing.T) {
 		t.Fatalf("health content type = %q", health.Header().Get("Content-Type"))
 	}
 
+	notStarted := httptest.NewRecorder()
+	handler.ServeHTTP(notStarted, httptest.NewRequest(http.MethodGet, "/startupz", nil))
+	if notStarted.Code != http.StatusServiceUnavailable {
+		t.Fatalf("initial startup = %d, want %d", notStarted.Code, http.StatusServiceUnavailable)
+	}
+
 	notReady := httptest.NewRecorder()
 	handler.ServeHTTP(notReady, httptest.NewRequest(http.MethodGet, "/readyz", nil))
 	if notReady.Code != http.StatusServiceUnavailable {
@@ -28,6 +34,12 @@ func TestHealthAndReadinessEndpoints(t *testing.T) {
 	}
 
 	state.Database(true)
+	started := httptest.NewRecorder()
+	handler.ServeHTTP(started, httptest.NewRequest(http.MethodGet, "/startupz", nil))
+	if started.Code != http.StatusOK {
+		t.Fatalf("database startup = %d, want %d", started.Code, http.StatusOK)
+	}
+
 	state.Lease(true)
 	state.Stream(true)
 	ready := httptest.NewRecorder()
