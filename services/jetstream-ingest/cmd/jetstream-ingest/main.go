@@ -21,6 +21,12 @@ import (
 	"github.com/stygian-tech/the-social-wire/services/jetstream-ingest/internal/store"
 )
 
+const leaseAcquireRetryInterval = time.Second
+
+type leaseAcquirer interface {
+	AcquireLease(context.Context, string, string, time.Duration) (store.Lease, error)
+}
+
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
@@ -69,8 +75,19 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	lease, err := database.AcquireLease(ctx, cfg.LeaderLeaseName, ownerID, cfg.LeaderLeaseTTL)
+	lease, err := acquireLeaseWithRetry(
+		ctx,
+		database,
+		cfg.LeaderLeaseName,
+		ownerID,
+		cfg.LeaderLeaseTTL,
+		leaseAcquireRetryInterval,
+		logger,
+	)
 	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			return nil
+		}
 		return err
 	}
 	state.Lease(true)
@@ -119,6 +136,41 @@ func run(logger *slog.Logger) error {
 		runErr = releaseErr
 	}
 	return runErr
+}
+
+func acquireLeaseWithRetry(
+	ctx context.Context,
+	database leaseAcquirer,
+	leaseName string,
+	ownerID string,
+	ttl time.Duration,
+	retryInterval time.Duration,
+	logger *slog.Logger,
+) (store.Lease, error) {
+	waitingForHandoff := false
+	for {
+		lease, err := database.AcquireLease(ctx, leaseName, ownerID, ttl)
+		if err == nil {
+			return lease, nil
+		}
+		if !errors.Is(err, store.ErrLeaseUnavailable) {
+			return store.Lease{}, err
+		}
+		if !waitingForHandoff {
+			logger.Info("waiting for ingestion lease handoff", "lease", leaseName)
+			waitingForHandoff = true
+		}
+
+		timer := time.NewTimer(retryInterval)
+		select {
+		case <-ctx.Done():
+			if !timer.Stop() {
+				<-timer.C
+			}
+			return store.Lease{}, ctx.Err()
+		case <-timer.C:
+		}
+	}
 }
 
 func newOwnerID() (string, error) {

@@ -101,7 +101,7 @@ describe("CI workflow configuration", () => {
           dockerfilePath?: string;
           watchPatterns?: string[];
         };
-        deploy?: { restartPolicyType?: string };
+        deploy?: { healthcheckPath?: string; restartPolicyType?: string };
       };
       expect(config.$schema).toBe("https://railway.com/railway.schema.json");
       expect(["RAILPACK", "DOCKERFILE"]).toContain(config.build?.builder);
@@ -112,6 +112,9 @@ describe("CI workflow configuration", () => {
         expect(config.build.dockerfilePath).toMatch(/^\/services\//);
       }
       expect(config.deploy?.restartPolicyType).toBe(restartPolicy);
+      if (configName === "jetstream-ingest") {
+        expect(config.deploy?.healthcheckPath).toBe("/startupz");
+      }
       expect(deploymentReadme).toContain(
         `| ${service} | \`/railway/${configName}.json\` |`,
       );

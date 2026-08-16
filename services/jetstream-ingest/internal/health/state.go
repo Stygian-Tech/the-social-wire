@@ -42,6 +42,14 @@ func (s *State) Handler() http.Handler {
 	mux.HandleFunc("GET /healthz", func(response http.ResponseWriter, _ *http.Request) {
 		writeJSON(response, http.StatusOK, map[string]any{"status": "ok"})
 	})
+	mux.HandleFunc("GET /startupz", func(response http.ResponseWriter, _ *http.Request) {
+		snapshot := s.snapshot()
+		status := http.StatusOK
+		if !snapshot.Database {
+			status = http.StatusServiceUnavailable
+		}
+		writeJSON(response, status, snapshot)
+	})
 	mux.HandleFunc("GET /readyz", func(response http.ResponseWriter, _ *http.Request) {
 		snapshot := s.snapshot()
 		status := http.StatusOK
