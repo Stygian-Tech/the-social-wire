@@ -109,6 +109,8 @@ describe("OpenAPI route drift", () => {
       "/v1/operations/events/stream": ['"/v1/operations/events/stream"'],
       "/v1/operations/services": ['"/v1/operations/services"'],
       "/v1/operations/ingestion": ['"/v1/operations/ingestion"'],
+      "/v1/operations/ingestion/durability": ['"/v1/operations/ingestion/durability"'],
+      "/v1/operations/ingestion/incidents": ['"/v1/operations/ingestion/incidents"'],
       "/v1/operations/ingestion/endpoints": ['"/v1/operations/ingestion/endpoints"'],
       "/v1/operations/commands": ['"/v1/operations/commands"'],
       "/v1/operations/ingestion/reconnect": ['"/v1/operations/ingestion/reconnect"'],

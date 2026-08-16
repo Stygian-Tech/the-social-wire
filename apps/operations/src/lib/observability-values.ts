@@ -124,6 +124,19 @@ export function overallSystemHealth(overview: Overview, reference = overview.ref
     lastDisconnectedAt: overview.ingestion?.lastDisconnectAt,
     referenceTime: reference,
   })
+  const checkpoint = overview.durability?.checkpoints[0]
+  const recoveryActive =
+    checkpoint?.replayState === "replaying" ||
+    checkpoint?.replayState === "paused_budget" ||
+    (overview.durability?.incidents.recovering ?? 0) > 0
+  const oldestInboxAge = overview.durability?.inbox.oldestPendingAgeSeconds
+  const durabilityRisk = overview.durability
+    ? overview.durability.incidents.open > 0 ||
+      overview.durability.incidents.recovering > 0 ||
+      overview.durability.incidents.verificationRequired > 0 ||
+      overview.durability.inbox.deadLetters > 0 ||
+      (oldestInboxAge !== undefined && oldestInboxAge >= (recoveryActive ? 900 : 60))
+    : overview.counts.activeGaps > 0
   if (
     connectionState === "disconnected" ||
     overview.alerts.some((alert) => alert.status === "open" && alert.severity === "critical") ||
@@ -132,7 +145,7 @@ export function overallSystemHealth(overview: Overview, reference = overview.ref
     return "unhealthy"
   if (
     connectionState === "reconnecting" ||
-    overview.counts.activeGaps > 0 ||
+    durabilityRisk ||
     overview.counts.unresolvedAlerts > 0 ||
     states.includes("degraded")
   )

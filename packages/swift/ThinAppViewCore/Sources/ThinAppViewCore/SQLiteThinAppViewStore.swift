@@ -22,6 +22,582 @@ public init(path dbPath: String, logger: Logger) throws {
     _ = try await db.read { database in try Int.fetchOne(database, sql: "SELECT 1") }
   }
 
+  public func claimIngestionInbox(
+    environment: String,
+    sourceGeneration: String,
+    workerId: String,
+    limit: Int,
+    leaseUntil: Date,
+    at: Date
+  ) async throws -> [AppViewIngestionInboxItem] {
+    try await db.write { db in
+      let now = Self.isoString(from: at)
+      let rows = try Row.fetchAll(
+        db,
+        sql: """
+          SELECT i.environment, i.source_generation, i.seq, i.source_host, i.event_kind,
+                 i.repo_did, i.collection, i.operation, i.repo_rev, i.record_key,
+                 i.record_cid, i.payload, i.event_time, i.attempt_count
+          FROM appview_ingestion_inbox i
+          WHERE i.environment = ? AND i.source_generation = ?
+            AND ((i.status IN ('pending', 'retry') AND i.next_attempt_at <= ?)
+              OR (i.status = 'leased' AND i.lease_expires_at <= ?))
+            AND NOT EXISTS (
+              SELECT 1
+              FROM appview_ingestion_inbox earlier
+              WHERE earlier.environment = i.environment
+                AND earlier.source_generation = i.source_generation
+                AND earlier.repo_did = i.repo_did
+                AND earlier.seq < i.seq
+                AND earlier.status IN ('pending', 'retry', 'leased')
+            )
+          ORDER BY i.seq ASC
+          LIMIT ?
+          """,
+        arguments: [environment, sourceGeneration, now, now, max(1, limit)]
+      )
+      var claimed: [AppViewIngestionInboxItem] = []
+      claimed.reserveCapacity(rows.count)
+      for row in rows {
+        let sequence: Int64 = row["seq"]
+        let leaseToken = UUID().uuidString.lowercased()
+        try db.execute(
+          sql: """
+            UPDATE appview_ingestion_inbox
+            SET status = 'leased', lease_owner = ?, lease_token = ?, lease_expires_at = ?,
+                updated_at = ?
+            WHERE environment = ? AND source_generation = ? AND seq = ?
+              AND ((status IN ('pending', 'retry') AND next_attempt_at <= ?)
+                OR (status = 'leased' AND lease_expires_at <= ?))
+            """,
+          arguments: [
+            workerId,
+            leaseToken,
+            Self.isoString(from: leaseUntil),
+            now,
+            environment,
+            sourceGeneration,
+            sequence,
+            now,
+            now,
+          ]
+        )
+        guard db.changesCount == 1 else { continue }
+        let eventKindRaw: String = row["event_kind"]
+        let payloadRaw: String = row["payload"]
+        let eventTimeRaw: String = row["event_time"]
+        guard
+          let eventKind = AppViewIngestionEventKind(rawValue: eventKindRaw),
+          let payload = payloadRaw.data(using: .utf8),
+          let eventTime = Self.date(fromIso: eventTimeRaw)
+        else { throw AppViewIngestionInboxStoreError.invalidRow }
+        claimed.append(
+          AppViewIngestionInboxItem(
+            environment: row["environment"],
+            sourceGeneration: row["source_generation"],
+            sequence: sequence,
+            sourceHost: row["source_host"],
+            eventKind: eventKind,
+            repoDid: row["repo_did"],
+            collection: row["collection"],
+            operation: row["operation"],
+            repoRev: row["repo_rev"],
+            recordKey: row["record_key"],
+            recordCID: row["record_cid"],
+            payload: payload,
+            eventTime: eventTime,
+            attemptCount: row["attempt_count"],
+            leaseToken: leaseToken,
+            leaseExpiresAt: leaseUntil
+          )
+        )
+      }
+      return claimed
+    }
+  }
+
+  public func markIngestionInboxApplied(
+    environment: String,
+    sourceGeneration: String,
+    sequence: Int64,
+    workerId: String,
+    leaseToken: String,
+    expiresAt: Date,
+    at: Date
+  ) async throws {
+    try await db.write { db in
+      let now = Self.isoString(from: at)
+      try db.execute(
+        sql: """
+          UPDATE appview_ingestion_inbox
+          SET status = 'applied', applied_at = ?, lease_owner = NULL, lease_token = NULL,
+              lease_expires_at = NULL, failure_category = NULL, failure_reason = NULL,
+              expires_at = ?, updated_at = ?
+          WHERE environment = ? AND source_generation = ? AND seq = ?
+            AND status = 'leased' AND lease_owner = ? AND lease_token = ?
+          """,
+        arguments: [
+          now,
+          Self.isoString(from: expiresAt),
+          now,
+          environment,
+          sourceGeneration,
+          sequence,
+          workerId,
+          leaseToken,
+        ]
+      )
+      guard db.changesCount == 1 else { throw AppViewIngestionInboxStoreError.staleLease }
+      try Self.advanceAppliedInboxWatermark(
+        db: db,
+        environment: environment,
+        sourceGeneration: sourceGeneration,
+        at: at
+      )
+    }
+  }
+
+  public func retryIngestionInbox(
+    environment: String,
+    sourceGeneration: String,
+    sequence: Int64,
+    workerId: String,
+    leaseToken: String,
+    failureCategory: String,
+    failureReason: String,
+    nextAttemptAt: Date,
+    at: Date
+  ) async throws {
+    try await updateFailedInboxLease(
+      environment: environment,
+      sourceGeneration: sourceGeneration,
+      sequence: sequence,
+      workerId: workerId,
+      leaseToken: leaseToken,
+      status: "retry",
+      failureCategory: failureCategory,
+      failureReason: failureReason,
+      nextAttemptAt: nextAttemptAt,
+      expiresAt: nil,
+      at: at
+    )
+  }
+
+  public func advanceIngestionInboxAppliedWatermark(
+    environment: String,
+    sourceGeneration: String,
+    at: Date
+  ) async throws {
+    try await db.write { db in
+      try Self.advanceAppliedInboxWatermark(
+        db: db,
+        environment: environment,
+        sourceGeneration: sourceGeneration,
+        at: at
+      )
+    }
+  }
+
+  public func renewIngestionInboxLease(
+    environment: String,
+    sourceGeneration: String,
+    sequence: Int64,
+    workerId: String,
+    leaseToken: String,
+    leaseUntil: Date,
+    at: Date
+  ) async throws {
+    try await db.write { db in
+      try db.execute(
+        sql: """
+          UPDATE appview_ingestion_inbox
+          SET lease_expires_at = ?, updated_at = ?
+          WHERE environment = ? AND source_generation = ? AND seq = ?
+            AND status = 'leased' AND lease_owner = ? AND lease_token = ?
+          """,
+        arguments: [
+          Self.isoString(from: leaseUntil),
+          Self.isoString(from: at),
+          environment,
+          sourceGeneration,
+          sequence,
+          workerId,
+          leaseToken,
+        ]
+      )
+      guard db.changesCount == 1 else { throw AppViewIngestionInboxStoreError.staleLease }
+    }
+  }
+
+  public func deadLetterIngestionInbox(
+    environment: String,
+    sourceGeneration: String,
+    sequence: Int64,
+    repoDid: String,
+    workerId: String,
+    leaseToken: String,
+    failureCategory: String,
+    failureReason: String,
+    expiresAt: Date,
+    at: Date
+  ) async throws {
+    try await db.write { db in
+      try Self.updateFailedInboxLease(
+        db: db,
+        environment: environment,
+        sourceGeneration: sourceGeneration,
+        sequence: sequence,
+        workerId: workerId,
+        leaseToken: leaseToken,
+        status: "dead_letter",
+        failureCategory: failureCategory,
+        failureReason: failureReason,
+        nextAttemptAt: at,
+        expiresAt: expiresAt,
+        at: at
+      )
+      let requestId = "\(sourceGeneration):\(sequence):\(repoDid)"
+      let now = Self.isoString(from: at)
+      try db.execute(
+        sql: """
+          INSERT INTO appview_ingestion_reconciliation_requests
+            (environment, id, source_generation, repo_did, reason, trigger_seq, status,
+             attempt_count, next_attempt_at, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, 'pending', 0, ?, ?, ?)
+          ON CONFLICT (environment, source_generation, repo_did, trigger_seq, reason) DO NOTHING
+          """,
+        arguments: [
+          environment,
+          requestId,
+          sourceGeneration,
+          repoDid,
+          failureCategory,
+          sequence,
+          now,
+          now,
+          now,
+        ]
+      )
+    }
+  }
+
+  public func markIngestionInboxReconciled(
+    environment: String,
+    sourceGeneration: String,
+    sequence: Int64,
+    repoDid: String,
+    repoRev: String,
+    workerId: String,
+    leaseToken: String,
+    expiresAt: Date,
+    at: Date
+  ) async throws {
+    try await db.write { db in
+      let now = Self.isoString(from: at)
+      try db.execute(
+        sql: """
+          UPDATE appview_ingestion_inbox
+          SET reconciled_at = ?, expires_at = ?, updated_at = ?
+          WHERE environment = ? AND source_generation = ? AND seq = ? AND repo_did = ?
+            AND status = 'leased' AND lease_owner = ? AND lease_token = ?
+          """,
+        arguments: [
+          now,
+          Self.isoString(from: expiresAt),
+          now,
+          environment,
+          sourceGeneration,
+          sequence,
+          repoDid,
+          workerId,
+          leaseToken,
+        ]
+      )
+      guard db.changesCount == 1 else { throw AppViewIngestionInboxStoreError.staleLease }
+      try db.execute(
+        sql: """
+          UPDATE appview_jetstream_checkpoints
+          SET last_reconciled_repo_rev = ?, last_reconciled_at = ?, updated_at = ?
+          WHERE environment = ? AND source_generation = ?
+        """,
+        arguments: [repoRev, now, now, environment, sourceGeneration]
+      )
+      try db.execute(
+        sql: """
+          UPDATE appview_ingestion_reconciliation_requests
+          SET status = 'completed', completed_at = ?, updated_at = ?,
+              lease_owner = NULL, lease_token = NULL, lease_expires_at = NULL
+          WHERE environment = ? AND source_generation = ? AND repo_did = ?
+            AND trigger_seq = ? AND status != 'completed'
+          """,
+        arguments: [now, now, environment, sourceGeneration, repoDid, sequence]
+      )
+      try Self.advanceAppliedInboxWatermark(
+        db: db,
+        environment: environment,
+        sourceGeneration: sourceGeneration,
+        at: at
+      )
+    }
+  }
+
+  public func deleteExpiredIngestionInbox(
+    environment: String,
+    before: Date,
+    batchSize: Int
+  ) async throws -> Int {
+    try await db.write { db in
+      try db.execute(
+        sql: """
+          DELETE FROM appview_ingestion_inbox
+          WHERE rowid IN (
+            SELECT rowid
+            FROM appview_ingestion_inbox
+            WHERE environment = ? AND expires_at <= ?
+              AND (status = 'applied' OR (status = 'dead_letter' AND reconciled_at IS NOT NULL))
+            ORDER BY expires_at ASC, seq ASC
+            LIMIT ?
+          )
+          """,
+        arguments: [environment, Self.isoString(from: before), max(1, batchSize)]
+      )
+      return db.changesCount
+    }
+  }
+
+  public func resolveRecoveredIngestionIncidents(
+    environment: String,
+    sourceGeneration: String,
+    at: Date
+  ) async throws -> Int {
+    try await db.write { db in
+      guard let checkpoint = try Row.fetchOne(
+        db,
+        sql: """
+          SELECT replay_state, replay_sealed_seq, last_applied_seq
+          FROM appview_jetstream_checkpoints
+          WHERE environment = ? AND source_generation = ?
+          """,
+        arguments: [environment, sourceGeneration]
+      ) else { return 0 }
+      let replayState: String = checkpoint["replay_state"]
+      let sealedSequence: Int64? = checkpoint["replay_sealed_seq"]
+      let terminalPrefix: Int64? = checkpoint["last_applied_seq"]
+      guard replayState == "live", let sealedSequence, let terminalPrefix,
+        terminalPrefix >= sealedSequence
+      else { return 0 }
+      let blocked = try Bool.fetchOne(
+        db,
+        sql: """
+          SELECT EXISTS(
+            SELECT 1 FROM appview_ingestion_inbox
+            WHERE environment = ? AND source_generation = ? AND seq <= ?
+              AND status != 'applied' AND reconciled_at IS NULL)
+          """,
+        arguments: [environment, sourceGeneration, sealedSequence]
+      ) ?? true
+      guard !blocked else { return 0 }
+      let evidenceData = try JSONSerialization.data(withJSONObject: [
+        "recovery": "terminal_prefix_reached",
+        "sealedSequence": String(sealedSequence),
+        "terminalPrefixSequence": String(terminalPrefix),
+        "allStagedRowsThroughSealedTerminal": true,
+      ], options: [.sortedKeys])
+      guard let evidence = String(data: evidenceData, encoding: .utf8) else {
+        throw AppViewIngestionInboxStoreError.invalidRow
+      }
+      let now = Self.isoString(from: at)
+      try db.execute(
+        sql: """
+          UPDATE appview_ingestion_incidents
+          SET status = 'resolved', replay_state = 'live', replay_sealed_seq = ?,
+              recovered_through_cursor = ?,
+              verification_evidence = json_patch(verification_evidence, ?), resolved_at = ?,
+              updated_at = ?, version = version + 1
+          WHERE environment = ? AND source_generation = ? AND source = 'jetstream-v2'
+            AND cursor_kind = 'jetstream_v2_seq'
+            AND category IN ('transport_error', 'consumer_too_slow', 'cursor_too_old',
+              'replay_budget', 'no_progress_24h')
+            AND status IN ('open', 'recovering')
+          """,
+        arguments: [
+          sealedSequence, terminalPrefix, evidence, now, now, environment, sourceGeneration,
+        ]
+      )
+      return db.changesCount
+    }
+  }
+
+  public func claimIngestionReconciliationRequests(
+    environment: String,
+    sourceGeneration: String,
+    workerId: String,
+    limit: Int,
+    leaseUntil: Date,
+    at: Date
+  ) async throws -> [AppViewIngestionReconciliationRequest] {
+    try await db.write { db in
+      let now = Self.isoString(from: at)
+      let rows = try Row.fetchAll(
+        db,
+        sql: """
+          SELECT request.* FROM appview_ingestion_reconciliation_requests request
+          WHERE request.environment = ? AND request.source_generation = ?
+            AND ((request.status = 'pending' AND request.next_attempt_at <= ?)
+              OR (request.status = 'leased' AND request.lease_expires_at <= ?))
+            AND NOT EXISTS (
+              SELECT 1 FROM appview_ingestion_reconciliation_requests earlier
+              WHERE earlier.environment = request.environment
+                AND earlier.source_generation = request.source_generation
+                AND earlier.repo_did = request.repo_did
+                AND earlier.trigger_seq < request.trigger_seq
+                AND earlier.status IN ('pending', 'leased'))
+          ORDER BY request.trigger_seq, request.id LIMIT ?
+          """,
+        arguments: [environment, sourceGeneration, now, now, max(1, limit)]
+      )
+      var requests: [AppViewIngestionReconciliationRequest] = []
+      for row in rows {
+        let id: String = row["id"]
+        let token = UUID().uuidString.lowercased()
+        try db.execute(
+          sql: """
+            UPDATE appview_ingestion_reconciliation_requests
+            SET status = 'leased', lease_owner = ?, lease_token = ?, lease_expires_at = ?,
+                updated_at = ?
+            WHERE environment = ? AND id = ?
+              AND ((status = 'pending' AND next_attempt_at <= ?)
+                OR (status = 'leased' AND lease_expires_at <= ?))
+            """,
+          arguments: [
+            workerId, token, Self.isoString(from: leaseUntil), now,
+            environment, id, now, now,
+          ]
+        )
+        guard db.changesCount == 1 else { continue }
+        requests.append(AppViewIngestionReconciliationRequest(
+          environment: environment, id: id, sourceGeneration: sourceGeneration,
+          repoDid: row["repo_did"], reason: row["reason"],
+          triggerSequence: row["trigger_seq"], attemptCount: row["attempt_count"],
+          leaseToken: token, leaseExpiresAt: leaseUntil))
+      }
+      return requests
+    }
+  }
+
+  public func renewIngestionReconciliationLease(
+    environment: String,
+    requestId: String,
+    workerId: String,
+    leaseToken: String,
+    leaseUntil: Date,
+    at: Date
+  ) async throws {
+    try await db.write { db in
+      try db.execute(
+        sql: """
+          UPDATE appview_ingestion_reconciliation_requests
+          SET lease_expires_at = ?, updated_at = ?
+          WHERE environment = ? AND id = ? AND status = 'leased'
+            AND lease_owner = ? AND lease_token = ?
+          """,
+        arguments: [
+          Self.isoString(from: leaseUntil), Self.isoString(from: at), environment,
+          requestId, workerId, leaseToken,
+        ]
+      )
+      guard db.changesCount == 1 else { throw AppViewIngestionInboxStoreError.staleLease }
+    }
+  }
+
+  public func retryIngestionReconciliation(
+    environment: String,
+    requestId: String,
+    workerId: String,
+    leaseToken: String,
+    failureReason: String,
+    nextAttemptAt: Date,
+    at: Date
+  ) async throws {
+    try await db.write { db in
+      try db.execute(
+        sql: """
+          UPDATE appview_ingestion_reconciliation_requests
+          SET status = CASE WHEN attempt_count + 1 >= 10 THEN 'failed' ELSE 'pending' END,
+              attempt_count = attempt_count + 1, next_attempt_at = ?,
+              lease_owner = NULL, lease_token = NULL, lease_expires_at = NULL,
+              reason = CASE WHEN attempt_count + 1 >= 10
+                THEN reason || ':reconciliation_failed:' || ? ELSE reason END,
+              updated_at = ?
+          WHERE environment = ? AND id = ? AND status = 'leased'
+            AND lease_owner = ? AND lease_token = ?
+          """,
+        arguments: [
+          Self.isoString(from: nextAttemptAt), String(failureReason.prefix(512)),
+          Self.isoString(from: at), environment, requestId, workerId, leaseToken,
+        ]
+      )
+      guard db.changesCount == 1 else { throw AppViewIngestionInboxStoreError.staleLease }
+    }
+  }
+
+  public func completeIngestionReconciliation(
+    environment: String,
+    requestId: String,
+    sourceGeneration: String,
+    repoDid: String,
+    triggerSequence: Int64,
+    workerId: String,
+    leaseToken: String,
+    expiresAt: Date,
+    at: Date
+  ) async throws {
+    try await db.write { db in
+      let now = Self.isoString(from: at)
+      try db.execute(
+        sql: """
+          UPDATE appview_ingestion_reconciliation_requests
+          SET status = 'completed', completed_at = ?, updated_at = ?,
+              lease_owner = NULL, lease_token = NULL, lease_expires_at = NULL
+          WHERE environment = ? AND id = ? AND status = 'leased'
+            AND lease_owner = ? AND lease_token = ?
+          """,
+        arguments: [now, now, environment, requestId, workerId, leaseToken]
+      )
+      guard db.changesCount == 1 else { throw AppViewIngestionInboxStoreError.staleLease }
+      try db.execute(
+        sql: """
+          UPDATE appview_ingestion_inbox
+          SET reconciled_at = ?, expires_at = ?, updated_at = ?
+          WHERE environment = ? AND source_generation = ? AND seq = ? AND repo_did = ?
+            AND status = 'dead_letter'
+          """,
+        arguments: [
+          now, Self.isoString(from: expiresAt), now, environment, sourceGeneration,
+          triggerSequence, repoDid,
+        ]
+      )
+      guard db.changesCount == 1 else { throw AppViewIngestionInboxStoreError.invalidRow }
+      try db.execute(
+        sql: """
+          UPDATE appview_jetstream_checkpoints
+          SET last_reconciled_repo_rev = COALESCE(
+                (SELECT repo_rev FROM appview_ingestion_inbox
+                 WHERE environment = ? AND source_generation = ? AND seq = ?),
+                last_reconciled_repo_rev),
+              last_reconciled_at = ?, updated_at = ?
+          WHERE environment = ? AND source_generation = ?
+          """,
+        arguments: [
+          environment, sourceGeneration, triggerSequence, now, now,
+          environment, sourceGeneration,
+        ]
+      )
+      try Self.advanceAppliedInboxWatermark(
+        db: db, environment: environment, sourceGeneration: sourceGeneration, at: at)
+    }
+  }
+
   private static func migrate(_ db: Database) throws {
     try db.execute(sql: """
       CREATE TABLE IF NOT EXISTS content_items (
@@ -103,6 +679,130 @@ public init(path dbPath: String, logger: Logger) throws {
     try db.execute(sql: """
       CREATE INDEX IF NOT EXISTS idx_appview_ingestion_checkpoints_observed
         ON appview_ingestion_checkpoints (observed_at);
+      """)
+
+    try db.execute(sql: """
+      CREATE TABLE IF NOT EXISTS appview_jetstream_checkpoints (
+        environment TEXT NOT NULL,
+        source_generation TEXT NOT NULL,
+        source_host TEXT NOT NULL,
+        stream_nsid TEXT NOT NULL,
+        filter_fingerprint TEXT NOT NULL,
+        cursor_kind TEXT NOT NULL,
+        last_staged_seq INTEGER,
+        last_staged_event_at TEXT,
+        last_staged_at TEXT,
+        last_applied_seq INTEGER,
+        last_applied_event_at TEXT,
+        last_applied_at TEXT,
+        last_reconciled_repo_rev TEXT,
+        last_reconciled_at TEXT,
+        replay_state TEXT NOT NULL DEFAULT 'idle',
+        replay_after_seq INTEGER,
+        replay_sealed_seq INTEGER,
+        replay_bytes_downloaded INTEGER NOT NULL DEFAULT 0,
+        replay_retry_count INTEGER NOT NULL DEFAULT 0,
+        replay_range_resume_count INTEGER NOT NULL DEFAULT 0,
+        replay_last_progress_at TEXT,
+        replay_etag TEXT,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (environment, source_generation)
+      );
+      """)
+
+    try db.execute(sql: """
+      CREATE TABLE IF NOT EXISTS appview_ingestion_inbox (
+        environment TEXT NOT NULL,
+        source_generation TEXT NOT NULL,
+        seq INTEGER NOT NULL,
+        source_host TEXT NOT NULL,
+        cursor_kind TEXT NOT NULL,
+        event_kind TEXT NOT NULL,
+        repo_did TEXT NOT NULL,
+        collection TEXT,
+        operation TEXT,
+        repo_rev TEXT,
+        record_key TEXT,
+        record_cid TEXT,
+        payload TEXT NOT NULL,
+        event_time TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        attempt_count INTEGER NOT NULL DEFAULT 0,
+        next_attempt_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        lease_owner TEXT,
+        lease_token TEXT,
+        lease_expires_at TEXT,
+        failure_category TEXT,
+        failure_reason TEXT,
+        staged_at TEXT NOT NULL,
+        applied_at TEXT,
+        dead_lettered_at TEXT,
+        reconciled_at TEXT,
+        expires_at TEXT,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (environment, source_generation, seq)
+      );
+      """)
+    try db.execute(sql: """
+      CREATE INDEX IF NOT EXISTS idx_appview_ingestion_inbox_claim
+        ON appview_ingestion_inbox
+          (environment, source_generation, status, next_attempt_at, lease_expires_at, seq);
+      """)
+    try db.execute(sql: """
+      CREATE INDEX IF NOT EXISTS idx_appview_ingestion_inbox_repo_fifo
+        ON appview_ingestion_inbox (environment, source_generation, repo_did, seq, status);
+      """)
+
+    try db.execute(sql: """
+      CREATE TABLE IF NOT EXISTS appview_ingestion_incidents (
+        environment TEXT NOT NULL,
+        id TEXT NOT NULL,
+        source_generation TEXT,
+        source_host TEXT,
+        source TEXT NOT NULL,
+        cursor_kind TEXT NOT NULL,
+        start_cursor INTEGER,
+        end_cursor INTEGER,
+        category TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'open',
+        occurrence_count INTEGER NOT NULL DEFAULT 1,
+        first_detected_at TEXT NOT NULL,
+        last_detected_at TEXT NOT NULL,
+        last_error TEXT,
+        replay_state TEXT,
+        replay_bytes_downloaded INTEGER NOT NULL DEFAULT 0,
+        replay_retry_count INTEGER NOT NULL DEFAULT 0,
+        replay_range_resume_count INTEGER NOT NULL DEFAULT 0,
+        replay_sealed_seq INTEGER,
+        recovered_through_cursor INTEGER,
+        verification_evidence TEXT NOT NULL DEFAULT '{}',
+        resolved_at TEXT,
+        updated_at TEXT NOT NULL,
+        version INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (environment, id)
+      );
+      """)
+
+    try db.execute(sql: """
+      CREATE TABLE IF NOT EXISTS appview_ingestion_reconciliation_requests (
+        environment TEXT NOT NULL,
+        id TEXT NOT NULL,
+        source_generation TEXT NOT NULL,
+        repo_did TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        trigger_seq INTEGER NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        attempt_count INTEGER NOT NULL DEFAULT 0,
+        next_attempt_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        lease_owner TEXT,
+        lease_token TEXT,
+        lease_expires_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        completed_at TEXT,
+        PRIMARY KEY (environment, id),
+        UNIQUE (environment, source_generation, repo_did, trigger_seq, reason)
+      );
       """)
 
     try db.execute(sql: """
@@ -3066,6 +3766,156 @@ public init(path dbPath: String, logger: Logger) throws {
         ]
       )
     }
+  }
+
+  private func updateFailedInboxLease(
+    environment: String,
+    sourceGeneration: String,
+    sequence: Int64,
+    workerId: String,
+    leaseToken: String,
+    status: String,
+    failureCategory: String,
+    failureReason: String,
+    nextAttemptAt: Date,
+    expiresAt: Date?,
+    at: Date
+  ) async throws {
+    try await db.write { db in
+      try Self.updateFailedInboxLease(
+        db: db,
+        environment: environment,
+        sourceGeneration: sourceGeneration,
+        sequence: sequence,
+        workerId: workerId,
+        leaseToken: leaseToken,
+        status: status,
+        failureCategory: failureCategory,
+        failureReason: failureReason,
+        nextAttemptAt: nextAttemptAt,
+        expiresAt: expiresAt,
+        at: at
+      )
+    }
+  }
+
+  private static func updateFailedInboxLease(
+    db: Database,
+    environment: String,
+    sourceGeneration: String,
+    sequence: Int64,
+    workerId: String,
+    leaseToken: String,
+    status: String,
+    failureCategory: String,
+    failureReason: String,
+    nextAttemptAt: Date,
+    expiresAt: Date?,
+    at: Date
+  ) throws {
+    let now = isoString(from: at)
+    try db.execute(
+      sql: """
+        UPDATE appview_ingestion_inbox
+        SET status = ?, attempt_count = attempt_count + 1,
+            next_attempt_at = ?, lease_owner = NULL, lease_token = NULL,
+            lease_expires_at = NULL, failure_category = ?, failure_reason = ?,
+            dead_lettered_at = CASE WHEN ? = 'dead_letter' THEN ? ELSE dead_lettered_at END,
+            expires_at = COALESCE(?, expires_at), updated_at = ?
+        WHERE environment = ? AND source_generation = ? AND seq = ?
+          AND status = 'leased' AND lease_owner = ? AND lease_token = ?
+        """,
+      arguments: [
+        status,
+        isoString(from: nextAttemptAt),
+        failureCategory,
+        String(failureReason.prefix(1_000)),
+        status,
+        now,
+        expiresAt.map(isoString(from:)),
+        now,
+        environment,
+        sourceGeneration,
+        sequence,
+        workerId,
+        leaseToken,
+      ]
+    )
+    guard db.changesCount == 1 else { throw AppViewIngestionInboxStoreError.staleLease }
+  }
+
+  private static func advanceAppliedInboxWatermark(
+    db: Database,
+    environment: String,
+    sourceGeneration: String,
+    at: Date
+  ) throws {
+    let barrier: Int64? = try Int64.fetchOne(
+      db,
+      sql: """
+        SELECT MIN(seq)
+        FROM appview_ingestion_inbox
+        WHERE environment = ? AND source_generation = ?
+          AND status != 'applied' AND reconciled_at IS NULL
+        """,
+      arguments: [environment, sourceGeneration]
+    )
+    let candidate: Int64?
+    if let barrier {
+      candidate = try Int64.fetchOne(
+        db,
+        sql: """
+          SELECT MAX(seq)
+          FROM appview_ingestion_inbox
+          WHERE environment = ? AND source_generation = ? AND seq < ?
+            AND (status = 'applied' OR reconciled_at IS NOT NULL)
+          """,
+        arguments: [environment, sourceGeneration, barrier]
+      )
+    } else {
+      candidate = try Int64.fetchOne(
+        db,
+        sql: """
+          SELECT last_staged_seq
+          FROM appview_jetstream_checkpoints
+          WHERE environment = ? AND source_generation = ?
+          """,
+        arguments: [environment, sourceGeneration]
+      )
+    }
+    guard let candidate else { return }
+    let candidateEventTime: String? = try String.fetchOne(
+      db,
+      sql: """
+        SELECT COALESCE(
+          (SELECT event_time FROM appview_ingestion_inbox
+           WHERE environment = ? AND source_generation = ? AND seq = ?),
+          (SELECT last_staged_event_at FROM appview_jetstream_checkpoints
+           WHERE environment = ? AND source_generation = ?)
+        )
+        """,
+      arguments: [
+        environment, sourceGeneration, candidate, environment, sourceGeneration,
+      ]
+    )
+    let now = isoString(from: at)
+    try db.execute(
+      sql: """
+        UPDATE appview_jetstream_checkpoints
+        SET last_applied_seq = ?, last_applied_event_at = ?, last_applied_at = ?, updated_at = ?
+        WHERE environment = ? AND source_generation = ?
+          AND (last_applied_seq IS NULL OR last_applied_seq < ?)
+        """,
+      arguments: [
+        candidate,
+        candidateEventTime,
+        now,
+        now,
+        environment,
+        sourceGeneration,
+        candidate,
+      ]
+    )
   }
 
   private static func jsonString(_ values: [String]) throws -> String {

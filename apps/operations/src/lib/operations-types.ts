@@ -83,6 +83,81 @@ export type StreamState = {
   version: number
   environment: EnvironmentName
 }
+export type JetstreamDurabilityCheckpoint = {
+  environment: EnvironmentName
+  sourceGeneration: string
+  sourceHost: string
+  streamNSID: string
+  filterFingerprint: string
+  cursorKind: "jetstream_v2_seq" | "jetstream_v1_time_us" | "unknown"
+  lastStagedSequence?: number
+  lastStagedEventAt?: string
+  lastStagedAt?: string
+  lastAppliedSequence?: number
+  lastAppliedEventAt?: string
+  lastAppliedAt?: string
+  lastReconciledRepositoryRevision?: string
+  lastReconciledAt?: string
+  replayState: "idle" | "replaying" | "live" | "paused_budget" | "failed"
+  replayAfterSequence?: number
+  replaySealedSequence?: number
+  replayBytesDownloaded: number
+  replayRetryCount: number
+  replayRangeResumeCount: number
+  replayLastProgressAt?: string
+  updatedAt: string
+}
+export type IngestionDurability = {
+  environment: EnvironmentName
+  checkpoints: JetstreamDurabilityCheckpoint[]
+  inbox: {
+    pending: number
+    leased: number
+    retrying: number
+    applied: number
+    deadLetters: number
+    total: number
+    oldestPendingAt?: string
+    oldestPendingAgeSeconds?: number
+  }
+  incidents: {
+    open: number
+    recovering: number
+    verificationRequired: number
+    resolved: number
+    ignored: number
+    latestDetectedAt?: string
+  }
+  replayBytesRolling24Hours: number
+  generatedAt: string
+}
+export type IngestionIncident = {
+  id: string
+  environment: EnvironmentName
+  sourceGeneration?: string
+  sourceHost?: string
+  source: string
+  cursorKind: "jetstream_v1_time_us" | "jetstream_v2_seq" | "unknown"
+  startCursor?: number
+  endCursor?: number
+  category: string
+  status: "open" | "recovering" | "verification_required" | "resolved" | "ignored"
+  occurrenceCount: number
+  firstDetectedAt: string
+  lastDetectedAt: string
+  lastError?: string
+  replayState?: "idle" | "replaying" | "live" | "paused_budget" | "failed"
+  replayBytesDownloaded: number
+  replayRetryCount: number
+  replayRangeResumeCount: number
+  replaySealedSequence?: number
+  recoveredThroughCursor?: number
+  verificationEvidence: Record<string, JSONScalar>
+  resolvedAt?: string
+  updatedAt: string
+  version: number
+}
+export type JSONScalar = string | number | boolean | null
 export type JetstreamEndpoint = {
   id: string
   displayName: string
@@ -301,6 +376,7 @@ export type Overview = {
   capabilities: OperationsCapabilities
   counts: OperationsCounts
   viewers?: ViewerCounts
+  durability?: IngestionDurability
 }
 export type BackfillDryRun = {
   gapId?: string
@@ -365,6 +441,13 @@ export type ServiceListResponse = {
 export type IngestionResponse = {
   state?: StreamState
   sources: StreamState[]
+  evidence: EvidenceEnvelope
+  durability?: IngestionDurability
+}
+export type IngestionIncidentListResponse = {
+  incidents: IngestionIncident[]
+  nextCursor?: string | null
+  totalCount: number
   evidence: EvidenceEnvelope
 }
 export type AppViewOperationsResponse = {

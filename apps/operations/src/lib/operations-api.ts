@@ -15,6 +15,8 @@ import type {
   GapListResponse,
   GapInvestigation,
   IngestionResponse,
+  IngestionDurability,
+  IngestionIncidentListResponse,
   MetricListResponse,
   Overview,
   ServiceListResponse,
@@ -315,6 +317,19 @@ export const fetchIngestionEndpoints = async (session: OAuthSession | null, befo
   assertListResponse(response, "endpoints")
   return response
 }
+export const fetchIngestionDurability = async (session: OAuthSession | null) => {
+  const response = await operationsRequest<IngestionDurability>(session, operationsXrpc.getIngestionDurability)
+  assertIngestionDurability(response, operationsEnvironment())
+  return response
+}
+export const fetchIngestionIncidents = async (session: OAuthSession | null, before?: string) => {
+  const response = await operationsRequest<IngestionIncidentListResponse>(
+    session,
+    listPath(operationsXrpc.listIngestionIncidents, { before }),
+  )
+  assertListResponse(response, "incidents")
+  return response
+}
 export type OperationsEvent = { id?: string; type?: string; data?: unknown }
 
 export async function subscribeOperationsEvents({
@@ -415,6 +430,8 @@ function legacyOperationsContractPath(path: string, init?: RequestInit) {
     getOverview: "/v1/operations/overview",
     listServices: "/v1/operations/services",
     getIngestion: "/v1/operations/ingestion",
+    getIngestionDurability: "/v1/operations/ingestion/durability",
+    listIngestionIncidents: "/v1/operations/ingestion/incidents",
     listIngestionEndpoints: "/v1/operations/ingestion/endpoints",
     listCommands: "/v1/operations/commands",
     getAppView: "/v1/operations/appview",
@@ -515,6 +532,8 @@ function assertOverviewResponse(value: unknown): asserts value is Overview {
   value.recentTraces.forEach((item: unknown) => assertSpan(item, environment))
   value.metricRollups.forEach((item: unknown) => assertMetric(item, environment))
   if (value.database !== undefined && value.database !== null) assertDatabase(value.database)
+  if (value.durability !== undefined && value.durability !== null)
+    assertIngestionDurability(value.durability, environment)
 }
 
 function assertServiceResponse(
@@ -534,11 +553,61 @@ function assertIngestionResponse(value: unknown): asserts value is IngestionResp
   if (value.state !== undefined && value.state !== null) assertStream(value.state, environment)
   value.sources.forEach((item: unknown) => assertStream(item, environment))
   assertEvidence(value.evidence)
+  if (value.durability !== undefined && value.durability !== null)
+    assertIngestionDurability(value.durability, environment)
+}
+
+function assertIngestionDurability(value: unknown, environment: string) {
+  if (
+    !isRecord(value) ||
+    value.environment !== environment ||
+    !Array.isArray(value.checkpoints) ||
+    !isRecord(value.inbox) ||
+    !isRecord(value.incidents) ||
+    !isNonNegativeInteger(value.replayBytesRolling24Hours) ||
+    !isDateString(value.generatedAt)
+  )
+    throw new Error("Operations durable ingestion evidence failed runtime contract validation")
+  const inbox = value.inbox
+  const incidents = value.incidents
+  const countKeys = ["pending", "leased", "retrying", "applied", "deadLetters", "total"]
+  if (countKeys.some((key) => !isNonNegativeInteger(inbox[key])))
+    throw new Error("Operations inbox metrics failed runtime contract validation")
+  if (
+    !isOptionalDateString(inbox.oldestPendingAt) ||
+    !isOptionalFiniteNonNegative(inbox.oldestPendingAgeSeconds)
+  )
+    throw new Error("Operations inbox age evidence failed runtime contract validation")
+  const incidentKeys = ["open", "recovering", "verificationRequired", "resolved", "ignored"]
+  if (
+    incidentKeys.some((key) => !isNonNegativeInteger(incidents[key])) ||
+    !isOptionalDateString(incidents.latestDetectedAt)
+  )
+    throw new Error("Operations incident metrics failed runtime contract validation")
+  value.checkpoints.forEach((checkpoint) => {
+    if (
+      !isRecord(checkpoint) ||
+      checkpoint.environment !== environment ||
+      !isNonEmptyString(checkpoint.sourceGeneration) ||
+      !isNonEmptyString(checkpoint.sourceHost) ||
+      !isNonEmptyString(checkpoint.streamNSID) ||
+      !isNonEmptyString(checkpoint.filterFingerprint) ||
+      checkpoint.cursorKind !== "jetstream_v2_seq" ||
+      !new Set(["idle", "replaying", "live", "paused_budget", "failed"]).has(String(checkpoint.replayState)) ||
+      !isOptionalNonNegativeInteger(checkpoint.lastStagedSequence) ||
+      !isOptionalNonNegativeInteger(checkpoint.lastAppliedSequence) ||
+      !isNonNegativeInteger(checkpoint.replayBytesDownloaded) ||
+      !isNonNegativeInteger(checkpoint.replayRetryCount) ||
+      !isNonNegativeInteger(checkpoint.replayRangeResumeCount) ||
+      !isDateString(checkpoint.updatedAt)
+    )
+      throw new Error("Operations durability checkpoint failed runtime contract validation")
+  })
 }
 
 function assertListResponse(
   value: unknown,
-  namedKey: "gaps" | "backfills" | "alerts" | "commands" | "endpoints",
+  namedKey: "gaps" | "backfills" | "alerts" | "commands" | "endpoints" | "incidents",
 ) {
   if (!isRecord(value)) throw new Error(`Operations ${namedKey} response was not an object`)
   const items = value[namedKey]
@@ -555,6 +624,7 @@ function assertListResponse(
   if (namedKey === "commands")
     items.forEach((item) => assertCommand(item, expectedEnvironment))
   if (namedKey === "endpoints") items.forEach((item) => assertEndpoint(item, expectedEnvironment))
+  if (namedKey === "incidents") items.forEach((item) => assertIncident(item, expectedEnvironment))
   assertEvidence(value.evidence)
 }
 
@@ -749,6 +819,30 @@ function assertEndpoint(value: unknown, environment: string) {
     !isOptionalString(value.lastError)
   )
     throw new Error("Operations endpoint failed runtime contract validation")
+}
+
+function assertIncident(value: unknown, environment: string) {
+  if (
+    !isRecord(value) ||
+    value.environment !== environment ||
+    !isNonEmptyString(value.id) ||
+    !isOptionalString(value.sourceGeneration) ||
+    !isOptionalString(value.sourceHost) ||
+    !isNonEmptyString(value.source) ||
+    !new Set(["jetstream_v1_time_us", "jetstream_v2_seq", "unknown"]).has(String(value.cursorKind)) ||
+    !isNonEmptyString(value.category) ||
+    !new Set(["open", "recovering", "verification_required", "resolved", "ignored"]).has(String(value.status)) ||
+    !isPositiveInteger(value.occurrenceCount) ||
+    !isDateString(value.firstDetectedAt) ||
+    !isDateString(value.lastDetectedAt) ||
+    !isNonNegativeInteger(value.replayBytesDownloaded) ||
+    !isNonNegativeInteger(value.replayRetryCount) ||
+    !isNonNegativeInteger(value.replayRangeResumeCount) ||
+    !isJSONScalarRecord(value.verificationEvidence) ||
+    !isDateString(value.updatedAt) ||
+    !isNonNegativeInteger(value.version)
+  )
+    throw new Error("Operations ingestion incident failed runtime contract validation")
 }
 
 function assertVersionedStatus(
@@ -1005,6 +1099,18 @@ function isStringArray(value: unknown): value is string[] {
 
 function isStringRecord(value: unknown): value is Record<string, string> {
   return isRecord(value) && Object.values(value).every((item) => typeof item === "string")
+}
+
+function isJSONScalarRecord(
+  value: unknown,
+): value is Record<string, string | number | boolean | null> {
+  return isRecord(value) && Object.values(value).every(
+    (item) =>
+      item === null ||
+      typeof item === "string" ||
+      typeof item === "boolean" ||
+      (typeof item === "number" && Number.isFinite(item)),
+  )
 }
 
 function isDateString(value: unknown): value is string {

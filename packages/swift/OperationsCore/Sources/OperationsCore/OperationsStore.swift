@@ -30,6 +30,31 @@ public protocol OperationsStore: Actor {
     jobId: String?, identityHash: String, collection: String, operation: String, cursor: Int64?,
     errorCategory: String, at: Date) async throws
 
+  func fetchIngestionDurabilitySnapshot(at: Date) async throws -> IngestionDurabilitySnapshot
+  func listIngestionIncidents(limit: Int, before: String?) async throws
+    -> OperationsPage<IngestionIncident>
+  func upsertOrMergeActiveIncident(
+    _ candidate: IngestionIncidentCandidate, legacyGapId: String?
+  ) async throws -> IngestionIncident
+  func acquireIngestionLeaderLease(
+    name: String, sourceGeneration: String, ownerID: String, leaseUntil: Date, at: Date
+  ) async throws -> IngestionLeaderLease?
+  func renewIngestionLeaderLease(
+    name: String, ownerID: String, fencingToken: Int64, leaseUntil: Date, at: Date
+  ) async throws -> IngestionLeaderLease
+  func releaseIngestionLeaderLease(
+    name: String, ownerID: String, fencingToken: Int64, at: Date
+  ) async throws
+  /// Holds the durable lease row fence for one authority-owned operation. A takeover cannot
+  /// complete until the operation returns; a stale owner never enters the operation.
+  func withIngestionLeaderLeaseFence(
+    name: String,
+    ownerID: String,
+    fencingToken: Int64,
+    at: Date,
+    operation: @Sendable @escaping () async throws -> Void
+  ) async throws
+
   func createCommand(
     action: OperationsCommandAction, operatorDid: String, auditNote: String, at: Date
   ) async throws -> OperationsWorkerCommand
@@ -158,6 +183,54 @@ extension OperationsStore {
 
   public func fetchViewerCounts(at: Date) async throws -> OperationsViewerCounts? { nil }
 
+  // Keep lightweight/test stores source-compatible while durable ingestion is rolled out.
+  // Production stores override these methods with the provider-specific implementation.
+  public func fetchIngestionDurabilitySnapshot(at: Date) async throws
+    -> IngestionDurabilitySnapshot
+  {
+    throw OperationsStoreError.notFound
+  }
+
+  public func listIngestionIncidents(limit: Int, before: String?) async throws
+    -> OperationsPage<IngestionIncident>
+  {
+    throw OperationsStoreError.notFound
+  }
+
+  public func upsertOrMergeActiveIncident(
+    _ candidate: IngestionIncidentCandidate, legacyGapId: String?
+  ) async throws -> IngestionIncident {
+    throw OperationsStoreError.notFound
+  }
+
+  public func acquireIngestionLeaderLease(
+    name: String, sourceGeneration: String, ownerID: String, leaseUntil: Date, at: Date
+  ) async throws -> IngestionLeaderLease? {
+    throw OperationsStoreError.notFound
+  }
+
+  public func renewIngestionLeaderLease(
+    name: String, ownerID: String, fencingToken: Int64, leaseUntil: Date, at: Date
+  ) async throws -> IngestionLeaderLease {
+    throw OperationsStoreError.notFound
+  }
+
+  public func releaseIngestionLeaderLease(
+    name: String, ownerID: String, fencingToken: Int64, at: Date
+  ) async throws {
+    throw OperationsStoreError.notFound
+  }
+
+  public func withIngestionLeaderLeaseFence(
+    name: String,
+    ownerID: String,
+    fencingToken: Int64,
+    at: Date,
+    operation: @Sendable @escaping () async throws -> Void
+  ) async throws {
+    throw OperationsStoreError.notFound
+  }
+
   public func recordTelemetryBatch(_ signals: [OperationsTelemetrySignal]) async throws {
     for signal in signals {
       switch signal {
@@ -185,6 +258,7 @@ extension OperationsStore {
       services: resolvedServices, streams: resolvedStreamStates, at: at)
     let databaseSnapshot = try? await database
     let viewerCounts = try? await viewers
+    let durability = try? await fetchIngestionDurabilitySnapshot(at: at)
     var evidence: [String: OperationsEvidenceMetadata] = [
       "services": serviceEvidence,
       "ingestion": ingestion.evidence,
@@ -214,7 +288,8 @@ extension OperationsStore {
       evidence: evidence,
       capabilities: capabilities,
       counts: resolvedCounts,
-      viewers: viewerCounts ?? nil
+      viewers: viewerCounts ?? nil,
+      durability: durability
     )
   }
 }

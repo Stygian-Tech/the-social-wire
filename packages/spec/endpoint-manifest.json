@@ -299,6 +299,20 @@
     {
       "surface": "openapi",
       "method": "GET",
+      "path": "/v1/operations/ingestion/durability",
+      "classification": "xrpc-migration",
+      "xrpcNsid": "app.thesocialwire.operations.getIngestionDurability"
+    },
+    {
+      "surface": "openapi",
+      "method": "GET",
+      "path": "/v1/operations/ingestion/incidents",
+      "classification": "xrpc-migration",
+      "xrpcNsid": "app.thesocialwire.operations.listIngestionIncidents"
+    },
+    {
+      "surface": "openapi",
+      "method": "GET",
       "path": "/v1/operations/ingestion/endpoints",
       "classification": "xrpc-migration",
       "xrpcNsid": "app.thesocialwire.operations.listIngestionEndpoints"

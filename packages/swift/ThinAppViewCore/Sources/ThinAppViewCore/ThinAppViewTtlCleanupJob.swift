@@ -65,6 +65,11 @@ actor ThinAppViewTtlCleanupJob {
     } else {
       0
     }
+    let ingestionInboxDeleted = try await store.deleteExpiredIngestionInbox(
+      environment: environment,
+      before: now,
+      batchSize: batchSize
+    )
     let projectionCachesDeleted = try await projectionCache?.deleteExpiredProjectionCaches(
       before: now,
       batchSize: batchSize
@@ -76,6 +81,7 @@ actor ThinAppViewTtlCleanupJob {
         "readMarksDeleted": .stringConvertible(readDeleted),
         "tapReceiptsDeleted": .stringConvertible(tapReceiptsDeleted),
         "projectionRepairsDeleted": .stringConvertible(projectionRepairsDeleted),
+        "ingestionInboxDeleted": .stringConvertible(ingestionInboxDeleted),
         "projectionCachesDeleted": .stringConvertible(projectionCachesDeleted),
       ]
     )

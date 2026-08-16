@@ -50,7 +50,6 @@ export function LiveStream({
   const jetstreamState = jetstreamStateForOverview(data)
   const receivedCursor = boundedNonNegativeInteger(state?.lastReceivedCursor)
   const committedCursor = boundedNonNegativeInteger(state?.lastCommittedCursor)
-  const cursorDelta = receivedCursor !== null && committedCursor !== null ? receivedCursor - committedCursor : null
   const connectionState = effectiveConnectionState({
     connectionState: state?.connectionState,
     transportHeartbeatAt: state?.transportHeartbeatAt,
@@ -73,9 +72,8 @@ export function LiveStream({
     ["Source", state?.source === "jetstream" ? "Jetstream · unverified supplemental" : (state?.source ?? "—")],
     ["Connected Since", formatTimestamp(state?.connectedAt)],
     ["Connection Duration", formatDuration(elapsedSeconds(state?.connectedAt, referenceTime))],
-    ["Last Received (μs)", receivedCursor?.toLocaleString() ?? "—"],
-    ["Last Committed (μs)", committedCursor?.toLocaleString() ?? "—"],
-    ["Cursor Delta", cursorDelta === null ? "—" : cursorDelta < 0 ? "Invalid ordering" : `${cursorDelta.toLocaleString()} μs`],
+    ["Legacy V1 Received Cursor (μs)", receivedCursor?.toLocaleString() ?? "—"],
+    ["Legacy V1 Committed Cursor (μs)", committedCursor?.toLocaleString() ?? "—"],
     ["Last Received Event", formatTimestamp(state?.lastReceivedEventAt)],
     ["Last Committed Event", formatTimestamp(state?.lastCommittedEventAt)],
     ...(queueEvidenceCurrent && state?.queueCapacity !== undefined

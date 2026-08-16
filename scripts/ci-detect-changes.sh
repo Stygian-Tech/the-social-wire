@@ -124,6 +124,13 @@ filter_changed tap \
   'railway/tap.json' \
   '.github/workflows/ci.yml'
 
+filter_changed jetstream_ingest \
+  'services/jetstream-ingest/**' \
+  'database/migrations/**' \
+  'packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/Fixtures/jetstream-v2-go-sdk-v0.2.0-events.json' \
+  'railway/jetstream-ingest.json' \
+  '.github/workflows/ci.yml'
+
 filter_changed lexicons \
   'packages/lexicons/**' \
   'package.json' \

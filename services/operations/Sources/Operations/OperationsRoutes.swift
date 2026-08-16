@@ -51,12 +51,30 @@ struct OperationsRoutes {
     group.get(route("/v1/operations/ingestion", "getIngestion")) { _, _ async throws -> IngestionResponse in
       async let serviceStates = store.listServiceStates()
       async let streamStates = store.listStreamStates()
+      async let durability = store.fetchIngestionDurabilitySnapshot(at: Date())
       let services = try await serviceStates
       let sources = try await streamStates
       let authority = OperationsEvidenceResolver.ingestionAuthority(
         services: services, streams: sources)
       return IngestionResponse(
-        state: authority.state, sources: sources, evidence: authority.evidence)
+        state: authority.state, sources: sources, evidence: authority.evidence,
+        durability: try? await durability)
+    }
+    group.get(route("/v1/operations/ingestion/durability", "getIngestionDurability")) {
+      _, _ async throws -> IngestionDurabilitySnapshot in
+      try await store.fetchIngestionDurabilitySnapshot(at: Date())
+    }
+    group.get(route("/v1/operations/ingestion/incidents", "listIngestionIncidents")) {
+      request, _ async throws -> IngestionIncidentListResponse in
+      let page = try await store.listIngestionIncidents(
+        limit: try Self.limit(request),
+        before: try Self.paginationCursor(request.uri.queryParameters.get("before")))
+      return IngestionIncidentListResponse(
+        incidents: page.items, nextCursor: page.nextCursor, totalCount: page.totalCount,
+        evidence: Self.evidence(
+          source: "appview_ingestion_incidents", itemCount: page.items.count,
+          totalCount: page.totalCount, indexedThrough: page.items.map(\.updatedAt).min(),
+          validitySeconds: 5, emptyReason: "No durable ingestion incidents are recorded."))
     }
     group.get(route("/v1/operations/ingestion/endpoints", "listIngestionEndpoints")) {
       request, _ async throws -> EndpointListResponse in
@@ -869,6 +887,13 @@ struct IngestionResponse: Codable, Sendable {
   let state: IngestionStreamState?
   let sources: [IngestionStreamState]
   let evidence: OperationsEvidenceMetadata
+  let durability: IngestionDurabilitySnapshot?
+}
+struct IngestionIncidentListResponse: Codable, Sendable {
+  let incidents: [IngestionIncident]
+  let nextCursor: String?
+  let totalCount: Int
+  let evidence: OperationsEvidenceMetadata
 }
 struct AppViewOperationsResponse: Codable, Sendable {
   let services: [OperationsServiceState]
@@ -929,6 +954,8 @@ extension OperationsOverview: @retroactive ResponseEncodable {}
 extension OperationsCapabilities: @retroactive ResponseEncodable {}
 extension OperationsServiceState: @retroactive ResponseEncodable {}
 extension IngestionStreamState: @retroactive ResponseEncodable {}
+extension IngestionDurabilitySnapshot: @retroactive ResponseEncodable {}
+extension IngestionIncident: @retroactive ResponseEncodable {}
 extension IngestionGap: @retroactive ResponseEncodable {}
 extension GapInvestigation: @retroactive ResponseEncodable {}
 extension BackfillDryRunResponse: @retroactive ResponseEncodable {}
@@ -938,6 +965,7 @@ extension OperationsWorkerCommand: @retroactive ResponseEncodable {}
 extension TraceSpan: @retroactive ResponseEncodable {}
 extension OperationsServiceListResponse: ResponseEncodable {}
 extension IngestionResponse: ResponseEncodable {}
+extension IngestionIncidentListResponse: ResponseEncodable {}
 extension AppViewOperationsResponse: ResponseEncodable {}
 extension EndpointListResponse: ResponseEncodable {}
 extension CommandListResponse: ResponseEncodable {}

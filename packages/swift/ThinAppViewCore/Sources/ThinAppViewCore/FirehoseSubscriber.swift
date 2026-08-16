@@ -15,11 +15,11 @@ actor FirehoseSubscriber {
   private let instanceId: String
   private let replayRewindMicroseconds: Int64
   private let logger: Logger
-  private var suspectedGapEndCursor: Int64?
   private var pendingReconnectCommand: OperationsWorkerCommand?
   private var pendingReconnectProgress: JetstreamReconnectProgressGate?
   private var pendingReconnectTimeoutTask: Task<Void, Never>?
   private var pendingReconnectFailures = 0
+  private var reconnectFailureCount = 0
   private var queueDepth = 0
   private var queueCapacity = 4_096
   private var queueDropped: Int64 = 0
@@ -62,14 +62,18 @@ actor FirehoseSubscriber {
     self.logger = logger
   }
 
-  func runForever() async {
+  func runForever(authorityLease: IngestionLeaderLease? = nil) async {
     while !Task.isCancelled {
       do {
-        try await consumeOnce()
+        try await consumeOnce(authorityLease: authorityLease)
       } catch let request as ManualJetstreamReconnectRequest {
         await beginPendingReconnect(request.command, at: Date())
       } catch {
         let now = Date()
+        let reconnectDelay = JetstreamReconnectBackoff.randomizedDelay(
+          failureCount: reconnectFailureCount
+        )
+        reconnectFailureCount += 1
         await markActiveEndpointDisconnected(error: error, at: now)
         await failReconnectCommandIfAllEndpointsFailed(error: error, at: now)
         try? await operationsStore?.markStreamDisconnected(
@@ -84,23 +88,18 @@ actor FirehoseSubscriber {
           metadata: [
             "error_type": .string(OperationsRedactor.errorCategory(error)),
             "next_endpoint": .string(endpointPool.active.host),
+            "retry_seconds": .stringConvertible(reconnectDelay),
           ]
         )
-        try? await Task.sleep(for: .seconds(3))
+        try? await Task.sleep(for: .seconds(reconnectDelay))
       }
     }
   }
 
-  private func consumeOnce() async throws {
+  private func consumeOnce(authorityLease: IngestionLeaderLease?) async throws {
     let endpoint = endpointPool.active
     await beginConnectionAttempt(endpoint: endpoint, at: Date())
     let streamState = try await operationsStore?.fetchStreamState(source: "jetstream")
-    if let gaps = try await operationsStore?.listGaps(limit: 250) {
-      suspectedGapEndCursor = gaps
-        .filter { $0.source == "jetstream" && $0.status == .suspected }
-        .compactMap(\.endCursor)
-        .max()
-    }
     let cursor = JetstreamCursor.resumeCursor(
       committed: streamState?.lastCommittedCursor,
       seededReceived: streamState?.lastReceivedCursor,
@@ -120,7 +119,7 @@ actor FirehoseSubscriber {
           onHeartbeat: { await self.didReceiveTransportHeartbeat(at: Date()) },
           onQueueObservation: { await self.observeQueue($0) }
         ) { text in
-          try await self.handleMessage(text)
+          try await self.handleMessage(text, authorityLease: authorityLease)
         }
         #else
         try await FirehoseSubscriberURLSessionTransport.consume(
@@ -131,7 +130,7 @@ actor FirehoseSubscriber {
           onHeartbeat: { await self.didReceiveTransportHeartbeat(at: Date()) },
           onQueueObservation: { await self.observeQueue($0) }
         ) { text in
-          try await self.handleMessage(text)
+          try await self.handleMessage(text, authorityLease: authorityLease)
         }
         #endif
         return .streamEnded
@@ -384,20 +383,39 @@ actor FirehoseSubscriber {
       throw JetstreamReconnectAssessmentError.streamStateUnavailable
     }
     guard let candidate = JetstreamGapDetector.postReconnectCandidate(state: state) else { return }
-    let existingGaps = try await store.listGaps(limit: 250)
-    guard !existingGaps.contains(where: { candidate.isCovered(by: $0) }) else { return }
-    let gap = try await store.createGap(
-      source: "jetstream",
-      startCursor: candidate.startCursor,
-      endCursor: candidate.endCursor,
-      reason: candidate.reason,
-      collections: [],
-      detectedAt: at
+    _ = try await store.upsertOrMergeActiveIncident(
+      IngestionIncidentCandidate(
+        source: "jetstream",
+        cursorKind: .jetstreamV1TimeUS,
+        startCursor: candidate.startCursor,
+        endCursor: candidate.endCursor,
+        category: candidate.reason,
+        detectedAt: at
+      ),
+      legacyGapId: nil
     )
-    suspectedGapEndCursor = max(suspectedGapEndCursor ?? gap.endCursor ?? 0, gap.endCursor ?? 0)
   }
 
-  func handleMessage(_ text: String) async throws {
+  func handleMessage(
+    _ text: String,
+    authorityLease: IngestionLeaderLease? = nil
+  ) async throws {
+    guard let authorityLease else {
+      try await handleMessageWithinAuthorityFence(text)
+      return
+    }
+    guard let operationsStore else { throw OperationsStoreError.notFound }
+    try await operationsStore.withIngestionLeaderLeaseFence(
+      name: authorityLease.name,
+      ownerID: authorityLease.ownerID,
+      fencingToken: authorityLease.fencingToken,
+      at: Date()
+    ) {
+      try await self.handleMessageWithinAuthorityFence(text)
+    }
+  }
+
+  private func handleMessageWithinAuthorityFence(_ text: String) async throws {
     guard
       let data = text.data(using: .utf8),
       let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -444,6 +462,7 @@ actor FirehoseSubscriber {
         committedAt: Date(),
         queueDepth: queueDepth
       )
+      reconnectFailureCount = 0
       if indexingOutcome.didMutateProjection {
         try? await operationsStore?.markStreamIndexedMutation(source: "jetstream", at: Date())
         try? await operationsStore?.markStreamProjectionWatermark(
@@ -452,7 +471,6 @@ actor FirehoseSubscriber {
           at: Date()
         )
       }
-      await confirmSuspectedGapsAfterProgress(through: cursor, at: Date())
       await completePendingReconnectAfterProgress(cursor: cursor, at: Date())
       let duration = Date().timeIntervalSince(startedAt)
       let indexingResult = indexingOutcome.didMutateProjection ? "indexed" : "skipped"
@@ -558,9 +576,24 @@ actor FirehoseSubscriber {
 
   private func recordDisconnectGap(reason: Error, at: Date) async {
     guard let operationsStore else { return }
-    guard let state = try? await operationsStore.fetchStreamState(source: "jetstream") else { return }
-    guard let candidate = JetstreamGapDetector.candidate(state: state, reason: reason) else { return }
-    await recordGap(candidate, collections: [], at: at)
+    guard let state = try? await operationsStore.fetchStreamState(source: "jetstream") else {
+      return
+    }
+    if let candidate = JetstreamGapDetector.candidate(state: state, reason: reason) {
+      await recordGap(candidate, collections: [], at: at)
+      return
+    }
+    guard reason is FirehoseQueueOverflowError else { return }
+    _ = try? await operationsStore.upsertOrMergeActiveIncident(
+      IngestionIncidentCandidate(
+        source: "jetstream",
+        cursorKind: .jetstreamV1TimeUS,
+        category: "message_pump_overflow",
+        error: OperationsRedactor.errorCategory(reason),
+        detectedAt: at
+      ),
+      legacyGapId: nil
+    )
   }
 
   private func recordCommitFailureGap(collection: String, cursor: Int64, at: Date) async {
@@ -586,27 +619,18 @@ actor FirehoseSubscriber {
     at: Date
   ) async {
     guard let operationsStore else { return }
-    let existingGaps = (try? await operationsStore.listGaps(limit: 250)) ?? []
-    guard !existingGaps.contains(where: { candidate.isCovered(by: $0) }) else { return }
-    guard let gap = try? await operationsStore.createGap(
-      source: "jetstream",
-      startCursor: candidate.startCursor,
-      endCursor: candidate.endCursor,
-      reason: candidate.reason,
-      collections: collections,
-      detectedAt: at
-    ) else { return }
-    suspectedGapEndCursor = max(suspectedGapEndCursor ?? gap.endCursor ?? 0, gap.endCursor ?? 0)
-  }
-
-  private func confirmSuspectedGapsAfterProgress(through cursor: Int64, at: Date) async {
-    guard let target = suspectedGapEndCursor, cursor >= target, let operationsStore else { return }
-    await JetstreamGapProgressAssessment.confirmSuspectedGaps(
-      store: operationsStore,
-      through: cursor,
-      at: at
+    _ = try? await operationsStore.upsertOrMergeActiveIncident(
+      IngestionIncidentCandidate(
+        source: "jetstream",
+        cursorKind: .jetstreamV1TimeUS,
+        startCursor: candidate.startCursor,
+        endCursor: candidate.endCursor,
+        category: candidate.reason,
+        error: collections.isEmpty ? nil : "collections=\(collections.sorted().joined(separator: ","))",
+        detectedAt: at
+      ),
+      legacyGapId: nil
     )
-    suspectedGapEndCursor = nil
   }
 }
 

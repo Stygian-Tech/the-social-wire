@@ -1010,4 +1010,127 @@ struct SQLiteOperationsStoreTests {
     #expect(exactJetstream.verificationStatus == .required)
     #expect(exactJetstream.verificationReason == "source_not_authoritative")
   }
+
+  @Test("durable incidents consolidate repeated signals without treating sequence jumps as losses")
+  func durableIncidentCoalescing() async throws {
+    let url = FileManager.default.temporaryDirectory
+      .appendingPathComponent("operations-\(UUID().uuidString).sqlite")
+    defer { try? FileManager.default.removeItem(at: url) }
+    let store = try SQLiteOperationsStore(
+      path: url.path, environment: "dev", logger: Logger(label: "operations.test"))
+    let now = Date()
+    let first = try await store.upsertOrMergeActiveIncident(
+      IngestionIncidentCandidate(
+        sourceGeneration: "v2-us-west-1", sourceHost: "jetstream.us-west.bsky.network",
+        source: "jetstream-v2",
+        cursorKind: .jetstreamV2Sequence, startCursor: 100, endCursor: 500,
+        category: "consumer_too_slow", detectedAt: now))
+    let merged = try await store.upsertOrMergeActiveIncident(
+      IngestionIncidentCandidate(
+        sourceGeneration: "v2-us-west-1", sourceHost: "jetstream.us-west.bsky.network",
+        source: "jetstream-v2",
+        cursorKind: .jetstreamV2Sequence, startCursor: 400, endCursor: 900_000,
+        category: "consumer_too_slow", detectedAt: now.addingTimeInterval(1)))
+    let widened = try await store.upsertOrMergeActiveIncident(
+      IngestionIncidentCandidate(
+        sourceGeneration: "v2-us-west-1", sourceHost: "jetstream.us-west.bsky.network",
+        source: "jetstream-v2",
+        cursorKind: .jetstreamV2Sequence, startCursor: 2_000_000, endCursor: 2_000_000,
+        category: "consumer_too_slow", detectedAt: now.addingTimeInterval(2)))
+    let separateCategory = try await store.upsertOrMergeActiveIncident(
+      IngestionIncidentCandidate(
+        sourceGeneration: "v2-us-west-1", sourceHost: "jetstream.us-west.bsky.network",
+        source: "jetstream-v2", cursorKind: .jetstreamV2Sequence,
+        category: "invalid_credentials", detectedAt: now.addingTimeInterval(3)))
+
+    #expect(merged.id == first.id)
+    #expect(merged.occurrenceCount == 2)
+    #expect(merged.startCursor == 100)
+    #expect(merged.endCursor == 900_000)
+    #expect(widened.id == first.id)
+    #expect(widened.occurrenceCount == 3)
+    #expect(widened.endCursor == 2_000_000)
+    #expect(separateCategory.id != first.id)
+    #expect(try await store.listIngestionIncidents(limit: 10, before: nil).totalCount == 2)
+  }
+
+  @Test("incident verification evidence preserves mixed JSON scalar values")
+  func incidentVerificationEvidenceScalars() throws {
+    let evidence = try JSONDecoder().decode(
+      [String: OperationsJSONScalar].self,
+      from: Data(#"{"reason":"terminal_prefix","verified":true,"attempts":3,"coverage":0.75,"error":null}"#.utf8))
+
+    #expect(evidence["reason"] == .string("terminal_prefix"))
+    #expect(evidence["verified"] == .boolean(true))
+    #expect(evidence["attempts"] == .integer(3))
+    #expect(evidence["coverage"] == .number(0.75))
+    #expect(evidence["error"] == .null)
+
+    let encoded = try JSONEncoder().encode(evidence)
+    let encodedObject = try #require(
+      JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+    #expect(encodedObject["verified"] as? Bool == true)
+    #expect((encodedObject["attempts"] as? NSNumber)?.intValue == 3)
+    #expect((encodedObject["coverage"] as? NSNumber)?.doubleValue == 0.75)
+    #expect(encodedObject["error"] is NSNull)
+
+    let roundTrip = try JSONDecoder().decode(
+      [String: OperationsJSONScalar].self, from: encoded)
+    #expect(roundTrip == evidence)
+  }
+
+  @Test("cleanup retains legacy gap rows linked as durable incident evidence")
+  func linkedLegacyGapEvidenceSurvivesCleanup() async throws {
+    let url = FileManager.default.temporaryDirectory
+      .appendingPathComponent("operations-\(UUID().uuidString).sqlite")
+    defer { try? FileManager.default.removeItem(at: url) }
+    let store = try SQLiteOperationsStore(
+      path: url.path, environment: "dev", logger: Logger(label: "operations.test"))
+    let detectedAt = Date(timeIntervalSince1970: 1_000)
+    let gap = try await store.createGap(
+      source: "jetstream", startCursor: 100, endCursor: 200,
+      reason: "legacy_disconnect_signal", collections: [], detectedAt: detectedAt)
+    _ = try await store.upsertOrMergeActiveIncident(
+      IngestionIncidentCandidate(
+        sourceGeneration: "legacy-v1", source: "jetstream",
+        cursorKind: .jetstreamV1TimeUS, startCursor: 100, endCursor: 200,
+        category: "legacy_disconnect_signal", detectedAt: detectedAt),
+      legacyGapId: gap.id)
+    try await store.updateGap(
+      id: gap.id, status: .resolved, operatorDid: "did:plc:operator", at: detectedAt)
+
+    _ = try await store.cleanupExpired(
+      at: detectedAt.addingTimeInterval(366 * 86_400), batchSize: 100)
+    #expect(try await store.fetchGap(id: gap.id) != nil)
+  }
+
+  @Test("ingestion leader leases preserve fencing tokens across release and takeover")
+  func ingestionLeaderLeaseFencing() async throws {
+    let url = FileManager.default.temporaryDirectory
+      .appendingPathComponent("operations-\(UUID().uuidString).sqlite")
+    defer { try? FileManager.default.removeItem(at: url) }
+    let store = try SQLiteOperationsStore(
+      path: url.path, environment: "dev", logger: Logger(label: "operations.test"))
+    let now = Date()
+    let first = try #require(await store.acquireIngestionLeaderLease(
+      name: "jetstream-v2-intake", sourceGeneration: "v2-us-west-1",
+      ownerID: "worker-a", leaseUntil: now.addingTimeInterval(30), at: now))
+    #expect(try await store.acquireIngestionLeaderLease(
+      name: "jetstream-v2-intake", sourceGeneration: "v2-us-west-1",
+      ownerID: "worker-b", leaseUntil: now.addingTimeInterval(30), at: now) == nil)
+    try await store.releaseIngestionLeaderLease(
+      name: first.name, ownerID: first.ownerID, fencingToken: first.fencingToken,
+      at: now.addingTimeInterval(1))
+    let second = try #require(await store.acquireIngestionLeaderLease(
+      name: "jetstream-v2-intake", sourceGeneration: "v2-us-west-1",
+      ownerID: "worker-b", leaseUntil: now.addingTimeInterval(40),
+      at: now.addingTimeInterval(2)))
+
+    #expect(second.fencingToken == first.fencingToken + 1)
+    await #expect(throws: OperationsStoreError.leaseConflict) {
+      _ = try await store.renewIngestionLeaderLease(
+        name: first.name, ownerID: first.ownerID, fencingToken: first.fencingToken,
+        leaseUntil: now.addingTimeInterval(50), at: now.addingTimeInterval(3))
+    }
+  }
 }

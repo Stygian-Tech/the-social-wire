@@ -28,8 +28,25 @@ export function HealthStrip({ overview, referenceTime = overview.refreshedAt }: 
     lastDisconnectedAt: overview.ingestion?.lastDisconnectAt,
     referenceTime,
   })
-  const activeGaps =
+  const legacyGapSignals =
     overview.counts?.activeGaps ?? (overview.gaps ?? []).filter((gap) => !["resolved", "ignored"].includes(gap.status)).length
+  const durability = overview.durability
+  const openIncidents = durability
+    ? durability.incidents.open + durability.incidents.recovering + durability.incidents.verificationRequired
+    : null
+  const deadLetters = durability?.inbox.deadLetters ?? null
+  const oldestInboxAge = durability?.inbox.oldestPendingAgeSeconds
+  const durabilityCheckpoint = durability?.checkpoints[0]
+  const recoveryActive =
+    durabilityCheckpoint?.replayState === "replaying" ||
+    durabilityCheckpoint?.replayState === "paused_budget" ||
+    (durability?.incidents.recovering ?? 0) > 0
+  const inboxAgeBudgetSeconds = recoveryActive ? 900 : 60
+  const durabilityHealthy =
+    durability !== undefined &&
+    openIncidents === 0 &&
+    deadLetters === 0 &&
+    (oldestInboxAge === undefined || oldestInboxAge < inboxAgeBudgetSeconds)
   const ingestionFresh =
     connectionState === "connected" &&
     workerFreshness.state === "healthy"
@@ -43,7 +60,12 @@ export function HealthStrip({ overview, referenceTime = overview.refreshedAt }: 
         : workerFreshness.state !== "healthy"
           ? healthLabel(workerFreshness.state)
           : "Good"
-  const projectionsComplete = projectionCompleteness.state === "healthy" && activeGaps === 0
+  const projectionsComplete =
+    projectionCompleteness.state === "healthy" &&
+    (durability ? durabilityHealthy : legacyGapSignals === 0)
+  const completenessNote = durability
+    ? `${openIncidents} open recovery incidents · staged ${durabilityCheckpoint?.lastStagedSequence?.toLocaleString() ?? "—"} / terminal prefix ${durabilityCheckpoint?.lastAppliedSequence?.toLocaleString() ?? "—"} · oldest inbox ${oldestInboxAge === undefined ? "—" : `${oldestInboxAge.toFixed(1)}s`} (${inboxAgeBudgetSeconds}s ${recoveryActive ? "recovery" : "normal"} budget) · ${deadLetters} unresolved dead letters`
+    : `${legacyGapSignals} legacy gap signals · ${projectionCompleteness.healthy} / ${projectionCompleteness.total} Charybdis projections complete`
   const items = [
     {
       label: "Service Liveness",
@@ -72,7 +94,7 @@ export function HealthStrip({ overview, referenceTime = overview.refreshedAt }: 
     {
       label: "Projection Completeness",
       value: projectionsComplete ? "Complete" : projectionCompleteness.state === "unknown" ? "Unknown" : "At Risk",
-      note: `${activeGaps} active gaps · ${projectionCompleteness.healthy} / ${projectionCompleteness.total} Charybdis projections complete`,
+      note: completenessNote,
       icon: Database,
       warning: !projectionsComplete,
     },

@@ -26,6 +26,8 @@ struct OperationsProxyRoutes {
     }
     get("/v1/operations/services", path: "/v1/operations/services", on: group)
     get("/v1/operations/ingestion", path: "/v1/operations/ingestion", on: group)
+    get("/v1/operations/ingestion/durability", path: "/v1/operations/ingestion/durability", on: group)
+    get("/v1/operations/ingestion/incidents", path: "/v1/operations/ingestion/incidents", on: group)
     get("/v1/operations/ingestion/endpoints", path: "/v1/operations/ingestion/endpoints", on: group)
     get("/v1/operations/commands", path: "/v1/operations/commands", on: group)
     post("/v1/operations/ingestion/reconnect", path: "/v1/operations/ingestion/reconnect", on: group)
@@ -91,7 +93,8 @@ struct OperationsProxyRoutes {
   private func registerXRPC(on group: RouterGroup<GatewayRequestContext>) {
     let queries = [
       "getCapabilities", "getOverview", "listServices", "getIngestion",
-      "listIngestionEndpoints", "listCommands", "getAppView", "listGaps",
+      "getIngestionDurability", "listIngestionIncidents", "listIngestionEndpoints",
+      "listCommands", "getAppView", "listGaps",
       "getGapInvestigation", "listBackfills", "getBackfill", "listAlerts",
       "listMetrics", "listTraces", "getTrace",
     ]

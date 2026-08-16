@@ -137,6 +137,57 @@ describe("observability values", () => {
       counts: { ...demoOverview.counts, activeGaps: 0, unresolvedAlerts: 0 },
     })).toBe("healthy")
   })
+
+  it("uses durable incidents instead of legacy gap signal totals when durability is available", () => {
+    const services = allHealthyServices()
+    expect(overallSystemHealth({
+      ...demoOverview,
+      services,
+      alerts: [],
+      counts: { ...demoOverview.counts, activeGaps: 19_711, unresolvedAlerts: 0 },
+      durability: {
+        environment: "dev",
+        checkpoints: [],
+        inbox: { pending: 0, leased: 0, retrying: 0, applied: 0, deadLetters: 0, total: 0 },
+        incidents: { open: 0, recovering: 0, verificationRequired: 0, resolved: 1, ignored: 0 },
+        replayBytesRolling24Hours: 0,
+        generatedAt: demoOverview.refreshedAt,
+      },
+    })).toBe("healthy")
+  })
+
+  it("uses the normal 60 second and recovery 15 minute inbox age budgets", () => {
+    const services = allHealthyServices()
+    const baseDurability = {
+      environment: "dev" as const,
+      checkpoints: [{
+        environment: "dev" as const,
+        sourceGeneration: "v2-us-west-1",
+        sourceHost: "jetstream.us-west.bsky.network",
+        streamNSID: "network.bsky.jetstream.subscribeEvents",
+        filterFingerprint: "filters-v1",
+        cursorKind: "jetstream_v2_seq" as const,
+        replayState: "live" as const,
+        replayBytesDownloaded: 0,
+        replayRetryCount: 0,
+        replayRangeResumeCount: 0,
+        updatedAt: demoOverview.refreshedAt,
+      }],
+      inbox: { pending: 1, leased: 0, retrying: 0, applied: 0, deadLetters: 0, total: 1, oldestPendingAgeSeconds: 61 },
+      incidents: { open: 0, recovering: 0, verificationRequired: 0, resolved: 0, ignored: 0 },
+      replayBytesRolling24Hours: 0,
+      generatedAt: demoOverview.refreshedAt,
+    }
+    const base = { ...demoOverview, services, alerts: [], counts: { ...demoOverview.counts, unresolvedAlerts: 0 } }
+    expect(overallSystemHealth({ ...base, durability: baseDurability })).toBe("degraded")
+    expect(overallSystemHealth({
+      ...base,
+      durability: {
+        ...baseDurability,
+        checkpoints: [{ ...baseDurability.checkpoints[0]!, replayState: "replaying" }],
+      },
+    })).toBe("healthy")
+  })
 })
 
 function allHealthyServices() {
