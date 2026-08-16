@@ -9,6 +9,8 @@ public final class JetstreamInboxProjectionWorker: Sendable {
   private let sourceGeneration: String
   private let workerId: String
   private let maxConcurrency: Int
+  private let reconciliationMaxConcurrency: Int
+  private let refillBatchSize: Int
   private let leaseSeconds: TimeInterval
   private let pollMilliseconds: Int
   private let appliedRetentionSeconds: TimeInterval
@@ -29,6 +31,7 @@ public final class JetstreamInboxProjectionWorker: Sendable {
     appliedRetentionSeconds: TimeInterval,
     deadLetterRetentionSeconds: TimeInterval,
     projectionTimeoutSeconds: TimeInterval = 120,
+    reconciliationMaxConcurrency: Int = 2,
     logger: Logger
   ) {
     precondition(!indexers.isEmpty, "At least one ThinAppViewIndexer is required.")
@@ -39,6 +42,11 @@ public final class JetstreamInboxProjectionWorker: Sendable {
     self.sourceGeneration = sourceGeneration
     self.workerId = workerId
     self.maxConcurrency = max(1, min(maxConcurrency, indexers.count))
+    self.reconciliationMaxConcurrency = max(
+      1,
+      min(reconciliationMaxConcurrency, self.maxConcurrency)
+    )
+    self.refillBatchSize = max(1, min(8, self.maxConcurrency / 4))
     self.leaseSeconds = max(5, leaseSeconds)
     self.pollMilliseconds = max(25, pollMilliseconds)
     self.appliedRetentionSeconds = max(60, appliedRetentionSeconds)
@@ -53,19 +61,35 @@ public final class JetstreamInboxProjectionWorker: Sendable {
       metadata: [
         "source_generation": .string(sourceGeneration),
         "max_concurrency": .stringConvertible(maxConcurrency),
+        "reconciliation_max_concurrency": .stringConvertible(reconciliationMaxConcurrency),
+        "refill_batch_size": .stringConvertible(refillBatchSize),
       ]
     )
+    await withTaskGroup(of: Void.self) { group in
+      group.addTask { await self.runLiveForever() }
+      if repositoryRestorer != nil {
+        group.addTask { await self.runReconciliationForever() }
+      }
+      await group.waitForAll()
+    }
+  }
+
+  private func runLiveForever() async {
     while !Task.isCancelled {
       do {
-        let claimed = try await drainOnce()
+        let claimed = try await drainLiveUntilIdle()
         if claimed == 0 {
           try await Task.sleep(for: .milliseconds(pollMilliseconds))
         }
       } catch is CancellationError {
-        return
+        if Self.shouldStopLoopAfterCancellation(parentTaskIsCancelled: Task.isCancelled) {
+          return
+        }
+        logger.error("Jetstream V2 inbox projection loop received unexpected cancellation")
+        try? await Task.sleep(for: .seconds(1))
       } catch {
         logger.error(
-          "Jetstream V2 inbox claim failed",
+          "Jetstream V2 inbox projection loop failed",
           metadata: ["error_type": .string(Self.failureCategory(error))]
         )
         try? await Task.sleep(for: .seconds(1))
@@ -75,60 +99,183 @@ public final class JetstreamInboxProjectionWorker: Sendable {
 
   @discardableResult
   public func drainOnce(at now: Date = Date()) async throws -> Int {
-    let items = try await store.claimIngestionInbox(
-      environment: environment,
-      sourceGeneration: sourceGeneration,
-      workerId: workerId,
-      limit: maxConcurrency,
-      leaseUntil: now.addingTimeInterval(leaseSeconds),
-      at: now
-    )
-    if !items.isEmpty {
-      await withTaskGroup(of: Void.self) { group in
-        for item in items {
-          let indexer = indexers[Self.lane(for: item.repoDid, count: indexers.count)]
-          group.addTask {
-            await self.process(item, with: indexer)
+    guard repositoryRestorer != nil else {
+      return try await drainLiveUntilIdle(at: now)
+    }
+    async let live = drainLiveUntilIdle(at: now)
+    async let reconciliations = drainReconciliationsUntilIdle(at: now)
+    let counts = try await (live, reconciliations)
+    // Preserve the one-shot contract: reconciliation may remove the final watermark/incident
+    // barrier after the live drain's last durability pass.
+    try await advanceDurabilityEvidence(at: Date())
+    return counts.0 + counts.1
+  }
+
+  func drainLiveUntilIdle(
+    at initialNow: Date = Date(),
+    claimObserver: (@Sendable (_ requestedLimit: Int, _ claimedCount: Int) async -> Void)? = nil
+  ) async throws -> Int {
+    try await withThrowingTaskGroup(of: Bool.self, returning: Int.self) { group in
+      var inFlight = 0
+      var claimedCount = 0
+      var completedSinceWatermark = 0
+      var isInitialClaim = true
+      var pendingError: (any Error)?
+      var refillAllowed = true
+      defer { group.cancelAll() }
+
+      while true {
+        try Task.checkCancellation()
+        let available = maxConcurrency - inFlight
+        if pendingError == nil, refillAllowed,
+          inFlight == 0 || available >= refillBatchSize
+        {
+          let limit = inFlight == 0 ? maxConcurrency : min(available, refillBatchSize)
+          do {
+            let claimAt = isInitialClaim ? initialNow : Date()
+            let items = try await claimLiveItems(limit: limit, at: claimAt)
+            await claimObserver?(limit, items.count)
+            isInitialClaim = false
+            claimedCount += items.count
+            inFlight += items.count
+            for item in items {
+              let indexer = indexers[Self.lane(for: item.repoDid, count: indexers.count)]
+              group.addTask { await self.process(item, with: indexer) }
+            }
+          } catch {
+            pendingError = error
+          }
+        }
+
+        guard inFlight > 0 else { break }
+        if try await group.next() == false {
+          // Do not reclaim a retry produced by this drain even when a database rounds its
+          // next-attempt timestamp. A later outer-loop iteration owns the backoff boundary.
+          refillAllowed = false
+        }
+        inFlight -= 1
+        completedSinceWatermark += 1
+        if completedSinceWatermark >= maxConcurrency, pendingError == nil {
+          do {
+            try await advanceDurabilityEvidence(at: Date())
+            completedSinceWatermark = 0
+          } catch {
+            pendingError = error
           }
         }
       }
+
+      try Task.checkCancellation()
+      if pendingError == nil {
+        try await advanceDurabilityEvidence(at: Date())
+      }
+      if let pendingError { throw pendingError }
+      return claimedCount
     }
-    let reconciliations = try await drainReconciliations(at: Date())
+  }
+
+  private func claimLiveItems(
+    limit: Int,
+    at now: Date
+  ) async throws -> [AppViewIngestionInboxItem] {
+    try await store.claimIngestionInbox(
+      environment: environment,
+      sourceGeneration: sourceGeneration,
+      workerId: workerId,
+      limit: limit,
+      leaseUntil: now.addingTimeInterval(leaseSeconds),
+      at: now
+    )
+  }
+
+  private func advanceDurabilityEvidence(at now: Date) async throws {
     try await store.advanceIngestionInboxAppliedWatermark(
       environment: environment,
       sourceGeneration: sourceGeneration,
-      at: Date()
+      at: now
     )
     _ = try await store.resolveRecoveredIngestionIncidents(
       environment: environment,
       sourceGeneration: sourceGeneration,
-      at: Date()
-    )
-    return items.count + reconciliations
-  }
-
-  private func drainReconciliations(at now: Date) async throws -> Int {
-    guard repositoryRestorer != nil else { return 0 }
-    let requests = try await store.claimIngestionReconciliationRequests(
-      environment: environment,
-      sourceGeneration: sourceGeneration,
-      workerId: workerId,
-      limit: maxConcurrency,
-      leaseUntil: now.addingTimeInterval(leaseSeconds),
       at: now
     )
-    await withTaskGroup(of: Void.self) { group in
-      for request in requests {
-        group.addTask { await self.processReconciliation(request) }
+  }
+
+  private func runReconciliationForever() async {
+    while !Task.isCancelled {
+      do {
+        let claimed = try await drainReconciliationsUntilIdle()
+        if claimed == 0 {
+          try await Task.sleep(for: .milliseconds(pollMilliseconds))
+        }
+      } catch is CancellationError {
+        if Self.shouldStopLoopAfterCancellation(parentTaskIsCancelled: Task.isCancelled) {
+          return
+        }
+        logger.error("Jetstream V2 reconciliation loop received unexpected cancellation")
+        try? await Task.sleep(for: .seconds(1))
+      } catch {
+        logger.error(
+          "Jetstream V2 reconciliation loop failed",
+          metadata: ["error_type": .string(Self.failureCategory(error))]
+        )
+        try? await Task.sleep(for: .seconds(1))
       }
     }
-    return requests.count
+  }
+
+  func drainReconciliationsUntilIdle(at initialNow: Date = Date()) async throws -> Int {
+    guard repositoryRestorer != nil else { return 0 }
+    return try await withThrowingTaskGroup(of: Bool.self, returning: Int.self) { group in
+      var inFlight = 0
+      var claimedCount = 0
+      var isInitialClaim = true
+      var pendingError: (any Error)?
+      var refillAllowed = true
+      defer { group.cancelAll() }
+
+      while true {
+        try Task.checkCancellation()
+        let available = reconciliationMaxConcurrency - inFlight
+        if pendingError == nil, refillAllowed, available > 0 {
+          do {
+            let claimAt = isInitialClaim ? initialNow : Date()
+            let requests = try await store.claimIngestionReconciliationRequests(
+              environment: environment,
+              sourceGeneration: sourceGeneration,
+              workerId: workerId,
+              limit: available,
+              leaseUntil: claimAt.addingTimeInterval(leaseSeconds),
+              at: claimAt
+            )
+            isInitialClaim = false
+            claimedCount += requests.count
+            inFlight += requests.count
+            for request in requests {
+              group.addTask { await self.processReconciliation(request) }
+            }
+          } catch {
+            pendingError = error
+          }
+        }
+
+        guard inFlight > 0 else { break }
+        if try await group.next() == false {
+          refillAllowed = false
+        }
+        inFlight -= 1
+      }
+
+      try Task.checkCancellation()
+      if let pendingError { throw pendingError }
+      return claimedCount
+    }
   }
 
   private func process(
     _ item: AppViewIngestionInboxItem,
     with indexer: ThinAppViewIndexer
-  ) async {
+  ) async -> Bool {
     do {
       try await withThrowingTaskGroup(of: Void.self) { group in
         group.addTask { try await self.apply(item, with: indexer) }
@@ -143,10 +290,11 @@ public final class JetstreamInboxProjectionWorker: Sendable {
           throw error
         }
       }
+      return true
     } catch is CancellationError {
-      return
+      return false
     } catch {
-      await handleFailure(error, item: item)
+      return await handleFailure(error, item: item)
     }
   }
 
@@ -253,7 +401,9 @@ public final class JetstreamInboxProjectionWorker: Sendable {
     }
   }
 
-  private func processReconciliation(_ request: AppViewIngestionReconciliationRequest) async {
+  private func processReconciliation(
+    _ request: AppViewIngestionReconciliationRequest
+  ) async -> Bool {
     do {
       try await withThrowingTaskGroup(of: Void.self) { group in
         group.addTask { try await self.applyReconciliation(request) }
@@ -268,8 +418,9 @@ public final class JetstreamInboxProjectionWorker: Sendable {
           throw error
         }
       }
+      return true
     } catch is CancellationError {
-      return
+      return false
     } catch {
       do {
         let attempt = request.attemptCount + 1
@@ -284,10 +435,12 @@ public final class JetstreamInboxProjectionWorker: Sendable {
           nextAttemptAt: Date().addingTimeInterval(delay),
           at: Date()
         )
+        return false
       } catch {
         logger.error(
           "Failed to persist targeted repository reconciliation retry",
           metadata: ["request_id": .string(request.id)])
+        return false
       }
     }
   }
@@ -352,7 +505,7 @@ public final class JetstreamInboxProjectionWorker: Sendable {
     }
   }
 
-  private func handleFailure(_ error: any Error, item: AppViewIngestionInboxItem) async {
+  private func handleFailure(_ error: any Error, item: AppViewIngestionInboxItem) async -> Bool {
     let attempt = item.attemptCount + 1
     let category = Self.failureCategory(error)
     let reason = String(describing: error)
@@ -379,6 +532,7 @@ public final class JetstreamInboxProjectionWorker: Sendable {
             "error_type": .string(category),
           ]
         )
+        return true
       } else {
         let delay = Self.retryDelaySeconds(attempt: attempt, jitterUnit: Double.random(in: 0...1))
         try await store.retryIngestionInbox(
@@ -402,6 +556,7 @@ public final class JetstreamInboxProjectionWorker: Sendable {
             "error_type": .string(category),
           ]
         )
+        return false
       }
     } catch {
       // The lease remains fenced and will be recovered after expiry if failure persistence fails.
@@ -412,6 +567,7 @@ public final class JetstreamInboxProjectionWorker: Sendable {
           "error_type": .string(Self.failureCategory(error)),
         ]
       )
+      return false
     }
   }
 
@@ -419,6 +575,10 @@ public final class JetstreamInboxProjectionWorker: Sendable {
     let exponent = min(max(0, attempt - 1), 7)
     let base = min(30, 0.25 * pow(2, Double(exponent)))
     return min(30, base + (base * 0.25 * min(1, max(0, jitterUnit))))
+  }
+
+  static func shouldStopLoopAfterCancellation(parentTaskIsCancelled: Bool) -> Bool {
+    parentTaskIsCancelled
   }
 
   private static func lane(for did: String, count: Int) -> Int {

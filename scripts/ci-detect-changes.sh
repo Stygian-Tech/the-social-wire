@@ -140,6 +140,7 @@ filter_changed jetstream_ingest \
 filter_changed database_migrator \
   'database/migrations/**' \
   'scripts/apply-database-migrations.sh' \
+  'scripts/verify-jetstream-v2-drain-indexes.sql' \
   'services/database-migrator/**' \
   'railway/database-migrator.json' \
   '.github/workflows/ci.yml'
@@ -165,6 +166,8 @@ filter_changed spec \
   'packages/swift/GatewayCore/**' \
   'packages/swift/ThinAppViewCore/**' \
   'packages/swift/OperationsCore/**' \
+  'scripts/apply-database-migrations.sh' \
+  'scripts/verify-jetstream-v2-drain-indexes.sql' \
   'scripts/operations/**' \
   'package.json' \
   'bun.lock' \
