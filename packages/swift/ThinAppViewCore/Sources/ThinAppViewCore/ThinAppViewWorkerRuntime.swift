@@ -83,6 +83,7 @@ public enum ThinAppViewWorkerRuntime {
       TapPDSRepositoryRestorer(
         store: store,
         backfill: $0,
+        projectionCache: projectionCache,
         maxConcurrency: config.maxEnrollConcurrency,
         rateLimitPerSecond: max(1, config.maxEnrollConcurrency * 10)
       )
@@ -174,7 +175,7 @@ public enum ThinAppViewWorkerRuntime {
       }
 
       if let backfill = enrollmentBackfill {
-        if config.proactiveBackfillEnabled {
+        if config.proactiveBackfillEnabled && config.jetstreamMode.runsLegacyProactiveBackfill {
           let proactive = ThinAppViewProactiveBackfillJob(
             store: store,
             backfill: backfill,
@@ -183,6 +184,10 @@ public enum ThinAppViewWorkerRuntime {
             extraAuthorDids: proactiveExtraAuthorDids
           )
           group.addTask { await proactive.runForever() }
+        } else if config.proactiveBackfillEnabled {
+          logger.info(
+            "Suppressing legacy proactive AppView backfill under durable Jetstream V2 authority"
+          )
         }
 
         if let operationsStore, let operationsConfig, operationsConfig.recoveryEnabled {

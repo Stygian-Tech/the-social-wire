@@ -51,6 +51,14 @@ public init(path dbPath: String, logger: Logger) throws {
                 AND earlier.seq < i.seq
                 AND earlier.status IN ('pending', 'retry', 'leased')
             )
+            AND NOT EXISTS (
+              SELECT 1
+              FROM appview_ingestion_reconciliation_requests request
+              WHERE request.environment = i.environment
+                AND request.source_generation = i.source_generation
+                AND request.repo_did = i.repo_did
+                AND request.status IN ('pending', 'leased')
+            )
           ORDER BY i.seq ASC
           LIMIT ?
           """,
@@ -452,9 +460,16 @@ public init(path dbPath: String, logger: Logger) throws {
                 AND earlier.repo_did = request.repo_did
                 AND earlier.trigger_seq < request.trigger_seq
                 AND earlier.status IN ('pending', 'leased'))
+            AND NOT EXISTS (
+              SELECT 1 FROM appview_ingestion_inbox inbox
+              WHERE inbox.environment = request.environment
+                AND inbox.source_generation = request.source_generation
+                AND inbox.repo_did = request.repo_did
+                AND inbox.status = 'leased'
+                AND inbox.lease_expires_at > ?)
           ORDER BY request.trigger_seq, request.id LIMIT ?
           """,
-        arguments: [environment, sourceGeneration, now, now, max(1, limit)]
+        arguments: [environment, sourceGeneration, now, now, now, max(1, limit)]
       )
       var requests: [AppViewIngestionReconciliationRequest] = []
       for row in rows {
@@ -1179,6 +1194,39 @@ public init(path dbPath: String, logger: Logger) throws {
         arguments: [authorDid]
       )
       return db.changesCount
+    }
+  }
+
+  public func deleteContentItems(
+    authorDid: String,
+    excludingURIs: [String],
+    indexedAtOrBefore: Date
+  ) async throws -> Int {
+    return try await db.write { db in
+      let cutoff = Self.isoString(from: indexedAtOrBefore)
+      let existingURIs = try String.fetchAll(
+        db,
+        sql: "SELECT uri FROM content_items WHERE author_did = ? AND indexed_at <= ?",
+        arguments: [authorDid, cutoff]
+      )
+      let retainedURIs = Set(excludingURIs)
+      let staleURIs = existingURIs.filter { !retainedURIs.contains($0) }
+      var deleted = 0
+      for start in stride(from: 0, to: staleURIs.count, by: 500) {
+        let end = min(start + 500, staleURIs.count)
+        let batch = Array(staleURIs[start..<end])
+        let placeholders = Array(repeating: "?", count: batch.count).joined(separator: ", ")
+        try db.execute(
+          sql: """
+            DELETE FROM content_items
+            WHERE author_did = ?
+              AND uri IN (\(placeholders))
+            """,
+          arguments: StatementArguments([authorDid] + batch)
+        )
+        deleted += db.changesCount
+      }
+      return deleted
     }
   }
 
@@ -2241,6 +2289,24 @@ public init(path dbPath: String, logger: Logger) throws {
           scope: $0
         )
       }
+    guard !scopes.isEmpty else { return }
+    let generation = AppViewUnreadCounterSupport.generation()
+    let countedAt = Self.isoString(from: Date())
+    try await db.write { db in
+      for scope in scopes {
+        try Self.markUnreadCounterDirty(
+          viewerDid: scope.viewerDid,
+          publicationId: scope.publicationId,
+          generation: generation,
+          countedAtIso: countedAt,
+          db: db
+        )
+      }
+    }
+  }
+
+  public func markUnreadCountersDirtyForAuthor(authorDid: String) async throws {
+    let scopes = try await publicationScopes(authorDid: authorDid, viewerDid: nil)
     guard !scopes.isEmpty else { return }
     let generation = AppViewUnreadCounterSupport.generation()
     let countedAt = Self.isoString(from: Date())

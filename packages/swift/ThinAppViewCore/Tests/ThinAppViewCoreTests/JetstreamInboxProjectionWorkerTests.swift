@@ -268,6 +268,109 @@ struct JetstreamInboxProjectionWorkerTests {
     #expect(try fixture.appliedWatermark() == nil)
   }
 
+  @Test("targeted reconciliation fences later inbox events for the same repository")
+  func reconciliationRequestFencesLaterInboxEvents() async throws {
+    let fixture = try Fixture()
+    defer { fixture.remove() }
+    let now = Date()
+    let did = "did:plc:poison"
+    try fixture.seedCheckpoint(lastStagedSequence: 501, at: now)
+    try fixture.seedEvent(
+      sequence: 500,
+      did: did,
+      kind: .commit,
+      payload: "{}",
+      attemptCount: 9,
+      at: now
+    )
+    try fixture.seedEvent(
+      sequence: 501,
+      did: did,
+      payload: Self.identityPayload(501, did: did),
+      at: now
+    )
+
+    #expect(try await fixture.worker().drainOnce(at: now) == 1)
+    let laterInbox = try await fixture.store.claimIngestionInbox(
+      environment: "dev",
+      sourceGeneration: Fixture.generation,
+      workerId: "later-worker",
+      limit: 1,
+      leaseUntil: now.addingTimeInterval(60),
+      at: now.addingTimeInterval(1)
+    )
+    let reconciliation = try await fixture.store.claimIngestionReconciliationRequests(
+      environment: "dev",
+      sourceGeneration: Fixture.generation,
+      workerId: "reconciliation-worker",
+      limit: 1,
+      leaseUntil: now.addingTimeInterval(60),
+      at: now.addingTimeInterval(1)
+    )
+
+    #expect(laterInbox.isEmpty)
+    #expect(reconciliation.map(\.repoDid) == [did])
+  }
+
+  @Test("targeted reconciliation waits for an existing same-repository inbox lease")
+  func reconciliationWaitsForExistingInboxLease() async throws {
+    let fixture = try Fixture()
+    defer { fixture.remove() }
+    let now = Date()
+    let did = "did:plc:leased"
+    try fixture.seedCheckpoint(lastStagedSequence: 700, at: now)
+    try fixture.seedEvent(
+      sequence: 700,
+      did: did,
+      payload: Self.identityPayload(700, did: did),
+      at: now
+    )
+    let leasedInbox = try #require(
+      try await fixture.store.claimIngestionInbox(
+        environment: "dev",
+        sourceGeneration: Fixture.generation,
+        workerId: "inbox-worker",
+        limit: 1,
+        leaseUntil: now.addingTimeInterval(60),
+        at: now
+      ).first
+    )
+    try fixture.seedReconciliationRequest(
+      sequence: 699,
+      did: did,
+      at: now
+    )
+
+    let blocked = try await fixture.store.claimIngestionReconciliationRequests(
+      environment: "dev",
+      sourceGeneration: Fixture.generation,
+      workerId: "reconciliation-worker",
+      limit: 1,
+      leaseUntil: now.addingTimeInterval(60),
+      at: now.addingTimeInterval(1)
+    )
+    #expect(blocked.isEmpty)
+
+    try await fixture.store.markIngestionInboxApplied(
+      environment: "dev",
+      sourceGeneration: Fixture.generation,
+      sequence: leasedInbox.sequence,
+      workerId: "inbox-worker",
+      leaseToken: leasedInbox.leaseToken,
+      expiresAt: now.addingTimeInterval(7 * 86_400),
+      at: now.addingTimeInterval(2)
+    )
+    let unblocked = try await fixture.store.claimIngestionReconciliationRequests(
+      environment: "dev",
+      sourceGeneration: Fixture.generation,
+      workerId: "reconciliation-worker",
+      limit: 1,
+      leaseUntil: now.addingTimeInterval(60),
+      at: now.addingTimeInterval(2)
+    )
+    #expect(unblocked.map(\.repoDid) == [did])
+  }
+
   @Test("sealed incidents stay open through a dead letter and resolve after durable reconciliation")
   func reconciliationClosesTheSealedRecoverySeam() async throws {
     let fixture = try Fixture()
@@ -531,6 +634,23 @@ private struct Fixture {
           """,
         arguments: [
           Self.generation, sequence, sequence, Self.iso(at), Self.iso(at), sequence, Self.iso(at),
+        ]
+      )
+    }
+  }
+
+  func seedReconciliationRequest(sequence: Int64, did: String, at: Date) throws {
+    try database.write { db in
+      try db.execute(
+        sql: """
+          INSERT INTO appview_ingestion_reconciliation_requests
+            (environment, id, source_generation, repo_did, reason, trigger_seq, status,
+             attempt_count, next_attempt_at, created_at, updated_at)
+          VALUES ('dev', ?, ?, ?, 'test', ?, 'pending', 0, ?, ?, ?)
+          """,
+        arguments: [
+          "\(Self.generation):\(sequence):\(did)", Self.generation, did, sequence,
+          Self.iso(at), Self.iso(at), Self.iso(at),
         ]
       )
     }

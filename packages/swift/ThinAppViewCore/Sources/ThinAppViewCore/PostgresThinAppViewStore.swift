@@ -43,6 +43,14 @@ public init(pool: PostgresClient, logger: Logger) {
               AND earlier.seq < i.seq
               AND earlier.status IN ('pending', 'retry', 'leased')
           )
+          AND NOT EXISTS (
+            SELECT 1
+            FROM appview_ingestion_reconciliation_requests request
+            WHERE request.environment = i.environment
+              AND request.source_generation = i.source_generation
+              AND request.repo_did = i.repo_did
+              AND request.status IN ('pending', 'leased')
+          )
         ORDER BY i.seq ASC
         FOR UPDATE SKIP LOCKED
         LIMIT \(max(1, limit))
@@ -402,6 +410,13 @@ public init(pool: PostgresClient, logger: Logger) {
               AND earlier.repo_did = request.repo_did
               AND earlier.trigger_seq < request.trigger_seq
               AND earlier.status IN ('pending', 'leased'))
+          AND NOT EXISTS (
+            SELECT 1 FROM appview_ingestion_inbox inbox
+            WHERE inbox.environment = request.environment
+              AND inbox.source_generation = request.source_generation
+              AND inbox.repo_did = request.repo_did
+              AND inbox.status = 'leased'
+              AND inbox.lease_expires_at > \(at))
         ORDER BY request.trigger_seq, request.id
         FOR UPDATE SKIP LOCKED
         LIMIT \(max(1, limit))
@@ -561,6 +576,38 @@ public init(pool: PostgresClient, logger: Logger) {
       "DELETE FROM content_items WHERE author_did = \(authorDid) RETURNING 1",
       logger: logger
     )
+    var deleted = 0
+    for try await _ in rows { deleted += 1 }
+    return deleted
+  }
+
+  public func deleteContentItems(
+    authorDid: String,
+    excludingURIs: [String],
+    indexedAtOrBefore: Date
+  ) async throws -> Int {
+    let rows = if excludingURIs.isEmpty {
+      try await pool.query(
+        """
+        DELETE FROM content_items
+        WHERE author_did = \(authorDid)
+          AND indexed_at <= \(indexedAtOrBefore)
+        RETURNING 1
+        """,
+        logger: logger
+      )
+    } else {
+      try await pool.query(
+        """
+        DELETE FROM content_items
+        WHERE author_did = \(authorDid)
+          AND indexed_at <= \(indexedAtOrBefore)
+          AND NOT (uri = ANY(\(excludingURIs)))
+        RETURNING 1
+        """,
+        logger: logger
+      )
+    }
     var deleted = 0
     for try await _ in rows { deleted += 1 }
     return deleted
@@ -2046,6 +2093,21 @@ public init(pool: PostgresClient, logger: Logger) {
           scope: $0
         )
       }
+    guard !scopes.isEmpty else { return }
+    let generation = AppViewUnreadCounterSupport.generation()
+    let countedAt = Date()
+    for scope in scopes {
+      try await markUnreadCounterDirty(
+        viewerDid: scope.viewerDid,
+        publicationId: scope.publicationId,
+        generation: generation,
+        countedAt: countedAt
+      )
+    }
+  }
+
+  public func markUnreadCountersDirtyForAuthor(authorDid: String) async throws {
+    let scopes = try await publicationScopes(authorDid: authorDid, viewerDid: nil)
     guard !scopes.isEmpty else { return }
     let generation = AppViewUnreadCounterSupport.generation()
     let countedAt = Date()

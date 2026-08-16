@@ -10,6 +10,7 @@ public enum ThinAppViewJetstreamMode: String, Sendable, Equatable {
 
   public var runsLegacySubscriber: Bool { self != .v2Authoritative }
   public var drainsV2Inbox: Bool { self == .v2Authoritative }
+  public var runsLegacyProactiveBackfill: Bool { self != .v2Authoritative }
 }
 
 /// Environment-driven configuration for the data-minimized Thin AppView index.
