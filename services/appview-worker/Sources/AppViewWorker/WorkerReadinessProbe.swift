@@ -28,7 +28,7 @@ struct WorkerReadinessProbe: Sendable {
       throw WorkerReadinessError.staleIngestionHeartbeat
     }
     guard state.liveness == .healthy, state.readiness == .healthy else {
-      throw WorkerReadinessError.ingestionUnhealthy
+      throw WorkerReadinessError.ingestionTransportUnhealthy
     }
 
     // Projection-repair evidence describes the authoritative Tap and durable V2 paths. The
@@ -39,10 +39,11 @@ struct WorkerReadinessProbe: Sendable {
     case "jetstream": false
     default: true
     }
-    if projectionQualityRequired,
-      state.freshness != .healthy || state.completeness != .healthy
-    {
-      throw WorkerReadinessError.ingestionUnhealthy
+    if projectionQualityRequired, state.freshness != .healthy {
+      throw WorkerReadinessError.ingestionFreshnessUnhealthy
+    }
+    if projectionQualityRequired, state.completeness != .healthy {
+      throw WorkerReadinessError.ingestionCompletenessUnhealthy
     }
   }
 }
@@ -50,5 +51,7 @@ struct WorkerReadinessProbe: Sendable {
 enum WorkerReadinessError: Error, Equatable {
   case missingIngestionHeartbeat
   case staleIngestionHeartbeat
-  case ingestionUnhealthy
+  case ingestionTransportUnhealthy
+  case ingestionFreshnessUnhealthy
+  case ingestionCompletenessUnhealthy
 }
