@@ -74,7 +74,9 @@ struct JetstreamV2ProjectionEventTests {
 
   @Test("configuration keeps V1 authoritative unless the V2 mode is explicit")
   func modeConfigurationIsFailClosed() {
-    #expect(ThinAppViewConfig.fromEnvironment([:]).jetstreamMode == .v1Authoritative)
+    let defaults = ThinAppViewConfig.fromEnvironment([:])
+    #expect(defaults.jetstreamMode == .v1Authoritative)
+    #expect(defaults.repositoryRestoreTimeoutSeconds == 120)
     let shadow = ThinAppViewConfig.fromEnvironment([
       "THIN_APPVIEW_JETSTREAM_MODE": "v2_shadow",
       "JETSTREAM_SOURCE_GENERATION": "west-filter-v2",
@@ -82,6 +84,10 @@ struct JetstreamV2ProjectionEventTests {
     #expect(shadow.jetstreamMode == .v2Shadow)
     #expect(shadow.jetstreamV2SourceGeneration == "west-filter-v2")
     #expect(shadow.jetstreamMode.runsLegacySubscriber)
+    let boundedRestore = ThinAppViewConfig.fromEnvironment([
+      "THIN_APPVIEW_REPOSITORY_RESTORE_TIMEOUT_SECONDS": "45"
+    ])
+    #expect(boundedRestore.repositoryRestoreTimeoutSeconds == 45)
     let authoritative = ThinAppViewConfig.fromEnvironment([
       "THIN_APPVIEW_JETSTREAM_MODE": "v2_authoritative"
     ])

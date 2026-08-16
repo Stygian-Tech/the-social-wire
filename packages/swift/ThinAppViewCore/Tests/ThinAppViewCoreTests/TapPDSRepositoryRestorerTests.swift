@@ -285,6 +285,48 @@ struct TapPDSRepositoryRestorerTests {
     #expect(try await fixture.store.fetchContentItem(uri: concurrentURI)?.title == "Concurrent")
   }
 
+  @Test("a repository deadline cancels stalled PDS work without pruning the last good snapshot")
+  func repositoryDeadlinePreservesProjection() async throws {
+    let did = Self.plcDID(endingIn: "c")
+    let fixture = try Self.fixture()
+    defer { try? FileManager.default.removeItem(atPath: fixture.path) }
+    let staleURI = try await Self.seedDocument(
+      did: did,
+      rkey: "existing",
+      title: "Last Good Projection",
+      indexer: fixture.indexer
+    )
+    let cancellation = RepositoryRestorationCancellationProbe()
+    let transport = StallingPDSHTTPTransport(
+      plcResponse: Self.plcResponse(),
+      cancellation: cancellation
+    )
+    let restorer = Self.restorer(
+      fixture: fixture,
+      transport: transport,
+      timeoutSeconds: 1
+    )
+
+    let restoration = Task {
+      try await restorer.restoreCurrentRepository(repoDid: did)
+    }
+    for _ in 0..<200 where !(await cancellation.didStart) {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    let didStart = await cancellation.didStart
+    try #require(didStart)
+
+    do {
+      _ = try await restoration.value
+      Issue.record("Expected repository restoration timeout")
+    } catch TapRepositoryRestorationError.timedOut {
+      // Expected.
+    }
+
+    #expect(await cancellation.wasObserved)
+    #expect(try await fixture.store.fetchContentItem(uri: staleURI)?.title == "Last Good Projection")
+  }
+
   private static func fixture() throws -> RepositoryRestorationFixture {
     let path = FileManager.default.temporaryDirectory
       .appendingPathComponent("tap-restorer-\(UUID().uuidString).sqlite").path
@@ -308,8 +350,9 @@ struct TapPDSRepositoryRestorerTests {
 
   private static func restorer(
     fixture: RepositoryRestorationFixture,
-    transport: OrderedPDSHTTPTransport,
-    projectionCache: (any AppViewProjectionCacheStore)? = nil
+    transport: any PDSHTTPTransport,
+    projectionCache: (any AppViewProjectionCacheStore)? = nil,
+    timeoutSeconds: TimeInterval = 120
   ) -> TapPDSRepositoryRestorer {
     let backfill = ThinAppViewEnrollBackfill(
       store: fixture.store,
@@ -325,7 +368,8 @@ struct TapPDSRepositoryRestorerTests {
       backfill: backfill,
       projectionCache: projectionCache,
       maxConcurrency: 1,
-      rateLimitPerSecond: 1_000
+      rateLimitPerSecond: 1_000,
+      timeoutSeconds: timeoutSeconds
     )
   }
 
@@ -437,4 +481,70 @@ private actor OrderedPDSHTTPTransport: PDSHTTPTransport {
 
 private enum OrderedPDSHTTPTransportError: Error {
   case unexpectedRequest(String)
+}
+
+private actor RepositoryRestorationCancellationProbe {
+  private(set) var didStart = false
+  private(set) var wasObserved = false
+
+  func start() {
+    didStart = true
+  }
+
+  func observe() {
+    wasObserved = true
+  }
+}
+
+private actor StallingPDSHTTPTransport: PDSHTTPTransport {
+  private let plcResponse: HTTPClientResponse
+  private let cancellation: RepositoryRestorationCancellationProbe
+  private var requestCount = 0
+
+  init(
+    plcResponse: HTTPClientResponse,
+    cancellation: RepositoryRestorationCancellationProbe
+  ) {
+    self.plcResponse = plcResponse
+    self.cancellation = cancellation
+  }
+
+  func execute(
+    _ request: HTTPClientRequest,
+    timeout: TimeAmount
+  ) async throws -> HTTPClientResponse {
+    _ = request
+    _ = timeout
+    requestCount += 1
+    if requestCount == 1 { return plcResponse }
+    return HTTPClientResponse(
+      status: .ok,
+      body: .stream(StallingRepositoryBodySequence(cancellation: cancellation))
+    )
+  }
+}
+
+private struct StallingRepositoryBodySequence: AsyncSequence, Sendable {
+  typealias Element = ByteBuffer
+
+  struct AsyncIterator: AsyncIteratorProtocol {
+    let cancellation: RepositoryRestorationCancellationProbe
+
+    mutating func next() async throws -> ByteBuffer? {
+      await cancellation.start()
+      do {
+        try await Task.sleep(for: .seconds(60))
+        return nil
+      } catch {
+        await cancellation.observe()
+        throw error
+      }
+    }
+  }
+
+  let cancellation: RepositoryRestorationCancellationProbe
+
+  func makeAsyncIterator() -> AsyncIterator {
+    AsyncIterator(cancellation: cancellation)
+  }
 }

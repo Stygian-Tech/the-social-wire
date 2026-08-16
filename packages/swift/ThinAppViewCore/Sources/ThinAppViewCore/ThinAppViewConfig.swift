@@ -49,6 +49,7 @@ public let ingestionInboxLeaseSeconds: TimeInterval
 public let ingestionInboxPollMilliseconds: Int
 public let ingestionInboxAppliedRetentionSeconds: TimeInterval
 public let ingestionInboxDeadLetterRetentionSeconds: TimeInterval
+public let repositoryRestoreTimeoutSeconds: TimeInterval
 public let contentRetentionSeconds: TimeInterval
 public let readMarkRetentionSeconds: TimeInterval
 public let maxEnrollAuthors: Int
@@ -97,6 +98,10 @@ public static func fromEnvironment(
         env["THIN_APPVIEW_INGESTION_INBOX_DEAD_LETTER_RETENTION_SECONDS"],
         default: 30 * 86_400
       ),
+      repositoryRestoreTimeoutSeconds: Self.seconds(
+        env["THIN_APPVIEW_REPOSITORY_RESTORE_TIMEOUT_SECONDS"],
+        default: 120
+      ),
       contentRetentionSeconds: Self.seconds(env["THIN_APPVIEW_CONTENT_TTL_SECONDS"], default: 30 * 24 * 60 * 60),
       readMarkRetentionSeconds: Self.seconds(env["THIN_APPVIEW_READ_MARK_TTL_SECONDS"], default: 180 * 24 * 60 * 60),
       maxEnrollAuthors: Self.int(env["THIN_APPVIEW_MAX_ENROLL_AUTHORS"], default: 500),
@@ -125,6 +130,7 @@ public static let disabled = ThinAppViewConfig(
     ingestionInboxPollMilliseconds: 250,
     ingestionInboxAppliedRetentionSeconds: 7 * 86_400,
     ingestionInboxDeadLetterRetentionSeconds: 30 * 86_400,
+    repositoryRestoreTimeoutSeconds: 120,
     contentRetentionSeconds: 30 * 24 * 60 * 60,
     readMarkRetentionSeconds: 180 * 24 * 60 * 60,
     maxEnrollAuthors: 500,
