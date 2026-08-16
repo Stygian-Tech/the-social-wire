@@ -39,10 +39,11 @@ struct OperationsCapabilityResolver: Sendable {
     }
 
     let jetstreamReplay = modeCapability(
-      worker: worker, key: "jetstream_replay", acceptedValue: "enabled_unverified",
+      worker: worker, key: "jetstream_replay",
+      acceptedValues: ["enabled_unverified", "enabled_durable_v2"],
       unavailableDescription: "Jetstream replay")
     let pdsReconciliation = modeCapability(
-      worker: worker, key: "pds_reconciliation", acceptedValue: "enabled_diagnostic_only",
+      worker: worker, key: "pds_reconciliation", acceptedValues: ["enabled_diagnostic_only"],
       unavailableDescription: "PDS reconciliation")
     let gatedJetstream = prerequisiteReason.map {
       OperationsCapability(enabled: false, disabledReason: $0)
@@ -91,7 +92,7 @@ struct OperationsCapabilityResolver: Sendable {
   private func modeCapability(
     worker: OperationsServiceState?,
     key: String,
-    acceptedValue: String,
+    acceptedValues: Set<String>,
     unavailableDescription: String
   ) -> OperationsCapability {
     guard let advertised = worker?.dependencyState[key] else {
@@ -99,7 +100,7 @@ struct OperationsCapabilityResolver: Sendable {
         enabled: false,
         disabledReason: "The worker did not advertise \(unavailableDescription) capability evidence.")
     }
-    guard advertised == acceptedValue else {
+    guard acceptedValues.contains(advertised) else {
       return OperationsCapability(
         enabled: false,
         disabledReason: "\(unavailableDescription) is unavailable: \(advertised).")

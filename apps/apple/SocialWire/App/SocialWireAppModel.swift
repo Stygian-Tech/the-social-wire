@@ -50,14 +50,14 @@ final class SocialWireAppModel {
     var errorMessage: String?
     /// Next AppView page cursor for the active publication entry list (`nil` when exhausted).
     private var entriesNextCursor: String?
-    /// Lexical account preferences returned from **`GET /v1/sync/preferences`** (optional read-later hints).
+    /// Lexical account preferences returned by **`app.thesocialwire.sync.getPreferences`** (optional read-later hints).
     var preferencesFromGateway: PreferencesRecord?
     var feedPreferences: ReaderFeedPreferences = .defaults
     /// Entry id currently open under **Unread** filter — `markRead` is deferred until navigation away.
     private var unreadDeferredEntryId: String?
     /// Bumped when publication selection clears the reader; stale `selectEntry` tasks must not reopen it.
     private var entrySelectionGeneration = 0
-    /// AppView scope keys from **`GET /v1/publications/sidebar`**.
+    /// AppView scope keys from **`app.thesocialwire.publication.getSidebar`**.
     private var sidebarScopesByPublicationId: [String: PublicationAppViewScopeDTO] = [:]
     /// Server unread counts keyed by publication id (sidebar projection + optional refresh).
     private var unreadCountsByPublicationId: [String: Int] = [:]
@@ -72,7 +72,7 @@ final class SocialWireAppModel {
     private(set) var followingSectionUnreadCount = 0
     /// Dedupes pagination triggers when the last filtered row re-appears during fast scroll.
     private var entriesPaginationTriggeredForEntryId: String?
-    /// Set false after a 404 from `/v1/appview/*` (API deployed without `ENABLE_THIN_APPVIEW`).
+    /// Set false after a 404 from `app.thesocialwire.appview.*` (API deployed without `ENABLE_THIN_APPVIEW`).
     private var appViewRoutesAvailable = true
 
     private var gatewaySubscribedUnfoldered: [DiscoveredPublication] = []
@@ -2055,7 +2055,7 @@ final class SocialWireAppModel {
         refreshSidebarUnreadSumCaches()
 
         do {
-            let created = try await gateway.createFolder(GatewayFolderWriteBody(name: trimmed))
+            let created = try await pds.createFolder(name: trimmed)
             OptimisticSidebarMutation.replaceOptimisticFolder(
                 folders: &folders,
                 folderMap: &gatewayFolderMap,
@@ -2089,7 +2089,7 @@ final class SocialWireAppModel {
         refreshSidebarUnreadSumCaches()
 
         do {
-            try await gateway.deleteFolder(rkey: folderRkey)
+            try await pds.deleteFolder(rkey: folderRkey)
             if let viewerDID {
                 persistSidebarSnapshot(viewerDid: viewerDID)
             }
@@ -2116,14 +2116,10 @@ final class SocialWireAppModel {
 
         do {
             let existing = publicationPrefs[publication.publicationId]
-            _ = try await gateway.upsertPublicationPrefs(
-                GatewayPublicationPrefsWriteBody(
-                    publicationId: publication.publicationId,
-                    folderId: toFolderRkey,
-                    sortOrder: existing?.value.sortOrder,
-                    hidden: existing?.value.hidden,
-                    existingRkey: existing.map { rkey(from: $0.uri) }
-                )
+            try await pds.upsertPublicationPrefs(
+                publicationId: publication.publicationId,
+                folderId: toFolderRkey,
+                existing: existing
             )
             if let viewerDID {
                 persistSidebarSnapshot(viewerDid: viewerDID)
@@ -2144,36 +2140,27 @@ final class SocialWireAppModel {
                 switch result.kind {
                 case "standard-site":
                     if let publicationAtUri = result.publicationAtUri {
-                        _ = try await gateway.createPublicationSubscription(
-                            GatewayPublicationSubscriptionWriteBody(publication: publicationAtUri)
-                        )
+                        try await pds.createPublicationSubscription(publication: publicationAtUri)
                     }
                 case "rss":
                     if let feedUrl = result.feedUrl {
-                        _ = try await gateway.createRssSubscription(
-                            GatewayRssSubscriptionWriteBody(
-                                feedUrl: rss.normalizeFeedURL(feedUrl),
-                                title: title ?? result.title,
-                                siteUrl: result.siteUrl
-                            )
+                        try await pds.createSkyreaderSubscription(
+                            feedURL: rss.normalizeFeedURL(feedUrl),
+                            title: title ?? result.title,
+                            siteURL: result.siteUrl
                         )
                     }
                 default:
                     break
                 }
             } else if normalized.contains(".") || normalized.hasPrefix("http") {
-                _ = try await gateway.createRssSubscription(
-                    GatewayRssSubscriptionWriteBody(
-                        feedUrl: rss.normalizeFeedURL(normalized),
-                        title: title,
-                        siteUrl: nil
-                    )
+                try await pds.createSkyreaderSubscription(
+                    feedURL: rss.normalizeFeedURL(normalized),
+                    title: title
                 )
             } else {
                 let did = try await resolver.resolveDID(handleOrDID: normalized)
-                _ = try await gateway.createPublicationSubscription(
-                    GatewayPublicationSubscriptionWriteBody(publication: did)
-                )
+                try await pds.createPublicationSubscription(publication: did)
             }
             await refreshAll()
         } catch {

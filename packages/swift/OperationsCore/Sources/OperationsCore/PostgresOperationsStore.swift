@@ -4,8 +4,8 @@ import PostgresNIO
 
 public actor PostgresOperationsStore: OperationsStore {
   public nonisolated let environment: String
-  private let pool: PostgresClient
-  private let logger: Logger
+  let pool: PostgresClient
+  let logger: Logger
   private let encoder = JSONEncoder()
   private let decoder = JSONDecoder()
   private let backfillFingerprintSecret: String?
@@ -2333,11 +2333,41 @@ public actor PostgresOperationsStore: OperationsStore {
   }
 
   public func cleanupExpired(at: Date, batchSize: Int) async throws -> Int {
+    let boundedBatch = max(1, min(batchSize, 10_000))
     let rows = try await pool.query(
       "SELECT operations_cleanup_expired(\(environment), \(at), \(max(1, min(batchSize, 10_000)))::integer)::bigint",
       logger: logger)
-    for try await row in rows { return Int(try row.decode(Int64.self)) }
-    return 0
+    var affected = 0
+    for try await row in rows { affected = Int(try row.decode(Int64.self)); break }
+    let inboxRows = try await pool.query(
+      """
+      DELETE FROM appview_ingestion_inbox WHERE ctid IN (
+        SELECT ctid FROM appview_ingestion_inbox
+        WHERE environment = \(environment) AND expires_at IS NOT NULL AND expires_at <= \(at)
+        LIMIT \(boundedBatch)
+      ) RETURNING 1
+      """, logger: logger)
+    for try await _ in inboxRows { affected += 1 }
+    let usageRows = try await pool.query(
+      """
+      DELETE FROM appview_ingestion_replay_usage WHERE ctid IN (
+        SELECT ctid FROM appview_ingestion_replay_usage
+        WHERE environment = \(environment) AND bucket_started_at <= \(at.addingTimeInterval(-48 * 3_600))
+        LIMIT \(boundedBatch)
+      ) RETURNING 1
+      """, logger: logger)
+    for try await _ in usageRows { affected += 1 }
+    let reconciliationRows = try await pool.query(
+      """
+      DELETE FROM appview_ingestion_reconciliation_requests WHERE ctid IN (
+        SELECT ctid FROM appview_ingestion_reconciliation_requests
+        WHERE environment = \(environment) AND status IN ('completed', 'failed')
+          AND updated_at <= \(at.addingTimeInterval(-30 * 86_400))
+        LIMIT \(boundedBatch)
+      ) RETURNING 1
+      """, logger: logger)
+    for try await _ in reconciliationRows { affected += 1 }
+    return affected
   }
 
   private func decodeBackfills(_ rows: PostgresRowSequence) async throws -> [BackfillJob] {

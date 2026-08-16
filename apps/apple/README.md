@@ -53,22 +53,17 @@ The app uses **`SocialWireGatewayClient`** against **`SocialWireAPIEnvironment.b
 
 Eligible JSON queries and procedures use the Lexicon-defined
 `/xrpc/app.thesocialwire.*` surface through `SocialWireXRPCMethod`. The table
-below names the equivalent compatibility routes and the HTTP-only stream/cache
-surfaces.
+below separates those XRPC calls from the intentional HTTP-only stream/cache
+surfaces and direct viewer-PDS writes.
 
-This migration is present in the current checkout but is not registered on the
-public Testing or Production gateways as of 2026-08-12. Do not distribute a
-client containing these calls before the matching backend deployment.
-
-| Route | Purpose |
+| Surface | Purpose |
 |-------|---------|
 | `GET /v1/appview/bootstrap-stream` | Progressive NDJSON initial reader load |
-| `GET /v1/publications/sidebar` | Sidebar projection |
-| `GET /v1/sync/preferences` | Account preferences envelope (ETag-aware) |
 | `GET /v1/pds/cache/record` | Cached single-record reads |
-| `/v1/appview/feed`, `/entries`, `/entry` | Aggregate/scoped lists and flat entry detail |
-| Other `/v1/appview/*` | Unread counts, read marks, enroll, mark-all-read, purge |
-| `/v1/publications/*` | Sidebar refresh/resolve plus folder, preference, and subscription PDS write-through |
+| `/xrpc/app.thesocialwire.appview.*` | Feed, entry, unread, read-mark, enroll, mark-all-read, and purge APIs |
+| `/xrpc/app.thesocialwire.publication.*` | Sidebar projection, refresh, and publication resolution |
+| `/xrpc/app.thesocialwire.sync.getPreferences` | Account preferences envelope (ETag-aware) |
+| Viewer PDS `com.atproto.repo.*` | Folder, publication preference, standard.site subscription, and Skyreader subscription records |
 
 ### AppView reader path
 

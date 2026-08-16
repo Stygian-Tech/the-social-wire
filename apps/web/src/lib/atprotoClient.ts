@@ -22,29 +22,12 @@ export const BSKY_APPVIEW_PUBLIC = "https://public.api.bsky.app";
 
 /**
  * Publication-shaped collections — probed first so the sidebar shows site/publication
- * names, not individual article titles (see {@link discoverPublications}).
+ * names, not individual article titles.
  */
 const DISCOVERY_PUBLICATION_COLLECTIONS = [
   "site.standard.publication",
   "com.standard.publication",
   "app.offprint.publication",
-] as const;
-
-/**
- * Post/document collections — only used when the author has no publication record but does
- * have standard.site posts; sidebar label stays the author/handle, not one article title.
- */
-const DISCOVERY_CONTENT_COLLECTIONS = [
-  "site.standard.document",
-  "com.standard.document",
-  "site.standard.entry",
-  "com.standard.entry",
-] as const;
-
-/** Union of collections probed during discovery (publication lexicons first). */
-export const DISCOVERY_COLLECTIONS = [
-  ...DISCOVERY_PUBLICATION_COLLECTIONS,
-  ...DISCOVERY_CONTENT_COLLECTIONS,
 ] as const;
 
 /**
@@ -144,16 +127,6 @@ export interface LatrExternalSavedSubjectPreview {
   language?: string;
 }
 
-interface FollowProfile {
-  did: string;
-  handle: string;
-  displayName?: string;
-  avatar?: string;
-}
-
-const MAX_FOLLOWS = 500;
-const FOLLOW_PAGE_LIMIT = 100;
-const DISCOVERY_BATCH_SIZE = 25;
 const OWN_PUBLICATIONS_PAGE_LIMIT = 50;
 
 /** Collections whose record AT-URIs may be used as {@link DiscoveredPublication.publicationId}. */
@@ -164,9 +137,6 @@ export const PUBLICATION_RECORD_COLLECTIONS = new Set<string>([
 
 const LIST_CURSOR_DOC = "d:";
 const LIST_CURSOR_ENT = "e:";
-
-/** Follow edges stored on the viewer's repo (canonical over Bluesky relay mirrors). */
-const GRAPH_FOLLOW_COLLECTION = "app.bsky.graph.follow";
 
 const plcEndpointCache = new Map<string, string | null>();
 
@@ -376,31 +346,6 @@ async function getRecordOnAuthorRepo(
 
   const json = (await res.json()) as { value?: unknown };
   return json.value ?? null;
-}
-
-async function enrichFollowsFromRelay(
-  relayAgent: Agent,
-  follows: FollowProfile[]
-): Promise<void> {
-  const chunkSize = 12;
-  for (let i = 0; i < follows.length; i += chunkSize) {
-    const slice = follows.slice(i, i + chunkSize);
-    await Promise.all(
-      slice.map(async (f) => {
-        try {
-          const res = await relayAgent.api.app.bsky.actor.getProfile({
-            actor: f.did,
-          });
-          const p = res.data;
-          f.handle = p.handle;
-          f.displayName = p.displayName ?? undefined;
-          f.avatar = p.avatar ?? undefined;
-        } catch {
-          /* DID may not be indexed on Bluesky — keep DID-shaped handle */
-        }
-      })
-    );
-  }
 }
 
 // ── OAuth Agent ───────────────────────────────────────────────────────────────
@@ -1247,86 +1192,6 @@ export async function probeFirstPublicationRecordUri(
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
-export type DiscoverPublicationsOptions = {
-  /** When aborted, probing stops between batch chunks. */
-  signal?: AbortSignal;
-  /**
-   * Called whenever a new publication is found, with the **full list so far** in
-   * **follow-graph order** (only includes DIDs that have been resolved to a publication).
-   */
-  onProgress?: (orderedPublications: DiscoveredPublication[]) => void;
-};
-
-/**
- * Lists every `site.standard.publication` / `com.standard.publication` record in the author's
- * repo (paginated). Used so the viewer can see **all** owned publications, not only the first.
- */
-export async function discoverOwnPublications(
-  authorDid: string,
-  oauthSession: OAuthSession,
-  options?: { signal?: AbortSignal }
-): Promise<DiscoveredPublication[]> {
-  const discoveredAt = new Date().toISOString();
-  const seen = new Set<string>();
-  const out: DiscoveredPublication[] = [];
-
-  for (const collection of DISCOVERY_PUBLICATION_COLLECTIONS) {
-    let cursor: string | undefined;
-    do {
-      if (options?.signal?.aborted) return out;
-      const { records, cursor: next } = await listRecordsOnAuthorRepo(
-        authorDid,
-        collection,
-        {
-          limit: OWN_PUBLICATIONS_PAGE_LIMIT,
-          cursor,
-          reverse: false,
-          signal: options?.signal,
-        },
-        oauthSession
-      );
-      for (const row of records) {
-        if (seen.has(row.uri)) continue;
-        seen.add(row.uri);
-
-        let publicationId = row.uri;
-        let recordValue = row.value as Record<string, unknown>;
-        if (collection === "app.offprint.publication") {
-          const inner = str(recordValue.publication);
-          if (inner) {
-            publicationId = normalizeAtRepoParam(inner);
-            const innerParsed = parseAtUri(publicationId);
-            if (innerParsed) {
-              const innerRecord = await getRecordOnAuthorRepo(
-                innerParsed.did,
-                innerParsed.collection,
-                innerParsed.rkey,
-                oauthSession
-              );
-              if (innerRecord && typeof innerRecord === "object") {
-                recordValue = innerRecord as Record<string, unknown>;
-              }
-            }
-          }
-        }
-
-        const label = authorDid;
-        out.push({
-          publicationId,
-          subscriptionPublicationId: publicationId,
-          authorDid,
-          authorHandle: authorDid,
-          title: publicationTitleFromRecord(collection, recordValue, label),
-          iconUrl: await publicationIconUrlFromRecord(publicationId, recordValue),
-          discoveredAt,
-        });
-      }
-      cursor = next;
-    } while (cursor);
-  }
-  return out;
-}
-
 /**
  * Hydrates a sidebar row from a publication AT-URI (e.g. manual graph subscription
  * on an author the viewer does not follow).
@@ -1378,239 +1243,6 @@ export async function fetchPublicationRecordValue(
   );
   if (!value || typeof value !== "object") return null;
   return value as Record<string, unknown>;
-}
-
-/**
- * Discovers followed authors with standard.site-related records.
- *
- * Follow subjects come from:
- * - **`app.bsky.graph.follow`** on the viewer's repo (OAuth / PDS — canonical graph).
- * - **`app.bsky.graph.getFollows`** on the Bluesky relay (additional mirrored edges).
- *
- * Each followed repo is probed via **that author's PDS** (PLC); optional OAuth retry on 400/401/403.
- */
-export async function discoverPublications(
-  userDid: string,
-  session: OAuthSession,
-  options?: DiscoverPublicationsOptions
-): Promise<DiscoveredPublication[]> {
-  const { signal, onProgress } = options ?? {};
-
-  const relayAgent = new Agent(BSKY_APPVIEW_PUBLIC);
-
-  const subjectDids = new Set<string>();
-  // Include the viewer's repo so authored publications surface (follow graph excludes self-follows).
-  subjectDids.add(userDid);
-
-  try {
-    let cursor: string | undefined;
-    do {
-      const { records, cursor: next } = await listRecordsOnAuthorRepo(
-        userDid,
-        GRAPH_FOLLOW_COLLECTION,
-        { limit: FOLLOW_PAGE_LIMIT, cursor, reverse: false },
-        session
-      );
-      for (const record of records) {
-        const val = record.value as { subject?: string };
-        if (typeof val.subject === "string") subjectDids.add(val.subject);
-        if (subjectDids.size >= MAX_FOLLOWS) break;
-      }
-      cursor = next;
-      if (subjectDids.size >= MAX_FOLLOWS) break;
-    } while (cursor);
-  } catch {
-    /* unreadable repo graph — merge relay-only below */
-  }
-
-  if (subjectDids.size < MAX_FOLLOWS) {
-    try {
-      let cursor: string | undefined;
-      do {
-        const res = await relayAgent.api.app.bsky.graph.getFollows({
-          actor: userDid,
-          limit: FOLLOW_PAGE_LIMIT,
-          cursor,
-        });
-        for (const follow of res.data.follows) {
-          subjectDids.add(follow.did);
-          if (subjectDids.size >= MAX_FOLLOWS) break;
-        }
-        cursor = res.data.cursor;
-        if (subjectDids.size >= MAX_FOLLOWS) break;
-      } while (cursor);
-    } catch {
-      /* relay unavailable */
-    }
-  }
-
-  const follows: FollowProfile[] = [...subjectDids]
-    .slice(0, MAX_FOLLOWS)
-    .map((did) => ({
-      did,
-      handle: did,
-      displayName: undefined,
-      avatar: undefined,
-    }));
-
-  await enrichFollowsFromRelay(relayAgent, follows);
-
-  if (signal?.aborted) {
-    return [];
-  }
-
-  /** Stable follow order while probes finish out-of-order (parallel batches). */
-  const foundByDid = new Map<string, DiscoveredPublication[]>();
-  let viewerPublications: DiscoveredPublication[] = [];
-
-  const discoveredAt = new Date().toISOString();
-
-  async function probeAuthorPublications(
-    follow: FollowProfile
-  ): Promise<DiscoveredPublication[]> {
-    const sidebarLabel =
-      follow.displayName?.trim() || follow.handle || follow.did;
-    const seen = new Set<string>();
-    const pubs: DiscoveredPublication[] = [];
-
-    for (const collection of DISCOVERY_PUBLICATION_COLLECTIONS) {
-      let cursor: string | undefined;
-      do {
-        const { records: rows, cursor: next } = await listRecordsOnAuthorRepo(
-          follow.did,
-          collection,
-          {
-            limit: OWN_PUBLICATIONS_PAGE_LIMIT,
-            cursor,
-            reverse: false,
-          },
-          session
-        );
-        for (const row of rows) {
-          if (seen.has(row.uri)) continue;
-          seen.add(row.uri);
-
-          let publicationId = row.uri;
-          let recordValue = row.value as Record<string, unknown>;
-          if (collection === "app.offprint.publication") {
-            const inner = str(recordValue.publication);
-            if (inner) {
-              publicationId = normalizeAtRepoParam(inner);
-              const innerParsed = parseAtUri(publicationId);
-              if (innerParsed) {
-                const innerRecord = await getRecordOnAuthorRepo(
-                  innerParsed.did,
-                  innerParsed.collection,
-                  innerParsed.rkey,
-                  session
-                );
-                if (innerRecord && typeof innerRecord === "object") {
-                  recordValue = innerRecord as Record<string, unknown>;
-                }
-              }
-            }
-          }
-
-          pubs.push({
-            publicationId,
-            subscriptionPublicationId: publicationId,
-            authorDid: follow.did,
-            authorHandle: follow.handle,
-            title: publicationTitleFromRecord(collection, recordValue, sidebarLabel),
-            iconUrl: await publicationIconUrlFromRecord(publicationId, recordValue),
-            avatarUrl: follow.avatar,
-            discoveredAt,
-          });
-        }
-        cursor = next;
-      } while (cursor);
-    }
-
-    if (pubs.length > 0) return pubs;
-
-    for (const collection of DISCOVERY_CONTENT_COLLECTIONS) {
-      const { records: rows } = await listRecordsOnAuthorRepo(
-        follow.did,
-        collection,
-        { limit: 1, reverse: false },
-        session
-      );
-      if (rows.length === 0) continue;
-
-      return [
-        {
-          publicationId: follow.did,
-          authorDid: follow.did,
-          authorHandle: follow.handle,
-          title: sidebarLabel,
-          avatarUrl: follow.avatar,
-          discoveredAt,
-        },
-      ];
-    }
-
-    return [];
-  }
-
-  async function hydrateViewerPublications(): Promise<void> {
-    const viewer = follows.find((f) => f.did === userDid);
-    if (!viewer) {
-      viewerPublications = [];
-      return;
-    }
-    const listed = await discoverOwnPublications(userDid, session, {
-      signal,
-    });
-    if (listed.length > 0) {
-      viewerPublications = listed.map((p) => ({
-        ...p,
-        authorHandle: viewer.handle,
-        avatarUrl: viewer.avatar,
-      }));
-      return;
-    }
-    const fallback = await probeAuthorPublications(viewer);
-    viewerPublications = fallback;
-  }
-
-  function snapshotOrdered(): DiscoveredPublication[] {
-    const list: DiscoveredPublication[] = [];
-    for (const f of follows) {
-      if (f.did === userDid) {
-        for (const p of viewerPublications) list.push(p);
-      } else {
-        const pubs = foundByDid.get(f.did);
-        if (pubs) list.push(...pubs);
-      }
-    }
-    return list;
-  }
-
-  onProgress?.([]);
-
-  await hydrateViewerPublications();
-  if (signal?.aborted) {
-    return snapshotOrdered();
-  }
-  onProgress?.(snapshotOrdered());
-
-  for (let i = 0; i < follows.length; i += DISCOVERY_BATCH_SIZE) {
-    if (signal?.aborted) break;
-
-    const batch = follows.slice(i, i + DISCOVERY_BATCH_SIZE);
-    await Promise.allSettled(
-      batch.map(async (follow) => {
-        if (follow.did === userDid) return;
-        const pubs = await probeAuthorPublications(follow);
-        if (pubs.length > 0) {
-          foundByDid.set(follow.did, pubs);
-          onProgress?.(snapshotOrdered());
-        }
-      })
-    );
-  }
-
-  return snapshotOrdered();
 }
 
 function decodePublicationListCursor(cursor: string | undefined): {

@@ -9,6 +9,7 @@ import {
   fetchCommands,
   fetchGapInvestigation,
   fetchIngestion,
+  fetchIngestionIncidents,
   fetchIngestionEndpoints,
   fetchRecentTraces,
   fetchServices,
@@ -489,6 +490,56 @@ test("rejects incomplete dry-run estimates before they can be fingerprint-bound"
       maxConcurrency: 1,
     }),
   ).rejects.toThrow("Operations backfill dry run failed runtime contract validation")
+})
+
+test("preserves mixed JSON scalar incident verification evidence", async () => {
+  delete process.env.NEXT_PUBLIC_OPERATIONS_DEMO_MODE
+  const response = await fetchIngestionIncidents(jsonSession({
+    incidents: [{
+      id: "incident-1",
+      environment: "dev",
+      sourceGeneration: "v2-us-west-1",
+      sourceHost: "jetstream.us-west.bsky.network",
+      source: "jetstream-v2",
+      cursorKind: "jetstream_v2_seq",
+      category: "consumer_too_slow",
+      status: "resolved",
+      occurrenceCount: 2,
+      firstDetectedAt: "2026-08-15T20:00:00.000Z",
+      lastDetectedAt: "2026-08-15T20:01:00.000Z",
+      replayBytesDownloaded: 1024,
+      replayRetryCount: 1,
+      replayRangeResumeCount: 0,
+      verificationEvidence: {
+        recovery: "terminal_prefix_reached",
+        verified: true,
+        attempts: 2,
+        coverage: 0.75,
+        error: null,
+      },
+      updatedAt: "2026-08-15T20:02:00.000Z",
+      version: 3,
+    }],
+    nextCursor: null,
+    totalCount: 1,
+    evidence,
+  }))
+
+  expect(response.incidents[0]?.verificationEvidence).toEqual({
+    recovery: "terminal_prefix_reached",
+    verified: true,
+    attempts: 2,
+    coverage: 0.75,
+    error: null,
+  })
+
+  await expect(fetchIngestionIncidents(jsonSession({
+    ...response,
+    incidents: [{
+      ...response.incidents[0],
+      verificationEvidence: { nested: { unsafe: true } },
+    }],
+  }))).rejects.toThrow("Operations ingestion incident failed runtime contract validation")
 })
 
 function restoreEnvironment(key: string, value: string | undefined) {

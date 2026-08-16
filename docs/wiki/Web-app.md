@@ -44,9 +44,9 @@ The full setup, environment, and OAuth reference is [apps/web/README.md](https:/
 | Data | Current path |
 |------|--------------|
 | Initial load | `GET /v1/appview/bootstrap-stream` NDJSON |
-| Sidebar refresh and resolve | Hosted `/v1/publications/*`; the current checkout migrates eligible calls to pending Gateway XRPC methods |
+| Sidebar refresh and resolve | Hosted `/xrpc/app.thesocialwire.publication.*` methods |
 | Folders, preferences, subscriptions | Direct viewer-PDS writes through the OAuth session |
-| Entry lists and detail | Hosted `/v1/appview/feed`, `/entries`, and flat `/entry`; the current checkout adds pending XRPC equivalents |
+| Entry lists and detail | Hosted `/xrpc/app.thesocialwire.appview.*` methods |
 | Read state | Browser local storage for immediate UI plus AppView read marks/floors |
 | Read Later and Archive | Same-origin `/api/latr-gateway/xrpc/link.latr.bookmarks.*` backed by L@tr Link |
 

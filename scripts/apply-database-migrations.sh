@@ -11,7 +11,8 @@ command -v psql >/dev/null 2>&1 || {
   exit 1
 }
 
-psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 <<'SQL'
+psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 --single-transaction <<'SQL'
+SELECT pg_advisory_xact_lock(hashtextextended('the-social-wire-schema-migrations', 0));
 CREATE TABLE IF NOT EXISTS public.schema_migrations (
   version TEXT PRIMARY KEY,
   name TEXT NOT NULL,
@@ -26,21 +27,73 @@ if (( ${#migrations[@]} == 0 )); then
   exit 1
 fi
 
+migration_run_dir="$(mktemp -d)"
+trap 'rm -rf "$migration_run_dir"' EXIT
+
+append_migration_body() {
+  local migration="$1"
+  # Some applied historical files carry their own outer BEGIN/COMMIT wrapper. Keeping that
+  # wrapper would commit and release our transaction-scoped advisory lock before the runner
+  # records schema_migrations. Remove only a file-wide outer wrapper in the temporary copy;
+  # nested PL/pgSQL BEGIN blocks and the checked-in migration history remain untouched.
+  awk '
+    function normalized(line, value) {
+      value = line
+      sub(/^[[:space:]]+/, "", value)
+      sub(/[[:space:]]+$/, "", value)
+      return toupper(value)
+    }
+    function significant(line, value) {
+      value = line
+      sub(/^[[:space:]]+/, "", value)
+      return value != "" && value !~ /^--/
+    }
+    {
+      lines[NR] = $0
+      if (significant($0)) {
+        if (first == 0) first = NR
+        last = NR
+      }
+    }
+    END {
+      strip = first > 0 && normalized(lines[first]) ~ /^BEGIN;?$/ &&
+        normalized(lines[last]) ~ /^COMMIT;?$/
+      for (line = 1; line <= NR; line++) {
+        if (strip && (line == first || line == last)) continue
+        print lines[line]
+      }
+    }
+  ' "$migration"
+}
+
 for migration in "${migrations[@]}"; do
   filename="$(basename "$migration")"
   version="${filename%%_*}"
-  if psql "$DATABASE_URL" -X -Atqc \
-    "SELECT 1 FROM public.schema_migrations WHERE version = '$version'" | grep -qx 1; then
-    echo "skip $filename"
-    continue
-  fi
-
-  echo "apply $filename"
-  psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 --single-transaction -f "$migration"
-  psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 \
-    -v migration_version="$version" -v migration_name="$filename" <<'SQL'
-INSERT INTO public.schema_migrations (version, name)
-VALUES (:'migration_version', :'migration_name')
-ON CONFLICT (version) DO NOTHING;
+  transaction_file="$migration_run_dir/$filename"
+  {
+    cat <<'SQL'
+SELECT pg_advisory_xact_lock(hashtextextended('the-social-wire-schema-migrations', 0));
+SELECT EXISTS (
+  SELECT 1
+  FROM public.schema_migrations
+  WHERE version = :'migration_version'
+) AS migration_applied
+\gset
+\if :migration_applied
+\echo skip :migration_name
+\else
+\echo apply :migration_name
 SQL
+    append_migration_body "$migration"
+    printf '\n'
+    cat <<'SQL'
+INSERT INTO public.schema_migrations (version, name)
+VALUES (:'migration_version', :'migration_name');
+\endif
+SQL
+  } >"$transaction_file"
+
+  psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 --single-transaction \
+    -v migration_version="$version" -v migration_name="$filename" \
+    -f "$transaction_file"
 done

@@ -17,7 +17,8 @@ Migrations live in `migrations/`. The runner applies each file once in timestamp
 
 ## Environment
 
-Set `DATABASE_URL=${{Postgres.DATABASE_URL}}` independently on **gateway**, **appview**, **appview-worker**, and **operations** in Railway.
+Set `DATABASE_URL=${{Postgres.DATABASE_URL}}` on **Database Migrator** and each
+database-consuming application service in Railway.
 
 Gateway, AppView, and Charybdis contain SQLite backends, but their current
 process entry points share the Operations environment guard and reject
@@ -41,10 +42,16 @@ private `DATABASE_URL`, not `DATABASE_PUBLIC_URL`.
 
 ## Automation
 
-GitHub Actions does not mutate hosted databases. The Gateway Railway deployment runs the checked-in migration runner as its pre-deploy command. Validate migration changes against a disposable Postgres database before merging.
+GitHub Actions does not mutate hosted databases. The Railway Database Migrator
+service runs the checked-in migration runner once per migration revision.
+Gateway, App View, Charybdis, Ops, and Jetstream V2 Ingest reference the
+migrator service ID so Railway starts their new revisions only after migration
+success. Validate migration changes against a disposable Postgres database
+before merging.
 
 ## Related
 
 - [Database test plan](../docs/test-plans/database.md)
+- [Postgres restore drill](../docs/runbooks/operations/postgres-restore-drill.md)
 - [Thin AppView architecture](../docs/architecture/appview.md)
 - [Redis ownership and rollback](../docs/architecture/redis.md)

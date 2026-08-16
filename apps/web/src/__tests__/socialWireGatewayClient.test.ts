@@ -19,7 +19,7 @@ describe("gatewayFetch", () => {
     let dpopClaims: Record<string, string | number> | undefined;
     const fetchMock = mock(async (url: string, init?: RequestInit) => {
       expect(url).toBe(
-        "https://api.testing.thesocialwire.app/v1/appview/entries?authorDid=did%3Aplc%3Aalice"
+        "https://api.testing.thesocialwire.app/xrpc/app.thesocialwire.appview.listEntries?authorDid=did%3Aplc%3Aalice"
       );
       const headers = new Headers(init?.headers);
       expect(headers.get("Authorization")).toBe("DPoP access-token");
@@ -63,14 +63,14 @@ describe("gatewayFetch", () => {
     const { gatewayFetch } = await import("@/lib/socialWireGatewayClient");
     const res = await gatewayFetch(
       oauthSession,
-      "/v1/appview/entries?authorDid=did%3Aplc%3Aalice"
+      "/xrpc/app.thesocialwire.appview.listEntries?authorDid=did%3Aplc%3Aalice"
     );
 
     expect(res.status).toBe(200);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(dpopClaims?.htm).toBe("GET");
     expect(dpopClaims?.htu).toBe(
-      "https://api.testing.thesocialwire.app/v1/appview/entries"
+      "https://api.testing.thesocialwire.app/xrpc/app.thesocialwire.appview.listEntries"
     );
     expect(dpopClaims?.ath).toBeTruthy();
   });
@@ -187,9 +187,9 @@ describe("gatewayFetch", () => {
 
     const { gatewayFetch } = await import("@/lib/socialWireGatewayClient");
     await Promise.all([
-      gatewayFetch(oauthSession, "/v1/appview/read-marks", { method: "POST" }),
-      gatewayFetch(oauthSession, "/v1/appview/read-marks", { method: "POST" }),
-      gatewayFetch(oauthSession, "/v1/appview/read-marks", { method: "POST" }),
+      gatewayFetch(oauthSession, "/xrpc/app.thesocialwire.appview.putReadMark", { method: "POST" }),
+      gatewayFetch(oauthSession, "/xrpc/app.thesocialwire.appview.putReadMark", { method: "POST" }),
+      gatewayFetch(oauthSession, "/xrpc/app.thesocialwire.appview.putReadMark", { method: "POST" }),
     ]);
 
     expect(fetchMock).toHaveBeenCalledTimes(3);
@@ -231,7 +231,7 @@ describe("gatewayFetch", () => {
       const { gatewayFetch } = await import("@/lib/socialWireGatewayClient");
       const response = await gatewayFetch(
         oauthSession,
-        "/v1/appview/entries",
+        "/xrpc/app.thesocialwire.appview.listEntries",
       );
 
       expect(response.status).toBe(401);

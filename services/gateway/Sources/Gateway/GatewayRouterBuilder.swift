@@ -25,7 +25,12 @@ enum GatewayRouterBuilder {
     router.get("/health") { _, _ in ["status": "ok", "service": "gateway"] }
     router.get("/livez") { _, _ in ["status": "live", "service": "gateway"] }
     router.get("/readyz") { _, _ async throws -> [String: String] in
-      try await operationsStore?.ping()
+      try await GatewayReadinessProbe(
+        operationsStore: operationsStore,
+        appViewBaseURL: config.appViewBaseURL,
+        charybdisBaseURL: config.charybdisBaseURL,
+        httpClient: httpClient
+      ).run()
       return ["status": "ready", "service": "gateway"]
     }
     router.get("/freshness") { _, _ async throws -> ServiceFreshnessResponse in
@@ -43,9 +48,6 @@ enum GatewayRouterBuilder {
       plcURL: config.core.atprotoPLCURL,
       gatewayClientPolicy: config.core.oauthGateway,
       supplementalJwksJSON: config.core.oauthAccessTokenSupplementalJwksJSON,
-      allowDpopBoundStructuralFallback:
-        config.core.gatewayAppViewInternalSecret != nil
-        || config.core.gatewayOperationsInternalSecret != nil,
       logger: logger
     )
     let protected = router.group()
@@ -64,7 +66,6 @@ enum GatewayRouterBuilder {
       logger: logger
     )
     SyncRoutes(preferenceService: prefs, repo: repo).register(on: protected)
-    PublicationWriteRoutes(repo: repo).register(on: protected)
     ClientPerformanceTelemetryRoutes(
       telemetry: telemetry,
       environment: telemetryEnvironment

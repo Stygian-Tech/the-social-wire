@@ -27,12 +27,12 @@ struct PostgresConfigTests {
     )
   }
 
-  @Test("Connection limit never falls below one")
-  func connectionLimitNeverFallsBelowOne() {
+  @Test("Connection limit preserves one writer beside the authority fence")
+  func connectionLimitPreservesFencedWriter() {
     #expect(
       postgresMaximumConnections(
         environment: ["POSTGRES_MAX_CONNECTIONS": "0"]
-      ) == 1
+      ) == 2
     )
   }
 }

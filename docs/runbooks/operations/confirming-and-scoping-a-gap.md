@@ -4,4 +4,4 @@
 2. Bound start/end `time_us` cursors and affected collection allowlist.
 3. Run a dry-run estimate in Development.
 4. Mark the gap Confirmed only when evidence shows completeness risk.
-5. Prefer verified Tap resync for recovery. Jetstream Replay and DID-scoped PDS Reconciliation are diagnostics only and end in **Verification Required**; PDS current-state enumeration cannot prove historical deletes.
+5. Tap verified resync is retired. Prefer durable Jetstream V2 replay; DID-scoped PDS Reconciliation remains diagnostic and PDS current-state enumeration cannot prove historical deletes.

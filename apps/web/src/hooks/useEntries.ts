@@ -592,7 +592,7 @@ export function useAggregateFeedEntries(
 }
 
 /**
- * Returns entry detail from Thin AppView (`GET /v1/appview/entry`).
+ * Returns entry detail from `app.thesocialwire.appview.getEntry`.
  */
 export function useEntry(entryId: string | null) {
   const { session, getOAuthSession } = useAuth();

@@ -23,8 +23,9 @@ struct AppViewExtendedRoutes {
     {
       group.get(path) { request, context async throws -> AppViewUnreadCountsByPublicationResponse in
         guard let auth = context.authContext else { throw HTTPError(.unauthorized) }
-        if let rawIds = request.uri.queryParameters.get("publicationIds") {
-          let publicationIds = Self.splitQueryList(rawIds)
+        let publicationIds = request.uri.queryParameters[values: "publicationIds"]
+          .flatMap { Self.splitQueryList(String($0)) }
+        if !publicationIds.isEmpty {
           return try await readService.unreadCountsByPublicationIds(
             auth: auth,
             publicationIds: publicationIds,

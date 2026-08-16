@@ -4,6 +4,7 @@ import { BackfillsTable } from "@/components/operations/backfills/backfills-tabl
 import { CollectionHealth } from "@/components/operations/dashboard/collection-health"
 import { CollectionTable } from "@/components/operations/dashboard/collection-table"
 import { DatabaseObservability } from "@/components/operations/dashboard/database-observability"
+import { DurableIngestionStatus } from "@/components/operations/dashboard/durable-ingestion-status"
 import { EvidenceInventory } from "@/components/operations/dashboard/evidence-inventory"
 import { EndpointInventory } from "@/components/operations/dashboard/endpoint-inventory"
 import { GapsTable } from "@/components/operations/gaps/gaps-table"
@@ -51,6 +52,7 @@ export function OperationsRouteContent({
     return (
       <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3">
         <LiveStream data={data} environment={environment} mutationsEnabled={recoveryEnabled} referenceTime={referenceTime} />
+        <DurableIngestionStatus durability={data.durability} />
         <CollectionTable
           metricRollups={data.metricRollups ?? []}
           refreshedAt={metricsGeneratedAt}
@@ -127,6 +129,7 @@ export function OperationsRouteContent({
       <CapabilityStatus overview={data} />
       <EvidenceInventory overview={data} referenceTime={referenceTime} />
       <LiveStream data={data} environment={environment} mutationsEnabled={recoveryEnabled} referenceTime={referenceTime} />
+      <DurableIngestionStatus durability={data.durability} />
       <CollectionTable
         metricRollups={data.metricRollups ?? []}
         refreshedAt={metricsGeneratedAt}

@@ -14,18 +14,13 @@ import { createIndexedDbQueryPersister } from "@/lib/indexedDbQueryPersister";
 import type { PublicationSidebarProjection } from "@/lib/publicationProjectionClient";
 import { shouldPersistSidebarProjection } from "@/lib/sidebarProjectionPersist";
 
-/** IndexedDB key for dehydrated React Query cache (discovery + bounded entry lists). */
+/** IndexedDB key for dehydrated React Query cache (sidebar + bounded entry lists). */
 const QUERY_PERSIST_KEY = "the-social-wire.react-query.v2";
 
 /** Drop persisted payload older than this (ms). */
 const QUERY_PERSIST_MAX_AGE_MS = 1000 * 60 * 60 * 24 * 7; // 7 days
 
 type EntryListPage = { entries: unknown[]; cursor?: string };
-
-function shouldPersistDiscoveryQuery(query: Query): boolean {
-  const key = query.queryKey;
-  return Array.isArray(key) && key[0] === "discovery";
-}
 
 /** Persist successful viewer-scoped feed pages only when they remain bounded. */
 function shouldPersistEntriesQuery(query: Query): boolean {
@@ -58,7 +53,6 @@ function shouldPersistSidebarProjectionQuery(query: Query): boolean {
 
 function shouldDehydrateQuery(query: Query): boolean {
   return (
-    shouldPersistDiscoveryQuery(query) ||
     shouldPersistEntriesQuery(query) ||
     shouldPersistSidebarProjectionQuery(query)
   );

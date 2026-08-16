@@ -4,25 +4,32 @@ meta {
   seq: 34
 }
 
-put {
-  url: {{baseUrl}}/v1/publications/folders/{{folderRkey}}
+post {
+  url: {{pdsUrl}}/xrpc/com.atproto.repo.putRecord
   body: json
   auth: none
 }
 
 headers {
-  Authorization: Bearer {{oauthAccessToken}}
-  DPoP: {{dpopProof}}
+  Authorization: DPoP {{oauthAccessToken}}
+  DPoP: {{pdsDpopProof}}
   Content-Type: application/json
 }
 
 body:json {
   {
-    "name": "Renamed Folder",
-    "sortOrder": 1
+    "repo": "{{userDid}}",
+    "collection": "app.thesocialwire.folder",
+    "rkey": "{{folderRkey}}",
+    "record": {
+      "$type": "app.thesocialwire.folder",
+      "name": "Renamed Folder",
+      "sortOrder": 1,
+      "createdAt": "{{recordCreatedAt}}"
+    }
   }
 }
 
 docs {
-  Updates an existing folder record on the viewer PDS.
+  Replaces an existing folder record directly on the viewer PDS with standard XRPC.
 }

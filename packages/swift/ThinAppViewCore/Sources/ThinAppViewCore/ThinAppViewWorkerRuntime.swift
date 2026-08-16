@@ -17,6 +17,11 @@ public enum ThinAppViewWorkerRuntime {
     operationsConfig: OperationsConfiguration? = nil,
     tapConfiguration: TapConsumerConfiguration? = nil
   ) async throws {
+    if config.jetstreamMode == .v2Authoritative,
+      tapConfiguration?.mode == .authoritative
+    {
+      throw ThinAppViewWorkerRuntimeError.conflictingIngestionAuthorities
+    }
     let indexer = ThinAppViewIndexer(
       store: store,
       config: config,
@@ -74,12 +79,71 @@ public enum ThinAppViewWorkerRuntime {
       telemetry: telemetry,
       logger: logger
     )
+    let repositoryRestorer: (any TapRepositoryRestorer)? = enrollmentBackfill.map {
+      TapPDSRepositoryRestorer(
+        store: store,
+        backfill: $0,
+        projectionCache: projectionCache,
+        maxConcurrency: config.maxEnrollConcurrency,
+        rateLimitPerSecond: max(1, config.maxEnrollConcurrency * 10)
+      )
+    }
+    let inboxWorker: JetstreamInboxProjectionWorker? = if config.jetstreamMode.drainsV2Inbox {
+      JetstreamInboxProjectionWorker(
+        store: store,
+        indexers: (0..<config.ingestionInboxMaxConcurrency).map { _ in
+          ThinAppViewIndexer(
+            store: store,
+            config: config,
+            logger: logger,
+            httpClient: httpClient,
+            plcURL: plcURL,
+            rssIngestion: httpClient.map {
+              ThinAppViewRssIngestion(
+                store: store,
+                httpClient: $0,
+                config: config,
+                logger: logger,
+                projectionCache: projectionCache
+              )
+            },
+            projectionCache: projectionCache
+          )
+        },
+        repositoryRestorer: repositoryRestorer,
+        environment: operationsConfig?.environment ?? "unknown",
+        sourceGeneration: config.jetstreamV2SourceGeneration,
+        workerId: operationsConfig?.instanceId ?? "appview-worker",
+        maxConcurrency: config.ingestionInboxMaxConcurrency,
+        leaseSeconds: config.ingestionInboxLeaseSeconds,
+        pollMilliseconds: config.ingestionInboxPollMilliseconds,
+        appliedRetentionSeconds: config.ingestionInboxAppliedRetentionSeconds,
+        deadLetterRetentionSeconds: config.ingestionInboxDeadLetterRetentionSeconds,
+        logger: logger
+      )
+    } else {
+      nil
+    }
 
-    logger.info("Starting Charybdis")
+    logger.info(
+      "Starting Charybdis",
+      metadata: ["jetstream_mode": .string(config.jetstreamMode.rawValue)]
+    )
 
     try await withThrowingTaskGroup(of: Void.self) { group in
-      if tapConfiguration?.mode != .authoritative {
-        group.addTask { await firehose.runForever() }
+      if tapConfiguration?.mode != .authoritative, config.jetstreamMode.runsLegacySubscriber {
+        group.addTask {
+          await LegacyJetstreamAuthorityLease.runForever(
+            store: operationsStore,
+            ownerID: operationsConfig?.instanceId ?? "appview-worker",
+            logger: logger
+          ) { lease in
+            await firehose.runForever(authorityLease: lease)
+          }
+        }
+      }
+      if let inboxWorker {
+        group.addTask { await inboxWorker.runForever() }
       }
       group.addTask { await cleanup.runForever() }
       if tapConfiguration?.mode != .disabled {
@@ -92,14 +156,7 @@ public enum ThinAppViewWorkerRuntime {
           store: store,
           indexer: indexer,
           configuration: tapConfiguration,
-          repositoryRestorer: enrollmentBackfill.map {
-            TapPDSRepositoryRestorer(
-              store: store,
-              backfill: $0,
-              maxConcurrency: config.maxEnrollConcurrency,
-              rateLimitPerSecond: max(1, config.maxEnrollConcurrency * 10)
-            )
-          },
+          repositoryRestorer: repositoryRestorer,
           operationsStore: operationsStore,
           telemetry: telemetry,
           instanceId: operationsConfig?.instanceId ?? "unknown",
@@ -118,7 +175,7 @@ public enum ThinAppViewWorkerRuntime {
       }
 
       if let backfill = enrollmentBackfill {
-        if config.proactiveBackfillEnabled {
+        if config.proactiveBackfillEnabled && config.jetstreamMode.runsLegacyProactiveBackfill {
           let proactive = ThinAppViewProactiveBackfillJob(
             store: store,
             backfill: backfill,
@@ -127,6 +184,10 @@ public enum ThinAppViewWorkerRuntime {
             extraAuthorDids: proactiveExtraAuthorDids
           )
           group.addTask { await proactive.runForever() }
+        } else if config.proactiveBackfillEnabled {
+          logger.info(
+            "Suppressing legacy proactive AppView backfill under durable Jetstream V2 authority"
+          )
         }
 
         if let operationsStore, let operationsConfig, operationsConfig.recoveryEnabled {
@@ -148,7 +209,9 @@ public enum ThinAppViewWorkerRuntime {
           operationsStore: operationsStore,
           operationsConfig: operationsConfig,
           tapConfiguration: tapConfiguration,
-          pdsReconciliationAvailable: enrollmentBackfill != nil
+          pdsReconciliationAvailable: enrollmentBackfill != nil,
+          jetstreamMode: config.jetstreamMode,
+          jetstreamV2SourceGeneration: config.jetstreamV2SourceGeneration
         )
         let heartbeat = OperationsHeartbeatJob(
           store: operationsStore,
@@ -189,7 +252,9 @@ public enum ThinAppViewWorkerRuntime {
     operationsStore: any OperationsStore,
     operationsConfig: OperationsConfiguration,
     tapConfiguration: TapConsumerConfiguration?,
-    pdsReconciliationAvailable: Bool
+    pdsReconciliationAvailable: Bool,
+    jetstreamMode: ThinAppViewJetstreamMode = .v1Authoritative,
+    jetstreamV2SourceGeneration: String = "jetstream-v2-us-west-v1"
   ) -> OperationsServiceDependencyProbe {
     {
       try await store.ping()
@@ -203,6 +268,15 @@ public enum ThinAppViewWorkerRuntime {
         try await operationsStore.fetchStreamState(source: "tap"),
         at: now
       )
+      let durability = try await operationsStore.fetchIngestionDurabilitySnapshot(at: now)
+      let durableCheckpoint = durability.checkpoints.first {
+        $0.sourceGeneration == jetstreamV2SourceGeneration
+      }
+      let durableTransport = Self.durableTransportEvidence(durableCheckpoint, at: now)
+      let durableProjection = Self.durableProjectionHealthEvidence(
+        durability,
+        checkpoint: durableCheckpoint
+      )
       let projectionBacklog = try await store.projectionRepairBacklog(
         environment: operationsConfig.environment,
         at: now
@@ -215,12 +289,27 @@ public enum ThinAppViewWorkerRuntime {
       )
       // Jetstream remains the indexing authority throughout shadow mode. Tap health must be
       // published independently, but a healthy shadow may not conceal a dead authority stream.
-      let authoritySource = tapMode == .authoritative ? "tap" : "jetstream"
-      let authority = tapMode == .authoritative ? tap : jetstream
+      let authoritySource: String
+      let authority: TransportEvidence
+      if tapMode == .authoritative {
+        authoritySource = "tap"
+        authority = tap
+      } else if jetstreamMode == .v2Authoritative {
+        authoritySource = "jetstream_v2_inbox"
+        authority = durableTransport
+      } else {
+        authoritySource = "jetstream"
+        authority = jetstream
+      }
 
-      let jetstreamReplay = operationsConfig.recoveryEnabled
-        ? "enabled_unverified"
-        : "disabled_by_release_gate"
+      let jetstreamReplay: String
+      switch jetstreamMode {
+      case .v2Authoritative: jetstreamReplay = "enabled_durable_v2"
+      case .v2Shadow: jetstreamReplay = "shadow_staging"
+      case .v1Authoritative:
+        jetstreamReplay = operationsConfig.recoveryEnabled
+          ? "enabled_unverified" : "disabled_by_release_gate"
+      }
       let pdsReconciliation = operationsConfig.recoveryEnabled && pdsReconciliationAvailable
         ? "enabled_diagnostic_only"
         : "disabled"
@@ -236,8 +325,10 @@ public enum ThinAppViewWorkerRuntime {
       return OperationsServiceProbeResult(
         liveness: authority.health,
         readiness: authority.health,
-        freshness: projectionEvidence.freshness,
-        completeness: projectionEvidence.completeness,
+        freshness: jetstreamMode == .v2Authoritative
+          ? durableProjection.freshness : projectionEvidence.freshness,
+        completeness: jetstreamMode == .v2Authoritative
+          ? durableProjection.completeness : projectionEvidence.completeness,
         dependencyState: [
           "appview_database": "ready",
           "ingestion_transport": authority.dependency,
@@ -252,6 +343,10 @@ public enum ThinAppViewWorkerRuntime {
           "tap_validation_support": validationSupport,
           "tap_verified_resync": "unsupported",
           "jetstream_replay": jetstreamReplay,
+          "jetstream_v2_source_generation": jetstreamV2SourceGeneration,
+          "jetstream_v2_inbox_pending": String(durability.inbox.pending),
+          "jetstream_v2_inbox_retrying": String(durability.inbox.retrying),
+          "jetstream_v2_dead_letters": String(durability.inbox.deadLetters),
           "pds_reconciliation": pdsReconciliation,
         ].merging(projectionEvidence.metadata) { _, projectionValue in projectionValue },
         requiredDependencyKeys: ["appview_database", "ingestion_transport"],
@@ -405,6 +500,71 @@ public enum ThinAppViewWorkerRuntime {
     }
     return TransportEvidence(health: .healthy, dependency: "ready", heartbeatAt: heartbeatAt)
   }
+
+  private static func durableTransportEvidence(
+    _ checkpoint: JetstreamDurabilityCheckpoint?,
+    at now: Date
+  ) -> TransportEvidence {
+    guard let checkpoint, checkpoint.cursorKind == .jetstreamV2Sequence else {
+      return TransportEvidence(health: .unknown, dependency: "missing", heartbeatAt: nil)
+    }
+    let age = now.timeIntervalSince(checkpoint.updatedAt)
+    guard age >= 0, age <= 30 else {
+      return TransportEvidence(
+        health: .unknown,
+        dependency: "expired",
+        heartbeatAt: checkpoint.updatedAt
+      )
+    }
+    guard checkpoint.replayState != .failed else {
+      return TransportEvidence(
+        health: .unhealthy,
+        dependency: "replay_failed",
+        heartbeatAt: checkpoint.updatedAt
+      )
+    }
+    return TransportEvidence(
+      health: checkpoint.replayState == .pausedBudget ? .degraded : .healthy,
+      dependency: checkpoint.replayState == .pausedBudget ? "paused_budget" : "ready",
+      heartbeatAt: checkpoint.updatedAt
+    )
+  }
+
+  private static func durableProjectionHealthEvidence(
+    _ snapshot: IngestionDurabilitySnapshot,
+    checkpoint: JetstreamDurabilityCheckpoint?
+  ) -> ProjectionRepairHealthEvidence {
+    guard checkpoint != nil else {
+      return ProjectionRepairHealthEvidence(
+        freshness: .unknown,
+        completeness: .unknown,
+        metadata: ["durable_ingestion": "missing_checkpoint"]
+      )
+    }
+    let oldestAge = snapshot.inbox.oldestPendingAgeSeconds
+    let freshness: OperationsHealthState
+    if let oldestAge, oldestAge > 15 * 60 {
+      freshness = .unhealthy
+    } else if let oldestAge, oldestAge > 60 {
+      freshness = .degraded
+    } else {
+      freshness = .healthy
+    }
+    let completeness: OperationsHealthState = snapshot.inbox.deadLetters > 0
+      ? .unhealthy : .healthy
+    return ProjectionRepairHealthEvidence(
+      freshness: freshness,
+      completeness: completeness,
+      metadata: [
+        "durable_ingestion": "ready",
+        "durable_inbox_oldest_pending_age_seconds": oldestAge.map { String($0) } ?? "none",
+      ]
+    )
+  }
+}
+
+public enum ThinAppViewWorkerRuntimeError: Error, Sendable, Equatable {
+  case conflictingIngestionAuthorities
 }
 
 struct ProjectionRepairHealthEvidence: Sendable {

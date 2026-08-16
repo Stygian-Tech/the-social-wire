@@ -21,18 +21,6 @@ struct RequestTraceMiddlewareTests {
         == "/v1/operations/gaps/:id/investigation"
     )
     #expect(
-      RequestTraceMiddleware.routeTemplate("/v1/publications/folders/3kexample")
-        == "/v1/publications/folders/:rkey"
-    )
-    #expect(
-      RequestTraceMiddleware.routeTemplate("/v1/publications/subscriptions/3kexample")
-        == "/v1/publications/subscriptions/:rkey"
-    )
-    #expect(
-      RequestTraceMiddleware.routeTemplate("/v1/publications/rss-subscriptions/3kexample")
-        == "/v1/publications/rss-subscriptions/:rkey"
-    )
-    #expect(
       RequestTraceMiddleware.routeTemplate("/v1/latr/saves/3kexample/state")
         == "/v1/latr/saves/:rkey/state"
     )

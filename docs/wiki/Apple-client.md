@@ -39,20 +39,19 @@ Full setup: [apps/apple/README.md](https://github.com/Stygian-Tech/the-social-wi
 
 ## Gateway usage
 
-The current checkout migrates eligible JSON queries and procedures to
-Lexicon-defined `/xrpc/app.thesocialwire.*` methods. Those aliases are not yet
-registered on the public gateways as of 2026-08-12; the table therefore names
-the current hosted `/v1/*` and HTTP-only stream/cache surfaces.
+Eligible JSON queries and procedures use Lexicon-defined
+`/xrpc/app.thesocialwire.*` methods. Streaming and cached-record adapters stay
+HTTP, while user-owned publication records use standard XRPC directly on the
+viewer PDS.
 
-| Route | Purpose |
+| Surface | Purpose |
 |-------|---------|
 | `GET /v1/appview/bootstrap-stream` | Progressive initial reader load |
-| `GET /v1/publications/sidebar` | Sidebar projection outside bootstrap |
-| `GET /v1/sync/preferences` | Account preferences envelope |
 | `GET /v1/pds/cache/record` | Cached single-record reads |
-| `/v1/appview/feed`, `/entries`, `/entry` | Aggregate/scoped lists and flat entry detail |
-| Other `/v1/appview/*` | Counts, read marks, enrollment, mark-all-read, purge |
-| `/v1/publications/*` | Resolve plus folder/subscription PDS write-through |
+| `/xrpc/app.thesocialwire.appview.*` | Entry APIs, counts, read marks, enrollment, mark-all-read, and purge |
+| `/xrpc/app.thesocialwire.publication.*` | Sidebar projection, refresh, and resolve |
+| `/xrpc/app.thesocialwire.sync.getPreferences` | Account preferences envelope |
+| Viewer PDS `com.atproto.repo.*` | Folders, publication preferences, and subscriptions |
 | `/v1/latr/*` | L@tr list/save proxy; archive/unarchive/delete use direct viewer-PDS writes in the current app model |
 
 The reader uses AppView for normal entry lists and detail. It does not fall back to an author-PDS body read during normal navigation. Current read state is AppView-backed with a local SwiftData cache; the client does not create `app.thesocialwire.entryReadState` PDS records.
@@ -80,6 +79,6 @@ xcodebuild test \
   -destination 'platform=iOS Simulator,name=iPhone 16'
 ```
 
-Xcode Cloud and macOS GitHub Actions are not configured. See the [Apple test plan](https://github.com/Stygian-Tech/the-social-wire/blob/main/docs/test-plans/apple.md).
+GitHub Actions runs the app's Swift Testing suite with code coverage on a macOS iOS Simulator. See the [Apple test plan](https://github.com/Stygian-Tech/the-social-wire/blob/main/docs/test-plans/apple.md).
 
 Related: [[Getting-started]], [[Reading-and-organizing]], [[Account-settings-and-privacy]], [[Service-API]].

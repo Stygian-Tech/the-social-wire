@@ -11,7 +11,8 @@ Generated `*.up.railway.app` domains are deployment diagnostics. OAuth client ID
 
 ## Deployed services
 
-Railway config-as-code files under `railway/` define seven application services:
+Railway config-as-code files under `railway/` define seven long-running
+application services and one migration job:
 
 | Service | Config |
 |---------|--------|
@@ -21,13 +22,24 @@ Railway config-as-code files under `railway/` define seven application services:
 | AppView | `railway/appview.json` |
 | Charybdis | `railway/charybdis.json` |
 | Operations | `railway/operations.json` |
-| Tap | `railway/tap.json` |
+| Jetstream V2 Ingest | `railway/jetstream-ingest.json` |
+| Database Migrator | `railway/database-migrator.json` |
 
-Railway Postgres is the canonical hosted database. Gateway's pre-deploy command applies the provider-neutral migration history before startup. GitHub Actions never deploys services or mutates hosted databases.
+Railway Postgres is the canonical hosted database. Database Migrator applies
+the provider-neutral migration history; database consumers reference its
+service ID so Railway orders their startup behind successful migration. GitHub
+Actions never deploys services or mutates hosted databases.
+
+The repository-owned Tap deployment was retired on 2026-08-16. Removing a
+pre-existing hosted service or secret remains a separate, environment-scoped
+operator action and is not performed by the source change.
 
 ## Internal networking and regions
 
-Gateway, AppView, Charybdis, Operations, Tap, and their databases communicate over Railway private networking. Database-bound compute and its Postgres service must remain co-located in the same US West region. The hosted data-residency scope is the United States.
+Gateway, AppView, Charybdis, Jetstream V2 Ingest, Operations, Database Migrator,
+and their databases communicate over Railway private networking. Database-bound
+compute and its Postgres service must remain co-located in the same US West
+region. The hosted data-residency scope is the United States.
 
 ## Redis rollout status
 

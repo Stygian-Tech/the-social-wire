@@ -4,15 +4,20 @@ meta {
   seq: 27
 }
 
-delete {
-  url: {{baseUrl}}/v1/appview/privacy/purge
-  body: none
+post {
+  url: {{baseUrl}}/xrpc/app.thesocialwire.appview.purgeViewerData
+  body: json
   auth: none
 }
 
 headers {
   Authorization: Bearer {{oauthAccessToken}}
   DPoP: {{dpopProof}}
+  Content-Type: application/json
+}
+
+body:json {
+  {}
 }
 
 docs {

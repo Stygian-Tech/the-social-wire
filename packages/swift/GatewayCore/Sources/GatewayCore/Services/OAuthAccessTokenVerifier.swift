@@ -21,8 +21,7 @@ private actor JWKSVerificationCache {
   /// JWKS content can rotate; a shorter TTL keeps rotation windows reasonable while still
   /// collapsing bursts onto a single upstream fetch.
   private let jwksContentTTL: TimeInterval = 300
-  /// Guessed JWKS endpoints that don't exist for a given issuer (404) won't start existing
-  /// moments later; a short negative TTL still collapses request bursts onto one failed probe
+  /// Discovered JWKS endpoints that fail briefly are negatively cached to collapse request bursts
   /// instead of one failed probe per request, without masking a real fix for very long.
   private let negativeContentTTL: TimeInterval = 60
 
@@ -94,6 +93,8 @@ public enum OAuthAccessTokenVerifier {
   enum VerifyError: Error {
     case missingIssuerClaim
     case unsupportedIssuerForm
+    case issuerSubjectMismatch
+    case unsafeRemoteURL
     case jwksFetch(Int?)
     case jwksMissing
     case jwksEmpty(String)
@@ -118,6 +119,27 @@ public enum OAuthAccessTokenVerifier {
     guard let issuerClaim = payload.iss?.value, !issuerClaim.isEmpty else {
       throw VerifyError.missingIssuerClaim
     }
+    guard
+      issuerClaim.hasPrefix("http://") || issuerClaim.hasPrefix("https://") || issuerClaim.hasPrefix("did:")
+    else {
+      throw VerifyError.unsupportedIssuerForm
+    }
+
+    var probeError: Error = VerifyError.signatureRejected
+    let supplementalTargets = supplementalJwksTargets(from: supplementalJwksJSON)
+
+    for target in supplementalTargets {
+      guard case .inline(let json, let source) = target else { continue }
+      if let verified = try await verifyAgainstJWKSJSON(
+        accessTokenJWT: accessTokenJWT,
+        jwksJSON: json,
+        source: source,
+        logger: logger,
+        probeError: &probeError
+      ) {
+        return verified
+      }
+    }
 
     let discoveryKey = "\(issuerClaim)#\(payload.sub.value)"
     let discoveredTargets: [JwksTarget]
@@ -132,15 +154,24 @@ public enum OAuthAccessTokenVerifier {
       )
       guard !baseCandidates.isEmpty else { throw VerifyError.unsupportedIssuerForm }
 
-      let collected = try await collectJwksURLs(httpClient: httpClient, issuerBases: baseCandidates)
+      let collected = try await collectJwksURLs(
+        httpClient: httpClient,
+        issuerBases: baseCandidates,
+        expectedIssuer: issuerClaim
+      )
       if !collected.isEmpty {
         await JWKSVerificationCache.shared.storeTargets(collected, forKey: discoveryKey)
       }
       discoveredTargets = collected
     }
 
-    let jwksTargets = supplementalJwksTargets(from: supplementalJwksJSON) + discoveredTargets
-    guard !jwksTargets.isEmpty else { throw VerifyError.noJwksCandidates }
+    let jwksTargets = discoveredTargets
+    guard !jwksTargets.isEmpty else {
+      if supplementalTargets.isEmpty {
+        throw VerifyError.noJwksCandidates
+      }
+      throw probeError
+    }
 
     logger.debug(
       "JWKS probing order",
@@ -149,8 +180,6 @@ public enum OAuthAccessTokenVerifier {
         "jwks": .string(jwksTargets.map(\.logLabel).joined(separator: " | ")),
       ]
     )
-
-    var probeError: Error = VerifyError.signatureRejected
 
     for target in jwksTargets {
       switch target {
@@ -180,60 +209,6 @@ public enum OAuthAccessTokenVerifier {
     }
 
     throw probeError
-  }
-
-  /// First-party gateway fallback when issuer JWKS omits access-token signing keys.
-  /// Validates DPoP binding plus structural JWT claims (`exp`, `sub`, optional `cnf.jkt`) without signature verification.
-  static func verifyDpopBoundStructural(
-    accessTokenJWT: String,
-    request: Request,
-    dpopProof: String,
-    logger: Logger
-  ) async throws -> VerifiedAccessToken {
-    let unverifiedColl = JWTKeyCollection()
-    let payload: AccessClaims = try await unverifiedColl.unverified(accessTokenJWT, as: AccessClaims.self)
-
-    try payload.exp.verifyNotExpired()
-
-    let subject = payload.sub.value.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard subject.hasPrefix("did:") else {
-      throw HTTPError(.unauthorized, message: "`sub` must be an ATProto DID")
-    }
-
-    let rawJkt = payload.cnf?.jkt?.trimmingCharacters(in: .whitespacesAndNewlines)
-    let cnfJkt = (rawJkt?.isEmpty == false) ? rawJkt : nil
-    let extra = extractRegisteredClientSignals(fromJWT: accessTokenJWT)
-
-    do {
-      try DPoPProofVerifier.verify(
-        proofJWT: dpopProof,
-        request: request,
-        accessTokenJWT: accessTokenJWT,
-        accessTokenCnFJkt: cnfJkt
-      )
-    } catch {
-      logger.warning(
-        "DPoP verification failed during structural fallback",
-        metadata: ["error": .string("\(error)")]
-      )
-      throw error
-    }
-
-    logger.info(
-      "Accepted DPoP-bound structural access token fallback",
-      metadata: [
-        "did": .string(subject),
-        "issuer": .string(payload.iss?.value ?? "<missing>"),
-      ]
-    )
-
-    return VerifiedAccessToken(
-      did: subject,
-      cnfJkt: cnfJkt,
-      clientIdClaim: extra.clientId,
-      azpClaim: extra.azp,
-      audiences: extra.audiences
-    )
   }
 
   fileprivate enum JwksTarget: Sendable {
@@ -266,7 +241,10 @@ public enum OAuthAccessTokenVerifier {
     logger: Logger,
     probeError: inout Error
   ) async throws -> VerifiedAccessToken? {
-    guard URL(string: url) != nil else { return nil }
+    guard isAllowedRemoteURL(url) else {
+      probeError = VerifyError.unsafeRemoteURL
+      return nil
+    }
 
     if let cachedJSON = await JWKSVerificationCache.shared.cachedContent(forURL: url) {
       if let verified = try await verifyAgainstJWKSJSON(
@@ -372,28 +350,32 @@ public enum OAuthAccessTokenVerifier {
     plcURL: String,
     httpClient: HTTPClient
   ) async throws -> [String] {
-    guard
-      issuerClaim.hasPrefix("http://") || issuerClaim.hasPrefix("https://") || issuerClaim.hasPrefix("did:")
-    else {
+    guard subjectDid.hasPrefix("did:") else { throw VerifyError.issuerSubjectMismatch }
+    guard let subjectAuthorities = try await issuerBasesFromDid(
+      did: subjectDid,
+      plcURL: plcURL,
+      httpClient: httpClient
+    ) else {
+      throw VerifyError.issuerSubjectMismatch
+    }
+    return try trustedIssuerBases(
+      issuerClaim: issuerClaim,
+      subjectAuthorities: subjectAuthorities
+    )
+  }
+
+  static func trustedIssuerBases(
+    issuerClaim: String,
+    subjectAuthorities: [String]
+  ) throws -> [String] {
+    guard let normalizedIssuer = normalizedRemoteBase(issuerClaim) else {
       throw VerifyError.unsupportedIssuerForm
     }
-
-    var bases: [String] = []
-
-    if issuerClaim.hasPrefix("http://") || issuerClaim.hasPrefix("https://") {
-      bases.append(contentsOf: issuerBaseVariants(for: issuerClaim))
-    } else if issuerClaim.hasPrefix("did:"),
-              let didBases = try await issuerBasesFromDid(did: issuerClaim, plcURL: plcURL, httpClient: httpClient) {
-      bases.append(contentsOf: didBases)
+    let trusted = subjectAuthorities.compactMap(normalizedRemoteBase)
+    guard trusted.contains(normalizedIssuer) else {
+      throw VerifyError.issuerSubjectMismatch
     }
-
-    if subjectDid.hasPrefix("did:") {
-      if let pdsBases = try await issuerBasesFromDid(did: subjectDid, plcURL: plcURL, httpClient: httpClient) {
-        bases.append(contentsOf: pdsBases)
-      }
-    }
-
-    return bases.uniqueStable()
+    return [normalizedIssuer]
   }
 
   private static func jwksKeyCount(in json: String) -> Int {
@@ -471,7 +453,8 @@ public enum OAuthAccessTokenVerifier {
 
   private static func collectJwksURLs(
     httpClient: HTTPClient,
-    issuerBases: [String]
+    issuerBases: [String],
+    expectedIssuer: String
   ) async throws -> [JwksTarget] {
     var accumulator: [JwksTarget] = []
 
@@ -492,7 +475,9 @@ public enum OAuthAccessTokenVerifier {
 
         let blob = try await response.body.collect(upTo: 64 * 1024)
         guard
-          let decoded = try? JSONSerialization.jsonObject(with: Data(buffer: blob)) as? [String: Any]
+          let decoded = try? JSONSerialization.jsonObject(with: Data(buffer: blob)) as? [String: Any],
+          let metadataIssuer = decoded["issuer"] as? String,
+          normalizedRemoteBase(metadataIssuer) == normalizedRemoteBase(expectedIssuer)
         else {
           continue
         }
@@ -508,13 +493,13 @@ public enum OAuthAccessTokenVerifier {
 
         if let jwks = decoded["jwks_uri"] as? String {
           let normalizedJWKSURI = normalizeRelativeJWKSURI(jwks, bases: issuerBases)
+          guard isAllowedRemoteURL(normalizedJWKSURI, sameOriginAs: expectedIssuer) else {
+            continue
+          }
           accumulator.append(.remote(normalizedJWKSURI))
           continue outer
         }
       }
-
-      accumulator.append(.remote(sanitizedBase + "/jwt/jwks"))
-      accumulator.append(.remote(sanitizedBase + "/oauth/jwks"))
     }
 
     return dedupeJwksTargets(accumulator)
@@ -563,14 +548,16 @@ public enum OAuthAccessTokenVerifier {
 
     var bases: [String] = []
 
-    if let resolvedPdsEndpoint = ATProtoPdsResolution.parsePdsEndpointFromPlcDoc(plcDocument) {
-      bases.append(contentsOf: issuerBaseVariants(for: resolvedPdsEndpoint))
+    if let rawPdsEndpoint = ATProtoPdsResolution.parsePdsEndpointFromPlcDoc(plcDocument),
+      let resolvedPdsEndpoint = normalizedRemoteBase(rawPdsEndpoint)
+    {
+      bases.append(resolvedPdsEndpoint)
       if let authServers = try await authorizationServersFromProtectedResource(
         pdsBase: resolvedPdsEndpoint,
         httpClient: httpClient
       ) {
         for server in authServers {
-          bases.append(contentsOf: issuerBaseVariants(for: server))
+          if let normalized = normalizedRemoteBase(server) { bases.append(normalized) }
         }
       }
     }
@@ -579,7 +566,7 @@ public enum OAuthAccessTokenVerifier {
       for service in services {
         guard let endpoint = service["serviceEndpoint"] as? String else { continue }
         let cleaned = endpoint.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard cleaned.hasPrefix("https://") else { continue }
+        guard let normalized = normalizedRemoteBase(cleaned) else { continue }
 
         let lexicalType = ((service["type"] as? String) ?? "").lowercased()
 
@@ -590,7 +577,7 @@ public enum OAuthAccessTokenVerifier {
         else {
           continue
         }
-        bases.append(contentsOf: issuerBaseVariants(for: cleaned))
+        bases.append(normalized)
       }
     }
 
@@ -620,9 +607,7 @@ public enum OAuthAccessTokenVerifier {
       return nil
     }
 
-    let cleaned = servers
-      .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-      .filter { $0.hasPrefix("https://") || $0.hasPrefix("http://") }
+    let cleaned = servers.compactMap(normalizedRemoteBase)
     return cleaned.isEmpty ? nil : cleaned.uniqueStable()
   }
 
@@ -681,37 +666,68 @@ public enum OAuthAccessTokenVerifier {
     return String(working)
   }
 
-  /// Produces progressively shorter HTTPS prefixes usable for probing `/.well-known/...`.
-  private static func issuerBaseVariants(for issuer: String) -> [String] {
-    guard var components = URLComponents(string: issuer) else { return [] }
+  static func isAllowedRemoteURL(_ raw: String, sameOriginAs trustedOrigin: String? = nil) -> Bool {
+    guard let normalized = normalizedRemoteBase(raw),
+      let candidate = URLComponents(string: normalized)
+    else { return false }
+    guard let trustedOrigin else { return true }
+    guard let trusted = normalizedRemoteBase(trustedOrigin).flatMap(URLComponents.init(string:))
+    else { return false }
+    return candidate.scheme == trusted.scheme
+      && candidate.host == trusted.host
+      && effectivePort(candidate) == effectivePort(trusted)
+  }
+
+  private static func normalizedRemoteBase(_ raw: String) -> String? {
+    let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard var components = URLComponents(string: trimmed),
+      components.scheme?.lowercased() == "https",
+      let rawHost = components.host?.lowercased(),
+      components.user == nil,
+      components.password == nil,
+      components.fragment == nil
+    else { return nil }
+
+    let host = rawHost.hasSuffix(".") ? String(rawHost.dropLast()) : rawHost
+    guard isPublicHostname(host) else { return nil }
+    components.scheme = "https"
+    components.host = host
     components.query = nil
-    components.fragment = nil
-
-    var segments = components.path.split(separator: "/").filter { !$0.isEmpty }.map(String.init)
-
-    guard !segments.isEmpty else {
-      guard let url = components.url else { return [] }
-      return [stripTrailingSlash(url.absoluteString)]
+    if components.path == "/" { components.path = "" }
+    while components.path.count > 1, components.path.hasSuffix("/") {
+      components.path.removeLast()
     }
+    return components.url?.absoluteString
+  }
 
-    var flattened: [String] = []
+  private static func effectivePort(_ components: URLComponents) -> Int {
+    components.port ?? 443
+  }
 
-    while !segments.isEmpty {
-      components.path = "/" + segments.joined(separator: "/")
-
-      if let absolute = components.url?.absoluteString {
-        flattened.append(stripTrailingSlash(absolute))
-      }
-
-      segments.removeLast()
+  private static func isPublicHostname(_ host: String) -> Bool {
+    guard host.contains("."), host.count <= 253, !isIPLiteral(host) else { return false }
+    let blockedExact = ["localhost", "example.com", "example.net", "example.org"]
+    guard !blockedExact.contains(host) else { return false }
+    let blockedSuffixes = [
+      ".alt", ".arpa", ".example", ".home.arpa", ".internal", ".invalid", ".local",
+      ".localdomain", ".localhost", ".onion", ".test",
+    ]
+    guard !blockedSuffixes.contains(where: host.hasSuffix) else { return false }
+    let labels = host.split(separator: ".", omittingEmptySubsequences: false)
+    return labels.count >= 2 && labels.allSatisfy { label in
+      !label.isEmpty && label.count <= 63 && label.first != "-" && label.last != "-"
+        && label.utf8.allSatisfy {
+          ($0 >= 48 && $0 <= 57) || ($0 >= 97 && $0 <= 122) || $0 == 45
+        }
     }
+  }
 
-    components.path = ""
-    if let rootAbsolute = components.url?.absoluteString {
-      flattened.append(stripTrailingSlash(rootAbsolute))
+  private static func isIPLiteral(_ host: String) -> Bool {
+    if host.contains(":") { return true }
+    let parts = host.split(separator: ".", omittingEmptySubsequences: false)
+    return parts.count == 4 && parts.allSatisfy { part in
+      !part.isEmpty && part.allSatisfy(\.isNumber) && UInt8(part) != nil
     }
-
-    return flattened.uniqueStable()
   }
 
   private static func stripTrailingSlash(_ value: String) -> String {

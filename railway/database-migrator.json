@@ -1,0 +1,16 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "build": {
+    "builder": "DOCKERFILE",
+    "dockerfilePath": "/services/database-migrator/Dockerfile",
+    "watchPatterns": [
+      "/database/migrations/**",
+      "/scripts/apply-database-migrations.sh",
+      "/services/database-migrator/**",
+      "/railway/database-migrator.json"
+    ]
+  },
+  "deploy": {
+    "restartPolicyType": "NEVER"
+  }
+}

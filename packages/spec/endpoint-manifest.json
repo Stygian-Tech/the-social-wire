@@ -92,54 +92,6 @@
     },
     {
       "surface": "openapi",
-      "method": "POST",
-      "path": "/v1/publications/folders",
-      "classification": "atproto-repo-compatibility"
-    },
-    {
-      "surface": "openapi",
-      "method": "PUT",
-      "path": "/v1/publications/folders/{rkey}",
-      "classification": "atproto-repo-compatibility"
-    },
-    {
-      "surface": "openapi",
-      "method": "DELETE",
-      "path": "/v1/publications/folders/{rkey}",
-      "classification": "atproto-repo-compatibility"
-    },
-    {
-      "surface": "openapi",
-      "method": "PUT",
-      "path": "/v1/publications/prefs",
-      "classification": "atproto-repo-compatibility"
-    },
-    {
-      "surface": "openapi",
-      "method": "POST",
-      "path": "/v1/publications/subscriptions",
-      "classification": "atproto-repo-compatibility"
-    },
-    {
-      "surface": "openapi",
-      "method": "DELETE",
-      "path": "/v1/publications/subscriptions/{rkey}",
-      "classification": "atproto-repo-compatibility"
-    },
-    {
-      "surface": "openapi",
-      "method": "POST",
-      "path": "/v1/publications/rss-subscriptions",
-      "classification": "atproto-repo-compatibility"
-    },
-    {
-      "surface": "openapi",
-      "method": "DELETE",
-      "path": "/v1/publications/rss-subscriptions/{rkey}",
-      "classification": "atproto-repo-compatibility"
-    },
-    {
-      "surface": "openapi",
       "method": "GET",
       "path": "/v1/appview/bootstrap-stream",
       "classification": "stream"
@@ -236,7 +188,7 @@
     },
     {
       "surface": "openapi",
-      "method": "PATCH",
+      "method": "POST",
       "path": "/xrpc/link.latr.bookmarks.setState",
       "classification": "foreign-xrpc",
       "xrpcNsid": "link.latr.bookmarks.setState"
@@ -295,6 +247,20 @@
       "path": "/v1/operations/ingestion",
       "classification": "xrpc-migration",
       "xrpcNsid": "app.thesocialwire.operations.getIngestion"
+    },
+    {
+      "surface": "openapi",
+      "method": "GET",
+      "path": "/v1/operations/ingestion/durability",
+      "classification": "xrpc-migration",
+      "xrpcNsid": "app.thesocialwire.operations.getIngestionDurability"
+    },
+    {
+      "surface": "openapi",
+      "method": "GET",
+      "path": "/v1/operations/ingestion/incidents",
+      "classification": "xrpc-migration",
+      "xrpcNsid": "app.thesocialwire.operations.listIngestionIncidents"
     },
     {
       "surface": "openapi",
@@ -456,12 +422,6 @@
     },
     {
       "surface": "nextjs",
-      "method": "POST",
-      "path": "/api/resolve-add-publication",
-      "classification": "web-bff"
-    },
-    {
-      "surface": "nextjs",
       "method": "GET",
       "path": "/api/bluesky-card-thumb",
       "classification": "media-proxy"
@@ -501,30 +461,6 @@
       "method": "GET",
       "path": "/api/oauth/web-client-metadata",
       "classification": "oauth-metadata"
-    },
-    {
-      "surface": "tap",
-      "method": "POST",
-      "path": "/channel",
-      "classification": "vendor-private-rest"
-    },
-    {
-      "surface": "tap",
-      "method": "POST",
-      "path": "/repos/add",
-      "classification": "vendor-private-rest"
-    },
-    {
-      "surface": "tap",
-      "method": "POST",
-      "path": "/repos/remove",
-      "classification": "vendor-private-rest"
-    },
-    {
-      "surface": "tap",
-      "method": "GET",
-      "path": "/repos",
-      "classification": "vendor-private-rest"
     }
   ]
 }

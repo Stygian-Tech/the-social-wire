@@ -61,33 +61,6 @@ export type ResolveAddPublicationPayload =
       feedIconUrl?: string;
     };
 
-export type GatewayFolderWriteInput = {
-  name: string;
-  icon?: string;
-  iconImage?: string;
-  sortOrder?: number;
-};
-
-export type GatewayFolderUpdateInput = Partial<GatewayFolderWriteInput>;
-
-export type GatewayPublicationPrefsWriteInput = {
-  publicationId: string;
-  folderId?: string | null;
-  sortOrder?: number;
-  hidden?: boolean;
-  existingRkey?: string;
-};
-
-export type GatewayPublicationSubscriptionWriteInput = {
-  publication: string;
-};
-
-export type GatewayRssSubscriptionWriteInput = {
-  feedUrl: string;
-  title?: string;
-  siteUrl?: string;
-};
-
 export type GatewayMarkAllReadScope =
   | { kind: "publication"; publicationId: string }
   | { kind: "folder"; folderRkey: string }
@@ -133,6 +106,8 @@ export async function refreshPublicationSidebar(
 ): Promise<PublicationSidebarProjection> {
   const res = await gatewayFetch(oauthSession, socialWireXrpc.refreshSidebar, {
     method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: "{}",
     signal,
   });
   if (!res.ok) {
@@ -163,127 +138,6 @@ export async function resolveAddPublicationOnGateway(
     result: json.result,
     error: json.error ?? undefined,
   };
-}
-
-export async function createFolderOnGateway(
-  oauthSession: OAuthSession,
-  input: GatewayFolderWriteInput
-): Promise<{ uri: string; rkey: string }> {
-  const res = await gatewayFetch(oauthSession, "/v1/publications/folders", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(input),
-  });
-  if (!res.ok) {
-    throw new Error(`Create folder failed (${res.status})`);
-  }
-  return (await res.json()) as { uri: string; rkey: string };
-}
-
-export async function updateFolderOnGateway(
-  oauthSession: OAuthSession,
-  rkey: string,
-  input: GatewayFolderUpdateInput
-): Promise<void> {
-  const res = await gatewayFetch(
-    oauthSession,
-    `/v1/publications/folders/${encodeURIComponent(rkey)}`,
-    {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(input),
-    }
-  );
-  if (!res.ok) {
-    throw new Error(`Update folder failed (${res.status})`);
-  }
-}
-
-export async function deleteFolderOnGateway(
-  oauthSession: OAuthSession,
-  rkey: string
-): Promise<void> {
-  const res = await gatewayFetch(
-    oauthSession,
-    `/v1/publications/folders/${encodeURIComponent(rkey)}`,
-    { method: "DELETE" }
-  );
-  if (!res.ok) {
-    throw new Error(`Delete folder failed (${res.status})`);
-  }
-}
-
-export async function upsertPublicationPrefsOnGateway(
-  oauthSession: OAuthSession,
-  input: GatewayPublicationPrefsWriteInput
-): Promise<{ uri: string; rkey: string }> {
-  const res = await gatewayFetch(oauthSession, "/v1/publications/prefs", {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(input),
-  });
-  if (!res.ok) {
-    throw new Error(`Publication prefs upsert failed (${res.status})`);
-  }
-  return (await res.json()) as { uri: string; rkey: string };
-}
-
-export async function createPublicationSubscriptionOnGateway(
-  oauthSession: OAuthSession,
-  input: GatewayPublicationSubscriptionWriteInput
-): Promise<{ uri: string; rkey: string }> {
-  const res = await gatewayFetch(oauthSession, "/v1/publications/subscriptions", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(input),
-  });
-  if (!res.ok) {
-    throw new Error(`Create subscription failed (${res.status})`);
-  }
-  return (await res.json()) as { uri: string; rkey: string };
-}
-
-export async function deletePublicationSubscriptionOnGateway(
-  oauthSession: OAuthSession,
-  rkey: string
-): Promise<void> {
-  const res = await gatewayFetch(
-    oauthSession,
-    `/v1/publications/subscriptions/${encodeURIComponent(rkey)}`,
-    { method: "DELETE" }
-  );
-  if (!res.ok) {
-    throw new Error(`Delete subscription failed (${res.status})`);
-  }
-}
-
-export async function createRssSubscriptionOnGateway(
-  oauthSession: OAuthSession,
-  input: GatewayRssSubscriptionWriteInput
-): Promise<{ uri: string; rkey: string }> {
-  const res = await gatewayFetch(oauthSession, "/v1/publications/rss-subscriptions", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(input),
-  });
-  if (!res.ok) {
-    throw new Error(`Create RSS subscription failed (${res.status})`);
-  }
-  return (await res.json()) as { uri: string; rkey: string };
-}
-
-export async function deleteRssSubscriptionOnGateway(
-  oauthSession: OAuthSession,
-  rkey: string
-): Promise<void> {
-  const res = await gatewayFetch(
-    oauthSession,
-    `/v1/publications/rss-subscriptions/${encodeURIComponent(rkey)}`,
-    { method: "DELETE" }
-  );
-  if (!res.ok) {
-    throw new Error(`Delete RSS subscription failed (${res.status})`);
-  }
 }
 
 export async function markAllReadOnGateway(

@@ -19,38 +19,6 @@ struct AppViewEnrollBody: Encodable, Sendable {
     }
 }
 
-struct GatewayFolderWriteBody: Encodable, Sendable {
-    let name: String
-    let icon: String?
-    let iconImage: String?
-    let sortOrder: Int?
-
-    init(name: String, icon: String? = nil, iconImage: String? = nil, sortOrder: Int? = nil) {
-        self.name = name
-        self.icon = icon
-        self.iconImage = iconImage
-        self.sortOrder = sortOrder
-    }
-}
-
-struct GatewayPublicationPrefsWriteBody: Encodable, Sendable {
-    let publicationId: String
-    let folderId: String?
-    let sortOrder: Int?
-    let hidden: Bool?
-    let existingRkey: String?
-}
-
-struct GatewayPublicationSubscriptionWriteBody: Encodable, Sendable {
-    let publication: String
-}
-
-struct GatewayRssSubscriptionWriteBody: Encodable, Sendable {
-    let feedUrl: String
-    let title: String?
-    let siteUrl: String?
-}
-
 enum GatewayMarkAllReadScopeDTO: Encodable, Sendable {
     case publication(publicationId: String)
     case folder(folderRkey: String)

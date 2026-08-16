@@ -17,7 +17,7 @@ For `standard.site`, the index stores render/detail fields (title, `publishedAt`
 ## Data flow
 
 ```
-Jetstream / environment-matched Tap
+Jetstream V1 / Jetstream V2 Ingest
         │
         ▼
 Railway Charybdis (`appview-worker`) — ATProto ingest, Skyreader RSS polling, proactive PDS backfill, TTL cleanup
@@ -57,37 +57,35 @@ its own cycle, and the `content_items` TTL eventually expires the rest.
 All routes require ATProto OAuth (`Authorization: Bearer` or `DPoP` + `DPoP` proof) unless noted. **`ENABLE_THIN_APPVIEW=true`** on AppView registers the AppView XRPC and compatibility `/v1/appview/*` surfaces; gateway always exposes OAuth metadata and proxies AppView when **`APPVIEW_BASE_URL`** is set.
 
 The current checkout migrates eligible JSON operations to Lexicon-defined
-`/xrpc/app.thesocialwire.appview.*` queries and procedures while retaining the
-`/v1/*` paths below. The XRPC aliases are not yet registered on the public
-Testing or Production gateways as of 2026-08-12, so `/v1/*` remains the current
-hosted contract. `bootstrap-stream` stays HTTP NDJSON because it is a
-progressive stream rather than a normal XRPC JSON response. See [[Service-API]]
-and [[Lexicons]].
+`/xrpc/app.thesocialwire.appview.*` queries and procedures are the canonical
+JSON contract. Compatibility `/v1/*` aliases remain server-side, while
+`bootstrap-stream` stays HTTP NDJSON because it is a progressive stream rather
+than a normal XRPC JSON response. See [[Service-API]] and [[Lexicons]].
 
 ### AppView (read index)
 
 | Method | Path | Purpose |
 |--------|------|---------|
 | `GET` | `/v1/appview/bootstrap-stream` | Progressive NDJSON initial load (sidebar, unread, first page) |
-| `GET` | `/v1/appview/entries` | Paginated timeline (`authorDid`, scope keys, `filter=all\|unread\|read`, optional `maxEntries`) |
-| `GET` | `/v1/appview/feed` | Aggregate Subscribed, Following, folder, or publication feed |
-| `GET` | `/v1/appview/entry` | Flat indexed entry-detail object |
-| `GET` | `/v1/appview/unread-counts` | Unread badges by publication or scope |
-| `POST` | `/v1/appview/read-marks` | Upsert AppView read mark |
-| `DELETE` | `/v1/appview/read-marks` | Delete AppView read mark |
-| `POST` | `/v1/appview/enroll` | Backfill recent author records (`authorDids`) and/or ingest subscribed RSS feeds (`feedUrls`) |
-| `POST` | `/v1/appview/mark-all-read` | Scoped mark-all-read (publication, folder, subscribed, following) |
-| `DELETE` | `/v1/appview/privacy/purge` | Delete the viewer's explicit read marks and unread overrides; bulk-read floors and other projection rows remain |
+| `GET` | `/xrpc/app.thesocialwire.appview.listEntries` | Paginated timeline (`authorDid`, scope keys, `filter=all\|unread\|read`, optional `maxEntries`) |
+| `GET` | `/xrpc/app.thesocialwire.appview.getFeed` | Aggregate Subscribed, Following, folder, or publication feed |
+| `GET` | `/xrpc/app.thesocialwire.appview.getEntry` | Flat indexed entry-detail object |
+| `GET` | `/xrpc/app.thesocialwire.appview.getUnreadCounts` | Unread badges by publication or scope |
+| `POST` | `/xrpc/app.thesocialwire.appview.putReadMark` | Upsert AppView read mark |
+| `POST` | `/xrpc/app.thesocialwire.appview.deleteReadMark` | Delete AppView read mark |
+| `POST` | `/xrpc/app.thesocialwire.appview.enrollSources` | Backfill recent author records (`authorDids`) and/or ingest subscribed RSS feeds (`feedUrls`) |
+| `POST` | `/xrpc/app.thesocialwire.appview.markAllRead` | Scoped mark-all-read (publication, folder, subscribed, following) |
+| `POST` | `/xrpc/app.thesocialwire.appview.purgeViewerData` | Delete the viewer's explicit read marks and unread overrides; bulk-read floors and other projection rows remain |
 
 ### Publications (sidebar projection)
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| `GET` | `/v1/publications/sidebar` | Unified sidebar (`phase=full\|priority\|folderPublications`) |
-| `POST` | `/v1/publications/refresh` | Recompute sidebar projection |
-| `POST` | `/v1/publications/resolve` | Resolve Add Publication input |
+| `GET` | `/xrpc/app.thesocialwire.publication.getSidebar` | Unified sidebar (`phase=full\|priority\|folderPublications`) |
+| `POST` | `/xrpc/app.thesocialwire.publication.refreshSidebar` | Recompute sidebar projection |
+| `POST` | `/xrpc/app.thesocialwire.publication.resolvePublication` | Resolve Add Publication input |
 
-Gateway exposes PDS write-through routes at `/v1/publications/folders`, `/prefs`, `/subscriptions`, and `/rss-subscriptions`. The web client normally writes these records directly to the viewer PDS; the current iOS app uses the Gateway routes with an upstream PDS-bound DPoP proof.
+Web, iOS, and Bruno clients write user-owned publication records directly to the viewer PDS with standard `com.atproto.repo.*` XRPC.
 
 OpenAPI: [packages/spec/openapi.yaml](https://github.com/Stygian-Tech/the-social-wire/blob/main/packages/spec/openapi.yaml)
 
@@ -126,7 +124,8 @@ When the server flag is off, AppView routes are unavailable. Current web and iOS
 | `GATEWAY_APPVIEW_INTERNAL_SECRET` | gateway + appview | HMAC trust for gateway→AppView proxy |
 | `DATABASE_URL` | gateway, appview, appview-worker, operations | Railway Postgres private connection URL |
 | `THIN_APPVIEW_RELAY_WS_URLS` | appview-worker | Ordered, comma-separated Jetstream WebSocket URLs for active/passive failover (`THIN_APPVIEW_RELAY_WS_URL` remains a compatible single-primary override) |
-| `TAP_BASE_URL` / `TAP_CONSUMER_MODE` | appview-worker | Environment-scoped Tap endpoint and shadow/authoritative transport mode |
+| `THIN_APPVIEW_JETSTREAM_MODE` | appview-worker | Select legacy V1 authority, V2 shadow staging, or durable V2 authority |
+| `JETSTREAM_SOURCE_GENERATION` | appview-worker + jetstream-ingest | Fence durable inbox generations during V2 replay and cutover |
 | `THIN_APPVIEW_PROACTIVE_BACKFILL_ENABLED` | appview-worker | Periodic PDS backfill for subscribed authors |
 | `THIN_APPVIEW_CONTENT_TTL_SECONDS` | appview, appview-worker | `content_items.expires_at` horizon used by stores and worker cleanup |
 | `THIN_APPVIEW_READ_MARK_TTL_SECONDS` | appview, appview-worker | `read_marks` retention used by stores and worker cleanup |
@@ -146,10 +145,11 @@ Railway deploys seven independent services per environment from repository-level
 | AppView | `railway/appview.json` |
 | Charybdis | `railway/charybdis.json` |
 | Operations | `railway/operations.json` |
-| Tap | `railway/tap.json` |
+| Jetstream V2 Ingest | `railway/jetstream-ingest.json` |
 
 Development tracks `dev`; production tracks `main`. Gateway reaches AppView and
-Operations over Railway private domains, and Charybdis reaches Tap the same way.
+Operations over Railway private domains; Jetstream V2 Ingest and Charybdis share
+the environment's durable PostgreSQL inbox.
 Database-backed hosted services use their environment's Railway Postgres
 service. Redis is optional and does not replace Postgres. During the current
 hosted configuration, both environments select Redis backends, while Postgres
@@ -157,7 +157,7 @@ remains durable and its cache tables remain the rollback target.
 
 **Rollout checklist**
 
-1. Confirm Gateway's pre-deploy migration command succeeds against the environment's Railway Postgres service.
+1. Confirm the Database Migrator job succeeds against the environment's Railway Postgres service.
 2. Deploy Charybdis with `ENABLE_THIN_APPVIEW=true`.
 3. Deploy AppView with `ENABLE_THIN_APPVIEW=true`.
 4. Deploy Gateway with `APPVIEW_BASE_URL` and the shared internal secret.
@@ -169,7 +169,7 @@ remains durable and its cache tables remain the rollback target.
 
 ### Web
 
-- **Release boundary:** hosted clients still use the `/v1/*` equivalents below until the pending XRPC source ships
+- **JSON API:** hosted clients use the canonical `app.thesocialwire.*` XRPC methods; only bootstrap remains HTTP
 - **Initial load:** `usePublicationSidebarData` → `GET /v1/appview/bootstrap-stream`
 - **Entry lists and aggregate feeds:** `useEntries` → `app.thesocialwire.appview.listEntries` or `getFeed`; **`useProactiveFeedRefresh`** polls/refocus-refreshes the active feed
 - **Entry detail:** `useEntry` → `app.thesocialwire.appview.getEntry`, with narrow author-PDS URL/embed enrichment for incomplete standard.site detail

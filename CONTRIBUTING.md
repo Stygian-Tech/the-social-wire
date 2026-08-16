@@ -55,12 +55,12 @@ hosted wiki can drift or be overwritten, so make the source change here first.
 ## Out of scope for automated CI
 
 - Playwright / browser E2E
-- macOS GitHub Actions or Xcode Cloud for iOS (local Cmd+U)
-- Coverage percentage gates
+- Authenticated hosted-environment mutation tests
+- Xcode Cloud (iOS tests run on GitHub-hosted macOS)
 
 ## Branch protection
 
-Require the **`CI — Required`** check from [.github/workflows/ci.yml](.github/workflows/ci.yml). It gates merges on path-filtered jobs for `web`, `operations-web`, `redis`, `gateway`, `appview`, `charybdis`, `operations`, `tap`, `lexicons`, and `spec`. Railway deployment remains independent and is handled by Railway's GitHub integration.
+Require the **`CI — Required`** check from [.github/workflows/ci.yml](.github/workflows/ci.yml) on both `dev` and `main`. It gates merges on path-filtered jobs for Web, Operations Web, Apple, Redis, Gateway, AppView, Charybdis, Operations, Jetstream V2 Ingest, database migrations, Lexicons, OpenAPI, and documentation. Railway deployment remains independent and is handled by Railway's GitHub integration.
 
 ## License
 

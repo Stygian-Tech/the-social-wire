@@ -36,7 +36,8 @@ struct AppViewProxyRoutes {
   func register(on group: RouterGroup<GatewayRequestContext>) {
     group.get("/v1/publications/sidebar") { request, context async throws -> Response in
       try await forward(
-        request: request, context: context, path: "/v1/publications/sidebar", method: "GET")
+        request: request, context: context,
+        path: "/xrpc/app.thesocialwire.publication.getSidebar", method: "GET")
     }
     group.get("/xrpc/app.thesocialwire.publication.getSidebar") {
       request, context async throws -> Response in
@@ -46,7 +47,8 @@ struct AppViewProxyRoutes {
     }
     group.post("/v1/publications/refresh") { request, context async throws -> Response in
       try await forward(
-        request: request, context: context, path: "/v1/publications/refresh", method: "POST")
+        request: request, context: context,
+        path: "/xrpc/app.thesocialwire.publication.refreshSidebar", method: "POST")
     }
     group.post("/xrpc/app.thesocialwire.publication.refreshSidebar") {
       request, context async throws -> Response in
@@ -56,7 +58,8 @@ struct AppViewProxyRoutes {
     }
     group.post("/v1/publications/resolve") { request, context async throws -> Response in
       try await forward(
-        request: request, context: context, path: "/v1/publications/resolve", method: "POST")
+        request: request, context: context,
+        path: "/xrpc/app.thesocialwire.publication.resolvePublication", method: "POST")
     }
     group.post("/xrpc/app.thesocialwire.publication.resolvePublication") {
       request, context async throws -> Response in
@@ -66,7 +69,8 @@ struct AppViewProxyRoutes {
     }
     group.get("/v1/appview/entries") { request, context async throws -> Response in
       try await forward(
-        request: request, context: context, path: "/v1/appview/entries", method: "GET")
+        request: request, context: context,
+        path: "/xrpc/app.thesocialwire.appview.listEntries", method: "GET")
     }
     group.get("/xrpc/app.thesocialwire.appview.listEntries") {
       request, context async throws -> Response in
@@ -75,7 +79,9 @@ struct AppViewProxyRoutes {
         method: "GET")
     }
     group.get("/v1/appview/feed") { request, context async throws -> Response in
-      try await forward(request: request, context: context, path: "/v1/appview/feed", method: "GET")
+      try await forward(
+        request: request, context: context,
+        path: "/xrpc/app.thesocialwire.appview.getFeed", method: "GET")
     }
     group.get("/xrpc/app.thesocialwire.appview.getFeed") {
       request, context async throws -> Response in
@@ -85,7 +91,8 @@ struct AppViewProxyRoutes {
     }
     group.get("/v1/appview/entry") { request, context async throws -> Response in
       try await forward(
-        request: request, context: context, path: "/v1/appview/entry", method: "GET")
+        request: request, context: context,
+        path: "/xrpc/app.thesocialwire.appview.getEntry", method: "GET")
     }
     group.get("/xrpc/app.thesocialwire.appview.getEntry") {
       request, context async throws -> Response in
@@ -95,7 +102,8 @@ struct AppViewProxyRoutes {
     }
     group.get("/v1/appview/unread-counts") { request, context async throws -> Response in
       try await forward(
-        request: request, context: context, path: "/v1/appview/unread-counts", method: "GET")
+        request: request, context: context,
+        path: "/xrpc/app.thesocialwire.appview.getUnreadCounts", method: "GET")
     }
     group.get("/xrpc/app.thesocialwire.appview.getUnreadCounts") {
       request, context async throws -> Response in
@@ -113,7 +121,8 @@ struct AppViewProxyRoutes {
     }
     group.post("/v1/appview/read-marks") { request, context async throws -> Response in
       try await forward(
-        request: request, context: context, path: "/v1/appview/read-marks", method: "POST")
+        request: request, context: context,
+        path: "/xrpc/app.thesocialwire.appview.putReadMark", method: "POST")
     }
     group.post("/xrpc/app.thesocialwire.appview.putReadMark") {
       request, context async throws -> Response in
@@ -123,7 +132,8 @@ struct AppViewProxyRoutes {
     }
     group.delete("/v1/appview/read-marks") { request, context async throws -> Response in
       try await forward(
-        request: request, context: context, path: "/v1/appview/read-marks", method: "DELETE")
+        request: request, context: context,
+        path: "/xrpc/app.thesocialwire.appview.deleteReadMark", method: "POST")
     }
     group.post("/xrpc/app.thesocialwire.appview.deleteReadMark") {
       request, context async throws -> Response in
@@ -133,7 +143,8 @@ struct AppViewProxyRoutes {
     }
     group.post("/v1/appview/enroll") { request, context async throws -> Response in
       try await forward(
-        request: request, context: context, path: "/v1/appview/enroll", method: "POST")
+        request: request, context: context,
+        path: "/xrpc/app.thesocialwire.appview.enrollSources", method: "POST")
     }
     group.post("/xrpc/app.thesocialwire.appview.enrollSources") {
       request, context async throws -> Response in
@@ -143,7 +154,8 @@ struct AppViewProxyRoutes {
     }
     group.delete("/v1/appview/privacy/purge") { request, context async throws -> Response in
       try await forward(
-        request: request, context: context, path: "/v1/appview/privacy/purge", method: "DELETE")
+        request: request, context: context,
+        path: "/xrpc/app.thesocialwire.appview.purgeViewerData", method: "POST")
     }
     group.post("/xrpc/app.thesocialwire.appview.purgeViewerData") {
       request, context async throws -> Response in
@@ -153,7 +165,8 @@ struct AppViewProxyRoutes {
     }
     group.post("/v1/appview/mark-all-read") { request, context async throws -> Response in
       try await forward(
-        request: request, context: context, path: "/v1/appview/mark-all-read", method: "POST")
+        request: request, context: context,
+        path: "/xrpc/app.thesocialwire.appview.markAllRead", method: "POST")
     }
     group.post("/xrpc/app.thesocialwire.appview.markAllRead") {
       request, context async throws -> Response in

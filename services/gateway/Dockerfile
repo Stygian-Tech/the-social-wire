@@ -34,16 +34,12 @@ FROM ubuntu:22.04
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends \
-    libssl3 libcurl4 libsqlite3-0 libicu70 libxml2 ca-certificates postgresql-client \
+    libssl3 libcurl4 libsqlite3-0 libicu70 libxml2 ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /src/services/gateway/.build/release/Gateway /usr/local/bin/Gateway
 COPY --from=builder /usr/lib/swift/linux /usr/lib/swift/linux
-COPY database/migrations /app/database/migrations
-COPY scripts/apply-database-migrations.sh /usr/local/bin/apply-database-migrations
-
-RUN chmod +x /usr/local/bin/Gateway /usr/local/bin/apply-database-migrations
-ENV MIGRATIONS_DIR=/app/database/migrations
+RUN chmod +x /usr/local/bin/Gateway
 EXPOSE 8080
 RUN useradd --system --no-create-home appuser
 USER appuser

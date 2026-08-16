@@ -4,17 +4,26 @@ meta {
   seq: 35
 }
 
-delete {
-  url: {{baseUrl}}/v1/publications/folders/{{folderRkey}}
-  body: none
+post {
+  url: {{pdsUrl}}/xrpc/com.atproto.repo.deleteRecord
+  body: json
   auth: none
 }
 
 headers {
-  Authorization: Bearer {{oauthAccessToken}}
-  DPoP: {{dpopProof}}
+  Authorization: DPoP {{oauthAccessToken}}
+  DPoP: {{pdsDpopProof}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "repo": "{{userDid}}",
+    "collection": "app.thesocialwire.folder",
+    "rkey": "{{folderRkey}}"
+  }
 }
 
 docs {
-  Deletes a folder record from the viewer PDS.
+  Deletes a folder record directly from the viewer PDS with standard XRPC.
 }

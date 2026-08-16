@@ -4,11 +4,12 @@ import Logging
 
 public actor SQLiteOperationsStore: OperationsStore {
   public nonisolated let environment: String
-  private let db: DatabasePool
-  private let logger: Logger
+  let db: DatabasePool
+  let logger: Logger
   private let encoder = JSONEncoder()
   private let decoder = JSONDecoder()
   private let backfillFingerprintSecret: String?
+  var ingestionLeaderFenceCounts: [String: IngestionLeaderFenceState] = [:]
 
   public init(
     path: String,
@@ -2193,6 +2194,28 @@ public actor SQLiteOperationsStore: OperationsStore {
       }
       try database.execute(
         sql: """
+          DELETE FROM appview_ingestion_inbox WHERE rowid IN (
+            SELECT rowid FROM appview_ingestion_inbox
+            WHERE environment = ? AND expires_at IS NOT NULL AND expires_at <= ? LIMIT ?)
+          """, arguments: [environment, Self.iso(at), batchSize])
+      deleted += database.changesCount
+      try database.execute(
+        sql: """
+          DELETE FROM appview_ingestion_replay_usage WHERE rowid IN (
+            SELECT rowid FROM appview_ingestion_replay_usage
+            WHERE environment = ? AND bucket_started_at <= ? LIMIT ?)
+          """, arguments: [environment, Self.iso(at.addingTimeInterval(-48 * 3_600)), batchSize])
+      deleted += database.changesCount
+      try database.execute(
+        sql: """
+          DELETE FROM appview_ingestion_reconciliation_requests WHERE rowid IN (
+            SELECT rowid FROM appview_ingestion_reconciliation_requests
+            WHERE environment = ? AND status IN ('completed', 'failed')
+              AND updated_at <= ? LIMIT ?)
+          """, arguments: [environment, Self.iso(at.addingTimeInterval(-30 * 86_400)), batchSize])
+      deleted += database.changesCount
+      try database.execute(
+        sql: """
           DELETE FROM operations_service_state WHERE rowid IN (
             SELECT rowid FROM operations_service_state
             WHERE environment = ? AND heartbeat_at <= ? LIMIT ?
@@ -2204,13 +2227,24 @@ public actor SQLiteOperationsStore: OperationsStore {
         ("operations_commands", "status IN ('completed', 'failed')"),
         ("operations_alerts", "status = 'resolved'"),
         ("appview_backfill_jobs", "status IN ('completed', 'failed', 'cancelled')"),
-        ("appview_ingestion_gaps", "status IN ('resolved', 'ignored')"),
       ] {
         try database.execute(
           sql: "DELETE FROM \(table) WHERE rowid IN (SELECT rowid FROM \(table) WHERE environment = ? AND \(terminalPredicate) AND expires_at <= ? LIMIT ?)",
           arguments: [environment, Self.iso(at), batchSize])
         deleted += database.changesCount
       }
+      try database.execute(
+        sql: """
+          DELETE FROM appview_ingestion_gaps WHERE rowid IN (
+            SELECT gap.rowid FROM appview_ingestion_gaps gap
+            WHERE gap.environment = ? AND gap.status IN ('resolved', 'ignored')
+              AND gap.expires_at <= ?
+              AND NOT EXISTS (
+                SELECT 1 FROM appview_ingestion_incident_gaps link
+                WHERE link.environment = gap.environment AND link.gap_id = gap.id)
+            LIMIT ?)
+          """, arguments: [environment, Self.iso(at), batchSize])
+      deleted += database.changesCount
       return deleted
     }
   }
@@ -2679,18 +2713,18 @@ public actor SQLiteOperationsStore: OperationsStore {
     return string
   }
 
-  private static func decode<T: Decodable>(_ type: T.Type, _ string: String) -> T? {
+  static func decode<T: Decodable>(_ type: T.Type, _ string: String) -> T? {
     guard let data = string.data(using: .utf8) else { return nil }
     return try? JSONDecoder().decode(type, from: data)
   }
 
-  private static func iso(_ date: Date) -> String {
+  static func iso(_ date: Date) -> String {
     let formatter = ISO8601DateFormatter()
     formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
     return formatter.string(from: date)
   }
 
-  private static func date(_ value: String?) -> Date? {
+  static func date(_ value: String?) -> Date? {
     guard let value else { return nil }
     let formatter = ISO8601DateFormatter()
     formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -2946,6 +2980,94 @@ private enum Schema {
       CHECK (queue_overflow_total IS NULL OR queue_overflow_total >= 0),
       PRIMARY KEY (environment, source)
     );
+    CREATE TABLE IF NOT EXISTS appview_jetstream_checkpoints (
+      environment TEXT NOT NULL, source_generation TEXT NOT NULL, source_host TEXT NOT NULL,
+      stream_nsid TEXT NOT NULL, filter_fingerprint TEXT NOT NULL,
+      cursor_kind TEXT NOT NULL CHECK (cursor_kind = 'jetstream_v2_seq'),
+      last_staged_seq INTEGER, last_staged_event_at TEXT, last_staged_at TEXT,
+      last_applied_seq INTEGER, last_applied_event_at TEXT, last_applied_at TEXT,
+      last_reconciled_repo_rev TEXT, last_reconciled_at TEXT,
+      replay_state TEXT NOT NULL DEFAULT 'idle'
+        CHECK (replay_state IN ('idle', 'replaying', 'live', 'paused_budget', 'failed')),
+      replay_after_seq INTEGER, replay_sealed_seq INTEGER,
+      replay_bytes_downloaded INTEGER NOT NULL DEFAULT 0,
+      replay_retry_count INTEGER NOT NULL DEFAULT 0,
+      replay_range_resume_count INTEGER NOT NULL DEFAULT 0,
+      replay_last_progress_at TEXT, replay_etag TEXT, updated_at TEXT NOT NULL,
+      CHECK (last_staged_seq IS NULL OR last_staged_seq >= 0),
+      CHECK (last_applied_seq IS NULL OR last_applied_seq >= 0),
+      CHECK (last_applied_seq IS NULL OR last_staged_seq IS NULL OR last_applied_seq <= last_staged_seq),
+      PRIMARY KEY (environment, source_generation)
+    );
+    CREATE TABLE IF NOT EXISTS appview_ingestion_inbox (
+      environment TEXT NOT NULL, source_generation TEXT NOT NULL, seq INTEGER NOT NULL,
+      source_host TEXT NOT NULL, cursor_kind TEXT NOT NULL CHECK (cursor_kind = 'jetstream_v2_seq'),
+      event_kind TEXT NOT NULL, repo_did TEXT NOT NULL, collection TEXT, operation TEXT,
+      repo_rev TEXT, record_key TEXT, record_cid TEXT, payload TEXT NOT NULL,
+      event_time TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending', 'leased', 'retry', 'applied', 'dead_letter')),
+      attempt_count INTEGER NOT NULL DEFAULT 0, next_attempt_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      lease_owner TEXT, lease_token TEXT, lease_expires_at TEXT,
+      failure_category TEXT, failure_reason TEXT, staged_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL, applied_at TEXT, dead_lettered_at TEXT,
+      reconciled_at TEXT, expires_at TEXT,
+      CHECK (seq >= 0), CHECK (attempt_count >= 0),
+      CHECK ((status = 'leased' AND lease_owner IS NOT NULL AND lease_token IS NOT NULL
+        AND lease_expires_at IS NOT NULL) OR status != 'leased'),
+      CHECK (status != 'applied' OR applied_at IS NOT NULL),
+      CHECK (status != 'dead_letter' OR dead_lettered_at IS NOT NULL),
+      PRIMARY KEY (environment, source_generation, seq)
+    );
+    CREATE TABLE IF NOT EXISTS appview_ingestion_incidents (
+      environment TEXT NOT NULL, id TEXT NOT NULL, source_generation TEXT, source_host TEXT,
+      source TEXT NOT NULL,
+      cursor_kind TEXT NOT NULL, start_cursor INTEGER, end_cursor INTEGER, category TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'open'
+        CHECK (status IN ('open', 'recovering', 'verification_required', 'resolved', 'ignored')),
+      occurrence_count INTEGER NOT NULL DEFAULT 1, first_detected_at TEXT NOT NULL,
+      last_detected_at TEXT NOT NULL, last_error TEXT, replay_state TEXT,
+      replay_bytes_downloaded INTEGER NOT NULL DEFAULT 0,
+      replay_retry_count INTEGER NOT NULL DEFAULT 0,
+      replay_range_resume_count INTEGER NOT NULL DEFAULT 0,
+      replay_sealed_seq INTEGER, recovered_through_cursor INTEGER,
+      verification_evidence TEXT NOT NULL DEFAULT '{}', resolved_at TEXT,
+      updated_at TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 0,
+      CHECK (start_cursor IS NULL OR start_cursor >= 0),
+      CHECK (end_cursor IS NULL OR end_cursor >= 0),
+      CHECK (start_cursor IS NULL OR end_cursor IS NULL OR start_cursor <= end_cursor),
+      CHECK (occurrence_count > 0), CHECK (version >= 0),
+      PRIMARY KEY (environment, id)
+    );
+    CREATE TABLE IF NOT EXISTS appview_ingestion_replay_usage (
+      environment TEXT NOT NULL, source_generation TEXT NOT NULL,
+      bucket_started_at TEXT NOT NULL, bytes_downloaded INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL, CHECK (bytes_downloaded >= 0),
+      PRIMARY KEY (environment, source_generation, bucket_started_at)
+    );
+    CREATE TABLE IF NOT EXISTS appview_ingestion_incident_gaps (
+      environment TEXT NOT NULL, incident_id TEXT NOT NULL, gap_id TEXT NOT NULL,
+      linked_at TEXT NOT NULL,
+      PRIMARY KEY (environment, incident_id, gap_id)
+    );
+    CREATE TABLE IF NOT EXISTS appview_ingestion_leases (
+      environment TEXT NOT NULL, lease_name TEXT NOT NULL, source_generation TEXT NOT NULL,
+      owner_id TEXT NOT NULL, fencing_token INTEGER NOT NULL, acquired_at TEXT NOT NULL,
+      lease_expires_at TEXT NOT NULL, released_at TEXT, updated_at TEXT NOT NULL,
+      CHECK (fencing_token > 0), PRIMARY KEY (environment, lease_name)
+    );
+    CREATE TABLE IF NOT EXISTS appview_ingestion_reconciliation_requests (
+      environment TEXT NOT NULL, id TEXT NOT NULL, source_generation TEXT NOT NULL,
+      repo_did TEXT NOT NULL, reason TEXT NOT NULL, trigger_seq INTEGER NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending', 'leased', 'completed', 'failed')),
+      attempt_count INTEGER NOT NULL DEFAULT 0, next_attempt_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      lease_owner TEXT, lease_token TEXT, lease_expires_at TEXT,
+      created_at TEXT NOT NULL, updated_at TEXT NOT NULL, completed_at TEXT,
+      CHECK (trigger_seq >= 0), CHECK (attempt_count >= 0),
+      PRIMARY KEY (environment, id),
+      UNIQUE (environment, source_generation, repo_did, trigger_seq, reason)
+    );
     CREATE TABLE IF NOT EXISTS appview_jetstream_endpoints (
       environment TEXT NOT NULL, id TEXT NOT NULL, display_name TEXT NOT NULL, host TEXT NOT NULL,
       role TEXT NOT NULL CHECK (role IN ('active', 'standby')),
@@ -3057,6 +3179,19 @@ private enum Schema {
     CREATE INDEX IF NOT EXISTS idx_operations_active_gaps
       ON appview_ingestion_gaps (environment, detected_at DESC, id DESC)
       WHERE status NOT IN ('resolved', 'ignored');
+    CREATE INDEX IF NOT EXISTS idx_appview_ingestion_inbox_claim
+      ON appview_ingestion_inbox
+        (environment, source_generation, status, next_attempt_at, seq)
+      WHERE status IN ('pending', 'leased', 'retry');
+    CREATE INDEX IF NOT EXISTS idx_appview_ingestion_inbox_repo_fifo
+      ON appview_ingestion_inbox (environment, source_generation, repo_did, seq)
+      WHERE status IN ('pending', 'leased', 'retry');
+    CREATE INDEX IF NOT EXISTS idx_appview_ingestion_incidents_active
+      ON appview_ingestion_incidents
+        (environment, source, source_generation, source_host, cursor_kind, category, last_detected_at DESC)
+      WHERE status IN ('open', 'recovering', 'verification_required');
+    CREATE INDEX IF NOT EXISTS idx_appview_ingestion_incidents_recent
+      ON appview_ingestion_incidents (environment, last_detected_at DESC, id DESC);
     CREATE INDEX IF NOT EXISTS idx_operations_active_backfills
       ON appview_backfill_jobs (environment, created_at DESC, id DESC)
       WHERE status IN ('queued', 'running', 'paused');

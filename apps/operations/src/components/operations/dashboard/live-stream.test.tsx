@@ -24,7 +24,9 @@ describe("LiveStream", () => {
     renderStream()
 
     expect(screen.getByText("Jetstream · unverified supplemental")).toBeTruthy()
-    expect(screen.getByText("2,100,333 μs")).toBeTruthy()
+    expect(screen.getByText("Legacy V1 Received Cursor (μs)")).toBeTruthy()
+    expect(screen.getByText("Legacy V1 Committed Cursor (μs)")).toBeTruthy()
+    expect(screen.queryByText("2,100,333 μs")).toBeNull()
     expect(screen.queryByText("dev-js-03")).toBeNull()
     expect(screen.queryByText("410 ms / 1.82 s")).toBeNull()
   })

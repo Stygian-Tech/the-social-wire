@@ -1,5 +1,18 @@
 import Foundation
 
+public enum ThinAppViewJetstreamMode: String, Sendable, Equatable {
+  /// Legacy V1 remains projection authority and V2 rows are not drained.
+  case v1Authoritative = "v1_authoritative"
+  /// Legacy V1 remains projection authority while the V2 ingester stages shadow evidence.
+  case v2Shadow = "v2_shadow"
+  /// The durable V2 inbox is projection authority and the legacy V1 subscriber is disabled.
+  case v2Authoritative = "v2_authoritative"
+
+  public var runsLegacySubscriber: Bool { self != .v2Authoritative }
+  public var drainsV2Inbox: Bool { self == .v2Authoritative }
+  public var runsLegacyProactiveBackfill: Bool { self != .v2Authoritative }
+}
+
 /// Environment-driven configuration for the data-minimized Thin AppView index.
 public struct ThinAppViewConfig: Sendable {
 public static let canonicalContentCollections: [String] = [
@@ -29,6 +42,13 @@ public static let defaultRelayWebSocketURL = defaultRelayWebSocketURLs[0]
 public let enabled: Bool
 public let relayWebSocketURLs: [String]
 public var relayWebSocketURL: String { relayWebSocketURLs[0] }
+public let jetstreamMode: ThinAppViewJetstreamMode
+public let jetstreamV2SourceGeneration: String
+public let ingestionInboxMaxConcurrency: Int
+public let ingestionInboxLeaseSeconds: TimeInterval
+public let ingestionInboxPollMilliseconds: Int
+public let ingestionInboxAppliedRetentionSeconds: TimeInterval
+public let ingestionInboxDeadLetterRetentionSeconds: TimeInterval
 public let contentRetentionSeconds: TimeInterval
 public let readMarkRetentionSeconds: TimeInterval
 public let maxEnrollAuthors: Int
@@ -49,6 +69,34 @@ public static func fromEnvironment(
     return ThinAppViewConfig(
       enabled: Self.truthyFlag(env["ENABLE_THIN_APPVIEW"]),
       relayWebSocketURLs: configuredRelays,
+      jetstreamMode: ThinAppViewJetstreamMode(
+        rawValue: env["THIN_APPVIEW_JETSTREAM_MODE"]?.trimmingCharacters(
+          in: .whitespacesAndNewlines
+        ).lowercased() ?? ""
+      ) ?? .v1Authoritative,
+      jetstreamV2SourceGeneration: env["JETSTREAM_SOURCE_GENERATION"]?
+        .trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty
+        ?? "jetstream-v2-us-west-v1",
+      ingestionInboxMaxConcurrency: Self.int(
+        env["THIN_APPVIEW_INGESTION_INBOX_MAX_CONCURRENCY"],
+        default: 8
+      ),
+      ingestionInboxLeaseSeconds: Self.seconds(
+        env["THIN_APPVIEW_INGESTION_INBOX_LEASE_SECONDS"],
+        default: 60
+      ),
+      ingestionInboxPollMilliseconds: Self.int(
+        env["THIN_APPVIEW_INGESTION_INBOX_POLL_MILLISECONDS"],
+        default: 250
+      ),
+      ingestionInboxAppliedRetentionSeconds: Self.seconds(
+        env["THIN_APPVIEW_INGESTION_INBOX_APPLIED_RETENTION_SECONDS"],
+        default: 7 * 86_400
+      ),
+      ingestionInboxDeadLetterRetentionSeconds: Self.seconds(
+        env["THIN_APPVIEW_INGESTION_INBOX_DEAD_LETTER_RETENTION_SECONDS"],
+        default: 30 * 86_400
+      ),
       contentRetentionSeconds: Self.seconds(env["THIN_APPVIEW_CONTENT_TTL_SECONDS"], default: 30 * 24 * 60 * 60),
       readMarkRetentionSeconds: Self.seconds(env["THIN_APPVIEW_READ_MARK_TTL_SECONDS"], default: 180 * 24 * 60 * 60),
       maxEnrollAuthors: Self.int(env["THIN_APPVIEW_MAX_ENROLL_AUTHORS"], default: 500),
@@ -70,6 +118,13 @@ public static func fromEnvironment(
 public static let disabled = ThinAppViewConfig(
     enabled: false,
     relayWebSocketURLs: defaultRelayWebSocketURLs,
+    jetstreamMode: .v1Authoritative,
+    jetstreamV2SourceGeneration: "jetstream-v2-us-west-v1",
+    ingestionInboxMaxConcurrency: 8,
+    ingestionInboxLeaseSeconds: 60,
+    ingestionInboxPollMilliseconds: 250,
+    ingestionInboxAppliedRetentionSeconds: 7 * 86_400,
+    ingestionInboxDeadLetterRetentionSeconds: 30 * 86_400,
     contentRetentionSeconds: 30 * 24 * 60 * 60,
     readMarkRetentionSeconds: 180 * 24 * 60 * 60,
     maxEnrollAuthors: 500,

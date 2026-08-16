@@ -50,6 +50,7 @@ let package = Package(
         .product(name: "GatewayTrustKit", package: "gateway-trust-kit"),
         .product(name: "AsyncHTTPClient", package: "async-http-client"),
         .product(name: "Hummingbird", package: "hummingbird"),
+        .product(name: "HummingbirdTesting", package: "hummingbird"),
         .product(name: "Logging", package: "swift-log"),
         .product(name: "JWTKit", package: "jwt-kit"),
         .product(name: "Crypto", package: "swift-crypto"),

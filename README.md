@@ -39,8 +39,8 @@ the-social-wire/
     gateway/         # OAuth, sync, PDS writes, AppView proxy (Hummingbird; Railway)
     appview/         # Publication sidebar + Thin AppView read index (Railway)
     appview-worker/  # Charybdis: Jetstream ingestion for Thin AppView (Railway)
+    jetstream-ingest/ # Durable Jetstream V2 replay + PostgreSQL inbox (Go; Railway)
     operations/      # Operations control plane (Railway)
-    tap/             # Pinned Indigo Tap image (Railway)
   packages/
     lexicons/        # record schemas plus app.thesocialwire.* service XRPC lexicons
     spec/            # OpenAPI 3.1 compatibility contract + endpoint manifest
@@ -58,6 +58,7 @@ the-social-wire/
 |------|---------|
 | [Bun](https://bun.sh) | Matches root [`package.json`](package.json) `packageManager` (currently 1.3.x) |
 | [Swift](https://swift.org/install) | 6.2+ for service/package test parity (CI uses 6.2.4) |
+| [Go](https://go.dev/dl/) | 1.26.5 for the Jetstream V2 ingress service |
 | [Railway CLI](https://docs.railway.com/guides/cli) | Latest (hosted operations and migration access) |
 | [Xcode](https://developer.apple.com/xcode/) | 16+ (for iOS) |
 
@@ -96,8 +97,8 @@ DATABASE_URL='postgresql://…' bash scripts/apply-database-migrations.sh
 # AppView (sidebar + Thin AppView reads)
 (cd services/appview && APP_ENV=dev DATABASE_URL='postgresql://…' ENABLE_THIN_APPVIEW=true GATEWAY_APPVIEW_INTERNAL_SECRET=local-development-only swift run AppView)
 
-# Charybdis (Jetstream ingestion)
-(cd services/appview-worker && APP_ENV=dev DATABASE_URL='postgresql://…' ENABLE_THIN_APPVIEW=true TAP_CONSUMER_MODE=disabled swift run AppViewWorker)
+# Charybdis (Jetstream ingestion and durable-inbox projection)
+(cd services/appview-worker && APP_ENV=dev DATABASE_URL='postgresql://…' ENABLE_THIN_APPVIEW=true swift run AppViewWorker)
 ```
 
 ### Running tests
@@ -115,6 +116,7 @@ See **[docs/test-plans/README.md](docs/test-plans/README.md)** for per-surface p
 (cd services/appview-worker && swift test)
 (cd packages/swift/OperationsCore && swift test)
 (cd services/operations && swift test)
+(cd services/jetstream-ingest && go test ./... && go vet ./...)
 
 # iOS — Cmd+U in Xcode (see docs/test-plans/apple.md)
 ```
@@ -133,8 +135,9 @@ See **[docs/test-plans/README.md](docs/test-plans/README.md)** for per-surface p
 | Component | Where |
 |-----------|-------|
 | Web + Operations UI | Railway |
-| Gateway, AppView, Charybdis | Railway |
-| Operations + Tap | Railway |
+| Gateway, AppView, Charybdis, Jetstream V2 Ingest | Railway |
+| Operations | Railway |
+| Database migrations | Railway Database Migrator job |
 | Durable index/state | Railway Postgres (`database/migrations/`) |
 | Optional disposable cache/coordination | Private Railway Redis (currently selected in Development and Production) |
 | CI/CD | GitHub Actions validates source; Railway deploys through its Git integration |

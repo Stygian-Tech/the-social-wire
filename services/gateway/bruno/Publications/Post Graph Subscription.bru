@@ -5,23 +5,29 @@ meta {
 }
 
 post {
-  url: {{baseUrl}}/v1/publications/subscriptions
+  url: {{pdsUrl}}/xrpc/com.atproto.repo.createRecord
   body: json
   auth: none
 }
 
 headers {
-  Authorization: Bearer {{oauthAccessToken}}
-  DPoP: {{dpopProof}}
+  Authorization: DPoP {{oauthAccessToken}}
+  DPoP: {{pdsDpopProof}}
   Content-Type: application/json
 }
 
 body:json {
   {
-    "publication": "{{publicationId}}"
+    "repo": "{{userDid}}",
+    "collection": "site.standard.graph.subscription",
+    "record": {
+      "$type": "site.standard.graph.subscription",
+      "publication": "{{publicationId}}"
+    }
   }
 }
 
 docs {
-  Creates a graph subscription record on the viewer PDS. Save the returned `rkey` as `subscriptionRkey`.
+  Creates a graph subscription directly on the viewer PDS with standard XRPC.
+  Save the rkey from the returned `uri` as `subscriptionRkey`.
 }

@@ -48,12 +48,12 @@ struct LatrProxyRoutes {
         method: "POST"
       )
     }
-    group.patch("/xrpc/link.latr.bookmarks.setState") { request, context async throws -> Response in
+    group.post("/xrpc/link.latr.bookmarks.setState") { request, context async throws -> Response in
       try await forward(
         request: request,
         context: context,
         path: "/xrpc/link.latr.bookmarks.setState",
-        method: "PATCH"
+        method: "POST"
       )
     }
     group.post("/xrpc/link.latr.bookmarks.deleteBookmark") { request, context async throws -> Response in

@@ -18,4 +18,15 @@ describe("GET /api/rss-feed", () => {
     const res = await GET(req);
     expect(res.status).toBe(400);
   });
+
+  it("rejects the retired list and detail surface", async () => {
+    const req = new NextRequest(
+      "http://localhost/api/rss-feed?url=https://example.com/feed.xml"
+    );
+    const res = await GET(req);
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toEqual({
+      error: "brandingOnly=1 is required",
+    });
+  });
 });

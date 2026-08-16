@@ -108,7 +108,7 @@ final class LatrGatewayClient {
 
     private func setState(bookmarkURI: String, state: SavedItemState) async throws {
         _ = try await request(
-            method: "PATCH",
+            method: "POST",
             xrpc: .setBookmarkState,
             body: try JSONEncoder().encode(
                 LatrSetBookmarkStateInput(bookmarkUri: bookmarkURI, state: state)

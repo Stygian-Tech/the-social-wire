@@ -53,9 +53,9 @@ VALUES STILL NEEDED FROM AN OPERATOR
      LATR_IOS_PROXY_CLIENT_ID=<Dev client ID>
      LATR_IOS_PROXY_API_KEY=<Dev API key>
 
-The core Web, Gateway, App View, worker, Tap, and Postgres configuration is already
-present. The three items above are needed for Operations access and complete L@tr
-functionality.
+The core Web, Gateway, App View, worker, Jetstream V2 Ingest, Database Migrator,
+and Postgres configuration is source-defined. The three items above are needed
+for Operations access and complete L@tr functionality.
 
 
 POSTGRES SERVICE: Postgres
@@ -78,6 +78,23 @@ RAILWAY MANAGED:
 DATABASE_PUBLIC_URL is Railway-managed and exists only while a public TCP proxy is
 enabled. Application services must use the private DATABASE_URL reference instead.
 Do not keep a public Postgres TCP proxy enabled after migration work.
+
+
+DATABASE MIGRATION SERVICE: Database Migrator
+==============================================
+
+REQUIRED:
+  DATABASE_URL=${{Postgres.DATABASE_URL}}
+
+Select /railway/database-migrator.json as this service's config-as-code path.
+The service applies pending migrations and exits successfully. It must not have
+a public domain, volume, cron schedule, or long-running replica.
+
+The following reference must be present on Gateway, App View, Charybdis, Ops,
+and Jetstream V2 Ingest. It is deliberately unused by application code; Railway
+uses the reference to order deployments behind the migration job:
+
+  DATABASE_MIGRATOR_SERVICE_ID=${{Database Migrator.RAILWAY_SERVICE_ID}}
 
 
 WEB FRONTEND SERVICE: Web
@@ -124,10 +141,14 @@ USER INPUT:
 Keep NEXT_PUBLIC_OPERATIONS_DEMO_MODE=0 on every deployed instance.
 
 
-TAP SERVICE: Tap
-================
+RETIRED TAP SERVICE (HISTORICAL — DO NOT APPLY)
+================================================
 
-ALREADY SET:
+Tap was removed from the repository deployment inventory on 2026-08-16. The
+following values are retained only to identify hosted variables and secrets that
+an operator must delete when retiring a pre-existing Development Tap service.
+
+HISTORICAL VALUES TO REMOVE:
   TAP_ENV=dev
   PORT=2480
   TAP_BIND=:2480
@@ -142,10 +163,11 @@ ALREADY SET:
   TAP_RESYNC_PARALLELISM=1
   TAP_RELAY_URL=https://relay1.us-east.bsky.network
 
-GENERATED, ALREADY SET:
+HISTORICAL SECRET TO REMOVE:
   TAP_ADMIN_PASSWORD=<unique Dev secret>
 
-TAP_ADMIN_PASSWORD must be exactly identical on Tap and Charybdis.
+These values must not be recreated. Remove the hosted Tap service, then remove
+TAP_BASE_URL, TAP_CONSUMER_MODE, and TAP_ADMIN_PASSWORD from Charybdis.
 
 
 INGESTION WORKER SERVICE: Charybdis
@@ -156,16 +178,14 @@ ALREADY SET:
   ENABLE_THIN_APPVIEW=true
   POSTGRES_MAX_CONNECTIONS=2
   DATABASE_URL=${{Postgres.DATABASE_URL}}
-  TAP_BASE_URL=http://${{Tap.RAILWAY_PRIVATE_DOMAIN}}:${{Tap.PORT}}
-  TAP_CONSUMER_MODE=shadow
+  DATABASE_MIGRATOR_SERVICE_ID=${{Database Migrator.RAILWAY_SERVICE_ID}}
   OPERATIONS_RECOVERY_ENABLED=true
-
-GENERATED, ALREADY SET:
-  TAP_ADMIN_PASSWORD=<same Dev secret as Tap>
+  THIN_APPVIEW_JETSTREAM_MODE=<mode selected by the Jetstream V2 rollout gate>
+  JETSTREAM_SOURCE_GENERATION=jetstream-v2-us-west-v1
 
 Use Railway's private Postgres reference. Do not use DATABASE_PUBLIC_URL for
-application traffic.
-Keep TAP_CONSUMER_MODE=shadow until the Tap parity gate is explicitly passed.
+application traffic. Tap variables are retired and should be absent after the
+hosted cleanup.
 
 
 PUBLIC API SERVICE: Gateway
@@ -176,7 +196,9 @@ ALREADY SET:
   PORT=8080
   POSTGRES_MAX_CONNECTIONS=2
   DATABASE_URL=${{Postgres.DATABASE_URL}}
+  DATABASE_MIGRATOR_SERVICE_ID=${{Database Migrator.RAILWAY_SERVICE_ID}}
   APPVIEW_BASE_URL=http://${{App View.RAILWAY_PRIVATE_DOMAIN}}:${{App View.PORT}}
+  CHARYBDIS_BASE_URL=http://${{Charybdis.RAILWAY_PRIVATE_DOMAIN}}:${{Charybdis.PORT}}
   OPERATIONS_BASE_URL=http://${{Ops.RAILWAY_PRIVATE_DOMAIN}}:${{Ops.PORT}}
   OAUTH_PUBLIC_ORIGIN=https://web-dev-88e4.up.railway.app
   OAUTH_OPERATIONS_ORIGIN=https://operations-web-dev.up.railway.app
@@ -185,6 +207,9 @@ ALREADY SET:
 GENERATED, ALREADY SET:
   GATEWAY_APPVIEW_INTERNAL_SECRET=<unique Dev secret>
   GATEWAY_OPERATIONS_INTERNAL_SECRET=<different unique Dev secret>
+
+REQUIRED WHEN THE AUTHORIZATION SERVER DOES NOT PUBLISH ACCESS-TOKEN KEYS:
+  OAUTH_ACCESS_TOKEN_SUPPLEMENTAL_JWKS_JSON=<trusted access-token signing JWKS>
 
 The App View secret must be exactly identical on Gateway and App View.
 The Operations secret must be exactly identical on Gateway and Ops.
@@ -217,6 +242,7 @@ ALREADY SET:
   ENABLE_THIN_APPVIEW=true
   POSTGRES_MAX_CONNECTIONS=8
   DATABASE_URL=${{Postgres.DATABASE_URL}}
+  DATABASE_MIGRATOR_SERVICE_ID=${{Database Migrator.RAILWAY_SERVICE_ID}}
 
 GENERATED, ALREADY SET:
   GATEWAY_APPVIEW_INTERNAL_SECRET=<same Dev secret as Gateway>
@@ -233,6 +259,7 @@ ALREADY SET:
   PORT=8083
   POSTGRES_MAX_CONNECTIONS=2
   DATABASE_URL=${{Postgres.DATABASE_URL}}
+  DATABASE_MIGRATOR_SERVICE_ID=${{Database Migrator.RAILWAY_SERVICE_ID}}
   OPERATIONS_TELEMETRY_ENABLED=true
   OPERATIONS_RECOVERY_ENABLED=true
   OPERATIONS_ALERT_DELIVERY_ENABLED=false
@@ -252,6 +279,20 @@ delivery false during the Dev migration rehearsal unless alerts are intentionall
 routed to a non-production destination.
 
 
+JETSTREAM V2 INGEST SERVICE: Jetstream V2 Ingest
+=================================================
+
+ALREADY SET:
+  APP_ENV=dev
+  PORT=8080
+  DATABASE_URL=${{Postgres.DATABASE_URL}}
+  DATABASE_MIGRATOR_SERVICE_ID=${{Database Migrator.RAILWAY_SERVICE_ID}}
+  JETSTREAM_SOURCE_GENERATION=jetstream-v2-us-west-v1
+
+Keep its existing Jetstream endpoint, collection filters, replay budget, and
+lease variables. It must remain private and select /railway/jetstream-ingest.json.
+
+
 SHARED SECRET PAIRING RULES
 ===========================
 
@@ -266,11 +307,7 @@ Pair 2:
   Gateway.GATEWAY_OPERATIONS_INTERNAL_SECRET
   Ops.GATEWAY_OPERATIONS_INTERNAL_SECRET
 
-Pair 3:
-  Tap.TAP_ADMIN_PASSWORD
-  Charybdis.TAP_ADMIN_PASSWORD
-
-Each pair must match internally. The three pairs must be different from one another
+Each pair must match internally. The two pairs must be different from one another
 and different from their Production equivalents.
 
 

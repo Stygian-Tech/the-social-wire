@@ -6,9 +6,9 @@ info:
   description: |
     HTTP contract for the Social Wire **distributed backend**:
 
-    - **`services/gateway`** (this spec's `servers` URLs) — OAuth client metadata, DPoP verification, PDS write-through, sync cache, unbuffered proxy to AppView.
+    - **`services/gateway`** (this spec's `servers` URLs) — OAuth client metadata, DPoP verification, sync cache, unbuffered proxy to AppView.
     - **`services/appview`** — publication sidebar projection (`/v1/publications/*`), Thin AppView read index (`/v1/appview/*`), bootstrap stream.
-    - **Charybdis** (`services/appview-worker`) — Jetstream/Tap ingestion, Skyreader RSS polling, proactive backfill, and cleanup (no HTTP surface).
+    - **Charybdis** (`services/appview-worker`) — Jetstream ingestion and durable-inbox projection, Skyreader RSS polling, proactive backfill, and cleanup (no HTTP surface).
     - **`services/operations`** — operator-only observability and recovery control plane, proxied by Gateway.
 
     **OAuth client metadata** mirrors SPA + ATS clients (`/oauth-client-metadata.json`, `/ios-client-metadata.json`) with scopes from **`ATProtoOAuthScopes`**.
@@ -426,6 +426,106 @@ components:
         heartbeatAt: { type: string, format: date-time }
         version: { type: integer, minimum: 0 }
 
+    JetstreamDurabilityCheckpoint:
+      type: object
+      additionalProperties: false
+      required: [environment, sourceGeneration, sourceHost, streamNSID, filterFingerprint, cursorKind, replayState, replayBytesDownloaded, replayRetryCount, replayRangeResumeCount, updatedAt]
+      properties:
+        environment: { $ref: "#/components/schemas/OperationsEnvironment" }
+        sourceGeneration: { type: string }
+        sourceHost: { type: string }
+        streamNSID: { type: string }
+        filterFingerprint: { type: string }
+        cursorKind: { type: string, enum: [jetstream_v2_seq] }
+        lastStagedSequence: { type: [integer, "null"], format: int64, minimum: 0 }
+        lastStagedEventAt: { type: [string, "null"], format: date-time }
+        lastStagedAt: { type: [string, "null"], format: date-time }
+        lastAppliedSequence:
+          type: [integer, "null"]
+          format: int64
+          minimum: 0
+          description: Highest staged terminal prefix; every retained event at or below this boundary is applied or reconciled. V2 sequences are sparse.
+        lastAppliedEventAt: { type: [string, "null"], format: date-time }
+        lastAppliedAt: { type: [string, "null"], format: date-time }
+        lastReconciledRepositoryRevision: { type: [string, "null"] }
+        lastReconciledAt: { type: [string, "null"], format: date-time }
+        replayState: { type: string, enum: [idle, replaying, live, paused_budget, failed] }
+        replayAfterSequence: { type: [integer, "null"], format: int64, minimum: 0 }
+        replaySealedSequence: { type: [integer, "null"], format: int64, minimum: 0 }
+        replayBytesDownloaded: { type: integer, format: int64, minimum: 0 }
+        replayRetryCount: { type: integer, minimum: 0 }
+        replayRangeResumeCount: { type: integer, minimum: 0 }
+        replayLastProgressAt: { type: [string, "null"], format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    IngestionDurabilitySnapshot:
+      type: object
+      additionalProperties: false
+      required: [environment, checkpoints, inbox, incidents, replayBytesRolling24Hours, generatedAt]
+      properties:
+        environment: { $ref: "#/components/schemas/OperationsEnvironment" }
+        checkpoints:
+          type: array
+          items: { $ref: "#/components/schemas/JetstreamDurabilityCheckpoint" }
+        inbox:
+          type: object
+          additionalProperties: false
+          required: [pending, leased, retrying, applied, deadLetters, total]
+          properties:
+            pending: { type: integer, minimum: 0 }
+            leased: { type: integer, minimum: 0 }
+            retrying: { type: integer, minimum: 0 }
+            applied: { type: integer, minimum: 0 }
+            deadLetters: { type: integer, minimum: 0 }
+            total: { type: integer, minimum: 0 }
+            oldestPendingAt: { type: [string, "null"], format: date-time }
+            oldestPendingAgeSeconds: { type: [number, "null"], minimum: 0 }
+        incidents:
+          type: object
+          additionalProperties: false
+          required: [open, recovering, verificationRequired, resolved, ignored]
+          properties:
+            open: { type: integer, minimum: 0 }
+            recovering: { type: integer, minimum: 0 }
+            verificationRequired: { type: integer, minimum: 0 }
+            resolved: { type: integer, minimum: 0 }
+            ignored: { type: integer, minimum: 0 }
+            latestDetectedAt: { type: [string, "null"], format: date-time }
+        replayBytesRolling24Hours: { type: integer, format: int64, minimum: 0 }
+        generatedAt: { type: string, format: date-time }
+
+    IngestionIncident:
+      type: object
+      additionalProperties: false
+      required: [id, environment, source, cursorKind, category, status, occurrenceCount, firstDetectedAt, lastDetectedAt, replayBytesDownloaded, replayRetryCount, replayRangeResumeCount, verificationEvidence, updatedAt, version]
+      properties:
+        id: { type: string }
+        environment: { $ref: "#/components/schemas/OperationsEnvironment" }
+        sourceGeneration: { type: [string, "null"] }
+        sourceHost: { type: [string, "null"] }
+        source: { type: string }
+        cursorKind: { type: string, enum: [jetstream_v1_time_us, jetstream_v2_seq, unknown] }
+        startCursor: { type: [integer, "null"], format: int64, minimum: 0 }
+        endCursor: { type: [integer, "null"], format: int64, minimum: 0 }
+        category: { type: string }
+        status: { type: string, enum: [open, recovering, verification_required, resolved, ignored] }
+        occurrenceCount: { type: integer, format: int64, minimum: 1 }
+        firstDetectedAt: { type: string, format: date-time }
+        lastDetectedAt: { type: string, format: date-time }
+        lastError: { type: [string, "null"] }
+        replayState: { type: [string, "null"], enum: [idle, replaying, live, paused_budget, failed, null] }
+        replayBytesDownloaded: { type: integer, format: int64, minimum: 0 }
+        replayRetryCount: { type: integer, minimum: 0 }
+        replayRangeResumeCount: { type: integer, minimum: 0 }
+        replaySealedSequence: { type: [integer, "null"], format: int64, minimum: 0 }
+        recoveredThroughCursor: { type: [integer, "null"], format: int64, minimum: 0 }
+        verificationEvidence:
+          type: object
+          additionalProperties: { type: [string, number, boolean, "null"] }
+        resolvedAt: { type: [string, "null"], format: date-time }
+        updatedAt: { type: string, format: date-time }
+        version: { type: integer, minimum: 0 }
+
     JetstreamEndpointState:
       type: object
       additionalProperties: false
@@ -665,7 +765,7 @@ components:
         ingestion: { anyOf: [{ $ref: "#/components/schemas/IngestionStreamState" }, { type: "null" }] }
         ingestionSources:
           type: array
-          description: Source-specific Tap, Jetstream, RSS, projection repair, and cache maintenance state.
+          description: Source-specific Jetstream, RSS, projection repair, cache maintenance, and historical Tap evidence.
           items: { $ref: "#/components/schemas/IngestionStreamState" }
         jetstreamEndpoints:
           type: array
@@ -696,6 +796,7 @@ components:
         capabilities: { $ref: "#/components/schemas/OperationsCapabilities" }
         counts: { $ref: "#/components/schemas/OperationsLifecycleCounts" }
         viewers: { anyOf: [{ $ref: "#/components/schemas/OperationsViewerCounts" }, { type: "null" }] }
+        durability: { anyOf: [{ $ref: "#/components/schemas/IngestionDurabilitySnapshot" }, { type: "null" }] }
 
     OperationsMutationRequest:
       type: object
@@ -834,6 +935,18 @@ components:
           items: { $ref: "#/components/schemas/OperationsServiceState" }
         evidence: { $ref: "#/components/schemas/OperationsEvidenceMetadata" }
 
+    IngestionIncidentPage:
+      type: object
+      additionalProperties: false
+      required: [incidents, totalCount, evidence]
+      properties:
+        incidents:
+          type: array
+          items: { $ref: "#/components/schemas/IngestionIncident" }
+        nextCursor: { type: [string, "null"] }
+        totalCount: { type: integer, minimum: 0 }
+        evidence: { $ref: "#/components/schemas/OperationsEvidenceMetadata" }
+
     OperationsIngestionResponse:
       type: object
       additionalProperties: false
@@ -847,6 +960,7 @@ components:
           type: array
           items: { $ref: "#/components/schemas/IngestionStreamState" }
         evidence: { $ref: "#/components/schemas/OperationsEvidenceMetadata" }
+        durability: { anyOf: [{ $ref: "#/components/schemas/IngestionDurabilitySnapshot" }, { type: "null" }] }
 
     OperationsAppViewResponse:
       type: object
@@ -1327,181 +1441,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ResolveAddPublicationResponse"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-
-  /v1/publications/folders:
-    post:
-      operationId: createPublicationFolder
-      summary: Create a folder on the viewer PDS (gateway write-through)
-      tags: [Publications]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [name]
-              properties:
-                name:
-                  type: string
-                sortOrder:
-                  type: integer
-      responses:
-        "201":
-          description: Folder created.
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [uri, rkey]
-                properties:
-                  uri:
-                    type: string
-                  rkey:
-                    type: string
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-
-  /v1/publications/folders/{rkey}:
-    put:
-      operationId: updatePublicationFolder
-      summary: Update a folder record
-      tags: [Publications]
-      parameters:
-        - name: rkey
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: Folder updated.
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-    delete:
-      operationId: deletePublicationFolder
-      summary: Delete a folder record
-      tags: [Publications]
-      parameters:
-        - name: rkey
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: Folder deleted.
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-
-  /v1/publications/prefs:
-    put:
-      operationId: upsertPublicationPrefs
-      summary: Upsert publication preferences
-      tags: [Publications]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [publicationId]
-              properties:
-                publicationId:
-                  type: string
-                folderId:
-                  type: string
-                  nullable: true
-                sortOrder:
-                  type: integer
-                hidden:
-                  type: boolean
-                existingRkey:
-                  type: string
-      responses:
-        "200":
-          description: Preferences upserted.
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-
-  /v1/publications/subscriptions:
-    post:
-      operationId: createPublicationSubscription
-      summary: Subscribe to a standard.site publication
-      tags: [Publications]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [publication]
-              properties:
-                publication:
-                  type: string
-      responses:
-        "201":
-          description: Subscription created.
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-
-  /v1/publications/subscriptions/{rkey}:
-    delete:
-      operationId: deletePublicationSubscription
-      summary: Delete a standard.site subscription from the viewer PDS
-      tags: [Publications]
-      parameters:
-        - name: rkey
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: Subscription deleted.
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-
-  /v1/publications/rss-subscriptions:
-    post:
-      operationId: createRssSubscription
-      summary: Subscribe to an RSS feed
-      tags: [Publications]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [feedUrl]
-              properties:
-                feedUrl:
-                  type: string
-                title:
-                  type: string
-                siteUrl:
-                  type: string
-      responses:
-        "201":
-          description: RSS subscription created.
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-
-  /v1/publications/rss-subscriptions/{rkey}:
-    delete:
-      operationId: deleteRssSubscription
-      summary: Delete a Skyreader RSS subscription from the viewer PDS
-      tags: [Publications]
-      parameters:
-        - name: rkey
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: RSS subscription deleted.
         "401":
           $ref: "#/components/responses/Unauthorized"
 
@@ -2039,7 +1978,7 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
 
   /xrpc/link.latr.bookmarks.setState:
-    patch:
+    post:
       operationId: setLatrBookmarkState
       summary: Archive or unarchive bookmark metadata
       tags: [Latr]
@@ -2212,10 +2151,45 @@ paths:
       tags: [Operations]
       responses:
         "200":
-          description: Tap, Jetstream, RSS, and projection-repair observations without blending trust boundaries.
+          description: Jetstream, RSS, projection-repair, and historical Tap observations without blending trust boundaries.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/OperationsIngestionResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/operations/ingestion/durability:
+    get:
+      operationId: getOperationsIngestionDurability
+      summary: Durable Jetstream V2 checkpoint, inbox, replay, and incident evidence
+      tags: [Operations]
+      responses:
+        "200":
+          description: Environment-scoped durability evidence. Sequence boundaries are ordered sparse cursors, never missing-event counts.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/IngestionDurabilitySnapshot" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/operations/ingestion/incidents:
+    get:
+      operationId: listOperationsIngestionIncidents
+      summary: List consolidated durable ingestion incidents
+      tags: [Operations]
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 250, default: 100 }
+        - { name: before, in: query, required: false, schema: { type: string } }
+      responses:
+        "200":
+          description: Consolidated recovery incidents with raw legacy gap evidence retained through links.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/IngestionIncidentPage" }
+        "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
 
@@ -2683,7 +2657,7 @@ tags:
   - name: Sync
     description: Protected ATProto-backed reader accelerators
   - name: Publications
-    description: Unified sidebar projection, resolver, and gateway write-through
+    description: Unified sidebar projection and resolver
   - name: AppView
     description: Data-minimized entry index gated behind `ENABLE_THIN_APPVIEW`
   - name: Latr

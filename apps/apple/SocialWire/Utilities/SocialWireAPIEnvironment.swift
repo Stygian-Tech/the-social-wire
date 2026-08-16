@@ -27,7 +27,7 @@ enum SocialWireAPIEnvironment {
         baseURL.appendingPathComponent("ios-client-metadata.json")
     }
 
-    /// When true, entry timelines and unread filtering use **`/v1/appview/*`** on the gateway.
+    /// When true, entry timelines and unread filtering use **`app.thesocialwire.appview.*`** on the gateway.
     static var useThinAppView: Bool {
         #if SOCIALWIRE_USE_THIN_APPVIEW
         return true

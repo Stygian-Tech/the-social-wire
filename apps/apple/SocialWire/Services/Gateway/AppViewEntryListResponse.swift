@@ -5,7 +5,7 @@ struct AppViewEntryListResponse: Codable, Sendable {
     let cursor: String?
 }
 
-/// Flat AppView `GET /v1/appview/entry` payload (matches `AppViewEntryDetailResponse` on the server).
+/// Flat `app.thesocialwire.appview.getEntry` payload (matches `AppViewEntryDetailResponse` on the server).
 struct AppViewEntryDetailDTO: Decodable, Sendable {
     let entryId: String
     let title: String

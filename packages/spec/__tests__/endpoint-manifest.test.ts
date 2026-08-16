@@ -44,6 +44,26 @@ describe("endpoint transport manifest", () => {
     expect(byPath.get("GET /v1/operations/events/stream")).toBe("stream");
     expect(byPath.get("GET /api/bluesky-card-thumb")).toBe("media-proxy");
     expect(byPath.get("GET /xrpc/link.latr.bookmarks.listBookmarks")).toBe("foreign-xrpc");
-    expect(byPath.get("POST /channel")).toBe("vendor-private-rest");
+    expect(byPath.has("POST /channel")).toBe(false);
+    expect(manifest.entries.some((entry) => entry.surface === "tap")).toBe(false);
+  });
+
+  it("uses GET for foreign XRPC queries and POST for foreign XRPC procedures", () => {
+    const methods = manifest.entries.filter(
+      (entry) => entry.classification === "foreign-xrpc"
+    );
+    for (const entry of methods) {
+      const lexiconPath = join(
+        SPEC_ROOT,
+        "../lexicons",
+        `${entry.xrpcNsid!.replaceAll(".", "/")}.json`
+      );
+      const lexicon = JSON.parse(readFileSync(lexiconPath, "utf8")) as {
+        defs: { main: { type: "query" | "procedure" } };
+      };
+      expect(entry.method, entry.xrpcNsid).toBe(
+        lexicon.defs.main.type === "query" ? "GET" : "POST"
+      );
+    }
   });
 });

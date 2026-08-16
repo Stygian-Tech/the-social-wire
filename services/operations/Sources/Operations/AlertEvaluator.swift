@@ -132,13 +132,28 @@ struct AlertEvaluator {
       at: now)
 
     let counts = try await store.lifecycleCounts()
+    let durability = try? await store.fetchIngestionDurabilitySnapshot(at: now)
+    let activeIncidents = durability.map {
+      $0.incidents.open + $0.incidents.recovering + $0.incidents.verificationRequired
+    }
+    let deadLetters = durability?.inbox.deadLetters
+    let durableRisk = durability.map { snapshot in
+      (activeIncidents ?? 0) > 0 || snapshot.inbox.deadLetters > 0
+    }
     try await reconcile(
-      condition: counts.activeGaps > 0,
-      rule: "active_ingestion_gap",
+      condition: durableRisk ?? (counts.activeGaps > 0),
+      rule: durability == nil ? "active_ingestion_gap" : "active_ingestion_incident",
       conditionKey: "ingestion:active_gap",
       severity: "critical",
-      summary: "An active ingestion gap requires investigation or recovery.",
-      evidence: ["gap_count": String(counts.activeGaps)],
+      summary: durability == nil
+        ? "Legacy ingestion gap evidence requires investigation."
+        : "A durable ingestion incident or dead letter requires recovery.",
+      evidence: [
+        "open_incident_count": activeIncidents.map(String.init) ?? "unavailable",
+        "dead_letter_count": deadLetters.map(String.init) ?? "unavailable",
+        "legacy_gap_signal_count": String(counts.activeGaps),
+        "primary_evidence": durability == nil ? "legacy_gap_signals" : "durable_ingestion",
+      ],
       runbookSlug: "confirming-and-scoping-a-gap",
       at: now)
 

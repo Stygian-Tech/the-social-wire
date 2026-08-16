@@ -28,9 +28,142 @@ public struct RssFeedFetchMetadata: Sendable {
 /// Persistence for thin AppView `content_items` and `read_marks`.
 public protocol ThinAppViewStore: Actor {
   func ping() async throws
+  /// Atomically leases at most one actionable item per repository, preserving FIFO per DID.
+  func claimIngestionInbox(
+    environment: String,
+    sourceGeneration: String,
+    workerId: String,
+    limit: Int,
+    leaseUntil: Date,
+    at: Date
+  ) async throws -> [AppViewIngestionInboxItem]
+
+  /// Marks a leased event applied and advances the generation's applied watermark atomically.
+  func markIngestionInboxApplied(
+    environment: String,
+    sourceGeneration: String,
+    sequence: Int64,
+    workerId: String,
+    leaseToken: String,
+    expiresAt: Date,
+    at: Date
+  ) async throws
+
+  /// Advances across the staged terminal prefix, including intentionally discarded V2 events.
+  func advanceIngestionInboxAppliedWatermark(
+    environment: String,
+    sourceGeneration: String,
+    at: Date
+  ) async throws
+
+  func renewIngestionInboxLease(
+    environment: String,
+    sourceGeneration: String,
+    sequence: Int64,
+    workerId: String,
+    leaseToken: String,
+    leaseUntil: Date,
+    at: Date
+  ) async throws
+
+  func retryIngestionInbox(
+    environment: String,
+    sourceGeneration: String,
+    sequence: Int64,
+    workerId: String,
+    leaseToken: String,
+    failureCategory: String,
+    failureReason: String,
+    nextAttemptAt: Date,
+    at: Date
+  ) async throws
+
+  /// Dead-letters a fenced event and enqueues targeted repository reconciliation atomically.
+  func deadLetterIngestionInbox(
+    environment: String,
+    sourceGeneration: String,
+    sequence: Int64,
+    repoDid: String,
+    workerId: String,
+    leaseToken: String,
+    failureCategory: String,
+    failureReason: String,
+    expiresAt: Date,
+    at: Date
+  ) async throws
+
+  func markIngestionInboxReconciled(
+    environment: String,
+    sourceGeneration: String,
+    sequence: Int64,
+    repoDid: String,
+    repoRev: String,
+    workerId: String,
+    leaseToken: String,
+    expiresAt: Date,
+    at: Date
+  ) async throws
+
+  func deleteExpiredIngestionInbox(
+    environment: String,
+    before: Date,
+    batchSize: Int
+  ) async throws -> Int
+
+  func resolveRecoveredIngestionIncidents(
+    environment: String,
+    sourceGeneration: String,
+    at: Date
+  ) async throws -> Int
+
+  func claimIngestionReconciliationRequests(
+    environment: String,
+    sourceGeneration: String,
+    workerId: String,
+    limit: Int,
+    leaseUntil: Date,
+    at: Date
+  ) async throws -> [AppViewIngestionReconciliationRequest]
+
+  func renewIngestionReconciliationLease(
+    environment: String,
+    requestId: String,
+    workerId: String,
+    leaseToken: String,
+    leaseUntil: Date,
+    at: Date
+  ) async throws
+
+  func retryIngestionReconciliation(
+    environment: String,
+    requestId: String,
+    workerId: String,
+    leaseToken: String,
+    failureReason: String,
+    nextAttemptAt: Date,
+    at: Date
+  ) async throws
+
+  func completeIngestionReconciliation(
+    environment: String,
+    requestId: String,
+    sourceGeneration: String,
+    repoDid: String,
+    triggerSequence: Int64,
+    workerId: String,
+    leaseToken: String,
+    expiresAt: Date,
+    at: Date
+  ) async throws
+
   func upsertContentItem(_ item: IndexedContentItem) async throws
   func deleteContentItem(uri: String) async throws
   func deleteContentItems(authorDid: String) async throws -> Int
+  func deleteContentItems(
+    authorDid: String,
+    excludingURIs: [String],
+    indexedAtOrBefore: Date
+  ) async throws -> Int
   func fetchContentIdentity(uri: String) async throws -> IndexedContentIdentity?
 
   func upsertReadMark(viewerDid: String, subjectUri: String, createdAt: Date) async throws
@@ -137,6 +270,7 @@ public protocol ThinAppViewStore: Actor {
   func incrementUnreadCountersForContentItem(_ item: IndexedContentItem) async throws
 
   func markUnreadCountersDirtyForContent(authorDid: String, publicationSite: String?) async throws
+  func markUnreadCountersDirtyForAuthor(authorDid: String) async throws
 
   func adjustUnreadCountersForReadState(
     viewerDid: String,

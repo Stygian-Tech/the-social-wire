@@ -28,11 +28,11 @@ export function GapsTable({
   const activeGapCount = counts?.activeGaps ?? activeGaps.length
   const activeEmptyMessage =
     activeGapCount > 0
-      ? `${activeGapCount.toLocaleString()} active gaps are reported, but row evidence is unavailable in this response.`
-      : "No active gaps."
+      ? `${activeGapCount.toLocaleString()} unresolved legacy V1 signals are reported, but row evidence is unavailable in this response.`
+      : "No unresolved legacy V1 signals."
   const action = expanded ? undefined : (
     <Link href="/gaps" className="ops-touch-link text-[10px] text-primary">
-      View All Gaps <ExternalLink className="inline size-3" />
+      View Legacy Evidence <ExternalLink className="inline size-3" />
     </Link>
   )
 
@@ -46,7 +46,7 @@ export function GapsTable({
               aria-current={view === "active" ? "page" : undefined}
               className={`inline-flex min-h-11 items-center rounded-md border px-3 py-2 text-[10px] ${view === "active" ? "border-primary bg-primary/10 text-primary" : "bg-background"}`}
             >
-              Active ({activeGapCount})
+              Open Evidence ({activeGapCount})
             </Link>
             <Link
               href="/gaps/history"
@@ -68,7 +68,7 @@ export function GapsTable({
               />
             </OperationsSection>
           ) : (
-            <OperationsSection title={`Active Gaps (${activeGapCount})`}>
+            <OperationsSection title={`Open Legacy V1 Signals (${activeGapCount})`}>
               <GapTable
                 gaps={activeGaps}
                 onSelect={onSelect}
@@ -81,7 +81,7 @@ export function GapsTable({
           )}
         </>
       ) : (
-        <OperationsSection title={`Active Gaps (${activeGapCount})`} action={action}>
+        <OperationsSection title={`Open Legacy V1 Signals (${activeGapCount})`} action={action}>
             <GapTable
               gaps={activeGaps}
               onSelect={onSelect}

@@ -71,6 +71,13 @@ struct JetstreamCursorTests {
     )
   }
 
+  @Test func reconnectBackoffIsExponentialJitteredAndCapped() {
+    #expect(JetstreamReconnectBackoff.delay(failureCount: 0, jitter: 1) == 0.25)
+    #expect(JetstreamReconnectBackoff.delay(failureCount: 4, jitter: 1) == 4)
+    #expect(JetstreamReconnectBackoff.delay(failureCount: 20, jitter: 1.2) == 30)
+    #expect(JetstreamReconnectBackoff.delay(failureCount: 0, jitter: 0) == 0.2)
+  }
+
   @Test func replayWindowUsesRewindOnlyForTransportCatchup() {
     let window = JetstreamReplayWindow(lowerBound: 20_000_000, upperBound: 30_000_000)
     #expect(window.connectionCursor == 15_000_000)
@@ -390,5 +397,20 @@ struct BoundedSequentialMessagePumpTests {
     #expect(pump.enqueue("first") == .accepted)
     #expect(pump.enqueue("overflow") == .saturated)
     #expect(pump.enqueue("after-overflow") == .stopped)
+  }
+
+  @Test func drainsAcceptedMessagesAfterStoppingInput() async throws {
+    let ordered = OrderedValues()
+    let pump = BoundedSequentialMessagePump(capacity: 2, handleMessage: { value in
+      try await Task.sleep(for: .milliseconds(10))
+      await ordered.append(value)
+    }, onFailure: { _ in })
+
+    #expect(pump.enqueue("accepted") == .accepted)
+    pump.stopAccepting()
+    #expect(pump.enqueue("too-late") == .stopped)
+    await pump.waitUntilIdle()
+
+    #expect(await ordered.snapshot() == ["accepted"])
   }
 }

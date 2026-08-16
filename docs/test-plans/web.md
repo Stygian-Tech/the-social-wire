@@ -8,8 +8,8 @@
 
 ```bash
 cd apps/web
-bun test              # all tests
-bun test --coverage   # optional local coverage report
+bun test                  # fast local suite
+bun run test:coverage     # enforced baseline plus text and LCOV reports
 ```
 
 ## Test layout
@@ -24,6 +24,11 @@ apps/web/src/__tests__/
 ```
 
 ## Coverage inventory
+
+CI enforces a measured non-regression baseline. Bun reports only modules loaded by
+the suite, so `coverage-inventory-allowlist.txt` records every production module
+currently absent from LCOV. Newly omitted modules and stale allowlist entries fail
+the coverage command; the percentage remains a floor, not a whole-application claim.
 
 The suite is intentionally colocated and grows with the owning code. Representative areas:
 
@@ -41,7 +46,6 @@ The suite is intentionally colocated and grows with the owning code. Representat
 | Route | Test file |
 |-------|-----------|
 | `oauth/web-client-metadata` | `api/web-client-metadata.test.ts` |
-| `resolve-add-publication` | `api/resolve-add-publication.test.ts` |
 | `rss-feed` | `api/rss-feed.test.ts` |
 | `embed-frame` | `api/embed-frame.test.ts` |
 | `oembed` | `api/oembed.test.ts` |

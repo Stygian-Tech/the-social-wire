@@ -8,6 +8,7 @@
     "start": "next start -p 3001",
     "lint": "eslint",
     "test": "bun test",
+    "test:coverage": "bun test --coverage --coverage-reporter=text --coverage-reporter=lcov && bun ../../scripts/check-bun-coverage-inventory.ts src coverage/lcov.info coverage-inventory-allowlist.txt",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

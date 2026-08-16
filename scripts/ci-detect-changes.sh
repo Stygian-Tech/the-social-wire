@@ -28,6 +28,14 @@ case "${GITHUB_EVENT_NAME:-}" in
     ;;
 esac
 
+# A workflow or detector change can affect any path decision. Exercise the whole
+# matrix so the aggregate gate cannot go green with an untested CI change.
+if [ "$MATCH_ALL" = "0" ] && ! git diff --quiet "$BASE" "$HEAD" -- \
+  '.github/workflows/ci.yml' \
+  'scripts/ci-detect-changes.sh'; then
+  MATCH_ALL=1
+fi
+
 to_pathspec() {
   local spec="$1"
   if [[ "$spec" == *"*"* ]]; then
@@ -50,7 +58,7 @@ filter_changed() {
   local spec pathspec
   for spec in "$@"; do
     pathspec="$(to_pathspec "$spec")"
-    if git diff --name-only "$BASE" "$HEAD" -- "$pathspec" | grep -q .; then
+    if ! git diff --quiet "$BASE" "$HEAD" -- "$pathspec"; then
       echo "${name}=true" >> "$out"
       return
     fi
@@ -61,21 +69,26 @@ filter_changed() {
 
 filter_changed web \
   'apps/web/**' \
-  'packages/**' \
+  'packages/record-keys/**' \
   'package.json' \
   'bun.lock' \
   'turbo.json' \
+  'scripts/check-bun-coverage-inventory.ts' \
   'railway/web.json' \
   '.github/workflows/ci.yml'
 
 filter_changed operations_web \
   'apps/operations/**' \
-  'packages/**' \
   'docs/runbooks/operations/**' \
   'package.json' \
   'bun.lock' \
   'turbo.json' \
+  'scripts/check-bun-coverage-inventory.ts' \
   'railway/operations-web.json' \
+  '.github/workflows/ci.yml'
+
+filter_changed apple \
+  'apps/apple/**' \
   '.github/workflows/ci.yml'
 
 filter_changed operations \
@@ -97,8 +110,6 @@ filter_changed gateway \
   'packages/swift/ThinAppViewCore/**' \
   'packages/swift/OperationsCore/**' \
   'packages/swift/SocialWireRedis/**' \
-  'database/migrations/**' \
-  'scripts/apply-database-migrations.sh' \
   'railway/gateway.json' \
   '.github/workflows/ci.yml'
 
@@ -119,25 +130,47 @@ filter_changed charybdis \
   'railway/charybdis.json' \
   '.github/workflows/ci.yml'
 
-filter_changed tap \
-  'services/tap/**' \
-  'railway/tap.json' \
+filter_changed jetstream_ingest \
+  'services/jetstream-ingest/**' \
+  'database/migrations/**' \
+  'packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/Fixtures/jetstream-v2-go-sdk-v0.2.0-events.json' \
+  'railway/jetstream-ingest.json' \
+  '.github/workflows/ci.yml'
+
+filter_changed database_migrator \
+  'database/migrations/**' \
+  'scripts/apply-database-migrations.sh' \
+  'services/database-migrator/**' \
+  'railway/database-migrator.json' \
   '.github/workflows/ci.yml'
 
 filter_changed lexicons \
   'packages/lexicons/**' \
+  'packages/spec/endpoint-manifest.json' \
   'package.json' \
   'bun.lock' \
   '.github/workflows/ci.yml'
 
 filter_changed spec \
   'packages/spec/**' \
+  'packages/lexicons/**' \
+  'apps/web/**' \
+  'apps/apple/**' \
   'railway/**' \
   '**/migrations/**' \
+  'services/**/bruno/**' \
   'services/gateway/Sources/Gateway/**' \
   'services/appview/Sources/AppView/**' \
   'services/operations/Sources/Operations/**' \
   'packages/swift/GatewayCore/**' \
+  'packages/swift/ThinAppViewCore/**' \
+  'packages/swift/OperationsCore/**' \
+  'scripts/operations/**' \
   'package.json' \
   'bun.lock' \
+  '.github/workflows/ci.yml'
+
+filter_changed docs \
+  'docs/wiki/**' \
+  'scripts/check-wiki-links.sh' \
   '.github/workflows/ci.yml'

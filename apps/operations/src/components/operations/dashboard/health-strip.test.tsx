@@ -19,8 +19,69 @@ describe("HealthStrip", () => {
     render(<HealthStrip overview={demoOverview} />)
 
     expect(screen.getByText("4 / 4 required services report healthy")).toBeTruthy()
-    expect(screen.getByText(/3 active gaps · 1 \/ 1 Charybdis projections complete/)).toBeTruthy()
+    expect(screen.getByText(/3 legacy gap signals · 1 \/ 1 Charybdis projections complete/)).toBeTruthy()
     expect(screen.getAllByText("Degraded").length).toBeGreaterThan(0)
+  })
+
+  it("uses durable incidents and terminal-prefix evidence instead of legacy gap totals", () => {
+    render(
+      <HealthStrip
+        overview={{
+          ...demoOverview,
+          durability: {
+            environment: "dev",
+            checkpoints: [{
+              environment: "dev",
+              sourceGeneration: "v2-us-west-1",
+              sourceHost: "jetstream.us-west.bsky.network",
+              streamNSID: "network.bsky.jetstream.subscribeEvents",
+              filterFingerprint: "filters-v1",
+              cursorKind: "jetstream_v2_seq",
+              lastStagedSequence: 1000,
+              lastAppliedSequence: 900,
+              replayState: "live",
+              replayBytesDownloaded: 0,
+              replayRetryCount: 0,
+              replayRangeResumeCount: 0,
+              updatedAt: demoOverview.refreshedAt,
+            }],
+            inbox: { pending: 2, leased: 1, retrying: 0, applied: 50, deadLetters: 0, total: 53, oldestPendingAgeSeconds: 2 },
+            incidents: { open: 0, recovering: 0, verificationRequired: 0, resolved: 1, ignored: 0 },
+            replayBytesRolling24Hours: 0,
+            generatedAt: demoOverview.refreshedAt,
+          },
+        }}
+      />,
+    )
+
+    expect(screen.getByText(/0 open recovery incidents · staged 1,000 \/ terminal prefix 900.*60s normal budget/)).toBeTruthy()
+    expect(screen.queryByText(/3 legacy gap signals/)).toBeNull()
+  })
+
+  it("uses the 15 minute inbox age budget only during active recovery", () => {
+    const durability = {
+      environment: "dev" as const,
+      checkpoints: [{
+        environment: "dev" as const,
+        sourceGeneration: "v2-us-west-1",
+        sourceHost: "jetstream.us-west.bsky.network",
+        streamNSID: "network.bsky.jetstream.subscribeEvents",
+        filterFingerprint: "filters-v1",
+        cursorKind: "jetstream_v2_seq" as const,
+        replayState: "replaying" as const,
+        replayBytesDownloaded: 0,
+        replayRetryCount: 0,
+        replayRangeResumeCount: 0,
+        updatedAt: demoOverview.refreshedAt,
+      }],
+      inbox: { pending: 1, leased: 0, retrying: 0, applied: 0, deadLetters: 0, total: 1, oldestPendingAgeSeconds: 600 },
+      incidents: { open: 0, recovering: 0, verificationRequired: 0, resolved: 0, ignored: 0 },
+      replayBytesRolling24Hours: 0,
+      generatedAt: demoOverview.refreshedAt,
+    }
+    render(<HealthStrip overview={{ ...demoOverview, durability }} />)
+
+    expect(screen.getByText(/900s recovery budget/)).toBeTruthy()
   })
 
   it("uses the transport heartbeat when a legitimate quiet source has no new content", () => {

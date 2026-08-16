@@ -27,6 +27,7 @@ final class BoundedSequentialMessagePump: @unchecked Sendable {
   private let onObservation: @Sendable (BoundedQueueObservation) -> Void
   private var tail: Task<Void, Never>?
   private var pending = 0
+  private var accepting = true
   private var failed = false
   private var dropped: Int64 = 0
 
@@ -44,7 +45,7 @@ final class BoundedSequentialMessagePump: @unchecked Sendable {
 
   func enqueue(_ message: String) -> BoundedMessageEnqueueResult {
     lock.lock()
-    guard !failed else {
+    guard accepting, !failed else {
       dropped += 1
       let observation = observationLocked()
       lock.unlock()
@@ -82,6 +83,15 @@ final class BoundedSequentialMessagePump: @unchecked Sendable {
     return .accepted
   }
 
+  /// Prevents new messages from entering the pump while allowing every accepted message to drain.
+  /// Transports must call this before assessing a graceful close so an in-flight commit does not
+  /// look like a durable ingestion gap.
+  func stopAccepting() {
+    lock.lock()
+    accepting = false
+    lock.unlock()
+  }
+
   /// Waits for the messages currently accepted by the pump to finish processing.
   /// Callers should stop enqueueing before awaiting this method.
   func waitUntilIdle() async {
@@ -110,6 +120,7 @@ final class BoundedSequentialMessagePump: @unchecked Sendable {
 
   private func markFailed() {
     lock.lock()
+    accepting = false
     failed = true
     lock.unlock()
   }

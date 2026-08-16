@@ -29,9 +29,10 @@ final class PDSRecordService {
         return page.records.sorted { ($0.value.sortOrder ?? 0, $0.value.name) < ($1.value.sortOrder ?? 0, $1.value.name) }
     }
 
-    func createFolder(name: String) async throws {
+    func createFolder(name: String) async throws -> RecordWriteResponseDTO {
         let record = FolderRecord(type: Self.folder, name: name, sortOrder: 0, createdAt: DateFormatters.string())
-        try await xrpc.createRecord(collection: Self.folder, record: record)
+        let uri = try await xrpc.createRecord(collection: Self.folder, record: record)
+        return RecordWriteResponseDTO(uri: uri, rkey: rkey(from: uri))
     }
 
     func deleteFolder(rkey: String) async throws {
@@ -47,9 +48,9 @@ final class PDSRecordService {
         let record = PublicationPrefsRecord(
             type: Self.publicationPrefs,
             publicationId: publicationId,
-            folderId: folderId ?? existing?.value.folderId,
+            folderId: folderId,
             sortOrder: existing?.value.sortOrder ?? 0,
-            hidden: false,
+            hidden: existing?.value.hidden ?? false,
             createdAt: existing?.value.createdAt ?? DateFormatters.string()
         )
         try await xrpc.putRecord(collection: Self.publicationPrefs, rkey: existing.map { rkey(from: $0.uri) } ?? DeterministicKeys.generateTID(), record: record)
@@ -72,7 +73,7 @@ final class PDSRecordService {
         return page.records
     }
 
-    func createSkyreaderSubscription(feedURL: String, title: String?) async throws {
+    func createSkyreaderSubscription(feedURL: String, title: String?, siteURL: String? = nil) async throws {
         let now = DateFormatters.string()
         let record = SkyreaderFeedSubscriptionRecord(
             type: Self.skyreaderFeedSubscription,
@@ -80,7 +81,7 @@ final class PDSRecordService {
             updatedAt: now,
             feedUrl: feedURL,
             title: title,
-            siteUrl: URL(string: feedURL)?.host.map { "https://\($0)" },
+            siteUrl: siteURL ?? URL(string: feedURL)?.host.map { "https://\($0)" },
             source: "the-social-wire",
             sourceType: "rss"
         )

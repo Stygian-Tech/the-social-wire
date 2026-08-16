@@ -5,7 +5,7 @@ import GatewayCore
 import Logging
 import ThinAppViewCore
 
-/// Follow-graph publication discovery aligned with web `discoverPublications`.
+/// Canonical server-side follow-graph publication discovery for thin clients.
 enum PublicationFollowDiscovery {
   private static let maxFollows = 500
   private static let followPageLimit = 100

@@ -66,7 +66,7 @@ describe("GapsTable", () => {
       />,
     )
 
-    const activeSection = screen.getByRole("heading", { name: "Active Gaps (1)" }).closest("section")
+    const activeSection = screen.getByRole("heading", { name: "Open Legacy V1 Signals (1)" }).closest("section")
     expect(activeSection).not.toBeNull()
     expect(within(activeSection!).getAllByRole("button", { name: "Backfill gap gap-active" }).length).toBeGreaterThan(0)
     expect(within(activeSection!).queryByText("resolved")).toBeNull()
@@ -111,10 +111,10 @@ describe("GapsTable", () => {
       />,
     )
 
-    expect(screen.getByRole("heading", { name: "Active Gaps (3)" })).toBeTruthy()
+    expect(screen.getByRole("heading", { name: "Open Legacy V1 Signals (3)" })).toBeTruthy()
     expect(
-      screen.getByText("3 active gaps are reported, but row evidence is unavailable in this response."),
+      screen.getByText("3 unresolved legacy V1 signals are reported, but row evidence is unavailable in this response."),
     ).toBeTruthy()
-    expect(screen.queryByText("No active gaps.")).toBeNull()
+    expect(screen.queryByText("No unresolved legacy V1 signals.")).toBeNull()
   })
 })

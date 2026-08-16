@@ -142,7 +142,7 @@ describe("applySidebarFoldersEvent", () => {
   });
 
   it("keeps folder contents when a refresh returns folder sections with no publications", () => {
-    // POST /v1/publications/refresh returns the priority tier, which builds folder sections
+    // refreshSidebar returns the priority tier, which builds folder sections
     // without their publications. Replacing the cached projection with that payload would empty
     // every folder in the sidebar, so the merge has to preserve the cached contents.
     const alpha = row("pub-a", "Alpha", 7);

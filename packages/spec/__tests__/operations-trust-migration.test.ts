@@ -11,6 +11,12 @@ const migration = readFileSync(
 );
 
 describe("Operations trust migration", () => {
+  it("keeps Supabase role grants optional on provider-neutral Postgres", () => {
+    expect(migration).toContain("SELECT 1 FROM pg_roles WHERE rolname = 'anon'");
+    expect(migration).toContain("SELECT 1 FROM pg_roles WHERE rolname = 'service_role'");
+    expect(migration).not.toContain("FROM anon, authenticated");
+  });
+
   it("quarantines malformed lifecycle rows before environment-scoped constraints", () => {
     expect(migration).toContain("SET environment = '__legacy_unscoped__'");
     expect(migration).toContain(

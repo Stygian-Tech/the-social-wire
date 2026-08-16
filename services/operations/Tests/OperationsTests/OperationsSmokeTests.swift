@@ -378,6 +378,40 @@ func jetstreamBacklogRequiresCurrentEvidence() async throws {
     .contains { $0.conditionKey == "jetstream:commit_backlog" })
 }
 
+@Test("durable incidents replace legacy gap totals as completeness alert evidence")
+func durableIncidentsArePrimaryCompletenessEvidence() async throws {
+  let url = FileManager.default.temporaryDirectory
+    .appendingPathComponent("operations-alert-durable-\(UUID().uuidString).sqlite")
+  defer { try? FileManager.default.removeItem(at: url) }
+  let store = try SQLiteOperationsStore(
+    path: url.path, environment: "dev", logger: Logger(label: "operations.test"))
+  let config = OperationsConfiguration.fromEnvironment(["APP_ENV": "dev"])
+  let evaluator = AlertEvaluator(
+    store: store, config: config, logger: Logger(label: "operations.test"), webhook: nil)
+  let now = Date()
+
+  _ = try await store.createGap(
+    source: "jetstream", startCursor: 100, endCursor: 200,
+    reason: "legacy_disconnect_signal", collections: [], detectedAt: now)
+  try await evaluator.evaluate(at: now)
+  #expect(try await store.listAlerts(view: .active, limit: 250, before: nil).items
+    .allSatisfy { $0.conditionKey != "ingestion:active_gap" })
+
+  _ = try await store.upsertOrMergeActiveIncident(IngestionIncidentCandidate(
+    sourceGeneration: "us-west-v2", sourceHost: "jetstream.us-west.bsky.network",
+    source: "jetstream", cursorKind: .jetstreamV2Sequence,
+    category: "consumer_too_slow", detectedAt: now.addingTimeInterval(1)))
+  try await evaluator.evaluate(at: now.addingTimeInterval(1))
+
+  let alert = try #require(
+    try await store.listAlerts(view: .active, limit: 250, before: nil).items.first {
+      $0.conditionKey == "ingestion:active_gap"
+    })
+  #expect(alert.rule == "active_ingestion_incident")
+  #expect(alert.evidence["primary_evidence"] == "durable_ingestion")
+  #expect(alert.evidence["legacy_gap_signal_count"] == "1")
+}
+
 @Test("one durable webhook attempt performs exactly one HTTP request")
 func webhookDeliveryDoesNotNestRetries() async throws {
   actor AttemptCounter {

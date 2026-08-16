@@ -51,5 +51,7 @@ func postgresMaximumConnections(
   // Keep a conservative per-process default so colocated services leave headroom in the
   // Railway Postgres connection budget even when an override is omitted.
   let configured = environment["POSTGRES_MAX_CONNECTIONS"].flatMap(Int.init) ?? 2
-  return max(1, configured)
+  // One connection may hold the V1 authority row fence while the fenced message performs its
+  // projection writes through the same shared pool. Fewer than two would deadlock that handoff.
+  return max(2, configured)
 }

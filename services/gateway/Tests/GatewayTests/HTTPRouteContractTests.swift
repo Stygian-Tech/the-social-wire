@@ -51,6 +51,7 @@ struct HTTPRouteContractTests {
     )
   }
 
+
   @Test("health is public")
   func healthEndpoint() async throws {
     try await withSingletonHTTPClient { client in
@@ -394,7 +395,7 @@ struct HTTPRouteContractTests {
           ("/xrpc/link.latr.bookmarks.listBookmarks?limit=25&cursor=next", .get),
           ("/xrpc/link.latr.bookmarks.getBookmark?subject=https%3A%2F%2Fexample.com", .get),
           ("/xrpc/link.latr.bookmarks.saveBookmark", .post),
-          ("/xrpc/link.latr.bookmarks.setState", .patch),
+          ("/xrpc/link.latr.bookmarks.setState", .post),
           ("/xrpc/link.latr.bookmarks.deleteBookmark", .post),
           ("/xrpc/link.latr.bookmarks.migrateLegacy", .post),
         ]
@@ -442,6 +443,7 @@ struct HTTPRouteContractTests {
     #expect(OperationsProxyRoutes.idempotencyKey(from: headers) == "mutation-123")
   }
 }
+
 
 @Suite("ATProtoAuthMiddleware")
 struct ATProtoAuthMiddlewareTests {

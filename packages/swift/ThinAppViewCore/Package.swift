@@ -48,10 +48,13 @@ let package = Package(
       name: "ThinAppViewCoreTests",
       dependencies: [
         "ThinAppViewCore",
+        "OperationsCore",
         "SocialWireRedis",
+        .product(name: "GRDB", package: "GRDB.swift"),
         .product(name: "Logging", package: "swift-log"),
       ],
       path: "Tests/ThinAppViewCoreTests",
+      resources: [.copy("Fixtures")],
       swiftSettings: [
         .swiftLanguageMode(.v6),
         .unsafeFlags(["-warnings-as-errors"]),

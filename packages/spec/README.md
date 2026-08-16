@@ -8,7 +8,7 @@ distributed backend (`services/gateway`, `services/appview`, and
 **File:** [`openapi.yaml`](./openapi.yaml) (OpenAPI 3.1)
 
 [`endpoint-manifest.json`](./endpoint-manifest.json) is the authoritative transport classification
-for every documented operation plus Next.js BFF and private Tap surfaces. `xrpc-migration` entries
+for every documented operation plus Next.js BFF surfaces. `xrpc-migration` entries
 name the exact Lexicon NSID; operational, metadata, streaming, media, ATProto-repository,
 foreign-service, and vendor-owned HTTP endpoints remain explicitly classified outside XRPC.
 

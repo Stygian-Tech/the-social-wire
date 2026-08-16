@@ -1,20 +1,25 @@
 meta {
-  name: Delete AppView Privacy Purge
+  name: Purge AppView Viewer Data
   type: http
   seq: 7
 }
 
-delete {
-  url: {{appviewBaseUrl}}/v1/appview/privacy/purge
-  body: none
+post {
+  url: {{appviewBaseUrl}}/xrpc/app.thesocialwire.appview.purgeViewerData
+  body: json
   auth: none
 }
 
 headers {
   Authorization: Bearer {{oauthAccessToken}}
   DPoP: {{dpopProof}}
+  Content-Type: application/json
+}
+
+body:json {
+  {}
 }
 
 docs {
-  Clears all indexed read marks for the authenticated viewer (privacy purge path).
+  Clears all indexed read marks for the authenticated viewer through the XRPC privacy procedure.
 }

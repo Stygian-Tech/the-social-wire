@@ -16,7 +16,7 @@ const reconnectRules = new Set([
   "jetstream_transport_evidence_missing",
   "jetstream_transport_heartbeat_expired",
 ])
-const activeGapRules = new Set(["active_ingestion_gap", "confirmed_ingestion_gap"])
+const activeGapRules = new Set(["active_ingestion_gap", "active_ingestion_incident", "confirmed_ingestion_gap"])
 
 function deliveryLabel(alert: Alert) {
   if (alert.deliveryDeadLetteredAt) return "Dead Letter"

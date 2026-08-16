@@ -23,7 +23,7 @@ const mockFetchHandler = mock(async (url: string) => {
       { status: 200, headers: { "Content-Type": "application/json" } }
     );
   }
-  if (url.includes("/v1/appview/enroll")) {
+  if (url.includes("/xrpc/app.thesocialwire.appview.enrollSources")) {
     return new Response(JSON.stringify({ indexed: 0 }), {
       status: 200,
       headers: { "Content-Type": "application/json" },

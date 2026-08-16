@@ -13,7 +13,6 @@ import { usePDSClient } from "./usePDSClient";
 import { useAuth } from "./useAuth";
 import { PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY } from "@/lib/sidebarQueryKeys";
 import {
-  discoverPublications,
   discoveredPublicationFromAtUri,
   normalizeAtRepoParam,
   parseAtUri,
@@ -48,7 +47,6 @@ import {
 } from "@/hooks/useEntries";
 import {
   enrollAuthorsInAppView,
-  isThinAppViewEnabled,
 } from "@/lib/thinAppViewClient";
 import {
   applyPublicationFolderMoveToProjection,
@@ -74,8 +72,6 @@ export const PUBLICATION_SUBSCRIPTIONS_QUERY_KEY = [
 export const SKYREADER_FEED_SUBSCRIPTIONS_QUERY_KEY = [
   "skyreaderFeedSubscriptions",
 ] as const;
-export const DISCOVERY_QUERY_KEY = (did: string) =>
-  ["discovery", "publications-v2", did] as const;
 
 async function refreshSidebarAfterAddingPublication(args: {
   oauthSession: OAuthSession;
@@ -288,80 +284,6 @@ export function useGraphSubscriptionPublications(
   });
 }
 
-/** Fire-and-forget enrollment of followed author DIDs into the thin AppView index. */
-function maybeEnrollDiscoveryAuthors(
-  oauthSession: OAuthSession | null,
-  publications: DiscoveredPublication[]
-): void {
-  if (!isThinAppViewEnabled() || !oauthSession) return;
-  const authorDids = [
-    ...new Set(
-      publications
-        .map((p) => p.authorDid?.trim())
-        .filter((did): did is string => Boolean(did))
-    ),
-  ];
-  if (authorDids.length === 0) return;
-  void enrollAuthorsInAppView(oauthSession, authorDids).catch(() => {
-    /* best-effort backfill */
-  });
-}
-
-// ── Discovery ─────────────────────────────────────────────────────────────────
-
-/**
- * Returns all publications discovered from the user's follow graph.
- */
-export function useDiscovery() {
-  const { session, getOAuthSession } = useAuth();
-  const did = session?.did ?? null;
-  const qc = useQueryClient();
-
-  return useQuery({
-    queryKey: DISCOVERY_QUERY_KEY(did ?? ""),
-    queryFn: async ({ signal }): Promise<DiscoveredPublication[]> => {
-      const oauthSession = getOAuthSession();
-      if (!did || !oauthSession) return [];
-      return discoverPublications(did, oauthSession, {
-        signal,
-        onProgress: (list) =>
-          qc.setQueryData(DISCOVERY_QUERY_KEY(did), list),
-      }).then((list) => {
-        maybeEnrollDiscoveryAuthors(oauthSession, list);
-        return list;
-      });
-    },
-    enabled: !!did && !!session,
-    /** Long TTL — hydrated from localStorage; user refreshes explicitly via sidebar control. */
-    staleTime: 1000 * 60 * 60 * 6,
-    gcTime: 1000 * 60 * 60 * 24 * 7,
-    refetchOnWindowFocus: false,
-  });
-}
-
-/**
- * Re-runs discovery by invalidating the cached results, triggering a fresh fetch.
- */
-export function useRefreshDiscovery() {
-  const { session, getOAuthSession } = useAuth();
-  const did = session?.did ?? null;
-  const qc = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (): Promise<DiscoveredPublication[]> => {
-      const oauthSession = getOAuthSession();
-      if (!did || !oauthSession) throw new Error("Not authenticated");
-      return discoverPublications(did, oauthSession, {
-        onProgress: (list) =>
-          qc.setQueryData(DISCOVERY_QUERY_KEY(did), list),
-      }).then((list) => {
-        maybeEnrollDiscoveryAuthors(oauthSession, list);
-        return list;
-      });
-    },
-  });
-}
-
 // ── Publication prefs mutations ───────────────────────────────────────────────
 
 export function useSetPublicationFolder() {
@@ -441,8 +363,6 @@ export function useSetPublicationFolder() {
 export function useSubscribeToPublication() {
   const client = usePDSClient();
   const qc = useQueryClient();
-  const { session } = useAuth();
-  const did = session?.did ?? null;
 
   return useMutation({
     mutationFn: async ({
@@ -472,7 +392,6 @@ export function useSubscribeToPublication() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: PUB_PREFS_QUERY_KEY });
       qc.invalidateQueries({ queryKey: PUBLICATION_SUBSCRIPTIONS_QUERY_KEY });
-      if (did) qc.invalidateQueries({ queryKey: DISCOVERY_QUERY_KEY(did) });
     },
   });
 }
@@ -571,7 +490,6 @@ export function useUnsubscribePublication() {
       qc.invalidateQueries({ queryKey: PUB_PREFS_QUERY_KEY });
       qc.invalidateQueries({ queryKey: PUBLICATION_SUBSCRIPTIONS_QUERY_KEY });
       qc.invalidateQueries({ queryKey: SKYREADER_FEED_SUBSCRIPTIONS_QUERY_KEY });
-      if (did) qc.invalidateQueries({ queryKey: DISCOVERY_QUERY_KEY(did) });
 
       const oauth = getOAuthSession();
       if (!oauth || !did) return;
@@ -809,24 +727,15 @@ export function useAddPublicationFromAnyLink() {
       qc.invalidateQueries({ queryKey: PUBLICATION_SUBSCRIPTIONS_QUERY_KEY });
       qc.invalidateQueries({ queryKey: SKYREADER_FEED_SUBSCRIPTIONS_QUERY_KEY });
       qc.invalidateQueries({ queryKey: ["graphSubscriptionPublications"] });
-      if (did) {
-        qc.invalidateQueries({ queryKey: DISCOVERY_QUERY_KEY(did) });
-      }
       const oauthSession = getOAuthSession();
       if (
         result?.kind === "standard-site" &&
         typeof result.authorDid === "string" &&
         oauthSession
       ) {
-        maybeEnrollDiscoveryAuthors(oauthSession, [
-          {
-            publicationId: result.navigatePubId,
-            authorDid: result.authorDid,
-            authorHandle: result.authorDid,
-            title: "",
-            discoveredAt: new Date().toISOString(),
-          },
-        ]);
+        void enrollAuthorsInAppView(oauthSession, [result.authorDid]).catch(
+          () => undefined
+        );
       }
     },
   });

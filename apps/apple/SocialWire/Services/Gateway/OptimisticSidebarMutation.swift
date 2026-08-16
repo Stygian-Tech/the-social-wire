@@ -43,7 +43,7 @@ enum OptimisticSidebarMutation {
         folderMap: inout [String: [DiscoveredPublication]],
         publicationPrefs: inout [String: RepoRecord<PublicationPrefsRecord>],
         optimisticRkey: String,
-        created: GatewayRecordWriteResponseDTO,
+        created: RecordWriteResponseDTO,
         name: String
     ) {
         guard let index = folders.firstIndex(where: { rkey(from: $0.uri) == optimisticRkey }) else { return }

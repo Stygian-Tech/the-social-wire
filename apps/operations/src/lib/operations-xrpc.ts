@@ -5,6 +5,8 @@ export const operationsXrpc = {
   getOverview: method("getOverview"),
   listServices: method("listServices"),
   getIngestion: method("getIngestion"),
+  getIngestionDurability: method("getIngestionDurability"),
+  listIngestionIncidents: method("listIngestionIncidents"),
   listIngestionEndpoints: method("listIngestionEndpoints"),
   listCommands: method("listCommands"),
   getAppView: method("getAppView"),

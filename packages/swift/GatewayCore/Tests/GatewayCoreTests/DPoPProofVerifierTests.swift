@@ -138,4 +138,52 @@ struct DPoPProofVerifierTests {
     }
     #expect(mismatchedConfirmation)
   }
+
+  @Test("rejects proof when the access token has no cnf thumbprint")
+  func rejectsMissingCnfThumbprint() throws {
+    let key = P256.Signing.PrivateKey()
+    let coordinates = key.publicKey.x963Representation.dropFirst()
+    let jwk = JWKBody(
+      crv: "P-256",
+      kty: "EC",
+      x: Base64URL.encodeNoPadding(data: Data(coordinates.prefix(32))),
+      y: Base64URL.encodeNoPadding(data: Data(coordinates.suffix(32)))
+    )
+    let accessTokenJWT = "token.part.three"
+    let helper = CanonicalJSON()
+    let headerSegment = try helper.base64url(
+      JWTDPoPHeader(alg: "ES256", typ: "dpop+jwt", jwk: jwk)
+    )
+    let payloadSegment = try helper.base64url(
+      JWTDPoPPayload(
+        jti: "missing-cnf",
+        iat: Int(Date().timeIntervalSince1970),
+        htm: "GET",
+        htu: "http://localhost/ok",
+        ath: AccessTokenAth.expectedAth(accessTokenJWT: accessTokenJWT)
+      )
+    )
+    let signingInput = Data((headerSegment + "." + payloadSegment).utf8)
+    let signature = try key.signature(for: SHA256.hash(data: signingInput))
+    let proofJWT = headerSegment + "." + payloadSegment + "."
+      + Base64URL.encodeNoPadding(data: signature.rawRepresentation)
+
+    for missingConfirmation in [nil, "", "  \t"] as [String?] {
+      var rejectedMissingConfirmation = false
+      do {
+        try DPoPProofVerifier.verify(
+          proofJWT: proofJWT,
+          uppercasedHTTPMethod: "GET",
+          expectedHtuURL: "http://localhost/ok",
+          accessTokenJWT: accessTokenJWT,
+          accessTokenCnFJkt: missingConfirmation
+        )
+      } catch DPoPProofVerifier.VerifyError.missingAccessTokenConfirmation {
+        rejectedMissingConfirmation = true
+      } catch {
+        Issue.record("Unexpected error: \(error)")
+      }
+      #expect(rejectedMissingConfirmation)
+    }
+  }
 }

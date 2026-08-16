@@ -17,6 +17,531 @@ public init(pool: PostgresClient, logger: Logger) {
     for try await _ in rows { return }
   }
 
+  public func claimIngestionInbox(
+    environment: String,
+    sourceGeneration: String,
+    workerId: String,
+    limit: Int,
+    leaseUntil: Date,
+    at: Date
+  ) async throws -> [AppViewIngestionInboxItem] {
+    let leaseToken = UUID().uuidString.lowercased()
+    let rows = try await pool.query(
+      """
+      WITH candidates AS (
+        SELECT i.environment, i.source_generation, i.seq
+        FROM appview_ingestion_inbox i
+        WHERE i.environment = \(environment) AND i.source_generation = \(sourceGeneration)
+          AND ((i.status IN ('pending', 'retry') AND i.next_attempt_at <= \(at))
+            OR (i.status = 'leased' AND i.lease_expires_at <= \(at)))
+          AND NOT EXISTS (
+            SELECT 1
+            FROM appview_ingestion_inbox earlier
+            WHERE earlier.environment = i.environment
+              AND earlier.source_generation = i.source_generation
+              AND earlier.repo_did = i.repo_did
+              AND earlier.seq < i.seq
+              AND earlier.status IN ('pending', 'retry', 'leased')
+          )
+          AND NOT EXISTS (
+            SELECT 1
+            FROM appview_ingestion_reconciliation_requests request
+            WHERE request.environment = i.environment
+              AND request.source_generation = i.source_generation
+              AND request.repo_did = i.repo_did
+              AND request.status IN ('pending', 'leased')
+          )
+        ORDER BY i.seq ASC
+        FOR UPDATE SKIP LOCKED
+        LIMIT \(max(1, limit))
+      )
+      UPDATE appview_ingestion_inbox AS inbox
+      SET status = 'leased', lease_owner = \(workerId), lease_token = \(leaseToken),
+          lease_expires_at = \(leaseUntil), updated_at = \(at)
+      FROM candidates
+      WHERE inbox.environment = candidates.environment
+        AND inbox.source_generation = candidates.source_generation
+        AND inbox.seq = candidates.seq
+      RETURNING inbox.seq, inbox.source_host, inbox.event_kind, inbox.repo_did,
+                inbox.collection, inbox.operation, inbox.repo_rev, inbox.record_key,
+                inbox.record_cid, inbox.payload::text, inbox.event_time, inbox.attempt_count
+      """,
+      logger: logger
+    )
+    var claimed: [AppViewIngestionInboxItem] = []
+    for try await row in rows {
+      let value = try row.decode(
+        (Int64, String, String, String, String?, String?, String?, String?, String?, String, Date, Int).self
+      )
+      guard let eventKind = AppViewIngestionEventKind(rawValue: value.2),
+        let payload = value.9.data(using: .utf8)
+      else { throw AppViewIngestionInboxStoreError.invalidRow }
+      claimed.append(
+        AppViewIngestionInboxItem(
+          environment: environment,
+          sourceGeneration: sourceGeneration,
+          sequence: value.0,
+          sourceHost: value.1,
+          eventKind: eventKind,
+          repoDid: value.3,
+          collection: value.4,
+          operation: value.5,
+          repoRev: value.6,
+          recordKey: value.7,
+          recordCID: value.8,
+          payload: payload,
+          eventTime: value.10,
+          attemptCount: value.11,
+          leaseToken: leaseToken,
+          leaseExpiresAt: leaseUntil
+        )
+      )
+    }
+    return claimed.sorted { $0.sequence < $1.sequence }
+  }
+
+  public func markIngestionInboxApplied(
+    environment: String,
+    sourceGeneration: String,
+    sequence: Int64,
+    workerId: String,
+    leaseToken: String,
+    expiresAt: Date,
+    at: Date
+  ) async throws {
+    try await pool.withTransaction(logger: logger) { connection in
+      let rows = try await connection.query(
+        """
+        UPDATE appview_ingestion_inbox
+        SET status = 'applied', applied_at = \(at), lease_owner = NULL, lease_token = NULL,
+            lease_expires_at = NULL, failure_category = NULL, failure_reason = NULL,
+            expires_at = \(expiresAt), updated_at = \(at)
+        WHERE environment = \(environment) AND source_generation = \(sourceGeneration)
+          AND seq = \(sequence) AND status = 'leased'
+          AND lease_owner = \(workerId) AND lease_token = \(leaseToken)
+        RETURNING 1
+        """,
+        logger: logger
+      )
+      var updated = false
+      for try await _ in rows { updated = true }
+      guard updated else { throw AppViewIngestionInboxStoreError.staleLease }
+      try await Self.advanceAppliedInboxWatermark(
+        connection: connection,
+        environment: environment,
+        sourceGeneration: sourceGeneration,
+        at: at,
+        logger: logger
+      )
+    }
+  }
+
+  public func retryIngestionInbox(
+    environment: String,
+    sourceGeneration: String,
+    sequence: Int64,
+    workerId: String,
+    leaseToken: String,
+    failureCategory: String,
+    failureReason: String,
+    nextAttemptAt: Date,
+    at: Date
+  ) async throws {
+    let rows = try await pool.query(
+      """
+      UPDATE appview_ingestion_inbox
+      SET status = 'retry', attempt_count = attempt_count + 1,
+          next_attempt_at = \(nextAttemptAt), lease_owner = NULL, lease_token = NULL,
+          lease_expires_at = NULL, failure_category = \(failureCategory),
+          failure_reason = \(String(failureReason.prefix(1_000))), updated_at = \(at)
+      WHERE environment = \(environment) AND source_generation = \(sourceGeneration)
+        AND seq = \(sequence) AND status = 'leased'
+        AND lease_owner = \(workerId) AND lease_token = \(leaseToken)
+      RETURNING 1
+      """,
+      logger: logger
+    )
+    var updated = false
+    for try await _ in rows { updated = true }
+    guard updated else { throw AppViewIngestionInboxStoreError.staleLease }
+  }
+
+  public func advanceIngestionInboxAppliedWatermark(
+    environment: String,
+    sourceGeneration: String,
+    at: Date
+  ) async throws {
+    try await pool.withTransaction(logger: logger) { connection in
+      try await Self.advanceAppliedInboxWatermark(
+        connection: connection,
+        environment: environment,
+        sourceGeneration: sourceGeneration,
+        at: at,
+        logger: logger
+      )
+    }
+  }
+
+  public func renewIngestionInboxLease(
+    environment: String,
+    sourceGeneration: String,
+    sequence: Int64,
+    workerId: String,
+    leaseToken: String,
+    leaseUntil: Date,
+    at: Date
+  ) async throws {
+    let rows = try await pool.query(
+      """
+      UPDATE appview_ingestion_inbox
+      SET lease_expires_at = \(leaseUntil), updated_at = \(at)
+      WHERE environment = \(environment) AND source_generation = \(sourceGeneration)
+        AND seq = \(sequence) AND status = 'leased'
+        AND lease_owner = \(workerId) AND lease_token = \(leaseToken)
+      RETURNING 1
+      """,
+      logger: logger
+    )
+    var updated = false
+    for try await _ in rows { updated = true }
+    guard updated else { throw AppViewIngestionInboxStoreError.staleLease }
+  }
+
+  public func deadLetterIngestionInbox(
+    environment: String,
+    sourceGeneration: String,
+    sequence: Int64,
+    repoDid: String,
+    workerId: String,
+    leaseToken: String,
+    failureCategory: String,
+    failureReason: String,
+    expiresAt: Date,
+    at: Date
+  ) async throws {
+    try await pool.withTransaction(logger: logger) { connection in
+      let rows = try await connection.query(
+        """
+        UPDATE appview_ingestion_inbox
+        SET status = 'dead_letter', attempt_count = attempt_count + 1,
+            next_attempt_at = \(at), lease_owner = NULL, lease_token = NULL,
+            lease_expires_at = NULL, failure_category = \(failureCategory),
+            failure_reason = \(String(failureReason.prefix(1_000))), dead_lettered_at = \(at),
+            expires_at = \(expiresAt), updated_at = \(at)
+        WHERE environment = \(environment) AND source_generation = \(sourceGeneration)
+          AND seq = \(sequence) AND status = 'leased'
+          AND lease_owner = \(workerId) AND lease_token = \(leaseToken)
+        RETURNING 1
+        """,
+        logger: logger
+      )
+      var updated = false
+      for try await _ in rows { updated = true }
+      guard updated else { throw AppViewIngestionInboxStoreError.staleLease }
+      let requestId = "\(sourceGeneration):\(sequence):\(repoDid)"
+      try await connection.query(
+        """
+        INSERT INTO appview_ingestion_reconciliation_requests
+          (environment, id, source_generation, repo_did, reason, trigger_seq, status,
+           attempt_count, next_attempt_at, created_at, updated_at)
+        VALUES
+          (\(environment), \(requestId), \(sourceGeneration), \(repoDid), \(failureCategory),
+           \(sequence), 'pending', 0, \(at), \(at), \(at))
+        ON CONFLICT (environment, source_generation, repo_did, trigger_seq, reason) DO NOTHING
+        """,
+        logger: logger
+      )
+    }
+  }
+
+  public func markIngestionInboxReconciled(
+    environment: String,
+    sourceGeneration: String,
+    sequence: Int64,
+    repoDid: String,
+    repoRev: String,
+    workerId: String,
+    leaseToken: String,
+    expiresAt: Date,
+    at: Date
+  ) async throws {
+    try await pool.withTransaction(logger: logger) { connection in
+      let rows = try await connection.query(
+        """
+        UPDATE appview_ingestion_inbox
+        SET reconciled_at = \(at), expires_at = \(expiresAt),
+            updated_at = \(at)
+        WHERE environment = \(environment) AND source_generation = \(sourceGeneration)
+          AND seq = \(sequence) AND repo_did = \(repoDid)
+          AND status = 'leased' AND lease_owner = \(workerId) AND lease_token = \(leaseToken)
+        RETURNING 1
+        """,
+        logger: logger
+      )
+      var updated = false
+      for try await _ in rows { updated = true }
+      guard updated else { throw AppViewIngestionInboxStoreError.staleLease }
+      try await connection.query(
+        """
+        UPDATE appview_jetstream_checkpoints
+        SET last_reconciled_repo_rev = \(repoRev), last_reconciled_at = \(at), updated_at = \(at)
+        WHERE environment = \(environment) AND source_generation = \(sourceGeneration)
+        """,
+        logger: logger
+      )
+      try await connection.query(
+        """
+        UPDATE appview_ingestion_reconciliation_requests
+        SET status = 'completed', completed_at = \(at), updated_at = \(at),
+            lease_owner = NULL, lease_token = NULL, lease_expires_at = NULL
+        WHERE environment = \(environment) AND source_generation = \(sourceGeneration)
+          AND repo_did = \(repoDid) AND trigger_seq = \(sequence) AND status != 'completed'
+        """,
+        logger: logger
+      )
+      try await Self.advanceAppliedInboxWatermark(
+        connection: connection,
+        environment: environment,
+        sourceGeneration: sourceGeneration,
+        at: at,
+        logger: logger
+      )
+    }
+  }
+
+  public func deleteExpiredIngestionInbox(
+    environment: String,
+    before: Date,
+    batchSize: Int
+  ) async throws -> Int {
+    let rows = try await pool.query(
+      """
+      WITH expired AS (
+        SELECT environment, source_generation, seq
+        FROM appview_ingestion_inbox
+        WHERE environment = \(environment) AND expires_at <= \(before)
+          AND (status = 'applied' OR (status = 'dead_letter' AND reconciled_at IS NOT NULL))
+        ORDER BY expires_at ASC, seq ASC
+        LIMIT \(max(1, batchSize))
+        FOR UPDATE SKIP LOCKED
+      )
+      DELETE FROM appview_ingestion_inbox inbox
+      USING expired
+      WHERE inbox.environment = expired.environment
+        AND inbox.source_generation = expired.source_generation
+        AND inbox.seq = expired.seq
+      RETURNING 1
+      """,
+      logger: logger
+    )
+    var deleted = 0
+    for try await _ in rows { deleted += 1 }
+    return deleted
+  }
+
+  public func resolveRecoveredIngestionIncidents(
+    environment: String,
+    sourceGeneration: String,
+    at: Date
+  ) async throws -> Int {
+    let rows = try await pool.query(
+      """
+      UPDATE appview_ingestion_incidents incident
+      SET status = 'resolved', replay_state = 'live',
+          replay_sealed_seq = checkpoint.replay_sealed_seq,
+          recovered_through_cursor = checkpoint.last_applied_seq,
+          verification_evidence = incident.verification_evidence || jsonb_build_object(
+            'recovery', 'terminal_prefix_reached',
+            'sealedSequence', checkpoint.replay_sealed_seq::text,
+            'terminalPrefixSequence', checkpoint.last_applied_seq::text,
+            'allStagedRowsThroughSealedTerminal', true),
+          resolved_at = \(at), updated_at = \(at), version = incident.version + 1
+      FROM appview_jetstream_checkpoints checkpoint
+      WHERE checkpoint.environment = \(environment)
+        AND checkpoint.source_generation = \(sourceGeneration)
+        AND checkpoint.replay_state = 'live'
+        AND checkpoint.replay_sealed_seq IS NOT NULL
+        AND checkpoint.last_applied_seq >= checkpoint.replay_sealed_seq
+        AND incident.environment = checkpoint.environment
+        AND incident.source_generation = checkpoint.source_generation
+        AND incident.source = 'jetstream-v2'
+        AND incident.cursor_kind = 'jetstream_v2_seq'
+        AND incident.category IN (
+          'transport_error', 'consumer_too_slow', 'cursor_too_old', 'replay_budget',
+          'no_progress_24h')
+        AND incident.status IN ('open', 'recovering')
+        AND NOT EXISTS (
+          SELECT 1 FROM appview_ingestion_inbox inbox
+          WHERE inbox.environment = checkpoint.environment
+            AND inbox.source_generation = checkpoint.source_generation
+            AND inbox.seq <= checkpoint.replay_sealed_seq
+            AND inbox.status != 'applied' AND inbox.reconciled_at IS NULL)
+      RETURNING 1
+      """,
+      logger: logger
+    )
+    var resolved = 0
+    for try await _ in rows { resolved += 1 }
+    return resolved
+  }
+
+  public func claimIngestionReconciliationRequests(
+    environment: String,
+    sourceGeneration: String,
+    workerId: String,
+    limit: Int,
+    leaseUntil: Date,
+    at: Date
+  ) async throws -> [AppViewIngestionReconciliationRequest] {
+    let leaseToken = UUID().uuidString.lowercased()
+    let rows = try await pool.query(
+      """
+      WITH candidates AS (
+        SELECT request.environment, request.id
+        FROM appview_ingestion_reconciliation_requests request
+        WHERE request.environment = \(environment)
+          AND request.source_generation = \(sourceGeneration)
+          AND ((request.status = 'pending' AND request.next_attempt_at <= \(at))
+            OR (request.status = 'leased' AND request.lease_expires_at <= \(at)))
+          AND NOT EXISTS (
+            SELECT 1 FROM appview_ingestion_reconciliation_requests earlier
+            WHERE earlier.environment = request.environment
+              AND earlier.source_generation = request.source_generation
+              AND earlier.repo_did = request.repo_did
+              AND earlier.trigger_seq < request.trigger_seq
+              AND earlier.status IN ('pending', 'leased'))
+          AND NOT EXISTS (
+            SELECT 1 FROM appview_ingestion_inbox inbox
+            WHERE inbox.environment = request.environment
+              AND inbox.source_generation = request.source_generation
+              AND inbox.repo_did = request.repo_did
+              AND inbox.status = 'leased'
+              AND inbox.lease_expires_at > \(at))
+        ORDER BY request.trigger_seq, request.id
+        FOR UPDATE SKIP LOCKED
+        LIMIT \(max(1, limit))
+      )
+      UPDATE appview_ingestion_reconciliation_requests request
+      SET status = 'leased', lease_owner = \(workerId), lease_token = \(leaseToken),
+          lease_expires_at = \(leaseUntil), updated_at = \(at)
+      FROM candidates
+      WHERE request.environment = candidates.environment AND request.id = candidates.id
+      RETURNING request.id, request.repo_did, request.reason, request.trigger_seq,
+                request.attempt_count
+      """,
+      logger: logger
+    )
+    var requests: [AppViewIngestionReconciliationRequest] = []
+    for try await row in rows {
+      let value = try row.decode((String, String, String, Int64, Int).self)
+      requests.append(AppViewIngestionReconciliationRequest(
+        environment: environment, id: value.0, sourceGeneration: sourceGeneration,
+        repoDid: value.1, reason: value.2, triggerSequence: value.3,
+        attemptCount: value.4, leaseToken: leaseToken, leaseExpiresAt: leaseUntil))
+    }
+    return requests
+  }
+
+  public func renewIngestionReconciliationLease(
+    environment: String,
+    requestId: String,
+    workerId: String,
+    leaseToken: String,
+    leaseUntil: Date,
+    at: Date
+  ) async throws {
+    let rows = try await pool.query(
+      """
+      UPDATE appview_ingestion_reconciliation_requests
+      SET lease_expires_at = \(leaseUntil), updated_at = \(at)
+      WHERE environment = \(environment) AND id = \(requestId) AND status = 'leased'
+        AND lease_owner = \(workerId) AND lease_token = \(leaseToken)
+      RETURNING 1
+      """, logger: logger)
+    for try await _ in rows { return }
+    throw AppViewIngestionInboxStoreError.staleLease
+  }
+
+  public func retryIngestionReconciliation(
+    environment: String,
+    requestId: String,
+    workerId: String,
+    leaseToken: String,
+    failureReason: String,
+    nextAttemptAt: Date,
+    at: Date
+  ) async throws {
+    let rows = try await pool.query(
+      """
+      UPDATE appview_ingestion_reconciliation_requests
+      SET status = CASE WHEN attempt_count + 1 >= 10 THEN 'failed' ELSE 'pending' END,
+          attempt_count = attempt_count + 1, next_attempt_at = \(nextAttemptAt),
+          lease_owner = NULL, lease_token = NULL, lease_expires_at = NULL,
+          reason = CASE WHEN attempt_count + 1 >= 10
+            THEN reason || ':reconciliation_failed:' || \(String(failureReason.prefix(512)))
+            ELSE reason END,
+          updated_at = \(at)
+      WHERE environment = \(environment) AND id = \(requestId) AND status = 'leased'
+        AND lease_owner = \(workerId) AND lease_token = \(leaseToken)
+      RETURNING 1
+      """, logger: logger)
+    for try await _ in rows { return }
+    throw AppViewIngestionInboxStoreError.staleLease
+  }
+
+  public func completeIngestionReconciliation(
+    environment: String,
+    requestId: String,
+    sourceGeneration: String,
+    repoDid: String,
+    triggerSequence: Int64,
+    workerId: String,
+    leaseToken: String,
+    expiresAt: Date,
+    at: Date
+  ) async throws {
+    try await pool.withTransaction(logger: logger) { connection in
+      let fenced = try await connection.query(
+        """
+        UPDATE appview_ingestion_reconciliation_requests
+        SET status = 'completed', completed_at = \(at), updated_at = \(at),
+            lease_owner = NULL, lease_token = NULL, lease_expires_at = NULL
+        WHERE environment = \(environment) AND id = \(requestId) AND status = 'leased'
+          AND lease_owner = \(workerId) AND lease_token = \(leaseToken)
+        RETURNING 1
+        """, logger: logger)
+      var updated = false
+      for try await _ in fenced { updated = true }
+      guard updated else { throw AppViewIngestionInboxStoreError.staleLease }
+      let inboxRows = try await connection.query(
+        """
+        UPDATE appview_ingestion_inbox
+        SET reconciled_at = \(at), expires_at = \(expiresAt), updated_at = \(at)
+        WHERE environment = \(environment) AND source_generation = \(sourceGeneration)
+          AND seq = \(triggerSequence) AND repo_did = \(repoDid) AND status = 'dead_letter'
+        RETURNING 1
+        """, logger: logger)
+      var inboxUpdated = false
+      for try await _ in inboxRows { inboxUpdated = true }
+      guard inboxUpdated else { throw AppViewIngestionInboxStoreError.invalidRow }
+      try await connection.query(
+        """
+        UPDATE appview_jetstream_checkpoints checkpoint
+        SET last_reconciled_repo_rev = COALESCE(inbox.repo_rev, checkpoint.last_reconciled_repo_rev),
+            last_reconciled_at = \(at), updated_at = \(at)
+        FROM appview_ingestion_inbox inbox
+        WHERE checkpoint.environment = \(environment)
+          AND checkpoint.source_generation = \(sourceGeneration)
+          AND inbox.environment = checkpoint.environment
+          AND inbox.source_generation = checkpoint.source_generation
+          AND inbox.seq = \(triggerSequence)
+        """, logger: logger)
+      try await Self.advanceAppliedInboxWatermark(
+        connection: connection, environment: environment,
+        sourceGeneration: sourceGeneration, at: at, logger: logger)
+    }
+  }
+
   public func upsertContentItem(_ item: IndexedContentItem) async throws {
     let renderJSON = try item.render.encodedJSON()
     try await pool.query(
@@ -51,6 +576,38 @@ public init(pool: PostgresClient, logger: Logger) {
       "DELETE FROM content_items WHERE author_did = \(authorDid) RETURNING 1",
       logger: logger
     )
+    var deleted = 0
+    for try await _ in rows { deleted += 1 }
+    return deleted
+  }
+
+  public func deleteContentItems(
+    authorDid: String,
+    excludingURIs: [String],
+    indexedAtOrBefore: Date
+  ) async throws -> Int {
+    let rows = if excludingURIs.isEmpty {
+      try await pool.query(
+        """
+        DELETE FROM content_items
+        WHERE author_did = \(authorDid)
+          AND indexed_at <= \(indexedAtOrBefore)
+        RETURNING 1
+        """,
+        logger: logger
+      )
+    } else {
+      try await pool.query(
+        """
+        DELETE FROM content_items
+        WHERE author_did = \(authorDid)
+          AND indexed_at <= \(indexedAtOrBefore)
+          AND NOT (uri = ANY(\(excludingURIs)))
+        RETURNING 1
+        """,
+        logger: logger
+      )
+    }
     var deleted = 0
     for try await _ in rows { deleted += 1 }
     return deleted
@@ -1549,6 +2106,21 @@ public init(pool: PostgresClient, logger: Logger) {
     }
   }
 
+  public func markUnreadCountersDirtyForAuthor(authorDid: String) async throws {
+    let scopes = try await publicationScopes(authorDid: authorDid, viewerDid: nil)
+    guard !scopes.isEmpty else { return }
+    let generation = AppViewUnreadCounterSupport.generation()
+    let countedAt = Date()
+    for scope in scopes {
+      try await markUnreadCounterDirty(
+        viewerDid: scope.viewerDid,
+        publicationId: scope.publicationId,
+        generation: generation,
+        countedAt: countedAt
+      )
+    }
+  }
+
   public func adjustUnreadCountersForReadState(
     viewerDid: String,
     subjectUri: String,
@@ -3033,6 +3605,64 @@ public init(pool: PostgresClient, logger: Logger) {
     )
     ON CONFLICT (viewer_did, feed_kind, feed_id, publication_id) DO NOTHING
     """
+  }
+
+  private static func advanceAppliedInboxWatermark(
+    connection: PostgresConnection,
+    environment: String,
+    sourceGeneration: String,
+    at: Date,
+    logger: Logger
+  ) async throws {
+    try await connection.query(
+      """
+      WITH barrier AS (
+        SELECT MIN(seq) AS first_nonterminal_seq
+        FROM appview_ingestion_inbox
+        WHERE environment = \(environment) AND source_generation = \(sourceGeneration)
+          AND status != 'applied' AND reconciled_at IS NULL
+      ), candidate AS (
+        SELECT CASE
+          WHEN barrier.first_nonterminal_seq IS NULL THEN checkpoint.last_staged_seq
+          ELSE (
+            SELECT MAX(inbox.seq)
+            FROM appview_ingestion_inbox inbox
+            WHERE inbox.environment = checkpoint.environment
+              AND inbox.source_generation = checkpoint.source_generation
+              AND inbox.seq < barrier.first_nonterminal_seq
+              AND (inbox.status = 'applied' OR inbox.reconciled_at IS NOT NULL)
+          )
+        END AS seq
+        FROM appview_jetstream_checkpoints checkpoint
+        CROSS JOIN barrier
+        WHERE checkpoint.environment = \(environment)
+          AND checkpoint.source_generation = \(sourceGeneration)
+      ), candidate_with_time AS (
+        SELECT candidate.seq,
+          COALESCE(
+            (SELECT event_time FROM appview_ingestion_inbox
+             WHERE environment = \(environment) AND source_generation = \(sourceGeneration)
+               AND seq = candidate.seq),
+            checkpoint.last_staged_event_at
+          ) AS event_at
+        FROM candidate
+        JOIN appview_jetstream_checkpoints checkpoint
+          ON checkpoint.environment = \(environment)
+         AND checkpoint.source_generation = \(sourceGeneration)
+      )
+      UPDATE appview_jetstream_checkpoints checkpoint
+      SET last_applied_seq = candidate.seq,
+          last_applied_event_at = candidate.event_at,
+          last_applied_at = \(at),
+          updated_at = \(at)
+      FROM candidate_with_time candidate
+      WHERE checkpoint.environment = \(environment)
+        AND checkpoint.source_generation = \(sourceGeneration)
+        AND candidate.seq IS NOT NULL
+        AND (checkpoint.last_applied_seq IS NULL OR checkpoint.last_applied_seq < candidate.seq)
+      """,
+      logger: logger
+    )
   }
 
   private static func stringArray(fromJSON raw: String) throws -> [String] {

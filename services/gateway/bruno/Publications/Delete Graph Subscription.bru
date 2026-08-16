@@ -4,17 +4,26 @@ meta {
   seq: 38
 }
 
-delete {
-  url: {{baseUrl}}/v1/publications/subscriptions/{{subscriptionRkey}}
-  body: none
+post {
+  url: {{pdsUrl}}/xrpc/com.atproto.repo.deleteRecord
+  body: json
   auth: none
 }
 
 headers {
-  Authorization: Bearer {{oauthAccessToken}}
-  DPoP: {{dpopProof}}
+  Authorization: DPoP {{oauthAccessToken}}
+  DPoP: {{pdsDpopProof}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "repo": "{{userDid}}",
+    "collection": "site.standard.graph.subscription",
+    "rkey": "{{subscriptionRkey}}"
+  }
 }
 
 docs {
-  Deletes a graph subscription record from the viewer PDS.
+  Deletes a graph subscription directly from the viewer PDS with standard XRPC.
 }

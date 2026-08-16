@@ -17,7 +17,6 @@ export function pdsXrpcMethodForSocialWireGatewayRequest(
   if (
     method === "GET" &&
     (path === "/v1/appview/bootstrap-stream" ||
-      path === "/v1/publications/sidebar" ||
       path === "/xrpc/app.thesocialwire.publication.getSidebar")
   ) {
     return {
@@ -28,8 +27,7 @@ export function pdsXrpcMethodForSocialWireGatewayRequest(
 
   if (
     method === "POST" &&
-    (path === "/v1/publications/refresh" ||
-      path === "/xrpc/app.thesocialwire.publication.refreshSidebar")
+    path === "/xrpc/app.thesocialwire.publication.refreshSidebar"
   ) {
     return {
       xrpcMethod: "com.atproto.repo.listRecords",
