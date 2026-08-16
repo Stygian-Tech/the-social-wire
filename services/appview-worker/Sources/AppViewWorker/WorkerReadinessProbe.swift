@@ -18,7 +18,9 @@ struct WorkerReadinessProbe: Sendable {
 
   func run() async throws {
     try await databaseProbe()
-    guard let serviceStateProbe else { return }
+    guard let serviceStateProbe else {
+      throw WorkerReadinessError.missingIngestionHeartbeat
+    }
     guard let state = try await serviceStateProbe() else {
       throw WorkerReadinessError.missingIngestionHeartbeat
     }

@@ -40,6 +40,7 @@ unloaded module or a stale entry fails CI.
 - [ ] V2 transport freshness comes from the active fenced ingester lease, not projection-owned checkpoint updates
 - [ ] V2 backlog alerts use only the advertised source generation while aggregate retained-generation evidence remains visible
 - [ ] Charybdis `/readyz` and aggregate Gateway `/readyz` are evaluated independently so an App View or Gateway database failure is not attributed to ingestion
+- [ ] Charybdis Railway deployment reaches `SUCCESS` through database-only `/startupz`, then Charybdis `/readyz` independently proves fresh authoritative transport and projection evidence
 
 ## Related
 

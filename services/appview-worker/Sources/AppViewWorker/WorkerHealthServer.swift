@@ -5,6 +5,7 @@ import NIOPosix
 
 enum WorkerHealthServer {
   static func run(
+    startupProbe: @escaping @Sendable () async throws -> Void,
     readinessProbe: @escaping @Sendable () async throws -> Void,
     host: String,
     port: Int,
@@ -17,7 +18,11 @@ enum WorkerHealthServer {
       .childChannelInitializer { channel in
         channel.pipeline.configureHTTPServerPipeline().flatMap {
           channel.pipeline.addHandler(
-            WorkerHealthRequestHandler(readinessProbe: readinessProbe, logger: logger)
+            WorkerHealthRequestHandler(
+              startupProbe: startupProbe,
+              readinessProbe: readinessProbe,
+              logger: logger
+            )
           )
         }
       }
@@ -39,18 +44,26 @@ enum WorkerHealthResponseBuilder {
   struct Response: Sendable {
     let status: HTTPResponseStatus
     let body: String
-    let readinessFailure: String?
+    let failedProbe: String?
+    let failureCategory: String?
 
-    init(status: HTTPResponseStatus, body: String, readinessFailure: String? = nil) {
+    init(
+      status: HTTPResponseStatus,
+      body: String,
+      failedProbe: String? = nil,
+      failureCategory: String? = nil
+    ) {
       self.status = status
       self.body = body
-      self.readinessFailure = readinessFailure
+      self.failedProbe = failedProbe
+      self.failureCategory = failureCategory
     }
   }
 
   static func response(
     method: HTTPMethod,
     uri: String,
+    startupProbe: @escaping @Sendable () async throws -> Void,
     readinessProbe: @escaping @Sendable () async throws -> Void
   ) async -> Response {
     guard method == .GET else {
@@ -62,6 +75,18 @@ enum WorkerHealthResponseBuilder {
       return Response(status: .ok, body: #"{"service":"charybdis","status":"ok"}"#)
     case "/livez":
       return Response(status: .ok, body: #"{"service":"charybdis","status":"live"}"#)
+    case "/startupz":
+      do {
+        try await startupProbe()
+        return Response(status: .ok, body: #"{"service":"charybdis","status":"started"}"#)
+      } catch {
+        return Response(
+          status: .serviceUnavailable,
+          body: #"{"service":"charybdis","status":"unavailable"}"#,
+          failedProbe: "startup",
+          failureCategory: healthFailureCategory(error)
+        )
+      }
     case "/readyz":
       do {
         try await readinessProbe()
@@ -70,7 +95,8 @@ enum WorkerHealthResponseBuilder {
         return Response(
           status: .serviceUnavailable,
           body: #"{"service":"charybdis","status":"unavailable"}"#,
-          readinessFailure: readinessFailureCategory(error)
+          failedProbe: "readiness",
+          failureCategory: healthFailureCategory(error)
         )
       }
     default:
@@ -78,7 +104,7 @@ enum WorkerHealthResponseBuilder {
     }
   }
 
-  private static func readinessFailureCategory(_ error: Error) -> String {
+  private static func healthFailureCategory(_ error: Error) -> String {
     if let readinessError = error as? WorkerReadinessError {
       return switch readinessError {
       case .missingIngestionHeartbeat: "missing_ingestion_heartbeat"
@@ -97,10 +123,16 @@ private final class WorkerHealthRequestHandler: ChannelInboundHandler, @unchecke
   typealias OutboundOut = HTTPServerResponsePart
 
   private let readinessProbe: @Sendable () async throws -> Void
+  private let startupProbe: @Sendable () async throws -> Void
   private let logger: Logger
   private var requestHead: HTTPRequestHead?
 
-  init(readinessProbe: @escaping @Sendable () async throws -> Void, logger: Logger) {
+  init(
+    startupProbe: @escaping @Sendable () async throws -> Void,
+    readinessProbe: @escaping @Sendable () async throws -> Void,
+    logger: Logger
+  ) {
+    self.startupProbe = startupProbe
     self.readinessProbe = readinessProbe
     self.logger = logger
   }
@@ -123,6 +155,7 @@ private final class WorkerHealthRequestHandler: ChannelInboundHandler, @unchecke
         await WorkerHealthResponseBuilder.response(
           method: head.method,
           uri: head.uri,
+          startupProbe: self.startupProbe,
           readinessProbe: self.readinessProbe
         )
       }.whenSuccess { response in
@@ -139,10 +172,10 @@ private final class WorkerHealthRequestHandler: ChannelInboundHandler, @unchecke
     _ response: WorkerHealthResponseBuilder.Response,
     context: ChannelHandlerContext
   ) {
-    if let readinessFailure = response.readinessFailure {
+    if let failedProbe = response.failedProbe, let failureCategory = response.failureCategory {
       logger.error(
-        "Charybdis readiness probe failed",
-        metadata: ["reason": "\(readinessFailure)"]
+        "Charybdis health probe failed",
+        metadata: ["probe": "\(failedProbe)", "reason": "\(failureCategory)"]
       )
     }
     var buffer = context.channel.allocator.buffer(capacity: response.body.utf8.count)

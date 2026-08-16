@@ -11,9 +11,39 @@ struct WorkerHealthServerTests {
     let response = await WorkerHealthResponseBuilder.response(
       method: .GET,
       uri: "/livez",
+      startupProbe: { throw ProbeError.unavailable },
       readinessProbe: { throw ProbeError.unavailable }
     )
     #expect(response.status == .ok)
+  }
+
+  @Test("startup requires the database but not caught-up projections")
+  func startup() async {
+    let catchingUp = await WorkerHealthResponseBuilder.response(
+      method: .GET,
+      uri: "/startupz",
+      startupProbe: {},
+      readinessProbe: { throw WorkerReadinessError.ingestionFreshnessUnhealthy }
+    )
+    #expect(catchingUp.status == .ok)
+
+    let ready = await WorkerHealthResponseBuilder.response(
+      method: .GET,
+      uri: "/readyz",
+      startupProbe: { throw ProbeError.unavailable },
+      readinessProbe: {}
+    )
+    #expect(ready.status == .ok)
+
+    let databaseUnavailable = await WorkerHealthResponseBuilder.response(
+      method: .GET,
+      uri: "/startupz",
+      startupProbe: { throw ProbeError.unavailable },
+      readinessProbe: {}
+    )
+    #expect(databaseUnavailable.status == .serviceUnavailable)
+    #expect(databaseUnavailable.failedProbe == "startup")
+    #expect(databaseUnavailable.failureCategory == String(reflecting: ProbeError.self))
   }
 
   @Test("readiness requires a successful database probe")
@@ -21,6 +51,7 @@ struct WorkerHealthServerTests {
     let ready = await WorkerHealthResponseBuilder.response(
       method: .GET,
       uri: "/readyz",
+      startupProbe: {},
       readinessProbe: {}
     )
     #expect(ready.status == .ok)
@@ -28,10 +59,12 @@ struct WorkerHealthServerTests {
     let unavailable = await WorkerHealthResponseBuilder.response(
       method: .GET,
       uri: "/readyz",
+      startupProbe: {},
       readinessProbe: { throw ProbeError.unavailable }
     )
     #expect(unavailable.status == .serviceUnavailable)
-    #expect(unavailable.readinessFailure == String(reflecting: ProbeError.self))
+    #expect(unavailable.failedProbe == "readiness")
+    #expect(unavailable.failureCategory == String(reflecting: ProbeError.self))
 
     let categorizedFailures: [(WorkerReadinessError, String)] = [
       (.missingIngestionHeartbeat, "missing_ingestion_heartbeat"),
@@ -44,15 +77,21 @@ struct WorkerHealthServerTests {
       let categorized = await WorkerHealthResponseBuilder.response(
         method: .GET,
         uri: "/readyz",
+        startupProbe: {},
         readinessProbe: { throw error }
       )
-      #expect(categorized.readinessFailure == expectedCategory)
+      #expect(categorized.failedProbe == "readiness")
+      #expect(categorized.failureCategory == expectedCategory)
     }
   }
 
   @Test("readiness rejects stale or unhealthy ingestion evidence")
   func ingestionEvidence() async throws {
     let now = Date()
+    await #expect(throws: WorkerReadinessError.missingIngestionHeartbeat) {
+      try await WorkerReadinessProbe(databaseProbe: {}).run()
+    }
+
     let healthy = serviceState(heartbeatAt: now, readiness: .healthy)
     try await WorkerReadinessProbe(
       databaseProbe: {},

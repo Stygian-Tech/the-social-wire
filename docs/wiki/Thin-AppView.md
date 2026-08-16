@@ -159,6 +159,8 @@ remains durable and its cache tables remain the rollback target.
 
 1. Confirm the Database Migrator job succeeds against the environment's Railway Postgres service.
 2. Deploy Charybdis with `ENABLE_THIN_APPVIEW=true`.
+   Railway uses `/startupz` so the process can drain an accumulated durable inbox; `/readyz`
+   remains unavailable until authoritative transport, freshness, and completeness are healthy.
 3. Deploy AppView with `ENABLE_THIN_APPVIEW=true`.
 4. Deploy Gateway with `APPVIEW_BASE_URL` and the shared internal secret.
 5. Ensure the web deployment does not explicitly set `NEXT_PUBLIC_USE_THIN_APPVIEW=false`.
