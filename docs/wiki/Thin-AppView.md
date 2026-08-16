@@ -17,7 +17,7 @@ For `standard.site`, the index stores render/detail fields (title, `publishedAt`
 ## Data flow
 
 ```
-Jetstream / environment-matched Tap
+Jetstream V1 / Jetstream V2 Ingest
         │
         ▼
 Railway Charybdis (`appview-worker`) — ATProto ingest, Skyreader RSS polling, proactive PDS backfill, TTL cleanup
@@ -85,7 +85,7 @@ than a normal XRPC JSON response. See [[Service-API]] and [[Lexicons]].
 | `POST` | `/xrpc/app.thesocialwire.publication.refreshSidebar` | Recompute sidebar projection |
 | `POST` | `/xrpc/app.thesocialwire.publication.resolvePublication` | Resolve Add Publication input |
 
-Gateway retains PDS write-through compatibility routes at `/v1/publications/folders`, `/prefs`, `/subscriptions`, and `/rss-subscriptions`. Web, iOS, and Bruno clients write these records directly to the viewer PDS with standard `com.atproto.repo.*` XRPC.
+Web, iOS, and Bruno clients write user-owned publication records directly to the viewer PDS with standard `com.atproto.repo.*` XRPC.
 
 OpenAPI: [packages/spec/openapi.yaml](https://github.com/Stygian-Tech/the-social-wire/blob/main/packages/spec/openapi.yaml)
 
@@ -124,7 +124,8 @@ When the server flag is off, AppView routes are unavailable. Current web and iOS
 | `GATEWAY_APPVIEW_INTERNAL_SECRET` | gateway + appview | HMAC trust for gateway→AppView proxy |
 | `DATABASE_URL` | gateway, appview, appview-worker, operations | Railway Postgres private connection URL |
 | `THIN_APPVIEW_RELAY_WS_URLS` | appview-worker | Ordered, comma-separated Jetstream WebSocket URLs for active/passive failover (`THIN_APPVIEW_RELAY_WS_URL` remains a compatible single-primary override) |
-| `TAP_BASE_URL` / `TAP_CONSUMER_MODE` | appview-worker | Environment-scoped Tap endpoint and shadow/authoritative transport mode |
+| `THIN_APPVIEW_JETSTREAM_MODE` | appview-worker | Select legacy V1 authority, V2 shadow staging, or durable V2 authority |
+| `JETSTREAM_SOURCE_GENERATION` | appview-worker + jetstream-ingest | Fence durable inbox generations during V2 replay and cutover |
 | `THIN_APPVIEW_PROACTIVE_BACKFILL_ENABLED` | appview-worker | Periodic PDS backfill for subscribed authors |
 | `THIN_APPVIEW_CONTENT_TTL_SECONDS` | appview, appview-worker | `content_items.expires_at` horizon used by stores and worker cleanup |
 | `THIN_APPVIEW_READ_MARK_TTL_SECONDS` | appview, appview-worker | `read_marks` retention used by stores and worker cleanup |
@@ -144,10 +145,11 @@ Railway deploys seven independent services per environment from repository-level
 | AppView | `railway/appview.json` |
 | Charybdis | `railway/charybdis.json` |
 | Operations | `railway/operations.json` |
-| Tap | `railway/tap.json` |
+| Jetstream V2 Ingest | `railway/jetstream-ingest.json` |
 
 Development tracks `dev`; production tracks `main`. Gateway reaches AppView and
-Operations over Railway private domains, and Charybdis reaches Tap the same way.
+Operations over Railway private domains; Jetstream V2 Ingest and Charybdis share
+the environment's durable PostgreSQL inbox.
 Database-backed hosted services use their environment's Railway Postgres
 service. Redis is optional and does not replace Postgres. During the current
 hosted configuration, both environments select Redis backends, while Postgres
@@ -155,7 +157,7 @@ remains durable and its cache tables remain the rollback target.
 
 **Rollout checklist**
 
-1. Confirm Gateway's pre-deploy migration command succeeds against the environment's Railway Postgres service.
+1. Confirm the Database Migrator job succeeds against the environment's Railway Postgres service.
 2. Deploy Charybdis with `ENABLE_THIN_APPVIEW=true`.
 3. Deploy AppView with `ENABLE_THIN_APPVIEW=true`.
 4. Deploy Gateway with `APPVIEW_BASE_URL` and the shared internal secret.

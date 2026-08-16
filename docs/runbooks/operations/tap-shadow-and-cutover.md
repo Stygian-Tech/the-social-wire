@@ -1,6 +1,10 @@
 # Tap Shadowing and Verified Cutover
 
-Tap is the intended verified repository-sync authority after the staged cutover. During shadowing,
+> **Retired 2026-08-16.** Tap is no longer a repository-owned or Railway-configured
+> Social Wire service. This runbook is historical evidence for the abandoned
+> shadow/cutover design; do not execute it against Development or Production.
+
+Tap was intended to become the verified repository-sync authority after a staged cutover. During shadowing,
 Jetstream remains a separately labeled, unverified discovery and latency signal, and neither source
 may claim verified recovery completeness.
 
@@ -23,4 +27,6 @@ or implement an equivalently durable job-scoped validator. The drill must demons
 collection, and range scope; zero failures; no truncation; complete delete semantics; and a persisted
 validation watermark. Until every condition passes, the capability remains disabled with this reason.
 
-If Tap is unavailable, preserve the last known good evidence, show the source as stale or offline, and do not silently promote Jetstream to verified completeness.
+Retain recorded Tap evidence as stale historical state. Current recovery uses
+the fenced Jetstream V2 inbox and explicit PDS reconciliation; deleting old Tap
+rows is not required to retire the service.

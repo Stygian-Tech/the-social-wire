@@ -12,6 +12,8 @@
     ]
   },
   "deploy": {
+    "healthcheckPath": "/readyz",
+    "healthcheckTimeout": 120,
     "restartPolicyType": "ALWAYS"
   }
 }

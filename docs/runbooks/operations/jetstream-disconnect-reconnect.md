@@ -1,6 +1,6 @@
 # Jetstream Disconnect and Reconnect
 
-Jetstream is an explicitly unverified supplemental source during the Tap migration. Its cursor can identify a transport interval, but cannot certify repository completeness or automatically resolve a gap.
+Legacy Jetstream is an explicitly unverified source during the durable V2 transition. Its cursor can identify a transport interval, but cannot certify repository completeness or automatically resolve a gap.
 
 1. Confirm the active Jetstream, both endpoints' connectivity, disconnect time, and bounded reason in Operations → Ingestion.
 2. Compare the last received and committed `time_us` cursors. Never resume from `commit.rev`.
@@ -10,4 +10,4 @@ Jetstream is an explicitly unverified supplemental source during the Tap migrati
 6. Verify committed cursor advancement and a stable receive-to-commit backlog for five minutes.
 7. If received is ahead of committed or the pump overflowed, investigate the generated suspected gap before running a dry-run backfill.
 
-Do not manually advance the committed cursor. Duplicate overlap is safe; skipping is not. A successful Jetstream replay ends in **Verification Required** until Tap or an operator supplies verified recovery evidence.
+Do not manually advance the committed cursor. Duplicate overlap is safe; skipping is not. A successful legacy replay ends in **Verification Required** until durable V2 evidence or an operator supplies exact-scope validation.

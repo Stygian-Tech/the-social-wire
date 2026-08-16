@@ -13,7 +13,7 @@ the-social-wire/
     appview/          # Sidebar projection + Thin AppView reads (Railway)
     appview-worker/   # Charybdis: Jetstream ingestion (Railway)
     operations/       # Operator control plane (Railway)
-    tap/              # Pinned Indigo Tap image (Railway)
+    jetstream-ingest/ # Durable Jetstream V2 ingress (Railway)
   packages/
     lexicons/     # app.thesocialwire.* (and related) lexicons
     spec/         # OpenAPI compatibility contract + endpoint transport manifest
@@ -22,7 +22,7 @@ the-social-wire/
     migrations/   # Postgres (pds_repo_record_cache, content_items, read_marks, …)
   docs/
     architecture/ # narrative docs (overview, discovery, appview, lexicons)
-    runbooks/      # operator incident, recovery, and Tap cutover procedures
+    runbooks/      # operator incident, recovery, and historical Tap cutover procedures
     test-plans/    # per-surface verification expectations
     wiki/         # canonical public wiki Markdown (GitHub sync; manual Lichen publish)
   railway/        # one config-as-code file per deployed service
@@ -41,5 +41,5 @@ tested from its own directory; there is no root Swift package.
 - [[Thin-AppView]] — read index, routes, and rollout
 - [[Redis]] — disposable cache, coordination, ranking, and rollout
 - [[Deployment-and-environments]] — Railway services and environment boundaries
-- [[Operations]] — operator console, control plane, Tap, and runbooks
+- [[Operations]] — operator console, control plane, ingestion recovery, and runbooks
 - [[Testing]] — package commands and CI ownership

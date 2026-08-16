@@ -89,8 +89,8 @@ See [discovery.md](discovery.md) for the detailed walkthrough.
 ## Thin AppView
 
 With `ENABLE_THIN_APPVIEW` enabled on AppView, **Charybdis** (the
-`appview-worker` process) ingests standard.site commits from Jetstream or the
-environment-matched Tap service, polls subscribed Skyreader RSS feeds, and
+`appview-worker` process) ingests standard.site commits from legacy Jetstream or
+projects the durable inbox populated by Jetstream V2 Ingest, polls subscribed Skyreader RSS feeds, and
 writes derived `content_items`. Clients load the sidebar and first feed page via
 **`GET /v1/appview/bootstrap-stream`**, then use Lexicon-defined
 `app.thesocialwire.publication.*` and `app.thesocialwire.appview.*` XRPC methods
@@ -112,8 +112,9 @@ Full designs: [appview.md](appview.md) and [redis.md](redis.md). Railway deploys
 ### Infrastructure
 
 Development and production run as isolated Railway environments. Web,
-Operations Web, Gateway, AppView, Charybdis, Operations, Tap, and Railway
-Postgres deploy in each environment. A private disposable Redis is currently
+Operations Web, Gateway, AppView, Charybdis, Jetstream V2 Ingest, Operations,
+Database Migrator, and Railway Postgres deploy in each environment. A private
+disposable Redis is currently
 selected by Gateway, AppView, and Charybdis in both environments; Postgres cache
 tables remain available as rollback backends. Service-to-service traffic uses
 Railway private networking.
@@ -125,20 +126,22 @@ GitHub (source)
 GitHub Actions
        │
        ├─ web / operations-web
-       ├─ gateway / appview / charybdis / operations / tap
+       ├─ gateway / appview / charybdis / jetstream-ingest / operations
+       ├─ database-migrator
        └─ lexicons / spec → CI — Required
 ```
 
 Railway's GitHub integration deploys the environment that tracks each branch after source
 changes. GitHub Actions validates the repository but does not deploy infrastructure.
-Gateway's Railway pre-deploy command applies pending database migrations before startup.
+The Railway Database Migrator applies pending database migrations before
+dependent application revisions start.
 
 ### Environments
 
 | Environment | Branch | Backend hosting |
 |-------------|--------|-----------------|
-| Production | `main` | Railway Web, Operations Web, Gateway, AppView, Charybdis, Operations, Tap, and Postgres |
-| Development | `dev` | Railway Web, Operations Web, Gateway, AppView, Charybdis, Operations, Tap, and Postgres |
+| Production | `main` | Railway Web, Operations Web, Gateway, AppView, Charybdis, Jetstream V2 Ingest, Operations, Database Migrator, and Postgres |
+| Development | `dev` | Railway Web, Operations Web, Gateway, AppView, Charybdis, Jetstream V2 Ingest, Operations, Database Migrator, and Postgres |
 | Local | — | Web runs in local mode; Swift service integration uses `APP_ENV=dev` plus an isolated disposable Postgres URL |
 
 ### Local development

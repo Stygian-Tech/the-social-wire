@@ -1,6 +1,6 @@
 # ThinAppViewCore
 
-Shared Swift package for the Thin AppView read index — used by **`services/appview`** (read routes, sidebar projection) and **Charybdis** at `services/appview-worker` (Jetstream/Tap ingestion, RSS polling, proactive backfill).
+Shared Swift package for the Thin AppView read index — used by **`services/appview`** (read routes, sidebar projection) and **Charybdis** at `services/appview-worker` (Jetstream ingestion and durable-inbox projection, RSS polling, proactive backfill).
 
 **Package:** [packages/swift/ThinAppViewCore](https://github.com/Stygian-Tech/the-social-wire/tree/main/packages/swift/ThinAppViewCore)  
 **Architecture:** [[Thin-AppView]]
@@ -13,12 +13,12 @@ Shared Swift package for the Thin AppView read index — used by **`services/app
 | `RenderFieldExtractor` | Extract list-row fields from standard.site records |
 | `AppViewProjectionCacheStore` | Stale-first sidebar/unread/first-page snapshots, with SQLite, Postgres, or Redis implementations |
 | `SQLiteThinAppViewStore` / `PostgresThinAppViewStore` | Equivalent index stores; hosted services use Postgres, while SQLite remains useful in package tests |
-| `ThinAppViewWorkerRuntime` | Jetstream/Tap ingestion, Skyreader RSS polling, proactive PDS backfill, and TTL cleanup |
+| `ThinAppViewWorkerRuntime` | Jetstream ingestion and durable-inbox projection, Skyreader RSS polling, proactive PDS backfill, and TTL cleanup |
 | `FirehoseSubscriber` | Jetstream WebSocket relay consumer and cursor recovery |
 | `RssFeedIdentity` / RSS ingest helpers | Normalize feed/article identities and avoid duplicate rows across polls |
 
 The package also owns unread filtering, publication-scope aliases, materialized
-counter updates, viewer-feed membership, Tap recovery state, and cache
+counter updates, viewer-feed membership, historical Tap recovery state, and cache
 invalidation. Redis remains an optional disposable side-cache; durable index and
 recovery state stays in Postgres. See [[Redis]] for the current hosted selection
 and Development-first change discipline.

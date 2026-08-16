@@ -73,7 +73,7 @@ Sign in with a **real** handle; tokens are issued by your PDS. There is **no OAu
 User's PDS (OAuth session — canonical for repo + graph on the viewer's repo)
   └─ app.thesocialwire.folder           ← useFolders / useCreateFolder
   └─ app.thesocialwire.publicationPrefs ← usePublicationPrefs / useSetPublicationFolder
-  └─ app.bsky.graph.follow              ← discoverPublications (canonical follow subjects)
+  └─ app.bsky.graph.follow              ← AppView server-side sidebar discovery
 
 Author repos (PLC-resolved PDS; com.atproto.repo.* — not the App View relay)
   └─ site.standard.publication  ← publication records
@@ -83,8 +83,7 @@ Author repos (PLC-resolved PDS; com.atproto.repo.* — not the App View relay)
 
 Public App View (https://public.api.bsky.app — no OAuth on these calls)
   └─ com.atproto.identity.resolveHandle
-  └─ app.bsky.graph.getFollows         ← merged with PDS graph when under cap
-  └─ app.bsky.actor.getProfile         ← follow enrichment (useViewerProfile also uses repo profile fallback)
+  └─ app.bsky.actor.getProfile         ← viewer/profile enrichment
 
 Social Wire gateway (default read path)
   └─ GET /v1/appview/bootstrap-stream   ← initial sidebar + unread + first feed page (NDJSON)
@@ -96,7 +95,7 @@ All user organisation data (folders, publication prefs, subscriptions) is stored
 
 #### PDS-first reads vs public App View
 
-OAuth access tokens are **audience-bound to the user's PDS**, not to the Bluesky App View. The web app uses a session-backed `@atproto/api` `Agent` for viewer-repo `com.atproto.repo.*` reads and writes. Compatibility discovery and URL enrichment resolve an author's own PDS and try public `com.atproto.repo.*` requests there; they only retry with the OAuth fetch handler after an authorization-shaped failure. For **identity and graph helpers**, the app uses `https://public.api.bsky.app` with plain `fetch` / a non-OAuth `Agent` — e.g. extra follow edges, handle resolution, and profile enrichment. Do not attach the viewer's PDS-bound OAuth token to arbitrary Bluesky App View calls.
+OAuth access tokens are **audience-bound to the user's PDS**, not to the Bluesky App View. The web app uses a session-backed `@atproto/api` `Agent` for viewer-repo `com.atproto.repo.*` reads and writes. Targeted URL enrichment resolves an author's own PDS and tries public `com.atproto.repo.*` reads there; it only retries with the OAuth fetch handler after an authorization-shaped failure. Identity/profile helpers use `https://public.api.bsky.app` without the viewer's PDS-bound OAuth token.
 
 ### Lexicons & collections
 
@@ -104,13 +103,13 @@ Lexicon **collection** (NSID) strings used in the web client match `apps/web/src
 
 | Collection | Role in the web app |
 |------------|---------------------|
-| `site.standard.publication` | Discovery: publication-shaped records probed first for sidebar titles |
-| `com.standard.publication` | Unregistered compatibility discovery probe |
-| `site.standard.document` | Discovery fallback; primary document collection for **entry lists** (`listEntries`) |
-| `com.standard.document` | Unregistered compatibility probe for discovery and legacy direct reads |
-| `site.standard.entry` | Legacy entry collection; discovery and listing (backward compatibility) |
+| `site.standard.publication` | Publication identity used by subscriptions and targeted row hydration |
+| `com.standard.publication` | Unregistered compatibility probe for targeted record reads |
+| `site.standard.document` | Primary document collection for targeted URL recovery |
+| `com.standard.document` | Unregistered compatibility probe for legacy direct reads |
+| `site.standard.entry` | Legacy entry collection retained for backward-compatible direct reads |
 | `com.standard.entry` | Unregistered compatibility probe for legacy direct reads |
-| `app.bsky.graph.follow` | Follow subjects read from the **viewer's** repo (canonical input to discovery) |
+| `app.bsky.graph.follow` | Server-side AppView discovery input; not crawled by the web client |
 | `app.thesocialwire.folder` | User-defined folders (`PDSClient.listFolders`, mutations) |
 | `app.thesocialwire.publicationPrefs` | Per-publication folder assignment and sort on the user's PDS (legacy `hidden` may still decode from old records but the client clears it on write) |
 
@@ -140,13 +139,13 @@ These browser-side keys are convenience caches (no secrets):
 | `the-social-wire.read-state.v1` | localStorage | Local read/unread map for entry AT-URIs (`entryReadStateStorage.ts`) |
 | `the-social-wire.sidebar-expanded-keys.v1` | localStorage | Folder/section expansion state, scoped by viewer DID |
 
-**React Query persistence scope:** only queries that pass `shouldDehydrateQuery` are written: discovery, sidebar projection, and viewer-scoped `entries` / `aggregateEntries` queries when the infinite list is small (at most 3 pages and 150 entries). Other query keys are not persisted. Writes are throttled (2s); max age is 7 days.
+**React Query persistence scope:** only queries that pass `shouldDehydrateQuery` are written: sidebar projection and viewer-scoped `entries` / `aggregateEntries` queries when the infinite list is small (at most 3 pages and 150 entries). Other query keys are not persisted. Writes are throttled (2s); max age is 7 days.
 
 ### Discovery, sidebar & entry lists
 
 - **Initial load:** `PublicationSidebarProvider` consumes **`GET /v1/appview/bootstrap-stream`** for progressive sidebar, unread counts, first-unread selection, and the first feed page. `usePublicationSidebarData` is the compatibility facade over that provider.
 - **Entries:** `useEntries` and aggregate feeds call AppView. `useProactiveFeedRefresh` polls and refocus-refreshes the active publication's first page via `feedRefresh.ts`; `useEntry` loads the flat AppView detail response.
-- **Compatibility discovery:** `discoverPublications` with `onProgress` remains for targeted discovery and add-publication helpers, but it is not the current reader-list fallback.
+- **Discovery and resolution:** AppView owns follow-graph discovery and add-publication resolution; the web client does not crawl followed repositories or merge a client-side fallback.
 
 ### Read Later and Archive
 

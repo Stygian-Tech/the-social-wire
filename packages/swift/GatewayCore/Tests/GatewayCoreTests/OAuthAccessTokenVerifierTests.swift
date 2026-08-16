@@ -78,4 +78,39 @@ struct OAuthAccessTokenVerifierTests {
     }
     try await client.shutdown()
   }
+
+  @Test("issuer must be authorized by the subject DID authority chain")
+  func issuerSubjectBinding() throws {
+    let trusted = try OAuthAccessTokenVerifier.trustedIssuerBases(
+      issuerClaim: "https://auth.bsky.social/",
+      subjectAuthorities: ["https://pds.example.social", "https://auth.bsky.social"]
+    )
+    #expect(trusted == ["https://auth.bsky.social"])
+
+    #expect(throws: OAuthAccessTokenVerifier.VerifyError.self) {
+      _ = try OAuthAccessTokenVerifier.trustedIssuerBases(
+        issuerClaim: "https://attacker.social",
+        subjectAuthorities: ["https://auth.bsky.social"]
+      )
+    }
+  }
+
+  @Test("remote auth discovery rejects private and cross-origin targets")
+  func remoteDiscoverySafety() {
+    #expect(!OAuthAccessTokenVerifier.isAllowedRemoteURL("http://auth.bsky.social/jwks"))
+    #expect(!OAuthAccessTokenVerifier.isAllowedRemoteURL("https://127.0.0.1/jwks"))
+    #expect(!OAuthAccessTokenVerifier.isAllowedRemoteURL("https://metadata.internal/jwks"))
+    #expect(
+      OAuthAccessTokenVerifier.isAllowedRemoteURL(
+        "https://auth.bsky.social/oauth/jwks",
+        sameOriginAs: "https://auth.bsky.social"
+      )
+    )
+    #expect(
+      !OAuthAccessTokenVerifier.isAllowedRemoteURL(
+        "https://attacker.social/jwks",
+        sameOriginAs: "https://auth.bsky.social"
+      )
+    )
+  }
 }

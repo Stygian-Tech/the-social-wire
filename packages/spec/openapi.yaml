@@ -6,9 +6,9 @@ info:
   description: |
     HTTP contract for the Social Wire **distributed backend**:
 
-    - **`services/gateway`** (this spec's `servers` URLs) — OAuth client metadata, DPoP verification, PDS write-through, sync cache, unbuffered proxy to AppView.
+    - **`services/gateway`** (this spec's `servers` URLs) — OAuth client metadata, DPoP verification, sync cache, unbuffered proxy to AppView.
     - **`services/appview`** — publication sidebar projection (`/v1/publications/*`), Thin AppView read index (`/v1/appview/*`), bootstrap stream.
-    - **Charybdis** (`services/appview-worker`) — Jetstream/Tap ingestion, Skyreader RSS polling, proactive backfill, and cleanup (no HTTP surface).
+    - **Charybdis** (`services/appview-worker`) — Jetstream ingestion and durable-inbox projection, Skyreader RSS polling, proactive backfill, and cleanup (no HTTP surface).
     - **`services/operations`** — operator-only observability and recovery control plane, proxied by Gateway.
 
     **OAuth client metadata** mirrors SPA + ATS clients (`/oauth-client-metadata.json`, `/ios-client-metadata.json`) with scopes from **`ATProtoOAuthScopes`**.
@@ -765,7 +765,7 @@ components:
         ingestion: { anyOf: [{ $ref: "#/components/schemas/IngestionStreamState" }, { type: "null" }] }
         ingestionSources:
           type: array
-          description: Source-specific Tap, Jetstream, RSS, projection repair, and cache maintenance state.
+          description: Source-specific Jetstream, RSS, projection repair, cache maintenance, and historical Tap evidence.
           items: { $ref: "#/components/schemas/IngestionStreamState" }
         jetstreamEndpoints:
           type: array
@@ -1441,181 +1441,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ResolveAddPublicationResponse"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-
-  /v1/publications/folders:
-    post:
-      operationId: createPublicationFolder
-      summary: Create a folder on the viewer PDS (gateway write-through)
-      tags: [Publications]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [name]
-              properties:
-                name:
-                  type: string
-                sortOrder:
-                  type: integer
-      responses:
-        "201":
-          description: Folder created.
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [uri, rkey]
-                properties:
-                  uri:
-                    type: string
-                  rkey:
-                    type: string
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-
-  /v1/publications/folders/{rkey}:
-    put:
-      operationId: updatePublicationFolder
-      summary: Update a folder record
-      tags: [Publications]
-      parameters:
-        - name: rkey
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: Folder updated.
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-    delete:
-      operationId: deletePublicationFolder
-      summary: Delete a folder record
-      tags: [Publications]
-      parameters:
-        - name: rkey
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: Folder deleted.
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-
-  /v1/publications/prefs:
-    put:
-      operationId: upsertPublicationPrefs
-      summary: Upsert publication preferences
-      tags: [Publications]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [publicationId]
-              properties:
-                publicationId:
-                  type: string
-                folderId:
-                  type: string
-                  nullable: true
-                sortOrder:
-                  type: integer
-                hidden:
-                  type: boolean
-                existingRkey:
-                  type: string
-      responses:
-        "200":
-          description: Preferences upserted.
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-
-  /v1/publications/subscriptions:
-    post:
-      operationId: createPublicationSubscription
-      summary: Subscribe to a standard.site publication
-      tags: [Publications]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [publication]
-              properties:
-                publication:
-                  type: string
-      responses:
-        "201":
-          description: Subscription created.
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-
-  /v1/publications/subscriptions/{rkey}:
-    delete:
-      operationId: deletePublicationSubscription
-      summary: Delete a standard.site subscription from the viewer PDS
-      tags: [Publications]
-      parameters:
-        - name: rkey
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: Subscription deleted.
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-
-  /v1/publications/rss-subscriptions:
-    post:
-      operationId: createRssSubscription
-      summary: Subscribe to an RSS feed
-      tags: [Publications]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [feedUrl]
-              properties:
-                feedUrl:
-                  type: string
-                title:
-                  type: string
-                siteUrl:
-                  type: string
-      responses:
-        "201":
-          description: RSS subscription created.
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-
-  /v1/publications/rss-subscriptions/{rkey}:
-    delete:
-      operationId: deleteRssSubscription
-      summary: Delete a Skyreader RSS subscription from the viewer PDS
-      tags: [Publications]
-      parameters:
-        - name: rkey
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: RSS subscription deleted.
         "401":
           $ref: "#/components/responses/Unauthorized"
 
@@ -2326,7 +2151,7 @@ paths:
       tags: [Operations]
       responses:
         "200":
-          description: Tap, Jetstream, RSS, and projection-repair observations without blending trust boundaries.
+          description: Jetstream, RSS, projection-repair, and historical Tap observations without blending trust boundaries.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/OperationsIngestionResponse" }
@@ -2832,7 +2657,7 @@ tags:
   - name: Sync
     description: Protected ATProto-backed reader accelerators
   - name: Publications
-    description: Unified sidebar projection, resolver, and gateway write-through
+    description: Unified sidebar projection and resolver
   - name: AppView
     description: Data-minimized entry index gated behind `ENABLE_THIN_APPVIEW`
   - name: Latr

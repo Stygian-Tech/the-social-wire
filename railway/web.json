@@ -5,7 +5,7 @@
     "buildCommand": "bun run turbo run build --filter=web...",
     "watchPatterns": [
       "/apps/web/**",
-      "/packages/**",
+      "/packages/record-keys/**",
       "/package.json",
       "/bun.lock",
       "/turbo.json",

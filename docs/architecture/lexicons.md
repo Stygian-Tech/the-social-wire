@@ -32,7 +32,7 @@ GET https://{pds-host}/xrpc/com.atproto.repo.listRecords
   &limit=100
 ```
 
-The web client normally writes user-authored records directly to the PDS. The current iOS app uses Gateway publication write-through routes and supplies the required upstream PDS-bound DPoP proof.
+Web and iOS write user-authored records directly to the PDS with a PDS-bound OAuth session and DPoP proof.
 
 ## Versioning
 

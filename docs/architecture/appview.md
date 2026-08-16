@@ -24,7 +24,8 @@ The thin AppView is **not** a Bluesky proxy. It is Social Wire’s own index of 
 |---------|----------------|
 | **`services/gateway`** | Public OAuth/DPoP edge, PDS write-through, sync cache, unbuffered proxy to AppView |
 | **`services/appview`** | Hosted `/v1/*` routes and bootstrap stream; pending source adds Sidebar/AppView XRPC aliases; projection cache |
-| **Charybdis** (`services/appview-worker`) | Jetstream/Tap ingestion, Skyreader RSS polling, proactive PDS backfill, TTL cleanup |
+| **Charybdis** (`services/appview-worker`) | Jetstream ingestion and durable-inbox projection, Skyreader RSS polling, proactive PDS backfill, TTL cleanup |
+| **`services/jetstream-ingest`** | Fenced Jetstream V2 ingestion into the durable PostgreSQL inbox |
 | **`packages/swift/ThinAppViewCore`** | Shared indexing, storage, worker runtime |
 
 Gateway→AppView trust uses **`GATEWAY_APPVIEW_INTERNAL_SECRET`** (HMAC on path only). Clients always call the gateway host.
@@ -32,11 +33,12 @@ Gateway→AppView trust uses **`GATEWAY_APPVIEW_INTERNAL_SECRET`** (HMAC on path
 ## Data flow
 
 ```
-Relay / Jetstream (subscribeRepos)
+Relay / Jetstream V1         Jetstream V2 Ingest
         │
-        ▼
+        └──────────────┬──────────────┘
+                       ▼
 Railway Charybdis (`appview-worker` source directory)
-  • consume Jetstream or environment-scoped Tap
+  • consume legacy Jetstream or project the durable V2 inbox
   • poll enrolled Skyreader RSS feed URLs
   • upsert content_items (title, publishedAt, summary, thumbnail ref)
   • proactive PDS backfill for subscribed authors
@@ -70,7 +72,7 @@ service integration therefore uses an isolated disposable Postgres database.
 ## Consistency model
 
 - **Writes:** clients update local read state immediately, then call `app.thesocialwire.appview.putReadMark`, `deleteReadMark`, or `markAllRead` (with `/v1/*` compatibility aliases).
-- **Ingestion:** Jetstream/Tap + enrollment backfill (`authorDids`) + immediate RSS ingestion (`feedUrls`) + worker proactive backfill/polling.
+- **Ingestion:** Jetstream V1/V2 + enrollment backfill (`authorDids`) + immediate RSS ingestion (`feedUrls`) + worker proactive backfill/polling.
 - **Unread UI:** Local optimistic read state remains primary for instant row state; AppView enables server-side unread pagination and sidebar badges.
 
 ## Privacy & retention

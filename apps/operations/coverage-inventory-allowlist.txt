@@ -1,0 +1,26 @@
+# Production modules not yet loaded by the test suite.
+# Remove entries as coverage is added; newly missing modules fail CI.
+src/app/[[...section]]/page.tsx
+src/app/callback/page.tsx
+src/app/layout.tsx
+src/app/operations-client-metadata.json/route.ts
+src/app/providers.tsx
+src/components/operations/backfills/backfill-sheet.tsx
+src/components/operations/backfills/backfill-summary.tsx
+src/components/operations/dashboard/endpoint-inventory.tsx
+src/components/operations/dashboard/operations-commands-table.tsx
+src/components/operations/dashboard/overview-skeleton.tsx
+src/components/operations/environment-banner.tsx
+src/components/operations/gaps/gap-investigation-sheet.tsx
+src/components/operations/gaps/gap-investigation-skeleton.tsx
+src/components/operations/operations-console.tsx
+src/components/operations/runbooks.tsx
+src/components/operations/shell/operations-loading-screen.tsx
+src/components/operations/shell/operations-page-heading.tsx
+src/components/operations/shell/operations-route-content.tsx
+src/components/operations/shell/operations-top-bar.tsx
+src/components/operations/shell/operations-view-types.ts
+src/components/operations/traces/trace-detail.tsx
+src/components/ui/skeleton.tsx
+src/lib/operations-types.ts
+src/lib/use-document-visibility.ts

@@ -1,11 +1,12 @@
 name: CI
 
-# Railway deploys from its GitHub integration. GitHub Actions only verifies source changes.
+# Railway deploys protected branch merges from its GitHub integration. GitHub Actions
+# verifies the pull request merge commit before it can reach dev or main.
 on:
-  push:
-    branches: [main, dev]
   pull_request:
     branches: [main, dev]
+  merge_group:
+  workflow_dispatch:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -24,21 +25,26 @@ jobs:
     outputs:
       web: ${{ steps.filter.outputs.web }}
       operations_web: ${{ steps.filter.outputs.operations_web }}
+      apple: ${{ steps.filter.outputs.apple }}
       redis: ${{ steps.filter.outputs.redis }}
       gateway: ${{ steps.filter.outputs.gateway }}
       appview: ${{ steps.filter.outputs.appview }}
       charybdis: ${{ steps.filter.outputs.charybdis }}
       operations: ${{ steps.filter.outputs.operations }}
-      tap: ${{ steps.filter.outputs.tap }}
       jetstream_ingest: ${{ steps.filter.outputs.jetstream_ingest }}
+      database_migrator: ${{ steps.filter.outputs.database_migrator }}
       lexicons: ${{ steps.filter.outputs.lexicons }}
       spec: ${{ steps.filter.outputs.spec }}
+      docs: ${{ steps.filter.outputs.docs }}
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - name: Detect changed paths
         id: filter
+        env:
+          GITHUB_EVENT_BEFORE: ${{ github.event.before }}
+          GITHUB_EVENT_PULL_REQUEST_BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: bash scripts/ci-detect-changes.sh
 
   web:
@@ -46,6 +52,7 @@ jobs:
     needs: changes
     if: needs.changes.result == 'success' && needs.changes.outputs.web == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
       - uses: oven-sh/setup-bun@v2
@@ -58,7 +65,7 @@ jobs:
       - name: Lint
         run: bunx turbo lint --filter=web
       - name: Test
-        run: bunx turbo test --filter=web
+        run: bun --cwd apps/web run test:coverage
         env:
           NEXT_PUBLIC_APP_ENV: test
       - name: Build
@@ -72,6 +79,7 @@ jobs:
     needs: changes
     if: needs.changes.result == 'success' && needs.changes.outputs.operations_web == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
       - uses: oven-sh/setup-bun@v2
@@ -84,18 +92,39 @@ jobs:
       - name: Lint
         run: bunx turbo lint --filter=operations
       - name: Test
-        run: bunx turbo test --filter=operations
+        run: bun --cwd apps/operations run test:coverage
       - name: Build
         run: bunx turbo build --filter=operations
         env:
           APP_ENV: dev
           NEXT_PUBLIC_OPERATIONS_DEMO_MODE: 1
 
+  apple:
+    name: Apple
+    needs: changes
+    if: needs.changes.result == 'success' && needs.changes.outputs.apple == 'true'
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - name: Test iOS app with coverage
+        run: |
+          xcodebuild test \
+            -project "apps/apple/The Social Wire.xcodeproj" \
+            -scheme SocialWire \
+            -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=latest' \
+            -enableCodeCoverage YES \
+            -resultBundlePath "$RUNNER_TEMP/SocialWireTests.xcresult" \
+            CODE_SIGNING_ALLOWED=NO
+      - name: Report iOS coverage
+        run: xcrun xccov view --report "$RUNNER_TEMP/SocialWireTests.xcresult"
+
   gateway:
     name: Gateway
     needs: changes
     if: needs.changes.result == 'success' && needs.changes.outputs.gateway == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v6
       - name: Cache Gateway packages
@@ -116,12 +145,15 @@ jobs:
       - name: Test Gateway
         working-directory: services/gateway
         run: swift test
+      - name: Build Gateway production image
+        run: docker build --file services/gateway/Dockerfile --tag the-social-wire-gateway:test .
 
   redis:
     name: SocialWire Redis
     needs: changes
     if: needs.changes.result == 'success' && needs.changes.outputs.redis == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     services:
       redis:
         image: redis:8.2.8-alpine
@@ -149,6 +181,7 @@ jobs:
     needs: changes
     if: needs.changes.result == 'success' && needs.changes.outputs.appview == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v6
       - name: Cache AppView
@@ -165,12 +198,15 @@ jobs:
       - name: Test AppView
         working-directory: services/appview
         run: swift test
+      - name: Build AppView production image
+        run: docker build --file services/appview/Dockerfile --tag the-social-wire-appview:test .
 
   charybdis:
     name: Charybdis
     needs: changes
     if: needs.changes.result == 'success' && needs.changes.outputs.charybdis == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v6
       - name: Cache Charybdis packages
@@ -191,12 +227,15 @@ jobs:
       - name: Test Charybdis
         working-directory: services/appview-worker
         run: swift test
+      - name: Build Charybdis production image
+        run: docker build --file services/appview-worker/Dockerfile --tag the-social-wire-charybdis:test .
 
   operations:
     name: Operations
     needs: changes
     if: needs.changes.result == 'success' && needs.changes.outputs.operations == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v6
       - name: Cache Operations packages
@@ -216,42 +255,100 @@ jobs:
       - name: Test Operations
         working-directory: services/operations
         run: swift test
-
-  tap:
-    name: Tap Image
-    needs: changes
-    if: needs.changes.result == 'success' && needs.changes.outputs.tap == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - name: Build image
-        run: docker build --file services/tap/Dockerfile --tag the-social-wire-tap:test .
+      - name: Build Operations production image
+        run: docker build --file services/operations/Dockerfile --tag the-social-wire-operations:test .
 
   jetstream-ingest:
     name: Jetstream V2 Ingest
     needs: changes
     if: needs.changes.result == 'success' && needs.changes.outputs.jetstream_ingest == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: socialwire_test
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d socialwire_test"
+          --health-interval 2s
+          --health-timeout 2s
+          --health-retries 30
     steps:
       - uses: actions/checkout@v6
+      - name: Build migration image for integration tests
+        run: docker build --file services/database-migrator/Dockerfile --tag the-social-wire-database-migrator:test .
+      - name: Apply database migrations
+        run: |
+          docker run --rm --network host \
+            --env DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/socialwire_test \
+            the-social-wire-database-migrator:test
       - uses: actions/setup-go@v6
         with:
           go-version-file: services/jetstream-ingest/go.mod
           cache-dependency-path: services/jetstream-ingest/go.sum
       - name: Test
         working-directory: services/jetstream-ingest
-        run: go test ./...
+        env:
+          JETSTREAM_INGEST_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/socialwire_test?sslmode=disable
+        run: |
+          go test -race -coverprofile="$RUNNER_TEMP/jetstream-coverage.out" ./...
+          coverage="$(go tool cover -func="$RUNNER_TEMP/jetstream-coverage.out" | awk '/^total:/ { gsub(/%/, "", $3); print $3 }')"
+          awk -v coverage="$coverage" 'BEGIN { if (coverage + 0 < 40) exit 1 }'
+          echo "Jetstream statement coverage: ${coverage}%"
       - name: Vet
         working-directory: services/jetstream-ingest
         run: go vet ./...
       - name: Build image
         run: docker build --file services/jetstream-ingest/Dockerfile --tag the-social-wire-jetstream-ingest:test .
 
+  database-migrator:
+    name: Database Migrator
+    needs: changes
+    if: needs.changes.result == 'success' && needs.changes.outputs.database_migrator == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: socialwire_migrations
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d socialwire_migrations"
+          --health-interval 2s
+          --health-timeout 2s
+          --health-retries 30
+    steps:
+      - uses: actions/checkout@v6
+      - name: Check migration runner syntax
+        run: |
+          bash -n scripts/apply-database-migrations.sh
+          bash -n scripts/verify-postgres-restore.sh
+      - name: Build image
+        run: docker build --file services/database-migrator/Dockerfile --tag the-social-wire-database-migrator:test .
+      - name: Apply migrations from empty and verify idempotence
+        run: |
+          docker run --rm --network host \
+            --env DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/socialwire_migrations \
+            the-social-wire-database-migrator:test
+          docker run --rm --network host \
+            --env DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/socialwire_migrations \
+            the-social-wire-database-migrator:test
+
   lexicons:
     name: Lexicons
     needs: changes
     if: needs.changes.result == 'success' && needs.changes.outputs.lexicons == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
       - uses: oven-sh/setup-bun@v2
@@ -268,6 +365,7 @@ jobs:
     needs: changes
     if: needs.changes.result == 'success' && needs.changes.outputs.spec == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
       - uses: oven-sh/setup-bun@v2
@@ -279,21 +377,34 @@ jobs:
         working-directory: packages/spec
         run: bun test
 
+  docs:
+    name: Documentation
+    needs: changes
+    if: needs.changes.result == 'success' && needs.changes.outputs.docs == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - name: Check wiki links and navigation
+        run: bash scripts/check-wiki-links.sh
+
   required:
     name: CI — Required
     needs:
       - changes
       - web
       - operations-web
+      - apple
       - redis
       - gateway
       - appview
       - charybdis
       - operations
-      - tap
       - jetstream-ingest
+      - database-migrator
       - lexicons
       - spec
+      - docs
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -302,26 +413,30 @@ jobs:
           CHANGES_RESULT: ${{ needs.changes.result }}
           WEB_FLAG: ${{ needs.changes.outputs.web }}
           OPERATIONS_WEB_FLAG: ${{ needs.changes.outputs.operations_web }}
+          APPLE_FLAG: ${{ needs.changes.outputs.apple }}
           REDIS_FLAG: ${{ needs.changes.outputs.redis }}
           GATEWAY_FLAG: ${{ needs.changes.outputs.gateway }}
           APPVIEW_FLAG: ${{ needs.changes.outputs.appview }}
           CHARYBDIS_FLAG: ${{ needs.changes.outputs.charybdis }}
           OPERATIONS_FLAG: ${{ needs.changes.outputs.operations }}
-          TAP_FLAG: ${{ needs.changes.outputs.tap }}
           JETSTREAM_INGEST_FLAG: ${{ needs.changes.outputs.jetstream_ingest }}
+          DATABASE_MIGRATOR_FLAG: ${{ needs.changes.outputs.database_migrator }}
           LEXICONS_FLAG: ${{ needs.changes.outputs.lexicons }}
           SPEC_FLAG: ${{ needs.changes.outputs.spec }}
+          DOCS_FLAG: ${{ needs.changes.outputs.docs }}
           WEB_RESULT: ${{ needs.web.result }}
           OPERATIONS_WEB_RESULT: ${{ needs.operations-web.result }}
+          APPLE_RESULT: ${{ needs.apple.result }}
           REDIS_RESULT: ${{ needs.redis.result }}
           GATEWAY_RESULT: ${{ needs.gateway.result }}
           APPVIEW_RESULT: ${{ needs.appview.result }}
           CHARYBDIS_RESULT: ${{ needs.charybdis.result }}
           OPERATIONS_RESULT: ${{ needs.operations.result }}
-          TAP_RESULT: ${{ needs.tap.result }}
           JETSTREAM_INGEST_RESULT: ${{ needs.jetstream-ingest.result }}
+          DATABASE_MIGRATOR_RESULT: ${{ needs.database-migrator.result }}
           LEXICONS_RESULT: ${{ needs.lexicons.result }}
           SPEC_RESULT: ${{ needs.spec.result }}
+          DOCS_RESULT: ${{ needs.docs.result }}
         run: |
           set -euo pipefail
 
@@ -349,12 +464,14 @@ jobs:
 
           check "$WEB_FLAG" "$WEB_RESULT" "Web"
           check "$OPERATIONS_WEB_FLAG" "$OPERATIONS_WEB_RESULT" "Operations Web"
+          check "$APPLE_FLAG" "$APPLE_RESULT" "Apple"
           check "$REDIS_FLAG" "$REDIS_RESULT" "SocialWire Redis"
           check "$GATEWAY_FLAG" "$GATEWAY_RESULT" "Gateway"
           check "$APPVIEW_FLAG" "$APPVIEW_RESULT" "AppView"
           check "$CHARYBDIS_FLAG" "$CHARYBDIS_RESULT" "Charybdis"
           check "$OPERATIONS_FLAG" "$OPERATIONS_RESULT" "Operations"
-          check "$TAP_FLAG" "$TAP_RESULT" "Tap Image"
           check "$JETSTREAM_INGEST_FLAG" "$JETSTREAM_INGEST_RESULT" "Jetstream V2 Ingest"
+          check "$DATABASE_MIGRATOR_FLAG" "$DATABASE_MIGRATOR_RESULT" "Database Migrator"
           check "$LEXICONS_FLAG" "$LEXICONS_RESULT" "Lexicons"
           check "$SPEC_FLAG" "$SPEC_RESULT" "OpenAPI Spec"
+          check "$DOCS_FLAG" "$DOCS_RESULT" "Documentation"

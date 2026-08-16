@@ -26,7 +26,7 @@ never advances the intake cursor. Redis is not part of either durability boundar
 - Charybdis leases at most one actionable event per DID so repository order is preserved while
   unrelated DIDs run concurrently.
 - Transient failures return to the inbox with bounded backoff. Ten failed attempts move an event to
-  dead letter and enqueue DID-scoped PDS/Tap reconciliation.
+  dead letter and enqueue DID-scoped PDS reconciliation.
 - A dead letter, sync marker, or repository revision mismatch is a projection-correctness incident,
   not proof that the transport skipped a numeric sequence.
 - Do not manually edit the staged or applied watermark. Recovery is inclusive and idempotent.

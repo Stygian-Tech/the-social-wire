@@ -14,6 +14,7 @@ public enum DPoPProofVerifier {
     case methodMismatch(expected: String, got: String)
     case urlMismatch(expected: String, got: String)
     case athMismatch
+    case missingAccessTokenConfirmation
     case jwkThumbprintMismatch(expected: String, got: String)
     case signatureVerificationFailed
   }
@@ -99,10 +100,14 @@ public enum DPoPProofVerifier {
 
     let thumbprintBase64URL = try jwkSha256Thumbprint(ecJWK: jwkDict)
 
-    if let expectedJkt = accessTokenCnFJkt?.trimmingCharacters(in: .whitespacesAndNewlines), !expectedJkt.isEmpty {
-      guard thumbprintBase64URL.caseInsensitiveCompare(expectedJkt) == .orderedSame else {
-        throw VerifyError.jwkThumbprintMismatch(expected: expectedJkt, got: thumbprintBase64URL)
-      }
+    guard
+      let expectedJkt = accessTokenCnFJkt?.trimmingCharacters(in: .whitespacesAndNewlines),
+      !expectedJkt.isEmpty
+    else {
+      throw VerifyError.missingAccessTokenConfirmation
+    }
+    guard thumbprintBase64URL.caseInsensitiveCompare(expectedJkt) == .orderedSame else {
+      throw VerifyError.jwkThumbprintMismatch(expected: expectedJkt, got: thumbprintBase64URL)
     }
 
     let computedAth = AccessTokenAth.expectedAth(accessTokenJWT: accessTokenJWT)

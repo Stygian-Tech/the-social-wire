@@ -41,7 +41,6 @@ the-social-wire/
     appview-worker/  # Charybdis: Jetstream ingestion for Thin AppView (Railway)
     jetstream-ingest/ # Durable Jetstream V2 replay + PostgreSQL inbox (Go; Railway)
     operations/      # Operations control plane (Railway)
-    tap/             # Pinned Indigo Tap image (Railway)
   packages/
     lexicons/        # record schemas plus app.thesocialwire.* service XRPC lexicons
     spec/            # OpenAPI 3.1 compatibility contract + endpoint manifest
@@ -98,8 +97,8 @@ DATABASE_URL='postgresql://…' bash scripts/apply-database-migrations.sh
 # AppView (sidebar + Thin AppView reads)
 (cd services/appview && APP_ENV=dev DATABASE_URL='postgresql://…' ENABLE_THIN_APPVIEW=true GATEWAY_APPVIEW_INTERNAL_SECRET=local-development-only swift run AppView)
 
-# Charybdis (Jetstream ingestion)
-(cd services/appview-worker && APP_ENV=dev DATABASE_URL='postgresql://…' ENABLE_THIN_APPVIEW=true TAP_CONSUMER_MODE=disabled swift run AppViewWorker)
+# Charybdis (Jetstream ingestion and durable-inbox projection)
+(cd services/appview-worker && APP_ENV=dev DATABASE_URL='postgresql://…' ENABLE_THIN_APPVIEW=true swift run AppViewWorker)
 ```
 
 ### Running tests
@@ -137,7 +136,8 @@ See **[docs/test-plans/README.md](docs/test-plans/README.md)** for per-surface p
 |-----------|-------|
 | Web + Operations UI | Railway |
 | Gateway, AppView, Charybdis, Jetstream V2 Ingest | Railway |
-| Operations + Tap | Railway |
+| Operations | Railway |
+| Database migrations | Railway Database Migrator job |
 | Durable index/state | Railway Postgres (`database/migrations/`) |
 | Optional disposable cache/coordination | Private Railway Redis (currently selected in Development and Production) |
 | CI/CD | GitHub Actions validates source; Railway deploys through its Git integration |

@@ -13,6 +13,9 @@ struct CharybdisCommand: AsyncParsableCommand {
     abstract: "Charybdis, The Social Wire ingestion service"
   )
 
+  @Option(name: .long) var port: Int?
+  @Option(name: .long) var hostname: String?
+
   mutating func run() async throws {
     var logger = Logger(label: "com.thesocialwire.appview-worker")
     logger.logLevel = .info
@@ -23,6 +26,8 @@ struct CharybdisCommand: AsyncParsableCommand {
     let thinConfig = ThinAppViewConfig.fromEnvironment(environment)
     let tapConfiguration = try TapConsumerConfiguration.fromEnvironment(environment)
     let operationsConfig = OperationsConfiguration.fromEnvironment(environment)
+    let listenPort = port ?? Int(environment["PORT"] ?? "8082") ?? 8082
+    let listenHost = hostname ?? environment["BIND_HOST"] ?? "::"
     guard thinConfig.enabled else {
       throw WorkerRuntimeError.thinAppViewDisabled
     }
@@ -68,18 +73,37 @@ struct CharybdisCommand: AsyncParsableCommand {
         try SQLiteAppViewProjectionCacheStore(path: path, logger: workerLogger)
       }
       await redisRuntime?.installResolutionCache()
-      try await ThinAppViewWorkerRuntime.run(
-        store: store,
-        config: thinConfig,
-        logger: workerLogger,
-        httpClient: httpClient,
-        plcURL: plcURL,
-        proactiveExtraAuthorDids: proactiveExtraAuthorDids,
-        projectionCache: projectionCache,
+      let readinessProbe = Self.readinessProbe(
+        storePing: { try await store.ping() },
         operationsStore: operationsStore,
-        operationsConfig: operationsConfig,
-        tapConfiguration: tapConfiguration
+        operationsConfig: operationsConfig
       )
+      try await withThrowingTaskGroup(of: Void.self) { group in
+        group.addTask {
+          try await WorkerHealthServer.run(
+            readinessProbe: { try await readinessProbe.run() },
+            host: listenHost,
+            port: listenPort,
+            logger: workerLogger
+          )
+        }
+        group.addTask {
+          try await ThinAppViewWorkerRuntime.run(
+            store: store,
+            config: thinConfig,
+            logger: workerLogger,
+            httpClient: httpClient,
+            plcURL: plcURL,
+            proactiveExtraAuthorDids: proactiveExtraAuthorDids,
+            projectionCache: projectionCache,
+            operationsStore: operationsStore,
+            operationsConfig: operationsConfig,
+            tapConfiguration: tapConfiguration
+          )
+        }
+        try await group.next()
+        group.cancelAll()
+      }
       await redisRuntime?.shutdown()
 
     case .postgres(let urlString):
@@ -112,8 +136,21 @@ struct CharybdisCommand: AsyncParsableCommand {
         ? redisRuntime?.store
         : PostgresAppViewProjectionCacheStore(pool: pgPool, logger: workerLogger)
       await redisRuntime?.installResolutionCache()
+      let readinessProbe = Self.readinessProbe(
+        storePing: { try await store.ping() },
+        operationsStore: operationsStore,
+        operationsConfig: operationsConfig
+      )
       try await withThrowingTaskGroup(of: Void.self) { group in
         group.addTask { await pgPool.run() }
+        group.addTask {
+          try await WorkerHealthServer.run(
+            readinessProbe: { try await readinessProbe.run() },
+            host: listenHost,
+            port: listenPort,
+            logger: workerLogger
+          )
+        }
         group.addTask {
           try await ThinAppViewWorkerRuntime.run(
             store: store,
@@ -134,6 +171,32 @@ struct CharybdisCommand: AsyncParsableCommand {
       await redisRuntime?.shutdown()
     }
   }
+
+  private static func readinessProbe(
+    storePing: @escaping @Sendable () async throws -> Void,
+    operationsStore: any OperationsStore,
+    operationsConfig: OperationsConfiguration
+  ) -> WorkerReadinessProbe {
+    let serviceStateProbe: (@Sendable () async throws -> OperationsServiceState?)?
+    if operationsConfig.enabled {
+      serviceStateProbe = {
+        try await operationsStore.listServiceStates()
+          .filter {
+            $0.service == "appview-worker"
+              && $0.environment == operationsConfig.environment
+              && $0.instanceId == operationsConfig.instanceId
+          }
+          .max(by: { $0.heartbeatAt < $1.heartbeatAt })
+      }
+    } else {
+      serviceStateProbe = nil
+    }
+    return WorkerReadinessProbe(
+      databaseProbe: storePing,
+      serviceStateProbe: serviceStateProbe
+    )
+  }
+
 }
 
 enum WorkerRuntimeError: Error, CustomStringConvertible {
