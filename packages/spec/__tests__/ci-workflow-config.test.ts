@@ -66,6 +66,15 @@ describe("CI workflow configuration", () => {
     expect(workflow).toContain("go test -race -coverprofile=");
   });
 
+  it("pins the latest production-supported Node.js LTS in JavaScript jobs", () => {
+    expect(workflow).toContain('NODE_VERSION: "24.19.0"');
+    expect(workflow).toContain("FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true");
+    expect(workflow.match(/uses: actions\/setup-node@v6/g)).toHaveLength(4);
+    expect(workflow.match(/node-version: \$\{\{ env\.NODE_VERSION \}\}/g)).toHaveLength(
+      4,
+    );
+  });
+
   it("tests deployment-shaped artifacts and migrations", () => {
     expect(workflow).toContain("Build Gateway production image");
     expect(workflow).toContain("Build AppView production image");
