@@ -52,6 +52,9 @@ func (r *Runner) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	if err := requireBootstrapSeam(checkpoint, r.cfg.BootstrapAfterSeq); err != nil {
+		return err
+	}
 	var incidentBytes int64
 	progressSeed := time.Now().UTC()
 	if checkpoint != nil {
@@ -124,6 +127,13 @@ func (r *Runner) Run(ctx context.Context) error {
 		if delay > r.cfg.BackoffMax {
 			delay = r.cfg.BackoffMax
 		}
+	}
+	return nil
+}
+
+func requireBootstrapSeam(checkpoint *ingest.Checkpoint, bootstrapAfterSeq *uint64) error {
+	if checkpoint == nil && bootstrapAfterSeq == nil {
+		return errors.New("JETSTREAM_BOOTSTRAP_AFTER_SEQ is required when the source generation has no checkpoint")
 	}
 	return nil
 }

@@ -256,7 +256,7 @@ public enum ThinAppViewWorkerRuntime {
     tapConfiguration: TapConsumerConfiguration?,
     pdsReconciliationAvailable: Bool,
     jetstreamMode: ThinAppViewJetstreamMode = .v1Authoritative,
-    jetstreamV2SourceGeneration: String = "jetstream-v2-us-west-v1"
+    jetstreamV2SourceGeneration: String = "jetstream-v2-us-west-v2"
   ) -> OperationsServiceDependencyProbe {
     {
       try await store.ping()

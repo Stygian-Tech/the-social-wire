@@ -38,6 +38,7 @@ extension PostgresOperationsStore {
         COUNT(*) FILTER (WHERE status = 'leased')::bigint,
         COUNT(*) FILTER (WHERE status = 'retry')::bigint,
         COUNT(*) FILTER (WHERE status = 'applied')::bigint,
+        COUNT(*) FILTER (WHERE status = 'filtered_scope')::bigint,
         COUNT(*) FILTER (WHERE status = 'dead_letter' AND reconciled_at IS NULL)::bigint,
         COUNT(*)::bigint,
         MIN(staged_at) FILTER (WHERE status IN ('pending', 'leased', 'retry'))
@@ -46,12 +47,14 @@ extension PostgresOperationsStore {
       """, logger: logger)
     var inbox = IngestionInboxMetrics()
     for try await row in inboxRows {
-      let value = try row.decode((Int64, Int64, Int64, Int64, Int64, Int64, Date?).self)
+      let value = try row.decode(
+        (Int64, Int64, Int64, Int64, Int64, Int64, Int64, Date?).self
+      )
       inbox = IngestionInboxMetrics(
         pending: Int(value.0), leased: Int(value.1), retrying: Int(value.2),
-        applied: Int(value.3), deadLetters: Int(value.4), total: Int(value.5),
-        oldestPendingAt: value.6,
-        oldestPendingAgeSeconds: value.6.map { max(0, at.timeIntervalSince($0)) })
+        applied: Int(value.3), filteredScope: Int(value.4), deadLetters: Int(value.5),
+        total: Int(value.6), oldestPendingAt: value.7,
+        oldestPendingAgeSeconds: value.7.map { max(0, at.timeIntervalSince($0)) })
       break
     }
     let generationInboxRows = try await pool.query(
@@ -61,6 +64,7 @@ extension PostgresOperationsStore {
         COUNT(*) FILTER (WHERE status = 'leased')::bigint,
         COUNT(*) FILTER (WHERE status = 'retry')::bigint,
         COUNT(*) FILTER (WHERE status = 'applied')::bigint,
+        COUNT(*) FILTER (WHERE status = 'filtered_scope')::bigint,
         COUNT(*) FILTER (WHERE status = 'dead_letter' AND reconciled_at IS NULL)::bigint,
         COUNT(*)::bigint,
         MIN(staged_at) FILTER (WHERE status IN ('pending', 'leased', 'retry'))
@@ -73,13 +77,13 @@ extension PostgresOperationsStore {
     var inboxBySourceGeneration: [String: IngestionInboxMetrics] = [:]
     for try await row in generationInboxRows {
       let value = try row.decode(
-        (String, Int64, Int64, Int64, Int64, Int64, Int64, Date?).self
+        (String, Int64, Int64, Int64, Int64, Int64, Int64, Int64, Date?).self
       )
       inboxBySourceGeneration[value.0] = IngestionInboxMetrics(
         pending: Int(value.1), leased: Int(value.2), retrying: Int(value.3),
-        applied: Int(value.4), deadLetters: Int(value.5), total: Int(value.6),
-        oldestPendingAt: value.7,
-        oldestPendingAgeSeconds: value.7.map { max(0, at.timeIntervalSince($0)) }
+        applied: Int(value.4), filteredScope: Int(value.5), deadLetters: Int(value.6),
+        total: Int(value.7), oldestPendingAt: value.8,
+        oldestPendingAgeSeconds: value.8.map { max(0, at.timeIntervalSince($0)) }
       )
     }
 

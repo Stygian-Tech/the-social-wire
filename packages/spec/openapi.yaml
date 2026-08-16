@@ -444,7 +444,7 @@ components:
           type: [integer, "null"]
           format: int64
           minimum: 0
-          description: Highest staged terminal prefix; every retained event at or below this boundary is applied or reconciled. V2 sequences are sparse.
+          description: Highest staged terminal prefix; every retained event at or below this boundary is applied, reconciled, or audibly filtered outside the current role-aware scope. V2 sequences are sparse.
         lastAppliedEventAt: { type: [string, "null"], format: date-time }
         lastAppliedAt: { type: [string, "null"], format: date-time }
         lastReconciledRepositoryRevision: { type: [string, "null"] }
@@ -465,12 +465,16 @@ components:
     IngestionInboxMetrics:
       type: object
       additionalProperties: false
-      required: [pending, leased, retrying, applied, deadLetters, total]
+      required: [pending, leased, retrying, applied, filteredScope, deadLetters, total]
       properties:
         pending: { type: integer, minimum: 0 }
         leased: { type: integer, minimum: 0 }
         retrying: { type: integer, minimum: 0 }
         applied: { type: integer, minimum: 0 }
+        filteredScope:
+          type: integer
+          minimum: 0
+          description: Commits intentionally terminalized by the current role-aware scope policy without projection or reconciliation. Current server responses require this field; rolling-deploy clients may accept its absence from an older server.
         deadLetters: { type: integer, minimum: 0 }
         total: { type: integer, minimum: 0 }
         oldestPendingAt: { type: [string, "null"], format: date-time }

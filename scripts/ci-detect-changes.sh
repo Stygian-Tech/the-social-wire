@@ -163,6 +163,8 @@ filter_changed spec \
   'services/gateway/Sources/Gateway/**' \
   'services/appview/Sources/AppView/**' \
   'services/operations/Sources/Operations/**' \
+  'services/jetstream-ingest/internal/config/config.go' \
+  'services/jetstream-ingest/internal/store/postgres.go' \
   'packages/swift/GatewayCore/**' \
   'packages/swift/ThinAppViewCore/**' \
   'packages/swift/OperationsCore/**' \

@@ -228,6 +228,7 @@ describe("OpenAPI route drift", () => {
       "leased",
       "retrying",
       "applied",
+      "filteredScope",
       "deadLetters",
       "total",
     ]);

@@ -311,8 +311,35 @@ func (p *Postgres) StageBatch(ctx context.Context, lease Lease, events []ingest.
 			   event_kind, repo_did, collection, operation, repo_rev, record_key,
 			   record_cid, payload, event_time, status, attempt_count,
 			   next_attempt_at, staged_at)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
-			        $13::jsonb, $14, 'pending', 0, NOW(), NOW())
+			SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
+			       $13::jsonb, $14, 'pending', 0, NOW(), NOW()
+			WHERE $8::text IS NULL
+			   OR (
+			     $8::text IN (
+			       'site.standard.document', 'site.standard.entry',
+			       'com.standard.document', 'com.standard.entry'
+			     )
+			     AND EXISTS (
+			       SELECT 1 FROM appview_publication_scopes scope
+			       WHERE scope.author_did = $7
+			     )
+			   )
+			   OR (
+			     $8::text IN (
+			       'app.skyreader.feed.subscription',
+			       'site.standard.graph.subscription'
+			     )
+			     AND (
+			       EXISTS (
+			         SELECT 1 FROM appview_viewer_feeds feed
+			         WHERE feed.viewer_did = $7
+			       )
+			       OR EXISTS (
+			         SELECT 1 FROM appview_publication_scopes scope
+			         WHERE scope.viewer_did = $7
+			       )
+			     )
+			   )
 			ON CONFLICT (environment, source_generation, seq) DO NOTHING`,
 			p.source.Environment, p.source.Generation, int64(event.Seq), p.source.Host,
 			p.source.CursorKind, event.Kind, event.RepoDID, event.Collection, event.Operation,
@@ -384,9 +411,17 @@ func nullableString(value string) any {
 
 func (p *Postgres) TrackedDIDs(ctx context.Context) (map[string]struct{}, error) {
 	rows, err := p.db.QueryContext(ctx, `
-		SELECT repo_did
-		FROM appview_tap_repository_registrations
-		WHERE environment = $1 AND is_registered = TRUE`, p.source.Environment)
+		SELECT author_did AS repo_did
+		FROM appview_publication_scopes
+		WHERE author_did <> ''
+		UNION
+		SELECT viewer_did AS repo_did
+		FROM appview_viewer_feeds
+		WHERE viewer_did <> ''
+		UNION
+		SELECT viewer_did AS repo_did
+		FROM appview_publication_scopes
+		WHERE viewer_did <> ''`)
 	if err != nil {
 		return nil, fmt.Errorf("query tracked DIDs: %w", err)
 	}

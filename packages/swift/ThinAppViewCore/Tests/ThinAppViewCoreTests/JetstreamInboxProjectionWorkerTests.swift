@@ -19,6 +19,131 @@ struct JetstreamInboxProjectionWorkerTests {
     #expect(columns.contains("source_host"))
   }
 
+  @Test("scope filter uses current author and viewer roles and fails closed for unknown commits")
+  func scopeFilterUsesCurrentRoleMembership() async throws {
+    let fixture = try Fixture()
+    defer { fixture.remove() }
+    let now = Date(timeIntervalSince1970: 1_800_000_000)
+    try fixture.seedCheckpoint(lastStagedSequence: 7, at: now)
+    try fixture.seedAuthorScope(did: "did:plc:author-in", at: now)
+    try fixture.seedViewerScope(did: "did:plc:viewer-in", at: now)
+    try fixture.seedViewerScope(did: "did:plc:read-mark", at: now)
+    try fixture.seedEvent(
+      sequence: 1, did: "did:plc:author-out", kind: .commit,
+      collection: "site.standard.document", payload: "{}", at: now)
+    try fixture.seedEvent(
+      sequence: 2, did: "did:plc:author-in", kind: .commit,
+      collection: "site.standard.entry", payload: "{}", at: now)
+    try fixture.seedEvent(
+      sequence: 3, did: "did:plc:viewer-out", kind: .commit,
+      collection: "app.skyreader.feed.subscription", payload: "{}", at: now)
+    try fixture.seedEvent(
+      sequence: 4, did: "did:plc:viewer-in", kind: .commit,
+      collection: "site.standard.graph.subscription", payload: "{}", at: now)
+    try fixture.seedEvent(
+      sequence: 5, did: "did:plc:read-mark", kind: .commit,
+      collection: "app.thesocialwire.entryReadState", payload: "{}", at: now)
+    try fixture.seedEvent(
+      sequence: 6, did: "did:plc:lifecycle", kind: .identity,
+      payload: Self.identityPayload(6, did: "did:plc:lifecycle"), at: now)
+    try fixture.seedEvent(
+      sequence: 7, did: "did:plc:lifecycle-out", kind: .identity,
+      payload: Self.identityPayload(7, did: "did:plc:lifecycle-out"),
+      trackedLifecycle: false, at: now)
+
+    let filtered = try await fixture.store.filterIngestionInboxOutsideScope(
+      environment: "dev",
+      sourceGeneration: Fixture.generation,
+      policy: AppViewIngestionScopePolicy.version,
+      limit: 100,
+      expiresAt: now.addingTimeInterval(7 * 86_400),
+      at: now
+    )
+    let claimed = try await fixture.store.claimIngestionInbox(
+      environment: "dev",
+      sourceGeneration: Fixture.generation,
+      workerId: "scope-test",
+      limit: 100,
+      leaseUntil: now.addingTimeInterval(60),
+      at: now
+    )
+
+    #expect(filtered == 4)
+    #expect(claimed.map(\.sequence) == [2, 4, 6])
+    let evidence = try fixture.filteredEvidence(sequence: 1)
+    #expect(evidence.status == "filtered_scope")
+    #expect(evidence.policy == AppViewIngestionScopePolicy.version)
+    #expect(evidence.filteredAt != nil)
+    #expect(evidence.appliedAt == nil)
+    #expect(evidence.reconciledAt == nil)
+    #expect(try fixture.status(sequence: 3) == "filtered_scope")
+    #expect(try fixture.status(sequence: 5) == "filtered_scope")
+  }
+
+  @Test("worker terminalizes excluded commits and advances through the filtered prefix")
+  func workerAdvancesAcrossFilteredScopeRows() async throws {
+    let fixture = try Fixture()
+    defer { fixture.remove() }
+    let now = Date(timeIntervalSince1970: 1_800_000_000)
+    try fixture.seedCheckpoint(lastStagedSequence: 20, at: now)
+    try fixture.seedEvent(
+      sequence: 10, did: "did:plc:excluded", kind: .commit,
+      collection: "app.thesocialwire.entryReadState", payload: "{}", at: now)
+    try fixture.seedEvent(
+      sequence: 20, did: "did:plc:lifecycle", kind: .identity,
+      payload: Self.identityPayload(20, did: "did:plc:lifecycle"), at: now)
+
+    #expect(try await fixture.worker().drainOnce(at: now) == 2)
+    #expect(try fixture.status(sequence: 10) == "filtered_scope")
+    #expect(try fixture.status(sequence: 20) == "applied")
+    #expect(try fixture.appliedWatermark() == 20)
+  }
+
+  @Test("scope filter skips active leases and reclaims expired unknown commits")
+  func scopeFilterHonorsLeaseFencing() async throws {
+    let fixture = try Fixture()
+    defer { fixture.remove() }
+    let now = Date(timeIntervalSince1970: 1_800_000_000)
+    try fixture.seedCheckpoint(lastStagedSequence: 2, at: now)
+    for sequence in Int64(1)...2 {
+      try fixture.seedEvent(
+        sequence: sequence, did: "did:plc:unknown-\(sequence)", kind: .commit,
+        collection: "app.example.unknown", payload: "{}", at: now)
+    }
+    try fixture.seedLease(sequence: 1, expiresAt: now.addingTimeInterval(60), at: now)
+    try fixture.seedLease(sequence: 2, expiresAt: now.addingTimeInterval(-1), at: now)
+
+    #expect(
+      try await fixture.store.filterIngestionInboxOutsideScope(
+        environment: "dev", sourceGeneration: Fixture.generation,
+        policy: AppViewIngestionScopePolicy.version, limit: 1,
+        expiresAt: now.addingTimeInterval(7 * 86_400), at: now) == 1
+    )
+    #expect(try fixture.status(sequence: 1) == "leased")
+    #expect(try fixture.status(sequence: 2) == "filtered_scope")
+  }
+
+  @Test("worker drains scope-filter backlog through bounded batches")
+  func workerRefillsScopeFilterBatchesUntilIdle() async throws {
+    let fixture = try Fixture()
+    defer { fixture.remove() }
+    let now = Date(timeIntervalSince1970: 1_800_000_000)
+    try fixture.seedCheckpoint(lastStagedSequence: 3, at: now)
+    for sequence in Int64(1)...3 {
+      try fixture.seedEvent(
+        sequence: sequence, did: "did:plc:filtered-\(sequence)", kind: .commit,
+        collection: "app.example.unknown", payload: "{}", at: now)
+    }
+
+    #expect(
+      try await fixture.worker(scopeFilterBatchSize: 1).drainLiveUntilIdle(at: now) == 3
+    )
+    #expect(try fixture.status(sequence: 1) == "filtered_scope")
+    #expect(try fixture.status(sequence: 2) == "filtered_scope")
+    #expect(try fixture.status(sequence: 3) == "filtered_scope")
+    #expect(try fixture.appliedWatermark() == 3)
+  }
+
   @Test("claims one event per DID and recovers only expired leases")
   func claimPreservesRepositoryFIFOAndLeaseFencing() async throws {
     let fixture = try Fixture()
@@ -370,6 +495,7 @@ struct JetstreamInboxProjectionWorkerTests {
     let now = Date()
     let did = "did:plc:author"
     try fixture.seedCheckpoint(lastStagedSequence: 102, at: now)
+    try fixture.seedAuthorScope(did: did, at: now)
     try fixture.seedEvent(
       sequence: 101,
       did: did,
@@ -403,10 +529,12 @@ struct JetstreamInboxProjectionWorkerTests {
     defer { fixture.remove() }
     let now = Date()
     try fixture.seedCheckpoint(lastStagedSequence: 500, at: now)
+    try fixture.seedAuthorScope(did: "did:plc:poison", at: now)
     try fixture.seedEvent(
       sequence: 500,
       did: "did:plc:poison",
       kind: .commit,
+      collection: "site.standard.document",
       payload: "{}",
       attemptCount: 9,
       at: now
@@ -426,10 +554,12 @@ struct JetstreamInboxProjectionWorkerTests {
     let now = Date()
     let did = "did:plc:poison"
     try fixture.seedCheckpoint(lastStagedSequence: 501, at: now)
+    try fixture.seedAuthorScope(did: did, at: now)
     try fixture.seedEvent(
       sequence: 500,
       did: did,
       kind: .commit,
+      collection: "site.standard.document",
       payload: "{}",
       attemptCount: 9,
       at: now
@@ -530,10 +660,12 @@ struct JetstreamInboxProjectionWorkerTests {
     try fixture.seedCheckpoint(lastStagedSequence: 500, at: now)
     try fixture.sealReplay(at: 500, now: now)
     try fixture.seedIncident(sequence: 500, at: now)
+    try fixture.seedAuthorScope(did: "did:plc:poison", at: now)
     try fixture.seedEvent(
       sequence: 500,
       did: "did:plc:poison",
       kind: .commit,
+      collection: "site.standard.document",
       payload: "{}",
       attemptCount: 9,
       at: now
@@ -704,10 +836,13 @@ struct JetstreamInboxProjectionWorkerTests {
     try fixture.installLeaseExpiryAudit()
     let now = Date()
     try fixture.seedCheckpoint(lastStagedSequence: 831, at: now)
+    try fixture.seedAuthorScope(did: "did:plc:delayed-reconciliation", at: now)
+    try fixture.seedAuthorScope(did: "did:plc:refilled-reconciliation", at: now)
     try fixture.seedEvent(
       sequence: 830,
       did: "did:plc:delayed-reconciliation",
       kind: .commit,
+      collection: "site.standard.document",
       payload: "{}",
       attemptCount: 9,
       at: now
@@ -716,6 +851,7 @@ struct JetstreamInboxProjectionWorkerTests {
       sequence: 831,
       did: "did:plc:refilled-reconciliation",
       kind: .commit,
+      collection: "site.standard.document",
       payload: "{}",
       attemptCount: 9,
       at: now
@@ -834,10 +970,12 @@ struct JetstreamInboxProjectionWorkerTests {
     defer { fixture.remove() }
     let now = Date()
     try fixture.seedCheckpoint(lastStagedSequence: 903, at: now)
+    try fixture.seedAuthorScope(did: "did:plc:recovery", at: now)
     try fixture.seedEvent(
       sequence: 900,
       did: "did:plc:recovery",
       kind: .commit,
+      collection: "site.standard.document",
       payload: "{}",
       attemptCount: 9,
       at: now
@@ -879,10 +1017,12 @@ struct JetstreamInboxProjectionWorkerTests {
     try fixture.seedCheckpoint(lastStagedSequence: 3, at: now)
     for sequence in Int64(1)...3 {
       let did = "did:plc:recovery-\(sequence)"
+      try fixture.seedAuthorScope(did: did, at: now)
       try fixture.seedEvent(
         sequence: sequence,
         did: did,
         kind: .commit,
+        collection: "site.standard.document",
         payload: "{}",
         attemptCount: 9,
         at: now
@@ -1134,7 +1274,8 @@ private struct Fixture {
     restorer: (any TapRepositoryRestorer)? = nil,
     projectionTimeoutSeconds: TimeInterval = 120,
     maxConcurrency: Int = 2,
-    reconciliationMaxConcurrency: Int = 2
+    reconciliationMaxConcurrency: Int = 2,
+    scopeFilterBatchSize: Int = 1_000
   ) -> JetstreamInboxProjectionWorker {
     let config = ThinAppViewConfig.fromEnvironment(["ENABLE_THIN_APPVIEW": "true"])
     let logger = Logger(label: "inbox.worker.test")
@@ -1154,6 +1295,7 @@ private struct Fixture {
       deadLetterRetentionSeconds: config.ingestionInboxDeadLetterRetentionSeconds,
       projectionTimeoutSeconds: projectionTimeoutSeconds,
       reconciliationMaxConcurrency: reconciliationMaxConcurrency,
+      scopeFilterBatchSize: scopeFilterBatchSize,
       logger: logger
     )
   }
@@ -1183,6 +1325,47 @@ private struct Fixture {
     }
   }
 
+  func seedAuthorScope(did: String, at: Date) throws {
+    try database.write { db in
+      try db.execute(
+        sql: """
+          INSERT INTO appview_publication_scopes
+            (viewer_did, publication_id, author_did, publication_scope_at_uris,
+             publication_site_urls, scope_keys, section_keys, updated_at)
+          VALUES ('did:plc:test-viewer', ?, ?, '[]', '[]', '[]', '[]', ?)
+          ON CONFLICT (viewer_did, publication_id) DO UPDATE SET updated_at = excluded.updated_at
+          """,
+        arguments: ["publication:\(did)", did, Self.iso(at)]
+      )
+    }
+  }
+
+  func seedViewerScope(did: String, at: Date) throws {
+    try database.write { db in
+      try db.execute(
+        sql: """
+          INSERT INTO appview_viewer_feeds (viewer_did, feed_kind, feed_id, updated_at)
+          VALUES (?, 'subscribed', '', ?)
+          """,
+        arguments: [did, Self.iso(at)]
+      )
+    }
+  }
+
+  func seedLease(sequence: Int64, expiresAt: Date, at: Date) throws {
+    try database.write { db in
+      try db.execute(
+        sql: """
+          UPDATE appview_ingestion_inbox
+          SET status = 'leased', lease_owner = 'existing-worker', lease_token = 'existing-token',
+              lease_expires_at = ?, updated_at = ?
+          WHERE seq = ?
+          """,
+        arguments: [Self.iso(expiresAt), Self.iso(at), sequence]
+      )
+    }
+  }
+
   func seedEvent(
     sequence: Int64,
     did: String,
@@ -1194,8 +1377,12 @@ private struct Fixture {
     recordCID: String? = nil,
     payload: String,
     attemptCount: Int = 0,
+    trackedLifecycle: Bool = true,
     at: Date
   ) throws {
+    if kind != .commit, trackedLifecycle {
+      try seedAuthorScope(did: did, at: at)
+    }
     try database.write { db in
       try db.execute(
         sql: """
@@ -1360,6 +1547,28 @@ private struct Fixture {
         db,
         sql: "SELECT status FROM appview_ingestion_inbox WHERE seq = ?",
         arguments: [sequence]
+      )
+    }
+  }
+
+  func filteredEvidence(
+    sequence: Int64
+  ) throws -> (status: String?, policy: String?, filteredAt: String?, appliedAt: String?, reconciledAt: String?) {
+    try database.read { db in
+      let row = try Row.fetchOne(
+        db,
+        sql: """
+          SELECT status, filtered_scope_policy, filtered_scope_at, applied_at, reconciled_at
+          FROM appview_ingestion_inbox WHERE seq = ?
+          """,
+        arguments: [sequence]
+      )
+      return (
+        row?["status"],
+        row?["filtered_scope_policy"],
+        row?["filtered_scope_at"],
+        row?["applied_at"],
+        row?["reconciled_at"]
       )
     }
   }

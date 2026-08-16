@@ -363,8 +363,9 @@ test("validates generation-scoped durable inbox evidence with rolling-deploy com
     leased: 2,
     retrying: 3,
     applied: 4,
+    filteredScope: 5,
     deadLetters: 0,
-    total: 10,
+    total: 15,
     oldestPendingAt: demoOverview.refreshedAt,
     oldestPendingAgeSeconds: 5,
   }
@@ -413,6 +414,10 @@ test("validates generation-scoped durable inbox evidence with rolling-deploy com
     ...durability,
     inboxBySourceGeneration: { "v2-us-west-1": { ...inbox, pending: -1 } },
   }))).rejects.toThrow("Operations inbox metrics failed runtime contract validation")
+  await expect(fetchIngestionDurability(jsonSession({
+    ...durability,
+    inbox: { ...inbox, filteredScope: -1 },
+  }))).rejects.toThrow("Operations filtered-scope metrics failed runtime contract validation")
 })
 
 test("requires trace truncation and evidence metadata", () => {

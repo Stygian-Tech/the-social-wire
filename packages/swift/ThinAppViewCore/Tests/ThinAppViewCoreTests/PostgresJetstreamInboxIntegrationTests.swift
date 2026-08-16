@@ -14,6 +14,54 @@ import Testing
   )
 )
 struct PostgresJetstreamInboxIntegrationTests {
+  @Test("Postgres scope filter uses DB-current roles and records an explicit terminal state")
+  func scopeFilterUsesCurrentRoles() async throws {
+    try await PostgresInboxFixture.withFixture { fixture in
+      let now = Date()
+      let prefix = "did:plc:\(fixture.environment)"
+      try await fixture.seedCheckpoint(lastStagedSequence: 5, at: now)
+      try await fixture.seedAuthorScope(did: "\(prefix)-author-in", at: now)
+      try await fixture.seedViewerScope(did: "\(prefix)-viewer-in", at: now)
+      try await fixture.seedViewerScope(did: "\(prefix)-read-mark", at: now)
+      try await fixture.seedInbox(
+        sequence: 1, repoDid: "\(prefix)-author-out", eventKind: "commit",
+        collection: "site.standard.document", at: now)
+      try await fixture.seedInbox(
+        sequence: 2, repoDid: "\(prefix)-author-in", eventKind: "commit",
+        collection: "site.standard.entry", at: now)
+      try await fixture.seedInbox(
+        sequence: 3, repoDid: "\(prefix)-viewer-out", eventKind: "commit",
+        collection: "app.skyreader.feed.subscription", at: now)
+      try await fixture.seedInbox(
+        sequence: 4, repoDid: "\(prefix)-viewer-in", eventKind: "commit",
+        collection: "site.standard.graph.subscription", at: now)
+      try await fixture.seedInbox(
+        sequence: 5, repoDid: "\(prefix)-read-mark", eventKind: "commit",
+        collection: "app.thesocialwire.entryReadState", at: now)
+
+      let filtered = try await fixture.store.filterIngestionInboxOutsideScope(
+        environment: fixture.environment,
+        sourceGeneration: fixture.sourceGeneration,
+        policy: AppViewIngestionScopePolicy.version,
+        limit: 100,
+        expiresAt: now.addingTimeInterval(3_600),
+        at: now
+      )
+      let claimed = try await fixture.claim(workerId: "scope-worker", limit: 100, at: now)
+      let evidence = try await fixture.filteredEvidence(sequence: 1)
+
+      #expect(filtered == 3)
+      #expect(claimed.map(\.sequence) == [2, 4])
+      #expect(evidence.status == "filtered_scope")
+      #expect(evidence.policy == AppViewIngestionScopePolicy.version)
+      #expect(evidence.filteredAt != nil)
+      #expect(evidence.appliedAt == nil)
+      #expect(evidence.reconciledAt == nil)
+      #expect(try await fixture.status(sequence: 3) == "filtered_scope")
+      #expect(try await fixture.status(sequence: 5) == "filtered_scope")
+    }
+  }
+
   @Test("concurrent workers claim disjoint rows with SKIP LOCKED")
   func concurrentWorkersClaimDisjointRows() async throws {
     try await PostgresInboxFixture.withFixture { fixture in
@@ -354,25 +402,87 @@ private final class PostgresInboxFixture: @unchecked Sendable {
   func seedInbox(
     sequence: Int64,
     repoDid: String,
+    eventKind: String = "identity",
+    collection: String? = nil,
+    trackedLifecycle: Bool = true,
     status: String = "pending",
     leaseOwner: String? = nil,
     leaseToken: String? = nil,
     leaseExpiresAt: Date? = nil,
     at now: Date
   ) async throws {
+    if eventKind != "commit", trackedLifecycle {
+      try await seedAuthorScope(did: repoDid, at: now)
+    }
     let payload = "{}"
     try await execute(
       """
       INSERT INTO appview_ingestion_inbox
         (environment, source_generation, seq, source_host, cursor_kind, event_kind, repo_did,
-         payload, event_time, status, attempt_count, next_attempt_at, lease_owner, lease_token,
+         collection, payload, event_time, status, attempt_count, next_attempt_at, lease_owner, lease_token,
          lease_expires_at, staged_at, updated_at)
       VALUES
         (\(environment), \(sourceGeneration), \(sequence), 'integration.jetstream.invalid',
-         'jetstream_v2_seq', 'identity', \(repoDid), \(payload)::jsonb, \(now), \(status), 0,
+         'jetstream_v2_seq', \(eventKind), \(repoDid), \(collection), \(payload)::jsonb, \(now), \(status), 0,
          \(now), \(leaseOwner), \(leaseToken), \(leaseExpiresAt), \(now), \(now))
       """
     )
+  }
+
+  func seedAuthorScope(did: String, at now: Date) async throws {
+    try await execute(
+      """
+      INSERT INTO appview_publication_scopes
+        (viewer_did, publication_id, author_did, publication_scope_at_uris,
+         publication_site_urls, scope_keys, section_keys, updated_at)
+      VALUES ('did:plc:integration-viewer', \("publication:\(did)"), \(did),
+              '[]'::jsonb, '[]'::jsonb, '[]'::jsonb, '[]'::jsonb, \(now))
+      ON CONFLICT (viewer_did, publication_id) DO UPDATE
+      SET author_did = EXCLUDED.author_did, updated_at = EXCLUDED.updated_at
+      """
+    )
+  }
+
+  func seedViewerScope(did: String, at now: Date) async throws {
+    try await execute(
+      """
+      INSERT INTO appview_viewer_feeds (viewer_did, feed_kind, feed_id, updated_at)
+      VALUES (\(did), 'subscribed', '', \(now))
+      ON CONFLICT (viewer_did, feed_kind, feed_id) DO UPDATE
+      SET updated_at = EXCLUDED.updated_at
+      """
+    )
+  }
+
+  func status(sequence: Int64) async throws -> String? {
+    let rows = try await pool.query(
+      """
+      SELECT status FROM appview_ingestion_inbox
+      WHERE environment = \(environment) AND source_generation = \(sourceGeneration)
+        AND seq = \(sequence)
+      """,
+      logger: logger
+    )
+    for try await row in rows { return try row.decode(String.self) }
+    return nil
+  }
+
+  func filteredEvidence(
+    sequence: Int64
+  ) async throws -> (status: String, policy: String?, filteredAt: Date?, appliedAt: Date?, reconciledAt: Date?) {
+    let rows = try await pool.query(
+      """
+      SELECT status, filtered_scope_policy, filtered_scope_at, applied_at, reconciled_at
+      FROM appview_ingestion_inbox
+      WHERE environment = \(environment) AND source_generation = \(sourceGeneration)
+        AND seq = \(sequence)
+      """,
+      logger: logger
+    )
+    for try await row in rows {
+      return try row.decode((String, String?, Date?, Date?, Date?).self)
+    }
+    throw AppViewIngestionInboxStoreError.invalidRow
   }
 
   func appliedWatermark() async throws -> Int64? {
@@ -482,8 +592,38 @@ private final class PostgresInboxFixture: @unchecked Sendable {
         applied_at TIMESTAMPTZ,
         dead_lettered_at TIMESTAMPTZ,
         reconciled_at TIMESTAMPTZ,
+        filtered_scope_policy TEXT,
+        filtered_scope_at TIMESTAMPTZ,
         expires_at TIMESTAMPTZ,
         PRIMARY KEY (environment, source_generation, seq)
+      )
+      """,
+      """
+      ALTER TABLE appview_ingestion_inbox
+        ADD COLUMN IF NOT EXISTS filtered_scope_policy TEXT,
+        ADD COLUMN IF NOT EXISTS filtered_scope_at TIMESTAMPTZ
+      """,
+      """
+      CREATE TABLE IF NOT EXISTS appview_publication_scopes (
+        viewer_did TEXT NOT NULL,
+        publication_id TEXT NOT NULL,
+        author_did TEXT NOT NULL,
+        publication_at_uri TEXT,
+        publication_scope_at_uris JSONB NOT NULL DEFAULT '[]'::jsonb,
+        publication_site_urls JSONB NOT NULL DEFAULT '[]'::jsonb,
+        scope_keys JSONB NOT NULL DEFAULT '[]'::jsonb,
+        section_keys JSONB NOT NULL DEFAULT '[]'::jsonb,
+        updated_at TIMESTAMPTZ NOT NULL,
+        PRIMARY KEY (viewer_did, publication_id)
+      )
+      """,
+      """
+      CREATE TABLE IF NOT EXISTS appview_viewer_feeds (
+        viewer_did TEXT NOT NULL,
+        feed_kind TEXT NOT NULL,
+        feed_id TEXT NOT NULL DEFAULT '',
+        updated_at TIMESTAMPTZ NOT NULL,
+        PRIMARY KEY (viewer_did, feed_kind, feed_id)
       )
       """,
       """

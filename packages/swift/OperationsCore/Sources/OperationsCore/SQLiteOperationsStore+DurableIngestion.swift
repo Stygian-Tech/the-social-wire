@@ -29,6 +29,7 @@ extension SQLiteOperationsStore {
             SUM(CASE WHEN status = 'leased' THEN 1 ELSE 0 END) AS leased_count,
             SUM(CASE WHEN status = 'retry' THEN 1 ELSE 0 END) AS retry_count,
             SUM(CASE WHEN status = 'applied' THEN 1 ELSE 0 END) AS applied_count,
+            SUM(CASE WHEN status = 'filtered_scope' THEN 1 ELSE 0 END) AS filtered_scope_count,
             SUM(CASE WHEN status = 'dead_letter' AND reconciled_at IS NULL THEN 1 ELSE 0 END)
               AS dead_letter_count,
             COUNT(*) AS total_count,
@@ -42,6 +43,7 @@ extension SQLiteOperationsStore {
         leased: inboxRow?["leased_count"] ?? 0,
         retrying: inboxRow?["retry_count"] ?? 0,
         applied: inboxRow?["applied_count"] ?? 0,
+        filteredScope: inboxRow?["filtered_scope_count"] ?? 0,
         deadLetters: inboxRow?["dead_letter_count"] ?? 0,
         total: inboxRow?["total_count"] ?? 0,
         oldestPendingAt: oldest,
@@ -54,6 +56,7 @@ extension SQLiteOperationsStore {
             SUM(CASE WHEN status = 'leased' THEN 1 ELSE 0 END) AS leased_count,
             SUM(CASE WHEN status = 'retry' THEN 1 ELSE 0 END) AS retry_count,
             SUM(CASE WHEN status = 'applied' THEN 1 ELSE 0 END) AS applied_count,
+            SUM(CASE WHEN status = 'filtered_scope' THEN 1 ELSE 0 END) AS filtered_scope_count,
             SUM(CASE WHEN status = 'dead_letter' AND reconciled_at IS NULL THEN 1 ELSE 0 END)
               AS dead_letter_count,
             COUNT(*) AS total_count,
@@ -74,6 +77,7 @@ extension SQLiteOperationsStore {
           leased: row["leased_count"] ?? 0,
           retrying: row["retry_count"] ?? 0,
           applied: row["applied_count"] ?? 0,
+          filteredScope: row["filtered_scope_count"] ?? 0,
           deadLetters: row["dead_letter_count"] ?? 0,
           total: row["total_count"] ?? 0,
           oldestPendingAt: generationOldest,

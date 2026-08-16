@@ -10,6 +10,13 @@ const migration = readFileSync(
   ),
   "utf8",
 );
+const scopeFilterMigration = readFileSync(
+  join(
+    repositoryRoot,
+    "database/migrations/20260816220000_jetstream_v2_scope_filtered_terminal.sql",
+  ),
+  "utf8",
+);
 const postgresStore = readFileSync(
   join(
     repositoryRoot,
@@ -106,17 +113,17 @@ describe("Jetstream V2 rolling-drain query indexes", () => {
   });
 
   it("matches the first nonterminal watermark barrier exactly", () => {
-    expect(migration).toContain(
-      "idx_appview_ingestion_inbox_terminal_barrier",
+    expect(scopeFilterMigration).toContain(
+      "idx_appview_ingestion_inbox_terminal_barrier_v2",
     );
-    expect(migration).toContain(
+    expect(scopeFilterMigration).toContain(
       "ON appview_ingestion_inbox (environment, source_generation, seq)",
     );
-    expect(migration).toContain(
-      "WHERE status != 'applied' AND reconciled_at IS NULL",
+    expect(scopeFilterMigration).toContain(
+      "WHERE status NOT IN ('applied', 'filtered_scope') AND reconciled_at IS NULL",
     );
     expect(postgresStore).toContain(
-      "AND status != 'applied' AND reconciled_at IS NULL",
+      "AND status NOT IN ('applied', 'filtered_scope') AND reconciled_at IS NULL",
     );
   });
 
@@ -140,6 +147,7 @@ describe("Jetstream V2 rolling-drain query indexes", () => {
       "idx_appview_ingestion_reconciliation_expired_lease",
       "idx_appview_ingestion_reconciliation_active_repo",
       "idx_appview_ingestion_inbox_terminal_barrier",
+      "idx_appview_ingestion_inbox_terminal_barrier_v2",
       "idx_first_page_cache_publication_viewer",
     ]) {
       expect(liveVerification).toContain(indexName);

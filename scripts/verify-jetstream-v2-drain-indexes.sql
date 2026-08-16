@@ -14,6 +14,7 @@ BEGIN
       ('idx_appview_ingestion_reconciliation_expired_lease'),
       ('idx_appview_ingestion_reconciliation_active_repo'),
       ('idx_appview_ingestion_inbox_terminal_barrier'),
+      ('idx_appview_ingestion_inbox_terminal_barrier_v2'),
       ('idx_first_page_cache_publication_viewer')
   ) AS expected(index_name)
   WHERE to_regclass('public.' || expected.index_name) IS NULL;
@@ -318,13 +319,13 @@ SELECT pg_temp.assert_plan_uses(
 );
 
 SELECT pg_temp.assert_plan_uses(
-  'idx_appview_ingestion_inbox_terminal_barrier',
+  'idx_appview_ingestion_inbox_terminal_barrier_v2',
   $query$
     SELECT MIN(seq)
     FROM appview_ingestion_inbox
     WHERE environment = 'ci-index-verification'
       AND source_generation = 'ci-generation'
-      AND status != 'applied'
+      AND status NOT IN ('applied', 'filtered_scope')
       AND reconciled_at IS NULL
   $query$
 );
