@@ -304,11 +304,20 @@ struct TapPDSRepositoryRestorerTests {
     let restorer = Self.restorer(
       fixture: fixture,
       transport: transport,
-      timeoutSeconds: 0.05
+      timeoutSeconds: 1
     )
 
+    let restoration = Task {
+      try await restorer.restoreCurrentRepository(repoDid: did)
+    }
+    for _ in 0..<200 where !(await cancellation.didStart) {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    let didStart = await cancellation.didStart
+    try #require(didStart)
+
     do {
-      _ = try await restorer.restoreCurrentRepository(repoDid: did)
+      _ = try await restoration.value
       Issue.record("Expected repository restoration timeout")
     } catch TapRepositoryRestorationError.timedOut {
       // Expected.
@@ -475,7 +484,12 @@ private enum OrderedPDSHTTPTransportError: Error {
 }
 
 private actor RepositoryRestorationCancellationProbe {
+  private(set) var didStart = false
   private(set) var wasObserved = false
+
+  func start() {
+    didStart = true
+  }
 
   func observe() {
     wasObserved = true
@@ -517,6 +531,7 @@ private struct StallingRepositoryBodySequence: AsyncSequence, Sendable {
     let cancellation: RepositoryRestorationCancellationProbe
 
     mutating func next() async throws -> ByteBuffer? {
+      await cancellation.start()
       do {
         try await Task.sleep(for: .seconds(60))
         return nil
