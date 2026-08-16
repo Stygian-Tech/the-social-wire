@@ -363,7 +363,7 @@ struct JetstreamInboxProjectionWorkerTests {
     }
   }
 
-  @Test("worker applies ordered commits and account lifecycle events")
+  @Test("rolling worker preserves same-DID order while refilling")
   func workerAppliesCommitThenAccountLifecycle() async throws {
     let fixture = try Fixture()
     defer { fixture.remove() }
@@ -391,10 +391,8 @@ struct JetstreamInboxProjectionWorkerTests {
     )
     let worker = fixture.worker()
 
-    #expect(try await worker.drainOnce(at: now) == 1)
+    #expect(try await worker.drainOnce(at: now) == 2)
     let uri = "at://\(did)/site.standard.entry/article"
-    #expect(try await fixture.store.fetchContentIdentity(uri: uri) != nil)
-    #expect(try await worker.drainOnce(at: now.addingTimeInterval(1)) == 1)
     #expect(try await fixture.store.fetchContentIdentity(uri: uri) == nil)
     #expect(try fixture.appliedWatermark() == 102)
   }
@@ -613,6 +611,309 @@ struct JetstreamInboxProjectionWorkerTests {
     #expect(try fixture.status(sequence: 801) == "applied")
   }
 
+  @Test("cancelling the long-lived worker cancels live and reconciliation children")
+  func longLivedWorkerPropagatesCancellationToBothLoops() async throws {
+    let fixture = try Fixture()
+    defer { fixture.remove() }
+    let now = Date()
+    let did = "did:plc:cancelled"
+    try fixture.seedCheckpoint(lastStagedSequence: 810, at: now)
+    try fixture.seedEvent(
+      sequence: 810,
+      did: did,
+      kind: .sync,
+      repoRev: "3kcancelled",
+      payload: Self.syncPayload(810, did: did),
+      at: now
+    )
+    try fixture.seedReconciliationRequest(
+      sequence: 809,
+      did: "did:plc:cancelled-reconciliation",
+      at: now
+    )
+    let restorer = BlockingRestorer()
+    let run = Task { await fixture.worker(restorer: restorer).runForever() }
+
+    #expect(await Self.eventually { await restorer.startedCount == 2 })
+    run.cancel()
+    await run.value
+
+    #expect(await restorer.cancellationCount == 2)
+    #expect(try fixture.status(sequence: 810) == "leased")
+    #expect(try fixture.reconciliationRequestStatus(sequence: 809) == "leased")
+  }
+
+  @Test("only parent task cancellation terminates a long-lived loop")
+  func cancellationTerminationPolicy() {
+    #expect(
+      !JetstreamInboxProjectionWorker.shouldStopLoopAfterCancellation(
+        parentTaskIsCancelled: false
+      )
+    )
+    #expect(
+      JetstreamInboxProjectionWorker.shouldStopLoopAfterCancellation(
+        parentTaskIsCancelled: true
+      )
+    )
+  }
+
+  @Test("delayed live refill receives a fresh lease expiry")
+  func delayedLiveRefillUsesFreshClaimTime() async throws {
+    let fixture = try Fixture()
+    defer { fixture.remove() }
+    try fixture.installLeaseExpiryAudit()
+    let now = Date()
+    try fixture.seedCheckpoint(lastStagedSequence: 821, at: now)
+    try fixture.seedEvent(
+      sequence: 820,
+      did: "did:plc:delayed-live",
+      kind: .sync,
+      repoRev: "3kdelayed",
+      payload: Self.syncPayload(820, did: "did:plc:delayed-live"),
+      at: now
+    )
+    try fixture.seedEvent(
+      sequence: 821,
+      did: "did:plc:refilled-live",
+      payload: Self.identityPayload(821, did: "did:plc:refilled-live"),
+      at: now
+    )
+    let restorer = GatedRestorer()
+    let worker = fixture.worker(
+      restorer: restorer,
+      projectionTimeoutSeconds: 5,
+      maxConcurrency: 1
+    )
+    let drain = Task { try await worker.drainLiveUntilIdle(at: now) }
+
+    #expect(await Self.eventually { await restorer.startedCount == 1 })
+    try await Task.sleep(for: .milliseconds(1_500))
+    let refillNotBefore = Date()
+    await restorer.releaseAll()
+
+    #expect(try await drain.value == 2)
+    let auditedExpiry = try fixture.inboxLeaseExpiry(sequence: 821)
+    let expiry = try #require(auditedExpiry)
+    #expect(expiry.timeIntervalSince(refillNotBefore) >= 58.75)
+  }
+
+  @Test("delayed reconciliation refill receives a fresh lease expiry")
+  func delayedReconciliationRefillUsesFreshClaimTime() async throws {
+    let fixture = try Fixture()
+    defer { fixture.remove() }
+    try fixture.installLeaseExpiryAudit()
+    let now = Date()
+    try fixture.seedCheckpoint(lastStagedSequence: 831, at: now)
+    try fixture.seedEvent(
+      sequence: 830,
+      did: "did:plc:delayed-reconciliation",
+      kind: .commit,
+      payload: "{}",
+      attemptCount: 9,
+      at: now
+    )
+    try fixture.seedEvent(
+      sequence: 831,
+      did: "did:plc:refilled-reconciliation",
+      kind: .commit,
+      payload: "{}",
+      attemptCount: 9,
+      at: now
+    )
+    #expect(try await fixture.worker(maxConcurrency: 1).drainLiveUntilIdle(at: now) == 2)
+    let restorer = GatedRestorer()
+    let worker = fixture.worker(
+      restorer: restorer,
+      projectionTimeoutSeconds: 5,
+      maxConcurrency: 1,
+      reconciliationMaxConcurrency: 1
+    )
+    let drain = Task {
+      try await worker.drainReconciliationsUntilIdle(at: now.addingTimeInterval(1))
+    }
+
+    #expect(await Self.eventually { await restorer.startedCount == 1 })
+    try await Task.sleep(for: .milliseconds(1_500))
+    let refillNotBefore = Date()
+    await restorer.releaseAll()
+
+    #expect(try await drain.value == 2)
+    let auditedExpiry = try fixture.reconciliationLeaseExpiry(sequence: 831)
+    let expiry = try #require(auditedExpiry)
+    #expect(expiry.timeIntervalSince(refillNotBefore) >= 58.75)
+  }
+
+  @Test("rolling live drain refills capacity before a stalled tail finishes")
+  func rollingDrainRefillsBeforeStalledTail() async throws {
+    let fixture = try Fixture()
+    defer { fixture.remove() }
+    let now = Date()
+    try fixture.seedCheckpoint(lastStagedSequence: 802, at: now)
+    try fixture.seedEvent(
+      sequence: 800,
+      did: "did:plc:stalled",
+      kind: .sync,
+      repoRev: "3kstalled",
+      payload: Self.syncPayload(800, did: "did:plc:stalled"),
+      at: now
+    )
+    for sequence in Int64(801)...802 {
+      let did = "did:plc:live-\(sequence)"
+      try fixture.seedEvent(
+        sequence: sequence,
+        did: did,
+        payload: Self.identityPayload(sequence, did: did),
+        at: now
+      )
+    }
+    let restorer = GatedRestorer()
+    let worker = fixture.worker(restorer: restorer, projectionTimeoutSeconds: 5)
+    let drain = Task { try await worker.drainOnce(at: now) }
+
+    #expect(await Self.eventually { await restorer.startedCount == 1 })
+    #expect(await Self.eventually { (try? fixture.status(sequence: 802)) == "applied" })
+    #expect(try fixture.status(sequence: 800) == "leased")
+
+    await restorer.releaseAll()
+    #expect(try await drain.value == 3)
+    #expect(try fixture.status(sequence: 800) == "applied")
+    #expect(try fixture.appliedWatermark() == 802)
+  }
+
+  @Test("rolling live drain claims only bounded refill chunks")
+  func rollingDrainUsesChunkedClaims() async throws {
+    let fixture = try Fixture()
+    defer { fixture.remove() }
+    let now = Date()
+    try fixture.seedCheckpoint(lastStagedSequence: 830, at: now)
+    try fixture.seedEvent(
+      sequence: 820,
+      did: "did:plc:chunked-stall",
+      kind: .sync,
+      repoRev: "3kchunked",
+      payload: Self.syncPayload(820, did: "did:plc:chunked-stall"),
+      at: now
+    )
+    for sequence in Int64(821)...830 {
+      let did = "did:plc:chunked-\(sequence)"
+      try fixture.seedEvent(
+        sequence: sequence,
+        did: did,
+        payload: Self.identityPayload(sequence, did: did),
+        at: now
+      )
+    }
+    let restorer = GatedRestorer()
+    let recorder = ClaimRecorder()
+    let worker = fixture.worker(restorer: restorer, projectionTimeoutSeconds: 5, maxConcurrency: 8)
+    let drain = Task {
+      try await worker.drainLiveUntilIdle(at: now) { limit, claimed in
+        await recorder.record(limit: limit, claimed: claimed)
+      }
+    }
+
+    #expect(await Self.eventually { (try? fixture.status(sequence: 830)) == "applied" })
+    let positiveClaims = await recorder.positiveClaims
+    #expect(
+      positiveClaims == [
+        ClaimRecord(limit: 8, claimed: 8),
+        ClaimRecord(limit: 2, claimed: 2),
+        ClaimRecord(limit: 2, claimed: 1),
+      ]
+    )
+    #expect(try fixture.status(sequence: 820) == "leased")
+
+    await restorer.releaseAll()
+    #expect(try await drain.value == 11)
+    #expect(try fixture.appliedWatermark() == 830)
+  }
+
+  @Test("blocked reconciliation does not consume live projection capacity")
+  func reconciliationRunsIndependentlyFromLiveProjection() async throws {
+    let fixture = try Fixture()
+    defer { fixture.remove() }
+    let now = Date()
+    try fixture.seedCheckpoint(lastStagedSequence: 903, at: now)
+    try fixture.seedEvent(
+      sequence: 900,
+      did: "did:plc:recovery",
+      kind: .commit,
+      payload: "{}",
+      attemptCount: 9,
+      at: now
+    )
+    #expect(try await fixture.worker().drainOnce(at: now) == 1)
+    for sequence in Int64(901)...903 {
+      let did = "did:plc:live-\(sequence)"
+      try fixture.seedEvent(
+        sequence: sequence,
+        did: did,
+        payload: Self.identityPayload(sequence, did: did),
+        at: now
+      )
+    }
+
+    let restorer = GatedRestorer()
+    let drain = Task {
+      try await fixture.worker(
+        restorer: restorer,
+        reconciliationMaxConcurrency: 1
+      ).drainOnce(at: now.addingTimeInterval(1))
+    }
+
+    #expect(await Self.eventually { await restorer.startedCount == 1 })
+    #expect(await Self.eventually { (try? fixture.status(sequence: 903)) == "applied" })
+    #expect(try fixture.reconciliationRequestStatus(sequence: 900) == "leased")
+
+    await restorer.releaseAll()
+    #expect(try await drain.value == 4)
+    #expect(try fixture.reconciliationRequestStatus(sequence: 900) == "completed")
+    #expect(try fixture.appliedWatermark() == 903)
+  }
+
+  @Test("reconciliation uses its independent bounded concurrency")
+  func reconciliationConcurrencyIsBounded() async throws {
+    let fixture = try Fixture()
+    defer { fixture.remove() }
+    let now = Date()
+    try fixture.seedCheckpoint(lastStagedSequence: 3, at: now)
+    for sequence in Int64(1)...3 {
+      let did = "did:plc:recovery-\(sequence)"
+      try fixture.seedEvent(
+        sequence: sequence,
+        did: did,
+        kind: .commit,
+        payload: "{}",
+        attemptCount: 9,
+        at: now
+      )
+    }
+    #expect(
+      try await fixture.worker(maxConcurrency: 3).drainOnce(at: now) == 3
+    )
+
+    let restorer = GatedRestorer()
+    let drain = Task {
+      try await fixture.worker(
+        restorer: restorer,
+        maxConcurrency: 3,
+        reconciliationMaxConcurrency: 2
+      ).drainOnce(at: now.addingTimeInterval(1))
+    }
+
+    #expect(await Self.eventually { await restorer.startedCount == 2 })
+    #expect(await restorer.peakConcurrency == 2)
+    #expect(await restorer.startedCount == 2)
+
+    await restorer.releaseAll()
+    #expect(try await drain.value == 3)
+    #expect(await restorer.startedCount == 3)
+    #expect(await restorer.peakConcurrency == 2)
+    for sequence in Int64(1)...3 {
+      #expect(try fixture.reconciliationRequestStatus(sequence: sequence) == "completed")
+    }
+  }
+
   @Test("retry backoff is bounded and jittered")
   func boundedRetryBackoff() {
     #expect(JetstreamInboxProjectionWorker.retryDelaySeconds(attempt: 1, jitterUnit: 0) == 0.25)
@@ -649,6 +950,16 @@ struct JetstreamInboxProjectionWorkerTests {
     {"did":"\(did)","cursor":\(sequence),"time_us":1700000000000000,"kind":"sync",\
     "sync":{"did":"\(did)","rev":"3ksync","seq":3,"time":"2026-08-15T12:00:02Z"}}
     """
+  }
+
+  private static func eventually(
+    _ condition: @escaping @Sendable () async -> Bool
+  ) async -> Bool {
+    for _ in 0..<100 {
+      if await condition() { return true }
+      try? await Task.sleep(for: .milliseconds(10))
+    }
+    return false
   }
 }
 
@@ -687,18 +998,115 @@ private actor SuccessfulRestorer: TapRepositoryRestorer {
 }
 
 private actor BlockingRestorer: TapRepositoryRestorer {
-  private(set) var cancellationObserved = false
+  private(set) var startedCount = 0
+  private(set) var cancellationCount = 0
+
+  var cancellationObserved: Bool { cancellationCount > 0 }
 
   func restoreCurrentRepository(repoDid: String) async throws -> PDSReconciliationReport {
     _ = repoDid
+    startedCount += 1
     do {
       try await Task.sleep(for: .seconds(60))
       throw TapRepositoryRestorationError.unavailable
     } catch {
-      cancellationObserved = true
+      cancellationCount += 1
       throw error
     }
   }
+}
+
+private actor GatedRestorer: TapRepositoryRestorer {
+  private var waiters: [UUID: CheckedContinuation<Void, Never>] = [:]
+  private var cancelledWaiters: Set<UUID> = []
+  private var released = false
+  private var active = 0
+  private(set) var startedCount = 0
+  private(set) var peakConcurrency = 0
+
+  func restoreCurrentRepository(repoDid: String) async throws -> PDSReconciliationReport {
+    startedCount += 1
+    active += 1
+    peakConcurrency = max(peakConcurrency, active)
+    if !released {
+      let waiterId = UUID()
+      await withTaskCancellationHandler {
+        await withCheckedContinuation { continuation in
+          registerWaiter(id: waiterId, continuation: continuation)
+        }
+      } onCancel: {
+        Task { await self.cancelWaiter(id: waiterId) }
+      }
+    }
+    active -= 1
+    try Task.checkCancellation()
+    return completeReconciliationReport(repoDid: repoDid)
+  }
+
+  func releaseAll() {
+    released = true
+    let pending = Array(waiters.values)
+    waiters.removeAll()
+    for continuation in pending { continuation.resume() }
+  }
+
+  private func registerWaiter(id: UUID, continuation: CheckedContinuation<Void, Never>) {
+    if released || cancelledWaiters.remove(id) != nil {
+      continuation.resume()
+    } else {
+      waiters[id] = continuation
+    }
+  }
+
+  private func cancelWaiter(id: UUID) {
+    if let continuation = waiters.removeValue(forKey: id) {
+      continuation.resume()
+    } else {
+      cancelledWaiters.insert(id)
+    }
+  }
+}
+
+private struct ClaimRecord: Sendable, Equatable {
+  let limit: Int
+  let claimed: Int
+}
+
+private actor ClaimRecorder {
+  private var records: [ClaimRecord] = []
+
+  var positiveClaims: [ClaimRecord] { records.filter { $0.claimed > 0 } }
+
+  func record(limit: Int, claimed: Int) {
+    records.append(ClaimRecord(limit: limit, claimed: claimed))
+  }
+}
+
+private func completeReconciliationReport(repoDid: String) -> PDSReconciliationReport {
+  PDSReconciliationReport(
+    authorScope: PDSAuthorScopeEvidence(
+      requestedAuthorDids: [repoDid],
+      acceptedAuthorDids: [repoDid],
+      issues: []
+    ),
+    limits: PDSReconciliationLimitsEvidence(
+      maximumAuthors: 1,
+      recordCapPerAuthor: 100,
+      maxConcurrency: 1,
+      rateLimitPerSecond: 10,
+      maxRateLimitRetries: 3
+    ),
+    authors: [
+      PDSAuthorReconciliationResult(
+        authorDid: repoDid,
+        pdsBase: "https://pds.example",
+        collections: [],
+        issues: []
+      )
+    ],
+    unsupportedCollections: [],
+    historicalDeletesProvable: false
+  )
 }
 
 private struct Fixture {
@@ -724,23 +1132,28 @@ private struct Fixture {
 
   func worker(
     restorer: (any TapRepositoryRestorer)? = nil,
-    projectionTimeoutSeconds: TimeInterval = 120
+    projectionTimeoutSeconds: TimeInterval = 120,
+    maxConcurrency: Int = 2,
+    reconciliationMaxConcurrency: Int = 2
   ) -> JetstreamInboxProjectionWorker {
     let config = ThinAppViewConfig.fromEnvironment(["ENABLE_THIN_APPVIEW": "true"])
     let logger = Logger(label: "inbox.worker.test")
     return JetstreamInboxProjectionWorker(
       store: store,
-      indexers: (0..<2).map { _ in ThinAppViewIndexer(store: store, config: config, logger: logger) },
+      indexers: (0..<maxConcurrency).map {
+        _ in ThinAppViewIndexer(store: store, config: config, logger: logger)
+      },
       repositoryRestorer: restorer,
       environment: "dev",
       sourceGeneration: Self.generation,
       workerId: "test-worker",
-      maxConcurrency: 2,
+      maxConcurrency: maxConcurrency,
       leaseSeconds: 60,
       pollMilliseconds: 25,
       appliedRetentionSeconds: config.ingestionInboxAppliedRetentionSeconds,
       deadLetterRetentionSeconds: config.ingestionInboxDeadLetterRetentionSeconds,
       projectionTimeoutSeconds: projectionTimeoutSeconds,
+      reconciliationMaxConcurrency: reconciliationMaxConcurrency,
       logger: logger
     )
   }
@@ -896,6 +1309,42 @@ private struct Fixture {
     }
   }
 
+  func installLeaseExpiryAudit() throws {
+    try database.write { db in
+      try db.execute(
+        sql: """
+          CREATE TABLE lease_expiry_audit (
+            claim_kind TEXT NOT NULL,
+            claim_key INTEGER NOT NULL,
+            lease_expires_at TEXT NOT NULL
+          );
+          CREATE TRIGGER audit_inbox_lease_expiry
+          AFTER UPDATE OF status ON appview_ingestion_inbox
+          WHEN NEW.status = 'leased'
+          BEGIN
+            INSERT INTO lease_expiry_audit (claim_kind, claim_key, lease_expires_at)
+            VALUES ('inbox', NEW.seq, NEW.lease_expires_at);
+          END;
+          CREATE TRIGGER audit_reconciliation_lease_expiry
+          AFTER UPDATE OF status ON appview_ingestion_reconciliation_requests
+          WHEN NEW.status = 'leased'
+          BEGIN
+            INSERT INTO lease_expiry_audit (claim_kind, claim_key, lease_expires_at)
+            VALUES ('reconciliation', NEW.trigger_seq, NEW.lease_expires_at);
+          END;
+          """
+      )
+    }
+  }
+
+  func inboxLeaseExpiry(sequence: Int64) throws -> Date? {
+    try leaseExpiry(kind: "inbox", key: sequence)
+  }
+
+  func reconciliationLeaseExpiry(sequence: Int64) throws -> Date? {
+    try leaseExpiry(kind: "reconciliation", key: sequence)
+  }
+
   func reconciledRevision() throws -> String? {
     try database.read { db in
       try String.fetchOne(
@@ -952,6 +1401,23 @@ private struct Fixture {
         sql: "SELECT status FROM appview_ingestion_incidents WHERE id = 'incident'"
       )
     }
+  }
+
+  private func leaseExpiry(kind: String, key: Int64) throws -> Date? {
+    let raw = try database.read { db in
+      try String.fetchOne(
+        db,
+        sql: """
+          SELECT lease_expires_at
+          FROM lease_expiry_audit
+          WHERE claim_kind = ? AND claim_key = ?
+          ORDER BY rowid DESC
+          LIMIT 1
+          """,
+        arguments: [kind, key]
+      )
+    }
+    return raw.flatMap { ISO8601DateFormatter().date(from: $0) }
   }
 
   private static func iso(_ date: Date) -> String {

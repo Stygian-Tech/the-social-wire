@@ -92,6 +92,27 @@ describe("CI path detection", () => {
     expect(result.get("web")).toBe("false");
   });
 
+  it("runs database checks without an extra Charybdis job for migrations", () => {
+    const result = detect(
+      repositoryWithChange("database/migrations/20990101000000_example.sql"),
+      "pull_request",
+    );
+    expect(result.get("charybdis")).toBe("false");
+    expect(result.get("jetstream_ingest")).toBe("true");
+    expect(result.get("database_migrator")).toBe("true");
+    expect(result.get("spec")).toBe("true");
+  });
+
+  it("runs deterministic spec coverage when the migration runner changes", () => {
+    const result = detect(
+      repositoryWithChange("scripts/apply-database-migrations.sh"),
+      "pull_request",
+    );
+    expect(result.get("database_migrator")).toBe("true");
+    expect(result.get("spec")).toBe("true");
+    expect(result.get("charybdis")).toBe("false");
+  });
+
   it("runs both Bun coverage jobs when their shared inventory gate changes", () => {
     const result = detect(
       repositoryWithChange("scripts/check-bun-coverage-inventory.ts"),

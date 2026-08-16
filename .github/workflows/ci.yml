@@ -214,6 +214,20 @@ jobs:
     if: needs.changes.result == 'success' && needs.changes.outputs.charybdis == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 35
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: thin_appview_test
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d thin_appview_test"
+          --health-interval 2s
+          --health-timeout 2s
+          --health-retries 30
     steps:
       - uses: actions/checkout@v6
       - name: Cache Charybdis packages
@@ -230,6 +244,8 @@ jobs:
           skip-verify-signature: true
       - name: Test ThinAppViewCore
         working-directory: packages/swift/ThinAppViewCore
+        env:
+          THIN_APPVIEW_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/thin_appview_test?sslmode=disable
         run: swift test
       - name: Test Charybdis
         working-directory: services/appview-worker
@@ -349,6 +365,14 @@ jobs:
           docker run --rm --network host \
             --env DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/socialwire_migrations \
             the-social-wire-database-migrator:test
+      - name: Verify Jetstream V2 drain indexes and query plans
+        run: |
+          docker run --rm --network host \
+            --volume "$PWD/scripts/verify-jetstream-v2-drain-indexes.sql:/tmp/verify-jetstream-v2-drain-indexes.sql:ro" \
+            --entrypoint psql \
+            the-social-wire-database-migrator:test \
+            postgresql://postgres:postgres@127.0.0.1:5432/socialwire_migrations \
+            -X -v ON_ERROR_STOP=1 -f /tmp/verify-jetstream-v2-drain-indexes.sql
 
   lexicons:
     name: Lexicons
