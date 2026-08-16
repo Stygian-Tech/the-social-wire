@@ -71,6 +71,23 @@ struct HTTPRouteContractTests {
     }
   }
 
+  @Test("readiness remains fail-closed when a required dependency is unavailable")
+  func readinessFailsClosed() async throws {
+    try await withSingletonHTTPClient { client in
+      let dbPath = FileManager.default.temporaryDirectory
+        .appendingPathComponent("sw-ready-\(UUID().uuidString).sqlite").path
+      defer { try? FileManager.default.removeItem(atPath: dbPath) }
+
+      let router = try gatewayRouter(client: client, dbPath: dbPath)
+      let app = Application(
+        router: router, configuration: .init(address: .hostname("127.0.0.1", port: 0)))
+      try await app.test(.live) { testClient in
+        let response = try await testClient.execute(uri: "/readyz", method: .get)
+        #expect(response.status == .internalServerError)
+      }
+    }
+  }
+
   @Test("sync route rejects unauthenticated calls")
   func syncUnauthorized() async throws {
     try await withSingletonHTTPClient { client in

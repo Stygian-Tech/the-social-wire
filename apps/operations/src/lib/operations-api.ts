@@ -568,16 +568,17 @@ function assertIngestionDurability(value: unknown, environment: string) {
     !isDateString(value.generatedAt)
   )
     throw new Error("Operations durable ingestion evidence failed runtime contract validation")
-  const inbox = value.inbox
+  assertIngestionInboxMetrics(value.inbox)
+  if (value.inboxBySourceGeneration !== undefined) {
+    if (!isRecord(value.inboxBySourceGeneration))
+      throw new Error("Operations source-generation inbox map failed runtime contract validation")
+    for (const [sourceGeneration, inbox] of Object.entries(value.inboxBySourceGeneration)) {
+      if (!isNonEmptyString(sourceGeneration))
+        throw new Error("Operations source-generation inbox map failed runtime contract validation")
+      assertIngestionInboxMetrics(inbox)
+    }
+  }
   const incidents = value.incidents
-  const countKeys = ["pending", "leased", "retrying", "applied", "deadLetters", "total"]
-  if (countKeys.some((key) => !isNonNegativeInteger(inbox[key])))
-    throw new Error("Operations inbox metrics failed runtime contract validation")
-  if (
-    !isOptionalDateString(inbox.oldestPendingAt) ||
-    !isOptionalFiniteNonNegative(inbox.oldestPendingAgeSeconds)
-  )
-    throw new Error("Operations inbox age evidence failed runtime contract validation")
   const incidentKeys = ["open", "recovering", "verificationRequired", "resolved", "ignored"]
   if (
     incidentKeys.some((key) => !isNonNegativeInteger(incidents[key])) ||
@@ -599,10 +600,24 @@ function assertIngestionDurability(value: unknown, environment: string) {
       !isNonNegativeInteger(checkpoint.replayBytesDownloaded) ||
       !isNonNegativeInteger(checkpoint.replayRetryCount) ||
       !isNonNegativeInteger(checkpoint.replayRangeResumeCount) ||
+      !isOptionalDateString(checkpoint.intakeHeartbeatAt) ||
       !isDateString(checkpoint.updatedAt)
     )
       throw new Error("Operations durability checkpoint failed runtime contract validation")
   })
+}
+
+function assertIngestionInboxMetrics(value: unknown) {
+  if (!isRecord(value))
+    throw new Error("Operations inbox metrics failed runtime contract validation")
+  const countKeys = ["pending", "leased", "retrying", "applied", "deadLetters", "total"]
+  if (countKeys.some((key) => !isNonNegativeInteger(value[key])))
+    throw new Error("Operations inbox metrics failed runtime contract validation")
+  if (
+    !isOptionalDateString(value.oldestPendingAt) ||
+    !isOptionalFiniteNonNegative(value.oldestPendingAgeSeconds)
+  )
+    throw new Error("Operations inbox age evidence failed runtime contract validation")
 }
 
 function assertListResponse(
