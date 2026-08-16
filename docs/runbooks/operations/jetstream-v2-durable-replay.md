@@ -40,3 +40,33 @@ never advances the intake cursor. Redis is not part of either durability boundar
 Development must complete the documented shadow comparison, fault drills, and seven-day soak before
 Production is considered. Rollback to V1 authority does not delete V2 checkpoints, inbox rows, raw
 gap signals, or consolidated incidents.
+
+### Changing authority on Railway
+
+Changing `THIN_APPVIEW_JETSTREAM_MODE` may create a `SKIPPED` deployment when the Git revision is
+unchanged. A skipped deployment does not prove that a running Charybdis process loaded the new mode.
+After setting the variable:
+
+1. Verify that Railway creates a non-skipped Charybdis deployment from the intended revision. If it
+   suppresses the variable-only deployment, run a fresh-source redeploy for Charybdis.
+2. Require the new process log to report the intended `jetstream_mode`.
+3. Require the Charybdis deployment to reach `SUCCESS`; its Railway health check calls `/readyz`,
+   which checks the database, fresh worker heartbeat, authoritative transport, and authoritative
+   projection freshness/completeness.
+4. Confirm the active fenced ingester lease heartbeat remains fresh, the matching source
+   generation's actionable inbox stays inside the freshness budget, and there are no dead letters
+   or unresolved ingestion incidents. Checkpoint `updated_at` is not an intake heartbeat because
+   projection and reconciliation work can also advance it.
+5. Check the public Gateway `/readyz` separately. It aggregates Gateway database, App View, and
+   Charybdis readiness, so a failure there is not by itself proof that Charybdis failed.
+
+For rollback, restore `THIN_APPVIEW_JETSTREAM_MODE=v2_shadow` and apply the same non-skipped
+deployment checks. Preserve all V2 state for diagnosis and a later retry.
+
+### Production rollout record
+
+Production was explicitly switched to `v2_authoritative` on 2026-08-16 by operator direction before
+the recommended seven-day Development soak completed. Deployment
+`afc03fa0-2ac5-4d1e-96ce-f434cc02a23e` loaded the mode on revision
+`e07324991e37492eb67c97679503a778684419aa` and passed the Charybdis Railway readiness check. Treat
+the shortened soak as accepted rollout risk, not as evidence that the documented soak occurred.
