@@ -1,11 +1,11 @@
 meta {
-  name: Delete AppView Read Mark
+  name: Post AppView Delete Read Mark
   type: http
   seq: 6
 }
 
-delete {
-  url: {{appviewBaseUrl}}/v1/appview/read-marks
+post {
+  url: {{appviewBaseUrl}}/xrpc/app.thesocialwire.appview.deleteReadMark
   body: json
   auth: none
 }

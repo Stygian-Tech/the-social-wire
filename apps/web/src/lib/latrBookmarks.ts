@@ -106,7 +106,7 @@ export class LatrBookmarksClient {
       this.oauthSession,
       latrXrpcPath(LATR_XRPC.setBookmarkState),
       {
-        method: "PATCH",
+        method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ bookmarkUri, state }),
       }

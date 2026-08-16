@@ -5,12 +5,17 @@ meta {
 }
 
 post {
-  url: {{baseUrl}}/v1/publications/refresh
-  body: none
+  url: {{baseUrl}}/xrpc/app.thesocialwire.publication.refreshSidebar
+  body: json
   auth: none
 }
 
 headers {
   Authorization: Bearer {{oauthAccessToken}}
   DPoP: {{dpopProof}}
+  Content-Type: application/json
+}
+
+body:json {
+  {}
 }

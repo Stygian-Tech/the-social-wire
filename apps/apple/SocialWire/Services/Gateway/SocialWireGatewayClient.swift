@@ -3,6 +3,8 @@ import Foundation
 /// Authenticated calls to **`SocialWireAPIEnvironment.baseURL`** (DPoP + access JWT), mirroring PDS **`XRPCClient`** semantics.
 @MainActor
 final class SocialWireGatewayClient {
+    private struct EmptyXRPCInput: Encodable {}
+
     private let auth: ATProtoOAuthService
     private let baseURL: URL
     private let urlSession: URLSession
@@ -51,12 +53,13 @@ final class SocialWireGatewayClient {
     }
 
     func refreshPublicationSidebar() async throws -> PublicationSidebarResponseDTO {
+        let payload = try JSONEncoder().encode(EmptyXRPCInput())
         let result = try await authorizedRequest(
             method: "POST",
             path: SocialWireXRPCMethod.refreshSidebar,
             query: [:],
-            body: nil,
-            contentType: nil
+            body: payload,
+            contentType: "application/json"
         )
         guard (200 ..< 300).contains(result.statusCode) else {
             throw SocialWireError.badResponse("Publication refresh failed (\(result.statusCode)).")
@@ -80,119 +83,6 @@ final class SocialWireGatewayClient {
             throw SocialWireError.badResponse("Publication resolve failed (\(result.statusCode)).")
         }
         return try JSONDecoder().decode(ResolveAddPublicationResponseDTO.self, from: result.body)
-    }
-
-    func createFolder(_ input: GatewayFolderWriteBody) async throws -> GatewayRecordWriteResponseDTO {
-        let payload = try JSONEncoder().encode(input)
-        let result = try await authorizedRequest(
-            method: "POST",
-            path: "/v1/publications/folders",
-            query: [:],
-            body: payload,
-            contentType: "application/json"
-        )
-        guard (200 ..< 300).contains(result.statusCode) else {
-            throw SocialWireError.badResponse("Create folder failed (\(result.statusCode)).")
-        }
-        return try JSONDecoder().decode(GatewayRecordWriteResponseDTO.self, from: result.body)
-    }
-
-    func updateFolder(rkey: String, input: GatewayFolderWriteBody) async throws {
-        let payload = try JSONEncoder().encode(input)
-        let result = try await authorizedRequest(
-            method: "PUT",
-            path: "/v1/publications/folders/\(rkey)",
-            query: [:],
-            body: payload,
-            contentType: "application/json"
-        )
-        guard (200 ..< 300).contains(result.statusCode) else {
-            throw SocialWireError.badResponse("Update folder failed (\(result.statusCode)).")
-        }
-    }
-
-    func deleteFolder(rkey: String) async throws {
-        let result = try await authorizedRequest(
-            method: "DELETE",
-            path: "/v1/publications/folders/\(rkey)",
-            query: [:],
-            body: nil,
-            contentType: nil
-        )
-        guard (200 ..< 300).contains(result.statusCode) else {
-            throw SocialWireError.badResponse("Delete folder failed (\(result.statusCode)).")
-        }
-    }
-
-    func upsertPublicationPrefs(_ input: GatewayPublicationPrefsWriteBody) async throws -> GatewayRecordWriteResponseDTO {
-        let payload = try JSONEncoder().encode(input)
-        let result = try await authorizedRequest(
-            method: "PUT",
-            path: "/v1/publications/prefs",
-            query: [:],
-            body: payload,
-            contentType: "application/json"
-        )
-        guard (200 ..< 300).contains(result.statusCode) else {
-            throw SocialWireError.badResponse("Publication prefs upsert failed (\(result.statusCode)).")
-        }
-        return try JSONDecoder().decode(GatewayRecordWriteResponseDTO.self, from: result.body)
-    }
-
-    func createPublicationSubscription(_ input: GatewayPublicationSubscriptionWriteBody) async throws -> GatewayRecordWriteResponseDTO {
-        let payload = try JSONEncoder().encode(input)
-        let result = try await authorizedRequest(
-            method: "POST",
-            path: "/v1/publications/subscriptions",
-            query: [:],
-            body: payload,
-            contentType: "application/json"
-        )
-        guard (200 ..< 300).contains(result.statusCode) else {
-            throw SocialWireError.badResponse("Create subscription failed (\(result.statusCode)).")
-        }
-        return try JSONDecoder().decode(GatewayRecordWriteResponseDTO.self, from: result.body)
-    }
-
-    func deletePublicationSubscription(rkey: String) async throws {
-        let result = try await authorizedRequest(
-            method: "DELETE",
-            path: "/v1/publications/subscriptions/\(rkey)",
-            query: [:],
-            body: nil,
-            contentType: nil
-        )
-        guard (200 ..< 300).contains(result.statusCode) else {
-            throw SocialWireError.badResponse("Delete subscription failed (\(result.statusCode)).")
-        }
-    }
-
-    func createRssSubscription(_ input: GatewayRssSubscriptionWriteBody) async throws -> GatewayRecordWriteResponseDTO {
-        let payload = try JSONEncoder().encode(input)
-        let result = try await authorizedRequest(
-            method: "POST",
-            path: "/v1/publications/rss-subscriptions",
-            query: [:],
-            body: payload,
-            contentType: "application/json"
-        )
-        guard (200 ..< 300).contains(result.statusCode) else {
-            throw SocialWireError.badResponse("Create RSS subscription failed (\(result.statusCode)).")
-        }
-        return try JSONDecoder().decode(GatewayRecordWriteResponseDTO.self, from: result.body)
-    }
-
-    func deleteRssSubscription(rkey: String) async throws {
-        let result = try await authorizedRequest(
-            method: "DELETE",
-            path: "/v1/publications/rss-subscriptions/\(rkey)",
-            query: [:],
-            body: nil,
-            contentType: nil
-        )
-        guard (200 ..< 300).contains(result.statusCode) else {
-            throw SocialWireError.badResponse("Delete RSS subscription failed (\(result.statusCode)).")
-        }
     }
 
     func fetchAppViewEntries(
@@ -285,7 +175,8 @@ final class SocialWireGatewayClient {
         }
         let result = try await authorizedGET(
             path: SocialWireXRPCMethod.getUnreadCounts,
-            query: ["publicationIds": publicationIds.joined(separator: ",")],
+            query: [:],
+            repeatedQuery: ["publicationIds": publicationIds],
             ifNoneMatch: nil
         )
         if result.statusCode == 404 {
@@ -370,12 +261,13 @@ final class SocialWireGatewayClient {
     }
 
     func purgeAppViewPrivacyData() async throws {
+        let payload = try JSONEncoder().encode(EmptyXRPCInput())
         let result = try await authorizedRequest(
             method: "POST",
             path: SocialWireXRPCMethod.purgeViewerData,
             query: [:],
-            body: nil,
-            contentType: nil
+            body: payload,
+            contentType: "application/json"
         )
         guard (200 ..< 300).contains(result.statusCode) else {
             throw SocialWireError.badResponse("AppView purge failed (\(result.statusCode)).")
@@ -395,12 +287,7 @@ final class SocialWireGatewayClient {
             var request = URLRequest(url: url)
             request.httpMethod = "GET"
             request.setValue("application/x-ndjson", forHTTPHeaderField: "Accept")
-            try await authorize(
-                &request,
-                session: session,
-                gatewayPath: "/v1/appview/bootstrap-stream",
-                gatewayMethod: "GET"
-            )
+            try await authorize(&request, session: session)
             return request
         }
 
@@ -452,12 +339,14 @@ final class SocialWireGatewayClient {
     private func authorizedGET(
         path: String,
         query: [String: String],
+        repeatedQuery: [String: [String]] = [:],
         ifNoneMatch: String?
     ) async throws -> GatewayHTTPResult {
         try await authorizedRequest(
             method: "GET",
             path: path,
             query: query,
+            repeatedQuery: repeatedQuery,
             body: nil,
             contentType: nil,
             ifNoneMatch: ifNoneMatch
@@ -495,6 +384,7 @@ final class SocialWireGatewayClient {
         method: String,
         path: String,
         query: [String: String],
+        repeatedQuery: [String: [String]] = [:],
         body: Data?,
         contentType: String?,
         ifNoneMatch: String? = nil
@@ -502,8 +392,11 @@ final class SocialWireGatewayClient {
         guard var comps = URLComponents(url: baseURL.appending(path: path), resolvingAgainstBaseURL: false) else {
             throw SocialWireError.invalidURL
         }
-        if !query.isEmpty {
+        if !query.isEmpty || !repeatedQuery.isEmpty {
             comps.queryItems = query.map { URLQueryItem(name: $0.key, value: $0.value) }
+                + repeatedQuery.flatMap { key, values in
+                    values.map { URLQueryItem(name: key, value: $0) }
+                }
         }
         guard let url = comps.url else {
             throw SocialWireError.invalidURL
@@ -520,12 +413,7 @@ final class SocialWireGatewayClient {
             request.setValue(contentType, forHTTPHeaderField: "Content-Type")
         }
 
-        try await authorize(
-          &request,
-          session: session,
-          gatewayPath: path,
-          gatewayMethod: method
-        )
+        try await authorize(&request, session: session)
 
         let trimmedNM = trimmedEntityTag(ifNoneMatch)
         if let trimmedNM, !trimmedNM.isEmpty {
@@ -547,9 +435,6 @@ final class SocialWireGatewayClient {
         )
 
         if [401, 400].contains(http.statusCode), http.value(forHTTPHeaderField: "DPoP-Nonce") != nil {
-            if Self.pdsXrpcMethod(gatewayMethod: method, path: path) != nil {
-                await auth.dpop.advancePdsDpopNonce(session: session, urlSession: urlSession)
-            }
             var retry = URLRequest(url: url)
             retry.httpMethod = method
             retry.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -559,12 +444,7 @@ final class SocialWireGatewayClient {
             if let contentType {
                 retry.setValue(contentType, forHTTPHeaderField: "Content-Type")
             }
-            try await authorize(
-              &retry,
-              session: session,
-              gatewayPath: path,
-              gatewayMethod: method
-            )
+            try await authorize(&retry, session: session)
             if let trimmedNM, !trimmedNM.isEmpty {
                 retry.setValue(trimmedNM, forHTTPHeaderField: "If-None-Match")
             }
@@ -591,62 +471,15 @@ final class SocialWireGatewayClient {
         return initial
     }
 
-    private func authorize(
-      _ request: inout URLRequest,
-      session: AuthSession,
-      gatewayPath: String,
-      gatewayMethod: String
-    ) async throws {
+    private func authorize(_ request: inout URLRequest, session: AuthSession) async throws {
         guard let url = request.url else { throw SocialWireError.invalidURL }
-        let method = request.httpMethod ?? gatewayMethod
+        let method = request.httpMethod ?? "GET"
 
         request.setValue("DPoP \(session.accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue(
             try await auth.dpop.proof(method: method, url: url, accessToken: session.accessToken),
             forHTTPHeaderField: "DPoP"
         )
-
-        if let xrpcMethod = Self.pdsXrpcMethod(gatewayMethod: gatewayMethod, path: gatewayPath) {
-            let pdsXrpcURL = session.pdsURL
-                .appending(path: "xrpc")
-                .appending(path: xrpcMethod)
-            await auth.dpop.advancePdsDpopNonce(session: session, urlSession: urlSession)
-            let upstreamProof = try await auth.dpop.proof(
-                method: method,
-                url: pdsXrpcURL,
-                accessToken: session.accessToken
-            )
-            request.setValue(upstreamProof, forHTTPHeaderField: "X-ATProto-Upstream-DPoP")
-        }
-    }
-
-    /// Maps gateway publication write routes to the PDS XRPC method they write through.
-    private static func pdsXrpcMethod(gatewayMethod: String, path: String) -> String? {
-        let method = gatewayMethod.uppercased()
-        switch method {
-        case "POST":
-            if path.hasSuffix("/subscriptions")
-                || path.hasSuffix("/rss-subscriptions")
-                || path.hasSuffix("/folders")
-            {
-                return "com.atproto.repo.createRecord"
-            }
-        case "PUT":
-            if path.contains("/folders/") || path.hasSuffix("/prefs") {
-                return "com.atproto.repo.putRecord"
-            }
-        case "DELETE":
-            if path.contains("/subscriptions/")
-                || path.contains("/rss-subscriptions/")
-                || path.contains("/folders/")
-                || path.hasSuffix("/read-marks")
-            {
-                return "com.atproto.repo.deleteRecord"
-            }
-        default:
-            break
-        }
-        return nil
     }
 
     private func trimmedEntityTag(_ raw: String?) -> String? {

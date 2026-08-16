@@ -4,8 +4,8 @@ meta {
   seq: 24
 }
 
-delete {
-  url: {{baseUrl}}/v1/appview/read-marks
+post {
+  url: {{baseUrl}}/xrpc/app.thesocialwire.appview.deleteReadMark
   body: json
   auth: none
 }

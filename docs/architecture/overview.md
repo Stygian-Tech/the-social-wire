@@ -1,10 +1,5 @@
 # Architecture Overview
 
-> **Release status:** the current checkout adds Lexicon-defined Social Wire XRPC
-> aliases and client calls, but both public Gateway environments still return
-> `404` for them as of 2026-08-12. The deployed application continues to use the
-> retained `/v1/*` routes until the backend and clients ship together.
-
 ## System Components
 
 ```
@@ -28,9 +23,8 @@
           │
           ▼ (authenticated read path)
    Social Wire Gateway (Railway)
-     /v1/sync/preferences, /v1/pds/cache/record
      /xrpc/app.thesocialwire.* (eligible JSON queries/procedures)
-     /v1/* compatibility, write-through, streams, L@tr, telemetry
+     /v1/* compatibility, streams, cached reads, L@tr, telemetry
           │
           ▼
      Railway Redis (projection/PDS caches, PLC/RSS leases, ranking primitives)
@@ -108,7 +102,7 @@ audited operator actions through its own XRPC namespace and compatibility
 routes.
 
 Enrollment (`app.thesocialwire.appview.enrollSources`, with a
-`POST /v1/appview/enroll` compatibility route) backfills followed author DIDs
+`app.thesocialwire.appview.enrollSources` procedure) backfills followed author DIDs
 after client-side discovery because the global relay may miss very new repos.
 
 Full designs: [appview.md](appview.md) and [redis.md](redis.md). Railway deploys each service from its config in [`railway/`](../../railway/README.md).

@@ -5,7 +5,7 @@ import GatewayCore
 struct GatewayServiceConfig: Sendable {
   let core: GatewayConfig
   let cacheBackend: CacheBackend
-  /// When set, `GET /v1/publications/sidebar` is proxied to this AppView service base URL.
+  /// When set, publication/AppView XRPC and their compatibility aliases are proxied to this AppView base URL.
   let appViewBaseURL: String?
   /// Dedicated control-plane origin for `/v1/operations/*`.
   let operationsBaseURL: String?

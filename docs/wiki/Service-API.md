@@ -7,23 +7,21 @@ Clients call the public **Gateway** host. AppView, Operations, Tap, databases, a
 [endpoint transport manifest](https://github.com/Stygian-Tech/the-social-wire/blob/main/packages/spec/endpoint-manifest.json),
 and [service Lexicons](https://github.com/Stygian-Tech/the-social-wire/tree/main/packages/lexicons/app/thesocialwire).
 
-The current checkout implements a migration of eligible authenticated JSON
-queries and procedures to `/xrpc/app.thesocialwire.*`, with `/v1/*`
-compatibility routes retained. **Release status:** as verified on 2026-08-12,
-both public Gateway environments still return `404` for these Social Wire XRPC
-methods while protected `/v1` routes are registered. Until the XRPC changes are
-committed, deployed, and smoke-tested, `/v1/*` is the current hosted contract.
+Eligible authenticated JSON queries and procedures use
+`/xrpc/app.thesocialwire.*`, with `/v1/*` compatibility routes retained.
 
-Streaming, health/readiness, OAuth metadata, telemetry, PDS write-through,
-and vendor-owned transports stay HTTP. L@tr exposes its foreign bookmark XRPC surface unchanged.
+Streaming, health/readiness, OAuth metadata, telemetry, and vendor-owned
+transports stay HTTP. User-owned records use standard `com.atproto.repo.*`
+XRPC directly on the viewer PDS; Gateway write-through routes remain compatibility adapters.
+L@tr exposes its foreign bookmark XRPC surface unchanged.
 The endpoint manifest records the intended transport per operation.
 
 ## Service boundaries
 
 | Service | Role | HTTP surface |
 |---------|------|--------------|
-| **Gateway** | OAuth metadata, DPoP verification, sync/PDS acceleration, publication write-through, AppView/L@tr/Operations proxy | Public health/metadata and `/v1/*`; pending source also registers `/xrpc/app.thesocialwire.*` |
-| **AppView** | Sidebar projection, indexed reads, unread state, bootstrap stream | Private `/v1/publications/*` and `/v1/appview/*`; pending source adds XRPC aliases |
+| **Gateway** | OAuth metadata, DPoP verification, sync/PDS acceleration, compatibility publication write-through, AppView/L@tr/Operations proxy | Public health/metadata, `/xrpc/app.thesocialwire.*`, and retained `/v1/*` adapters |
+| **AppView** | Sidebar projection, indexed reads, unread state, bootstrap stream | Private `/xrpc/app.thesocialwire.*`, retained `/v1/*` adapters, and NDJSON bootstrap |
 | **Charybdis** | Jetstream/Tap ingestion, RSS polling, backfill, repair, TTL cleanup | No application HTTP API |
 | **Operations** | Operator evidence and controlled recovery | Private `/v1/operations/*`, proxied by Gateway; pending source adds Operations XRPC aliases |
 | **Tap** | Pinned Indigo repository synchronization | Private authenticated Tap API |
@@ -41,7 +39,7 @@ The endpoint manifest records the intended transport per operation.
 | `/v1/telemetry/*` | Bounded, deidentified client-performance samples |
 | `/v1/operations/*` | Operator-only control-plane proxy |
 
-Examples in the pending XRPC surface include
+Examples in the XRPC surface include
 `app.thesocialwire.sync.getPreferences`,
 `app.thesocialwire.publication.getSidebar`,
 `app.thesocialwire.appview.getFeed`, and

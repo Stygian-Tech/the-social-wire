@@ -57,37 +57,35 @@ its own cycle, and the `content_items` TTL eventually expires the rest.
 All routes require ATProto OAuth (`Authorization: Bearer` or `DPoP` + `DPoP` proof) unless noted. **`ENABLE_THIN_APPVIEW=true`** on AppView registers the AppView XRPC and compatibility `/v1/appview/*` surfaces; gateway always exposes OAuth metadata and proxies AppView when **`APPVIEW_BASE_URL`** is set.
 
 The current checkout migrates eligible JSON operations to Lexicon-defined
-`/xrpc/app.thesocialwire.appview.*` queries and procedures while retaining the
-`/v1/*` paths below. The XRPC aliases are not yet registered on the public
-Testing or Production gateways as of 2026-08-12, so `/v1/*` remains the current
-hosted contract. `bootstrap-stream` stays HTTP NDJSON because it is a
-progressive stream rather than a normal XRPC JSON response. See [[Service-API]]
-and [[Lexicons]].
+`/xrpc/app.thesocialwire.appview.*` queries and procedures are the canonical
+JSON contract. Compatibility `/v1/*` aliases remain server-side, while
+`bootstrap-stream` stays HTTP NDJSON because it is a progressive stream rather
+than a normal XRPC JSON response. See [[Service-API]] and [[Lexicons]].
 
 ### AppView (read index)
 
 | Method | Path | Purpose |
 |--------|------|---------|
 | `GET` | `/v1/appview/bootstrap-stream` | Progressive NDJSON initial load (sidebar, unread, first page) |
-| `GET` | `/v1/appview/entries` | Paginated timeline (`authorDid`, scope keys, `filter=all\|unread\|read`, optional `maxEntries`) |
-| `GET` | `/v1/appview/feed` | Aggregate Subscribed, Following, folder, or publication feed |
-| `GET` | `/v1/appview/entry` | Flat indexed entry-detail object |
-| `GET` | `/v1/appview/unread-counts` | Unread badges by publication or scope |
-| `POST` | `/v1/appview/read-marks` | Upsert AppView read mark |
-| `DELETE` | `/v1/appview/read-marks` | Delete AppView read mark |
-| `POST` | `/v1/appview/enroll` | Backfill recent author records (`authorDids`) and/or ingest subscribed RSS feeds (`feedUrls`) |
-| `POST` | `/v1/appview/mark-all-read` | Scoped mark-all-read (publication, folder, subscribed, following) |
-| `DELETE` | `/v1/appview/privacy/purge` | Delete the viewer's explicit read marks and unread overrides; bulk-read floors and other projection rows remain |
+| `GET` | `/xrpc/app.thesocialwire.appview.listEntries` | Paginated timeline (`authorDid`, scope keys, `filter=all\|unread\|read`, optional `maxEntries`) |
+| `GET` | `/xrpc/app.thesocialwire.appview.getFeed` | Aggregate Subscribed, Following, folder, or publication feed |
+| `GET` | `/xrpc/app.thesocialwire.appview.getEntry` | Flat indexed entry-detail object |
+| `GET` | `/xrpc/app.thesocialwire.appview.getUnreadCounts` | Unread badges by publication or scope |
+| `POST` | `/xrpc/app.thesocialwire.appview.putReadMark` | Upsert AppView read mark |
+| `POST` | `/xrpc/app.thesocialwire.appview.deleteReadMark` | Delete AppView read mark |
+| `POST` | `/xrpc/app.thesocialwire.appview.enrollSources` | Backfill recent author records (`authorDids`) and/or ingest subscribed RSS feeds (`feedUrls`) |
+| `POST` | `/xrpc/app.thesocialwire.appview.markAllRead` | Scoped mark-all-read (publication, folder, subscribed, following) |
+| `POST` | `/xrpc/app.thesocialwire.appview.purgeViewerData` | Delete the viewer's explicit read marks and unread overrides; bulk-read floors and other projection rows remain |
 
 ### Publications (sidebar projection)
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| `GET` | `/v1/publications/sidebar` | Unified sidebar (`phase=full\|priority\|folderPublications`) |
-| `POST` | `/v1/publications/refresh` | Recompute sidebar projection |
-| `POST` | `/v1/publications/resolve` | Resolve Add Publication input |
+| `GET` | `/xrpc/app.thesocialwire.publication.getSidebar` | Unified sidebar (`phase=full\|priority\|folderPublications`) |
+| `POST` | `/xrpc/app.thesocialwire.publication.refreshSidebar` | Recompute sidebar projection |
+| `POST` | `/xrpc/app.thesocialwire.publication.resolvePublication` | Resolve Add Publication input |
 
-Gateway exposes PDS write-through routes at `/v1/publications/folders`, `/prefs`, `/subscriptions`, and `/rss-subscriptions`. The web client normally writes these records directly to the viewer PDS; the current iOS app uses the Gateway routes with an upstream PDS-bound DPoP proof.
+Gateway retains PDS write-through compatibility routes at `/v1/publications/folders`, `/prefs`, `/subscriptions`, and `/rss-subscriptions`. Web, iOS, and Bruno clients write these records directly to the viewer PDS with standard `com.atproto.repo.*` XRPC.
 
 OpenAPI: [packages/spec/openapi.yaml](https://github.com/Stygian-Tech/the-social-wire/blob/main/packages/spec/openapi.yaml)
 
@@ -169,7 +167,7 @@ remains durable and its cache tables remain the rollback target.
 
 ### Web
 
-- **Release boundary:** hosted clients still use the `/v1/*` equivalents below until the pending XRPC source ships
+- **JSON API:** hosted clients use the canonical `app.thesocialwire.*` XRPC methods; only bootstrap remains HTTP
 - **Initial load:** `usePublicationSidebarData` → `GET /v1/appview/bootstrap-stream`
 - **Entry lists and aggregate feeds:** `useEntries` → `app.thesocialwire.appview.listEntries` or `getFeed`; **`useProactiveFeedRefresh`** polls/refocus-refreshes the active feed
 - **Entry detail:** `useEntry` → `app.thesocialwire.appview.getEntry`, with narrow author-PDS URL/embed enrichment for incomplete standard.site detail

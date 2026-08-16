@@ -380,7 +380,7 @@ actor PublicationProjectionService {
   }
 
   /// Full follow-graph discovery plus a durable projection-cache write, for running off the
-  /// request path. Shared by bootstrap and by `POST /v1/publications/refresh` so that a refresh
+  /// request path. Shared by bootstrap and by `app.thesocialwire.publication.refreshSidebar` so that a refresh
   /// leaves the cross-replica cache warm instead of deleting it and never writing it back.
   func refreshFullDiscoveryAndPersist(auth: AuthContext) async {
     do {

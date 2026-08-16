@@ -2039,7 +2039,7 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
 
   /xrpc/link.latr.bookmarks.setState:
-    patch:
+    post:
       operationId: setLatrBookmarkState
       summary: Archive or unarchive bookmark metadata
       tags: [Latr]

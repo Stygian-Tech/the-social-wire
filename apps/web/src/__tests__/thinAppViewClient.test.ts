@@ -177,7 +177,11 @@ describe("thinAppViewClient", () => {
       expect(url).toContain(
         "/xrpc/app.thesocialwire.appview.getUnreadCounts?"
       );
-      expect(url).toContain("publicationIds=");
+      const request = new URL(url);
+      expect(request.searchParams.getAll("publicationIds")).toEqual([
+        "did:plc:alice",
+        "at://did:plc:alice/site.standard.publication/main",
+      ]);
       return new Response(
         JSON.stringify({
           counts: { "did:plc:alice": 2 },
@@ -192,7 +196,10 @@ describe("thinAppViewClient", () => {
     const { fetchAppViewUnreadCounts } = await import("@/lib/thinAppViewClient");
     const snapshot = await fetchAppViewUnreadCounts(
       { fetchHandler } as never,
-      ["did:plc:alice"]
+      [
+        "did:plc:alice",
+        "at://did:plc:alice/site.standard.publication/main",
+      ]
     );
     expect(snapshot.counts["did:plc:alice"]).toBe(2);
     expect(snapshot.generation).toBe(42);

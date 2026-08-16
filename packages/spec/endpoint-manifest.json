@@ -236,7 +236,7 @@
     },
     {
       "surface": "openapi",
-      "method": "PATCH",
+      "method": "POST",
       "path": "/xrpc/link.latr.bookmarks.setState",
       "classification": "foreign-xrpc",
       "xrpcNsid": "link.latr.bookmarks.setState"

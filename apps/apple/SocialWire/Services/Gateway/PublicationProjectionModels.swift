@@ -66,7 +66,7 @@ struct PublicationPrefsDTO: Codable, Sendable {
     let value: [String: JSONValue]?
 }
 
-struct GatewayRecordWriteResponseDTO: Codable, Sendable {
+struct RecordWriteResponseDTO: Codable, Sendable {
     let uri: String
     let rkey: String
 }

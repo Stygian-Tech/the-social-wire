@@ -52,10 +52,9 @@ Authentication uses ATProto OAuth (PKCE + DPoP) via `@atproto/oauth-client-brows
 - `src/lib/bootstrapStreamClient.ts` — NDJSON bootstrap stream consumer
 - `src/lib/feedRefresh.ts` — proactive first-page feed merge helpers
 
-The XRPC client migration described here is present in the current checkout but
-is not registered on the public Testing or Production gateways as of
-2026-08-12. Hosted clients continue to use the retained `/v1/*` routes until the
-matching Gateway/AppView deployment ships.
+The web client uses Lexicon-defined Social Wire XRPC methods for eligible JSON
+queries and procedures. The Gateway retains documented `/v1/*` compatibility
+adapters, while bootstrap streaming and telemetry remain HTTP transports.
 
 #### Local ATProto OAuth (`next dev`)
 

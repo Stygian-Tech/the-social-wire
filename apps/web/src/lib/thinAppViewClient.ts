@@ -293,8 +293,10 @@ export async function fetchAppViewUnreadCounts(
 ): Promise<AppViewUnreadCountsResponse> {
   if (publicationIds.length === 0) return { counts: {} };
   const params = new URLSearchParams({
-    publicationIds: publicationIds.join(","),
   });
+  for (const publicationId of publicationIds) {
+    params.append("publicationIds", publicationId);
+  }
   const res = await gatewayFetch(
     oauthSession,
     `${socialWireXrpc.getUnreadCounts}?${params.toString()}`,
@@ -370,6 +372,8 @@ export async function purgeThinAppViewData(
 ): Promise<void> {
   const res = await gatewayFetch(oauthSession, socialWireXrpc.purgeViewerData, {
     method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: "{}",
   });
   if (!res.ok) {
     throw new Error(`Thin AppView purge failed (${res.status})`);

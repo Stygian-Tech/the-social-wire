@@ -3,7 +3,7 @@ import Foundation
 enum SocialWireError: LocalizedError {
     case notAuthenticated
     case badResponse(String)
-    /// `GET /v1/appview/*` is not mounted (`ENABLE_THIN_APPVIEW` off on the gateway).
+    /// `app.thesocialwire.appview.*` is not mounted (`ENABLE_THIN_APPVIEW` off on the gateway).
     case appViewUnavailable
     case invalidURL
     case invalidATURI

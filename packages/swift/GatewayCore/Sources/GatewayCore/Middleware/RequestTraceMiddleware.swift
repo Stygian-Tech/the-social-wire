@@ -106,7 +106,7 @@ public struct RequestTraceMiddleware: RouterMiddleware {
     }
     _ = await telemetry.enqueue(.metric(.init(name: "socialwire.http.server.requests_total", value: 1, dimensions: dimensions)))
     _ = await telemetry.enqueue(.metric(.init(name: "socialwire.http.server.duration_seconds", value: duration, dimensions: dimensions)))
-    if route == "/v1/appview/feed" || route == "/v1/appview/entries" {
+    if Self.feedRoutes.contains(route) {
       let durationMs = duration * 1_000
       for upperBound in [50, 100, 150, 250, 500, 1_000, 2_000, 5_000]
       where durationMs <= Double(upperBound) {
@@ -170,16 +170,23 @@ public struct RequestTraceMiddleware: RouterMiddleware {
 
   private static func feedKind(_ request: Request) -> String? {
     switch request.uri.path {
-    case "/v1/appview/feed":
+    case "/v1/appview/feed", "/xrpc/app.thesocialwire.appview.getFeed":
       let allowed = Set(["subscribed", "following", "folder", "publication"])
       let raw = request.uri.queryParameters.get("kind") ?? "invalid"
       return allowed.contains(raw) ? raw : "invalid"
-    case "/v1/appview/entries":
+    case "/v1/appview/entries", "/xrpc/app.thesocialwire.appview.listEntries":
       return "publication"
     default:
       return nil
     }
   }
+
+  private static let feedRoutes = Set([
+    "/v1/appview/feed",
+    "/v1/appview/entries",
+    "/xrpc/app.thesocialwire.appview.getFeed",
+    "/xrpc/app.thesocialwire.appview.listEntries",
+  ])
 
   private static func normalizedFallbackPath(_ path: String) -> String {
     let normalized = path.split(separator: "/").prefix(6).map { component -> String in

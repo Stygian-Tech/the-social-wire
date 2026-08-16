@@ -58,7 +58,7 @@ describe("pdsXrpcMethodForSocialWireGatewayRequest", () => {
     expect(
       pdsXrpcMethodForSocialWireGatewayRequest(
         "GET",
-        "/v1/publications/sidebar?phase=priority"
+        "/xrpc/app.thesocialwire.publication.getSidebar?phase=priority"
       )
     ).toEqual({
       xrpcMethod: "com.atproto.repo.listRecords",
@@ -67,27 +67,6 @@ describe("pdsXrpcMethodForSocialWireGatewayRequest", () => {
   });
 
   it("maps publication refresh to listRecords", () => {
-    expect(
-      pdsXrpcMethodForSocialWireGatewayRequest(
-        "POST",
-        "/v1/publications/refresh"
-      )
-    ).toEqual({
-      xrpcMethod: "com.atproto.repo.listRecords",
-      httpMethod: "GET",
-    });
-  });
-
-  it("maps XRPC publication projection methods to listRecords", () => {
-    expect(
-      pdsXrpcMethodForSocialWireGatewayRequest(
-        "GET",
-        "/xrpc/app.thesocialwire.publication.getSidebar?phase=priority"
-      )
-    ).toEqual({
-      xrpcMethod: "com.atproto.repo.listRecords",
-      httpMethod: "GET",
-    });
     expect(
       pdsXrpcMethodForSocialWireGatewayRequest(
         "POST",
@@ -103,7 +82,7 @@ describe("pdsXrpcMethodForSocialWireGatewayRequest", () => {
     expect(
       pdsXrpcMethodForSocialWireGatewayRequest(
         "POST",
-        "/v1/appview/mark-all-read"
+        "/xrpc/app.thesocialwire.appview.markAllRead"
       )
     ).toBeNull();
   });

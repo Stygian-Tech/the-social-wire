@@ -32,7 +32,7 @@ Gateway, AppView, and Charybdis still contain SQLite backends, but their current
 | `rss_feed_fetch_metadata` | Skyreader RSS poll state |
 | `discovery_cache`, `entry_cache` | Legacy content-path caches retained for compatibility while legacy routes are gated |
 
-`DELETE /v1/appview/privacy/purge` currently removes only the authenticated
+`POST /xrpc/app.thesocialwire.appview.purgeViewerData` currently removes only the authenticated
 viewer’s `read_marks` and `appview_unread_overrides`. It does not remove bulk-read
 floors, materialized counters, publication scopes, feed membership, or indexed
 content. See [[Account-settings-and-privacy]] before describing the action as a

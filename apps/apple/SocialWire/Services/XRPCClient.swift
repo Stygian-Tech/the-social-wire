@@ -170,10 +170,16 @@ final class XRPCClient {
         let _: EmptyResponse = try await authorizedPost(session.pdsURL, method: "com.atproto.repo.putRecord", body: body)
     }
 
-    func createRecord<Record: Encodable>(collection: String, record: Record) async throws {
+    @discardableResult
+    func createRecord<Record: Encodable>(collection: String, record: Record) async throws -> String {
         let session = try await auth.validSession()
         let body = CreateRecordRequest(repo: session.did, collection: collection, record: AnyEncodable(record))
-        let _: EmptyResponse = try await authorizedPost(session.pdsURL, method: "com.atproto.repo.createRecord", body: body)
+        let response: CreateRecordResponse = try await authorizedPost(
+            session.pdsURL,
+            method: "com.atproto.repo.createRecord",
+            body: body
+        )
+        return response.uri
     }
 
     func deleteRecord(collection: String, rkey: String) async throws {
@@ -249,6 +255,10 @@ private struct CreateRecordRequest: Encodable {
     let repo: String
     let collection: String
     let record: AnyEncodable
+}
+
+private struct CreateRecordResponse: Decodable {
+    let uri: String
 }
 
 private struct DeleteRecordRequest: Encodable {

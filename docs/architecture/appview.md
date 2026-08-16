@@ -78,7 +78,7 @@ service integration therefore uses an isolated disposable Postgres database.
 - **Region:** compute and Postgres placement are Railway environment settings. Verify those settings directly before making data-residency claims.
 - **Data-minimized index:** standard.site indexing extracts render/detail fields rather than blobs or complete repo records; RSS ingestion may retain the feed-provided HTML body.
 - **TTL defaults:** `content_items` 30 days; `read_marks` 180 days (env-configurable).
-- **User control:** `DELETE /v1/appview/privacy/purge` removes explicit `read_marks` and `appview_unread_overrides` for the authenticated viewer. Bulk-read floors and other projection rows remain.
+- **User control:** `POST /xrpc/app.thesocialwire.appview.purgeViewerData` removes explicit `read_marks` and `appview_unread_overrides` for the authenticated viewer. Bulk-read floors and other projection rows remain.
 - **Authority:** user-authored organization and preference records remain on the user's PDS; AppView projections are rebuildable.
 
 ## Feature flags

@@ -3,6 +3,8 @@ import {
   LATR_API_KEY_HEADER,
   LATR_CLIENT_ID_HEADER,
   LATR_UPSTREAM_DPOP_HEADER,
+  LATR_XRPC,
+  latrXrpcPath,
 } from "latr-packages/gateway-client";
 
 import {
@@ -54,14 +56,22 @@ async function buildUpstreamDpopHeader(
   method: string,
   gatewayPath: string
 ): Promise<string | undefined> {
+  // latr-packages still selects the setState proof plan with the route's former
+  // PATCH verb. The Lexicon declares a procedure, so the public XRPC request is
+  // POST; reuse the same PDS proof plan until that dependency catches up.
+  const proofPlanMethod =
+    method === "POST" &&
+    gatewayPath === latrXrpcPath(LATR_XRPC.setBookmarkState)
+      ? "PATCH"
+      : method;
   const bookmarkPlan = bookmarkUpstreamProofPlanForGatewayRequest(
-    method,
+    proofPlanMethod,
     gatewayPath
   );
   if (bookmarkPlan?.transport === "header") {
     return createBookmarkUpstreamDpopProofPool(
       oauthSession,
-      method,
+      proofPlanMethod,
       gatewayPath
     );
   }
