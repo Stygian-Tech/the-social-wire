@@ -156,12 +156,6 @@ public init(path dbPath: String, logger: Logger) throws {
         ]
       )
       guard db.changesCount == 1 else { throw AppViewIngestionInboxStoreError.staleLease }
-      try Self.advanceAppliedInboxWatermark(
-        db: db,
-        environment: environment,
-        sourceGeneration: sourceGeneration,
-        at: at
-      )
     }
   }
 
