@@ -88,11 +88,30 @@ struct WorkerHealthServerTests {
     }
   }
 
+  @Test("legacy Jetstream readiness does not require inapplicable projection repair evidence")
+  func legacyJetstreamReadiness() async throws {
+    let now = Date()
+    let state = serviceState(
+      heartbeatAt: now,
+      readiness: .healthy,
+      freshness: .unknown,
+      completeness: .unknown,
+      dependencyState: ["ingestion_source": "jetstream"]
+    )
+
+    try await WorkerReadinessProbe(
+      databaseProbe: {},
+      serviceStateProbe: { state },
+      now: { now }
+    ).run()
+  }
+
   private func serviceState(
     heartbeatAt: Date,
     readiness: OperationsHealthState,
     freshness: OperationsHealthState = .healthy,
-    completeness: OperationsHealthState = .healthy
+    completeness: OperationsHealthState = .healthy,
+    dependencyState: [String: String] = [:]
   ) -> OperationsServiceState {
     OperationsServiceState(
       service: "appview-worker",
@@ -102,6 +121,7 @@ struct WorkerHealthServerTests {
       readiness: readiness,
       freshness: freshness,
       completeness: completeness,
+      dependencyState: dependencyState,
       startedAt: heartbeatAt.addingTimeInterval(-60),
       heartbeatAt: heartbeatAt
     )

@@ -27,12 +27,21 @@ struct WorkerReadinessProbe: Sendable {
     guard heartbeatAge >= -5, heartbeatAge <= 15 else {
       throw WorkerReadinessError.staleIngestionHeartbeat
     }
-    guard
-      state.liveness == .healthy,
-      state.readiness == .healthy,
-      state.freshness == .healthy,
-      state.completeness == .healthy
-    else {
+    guard state.liveness == .healthy, state.readiness == .healthy else {
+      throw WorkerReadinessError.ingestionUnhealthy
+    }
+
+    // Projection-repair evidence describes the authoritative Tap and durable V2 paths. The
+    // legacy Jetstream path used during v1_authoritative/v2_shadow has no repair queue, so its
+    // freshness and completeness are intentionally unknown even while its transport is healthy.
+    // Keep fail-closed behavior for missing or unrecognized source metadata.
+    let projectionQualityRequired = switch state.dependencyState["ingestion_source"] {
+    case "jetstream": false
+    default: true
+    }
+    if projectionQualityRequired,
+      state.freshness != .healthy || state.completeness != .healthy
+    {
       throw WorkerReadinessError.ingestionUnhealthy
     }
   }
