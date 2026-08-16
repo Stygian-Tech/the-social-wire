@@ -85,7 +85,8 @@ public enum ThinAppViewWorkerRuntime {
         backfill: $0,
         projectionCache: projectionCache,
         maxConcurrency: config.maxEnrollConcurrency,
-        rateLimitPerSecond: max(1, config.maxEnrollConcurrency * 10)
+        rateLimitPerSecond: max(1, config.maxEnrollConcurrency * 10),
+        timeoutSeconds: config.repositoryRestoreTimeoutSeconds
       )
     }
     let inboxWorker: JetstreamInboxProjectionWorker? = if config.jetstreamMode.drainsV2Inbox {
@@ -119,6 +120,7 @@ public enum ThinAppViewWorkerRuntime {
         pollMilliseconds: config.ingestionInboxPollMilliseconds,
         appliedRetentionSeconds: config.ingestionInboxAppliedRetentionSeconds,
         deadLetterRetentionSeconds: config.ingestionInboxDeadLetterRetentionSeconds,
+        projectionTimeoutSeconds: config.repositoryRestoreTimeoutSeconds,
         logger: logger
       )
     } else {

@@ -42,7 +42,9 @@ let package = Package(
       dependencies: [
         "AppViewWorker",
         .product(name: "ThinAppViewCore", package: "ThinAppViewCore"),
+        .product(name: "AsyncHTTPClient", package: "async-http-client"),
         .product(name: "Logging", package: "swift-log"),
+        .product(name: "NIOCore", package: "swift-nio"),
       ],
       path: "Tests/AppViewWorkerTests",
       swiftSettings: [

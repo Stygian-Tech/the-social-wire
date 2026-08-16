@@ -163,6 +163,7 @@ public actor ThinAppViewIndexer {
     } else {
       resolvedPds = await resolvePdsBase(for: repoDid)
     }
+    try Task.checkCancellation()
     var render = RenderFieldExtractor.extractRenderFields(
       from: record,
       repoDid: repoDid,
@@ -170,7 +171,7 @@ public actor ThinAppViewIndexer {
     )
     let publicationSite = RenderFieldExtractor.publicationSiteField(from: record)
     if render.articleUrl == nil, let publicationSite {
-      render.articleUrl = await resolvedArticleUrl(
+      render.articleUrl = try await resolvedArticleUrl(
         from: record,
         publicationSite: publicationSite
       )
@@ -363,23 +364,30 @@ public actor ThinAppViewIndexer {
   private func resolvedArticleUrl(
     from record: [String: Any],
     publicationSite: String
-  ) async -> String? {
+  ) async throws -> String? {
     guard
       let publicationSiteResolver,
       RenderFieldExtractor.parseAtUri(publicationSite) != nil,
-      let base = await publicationSiteResolver.siteBase(forPublicationAtUri: publicationSite)
+      let base = try await publicationSiteResolver.siteBase(forPublicationAtUri: publicationSite)
     else { return nil }
+    try Task.checkCancellation()
     return RenderFieldExtractor.articleUrl(from: record, publicationSiteBase: base)
   }
 
   private func resolvePdsBase(for repoDid: String) async -> String? {
     if let cached = pdsBaseCache[repoDid] { return cached }
     guard let httpClient, let plcURL else { return nil }
-    let resolved = try? await ThinAppViewPdsResolution.resolvePdsBase(
-      repoDid: repoDid,
-      plcBase: plcURL,
-      httpClient: httpClient
-    )
+    let resolved: String?
+    do {
+      resolved = try await ThinAppViewPdsResolution.resolvePdsBase(
+        repoDid: repoDid,
+        plcBase: plcURL,
+        httpClient: httpClient
+      )
+    } catch {
+      return nil
+    }
+    guard !Task.isCancelled else { return nil }
     if let resolved {
       pdsBaseCache[repoDid] = resolved
     }

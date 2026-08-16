@@ -423,6 +423,43 @@ struct JetstreamInboxProjectionWorkerTests {
     #expect(try fixture.appliedWatermark() == 700)
   }
 
+  @Test("a timed-out sync retries without pinning an unrelated repository")
+  func timedOutSyncReleasesWorkerCapacity() async throws {
+    let fixture = try Fixture()
+    defer { fixture.remove() }
+    let now = Date()
+    let stalledDid = "did:plc:stalled"
+    let unrelatedDid = "did:plc:unrelated"
+    try fixture.seedCheckpoint(lastStagedSequence: 801, at: now)
+    try fixture.seedEvent(
+      sequence: 800,
+      did: stalledDid,
+      kind: .sync,
+      repoRev: "3kstalled",
+      payload: Self.syncPayload(800, did: stalledDid),
+      at: now
+    )
+    try fixture.seedEvent(
+      sequence: 801,
+      did: unrelatedDid,
+      payload: Self.identityPayload(801, did: unrelatedDid),
+      at: now
+    )
+    let restorer = BlockingRestorer()
+
+    #expect(
+      try await fixture.worker(
+        restorer: restorer,
+        projectionTimeoutSeconds: 0.05
+      ).drainOnce(at: now) == 2
+    )
+
+    #expect(await restorer.cancellationObserved)
+    #expect(try fixture.status(sequence: 800) == "retry")
+    #expect(try fixture.attemptCount(sequence: 800) == 1)
+    #expect(try fixture.status(sequence: 801) == "applied")
+  }
+
   @Test("retry backoff is bounded and jittered")
   func boundedRetryBackoff() {
     #expect(JetstreamInboxProjectionWorker.retryDelaySeconds(attempt: 1, jitterUnit: 0) == 0.25)
@@ -496,6 +533,21 @@ private actor SuccessfulRestorer: TapRepositoryRestorer {
   func restoredDids() -> [String] { dids }
 }
 
+private actor BlockingRestorer: TapRepositoryRestorer {
+  private(set) var cancellationObserved = false
+
+  func restoreCurrentRepository(repoDid: String) async throws -> PDSReconciliationReport {
+    _ = repoDid
+    do {
+      try await Task.sleep(for: .seconds(60))
+      throw TapRepositoryRestorationError.unavailable
+    } catch {
+      cancellationObserved = true
+      throw error
+    }
+  }
+}
+
 private struct Fixture {
   static let generation = "jetstream-v2-us-west-v1"
 
@@ -517,7 +569,10 @@ private struct Fixture {
     try? FileManager.default.removeItem(atPath: "\(path)-wal")
   }
 
-  func worker(restorer: (any TapRepositoryRestorer)? = nil) -> JetstreamInboxProjectionWorker {
+  func worker(
+    restorer: (any TapRepositoryRestorer)? = nil,
+    projectionTimeoutSeconds: TimeInterval = 120
+  ) -> JetstreamInboxProjectionWorker {
     let config = ThinAppViewConfig.fromEnvironment(["ENABLE_THIN_APPVIEW": "true"])
     let logger = Logger(label: "inbox.worker.test")
     return JetstreamInboxProjectionWorker(
@@ -532,6 +587,7 @@ private struct Fixture {
       pollMilliseconds: 25,
       appliedRetentionSeconds: config.ingestionInboxAppliedRetentionSeconds,
       deadLetterRetentionSeconds: config.ingestionInboxDeadLetterRetentionSeconds,
+      projectionTimeoutSeconds: projectionTimeoutSeconds,
       logger: logger
     )
   }

@@ -13,6 +13,7 @@ public final class JetstreamInboxProjectionWorker: Sendable {
   private let pollMilliseconds: Int
   private let appliedRetentionSeconds: TimeInterval
   private let deadLetterRetentionSeconds: TimeInterval
+  private let projectionTimeoutSeconds: TimeInterval
   private let logger: Logger
 
   public init(
@@ -27,6 +28,7 @@ public final class JetstreamInboxProjectionWorker: Sendable {
     pollMilliseconds: Int,
     appliedRetentionSeconds: TimeInterval,
     deadLetterRetentionSeconds: TimeInterval,
+    projectionTimeoutSeconds: TimeInterval = 120,
     logger: Logger
   ) {
     precondition(!indexers.isEmpty, "At least one ThinAppViewIndexer is required.")
@@ -41,6 +43,7 @@ public final class JetstreamInboxProjectionWorker: Sendable {
     self.pollMilliseconds = max(25, pollMilliseconds)
     self.appliedRetentionSeconds = max(60, appliedRetentionSeconds)
     self.deadLetterRetentionSeconds = max(60, deadLetterRetentionSeconds)
+    self.projectionTimeoutSeconds = max(0.01, projectionTimeoutSeconds)
     self.logger = logger
   }
 
@@ -130,6 +133,7 @@ public final class JetstreamInboxProjectionWorker: Sendable {
       try await withThrowingTaskGroup(of: Void.self) { group in
         group.addTask { try await self.apply(item, with: indexer) }
         group.addTask { try await self.renewLeaseUntilCancelled(for: item) }
+        group.addTask { try await self.failAfterProjectionTimeout() }
         do {
           _ = try await group.next()
           group.cancelAll()
@@ -254,6 +258,7 @@ public final class JetstreamInboxProjectionWorker: Sendable {
       try await withThrowingTaskGroup(of: Void.self) { group in
         group.addTask { try await self.applyReconciliation(request) }
         group.addTask { try await self.renewReconciliationUntilCancelled(for: request) }
+        group.addTask { try await self.failAfterProjectionTimeout() }
         do {
           _ = try await group.next()
           group.cancelAll()
@@ -308,6 +313,15 @@ public final class JetstreamInboxProjectionWorker: Sendable {
       expiresAt: Date().addingTimeInterval(deadLetterRetentionSeconds),
       at: Date()
     )
+  }
+
+  private func failAfterProjectionTimeout() async throws {
+    do {
+      try await Task.sleep(for: .seconds(projectionTimeoutSeconds))
+    } catch is CancellationError {
+      return
+    }
+    throw JetstreamInboxProjectionError.projectionTimedOut
   }
 
   private func renewReconciliationUntilCancelled(
@@ -436,6 +450,7 @@ public final class JetstreamInboxProjectionWorker: Sendable {
 
 public enum JetstreamInboxProjectionError: Error, Sendable, Equatable {
   case commitRecordUnavailable
+  case projectionTimedOut
   case repositoryReconciliationUnavailable
   case repositoryReconciliationIncomplete
 }
