@@ -272,9 +272,13 @@ public enum ThinAppViewWorkerRuntime {
       let durableCheckpoint = durability.checkpoints.first {
         $0.sourceGeneration == jetstreamV2SourceGeneration
       }
+      let durableInbox = Self.durableInboxMetrics(
+        durability,
+        sourceGeneration: jetstreamV2SourceGeneration
+      )
       let durableTransport = Self.durableTransportEvidence(durableCheckpoint, at: now)
       let durableProjection = Self.durableProjectionHealthEvidence(
-        durability,
+        durableInbox,
         checkpoint: durableCheckpoint
       )
       let projectionBacklog = try await store.projectionRepairBacklog(
@@ -344,9 +348,9 @@ public enum ThinAppViewWorkerRuntime {
           "tap_verified_resync": "unsupported",
           "jetstream_replay": jetstreamReplay,
           "jetstream_v2_source_generation": jetstreamV2SourceGeneration,
-          "jetstream_v2_inbox_pending": String(durability.inbox.pending),
-          "jetstream_v2_inbox_retrying": String(durability.inbox.retrying),
-          "jetstream_v2_dead_letters": String(durability.inbox.deadLetters),
+          "jetstream_v2_inbox_pending": String(durableInbox.pending),
+          "jetstream_v2_inbox_retrying": String(durableInbox.retrying),
+          "jetstream_v2_dead_letters": String(durableInbox.deadLetters),
           "pds_reconciliation": pdsReconciliation,
         ].merging(projectionEvidence.metadata) { _, projectionValue in projectionValue },
         requiredDependencyKeys: ["appview_database", "ingestion_transport"],
@@ -533,8 +537,15 @@ public enum ThinAppViewWorkerRuntime {
     )
   }
 
-  private static func durableProjectionHealthEvidence(
+  static func durableInboxMetrics(
     _ snapshot: IngestionDurabilitySnapshot,
+    sourceGeneration: String
+  ) -> IngestionInboxMetrics {
+    snapshot.inboxBySourceGeneration[sourceGeneration] ?? IngestionInboxMetrics()
+  }
+
+  static func durableProjectionHealthEvidence(
+    _ inbox: IngestionInboxMetrics,
     checkpoint: JetstreamDurabilityCheckpoint?
   ) -> ProjectionRepairHealthEvidence {
     guard checkpoint != nil else {
@@ -544,7 +555,7 @@ public enum ThinAppViewWorkerRuntime {
         metadata: ["durable_ingestion": "missing_checkpoint"]
       )
     }
-    let oldestAge = snapshot.inbox.oldestPendingAgeSeconds
+    let oldestAge = inbox.oldestPendingAgeSeconds
     let freshness: OperationsHealthState
     if let oldestAge, oldestAge > 15 * 60 {
       freshness = .unhealthy
@@ -553,7 +564,7 @@ public enum ThinAppViewWorkerRuntime {
     } else {
       freshness = .healthy
     }
-    let completeness: OperationsHealthState = snapshot.inbox.deadLetters > 0
+    let completeness: OperationsHealthState = inbox.deadLetters > 0
       ? .unhealthy : .healthy
     return ProjectionRepairHealthEvidence(
       freshness: freshness,
