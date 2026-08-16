@@ -2251,6 +2251,7 @@ public actor SQLiteOperationsStore: OperationsStore {
 
   private static func migrate(_ db: Database) throws {
     try db.execute(sql: Schema.sqlite)
+    try migrateIngestionInboxFilteredScopeIfNeeded(db)
     for table in [
       "operations_metric_rollups", "operations_trace_spans", "operations_audit_events",
       "appview_ingestion_stream_state", "appview_jetstream_endpoints", "operations_commands",
@@ -2337,6 +2338,92 @@ public actor SQLiteOperationsStore: OperationsStore {
     if !columns.contains(column) {
       try db.execute(sql: "ALTER TABLE \(table) ADD COLUMN \(column) \(definition)")
     }
+  }
+
+  private static func migrateIngestionInboxFilteredScopeIfNeeded(_ db: Database) throws {
+    let tableSQL = try String.fetchOne(
+      db,
+      sql: """
+        SELECT sql FROM sqlite_master
+        WHERE type = 'table' AND name = 'appview_ingestion_inbox'
+        """
+    ) ?? ""
+    guard !tableSQL.contains("'filtered_scope'") else { return }
+    let columns = try Row.fetchAll(db, sql: "PRAGMA table_info(appview_ingestion_inbox)")
+      .map { row -> String in row["name"] }
+    let hasFilteredEvidenceColumns = columns.contains("filtered_scope_policy")
+      && columns.contains("filtered_scope_at")
+
+    try db.execute(sql: """
+      ALTER TABLE appview_ingestion_inbox RENAME TO appview_ingestion_inbox_before_filtered_scope;
+      CREATE TABLE appview_ingestion_inbox (
+        environment TEXT NOT NULL, source_generation TEXT NOT NULL, seq INTEGER NOT NULL,
+        source_host TEXT NOT NULL, cursor_kind TEXT NOT NULL CHECK (cursor_kind = 'jetstream_v2_seq'),
+        event_kind TEXT NOT NULL, repo_did TEXT NOT NULL, collection TEXT, operation TEXT,
+        repo_rev TEXT, record_key TEXT, record_cid TEXT, payload TEXT NOT NULL,
+        event_time TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending'
+          CHECK (status IN ('pending', 'leased', 'retry', 'applied', 'dead_letter', 'filtered_scope')),
+        attempt_count INTEGER NOT NULL DEFAULT 0, next_attempt_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        lease_owner TEXT, lease_token TEXT, lease_expires_at TEXT,
+        failure_category TEXT, failure_reason TEXT, staged_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL, applied_at TEXT, dead_lettered_at TEXT,
+        reconciled_at TEXT, filtered_scope_policy TEXT, filtered_scope_at TEXT, expires_at TEXT,
+        CHECK (seq >= 0), CHECK (attempt_count >= 0),
+        CHECK ((status = 'leased' AND lease_owner IS NOT NULL AND lease_token IS NOT NULL
+          AND lease_expires_at IS NOT NULL) OR status != 'leased'),
+        CHECK (status != 'applied' OR applied_at IS NOT NULL),
+        CHECK (status != 'dead_letter' OR dead_lettered_at IS NOT NULL),
+        CHECK ((status = 'filtered_scope' AND filtered_scope_policy IS NOT NULL
+          AND length(filtered_scope_policy) BETWEEN 1 AND 128
+          AND filtered_scope_at IS NOT NULL AND applied_at IS NULL AND reconciled_at IS NULL)
+          OR (status != 'filtered_scope' AND filtered_scope_policy IS NULL AND filtered_scope_at IS NULL)),
+        PRIMARY KEY (environment, source_generation, seq)
+      );
+      """)
+    if hasFilteredEvidenceColumns {
+      try db.execute(sql: """
+        INSERT INTO appview_ingestion_inbox
+          (environment, source_generation, seq, source_host, cursor_kind, event_kind,
+           repo_did, collection, operation, repo_rev, record_key, record_cid, payload,
+           event_time, status, attempt_count, next_attempt_at, lease_owner, lease_token,
+           lease_expires_at, failure_category, failure_reason, staged_at, updated_at,
+           applied_at, dead_lettered_at, reconciled_at, filtered_scope_policy,
+           filtered_scope_at, expires_at)
+        SELECT environment, source_generation, seq, source_host, cursor_kind, event_kind,
+               repo_did, collection, operation, repo_rev, record_key, record_cid, payload,
+               event_time, status, attempt_count, next_attempt_at, lease_owner, lease_token,
+               lease_expires_at, failure_category, failure_reason, staged_at, updated_at,
+               applied_at, dead_lettered_at, reconciled_at, filtered_scope_policy,
+               filtered_scope_at, expires_at
+        FROM appview_ingestion_inbox_before_filtered_scope;
+        """)
+    } else {
+      try db.execute(sql: """
+        INSERT INTO appview_ingestion_inbox
+          (environment, source_generation, seq, source_host, cursor_kind, event_kind,
+           repo_did, collection, operation, repo_rev, record_key, record_cid, payload,
+           event_time, status, attempt_count, next_attempt_at, lease_owner, lease_token,
+           lease_expires_at, failure_category, failure_reason, staged_at, updated_at,
+           applied_at, dead_lettered_at, reconciled_at, expires_at)
+        SELECT environment, source_generation, seq, source_host, cursor_kind, event_kind,
+               repo_did, collection, operation, repo_rev, record_key, record_cid, payload,
+               event_time, status, attempt_count, next_attempt_at, lease_owner, lease_token,
+               lease_expires_at, failure_category, failure_reason, staged_at, updated_at,
+               applied_at, dead_lettered_at, reconciled_at, expires_at
+        FROM appview_ingestion_inbox_before_filtered_scope;
+        """)
+    }
+    try db.execute(sql: """
+      DROP TABLE appview_ingestion_inbox_before_filtered_scope;
+      CREATE INDEX IF NOT EXISTS idx_appview_ingestion_inbox_claim
+        ON appview_ingestion_inbox
+          (environment, source_generation, status, next_attempt_at, seq)
+        WHERE status IN ('pending', 'leased', 'retry');
+      CREATE INDEX IF NOT EXISTS idx_appview_ingestion_inbox_repo_fifo
+        ON appview_ingestion_inbox (environment, source_generation, repo_did, seq)
+        WHERE status IN ('pending', 'leased', 'retry');
+      """)
   }
 
   private static func installChangeEventTriggers(_ db: Database) throws {
@@ -3006,17 +3093,21 @@ private enum Schema {
       repo_rev TEXT, record_key TEXT, record_cid TEXT, payload TEXT NOT NULL,
       event_time TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'pending'
-        CHECK (status IN ('pending', 'leased', 'retry', 'applied', 'dead_letter')),
+        CHECK (status IN ('pending', 'leased', 'retry', 'applied', 'dead_letter', 'filtered_scope')),
       attempt_count INTEGER NOT NULL DEFAULT 0, next_attempt_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       lease_owner TEXT, lease_token TEXT, lease_expires_at TEXT,
       failure_category TEXT, failure_reason TEXT, staged_at TEXT NOT NULL,
       updated_at TEXT NOT NULL, applied_at TEXT, dead_lettered_at TEXT,
-      reconciled_at TEXT, expires_at TEXT,
+      reconciled_at TEXT, filtered_scope_policy TEXT, filtered_scope_at TEXT, expires_at TEXT,
       CHECK (seq >= 0), CHECK (attempt_count >= 0),
       CHECK ((status = 'leased' AND lease_owner IS NOT NULL AND lease_token IS NOT NULL
         AND lease_expires_at IS NOT NULL) OR status != 'leased'),
       CHECK (status != 'applied' OR applied_at IS NOT NULL),
       CHECK (status != 'dead_letter' OR dead_lettered_at IS NOT NULL),
+      CHECK ((status = 'filtered_scope' AND filtered_scope_policy IS NOT NULL
+        AND length(filtered_scope_policy) BETWEEN 1 AND 128
+        AND filtered_scope_at IS NOT NULL AND applied_at IS NULL AND reconciled_at IS NULL)
+        OR (status != 'filtered_scope' AND filtered_scope_policy IS NULL AND filtered_scope_at IS NULL)),
       PRIMARY KEY (environment, source_generation, seq)
     );
     CREATE TABLE IF NOT EXISTS appview_ingestion_incidents (

@@ -95,6 +95,7 @@ public struct IngestionInboxMetrics: Codable, Sendable, Equatable {
   public let leased: Int
   public let retrying: Int
   public let applied: Int
+  public let filteredScope: Int
   public let deadLetters: Int
   public let total: Int
   public let oldestPendingAt: Date?
@@ -105,6 +106,7 @@ public struct IngestionInboxMetrics: Codable, Sendable, Equatable {
     leased: Int = 0,
     retrying: Int = 0,
     applied: Int = 0,
+    filteredScope: Int = 0,
     deadLetters: Int = 0,
     total: Int = 0,
     oldestPendingAt: Date? = nil,
@@ -114,10 +116,34 @@ public struct IngestionInboxMetrics: Codable, Sendable, Equatable {
     self.leased = max(0, leased)
     self.retrying = max(0, retrying)
     self.applied = max(0, applied)
+    self.filteredScope = max(0, filteredScope)
     self.deadLetters = max(0, deadLetters)
     self.total = max(0, total)
     self.oldestPendingAt = oldestPendingAt
     self.oldestPendingAgeSeconds = oldestPendingAgeSeconds.map { max(0, $0) }
+  }
+
+  private enum CodingKeys: String, CodingKey {
+    case pending, leased, retrying, applied, filteredScope, deadLetters, total
+    case oldestPendingAt, oldestPendingAgeSeconds
+  }
+
+  public init(from decoder: any Decoder) throws {
+    let values = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      pending: try values.decodeIfPresent(Int.self, forKey: .pending) ?? 0,
+      leased: try values.decodeIfPresent(Int.self, forKey: .leased) ?? 0,
+      retrying: try values.decodeIfPresent(Int.self, forKey: .retrying) ?? 0,
+      applied: try values.decodeIfPresent(Int.self, forKey: .applied) ?? 0,
+      filteredScope: try values.decodeIfPresent(Int.self, forKey: .filteredScope) ?? 0,
+      deadLetters: try values.decodeIfPresent(Int.self, forKey: .deadLetters) ?? 0,
+      total: try values.decodeIfPresent(Int.self, forKey: .total) ?? 0,
+      oldestPendingAt: try values.decodeIfPresent(Date.self, forKey: .oldestPendingAt),
+      oldestPendingAgeSeconds: try values.decodeIfPresent(
+        Double.self,
+        forKey: .oldestPendingAgeSeconds
+      )
+    )
   }
 }
 

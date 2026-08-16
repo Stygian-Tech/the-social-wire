@@ -77,7 +77,7 @@ public static func fromEnvironment(
       ) ?? .v1Authoritative,
       jetstreamV2SourceGeneration: env["JETSTREAM_SOURCE_GENERATION"]?
         .trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty
-        ?? "jetstream-v2-us-west-v1",
+        ?? "jetstream-v2-us-west-v2",
       ingestionInboxMaxConcurrency: Self.int(
         env["THIN_APPVIEW_INGESTION_INBOX_MAX_CONCURRENCY"],
         default: 8
@@ -124,7 +124,7 @@ public static let disabled = ThinAppViewConfig(
     enabled: false,
     relayWebSocketURLs: defaultRelayWebSocketURLs,
     jetstreamMode: .v1Authoritative,
-    jetstreamV2SourceGeneration: "jetstream-v2-us-west-v1",
+    jetstreamV2SourceGeneration: "jetstream-v2-us-west-v2",
     ingestionInboxMaxConcurrency: 8,
     ingestionInboxLeaseSeconds: 60,
     ingestionInboxPollMilliseconds: 250,

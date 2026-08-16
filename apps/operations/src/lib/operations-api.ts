@@ -613,6 +613,8 @@ function assertIngestionInboxMetrics(value: unknown) {
   const countKeys = ["pending", "leased", "retrying", "applied", "deadLetters", "total"]
   if (countKeys.some((key) => !isNonNegativeInteger(value[key])))
     throw new Error("Operations inbox metrics failed runtime contract validation")
+  if (value.filteredScope !== undefined && !isNonNegativeInteger(value.filteredScope))
+    throw new Error("Operations filtered-scope metrics failed runtime contract validation")
   if (
     !isOptionalDateString(value.oldestPendingAt) ||
     !isOptionalFiniteNonNegative(value.oldestPendingAgeSeconds)

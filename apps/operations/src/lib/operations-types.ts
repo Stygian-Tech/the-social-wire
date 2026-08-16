@@ -113,6 +113,8 @@ export type IngestionInboxMetrics = {
   leased: number
   retrying: number
   applied: number
+  // Optional only while an older Operations server may still be serving during a rolling deploy.
+  filteredScope?: number
   deadLetters: number
   total: number
   oldestPendingAt?: string

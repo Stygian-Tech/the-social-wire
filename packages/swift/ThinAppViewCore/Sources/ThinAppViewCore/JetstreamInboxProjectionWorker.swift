@@ -16,6 +16,7 @@ public final class JetstreamInboxProjectionWorker: Sendable {
   private let appliedRetentionSeconds: TimeInterval
   private let deadLetterRetentionSeconds: TimeInterval
   private let projectionTimeoutSeconds: TimeInterval
+  private let scopeFilterBatchSize: Int
   private let logger: Logger
 
   public init(
@@ -32,6 +33,7 @@ public final class JetstreamInboxProjectionWorker: Sendable {
     deadLetterRetentionSeconds: TimeInterval,
     projectionTimeoutSeconds: TimeInterval = 120,
     reconciliationMaxConcurrency: Int = 2,
+    scopeFilterBatchSize: Int = 1_000,
     logger: Logger
   ) {
     precondition(!indexers.isEmpty, "At least one ThinAppViewIndexer is required.")
@@ -52,6 +54,7 @@ public final class JetstreamInboxProjectionWorker: Sendable {
     self.appliedRetentionSeconds = max(60, appliedRetentionSeconds)
     self.deadLetterRetentionSeconds = max(60, deadLetterRetentionSeconds)
     self.projectionTimeoutSeconds = max(0.01, projectionTimeoutSeconds)
+    self.scopeFilterBatchSize = max(1, min(scopeFilterBatchSize, 10_000))
     self.logger = logger
   }
 
@@ -63,6 +66,7 @@ public final class JetstreamInboxProjectionWorker: Sendable {
         "max_concurrency": .stringConvertible(maxConcurrency),
         "reconciliation_max_concurrency": .stringConvertible(reconciliationMaxConcurrency),
         "refill_batch_size": .stringConvertible(refillBatchSize),
+        "scope_filter_batch_size": .stringConvertible(scopeFilterBatchSize),
       ]
     )
     await withTaskGroup(of: Void.self) { group in
@@ -115,7 +119,21 @@ public final class JetstreamInboxProjectionWorker: Sendable {
     at initialNow: Date = Date(),
     claimObserver: (@Sendable (_ requestedLimit: Int, _ claimedCount: Int) async -> Void)? = nil
   ) async throws -> Int {
-    try await withThrowingTaskGroup(of: Bool.self, returning: Int.self) { group in
+    var filteredCount = 0
+    while true {
+      try Task.checkCancellation()
+      let batchCount = try await store.filterIngestionInboxOutsideScope(
+        environment: environment,
+        sourceGeneration: sourceGeneration,
+        policy: AppViewIngestionScopePolicy.version,
+        limit: scopeFilterBatchSize,
+        expiresAt: initialNow.addingTimeInterval(appliedRetentionSeconds),
+        at: initialNow
+      )
+      filteredCount += batchCount
+      if batchCount < scopeFilterBatchSize { break }
+    }
+    return try await withThrowingTaskGroup(of: Bool.self, returning: Int.self) { group in
       var inFlight = 0
       var claimedCount = 0
       var completedSinceWatermark = 0
@@ -170,7 +188,7 @@ public final class JetstreamInboxProjectionWorker: Sendable {
         try await advanceDurabilityEvidence(at: Date())
       }
       if let pendingError { throw pendingError }
-      return claimedCount
+      return filteredCount + claimedCount
     }
   }
 

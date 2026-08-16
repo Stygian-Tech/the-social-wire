@@ -40,11 +40,20 @@ func TestPostgresStageBatchIntegration(t *testing.T) {
 		_, _ = db.ExecContext(cleanup, "DELETE FROM appview_ingestion_inbox WHERE environment = $1 AND source_generation = $2", source.Environment, generation)
 		_, _ = db.ExecContext(cleanup, "DELETE FROM appview_jetstream_checkpoints WHERE environment = $1 AND source_generation = $2", source.Environment, generation)
 		_, _ = db.ExecContext(cleanup, "DELETE FROM appview_ingestion_leases WHERE environment = $1 AND lease_name = $2", source.Environment, lease.Name)
+		_, _ = db.ExecContext(cleanup, "DELETE FROM appview_viewer_feeds WHERE viewer_did IN ('did:plc:integration-viewer', 'did:plc:integration-dual')")
+		_, _ = db.ExecContext(cleanup, "DELETE FROM appview_publication_scopes WHERE viewer_did IN ('did:plc:integration-viewer', 'did:plc:integration-dual')")
 	})
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO appview_publication_scopes (viewer_did, publication_id, author_did)
+		VALUES ('did:plc:integration-viewer', 'at://did:plc:integration/site.standard.publication/test', 'did:plc:integration')`); err != nil {
+		t.Fatal(err)
+	}
 	now := time.Now().UTC()
+	contentCollection := "site.standard.entry"
 	event := ingest.InboxEvent{
 		Seq: 77, Time: now, Kind: "commit", RepoDID: "did:plc:integration",
-		Payload: []byte(`{"did":"did:plc:integration","cursor":77,"time_us":1,"kind":"commit","commit":{"operation":"delete","collection":"site.standard.entry","rkey":"one","rev":"one"}}`),
+		Collection: &contentCollection,
+		Payload:    []byte(`{"did":"did:plc:integration","cursor":77,"time_us":1,"kind":"commit","commit":{"operation":"delete","collection":"site.standard.entry","rkey":"one","rev":"one"}}`),
 	}
 	if err := postgres.StageBatch(ctx, lease, []ingest.InboxEvent{event}, 77, now, ReplayProgress{State: "live", LastProgressAt: now}); err != nil {
 		t.Fatal(err)
@@ -68,5 +77,116 @@ func TestPostgresStageBatchIntegration(t *testing.T) {
 	}
 	if checkpoint == nil || checkpoint.LastStagedSeq != 77 {
 		t.Fatalf("checkpoint = %#v", checkpoint)
+	}
+
+	untracked := event
+	untracked.Seq = 78
+	untracked.RepoDID = "did:plc:not-enrolled"
+	untracked.Payload = []byte(`{"cursor":78,"kind":"commit"}`)
+	if err := postgres.StageBatch(ctx, lease, []ingest.InboxEvent{untracked}, 78, now, ReplayProgress{State: "live", LastProgressAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	var untrackedCount int
+	if err := db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM appview_ingestion_inbox
+		WHERE environment = $1 AND source_generation = $2 AND seq = 78`, source.Environment, generation).
+		Scan(&untrackedCount); err != nil {
+		t.Fatal(err)
+	}
+	if untrackedCount != 0 {
+		t.Fatalf("untracked author commits staged = %d", untrackedCount)
+	}
+	checkpoint, err = postgres.LoadCheckpoint(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if checkpoint == nil || checkpoint.LastStagedSeq != 78 {
+		t.Fatalf("checkpoint did not advance over filtered sequence: %#v", checkpoint)
+	}
+
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO appview_viewer_feeds (viewer_did, feed_kind, feed_id)
+		VALUES ('did:plc:integration-viewer', 'subscribed', '')`); err != nil {
+		t.Fatal(err)
+	}
+	subscriptionCollection := "app.skyreader.feed.subscription"
+	viewerEvent := event
+	viewerEvent.Seq = 79
+	viewerEvent.RepoDID = "did:plc:integration-viewer"
+	viewerEvent.Collection = &subscriptionCollection
+	viewerEvent.Payload = []byte(`{"cursor":79,"kind":"commit"}`)
+	if err := postgres.StageBatch(ctx, lease, []ingest.InboxEvent{viewerEvent}, 79, now, ReplayProgress{State: "live", LastProgressAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	var viewerCount int
+	if err := db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM appview_ingestion_inbox
+		WHERE environment = $1 AND source_generation = $2 AND seq = 79`, source.Environment, generation).
+		Scan(&viewerCount); err != nil {
+		t.Fatal(err)
+	}
+	if viewerCount != 1 {
+		t.Fatalf("tracked viewer commits staged = %d", viewerCount)
+	}
+
+	viewerAsAuthor := event
+	viewerAsAuthor.Seq = 80
+	viewerAsAuthor.RepoDID = "did:plc:integration-viewer"
+	viewerAsAuthor.Payload = []byte(`{"cursor":80,"kind":"commit"}`)
+	authorAsViewer := event
+	authorAsViewer.Seq = 81
+	authorAsViewer.Collection = &subscriptionCollection
+	authorAsViewer.Payload = []byte(`{"cursor":81,"kind":"commit"}`)
+	if err := postgres.StageBatch(ctx, lease, []ingest.InboxEvent{viewerAsAuthor, authorAsViewer}, 81, now, ReplayProgress{State: "live", LastProgressAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	var crossRoleCount int
+	if err := db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM appview_ingestion_inbox
+		WHERE environment = $1 AND source_generation = $2 AND seq IN (80, 81)`, source.Environment, generation).
+		Scan(&crossRoleCount); err != nil {
+		t.Fatal(err)
+	}
+	if crossRoleCount != 0 {
+		t.Fatalf("cross-role commits staged = %d", crossRoleCount)
+	}
+
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO appview_publication_scopes (viewer_did, publication_id, author_did)
+		VALUES ('did:plc:integration-dual', 'at://did:plc:integration-dual/site.standard.publication/test', 'did:plc:integration-dual')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO appview_viewer_feeds (viewer_did, feed_kind, feed_id)
+		VALUES ('did:plc:integration-dual', 'subscribed', '')`); err != nil {
+		t.Fatal(err)
+	}
+	dualContent := event
+	dualContent.Seq = 82
+	dualContent.RepoDID = "did:plc:integration-dual"
+	dualContent.Payload = []byte(`{"cursor":82,"kind":"commit"}`)
+	dualSubscription := dualContent
+	dualSubscription.Seq = 83
+	dualSubscription.Collection = &subscriptionCollection
+	dualSubscription.Payload = []byte(`{"cursor":83,"kind":"commit"}`)
+	if err := postgres.StageBatch(ctx, lease, []ingest.InboxEvent{dualContent, dualSubscription}, 83, now, ReplayProgress{State: "live", LastProgressAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	var dualRoleCount int
+	if err := db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM appview_ingestion_inbox
+		WHERE environment = $1 AND source_generation = $2 AND seq IN (82, 83)`, source.Environment, generation).
+		Scan(&dualRoleCount); err != nil {
+		t.Fatal(err)
+	}
+	if dualRoleCount != 2 {
+		t.Fatalf("dual-role commits staged = %d", dualRoleCount)
+	}
+	checkpoint, err = postgres.LoadCheckpoint(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if checkpoint == nil || checkpoint.LastStagedSeq != 83 {
+		t.Fatalf("sparse admission checkpoint = %#v", checkpoint)
 	}
 }

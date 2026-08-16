@@ -25,7 +25,7 @@ describe("DurableIngestionStatus", () => {
             replayRangeResumeCount: 2,
             updatedAt: "2026-08-15T20:00:00.000Z",
           }],
-          inbox: { pending: 1, leased: 2, retrying: 3, applied: 100, deadLetters: 0, total: 106 },
+          inbox: { pending: 1, leased: 2, retrying: 3, applied: 100, filteredScope: 27, deadLetters: 0, total: 133 },
           incidents: { open: 0, recovering: 0, verificationRequired: 0, resolved: 4, ignored: 1 },
           replayBytesRolling24Hours: 1_048_576,
           generatedAt: "2026-08-15T20:00:00.000Z",
@@ -36,9 +36,12 @@ describe("DurableIngestionStatus", () => {
     expect(screen.getByText("42,000")).toBeTruthy()
     expect(screen.getByText("41,900")).toBeTruthy()
     expect(screen.getByText("1 / 2 / 3")).toBeTruthy()
+    expect(screen.getByText("Filtered Outside Scope")).toBeTruthy()
+    expect(screen.getByText("27")).toBeTruthy()
     expect(screen.getByText("Unresolved Dead Letters")).toBeTruthy()
     expect(screen.getByText("1.0 MiB")).toBeTruthy()
     expect(screen.queryByText(/Cursor Delta/)).toBeNull()
     expect(screen.getByText(/numeric difference is never treated as missing events/)).toBeTruthy()
+    expect(screen.getByText(/were not projected or reconciled/)).toBeTruthy()
   })
 })

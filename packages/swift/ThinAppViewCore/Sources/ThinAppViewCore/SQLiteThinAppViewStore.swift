@@ -42,6 +42,30 @@ public init(path dbPath: String, logger: Logger) throws {
           WHERE i.environment = ? AND i.source_generation = ?
             AND ((i.status IN ('pending', 'retry') AND i.next_attempt_at <= ?)
               OR (i.status = 'leased' AND i.lease_expires_at <= ?))
+            AND (
+              (i.event_kind != 'commit' AND (
+                EXISTS (
+                  SELECT 1 FROM appview_publication_scopes scope
+                  WHERE scope.author_did = i.repo_did OR scope.viewer_did = i.repo_did)
+                OR EXISTS (
+                  SELECT 1 FROM appview_viewer_feeds feed
+                  WHERE feed.viewer_did = i.repo_did)))
+              OR (i.collection IN (
+                  'site.standard.document', 'site.standard.entry',
+                  'com.standard.document', 'com.standard.entry'
+                ) AND EXISTS (
+                  SELECT 1 FROM appview_publication_scopes scope
+                  WHERE scope.author_did = i.repo_did))
+              OR (i.collection IN (
+                  'app.skyreader.feed.subscription', 'site.standard.graph.subscription'
+                ) AND (
+                  EXISTS (
+                    SELECT 1 FROM appview_viewer_feeds feed
+                    WHERE feed.viewer_did = i.repo_did)
+                  OR EXISTS (
+                    SELECT 1 FROM appview_publication_scopes scope
+                    WHERE scope.viewer_did = i.repo_did)))
+            )
             AND NOT EXISTS (
               SELECT 1
               FROM appview_ingestion_inbox earlier
@@ -121,6 +145,97 @@ public init(path dbPath: String, logger: Logger) throws {
         )
       }
       return claimed
+    }
+  }
+
+  public func filterIngestionInboxOutsideScope(
+    environment: String,
+    sourceGeneration: String,
+    policy: String,
+    limit: Int,
+    expiresAt: Date,
+    at: Date
+  ) async throws -> Int {
+    try await db.write { db in
+      let now = Self.isoString(from: at)
+      let rows = try Row.fetchAll(
+        db,
+        sql: """
+          SELECT inbox.seq
+          FROM appview_ingestion_inbox inbox
+          WHERE inbox.environment = ? AND inbox.source_generation = ?
+            AND ((inbox.status IN ('pending', 'retry') AND inbox.next_attempt_at <= ?)
+              OR (inbox.status = 'leased' AND inbox.lease_expires_at <= ?))
+            AND (
+              (inbox.event_kind = 'commit' AND (
+                inbox.collection IS NULL OR inbox.collection NOT IN (
+                  'site.standard.document', 'site.standard.entry',
+                  'com.standard.document', 'com.standard.entry',
+                  'app.skyreader.feed.subscription', 'site.standard.graph.subscription'
+                )
+                OR (inbox.collection IN (
+                    'site.standard.document', 'site.standard.entry',
+                    'com.standard.document', 'com.standard.entry'
+                  ) AND NOT EXISTS (
+                    SELECT 1 FROM appview_publication_scopes scope
+                    WHERE scope.author_did = inbox.repo_did))
+                OR (inbox.collection IN (
+                    'app.skyreader.feed.subscription', 'site.standard.graph.subscription'
+                  ) AND NOT EXISTS (
+                    SELECT 1 FROM appview_viewer_feeds feed
+                    WHERE feed.viewer_did = inbox.repo_did)
+                  AND NOT EXISTS (
+                    SELECT 1 FROM appview_publication_scopes scope
+                    WHERE scope.viewer_did = inbox.repo_did))))
+              OR (inbox.event_kind != 'commit'
+                AND NOT EXISTS (
+                  SELECT 1 FROM appview_publication_scopes scope
+                  WHERE scope.author_did = inbox.repo_did OR scope.viewer_did = inbox.repo_did)
+                AND NOT EXISTS (
+                  SELECT 1 FROM appview_viewer_feeds feed
+                  WHERE feed.viewer_did = inbox.repo_did))
+            )
+          ORDER BY inbox.seq
+          LIMIT ?
+          """,
+        arguments: [
+          environment,
+          sourceGeneration,
+          now,
+          now,
+          max(1, min(limit, 10_000)),
+        ]
+      )
+      var filtered = 0
+      for row in rows {
+        let sequence: Int64 = row["seq"]
+        try db.execute(
+          sql: """
+            UPDATE appview_ingestion_inbox
+            SET status = 'filtered_scope', filtered_scope_policy = ?, filtered_scope_at = ?,
+                applied_at = NULL, reconciled_at = NULL,
+                lease_owner = NULL, lease_token = NULL, lease_expires_at = NULL,
+                failure_category = NULL, failure_reason = NULL,
+                expires_at = ?, updated_at = ?
+            WHERE environment = ? AND source_generation = ? AND seq = ?
+              AND ((status IN ('pending', 'retry') AND next_attempt_at <= ?)
+                OR (status = 'leased' AND lease_expires_at <= ?))
+            """,
+          arguments: [
+            String(policy.prefix(128)),
+            now,
+            Self.isoString(from: expiresAt),
+            now,
+            environment,
+            sourceGeneration,
+            sequence,
+            now,
+            now,
+          ]
+        )
+        filtered += db.changesCount
+      }
+      return filtered
     }
   }
 
@@ -356,7 +471,8 @@ public init(path dbPath: String, logger: Logger) throws {
             SELECT rowid
             FROM appview_ingestion_inbox
             WHERE environment = ? AND expires_at <= ?
-              AND (status = 'applied' OR (status = 'dead_letter' AND reconciled_at IS NOT NULL))
+              AND (status IN ('applied', 'filtered_scope')
+                OR (status = 'dead_letter' AND reconciled_at IS NOT NULL))
             ORDER BY expires_at ASC, seq ASC
             LIMIT ?
           )
@@ -394,7 +510,8 @@ public init(path dbPath: String, logger: Logger) throws {
           SELECT EXISTS(
             SELECT 1 FROM appview_ingestion_inbox
             WHERE environment = ? AND source_generation = ? AND seq <= ?
-              AND status != 'applied' AND reconciled_at IS NULL)
+              AND status NOT IN ('applied', 'filtered_scope')
+              AND reconciled_at IS NULL)
           """,
         arguments: [environment, sourceGeneration, sealedSequence]
       ) ?? true
@@ -747,11 +864,14 @@ public init(path dbPath: String, logger: Logger) throws {
         applied_at TEXT,
         dead_lettered_at TEXT,
         reconciled_at TEXT,
+        filtered_scope_policy TEXT,
+        filtered_scope_at TEXT,
         expires_at TEXT,
         updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (environment, source_generation, seq)
       );
       """)
+    try migrateIngestionInboxScopeFilterColumnsIfNeeded(db)
     try db.execute(sql: """
       CREATE INDEX IF NOT EXISTS idx_appview_ingestion_inbox_claim
         ON appview_ingestion_inbox
@@ -1052,6 +1172,25 @@ public init(path dbPath: String, logger: Logger) throws {
       CREATE INDEX IF NOT EXISTS idx_appview_unread_overrides_cleanup
         ON appview_unread_overrides (created_at, viewer_did, subject_uri);
       """)
+  }
+
+  private static func migrateIngestionInboxScopeFilterColumnsIfNeeded(
+    _ db: Database
+  ) throws {
+    let columns = try Row.fetchAll(
+      db,
+      sql: "PRAGMA table_info(appview_ingestion_inbox)"
+    ).map { row -> String in row["name"] }
+    if !columns.contains("filtered_scope_policy") {
+      try db.execute(
+        sql: "ALTER TABLE appview_ingestion_inbox ADD COLUMN filtered_scope_policy TEXT"
+      )
+    }
+    if !columns.contains("filtered_scope_at") {
+      try db.execute(
+        sql: "ALTER TABLE appview_ingestion_inbox ADD COLUMN filtered_scope_at TEXT"
+      )
+    }
   }
 
   /// SQLite cannot add a column to an existing primary key. Rebuild the legacy table while
@@ -2110,8 +2249,37 @@ public init(path dbPath: String, logger: Logger) throws {
         sql: "DELETE FROM appview_publication_scopes WHERE viewer_did = ?",
         arguments: [viewerDid]
       )
+      for scope in scopes {
+        try db.execute(
+          sql: """
+            INSERT INTO appview_publication_scopes
+              (viewer_did, publication_id, author_did, publication_at_uri,
+               publication_scope_at_uris, publication_site_urls, scope_keys,
+               section_keys, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (viewer_did, publication_id) DO UPDATE SET
+              author_did = excluded.author_did,
+              publication_at_uri = excluded.publication_at_uri,
+              publication_scope_at_uris = excluded.publication_scope_at_uris,
+              publication_site_urls = excluded.publication_site_urls,
+              scope_keys = excluded.scope_keys,
+              section_keys = excluded.section_keys,
+              updated_at = excluded.updated_at
+            """,
+          arguments: [
+            scope.viewerDid,
+            scope.publicationId,
+            scope.authorDid,
+            scope.publicationAtUri,
+            try Self.jsonString(scope.publicationScopeAtUris),
+            try Self.jsonString(scope.publicationSiteUrls),
+            try Self.jsonString(scope.scopeKeys),
+            try Self.jsonString(scope.sectionKeys),
+            Self.isoString(from: scope.updatedAt),
+          ]
+        )
+      }
     }
-    try await upsertPublicationScopes(scopes)
   }
 
   public func upsertViewerFeedProjection(
@@ -3916,7 +4084,7 @@ public init(path dbPath: String, logger: Logger) throws {
         SELECT MIN(seq)
         FROM appview_ingestion_inbox
         WHERE environment = ? AND source_generation = ?
-          AND status != 'applied' AND reconciled_at IS NULL
+          AND status NOT IN ('applied', 'filtered_scope') AND reconciled_at IS NULL
         """,
       arguments: [environment, sourceGeneration]
     )
@@ -3928,7 +4096,7 @@ public init(path dbPath: String, logger: Logger) throws {
           SELECT MAX(seq)
           FROM appview_ingestion_inbox
           WHERE environment = ? AND source_generation = ? AND seq < ?
-            AND (status = 'applied' OR reconciled_at IS NOT NULL)
+            AND (status IN ('applied', 'filtered_scope') OR reconciled_at IS NOT NULL)
           """,
         arguments: [environment, sourceGeneration, barrier]
       )

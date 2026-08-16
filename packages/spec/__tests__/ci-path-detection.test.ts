@@ -123,6 +123,16 @@ describe("CI path detection", () => {
     expect(result.get("gateway")).toBe("false");
   });
 
+  it("runs scope-policy drift checks for Jetstream admission changes", () => {
+    const result = detect(
+      repositoryWithChange("services/jetstream-ingest/internal/store/postgres.go"),
+      "pull_request",
+    );
+    expect(result.get("jetstream_ingest")).toBe("true");
+    expect(result.get("spec")).toBe("true");
+    expect(result.get("charybdis")).toBe("false");
+  });
+
   it("runs the full matrix when the detector changes", () => {
     const result = detect(
       repositoryWithChange("scripts/ci-detect-changes.sh"),

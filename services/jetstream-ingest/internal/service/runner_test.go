@@ -6,6 +6,7 @@ import (
 	"time"
 
 	jetstream "github.com/bluesky-social/jetstream"
+	"github.com/stygian-tech/the-social-wire/services/jetstream-ingest/internal/ingest"
 )
 
 func TestInclusiveReplayAfterRedeliversLastStagedSequence(t *testing.T) {
@@ -14,6 +15,19 @@ func TestInclusiveReplayAfterRedeliversLastStagedSequence(t *testing.T) {
 	}
 	if got := inclusiveReplayAfter(0); got != 0 {
 		t.Fatalf("zero afterSeq = %d", got)
+	}
+}
+
+func TestRequireBootstrapSeamFailsClosedForNewGeneration(t *testing.T) {
+	if err := requireBootstrapSeam(nil, nil); err == nil {
+		t.Fatal("expected a new generation without an explicit seam to fail")
+	}
+	bootstrap := uint64(41)
+	if err := requireBootstrapSeam(nil, &bootstrap); err != nil {
+		t.Fatalf("explicit bootstrap seam rejected: %v", err)
+	}
+	if err := requireBootstrapSeam(&ingest.Checkpoint{LastStagedSeq: 42}, nil); err != nil {
+		t.Fatalf("durable checkpoint rejected: %v", err)
 	}
 }
 

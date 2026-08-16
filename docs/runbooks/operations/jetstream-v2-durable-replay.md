@@ -19,7 +19,8 @@ never advances the intake cursor. Redis is not part of either durability boundar
    limit is a hard stop: inspect the incident and deliberately raise the configured limit or begin a
    separately audited recovery; never reset the counter on a timer.
 6. Resolve a transport incident only after replay reaches the sealed/live seam and every staged row
-   through that boundary is applied or reconciled.
+   through that boundary is applied, reconciled, or explicitly terminalized by the current scope
+   policy.
 
 ## Projection failures
 
@@ -31,6 +32,21 @@ never advances the intake cursor. Redis is not part of either durability boundar
   not proof that the transport skipped a numeric sequence.
 - Do not manually edit the staged or applied watermark. Recovery is inclusive and idempotent.
 
+## Out-of-scope backlog
+
+Standard Site content is actionable only while its repository DID is a current publication author.
+Skyreader and graph-subscription commits are actionable only for a current AppView viewer.
+Read-state records remain outside V2 intake because authenticated AppView mutations own that
+projection. The ingester checks those roles in the same transaction that stages a batch; Charybdis uses
+the same policy when claiming older rows.
+
+If a historical generation contains globally staged commits, let Charybdis mark the currently
+out-of-scope subset `filtered_scope` in bounded, row-locked batches. Each decision records the stable
+scope-policy version and timestamp. This is a terminal outcome, but it is deliberately distinct from
+both projection (`applied`) and PDS repair (`reconciled`). The normal terminal-prefix query advances
+the applied watermark after each batch. Never bulk-delete the rows, rewrite their status manually,
+or jump the checkpoint; a new or reactivated scope must instead complete PDS backfill.
+
 ## Rollout and rollback
 
 - `v1_authoritative`: legacy V1 projects data; the V2 inbox is not drained.
@@ -40,6 +56,32 @@ never advances the intake cursor. Redis is not part of either durability boundar
 Development must complete the documented shadow comparison, fault drills, and seven-day soak before
 Production is considered. Rollback to V1 authority does not delete V2 checkpoints, inbox rows, raw
 gap signals, or consolidated incidents.
+
+### Changing the scope policy generation
+
+The role-aware scope policy is part of the ingester filter fingerprint. Never let a new generation
+start implicitly at the live tip.
+
+1. Scale the Jetstream V2 Ingest service to zero, then verify its old fenced lease is released or
+   expired. A failed Railway replacement can leave the previous healthy deployment running, so a
+   failed new deployment is not evidence that intake stopped.
+2. Record the old generation's exact `last_staged_seq` after intake stops and keep Charybdis
+   configured to that old generation. Also remove any `JETSTREAM_COLLECTIONS` override that contains
+   collections outside the new policy.
+3. Deploy the migration and scope-aware Charybdis while the ingester remains scaled to zero.
+4. Let Charybdis terminalize the old generation's out-of-scope rows and project or reconcile every
+   remaining desired row. Require its terminal prefix to reach the recorded staged seam with zero
+   actionable rows, unresolved dead letters, or recovery incidents.
+5. Set `JETSTREAM_SOURCE_GENERATION` on both Charybdis and Jetstream V2 Ingest to the new generation.
+   Set `JETSTREAM_BOOTSTRAP_AFTER_SEQ` on the ingester to one less than the recorded old-generation
+   seam, creating an inclusive duplicate overlap. A new generation without that explicit cursor
+   fails closed.
+6. Scale the ingester back to one replica, require a fresh fenced lease and live checkpoint, then
+   verify Charybdis on the same generation. Run exact active-scope PDS reconciliation before
+   declaring the seam complete.
+
+Repeat this sequence independently in each environment. A Development cursor is never valid for
+Production.
 
 ### Changing authority on Railway
 

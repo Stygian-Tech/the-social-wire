@@ -65,6 +65,23 @@ func TestPrepareBatchStagesLifecycleOnlyForTrackedDIDs(t *testing.T) {
 	}
 }
 
+func TestPrepareBatchDefersCommitScopeDecisionToStagingTransaction(t *testing.T) {
+	events := []jetstream.Event{{
+		DID: "did:plc:not-in-snapshot", Seq: 21, Kind: jetstream.KindCommit,
+		Commit: &jetstream.Commit{
+			Operation: jetstream.OpCreate, Collection: "site.standard.document",
+			Rkey: "article", Rev: "rev", Record: map[string]any{"$type": "site.standard.document"},
+		},
+	}}
+	prepared, cursor, _, err := PrepareBatch(events, map[string]struct{}{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(prepared) != 1 || cursor != 21 {
+		t.Fatalf("prepared=%#v cursor=%d", prepared, cursor)
+	}
+}
+
 func TestPrepareBatchRejectsMismatchedEnvelope(t *testing.T) {
 	events := []jetstream.Event{{DID: "did:plc:a", Seq: 1, Kind: jetstream.KindSync, Commit: &jetstream.Commit{}}}
 	if _, _, _, err := PrepareBatch(events, nil); err == nil {

@@ -16,7 +16,8 @@ const (
 	DefaultHost             = "jetstream.us-west.bsky.network"
 	DefaultStreamNSID       = "network.bsky.jetstream.subscribeEvents"
 	DefaultCursorKind       = "jetstream_v2_seq"
-	DefaultSourceGeneration = "jetstream-v2-us-west-v1"
+	DefaultSourceGeneration = "jetstream-v2-us-west-v2"
+	DefaultScopePolicy      = "publication-author-viewer-v1"
 )
 
 var DefaultCollections = []string{
@@ -24,7 +25,6 @@ var DefaultCollections = []string{
 	"site.standard.entry",
 	"com.standard.document",
 	"com.standard.entry",
-	"app.thesocialwire.entryReadState",
 	"app.skyreader.feed.subscription",
 	"site.standard.graph.subscription",
 }
@@ -37,6 +37,7 @@ type Config struct {
 	CursorKind          string
 	SourceGeneration    string
 	Collections         []string
+	ScopePolicy         string
 	FilterFingerprint   string
 	APIKey              string
 	Port                int
@@ -65,7 +66,8 @@ func Load() (Config, error) {
 		CursorKind:          DefaultCursorKind,
 		SourceGeneration:    envString("JETSTREAM_SOURCE_GENERATION", DefaultSourceGeneration),
 		Collections:         collections,
-		FilterFingerprint:   FilterFingerprint(DefaultStreamNSID, collections),
+		ScopePolicy:         DefaultScopePolicy,
+		FilterFingerprint:   FilterFingerprint(DefaultStreamNSID, collections, DefaultScopePolicy),
 		APIKey:              strings.TrimSpace(os.Getenv("JETSTREAM_API_KEY")),
 		Port:                envInt("PORT", 8080),
 		BatchSize:           envInt("JETSTREAM_BATCH_SIZE", 256),
@@ -110,6 +112,15 @@ func (c Config) Validate() error {
 	}
 	if len(c.Collections) == 0 {
 		problems = append(problems, errors.New("at least one JETSTREAM_COLLECTIONS value is required"))
+	} else {
+		for _, collection := range c.Collections {
+			if !slices.Contains(DefaultCollections, collection) {
+				problems = append(problems, fmt.Errorf("unsupported JETSTREAM_COLLECTIONS value %q", collection))
+			}
+		}
+	}
+	if c.ScopePolicy == "" {
+		problems = append(problems, errors.New("Jetstream scope policy is required"))
 	}
 	if c.APIKey == "" {
 		problems = append(problems, errors.New("JETSTREAM_API_KEY is required for durable archive replay"))
@@ -141,14 +152,14 @@ func (c Config) Validate() error {
 	return errors.Join(problems...)
 }
 
-func FilterFingerprint(streamNSID string, collections []string) string {
+func FilterFingerprint(streamNSID string, collections []string, scopePolicy string) string {
 	canonical := append([]string(nil), collections...)
 	for index := range canonical {
 		canonical[index] = strings.TrimSpace(canonical[index])
 	}
 	slices.Sort(canonical)
 	canonical = slices.Compact(canonical)
-	payload := streamNSID + "\n" + strings.Join(canonical, "\n")
+	payload := streamNSID + "\n" + strings.TrimSpace(scopePolicy) + "\n" + strings.Join(canonical, "\n")
 	sum := sha256.Sum256([]byte(payload))
 	return hex.EncodeToString(sum[:])
 }
