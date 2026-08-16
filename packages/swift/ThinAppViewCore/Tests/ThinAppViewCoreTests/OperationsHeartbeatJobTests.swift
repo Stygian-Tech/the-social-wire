@@ -8,6 +8,59 @@ import Testing
 
 @Suite("Operations heartbeat evidence")
 struct OperationsHeartbeatJobTests {
+  @Test("V2 durable readiness evaluates only the advertised generation inbox")
+  func v2DurableReadinessUsesGenerationScopedInbox() {
+    let checkpoint = JetstreamDurabilityCheckpoint(
+      environment: "test",
+      sourceGeneration: "active-v2",
+      sourceHost: "jetstream.us-west.bsky.network",
+      streamNSID: "network.bsky.jetstream.subscribeEvents",
+      filterFingerprint: "filter-v1",
+      cursorKind: .jetstreamV2Sequence,
+      replayState: .live,
+      updatedAt: Date()
+    )
+    let snapshot = IngestionDurabilitySnapshot(
+      environment: "test",
+      checkpoints: [checkpoint],
+      inbox: IngestionInboxMetrics(
+        pending: 100,
+        deadLetters: 3,
+        oldestPendingAgeSeconds: 24 * 60 * 60
+      ),
+      inboxBySourceGeneration: [
+        "retired-v2": IngestionInboxMetrics(
+          pending: 98,
+          deadLetters: 3,
+          oldestPendingAgeSeconds: 24 * 60 * 60
+        ),
+        "active-v2": IngestionInboxMetrics(pending: 2, oldestPendingAgeSeconds: 20),
+      ]
+    )
+    let activeInbox = ThinAppViewWorkerRuntime.durableInboxMetrics(
+      snapshot,
+      sourceGeneration: checkpoint.sourceGeneration
+    )
+
+    let activeGeneration = ThinAppViewWorkerRuntime.durableProjectionHealthEvidence(
+      activeInbox,
+      checkpoint: checkpoint
+    )
+    #expect(activeGeneration.freshness == .healthy)
+    #expect(activeGeneration.completeness == .healthy)
+
+    let staleActiveGeneration = ThinAppViewWorkerRuntime.durableProjectionHealthEvidence(
+      IngestionInboxMetrics(
+        pending: 1,
+        deadLetters: 1,
+        oldestPendingAgeSeconds: 16 * 60
+      ),
+      checkpoint: checkpoint
+    )
+    #expect(staleActiveGeneration.freshness == .unhealthy)
+    #expect(staleActiveGeneration.completeness == .unhealthy)
+  }
+
   @Test("projection backlog fail-closes freshness and completeness")
   func projectionBacklogHealth() {
     let now = Date(timeIntervalSince1970: 1_800_000_000)
