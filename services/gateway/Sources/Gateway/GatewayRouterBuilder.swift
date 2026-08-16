@@ -29,7 +29,13 @@ enum GatewayRouterBuilder {
         operationsStore: operationsStore,
         appViewBaseURL: config.appViewBaseURL,
         charybdisBaseURL: config.charybdisBaseURL,
-        httpClient: httpClient
+        httpClient: httpClient,
+        recordFailure: { dependency in
+          logger.error(
+            "Gateway readiness required dependency failed",
+            metadata: ["dependency": .string(dependency.rawValue)]
+          )
+        }
       ).run()
       return ["status": "ready", "service": "gateway"]
     }
