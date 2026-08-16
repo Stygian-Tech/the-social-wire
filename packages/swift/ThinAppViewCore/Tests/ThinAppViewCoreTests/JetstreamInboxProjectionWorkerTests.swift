@@ -102,6 +102,12 @@ struct JetstreamInboxProjectionWorkerTests {
       at: now
     )
     #expect(try fixture.appliedWatermark() == nil)
+    try await fixture.store.advanceIngestionInboxAppliedWatermark(
+      environment: "dev",
+      sourceGeneration: Fixture.generation,
+      at: now
+    )
+    #expect(try fixture.appliedWatermark() == nil)
 
     let low = try #require(first.first { $0.sequence == 10 })
     try await fixture.store.markIngestionInboxApplied(
@@ -111,6 +117,12 @@ struct JetstreamInboxProjectionWorkerTests {
       workerId: "worker",
       leaseToken: low.leaseToken,
       expiresAt: now.addingTimeInterval(7 * 86_400),
+      at: now
+    )
+    #expect(try fixture.appliedWatermark() == nil)
+    try await fixture.store.advanceIngestionInboxAppliedWatermark(
+      environment: "dev",
+      sourceGeneration: Fixture.generation,
       at: now
     )
     #expect(try fixture.appliedWatermark() == 10)
@@ -133,7 +145,148 @@ struct JetstreamInboxProjectionWorkerTests {
       expiresAt: now.addingTimeInterval(7 * 86_400),
       at: now
     )
+    #expect(try fixture.appliedWatermark() == 10)
+    try await fixture.store.advanceIngestionInboxAppliedWatermark(
+      environment: "dev",
+      sourceGeneration: Fixture.generation,
+      at: now
+    )
     #expect(try fixture.appliedWatermark() == 100)
+  }
+
+  @Test("an empty drain repairs a crash-lagged applied watermark")
+  func emptyDrainRepairsCrashLaggedWatermark() async throws {
+    let fixture = try Fixture()
+    defer { fixture.remove() }
+    let now = Date(timeIntervalSince1970: 1_800_000_000)
+    try fixture.seedCheckpoint(lastStagedSequence: 10, at: now)
+    try fixture.seedEvent(
+      sequence: 10,
+      did: "did:plc:applied",
+      payload: Self.identityPayload(10, did: "did:plc:applied"),
+      at: now
+    )
+    let item = try #require(
+      try await fixture.store.claimIngestionInbox(
+        environment: "dev",
+        sourceGeneration: Fixture.generation,
+        workerId: "worker-before-crash",
+        limit: 1,
+        leaseUntil: now.addingTimeInterval(60),
+        at: now
+      ).first
+    )
+    try await fixture.store.markIngestionInboxApplied(
+      environment: "dev",
+      sourceGeneration: Fixture.generation,
+      sequence: item.sequence,
+      workerId: "worker-before-crash",
+      leaseToken: item.leaseToken,
+      expiresAt: now.addingTimeInterval(7 * 86_400),
+      at: now
+    )
+    #expect(try fixture.status(sequence: 10) == "applied")
+    #expect(try fixture.appliedWatermark() == nil)
+
+    #expect(try await fixture.worker().drainOnce(at: now.addingTimeInterval(1)) == 0)
+    #expect(try fixture.appliedWatermark() == 10)
+  }
+
+  @Test("retry, leased, and unreconciled dead-letter rows remain watermark barriers")
+  func actionableAndDeadLetterRowsRemainWatermarkBarriers() async throws {
+    let fixture = try Fixture()
+    defer { fixture.remove() }
+    let now = Date(timeIntervalSince1970: 1_800_000_000)
+    try fixture.seedCheckpoint(lastStagedSequence: 40, at: now)
+    for sequence in stride(from: Int64(10), through: 40, by: 10) {
+      let did = "did:plc:barrier-\(sequence)"
+      try fixture.seedEvent(
+        sequence: sequence,
+        did: did,
+        payload: Self.identityPayload(sequence, did: did),
+        at: now
+      )
+    }
+    let claimed = try await fixture.store.claimIngestionInbox(
+      environment: "dev",
+      sourceGeneration: Fixture.generation,
+      workerId: "worker",
+      limit: 4,
+      leaseUntil: now.addingTimeInterval(60),
+      at: now
+    )
+    let bySequence = Dictionary(uniqueKeysWithValues: claimed.map { ($0.sequence, $0) })
+    let applied = try #require(bySequence[10])
+    let retrying = try #require(bySequence[20])
+    let deadLetter = try #require(bySequence[40])
+
+    try await fixture.store.markIngestionInboxApplied(
+      environment: "dev",
+      sourceGeneration: Fixture.generation,
+      sequence: applied.sequence,
+      workerId: "worker",
+      leaseToken: applied.leaseToken,
+      expiresAt: now.addingTimeInterval(7 * 86_400),
+      at: now
+    )
+    try await fixture.store.retryIngestionInbox(
+      environment: "dev",
+      sourceGeneration: Fixture.generation,
+      sequence: retrying.sequence,
+      workerId: "worker",
+      leaseToken: retrying.leaseToken,
+      failureCategory: "test",
+      failureReason: "test",
+      nextAttemptAt: now.addingTimeInterval(30),
+      at: now
+    )
+    try await fixture.store.deadLetterIngestionInbox(
+      environment: "dev",
+      sourceGeneration: Fixture.generation,
+      sequence: deadLetter.sequence,
+      repoDid: deadLetter.repoDid,
+      workerId: "worker",
+      leaseToken: deadLetter.leaseToken,
+      failureCategory: "test",
+      failureReason: "test",
+      expiresAt: now.addingTimeInterval(30 * 86_400),
+      at: now
+    )
+    try await fixture.store.advanceIngestionInboxAppliedWatermark(
+      environment: "dev",
+      sourceGeneration: Fixture.generation,
+      at: now
+    )
+
+    #expect(try fixture.appliedWatermark() == 10)
+    #expect(try fixture.status(sequence: 20) == "retry")
+    #expect(try fixture.status(sequence: 30) == "leased")
+    #expect(try fixture.status(sequence: 40) == "dead_letter")
+  }
+
+  @Test("worker advances the applied watermark once after a completed batch")
+  func workerAdvancesWatermarkOncePerBatch() async throws {
+    let fixture = try Fixture()
+    defer { fixture.remove() }
+    let now = Date(timeIntervalSince1970: 1_800_000_000)
+    try fixture.seedCheckpoint(lastStagedSequence: 20, at: now)
+    try fixture.seedEvent(
+      sequence: 10,
+      did: "did:plc:first",
+      payload: Self.identityPayload(10, did: "did:plc:first"),
+      at: now
+    )
+    try fixture.seedEvent(
+      sequence: 20,
+      did: "did:plc:second",
+      payload: Self.identityPayload(20, did: "did:plc:second"),
+      at: now
+    )
+    try fixture.installWatermarkUpdateCounter()
+
+    #expect(try await fixture.worker().drainOnce(at: now) == 2)
+    #expect(try fixture.appliedWatermark() == 20)
+    #expect(try fixture.watermarkUpdateCount() == 1)
   }
 
   @Test("discarded lifecycle-only staging advances without inventing contiguous sequences")
@@ -718,6 +871,28 @@ private struct Fixture {
         db,
         sql: "SELECT last_applied_seq FROM appview_jetstream_checkpoints WHERE environment = 'dev'"
       )
+    }
+  }
+
+  func installWatermarkUpdateCounter() throws {
+    try database.write { db in
+      try db.execute(
+        sql: """
+          CREATE TABLE watermark_update_audit (sequence INTEGER NOT NULL);
+          CREATE TRIGGER count_watermark_updates
+          AFTER UPDATE OF last_applied_seq ON appview_jetstream_checkpoints
+          WHEN NEW.last_applied_seq IS NOT OLD.last_applied_seq
+          BEGIN
+            INSERT INTO watermark_update_audit (sequence) VALUES (NEW.last_applied_seq);
+          END;
+          """
+      )
+    }
+  }
+
+  func watermarkUpdateCount() throws -> Int {
+    try database.read { db in
+      try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM watermark_update_audit") ?? 0
     }
   }
 

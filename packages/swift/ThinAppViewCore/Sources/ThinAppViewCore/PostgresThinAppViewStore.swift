@@ -109,31 +109,22 @@ public init(pool: PostgresClient, logger: Logger) {
     expiresAt: Date,
     at: Date
   ) async throws {
-    try await pool.withTransaction(logger: logger) { connection in
-      let rows = try await connection.query(
-        """
-        UPDATE appview_ingestion_inbox
-        SET status = 'applied', applied_at = \(at), lease_owner = NULL, lease_token = NULL,
-            lease_expires_at = NULL, failure_category = NULL, failure_reason = NULL,
-            expires_at = \(expiresAt), updated_at = \(at)
-        WHERE environment = \(environment) AND source_generation = \(sourceGeneration)
-          AND seq = \(sequence) AND status = 'leased'
-          AND lease_owner = \(workerId) AND lease_token = \(leaseToken)
-        RETURNING 1
-        """,
-        logger: logger
-      )
-      var updated = false
-      for try await _ in rows { updated = true }
-      guard updated else { throw AppViewIngestionInboxStoreError.staleLease }
-      try await Self.advanceAppliedInboxWatermark(
-        connection: connection,
-        environment: environment,
-        sourceGeneration: sourceGeneration,
-        at: at,
-        logger: logger
-      )
-    }
+    let rows = try await pool.query(
+      """
+      UPDATE appview_ingestion_inbox
+      SET status = 'applied', applied_at = \(at), lease_owner = NULL, lease_token = NULL,
+          lease_expires_at = NULL, failure_category = NULL, failure_reason = NULL,
+          expires_at = \(expiresAt), updated_at = \(at)
+      WHERE environment = \(environment) AND source_generation = \(sourceGeneration)
+        AND seq = \(sequence) AND status = 'leased'
+        AND lease_owner = \(workerId) AND lease_token = \(leaseToken)
+      RETURNING 1
+      """,
+      logger: logger
+    )
+    var updated = false
+    for try await _ in rows { updated = true }
+    guard updated else { throw AppViewIngestionInboxStoreError.staleLease }
   }
 
   public func retryIngestionInbox(

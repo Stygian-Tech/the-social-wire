@@ -38,7 +38,8 @@ public protocol ThinAppViewStore: Actor {
     at: Date
   ) async throws -> [AppViewIngestionInboxItem]
 
-  /// Marks a leased event applied and advances the generation's applied watermark atomically.
+  /// Atomically marks a leased event applied. The worker coalesces applied-watermark advancement
+  /// after a drain so concurrent completions do not contend on the generation checkpoint row.
   func markIngestionInboxApplied(
     environment: String,
     sourceGeneration: String,
