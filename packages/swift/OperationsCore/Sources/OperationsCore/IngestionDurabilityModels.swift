@@ -36,7 +36,58 @@ public struct JetstreamDurabilityCheckpoint: Codable, Sendable, Equatable {
   public let replayRetryCount: Int
   public let replayRangeResumeCount: Int
   public let replayLastProgressAt: Date?
+  public let intakeHeartbeatAt: Date?
   public let updatedAt: Date
+
+  public init(
+    environment: String,
+    sourceGeneration: String,
+    sourceHost: String,
+    streamNSID: String,
+    filterFingerprint: String,
+    cursorKind: IngestionCursorKind,
+    lastStagedSequence: Int64? = nil,
+    lastStagedEventAt: Date? = nil,
+    lastStagedAt: Date? = nil,
+    lastAppliedSequence: Int64? = nil,
+    lastAppliedEventAt: Date? = nil,
+    lastAppliedAt: Date? = nil,
+    lastReconciledRepositoryRevision: String? = nil,
+    lastReconciledAt: Date? = nil,
+    replayState: JetstreamReplayState,
+    replayAfterSequence: Int64? = nil,
+    replaySealedSequence: Int64? = nil,
+    replayBytesDownloaded: Int64 = 0,
+    replayRetryCount: Int = 0,
+    replayRangeResumeCount: Int = 0,
+    replayLastProgressAt: Date? = nil,
+    intakeHeartbeatAt: Date? = nil,
+    updatedAt: Date
+  ) {
+    self.environment = environment
+    self.sourceGeneration = sourceGeneration
+    self.sourceHost = sourceHost
+    self.streamNSID = streamNSID
+    self.filterFingerprint = filterFingerprint
+    self.cursorKind = cursorKind
+    self.lastStagedSequence = lastStagedSequence
+    self.lastStagedEventAt = lastStagedEventAt
+    self.lastStagedAt = lastStagedAt
+    self.lastAppliedSequence = lastAppliedSequence
+    self.lastAppliedEventAt = lastAppliedEventAt
+    self.lastAppliedAt = lastAppliedAt
+    self.lastReconciledRepositoryRevision = lastReconciledRepositoryRevision
+    self.lastReconciledAt = lastReconciledAt
+    self.replayState = replayState
+    self.replayAfterSequence = replayAfterSequence
+    self.replaySealedSequence = replaySealedSequence
+    self.replayBytesDownloaded = max(0, replayBytesDownloaded)
+    self.replayRetryCount = max(0, replayRetryCount)
+    self.replayRangeResumeCount = max(0, replayRangeResumeCount)
+    self.replayLastProgressAt = replayLastProgressAt
+    self.intakeHeartbeatAt = intakeHeartbeatAt
+    self.updatedAt = updatedAt
+  }
 }
 
 public struct IngestionInboxMetrics: Codable, Sendable, Equatable {
@@ -99,6 +150,7 @@ public struct IngestionDurabilitySnapshot: Codable, Sendable, Equatable {
   public let environment: String
   public let checkpoints: [JetstreamDurabilityCheckpoint]
   public let inbox: IngestionInboxMetrics
+  public let inboxBySourceGeneration: [String: IngestionInboxMetrics]
   public let incidents: IngestionIncidentMetrics
   public let replayBytesRolling24Hours: Int64
   public let generatedAt: Date
@@ -107,6 +159,7 @@ public struct IngestionDurabilitySnapshot: Codable, Sendable, Equatable {
     environment: String,
     checkpoints: [JetstreamDurabilityCheckpoint] = [],
     inbox: IngestionInboxMetrics = IngestionInboxMetrics(),
+    inboxBySourceGeneration: [String: IngestionInboxMetrics] = [:],
     incidents: IngestionIncidentMetrics = IngestionIncidentMetrics(),
     replayBytesRolling24Hours: Int64 = 0,
     generatedAt: Date = Date()
@@ -114,6 +167,7 @@ public struct IngestionDurabilitySnapshot: Codable, Sendable, Equatable {
     self.environment = environment
     self.checkpoints = checkpoints
     self.inbox = inbox
+    self.inboxBySourceGeneration = inboxBySourceGeneration
     self.incidents = incidents
     self.replayBytesRolling24Hours = max(0, replayBytesRolling24Hours)
     self.generatedAt = generatedAt

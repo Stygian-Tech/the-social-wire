@@ -3,6 +3,9 @@ import Logging
 import OperationsCore
 
 struct AlertEvaluator {
+  static let durableInboxDegradedAgeSeconds: TimeInterval = 60
+  static let durableInboxUnhealthyAgeSeconds: TimeInterval = 15 * 60
+
   let store: any OperationsStore
   let config: OperationsConfiguration
   let logger: Logger
@@ -21,17 +24,17 @@ struct AlertEvaluator {
 
   func evaluate(at now: Date) async throws {
     let services = try await store.listServiceStates()
+    let streamStates = try await store.listStreamStates()
+    let durability = try? await store.fetchIngestionDurabilitySnapshot(at: now)
+    let authority = OperationsEvidenceResolver.ingestionAuthority(
+      services: services,
+      streams: streamStates,
+      durability: durability,
+      at: now
+    )
     let worker = services.filter { $0.service == "appview-worker" }
       .max(by: { $0.heartbeatAt < $1.heartbeatAt })
-    let authoritySource: String?
-    if let worker, now.timeIntervalSince(worker.heartbeatAt) <= 15,
-      let advertised = worker.dependencyState["ingestion_authority"],
-      ["jetstream", "tap"].contains(advertised)
-    {
-      authoritySource = advertised
-    } else {
-      authoritySource = nil
-    }
+    let authoritySource = authority.source
     try await reconcile(
       condition: authoritySource == nil,
       rule: "ingestion_authority_evidence_missing",
@@ -46,12 +49,29 @@ struct AlertEvaluator {
       runbookSlug: "live-process-stalled-ingestion",
       at: now)
 
-    let streamStates = try await store.listStreamStates()
     let streamsBySource = Dictionary(uniqueKeysWithValues: streamStates.map { ($0.source, $0) })
     let tapRole = worker?.dependencyState["tap_role"]
     let tapEnabled = tapRole == "shadow" || tapRole == "authoritative"
-    var evaluatedSources = Set(streamsBySource.keys.filter { $0 != "tap" })
-    evaluatedSources.insert("jetstream")
+    let durableV2IsAuthority = authoritySource
+      == OperationsEvidenceResolver.durableJetstreamV2AuthoritySource
+    var evaluatedSources = Set(streamsBySource.keys.filter {
+      $0 != "tap" && $0 != OperationsEvidenceResolver.durableJetstreamV2AuthoritySource
+    })
+    if durableV2IsAuthority {
+      evaluatedSources.remove("jetstream")
+      try await resolveTransportAlerts(source: "jetstream", at: now)
+      try await evaluateDurableV2Transport(checkpoint: authority.durableCheckpoint, at: now)
+      try await evaluateDurableV2Backlog(
+        inbox: authority.durableInbox,
+        observedAt: durability?.generatedAt,
+        checkpoint: authority.durableCheckpoint,
+        at: now
+      )
+    } else {
+      evaluatedSources.insert("jetstream")
+      try await resolveDurableV2TransportAlerts(at: now)
+      try await resolveDurableV2BacklogAlert(at: now)
+    }
     if tapEnabled {
       evaluatedSources.insert("tap")
     } else {
@@ -63,76 +83,17 @@ struct AlertEvaluator {
         at: now)
     }
 
-    let jetstreamState = streamsBySource["jetstream"]
-    let cursorDelta = jetstreamState.flatMap { stream -> Int64? in
-      guard let received = stream.lastReceivedCursor, let committed = stream.lastCommittedCursor
-      else { return nil }
-      return max(0, received - committed)
+    if durableV2IsAuthority {
+      try await resolveLegacyJetstreamBacklogAlerts(at: now)
+    } else {
+      try await evaluateLegacyJetstreamBacklog(
+        state: streamsBySource["jetstream"],
+        isAuthority: authoritySource == "jetstream",
+        at: now
+      )
     }
-    let transportObservedAt = jetstreamState?.transportHeartbeatAt
-    let transportValidUntil = transportObservedAt?.addingTimeInterval(config.idleAlertSeconds)
-    let transportEvidenceCurrent = transportObservedAt != nil
-      && (transportValidUntil.map { now < $0 } ?? false)
-    let queueEvidence = jetstreamState?.queueEvidence
-    let queueObservedAt = queueEvidence?.indexedThrough
-    let queueEvidenceMissing = queueEvidence == nil || queueEvidence?.accuracy != .exact
-      || queueObservedAt == nil
-    let queueEvidenceExpired = !queueEvidenceMissing
-      && (queueEvidence.map { now >= $0.validUntil } ?? false)
-    let queueEvidenceCurrent = !queueEvidenceMissing && !queueEvidenceExpired
-    let backlogObservedAt = [transportObservedAt, queueObservedAt].compactMap { $0 }.min()
-    let backlogValidUntil = [transportValidUntil, queueEvidence?.validUntil]
-      .compactMap { $0 }.min()
-    let cursorDeltaValue = cursorDelta.map { String($0) } ?? "unknown"
-    let role = authoritySource == "jetstream" ? "authority" : "supplemental_unverified"
-    let transportHeartbeat = transportObservedAt?.ISO8601Format() ?? "none"
-    let queueObserved = queueObservedAt?.ISO8601Format() ?? "none"
-    let queueDepth = jetstreamState.map { String($0.queueDepth) } ?? "unknown"
-    let queueCapacity = jetstreamState?.queueCapacity.map { String($0) } ?? "unknown"
-    let backlogObserved = backlogObservedAt?.ISO8601Format() ?? "none"
-    let backlogValid = backlogValidUntil?.ISO8601Format() ?? "none"
-    let backlogEvidence: [String: String] = [
-      "cursor_delta_microseconds": cursorDeltaValue,
-      "role": role,
-      "transport_heartbeat_at": transportHeartbeat,
-      "queue_observed_at": queueObserved,
-      "queue_depth": queueDepth,
-      "queue_capacity": queueCapacity,
-      "observedAt": backlogObserved,
-      "validUntil": backlogValid,
-    ]
-    let jetstreamSeverity = authoritySource == "jetstream" ? "critical" : "warning"
-    try await reconcile(
-      condition: queueEvidenceMissing,
-      rule: "jetstream_queue_evidence_missing",
-      conditionKey: "jetstream:queue_evidence_missing",
-      severity: jetstreamSeverity,
-      summary: "No exact Jetstream processing-queue observation is available.",
-      evidence: backlogEvidence,
-      runbookSlug: "live-process-stalled-ingestion",
-      at: now)
-    try await reconcile(
-      condition: queueEvidenceExpired,
-      rule: "jetstream_queue_evidence_expired",
-      conditionKey: "jetstream:queue_evidence_expired",
-      severity: jetstreamSeverity,
-      summary: "The Jetstream processing-queue observation has expired.",
-      evidence: backlogEvidence,
-      runbookSlug: "live-process-stalled-ingestion",
-      at: now)
-    try await reconcile(
-      condition: transportEvidenceCurrent && queueEvidenceCurrent
-        && (cursorDelta.map { $0 >= config.backlogAlertMicroseconds } ?? false),
-      rule: "jetstream_commit_backlog",
-      conditionKey: "jetstream:commit_backlog",
-      severity: jetstreamSeverity,
-      summary: "The measured Jetstream receive-to-commit backlog is above threshold.",
-      evidence: backlogEvidence,
-      runbookSlug: "live-process-stalled-ingestion",
-      at: now)
 
     let counts = try await store.lifecycleCounts()
-    let durability = try? await store.fetchIngestionDurabilitySnapshot(at: now)
     let activeIncidents = durability.map {
       $0.incidents.open + $0.incidents.recovering + $0.incidents.verificationRequired
     }
@@ -194,6 +155,195 @@ struct AlertEvaluator {
       } catch {
         try await store.recordAlertDelivery(id: alert.id, error: "webhook_delivery_failed", at: now)
       }
+    }
+  }
+
+  func evaluateDurableV2Transport(
+    checkpoint: JetstreamDurabilityCheckpoint?,
+    at now: Date
+  ) async throws {
+    let source = OperationsEvidenceResolver.durableJetstreamV2AuthoritySource
+    let observedAt = checkpoint?.intakeHeartbeatAt
+    let observedAge = observedAt.map { now.timeIntervalSince($0) }
+    let identityValid = checkpoint?.cursorKind == .jetstreamV2Sequence
+    let evidence: [String: String] = [
+      "source_generation": checkpoint?.sourceGeneration ?? "none",
+      "source_host": checkpoint?.sourceHost ?? "none",
+      "cursor_kind": checkpoint?.cursorKind.rawValue ?? "none",
+      "replay_state": checkpoint?.replayState.rawValue ?? "none",
+      "last_staged_sequence": checkpoint?.lastStagedSequence.map(String.init) ?? "none",
+      "last_applied_sequence": checkpoint?.lastAppliedSequence.map(String.init) ?? "none",
+      "checkpoint_updated_at": checkpoint?.updatedAt.ISO8601Format() ?? "none",
+      "observedAt": observedAt?.ISO8601Format() ?? "none",
+      "validUntil": observedAt?.addingTimeInterval(config.idleAlertSeconds).ISO8601Format()
+        ?? "none",
+    ]
+    try await reconcile(
+      condition: checkpoint == nil || !identityValid || observedAt == nil,
+      rule: "jetstream_v2_transport_evidence_missing",
+      conditionKey: "\(source):transport_evidence_missing",
+      severity: "critical",
+      summary: "No matching durable Jetstream V2 checkpoint evidence is available for the authority source.",
+      evidence: evidence,
+      runbookSlug: "live-process-stalled-ingestion",
+      at: now
+    )
+    try await reconcile(
+      condition: identityValid && (observedAge.map {
+        $0 < 0 || $0 >= config.idleAlertSeconds
+      } ?? false),
+      rule: "jetstream_v2_transport_heartbeat_expired",
+      conditionKey: "\(source):transport_heartbeat_expired",
+      severity: "critical",
+      summary: "The durable Jetstream V2 intake lease heartbeat has expired for the authority source.",
+      evidence: evidence,
+      runbookSlug: "live-process-stalled-ingestion",
+      at: now
+    )
+    try await reconcile(
+      condition: checkpoint?.replayState == .failed,
+      rule: "jetstream_v2_replay_failed",
+      conditionKey: "\(source):replay_failed",
+      severity: "critical",
+      summary: "The authoritative durable Jetstream V2 replay is in a failed state.",
+      evidence: evidence,
+      runbookSlug: "live-process-stalled-ingestion",
+      at: now
+    )
+  }
+
+  private func resolveDurableV2TransportAlerts(at: Date) async throws {
+    let source = OperationsEvidenceResolver.durableJetstreamV2AuthoritySource
+    for conditionKey in [
+      "\(source):transport_evidence_missing",
+      "\(source):transport_heartbeat_expired",
+      "\(source):replay_failed",
+    ] {
+      try await store.resolveAlert(conditionKey: conditionKey, at: at)
+    }
+  }
+
+  func evaluateDurableV2Backlog(
+    inbox: IngestionInboxMetrics?,
+    observedAt: Date?,
+    checkpoint: JetstreamDurabilityCheckpoint?,
+    at now: Date
+  ) async throws {
+    let conditionKey = "jetstream_v2_inbox:actionable_backlog_overdue"
+    guard let inbox, let oldestAge = inbox.oldestPendingAgeSeconds,
+      oldestAge > Self.durableInboxDegradedAgeSeconds
+    else {
+      try await store.resolveAlert(conditionKey: conditionKey, at: now)
+      return
+    }
+
+    let unhealthy = oldestAge > Self.durableInboxUnhealthyAgeSeconds
+    let severity = unhealthy ? "critical" : "warning"
+    let threshold = unhealthy
+      ? Self.durableInboxUnhealthyAgeSeconds : Self.durableInboxDegradedAgeSeconds
+    try await reconcile(
+      condition: true,
+      rule: "jetstream_v2_actionable_backlog_overdue",
+      conditionKey: conditionKey,
+      severity: severity,
+      summary: unhealthy
+        ? "The authoritative Jetstream V2 inbox has actionable work older than 15 minutes."
+        : "The authoritative Jetstream V2 inbox has actionable work older than 60 seconds.",
+      evidence: [
+        "source_generation": checkpoint?.sourceGeneration ?? "none",
+        "replay_state": checkpoint?.replayState.rawValue ?? "none",
+        "pending_count": String(inbox.pending),
+        "leased_count": String(inbox.leased),
+        "retrying_count": String(inbox.retrying),
+        "oldest_actionable_age_seconds": String(oldestAge),
+        "threshold_seconds": String(threshold),
+        "observedAt": observedAt?.ISO8601Format() ?? "none",
+        "validUntil": observedAt?.addingTimeInterval(5).ISO8601Format() ?? "none",
+      ],
+      runbookSlug: "live-process-stalled-ingestion",
+      at: now
+    )
+  }
+
+  private func resolveDurableV2BacklogAlert(at: Date) async throws {
+    try await store.resolveAlert(
+      conditionKey: "jetstream_v2_inbox:actionable_backlog_overdue",
+      at: at
+    )
+  }
+
+  private func evaluateLegacyJetstreamBacklog(
+    state jetstreamState: IngestionStreamState?,
+    isAuthority: Bool,
+    at now: Date
+  ) async throws {
+    let cursorDelta = jetstreamState.flatMap { stream -> Int64? in
+      guard let received = stream.lastReceivedCursor, let committed = stream.lastCommittedCursor
+      else { return nil }
+      return max(0, received - committed)
+    }
+    let transportObservedAt = jetstreamState?.transportHeartbeatAt
+    let transportValidUntil = transportObservedAt?.addingTimeInterval(config.idleAlertSeconds)
+    let transportEvidenceCurrent = transportObservedAt != nil
+      && (transportValidUntil.map { now < $0 } ?? false)
+    let queueEvidence = jetstreamState?.queueEvidence
+    let queueObservedAt = queueEvidence?.indexedThrough
+    let queueEvidenceMissing = queueEvidence == nil || queueEvidence?.accuracy != .exact
+      || queueObservedAt == nil
+    let queueEvidenceExpired = !queueEvidenceMissing
+      && (queueEvidence.map { now >= $0.validUntil } ?? false)
+    let queueEvidenceCurrent = !queueEvidenceMissing && !queueEvidenceExpired
+    let backlogObservedAt = [transportObservedAt, queueObservedAt].compactMap { $0 }.min()
+    let backlogValidUntil = [transportValidUntil, queueEvidence?.validUntil]
+      .compactMap { $0 }.min()
+    let backlogEvidence: [String: String] = [
+      "cursor_delta_microseconds": cursorDelta.map(String.init) ?? "unknown",
+      "role": isAuthority ? "authority" : "supplemental_unverified",
+      "transport_heartbeat_at": transportObservedAt?.ISO8601Format() ?? "none",
+      "queue_observed_at": queueObservedAt?.ISO8601Format() ?? "none",
+      "queue_depth": jetstreamState.map { String($0.queueDepth) } ?? "unknown",
+      "queue_capacity": jetstreamState?.queueCapacity.map(String.init) ?? "unknown",
+      "observedAt": backlogObservedAt?.ISO8601Format() ?? "none",
+      "validUntil": backlogValidUntil?.ISO8601Format() ?? "none",
+    ]
+    let severity = isAuthority ? "critical" : "warning"
+    try await reconcile(
+      condition: queueEvidenceMissing,
+      rule: "jetstream_queue_evidence_missing",
+      conditionKey: "jetstream:queue_evidence_missing",
+      severity: severity,
+      summary: "No exact Jetstream processing-queue observation is available.",
+      evidence: backlogEvidence,
+      runbookSlug: "live-process-stalled-ingestion",
+      at: now)
+    try await reconcile(
+      condition: queueEvidenceExpired,
+      rule: "jetstream_queue_evidence_expired",
+      conditionKey: "jetstream:queue_evidence_expired",
+      severity: severity,
+      summary: "The Jetstream processing-queue observation has expired.",
+      evidence: backlogEvidence,
+      runbookSlug: "live-process-stalled-ingestion",
+      at: now)
+    try await reconcile(
+      condition: transportEvidenceCurrent && queueEvidenceCurrent
+        && (cursorDelta.map { $0 >= config.backlogAlertMicroseconds } ?? false),
+      rule: "jetstream_commit_backlog",
+      conditionKey: "jetstream:commit_backlog",
+      severity: severity,
+      summary: "The measured Jetstream receive-to-commit backlog is above threshold.",
+      evidence: backlogEvidence,
+      runbookSlug: "live-process-stalled-ingestion",
+      at: now)
+  }
+
+  private func resolveLegacyJetstreamBacklogAlerts(at: Date) async throws {
+    for conditionKey in [
+      "jetstream:queue_evidence_missing",
+      "jetstream:queue_evidence_expired",
+      "jetstream:commit_backlog",
+    ] {
+      try await store.resolveAlert(conditionKey: conditionKey, at: at)
     }
   }
 

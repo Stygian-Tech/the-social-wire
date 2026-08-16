@@ -456,30 +456,39 @@ components:
         replayRetryCount: { type: integer, minimum: 0 }
         replayRangeResumeCount: { type: integer, minimum: 0 }
         replayLastProgressAt: { type: [string, "null"], format: date-time }
+        intakeHeartbeatAt:
+          type: [string, "null"]
+          format: date-time
+          description: Last observed intake progress for this source generation; projection checkpoint writes do not refresh it.
         updatedAt: { type: string, format: date-time }
+
+    IngestionInboxMetrics:
+      type: object
+      additionalProperties: false
+      required: [pending, leased, retrying, applied, deadLetters, total]
+      properties:
+        pending: { type: integer, minimum: 0 }
+        leased: { type: integer, minimum: 0 }
+        retrying: { type: integer, minimum: 0 }
+        applied: { type: integer, minimum: 0 }
+        deadLetters: { type: integer, minimum: 0 }
+        total: { type: integer, minimum: 0 }
+        oldestPendingAt: { type: [string, "null"], format: date-time }
+        oldestPendingAgeSeconds: { type: [number, "null"], minimum: 0 }
 
     IngestionDurabilitySnapshot:
       type: object
       additionalProperties: false
-      required: [environment, checkpoints, inbox, incidents, replayBytesRolling24Hours, generatedAt]
+      required: [environment, checkpoints, inbox, inboxBySourceGeneration, incidents, replayBytesRolling24Hours, generatedAt]
       properties:
         environment: { $ref: "#/components/schemas/OperationsEnvironment" }
         checkpoints:
           type: array
           items: { $ref: "#/components/schemas/JetstreamDurabilityCheckpoint" }
-        inbox:
+        inbox: { $ref: "#/components/schemas/IngestionInboxMetrics" }
+        inboxBySourceGeneration:
           type: object
-          additionalProperties: false
-          required: [pending, leased, retrying, applied, deadLetters, total]
-          properties:
-            pending: { type: integer, minimum: 0 }
-            leased: { type: integer, minimum: 0 }
-            retrying: { type: integer, minimum: 0 }
-            applied: { type: integer, minimum: 0 }
-            deadLetters: { type: integer, minimum: 0 }
-            total: { type: integer, minimum: 0 }
-            oldestPendingAt: { type: [string, "null"], format: date-time }
-            oldestPendingAgeSeconds: { type: [number, "null"], minimum: 0 }
+          additionalProperties: { $ref: "#/components/schemas/IngestionInboxMetrics" }
         incidents:
           type: object
           additionalProperties: false

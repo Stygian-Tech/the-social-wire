@@ -1,4 +1,5 @@
 import Foundation
+@preconcurrency import GRDB
 import Logging
 import OperationsCore
 import Testing
@@ -142,6 +143,126 @@ struct OperationsHeartbeatJobTests {
     #expect(overdue.completeness == .unhealthy)
     #expect(overdue.dependencyState["projection_repair_backlog"] == "overdue")
     #expect(overdue.dependencyState["projection_repair_queued_count"] == "1")
+  }
+
+  @Test("V2 worker readiness requires the active intake lease heartbeat")
+  func v2WorkerReadinessUsesIntakeLeaseHeartbeat() async throws {
+    let logger = Logger(label: "worker-probe.v2-intake.test")
+    let generation = "v2-intake-generation"
+    let appViewPath = FileManager.default.temporaryDirectory
+      .appendingPathComponent("worker-probe-v2-appview-\(UUID().uuidString).sqlite")
+      .path
+    let operationsPath = FileManager.default.temporaryDirectory
+      .appendingPathComponent("worker-probe-v2-operations-\(UUID().uuidString).sqlite")
+      .path
+    defer {
+      for path in [appViewPath, operationsPath] {
+        try? FileManager.default.removeItem(atPath: path)
+        try? FileManager.default.removeItem(atPath: "\(path)-shm")
+        try? FileManager.default.removeItem(atPath: "\(path)-wal")
+      }
+    }
+
+    let appViewStore = try SQLiteThinAppViewStore(path: appViewPath, logger: logger)
+    let operationsStore = try SQLiteOperationsStore(
+      path: operationsPath,
+      environment: "test",
+      logger: logger
+    )
+    let operationsDatabase = try DatabaseQueue(path: operationsPath)
+    let checkpointUpdatedAt = Date()
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    let checkpointTimestamp = formatter.string(from: checkpointUpdatedAt)
+    try await operationsDatabase.write { database in
+      try database.execute(
+        sql: """
+          INSERT INTO appview_jetstream_checkpoints
+            (environment, source_generation, source_host, stream_nsid, filter_fingerprint,
+             cursor_kind, last_staged_seq, last_staged_at, last_applied_seq, last_applied_at,
+             replay_state, updated_at)
+          VALUES ('test', ?, 'jetstream.us-west.bsky.network',
+                  'network.bsky.jetstream.subscribeEvents', 'filter-v1',
+                  'jetstream_v2_seq', 200, ?, 190, ?, 'live', ?)
+          """,
+        arguments: [
+          generation,
+          checkpointTimestamp,
+          checkpointTimestamp,
+          checkpointTimestamp,
+        ]
+      )
+    }
+
+    let probe = ThinAppViewWorkerRuntime.workerDependencyProbe(
+      store: appViewStore,
+      operationsStore: operationsStore,
+      operationsConfig: OperationsConfiguration.fromEnvironment([
+        "APP_ENV": "test",
+        "RAILWAY_REPLICA_ID": "test-v2-worker",
+      ]),
+      tapConfiguration: nil,
+      pdsReconciliationAvailable: false,
+      jetstreamMode: .v2Authoritative,
+      jetstreamV2SourceGeneration: generation
+    )
+
+    let projectionOnly = try await probe()
+    #expect(projectionOnly.liveness == .unknown)
+    #expect(projectionOnly.readiness == .unknown)
+    #expect(projectionOnly.dependencyState["ingestion_transport"] == "missing")
+
+    let leaseHeartbeatAt = Date().addingTimeInterval(-31)
+    let lease = try #require(
+      try await operationsStore.acquireIngestionLeaderLease(
+        name: "jetstream-v2-ingest",
+        sourceGeneration: generation,
+        ownerID: "intake-worker",
+        leaseUntil: Date().addingTimeInterval(60),
+        at: leaseHeartbeatAt
+      )
+    )
+    let staleIntake = try await probe()
+    #expect(staleIntake.liveness == .unknown)
+    #expect(staleIntake.readiness == .unknown)
+    #expect(staleIntake.dependencyState["ingestion_transport"] == "expired")
+
+    let renewedAt = Date()
+    let renewedLease = try await operationsStore.renewIngestionLeaderLease(
+      name: lease.name,
+      ownerID: lease.ownerID,
+      fencingToken: lease.fencingToken,
+      leaseUntil: renewedAt.addingTimeInterval(60),
+      at: renewedAt
+    )
+    let activeIntake = try await probe()
+    #expect(activeIntake.liveness == .healthy)
+    #expect(activeIntake.readiness == .healthy)
+    #expect(activeIntake.dependencyState["ingestion_transport"] == "ready")
+
+    try await operationsStore.releaseIngestionLeaderLease(
+      name: renewedLease.name,
+      ownerID: renewedLease.ownerID,
+      fencingToken: renewedLease.fencingToken,
+      at: Date()
+    )
+    let projectionUpdateAt = Date()
+    let projectionTimestamp = formatter.string(from: projectionUpdateAt)
+    try await operationsDatabase.write { database in
+      try database.execute(
+        sql: """
+          UPDATE appview_jetstream_checkpoints
+          SET last_applied_at = ?, updated_at = ?
+          WHERE environment = 'test' AND source_generation = ?
+          """,
+        arguments: [projectionTimestamp, projectionTimestamp, generation]
+      )
+    }
+
+    let intakeStopped = try await probe()
+    #expect(intakeStopped.liveness == .unknown)
+    #expect(intakeStopped.readiness == .unknown)
+    #expect(intakeStopped.dependencyState["ingestion_transport"] == "missing")
   }
 
   @Test("missing service-specific probe publishes Unknown, never Healthy")

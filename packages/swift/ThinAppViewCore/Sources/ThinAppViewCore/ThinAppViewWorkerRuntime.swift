@@ -508,25 +508,28 @@ public enum ThinAppViewWorkerRuntime {
     guard let checkpoint, checkpoint.cursorKind == .jetstreamV2Sequence else {
       return TransportEvidence(health: .unknown, dependency: "missing", heartbeatAt: nil)
     }
-    let age = now.timeIntervalSince(checkpoint.updatedAt)
+    guard let heartbeatAt = checkpoint.intakeHeartbeatAt else {
+      return TransportEvidence(health: .unknown, dependency: "missing", heartbeatAt: nil)
+    }
+    let age = now.timeIntervalSince(heartbeatAt)
     guard age >= 0, age <= 30 else {
       return TransportEvidence(
         health: .unknown,
         dependency: "expired",
-        heartbeatAt: checkpoint.updatedAt
+        heartbeatAt: heartbeatAt
       )
     }
     guard checkpoint.replayState != .failed else {
       return TransportEvidence(
         health: .unhealthy,
         dependency: "replay_failed",
-        heartbeatAt: checkpoint.updatedAt
+        heartbeatAt: heartbeatAt
       )
     }
     return TransportEvidence(
       health: checkpoint.replayState == .pausedBudget ? .degraded : .healthy,
       dependency: checkpoint.replayState == .pausedBudget ? "paused_budget" : "ready",
-      heartbeatAt: checkpoint.updatedAt
+      heartbeatAt: heartbeatAt
     )
   }
 

@@ -20,6 +20,58 @@ func reconnectRequestDoesNotRequireReason() throws {
   #expect(request.environmentConfirmation == nil)
 }
 
+@Test("legacy reconnect rejects fresh V2 authority but preserves Tap authority")
+func legacyReconnectRequiresNonV2Authority() throws {
+  let now = Date()
+  let retainedLegacyState = IngestionStreamState(
+    environment: "dev",
+    source: "jetstream",
+    connectionState: .connected,
+    transportHeartbeatAt: now,
+    heartbeatAt: now,
+    version: 9
+  )
+  #expect(retainedLegacyState.version == 9)
+
+  let v2Worker = OperationsServiceState(
+    service: "appview-worker",
+    environment: "dev",
+    instanceId: "worker-v2",
+    liveness: .healthy,
+    readiness: .healthy,
+    freshness: .healthy,
+    completeness: .healthy,
+    dependencyState: [
+      "ingestion_authority": OperationsEvidenceResolver.durableJetstreamV2AuthoritySource,
+      "jetstream_v2_source_generation": "west-v2",
+    ],
+    startedAt: now.addingTimeInterval(-60),
+    heartbeatAt: now
+  )
+  do {
+    try OperationsRoutes.requireLegacyJetstreamReconnectAuthority(
+      services: [v2Worker], streams: [retainedLegacyState], at: now)
+    Issue.record("Expected V2 authority to reject the legacy reconnect command")
+  } catch let error as HTTPError {
+    #expect(error.status == .conflict)
+  }
+
+  let tapWorker = OperationsServiceState(
+    service: "appview-worker",
+    environment: "dev",
+    instanceId: "worker-tap",
+    liveness: .healthy,
+    readiness: .healthy,
+    freshness: .healthy,
+    completeness: .healthy,
+    dependencyState: ["ingestion_authority": "tap"],
+    startedAt: now.addingTimeInterval(-60),
+    heartbeatAt: now
+  )
+  try OperationsRoutes.requireLegacyJetstreamReconnectAuthority(
+    services: [tapWorker], at: now)
+}
+
 @Test("new event streams start at the current durable cursor")
 func newEventStreamDoesNotReplayHistory() {
   let bounds = OperationsChangeEventCursorBounds(earliestAvailable: 40, latest: 900)

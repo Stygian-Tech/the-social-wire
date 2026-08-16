@@ -54,11 +54,12 @@ struct OperationsRoutes {
       async let durability = store.fetchIngestionDurabilitySnapshot(at: Date())
       let services = try await serviceStates
       let sources = try await streamStates
+      let resolvedDurability = try? await durability
       let authority = OperationsEvidenceResolver.ingestionAuthority(
-        services: services, streams: sources)
+        services: services, streams: sources, durability: resolvedDurability)
       return IngestionResponse(
         state: authority.state, sources: sources, evidence: authority.evidence,
-        durability: try? await durability)
+        durability: resolvedDurability)
     }
     group.get(route("/v1/operations/ingestion/durability", "getIngestionDurability")) {
       _, _ async throws -> IngestionDurabilitySnapshot in
@@ -118,7 +119,12 @@ struct OperationsRoutes {
         try validateIdempotencyHeader(request, bodyKey: mutation.idempotencyKey)
         let capabilities = await capabilityResolver.resolve()
         try Self.require(capabilities.recovery)
-        let state = try await store.fetchStreamState(source: "jetstream")
+        async let serviceStates = store.listServiceStates()
+        async let legacyState = store.fetchStreamState(source: "jetstream")
+        let state = try await legacyState
+        try Self.requireLegacyJetstreamReconnectAuthority(
+          services: try await serviceStates,
+          streams: state.map { [$0] } ?? [])
         audit.setBefore([
           "connectionState": state?.connectionState.rawValue ?? "unknown",
           "version": String(state?.version ?? 0),
@@ -619,6 +625,20 @@ struct OperationsRoutes {
     }
     guard headerValue == bodyKey else {
       throw HTTPError(.badRequest, message: "Idempotency-Key header does not match the request body")
+    }
+  }
+
+  static func requireLegacyJetstreamReconnectAuthority(
+    services: [OperationsServiceState],
+    streams: [IngestionStreamState] = [],
+    at now: Date = Date()
+  ) throws {
+    let authority = OperationsEvidenceResolver.ingestionAuthority(
+      services: services, streams: streams, at: now)
+    guard authority.source != OperationsEvidenceResolver.durableJetstreamV2AuthoritySource else {
+      throw HTTPError(
+        .conflict,
+        message: "Legacy Jetstream reconnect is unavailable while durable Jetstream V2 is authoritative")
     }
   }
 

@@ -7,15 +7,24 @@ extension PostgresOperationsStore {
   ) async throws -> IngestionDurabilitySnapshot {
     let checkpointRows = try await pool.query(
       """
-      SELECT environment, source_generation, source_host, stream_nsid, filter_fingerprint,
-        cursor_kind, last_staged_seq, last_staged_event_at, last_staged_at,
-        last_applied_seq, last_applied_event_at, last_applied_at,
-        last_reconciled_repo_rev, last_reconciled_at, replay_state, replay_after_seq,
-        replay_sealed_seq, replay_bytes_downloaded, replay_retry_count,
-        replay_range_resume_count, replay_last_progress_at, updated_at
-      FROM appview_jetstream_checkpoints
-      WHERE environment = \(environment)
-      ORDER BY updated_at DESC, source_generation
+      SELECT checkpoint.environment, checkpoint.source_generation, checkpoint.source_host,
+        checkpoint.stream_nsid, checkpoint.filter_fingerprint, checkpoint.cursor_kind,
+        checkpoint.last_staged_seq, checkpoint.last_staged_event_at, checkpoint.last_staged_at,
+        checkpoint.last_applied_seq, checkpoint.last_applied_event_at, checkpoint.last_applied_at,
+        checkpoint.last_reconciled_repo_rev, checkpoint.last_reconciled_at,
+        checkpoint.replay_state, checkpoint.replay_after_seq, checkpoint.replay_sealed_seq,
+        checkpoint.replay_bytes_downloaded, checkpoint.replay_retry_count,
+        checkpoint.replay_range_resume_count, checkpoint.replay_last_progress_at,
+        checkpoint.updated_at,
+        (SELECT MAX(lease.updated_at)
+         FROM appview_ingestion_leases lease
+         WHERE lease.environment = checkpoint.environment
+           AND lease.source_generation = checkpoint.source_generation
+           AND lease.released_at IS NULL AND lease.lease_expires_at >= \(at))
+          AS intake_heartbeat_at
+      FROM appview_jetstream_checkpoints checkpoint
+      WHERE checkpoint.environment = \(environment)
+      ORDER BY checkpoint.updated_at DESC, checkpoint.source_generation
       """, logger: logger)
     var checkpoints: [JetstreamDurabilityCheckpoint] = []
     for try await row in checkpointRows {
@@ -44,6 +53,34 @@ extension PostgresOperationsStore {
         oldestPendingAt: value.6,
         oldestPendingAgeSeconds: value.6.map { max(0, at.timeIntervalSince($0)) })
       break
+    }
+    let generationInboxRows = try await pool.query(
+      """
+      SELECT source_generation,
+        COUNT(*) FILTER (WHERE status = 'pending')::bigint,
+        COUNT(*) FILTER (WHERE status = 'leased')::bigint,
+        COUNT(*) FILTER (WHERE status = 'retry')::bigint,
+        COUNT(*) FILTER (WHERE status = 'applied')::bigint,
+        COUNT(*) FILTER (WHERE status = 'dead_letter' AND reconciled_at IS NULL)::bigint,
+        COUNT(*)::bigint,
+        MIN(staged_at) FILTER (WHERE status IN ('pending', 'leased', 'retry'))
+      FROM appview_ingestion_inbox
+      WHERE environment = \(environment)
+      GROUP BY source_generation
+      """,
+      logger: logger
+    )
+    var inboxBySourceGeneration: [String: IngestionInboxMetrics] = [:]
+    for try await row in generationInboxRows {
+      let value = try row.decode(
+        (String, Int64, Int64, Int64, Int64, Int64, Int64, Date?).self
+      )
+      inboxBySourceGeneration[value.0] = IngestionInboxMetrics(
+        pending: Int(value.1), leased: Int(value.2), retrying: Int(value.3),
+        applied: Int(value.4), deadLetters: Int(value.5), total: Int(value.6),
+        oldestPendingAt: value.7,
+        oldestPendingAgeSeconds: value.7.map { max(0, at.timeIntervalSince($0)) }
+      )
     }
 
     let incidentRows = try await pool.query(
@@ -79,6 +116,7 @@ extension PostgresOperationsStore {
     }
     return IngestionDurabilitySnapshot(
       environment: environment, checkpoints: checkpoints, inbox: inbox,
+      inboxBySourceGeneration: inboxBySourceGeneration,
       incidents: incidents, replayBytesRolling24Hours: replayBytesRolling24Hours,
       generatedAt: at)
   }
@@ -389,6 +427,7 @@ extension PostgresOperationsStore {
       replayRetryCount: try value["replay_retry_count"].decode(Int.self),
       replayRangeResumeCount: try value["replay_range_resume_count"].decode(Int.self),
       replayLastProgressAt: try value["replay_last_progress_at"].decode(Date?.self),
+      intakeHeartbeatAt: try value["intake_heartbeat_at"].decode(Date?.self),
       updatedAt: try value["updated_at"].decode(Date.self))
   }
 
