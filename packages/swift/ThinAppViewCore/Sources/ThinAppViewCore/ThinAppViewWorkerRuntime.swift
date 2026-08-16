@@ -283,6 +283,11 @@ public enum ThinAppViewWorkerRuntime {
         durableInbox,
         checkpoint: durableCheckpoint
       )
+      let durableReadinessDiagnostics = Self.durableReadinessDiagnostics(
+        durableInbox,
+        checkpoint: durableCheckpoint,
+        at: now
+      )
       let projectionBacklog = try await store.projectionRepairBacklog(
         environment: operationsConfig.environment,
         at: now
@@ -350,11 +355,10 @@ public enum ThinAppViewWorkerRuntime {
           "tap_verified_resync": "unsupported",
           "jetstream_replay": jetstreamReplay,
           "jetstream_v2_source_generation": jetstreamV2SourceGeneration,
-          "jetstream_v2_inbox_pending": String(durableInbox.pending),
-          "jetstream_v2_inbox_retrying": String(durableInbox.retrying),
-          "jetstream_v2_dead_letters": String(durableInbox.deadLetters),
           "pds_reconciliation": pdsReconciliation,
-        ].merging(projectionEvidence.metadata) { _, projectionValue in projectionValue },
+        ]
+        .merging(durableReadinessDiagnostics) { _, diagnosticValue in diagnosticValue }
+        .merging(projectionEvidence.metadata) { _, projectionValue in projectionValue },
         requiredDependencyKeys: ["appview_database", "ingestion_transport"],
         observedAt: observedAt,
         validUntil: min(
@@ -576,6 +580,43 @@ public enum ThinAppViewWorkerRuntime {
         "durable_inbox_oldest_pending_age_seconds": oldestAge.map { String($0) } ?? "none",
       ]
     )
+  }
+
+  static func durableReadinessDiagnostics(
+    _ inbox: IngestionInboxMetrics,
+    checkpoint: JetstreamDurabilityCheckpoint?,
+    at now: Date
+  ) -> [String: String] {
+    [
+      "jetstream_v2_replay_state": checkpoint?.replayState.rawValue ?? "missing",
+      "jetstream_v2_inbox_pending": String(inbox.pending),
+      "jetstream_v2_inbox_leased": String(inbox.leased),
+      "jetstream_v2_inbox_retrying": String(inbox.retrying),
+      "jetstream_v2_dead_letters": String(inbox.deadLetters),
+      "jetstream_v2_intake_heartbeat_age_seconds": boundedDiagnosticAge(
+        since: checkpoint?.intakeHeartbeatAt,
+        at: now
+      ),
+      "jetstream_v2_checkpoint_age_seconds": boundedDiagnosticAge(
+        since: checkpoint?.updatedAt,
+        at: now
+      ),
+      "jetstream_v2_inbox_oldest_actionable_age_seconds": inbox.oldestPendingAgeSeconds.map {
+        boundedDiagnosticAge($0)
+      } ?? "missing",
+    ]
+  }
+
+  private static func boundedDiagnosticAge(since date: Date?, at now: Date) -> String {
+    guard let date else { return "missing" }
+    return boundedDiagnosticAge(now.timeIntervalSince(date))
+  }
+
+  private static func boundedDiagnosticAge(_ rawAge: TimeInterval) -> String {
+    guard rawAge.isFinite, rawAge >= 0 else { return "invalid" }
+    let maximumAge: TimeInterval = 31_536_000
+    guard rawAge <= maximumAge else { return "31536000+" }
+    return String(Int(rawAge.rounded(.down)))
   }
 }
 

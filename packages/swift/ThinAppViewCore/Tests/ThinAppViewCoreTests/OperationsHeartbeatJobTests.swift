@@ -10,6 +10,7 @@ import Testing
 struct OperationsHeartbeatJobTests {
   @Test("V2 durable readiness evaluates only the advertised generation inbox")
   func v2DurableReadinessUsesGenerationScopedInbox() {
+    let now = Date(timeIntervalSince1970: 1_800_000_000)
     let checkpoint = JetstreamDurabilityCheckpoint(
       environment: "test",
       sourceGeneration: "active-v2",
@@ -18,7 +19,8 @@ struct OperationsHeartbeatJobTests {
       filterFingerprint: "filter-v1",
       cursorKind: .jetstreamV2Sequence,
       replayState: .live,
-      updatedAt: Date()
+      intakeHeartbeatAt: now.addingTimeInterval(-7),
+      updatedAt: now.addingTimeInterval(-12)
     )
     let snapshot = IngestionDurabilitySnapshot(
       environment: "test",
@@ -48,6 +50,26 @@ struct OperationsHeartbeatJobTests {
     )
     #expect(activeGeneration.freshness == .healthy)
     #expect(activeGeneration.completeness == .healthy)
+
+    let diagnostics = ThinAppViewWorkerRuntime.durableReadinessDiagnostics(
+      IngestionInboxMetrics(
+        pending: 2,
+        leased: 3,
+        retrying: 4,
+        deadLetters: 5,
+        oldestPendingAgeSeconds: 65
+      ),
+      checkpoint: checkpoint,
+      at: now
+    )
+    #expect(diagnostics["jetstream_v2_replay_state"] == "live")
+    #expect(diagnostics["jetstream_v2_intake_heartbeat_age_seconds"] == "7")
+    #expect(diagnostics["jetstream_v2_checkpoint_age_seconds"] == "12")
+    #expect(diagnostics["jetstream_v2_inbox_pending"] == "2")
+    #expect(diagnostics["jetstream_v2_inbox_leased"] == "3")
+    #expect(diagnostics["jetstream_v2_inbox_retrying"] == "4")
+    #expect(diagnostics["jetstream_v2_dead_letters"] == "5")
+    #expect(diagnostics["jetstream_v2_inbox_oldest_actionable_age_seconds"] == "65")
 
     let staleActiveGeneration = ThinAppViewWorkerRuntime.durableProjectionHealthEvidence(
       IngestionInboxMetrics(
