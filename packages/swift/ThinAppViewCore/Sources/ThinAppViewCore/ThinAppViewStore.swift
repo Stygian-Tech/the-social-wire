@@ -159,6 +159,11 @@ public protocol ThinAppViewStore: Actor {
   func upsertContentItem(_ item: IndexedContentItem) async throws
   func deleteContentItem(uri: String) async throws
   func deleteContentItems(authorDid: String) async throws -> Int
+  func deleteContentItems(
+    authorDid: String,
+    excludingURIs: [String],
+    indexedAtOrBefore: Date
+  ) async throws -> Int
   func fetchContentIdentity(uri: String) async throws -> IndexedContentIdentity?
 
   func upsertReadMark(viewerDid: String, subjectUri: String, createdAt: Date) async throws
@@ -265,6 +270,7 @@ public protocol ThinAppViewStore: Actor {
   func incrementUnreadCountersForContentItem(_ item: IndexedContentItem) async throws
 
   func markUnreadCountersDirtyForContent(authorDid: String, publicationSite: String?) async throws
+  func markUnreadCountersDirtyForAuthor(authorDid: String) async throws
 
   func adjustUnreadCountersForReadState(
     viewerDid: String,

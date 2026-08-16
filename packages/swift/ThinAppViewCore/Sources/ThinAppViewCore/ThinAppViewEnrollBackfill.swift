@@ -183,6 +183,8 @@ public struct PDSReconciliationIncompleteError: Error, Sendable {
 /// This can prove which current records were observed. It cannot prove historical deletes and is
 /// therefore never sufficient, by itself, to resolve an ingestion gap.
 public struct ThinAppViewEnrollBackfill: Sendable {
+  static let maximumListRecordsResponseBytes = 8 * 1_024 * 1_024
+
   private let store: any ThinAppViewStore
   private let indexer: ThinAppViewIndexer
   private let httpTransport: any PDSHTTPTransport
@@ -541,10 +543,15 @@ public struct ThinAppViewEnrollBackfill: Sendable {
 
       let body: ByteBuffer
       do {
-        body = try await response.body.collect(upTo: 512 * 1_024)
+        body = try await response.body.collect(upTo: Self.maximumListRecordsResponseBytes)
       } catch {
         try Task.checkCancellation()
-        issues.append(.init(kind: .malformedResponse, detail: "body_too_large_or_unreadable"))
+        issues.append(
+          .init(
+            kind: .malformedResponse,
+            detail: "body_exceeds_8_mib_or_unreadable"
+          )
+        )
         break
       }
       try Task.checkCancellation()
@@ -667,7 +674,7 @@ public struct ThinAppViewEnrollBackfill: Sendable {
       components?.queryItems = [
         URLQueryItem(name: "repo", value: authorDid),
         URLQueryItem(name: "collection", value: collection),
-        URLQueryItem(name: "limit", value: "50"),
+        URLQueryItem(name: "limit", value: String(Self.listRecordsPageLimit(for: collection))),
       ]
         + (useReverse ? [URLQueryItem(name: "reverse", value: "true")] : [])
         + (cursor.map { [URLQueryItem(name: "cursor", value: $0)] } ?? [])
@@ -750,6 +757,10 @@ public struct ThinAppViewEnrollBackfill: Sendable {
 
   private func errorCategory(_ error: Error) -> String {
     String(describing: type(of: error))
+  }
+
+  static func listRecordsPageLimit(for collection: String) -> Int {
+    collection == "site.standard.document" ? 10 : 50
   }
 }
 

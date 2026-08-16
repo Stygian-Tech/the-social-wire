@@ -87,5 +87,7 @@ struct JetstreamV2ProjectionEventTests {
     ])
     #expect(authoritative.jetstreamMode.drainsV2Inbox)
     #expect(!authoritative.jetstreamMode.runsLegacySubscriber)
+    #expect(!authoritative.jetstreamMode.runsLegacyProactiveBackfill)
+    #expect(shadow.jetstreamMode.runsLegacyProactiveBackfill)
   }
 }
