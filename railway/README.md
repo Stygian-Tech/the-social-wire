@@ -40,4 +40,4 @@ tables as rollback targets, and follow the Development-first change discipline
 in [`docs/architecture/redis.md`](../docs/architecture/redis.md) before future
 Production changes.
 
-Secrets, reference variables, custom domains, volumes, and region placement remain environment-specific Railway settings. Gateway, App View, Charybdis, Ops, and Jetstream V2 Ingest expose `/readyz`.
+Secrets, reference variables, custom domains, volumes, and region placement remain environment-specific Railway settings. Gateway, App View, Charybdis, Ops, and Jetstream V2 Ingest expose `/readyz`. Railway deploys Charybdis and Jetstream V2 Ingest against `/startupz` so durable catch-up or fenced-lease handoff can complete without weakening their operational readiness probes.
