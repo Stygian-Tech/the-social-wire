@@ -46,17 +46,27 @@ enum WorkerHealthResponseBuilder {
     let body: String
     let failedProbe: String?
     let failureCategory: String?
+    let failureMetadata: [String: String]
 
     init(
       status: HTTPResponseStatus,
       body: String,
       failedProbe: String? = nil,
-      failureCategory: String? = nil
+      failureCategory: String? = nil,
+      failureMetadata: [String: String] = [:]
     ) {
       self.status = status
       self.body = body
       self.failedProbe = failedProbe
       self.failureCategory = failureCategory
+      self.failureMetadata = failureMetadata
+    }
+
+    var failureLogFields: [String: String]? {
+      guard let failedProbe, let failureCategory else { return nil }
+      return failureMetadata.merging(
+        ["probe": failedProbe, "reason": failureCategory]
+      ) { _, requiredValue in requiredValue }
     }
   }
 
@@ -84,7 +94,8 @@ enum WorkerHealthResponseBuilder {
           status: .serviceUnavailable,
           body: #"{"service":"charybdis","status":"unavailable"}"#,
           failedProbe: "startup",
-          failureCategory: healthFailureCategory(error)
+          failureCategory: healthFailureCategory(error),
+          failureMetadata: healthFailureMetadata(error)
         )
       }
     case "/readyz":
@@ -96,7 +107,8 @@ enum WorkerHealthResponseBuilder {
           status: .serviceUnavailable,
           body: #"{"service":"charybdis","status":"unavailable"}"#,
           failedProbe: "readiness",
-          failureCategory: healthFailureCategory(error)
+          failureCategory: healthFailureCategory(error),
+          failureMetadata: healthFailureMetadata(error)
         )
       }
     default:
@@ -105,7 +117,9 @@ enum WorkerHealthResponseBuilder {
   }
 
   private static func healthFailureCategory(_ error: Error) -> String {
-    if let readinessError = error as? WorkerReadinessError {
+    let readinessError = (error as? WorkerReadinessFailure)?.reason
+      ?? (error as? WorkerReadinessError)
+    if let readinessError {
       return switch readinessError {
       case .missingIngestionHeartbeat: "missing_ingestion_heartbeat"
       case .staleIngestionHeartbeat: "stale_ingestion_heartbeat"
@@ -115,6 +129,10 @@ enum WorkerHealthResponseBuilder {
       }
     }
     return String(String(reflecting: type(of: error)).prefix(128))
+  }
+
+  private static func healthFailureMetadata(_ error: Error) -> [String: String] {
+    (error as? WorkerReadinessFailure)?.diagnostics.logMetadata ?? [:]
   }
 }
 
@@ -172,10 +190,14 @@ private final class WorkerHealthRequestHandler: ChannelInboundHandler, @unchecke
     _ response: WorkerHealthResponseBuilder.Response,
     context: ChannelHandlerContext
   ) {
-    if let failedProbe = response.failedProbe, let failureCategory = response.failureCategory {
+    if let fields = response.failureLogFields {
+      var metadata: Logger.Metadata = [:]
+      for (key, value) in fields {
+        metadata[key] = .string(value)
+      }
       logger.error(
         "Charybdis health probe failed",
-        metadata: ["probe": "\(failedProbe)", "reason": "\(failureCategory)"]
+        metadata: metadata
       )
     }
     var buffer = context.channel.allocator.buffer(capacity: response.body.utf8.count)

@@ -85,7 +85,7 @@ struct CharybdisCommand: AsyncParsableCommand {
         group.addTask {
           try await WorkerHealthServer.run(
             startupProbe: { try await store.ping() },
-            readinessProbe: { try await readinessProbe.run() },
+            readinessProbe: { try await readinessProbe.run(includingDiagnostics: true) },
             host: listenHost,
             port: listenPort,
             logger: workerLogger
@@ -150,7 +150,7 @@ struct CharybdisCommand: AsyncParsableCommand {
         group.addTask {
           try await WorkerHealthServer.run(
             startupProbe: { try await store.ping() },
-            readinessProbe: { try await readinessProbe.run() },
+            readinessProbe: { try await readinessProbe.run(includingDiagnostics: true) },
             host: listenHost,
             port: listenPort,
             logger: workerLogger
