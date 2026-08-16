@@ -29,8 +29,8 @@ jobs:
       appview: ${{ steps.filter.outputs.appview }}
       charybdis: ${{ steps.filter.outputs.charybdis }}
       operations: ${{ steps.filter.outputs.operations }}
-      tap: ${{ steps.filter.outputs.tap }}
       jetstream_ingest: ${{ steps.filter.outputs.jetstream_ingest }}
+      database_migrator: ${{ steps.filter.outputs.database_migrator }}
       lexicons: ${{ steps.filter.outputs.lexicons }}
       spec: ${{ steps.filter.outputs.spec }}
     steps:
@@ -217,16 +217,6 @@ jobs:
         working-directory: services/operations
         run: swift test
 
-  tap:
-    name: Tap Image
-    needs: changes
-    if: needs.changes.result == 'success' && needs.changes.outputs.tap == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - name: Build image
-        run: docker build --file services/tap/Dockerfile --tag the-social-wire-tap:test .
-
   jetstream-ingest:
     name: Jetstream V2 Ingest
     needs: changes
@@ -246,6 +236,20 @@ jobs:
         run: go vet ./...
       - name: Build image
         run: docker build --file services/jetstream-ingest/Dockerfile --tag the-social-wire-jetstream-ingest:test .
+
+  database-migrator:
+    name: Database Migrator
+    needs: changes
+    if: needs.changes.result == 'success' && needs.changes.outputs.database_migrator == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Check migration runner syntax
+        run: |
+          bash -n scripts/apply-database-migrations.sh
+          bash -n scripts/verify-postgres-restore.sh
+      - name: Build image
+        run: docker build --file services/database-migrator/Dockerfile --tag the-social-wire-database-migrator:test .
 
   lexicons:
     name: Lexicons
@@ -290,8 +294,8 @@ jobs:
       - appview
       - charybdis
       - operations
-      - tap
       - jetstream-ingest
+      - database-migrator
       - lexicons
       - spec
     if: always()
@@ -307,8 +311,8 @@ jobs:
           APPVIEW_FLAG: ${{ needs.changes.outputs.appview }}
           CHARYBDIS_FLAG: ${{ needs.changes.outputs.charybdis }}
           OPERATIONS_FLAG: ${{ needs.changes.outputs.operations }}
-          TAP_FLAG: ${{ needs.changes.outputs.tap }}
           JETSTREAM_INGEST_FLAG: ${{ needs.changes.outputs.jetstream_ingest }}
+          DATABASE_MIGRATOR_FLAG: ${{ needs.changes.outputs.database_migrator }}
           LEXICONS_FLAG: ${{ needs.changes.outputs.lexicons }}
           SPEC_FLAG: ${{ needs.changes.outputs.spec }}
           WEB_RESULT: ${{ needs.web.result }}
@@ -318,8 +322,8 @@ jobs:
           APPVIEW_RESULT: ${{ needs.appview.result }}
           CHARYBDIS_RESULT: ${{ needs.charybdis.result }}
           OPERATIONS_RESULT: ${{ needs.operations.result }}
-          TAP_RESULT: ${{ needs.tap.result }}
           JETSTREAM_INGEST_RESULT: ${{ needs.jetstream-ingest.result }}
+          DATABASE_MIGRATOR_RESULT: ${{ needs.database-migrator.result }}
           LEXICONS_RESULT: ${{ needs.lexicons.result }}
           SPEC_RESULT: ${{ needs.spec.result }}
         run: |
@@ -354,7 +358,7 @@ jobs:
           check "$APPVIEW_FLAG" "$APPVIEW_RESULT" "AppView"
           check "$CHARYBDIS_FLAG" "$CHARYBDIS_RESULT" "Charybdis"
           check "$OPERATIONS_FLAG" "$OPERATIONS_RESULT" "Operations"
-          check "$TAP_FLAG" "$TAP_RESULT" "Tap Image"
           check "$JETSTREAM_INGEST_FLAG" "$JETSTREAM_INGEST_RESULT" "Jetstream V2 Ingest"
+          check "$DATABASE_MIGRATOR_FLAG" "$DATABASE_MIGRATOR_RESULT" "Database Migrator"
           check "$LEXICONS_FLAG" "$LEXICONS_RESULT" "Lexicons"
           check "$SPEC_FLAG" "$SPEC_RESULT" "OpenAPI Spec"

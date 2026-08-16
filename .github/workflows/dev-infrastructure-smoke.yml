@@ -1,0 +1,31 @@
+name: Development Infrastructure Smoke
+
+on:
+  schedule:
+    - cron: "7,22,37,52 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: development-infrastructure-smoke
+  cancel-in-progress: true
+
+jobs:
+  gateway-readiness:
+    name: Gateway, AppView, and Charybdis Readiness
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Probe the Development read path
+        run: |
+          curl \
+            --fail \
+            --silent \
+            --show-error \
+            --location \
+            --max-time 20 \
+            --retry 2 \
+            --retry-all-errors \
+            https://api.testing.thesocialwire.app/readyz >/dev/null

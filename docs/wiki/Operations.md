@@ -24,11 +24,12 @@ Access is restricted by an environment-specific operator DID allowlist. The cons
 
 Backfill creation is dry-run-first. Mutations carry idempotency and expected-version evidence. Production additionally requires the exact `PRODUCTION` confirmation. Recovery and outbound alert delivery remain separately gated by environment variables.
 
-## Tap and Charybdis
+## Jetstream and Charybdis
 
-Charybdis consumes Jetstream or the environment-matched private Tap service, polls Skyreader RSS subscriptions, and updates the AppView index. Tap currently covers `site.standard.document` and `site.standard.entry`; subscription, graph, and read-state collections are outside its 100% parity boundary.
-
-Tap has no unauthenticated health endpoint. Its readiness and repository-sync health come from authenticated capability checks and worker evidence.
+Charybdis consumes legacy Jetstream or projects the durable PostgreSQL inbox
+populated by Jetstream V2 Ingest, polls Skyreader RSS subscriptions, and updates
+the AppView index. The retired Tap transport remains represented in historical
+evidence and recovery enums, but it is no longer a deployed service.
 
 ## Runbooks
 

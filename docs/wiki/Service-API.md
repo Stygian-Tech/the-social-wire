@@ -1,6 +1,6 @@
 # Services and API
 
-Clients call the public **Gateway** host. AppView, Operations, Tap, databases, and most worker traffic stay on Railway private networking.
+Clients call the public **Gateway** host. AppView, Operations, databases, and worker traffic stay on Railway private networking.
 
 **Machine-readable contracts:**
 [OpenAPI](https://github.com/Stygian-Tech/the-social-wire/blob/main/packages/spec/openapi.yaml),
@@ -12,7 +12,7 @@ Eligible authenticated JSON queries and procedures use
 
 Streaming, health/readiness, OAuth metadata, telemetry, and vendor-owned
 transports stay HTTP. User-owned records use standard `com.atproto.repo.*`
-XRPC directly on the viewer PDS; Gateway write-through routes remain compatibility adapters.
+XRPC directly on the viewer PDS.
 L@tr exposes its foreign bookmark XRPC surface unchanged.
 The endpoint manifest records the intended transport per operation.
 
@@ -20,11 +20,11 @@ The endpoint manifest records the intended transport per operation.
 
 | Service | Role | HTTP surface |
 |---------|------|--------------|
-| **Gateway** | OAuth metadata, DPoP verification, sync/PDS acceleration, compatibility publication write-through, AppView/L@tr/Operations proxy | Public health/metadata, `/xrpc/app.thesocialwire.*`, and retained `/v1/*` adapters |
+| **Gateway** | OAuth metadata, DPoP verification, sync/PDS acceleration, AppView/L@tr/Operations proxy | Public health/metadata, `/xrpc/app.thesocialwire.*`, and retained `/v1/*` adapters |
 | **AppView** | Sidebar projection, indexed reads, unread state, bootstrap stream | Private `/xrpc/app.thesocialwire.*`, retained `/v1/*` adapters, and NDJSON bootstrap |
-| **Charybdis** | Jetstream/Tap ingestion, RSS polling, backfill, repair, TTL cleanup | No application HTTP API |
+| **Charybdis** | Jetstream ingestion and durable-inbox projection, RSS polling, backfill, repair, TTL cleanup | No application HTTP API |
+| **Jetstream V2 Ingest** | Fenced Jetstream subscription and durable PostgreSQL inbox staging | Private health/readiness only |
 | **Operations** | Operator evidence and controlled recovery | Private `/v1/operations/*`, proxied by Gateway; pending source adds Operations XRPC aliases |
-| **Tap** | Pinned Indigo repository synchronization | Private authenticated Tap API |
 
 ## Gateway compatibility route groups
 
@@ -79,7 +79,7 @@ APP_ENV=dev DATABASE_URL='postgresql://…' \
 # Terminal 3: Charybdis (optional; connects to live public ingestion by default)
 cd services/appview-worker
 APP_ENV=dev DATABASE_URL='postgresql://…' ENABLE_THIN_APPVIEW=true \
-  TAP_CONSUMER_MODE=disabled swift run AppViewWorker
+  swift run AppViewWorker
 ```
 
 Use the same disposable database for these three processes. Do not point local runs at hosted Development or Production data. Charybdis consumes external Jetstream traffic unless you explicitly configure an isolated source, so start it only when that effect is intended.

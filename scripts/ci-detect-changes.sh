@@ -97,8 +97,6 @@ filter_changed gateway \
   'packages/swift/ThinAppViewCore/**' \
   'packages/swift/OperationsCore/**' \
   'packages/swift/SocialWireRedis/**' \
-  'database/migrations/**' \
-  'scripts/apply-database-migrations.sh' \
   'railway/gateway.json' \
   '.github/workflows/ci.yml'
 
@@ -119,16 +117,18 @@ filter_changed charybdis \
   'railway/charybdis.json' \
   '.github/workflows/ci.yml'
 
-filter_changed tap \
-  'services/tap/**' \
-  'railway/tap.json' \
-  '.github/workflows/ci.yml'
-
 filter_changed jetstream_ingest \
   'services/jetstream-ingest/**' \
   'database/migrations/**' \
   'packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/Fixtures/jetstream-v2-go-sdk-v0.2.0-events.json' \
   'railway/jetstream-ingest.json' \
+  '.github/workflows/ci.yml'
+
+filter_changed database_migrator \
+  'database/migrations/**' \
+  'scripts/apply-database-migrations.sh' \
+  'services/database-migrator/**' \
+  'railway/database-migrator.json' \
   '.github/workflows/ci.yml'
 
 filter_changed lexicons \

@@ -23,7 +23,7 @@ Never work directly on `main`. If the checkout is already on an issue branch, ke
 | AppView | `services/appview` |
 | Charybdis | `services/appview-worker` |
 | Operations service | `services/operations` |
-| Tap | [services/tap/README.md](https://github.com/Stygian-Tech/the-social-wire/blob/main/services/tap/README.md) |
+| Jetstream V2 Ingest | [services/jetstream-ingest/README.md](https://github.com/Stygian-Tech/the-social-wire/blob/main/services/jetstream-ingest/README.md) |
 
 Gateway, AppView, and Charybdis currently require `APP_ENV=dev|prod` at process startup because their Operations telemetry namespace uses the same environment guard. Although SQLite backends still exist in code, the documented `APP_ENV=local` launch path is not runnable at present. For local service integration, use `APP_ENV=dev` with an isolated disposable Postgres database; never point local experiments at hosted Development or Production data.
 

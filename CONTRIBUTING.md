@@ -60,7 +60,7 @@ hosted wiki can drift or be overwritten, so make the source change here first.
 
 ## Branch protection
 
-Require the **`CI — Required`** check from [.github/workflows/ci.yml](.github/workflows/ci.yml). It gates merges on path-filtered jobs for `web`, `operations-web`, `redis`, `gateway`, `appview`, `charybdis`, `operations`, `tap`, `lexicons`, and `spec`. Railway deployment remains independent and is handled by Railway's GitHub integration.
+Require the **`CI — Required`** check from [.github/workflows/ci.yml](.github/workflows/ci.yml). It gates merges on path-filtered jobs for `web`, `operations-web`, `redis`, `gateway`, `appview`, `charybdis`, `operations`, `jetstream-ingest`, `lexicons`, and `spec`. Railway deployment remains independent and is handled by Railway's GitHub integration.
 
 ## License
 

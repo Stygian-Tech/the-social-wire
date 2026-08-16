@@ -7,9 +7,9 @@ The Social Wire separates portable user records from rebuildable application pro
 | **Web and Apple clients** | ATProto sign-in, direct or gateway-assisted PDS writes, local cache, reader UI |
 | **Gateway** | Public OAuth/DPoP edge, sync acceleration, publication writes for native clients, L@tr/Operations proxies, unbuffered AppView proxy |
 | **AppView** | Publication sidebar, indexed timelines/detail, unread state, bootstrap stream |
-| **Charybdis** | Jetstream/Tap ingestion, RSS polling, backfill, repair, and retention cleanup |
+| **Charybdis** | Jetstream ingestion and durable-inbox projection, RSS polling, backfill, repair, and retention cleanup |
+| **Jetstream V2 Ingest** | Fenced Jetstream V2 staging into PostgreSQL |
 | **Operations** | Operator-only health, evidence, gaps, alerts, traces, and controlled recovery |
-| **Tap** | Private, environment-scoped repository synchronization for covered collections |
 
 ## Data ownership
 
@@ -37,7 +37,8 @@ Web / iOS / iPadOS
                   +---- Operations
                   `---- L@tr Gateway
 
-Jetstream or Tap ---- Charybdis ---- Postgres
+Jetstream V1 -------- Charybdis ---- Postgres
+Jetstream V2 Ingest -------┘
 RSS/Atom feeds -----------^             `---- optional Redis leases/cache
 ```
 

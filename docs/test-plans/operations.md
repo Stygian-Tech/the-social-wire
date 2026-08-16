@@ -1,6 +1,6 @@
-# Operations and Tap test plan
+# Operations and ingestion-recovery test plan
 
-The operator surfaces span the Next.js console, the shared Swift control-plane package, the Operations service, and the pinned Tap image.
+The operator surfaces span the Next.js console, the shared Swift control-plane package, the Operations service, and Jetstream V2 ingestion/recovery evidence. Tap-specific cases are retained as historical compatibility coverage only.
 
 ## Local commands
 
@@ -12,7 +12,7 @@ bun install
 (cd apps/operations && APP_ENV=dev NEXT_PUBLIC_OPERATIONS_DEMO_MODE=1 bun run build)
 (cd packages/swift/OperationsCore && swift test)
 (cd services/operations && swift test)
-docker build --file services/tap/Dockerfile --tag the-social-wire-tap:test .
+(cd services/jetstream-ingest && go test ./... && go vet ./...)
 ```
 
 ## CI coverage
@@ -21,7 +21,7 @@ docker build --file services/tap/Dockerfile --tag the-social-wire-tap:test .
 |-----|----------|
 | `operations-web` | Operations UI typecheck, lint, tests, and production build |
 | `operations` | `OperationsCore` and `services/operations` Swift Testing suites |
-| `tap` | Pinned Tap Docker image builds from the monorepo context |
+| `jetstream-ingest` | Go tests, vet, and the Jetstream V2 image build |
 
 ## Manual checks
 
@@ -30,10 +30,10 @@ docker build --file services/tap/Dockerfile --tag the-social-wire-tap:test .
 - [ ] Railway Development maps `operations.testing.thesocialwire.app` to `api.testing.thesocialwire.app`; Production maps `operations.thesocialwire.app` to `api.thesocialwire.app`
 - [ ] Gateway metadata redirects to the matching Operations custom domain, never a generated `*.up.railway.app` domain
 - [ ] Production mutations require the exact `PRODUCTION` confirmation and preserve audit evidence
-- [ ] Charybdis can reach the environment-matched Tap private hostname with authenticated readiness evidence
+- [ ] Jetstream V2 Ingest holds the environment-scoped fenced lease and Charybdis reports the intended V1/V2 authority mode
 
 ## Related
 
 - [Operations UI](../../apps/operations/README.md)
 - [Operations runbooks](../runbooks/operations/README.md)
-- [Tap service](../../services/tap/README.md)
+- [Retired Tap cutover history](../runbooks/operations/tap-shadow-and-cutover.md)

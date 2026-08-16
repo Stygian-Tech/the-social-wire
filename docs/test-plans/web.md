@@ -41,7 +41,6 @@ The suite is intentionally colocated and grows with the owning code. Representat
 | Route | Test file |
 |-------|-----------|
 | `oauth/web-client-metadata` | `api/web-client-metadata.test.ts` |
-| `resolve-add-publication` | `api/resolve-add-publication.test.ts` |
 | `rss-feed` | `api/rss-feed.test.ts` |
 | `embed-frame` | `api/embed-frame.test.ts` |
 | `oembed` | `api/oembed.test.ts` |

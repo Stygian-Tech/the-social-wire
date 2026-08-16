@@ -19,28 +19,19 @@ hosted routes and remain as compatibility routes in the new source.
 
 The projection merges follow-graph discovery, graph subscriptions, Skyreader RSS rows, folder prefs, and per-publication AppView scope keys. Clients paint folder/publication headers immediately and fill rows as stream events arrive.
 
-## Legacy and diagnostic client-side discovery
+## Thin-client boundary
 
-The web codebase retains direct author-PDS discovery helpers for diagnostics and compatibility probes, but current feed/detail hooks require AppView rather than providing a complete fallback:
+Web and iOS do not crawl the viewer's follow graph or merge a client-side discovery cache. AppView owns the canonical sequence:
 
-1. Fetch follows via `app.bsky.graph.getFollows` (public App View) merged with PDS graph
-2. Check each followed DID for `site.standard.publication`, `site.standard.document`, and legacy entry collections
-3. Cache results in React Query / SwiftData
+1. Fetch follow subjects from the viewer PDS and the public Bluesky graph.
+2. Resolve publication records on author PDSes.
+3. Persist the rebuildable sidebar projection and stream it to clients.
 
-```
-GET https://{author-pds}/xrpc/com.atproto.repo.listRecords
-  ?repo={did}
-  &collection=site.standard.document
-  &limit=1
-```
-
-Profile metadata comes from `app.bsky.graph.getFollows` and `app.bsky.actor.getProfile`.
+The web client retains targeted public record reads for article URL recovery and publication-row hydration, not a follow-graph fallback.
 
 ## Concurrency
 
-Legacy client probes batch followed DID checks (web: settled promises; older iOS paths used Swift task groups).
-
-When Thin AppView is enabled, web and iOS call
+Web and iOS call
 **`app.thesocialwire.appview.enrollSources`** with author DIDs after sidebar load
 (best-effort backfill). Charybdis (`appview-worker`) also runs **proactive PDS
 backfill** on a timer for subscribed authors.

@@ -13,13 +13,14 @@ const pathFilters = readFileSync(
 );
 
 const railwayServices = [
-  { service: "Web", config: "web" },
-  { service: "Operations Web", config: "operations-web" },
-  { service: "Gateway", config: "gateway" },
-  { service: "App View", config: "appview" },
-  { service: "Charybdis", config: "charybdis" },
-  { service: "Ops", config: "operations" },
-  { service: "Tap", config: "tap" },
+  { service: "Web", config: "web", restartPolicy: "ALWAYS" },
+  { service: "Operations Web", config: "operations-web", restartPolicy: "ALWAYS" },
+  { service: "Gateway", config: "gateway", restartPolicy: "ALWAYS" },
+  { service: "App View", config: "appview", restartPolicy: "ALWAYS" },
+  { service: "Charybdis", config: "charybdis", restartPolicy: "ALWAYS" },
+  { service: "Jetstream V2 Ingest", config: "jetstream-ingest", restartPolicy: "ALWAYS" },
+  { service: "Ops", config: "operations", restartPolicy: "ALWAYS" },
+  { service: "Database Migrator", config: "database-migrator", restartPolicy: "NEVER" },
 ] as const;
 
 describe("CI workflow configuration", () => {
@@ -33,7 +34,8 @@ describe("CI workflow configuration", () => {
       "appview",
       "charybdis",
       "operations",
-      "tap",
+      "jetstream-ingest",
+      "database-migrator",
     ]) {
       expect(workflow).toContain(`  ${job}:`);
     }
@@ -59,7 +61,7 @@ describe("CI workflow configuration", () => {
       "utf8",
     );
 
-    for (const { service, config: configName } of railwayServices) {
+    for (const { service, config: configName, restartPolicy } of railwayServices) {
       const path = join(repositoryRoot, "railway", `${configName}.json`);
       expect(existsSync(path)).toBe(true);
 
@@ -80,7 +82,7 @@ describe("CI workflow configuration", () => {
       if (config.build?.builder === "DOCKERFILE") {
         expect(config.build.dockerfilePath).toMatch(/^\/services\//);
       }
-      expect(config.deploy?.restartPolicyType).toBe("ALWAYS");
+      expect(config.deploy?.restartPolicyType).toBe(restartPolicy);
       expect(deploymentReadme).toContain(
         `| ${service} | \`/railway/${configName}.json\` |`,
       );
@@ -106,7 +108,8 @@ describe("CI workflow configuration", () => {
       "appview",
       "charybdis",
       "operations",
-      "tap",
+      "jetstream_ingest",
+      "database_migrator",
       "lexicons",
       "spec",
     ]) {

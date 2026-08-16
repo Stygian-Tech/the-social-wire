@@ -154,12 +154,6 @@ public struct RequestTraceMiddleware: RouterMiddleware {
       components[3] = ":id"
     } else if
       components.count >= 4,
-      components[1] == "publications",
-      ["folders", "subscriptions", "rss-subscriptions"].contains(components[2])
-    {
-      components[3] = ":rkey"
-    } else if
-      components.count >= 4,
       components[1] == "latr",
       components[2] == "saves"
     {

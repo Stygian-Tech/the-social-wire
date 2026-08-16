@@ -9,13 +9,10 @@
       "/packages/swift/ThinAppViewCore/**",
       "/packages/swift/OperationsCore/**",
       "/packages/swift/SocialWireRedis/**",
-      "/database/migrations/**",
-      "/scripts/apply-database-migrations.sh",
       "/railway/gateway.json"
     ]
   },
   "deploy": {
-    "preDeployCommand": "/usr/local/bin/apply-database-migrations",
     "healthcheckPath": "/readyz",
     "healthcheckTimeout": 600,
     "restartPolicyType": "ALWAYS"

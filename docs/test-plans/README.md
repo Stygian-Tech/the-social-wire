@@ -14,9 +14,9 @@ Verification guides for each surface in the monorepo. Tests live **in the owning
 | ThinAppViewCore | [worker.md](./worker.md#thinappviewcore) | `cd packages/swift/ThinAppViewCore && swift test` | `charybdis` |
 | OperationsCore | [operations.md](./operations.md) | `cd packages/swift/OperationsCore && swift test` | `operations` |
 | Operations service | [operations.md](./operations.md) | `cd services/operations && swift test` | `operations` |
-| Tap image | [operations.md](./operations.md) | `docker build --file services/tap/Dockerfile --tag the-social-wire-tap:test .` | `tap` |
+| Jetstream V2 Ingest | [operations.md](./operations.md) | `(cd services/jetstream-ingest && go test ./... && go vet ./...)` | `jetstream-ingest` |
 | iOS | [apple.md](./apple.md) | Xcode **Cmd+U** | Local only (Xcode Cloud deferred) |
-| Database migrations | [database.md](./database.md) | `DATABASE_URL=… bash scripts/apply-database-migrations.sh` | Railway pre-deploy + local validation |
+| Database migrations | [database.md](./database.md) | `DATABASE_URL=… bash scripts/apply-database-migrations.sh` | Database Migrator job + local validation |
 | Lexicons | [web.md](./web.md#lexicons) | `cd packages/lexicons && bun test` | `lexicons` |
 | OpenAPI spec | [api.md](./api.md#openapi-drift) | `cd packages/spec && bun test` | `spec` |
 
@@ -49,8 +49,8 @@ cd packages/swift/ThinAppViewCore && swift test && cd ../../..
 cd packages/lexicons && bun test && cd ../..
 cd packages/spec && bun test && cd ../..
 
-# Tap image
-docker build --file services/tap/Dockerfile --tag the-social-wire-tap:test .
+# Jetstream V2 Ingest
+(cd services/jetstream-ingest && go test ./... && go vet ./...)
 
 # Database migration validation (use a disposable Postgres database)
 DATABASE_URL='postgresql://…' bash scripts/apply-database-migrations.sh

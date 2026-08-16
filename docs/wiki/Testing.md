@@ -18,8 +18,8 @@ Automated and manual verification for every package in the monorepo.
 | ThinAppViewCore | `cd packages/swift/ThinAppViewCore && swift test` | `charybdis` |
 | OperationsCore | `cd packages/swift/OperationsCore && swift test` | `operations` |
 | Operations service | `cd services/operations && swift test` | `operations` |
-| Tap image | `docker build --file services/tap/Dockerfile --tag the-social-wire-tap:test .` | `tap` |
-| Database migrations | `DATABASE_URL=… bash scripts/apply-database-migrations.sh` | Railway pre-deploy + local validation |
+| Jetstream V2 Ingest | `(cd services/jetstream-ingest && go test ./... && go vet ./...)` | `jetstream-ingest` |
+| Database migrations | `DATABASE_URL=… bash scripts/apply-database-migrations.sh` | Database Migrator job + local validation |
 | Lexicons | `cd packages/lexicons && bun test` | `lexicons` |
 | OpenAPI spec | `cd packages/spec && bun test` | `spec` |
 | iOS | Xcode **Cmd+U** | Local only |
@@ -30,7 +30,7 @@ Automated and manual verification for every package in the monorepo.
 - [Gateway](https://github.com/Stygian-Tech/the-social-wire/blob/main/docs/test-plans/api.md) — Swift Testing, auth, Bruno
 - [Charybdis + ThinAppViewCore](https://github.com/Stygian-Tech/the-social-wire/blob/main/docs/test-plans/worker.md)
 - [Apple](https://github.com/Stygian-Tech/the-social-wire/blob/main/docs/test-plans/apple.md) — Swift Testing, OAuth checklist
-- [Operations + Tap](https://github.com/Stygian-Tech/the-social-wire/blob/main/docs/test-plans/operations.md)
+- [Operations](https://github.com/Stygian-Tech/the-social-wire/blob/main/docs/test-plans/operations.md)
 - [Database migrations](https://github.com/Stygian-Tech/the-social-wire/blob/main/docs/test-plans/database.md) — explicit local validation
 
 ## Test location rule
@@ -39,7 +39,7 @@ Tests live **inside the owning package** (`apps/web/src/__tests__/`, `services/g
 
 ## Full CI gate
 
-The single `.github/workflows/ci.yml` workflow detects changed paths and runs the relevant Web, Operations Web, Redis, Gateway, AppView, Charybdis, Operations, Tap, Lexicon, and OpenAPI jobs. **CI — Required** is the aggregate branch-protection check. OpenAPI drift coverage checks both documented-to-source mappings and every directly registered literal `/v1/*` source path. GitHub Actions validates source only; Railway's Git integration is responsible for deployments.
+The single `.github/workflows/ci.yml` workflow detects changed paths and runs the relevant Web, Operations Web, Redis, Gateway, AppView, Charybdis, Operations, Jetstream V2 Ingest, Lexicon, and OpenAPI jobs. **CI — Required** is the aggregate branch-protection check. OpenAPI drift coverage checks both documented-to-source mappings and every directly registered literal `/v1/*` source path. GitHub Actions validates source only; Railway's Git integration is responsible for deployments.
 
 Documentation-only changes should still run the wiki integrity checker and
 `git diff --check`. The main-only publish workflow runs the same checker before

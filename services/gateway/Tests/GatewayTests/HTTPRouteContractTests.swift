@@ -51,6 +51,7 @@ struct HTTPRouteContractTests {
     )
   }
 
+
   @Test("health is public")
   func healthEndpoint() async throws {
     try await withSingletonHTTPClient { client in
@@ -442,6 +443,7 @@ struct HTTPRouteContractTests {
     #expect(OperationsProxyRoutes.idempotencyKey(from: headers) == "mutation-123")
   }
 }
+
 
 @Suite("ATProtoAuthMiddleware")
 struct ATProtoAuthMiddlewareTests {

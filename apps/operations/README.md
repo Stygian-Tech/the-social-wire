@@ -38,4 +38,4 @@ bunx turbo typecheck lint test --filter=operations
 APP_ENV=dev NEXT_PUBLIC_OPERATIONS_DEMO_MODE=1 bunx turbo build --filter=operations
 ```
 
-CI runs the same checks in **`operations-web`**. Swift control-plane and Tap verification commands are in the [Operations and Tap test plan](../../docs/test-plans/operations.md).
+CI runs the same checks in **`operations-web`**. Swift control-plane and ingestion-recovery verification commands are in the [Operations test plan](../../docs/test-plans/operations.md).
