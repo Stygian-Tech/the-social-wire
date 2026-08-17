@@ -77,12 +77,15 @@ struct JetstreamV2ProjectionEventTests {
     let defaults = ThinAppViewConfig.fromEnvironment([:])
     #expect(defaults.jetstreamMode == .v1Authoritative)
     #expect(defaults.repositoryRestoreTimeoutSeconds == 120)
+    #expect(defaults.jetstreamLeaderLeaseName == "jetstream-v2-ingest")
     let shadow = ThinAppViewConfig.fromEnvironment([
       "THIN_APPVIEW_JETSTREAM_MODE": "v2_shadow",
       "JETSTREAM_SOURCE_GENERATION": "west-filter-v2",
+      "JETSTREAM_LEADER_LEASE_NAME": "custom-v2-intake",
     ])
     #expect(shadow.jetstreamMode == .v2Shadow)
     #expect(shadow.jetstreamV2SourceGeneration == "west-filter-v2")
+    #expect(shadow.jetstreamLeaderLeaseName == "custom-v2-intake")
     #expect(shadow.jetstreamMode.runsLegacySubscriber)
     let boundedRestore = ThinAppViewConfig.fromEnvironment([
       "THIN_APPVIEW_REPOSITORY_RESTORE_TIMEOUT_SECONDS": "45"

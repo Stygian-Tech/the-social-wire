@@ -14,6 +14,180 @@ import Testing
   )
 )
 struct PostgresJetstreamInboxIntegrationTests {
+  @Test("Postgres resolves only proven terminal retired fatal-stream incidents")
+  func resolvesOnlyTerminalRetiredGenerationIncidents() async throws {
+    try await PostgresInboxFixture.withFixture { fixture in
+      let now = Date()
+      let retiredGeneration = "\(fixture.sourceGeneration)-retired"
+      let incompleteGeneration = "\(fixture.sourceGeneration)-incomplete"
+      let seamGapGeneration = "\(fixture.sourceGeneration)-seam-gap"
+      let differentIdentityGeneration = "\(fixture.sourceGeneration)-different-identity"
+      let reconciliationGeneration = "\(fixture.sourceGeneration)-reconciliation"
+      try await fixture.seedCheckpoint(
+        lastStagedSequence: 100, lastAppliedSequence: 100, at: now)
+      try await fixture.seedIntakeLease(
+        sourceGeneration: fixture.sourceGeneration,
+        name: "wrong-intake-lease",
+        expiresAt: now.addingTimeInterval(60),
+        at: now)
+      try await fixture.seedGenerationCheckpoint(
+        sourceGeneration: retiredGeneration,
+        lastStagedSequence: 50,
+        lastAppliedSequence: 50,
+        at: now)
+      try await fixture.seedGenerationCheckpoint(
+        sourceGeneration: incompleteGeneration,
+        lastStagedSequence: 60,
+        lastAppliedSequence: 59,
+        at: now)
+      try await fixture.seedGenerationCheckpoint(
+        sourceGeneration: seamGapGeneration,
+        lastStagedSequence: 0,
+        lastAppliedSequence: 0,
+        at: now)
+      try await fixture.seedGenerationCheckpoint(
+        sourceGeneration: differentIdentityGeneration,
+        lastStagedSequence: 40,
+        lastAppliedSequence: 40,
+        sourceHost: "different.jetstream.invalid",
+        at: now)
+      try await fixture.seedGenerationCheckpoint(
+        sourceGeneration: reconciliationGeneration,
+        lastStagedSequence: 45,
+        lastAppliedSequence: 45,
+        at: now)
+      try await fixture.seedReconciliationRequest(
+        sourceGeneration: reconciliationGeneration, sequence: 45, status: "pending", at: now)
+      try await fixture.seedIncident(
+        id: "retired-fatal", sourceGeneration: retiredGeneration,
+        category: "fatal_stream", status: "open", sequence: 50, at: now)
+      try await fixture.seedIncident(
+        id: "current-fatal", sourceGeneration: fixture.sourceGeneration,
+        category: "fatal_stream", status: "open", sequence: 100, at: now)
+      try await fixture.seedIncident(
+        id: "incomplete-fatal", sourceGeneration: incompleteGeneration,
+        category: "fatal_stream", status: "recovering", sequence: 60, at: now)
+      try await fixture.seedIncident(
+        id: "verification-required", sourceGeneration: retiredGeneration,
+        category: "fatal_stream", status: "verification_required", sequence: 50, at: now)
+      try await fixture.seedIncident(
+        id: "retired-nonfatal", sourceGeneration: retiredGeneration,
+        category: "transport_error", status: "open", sequence: 50, at: now)
+      try await fixture.seedIncident(
+        id: "seam-gap", sourceGeneration: seamGapGeneration,
+        category: "fatal_stream", status: "open", sequence: 0, at: now)
+      try await fixture.seedIncident(
+        id: "different-identity", sourceGeneration: differentIdentityGeneration,
+        category: "fatal_stream", status: "open", sequence: 40, at: now)
+      try await fixture.seedIncident(
+        id: "open-reconciliation", sourceGeneration: reconciliationGeneration,
+        category: "fatal_stream", status: "open", sequence: 45, at: now)
+
+      #expect(
+        try await fixture.store.resolveTerminalRetiredGenerationIncidents(
+          environment: fixture.environment,
+          activeSourceGeneration: fixture.sourceGeneration,
+          activeLeaseName: ThinAppViewConfig.defaultJetstreamLeaderLeaseName,
+          at: now) == 0
+      )
+      try await fixture.seedIntakeLease(
+        sourceGeneration: fixture.sourceGeneration,
+        expiresAt: now.addingTimeInterval(60),
+        at: now)
+
+      #expect(
+        try await fixture.store.resolveTerminalRetiredGenerationIncidents(
+          environment: fixture.environment,
+          activeSourceGeneration: fixture.sourceGeneration,
+          at: now) == 1
+      )
+      let resolved = try await fixture.incidentEvidence(id: "retired-fatal")
+      #expect(resolved.status == "resolved")
+      #expect(resolved.recoveredThroughCursor == 50)
+      #expect(resolved.evidence.contains("retired_generation_terminal"))
+      #expect(resolved.evidence.contains("retired-generation-terminal-v1"))
+      #expect(resolved.evidence.contains("identityAndInclusiveOverlapVerified"))
+      #expect(try await fixture.incidentStatus(id: "current-fatal") == "open")
+      #expect(try await fixture.incidentStatus(id: "incomplete-fatal") == "recovering")
+      #expect(try await fixture.incidentStatus(id: "verification-required") == "verification_required")
+      #expect(try await fixture.incidentStatus(id: "retired-nonfatal") == "open")
+      #expect(try await fixture.incidentStatus(id: "seam-gap") == "open")
+      #expect(try await fixture.incidentStatus(id: "different-identity") == "open")
+      #expect(try await fixture.incidentStatus(id: "open-reconciliation") == "open")
+      #expect(
+        try await fixture.store.resolveTerminalRetiredGenerationIncidents(
+          environment: fixture.environment,
+          activeSourceGeneration: fixture.sourceGeneration,
+          at: now) == 0
+      )
+    }
+  }
+
+  @Test("Postgres retired resolver enforces the terminal inbox allowlist")
+  func retiredResolverTerminalInboxAllowlist() async throws {
+    try await PostgresInboxFixture.withFixture { fixture in
+      let now = Date()
+      try await fixture.seedCheckpoint(
+        lastStagedSequence: 100, lastAppliedSequence: 100, at: now)
+      try await fixture.seedIntakeLease(
+        sourceGeneration: fixture.sourceGeneration,
+        expiresAt: now.addingTimeInterval(60),
+        at: now)
+      let cases: [(generation: String, sequence: Int64, status: String, reconciled: Bool)] = [
+        ("\(fixture.sourceGeneration)-pending-reconciled", 10, "pending", true),
+        ("\(fixture.sourceGeneration)-retry-reconciled", 20, "retry", true),
+        ("\(fixture.sourceGeneration)-dead-letter", 30, "dead_letter", false),
+        ("\(fixture.sourceGeneration)-dead-letter-reconciled", 40, "dead_letter", true),
+      ]
+      for item in cases {
+        try await fixture.seedGenerationCheckpoint(
+          sourceGeneration: item.generation,
+          lastStagedSequence: item.sequence,
+          lastAppliedSequence: item.sequence,
+          at: now)
+        try await fixture.seedInbox(
+          sequence: item.sequence,
+          repoDid: "did:plc:terminal-\(item.sequence)",
+          sourceGeneration: item.generation,
+          trackedLifecycle: false,
+          status: item.status,
+          reconciledAt: item.reconciled ? now : nil,
+          at: now)
+        try await fixture.seedIncident(
+          id: item.generation,
+          sourceGeneration: item.generation,
+          category: "fatal_stream",
+          status: "open",
+          sequence: item.sequence,
+          at: now)
+      }
+
+      #expect(
+        try await fixture.store.resolveTerminalRetiredGenerationIncidents(
+          environment: fixture.environment,
+          activeSourceGeneration: fixture.sourceGeneration,
+          activeLeaseName: ThinAppViewConfig.defaultJetstreamLeaderLeaseName,
+          at: now) == 1
+      )
+      #expect(
+        try await fixture.incidentStatus(
+          id: "\(fixture.sourceGeneration)-pending-reconciled") == "open"
+      )
+      #expect(
+        try await fixture.incidentStatus(
+          id: "\(fixture.sourceGeneration)-retry-reconciled") == "open"
+      )
+      #expect(
+        try await fixture.incidentStatus(
+          id: "\(fixture.sourceGeneration)-dead-letter") == "open"
+      )
+      #expect(
+        try await fixture.incidentStatus(
+          id: "\(fixture.sourceGeneration)-dead-letter-reconciled") == "resolved"
+      )
+    }
+  }
+
   @Test("Postgres scope filter uses DB-current roles and records an explicit terminal state")
   func scopeFilterUsesCurrentRoles() async throws {
     try await PostgresInboxFixture.withFixture { fixture in
@@ -384,24 +558,153 @@ private final class PostgresInboxFixture: @unchecked Sendable {
     )
   }
 
-  func seedCheckpoint(lastStagedSequence: Int64, at now: Date) async throws {
+  func seedCheckpoint(
+    lastStagedSequence: Int64,
+    lastAppliedSequence: Int64? = nil,
+    replayAfterSequence: Int64? = 0,
+    at now: Date
+  ) async throws {
+    let lastAppliedAt: Date? = lastAppliedSequence == nil ? nil : now
     try await execute(
       """
       INSERT INTO appview_jetstream_checkpoints
         (environment, source_generation, source_host, stream_nsid, filter_fingerprint,
          cursor_kind, last_staged_seq, last_staged_event_at, last_staged_at, replay_state,
-         updated_at)
+         replay_after_seq,
+         last_applied_seq, last_applied_event_at, last_applied_at, updated_at)
       VALUES
         (\(environment), \(sourceGeneration), 'integration.jetstream.invalid',
          'network.bsky.jetstream.subscribeEvents', 'integration-filter',
-         'jetstream_v2_seq', \(lastStagedSequence), \(now), \(now), 'live', \(now))
+         'jetstream_v2_seq', \(lastStagedSequence), \(now), \(now), 'live',
+         \(replayAfterSequence),
+         \(lastAppliedSequence), \(lastAppliedAt), \(lastAppliedAt), \(now))
       """
     )
+  }
+
+  func seedGenerationCheckpoint(
+    sourceGeneration: String,
+    lastStagedSequence: Int64,
+    lastAppliedSequence: Int64,
+    sourceHost: String = "integration.jetstream.invalid",
+    streamNSID: String = "network.bsky.jetstream.subscribeEvents",
+    cursorKind: String = "jetstream_v2_seq",
+    replayAfterSequence: Int64? = 0,
+    at now: Date
+  ) async throws {
+    try await execute(
+      """
+      INSERT INTO appview_jetstream_checkpoints
+        (environment, source_generation, source_host, stream_nsid, filter_fingerprint,
+         cursor_kind, last_staged_seq, last_staged_event_at, last_staged_at,
+         last_applied_seq, last_applied_event_at, last_applied_at, replay_state,
+         replay_after_seq, updated_at)
+      VALUES
+        (\(environment), \(sourceGeneration), \(sourceHost),
+         \(streamNSID), 'integration-filter',
+         \(cursorKind), \(lastStagedSequence), \(now), \(now),
+         \(lastAppliedSequence), \(now), \(now), 'live', \(replayAfterSequence), \(now))
+      """
+    )
+  }
+
+  func seedReconciliationRequest(
+    sourceGeneration: String,
+    sequence: Int64,
+    status: String,
+    at now: Date
+  ) async throws {
+    try await execute(
+      """
+      INSERT INTO appview_ingestion_reconciliation_requests
+        (environment, id, source_generation, repo_did, status)
+      VALUES (\(environment), \("\(sourceGeneration):\(sequence)"), \(sourceGeneration),
+              'did:plc:reconciliation', \(status))
+      """
+    )
+  }
+
+  func seedIntakeLease(
+    sourceGeneration: String,
+    name: String = ThinAppViewConfig.defaultJetstreamLeaderLeaseName,
+    expiresAt: Date,
+    at now: Date
+  ) async throws {
+    try await execute(
+      """
+      INSERT INTO appview_ingestion_leases
+        (environment, lease_name, source_generation, owner_id, fencing_token, acquired_at,
+         lease_expires_at, released_at, updated_at)
+      VALUES (\(environment), \(name), \(sourceGeneration),
+              'integration-worker', 1, \(now), \(expiresAt), NULL, \(now))
+      ON CONFLICT (environment, lease_name) DO UPDATE
+      SET source_generation = EXCLUDED.source_generation,
+          owner_id = EXCLUDED.owner_id,
+          fencing_token = appview_ingestion_leases.fencing_token + 1,
+          acquired_at = EXCLUDED.acquired_at,
+          lease_expires_at = EXCLUDED.lease_expires_at,
+          released_at = NULL,
+          updated_at = EXCLUDED.updated_at
+      """
+    )
+  }
+
+  func seedIncident(
+    id: String,
+    sourceGeneration: String,
+    category: String,
+    status: String,
+    sequence: Int64,
+    at now: Date
+  ) async throws {
+    try await execute(
+      """
+      INSERT INTO appview_ingestion_incidents
+        (environment, id, source_generation, source_host, source, cursor_kind,
+         start_cursor, end_cursor, category, status, occurrence_count,
+         first_detected_at, last_detected_at, last_error, replay_state,
+         verification_evidence, updated_at, version)
+      VALUES (\(environment), \(id), \(sourceGeneration), 'integration.jetstream.invalid',
+              'jetstream-v2', 'jetstream_v2_seq', \(sequence), \(sequence), \(category),
+              \(status), 1, \(now), \(now), 'TLS handshake timeout', 'live',
+              '{}'::jsonb, \(now), 0)
+      """
+    )
+  }
+
+  func incidentStatus(id: String) async throws -> String? {
+    let rows = try await pool.query(
+      """
+      SELECT status FROM appview_ingestion_incidents
+      WHERE environment = \(environment) AND id = \(id)
+      """,
+      logger: logger
+    )
+    for try await row in rows { return try row.decode(String.self) }
+    return nil
+  }
+
+  func incidentEvidence(
+    id: String
+  ) async throws -> (status: String, recoveredThroughCursor: Int64?, evidence: String) {
+    let rows = try await pool.query(
+      """
+      SELECT status, recovered_through_cursor, verification_evidence::text
+      FROM appview_ingestion_incidents
+      WHERE environment = \(environment) AND id = \(id)
+      """,
+      logger: logger
+    )
+    for try await row in rows {
+      return try row.decode((String, Int64?, String).self)
+    }
+    throw AppViewIngestionInboxStoreError.invalidRow
   }
 
   func seedInbox(
     sequence: Int64,
     repoDid: String,
+    sourceGeneration overrideSourceGeneration: String? = nil,
     eventKind: String = "identity",
     collection: String? = nil,
     trackedLifecycle: Bool = true,
@@ -409,22 +712,24 @@ private final class PostgresInboxFixture: @unchecked Sendable {
     leaseOwner: String? = nil,
     leaseToken: String? = nil,
     leaseExpiresAt: Date? = nil,
+    reconciledAt: Date? = nil,
     at now: Date
   ) async throws {
     if eventKind != "commit", trackedLifecycle {
       try await seedAuthorScope(did: repoDid, at: now)
     }
     let payload = "{}"
+    let inboxSourceGeneration = overrideSourceGeneration ?? sourceGeneration
     try await execute(
       """
       INSERT INTO appview_ingestion_inbox
         (environment, source_generation, seq, source_host, cursor_kind, event_kind, repo_did,
          collection, payload, event_time, status, attempt_count, next_attempt_at, lease_owner, lease_token,
-         lease_expires_at, staged_at, updated_at)
+         lease_expires_at, staged_at, reconciled_at, updated_at)
       VALUES
-        (\(environment), \(sourceGeneration), \(sequence), 'integration.jetstream.invalid',
+        (\(environment), \(inboxSourceGeneration), \(sequence), 'integration.jetstream.invalid',
          'jetstream_v2_seq', \(eventKind), \(repoDid), \(collection), \(payload)::jsonb, \(now), \(status), 0,
-         \(now), \(leaseOwner), \(leaseToken), \(leaseExpiresAt), \(now), \(now))
+         \(now), \(leaseOwner), \(leaseToken), \(leaseExpiresAt), \(now), \(reconciledAt), \(now))
       """
     )
   }
@@ -559,6 +864,7 @@ private final class PostgresInboxFixture: @unchecked Sendable {
         last_applied_event_at TIMESTAMPTZ,
         last_applied_at TIMESTAMPTZ,
         replay_state TEXT NOT NULL DEFAULT 'idle',
+        replay_after_seq BIGINT,
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         PRIMARY KEY (environment, source_generation)
       )
@@ -636,6 +942,49 @@ private final class PostgresInboxFixture: @unchecked Sendable {
         PRIMARY KEY (environment, id)
       )
       """,
+      """
+      CREATE TABLE IF NOT EXISTS appview_ingestion_leases (
+        environment TEXT NOT NULL,
+        lease_name TEXT NOT NULL,
+        source_generation TEXT NOT NULL,
+        owner_id TEXT NOT NULL,
+        fencing_token BIGINT NOT NULL,
+        acquired_at TIMESTAMPTZ NOT NULL,
+        lease_expires_at TIMESTAMPTZ NOT NULL,
+        released_at TIMESTAMPTZ,
+        updated_at TIMESTAMPTZ NOT NULL,
+        PRIMARY KEY (environment, lease_name)
+      )
+      """,
+      """
+      CREATE TABLE IF NOT EXISTS appview_ingestion_incidents (
+        environment TEXT NOT NULL,
+        id TEXT NOT NULL,
+        source_generation TEXT,
+        source_host TEXT,
+        source TEXT NOT NULL,
+        cursor_kind TEXT NOT NULL,
+        start_cursor BIGINT,
+        end_cursor BIGINT,
+        category TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'open',
+        occurrence_count BIGINT NOT NULL DEFAULT 1,
+        first_detected_at TIMESTAMPTZ NOT NULL,
+        last_detected_at TIMESTAMPTZ NOT NULL,
+        last_error TEXT,
+        replay_state TEXT,
+        replay_bytes_downloaded BIGINT NOT NULL DEFAULT 0,
+        replay_retry_count INTEGER NOT NULL DEFAULT 0,
+        replay_range_resume_count INTEGER NOT NULL DEFAULT 0,
+        replay_sealed_seq BIGINT,
+        recovered_through_cursor BIGINT,
+        verification_evidence JSONB NOT NULL DEFAULT '{}'::jsonb,
+        resolved_at TIMESTAMPTZ,
+        updated_at TIMESTAMPTZ NOT NULL,
+        version INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (environment, id)
+      )
+      """,
     ]
     for statement in statements { try await execute(statement) }
   }
@@ -646,6 +995,16 @@ private final class PostgresInboxFixture: @unchecked Sendable {
   }
 
   private func shutdown() async {
+    try? await execute(
+      """
+      DELETE FROM appview_ingestion_incidents WHERE environment = \(environment)
+      """
+    )
+    try? await execute(
+      """
+      DELETE FROM appview_ingestion_leases WHERE environment = \(environment)
+      """
+    )
     try? await execute(
       """
       DELETE FROM appview_ingestion_reconciliation_requests

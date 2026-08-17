@@ -463,6 +463,109 @@ public init(pool: PostgresClient, logger: Logger) {
     return resolved
   }
 
+  public func resolveTerminalRetiredGenerationIncidents(
+    environment: String,
+    activeSourceGeneration: String,
+    activeLeaseName: String,
+    at: Date
+  ) async throws -> Int {
+    let rows = try await pool.query(
+      """
+      WITH successor AS (
+        SELECT checkpoint.source_generation, checkpoint.source_host,
+               checkpoint.stream_nsid, checkpoint.cursor_kind,
+               checkpoint.replay_after_seq, checkpoint.last_staged_seq,
+               checkpoint.updated_at AS checkpoint_observed_at,
+               lease.updated_at AS lease_observed_at
+        FROM appview_jetstream_checkpoints checkpoint
+        JOIN LATERAL (
+          SELECT candidate.updated_at
+          FROM appview_ingestion_leases candidate
+          WHERE candidate.environment = checkpoint.environment
+            AND candidate.source_generation = checkpoint.source_generation
+            AND candidate.lease_name = \(activeLeaseName)
+            AND candidate.released_at IS NULL
+            AND candidate.lease_expires_at >= \(at)
+          ORDER BY candidate.updated_at DESC
+          LIMIT 1
+        ) lease ON TRUE
+        WHERE checkpoint.environment = \(environment)
+          AND checkpoint.source_generation = \(activeSourceGeneration)
+          AND checkpoint.replay_state = 'live'
+      ), retired AS (
+        SELECT checkpoint.source_generation, checkpoint.last_staged_seq,
+               checkpoint.last_applied_seq
+        FROM appview_jetstream_checkpoints checkpoint
+        CROSS JOIN successor
+        WHERE checkpoint.environment = \(environment)
+          AND checkpoint.source_generation != successor.source_generation
+          AND checkpoint.source_host = successor.source_host
+          AND checkpoint.stream_nsid = successor.stream_nsid
+          AND checkpoint.cursor_kind = successor.cursor_kind
+          AND successor.replay_after_seq < checkpoint.last_staged_seq
+          AND successor.last_staged_seq >= checkpoint.last_staged_seq
+          AND checkpoint.replay_state = 'live'
+          AND checkpoint.last_staged_seq IS NOT NULL
+          AND checkpoint.last_applied_seq IS NOT NULL
+          AND checkpoint.last_applied_seq >= checkpoint.last_staged_seq
+          AND NOT EXISTS (
+            SELECT 1 FROM appview_ingestion_leases retired_lease
+            WHERE retired_lease.environment = checkpoint.environment
+              AND retired_lease.source_generation = checkpoint.source_generation
+              AND retired_lease.released_at IS NULL
+              AND retired_lease.lease_expires_at >= \(at))
+          AND NOT EXISTS (
+            SELECT 1 FROM appview_ingestion_inbox inbox
+            WHERE inbox.environment = checkpoint.environment
+              AND inbox.source_generation = checkpoint.source_generation
+              AND (inbox.seq > checkpoint.last_staged_seq
+                OR NOT (
+                  inbox.status IN ('applied', 'filtered_scope')
+                  OR (inbox.status = 'dead_letter' AND inbox.reconciled_at IS NOT NULL))))
+          AND NOT EXISTS (
+            SELECT 1 FROM appview_ingestion_reconciliation_requests request
+            WHERE request.environment = checkpoint.environment
+              AND request.source_generation = checkpoint.source_generation
+              AND request.status IN ('pending', 'leased', 'failed'))
+      )
+      UPDATE appview_ingestion_incidents incident
+      SET status = 'resolved', replay_state = 'live',
+          recovered_through_cursor = retired.last_applied_seq,
+          verification_evidence = incident.verification_evidence || jsonb_build_object(
+            'recovery', 'retired_generation_terminal',
+            'resolutionPolicy', 'retired-generation-terminal-v1',
+            'retiredSourceGeneration', retired.source_generation,
+            'successorSourceGeneration', successor.source_generation,
+            'successorLeaseName', \(activeLeaseName),
+            'successorReplayAfterSequence', successor.replay_after_seq::text,
+            'successorLastStagedSequence', successor.last_staged_seq::text,
+            'identityAndInclusiveOverlapVerified', true,
+            'retiredLastStagedSequence', retired.last_staged_seq::text,
+            'retiredTerminalPrefixSequence', retired.last_applied_seq::text,
+            'allRetiredRowsTerminal', true,
+            'successorCheckpointObservedAt', successor.checkpoint_observed_at,
+            'successorLeaseObservedAt', successor.lease_observed_at),
+          resolved_at = \(at), updated_at = \(at), version = incident.version + 1
+      FROM retired CROSS JOIN successor
+      WHERE incident.environment = \(environment)
+        AND incident.source_generation = retired.source_generation
+        AND incident.source = 'jetstream-v2'
+        AND incident.cursor_kind = 'jetstream_v2_seq'
+        AND incident.category = 'fatal_stream'
+        AND incident.status IN ('open', 'recovering')
+        AND (incident.start_cursor IS NULL
+          OR incident.start_cursor <= retired.last_applied_seq)
+        AND (incident.end_cursor IS NULL
+          OR incident.end_cursor <= retired.last_applied_seq)
+      RETURNING 1
+      """,
+      logger: logger
+    )
+    var resolved = 0
+    for try await _ in rows { resolved += 1 }
+    return resolved
+  }
+
   public func claimIngestionReconciliationRequests(
     environment: String,
     sourceGeneration: String,

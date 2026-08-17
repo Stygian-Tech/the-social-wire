@@ -547,6 +547,133 @@ public init(path dbPath: String, logger: Logger) throws {
     }
   }
 
+  public func resolveTerminalRetiredGenerationIncidents(
+    environment: String,
+    activeSourceGeneration: String,
+    activeLeaseName: String,
+    at: Date
+  ) async throws -> Int {
+    try await db.write { db in
+      let now = Self.isoString(from: at)
+      guard let successor = try Row.fetchOne(
+        db,
+        sql: """
+          SELECT checkpoint.source_generation, checkpoint.source_host,
+                 checkpoint.stream_nsid, checkpoint.cursor_kind,
+                 checkpoint.replay_after_seq, checkpoint.last_staged_seq,
+                 checkpoint.updated_at AS checkpoint_observed_at,
+                 lease.updated_at AS lease_observed_at
+          FROM appview_jetstream_checkpoints checkpoint
+          JOIN appview_ingestion_leases lease
+            ON lease.environment = checkpoint.environment
+           AND lease.source_generation = checkpoint.source_generation
+           AND lease.lease_name = ?
+           AND lease.released_at IS NULL
+           AND lease.lease_expires_at >= ?
+          WHERE checkpoint.environment = ? AND checkpoint.source_generation = ?
+            AND checkpoint.replay_state = 'live'
+          ORDER BY lease.updated_at DESC
+          LIMIT 1
+          """,
+        arguments: [activeLeaseName, now, environment, activeSourceGeneration]
+      ) else { return 0 }
+      let successorGeneration: String = successor["source_generation"]
+      let successorSourceHost: String = successor["source_host"]
+      let successorStreamNSID: String = successor["stream_nsid"]
+      let successorCursorKind: String = successor["cursor_kind"]
+      let replayAfterSequence: Int64? = successor["replay_after_seq"]
+      let lastStagedSequence: Int64? = successor["last_staged_seq"]
+      guard let successorReplayAfterSequence = replayAfterSequence,
+            let successorLastStagedSequence = lastStagedSequence else { return 0 }
+      let successorCheckpointObservedAt: String = successor["checkpoint_observed_at"]
+      let successorLeaseObservedAt: String = successor["lease_observed_at"]
+      let retired = try Row.fetchAll(
+        db,
+        sql: """
+          SELECT checkpoint.source_generation, checkpoint.last_staged_seq,
+                 checkpoint.last_applied_seq
+          FROM appview_jetstream_checkpoints checkpoint
+          WHERE checkpoint.environment = ? AND checkpoint.source_generation != ?
+            AND checkpoint.source_host = ? AND checkpoint.stream_nsid = ?
+            AND checkpoint.cursor_kind = ?
+            AND ? < checkpoint.last_staged_seq
+            AND ? >= checkpoint.last_staged_seq
+            AND checkpoint.replay_state = 'live'
+            AND checkpoint.last_staged_seq IS NOT NULL
+            AND checkpoint.last_applied_seq IS NOT NULL
+            AND checkpoint.last_applied_seq >= checkpoint.last_staged_seq
+            AND NOT EXISTS (
+              SELECT 1 FROM appview_ingestion_leases retired_lease
+              WHERE retired_lease.environment = checkpoint.environment
+                AND retired_lease.source_generation = checkpoint.source_generation
+                AND retired_lease.released_at IS NULL
+                AND retired_lease.lease_expires_at >= ?)
+            AND NOT EXISTS (
+              SELECT 1 FROM appview_ingestion_inbox inbox
+              WHERE inbox.environment = checkpoint.environment
+                AND inbox.source_generation = checkpoint.source_generation
+                AND (inbox.seq > checkpoint.last_staged_seq
+                  OR NOT (
+                    inbox.status IN ('applied', 'filtered_scope')
+                    OR (inbox.status = 'dead_letter' AND inbox.reconciled_at IS NOT NULL))))
+            AND NOT EXISTS (
+              SELECT 1 FROM appview_ingestion_reconciliation_requests request
+              WHERE request.environment = checkpoint.environment
+                AND request.source_generation = checkpoint.source_generation
+                AND request.status IN ('pending', 'leased', 'failed'))
+          ORDER BY checkpoint.source_generation
+          """,
+        arguments: [
+          environment, successorGeneration, successorSourceHost, successorStreamNSID,
+          successorCursorKind, successorReplayAfterSequence, successorLastStagedSequence, now,
+        ]
+      )
+      var resolved = 0
+      for checkpoint in retired {
+        let retiredGeneration: String = checkpoint["source_generation"]
+        let lastStagedSequence: Int64 = checkpoint["last_staged_seq"]
+        let terminalPrefixSequence: Int64 = checkpoint["last_applied_seq"]
+        let evidenceData = try JSONSerialization.data(withJSONObject: [
+          "recovery": "retired_generation_terminal",
+          "resolutionPolicy": "retired-generation-terminal-v1",
+          "retiredSourceGeneration": retiredGeneration,
+          "successorSourceGeneration": successorGeneration,
+          "successorLeaseName": activeLeaseName,
+          "successorReplayAfterSequence": String(successorReplayAfterSequence),
+          "successorLastStagedSequence": String(successorLastStagedSequence),
+          "identityAndInclusiveOverlapVerified": true,
+          "retiredLastStagedSequence": String(lastStagedSequence),
+          "retiredTerminalPrefixSequence": String(terminalPrefixSequence),
+          "allRetiredRowsTerminal": true,
+          "successorCheckpointObservedAt": successorCheckpointObservedAt,
+          "successorLeaseObservedAt": successorLeaseObservedAt,
+        ], options: [.sortedKeys])
+        guard let evidence = String(data: evidenceData, encoding: .utf8) else {
+          throw AppViewIngestionInboxStoreError.invalidRow
+        }
+        try db.execute(
+          sql: """
+            UPDATE appview_ingestion_incidents
+            SET status = 'resolved', replay_state = 'live', recovered_through_cursor = ?,
+                verification_evidence = json_patch(verification_evidence, ?), resolved_at = ?,
+                updated_at = ?, version = version + 1
+            WHERE environment = ? AND source_generation = ? AND source = 'jetstream-v2'
+              AND cursor_kind = 'jetstream_v2_seq' AND category = 'fatal_stream'
+              AND status IN ('open', 'recovering')
+              AND (start_cursor IS NULL OR start_cursor <= ?)
+              AND (end_cursor IS NULL OR end_cursor <= ?)
+            """,
+          arguments: [
+            terminalPrefixSequence, evidence, now, now, environment, retiredGeneration,
+            terminalPrefixSequence, terminalPrefixSequence,
+          ]
+        )
+        resolved += db.changesCount
+      }
+      return resolved
+    }
+  }
+
   public func claimIngestionReconciliationRequests(
     environment: String,
     sourceGeneration: String,
@@ -931,6 +1058,22 @@ public init(path dbPath: String, logger: Logger) throws {
         completed_at TEXT,
         PRIMARY KEY (environment, id),
         UNIQUE (environment, source_generation, repo_did, trigger_seq, reason)
+      );
+      """)
+
+    try db.execute(sql: """
+      CREATE TABLE IF NOT EXISTS appview_ingestion_leases (
+        environment TEXT NOT NULL,
+        lease_name TEXT NOT NULL,
+        source_generation TEXT NOT NULL,
+        owner_id TEXT NOT NULL,
+        fencing_token INTEGER NOT NULL,
+        acquired_at TEXT NOT NULL,
+        lease_expires_at TEXT NOT NULL,
+        released_at TEXT,
+        updated_at TEXT NOT NULL,
+        CHECK (fencing_token > 0),
+        PRIMARY KEY (environment, lease_name)
       );
       """)
 

@@ -154,6 +154,7 @@ filter_changed lexicons \
 
 filter_changed spec \
   'packages/spec/**' \
+  'docs/runbooks/operations/jetstream-v2-durable-replay.md' \
   'packages/lexicons/**' \
   'apps/web/**' \
   'apps/apple/**' \

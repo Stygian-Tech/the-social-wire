@@ -15,6 +15,8 @@ public enum ThinAppViewJetstreamMode: String, Sendable, Equatable {
 
 /// Environment-driven configuration for the data-minimized Thin AppView index.
 public struct ThinAppViewConfig: Sendable {
+public static let defaultJetstreamLeaderLeaseName = "jetstream-v2-ingest"
+
 public static let canonicalContentCollections: [String] = [
     "site.standard.document",
     "site.standard.entry",
@@ -44,6 +46,7 @@ public let relayWebSocketURLs: [String]
 public var relayWebSocketURL: String { relayWebSocketURLs[0] }
 public let jetstreamMode: ThinAppViewJetstreamMode
 public let jetstreamV2SourceGeneration: String
+public let jetstreamLeaderLeaseName: String
 public let ingestionInboxMaxConcurrency: Int
 public let ingestionInboxLeaseSeconds: TimeInterval
 public let ingestionInboxPollMilliseconds: Int
@@ -78,6 +81,9 @@ public static func fromEnvironment(
       jetstreamV2SourceGeneration: env["JETSTREAM_SOURCE_GENERATION"]?
         .trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty
         ?? "jetstream-v2-us-west-v2",
+      jetstreamLeaderLeaseName: env["JETSTREAM_LEADER_LEASE_NAME"]?
+        .trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty
+        ?? Self.defaultJetstreamLeaderLeaseName,
       ingestionInboxMaxConcurrency: Self.int(
         env["THIN_APPVIEW_INGESTION_INBOX_MAX_CONCURRENCY"],
         default: 8
@@ -125,6 +131,7 @@ public static let disabled = ThinAppViewConfig(
     relayWebSocketURLs: defaultRelayWebSocketURLs,
     jetstreamMode: .v1Authoritative,
     jetstreamV2SourceGeneration: "jetstream-v2-us-west-v2",
+    jetstreamLeaderLeaseName: defaultJetstreamLeaderLeaseName,
     ingestionInboxMaxConcurrency: 8,
     ingestionInboxLeaseSeconds: 60,
     ingestionInboxPollMilliseconds: 250,

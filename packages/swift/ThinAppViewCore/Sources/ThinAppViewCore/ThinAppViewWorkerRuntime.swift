@@ -114,6 +114,7 @@ public enum ThinAppViewWorkerRuntime {
         repositoryRestorer: repositoryRestorer,
         environment: operationsConfig?.environment ?? "unknown",
         sourceGeneration: config.jetstreamV2SourceGeneration,
+        intakeLeaseName: config.jetstreamLeaderLeaseName,
         workerId: operationsConfig?.instanceId ?? "appview-worker",
         maxConcurrency: config.ingestionInboxMaxConcurrency,
         leaseSeconds: config.ingestionInboxLeaseSeconds,

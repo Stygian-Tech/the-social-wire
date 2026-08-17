@@ -147,6 +147,17 @@ public protocol ThinAppViewStore: Actor {
     at: Date
   ) async throws -> Int
 
+  /// Resolves only fully-terminal fatal-stream incidents from generations superseded by the
+  /// configured generation. The live successor must have an active fenced intake lease, match
+  /// the retired transport identity, and prove inclusive cursor overlap. Current-generation,
+  /// verification-required, and reconciliation-blocked incidents remain fail-closed.
+  func resolveTerminalRetiredGenerationIncidents(
+    environment: String,
+    activeSourceGeneration: String,
+    activeLeaseName: String,
+    at: Date
+  ) async throws -> Int
+
   func claimIngestionReconciliationRequests(
     environment: String,
     sourceGeneration: String,
@@ -427,6 +438,31 @@ public protocol ThinAppViewStore: Actor {
 }
 
 public extension ThinAppViewStore {
+  /// Default for external store conformers that have not adopted retired-generation recovery.
+  /// Remaining unresolved is the fail-closed, source-compatible behavior.
+  func resolveTerminalRetiredGenerationIncidents(
+    environment: String,
+    activeSourceGeneration: String,
+    activeLeaseName: String,
+    at: Date
+  ) async throws -> Int {
+    0
+  }
+
+  /// Source-compatible convenience for callers using the canonical intake lease name.
+  func resolveTerminalRetiredGenerationIncidents(
+    environment: String,
+    activeSourceGeneration: String,
+    at: Date
+  ) async throws -> Int {
+    try await resolveTerminalRetiredGenerationIncidents(
+      environment: environment,
+      activeSourceGeneration: activeSourceGeneration,
+      activeLeaseName: ThinAppViewConfig.defaultJetstreamLeaderLeaseName,
+      at: at
+    )
+  }
+
   func listFeedEntries(
     viewerDid: String,
     scopes: [PublicationUnreadScope],
