@@ -134,6 +134,36 @@ func TestStageBatchRejectsStaleFencingTokenBeforeInboxWrite(t *testing.T) {
 	}
 }
 
+func TestTrackedDIDsUsesCurrentAuthorAndViewerScopes(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	store := New(db, testSource())
+	mock.ExpectQuery("SELECT author_did AS repo_did").WillReturnRows(
+		sqlmock.NewRows([]string{"repo_did"}).
+			AddRow("did:plc:author").
+			AddRow("did:plc:viewer"),
+	)
+
+	dids, err := store.TrackedDIDs(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(dids) != 2 {
+		t.Fatalf("tracked DIDs = %#v", dids)
+	}
+	for _, did := range []string{"did:plc:author", "did:plc:viewer"} {
+		if _, ok := dids[did]; !ok {
+			t.Fatalf("missing tracked DID %q", did)
+		}
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestUpsertIncidentMergesExistingActiveIncident(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {

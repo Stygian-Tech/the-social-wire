@@ -85,7 +85,8 @@ public enum ThinAppViewWorkerRuntime {
         backfill: $0,
         projectionCache: projectionCache,
         maxConcurrency: config.maxEnrollConcurrency,
-        rateLimitPerSecond: max(1, config.maxEnrollConcurrency * 10)
+        rateLimitPerSecond: max(1, config.maxEnrollConcurrency * 10),
+        timeoutSeconds: config.repositoryRestoreTimeoutSeconds
       )
     }
     let inboxWorker: JetstreamInboxProjectionWorker? = if config.jetstreamMode.drainsV2Inbox {
@@ -113,12 +114,14 @@ public enum ThinAppViewWorkerRuntime {
         repositoryRestorer: repositoryRestorer,
         environment: operationsConfig?.environment ?? "unknown",
         sourceGeneration: config.jetstreamV2SourceGeneration,
+        intakeLeaseName: config.jetstreamLeaderLeaseName,
         workerId: operationsConfig?.instanceId ?? "appview-worker",
         maxConcurrency: config.ingestionInboxMaxConcurrency,
         leaseSeconds: config.ingestionInboxLeaseSeconds,
         pollMilliseconds: config.ingestionInboxPollMilliseconds,
         appliedRetentionSeconds: config.ingestionInboxAppliedRetentionSeconds,
         deadLetterRetentionSeconds: config.ingestionInboxDeadLetterRetentionSeconds,
+        projectionTimeoutSeconds: config.repositoryRestoreTimeoutSeconds,
         logger: logger
       )
     } else {
@@ -254,7 +257,7 @@ public enum ThinAppViewWorkerRuntime {
     tapConfiguration: TapConsumerConfiguration?,
     pdsReconciliationAvailable: Bool,
     jetstreamMode: ThinAppViewJetstreamMode = .v1Authoritative,
-    jetstreamV2SourceGeneration: String = "jetstream-v2-us-west-v1"
+    jetstreamV2SourceGeneration: String = "jetstream-v2-us-west-v2"
   ) -> OperationsServiceDependencyProbe {
     {
       try await store.ping()
@@ -272,10 +275,19 @@ public enum ThinAppViewWorkerRuntime {
       let durableCheckpoint = durability.checkpoints.first {
         $0.sourceGeneration == jetstreamV2SourceGeneration
       }
+      let durableInbox = Self.durableInboxMetrics(
+        durability,
+        sourceGeneration: jetstreamV2SourceGeneration
+      )
       let durableTransport = Self.durableTransportEvidence(durableCheckpoint, at: now)
       let durableProjection = Self.durableProjectionHealthEvidence(
-        durability,
+        durableInbox,
         checkpoint: durableCheckpoint
+      )
+      let durableReadinessDiagnostics = Self.durableReadinessDiagnostics(
+        durableInbox,
+        checkpoint: durableCheckpoint,
+        at: now
       )
       let projectionBacklog = try await store.projectionRepairBacklog(
         environment: operationsConfig.environment,
@@ -344,11 +356,10 @@ public enum ThinAppViewWorkerRuntime {
           "tap_verified_resync": "unsupported",
           "jetstream_replay": jetstreamReplay,
           "jetstream_v2_source_generation": jetstreamV2SourceGeneration,
-          "jetstream_v2_inbox_pending": String(durability.inbox.pending),
-          "jetstream_v2_inbox_retrying": String(durability.inbox.retrying),
-          "jetstream_v2_dead_letters": String(durability.inbox.deadLetters),
           "pds_reconciliation": pdsReconciliation,
-        ].merging(projectionEvidence.metadata) { _, projectionValue in projectionValue },
+        ]
+        .merging(durableReadinessDiagnostics) { _, diagnosticValue in diagnosticValue }
+        .merging(projectionEvidence.metadata) { _, projectionValue in projectionValue },
         requiredDependencyKeys: ["appview_database", "ingestion_transport"],
         observedAt: observedAt,
         validUntil: min(
@@ -508,30 +519,40 @@ public enum ThinAppViewWorkerRuntime {
     guard let checkpoint, checkpoint.cursorKind == .jetstreamV2Sequence else {
       return TransportEvidence(health: .unknown, dependency: "missing", heartbeatAt: nil)
     }
-    let age = now.timeIntervalSince(checkpoint.updatedAt)
+    guard let heartbeatAt = checkpoint.intakeHeartbeatAt else {
+      return TransportEvidence(health: .unknown, dependency: "missing", heartbeatAt: nil)
+    }
+    let age = now.timeIntervalSince(heartbeatAt)
     guard age >= 0, age <= 30 else {
       return TransportEvidence(
         health: .unknown,
         dependency: "expired",
-        heartbeatAt: checkpoint.updatedAt
+        heartbeatAt: heartbeatAt
       )
     }
     guard checkpoint.replayState != .failed else {
       return TransportEvidence(
         health: .unhealthy,
         dependency: "replay_failed",
-        heartbeatAt: checkpoint.updatedAt
+        heartbeatAt: heartbeatAt
       )
     }
     return TransportEvidence(
       health: checkpoint.replayState == .pausedBudget ? .degraded : .healthy,
       dependency: checkpoint.replayState == .pausedBudget ? "paused_budget" : "ready",
-      heartbeatAt: checkpoint.updatedAt
+      heartbeatAt: heartbeatAt
     )
   }
 
-  private static func durableProjectionHealthEvidence(
+  static func durableInboxMetrics(
     _ snapshot: IngestionDurabilitySnapshot,
+    sourceGeneration: String
+  ) -> IngestionInboxMetrics {
+    snapshot.inboxBySourceGeneration[sourceGeneration] ?? IngestionInboxMetrics()
+  }
+
+  static func durableProjectionHealthEvidence(
+    _ inbox: IngestionInboxMetrics,
     checkpoint: JetstreamDurabilityCheckpoint?
   ) -> ProjectionRepairHealthEvidence {
     guard checkpoint != nil else {
@@ -541,7 +562,7 @@ public enum ThinAppViewWorkerRuntime {
         metadata: ["durable_ingestion": "missing_checkpoint"]
       )
     }
-    let oldestAge = snapshot.inbox.oldestPendingAgeSeconds
+    let oldestAge = inbox.oldestPendingAgeSeconds
     let freshness: OperationsHealthState
     if let oldestAge, oldestAge > 15 * 60 {
       freshness = .unhealthy
@@ -550,7 +571,7 @@ public enum ThinAppViewWorkerRuntime {
     } else {
       freshness = .healthy
     }
-    let completeness: OperationsHealthState = snapshot.inbox.deadLetters > 0
+    let completeness: OperationsHealthState = inbox.deadLetters > 0
       ? .unhealthy : .healthy
     return ProjectionRepairHealthEvidence(
       freshness: freshness,
@@ -560,6 +581,43 @@ public enum ThinAppViewWorkerRuntime {
         "durable_inbox_oldest_pending_age_seconds": oldestAge.map { String($0) } ?? "none",
       ]
     )
+  }
+
+  static func durableReadinessDiagnostics(
+    _ inbox: IngestionInboxMetrics,
+    checkpoint: JetstreamDurabilityCheckpoint?,
+    at now: Date
+  ) -> [String: String] {
+    [
+      "jetstream_v2_replay_state": checkpoint?.replayState.rawValue ?? "missing",
+      "jetstream_v2_inbox_pending": String(inbox.pending),
+      "jetstream_v2_inbox_leased": String(inbox.leased),
+      "jetstream_v2_inbox_retrying": String(inbox.retrying),
+      "jetstream_v2_dead_letters": String(inbox.deadLetters),
+      "jetstream_v2_intake_heartbeat_age_seconds": boundedDiagnosticAge(
+        since: checkpoint?.intakeHeartbeatAt,
+        at: now
+      ),
+      "jetstream_v2_checkpoint_age_seconds": boundedDiagnosticAge(
+        since: checkpoint?.updatedAt,
+        at: now
+      ),
+      "jetstream_v2_inbox_oldest_actionable_age_seconds": inbox.oldestPendingAgeSeconds.map {
+        boundedDiagnosticAge($0)
+      } ?? "missing",
+    ]
+  }
+
+  private static func boundedDiagnosticAge(since date: Date?, at now: Date) -> String {
+    guard let date else { return "missing" }
+    return boundedDiagnosticAge(now.timeIntervalSince(date))
+  }
+
+  private static func boundedDiagnosticAge(_ rawAge: TimeInterval) -> String {
+    guard rawAge.isFinite, rawAge >= 0 else { return "invalid" }
+    let maximumAge: TimeInterval = 31_536_000
+    guard rawAge <= maximumAge else { return "31536000+" }
+    return String(Int(rawAge.rounded(.down)))
   }
 }
 

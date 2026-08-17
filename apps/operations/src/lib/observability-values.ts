@@ -1,4 +1,9 @@
 import type { Health, Overview, ServiceState } from "@/lib/operations-types"
+import {
+  ingestionAuthoritySource,
+  isJetstreamV2InboxSource,
+  jetstreamV2CheckpointForOverview,
+} from "@/lib/operations-policy"
 
 export type HealthDimension = "liveness" | "readiness" | "freshness" | "completeness"
 
@@ -111,6 +116,39 @@ export function healthLabel(state: Health) {
   return "Unknown"
 }
 
+export function overviewIngestionConnectionState(
+  overview: Overview,
+  reference = overview.refreshedAt,
+): EffectiveConnectionState {
+  if (overview.ingestion || !isJetstreamV2InboxSource(ingestionAuthoritySource(overview))) {
+    return effectiveConnectionState({
+      connectionState: overview.ingestion?.connectionState,
+      transportHeartbeatAt: overview.ingestion?.transportHeartbeatAt,
+      lastDisconnectedAt: overview.ingestion?.lastDisconnectAt,
+      referenceTime: reference,
+    })
+  }
+
+  const intakeHeartbeatAge = elapsedSeconds(
+    jetstreamV2CheckpointForOverview(overview)?.intakeHeartbeatAt ?? undefined,
+    reference,
+  )
+  if (
+    intakeHeartbeatAge === null ||
+    intakeHeartbeatAge > TRANSPORT_HEARTBEAT_FRESHNESS_SECONDS
+  )
+    return "unknown"
+
+  const evidenceValidUntil = new Date(overview.evidence.ingestion.validUntil).getTime()
+  const referenceTime = new Date(reference).getTime()
+  return overview.evidence.ingestion.accuracy === "exact" &&
+    Number.isFinite(evidenceValidUntil) &&
+    Number.isFinite(referenceTime) &&
+    evidenceValidUntil >= referenceTime
+    ? "connected"
+    : "unknown"
+}
+
 export function overallSystemHealth(overview: Overview, reference = overview.refreshedAt): Health {
   const states = [
     serviceHealthEvidence(overview.services, "liveness", reference).state,
@@ -118,13 +156,11 @@ export function overallSystemHealth(overview: Overview, reference = overview.ref
     serviceHealthEvidence(overview.services, "freshness", reference, ["appview-worker"]).state,
     serviceHealthEvidence(overview.services, "completeness", reference, ["appview-worker"]).state,
   ]
-  const connectionState = effectiveConnectionState({
-    connectionState: overview.ingestion?.connectionState,
-    transportHeartbeatAt: overview.ingestion?.transportHeartbeatAt,
-    lastDisconnectedAt: overview.ingestion?.lastDisconnectAt,
-    referenceTime: reference,
-  })
-  const checkpoint = overview.durability?.checkpoints[0]
+  const v2InboxAuthority = isJetstreamV2InboxSource(ingestionAuthoritySource(overview))
+  const connectionState = overviewIngestionConnectionState(overview, reference)
+  const checkpoint = v2InboxAuthority
+    ? jetstreamV2CheckpointForOverview(overview)
+    : overview.durability?.checkpoints[0]
   const recoveryActive =
     checkpoint?.replayState === "replaying" ||
     checkpoint?.replayState === "paused_budget" ||
@@ -150,6 +186,7 @@ export function overallSystemHealth(overview: Overview, reference = overview.ref
     states.includes("degraded")
   )
     return "degraded"
-  if (!overview.ingestion || connectionState === "unknown" || states.includes("unknown")) return "unknown"
+  if ((!overview.ingestion && !v2InboxAuthority) || connectionState === "unknown" || states.includes("unknown"))
+    return "unknown"
   return "healthy"
 }

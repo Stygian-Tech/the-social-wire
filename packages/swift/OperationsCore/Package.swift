@@ -29,7 +29,10 @@ let package = Package(
     ),
     .testTarget(
       name: "OperationsCoreTests",
-      dependencies: ["OperationsCore"],
+      dependencies: [
+        "OperationsCore",
+        .product(name: "GRDB", package: "GRDB.swift"),
+      ],
       swiftSettings: [
         .swiftLanguageMode(.v6),
         .unsafeFlags(["-warnings-as-errors"]),

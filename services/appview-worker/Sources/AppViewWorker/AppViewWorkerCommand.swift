@@ -39,7 +39,10 @@ struct CharybdisCommand: AsyncParsableCommand {
 
     let backend = try DatabaseBackend.fromEnvironment(environment)
     let plcURL = environment["ATPROTO_PLC_URL"] ?? "https://plc.directory"
-    let httpClient = HTTPClient(eventLoopGroupProvider: .singleton)
+    let httpClient = HTTPClient(
+      eventLoopGroupProvider: .singleton,
+      configuration: Self.httpClientConfiguration()
+    )
     defer { Task { try? await httpClient.shutdown() } }
 
     switch backend {
@@ -81,7 +84,8 @@ struct CharybdisCommand: AsyncParsableCommand {
       try await withThrowingTaskGroup(of: Void.self) { group in
         group.addTask {
           try await WorkerHealthServer.run(
-            readinessProbe: { try await readinessProbe.run() },
+            startupProbe: { try await store.ping() },
+            readinessProbe: { try await readinessProbe.run(includingDiagnostics: true) },
             host: listenHost,
             port: listenPort,
             logger: workerLogger
@@ -145,7 +149,8 @@ struct CharybdisCommand: AsyncParsableCommand {
         group.addTask { await pgPool.run() }
         group.addTask {
           try await WorkerHealthServer.run(
-            readinessProbe: { try await readinessProbe.run() },
+            startupProbe: { try await store.ping() },
+            readinessProbe: { try await readinessProbe.run(includingDiagnostics: true) },
             host: listenHost,
             port: listenPort,
             logger: workerLogger
@@ -170,6 +175,16 @@ struct CharybdisCommand: AsyncParsableCommand {
       }
       await redisRuntime?.shutdown()
     }
+  }
+
+  static func httpClientConfiguration() -> HTTPClient.Configuration {
+    var configuration = HTTPClient.Configuration()
+    // Per-request deadlines stop at response headers. An idle read deadline also releases an
+    // ingestion lane when a PDS or proxy sends headers and then stalls the response body.
+    configuration.timeout.read = .seconds(30)
+    // Shared PDS hosts should not reduce a wider durable-inbox pool back to AHC's default of eight.
+    configuration.connectionPool.concurrentHTTP1ConnectionsPerHostSoftLimit = 50
+    return configuration
   }
 
   private static func readinessProbe(

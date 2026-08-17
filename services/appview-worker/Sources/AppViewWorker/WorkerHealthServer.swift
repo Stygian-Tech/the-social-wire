@@ -5,6 +5,7 @@ import NIOPosix
 
 enum WorkerHealthServer {
   static func run(
+    startupProbe: @escaping @Sendable () async throws -> Void,
     readinessProbe: @escaping @Sendable () async throws -> Void,
     host: String,
     port: Int,
@@ -17,7 +18,11 @@ enum WorkerHealthServer {
       .childChannelInitializer { channel in
         channel.pipeline.configureHTTPServerPipeline().flatMap {
           channel.pipeline.addHandler(
-            WorkerHealthRequestHandler(readinessProbe: readinessProbe)
+            WorkerHealthRequestHandler(
+              startupProbe: startupProbe,
+              readinessProbe: readinessProbe,
+              logger: logger
+            )
           )
         }
       }
@@ -39,11 +44,36 @@ enum WorkerHealthResponseBuilder {
   struct Response: Sendable {
     let status: HTTPResponseStatus
     let body: String
+    let failedProbe: String?
+    let failureCategory: String?
+    let failureMetadata: [String: String]
+
+    init(
+      status: HTTPResponseStatus,
+      body: String,
+      failedProbe: String? = nil,
+      failureCategory: String? = nil,
+      failureMetadata: [String: String] = [:]
+    ) {
+      self.status = status
+      self.body = body
+      self.failedProbe = failedProbe
+      self.failureCategory = failureCategory
+      self.failureMetadata = failureMetadata
+    }
+
+    var failureLogFields: [String: String]? {
+      guard let failedProbe, let failureCategory else { return nil }
+      return failureMetadata.merging(
+        ["probe": failedProbe, "reason": failureCategory]
+      ) { _, requiredValue in requiredValue }
+    }
   }
 
   static func response(
     method: HTTPMethod,
     uri: String,
+    startupProbe: @escaping @Sendable () async throws -> Void,
     readinessProbe: @escaping @Sendable () async throws -> Void
   ) async -> Response {
     guard method == .GET else {
@@ -55,6 +85,19 @@ enum WorkerHealthResponseBuilder {
       return Response(status: .ok, body: #"{"service":"charybdis","status":"ok"}"#)
     case "/livez":
       return Response(status: .ok, body: #"{"service":"charybdis","status":"live"}"#)
+    case "/startupz":
+      do {
+        try await startupProbe()
+        return Response(status: .ok, body: #"{"service":"charybdis","status":"started"}"#)
+      } catch {
+        return Response(
+          status: .serviceUnavailable,
+          body: #"{"service":"charybdis","status":"unavailable"}"#,
+          failedProbe: "startup",
+          failureCategory: healthFailureCategory(error),
+          failureMetadata: healthFailureMetadata(error)
+        )
+      }
     case "/readyz":
       do {
         try await readinessProbe()
@@ -62,12 +105,34 @@ enum WorkerHealthResponseBuilder {
       } catch {
         return Response(
           status: .serviceUnavailable,
-          body: #"{"service":"charybdis","status":"unavailable"}"#
+          body: #"{"service":"charybdis","status":"unavailable"}"#,
+          failedProbe: "readiness",
+          failureCategory: healthFailureCategory(error),
+          failureMetadata: healthFailureMetadata(error)
         )
       }
     default:
       return Response(status: .notFound, body: #"{"error":"not_found"}"#)
     }
+  }
+
+  private static func healthFailureCategory(_ error: Error) -> String {
+    let readinessError = (error as? WorkerReadinessFailure)?.reason
+      ?? (error as? WorkerReadinessError)
+    if let readinessError {
+      return switch readinessError {
+      case .missingIngestionHeartbeat: "missing_ingestion_heartbeat"
+      case .staleIngestionHeartbeat: "stale_ingestion_heartbeat"
+      case .ingestionTransportUnhealthy: "ingestion_transport_unhealthy"
+      case .ingestionFreshnessUnhealthy: "ingestion_freshness_unhealthy"
+      case .ingestionCompletenessUnhealthy: "ingestion_completeness_unhealthy"
+      }
+    }
+    return String(String(reflecting: type(of: error)).prefix(128))
+  }
+
+  private static func healthFailureMetadata(_ error: Error) -> [String: String] {
+    (error as? WorkerReadinessFailure)?.diagnostics.logMetadata ?? [:]
   }
 }
 
@@ -76,10 +141,18 @@ private final class WorkerHealthRequestHandler: ChannelInboundHandler, @unchecke
   typealias OutboundOut = HTTPServerResponsePart
 
   private let readinessProbe: @Sendable () async throws -> Void
+  private let startupProbe: @Sendable () async throws -> Void
+  private let logger: Logger
   private var requestHead: HTTPRequestHead?
 
-  init(readinessProbe: @escaping @Sendable () async throws -> Void) {
+  init(
+    startupProbe: @escaping @Sendable () async throws -> Void,
+    readinessProbe: @escaping @Sendable () async throws -> Void,
+    logger: Logger
+  ) {
+    self.startupProbe = startupProbe
     self.readinessProbe = readinessProbe
+    self.logger = logger
   }
 
   func channelRead(context: ChannelHandlerContext, data: NIOAny) {
@@ -100,6 +173,7 @@ private final class WorkerHealthRequestHandler: ChannelInboundHandler, @unchecke
         await WorkerHealthResponseBuilder.response(
           method: head.method,
           uri: head.uri,
+          startupProbe: self.startupProbe,
           readinessProbe: self.readinessProbe
         )
       }.whenSuccess { response in
@@ -116,6 +190,16 @@ private final class WorkerHealthRequestHandler: ChannelInboundHandler, @unchecke
     _ response: WorkerHealthResponseBuilder.Response,
     context: ChannelHandlerContext
   ) {
+    if let fields = response.failureLogFields {
+      var metadata: Logger.Metadata = [:]
+      for (key, value) in fields {
+        metadata[key] = .string(value)
+      }
+      logger.error(
+        "Charybdis health probe failed",
+        metadata: metadata
+      )
+    }
     var buffer = context.channel.allocator.buffer(capacity: response.body.utf8.count)
     buffer.writeString(response.body)
     var headers = HTTPHeaders()

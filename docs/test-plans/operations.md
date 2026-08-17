@@ -35,6 +35,12 @@ unloaded module or a stale entry fails CI.
 - [ ] Gateway metadata redirects to the matching Operations custom domain, never a generated `*.up.railway.app` domain
 - [ ] Production mutations require the exact `PRODUCTION` confirmation and preserve audit evidence
 - [ ] Jetstream V2 Ingest holds the environment-scoped fenced lease and Charybdis reports the intended V1/V2 authority mode
+- [ ] A mode change produces a non-skipped Charybdis deployment whose startup log reports the intended `jetstream_mode`
+- [ ] V2 authority evidence resolves from the durable checkpoint/inbox without requiring a legacy `jetstream` stream row
+- [ ] V2 transport freshness comes from the active fenced ingester lease, not projection-owned checkpoint updates
+- [ ] V2 backlog alerts use only the advertised source generation while aggregate retained-generation evidence remains visible
+- [ ] Charybdis `/readyz` and aggregate Gateway `/readyz` are evaluated independently so an App View or Gateway database failure is not attributed to ingestion
+- [ ] Charybdis Railway deployment reaches `SUCCESS` through database-only `/startupz`, then Charybdis `/readyz` independently proves fresh authoritative transport and projection evidence
 
 ## Related
 

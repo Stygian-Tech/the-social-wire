@@ -9,7 +9,7 @@ import Testing
 @Suite("LivePublicationSiteBaseResolver")
 struct PublicationSiteBaseResolverTests {
   // `example.com` is rejected by the public-HTTPS SSRF policy, so the PDS host must be routable.
-  private static let plcDocumentJSON = ##"""
+  fileprivate static let plcDocumentJSON = ##"""
     {"service":[{"id":"#atproto_pds","type":"AtprotoPersonalDataServer","serviceEndpoint":"https://pds.thesocialwire.social"}]}
     """##
 
@@ -59,8 +59,8 @@ struct PublicationSiteBaseResolverTests {
       plcBase: "https://plc.directory"
     )
 
-    #expect(await resolver.siteBase(forPublicationAtUri: Self.publication) == "https://example.com")
-    #expect(await resolver.siteBase(forPublicationAtUri: Self.publication) == "https://example.com")
+    #expect(try await resolver.siteBase(forPublicationAtUri: Self.publication) == "https://example.com")
+    #expect(try await resolver.siteBase(forPublicationAtUri: Self.publication) == "https://example.com")
     #expect(await transport.getRecordRequestCount() == 1)
   }
 
@@ -72,8 +72,8 @@ struct PublicationSiteBaseResolverTests {
       plcBase: "https://plc.directory"
     )
 
-    #expect(await resolver.siteBase(forPublicationAtUri: Self.publication) == nil)
-    #expect(await resolver.siteBase(forPublicationAtUri: Self.publication) == nil)
+    #expect(try await resolver.siteBase(forPublicationAtUri: Self.publication) == nil)
+    #expect(try await resolver.siteBase(forPublicationAtUri: Self.publication) == nil)
     #expect(await transport.getRecordRequestCount() == 1)
   }
 
@@ -85,7 +85,7 @@ struct PublicationSiteBaseResolverTests {
       plcBase: "https://plc.directory"
     )
 
-    #expect(await resolver.siteBase(forPublicationAtUri: Self.publication) == nil)
+    #expect(try await resolver.siteBase(forPublicationAtUri: Self.publication) == nil)
   }
 
   @Test("skips URIs that are not publication records")
@@ -97,10 +97,10 @@ struct PublicationSiteBaseResolverTests {
     )
 
     #expect(
-      await resolver.siteBase(forPublicationAtUri: "at://did:plc:author/site.standard.document/abc")
+      try await resolver.siteBase(forPublicationAtUri: "at://did:plc:author/site.standard.document/abc")
         == nil
     )
-    #expect(await resolver.siteBase(forPublicationAtUri: "https://example.com") == nil)
+    #expect(try await resolver.siteBase(forPublicationAtUri: "https://example.com") == nil)
     #expect(await transport.requestedURLs.isEmpty)
   }
 
@@ -113,9 +113,62 @@ struct PublicationSiteBaseResolverTests {
     )
 
     #expect(
-      await resolver.siteBase(
+      try await resolver.siteBase(
         forPublicationAtUri: "at://did:plc:author/com.standard.publication/main"
       ) == "https://example.com"
+    )
+  }
+
+  @Test("cancellation is propagated and is not cached as a publication miss")
+  func cancellationIsNotCached() async throws {
+    let transport = SuspendingPublicationTransport()
+    let resolver = LivePublicationSiteBaseResolver(
+      transport: transport,
+      plcBase: "https://plc.directory"
+    )
+    let lookup = Task {
+      try await resolver.siteBase(forPublicationAtUri: Self.publication)
+    }
+    for _ in 0..<50 {
+      if await transport.getRecordRequestCount > 0 { break }
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    lookup.cancel()
+
+    await #expect(throws: CancellationError.self) {
+      _ = try await lookup.value
+    }
+    #expect(
+      try await resolver.siteBase(forPublicationAtUri: Self.publication)
+        == "https://example.com"
+    )
+    #expect(await transport.getRecordRequestCount == 2)
+  }
+}
+
+private actor SuspendingPublicationTransport: PDSHTTPTransport {
+  private var getRecordRequests = 0
+
+  var getRecordRequestCount: Int { getRecordRequests }
+
+  func execute(
+    _ request: HTTPClientRequest,
+    timeout: TimeAmount
+  ) async throws -> HTTPClientResponse {
+    _ = timeout
+    if request.url.contains("/xrpc/com.atproto.repo.getRecord") {
+      getRecordRequests += 1
+      if getRecordRequests == 1 {
+        try await Task.sleep(for: .seconds(60))
+      }
+      return HTTPClientResponse(
+        status: .ok,
+        body: .bytes(ByteBuffer(string: #"{"value":{"url":"https://example.com/"}}"#))
+      )
+    }
+    return HTTPClientResponse(
+      status: .ok,
+      body: .bytes(ByteBuffer(string: PublicationSiteBaseResolverTests.plcDocumentJSON))
     )
   }
 }

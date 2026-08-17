@@ -1,9 +1,10 @@
 import AsyncHTTPClient
 import Foundation
+import NIOCore
 
 /// Resolves the HTTPS base a standard.site publication serves its documents from.
 protocol PublicationSiteBaseResolving: Sendable {
-  func siteBase(forPublicationAtUri atUri: String) async -> String?
+  func siteBase(forPublicationAtUri atUri: String) async throws -> String?
 }
 
 /// Reads the publication record from its author PDS to recover the site base.
@@ -43,7 +44,8 @@ actor LivePublicationSiteBaseResolver: PublicationSiteBaseResolving {
     )
   }
 
-  func siteBase(forPublicationAtUri atUri: String) async -> String? {
+  func siteBase(forPublicationAtUri atUri: String) async throws -> String? {
+    try Task.checkCancellation()
     guard
       let parsed = RenderFieldExtractor.parseAtUri(atUri),
       RenderFieldExtractor.publicationRecordCollections.contains(parsed.collection),
@@ -55,11 +57,18 @@ actor LivePublicationSiteBaseResolver: PublicationSiteBaseResolving {
       return cached.base
     }
 
-    let base = await fetchSiteBase(
-      repoDid: parsed.did,
-      collection: parsed.collection,
-      rkey: parsed.rkey
-    )
+    let base: String?
+    do {
+      base = try await fetchSiteBase(
+        repoDid: parsed.did,
+        collection: parsed.collection,
+        rkey: parsed.rkey
+      )
+    } catch {
+      try Task.checkCancellation()
+      base = nil
+    }
+    try Task.checkCancellation()
     store(base, forKey: key, now: now)
     return base
   }
@@ -72,15 +81,25 @@ actor LivePublicationSiteBaseResolver: PublicationSiteBaseResolving {
     cache[key] = (base, now.addingTimeInterval(ttl))
   }
 
-  private func fetchSiteBase(repoDid: String, collection: String, rkey: String) async -> String? {
-    guard
-      let pdsBase = try? await ThinAppViewPdsResolution.resolvePdsBase(
+  private func fetchSiteBase(
+    repoDid: String,
+    collection: String,
+    rkey: String
+  ) async throws -> String? {
+    let pdsBase: String?
+    do {
+      pdsBase = try await ThinAppViewPdsResolution.resolvePdsBase(
         repoDid: repoDid,
         plcBase: plcBase,
         transport: transport,
         endpointPolicy: endpointPolicy
-      ),
-      var components = URLComponents(string: "\(pdsBase)/xrpc/com.atproto.repo.getRecord")
+      )
+    } catch {
+      try Task.checkCancellation()
+      return nil
+    }
+    guard let pdsBase,
+          var components = URLComponents(string: "\(pdsBase)/xrpc/com.atproto.repo.getRecord")
     else { return nil }
 
     components.queryItems = [
@@ -92,16 +111,31 @@ actor LivePublicationSiteBaseResolver: PublicationSiteBaseResolving {
 
     var request = HTTPClientRequest(url: url)
     request.headers.add(name: "Accept", value: "application/json")
-    guard let response = try? await transport.execute(request, timeout: .seconds(10)) else {
+    let response: HTTPClientResponse
+    do {
+      response = try await transport.execute(request, timeout: .seconds(10))
+    } catch {
+      try Task.checkCancellation()
       return nil
     }
     guard response.status == .ok else {
-      try? await HTTPResponseBodyDrain.drainOrCancel(response.body)
+      do {
+        try await HTTPResponseBodyDrain.drainOrCancel(response.body)
+      } catch {
+        try Task.checkCancellation()
+      }
       return nil
     }
 
+    let body: ByteBuffer
+    do {
+      body = try await response.body.collect(upTo: 64 * 1024)
+    } catch {
+      try Task.checkCancellation()
+      return nil
+    }
+    try Task.checkCancellation()
     guard
-      let body = try? await response.body.collect(upTo: 64 * 1024),
       let json = try? JSONSerialization.jsonObject(with: Data(buffer: body)) as? [String: Any],
       let value = json["value"] as? [String: Any]
     else { return nil }

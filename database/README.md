@@ -15,6 +15,13 @@ DATABASE_URL='postgresql://…' bash scripts/apply-database-migrations.sh
 
 Migrations live in `migrations/`. The runner applies each file once in timestamp order and records versions in `public.schema_migrations`.
 
+Migrations are transactional by default. A migration that must use PostgreSQL
+operations forbidden inside a transaction, such as `CREATE INDEX CONCURRENTLY`,
+must begin with `-- socialwire:transaction=off`. The runner then holds the same
+schema-migration advisory lock for the whole session and records the version
+only after every autocommitted statement succeeds. Such migrations must be
+idempotent and recover safely from a partially completed prior attempt.
+
 ## Environment
 
 Set `DATABASE_URL=${{Postgres.DATABASE_URL}}` on **Database Migrator** and each

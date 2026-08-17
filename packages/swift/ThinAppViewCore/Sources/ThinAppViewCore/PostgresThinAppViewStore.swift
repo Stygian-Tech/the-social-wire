@@ -26,6 +26,8 @@ public init(pool: PostgresClient, logger: Logger) {
     at: Date
   ) async throws -> [AppViewIngestionInboxItem] {
     let leaseToken = UUID().uuidString.lowercased()
+    let authorCollections = AppViewIngestionScopePolicy.publicationAuthorCollections
+    let viewerCollections = AppViewIngestionScopePolicy.viewerCollections
     let rows = try await pool.query(
       """
       WITH candidates AS (
@@ -34,6 +36,25 @@ public init(pool: PostgresClient, logger: Logger) {
         WHERE i.environment = \(environment) AND i.source_generation = \(sourceGeneration)
           AND ((i.status IN ('pending', 'retry') AND i.next_attempt_at <= \(at))
             OR (i.status = 'leased' AND i.lease_expires_at <= \(at)))
+          AND (
+            (i.event_kind != 'commit' AND (
+              EXISTS (
+                SELECT 1 FROM appview_publication_scopes scope
+                WHERE scope.author_did = i.repo_did OR scope.viewer_did = i.repo_did)
+              OR EXISTS (
+                SELECT 1 FROM appview_viewer_feeds feed
+                WHERE feed.viewer_did = i.repo_did)))
+            OR (i.collection = ANY(\(authorCollections)) AND EXISTS (
+              SELECT 1 FROM appview_publication_scopes scope
+              WHERE scope.author_did = i.repo_did))
+            OR (i.collection = ANY(\(viewerCollections)) AND (
+              EXISTS (
+                SELECT 1 FROM appview_viewer_feeds feed
+                WHERE feed.viewer_did = i.repo_did)
+              OR EXISTS (
+                SELECT 1 FROM appview_publication_scopes scope
+                WHERE scope.viewer_did = i.repo_did)))
+          )
           AND NOT EXISTS (
             SELECT 1
             FROM appview_ingestion_inbox earlier
@@ -100,6 +121,70 @@ public init(pool: PostgresClient, logger: Logger) {
     return claimed.sorted { $0.sequence < $1.sequence }
   }
 
+  public func filterIngestionInboxOutsideScope(
+    environment: String,
+    sourceGeneration: String,
+    policy: String,
+    limit: Int,
+    expiresAt: Date,
+    at: Date
+  ) async throws -> Int {
+    let authorCollections = AppViewIngestionScopePolicy.publicationAuthorCollections
+    let viewerCollections = AppViewIngestionScopePolicy.viewerCollections
+    let managedCollections = authorCollections + viewerCollections
+    let rows = try await pool.query(
+      """
+      WITH candidates AS (
+        SELECT inbox.environment, inbox.source_generation, inbox.seq
+        FROM appview_ingestion_inbox inbox
+        WHERE inbox.environment = \(environment)
+          AND inbox.source_generation = \(sourceGeneration)
+          AND ((inbox.status IN ('pending', 'retry') AND inbox.next_attempt_at <= \(at))
+            OR (inbox.status = 'leased' AND inbox.lease_expires_at <= \(at)))
+          AND (
+            (inbox.event_kind = 'commit' AND (
+              inbox.collection IS NULL OR inbox.collection != ALL(\(managedCollections))
+              OR (inbox.collection = ANY(\(authorCollections)) AND NOT EXISTS (
+                SELECT 1 FROM appview_publication_scopes scope
+                WHERE scope.author_did = inbox.repo_did))
+              OR (inbox.collection = ANY(\(viewerCollections))
+                AND NOT EXISTS (
+                  SELECT 1 FROM appview_viewer_feeds feed
+                  WHERE feed.viewer_did = inbox.repo_did)
+                AND NOT EXISTS (
+                  SELECT 1 FROM appview_publication_scopes scope
+                  WHERE scope.viewer_did = inbox.repo_did))))
+            OR (inbox.event_kind != 'commit'
+              AND NOT EXISTS (
+                SELECT 1 FROM appview_publication_scopes scope
+                WHERE scope.author_did = inbox.repo_did OR scope.viewer_did = inbox.repo_did)
+              AND NOT EXISTS (
+                SELECT 1 FROM appview_viewer_feeds feed
+                WHERE feed.viewer_did = inbox.repo_did))
+          )
+        ORDER BY inbox.seq
+        FOR UPDATE SKIP LOCKED
+        LIMIT \(max(1, min(limit, 10_000)))
+      )
+      UPDATE appview_ingestion_inbox inbox
+      SET status = 'filtered_scope', filtered_scope_policy = \(String(policy.prefix(128))),
+          filtered_scope_at = \(at), applied_at = NULL, reconciled_at = NULL,
+          lease_owner = NULL, lease_token = NULL, lease_expires_at = NULL,
+          failure_category = NULL, failure_reason = NULL,
+          expires_at = \(expiresAt), updated_at = \(at)
+      FROM candidates
+      WHERE inbox.environment = candidates.environment
+        AND inbox.source_generation = candidates.source_generation
+        AND inbox.seq = candidates.seq
+      RETURNING 1
+      """,
+      logger: logger
+    )
+    var filtered = 0
+    for try await _ in rows { filtered += 1 }
+    return filtered
+  }
+
   public func markIngestionInboxApplied(
     environment: String,
     sourceGeneration: String,
@@ -109,31 +194,22 @@ public init(pool: PostgresClient, logger: Logger) {
     expiresAt: Date,
     at: Date
   ) async throws {
-    try await pool.withTransaction(logger: logger) { connection in
-      let rows = try await connection.query(
-        """
-        UPDATE appview_ingestion_inbox
-        SET status = 'applied', applied_at = \(at), lease_owner = NULL, lease_token = NULL,
-            lease_expires_at = NULL, failure_category = NULL, failure_reason = NULL,
-            expires_at = \(expiresAt), updated_at = \(at)
-        WHERE environment = \(environment) AND source_generation = \(sourceGeneration)
-          AND seq = \(sequence) AND status = 'leased'
-          AND lease_owner = \(workerId) AND lease_token = \(leaseToken)
-        RETURNING 1
-        """,
-        logger: logger
-      )
-      var updated = false
-      for try await _ in rows { updated = true }
-      guard updated else { throw AppViewIngestionInboxStoreError.staleLease }
-      try await Self.advanceAppliedInboxWatermark(
-        connection: connection,
-        environment: environment,
-        sourceGeneration: sourceGeneration,
-        at: at,
-        logger: logger
-      )
-    }
+    let rows = try await pool.query(
+      """
+      UPDATE appview_ingestion_inbox
+      SET status = 'applied', applied_at = \(at), lease_owner = NULL, lease_token = NULL,
+          lease_expires_at = NULL, failure_category = NULL, failure_reason = NULL,
+          expires_at = \(expiresAt), updated_at = \(at)
+      WHERE environment = \(environment) AND source_generation = \(sourceGeneration)
+        AND seq = \(sequence) AND status = 'leased'
+        AND lease_owner = \(workerId) AND lease_token = \(leaseToken)
+      RETURNING 1
+      """,
+      logger: logger
+    )
+    var updated = false
+    for try await _ in rows { updated = true }
+    guard updated else { throw AppViewIngestionInboxStoreError.staleLease }
   }
 
   public func retryIngestionInbox(
@@ -320,7 +396,8 @@ public init(pool: PostgresClient, logger: Logger) {
         SELECT environment, source_generation, seq
         FROM appview_ingestion_inbox
         WHERE environment = \(environment) AND expires_at <= \(before)
-          AND (status = 'applied' OR (status = 'dead_letter' AND reconciled_at IS NOT NULL))
+          AND (status IN ('applied', 'filtered_scope')
+            OR (status = 'dead_letter' AND reconciled_at IS NOT NULL))
         ORDER BY expires_at ASC, seq ASC
         LIMIT \(max(1, batchSize))
         FOR UPDATE SKIP LOCKED
@@ -375,7 +452,111 @@ public init(pool: PostgresClient, logger: Logger) {
           WHERE inbox.environment = checkpoint.environment
             AND inbox.source_generation = checkpoint.source_generation
             AND inbox.seq <= checkpoint.replay_sealed_seq
-            AND inbox.status != 'applied' AND inbox.reconciled_at IS NULL)
+            AND inbox.status NOT IN ('applied', 'filtered_scope')
+            AND inbox.reconciled_at IS NULL)
+      RETURNING 1
+      """,
+      logger: logger
+    )
+    var resolved = 0
+    for try await _ in rows { resolved += 1 }
+    return resolved
+  }
+
+  public func resolveTerminalRetiredGenerationIncidents(
+    environment: String,
+    activeSourceGeneration: String,
+    activeLeaseName: String,
+    at: Date
+  ) async throws -> Int {
+    let rows = try await pool.query(
+      """
+      WITH successor AS (
+        SELECT checkpoint.source_generation, checkpoint.source_host,
+               checkpoint.stream_nsid, checkpoint.cursor_kind,
+               checkpoint.replay_after_seq, checkpoint.last_staged_seq,
+               checkpoint.updated_at AS checkpoint_observed_at,
+               lease.updated_at AS lease_observed_at
+        FROM appview_jetstream_checkpoints checkpoint
+        JOIN LATERAL (
+          SELECT candidate.updated_at
+          FROM appview_ingestion_leases candidate
+          WHERE candidate.environment = checkpoint.environment
+            AND candidate.source_generation = checkpoint.source_generation
+            AND candidate.lease_name = \(activeLeaseName)
+            AND candidate.released_at IS NULL
+            AND candidate.lease_expires_at >= \(at)
+          ORDER BY candidate.updated_at DESC
+          LIMIT 1
+        ) lease ON TRUE
+        WHERE checkpoint.environment = \(environment)
+          AND checkpoint.source_generation = \(activeSourceGeneration)
+          AND checkpoint.replay_state = 'live'
+      ), retired AS (
+        SELECT checkpoint.source_generation, checkpoint.last_staged_seq,
+               checkpoint.last_applied_seq
+        FROM appview_jetstream_checkpoints checkpoint
+        CROSS JOIN successor
+        WHERE checkpoint.environment = \(environment)
+          AND checkpoint.source_generation != successor.source_generation
+          AND checkpoint.source_host = successor.source_host
+          AND checkpoint.stream_nsid = successor.stream_nsid
+          AND checkpoint.cursor_kind = successor.cursor_kind
+          AND successor.replay_after_seq < checkpoint.last_staged_seq
+          AND successor.last_staged_seq >= checkpoint.last_staged_seq
+          AND checkpoint.replay_state = 'live'
+          AND checkpoint.last_staged_seq IS NOT NULL
+          AND checkpoint.last_applied_seq IS NOT NULL
+          AND checkpoint.last_applied_seq >= checkpoint.last_staged_seq
+          AND NOT EXISTS (
+            SELECT 1 FROM appview_ingestion_leases retired_lease
+            WHERE retired_lease.environment = checkpoint.environment
+              AND retired_lease.source_generation = checkpoint.source_generation
+              AND retired_lease.released_at IS NULL
+              AND retired_lease.lease_expires_at >= \(at))
+          AND NOT EXISTS (
+            SELECT 1 FROM appview_ingestion_inbox inbox
+            WHERE inbox.environment = checkpoint.environment
+              AND inbox.source_generation = checkpoint.source_generation
+              AND (inbox.seq > checkpoint.last_staged_seq
+                OR NOT (
+                  inbox.status IN ('applied', 'filtered_scope')
+                  OR (inbox.status = 'dead_letter' AND inbox.reconciled_at IS NOT NULL))))
+          AND NOT EXISTS (
+            SELECT 1 FROM appview_ingestion_reconciliation_requests request
+            WHERE request.environment = checkpoint.environment
+              AND request.source_generation = checkpoint.source_generation
+              AND request.status IN ('pending', 'leased', 'failed'))
+      )
+      UPDATE appview_ingestion_incidents incident
+      SET status = 'resolved', replay_state = 'live',
+          recovered_through_cursor = retired.last_applied_seq,
+          verification_evidence = incident.verification_evidence || jsonb_build_object(
+            'recovery', 'retired_generation_terminal',
+            'resolutionPolicy', 'retired-generation-terminal-v1',
+            'retiredSourceGeneration', retired.source_generation,
+            'successorSourceGeneration', successor.source_generation,
+            'successorLeaseName', \(activeLeaseName),
+            'successorReplayAfterSequence', successor.replay_after_seq::text,
+            'successorLastStagedSequence', successor.last_staged_seq::text,
+            'identityAndInclusiveOverlapVerified', true,
+            'retiredLastStagedSequence', retired.last_staged_seq::text,
+            'retiredTerminalPrefixSequence', retired.last_applied_seq::text,
+            'allRetiredRowsTerminal', true,
+            'successorCheckpointObservedAt', successor.checkpoint_observed_at,
+            'successorLeaseObservedAt', successor.lease_observed_at),
+          resolved_at = \(at), updated_at = \(at), version = incident.version + 1
+      FROM retired CROSS JOIN successor
+      WHERE incident.environment = \(environment)
+        AND incident.source_generation = retired.source_generation
+        AND incident.source = 'jetstream-v2'
+        AND incident.cursor_kind = 'jetstream_v2_seq'
+        AND incident.category = 'fatal_stream'
+        AND incident.status IN ('open', 'recovering')
+        AND (incident.start_cursor IS NULL
+          OR incident.start_cursor <= retired.last_applied_seq)
+        AND (incident.end_cursor IS NULL
+          OR incident.end_cursor <= retired.last_applied_seq)
       RETURNING 1
       """,
       logger: logger
@@ -3620,7 +3801,7 @@ public init(pool: PostgresClient, logger: Logger) {
         SELECT MIN(seq) AS first_nonterminal_seq
         FROM appview_ingestion_inbox
         WHERE environment = \(environment) AND source_generation = \(sourceGeneration)
-          AND status != 'applied' AND reconciled_at IS NULL
+          AND status NOT IN ('applied', 'filtered_scope') AND reconciled_at IS NULL
       ), candidate AS (
         SELECT CASE
           WHEN barrier.first_nonterminal_seq IS NULL THEN checkpoint.last_staged_seq
@@ -3630,7 +3811,8 @@ public init(pool: PostgresClient, logger: Logger) {
             WHERE inbox.environment = checkpoint.environment
               AND inbox.source_generation = checkpoint.source_generation
               AND inbox.seq < barrier.first_nonterminal_seq
-              AND (inbox.status = 'applied' OR inbox.reconciled_at IS NOT NULL)
+              AND (inbox.status IN ('applied', 'filtered_scope')
+                OR inbox.reconciled_at IS NOT NULL)
           )
         END AS seq
         FROM appview_jetstream_checkpoints checkpoint

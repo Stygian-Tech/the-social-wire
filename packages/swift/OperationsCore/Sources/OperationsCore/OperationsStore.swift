@@ -254,11 +254,14 @@ extension OperationsStore {
     let resolvedStreamStates = try await streamStates
     let resolvedCounts = try await counts
     let serviceEvidence = OperationsEvidenceResolver.services(resolvedServices, at: at)
+    let durability = try? await fetchIngestionDurabilitySnapshot(at: at)
     let ingestion = OperationsEvidenceResolver.ingestionAuthority(
-      services: resolvedServices, streams: resolvedStreamStates, at: at)
+      services: resolvedServices,
+      streams: resolvedStreamStates,
+      durability: durability,
+      at: at)
     let databaseSnapshot = try? await database
     let viewerCounts = try? await viewers
-    let durability = try? await fetchIngestionDurabilitySnapshot(at: at)
     var evidence: [String: OperationsEvidenceMetadata] = [
       "services": serviceEvidence,
       "ingestion": ingestion.evidence,

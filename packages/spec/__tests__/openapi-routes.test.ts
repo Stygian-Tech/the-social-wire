@@ -214,6 +214,24 @@ describe("OpenAPI route drift", () => {
     expect(schemas.OperationsOverviewEvidence.required).toEqual(["services", "ingestion", "database"]);
     expect(schemas.OperationsOverview.properties.evidence.$ref)
       .toBe("#/components/schemas/OperationsOverviewEvidence");
+    expect(schemas.JetstreamDurabilityCheckpoint.properties.intakeHeartbeatAt).toMatchObject({
+      type: ["string", "null"],
+      format: "date-time",
+    });
+    expect(schemas.IngestionDurabilitySnapshot.required).toContain("inboxBySourceGeneration");
+    expect(schemas.IngestionDurabilitySnapshot.properties.inboxBySourceGeneration).toEqual({
+      type: "object",
+      additionalProperties: { $ref: "#/components/schemas/IngestionInboxMetrics" },
+    });
+    expect(schemas.IngestionInboxMetrics.required).toEqual([
+      "pending",
+      "leased",
+      "retrying",
+      "applied",
+      "filteredScope",
+      "deadLetters",
+      "total",
+    ]);
 
     for (const schemaName of ["OperationsMutationRequest", "GapMutationRequest"]) {
       expect(schemas[schemaName].required).toContain("expectedVersion");

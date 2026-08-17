@@ -9,9 +9,17 @@ extension SQLiteOperationsStore {
       let checkpoints = try Row.fetchAll(
         database,
         sql: """
-          SELECT * FROM appview_jetstream_checkpoints
-          WHERE environment = ? ORDER BY updated_at DESC, source_generation
-          """, arguments: [environment]
+          SELECT checkpoint.*,
+            (SELECT MAX(lease.updated_at)
+             FROM appview_ingestion_leases lease
+             WHERE lease.environment = checkpoint.environment
+               AND lease.source_generation = checkpoint.source_generation
+               AND lease.released_at IS NULL AND lease.lease_expires_at >= ?)
+              AS intake_heartbeat_at
+          FROM appview_jetstream_checkpoints checkpoint
+          WHERE checkpoint.environment = ?
+          ORDER BY checkpoint.updated_at DESC, checkpoint.source_generation
+          """, arguments: [Self.iso(at), environment]
       ).compactMap(Self.durabilityCheckpoint)
       let inboxRow = try Row.fetchOne(
         database,
@@ -21,6 +29,7 @@ extension SQLiteOperationsStore {
             SUM(CASE WHEN status = 'leased' THEN 1 ELSE 0 END) AS leased_count,
             SUM(CASE WHEN status = 'retry' THEN 1 ELSE 0 END) AS retry_count,
             SUM(CASE WHEN status = 'applied' THEN 1 ELSE 0 END) AS applied_count,
+            SUM(CASE WHEN status = 'filtered_scope' THEN 1 ELSE 0 END) AS filtered_scope_count,
             SUM(CASE WHEN status = 'dead_letter' AND reconciled_at IS NULL THEN 1 ELSE 0 END)
               AS dead_letter_count,
             COUNT(*) AS total_count,
@@ -34,10 +43,47 @@ extension SQLiteOperationsStore {
         leased: inboxRow?["leased_count"] ?? 0,
         retrying: inboxRow?["retry_count"] ?? 0,
         applied: inboxRow?["applied_count"] ?? 0,
+        filteredScope: inboxRow?["filtered_scope_count"] ?? 0,
         deadLetters: inboxRow?["dead_letter_count"] ?? 0,
         total: inboxRow?["total_count"] ?? 0,
         oldestPendingAt: oldest,
         oldestPendingAgeSeconds: oldest.map { max(0, at.timeIntervalSince($0)) })
+      let generationInboxRows = try Row.fetchAll(
+        database,
+        sql: """
+          SELECT source_generation,
+            SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending_count,
+            SUM(CASE WHEN status = 'leased' THEN 1 ELSE 0 END) AS leased_count,
+            SUM(CASE WHEN status = 'retry' THEN 1 ELSE 0 END) AS retry_count,
+            SUM(CASE WHEN status = 'applied' THEN 1 ELSE 0 END) AS applied_count,
+            SUM(CASE WHEN status = 'filtered_scope' THEN 1 ELSE 0 END) AS filtered_scope_count,
+            SUM(CASE WHEN status = 'dead_letter' AND reconciled_at IS NULL THEN 1 ELSE 0 END)
+              AS dead_letter_count,
+            COUNT(*) AS total_count,
+            MIN(CASE WHEN status IN ('pending', 'leased', 'retry') THEN staged_at END)
+              AS oldest_pending_at
+          FROM appview_ingestion_inbox
+          WHERE environment = ?
+          GROUP BY source_generation
+          """,
+        arguments: [environment]
+      )
+      var inboxBySourceGeneration: [String: IngestionInboxMetrics] = [:]
+      for row in generationInboxRows {
+        let generation: String = row["source_generation"]
+        let generationOldest = Self.date(row["oldest_pending_at"])
+        inboxBySourceGeneration[generation] = IngestionInboxMetrics(
+          pending: row["pending_count"] ?? 0,
+          leased: row["leased_count"] ?? 0,
+          retrying: row["retry_count"] ?? 0,
+          applied: row["applied_count"] ?? 0,
+          filteredScope: row["filtered_scope_count"] ?? 0,
+          deadLetters: row["dead_letter_count"] ?? 0,
+          total: row["total_count"] ?? 0,
+          oldestPendingAt: generationOldest,
+          oldestPendingAgeSeconds: generationOldest.map { max(0, at.timeIntervalSince($0)) }
+        )
+      }
       let incidentRow = try Row.fetchOne(
         database,
         sql: """
@@ -67,6 +113,7 @@ extension SQLiteOperationsStore {
           """, arguments: [environment, Self.iso(at.addingTimeInterval(-86_400))]) ?? 0
       return IngestionDurabilitySnapshot(
         environment: environment, checkpoints: checkpoints, inbox: inbox,
+        inboxBySourceGeneration: inboxBySourceGeneration,
         incidents: incidents, replayBytesRolling24Hours: replayBytesRolling24Hours,
         generatedAt: at)
     }
@@ -411,7 +458,9 @@ extension SQLiteOperationsStore {
       replayBytesDownloaded: row["replay_bytes_downloaded"],
       replayRetryCount: row["replay_retry_count"],
       replayRangeResumeCount: row["replay_range_resume_count"],
-      replayLastProgressAt: date(row["replay_last_progress_at"]), updatedAt: updatedAt)
+      replayLastProgressAt: date(row["replay_last_progress_at"]),
+      intakeHeartbeatAt: date(row["intake_heartbeat_at"]),
+      updatedAt: updatedAt)
   }
 
   private static func ingestionIncident(_ row: Row) -> IngestionIncident? {
