@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, jest, test } from "bun:test"
 import { act, renderHook } from "@testing-library/react"
-import type { OAuthSession } from "@/lib/auth"
 import { useOperationsEventStream } from "@/lib/use-operations-event-stream"
+import { createOperationsOAuthSession } from "@/__tests__/oauth-session"
 
 const originalDemoMode = process.env.NEXT_PUBLIC_OPERATIONS_DEMO_MODE
 
@@ -19,22 +19,20 @@ describe("useOperationsEventStream", () => {
     let requests = 0
     let cursorRefreshes = 0
     let liveSynchronizations = 0
-    const session = {
-      fetchHandler: async (_url: string, init?: RequestInit) => {
-        requests += 1
-        requestedCursors.push(new Headers(init?.headers).get("Last-Event-ID"))
-        if (requests === 1)
-          return new Response("id: 1\nevent: gap.update\ndata: {\"gapId\":\"gap-1\"}\n\n", {
-            status: 200,
-            headers: { "Content-Type": "text/event-stream" },
-          })
-        if (requests === 2) return Response.json({ error: "expired_cursor" }, { status: 410 })
-        return new Response(": heartbeat\n\n", {
+    const session = createOperationsOAuthSession(async (_url: string, init?: RequestInit) => {
+      requests += 1
+      requestedCursors.push(new Headers(init?.headers).get("Last-Event-ID"))
+      if (requests === 1)
+        return new Response("id: 1\nevent: gap.update\ndata: {\"gapId\":\"gap-1\"}\n\n", {
           status: 200,
           headers: { "Content-Type": "text/event-stream" },
         })
-      },
-    } as unknown as OAuthSession
+      if (requests === 2) return Response.json({ error: "expired_cursor" }, { status: 410 })
+      return new Response(": heartbeat\n\n", {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      })
+    })
 
     const hook = renderHook(() =>
       useOperationsEventStream({
@@ -68,19 +66,17 @@ describe("useOperationsEventStream", () => {
     const encoder = new TextEncoder()
     let streamController: ReadableStreamDefaultController<Uint8Array> | undefined
     let requests = 0
-    const session = {
-      fetchHandler: async () => {
-        requests += 1
-        return new Response(
-          new ReadableStream<Uint8Array>({
-            start(controller) {
-              streamController = controller
-            },
-          }),
-          { status: 200, headers: { "Content-Type": "text/event-stream" } },
-        )
-      },
-    } as unknown as OAuthSession
+    const session = createOperationsOAuthSession(async () => {
+      requests += 1
+      return new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            streamController = controller
+          },
+        }),
+        { status: 200, headers: { "Content-Type": "text/event-stream" } },
+      )
+    })
     const hook = renderHook(() =>
       useOperationsEventStream({
         enabled: true,
@@ -113,19 +109,17 @@ describe("useOperationsEventStream", () => {
     delete process.env.NEXT_PUBLIC_OPERATIONS_DEMO_MODE
     let requests = 0
     let cancelled = 0
-    const session = {
-      fetchHandler: async () => {
-        requests += 1
-        return new Response(
-          new ReadableStream<Uint8Array>({
-            cancel() {
-              cancelled += 1
-            },
-          }),
-          { status: 200, headers: { "Content-Type": "text/event-stream" } },
-        )
-      },
-    } as unknown as OAuthSession
+    const session = createOperationsOAuthSession(async () => {
+      requests += 1
+      return new Response(
+        new ReadableStream<Uint8Array>({
+          cancel() {
+            cancelled += 1
+          },
+        }),
+        { status: 200, headers: { "Content-Type": "text/event-stream" } },
+      )
+    })
     const hook = renderHook(() =>
       useOperationsEventStream({
         enabled: true,

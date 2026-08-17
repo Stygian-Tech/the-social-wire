@@ -103,6 +103,19 @@ public enum OAuthAccessTokenVerifier {
     case signatureRejected
   }
 
+  static func permitsActivePDSFallback(error: Error, supplementalJwksJSON: String?) -> Bool {
+    if let supplementalJwksJSON, jwksKeyCount(in: supplementalJwksJSON) > 0 {
+      return false
+    }
+    guard let error = error as? VerifyError else { return false }
+    switch error {
+    case .jwksEmpty, .jwksMissing, .noJwksCandidates:
+      return true
+    default:
+      return false
+    }
+  }
+
   /// Cryptographically verifies the access JWT, returning DID + **`cnf.jkt`** plus optional **`client_id`/`azp`/`aud`** claims.
   static func verify(
     accessTokenJWT: String,
@@ -678,7 +691,7 @@ public enum OAuthAccessTokenVerifier {
       && effectivePort(candidate) == effectivePort(trusted)
   }
 
-  private static func normalizedRemoteBase(_ raw: String) -> String? {
+  static func normalizedPublicRemoteBase(_ raw: String) -> String? {
     let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
     guard var components = URLComponents(string: trimmed),
       components.scheme?.lowercased() == "https",
@@ -698,6 +711,10 @@ public enum OAuthAccessTokenVerifier {
       components.path.removeLast()
     }
     return components.url?.absoluteString
+  }
+
+  private static func normalizedRemoteBase(_ raw: String) -> String? {
+    normalizedPublicRemoteBase(raw)
   }
 
   private static func effectivePort(_ components: URLComponents) -> Int {

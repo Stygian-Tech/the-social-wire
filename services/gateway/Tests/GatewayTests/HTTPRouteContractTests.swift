@@ -42,7 +42,7 @@ struct HTTPRouteContractTests {
     if let operationsBaseURL, !operationsBaseURL.isEmpty {
       env["OPERATIONS_BASE_URL"] = operationsBaseURL
     }
-    let config = GatewayServiceConfig.fromEnvironment(env)
+    let config = try GatewayServiceConfig.fromEnvironment(env)
     return GatewayRouterBuilder.router(
       config: config,
       httpClient: client,
@@ -273,7 +273,7 @@ struct HTTPRouteContractTests {
         "OAUTH_PUBLIC_ORIGIN": "https://testing.thesocialwire.app",
         "OAUTH_OPERATIONS_ORIGIN": "https://operations.testing.thesocialwire.app",
       ]
-      let config = GatewayServiceConfig.fromEnvironment(env)
+      let config = try GatewayServiceConfig.fromEnvironment(env)
       let cache = try SQLiteCache(path: dbPath, logger: Logger(label: "contracts.sqlite"))
       let router = GatewayRouterBuilder.router(
         config: config,
@@ -380,7 +380,7 @@ struct HTTPRouteContractTests {
         "LATR_IOS_PROXY_CLIENT_ID": "the-social-wire-ios",
         "LATR_IOS_PROXY_API_KEY": "test-key",
       ]
-      let config = GatewayServiceConfig.fromEnvironment(env)
+      let config = try GatewayServiceConfig.fromEnvironment(env)
       let cache = try SQLiteCache(path: dbPath, logger: Logger(label: "contracts.sqlite"))
       let router = GatewayRouterBuilder.router(
         config: config,
@@ -447,6 +447,71 @@ struct HTTPRouteContractTests {
 
 @Suite("ATProtoAuthMiddleware")
 struct ATProtoAuthMiddlewareTests {
+  @Test("XRPC error middleware preserves a direct session nonce challenge response")
+  func xrpcNonceChallengePassesThrough() async throws {
+    let router = Router(context: GatewayRequestContext.self)
+    let protected = router.group().add(middleware: XRPCErrorMiddleware())
+    protected.get("/xrpc/app.thesocialwire.test") { _, _ in
+      var headers = HTTPFields()
+      headers[HTTPField.Name(ATProtoSessionDPoP.nonceHeaderName)!] = "pds-session-nonce"
+      return Response(status: .unauthorized, headers: headers)
+    }
+    let app = Application(
+      router: router,
+      configuration: .init(address: .hostname("127.0.0.1", port: 0))
+    )
+
+    try await app.test(.router) { client in
+      let response = try await client.execute(
+        uri: "/xrpc/app.thesocialwire.test",
+        method: .get
+      )
+      #expect(response.status == .unauthorized)
+      #expect(
+        response.headers[HTTPField.Name(ATProtoSessionDPoP.nonceHeaderName)!]
+          == "pds-session-nonce"
+      )
+    }
+  }
+
+  @Test("XRPC error middleware preserves the attestation receipt precondition response")
+  func xrpcAttestationRequiredPassesThrough() async throws {
+    let router = Router(context: GatewayRequestContext.self)
+    let protected = router.group().add(middleware: XRPCErrorMiddleware())
+    protected.get("/xrpc/app.thesocialwire.test") { _, _ in
+      var headers = HTTPFields()
+      headers[
+        HTTPField.Name(ATProtoSessionAttestationReceipt.requiredHeaderName)!
+      ] = "true"
+      return Response(
+        status: .preconditionRequired,
+        headers: headers,
+        body: .init(byteBuffer: .init(string: #"{"error":"ATProtoSessionAttestationRequired"}"#))
+      )
+    }
+    let app = Application(
+      router: router,
+      configuration: .init(address: .hostname("127.0.0.1", port: 0))
+    )
+
+    try await app.test(.router) { client in
+      let response = try await client.execute(
+        uri: "/xrpc/app.thesocialwire.test",
+        method: .get
+      )
+      #expect(response.status == .preconditionRequired)
+      #expect(
+        response.headers[
+          HTTPField.Name(ATProtoSessionAttestationReceipt.requiredHeaderName)!
+        ] == "true"
+      )
+      #expect(
+        response.body.getString(at: 0, length: response.body.readableBytes)?
+          .contains("ATProtoSessionAttestationRequired") == true
+      )
+    }
+  }
+
   @Test("sync route rejects unauthenticated calls")
   func syncUnauthorized() async throws {
     let client = HTTPClient(eventLoopGroupProvider: .singleton)
@@ -457,7 +522,7 @@ struct ATProtoAuthMiddlewareTests {
     defer { try? FileManager.default.removeItem(atPath: dbPath) }
 
     let cache = try SQLiteCache(path: dbPath, logger: Logger(label: "auth.sqlite"))
-    let config = GatewayServiceConfig.fromEnvironment([
+    let config = try GatewayServiceConfig.fromEnvironment([
       "APP_ENV": "local",
       "SQLITE_DB_PATH": dbPath,
     ])

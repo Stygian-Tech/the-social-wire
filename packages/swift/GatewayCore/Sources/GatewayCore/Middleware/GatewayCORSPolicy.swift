@@ -5,6 +5,26 @@ import NIOCore
 
 /// Builds browser CORS policy for the public gateway edge (SPA + OAuth DPoP preflights).
 public enum GatewayCORSPolicy {
+  public struct Middleware: RouterMiddleware {
+    public typealias Context = GatewayRequestContext
+
+    let base: CORSMiddleware<GatewayRequestContext>
+
+    public func handle(
+      _ request: Request,
+      context: GatewayRequestContext,
+      next: (Request, GatewayRequestContext) async throws -> Response
+    ) async throws -> Response {
+      var response = try await base.handle(request, context: context, next: next)
+      // Hummingbird's CORS middleware currently emits exposedHeaders only on OPTIONS. Browsers
+      // also require it on the actual response before JavaScript may read a returned PDS nonce.
+      if request.headers.contains(.origin) {
+        response.headers[.accessControlExposeHeaders] = exposedHeaderNames.joined(separator: ", ")
+      }
+      return response
+    }
+  }
+
   public static func allowedOrigins(
     config: GatewayConfig,
     env: [String: String] = ProcessInfo.processInfo.environment
@@ -34,7 +54,7 @@ public enum GatewayCORSPolicy {
   public static func middleware(
     config: GatewayConfig,
     env: [String: String] = ProcessInfo.processInfo.environment
-  ) -> CORSMiddleware<GatewayRequestContext> {
+  ) -> Middleware {
     let origins = allowedOrigins(config: config, env: env)
     let allowOrigin = resolveAllowOrigin(origins: origins, appEnv: config.appEnv)
     let dpopHeader = HTTPField.Name("DPoP")!
@@ -43,19 +63,35 @@ public enum GatewayCORSPolicy {
     let idempotencyKeyHeader = HTTPField.Name("Idempotency-Key")!
     let lastEventIdHeader = HTTPField.Name("Last-Event-ID")!
     let upstreamDpopHeader = HTTPField.Name(ATProtoUpstreamDPoP.headerName)!
+    let sessionDpopHeader = HTTPField.Name(ATProtoSessionDPoP.headerName)!
+    let attestationReceiptHeader = HTTPField.Name(
+      ATProtoSessionAttestationReceipt.receiptHeaderName)!
+    let attestationRequiredHeader = HTTPField.Name(
+      ATProtoSessionAttestationReceipt.requiredHeaderName)!
+    let upstreamPreparedHeader = HTTPField.Name(
+      ATProtoSessionAttestationReceipt.upstreamPreparedHeaderName)!
     let latrGatewayDpopHeader = HTTPField.Name(LatrGatewayUpstreamDPoP.headerName)!
-    return CORSMiddleware(
+    return Middleware(base: CORSMiddleware(
       allowOrigin: allowOrigin,
       allowHeaders: [
         .accept, .authorization, .contentType, .origin, .ifNoneMatch,
         dpopHeader, requestIdHeader, traceparentHeader, idempotencyKeyHeader, lastEventIdHeader,
-        upstreamDpopHeader, latrGatewayDpopHeader,
+        upstreamDpopHeader, sessionDpopHeader, latrGatewayDpopHeader,
+        attestationReceiptHeader, attestationRequiredHeader, upstreamPreparedHeader,
       ],
       allowMethods: [.get, .post, .put, .patch, .delete, .head, .options],
       allowCredentials: true,
+      exposedHeaders: exposedHeaderNames,
       maxAge: .seconds(3600)
-    )
+    ))
   }
+
+  private static let exposedHeaderNames = [
+    ATProtoSessionDPoP.nonceHeaderName,
+    ATProtoSessionAttestationReceipt.receiptHeaderName,
+    ATProtoSessionAttestationReceipt.requiredHeaderName,
+    ATProtoSessionAttestationReceipt.upstreamPreparedHeaderName,
+  ]
 
   private static func resolveAllowOrigin(
     origins: [String],

@@ -8,6 +8,12 @@ import {
 } from "@atproto/oauth-client-browser"
 import { buildAtprotoLoopbackClientId } from "@atproto/oauth-types"
 import { operationsOAuthClientMetadataUrl } from "@/lib/operations-oauth-client-metadata"
+import {
+  capturePdsSessionAttestationNonce,
+  createPdsSessionAttestationProof,
+  pdsSessionDpopHeader,
+  shouldRetryPdsSessionAttestation,
+} from "@/lib/pds-session-attestation"
 
 export const OPERATIONS_OAUTH_SCOPE = "atproto"
 const storedDidKey = "@@atproto/oauth-client-browser(sub)"
@@ -100,7 +106,20 @@ export async function endSession(did: string) {
 
 export async function authFetch(session: OAuthSession, url: string, init?: RequestInit) {
   try {
-    return await session.fetchHandler(url, init)
+    const headers = new Headers(init?.headers)
+    headers.set(pdsSessionDpopHeader, await createPdsSessionAttestationProof(session))
+    let response = await session.fetchHandler(url, { ...init, headers })
+    const nonce = await capturePdsSessionAttestationNonce(session, response)
+
+    if (shouldRetryPdsSessionAttestation(response)) {
+      headers.set(
+        pdsSessionDpopHeader,
+        await createPdsSessionAttestationProof(session, nonce),
+      )
+      response = await session.fetchHandler(url, { ...init, headers })
+      await capturePdsSessionAttestationNonce(session, response)
+    }
+    return response
   } catch (error) {
     if (isTerminalOAuthSessionError(error)) notifySessionInvalidated(session.did, error)
     throw error

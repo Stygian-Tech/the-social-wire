@@ -18,7 +18,7 @@ import {
   operationsRequest,
   subscribeOperationsEvents,
 } from "@/lib/operations-api"
-import type { OAuthSession } from "@/lib/auth"
+import { createOperationsOAuthSession } from "@/__tests__/oauth-session"
 import { demoGapInvestigation, demoOverview } from "@/lib/demo-data"
 
 const evidence = demoOverview.evidence.overview
@@ -55,13 +55,13 @@ test("parses resumable authenticated event-stream frames", async () => {
   delete process.env.NEXT_PUBLIC_OPERATIONS_DEMO_MODE
   const events: unknown[] = []
   let connected = false
-  const session = {
-    fetchHandler: async () =>
+  const session = createOperationsOAuthSession(
+    async () =>
       new Response("id: 2\nevent: gap.changed\ndata: {\"gapId\":\"gap-1\"}\n\n", {
         status: 200,
         headers: { "Content-Type": "text/event-stream" },
       }),
-  } as unknown as OAuthSession
+  )
 
   await subscribeOperationsEvents({
     session,
@@ -91,10 +91,9 @@ test("keeps partial frames buffered and treats comments, heartbeat events, and m
       else controller.enqueue(encoder.encode(chunk))
     },
   })
-  const session = {
-    fetchHandler: async () =>
-      new Response(stream, { status: 200, headers: { "Content-Type": "text/event-stream" } }),
-  } as unknown as OAuthSession
+  const session = createOperationsOAuthSession(
+    async () => new Response(stream, { status: 200, headers: { "Content-Type": "text/event-stream" } }),
+  )
   const events: unknown[] = []
   let activityCount = 0
 
@@ -114,9 +113,9 @@ test("keeps partial frames buffered and treats comments, heartbeat events, and m
 
 test("surfaces expired event cursors as 410 without consuming a fake stream", async () => {
   delete process.env.NEXT_PUBLIC_OPERATIONS_DEMO_MODE
-  const session = {
-    fetchHandler: async () => Response.json({ error: "expired_cursor" }, { status: 410 }),
-  } as unknown as OAuthSession
+  const session = createOperationsOAuthSession(async () =>
+    Response.json({ error: "expired_cursor" }, { status: 410 }),
+  )
 
   const request = subscribeOperationsEvents({
     session,
@@ -138,10 +137,9 @@ test("cancels an open event-stream reader when its request is aborted", async ()
       cancelled = true
     },
   })
-  const session = {
-    fetchHandler: async () =>
-      new Response(stream, { status: 200, headers: { "Content-Type": "text/event-stream" } }),
-  } as unknown as OAuthSession
+  const session = createOperationsOAuthSession(
+    async () => new Response(stream, { status: 200, headers: { "Content-Type": "text/event-stream" } }),
+  )
 
   await subscribeOperationsEvents({
     session,
@@ -187,15 +185,13 @@ test("defaults the gateway origin from the fixed environment", () => {
 
 test("operations requests propagate request and W3C trace identifiers", async () => {
   let headers = new Headers()
-  const session = {
-    fetchHandler: async (_url: string, init?: RequestInit) => {
-      headers = new Headers(init?.headers)
-      return new Response(JSON.stringify({ ok: true }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      })
-    },
-  } as unknown as OAuthSession
+  const session = createOperationsOAuthSession(async (_url: string, init?: RequestInit) => {
+    headers = new Headers(init?.headers)
+    return new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    })
+  })
 
   await operationsRequest(session, "/v1/operations/gaps")
 
@@ -278,12 +274,10 @@ test("uses explicit lifecycle views and opaque before cursors", async () => {
   process.env.NEXT_PUBLIC_APP_ENV = "dev"
   let requestedURL = ""
   const item = demoOverview.backfills.find(({ status }) => status === "failed")!
-  const session = {
-    fetchHandler: async (url: string) => {
-      requestedURL = url
-      return Response.json({ backfills: [item], totalCount: 1, evidence })
-    },
-  } as unknown as OAuthSession
+  const session = createOperationsOAuthSession(async (url: string) => {
+    requestedURL = url
+    return Response.json({ backfills: [item], totalCount: 1, evidence })
+  })
 
   await fetchBackfills(session, "needs_attention", "opaque-page-cursor")
 
@@ -298,12 +292,10 @@ test("uses server-side alert lifecycle views before pagination", async () => {
   process.env.NEXT_PUBLIC_APP_ENV = "dev"
   let requestedURL = ""
   const alert = { ...demoOverview.alerts[0]!, id: "resolved-alert", status: "resolved" as const }
-  const session = {
-    fetchHandler: async (url: string) => {
-      requestedURL = url
-      return Response.json({ alerts: [alert], totalCount: 1, evidence })
-    },
-  } as unknown as OAuthSession
+  const session = createOperationsOAuthSession(async (url: string) => {
+    requestedURL = url
+    return Response.json({ alerts: [alert], totalCount: 1, evidence })
+  })
 
   await fetchAlerts(session, "history", "opaque-alert-cursor")
 
@@ -548,7 +540,5 @@ function restoreEnvironment(key: string, value: string | undefined) {
 }
 
 function jsonSession(value: unknown, status = 200) {
-  return {
-    fetchHandler: async () => Response.json(value, { status }),
-  } as unknown as OAuthSession
+  return createOperationsOAuthSession(async () => Response.json(value, { status }))
 }

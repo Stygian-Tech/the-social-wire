@@ -1,6 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { TokenRefreshError } from "@atproto/oauth-client-browser";
 import { onOAuthSessionInvalidated } from "@/lib/auth";
+import {
+  createPdsSessionAttestationProof,
+  PDS_SESSION_ATTESTATION_RECEIPT_HEADER,
+  PDS_SESSION_ATTESTATION_REQUIRED_HEADER,
+  PDS_SESSION_DPOP_HEADER,
+  PDS_SESSION_DPOP_NONCE_HEADER,
+} from "@/lib/pdsSessionAttestation";
+import { LATR_UPSTREAM_DPOP_HEADER } from "latr-packages/gateway-client";
 
 const ORIG_ENV = { ...process.env };
 const ORIG_FETCH = globalThis.fetch;
@@ -16,8 +24,46 @@ afterEach(() => {
 });
 
 describe("gatewayFetch", () => {
+  it("fails closed on an advertised DPoP algorithm mismatch and accepts a matching algorithm", async () => {
+    const jwtHeaders: Array<Record<string, unknown>> = [];
+    const supportedAlgorithms = ["PS256"];
+    const oauthSession = {
+      did: "did:plc:viewer",
+      getTokenSet: async () => ({ access_token: "access-token", token_type: "DPoP" }),
+      getTokenInfo: async () => ({ aud: "https://pds.example" }),
+      server: {
+        dpopKey: {
+          bareJwk: { kty: "EC", crv: "P-256", x: "x", y: "y" },
+          algorithms: ["ES256"],
+          createJwt: async (header: Record<string, unknown>) => {
+            jwtHeaders.push(header);
+            return "pds-session-proof";
+          },
+        },
+        dpopNonces: { get: async () => undefined, set: async () => {} },
+        serverMetadata: { dpop_signing_alg_values_supported: supportedAlgorithms },
+      },
+    } as never;
+
+    await expect(
+      createPdsSessionAttestationProof(oauthSession)
+    ).rejects.toThrow("OAuth session DPoP key has no supported algorithm");
+    expect(jwtHeaders).toEqual([]);
+
+    supportedAlgorithms.push("ES256");
+    await createPdsSessionAttestationProof(oauthSession);
+    expect(jwtHeaders).toHaveLength(1);
+    expect(jwtHeaders[0]?.alg).toBe("ES256");
+  });
+
   it("signs Social Wire gateway requests with Authorization and DPoP for the gateway URL", async () => {
-    let dpopClaims: Record<string, string | number> | undefined;
+    const dpopClaims: Array<Record<string, string | number>> = [];
+    const pdsFetchHandler = mock(async () =>
+      new Response(JSON.stringify({ records: [] }), {
+        status: 200,
+        headers: { "DPoP-Nonce": "fresh-pds-nonce" },
+      })
+    );
     const fetchMock = mock(async (url: string, init?: RequestInit) => {
       expect(url).toBe(
         "https://api.testing.thesocialwire.app/xrpc/app.thesocialwire.appview.listEntries?authorDid=did%3Aplc%3Aalice"
@@ -25,6 +71,10 @@ describe("gatewayFetch", () => {
       const headers = new Headers(init?.headers);
       expect(headers.get("Authorization")).toBe("DPoP access-token");
       expect(headers.get("DPoP")).toBe("gateway-dpop-proof");
+      expect(headers.get(PDS_SESSION_DPOP_HEADER)).toBe(
+        "pds-session-attestation-proof"
+      );
+      expect(headers.get(PDS_SESSION_DPOP_HEADER)).not.toContain(",");
       expect(headers.get("Accept")).toBe("application/json");
       return new Response(JSON.stringify({ entries: [] }), { status: 200 });
     });
@@ -39,17 +89,19 @@ describe("gatewayFetch", () => {
       getTokenInfo: async () => ({
         aud: "https://jellybaby.us-east.host.bsky.network",
       }),
-      fetchHandler: async () =>
-        new Response(JSON.stringify({ records: [] }), {
-          status: 200,
-          headers: { "DPoP-Nonce": "fresh-pds-nonce" },
-        }),
+      fetchHandler: pdsFetchHandler,
       server: {
         dpopKey: {
           bareJwk: { kty: "EC", crv: "P-256", x: "x", y: "y" },
           algorithms: ["ES256"],
           createJwt: async (_header: unknown, claims: Record<string, string | number>) => {
-            dpopClaims = claims;
+            dpopClaims.push(claims);
+            if (
+              claims.htu ===
+              "https://jellybaby.us-east.host.bsky.network/xrpc/com.atproto.server.getSession"
+            ) {
+              return "pds-session-attestation-proof";
+            }
             return "gateway-dpop-proof";
           },
         },
@@ -69,11 +121,285 @@ describe("gatewayFetch", () => {
 
     expect(res.status).toBe(200);
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(dpopClaims?.htm).toBe("GET");
-    expect(dpopClaims?.htu).toBe(
+    expect(dpopClaims).toHaveLength(2);
+    expect(dpopClaims[0]).toMatchObject({
+      htm: "GET",
+      htu: "https://jellybaby.us-east.host.bsky.network/xrpc/com.atproto.server.getSession",
+    });
+    expect(dpopClaims[0]).not.toHaveProperty("nonce");
+    expect(dpopClaims[0]?.ath).toBeTruthy();
+    expect(dpopClaims[1]?.htm).toBe("GET");
+    expect(dpopClaims[1]?.htu).toBe(
       "https://api.testing.thesocialwire.app/xrpc/app.thesocialwire.appview.listEntries"
     );
-    expect(dpopClaims?.ath).toBeTruthy();
+    expect(dpopClaims[1]?.ath).toBeTruthy();
+    expect(pdsFetchHandler).not.toHaveBeenCalled();
+  });
+
+  it("warms nonce-rotating PDS attestation before minting and preserving route proofs", async () => {
+    const nonceCache = new Map<string, string>();
+    const sessionProofHeaders: string[] = [];
+    const upstreamProofHeaders: string[] = [];
+    const receiptHeaders: string[] = [];
+    const pdsSessionClaims: Array<
+      Record<string, string | number | undefined>
+    > = [];
+    const upstreamClaims: Array<Record<string, string | number>> = [];
+    let gatewayCalls = 0;
+    let pdsNonce = "cold-pds-nonce";
+    let pdsProbeCalls = 0;
+    let pdsGetSessionCalls = 0;
+    let sessionProofIndex = 0;
+    let routeAttempts = 0;
+    const fetchMock = mock(async (url: string, init?: RequestInit) => {
+      gatewayCalls += 1;
+      const headers = new Headers(init?.headers);
+      sessionProofHeaders.push(headers.get(PDS_SESSION_DPOP_HEADER) ?? "");
+      upstreamProofHeaders.push(headers.get(LATR_UPSTREAM_DPOP_HEADER) ?? "");
+      receiptHeaders.push(
+        headers.get(PDS_SESSION_ATTESTATION_RECEIPT_HEADER) ?? ""
+      );
+
+      if (url.includes("app.thesocialwire.appview.listEntries")) {
+        pdsGetSessionCalls += 1;
+        const sessionClaim = pdsSessionClaims[pdsGetSessionCalls - 1];
+        if (sessionClaim?.nonce !== pdsNonce) {
+          return new Response(
+            JSON.stringify({ error: "use_pds_session_dpop_nonce" }),
+            {
+              status: 401,
+              headers: { [PDS_SESSION_DPOP_NONCE_HEADER]: pdsNonce },
+            }
+          );
+        }
+        pdsNonce = `post-attestation-pds-nonce-${pdsGetSessionCalls}`;
+        return new Response(JSON.stringify({ entries: [] }), {
+          status: 200,
+          headers: {
+            [PDS_SESSION_DPOP_NONCE_HEADER]: pdsNonce,
+            [PDS_SESSION_ATTESTATION_RECEIPT_HEADER]:
+              `attestation-receipt-${pdsGetSessionCalls}`,
+          },
+        });
+      }
+
+      expect(url).toContain("/v1/appview/bootstrap-stream");
+      routeAttempts += 1;
+      if (routeAttempts === 1) {
+        expect(pdsNonce).toBe("route-pds-nonce-1");
+        return new Response(JSON.stringify({ error: "attestation_required" }), {
+          status: 428,
+          headers: { [PDS_SESSION_ATTESTATION_REQUIRED_HEADER]: "true" },
+        });
+      }
+      if (routeAttempts === 2) {
+        return new Response(JSON.stringify({ error: "use_dpop_nonce" }), {
+          status: 401,
+          headers: { "DPoP-Nonce": "gateway-route-nonce" },
+        });
+      }
+      expect(upstreamClaims[1]?.nonce).toBe(pdsNonce);
+      pdsNonce = "post-route-pds-nonce";
+      return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const oauthSession = {
+      did: "did:plc:viewer",
+      getTokenSet: async () => ({
+        access_token: "access-token",
+        token_type: "DPoP",
+      }),
+      getTokenInfo: async () => ({ aud: "https://pds.example" }),
+      fetchHandler: async (input: string | URL | Request) => {
+        expect(String(input)).toContain("/xrpc/com.atproto.repo.listRecords");
+        pdsProbeCalls += 1;
+        pdsNonce = `route-pds-nonce-${pdsProbeCalls}`;
+        nonceCache.set("https://pds.example", pdsNonce);
+        return new Response(JSON.stringify({ records: [] }), {
+          status: 200,
+          headers: { "DPoP-Nonce": pdsNonce },
+        });
+      },
+      server: {
+        dpopKey: {
+          bareJwk: { kty: "EC", crv: "P-256", x: "x", y: "y" },
+          algorithms: ["ES256"],
+          createJwt: async (_header: unknown, claims: Record<string, string | number>) => {
+            if (
+              claims.htu ===
+              "https://pds.example/xrpc/com.atproto.server.getSession"
+            ) {
+              pdsSessionClaims.push(claims);
+              return `pds-session-proof-${++sessionProofIndex}`;
+            }
+            if (
+              claims.htu ===
+              "https://pds.example/xrpc/com.atproto.repo.listRecords"
+            ) {
+              upstreamClaims.push(claims);
+              return `route-upstream-proof-${upstreamClaims.length}`;
+            }
+            return "gateway-dpop-proof";
+          },
+        },
+        dpopNonces: {
+          get: async (origin: string) => nonceCache.get(origin),
+          set: async (origin: string, nonce: string) => {
+            nonceCache.set(origin, nonce);
+          },
+        },
+        serverMetadata: { dpop_signing_alg_values_supported: ["ES256"] },
+      },
+    } as never;
+
+    const { gatewayFetch } = await import("@/lib/socialWireGatewayClient");
+    const response = await gatewayFetch(
+      oauthSession,
+      "/v1/appview/bootstrap-stream"
+    );
+
+    expect(response.status).toBe(200);
+    expect(gatewayCalls).toBe(6);
+    expect(pdsGetSessionCalls).toBe(3);
+    expect(pdsProbeCalls).toBe(2);
+    expect(upstreamProofHeaders).toEqual([
+      "",
+      "",
+      "route-upstream-proof-1",
+      "",
+      "route-upstream-proof-2",
+      "route-upstream-proof-2",
+    ]);
+    expect(receiptHeaders).toEqual([
+      "",
+      "",
+      "attestation-receipt-2",
+      "",
+      "attestation-receipt-3",
+      "attestation-receipt-3",
+    ]);
+    expect(upstreamClaims).toHaveLength(2);
+    expect(upstreamClaims.map((claims) => claims.nonce)).toEqual([
+      "route-pds-nonce-1",
+      "route-pds-nonce-2",
+    ]);
+    expect(pdsSessionClaims.map((claims) => claims.nonce)).toEqual([
+      undefined,
+      "cold-pds-nonce",
+      "route-pds-nonce-1",
+      "route-pds-nonce-1",
+      "route-pds-nonce-2",
+      "route-pds-nonce-2",
+    ]);
+    expect(sessionProofHeaders).toEqual([
+      "pds-session-proof-1",
+      "pds-session-proof-2",
+      "pds-session-proof-3",
+      "pds-session-proof-4",
+      "pds-session-proof-5",
+      "pds-session-proof-6",
+    ]);
+    expect(new Set(pdsSessionClaims.map((claims) => claims.jti)).size).toBe(6);
+    expect(nonceCache.get("https://pds.example")).toBe("route-pds-nonce-2");
+    expect(
+      nonceCache.get("https://api.testing.thesocialwire.app")
+    ).toBe("gateway-route-nonce");
+  });
+
+  it("regenerates a prepared route proof at most once across repeated attestation-required responses", async () => {
+    const nonceCache = new Map<string, string>();
+    const routeProofHeaders: string[] = [];
+    const receiptHeaders: string[] = [];
+    let gatewayCalls = 0;
+    let preflightCalls = 0;
+    let pdsProbeCalls = 0;
+    let upstreamProofsCreated = 0;
+    const fetchMock = mock(async (url: string, init?: RequestInit) => {
+      gatewayCalls += 1;
+      const headers = new Headers(init?.headers);
+      if (url.includes("app.thesocialwire.appview.listEntries")) {
+        preflightCalls += 1;
+        return new Response(JSON.stringify({ entries: [] }), {
+          status: 200,
+          headers: {
+            [PDS_SESSION_ATTESTATION_RECEIPT_HEADER]:
+              `attestation-receipt-${preflightCalls}`,
+          },
+        });
+      }
+
+      routeProofHeaders.push(headers.get(LATR_UPSTREAM_DPOP_HEADER) ?? "");
+      receiptHeaders.push(
+        headers.get(PDS_SESSION_ATTESTATION_RECEIPT_HEADER) ?? ""
+      );
+      return new Response(JSON.stringify({ error: "attestation_required" }), {
+        status: 428,
+        headers: { [PDS_SESSION_ATTESTATION_REQUIRED_HEADER]: "true" },
+      });
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const oauthSession = {
+      did: "did:plc:viewer",
+      getTokenSet: async () => ({
+        access_token: "access-token",
+        token_type: "DPoP",
+      }),
+      getTokenInfo: async () => ({ aud: "https://pds.example" }),
+      fetchHandler: async () => {
+        pdsProbeCalls += 1;
+        const nonce = `route-pds-nonce-${pdsProbeCalls}`;
+        nonceCache.set("https://pds.example", nonce);
+        return new Response(JSON.stringify({ records: [] }), {
+          status: 200,
+          headers: { "DPoP-Nonce": nonce },
+        });
+      },
+      server: {
+        dpopKey: {
+          bareJwk: { kty: "EC", crv: "P-256", x: "x", y: "y" },
+          algorithms: ["ES256"],
+          createJwt: async (_header: unknown, claims: Record<string, string | number>) => {
+            if (
+              claims.htu ===
+              "https://pds.example/xrpc/com.atproto.repo.listRecords"
+            ) {
+              upstreamProofsCreated += 1;
+              return `route-upstream-proof-${upstreamProofsCreated}`;
+            }
+            return "request-proof";
+          },
+        },
+        dpopNonces: {
+          get: async (origin: string) => nonceCache.get(origin),
+          set: async (origin: string, nonce: string) => {
+            nonceCache.set(origin, nonce);
+          },
+        },
+        serverMetadata: { dpop_signing_alg_values_supported: ["ES256"] },
+      },
+    } as never;
+
+    const { gatewayFetch } = await import("@/lib/socialWireGatewayClient");
+    const response = await gatewayFetch(
+      oauthSession,
+      "/v1/appview/bootstrap-stream"
+    );
+
+    expect(response.status).toBe(428);
+    expect(gatewayCalls).toBe(4);
+    expect(preflightCalls).toBe(2);
+    expect(pdsProbeCalls).toBe(2);
+    expect(upstreamProofsCreated).toBe(2);
+    expect(routeProofHeaders).toEqual([
+      "route-upstream-proof-1",
+      "route-upstream-proof-2",
+    ]);
+    expect(receiptHeaders).toEqual([
+      "attestation-receipt-1",
+      "attestation-receipt-2",
+    ]);
   });
 
   it("retries once with the received DPoP nonce", async () => {
@@ -128,7 +454,10 @@ describe("gatewayFetch", () => {
     } as never;
 
     const { gatewayFetch } = await import("@/lib/socialWireGatewayClient");
-    const res = await gatewayFetch(oauthSession, "/v1/appview/bootstrap-stream");
+    const res = await gatewayFetch(
+      oauthSession,
+      "/xrpc/app.thesocialwire.appview.listEntries"
+    );
 
     expect(res.status).toBe(200);
     expect(fetchMock).toHaveBeenCalledTimes(2);
@@ -163,7 +492,10 @@ describe("gatewayFetch", () => {
       }),
       getTokenInfo: async () => ({ aud: "https://pds.example" }),
       fetchHandler: async () =>
-        new Response(JSON.stringify({ records: [] }), { status: 200 }),
+        new Response(JSON.stringify({ records: [] }), {
+          status: 200,
+          headers: { "DPoP-Nonce": "pds-nonce" },
+        }),
       server: {
         dpopKey: {
           bareJwk: { kty: "EC", crv: "P-256", x: "x", y: "y" },
@@ -172,7 +504,13 @@ describe("gatewayFetch", () => {
             _header: unknown,
             claims: Record<string, string | number>
           ) => {
-            nonceClaimsSeen.push(claims.nonce as string | undefined);
+            if (
+              String(claims.htu).startsWith(
+                "https://api.testing.thesocialwire.app/"
+              )
+            ) {
+              nonceClaimsSeen.push(claims.nonce as string | undefined);
+            }
             return "gateway-dpop-proof";
           },
         },
@@ -214,6 +552,11 @@ describe("gatewayFetch", () => {
         token_type: "DPoP",
       }),
       getTokenInfo: async () => ({ aud: "https://pds.example" }),
+      fetchHandler: async () =>
+        new Response(JSON.stringify({ records: [] }), {
+          status: 200,
+          headers: { "DPoP-Nonce": "pds-nonce" },
+        }),
       server: {
         dpopKey: {
           bareJwk: { kty: "EC", crv: "P-256", x: "x", y: "y" },
@@ -267,6 +610,11 @@ describe("gatewayFetch", () => {
         token_type: "DPoP",
       }),
       getTokenInfo: async () => ({ aud: "https://pds.example" }),
+      fetchHandler: async () =>
+        new Response(JSON.stringify({ records: [] }), {
+          status: 200,
+          headers: { "DPoP-Nonce": "pds-nonce" },
+        }),
       server: {
         dpopKey: {
           bareJwk: { kty: "EC", crv: "P-256", x: "x", y: "y" },
@@ -297,17 +645,39 @@ describe("gatewayFetch", () => {
   });
 
   it("does not let a telemetry 401 invalidate the session", async () => {
+    globalThis.fetch = mock(async () =>
+      new Response(JSON.stringify({ error: "invalid_token" }), {
+        status: 401,
+      })
+    ) as unknown as typeof fetch;
     const invalidations: string[] = [];
     const unsubscribe = onOAuthSessionInvalidated((did) => {
       invalidations.push(did);
     });
     const oauthSession = {
       did: "did:plc:viewer",
-      fetchHandler: mock(async () =>
-        new Response(JSON.stringify({ error: "invalid_token" }), {
-          status: 401,
-        })
-      ),
+      getTokenSet: async () => ({
+        access_token: "access-token",
+        token_type: "DPoP",
+      }),
+      getTokenInfo: async () => ({ aud: "https://pds.example" }),
+      fetchHandler: async () =>
+        new Response(JSON.stringify({ records: [] }), {
+          status: 200,
+          headers: { "DPoP-Nonce": "pds-nonce" },
+        }),
+      server: {
+        dpopKey: {
+          bareJwk: { kty: "EC", crv: "P-256", x: "x", y: "y" },
+          algorithms: ["ES256"],
+          createJwt: async () => "dpop-proof",
+        },
+        dpopNonces: {
+          get: async () => undefined,
+          set: async () => {},
+        },
+        serverMetadata: { dpop_signing_alg_values_supported: ["ES256"] },
+      },
     } as never;
 
     try {
@@ -338,6 +708,7 @@ describe("gatewayFetch", () => {
     });
     const oauthSession = {
       did,
+      getTokenInfo: async () => ({ aud: "https://pds.example" }),
       getTokenSet: async () => {
         throw failure;
       },

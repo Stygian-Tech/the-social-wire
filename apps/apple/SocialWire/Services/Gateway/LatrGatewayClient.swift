@@ -5,8 +5,27 @@ import LatrKit
 /// server-side; the native client supplies gateway-, L@tr-, and PDS-bound DPoP proofs.
 @MainActor
 final class LatrGatewayClient {
-    private static let upstreamDPoPHeader = "X-ATProto-Upstream-DPoP"
     private static let contractVersion = "link.latr.bookmarks.v1"
+    private static let sessionAttestationPreflightPath = "xrpc/app.thesocialwire.appview.listEntries"
+    private static let maximumAttestationCeremonies = 2
+
+    private struct PreparedGatewaySession {
+        let session: AuthSession
+        let attestationReceipt: String?
+    }
+
+    private enum AttestationCeremonyError: Error {
+        case refreshRequired
+    }
+
+    enum AttestationCeremonyResult<Value> {
+        case success(Value)
+        case refreshRequired
+    }
+
+    enum AttestationCeremonyLimitError: Error {
+        case exhausted
+    }
 
     private let auth: ATProtoOAuthService
     private let transportBaseURL: URL
@@ -86,14 +105,7 @@ final class LatrGatewayClient {
         var conflicts = 0
         repeat {
             let input = LatrMigrateBookmarksInput(limit: 25, cursor: cursor)
-            var body = try JSONSerialization.jsonObject(with: JSONEncoder().encode(input)) as? [String: Any] ?? [:]
-            body["upstreamDpopProof"] = try await upstreamProofPool(for: .migrateBookmarks)
-            let data = try await request(
-                method: "POST",
-                xrpc: .migrateBookmarks,
-                body: try JSONSerialization.data(withJSONObject: body),
-                bodyCarriesUpstreamProof: true
-            )
+            let data = try await migrateLegacyPage(input)
             let page = try JSONDecoder().decode(LatrBookmarkMigrationResult.self, from: data)
             guard page.ok else {
                 throw SocialWireError.badResponse("L@tr legacy bookmark migration did not complete.")
@@ -104,6 +116,52 @@ final class LatrGatewayClient {
         } while cursor != nil
         if conflicts == 0 { UserDefaults.standard.set(true, forKey: key) }
         return conflicts
+    }
+
+    private func migrateLegacyPage(_ input: LatrMigrateBookmarksInput) async throws -> Data {
+        do {
+            return try await Self.performAttestationCeremonies { _ in
+                let prepared = try await self.preparedGatewaySession()
+                var body = try JSONSerialization.jsonObject(
+                    with: JSONEncoder().encode(input)
+                ) as? [String: Any] ?? [:]
+                body["upstreamDpopProof"] = try await self.upstreamProofPool(
+                    for: .migrateBookmarks,
+                    session: prepared.session
+                )
+                do {
+                    return .success(try await self.request(
+                        method: "POST",
+                        xrpc: .migrateBookmarks,
+                        body: try JSONSerialization.data(withJSONObject: body),
+                        bodyCarriesUpstreamProof: true,
+                        preparedSession: prepared
+                    ))
+                } catch AttestationCeremonyError.refreshRequired {
+                    return .refreshRequired
+                }
+            }
+        } catch AttestationCeremonyLimitError.exhausted {
+            throw SocialWireError.badResponse(
+                "Gateway session attestation expired while preparing the migration."
+            )
+        }
+    }
+
+    static func performAttestationCeremonies<Value>(
+        attempt: (Int) async throws -> AttestationCeremonyResult<Value>
+    ) async throws -> Value {
+        for ceremony in 0 ..< maximumAttestationCeremonies {
+            switch try await attempt(ceremony) {
+            case .success(let value):
+                return value
+            case .refreshRequired:
+                if ceremony + 1 == maximumAttestationCeremonies {
+                    throw AttestationCeremonyLimitError.exhausted
+                }
+            }
+        }
+        throw AttestationCeremonyLimitError.exhausted
     }
 
     private func setState(bookmarkURI: String, state: SavedItemState) async throws {
@@ -121,7 +179,8 @@ final class LatrGatewayClient {
         xrpc: LatrXRPCMethod,
         query: [URLQueryItem] = [],
         body: Data? = nil,
-        bodyCarriesUpstreamProof: Bool = false
+        bodyCarriesUpstreamProof: Bool = false,
+        preparedSession: PreparedGatewaySession? = nil
     ) async throws -> Data {
         var components = URLComponents(
             url: transportBaseURL.appending(path: "xrpc/\(xrpc.nsid)"),
@@ -129,7 +188,48 @@ final class LatrGatewayClient {
         )
         components?.queryItems = query.isEmpty ? nil : query
         guard let url = components?.url else { throw SocialWireError.invalidURL }
-        let session = try await auth.validSession()
+
+        let ceremonyLimit = preparedSession == nil ? Self.maximumAttestationCeremonies : 1
+        for ceremony in 0 ..< ceremonyLimit {
+            let prepared: PreparedGatewaySession
+            if let preparedSession {
+                prepared = preparedSession
+            } else {
+                prepared = try await preparedGatewaySession()
+            }
+            do {
+                return try await requestOnce(
+                    method: method,
+                    xrpc: xrpc,
+                    url: url,
+                    body: body,
+                    bodyCarriesUpstreamProof: bodyCarriesUpstreamProof,
+                    prepared: prepared
+                )
+            } catch AttestationCeremonyError.refreshRequired {
+                if ceremony + 1 == ceremonyLimit {
+                    if preparedSession != nil { throw AttestationCeremonyError.refreshRequired }
+                    throw SocialWireError.badResponse(
+                        "Gateway session attestation expired while preparing the request."
+                    )
+                }
+            }
+        }
+        throw SocialWireError.badResponse("Gateway session attestation did not complete.")
+    }
+
+    private func requestOnce(
+        method: String,
+        xrpc: LatrXRPCMethod,
+        url: URL,
+        body: Data?,
+        bodyCarriesUpstreamProof: Bool,
+        prepared: PreparedGatewaySession
+    ) async throws -> Data {
+        let session = prepared.session
+        let preparedUpstreamProof = bodyCarriesUpstreamProof
+            ? nil
+            : try await upstreamProofPool(for: xrpc, session: session)
 
         func signedRequest() async throws -> URLRequest {
             var request = URLRequest(url: url)
@@ -160,10 +260,21 @@ final class LatrGatewayClient {
                     forHTTPHeaderField: LatrGatewayEnvironment.latrGatewayDPoPHeaderName
                 )
             }
-            if !bodyCarriesUpstreamProof {
+            Self.applyPreparedUpstreamProof(preparedUpstreamProof, to: &request)
+            if !LatrGatewayEnvironment.usesDirectExternalGateway {
+                Self.applyPreparedAttestation(
+                    receipt: prepared.attestationReceipt,
+                    bodyCarriesUpstreamProof: bodyCarriesUpstreamProof,
+                    to: &request
+                )
+                let getSessionURL = ATProtoSessionDPoP.getSessionURL(for: session)
                 request.setValue(
-                    try await upstreamProofPool(for: xrpc),
-                    forHTTPHeaderField: Self.upstreamDPoPHeader
+                    try await auth.dpop.proof(
+                        method: "GET",
+                        url: getSessionURL,
+                        accessToken: session.accessToken
+                    ),
+                    forHTTPHeaderField: ATProtoSessionDPoP.headerName
                 )
             }
             return request
@@ -174,14 +285,20 @@ final class LatrGatewayClient {
         guard let http = response as? HTTPURLResponse else {
             throw SocialWireError.badResponse("Missing L@tr gateway response.")
         }
-        await captureNonce(from: http, xrpc: xrpc)
-        if [400, 401].contains(http.statusCode), http.value(forHTTPHeaderField: "DPoP-Nonce") != nil {
+        await captureNonce(from: http, xrpc: xrpc, session: session)
+        if ATProtoSessionDPoP.isAttestationRequired(http) {
+            throw AttestationCeremonyError.refreshRequired
+        }
+        if shouldRetryNonceChallenge(http) {
             let retry = try await signedRequest()
             let (retryData, retryResponse) = try await urlSession.data(for: retry)
             guard let retryHTTP = retryResponse as? HTTPURLResponse else {
                 throw SocialWireError.badResponse("Missing L@tr gateway response.")
             }
-            await captureNonce(from: retryHTTP, xrpc: xrpc)
+            await captureNonce(from: retryHTTP, xrpc: xrpc, session: session)
+            if ATProtoSessionDPoP.isAttestationRequired(retryHTTP) {
+                throw AttestationCeremonyError.refreshRequired
+            }
             try validate(retryHTTP, data: retryData)
             return retryData
         }
@@ -189,8 +306,15 @@ final class LatrGatewayClient {
         return data
     }
 
-    private func captureNonce(from response: HTTPURLResponse, xrpc: LatrXRPCMethod) async {
+    private func captureNonce(
+        from response: HTTPURLResponse,
+        xrpc: LatrXRPCMethod,
+        session: AuthSession
+    ) async {
         await auth.dpop.updateNonce(from: response)
+        if !LatrGatewayEnvironment.usesDirectExternalGateway {
+            await auth.dpop.updateSessionNonce(from: response, session: session)
+        }
         guard !LatrGatewayEnvironment.usesDirectExternalGateway,
               let nonce = response.value(forHTTPHeaderField: "DPoP-Nonce")
         else { return }
@@ -200,8 +324,90 @@ final class LatrGatewayClient {
         )
     }
 
-    private func upstreamProofPool(for method: LatrXRPCMethod) async throws -> String {
+    private func shouldRetryNonceChallenge(_ response: HTTPURLResponse) -> Bool {
+        guard [400, 401].contains(response.statusCode) else { return false }
+        return response.value(forHTTPHeaderField: "DPoP-Nonce") != nil
+            || (!LatrGatewayEnvironment.usesDirectExternalGateway
+                && ATProtoSessionDPoP.isNonceChallenge(response))
+    }
+
+    private func preparedGatewaySession() async throws -> PreparedGatewaySession {
         let session = try await auth.validSession()
+        if !LatrGatewayEnvironment.usesDirectExternalGateway {
+            return PreparedGatewaySession(
+                session: session,
+                attestationReceipt: try await warmSessionAttestation(session: session)
+            )
+        }
+        return PreparedGatewaySession(session: session, attestationReceipt: nil)
+    }
+
+    private func warmSessionAttestation(session: AuthSession) async throws -> String? {
+        var components = URLComponents(
+            url: transportBaseURL.appending(path: Self.sessionAttestationPreflightPath),
+            resolvingAgainstBaseURL: false
+        )
+        components?.queryItems = [
+            URLQueryItem(name: "authorDid", value: session.did),
+            URLQueryItem(name: "limit", value: "1"),
+        ]
+        guard let url = components?.url else { throw SocialWireError.invalidURL }
+
+        func signedRequest() async throws -> URLRequest {
+            var request = URLRequest(url: url)
+            request.httpMethod = "GET"
+            request.setValue("application/json", forHTTPHeaderField: "Accept")
+            request.setValue("DPoP \(session.accessToken)", forHTTPHeaderField: "Authorization")
+            request.setValue(
+                try await auth.dpop.proof(method: "GET", url: url, accessToken: session.accessToken),
+                forHTTPHeaderField: "DPoP"
+            )
+            request.setValue(
+                try await auth.dpop.proof(
+                    method: "GET",
+                    url: ATProtoSessionDPoP.getSessionURL(for: session),
+                    accessToken: session.accessToken
+                ),
+                forHTTPHeaderField: ATProtoSessionDPoP.headerName
+            )
+            return request
+        }
+
+        let (_, response) = try await urlSession.data(for: signedRequest())
+        guard var http = response as? HTTPURLResponse else {
+            throw SocialWireError.badResponse("Missing session-attestation preflight response.")
+        }
+        await captureGatewaySessionNonces(from: http, session: session)
+
+        if shouldRetryNonceChallenge(http) {
+            let (_, retryResponse) = try await urlSession.data(for: signedRequest())
+            guard let retryHTTP = retryResponse as? HTTPURLResponse else {
+                throw SocialWireError.badResponse("Missing session-attestation preflight response.")
+            }
+            http = retryHTTP
+            await captureGatewaySessionNonces(from: retryHTTP, session: session)
+        }
+
+        guard (200 ..< 300).contains(http.statusCode) else {
+            throw SocialWireError.badResponse(
+                "Session-attestation preflight failed (\(http.statusCode))."
+            )
+        }
+        return ATProtoSessionDPoP.receipt(from: http)
+    }
+
+    private func captureGatewaySessionNonces(
+        from response: HTTPURLResponse,
+        session: AuthSession
+    ) async {
+        await auth.dpop.updateNonce(from: response)
+        await auth.dpop.updateSessionNonce(from: response, session: session)
+    }
+
+    private func upstreamProofPool(
+        for method: LatrXRPCMethod,
+        session: AuthSession
+    ) async throws -> String {
         let specs = Self.proofSpecs(for: method)
         var proofs: [String] = []
         for spec in specs {
@@ -218,6 +424,35 @@ final class LatrGatewayClient {
             }
         }
         return proofs.joined(separator: ",")
+    }
+
+    nonisolated static func applyPreparedUpstreamProof(
+        _ proof: String?,
+        to request: inout URLRequest
+    ) {
+        guard let proof, !proof.isEmpty else { return }
+        request.setValue(proof, forHTTPHeaderField: "X-ATProto-Upstream-DPoP")
+    }
+
+    nonisolated static func applyPreparedAttestation(
+        receipt: String?,
+        bodyCarriesUpstreamProof: Bool,
+        to request: inout URLRequest
+    ) {
+        if let receipt = receipt?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !receipt.isEmpty
+        {
+            request.setValue(
+                receipt,
+                forHTTPHeaderField: ATProtoSessionDPoP.receiptHeaderName
+            )
+        }
+        if bodyCarriesUpstreamProof {
+            request.setValue(
+                "true",
+                forHTTPHeaderField: ATProtoSessionDPoP.preparedUpstreamDPoPHeaderName
+            )
+        }
     }
 
     nonisolated static func proofSpecs(for method: LatrXRPCMethod) -> [(nsid: String, httpMethod: String, count: Int)] {
@@ -239,7 +474,6 @@ final class LatrGatewayClient {
 
     private func validate(_ response: HTTPURLResponse, data: Data) throws {
         guard (200 ..< 300).contains(response.statusCode) else {
-            if response.statusCode == 401 { auth.invalidateSessionAfterUnauthorizedResponse() }
             let error = try? JSONDecoder().decode(LatrXRPCErrorBody.self, from: data)
             throw SocialWireError.badResponse(error?.message ?? error?.error ?? "L@tr gateway request failed (\(response.statusCode)).")
         }
