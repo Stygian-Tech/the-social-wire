@@ -1,4 +1,4 @@
-import Crypto
+@preconcurrency import Crypto
 import Foundation
 
 /// Short-lived proof that this exact access token was recently attested against its authoritative PDS.
