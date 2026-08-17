@@ -92,7 +92,7 @@ DATABASE_URL='postgresql://…' bash scripts/apply-database-migrations.sh
 
 # Run each service in a separate terminal with the same disposable DATABASE_URL.
 # Gateway (OAuth, sync, writes)
-(cd services/gateway && APP_ENV=dev DATABASE_URL='postgresql://…' APPVIEW_BASE_URL=http://127.0.0.1:8081 GATEWAY_APPVIEW_INTERNAL_SECRET=local-development-only swift run Gateway)
+(cd services/gateway && APP_ENV=dev DATABASE_URL='postgresql://…' APPVIEW_BASE_URL=http://127.0.0.1:8081 GATEWAY_APPVIEW_INTERNAL_SECRET=local-development-only PDS_ATTESTATION_RECEIPT_SECRET=local-development-attestation-receipt-secret swift run Gateway)
 
 # AppView (sidebar + Thin AppView reads)
 (cd services/appview && APP_ENV=dev DATABASE_URL='postgresql://…' ENABLE_THIN_APPVIEW=true GATEWAY_APPVIEW_INTERNAL_SECRET=local-development-only swift run AppView)

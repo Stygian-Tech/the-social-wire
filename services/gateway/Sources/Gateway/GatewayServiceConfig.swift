@@ -1,6 +1,11 @@
 import Foundation
 import GatewayCore
 
+enum GatewayServiceConfigError: Error, Equatable {
+  case missingPDSAttestationReceiptSecret
+  case invalidPDSAttestationReceiptSecret
+}
+
 /// Gateway-specific configuration (PDS write-through, sync cache, optional AppView read proxy).
 struct GatewayServiceConfig: Sendable {
   let core: GatewayConfig
@@ -13,6 +18,8 @@ struct GatewayServiceConfig: Sendable {
   let charybdisBaseURL: String?
   /// When set, `link.latr.bookmarks.*` XRPC is proxied to L@tr using iOS server credentials.
   let latrIosProxy: LatrIosProxyCredentials.Config?
+  /// Shared across Gateway replicas so short-lived PDS attestations remain portable.
+  let pdsAttestationReceipt: ATProtoSessionAttestationReceipt
 
   enum CacheBackend: Sendable {
     case sqlite(path: String)
@@ -21,8 +28,15 @@ struct GatewayServiceConfig: Sendable {
 
   static func fromEnvironment(
     _ env: [String: String] = AppEnvironmentLoader.mergeProcessWithDotenv()
-  ) -> GatewayServiceConfig {
+  ) throws -> GatewayServiceConfig {
     let core = GatewayConfig.fromEnvironment(env)
+    let receiptSecret = try pdsAttestationReceiptSecret(env: env, appEnv: core.appEnv)
+    let pdsAttestationReceipt: ATProtoSessionAttestationReceipt
+    do {
+      pdsAttestationReceipt = try ATProtoSessionAttestationReceipt(secret: receiptSecret)
+    } catch {
+      throw GatewayServiceConfigError.invalidPDSAttestationReceiptSecret
+    }
     let backend: CacheBackend
     switch core.appEnv {
     case .local:
@@ -46,7 +60,23 @@ struct GatewayServiceConfig: Sendable {
       appViewBaseURL: appViewBaseURL,
       operationsBaseURL: operationsBaseURL,
       charybdisBaseURL: charybdisBaseURL,
-      latrIosProxy: latrIosProxy
+      latrIosProxy: latrIosProxy,
+      pdsAttestationReceipt: pdsAttestationReceipt
     )
+  }
+
+  private static func pdsAttestationReceiptSecret(
+    env: [String: String],
+    appEnv: GatewayConfig.AppEnvironment
+  ) throws -> String {
+    if let value = env["PDS_ATTESTATION_RECEIPT_SECRET"]?
+      .trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty
+    {
+      return value
+    }
+    guard appEnv == .local else {
+      throw GatewayServiceConfigError.missingPDSAttestationReceiptSecret
+    }
+    return "local-only-pds-attestation-receipt-secret"
   }
 }

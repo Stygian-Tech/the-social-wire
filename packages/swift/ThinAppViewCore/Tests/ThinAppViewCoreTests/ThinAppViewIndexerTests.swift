@@ -15,7 +15,7 @@ struct ThinAppViewIndexerTests {
       self.base = base
     }
 
-    func siteBase(forPublicationAtUri atUri: String) async -> String? {
+    func siteBase(forPublicationAtUri atUri: String) async throws -> String? {
       lookups.append(atUri)
       return base
     }

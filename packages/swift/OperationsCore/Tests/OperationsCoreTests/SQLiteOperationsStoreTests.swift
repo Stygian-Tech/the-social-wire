@@ -1,4 +1,5 @@
 import Foundation
+@preconcurrency import GRDB
 import Logging
 import Testing
 
@@ -6,6 +7,78 @@ import Testing
 
 @Suite("SQLiteOperationsStore")
 struct SQLiteOperationsStoreTests {
+  @Test("existing inbox schema upgrades filtered scope state and preserves indexes")
+  func existingInboxSchemaUpgrade() async throws {
+    let url = FileManager.default.temporaryDirectory
+      .appendingPathComponent("operations-upgrade-\(UUID().uuidString).sqlite")
+    defer { try? FileManager.default.removeItem(at: url) }
+    let now = "2026-08-16T12:00:00.000Z"
+    try await DatabaseQueue(path: url.path).write { db in
+      try db.execute(sql: """
+        CREATE TABLE appview_ingestion_inbox (
+          environment TEXT NOT NULL, source_generation TEXT NOT NULL, seq INTEGER NOT NULL,
+          source_host TEXT NOT NULL, cursor_kind TEXT NOT NULL CHECK (cursor_kind = 'jetstream_v2_seq'),
+          event_kind TEXT NOT NULL, repo_did TEXT NOT NULL, collection TEXT, operation TEXT,
+          repo_rev TEXT, record_key TEXT, record_cid TEXT, payload TEXT NOT NULL,
+          event_time TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'pending'
+            CHECK (status IN ('pending', 'leased', 'retry', 'applied', 'dead_letter')),
+          attempt_count INTEGER NOT NULL DEFAULT 0, next_attempt_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          lease_owner TEXT, lease_token TEXT, lease_expires_at TEXT,
+          failure_category TEXT, failure_reason TEXT, staged_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL, applied_at TEXT, dead_lettered_at TEXT,
+          reconciled_at TEXT, expires_at TEXT,
+          PRIMARY KEY (environment, source_generation, seq)
+        );
+        CREATE INDEX idx_appview_ingestion_inbox_claim
+          ON appview_ingestion_inbox
+            (environment, source_generation, status, next_attempt_at, seq)
+          WHERE status IN ('pending', 'leased', 'retry');
+        CREATE INDEX idx_appview_ingestion_inbox_repo_fifo
+          ON appview_ingestion_inbox (environment, source_generation, repo_did, seq)
+          WHERE status IN ('pending', 'leased', 'retry');
+        INSERT INTO appview_ingestion_inbox
+          (environment, source_generation, seq, source_host, cursor_kind, event_kind,
+           repo_did, payload, event_time, staged_at, updated_at, expires_at)
+        VALUES ('dev', 'v2', 1, 'jetstream.example', 'jetstream_v2_seq', 'identity',
+                'did:plc:existing', '{}', ?, ?, ?, ?);
+        """, arguments: [now, now, now, now])
+    }
+
+    let store = try SQLiteOperationsStore(
+      path: url.path, environment: "dev", logger: Logger(label: "operations.upgrade.test"))
+    let database = try DatabaseQueue(path: url.path)
+    let schemaEvidence = try await database.read { db -> (String, [String]) in
+      let sql = try String.fetchOne(
+        db,
+        sql: "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'appview_ingestion_inbox'"
+      ) ?? ""
+      let indexes = try String.fetchAll(
+        db,
+        sql: "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'appview_ingestion_inbox'"
+      )
+      return (sql, indexes)
+    }
+    #expect(schemaEvidence.0.contains("'filtered_scope'"))
+    #expect(schemaEvidence.1.contains("idx_appview_ingestion_inbox_claim"))
+    #expect(schemaEvidence.1.contains("idx_appview_ingestion_inbox_repo_fifo"))
+
+    try await database.write { db in
+      try db.execute(sql: """
+        INSERT INTO appview_ingestion_inbox
+          (environment, source_generation, seq, source_host, cursor_kind, event_kind,
+           repo_did, collection, payload, event_time, status, staged_at, updated_at,
+           filtered_scope_policy, filtered_scope_at, expires_at)
+        VALUES ('dev', 'v2', 2, 'jetstream.example', 'jetstream_v2_seq', 'commit',
+                'did:plc:filtered', 'app.example.unknown', '{}', ?, 'filtered_scope',
+                ?, ?, ?, ?, ?)
+        """, arguments: [now, now, now, "publication-author-viewer-v1", now, now])
+    }
+    let snapshot = try await store.fetchIngestionDurabilitySnapshot()
+    #expect(snapshot.inbox.filteredScope == 1)
+    #expect(snapshot.inbox.total == 2)
+    #expect(snapshot.inboxBySourceGeneration["v2"]?.filteredScope == 1)
+  }
   @Test("Jetstream endpoint state and reconnect commands are durable")
   func jetstreamRecoveryControlLifecycle() async throws {
     let url = FileManager.default.temporaryDirectory

@@ -140,6 +140,7 @@ filter_changed jetstream_ingest \
 filter_changed database_migrator \
   'database/migrations/**' \
   'scripts/apply-database-migrations.sh' \
+  'scripts/verify-jetstream-v2-drain-indexes.sql' \
   'services/database-migrator/**' \
   'railway/database-migrator.json' \
   '.github/workflows/ci.yml'
@@ -153,6 +154,7 @@ filter_changed lexicons \
 
 filter_changed spec \
   'packages/spec/**' \
+  'docs/runbooks/operations/jetstream-v2-durable-replay.md' \
   'packages/lexicons/**' \
   'apps/web/**' \
   'apps/apple/**' \
@@ -162,9 +164,13 @@ filter_changed spec \
   'services/gateway/Sources/Gateway/**' \
   'services/appview/Sources/AppView/**' \
   'services/operations/Sources/Operations/**' \
+  'services/jetstream-ingest/internal/config/config.go' \
+  'services/jetstream-ingest/internal/store/postgres.go' \
   'packages/swift/GatewayCore/**' \
   'packages/swift/ThinAppViewCore/**' \
   'packages/swift/OperationsCore/**' \
+  'scripts/apply-database-migrations.sh' \
+  'scripts/verify-jetstream-v2-drain-indexes.sql' \
   'scripts/operations/**' \
   'package.json' \
   'bun.lock' \

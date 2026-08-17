@@ -36,6 +36,7 @@ export function DurableIngestionStatus({ durability }: { durability?: IngestionD
     ["Last Staged Sequence", checkpoint?.lastStagedSequence?.toLocaleString() ?? "—"],
     ["Applied Terminal Prefix", checkpoint?.lastAppliedSequence?.toLocaleString() ?? "—"],
     ["Pending / Leased / Retry", `${durability.inbox.pending} / ${durability.inbox.leased} / ${durability.inbox.retrying}`],
+    ["Filtered Outside Scope", (durability.inbox.filteredScope ?? 0).toLocaleString()],
     ["Oldest Pending", durability.inbox.oldestPendingAgeSeconds === undefined ? "—" : `${durability.inbox.oldestPendingAgeSeconds.toFixed(1)}s`],
     ["Unresolved Dead Letters", durability.inbox.deadLetters.toLocaleString()],
     ["Open Recovery Incidents", activeIncidents.toLocaleString()],
@@ -60,7 +61,7 @@ export function DurableIngestionStatus({ durability }: { durability?: IngestionD
         ))}
       </div>
       <p className="border-t px-3 py-2 text-[10px] text-muted-foreground">
-        Sequence values are ordered cursors, not contiguous event counters. Staged and terminal-prefix watermarks are shown independently; their numeric difference is never treated as missing events.
+        Sequence values are ordered cursors, not contiguous event counters. Staged and terminal-prefix watermarks are shown independently; their numeric difference is never treated as missing events. Scope-filtered rows are terminal but were not projected or reconciled.
       </p>
     </OperationsSection>
   )

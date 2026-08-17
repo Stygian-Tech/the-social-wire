@@ -105,21 +105,26 @@ export type JetstreamDurabilityCheckpoint = {
   replayRetryCount: number
   replayRangeResumeCount: number
   replayLastProgressAt?: string
+  intakeHeartbeatAt?: string | null
   updatedAt: string
+}
+export type IngestionInboxMetrics = {
+  pending: number
+  leased: number
+  retrying: number
+  applied: number
+  // Optional only while an older Operations server may still be serving during a rolling deploy.
+  filteredScope?: number
+  deadLetters: number
+  total: number
+  oldestPendingAt?: string
+  oldestPendingAgeSeconds?: number
 }
 export type IngestionDurability = {
   environment: EnvironmentName
   checkpoints: JetstreamDurabilityCheckpoint[]
-  inbox: {
-    pending: number
-    leased: number
-    retrying: number
-    applied: number
-    deadLetters: number
-    total: number
-    oldestPendingAt?: string
-    oldestPendingAgeSeconds?: number
-  }
+  inbox: IngestionInboxMetrics
+  inboxBySourceGeneration?: Record<string, IngestionInboxMetrics>
   incidents: {
     open: number
     recovering: number

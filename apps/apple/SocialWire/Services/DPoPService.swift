@@ -55,6 +55,13 @@ actor DPoPService {
         nonceByOrigin[originKey(for: url)] = trimmed
     }
 
+    func updateSessionNonce(from response: HTTPURLResponse, session: AuthSession) {
+        guard let nonce = response.value(forHTTPHeaderField: ATProtoSessionDPoP.nonceHeaderName) else {
+            return
+        }
+        updateNonce(nonce, for: ATProtoSessionDPoP.getSessionURL(for: session))
+    }
+
     /// Advances the viewer PDS DPoP nonce chain before minting upstream write proofs (RFC 9449 single-use nonces).
     func advancePdsDpopNonce(
         session: AuthSession,
@@ -164,7 +171,10 @@ actor DPoPService {
     }
 
     private func originKey(for url: URL) -> String {
-        "\(url.scheme ?? "https")://\(url.host ?? "")"
+        let scheme = (url.scheme ?? "https").lowercased()
+        let host = (url.host ?? "").lowercased()
+        let port = url.port ?? (scheme == "http" ? 80 : 443)
+        return "\(scheme)://\(host):\(port)"
     }
 
     private func urlWithoutQueryFragment(_ url: URL) -> URL {

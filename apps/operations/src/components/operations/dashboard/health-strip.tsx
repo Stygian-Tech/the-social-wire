@@ -1,10 +1,16 @@
 import { Activity, CheckCircle2, Clock3, Database, TriangleAlert } from "lucide-react"
 import {
-  effectiveConnectionState,
   elapsedSeconds,
   healthLabel,
+  overviewIngestionConnectionState,
   serviceHealthEvidence,
 } from "@/lib/observability-values"
+import {
+  ingestionAuthoritySource,
+  ingestionSourceLabel,
+  isJetstreamV2InboxSource,
+  jetstreamV2CheckpointForOverview,
+} from "@/lib/operations-policy"
 import type { Overview } from "@/lib/operations-types"
 
 export function HealthStrip({ overview, referenceTime = overview.refreshedAt }: { overview: Overview; referenceTime?: string }) {
@@ -18,16 +24,20 @@ export function HealthStrip({ overview, referenceTime = overview.refreshedAt }: 
     referenceTime,
     ["appview-worker"],
   )
+  const authoritySource = ingestionAuthoritySource(overview)
+  const v2InboxAuthority = isJetstreamV2InboxSource(authoritySource)
+  const authorityLabel = authoritySource
+    ? (v2InboxAuthority ? ingestionSourceLabel(authoritySource) : authoritySource)
+    : "Ingestion source"
+  const durabilityCheckpoint = v2InboxAuthority
+    ? jetstreamV2CheckpointForOverview(overview)
+    : overview.durability?.checkpoints[0]
   const transportAge = elapsedSeconds(
-    overview.ingestion?.transportHeartbeatAt,
+    overview.ingestion?.transportHeartbeatAt ??
+      (v2InboxAuthority ? durabilityCheckpoint?.intakeHeartbeatAt ?? undefined : undefined),
     referenceTime,
   )
-  const connectionState = effectiveConnectionState({
-    connectionState: overview.ingestion?.connectionState,
-    transportHeartbeatAt: overview.ingestion?.transportHeartbeatAt,
-    lastDisconnectedAt: overview.ingestion?.lastDisconnectAt,
-    referenceTime,
-  })
+  const connectionState = overviewIngestionConnectionState(overview, referenceTime)
   const legacyGapSignals =
     overview.counts?.activeGaps ?? (overview.gaps ?? []).filter((gap) => !["resolved", "ignored"].includes(gap.status)).length
   const durability = overview.durability
@@ -36,7 +46,6 @@ export function HealthStrip({ overview, referenceTime = overview.refreshedAt }: 
     : null
   const deadLetters = durability?.inbox.deadLetters ?? null
   const oldestInboxAge = durability?.inbox.oldestPendingAgeSeconds
-  const durabilityCheckpoint = durability?.checkpoints[0]
   const recoveryActive =
     durabilityCheckpoint?.replayState === "replaying" ||
     durabilityCheckpoint?.replayState === "paused_budget" ||
@@ -86,8 +95,8 @@ export function HealthStrip({ overview, referenceTime = overview.refreshedAt }: 
       value: freshnessLabel,
       note:
         transportAge === null
-          ? "No valid transport heartbeat reported"
-          : `${overview.ingestion?.source ?? "Ingestion source"} transport heartbeat ${transportAge.toFixed(1)}s ago · Charybdis freshness ${workerFreshness.state}`,
+          ? `No valid ${v2InboxAuthority ? "durable checkpoint" : "transport heartbeat"} reported`
+          : `${authorityLabel} ${v2InboxAuthority ? "checkpoint" : "transport heartbeat"} ${transportAge.toFixed(1)}s ago · Charybdis freshness ${workerFreshness.state}`,
       icon: Clock3,
       warning: !ingestionFresh,
     },

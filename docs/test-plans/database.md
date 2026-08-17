@@ -12,7 +12,7 @@ DATABASE_URL='postgresql://…' bash scripts/apply-database-migrations.sh
 
 ## What to validate
 
-Run the migration script against a disposable Postgres database before merging. CI performs the same empty-database and idempotence checks; this catches broken migrations before Railway's migration service runs.
+Run the migration script against a disposable Postgres database before merging. CI performs the same empty-database and idempotence checks, then verifies the Jetstream V2 drain indexes against representative copies of the combined claim-query shapes. Source-contract tests guard their critical predicates. This catches broken migrations and planner drift before Railway's migration service runs.
 
 ## Application tables
 

@@ -43,6 +43,7 @@ describe("thinAppViewClient", () => {
         { status: 200, headers: { "Content-Type": "application/json" } }
       );
     });
+    const oauthSession = gatewayOAuthSession(fetchHandler);
 
     const { listEntriesFromAppView } = await import("@/lib/thinAppViewClient");
     const page = await listEntriesFromAppView({
@@ -56,7 +57,7 @@ describe("thinAppViewClient", () => {
         publicationSiteUrls: ["https://example.offprint.app"],
       },
       filter: "unread",
-      oauthSession: { fetchHandler } as never,
+      oauthSession,
     });
 
     expect(page.entries).toHaveLength(1);
@@ -74,6 +75,7 @@ describe("thinAppViewClient", () => {
         { status: 200, headers: { "Content-Type": "application/json" } }
       );
     });
+    const oauthSession = gatewayOAuthSession(fetchHandler);
 
     const { listEntriesFromAppView } = await import("@/lib/thinAppViewClient");
     await listEntriesFromAppView({
@@ -85,7 +87,7 @@ describe("thinAppViewClient", () => {
         publicationSiteUrls: [],
       },
       maxEntries: 120,
-      oauthSession: { fetchHandler } as never,
+      oauthSession,
     });
     expect(fetchHandler).toHaveBeenCalledTimes(1);
   });
@@ -107,13 +109,14 @@ describe("thinAppViewClient", () => {
         { status: 200, headers: { "Content-Type": "application/json" } }
       );
     });
+    const oauthSession = gatewayOAuthSession(fetchHandler);
 
     const { listAggregateFeedFromAppView } = await import(
       "@/lib/thinAppViewClient"
     );
     const page = await listAggregateFeedFromAppView({
       feed: { kind: "subscribed" },
-      oauthSession: { fetchHandler } as never,
+      oauthSession,
     });
 
     expect(page.entries[0]?.publishedAt).toBe("2024-01-01T00:00:00.000Z");
@@ -136,10 +139,11 @@ describe("thinAppViewClient", () => {
         { status: 200, headers: { "Content-Type": "application/json" } }
       );
     });
+    const oauthSession = gatewayOAuthSession(fetchHandler);
 
     const { getEntryFromAppView } = await import("@/lib/thinAppViewClient");
     const entry = await getEntryFromAppView(
-      { fetchHandler } as never,
+      oauthSession,
       "at://did:plc:alice/site.standard.document/entry1"
     );
     expect(entry?.title).toBe("Detail");
@@ -162,10 +166,11 @@ describe("thinAppViewClient", () => {
       expect(body.readAt).toBe("2024-06-01T12:00:00.000Z");
       return new Response(null, { status: 200 });
     });
+    const oauthSession = gatewayOAuthSession(fetchHandler);
 
     const { writeThroughReadMark } = await import("@/lib/thinAppViewClient");
     await writeThroughReadMark(
-      { fetchHandler } as never,
+      oauthSession,
       "at://did:plc:alice/site.standard.entry/rkey1",
       "2024-06-01T12:00:00.000Z"
     );
@@ -192,10 +197,11 @@ describe("thinAppViewClient", () => {
         { status: 200, headers: { "Content-Type": "application/json" } }
       );
     });
+    const oauthSession = gatewayOAuthSession(fetchHandler);
 
     const { fetchAppViewUnreadCounts } = await import("@/lib/thinAppViewClient");
     const snapshot = await fetchAppViewUnreadCounts(
-      { fetchHandler } as never,
+      oauthSession,
       [
         "did:plc:alice",
         "at://did:plc:alice/site.standard.publication/main",
@@ -206,3 +212,40 @@ describe("thinAppViewClient", () => {
     expect(snapshot.accuracy).toBe("exact");
   });
 });
+
+function gatewayOAuthSession(
+  gatewayHandler: (url: string, init?: RequestInit) => Promise<Response>
+) {
+  globalThis.fetch = gatewayHandler as unknown as typeof fetch;
+  const nonces = new Map<string, string>();
+  let nonceIndex = 0;
+  return {
+    did: "did:plc:viewer",
+    getTokenSet: async () => ({
+      access_token: "access-token",
+      token_type: "DPoP",
+    }),
+    getTokenInfo: async () => ({ aud: "https://pds.example" }),
+    fetchHandler: async () => {
+      const nonce = `pds-nonce-${++nonceIndex}`;
+      nonces.set("https://pds.example", nonce);
+      return new Response(JSON.stringify({ records: [] }), {
+        headers: { "DPoP-Nonce": nonce },
+      });
+    },
+    server: {
+      dpopKey: {
+        bareJwk: { kty: "EC", crv: "P-256", x: "x", y: "y" },
+        algorithms: ["ES256"],
+        createJwt: async () => "dpop-proof",
+      },
+      dpopNonces: {
+        get: async (origin: string) => nonces.get(origin),
+        set: async (origin: string, nonce: string) => {
+          nonces.set(origin, nonce);
+        },
+      },
+      serverMetadata: { dpop_signing_alg_values_supported: ["ES256"] },
+    },
+  } as never;
+}

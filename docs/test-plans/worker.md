@@ -13,6 +13,10 @@ The source directory, executable product, and `appview-worker` telemetry identit
 cd packages/swift/ThinAppViewCore
 swift test
 
+# Live inbox store semantics against an explicitly disposable Postgres database
+THIN_APPVIEW_TEST_DATABASE_URL='postgresql://postgres:postgres@127.0.0.1:5432/thin_appview_test?sslmode=disable' \
+  swift test --filter PostgresJetstreamInboxIntegrationTests
+
 # Worker CLI + wiring
 cd services/appview-worker
 swift test
@@ -43,11 +47,16 @@ The worker executable delegates to `ThinAppViewWorkerRuntime` from ThinAppViewCo
 - Skyreader RSS parsing, stable identity, ingestion, and polling
 - `AppViewProjectionCacheStore` — sidebar/unread snapshot caches
 - `ThinAppViewQuerySupport` — pagination SQL
+- `PostgresJetstreamInboxIntegrationTests` — concurrent `SKIP LOCKED` claims,
+  per-DID FIFO, lease takeover/fencing, terminal-prefix watermarks, and pool
+  pressure with 32 logical claimers on 16 connections
 
 Postgres store tests are integration-level. SQLite remains covered directly in
 package tests, but the current Charybdis entry point rejects `APP_ENV=local`
 through its shared Operations environment guard. Runnable service integration
-uses `APP_ENV=dev` with an isolated disposable Postgres database.
+uses `APP_ENV=dev` with an isolated disposable Postgres database. The guarded
+Postgres suite runs automatically in the Charybdis CI job and skips locally
+unless `THIN_APPVIEW_TEST_DATABASE_URL` is explicitly set.
 
 ## Worker tests
 

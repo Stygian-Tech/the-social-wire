@@ -15,6 +15,8 @@ public enum ThinAppViewJetstreamMode: String, Sendable, Equatable {
 
 /// Environment-driven configuration for the data-minimized Thin AppView index.
 public struct ThinAppViewConfig: Sendable {
+public static let defaultJetstreamLeaderLeaseName = "jetstream-v2-ingest"
+
 public static let canonicalContentCollections: [String] = [
     "site.standard.document",
     "site.standard.entry",
@@ -44,11 +46,13 @@ public let relayWebSocketURLs: [String]
 public var relayWebSocketURL: String { relayWebSocketURLs[0] }
 public let jetstreamMode: ThinAppViewJetstreamMode
 public let jetstreamV2SourceGeneration: String
+public let jetstreamLeaderLeaseName: String
 public let ingestionInboxMaxConcurrency: Int
 public let ingestionInboxLeaseSeconds: TimeInterval
 public let ingestionInboxPollMilliseconds: Int
 public let ingestionInboxAppliedRetentionSeconds: TimeInterval
 public let ingestionInboxDeadLetterRetentionSeconds: TimeInterval
+public let repositoryRestoreTimeoutSeconds: TimeInterval
 public let contentRetentionSeconds: TimeInterval
 public let readMarkRetentionSeconds: TimeInterval
 public let maxEnrollAuthors: Int
@@ -76,7 +80,10 @@ public static func fromEnvironment(
       ) ?? .v1Authoritative,
       jetstreamV2SourceGeneration: env["JETSTREAM_SOURCE_GENERATION"]?
         .trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty
-        ?? "jetstream-v2-us-west-v1",
+        ?? "jetstream-v2-us-west-v2",
+      jetstreamLeaderLeaseName: env["JETSTREAM_LEADER_LEASE_NAME"]?
+        .trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty
+        ?? Self.defaultJetstreamLeaderLeaseName,
       ingestionInboxMaxConcurrency: Self.int(
         env["THIN_APPVIEW_INGESTION_INBOX_MAX_CONCURRENCY"],
         default: 8
@@ -96,6 +103,10 @@ public static func fromEnvironment(
       ingestionInboxDeadLetterRetentionSeconds: Self.seconds(
         env["THIN_APPVIEW_INGESTION_INBOX_DEAD_LETTER_RETENTION_SECONDS"],
         default: 30 * 86_400
+      ),
+      repositoryRestoreTimeoutSeconds: Self.seconds(
+        env["THIN_APPVIEW_REPOSITORY_RESTORE_TIMEOUT_SECONDS"],
+        default: 120
       ),
       contentRetentionSeconds: Self.seconds(env["THIN_APPVIEW_CONTENT_TTL_SECONDS"], default: 30 * 24 * 60 * 60),
       readMarkRetentionSeconds: Self.seconds(env["THIN_APPVIEW_READ_MARK_TTL_SECONDS"], default: 180 * 24 * 60 * 60),
@@ -119,12 +130,14 @@ public static let disabled = ThinAppViewConfig(
     enabled: false,
     relayWebSocketURLs: defaultRelayWebSocketURLs,
     jetstreamMode: .v1Authoritative,
-    jetstreamV2SourceGeneration: "jetstream-v2-us-west-v1",
+    jetstreamV2SourceGeneration: "jetstream-v2-us-west-v2",
+    jetstreamLeaderLeaseName: defaultJetstreamLeaderLeaseName,
     ingestionInboxMaxConcurrency: 8,
     ingestionInboxLeaseSeconds: 60,
     ingestionInboxPollMilliseconds: 250,
     ingestionInboxAppliedRetentionSeconds: 7 * 86_400,
     ingestionInboxDeadLetterRetentionSeconds: 30 * 86_400,
+    repositoryRestoreTimeoutSeconds: 120,
     contentRetentionSeconds: 30 * 24 * 60 * 60,
     readMarkRetentionSeconds: 180 * 24 * 60 * 60,
     maxEnrollAuthors: 500,

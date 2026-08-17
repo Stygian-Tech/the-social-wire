@@ -4,7 +4,11 @@ import { OperationsSection } from "@/components/operations/operations-section"
 import { OperatorActionDialog } from "@/components/operations/operator-action-dialog"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHeader, TableRow } from "@/components/ui/table"
-import { jetstreamStateForOverview } from "@/lib/operations-policy"
+import {
+  ingestionAuthoritySource,
+  isJetstreamV2InboxSource,
+  jetstreamStateForOverview,
+} from "@/lib/operations-policy"
 import { operationsXrpc } from "@/lib/operations-xrpc"
 import type { Alert, EnvironmentName, Overview } from "@/lib/operations-types"
 
@@ -45,9 +49,10 @@ function AlertActions({
   const lifecycleLabel = lifecycleAction === "acknowledge" ? "Acknowledge" : "Resolve"
   const versionUnavailable = alert.version === undefined
   const jetstreamState = jetstreamStateForOverview(data)
+  const legacyReconnectSupported = !isJetstreamV2InboxSource(ingestionAuthoritySource(data))
   return (
     <div className="flex flex-wrap items-center gap-1.5">
-      {reconnectRules.has(alert.rule) ? (
+      {reconnectRules.has(alert.rule) && legacyReconnectSupported ? (
         reconnectActive ? (
           <Badge tone="warning">Reconnect In Progress</Badge>
         ) : (

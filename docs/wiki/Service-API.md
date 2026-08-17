@@ -55,6 +55,10 @@ Gateway→AppView trust uses `GATEWAY_APPVIEW_INTERNAL_SECRET`, with HMAC over t
 
 Authenticated routes accept an ATProto OAuth access token and a request-bound RFC 9449 DPoP proof. A gateway-bound DPoP proof cannot be forwarded to a PDS or L@tr origin; native write-through paths use distinct upstream proof headers.
 
+When an authorization server publishes no usable access-token JWKS, clients also send one `X-ATProto-Session-DPoP` proof bound to `com.atproto.server.getSession` at the viewer PDS. The Gateway verifies the DID→PDS→issuer binding and confirms the active session with that proof. A non-empty JWKS signature failure never falls back to PDS attestation. PDS nonce challenges use the separate `X-ATProto-Session-DPoP-Nonce` response header so Gateway and route-specific DPoP nonce chains remain isolated. Attestation is cached for no more than 60 seconds and bounded globally and per PDS; admission exhaustion returns `503`.
+
+A successful fallback response includes `X-ATProto-Session-Attestation-Receipt`. Before a client submits a route-specific `X-ATProto-Upstream-DPoP` proof—or signals a prepared proof with `X-ATProto-Upstream-DPoP-Prepared: true`—it must first obtain that receipt from an ordinary protected safe-read request. Missing or expired receipts return `428` plus `X-ATProto-Session-Attestation-Required: true` before the route handler or PDS probe runs; invalid receipts return a generic `401`. Receipts are HMAC-bound to the exact token, DID, and DPoP key and expire with the authoritative attestation window. Every hosted Gateway replica must share a random `PDS_ATTESTATION_RECEIPT_SECRET` of at least 32 bytes.
+
 Known-client enforcement is conditional on `OAUTH_GATEWAY_REQUIRE_KNOWN_CLIENT`. When enabled, token claims must match the configured client-ID and/or audience allowlists. Operations routes additionally enforce `OPERATIONS_OPERATOR_DIDS`.
 
 ## Local integration

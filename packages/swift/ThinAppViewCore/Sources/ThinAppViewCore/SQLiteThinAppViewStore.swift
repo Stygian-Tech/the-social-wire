@@ -42,6 +42,30 @@ public init(path dbPath: String, logger: Logger) throws {
           WHERE i.environment = ? AND i.source_generation = ?
             AND ((i.status IN ('pending', 'retry') AND i.next_attempt_at <= ?)
               OR (i.status = 'leased' AND i.lease_expires_at <= ?))
+            AND (
+              (i.event_kind != 'commit' AND (
+                EXISTS (
+                  SELECT 1 FROM appview_publication_scopes scope
+                  WHERE scope.author_did = i.repo_did OR scope.viewer_did = i.repo_did)
+                OR EXISTS (
+                  SELECT 1 FROM appview_viewer_feeds feed
+                  WHERE feed.viewer_did = i.repo_did)))
+              OR (i.collection IN (
+                  'site.standard.document', 'site.standard.entry',
+                  'com.standard.document', 'com.standard.entry'
+                ) AND EXISTS (
+                  SELECT 1 FROM appview_publication_scopes scope
+                  WHERE scope.author_did = i.repo_did))
+              OR (i.collection IN (
+                  'app.skyreader.feed.subscription', 'site.standard.graph.subscription'
+                ) AND (
+                  EXISTS (
+                    SELECT 1 FROM appview_viewer_feeds feed
+                    WHERE feed.viewer_did = i.repo_did)
+                  OR EXISTS (
+                    SELECT 1 FROM appview_publication_scopes scope
+                    WHERE scope.viewer_did = i.repo_did)))
+            )
             AND NOT EXISTS (
               SELECT 1
               FROM appview_ingestion_inbox earlier
@@ -124,6 +148,97 @@ public init(path dbPath: String, logger: Logger) throws {
     }
   }
 
+  public func filterIngestionInboxOutsideScope(
+    environment: String,
+    sourceGeneration: String,
+    policy: String,
+    limit: Int,
+    expiresAt: Date,
+    at: Date
+  ) async throws -> Int {
+    try await db.write { db in
+      let now = Self.isoString(from: at)
+      let rows = try Row.fetchAll(
+        db,
+        sql: """
+          SELECT inbox.seq
+          FROM appview_ingestion_inbox inbox
+          WHERE inbox.environment = ? AND inbox.source_generation = ?
+            AND ((inbox.status IN ('pending', 'retry') AND inbox.next_attempt_at <= ?)
+              OR (inbox.status = 'leased' AND inbox.lease_expires_at <= ?))
+            AND (
+              (inbox.event_kind = 'commit' AND (
+                inbox.collection IS NULL OR inbox.collection NOT IN (
+                  'site.standard.document', 'site.standard.entry',
+                  'com.standard.document', 'com.standard.entry',
+                  'app.skyreader.feed.subscription', 'site.standard.graph.subscription'
+                )
+                OR (inbox.collection IN (
+                    'site.standard.document', 'site.standard.entry',
+                    'com.standard.document', 'com.standard.entry'
+                  ) AND NOT EXISTS (
+                    SELECT 1 FROM appview_publication_scopes scope
+                    WHERE scope.author_did = inbox.repo_did))
+                OR (inbox.collection IN (
+                    'app.skyreader.feed.subscription', 'site.standard.graph.subscription'
+                  ) AND NOT EXISTS (
+                    SELECT 1 FROM appview_viewer_feeds feed
+                    WHERE feed.viewer_did = inbox.repo_did)
+                  AND NOT EXISTS (
+                    SELECT 1 FROM appview_publication_scopes scope
+                    WHERE scope.viewer_did = inbox.repo_did))))
+              OR (inbox.event_kind != 'commit'
+                AND NOT EXISTS (
+                  SELECT 1 FROM appview_publication_scopes scope
+                  WHERE scope.author_did = inbox.repo_did OR scope.viewer_did = inbox.repo_did)
+                AND NOT EXISTS (
+                  SELECT 1 FROM appview_viewer_feeds feed
+                  WHERE feed.viewer_did = inbox.repo_did))
+            )
+          ORDER BY inbox.seq
+          LIMIT ?
+          """,
+        arguments: [
+          environment,
+          sourceGeneration,
+          now,
+          now,
+          max(1, min(limit, 10_000)),
+        ]
+      )
+      var filtered = 0
+      for row in rows {
+        let sequence: Int64 = row["seq"]
+        try db.execute(
+          sql: """
+            UPDATE appview_ingestion_inbox
+            SET status = 'filtered_scope', filtered_scope_policy = ?, filtered_scope_at = ?,
+                applied_at = NULL, reconciled_at = NULL,
+                lease_owner = NULL, lease_token = NULL, lease_expires_at = NULL,
+                failure_category = NULL, failure_reason = NULL,
+                expires_at = ?, updated_at = ?
+            WHERE environment = ? AND source_generation = ? AND seq = ?
+              AND ((status IN ('pending', 'retry') AND next_attempt_at <= ?)
+                OR (status = 'leased' AND lease_expires_at <= ?))
+            """,
+          arguments: [
+            String(policy.prefix(128)),
+            now,
+            Self.isoString(from: expiresAt),
+            now,
+            environment,
+            sourceGeneration,
+            sequence,
+            now,
+            now,
+          ]
+        )
+        filtered += db.changesCount
+      }
+      return filtered
+    }
+  }
+
   public func markIngestionInboxApplied(
     environment: String,
     sourceGeneration: String,
@@ -156,12 +271,6 @@ public init(path dbPath: String, logger: Logger) throws {
         ]
       )
       guard db.changesCount == 1 else { throw AppViewIngestionInboxStoreError.staleLease }
-      try Self.advanceAppliedInboxWatermark(
-        db: db,
-        environment: environment,
-        sourceGeneration: sourceGeneration,
-        at: at
-      )
     }
   }
 
@@ -362,7 +471,8 @@ public init(path dbPath: String, logger: Logger) throws {
             SELECT rowid
             FROM appview_ingestion_inbox
             WHERE environment = ? AND expires_at <= ?
-              AND (status = 'applied' OR (status = 'dead_letter' AND reconciled_at IS NOT NULL))
+              AND (status IN ('applied', 'filtered_scope')
+                OR (status = 'dead_letter' AND reconciled_at IS NOT NULL))
             ORDER BY expires_at ASC, seq ASC
             LIMIT ?
           )
@@ -400,7 +510,8 @@ public init(path dbPath: String, logger: Logger) throws {
           SELECT EXISTS(
             SELECT 1 FROM appview_ingestion_inbox
             WHERE environment = ? AND source_generation = ? AND seq <= ?
-              AND status != 'applied' AND reconciled_at IS NULL)
+              AND status NOT IN ('applied', 'filtered_scope')
+              AND reconciled_at IS NULL)
           """,
         arguments: [environment, sourceGeneration, sealedSequence]
       ) ?? true
@@ -433,6 +544,133 @@ public init(path dbPath: String, logger: Logger) throws {
         ]
       )
       return db.changesCount
+    }
+  }
+
+  public func resolveTerminalRetiredGenerationIncidents(
+    environment: String,
+    activeSourceGeneration: String,
+    activeLeaseName: String,
+    at: Date
+  ) async throws -> Int {
+    try await db.write { db in
+      let now = Self.isoString(from: at)
+      guard let successor = try Row.fetchOne(
+        db,
+        sql: """
+          SELECT checkpoint.source_generation, checkpoint.source_host,
+                 checkpoint.stream_nsid, checkpoint.cursor_kind,
+                 checkpoint.replay_after_seq, checkpoint.last_staged_seq,
+                 checkpoint.updated_at AS checkpoint_observed_at,
+                 lease.updated_at AS lease_observed_at
+          FROM appview_jetstream_checkpoints checkpoint
+          JOIN appview_ingestion_leases lease
+            ON lease.environment = checkpoint.environment
+           AND lease.source_generation = checkpoint.source_generation
+           AND lease.lease_name = ?
+           AND lease.released_at IS NULL
+           AND lease.lease_expires_at >= ?
+          WHERE checkpoint.environment = ? AND checkpoint.source_generation = ?
+            AND checkpoint.replay_state = 'live'
+          ORDER BY lease.updated_at DESC
+          LIMIT 1
+          """,
+        arguments: [activeLeaseName, now, environment, activeSourceGeneration]
+      ) else { return 0 }
+      let successorGeneration: String = successor["source_generation"]
+      let successorSourceHost: String = successor["source_host"]
+      let successorStreamNSID: String = successor["stream_nsid"]
+      let successorCursorKind: String = successor["cursor_kind"]
+      let replayAfterSequence: Int64? = successor["replay_after_seq"]
+      let lastStagedSequence: Int64? = successor["last_staged_seq"]
+      guard let successorReplayAfterSequence = replayAfterSequence,
+            let successorLastStagedSequence = lastStagedSequence else { return 0 }
+      let successorCheckpointObservedAt: String = successor["checkpoint_observed_at"]
+      let successorLeaseObservedAt: String = successor["lease_observed_at"]
+      let retired = try Row.fetchAll(
+        db,
+        sql: """
+          SELECT checkpoint.source_generation, checkpoint.last_staged_seq,
+                 checkpoint.last_applied_seq
+          FROM appview_jetstream_checkpoints checkpoint
+          WHERE checkpoint.environment = ? AND checkpoint.source_generation != ?
+            AND checkpoint.source_host = ? AND checkpoint.stream_nsid = ?
+            AND checkpoint.cursor_kind = ?
+            AND ? < checkpoint.last_staged_seq
+            AND ? >= checkpoint.last_staged_seq
+            AND checkpoint.replay_state = 'live'
+            AND checkpoint.last_staged_seq IS NOT NULL
+            AND checkpoint.last_applied_seq IS NOT NULL
+            AND checkpoint.last_applied_seq >= checkpoint.last_staged_seq
+            AND NOT EXISTS (
+              SELECT 1 FROM appview_ingestion_leases retired_lease
+              WHERE retired_lease.environment = checkpoint.environment
+                AND retired_lease.source_generation = checkpoint.source_generation
+                AND retired_lease.released_at IS NULL
+                AND retired_lease.lease_expires_at >= ?)
+            AND NOT EXISTS (
+              SELECT 1 FROM appview_ingestion_inbox inbox
+              WHERE inbox.environment = checkpoint.environment
+                AND inbox.source_generation = checkpoint.source_generation
+                AND (inbox.seq > checkpoint.last_staged_seq
+                  OR NOT (
+                    inbox.status IN ('applied', 'filtered_scope')
+                    OR (inbox.status = 'dead_letter' AND inbox.reconciled_at IS NOT NULL))))
+            AND NOT EXISTS (
+              SELECT 1 FROM appview_ingestion_reconciliation_requests request
+              WHERE request.environment = checkpoint.environment
+                AND request.source_generation = checkpoint.source_generation
+                AND request.status IN ('pending', 'leased', 'failed'))
+          ORDER BY checkpoint.source_generation
+          """,
+        arguments: [
+          environment, successorGeneration, successorSourceHost, successorStreamNSID,
+          successorCursorKind, successorReplayAfterSequence, successorLastStagedSequence, now,
+        ]
+      )
+      var resolved = 0
+      for checkpoint in retired {
+        let retiredGeneration: String = checkpoint["source_generation"]
+        let lastStagedSequence: Int64 = checkpoint["last_staged_seq"]
+        let terminalPrefixSequence: Int64 = checkpoint["last_applied_seq"]
+        let evidenceData = try JSONSerialization.data(withJSONObject: [
+          "recovery": "retired_generation_terminal",
+          "resolutionPolicy": "retired-generation-terminal-v1",
+          "retiredSourceGeneration": retiredGeneration,
+          "successorSourceGeneration": successorGeneration,
+          "successorLeaseName": activeLeaseName,
+          "successorReplayAfterSequence": String(successorReplayAfterSequence),
+          "successorLastStagedSequence": String(successorLastStagedSequence),
+          "identityAndInclusiveOverlapVerified": true,
+          "retiredLastStagedSequence": String(lastStagedSequence),
+          "retiredTerminalPrefixSequence": String(terminalPrefixSequence),
+          "allRetiredRowsTerminal": true,
+          "successorCheckpointObservedAt": successorCheckpointObservedAt,
+          "successorLeaseObservedAt": successorLeaseObservedAt,
+        ], options: [.sortedKeys])
+        guard let evidence = String(data: evidenceData, encoding: .utf8) else {
+          throw AppViewIngestionInboxStoreError.invalidRow
+        }
+        try db.execute(
+          sql: """
+            UPDATE appview_ingestion_incidents
+            SET status = 'resolved', replay_state = 'live', recovered_through_cursor = ?,
+                verification_evidence = json_patch(verification_evidence, ?), resolved_at = ?,
+                updated_at = ?, version = version + 1
+            WHERE environment = ? AND source_generation = ? AND source = 'jetstream-v2'
+              AND cursor_kind = 'jetstream_v2_seq' AND category = 'fatal_stream'
+              AND status IN ('open', 'recovering')
+              AND (start_cursor IS NULL OR start_cursor <= ?)
+              AND (end_cursor IS NULL OR end_cursor <= ?)
+            """,
+          arguments: [
+            terminalPrefixSequence, evidence, now, now, environment, retiredGeneration,
+            terminalPrefixSequence, terminalPrefixSequence,
+          ]
+        )
+        resolved += db.changesCount
+      }
+      return resolved
     }
   }
 
@@ -753,11 +991,14 @@ public init(path dbPath: String, logger: Logger) throws {
         applied_at TEXT,
         dead_lettered_at TEXT,
         reconciled_at TEXT,
+        filtered_scope_policy TEXT,
+        filtered_scope_at TEXT,
         expires_at TEXT,
         updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (environment, source_generation, seq)
       );
       """)
+    try migrateIngestionInboxScopeFilterColumnsIfNeeded(db)
     try db.execute(sql: """
       CREATE INDEX IF NOT EXISTS idx_appview_ingestion_inbox_claim
         ON appview_ingestion_inbox
@@ -817,6 +1058,22 @@ public init(path dbPath: String, logger: Logger) throws {
         completed_at TEXT,
         PRIMARY KEY (environment, id),
         UNIQUE (environment, source_generation, repo_did, trigger_seq, reason)
+      );
+      """)
+
+    try db.execute(sql: """
+      CREATE TABLE IF NOT EXISTS appview_ingestion_leases (
+        environment TEXT NOT NULL,
+        lease_name TEXT NOT NULL,
+        source_generation TEXT NOT NULL,
+        owner_id TEXT NOT NULL,
+        fencing_token INTEGER NOT NULL,
+        acquired_at TEXT NOT NULL,
+        lease_expires_at TEXT NOT NULL,
+        released_at TEXT,
+        updated_at TEXT NOT NULL,
+        CHECK (fencing_token > 0),
+        PRIMARY KEY (environment, lease_name)
       );
       """)
 
@@ -1058,6 +1315,25 @@ public init(path dbPath: String, logger: Logger) throws {
       CREATE INDEX IF NOT EXISTS idx_appview_unread_overrides_cleanup
         ON appview_unread_overrides (created_at, viewer_did, subject_uri);
       """)
+  }
+
+  private static func migrateIngestionInboxScopeFilterColumnsIfNeeded(
+    _ db: Database
+  ) throws {
+    let columns = try Row.fetchAll(
+      db,
+      sql: "PRAGMA table_info(appview_ingestion_inbox)"
+    ).map { row -> String in row["name"] }
+    if !columns.contains("filtered_scope_policy") {
+      try db.execute(
+        sql: "ALTER TABLE appview_ingestion_inbox ADD COLUMN filtered_scope_policy TEXT"
+      )
+    }
+    if !columns.contains("filtered_scope_at") {
+      try db.execute(
+        sql: "ALTER TABLE appview_ingestion_inbox ADD COLUMN filtered_scope_at TEXT"
+      )
+    }
   }
 
   /// SQLite cannot add a column to an existing primary key. Rebuild the legacy table while
@@ -2116,8 +2392,37 @@ public init(path dbPath: String, logger: Logger) throws {
         sql: "DELETE FROM appview_publication_scopes WHERE viewer_did = ?",
         arguments: [viewerDid]
       )
+      for scope in scopes {
+        try db.execute(
+          sql: """
+            INSERT INTO appview_publication_scopes
+              (viewer_did, publication_id, author_did, publication_at_uri,
+               publication_scope_at_uris, publication_site_urls, scope_keys,
+               section_keys, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (viewer_did, publication_id) DO UPDATE SET
+              author_did = excluded.author_did,
+              publication_at_uri = excluded.publication_at_uri,
+              publication_scope_at_uris = excluded.publication_scope_at_uris,
+              publication_site_urls = excluded.publication_site_urls,
+              scope_keys = excluded.scope_keys,
+              section_keys = excluded.section_keys,
+              updated_at = excluded.updated_at
+            """,
+          arguments: [
+            scope.viewerDid,
+            scope.publicationId,
+            scope.authorDid,
+            scope.publicationAtUri,
+            try Self.jsonString(scope.publicationScopeAtUris),
+            try Self.jsonString(scope.publicationSiteUrls),
+            try Self.jsonString(scope.scopeKeys),
+            try Self.jsonString(scope.sectionKeys),
+            Self.isoString(from: scope.updatedAt),
+          ]
+        )
+      }
     }
-    try await upsertPublicationScopes(scopes)
   }
 
   public func upsertViewerFeedProjection(
@@ -3922,7 +4227,7 @@ public init(path dbPath: String, logger: Logger) throws {
         SELECT MIN(seq)
         FROM appview_ingestion_inbox
         WHERE environment = ? AND source_generation = ?
-          AND status != 'applied' AND reconciled_at IS NULL
+          AND status NOT IN ('applied', 'filtered_scope') AND reconciled_at IS NULL
         """,
       arguments: [environment, sourceGeneration]
     )
@@ -3934,7 +4239,7 @@ public init(path dbPath: String, logger: Logger) throws {
           SELECT MAX(seq)
           FROM appview_ingestion_inbox
           WHERE environment = ? AND source_generation = ? AND seq < ?
-            AND (status = 'applied' OR reconciled_at IS NOT NULL)
+            AND (status IN ('applied', 'filtered_scope') OR reconciled_at IS NOT NULL)
           """,
         arguments: [environment, sourceGeneration, barrier]
       )

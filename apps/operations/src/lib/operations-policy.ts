@@ -6,6 +6,53 @@ import type {
   Span,
 } from "@/lib/operations-types"
 
+const LEGACY_JETSTREAM_SOURCE = "jetstream"
+export const JETSTREAM_V2_INBOX_SOURCE = "jetstream_v2_inbox"
+
+function normalizedSource(source?: string) {
+  return source?.trim().toLowerCase()
+}
+
+export function isJetstreamV2InboxSource(source?: string) {
+  return normalizedSource(source) === JETSTREAM_V2_INBOX_SOURCE
+}
+
+export function ingestionSourceLabel(source: string) {
+  if (isJetstreamV2InboxSource(source)) return "Jetstream V2 Inbox · authoritative"
+  if (normalizedSource(source) === LEGACY_JETSTREAM_SOURCE) return "Jetstream · unverified supplemental"
+  return source
+}
+
+function currentIngestionWorker(overview: Overview) {
+  return overview.services
+    .filter((service) => service.service === "appview-worker")
+    .sort((left, right) => Date.parse(right.heartbeatAt) - Date.parse(left.heartbeatAt))[0]
+}
+
+export function ingestionAuthoritySource(overview: Overview) {
+  if (overview.ingestion?.source) return normalizedSource(overview.ingestion.source)
+
+  const worker = currentIngestionWorker(overview)
+  const advertisedSource = normalizedSource(worker?.dependencyState.ingestion_authority)
+  return advertisedSource === LEGACY_JETSTREAM_SOURCE ||
+    advertisedSource === "tap" ||
+    advertisedSource === JETSTREAM_V2_INBOX_SOURCE
+    ? advertisedSource
+    : undefined
+}
+
+export function jetstreamV2CheckpointForOverview(overview: Overview) {
+  const checkpoints = overview.durability?.checkpoints.filter(
+    (checkpoint) => checkpoint.cursorKind === "jetstream_v2_seq",
+  ) ?? []
+  const advertisedGeneration = currentIngestionWorker(overview)
+    ?.dependencyState.jetstream_v2_source_generation
+  if (advertisedGeneration) {
+    return checkpoints.find((checkpoint) => checkpoint.sourceGeneration === advertisedGeneration)
+  }
+  return checkpoints.length === 1 ? checkpoints[0] : undefined
+}
+
 /**
  * Picks a recovery source mode the Operations service currently enables.
  *
@@ -24,8 +71,9 @@ export function preferredRecoveryMode(
 }
 
 export function jetstreamStateForOverview(overview: Overview) {
-  return overview.ingestionSources.find((state) => state.source.toLowerCase() === "jetstream")
-    ?? (overview.ingestion?.source.toLowerCase() === "jetstream" ? overview.ingestion : undefined)
+  if (isJetstreamV2InboxSource(ingestionAuthoritySource(overview))) return undefined
+  return overview.ingestionSources.find((state) => normalizedSource(state.source) === LEGACY_JETSTREAM_SOURCE)
+    ?? (normalizedSource(overview.ingestion?.source) === LEGACY_JETSTREAM_SOURCE ? overview.ingestion : undefined)
 }
 
 export function productionConfirmationMatches(environment: EnvironmentName, value: string) {

@@ -33,7 +33,7 @@ struct Serve: AsyncParsableCommand {
 
     let environment = AppEnvironmentLoader.mergeProcessWithDotenv()
     let operationsEnvironment = try OperationsConfiguration.requireEnvironment(environment)
-    let config = GatewayServiceConfig.fromEnvironment(environment)
+    let config = try GatewayServiceConfig.fromEnvironment(environment)
     let operationsConfig = OperationsConfiguration.fromEnvironment(environment)
     let listenPort = port ?? Int(environment["PORT"] ?? "8080") ?? 8080
     let listenHost = hostname ?? environment["BIND_HOST"] ?? "::"

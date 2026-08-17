@@ -15,6 +15,7 @@ import {
 import { dummyPublicationSidebarProjection } from "@/lib/dummyReaderData";
 
 const ORIG_ENV = { ...process.env };
+const ORIG_FETCH = globalThis.fetch;
 
 const mockFetchHandler = mock(async (url: string) => {
   if (url.includes("/xrpc/app.thesocialwire.appview.getFeed")) {
@@ -41,13 +42,45 @@ const mockFetchHandler = mock(async (url: string) => {
   return new Response("not found", { status: 404 });
 });
 
+const pdsNonces = new Map<string, string>();
+let pdsNonceIndex = 0;
+const mockOAuthSession = {
+  did: "did:plc:testuser",
+  getTokenSet: async () => ({
+    access_token: "access-token",
+    token_type: "DPoP",
+  }),
+  getTokenInfo: async () => ({ aud: "https://pds.example" }),
+  fetchHandler: async () => {
+    const nonce = `pds-nonce-${++pdsNonceIndex}`;
+    pdsNonces.set("https://pds.example", nonce);
+    return new Response(JSON.stringify({ records: [] }), {
+      headers: { "DPoP-Nonce": nonce },
+    });
+  },
+  server: {
+    dpopKey: {
+      bareJwk: { kty: "EC", crv: "P-256", x: "x", y: "y" },
+      algorithms: ["ES256"],
+      createJwt: async () => "dpop-proof",
+    },
+    dpopNonces: {
+      get: async (origin: string) => pdsNonces.get(origin),
+      set: async (origin: string, nonce: string) => {
+        pdsNonces.set(origin, nonce);
+      },
+    },
+    serverMetadata: { dpop_signing_alg_values_supported: ["ES256"] },
+  },
+} as never;
+
 mock.module("@/hooks/useAuth", () => ({
   useAuth: () => ({
     session: { did: "did:plc:testuser" },
     isLoading: false,
     oauthSessionReloadSeq: 0,
     applyOAuthSession: () => {},
-    getOAuthSession: () => ({ fetchHandler: mockFetchHandler }),
+    getOAuthSession: () => mockOAuthSession,
     getAuthFetch: () => null,
     reconcileOAuthSession: async () => false,
     signIn: async () => {},
@@ -94,10 +127,14 @@ describe("useEntries", () => {
   beforeEach(() => {
     process.env.NEXT_PUBLIC_USE_THIN_APPVIEW = "true";
     mockFetchHandler.mockClear();
+    globalThis.fetch = mockFetchHandler as unknown as typeof fetch;
+    pdsNonces.clear();
+    pdsNonceIndex = 0;
   });
 
   afterEach(() => {
     process.env = { ...ORIG_ENV };
+    globalThis.fetch = ORIG_FETCH;
   });
 
   it("fetches entries from AppView for a publication", async () => {
@@ -252,10 +289,14 @@ describe("useEntry", () => {
   beforeEach(() => {
     process.env.NEXT_PUBLIC_USE_THIN_APPVIEW = "true";
     mockFetchHandler.mockClear();
+    globalThis.fetch = mockFetchHandler as unknown as typeof fetch;
+    pdsNonces.clear();
+    pdsNonceIndex = 0;
   });
 
   afterEach(() => {
     process.env = { ...ORIG_ENV };
+    globalThis.fetch = ORIG_FETCH;
   });
 
   it("fetches entry detail from AppView by AT-URI", async () => {

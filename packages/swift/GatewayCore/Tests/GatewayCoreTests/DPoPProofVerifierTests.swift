@@ -66,9 +66,10 @@ struct DPoPProofVerifierTests {
     let header = JWTDPoPHeader(alg: "ES256", typ: "dpop+jwt", jwk: jwk)
     let htu = "http://localhost:8080/v1/sync/preferences"
 
+    let issuedAt = Int(Date().timeIntervalSince1970)
     let payload = JWTDPoPPayload(
       jti: UUID().uuidString,
-      iat: Int(Date().timeIntervalSince1970),
+      iat: issuedAt,
       htm: "GET",
       htu: htu,
       ath: AccessTokenAth.expectedAth(accessTokenJWT: accessTokenJWT)
@@ -84,12 +85,16 @@ struct DPoPProofVerifierTests {
 
     let proofJWT = headerSegment + "." + payloadSegment + "." + sigSegment
 
-    try DPoPProofVerifier.verify(
+    let verifiedProof = try DPoPProofVerifier.verify(
       proofJWT: proofJWT,
       uppercasedHTTPMethod: "GET",
       expectedHtuURL: htu,
       accessTokenJWT: accessTokenJWT,
       accessTokenCnFJkt: try helper.rfc7638Thumbprint(ec: jwk)
+    )
+    #expect(
+      verifiedProof.validUntil
+        == Date(timeIntervalSince1970: TimeInterval(issuedAt)).addingTimeInterval(120)
     )
   }
 
@@ -105,7 +110,14 @@ struct DPoPProofVerifierTests {
     )
 
     let helper = CanonicalJSON()
-    let wrongThumb = "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
+    let actualThumb = try helper.rfc7638Thumbprint(ec: jwk)
+    var caseChangedCharacters = Array(actualThumb)
+    let alphabeticIndex = try #require(caseChangedCharacters.firstIndex { $0.isLetter })
+    let letter = caseChangedCharacters[alphabeticIndex]
+    caseChangedCharacters[alphabeticIndex] = Character(
+      letter.isUppercase ? letter.lowercased() : letter.uppercased()
+    )
+    let caseChangedThumb = String(caseChangedCharacters)
 
     let accessTokenJWT = "token.part.three"
 
@@ -124,19 +136,21 @@ struct DPoPProofVerifierTests {
     let signature = try key.signature(for: SHA256.hash(data: signingBytes))
     let jwt = headerSegment + "." + payloadSegment + "." + Base64URL.encodeNoPadding(data: signature.rawRepresentation)
 
-    var mismatchedConfirmation = false
-    do {
-      try DPoPProofVerifier.verify(
-        proofJWT: jwt,
-        uppercasedHTTPMethod: "GET",
-        expectedHtuURL: "http://localhost/ok",
-        accessTokenJWT: accessTokenJWT,
-        accessTokenCnFJkt: wrongThumb
-      )
-    } catch {
-      mismatchedConfirmation = true
+    for wrongThumb in ["BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB", caseChangedThumb] {
+      var mismatchedConfirmation = false
+      do {
+        try DPoPProofVerifier.verify(
+          proofJWT: jwt,
+          uppercasedHTTPMethod: "GET",
+          expectedHtuURL: "http://localhost/ok",
+          accessTokenJWT: accessTokenJWT,
+          accessTokenCnFJkt: wrongThumb
+        )
+      } catch {
+        mismatchedConfirmation = true
+      }
+      #expect(mismatchedConfirmation)
     }
-    #expect(mismatchedConfirmation)
   }
 
   @Test("rejects proof when the access token has no cnf thumbprint")

@@ -207,9 +207,13 @@ ALREADY SET:
 GENERATED, ALREADY SET:
   GATEWAY_APPVIEW_INTERNAL_SECRET=<unique Dev secret>
   GATEWAY_OPERATIONS_INTERNAL_SECRET=<different unique Dev secret>
+  PDS_ATTESTATION_RECEIPT_SECRET=<unique random secret, at least 32 bytes, identical on every Gateway replica>
 
-REQUIRED WHEN THE AUTHORIZATION SERVER DOES NOT PUBLISH ACCESS-TOKEN KEYS:
+OPTIONAL TRUSTED-OPERATOR FAST PATH WHEN THE AUTHORIZATION SERVER DOES NOT PUBLISH ACCESS-TOKEN KEYS:
   OAUTH_ACCESS_TOKEN_SUPPLEMENTAL_JWKS_JSON=<trusted access-token signing JWKS>
+
+Without trusted supplemental keys, supported clients use active PDS `getSession` attestation.
+Never derive or copy untrusted keys into this variable.
 
 The App View secret must be exactly identical on Gateway and App View.
 The Operations secret must be exactly identical on Gateway and Ops.

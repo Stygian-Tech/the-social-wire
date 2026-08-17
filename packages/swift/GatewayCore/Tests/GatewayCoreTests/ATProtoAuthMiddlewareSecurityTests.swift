@@ -11,6 +11,42 @@ import Testing
 
 @Suite("ATProtoAuthMiddleware security")
 struct ATProtoAuthMiddlewareSecurityTests {
+  private actor CallCounter {
+    private(set) var count = 0
+    func increment() { count += 1 }
+  }
+
+  private struct StubAttestor: PDSAccessTokenAttesting {
+    enum Behavior: Sendable {
+      case success(OAuthAccessTokenVerifier.VerifiedAccessToken, String?)
+      case nonce(String)
+      case overloaded
+    }
+
+    let calls: CallCounter
+    let behavior: Behavior
+
+    func attest(
+      accessTokenJWT _: String,
+      authorizationValue _: String,
+      gatewayProof _: DPoPProofVerifier.VerifiedProof,
+      sessionProof _: String?
+    ) async throws -> PDSAccessTokenAttestationOutcome {
+      await calls.increment()
+      switch behavior {
+      case .success(let token, let nonce):
+        return .init(
+          token: token,
+          responseNonce: nonce,
+          attestationExpiresAt: Date().addingTimeInterval(60)
+        )
+      case .nonce(let nonce):
+        throw PDSAccessTokenAttestationError.nonceChallenge(nonce)
+      case .overloaded:
+        throw PDSAccessTokenAttestationError.overloaded
+      }
+    }
+  }
   private struct JWK: Encodable {
     let alg = "ES256"
     let crv = "P-256"
@@ -148,26 +184,367 @@ struct ATProtoAuthMiddlewareSecurityTests {
     #expect(response.status == .unauthorized)
   }
 
+  @Test("nonempty JWKS signature failure never invokes active PDS fallback")
+  func nonemptyJWKSSignatureFailureDoesNotFallback() async throws {
+    let fixture = try fallbackFixture()
+    let calls = CallCounter()
+    let attestor = StubAttestor(
+      calls: calls,
+      behavior: .success(fixture.verifiedToken, nil)
+    )
+    let unrelatedIssuerKey = P256.Signing.PrivateKey()
+    let response = try await protectedResponse(
+      accessToken: fixture.accessToken,
+      dpopProof: fixture.gatewayProof,
+      supplementalJWKS: try jwksJSON(
+        containing: jwk(for: unrelatedIssuerKey, kid: "nonempty-issuer")),
+      accessTokenVerifier: { _ in throw OAuthAccessTokenVerifier.VerifyError.signatureRejected },
+      attestor: attestor,
+      sessionProof: "unused"
+    )
+
+    #expect(response.status == .unauthorized)
+    #expect(await calls.count == 0)
+  }
+
+  @Test("empty JWKS downgrades to attestation and propagates the PDS nonce")
+  func emptyJWKSFallbackPropagatesNonce() async throws {
+    let fixture = try fallbackFixture()
+    let calls = CallCounter()
+    let attestor = StubAttestor(
+      calls: calls,
+      behavior: .success(fixture.verifiedToken, "next-session-nonce")
+    )
+    let response = try await protectedResponse(
+      accessToken: fixture.accessToken,
+      dpopProof: fixture.gatewayProof,
+      supplementalJWKS: #"{"keys":[]}"#,
+      accessTokenVerifier: { _ in throw OAuthAccessTokenVerifier.VerifyError.jwksEmpty("issuer") },
+      attestor: attestor,
+      sessionProof: "session-proof"
+    )
+
+    #expect(response.status == .ok)
+    #expect(await calls.count == 1)
+    #expect(
+      response.headers[HTTPField.Name(ATProtoSessionDPoP.nonceHeaderName)!]
+        == "next-session-nonce"
+    )
+    #expect(
+      response.headers[
+        HTTPField.Name(ATProtoSessionAttestationReceipt.receiptHeaderName)!
+      ] != nil
+    )
+  }
+
+  @Test("receipt is portable across instances and preserves prepared upstream proof bytes")
+  func receiptSkipsSecondProbeAcrossInstances() async throws {
+    let fixture = try fallbackFixture()
+    let firstCalls = CallCounter()
+    let verifier: ATProtoAuthMiddleware.AccessTokenVerifier = { _ in
+      throw OAuthAccessTokenVerifier.VerifyError.jwksEmpty("issuer")
+    }
+    let first = try await protectedResponse(
+      accessToken: fixture.accessToken,
+      dpopProof: fixture.gatewayProof,
+      supplementalJWKS: #"{"keys":[]}"#,
+      accessTokenVerifier: verifier,
+      attestor: StubAttestor(calls: firstCalls, behavior: .success(fixture.verifiedToken, nil)),
+      sessionProof: "session-proof"
+    )
+    let receipt = try #require(
+      first.headers[HTTPField.Name(ATProtoSessionAttestationReceipt.receiptHeaderName)!]
+    )
+    let secondCalls = CallCounter()
+    let handlerCalls = CallCounter()
+    let upstreamProof = "route-proof-one,route-proof-two"
+    let second = try await protectedResponse(
+      accessToken: fixture.accessToken,
+      dpopProof: fixture.gatewayProof,
+      supplementalJWKS: #"{"keys":[]}"#,
+      accessTokenVerifier: verifier,
+      attestor: StubAttestor(calls: secondCalls, behavior: .success(fixture.verifiedToken, nil)),
+      upstreamProof: upstreamProof,
+      attestationReceipt: receipt,
+      handlerCalls: handlerCalls
+    )
+
+    #expect(first.status == .ok)
+    #expect(second.status == .ok)
+    #expect(await firstCalls.count == 1)
+    #expect(await secondCalls.count == 0)
+    #expect(await handlerCalls.count == 1)
+    #expect(responseHeader(second, "X-Test-Upstream-DPoP") == upstreamProof)
+    #expect(responseHeader(second, ATProtoSessionAttestationReceipt.receiptHeaderName) != nil)
+  }
+
+  @Test("missing or expired receipt returns a preflight marker without probing or handling")
+  func receiptPreconditionRequired() async throws {
+    let fixture = try fallbackFixture()
+    let verifier: ATProtoAuthMiddleware.AccessTokenVerifier = { _ in
+      throw OAuthAccessTokenVerifier.VerifyError.noJwksCandidates
+    }
+    let authority = try ATProtoSessionAttestationReceipt(
+      secret: "gateway-core-test-attestation-receipt-secret"
+    )
+    let expired = try authority.issue(
+      accessTokenJWT: fixture.accessToken,
+      did: fixture.verifiedToken.did,
+      cnfJkt: try #require(fixture.verifiedToken.cnfJkt),
+      tokenExpiresAt: Date().addingTimeInterval(3_600),
+      authoritativeValidUntil: Date().addingTimeInterval(-1),
+      now: Date().addingTimeInterval(-61)
+    )
+
+    for receipt in [String?.none, expired] {
+      let probes = CallCounter()
+      let handlers = CallCounter()
+      let response = try await protectedResponse(
+        accessToken: fixture.accessToken,
+        dpopProof: fixture.gatewayProof,
+        supplementalJWKS: #"{"keys":[]}"#,
+        accessTokenVerifier: verifier,
+        attestor: StubAttestor(calls: probes, behavior: .success(fixture.verifiedToken, nil)),
+        upstreamProof: "prepared-route-proof",
+        attestationReceipt: receipt,
+        handlerCalls: handlers
+      )
+      #expect(response.status == .preconditionRequired)
+      #expect(
+        responseHeader(response, ATProtoSessionAttestationReceipt.requiredHeaderName) == "true"
+      )
+      #expect(response.body.getString(at: 0, length: response.body.readableBytes)?.contains(
+        "ATProtoSessionAttestationRequired") == true)
+      #expect(await probes.count == 0)
+      #expect(await handlers.count == 0)
+    }
+  }
+
+  @Test("prepared marker requires a receipt before a route proof exists")
+  func preparedMarkerRequiresReceipt() async throws {
+    let fixture = try fallbackFixture()
+    let probes = CallCounter()
+    let handlers = CallCounter()
+    let response = try await protectedResponse(
+      accessToken: fixture.accessToken,
+      dpopProof: fixture.gatewayProof,
+      supplementalJWKS: #"{"keys":[]}"#,
+      accessTokenVerifier: { _ in throw OAuthAccessTokenVerifier.VerifyError.noJwksCandidates },
+      attestor: StubAttestor(calls: probes, behavior: .success(fixture.verifiedToken, nil)),
+      upstreamPrepared: true,
+      handlerCalls: handlers
+    )
+
+    #expect(response.status == .preconditionRequired)
+    #expect(await probes.count == 0)
+    #expect(await handlers.count == 0)
+  }
+
+  @Test("forged receipt is a generic unauthorized response")
+  func forgedReceiptIsUnauthorized() async throws {
+    let fixture = try fallbackFixture()
+    let probes = CallCounter()
+    let handlers = CallCounter()
+    let response = try await protectedResponse(
+      accessToken: fixture.accessToken,
+      dpopProof: fixture.gatewayProof,
+      supplementalJWKS: #"{"keys":[]}"#,
+      accessTokenVerifier: { _ in throw OAuthAccessTokenVerifier.VerifyError.noJwksCandidates },
+      attestor: StubAttestor(calls: probes, behavior: .success(fixture.verifiedToken, nil)),
+      upstreamProof: "prepared-route-proof",
+      attestationReceipt: "forged.receipt",
+      handlerCalls: handlers
+    )
+
+    #expect(response.status == .unauthorized)
+    #expect(responseHeader(response, ATProtoSessionAttestationReceipt.requiredHeaderName) == nil)
+    #expect(await probes.count == 0)
+    #expect(await handlers.count == 0)
+  }
+
+  @Test("direct JWKS authentication never requires an attestation receipt")
+  func directJWKSPathDoesNotRequireReceipt() async throws {
+    let fixture = try fallbackFixture()
+    let probes = CallCounter()
+    let handlers = CallCounter()
+    let response = try await protectedResponse(
+      accessToken: fixture.accessToken,
+      dpopProof: fixture.gatewayProof,
+      supplementalJWKS: #"{"keys":[{}]}"#,
+      accessTokenVerifier: { _ in fixture.verifiedToken },
+      attestor: StubAttestor(calls: probes, behavior: .success(fixture.verifiedToken, nil)),
+      upstreamProof: "direct-route-proof",
+      handlerCalls: handlers
+    )
+
+    #expect(response.status == .ok)
+    #expect(await probes.count == 0)
+    #expect(await handlers.count == 1)
+    #expect(responseHeader(response, "X-Test-Upstream-DPoP") == "direct-route-proof")
+    #expect(responseHeader(response, ATProtoSessionAttestationReceipt.receiptHeaderName) == nil)
+  }
+
+  @Test("PDS nonce challenge uses only the dedicated response header")
+  func dedicatedNonceChallenge() async throws {
+    let fixture = try fallbackFixture()
+    let calls = CallCounter()
+    let response = try await protectedResponse(
+      accessToken: fixture.accessToken,
+      dpopProof: fixture.gatewayProof,
+      supplementalJWKS: #"{"keys":[]}"#,
+      accessTokenVerifier: { _ in throw OAuthAccessTokenVerifier.VerifyError.noJwksCandidates },
+      attestor: StubAttestor(calls: calls, behavior: .nonce("challenge-nonce")),
+      sessionProof: "session-proof"
+    )
+
+    #expect(response.status == .unauthorized)
+    #expect(
+      response.headers[HTTPField.Name(ATProtoSessionDPoP.nonceHeaderName)!] == "challenge-nonce"
+    )
+    #expect(response.headers[HTTPField.Name("DPoP-Nonce")!] == nil)
+  }
+
+  @Test("active PDS admission overload remains an availability failure")
+  func attestationOverloadIsServiceUnavailable() async throws {
+    let fixture = try fallbackFixture()
+    let calls = CallCounter()
+    let response = try await protectedResponse(
+      accessToken: fixture.accessToken,
+      dpopProof: fixture.gatewayProof,
+      supplementalJWKS: #"{"keys":[]}"#,
+      accessTokenVerifier: { _ in throw OAuthAccessTokenVerifier.VerifyError.noJwksCandidates },
+      attestor: StubAttestor(calls: calls, behavior: .overloaded),
+      sessionProof: "session-proof"
+    )
+
+    #expect(response.status == .serviceUnavailable)
+    #expect(await calls.count == 1)
+  }
+
+  @Test("a cached attestation does not bypass Gateway DPoP replay protection")
+  func cachedAttestationStillRejectsGatewayReplay() async throws {
+    let fixture = try fallbackFixture()
+    let probes = CallCounter()
+    let attestor = PDSAccessTokenAttestor(
+      authorityResolver: { _ in
+        .init(
+          pdsBase: "https://pds.public.social",
+          authorizationServers: ["https://issuer.public.social"]
+        )
+      },
+      sessionProbe: { _, _, _ in
+        await probes.increment()
+        return ("did:plc:middlewareattestation", true, nil)
+      }
+    )
+    let sessionProof = try dpopProof(
+      accessToken: fixture.accessToken,
+      key: fixture.proofKey,
+      jwk: fixture.proofJWK,
+      htu: "https://pds.public.social/xrpc/com.atproto.server.getSession"
+    )
+    let verifier: ATProtoAuthMiddleware.AccessTokenVerifier = { _ in
+      throw OAuthAccessTokenVerifier.VerifyError.jwksEmpty("issuer")
+    }
+    let replayGuard = DPoPReplayGuard()
+    let first = try await protectedResponse(
+      accessToken: fixture.accessToken,
+      dpopProof: fixture.gatewayProof,
+      supplementalJWKS: #"{"keys":[]}"#,
+      accessTokenVerifier: verifier,
+      attestor: attestor,
+      replayGuard: replayGuard,
+      sessionProof: sessionProof
+    )
+    let replay = try await protectedResponse(
+      accessToken: fixture.accessToken,
+      dpopProof: fixture.gatewayProof,
+      supplementalJWKS: #"{"keys":[]}"#,
+      accessTokenVerifier: verifier,
+      attestor: attestor,
+      replayGuard: replayGuard,
+      sessionProof: nil
+    )
+
+    #expect(first.status == .ok)
+    #expect(replay.status == .unauthorized)
+    #expect(await probes.count == 1)
+  }
+
+  @Test("replay guard capacity exhaustion fails closed as unauthorized")
+  func replayGuardCapacityExhaustionFailsClosed() async throws {
+    let fixture = try fallbackFixture()
+    let calls = CallCounter()
+    let replayGuard = DPoPReplayGuard(retention: 120, maximumEntries: 1)
+    try await replayGuard.consume(thumbprint: "existing-key", jti: "existing-proof")
+
+    let response = try await protectedResponse(
+      accessToken: fixture.accessToken,
+      dpopProof: fixture.gatewayProof,
+      supplementalJWKS: #"{"keys":[]}"#,
+      accessTokenVerifier: { _ in throw OAuthAccessTokenVerifier.VerifyError.jwksEmpty("issuer") },
+      attestor: StubAttestor(calls: calls, behavior: .success(fixture.verifiedToken, nil)),
+      replayGuard: replayGuard,
+      sessionProof: "session-proof"
+    )
+
+    #expect(response.status == .unauthorized)
+    #expect(await calls.count == 1)
+  }
+
   private func protectedResponse(
     accessToken: String,
     dpopProof: String,
     supplementalJWKS: String?,
-    legacyFallbackConfigured: Bool
+    legacyFallbackConfigured: Bool = false,
+    accessTokenVerifier: ATProtoAuthMiddleware.AccessTokenVerifier? = nil,
+    attestor: (any PDSAccessTokenAttesting)? = nil,
+    replayGuard: DPoPReplayGuard = DPoPReplayGuard(),
+    sessionProof: String? = nil,
+    upstreamProof: String? = nil,
+    upstreamPrepared: Bool = false,
+    attestationReceipt: String? = nil,
+    handlerCalls: CallCounter? = nil
   ) async throws -> TestResponse {
     let httpClient = HTTPClient(eventLoopGroupProvider: .singleton)
 
-    let middleware = ATProtoAuthMiddleware(
-      httpClient: httpClient,
-      plcURL: "https://plc.invalid",
-      gatewayClientPolicy: .permissive,
-      supplementalJwksJSON: supplementalJWKS,
-      allowDpopBoundStructuralFallback: legacyFallbackConfigured,
-      logger: Logger(label: "auth.security.test")
-    )
+    let middleware: ATProtoAuthMiddleware
+    if let accessTokenVerifier, let attestor {
+      middleware = ATProtoAuthMiddleware(
+        httpClient: httpClient,
+        plcURL: "https://plc.invalid",
+        gatewayClientPolicy: .permissive,
+        supplementalJwksJSON: supplementalJWKS,
+        accessTokenVerifier: accessTokenVerifier,
+        attestor: attestor,
+        attestationReceipt: try ATProtoSessionAttestationReceipt(
+          secret: "gateway-core-test-attestation-receipt-secret"
+        ),
+        replayGuard: replayGuard,
+        logger: Logger(label: "auth.security.test")
+      )
+    } else {
+      middleware = ATProtoAuthMiddleware(
+        httpClient: httpClient,
+        plcURL: "https://plc.invalid",
+        gatewayClientPolicy: .permissive,
+        attestationReceipt: try ATProtoSessionAttestationReceipt(
+          secret: "gateway-core-test-attestation-receipt-secret"
+        ),
+        supplementalJwksJSON: supplementalJWKS,
+        allowDpopBoundStructuralFallback: legacyFallbackConfigured,
+        logger: Logger(label: "auth.security.test")
+      )
+    }
     let router = Router(context: GatewayRequestContext.self)
     let protected = router.group().add(middleware: middleware)
     protected.get("/protected") { _, context in
-      ["did": context.authContext?.did ?? "missing"]
+      if let handlerCalls { await handlerCalls.increment() }
+      var headers = HTTPFields()
+      if let upstreamProof = context.authContext?.upstreamDpopProof {
+        headers[HTTPField.Name("X-Test-Upstream-DPoP")!] = upstreamProof
+      }
+      return Response(status: .ok, headers: headers)
     }
     let app = Application(
       router: router,
@@ -177,6 +554,22 @@ struct ATProtoAuthMiddlewareSecurityTests {
       var headers = HTTPFields()
       headers[.authorization] = "DPoP \(accessToken)"
       headers[HTTPField.Name("DPoP")!] = dpopProof
+      if let sessionProof {
+        headers[HTTPField.Name(ATProtoSessionDPoP.headerName)!] = sessionProof
+      }
+      if let upstreamProof {
+        headers[HTTPField.Name(ATProtoUpstreamDPoP.headerName)!] = upstreamProof
+      }
+      if upstreamPrepared {
+        headers[
+          HTTPField.Name(ATProtoSessionAttestationReceipt.upstreamPreparedHeaderName)!
+        ] = "true"
+      }
+      if let attestationReceipt {
+        headers[
+          HTTPField.Name(ATProtoSessionAttestationReceipt.receiptHeaderName)!
+        ] = attestationReceipt
+      }
       return headers
     }()
     do {
@@ -189,6 +582,48 @@ struct ATProtoAuthMiddlewareSecurityTests {
       try? await httpClient.shutdown()
       throw error
     }
+  }
+
+  private func responseHeader(_ response: TestResponse, _ name: String) -> String? {
+    response.headers[HTTPField.Name(name)!]
+  }
+
+  private func fallbackFixture() throws -> (
+    accessToken: String,
+    gatewayProof: String,
+    proofKey: P256.Signing.PrivateKey,
+    proofJWK: JWK,
+    verifiedToken: OAuthAccessTokenVerifier.VerifiedAccessToken
+  ) {
+    let proofKey = P256.Signing.PrivateKey()
+    let proofJWK = jwk(for: proofKey, kid: "fallback-proof")
+    let thumbprint = try thumbprint(of: proofJWK)
+    let accessToken = try signedAccessToken(
+      issuer: "https://issuer.public.social",
+      subject: "did:plc:middlewareattestation",
+      confirmationThumbprint: thumbprint,
+      signingKey: P256.Signing.PrivateKey(),
+      kid: "pds-attested-token"
+    )
+    let gatewayProof = try dpopProof(
+      accessToken: accessToken,
+      key: proofKey,
+      jwk: proofJWK,
+      htu: "http://localhost/protected"
+    )
+    return (
+      accessToken,
+      gatewayProof,
+      proofKey,
+      proofJWK,
+      .init(
+        did: "did:plc:middlewareattestation",
+        cnfJkt: thumbprint,
+        clientIdClaim: nil,
+        azpClaim: nil,
+        audiences: []
+      )
+    )
   }
 
   private func signedAccessToken(

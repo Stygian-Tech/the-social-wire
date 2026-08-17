@@ -56,6 +56,7 @@ Both public API hosts are Railway Gateway custom domains. Do not substitute a ge
 - [ ] URL scheme matches reversed FQDN (e.g. `app.thesocialwire.api:/oauth/callback`)
 - [ ] Sign in completes; Keychain holds refresh token
 - [ ] Gateway sync preferences load after auth
+- [ ] Gateway requests retry one dedicated PDS-session nonce challenge without signing the user out
 - [ ] Bootstrap, AppView lists, and flat entry detail load through the active gateway host
 
 ## Components / views
@@ -91,6 +92,7 @@ Functional parity with `apps/web` (native SwiftUI chrome; not pixel-matched layo
 iOS must **not** ship L@tr API credentials. All six bookmark NSIDs go to `SocialWireAPIEnvironment.baseURL` under `/xrpc/`. The client sends:
 
 - `Authorization` + gateway-bound `DPoP` (Social Wire Gateway `htu`)
+- `X-ATProto-Session-DPoP` (`com.atproto.server.getSession` at the viewer PDS)
 - `X-Latr-Gateway-DPoP` (external L@tr Gateway `htu`; forwarded as outbound `DPoP`)
 - `X-ATProto-Upstream-DPoP` (PDS write-through)
 

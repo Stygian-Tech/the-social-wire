@@ -2,14 +2,25 @@ package config
 
 import (
 	"slices"
+	"strings"
 	"testing"
+	"time"
 )
 
 func TestFilterFingerprintIgnoresCollectionOrderingAndDuplicates(t *testing.T) {
-	first := FilterFingerprint(DefaultStreamNSID, []string{"site.standard.entry", "site.standard.document"})
-	second := FilterFingerprint(DefaultStreamNSID, []string{"site.standard.document", "site.standard.entry", "site.standard.entry"})
+	first := FilterFingerprint(DefaultStreamNSID, []string{"site.standard.entry", "site.standard.document"}, DefaultScopePolicy)
+	second := FilterFingerprint(DefaultStreamNSID, []string{"site.standard.document", "site.standard.entry", "site.standard.entry"}, DefaultScopePolicy)
 	if first != second {
 		t.Fatalf("fingerprints differ: %q != %q", first, second)
+	}
+}
+
+func TestFilterFingerprintChangesWithScopePolicy(t *testing.T) {
+	collections := []string{"site.standard.document"}
+	first := FilterFingerprint(DefaultStreamNSID, collections, "publication-author-viewer-v1")
+	second := FilterFingerprint(DefaultStreamNSID, collections, "publication-author-viewer-v2")
+	if first == second {
+		t.Fatalf("scope policy did not change fingerprint: %q", first)
 	}
 }
 
@@ -28,8 +39,14 @@ func TestLoadDefaultsToUSWestAndAllEventKinds(t *testing.T) {
 	if cfg.SourceGeneration != DefaultSourceGeneration {
 		t.Fatalf("source generation = %q", cfg.SourceGeneration)
 	}
+	if cfg.ScopePolicy != DefaultScopePolicy {
+		t.Fatalf("scope policy = %q", cfg.ScopePolicy)
+	}
 	if !slices.Contains(cfg.Collections, "site.standard.document") || !slices.Contains(cfg.Collections, "app.skyreader.feed.subscription") {
 		t.Fatalf("collections = %#v", cfg.Collections)
+	}
+	if slices.Contains(cfg.Collections, "app.thesocialwire.entryReadState") {
+		t.Fatalf("read-state records should not be consumed by V2: %#v", cfg.Collections)
 	}
 }
 
@@ -37,12 +54,28 @@ func TestHostedConfigRequiresArchiveKey(t *testing.T) {
 	cfg := Config{
 		Environment: "dev", DatabaseURL: "postgres://example.invalid/db", Host: DefaultHost,
 		SourceGeneration: DefaultSourceGeneration, Collections: []string{"site.standard.entry"},
-		Port: 8080, BatchSize: 64, DownloadConcurrency: 1, SegmentStripes: 1,
+		ScopePolicy: DefaultScopePolicy,
+		Port:        8080, BatchSize: 64, DownloadConcurrency: 1, SegmentStripes: 1,
 		MaxDownloadAttempts: 1, LeaderLeaseTTL: 30, TrackedDIDRefresh: 10,
 		ReplayIncidentBytes: 1, ReplayDailyBytes: 1, ReplayBudgetPause: 1,
 		BackoffMin: 1, BackoffMax: 1,
 	}
 	if err := cfg.Validate(); err == nil {
 		t.Fatal("expected missing API key validation error")
+	}
+}
+
+func TestConfigRejectsCollectionsWithoutAScopeRole(t *testing.T) {
+	cfg := Config{
+		Environment: "dev", DatabaseURL: "postgres://example.invalid/db", Host: DefaultHost,
+		SourceGeneration: DefaultSourceGeneration, Collections: []string{"example.unsupported.record"},
+		ScopePolicy: DefaultScopePolicy, APIKey: "test-key",
+		Port: 8080, BatchSize: 64, DownloadConcurrency: 1, SegmentStripes: 1,
+		MaxDownloadAttempts: 1, LeaderLeaseTTL: 30, TrackedDIDRefresh: 10,
+		ReplayIncidentBytes: 1, ReplayDailyBytes: 1, ReplayBudgetPause: time.Minute,
+		BackoffMin: 1, BackoffMax: 1,
+	}
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "unsupported JETSTREAM_COLLECTIONS") {
+		t.Fatalf("validation error = %v", err)
 	}
 }

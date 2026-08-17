@@ -70,9 +70,36 @@ for migration in "${migrations[@]}"; do
   filename="$(basename "$migration")"
   version="${filename%%_*}"
   transaction_file="$migration_run_dir/$filename"
+  transaction_setting="$(
+    sed -nE \
+      's/^[[:space:]]*--[[:space:]]*socialwire:transaction=(on|off)[[:space:]]*$/\1/p' \
+      "$migration"
+  )"
+  if grep -Eq '^[[:space:]]*--[[:space:]]*socialwire:transaction' "$migration"; then
+    case "$transaction_setting" in
+      on|off) ;;
+      *)
+        echo "error: $filename has an invalid or duplicate socialwire:transaction directive." >&2
+        exit 1
+        ;;
+    esac
+  else
+    transaction_setting="on"
+  fi
+
   {
-    cat <<'SQL'
+    if [ "$transaction_setting" = "off" ]; then
+      cat <<'SQL'
+-- A session-level lock spans every autocommitted statement in this migration.
+-- PostgreSQL releases it automatically if psql exits after a failed statement.
+SELECT pg_advisory_lock(hashtextextended('the-social-wire-schema-migrations', 0));
+SQL
+    else
+      cat <<'SQL'
 SELECT pg_advisory_xact_lock(hashtextextended('the-social-wire-schema-migrations', 0));
+SQL
+    fi
+    cat <<'SQL'
 SELECT EXISTS (
   SELECT 1
   FROM public.schema_migrations
@@ -91,9 +118,20 @@ INSERT INTO public.schema_migrations (version, name)
 VALUES (:'migration_version', :'migration_name');
 \endif
 SQL
+    if [ "$transaction_setting" = "off" ]; then
+      cat <<'SQL'
+SELECT pg_advisory_unlock(hashtextextended('the-social-wire-schema-migrations', 0));
+SQL
+    fi
   } >"$transaction_file"
 
-  psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 --single-transaction \
-    -v migration_version="$version" -v migration_name="$filename" \
-    -f "$transaction_file"
+  if [ "$transaction_setting" = "off" ]; then
+    psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 \
+      -v migration_version="$version" -v migration_name="$filename" \
+      -f "$transaction_file"
+  else
+    psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 --single-transaction \
+      -v migration_version="$version" -v migration_name="$filename" \
+      -f "$transaction_file"
+  fi
 done

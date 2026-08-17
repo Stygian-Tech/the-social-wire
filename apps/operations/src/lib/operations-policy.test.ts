@@ -3,6 +3,8 @@ import {
   backfillReadiness,
   canQueueBackfill,
   filterTraces,
+  ingestionAuthoritySource,
+  ingestionSourceLabel,
   jetstreamStateForOverview,
   preferredRecoveryMode,
   productionConfirmationMatches,
@@ -107,4 +109,22 @@ test("selects supplemental Jetstream version when Tap is the ingestion authority
     ingestion: tap,
     ingestionSources: [tap, jetstream],
   })?.version).toBe(7)
+})
+
+test("recognizes the durable Jetstream V2 inbox authority without reusing it as legacy reconnect evidence", () => {
+  const jetstream = { ...demoOverview.ingestion!, source: "jetstream", version: 7 }
+  const services = demoOverview.services.map((service) => service.service === "appview-worker"
+    ? { ...service, dependencyState: { ...service.dependencyState, ingestion_authority: "jetstream_v2_inbox" } }
+    : service)
+  const overview = {
+    ...demoOverview,
+    services,
+    ingestion: undefined,
+    ingestionSources: [jetstream],
+  }
+
+  expect(ingestionAuthoritySource(overview)).toBe("jetstream_v2_inbox")
+  expect(ingestionSourceLabel("JETSTREAM_V2_INBOX")).toBe("Jetstream V2 Inbox · authoritative")
+  expect(jetstreamStateForOverview(overview)).toBeUndefined()
+  expect(jetstreamStateForOverview({ ...overview, ingestionSources: [] })).toBeUndefined()
 })
