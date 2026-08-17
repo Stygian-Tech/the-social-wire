@@ -80,6 +80,33 @@ start implicitly at the live tip.
    verify Charybdis on the same generation. Run exact active-scope PDS reconciliation before
    declaring the seam complete.
 
+After a generation handoff, Charybdis may automatically resolve an `open` or `recovering`
+`fatal_stream` incident from the retired generation. The
+`retired-generation-terminal-v1` policy is deliberately fail-closed and applies only when all of
+these facts are true in one durable store evaluation:
+
+- the configured successor has a `live` checkpoint and a current, unreleased fenced intake lease;
+- the successor and retired checkpoints use the same source host, stream NSID, and cursor kind;
+- the successor's `replay_after_seq` is below the retired `last_staged_seq`, and the successor has
+  staged through at least that retired seam, proving the required inclusive overlap was observed;
+- the retired checkpoint is `live`, has no active intake lease, and its terminal-prefix
+  `last_applied_seq` has reached its recorded `last_staged_seq`;
+- the retired generation has no row beyond the recorded seam, no actionable inbox row, no
+  unreconciled dead letter, and no pending, leased, or failed reconciliation request; and
+- the incident's cursor range is absent or is fully covered by the retired terminal prefix.
+
+The resolver never changes current-generation incidents, `verification_required` incidents, other
+incident categories, or a candidate that lacks any of this evidence. A successful transition
+records both generation IDs, both sides of the inclusive seam, the successor checkpoint and lease
+observations, and the policy version in `verification_evidence`; it also records the recovered
+cursor and resolution time. Re-running the resolver is idempotent. Do not manually edit an incident
+that remains active: diagnose the missing invariant instead.
+
+Automated retired-generation incident resolution proves only that the recorded transport seam and
+retired inbox are terminal. It does not replace exact active-scope PDS reconciliation, which remains
+required to validate the current records for every enrolled author and viewer repository before the
+generation handoff or a Production promotion is accepted.
+
 Repeat this sequence independently in each environment. A Development cursor is never valid for
 Production.
 

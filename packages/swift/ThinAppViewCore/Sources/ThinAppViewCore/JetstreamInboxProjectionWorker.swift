@@ -7,6 +7,7 @@ public final class JetstreamInboxProjectionWorker: Sendable {
   private let repositoryRestorer: (any TapRepositoryRestorer)?
   private let environment: String
   private let sourceGeneration: String
+  private let intakeLeaseName: String
   private let workerId: String
   private let maxConcurrency: Int
   private let reconciliationMaxConcurrency: Int
@@ -25,6 +26,7 @@ public final class JetstreamInboxProjectionWorker: Sendable {
     repositoryRestorer: (any TapRepositoryRestorer)? = nil,
     environment: String,
     sourceGeneration: String,
+    intakeLeaseName: String = ThinAppViewConfig.defaultJetstreamLeaderLeaseName,
     workerId: String,
     maxConcurrency: Int,
     leaseSeconds: TimeInterval,
@@ -42,6 +44,7 @@ public final class JetstreamInboxProjectionWorker: Sendable {
     self.repositoryRestorer = repositoryRestorer
     self.environment = environment
     self.sourceGeneration = sourceGeneration
+    self.intakeLeaseName = intakeLeaseName
     self.workerId = workerId
     self.maxConcurrency = max(1, min(maxConcurrency, indexers.count))
     self.reconciliationMaxConcurrency = max(
@@ -215,6 +218,12 @@ public final class JetstreamInboxProjectionWorker: Sendable {
     _ = try await store.resolveRecoveredIngestionIncidents(
       environment: environment,
       sourceGeneration: sourceGeneration,
+      at: now
+    )
+    _ = try await store.resolveTerminalRetiredGenerationIncidents(
+      environment: environment,
+      activeSourceGeneration: sourceGeneration,
+      activeLeaseName: intakeLeaseName,
       at: now
     )
   }

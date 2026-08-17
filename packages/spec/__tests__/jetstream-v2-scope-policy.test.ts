@@ -23,6 +23,10 @@ const migration = readFileSync(
   join(repositoryRoot, "database/migrations/20260816220000_jetstream_v2_scope_filtered_terminal.sql"),
   "utf8",
 )
+const replayRunbook = readFileSync(
+  join(repositoryRoot, "docs/runbooks/operations/jetstream-v2-durable-replay.md"),
+  "utf8",
+)
 
 const authorCollections = [
   "site.standard.document",
@@ -80,5 +84,15 @@ describe("Jetstream V2 role-aware scope policy", () => {
     expect(migration).not.toContain(
       "DROP INDEX CONCURRENTLY IF EXISTS public.idx_appview_ingestion_inbox_terminal_barrier;",
     )
+  })
+
+  it("keeps retired-generation incident resolution distinct from active-scope reconciliation", () => {
+    expect(replayRunbook).toContain("`retired-generation-terminal-v1` policy")
+    expect(replayRunbook).toContain("`open` or `recovering`")
+    expect(replayRunbook).toContain("`verification_required` incidents")
+    expect(replayRunbook).toContain("`replay_after_seq` is below the retired `last_staged_seq`")
+    expect(replayRunbook).toContain("`last_applied_seq` has reached its recorded `last_staged_seq`")
+    expect(replayRunbook).toContain("no pending, leased, or failed reconciliation request")
+    expect(replayRunbook).toContain("It does not replace exact active-scope PDS reconciliation")
   })
 })

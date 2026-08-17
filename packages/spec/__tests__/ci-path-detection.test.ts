@@ -133,6 +133,18 @@ describe("CI path detection", () => {
     expect(result.get("charybdis")).toBe("false");
   });
 
+  it("runs the retired-generation policy spec when its runbook changes", () => {
+    const result = detect(
+      repositoryWithChange(
+        "docs/runbooks/operations/jetstream-v2-durable-replay.md",
+      ),
+      "pull_request",
+    );
+    expect(result.get("spec")).toBe("true");
+    expect(result.get("operations_web")).toBe("true");
+    expect(result.get("charybdis")).toBe("false");
+  });
+
   it("runs the full matrix when the detector changes", () => {
     const result = detect(
       repositoryWithChange("scripts/ci-detect-changes.sh"),
