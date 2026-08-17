@@ -295,23 +295,20 @@ final class SocialWireGatewayClient {
         guard var http = response as? HTTPURLResponse else {
             throw SocialWireError.badResponse("Missing gateway response.")
         }
-        await auth.dpop.updateNonce(from: http)
+        await captureNonces(from: http, session: session)
 
         // Cold-origin DPoP-nonce challenge: the server replies 401/400 with a fresh DPoP-Nonce when
         // the client hasn't seeded one yet. Re-authorize with that nonce and retry once (mirrors
         // authorizedRequest); otherwise a first-launch challenge would fail the whole bootstrap.
-        if [401, 400].contains(http.statusCode), http.value(forHTTPHeaderField: "DPoP-Nonce") != nil {
+        if shouldRetryNonceChallenge(http) {
             (bytes, response) = try await urlSession.bytes(for: authorizedStreamRequest())
             guard let retryHttp = response as? HTTPURLResponse else {
                 throw SocialWireError.badResponse("Missing gateway response.")
             }
             http = retryHttp
-            await auth.dpop.updateNonce(from: http)
+            await captureNonces(from: http, session: session)
         }
 
-        if http.statusCode == 401 {
-            auth.invalidateSessionAfterUnauthorizedResponse()
-        }
         guard (200 ..< 300).contains(http.statusCode) else {
             throw SocialWireError.badResponse("Bootstrap stream failed (\(http.statusCode)).")
         }
@@ -425,7 +422,7 @@ final class SocialWireGatewayClient {
             throw SocialWireError.badResponse("Missing gateway response.")
         }
 
-        await auth.dpop.updateNonce(from: http)
+        await captureNonces(from: http, session: session)
 
         let initial = GatewayHTTPResult(
             statusCode: http.statusCode,
@@ -434,7 +431,7 @@ final class SocialWireGatewayClient {
             body: firstData
         )
 
-        if [401, 400].contains(http.statusCode), http.value(forHTTPHeaderField: "DPoP-Nonce") != nil {
+        if shouldRetryNonceChallenge(http) {
             var retry = URLRequest(url: url)
             retry.httpMethod = method
             retry.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -453,10 +450,7 @@ final class SocialWireGatewayClient {
             guard let retryHttp = retryResponse as? HTTPURLResponse else {
                 throw SocialWireError.badResponse("Missing gateway response.")
             }
-            await auth.dpop.updateNonce(from: retryHttp)
-            if retryHttp.statusCode == 401 {
-                auth.invalidateSessionAfterUnauthorizedResponse()
-            }
+            await captureNonces(from: retryHttp, session: session)
             return GatewayHTTPResult(
                 statusCode: retryHttp.statusCode,
                 etagHeader: retryHttp.value(forHTTPHeaderField: "ETag"),
@@ -465,9 +459,6 @@ final class SocialWireGatewayClient {
             )
         }
 
-        if http.statusCode == 401 {
-            auth.invalidateSessionAfterUnauthorizedResponse()
-        }
         return initial
     }
 
@@ -480,6 +471,26 @@ final class SocialWireGatewayClient {
             try await auth.dpop.proof(method: method, url: url, accessToken: session.accessToken),
             forHTTPHeaderField: "DPoP"
         )
+        let getSessionURL = ATProtoSessionDPoP.getSessionURL(for: session)
+        request.setValue(
+            try await auth.dpop.proof(
+                method: "GET",
+                url: getSessionURL,
+                accessToken: session.accessToken
+            ),
+            forHTTPHeaderField: ATProtoSessionDPoP.headerName
+        )
+    }
+
+    private func captureNonces(from response: HTTPURLResponse, session: AuthSession) async {
+        await auth.dpop.updateNonce(from: response)
+        await auth.dpop.updateSessionNonce(from: response, session: session)
+    }
+
+    private func shouldRetryNonceChallenge(_ response: HTTPURLResponse) -> Bool {
+        guard [400, 401].contains(response.statusCode) else { return false }
+        return response.value(forHTTPHeaderField: "DPoP-Nonce") != nil
+            || ATProtoSessionDPoP.isNonceChallenge(response)
     }
 
     private func trimmedEntityTag(_ raw: String?) -> String? {

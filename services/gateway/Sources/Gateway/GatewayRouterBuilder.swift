@@ -53,6 +53,7 @@ enum GatewayRouterBuilder {
       httpClient: httpClient,
       plcURL: config.core.atprotoPLCURL,
       gatewayClientPolicy: config.core.oauthGateway,
+      attestationReceipt: config.pdsAttestationReceipt,
       supplementalJwksJSON: config.core.oauthAccessTokenSupplementalJwksJSON,
       logger: logger
     )

@@ -4,6 +4,22 @@ import Hummingbird
 
 /// Validates RFC 9449 DPoP proofs for bound access tokens (ES‑256 with embedded **`jwk`** header keys).
 public enum DPoPProofVerifier {
+  struct VerifiedProof: Sendable, Equatable {
+    let jwkThumbprint: String
+    let jti: String
+    let validUntil: Date
+
+    init(jwkThumbprint: String, jti: String, validUntil: Date) {
+      self.jwkThumbprint = jwkThumbprint
+      self.jti = jti
+      self.validUntil = validUntil
+    }
+
+    init(jwkThumbprint: String, jti: String) {
+      self.init(jwkThumbprint: jwkThumbprint, jti: jti, validUntil: .distantPast)
+    }
+  }
+
   enum VerifyError: Swift.Error {
     case malformedJWT
     case unexpectedHeaderTyping
@@ -21,12 +37,15 @@ public enum DPoPProofVerifier {
 
   private static let skewTolerance: TimeInterval = 120
 
-  static func verify(proofJWT: String, request: Request, accessTokenJWT: String, accessTokenCnFJkt: String?) throws {
+  @discardableResult
+  static func verify(proofJWT: String, request: Request, accessTokenJWT: String, accessTokenCnFJkt: String?) throws
+    -> VerifiedProof
+  {
     guard let canonical = DPoPHtu.canonical(for: request) else {
       throw VerifyError.urlMismatch(expected: "<unresolved>", got: "<unresolved>")
     }
 
-    try verify(
+    return try verify(
       proofJWT: proofJWT,
       uppercasedHTTPMethod: request.method.rawValue.uppercased(),
       expectedHtuURL: canonical,
@@ -35,13 +54,14 @@ public enum DPoPProofVerifier {
     )
   }
 
+  @discardableResult
   static func verify(
     proofJWT: String,
     uppercasedHTTPMethod: String,
     expectedHtuURL: String,
     accessTokenJWT: String,
     accessTokenCnFJkt: String?
-  ) throws {
+  ) throws -> VerifiedProof {
     let parts = proofJWT.split(separator: ".", omittingEmptySubsequences: false)
     guard parts.count == 3 else { throw VerifyError.malformedJWT }
 
@@ -106,7 +126,7 @@ public enum DPoPProofVerifier {
     else {
       throw VerifyError.missingAccessTokenConfirmation
     }
-    guard thumbprintBase64URL.caseInsensitiveCompare(expectedJkt) == .orderedSame else {
+    guard thumbprintBase64URL == expectedJkt else {
       throw VerifyError.jwkThumbprintMismatch(expected: expectedJkt, got: thumbprintBase64URL)
     }
 
@@ -129,6 +149,11 @@ public enum DPoPProofVerifier {
     guard publicKey.isValidSignature(rawSig, for: digest) else {
       throw VerifyError.signatureVerificationFailed
     }
+    return VerifiedProof(
+      jwkThumbprint: thumbprintBase64URL,
+      jti: jti,
+      validUntil: proofInstant.addingTimeInterval(Self.skewTolerance)
+    )
   }
 
   // MARK: - Internals
