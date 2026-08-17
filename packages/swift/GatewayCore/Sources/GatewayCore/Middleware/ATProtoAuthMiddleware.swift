@@ -54,7 +54,7 @@ public struct ATProtoAuthMiddleware: RouterMiddleware {
   private let supplementalJwksJSON: String?
   private let accessTokenVerifier: AccessTokenVerifier
   private let attestor: any PDSAccessTokenAttesting
-  private let attestationReceipt: ATProtoSessionAttestationReceipt
+  private let attestationReceipt: ATProtoSessionAttestationReceipt?
   private let replayGuard: DPoPReplayGuard
   private let logger: Logger
 
@@ -62,7 +62,7 @@ public struct ATProtoAuthMiddleware: RouterMiddleware {
     httpClient: HTTPClient,
     plcURL: String,
     gatewayClientPolicy: OAuthGatewayClientPolicy,
-    attestationReceipt: ATProtoSessionAttestationReceipt,
+    attestationReceipt: ATProtoSessionAttestationReceipt? = nil,
     supplementalJwksJSON: String? = nil,
     // Retained for source compatibility; structural token fallback is intentionally disabled.
     allowDpopBoundStructuralFallback _: Bool = false,
@@ -165,6 +165,10 @@ public struct ATProtoAuthMiddleware: RouterMiddleware {
         supplementalJwksJSON: supplementalJwksJSON
       ) else {
         logger.warning("Access token cryptographic verification failed")
+        throw HTTPError(.unauthorized, message: "Invalid or stale ATProto OAuth access token")
+      }
+      guard let attestationReceipt else {
+        logger.warning("Active PDS token attestation is not configured")
         throw HTTPError(.unauthorized, message: "Invalid or stale ATProto OAuth access token")
       }
 
