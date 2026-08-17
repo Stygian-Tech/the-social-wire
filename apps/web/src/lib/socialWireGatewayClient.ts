@@ -87,6 +87,8 @@ export async function gatewayFetch(
     }
     return await run();
   } catch (error) {
+    // A Gateway 401 can be caused by edge policy or DPoP verification. Only an
+    // OAuth-client refresh/revocation failure proves the local session is unusable.
     if (isTerminalOAuthSessionError(error)) {
       invalidateOAuthSession(oauthSession.did, error);
     }
@@ -115,7 +117,7 @@ async function gatewayFetchAttempt(
   }
 
   if (!canManuallySignGatewayRequest(oauthSession)) {
-    const response = await oauthSession.fetchHandler(url, {
+    return oauthSession.fetchHandler(url, {
       ...init,
       headers: {
         Accept: "application/json",
@@ -123,16 +125,6 @@ async function gatewayFetchAttempt(
         ...(init?.headers ?? {}),
       },
     });
-    if (
-      response.status === 401 &&
-      !response.headers.get("DPoP-Nonce")?.trim()
-    ) {
-      invalidateOAuthSession(
-        oauthSession.did,
-        new Error(`Gateway request failed with ${response.status}`)
-      );
-    }
-    return response;
   }
 
   const userAuthHeaders = await buildLatrGatewayUserAuthHeaders(
@@ -169,13 +161,6 @@ async function gatewayFetchAttempt(
       init,
       attempt + 1,
       retryNonce
-    );
-  }
-
-  if (res.status === 401) {
-    invalidateOAuthSession(
-      oauthSession.did,
-      new Error(`Gateway request failed with ${res.status}`)
     );
   }
 

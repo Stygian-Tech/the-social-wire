@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import { TokenRefreshError } from "@atproto/oauth-client-browser";
 import { onOAuthSessionInvalidated } from "@/lib/auth";
 
 const ORIG_ENV = { ...process.env };
@@ -198,7 +199,7 @@ describe("gatewayFetch", () => {
     expect(nonceClaimsSeen).toEqual([undefined, "nonce-1", "nonce-2"]);
   });
 
-  it("invalidates the session after a final gateway 401", async () => {
+  it("does not invalidate a locally valid session after a final gateway 401", async () => {
     globalThis.fetch = mock(async () =>
       new Response(JSON.stringify({ error: "invalid_token" }), { status: 401 })
     ) as unknown as typeof fetch;
@@ -209,7 +210,7 @@ describe("gatewayFetch", () => {
     const oauthSession = {
       did: "did:plc:viewer",
       getTokenSet: async () => ({
-        access_token: "expired-access-token",
+        access_token: "access-token",
         token_type: "DPoP",
       }),
       getTokenInfo: async () => ({ aud: "https://pds.example" }),
@@ -235,7 +236,132 @@ describe("gatewayFetch", () => {
       );
 
       expect(response.status).toBe(401);
-      expect(invalidations).toEqual(["did:plc:viewer"]);
+      expect(invalidations).toEqual([]);
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it("does not invalidate the session when a DPoP nonce retry ends in a gateway 401", async () => {
+    let calls = 0;
+    globalThis.fetch = mock(async () => {
+      calls += 1;
+      if (calls === 1) {
+        return new Response(JSON.stringify({ error: "use_dpop_nonce" }), {
+          status: 401,
+          headers: { "DPoP-Nonce": "fresh-gateway-nonce" },
+        });
+      }
+      return new Response(JSON.stringify({ error: "invalid_token" }), {
+        status: 401,
+      });
+    }) as unknown as typeof fetch;
+    const invalidations: string[] = [];
+    const unsubscribe = onOAuthSessionInvalidated((did) => {
+      invalidations.push(did);
+    });
+    const oauthSession = {
+      did: "did:plc:viewer",
+      getTokenSet: async () => ({
+        access_token: "access-token",
+        token_type: "DPoP",
+      }),
+      getTokenInfo: async () => ({ aud: "https://pds.example" }),
+      server: {
+        dpopKey: {
+          bareJwk: { kty: "EC", crv: "P-256", x: "x", y: "y" },
+          algorithms: ["ES256"],
+          createJwt: async () => "gateway-dpop-proof",
+        },
+        dpopNonces: {
+          get: async () => undefined,
+          set: async () => {},
+        },
+        serverMetadata: { dpop_signing_alg_values_supported: ["ES256"] },
+      },
+    } as never;
+
+    try {
+      const { gatewayFetch } = await import("@/lib/socialWireGatewayClient");
+      const response = await gatewayFetch(
+        oauthSession,
+        "/xrpc/app.thesocialwire.appview.listEntries",
+      );
+
+      expect(response.status).toBe(401);
+      expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+      expect(invalidations).toEqual([]);
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it("does not let a telemetry 401 invalidate the session", async () => {
+    const invalidations: string[] = [];
+    const unsubscribe = onOAuthSessionInvalidated((did) => {
+      invalidations.push(did);
+    });
+    const oauthSession = {
+      did: "did:plc:viewer",
+      fetchHandler: mock(async () =>
+        new Response(JSON.stringify({ error: "invalid_token" }), {
+          status: 401,
+        })
+      ),
+    } as never;
+
+    try {
+      const { recordClientPerformance } = await import(
+        "@/lib/clientPerformanceTelemetry"
+      );
+      const response = await recordClientPerformance(oauthSession, {
+        event: "feed_error",
+        durationMs: 100,
+        feedType: "aggregate",
+        cacheState: "miss",
+        outcome: "error",
+      });
+
+      expect(response.status).toBe(401);
+      expect(invalidations).toEqual([]);
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it("still invalidates the session after a terminal token refresh failure", async () => {
+    const did = "did:plc:viewer";
+    const failure = new TokenRefreshError(did, "The session was revoked");
+    const invalidations: Array<{ did: string; cause: unknown }> = [];
+    const unsubscribe = onOAuthSessionInvalidated((invalidatedDid, cause) => {
+      invalidations.push({ did: invalidatedDid, cause });
+    });
+    const oauthSession = {
+      did,
+      getTokenSet: async () => {
+        throw failure;
+      },
+      server: {
+        dpopKey: {
+          bareJwk: { kty: "EC", crv: "P-256", x: "x", y: "y" },
+          algorithms: ["ES256"],
+          createJwt: async () => "gateway-dpop-proof",
+        },
+        dpopNonces: {
+          get: async () => undefined,
+          set: async () => {},
+        },
+        serverMetadata: { dpop_signing_alg_values_supported: ["ES256"] },
+      },
+    } as never;
+
+    try {
+      const { gatewayFetch } = await import("@/lib/socialWireGatewayClient");
+
+      await expect(
+        gatewayFetch(oauthSession, "/v1/telemetry/client-performance")
+      ).rejects.toBe(failure);
+      expect(invalidations).toEqual([{ did, cause: failure }]);
     } finally {
       unsubscribe();
     }
