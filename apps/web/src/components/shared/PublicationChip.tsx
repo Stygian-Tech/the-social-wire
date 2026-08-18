@@ -1,6 +1,7 @@
 "use client";
 
 import { Avatar } from "@/components/shared/Avatar";
+import { outboundLinkProps } from "@/lib/outboundLinks";
 import { cn } from "@/lib/utils";
 
 export type PublicationChipModel = {
@@ -39,8 +40,7 @@ export function PublicationChip({
   return publication.homepageUrl ? (
     <a
       href={publication.homepageUrl}
-      target="_blank"
-      rel="noopener noreferrer"
+      {...outboundLinkProps}
       className={cn(classes, "transition-colors hover:bg-accent/70")}
       title={`Open ${publication.name}`}
     >

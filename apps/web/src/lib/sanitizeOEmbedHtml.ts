@@ -5,6 +5,10 @@
 
 import DOMPurify from "dompurify";
 
+import {
+  OUTBOUND_LINK_REL,
+  OUTBOUND_REFERRER_POLICY,
+} from "@/lib/outboundLinks";
 import { normalizeHttpUrlToHttps } from "@/lib/publicResourceUrl";
 
 export function sanitizeOEmbedHtml(dirty: string): string {
@@ -80,7 +84,8 @@ export function sanitizeOEmbedHtml(dirty: string): string {
     const href = a.getAttribute("href") ?? "";
     if (href.startsWith("http://") || href.startsWith("https://")) {
       a.setAttribute("target", "_blank");
-      a.setAttribute("rel", "noopener noreferrer");
+      a.setAttribute("rel", OUTBOUND_LINK_REL);
+      a.setAttribute("referrerpolicy", OUTBOUND_REFERRER_POLICY);
     }
   });
 
