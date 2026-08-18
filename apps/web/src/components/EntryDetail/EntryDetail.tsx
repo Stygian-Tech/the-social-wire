@@ -10,6 +10,7 @@ import {
   lockedEntryArticlePresentation,
   type EntryArticlePresentation,
 } from "@/lib/entryArticlePresentation";
+import { outboundLinkProps } from "@/lib/outboundLinks";
 import { normalizeHttpUrlToHttps } from "@/lib/publicResourceUrl";
 import { sanitizeHTMLWithLinks } from "@/lib/sanitize";
 import { cn } from "@/lib/utils";
@@ -81,8 +82,7 @@ export function EntryDetail({ entryId }: EntryDetailProps) {
           <div className="mt-3 flex flex-wrap sm:mt-4">
             <a
               href={canonicalArticleHref}
-              target="_blank"
-              rel="noopener noreferrer"
+              {...outboundLinkProps}
               className="inline-flex min-h-[44px] min-w-0 items-center gap-1 py-2 text-xs font-medium text-[var(--purple-foreground)] underline decoration-[var(--purple-border)] underline-offset-4 transition-colors hover:text-primary hover:decoration-primary sm:min-h-0 sm:text-sm sm:py-0"
             >
               <ExternalLink className="h-3.5 w-3.5 shrink-0" />
