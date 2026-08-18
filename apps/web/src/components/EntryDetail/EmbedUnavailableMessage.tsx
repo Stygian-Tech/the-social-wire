@@ -1,5 +1,6 @@
 import { ExternalLink } from "lucide-react";
 import type { ReactNode } from "react";
+import { outboundLinkProps } from "@/lib/outboundLinks";
 
 export function EmbedUnavailableMessage({
   href,
@@ -15,8 +16,7 @@ export function EmbedUnavailableMessage({
   const link = (
     <a
       href={href}
-      target="_blank"
-      rel="noopener noreferrer"
+      {...outboundLinkProps}
       className="inline-flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-md py-2 text-sm font-medium text-[var(--purple-foreground)] underline decoration-[var(--purple-border)] underline-offset-4 hover:text-primary hover:decoration-primary"
     >
       <ExternalLink className="size-4 shrink-0" aria-hidden />

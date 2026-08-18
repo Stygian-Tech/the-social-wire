@@ -41,6 +41,20 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
+        /**
+         * Publishers only see The Social Wire in their analytics if we send a `Referer`, so pin the
+         * document policy instead of inheriting whatever a browser defaults to. `origin-when-
+         * cross-origin` sends bare `https://thesocialwire.app/` off-origin — never the reader's
+         * in-app path — and, unlike `strict-origin-when-cross-origin`, keeps sending it to
+         * publishers still served over `http:`. Outbound anchors restate this via
+         * `outboundLinkProps`; hotlinked images opt out with `referrerPolicy="no-referrer"`.
+         */
+        source: "/:path*",
+        headers: [
+          { key: "Referrer-Policy", value: "origin-when-cross-origin" },
+        ],
+      },
+      {
         source: "/oauth-client-metadata.json",
         headers: [{ key: "Access-Control-Allow-Origin", value: "*" }],
       },

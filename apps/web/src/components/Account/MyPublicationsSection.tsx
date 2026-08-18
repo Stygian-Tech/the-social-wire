@@ -10,6 +10,7 @@ import {
   useSidebarBootstrap,
   useSidebarProjection,
 } from "@/contexts/PublicationSidebarContext";
+import { outboundLinkProps } from "@/lib/outboundLinks";
 import { cn } from "@/lib/utils";
 
 export function MyPublicationsSection() {
@@ -78,8 +79,7 @@ export function MyPublicationsSection() {
             Create a publication on{" "}
             <a
               href="https://leaflet.pub/"
-              target="_blank"
-              rel="noreferrer"
+              {...outboundLinkProps}
               className="font-medium text-foreground underline underline-offset-4"
             >
               Leaflet
@@ -87,8 +87,7 @@ export function MyPublicationsSection() {
             ,{" "}
             <a
               href="https://offprint.app/"
-              target="_blank"
-              rel="noreferrer"
+              {...outboundLinkProps}
               className="font-medium text-foreground underline underline-offset-4"
             >
               Offprint
@@ -96,8 +95,7 @@ export function MyPublicationsSection() {
             , or{" "}
             <a
               href="https://pckt.blog/"
-              target="_blank"
-              rel="noreferrer"
+              {...outboundLinkProps}
               className="font-medium text-foreground underline underline-offset-4"
             >
               pckt

@@ -38,6 +38,7 @@ import {
 import { useStandardSiteRecommendation } from "@/hooks/useStandardSiteRecommendation";
 import type { EntryDetail } from "@/lib/atprotoClient";
 import { canonicalArticleHttpsUrl } from "@/lib/articleCanonicalUrl";
+import { outboundLinkProps } from "@/lib/outboundLinks";
 import { cn } from "@/lib/utils";
 
 function shareArticleUrl(entry: EntryDetail): string {
@@ -279,8 +280,7 @@ export function ArticleSocialToolbar({
                 render={
                   <a
                     href={shareArticleUrl(entry)}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                    {...outboundLinkProps}
                   />
                 }
               >
@@ -438,8 +438,7 @@ export function ArticleSocialToolbar({
         {canonUrl ? (
           <a
             href={shareArticleUrl(entry)}
-            target="_blank"
-            rel="noopener noreferrer"
+            {...outboundLinkProps}
             className={cn(
               buttonVariants({ variant: "outline", size: "sm" }),
               "inline-flex h-11 min-h-[44px] items-center justify-center gap-1 px-2 no-underline sm:h-7 sm:min-h-0 sm:justify-start sm:gap-1.5 sm:px-2.5"

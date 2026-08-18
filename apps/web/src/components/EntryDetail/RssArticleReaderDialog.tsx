@@ -6,6 +6,7 @@ import { ExternalLink, X } from "lucide-react";
 import { ArticleContent } from "@/components/EntryDetail/ArticleContent";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useEntry } from "@/hooks/useEntries";
+import { outboundLinkProps } from "@/lib/outboundLinks";
 import { sanitizeHTMLWithLinks } from "@/lib/sanitize";
 
 export function RssArticleReaderDialog({
@@ -99,8 +100,7 @@ export function RssArticleReaderDialogView({
           {originalUrl ? (
             <a
               href={originalUrl}
-              target="_blank"
-              rel="noopener noreferrer"
+              {...outboundLinkProps}
               aria-label="Open Article on Original Site"
               title="Open on Original Site"
               className="inline-flex size-9 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"

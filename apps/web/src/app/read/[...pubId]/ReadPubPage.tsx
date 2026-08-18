@@ -5,6 +5,7 @@ import { EntryList } from "@/components/EntryList/EntryList";
 import { RssArticleReaderDialog } from "@/components/EntryDetail/RssArticleReaderDialog";
 import { DevRecordKindBadge } from "@/components/shared/DevRecordKindBadge";
 import { useReadRoute } from "@/contexts/ReadRouteContext";
+import { OUTBOUND_WINDOW_FEATURES } from "@/lib/outboundLinks";
 import { recordKindFromPubId } from "@/lib/recordKindDebug";
 import { entryOpenTarget, type EntryOpenTarget } from "@/lib/entryOpenTarget";
 import { resolveEntryOpenUrlFromPds } from "@/lib/resolveEntryOpenUrl";
@@ -86,7 +87,7 @@ export default function ReadPubPage({
         pendingTab.location.href = target.url;
         return;
       }
-      window.open(target.url, "_blank", "noopener,noreferrer");
+      window.open(target.url, "_blank", OUTBOUND_WINDOW_FEATURES);
     },
     [articleListFilter, markEntryReadForPub, rssReaderEntry],
   );
