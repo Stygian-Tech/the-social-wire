@@ -34,7 +34,7 @@ describe("Sidebar", () => {
     expect(aside.className).toContain("flex-col")
     expect(toggle.parentElement?.className).toContain("shrink-0")
     expect(toggle.parentElement?.className).not.toContain("absolute")
-    expect(screen.getByText("Title").className).toContain("h-[53.5px]")
+    expect(screen.getByText("Title").className).toContain("h-12")
     expect(aside.parentElement?.className).toContain("overflow-hidden")
     expect(aside.parentElement?.className).toContain("h-[calc(100svh-var(--operations-banner-height,0rem))]")
     expect(screen.getByRole("main").className).toContain("overflow-y-auto")
@@ -46,7 +46,7 @@ describe("Sidebar", () => {
       <SidebarProvider>
         <Sidebar>
           <SidebarContent>
-            <SidebarNavButton icon={<span>O</span>}>Overview</SidebarNavButton>
+            <SidebarNavButton href="/" icon={<span>O</span>}>Overview</SidebarNavButton>
           </SidebarContent>
           <SidebarFooter>
             <SidebarTrigger />
@@ -56,8 +56,8 @@ describe("Sidebar", () => {
     )
 
     fireEvent.click(screen.getByRole("button", { name: "Collapse Sidebar" }))
-    const navigationButton = screen.getByRole("button", { name: "Overview" })
-    fireEvent.mouseEnter(navigationButton)
+    const navigationLink = screen.getByRole("link", { name: "Overview" })
+    fireEvent.mouseEnter(navigationLink)
 
     expect(screen.getByRole("tooltip").textContent).toBe("Overview")
     expect(screen.getByRole("tooltip").getAttribute("data-placement")).toBe("right")

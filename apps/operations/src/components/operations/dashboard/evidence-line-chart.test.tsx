@@ -129,5 +129,6 @@ test("uses compact tick labels while keeping the full unit in the chart header",
 
   const ticks = Array.from(screen.getByRole("img").querySelectorAll("text")).map((node) => node.textContent)
   expect(ticks).toContain("1.6K")
-  expect(screen.getByText(/indexed events per second/)).toBeTruthy()
+  expect(screen.getAllByText(/indexed events per second/).length).toBeGreaterThanOrEqual(2)
+  expect(screen.getByRole("table", { name: "Indexed Events\/sec. time-series data" })).toBeTruthy()
 })

@@ -127,11 +127,11 @@ export function HealthStrip({ overview, referenceTime = overview.refreshedAt }: 
   ]
   return (
     <section
-      className="ops-panel grid divide-y sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-4"
+      className="ops-panel ops-metric-grid sm:grid-cols-2 xl:grid-cols-4"
       aria-label="System Health"
     >
       {items.map((item) => (
-        <div key={item.label} className="relative min-w-0 p-3">
+        <div key={item.label} className="ops-stat-cell relative">
           <div className="flex items-center gap-2 text-[11px]">
             <item.icon className="size-3.5" />
             {item.label}

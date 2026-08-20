@@ -19,9 +19,9 @@ export function CapabilityStatus({ overview }: { overview: Overview }) {
     ["Live Event Stream", capabilities.eventStream],
   ] as const
   return (
-    <section className="ops-panel grid divide-y sm:grid-cols-2 lg:grid-cols-3" aria-label="Operations Capabilities">
+    <section className="ops-panel ops-metric-grid sm:grid-cols-2 lg:grid-cols-3" aria-label="Operations Capabilities">
       {items.map(([label, capability]) => (
-        <div key={label} className="p-3">
+        <div key={label} className="ops-stat-cell">
           <div className="flex items-center justify-between gap-2">
             <h2 className="text-[10px] font-semibold">{label}</h2>
             <Badge tone={capability.enabled ? "success" : "warning"}>{capability.enabled ? "Enabled" : "Disabled"}</Badge>

@@ -1,4 +1,5 @@
 import { Badge } from "@/components/ui/badge"
+import { OperationsEmptyState } from "@/components/operations/operations-empty-state"
 import type { JetstreamEndpoint } from "@/lib/operations-types"
 import { effectiveConnectionState, elapsedSeconds } from "@/lib/observability-values"
 
@@ -8,10 +9,10 @@ function timestamp(value?: string) {
 
 export function JetstreamEndpointStatus({ endpoints, reference }: { endpoints: JetstreamEndpoint[]; reference: string }) {
   if (endpoints.length === 0) {
-    return <p className="border-t p-3 text-xs text-muted-foreground">No endpoint telemetry has been reported yet.</p>
+    return <OperationsEmptyState>No endpoint telemetry has been reported yet.</OperationsEmptyState>
   }
   return (
-    <div className="grid border-t md:grid-cols-2">
+    <div className="ops-metric-grid md:grid-cols-2">
       {endpoints.map((endpoint) => {
         const fresh = (elapsedSeconds(endpoint.updatedAt, reference) ?? Number.POSITIVE_INFINITY) <= 45
         const effectiveState = effectiveConnectionState({
@@ -27,7 +28,7 @@ export function JetstreamEndpointStatus({ endpoints, reference }: { endpoints: J
               ? "neutral"
               : "danger"
         return (
-          <article key={endpoint.id} className="grid gap-2 border-b p-3 last:border-b-0 md:border-b-0 md:border-r md:last:border-r-0">
+          <article key={endpoint.id} className="ops-stat-cell grid gap-2">
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
                 <p className="text-xs font-semibold">{endpoint.displayName}</p>

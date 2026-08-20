@@ -370,9 +370,10 @@ export function BackfillSheet({
               </section>
               <section className="mt-4">
                 <p className="text-xs font-semibold">Backfill Configuration</p>
-                <FieldGroup className="mt-3 grid-cols-[1fr_1.2fr]">
-                  <FieldLabel>Source Mode</FieldLabel>
+                <FieldGroup className="mt-3 grid-cols-1 sm:grid-cols-[minmax(9rem,1fr)_minmax(0,1.2fr)]">
+                  <FieldLabel htmlFor="backfill-source-mode">Source Mode</FieldLabel>
                   <Select
+                    id="backfill-source-mode"
                     ariaLabel="Source Mode"
                     value={sourceMode}
                     onValueChange={changeSourceMode}
@@ -394,12 +395,13 @@ export function BackfillSheet({
                       },
                     ]}
                   />
-                  <FieldLabel>Start Time (μs)</FieldLabel>
-                  <Input className="font-mono" value={request.startCursor ?? ""} readOnly />
-                  <FieldLabel>End Time (μs)</FieldLabel>
-                  <Input className="font-mono" value={request.endCursor ?? ""} readOnly />
-                  <FieldLabel>Collection Filters</FieldLabel>
+                  <FieldLabel htmlFor="backfill-start-time">Start Time (μs)</FieldLabel>
+                  <Input id="backfill-start-time" className="font-mono" value={request.startCursor ?? ""} readOnly />
+                  <FieldLabel htmlFor="backfill-end-time">End Time (μs)</FieldLabel>
+                  <Input id="backfill-end-time" className="font-mono" value={request.endCursor ?? ""} readOnly />
+                  <FieldLabel id="backfill-collections-label">Collection Filters</FieldLabel>
                   <BackfillCollectionSelector
+                    labelledBy="backfill-collections-label"
                     value={collections}
                     options={supportedCollections}
                     onValueChange={changeCollections}
@@ -433,8 +435,9 @@ export function BackfillSheet({
                       </div>
                     </>
                   ) : null}
-                  <FieldLabel>Bounded Batch Size</FieldLabel>
+                  <FieldLabel htmlFor="backfill-batch-size">Bounded Batch Size</FieldLabel>
                   <Input
+                    id="backfill-batch-size"
                     type="number"
                     min={1}
                     max={10_000}
@@ -444,10 +447,11 @@ export function BackfillSheet({
                       configurationChanged()
                     }}
                   />
-                  <FieldLabel>
+                  <FieldLabel htmlFor="backfill-rate-limit">
                     {sourceMode === "pds_reconciliation" ? "PDS Request Rate Limit" : "Source Event Rate Limit"}
                   </FieldLabel>
                   <Input
+                    id="backfill-rate-limit"
                     type="number"
                     min={1}
                     max={5_000}
@@ -459,8 +463,9 @@ export function BackfillSheet({
                   />
                   {sourceMode === "pds_reconciliation" ? (
                     <>
-                      <FieldLabel>PDS Request Concurrency</FieldLabel>
+                      <FieldLabel htmlFor="backfill-concurrency">PDS Request Concurrency</FieldLabel>
                       <Input
+                        id="backfill-concurrency"
                         type="number"
                         min={1}
                         max={16}
@@ -473,12 +478,12 @@ export function BackfillSheet({
                     </>
                   ) : sourceMode === "jetstream_replay" ? (
                     <>
-                      <FieldLabel>Execution Model</FieldLabel>
-                      <Input value="Serial · 1 replay worker" readOnly aria-label="Jetstream Replay Execution Model" />
+                      <FieldLabel htmlFor="backfill-execution-model">Execution Model</FieldLabel>
+                      <Input id="backfill-execution-model" value="Serial · 1 replay worker" readOnly />
                     </>
                   ) : null}
-                  <FieldLabel>Snapshot End Cursor</FieldLabel>
-                  <Input className="font-mono" value={dryRun.data?.snapshotEndCursor ?? "Dry-run required"} readOnly />
+                  <FieldLabel htmlFor="backfill-snapshot-end">Snapshot End Cursor</FieldLabel>
+                  <Input id="backfill-snapshot-end" className="font-mono" value={dryRun.data?.snapshotEndCursor ?? "Dry-run required"} readOnly />
                 </FieldGroup>
                 {!boundsValid ? (
                   <p role="alert" className="mt-2 text-[9px] text-destructive">
@@ -529,10 +534,10 @@ export function BackfillSheet({
                 />
                 <FieldDescription className="text-right">{auditNote.length} / 280</FieldDescription>
               </Field>
-              <label className="mt-4 flex items-start gap-2 text-[10px]">
+              <label className="mt-4 flex min-h-8 items-start gap-2 rounded-md px-1 py-1.5 text-[11px] [@media(pointer:coarse)]:min-h-11">
                 <input
                   type="checkbox"
-                  className="mt-0.5"
+                  className="mt-0.5 size-4 shrink-0 accent-primary"
                   checked={reviewed}
                   onChange={(event) => setReviewed(event.target.checked)}
                 />

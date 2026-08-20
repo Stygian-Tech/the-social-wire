@@ -31,9 +31,11 @@ export function OperationsDataStatus({
           : "danger"
 
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b bg-muted/30 px-3 py-2 text-[10px] sm:px-4" role="status">
-      <Badge tone={tone}>{freshness.state}</Badge>
-      <span>{freshness.reason}</span>
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b bg-muted/30 px-3 py-2 text-[11px] sm:px-4">
+      <span className="contents" role="status" aria-live="polite" aria-atomic="true">
+        <Badge tone={tone}>{freshness.state}</Badge>
+        <span>{freshness.reason}</span>
+      </span>
       <span className="ml-auto text-muted-foreground">
         Age {freshness.ageSeconds === null ? "unknown" : `${Math.round(freshness.ageSeconds)}s`}
         {freshness.evidence ? ` · ${freshness.evidence.source} · ${freshness.evidence.accuracy}` : ""}

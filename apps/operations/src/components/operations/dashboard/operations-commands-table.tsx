@@ -1,5 +1,6 @@
 import { DataColumnHeaders } from "@/components/operations/data-column-headers"
 import { OperationsSection } from "@/components/operations/operations-section"
+import { OperationsEmptyState } from "@/components/operations/operations-empty-state"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHeader, TableRow } from "@/components/ui/table"
 import type { OperationsCommand } from "@/lib/operations-types"
@@ -18,12 +19,12 @@ export function OperationsCommandsTable({ commands }: { commands: OperationsComm
       description="Durable command lifecycle records from the environment-scoped Operations database."
     >
       {commands.length === 0 ? (
-        <p className="p-6 text-center text-xs text-muted-foreground">No operator commands were reported.</p>
+        <OperationsEmptyState>No operator commands were reported.</OperationsEmptyState>
       ) : (
         <>
           <div className="grid gap-2 p-3 md:hidden">
             {commands.map((command) => (
-              <article key={command.id} className="rounded-md border bg-background p-3">
+              <article key={command.id} className="ops-record-card">
                 <header className="flex items-start justify-between gap-3">
                   <h3 className="break-all font-mono text-xs font-semibold">{command.action}</h3>
                   <Badge tone={commandTone(command.status)}>{command.status}</Badge>

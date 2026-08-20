@@ -1,4 +1,5 @@
 import { OperationsSection } from "@/components/operations/operations-section"
+import { OperationsEmptyState } from "@/components/operations/operations-empty-state"
 import { Badge } from "@/components/ui/badge"
 import type { Overview } from "@/lib/operations-types"
 
@@ -42,7 +43,7 @@ export function EvidenceInventory({ overview, referenceTime = overview.refreshed
       description="Independent source, accuracy, coverage, and validity metadata. Unlike pipelines are never blended into one status."
     >
       {entries.length === 0 ? (
-        <p className="p-6 text-center text-xs text-muted-foreground">No section-level provenance was reported.</p>
+        <OperationsEmptyState>No section-level provenance was reported.</OperationsEmptyState>
       ) : (
         <div className="grid gap-2 p-3 sm:grid-cols-2 xl:grid-cols-4">
           {entries.map(([section, evidence]) => {
@@ -51,7 +52,7 @@ export function EvidenceInventory({ overview, referenceTime = overview.refreshed
             const reference = new Date(referenceTime).getTime()
             const current = Number.isFinite(validUntil) && Number.isFinite(reference) && validUntil >= reference
             return (
-              <article key={section} className="rounded-md border bg-background p-3">
+              <article key={section} className="ops-record-card">
                 <header className="flex items-start justify-between gap-2">
                   <h3 className="break-all font-mono text-[10px] font-semibold">{section}</h3>
                   <Badge tone={evidence.accuracy === "exact" ? "success" : evidence.accuracy === "unavailable" ? "danger" : "warning"}>

@@ -1,5 +1,6 @@
 import { describe, expect, it, mock } from "bun:test"
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
+import userEvent from "@testing-library/user-event"
 import { Select } from "@/components/ui/select"
 
 describe("Select", () => {
@@ -24,7 +25,7 @@ describe("Select", () => {
 
     fireEvent.click(trigger)
     const option = await screen.findByRole("option", { name: "PDS Reconciliation" })
-    fireEvent.click(option)
+    await userEvent.click(option)
 
     await waitFor(() => expect(onValueChange).toHaveBeenCalledWith("pds_reconciliation"))
   })

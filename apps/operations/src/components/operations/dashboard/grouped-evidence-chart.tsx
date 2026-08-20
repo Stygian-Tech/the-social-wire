@@ -1,5 +1,6 @@
 "use client"
 
+import { useId } from "react"
 import { CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts"
 
 import { Badge } from "@/components/ui/badge"
@@ -49,6 +50,7 @@ export function GroupedEvidenceChart({
   valueFormatter?: (value: number) => string
   sampleCount?: number
 }) {
+  const dataTableId = useId()
   const config = Object.fromEntries(
     series.map((item) => [item.key, { label: item.label, color: item.color }]),
   ) satisfies ChartConfig
@@ -69,9 +71,9 @@ export function GroupedEvidenceChart({
   const ariaDescription = `${title}. ${series.length} series over ${data.length} one-minute buckets. ${observed} of ${total} values observed. Source ${source}.`
 
   return (
-    <Card size="sm" className="rounded-md bg-background shadow-none" aria-label={title}>
+    <Card size="sm" className="rounded-none bg-transparent shadow-none ring-0" aria-label={title}>
       <CardHeader>
-        <CardTitle className="text-xs">{title}</CardTitle>
+        <CardTitle className="text-xs"><h3>{title}</h3></CardTitle>
         <CardDescription className="text-[11px]">
           {description} · {unit}
         </CardDescription>
@@ -82,10 +84,11 @@ export function GroupedEvidenceChart({
       <CardContent>
         <ChartContainer
           config={config}
-          initialDimension={{ width: 720, height: 300 }}
-          className="h-[300px] w-full min-w-0 aspect-auto"
+          initialDimension={{ width: 720, height: 240 }}
+          className="h-[240px] w-full min-w-0 aspect-auto"
           role="img"
           aria-label={ariaDescription}
+          aria-describedby={dataTableId}
         >
           <LineChart accessibilityLayer data={chartData} margin={{ top: 8, right: 18, bottom: 12, left: 4 }}>
             <CartesianGrid vertical={false} />
@@ -126,7 +129,7 @@ export function GroupedEvidenceChart({
               }
             />
             <ChartLegend content={<ChartLegendContent className="flex-wrap gap-x-3 gap-y-1" />} />
-            {series.map((item) => (
+            {series.map((item, index) => (
               <Line
                 key={item.key}
                 dataKey={item.key}
@@ -134,14 +137,34 @@ export function GroupedEvidenceChart({
                 type="linear"
                 stroke={`var(--color-${item.key})`}
                 strokeWidth={2}
-                strokeDasharray={item.dashed ? "5 4" : undefined}
+                strokeDasharray={item.dashed ? "5 4" : [undefined, "8 3", "2 3", "9 3 2 3"][index % 4]}
                 connectNulls={false}
-                dot={false}
+                dot={chartData.length === 1 ? { r: 3 + (index % 2) } : false}
                 isAnimationActive={false}
               />
             ))}
           </LineChart>
         </ChartContainer>
+        <table id={dataTableId} className="sr-only">
+          <caption>{title} time-series data</caption>
+          <thead>
+            <tr>
+              <th scope="col">Time</th>
+              {series.map((item) => <th key={item.key} scope="col">{item.label}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {chartData.map((datum) => (
+              <tr key={datum.timestamp}>
+                <th scope="row">{formatChartTime(datum.timestamp)}</th>
+                {series.map((item) => {
+                  const value = datum[item.key]
+                  return <td key={item.key}>{typeof value === "number" ? valueFormatter(value) : "Missing"}</td>
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </CardContent>
       <CardFooter className="flex flex-wrap justify-between gap-2 text-[11px] text-muted-foreground">
         <span>Source: {source}</span>

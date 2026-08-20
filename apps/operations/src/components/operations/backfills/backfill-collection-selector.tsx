@@ -6,11 +6,13 @@ export function BackfillCollectionSelector({
   value,
   options,
   legacyCollections = [],
+  labelledBy,
 }: {
   onValueChange: (value: string[]) => void
   value: readonly string[]
   options: readonly string[]
   legacyCollections?: readonly string[]
+  labelledBy?: string
 }) {
   const legacy = legacyCollections.filter((collection) => LEGACY_DIAGNOSTIC_COLLECTIONS.has(collection))
   const unsupported = legacyCollections.filter(
@@ -18,14 +20,15 @@ export function BackfillCollectionSelector({
   )
 
   return (
-    <fieldset className="grid gap-1.5 rounded-md border p-2">
+    <fieldset aria-labelledby={labelledBy} className="grid gap-1.5 rounded-lg border p-2">
       <legend className="sr-only">Collection Filters</legend>
       {options.map((collection) => {
         const checked = value.includes(collection)
         return (
-          <label key={collection} className="flex items-center gap-2 text-[10px]">
+          <label key={collection} className="flex min-h-8 items-center gap-2 rounded-md px-1 text-[11px] hover:bg-muted/50 [@media(pointer:coarse)]:min-h-11">
             <input
               type="checkbox"
+              className="size-4 shrink-0 accent-primary"
               checked={checked}
               onChange={() => {
                 onValueChange(checked ? value.filter((item) => item !== collection) : [...value, collection])

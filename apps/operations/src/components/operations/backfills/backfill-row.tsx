@@ -105,7 +105,7 @@ export function BackfillCard({
 }) {
   const progress = jobProgress(job)
   return (
-    <article className="rounded-md border bg-background p-3">
+    <article className="ops-record-card">
       <header className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h3 className="break-all font-mono text-xs font-semibold">{job.id}</h3>
@@ -128,7 +128,7 @@ export function BackfillCard({
         <div><dt className="text-muted-foreground">Updated</dt><dd className="mt-0.5">{new Date(job.updatedAt).toLocaleString()}</dd></div>
       </dl>
       <BackfillFailureReason reason={job.failureReason} className="mt-3 text-[10px] text-destructive" />
-      <div className="mt-3 border-t pt-3">
+      <div className="mt-3 border-t border-border/45 pt-3">
         <BackfillActions job={job} environment={environment} mutationsEnabled={mutationsEnabled} />
       </div>
     </article>

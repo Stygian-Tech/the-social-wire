@@ -5,6 +5,7 @@ import {
   type GroupedChartDatum,
 } from "@/components/operations/dashboard/grouped-evidence-chart"
 import { OperationsSection } from "@/components/operations/operations-section"
+import { OperationsEmptyState } from "@/components/operations/operations-empty-state"
 import { Badge } from "@/components/ui/badge"
 import type { MetricRollup } from "@/lib/operations-types"
 import { redisOperationsSummary, redisOperationsTrends } from "@/lib/redis-metrics"
@@ -30,9 +31,7 @@ export function RedisObservability({ metricRollups }: { metricRollups: MetricRol
       action={<Badge tone={summary.errors === 0 ? "success" : "warning"}>{summary.errors.toLocaleString()} errors</Badge>}
     >
       {!hasEvidence ? (
-        <p className="p-6 text-center text-xs text-muted-foreground">
-          No Redis evidence is available in the retained metrics window.
-        </p>
+        <OperationsEmptyState>No Redis evidence is available in the retained metrics window.</OperationsEmptyState>
       ) : (
         <div className="grid gap-3 p-3 xl:grid-cols-2">
           <GroupedEvidenceChart

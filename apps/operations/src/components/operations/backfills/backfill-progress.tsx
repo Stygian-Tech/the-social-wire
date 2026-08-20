@@ -28,7 +28,10 @@ export function BackfillProgress({ job, refreshing }: { job: Backfill; refreshin
     progress.observedCount !== progress.estimatedCount
   return (
     <div className="flex-1 overflow-y-auto overscroll-contain p-4">
-      <div aria-live="polite" className="rounded-md border bg-muted/20 p-3">
+      <span className="sr-only" aria-live="polite" aria-atomic="true">
+        Backfill status changed to {job.status}.
+      </span>
+      <div className="rounded-lg border bg-muted/20 p-3">
         <div className="flex items-center justify-between gap-3">
           <div>
             <p className="text-[10px] text-muted-foreground">Current Status</p>

@@ -41,7 +41,7 @@ export function OperationsTopBar({
           ? "danger"
           : "neutral"
   return (
-    <header className="sticky top-0 z-30 flex min-h-[53px] flex-wrap items-center gap-x-4 gap-y-2 border-b bg-background/95 px-3 py-2 backdrop-blur sm:px-4 md:flex-nowrap">
+    <header className="sticky top-0 z-30 flex min-h-12 flex-wrap items-center gap-x-4 gap-y-1.5 border-b border-border/70 bg-background/72 px-3 py-1.5 supports-backdrop-filter:bg-background/55 supports-backdrop-filter:backdrop-blur-xl sm:px-4 md:flex-nowrap">
       <div className="flex items-center gap-2">
         <span className="ops-label normal-case tracking-normal">Environment</span>
         <Badge tone={environment === "prod" ? "danger" : "warning"}>
@@ -65,7 +65,7 @@ export function OperationsTopBar({
             aria-label="Automatic Refresh"
             aria-checked={autoRefresh}
             onClick={() => setAutoRefresh(!autoRefresh)}
-            className="relative grid size-11 shrink-0 place-items-center rounded-md"
+            className="relative grid size-8 shrink-0 place-items-center rounded-lg [@media(pointer:coarse)]:size-11"
           >
             <span className={`relative h-4 w-7 rounded-full border ${autoRefresh ? "bg-primary" : "bg-muted"}`}>
               <span

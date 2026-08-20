@@ -13,7 +13,13 @@ export default function CallbackPage() {
     <main className="grid min-h-svh place-items-center p-6">
       <div className="ops-panel max-w-md p-6 text-center">
         <h1 className="text-base font-semibold">Completing Operator Sign-In</h1>
-        <p className="mt-2 text-xs text-muted-foreground">{error ?? "Verifying the DPoP-bound OAuth session…"}</p>
+        <p
+          className={error ? "mt-2 text-xs text-destructive" : "mt-2 text-xs text-muted-foreground"}
+          role={error ? "alert" : "status"}
+          aria-live={error ? "assertive" : "polite"}
+        >
+          {error ?? "Verifying the DPoP-bound OAuth session…"}
+        </p>
       </div>
     </main>
   )

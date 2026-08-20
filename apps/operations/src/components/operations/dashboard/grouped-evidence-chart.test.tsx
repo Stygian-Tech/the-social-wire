@@ -38,8 +38,9 @@ test("renders shadcn chart provenance, legend, and coverage for grouped evidence
   )
 
   expect(screen.getByRole("img").getAttribute("aria-label")).toContain("3 of 4 values observed")
-  expect(screen.getByText("Average")).toBeTruthy()
-  expect(screen.getByText("Maximum")).toBeTruthy()
+  expect(screen.getAllByText("Average").length).toBeGreaterThanOrEqual(2)
+  expect(screen.getAllByText("Maximum").length).toBeGreaterThanOrEqual(2)
+  expect(screen.getByRole("table", { name: "Commit Duration time-series data" })).toBeTruthy()
   expect(screen.getByText("Source: Operations rollups")).toBeTruthy()
   expect(screen.getByText("Coverage: 3/4 values (75%)")).toBeTruthy()
   expect(screen.getByText("Samples: 3")).toBeTruthy()

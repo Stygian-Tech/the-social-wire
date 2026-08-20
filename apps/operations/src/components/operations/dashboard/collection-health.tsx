@@ -3,6 +3,7 @@ import {
   mergeGroupedSeries,
 } from "@/components/operations/dashboard/grouped-evidence-chart"
 import { OperationsSection } from "@/components/operations/operations-section"
+import { OperationsEmptyState } from "@/components/operations/operations-empty-state"
 import { Badge } from "@/components/ui/badge"
 import {
   collectionMetricRows,
@@ -58,13 +59,13 @@ export function CollectionHealth({
       action={<Badge tone={sectionStatus.tone}>{sectionStatus.label}</Badge>}
     >
       {rows.length === 0 ? (
-        <p className="p-6 text-center text-xs text-muted-foreground">No processing evidence is available.</p>
+        <OperationsEmptyState>No processing evidence is available.</OperationsEmptyState>
       ) : (
         <div className="grid gap-3 p-3">
           {rows.map((row) => {
             const failures = currentMetricValue(row.failedRate)
             return (
-              <article key={row.collection} className="min-w-0 rounded-md border bg-muted/10 p-3">
+              <article key={row.collection} className="ops-subpanel min-w-0">
                 <header className="mb-3 flex flex-wrap items-center justify-between gap-2">
                   <h3 className="break-all font-mono text-xs font-semibold">{row.collection}</h3>
                   <Badge tone={failures === null ? "neutral" : failures > 0 ? "danger" : "success"}>

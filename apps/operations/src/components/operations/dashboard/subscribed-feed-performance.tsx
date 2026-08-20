@@ -5,6 +5,7 @@ import {
   type GroupedChartDatum,
 } from "@/components/operations/dashboard/grouped-evidence-chart"
 import { OperationsSection } from "@/components/operations/operations-section"
+import { OperationsEmptyState } from "@/components/operations/operations-empty-state"
 import { Badge } from "@/components/ui/badge"
 import {
   subscribedFeedPerformanceRows,
@@ -39,9 +40,7 @@ export function SubscribedFeedPerformance({
       action={<Badge tone={sampleCount > 0 ? "success" : "neutral"}>n={sampleCount.toLocaleString()}</Badge>}
     >
       {rows.length === 0 ? (
-        <p className="p-6 text-center text-xs text-muted-foreground">
-          No Subscribed-feed performance samples are available in the retained window.
-        </p>
+        <OperationsEmptyState>No Subscribed-feed performance samples are available in the retained window.</OperationsEmptyState>
       ) : (
         <div className="grid gap-3 p-3 xl:grid-cols-2">
           <GroupedEvidenceChart
