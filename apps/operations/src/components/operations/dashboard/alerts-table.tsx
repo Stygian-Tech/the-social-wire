@@ -1,8 +1,10 @@
 import Link from "next/link"
 import { DataColumnHeaders } from "@/components/operations/data-column-headers"
 import { OperationsSection } from "@/components/operations/operations-section"
+import { OperationsEmptyState } from "@/components/operations/operations-empty-state"
 import { OperatorActionDialog } from "@/components/operations/operator-action-dialog"
 import { Badge } from "@/components/ui/badge"
+import { buttonVariants } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHeader, TableRow } from "@/components/ui/table"
 import {
   ingestionAuthoritySource,
@@ -102,12 +104,12 @@ function AlertActions({
 }
 
 function AlertList({ alerts, data, environment, mutationsEnabled, emptyMessage }: { alerts: Alert[]; data: Overview; environment: EnvironmentName; mutationsEnabled: boolean; emptyMessage: string }) {
-  if (!alerts.length) return <p className="p-6 text-center text-xs text-muted-foreground">{emptyMessage}</p>
+  if (!alerts.length) return <OperationsEmptyState>{emptyMessage}</OperationsEmptyState>
   return (
     <>
       <div className="grid gap-2 p-3 md:hidden">
         {alerts.map((alert) => (
-          <article key={alert.id} className="rounded-md border bg-background p-3">
+          <article key={alert.id} className="ops-record-card">
             <header className="flex items-start justify-between gap-3">
               <h3 className="break-all font-mono text-xs font-semibold">{alert.rule}</h3>
               <div className="flex gap-1"><Badge tone={alert.severity === "critical" ? "danger" : "warning"}>{alert.severity}</Badge><Badge>{alert.status}</Badge></div>
@@ -119,7 +121,7 @@ function AlertList({ alerts, data, environment, mutationsEnabled, emptyMessage }
               <div><dt className="text-muted-foreground">Delivery</dt><dd className="mt-0.5">{deliveryLabel(alert)}</dd></div>
             </dl>
             <Link href={`/runbooks#${alert.runbookSlug}`} className="ops-touch-link mt-3 text-[10px] text-primary">Open Runbook</Link>
-            <div className="mt-3 border-t pt-3"><AlertActions alert={alert} data={data} environment={environment} mutationsEnabled={mutationsEnabled} /></div>
+            <div className="mt-3 border-t border-border/45 pt-3"><AlertActions alert={alert} data={data} environment={environment} mutationsEnabled={mutationsEnabled} /></div>
           </article>
         ))}
       </div>
@@ -170,14 +172,14 @@ export function AlertsTable({
         <Link
           href="/alerts/active"
           aria-current={view === "active" ? "page" : undefined}
-          className={`inline-flex min-h-11 items-center rounded-md border px-3 py-2 text-[10px] ${view === "active" ? "border-primary bg-primary/10 text-primary" : "bg-background"}`}
+          className={buttonVariants({ variant: view === "active" ? "secondary" : "outline", size: "sm" })}
         >
           Active ({activeCount.toLocaleString()})
         </Link>
         <Link
           href="/alerts/history"
           aria-current={view === "history" ? "page" : undefined}
-          className={`inline-flex min-h-11 items-center rounded-md border px-3 py-2 text-[10px] ${view === "history" ? "border-primary bg-primary/10 text-primary" : "bg-background"}`}
+          className={buttonVariants({ variant: view === "history" ? "secondary" : "outline", size: "sm" })}
         >
           History
         </Link>

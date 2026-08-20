@@ -2,6 +2,7 @@
 
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { useId, useState } from "react"
+import { OperationsRequestError } from "@/components/operations/operations-request-error"
 import {
   AlertDialog,
   AlertDialogClose,
@@ -17,34 +18,11 @@ import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Toast } from "@/components/ui/toast"
-import { OperationsRequestError } from "@/components/operations/operations-request-error"
 import { useOperationsAuth } from "@/lib/auth-context"
-import { operationsRequest } from "@/lib/operations-api"
-import type { EnvironmentName } from "@/lib/operations-types"
+import { ignoreGap } from "@/lib/operations-api"
+import type { Gap } from "@/lib/operations-types"
 
-export function OperatorActionDialog({
-  environment,
-  path,
-  label,
-  auditNoteRequired = false,
-  expectedVersion,
-  disabled = false,
-  disabledReason,
-  destructive = false,
-  targetLabel,
-  subjectId,
-}: {
-  environment: EnvironmentName
-  path: string
-  label: string
-  auditNoteRequired?: boolean
-  expectedVersion?: number
-  disabled?: boolean
-  disabledReason?: string
-  destructive?: boolean
-  targetLabel?: string
-  subjectId?: string
-}) {
+export function ClearGapDialog({ gap, disabled = false }: { gap: Gap; disabled?: boolean }) {
   const { session } = useOperationsAuth()
   const queryClient = useQueryClient()
   const fieldId = useId()
@@ -55,42 +33,27 @@ export function OperatorActionDialog({
   const [succeeded, setSucceeded] = useState(false)
   const mutation = useMutation({
     mutationFn: () =>
-      operationsRequest(session, path, {
-        method: "POST",
-        body: JSON.stringify({
-          id: subjectId,
-          auditNote: auditNote.trim() || undefined,
-          environmentConfirmation: confirmation || undefined,
-          idempotencyKey,
-          expectedVersion,
-        }),
-        headers: { "Idempotency-Key": idempotencyKey },
+      ignoreGap(session, {
+        gap,
+        auditNote: auditNote.trim(),
+        environmentConfirmation: confirmation || undefined,
+        idempotencyKey,
       }),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["operations-overview", environment] })
-      await queryClient.invalidateQueries({ queryKey: ["operations-route", environment] })
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["operations-overview", gap.environment] }),
+        queryClient.invalidateQueries({ queryKey: ["operations-route", gap.environment] }),
+      ])
       setSucceeded(true)
       setOpen(false)
     },
   })
   const allowed =
-    (!auditNoteRequired || auditNote.trim().length >= 8) &&
-    (environment !== "prod" || confirmation === "PRODUCTION") &&
-    Number.isSafeInteger(expectedVersion) &&
-    idempotencyKey.length >= 8
-  const versionUnavailable = !Number.isSafeInteger(expectedVersion)
-  if (disabled || versionUnavailable)
-    return (
-      <Button
-        variant="outline"
-        size="sm"
-        disabled
-        title={disabledReason ?? (versionUnavailable ? "Version evidence is unavailable" : undefined)}
-        aria-label={`${label} ${targetLabel ?? "action"}: ${disabledReason ?? (versionUnavailable ? "version evidence is unavailable" : "unavailable")}`}
-      >
-        {label}
-      </Button>
-    )
+    auditNote.trim().length >= 8 &&
+    (gap.environment !== "prod" || confirmation === "PRODUCTION") &&
+    idempotencyKey.length >= 8 &&
+    !mutation.isPending
+
   return (
     <>
       <AlertDialog
@@ -108,34 +71,36 @@ export function OperatorActionDialog({
         <AlertDialogTrigger
           render={
             <Button
-              variant={destructive ? "destructive" : "outline"}
+              variant="destructive"
               size="sm"
-              aria-label={targetLabel ? `${label} ${targetLabel}` : label}
+              disabled={disabled}
+              aria-label={`Clear legacy gap ${gap.id}`}
             />
           }
         >
-          {label}
+          Clear Signal
         </AlertDialogTrigger>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle className="text-sm font-semibold">{label}?</AlertDialogTitle>
-            <AlertDialogDescription className="mt-2 text-xs text-muted-foreground">
-              This versioned operator action and its outcome are recorded in durable audit history.
+            <AlertDialogTitle>Clear This Legacy V1 Signal?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This marks the signal Ignored and moves it to History. It does not delete ingestion,
+              recovery, or audit evidence.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <FieldGroup className="py-3">
             <Field>
-              <FieldLabel htmlFor={`${fieldId}-audit`}>Operator Audit Note {auditNoteRequired ? "" : "(Optional)"}</FieldLabel>
+              <FieldLabel htmlFor={`${fieldId}-audit`}>Operator Audit Note</FieldLabel>
               <Textarea
                 id={`${fieldId}-audit`}
                 value={auditNote}
                 maxLength={280}
                 onChange={(event) => setAuditNote(event.target.value)}
-                placeholder="Explain why this action is required"
+                placeholder="Explain why this legacy signal is no longer actionable"
               />
-              <FieldDescription>{auditNote.length} / 280</FieldDescription>
+              <FieldDescription>{auditNote.length} / 280 · minimum 8 characters</FieldDescription>
             </Field>
-            {environment === "prod" ? (
+            {gap.environment === "prod" ? (
               <Field>
                 <FieldLabel htmlFor={`${fieldId}-confirm`}>Production Confirmation</FieldLabel>
                 <Input
@@ -154,16 +119,16 @@ export function OperatorActionDialog({
           </FieldGroup>
           <AlertDialogFooter>
             <AlertDialogClose render={<Button variant="outline" />}>Cancel</AlertDialogClose>
-            <Button disabled={!allowed || mutation.isPending} onClick={() => mutation.mutate()}>
-              {mutation.isPending ? "Working…" : label}
+            <Button variant="destructive" disabled={!allowed} onClick={() => mutation.mutate()}>
+              {mutation.isPending ? "Clearing…" : "Clear Signal"}
             </Button>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
       {succeeded ? (
         <Toast
-          title={`${label} Succeeded`}
-          description={`${targetLabel ?? "Operator action"} was updated and fresh evidence was requested.`}
+          title="Legacy Signal Cleared"
+          description="The signal was archived as Ignored and remains available in History."
           tone="success"
           onClose={() => setSucceeded(false)}
         />

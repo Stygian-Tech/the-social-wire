@@ -114,9 +114,9 @@ export function LiveStream({
         )
       }
     >
-      <div className="grid grid-cols-2 divide-x divide-y sm:grid-cols-3 xl:grid-cols-5">
+      <div className="ops-metric-grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5">
         {metrics.map(([label, value]) => (
-          <div key={label} className="min-w-0 p-3">
+          <div key={label} className="ops-stat-cell">
             <p className="text-[9px] text-muted-foreground">{label}</p>
             <p className="mt-1 truncate font-mono text-[10px]">{value}</p>
           </div>
@@ -137,7 +137,7 @@ export function LiveStream({
           </p>
         </header>
         {data.ingestionSources.length ? (
-          <div className="grid gap-px border-t bg-border sm:grid-cols-2 xl:grid-cols-4">
+          <div className="ops-metric-grid border-t sm:grid-cols-2 xl:grid-cols-4">
             {data.ingestionSources.map((source) => {
               const sourceState = effectiveConnectionState({
                 connectionState: source.connectionState,
@@ -146,7 +146,7 @@ export function LiveStream({
                 referenceTime,
               })
               return (
-                <article key={source.source} className="min-w-0 bg-background p-3">
+                <article key={source.source} className="ops-stat-cell">
                   <div className="flex items-start justify-between gap-2">
                     <h4 className="break-all font-mono text-[10px] font-semibold">{ingestionSourceLabel(source.source)}</h4>
                     <Badge

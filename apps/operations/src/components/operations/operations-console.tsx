@@ -2,7 +2,6 @@
 
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Activity } from "lucide-react"
-import { useRouter } from "next/navigation"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { BackfillSheet } from "@/components/operations/backfills/backfill-sheet"
 import { OperationsDataStatus } from "@/components/operations/dashboard/operations-data-status"
@@ -56,7 +55,6 @@ import {
 import { useVisibilityAwareClock } from "@/lib/use-visibility-aware-clock"
 
 export function OperationsConsole({ section, runbooks }: { section: string[]; runbooks: Runbook[] }) {
-  const router = useRouter()
   const queryClient = useQueryClient()
   const auth = useOperationsAuth()
   const demo = process.env.NEXT_PUBLIC_OPERATIONS_DEMO_MODE === "1"
@@ -258,6 +256,12 @@ export function OperationsConsole({ section, runbooks }: { section: string[]; ru
 
   return (
     <SidebarProvider>
+      <a
+        href="#operations-main"
+        className="fixed left-3 top-3 z-50 -translate-y-20 rounded-lg bg-primary px-3 py-2 text-xs text-primary-foreground shadow-lg transition-transform focus:translate-y-0"
+      >
+        Skip To Operations Content
+      </a>
       <Sidebar>
         <SidebarHeader>
           <div className="flex min-w-0 items-center gap-2">
@@ -278,7 +282,7 @@ export function OperationsConsole({ section, runbooks }: { section: string[]; ru
                   key={key}
                   active={current === key}
                   icon={<Icon className="size-3.5" />}
-                  onClick={() => router.push(key === "overview" ? "/" : `/${key}`)}
+                  href={key === "overview" ? "/" : `/${key}`}
                 >
                   {label}
                 </SidebarNavButton>
@@ -290,7 +294,7 @@ export function OperationsConsole({ section, runbooks }: { section: string[]; ru
           <SidebarTrigger />
         </SidebarFooter>
       </Sidebar>
-      <SidebarInset>
+      <SidebarInset id="operations-main" tabIndex={-1}>
         <OperationsTopBar
           environment={environment}
           autoRefresh={autoRefresh}
@@ -342,7 +346,7 @@ export function OperationsConsole({ section, runbooks }: { section: string[]; ru
           now={now}
         />
         <MobileOperationsNav current={current} />
-        <div className="min-w-0 p-3 sm:p-4">
+        <div className="min-w-0 p-3 sm:p-4 lg:p-5">
           <OperationsPageHeading current={current} />
           {overview.isLoading || !data || routeEvidenceLoading ? (
             <OverviewSkeleton />

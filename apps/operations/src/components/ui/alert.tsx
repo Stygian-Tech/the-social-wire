@@ -9,7 +9,7 @@ export function Alert({
     <div
       role="alert"
       className={cn(
-        "rounded-md border p-3 text-xs",
+        "rounded-lg border p-2.5 text-xs shadow-sm",
         variant === "warning" && "border-warning/35 bg-warning-surface text-warning",
         variant === "destructive" && "border-destructive/35 bg-danger-surface text-destructive",
         className,

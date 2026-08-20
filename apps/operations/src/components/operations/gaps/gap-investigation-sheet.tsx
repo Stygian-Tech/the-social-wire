@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query"
 import { ArrowRight, Search, XCircle } from "lucide-react"
 import { GapInvestigationContent } from "@/components/operations/gaps/gap-investigation-content"
 import { GapInvestigationSkeleton } from "@/components/operations/gaps/gap-investigation-skeleton"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { useOperationsAuth } from "@/lib/auth-context"
@@ -39,25 +40,24 @@ export function GapInvestigationSheet({
           </div>
           <SheetDescription className="mt-1 font-mono text-[10px]">{gap?.id}</SheetDescription>
         </SheetHeader>
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3.5">
           {investigation.isLoading ? (
             <GapInvestigationSkeleton />
           ) : investigation.data ? (
             <GapInvestigationContent investigation={investigation.data} />
           ) : (
-            <div
-              role="alert"
-              className="rounded-md border border-destructive/30 bg-danger-surface p-3 text-xs text-destructive"
-            >
+            <Alert variant="destructive">
               <XCircle className="mb-1 size-4" />
-              {investigation.error instanceof Error
-                ? investigation.error.message
-                : "Investigation evidence could not be loaded."}
-            </div>
+              <AlertDescription>
+                {investigation.error instanceof Error
+                  ? investigation.error.message
+                  : "Investigation evidence could not be loaded."}
+              </AlertDescription>
+            </Alert>
           )}
         </div>
         {investigation.data ? (
-          <SheetFooter className="flex items-center justify-between gap-3">
+          <SheetFooter className="flex flex-col items-stretch gap-2.5 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-[10px] text-muted-foreground">Review evidence before choosing recovery scope.</p>
             <Button
               disabled={

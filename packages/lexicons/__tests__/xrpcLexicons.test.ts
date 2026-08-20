@@ -91,4 +91,25 @@ describe("Social Wire XRPC lexicons", () => {
       expect(lexicon.defs.main.input.schema.required, name).toContain("expectedVersion");
     }
   });
+
+  it("keeps Operations metric filters and gap statuses aligned with the service contract", () => {
+    const metrics = JSON.parse(
+      readFileSync(fileForNsid("app.thesocialwire.operations.listMetrics"), "utf8")
+    );
+    expect(metrics.defs.main.parameters.properties.metric.maxLength).toBe(160);
+    expect(metrics.defs.main.parameters.properties.collection.maxLength).toBe(256);
+
+    const updateGap = JSON.parse(
+      readFileSync(fileForNsid("app.thesocialwire.operations.updateGap"), "utf8")
+    );
+    expect(updateGap.defs.main.input.schema.properties.status.knownValues).toEqual([
+      "suspected",
+      "confirmed",
+      "backfill_queued",
+      "backfilling",
+      "verification_required",
+      "resolved",
+      "ignored",
+    ]);
+  });
 });

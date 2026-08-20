@@ -27,9 +27,9 @@ test("renders visible provenance, window, latest value, and missing-bucket cover
   ).toBeTruthy()
   expect(screen.getByText("Coverage: 2/3 buckets (67%)")).toBeTruthy()
   expect(screen.getByText("Partial")).toBeTruthy()
-  expect(screen.getByRole("img").getAttribute("viewBox")).toBe("0 0 480 280")
-  expect(screen.getByText("Coverage: 2/3 buckets (67%)").closest("footer")?.className).toContain("text-[11px]")
-  expect(screen.getByRole("img").querySelector("text")?.getAttribute("font-size")).toBe("11")
+  expect(screen.getByRole("img").querySelector("svg")?.getAttribute("viewBox")).toBe("0 0 480 280")
+  expect(screen.getByText("Coverage: 2/3 buckets (67%)").closest("[data-slot=card-footer]")?.className).toContain("text-[11px]")
+  expect(screen.getByRole("img").querySelector(".recharts-line-curve")).toBeTruthy()
 })
 
 test("ages previously fresh chart evidence against current time", () => {
@@ -129,5 +129,6 @@ test("uses compact tick labels while keeping the full unit in the chart header",
 
   const ticks = Array.from(screen.getByRole("img").querySelectorAll("text")).map((node) => node.textContent)
   expect(ticks).toContain("1.6K")
-  expect(screen.getByText(/indexed events per second/)).toBeTruthy()
+  expect(screen.getAllByText(/indexed events per second/).length).toBeGreaterThanOrEqual(2)
+  expect(screen.getByRole("table", { name: "Indexed Events\/sec. time-series data" })).toBeTruthy()
 })

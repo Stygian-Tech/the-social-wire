@@ -548,6 +548,46 @@ struct OperationsHeartbeatJobTests {
     #expect(state.dependencyState["telemetry_last_export_age_seconds"] == "unknown")
   }
 
+  @Test("heartbeat emits bounded samples for all health dimensions")
+  func heartbeatEmitsHealthSamples() async throws {
+    let fixture = try Fixture()
+    let now = Date(timeIntervalSince1970: 1_800_000_000)
+    let recorder = HealthTelemetryRecorder()
+    let telemetry = OperationsTelemetryBuffer(
+      capacity: 10,
+      batchSize: 10,
+      logger: Logger(label: "heartbeat.health-samples.test")
+    ) { signals in
+      await recorder.append(signals)
+    }
+    let job = fixture.job(telemetry: telemetry) {
+      OperationsServiceProbeResult(
+        liveness: .healthy,
+        readiness: .degraded,
+        freshness: .unhealthy,
+        completeness: .unknown,
+        dependencyState: ["appview_database": "ready"],
+        observedAt: now.addingTimeInterval(-1),
+        validUntil: now.addingTimeInterval(30)
+      )
+    }
+
+    try await job.runOnce(startedAt: now.addingTimeInterval(-60), at: now)
+    #expect(await telemetry.flushOnce() == 4)
+
+    let samples = await recorder.metrics(named: "socialwire.service.health.samples_total")
+    #expect(samples.count == 4)
+    #expect(Set(samples.compactMap { $0.dimensions["service"] }) == ["appview"])
+    #expect(Set(samples.compactMap { $0.dimensions["dimension"] }) == [
+      "liveness", "readiness", "freshness", "completeness",
+    ])
+    #expect(Set(samples.compactMap { $0.dimensions["state"] }) == [
+      "healthy", "degraded", "unhealthy", "unknown",
+    ])
+    #expect(samples.allSatisfy { $0.value == 1 })
+    #expect(samples.allSatisfy { $0.dimensions["instance_id"] == nil })
+  }
+
   private enum ProbeFailure: Error {
     case secret(String)
   }
@@ -580,6 +620,21 @@ struct OperationsHeartbeatJobTests {
         telemetry: telemetry,
         logger: Logger(label: "heartbeat.test")
       )
+    }
+  }
+}
+
+private actor HealthTelemetryRecorder {
+  private var signals: [OperationsTelemetrySignal] = []
+
+  func append(_ newSignals: [OperationsTelemetrySignal]) {
+    signals.append(contentsOf: newSignals)
+  }
+
+  func metrics(named name: String) -> [OperationsMetricSample] {
+    signals.compactMap { signal in
+      guard case .metric(let sample) = signal, sample.name == name else { return nil }
+      return sample
     }
   }
 }

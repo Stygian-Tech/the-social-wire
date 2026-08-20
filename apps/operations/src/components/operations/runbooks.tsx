@@ -2,10 +2,10 @@ import type { Runbook } from "@/components/operations/shell/operations-view-type
 
 export function Runbooks({ runbooks }: { runbooks: Runbook[] }) {
   return (
-    <section className="ops-panel divide-y">
+    <section className="ops-panel divide-y divide-border/45">
       {runbooks.map((runbook, index) => (
-        <article id={runbook.slug} key={runbook.slug} className="grid gap-3 p-4 sm:grid-cols-[32px_1fr]">
-          <span className="grid size-7 place-items-center rounded-md bg-muted font-mono text-[10px]">
+        <article id={runbook.slug} key={runbook.slug} className="grid scroll-mt-36 gap-3 p-3 transition-colors hover:bg-muted/15 sm:grid-cols-[32px_1fr]">
+          <span className="grid size-7 place-items-center rounded-lg border border-border/45 bg-muted/50 font-mono text-[10px]">
             {String(index + 1).padStart(2, "0")}
           </span>
           <div>

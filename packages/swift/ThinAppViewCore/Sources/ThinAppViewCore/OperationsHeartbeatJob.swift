@@ -117,21 +117,42 @@ public struct OperationsHeartbeatJob: Sendable {
         completeness = Self.downgradeHealthy(completeness)
       }
     }
-    try await store.upsertServiceState(
-      OperationsServiceState(
-        service: service,
-        environment: environment,
-        instanceId: instanceId,
-        liveness: evaluated.liveness,
-        readiness: evaluated.readiness,
-        freshness: freshness,
-        completeness: completeness,
-        dependencyState: dependencies,
-        version: ProcessInfo.processInfo.environment["RAILWAY_DEPLOYMENT_ID"],
-        startedAt: startedAt,
-        heartbeatAt: now()
-      )
+    let state = OperationsServiceState(
+      service: service,
+      environment: environment,
+      instanceId: instanceId,
+      liveness: evaluated.liveness,
+      readiness: evaluated.readiness,
+      freshness: freshness,
+      completeness: completeness,
+      dependencyState: dependencies,
+      version: ProcessInfo.processInfo.environment["RAILWAY_DEPLOYMENT_ID"],
+      startedAt: startedAt,
+      heartbeatAt: now()
     )
+    try await store.upsertServiceState(state)
+    await enqueueHealthSamples(state)
+  }
+
+  private func enqueueHealthSamples(_ state: OperationsServiceState) async {
+    guard let telemetry else { return }
+    let serviceDimension = String(state.service.prefix(64))
+    for (dimension, healthState) in [
+      ("liveness", state.liveness),
+      ("readiness", state.readiness),
+      ("freshness", state.freshness),
+      ("completeness", state.completeness),
+    ] {
+      _ = await telemetry.enqueue(.metric(.init(
+        name: "socialwire.service.health.samples_total",
+        value: 1,
+        dimensions: [
+          "service": serviceDimension,
+          "dimension": dimension,
+          "state": healthState.rawValue,
+        ]
+      )))
+    }
   }
 
   private func evaluateProbe(

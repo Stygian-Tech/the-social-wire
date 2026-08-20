@@ -1,5 +1,6 @@
 import { Database } from "lucide-react"
 import { DataColumnHeaders } from "@/components/operations/data-column-headers"
+import { OperationsEmptyState } from "@/components/operations/operations-empty-state"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHeader, TableRow } from "@/components/ui/table"
 import {
@@ -84,7 +85,7 @@ export function DatabaseObservability({ overview, referenceTime = overview.refre
 
   return (
     <section className="ops-panel min-w-0 overflow-hidden" aria-label="Database Observability">
-      <header className="flex min-h-9 flex-wrap items-center justify-between gap-2 border-b px-3 py-2">
+      <header className="flex min-h-9 flex-wrap items-center justify-between gap-2 border-b border-border/45 bg-muted/12 px-3 py-2">
         <div>
           <h2 className="flex items-center gap-2 text-xs font-semibold"><Database className="size-3.5" /> Database Observability</h2>
           <p className="mt-1 text-[9px] text-muted-foreground">
@@ -105,9 +106,9 @@ export function DatabaseObservability({ overview, referenceTime = overview.refre
           not current state.
         </p>
       ) : null}
-      <div className="grid divide-y sm:grid-cols-2 sm:divide-x xl:grid-cols-3">
+      <div className="ops-metric-grid sm:grid-cols-2 xl:grid-cols-3">
         {metrics.map((metric) => (
-          <div key={metric.label} className="p-3">
+          <div key={metric.label} className="ops-stat-cell">
             <p className="text-[10px] text-muted-foreground">{metric.label}</p>
             <p className="mt-1 font-mono text-sm font-medium">{metric.value}</p>
             <p className="mt-1 text-[9px] text-muted-foreground">{metric.note}</p>
@@ -153,7 +154,7 @@ export function DatabaseObservability({ overview, referenceTime = overview.refre
             </TableBody>
           </Table>
         ) : (
-          <p className="p-3 text-[10px] text-muted-foreground">No sampled database spans were reported.</p>
+          <OperationsEmptyState>No sampled database spans were reported.</OperationsEmptyState>
         )}
       </div>
     </section>

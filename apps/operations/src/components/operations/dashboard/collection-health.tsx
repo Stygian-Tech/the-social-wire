@@ -1,5 +1,9 @@
-import { EvidenceLineChart } from "@/components/operations/dashboard/evidence-line-chart"
+import {
+  GroupedEvidenceChart,
+  mergeGroupedSeries,
+} from "@/components/operations/dashboard/grouped-evidence-chart"
 import { OperationsSection } from "@/components/operations/operations-section"
+import { OperationsEmptyState } from "@/components/operations/operations-empty-state"
 import { Badge } from "@/components/ui/badge"
 import {
   collectionMetricRows,
@@ -55,13 +59,13 @@ export function CollectionHealth({
       action={<Badge tone={sectionStatus.tone}>{sectionStatus.label}</Badge>}
     >
       {rows.length === 0 ? (
-        <p className="p-6 text-center text-xs text-muted-foreground">No processing evidence is available.</p>
+        <OperationsEmptyState>No processing evidence is available.</OperationsEmptyState>
       ) : (
         <div className="grid gap-3 p-3">
           {rows.map((row) => {
             const failures = currentMetricValue(row.failedRate)
             return (
-              <article key={row.collection} className="min-w-0 rounded-md border bg-muted/10 p-3">
+              <article key={row.collection} className="ops-subpanel min-w-0">
                 <header className="mb-3 flex flex-wrap items-center justify-between gap-2">
                   <h3 className="break-all font-mono text-xs font-semibold">{row.collection}</h3>
                   <Badge tone={failures === null ? "neutral" : failures > 0 ? "danger" : "success"}>
@@ -69,28 +73,36 @@ export function CollectionHealth({
                   </Badge>
                 </header>
                 <div className="grid gap-3 xl:grid-cols-2">
-                  <EvidenceLineChart
-                    points={row.averageCommitMilliseconds}
-                    title="Average Database Commit Duration"
+                  <GroupedEvidenceChart
+                    data={mergeGroupedSeries([
+                      { key: "average", points: row.averageCommitMilliseconds },
+                      { key: "maximum", points: row.maximumCommitMilliseconds },
+                    ])}
+                    series={[
+                      { key: "average", label: "Average", color: "var(--primary)" },
+                      { key: "maximum", label: "Maximum", color: "var(--warning)", dashed: true },
+                    ]}
+                    title="Database Commit Duration"
+                    description="Average and maximum by closed one-minute bucket"
                     unit="milliseconds"
                     source="Charybdis database-write duration rollups"
-                    format={formatMilliseconds}
-                    refreshedAt={refreshedAt}
-                    referenceTime={referenceTime}
-                    evidence={evidence}
-                    showFreshnessBadge={false}
+                    valueFormatter={formatMilliseconds}
                     sampleCount={metricSampleCount(metricRollups, row.collection, "socialwire.ingestion.db_write_duration_seconds")}
                   />
-                  <EvidenceLineChart
-                    points={row.averageLagSeconds}
-                    title="Average Event Lag"
+                  <GroupedEvidenceChart
+                    data={mergeGroupedSeries([
+                      { key: "average", points: row.averageLagSeconds },
+                      { key: "maximum", points: row.maximumLagSeconds },
+                    ])}
+                    series={[
+                      { key: "average", label: "Average", color: "var(--info)" },
+                      { key: "maximum", label: "Maximum", color: "var(--warning)", dashed: true },
+                    ]}
+                    title="Committed Event Lag"
+                    description="Average and maximum by closed one-minute bucket"
                     unit="seconds"
                     source="Charybdis committed-event lag rollups"
-                    format={formatSeconds}
-                    refreshedAt={refreshedAt}
-                    referenceTime={referenceTime}
-                    evidence={evidence}
-                    showFreshnessBadge={false}
+                    valueFormatter={formatSeconds}
                     sampleCount={metricSampleCount(metricRollups, row.collection, "socialwire.ingestion.commit_lag_seconds")}
                   />
                 </div>

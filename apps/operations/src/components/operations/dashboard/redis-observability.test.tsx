@@ -1,5 +1,5 @@
-import { describe, expect, it } from "bun:test"
-import { render, screen } from "@testing-library/react"
+import { afterEach, describe, expect, it } from "bun:test"
+import { cleanup, render, screen } from "@testing-library/react"
 
 import { RedisObservability } from "@/components/operations/dashboard/redis-observability"
 import type { MetricRollup } from "@/lib/operations-types"
@@ -14,12 +14,16 @@ const duration: MetricRollup = {
   valueMax: 0.04,
 }
 
+afterEach(cleanup)
+
 describe("RedisObservability", () => {
   it("renders averages and maxima without a percentile label", () => {
     render(<RedisObservability metricRollups={[duration]} />)
     expect(screen.getByText("Redis Cache and Coordination")).toBeTruthy()
-    expect(screen.getByText("25 ms")).toBeTruthy()
-    expect(screen.getByText("40 ms")).toBeTruthy()
+    expect(screen.getByText("Redis Operation Duration")).toBeTruthy()
+    expect(screen.getAllByText("Average").length).toBeGreaterThanOrEqual(2)
+    expect(screen.getAllByText("Maximum").length).toBeGreaterThanOrEqual(2)
+    expect(screen.getAllByRole("img")).toHaveLength(5)
     expect(screen.getByText(/not percentiles/i)).toBeTruthy()
     expect(screen.queryByText(/p95/i)).toBeNull()
   })

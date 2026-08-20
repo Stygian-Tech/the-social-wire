@@ -1,9 +1,22 @@
 import { afterEach, describe, expect, it, mock } from "bun:test"
-import { cleanup, render, screen, within } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react"
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import type { ReactElement } from "react"
 import { GapsTable } from "@/components/operations/gaps/gaps-table"
+import { OperationsAuthProvider } from "@/lib/auth-context"
 import type { Backfill, Gap } from "@/lib/operations-types"
 
 afterEach(cleanup)
+process.env.NEXT_PUBLIC_OPERATIONS_DEMO_MODE = "1"
+
+function renderGaps(component: ReactElement) {
+  const queryClient = new QueryClient()
+  render(
+    <QueryClientProvider client={queryClient}>
+      <OperationsAuthProvider>{component}</OperationsAuthProvider>
+    </QueryClientProvider>,
+  )
+}
 
 const activeGap: Gap = {
   id: "gap-active",
@@ -56,7 +69,7 @@ const completedBackfill: Backfill = {
 
 describe("GapsTable", () => {
   it("keeps completed recoveries out of the active lifecycle view", () => {
-    render(
+    renderGaps(
       <GapsTable
         gaps={[activeGap, backfilledGap]}
         backfills={[completedBackfill]}
@@ -69,13 +82,33 @@ describe("GapsTable", () => {
     const activeSection = screen.getByRole("heading", { name: "Open Legacy V1 Signals (1)" }).closest("section")
     expect(activeSection).not.toBeNull()
     expect(within(activeSection!).getAllByRole("button", { name: "Backfill gap gap-active" }).length).toBeGreaterThan(0)
+    expect(within(activeSection!).getAllByRole("button", { name: "Clear legacy gap gap-active" }).length).toBeGreaterThan(0)
     expect(within(activeSection!).queryByText("resolved")).toBeNull()
     expect(screen.getByRole("link", { name: "History" })).toBeTruthy()
   })
 
+  it("explains that clearing archives evidence instead of deleting it", () => {
+    renderGaps(
+      <GapsTable
+        gaps={[activeGap]}
+        backfills={[]}
+        onSelect={mock()}
+        onInvestigate={mock()}
+        expanded
+      />,
+    )
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Clear legacy gap gap-active" })[0]!)
+
+    expect(screen.getByRole("heading", { name: "Clear This Legacy V1 Signal?" })).toBeTruthy()
+    expect(screen.getByText(/marks the signal Ignored and moves it to History/i)).toBeTruthy()
+    expect(screen.getByText(/does not delete ingestion, recovery, or audit evidence/i)).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Clear Signal" }).hasAttribute("disabled")).toBe(true)
+  })
+
   it("keeps resolved gaps without backfills out of active gaps and in expanded history", () => {
     const resolvedGap = { ...activeGap, id: "gap-resolved", status: "resolved" as const }
-    render(
+    renderGaps(
       <GapsTable
         gaps={[activeGap, resolvedGap]}
         backfills={[]}
@@ -92,10 +125,11 @@ describe("GapsTable", () => {
 
     expect(within(inactiveSection!).getAllByText("resolved").length).toBeGreaterThan(0)
     expect(within(inactiveSection!).queryByRole("button", { name: /Backfill gap/ })).toBeNull()
+    expect(within(inactiveSection!).queryByRole("button", { name: /Clear legacy gap/ })).toBeNull()
   })
 
   it("does not claim the active list is empty when only a nonzero server count is available", () => {
-    render(
+    renderGaps(
       <GapsTable
         gaps={[]}
         backfills={[]}

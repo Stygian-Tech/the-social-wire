@@ -4,8 +4,8 @@ export function OperationsPageHeading({ current }: { current: string }) {
   const label =
     operationsNav.find(([key]) => key === current)?.[1] ?? (current === "traces" ? "Trace Detail" : "Overview")
   return (
-    <div className="mb-3 flex items-center gap-3">
-      <h1 className="text-lg font-semibold tracking-tight">{label}</h1>
+    <div className="mb-3 flex min-h-8 items-center gap-3">
+      <h1 className="text-lg font-semibold tracking-[-0.02em]">{label}</h1>
     </div>
   )
 }

@@ -1,4 +1,24 @@
+"use client"
+
+import { useId } from "react"
+import { CartesianGrid, Line, LineChart, ReferenceLine, XAxis, YAxis } from "recharts"
+
 import { Badge } from "@/components/ui/badge"
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card"
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from "@/components/ui/chart"
 import { evidenceChartModel } from "@/lib/evidence-chart"
 import type { MetricPoint } from "@/lib/collection-metrics"
 import type { EvidenceEnvelope } from "@/lib/operations-types"
@@ -7,12 +27,12 @@ const WIDTH = 480
 const HEIGHT = 280
 const PADDING = { top: 18, right: 18, bottom: 38, left: 58 }
 
-function formatTime(timestamp?: number) {
-  if (timestamp === undefined) return "—"
+export function formatChartTime(timestamp?: number) {
+  if (timestamp === undefined || !Number.isFinite(timestamp)) return "—"
   return new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(timestamp)
 }
 
-function formatTick(value: number) {
+export function formatChartTick(value: number) {
   const compact = (divisor: number, suffix: string) =>
     `${(value / divisor).toFixed(value >= divisor * 10 ? 0 : 1).replace(/\.0$/, "")}${suffix}`
   if (value >= 1_000_000_000) return compact(1_000_000_000, "B")
@@ -48,8 +68,15 @@ export function EvidenceLineChart({
   evidence?: EvidenceEnvelope
   showFreshnessBadge?: boolean
 }) {
-  const model = evidenceChartModel(points, WIDTH, HEIGHT, PADDING, threshold)
-  const stroke = tone === "warning" ? "var(--warning)" : "var(--primary)"
+  const dataTableId = useId()
+  const chartPoints = points.map((point) => ({
+    ...point,
+    value:
+      point.value !== null && Number.isFinite(point.value) && point.value >= 0
+        ? point.value
+        : null,
+  }))
+  const model = evidenceChartModel(chartPoints, WIDTH, HEIGHT, PADDING, threshold)
   const referenceMs = new Date(referenceTime).getTime()
   const bucketAgeSeconds =
     model.end !== undefined && Number.isFinite(referenceMs)
@@ -65,82 +92,121 @@ export function EvidenceLineChart({
         : evidence?.accuracy === "unavailable" || model.latest === null || model.coverage < 1
           ? "Partial"
           : "Fresh"
-  const thresholdY =
-    threshold !== undefined && threshold >= 0 && Number.isFinite(threshold) && model.maximum > 0
-      ? PADDING.top + (HEIGHT - PADDING.top - PADDING.bottom) - (threshold / model.maximum) * (HEIGHT - PADDING.top - PADDING.bottom)
-      : undefined
   const envelopeSource = evidence?.source
   const sourceDescription =
     envelopeSource && envelopeSource !== source
       ? `Metric source ${source}. Evidence envelope ${envelopeSource}.`
       : `Source ${source}.`
   const description = `${title}. ${model.observed} of ${model.total} one-minute buckets observed. Latest ${model.latest === null ? "missing" : format(model.latest)}. ${sourceDescription}`
+  const chartConfig = {
+    value: {
+      label: title,
+      color: tone === "warning" ? "var(--warning)" : "var(--primary)",
+    },
+  } satisfies ChartConfig
 
   return (
-    <article className="rounded-md border bg-background p-3" aria-label={title}>
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h3 className="text-xs font-semibold">{title}</h3>
-          <p className="mt-1 text-[11px] text-muted-foreground">
-            {formatTime(model.start)}–{formatTime(model.end)} · 1-minute closed buckets · {unit}
+    <Card size="sm" className="rounded-none bg-transparent shadow-none ring-0" aria-label={title}>
+      <CardHeader>
+        <CardTitle className="text-xs"><h3>{title}</h3></CardTitle>
+        <CardDescription className="text-[11px]">
+          {formatChartTime(model.start)}–{formatChartTime(model.end)} · 1-minute closed buckets · {unit}
+        </CardDescription>
+        <CardAction className="text-right">
+          <p className="font-mono text-base font-semibold">
+            {model.latest === null ? "— Missing" : format(model.latest)}
           </p>
-        </div>
-        <div className="text-right">
-          <p className="font-mono text-base font-semibold">{model.latest === null ? "— Missing" : format(model.latest)}</p>
           {showFreshnessBadge ? (
             <Badge tone={freshness === "Fresh" ? "success" : freshness === "Partial" ? "warning" : "danger"}>
               {freshness}
             </Badge>
           ) : null}
-        </div>
-      </header>
-      <svg
-        className="mt-3 h-auto w-full min-w-0"
-        viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
-        role="img"
-        aria-label={description}
-      >
-        <title>{title}</title>
-        <desc>{description}</desc>
-        {[0, 0.5, 1].map((ratio) => {
-          const y = PADDING.top + (1 - ratio) * (HEIGHT - PADDING.top - PADDING.bottom)
-          const value = model.maximum * ratio
-          return (
-            <g key={ratio}>
-              <line x1={PADDING.left} x2={WIDTH - PADDING.right} y1={y} y2={y} stroke="var(--border)" strokeWidth="1" />
-              <text x={PADDING.left - 8} y={y + 4} textAnchor="end" fill="var(--muted-foreground)" fontSize="11">
-                {formatTick(value)}
-              </text>
-            </g>
-          )
-        })}
-        <text x={PADDING.left} y={HEIGHT - 9} fill="var(--muted-foreground)" fontSize="11">{formatTime(model.start)}</text>
-        <text x={WIDTH - PADDING.right} y={HEIGHT - 9} textAnchor="end" fill="var(--muted-foreground)" fontSize="11">
-          {formatTime(model.end)}
-        </text>
-        {thresholdY !== undefined ? (
-          <g>
-            <line
-              x1={PADDING.left}
-              x2={WIDTH - PADDING.right}
-              y1={thresholdY}
-              y2={thresholdY}
-              stroke="var(--destructive)"
-              strokeDasharray="5 4"
+        </CardAction>
+      </CardHeader>
+      <CardContent>
+        <ChartContainer
+          config={chartConfig}
+          initialDimension={{ width: WIDTH, height: HEIGHT }}
+          className="h-[240px] w-full min-w-0 aspect-auto"
+          role="img"
+          aria-label={description}
+          aria-describedby={dataTableId}
+        >
+          <LineChart accessibilityLayer data={chartPoints} margin={{ top: 18, right: 18, bottom: 12, left: 4 }}>
+            <CartesianGrid vertical={false} />
+            <XAxis
+              dataKey="timestamp"
+              type="number"
+              scale="time"
+              domain={["dataMin", "dataMax"]}
+              tickLine={false}
+              axisLine={false}
+              tickMargin={8}
+              minTickGap={24}
+              tickFormatter={formatChartTime}
             />
-            <text x={WIDTH - PADDING.right} y={thresholdY - 6} textAnchor="end" fill="var(--destructive)" fontSize="11">
-              Threshold {formatTick(threshold!)}
-            </text>
-          </g>
-        ) : null}
-        {model.paths.map((path) => (
-          <path key={path} d={path} fill="none" stroke={stroke} strokeWidth="2" vectorEffect="non-scaling-stroke" />
-        ))}
-        {model.points.length === 1 ? (
-          <circle cx={model.points[0]!.x} cy={model.points[0]!.y} r="3" fill={stroke} />
-        ) : null}
-      </svg>
-      <footer className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t pt-3 text-[11px] leading-4 text-muted-foreground">
+            <YAxis
+              domain={[0, model.maximum]}
+              tickLine={false}
+              axisLine={false}
+              tickMargin={8}
+              width={50}
+              tickFormatter={formatChartTick}
+            />
+            <ChartTooltip
+              cursor={false}
+              content={
+                <ChartTooltipContent
+                  indicator="line"
+                  labelFormatter={(_, payload) => formatChartTime(Number(payload[0]?.payload?.timestamp))}
+                  formatter={(value) => (
+                    <span className="font-mono font-medium text-foreground tabular-nums">
+                      {typeof value === "number" ? format(value) : "— Missing"}
+                    </span>
+                  )}
+                />
+              }
+            />
+            {threshold !== undefined && Number.isFinite(threshold) && threshold >= 0 ? (
+              <ReferenceLine
+                y={threshold}
+                stroke="var(--destructive)"
+                strokeDasharray="5 4"
+                label={{
+                  value: `Threshold ${formatChartTick(threshold)}`,
+                  position: "insideTopRight",
+                  fill: "var(--destructive)",
+                  fontSize: 11,
+                }}
+              />
+            ) : null}
+            <Line
+              dataKey="value"
+              type="linear"
+              stroke="var(--color-value)"
+              strokeWidth={2}
+              connectNulls={false}
+              dot={model.points.length === 1 ? { r: 3 } : false}
+              isAnimationActive={false}
+            />
+          </LineChart>
+        </ChartContainer>
+        <table id={dataTableId} className="sr-only">
+          <caption>{title} time-series data</caption>
+          <thead>
+            <tr><th scope="col">Time</th><th scope="col">{unit}</th></tr>
+          </thead>
+          <tbody>
+            {chartPoints.map((point) => (
+              <tr key={point.timestamp}>
+                <th scope="row">{formatChartTime(point.timestamp)}</th>
+                <td>{point.value === null ? "Missing" : format(point.value)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </CardContent>
+      <CardFooter className="flex flex-wrap items-center justify-between gap-2 text-[11px] leading-4 text-muted-foreground">
         <span>
           Source: {source}
           {envelopeSource && envelopeSource !== source ? ` · Envelope: ${envelopeSource}` : ""}
@@ -152,7 +218,7 @@ export function EvidenceLineChart({
           {evidence?.coverage !== undefined ? ` · source ${Math.round(evidence.coverage * 100)}%` : ""}
         </span>
         <span>Samples: {sampleCount === undefined ? "unavailable" : sampleCount.toLocaleString()}</span>
-      </footer>
-    </article>
+      </CardFooter>
+    </Card>
   )
 }

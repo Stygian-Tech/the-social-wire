@@ -1,7 +1,17 @@
 import Foundation
 import Logging
+import OperationsCore
 
 public final class JetstreamInboxProjectionWorker: Sendable {
+  private struct CommitMeasurement: Sendable {
+    let collection: String
+    let operation: String
+    let eventTime: Date
+    let indexingResult: String
+    let didMutateProjection: Bool
+    let startedAt: Date
+  }
+
   private let store: any ThinAppViewStore
   private let indexers: [ThinAppViewIndexer]
   private let repositoryRestorer: (any TapRepositoryRestorer)?
@@ -18,6 +28,7 @@ public final class JetstreamInboxProjectionWorker: Sendable {
   private let deadLetterRetentionSeconds: TimeInterval
   private let projectionTimeoutSeconds: TimeInterval
   private let scopeFilterBatchSize: Int
+  private let telemetry: OperationsTelemetryBuffer?
   private let logger: Logger
 
   public init(
@@ -36,6 +47,7 @@ public final class JetstreamInboxProjectionWorker: Sendable {
     projectionTimeoutSeconds: TimeInterval = 120,
     reconciliationMaxConcurrency: Int = 2,
     scopeFilterBatchSize: Int = 1_000,
+    telemetry: OperationsTelemetryBuffer? = nil,
     logger: Logger
   ) {
     precondition(!indexers.isEmpty, "At least one ThinAppViewIndexer is required.")
@@ -58,6 +70,7 @@ public final class JetstreamInboxProjectionWorker: Sendable {
     self.deadLetterRetentionSeconds = max(60, deadLetterRetentionSeconds)
     self.projectionTimeoutSeconds = max(0.01, projectionTimeoutSeconds)
     self.scopeFilterBatchSize = max(1, min(scopeFilterBatchSize, 10_000))
+    self.telemetry = telemetry
     self.logger = logger
   }
 
@@ -321,6 +334,7 @@ public final class JetstreamInboxProjectionWorker: Sendable {
     } catch is CancellationError {
       return false
     } catch {
+      await emitCommitFailureMetric(item: item, error: error)
       return await handleFailure(error, item: item)
     }
   }
@@ -329,6 +343,8 @@ public final class JetstreamInboxProjectionWorker: Sendable {
     _ item: AppViewIngestionInboxItem,
     with indexer: ThinAppViewIndexer
   ) async throws {
+    let startedAt = Date()
+    var commitMeasurement: CommitMeasurement?
     let event = try JetstreamV2ProjectionEventParser.parse(
       item.payload,
       expectedSequence: item.sequence,
@@ -341,7 +357,7 @@ public final class JetstreamInboxProjectionWorker: Sendable {
       guard commit.operation == .delete || commit.recordJSON != nil else {
         throw JetstreamInboxProjectionError.commitRecordUnavailable
       }
-      try await indexer.handleCommit(
+      let indexingOutcome = try await indexer.handleCommitWithOutcome(
         repoDid: commit.did,
         collection: commit.collection,
         rkey: commit.rkey,
@@ -353,6 +369,14 @@ public final class JetstreamInboxProjectionWorker: Sendable {
         repoRev: commit.repoRev,
         cursor: String(commit.sequence),
         eventTime: commit.eventTime
+      )
+      commitMeasurement = CommitMeasurement(
+        collection: commit.collection,
+        operation: commit.operation.rawValue,
+        eventTime: commit.eventTime,
+        indexingResult: indexingOutcome.didMutateProjection ? "indexed" : "skipped",
+        didMutateProjection: indexingOutcome.didMutateProjection,
+        startedAt: startedAt
       )
 
     case .identity(let identity):
@@ -396,6 +420,87 @@ public final class JetstreamInboxProjectionWorker: Sendable {
       expiresAt: Date().addingTimeInterval(appliedRetentionSeconds),
       at: Date()
     )
+    if let commitMeasurement {
+      await emitCommitSuccessMetrics(commitMeasurement)
+    }
+  }
+
+  private func emitCommitSuccessMetrics(_ measurement: CommitMeasurement) async {
+    let commonDimensions = [
+      "collection": Self.collectionDimension(measurement.collection),
+      "operation": measurement.operation,
+      "ingestion_mode": "live",
+    ]
+    if measurement.didMutateProjection {
+      await emitMetric(
+        "socialwire.ingestion.events_total",
+        value: 1,
+        dimensions: commonDimensions
+      )
+      await emitMetric(
+        "socialwire.ingestion.db_write_duration_seconds",
+        value: Date().timeIntervalSince(measurement.startedAt),
+        dimensions: commonDimensions
+      )
+    }
+    await emitMetric(
+      "socialwire.ingestion.results_total",
+      value: 1,
+      dimensions: commonDimensions.merging([
+        "result": "success",
+        "indexing_result": measurement.indexingResult,
+      ]) { _, new in new }
+    )
+    await emitMetric(
+      "socialwire.ingestion.commit_lag_seconds",
+      value: Date().timeIntervalSince(measurement.eventTime),
+      dimensions: [
+        "collection": Self.collectionDimension(measurement.collection),
+        "ingestion_mode": "live",
+      ]
+    )
+  }
+
+  private func emitCommitFailureMetric(
+    item: AppViewIngestionInboxItem,
+    error: any Error
+  ) async {
+    guard item.eventKind == .commit,
+      let collection = item.collection,
+      let operation = item.operation
+    else { return }
+    await emitMetric(
+      "socialwire.ingestion.results_total",
+      value: 1,
+      dimensions: [
+        "collection": Self.collectionDimension(collection),
+        "operation": operation,
+        "result": "error",
+        "error_type": OperationsRedactor.errorCategory(error),
+        "ingestion_mode": "live",
+      ]
+    )
+  }
+
+  private func emitMetric(
+    _ name: String,
+    value: Double,
+    dimensions: [String: String]
+  ) async {
+    _ = await telemetry?.enqueue(.metric(.init(
+      name: name,
+      value: value,
+      dimensions: dimensions
+    )))
+  }
+
+  private static func collectionDimension(_ value: String) -> String {
+    let allowlist: Set<String> = [
+      "site.standard.document", "site.standard.entry", "site.standard.publication",
+      "site.standard.graph.subscription",
+      "app.skyreader.feed.subscription", "app.thesocialwire.entryReadState",
+    ]
+    return allowlist.contains(value) ? value : "other"
   }
 
   private func renewLeaseUntilCancelled(for item: AppViewIngestionInboxItem) async throws {

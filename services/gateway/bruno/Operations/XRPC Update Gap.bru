@@ -18,5 +18,5 @@ headers {
 }
 
 body:json {
-  { "id": "{{operationsGapId}}", "status": "acknowledged", "expectedVersion": {{operationsGapVersion}}, "idempotencyKey": "{{operationsIdempotencyKey}}", "auditNote": "Update after review", "environmentConfirmation": "{{operationsEnvironmentConfirmation}}" }
+  { "id": "{{operationsGapId}}", "status": "ignored", "expectedVersion": {{operationsGapVersion}}, "idempotencyKey": "{{operationsIdempotencyKey}}", "auditNote": "Archive superseded legacy V1 evidence", "environmentConfirmation": "{{operationsEnvironmentConfirmation}}" }
 }

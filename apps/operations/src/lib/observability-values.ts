@@ -1,4 +1,4 @@
-import type { Health, Overview, ServiceState } from "@/lib/operations-types"
+import type { Health, MetricRollup, Overview, ServiceState } from "@/lib/operations-types"
 import {
   ingestionAuthoritySource,
   isJetstreamV2InboxSource,
@@ -13,9 +13,19 @@ export type HealthEvidence = {
   total: number
 }
 
+export type RollingHealthEvidence = HealthEvidence & {
+  source: "rolling" | "current"
+  sampleCount: number
+  windowMinutes: number
+}
+
 export const requiredOperationsServices = ["gateway", "appview", "appview-worker", "operations"] as const
 export const TRANSPORT_HEARTBEAT_FRESHNESS_SECONDS = 45
 export const CONNECTION_DISCONNECT_GRACE_SECONDS = 90
+export const SERVICE_HEALTH_METRIC = "socialwire.service.health.samples_total"
+export const SERVICE_HEALTH_WINDOW_MINUTES = 5
+const SERVICE_HEALTH_SAMPLE_FLOOR = 6
+const NON_HEALTHY_RATIO_THRESHOLD = 0.2
 
 export type EffectiveConnectionState = "connected" | "disconnected" | "reconnecting" | "unknown"
 
@@ -109,6 +119,96 @@ export function serviceHealthEvidence(
   return { state, healthy, total: states.length }
 }
 
+function rollingServiceState(
+  rollups: MetricRollup[],
+  service: string,
+  dimension: HealthDimension,
+  windowStart: number,
+  windowEnd: number,
+): { state: Health; sampleCount: number } {
+  const samples: Record<Health, number> = { healthy: 0, degraded: 0, unhealthy: 0, unknown: 0 }
+  for (const rollup of rollups) {
+    if (
+      rollup.metricName !== SERVICE_HEALTH_METRIC ||
+      rollup.dimensions.service !== service ||
+      rollup.dimensions.dimension !== dimension
+    )
+      continue
+    const bucket = new Date(rollup.bucketStart).getTime()
+    const state = rollup.dimensions.state as Health | undefined
+    if (
+      !Number.isFinite(bucket) ||
+      bucket < windowStart ||
+      bucket >= windowEnd ||
+      !state ||
+      !Object.prototype.hasOwnProperty.call(samples, state) ||
+      !Number.isFinite(rollup.valueSum) ||
+      rollup.valueSum < 0
+    )
+      continue
+    samples[state] += rollup.valueSum
+  }
+
+  const sampleCount = Object.values(samples).reduce((total, count) => total + count, 0)
+  if (sampleCount < SERVICE_HEALTH_SAMPLE_FLOOR) return { state: "unknown", sampleCount }
+  if (samples.unhealthy / sampleCount >= NON_HEALTHY_RATIO_THRESHOLD)
+    return { state: "unhealthy", sampleCount }
+  if ((samples.unhealthy + samples.degraded) / sampleCount >= NON_HEALTHY_RATIO_THRESHOLD)
+    return { state: "degraded", sampleCount }
+  if (samples.unknown / sampleCount >= NON_HEALTHY_RATIO_THRESHOLD)
+    return { state: "unknown", sampleCount }
+  return { state: "healthy", sampleCount }
+}
+
+export function rollingServiceHealthEvidence(
+  rollups: MetricRollup[],
+  dimension: HealthDimension,
+  reference: string,
+  requiredServices: readonly string[] = requiredOperationsServices,
+): RollingHealthEvidence | null {
+  const referenceMs = new Date(reference).getTime()
+  if (!Number.isFinite(referenceMs)) return null
+  const windowEnd = Math.floor(referenceMs / 60_000) * 60_000
+  const windowStart = windowEnd - SERVICE_HEALTH_WINDOW_MINUTES * 60_000
+  const hasHealthSamples = rollups.some((rollup) => rollup.metricName === SERVICE_HEALTH_METRIC)
+  if (!hasHealthSamples) return null
+
+  const services = requiredServices.map((service) =>
+    rollingServiceState(rollups, service, dimension, windowStart, windowEnd),
+  )
+  const states = services.map(({ state }) => state)
+  const healthy = states.filter((state) => state === "healthy").length
+  const state: Health = states.some((value) => value === "unhealthy")
+    ? "unhealthy"
+    : states.some((value) => value === "degraded")
+      ? "degraded"
+      : states.length === 0 || states.some((value) => value === "unknown")
+        ? "unknown"
+        : "healthy"
+  return {
+    state,
+    healthy,
+    total: states.length,
+    source: "rolling",
+    sampleCount: services.reduce((total, service) => total + service.sampleCount, 0),
+    windowMinutes: SERVICE_HEALTH_WINDOW_MINUTES,
+  }
+}
+
+export function stableServiceHealthEvidence(
+  overview: Overview,
+  dimension: HealthDimension,
+  reference = overview.refreshedAt,
+  requiredServices: readonly string[] = requiredOperationsServices,
+): RollingHealthEvidence {
+  return rollingServiceHealthEvidence(overview.metricRollups ?? [], dimension, reference, requiredServices) ?? {
+    ...serviceHealthEvidence(overview.services, dimension, reference, requiredServices),
+    source: "current",
+    sampleCount: 0,
+    windowMinutes: 0,
+  }
+}
+
 export function healthLabel(state: Health) {
   if (state === "healthy") return "Healthy"
   if (state === "degraded") return "Degraded"
@@ -151,10 +251,10 @@ export function overviewIngestionConnectionState(
 
 export function overallSystemHealth(overview: Overview, reference = overview.refreshedAt): Health {
   const states = [
-    serviceHealthEvidence(overview.services, "liveness", reference).state,
-    serviceHealthEvidence(overview.services, "readiness", reference).state,
-    serviceHealthEvidence(overview.services, "freshness", reference, ["appview-worker"]).state,
-    serviceHealthEvidence(overview.services, "completeness", reference, ["appview-worker"]).state,
+    stableServiceHealthEvidence(overview, "liveness", reference).state,
+    stableServiceHealthEvidence(overview, "readiness", reference).state,
+    stableServiceHealthEvidence(overview, "freshness", reference, ["appview-worker"]).state,
+    stableServiceHealthEvidence(overview, "completeness", reference, ["appview-worker"]).state,
   ]
   const v2InboxAuthority = isJetstreamV2InboxSource(ingestionAuthoritySource(overview))
   const connectionState = overviewIngestionConnectionState(overview, reference)

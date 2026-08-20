@@ -1,5 +1,6 @@
 import { EvidenceLineChart } from "@/components/operations/dashboard/evidence-line-chart"
 import { OperationsSection } from "@/components/operations/operations-section"
+import { OperationsEmptyState } from "@/components/operations/operations-empty-state"
 import { Badge } from "@/components/ui/badge"
 import {
   collectionMetricRows,
@@ -39,13 +40,11 @@ export function CollectionTable({
       description="15 closed one-minute buckets. Missing buckets remain gaps; zero is shown only when it was observed."
     >
       {rows.length === 0 ? (
-        <p className="p-6 text-center text-xs text-muted-foreground">
-          No measured collection rollups are available for this window.
-        </p>
+        <OperationsEmptyState>No measured collection rollups are available for this window.</OperationsEmptyState>
       ) : (
         <div className="grid gap-3 p-3 xl:grid-cols-2">
           {rows.map((row) => (
-            <article key={row.collection} className="min-w-0 rounded-md border bg-muted/10 p-3">
+            <article key={row.collection} className="ops-subpanel min-w-0">
               <header className="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <h3 className="break-all font-mono text-xs font-semibold">{row.collection}</h3>
                 <Badge tone="info">Indexed, Not Received</Badge>
@@ -65,14 +64,14 @@ export function CollectionTable({
                   "socialwire.ingestion.events_total",
                 )}
               />
-              <dl className="mt-3 grid grid-cols-2 gap-px overflow-hidden rounded-md border bg-border sm:grid-cols-4">
+              <dl className="ops-data-grid mt-3 grid grid-cols-2 gap-px sm:grid-cols-4">
                 {[
                   ["Create", observedValue(row.createRate)],
                   ["Update", observedValue(row.updateRate)],
                   ["Delete", observedValue(row.deleteRate)],
                   ["Failed", observedValue(row.failedRate, formatFailedRate)],
                 ].map(([label, value]) => (
-                  <div key={label} className="bg-background p-2.5">
+                  <div key={label} className="ops-data-cell">
                     <dt className="text-[9px] text-muted-foreground">{label} · latest closed bucket</dt>
                     <dd className="mt-1 font-mono text-xs">{value}</dd>
                   </div>
