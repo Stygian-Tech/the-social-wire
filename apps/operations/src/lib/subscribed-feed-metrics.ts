@@ -20,6 +20,22 @@ export type SubscribedFeedPerformanceRow = {
   duplicatesSuppressed: number
 }
 
+export type SubscribedFeedTrendPoint = {
+  timestamp: number
+  firstPageAverageQueryMilliseconds: number | null
+  firstPageMaximumQueryMilliseconds: number | null
+  paginationAverageQueryMilliseconds: number | null
+  paginationMaximumQueryMilliseconds: number | null
+  firstPageAverageRowsScanned: number | null
+  firstPageAverageRowsReturned: number | null
+  paginationAverageRowsScanned: number | null
+  paginationAverageRowsReturned: number | null
+  firstPageAveragePayloadBytes: number | null
+  paginationAveragePayloadBytes: number | null
+  firstPageDuplicatesSuppressed: number | null
+  paginationDuplicatesSuppressed: number | null
+}
+
 type MetricAggregate = {
   count: number
   sum: number
@@ -84,5 +100,56 @@ export function subscribedFeedPerformanceRows(
       averagePayloadBytes: average(payload),
       duplicatesSuppressed: duplicates.sum,
     }]
+  })
+}
+
+export function subscribedFeedPerformanceTrends(rollups: MetricRollup[]): SubscribedFeedTrendPoint[] {
+  const relevant = rollups.filter(
+    (rollup) =>
+      rollup.dimensions.feed_kind === "subscribed" &&
+      (rollup.dimensions.page_kind === "first_page" || rollup.dimensions.page_kind === "pagination") &&
+      [QUERY_DURATION, ROWS_SCANNED, ROWS_RETURNED, DUPLICATES_SUPPRESSED, PAYLOAD_BYTES]
+        .includes(rollup.metricName),
+  )
+  const timestamps = relevant
+    .map(({ bucketStart }) => new Date(bucketStart).getTime())
+    .filter(Number.isFinite)
+  if (timestamps.length === 0) return []
+  const start = Math.min(...timestamps)
+  const end = Math.max(...timestamps)
+  const buckets = Array.from({ length: Math.floor((end - start) / 60_000) + 1 }, (_, index) => start + index * 60_000)
+  const rollupsByTimestamp = new Map<number, MetricRollup[]>()
+  for (const rollup of relevant) {
+    const timestamp = new Date(rollup.bucketStart).getTime()
+    const bucket = rollupsByTimestamp.get(timestamp) ?? []
+    bucket.push(rollup)
+    rollupsByTimestamp.set(timestamp, bucket)
+  }
+
+  return buckets.map((timestamp) => {
+    const point: Record<string, number | null> = { timestamp }
+    const bucket = rollupsByTimestamp.get(timestamp) ?? []
+    for (const pageKind of ["first_page", "pagination"] as const) {
+      const metrics = new Map<string, MetricAggregate>()
+      for (const rollup of bucket) {
+        if (rollup.dimensions.page_kind !== pageKind) continue
+        const aggregate = metrics.get(rollup.metricName) ?? emptyAggregate()
+        append(aggregate, rollup)
+        metrics.set(rollup.metricName, aggregate)
+      }
+      const prefix = pageKind === "first_page" ? "firstPage" : "pagination"
+      const query = metrics.get(QUERY_DURATION) ?? emptyAggregate()
+      const scanned = metrics.get(ROWS_SCANNED) ?? emptyAggregate()
+      const returned = metrics.get(ROWS_RETURNED) ?? emptyAggregate()
+      const payload = metrics.get(PAYLOAD_BYTES) ?? emptyAggregate()
+      const duplicates = metrics.get(DUPLICATES_SUPPRESSED) ?? emptyAggregate()
+      point[`${prefix}AverageQueryMilliseconds`] = average(query, 1_000)
+      point[`${prefix}MaximumQueryMilliseconds`] = query.maximum === null ? null : query.maximum * 1_000
+      point[`${prefix}AverageRowsScanned`] = average(scanned)
+      point[`${prefix}AverageRowsReturned`] = average(returned)
+      point[`${prefix}AveragePayloadBytes`] = average(payload)
+      point[`${prefix}DuplicatesSuppressed`] = duplicates.count > 0 ? duplicates.sum : null
+    }
+    return point as SubscribedFeedTrendPoint
   })
 }

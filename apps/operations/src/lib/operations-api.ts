@@ -12,6 +12,7 @@ import type {
   CommandListResponse,
   DryRunResult,
   EndpointListResponse,
+  Gap,
   GapListResponse,
   GapInvestigation,
   IngestionResponse,
@@ -234,6 +235,32 @@ export const fetchBackfill = (session: OAuthSession | null, backfillId: string) 
   operationsRequest<Backfill>(session, `${operationsXrpc.getBackfill}?id=${encodeURIComponent(backfillId)}`)
 export const fetchGapInvestigation = (session: OAuthSession | null, gapId: string) =>
   operationsRequest<GapInvestigation>(session, `${operationsXrpc.getGapInvestigation}?id=${encodeURIComponent(gapId)}`)
+export const ignoreGap = (
+  session: OAuthSession | null,
+  {
+    gap,
+    auditNote,
+    environmentConfirmation,
+    idempotencyKey,
+  }: {
+    gap: Gap
+    auditNote: string
+    environmentConfirmation?: string
+    idempotencyKey: string
+  },
+) =>
+  operationsRequest<Gap>(session, operationsXrpc.updateGap, {
+    method: "POST",
+    body: JSON.stringify({
+      id: gap.id,
+      status: "ignored",
+      auditNote,
+      environmentConfirmation,
+      idempotencyKey,
+      expectedVersion: gap.version,
+    }),
+    headers: { "Idempotency-Key": idempotencyKey },
+  })
 export const fetchTraceSpans = (session: OAuthSession | null, traceId: string) =>
   validatedTracePage(
     operationsRequest<TraceListResponse>(session, `${operationsXrpc.getTrace}?traceId=${encodeURIComponent(traceId)}`),

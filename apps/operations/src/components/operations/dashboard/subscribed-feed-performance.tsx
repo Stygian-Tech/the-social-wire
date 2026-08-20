@@ -1,8 +1,15 @@
 import { Gauge } from "lucide-react"
 
+import {
+  GroupedEvidenceChart,
+  type GroupedChartDatum,
+} from "@/components/operations/dashboard/grouped-evidence-chart"
 import { OperationsSection } from "@/components/operations/operations-section"
 import { Badge } from "@/components/ui/badge"
-import { subscribedFeedPerformanceRows } from "@/lib/subscribed-feed-metrics"
+import {
+  subscribedFeedPerformanceRows,
+  subscribedFeedPerformanceTrends,
+} from "@/lib/subscribed-feed-metrics"
 import type { MetricRollup } from "@/lib/operations-types"
 
 const formatNumber = (value: number | null, maximumFractionDigits = 1) =>
@@ -22,6 +29,7 @@ export function SubscribedFeedPerformance({
   metricRollups: MetricRollup[]
 }) {
   const rows = subscribedFeedPerformanceRows(metricRollups)
+  const trends = subscribedFeedPerformanceTrends(metricRollups) as unknown as GroupedChartDatum[]
   const sampleCount = rows.reduce((total, row) => total + row.requestSamples, 0)
 
   return (
@@ -36,38 +44,64 @@ export function SubscribedFeedPerformance({
         </p>
       ) : (
         <div className="grid gap-3 p-3 xl:grid-cols-2">
-          {rows.map((row) => (
-            <article key={row.pageKind} className="min-w-0 rounded-md border bg-muted/10 p-3">
-              <header className="mb-3 flex items-center justify-between gap-2">
-                <h3 className="text-xs font-semibold">
-                  {row.pageKind === "first_page" ? "First Page" : "Pagination"}
-                </h3>
-                <Badge tone="neutral">{row.requestSamples.toLocaleString()} requests</Badge>
-              </header>
-              <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                <Metric label="Average Query" value={`${formatNumber(row.averageQueryMilliseconds)} ms`} />
-                <Metric label="Maximum Query" value={`${formatNumber(row.maximumQueryMilliseconds)} ms`} />
-                <Metric label="Scan Yield" value={row.scanYieldRatio === null ? "—" : `${formatNumber(row.scanYieldRatio * 100)}%`} />
-                <Metric label="Average Scanned" value={formatNumber(row.averageRowsScanned)} />
-                <Metric label="Average Returned" value={formatNumber(row.averageRowsReturned)} />
-                <Metric label="Average Payload" value={formatBytes(row.averagePayloadBytes)} />
-              </dl>
-              <p className="mt-3 text-[9px] text-muted-foreground">
-                {formatNumber(row.duplicatesSuppressed, 0)} canonical duplicates suppressed in this window.
-              </p>
-            </article>
-          ))}
+          <GroupedEvidenceChart
+            data={trends}
+            series={[
+              { key: "firstPageAverageQueryMilliseconds", label: "First Page Average", color: "var(--primary)" },
+              { key: "firstPageMaximumQueryMilliseconds", label: "First Page Maximum", color: "var(--primary)", dashed: true },
+              { key: "paginationAverageQueryMilliseconds", label: "Pagination Average", color: "var(--info)" },
+              { key: "paginationMaximumQueryMilliseconds", label: "Pagination Maximum", color: "var(--warning)", dashed: true },
+            ]}
+            title="Query Duration"
+            description="First-page and pagination average/maximum by closed bucket; maxima are not percentiles"
+            unit="milliseconds"
+            source="AppView subscribed-feed rollups"
+            valueFormatter={(value) => `${formatNumber(value)} ms`}
+            sampleCount={sampleCount}
+          />
+          <GroupedEvidenceChart
+            data={trends}
+            series={[
+              { key: "firstPageAverageRowsScanned", label: "First Page Scanned", color: "var(--warning)" },
+              { key: "firstPageAverageRowsReturned", label: "First Page Returned", color: "var(--success)" },
+              { key: "paginationAverageRowsScanned", label: "Pagination Scanned", color: "var(--info)" },
+              { key: "paginationAverageRowsReturned", label: "Pagination Returned", color: "var(--primary)" },
+            ]}
+            title="Rows Scanned and Returned"
+            description="Average query scan work and result yield by page kind"
+            unit="rows per request"
+            source="AppView subscribed-feed rollups"
+            valueFormatter={(value) => formatNumber(value)}
+            sampleCount={sampleCount}
+          />
+          <GroupedEvidenceChart
+            data={trends}
+            series={[
+              { key: "firstPageAveragePayloadBytes", label: "First Page", color: "var(--primary)" },
+              { key: "paginationAveragePayloadBytes", label: "Pagination", color: "var(--info)" },
+            ]}
+            title="Encoded Payload Size"
+            description="Average encoded response payload by page kind"
+            unit="bytes per request"
+            source="AppView subscribed-feed rollups"
+            valueFormatter={formatBytes}
+            sampleCount={sampleCount}
+          />
+          <GroupedEvidenceChart
+            data={trends}
+            series={[
+              { key: "firstPageDuplicatesSuppressed", label: "First Page", color: "var(--warning)" },
+              { key: "paginationDuplicatesSuppressed", label: "Pagination", color: "var(--info)" },
+            ]}
+            title="Canonical Duplicates Suppressed"
+            description="Deduplication work by page kind and closed bucket"
+            unit="duplicates per minute"
+            source="AppView subscribed-feed rollups"
+            valueFormatter={(value) => formatNumber(value, 0)}
+            sampleCount={sampleCount}
+          />
         </div>
       )}
     </OperationsSection>
-  )
-}
-
-function Metric({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <dt className="text-[9px] text-muted-foreground">{label}</dt>
-      <dd className="mt-1 font-mono text-sm font-medium">{value}</dd>
-    </div>
   )
 }

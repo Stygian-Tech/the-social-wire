@@ -1,4 +1,5 @@
 import { GapCollectionScope } from "@/components/operations/gaps/gap-collection-scope"
+import { ClearGapDialog } from "@/components/operations/gaps/clear-gap-dialog"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { TableCell, TableRow } from "@/components/ui/table"
@@ -19,6 +20,8 @@ function GapActions({
 }) {
   const canBackfill = allowBackfill && (gap.status === "confirmed" || gap.status === "verification_required")
   const disabled = !mutationsEnabled || gap.version === undefined
+  const canClear =
+    allowBackfill && ["suspected", "confirmed", "verification_required"].includes(gap.status)
   return (
     <div className="flex flex-wrap items-center gap-1.5">
       <Button size="sm" variant="outline" aria-label={`Investigate gap ${gap.id}`} onClick={() => onInvestigate(gap)}>
@@ -38,6 +41,7 @@ function GapActions({
       ) : gap.status === "backfill_queued" || gap.status === "backfilling" ? (
         <Badge tone="warning">Recovery {gap.status === "backfill_queued" ? "Queued" : "Running"}</Badge>
       ) : null}
+      {canClear ? <ClearGapDialog gap={gap} disabled={disabled} /> : null}
     </div>
   )
 }

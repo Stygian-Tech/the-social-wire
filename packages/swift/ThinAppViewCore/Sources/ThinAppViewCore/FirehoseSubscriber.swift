@@ -569,6 +569,7 @@ actor FirehoseSubscriber {
   private static func collectionDimension(_ value: String) -> String {
     let allowlist: Set<String> = [
       "site.standard.document", "site.standard.entry", "site.standard.publication",
+      "site.standard.graph.subscription",
       "app.skyreader.feed.subscription", "app.thesocialwire.entryReadState",
     ]
     return allowlist.contains(value) ? value : "other"

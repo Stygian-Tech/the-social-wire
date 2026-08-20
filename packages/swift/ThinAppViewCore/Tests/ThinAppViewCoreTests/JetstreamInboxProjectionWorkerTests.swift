@@ -1,6 +1,7 @@
 import Foundation
 @preconcurrency import GRDB
 import Logging
+import OperationsCore
 import Testing
 @testable import ThinAppViewCore
 
@@ -523,28 +524,111 @@ struct JetstreamInboxProjectionWorkerTests {
     #expect(try fixture.appliedWatermark() == 102)
   }
 
+  @Test("V2 commit processing emits collection telemetry without lifecycle noise")
+  func v2CommitEmitsCollectionTelemetry() async throws {
+    let fixture = try Fixture()
+    defer { fixture.remove() }
+    let now = Date()
+    let did = "did:plc:telemetry"
+    let recorder = InboxTelemetryRecorder()
+    let telemetry = OperationsTelemetryBuffer(
+      capacity: 100,
+      batchSize: 100,
+      logger: Logger(label: "inbox.telemetry.test")
+    ) { signals in
+      await recorder.append(signals)
+    }
+    try fixture.seedCheckpoint(lastStagedSequence: 102, at: now)
+    try fixture.seedAuthorScope(did: did, at: now)
+    try fixture.seedEvent(
+      sequence: 101,
+      did: did,
+      kind: .commit,
+      collection: "site.standard.entry",
+      operation: "create",
+      repoRev: "3kcreate",
+      recordKey: "article",
+      recordCID: "bafycreate",
+      payload: Self.commitPayload(sequence: 101, did: did),
+      at: now
+    )
+    try fixture.seedEvent(
+      sequence: 102,
+      did: did,
+      kind: .account,
+      payload: Self.accountPayload(102, did: did),
+      at: now
+    )
+
+    #expect(try await fixture.worker(telemetry: telemetry).drainOnce(at: now) == 2)
+    #expect(await telemetry.flushOnce() == 4)
+
+    let events = await recorder.metrics(named: "socialwire.ingestion.events_total")
+    let results = await recorder.metrics(named: "socialwire.ingestion.results_total")
+    let writeDurations = await recorder.metrics(
+      named: "socialwire.ingestion.db_write_duration_seconds"
+    )
+    let commitLag = await recorder.metrics(named: "socialwire.ingestion.commit_lag_seconds")
+    #expect(events.count == 1)
+    #expect(results.count == 1)
+    #expect(writeDurations.count == 1)
+    #expect(commitLag.count == 1)
+    #expect(events.first?.dimensions == [
+      "collection": "site.standard.entry",
+      "operation": "create",
+      "ingestion_mode": "live",
+    ])
+    #expect(results.first?.dimensions["result"] == "success")
+    #expect(results.first?.dimensions["indexing_result"] == "indexed")
+  }
+
   @Test("tenth failure dead-letters and enqueues targeted reconciliation")
   func deadLettersPoisonEventAfterTenFailures() async throws {
     let fixture = try Fixture()
     defer { fixture.remove() }
     let now = Date()
+    let recorder = InboxTelemetryRecorder()
+    let telemetry = OperationsTelemetryBuffer(
+      capacity: 100,
+      batchSize: 100,
+      logger: Logger(label: "inbox.failure-telemetry.test")
+    ) { signals in
+      await recorder.append(signals)
+    }
     try fixture.seedCheckpoint(lastStagedSequence: 500, at: now)
-    try fixture.seedAuthorScope(did: "did:plc:poison", at: now)
+    try fixture.seedViewerScope(did: "did:plc:poison", at: now)
     try fixture.seedEvent(
       sequence: 500,
       did: "did:plc:poison",
       kind: .commit,
-      collection: "site.standard.document",
+      collection: "site.standard.graph.subscription",
+      operation: "create",
       payload: "{}",
       attemptCount: 9,
       at: now
     )
 
-    #expect(try await fixture.worker().drainOnce(at: now) == 1)
+    #expect(try await fixture.worker(telemetry: telemetry).drainOnce(at: now) == 1)
+    #expect(await telemetry.flushOnce() == 1)
     #expect(try fixture.status(sequence: 500) == "dead_letter")
     #expect(try fixture.attemptCount(sequence: 500) == 10)
     #expect(try fixture.reconciliationRequestCount(sequence: 500) == 1)
     #expect(try fixture.appliedWatermark() == nil)
+    let results = await recorder.metrics(named: "socialwire.ingestion.results_total")
+    #expect(results.count == 1)
+    #expect(results.first?.dimensions["collection"] == "site.standard.graph.subscription")
+    #expect(results.first?.dimensions["operation"] == "create")
+    #expect(results.first?.dimensions["result"] == "error")
+    #expect(results.first?.dimensions["error_type"] != nil)
+    #expect(
+      await recorder.metrics(named: "socialwire.ingestion.events_total").isEmpty
+    )
+    #expect(
+      await recorder.metrics(named: "socialwire.ingestion.db_write_duration_seconds").isEmpty
+    )
+    #expect(
+      await recorder.metrics(named: "socialwire.ingestion.commit_lag_seconds").isEmpty
+    )
   }
 
   @Test("targeted reconciliation fences later inbox events for the same repository")
@@ -1532,7 +1616,8 @@ private struct Fixture {
     projectionTimeoutSeconds: TimeInterval = 120,
     maxConcurrency: Int = 2,
     reconciliationMaxConcurrency: Int = 2,
-    scopeFilterBatchSize: Int = 1_000
+    scopeFilterBatchSize: Int = 1_000,
+    telemetry: OperationsTelemetryBuffer? = nil
   ) -> JetstreamInboxProjectionWorker {
     let config = ThinAppViewConfig.fromEnvironment(["ENABLE_THIN_APPVIEW": "true"])
     let logger = Logger(label: "inbox.worker.test")
@@ -1553,6 +1638,7 @@ private struct Fixture {
       projectionTimeoutSeconds: projectionTimeoutSeconds,
       reconciliationMaxConcurrency: reconciliationMaxConcurrency,
       scopeFilterBatchSize: scopeFilterBatchSize,
+      telemetry: telemetry,
       logger: logger
     )
   }
@@ -2034,5 +2120,20 @@ private struct Fixture {
 
   private static func iso(_ date: Date) -> String {
     ISO8601DateFormatter().string(from: date)
+  }
+}
+
+private actor InboxTelemetryRecorder {
+  private var signals: [OperationsTelemetrySignal] = []
+
+  func append(_ newSignals: [OperationsTelemetrySignal]) {
+    signals.append(contentsOf: newSignals)
+  }
+
+  func metrics(named name: String) -> [OperationsMetricSample] {
+    signals.compactMap { signal in
+      guard case .metric(let sample) = signal, sample.name == name else { return nil }
+      return sample
+    }
   }
 }

@@ -122,6 +122,7 @@ public enum ThinAppViewWorkerRuntime {
         appliedRetentionSeconds: config.ingestionInboxAppliedRetentionSeconds,
         deadLetterRetentionSeconds: config.ingestionInboxDeadLetterRetentionSeconds,
         projectionTimeoutSeconds: config.repositoryRestoreTimeoutSeconds,
+        telemetry: telemetry,
         logger: logger
       )
     } else {

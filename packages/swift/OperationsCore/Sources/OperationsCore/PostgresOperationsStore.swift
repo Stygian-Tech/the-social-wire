@@ -2667,12 +2667,13 @@ public actor PostgresOperationsStore: OperationsStore {
 
   private static func canTransitionGap(from: IngestionGapStatus, to: IngestionGapStatus) -> Bool {
     switch (from, to) {
-    case (.suspected, .confirmed), (.suspected, .resolved),
+    case (.suspected, .confirmed), (.suspected, .resolved), (.suspected, .ignored),
       (.confirmed, .backfillQueued), (.confirmed, .ignored),
       (.backfillQueued, .backfilling), (.backfillQueued, .confirmed),
       (.backfilling, .resolved), (.backfilling, .verificationRequired),
       (.backfilling, .confirmed), (.verificationRequired, .resolved),
-      (.verificationRequired, .confirmed), (.verificationRequired, .backfillQueued): return true
+      (.verificationRequired, .confirmed), (.verificationRequired, .backfillQueued),
+      (.verificationRequired, .ignored): return true
     default: return false
     }
   }

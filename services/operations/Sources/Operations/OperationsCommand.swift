@@ -147,6 +147,7 @@ struct OperationsCommand: AsyncParsableCommand {
           observedAt: now,
           validUntil: now.addingTimeInterval(10))
       },
+      telemetry: telemetry,
       logger: logger)
     let retention = OperationsRetentionJob(store: store, logger: logger)
     let evidenceChanges = OperationsEvidenceChangeMonitor(store: store, logger: logger)
