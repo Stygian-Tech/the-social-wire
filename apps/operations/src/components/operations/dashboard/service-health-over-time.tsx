@@ -5,6 +5,7 @@ import {
   type GroupedChartDatum,
 } from "@/components/operations/dashboard/grouped-evidence-chart"
 import { OperationsSection } from "@/components/operations/operations-section"
+import { OperationsEmptyState } from "@/components/operations/operations-empty-state"
 import { Badge } from "@/components/ui/badge"
 import type { MetricRollup } from "@/lib/operations-types"
 import {
@@ -30,9 +31,7 @@ export function ServiceHealthOverTime({ metricRollups }: { metricRollups: Metric
       action={<Badge tone={minimum === null ? "neutral" : "info"}>{minimum === null ? "No samples" : `${percentage(minimum)} minimum`}</Badge>}
     >
       {trends.length === 0 ? (
-        <p className="p-6 text-center text-xs text-muted-foreground">
-          No service-health samples are available in the retained metrics window.
-        </p>
+        <OperationsEmptyState>No service-health samples are available in the retained metrics window.</OperationsEmptyState>
       ) : (
         <div className="p-3">
           <GroupedEvidenceChart

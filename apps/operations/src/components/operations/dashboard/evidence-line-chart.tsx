@@ -1,5 +1,6 @@
 "use client"
 
+import { useId } from "react"
 import { CartesianGrid, Line, LineChart, ReferenceLine, XAxis, YAxis } from "recharts"
 
 import { Badge } from "@/components/ui/badge"
@@ -67,6 +68,7 @@ export function EvidenceLineChart({
   evidence?: EvidenceEnvelope
   showFreshnessBadge?: boolean
 }) {
+  const dataTableId = useId()
   const chartPoints = points.map((point) => ({
     ...point,
     value:
@@ -104,9 +106,9 @@ export function EvidenceLineChart({
   } satisfies ChartConfig
 
   return (
-    <Card size="sm" className="rounded-md bg-background shadow-none" aria-label={title}>
+    <Card size="sm" className="rounded-none bg-transparent shadow-none ring-0" aria-label={title}>
       <CardHeader>
-        <CardTitle className="text-xs">{title}</CardTitle>
+        <CardTitle className="text-xs"><h3>{title}</h3></CardTitle>
         <CardDescription className="text-[11px]">
           {formatChartTime(model.start)}–{formatChartTime(model.end)} · 1-minute closed buckets · {unit}
         </CardDescription>
@@ -125,9 +127,10 @@ export function EvidenceLineChart({
         <ChartContainer
           config={chartConfig}
           initialDimension={{ width: WIDTH, height: HEIGHT }}
-          className="h-[280px] w-full min-w-0 aspect-auto"
+          className="h-[240px] w-full min-w-0 aspect-auto"
           role="img"
           aria-label={description}
+          aria-describedby={dataTableId}
         >
           <LineChart accessibilityLayer data={chartPoints} margin={{ top: 18, right: 18, bottom: 12, left: 4 }}>
             <CartesianGrid vertical={false} />
@@ -188,6 +191,20 @@ export function EvidenceLineChart({
             />
           </LineChart>
         </ChartContainer>
+        <table id={dataTableId} className="sr-only">
+          <caption>{title} time-series data</caption>
+          <thead>
+            <tr><th scope="col">Time</th><th scope="col">{unit}</th></tr>
+          </thead>
+          <tbody>
+            {chartPoints.map((point) => (
+              <tr key={point.timestamp}>
+                <th scope="row">{formatChartTime(point.timestamp)}</th>
+                <td>{point.value === null ? "Missing" : format(point.value)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </CardContent>
       <CardFooter className="flex flex-wrap items-center justify-between gap-2 text-[11px] leading-4 text-muted-foreground">
         <span>

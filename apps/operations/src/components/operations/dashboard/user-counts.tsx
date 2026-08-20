@@ -35,9 +35,9 @@ export function UserCounts({ overview, referenceTime = overview.refreshedAt }: {
   ]
   return (
     <section className="ops-panel" aria-label="Users">
-      <div className="grid divide-y sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+      <div className="ops-metric-grid sm:grid-cols-3">
         {items.map((item) => (
-          <div key={item.label} className="min-w-0 p-3">
+          <div key={item.label} className="ops-stat-cell">
             <div className="flex items-center gap-2 text-[11px]">
               <item.icon className="size-3.5" />
               {item.label}
@@ -47,7 +47,7 @@ export function UserCounts({ overview, referenceTime = overview.refreshedAt }: {
           </div>
         ))}
       </div>
-      <p className="border-t p-3 text-[9px] text-muted-foreground">
+      <p className="border-t border-border/45 bg-muted/15 px-3 py-2.5 text-[9px] text-muted-foreground">
         Accounts live on their PDS, so these are viewers with rebuildable AppView projections, not a
         registration count. Activity reflects projection writes rather than sign-ins.
         {observationAge === null ? "" : ` Observed ${observationAge.toFixed(0)}s ago.`}

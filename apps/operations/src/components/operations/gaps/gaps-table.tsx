@@ -2,6 +2,7 @@ import { ExternalLink } from "lucide-react"
 import Link from "next/link"
 import { GapTable } from "@/components/operations/gaps/gap-table"
 import { OperationsSection } from "@/components/operations/operations-section"
+import { buttonVariants } from "@/components/ui/button"
 import { partitionGapsByBackfillCompletion } from "@/lib/gap-sections"
 import type { Backfill, Gap, OperationsCounts } from "@/lib/operations-types"
 
@@ -44,14 +45,14 @@ export function GapsTable({
             <Link
               href="/gaps/active"
               aria-current={view === "active" ? "page" : undefined}
-              className={`inline-flex min-h-11 items-center rounded-md border px-3 py-2 text-[10px] ${view === "active" ? "border-primary bg-primary/10 text-primary" : "bg-background"}`}
+              className={buttonVariants({ variant: view === "active" ? "secondary" : "outline", size: "sm" })}
             >
               Open Evidence ({activeGapCount})
             </Link>
             <Link
               href="/gaps/history"
               aria-current={view === "history" ? "page" : undefined}
-              className={`inline-flex min-h-11 items-center rounded-md border px-3 py-2 text-[10px] ${view === "history" ? "border-primary bg-primary/10 text-primary" : "bg-background"}`}
+              className={buttonVariants({ variant: view === "history" ? "secondary" : "outline", size: "sm" })}
             >
               History
             </Link>

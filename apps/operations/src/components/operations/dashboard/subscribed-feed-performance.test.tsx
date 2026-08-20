@@ -22,8 +22,8 @@ describe("SubscribedFeedPerformance", () => {
     render(<SubscribedFeedPerformance metricRollups={[queryRollup]} />)
 
     expect(screen.getByText("Subscribed Feed Performance")).toBeTruthy()
-    expect(screen.getByText("First Page Average")).toBeTruthy()
-    expect(screen.getByText("First Page Maximum")).toBeTruthy()
+    expect(screen.getAllByText("First Page Average").length).toBeGreaterThanOrEqual(2)
+    expect(screen.getAllByText("First Page Maximum").length).toBeGreaterThanOrEqual(2)
     expect(screen.getByText("Query Duration")).toBeTruthy()
     expect(screen.getAllByRole("img")).toHaveLength(4)
     expect(screen.getAllByText(/not percentiles/i).length).toBeGreaterThan(0)

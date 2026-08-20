@@ -1,4 +1,5 @@
 import { OperationsSection } from "@/components/operations/operations-section"
+import { OperationsEmptyState } from "@/components/operations/operations-empty-state"
 import { Badge } from "@/components/ui/badge"
 import type { IngestionDurability } from "@/lib/operations-types"
 
@@ -19,9 +20,9 @@ export function DurableIngestionStatus({ durability }: { durability?: IngestionD
   if (!durability) {
     return (
       <OperationsSection title="Durable Jetstream Recovery">
-        <p className="p-3 text-[10px] text-muted-foreground">
+        <OperationsEmptyState>
           Durable V2 checkpoint and inbox evidence is unavailable. Legacy gap rows remain historical signals, not event-loss counts.
-        </p>
+        </OperationsEmptyState>
       </OperationsSection>
     )
   }
@@ -52,9 +53,9 @@ export function DurableIngestionStatus({ durability }: { durability?: IngestionD
         </span>
       }
     >
-      <div className="grid grid-cols-2 divide-x divide-y sm:grid-cols-3 xl:grid-cols-6">
+      <div className="ops-metric-grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6">
         {metrics.map(([label, value]) => (
-          <div key={label} className="min-w-0 p-3">
+          <div key={label} className="ops-stat-cell">
             <p className="text-[9px] text-muted-foreground">{label}</p>
             <p className="mt-1 truncate font-mono text-[10px]">{value}</p>
           </div>

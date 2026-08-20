@@ -1,5 +1,6 @@
 import { DataColumnHeaders } from "@/components/operations/data-column-headers"
 import { OperationsSection } from "@/components/operations/operations-section"
+import { OperationsEmptyState } from "@/components/operations/operations-empty-state"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHeader, TableRow } from "@/components/ui/table"
 import { effectiveServiceHealth, healthLabel, serviceHeartbeatIsFresh, type HealthDimension } from "@/lib/observability-values"
@@ -34,12 +35,12 @@ export function ServiceTable({ data, referenceTime = data.refreshedAt }: { data:
   return (
     <OperationsSection title="Service State" description="A stale or invalid heartbeat forces every reported dimension to Unknown.">
       {data.services.length === 0 ? (
-        <p className="p-6 text-center text-xs text-muted-foreground">No service heartbeats are available.</p>
+        <OperationsEmptyState>No service heartbeats are available.</OperationsEmptyState>
       ) : (
         <>
           <div className="grid gap-2 p-3 md:hidden">
             {data.services.map((service) => (
-              <article key={`${service.service}-${service.instanceId}`} className="rounded-md border bg-background p-3">
+              <article key={`${service.service}-${service.instanceId}`} className="ops-record-card">
                 <header className="flex items-start justify-between gap-3">
                   <h3 className="text-xs font-semibold">{serviceDisplayName(service.service)}</h3>
                   <span className="break-all font-mono text-[9px] text-muted-foreground">{service.instanceId}</span>

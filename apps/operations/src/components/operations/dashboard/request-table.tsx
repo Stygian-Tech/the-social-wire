@@ -2,6 +2,7 @@ import { ExternalLink } from "lucide-react"
 import Link from "next/link"
 import { DataColumnHeaders } from "@/components/operations/data-column-headers"
 import { OperationsSection } from "@/components/operations/operations-section"
+import { OperationsEmptyState } from "@/components/operations/operations-empty-state"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHeader, TableRow } from "@/components/ui/table"
 import type { Span } from "@/lib/operations-types"
@@ -19,7 +20,7 @@ function visibleSpans(spans: Span[], refreshedAt?: string) {
 
 function SpanCard({ span }: { span: Span }) {
   return (
-    <article className="rounded-md border bg-background p-3">
+    <article className="ops-record-card">
       <header className="flex items-start justify-between gap-3">
         <h3 className="break-all font-mono text-xs font-semibold">{span.attributes.route_template ?? span.name}</h3>
         <Badge tone={span.status === "error" ? "danger" : "success"}>{span.status}</Badge>
@@ -51,7 +52,7 @@ export function RequestTable({ spans, refreshedAt, expanded = false }: { spans: 
       }
     >
       {observed.length === 0 ? (
-        <p className="p-6 text-center text-xs text-muted-foreground">No sampled spans were observed in this exact window.</p>
+        <OperationsEmptyState>No sampled spans were observed in this exact window.</OperationsEmptyState>
       ) : (
         <>
           <div className="grid gap-2 p-3 md:hidden">{observed.slice(0, expanded ? undefined : 5).map((span) => <SpanCard key={span.id} span={span} />)}</div>

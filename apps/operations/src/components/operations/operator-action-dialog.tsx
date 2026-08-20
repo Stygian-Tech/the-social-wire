@@ -13,7 +13,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
-import { Field, FieldDescription, FieldLabel } from "@/components/ui/field"
+import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Toast } from "@/components/ui/toast"
@@ -123,7 +123,7 @@ export function OperatorActionDialog({
               This versioned operator action and its outcome are recorded in durable audit history.
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <div className="grid gap-3 py-3">
+          <FieldGroup className="py-3">
             <Field>
               <FieldLabel htmlFor={`${fieldId}-audit`}>Operator Audit Note {auditNoteRequired ? "" : "(Optional)"}</FieldLabel>
               <Textarea
@@ -151,7 +151,7 @@ export function OperatorActionDialog({
                 <OperationsRequestError error={mutation.error} />
               </p>
             ) : null}
-          </div>
+          </FieldGroup>
           <AlertDialogFooter>
             <AlertDialogClose render={<Button variant="outline" />}>Cancel</AlertDialogClose>
             <Button disabled={!allowed || mutation.isPending} onClick={() => mutation.mutate()}>

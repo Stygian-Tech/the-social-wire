@@ -95,7 +95,7 @@ export function GapCard({
   mutationsEnabled: boolean
 }) {
   return (
-    <article className="rounded-md border bg-background p-3">
+    <article className="ops-record-card">
       <header className="flex items-start justify-between gap-3">
         <h3 className="break-all font-mono text-xs font-semibold">{gap.id}</h3>
         <Badge tone={gap.status === "confirmed" ? "danger" : gap.status === "resolved" ? "success" : "warning"}>
@@ -108,7 +108,7 @@ export function GapCard({
         <div className="col-span-2"><dt className="text-muted-foreground">Cursor Range (μs)</dt><dd className="mt-0.5 break-all font-mono">{gap.startCursor ?? "—"} .. {gap.endCursor ?? "—"}</dd></div>
         <div className="col-span-2"><dt className="text-muted-foreground">Collections</dt><dd className="mt-0.5"><GapCollectionScope collections={gap.collections} /></dd></div>
       </dl>
-      <div className="mt-3 border-t pt-3">
+      <div className="mt-3 border-t border-border/45 pt-3">
         <GapActions gap={gap} onSelect={onSelect} onInvestigate={onInvestigate} allowBackfill={allowBackfill} mutationsEnabled={mutationsEnabled} />
       </div>
     </article>
