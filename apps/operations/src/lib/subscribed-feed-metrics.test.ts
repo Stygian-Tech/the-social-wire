@@ -1,6 +1,9 @@
 import { describe, expect, it } from "bun:test"
 
-import { subscribedFeedPerformanceRows } from "@/lib/subscribed-feed-metrics"
+import {
+  subscribedFeedPerformanceRows,
+  subscribedFeedPerformanceTrends,
+} from "@/lib/subscribed-feed-metrics"
 import type { MetricRollup } from "@/lib/operations-types"
 
 function rollup(
@@ -65,5 +68,32 @@ describe("subscribedFeedPerformanceRows", () => {
       otherFeed,
       rollup("socialwire.appview.feed.query_duration_seconds", "first_page", 1, -1),
     ])).toEqual([])
+  })
+})
+
+describe("subscribedFeedPerformanceTrends", () => {
+  it("preserves closed-minute gaps and groups page-kind series on a shared timeline", () => {
+    const first = rollup("socialwire.appview.feed.query_duration_seconds", "first_page", 2, 0.3, 0.2)
+    const pagination = rollup("socialwire.appview.feed.query_duration_seconds", "pagination", 1, 0.08, 0.08)
+    pagination.bucketStart = "2026-07-30T02:02:00.000Z"
+
+    expect(subscribedFeedPerformanceTrends([first, pagination])).toEqual([
+      expect.objectContaining({
+        timestamp: Date.parse("2026-07-30T02:00:00.000Z"),
+        firstPageAverageQueryMilliseconds: 150,
+        firstPageMaximumQueryMilliseconds: 200,
+        paginationAverageQueryMilliseconds: null,
+      }),
+      expect.objectContaining({
+        timestamp: Date.parse("2026-07-30T02:01:00.000Z"),
+        firstPageAverageQueryMilliseconds: null,
+        paginationAverageQueryMilliseconds: null,
+      }),
+      expect.objectContaining({
+        timestamp: Date.parse("2026-07-30T02:02:00.000Z"),
+        firstPageAverageQueryMilliseconds: null,
+        paginationAverageQueryMilliseconds: 80,
+      }),
+    ])
   })
 })

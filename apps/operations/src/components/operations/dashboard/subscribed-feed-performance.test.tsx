@@ -1,5 +1,5 @@
-import { describe, expect, it } from "bun:test"
-import { render, screen } from "@testing-library/react"
+import { afterEach, describe, expect, it } from "bun:test"
+import { cleanup, render, screen } from "@testing-library/react"
 
 import { SubscribedFeedPerformance } from "@/components/operations/dashboard/subscribed-feed-performance"
 import type { MetricRollup } from "@/lib/operations-types"
@@ -15,15 +15,18 @@ const queryRollup: MetricRollup = {
   valueMax: 0.2,
 }
 
+afterEach(cleanup)
+
 describe("SubscribedFeedPerformance", () => {
   it("renders observed first-page performance without inventing percentiles", () => {
     render(<SubscribedFeedPerformance metricRollups={[queryRollup]} />)
 
     expect(screen.getByText("Subscribed Feed Performance")).toBeTruthy()
-    expect(screen.getByText("First Page")).toBeTruthy()
-    expect(screen.getByText("150 ms")).toBeTruthy()
-    expect(screen.getByText("200 ms")).toBeTruthy()
-    expect(screen.getByText(/not percentiles/i)).toBeTruthy()
+    expect(screen.getByText("First Page Average")).toBeTruthy()
+    expect(screen.getByText("First Page Maximum")).toBeTruthy()
+    expect(screen.getByText("Query Duration")).toBeTruthy()
+    expect(screen.getAllByRole("img")).toHaveLength(4)
+    expect(screen.getAllByText(/not percentiles/i).length).toBeGreaterThan(0)
   })
 
   it("renders an explicit empty-evidence state", () => {

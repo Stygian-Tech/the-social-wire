@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import { redisOperationsSummary } from "@/lib/redis-metrics"
+import { redisOperationsSummary, redisOperationsTrends } from "@/lib/redis-metrics"
 import type { MetricRollup } from "@/lib/operations-types"
 
 function rollup(
@@ -54,5 +54,32 @@ describe("redisOperationsSummary", () => {
     expect(summary.averageOperationMilliseconds).toBeNull()
     expect(summary.maximumOperationMilliseconds).toBeNull()
     expect(summary.memoryUsedBytes).toBeNull()
+  })
+})
+
+describe("redisOperationsTrends", () => {
+  it("keeps missing minutes explicit and groups related Redis evidence", () => {
+    const duration = rollup("socialwire.redis.operation.duration_seconds", 0.05, {}, 2, 0.04)
+    const lookups = rollup("socialwire.appview.cache.lookups_total", 12, { outcome: "fresh_hit" })
+    lookups.bucketStart = "2026-08-11T12:02:00.000Z"
+
+    expect(redisOperationsTrends([duration, lookups])).toEqual([
+      expect.objectContaining({
+        timestamp: Date.parse("2026-08-11T12:00:00.000Z"),
+        averageOperationMilliseconds: 25,
+        maximumOperationMilliseconds: 40,
+        freshLookups: null,
+      }),
+      expect.objectContaining({
+        timestamp: Date.parse("2026-08-11T12:01:00.000Z"),
+        averageOperationMilliseconds: null,
+        freshLookups: null,
+      }),
+      expect.objectContaining({
+        timestamp: Date.parse("2026-08-11T12:02:00.000Z"),
+        averageOperationMilliseconds: null,
+        freshLookups: 12,
+      }),
+    ])
   })
 })

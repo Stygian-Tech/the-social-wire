@@ -25,6 +25,25 @@ export type RedisOperationsSummary = {
   memoryUsedBytes: number | null
 }
 
+export type RedisTrendPoint = {
+  timestamp: number
+  freshLookups: number | null
+  staleLookups: number | null
+  missedLookups: number | null
+  malformedLookups: number | null
+  fallbackLookups: number | null
+  averageOperationMilliseconds: number | null
+  maximumOperationMilliseconds: number | null
+  locksAcquired: number | null
+  lockContention: number | null
+  errors: number | null
+  circuitOpenSamples: number | null
+  unreadRecomputes: number | null
+  expiredKeys: number | null
+  evictedKeys: number | null
+  memoryUsedBytes: number | null
+}
+
 function finiteNonnegative(value: number | undefined) {
   return value !== undefined && Number.isFinite(value) && value >= 0 ? value : null
 }
@@ -109,4 +128,51 @@ export function redisOperationsSummary(rollups: MetricRollup[]): RedisOperations
     ? (durationSum / summary.operationSamples) * 1_000
     : null
   return summary
+}
+
+export function redisOperationsTrends(rollups: MetricRollup[]): RedisTrendPoint[] {
+  const relevant = rollups.filter((rollup) =>
+    [LOOKUPS, DURATION, LOCKS, ERRORS, CIRCUIT, UNREAD_RECOMPUTES, EXPIRED_KEYS, EVICTED_KEYS, MEMORY_BYTES]
+      .includes(rollup.metricName),
+  )
+  const timestamps = relevant
+    .map(({ bucketStart }) => new Date(bucketStart).getTime())
+    .filter(Number.isFinite)
+  if (timestamps.length === 0) return []
+  const start = Math.min(...timestamps)
+  const end = Math.max(...timestamps)
+  const rollupsByTimestamp = new Map<number, MetricRollup[]>()
+  for (const rollup of relevant) {
+    const timestamp = new Date(rollup.bucketStart).getTime()
+    const bucket = rollupsByTimestamp.get(timestamp) ?? []
+    bucket.push(rollup)
+    rollupsByTimestamp.set(timestamp, bucket)
+  }
+
+  return Array.from({ length: Math.floor((end - start) / 60_000) + 1 }, (_, index) => {
+    const timestamp = start + index * 60_000
+    const bucket = rollupsByTimestamp.get(timestamp) ?? []
+    const summary = redisOperationsSummary(bucket)
+    const has = (metricName: string) => bucket.some((rollup) => rollup.metricName === metricName)
+    return {
+      timestamp,
+      freshLookups: has(LOOKUPS) ? summary.lookups.fresh : null,
+      staleLookups: has(LOOKUPS) ? summary.lookups.stale : null,
+      missedLookups: has(LOOKUPS) ? summary.lookups.miss : null,
+      malformedLookups: has(LOOKUPS) ? summary.lookups.malformed : null,
+      fallbackLookups: has(LOOKUPS) ? summary.lookups.fallback : null,
+      averageOperationMilliseconds: has(DURATION) ? summary.averageOperationMilliseconds : null,
+      maximumOperationMilliseconds: has(DURATION) ? summary.maximumOperationMilliseconds : null,
+      locksAcquired: has(LOCKS) ? summary.locksAcquired : null,
+      lockContention: has(LOCKS) ? summary.lockContention : null,
+      errors: has(ERRORS) ? summary.errors : null,
+      circuitOpenSamples: has(CIRCUIT) ? summary.circuitOpenSamples : null,
+      unreadRecomputes: has(UNREAD_RECOMPUTES)
+        ? Object.values(summary.unreadRecomputes).reduce((total, value) => total + value, 0)
+        : null,
+      expiredKeys: has(EXPIRED_KEYS) ? summary.expiredKeys : null,
+      evictedKeys: has(EVICTED_KEYS) ? summary.evictedKeys : null,
+      memoryUsedBytes: has(MEMORY_BYTES) ? summary.memoryUsedBytes : null,
+    }
+  })
 }

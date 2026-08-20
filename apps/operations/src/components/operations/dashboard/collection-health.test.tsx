@@ -14,7 +14,7 @@ const metricsEvidence = {
   coverage: 1,
 }
 
-test("uses one section-level freshness counter instead of per-chart badges", () => {
+test("uses one section-level freshness counter and groups average/maximum series", () => {
   render(
     <CollectionHealth
       metricRollups={demoOverview.metricRollups}
@@ -26,7 +26,10 @@ test("uses one section-level freshness counter instead of per-chart badges", () 
 
   expect(screen.getAllByText(/(?:Current|Partial|Expired|Unavailable) · \d+s old/)).toHaveLength(1)
   expect(screen.queryByText("Fresh")).toBeNull()
-  expect(screen.getAllByText(/Latest bucket age:/).length).toBeGreaterThan(1)
+  expect(screen.getAllByText("Average").length).toBeGreaterThan(0)
+  expect(screen.getAllByText("Maximum").length).toBeGreaterThan(0)
+  expect(screen.getAllByText("Database Commit Duration").length).toBeGreaterThan(0)
+  expect(screen.getAllByText("Committed Event Lag").length).toBeGreaterThan(0)
 })
 
 test("ages the shared counter once for the whole section", () => {

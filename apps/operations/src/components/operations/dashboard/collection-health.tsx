@@ -1,4 +1,7 @@
-import { EvidenceLineChart } from "@/components/operations/dashboard/evidence-line-chart"
+import {
+  GroupedEvidenceChart,
+  mergeGroupedSeries,
+} from "@/components/operations/dashboard/grouped-evidence-chart"
 import { OperationsSection } from "@/components/operations/operations-section"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -69,28 +72,36 @@ export function CollectionHealth({
                   </Badge>
                 </header>
                 <div className="grid gap-3 xl:grid-cols-2">
-                  <EvidenceLineChart
-                    points={row.averageCommitMilliseconds}
-                    title="Average Database Commit Duration"
+                  <GroupedEvidenceChart
+                    data={mergeGroupedSeries([
+                      { key: "average", points: row.averageCommitMilliseconds },
+                      { key: "maximum", points: row.maximumCommitMilliseconds },
+                    ])}
+                    series={[
+                      { key: "average", label: "Average", color: "var(--primary)" },
+                      { key: "maximum", label: "Maximum", color: "var(--warning)", dashed: true },
+                    ]}
+                    title="Database Commit Duration"
+                    description="Average and maximum by closed one-minute bucket"
                     unit="milliseconds"
                     source="Charybdis database-write duration rollups"
-                    format={formatMilliseconds}
-                    refreshedAt={refreshedAt}
-                    referenceTime={referenceTime}
-                    evidence={evidence}
-                    showFreshnessBadge={false}
+                    valueFormatter={formatMilliseconds}
                     sampleCount={metricSampleCount(metricRollups, row.collection, "socialwire.ingestion.db_write_duration_seconds")}
                   />
-                  <EvidenceLineChart
-                    points={row.averageLagSeconds}
-                    title="Average Event Lag"
+                  <GroupedEvidenceChart
+                    data={mergeGroupedSeries([
+                      { key: "average", points: row.averageLagSeconds },
+                      { key: "maximum", points: row.maximumLagSeconds },
+                    ])}
+                    series={[
+                      { key: "average", label: "Average", color: "var(--info)" },
+                      { key: "maximum", label: "Maximum", color: "var(--warning)", dashed: true },
+                    ]}
+                    title="Committed Event Lag"
+                    description="Average and maximum by closed one-minute bucket"
                     unit="seconds"
                     source="Charybdis committed-event lag rollups"
-                    format={formatSeconds}
-                    refreshedAt={refreshedAt}
-                    referenceTime={referenceTime}
-                    evidence={evidence}
-                    showFreshnessBadge={false}
+                    valueFormatter={formatSeconds}
                     sampleCount={metricSampleCount(metricRollups, row.collection, "socialwire.ingestion.commit_lag_seconds")}
                   />
                 </div>

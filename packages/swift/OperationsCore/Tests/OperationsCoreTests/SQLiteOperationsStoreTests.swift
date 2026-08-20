@@ -529,6 +529,30 @@ struct SQLiteOperationsStoreTests {
     #expect(job.gapId == gap.id)
   }
 
+  @Test("operator can archive a suspected legacy gap without deleting its evidence")
+  func suspectedLegacyGapCanBeIgnored() async throws {
+    let url = FileManager.default.temporaryDirectory
+      .appendingPathComponent("operations-\(UUID().uuidString).sqlite")
+    defer { try? FileManager.default.removeItem(at: url) }
+    let store = try SQLiteOperationsStore(
+      path: url.path, environment: "dev", backfillFingerprintSecret: "test-secret",
+      logger: Logger(label: "operations.test"))
+    let now = Date()
+    let gap = try await store.createGap(
+      source: "jetstream", startCursor: 10, endCursor: 20,
+      reason: "legacy_v1_signal", collections: ["site.standard.document"], detectedAt: now)
+
+    let ignored = try await store.transitionGap(
+      id: gap.id, to: .ignored, expectedVersion: gap.version,
+      operatorDid: "did:plc:operator", idempotencyKey: "ignore-suspected-gap",
+      requestId: "request-ignore-suspected-gap", note: "Superseded by V2 evidence", at: now)
+
+    #expect(ignored.status == .ignored)
+    #expect(try await store.fetchGap(id: gap.id)?.status == .ignored)
+    #expect(try await store.listGaps(view: .active, limit: 10, before: nil).items.isEmpty)
+    #expect(try await store.listGaps(view: .history, limit: 10, before: nil).items.map(\.id) == [gap.id])
+  }
+
   @Test("Dry run rejects an overlapping active backfill")
   func duplicateBackfillIsRejected() async throws {
     let url = FileManager.default.temporaryDirectory

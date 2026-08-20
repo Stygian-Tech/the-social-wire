@@ -4,9 +4,13 @@ import {
   elapsedSeconds,
   overallSystemHealth,
   overviewIngestionConnectionState,
+  rollingServiceHealthEvidence,
+  SERVICE_HEALTH_METRIC,
   serviceHealthEvidence,
+  stableServiceHealthEvidence,
 } from "@/lib/observability-values"
 import { demoOverview } from "@/lib/demo-data"
+import type { Health, MetricRollup } from "@/lib/operations-types"
 
 describe("observability values", () => {
   it("derives health from every reporting service instead of a fixed label", () => {
@@ -20,6 +24,49 @@ describe("observability values", () => {
 
   it("returns unknown when no service reports a dimension", () => {
     expect(serviceHealthEvidence([], "liveness").state).toBe("unknown")
+  })
+
+  it("uses a five minute rolling average instead of one degraded refresh", () => {
+    const reference = demoOverview.refreshedAt
+    const rollups = requiredHealthRollups(reference, "liveness", "healthy", 40)
+    rollups.push(healthRollup(reference, "gateway", "liveness", "degraded", 1))
+
+    const evidence = rollingServiceHealthEvidence(rollups, "liveness", reference)
+
+    expect(evidence?.state).toBe("healthy")
+    expect(evidence?.healthy).toBe(4)
+    expect(evidence?.sampleCount).toBe(161)
+    expect(evidence?.windowMinutes).toBe(5)
+  })
+
+  it("reports sustained degradation once it occupies at least one fifth of the window", () => {
+    const reference = demoOverview.refreshedAt
+    const rollups = requiredHealthRollups(reference, "readiness", "healthy", 32)
+    rollups.push(healthRollup(reference, "appview", "readiness", "degraded", 8))
+
+    expect(rollingServiceHealthEvidence(rollups, "readiness", reference)?.state).toBe("degraded")
+  })
+
+  it("fails closed when rolling samples are missing for a required service", () => {
+    const reference = demoOverview.refreshedAt
+    const rollups = requiredHealthRollups(reference, "liveness", "healthy", 40)
+      .filter((rollup) => rollup.dimensions.service !== "operations")
+
+    expect(rollingServiceHealthEvidence(rollups, "liveness", reference)?.state).toBe("unknown")
+  })
+
+  it("stabilizes current degraded state when the completed rolling window is healthy", () => {
+    const reference = demoOverview.refreshedAt
+    const overview = {
+      ...demoOverview,
+      services: allHealthyServices().map((service) =>
+        service.service === "gateway" ? { ...service, liveness: "degraded" as const } : service,
+      ),
+      metricRollups: requiredHealthRollups(reference, "liveness", "healthy", 40),
+    }
+
+    expect(serviceHealthEvidence(overview.services, "liveness", reference).state).toBe("degraded")
+    expect(stableServiceHealthEvidence(overview, "liveness", reference).state).toBe("healthy")
   })
 
   it("does not let missing evidence erase a known unhealthy or degraded service", () => {
@@ -291,4 +338,35 @@ function allHealthyServices() {
     freshness: "healthy" as const,
     completeness: "healthy" as const,
   }))
+}
+
+function healthRollup(
+  reference: string,
+  service: string,
+  dimension: string,
+  state: Health,
+  count: number,
+): MetricRollup {
+  const referenceMs = new Date(reference).getTime()
+  return {
+    environment: "dev",
+    bucketStart: new Date(Math.floor(referenceMs / 60_000) * 60_000 - 60_000).toISOString(),
+    metricName: SERVICE_HEALTH_METRIC,
+    dimensions: { service, dimension, state },
+    sampleCount: count,
+    valueSum: count,
+    valueMin: 1,
+    valueMax: 1,
+  }
+}
+
+function requiredHealthRollups(
+  reference: string,
+  dimension: string,
+  state: Health,
+  count: number,
+) {
+  return ["gateway", "appview", "appview-worker", "operations"].map((service) =>
+    healthRollup(reference, service, dimension, state, count),
+  )
 }

@@ -15,6 +15,7 @@ import {
   fetchRecentTraces,
   fetchServices,
   gatewayOrigin,
+  ignoreGap,
   OperationsHttpError,
   operationsRequest,
   subscribeOperationsEvents,
@@ -535,6 +536,36 @@ test("validates XRPC operator mutation responses through legacy contracts", asyn
       { method: "POST", body: JSON.stringify({ id: alert.id }) },
     ),
   ).rejects.toThrow("contract requires 202")
+})
+
+test("archives a legacy gap through the versioned XRPC mutation", async () => {
+  delete process.env.NEXT_PUBLIC_OPERATIONS_DEMO_MODE
+  process.env.NEXT_PUBLIC_APP_ENV = "dev"
+  const gap = { ...demoOverview.gaps[0]!, status: "ignored" as const, version: 4 }
+  let requestedURL = ""
+  let requestInit: RequestInit | undefined
+  const session = createOperationsOAuthSession(async (url, init) => {
+    requestedURL = url
+    requestInit = init
+    return Response.json(gap)
+  })
+
+  await expect(
+    ignoreGap(session, {
+      gap: { ...gap, status: "confirmed", version: 3 },
+      auditNote: "Legacy V1 evidence is superseded by verified V2 durability.",
+      idempotencyKey: "clear-gap-request-1",
+    }),
+  ).resolves.toEqual(gap)
+
+  expect(new URL(requestedURL).pathname).toBe("/xrpc/app.thesocialwire.operations.updateGap")
+  expect(new Headers(requestInit?.headers).get("Idempotency-Key")).toBe("clear-gap-request-1")
+  expect(JSON.parse(String(requestInit?.body))).toMatchObject({
+    id: gap.id,
+    status: "ignored",
+    expectedVersion: 3,
+    idempotencyKey: "clear-gap-request-1",
+  })
 })
 
 test("rejects incomplete dry-run estimates before they can be fingerprint-bound", () => {

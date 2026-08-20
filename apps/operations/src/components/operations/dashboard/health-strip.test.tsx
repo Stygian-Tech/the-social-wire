@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "bun:test"
 import { cleanup, render, screen } from "@testing-library/react"
 import { HealthStrip } from "@/components/operations/dashboard/health-strip"
 import { demoOverview } from "@/lib/demo-data"
+import { SERVICE_HEALTH_METRIC } from "@/lib/observability-values"
 
 afterEach(cleanup)
 
@@ -21,6 +22,34 @@ describe("HealthStrip", () => {
     expect(screen.getByText("4 / 4 required services report healthy")).toBeTruthy()
     expect(screen.getByText(/3 legacy gap signals · 1 \/ 1 Charybdis projections complete/)).toBeTruthy()
     expect(screen.getAllByText("Degraded").length).toBeGreaterThan(0)
+  })
+
+  it("shows the rolling window and does not flip for one degraded refresh", () => {
+    const bucketStart = new Date(
+      Math.floor(new Date(demoOverview.refreshedAt).getTime() / 60_000) * 60_000 - 60_000,
+    ).toISOString()
+    render(
+      <HealthStrip
+        overview={{
+          ...demoOverview,
+          services: demoOverview.services.map((service) => ({
+            ...service,
+            liveness: service.service === "gateway" ? "degraded" : "healthy",
+          })),
+          metricRollups: ["gateway", "appview", "appview-worker", "operations"].map((service) => ({
+            environment: "dev",
+            bucketStart,
+            metricName: SERVICE_HEALTH_METRIC,
+            dimensions: { service, dimension: "liveness", state: "healthy" },
+            sampleCount: 6,
+            valueSum: 6,
+          })),
+        }}
+      />,
+    )
+
+    expect(screen.getByText("Service Liveness").nextElementSibling?.textContent).toBe("Healthy")
+    expect(screen.getByText("5m rolling average · 24 samples")).toBeTruthy()
   })
 
   it("uses durable incidents and terminal-prefix evidence instead of legacy gap totals", () => {

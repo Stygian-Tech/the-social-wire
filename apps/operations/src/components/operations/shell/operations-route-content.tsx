@@ -15,6 +15,7 @@ import { RequestTable } from "@/components/operations/dashboard/request-table"
 import { RedisObservability } from "@/components/operations/dashboard/redis-observability"
 import { Runbooks } from "@/components/operations/runbooks"
 import { ServiceTable } from "@/components/operations/dashboard/service-table"
+import { ServiceHealthOverTime } from "@/components/operations/dashboard/service-health-over-time"
 import { SubscribedFeedPerformance } from "@/components/operations/dashboard/subscribed-feed-performance"
 import { TraceDetail } from "@/components/operations/traces/trace-detail"
 import { UserCounts } from "@/components/operations/dashboard/user-counts"
@@ -125,6 +126,7 @@ export function OperationsRouteContent({
   return (
     <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3">
       <HealthStrip overview={data} referenceTime={referenceTime} />
+      <ServiceHealthOverTime metricRollups={data.metricRollups ?? []} />
       <UserCounts overview={data} referenceTime={referenceTime} />
       <CapabilityStatus overview={data} />
       <EvidenceInventory overview={data} referenceTime={referenceTime} />
