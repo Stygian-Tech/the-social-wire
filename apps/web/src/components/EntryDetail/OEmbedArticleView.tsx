@@ -1,6 +1,7 @@
 "use client";
 
 import { oEmbedHtmlLayout } from "@/lib/oEmbed";
+import { outboundLinkProps } from "@/lib/outboundLinks";
 import { sanitizeOEmbedHtml } from "@/lib/sanitizeOEmbedHtml";
 import type { OEmbedResponse } from "@/lib/oEmbed";
 import { cn } from "@/lib/utils";
@@ -71,8 +72,7 @@ export function OEmbedArticleView({ oembed, pageUrl }: Props) {
         </p>
         <a
           href={oembed.url}
-          target="_blank"
-          rel="noopener noreferrer"
+          {...outboundLinkProps}
           data-hypertext="true"
           className="text-sm font-medium"
         >
@@ -87,8 +87,7 @@ export function OEmbedArticleView({ oembed, pageUrl }: Props) {
       <p className="text-sm text-muted-foreground">Could not render this embed.</p>
       <a
         href={pageUrl}
-        target="_blank"
-        rel="noopener noreferrer"
+        {...outboundLinkProps}
         data-hypertext="true"
         className="text-sm font-medium"
       >

@@ -103,7 +103,10 @@ describe("sanitizeHTMLWithLinks", () => {
     const input = '<a href="https://example.com">Link</a>';
     const result = sanitizeHTMLWithLinks(input);
     expect(result).toContain('target="_blank"');
-    expect(result).toContain('rel="noopener noreferrer"');
+    expect(result).toContain('rel="noopener"');
+    // Publishers need the referrer for attribution — `noreferrer` would suppress it.
+    expect(result).not.toContain("noreferrer");
+    expect(result).toContain('referrerpolicy="origin"');
   });
 
   it("still sanitizes unsafe content", () => {
@@ -119,7 +122,7 @@ describe("sanitizeHTMLWithLinks", () => {
     );
     expect(result).toContain("<p>First line<br>second line</p>");
     expect(result).toContain(
-      '<a href="https://example.com/docs" target="_blank" rel="noopener noreferrer">https://example.com/docs</a>.'
+      '<a href="https://example.com/docs" target="_blank" rel="noopener" referrerpolicy="origin">https://example.com/docs</a>.'
     );
   });
 

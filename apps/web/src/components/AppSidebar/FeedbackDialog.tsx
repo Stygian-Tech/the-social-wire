@@ -21,6 +21,7 @@ import { SidebarMenuButton } from "@/components/ui/sidebar";
 import { useAuth } from "@/hooks/useAuth";
 import { usePDSClient } from "@/hooks/usePDSClient";
 import { isDummyReaderDataEnabled } from "@/lib/dummyReaderData";
+import { outboundLinkProps } from "@/lib/outboundLinks";
 import {
   fetchUserInputBoardReference,
   LOCAL_USER_INPUT_TAGS,
@@ -171,7 +172,7 @@ export function FeedbackDialog() {
               </DialogClose>
               <Button
                 nativeButton={false}
-                render={<a href={result.url} target="_blank" rel="noreferrer" />}
+                render={<a href={result.url} {...outboundLinkProps} />}
               >
                 {result.local ? "View Feedback Board" : "View Feedback"}
                 <ExternalLink />
@@ -185,7 +186,7 @@ export function FeedbackDialog() {
               <DialogDescription>
                 Share a bug, idea, or question with The Social Wire team. Your
                 feedback will be public on {" "}
-                <a href={USER_INPUT_BOARD_URL} target="_blank" rel="noreferrer">
+                <a href={USER_INPUT_BOARD_URL} {...outboundLinkProps}>
                   UserInput
                 </a>
                 .

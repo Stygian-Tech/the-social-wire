@@ -8,6 +8,10 @@
 
 import DOMPurify from "dompurify";
 
+import {
+  OUTBOUND_LINK_REL,
+  OUTBOUND_REFERRER_POLICY,
+} from "@/lib/outboundLinks";
 import { normalizeHttpUrlToHttps } from "@/lib/publicResourceUrl";
 
 /**
@@ -48,8 +52,8 @@ export function sanitizeHTML(dirty: string): string {
     ],
     // Only allow https:// links and mailto: — no javascript:, no data:
     ALLOWED_URI_REGEXP: /^(?:https?:|mailto:|#)/i,
-    // Force target="_blank" + rel="noopener noreferrer" on all links
-    ADD_ATTR: ["target", "rel"],
+    // Force target="_blank" + outbound link/referrer attributes on all links
+    ADD_ATTR: ["target", "rel", "referrerpolicy"],
     FORBID_TAGS: ["script", "style", "iframe", "object", "embed", "form", "input"],
     FORBID_ATTR: [
       "onclick", "onload", "onerror", "onmouseover", "onmouseout",
@@ -61,8 +65,9 @@ export function sanitizeHTML(dirty: string): string {
 }
 
 /**
- * Post-processes DOMPurify output to add target="_blank" and
- * rel="noopener noreferrer" to all external links.
+ * Post-processes DOMPurify output to add target="_blank" and the outbound link attributes
+ * (see `outboundLinks`) to all external links, so the destination publisher still receives a
+ * referrer. Any `rel` the source markup carried is replaced, not merged.
  */
 export function sanitizeHTMLWithLinks(dirty: string): string {
   if (typeof window === "undefined" || typeof document === "undefined") {
@@ -79,7 +84,8 @@ export function sanitizeHTMLWithLinks(dirty: string): string {
     const href = a.getAttribute("href") ?? "";
     if (href.startsWith("http://") || href.startsWith("https://")) {
       a.setAttribute("target", "_blank");
-      a.setAttribute("rel", "noopener noreferrer");
+      a.setAttribute("rel", OUTBOUND_LINK_REL);
+      a.setAttribute("referrerpolicy", OUTBOUND_REFERRER_POLICY);
     }
   });
 
@@ -117,7 +123,7 @@ function sanitizeHTMLFallback(dirty: string, addLinkAttrs: boolean): string {
 
   return clean.replace(
     /<a\b(?=[^>]*\shref=(["'])https?:\/\/[^"']+\1)(?![^>]*\starget=)([^>]*)>/gi,
-    '<a$2 target="_blank" rel="noopener noreferrer">'
+    `<a$2 target="_blank" rel="${OUTBOUND_LINK_REL}" referrerpolicy="${OUTBOUND_REFERRER_POLICY}">`
   );
 }
 

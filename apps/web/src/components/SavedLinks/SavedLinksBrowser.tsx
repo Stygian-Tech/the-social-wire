@@ -27,6 +27,7 @@ import {
   articleListCardWrapperClassName,
   articleListRowButtonClassName,
 } from "@/lib/articleListCardStyles";
+import { OUTBOUND_WINDOW_FEATURES } from "@/lib/outboundLinks";
 import type { LatrSaveListState, MergedLatrSave } from "@/lib/pdsClient";
 import { sidebarPublicationRows } from "@/lib/publicationProjectionClient";
 import { savedFeedSourceKey } from "@/lib/savedFeedSources";
@@ -148,7 +149,7 @@ export function SavedLinksBrowser({ mode }: { mode: SavedLinksBrowserMode }) {
             return;
           }
           if (pendingTab) pendingTab.location.href = resolvedUrl;
-          else window.open(resolvedUrl, "_blank", "noopener,noreferrer");
+          else window.open(resolvedUrl, "_blank", OUTBOUND_WINDOW_FEATURES);
         });
         return;
       }
@@ -156,7 +157,7 @@ export function SavedLinksBrowser({ mode }: { mode: SavedLinksBrowserMode }) {
         setRssReader({ row, entryId: target.entryId, url: target.url });
         return;
       }
-      window.open(target.url, "_blank", "noopener,noreferrer");
+      window.open(target.url, "_blank", OUTBOUND_WINDOW_FEATURES);
     },
     [getOAuthSession, preferences.rssArticleOpenMode, sidebarRows],
   );
