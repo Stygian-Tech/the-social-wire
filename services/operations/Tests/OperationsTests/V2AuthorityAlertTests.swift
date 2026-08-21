@@ -74,6 +74,16 @@ func durableV2AuthorityReplacesLegacyTransportAlerts() async throws {
     at: switchedAt
   )
   #expect(try await activeAlertKeys(store).contains("jetstream_v2_inbox:replay_failed"))
+
+  try await evaluator.evaluateDurableV2Transport(
+    checkpoint: authorityCheckpoint(
+      updatedAt: switchedAt.addingTimeInterval(-3_600),
+      replayState: .snapshotComplete,
+      includeIntakeHeartbeat: false
+    ),
+    at: switchedAt
+  )
+  #expect(try await activeAlertKeys(store).allSatisfy { !$0.hasPrefix("jetstream_v2_inbox:") })
 }
 
 @Test("durable V2 actionable backlog alert follows worker freshness thresholds")
@@ -187,7 +197,8 @@ private func authorityWorker(
 private func authorityCheckpoint(
   updatedAt: Date,
   intakeHeartbeatAt: Date? = nil,
-  replayState: JetstreamReplayState = .live
+  replayState: JetstreamReplayState = .live,
+  includeIntakeHeartbeat: Bool = true
 ) -> JetstreamDurabilityCheckpoint {
   JetstreamDurabilityCheckpoint(
     environment: "dev",
@@ -203,7 +214,10 @@ private func authorityCheckpoint(
     lastAppliedEventAt: updatedAt,
     lastAppliedAt: updatedAt,
     replayState: replayState,
-    intakeHeartbeatAt: intakeHeartbeatAt ?? updatedAt,
+    replayAfterSequence: replayState == .snapshotComplete ? 100 : nil,
+    replayBeforeSequence: replayState == .snapshotComplete ? 200 : nil,
+    replaySealedSequence: replayState == .snapshotComplete ? 200 : nil,
+    intakeHeartbeatAt: includeIntakeHeartbeat ? (intakeHeartbeatAt ?? updatedAt) : nil,
     updatedAt: updatedAt
   )
 }

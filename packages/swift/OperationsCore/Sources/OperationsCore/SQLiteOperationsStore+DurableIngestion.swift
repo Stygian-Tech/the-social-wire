@@ -454,6 +454,7 @@ extension SQLiteOperationsStore {
       lastReconciledAt: date(row["last_reconciled_at"]),
       replayState: JetstreamReplayState(rawValue: row["replay_state"]) ?? .failed,
       replayAfterSequence: row["replay_after_seq"],
+      replayBeforeSequence: row["replay_before_seq"],
       replaySealedSequence: row["replay_sealed_seq"],
       replayBytesDownloaded: row["replay_bytes_downloaded"],
       replayRetryCount: row["replay_retry_count"],

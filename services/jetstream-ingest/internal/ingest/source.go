@@ -46,10 +46,13 @@ type Checkpoint struct {
 	StreamNSID             string
 	FilterFingerprint      string
 	CursorKind             string
-	LastStagedSeq          uint64
+	LastStagedSeq          *uint64
 	LastStagedAt           time.Time
 	ReplayBytesDownloaded  int64
 	ReplayState            string
+	ReplayAfterSeq         *uint64
+	ReplayBeforeSeq        *uint64
+	ReplaySealedSeq        *uint64
 	ReplayRetryCount       int
 	ReplayRangeResumeCount int
 	ReplayETag             string

@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"slices"
 	"strconv"
@@ -72,6 +73,8 @@ type Config struct {
 	BackoffMin          time.Duration
 	BackoffMax          time.Duration
 	BootstrapAfterSeq   *uint64
+	ReplayBeforeSeq     *uint64
+	ReplaySnapshotOnly  bool
 }
 
 func Load() (Config, error) {
@@ -89,6 +92,10 @@ func Load() (Config, error) {
 		defaultSegmentStripes = WireSegmentStripes
 	}
 	collections := envCSV("JETSTREAM_COLLECTIONS", defaultCollections)
+	replaySnapshotOnly, err := envBool("JETSTREAM_REPLAY_SNAPSHOT_ONLY", false)
+	if err != nil {
+		return Config{}, err
+	}
 	cfg := Config{
 		PipelineMode:        pipelineMode,
 		Environment:         strings.TrimSpace(os.Getenv("APP_ENV")),
@@ -114,6 +121,7 @@ func Load() (Config, error) {
 		ReplayBudgetPause:   envDuration("JETSTREAM_REPLAY_BUDGET_PAUSE", 15*time.Minute),
 		BackoffMin:          envDuration("JETSTREAM_BACKOFF_MIN", 250*time.Millisecond),
 		BackoffMax:          envDuration("JETSTREAM_BACKOFF_MAX", 30*time.Second),
+		ReplaySnapshotOnly:  replaySnapshotOnly,
 	}
 	if value := strings.TrimSpace(os.Getenv("JETSTREAM_BOOTSTRAP_AFTER_SEQ")); value != "" {
 		seq, err := strconv.ParseUint(value, 10, 64)
@@ -121,6 +129,13 @@ func Load() (Config, error) {
 			return Config{}, fmt.Errorf("JETSTREAM_BOOTSTRAP_AFTER_SEQ: %w", err)
 		}
 		cfg.BootstrapAfterSeq = &seq
+	}
+	if value := strings.TrimSpace(os.Getenv("JETSTREAM_REPLAY_BEFORE_SEQ")); value != "" {
+		seq, err := strconv.ParseUint(value, 10, 64)
+		if err != nil {
+			return Config{}, fmt.Errorf("JETSTREAM_REPLAY_BEFORE_SEQ: %w", err)
+		}
+		cfg.ReplayBeforeSeq = &seq
 	}
 	if err := cfg.Validate(); err != nil {
 		return Config{}, err
@@ -190,6 +205,46 @@ func (c Config) Validate() error {
 	}
 	if c.BackoffMin <= 0 || c.BackoffMax < c.BackoffMin {
 		problems = append(problems, errors.New("reconnect backoff bounds are invalid"))
+	}
+	if (c.ReplayBeforeSeq != nil) != c.ReplaySnapshotOnly {
+		problems = append(problems, errors.New(
+			"JETSTREAM_REPLAY_BEFORE_SEQ and JETSTREAM_REPLAY_SNAPSHOT_ONLY=true are required together",
+		))
+	}
+	if c.ReplayBeforeSeq != nil {
+		if *c.ReplayBeforeSeq == 0 {
+			problems = append(problems, errors.New("JETSTREAM_REPLAY_BEFORE_SEQ must be positive"))
+		}
+		if *c.ReplayBeforeSeq > math.MaxInt64 {
+			problems = append(problems, errors.New("JETSTREAM_REPLAY_BEFORE_SEQ exceeds the signed 64-bit cursor range"))
+		}
+		if c.PipelineMode != WirePipelineMode {
+			problems = append(problems, errors.New("bounded snapshot replay is supported only by the Wire pipeline"))
+		}
+		if c.BootstrapAfterSeq == nil {
+			problems = append(problems, errors.New(
+				"bounded snapshot replay requires JETSTREAM_BOOTSTRAP_AFTER_SEQ as its exclusive lower bound",
+			))
+		}
+		if c.BootstrapAfterSeq != nil && *c.BootstrapAfterSeq > math.MaxInt64 {
+			problems = append(problems, errors.New(
+				"JETSTREAM_BOOTSTRAP_AFTER_SEQ exceeds the signed 64-bit cursor range",
+			))
+		}
+		if c.BootstrapAfterSeq != nil && *c.ReplayBeforeSeq <= *c.BootstrapAfterSeq {
+			problems = append(problems, errors.New(
+				"JETSTREAM_REPLAY_BEFORE_SEQ must be greater than JETSTREAM_BOOTSTRAP_AFTER_SEQ",
+			))
+		}
+		defaultGeneration := DefaultSourceGeneration
+		if c.PipelineMode == WirePipelineMode {
+			defaultGeneration = WireSourceGeneration
+		}
+		if c.SourceGeneration == defaultGeneration {
+			problems = append(problems, errors.New(
+				"bounded snapshot replay requires a distinct JETSTREAM_SOURCE_GENERATION",
+			))
+		}
 	}
 	return errors.Join(problems...)
 }
@@ -262,4 +317,16 @@ func envDuration(name string, fallback time.Duration) time.Duration {
 		return 0
 	}
 	return parsed
+}
+
+func envBool(name string, fallback bool) (bool, error) {
+	value := strings.TrimSpace(os.Getenv(name))
+	if value == "" {
+		return fallback, nil
+	}
+	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		return false, fmt.Errorf("%s: %w", name, err)
+	}
+	return parsed, nil
 }

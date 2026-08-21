@@ -163,7 +163,8 @@ struct AlertEvaluator {
     at now: Date
   ) async throws {
     let source = OperationsEvidenceResolver.durableJetstreamV2AuthoritySource
-    let observedAt = checkpoint?.intakeHeartbeatAt
+    let terminalSnapshot = checkpoint?.replayState == .snapshotComplete
+    let observedAt = terminalSnapshot ? checkpoint?.updatedAt : checkpoint?.intakeHeartbeatAt
     let observedAge = observedAt.map { now.timeIntervalSince($0) }
     let identityValid = checkpoint?.cursorKind == .jetstreamV2Sequence
     let evidence: [String: String] = [
@@ -171,6 +172,10 @@ struct AlertEvaluator {
       "source_host": checkpoint?.sourceHost ?? "none",
       "cursor_kind": checkpoint?.cursorKind.rawValue ?? "none",
       "replay_state": checkpoint?.replayState.rawValue ?? "none",
+      "snapshot_complete": String(terminalSnapshot),
+      "replay_after_sequence": checkpoint?.replayAfterSequence.map(String.init) ?? "none",
+      "replay_before_sequence": checkpoint?.replayBeforeSequence.map(String.init) ?? "none",
+      "replay_sealed_sequence": checkpoint?.replaySealedSequence.map(String.init) ?? "none",
       "last_staged_sequence": checkpoint?.lastStagedSequence.map(String.init) ?? "none",
       "last_applied_sequence": checkpoint?.lastAppliedSequence.map(String.init) ?? "none",
       "checkpoint_updated_at": checkpoint?.updatedAt.ISO8601Format() ?? "none",
@@ -179,7 +184,7 @@ struct AlertEvaluator {
         ?? "none",
     ]
     try await reconcile(
-      condition: checkpoint == nil || !identityValid || observedAt == nil,
+      condition: checkpoint == nil || !identityValid || (!terminalSnapshot && observedAt == nil),
       rule: "jetstream_v2_transport_evidence_missing",
       conditionKey: "\(source):transport_evidence_missing",
       severity: "critical",
@@ -189,7 +194,7 @@ struct AlertEvaluator {
       at: now
     )
     try await reconcile(
-      condition: identityValid && (observedAge.map {
+      condition: !terminalSnapshot && identityValid && (observedAge.map {
         $0 < 0 || $0 >= config.idleAlertSeconds
       } ?? false),
       rule: "jetstream_v2_transport_heartbeat_expired",

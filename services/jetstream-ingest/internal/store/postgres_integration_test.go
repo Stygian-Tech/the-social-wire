@@ -12,6 +12,153 @@ import (
 	"github.com/stygian-tech/the-social-wire/services/jetstream-ingest/internal/ingest"
 )
 
+func TestPostgresCompleteSnapshotIntegration(t *testing.T) {
+	databaseURL := os.Getenv("JETSTREAM_INGEST_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("JETSTREAM_INGEST_TEST_DATABASE_URL is not set")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	db, err := sql.Open("pgx", databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	generation := fmt.Sprintf("integration-wire-snapshot-%d", time.Now().UnixNano())
+	source := ingest.SourceIdentity{
+		PipelineMode: config.WirePipelineMode, Environment: "dev",
+		Host: "jetstream.us-west.bsky.network", StreamNSID: "network.bsky.jetstream.subscribeEvents",
+		FilterFingerprint: "integration-wire-snapshot-filter", CursorKind: "jetstream_v2_seq",
+		Generation: generation,
+	}
+	postgres := New(db, source)
+	lease, err := postgres.AcquireLease(ctx, "integration-"+generation, "integration-owner", 30*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		cleanup, cleanupCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cleanupCancel()
+		_, _ = db.ExecContext(cleanup, "DELETE FROM appview_jetstream_checkpoints WHERE environment = $1 AND source_generation = $2", source.Environment, generation)
+		_, _ = db.ExecContext(cleanup, "DELETE FROM appview_ingestion_leases WHERE environment = $1 AND lease_name = $2", source.Environment, lease.Name)
+	})
+
+	if err := postgres.EnsureSnapshotRange(ctx, lease, 100, 200); err != nil {
+		t.Fatal(err)
+	}
+	if err := postgres.EnsureSnapshotRange(ctx, lease, 100, 200); err != nil {
+		t.Fatalf("idempotent exact-bound range binding: %v", err)
+	}
+	if err := postgres.EnsureSnapshotRange(ctx, lease, 100, 201); err == nil {
+		t.Fatal("changed upper bound was accepted before the first matching event")
+	}
+	started, err := postgres.LoadCheckpoint(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if started == nil || started.LastStagedSeq != nil || started.ReplayState != "replaying" ||
+		!cursorEquals(started.ReplayAfterSeq, 100) || !cursorEquals(started.ReplayBeforeSeq, 200) {
+		t.Fatalf("durable bounded start marker = %#v", started)
+	}
+
+	if err := postgres.CompleteSnapshot(
+		ctx, lease, 100, 200,
+		ReplayProgress{SealedSeq: 200, BytesDownloaded: 42, RetryCount: 2, RangeResumeCount: 3},
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := postgres.CompleteSnapshot(
+		ctx, lease, 100, 200,
+		ReplayProgress{SealedSeq: 200, BytesDownloaded: 42, RetryCount: 2, RangeResumeCount: 3},
+	); err != nil {
+		t.Fatalf("idempotent exact-bound completion: %v", err)
+	}
+	checkpoint, err := postgres.LoadCheckpoint(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if checkpoint == nil || checkpoint.LastStagedSeq != nil || checkpoint.ReplayState != "snapshot_complete" ||
+		!cursorEquals(checkpoint.ReplayAfterSeq, 100) || !cursorEquals(checkpoint.ReplayBeforeSeq, 200) ||
+		!cursorEquals(checkpoint.ReplaySealedSeq, 200) {
+		t.Fatalf("durable bounded completion = %#v", checkpoint)
+	}
+	if err := postgres.CompleteSnapshot(ctx, lease, 100, 201, ReplayProgress{SealedSeq: 201}); err == nil {
+		t.Fatal("changed upper bound was accepted for completed source generation")
+	}
+	if _, err := db.ExecContext(ctx, `
+		UPDATE appview_jetstream_checkpoints
+		SET replay_before_seq = 201
+		WHERE environment = $1 AND source_generation = $2`, source.Environment, generation); err == nil {
+		t.Fatal("database allowed mutation of immutable snapshot bounds")
+	}
+	if _, err := db.ExecContext(ctx, `
+		UPDATE appview_jetstream_checkpoints
+		SET replay_state = 'replaying'
+		WHERE environment = $1 AND source_generation = $2`, source.Environment, generation); err == nil {
+		t.Fatal("database allowed reopening a terminal snapshot")
+	}
+}
+
+func TestPostgresCompleteSnapshotPreservesHighestStagedEvent(t *testing.T) {
+	databaseURL := os.Getenv("JETSTREAM_INGEST_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("JETSTREAM_INGEST_TEST_DATABASE_URL is not set")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	db, err := sql.Open("pgx", databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	generation := fmt.Sprintf("integration-wire-snapshot-event-%d", time.Now().UnixNano())
+	source := ingest.SourceIdentity{
+		PipelineMode: config.WirePipelineMode, Environment: "dev",
+		Host: "jetstream.us-west.bsky.network", StreamNSID: "network.bsky.jetstream.subscribeEvents",
+		FilterFingerprint: "integration-wire-snapshot-event-filter", CursorKind: "jetstream_v2_seq",
+		Generation: generation,
+	}
+	postgres := New(db, source)
+	lease, err := postgres.AcquireLease(ctx, "integration-"+generation, "integration-owner", 30*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		cleanup, cleanupCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cleanupCancel()
+		_, _ = db.ExecContext(cleanup, "DELETE FROM wire_ingestion_inbox WHERE environment = $1 AND source_generation = $2", source.Environment, generation)
+		_, _ = db.ExecContext(cleanup, "DELETE FROM appview_jetstream_checkpoints WHERE environment = $1 AND source_generation = $2", source.Environment, generation)
+		_, _ = db.ExecContext(cleanup, "DELETE FROM appview_ingestion_leases WHERE environment = $1 AND lease_name = $2", source.Environment, lease.Name)
+	})
+
+	if err := postgres.EnsureSnapshotRange(ctx, lease, 100, 200); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	event := ingest.InboxEvent{
+		Seq: 150, Time: now, Kind: "commit", RepoDID: "did:plc:wire-snapshot-event",
+		Payload: []byte(`{"cursor":150,"kind":"commit"}`),
+	}
+	if err := postgres.StageBatch(
+		ctx, lease, []ingest.InboxEvent{event}, event.Seq, now,
+		ReplayProgress{State: "replaying", AfterSeq: 100, BeforeSeq: 200, SealedSeq: 150, LastProgressAt: now},
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := postgres.CompleteSnapshot(ctx, lease, 100, 200, ReplayProgress{SealedSeq: 200}); err != nil {
+		t.Fatal(err)
+	}
+	checkpoint, err := postgres.LoadCheckpoint(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if checkpoint == nil || !cursorEquals(checkpoint.LastStagedSeq, event.Seq) ||
+		checkpoint.LastStagedAt.IsZero() || checkpoint.ReplayState != "snapshot_complete" ||
+		!cursorEquals(checkpoint.ReplayBeforeSeq, 200) {
+		t.Fatalf("non-empty bounded completion = %#v", checkpoint)
+	}
+}
+
 func TestPostgresStageWireBatchNormalizesUnsupportedUnicode(t *testing.T) {
 	databaseURL := os.Getenv("JETSTREAM_INGEST_TEST_DATABASE_URL")
 	if databaseURL == "" {
@@ -23,7 +170,7 @@ func TestPostgresStageWireBatchNormalizesUnsupportedUnicode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	t.Cleanup(func() { _ = db.Close() })
 	generation := fmt.Sprintf("integration-wire-%d", time.Now().UnixNano())
 	source := ingest.SourceIdentity{
 		PipelineMode: config.WirePipelineMode, Environment: "dev",
@@ -93,7 +240,7 @@ func TestPostgresStageWireBatchNormalizesUnsupportedUnicode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if checkpoint == nil || checkpoint.LastStagedSeq != malformed.Seq {
+	if checkpoint == nil || !cursorEquals(checkpoint.LastStagedSeq, malformed.Seq) {
 		t.Fatalf("checkpoint did not advance over fallback payload: %#v", checkpoint)
 	}
 }
@@ -109,7 +256,7 @@ func TestPostgresStageBatchIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	t.Cleanup(func() { _ = db.Close() })
 	generation := fmt.Sprintf("integration-%d", time.Now().UnixNano())
 	source := ingest.SourceIdentity{
 		Environment: "dev", Host: "jetstream.us-west.bsky.network",
@@ -162,7 +309,7 @@ func TestPostgresStageBatchIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if checkpoint == nil || checkpoint.LastStagedSeq != 77 {
+	if checkpoint == nil || !cursorEquals(checkpoint.LastStagedSeq, 77) {
 		t.Fatalf("checkpoint = %#v", checkpoint)
 	}
 
@@ -187,7 +334,7 @@ func TestPostgresStageBatchIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if checkpoint == nil || checkpoint.LastStagedSeq != 78 {
+	if checkpoint == nil || !cursorEquals(checkpoint.LastStagedSeq, 78) {
 		t.Fatalf("checkpoint did not advance over filtered sequence: %#v", checkpoint)
 	}
 
@@ -273,7 +420,11 @@ func TestPostgresStageBatchIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if checkpoint == nil || checkpoint.LastStagedSeq != 83 {
+	if checkpoint == nil || !cursorEquals(checkpoint.LastStagedSeq, 83) {
 		t.Fatalf("sparse admission checkpoint = %#v", checkpoint)
 	}
+}
+
+func cursorEquals(cursor *uint64, expected uint64) bool {
+	return cursor != nil && *cursor == expected
 }

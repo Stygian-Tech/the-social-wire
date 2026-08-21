@@ -12,6 +12,7 @@ public enum JetstreamReplayState: String, Codable, Sendable {
   case live
   case pausedBudget = "paused_budget"
   case failed
+  case snapshotComplete = "snapshot_complete"
 }
 
 public struct JetstreamDurabilityCheckpoint: Codable, Sendable, Equatable {
@@ -31,6 +32,7 @@ public struct JetstreamDurabilityCheckpoint: Codable, Sendable, Equatable {
   public let lastReconciledAt: Date?
   public let replayState: JetstreamReplayState
   public let replayAfterSequence: Int64?
+  public let replayBeforeSequence: Int64?
   public let replaySealedSequence: Int64?
   public let replayBytesDownloaded: Int64
   public let replayRetryCount: Int
@@ -56,6 +58,7 @@ public struct JetstreamDurabilityCheckpoint: Codable, Sendable, Equatable {
     lastReconciledAt: Date? = nil,
     replayState: JetstreamReplayState,
     replayAfterSequence: Int64? = nil,
+    replayBeforeSequence: Int64? = nil,
     replaySealedSequence: Int64? = nil,
     replayBytesDownloaded: Int64 = 0,
     replayRetryCount: Int = 0,
@@ -80,6 +83,7 @@ public struct JetstreamDurabilityCheckpoint: Codable, Sendable, Equatable {
     self.lastReconciledAt = lastReconciledAt
     self.replayState = replayState
     self.replayAfterSequence = replayAfterSequence
+    self.replayBeforeSequence = replayBeforeSequence
     self.replaySealedSequence = replaySealedSequence
     self.replayBytesDownloaded = max(0, replayBytesDownloaded)
     self.replayRetryCount = max(0, replayRetryCount)

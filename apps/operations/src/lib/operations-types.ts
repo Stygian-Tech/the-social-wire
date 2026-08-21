@@ -98,8 +98,9 @@ export type JetstreamDurabilityCheckpoint = {
   lastAppliedAt?: string
   lastReconciledRepositoryRevision?: string
   lastReconciledAt?: string
-  replayState: "idle" | "replaying" | "live" | "paused_budget" | "failed"
+  replayState: "idle" | "replaying" | "live" | "paused_budget" | "failed" | "snapshot_complete"
   replayAfterSequence?: number
+  replayBeforeSequence?: number
   replaySealedSequence?: number
   replayBytesDownloaded: number
   replayRetryCount: number
@@ -151,7 +152,7 @@ export type IngestionIncident = {
   firstDetectedAt: string
   lastDetectedAt: string
   lastError?: string
-  replayState?: "idle" | "replaying" | "live" | "paused_budget" | "failed"
+  replayState?: "idle" | "replaying" | "live" | "paused_budget" | "failed" | "snapshot_complete"
   replayBytesDownloaded: number
   replayRetryCount: number
   replayRangeResumeCount: number

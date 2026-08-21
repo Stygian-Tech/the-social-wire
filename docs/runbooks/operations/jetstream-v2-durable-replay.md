@@ -22,6 +22,21 @@ never advances the intake cursor. Redis is not part of either durability boundar
    through that boundary is applied, reconciled, or explicitly terminalized by the current scope
    policy.
 
+### Bounded The Wire snapshots
+
+The Wire may intentionally replay one sealed range `(replay_after_seq, replay_before_seq]` and stop.
+When that range is fully staged, the checkpoint enters `snapshot_complete`, with
+`replay_sealed_seq` equal to `replay_before_seq`. This is a healthy terminal state, not a failed or
+disconnected live subscriber. The intake lease and its heartbeat may be absent after completion;
+Operations treats the durable terminal checkpoint as completion evidence and must not raise
+missing-heartbeat or expired-heartbeat alerts for this state.
+
+Continue to evaluate Charybdis freshness, actionable inbox age, unresolved dead letters, and
+ingestion incidents independently. A completed snapshot proves only that the bounded transport
+range was staged; it does not make downstream projection failures healthy. If the replay bounds are
+missing, inverted, or disagree with the sealed sequence, treat the checkpoint as invalid evidence
+rather than manually changing its state.
+
 ## Projection failures
 
 - Charybdis leases at most one actionable event per DID so repository order is preserved while
@@ -126,7 +141,9 @@ After setting the variable:
 4. Confirm the active fenced ingester lease heartbeat remains fresh, the matching source
    generation's actionable inbox stays inside the freshness budget, and there are no dead letters
    or unresolved ingestion incidents. Checkpoint `updated_at` is not an intake heartbeat because
-   projection and reconciliation work can also advance it.
+   projection and reconciliation work can also advance it. The exception is a bounded The Wire
+   checkpoint in terminal `snapshot_complete`, where no continuing intake lease is expected and
+   the durable state and sealed bounds provide completion evidence.
 5. Check the public Gateway `/readyz` separately. It aggregates Gateway database, App View, and
    Charybdis readiness, so a failure there is not by itself proof that Charybdis failed.
 

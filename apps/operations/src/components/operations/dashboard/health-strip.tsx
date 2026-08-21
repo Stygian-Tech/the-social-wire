@@ -37,6 +37,8 @@ export function HealthStrip({ overview, referenceTime = overview.refreshedAt }: 
   const durabilityCheckpoint = v2InboxAuthority
     ? jetstreamV2CheckpointForOverview(overview)
     : overview.durability?.checkpoints[0]
+  const terminalSnapshot =
+    v2InboxAuthority && durabilityCheckpoint?.replayState === "snapshot_complete"
   const transportAge = elapsedSeconds(
     overview.ingestion?.transportHeartbeatAt ??
       (v2InboxAuthority ? durabilityCheckpoint?.intakeHeartbeatAt ?? undefined : undefined),
@@ -105,7 +107,9 @@ export function HealthStrip({ overview, referenceTime = overview.refreshedAt }: 
       label: "Ingestion Freshness",
       value: freshnessLabel,
       note:
-        transportAge === null
+        terminalSnapshot
+          ? `The Wire bounded snapshot is complete · Charybdis freshness ${workerFreshness.state}`
+          : transportAge === null
           ? `No valid ${v2InboxAuthority ? "durable checkpoint" : "transport heartbeat"} reported`
           : `${authorityLabel} ${v2InboxAuthority ? "checkpoint" : "transport heartbeat"} ${transportAge.toFixed(1)}s ago · Charybdis freshness ${workerFreshness.state}`,
       windowNote: workerFreshness.source === "rolling"

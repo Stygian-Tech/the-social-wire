@@ -2251,6 +2251,7 @@ public actor SQLiteOperationsStore: OperationsStore {
 
   private static func migrate(_ db: Database) throws {
     try db.execute(sql: Schema.sqlite)
+    try migrateJetstreamCheckpointSnapshotCompleteIfNeeded(db)
     try migrateIngestionInboxFilteredScopeIfNeeded(db)
     for table in [
       "operations_metric_rollups", "operations_trace_spans", "operations_audit_events",
@@ -2338,6 +2339,75 @@ public actor SQLiteOperationsStore: OperationsStore {
     if !columns.contains(column) {
       try db.execute(sql: "ALTER TABLE \(table) ADD COLUMN \(column) \(definition)")
     }
+  }
+
+  private static func migrateJetstreamCheckpointSnapshotCompleteIfNeeded(
+    _ db: Database
+  ) throws {
+    let tableSQL = try String.fetchOne(
+      db,
+      sql: """
+        SELECT sql FROM sqlite_master
+        WHERE type = 'table' AND name = 'appview_jetstream_checkpoints'
+        """
+    ) ?? ""
+    let columns = try Row.fetchAll(db, sql: "PRAGMA table_info(appview_jetstream_checkpoints)")
+      .map { row -> String in row["name"] }
+    guard !tableSQL.contains("'snapshot_complete'") || !columns.contains("replay_before_seq")
+    else { return }
+    let replayBeforeExpression = columns.contains("replay_before_seq") ? "replay_before_seq" : "NULL"
+
+    try db.execute(sql: """
+      ALTER TABLE appview_jetstream_checkpoints
+        RENAME TO appview_jetstream_checkpoints_before_snapshot_complete;
+      CREATE TABLE appview_jetstream_checkpoints (
+        environment TEXT NOT NULL, source_generation TEXT NOT NULL, source_host TEXT NOT NULL,
+        stream_nsid TEXT NOT NULL, filter_fingerprint TEXT NOT NULL,
+        cursor_kind TEXT NOT NULL CHECK (cursor_kind = 'jetstream_v2_seq'),
+        last_staged_seq INTEGER, last_staged_event_at TEXT, last_staged_at TEXT,
+        last_applied_seq INTEGER, last_applied_event_at TEXT, last_applied_at TEXT,
+        last_reconciled_repo_rev TEXT, last_reconciled_at TEXT,
+        replay_state TEXT NOT NULL DEFAULT 'idle'
+          CHECK (replay_state IN (
+            'idle', 'replaying', 'live', 'paused_budget', 'failed', 'snapshot_complete'
+          )),
+        replay_after_seq INTEGER, replay_before_seq INTEGER, replay_sealed_seq INTEGER,
+        replay_bytes_downloaded INTEGER NOT NULL DEFAULT 0,
+        replay_retry_count INTEGER NOT NULL DEFAULT 0,
+        replay_range_resume_count INTEGER NOT NULL DEFAULT 0,
+        replay_last_progress_at TEXT, replay_etag TEXT, updated_at TEXT NOT NULL,
+        CHECK (last_staged_seq IS NULL OR last_staged_seq >= 0),
+        CHECK (last_applied_seq IS NULL OR last_applied_seq >= 0),
+        CHECK (last_applied_seq IS NULL OR last_staged_seq IS NULL OR last_applied_seq <= last_staged_seq),
+        CHECK (replay_before_seq IS NULL OR replay_before_seq >= 0),
+        CHECK (replay_before_seq IS NULL OR (
+          replay_after_seq IS NOT NULL AND replay_after_seq < replay_before_seq
+        )),
+        CHECK (replay_state != 'snapshot_complete' OR (
+          replay_after_seq IS NOT NULL AND replay_before_seq IS NOT NULL
+          AND replay_after_seq < replay_before_seq
+          AND replay_sealed_seq = replay_before_seq
+          AND (last_staged_seq IS NULL OR last_staged_seq <= replay_before_seq)
+        )),
+        PRIMARY KEY (environment, source_generation)
+      );
+      INSERT INTO appview_jetstream_checkpoints
+        (environment, source_generation, source_host, stream_nsid, filter_fingerprint,
+         cursor_kind, last_staged_seq, last_staged_event_at, last_staged_at,
+         last_applied_seq, last_applied_event_at, last_applied_at,
+         last_reconciled_repo_rev, last_reconciled_at, replay_state, replay_after_seq,
+         replay_before_seq, replay_sealed_seq, replay_bytes_downloaded, replay_retry_count,
+         replay_range_resume_count, replay_last_progress_at, replay_etag, updated_at)
+      SELECT environment, source_generation, source_host, stream_nsid, filter_fingerprint,
+             cursor_kind, last_staged_seq, last_staged_event_at, last_staged_at,
+             last_applied_seq, last_applied_event_at, last_applied_at,
+             last_reconciled_repo_rev, last_reconciled_at, replay_state, replay_after_seq,
+             \(replayBeforeExpression), replay_sealed_seq, replay_bytes_downloaded,
+             replay_retry_count, replay_range_resume_count, replay_last_progress_at,
+             replay_etag, updated_at
+      FROM appview_jetstream_checkpoints_before_snapshot_complete;
+      DROP TABLE appview_jetstream_checkpoints_before_snapshot_complete;
+      """)
   }
 
   private static func migrateIngestionInboxFilteredScopeIfNeeded(_ db: Database) throws {
@@ -3076,8 +3146,10 @@ private enum Schema {
       last_applied_seq INTEGER, last_applied_event_at TEXT, last_applied_at TEXT,
       last_reconciled_repo_rev TEXT, last_reconciled_at TEXT,
       replay_state TEXT NOT NULL DEFAULT 'idle'
-        CHECK (replay_state IN ('idle', 'replaying', 'live', 'paused_budget', 'failed')),
-      replay_after_seq INTEGER, replay_sealed_seq INTEGER,
+        CHECK (replay_state IN (
+          'idle', 'replaying', 'live', 'paused_budget', 'failed', 'snapshot_complete'
+        )),
+      replay_after_seq INTEGER, replay_before_seq INTEGER, replay_sealed_seq INTEGER,
       replay_bytes_downloaded INTEGER NOT NULL DEFAULT 0,
       replay_retry_count INTEGER NOT NULL DEFAULT 0,
       replay_range_resume_count INTEGER NOT NULL DEFAULT 0,
@@ -3085,6 +3157,16 @@ private enum Schema {
       CHECK (last_staged_seq IS NULL OR last_staged_seq >= 0),
       CHECK (last_applied_seq IS NULL OR last_applied_seq >= 0),
       CHECK (last_applied_seq IS NULL OR last_staged_seq IS NULL OR last_applied_seq <= last_staged_seq),
+      CHECK (replay_before_seq IS NULL OR replay_before_seq >= 0),
+      CHECK (replay_before_seq IS NULL OR (
+        replay_after_seq IS NOT NULL AND replay_after_seq < replay_before_seq
+      )),
+      CHECK (replay_state != 'snapshot_complete' OR (
+        replay_after_seq IS NOT NULL AND replay_before_seq IS NOT NULL
+        AND replay_after_seq < replay_before_seq
+        AND replay_sealed_seq = replay_before_seq
+        AND (last_staged_seq IS NULL OR last_staged_seq <= replay_before_seq)
+      )),
       PRIMARY KEY (environment, source_generation)
     );
     CREATE TABLE IF NOT EXISTS appview_ingestion_inbox (

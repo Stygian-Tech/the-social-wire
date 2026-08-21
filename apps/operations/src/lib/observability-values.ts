@@ -220,7 +220,10 @@ export function overviewIngestionConnectionState(
   overview: Overview,
   reference = overview.refreshedAt,
 ): EffectiveConnectionState {
-  if (overview.ingestion || !isJetstreamV2InboxSource(ingestionAuthoritySource(overview))) {
+  const v2InboxAuthority = isJetstreamV2InboxSource(ingestionAuthoritySource(overview))
+  const checkpoint = v2InboxAuthority ? jetstreamV2CheckpointForOverview(overview) : undefined
+  const terminalSnapshot = checkpoint?.replayState === "snapshot_complete"
+  if ((overview.ingestion && !terminalSnapshot) || !v2InboxAuthority) {
     return effectiveConnectionState({
       connectionState: overview.ingestion?.connectionState,
       transportHeartbeatAt: overview.ingestion?.transportHeartbeatAt,
@@ -229,15 +232,17 @@ export function overviewIngestionConnectionState(
     })
   }
 
-  const intakeHeartbeatAge = elapsedSeconds(
-    jetstreamV2CheckpointForOverview(overview)?.intakeHeartbeatAt ?? undefined,
-    reference,
-  )
-  if (
-    intakeHeartbeatAge === null ||
-    intakeHeartbeatAge > TRANSPORT_HEARTBEAT_FRESHNESS_SECONDS
-  )
-    return "unknown"
+  if (!terminalSnapshot) {
+    const intakeHeartbeatAge = elapsedSeconds(
+      checkpoint?.intakeHeartbeatAt ?? undefined,
+      reference,
+    )
+    if (
+      intakeHeartbeatAge === null ||
+      intakeHeartbeatAge > TRANSPORT_HEARTBEAT_FRESHNESS_SECONDS
+    )
+      return "unknown"
+  }
 
   const evidenceValidUntil = new Date(overview.evidence.ingestion.validUntil).getTime()
   const referenceTime = new Date(reference).getTime()
