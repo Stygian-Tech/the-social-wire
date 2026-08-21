@@ -413,6 +413,7 @@ func (p *Postgres) stageWireInboxEvent(
 	tx *sql.Tx,
 	event ingest.InboxEvent,
 ) error {
+	payload := wireJSONPayloadForPostgres(event.Payload)
 	_, err := tx.ExecContext(ctx, `
 		INSERT INTO wire_ingestion_inbox
 		  (environment, source_generation, seq, source_host, cursor_kind,
@@ -424,7 +425,7 @@ func (p *Postgres) stageWireInboxEvent(
 		ON CONFLICT (environment, source_generation, seq) DO NOTHING`,
 		p.source.Environment, p.source.Generation, int64(event.Seq), p.source.Host,
 		p.source.CursorKind, event.Kind, event.RepoDID, event.Collection, event.Operation,
-		event.RepoRev, event.RecordKey, event.RecordCID, string(event.Payload), event.Time,
+		event.RepoRev, event.RecordKey, event.RecordCID, string(payload), event.Time,
 	)
 	if err != nil {
 		return fmt.Errorf("insert Wire inbox event %d: %w", event.Seq, err)

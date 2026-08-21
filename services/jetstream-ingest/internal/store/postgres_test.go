@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/stygian-tech/the-social-wire/services/jetstream-ingest/internal/config"
 	"github.com/stygian-tech/the-social-wire/services/jetstream-ingest/internal/ingest"
 )
 
@@ -18,6 +19,13 @@ func testSource() ingest.SourceIdentity {
 		StreamNSID:        "network.bsky.jetstream.subscribeEvents",
 		FilterFingerprint: "filter", CursorKind: "jetstream_v2_seq", Generation: "west-v1",
 	}
+}
+
+func wireTestSource() ingest.SourceIdentity {
+	source := testSource()
+	source.PipelineMode = config.WirePipelineMode
+	source.Generation = config.WireSourceGeneration
+	return source
 }
 
 func TestStageBatchCommitsInboxAndCheckpointAtomically(t *testing.T) {
@@ -43,6 +51,98 @@ func TestStageBatchCommitsInboxAndCheckpointAtomically(t *testing.T) {
 	mock.ExpectCommit()
 
 	err = store.StageBatch(context.Background(), lease, []ingest.InboxEvent{event}, 7, now, ReplayProgress{State: "live", LastProgressAt: now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestStageBatchNormalizesUnsupportedUnicodeOnlyForWireInbox(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	store := New(db, wireTestSource())
+	now := time.Unix(1_700_000_000, 0).UTC()
+	event := ingest.InboxEvent{
+		Seq: 7, Time: now, Kind: "commit", RepoDID: "did:plc:test",
+		Payload: []byte(`{"record":{"text":"before\u0000after","literal":"\\u0000"}}`),
+	}
+	lease := Lease{Name: "wire-global-v1-ingest", OwnerID: "owner", FencingToken: 3}
+
+	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT TRUE").
+		WithArgs("dev", lease.Name, config.WireSourceGeneration, lease.OwnerID, int64(3)).
+		WillReturnRows(sqlmock.NewRows([]string{"valid"}).AddRow(true))
+	mock.ExpectExec("INSERT INTO wire_ingestion_inbox").
+		WithArgs(
+			"dev", config.WireSourceGeneration, int64(7), "jetstream.us-west.bsky.network",
+			"jetstream_v2_seq", "commit", "did:plc:test", nil, nil, nil, nil, nil,
+			"{\"record\":{\"literal\":\"\\\\u0000\",\"text\":\"before�after\"}}", now,
+		).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("INSERT INTO appview_jetstream_checkpoints").
+		WithArgs(
+			"dev", config.WireSourceGeneration, "jetstream.us-west.bsky.network",
+			"network.bsky.jetstream.subscribeEvents", "filter", "jetstream_v2_seq", int64(7),
+			now, "live", int64(0), int64(0), int64(0), 0, 0, nil, now,
+		).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+
+	err = store.StageBatch(
+		context.Background(), lease, []ingest.InboxEvent{event}, 7, now,
+		ReplayProgress{State: "live", LastProgressAt: now},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestStageBatchLeavesPublicationLanePayloadUnchanged(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	store := New(db, testSource())
+	now := time.Unix(1_700_000_000, 0).UTC()
+	event := ingest.InboxEvent{
+		Seq: 7, Time: now, Kind: "commit", RepoDID: "did:plc:test",
+		Payload: []byte(`{"record":{"text":"before\u0000after"}}`),
+	}
+	lease := Lease{Name: "jetstream-v2-ingest", OwnerID: "owner", FencingToken: 3}
+
+	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT TRUE").
+		WithArgs("dev", lease.Name, "west-v1", lease.OwnerID, int64(3)).
+		WillReturnRows(sqlmock.NewRows([]string{"valid"}).AddRow(true))
+	mock.ExpectExec("INSERT INTO appview_ingestion_inbox").
+		WithArgs(
+			"dev", "west-v1", int64(7), "jetstream.us-west.bsky.network",
+			"jetstream_v2_seq", "commit", "did:plc:test", nil, nil, nil, nil, nil,
+			string(event.Payload), now,
+		).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("INSERT INTO appview_jetstream_checkpoints").
+		WithArgs(
+			"dev", "west-v1", "jetstream.us-west.bsky.network",
+			"network.bsky.jetstream.subscribeEvents", "filter", "jetstream_v2_seq", int64(7),
+			now, "live", int64(0), int64(0), int64(0), 0, 0, nil, now,
+		).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+
+	err = store.StageBatch(
+		context.Background(), lease, []ingest.InboxEvent{event}, 7, now,
+		ReplayProgress{State: "live", LastProgressAt: now},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}

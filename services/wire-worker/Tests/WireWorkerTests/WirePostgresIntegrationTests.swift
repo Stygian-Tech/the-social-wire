@@ -14,6 +14,198 @@ import WireCore
   )
 )
 struct WirePostgresIntegrationTests {
+  @Test("a staged payload-normalization fallback is dead-lettered")
+  func payloadNormalizationFallbackDeadLetters() async throws {
+    guard let url = ProcessInfo.processInfo.environment["WIRE_TEST_DATABASE_URL"] else { return }
+    let logger = Logger(label: "wire-normalization-fallback-postgres.integration")
+    let configuration = try PostgresWireConfig.make(from: url, logger: logger)
+    let pool = PostgresClient(configuration: configuration, backgroundLogger: logger)
+    let runTask = Task { await pool.run() }
+    await Task.yield()
+    defer { runTask.cancel() }
+
+    let environment = "wire-normalization-\(UUID().uuidString.lowercased())"
+    let generation = "wire-normalization-v1"
+    let now = Date()
+    try await pool.query(
+      """
+      INSERT INTO wire_ingestion_inbox
+        (environment, source_generation, seq, source_host, cursor_kind, event_kind,
+         repo_did, payload, event_time)
+      VALUES
+        (\(environment), \(generation), 1, 'test', 'jetstream_v2_seq', 'identity',
+         'did:example:normalization-fallback',
+         '{"$wireIngestionError":{"code":"payload_normalization_failed","version":1,"originalBytes":42}}'::jsonb,
+         \(now))
+      """,
+      logger: logger
+    )
+    let processor = try PostgresWireInboxProcessor(
+      pool: pool,
+      logger: logger,
+      actorSecret: String(repeating: "s", count: 32)
+    )
+    #expect(try await processor.process(asOf: now.addingTimeInterval(1)) == 1)
+
+    let rows = try await pool.query(
+      """
+      SELECT status, failure_reason, dead_lettered_at IS NOT NULL
+      FROM wire_ingestion_inbox
+      WHERE environment = \(environment) AND source_generation = \(generation) AND seq = 1
+      """,
+      logger: logger
+    )
+    for try await row in rows {
+      let result = try row.decode((String, String?, Bool).self)
+      #expect(result.0 == "dead_letter")
+      #expect(result.1 == "malformed_event")
+      #expect(result.2)
+    }
+    try await pool.query(
+      "DELETE FROM wire_ingestion_inbox WHERE environment = \(environment)",
+      logger: logger
+    )
+  }
+
+  @Test("continuous runtime drains successive bounded PostgreSQL batches")
+  func continuousPostgresDrain() async throws {
+    guard let url = ProcessInfo.processInfo.environment["WIRE_TEST_DATABASE_URL"] else { return }
+    let logger = Logger(label: "wire-continuous-drain-postgres.integration")
+    let configuration = try PostgresWireConfig.make(from: url, maximumConnections: 8, logger: logger)
+    let pool = PostgresClient(configuration: configuration, backgroundLogger: logger)
+    let runTask = Task { await pool.run() }
+    await Task.yield()
+    defer { runTask.cancel() }
+
+    let environment = "wire-drain-\(UUID().uuidString.lowercased())"
+    let generation = "wire-drain-v1"
+    let repoPrefix = "did:example:drain-\(UUID().uuidString.lowercased())-"
+    let now = Date()
+    try await pool.query(
+      """
+      INSERT INTO wire_ingestion_inbox
+        (environment, source_generation, seq, source_host, cursor_kind, event_kind,
+         repo_did, payload, event_time)
+      SELECT \(environment), \(generation), sequence, 'test', 'jetstream_v2_seq',
+             'identity', \(repoPrefix) || sequence::text, '{}'::jsonb, \(now)
+      FROM generate_series(1, 37) AS rows(sequence)
+      """,
+      logger: logger
+    )
+    let processor = try PostgresWireInboxProcessor(
+      pool: pool,
+      logger: logger,
+      actorSecret: String(repeating: "s", count: 32),
+      batchSize: 10,
+      maximumConcurrentEvents: 8
+    )
+    let sleeper = IntegrationDrainSleeper()
+    try await WireInboxDrainRuntime.run(
+      processor: processor,
+      state: WireWorkerHealthState(),
+      logger: logger,
+      configuration: .init(idleMilliseconds: 250),
+      sleeper: sleeper,
+      iterationLimit: 5
+    )
+
+    let rows = try await pool.query(
+      """
+      SELECT COUNT(*) FILTER (WHERE status = 'applied')::bigint,
+             COUNT(*) FILTER (WHERE status IN ('pending','leased','retry'))::bigint
+      FROM wire_ingestion_inbox
+      WHERE environment = \(environment)
+      """,
+      logger: logger
+    )
+    for try await row in rows {
+      let counts = try row.decode((Int64, Int64).self)
+      #expect(counts.0 == 37)
+      #expect(counts.1 == 0)
+    }
+    #expect(await sleeper.delays == [250])
+    try await pool.query(
+      "DELETE FROM wire_ingestion_inbox WHERE environment = \(environment)",
+      logger: logger
+    )
+  }
+
+  @Test("claiming preserves repository FIFO while batching different repositories")
+  func repositoryFIFOAcrossConcurrentClaim() async throws {
+    guard let url = ProcessInfo.processInfo.environment["WIRE_TEST_DATABASE_URL"] else { return }
+    let logger = Logger(label: "wire-repository-fifo-postgres.integration")
+    let configuration = try PostgresWireConfig.make(from: url, maximumConnections: 8, logger: logger)
+    let pool = PostgresClient(configuration: configuration, backgroundLogger: logger)
+    let runTask = Task { await pool.run() }
+    await Task.yield()
+    defer { runTask.cancel() }
+
+    let environment = "wire-fifo-\(UUID().uuidString.lowercased())"
+    let generation = "wire-fifo-v1"
+    let sharedRepo = "did:example:fifo-shared-\(UUID().uuidString.lowercased())"
+    let otherRepo = "did:example:fifo-other-\(UUID().uuidString.lowercased())"
+    let now = Date()
+    for (sequence, repoDID) in [(1, sharedRepo), (2, sharedRepo), (3, otherRepo)] {
+      try await pool.query(
+        """
+        INSERT INTO wire_ingestion_inbox
+          (environment, source_generation, seq, source_host, cursor_kind, event_kind,
+           repo_did, payload, event_time)
+        VALUES
+          (\(environment), \(generation), \(sequence), 'test', 'jetstream_v2_seq',
+           'identity', \(repoDID), '{}'::jsonb, \(now))
+        """,
+        logger: logger
+      )
+    }
+
+    let processor = try PostgresWireInboxProcessor(
+      pool: pool,
+      logger: logger,
+      actorSecret: String(repeating: "s", count: 32),
+      batchSize: 10,
+      maximumConcurrentEvents: 8
+    )
+    let firstProcessAt = Date()
+    #expect(try await processor.process(asOf: firstProcessAt) == 2)
+
+    let firstClaimRows = try await pool.query(
+      """
+      SELECT seq, status
+      FROM wire_ingestion_inbox
+      WHERE environment = \(environment)
+      ORDER BY seq
+      """,
+      logger: logger
+    )
+    var firstClaimStatuses: [(Int64, String)] = []
+    for try await row in firstClaimRows {
+      firstClaimStatuses.append(try row.decode((Int64, String).self))
+    }
+    #expect(firstClaimStatuses.map(\.0) == [1, 2, 3])
+    #expect(firstClaimStatuses.map(\.1) == ["applied", "pending", "applied"])
+
+    #expect(try await processor.process(asOf: firstProcessAt.addingTimeInterval(1)) == 1)
+    let finalRows = try await pool.query(
+      """
+      SELECT COUNT(*) FILTER (WHERE status = 'applied')::bigint,
+             COUNT(*) FILTER (WHERE status IN ('pending','leased','retry'))::bigint
+      FROM wire_ingestion_inbox
+      WHERE environment = \(environment)
+      """,
+      logger: logger
+    )
+    for try await row in finalRows {
+      let counts = try row.decode((Int64, Int64).self)
+      #expect(counts.0 == 3)
+      #expect(counts.1 == 0)
+    }
+    try await pool.query(
+      "DELETE FROM wire_ingestion_inbox WHERE environment = \(environment)",
+      logger: logger
+    )
+  }
+
   @Test("a partial label refresh retains labels for unqueried candidates")
   func partialLabelRefreshScope() async throws {
     guard let url = ProcessInfo.processInfo.environment["WIRE_TEST_DATABASE_URL"] else { return }
@@ -130,6 +322,7 @@ struct WirePostgresIntegrationTests {
       return
     }
     #expect(createdCount == 1)
+    try await processor.maintain(asOf: createProcessAt)
 
     let canonical = WireCanonicalizer.canonicalize(articleURL)!
     let itemRows = try await pool.query(
@@ -185,4 +378,9 @@ struct WirePostgresIntegrationTests {
     try await pool.query(
       "DELETE FROM wire_active_actors WHERE actor_key_hash = \(actorHash)", logger: logger)
   }
+}
+
+private actor IntegrationDrainSleeper: WireInboxDrainSleeping {
+  private(set) var delays: [Int] = []
+  func sleep(milliseconds: Int) { delays.append(milliseconds) }
 }

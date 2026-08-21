@@ -23,7 +23,10 @@
 | `WIRE_ACTOR_HMAC_SECRET` | required outside `off` | Versioned 256-bit minimum actor-key secret |
 | `WIRE_BASELINE_LABELERS` | Bluesky Moderation Service | Comma-separated `source-did|https://labeler-host` queryLabels authorities |
 | `WIRE_LABEL_REFRESH_MAX_AGE_SECONDS` | `900` | Maximum baseline label snapshot age allowed before activation fails closed |
-| `POSTGRES_MAX_CONNECTIONS` | n/a | Intentionally not used; this worker reserves two connections |
+| `WIRE_INBOX_BATCH_SIZE` | `1000` | Maximum inbox rows claimed by one drain iteration (maximum `5000`) |
+| `WIRE_INBOX_CONCURRENCY` | `16` | Maximum independently fenced events applied concurrently (maximum `64`) |
+| `WIRE_INBOX_IDLE_MILLISECONDS` | `250` | Backpressure delay after an empty claim; full batches continue immediately |
+| `WIRE_POSTGRES_MAX_CONNECTIONS` | `12` | Bounded pool shared by drain, maintenance, ranking, and health work (maximum `64`) |
 | `PORT` | `8080` | Health server port |
 
 Health endpoints are `/health`, `/livez`, `/startupz`, and `/readyz`. Startup and readiness fail closed when PostgreSQL cannot be reached. Database migrations remain owned by the dedicated Database Migrator service.
@@ -38,4 +41,10 @@ If any endpoint errors, returns malformed attribution, repeats a cursor, exceeds
 
 This baseline verifies transport and attribution, not label signatures: requests are limited to explicitly configured HTTPS endpoints and responses must use the exact configured source DID, but the optional ATProto label `sig` is not yet cryptographically verified against the labeler DID. Signature verification is a remaining hardening item and this implementation must not be described as independently proving label authenticity.
 
-The isolated Go lane stages global events into `wire_ingestion_inbox`. This worker claims that inbox, resolves supported article/share/reference/follow events, stores only keyed actor hashes in signal/graph tables, retracts deletes and inactive accounts, rebuilds exact rolling rollups, and then materializes immutable generations.
+The isolated Go lane stages global events into `wire_ingestion_inbox`. A dedicated runtime continuously claims bounded batches using PostgreSQL fencing and `SKIP LOCKED`. A batch contains only the earliest actionable event for each repository, so up to `WIRE_INBOX_CONCURRENCY` different repositories can apply concurrently without violating per-repository sequence. Full batches continue immediately; an empty claim waits `WIRE_INBOX_IDLE_MILLISECONDS`. Failures preserve leases/retry state, make readiness unhealthy, and retry with exponential one-to-30-second backoff. One process therefore applies at most one bounded batch at a time and cannot create an unbounded in-memory queue.
+
+The default event concurrency of 16 intentionally exceeds the 12-connection PostgreSQL pool. PostgreSQL pool queuing is the database backpressure boundary while JSON decoding and canonicalization work remain in flight; the worker never opens more than `WIRE_POSTGRES_MAX_CONNECTIONS` database connections.
+
+Graph pruning, six-hour community refresh checks, and exact rollup rebuilding run once with the five-minute generation cycle rather than after every inbox batch. Baseline label refresh and ranking also remain on that five-minute cadence, so an archive drain cannot hammer labelers. Readiness requires both a recent successful generation cycle and either a recently completed drain iteration or an in-flight batch younger than three minutes.
+
+The worker resolves supported article/share/reference/follow events, stores only keyed actor hashes in signal/graph tables, retracts deletes and inactive accounts, rebuilds exact rolling rollups, and then materializes immutable generations.

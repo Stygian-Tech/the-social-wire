@@ -4,25 +4,25 @@ import WireCore
 struct WireWorkerCycle: Sendable {
   let store: any WireGenerationStore
   let config: WireWorkerConfig
-  let inboxProcessor: (any WireInboxProcessing)?
+  let inboxMaintainer: (any WireInboxMaintaining)?
   let labelRefresher: (any WireBaselineLabelRefreshing)?
 
   init(
     store: any WireGenerationStore,
     config: WireWorkerConfig,
-    inboxProcessor: (any WireInboxProcessing)? = nil,
+    inboxMaintainer: (any WireInboxMaintaining)? = nil,
     labelRefresher: (any WireBaselineLabelRefreshing)? = nil
   ) {
     self.store = store
     self.config = config
-    self.inboxProcessor = inboxProcessor
+    self.inboxMaintainer = inboxMaintainer
     self.labelRefresher = labelRefresher
   }
 
   func run(asOf: Date) async throws -> WireWorkerCycleOutcome {
     try await store.ping()
     guard config.mode != .off else { return .off }
-    _ = try await inboxProcessor?.process(asOf: asOf)
+    try await inboxMaintainer?.maintain(asOf: asOf)
     try await store.deleteExpired(asOf: asOf, batchSize: config.retentionBatchSize)
     guard let labelRefresher else { throw WireLabelQueryError.incompleteResponse }
     try await labelRefresher.refresh(asOf: asOf)

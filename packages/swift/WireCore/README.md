@@ -5,9 +5,9 @@
 ## End-to-end flow
 
 1. Public Jetstream/RSS producers place idempotent envelopes in `wire_ingestion_inbox`. The durable inbox owns retry, lease, dead-letter, and expiry state; a network message is not considered accepted until PostgreSQL has it.
-2. An inbox applier canonicalizes the linked story, upserts `wire_items` plus `wire_item_aliases`, records presentation-safe provenance, applies moderation/source labels, and inserts a deduplicated `wire_signal_events` row.
+2. A dedicated drain runtime continuously claims bounded inbox batches, applies different repositories concurrently while preserving repository FIFO, and uses bounded idle/error backoff. The applier canonicalizes the linked story, upserts `wire_items` plus `wire_item_aliases`, records presentation-safe provenance, applies moderation/source labels, and inserts a deduplicated `wire_signal_events` row.
 3. The applier updates bounded, keyed-hash graph state (`wire_active_actors`, `wire_follow_edges`, `wire_actor_communities`) and privacy-safe aggregate counts in `wire_signal_rollups`. DIDs for sharers, likers, reposters, and other engagement actors never enter a serving row. A public source/author DID may be retained only with its public item for attribution and viewer block/mute filtering; it is never a ranking feature or community identifier.
-4. Every five minutes by default, `wire-worker` loads eligible item/rollup rows, computes the deterministic `wire-v1` score, applies first-page diversity, and writes an immutable `wire_rank_generations` plus its `wire_ranked_items`.
+4. Every five minutes by default, `wire-worker` prunes bounded graph state, refreshes community assignments when due, rebuilds exact rollups, refreshes baseline labels, loads eligible item/rollup rows, computes the deterministic `wire-v1` score, applies first-page diversity, and writes an immutable `wire_rank_generations` plus its `wire_ranked_items`. Continuous archive draining never increases labeler cadence.
 5. In `shadow` mode the generation remains queryable for comparison but is not served. In `api` or `visible` mode the worker moves `wire_feed_state.active_generation_id` in the same PostgreSQL transaction as the completed generation. `off` performs read-only health probes and no data operation.
 6. An AppView `WireFeedStore` serving adapter reads the active generation, joins the presentation snapshot, filters labels again, and returns the approved `WirePage`, `WireItemDetail`, or singleton `WireFeedCatalog` contract. A Redis copy may be read first, but a miss or disagreement always resolves from PostgreSQL.
 
@@ -165,6 +165,8 @@ Ranking defaults live in `WireRankingConfig`/`WireRankingWeights`/`WireDiversity
 - `WIRE_ACTOR_HMAC_SECRET` with at least 32 bytes outside `off` mode.
 - `WIRE_BASELINE_LABELERS` as comma-separated `source-did|https://labeler-host` authorities (default: Bluesky Moderation Service);
 - `WIRE_LABEL_REFRESH_MAX_AGE_SECONDS=900`.
+- `WIRE_INBOX_BATCH_SIZE=1000`, `WIRE_INBOX_CONCURRENCY=16`, and `WIRE_INBOX_IDLE_MILLISECONDS=250`;
+- `WIRE_POSTGRES_MAX_CONNECTIONS=12`.
 
 `DATABASE_URL` is always required. Positive integers reject zero/negative/garbage. Unknown modes fail startup. Ranking weights are not mutable ad-hoc environment variables in this slice: changing them requires a reviewed, versioned config/code deployment, replay evidence, README update, and a new version when ordering semantics change.
 

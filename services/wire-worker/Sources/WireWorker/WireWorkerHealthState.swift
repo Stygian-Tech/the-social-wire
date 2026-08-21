@@ -2,19 +2,49 @@ import Foundation
 
 actor WireWorkerHealthState {
   private(set) var lastSuccessfulCycleAt: Date?
-  private(set) var lastFailure: String?
+  private(set) var lastGenerationFailure: String?
+  private(set) var drainStartedAt: Date?
+  private(set) var lastSuccessfulDrainAt: Date?
+  private(set) var lastDrainFailure: String?
 
-  func recordSuccess(at: Date) {
+  func recordGenerationSuccess(at: Date) {
     lastSuccessfulCycleAt = at
-    lastFailure = nil
+    lastGenerationFailure = nil
   }
 
-  func recordFailure(_ error: Error) {
-    lastFailure = String(reflecting: error)
+  func recordGenerationFailure(_ error: Error) {
+    lastGenerationFailure = String(reflecting: error)
   }
 
-  func isReady(at now: Date, maximumCycleAge: TimeInterval) -> Bool {
-    guard lastFailure == nil, let lastSuccessfulCycleAt else { return false }
-    return now.timeIntervalSince(lastSuccessfulCycleAt) <= maximumCycleAge
+  func recordDrainStarted(at: Date) {
+    drainStartedAt = at
+  }
+
+  func recordDrainSuccess(at: Date) {
+    drainStartedAt = nil
+    lastSuccessfulDrainAt = at
+    lastDrainFailure = nil
+  }
+
+  func recordDrainFailure(_ error: Error) {
+    drainStartedAt = nil
+    lastDrainFailure = String(reflecting: error)
+  }
+
+  func isReady(
+    at now: Date,
+    maximumCycleAge: TimeInterval,
+    maximumDrainSuccessAge: TimeInterval,
+    maximumDrainOperationAge: TimeInterval
+  ) -> Bool {
+    guard lastGenerationFailure == nil, let lastSuccessfulCycleAt,
+      now.timeIntervalSince(lastSuccessfulCycleAt) <= maximumCycleAge,
+      lastDrainFailure == nil
+    else { return false }
+    if let drainStartedAt {
+      return now.timeIntervalSince(drainStartedAt) <= maximumDrainOperationAge
+    }
+    guard let lastSuccessfulDrainAt else { return false }
+    return now.timeIntervalSince(lastSuccessfulDrainAt) <= maximumDrainSuccessAge
   }
 }

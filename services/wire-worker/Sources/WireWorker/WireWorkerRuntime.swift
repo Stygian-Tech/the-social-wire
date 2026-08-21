@@ -11,7 +11,7 @@ enum WireWorkerRuntime {
       let startedAt = Date()
       do {
         let outcome = try await cycle.run(asOf: startedAt)
-        await state.recordSuccess(at: startedAt)
+        await state.recordGenerationSuccess(at: startedAt)
         switch outcome {
         case .off:
           logger.info("The Wire is remotely off")
@@ -26,7 +26,7 @@ enum WireWorkerRuntime {
           )
         }
       } catch {
-        await state.recordFailure(error)
+        await state.recordGenerationFailure(error)
         logger.error("The Wire generation cycle failed", metadata: ["error": .string(String(reflecting: error))])
       }
       try await Task.sleep(for: .seconds(cycle.config.intervalSeconds))

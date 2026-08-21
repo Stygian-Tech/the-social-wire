@@ -33,61 +33,84 @@ struct PostgresWireInboxProcessor: Sendable {
   let logger: Logger
   let actorHasher: WireActorHasher
   let batchSize: Int
+  let maximumConcurrentEvents: Int
 
-  init(pool: PostgresClient, logger: Logger, actorSecret: String, batchSize: Int = 1_000) throws {
+  init(
+    pool: PostgresClient,
+    logger: Logger,
+    actorSecret: String,
+    batchSize: Int = 1_000,
+    maximumConcurrentEvents: Int = 16
+  ) throws {
     self.pool = pool
     self.logger = logger
     self.actorHasher = try WireActorHasher(secret: Data(actorSecret.utf8))
     self.batchSize = max(1, min(batchSize, 5_000))
+    self.maximumConcurrentEvents = max(1, min(maximumConcurrentEvents, 64))
   }
 
   func process(asOf: Date) async throws -> Int {
     let events = try await claim(asOf: asOf)
-    for event in events {
-      do {
-        try await apply(event, asOf: asOf)
-        try await finish(event, status: "applied", retryAt: asOf, reason: nil, asOf: asOf)
-      } catch ApplyError.unresolvedReference {
-        if asOf.timeIntervalSince(event.eventTime) < 24 * 3_600 {
-          try await finish(
-            event,
-            status: "retry",
-            retryAt: asOf.addingTimeInterval(30),
-            reason: "unresolved_subject",
-            asOf: asOf
-          )
-        } else {
-          try await finish(
-            event,
-            status: "dead_letter",
-            retryAt: asOf,
-            reason: "unresolved_subject_expired",
-            asOf: asOf
-          )
-        }
-      } catch ApplyError.malformed {
+    var iterator = events.makeIterator()
+    try await withThrowingTaskGroup(of: Void.self) { tasks in
+      for _ in 0..<min(maximumConcurrentEvents, events.count) {
+        guard let event = iterator.next() else { break }
+        tasks.addTask { try await process(event, asOf: asOf) }
+      }
+      while try await tasks.next() != nil {
+        guard let event = iterator.next() else { continue }
+        tasks.addTask { try await process(event, asOf: asOf) }
+      }
+    }
+    return events.count
+  }
+
+  func maintain(asOf: Date) async throws {
+    try await pruneActiveGraph(asOf: asOf)
+    try await refreshCommunitiesIfNeeded(asOf: asOf)
+    try await refreshRollups(asOf: asOf)
+  }
+
+  private func process(_ event: InboxEvent, asOf: Date) async throws {
+    do {
+      try await apply(event, asOf: asOf)
+      try await finish(event, status: "applied", retryAt: asOf, reason: nil, asOf: asOf)
+    } catch ApplyError.unresolvedReference {
+      if asOf.timeIntervalSince(event.eventTime) < 24 * 3_600 {
+        try await finish(
+          event,
+          status: "retry",
+          retryAt: asOf.addingTimeInterval(30),
+          reason: "unresolved_subject",
+          asOf: asOf
+        )
+      } else {
         try await finish(
           event,
           status: "dead_letter",
           retryAt: asOf,
-          reason: "malformed_event",
-          asOf: asOf
-        )
-      } catch {
-        let terminal = event.attemptCount >= 8
-        try await finish(
-          event,
-          status: terminal ? "dead_letter" : "retry",
-          retryAt: terminal ? asOf : asOf.addingTimeInterval(60),
-          reason: String(reflecting: error).prefix(500).description,
+          reason: "unresolved_subject_expired",
           asOf: asOf
         )
       }
+    } catch ApplyError.malformed {
+      try await finish(
+        event,
+        status: "dead_letter",
+        retryAt: asOf,
+        reason: "malformed_event",
+        asOf: asOf
+      )
+    } catch {
+      let terminal = event.attemptCount >= 8
+      try await finish(
+        event,
+        status: terminal ? "dead_letter" : "retry",
+        retryAt: terminal ? asOf : asOf.addingTimeInterval(60),
+        reason: String(reflecting: error).prefix(500).description,
+        asOf: asOf
+      )
     }
-    try await pruneActiveGraph(asOf: asOf)
-    try await refreshCommunitiesIfNeeded(asOf: asOf)
-    try await refreshRollups(asOf: asOf)
-    return events.count
   }
 
   private func claim(asOf: Date) async throws -> [InboxEvent] {
@@ -152,6 +175,9 @@ struct PostgresWireInboxProcessor: Sendable {
   }
 
   private func apply(_ event: InboxEvent, asOf: Date) async throws {
+    if Self.isPayloadNormalizationFailure(event.payloadJSON) {
+      throw ApplyError.malformed
+    }
     if event.eventKind == "account" {
       try await applyAccountLifecycle(event, asOf: asOf)
       return
@@ -195,6 +221,15 @@ struct PostgresWireInboxProcessor: Sendable {
     default:
       return
     }
+  }
+
+  static func isPayloadNormalizationFailure(_ payloadJSON: String) -> Bool {
+    guard
+      let document = try? JSONSerialization.jsonObject(with: Data(payloadJSON.utf8))
+        as? [String: Any],
+      let error = document["$wireIngestionError"] as? [String: Any]
+    else { return false }
+    return error["code"] as? String == "payload_normalization_failed"
   }
 
   private func applyArticle(

@@ -4,7 +4,11 @@ import NIOSSL
 import PostgresNIO
 
 enum PostgresWireConfig {
-  static func make(from urlString: String, logger: Logger) throws -> PostgresClient.Configuration {
+  static func make(
+    from urlString: String,
+    maximumConnections: Int = 2,
+    logger: Logger
+  ) throws -> PostgresClient.Configuration {
     guard let url = URL(string: urlString), let host = url.host, !host.isEmpty else {
       logger.critical("DATABASE_URL is not a valid URL")
       throw WireWorkerConfigError.missingDatabaseURL
@@ -19,7 +23,7 @@ enum PostgresWireConfig {
       database: String(url.path.drop(while: { $0 == "/" })).nilIfEmpty,
       tls: .prefer(tls)
     )
-    config.options.maximumConnections = 2
+    config.options.maximumConnections = max(2, min(maximumConnections, 64))
     return config
   }
 }
