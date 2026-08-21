@@ -13,6 +13,19 @@ const knownHistoricalDuplicates = new Set([
 ]);
 
 describe("database migration history", () => {
+  it("uses one migration per timestamp version", () => {
+    const migrationsByVersion = new Map<string, string[]>();
+
+    for (const filename of readdirSync(MIGRATIONS_ROOT).filter((name) => name.endsWith(".sql"))) {
+      const version = filename.split("_", 1)[0];
+      const migrations = migrationsByVersion.get(version) ?? [];
+      migrations.push(filename);
+      migrationsByVersion.set(version, migrations);
+    }
+
+    expect([...migrationsByVersion.values()].filter((filenames) => filenames.length > 1)).toEqual([]);
+  });
+
   it("does not introduce duplicate migration bodies", () => {
     const migrationsByHash = new Map<string, string[]>();
 

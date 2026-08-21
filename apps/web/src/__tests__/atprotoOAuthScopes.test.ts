@@ -8,6 +8,7 @@ import {
   SKYREADER_REPO_SCOPES,
   SOCIAL_WIRE_REPO_SCOPES,
   STANDARD_SITE_SOCIAL_PERMISSION_SCOPE,
+  WIRE_MODERATION_RPC_SCOPES,
 } from "@/lib/atprotoOAuthScopes";
 import {
   USER_INPUT_BLOB_OAUTH_SCOPE,
@@ -55,6 +56,7 @@ describe("atprotoOAuthScopes", () => {
           (scope) =>
             scope.startsWith("repo:") ||
             scope.startsWith("include:") ||
+            scope.startsWith("rpc:") ||
             scope.startsWith("blob:")
         )
     ).toBe(true);
@@ -77,5 +79,13 @@ describe("atprotoOAuthScopes", () => {
     ]);
     expect(USER_INPUT_OAUTH_SCOPE).toBe("include:app.userinput.authFull");
     expect(USER_INPUT_BLOB_OAUTH_SCOPE).toBe("blob:*/*");
+    expect(WIRE_MODERATION_RPC_SCOPES).toEqual([
+      "rpc:app.bsky.actor.getPreferences?aud=did:web:api.bsky.app%23bsky_appview",
+      "rpc:app.bsky.graph.getBlocks?aud=did:web:api.bsky.app%23bsky_appview",
+      "rpc:app.bsky.graph.getMutes?aud=did:web:api.bsky.app%23bsky_appview",
+      "rpc:app.bsky.graph.getListMutes?aud=did:web:api.bsky.app%23bsky_appview",
+      "rpc:app.bsky.graph.getListBlocks?aud=did:web:api.bsky.app%23bsky_appview",
+      "rpc:app.bsky.graph.getList?aud=did:web:api.bsky.app%23bsky_appview",
+    ]);
   });
 });

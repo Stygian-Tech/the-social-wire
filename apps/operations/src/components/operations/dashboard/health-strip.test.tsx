@@ -180,6 +180,63 @@ describe("HealthStrip", () => {
     expect(screen.getByText(/Jetstream V2 Inbox · authoritative checkpoint .* Charybdis freshness healthy/)).toBeTruthy()
   })
 
+  it("shows a completed The Wire snapshot as healthy without an intake heartbeat", () => {
+    const services = demoOverview.services.map((service) => ({
+      ...service,
+      freshness: "healthy" as const,
+      dependencyState: service.service === "appview-worker"
+        ? { ...service.dependencyState, ingestion_authority: "jetstream_v2_inbox" }
+        : service.dependencyState,
+    }))
+    render(
+      <HealthStrip
+        overview={{
+          ...demoOverview,
+          services,
+          ingestion: undefined,
+          evidence: {
+            ...demoOverview.evidence,
+            ingestion: {
+              ...demoOverview.evidence.ingestion,
+              accuracy: "exact",
+              validUntil: "2100-01-01T00:00:00.000Z",
+            },
+          },
+          durability: {
+            environment: "dev",
+            checkpoints: [{
+              environment: "dev",
+              sourceGeneration: "wire-v2",
+              sourceHost: "jetstream.us-west.bsky.network",
+              streamNSID: "network.bsky.jetstream.subscribeEvents",
+              filterFingerprint: "wire-v1",
+              cursorKind: "jetstream_v2_seq",
+              lastStagedSequence: 200,
+              replayState: "snapshot_complete",
+              replayAfterSequence: 100,
+              replayBeforeSequence: 200,
+              replaySealedSequence: 200,
+              replayBytesDownloaded: 2_048,
+              replayRetryCount: 0,
+              replayRangeResumeCount: 0,
+              updatedAt: new Date(
+                new Date(demoOverview.refreshedAt).getTime() - 3_600_000,
+              ).toISOString(),
+            }],
+            inbox: { pending: 0, leased: 0, retrying: 0, applied: 100, deadLetters: 0, total: 100 },
+            incidents: { open: 0, recovering: 0, verificationRequired: 0, resolved: 0, ignored: 0 },
+            replayBytesRolling24Hours: 2_048,
+            generatedAt: demoOverview.refreshedAt,
+          },
+        }}
+      />,
+    )
+
+    expect(screen.getByText("Ingestion Freshness").nextElementSibling?.textContent).toBe("Good")
+    expect(screen.getByText("The Wire bounded snapshot is complete · Charybdis freshness healthy")).toBeTruthy()
+    expect(screen.queryByText("Disconnected")).toBeNull()
+  })
+
   it("does not treat a projection checkpoint write as V2 intake freshness", () => {
     const services = demoOverview.services.map((service) => ({
       ...service,

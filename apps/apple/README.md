@@ -95,7 +95,7 @@ The app signs in with the ATProto OAuth authorization-code flow, PKCE (`S256`), 
 4. Open the discovered `authorization_endpoint` with only `client_id` and the returned `request_uri`.
 5. Receive the code on **`{reversed-client-id-host}:/oauth/callback`**, then exchange and refresh tokens at the discovered `token_endpoint`.
 
-The scope includes Social Wire folders/preferences, Bluesky social actions, L@tr records, Skyreader subscriptions, and standard.site/user-input permission sets. The refresh token, current access token, token endpoint, and DPoP key are stored in Keychain.
+The scope includes Social Wire folders/preferences, Bluesky social actions and viewer-moderation reads, L@tr records, Skyreader subscriptions, and standard.site/user-input permission sets. The refresh token, current access token, token endpoint, and DPoP key are stored in Keychain. Existing sessions must reauthenticate before viewer-aware moderation can be applied.
 
 Source of truth: [`SocialWire/Services/ATProtoOAuthService.swift`](SocialWire/Services/ATProtoOAuthService.swift).
 
@@ -128,9 +128,10 @@ See [docs/test-plans/apple.md](../../docs/test-plans/apple.md).
 
 ## Reader navigation
 
-- **iPhone / compact width:** a page-style horizontal `TabView`. Subscribed and Following use **Lists → Publications → Articles → Reader**. Read Later and Archive use **Lists → Saved Links → Reader** with contiguous three-pane tags.
-- **iPad / regular width:** `NavigationSplitView` uses three columns for Subscribed/Following (combined lists/publications sidebar, articles, reader) and two for Read Later/Archive (combined lists/saved-links sidebar, reader).
-- Reader chrome is hosted once by `MainSplitView`: profile, refresh, and scoped **Mark All As Read** actions are in the toolbar. Feed sources show an **All / Unread** segmented filter; saved-link sources do not.
+- **iPhone / compact width:** a page-style horizontal `TabView`. Subscribed and Following use **Lists → Publications → Articles → Reader**. The Wire uses **Lists → Articles → Reader**. Read Later and Archive use **Lists → Saved Links → Reader** with contiguous three-pane tags.
+- **iPad / regular width:** `NavigationSplitView` uses three columns for The Wire and Subscribed/Following (combined lists/publications sidebar, articles, reader) and two for Read Later/Archive (combined lists/saved-links sidebar, reader).
+- Reader chrome is hosted once by `MainSplitView`: profile, refresh, and scoped **Mark All As Read** actions are in the toolbar. Subscribed and Following show an **All / Unread** segmented filter; The Wire and saved-link sources do not.
+- The Wire is capability-gated by `app.thesocialwire.discovery.getFeedCatalog`, uses viewer-scoped SwiftData page/detail caches, and never participates in unread state, read actions, or feed-display PDS preferences.
 - Read Later and Archive use `link.latr.bookmarks.*` through the Social Wire Gateway for list/save/archive/unarchive/delete and lazy legacy migration.
 
 ## OAuth client metadata (production vs development)

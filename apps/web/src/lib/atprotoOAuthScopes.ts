@@ -41,6 +41,16 @@ export const BLUESKY_SOCIAL_REPO_SCOPES = [
   "repo:app.bsky.feed.repost?action=create",
 ] as const;
 
+/** Viewer moderation reads used by authenticated The Wire requests. */
+export const WIRE_MODERATION_RPC_SCOPES = [
+  "rpc:app.bsky.actor.getPreferences?aud=did:web:api.bsky.app%23bsky_appview",
+  "rpc:app.bsky.graph.getBlocks?aud=did:web:api.bsky.app%23bsky_appview",
+  "rpc:app.bsky.graph.getMutes?aud=did:web:api.bsky.app%23bsky_appview",
+  "rpc:app.bsky.graph.getListMutes?aud=did:web:api.bsky.app%23bsky_appview",
+  "rpc:app.bsky.graph.getListBlocks?aud=did:web:api.bsky.app%23bsky_appview",
+  "rpc:app.bsky.graph.getList?aud=did:web:api.bsky.app%23bsky_appview",
+] as const;
+
 export const STANDARD_SITE_SOCIAL_PERMISSION_SCOPE =
   "include:site.standard.authSocial";
 
@@ -52,6 +62,7 @@ export const AT_PROTO_OAUTH_SCOPES = [
   "atproto",
   ...SOCIAL_WIRE_REPO_SCOPES,
   ...BLUESKY_SOCIAL_PERMISSION_SCOPES,
+  ...WIRE_MODERATION_RPC_SCOPES,
   ...BLUESKY_SOCIAL_REPO_SCOPES,
   ...LATR_REPO_OAUTH_SCOPES,
   STANDARD_SITE_SOCIAL_PERMISSION_SCOPE,

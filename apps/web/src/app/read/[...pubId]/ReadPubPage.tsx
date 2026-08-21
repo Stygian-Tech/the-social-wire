@@ -14,12 +14,17 @@ import type { AggregateAppViewFeed } from "@/lib/thinAppViewClient";
 import { useFeedDisplayPreferences } from "@/hooks/useFeedDisplayPreferences";
 import { useAuth } from "@/hooks/useAuth";
 
+const ignoreTheWireReadState = () => undefined;
+const theWireEntryIsUnread = () => false;
+
 export default function ReadPubPage({
   pubId,
   aggregateFeed,
+  wireFeed = false,
 }: {
   pubId?: string;
   aggregateFeed?: AggregateAppViewFeed;
+  wireFeed?: boolean;
 }) {
   const [rssReaderEntry, setRssReaderEntry] = useState<{
     entryId: string;
@@ -65,6 +70,7 @@ export default function ReadPubPage({
       if (target.kind === "rssReader") {
         pendingTab?.close();
         if (
+          !wireFeed &&
           articleListFilter === "unread" &&
           rssReaderEntry &&
           rssReaderEntry.entryId !== entryId
@@ -76,20 +82,20 @@ export default function ReadPubPage({
           title: entry.title ?? "RSS Article",
           url: target.url,
         });
-        if (articleListFilter !== "unread") {
+        if (!wireFeed && articleListFilter !== "unread") {
           markEntryReadForPub(entryId);
         }
         return;
       }
 
-      markEntryReadForPub(entryId);
+      if (!wireFeed) markEntryReadForPub(entryId);
       if (pendingTab) {
         pendingTab.location.href = target.url;
         return;
       }
       window.open(target.url, "_blank", OUTBOUND_WINDOW_FEATURES);
     },
-    [articleListFilter, markEntryReadForPub, rssReaderEntry],
+    [articleListFilter, markEntryReadForPub, rssReaderEntry, wireFeed],
   );
 
   const handleSelectEntry = useCallback(
@@ -143,11 +149,11 @@ export default function ReadPubPage({
   );
 
   const closeRssReader = useCallback(() => {
-    if (articleListFilter === "unread" && rssReaderEntry) {
+    if (!wireFeed && articleListFilter === "unread" && rssReaderEntry) {
       markEntryReadForPub(rssReaderEntry.entryId);
     }
     setRssReaderEntry(null);
-  }, [articleListFilter, markEntryReadForPub, rssReaderEntry]);
+  }, [articleListFilter, markEntryReadForPub, rssReaderEntry, wireFeed]);
 
   return (
     <>
@@ -179,14 +185,19 @@ export default function ReadPubPage({
           <EntryList
             pubId={pubId}
             aggregateFeed={aggregateFeed}
+            wireFeed={wireFeed}
             selectedEntryId={rssReaderEntry?.entryId ?? null}
             resolvingEntryId={resolvingEntryId}
             onSelectEntry={handleSelectEntry}
-            isEntryRead={isEntryRead}
-            readIndicatorsEnabled
-            articleFilter={articleListFilter}
-            markEntryRead={markEntryReadForPub}
-            markEntryUnread={markEntryUnreadForPub}
+            isEntryRead={wireFeed ? theWireEntryIsUnread : isEntryRead}
+            readIndicatorsEnabled={!wireFeed}
+            articleFilter={wireFeed ? "all" : articleListFilter}
+            markEntryRead={
+              wireFeed ? ignoreTheWireReadState : markEntryReadForPub
+            }
+            markEntryUnread={
+              wireFeed ? ignoreTheWireReadState : markEntryUnreadForPub
+            }
           />
         </div>
       </div>

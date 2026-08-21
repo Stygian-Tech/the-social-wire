@@ -5,12 +5,15 @@ import Hummingbird
 import Logging
 import OperationsCore
 import ThinAppViewCore
+import WireCore
 
 enum AppViewRouterBuilder {
   static func router(
     config: AppViewServiceConfig,
     httpClient: HTTPClient,
     thinAppViewStore: any ThinAppViewStore,
+    wireFeedStore: (any WireFeedStore)? = nil,
+    wireModerationService: WireViewerModerationService? = nil,
     projectionCache: (any AppViewProjectionCacheStore)?,
     operationsStore: (any OperationsStore)? = nil,
     telemetry: OperationsTelemetryBuffer? = nil,
@@ -50,6 +53,19 @@ enum AppViewRouterBuilder {
       .add(middleware: AppViewFeedErrorMiddleware())
       .add(middleware: internalTrustMiddleware)
       .add(middleware: authMiddleware)
+
+    if let wireFeedStore, let wireModerationService, config.wire.mode.servesAPI {
+      let wireInternalTrustMiddleware = GatewayInternalTrustAuthMiddleware(
+        sharedSecret: config.core.gatewayAppViewInternalSecret,
+        allowsAnonymousDiscovery: true,
+        logger: logger
+      )
+      let wire = router.group()
+        .add(middleware: XRPCErrorMiddleware())
+        .add(middleware: wireInternalTrustMiddleware)
+        .add(middleware: authMiddleware)
+      WireDiscoveryRoutes(store: wireFeedStore, moderation: wireModerationService).register(on: wire)
+    }
 
     guard config.thinAppView.enabled else { return router }
 

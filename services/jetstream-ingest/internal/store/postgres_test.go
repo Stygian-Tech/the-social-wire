@@ -5,10 +5,12 @@ import (
 	"database/sql"
 	"errors"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/stygian-tech/the-social-wire/services/jetstream-ingest/internal/config"
 	"github.com/stygian-tech/the-social-wire/services/jetstream-ingest/internal/ingest"
 )
 
@@ -18,6 +20,13 @@ func testSource() ingest.SourceIdentity {
 		StreamNSID:        "network.bsky.jetstream.subscribeEvents",
 		FilterFingerprint: "filter", CursorKind: "jetstream_v2_seq", Generation: "west-v1",
 	}
+}
+
+func wireTestSource() ingest.SourceIdentity {
+	source := testSource()
+	source.PipelineMode = config.WirePipelineMode
+	source.Generation = config.WireSourceGeneration
+	return source
 }
 
 func TestStageBatchCommitsInboxAndCheckpointAtomically(t *testing.T) {
@@ -38,11 +47,175 @@ func TestStageBatchCommitsInboxAndCheckpointAtomically(t *testing.T) {
 		WithArgs("dev", "west-v1", int64(7), "jetstream.us-west.bsky.network", "jetstream_v2_seq", "commit", "did:plc:test", nil, nil, nil, nil, nil, string(event.Payload), now).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec("INSERT INTO appview_jetstream_checkpoints").
-		WithArgs("dev", "west-v1", "jetstream.us-west.bsky.network", "network.bsky.jetstream.subscribeEvents", "filter", "jetstream_v2_seq", int64(7), now, "live", int64(0), int64(0), int64(0), 0, 0, nil, now).
+		WithArgs("dev", "west-v1", "jetstream.us-west.bsky.network", "network.bsky.jetstream.subscribeEvents", "filter", "jetstream_v2_seq", int64(7), now, "live", int64(0), nil, int64(0), int64(0), 0, 0, nil, now).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectCommit()
 
 	err = store.StageBatch(context.Background(), lease, []ingest.InboxEvent{event}, 7, now, ReplayProgress{State: "live", LastProgressAt: now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestStageBatchNormalizesUnsupportedUnicodeOnlyForWireInbox(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	store := New(db, wireTestSource())
+	now := time.Unix(1_700_000_000, 0).UTC()
+	event := ingest.InboxEvent{
+		Seq: 7, Time: now, Kind: "commit", RepoDID: "did:plc:test",
+		Payload: []byte(`{"record":{"text":"before\u0000after","literal":"\\u0000"}}`),
+	}
+	lease := Lease{Name: "wire-global-v1-ingest", OwnerID: "owner", FencingToken: 3}
+
+	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT TRUE").
+		WithArgs("dev", lease.Name, config.WireSourceGeneration, lease.OwnerID, int64(3)).
+		WillReturnRows(sqlmock.NewRows([]string{"valid"}).AddRow(true))
+	mock.ExpectExec("INSERT INTO wire_ingestion_inbox").
+		WithArgs(
+			"dev", config.WireSourceGeneration, int64(7), "jetstream.us-west.bsky.network",
+			"jetstream_v2_seq", "commit", "did:plc:test", nil, nil, nil, nil, nil,
+			"{\"record\":{\"literal\":\"\\\\u0000\",\"text\":\"before�after\"}}", now,
+		).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("UPDATE wire_ingestion_admission").
+		WithArgs("dev", int64(1)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("INSERT INTO appview_jetstream_checkpoints").
+		WithArgs(
+			"dev", config.WireSourceGeneration, "jetstream.us-west.bsky.network",
+			"network.bsky.jetstream.subscribeEvents", "filter", "jetstream_v2_seq", int64(7),
+			now, "live", int64(0), nil, int64(0), int64(0), 0, 0, nil, now,
+		).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+
+	err = store.StageBatch(
+		context.Background(), lease, []ingest.InboxEvent{event}, 7, now,
+		ReplayProgress{State: "live", LastProgressAt: now},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestWireAdmissionAtCapAllowsDuplicateOnlyReplayToAdvanceCheckpoint(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	postgres := New(db, wireTestSource())
+	postgres.ConfigureWireAdmission(5_000_000, 95<<30)
+	lease := Lease{Name: "wire-global-v1-ingest", OwnerID: "owner", FencingToken: 3}
+
+	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT TRUE").
+		WithArgs("dev", lease.Name, config.WireSourceGeneration, lease.OwnerID, int64(3)).
+		WillReturnRows(sqlmock.NewRows([]string{"valid"}).AddRow(true))
+	mock.ExpectQuery("SELECT retained_rows").
+		WithArgs("dev").
+		WillReturnRows(sqlmock.NewRows([]string{"retained_rows", "database_bytes"}).AddRow(int64(5_000_000), int64(20<<30)))
+	mock.ExpectExec("INSERT INTO wire_ingestion_inbox").WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec("INSERT INTO appview_jetstream_checkpoints").WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+
+	err = postgres.StageBatch(
+		context.Background(), lease,
+		[]ingest.InboxEvent{{Seq: 8, Time: time.Now().UTC(), Kind: "commit", RepoDID: "did:plc:test", Payload: []byte(`{}`)}},
+		8, time.Now().UTC(), ReplayProgress{State: "live"},
+	)
+	if err != nil {
+		t.Fatalf("duplicate-only replay = %v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestWireAdmissionMixedReplayRollsBackWhenActualNewRowsExceedCap(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	postgres := New(db, wireTestSource())
+	postgres.ConfigureWireAdmission(5_000_000, 95<<30)
+	lease := Lease{Name: "wire-global-v1-ingest", OwnerID: "owner", FencingToken: 3}
+	now := time.Now().UTC()
+	events := []ingest.InboxEvent{
+		{Seq: 8, Time: now, Kind: "commit", RepoDID: "did:plc:test", Payload: []byte(`{}`)},
+		{Seq: 9, Time: now, Kind: "commit", RepoDID: "did:plc:test", Payload: []byte(`{}`)},
+	}
+
+	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT TRUE").
+		WithArgs("dev", lease.Name, config.WireSourceGeneration, lease.OwnerID, int64(3)).
+		WillReturnRows(sqlmock.NewRows([]string{"valid"}).AddRow(true))
+	mock.ExpectQuery("SELECT retained_rows").
+		WithArgs("dev").
+		WillReturnRows(sqlmock.NewRows([]string{"retained_rows", "database_bytes"}).AddRow(int64(5_000_000), int64(20<<30)))
+	mock.ExpectExec("INSERT INTO wire_ingestion_inbox").WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec("INSERT INTO wire_ingestion_inbox").WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectRollback()
+
+	err = postgres.StageBatch(context.Background(), lease, events, 9, now, ReplayProgress{State: "live"})
+	if !errors.Is(err, ErrWireAdmissionPaused) {
+		t.Fatalf("admission error = %v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestStageBatchLeavesPublicationLanePayloadUnchanged(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	store := New(db, testSource())
+	now := time.Unix(1_700_000_000, 0).UTC()
+	event := ingest.InboxEvent{
+		Seq: 7, Time: now, Kind: "commit", RepoDID: "did:plc:test",
+		Payload: []byte(`{"record":{"text":"before\u0000after"}}`),
+	}
+	lease := Lease{Name: "jetstream-v2-ingest", OwnerID: "owner", FencingToken: 3}
+
+	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT TRUE").
+		WithArgs("dev", lease.Name, "west-v1", lease.OwnerID, int64(3)).
+		WillReturnRows(sqlmock.NewRows([]string{"valid"}).AddRow(true))
+	mock.ExpectExec("INSERT INTO appview_ingestion_inbox").
+		WithArgs(
+			"dev", "west-v1", int64(7), "jetstream.us-west.bsky.network",
+			"jetstream_v2_seq", "commit", "did:plc:test", nil, nil, nil, nil, nil,
+			string(event.Payload), now,
+		).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("INSERT INTO appview_jetstream_checkpoints").
+		WithArgs(
+			"dev", "west-v1", "jetstream.us-west.bsky.network",
+			"network.bsky.jetstream.subscribeEvents", "filter", "jetstream_v2_seq", int64(7),
+			now, "live", int64(0), nil, int64(0), int64(0), 0, 0, nil, now,
+		).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+
+	err = store.StageBatch(
+		context.Background(), lease, []ingest.InboxEvent{event}, 7, now,
+		ReplayProgress{State: "live", LastProgressAt: now},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,11 +279,172 @@ func TestLoadCheckpointRejectsChangedIdentity(t *testing.T) {
 	defer db.Close()
 	store := New(db, testSource())
 	mock.ExpectQuery("SELECT source_host").WithArgs("dev", "west-v1").WillReturnRows(
-		sqlmock.NewRows([]string{"source_host", "stream_nsid", "filter_fingerprint", "cursor_kind", "last_staged_seq", "replay_bytes_downloaded", "replay_state", "replay_retry_count", "replay_range_resume_count", "replay_etag", "last_staged_at", "replay_last_progress_at"}).
-			AddRow("jetstream.us-east.bsky.network", "network.bsky.jetstream.subscribeEvents", "filter", "jetstream_v2_seq", int64(10), int64(0), "live", 0, 0, "", nil, nil),
+		sqlmock.NewRows([]string{"source_host", "stream_nsid", "filter_fingerprint", "cursor_kind", "last_staged_seq", "replay_bytes_downloaded", "replay_state", "replay_after_seq", "replay_before_seq", "replay_sealed_seq", "replay_retry_count", "replay_range_resume_count", "replay_etag", "last_staged_at", "replay_last_progress_at"}).
+			AddRow("jetstream.us-east.bsky.network", "network.bsky.jetstream.subscribeEvents", "filter", "jetstream_v2_seq", int64(10), int64(0), "live", nil, nil, nil, 0, 0, "", nil, nil),
 	)
 	if _, err := store.LoadCheckpoint(context.Background()); err == nil {
 		t.Fatal("expected identity mismatch")
+	}
+}
+
+func TestLoadCheckpointPreservesNullableLastEventAndExactSnapshotBounds(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	postgres := New(db, wireTestSource())
+	mock.ExpectQuery("SELECT source_host").WithArgs("dev", config.WireSourceGeneration).WillReturnRows(
+		sqlmock.NewRows([]string{"source_host", "stream_nsid", "filter_fingerprint", "cursor_kind", "last_staged_seq", "replay_bytes_downloaded", "replay_state", "replay_after_seq", "replay_before_seq", "replay_sealed_seq", "replay_retry_count", "replay_range_resume_count", "replay_etag", "last_staged_at", "replay_last_progress_at"}).
+			AddRow("jetstream.us-west.bsky.network", "network.bsky.jetstream.subscribeEvents", "filter", "jetstream_v2_seq", nil, int64(42), "snapshot_complete", int64(0), int64(200), int64(200), 2, 3, "etag", nil, nil),
+	)
+	checkpoint, err := postgres.LoadCheckpoint(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if checkpoint == nil || checkpoint.LastStagedSeq != nil ||
+		checkpoint.ReplayAfterSeq == nil || *checkpoint.ReplayAfterSeq != 0 ||
+		checkpoint.ReplayBeforeSeq == nil || *checkpoint.ReplayBeforeSeq != 200 ||
+		checkpoint.ReplaySealedSeq == nil || *checkpoint.ReplaySealedSeq != 200 {
+		t.Fatalf("nullable bounded checkpoint = %#v", checkpoint)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestEnsureSnapshotRangeBindsExactWindowBeforeDownloading(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	postgres := New(db, wireTestSource())
+	lease := Lease{Name: "wire-snapshot", OwnerID: "owner", FencingToken: 11}
+
+	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT TRUE").
+		WithArgs("dev", lease.Name, config.WireSourceGeneration, lease.OwnerID, int64(11)).
+		WillReturnRows(sqlmock.NewRows([]string{"valid"}).AddRow(true))
+	mock.ExpectExec("INSERT INTO appview_jetstream_checkpoints").
+		WithArgs(
+			"dev", config.WireSourceGeneration, "jetstream.us-west.bsky.network",
+			"network.bsky.jetstream.subscribeEvents", "filter", "jetstream_v2_seq",
+			int64(100), int64(200),
+		).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+
+	if err := postgres.EnsureSnapshotRange(context.Background(), lease, 100, 200); err != nil {
+		t.Fatal(err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestEnsureSnapshotRangeRejectsChangedWindowForSameGeneration(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	postgres := New(db, wireTestSource())
+	lease := Lease{Name: "wire-snapshot", OwnerID: "owner", FencingToken: 11}
+
+	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT TRUE").WillReturnRows(sqlmock.NewRows([]string{"valid"}).AddRow(true))
+	mock.ExpectExec("INSERT INTO appview_jetstream_checkpoints").
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectRollback()
+	err = postgres.EnsureSnapshotRange(context.Background(), lease, 100, 201)
+	if err == nil || !strings.Contains(err.Error(), "immutable range mismatch") {
+		t.Fatalf("changed-window binding error = %v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCompleteSnapshotPersistsExactBoundsUnderLeaseFence(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	postgres := New(db, wireTestSource())
+	lease := Lease{Name: "wire-snapshot", OwnerID: "owner", FencingToken: 11}
+
+	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT TRUE").
+		WithArgs("dev", lease.Name, config.WireSourceGeneration, lease.OwnerID, int64(11)).
+		WillReturnRows(sqlmock.NewRows([]string{"valid"}).AddRow(true))
+	mock.ExpectExec("INSERT INTO appview_jetstream_checkpoints").
+		WithArgs(
+			"dev", config.WireSourceGeneration, "jetstream.us-west.bsky.network",
+			"network.bsky.jetstream.subscribeEvents", "filter", "jetstream_v2_seq",
+			int64(100), int64(200), int64(200), int64(42), 2, 3, "etag",
+		).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+
+	err = postgres.CompleteSnapshot(
+		context.Background(), lease, 100, 200,
+		ReplayProgress{SealedSeq: 200, BytesDownloaded: 42, RetryCount: 2, RangeResumeCount: 3, ETag: "etag"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCompleteSnapshotRejectsChangedBoundsForSameGeneration(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	postgres := New(db, wireTestSource())
+	lease := Lease{Name: "wire-snapshot", OwnerID: "owner", FencingToken: 11}
+
+	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT TRUE").WillReturnRows(sqlmock.NewRows([]string{"valid"}).AddRow(true))
+	mock.ExpectExec("INSERT INTO appview_jetstream_checkpoints").
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectRollback()
+	err = postgres.CompleteSnapshot(
+		context.Background(), lease, 100, 201, ReplayProgress{SealedSeq: 201},
+	)
+	if err == nil || !strings.Contains(err.Error(), "identity or range mismatch") {
+		t.Fatalf("changed-bound completion error = %v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCompleteSnapshotRejectsStaleFenceBeforeCheckpointWrite(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	postgres := New(db, wireTestSource())
+	lease := Lease{Name: "wire-snapshot", OwnerID: "old-owner", FencingToken: 10}
+
+	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT TRUE").WillReturnError(sql.ErrNoRows)
+	mock.ExpectRollback()
+	err = postgres.CompleteSnapshot(
+		context.Background(), lease, 100, 200, ReplayProgress{SealedSeq: 200},
+	)
+	if !errors.Is(err, ErrLeaseUnavailable) {
+		t.Fatalf("error = %v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
 	}
 }
 

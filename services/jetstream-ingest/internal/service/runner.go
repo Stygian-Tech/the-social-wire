@@ -20,6 +20,8 @@ import (
 	"github.com/stygian-tech/the-social-wire/services/jetstream-ingest/internal/store"
 )
 
+var errSnapshotComplete = errors.New("bounded Jetstream archive snapshot completed")
+
 type Runner struct {
 	cfg        config.Config
 	store      *store.Postgres
@@ -52,14 +54,37 @@ func (r *Runner) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	completed, err := snapshotCheckpointComplete(r.cfg, checkpoint)
+	if err != nil {
+		return err
+	}
+	if completed {
+		lastStagedSeq := checkpointLastStagedSeq(checkpoint)
+		r.lastSeq.Store(lastStagedSeq)
+		r.health.SnapshotComplete(lastStagedSeq)
+		r.logger.Info(
+			"bounded Jetstream archive snapshot already completed",
+			"lastSeq", lastStagedSeq,
+			"beforeSeq", *r.cfg.ReplayBeforeSeq,
+		)
+		<-ctx.Done()
+		return nil
+	}
 	if err := requireBootstrapSeam(checkpoint, r.cfg.BootstrapAfterSeq); err != nil {
 		return err
+	}
+	if r.cfg.ReplaySnapshotOnly {
+		if err := r.store.EnsureSnapshotRange(
+			ctx, r.lease, *r.cfg.BootstrapAfterSeq, *r.cfg.ReplayBeforeSeq,
+		); err != nil {
+			return err
+		}
 	}
 	var incidentBytes int64
 	progressSeed := time.Now().UTC()
 	if checkpoint != nil {
 		incidentBytes = checkpoint.ReplayBytesDownloaded
-		r.lastSeq.Store(checkpoint.LastStagedSeq)
+		r.lastSeq.Store(checkpointLastStagedSeq(checkpoint))
 		progressSeed = latestProgressTime(checkpoint.LastStagedAt, checkpoint.ReplayLastProgressAt, progressSeed)
 		if checkpoint.ReplayState == "replaying" {
 			r.evidence.Seed(checkpoint.ReplayRetryCount, checkpoint.ReplayRangeResumeCount, checkpoint.ReplayETag)
@@ -69,15 +94,30 @@ func (r *Runner) Run(ctx context.Context) error {
 	if err := r.store.PruneReplayUsage(ctx); err != nil {
 		return err
 	}
-	if err := r.registry.Load(ctx); err != nil {
-		return err
+	if r.cfg.PipelineMode != config.WirePipelineMode {
+		if err := r.registry.Load(ctx); err != nil {
+			return err
+		}
+		go r.registry.Run(ctx, r.cfg.TrackedDIDRefresh, r.logger)
 	}
-	go r.registry.Run(ctx, r.cfg.TrackedDIDRefresh, r.logger)
-	go r.monitorNoProgress(ctx, progressSeed)
+	monitorContext, stopMonitor := context.WithCancel(ctx)
+	defer stopMonitor()
+	go r.monitorNoProgress(monitorContext, progressSeed)
 	delay := r.cfg.BackoffMin
 	for ctx.Err() == nil {
 		beforeSeq := r.lastSeq.Load()
 		err := r.runOnce(ctx)
+		if errors.Is(err, errSnapshotComplete) {
+			stopMonitor()
+			r.health.SnapshotComplete(r.lastSeq.Load())
+			r.logger.Info(
+				"bounded Jetstream archive snapshot completed",
+				"lastSeq", r.lastSeq.Load(),
+				"beforeSeq", *r.cfg.ReplayBeforeSeq,
+			)
+			<-ctx.Done()
+			return nil
+		}
 		if r.lastSeq.Load() > beforeSeq {
 			delay = r.cfg.BackoffMin
 		}
@@ -87,6 +127,25 @@ func (r *Runner) Run(ctx context.Context) error {
 		r.health.Stream(false)
 		r.health.Error(err)
 		r.recordIncident(ctx, err)
+		var capacityError *store.WireCapacityExceededError
+		if errors.As(err, &capacityError) {
+			r.health.Paused(true)
+			r.health.Backpressure(
+				true, capacityError.InboxRows, capacityError.InboxMaxRows,
+				capacityError.DatabaseBytes, capacityError.DatabaseMaxBytes,
+			)
+			r.logger.Warn(
+				"The Wire intake paused at the durable admission boundary",
+				"inboxRows", capacityError.InboxRows, "inboxMaxRows", capacityError.InboxMaxRows,
+				"databaseBytes", capacityError.DatabaseBytes, "databaseMaxBytes", capacityError.DatabaseMaxBytes,
+			)
+			if !sleepContext(ctx, r.cfg.WireAdmissionPause) {
+				return nil
+			}
+			r.health.Paused(false)
+			continue
+		}
+		r.health.Backpressure(false, 0, r.cfg.WireInboxMaxRows, 0, r.cfg.WireDatabaseMaxBytes)
 		if errors.Is(err, ingest.ErrDailyBudgetExceeded) {
 			wait := r.budget.WaitForDailyCapacity()
 			if wait == 0 {
@@ -179,17 +238,8 @@ func (r *Runner) runOnce(ctx context.Context) error {
 			Evidence: r.evidence,
 		}}),
 	}
-	var replayAfter uint64
-	replaying := false
-	if checkpoint != nil {
-		replayAfter = inclusiveReplayAfter(checkpoint.LastStagedSeq)
-		options = append(options, jetstream.WithAfterSeq(replayAfter))
-		replaying = true
-	} else if r.cfg.BootstrapAfterSeq != nil {
-		replayAfter = *r.cfg.BootstrapAfterSeq
-		options = append(options, jetstream.WithAfterSeq(replayAfter))
-		replaying = true
-	}
+	replayAfter, replaying := replayStart(r.cfg, checkpoint)
+	options = append(options, replayOptions(r.cfg, replayAfter)...)
 
 	client, err := jetstream.Subscribe(r.cfg.Host, options...)
 	if err != nil {
@@ -208,7 +258,8 @@ func (r *Runner) runOnce(ctx context.Context) error {
 			continue
 		}
 		tracked := r.registry.Snapshot()
-		prepared, lastSeq, lastEventTime, err := ingest.PrepareBatch(batch.Events(), tracked)
+		prepared, lastSeq, lastEventTime, err := ingest.PrepareBatchForPipeline(
+			batch.Events(), tracked, r.cfg.PipelineMode == config.WirePipelineMode)
 		if err != nil {
 			return err
 		}
@@ -218,16 +269,26 @@ func (r *Runner) runOnce(ctx context.Context) error {
 		stats := client.Stats()
 		r.lastSealed.Store(stats.SealedTip)
 		state := "live"
-		if replaying && (stats.SealedTip == 0 || stats.ResidualGap > 0) {
+		if r.cfg.ReplaySnapshotOnly || (replaying && (stats.SealedTip == 0 || stats.ResidualGap > 0)) {
 			state = "replaying"
 		}
-		if state == "live" {
+		if state == "live" && !r.cfg.ReplaySnapshotOnly {
 			replaying = false
 			r.budget.ResetIncident()
 		}
 		evidence := r.evidence.Snapshot()
+		progressAfterSeq := replayAfter
+		progressBeforeSeq := uint64(0)
+		if r.cfg.ReplaySnapshotOnly {
+			// Persist the configured range, not the current resume cursor or the
+			// provider's sealed tip. replay_before_seq is the immutable configured
+			// identity; replay_sealed_seq remains honest provider progress.
+			progressAfterSeq = *r.cfg.BootstrapAfterSeq
+			progressBeforeSeq = *r.cfg.ReplayBeforeSeq
+		}
 		progress := store.ReplayProgress{
-			State: state, AfterSeq: replayAfter, SealedSeq: stats.SealedTip,
+			State: state, AfterSeq: progressAfterSeq, BeforeSeq: progressBeforeSeq,
+			SealedSeq:       stats.SealedTip,
 			BytesDownloaded: r.budget.IncidentUsed(), RetryCount: evidence.RetryCount,
 			RangeResumeCount: evidence.RangeResumeCount, ETag: evidence.ETag,
 			LastProgressAt: time.Now().UTC(),
@@ -235,16 +296,117 @@ func (r *Runner) runOnce(ctx context.Context) error {
 		if err := r.store.StageBatch(ctx, r.lease, prepared, lastSeq, lastEventTime, progress); err != nil {
 			return err
 		}
+		r.health.Backpressure(false, 0, r.cfg.WireInboxMaxRows, 0, r.cfg.WireDatabaseMaxBytes)
 		previousSeq := r.lastSeq.Load()
 		r.lastSeq.Store(lastSeq)
 		if lastSeq > previousSeq {
 			r.health.Progress(lastSeq)
 		}
 	}
-	if ctx.Err() != nil {
+	stats := client.Stats()
+	completionError := subscriptionEndError(
+		ctx.Err(), r.cfg.ReplaySnapshotOnly, stats, r.cfg.ReplayBeforeSeq,
+	)
+	if errors.Is(completionError, errSnapshotComplete) {
+		evidence := r.evidence.Snapshot()
+		progress := store.ReplayProgress{
+			State: "snapshot_complete", AfterSeq: *r.cfg.BootstrapAfterSeq,
+			BeforeSeq: *r.cfg.ReplayBeforeSeq, SealedSeq: stats.SealedTip,
+			BytesDownloaded: r.budget.IncidentUsed(), RetryCount: evidence.RetryCount,
+			RangeResumeCount: evidence.RangeResumeCount, ETag: evidence.ETag,
+			LastProgressAt: time.Now().UTC(),
+		}
+		if err := r.store.CompleteSnapshot(
+			ctx, r.lease, *r.cfg.BootstrapAfterSeq, *r.cfg.ReplayBeforeSeq, progress,
+		); err != nil {
+			return err
+		}
+	}
+	return completionError
+}
+
+func replayOptions(cfg config.Config, afterSeq uint64) []jetstream.Option {
+	options := []jetstream.Option{jetstream.WithAfterSeq(afterSeq)}
+	if cfg.ReplaySnapshotOnly {
+		options = append(
+			options,
+			jetstream.WithBeforeSeq(*cfg.ReplayBeforeSeq),
+			jetstream.WithSnapshotOnly(),
+		)
+	}
+	return options
+}
+
+func replayStart(cfg config.Config, checkpoint *ingest.Checkpoint) (uint64, bool) {
+	if checkpoint != nil && checkpoint.LastStagedSeq != nil {
+		return inclusiveReplayAfter(*checkpoint.LastStagedSeq), true
+	}
+	if cfg.BootstrapAfterSeq != nil {
+		return *cfg.BootstrapAfterSeq, true
+	}
+	return 0, false
+}
+
+func snapshotCheckpointComplete(cfg config.Config, checkpoint *ingest.Checkpoint) (bool, error) {
+	if !cfg.ReplaySnapshotOnly || checkpoint == nil {
+		return false, nil
+	}
+	if cfg.ReplayBeforeSeq == nil || cfg.BootstrapAfterSeq == nil {
+		return false, errors.New("bounded snapshot configuration is incomplete")
+	}
+	if checkpoint.LastStagedSeq != nil && *checkpoint.LastStagedSeq > *cfg.ReplayBeforeSeq {
+		return false, errors.New("bounded snapshot checkpoint advanced beyond its configured upper bound")
+	}
+	if !cursorMatches(checkpoint.ReplayAfterSeq, *cfg.BootstrapAfterSeq) ||
+		!cursorMatches(checkpoint.ReplayBeforeSeq, *cfg.ReplayBeforeSeq) {
+		return false, errors.New("bounded snapshot checkpoint bounds do not match configuration")
+	}
+	if checkpoint.ReplayState == "live" {
+		return false, errors.New("bounded snapshot checkpoint cannot use the live replay state")
+	}
+	if checkpoint.ReplayState != "snapshot_complete" {
+		return false, nil
+	}
+	if !cursorMatches(checkpoint.ReplaySealedSeq, *cfg.ReplayBeforeSeq) {
+		return false, errors.New("completed snapshot checkpoint lacks exact sealed-upper-bound proof")
+	}
+	return true, nil
+}
+
+func checkpointLastStagedSeq(checkpoint *ingest.Checkpoint) uint64 {
+	if checkpoint == nil || checkpoint.LastStagedSeq == nil {
+		return 0
+	}
+	return *checkpoint.LastStagedSeq
+}
+
+func cursorMatches(stored *uint64, configured uint64) bool {
+	return stored != nil && *stored == configured
+}
+
+func subscriptionEndError(
+	contextError error,
+	snapshotOnly bool,
+	stats jetstream.Stats,
+	beforeSeq *uint64,
+) error {
+	if contextError != nil {
 		return nil
 	}
-	return errors.New("Jetstream V2 event iterator ended unexpectedly")
+	if !snapshotOnly {
+		return errors.New("Jetstream V2 event iterator ended unexpectedly")
+	}
+	if beforeSeq == nil {
+		return errors.New("bounded snapshot upper bound is missing")
+	}
+	if stats.ResidualGap != 0 || stats.PlannedThrough != stats.SealedTip ||
+		stats.SealedTip != *beforeSeq {
+		return fmt.Errorf(
+			"bounded snapshot ended before exact upper bound: plannedThrough=%d sealedTip=%d residualGap=%d beforeSeq=%d",
+			stats.PlannedThrough, stats.SealedTip, stats.ResidualGap, *beforeSeq,
+		)
+	}
+	return errSnapshotComplete
 }
 
 func (r *Runner) recordIncident(ctx context.Context, err error) {

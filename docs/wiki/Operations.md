@@ -31,6 +31,10 @@ populated by Jetstream V2 Ingest, polls Skyreader RSS subscriptions, and updates
 the AppView index. The retired Tap transport remains represented in historical
 evidence and recovery enums, but it is no longer a deployed service.
 
+A bounded The Wire replay ends in `snapshot_complete`. Operations reports that as a healthy
+terminal checkpoint without requiring a continuing intake lease, while still evaluating Charybdis
+freshness, inbox backlog, dead letters, and recovery incidents independently.
+
 ## Runbooks
 
 Canonical runbooks live in [`docs/runbooks/operations/`](https://github.com/Stygian-Tech/the-social-wire/tree/main/docs/runbooks/operations). Start with the [runbook index](https://github.com/Stygian-Tech/the-social-wire/blob/main/docs/runbooks/operations/README.md).

@@ -1,6 +1,7 @@
 export {
   createSaveUpstreamDpopProofPool,
   createUpstreamDpopProof,
+  createUpstreamDpopProofPool,
   pdsXrpcMethodForGatewayRequest,
   primePdsDpopNonce,
   refreshPdsDpopNonce,

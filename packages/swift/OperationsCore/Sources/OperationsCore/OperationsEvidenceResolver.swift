@@ -116,9 +116,10 @@ public enum OperationsEvidenceResolver {
     let authorityInbox = sourceGeneration.flatMap { generation in
       durability.map { $0.inboxBySourceGeneration[generation] ?? IngestionInboxMetrics() }
     }
-    let observedAt = checkpoint?.intakeHeartbeatAt
+    let terminalSnapshot = checkpoint?.replayState == .snapshotComplete
+    let observedAt = terminalSnapshot ? checkpoint?.updatedAt : checkpoint?.intakeHeartbeatAt
     let age = observedAt.map { at.timeIntervalSince($0) }
-    let isFresh = age.map { $0 >= 0 && $0 <= validitySeconds } ?? false
+    let isFresh = terminalSnapshot || (age.map { $0 >= 0 && $0 <= validitySeconds } ?? false)
     let authorityState = checkpoint.map {
       durableJetstreamV2State(
         checkpoint: $0,
@@ -153,8 +154,9 @@ public enum OperationsEvidenceResolver {
         accuracy: isFresh ? .exact : .unavailable,
         generatedAt: at,
         indexedThrough: isFresh ? observedAt : nil,
-        ageSeconds: isFresh ? (age ?? 0) : 0,
-        validUntil: observedAt?.addingTimeInterval(validitySeconds) ?? at,
+        ageSeconds: isFresh ? max(0, age ?? 0) : 0,
+        validUntil: terminalSnapshot ? .distantFuture
+          : (observedAt?.addingTimeInterval(validitySeconds) ?? at),
         coverage: isFresh ? 1 : 0,
         lastSuccessfulAt: observedAt,
         degradedReason: degradedReason
@@ -174,13 +176,13 @@ public enum OperationsEvidenceResolver {
       connectionState = .disconnected
     case .pausedBudget:
       connectionState = .reconnecting
-    case .idle, .replaying, .live:
+    case .idle, .replaying, .live, .snapshotComplete:
       connectionState = .connected
     }
     let lastDisconnectReason: String? = switch checkpoint.replayState {
     case .failed: "durable_replay_failed"
     case .pausedBudget: "replay_budget_paused"
-    case .idle, .replaying, .live: nil
+    case .idle, .replaying, .live, .snapshotComplete: nil
     }
     let queueDepth = inbox.pending + inbox.leased + inbox.retrying
     let queueEvidence = OperationsEvidenceMetadata(

@@ -7,13 +7,14 @@ struct UnifiedFeedSelectionTests {
     @Test("selection cases remain exclusive")
     func selectionCasesRemainDistinct() {
         let selections: Set<FeedSelection> = [
+            .topLevel(.wire),
             .topLevel(.subscribed),
             .folder("folder-one"),
             .publication("at://did:plc:example/site.standard.publication/main"),
             .savedSource(.readLater, "site:example.com"),
         ]
 
-        #expect(selections.count == 4)
+        #expect(selections.count == 5)
         #expect(FeedSelection.topLevel(.following).topLevelSource == .following)
         #expect(FeedSelection.folder("folder-one").topLevelSource == nil)
     }
@@ -40,13 +41,21 @@ struct UnifiedFeedSelectionTests {
         #expect(ReaderListSource.following.supportsMarkAllReadContextMenu)
         #expect(!ReaderListSource.readLater.supportsMarkAllReadContextMenu)
         #expect(!ReaderListSource.archive.supportsMarkAllReadContextMenu)
+        #expect(!ReaderListSource.wire.supportsMarkAllReadContextMenu)
+        #expect(ReaderMarkReadScope.selectedFeed(.topLevel(.wire)) == .unavailable)
     }
 
     @Test("preference decoding defaults additive fields and preserves order")
     func preferenceDefaultsAndFallback() {
         let defaults = ReaderFeedPreferences(record: nil)
-        #expect(defaults.visibleFeeds == ReaderListSource.allCases)
-        #expect(defaults.feedsWithUnreadCounts == ReaderListSource.allCases)
+        #expect(defaults.visibleFeeds == ReaderListSource.preferenceCases)
+        #expect(defaults.feedsWithUnreadCounts == ReaderListSource.preferenceCases)
+        let ignoresWire = ReaderFeedPreferences(
+            visibleFeeds: [.wire, .following],
+            feedsWithUnreadCounts: [.wire, .following]
+        )
+        #expect(ignoresWire.visibleFeeds == [.following])
+        #expect(ignoresWire.feedsWithUnreadCounts == [.following])
 
         let record = PreferencesRecord(
             type: "app.thesocialwire.preferences",
@@ -212,11 +221,13 @@ struct ArticlePresentationResolverTests {
 
 @Suite("CompactReaderNavigation")
 struct CompactReaderNavigationTests {
-    @Test("list source opens publications pane")
-    func listSourceOpensPublications() {
-        for source in ReaderListSource.allCases {
-            #expect(CompactReaderNavigation.paneAfterListSource(source) == .publications)
-        }
+    @Test("list source opens the first content pane")
+    func listSourceOpensFirstContentPane() {
+        #expect(CompactReaderNavigation.paneAfterListSource(.wire) == .articles)
+        #expect(CompactReaderNavigation.paneAfterListSource(.subscribed) == .articles)
+        #expect(CompactReaderNavigation.paneAfterListSource(.following) == .articles)
+        #expect(CompactReaderNavigation.paneAfterListSource(.readLater) == .publications)
+        #expect(CompactReaderNavigation.paneAfterListSource(.archive) == .publications)
     }
 
     @Test("publication opens articles for feed lists")
@@ -235,7 +246,7 @@ struct CompactReaderNavigationTests {
         let transition = CompactReaderNavigation.swipeTransition(
             from: .reader,
             to: .articles,
-            usesArticlesPane: true
+            navigationShape: .publicationFeed
         )
         #expect(transition == CompactReaderNavigation.SwipeTransition(
             clearsReaderDetail: true,
@@ -249,7 +260,7 @@ struct CompactReaderNavigationTests {
         let transition = CompactReaderNavigation.swipeTransition(
             from: .articles,
             to: .publications,
-            usesArticlesPane: true
+            navigationShape: .publicationFeed
         )
         #expect(transition == CompactReaderNavigation.SwipeTransition(
             clearsReaderDetail: false,
@@ -263,7 +274,7 @@ struct CompactReaderNavigationTests {
         let transition = CompactReaderNavigation.swipeTransition(
             from: .reader,
             to: .lists,
-            usesArticlesPane: true
+            navigationShape: .publicationFeed
         )
         #expect(transition.clearsFeedState)
     }
@@ -287,9 +298,13 @@ struct CompactReaderNavigationTests {
     func layoutChangeNormalizesArticlesPane() {
         let normalized = CompactReaderNavigation.normalizedPaneAfterLayoutChange(
             compactPane: .articles,
-            usesArticlesPane: false
+            navigationShape: .savedLinks
         )
         #expect(normalized == .publications)
+        #expect(CompactReaderNavigation.normalizedPaneAfterLayoutChange(
+            compactPane: .publications,
+            navigationShape: .wire
+        ) == .articles)
     }
 }
 
@@ -297,16 +312,25 @@ struct CompactReaderNavigationTests {
 struct ReaderPaneCompactPagerTests {
     @Test("uses contiguous tab tags without an articles pane")
     func threePaneTagsAreContiguous() {
-        #expect(ReaderPane.lists.compactTabTag(usesArticlesPane: false) == 0)
-        #expect(ReaderPane.publications.compactTabTag(usesArticlesPane: false) == 1)
-        #expect(ReaderPane.reader.compactTabTag(usesArticlesPane: false) == 2)
-        #expect(ReaderPane.fromCompactTabTag(2, usesArticlesPane: false) == .reader)
+        #expect(ReaderPane.lists.compactTabTag(navigationShape: .savedLinks) == 0)
+        #expect(ReaderPane.publications.compactTabTag(navigationShape: .savedLinks) == 1)
+        #expect(ReaderPane.reader.compactTabTag(navigationShape: .savedLinks) == 2)
+        #expect(ReaderPane.fromCompactTabTag(2, navigationShape: .savedLinks) == .reader)
     }
 
     @Test("preserves four-pane tab tags when articles pane is shown")
     func fourPaneTagsKeepArticlesIndex() {
-        #expect(ReaderPane.reader.compactTabTag(usesArticlesPane: true) == 3)
-        #expect(ReaderPane.fromCompactTabTag(3, usesArticlesPane: true) == .reader)
+        #expect(ReaderPane.reader.compactTabTag(navigationShape: .publicationFeed) == 3)
+        #expect(ReaderPane.fromCompactTabTag(3, navigationShape: .publicationFeed) == .reader)
+    }
+
+    @Test("The Wire uses contiguous lists articles reader tags")
+    func wireTagsAreContiguous() {
+        #expect(ReaderPane.lists.compactTabTag(navigationShape: .wire) == 0)
+        #expect(ReaderPane.articles.compactTabTag(navigationShape: .wire) == 1)
+        #expect(ReaderPane.reader.compactTabTag(navigationShape: .wire) == 2)
+        #expect(ReaderPane.publications.compactTabTag(navigationShape: .wire) == nil)
+        #expect(ReaderPane.fromCompactTabTag(1, navigationShape: .wire) == .articles)
     }
 }
 

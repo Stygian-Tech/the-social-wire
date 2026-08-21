@@ -7,6 +7,7 @@ import Logging
 import OperationsCore
 import PostgresNIO
 import ThinAppViewCore
+import WireCore
 
 @main
 @available(macOS 10.15, macCatalyst 13, iOS 13, tvOS 13, watchOS 6, *)
@@ -30,7 +31,7 @@ struct Serve: AsyncParsableCommand {
 
     let environment = AppEnvironmentLoader.mergeProcessWithDotenv()
     let operationsEnvironment = try OperationsConfiguration.requireEnvironment(environment)
-    let config = AppViewServiceConfig.fromEnvironment(environment)
+    let config = try AppViewServiceConfig.fromEnvironment(environment)
     let operationsConfig = OperationsConfiguration.fromEnvironment(environment)
     let listenPort = port ?? Int(environment["PORT"] ?? "8081") ?? 8081
     let listenHost = hostname ?? environment["BIND_HOST"] ?? "::"
@@ -102,6 +103,8 @@ struct Serve: AsyncParsableCommand {
           config: config,
           httpClient: httpClient,
           thinAppViewStore: store,
+          wireFeedStore: nil,
+          wireModerationService: nil,
           projectionCache: projectionCache,
           operationsStore: operationsStore,
           telemetry: operationsConfig.enabled ? telemetry : nil,
@@ -127,6 +130,39 @@ struct Serve: AsyncParsableCommand {
         let pgConfig = try makePostgresConfig(from: urlString, logger: logger)
         let pgPool = PostgresClient(configuration: pgConfig, backgroundLogger: logger)
         let store = PostgresThinAppViewStore(pool: pgPool, logger: logger)
+        let wireFeedStore: (any WireFeedStore)?
+        let wireModerationService: WireViewerModerationService?
+        if config.wire.mode.servesAPI {
+          guard let cursorSecret = config.wire.cursorSecret else {
+            throw AppViewStartupError.missingWireCursorSecret
+          }
+          let moderationCache = WireViewerModerationCache()
+          if let corpusEdge = config.wire.corpusEdge {
+            wireFeedStore = try RemoteWireFeedStore(
+              transport: HTTPWireCorpusTransport(config: corpusEdge, httpClient: httpClient),
+              cursorSecret: cursorSecret,
+              mode: config.wire.mode,
+              moderationCache: moderationCache
+            )
+          } else {
+            wireFeedStore = try PostgresWireFeedStore(
+              pool: pgPool,
+              logger: logger,
+              cursorSecret: cursorSecret,
+              mode: config.wire.mode,
+              moderationCache: moderationCache
+            )
+          }
+          wireModerationService = WireViewerModerationService(
+            httpClient: httpClient,
+            plcURL: config.core.atprotoPLCURL,
+            cache: moderationCache,
+            logger: logger
+          )
+        } else {
+          wireFeedStore = nil
+          wireModerationService = nil
+        }
         let operationsStore = PostgresOperationsStore(
           pool: pgPool,
           environment: operationsEnvironment,
@@ -166,6 +202,8 @@ struct Serve: AsyncParsableCommand {
           config: config,
           httpClient: httpClient,
           thinAppViewStore: store,
+          wireFeedStore: wireFeedStore,
+          wireModerationService: wireModerationService,
           projectionCache: projectionCache,
           operationsStore: operationsStore,
           telemetry: operationsConfig.enabled ? telemetry : nil,
@@ -221,5 +259,14 @@ private func appViewDependencyProbe(
 
 enum AppViewStartupError: Error, CustomStringConvertible {
   case thinAppViewDisabled
-  var description: String { "ENABLE_THIN_APPVIEW must be true for the AppView service." }
+  case missingWireCursorSecret
+
+  var description: String {
+    switch self {
+    case .thinAppViewDisabled:
+      "ENABLE_THIN_APPVIEW must be true for the AppView service."
+    case .missingWireCursorSecret:
+      "WIRE_CURSOR_HMAC_SECRET must contain at least 32 bytes when The Wire API is enabled."
+    }
+  }
 }

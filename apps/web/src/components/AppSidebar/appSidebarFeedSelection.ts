@@ -1,4 +1,4 @@
-import type { TopLevelFeed } from "@/lib/feedPreferences";
+import type { ReaderNavigationFeed } from "@/lib/feedPreferences";
 import type { PublicationTab } from "./appSidebarConstants";
 
 export function currentAppSidebarFeed({
@@ -11,11 +11,12 @@ export function currentAppSidebarFeed({
   feedParam: string | null;
   folderParam: string | null;
   publicationTab: PublicationTab;
-}): TopLevelFeed | null {
+}): ReaderNavigationFeed | null {
   if (pathname.startsWith("/saved")) return "readLater";
   if (pathname.startsWith("/archive")) return "archive";
   if (!pathname.startsWith("/read")) return null;
   if (folderParam) return "subscribed";
+  if (feedParam === "wire") return "wire";
   if (feedParam === "following") return "following";
   if (feedParam === "subscribed") return "subscribed";
   return publicationTab;

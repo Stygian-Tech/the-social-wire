@@ -5,24 +5,28 @@ struct ReaderFeedPreferences: Codable, Equatable, Sendable {
     var feedsWithUnreadCounts: [ReaderListSource]
 
     static let defaults = ReaderFeedPreferences(
-        visibleFeeds: ReaderListSource.allCases,
-        feedsWithUnreadCounts: ReaderListSource.allCases
+        visibleFeeds: ReaderListSource.preferenceCases,
+        feedsWithUnreadCounts: ReaderListSource.preferenceCases
     )
 
     init(visibleFeeds: [ReaderListSource], feedsWithUnreadCounts: [ReaderListSource]) {
         let unique = visibleFeeds.reduce(into: [ReaderListSource]()) { result, source in
             if !result.contains(source) { result.append(source) }
         }
-        let normalizedVisibleFeeds = unique.isEmpty ? ReaderListSource.allCases : unique
-        self.visibleFeeds = normalizedVisibleFeeds
-        self.feedsWithUnreadCounts = ReaderListSource.allCases.filter { source in
-            normalizedVisibleFeeds.contains(source) && feedsWithUnreadCounts.contains(source)
+        let normalizedVisibleFeeds = unique.filter { ReaderListSource.preferenceCases.contains($0) }
+        let effectiveVisibleFeeds = normalizedVisibleFeeds.isEmpty
+            ? ReaderListSource.preferenceCases
+            : normalizedVisibleFeeds
+        self.visibleFeeds = effectiveVisibleFeeds
+        self.feedsWithUnreadCounts = ReaderListSource.preferenceCases.filter { source in
+            effectiveVisibleFeeds.contains(source)
+                && feedsWithUnreadCounts.contains(source)
         }
     }
 
     init(record: PreferencesRecord?) {
         let visibleFeeds = record?.visibleFeeds?.compactMap(ReaderListSource.init(preferenceKey:))
-            ?? ReaderListSource.allCases
+            ?? ReaderListSource.preferenceCases
         let feedsWithUnreadCounts: [ReaderListSource]
         if let stored = record?.feedsWithUnreadCounts {
             feedsWithUnreadCounts = stored.compactMap(ReaderListSource.init(preferenceKey:))
@@ -50,7 +54,7 @@ struct ReaderFeedPreferences: Codable, Equatable, Sendable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let visibleFeeds = try container.decodeIfPresent([ReaderListSource].self, forKey: .visibleFeeds)
-            ?? ReaderListSource.allCases
+            ?? ReaderListSource.preferenceCases
         let feedsWithUnreadCounts: [ReaderListSource]
         if let stored = try container.decodeIfPresent(
             [ReaderListSource].self,

@@ -621,9 +621,12 @@ function assertIngestionDurability(value: unknown, environment: string) {
       !isNonEmptyString(checkpoint.streamNSID) ||
       !isNonEmptyString(checkpoint.filterFingerprint) ||
       checkpoint.cursorKind !== "jetstream_v2_seq" ||
-      !new Set(["idle", "replaying", "live", "paused_budget", "failed"]).has(String(checkpoint.replayState)) ||
+      !new Set(["idle", "replaying", "live", "paused_budget", "failed", "snapshot_complete"]).has(String(checkpoint.replayState)) ||
       !isOptionalNonNegativeInteger(checkpoint.lastStagedSequence) ||
       !isOptionalNonNegativeInteger(checkpoint.lastAppliedSequence) ||
+      !isOptionalNonNegativeInteger(checkpoint.replayAfterSequence) ||
+      !isOptionalNonNegativeInteger(checkpoint.replayBeforeSequence) ||
+      !isOptionalNonNegativeInteger(checkpoint.replaySealedSequence) ||
       !isNonNegativeInteger(checkpoint.replayBytesDownloaded) ||
       !isNonNegativeInteger(checkpoint.replayRetryCount) ||
       !isNonNegativeInteger(checkpoint.replayRangeResumeCount) ||
@@ -631,6 +634,17 @@ function assertIngestionDurability(value: unknown, environment: string) {
       !isDateString(checkpoint.updatedAt)
     )
       throw new Error("Operations durability checkpoint failed runtime contract validation")
+    if (
+      checkpoint.replayState === "snapshot_complete" &&
+      (!isNonNegativeInteger(checkpoint.replayAfterSequence) ||
+        !isNonNegativeInteger(checkpoint.replayBeforeSequence) ||
+        !isNonNegativeInteger(checkpoint.replaySealedSequence) ||
+        checkpoint.replayAfterSequence >= checkpoint.replayBeforeSequence ||
+        checkpoint.replaySealedSequence !== checkpoint.replayBeforeSequence ||
+        (isNonNegativeInteger(checkpoint.lastStagedSequence) &&
+          checkpoint.lastStagedSequence > checkpoint.replayBeforeSequence))
+    )
+      throw new Error("Operations completed snapshot checkpoint failed runtime contract validation")
   })
 }
 
@@ -879,6 +893,10 @@ function assertIncident(value: unknown, environment: string) {
     !isPositiveInteger(value.occurrenceCount) ||
     !isDateString(value.firstDetectedAt) ||
     !isDateString(value.lastDetectedAt) ||
+    (value.replayState !== undefined &&
+      value.replayState !== null &&
+      !new Set(["idle", "replaying", "live", "paused_budget", "failed", "snapshot_complete"])
+        .has(String(value.replayState))) ||
     !isNonNegativeInteger(value.replayBytesDownloaded) ||
     !isNonNegativeInteger(value.replayRetryCount) ||
     !isNonNegativeInteger(value.replayRangeResumeCount) ||

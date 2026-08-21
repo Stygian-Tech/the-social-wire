@@ -10,7 +10,7 @@ struct SettingsView: View {
     var body: some View {
         Form {
             Section("Feed Display") {
-                ForEach(ReaderListSource.allCases) { source in
+                ForEach(ReaderListSource.preferenceCases) { source in
                     let isVisible = appModel.visibleReaderListSources.contains(source)
                     VStack(alignment: .leading, spacing: 8) {
                         Text(source.rawValue)

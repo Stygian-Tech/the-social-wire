@@ -1,0 +1,15 @@
+meta {
+  name: XRPC app.thesocialwire.discovery.getWireItem
+  type: http
+  seq: 32
+}
+
+get {
+  url: {{baseUrl}}/xrpc/app.thesocialwire.discovery.getWireItem?itemId={{wireItemId}}
+  body: none
+  auth: none
+}
+
+docs {
+  Public detail for a canonical The Wire item.
+}

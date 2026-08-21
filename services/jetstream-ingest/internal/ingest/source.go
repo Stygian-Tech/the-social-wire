@@ -8,6 +8,7 @@ import (
 )
 
 type SourceIdentity struct {
+	PipelineMode      string
 	Environment       string
 	Host              string
 	StreamNSID        string
@@ -18,6 +19,7 @@ type SourceIdentity struct {
 
 func SourceFromConfig(cfg config.Config) SourceIdentity {
 	return SourceIdentity{
+		PipelineMode:      cfg.PipelineMode,
 		Environment:       cfg.Environment,
 		Host:              cfg.Host,
 		StreamNSID:        cfg.StreamNSID,
@@ -25,6 +27,10 @@ func SourceFromConfig(cfg config.Config) SourceIdentity {
 		CursorKind:        cfg.CursorKind,
 		Generation:        cfg.SourceGeneration,
 	}
+}
+
+func (s SourceIdentity) IsWire() bool {
+	return s.PipelineMode == config.WirePipelineMode
 }
 
 func (s SourceIdentity) ValidateCheckpoint(checkpoint Checkpoint) error {
@@ -40,10 +46,13 @@ type Checkpoint struct {
 	StreamNSID             string
 	FilterFingerprint      string
 	CursorKind             string
-	LastStagedSeq          uint64
+	LastStagedSeq          *uint64
 	LastStagedAt           time.Time
 	ReplayBytesDownloaded  int64
 	ReplayState            string
+	ReplayAfterSeq         *uint64
+	ReplayBeforeSeq        *uint64
+	ReplaySealedSeq        *uint64
 	ReplayRetryCount       int
 	ReplayRangeResumeCount int
 	ReplayETag             string

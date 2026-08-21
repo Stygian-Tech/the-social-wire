@@ -33,4 +33,16 @@ struct GatewayServiceConfigTests {
       "PDS_ATTESTATION_RECEIPT_SECRET": "shared-hosted-attestation-receipt-secret",
     ])
   }
+
+  @Test("invalid Wire modes fail closed")
+  func invalidWireModeIsRejected() {
+    #expect(throws: GatewayServiceConfigError.invalidWireFeedMode("enabled")) {
+      _ = try GatewayServiceConfig.fromEnvironment([
+        "APP_ENV": "dev",
+        "DATABASE_URL": "postgresql://localhost/gateway-test",
+        "PDS_ATTESTATION_RECEIPT_SECRET": "shared-hosted-attestation-receipt-secret",
+        "WIRE_FEED_MODE": "enabled",
+      ])
+    }
+  }
 }

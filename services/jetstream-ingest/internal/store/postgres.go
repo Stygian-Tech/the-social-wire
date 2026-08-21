@@ -14,15 +14,32 @@ import (
 )
 
 var ErrLeaseUnavailable = errors.New("ingestion leader lease is held by another process")
+var ErrWireAdmissionPaused = errors.New("Wire inbox admission paused at configured capacity")
+
+type WireCapacityExceededError struct {
+	InboxRows, InboxMaxRows, DatabaseBytes, DatabaseMaxBytes int64
+}
+
+func (e *WireCapacityExceededError) Error() string {
+	return fmt.Sprintf(
+		"%v: inbox=%d/%d rows database=%d/%d bytes",
+		ErrWireAdmissionPaused, e.InboxRows, e.InboxMaxRows, e.DatabaseBytes, e.DatabaseMaxBytes,
+	)
+}
+
+func (e *WireCapacityExceededError) Unwrap() error { return ErrWireAdmissionPaused }
 
 type Postgres struct {
-	db     *sql.DB
-	source ingest.SourceIdentity
+	db                   *sql.DB
+	source               ingest.SourceIdentity
+	wireInboxMaxRows     int64
+	wireDatabaseMaxBytes int64
 }
 
 type ReplayProgress struct {
 	State            string
 	AfterSeq         uint64
+	BeforeSeq        uint64
 	SealedSeq        uint64
 	BytesDownloaded  int64
 	RetryCount       int
@@ -54,21 +71,57 @@ func (p *Postgres) Close() error { return p.db.Close() }
 
 func (p *Postgres) Ping(ctx context.Context) error { return p.db.PingContext(ctx) }
 
+func (p *Postgres) ConfigureWireAdmission(inboxMaxRows, databaseMaxBytes int64) {
+	p.wireInboxMaxRows = inboxMaxRows
+	p.wireDatabaseMaxBytes = databaseMaxBytes
+}
+
+func (p *Postgres) ReconcileWireAdmission(ctx context.Context) error {
+	if !p.source.IsWire() {
+		return nil
+	}
+	tx, err := p.db.BeginTx(ctx, &sql.TxOptions{})
+	if err != nil {
+		return fmt.Errorf("begin Wire admission reconciliation: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	var ignored int64
+	if err := tx.QueryRowContext(ctx, `
+		SELECT retained_rows FROM wire_ingestion_admission
+		WHERE environment = $1 FOR UPDATE`, p.source.Environment).Scan(&ignored); err != nil {
+		return fmt.Errorf("lock Wire admission counter: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE wire_ingestion_admission
+		SET retained_rows = (
+		  SELECT COUNT(*) FROM wire_ingestion_inbox WHERE environment = $1
+		), updated_at = NOW()
+		WHERE environment = $1`, p.source.Environment); err != nil {
+		return fmt.Errorf("reconcile Wire admission counter: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit Wire admission reconciliation: %w", err)
+	}
+	return nil
+}
+
 func (p *Postgres) LoadCheckpoint(ctx context.Context) (*ingest.Checkpoint, error) {
 	row := p.db.QueryRowContext(ctx, `
 		SELECT source_host, stream_nsid, filter_fingerprint, cursor_kind,
 		       last_staged_seq, replay_bytes_downloaded, replay_state,
+		       replay_after_seq, replay_before_seq, replay_sealed_seq,
 		       replay_retry_count, replay_range_resume_count, COALESCE(replay_etag, ''),
 		       last_staged_at, replay_last_progress_at
 		FROM appview_jetstream_checkpoints
 		WHERE environment = $1 AND source_generation = $2`,
 		p.source.Environment, p.source.Generation)
 	var checkpoint ingest.Checkpoint
-	var seq int64
+	var seq, replayAfterSeq, replayBeforeSeq, replaySealedSeq sql.NullInt64
 	var lastStagedAt sql.NullTime
 	var replayLastProgressAt sql.NullTime
 	if err := row.Scan(&checkpoint.Host, &checkpoint.StreamNSID, &checkpoint.FilterFingerprint,
 		&checkpoint.CursorKind, &seq, &checkpoint.ReplayBytesDownloaded, &checkpoint.ReplayState,
+		&replayAfterSeq, &replayBeforeSeq, &replaySealedSeq,
 		&checkpoint.ReplayRetryCount, &checkpoint.ReplayRangeResumeCount, &checkpoint.ReplayETag,
 		&lastStagedAt, &replayLastProgressAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -76,10 +129,19 @@ func (p *Postgres) LoadCheckpoint(ctx context.Context) (*ingest.Checkpoint, erro
 		}
 		return nil, fmt.Errorf("load Jetstream checkpoint: %w", err)
 	}
-	if seq < 0 {
-		return nil, fmt.Errorf("stored Jetstream cursor is negative: %d", seq)
+	var cursorErr error
+	if checkpoint.LastStagedSeq, cursorErr = cursorPointer(seq, "Jetstream cursor"); cursorErr != nil {
+		return nil, cursorErr
 	}
-	checkpoint.LastStagedSeq = uint64(seq)
+	if checkpoint.ReplayAfterSeq, cursorErr = cursorPointer(replayAfterSeq, "replay lower bound"); cursorErr != nil {
+		return nil, cursorErr
+	}
+	if checkpoint.ReplayBeforeSeq, cursorErr = cursorPointer(replayBeforeSeq, "replay upper bound"); cursorErr != nil {
+		return nil, cursorErr
+	}
+	if checkpoint.ReplaySealedSeq, cursorErr = cursorPointer(replaySealedSeq, "replay sealed bound"); cursorErr != nil {
+		return nil, cursorErr
+	}
 	if lastStagedAt.Valid {
 		checkpoint.LastStagedAt = lastStagedAt.Time
 	}
@@ -269,6 +331,17 @@ func nullableCursor(value uint64) any {
 	return int64(value)
 }
 
+func cursorPointer(value sql.NullInt64, description string) (*uint64, error) {
+	if !value.Valid {
+		return nil, nil
+	}
+	if value.Int64 < 0 {
+		return nil, fmt.Errorf("stored %s is negative: %d", description, value.Int64)
+	}
+	cursor := uint64(value.Int64)
+	return &cursor, nil
+}
+
 func newIncidentID() (string, error) {
 	random := make([]byte, 12)
 	if _, err := rand.Read(random); err != nil {
@@ -303,8 +376,36 @@ func (p *Postgres) StageBatch(ctx context.Context, lease Lease, events []ingest.
 	if !leaseValid {
 		return ErrLeaseUnavailable
 	}
+	var admittedWireEvents int64
+	var wireInboxRows int64
+	var wireDatabaseBytes int64
+	if p.source.IsWire() && p.wireInboxMaxRows > 0 && p.wireDatabaseMaxBytes > 0 {
+		if err := tx.QueryRowContext(ctx, `
+			SELECT retained_rows, pg_database_size(current_database())
+			FROM wire_ingestion_admission
+			WHERE environment = $1
+			FOR UPDATE`, p.source.Environment).Scan(&wireInboxRows, &wireDatabaseBytes); err != nil {
+			return fmt.Errorf("measure Wire admission capacity: %w", err)
+		}
+		if wireDatabaseBytes >= p.wireDatabaseMaxBytes {
+			return &WireCapacityExceededError{
+				InboxRows: wireInboxRows, InboxMaxRows: p.wireInboxMaxRows,
+				DatabaseBytes: wireDatabaseBytes, DatabaseMaxBytes: p.wireDatabaseMaxBytes,
+			}
+		}
+	}
 
 	for _, event := range events {
+		if p.source.IsWire() {
+			inserted, err := p.stageWireInboxEvent(ctx, tx, event)
+			if err != nil {
+				return err
+			}
+			if inserted {
+				admittedWireEvents++
+			}
+			continue
+		}
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO appview_ingestion_inbox
 			  (environment, source_generation, seq, source_host, cursor_kind,
@@ -348,43 +449,70 @@ func (p *Postgres) StageBatch(ctx context.Context, lease Lease, events []ingest.
 			return fmt.Errorf("insert inbox event %d: %w", event.Seq, err)
 		}
 	}
+	if p.source.IsWire() && p.wireInboxMaxRows > 0 && wireInboxRows+admittedWireEvents > p.wireInboxMaxRows {
+		return &WireCapacityExceededError{
+			InboxRows: wireInboxRows, InboxMaxRows: p.wireInboxMaxRows,
+			DatabaseBytes: wireDatabaseBytes, DatabaseMaxBytes: p.wireDatabaseMaxBytes,
+		}
+	}
+	if admittedWireEvents > 0 {
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE wire_ingestion_admission
+			SET retained_rows = retained_rows + $2, updated_at = NOW()
+			WHERE environment = $1`, p.source.Environment, admittedWireEvents); err != nil {
+			return fmt.Errorf("update Wire admission count: %w", err)
+		}
+	}
 
 	result, err := tx.ExecContext(ctx, `
 		INSERT INTO appview_jetstream_checkpoints
 		  (environment, source_generation, source_host, stream_nsid, filter_fingerprint,
 		   cursor_kind, last_staged_seq, last_staged_event_at, last_staged_at,
-		   replay_state, replay_after_seq, replay_sealed_seq, replay_bytes_downloaded,
+		   replay_state, replay_after_seq, replay_before_seq, replay_sealed_seq, replay_bytes_downloaded,
 		   replay_retry_count, replay_range_resume_count, replay_etag,
 		   replay_last_progress_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), $9, $10, $11, $12, $13, $14, $15, $16, NOW())
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), $9, $10, $11, $12, $13, $14, $15, $16, $17, NOW())
 		ON CONFLICT (environment, source_generation) DO UPDATE SET
 		  last_staged_seq = GREATEST(appview_jetstream_checkpoints.last_staged_seq, EXCLUDED.last_staged_seq),
 		  last_staged_event_at = CASE
-		    WHEN EXCLUDED.last_staged_seq >= appview_jetstream_checkpoints.last_staged_seq
+		    WHEN appview_jetstream_checkpoints.last_staged_seq IS NULL
+		      OR EXCLUDED.last_staged_seq >= appview_jetstream_checkpoints.last_staged_seq
 		    THEN EXCLUDED.last_staged_event_at ELSE appview_jetstream_checkpoints.last_staged_event_at END,
 		  last_staged_at = CASE
-		    WHEN EXCLUDED.last_staged_seq > appview_jetstream_checkpoints.last_staged_seq
+		    WHEN appview_jetstream_checkpoints.last_staged_seq IS NULL
+		      OR EXCLUDED.last_staged_seq > appview_jetstream_checkpoints.last_staged_seq
 		    THEN NOW() ELSE appview_jetstream_checkpoints.last_staged_at END,
 		  replay_state = EXCLUDED.replay_state,
 		  replay_after_seq = EXCLUDED.replay_after_seq,
+		  replay_before_seq = EXCLUDED.replay_before_seq,
 		  replay_sealed_seq = EXCLUDED.replay_sealed_seq,
 		  replay_bytes_downloaded = EXCLUDED.replay_bytes_downloaded,
 		  replay_retry_count = EXCLUDED.replay_retry_count,
 		  replay_range_resume_count = EXCLUDED.replay_range_resume_count,
 		  replay_etag = EXCLUDED.replay_etag,
 		  replay_last_progress_at = CASE
-		    WHEN EXCLUDED.last_staged_seq > appview_jetstream_checkpoints.last_staged_seq
+		    WHEN appview_jetstream_checkpoints.last_staged_seq IS NULL
+		      OR EXCLUDED.last_staged_seq > appview_jetstream_checkpoints.last_staged_seq
 		    THEN EXCLUDED.replay_last_progress_at
 		    ELSE appview_jetstream_checkpoints.replay_last_progress_at END,
 		  updated_at = NOW()
 		WHERE appview_jetstream_checkpoints.source_host = EXCLUDED.source_host
 		  AND appview_jetstream_checkpoints.stream_nsid = EXCLUDED.stream_nsid
 		  AND appview_jetstream_checkpoints.filter_fingerprint = EXCLUDED.filter_fingerprint
-		  AND appview_jetstream_checkpoints.cursor_kind = EXCLUDED.cursor_kind`,
+		  AND appview_jetstream_checkpoints.cursor_kind = EXCLUDED.cursor_kind
+		  AND appview_jetstream_checkpoints.replay_state <> 'snapshot_complete'
+		  AND (
+		    EXCLUDED.replay_before_seq IS NULL
+		    OR (
+		      appview_jetstream_checkpoints.replay_after_seq = EXCLUDED.replay_after_seq
+		      AND appview_jetstream_checkpoints.replay_before_seq = EXCLUDED.replay_before_seq
+		    )
+		  )`,
 		p.source.Environment, p.source.Generation, p.source.Host, p.source.StreamNSID,
 		p.source.FilterFingerprint, p.source.CursorKind, int64(checkpointSeq), checkpointEventTime,
-		progress.State, int64(progress.AfterSeq), int64(progress.SealedSeq), progress.BytesDownloaded,
-		progress.RetryCount, progress.RangeResumeCount, nullableString(progress.ETag), progress.LastProgressAt,
+		progress.State, int64(progress.AfterSeq), nullableCursor(progress.BeforeSeq), int64(progress.SealedSeq),
+		progress.BytesDownloaded, progress.RetryCount, progress.RangeResumeCount,
+		nullableString(progress.ETag), progress.LastProgressAt,
 	)
 	if err != nil {
 		return fmt.Errorf("advance Jetstream checkpoint: %w", err)
@@ -394,12 +522,189 @@ func (p *Postgres) StageBatch(ctx context.Context, lease Lease, events []ingest.
 		return fmt.Errorf("inspect checkpoint advance: %w", err)
 	}
 	if rows != 1 {
-		return errors.New("checkpoint source identity mismatch")
+		return errors.New("checkpoint source identity or immutable replay range mismatch")
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit stage batch: %w", err)
 	}
 	return nil
+}
+
+// EnsureSnapshotRange binds a dedicated source generation to one immutable replay window before
+// any archive request starts, including ranges where no event will match the collection filter.
+func (p *Postgres) EnsureSnapshotRange(
+	ctx context.Context,
+	lease Lease,
+	afterSeq uint64,
+	beforeSeq uint64,
+) error {
+	if beforeSeq == 0 || afterSeq >= beforeSeq {
+		return errors.New("invalid bounded snapshot range")
+	}
+	tx, err := p.db.BeginTx(ctx, &sql.TxOptions{})
+	if err != nil {
+		return fmt.Errorf("begin snapshot range binding: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	var leaseValid bool
+	if err := tx.QueryRowContext(ctx, `
+		SELECT TRUE
+		FROM appview_ingestion_leases
+		WHERE environment = $1 AND lease_name = $2 AND source_generation = $3
+		  AND owner_id = $4 AND fencing_token = $5 AND released_at IS NULL
+		  AND lease_expires_at > NOW()
+		FOR SHARE`, p.source.Environment, lease.Name, p.source.Generation,
+		lease.OwnerID, lease.FencingToken).Scan(&leaseValid); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrLeaseUnavailable
+		}
+		return fmt.Errorf("verify snapshot range fencing token: %w", err)
+	}
+
+	result, err := tx.ExecContext(ctx, `
+		INSERT INTO appview_jetstream_checkpoints
+		  (environment, source_generation, source_host, stream_nsid, filter_fingerprint,
+		   cursor_kind, last_staged_seq, last_staged_event_at, last_staged_at,
+		   replay_state, replay_after_seq, replay_before_seq, replay_sealed_seq,
+		   replay_bytes_downloaded, replay_retry_count, replay_range_resume_count,
+		   replay_etag, replay_last_progress_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, NULL, NULL, NULL,
+		        'replaying', $7, $8, NULL, 0, 0, 0, NULL, NOW(), NOW())
+		ON CONFLICT (environment, source_generation) DO UPDATE SET
+		  updated_at = appview_jetstream_checkpoints.updated_at
+		WHERE appview_jetstream_checkpoints.source_host = EXCLUDED.source_host
+		  AND appview_jetstream_checkpoints.stream_nsid = EXCLUDED.stream_nsid
+		  AND appview_jetstream_checkpoints.filter_fingerprint = EXCLUDED.filter_fingerprint
+		  AND appview_jetstream_checkpoints.cursor_kind = EXCLUDED.cursor_kind
+		  AND appview_jetstream_checkpoints.replay_after_seq = EXCLUDED.replay_after_seq
+		  AND appview_jetstream_checkpoints.replay_before_seq = EXCLUDED.replay_before_seq
+		  AND appview_jetstream_checkpoints.replay_state IN ('idle', 'replaying', 'paused_budget', 'failed')`,
+		p.source.Environment, p.source.Generation, p.source.Host, p.source.StreamNSID,
+		p.source.FilterFingerprint, p.source.CursorKind, int64(afterSeq), int64(beforeSeq),
+	)
+	if err != nil {
+		return fmt.Errorf("bind bounded snapshot range: %w", err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("inspect bounded snapshot range binding: %w", err)
+	}
+	if rows != 1 {
+		return errors.New("snapshot source identity, state, or immutable range mismatch")
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit bounded snapshot range binding: %w", err)
+	}
+	return nil
+}
+
+// CompleteSnapshot durably records that the configured bounded archive range was fully scanned.
+// last_staged_seq remains the highest matching event when one exists and stays NULL when none did.
+func (p *Postgres) CompleteSnapshot(
+	ctx context.Context,
+	lease Lease,
+	afterSeq uint64,
+	beforeSeq uint64,
+	progress ReplayProgress,
+) error {
+	if beforeSeq == 0 || afterSeq >= beforeSeq || progress.SealedSeq != beforeSeq {
+		return errors.New("invalid bounded snapshot completion range")
+	}
+	tx, err := p.db.BeginTx(ctx, &sql.TxOptions{})
+	if err != nil {
+		return fmt.Errorf("begin snapshot completion: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	var leaseValid bool
+	if err := tx.QueryRowContext(ctx, `
+		SELECT TRUE
+		FROM appview_ingestion_leases
+		WHERE environment = $1 AND lease_name = $2 AND source_generation = $3
+		  AND owner_id = $4 AND fencing_token = $5 AND released_at IS NULL
+		  AND lease_expires_at > NOW()
+		FOR SHARE`, p.source.Environment, lease.Name, p.source.Generation,
+		lease.OwnerID, lease.FencingToken).Scan(&leaseValid); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrLeaseUnavailable
+		}
+		return fmt.Errorf("verify snapshot completion fencing token: %w", err)
+	}
+
+	result, err := tx.ExecContext(ctx, `
+		INSERT INTO appview_jetstream_checkpoints
+		  (environment, source_generation, source_host, stream_nsid, filter_fingerprint,
+		   cursor_kind, last_staged_seq, last_staged_event_at, last_staged_at,
+		   replay_state, replay_after_seq, replay_before_seq, replay_sealed_seq, replay_bytes_downloaded,
+		   replay_retry_count, replay_range_resume_count, replay_etag,
+		   replay_last_progress_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, NULL, NULL, NULL,
+		        'snapshot_complete', $7, $8, $9, $10, $11, $12, $13, NOW(), NOW())
+		ON CONFLICT (environment, source_generation) DO UPDATE SET
+		  replay_state = 'snapshot_complete',
+		  replay_sealed_seq = EXCLUDED.replay_sealed_seq,
+		  replay_bytes_downloaded = EXCLUDED.replay_bytes_downloaded,
+		  replay_retry_count = EXCLUDED.replay_retry_count,
+		  replay_range_resume_count = EXCLUDED.replay_range_resume_count,
+		  replay_etag = EXCLUDED.replay_etag,
+		  replay_last_progress_at = NOW(), updated_at = NOW()
+		WHERE appview_jetstream_checkpoints.source_host = EXCLUDED.source_host
+		  AND appview_jetstream_checkpoints.stream_nsid = EXCLUDED.stream_nsid
+		  AND appview_jetstream_checkpoints.filter_fingerprint = EXCLUDED.filter_fingerprint
+		  AND appview_jetstream_checkpoints.cursor_kind = EXCLUDED.cursor_kind
+		  AND appview_jetstream_checkpoints.replay_after_seq = EXCLUDED.replay_after_seq
+		  AND appview_jetstream_checkpoints.replay_before_seq = EXCLUDED.replay_before_seq
+		  AND (
+		    appview_jetstream_checkpoints.last_staged_seq IS NULL
+		    OR appview_jetstream_checkpoints.last_staged_seq <= EXCLUDED.replay_before_seq
+		  )`,
+		p.source.Environment, p.source.Generation, p.source.Host, p.source.StreamNSID,
+		p.source.FilterFingerprint, p.source.CursorKind, int64(afterSeq), int64(beforeSeq),
+		int64(progress.SealedSeq), progress.BytesDownloaded, progress.RetryCount,
+		progress.RangeResumeCount, nullableString(progress.ETag),
+	)
+	if err != nil {
+		return fmt.Errorf("persist bounded snapshot completion: %w", err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("inspect bounded snapshot completion: %w", err)
+	}
+	if rows != 1 {
+		return errors.New("snapshot completion source identity or range mismatch")
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit bounded snapshot completion: %w", err)
+	}
+	return nil
+}
+
+func (p *Postgres) stageWireInboxEvent(
+	ctx context.Context,
+	tx *sql.Tx,
+	event ingest.InboxEvent,
+) (bool, error) {
+	payload := wireJSONPayloadForPostgres(event.Payload)
+	result, err := tx.ExecContext(ctx, `
+		INSERT INTO wire_ingestion_inbox
+		  (environment, source_generation, seq, source_host, cursor_kind,
+		   event_kind, repo_did, collection, operation, repo_rev, record_key,
+		   record_cid, payload, event_time, status, attempt_count,
+		   next_attempt_at, staged_at, updated_at, expires_at)
+		SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
+		       $13::jsonb, $14, 'pending', 0, NOW(), NOW(), NOW(), 'infinity'::timestamptz
+		ON CONFLICT (environment, source_generation, seq) DO NOTHING`,
+		p.source.Environment, p.source.Generation, int64(event.Seq), p.source.Host,
+		p.source.CursorKind, event.Kind, event.RepoDID, event.Collection, event.Operation,
+		event.RepoRev, event.RecordKey, event.RecordCID, string(payload), event.Time,
+	)
+	if err != nil {
+		return false, fmt.Errorf("insert Wire inbox event %d: %w", event.Seq, err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("inspect Wire inbox insert %d: %w", event.Seq, err)
+	}
+	return rows == 1, nil
 }
 
 func nullableString(value string) any {

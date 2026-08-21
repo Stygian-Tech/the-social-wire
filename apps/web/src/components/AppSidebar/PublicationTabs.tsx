@@ -1,6 +1,6 @@
 "use client";
 
-import { Rss, Users } from "lucide-react";
+import { Newspaper, Rss, Users } from "lucide-react";
 
 import {
   SidebarGroup,
@@ -24,6 +24,9 @@ export function PublicationTabs({
   visibleTabs = ["subscribed", "following"],
   subscribedPublications = [],
   followingPublications = [],
+  wireEnabled = false,
+  wireActive = false,
+  onWireSelect,
 }: {
   activeTab: PublicationTab | null;
   onTabChange: (tab: PublicationTab) => void;
@@ -34,11 +37,28 @@ export function PublicationTabs({
   visibleTabs?: PublicationTab[];
   subscribedPublications?: DiscoveredPublication[];
   followingPublications?: DiscoveredPublication[];
+  wireEnabled?: boolean;
+  wireActive?: boolean;
+  onWireSelect?: () => void;
 }) {
   return (
     <SidebarGroup className="pb-1 pt-1">
       <SidebarGroupLabel>Feeds</SidebarGroupLabel>
       <SidebarMenu className="gap-0.5" role="tablist" aria-label="Publication Source">
+        {wireEnabled ? (
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              type="button"
+              role="tab"
+              aria-selected={wireActive}
+              isActive={wireActive}
+              onClick={onWireSelect}
+            >
+              <Newspaper />
+              <span>The Wire</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        ) : null}
         {visibleTabs.includes("subscribed") ? (
           <SidebarMenuItem>
             <SidebarReadBulkMenuWrap

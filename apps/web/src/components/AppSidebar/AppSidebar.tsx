@@ -44,6 +44,7 @@ import {
   feedDisplaysUnreadCount,
   nextVisibleFeed,
   type TopLevelFeed,
+  type ReaderNavigationFeed,
 } from "@/lib/feedPreferences";
 import { sidebarPublicationRows } from "@/lib/publicationProjectionClient";
 import { savedFeedSources } from "@/lib/savedFeedSources";
@@ -58,6 +59,12 @@ import {
 import { MobileFeedNavigation } from "./MobileFeedNavigation";
 import { FeedbackDialog } from "./FeedbackDialog";
 import { AppSidebarBrandHeader } from "./AppSidebarBrandHeader";
+import { useWireFeedCatalog } from "@/hooks/useWireFeed";
+import {
+  loadReaderFeedSelection,
+  saveReaderFeedSelection,
+} from "@/lib/readerFeedSelectionStorage";
+import { SIDEBAR_PUBLICATION_TAB_STORAGE_KEY } from "@/lib/sidebarPublicationTabStorage";
 
 interface AppSidebarProps {
   selectedPubId: string | null;
@@ -132,6 +139,9 @@ export function AppSidebar({
     enabled: sidebarDependentDataEnabled,
   });
   const { preferences: feedPreferences } = useFeedDisplayPreferences();
+  const wireCatalog = useWireFeedCatalog();
+  const wireNavigationEnabled =
+    wireCatalog.data?.enabled === true && wireCatalog.data.available === true;
   const savedSidebarRows = useMemo(
     () =>
       publicationSidebarProjection
@@ -214,6 +224,21 @@ export function AppSidebar({
 
   useEffect(() => {
     if (!setActiveReadFeedScope) return;
+
+    if (currentFeed === "wire") {
+      setActiveReadFeedScope((previous) =>
+        previous.gatewayScope === null &&
+        previous.displayName === "The Wire" &&
+        previous.publications.length === 0
+          ? previous
+          : {
+              publications: [],
+              gatewayScope: null,
+              displayName: "The Wire",
+            },
+      );
+      return;
+    }
 
     const folderRkey = selectedFolderRkey;
     const folderName = folderRkey
@@ -299,6 +324,18 @@ export function AppSidebar({
 
   useEffect(() => {
     if (!currentFeed) return;
+    if (currentFeed === "wire") {
+      if (!wireCatalog.isLoading && !wireNavigationEnabled) {
+        const remembered = loadReaderFeedSelection(window.localStorage);
+        const replacement =
+          remembered === "following" &&
+          feedPreferences.visibleFeeds.includes("following")
+            ? "following"
+            : "subscribed";
+        router.replace(`/read?feed=${replacement}`);
+      }
+      return;
+    }
     if (feedPreferences.visibleFeeds.includes(currentFeed)) return;
     const replacement = nextVisibleFeed(
       currentFeed,
@@ -307,7 +344,41 @@ export function AppSidebar({
     if (replacement === "readLater") router.replace("/saved");
     else if (replacement === "archive") router.replace("/archive");
     else router.replace(`/read?feed=${replacement}`);
-  }, [currentFeed, feedPreferences.visibleFeeds, router]);
+  }, [
+    currentFeed,
+    feedPreferences.visibleFeeds,
+    router,
+    wireCatalog.isLoading,
+    wireNavigationEnabled,
+  ]);
+
+  useEffect(() => {
+    if (
+      !clientHydrated ||
+      !bootstrapStreamComplete ||
+      !wireNavigationEnabled ||
+      pathname !== "/read" ||
+      searchParams.get("feed") ||
+      searchParams.get("folder") ||
+      subscribedPublications.length > 0 ||
+      followingTabPublications.length > 0
+    ) {
+      return;
+    }
+    const hasRememberedChoice =
+      loadReaderFeedSelection(window.localStorage) !== null ||
+      window.localStorage.getItem(SIDEBAR_PUBLICATION_TAB_STORAGE_KEY) !== null;
+    if (!hasRememberedChoice) router.replace("/read?feed=wire");
+  }, [
+    bootstrapStreamComplete,
+    clientHydrated,
+    followingTabPublications.length,
+    pathname,
+    router,
+    searchParams,
+    subscribedPublications.length,
+    wireNavigationEnabled,
+  ]);
 
   const showFeedCount = (feed: TopLevelFeed) =>
     clientHydrated && feedDisplaysUnreadCount(feedPreferences, feed);
@@ -329,13 +400,14 @@ export function AppSidebar({
     ? readLaterUnread
     : 0;
   const displayedArchiveUnread = showFeedCount("archive") ? archiveUnread : 0;
-  const visible = new Set<TopLevelFeed>(
+  const visible = new Set<ReaderNavigationFeed>(
     clientHydrated
       ? feedPreferences.visibleFeeds
       : DEFAULT_FEED_DISPLAY_PREFERENCES.visibleFeeds,
   );
+  if (wireNavigationEnabled) visible.add("wire");
 
-  const selectTopLevelFeed = (feed: TopLevelFeed) => {
+  const selectTopLevelFeed = (feed: ReaderNavigationFeed) => {
     setSelectedFolderUri(null);
     if (feed === "readLater") {
       router.push("/saved");
@@ -345,7 +417,13 @@ export function AppSidebar({
       router.push("/archive");
       return;
     }
+    if (feed === "wire") {
+      saveReaderFeedSelection(window.localStorage, "wire");
+      router.push("/read?feed=wire");
+      return;
+    }
     setPublicationTab(feed);
+    saveReaderFeedSelection(window.localStorage, feed);
     router.push(`/read?feed=${feed}`);
   };
 
@@ -419,9 +497,12 @@ export function AppSidebar({
               ...(visible.has("subscribed") ? ["subscribed" as const] : []),
               ...(visible.has("following") ? ["following" as const] : []),
             ]}
+            wireEnabled={wireNavigationEnabled}
+            wireActive={currentFeed === "wire"}
+            onWireSelect={() => selectTopLevelFeed("wire")}
           />
         </div>
-        {showPublicationsRail ? (
+        {showPublicationsRail && currentFeed !== "wire" ? (
         <div className="flex min-w-0 flex-col gap-0 group-data-[collapsible=icon]:overflow-hidden lg:fixed lg:bottom-0 lg:right-[max(0px,calc((100vw-70rem)/2))] lg:top-[var(--environment-banner-height,0px)] lg:z-30 lg:w-64 lg:overflow-y-auto lg:border-l lg:border-sidebar-border/70 lg:bg-background">
           <div className="hidden min-h-12 shrink-0 items-end px-4 pb-1 lg:flex">
             <p className="text-base font-bold text-sidebar-foreground">

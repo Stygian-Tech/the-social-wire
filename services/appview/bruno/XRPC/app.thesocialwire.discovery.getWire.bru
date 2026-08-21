@@ -1,0 +1,22 @@
+meta {
+  name: XRPC app.thesocialwire.discovery.getWire
+  type: http
+  seq: 31
+}
+
+get {
+  url: {{baseUrl}}/xrpc/app.thesocialwire.discovery.getWire?limit=30&lang=en
+  body: none
+  auth: none
+}
+
+headers {
+  X-SocialWire-Gateway-DID: {{gatewayViewerDid}}
+  X-SocialWire-Gateway-Timestamp: {{gatewayTimestamp}}
+  X-SocialWire-Gateway-Signature: {{gatewaySignature}}
+}
+
+docs {
+  Private AppView serving route for The Wire. Internal trust must represent either
+  the authenticated viewer or the dedicated anonymous-discovery principal.
+}

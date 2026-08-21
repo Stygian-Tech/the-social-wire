@@ -1,0 +1,28 @@
+{
+  "lexicon": 1,
+  "id": "app.thesocialwire.discovery.getFeedCatalog",
+  "defs": {
+    "main": {
+      "type": "query",
+      "description": "Get remotely controlled The Wire availability and presentation metadata.",
+      "parameters": { "type": "params", "properties": {} },
+      "output": {
+        "encoding": "application/json",
+        "schema": {
+          "type": "object",
+          "required": ["enabled", "available", "title", "subtitle", "supportedLanguages"],
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "available": { "type": "boolean" },
+            "title": { "type": "string", "maxLength": 100 },
+            "subtitle": { "type": "string", "maxLength": 300 },
+            "supportedLanguages": { "type": "array", "maxLength": 12, "items": { "type": "string", "maxLength": 35 } },
+            "latestGenerationId": { "type": "string", "maxLength": 128 },
+            "generatedAt": { "type": "string", "format": "datetime" }
+          }
+        }
+      },
+      "errors": [{ "name": "FeedUnavailable" }]
+    }
+  }
+}

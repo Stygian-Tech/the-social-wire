@@ -110,15 +110,18 @@ filter_changed gateway \
   'packages/swift/ThinAppViewCore/**' \
   'packages/swift/OperationsCore/**' \
   'packages/swift/SocialWireRedis/**' \
+  'packages/swift/WireCore/**' \
   'railway/gateway.json' \
   '.github/workflows/ci.yml'
 
 filter_changed appview \
   'services/appview/**' \
+  'database/migrations/**' \
   'packages/swift/GatewayCore/**' \
   'packages/swift/ThinAppViewCore/**' \
   'packages/swift/OperationsCore/**' \
   'packages/swift/SocialWireRedis/**' \
+  'packages/swift/WireCore/**' \
   'railway/appview.json' \
   '.github/workflows/ci.yml'
 
@@ -137,10 +140,33 @@ filter_changed jetstream_ingest \
   'railway/jetstream-ingest.json' \
   '.github/workflows/ci.yml'
 
+filter_changed wire_ingest \
+  'services/jetstream-ingest/**' \
+  'database/migrations/**' \
+  'railway/wire-jetstream-ingest.json' \
+  '.github/workflows/ci.yml'
+
+filter_changed wire_worker \
+  'services/wire-worker/**' \
+  'packages/swift/WireCore/**' \
+  'packages/swift/SocialWireRedis/**' \
+  'database/migrations/**' \
+  'railway/wire-worker.json' \
+  '.github/workflows/ci.yml'
+
+filter_changed wire_corpus_edge \
+  'services/wire-corpus-edge/**' \
+  'packages/swift/WireCore/**' \
+  'database/migrations/**' \
+  'scripts/verify-wire-corpus-serving.sql' \
+  'railway/wire-corpus-edge.json' \
+  '.github/workflows/ci.yml'
+
 filter_changed database_migrator \
   'database/migrations/**' \
   'scripts/apply-database-migrations.sh' \
   'scripts/verify-jetstream-v2-drain-indexes.sql' \
+  'scripts/verify-wire-corpus-serving.sql' \
   'services/database-migrator/**' \
   'railway/database-migrator.json' \
   '.github/workflows/ci.yml'
@@ -169,8 +195,12 @@ filter_changed spec \
   'packages/swift/GatewayCore/**' \
   'packages/swift/ThinAppViewCore/**' \
   'packages/swift/OperationsCore/**' \
+  'packages/swift/WireCore/**' \
+  'services/wire-worker/**' \
+  'services/wire-corpus-edge/**' \
   'scripts/apply-database-migrations.sh' \
   'scripts/verify-jetstream-v2-drain-indexes.sql' \
+  'scripts/verify-wire-corpus-serving.sql' \
   'scripts/operations/**' \
   'package.json' \
   'bun.lock' \

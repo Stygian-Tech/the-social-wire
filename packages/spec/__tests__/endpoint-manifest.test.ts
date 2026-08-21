@@ -31,7 +31,7 @@ describe("endpoint transport manifest", () => {
     const migrations = manifest.entries.filter((entry) => entry.classification === "xrpc-migration");
     expect(migrations.length).toBeGreaterThan(30);
     for (const entry of migrations) {
-      expect(entry.xrpcNsid).toMatch(/^app\.thesocialwire\.(appview|publication|sync|operations)\.[a-z][A-Za-z0-9]*$/);
+      expect(entry.xrpcNsid).toMatch(/^app\.thesocialwire\.(appview|publication|sync|operations|discovery)\.[a-z][A-Za-z0-9]*$/);
       const verb = entry.xrpcNsid!.split(".").at(-1)!;
       const query = /^(get|list)/.test(verb);
       expect(query ? entry.method : ["POST", "PATCH", "DELETE"].includes(entry.method)).toBeTruthy();

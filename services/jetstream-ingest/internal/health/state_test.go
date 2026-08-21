@@ -91,3 +91,44 @@ func TestStatusTracksPauseProgressAndErrors(t *testing.T) {
 		t.Fatalf("unexpected progress snapshot: %+v", progressed)
 	}
 }
+
+func TestCompletedSnapshotRemainsReadyWithoutALiveStream(t *testing.T) {
+	state := &State{}
+	state.Database(true)
+	state.Lease(true)
+	state.SnapshotComplete(200)
+
+	response := httptest.NewRecorder()
+	state.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+	if response.Code != http.StatusOK {
+		t.Fatalf("completed snapshot readiness = %d, want %d", response.Code, http.StatusOK)
+	}
+	var snapshot Snapshot
+	if err := json.NewDecoder(response.Body).Decode(&snapshot); err != nil {
+		t.Fatal(err)
+	}
+	if !snapshot.Ready || !snapshot.SnapshotDone || snapshot.Stream || snapshot.LastSeq != 200 {
+		t.Fatalf("completed snapshot status = %+v", snapshot)
+	}
+}
+
+func TestBackpressureFailsReadinessAndReportsCapacity(t *testing.T) {
+	state := &State{}
+	state.Database(true)
+	state.Lease(true)
+	state.Stream(true)
+	state.Backpressure(true, 21, 20, 81, 80)
+
+	response := httptest.NewRecorder()
+	state.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("backpressured readiness = %d", response.Code)
+	}
+	var snapshot Snapshot
+	if err := json.NewDecoder(response.Body).Decode(&snapshot); err != nil {
+		t.Fatal(err)
+	}
+	if !snapshot.Backpressured || snapshot.InboxRows != 21 || snapshot.DatabaseMaxBytes != 80 {
+		t.Fatalf("capacity snapshot = %+v", snapshot)
+	}
+}

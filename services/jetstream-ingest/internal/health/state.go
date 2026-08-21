@@ -8,20 +8,48 @@ import (
 )
 
 type State struct {
-	mu           sync.RWMutex
-	database     bool
-	lease        bool
-	stream       bool
-	paused       bool
-	lastSeq      uint64
-	lastProgress time.Time
-	lastError    string
+	mu               sync.RWMutex
+	database         bool
+	lease            bool
+	stream           bool
+	paused           bool
+	backpressured    bool
+	inboxRows        int64
+	inboxMaxRows     int64
+	databaseBytes    int64
+	databaseMaxBytes int64
+	snapshotDone     bool
+	lastSeq          uint64
+	lastProgress     time.Time
+	lastError        string
 }
 
 func (s *State) Database(ready bool) { s.mu.Lock(); s.database = ready; s.mu.Unlock() }
 func (s *State) Lease(held bool)     { s.mu.Lock(); s.lease = held; s.mu.Unlock() }
-func (s *State) Stream(running bool) { s.mu.Lock(); s.stream = running; s.mu.Unlock() }
-func (s *State) Paused(paused bool)  { s.mu.Lock(); s.paused = paused; s.mu.Unlock() }
+func (s *State) Stream(running bool) {
+	s.mu.Lock()
+	s.stream = running
+	if running {
+		s.snapshotDone = false
+	}
+	s.mu.Unlock()
+}
+func (s *State) Paused(paused bool) { s.mu.Lock(); s.paused = paused; s.mu.Unlock() }
+func (s *State) Backpressure(active bool, inboxRows, inboxMaxRows, databaseBytes, databaseMaxBytes int64) {
+	s.mu.Lock()
+	s.backpressured = active
+	s.inboxRows, s.inboxMaxRows = inboxRows, inboxMaxRows
+	s.databaseBytes, s.databaseMaxBytes = databaseBytes, databaseMaxBytes
+	s.mu.Unlock()
+}
+func (s *State) SnapshotComplete(lastSeq uint64) {
+	s.mu.Lock()
+	s.stream = false
+	s.snapshotDone = true
+	s.lastSeq = lastSeq
+	s.lastError = ""
+	s.mu.Unlock()
+}
 func (s *State) Progress(seq uint64) {
 	s.mu.Lock()
 	s.lastSeq = seq
@@ -65,23 +93,32 @@ func (s *State) Handler() http.Handler {
 }
 
 type Snapshot struct {
-	Ready        bool      `json:"ready"`
-	Database     bool      `json:"database"`
-	Lease        bool      `json:"lease"`
-	Stream       bool      `json:"stream"`
-	Paused       bool      `json:"paused"`
-	LastSeq      uint64    `json:"lastSeq"`
-	LastProgress time.Time `json:"lastProgress,omitempty"`
-	LastError    string    `json:"lastError,omitempty"`
+	Ready            bool      `json:"ready"`
+	Database         bool      `json:"database"`
+	Lease            bool      `json:"lease"`
+	Stream           bool      `json:"stream"`
+	Paused           bool      `json:"paused"`
+	Backpressured    bool      `json:"backpressured"`
+	InboxRows        int64     `json:"inboxRows,omitempty"`
+	InboxMaxRows     int64     `json:"inboxMaxRows,omitempty"`
+	DatabaseBytes    int64     `json:"databaseBytes,omitempty"`
+	DatabaseMaxBytes int64     `json:"databaseMaxBytes,omitempty"`
+	SnapshotDone     bool      `json:"snapshotComplete"`
+	LastSeq          uint64    `json:"lastSeq"`
+	LastProgress     time.Time `json:"lastProgress,omitempty"`
+	LastError        string    `json:"lastError,omitempty"`
 }
 
 func (s *State) snapshot() Snapshot {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return Snapshot{
-		Ready:    s.database && s.lease && s.stream,
+		Ready:    s.database && s.lease && (s.stream || s.snapshotDone) && !s.paused && !s.backpressured,
 		Database: s.database, Lease: s.lease, Stream: s.stream, Paused: s.paused,
-		LastSeq: s.lastSeq, LastProgress: s.lastProgress, LastError: s.lastError,
+		SnapshotDone: s.snapshotDone, LastSeq: s.lastSeq,
+		Backpressured: s.backpressured, InboxRows: s.inboxRows, InboxMaxRows: s.inboxMaxRows,
+		DatabaseBytes: s.databaseBytes, DatabaseMaxBytes: s.databaseMaxBytes,
+		LastProgress: s.lastProgress, LastError: s.lastError,
 	}
 }
 

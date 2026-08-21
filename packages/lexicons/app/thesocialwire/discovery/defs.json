@@ -1,0 +1,61 @@
+{
+  "lexicon": 1,
+  "id": "app.thesocialwire.discovery.defs",
+  "defs": {
+    "sourceAttribution": {
+      "type": "object",
+      "required": ["name", "domain"],
+      "properties": {
+        "name": { "type": "string", "maxLength": 300 },
+        "domain": { "type": "string", "maxLength": 253 },
+        "publication": { "type": "string", "maxLength": 2048 },
+        "author": { "type": "string", "maxLength": 300 }
+      }
+    },
+    "wireItem": {
+      "type": "object",
+      "required": ["itemId", "canonicalUrl", "title", "source", "reasons", "provenance"],
+      "properties": {
+        "itemId": { "type": "string", "maxLength": 128 },
+        "canonicalUrl": { "type": "string", "format": "uri", "maxLength": 8192 },
+        "representativeUri": { "type": "string", "format": "at-uri", "maxLength": 2048 },
+        "title": { "type": "string", "maxLength": 1000 },
+        "summary": { "type": "string", "maxLength": 10000 },
+        "publishedAt": { "type": "string", "format": "datetime" },
+        "thumbnailUrl": { "type": "string", "format": "uri", "maxLength": 8192 },
+        "source": { "type": "ref", "ref": "app.thesocialwire.discovery.defs#sourceAttribution" },
+        "reasons": {
+          "type": "array",
+          "maxLength": 2,
+          "items": {
+            "type": "string",
+            "maxLength": 64,
+            "knownValues": ["breaking_story", "widely_discussed", "shared_across_communities", "fresh_publication", "resurfacing"]
+          }
+        },
+        "provenance": {
+          "type": "array",
+          "maxLength": 8,
+          "items": {
+            "type": "string",
+            "maxLength": 64,
+            "knownValues": ["standard_site", "recommendation", "direct_share", "quote", "repost", "like", "rss"]
+          }
+        }
+      }
+    },
+    "wirePage": {
+      "type": "object",
+      "required": ["generationId", "generatedAt", "language", "source", "degraded", "items"],
+      "properties": {
+        "generationId": { "type": "string", "maxLength": 128 },
+        "generatedAt": { "type": "string", "format": "datetime" },
+        "language": { "type": "string", "maxLength": 35 },
+        "cursor": { "type": "string", "maxLength": 4096 },
+        "source": { "type": "string", "knownValues": ["ranked", "stale_generation", "simplified_fallback"] },
+        "degraded": { "type": "boolean" },
+        "items": { "type": "array", "maxLength": 50, "items": { "type": "ref", "ref": "app.thesocialwire.discovery.defs#wireItem" } }
+      }
+    }
+  }
+}

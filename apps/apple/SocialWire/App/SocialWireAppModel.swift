@@ -53,6 +53,10 @@ final class SocialWireAppModel {
     /// Lexical account preferences returned by **`app.thesocialwire.sync.getPreferences`** (optional read-later hints).
     var preferencesFromGateway: PreferencesRecord?
     var feedPreferences: ReaderFeedPreferences = .defaults
+    var wireCatalog: WireFeedCatalog?
+    var wireFeedNotice: String?
+    var wireFeedLoadFailed = false
+    private var wireGenerationId: String?
     /// Entry id currently open under **Unread** filter — `markRead` is deferred until navigation away.
     private var unreadDeferredEntryId: String?
     /// Bumped when publication selection clears the reader; stale `selectEntry` tasks must not reopen it.
@@ -146,11 +150,15 @@ final class SocialWireAppModel {
     }
 
     var visibleReaderListSources: [ReaderListSource] {
-        feedPreferences.visibleFeeds
+        var sources = feedPreferences.visibleFeeds
+        if wireCatalog?.isAvailable == true {
+            sources.insert(.wire, at: 0)
+        }
+        return sources
     }
 
     func showsTopLevelFeedUnreadCount(for source: ReaderListSource) -> Bool {
-        feedPreferences.showsUnreadCount(for: source)
+        source != .wire && feedPreferences.showsUnreadCount(for: source)
     }
 
     func isTopLevelFeedSelected(_ source: ReaderListSource) -> Bool {
@@ -159,6 +167,8 @@ final class SocialWireAppModel {
 
     func topLevelUnreadCount(for source: ReaderListSource) -> Int {
         switch source {
+        case .wire:
+            0
         case .readLater:
             savedLinks.filter { save in
                 guard let subjectUri = save.subjectUri else { return true }
@@ -218,7 +228,7 @@ final class SocialWireAppModel {
 
     func publicationsForBulkRead(list: ReaderListSource) -> [DiscoveredPublication] {
         switch list {
-        case .readLater, .archive:
+        case .wire, .readLater, .archive:
             return []
         case .subscribed:
             var seen = Set<String>()
@@ -336,6 +346,7 @@ final class SocialWireAppModel {
     }
 
     func markReadScope(compactPane: ReaderPane?, isCompact: Bool) -> ReaderMarkReadScope {
+        guard readerListSource.supportsReadState else { return .unavailable }
         if let entryId = focusedEntryIdForMarkRead, showsEntryMarkReadInChrome(
             compactPane: compactPane,
             isCompact: isCompact
@@ -375,7 +386,8 @@ final class SocialWireAppModel {
     }
 
     var filteredEntries: [EntryListItem] {
-        switch readerFilter {
+        guard readerListSource.supportsReadState else { return entries }
+        return switch readerFilter {
         case .all: entries
         case .unread: entries.filter { readAtByEntryId[$0.entryId] == nil }
         }
@@ -389,7 +401,7 @@ final class SocialWireAppModel {
     var hasSelectedArticleFeed: Bool {
         if selectedPublication != nil { return true }
         switch feedSelection {
-        case .topLevel(.subscribed), .topLevel(.following), .folder:
+        case .topLevel(.wire), .topLevel(.subscribed), .topLevel(.following), .folder:
             return true
         default:
             return false
@@ -402,6 +414,8 @@ final class SocialWireAppModel {
             return
         }
         switch feedSelection {
+        case .topLevel(.wire):
+            await loadWireFeed()
         case .topLevel(.subscribed):
             await loadAggregateFeed(kind: "subscribed")
         case .topLevel(.following):
@@ -626,6 +640,10 @@ final class SocialWireAppModel {
         viewerProfile = nil
         preferencesFromGateway = nil
         feedPreferences = .defaults
+        wireCatalog = nil
+        wireFeedNotice = nil
+        wireFeedLoadFailed = false
+        wireGenerationId = nil
         unreadDeferredEntryId = nil
         sidebarFetching = false
         folderPublicationsLoading = false
@@ -778,6 +796,14 @@ final class SocialWireAppModel {
         }
 
         switch source {
+        case .wire:
+            selectedSidebar = nil
+            selectedPublication = nil
+            selectedSavedLink = nil
+            entries = []
+            if persist {
+                Task { await loadWireFeed() }
+            }
         case .readLater, .archive:
             selectedSidebar = .saved
             selectedPublication = nil
@@ -857,6 +883,108 @@ final class SocialWireAppModel {
         }
     }
 
+    private var preferredWireLanguage: String {
+        let preferred = Locale.current.language.languageCode?.identifier ?? "en"
+        guard let supported = wireCatalog?.supportedLanguages, !supported.isEmpty else {
+            return preferred
+        }
+        if supported.contains(preferred) { return preferred }
+        if let language = supported.first(where: { preferred.hasPrefix($0 + "-") }) {
+            return language
+        }
+        return supported.first ?? preferred
+    }
+
+    func refreshWireCatalog() async {
+        do {
+            let catalog = try await gateway.fetchFeedCatalog()
+            wireCatalog = catalog
+            guard catalog.isAvailable else {
+                if readerListSource == .wire {
+                    let fallback = feedPreferences.visibleFeeds.first ?? .subscribed
+                    applyReaderListSource(fallback, persist: true)
+                }
+                return
+            }
+            if readerListSource == .wire, entries.isEmpty {
+                await loadWireFeed()
+            }
+        } catch {
+            // Keep an already-confirmed catalog during a transient refresh failure. On a cold
+            // launch, fail closed so an operator-disabled feed never appears from client defaults.
+            if wireCatalog == nil, readerListSource == .wire {
+                let fallback = feedPreferences.visibleFeeds.first ?? .subscribed
+                applyReaderListSource(fallback, persist: true)
+            }
+        }
+    }
+
+    func loadWireFeed(cursor: String? = nil) async {
+        guard wireCatalog?.isAvailable == true, let viewerDID else { return }
+        let language = preferredWireLanguage
+        var restoredCache = false
+
+        if cursor == nil,
+           let coordinator = readerCacheCoordinator,
+           let cached = try? coordinator.wireFeedPage(
+               viewerDID: viewerDID,
+               language: language
+           ) {
+            _ = applyWirePage(cached, replacing: true)
+            restoredCache = !cached.items.isEmpty
+        }
+
+        if cursor == nil {
+            entriesNextCursor = nil
+            entriesPaginationTriggeredForEntryId = nil
+            isLoadingEntries = !restoredCache
+        } else {
+            isLoadingMoreEntries = true
+        }
+        defer {
+            if cursor == nil { isLoadingEntries = false }
+            else { isLoadingMoreEntries = false }
+        }
+
+        do {
+            let page = try await gateway.fetchWire(
+                language: language,
+                cursor: cursor
+            )
+            guard readerListSource == .wire else { return }
+            guard applyWirePage(page, replacing: cursor == nil) else { return }
+            if cursor == nil {
+                try? readerCacheCoordinator?.upsertWireFeedPage(
+                    page,
+                    viewerDID: viewerDID
+                )
+            }
+            await prefetchThumbnailImages(for: page.items.map { $0.toEntryListItem() })
+        } catch {
+            guard readerListSource == .wire else { return }
+            wireFeedLoadFailed = entries.isEmpty
+            if !entries.isEmpty {
+                wireFeedNotice = "Showing the most recently cached edition."
+            }
+        }
+    }
+
+    @discardableResult
+    private func applyWirePage(_ page: WireFeedPage, replacing: Bool) -> Bool {
+        if !replacing, let wireGenerationId, page.generationId != wireGenerationId {
+            return false
+        }
+        let pageEntries = page.items.map { $0.toEntryListItem() }
+        entries = replacing
+            ? pageEntries
+            : mergeEntryPages(existing: entries, newPage: pageEntries)
+        wireGenerationId = page.generationId
+        entriesNextCursor = page.cursor
+        wireFeedNotice = page.notice
+        wireFeedLoadFailed = false
+        return true
+    }
+
     func loadMoreSelectedFeedIfNeeded(triggeredByEntryId entryId: String) async {
         guard entriesPaginationTriggeredForEntryId != entryId else { return }
         entriesPaginationTriggeredForEntryId = entryId
@@ -865,6 +993,8 @@ final class SocialWireAppModel {
               !isLoadingMoreEntries
         else { return }
         switch feedSelection {
+        case .topLevel(.wire):
+            await loadWireFeed(cursor: cursor)
         case .topLevel(.subscribed):
             await loadAggregateFeed(kind: "subscribed", cursor: cursor)
         case .topLevel(.following):
@@ -877,6 +1007,7 @@ final class SocialWireAppModel {
     }
 
     func setFeedVisible(_ source: ReaderListSource, visible: Bool) async {
+        guard source != .wire else { return }
         var next = feedPreferences.visibleFeeds
         if visible {
             if !next.contains(source) { next.append(source) }
@@ -901,9 +1032,10 @@ final class SocialWireAppModel {
     }
 
     func setFeedUnreadCountVisible(_ source: ReaderListSource, visible: Bool) async {
+        guard source != .wire else { return }
         guard feedPreferences.visibleFeeds.contains(source) else { return }
         let feedsWithUnreadCounts = visible
-            ? ReaderListSource.allCases.filter {
+            ? ReaderListSource.preferenceCases.filter {
                 $0 == source || feedPreferences.feedsWithUnreadCounts.contains($0)
             }
             : feedPreferences.feedsWithUnreadCounts.filter { $0 != source }
@@ -921,12 +1053,12 @@ final class SocialWireAppModel {
         after source: ReaderListSource,
         among visible: [ReaderListSource]
     ) -> ReaderListSource? {
-        guard let start = ReaderListSource.allCases.firstIndex(of: source) else {
+        guard let start = ReaderListSource.preferenceCases.firstIndex(of: source) else {
             return visible.first
         }
-        for offset in 1 ... ReaderListSource.allCases.count {
-            let candidate = ReaderListSource.allCases[
-                (start + offset) % ReaderListSource.allCases.count
+        for offset in 1 ... ReaderListSource.preferenceCases.count {
+            let candidate = ReaderListSource.preferenceCases[
+                (start + offset) % ReaderListSource.preferenceCases.count
             ]
             if visible.contains(candidate) { return candidate }
         }
@@ -934,6 +1066,7 @@ final class SocialWireAppModel {
     }
 
     func refreshAll() async {
+        await refreshWireCatalog()
         await refreshSidebarProjection()
         await refreshActiveReaderContentIfNeeded()
     }
@@ -1868,6 +2001,7 @@ final class SocialWireAppModel {
     }
 
     func applyReaderFilter(_ newValue: ReaderFilter) async {
+        guard readerListSource.supportsReadState else { return }
         let old = readerFilter
         guard old != newValue else { return }
         readerFilter = newValue
@@ -1887,7 +2021,7 @@ final class SocialWireAppModel {
     }
 
     func dismissReaderDetail() async {
-        if readerFilter == .unread {
+        if readerListSource.supportsReadState, readerFilter == .unread {
             if let id = unreadDeferredEntryId {
                 await markReadIfNeeded(entryId: id)
             } else if let open = selectedEntry?.entryId {
@@ -1905,6 +2039,39 @@ final class SocialWireAppModel {
     func selectEntry(_ item: EntryListItem) async {
         entrySelectionGeneration += 1
         let generation = entrySelectionGeneration
+
+        if readerListSource == .wire {
+            unreadDeferredEntryId = nil
+            guard let viewerDID else { return }
+            do {
+                if let coordinator = readerCacheCoordinator,
+                   let cached = try coordinator.wireItemDetail(
+                       itemId: item.entryId,
+                       viewerDID: viewerDID
+                   ) {
+                    guard generation == entrySelectionGeneration else { return }
+                    guard entries.contains(where: { $0.entryId == item.entryId }) else { return }
+                    selectedEntry = cached
+                } else if selectedEntry?.entryId != item.entryId {
+                    selectedEntry = nil
+                }
+
+                let wireItem = try await gateway.fetchWireItem(itemId: item.entryId)
+                guard generation == entrySelectionGeneration else { return }
+                guard entries.contains(where: { $0.entryId == item.entryId }) else { return }
+                let detail = wireItem.toEntryDetail()
+                selectedEntry = detail
+                selectedSavedLink = nil
+                try? readerCacheCoordinator?.upsertWireItemDetail(
+                    detail,
+                    viewerDID: viewerDID
+                )
+            } catch {
+                guard generation == entrySelectionGeneration else { return }
+                // Retain cached detail when available; Wire navigation must never create read marks.
+            }
+            return
+        }
 
         if readerFilter == .unread {
             if let previous = unreadDeferredEntryId, previous != item.entryId {
@@ -2208,7 +2375,7 @@ final class SocialWireAppModel {
         guard let selection = pendingRestoredFeedSelection else { return }
         switch selection {
         case .topLevel(let source):
-            guard feedPreferences.visibleFeeds.contains(source) else {
+            guard visibleReaderListSources.contains(source) else {
                 pendingRestoredFeedSelection = nil
                 return
             }
@@ -2490,7 +2657,7 @@ final class SocialWireAppModel {
             [.subscribed]
         case .list(.following):
             [.following]
-        case .list(.readLater), .list(.archive):
+        case .list(.wire), .list(.readLater), .list(.archive):
             []
         case .folder(let folderRkey):
             [.folder(folderRkey: folderRkey)]

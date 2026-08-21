@@ -6,6 +6,7 @@ struct AppViewServiceConfig: Sendable {
   let core: GatewayConfig
   let thinAppView: ThinAppViewConfig
   let storeBackend: StoreBackend
+  let wire: WireDiscoveryConfig
 
   enum StoreBackend: Sendable {
     case sqlite(path: String)
@@ -14,7 +15,7 @@ struct AppViewServiceConfig: Sendable {
 
   static func fromEnvironment(
     _ env: [String: String] = AppEnvironmentLoader.mergeProcessWithDotenv()
-  ) -> AppViewServiceConfig {
+  ) throws -> AppViewServiceConfig {
     let core = GatewayConfig.fromEnvironment(env)
     let thin = ThinAppViewConfig.fromEnvironment(env)
     let backend: StoreBackend
@@ -27,6 +28,18 @@ struct AppViewServiceConfig: Sendable {
       }
       backend = .postgres(url: dbURL)
     }
-    return AppViewServiceConfig(core: core, thinAppView: thin, storeBackend: backend)
+    let wire = try WireDiscoveryConfig.fromEnvironment(env)
+    if core.appEnv == .dev, wire.mode.servesAPI, wire.corpusEdge == nil {
+      throw WireDiscoveryConfigError.missingCorpusEdgeForDevelopment
+    }
+    if core.appEnv == .prod, wire.corpusEdge != nil {
+      throw WireDiscoveryConfigError.remoteCorpusEdgeNotAllowedInProduction
+    }
+    return AppViewServiceConfig(
+      core: core,
+      thinAppView: thin,
+      storeBackend: backend,
+      wire: wire
+    )
   }
 }
