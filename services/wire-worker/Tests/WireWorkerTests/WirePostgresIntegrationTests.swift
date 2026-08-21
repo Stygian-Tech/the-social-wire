@@ -272,6 +272,68 @@ struct WirePostgresIntegrationTests {
     )
   }
 
+  @Test("expired leases are reclaimed while live leases remain untouched")
+  func expiredLeaseRecovery() async throws {
+    guard let url = ProcessInfo.processInfo.environment["WIRE_TEST_DATABASE_URL"] else { return }
+    let logger = Logger(label: "wire-expired-lease-postgres.integration")
+    let configuration = try PostgresWireConfig.make(from: url, logger: logger)
+    let pool = PostgresClient(configuration: configuration, backgroundLogger: logger)
+    let runTask = Task { await pool.run() }
+    await Task.yield()
+    defer { runTask.cancel() }
+
+    let environment = "wire-expired-lease-\(UUID().uuidString.lowercased())"
+    let generation = "wire-expired-lease-v1"
+    let now = Date()
+    try await pool.query(
+      """
+      INSERT INTO wire_ingestion_inbox
+        (environment, source_generation, seq, source_host, cursor_kind, event_kind,
+         repo_did, payload, event_time, status, lease_owner, lease_token,
+         lease_expires_at, next_attempt_at)
+      VALUES
+        (\(environment), \(generation), 1, 'test', 'jetstream_v2_seq', 'identity',
+         'did:example:expired-lease', '{}'::jsonb, \(now), 'leased', 'old-worker',
+         'expired-token', \(now.addingTimeInterval(-60)), \(now.addingTimeInterval(3_600))),
+        (\(environment), \(generation), 2, 'test', 'jetstream_v2_seq', 'identity',
+         'did:example:live-lease', '{}'::jsonb, \(now), 'leased', 'live-worker',
+         'live-token', \(now.addingTimeInterval(60)), \(now.addingTimeInterval(-3_600)))
+      """,
+      logger: logger
+    )
+
+    let processor = try PostgresWireInboxProcessor(
+      pool: pool,
+      logger: logger,
+      actorSecret: String(repeating: "s", count: 32),
+      batchSize: 10,
+      maximumConcurrentEvents: 2
+    )
+    #expect(try await processor.process(asOf: now) == 1)
+
+    let rows = try await pool.query(
+      """
+      SELECT seq, status, lease_token
+      FROM wire_ingestion_inbox
+      WHERE environment = \(environment) AND source_generation = \(generation)
+      ORDER BY seq
+      """,
+      logger: logger
+    )
+    var states: [(Int64, String, String?)] = []
+    for try await row in rows {
+      states.append(try row.decode((Int64, String, String?).self))
+    }
+    #expect(states.map(\.0) == [1, 2])
+    #expect(states.map(\.1) == ["applied", "leased"])
+    #expect(states[1].2 == "live-token")
+
+    try await pool.query(
+      "DELETE FROM wire_ingestion_inbox WHERE environment = \(environment)",
+      logger: logger
+    )
+  }
+
   @Test("overlapping source generations count one stable transport signal")
   func overlappingGenerationsDeduplicateSignals() async throws {
     guard let url = ProcessInfo.processInfo.environment["WIRE_TEST_DATABASE_URL"] else { return }

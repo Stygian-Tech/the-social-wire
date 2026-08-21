@@ -186,8 +186,13 @@ struct PostgresWireInboxProcessor: Sendable {
       WITH candidates AS (
         SELECT environment, source_generation, seq
         FROM wire_ingestion_inbox candidate
-        WHERE (((candidate.status IN ('pending', 'retry') AND candidate.next_attempt_at <= \(asOf))
-          OR (candidate.status = 'leased' AND candidate.lease_expires_at <= \(asOf))))
+        WHERE candidate.status IN ('pending', 'leased', 'retry')
+          AND (
+            CASE
+              WHEN candidate.status = 'leased' THEN candidate.lease_expires_at
+              ELSE candidate.next_attempt_at
+            END
+          ) <= \(asOf)
           AND NOT EXISTS (
             SELECT 1 FROM wire_ingestion_inbox earlier
             WHERE earlier.environment = candidate.environment
@@ -196,7 +201,16 @@ struct PostgresWireInboxProcessor: Sendable {
               AND earlier.seq < candidate.seq
               AND earlier.status IN ('pending', 'leased', 'retry')
           )
-        ORDER BY next_attempt_at, seq
+        ORDER BY
+          (
+            CASE
+              WHEN candidate.status = 'leased' THEN candidate.lease_expires_at
+              ELSE candidate.next_attempt_at
+            END
+          ),
+          candidate.seq,
+          candidate.environment,
+          candidate.source_generation
         FOR UPDATE SKIP LOCKED
         LIMIT \(batchSize)
       )
@@ -955,7 +969,8 @@ struct PostgresWireInboxProcessor: Sendable {
   ) async throws {
     let appliedAt: Date? = status == "applied" ? asOf : nil
     let deadAt: Date? = status == "dead_letter" ? asOf : nil
-    let expiresAt = status == "applied"
+    let expiresAt =
+      status == "applied"
       ? asOf.addingTimeInterval(300)
       : status == "dead_letter" ? asOf.addingTimeInterval(7 * 24 * 3_600) : .distantFuture
     try await pool.query(
