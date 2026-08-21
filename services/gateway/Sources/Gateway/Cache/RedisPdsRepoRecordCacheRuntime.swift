@@ -28,7 +28,7 @@ enum GatewayPdsCacheBackendError: Error {
 struct RedisPdsRepoRecordCacheRuntime: Sendable {
   let store: any PdsRepoRecordCacheStore
   let resolutionCache: any PDSResolutionCache
-  private let client: any RedisCommandClient
+  let client: any RedisCommandClient
 
   static func make(
     environment: [String: String],

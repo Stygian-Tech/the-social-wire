@@ -28,7 +28,7 @@ describe("Social Wire XRPC lexicons", () => {
   });
 
   it("loads through the AT Protocol Lexicon validator", () => {
-    const documents = ["app.thesocialwire.defs", ...nsids].map((nsid) =>
+    const documents = ["app.thesocialwire.defs", "app.thesocialwire.discovery.defs", ...nsids].map((nsid) =>
       JSON.parse(readFileSync(fileForNsid(nsid), "utf8"))
     );
     expect(() => new Lexicons(documents)).not.toThrow();
@@ -50,6 +50,7 @@ describe("Social Wire XRPC lexicons", () => {
   it("declares bounded identifiers for item methods", () => {
     for (const nsid of [
       "app.thesocialwire.appview.getEntry",
+      "app.thesocialwire.discovery.getWireItem",
       "app.thesocialwire.operations.getBackfill",
       "app.thesocialwire.operations.getGapInvestigation",
       "app.thesocialwire.operations.getTrace",

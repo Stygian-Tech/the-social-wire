@@ -21,6 +21,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import { useWireFeedEntries } from "@/hooks/useWireFeed";
 
 /**
  * Global All / Unread toggle for the read shell (applies to whichever publication is open).
@@ -37,6 +38,9 @@ export function ReadArticleFilterBar() {
   const isTabletPortrait = useIsTabletPortrait();
   const clientHydrated = useClientHydrated();
   const { refresh } = useSidebarBootstrap();
+  const isWire =
+    pathname === "/read" && searchParams.get("feed") === "wire";
+  const wire = useWireFeedEntries({ enabled: isWire });
 
   const { activeFeedScope } = useReadSidebarScope();
   const { bulkDisabled, applyMarkAllRead } =
@@ -57,6 +61,51 @@ export function ReadArticleFilterBar() {
         : "Subscribed"
     : "Articles";
   const feedTitle = activeFeedScope.displayName.trim() || routeFeedTitle;
+
+  if (isWire) {
+    const firstPage = wire.data?.pages[0];
+    const degraded =
+      firstPage?.degraded === true ||
+      (firstPage?.source != null && firstPage.source !== "ranked");
+    const subtitle = "Important stories across the social web";
+    const statusDetails: string[] = [];
+    if (degraded) statusDetails.push("Showing fallback results");
+    if (wire.viewerModerationNeedsReauth) {
+      statusDetails.push(
+        "Baseline moderation; sign out and sign in again to apply your Bluesky moderation settings",
+      );
+    } else if (wire.viewerModerationError) {
+      statusDetails.push("Your moderation settings could not be applied; retry");
+    }
+    return (
+      <FeedHeader
+        title="The Wire"
+        subtitle={[subtitle, ...statusDetails].join(" · ")}
+      >
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          className="size-8 shrink-0 rounded-md border-0 bg-transparent shadow-none hover:bg-muted/50 hover:text-foreground"
+          disabled={
+            wire.isRefreshingFirstPage ||
+            wire.isLoading ||
+            wire.viewerModerationRetryUnavailable
+          }
+          aria-label="Refresh The Wire"
+          title="Refresh The Wire"
+          onClick={() => {
+            void wire.retryTheWire().catch(() => undefined);
+          }}
+        >
+          <RefreshCw
+            aria-hidden="true"
+            className={`size-3.5 ${wire.isRefreshingFirstPage ? "animate-spin" : ""}`}
+          />
+        </Button>
+      </FeedHeader>
+    );
+  }
 
   return (
     <FeedHeader title={feedTitle}>

@@ -65,6 +65,20 @@ func TestPrepareBatchStagesLifecycleOnlyForTrackedDIDs(t *testing.T) {
 	}
 }
 
+func TestPrepareBatchWireStagesGlobalLifecycleEvents(t *testing.T) {
+	events := []jetstream.Event{
+		{DID: "did:plc:one", Seq: 11, Kind: jetstream.KindAccount, Account: &jetstream.Account{DID: "did:plc:one", Active: false}},
+		{DID: "did:plc:two", Seq: 12, Kind: jetstream.KindIdentity, Identity: &jetstream.Identity{DID: "did:plc:two"}},
+	}
+	prepared, cursor, _, err := PrepareBatchForPipeline(events, nil, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(prepared) != 2 || cursor != 12 {
+		t.Fatalf("prepared=%#v cursor=%d", prepared, cursor)
+	}
+}
+
 func TestPrepareBatchDefersCommitScopeDecisionToStagingTransaction(t *testing.T) {
 	events := []jetstream.Event{{
 		DID: "did:plc:not-in-snapshot", Seq: 21, Kind: jetstream.KindCommit,

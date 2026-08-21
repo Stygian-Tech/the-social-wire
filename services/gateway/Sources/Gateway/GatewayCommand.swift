@@ -97,6 +97,10 @@ struct Serve: AsyncParsableCommand {
           config: config,
           httpClient: httpClient,
           cache: cache,
+          wireLimiter: WireRequestLimiter(
+            redis: redisRuntime?.client,
+            environment: config.core.appEnv.rawValue
+          ),
           operationsStore: operationsStore,
           telemetry: operationsConfig.enabled ? telemetry : nil,
           telemetryEnvironment: operationsEnvironment,
@@ -158,6 +162,10 @@ struct Serve: AsyncParsableCommand {
           config: config,
           httpClient: httpClient,
           cache: cache,
+          wireLimiter: WireRequestLimiter(
+            redis: redisRuntime?.client,
+            environment: config.core.appEnv.rawValue
+          ),
           operationsStore: operationsStore,
           telemetry: operationsConfig.enabled ? telemetry : nil,
           telemetryEnvironment: operationsEnvironment,

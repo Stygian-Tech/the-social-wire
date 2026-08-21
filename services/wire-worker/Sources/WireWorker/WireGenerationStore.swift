@@ -1,0 +1,16 @@
+import Foundation
+import WireCore
+
+protocol WireGenerationStore: Sendable {
+  func ping() async throws
+  func eligibleLanguageBuckets(limit: Int, minimumCandidates: Int, asOf: Date) async throws -> [String]
+  func loadCandidates(languageBucket: String, limit: Int, asOf: Date) async throws -> [WireCandidate]
+  func commit(_ generation: WireGenerationCommit) async throws
+  func deleteExpired(asOf: Date, batchSize: Int) async throws
+}
+
+extension WireGenerationStore {
+  func eligibleLanguageBuckets(limit: Int, minimumCandidates: Int, asOf: Date) async throws -> [String] {
+    []
+  }
+}

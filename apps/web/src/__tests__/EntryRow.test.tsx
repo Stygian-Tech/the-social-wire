@@ -55,4 +55,59 @@ describe("EntryRow", () => {
       .toBe(entry.entryId);
     expect(queryByText(entry.entryId)).toBeNull();
   });
+
+  it("renders The Wire source, reason, and presentation-safe provenance", async () => {
+    const { EntryRow } = await import("@/components/EntryList/EntryRow");
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    function Wrapper({ children }: { children: ReactNode }) {
+      return (
+        <QueryClientProvider client={queryClient}>
+          <AuthProvider>{children}</AuthProvider>
+        </QueryClientProvider>
+      );
+    }
+    const entry: EntryListItem = {
+      entryId: "at://did:plc:alice/site.standard.document/entry-1",
+      title: "A Ranked Story",
+      publishedAt: "2026-08-20T12:00:00.000Z",
+      originalUrl: "https://news.example/story",
+      wireItem: {
+        itemId: "wire:item:one",
+        representativeUri:
+          "at://did:plc:alice/site.standard.document/entry-1",
+        source: {
+          name: "Example News",
+          domain: "news.example",
+          publication: "Example News",
+          author: "A. Writer",
+        },
+        reasons: ["breaking_story"],
+        provenance: ["direct_share"],
+        publishedAt: "2026-08-20T12:00:00.000Z",
+      },
+    };
+
+    const { getByText, getByLabelText, queryByText } = render(
+      <EntryRow
+        entry={entry}
+        isSelected={false}
+        onSelect={() => {}}
+        isRead={true}
+        readIndicatorsEnabled={false}
+        onMarkEntryRead={() => {}}
+        onMarkEntryUnread={() => {}}
+      />,
+      { wrapper: Wrapper },
+    );
+
+    expect(getByText("Example News")).toBeDefined();
+    expect(getByText("news.example")).toBeDefined();
+    expect(getByText("A. Writer")).toBeDefined();
+    expect(getByLabelText("Why this story is on The Wire")).toBeDefined();
+    expect(getByText("Breaking Story")).toBeDefined();
+    expect(getByText("Directly Shared")).toBeDefined();
+    expect(queryByText("Mark As Unread")).toBeNull();
+  });
 });

@@ -1,0 +1,21 @@
+meta {
+  name: XRPC app.thesocialwire.discovery.getFeedCatalog
+  type: http
+  seq: 33
+}
+
+get {
+  url: {{baseUrl}}/xrpc/app.thesocialwire.discovery.getFeedCatalog
+  body: none
+  auth: none
+}
+
+headers {
+  X-SocialWire-Gateway-DID: {{gatewayViewerDid}}
+  X-SocialWire-Gateway-Timestamp: {{gatewayTimestamp}}
+  X-SocialWire-Gateway-Signature: {{gatewaySignature}}
+}
+
+docs {
+  Private AppView runtime capability catalog for The Wire.
+}

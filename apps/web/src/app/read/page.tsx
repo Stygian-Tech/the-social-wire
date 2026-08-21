@@ -1,8 +1,15 @@
 "use client";
 
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
+import { useEffect, useState } from "react";
 import ReadPubPage from "./[...pubId]/ReadPubPage";
+import { useWireFeedCatalog } from "@/hooks/useWireFeed";
+import {
+  isReaderFeedSelection,
+  loadReaderFeedSelection,
+  type ReaderFeedSelection,
+} from "@/lib/readerFeedSelectionStorage";
 
 export default function ReadIndexPage() {
   return (
@@ -14,8 +21,30 @@ export default function ReadIndexPage() {
 
 function ReadIndexContent() {
   const params = useSearchParams();
+  const router = useRouter();
   const folder = params.get("folder");
   const feed = params.get("feed");
+  const catalog = useWireFeedCatalog();
+  const [selectionState, setSelectionState] = useState<{
+    loaded: boolean;
+    feed: ReaderFeedSelection | null;
+  }>({ loaded: false, feed: null });
+
+  useEffect(() => {
+    queueMicrotask(() =>
+      setSelectionState({
+        loaded: true,
+        feed: loadReaderFeedSelection(window.localStorage),
+      }),
+    );
+  }, []);
+  const rememberedFeed = selectionState.feed;
+
+  useEffect(() => {
+    if (!selectionState.loaded || folder || feed || !rememberedFeed) return;
+    router.replace(`/read?feed=${rememberedFeed}`);
+  }, [feed, folder, rememberedFeed, router, selectionState.loaded]);
+
   if (folder) {
     return (
       <ReadPubPage
@@ -24,7 +53,30 @@ function ReadIndexContent() {
       />
     );
   }
-  const kind = feed === "following" ? "following" : "subscribed";
+  const wireAvailable =
+    catalog.data?.enabled === true && catalog.data.available === true;
+  if (feed === "wire") {
+    if (wireAvailable) return <ReadPubPage key="wire" wireFeed />;
+    return (
+      <div className="flex h-full flex-1 items-center justify-center p-8 text-sm text-muted-foreground">
+        {catalog.isLoading ? "Loading The Wire…" : "The Wire is unavailable."}
+      </div>
+    );
+  }
+  if (feed && !isReaderFeedSelection(feed)) {
+    return (
+      <div className="flex h-full flex-1 items-center justify-center p-8 text-sm text-muted-foreground">
+        This feed is unavailable.
+      </div>
+    );
+  }
+  if (!feed && (!selectionState.loaded || rememberedFeed)) {
+    return null;
+  }
+  const kind =
+    feed === "following" || (!feed && rememberedFeed === "following")
+      ? "following"
+      : "subscribed";
   return (
     <ReadPubPage
       key={kind}

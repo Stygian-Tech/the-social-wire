@@ -69,7 +69,7 @@ struct AppViewRouteContractTests {
     defer { try? FileManager.default.removeItem(atPath: dbPath) }
 
     let store = try SQLiteThinAppViewStore(path: dbPath, logger: Logger(label: "appview.store"))
-    let config = AppViewServiceConfig.fromEnvironment([
+    let config = try AppViewServiceConfig.fromEnvironment([
       "APP_ENV": "local",
       "SQLITE_DB_PATH": dbPath,
       "ENABLE_THIN_APPVIEW": "true",
@@ -99,7 +99,7 @@ struct AppViewRouteContractTests {
 
     let store = try SQLiteThinAppViewStore(
       path: dbPath, logger: Logger(label: "appview.xrpc.store"))
-    let config = AppViewServiceConfig.fromEnvironment([
+    let config = try AppViewServiceConfig.fromEnvironment([
       "APP_ENV": "local",
       "SQLITE_DB_PATH": dbPath,
       "ENABLE_THIN_APPVIEW": "true",

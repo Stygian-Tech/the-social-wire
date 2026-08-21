@@ -1,11 +1,12 @@
 "use client";
 
-import { Archive, Bookmark, Rss, Users } from "lucide-react";
+import { Archive, Bookmark, Newspaper, Rss, Users } from "lucide-react";
 
-import type { TopLevelFeed } from "@/lib/feedPreferences";
+import type { ReaderNavigationFeed } from "@/lib/feedPreferences";
 import { cn } from "@/lib/utils";
 
 const FEED_ITEMS = [
+  { feed: "wire", label: "The Wire", icon: Newspaper },
   { feed: "readLater", label: "Saved", icon: Bookmark },
   { feed: "archive", label: "Archive", icon: Archive },
   { feed: "subscribed", label: "Subscribed", icon: Rss },
@@ -17,9 +18,9 @@ export function MobileFeedNavigation({
   visibleFeeds,
   onSelect,
 }: {
-  currentFeed: TopLevelFeed | null;
-  visibleFeeds: Set<TopLevelFeed>;
-  onSelect: (feed: TopLevelFeed) => void;
+  currentFeed: ReaderNavigationFeed | null;
+  visibleFeeds: Set<ReaderNavigationFeed>;
+  onSelect: (feed: ReaderNavigationFeed) => void;
 }) {
   const items = FEED_ITEMS.filter(({ feed }) => visibleFeeds.has(feed));
   if (items.length === 0) return null;

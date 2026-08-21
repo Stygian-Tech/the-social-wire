@@ -305,6 +305,12 @@ func (p *Postgres) StageBatch(ctx context.Context, lease Lease, events []ingest.
 	}
 
 	for _, event := range events {
+		if p.source.IsWire() {
+			if err := p.stageWireInboxEvent(ctx, tx, event); err != nil {
+				return err
+			}
+			continue
+		}
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO appview_ingestion_inbox
 			  (environment, source_generation, seq, source_host, cursor_kind,
@@ -398,6 +404,30 @@ func (p *Postgres) StageBatch(ctx context.Context, lease Lease, events []ingest.
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit stage batch: %w", err)
+	}
+	return nil
+}
+
+func (p *Postgres) stageWireInboxEvent(
+	ctx context.Context,
+	tx *sql.Tx,
+	event ingest.InboxEvent,
+) error {
+	_, err := tx.ExecContext(ctx, `
+		INSERT INTO wire_ingestion_inbox
+		  (environment, source_generation, seq, source_host, cursor_kind,
+		   event_kind, repo_did, collection, operation, repo_rev, record_key,
+		   record_cid, payload, event_time, status, attempt_count,
+		   next_attempt_at, staged_at, updated_at)
+		SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
+		       $13::jsonb, $14, 'pending', 0, NOW(), NOW(), NOW()
+		ON CONFLICT (environment, source_generation, seq) DO NOTHING`,
+		p.source.Environment, p.source.Generation, int64(event.Seq), p.source.Host,
+		p.source.CursorKind, event.Kind, event.RepoDID, event.Collection, event.Operation,
+		event.RepoRev, event.RecordKey, event.RecordCID, string(event.Payload), event.Time,
+	)
+	if err != nil {
+		return fmt.Errorf("insert Wire inbox event %d: %w", event.Seq, err)
 	}
 	return nil
 }

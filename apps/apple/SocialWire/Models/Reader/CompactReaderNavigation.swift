@@ -3,13 +3,16 @@ import Foundation
 /// Pure navigation decisions for the compact horizontal pager.
 enum CompactReaderNavigation {
     /// Pane shown after choosing a list source on the Lists pane.
-    static func paneAfterListSource(_: ReaderListSource) -> ReaderPane {
-        .publications
+    static func paneAfterListSource(_ source: ReaderListSource) -> ReaderPane {
+        switch source.navigationShape {
+        case .savedLinks: .publications
+        case .publicationFeed, .wire: .articles
+        }
     }
 
     /// Pane shown after choosing a publication.
     static func paneAfterPublication(_ source: ReaderListSource) -> ReaderPane {
-        source.compactUsesArticlesPane ? .articles : .publications
+        source.navigationShape == .publicationFeed ? .articles : .publications
     }
 
     /// Pane shown after opening an article or saved link.
@@ -27,17 +30,19 @@ enum CompactReaderNavigation {
     static func swipeTransition(
         from oldPane: ReaderPane,
         to newPane: ReaderPane,
-        usesArticlesPane: Bool
+        navigationShape: ReaderNavigationShape
     ) -> SwipeTransition {
         var clearsReaderDetail = false
         var clearsArticleSelection = false
         var clearsFeedState = false
 
-        if usesArticlesPane {
+        if navigationShape.showsArticlesColumn {
             if newPane == .articles, oldPane == .reader {
                 clearsReaderDetail = true
             }
-            if newPane == .publications, oldPane == .articles {
+            if navigationShape == .publicationFeed,
+               newPane == .publications,
+               oldPane == .articles {
                 clearsArticleSelection = true
             }
         }
@@ -53,13 +58,17 @@ enum CompactReaderNavigation {
         )
     }
 
-    /// Remap compact pane when switching to a three-pane list source.
+    /// Remap a pane that is absent from the new compact navigation shape.
     static func remapPaneAfterListSourceChange(
         compactPane: ReaderPane,
         newSource: ReaderListSource
     ) -> ReaderPane? {
-        guard !newSource.compactUsesArticlesPane, compactPane == .articles else { return nil }
-        return .publications
+        let panes = newSource.navigationShape.compactPanes
+        guard !panes.contains(compactPane) else { return nil }
+        switch newSource.navigationShape {
+        case .savedLinks: return .publications
+        case .publicationFeed, .wire: return .articles
+        }
     }
 
     /// Whether an async tap handler should still animate the pager after awaiting work.
@@ -73,9 +82,13 @@ enum CompactReaderNavigation {
     /// Normalize pane when switching between three- and four-pane compact layouts.
     static func normalizedPaneAfterLayoutChange(
         compactPane: ReaderPane,
-        usesArticlesPane: Bool
+        navigationShape: ReaderNavigationShape
     ) -> ReaderPane? {
-        guard !usesArticlesPane, compactPane == .articles else { return nil }
-        return .publications
+        let panes = navigationShape.compactPanes
+        guard !panes.contains(compactPane) else { return nil }
+        switch navigationShape {
+        case .savedLinks: return .publications
+        case .publicationFeed, .wire: return .articles
+        }
     }
 }

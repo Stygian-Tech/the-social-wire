@@ -13,6 +13,8 @@ struct PublicationsPaneView: View {
 
         Group {
             switch appModel.readerListSource {
+            case .wire:
+                EmptyView()
             case .readLater, .archive:
                 SavedLinksListContent(onSavedLinkTap: onSavedLinkTap)
             case .subscribed:
@@ -33,6 +35,8 @@ struct PublicationsPaneView: View {
         }
         .refreshable {
             switch appModel.readerListSource {
+            case .wire:
+                await appModel.loadWireFeed()
             case .readLater, .archive:
                 await appModel.refreshSavedLinks()
             case .subscribed, .following:

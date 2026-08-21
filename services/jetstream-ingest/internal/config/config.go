@@ -18,6 +18,10 @@ const (
 	DefaultCursorKind       = "jetstream_v2_seq"
 	DefaultSourceGeneration = "jetstream-v2-us-west-v2"
 	DefaultScopePolicy      = "publication-author-viewer-v1"
+	DefaultPipelineMode     = "publication-author-viewer-v1"
+	WirePipelineMode        = "wire-global-v1"
+	WireSourceGeneration    = "wire-global-v1"
+	WireScopePolicy         = "wire-global-v1"
 )
 
 var DefaultCollections = []string{
@@ -29,7 +33,19 @@ var DefaultCollections = []string{
 	"site.standard.graph.subscription",
 }
 
+var WireCollections = []string{
+	"site.standard.document",
+	"site.standard.entry",
+	"site.standard.publication",
+	"site.standard.graph.recommend",
+	"app.bsky.feed.post",
+	"app.bsky.feed.like",
+	"app.bsky.feed.repost",
+	"app.bsky.graph.follow",
+}
+
 type Config struct {
+	PipelineMode        string
 	Environment         string
 	DatabaseURL         string
 	Host                string
@@ -57,24 +73,36 @@ type Config struct {
 }
 
 func Load() (Config, error) {
-	collections := envCSV("JETSTREAM_COLLECTIONS", DefaultCollections)
+	pipelineMode := envString("JETSTREAM_PIPELINE_MODE", DefaultPipelineMode)
+	defaultCollections := DefaultCollections
+	defaultGeneration := DefaultSourceGeneration
+	defaultScopePolicy := DefaultScopePolicy
+	defaultLeaseName := "jetstream-v2-ingest"
+	if pipelineMode == WirePipelineMode {
+		defaultCollections = WireCollections
+		defaultGeneration = WireSourceGeneration
+		defaultScopePolicy = WireScopePolicy
+		defaultLeaseName = "wire-global-v1-ingest"
+	}
+	collections := envCSV("JETSTREAM_COLLECTIONS", defaultCollections)
 	cfg := Config{
+		PipelineMode:        pipelineMode,
 		Environment:         strings.TrimSpace(os.Getenv("APP_ENV")),
 		DatabaseURL:         strings.TrimSpace(os.Getenv("DATABASE_URL")),
 		Host:                envString("JETSTREAM_HOST", DefaultHost),
 		StreamNSID:          DefaultStreamNSID,
 		CursorKind:          DefaultCursorKind,
-		SourceGeneration:    envString("JETSTREAM_SOURCE_GENERATION", DefaultSourceGeneration),
+		SourceGeneration:    envString("JETSTREAM_SOURCE_GENERATION", defaultGeneration),
 		Collections:         collections,
-		ScopePolicy:         DefaultScopePolicy,
-		FilterFingerprint:   FilterFingerprint(DefaultStreamNSID, collections, DefaultScopePolicy),
+		ScopePolicy:         defaultScopePolicy,
+		FilterFingerprint:   FilterFingerprint(DefaultStreamNSID, collections, defaultScopePolicy),
 		APIKey:              strings.TrimSpace(os.Getenv("JETSTREAM_API_KEY")),
 		Port:                envInt("PORT", 8080),
 		BatchSize:           envInt("JETSTREAM_BATCH_SIZE", 256),
 		DownloadConcurrency: envInt("JETSTREAM_DOWNLOAD_CONCURRENCY", 4),
 		SegmentStripes:      envInt("JETSTREAM_SEGMENT_STRIPES", 4),
 		MaxDownloadAttempts: envInt("JETSTREAM_MAX_DOWNLOAD_ATTEMPTS", 8),
-		LeaderLeaseName:     envString("JETSTREAM_LEADER_LEASE_NAME", "jetstream-v2-ingest"),
+		LeaderLeaseName:     envString("JETSTREAM_LEADER_LEASE_NAME", defaultLeaseName),
 		LeaderLeaseTTL:      envDuration("JETSTREAM_LEADER_LEASE_TTL", 30*time.Second),
 		TrackedDIDRefresh:   envDuration("JETSTREAM_TRACKED_DID_REFRESH", time.Minute),
 		ReplayIncidentBytes: envInt64("JETSTREAM_REPLAY_INCIDENT_BYTES", 5<<30),
@@ -98,6 +126,9 @@ func Load() (Config, error) {
 
 func (c Config) Validate() error {
 	var problems []error
+	if c.PipelineMode != DefaultPipelineMode && c.PipelineMode != WirePipelineMode {
+		problems = append(problems, fmt.Errorf("unsupported JETSTREAM_PIPELINE_MODE %q", c.PipelineMode))
+	}
 	if c.Environment != "dev" && c.Environment != "prod" {
 		problems = append(problems, errors.New("APP_ENV must be dev or prod"))
 	}
@@ -113,11 +144,18 @@ func (c Config) Validate() error {
 	if len(c.Collections) == 0 {
 		problems = append(problems, errors.New("at least one JETSTREAM_COLLECTIONS value is required"))
 	} else {
+		allowedCollections := DefaultCollections
+		if c.PipelineMode == WirePipelineMode {
+			allowedCollections = WireCollections
+		}
 		for _, collection := range c.Collections {
-			if !slices.Contains(DefaultCollections, collection) {
+			if !slices.Contains(allowedCollections, collection) {
 				problems = append(problems, fmt.Errorf("unsupported JETSTREAM_COLLECTIONS value %q", collection))
 			}
 		}
+	}
+	if c.PipelineMode == WirePipelineMode && c.ScopePolicy != WireScopePolicy {
+		problems = append(problems, errors.New("Wire pipeline must use the wire-global-v1 scope policy"))
 	}
 	if c.ScopePolicy == "" {
 		problems = append(problems, errors.New("Jetstream scope policy is required"))

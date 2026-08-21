@@ -105,6 +105,27 @@
     },
     {
       "surface": "openapi",
+      "method": "GET",
+      "path": "/xrpc/app.thesocialwire.discovery.getWire",
+      "classification": "xrpc-migration",
+      "xrpcNsid": "app.thesocialwire.discovery.getWire"
+    },
+    {
+      "surface": "openapi",
+      "method": "GET",
+      "path": "/xrpc/app.thesocialwire.discovery.getWireItem",
+      "classification": "xrpc-migration",
+      "xrpcNsid": "app.thesocialwire.discovery.getWireItem"
+    },
+    {
+      "surface": "openapi",
+      "method": "GET",
+      "path": "/xrpc/app.thesocialwire.discovery.getFeedCatalog",
+      "classification": "xrpc-migration",
+      "xrpcNsid": "app.thesocialwire.discovery.getFeedCatalog"
+    },
+    {
+      "surface": "openapi",
       "method": "POST",
       "path": "/v1/telemetry/client-performance",
       "classification": "telemetry"

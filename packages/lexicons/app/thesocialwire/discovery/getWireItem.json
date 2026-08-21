@@ -1,0 +1,28 @@
+{
+  "lexicon": 1,
+  "id": "app.thesocialwire.discovery.getWireItem",
+  "defs": {
+    "main": {
+      "type": "query",
+      "description": "Get presentation detail for a canonical item on The Wire.",
+      "parameters": {
+        "type": "params",
+        "required": ["itemId"],
+        "properties": { "itemId": { "type": "string", "maxLength": 128 } }
+      },
+      "output": {
+        "encoding": "application/json",
+        "schema": {
+          "type": "object",
+          "required": ["item"],
+          "properties": {
+            "item": { "type": "ref", "ref": "app.thesocialwire.discovery.defs#wireItem" },
+            "html": { "type": "string", "maxLength": 2000000 },
+            "embedUrl": { "type": "string", "format": "uri", "maxLength": 8192 }
+          }
+        }
+      },
+      "errors": [{ "name": "InvalidRequest" }, { "name": "NotFound" }, { "name": "ModerationUnavailable" }]
+    }
+  }
+}

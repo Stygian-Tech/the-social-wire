@@ -11,6 +11,7 @@ struct EntryListItem: Identifiable, Codable, Equatable, Sendable {
     var originalUrl: String?
     var publicationId: String?
     var isRead: Bool
+    var wireMetadata: WireEntryMetadata?
 
     var id: String { entryId }
 
@@ -28,7 +29,8 @@ struct EntryListItem: Identifiable, Codable, Equatable, Sendable {
         thumbnailFallbackUrl: String?,
         originalUrl: String? = nil,
         publicationId: String? = nil,
-        isRead: Bool = false
+        isRead: Bool = false,
+        wireMetadata: WireEntryMetadata? = nil
     ) {
         self.entryId = entryId
         self.title = title
@@ -40,6 +42,7 @@ struct EntryListItem: Identifiable, Codable, Equatable, Sendable {
         self.originalUrl = originalUrl
         self.publicationId = publicationId
         self.isRead = isRead
+        self.wireMetadata = wireMetadata
     }
 
     enum CodingKeys: String, CodingKey {
@@ -53,6 +56,7 @@ struct EntryListItem: Identifiable, Codable, Equatable, Sendable {
         case originalUrl
         case publicationId
         case isRead
+        case wireMetadata
     }
 
     init(from decoder: Decoder) throws {
@@ -68,6 +72,7 @@ struct EntryListItem: Identifiable, Codable, Equatable, Sendable {
         originalUrl = try container.decodeIfPresent(String.self, forKey: .originalUrl)
         publicationId = try container.decodeIfPresent(String.self, forKey: .publicationId)
         isRead = try container.decodeIfPresent(Bool.self, forKey: .isRead) ?? false
+        wireMetadata = try container.decodeIfPresent(WireEntryMetadata.self, forKey: .wireMetadata)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -82,6 +87,7 @@ struct EntryListItem: Identifiable, Codable, Equatable, Sendable {
         try container.encodeIfPresent(originalUrl, forKey: .originalUrl)
         try container.encodeIfPresent(publicationId, forKey: .publicationId)
         try container.encode(isRead, forKey: .isRead)
+        try container.encodeIfPresent(wireMetadata, forKey: .wireMetadata)
     }
 
     static func formatDisplayPublishedAt(_ raw: String) -> String {

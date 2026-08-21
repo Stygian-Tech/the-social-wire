@@ -17,6 +17,9 @@ export function EntryCardActionMenu({ entry }: { entry: EntryListItem }) {
       thumbnailFallbackUrl: entry.thumbnailFallbackUrl,
       originalUrl: entry.originalUrl,
       embedUrl: entry.originalUrl,
+      ...(entry.wireItem?.representativeUri
+        ? { entryId: entry.wireItem.representativeUri }
+        : {}),
     }),
     [entry],
   );

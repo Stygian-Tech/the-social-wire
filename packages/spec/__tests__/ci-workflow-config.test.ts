@@ -19,6 +19,8 @@ const railwayServices = [
   { service: "App View", config: "appview", restartPolicy: "ALWAYS" },
   { service: "Charybdis", config: "charybdis", restartPolicy: "ALWAYS" },
   { service: "Jetstream V2 Ingest", config: "jetstream-ingest", restartPolicy: "ALWAYS" },
+  { service: "The Wire Global Ingest", config: "wire-jetstream-ingest", restartPolicy: "ALWAYS" },
+  { service: "The Wire Worker", config: "wire-worker", restartPolicy: "ALWAYS" },
   { service: "Ops", config: "operations", restartPolicy: "ALWAYS" },
   { service: "Database Migrator", config: "database-migrator", restartPolicy: "NEVER" },
 ] as const;
@@ -36,6 +38,8 @@ describe("CI workflow configuration", () => {
       "charybdis",
       "operations",
       "jetstream-ingest",
+      "wire-ingest",
+      "wire-worker",
       "database-migrator",
       "docs",
     ]) {
@@ -79,6 +83,7 @@ describe("CI workflow configuration", () => {
     expect(workflow).toContain("Build Gateway production image");
     expect(workflow).toContain("Build AppView production image");
     expect(workflow).toContain("Build Charybdis production image");
+    expect(workflow).toContain("Build The Wire worker production image");
     expect(workflow).toContain("Build Operations production image");
     expect(workflow).toContain("Apply migrations from empty and verify idempotence");
     expect(workflow).toContain("Test iOS app with coverage");
@@ -121,14 +126,16 @@ describe("CI workflow configuration", () => {
         expect(config.build.dockerfilePath).toMatch(/^\/services\//);
       }
       expect(config.deploy?.restartPolicyType).toBe(restartPolicy);
-      if (["jetstream-ingest", "charybdis"].includes(configName)) {
+      if (["jetstream-ingest", "wire-jetstream-ingest", "wire-worker", "charybdis"].includes(configName)) {
         expect(config.deploy?.healthcheckPath).toBe("/startupz");
       }
       expect(deploymentReadme).toContain(
         `| ${service} | \`/railway/${configName}.json\` |`,
       );
 
-      const filterName = configName.replace("-", "_");
+      const filterName = configName === "wire-jetstream-ingest"
+        ? "wire_ingest"
+        : configName.replace("-", "_");
       const filter = pathFilters
         .split("\n\n")
         .find((block) =>
@@ -151,6 +158,8 @@ describe("CI workflow configuration", () => {
       "charybdis",
       "operations",
       "jetstream_ingest",
+      "wire_ingest",
+      "wire_worker",
       "database_migrator",
       "lexicons",
       "spec",

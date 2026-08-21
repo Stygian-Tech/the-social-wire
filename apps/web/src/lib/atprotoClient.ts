@@ -87,6 +87,21 @@ export interface EntryListItem {
   publicationId?: string;
   /** Authoritative AppView read state before local optimistic overrides. */
   isRead?: boolean;
+  /** The Wire presentation metadata for a globally ranked item. */
+  wireItem?: {
+    itemId: string;
+    representativeUri?: string;
+    source: {
+      name: string;
+      domain: string;
+      publication?: string;
+      author?: string;
+    };
+    reasons: string[];
+    provenance: string[];
+    /** Omitted when the discovery item has no trustworthy publication date. */
+    publishedAt?: string;
+  };
 }
 
 export interface EntryDetail {

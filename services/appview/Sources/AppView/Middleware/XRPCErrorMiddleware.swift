@@ -20,7 +20,7 @@ struct XRPCErrorMiddleware: RouterMiddleware {
     } catch {
       let status = (error as? any HTTPResponseError)?.status ?? .internalServerError
       let envelope = XRPCErrorEnvelope(
-        error: Self.errorName(for: status),
+        error: (error as? WireServingError)?.xrpcErrorName ?? Self.errorName(for: status),
         message: status.code >= 500
           ? "The request could not be completed." : String(describing: error)
       )
@@ -37,6 +37,7 @@ struct XRPCErrorMiddleware: RouterMiddleware {
     case 401: "AuthRequired"
     case 403: "Forbidden"
     case 404: "NotFound"
+    case 410: "CursorExpired"
     case 429: "RateLimitExceeded"
     case 503: "ServiceUnavailable"
     case 504: "UpstreamTimeout"

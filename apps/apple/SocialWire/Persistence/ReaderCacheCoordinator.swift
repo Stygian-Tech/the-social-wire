@@ -4,6 +4,7 @@ import SwiftData
 
 private let maxPersistedPublicationRows = 32
 private let maxPersistedEntryDetailRows = 120
+private let maxPersistedWireItemDetailRows = 120
 private let maxPersistedGatewayKeys = 48
 private let maxStoredEntriesPerPublication = 120
 
@@ -140,6 +141,69 @@ final class ReaderCacheCoordinator {
         return ordered
     }
 
+    // MARK: - The Wire
+
+    func wireFeedPage(viewerDID: String, language: String) throws -> WireFeedPage? {
+        var descriptor = FetchDescriptor<PersistedWireFeedPage>()
+        descriptor.fetchLimit = 1
+        descriptor.predicate = #Predicate<PersistedWireFeedPage> {
+            $0.language == language && $0.viewerDID == viewerDID
+        }
+        guard let payload = try modelContext.fetch(descriptor).first?.pagePayload else { return nil }
+        return try ReaderCacheCoding.decoder.decode(WireFeedPage.self, from: payload)
+    }
+
+    func upsertWireFeedPage(_ page: WireFeedPage, viewerDID: String) throws {
+        let payload = try ReaderCacheCoding.encoder.encode(page)
+        let language = page.language
+        var descriptor = FetchDescriptor<PersistedWireFeedPage>()
+        descriptor.fetchLimit = 1
+        descriptor.predicate = #Predicate<PersistedWireFeedPage> { $0.language == language }
+        if let existing = try modelContext.fetch(descriptor).first {
+            existing.viewerDID = viewerDID
+            existing.pagePayload = payload
+            existing.cachedAt = Date()
+        } else {
+            modelContext.insert(PersistedWireFeedPage(
+                language: language,
+                viewerDID: viewerDID,
+                pagePayload: payload
+            ))
+        }
+        try modelContext.save()
+    }
+
+    func wireItemDetail(itemId: String, viewerDID: String) throws -> EntryDetail? {
+        let cacheKey = Self.wireItemCacheKey(itemId: itemId, viewerDID: viewerDID)
+        var descriptor = FetchDescriptor<PersistedWireItemDetail>()
+        descriptor.fetchLimit = 1
+        descriptor.predicate = #Predicate<PersistedWireItemDetail> { $0.cacheKey == cacheKey }
+        guard let payload = try modelContext.fetch(descriptor).first?.detailPayload else { return nil }
+        return try ReaderCacheCoding.decoder.decode(EntryDetail.self, from: payload)
+    }
+
+    func upsertWireItemDetail(_ detail: EntryDetail, viewerDID: String) throws {
+        let itemId = detail.entryId
+        let cacheKey = Self.wireItemCacheKey(itemId: itemId, viewerDID: viewerDID)
+        let payload = try ReaderCacheCoding.encoder.encode(detail)
+        var descriptor = FetchDescriptor<PersistedWireItemDetail>()
+        descriptor.fetchLimit = 1
+        descriptor.predicate = #Predicate<PersistedWireItemDetail> { $0.cacheKey == cacheKey }
+        if let existing = try modelContext.fetch(descriptor).first {
+            existing.detailPayload = payload
+            existing.cachedAt = Date()
+        } else {
+            modelContext.insert(PersistedWireItemDetail(
+                cacheKey: cacheKey,
+                viewerDID: viewerDID,
+                itemId: itemId,
+                detailPayload: payload
+            ))
+        }
+        try modelContext.save()
+        try pruneWireItemDetailsIfNeeded()
+    }
+
     // MARK: - Pruning
 
     private func prunePublicationRowsIfNeeded() throws {
@@ -166,6 +230,18 @@ final class ReaderCacheCoordinator {
         try modelContext.save()
     }
 
+    private func pruneWireItemDetailsIfNeeded() throws {
+        var descriptor = FetchDescriptor<PersistedWireItemDetail>()
+        descriptor.sortBy = [.init(\.cachedAt)]
+        let rows = try modelContext.fetch(descriptor)
+        guard rows.count > maxPersistedWireItemDetailRows else { return }
+
+        rows.sorted { $0.cachedAt > $1.cachedAt }
+            .dropFirst(maxPersistedWireItemDetailRows)
+            .forEach { modelContext.delete($0) }
+        try modelContext.save()
+    }
+
     private func pruneGatewayResponsesIfNeeded() throws {
         var descriptor = FetchDescriptor<PersistedGatewayResponse>()
         descriptor.sortBy = [.init(\.cachedAt)]
@@ -180,5 +256,9 @@ final class ReaderCacheCoordinator {
 
     private static func normalize(_ raw: String) -> String {
         raw.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func wireItemCacheKey(itemId: String, viewerDID: String) -> String {
+        "\(viewerDID.utf8.count):\(viewerDID)\(itemId)"
     }
 }
