@@ -95,5 +95,8 @@ struct WireMigrationContractTests {
     #expect(claimSQL.contains("WHERE status IN ('pending', 'leased', 'retry')"))
     #expect(claimSQL.contains("NOT index_state.indisvalid"))
     #expect(claimSQL.contains("DROP INDEX CONCURRENTLY IF EXISTS"))
+    #expect(claimSQL.contains("pg_relation_size(existing_claim_index)"))
+    #expect(claimSQL.contains("1610612736"))
+    #expect(claimSQL.contains("online-build safety limit"))
   }
 }
