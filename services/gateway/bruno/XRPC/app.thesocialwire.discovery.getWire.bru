@@ -1,0 +1,16 @@
+meta {
+  name: XRPC app.thesocialwire.discovery.getWire
+  type: http
+  seq: 31
+}
+
+get {
+  url: {{baseUrl}}/xrpc/app.thesocialwire.discovery.getWire?limit=30&lang=en
+  body: none
+  auth: none
+}
+
+docs {
+  Public first page of The Wire. Add Authorization, DPoP, and the ordered
+  X-Wire-Moderation-DPoP proof pool to exercise viewer-aware moderation.
+}

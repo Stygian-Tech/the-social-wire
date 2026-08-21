@@ -10,6 +10,7 @@ enum GatewayRouterBuilder {
     config: GatewayServiceConfig,
     httpClient: HTTPClient,
     cache: any PdsRepoRecordCacheStore,
+    wireLimiter: WireRequestLimiter = WireRequestLimiter(),
     operationsStore: (any OperationsStore)? = nil,
     telemetry: OperationsTelemetryBuffer? = nil,
     telemetryEnvironment: String = "unknown",
@@ -60,6 +61,9 @@ enum GatewayRouterBuilder {
     let protected = router.group()
       .add(middleware: XRPCErrorMiddleware())
       .add(middleware: authMiddleware)
+    let optionalAuthentication = router.group()
+      .add(middleware: XRPCErrorMiddleware())
+      .add(middleware: OptionalATProtoAuthMiddleware(strict: authMiddleware))
 
     let prefs = PreferenceSyncService(
       httpClient: httpClient,
@@ -85,6 +89,15 @@ enum GatewayRouterBuilder {
         httpClient: httpClient,
         logger: logger
       ).register(on: protected)
+      if config.wireFeedMode.servesAPI {
+        WireProxyRoutes(
+          baseURL: appViewBase,
+          internalSecret: config.core.gatewayAppViewInternalSecret,
+          httpClient: httpClient,
+          limiter: wireLimiter,
+          logger: logger
+        ).register(on: optionalAuthentication)
+      }
     }
 
     if let operationsBase = config.operationsBaseURL {

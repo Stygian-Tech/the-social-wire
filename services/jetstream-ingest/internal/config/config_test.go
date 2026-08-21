@@ -52,6 +52,7 @@ func TestLoadDefaultsToUSWestAndAllEventKinds(t *testing.T) {
 
 func TestHostedConfigRequiresArchiveKey(t *testing.T) {
 	cfg := Config{
+		PipelineMode: DefaultPipelineMode,
 		Environment: "dev", DatabaseURL: "postgres://example.invalid/db", Host: DefaultHost,
 		SourceGeneration: DefaultSourceGeneration, Collections: []string{"site.standard.entry"},
 		ScopePolicy: DefaultScopePolicy,
@@ -67,6 +68,7 @@ func TestHostedConfigRequiresArchiveKey(t *testing.T) {
 
 func TestConfigRejectsCollectionsWithoutAScopeRole(t *testing.T) {
 	cfg := Config{
+		PipelineMode: DefaultPipelineMode,
 		Environment: "dev", DatabaseURL: "postgres://example.invalid/db", Host: DefaultHost,
 		SourceGeneration: DefaultSourceGeneration, Collections: []string{"example.unsupported.record"},
 		ScopePolicy: DefaultScopePolicy, APIKey: "test-key",
@@ -77,5 +79,34 @@ func TestConfigRejectsCollectionsWithoutAScopeRole(t *testing.T) {
 	}
 	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "unsupported JETSTREAM_COLLECTIONS") {
 		t.Fatalf("validation error = %v", err)
+	}
+}
+
+func TestLoadWirePipelineUsesIndependentIdentityAndGlobalCollections(t *testing.T) {
+	t.Setenv("APP_ENV", "dev")
+	t.Setenv("DATABASE_URL", "postgres://example.invalid/socialwire")
+	t.Setenv("JETSTREAM_API_KEY", "test-key")
+	t.Setenv("JETSTREAM_PIPELINE_MODE", WirePipelineMode)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.SourceGeneration != WireSourceGeneration || cfg.ScopePolicy != WireScopePolicy {
+		t.Fatalf("wire identity = generation %q policy %q", cfg.SourceGeneration, cfg.ScopePolicy)
+	}
+	if cfg.LeaderLeaseName != "wire-global-v1-ingest" {
+		t.Fatalf("wire lease name = %q", cfg.LeaderLeaseName)
+	}
+	for _, required := range []string{
+		"site.standard.graph.recommend", "app.bsky.feed.post", "app.bsky.feed.like",
+		"app.bsky.feed.repost", "app.bsky.graph.follow",
+	} {
+		if !slices.Contains(cfg.Collections, required) {
+			t.Fatalf("wire collections missing %q: %#v", required, cfg.Collections)
+		}
+	}
+	if cfg.FilterFingerprint == FilterFingerprint(DefaultStreamNSID, DefaultCollections, DefaultScopePolicy) {
+		t.Fatal("wire pipeline reused the publication-author-viewer fingerprint")
 	}
 }

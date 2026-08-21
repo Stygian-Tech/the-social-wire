@@ -9,6 +9,7 @@
       "/packages/swift/ThinAppViewCore/**",
       "/packages/swift/OperationsCore/**",
       "/packages/swift/SocialWireRedis/**",
+      "/packages/swift/WireCore/**",
       "/railway/appview.json"
     ]
   },

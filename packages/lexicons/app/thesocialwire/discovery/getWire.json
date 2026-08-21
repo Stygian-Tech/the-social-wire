@@ -1,0 +1,26 @@
+{
+  "lexicon": 1,
+  "id": "app.thesocialwire.discovery.getWire",
+  "defs": {
+    "main": {
+      "type": "query",
+      "description": "Get a generation-bound page of The Wire global discovery feed.",
+      "parameters": {
+        "type": "params",
+        "properties": {
+          "cursor": { "type": "string", "maxLength": 4096 },
+          "limit": { "type": "integer", "minimum": 1, "maximum": 50, "default": 30 },
+          "lang": { "type": "string", "maxLength": 35 }
+        }
+      },
+      "output": { "encoding": "application/json", "schema": { "type": "ref", "ref": "app.thesocialwire.discovery.defs#wirePage" } },
+      "errors": [
+        { "name": "InvalidRequest" },
+        { "name": "CursorExpired" },
+        { "name": "ModerationUnavailable" },
+        { "name": "RateLimitExceeded" },
+        { "name": "FeedUnavailable" }
+      ]
+    }
+  }
+}

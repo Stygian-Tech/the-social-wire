@@ -145,6 +145,78 @@ components:
           format: uri
           description: Link to the original entry on standard.site.
 
+    WireSourceAttribution:
+      type: object
+      required: [name, domain]
+      properties:
+        name: { type: string, maxLength: 300 }
+        domain: { type: string, maxLength: 253 }
+        publication: { type: string, maxLength: 2048 }
+        author: { type: string, maxLength: 300 }
+
+    WireItem:
+      type: object
+      required: [itemId, canonicalUrl, title, source, reasons, provenance]
+      properties:
+        itemId: { type: string, maxLength: 128 }
+        canonicalUrl: { type: string, format: uri }
+        representativeUri: { type: string }
+        title: { type: string, maxLength: 1000 }
+        summary: { type: string, maxLength: 10000 }
+        publishedAt: { type: string, format: date-time }
+        thumbnailUrl: { type: string, format: uri }
+        source: { $ref: "#/components/schemas/WireSourceAttribution" }
+        reasons:
+          type: array
+          maxItems: 2
+          items:
+            type: string
+            enum: [breaking_story, widely_discussed, shared_across_communities, fresh_publication, resurfacing]
+        provenance:
+          type: array
+          maxItems: 8
+          items:
+            type: string
+            enum: [standard_site, recommendation, direct_share, quote, repost, like, rss]
+
+    WirePage:
+      type: object
+      required: [generationId, generatedAt, language, source, degraded, items]
+      properties:
+        generationId: { type: string, maxLength: 128 }
+        generatedAt: { type: string, format: date-time }
+        language: { type: string, maxLength: 35 }
+        cursor: { type: string, maxLength: 4096 }
+        source: { type: string, enum: [ranked, stale_generation, simplified_fallback] }
+        degraded: { type: boolean }
+        items:
+          type: array
+          maxItems: 50
+          items: { $ref: "#/components/schemas/WireItem" }
+
+    WireItemDetail:
+      type: object
+      required: [item]
+      properties:
+        item: { $ref: "#/components/schemas/WireItem" }
+        html: { type: string, maxLength: 2000000 }
+        embedUrl: { type: string, format: uri }
+
+    WireFeedCatalog:
+      type: object
+      required: [enabled, available, title, subtitle, supportedLanguages]
+      properties:
+        enabled: { type: boolean }
+        available: { type: boolean }
+        title: { type: string, maxLength: 100 }
+        subtitle: { type: string, maxLength: 300 }
+        supportedLanguages:
+          type: array
+          maxItems: 12
+          items: { type: string, maxLength: 35 }
+        latestGenerationId: { type: string, maxLength: 128 }
+        generatedAt: { type: string, format: date-time }
+
     PublicationAppViewScope:
       type: object
       required: [authorDid, publicationScopeAtUris, publicationSiteUrls]
@@ -1592,6 +1664,71 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/AppViewFeedError" }
 
+  /xrpc/app.thesocialwire.discovery.getWire:
+    get:
+      operationId: getWire
+      summary: Get a generation-bound page of The Wire
+      description: Public requests receive strict baseline moderation. Valid optional OAuth adds viewer moderation; invalid supplied credentials return 401.
+      tags: [Discovery]
+      security:
+        - {}
+        - ATProtoOAuthDPoP: []
+      parameters:
+        - { name: cursor, in: query, schema: { type: string, maxLength: 4096 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 30 } }
+        - { name: lang, in: query, schema: { type: string, maxLength: 35 } }
+      responses:
+        "200":
+          description: Ranked, stale-generation, or simplified-fallback The Wire page.
+          headers:
+            ETag: { schema: { type: string } }
+            Cache-Control: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WirePage" }
+        "400": { description: Invalid cursor, language, or limit. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "410": { description: CursorExpired; restart from page one. }
+        "429": { description: Public or authenticated request budget exhausted. }
+        "503": { description: Feed or authenticated moderation state unavailable. }
+
+  /xrpc/app.thesocialwire.discovery.getWireItem:
+    get:
+      operationId: getWireItem
+      summary: Get presentation detail for an item on The Wire
+      tags: [Discovery]
+      security:
+        - {}
+        - ATProtoOAuthDPoP: []
+      parameters:
+        - { name: itemId, in: query, required: true, schema: { type: string, maxLength: 128 } }
+      responses:
+        "200":
+          description: Canonical item detail from The Wire.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WireItemDetail" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { description: Item not found or excluded by moderation. }
+        "503": { description: Authenticated moderation state unavailable. }
+
+  /xrpc/app.thesocialwire.discovery.getFeedCatalog:
+    get:
+      operationId: getWireFeedCatalog
+      summary: Get remotely controlled The Wire availability
+      tags: [Discovery]
+      security:
+        - {}
+        - ATProtoOAuthDPoP: []
+      responses:
+        "200":
+          description: The Wire capability and latest acceptable generation metadata.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WireFeedCatalog" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "503": { description: Catalog unavailable. }
+
   /v1/telemetry/client-performance:
     post:
       operationId: recordClientPerformance
@@ -2673,6 +2810,8 @@ tags:
     description: Unified sidebar projection and resolver
   - name: AppView
     description: Data-minimized entry index gated behind `ENABLE_THIN_APPVIEW`
+  - name: Discovery
+    description: Public optional-auth global discovery feeds and runtime capability catalog
   - name: Latr
     description: Authenticated L@tr read-later iOS proxy (`LATR_IOS_PROXY_*` server credentials)
   - name: Operations

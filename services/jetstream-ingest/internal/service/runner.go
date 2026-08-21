@@ -69,10 +69,12 @@ func (r *Runner) Run(ctx context.Context) error {
 	if err := r.store.PruneReplayUsage(ctx); err != nil {
 		return err
 	}
-	if err := r.registry.Load(ctx); err != nil {
-		return err
+	if r.cfg.PipelineMode != config.WirePipelineMode {
+		if err := r.registry.Load(ctx); err != nil {
+			return err
+		}
+		go r.registry.Run(ctx, r.cfg.TrackedDIDRefresh, r.logger)
 	}
-	go r.registry.Run(ctx, r.cfg.TrackedDIDRefresh, r.logger)
 	go r.monitorNoProgress(ctx, progressSeed)
 	delay := r.cfg.BackoffMin
 	for ctx.Err() == nil {
@@ -208,7 +210,8 @@ func (r *Runner) runOnce(ctx context.Context) error {
 			continue
 		}
 		tracked := r.registry.Snapshot()
-		prepared, lastSeq, lastEventTime, err := ingest.PrepareBatch(batch.Events(), tracked)
+		prepared, lastSeq, lastEventTime, err := ingest.PrepareBatchForPipeline(
+			batch.Events(), tracked, r.cfg.PipelineMode == config.WirePipelineMode)
 		if err != nil {
 			return err
 		}

@@ -4,10 +4,20 @@ import GatewayCore
 enum GatewayServiceConfigError: Error, Equatable {
   case missingPDSAttestationReceiptSecret
   case invalidPDSAttestationReceiptSecret
+  case invalidWireFeedMode(String)
 }
 
 /// Gateway-specific configuration (PDS write-through, sync cache, optional AppView read proxy).
 struct GatewayServiceConfig: Sendable {
+  enum WireFeedMode: String, Sendable {
+    case off
+    case shadow
+    case api
+    case visible
+
+    var servesAPI: Bool { self == .api || self == .visible }
+  }
+
   let core: GatewayConfig
   let cacheBackend: CacheBackend
   /// When set, publication/AppView XRPC and their compatibility aliases are proxied to this AppView base URL.
@@ -20,6 +30,7 @@ struct GatewayServiceConfig: Sendable {
   let latrIosProxy: LatrIosProxyCredentials.Config?
   /// Shared across Gateway replicas so short-lived PDS attestations remain portable.
   let pdsAttestationReceipt: ATProtoSessionAttestationReceipt
+  let wireFeedMode: WireFeedMode
 
   enum CacheBackend: Sendable {
     case sqlite(path: String)
@@ -54,6 +65,10 @@ struct GatewayServiceConfig: Sendable {
     let charybdisRaw = env["CHARYBDIS_BASE_URL"]?.trimmingCharacters(in: .whitespacesAndNewlines)
     let charybdisBaseURL = (charybdisRaw?.isEmpty == false) ? charybdisRaw : nil
     let latrIosProxy = LatrIosProxyCredentials.Config.fromEnvironment(env)
+    let rawWireFeedMode = env["WIRE_FEED_MODE"]?.lowercased() ?? WireFeedMode.off.rawValue
+    guard let wireFeedMode = WireFeedMode(rawValue: rawWireFeedMode) else {
+      throw GatewayServiceConfigError.invalidWireFeedMode(rawWireFeedMode)
+    }
     return GatewayServiceConfig(
       core: core,
       cacheBackend: backend,
@@ -61,7 +76,8 @@ struct GatewayServiceConfig: Sendable {
       operationsBaseURL: operationsBaseURL,
       charybdisBaseURL: charybdisBaseURL,
       latrIosProxy: latrIosProxy,
-      pdsAttestationReceipt: pdsAttestationReceipt
+      pdsAttestationReceipt: pdsAttestationReceipt,
+      wireFeedMode: wireFeedMode
     )
   }
 

@@ -1,0 +1,21 @@
+meta {
+  name: XRPC app.thesocialwire.discovery.getWireItem
+  type: http
+  seq: 32
+}
+
+get {
+  url: {{baseUrl}}/xrpc/app.thesocialwire.discovery.getWireItem?itemId={{wireItemId}}
+  body: none
+  auth: none
+}
+
+headers {
+  X-SocialWire-Gateway-DID: {{gatewayViewerDid}}
+  X-SocialWire-Gateway-Timestamp: {{gatewayTimestamp}}
+  X-SocialWire-Gateway-Signature: {{gatewaySignature}}
+}
+
+docs {
+  Private AppView detail route for a canonical The Wire item.
+}

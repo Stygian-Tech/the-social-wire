@@ -25,6 +25,12 @@ type InboxEvent struct {
 }
 
 func PrepareBatch(events []jetstream.Event, trackedDIDs map[string]struct{}) ([]InboxEvent, uint64, time.Time, error) {
+	return PrepareBatchForPipeline(events, trackedDIDs, false)
+}
+
+// PrepareBatchForPipeline preserves all account and identity lifecycle events for the global Wire
+// lane. The scoped publication lane continues to retain lifecycle events only for tracked DIDs.
+func PrepareBatchForPipeline(events []jetstream.Event, trackedDIDs map[string]struct{}, includeAllLifecycle bool) ([]InboxEvent, uint64, time.Time, error) {
 	prepared := make([]InboxEvent, 0, len(events))
 	var lastSeq uint64
 	var lastEventTime time.Time
@@ -38,7 +44,7 @@ func PrepareBatch(events []jetstream.Event, trackedDIDs map[string]struct{}) ([]
 			lastEventTime = time.UnixMicro(event.TimeUS).UTC()
 		}
 
-		if event.Kind != jetstream.KindCommit {
+		if event.Kind != jetstream.KindCommit && !includeAllLifecycle {
 			if _, tracked := trackedDIDs[event.DID]; !tracked {
 				continue
 			}

@@ -7,11 +7,19 @@ import Logging
 public struct GatewayInternalTrustAuthMiddleware: RouterMiddleware {
   public typealias Context = GatewayRequestContext
 
+  public static let anonymousDiscoveryDID = "did:web:thesocialwire.app:anonymous-discovery"
+
   private let sharedSecret: String?
+  private let allowsAnonymousDiscovery: Bool
   private let logger: Logger
 
-  public init(sharedSecret: String?, logger: Logger) {
+  public init(
+    sharedSecret: String?,
+    allowsAnonymousDiscovery: Bool = false,
+    logger: Logger
+  ) {
     self.sharedSecret = sharedSecret
+    self.allowsAnonymousDiscovery = allowsAnonymousDiscovery
     self.logger = logger
   }
 
@@ -66,10 +74,11 @@ public struct GatewayInternalTrustAuthMiddleware: RouterMiddleware {
       throw HTTPError(.unauthorized, message: "Invalid gateway internal trust headers")
     }
 
-    guard let authHeaderRaw = request.headers[.authorization]?
-      .trimmingCharacters(in: .whitespacesAndNewlines),
-      !authHeaderRaw.isEmpty
-    else {
+    let authHeaderRaw = request.headers[.authorization]?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    if (authHeaderRaw?.isEmpty != false)
+      && !(allowsAnonymousDiscovery && did == Self.anonymousDiscoveryDID)
+    {
       throw HTTPError(.unauthorized, message: "Missing Authorization header for gateway-proxied request")
     }
 
@@ -78,7 +87,7 @@ public struct GatewayInternalTrustAuthMiddleware: RouterMiddleware {
     var mutableContext = context
     mutableContext.authContext = AuthContext(
       did: did,
-      authorizationForwardingValue: authHeaderRaw,
+      authorizationForwardingValue: authHeaderRaw ?? "",
       dpopProof: dpopProof,
       upstreamDpopProof: ATProtoUpstreamDPoP.extract(from: request)
     )
