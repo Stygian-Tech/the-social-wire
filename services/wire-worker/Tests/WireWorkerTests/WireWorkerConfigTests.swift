@@ -15,6 +15,8 @@ struct WireWorkerConfigTests {
     #expect(config.inboxBatchSize == 1_000)
     #expect(config.inboxConcurrency == 16)
     #expect(config.inboxIdleMilliseconds == 250)
+    #expect(config.inboxCleanupBatchSize == 5_000)
+    #expect(config.inboxCleanupIdleMilliseconds == 1_000)
     #expect(config.postgresMaximumConnections == 12)
   }
 

@@ -141,6 +141,16 @@ so a replacement can stay alive while the previous replica releases its fenced
 lease; the replacement retries acquisition and `/readyz` remains unavailable
 until it becomes the active consumer.
 
+### The Wire admission boundary
+
+The Wire lane atomically checks `wire_ingestion_admission.retained_rows` before
+staging a batch. `WIRE_INBOX_MAX_ROWS` defaults to 5,000,000, and
+`WIRE_DATABASE_MAX_BYTES` defaults to 80 GiB as an emergency whole-database
+ceiling. At either boundary the transaction rolls back, the checkpoint does not
+advance, the subscription reconnects from its durable cursor after
+`WIRE_ADMISSION_PAUSE`, and `/readyz` reports the backpressured row/byte evidence.
+The publication-author-viewer lane does not use this boundary.
+
 ## Local verification
 
 ```sh

@@ -48,33 +48,36 @@ var WireCollections = []string{
 }
 
 type Config struct {
-	PipelineMode        string
-	Environment         string
-	DatabaseURL         string
-	Host                string
-	StreamNSID          string
-	CursorKind          string
-	SourceGeneration    string
-	Collections         []string
-	ScopePolicy         string
-	FilterFingerprint   string
-	APIKey              string
-	Port                int
-	BatchSize           int
-	DownloadConcurrency int
-	SegmentStripes      int
-	MaxDownloadAttempts int
-	LeaderLeaseName     string
-	LeaderLeaseTTL      time.Duration
-	TrackedDIDRefresh   time.Duration
-	ReplayIncidentBytes int64
-	ReplayDailyBytes    int64
-	ReplayBudgetPause   time.Duration
-	BackoffMin          time.Duration
-	BackoffMax          time.Duration
-	BootstrapAfterSeq   *uint64
-	ReplayBeforeSeq     *uint64
-	ReplaySnapshotOnly  bool
+	PipelineMode         string
+	Environment          string
+	DatabaseURL          string
+	Host                 string
+	StreamNSID           string
+	CursorKind           string
+	SourceGeneration     string
+	Collections          []string
+	ScopePolicy          string
+	FilterFingerprint    string
+	APIKey               string
+	Port                 int
+	BatchSize            int
+	DownloadConcurrency  int
+	SegmentStripes       int
+	MaxDownloadAttempts  int
+	LeaderLeaseName      string
+	LeaderLeaseTTL       time.Duration
+	TrackedDIDRefresh    time.Duration
+	ReplayIncidentBytes  int64
+	ReplayDailyBytes     int64
+	ReplayBudgetPause    time.Duration
+	BackoffMin           time.Duration
+	BackoffMax           time.Duration
+	WireInboxMaxRows     int64
+	WireDatabaseMaxBytes int64
+	WireAdmissionPause   time.Duration
+	BootstrapAfterSeq    *uint64
+	ReplayBeforeSeq      *uint64
+	ReplaySnapshotOnly   bool
 }
 
 func Load() (Config, error) {
@@ -97,31 +100,34 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 	cfg := Config{
-		PipelineMode:        pipelineMode,
-		Environment:         strings.TrimSpace(os.Getenv("APP_ENV")),
-		DatabaseURL:         strings.TrimSpace(os.Getenv("DATABASE_URL")),
-		Host:                envString("JETSTREAM_HOST", DefaultHost),
-		StreamNSID:          DefaultStreamNSID,
-		CursorKind:          DefaultCursorKind,
-		SourceGeneration:    envString("JETSTREAM_SOURCE_GENERATION", defaultGeneration),
-		Collections:         collections,
-		ScopePolicy:         defaultScopePolicy,
-		FilterFingerprint:   FilterFingerprint(DefaultStreamNSID, collections, defaultScopePolicy),
-		APIKey:              strings.TrimSpace(os.Getenv("JETSTREAM_API_KEY")),
-		Port:                envInt("PORT", 8080),
-		BatchSize:           envInt("JETSTREAM_BATCH_SIZE", 256),
-		DownloadConcurrency: envInt("JETSTREAM_DOWNLOAD_CONCURRENCY", 4),
-		SegmentStripes:      envInt("JETSTREAM_SEGMENT_STRIPES", defaultSegmentStripes),
-		MaxDownloadAttempts: envInt("JETSTREAM_MAX_DOWNLOAD_ATTEMPTS", 8),
-		LeaderLeaseName:     envString("JETSTREAM_LEADER_LEASE_NAME", defaultLeaseName),
-		LeaderLeaseTTL:      envDuration("JETSTREAM_LEADER_LEASE_TTL", 30*time.Second),
-		TrackedDIDRefresh:   envDuration("JETSTREAM_TRACKED_DID_REFRESH", time.Minute),
-		ReplayIncidentBytes: envInt64("JETSTREAM_REPLAY_INCIDENT_BYTES", 5<<30),
-		ReplayDailyBytes:    envInt64("JETSTREAM_REPLAY_DAILY_BYTES", 25<<30),
-		ReplayBudgetPause:   envDuration("JETSTREAM_REPLAY_BUDGET_PAUSE", 15*time.Minute),
-		BackoffMin:          envDuration("JETSTREAM_BACKOFF_MIN", 250*time.Millisecond),
-		BackoffMax:          envDuration("JETSTREAM_BACKOFF_MAX", 30*time.Second),
-		ReplaySnapshotOnly:  replaySnapshotOnly,
+		PipelineMode:         pipelineMode,
+		Environment:          strings.TrimSpace(os.Getenv("APP_ENV")),
+		DatabaseURL:          strings.TrimSpace(os.Getenv("DATABASE_URL")),
+		Host:                 envString("JETSTREAM_HOST", DefaultHost),
+		StreamNSID:           DefaultStreamNSID,
+		CursorKind:           DefaultCursorKind,
+		SourceGeneration:     envString("JETSTREAM_SOURCE_GENERATION", defaultGeneration),
+		Collections:          collections,
+		ScopePolicy:          defaultScopePolicy,
+		FilterFingerprint:    FilterFingerprint(DefaultStreamNSID, collections, defaultScopePolicy),
+		APIKey:               strings.TrimSpace(os.Getenv("JETSTREAM_API_KEY")),
+		Port:                 envInt("PORT", 8080),
+		BatchSize:            envInt("JETSTREAM_BATCH_SIZE", 256),
+		DownloadConcurrency:  envInt("JETSTREAM_DOWNLOAD_CONCURRENCY", 4),
+		SegmentStripes:       envInt("JETSTREAM_SEGMENT_STRIPES", defaultSegmentStripes),
+		MaxDownloadAttempts:  envInt("JETSTREAM_MAX_DOWNLOAD_ATTEMPTS", 8),
+		LeaderLeaseName:      envString("JETSTREAM_LEADER_LEASE_NAME", defaultLeaseName),
+		LeaderLeaseTTL:       envDuration("JETSTREAM_LEADER_LEASE_TTL", 30*time.Second),
+		TrackedDIDRefresh:    envDuration("JETSTREAM_TRACKED_DID_REFRESH", time.Minute),
+		ReplayIncidentBytes:  envInt64("JETSTREAM_REPLAY_INCIDENT_BYTES", 5<<30),
+		ReplayDailyBytes:     envInt64("JETSTREAM_REPLAY_DAILY_BYTES", 25<<30),
+		ReplayBudgetPause:    envDuration("JETSTREAM_REPLAY_BUDGET_PAUSE", 15*time.Minute),
+		BackoffMin:           envDuration("JETSTREAM_BACKOFF_MIN", 250*time.Millisecond),
+		BackoffMax:           envDuration("JETSTREAM_BACKOFF_MAX", 30*time.Second),
+		WireInboxMaxRows:     envInt64("WIRE_INBOX_MAX_ROWS", 5_000_000),
+		WireDatabaseMaxBytes: envInt64("WIRE_DATABASE_MAX_BYTES", 80<<30),
+		WireAdmissionPause:   envDuration("WIRE_ADMISSION_PAUSE", 5*time.Second),
+		ReplaySnapshotOnly:   replaySnapshotOnly,
 	}
 	if value := strings.TrimSpace(os.Getenv("JETSTREAM_BOOTSTRAP_AFTER_SEQ")); value != "" {
 		seq, err := strconv.ParseUint(value, 10, 64)
@@ -205,6 +211,14 @@ func (c Config) Validate() error {
 	}
 	if c.BackoffMin <= 0 || c.BackoffMax < c.BackoffMin {
 		problems = append(problems, errors.New("reconnect backoff bounds are invalid"))
+	}
+	if c.PipelineMode == WirePipelineMode {
+		if c.WireInboxMaxRows <= 0 || c.WireDatabaseMaxBytes <= 0 {
+			problems = append(problems, errors.New("WIRE_INBOX_MAX_ROWS and WIRE_DATABASE_MAX_BYTES must be positive"))
+		}
+		if c.WireAdmissionPause < time.Second {
+			problems = append(problems, errors.New("WIRE_ADMISSION_PAUSE must be at least 1s"))
+		}
 	}
 	if (c.ReplayBeforeSeq != nil) != c.ReplaySnapshotOnly {
 		problems = append(problems, errors.New(

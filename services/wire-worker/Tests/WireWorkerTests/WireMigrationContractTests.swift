@@ -69,5 +69,17 @@ struct WireMigrationContractTests {
     #expect(transportSQL.contains("wire_signal_events_transport_identity_idx"))
     #expect(transportSQL.contains("inbox.source_host"))
     #expect(transportSQL.contains("inbox.cursor_kind"))
+
+    let lifecycleMigration = migration.deletingLastPathComponent()
+      .appendingPathComponent("20260821193000_bound_wire_inbox_lifecycle.sql")
+    let lifecycleSQL = try String(contentsOf: lifecycleMigration, encoding: .utf8)
+    #expect(lifecycleSQL.contains("CREATE TABLE IF NOT EXISTS wire_ingestion_admission"))
+    #expect(lifecycleSQL.contains("ALTER COLUMN expires_at SET DEFAULT 'infinity'::timestamptz"))
+    #expect(!lifecycleSQL.contains("ALTER COLUMN expires_at DROP DEFAULT"))
+    #expect(lifecycleSQL.contains("fenced ingester reconciles this counter"))
+    #expect(processor.contains("status IN ('applied', 'dead_letter') AND expires_at <="))
+    #expect(processor.contains("asOf.addingTimeInterval(300)"))
+    #expect(processor.contains("asOf.addingTimeInterval(7 * 24 * 3_600)"))
+    #expect(processor.contains("SET retained_rows = GREATEST(0, retained_rows -"))
   }
 }

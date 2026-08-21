@@ -26,6 +26,8 @@
 | `WIRE_INBOX_BATCH_SIZE` | `1000` | Maximum inbox rows claimed by one drain iteration (maximum `5000`) |
 | `WIRE_INBOX_CONCURRENCY` | `16` | Maximum independently fenced events applied concurrently (maximum `64`) |
 | `WIRE_INBOX_IDLE_MILLISECONDS` | `250` | Backpressure delay after an empty claim; full batches continue immediately |
+| `WIRE_INBOX_CLEANUP_BATCH_SIZE` | `5000` | Maximum terminal inbox rows deleted by one cleanup iteration (maximum `20000`) |
+| `WIRE_INBOX_CLEANUP_IDLE_MILLISECONDS` | `1000` | Delay after a cleanup iteration that deletes fewer than one full batch |
 | `WIRE_POSTGRES_MAX_CONNECTIONS` | `12` | Bounded pool shared by drain, maintenance, ranking, and health work (maximum `64`) |
 | `PORT` | `8080` | Health server port |
 
@@ -45,7 +47,7 @@ The isolated Go lane stages global events into `wire_ingestion_inbox`. A dedicat
 
 The default event concurrency of 16 intentionally exceeds the 12-connection PostgreSQL pool. PostgreSQL pool queuing is the database backpressure boundary while JSON decoding and canonicalization work remain in flight; the worker never opens more than `WIRE_POSTGRES_MAX_CONNECTIONS` database connections.
 
-Graph pruning, six-hour community refresh checks, and exact rollup rebuilding run once with the five-minute generation cycle rather than after every inbox batch. Baseline label refresh and ranking also remain on that five-minute cadence, so an archive drain cannot hammer labelers. Readiness requires both a recent successful generation cycle and either a recently completed drain iteration or an in-flight batch younger than three minutes.
+Graph pruning, six-hour community refresh checks, and exact rollup rebuilding run once with the five-minute generation cycle rather than after every inbox batch. Baseline label refresh and ranking also remain on that five-minute cadence, so an archive drain cannot hammer labelers. Terminal inbox cleanup is a separate continuous bounded loop (`WIRE_INBOX_CLEANUP_BATCH_SIZE`, default 5,000; `WIRE_INBOX_CLEANUP_IDLE_MILLISECONDS`, default one second), so cleanup throughput is not tied to ranking. Applied inbox rows become cleanup-eligible after five minutes and dead letters after seven days. Pending, leased, and retry rows are never retention-deleted. Cleanup decrements the admission counter in the same transaction as deletion. Readiness requires recent successful generation, drain, and cleanup activity.
 
 The worker observes `site.standard.publication` commits into the rebuildable `wire_publications` PostgreSQL projection. A Standard Site document with a publication AT-URI plus relative `path` resolves from that durable projection, then from a bounded public-HTTPS PLC/PDS lookup with 64 KiB response limits, timeouts, negative caching, and in-flight request coalescing. Immediately before every PLC and PDS request, the worker resolves DNS again and rejects the entire answer set if any address is loopback, link-local, private, documentation, multicast, or otherwise non-global. At most eight blocking resolver calls may remain active, each caller waits at most three seconds, and redirects are not followed. Direct article URLs and HTTPS publication-site-plus-path records remain local and require no network lookup. Unsafe or structurally invalid endpoints are terminal; absent, timed-out, or transient publication dependencies remain retryable within the 24-hour bound.
 

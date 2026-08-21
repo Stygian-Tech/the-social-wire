@@ -127,6 +127,25 @@ func (r *Runner) Run(ctx context.Context) error {
 		r.health.Stream(false)
 		r.health.Error(err)
 		r.recordIncident(ctx, err)
+		var capacityError *store.WireCapacityExceededError
+		if errors.As(err, &capacityError) {
+			r.health.Paused(true)
+			r.health.Backpressure(
+				true, capacityError.InboxRows, capacityError.InboxMaxRows,
+				capacityError.DatabaseBytes, capacityError.DatabaseMaxBytes,
+			)
+			r.logger.Warn(
+				"The Wire intake paused at the durable admission boundary",
+				"inboxRows", capacityError.InboxRows, "inboxMaxRows", capacityError.InboxMaxRows,
+				"databaseBytes", capacityError.DatabaseBytes, "databaseMaxBytes", capacityError.DatabaseMaxBytes,
+			)
+			if !sleepContext(ctx, r.cfg.WireAdmissionPause) {
+				return nil
+			}
+			r.health.Paused(false)
+			continue
+		}
+		r.health.Backpressure(false, 0, r.cfg.WireInboxMaxRows, 0, r.cfg.WireDatabaseMaxBytes)
 		if errors.Is(err, ingest.ErrDailyBudgetExceeded) {
 			wait := r.budget.WaitForDailyCapacity()
 			if wait == 0 {
@@ -277,6 +296,7 @@ func (r *Runner) runOnce(ctx context.Context) error {
 		if err := r.store.StageBatch(ctx, r.lease, prepared, lastSeq, lastEventTime, progress); err != nil {
 			return err
 		}
+		r.health.Backpressure(false, 0, r.cfg.WireInboxMaxRows, 0, r.cfg.WireDatabaseMaxBytes)
 		previousSeq := r.lastSeq.Load()
 		r.lastSeq.Store(lastSeq)
 		if lastSeq > previousSeq {
