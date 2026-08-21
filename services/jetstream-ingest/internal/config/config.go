@@ -22,6 +22,8 @@ const (
 	WirePipelineMode        = "wire-global-v1"
 	WireSourceGeneration    = "wire-global-v1"
 	WireScopePolicy         = "wire-global-v1"
+	DefaultSegmentStripes   = 4
+	WireSegmentStripes      = 1
 )
 
 var DefaultCollections = []string{
@@ -78,11 +80,13 @@ func Load() (Config, error) {
 	defaultGeneration := DefaultSourceGeneration
 	defaultScopePolicy := DefaultScopePolicy
 	defaultLeaseName := "jetstream-v2-ingest"
+	defaultSegmentStripes := DefaultSegmentStripes
 	if pipelineMode == WirePipelineMode {
 		defaultCollections = WireCollections
 		defaultGeneration = WireSourceGeneration
 		defaultScopePolicy = WireScopePolicy
 		defaultLeaseName = "wire-global-v1-ingest"
+		defaultSegmentStripes = WireSegmentStripes
 	}
 	collections := envCSV("JETSTREAM_COLLECTIONS", defaultCollections)
 	cfg := Config{
@@ -100,7 +104,7 @@ func Load() (Config, error) {
 		Port:                envInt("PORT", 8080),
 		BatchSize:           envInt("JETSTREAM_BATCH_SIZE", 256),
 		DownloadConcurrency: envInt("JETSTREAM_DOWNLOAD_CONCURRENCY", 4),
-		SegmentStripes:      envInt("JETSTREAM_SEGMENT_STRIPES", 4),
+		SegmentStripes:      envInt("JETSTREAM_SEGMENT_STRIPES", defaultSegmentStripes),
 		MaxDownloadAttempts: envInt("JETSTREAM_MAX_DOWNLOAD_ATTEMPTS", 8),
 		LeaderLeaseName:     envString("JETSTREAM_LEADER_LEASE_NAME", defaultLeaseName),
 		LeaderLeaseTTL:      envDuration("JETSTREAM_LEADER_LEASE_TTL", 30*time.Second),

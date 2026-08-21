@@ -32,6 +32,14 @@ every SDK error as a restart boundary and resumes from the last transactionally
 staged sequence, so a failed decode or download can never be skipped by a later
 checkpoint.
 
+The publication-author-viewer lane keeps the existing default of four parallel
+segment stripes. The Wire lane defaults to one resumable segment stream because
+hosted replay is metered in bytes and may close a response when its quota is
+temporarily exhausted. Single-stream mode preserves the bytes already received
+and resumes at the exact next offset after `Retry-After`; striped mode retries a
+part from its beginning after a short body. `JETSTREAM_SEGMENT_STRIPES` remains
+an explicit override for either lane.
+
 ## Required Railway variables
 
 - `APP_ENV=dev|prod`

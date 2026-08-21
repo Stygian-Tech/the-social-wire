@@ -39,6 +39,9 @@ func TestLoadDefaultsToUSWestAndAllEventKinds(t *testing.T) {
 	if cfg.SourceGeneration != DefaultSourceGeneration {
 		t.Fatalf("source generation = %q", cfg.SourceGeneration)
 	}
+	if cfg.SegmentStripes != DefaultSegmentStripes {
+		t.Fatalf("segment stripes = %d, want %d", cfg.SegmentStripes, DefaultSegmentStripes)
+	}
 	if cfg.ScopePolicy != DefaultScopePolicy {
 		t.Fatalf("scope policy = %q", cfg.ScopePolicy)
 	}
@@ -53,7 +56,7 @@ func TestLoadDefaultsToUSWestAndAllEventKinds(t *testing.T) {
 func TestHostedConfigRequiresArchiveKey(t *testing.T) {
 	cfg := Config{
 		PipelineMode: DefaultPipelineMode,
-		Environment: "dev", DatabaseURL: "postgres://example.invalid/db", Host: DefaultHost,
+		Environment:  "dev", DatabaseURL: "postgres://example.invalid/db", Host: DefaultHost,
 		SourceGeneration: DefaultSourceGeneration, Collections: []string{"site.standard.entry"},
 		ScopePolicy: DefaultScopePolicy,
 		Port:        8080, BatchSize: 64, DownloadConcurrency: 1, SegmentStripes: 1,
@@ -69,7 +72,7 @@ func TestHostedConfigRequiresArchiveKey(t *testing.T) {
 func TestConfigRejectsCollectionsWithoutAScopeRole(t *testing.T) {
 	cfg := Config{
 		PipelineMode: DefaultPipelineMode,
-		Environment: "dev", DatabaseURL: "postgres://example.invalid/db", Host: DefaultHost,
+		Environment:  "dev", DatabaseURL: "postgres://example.invalid/db", Host: DefaultHost,
 		SourceGeneration: DefaultSourceGeneration, Collections: []string{"example.unsupported.record"},
 		ScopePolicy: DefaultScopePolicy, APIKey: "test-key",
 		Port: 8080, BatchSize: 64, DownloadConcurrency: 1, SegmentStripes: 1,
@@ -98,6 +101,9 @@ func TestLoadWirePipelineUsesIndependentIdentityAndGlobalCollections(t *testing.
 	if cfg.LeaderLeaseName != "wire-global-v1-ingest" {
 		t.Fatalf("wire lease name = %q", cfg.LeaderLeaseName)
 	}
+	if cfg.SegmentStripes != WireSegmentStripes {
+		t.Fatalf("wire segment stripes = %d, want %d", cfg.SegmentStripes, WireSegmentStripes)
+	}
 	for _, required := range []string{
 		"site.standard.graph.recommend", "app.bsky.feed.post", "app.bsky.feed.like",
 		"app.bsky.feed.repost", "app.bsky.graph.follow",
@@ -108,5 +114,21 @@ func TestLoadWirePipelineUsesIndependentIdentityAndGlobalCollections(t *testing.
 	}
 	if cfg.FilterFingerprint == FilterFingerprint(DefaultStreamNSID, DefaultCollections, DefaultScopePolicy) {
 		t.Fatal("wire pipeline reused the publication-author-viewer fingerprint")
+	}
+}
+
+func TestLoadWirePipelineAllowsExplicitSegmentStripeOverride(t *testing.T) {
+	t.Setenv("APP_ENV", "dev")
+	t.Setenv("DATABASE_URL", "postgres://example.invalid/socialwire")
+	t.Setenv("JETSTREAM_API_KEY", "test-key")
+	t.Setenv("JETSTREAM_PIPELINE_MODE", WirePipelineMode)
+	t.Setenv("JETSTREAM_SEGMENT_STRIPES", "2")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.SegmentStripes != 2 {
+		t.Fatalf("wire segment stripes = %d, want explicit override 2", cfg.SegmentStripes)
 	}
 }
