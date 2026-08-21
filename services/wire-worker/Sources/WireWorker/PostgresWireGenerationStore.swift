@@ -281,6 +281,16 @@ struct PostgresWireGenerationStore: WireGenerationStore {
       )
       try await connection.query(
         """
+        DELETE FROM wire_publications
+        WHERE publication_uri IN (
+          SELECT publication_uri FROM wire_publications
+          WHERE expires_at <= \(asOf) ORDER BY expires_at LIMIT \(batchSize)
+        )
+        """,
+        logger: logger
+      )
+      try await connection.query(
+        """
         DELETE FROM wire_item_aliases
         WHERE alias_key IN (
           SELECT alias_key FROM wire_item_aliases

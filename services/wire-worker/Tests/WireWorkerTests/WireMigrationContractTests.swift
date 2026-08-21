@@ -50,7 +50,24 @@ struct WireMigrationContractTests {
       .appendingPathComponent("Sources/WireWorker/PostgresWireInboxProcessor.swift")
     let processor = try String(contentsOf: processorSource, encoding: .utf8)
     #expect(processor.contains("earlier.repo_did = candidate.repo_did"))
+    #expect(processor.contains("ORDER BY next_attempt_at, seq"))
+    #expect(processor.contains("unresolved_publication_expired"))
     #expect(processor.contains("event.attemptCount >= 8"))
     #expect(processor.contains("DELETE FROM wire_follow_edges WHERE source_uri"))
+
+    let publicationMigration = migration.deletingLastPathComponent()
+      .appendingPathComponent("20260821023000_add_wire_publication_metadata.sql")
+    let publicationSQL = try String(contentsOf: publicationMigration, encoding: .utf8)
+    #expect(publicationSQL.contains("CREATE TABLE IF NOT EXISTS wire_publications"))
+    #expect(publicationSQL.contains("publication_uri TEXT PRIMARY KEY"))
+    #expect(publicationSQL.contains("wire_publications_expires_idx"))
+
+    let transportMigration = migration.deletingLastPathComponent()
+      .appendingPathComponent("20260821024500_add_wire_signal_transport_identity.sql")
+    let transportSQL = try String(contentsOf: transportMigration, encoding: .utf8)
+    #expect(transportSQL.contains("ADD COLUMN IF NOT EXISTS transport_event_key TEXT"))
+    #expect(transportSQL.contains("wire_signal_events_transport_identity_idx"))
+    #expect(transportSQL.contains("inbox.source_host"))
+    #expect(transportSQL.contains("inbox.cursor_kind"))
   }
 }

@@ -79,6 +79,85 @@ struct SQLiteOperationsStoreTests {
     #expect(snapshot.inbox.total == 2)
     #expect(snapshot.inboxBySourceGeneration["v2"]?.filteredScope == 1)
   }
+
+  @Test("existing checkpoint schema upgrades bounded snapshot state")
+  func existingCheckpointSchemaUpgrade() async throws {
+    let url = FileManager.default.temporaryDirectory
+      .appendingPathComponent("operations-checkpoint-upgrade-\(UUID().uuidString).sqlite")
+    defer { try? FileManager.default.removeItem(at: url) }
+    let now = "2026-08-20T12:00:00.000Z"
+    try await DatabaseQueue(path: url.path).write { db in
+      try db.execute(sql: """
+        CREATE TABLE appview_jetstream_checkpoints (
+          environment TEXT NOT NULL, source_generation TEXT NOT NULL, source_host TEXT NOT NULL,
+          stream_nsid TEXT NOT NULL, filter_fingerprint TEXT NOT NULL,
+          cursor_kind TEXT NOT NULL CHECK (cursor_kind = 'jetstream_v2_seq'),
+          last_staged_seq INTEGER, last_staged_event_at TEXT, last_staged_at TEXT,
+          last_applied_seq INTEGER, last_applied_event_at TEXT, last_applied_at TEXT,
+          last_reconciled_repo_rev TEXT, last_reconciled_at TEXT,
+          replay_state TEXT NOT NULL DEFAULT 'idle'
+            CHECK (replay_state IN ('idle', 'replaying', 'live', 'paused_budget', 'failed')),
+          replay_after_seq INTEGER, replay_sealed_seq INTEGER,
+          replay_bytes_downloaded INTEGER NOT NULL DEFAULT 0,
+          replay_retry_count INTEGER NOT NULL DEFAULT 0,
+          replay_range_resume_count INTEGER NOT NULL DEFAULT 0,
+          replay_last_progress_at TEXT, replay_etag TEXT, updated_at TEXT NOT NULL,
+          CHECK (last_staged_seq IS NULL OR last_staged_seq >= 0),
+          CHECK (last_applied_seq IS NULL OR last_applied_seq >= 0),
+          CHECK (last_applied_seq IS NULL OR last_staged_seq IS NULL OR last_applied_seq <= last_staged_seq),
+          PRIMARY KEY (environment, source_generation)
+        );
+        INSERT INTO appview_jetstream_checkpoints
+          (environment, source_generation, source_host, stream_nsid, filter_fingerprint,
+           cursor_kind, replay_state, updated_at)
+        VALUES ('dev', 'existing-v2', 'jetstream.example',
+                'network.bsky.jetstream.subscribeEvents', 'filter-v1',
+                'jetstream_v2_seq', 'live', ?);
+        """, arguments: [now])
+    }
+
+    let store = try SQLiteOperationsStore(
+      path: url.path,
+      environment: "dev",
+      logger: Logger(label: "operations.checkpoint-upgrade.test")
+    )
+    let database = try DatabaseQueue(path: url.path)
+    let tableSQL = try await database.read { db in
+      try String.fetchOne(
+        db,
+        sql: """
+          SELECT sql FROM sqlite_master
+          WHERE type = 'table' AND name = 'appview_jetstream_checkpoints'
+          """
+      ) ?? ""
+    }
+    #expect(tableSQL.contains("'snapshot_complete'"))
+    #expect(tableSQL.contains("replay_before_seq"))
+
+    try await database.write { db in
+      try db.execute(sql: """
+        INSERT INTO appview_jetstream_checkpoints
+          (environment, source_generation, source_host, stream_nsid, filter_fingerprint,
+           cursor_kind, last_staged_seq, replay_state, replay_after_seq, replay_before_seq,
+           replay_sealed_seq, updated_at)
+        VALUES ('dev', 'bounded-v2', 'jetstream.example',
+                'network.bsky.jetstream.subscribeEvents', 'filter-v1',
+                'jetstream_v2_seq', 200, 'snapshot_complete', 100, 200, 200, ?);
+        """, arguments: [now])
+    }
+
+    let snapshot = try await store.fetchIngestionDurabilitySnapshot(
+      at: Date(timeIntervalSince1970: 1_900_000_000)
+    )
+    let completed = try #require(
+      snapshot.checkpoints.first { $0.sourceGeneration == "bounded-v2" }
+    )
+    #expect(completed.replayState == .snapshotComplete)
+    #expect(completed.replayAfterSequence == 100)
+    #expect(completed.replayBeforeSequence == 200)
+    #expect(completed.replaySealedSequence == 200)
+  }
+
   @Test("Jetstream endpoint state and reconnect commands are durable")
   func jetstreamRecoveryControlLifecycle() async throws {
     let url = FileManager.default.temporaryDirectory

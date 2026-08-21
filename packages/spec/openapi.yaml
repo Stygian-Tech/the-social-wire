@@ -521,8 +521,16 @@ components:
         lastAppliedAt: { type: [string, "null"], format: date-time }
         lastReconciledRepositoryRevision: { type: [string, "null"] }
         lastReconciledAt: { type: [string, "null"], format: date-time }
-        replayState: { type: string, enum: [idle, replaying, live, paused_budget, failed] }
+        replayState:
+          type: string
+          enum: [idle, replaying, live, paused_budget, failed, snapshot_complete]
+          description: snapshot_complete is a healthy terminal state for a bounded replay and does not require an active intake lease.
         replayAfterSequence: { type: [integer, "null"], format: int64, minimum: 0 }
+        replayBeforeSequence:
+          type: [integer, "null"]
+          format: int64
+          minimum: 0
+          description: Inclusive upper bound sealed for a bounded replay; snapshot_complete requires this to equal replaySealedSequence.
         replaySealedSequence: { type: [integer, "null"], format: int64, minimum: 0 }
         replayBytesDownloaded: { type: integer, format: int64, minimum: 0 }
         replayRetryCount: { type: integer, minimum: 0 }
@@ -598,7 +606,7 @@ components:
         firstDetectedAt: { type: string, format: date-time }
         lastDetectedAt: { type: string, format: date-time }
         lastError: { type: [string, "null"] }
-        replayState: { type: [string, "null"], enum: [idle, replaying, live, paused_budget, failed, null] }
+        replayState: { type: [string, "null"], enum: [idle, replaying, live, paused_budget, failed, snapshot_complete, null] }
         replayBytesDownloaded: { type: integer, format: int64, minimum: 0 }
         replayRetryCount: { type: integer, minimum: 0 }
         replayRangeResumeCount: { type: integer, minimum: 0 }

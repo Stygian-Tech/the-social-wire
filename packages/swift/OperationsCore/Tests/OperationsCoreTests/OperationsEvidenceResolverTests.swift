@@ -87,6 +87,35 @@ func durableV2AuthorityExpiresStaleCheckpoint() {
   #expect(resolution.evidence.degradedReason?.contains("expired") == true)
 }
 
+@Test("completed bounded snapshot remains healthy without an intake heartbeat")
+func completedBoundedSnapshotIsHealthyTerminalEvidence() {
+  let now = Date(timeIntervalSince1970: 10_000)
+  let checkpoint = durabilityCheckpoint(
+    generation: "west-v2",
+    updatedAt: now.addingTimeInterval(-3_600),
+    replayState: .snapshotComplete,
+    includeIntakeHeartbeat: false
+  )
+  let resolution = OperationsEvidenceResolver.ingestionAuthority(
+    services: [durableV2Worker(generation: "west-v2", at: now)],
+    streams: [],
+    durability: IngestionDurabilitySnapshot(
+      environment: "dev",
+      checkpoints: [checkpoint],
+      generatedAt: now
+    ),
+    at: now
+  )
+
+  #expect(resolution.state?.connectionState == .connected)
+  #expect(resolution.state?.transportHeartbeatAt == nil)
+  #expect(resolution.state?.lastDisconnectReason == nil)
+  #expect(resolution.evidence.accuracy == .exact)
+  #expect(resolution.evidence.indexedThrough == checkpoint.updatedAt)
+  #expect(resolution.evidence.validUntil == .distantFuture)
+  #expect(resolution.evidence.degradedReason == nil)
+}
+
 private func durableV2Worker(generation: String, at now: Date) -> OperationsServiceState {
   OperationsServiceState(
     service: "appview-worker",
@@ -109,7 +138,8 @@ private func durabilityCheckpoint(
   generation: String,
   updatedAt: Date,
   intakeHeartbeatAt: Date? = nil,
-  replayState: JetstreamReplayState = .live
+  replayState: JetstreamReplayState = .live,
+  includeIntakeHeartbeat: Bool = true
 ) -> JetstreamDurabilityCheckpoint {
   JetstreamDurabilityCheckpoint(
     environment: "dev",
@@ -125,7 +155,10 @@ private func durabilityCheckpoint(
     lastAppliedEventAt: updatedAt,
     lastAppliedAt: updatedAt,
     replayState: replayState,
-    intakeHeartbeatAt: intakeHeartbeatAt ?? updatedAt,
+    replayAfterSequence: replayState == .snapshotComplete ? 100 : nil,
+    replayBeforeSequence: replayState == .snapshotComplete ? 200 : nil,
+    replaySealedSequence: replayState == .snapshotComplete ? 200 : nil,
+    intakeHeartbeatAt: includeIntakeHeartbeat ? (intakeHeartbeatAt ?? updatedAt) : nil,
     updatedAt: updatedAt
   )
 }

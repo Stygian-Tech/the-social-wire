@@ -1,0 +1,19 @@
+{
+  "$type": "site.standard.document",
+  "bskyPostRef": {
+    "uri": "at://did:plc:author/app.bsky.feed.post/3example",
+    "cid": "bafyexample"
+  },
+  "coverImage": {
+    "$type": "blob",
+    "ref": { "$link": "bafycover" },
+    "mimeType": "image/jpeg",
+    "size": 1234
+  },
+  "path": "/stories/the-wire-fixture",
+  "publishedAt": "2026-08-21T01:00:00Z",
+  "site": "at://did:plc:author/site.standard.publication/main",
+  "tags": ["News", "Social Web"],
+  "textContent": "The body of the Standard Site document.",
+  "title": "The Wire Fixture"
+}

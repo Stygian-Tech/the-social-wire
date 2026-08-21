@@ -43,6 +43,7 @@ let package = Package(
         .product(name: "Logging", package: "swift-log"),
       ],
       path: "Tests/WireWorkerTests",
+      resources: [.copy("Fixtures")],
       swiftSettings: [
         .swiftLanguageMode(.v6),
         .unsafeFlags(["-warnings-as-errors"]),

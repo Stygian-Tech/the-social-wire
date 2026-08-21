@@ -16,6 +16,18 @@ function formatTimestamp(value?: string) {
   return Number.isFinite(date.getTime()) ? date.toLocaleString() : "Invalid timestamp"
 }
 
+function formatReplayState(value?: IngestionDurability["checkpoints"][number]["replayState"]) {
+  switch (value) {
+    case "idle": return "Idle"
+    case "replaying": return "Replaying"
+    case "live": return "Live"
+    case "paused_budget": return "Paused For Budget"
+    case "failed": return "Failed"
+    case "snapshot_complete": return "The Wire Snapshot Complete"
+    default: return "—"
+  }
+}
+
 export function DurableIngestionStatus({ durability }: { durability?: IngestionDurability }) {
   if (!durability) {
     return (
@@ -29,11 +41,23 @@ export function DurableIngestionStatus({ durability }: { durability?: IngestionD
   const checkpoint = durability.checkpoints[0]
   const activeIncidents =
     durability.incidents.open + durability.incidents.recovering + durability.incidents.verificationRequired
-  const healthy = activeIncidents === 0 && durability.inbox.deadLetters === 0
+  const recoveryActive =
+    checkpoint?.replayState === "replaying" ||
+    checkpoint?.replayState === "paused_budget" ||
+    durability.incidents.recovering > 0
+  const inboxAgeBudgetSeconds = recoveryActive ? 900 : 60
+  const healthy =
+    activeIncidents === 0 &&
+    durability.inbox.deadLetters === 0 &&
+    (durability.inbox.oldestPendingAgeSeconds === undefined ||
+      durability.inbox.oldestPendingAgeSeconds < inboxAgeBudgetSeconds)
   const metrics = [
     ["Source Generation", checkpoint?.sourceGeneration ?? "—"],
     ["Cursor Kind", checkpoint?.cursorKind ?? "—"],
-    ["Replay State", checkpoint?.replayState ?? "—"],
+    ["Replay State", formatReplayState(checkpoint?.replayState)],
+    ["Replay Range Start", checkpoint?.replayAfterSequence?.toLocaleString() ?? "—"],
+    ["Replay Range End", checkpoint?.replayBeforeSequence?.toLocaleString() ?? "—"],
+    ["Replay Sealed Sequence", checkpoint?.replaySealedSequence?.toLocaleString() ?? "—"],
     ["Last Staged Sequence", checkpoint?.lastStagedSequence?.toLocaleString() ?? "—"],
     ["Applied Terminal Prefix", checkpoint?.lastAppliedSequence?.toLocaleString() ?? "—"],
     ["Pending / Leased / Retry", `${durability.inbox.pending} / ${durability.inbox.leased} / ${durability.inbox.retrying}`],

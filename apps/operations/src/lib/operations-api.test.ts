@@ -388,6 +388,23 @@ test("validates generation-scoped durable inbox evidence with rolling-deploy com
 
   await expect(fetchIngestionDurability(jsonSession(durability))).resolves.toEqual(durability)
 
+  const completedSnapshot = {
+    ...checkpoint,
+    replayState: "snapshot_complete" as const,
+    replayAfterSequence: 100,
+    replayBeforeSequence: 200,
+    replaySealedSequence: 200,
+    intakeHeartbeatAt: null,
+  }
+  await expect(fetchIngestionDurability(jsonSession({
+    ...durability,
+    checkpoints: [completedSnapshot],
+  }))).resolves.toMatchObject({ checkpoints: [completedSnapshot] })
+  await expect(fetchIngestionDurability(jsonSession({
+    ...durability,
+    checkpoints: [{ ...completedSnapshot, replayBeforeSequence: 99 }],
+  }))).rejects.toThrow("Operations completed snapshot checkpoint failed runtime contract validation")
+
   const legacyCheckpoint: Record<string, unknown> = { ...checkpoint }
   delete legacyCheckpoint.intakeHeartbeatAt
   const legacyDurability: Record<string, unknown> = {

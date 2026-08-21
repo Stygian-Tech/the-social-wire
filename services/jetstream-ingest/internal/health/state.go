@@ -13,6 +13,7 @@ type State struct {
 	lease        bool
 	stream       bool
 	paused       bool
+	snapshotDone bool
 	lastSeq      uint64
 	lastProgress time.Time
 	lastError    string
@@ -20,8 +21,23 @@ type State struct {
 
 func (s *State) Database(ready bool) { s.mu.Lock(); s.database = ready; s.mu.Unlock() }
 func (s *State) Lease(held bool)     { s.mu.Lock(); s.lease = held; s.mu.Unlock() }
-func (s *State) Stream(running bool) { s.mu.Lock(); s.stream = running; s.mu.Unlock() }
-func (s *State) Paused(paused bool)  { s.mu.Lock(); s.paused = paused; s.mu.Unlock() }
+func (s *State) Stream(running bool) {
+	s.mu.Lock()
+	s.stream = running
+	if running {
+		s.snapshotDone = false
+	}
+	s.mu.Unlock()
+}
+func (s *State) Paused(paused bool) { s.mu.Lock(); s.paused = paused; s.mu.Unlock() }
+func (s *State) SnapshotComplete(lastSeq uint64) {
+	s.mu.Lock()
+	s.stream = false
+	s.snapshotDone = true
+	s.lastSeq = lastSeq
+	s.lastError = ""
+	s.mu.Unlock()
+}
 func (s *State) Progress(seq uint64) {
 	s.mu.Lock()
 	s.lastSeq = seq
@@ -70,6 +86,7 @@ type Snapshot struct {
 	Lease        bool      `json:"lease"`
 	Stream       bool      `json:"stream"`
 	Paused       bool      `json:"paused"`
+	SnapshotDone bool      `json:"snapshotComplete"`
 	LastSeq      uint64    `json:"lastSeq"`
 	LastProgress time.Time `json:"lastProgress,omitempty"`
 	LastError    string    `json:"lastError,omitempty"`
@@ -79,9 +96,10 @@ func (s *State) snapshot() Snapshot {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return Snapshot{
-		Ready:    s.database && s.lease && s.stream,
+		Ready:    s.database && s.lease && (s.stream || s.snapshotDone),
 		Database: s.database, Lease: s.lease, Stream: s.stream, Paused: s.paused,
-		LastSeq: s.lastSeq, LastProgress: s.lastProgress, LastError: s.lastError,
+		SnapshotDone: s.snapshotDone, LastSeq: s.lastSeq,
+		LastProgress: s.lastProgress, LastError: s.lastError,
 	}
 }
 

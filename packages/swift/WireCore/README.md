@@ -5,7 +5,7 @@
 ## End-to-end flow
 
 1. Public Jetstream/RSS producers place idempotent envelopes in `wire_ingestion_inbox`. The durable inbox owns retry, lease, dead-letter, and expiry state; a network message is not considered accepted until PostgreSQL has it.
-2. A dedicated drain runtime continuously claims bounded inbox batches, applies different repositories concurrently while preserving repository FIFO, and uses bounded idle/error backoff. The applier canonicalizes the linked story, upserts `wire_items` plus `wire_item_aliases`, records presentation-safe provenance, applies moderation/source labels, and inserts a deduplicated `wire_signal_events` row.
+2. A dedicated drain runtime continuously claims bounded inbox batches, applies different repositories concurrently while preserving repository FIFO, and uses bounded idle/error backoff. Claims order ready work by retry time before sequence so retries in one repository cannot starve unrelated pending repositories. The applier canonicalizes the linked story, upserts `wire_items` plus `wire_item_aliases`, records presentation-safe provenance, applies moderation/source labels, and inserts a deduplicated `wire_signal_events` row. Standard Site publication records form a rebuildable PostgreSQL resolver projection; documents carrying a publication AT-URI plus relative path use that projection or a bounded public PLC/PDS lookup. PLC/PDS DNS is revalidated immediately before every request, mixed or non-global answer sets fail closed, and redirects are not followed. Unresolved dependencies retry for no more than 24 hours.
 3. The applier updates bounded, keyed-hash graph state (`wire_active_actors`, `wire_follow_edges`, `wire_actor_communities`) and privacy-safe aggregate counts in `wire_signal_rollups`. DIDs for sharers, likers, reposters, and other engagement actors never enter a serving row. A public source/author DID may be retained only with its public item for attribution and viewer block/mute filtering; it is never a ranking feature or community identifier.
 4. Every five minutes by default, `wire-worker` prunes bounded graph state, refreshes community assignments when due, rebuilds exact rollups, refreshes baseline labels, loads eligible item/rollup rows, computes the deterministic `wire-v1` score, applies first-page diversity, and writes an immutable `wire_rank_generations` plus its `wire_ranked_items`. Continuous archive draining never increases labeler cadence.
 5. In `shadow` mode the generation remains queryable for comparison but is not served. In `api` or `visible` mode the worker moves `wire_feed_state.active_generation_id` in the same PostgreSQL transaction as the completed generation. `off` performs read-only health probes and no data operation.
@@ -40,7 +40,7 @@ A candidate is eligible when all of these are true:
 - the item is marked eligible, not expired, and matches the generation language (unless the bucket is `und`);
 - no current `moderation`/`visibility` label has value `block`, `exclude`, `adult`, `graphic`, or `spam`.
 
-Do not ingest private posts, deleted/tombstoned records, blocks/mutes, DMs, raw viewer actions, non-public graph edges, bot/spam traffic identified by labels, or repeated events with the same event key. An actor contributes at most once to each distinct-actor window even if they emit several engagement events. Recommendation is an admission signal, not a guarantee of placement.
+Do not ingest private posts, deleted/tombstoned records, blocks/mutes, DMs, raw viewer actions, non-public graph edges, bot/spam traffic identified by labels, or repeated events with the same transport key. That key is derived from environment, source host, cursor kind, and sequence; it deliberately excludes replay source generation. Source-record updates replace older raw signal state and deletes retract only state at or before their event time, so overlapping generation backfills remain idempotent without erasing newer updates. An actor contributes at most once to each distinct-actor window even if they emit several engagement events. Recommendation is an admission signal, not a guarantee of placement.
 
 Retention defaults are code constants in `WireDataPolicy`:
 
@@ -50,6 +50,7 @@ Retention defaults are code constants in `WireDataPolicy`:
 | Applied inbox envelopes | 1 day |
 | Dead letters | 14 days |
 | Items/presentation snapshots | 30 days since final eligibility |
+| Standard Site publication resolver projection | 30 days since last observation/resolution |
 | Active actor records | 30 days |
 | Follow edges | 30 days |
 | Community assignments | 7 days |

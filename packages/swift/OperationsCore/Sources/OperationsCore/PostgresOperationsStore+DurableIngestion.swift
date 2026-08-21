@@ -12,7 +12,8 @@ extension PostgresOperationsStore {
         checkpoint.last_staged_seq, checkpoint.last_staged_event_at, checkpoint.last_staged_at,
         checkpoint.last_applied_seq, checkpoint.last_applied_event_at, checkpoint.last_applied_at,
         checkpoint.last_reconciled_repo_rev, checkpoint.last_reconciled_at,
-        checkpoint.replay_state, checkpoint.replay_after_seq, checkpoint.replay_sealed_seq,
+        checkpoint.replay_state, checkpoint.replay_after_seq, checkpoint.replay_before_seq,
+        checkpoint.replay_sealed_seq,
         checkpoint.replay_bytes_downloaded, checkpoint.replay_retry_count,
         checkpoint.replay_range_resume_count, checkpoint.replay_last_progress_at,
         checkpoint.updated_at,
@@ -426,6 +427,7 @@ extension PostgresOperationsStore {
       replayState: JetstreamReplayState(
         rawValue: try value["replay_state"].decode(String.self)) ?? .failed,
       replayAfterSequence: try value["replay_after_seq"].decode(Int64?.self),
+      replayBeforeSequence: try value["replay_before_seq"].decode(Int64?.self),
       replaySealedSequence: try value["replay_sealed_seq"].decode(Int64?.self),
       replayBytesDownloaded: try value["replay_bytes_downloaded"].decode(Int64.self),
       replayRetryCount: try value["replay_retry_count"].decode(Int.self),
