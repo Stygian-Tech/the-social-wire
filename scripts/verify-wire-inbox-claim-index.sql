@@ -2,29 +2,39 @@
 
 DO $$
 DECLARE
-  index_valid BOOLEAN;
-  index_expression TEXT;
-  index_predicate TEXT;
+  pending_retry_valid BOOLEAN;
+  pending_retry_definition TEXT;
+  leased_valid BOOLEAN;
+  leased_definition TEXT;
 BEGIN
-  SELECT index_state.indisvalid,
-         pg_get_expr(index_state.indexprs, index_state.indrelid),
-         pg_get_expr(index_state.indpred, index_state.indrelid)
-  INTO index_valid, index_expression, index_predicate
+  SELECT index_state.indisvalid, pg_get_indexdef(index_state.indexrelid)
+  INTO pending_retry_valid, pending_retry_definition
   FROM pg_index index_state
   WHERE index_state.indexrelid =
-    to_regclass('public.wire_ingestion_inbox_claimable_global_v2_idx');
+    to_regclass('public.wire_ingestion_inbox_pending_retry_ready_idx');
 
-  IF index_valid IS DISTINCT FROM TRUE THEN
-    RAISE EXCEPTION 'global Wire inbox claim index is missing or invalid';
+  IF pending_retry_valid IS DISTINCT FROM TRUE THEN
+    RAISE EXCEPTION 'pending/retry Wire inbox claim index is missing or invalid';
   END IF;
-  IF index_expression NOT LIKE '%lease_expires_at%'
-      OR index_expression NOT LIKE '%next_attempt_at%' THEN
-    RAISE EXCEPTION 'unexpected global Wire inbox claim expression: %', index_expression;
+  IF pending_retry_definition NOT LIKE '%(next_attempt_at, seq)%'
+      OR pending_retry_definition NOT LIKE '%pending%'
+      OR pending_retry_definition NOT LIKE '%retry%' THEN
+    RAISE EXCEPTION 'unexpected pending/retry Wire inbox claim index: %',
+      pending_retry_definition;
   END IF;
-  IF index_predicate NOT LIKE '%pending%'
-      OR index_predicate NOT LIKE '%leased%'
-      OR index_predicate NOT LIKE '%retry%' THEN
-    RAISE EXCEPTION 'unexpected global Wire inbox claim predicate: %', index_predicate;
+
+  SELECT index_state.indisvalid, pg_get_indexdef(index_state.indexrelid)
+  INTO leased_valid, leased_definition
+  FROM pg_index index_state
+  WHERE index_state.indexrelid =
+    to_regclass('public.wire_ingestion_inbox_expired_lease_idx');
+
+  IF leased_valid IS DISTINCT FROM TRUE THEN
+    RAISE EXCEPTION 'expired-lease Wire inbox claim index is missing or invalid';
+  END IF;
+  IF leased_definition NOT LIKE '%(lease_expires_at, seq)%'
+      OR leased_definition NOT LIKE '%leased%' THEN
+    RAISE EXCEPTION 'unexpected expired-lease Wire inbox claim index: %', leased_definition;
   END IF;
 END
 $$;
@@ -64,7 +74,7 @@ SELECT
   'did:example:terminal-' || seq, '{}'::jsonb, NOW(), 'applied', NOW()
 FROM generate_series(1, 20000) AS seq;
 
--- A large active but ineligible set ensures the plan must seek by the CASE
+-- A large active but ineligible set ensures the pending/retry branch seeks by
 -- eligibility timestamp instead of walking every active row.
 INSERT INTO wire_ingestion_inbox (
   environment, source_generation, seq, source_host, cursor_kind, event_kind,
@@ -121,39 +131,53 @@ SET LOCAL enable_seqscan = off;
 
 SELECT pg_temp.assert_plan_uses_all(
   ARRAY[
-    'wire_ingestion_inbox_claimable_global_v2_idx',
+    'wire_ingestion_inbox_pending_retry_ready_idx',
+    'wire_ingestion_inbox_expired_lease_idx',
     'wire_ingestion_inbox_repo_fifo_idx'
   ],
   $query$
-    SELECT environment, source_generation, seq
-    FROM wire_ingestion_inbox candidate
-    WHERE candidate.status IN ('pending', 'leased', 'retry')
-      AND (
-        CASE
-          WHEN candidate.status = 'leased' THEN candidate.lease_expires_at
-          ELSE candidate.next_attempt_at
-        END
-      ) <= NOW()
-      AND NOT EXISTS (
-        SELECT 1
-        FROM wire_ingestion_inbox earlier
-        WHERE earlier.environment = candidate.environment
-          AND earlier.source_generation = candidate.source_generation
-          AND earlier.repo_did = candidate.repo_did
-          AND earlier.seq < candidate.seq
-          AND earlier.status IN ('pending', 'leased', 'retry')
-      )
-    ORDER BY
-      (
-        CASE
-          WHEN candidate.status = 'leased' THEN candidate.lease_expires_at
-          ELSE candidate.next_attempt_at
-        END
-      ),
-      candidate.seq,
-      candidate.environment,
-      candidate.source_generation
-    FOR UPDATE SKIP LOCKED
+    WITH pending_retry_candidates AS (
+      SELECT environment, source_generation, seq, next_attempt_at AS eligible_at
+      FROM wire_ingestion_inbox candidate
+      WHERE candidate.status IN ('pending', 'retry')
+        AND candidate.next_attempt_at <= NOW()
+        AND NOT EXISTS (
+          SELECT 1 FROM wire_ingestion_inbox earlier
+          WHERE earlier.environment = candidate.environment
+            AND earlier.source_generation = candidate.source_generation
+            AND earlier.repo_did = candidate.repo_did
+            AND earlier.seq < candidate.seq
+            AND earlier.status IN ('pending', 'leased', 'retry')
+        )
+      ORDER BY candidate.next_attempt_at, candidate.seq,
+               candidate.environment, candidate.source_generation
+      FOR UPDATE SKIP LOCKED
+      LIMIT 32
+    ),
+    expired_lease_candidates AS (
+      SELECT environment, source_generation, seq, lease_expires_at AS eligible_at
+      FROM wire_ingestion_inbox candidate
+      WHERE candidate.status = 'leased'
+        AND candidate.lease_expires_at <= NOW()
+        AND NOT EXISTS (
+          SELECT 1 FROM wire_ingestion_inbox earlier
+          WHERE earlier.environment = candidate.environment
+            AND earlier.source_generation = candidate.source_generation
+            AND earlier.repo_did = candidate.repo_did
+            AND earlier.seq < candidate.seq
+            AND earlier.status IN ('pending', 'leased', 'retry')
+        )
+      ORDER BY candidate.lease_expires_at, candidate.seq,
+               candidate.environment, candidate.source_generation
+      FOR UPDATE SKIP LOCKED
+      LIMIT 32
+    )
+    SELECT environment, source_generation, seq, eligible_at
+    FROM pending_retry_candidates
+    UNION ALL
+    SELECT environment, source_generation, seq, eligible_at
+    FROM expired_lease_candidates
+    ORDER BY eligible_at, seq, environment, source_generation
     LIMIT 32
   $query$
 );
