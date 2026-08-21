@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, describe, expect, it, spyOn } from "bun:test";
+import { afterEach, beforeAll, describe, expect, it, mock, spyOn } from "bun:test";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 
 import { PublicationTabs } from "@/components/AppSidebar/PublicationTabs";
@@ -76,5 +76,28 @@ describe("PublicationTabs", () => {
     expect(screen.queryByText("Mark All As Unread")).toBeNull();
 
     bulkReadSpy.mockRestore();
+  });
+
+  it("renders The Wire without a bulk-read context menu", () => {
+    const onWireSelect = mock(() => undefined);
+    render(
+      <SidebarProvider>
+        <PublicationTabs
+          activeTab={null}
+          onTabChange={() => undefined}
+          wireEnabled
+          wireActive
+          onWireSelect={onWireSelect}
+          visibleTabs={[]}
+        />
+      </SidebarProvider>,
+    );
+
+    const wire = screen.getByRole("tab", { name: "The Wire" });
+    expect(wire.getAttribute("aria-selected")).toBe("true");
+    fireEvent.click(wire);
+    expect(onWireSelect).toHaveBeenCalledTimes(1);
+    fireEvent.contextMenu(wire);
+    expect(screen.queryByText("Mark All As Read")).toBeNull();
   });
 });

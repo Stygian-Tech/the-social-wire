@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useEffect } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 import { AppSidebar } from "@/components/AppSidebar/AppSidebar";
 import { PublicationSidebarProvider } from "@/contexts/PublicationSidebarContext";
@@ -67,17 +67,36 @@ export default function ReadLayout({
                 }
               />
             </Suspense>
-            <SidebarInset className="flex min-h-0 flex-1 flex-col overflow-hidden pb-16 md:pb-0 lg:mr-64">
-              <Suspense fallback={null}>
-                <ReadArticleFilterBar />
-              </Suspense>
-              <main className="flex min-h-0 flex-1 overflow-hidden">
-                {children}
-              </main>
-            </SidebarInset>
+            <Suspense
+              fallback={
+                <SidebarInset className="flex min-h-0 flex-1 flex-col overflow-hidden pb-16 md:pb-0">
+                  <main className="flex min-h-0 flex-1 overflow-hidden">
+                    {children}
+                  </main>
+                </SidebarInset>
+              }
+            >
+              <ReadContentInset>{children}</ReadContentInset>
+            </Suspense>
           </ReadSidebarScopeProvider>
         </ReadRouteProvider>
       </PublicationSidebarProvider>
     </SidebarProvider>
+  );
+}
+
+function ReadContentInset({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const wireRoute =
+    pathname === "/read" && searchParams.get("feed") === "wire";
+
+  return (
+    <SidebarInset
+      className={`flex min-h-0 flex-1 flex-col overflow-hidden pb-16 md:pb-0 ${wireRoute ? "" : "lg:mr-64"}`}
+    >
+      <ReadArticleFilterBar />
+      <main className="flex min-h-0 flex-1 overflow-hidden">{children}</main>
+    </SidebarInset>
   );
 }

@@ -24,4 +24,29 @@ describe("MobileFeedNavigation", () => {
     fireEvent.click(screen.getByRole("button", { name: "Following" }));
     expect(onSelect).toHaveBeenCalledWith("following");
   });
+
+  it("shows The Wire only when runtime capabilities include it", () => {
+    const onSelect = mock(() => undefined);
+    const { rerender } = render(
+      <MobileFeedNavigation
+        currentFeed="wire"
+        visibleFeeds={new Set(["wire", "subscribed"])}
+        onSelect={onSelect}
+      />,
+    );
+
+    const wire = screen.getByRole("button", { name: "The Wire" });
+    expect(wire.getAttribute("aria-current")).toBe("page");
+    fireEvent.click(wire);
+    expect(onSelect).toHaveBeenCalledWith("wire");
+
+    rerender(
+      <MobileFeedNavigation
+        currentFeed="subscribed"
+        visibleFeeds={new Set(["subscribed"])}
+        onSelect={onSelect}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: "The Wire" })).toBeNull();
+  });
 });

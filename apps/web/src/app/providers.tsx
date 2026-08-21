@@ -27,9 +27,11 @@ function shouldPersistEntriesQuery(query: Query): boolean {
   const key = query.queryKey;
   if (
     !Array.isArray(key) ||
-    (key[0] !== "entries" && key[0] !== "aggregateEntries") ||
-    typeof key[1] !== "string" ||
-    key[1].length === 0 ||
+    (key[0] !== "entries" &&
+      key[0] !== "aggregateEntries" &&
+      key[0] !== "wireEntries") ||
+    (key[0] !== "wireEntries" &&
+      (typeof key[1] !== "string" || key[1].length === 0)) ||
     query.state.status !== "success"
   ) {
     return false;
@@ -76,7 +78,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
       dbName: "the-social-wire-cache",
       storeName: "react-query",
       key: QUERY_PERSIST_KEY,
-      /** Discovery + entry streams: throttle persist writes. */
+      /** The Wire + entry streams: throttle persist writes. */
       throttleTime: 2000,
     })
   );

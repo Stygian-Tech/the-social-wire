@@ -16,6 +16,7 @@ import { ReadRouteProvider } from "@/contexts/ReadRouteContext";
 import * as AuthHook from "@/hooks/useAuth";
 import type { EntryListItem } from "@/lib/atprotoClient";
 import * as ResolveEntryOpenURL from "@/lib/resolveEntryOpenUrl";
+import { READ_STATE_STORAGE_KEY } from "@/lib/entryReadStateStorage";
 
 beforeAll(() => {
   Object.defineProperty(globalThis, "Element", {
@@ -35,6 +36,8 @@ let resolveEntryOpenUrlFromPds: ReturnType<
 
 beforeEach(() => {
   window.localStorage.clear();
+  renderedEntry = unresolvedEntry;
+  renderedEntryListProps = {};
   const authSpy = spyOn(AuthHook, "useAuth").mockReturnValue({
     session: { did: "did:plc:viewer" },
     getOAuthSession: () => null,
@@ -60,22 +63,41 @@ const unresolvedEntry: EntryListItem = {
   title: "Standard Site Article",
   publishedAt: "2026-01-01T00:00:00.000Z",
 };
+let renderedEntry = unresolvedEntry;
+let renderedEntryListProps: {
+  wireFeed?: boolean;
+  readIndicatorsEnabled?: boolean;
+  articleFilter?: string;
+} = {};
 
 mock.module("@/components/EntryList/EntryList", () => ({
   EntryList: ({
     onSelectEntry,
     resolvingEntryId,
+    wireFeed,
+    readIndicatorsEnabled,
+    articleFilter,
   }: {
     onSelectEntry: (entryId: string, entry?: EntryListItem) => void;
     resolvingEntryId?: string | null;
+    wireFeed?: boolean;
+    readIndicatorsEnabled?: boolean;
+    articleFilter?: string;
   }) => (
     <button
       type="button"
       data-testid="entry-row"
-      aria-busy={resolvingEntryId === unresolvedEntry.entryId || undefined}
-      onClick={() => onSelectEntry(unresolvedEntry.entryId, unresolvedEntry)}
+      aria-busy={resolvingEntryId === renderedEntry.entryId || undefined}
+      onClick={() => onSelectEntry(renderedEntry.entryId, renderedEntry)}
+      ref={() => {
+        renderedEntryListProps = {
+          wireFeed,
+          readIndicatorsEnabled,
+          articleFilter,
+        };
+      }}
     >
-      {unresolvedEntry.title}
+      {renderedEntry.title}
     </button>
   ),
 }));
@@ -149,6 +171,44 @@ describe("ReadPubPage entry open fallback", () => {
       expect(screen.queryByRole("status")).toBeNull();
     } finally {
       restore();
+    }
+  });
+
+  it("opens The Wire stories without creating read state or unread UI semantics", () => {
+    renderedEntry = {
+      entryId: "at://did:plc:writer/site.standard.document/wire-story",
+      title: "The Wire Story",
+      publishedAt: "2026-08-20T12:00:00.000Z",
+      originalUrl: "https://news.example/story",
+      wireItem: {
+        itemId: "wire:item:one",
+        representativeUri:
+          "at://did:plc:writer/site.standard.document/wire-story",
+        source: { name: "Example News", domain: "news.example" },
+        reasons: ["breaking_story"],
+        provenance: [],
+      },
+    };
+    const { tabs, restore } = stubWindowOpen();
+
+    try {
+      render(
+        <ReadPubPage wireFeed />,
+        { wrapper: Wrapper },
+      );
+      act(() => screen.getByTestId("entry-row").click());
+
+      expect(renderedEntryListProps).toEqual({
+        wireFeed: true,
+        readIndicatorsEnabled: false,
+        articleFilter: "all",
+      });
+      expect(tabs).toHaveLength(1);
+      expect(window.localStorage.getItem(READ_STATE_STORAGE_KEY)).toBeNull();
+      expect(resolveEntryOpenUrlFromPds).not.toHaveBeenCalled();
+    } finally {
+      restore();
+      renderedEntry = unresolvedEntry;
     }
   });
 

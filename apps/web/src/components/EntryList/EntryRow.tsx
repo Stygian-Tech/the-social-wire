@@ -19,6 +19,10 @@ import {
 } from "@/lib/articleListCardStyles";
 import { PublicationChip } from "@/components/shared/PublicationChip";
 import { useOptionalSidebarPublicationRows } from "@/contexts/PublicationSidebarContext";
+import {
+  wireProvenanceLabel,
+  wireReasonLabel,
+} from "@/lib/wireFeedClient";
 
 interface EntryRowProps {
   entry: EntryListItem;
@@ -74,7 +78,14 @@ export const EntryRow = memo(function EntryRow({
       )
     : undefined;
   const publication =
-    publicationOverride ??
+    (entry.wireItem
+      ? {
+          name:
+            entry.wireItem.source.publication?.trim() ||
+            entry.wireItem.source.name.trim() ||
+            entry.wireItem.source.domain,
+        }
+      : publicationOverride) ??
     (sidebarPublication
       ? {
           name: sidebarPublication.title,
@@ -82,6 +93,15 @@ export const EntryRow = memo(function EntryRow({
             sidebarPublication.iconUrl ?? sidebarPublication.avatarUrl,
         }
       : undefined);
+  const showPublishedDate =
+    !entry.wireItem || Boolean(entry.wireItem.publishedAt?.trim());
+  const wireReasonLabels = (entry.wireItem?.reasons ?? [])
+    .map(wireReasonLabel)
+    .filter((label): label is string => Boolean(label));
+  const wireProvenance = (entry.wireItem?.provenance ?? [])
+    .map(wireProvenanceLabel)
+    .filter((label): label is string => Boolean(label))
+    .slice(0, 2);
   const activeThumbSrc =
     thumbAttempts.length > 0 && attemptIdx < thumbAttempts.length
       ? thumbAttempts[attemptIdx]
@@ -152,8 +172,21 @@ export const EntryRow = memo(function EntryRow({
                 className="max-w-[12rem] border-0 bg-transparent px-0 py-0 text-foreground/80"
               />
             ) : null}
-            {publication ? <span aria-hidden>•</span> : null}
-            <span>{formattedDate}</span>
+            {entry.wireItem?.source.domain?.trim() &&
+            entry.wireItem.source.domain.trim() !== publication?.name ? (
+              <>
+                <span aria-hidden>•</span>
+                <span className="truncate">{entry.wireItem.source.domain}</span>
+              </>
+            ) : null}
+            {publication && showPublishedDate ? <span aria-hidden>•</span> : null}
+            {showPublishedDate ? <span>{formattedDate}</span> : null}
+            {entry.wireItem?.source.author?.trim() ? (
+              <>
+                <span aria-hidden>•</span>
+                <span className="truncate">{entry.wireItem.source.author}</span>
+              </>
+            ) : null}
           </div>
           <p
             className={cn(
@@ -167,6 +200,23 @@ export const EntryRow = memo(function EntryRow({
           {displaySummary ? (
             <p className="line-clamp-2 pr-8 text-sm leading-5 text-muted-foreground">
               {displaySummary}
+            </p>
+          ) : null}
+          {wireReasonLabels.length > 0 ? (
+            <div className="flex flex-wrap gap-1.5 pt-0.5" aria-label="Why this story is on The Wire">
+              {wireReasonLabels.map((label) => (
+                <span
+                  key={label}
+                  className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-[var(--purple-foreground)]"
+                >
+                  {label}
+                </span>
+              ))}
+            </div>
+          ) : null}
+          {wireProvenance.length > 0 ? (
+            <p className="line-clamp-1 pr-8 text-xs text-muted-foreground">
+              {wireProvenance.join(" · ")}
             </p>
           ) : null}
           <div className="absolute bottom-2.5 right-2.5 flex items-center">

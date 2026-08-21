@@ -15,7 +15,7 @@ export function recordClientPerformance(
   sample: {
     event: ClientPerformanceEvent;
     durationMs: number;
-    feedType: "aggregate" | "publication";
+    feedType: "aggregate" | "publication" | "wire";
     cacheState: "hit" | "miss";
     outcome: "success" | "error";
   }
