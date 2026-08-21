@@ -22,7 +22,11 @@ struct WireWorkerCommand: AsyncParsableCommand {
     let environment = ProcessInfo.processInfo.environment
     let config = try WireWorkerConfig.load(environment)
     try config.ranking.validate()
-    let postgresConfig = try PostgresWireConfig.make(from: config.databaseURL, logger: serviceLogger)
+    let postgresConfig = try PostgresWireConfig.make(
+      from: config.databaseURL,
+      maximumConnections: config.postgresMaximumConnections,
+      logger: serviceLogger
+    )
     let pool = PostgresClient(configuration: postgresConfig, backgroundLogger: serviceLogger)
     let store = PostgresWireGenerationStore(pool: pool, logger: serviceLogger)
     let httpClient = HTTPClient(eventLoopGroupProvider: .singleton)
@@ -39,7 +43,9 @@ struct WireWorkerCommand: AsyncParsableCommand {
       inboxProcessor = try PostgresWireInboxProcessor(
         pool: pool,
         logger: serviceLogger,
-        actorSecret: actorSecret
+        actorSecret: actorSecret,
+        batchSize: config.inboxBatchSize,
+        maximumConcurrentEvents: config.inboxConcurrency
       )
     } else {
       inboxProcessor = nil
@@ -47,7 +53,7 @@ struct WireWorkerCommand: AsyncParsableCommand {
     let cycle = WireWorkerCycle(
       store: store,
       config: config,
-      inboxProcessor: inboxProcessor,
+      inboxMaintainer: inboxProcessor,
       labelRefresher: labelRefresher
     )
     let state = WireWorkerHealthState()
@@ -66,7 +72,9 @@ struct WireWorkerCommand: AsyncParsableCommand {
               if config.mode != .off {
                 let ready = await state.isReady(
                   at: Date(),
-                  maximumCycleAge: TimeInterval(max(config.intervalSeconds * 2, 600))
+                  maximumCycleAge: TimeInterval(max(config.intervalSeconds * 2, 600)),
+                  maximumDrainSuccessAge: 60,
+                  maximumDrainOperationAge: 180
                 )
                 guard ready else { throw HealthError.generationCycleStale }
               }
@@ -78,6 +86,16 @@ struct WireWorkerCommand: AsyncParsableCommand {
         }
         group.addTask {
           try await WireWorkerRuntime.runForever(cycle: cycle, state: state, logger: serviceLogger)
+        }
+        if config.mode != .off, let inboxProcessor {
+          group.addTask {
+            try await WireInboxDrainRuntime.run(
+              processor: inboxProcessor,
+              state: state,
+              logger: serviceLogger,
+              configuration: .init(idleMilliseconds: config.inboxIdleMilliseconds)
+            )
+          }
         }
         try await group.next()
         group.cancelAll()

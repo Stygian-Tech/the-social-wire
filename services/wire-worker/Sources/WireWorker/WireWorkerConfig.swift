@@ -13,6 +13,10 @@ struct WireWorkerConfig: Sendable {
   var actorHMACSecret: String?
   var baselineLabelers: [WireLabelerEndpoint]
   var labelRefreshMaximumAgeSeconds: Int
+  var inboxBatchSize: Int
+  var inboxConcurrency: Int
+  var inboxIdleMilliseconds: Int
+  var postgresMaximumConnections: Int
 
   static func load(_ environment: [String: String]) throws -> WireWorkerConfig {
     guard let databaseURL = environment["DATABASE_URL"]?.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -53,6 +57,18 @@ struct WireWorkerConfig: Sendable {
       ),
       labelRefreshMaximumAgeSeconds: try positiveInt(
         environment, key: "WIRE_LABEL_REFRESH_MAX_AGE_SECONDS", default: 900
+      ),
+      inboxBatchSize: try boundedPositiveInt(
+        environment, key: "WIRE_INBOX_BATCH_SIZE", default: 1_000, maximum: 5_000
+      ),
+      inboxConcurrency: try boundedPositiveInt(
+        environment, key: "WIRE_INBOX_CONCURRENCY", default: 16, maximum: 64
+      ),
+      inboxIdleMilliseconds: try boundedPositiveInt(
+        environment, key: "WIRE_INBOX_IDLE_MILLISECONDS", default: 250, maximum: 60_000
+      ),
+      postgresMaximumConnections: try boundedPositiveInt(
+        environment, key: "WIRE_POSTGRES_MAX_CONNECTIONS", default: 12, maximum: 64
       )
     )
   }
@@ -66,6 +82,17 @@ struct WireWorkerConfig: Sendable {
     guard let value = Int(raw), value > 0 else {
       throw WireWorkerConfigError.invalidPositiveInteger(key)
     }
+    return value
+  }
+
+  private static func boundedPositiveInt(
+    _ environment: [String: String],
+    key: String,
+    default defaultValue: Int,
+    maximum: Int
+  ) throws -> Int {
+    let value = try positiveInt(environment, key: key, default: defaultValue)
+    guard value <= maximum else { throw WireWorkerConfigError.invalidPositiveInteger(key) }
     return value
   }
 }

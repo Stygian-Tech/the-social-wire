@@ -8,8 +8,95 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stygian-tech/the-social-wire/services/jetstream-ingest/internal/config"
 	"github.com/stygian-tech/the-social-wire/services/jetstream-ingest/internal/ingest"
 )
+
+func TestPostgresStageWireBatchNormalizesUnsupportedUnicode(t *testing.T) {
+	databaseURL := os.Getenv("JETSTREAM_INGEST_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("JETSTREAM_INGEST_TEST_DATABASE_URL is not set")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	db, err := sql.Open("pgx", databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	generation := fmt.Sprintf("integration-wire-%d", time.Now().UnixNano())
+	source := ingest.SourceIdentity{
+		PipelineMode: config.WirePipelineMode, Environment: "dev",
+		Host: "jetstream.us-west.bsky.network", StreamNSID: "network.bsky.jetstream.subscribeEvents",
+		FilterFingerprint: "integration-wire-filter", CursorKind: "jetstream_v2_seq",
+		Generation: generation,
+	}
+	postgres := New(db, source)
+	lease, err := postgres.AcquireLease(ctx, "integration-"+generation, "integration-owner", 30*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		cleanup, cleanupCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cleanupCancel()
+		_, _ = db.ExecContext(cleanup, "DELETE FROM wire_ingestion_inbox WHERE environment = $1 AND source_generation = $2", source.Environment, generation)
+		_, _ = db.ExecContext(cleanup, "DELETE FROM appview_jetstream_checkpoints WHERE environment = $1 AND source_generation = $2", source.Environment, generation)
+		_, _ = db.ExecContext(cleanup, "DELETE FROM appview_ingestion_leases WHERE environment = $1 AND lease_name = $2", source.Environment, lease.Name)
+	})
+
+	now := time.Now().UTC()
+	event := ingest.InboxEvent{
+		Seq: 177, Time: now, Kind: "commit", RepoDID: "did:plc:wire-integration",
+		Payload: []byte(`{"record":{"text":"before\u0000after","literal":"\\u0000"},"cursor":177}`),
+	}
+	if err := postgres.StageBatch(
+		ctx, lease, []ingest.InboxEvent{event}, event.Seq, now,
+		ReplayProgress{State: "live", LastProgressAt: now},
+	); err != nil {
+		t.Fatal(err)
+	}
+	var text, literal string
+	if err := db.QueryRowContext(ctx, `
+		SELECT payload->'record'->>'text', payload->'record'->>'literal'
+		FROM wire_ingestion_inbox
+		WHERE environment = $1 AND source_generation = $2 AND seq = $3`,
+		source.Environment, generation, int64(event.Seq)).Scan(&text, &literal); err != nil {
+		t.Fatal(err)
+	}
+	if text != "before�after" || literal != `\u0000` {
+		t.Fatalf("stored normalized strings text=%q literal=%q", text, literal)
+	}
+
+	malformed := event
+	malformed.Seq = 178
+	malformed.Payload = []byte(`{"record":`)
+	if err := postgres.StageBatch(
+		ctx, lease, []ingest.InboxEvent{malformed}, malformed.Seq, now,
+		ReplayProgress{State: "live", LastProgressAt: now},
+	); err != nil {
+		t.Fatal(err)
+	}
+	var failureCode string
+	var originalBytes int
+	if err := db.QueryRowContext(ctx, `
+		SELECT payload->'$wireIngestionError'->>'code',
+		       (payload->'$wireIngestionError'->>'originalBytes')::integer
+		FROM wire_ingestion_inbox
+		WHERE environment = $1 AND source_generation = $2 AND seq = $3`,
+		source.Environment, generation, int64(malformed.Seq)).Scan(&failureCode, &originalBytes); err != nil {
+		t.Fatal(err)
+	}
+	if failureCode != wirePayloadNormalizationFailureCode || originalBytes != len(malformed.Payload) {
+		t.Fatalf("stored fallback code=%q originalBytes=%d", failureCode, originalBytes)
+	}
+	checkpoint, err := postgres.LoadCheckpoint(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if checkpoint == nil || checkpoint.LastStagedSeq != malformed.Seq {
+		t.Fatalf("checkpoint did not advance over fallback payload: %#v", checkpoint)
+	}
+}
 
 func TestPostgresStageBatchIntegration(t *testing.T) {
 	databaseURL := os.Getenv("JETSTREAM_INGEST_TEST_DATABASE_URL")

@@ -89,6 +89,18 @@ struct WireWorkerCycleTests {
     #expect(await store.snapshot().commits.isEmpty)
   }
 
+  @Test("generation maintenance runs once without draining an inbox batch")
+  func generationMaintenance() async throws {
+    let maintainer = FakeInboxMaintainer()
+    _ = try await WireWorkerCycle(
+      store: FakeWireStore(candidates: activationCandidates),
+      config: config(mode: .shadow),
+      inboxMaintainer: maintainer,
+      labelRefresher: SuccessfulLabelRefresher()
+    ).run(asOf: now)
+    #expect(await maintainer.callCount == 1)
+  }
+
   private var candidate: WireCandidate {
     candidate(index: nil)
   }
@@ -128,7 +140,11 @@ struct WireWorkerCycleTests {
       ranking: .init(),
       actorHMACSecret: String(repeating: "s", count: 32),
       baselineLabelers: try! WireLabelerEndpoint.parse(WireLabelerEndpoint.blueskyDefault),
-      labelRefreshMaximumAgeSeconds: 900
+      labelRefreshMaximumAgeSeconds: 900,
+      inboxBatchSize: 1_000,
+      inboxConcurrency: 16,
+      inboxIdleMilliseconds: 250,
+      postgresMaximumConnections: 12
     )
   }
 }
@@ -139,6 +155,11 @@ private struct SuccessfulLabelRefresher: WireBaselineLabelRefreshing {
 
 private struct FailingLabelRefresher: WireBaselineLabelRefreshing {
   func refresh(asOf: Date) async throws { throw WireLabelQueryError.staleRefresh }
+}
+
+private actor FakeInboxMaintainer: WireInboxMaintaining {
+  private(set) var callCount = 0
+  func maintain(asOf: Date) { callCount += 1 }
 }
 
 private actor FakeWireStore: WireGenerationStore {

@@ -12,6 +12,10 @@ struct WireWorkerConfigTests {
     #expect(config.baselineLabelers.count == 1)
     #expect(config.baselineLabelers[0].endpointHost == "mod.bsky.app")
     #expect(config.labelRefreshMaximumAgeSeconds == 900)
+    #expect(config.inboxBatchSize == 1_000)
+    #expect(config.inboxConcurrency == 16)
+    #expect(config.inboxIdleMilliseconds == 250)
+    #expect(config.postgresMaximumConnections == 12)
   }
 
   @Test("loads every approved rollout mode")
@@ -49,6 +53,11 @@ struct WireWorkerConfigTests {
       try WireWorkerConfig.load([
         "DATABASE_URL": "postgres://db/wire",
         "WIRE_BASELINE_LABELERS": "did:example:test|http://labels.example",
+      ])
+    }
+    #expect(throws: WireWorkerConfigError.invalidPositiveInteger("WIRE_INBOX_CONCURRENCY")) {
+      try WireWorkerConfig.load([
+        "DATABASE_URL": "postgres://db/wire", "WIRE_INBOX_CONCURRENCY": "65",
       ])
     }
   }
