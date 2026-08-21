@@ -30,6 +30,10 @@ struct WireWorkerCommand: AsyncParsableCommand {
     let pool = PostgresClient(configuration: postgresConfig, backgroundLogger: serviceLogger)
     let store = PostgresWireGenerationStore(pool: pool, logger: serviceLogger)
     let httpClient = HTTPClient(eventLoopGroupProvider: .singleton)
+    let publicationResolver = WirePublicationResolver(
+      store: PostgresWirePublicationMetadataStore(pool: pool, logger: serviceLogger),
+      queryClient: HTTPWirePublicationQueryClient(httpClient: httpClient)
+    )
     let labelStore = PostgresWireBaselineLabelStore(pool: pool, logger: serviceLogger)
     let labelRefresher = WireBaselineLabelRefresher(
       store: labelStore,
@@ -44,6 +48,7 @@ struct WireWorkerCommand: AsyncParsableCommand {
         pool: pool,
         logger: serviceLogger,
         actorSecret: actorSecret,
+        publicationResolver: publicationResolver,
         batchSize: config.inboxBatchSize,
         maximumConcurrentEvents: config.inboxConcurrency
       )
@@ -60,7 +65,8 @@ struct WireWorkerCommand: AsyncParsableCommand {
     let host = hostname ?? environment["BIND_HOST"] ?? "::"
     let port = port ?? Int(environment["PORT"] ?? "8080") ?? 8080
 
-    serviceLogger.info("Starting The Wire worker", metadata: ["mode": .string(config.mode.rawValue)])
+    serviceLogger.info(
+      "Starting The Wire worker", metadata: ["mode": .string(config.mode.rawValue)])
     var runtimeError: Error?
     do {
       try await withThrowingTaskGroup(of: Void.self) { group in

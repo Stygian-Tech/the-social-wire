@@ -8,6 +8,8 @@ struct PostgresWireInboxProcessor: Sendable {
     let environment: String
     let sourceGeneration: String
     let sequence: Int64
+    let sourceHost: String
+    let cursorKind: String
     let eventKind: String
     let repoDID: String
     let collection: String?
@@ -26,12 +28,14 @@ struct PostgresWireInboxProcessor: Sendable {
 
   private enum ApplyError: Error {
     case unresolvedReference
+    case unresolvedPublication
     case malformed
   }
 
   let pool: PostgresClient
   let logger: Logger
   let actorHasher: WireActorHasher
+  let publicationResolver: any WirePublicationResolving
   let batchSize: Int
   let maximumConcurrentEvents: Int
 
@@ -39,12 +43,19 @@ struct PostgresWireInboxProcessor: Sendable {
     pool: PostgresClient,
     logger: Logger,
     actorSecret: String,
+    publicationResolver: (any WirePublicationResolving)? = nil,
     batchSize: Int = 1_000,
     maximumConcurrentEvents: Int = 16
   ) throws {
     self.pool = pool
     self.logger = logger
     self.actorHasher = try WireActorHasher(secret: Data(actorSecret.utf8))
+    self.publicationResolver =
+      publicationResolver
+      ?? WirePublicationResolver(
+        store: PostgresWirePublicationMetadataStore(pool: pool, logger: logger),
+        queryClient: nil
+      )
     self.batchSize = max(1, min(batchSize, 5_000))
     self.maximumConcurrentEvents = max(1, min(maximumConcurrentEvents, 64))
   }
@@ -93,6 +104,25 @@ struct PostgresWireInboxProcessor: Sendable {
           asOf: asOf
         )
       }
+    } catch ApplyError.unresolvedPublication {
+      if asOf.timeIntervalSince(event.eventTime) < 24 * 3_600 {
+        try await finish(
+          event,
+          status: "retry",
+          retryAt: asOf.addingTimeInterval(
+            Self.publicationRetryDelay(attemptCount: event.attemptCount)),
+          reason: "unresolved_publication",
+          asOf: asOf
+        )
+      } else {
+        try await finish(
+          event,
+          status: "dead_letter",
+          retryAt: asOf,
+          reason: "unresolved_publication_expired",
+          asOf: asOf
+        )
+      }
     } catch ApplyError.malformed {
       try await finish(
         event,
@@ -131,7 +161,7 @@ struct PostgresWireInboxProcessor: Sendable {
               AND earlier.seq < candidate.seq
               AND earlier.status IN ('pending', 'leased', 'retry')
           )
-        ORDER BY seq
+        ORDER BY next_attempt_at, seq
         FOR UPDATE SKIP LOCKED
         LIMIT \(batchSize)
       )
@@ -143,7 +173,8 @@ struct PostgresWireInboxProcessor: Sendable {
       WHERE inbox.environment = candidates.environment
         AND inbox.source_generation = candidates.source_generation
         AND inbox.seq = candidates.seq
-      RETURNING inbox.environment, inbox.source_generation, inbox.seq, inbox.event_kind,
+      RETURNING inbox.environment, inbox.source_generation, inbox.seq,
+                inbox.source_host, inbox.cursor_kind, inbox.event_kind,
                 inbox.repo_did, inbox.collection, inbox.operation, inbox.record_key,
                 inbox.payload::text, inbox.event_time, inbox.lease_token, inbox.attempt_count
       """,
@@ -152,22 +183,27 @@ struct PostgresWireInboxProcessor: Sendable {
     var result: [InboxEvent] = []
     for try await row in rows {
       let value = try row.decode(
-        (String, String, Int64, String, String, String?, String?, String?, String, Date, String, Int).self
+        (
+          String, String, Int64, String, String, String, String, String?, String?, String?, String,
+          Date, String, Int
+        ).self
       )
       result.append(
         InboxEvent(
           environment: value.0,
           sourceGeneration: value.1,
           sequence: value.2,
-          eventKind: value.3,
-          repoDID: value.4,
-          collection: value.5,
-          operation: value.6,
-          recordKey: value.7,
-          payloadJSON: value.8,
-          eventTime: value.9,
-          leaseToken: value.10,
-          attemptCount: value.11
+          sourceHost: value.3,
+          cursorKind: value.4,
+          eventKind: value.5,
+          repoDID: value.6,
+          collection: value.7,
+          operation: value.8,
+          recordKey: value.9,
+          payloadJSON: value.10,
+          eventTime: value.11,
+          leaseToken: value.12,
+          attemptCount: value.13
         )
       )
     }
@@ -186,16 +222,33 @@ struct PostgresWireInboxProcessor: Sendable {
       let operation = event.operation, let sourceURI = event.sourceURI
     else { return }
     if operation == "delete" {
-      try await retract(sourceURI: sourceURI, asOf: asOf)
+      if collection == "site.standard.publication" {
+        try await publicationResolver.remove(
+          publicationURI: sourceURI,
+          observedAt: event.eventTime
+        )
+      } else {
+        try await retract(sourceURI: sourceURI, eventTime: event.eventTime, asOf: asOf)
+      }
       return
     }
     guard operation == "create" || operation == "update",
-      let document = try JSONSerialization.jsonObject(with: Data(event.payloadJSON.utf8)) as? [String: Any],
+      let document = try JSONSerialization.jsonObject(with: Data(event.payloadJSON.utf8))
+        as? [String: Any],
       let commit = document["commit"] as? [String: Any],
       let record = commit["record"] as? [String: Any]
     else { throw ApplyError.malformed }
 
     switch collection {
+    case "site.standard.publication":
+      guard
+        let metadata = WirePublicationMetadata.parse(
+          publicationURI: sourceURI,
+          repoDID: event.repoDID,
+          record: record
+        )
+      else { throw ApplyError.malformed }
+      try await publicationResolver.observe(metadata, asOf: event.eventTime)
     case "site.standard.document", "site.standard.entry":
       try await applyArticle(record: record, event: event, sourceURI: sourceURI, asOf: asOf)
     case "app.bsky.feed.post":
@@ -238,16 +291,29 @@ struct PostgresWireInboxProcessor: Sendable {
     sourceURI: String,
     asOf: Date
   ) async throws {
-    guard let rawURL = Self.firstString(record, keys: ["canonicalUrl", "url", "siteUrl"]),
-      let identity = WireCanonicalizer.canonicalize(rawURL),
+    let resolved: WireResolvedStandardSiteDocument
+    do {
+      resolved = try await WireStandardSiteDocumentResolver.resolve(
+        record: record,
+        publicationResolver: publicationResolver,
+        asOf: asOf
+      )
+    } catch WireStandardSiteDocumentError.unresolvedPublication {
+      throw ApplyError.unresolvedPublication
+    } catch WireStandardSiteDocumentError.malformedDocument,
+      WireStandardSiteDocumentError.invalidPublication
+    {
+      throw ApplyError.malformed
+    }
+    guard let identity = WireCanonicalizer.canonicalize(resolved.canonicalURL),
       let host = URL(string: identity.canonicalURL)?.host
     else { throw ApplyError.malformed }
     let title = Self.firstString(record, keys: ["title", "name"]) ?? host
-    let summary = Self.firstString(record, keys: ["summary", "description", "text"])
+    let summary = Self.firstString(record, keys: ["summary", "description", "text", "textContent"])
     let thumbnail = Self.firstString(record, keys: ["thumbnail", "thumbnailUrl", "image"])
     let language = Self.primaryLanguage(Self.firstString(record, keys: ["lang", "language"]))
     let publishedAt = Self.date(Self.firstString(record, keys: ["publishedAt", "createdAt"]))
-    let publicationID = Self.firstString(record, keys: ["site", "publication"])
+    let publicationID = resolved.publicationURI
     let authorName = Self.firstString(record, keys: ["authorName", "displayName"])
     let topicKeys = (record["tags"] as? [String] ?? []).map { $0.lowercased() }
     let actorHash = try actorHasher.hash(event.repoDID)
@@ -255,7 +321,8 @@ struct PostgresWireInboxProcessor: Sendable {
       identity: identity,
       representativeURI: sourceURI,
       authorDID: event.repoDID,
-      sourceName: Self.firstString(record, keys: ["publicationName", "siteName"]) ?? host,
+      sourceName: resolved.publicationName
+        ?? Self.firstString(record, keys: ["publicationName", "siteName"]) ?? host,
       host: host,
       publicationID: publicationID,
       authorName: authorName,
@@ -269,8 +336,10 @@ struct PostgresWireInboxProcessor: Sendable {
       confidence: 0.9,
       asOf: asOf
     )
-    try await upsertAlias(alias: sourceURI, type: "at_uri", canonicalKey: identity.canonicalKey, asOf: asOf)
-    try await upsertAlias(alias: identity.canonicalURL, type: "url", canonicalKey: identity.canonicalKey, asOf: asOf)
+    try await upsertAlias(
+      alias: sourceURI, type: "at_uri", canonicalKey: identity.canonicalKey, asOf: asOf)
+    try await upsertAlias(
+      alias: identity.canonicalURL, type: "url", canonicalKey: identity.canonicalKey, asOf: asOf)
     try await upsertActor(hash: actorHash, asOf: asOf)
     try await insertSignal(
       event: event,
@@ -280,6 +349,11 @@ struct PostgresWireInboxProcessor: Sendable {
       kind: "publication",
       asOf: asOf
     )
+  }
+
+  static func publicationRetryDelay(attemptCount: Int) -> TimeInterval {
+    let exponent = min(max(attemptCount - 1, 0), 4)
+    return min(300 * pow(2, Double(exponent)), 3_600)
   }
 
   private func applyPost(
@@ -293,9 +367,10 @@ struct PostgresWireInboxProcessor: Sendable {
       let host = URL(string: identity.canonicalURL)?.host
     else { return }
     let text = Self.firstString(record, keys: ["text"])
-    let title = text?.split(separator: "\n").first.map(String.init).flatMap {
-      $0.isEmpty ? nil : String($0.prefix(200))
-    } ?? host
+    let title =
+      text?.split(separator: "\n").first.map(String.init).flatMap {
+        $0.isEmpty ? nil : String($0.prefix(200))
+      } ?? host
     let actorHash = try actorHasher.hash(event.repoDID)
     try await upsertItem(
       identity: identity,
@@ -315,8 +390,10 @@ struct PostgresWireInboxProcessor: Sendable {
       confidence: 0.6,
       asOf: asOf
     )
-    try await upsertAlias(alias: sourceURI, type: "at_uri", canonicalKey: identity.canonicalKey, asOf: asOf)
-    try await upsertAlias(alias: identity.canonicalURL, type: "url", canonicalKey: identity.canonicalKey, asOf: asOf)
+    try await upsertAlias(
+      alias: sourceURI, type: "at_uri", canonicalKey: identity.canonicalKey, asOf: asOf)
+    try await upsertAlias(
+      alias: identity.canonicalURL, type: "url", canonicalKey: identity.canonicalKey, asOf: asOf)
     try await upsertActor(hash: actorHash, asOf: asOf)
     let kind = Self.containsQuote(record) ? "quote" : "share"
     try await insertSignal(
@@ -403,7 +480,9 @@ struct PostgresWireInboxProcessor: Sendable {
   }
 
   private func applyAccountLifecycle(_ event: InboxEvent, asOf: Date) async throws {
-    guard let document = try JSONSerialization.jsonObject(with: Data(event.payloadJSON.utf8)) as? [String: Any],
+    guard
+      let document = try JSONSerialization.jsonObject(with: Data(event.payloadJSON.utf8))
+        as? [String: Any],
       let account = document["account"] as? [String: Any],
       account["active"] as? Bool == false
     else { return }
@@ -425,13 +504,21 @@ struct PostgresWireInboxProcessor: Sendable {
         "DELETE FROM wire_active_actors WHERE actor_key_hash = \(actorHash)",
         logger: logger
       )
+      try await connection.query(
+        "DELETE FROM wire_publications WHERE repo_did = \(event.repoDID)",
+        logger: logger
+      )
     }
   }
 
-  private func retract(sourceURI: String, asOf: Date) async throws {
+  private func retract(sourceURI: String, eventTime: Date, asOf: Date) async throws {
     try await pool.withTransaction(logger: logger) { connection in
       try await connection.query(
-        "DELETE FROM wire_signal_events WHERE source_uri = \(sourceURI)",
+        "SELECT pg_advisory_xact_lock(hashtextextended(\(sourceURI), 0))",
+        logger: logger
+      )
+      try await connection.query(
+        "DELETE FROM wire_signal_events WHERE source_uri = \(sourceURI) AND occurred_at <= \(eventTime)",
         logger: logger
       )
       try await connection.query(
@@ -439,7 +526,14 @@ struct PostgresWireInboxProcessor: Sendable {
         logger: logger
       )
       try await connection.query(
-        "DELETE FROM wire_item_aliases WHERE alias_key = \(sourceURI)",
+        """
+        DELETE FROM wire_item_aliases alias
+        WHERE alias.alias_key = \(sourceURI)
+          AND NOT EXISTS (
+            SELECT 1 FROM wire_signal_events signal
+            WHERE signal.source_uri = \(sourceURI) AND signal.occurred_at > \(eventTime)
+          )
+        """,
         logger: logger
       )
       try await connection.query(
@@ -593,24 +687,51 @@ struct PostgresWireInboxProcessor: Sendable {
     asOf: Date
   ) async throws {
     let eventKey = "\(event.environment):\(event.sourceGeneration):\(event.sequence)"
+    let transportEventKey = Self.transportEventKey(
+      environment: event.environment,
+      sourceHost: event.sourceHost,
+      cursorKind: event.cursorKind,
+      sequence: event.sequence
+    )
     try await pool.withTransaction(logger: logger) { connection in
+      try await connection.query(
+        "SELECT pg_advisory_xact_lock(hashtextextended(\(sourceURI), 0))",
+        logger: logger
+      )
       try await connection.query(
         "SELECT ensure_wire_signal_event_partition((\(event.eventTime) AT TIME ZONE 'UTC')::date)",
         logger: logger
       )
       try await connection.query(
+        "DELETE FROM wire_signal_events WHERE source_uri = \(sourceURI) AND occurred_at <= \(event.eventTime)",
+        logger: logger
+      )
+      try await connection.query(
         """
         INSERT INTO wire_signal_events
-          (event_key, canonical_key, signal_kind, actor_key_hash, source_uri,
+          (event_key, transport_event_key, canonical_key, signal_kind, actor_key_hash, source_uri,
            occurred_at, expires_at)
-        VALUES
-          (\(eventKey), \(canonicalKey), \(kind), \(actorHash), \(sourceURI),
-           \(event.eventTime), \(event.eventTime.addingTimeInterval(WireDataPolicy.signalRetention)))
-        ON CONFLICT (occurred_at, event_key) DO NOTHING
+        SELECT
+          \(eventKey), \(transportEventKey), \(canonicalKey), \(kind), \(actorHash), \(sourceURI),
+          \(event.eventTime), \(event.eventTime.addingTimeInterval(WireDataPolicy.signalRetention))
+        WHERE NOT EXISTS (
+          SELECT 1 FROM wire_signal_events
+          WHERE source_uri = \(sourceURI) AND occurred_at > \(event.eventTime)
+        )
+        ON CONFLICT DO NOTHING
         """,
         logger: logger
       )
     }
+  }
+
+  static func transportEventKey(
+    environment: String,
+    sourceHost: String,
+    cursorKind: String,
+    sequence: Int64
+  ) -> String {
+    "transport:\(environment):\(sourceHost):\(cursorKind):\(sequence)"
   }
 
   private func refreshRollups(asOf: Date) async throws {
@@ -708,7 +829,9 @@ struct PostgresWireInboxProcessor: Sendable {
     for try await row in rows { lastAssigned = try row.decode(Date?.self) }
     if let lastAssigned,
       asOf.timeIntervalSince(lastAssigned) < WireDataPolicy.clusteringCadence
-    { return }
+    {
+      return
+    }
 
     try await pool.withTransaction(logger: logger) { connection in
       try await connection.query(
@@ -830,7 +953,9 @@ struct PostgresWireInboxProcessor: Sendable {
   private static func externalURL(_ record: [String: Any]) -> String? {
     let candidates = allStrings(record, keys: ["uri", "url"])
     return candidates.first { value in
-      guard let url = URL(string: value), let scheme = url.scheme?.lowercased() else { return false }
+      guard let url = URL(string: value), let scheme = url.scheme?.lowercased() else {
+        return false
+      }
       return (scheme == "http" || scheme == "https") && url.host != nil
     }
   }

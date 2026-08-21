@@ -3,6 +3,7 @@ import Logging
 import PostgresNIO
 import Testing
 import WireCore
+
 @testable import WireWorker
 
 @Suite(
@@ -71,7 +72,8 @@ struct WirePostgresIntegrationTests {
   func continuousPostgresDrain() async throws {
     guard let url = ProcessInfo.processInfo.environment["WIRE_TEST_DATABASE_URL"] else { return }
     let logger = Logger(label: "wire-continuous-drain-postgres.integration")
-    let configuration = try PostgresWireConfig.make(from: url, maximumConnections: 8, logger: logger)
+    let configuration = try PostgresWireConfig.make(
+      from: url, maximumConnections: 8, logger: logger)
     let pool = PostgresClient(configuration: configuration, backgroundLogger: logger)
     let runTask = Task { await pool.run() }
     await Task.yield()
@@ -134,7 +136,8 @@ struct WirePostgresIntegrationTests {
   func repositoryFIFOAcrossConcurrentClaim() async throws {
     guard let url = ProcessInfo.processInfo.environment["WIRE_TEST_DATABASE_URL"] else { return }
     let logger = Logger(label: "wire-repository-fifo-postgres.integration")
-    let configuration = try PostgresWireConfig.make(from: url, maximumConnections: 8, logger: logger)
+    let configuration = try PostgresWireConfig.make(
+      from: url, maximumConnections: 8, logger: logger)
     let pool = PostgresClient(configuration: configuration, backgroundLogger: logger)
     let runTask = Task { await pool.run() }
     await Task.yield()
@@ -202,6 +205,279 @@ struct WirePostgresIntegrationTests {
     }
     try await pool.query(
       "DELETE FROM wire_ingestion_inbox WHERE environment = \(environment)",
+      logger: logger
+    )
+  }
+
+  @Test("ready pending work is not starved by an older retry while repository FIFO remains intact")
+  func pendingWorkIsNotStarvedByRetry() async throws {
+    guard let url = ProcessInfo.processInfo.environment["WIRE_TEST_DATABASE_URL"] else { return }
+    let logger = Logger(label: "wire-retry-fairness-postgres.integration")
+    let configuration = try PostgresWireConfig.make(from: url, logger: logger)
+    let pool = PostgresClient(configuration: configuration, backgroundLogger: logger)
+    let runTask = Task { await pool.run() }
+    await Task.yield()
+    defer { runTask.cancel() }
+
+    let environment = "wire-fairness-\(UUID().uuidString.lowercased())"
+    let generation = "wire-fairness-v1"
+    let blockedRepo = "did:plc:blocked\(UUID().uuidString.lowercased())"
+    let readyRepo = "did:plc:ready\(UUID().uuidString.lowercased())"
+    let now = Date()
+    let unresolvedPayload = """
+      {"commit":{"record":{"$type":"site.standard.document","site":"at://\(blockedRepo)/site.standard.publication/main","path":"story"}}}
+      """
+    try await pool.query(
+      """
+      INSERT INTO wire_ingestion_inbox
+        (environment, source_generation, seq, source_host, cursor_kind, event_kind, repo_did,
+         collection, operation, record_key, payload, event_time, status, next_attempt_at)
+      VALUES
+        (\(environment), \(generation), 1, 'test', 'jetstream_v2_seq', 'commit', \(blockedRepo),
+         'site.standard.document', 'create', 'first', \(unresolvedPayload)::jsonb, \(now),
+         'retry', \(now.addingTimeInterval(-10))),
+        (\(environment), \(generation), 2, 'test', 'jetstream_v2_seq', 'identity', \(blockedRepo),
+         NULL, NULL, NULL, '{}'::jsonb, \(now), 'pending', \(now.addingTimeInterval(-3_600))),
+        (\(environment), \(generation), 3, 'test', 'jetstream_v2_seq', 'identity', \(readyRepo),
+         NULL, NULL, NULL, '{}'::jsonb, \(now), 'pending', \(now.addingTimeInterval(-3_600)))
+      """,
+      logger: logger
+    )
+
+    let processor = try PostgresWireInboxProcessor(
+      pool: pool,
+      logger: logger,
+      actorSecret: String(repeating: "s", count: 32),
+      batchSize: 1,
+      maximumConcurrentEvents: 1
+    )
+    #expect(try await processor.process(asOf: now) == 1)
+
+    let rows = try await pool.query(
+      """
+      SELECT seq, status FROM wire_ingestion_inbox
+      WHERE environment = \(environment) AND source_generation = \(generation)
+      ORDER BY seq
+      """,
+      logger: logger
+    )
+    var statuses: [(Int64, String)] = []
+    for try await row in rows { statuses.append(try row.decode((Int64, String).self)) }
+    #expect(statuses.map(\.0) == [1, 2, 3])
+    #expect(statuses.map(\.1) == ["retry", "pending", "applied"])
+
+    try await pool.query(
+      "DELETE FROM wire_ingestion_inbox WHERE environment = \(environment)",
+      logger: logger
+    )
+  }
+
+  @Test("overlapping source generations count one stable transport signal")
+  func overlappingGenerationsDeduplicateSignals() async throws {
+    guard let url = ProcessInfo.processInfo.environment["WIRE_TEST_DATABASE_URL"] else { return }
+    let logger = Logger(label: "wire-generation-overlap-postgres.integration")
+    let configuration = try PostgresWireConfig.make(from: url, logger: logger)
+    let pool = PostgresClient(configuration: configuration, backgroundLogger: logger)
+    let runTask = Task { await pool.run() }
+    await Task.yield()
+    defer { runTask.cancel() }
+
+    let environment = "wire-overlap-\(UUID().uuidString.lowercased())"
+    let repoDID = "did:plc:overlap\(UUID().uuidString.lowercased())"
+    let recordKey = "same-event"
+    let sourceURI = "at://\(repoDID)/site.standard.document/\(recordKey)"
+    let articleURL = "https://overlap.example/story"
+    let eventTime = Date()
+    let payload = """
+      {"commit":{"record":{"$type":"site.standard.document","url":"\(articleURL)","title":"Overlap"}}}
+      """
+    for generation in ["wire-overlap-v1", "wire-overlap-v2"] {
+      try await pool.query(
+        """
+        INSERT INTO wire_ingestion_inbox
+          (environment, source_generation, seq, source_host, cursor_kind, event_kind, repo_did,
+           collection, operation, record_key, payload, event_time)
+        VALUES
+          (\(environment), \(generation), 42, 'jetstream.example', 'jetstream_v2_seq',
+           'commit', \(repoDID), 'site.standard.document', 'create', \(recordKey),
+           \(payload)::jsonb, \(eventTime))
+        """,
+        logger: logger
+      )
+    }
+
+    let processor = try PostgresWireInboxProcessor(
+      pool: pool,
+      logger: logger,
+      actorSecret: String(repeating: "s", count: 32),
+      batchSize: 10,
+      maximumConcurrentEvents: 1
+    )
+    #expect(try await processor.process(asOf: eventTime.addingTimeInterval(1)) == 2)
+    let staleDeletePayload = """
+      {"commit":{"operation":"delete","collection":"site.standard.document","rkey":"\(recordKey)"}}
+      """
+    try await pool.query(
+      """
+      INSERT INTO wire_ingestion_inbox
+        (environment, source_generation, seq, source_host, cursor_kind, event_kind, repo_did,
+         collection, operation, record_key, payload, event_time)
+      VALUES
+        (\(environment), 'wire-overlap-v3', 41, 'jetstream.example', 'jetstream_v2_seq',
+         'commit', \(repoDID), 'site.standard.document', 'delete', \(recordKey),
+         \(staleDeletePayload)::jsonb, \(eventTime.addingTimeInterval(-60)))
+      """,
+      logger: logger
+    )
+    #expect(try await processor.process(asOf: eventTime.addingTimeInterval(2)) == 1)
+
+    let updatePayload = """
+      {"commit":{"record":{"$type":"site.standard.document","url":"\(articleURL)","title":"Overlap Updated"}}}
+      """
+    try await pool.query(
+      """
+      INSERT INTO wire_ingestion_inbox
+        (environment, source_generation, seq, source_host, cursor_kind, event_kind, repo_did,
+         collection, operation, record_key, payload, event_time)
+      VALUES
+        (\(environment), 'wire-overlap-v3', 43, 'jetstream.example', 'jetstream_v2_seq',
+         'commit', \(repoDID), 'site.standard.document', 'update', \(recordKey),
+         \(updatePayload)::jsonb, \(eventTime.addingTimeInterval(60)))
+      """,
+      logger: logger
+    )
+    #expect(try await processor.process(asOf: eventTime.addingTimeInterval(61)) == 1)
+    try await processor.maintain(asOf: eventTime.addingTimeInterval(61))
+
+    let signalRows = try await pool.query(
+      """
+      SELECT COUNT(*)::bigint, COUNT(DISTINCT transport_event_key)::bigint,
+             MAX(occurred_at)
+      FROM wire_signal_events WHERE source_uri = \(sourceURI)
+      """,
+      logger: logger
+    )
+    for try await row in signalRows {
+      let counts = try row.decode((Int64, Int64, Date?).self)
+      #expect(counts.0 == 1)
+      #expect(counts.1 == 1)
+      #expect(
+        abs(try #require(counts.2).timeIntervalSince(eventTime.addingTimeInterval(60))) < 0.001)
+    }
+    let canonical = try #require(WireCanonicalizer.canonicalize(articleURL))
+    let rollupRows = try await pool.query(
+      "SELECT signals_7d FROM wire_signal_rollups WHERE canonical_key = \(canonical.canonicalKey)",
+      logger: logger
+    )
+    for try await row in rollupRows { #expect(try row.decode(Int.self) == 1) }
+
+    try await pool.query(
+      "DELETE FROM wire_ingestion_inbox WHERE environment = \(environment)",
+      logger: logger
+    )
+    try await pool.query(
+      "DELETE FROM wire_items WHERE canonical_key = \(canonical.canonicalKey)",
+      logger: logger
+    )
+  }
+
+  @Test("publication metadata resolves a Standard Site document and delete removes the projection")
+  func standardSitePublicationLifecycle() async throws {
+    guard let url = ProcessInfo.processInfo.environment["WIRE_TEST_DATABASE_URL"] else { return }
+    let logger = Logger(label: "wire-standard-site-postgres.integration")
+    let configuration = try PostgresWireConfig.make(from: url, logger: logger)
+    let pool = PostgresClient(configuration: configuration, backgroundLogger: logger)
+    let runTask = Task { await pool.run() }
+    await Task.yield()
+    defer { runTask.cancel() }
+
+    let environment = "wire-standard-site-\(UUID().uuidString.lowercased())"
+    let generation = "wire-standard-site-v1"
+    let repoDID = "did:plc:standardsite\(UUID().uuidString.lowercased())"
+    let publicationURI = "at://\(repoDID)/site.standard.publication/main"
+    let documentURI = "at://\(repoDID)/site.standard.document/story"
+    let now = Date()
+    let publicationPayload = """
+      {"commit":{"record":{"$type":"site.standard.publication","name":"Fixture Publication","url":"https://standard.example/"}}}
+      """
+    let documentPayload = """
+      {"commit":{"record":{"$type":"site.standard.document","site":"\(publicationURI)","path":"/stories/example","title":"Fixture Story","textContent":"Fixture body"}}}
+      """
+    try await pool.query(
+      """
+      INSERT INTO wire_ingestion_inbox
+        (environment, source_generation, seq, source_host, cursor_kind, event_kind, repo_did,
+         collection, operation, record_key, payload, event_time)
+      VALUES
+        (\(environment), \(generation), 1, 'test', 'jetstream_v2_seq', 'commit', \(repoDID),
+         'site.standard.publication', 'create', 'main', \(publicationPayload)::jsonb, \(now)),
+        (\(environment), \(generation), 2, 'test', 'jetstream_v2_seq', 'commit', \(repoDID),
+         'site.standard.document', 'create', 'story', \(documentPayload)::jsonb, \(now))
+      """,
+      logger: logger
+    )
+
+    let processor = try PostgresWireInboxProcessor(
+      pool: pool,
+      logger: logger,
+      actorSecret: String(repeating: "s", count: 32)
+    )
+    #expect(try await processor.process(asOf: now.addingTimeInterval(1)) == 1)
+    #expect(try await processor.process(asOf: now.addingTimeInterval(2)) == 1)
+
+    let publicationRows = try await pool.query(
+      "SELECT site_url, name FROM wire_publications WHERE publication_uri = \(publicationURI)",
+      logger: logger
+    )
+    for try await row in publicationRows {
+      #expect(
+        try row.decode((String, String).self) == ("https://standard.example", "Fixture Publication")
+      )
+    }
+    let canonical = try #require(
+      WireCanonicalizer.canonicalize("https://standard.example/stories/example"))
+    let itemRows = try await pool.query(
+      """
+      SELECT representative_uri, publication_id, source_name, summary
+      FROM wire_items WHERE canonical_key = \(canonical.canonicalKey)
+      """,
+      logger: logger
+    )
+    for try await row in itemRows {
+      let item = try row.decode((String?, String?, String, String?).self)
+      #expect(item.0 == documentURI)
+      #expect(item.1 == publicationURI)
+      #expect(item.2 == "Fixture Publication")
+      #expect(item.3 == "Fixture body")
+    }
+
+    let deletePayload = """
+      {"commit":{"operation":"delete","collection":"site.standard.publication","rkey":"main"}}
+      """
+    try await pool.query(
+      """
+      INSERT INTO wire_ingestion_inbox
+        (environment, source_generation, seq, source_host, cursor_kind, event_kind, repo_did,
+         collection, operation, record_key, payload, event_time)
+      VALUES
+        (\(environment), \(generation), 3, 'test', 'jetstream_v2_seq', 'commit', \(repoDID),
+         'site.standard.publication', 'delete', 'main', \(deletePayload)::jsonb, \(now))
+      """,
+      logger: logger
+    )
+    #expect(try await processor.process(asOf: now.addingTimeInterval(3)) == 1)
+    let deletedRows = try await pool.query(
+      "SELECT COUNT(*)::bigint FROM wire_publications WHERE publication_uri = \(publicationURI)",
+      logger: logger
+    )
+    for try await row in deletedRows { #expect(try row.decode(Int64.self) == 0) }
+
+    try await pool.query(
+      "DELETE FROM wire_ingestion_inbox WHERE environment = \(environment)",
+      logger: logger
+    )
+    try await pool.query(
+      "DELETE FROM wire_items WHERE canonical_key = \(canonical.canonicalKey)",
       logger: logger
     )
   }
@@ -374,7 +650,8 @@ struct WirePostgresIntegrationTests {
       "DELETE FROM wire_ingestion_inbox WHERE environment = \(environment)", logger: logger)
     try await pool.query(
       "DELETE FROM wire_items WHERE canonical_key = \(canonical.canonicalKey)", logger: logger)
-    let actorHash = try WireActorHasher(secret: Data(String(repeating: "s", count: 32).utf8)).hash(did)
+    let actorHash = try WireActorHasher(secret: Data(String(repeating: "s", count: 32).utf8)).hash(
+      did)
     try await pool.query(
       "DELETE FROM wire_active_actors WHERE actor_key_hash = \(actorHash)", logger: logger)
   }

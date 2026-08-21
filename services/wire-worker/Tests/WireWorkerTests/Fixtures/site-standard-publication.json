@@ -1,0 +1,6 @@
+{
+  "$type": "site.standard.publication",
+  "name": "Example Standard Site",
+  "description": "A sanitized Standard Site publication fixture.",
+  "url": "https://publication.example/"
+}
