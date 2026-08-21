@@ -272,6 +272,74 @@ struct WirePostgresIntegrationTests {
     )
   }
 
+  @Test("pending/retry and expired-lease branches preserve global eligibility order")
+  func claimBranchesPreserveGlobalEligibilityOrder() async throws {
+    guard let url = ProcessInfo.processInfo.environment["WIRE_TEST_DATABASE_URL"] else { return }
+    let logger = Logger(label: "wire-claim-branches-postgres.integration")
+    let configuration = try PostgresWireConfig.make(from: url, logger: logger)
+    let pool = PostgresClient(configuration: configuration, backgroundLogger: logger)
+    let runTask = Task { await pool.run() }
+    await Task.yield()
+    defer { runTask.cancel() }
+
+    let environment = "wire-claim-branches-\(UUID().uuidString.lowercased())"
+    let generation = "wire-claim-branches-v1"
+    let now = Date()
+    try await pool.query(
+      """
+      INSERT INTO wire_ingestion_inbox
+        (environment, source_generation, seq, source_host, cursor_kind, event_kind,
+         repo_did, payload, event_time, status, next_attempt_at, lease_owner,
+         lease_token, lease_expires_at)
+      VALUES
+        (\(environment), \(generation), 1, 'test', 'jetstream_v2_seq', 'identity',
+         'did:example:branch-pending', '{}'::jsonb, \(now), 'pending',
+         \(now.addingTimeInterval(-120)), NULL, NULL, NULL),
+        (\(environment), \(generation), 2, 'test', 'jetstream_v2_seq', 'identity',
+         'did:example:branch-retry', '{}'::jsonb, \(now), 'retry',
+         \(now.addingTimeInterval(-60)), NULL, NULL, NULL),
+        (\(environment), \(generation), 3, 'test', 'jetstream_v2_seq', 'identity',
+         'did:example:branch-expired', '{}'::jsonb, \(now), 'leased', \(now),
+         'old-worker', 'expired-token', \(now.addingTimeInterval(-90))),
+        (\(environment), \(generation), 4, 'test', 'jetstream_v2_seq', 'identity',
+         'did:example:branch-live', '{}'::jsonb, \(now), 'leased', \(now),
+         'live-worker', 'live-token', \(now.addingTimeInterval(60))),
+        (\(environment), \(generation), 5, 'test', 'jetstream_v2_seq', 'identity',
+         'did:example:branch-pending', '{}'::jsonb, \(now), 'pending',
+         \(now.addingTimeInterval(-300)), NULL, NULL, NULL)
+      """,
+      logger: logger
+    )
+
+    let processor = try PostgresWireInboxProcessor(
+      pool: pool,
+      logger: logger,
+      actorSecret: String(repeating: "s", count: 32),
+      batchSize: 2,
+      maximumConcurrentEvents: 2
+    )
+    #expect(try await processor.process(asOf: now) == 2)
+
+    let rows = try await pool.query(
+      """
+      SELECT seq, status
+      FROM wire_ingestion_inbox
+      WHERE environment = \(environment) AND source_generation = \(generation)
+      ORDER BY seq
+      """,
+      logger: logger
+    )
+    var states: [(Int64, String)] = []
+    for try await row in rows { states.append(try row.decode((Int64, String).self)) }
+    #expect(states.map(\.0) == [1, 2, 3, 4, 5])
+    #expect(states.map(\.1) == ["applied", "retry", "applied", "leased", "pending"])
+
+    try await pool.query(
+      "DELETE FROM wire_ingestion_inbox WHERE environment = \(environment)",
+      logger: logger
+    )
+  }
+
   @Test("expired leases are reclaimed while live leases remain untouched")
   func expiredLeaseRecovery() async throws {
     guard let url = ProcessInfo.processInfo.environment["WIRE_TEST_DATABASE_URL"] else { return }
