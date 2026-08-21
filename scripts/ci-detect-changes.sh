@@ -154,10 +154,19 @@ filter_changed wire_worker \
   'railway/wire-worker.json' \
   '.github/workflows/ci.yml'
 
+filter_changed wire_corpus_edge \
+  'services/wire-corpus-edge/**' \
+  'packages/swift/WireCore/**' \
+  'database/migrations/**' \
+  'scripts/verify-wire-corpus-serving.sql' \
+  'railway/wire-corpus-edge.json' \
+  '.github/workflows/ci.yml'
+
 filter_changed database_migrator \
   'database/migrations/**' \
   'scripts/apply-database-migrations.sh' \
   'scripts/verify-jetstream-v2-drain-indexes.sql' \
+  'scripts/verify-wire-corpus-serving.sql' \
   'services/database-migrator/**' \
   'railway/database-migrator.json' \
   '.github/workflows/ci.yml'
@@ -188,8 +197,10 @@ filter_changed spec \
   'packages/swift/OperationsCore/**' \
   'packages/swift/WireCore/**' \
   'services/wire-worker/**' \
+  'services/wire-corpus-edge/**' \
   'scripts/apply-database-migrations.sh' \
   'scripts/verify-jetstream-v2-drain-indexes.sql' \
+  'scripts/verify-wire-corpus-serving.sql' \
   'scripts/operations/**' \
   'package.json' \
   'bun.lock' \

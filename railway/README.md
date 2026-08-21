@@ -14,6 +14,7 @@ These custom-named config-as-code files are inactive until each Railway service 
 | Jetstream V2 Ingest | `/railway/jetstream-ingest.json` |
 | The Wire Global Ingest | `/railway/wire-jetstream-ingest.json` |
 | The Wire Worker | `/railway/wire-worker.json` |
+| The Wire Corpus Edge | `/railway/wire-corpus-edge.json` |
 | Ops | `/railway/operations.json` |
 | Database Migrator | `/railway/database-migrator.json` |
 
@@ -45,3 +46,10 @@ in [`docs/architecture/redis.md`](../docs/architecture/redis.md) before future
 Production changes.
 
 Secrets, reference variables, custom domains, volumes, and region placement remain environment-specific Railway settings. Gateway, App View, Charybdis, Ops, Jetstream V2 Ingest, The Wire Global Ingest, and The Wire Worker expose `/readyz`. Railway deploys Charybdis and both ingestion lanes against `/startupz` so durable catch-up or fenced-lease handoff can complete without weakening their operational readiness probes. The Wire Worker also deploys against `/startupz` while Development shadow generations warm.
+
+The Wire Corpus Edge exists only in Production and connects to Production
+Postgres over the private network. Its narrowly exposed HTTPS domain accepts
+only dedicated nonce-protected service signatures from Development App View;
+it never accepts viewer or Gateway/AppView trust credentials. Development
+App View receives only the edge URL and its edge-client secret, never a
+Production database credential.

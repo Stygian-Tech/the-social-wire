@@ -35,6 +35,7 @@ jobs:
       jetstream_ingest: ${{ steps.filter.outputs.jetstream_ingest }}
       wire_ingest: ${{ steps.filter.outputs.wire_ingest }}
       wire_worker: ${{ steps.filter.outputs.wire_worker }}
+      wire_corpus_edge: ${{ steps.filter.outputs.wire_corpus_edge }}
       database_migrator: ${{ steps.filter.outputs.database_migrator }}
       lexicons: ${{ steps.filter.outputs.lexicons }}
       spec: ${{ steps.filter.outputs.spec }}
@@ -416,6 +417,53 @@ jobs:
       - name: Build The Wire worker production image
         run: docker build --file services/wire-worker/Dockerfile --tag the-social-wire-wire-worker:test .
 
+  wire-corpus-edge:
+    name: The Wire Corpus Edge
+    needs: changes
+    if: needs.changes.result == 'success' && needs.changes.outputs.wire_corpus_edge == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: socialwire_wire_corpus_test
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d socialwire_wire_corpus_test"
+          --health-interval 2s
+          --health-timeout 2s
+          --health-retries 30
+    steps:
+      - uses: actions/checkout@v6
+      - name: Build migration image for corpus contract tests
+        run: docker build --file services/database-migrator/Dockerfile --tag the-social-wire-wire-corpus-migrator:test .
+      - name: Apply database migrations
+        run: |
+          docker run --rm --network host \
+            --env DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/socialwire_wire_corpus_test \
+            the-social-wire-wire-corpus-migrator:test
+      - name: Verify presentation-only read contract
+        run: |
+          docker run --rm --network host \
+            --volume "$PWD/scripts/verify-wire-corpus-serving.sql:/tmp/verify-wire-corpus-serving.sql:ro" \
+            --entrypoint psql \
+            the-social-wire-wire-corpus-migrator:test \
+            postgresql://postgres:postgres@127.0.0.1:5432/socialwire_wire_corpus_test \
+            -X -v ON_ERROR_STOP=1 -f /tmp/verify-wire-corpus-serving.sql
+      - uses: swift-actions/setup-swift@v3
+        with:
+          swift-version: "6.2.4"
+          skip-verify-signature: true
+      - name: Test The Wire Corpus Edge
+        working-directory: services/wire-corpus-edge
+        run: swift test
+      - name: Build The Wire Corpus Edge production image
+        run: docker build --file services/wire-corpus-edge/Dockerfile --tag the-social-wire-wire-corpus-edge:test .
+
   database-migrator:
     name: Database Migrator
     needs: changes
@@ -527,6 +575,7 @@ jobs:
       - jetstream-ingest
       - wire-ingest
       - wire-worker
+      - wire-corpus-edge
       - database-migrator
       - lexicons
       - spec
@@ -548,6 +597,7 @@ jobs:
           JETSTREAM_INGEST_FLAG: ${{ needs.changes.outputs.jetstream_ingest }}
           WIRE_INGEST_FLAG: ${{ needs.changes.outputs.wire_ingest }}
           WIRE_WORKER_FLAG: ${{ needs.changes.outputs.wire_worker }}
+          WIRE_CORPUS_EDGE_FLAG: ${{ needs.changes.outputs.wire_corpus_edge }}
           DATABASE_MIGRATOR_FLAG: ${{ needs.changes.outputs.database_migrator }}
           LEXICONS_FLAG: ${{ needs.changes.outputs.lexicons }}
           SPEC_FLAG: ${{ needs.changes.outputs.spec }}
@@ -563,6 +613,7 @@ jobs:
           JETSTREAM_INGEST_RESULT: ${{ needs.jetstream-ingest.result }}
           WIRE_INGEST_RESULT: ${{ needs.wire-ingest.result }}
           WIRE_WORKER_RESULT: ${{ needs.wire-worker.result }}
+          WIRE_CORPUS_EDGE_RESULT: ${{ needs.wire-corpus-edge.result }}
           DATABASE_MIGRATOR_RESULT: ${{ needs.database-migrator.result }}
           LEXICONS_RESULT: ${{ needs.lexicons.result }}
           SPEC_RESULT: ${{ needs.spec.result }}
@@ -603,6 +654,7 @@ jobs:
           check "$JETSTREAM_INGEST_FLAG" "$JETSTREAM_INGEST_RESULT" "Jetstream V2 Ingest"
           check "$WIRE_INGEST_FLAG" "$WIRE_INGEST_RESULT" "The Wire Global Ingest"
           check "$WIRE_WORKER_FLAG" "$WIRE_WORKER_RESULT" "The Wire Worker"
+          check "$WIRE_CORPUS_EDGE_FLAG" "$WIRE_CORPUS_EDGE_RESULT" "The Wire Corpus Edge"
           check "$DATABASE_MIGRATOR_FLAG" "$DATABASE_MIGRATOR_RESULT" "Database Migrator"
           check "$LEXICONS_FLAG" "$LEXICONS_RESULT" "Lexicons"
           check "$SPEC_FLAG" "$SPEC_RESULT" "OpenAPI Spec"

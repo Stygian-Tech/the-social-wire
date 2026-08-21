@@ -102,6 +102,7 @@ describe("CI path detection", () => {
     expect(result.get("jetstream_ingest")).toBe("true");
     expect(result.get("wire_ingest")).toBe("true");
     expect(result.get("wire_worker")).toBe("true");
+    expect(result.get("wire_corpus_edge")).toBe("true");
     expect(result.get("database_migrator")).toBe("true");
     expect(result.get("spec")).toBe("true");
   });

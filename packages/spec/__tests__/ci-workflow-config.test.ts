@@ -21,6 +21,7 @@ const railwayServices = [
   { service: "Jetstream V2 Ingest", config: "jetstream-ingest", restartPolicy: "ALWAYS" },
   { service: "The Wire Global Ingest", config: "wire-jetstream-ingest", restartPolicy: "ALWAYS" },
   { service: "The Wire Worker", config: "wire-worker", restartPolicy: "ALWAYS" },
+  { service: "The Wire Corpus Edge", config: "wire-corpus-edge", restartPolicy: "ALWAYS" },
   { service: "Ops", config: "operations", restartPolicy: "ALWAYS" },
   { service: "Database Migrator", config: "database-migrator", restartPolicy: "NEVER" },
 ] as const;
@@ -40,6 +41,7 @@ describe("CI workflow configuration", () => {
       "jetstream-ingest",
       "wire-ingest",
       "wire-worker",
+      "wire-corpus-edge",
       "database-migrator",
       "docs",
     ]) {
@@ -84,6 +86,7 @@ describe("CI workflow configuration", () => {
     expect(workflow).toContain("Build AppView production image");
     expect(workflow).toContain("Build Charybdis production image");
     expect(workflow).toContain("Build The Wire worker production image");
+    expect(workflow).toContain("Build The Wire Corpus Edge production image");
     expect(workflow).toContain("Build Operations production image");
     expect(workflow).toContain("Apply migrations from empty and verify idempotence");
     expect(workflow).toContain("Test iOS app with coverage");
@@ -135,7 +138,7 @@ describe("CI workflow configuration", () => {
 
       const filterName = configName === "wire-jetstream-ingest"
         ? "wire_ingest"
-        : configName.replace("-", "_");
+        : configName.replaceAll("-", "_");
       const filter = pathFilters
         .split("\n\n")
         .find((block) =>
@@ -160,6 +163,7 @@ describe("CI workflow configuration", () => {
       "jetstream_ingest",
       "wire_ingest",
       "wire_worker",
+      "wire_corpus_edge",
       "database_migrator",
       "lexicons",
       "spec",
