@@ -231,16 +231,6 @@ struct PostgresWireGenerationStore: WireGenerationStore {
       )
       try await connection.query(
         """
-        DELETE FROM wire_ingestion_inbox
-        WHERE (environment, source_generation, seq) IN (
-          SELECT environment, source_generation, seq FROM wire_ingestion_inbox
-          WHERE expires_at <= \(asOf) ORDER BY expires_at LIMIT \(batchSize)
-        )
-        """,
-        logger: logger
-      )
-      try await connection.query(
-        """
         DELETE FROM wire_signal_events
         WHERE (occurred_at, id) IN (
           SELECT occurred_at, id FROM wire_signal_events WHERE expires_at <= \(asOf)

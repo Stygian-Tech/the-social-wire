@@ -69,6 +69,9 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 	defer database.Close()
+	if cfg.PipelineMode == config.WirePipelineMode {
+		database.ConfigureWireAdmission(cfg.WireInboxMaxRows, cfg.WireDatabaseMaxBytes)
+	}
 	state.Database(true)
 
 	ownerID, err := newOwnerID()
@@ -92,6 +95,11 @@ func run(logger *slog.Logger) error {
 	}
 	state.Lease(true)
 	logger.Info("acquired fenced ingestion lease", "lease", lease.Name, "fencingToken", lease.FencingToken)
+	if cfg.PipelineMode == config.WirePipelineMode {
+		if err := database.ReconcileWireAdmission(ctx); err != nil {
+			return err
+		}
+	}
 
 	workerContext, stopWorker := context.WithCancel(ctx)
 	leaseErrors := make(chan error, 1)

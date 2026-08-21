@@ -85,6 +85,9 @@ func TestStageBatchNormalizesUnsupportedUnicodeOnlyForWireInbox(t *testing.T) {
 			"{\"record\":{\"literal\":\"\\\\u0000\",\"text\":\"before�after\"}}", now,
 		).
 		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("UPDATE wire_ingestion_admission").
+		WithArgs("dev", int64(1)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec("INSERT INTO appview_jetstream_checkpoints").
 		WithArgs(
 			"dev", config.WireSourceGeneration, "jetstream.us-west.bsky.network",
@@ -100,6 +103,75 @@ func TestStageBatchNormalizesUnsupportedUnicodeOnlyForWireInbox(t *testing.T) {
 	)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestWireAdmissionAtCapAllowsDuplicateOnlyReplayToAdvanceCheckpoint(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	postgres := New(db, wireTestSource())
+	postgres.ConfigureWireAdmission(5_000_000, 95<<30)
+	lease := Lease{Name: "wire-global-v1-ingest", OwnerID: "owner", FencingToken: 3}
+
+	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT TRUE").
+		WithArgs("dev", lease.Name, config.WireSourceGeneration, lease.OwnerID, int64(3)).
+		WillReturnRows(sqlmock.NewRows([]string{"valid"}).AddRow(true))
+	mock.ExpectQuery("SELECT retained_rows").
+		WithArgs("dev").
+		WillReturnRows(sqlmock.NewRows([]string{"retained_rows", "database_bytes"}).AddRow(int64(5_000_000), int64(20<<30)))
+	mock.ExpectExec("INSERT INTO wire_ingestion_inbox").WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec("INSERT INTO appview_jetstream_checkpoints").WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+
+	err = postgres.StageBatch(
+		context.Background(), lease,
+		[]ingest.InboxEvent{{Seq: 8, Time: time.Now().UTC(), Kind: "commit", RepoDID: "did:plc:test", Payload: []byte(`{}`)}},
+		8, time.Now().UTC(), ReplayProgress{State: "live"},
+	)
+	if err != nil {
+		t.Fatalf("duplicate-only replay = %v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestWireAdmissionMixedReplayRollsBackWhenActualNewRowsExceedCap(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	postgres := New(db, wireTestSource())
+	postgres.ConfigureWireAdmission(5_000_000, 95<<30)
+	lease := Lease{Name: "wire-global-v1-ingest", OwnerID: "owner", FencingToken: 3}
+	now := time.Now().UTC()
+	events := []ingest.InboxEvent{
+		{Seq: 8, Time: now, Kind: "commit", RepoDID: "did:plc:test", Payload: []byte(`{}`)},
+		{Seq: 9, Time: now, Kind: "commit", RepoDID: "did:plc:test", Payload: []byte(`{}`)},
+	}
+
+	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT TRUE").
+		WithArgs("dev", lease.Name, config.WireSourceGeneration, lease.OwnerID, int64(3)).
+		WillReturnRows(sqlmock.NewRows([]string{"valid"}).AddRow(true))
+	mock.ExpectQuery("SELECT retained_rows").
+		WithArgs("dev").
+		WillReturnRows(sqlmock.NewRows([]string{"retained_rows", "database_bytes"}).AddRow(int64(5_000_000), int64(20<<30)))
+	mock.ExpectExec("INSERT INTO wire_ingestion_inbox").WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec("INSERT INTO wire_ingestion_inbox").WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectRollback()
+
+	err = postgres.StageBatch(context.Background(), lease, events, 9, now, ReplayProgress{State: "live"})
+	if !errors.Is(err, ErrWireAdmissionPaused) {
+		t.Fatalf("admission error = %v", err)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)

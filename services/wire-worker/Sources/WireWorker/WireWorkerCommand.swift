@@ -83,6 +83,9 @@ struct WireWorkerCommand: AsyncParsableCommand {
                   maximumDrainOperationAge: 180
                 )
                 guard ready else { throw HealthError.generationCycleStale }
+                guard await state.isCleanupReady(
+                  at: Date(), maximumSuccessAge: 60, maximumOperationAge: 180
+                ) else { throw HealthError.generationCycleStale }
               }
             },
             host: host,
@@ -100,6 +103,15 @@ struct WireWorkerCommand: AsyncParsableCommand {
               state: state,
               logger: serviceLogger,
               configuration: .init(idleMilliseconds: config.inboxIdleMilliseconds)
+            )
+          }
+          group.addTask {
+            try await WireInboxCleanupRuntime.run(
+              cleaner: inboxProcessor,
+              state: state,
+              logger: serviceLogger,
+              batchSize: config.inboxCleanupBatchSize,
+              idleMilliseconds: config.inboxCleanupIdleMilliseconds
             )
           }
         }

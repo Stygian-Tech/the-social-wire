@@ -2,6 +2,12 @@ import Foundation
 
 enum WireDiscoveryConfigError: Error, Equatable {
   case invalidMode(String)
+  case incompleteCorpusEdgeConfiguration
+  case invalidCorpusEdgeBaseURL
+  case invalidCorpusEdgeServiceID
+  case invalidCorpusEdgeSecret
+  case missingCorpusEdgeForDevelopment
+  case remoteCorpusEdgeNotAllowedInProduction
 }
 
 enum WireDiscoveryMode: String, Sendable {
@@ -17,6 +23,7 @@ enum WireDiscoveryMode: String, Sendable {
 struct WireDiscoveryConfig: Sendable {
   let mode: WireDiscoveryMode
   let cursorSecret: String?
+  let corpusEdge: WireCorpusRemoteConfig?
 
   static func fromEnvironment(_ environment: [String: String]) throws -> WireDiscoveryConfig {
     let rawMode = environment["WIRE_FEED_MODE"]?.lowercased() ?? WireDiscoveryMode.off.rawValue
@@ -27,7 +34,8 @@ struct WireDiscoveryConfig: Sendable {
       .trimmingCharacters(in: .whitespacesAndNewlines)
     return WireDiscoveryConfig(
       mode: mode,
-      cursorSecret: rawSecret?.isEmpty == false ? rawSecret : nil
+      cursorSecret: rawSecret?.isEmpty == false ? rawSecret : nil,
+      corpusEdge: try WireCorpusRemoteConfig.fromEnvironment(environment)
     )
   }
 }

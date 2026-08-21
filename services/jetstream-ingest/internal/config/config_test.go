@@ -102,6 +102,8 @@ func TestBoundedSnapshotConfigurationFailsClosed(t *testing.T) {
 		MaxDownloadAttempts: 1, LeaderLeaseTTL: 30, TrackedDIDRefresh: 10,
 		ReplayIncidentBytes: 1, ReplayDailyBytes: 1, ReplayBudgetPause: time.Minute,
 		BackoffMin: 1, BackoffMax: 1,
+		WireInboxMaxRows: 1_000, WireDatabaseMaxBytes: 2 << 30,
+		WireAdmissionPause: time.Second,
 	}
 	after, before := uint64(100), uint64(200)
 	zero, tooLarge := uint64(0), uint64(math.MaxInt64)+1

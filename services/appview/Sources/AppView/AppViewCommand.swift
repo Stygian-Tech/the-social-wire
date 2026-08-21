@@ -137,13 +137,22 @@ struct Serve: AsyncParsableCommand {
             throw AppViewStartupError.missingWireCursorSecret
           }
           let moderationCache = WireViewerModerationCache()
-          wireFeedStore = try PostgresWireFeedStore(
-            pool: pgPool,
-            logger: logger,
-            cursorSecret: cursorSecret,
-            mode: config.wire.mode,
-            moderationCache: moderationCache
-          )
+          if let corpusEdge = config.wire.corpusEdge {
+            wireFeedStore = try RemoteWireFeedStore(
+              transport: HTTPWireCorpusTransport(config: corpusEdge, httpClient: httpClient),
+              cursorSecret: cursorSecret,
+              mode: config.wire.mode,
+              moderationCache: moderationCache
+            )
+          } else {
+            wireFeedStore = try PostgresWireFeedStore(
+              pool: pgPool,
+              logger: logger,
+              cursorSecret: cursorSecret,
+              mode: config.wire.mode,
+              moderationCache: moderationCache
+            )
+          }
           wireModerationService = WireViewerModerationService(
             httpClient: httpClient,
             plcURL: config.core.atprotoPLCURL,

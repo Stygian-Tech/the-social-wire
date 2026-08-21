@@ -28,11 +28,18 @@ struct AppViewServiceConfig: Sendable {
       }
       backend = .postgres(url: dbURL)
     }
+    let wire = try WireDiscoveryConfig.fromEnvironment(env)
+    if core.appEnv == .dev, wire.mode.servesAPI, wire.corpusEdge == nil {
+      throw WireDiscoveryConfigError.missingCorpusEdgeForDevelopment
+    }
+    if core.appEnv == .prod, wire.corpusEdge != nil {
+      throw WireDiscoveryConfigError.remoteCorpusEdgeNotAllowedInProduction
+    }
     return AppViewServiceConfig(
       core: core,
       thinAppView: thin,
       storeBackend: backend,
-      wire: try WireDiscoveryConfig.fromEnvironment(env)
+      wire: wire
     )
   }
 }

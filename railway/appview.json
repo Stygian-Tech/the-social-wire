@@ -10,6 +10,7 @@
       "/packages/swift/OperationsCore/**",
       "/packages/swift/SocialWireRedis/**",
       "/packages/swift/WireCore/**",
+      "/database/migrations/**",
       "/railway/appview.json"
     ]
   },

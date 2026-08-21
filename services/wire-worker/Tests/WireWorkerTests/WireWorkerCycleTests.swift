@@ -144,6 +144,8 @@ struct WireWorkerCycleTests {
       inboxBatchSize: 1_000,
       inboxConcurrency: 16,
       inboxIdleMilliseconds: 250,
+      inboxCleanupBatchSize: 5_000,
+      inboxCleanupIdleMilliseconds: 1_000,
       postgresMaximumConnections: 12
     )
   }

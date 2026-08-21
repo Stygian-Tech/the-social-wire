@@ -82,6 +82,41 @@ struct PostgresWireInboxProcessor: Sendable {
     try await refreshRollups(asOf: asOf)
   }
 
+  func deleteTerminal(asOf: Date, batchSize: Int) async throws -> Int {
+    try await pool.withTransaction(logger: logger) { connection in
+      let rows = try await connection.query(
+        """
+        DELETE FROM wire_ingestion_inbox
+        WHERE (environment, source_generation, seq) IN (
+          SELECT environment, source_generation, seq
+          FROM wire_ingestion_inbox
+          WHERE status IN ('applied', 'dead_letter') AND expires_at <= \(asOf)
+          ORDER BY expires_at, environment, source_generation, seq
+          FOR UPDATE SKIP LOCKED
+          LIMIT \(max(1, min(batchSize, 20_000)))
+        )
+        RETURNING environment
+        """,
+        logger: logger
+      )
+      var deletedByEnvironment: [String: Int64] = [:]
+      for try await row in rows {
+        deletedByEnvironment[try row.decode(String.self), default: 0] += 1
+      }
+      for (environment, count) in deletedByEnvironment {
+        try await connection.query(
+          """
+          UPDATE wire_ingestion_admission
+          SET retained_rows = GREATEST(0, retained_rows - \(count)), updated_at = \(asOf)
+          WHERE environment = \(environment)
+          """,
+          logger: logger
+        )
+      }
+      return deletedByEnvironment.values.reduce(0) { $0 + Int($1) }
+    }
+  }
+
   private func process(_ event: InboxEvent, asOf: Date) async throws {
     do {
       try await apply(event, asOf: asOf)
@@ -920,12 +955,16 @@ struct PostgresWireInboxProcessor: Sendable {
   ) async throws {
     let appliedAt: Date? = status == "applied" ? asOf : nil
     let deadAt: Date? = status == "dead_letter" ? asOf : nil
+    let expiresAt = status == "applied"
+      ? asOf.addingTimeInterval(300)
+      : status == "dead_letter" ? asOf.addingTimeInterval(7 * 24 * 3_600) : .distantFuture
     try await pool.query(
       """
       UPDATE wire_ingestion_inbox
       SET status = \(status), next_attempt_at = \(retryAt), failure_category = \(reason),
           failure_reason = \(reason), applied_at = \(appliedAt), dead_lettered_at = \(deadAt),
-          lease_owner = NULL, lease_token = NULL, lease_expires_at = NULL, updated_at = \(asOf)
+          lease_owner = NULL, lease_token = NULL, lease_expires_at = NULL,
+          expires_at = \(expiresAt), updated_at = \(asOf)
       WHERE environment = \(event.environment) AND source_generation = \(event.sourceGeneration)
         AND seq = \(event.sequence) AND lease_token = \(event.leaseToken)
       """,

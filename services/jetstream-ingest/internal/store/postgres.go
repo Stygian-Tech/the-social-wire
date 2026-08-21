@@ -14,10 +14,26 @@ import (
 )
 
 var ErrLeaseUnavailable = errors.New("ingestion leader lease is held by another process")
+var ErrWireAdmissionPaused = errors.New("Wire inbox admission paused at configured capacity")
+
+type WireCapacityExceededError struct {
+	InboxRows, InboxMaxRows, DatabaseBytes, DatabaseMaxBytes int64
+}
+
+func (e *WireCapacityExceededError) Error() string {
+	return fmt.Sprintf(
+		"%v: inbox=%d/%d rows database=%d/%d bytes",
+		ErrWireAdmissionPaused, e.InboxRows, e.InboxMaxRows, e.DatabaseBytes, e.DatabaseMaxBytes,
+	)
+}
+
+func (e *WireCapacityExceededError) Unwrap() error { return ErrWireAdmissionPaused }
 
 type Postgres struct {
-	db     *sql.DB
-	source ingest.SourceIdentity
+	db                   *sql.DB
+	source               ingest.SourceIdentity
+	wireInboxMaxRows     int64
+	wireDatabaseMaxBytes int64
 }
 
 type ReplayProgress struct {
@@ -54,6 +70,40 @@ func New(db *sql.DB, source ingest.SourceIdentity) *Postgres {
 func (p *Postgres) Close() error { return p.db.Close() }
 
 func (p *Postgres) Ping(ctx context.Context) error { return p.db.PingContext(ctx) }
+
+func (p *Postgres) ConfigureWireAdmission(inboxMaxRows, databaseMaxBytes int64) {
+	p.wireInboxMaxRows = inboxMaxRows
+	p.wireDatabaseMaxBytes = databaseMaxBytes
+}
+
+func (p *Postgres) ReconcileWireAdmission(ctx context.Context) error {
+	if !p.source.IsWire() {
+		return nil
+	}
+	tx, err := p.db.BeginTx(ctx, &sql.TxOptions{})
+	if err != nil {
+		return fmt.Errorf("begin Wire admission reconciliation: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	var ignored int64
+	if err := tx.QueryRowContext(ctx, `
+		SELECT retained_rows FROM wire_ingestion_admission
+		WHERE environment = $1 FOR UPDATE`, p.source.Environment).Scan(&ignored); err != nil {
+		return fmt.Errorf("lock Wire admission counter: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE wire_ingestion_admission
+		SET retained_rows = (
+		  SELECT COUNT(*) FROM wire_ingestion_inbox WHERE environment = $1
+		), updated_at = NOW()
+		WHERE environment = $1`, p.source.Environment); err != nil {
+		return fmt.Errorf("reconcile Wire admission counter: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit Wire admission reconciliation: %w", err)
+	}
+	return nil
+}
 
 func (p *Postgres) LoadCheckpoint(ctx context.Context) (*ingest.Checkpoint, error) {
 	row := p.db.QueryRowContext(ctx, `
@@ -326,11 +376,33 @@ func (p *Postgres) StageBatch(ctx context.Context, lease Lease, events []ingest.
 	if !leaseValid {
 		return ErrLeaseUnavailable
 	}
+	var admittedWireEvents int64
+	var wireInboxRows int64
+	var wireDatabaseBytes int64
+	if p.source.IsWire() && p.wireInboxMaxRows > 0 && p.wireDatabaseMaxBytes > 0 {
+		if err := tx.QueryRowContext(ctx, `
+			SELECT retained_rows, pg_database_size(current_database())
+			FROM wire_ingestion_admission
+			WHERE environment = $1
+			FOR UPDATE`, p.source.Environment).Scan(&wireInboxRows, &wireDatabaseBytes); err != nil {
+			return fmt.Errorf("measure Wire admission capacity: %w", err)
+		}
+		if wireDatabaseBytes >= p.wireDatabaseMaxBytes {
+			return &WireCapacityExceededError{
+				InboxRows: wireInboxRows, InboxMaxRows: p.wireInboxMaxRows,
+				DatabaseBytes: wireDatabaseBytes, DatabaseMaxBytes: p.wireDatabaseMaxBytes,
+			}
+		}
+	}
 
 	for _, event := range events {
 		if p.source.IsWire() {
-			if err := p.stageWireInboxEvent(ctx, tx, event); err != nil {
+			inserted, err := p.stageWireInboxEvent(ctx, tx, event)
+			if err != nil {
 				return err
+			}
+			if inserted {
+				admittedWireEvents++
 			}
 			continue
 		}
@@ -375,6 +447,20 @@ func (p *Postgres) StageBatch(ctx context.Context, lease Lease, events []ingest.
 			event.RepoRev, event.RecordKey, event.RecordCID, string(event.Payload), event.Time,
 		); err != nil {
 			return fmt.Errorf("insert inbox event %d: %w", event.Seq, err)
+		}
+	}
+	if p.source.IsWire() && p.wireInboxMaxRows > 0 && wireInboxRows+admittedWireEvents > p.wireInboxMaxRows {
+		return &WireCapacityExceededError{
+			InboxRows: wireInboxRows, InboxMaxRows: p.wireInboxMaxRows,
+			DatabaseBytes: wireDatabaseBytes, DatabaseMaxBytes: p.wireDatabaseMaxBytes,
+		}
+	}
+	if admittedWireEvents > 0 {
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE wire_ingestion_admission
+			SET retained_rows = retained_rows + $2, updated_at = NOW()
+			WHERE environment = $1`, p.source.Environment, admittedWireEvents); err != nil {
+			return fmt.Errorf("update Wire admission count: %w", err)
 		}
 	}
 
@@ -596,25 +682,29 @@ func (p *Postgres) stageWireInboxEvent(
 	ctx context.Context,
 	tx *sql.Tx,
 	event ingest.InboxEvent,
-) error {
+) (bool, error) {
 	payload := wireJSONPayloadForPostgres(event.Payload)
-	_, err := tx.ExecContext(ctx, `
+	result, err := tx.ExecContext(ctx, `
 		INSERT INTO wire_ingestion_inbox
 		  (environment, source_generation, seq, source_host, cursor_kind,
 		   event_kind, repo_did, collection, operation, repo_rev, record_key,
 		   record_cid, payload, event_time, status, attempt_count,
-		   next_attempt_at, staged_at, updated_at)
+		   next_attempt_at, staged_at, updated_at, expires_at)
 		SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
-		       $13::jsonb, $14, 'pending', 0, NOW(), NOW(), NOW()
+		       $13::jsonb, $14, 'pending', 0, NOW(), NOW(), NOW(), 'infinity'::timestamptz
 		ON CONFLICT (environment, source_generation, seq) DO NOTHING`,
 		p.source.Environment, p.source.Generation, int64(event.Seq), p.source.Host,
 		p.source.CursorKind, event.Kind, event.RepoDID, event.Collection, event.Operation,
 		event.RepoRev, event.RecordKey, event.RecordCID, string(payload), event.Time,
 	)
 	if err != nil {
-		return fmt.Errorf("insert Wire inbox event %d: %w", event.Seq, err)
+		return false, fmt.Errorf("insert Wire inbox event %d: %w", event.Seq, err)
 	}
-	return nil
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("inspect Wire inbox insert %d: %w", event.Seq, err)
+	}
+	return rows == 1, nil
 }
 
 func nullableString(value string) any {

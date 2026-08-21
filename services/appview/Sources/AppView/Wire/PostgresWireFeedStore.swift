@@ -66,12 +66,22 @@ actor PostgresWireFeedStore: WireFeedStore {
       generation = active
       startOrdinal = 0
     } else {
-      return try await simplifiedFallback(limit: safeLimit, language: requestedLanguage, now: now)
+      return try await simplifiedFallback(
+        limit: safeLimit,
+        language: requestedLanguage,
+        viewerDID: viewerDid,
+        now: now
+      )
     }
 
     let age = now.timeIntervalSince(generation.generatedAt)
     if cursor == nil, age > 30 * 60 {
-      return try await simplifiedFallback(limit: safeLimit, language: requestedLanguage, now: now)
+      return try await simplifiedFallback(
+        limit: safeLimit,
+        language: requestedLanguage,
+        viewerDID: viewerDid,
+        now: now
+      )
     }
 
     let moderation = try await moderationSnapshot(viewerDID: viewerDid, now: now)
@@ -332,7 +342,12 @@ actor PostgresWireFeedStore: WireFeedStore {
     return false
   }
 
-  private func simplifiedFallback(limit: Int, language: String, now: Date) async throws -> WirePage {
+  private func simplifiedFallback(
+    limit: Int,
+    language: String,
+    viewerDID: String?,
+    now: Date
+  ) async throws -> WirePage {
     let rows = try await pool.query(
       """
       SELECT canonical_key, canonical_url, representative_uri, title, summary, published_at,
@@ -386,10 +401,25 @@ actor PostgresWireFeedStore: WireFeedStore {
       requestedLanguage: language,
       localizedCandidateCount: candidates.count
     ) {
-      return try await simplifiedFallback(limit: limit, language: "und", now: now)
+      return try await simplifiedFallback(
+        limit: limit,
+        language: "und",
+        viewerDID: viewerDID,
+        now: now
+      )
     }
     let reranked = WireDiversityReranker.rerank(candidates, policy: WireDiversityPolicy())
-    let items = reranked.items.prefix(limit).compactMap { itemsByKey[$0.candidate.canonicalKey] }
+    let moderation = try await moderationSnapshot(viewerDID: viewerDID, now: now)
+    let items = reranked.items.compactMap { candidate -> WireFeedItem? in
+      guard let item = itemsByKey[candidate.candidate.canonicalKey] else { return nil }
+      guard moderation?.allows(
+        item: candidate.candidate.authorKey ?? item.itemID,
+        title: item.title,
+        summary: item.summary,
+        representativeURI: item.representativeURI
+      ) ?? true else { return nil }
+      return item
+    }.prefix(limit)
     let bucket = Int(now.timeIntervalSince1970 / 300)
     return WirePage(
       generationID: "fallback-\(bucket)",
