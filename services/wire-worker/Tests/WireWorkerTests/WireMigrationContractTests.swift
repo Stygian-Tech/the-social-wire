@@ -91,7 +91,7 @@ struct WireMigrationContractTests {
     #expect(claimSQL.contains("CREATE INDEX CONCURRENTLY IF NOT EXISTS"))
     #expect(claimSQL.contains("wire_ingestion_inbox_claimable_global_v2_idx"))
     #expect(claimSQL.contains("WHEN status = 'leased' THEN lease_expires_at"))
-    #expect(claimSQL.contains("INCLUDE (repo_did)"))
+    #expect(!claimSQL.contains("INCLUDE (repo_did)"))
     #expect(claimSQL.contains("WHERE status IN ('pending', 'leased', 'retry')"))
     #expect(claimSQL.contains("NOT index_state.indisvalid"))
     #expect(claimSQL.contains("DROP INDEX CONCURRENTLY IF EXISTS"))

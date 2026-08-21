@@ -32,7 +32,6 @@ ON public.wire_ingestion_inbox (
   environment,
   source_generation
 )
-INCLUDE (repo_did)
 WHERE status IN ('pending', 'leased', 'retry');
 
 DO $$
