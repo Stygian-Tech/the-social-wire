@@ -508,6 +508,14 @@ jobs:
             the-social-wire-database-migrator:test \
             postgresql://postgres:postgres@127.0.0.1:5432/socialwire_migrations \
             -X -v ON_ERROR_STOP=1 -f /tmp/verify-jetstream-v2-drain-indexes.sql
+      - name: Verify The Wire inbox claim index and query plan
+        run: |
+          docker run --rm --network host \
+            --volume "$PWD/scripts/verify-wire-inbox-claim-index.sql:/tmp/verify-wire-inbox-claim-index.sql:ro" \
+            --entrypoint psql \
+            the-social-wire-database-migrator:test \
+            postgresql://postgres:postgres@127.0.0.1:5432/socialwire_migrations \
+            -X -v ON_ERROR_STOP=1 -f /tmp/verify-wire-inbox-claim-index.sql
 
   lexicons:
     name: Lexicons
