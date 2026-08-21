@@ -90,6 +90,8 @@ struct ReaderShellOverlayModifier: ViewModifier {
                 """
         case .list(let source):
             switch source {
+            case .wire:
+                return ""
             case .readLater:
                 return "Read Later uses saved links, not feed read state. Open a publication feed to mark articles as read."
             case .archive:
@@ -123,7 +125,8 @@ struct ReaderShellOverlayModifier: ViewModifier {
     }
 
     private var showsArticlesFilter: Bool {
-        appModel.readerListSource.compactUsesArticlesPane
+        appModel.readerListSource.supportsReadState
+            && appModel.readerListSource.navigationShape.showsArticlesColumn
     }
 
     func body(content: Content) -> some View {

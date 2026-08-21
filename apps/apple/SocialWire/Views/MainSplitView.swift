@@ -32,7 +32,7 @@ struct MainSplitView: View {
                 compact: compact,
                 compactPane: $compactPane,
                 compactNavigationEpoch: $compactNavigationEpoch,
-                compactUsesArticlesPane: compactUsesArticlesPane,
+                navigationShape: navigationShape,
                 onSidebarSelection: handleSidebarSelection,
                 onCompactPaneChange: handleCompactPaneChange
             ))
@@ -49,14 +49,14 @@ struct MainSplitView: View {
 
     // MARK: - Regular (iPad)
 
-    private var compactUsesArticlesPane: Bool {
-        appModel.readerListSource.compactUsesArticlesPane
+    private var navigationShape: ReaderNavigationShape {
+        appModel.readerListSource.navigationShape
     }
 
     private var regularSplitView: some View {
         NavigationStack {
             Group {
-                if compactUsesArticlesPane {
+                if navigationShape.showsArticlesColumn {
                     NavigationSplitView(columnVisibility: $columnVisibility) {
                         ReaderSidebarColumn(
                             showingNewFolder: $showingNewFolder,
@@ -99,10 +99,13 @@ struct MainSplitView: View {
 
     @ViewBuilder
     private var compactReaderTabView: some View {
-        if compactUsesArticlesPane {
+        switch navigationShape {
+        case .publicationFeed:
             compactFourPaneTabView
-        } else {
+        case .savedLinks:
             compactThreePaneTabView
+        case .wire:
+            compactWireTabView
         }
     }
 
@@ -149,6 +152,21 @@ struct MainSplitView: View {
         .id("compact-three-pane")
     }
 
+    /// The Wire: lists → ranked articles → reader (contiguous tags 0…2).
+    private var compactWireTabView: some View {
+        compactTabView {
+            ListsView(onListSourceTap: openListSource)
+                .tag(0)
+
+            articlesColumn
+                .tag(1)
+
+            readerColumn
+                .tag(2)
+        }
+        .id("compact-wire-three-pane")
+    }
+
     private func compactTabView<Content: View>(
         @ViewBuilder content: () -> Content
     ) -> some View {
@@ -161,12 +179,12 @@ struct MainSplitView: View {
 
     private var compactTabSelection: Binding<Int> {
         Binding(
-            get: { compactPane.compactTabTag(usesArticlesPane: compactUsesArticlesPane) },
+            get: { compactPane.compactTabTag(navigationShape: navigationShape) ?? 0 },
             set: { newTag in
-                let clamped = min(max(newTag, 0), compactUsesArticlesPane ? 3 : 2)
+                let clamped = min(max(newTag, 0), navigationShape.compactPanes.count - 1)
                 let newPane = ReaderPane.fromCompactTabTag(
                     clamped,
-                    usesArticlesPane: compactUsesArticlesPane
+                    navigationShape: navigationShape
                 )
                 guard newPane != compactPane else { return }
                 compactPane = newPane
@@ -193,7 +211,7 @@ struct MainSplitView: View {
         case .publications:
             appModel.readerListSource.rawValue
         case .articles:
-            "Articles"
+            appModel.readerListSource == .wire ? "The Wire" : "Articles"
         case .reader:
             if let entry = appModel.selectedEntry {
                 entry.title
@@ -265,7 +283,9 @@ struct MainSplitView: View {
     }
 
     private var chooseArticlePlaceholderDescription: String {
-        if appModel.selectedPublication != nil {
+        if appModel.readerListSource == .wire {
+            "Select an article from The Wire."
+        } else if appModel.selectedPublication != nil {
             "Select an article from the list."
         } else if appModel.selectedSavedLink != nil {
             "Your saved link is open in the reader."
@@ -288,10 +308,7 @@ struct MainSplitView: View {
 
     private func openListSource(_ source: ReaderListSource) {
         appModel.selectReaderListSource(source)
-        let target: ReaderPane =
-            source.compactUsesArticlesPane
-                ? .articles
-                : CompactReaderNavigation.paneAfterListSource(source)
+        let target = CompactReaderNavigation.paneAfterListSource(source)
         navigateCompactPane(target, animated: true)
     }
 
@@ -356,7 +373,7 @@ struct MainSplitView: View {
         let transition = CompactReaderNavigation.swipeTransition(
             from: oldPane,
             to: newPane,
-            usesArticlesPane: compactUsesArticlesPane
+            navigationShape: navigationShape
         )
         if transition.clearsReaderDetail {
             Task {
@@ -385,7 +402,7 @@ private struct CompactReaderSelectionHandlers: ViewModifier {
     let compact: Bool
     @Binding var compactPane: ReaderPane
     @Binding var compactNavigationEpoch: UInt
-    let compactUsesArticlesPane: Bool
+    let navigationShape: ReaderNavigationShape
     let onSidebarSelection: (SidebarSelection?) async -> Void
     let onCompactPaneChange: (ReaderPane, ReaderPane) -> Void
 
@@ -393,6 +410,15 @@ private struct CompactReaderSelectionHandlers: ViewModifier {
         @Bindable var model = appModel
 
         content
+            .onAppear {
+                guard compact else { return }
+                if let normalized = CompactReaderNavigation.normalizedPaneAfterLayoutChange(
+                    compactPane: compactPane,
+                    navigationShape: navigationShape
+                ) {
+                    compactPane = normalized
+                }
+            }
             .onChange(of: model.selectedSidebar) { _, selection in
                 Task { await onSidebarSelection(selection) }
             }
@@ -405,11 +431,11 @@ private struct CompactReaderSelectionHandlers: ViewModifier {
                     compactPane = remapped
                 }
             }
-            .onChange(of: compactUsesArticlesPane) { _, usesArticlesPane in
+            .onChange(of: navigationShape) { _, shape in
                 guard compact else { return }
                 if let normalized = CompactReaderNavigation.normalizedPaneAfterLayoutChange(
                     compactPane: compactPane,
-                    usesArticlesPane: usesArticlesPane
+                    navigationShape: shape
                 ) {
                     compactPane = normalized
                 }

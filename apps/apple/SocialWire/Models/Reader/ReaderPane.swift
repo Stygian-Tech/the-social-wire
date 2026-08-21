@@ -9,24 +9,14 @@ enum ReaderPane: Int, Hashable, CaseIterable {
     case articles = 2
     case reader = 3
 
-    /// Contiguous `TabView` page index. Three-pane layouts must not skip index 2.
-    func compactTabTag(usesArticlesPane: Bool) -> Int {
-        if usesArticlesPane { return rawValue }
-        switch self {
-        case .lists: return 0
-        case .publications, .articles: return 1
-        case .reader: return 2
-        }
+    /// Contiguous `TabView` page index for the active reader shape.
+    func compactTabTag(navigationShape: ReaderNavigationShape) -> Int? {
+        navigationShape.compactPanes.firstIndex(of: self)
     }
 
-    static func fromCompactTabTag(_ tag: Int, usesArticlesPane: Bool) -> ReaderPane {
-        if usesArticlesPane {
-            return ReaderPane(rawValue: tag) ?? .lists
-        }
-        switch tag {
-        case 0: return .lists
-        case 1: return .publications
-        default: return .reader
-        }
+    static func fromCompactTabTag(_ tag: Int, navigationShape: ReaderNavigationShape) -> ReaderPane {
+        let panes = navigationShape.compactPanes
+        guard panes.indices.contains(tag) else { return panes.last ?? .lists }
+        return panes[tag]
     }
 }

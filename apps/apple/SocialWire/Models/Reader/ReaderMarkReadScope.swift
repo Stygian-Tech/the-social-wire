@@ -12,7 +12,7 @@ enum ReaderMarkReadScope: Equatable {
     static func selectedFeed(_ selection: FeedSelection) -> ReaderMarkReadScope {
         switch selection {
         case .topLevel(let source):
-            .list(source)
+            source.supportsReadState ? .list(source) : .unavailable
         case .folder(let folderRkey):
             .folder(folderRkey: folderRkey)
         case .publication(let publicationId):

@@ -9,6 +9,13 @@ struct EntryListView: View {
 
     var body: some View {
         List {
+            if appModel.readerListSource == .wire, let notice = appModel.wireFeedNotice {
+                Label(notice, systemImage: "exclamationmark.triangle")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .readerClearListRow()
+                    .accessibilityLabel(notice)
+            }
             if appModel.filteredEntries.isEmpty,
                appModel.hasSelectedArticleFeed,
                (appModel.isLoadingEntries || appModel.sidebarFetching) {
@@ -16,7 +23,10 @@ struct EntryListView: View {
                     .frame(maxWidth: .infinity)
                     .readerClearListRow()
             } else if appModel.filteredEntries.isEmpty {
-                ContentUnavailableView("No Articles", systemImage: "doc.text")
+                ContentUnavailableView(
+                    appModel.wireFeedLoadFailed ? "The Wire Is Unavailable" : "No Articles",
+                    systemImage: appModel.wireFeedLoadFailed ? "wifi.exclamationmark" : "doc.text"
+                )
                     .readerClearListRow()
             } else {
                 Section("Articles") {
@@ -25,13 +35,17 @@ struct EntryListView: View {
                             let epoch = navigationEpoch?() ?? 0
                             Task { await openEntry(entry, navigationEpoch: epoch) }
                         } label: {
-                            EntryRow(entry: entry, isRead: appModel.readAtByEntryId[entry.entryId] != nil)
+                            EntryRow(
+                                entry: entry,
+                                isRead: appModel.readAtByEntryId[entry.entryId] != nil,
+                                showsReadState: appModel.readerListSource.supportsReadState
+                            )
                                 .readerFullWidthTapLabel()
                         }
                         .buttonStyle(.plain)
                         .readerClearListRow()
                         .accessibilityElement(children: .combine)
-                        .accessibilityValue(appModel.readAtByEntryId[entry.entryId] == nil ? "Unread" : "Read")
+                        .accessibilityValue(entryAccessibilityValue(entry))
                             .contextMenu {
                                 Button {
                                     saveFeedback += 1
@@ -47,8 +61,10 @@ struct EntryListView: View {
                                     Label("Save", systemImage: "bookmark")
                                 }
 
-                                Button(appModel.readAtByEntryId[entry.entryId] == nil ? "Mark As Read" : "Mark As Unread") {
-                                    Task { await appModel.toggleRead(entry) }
+                                if appModel.readerListSource.supportsReadState {
+                                    Button(appModel.readAtByEntryId[entry.entryId] == nil ? "Mark As Read" : "Mark As Unread") {
+                                        Task { await appModel.toggleRead(entry) }
+                                    }
                                 }
                             }
                             .onAppear {
@@ -61,11 +77,13 @@ struct EntryListView: View {
                                     )
                                 }
                             }
-                            .swipeActions(edge: .trailing) {
-                                Button(appModel.readAtByEntryId[entry.entryId] == nil ? "Read" : "Unread") {
-                                    Task { await appModel.toggleRead(entry) }
+                            .swipeActions(edge: .trailing, allowsFullSwipe: appModel.readerListSource.supportsReadState) {
+                                if appModel.readerListSource.supportsReadState {
+                                    Button(appModel.readAtByEntryId[entry.entryId] == nil ? "Read" : "Unread") {
+                                        Task { await appModel.toggleRead(entry) }
+                                    }
+                                    .tint(.indigo)
                                 }
-                                .tint(.indigo)
                             }
                     }
 
@@ -90,6 +108,13 @@ struct EntryListView: View {
         await appModel.selectEntry(entry)
         guard appModel.selectedEntry?.entryId == entry.entryId else { return }
         onEntryOpened?(navigationEpoch)
+    }
+
+    private func entryAccessibilityValue(_ entry: EntryListItem) -> String {
+        guard appModel.readerListSource.supportsReadState else {
+            return entry.wireMetadata?.primaryReasonLabel ?? ""
+        }
+        return appModel.readAtByEntryId[entry.entryId] == nil ? "Unread" : "Read"
     }
 
 }

@@ -14,4 +14,7 @@ enum SocialWireXRPCMethod {
     static let markAllRead = prefix + "app.thesocialwire.appview.markAllRead"
     static let enrollSources = prefix + "app.thesocialwire.appview.enrollSources"
     static let purgeViewerData = prefix + "app.thesocialwire.appview.purgeViewerData"
+    static let getWire = prefix + "app.thesocialwire.discovery.getWire"
+    static let getWireItem = prefix + "app.thesocialwire.discovery.getWireItem"
+    static let getFeedCatalog = prefix + "app.thesocialwire.discovery.getFeedCatalog"
 }
