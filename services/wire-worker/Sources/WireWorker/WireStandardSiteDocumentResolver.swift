@@ -10,10 +10,17 @@ enum WireStandardSiteDocumentResolver {
       record, keys: ["canonicalUrl", "url", "externalUrl", "href", "permalink"]),
       let normalized = WireStandardSiteURL.articleURL(path: directURL, publicationBase: directURL)
     {
+      let publicationURI = publicationURI(from: record)
+      let publication = try await optionalPublication(
+        publicationURI: publicationURI,
+        publicationResolver: publicationResolver,
+        asOf: asOf
+      )
       return WireResolvedStandardSiteDocument(
         canonicalURL: normalized,
-        publicationURI: publicationURI(from: record),
-        publicationName: nil
+        publicationURI: publicationURI,
+        publicationName: publication?.name,
+        publicationHomepageURL: publication?.siteURL
       )
     }
     guard let path = firstString(record, keys: ["path"])
@@ -24,7 +31,8 @@ enum WireStandardSiteDocumentResolver {
       return WireResolvedStandardSiteDocument(
         canonicalURL: articleURL,
         publicationURI: nil,
-        publicationName: nil
+        publicationName: nil,
+        publicationHomepageURL: WireStandardSiteURL.publicationBase(from: ["url": site])
       )
     }
     guard let publicationURI = publicationURI(from: record)
@@ -51,8 +59,26 @@ enum WireStandardSiteDocumentResolver {
     return WireResolvedStandardSiteDocument(
       canonicalURL: articleURL,
       publicationURI: publication.publicationURI,
-      publicationName: publication.name
+      publicationName: publication.name,
+      publicationHomepageURL: publication.siteURL
     )
+  }
+
+  private static func optionalPublication(
+    publicationURI: String?,
+    publicationResolver: any WirePublicationResolving,
+    asOf: Date
+  ) async throws -> WirePublicationMetadata? {
+    guard let publicationURI else { return nil }
+    do {
+      return try await publicationResolver.resolve(publicationURI: publicationURI, asOf: asOf)
+    } catch is CancellationError {
+      throw CancellationError()
+    } catch {
+      // A canonical document URL is independently authoritative. Publication
+      // branding is best-effort here and can be filled by a later observation.
+      return nil
+    }
   }
 
   private static func publicationURI(from record: [String: Any]) -> String? {

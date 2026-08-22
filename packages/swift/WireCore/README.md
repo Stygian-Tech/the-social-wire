@@ -170,7 +170,10 @@ unless at least four safe profiles remain.
 
 Article presentation follows one explicit precedence: authoritative Standard Site record,
 fresh page OpenGraph/Twitter metadata, embedded Bluesky external card, then social-post
-text and hostname fallback. The selected fields are copied into the item presentation
+text and hostname fallback. Precedence is applied per field, so lower-priority page
+metadata may fill a missing Standard Site thumbnail, byline, publication timestamp, icon,
+or description but cannot replace an authoritative non-empty value. The selected fields
+are copied into the item presentation
 snapshot; browser clients never scrape or fetch metadata per card. `wire_link_metadata_cache`
 keeps successful page metadata fresh for 24 hours and stale-safe for at most seven days,
 uses ETag/Last-Modified conditional refreshes, and negative-caches unusable pages for six

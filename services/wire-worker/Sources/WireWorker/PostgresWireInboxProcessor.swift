@@ -382,11 +382,17 @@ struct PostgresWireInboxProcessor: Sendable {
     else { throw ApplyError.malformed }
     let title = Self.firstString(record, keys: ["title", "name"]) ?? host
     let summary = Self.firstString(record, keys: ["summary", "description", "text", "textContent"])
-    let thumbnail = Self.firstString(record, keys: ["thumbnail", "thumbnailUrl", "image"])
+    let thumbnail = Self.firstString(
+      record,
+      keys: ["thumbnail", "thumbnailUrl", "coverImageUrl", "image"]
+    )
     let language = Self.primaryLanguage(Self.firstString(record, keys: ["lang", "language"]))
     let publishedAt = Self.date(Self.firstString(record, keys: ["publishedAt", "createdAt"]))
     let publicationID = resolved.publicationURI
-    let authorName = Self.firstString(record, keys: ["authorName", "displayName"])
+    let authorName = Self.firstString(
+      record,
+      keys: ["authorName", "displayName", "byline", "author"]
+    )
     let topicKeys = (record["tags"] as? [String] ?? []).map { $0.lowercased() }
     let actorHash = try actorHasher.hash(event.repoDID)
     try await upsertItem(
@@ -408,7 +414,8 @@ struct PostgresWireInboxProcessor: Sendable {
       confidence: 0.9,
       presentationSource: "standard_site",
       presentationPriority: 400,
-      publicationHomepageURL: Self.homepageURL(for: identity.canonicalURL),
+      publicationHomepageURL: resolved.publicationHomepageURL
+        ?? Self.homepageURL(for: identity.canonicalURL),
       publicationIconURL: nil,
       asOf: asOf
     )

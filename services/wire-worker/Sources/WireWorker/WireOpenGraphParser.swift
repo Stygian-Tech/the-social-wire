@@ -44,8 +44,18 @@ enum WireOpenGraphParser {
       relativeTo: pageURL
     )
     let siteName = first([properties["og:site_name"], properties["application-name"]])
+    let authorName = first([
+      properties["article:author"], properties["author"], properties["byl"],
+      properties["twitter:creator"],
+    ])
+    let publishedAt = first([
+      properties["article:published_time"], properties["og:published_time"],
+      properties["date"], properties["datepublished"],
+    ]).flatMap(parseDate)
     let resolvedCanonical = normalizedURL(canonicalURL, relativeTo: pageURL) ?? pageURL.absoluteString
-    guard title != nil || description != nil || imageURL != nil || siteName != nil || icon != nil else {
+    guard title != nil || description != nil || imageURL != nil || siteName != nil
+      || authorName != nil || publishedAt != nil || icon != nil
+    else {
       return nil
     }
     return WireLinkMetadata(
@@ -54,6 +64,8 @@ enum WireOpenGraphParser {
       description: description,
       imageURL: imageURL,
       siteName: siteName,
+      authorName: authorName,
+      publishedAt: publishedAt,
       iconURL: icon,
       etag: nil,
       lastModified: nil,
@@ -121,6 +133,14 @@ enum WireOpenGraphParser {
 
   private static func first(_ values: [String?]) -> String? {
     values.lazy.compactMap(normalized).first
+  }
+
+  private static func parseDate(_ value: String) -> Date? {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    if let date = formatter.date(from: value) { return date }
+    formatter.formatOptions = [.withInternetDateTime]
+    return formatter.date(from: value)
   }
 
   private static func normalizedURL(_ raw: String?, relativeTo pageURL: URL) -> String? {

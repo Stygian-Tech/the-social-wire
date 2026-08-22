@@ -52,7 +52,7 @@ export default function ReadLayout({
   return (
     <SidebarProvider
       defaultWidthPx={208}
-      className="mx-auto h-[calc(100svh-var(--environment-banner-height,0px))] min-h-[calc(100svh-var(--environment-banner-height,0px))] max-h-[calc(100svh-var(--environment-banner-height,0px))] max-w-[var(--reader-shell-width)] overflow-hidden overscroll-none [--reader-shell-width:70rem] has-[[data-wire-route=true]]:[--reader-shell-width:82rem]"
+      className="mx-auto h-[calc(100svh-var(--environment-banner-height,0px))] min-h-[calc(100svh-var(--environment-banner-height,0px))] max-h-[calc(100svh-var(--environment-banner-height,0px))] max-w-[var(--reader-shell-width)] overflow-hidden overscroll-none [--reader-shell-width:70rem] has-[[data-wire-route=true]]:max-w-none has-[[data-wire-route=true]]:[--reader-shell-width:82rem] has-[[data-wire-route=true]]:[&_[data-slot=sidebar-gap]]:ml-[max(0px,calc((100vw-var(--reader-shell-width))/2))]"
     >
       <PublicationSidebarProvider>
         <ReadRouteProvider>
