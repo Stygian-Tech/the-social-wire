@@ -122,9 +122,9 @@ Diversity applies to the first 50 items after deterministic score ordering. Gree
 
 Missing publication/author/community does not consume that dimension. Duplicate topic keys count once. A violating item is deferred and records the first violated dimension. Continue scanning for nonviolating items. If fewer than 40 positions can be filled, relax topic, community, author, publication, then domain caps by one level at a time, recording each relaxation. After the first page, append every unselected item in original score/tie order. Diversity never drops a candidate or changes its score, and safety exclusions never relax.
 
-## News edition assembly (`wire-edition-v1`)
+## News edition assembly (`wire-edition-v2`)
 
-`wire-v1` remains the sole authority for story eligibility and order. `wire-edition-v1`
+`wire-v1` remains the sole authority for story eligibility and order. `wire-edition-v2`
 is a deterministic presentation pass over that already-ranked order; it never changes a
 story score, exposes a score/rank, or creates a personalized order. Duplicate item IDs
 are removed by first occurrence before assembly.
@@ -132,7 +132,11 @@ are removed by first occurrence before assembly.
 The edition allocates primary story modules in this order:
 
 1. Select up to four lead stories—one feature and three supporting stories—accepting only
-   the first story from each normalized source domain.
+   the first story from each normalized source domain. If those four contain no direct
+   `site.standard.document` or `site.standard.entry`, the final supporting slot goes to the
+   best such story within the canonical top ten when doing so preserves source diversity.
+   The feature and first two supporting stories never move. This is a bounded presentation
+   tie-break; it does not alter `wire-v1` scores, eligibility, or continuation order.
 2. From the unallocated stories, select up to six publication panels in first-appearance
    order. A panel requires at least two remaining stories and contains at most three.
    Publication identity prefers the presentation-safe publication key, then publication
@@ -157,7 +161,9 @@ sharers, likers, or reposters. An account qualifies only after appearing across 
 two distinct stories and three distinct HMAC-counted public speakers. Qualifying accounts
 sort by distinct-story breadth, distinct-speaker breadth, best associated story rank,
 latest mention time, then normalized DID, and cap at ten. Aggregate counts and associated
-story rank are assembler inputs only and are not Codable response fields.
+story rank are assembler inputs only and are not Codable response fields. Materialization
+considers only mention edges attached to the first 50 displayed stories, keeping the rail
+connected to the edition rather than unrelated retained corpus items.
 
 Mention edges come only from explicit `app.bsky.richtext.facet#mention` DIDs and quoted
 record subjects on public source posts. Authors, sharers, likers, and reposters do not
@@ -173,6 +179,8 @@ fresh page OpenGraph/Twitter metadata, embedded Bluesky external card, then soci
 text and hostname fallback. Precedence is applied per field, so lower-priority page
 metadata may fill a missing Standard Site thumbnail, byline, publication timestamp, icon,
 or description but cannot replace an authoritative non-empty value. The selected fields
+include bounded Schema.org JSON-LD article fallbacks after explicit OpenGraph/Twitter tags,
+which recovers publisher names, authors, dates, logos, and images from sites that omit OG.
 are copied into the item presentation
 snapshot; browser clients never scrape or fetch metadata per card. `wire_link_metadata_cache`
 keeps successful page metadata fresh for 24 hours and stale-safe for at most seven days,

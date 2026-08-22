@@ -499,7 +499,7 @@ actor PostgresWireCorpusStore: WireCorpusStoring {
 
   private func fallbackEdition(language: String, now: Date) async throws -> WireEdition {
     let page = try await fallback(language: language, limit: 50, now: now)
-    return WireEditionAssembler.assemble(
+    let edition = WireEditionAssembler.assemble(
       generationID: page.generationID,
       generatedAt: page.generatedAt,
       language: page.language,
@@ -507,5 +507,45 @@ actor PostgresWireCorpusStore: WireCorpusStoring {
       degraded: page.degraded,
       rankedItems: page.rows.map(\.item)
     )
+    let accounts = try await latestMaterializedTalkedAccounts(language: page.language)
+    guard accounts.count >= 4 else { return edition }
+    return WireEdition(
+      algorithmVersion: edition.algorithmVersion,
+      generationID: edition.generationID,
+      generatedAt: edition.generatedAt,
+      language: edition.language,
+      cursor: edition.cursor,
+      source: edition.source,
+      degraded: edition.degraded,
+      leadStories: edition.leadStories,
+      publicationPanels: edition.publicationPanels,
+      storyRails: edition.storyRails,
+      generalStories: edition.generalStories,
+      trendingStories: edition.trendingStories,
+      talkedAboutAccounts: accounts
+    )
+  }
+
+  private func latestMaterializedTalkedAccounts(
+    language: String
+  ) async throws -> [WireTalkedAboutAccount] {
+    let rows = try await pool.query(
+      """
+      SELECT generation.generation_id
+      FROM wire_serving.edition_generations generation
+      WHERE generation.language_bucket = \(language)
+        AND EXISTS (
+          SELECT 1 FROM wire_serving.edition_talked_accounts account
+          WHERE account.generation_id = generation.generation_id
+        )
+      ORDER BY generation.generated_at DESC, generation.generation_id DESC
+      LIMIT 1
+      """,
+      logger: logger
+    )
+    for try await row in rows {
+      return try await materializedTalkedAccounts(generationID: row.decode(UUID.self))
+    }
+    return []
   }
 }

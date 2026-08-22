@@ -1,7 +1,7 @@
 import Foundation
 
 public enum WireEditionAssembler {
-  public static let version = "wire-edition-v1"
+  public static let version = "wire-edition-v2"
   public static let maximumLeadStories = 4
   public static let maximumPublicationPanels = 6
   public static let minimumStoriesPerPublicationPanel = 2
@@ -63,7 +63,23 @@ public enum WireEditionAssembler {
       result.append(story)
       if result.count == maximumLeadStories { break }
     }
+    guard result.count == maximumLeadStories,
+      !result.contains(where: isDirectStandardSiteStory),
+      let standardSiteStory = stories.prefix(10).first(where: { story in
+        isDirectStandardSiteStory(story)
+          && !result.contains(where: { $0.itemID == story.itemID })
+          && !result.dropLast().contains(where: {
+            normalized($0.source.domain) == normalized(story.source.domain)
+          })
+      })
+    else { return result }
+    result[result.index(before: result.endIndex)] = standardSiteStory
     return result
+  }
+
+  private static func isDirectStandardSiteStory(_ story: WireFeedItem) -> Bool {
+    guard let uri = story.representativeURI?.lowercased() else { return false }
+    return uri.contains("/site.standard.document/") || uri.contains("/site.standard.entry/")
   }
 
   private static func publicationPanels(

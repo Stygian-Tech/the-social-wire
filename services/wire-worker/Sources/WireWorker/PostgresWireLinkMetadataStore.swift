@@ -71,7 +71,7 @@ struct PostgresWireLinkMetadataStore: WireLinkMetadataStoring {
           SELECT canonical_key
           FROM wire_link_metadata_cache
           WHERE retry_after <= \(asOf)
-            AND status IN ('pending', 'retry', 'negative', 'fresh', 'stale', 'failed')
+            AND status IN ('pending', 'retry', 'negative', 'fresh', 'stale', 'failed', 'fetching')
             AND (fresh_until IS NULL OR fresh_until <= \(asOf))
           ORDER BY retry_after, canonical_key
           FOR UPDATE SKIP LOCKED

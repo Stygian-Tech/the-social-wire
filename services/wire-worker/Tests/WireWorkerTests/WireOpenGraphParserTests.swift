@@ -47,4 +47,81 @@ struct WireOpenGraphParserTests {
     #expect(parsed.authorName == nil)
     #expect(parsed.publishedAt == nil)
   }
+
+  @Test("uses article JSON-LD for publisher, author, image, and dates")
+  func parsesArticleJSONLD() throws {
+    let html = #"""
+      <html><head>
+      <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "NewsArticle",
+        "headline": "A JSON-LD headline",
+        "description": "Structured story description",
+        "image": { "url": "/images/structured.jpg" },
+        "author": [
+          { "@type": "Person", "name": "Jordan Writer" },
+          { "@type": "Person", "name": "Second Writer" }
+        ],
+        "publisher": {
+          "@type": "Organization",
+          "name": "The Example Dispatch",
+          "logo": { "url": "/branding/logo.png" }
+        },
+        "datePublished": "2026-08-22T14:30:00Z",
+        "mainEntityOfPage": { "@id": "/news/structured-story" }
+      }
+      </script>
+      </head></html>
+      """#
+    let parsed = try #require(
+      WireOpenGraphParser.parse(html: html, pageURL: URL(string: "https://news.example/story")!)
+    )
+    #expect(parsed.title == "A JSON-LD headline")
+    #expect(parsed.description == "Structured story description")
+    #expect(parsed.siteName == "The Example Dispatch")
+    #expect(parsed.authorName == "Jordan Writer")
+    #expect(parsed.imageURL == "https://news.example/images/structured.jpg")
+    #expect(parsed.iconURL == "https://news.example/branding/logo.png")
+    #expect(parsed.canonicalURL == "https://news.example/news/structured-story")
+    #expect(parsed.publishedAt == Date(timeIntervalSince1970: 1_787_409_000))
+  }
+
+  @Test("keeps explicit OpenGraph fields ahead of JSON-LD")
+  func openGraphPrecedesJSONLD() throws {
+    let html = #"""
+      <html><head>
+      <meta property="og:title" content="OpenGraph title">
+      <meta property="og:site_name" content="OpenGraph site">
+      <meta property="og:image" content="/og.jpg">
+      <script type="application/ld+json">
+      {
+        "@type": "NewsArticle",
+        "headline": "Structured title",
+        "image": "/structured.jpg",
+        "publisher": { "name": "Structured site" }
+      }
+      </script>
+      </head></html>
+      """#
+    let parsed = try #require(
+      WireOpenGraphParser.parse(html: html, pageURL: URL(string: "https://news.example/story")!)
+    )
+    #expect(parsed.title == "OpenGraph title")
+    #expect(parsed.siteName == "OpenGraph site")
+    #expect(parsed.imageURL == "https://news.example/og.jpg")
+  }
+
+  @Test("ignores malformed JSON-LD without losing HTML fallbacks")
+  func malformedJSONLD() throws {
+    let html = """
+      <html><head><title>Fallback survives</title>
+      <script type="application/ld+json">{not-json}</script>
+      </head></html>
+      """
+    let parsed = try #require(
+      WireOpenGraphParser.parse(html: html, pageURL: URL(string: "https://news.example/story")!)
+    )
+    #expect(parsed.title == "Fallback survives")
+  }
 }

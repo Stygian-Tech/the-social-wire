@@ -241,6 +241,7 @@ struct PostgresWireGenerationStore: WireGenerationStore {
         WHERE mentions.expires_at > \(generation.generatedAt)
           AND profile.status = 'fresh'
           AND profile.expires_at > \(generation.generatedAt)
+          AND ranked.position < 50
         GROUP BY mentions.subject_did, profile.handle, profile.display_name,
                  profile.avatar_url, profile.description
         HAVING COUNT(DISTINCT mentions.canonical_key) >= 2

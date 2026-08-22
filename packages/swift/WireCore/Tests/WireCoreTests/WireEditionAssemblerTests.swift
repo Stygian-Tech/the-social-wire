@@ -21,7 +21,7 @@ struct WireEditionAssemblerTests {
     let second = assemble(ranked)
 
     #expect(first == second)
-    #expect(first.algorithmVersion == "wire-edition-v1")
+    #expect(first.algorithmVersion == "wire-edition-v2")
     #expect(first.leadStories.map(\.itemID) == ["p0-s0", "p1-s0", "p2-s0", "p3-s0"])
     #expect(first.publicationPanels.count == 6)
     #expect(first.publicationPanels.allSatisfy { $0.stories.count == 3 })
@@ -144,6 +144,41 @@ struct WireEditionAssemblerTests {
     #expect(edition.generalStories.map(\.itemID) == ["underfilled-panel"])
   }
 
+  @Test("gives one supporting lead slot to a nearby direct Standard Site story")
+  func standardSiteSupportingLeadPreference() {
+    let ranked = [
+      item(id: "first", domain: "one.example"),
+      item(id: "second", domain: "two.example"),
+      item(id: "third", domain: "three.example"),
+      item(id: "fourth", domain: "four.example"),
+      item(id: "fifth", domain: "five.example"),
+      item(
+        id: "standard", domain: "standard.example",
+        representativeURI: "at://did:plc:standard/site.standard.document/story"
+      ),
+    ]
+
+    let edition = assemble(ranked)
+
+    #expect(edition.leadStories.map(\.itemID) == ["first", "second", "third", "standard"])
+    #expect(edition.generalStories.map(\.itemID).contains("fourth"))
+  }
+
+  @Test("does not displace a canonical lead when Standard Site is outside the top ten")
+  func boundedStandardSitePreference() {
+    var ranked = (0..<11).map { item(id: "story-\($0)", domain: "source-\($0).example") }
+    ranked.append(
+      item(
+        id: "late-standard", domain: "standard.example",
+        representativeURI: "at://did:plc:standard/site.standard.document/late"
+      )
+    )
+
+    #expect(assemble(ranked).leadStories.map(\.itemID) == [
+      "story-0", "story-1", "story-2", "story-3",
+    ])
+  }
+
   @Test("ranks only privacy-safe talked-about account cohorts deterministically")
   func talkedAboutAccounts() throws {
     var candidates: [WireTalkedAboutAccountCandidate] = []
@@ -214,12 +249,13 @@ struct WireEditionAssemblerTests {
     id: String,
     domain: String,
     publication: String? = nil,
+    representativeURI: String? = nil,
     reasons: [WireReasonCode] = []
   ) -> WireFeedItem {
     WireFeedItem(
       itemID: id,
       canonicalURL: "https://\(domain)/\(id)",
-      representativeURI: nil,
+      representativeURI: representativeURI,
       title: "Story \(id)",
       summary: nil,
       publishedAt: now,

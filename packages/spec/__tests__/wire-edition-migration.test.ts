@@ -13,6 +13,13 @@ const metadataDetailsMigration = readFileSync(
   ),
   "utf8",
 );
+const metadataRecoveryMigration = readFileSync(
+  join(
+    import.meta.dir,
+    "../../../database/migrations/20260822200000_recover_wire_metadata_and_edition_v2.sql",
+  ),
+  "utf8",
+);
 const generationStore = readFileSync(
   join(import.meta.dir, "../../../services/wire-worker/Sources/WireWorker/PostgresWireGenerationStore.swift"),
   "utf8",
@@ -54,6 +61,12 @@ describe("The Wire news edition migration", () => {
     );
     expect(metadataDetailsMigration).toContain(
       "ADD COLUMN IF NOT EXISTS published_at TIMESTAMPTZ",
+    );
+    expect(metadataRecoveryMigration).toContain(
+      "'pending', 'fresh', 'stale', 'negative', 'retry', 'failed', 'fetching'",
+    );
+    expect(metadataRecoveryMigration).toContain(
+      "ALTER COLUMN algorithm_version SET DEFAULT 'wire-edition-v2'",
     );
   });
 
