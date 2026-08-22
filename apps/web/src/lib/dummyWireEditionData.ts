@@ -66,7 +66,7 @@ function story(index: number): WireItem {
 export function dummyWireEdition(): WireEditionPage {
   const stories = titles.map((_, index) => story(index));
   return {
-    editionVersion: "wire-edition-v1",
+    editionVersion: "wire-edition-v2",
     generationId: "00000000-0000-4000-8000-000000000001",
     generatedAt: "2026-08-21T22:00:00.000Z",
     language: "en",

@@ -19,7 +19,8 @@ export function WireStoryHoverMetadata({
       side="top"
       align="start"
       sideOffset={8}
-      className="w-[min(22rem,calc(100vw-2rem))] max-w-none flex-col items-start gap-2 px-3 py-2.5 text-left"
+      arrowClassName="bg-popover fill-popover"
+      className="w-[min(22rem,calc(100vw-2rem))] max-w-none flex-col items-start gap-2 border border-border bg-popover px-3 py-2.5 text-left text-popover-foreground shadow-lg"
     >
       <p className="text-sm font-semibold leading-snug">{title}</p>
       <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-2 gap-y-1 text-[11px] leading-4">

@@ -825,6 +825,13 @@ struct WirePostgresIntegrationTests {
     }
     #expect(claimed == Set(canonicalKeys))
 
+    let recovered = try await store.claimDue(
+      limit: 1,
+      asOf: now.addingTimeInterval(301)
+    )
+    #expect(recovered.count == 1)
+    #expect(canonicalKeys.contains(recovered[0].canonicalKey))
+
     for canonicalKey in canonicalKeys {
       try await pool.query(
         "DELETE FROM wire_items WHERE canonical_key = \(canonicalKey)", logger: logger)

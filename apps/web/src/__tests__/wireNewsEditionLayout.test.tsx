@@ -169,7 +169,7 @@ describe("WireNewsEditionLayout", () => {
       '[data-wire-story-id="analysis"]',
     );
     expect(trendingStory?.className).toContain(
-      "grid-cols-[minmax(0,1fr)_4.75rem]",
+      "grid-cols-[minmax(0,1fr)_7rem]",
     );
     expect(trendingStory?.textContent).toContain("By Riley Reporter");
     expect(trendingStory?.textContent).toContain("analysis.example");
@@ -188,6 +188,9 @@ describe("WireNewsEditionLayout", () => {
     expect(
       screen.getByRole("group", { name: "Publication Spotlights carousel" }).className,
     ).toContain("scroll-pl-5");
+    expect(
+      screen.getByRole("group", { name: "Publication Spotlights carousel" }).className,
+    ).toContain("pt-2");
 
     const lead = container.querySelector('[data-wire-story-id="lead"]');
     const leadText = lead?.textContent ?? "";
@@ -228,6 +231,8 @@ describe("WireNewsEditionLayout", () => {
       expect(metadata?.textContent).toContain("Riley Reporter");
       expect(metadata?.textContent).toContain("analysis.example");
       expect(metadata?.textContent).toContain("Published");
+      expect(metadata?.className).toContain("bg-popover");
+      expect(metadata?.className).toContain("text-popover-foreground");
     });
 
     const scrollContainer = container.querySelector(
@@ -256,6 +261,7 @@ describe("WireNewsEditionLayout", () => {
     const rail = screen.getByRole("group", { name: "Test Stories carousel" });
     expect(rail.className).toContain("scroll-pl-5");
     expect(rail.className).toContain("sm:scroll-pl-6");
+    expect(rail.className).toContain("pt-2");
     Object.defineProperty(rail, "clientWidth", { configurable: true, value: 300 });
     Object.defineProperty(rail, "scrollWidth", { configurable: true, value: 900 });
     Object.defineProperty(rail, "scrollLeft", {
