@@ -25,7 +25,7 @@ actor PostgresWireCorpusStore: WireCorpusStoring {
       logger: logger
     )
     for try await row in rows {
-      guard try row.decode(Int.self) == 1 else {
+      guard try row.decode(Int.self) == 2 else {
         throw WireCorpusEdgeStoreError.contractMismatch
       }
       return
@@ -90,13 +90,153 @@ actor PostgresWireCorpusStore: WireCorpusStoring {
     )
   }
 
+  func edition(language: String, now: Date) async throws -> WireEdition {
+    try await requireFreshBaseline(now: now)
+    guard let generation = try await activeGeneration(language: language) else {
+      return try await fallbackEdition(language: language, now: now)
+    }
+    guard now.timeIntervalSince(generation.generatedAt) <= 30 * 60 else {
+      return try await fallbackEdition(language: language, now: now)
+    }
+
+    let generationRows = try await pool.query(
+      """
+      SELECT algorithm_version, continuation_ordinal
+      FROM wire_serving.edition_generations
+      WHERE generation_id = \(generation.id)
+      LIMIT 1
+      """,
+      logger: logger
+    )
+    var algorithmVersion: String?
+    var continuationOrdinal = 0
+    for try await row in generationRows {
+      let value = try row.decode((String, Int).self)
+      algorithmVersion = value.0
+      continuationOrdinal = value.1
+    }
+    guard let algorithmVersion else { throw WireCorpusEdgeStoreError.contractMismatch }
+
+    let itemRows = try await pool.query(
+      """
+      SELECT module_key, module_position, canonical_key, canonical_url, representative_uri,
+             title, summary, published_at, thumbnail_url, source_name, source_domain,
+             publication_id, author_name, provenance::text, author_key, reason_codes::text,
+             publication_key, publication_homepage_url, publication_icon_url
+      FROM wire_serving.edition_module_items
+      WHERE generation_id = \(generation.id)
+      ORDER BY module_key, module_position
+      """,
+      logger: logger
+    )
+    var itemsByModule: [String: [WireFeedItem]] = [:]
+    for try await row in itemRows {
+      let cells = row.makeRandomAccess()
+      let key = try cells[0].decode(String.self)
+      itemsByModule[key, default: []].append(
+        try Self.decodeItem(
+          row: row,
+          offset: 2,
+          reasonsJSON: try cells[15].decode(String.self),
+          metadataOffset: 16
+        )
+      )
+    }
+
+    let moduleRows = try await pool.query(
+      """
+      SELECT module_key, module_kind, title, position, reason_code,
+             publication_key, publication_name, publication_domain,
+             publication_homepage_url, publication_icon_url
+      FROM wire_serving.edition_modules
+      WHERE generation_id = \(generation.id)
+      ORDER BY position
+      """,
+      logger: logger
+    )
+    var leads: [WireFeedItem] = []
+    var panels: [WireEditionPublicationPanel] = []
+    var rails: [WireEditionStoryRail] = []
+    var general: [WireFeedItem] = []
+    var trending: [WireFeedItem] = []
+    for try await row in moduleRows {
+      let value = try row.decode(
+        (String, String, String?, Int, String?, String?, String?, String?, String?, String?).self
+      )
+      let stories = itemsByModule[value.0] ?? []
+      switch value.1 {
+      case "top_stories":
+        leads = stories
+      case "publication_spotlight":
+        guard let key = value.5, let name = value.6, let domain = value.7 else {
+          throw WireCorpusEdgeStoreError.contractMismatch
+        }
+        panels.append(
+          WireEditionPublicationPanel(
+            publication: WireEditionPublication(
+              key: key,
+              id: stories.first?.source.publication,
+              name: name,
+              domain: domain,
+              homepageURL: value.8,
+              iconURL: value.9
+            ),
+            stories: stories
+          )
+        )
+      case "story_rail":
+        guard let reasonValue = value.4,
+          let reason = WireReasonCode(rawValue: reasonValue),
+          let title = value.2
+        else { throw WireCorpusEdgeStoreError.contractMismatch }
+        rails.append(WireEditionStoryRail(id: value.0, title: title, reason: reason, stories: stories))
+      case "general":
+        general = stories
+      case "trending":
+        trending = stories
+      default:
+        throw WireCorpusEdgeStoreError.contractMismatch
+      }
+    }
+
+    let moreRows = try await pool.query(
+      """
+      SELECT EXISTS(
+        SELECT 1 FROM wire_serving.ranked_items
+        WHERE generation_id = \(generation.id) AND position >= \(continuationOrdinal)
+      )
+      """,
+      logger: logger
+    )
+    var hasMore = false
+    for try await row in moreRows { hasMore = try row.decode(Bool.self) }
+    let accounts = try await materializedTalkedAccounts(generationID: generation.id)
+    let age = now.timeIntervalSince(generation.generatedAt)
+    return WireEdition(
+      algorithmVersion: algorithmVersion,
+      generationID: generation.id.uuidString.lowercased(),
+      generatedAt: generation.generatedAt,
+      language: generation.language,
+      cursor: hasMore ? String(continuationOrdinal) : nil,
+      source: age > 10 * 60 ? .staleGeneration : .ranked,
+      degraded: age > 10 * 60,
+      leadStories: leads,
+      publicationPanels: panels,
+      storyRails: rails,
+      generalStories: general,
+      trendingStories: trending,
+      talkedAboutAccounts: accounts.count >= 4 ? accounts : []
+    )
+  }
+
   func item(id: String, now: Date) async throws -> WireCorpusItem? {
     try await requireFreshBaseline(now: now)
     let rows = try await pool.query(
       """
       SELECT canonical_key, canonical_url, representative_uri, title, summary, published_at,
              thumbnail_url, source_name, source_domain, publication_id, author_name,
-             provenance::text, author_key
+             provenance::text, author_key, publication_key,
+             publication_homepage_url, publication_icon_url
       FROM wire_serving.items
       WHERE canonical_key = \(id)
       LIMIT 1
@@ -105,7 +245,7 @@ actor PostgresWireCorpusStore: WireCorpusStoring {
     )
     for try await row in rows {
       return WireCorpusItem(
-        item: try Self.decodeItem(row: row, reasonsJSON: "[]"),
+        item: try Self.decodeItem(row: row, reasonsJSON: "[]", metadataOffset: 13),
         sourceActorKey: try row.makeRandomAccess()[12].decode(String?.self)
       )
     }
@@ -192,7 +332,8 @@ actor PostgresWireCorpusStore: WireCorpusStoring {
       """
       SELECT position, canonical_key, canonical_url, representative_uri, title, summary,
              published_at, thumbnail_url, source_name, source_domain, publication_id,
-             author_name, provenance::text, author_key, reason_codes::text
+             author_name, provenance::text, author_key, reason_codes::text,
+             publication_key, publication_homepage_url, publication_icon_url
       FROM wire_serving.ranked_items
       WHERE generation_id = \(generationID) AND position >= \(startOrdinal)
       ORDER BY position
@@ -209,7 +350,8 @@ actor PostgresWireCorpusStore: WireCorpusStoring {
           item: try Self.decodeItem(
             row: row,
             offset: 1,
-            reasonsJSON: try cells[14].decode(String.self)
+            reasonsJSON: try cells[14].decode(String.self),
+            metadataOffset: 15
           ),
           sourceActorKey: try cells[13].decode(String?.self)
         )
@@ -234,7 +376,8 @@ actor PostgresWireCorpusStore: WireCorpusStoring {
       """
       SELECT canonical_key, canonical_url, representative_uri, title, summary, published_at,
              thumbnail_url, source_name, source_domain, publication_id, author_name,
-             provenance::text, author_key, topic_keys::text, first_seen_at
+             provenance::text, author_key, topic_keys::text, first_seen_at,
+             publication_key, publication_homepage_url, publication_icon_url
       FROM wire_serving.fallback_items
       WHERE (\(language) = 'und' OR language_code = \(language))
       ORDER BY COALESCE(published_at, first_seen_at) DESC, canonical_key
@@ -247,7 +390,7 @@ actor PostgresWireCorpusStore: WireCorpusStoring {
     var ordinal = 0
     for try await row in rows {
       let cells = row.makeRandomAccess()
-      let item = try Self.decodeItem(row: row, reasonsJSON: "[]")
+      let item = try Self.decodeItem(row: row, reasonsJSON: "[]", metadataOffset: 15)
       let publication = try cells[9].decode(String?.self)
       let author = try cells[12].decode(String?.self)
       let topicsJSON = try cells[13].decode(String.self)
@@ -297,7 +440,8 @@ actor PostgresWireCorpusStore: WireCorpusStoring {
   private static func decodeItem(
     row: PostgresRow,
     offset: Int = 0,
-    reasonsJSON: String
+    reasonsJSON: String,
+    metadataOffset: Int? = nil
   ) throws -> WireFeedItem {
     let cells = row.makeRandomAccess()
     let decoder = JSONDecoder()
@@ -314,10 +458,54 @@ actor PostgresWireCorpusStore: WireCorpusStoring {
         name: try cells[offset + 7].decode(String.self),
         domain: try cells[offset + 8].decode(String.self),
         publication: try cells[offset + 9].decode(String?.self),
-        author: try cells[offset + 10].decode(String?.self)
+        author: try cells[offset + 10].decode(String?.self),
+        publicationKey: try metadataOffset.map { try cells[$0].decode(String?.self) } ?? nil,
+        homepageURL: try metadataOffset.map { try cells[$0 + 1].decode(String?.self) } ?? nil,
+        iconURL: try metadataOffset.map { try cells[$0 + 2].decode(String?.self) } ?? nil
       ),
       reasons: (try? decoder.decode([WireReasonCode].self, from: Data(reasonsJSON.utf8))) ?? [],
       provenance: (try? decoder.decode([WireProvenanceKind].self, from: Data(provenanceJSON.utf8))) ?? []
+    )
+  }
+
+  private func materializedTalkedAccounts(
+    generationID: UUID
+  ) async throws -> [WireTalkedAboutAccount] {
+    let rows = try await pool.query(
+      """
+      SELECT position, subject_did, handle, display_name, avatar_url, description
+      FROM wire_serving.edition_talked_accounts
+      WHERE generation_id = \(generationID)
+      ORDER BY position
+      LIMIT 10
+      """,
+      logger: logger
+    )
+    var result: [WireTalkedAboutAccount] = []
+    for try await row in rows {
+      let value = try row.decode((Int, String, String?, String?, String?, String?).self)
+      result.append(
+        WireTalkedAboutAccount(
+          did: value.1,
+          handle: value.2,
+          displayName: value.3,
+          avatarURL: value.4,
+          description: value.5
+        )
+      )
+    }
+    return result
+  }
+
+  private func fallbackEdition(language: String, now: Date) async throws -> WireEdition {
+    let page = try await fallback(language: language, limit: 50, now: now)
+    return WireEditionAssembler.assemble(
+      generationID: page.generationID,
+      generatedAt: page.generatedAt,
+      language: page.language,
+      source: page.source,
+      degraded: page.degraded,
+      rankedItems: page.rows.map(\.item)
     )
   }
 }

@@ -122,6 +122,69 @@ Diversity applies to the first 50 items after deterministic score ordering. Gree
 
 Missing publication/author/community does not consume that dimension. Duplicate topic keys count once. A violating item is deferred and records the first violated dimension. Continue scanning for nonviolating items. If fewer than 40 positions can be filled, relax topic, community, author, publication, then domain caps by one level at a time, recording each relaxation. After the first page, append every unselected item in original score/tie order. Diversity never drops a candidate or changes its score, and safety exclusions never relax.
 
+## News edition assembly (`wire-edition-v1`)
+
+`wire-v1` remains the sole authority for story eligibility and order. `wire-edition-v1`
+is a deterministic presentation pass over that already-ranked order; it never changes a
+story score, exposes a score/rank, or creates a personalized order. Duplicate item IDs
+are removed by first occurrence before assembly.
+
+The edition allocates primary story modules in this order:
+
+1. Select up to four lead stories—one feature and three supporting stories—accepting only
+   the first story from each normalized source domain.
+2. From the unallocated stories, select up to six publication panels in first-appearance
+   order. A panel requires at least two remaining stories and contains at most three.
+   Publication identity prefers the presentation-safe publication key, then publication
+   URI, then normalized source domain.
+3. From the unallocated stories, build at most three stable editorial rails in this order:
+   **Breaking & Developing** (`breaking-developing`) accepts `breaking_story` or
+   `widely_discussed`; **Across Communities** (`across-communities`) accepts
+   `shared_across_communities`; **Resurfacing** (`resurfacing`) accepts `resurfacing`.
+   Hide a rail with fewer than four stories and cap each visible rail at ten.
+4. Put every still-unallocated first-page story in the general remainder, preserving rank
+   order. `fresh_publication` remains a presentation reason on its story and does not create
+   a separate rail.
+
+A story appears in exactly one primary module. The secondary trending list deliberately
+may repeat a primary story: it takes breaking or widely-discussed stories first in their
+existing rank order, fills from the remaining rank order, and caps at ten. All edition
+arrays and panels carry presentation DTOs only; internal score and ordinal fields are not
+encoded.
+
+Talked-about accounts are public subjects of discussion, never the private identities of
+sharers, likers, or reposters. An account qualifies only after appearing across at least
+two distinct stories and three distinct HMAC-counted public speakers. Qualifying accounts
+sort by distinct-story breadth, distinct-speaker breadth, best associated story rank,
+latest mention time, then normalized DID, and cap at ten. Aggregate counts and associated
+story rank are assembler inputs only and are not Codable response fields.
+
+Mention edges come only from explicit `app.bsky.richtext.facet#mention` DIDs and quoted
+record subjects on public source posts. Authors, sharers, likers, and reposters do not
+become discussed accounts unless the same post explicitly mentions or quotes them. A
+source-post deletion retracts its mention edges through the deletion event time, and every
+edge expires with the seven-day signal retention window. Public profile snapshots are
+refreshed asynchronously, expire after 24 hours, and pass baseline moderation before
+materialization. AppView applies viewer moderation again and hides the entire people rail
+unless at least four safe profiles remain.
+
+Article presentation follows one explicit precedence: authoritative Standard Site record,
+fresh page OpenGraph/Twitter metadata, embedded Bluesky external card, then social-post
+text and hostname fallback. The selected fields are copied into the item presentation
+snapshot; browser clients never scrape or fetch metadata per card. `wire_link_metadata_cache`
+keeps successful page metadata fresh for 24 hours and stale-safe for at most seven days,
+uses ETag/Last-Modified conditional refreshes, and negative-caches unusable pages for six
+hours. Fetches accept HTML only, cap response bodies at 512 KiB, use bounded request time,
+follow at most three redirects, and revalidate public DNS on every hop; private, loopback,
+link-local, credential-bearing, and non-HTTPS destinations fail closed. A refresh failure
+may retain an unexpired stale presentation but never replaces authoritative Standard Site
+fields.
+
+`WireEdition` is bound to the same generation, language, source/degraded state, and signed
+continuation cursor as the underlying ranked page. Publication presentation includes a
+stable key, name, domain, optional homepage, and optional icon URL so clients do not need
+to reconstruct identity or scrape page metadata.
+
 ## Languages and fallback
 
 `und` is the global/default bucket. Every global worker cycle builds it first, then discovers and builds at most 12 observed locale buckets. Global and language-specific generations require at least 200 eligible candidates; a locale must also fill a diverse first page of 50. Language tags are lowercase BCP 47 primary languages, maximum 35 characters. Catalog languages are capped at 12.
@@ -158,6 +221,8 @@ PostgreSQL is authoritative for the inbox, items/aliases, short-retention signal
 Ranking defaults live in `WireRankingConfig`/`WireRankingWeights`/`WireDiversityPolicy` and are identified by `wire-v1`. Operational environment controls are:
 
 - `WIRE_FEED_MODE=off|shadow|api|visible`;
+- `WIRE_WORKER_ROLE=combined|rank|drain` (rank and drain split generation from scalable inbox work);
+- `WIRE_INBOX_CLEANUP_ENABLED=true|false` (assign terminal-row cleanup to selected drain replicas);
 - `WIRE_RANK_INTERVAL_SECONDS=300`;
 - `WIRE_CANDIDATE_LIMIT=5000`;
 - `WIRE_GENERATION_RETENTION_SECONDS=172800`;
@@ -167,6 +232,7 @@ Ranking defaults live in `WireRankingConfig`/`WireRankingWeights`/`WireDiversity
 - `WIRE_BASELINE_LABELERS` as comma-separated `source-did|https://labeler-host` authorities (default: Bluesky Moderation Service);
 - `WIRE_LABEL_REFRESH_MAX_AGE_SECONDS=900`.
 - `WIRE_INBOX_BATCH_SIZE=1000`, `WIRE_INBOX_CONCURRENCY=16`, and `WIRE_INBOX_IDLE_MILLISECONDS=250`;
+- `WIRE_METADATA_BATCH_SIZE=32`, `WIRE_METADATA_CONCURRENCY=8`, and `WIRE_METADATA_IDLE_MILLISECONDS=1000`;
 - `WIRE_POSTGRES_MAX_CONNECTIONS=12`.
 
 `DATABASE_URL` is always required. Positive integers reject zero/negative/garbage. Unknown modes fail startup. Ranking weights are not mutable ad-hoc environment variables in this slice: changing them requires a reviewed, versioned config/code deployment, replay evidence, README update, and a new version when ordering semantics change.
@@ -174,6 +240,12 @@ Ranking defaults live in `WireRankingConfig`/`WireRankingWeights`/`WireDiversity
 ## Observability and rollout SLOs
 
 Emit privacy-safe metrics/logs for inbox pending/leased/dead-letter counts and oldest age; signal/rollup freshness; eligible/rejected counts by reason; generation duration/count/version/mode; diversity deferral count/dimension; active generation age; cursor failure category; moderation exclusions; fallback/stale responses; and PostgreSQL/optional-Redis latency/error rates. Generation IDs and canonical keys are allowed operational identifiers; actor/community hashes are not log fields.
+
+The news edition additionally reports metadata cache hit/stale/miss/failure age, edition
+assembly duration, section fill and underfill, publication concentration, eligible people
+count/profile freshness, and `getWireEdition` latency. These measurements may include a
+generation ID or aggregate module key, but never a raw DID, actor/community hash, internal
+score, rank, speaker count, or viewer-to-story join.
 
 Initial gates:
 

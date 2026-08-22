@@ -4,6 +4,7 @@ import WireCore
 struct WireWorkerConfig: Sendable {
   var databaseURL: String
   var mode: WireFeedMode
+  var role: WireWorkerRole
   var intervalSeconds: Int
   var candidateLimit: Int
   var generationRetentionSeconds: Int
@@ -18,6 +19,10 @@ struct WireWorkerConfig: Sendable {
   var inboxIdleMilliseconds: Int
   var inboxCleanupBatchSize: Int
   var inboxCleanupIdleMilliseconds: Int
+  var inboxCleanupEnabled: Bool
+  var metadataBatchSize: Int
+  var metadataConcurrency: Int
+  var metadataIdleMilliseconds: Int
   var postgresMaximumConnections: Int
 
   static func load(_ environment: [String: String]) throws -> WireWorkerConfig {
@@ -29,6 +34,10 @@ struct WireWorkerConfig: Sendable {
     let rawMode = environment["WIRE_FEED_MODE"]?.lowercased() ?? WireFeedMode.off.rawValue
     guard let mode = WireFeedMode(rawValue: rawMode) else {
       throw WireWorkerConfigError.invalidMode(rawMode)
+    }
+    let rawRole = environment["WIRE_WORKER_ROLE"]?.lowercased() ?? WireWorkerRole.combined.rawValue
+    guard let role = WireWorkerRole(rawValue: rawRole) else {
+      throw WireWorkerConfigError.invalidRole(rawRole)
     }
 
     let actorHMACSecret = environment["WIRE_ACTOR_HMAC_SECRET"]?
@@ -45,6 +54,7 @@ struct WireWorkerConfig: Sendable {
     return WireWorkerConfig(
       databaseURL: databaseURL,
       mode: mode,
+      role: role,
       intervalSeconds: try positiveInt(environment, key: "WIRE_RANK_INTERVAL_SECONDS", default: 300),
       candidateLimit: try positiveInt(environment, key: "WIRE_CANDIDATE_LIMIT", default: 5_000),
       generationRetentionSeconds: try positiveInt(
@@ -54,9 +64,10 @@ struct WireWorkerConfig: Sendable {
       languageBucket: environment["WIRE_LANGUAGE_BUCKET"]?.lowercased() ?? "und",
       ranking: WireRankingConfig(),
       actorHMACSecret: actorHMACSecret,
-      baselineLabelers: try WireLabelerEndpoint.parse(
-        environment["WIRE_BASELINE_LABELERS"] ?? WireLabelerEndpoint.blueskyDefault
-      ),
+      baselineLabelers: role.runsGeneration
+        ? try WireLabelerEndpoint.parse(
+          environment["WIRE_BASELINE_LABELERS"] ?? WireLabelerEndpoint.blueskyDefault
+        ) : [],
       labelRefreshMaximumAgeSeconds: try positiveInt(
         environment, key: "WIRE_LABEL_REFRESH_MAX_AGE_SECONDS", default: 900
       ),
@@ -74,6 +85,18 @@ struct WireWorkerConfig: Sendable {
       ),
       inboxCleanupIdleMilliseconds: try boundedPositiveInt(
         environment, key: "WIRE_INBOX_CLEANUP_IDLE_MILLISECONDS", default: 1_000, maximum: 60_000
+      ),
+      inboxCleanupEnabled: try boolean(
+        environment, key: "WIRE_INBOX_CLEANUP_ENABLED", default: true
+      ),
+      metadataBatchSize: try boundedPositiveInt(
+        environment, key: "WIRE_METADATA_BATCH_SIZE", default: 32, maximum: 250
+      ),
+      metadataConcurrency: try boundedPositiveInt(
+        environment, key: "WIRE_METADATA_CONCURRENCY", default: 8, maximum: 32
+      ),
+      metadataIdleMilliseconds: try boundedPositiveInt(
+        environment, key: "WIRE_METADATA_IDLE_MILLISECONDS", default: 1_000, maximum: 60_000
       ),
       postgresMaximumConnections: try boundedPositiveInt(
         environment, key: "WIRE_POSTGRES_MAX_CONNECTIONS", default: 12, maximum: 64
@@ -102,5 +125,18 @@ struct WireWorkerConfig: Sendable {
     let value = try positiveInt(environment, key: key, default: defaultValue)
     guard value <= maximum else { throw WireWorkerConfigError.invalidPositiveInteger(key) }
     return value
+  }
+
+  private static func boolean(
+    _ environment: [String: String],
+    key: String,
+    default defaultValue: Bool
+  ) throws -> Bool {
+    guard let raw = environment[key]?.lowercased() else { return defaultValue }
+    switch raw {
+    case "true": return true
+    case "false": return false
+    default: throw WireWorkerConfigError.invalidBoolean(key)
+    }
   }
 }

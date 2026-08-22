@@ -7,7 +7,7 @@ import PostgresNIO
 @main
 @available(macOS 10.15, macCatalyst 13, iOS 13, tvOS 13, watchOS 6, *)
 struct WireWorkerCommand: AsyncParsableCommand {
-  private enum HealthError: Error { case generationCycleStale }
+  private enum HealthError: Error { case runtimeStale }
   static let configuration = CommandConfiguration(
     abstract: "Materialize The Wire"
   )
@@ -21,7 +21,12 @@ struct WireWorkerCommand: AsyncParsableCommand {
     let serviceLogger = logger
     let environment = ProcessInfo.processInfo.environment
     let config = try WireWorkerConfig.load(environment)
-    try config.ranking.validate()
+    let runtimePlan = WireWorkerRuntimePlan(
+      mode: config.mode,
+      role: config.role,
+      cleanupEnabled: config.inboxCleanupEnabled
+    )
+    if runtimePlan.runsGeneration { try config.ranking.validate() }
     let postgresConfig = try PostgresWireConfig.make(
       from: config.databaseURL,
       maximumConnections: config.postgresMaximumConnections,
@@ -34,14 +39,7 @@ struct WireWorkerCommand: AsyncParsableCommand {
       store: PostgresWirePublicationMetadataStore(pool: pool, logger: serviceLogger),
       queryClient: HTTPWirePublicationQueryClient(httpClient: httpClient)
     )
-    let labelStore = PostgresWireBaselineLabelStore(pool: pool, logger: serviceLogger)
-    let labelRefresher = WireBaselineLabelRefresher(
-      store: labelStore,
-      queryClient: HTTPWireLabelQueryClient(httpClient: httpClient),
-      labelers: config.baselineLabelers,
-      candidateLimit: config.candidateLimit,
-      maximumAge: TimeInterval(config.labelRefreshMaximumAgeSeconds)
-    )
+    let linkMetadataStore = PostgresWireLinkMetadataStore(pool: pool, logger: serviceLogger)
     let inboxProcessor: PostgresWireInboxProcessor?
     if let actorSecret = config.actorHMACSecret {
       inboxProcessor = try PostgresWireInboxProcessor(
@@ -49,24 +47,43 @@ struct WireWorkerCommand: AsyncParsableCommand {
         logger: serviceLogger,
         actorSecret: actorSecret,
         publicationResolver: publicationResolver,
+        linkMetadataStore: linkMetadataStore,
         batchSize: config.inboxBatchSize,
         maximumConcurrentEvents: config.inboxConcurrency
       )
     } else {
       inboxProcessor = nil
     }
-    let cycle = WireWorkerCycle(
-      store: store,
-      config: config,
-      inboxMaintainer: inboxProcessor,
-      labelRefresher: labelRefresher
-    )
+    let cycle: WireWorkerCycle?
+    if runtimePlan.runsGeneration {
+      let labelStore = PostgresWireBaselineLabelStore(pool: pool, logger: serviceLogger)
+      let labelRefresher = WireBaselineLabelRefresher(
+        store: labelStore,
+        queryClient: HTTPWireLabelQueryClient(httpClient: httpClient),
+        labelers: config.baselineLabelers,
+        candidateLimit: config.candidateLimit,
+        maximumAge: TimeInterval(config.labelRefreshMaximumAgeSeconds)
+      )
+      cycle = WireWorkerCycle(
+        store: store,
+        config: config,
+        inboxMaintainer: inboxProcessor,
+        labelRefresher: labelRefresher
+      )
+    } else {
+      cycle = nil
+    }
     let state = WireWorkerHealthState()
     let host = hostname ?? environment["BIND_HOST"] ?? "::"
     let port = port ?? Int(environment["PORT"] ?? "8080") ?? 8080
 
     serviceLogger.info(
-      "Starting The Wire worker", metadata: ["mode": .string(config.mode.rawValue)])
+      "Starting The Wire worker",
+      metadata: [
+        "mode": .string(config.mode.rawValue),
+        "role": .string(config.role.rawValue),
+      ]
+    )
     var runtimeError: Error?
     do {
       try await withThrowingTaskGroup(of: Void.self) { group in
@@ -75,17 +92,24 @@ struct WireWorkerCommand: AsyncParsableCommand {
           try await WireHealthServer.run(
             databaseProbe: { try await store.ping() },
             readinessProbe: {
-              if config.mode != .off {
-                let ready = await state.isReady(
-                  at: Date(),
-                  maximumCycleAge: TimeInterval(max(config.intervalSeconds * 2, 600)),
-                  maximumDrainSuccessAge: 60,
-                  maximumDrainOperationAge: 180
-                )
-                guard ready else { throw HealthError.generationCycleStale }
+              let now = Date()
+              if runtimePlan.requiresDrainReadiness {
+                guard await state.isDrainReady(
+                  at: now,
+                  maximumSuccessAge: 60,
+                  maximumOperationAge: 180
+                ) else { throw HealthError.runtimeStale }
+              }
+              if runtimePlan.requiresCleanupReadiness {
                 guard await state.isCleanupReady(
-                  at: Date(), maximumSuccessAge: 60, maximumOperationAge: 180
-                ) else { throw HealthError.generationCycleStale }
+                  at: now, maximumSuccessAge: 60, maximumOperationAge: 180
+                ) else { throw HealthError.runtimeStale }
+              }
+              if runtimePlan.requiresGenerationReadiness {
+                guard await state.isGenerationReady(
+                  at: now,
+                  maximumCycleAge: TimeInterval(max(config.intervalSeconds * 2, 600))
+                ) else { throw HealthError.runtimeStale }
               }
             },
             host: host,
@@ -93,10 +117,12 @@ struct WireWorkerCommand: AsyncParsableCommand {
             logger: serviceLogger
           )
         }
-        group.addTask {
-          try await WireWorkerRuntime.runForever(cycle: cycle, state: state, logger: serviceLogger)
+        if let cycle {
+          group.addTask {
+            try await WireWorkerRuntime.runForever(cycle: cycle, state: state, logger: serviceLogger)
+          }
         }
-        if config.mode != .off, let inboxProcessor {
+        if runtimePlan.runsDrain, let inboxProcessor {
           group.addTask {
             try await WireInboxDrainRuntime.run(
               processor: inboxProcessor,
@@ -105,6 +131,8 @@ struct WireWorkerCommand: AsyncParsableCommand {
               configuration: .init(idleMilliseconds: config.inboxIdleMilliseconds)
             )
           }
+        }
+        if runtimePlan.runsCleanup, let inboxProcessor {
           group.addTask {
             try await WireInboxCleanupRuntime.run(
               cleaner: inboxProcessor,
@@ -112,6 +140,36 @@ struct WireWorkerCommand: AsyncParsableCommand {
               logger: serviceLogger,
               batchSize: config.inboxCleanupBatchSize,
               idleMilliseconds: config.inboxCleanupIdleMilliseconds
+            )
+          }
+        }
+        if runtimePlan.runsMetadataEnrichment {
+          let enricher = WireLinkMetadataEnricher(
+            store: linkMetadataStore,
+            client: HTTPWireLinkMetadataClient(httpClient: httpClient),
+            logger: serviceLogger,
+            batchSize: config.metadataBatchSize,
+            maximumConcurrentFetches: config.metadataConcurrency
+          )
+          group.addTask {
+            try await WireMetadataEnrichmentRuntime.run(
+              enricher: enricher,
+              logger: serviceLogger,
+              idleMilliseconds: config.metadataIdleMilliseconds
+            )
+          }
+          let profileEnricher = WireTalkedAccountProfileEnricher(
+            store: PostgresWireTalkedAccountProfileStore(pool: pool, logger: serviceLogger),
+            client: HTTPWireTalkedAccountProfileClient(httpClient: httpClient),
+            logger: serviceLogger,
+            batchSize: min(config.metadataBatchSize, 100),
+            maximumConcurrentFetches: min(config.metadataConcurrency, 8)
+          )
+          group.addTask {
+            try await WireMetadataEnrichmentRuntime.runProfiles(
+              enricher: profileEnricher,
+              logger: serviceLogger,
+              idleMilliseconds: config.metadataIdleMilliseconds
             )
           }
         }

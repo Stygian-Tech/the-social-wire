@@ -49,6 +49,9 @@ export type WireSource = {
   domain: string;
   publication?: string;
   author?: string;
+  publicationKey?: string;
+  homepageUrl?: string;
+  iconUrl?: string;
 };
 
 export type WireItem = {
@@ -218,7 +221,11 @@ export function wireItemToEntryListItem(
     wireItem: {
       itemId: item.itemId,
       representativeUri,
-      source: item.source,
+      source: {
+        ...item.source,
+        homepageUrl: normalizeHttpsUrl(item.source.homepageUrl),
+        iconUrl: normalizeHttpsUrl(item.source.iconUrl),
+      },
       reasons: item.reasons.filter(isWireReasonCode).slice(0, 2),
       provenance: item.provenance.filter(isWireProvenanceCode),
       publishedAt: item.publishedAt,
@@ -243,6 +250,17 @@ export function wirePageToEntriesPage(page: WirePage): WireEntriesPage {
 export async function getWireFeedCatalog(
   signal?: AbortSignal,
 ): Promise<WireFeedCatalog> {
+  if (process.env.NEXT_PUBLIC_USE_DUMMY_DATA === "true") {
+    return {
+      enabled: true,
+      available: true,
+      title: "The Wire",
+      subtitle: "Important stories across the social web",
+      supportedLanguages: ["en"],
+      latestGenerationId: "00000000-0000-4000-8000-000000000001",
+      generatedAt: "2026-08-21T22:00:00.000Z",
+    };
+  }
   const response = await publicGatewayFetch(socialWireXrpc.getFeedCatalog, {
     method: "GET",
     signal,

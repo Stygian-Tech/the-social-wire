@@ -96,6 +96,9 @@ export interface EntryListItem {
       domain: string;
       publication?: string;
       author?: string;
+      publicationKey?: string;
+      homepageUrl?: string;
+      iconUrl?: string;
     };
     reasons: string[];
     provenance: string[];

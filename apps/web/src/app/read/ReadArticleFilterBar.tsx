@@ -21,7 +21,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import { useWireEdition } from "@/hooks/useWireEdition";
 import { useWireFeedEntries } from "@/hooks/useWireFeed";
+import { isWireNewsEditionEnabled } from "@/lib/wireEditionClient";
 
 /**
  * Global All / Unread toggle for the read shell (applies to whichever publication is open).
@@ -40,7 +42,12 @@ export function ReadArticleFilterBar() {
   const { refresh } = useSidebarBootstrap();
   const isWire =
     pathname === "/read" && searchParams.get("feed") === "wire";
-  const wire = useWireFeedEntries({ enabled: isWire });
+  const wireNewsEditionEnabled = isWire && isWireNewsEditionEnabled();
+  const wireEdition = useWireEdition({ enabled: wireNewsEditionEnabled });
+  const wireFeed = useWireFeedEntries({
+    enabled: isWire && !wireNewsEditionEnabled,
+  });
+  const wire = wireNewsEditionEnabled ? wireEdition : wireFeed;
 
   const { activeFeedScope } = useReadSidebarScope();
   const { bulkDisabled, applyMarkAllRead } =

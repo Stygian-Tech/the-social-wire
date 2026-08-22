@@ -152,6 +152,7 @@ filter_changed wire_worker \
   'packages/swift/SocialWireRedis/**' \
   'database/migrations/**' \
   'railway/wire-worker.json' \
+  'railway/wire-inbox-drain.json' \
   '.github/workflows/ci.yml'
 
 filter_changed wire_corpus_edge \

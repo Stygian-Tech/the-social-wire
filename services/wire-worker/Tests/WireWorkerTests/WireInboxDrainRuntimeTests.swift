@@ -67,6 +67,28 @@ struct WireInboxDrainRuntimeTests {
     #expect(!(await ready(state, at: now.addingTimeInterval(61))))
   }
 
+  @Test("drain-only readiness does not require a generation cycle")
+  func drainOnlyReadiness() async {
+    let now = Date(timeIntervalSince1970: 2_000_000_000)
+    let state = WireWorkerHealthState()
+    #expect(!(await state.isDrainReady(
+      at: now, maximumSuccessAge: 60, maximumOperationAge: 180
+    )))
+
+    await state.recordDrainStarted(at: now)
+    #expect(await state.isDrainReady(
+      at: now.addingTimeInterval(30), maximumSuccessAge: 60, maximumOperationAge: 180
+    ))
+    #expect(!(await state.isDrainReady(
+      at: now.addingTimeInterval(181), maximumSuccessAge: 60, maximumOperationAge: 180
+    )))
+
+    await state.recordDrainSuccess(at: now)
+    #expect(await state.isDrainReady(
+      at: now.addingTimeInterval(59), maximumSuccessAge: 60, maximumOperationAge: 180
+    ))
+  }
+
   private func ready(_ state: WireWorkerHealthState, at date: Date) async -> Bool {
     await state.isReady(
       at: date,

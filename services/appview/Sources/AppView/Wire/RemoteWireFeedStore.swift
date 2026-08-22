@@ -117,6 +117,76 @@ actor RemoteWireFeedStore: WireFeedStore {
     )
   }
 
+  func getEdition(
+    language: String?,
+    viewerDid: String?,
+    now: Date
+  ) async throws -> WireEdition {
+    guard mode.servesAPI else { throw WireServingError.unavailable }
+    let requestedLanguage = Self.primaryLanguage(language)
+    let target = Self.target(
+      path: "/internal/wire/v1/edition",
+      query: [("language", requestedLanguage)]
+    )
+    let response = try await transportResponse(target: target, allowsNotFound: false)
+    guard response.contractVersion == 2 else { throw WireServingError.unavailable }
+    let edition: WireEdition = try decode(response.body)
+    let moderation = try await moderationSnapshot(viewerDID: viewerDid, now: now)
+    let allows: (WireFeedItem) -> Bool = { item in
+      moderation?.allows(
+        item: item.itemID,
+        title: item.title,
+        summary: item.summary,
+        representativeURI: item.representativeURI
+      ) ?? true
+    }
+    let accounts = edition.talkedAboutAccounts.filter { account in
+      moderation?.allows(
+        item: account.did,
+        title: account.displayName ?? account.handle ?? account.did,
+        summary: nil,
+        representativeURI: nil
+      ) ?? true
+    }
+    let cursor: String?
+    if let rawNextOrdinal = edition.cursor, let nextOrdinal = Int(rawNextOrdinal) {
+      cursor = try cursorCodec.encode(
+        WireCursor(
+          generationID: edition.generationID,
+          language: edition.language,
+          nextOrdinal: nextOrdinal
+        )
+      )
+    } else {
+      cursor = nil
+    }
+    return WireEdition(
+      algorithmVersion: edition.algorithmVersion,
+      generationID: edition.generationID,
+      generatedAt: edition.generatedAt,
+      language: edition.language,
+      cursor: cursor,
+      source: edition.source,
+      degraded: edition.degraded,
+      leadStories: edition.leadStories.filter(allows),
+      publicationPanels: edition.publicationPanels.compactMap { panel in
+        let stories = panel.stories.filter(allows)
+        guard stories.count >= WireEditionAssembler.minimumStoriesPerPublicationPanel else {
+          return nil
+        }
+        return WireEditionPublicationPanel(publication: panel.publication, stories: stories)
+      },
+      storyRails: edition.storyRails.compactMap { rail in
+        let stories = rail.stories.filter(allows)
+        guard stories.count >= WireEditionAssembler.minimumStoriesPerRail else { return nil }
+        return WireEditionStoryRail(reason: rail.reason, stories: stories)
+      },
+      generalStories: edition.generalStories.filter(allows),
+      trendingStories: edition.trendingStories.filter(allows),
+      talkedAboutAccounts: accounts.count >= 4 ? accounts : []
+    )
+  }
+
   func getItem(itemId: String, viewerDid: String?) async throws -> WireItemDetail? {
     guard mode.servesAPI else { throw WireServingError.unavailable }
     let target = Self.target(path: "/internal/wire/v1/item", query: [("itemId", itemId)])
@@ -164,7 +234,11 @@ actor RemoteWireFeedStore: WireFeedStore {
     }
     switch response.statusCode {
     case 200:
-      guard response.contractVersion == 1 else { throw WireServingError.unavailable }
+      guard let contractVersion = response.contractVersion,
+        (1...2).contains(contractVersion)
+      else {
+        throw WireServingError.unavailable
+      }
       return response
     case 400: throw WireServingError.invalidCursor
     case 404 where allowsNotFound: return response
