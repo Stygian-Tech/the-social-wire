@@ -1,6 +1,12 @@
 import Foundation
 
 public enum WireRanker {
+  private enum AdmissionTier {
+    case primary
+    case qualityBackfill
+    case generalBackfill
+  }
+
   public static func rank(
     candidates: [WireCandidate],
     asOf: Date,
@@ -11,16 +17,16 @@ public enum WireRanker {
     var rejectedForAge = 0
     var rejectedForQuality = 0
     var rejectedForSignalFloor = 0
-    var scored: [WireScoredCandidate] = []
+    var primary: [WireScoredCandidate] = []
+    var qualityBackfill: [WireScoredCandidate] = []
+    var generalBackfill: [WireScoredCandidate] = []
 
     let signalEligible = candidates.filter { candidate in
       let age = max(0, asOf.timeIntervalSince(candidate.publishedAt ?? candidate.firstSeenAt))
-      return candidate.distinctActors24h >= config.minimumDistinctActors
-        || candidate.recommendations24h >= config.minimumRecommendations
-        || qualifiesFreshPublicationLane(candidate, age: age)
+      return admissionTier(for: candidate, age: age, config: config) != nil
     }
     let shareVelocityP90 = percentile(signalEligible.map(\.shares1h), quantile: 0.90)
-    let sharersP90 = percentile(signalEligible.map(\.distinctActors24h), quantile: 0.90)
+    let sharersP90 = percentile(signalEligible.map(\.shares24h), quantile: 0.90)
     let communitiesP75 = percentile(signalEligible.map(\.communities24h), quantile: 0.75)
 
     for candidate in candidates {
@@ -36,16 +42,13 @@ public enum WireRanker {
         rejectedForQuality += 1
         continue
       }
-      guard candidate.distinctActors24h >= config.minimumDistinctActors
-        || candidate.recommendations24h >= config.minimumRecommendations
-        || qualifiesFreshPublicationLane(candidate, age: age)
-      else {
+      guard let tier = admissionTier(for: candidate, age: age, config: config) else {
         rejectedForSignalFloor += 1
         continue
       }
 
       let distinctSharers24h = logarithmicRatio(
-        candidate.distinctActors24h,
+        candidate.shares24h,
         target: config.actorBreadthTarget
       )
       let shareVelocity1h = velocity(hour: candidate.shares1h, day: candidate.shares24h)
@@ -66,6 +69,8 @@ public enum WireRanker {
         Double(candidate.shares1h) / (sevenDayHourlyBaseline * 3)
       )
       let sourceConfidence = clamp(candidate.sourceConfidence)
+      let standardSiteAuthority = candidate.isStandardSite == true ? 1.0 : 0.0
+      let openGraphMetadata = candidate.hasUsableOpenGraphMetadata == true ? 1.0 : 0.0
       let weightTotal = config.weights.all.reduce(0, +)
       let score = (
         distinctSharers24h * config.weights.distinctSharers24h
@@ -76,29 +81,53 @@ public enum WireRanker {
           + freshness * config.weights.freshness
           + resurfacingAcceleration * config.weights.resurfacingAcceleration
           + sourceConfidence * config.weights.sourceConfidence
+          + standardSiteAuthority * config.weights.standardSiteAuthority
+          + openGraphMetadata * config.weights.openGraphMetadata
       ) / weightTotal
 
       guard score.isFinite else { continue }
 
-      scored.append(
-        WireScoredCandidate(
-          candidate: candidate,
-          score: score,
-          reasonCodes: reasons(
-            for: candidate,
-            age: age,
-            shareVelocityP90: shareVelocityP90,
-            sharersP90: sharersP90,
-            communitiesP75: communitiesP75
-          )
+      let scoredCandidate = WireScoredCandidate(
+        candidate: candidate,
+        score: score,
+        reasonCodes: reasons(
+          for: candidate,
+          age: age,
+          shareVelocityP90: shareVelocityP90,
+          sharersP90: sharersP90,
+          communitiesP75: communitiesP75
         )
       )
+      switch tier {
+      case .primary: primary.append(scoredCandidate)
+      case .qualityBackfill: qualityBackfill.append(scoredCandidate)
+      case .generalBackfill: generalBackfill.append(scoredCandidate)
+      }
     }
 
-    scored.sort {
-      if $0.score != $1.score { return $0.score > $1.score }
-      return $0.candidate.canonicalKey < $1.candidate.canonicalKey
+    func sort(_ values: inout [WireScoredCandidate]) {
+      values.sort {
+        if $0.score != $1.score { return $0.score > $1.score }
+        return $0.candidate.canonicalKey < $1.candidate.canonicalKey
+      }
     }
+    sort(&primary)
+    sort(&qualityBackfill)
+    sort(&generalBackfill)
+
+    let qualityCount = min(
+      qualityBackfill.count,
+      max(0, config.minimumRankedItems - primary.count)
+    )
+    let generalCount = min(
+      generalBackfill.count,
+      max(0, config.minimumRankedItems - primary.count - qualityCount)
+    )
+    rejectedForSignalFloor += qualityBackfill.count - qualityCount
+      + generalBackfill.count - generalCount
+    let scored = primary
+      + qualityBackfill.prefix(qualityCount)
+      + generalBackfill.prefix(generalCount)
     let diversity = WireDiversityReranker.rerank(scored, policy: config.diversity)
     return WireRankingResult(
       items: diversity.items,
@@ -108,6 +137,8 @@ public enum WireRanker {
         rejectedForAge: rejectedForAge,
         rejectedForQuality: rejectedForQuality,
         rejectedForSignalFloor: rejectedForSignalFloor,
+        qualityBackfillCount: qualityCount,
+        generalBackfillCount: generalCount,
         diversityDeferrals: diversity.interventions.count
       )
     )
@@ -144,7 +175,7 @@ public enum WireRanker {
     if age <= 21_600, candidate.shares1h >= max(1, shareVelocityP90) {
       result.append(.breakingStory)
     }
-    if candidate.distinctActors24h >= max(1, sharersP90) { result.append(.widelyDiscussed) }
+    if candidate.shares24h >= max(1, sharersP90) { result.append(.widelyDiscussed) }
     if candidate.communities24h >= 3,
       candidate.communities24h >= max(1, communitiesP75)
     {
@@ -167,8 +198,29 @@ public enum WireRanker {
     _ candidate: WireCandidate,
     age: TimeInterval
   ) -> Bool {
-    age <= 86_400
+    age <= 3 * 86_400
       && candidate.sourceConfidence >= 0.75
-      && candidate.representativeURI?.contains("/site.standard.") == true
+      && candidate.isStandardSite == true
+  }
+
+  private static func admissionTier(
+    for candidate: WireCandidate,
+    age: TimeInterval,
+    config: WireRankingConfig
+  ) -> AdmissionTier? {
+    if candidate.shares24h >= config.minimumHighIntentActors
+      || candidate.recommendations24h >= config.minimumRecommendations
+      || (qualifiesFreshPublicationLane(candidate, age: age)
+        && candidate.shares24h >= config.standardSiteMinimumHighIntentActors)
+    {
+      return .primary
+    }
+    guard candidate.shares24h >= config.backfillMinimumHighIntentActors
+      || candidate.recommendations24h >= config.backfillMinimumRecommendations
+    else { return nil }
+    if candidate.isStandardSite == true || candidate.hasUsableOpenGraphMetadata == true {
+      return .qualityBackfill
+    }
+    return .generalBackfill
   }
 }

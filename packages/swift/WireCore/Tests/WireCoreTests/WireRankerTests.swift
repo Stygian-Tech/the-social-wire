@@ -23,7 +23,7 @@ struct WireRankerTests {
     lowQuality.sourceConfidence = 0.1
     var quiet = candidate("quiet", actors: 0, recommendations: 0)
     quiet.representativeURI = "at://did:example:quiet/app.bsky.feed.post/1"
-    let accepted = candidate("accepted", actors: 3)
+    let accepted = candidate("accepted", actors: 5)
     let result = try WireRanker.rank(
       candidates: [old, lowQuality, quiet, accepted], asOf: now, config: .init()
     )
@@ -48,7 +48,7 @@ struct WireRankerTests {
   @Test("recommendations can satisfy the admission floor")
   func recommendationsAdmit() throws {
     let result = try WireRanker.rank(
-      candidates: [candidate("recommended", actors: 0, recommendations: 1)],
+      candidates: [candidate("recommended", actors: 0, recommendations: 2)],
       asOf: now,
       config: .init()
     )
@@ -58,7 +58,9 @@ struct WireRankerTests {
   @Test("trusted direct publications have a bounded fresh-content lane")
   func freshPublicationLane() throws {
     let result = try WireRanker.rank(
-      candidates: [candidate("fresh", actors: 0, signals1h: 0, recommendations: 0)],
+      candidates: [
+        candidate("fresh", actors: 3, signals1h: 0, recommendations: 0, standardSite: true)
+      ],
       asOf: now,
       config: .init()
     )
@@ -66,12 +68,61 @@ struct WireRankerTests {
     #expect(result.items[0].reasonCodes.contains(.freshPublication))
   }
 
+  @Test("passive engagement cannot satisfy the conversation gate")
+  func passiveEngagementDoesNotAdmit() throws {
+    var passive = candidate("passive", actors: 20)
+    passive.shares24h = 0
+    passive.recommendations24h = 0
+    passive.distinctLikes24h = 20
+    passive.distinctReposts24h = 20
+    let result = try WireRanker.rank(candidates: [passive], asOf: now, config: .init())
+    #expect(result.items.isEmpty)
+    #expect(result.diagnostics.rejectedForSignalFloor == 1)
+  }
+
+  @Test("Standard Site still requires high-intent conversation")
+  func standardSiteRequiresConversation() throws {
+    let quiet = candidate("quiet-standard", actors: 2, standardSite: true)
+    let discussed = candidate("discussed-standard", actors: 3, standardSite: true)
+    let result = try WireRanker.rank(
+      candidates: [quiet, discussed], asOf: now, config: .init()
+    )
+    #expect(result.items.map(\.candidate.canonicalKey) == ["discussed-standard"])
+  }
+
+  @Test("bounded source quality signals break otherwise equal ranking ties")
+  func sourceQualitySignals() throws {
+    let plain = candidate("a-plain", actors: 8)
+    let openGraph = candidate("b-open-graph", actors: 8, openGraph: true)
+    let standard = candidate("c-standard", actors: 8, standardSite: true)
+    let result = try WireRanker.rank(
+      candidates: [plain, openGraph, standard], asOf: now, config: .init()
+    )
+    #expect(result.items.map(\.candidate.canonicalKey) == [
+      "c-standard", "b-open-graph", "a-plain",
+    ])
+  }
+
+  @Test("quality backfill fills a sparse edition before general backfill")
+  func qualityBackfill() throws {
+    let quality = candidate("quality", actors: 3, openGraph: true)
+    let general = candidate("general", actors: 3)
+    let result = try WireRanker.rank(
+      candidates: [general, quality], asOf: now, config: .init(minimumRankedItems: 1)
+    )
+    #expect(result.items.map(\.candidate.canonicalKey) == ["quality"])
+    #expect(result.diagnostics.qualityBackfillCount == 1)
+    #expect(result.diagnostics.generalBackfillCount == 0)
+  }
+
   private func candidate(
     _ key: String,
     actors: Int,
     signals1h: Int = 2,
     communities: Int = 2,
-    recommendations: Int = 0
+    recommendations: Int = 0,
+    standardSite: Bool = false,
+    openGraph: Bool = false
   ) -> WireCandidate {
     WireCandidate(
       canonicalKey: key,
@@ -92,7 +143,11 @@ struct WireRankerTests {
       signals7d: 20,
       communities24h: communities,
       recommendations24h: recommendations,
-      sourceConfidence: 0.8
+      shares1h: signals1h,
+      shares24h: actors,
+      sourceConfidence: 0.8,
+      isStandardSite: standardSite,
+      hasUsableOpenGraphMetadata: openGraph
     )
   }
 }

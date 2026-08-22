@@ -7,7 +7,7 @@
 1. Public Jetstream/RSS producers place idempotent envelopes in `wire_ingestion_inbox`. The durable inbox owns retry, lease, dead-letter, and expiry state; a network message is not considered accepted until PostgreSQL has it.
 2. A dedicated drain runtime continuously claims bounded inbox batches, applies different repositories concurrently while preserving repository FIFO, and uses bounded idle/error backoff. Claims order ready work by retry time before sequence so retries in one repository cannot starve unrelated pending repositories. The applier canonicalizes the linked story, upserts `wire_items` plus `wire_item_aliases`, records presentation-safe provenance, applies moderation/source labels, and inserts a deduplicated `wire_signal_events` row. Standard Site publication records form a rebuildable PostgreSQL resolver projection; documents carrying a publication AT-URI plus relative path use that projection or a bounded public PLC/PDS lookup. PLC/PDS DNS is revalidated immediately before every request, mixed or non-global answer sets fail closed, and redirects are not followed. Unresolved dependencies retry for no more than 24 hours.
 3. The applier updates bounded, keyed-hash graph state (`wire_active_actors`, `wire_follow_edges`, `wire_actor_communities`) and privacy-safe aggregate counts in `wire_signal_rollups`. DIDs for sharers, likers, reposters, and other engagement actors never enter a serving row. A public source/author DID may be retained only with its public item for attribution and viewer block/mute filtering; it is never a ranking feature or community identifier.
-4. Every five minutes by default, `wire-worker` prunes bounded graph state, refreshes community assignments when due, rebuilds exact rollups, refreshes baseline labels, loads eligible item/rollup rows, computes the deterministic `wire-v1` score, applies first-page diversity, and writes an immutable `wire_rank_generations` plus its `wire_ranked_items`. Continuous archive draining never increases labeler cadence.
+4. Every five minutes by default, `wire-worker` prunes bounded graph state, refreshes community assignments when due, rebuilds exact rollups, refreshes baseline labels, loads eligible item/rollup/metadata rows, computes the deterministic `wire-v2` score, applies first-page diversity, and writes an immutable `wire_rank_generations` plus its `wire_ranked_items`. Continuous archive draining never increases labeler cadence.
 5. In `shadow` mode the generation remains queryable for comparison but is not served. In `api` or `visible` mode the worker moves `wire_feed_state.active_generation_id` in the same PostgreSQL transaction as the completed generation. `off` performs read-only health probes and no data operation.
 6. An AppView `WireFeedStore` serving adapter reads the active generation, joins the presentation snapshot, filters labels again, and returns the approved `WirePage`, `WireItemDetail`, or singleton `WireFeedCatalog` contract. A Redis copy may be read first, but a miss or disagreement always resolves from PostgreSQL.
 
@@ -36,11 +36,13 @@ A candidate is eligible when all of these are true:
 
 - item age is no more than 2,592,000 seconds (30 days);
 - source confidence is finite and at least `0.25`;
-- it has at least three distinct actors in 24 hours, at least one explicit recommendation in 24 hours, or it is trusted direct Standard Site content published within the last 24 hours (the bounded fresh-content lane);
+- it has at least five distinct high-intent actors in 24 hours or two explicit recommendations in 24 hours; a trusted Standard Site story published within 72 hours has a bounded lane at three distinct high-intent actors;
 - the item is marked eligible, not expired, and matches the generation language (unless the bucket is `und`);
 - no current `moderation`/`visibility` label has value `block`, `exclude`, `adult`, `graphic`, or `spam`.
 
-Do not ingest private posts, deleted/tombstoned records, blocks/mutes, DMs, raw viewer actions, non-public graph edges, bot/spam traffic identified by labels, or repeated events with the same transport key. That key is derived from environment, source host, cursor kind, and sequence; it deliberately excludes replay source generation. Source-record updates replace older raw signal state and deletes retract only state at or before their event time, so overlapping generation backfills remain idempotent without erasing newer updates. An actor contributes at most once to each distinct-actor window even if they emit several engagement events. Recommendation is an admission signal, not a guarantee of placement.
+Do not ingest private posts, deleted/tombstoned records, blocks/mutes, DMs, raw viewer actions, non-public graph edges, bot/spam traffic identified by labels, or repeated events with the same transport key. That key is derived from environment, source host, cursor kind, and sequence; it deliberately excludes replay source generation. Source-record updates replace older raw signal state and deletes retract only state at or before their event time, so overlapping generation backfills remain idempotent without erasing newer updates. An actor contributes at most once to each distinct-actor window even if they emit several engagement events. High-intent actors are the distinct actors behind a share, quote, recommendation, or direct publication event; passive likes, reposts, and replies cannot admit a story on their own. Recommendation is an admission signal, not a guarantee of placement.
+
+To keep a sparse edition useful, `wire-v2` has a deterministic reserve. When the strict pool has fewer than 50 stories, candidates meeting the former three-high-intent-actor or one-recommendation floor may fill only the missing positions. The quality reserve takes usable Standard Site/OpenGraph-backed candidates first, then a general reserve. Metadata never admits an article by itself, and reserve stories never displace strict stories.
 
 Retention defaults are code constants in `WireDataPolicy`:
 
@@ -64,14 +66,14 @@ All cleanup is bounded by `WIRE_RETENTION_BATCH_SIZE` (default 5,000). The Datab
 
 The active graph is not the social graph archive. Keep at most the 250,000 most recently active actors from the last 30 days and at most the 200 most recently observed public follow edges per actor (`WireDataPolicy.maximumFollowEdgesPerActor`). Recompute deterministic community assignments every six hours using the current bounded graph, with a stable `algorithm_version` and stable tie ordering by hashed key. Assignments expire after seven days so an interrupted clustering job cannot become permanent authority. Serving sees only per-item community spread, never actor or edge rows.
 
-## Exact ranking algorithm (`wire-v1`)
+## Exact ranking algorithm (`wire-v2`)
 
-Let `clamp(x) = min(1, max(0, x))`, `age` be nonnegative seconds since `publishedAt` (or `firstSeenAt`), `a24` be distinct sharers in 24 hours, `sh1`/`sh24` be shares in one/24 hours, `l1`/`l24` be likes, `r1`/`r24` be reposts, `la24`/`ra24` be their distinct actor counts, `s7` be all seven-day signals, and `c24` be distinct qualifying communities.
+Let `clamp(x) = min(1, max(0, x))`, `age` be nonnegative seconds since `publishedAt` (or `firstSeenAt`), `sh1`/`sh24` be distinct high-intent actors in one/24 hours, `l1`/`l24` be likes, `r1`/`r24` be reposts, `la24`/`ra24` be their distinct actor counts, `s7` be all seven-day signals, and `c24` be distinct qualifying communities. `standardSiteAuthority` is one only for authoritative `standard_site` provenance. `openGraphMetadata` is one only while a successful OpenGraph cache row remains fresh or stale-safe and contains at least two useful presentation fields.
 
 Normalized components:
 
 ```text
-distinctSharers24h      = clamp(log1p(a24) / log1p(30))
+distinctSharers24h      = clamp(log1p(sh24) / log1p(30))
 shareVelocity1h         = clamp(sh1 / (max(1, sh24 / 24) * 4))
 likeBreadthVelocity     = (clamp(log1p(la24) / log1p(30))
                            + clamp(l1 / (max(1, l24 / 24) * 4))) / 2
@@ -81,19 +83,23 @@ communitySpread         = clamp(c24 / 5)
 freshness               = 0.5 ^ (age / 64,800)
 resurfacingAcceleration = clamp(sh1 / (max(1, s7 / 168) * 3))
 sourceConfidence        = clamp(sourceConfidence)
+standardSiteAuthority   = isStandardSite ? 1 : 0
+openGraphMetadata       = hasUsableOpenGraphMetadata ? 1 : 0
 ```
 
 Score:
 
 ```text
-0.24 * distinctSharers24h
-+ 0.20 * shareVelocity1h
-+ 0.08 * likeBreadthVelocity
-+ 0.08 * repostBreadthVelocity
-+ 0.15 * communitySpread
-+ 0.12 * freshness
-+ 0.08 * resurfacingAcceleration
-+ 0.05 * sourceConfidence
+0.22 * distinctSharers24h
++ 0.14 * shareVelocity1h
++ 0.04 * likeBreadthVelocity
++ 0.04 * repostBreadthVelocity
++ 0.18 * communitySpread
++ 0.10 * freshness
++ 0.06 * resurfacingAcceleration
++ 0.08 * sourceConfidence
++ 0.09 * standardSiteAuthority
++ 0.05 * openGraphMetadata
 ```
 
 The implementation divides by the sum of weights, so validated future configurations remain normalized. Weights must be finite/nonnegative with a positive total. Thresholds/targets and time intervals must be positive and source confidence must stay in `[0, 1]`. Sort by score descending, then `canonicalKey` ascending; input order, database plan, clock locale, and process count must not change output.
@@ -105,7 +111,7 @@ Compute every applicable reason, then emit at most two using this priority order
 1. `breaking_story`: published within six hours and one-hour shares are at or above the generation P90.
 2. `widely_discussed`: 24-hour distinct sharers are at or above P90.
 3. `shared_across_communities`: at least three qualifying communities and spread at or above P75.
-4. `fresh_publication`: trusted direct Standard Site publication content within 24 hours.
+4. `fresh_publication`: trusted direct Standard Site publication content within 72 hours.
 5. `resurfacing`: at least 48 hours old with current hourly shares at least three times the seven-day hourly baseline.
 
 Reasons are presentation-safe explanations, not raw counts. `WireFeedItem` also caps decoded/constructed reasons at two and provenance at eight. Public DTOs never expose score or internal rank.
@@ -124,7 +130,7 @@ Missing publication/author/community does not consume that dimension. Duplicate 
 
 ## News edition assembly (`wire-edition-v2`)
 
-`wire-v1` remains the sole authority for story eligibility and order. `wire-edition-v2`
+`wire-v2` remains the sole authority for story eligibility and order. `wire-edition-v2`
 is a deterministic presentation pass over that already-ranked order; it never changes a
 story score, exposes a score/rank, or creates a personalized order. Duplicate item IDs
 are removed by first occurrence before assembly.
@@ -136,7 +142,7 @@ The edition allocates primary story modules in this order:
    `site.standard.document` or `site.standard.entry`, the final supporting slot goes to the
    best such story within the canonical top ten when doing so preserves source diversity.
    The feature and first two supporting stories never move. This is a bounded presentation
-   tie-break; it does not alter `wire-v1` scores, eligibility, or continuation order.
+   tie-break; it does not alter `wire-v2` scores, eligibility, or continuation order.
 2. From the unallocated stories, select up to six publication panels in first-appearance
    order. A panel requires at least two remaining stories and contains at most three.
    Publication identity prefers the presentation-safe publication key, then publication
@@ -181,15 +187,16 @@ metadata may fill a missing Standard Site thumbnail, byline, publication timesta
 or description but cannot replace an authoritative non-empty value. The selected fields
 include bounded Schema.org JSON-LD article fallbacks after explicit OpenGraph/Twitter tags,
 which recovers publisher names, authors, dates, logos, and images from sites that omit OG.
-are copied into the item presentation
-snapshot; browser clients never scrape or fetch metadata per card. `wire_link_metadata_cache`
+These fields are copied into the item presentation snapshot; browser clients never scrape
+or fetch metadata per card. `wire_link_metadata_cache`
 keeps successful page metadata fresh for 24 hours and stale-safe for at most seven days,
 uses ETag/Last-Modified conditional refreshes, and negative-caches unusable pages for six
 hours. Fetches accept HTML only, cap response bodies at 512 KiB, use bounded request time,
 follow at most three redirects, and revalidate public DNS on every hop; private, loopback,
 link-local, credential-bearing, and non-HTTPS destinations fail closed. A refresh failure
 may retain an unexpired stale presentation but never replaces authoritative Standard Site
-fields.
+fields. Ranking receives only a bounded availability bit for a usable, non-expired
+OpenGraph cache result. It never receives page text, and OpenGraph cannot satisfy admission.
 
 `WireEdition` is bound to the same generation, language, source/degraded state, and signed
 continuation cursor as the underlying ranked page. Publication presentation includes a
@@ -198,14 +205,15 @@ to reconstruct identity or scrape page metadata.
 
 ## Languages and fallback
 
-`und` is the global/default bucket. Every global worker cycle builds it first, then discovers and builds at most 12 observed locale buckets. Global and language-specific generations require at least 200 eligible candidates; a locale must also fill a diverse first page of 50. Language tags are lowercase BCP 47 primary languages, maximum 35 characters. Catalog languages are capped at 12.
+`und` is the global/default bucket. Every global worker cycle builds it first, then discovers and builds at most 12 observed locale buckets. Global and language-specific generations require at least 50 eligible candidates, exactly the complete diverse first-page target. Language tags are lowercase BCP 47 primary languages, maximum 35 characters. Catalog languages are capped at 12.
 
 Serving behavior:
 
 - return `source: ranked`, `degraded: false` for a fresh active generation in the requested language;
 - return `source: stale_generation`, `degraded: true` when the last safe generation is beyond the freshness SLO but not expired;
 - fall back to the ranked `und` generation when a requested language has no eligible locale generation;
-- after 30 minutes, serve a deterministic diversity-capped recent trusted-content fallback from PostgreSQL; never synthesize or merge a client-side feed.
+- keep serving the last active quality generation as stale until its retention expiry rather than replacing it with a looser recency feed;
+- when no retained generation exists, serve a deterministic engagement-gated quality fallback that prefers Standard Site stories and requires trusted provenance, usable OpenGraph metadata, or high source confidence; never synthesize or merge a client-side feed.
 
 ## Generations and cursors
 
@@ -229,7 +237,7 @@ PostgreSQL is authoritative for the inbox, items/aliases, short-retention signal
 
 ## Configuration and validation
 
-Ranking defaults live in `WireRankingConfig`/`WireRankingWeights`/`WireDiversityPolicy` and are identified by `wire-v1`. Operational environment controls are:
+Ranking defaults live in `WireRankingConfig`/`WireRankingWeights`/`WireDiversityPolicy` and are identified by `wire-v2`. Operational environment controls are:
 
 - `WIRE_FEED_MODE=off|shadow|api|visible`;
 - `WIRE_WORKER_ROLE=combined|rank|drain` (rank and drain split generation from scalable inbox work);
