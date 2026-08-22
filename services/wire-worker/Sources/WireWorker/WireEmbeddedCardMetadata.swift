@@ -18,6 +18,8 @@ enum WireEmbeddedCardMetadata {
       description: description,
       imageURL: imageURL,
       siteName: nil,
+      authorName: nil,
+      publishedAt: nil,
       iconURL: nil,
       etag: nil,
       lastModified: nil,

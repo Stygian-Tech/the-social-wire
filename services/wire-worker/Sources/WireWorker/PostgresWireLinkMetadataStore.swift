@@ -14,12 +14,14 @@ struct PostgresWireLinkMetadataStore: WireLinkMetadataStoring {
     try await pool.query(
       """
       INSERT INTO wire_link_metadata_cache
-        (canonical_key, canonical_url, title, description, image_url, site_name, icon_url,
+        (canonical_key, canonical_url, title, description, image_url, site_name, author_name,
+         published_at, icon_url,
          etag, last_modified, source, status, fetched_at, fresh_until, stale_until,
          retry_after, failure_count, updated_at)
       VALUES
         (\(canonicalKey), \(metadata.canonicalURL), \(metadata.title), \(metadata.description),
-         \(metadata.imageURL), \(metadata.siteName), \(metadata.iconURL), NULL, NULL,
+         \(metadata.imageURL), \(metadata.siteName), \(metadata.authorName),
+         \(metadata.publishedAt), \(metadata.iconURL), NULL, NULL,
          'embedded_card', 'pending', \(asOf), \(asOf), \(asOf.addingTimeInterval(7 * 86_400)),
          \(asOf), 0, \(asOf))
       ON CONFLICT (canonical_key) DO UPDATE SET
@@ -29,6 +31,10 @@ struct PostgresWireLinkMetadataStore: WireLinkMetadataStoring {
           THEN wire_link_metadata_cache.description ELSE COALESCE(EXCLUDED.description, wire_link_metadata_cache.description) END,
         image_url = CASE WHEN wire_link_metadata_cache.source = 'open_graph'
           THEN wire_link_metadata_cache.image_url ELSE COALESCE(EXCLUDED.image_url, wire_link_metadata_cache.image_url) END,
+        author_name = CASE WHEN wire_link_metadata_cache.source = 'open_graph'
+          THEN wire_link_metadata_cache.author_name ELSE COALESCE(EXCLUDED.author_name, wire_link_metadata_cache.author_name) END,
+        published_at = CASE WHEN wire_link_metadata_cache.source = 'open_graph'
+          THEN wire_link_metadata_cache.published_at ELSE COALESCE(EXCLUDED.published_at, wire_link_metadata_cache.published_at) END,
         stale_until = GREATEST(wire_link_metadata_cache.stale_until, EXCLUDED.stale_until),
         retry_after = LEAST(wire_link_metadata_cache.retry_after, EXCLUDED.retry_after),
         updated_at = EXCLUDED.updated_at
@@ -49,6 +55,10 @@ struct PostgresWireLinkMetadataStore: WireLinkMetadataStoring {
         FROM wire_items item
         WHERE item.eligible = TRUE AND item.expires_at > \(asOf)
           AND item.canonical_url LIKE 'https://%'
+          AND NOT EXISTS (
+            SELECT 1 FROM wire_link_metadata_cache cache
+            WHERE cache.canonical_key = item.canonical_key
+          )
         ORDER BY item.last_signal_at DESC NULLS LAST, item.canonical_key
         LIMIT \(boundedLimit * 4)
         ON CONFLICT (canonical_key) DO NOTHING
@@ -61,7 +71,7 @@ struct PostgresWireLinkMetadataStore: WireLinkMetadataStoring {
           SELECT canonical_key
           FROM wire_link_metadata_cache
           WHERE retry_after <= \(asOf)
-            AND status IN ('pending', 'retry', 'negative', 'fresh')
+            AND status IN ('pending', 'retry', 'negative', 'fresh', 'stale', 'failed', 'fetching')
             AND (fresh_until IS NULL OR fresh_until <= \(asOf))
           ORDER BY retry_after, canonical_key
           FOR UPDATE SKIP LOCKED
@@ -123,7 +133,8 @@ struct PostgresWireLinkMetadataStore: WireLinkMetadataStoring {
         UPDATE wire_link_metadata_cache
         SET canonical_url = \(metadata.canonicalURL), title = \(metadata.title),
             description = \(metadata.description), image_url = \(metadata.imageURL),
-            site_name = \(metadata.siteName), icon_url = \(metadata.iconURL),
+            site_name = \(metadata.siteName), author_name = \(metadata.authorName),
+            published_at = \(metadata.publishedAt), icon_url = \(metadata.iconURL),
             etag = \(metadata.etag), last_modified = \(metadata.lastModified),
             source = 'open_graph', status = 'fresh', fetched_at = \(asOf),
             fresh_until = \(asOf.addingTimeInterval(86_400)),
@@ -136,21 +147,58 @@ struct PostgresWireLinkMetadataStore: WireLinkMetadataStoring {
       try await connection.query(
         """
         UPDATE wire_items
-        SET title = COALESCE(\(metadata.title), title),
-            summary = COALESCE(\(metadata.description), summary),
-            thumbnail_url = COALESCE(\(metadata.imageURL), thumbnail_url),
-            source_name = COALESCE(\(metadata.siteName), source_name),
-            publication_homepage_url = COALESCE(\(homepageURL), publication_homepage_url),
-            publication_icon_url = COALESCE(\(metadata.iconURL), publication_icon_url),
+        SET title = CASE WHEN provenance ? 'standard_site' THEN title
+              ELSE COALESCE(\(metadata.title), title) END,
+            summary = CASE WHEN provenance ? 'standard_site'
+              THEN COALESCE(summary, \(metadata.description))
+              ELSE COALESCE(\(metadata.description), summary) END,
+            thumbnail_url = CASE WHEN provenance ? 'standard_site'
+              THEN COALESCE(thumbnail_url, \(metadata.imageURL))
+              ELSE COALESCE(\(metadata.imageURL), thumbnail_url) END,
+            source_name = CASE WHEN provenance ? 'standard_site' THEN source_name
+              ELSE COALESCE(\(metadata.siteName), source_name) END,
+            author_name = CASE WHEN provenance ? 'standard_site'
+              THEN COALESCE(author_name, \(metadata.authorName))
+              ELSE COALESCE(\(metadata.authorName), author_name) END,
+            published_at = CASE WHEN provenance ? 'standard_site'
+              THEN COALESCE(published_at, \(metadata.publishedAt))
+              ELSE COALESCE(\(metadata.publishedAt), published_at) END,
+            publication_homepage_url = CASE WHEN provenance ? 'standard_site'
+              THEN COALESCE(publication_homepage_url, \(homepageURL))
+              ELSE COALESCE(\(homepageURL), publication_homepage_url) END,
+            publication_icon_url = CASE WHEN provenance ? 'standard_site'
+              THEN COALESCE(publication_icon_url, \(metadata.iconURL))
+              ELSE COALESCE(\(metadata.iconURL), publication_icon_url) END,
             presentation_snapshot = presentation_snapshot || jsonb_strip_nulls(jsonb_build_object(
-              'metadataSource', 'open_graph',
-              'sourcePriority', 300,
-              'homepageUrl', \(homepageURL),
-              'iconUrl', \(metadata.iconURL)
+              'metadataSource', CASE WHEN provenance ? 'standard_site'
+                THEN presentation_snapshot->>'metadataSource' ELSE 'open_graph' END,
+              'sourcePriority', CASE WHEN provenance ? 'standard_site'
+                THEN presentation_snapshot->'sourcePriority' ELSE to_jsonb(300) END,
+              'title', CASE WHEN provenance ? 'standard_site' THEN title
+                ELSE COALESCE(\(metadata.title), title) END,
+              'summary', CASE WHEN provenance ? 'standard_site'
+                THEN COALESCE(summary, \(metadata.description))
+                ELSE COALESCE(\(metadata.description), summary) END,
+              'thumbnailUrl', CASE WHEN provenance ? 'standard_site'
+                THEN COALESCE(thumbnail_url, \(metadata.imageURL))
+                ELSE COALESCE(\(metadata.imageURL), thumbnail_url) END,
+              'sourceName', CASE WHEN provenance ? 'standard_site' THEN source_name
+                ELSE COALESCE(\(metadata.siteName), source_name) END,
+              'author', CASE WHEN provenance ? 'standard_site'
+                THEN COALESCE(author_name, \(metadata.authorName))
+                ELSE COALESCE(\(metadata.authorName), author_name) END,
+              'publishedAt', CASE WHEN provenance ? 'standard_site'
+                THEN COALESCE(published_at, \(metadata.publishedAt))
+                ELSE COALESCE(\(metadata.publishedAt), published_at) END,
+              'homepageUrl', CASE WHEN provenance ? 'standard_site'
+                THEN COALESCE(publication_homepage_url, \(homepageURL))
+                ELSE COALESCE(\(homepageURL), publication_homepage_url) END,
+              'iconUrl', CASE WHEN provenance ? 'standard_site'
+                THEN COALESCE(publication_icon_url, \(metadata.iconURL))
+                ELSE COALESCE(\(metadata.iconURL), publication_icon_url) END
             )),
             updated_at = \(asOf)
         WHERE canonical_key = \(canonicalKey)
-          AND NOT (provenance ? 'standard_site')
         """,
         logger: logger
       )
