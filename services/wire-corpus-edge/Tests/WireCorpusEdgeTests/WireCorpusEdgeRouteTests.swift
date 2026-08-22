@@ -36,7 +36,7 @@ struct WireCorpusEdgeRouteTests {
       let first = try await client.execute(uri: target, method: .get, headers: headers)
       #expect(first.status == .ok)
       #expect(first.headers[.cacheControl] == "no-store")
-      #expect(first.headers[HTTPField.Name("X-Wire-Corpus-Contract")!] == "1")
+      #expect(first.headers[HTTPField.Name("X-Wire-Corpus-Contract")!] == "2")
       #expect(first.headers[.accessControlAllowOrigin] == nil)
 
       let replay = try await client.execute(uri: target, method: .get, headers: headers)
@@ -69,6 +69,20 @@ struct WireCorpusEdgeRouteTests {
       #expect(response.status == .badRequest)
     }
     #expect(await store.feedCalls == 0)
+  }
+
+  @Test("signed edition route returns the bounded internal edition")
+  func edition() async throws {
+    let store = TestWireCorpusStore()
+    let target = "/internal/wire/v1/edition?language=en"
+    let headers = try requestHeaders(target: target)
+    try await application(store: store).test(.router) { client in
+      let response = try await client.execute(uri: target, method: .get, headers: headers)
+      #expect(response.status == .ok)
+      #expect(response.headers[HTTPField.Name("X-Wire-Corpus-Contract")!] == "2")
+      #expect(response.body.readableBytes > 0)
+    }
+    #expect(await store.editionCalls == 1)
   }
 
   private func application(store: TestWireCorpusStore) -> Application<RouterResponder<WireCorpusEdgeRequestContext>> {
@@ -106,6 +120,7 @@ struct WireCorpusEdgeRouteTests {
 
 private actor TestWireCorpusStore: WireCorpusStoring {
   private(set) var feedCalls = 0
+  private(set) var editionCalls = 0
   private(set) var catalogCalls = 0
 
   func ping() async throws {}
@@ -127,6 +142,18 @@ private actor TestWireCorpusStore: WireCorpusStoring {
       degraded: false,
       rows: [],
       exhausted: true
+    )
+  }
+
+  func edition(language: String, now: Date) async throws -> WireEdition {
+    editionCalls += 1
+    return WireEditionAssembler.assemble(
+      generationID: UUID().uuidString.lowercased(),
+      generatedAt: now,
+      language: language,
+      source: .ranked,
+      degraded: false,
+      rankedItems: []
     )
   }
 

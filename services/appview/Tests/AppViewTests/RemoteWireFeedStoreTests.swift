@@ -123,6 +123,38 @@ struct RemoteWireFeedStoreTests {
     }
   }
 
+  @Test("edition mints a getWire continuation at the first fifty-story boundary")
+  func editionContinuation() async throws {
+    let generationID = UUID().uuidString.lowercased()
+    let edition = WireEditionAssembler.assemble(
+      generationID: generationID,
+      generatedAt: now,
+      language: "en",
+      cursor: "50",
+      source: .ranked,
+      degraded: false,
+      rankedItems: [item(id: "one", title: "One", actor: nil)]
+    )
+    let transport = StubWireCorpusTransport(responses: [try encodedResponse(edition)])
+    let store = try RemoteWireFeedStore(
+      transport: transport,
+      cursorSecret: cursorSecret,
+      mode: .visible,
+      moderationCache: WireViewerModerationCache()
+    )
+    let result = try await store.getEdition(
+      language: "en-US",
+      viewerDid: nil,
+      now: now
+    )
+    let cursor = try #require(result.cursor)
+    let decoded = try WireCursorCodec(secret: cursorSecret).decode(cursor)
+    #expect(decoded.generationID == generationID)
+    #expect(decoded.language == "en")
+    #expect(decoded.nextOrdinal == 50)
+    #expect(await transport.targets == ["/internal/wire/v1/edition?language=en"])
+  }
+
   private func item(id: String, title: String, actor: String?) -> WireFeedItem {
     WireFeedItem(
       itemID: id,
@@ -143,7 +175,7 @@ struct RemoteWireFeedStoreTests {
     encoder.dateEncodingStrategy = .iso8601
     return WireCorpusTransportResponse(
       statusCode: 200,
-      contractVersion: 1,
+      contractVersion: 2,
       body: try encoder.encode(value)
     )
   }

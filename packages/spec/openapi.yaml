@@ -153,6 +153,9 @@ components:
         domain: { type: string, maxLength: 253 }
         publication: { type: string, maxLength: 2048 }
         author: { type: string, maxLength: 300 }
+        publicationKey: { type: string, maxLength: 2048 }
+        homepageUrl: { type: string, format: uri }
+        iconUrl: { type: string, format: uri }
 
     WireItem:
       type: object
@@ -201,6 +204,78 @@ components:
         item: { $ref: "#/components/schemas/WireItem" }
         html: { type: string, maxLength: 2000000 }
         embedUrl: { type: string, format: uri }
+
+    WirePublicationSpotlight:
+      type: object
+      required: [id, publication, storyIds]
+      properties:
+        id: { type: string, maxLength: 2048 }
+        publication: { $ref: "#/components/schemas/WireSourceAttribution" }
+        storyIds:
+          type: array
+          minItems: 2
+          maxItems: 3
+          items: { type: string, maxLength: 128 }
+
+    WireStoryRail:
+      type: object
+      required: [id, title, storyIds]
+      properties:
+        id: { type: string, maxLength: 128 }
+        title: { type: string, maxLength: 160 }
+        storyIds:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items: { type: string, maxLength: 128 }
+
+    WireTalkedAboutPerson:
+      type: object
+      required: [did, handle, displayName]
+      properties:
+        did: { type: string, maxLength: 2048 }
+        handle: { type: string, maxLength: 253 }
+        displayName: { type: string, maxLength: 640 }
+        avatarUrl: { type: string, format: uri }
+        description: { type: string, maxLength: 10000 }
+
+    WireEdition:
+      type: object
+      required:
+        [editionVersion, generationId, generatedAt, language, source, degraded, stories,
+         topStoryIds, publicationSpotlights, storyRails, people, trendingStoryIds]
+      properties:
+        editionVersion: { type: string, maxLength: 128 }
+        generationId: { type: string, maxLength: 128 }
+        generatedAt: { type: string, format: date-time }
+        language: { type: string, maxLength: 35 }
+        source: { type: string, enum: [ranked, stale_generation, simplified_fallback] }
+        degraded: { type: boolean }
+        stories:
+          type: array
+          maxItems: 50
+          items: { $ref: "#/components/schemas/WireItem" }
+        topStoryIds:
+          type: array
+          maxItems: 4
+          items: { type: string, maxLength: 128 }
+        publicationSpotlights:
+          type: array
+          maxItems: 6
+          items: { $ref: "#/components/schemas/WirePublicationSpotlight" }
+        storyRails:
+          type: array
+          maxItems: 6
+          items: { $ref: "#/components/schemas/WireStoryRail" }
+        people:
+          type: array
+          maxItems: 10
+          items: { $ref: "#/components/schemas/WireTalkedAboutPerson" }
+        trendingStoryIds:
+          type: array
+          maxItems: 10
+          items: { type: string, maxLength: 128 }
+        moreCursor: { type: string, maxLength: 4096 }
 
     WireFeedCatalog:
       type: object
@@ -1699,6 +1774,31 @@ paths:
         "410": { description: CursorExpired; restart from page one. }
         "429": { description: Public or authenticated request budget exhausted. }
         "503": { description: Feed or authenticated moderation state unavailable. }
+
+  /xrpc/app.thesocialwire.discovery.getWireEdition:
+    get:
+      operationId: getWireEdition
+      summary: Get the generation-bound news edition of The Wire
+      description: Public requests receive strict baseline moderation. Valid optional OAuth adds viewer moderation; invalid supplied credentials return 401.
+      tags: [Discovery]
+      security:
+        - {}
+        - ATProtoOAuthDPoP: []
+      parameters:
+        - { name: lang, in: query, schema: { type: string, maxLength: 35 } }
+      responses:
+        "200":
+          description: Deterministic editorial modules for one immutable Wire generation.
+          headers:
+            ETag: { schema: { type: string } }
+            Cache-Control: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WireEdition" }
+        "400": { description: Invalid language. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { description: Public or authenticated request budget exhausted. }
+        "503": { description: Edition or authenticated moderation state unavailable. }
 
   /xrpc/app.thesocialwire.discovery.getWireItem:
     get:

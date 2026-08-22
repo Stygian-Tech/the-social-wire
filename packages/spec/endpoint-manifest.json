@@ -113,6 +113,13 @@
     {
       "surface": "openapi",
       "method": "GET",
+      "path": "/xrpc/app.thesocialwire.discovery.getWireEdition",
+      "classification": "xrpc-migration",
+      "xrpcNsid": "app.thesocialwire.discovery.getWireEdition"
+    },
+    {
+      "surface": "openapi",
+      "method": "GET",
       "path": "/xrpc/app.thesocialwire.discovery.getWireItem",
       "classification": "xrpc-migration",
       "xrpcNsid": "app.thesocialwire.discovery.getWireItem"

@@ -14,9 +14,11 @@ import type { ReactNode } from "react";
 
 import { ReadRouteProvider } from "@/contexts/ReadRouteContext";
 import * as AuthHook from "@/hooks/useAuth";
+import * as WireEditionHook from "@/hooks/useWireEdition";
 import type { EntryListItem } from "@/lib/atprotoClient";
 import * as ResolveEntryOpenURL from "@/lib/resolveEntryOpenUrl";
 import { READ_STATE_STORAGE_KEY } from "@/lib/entryReadStateStorage";
+import type { WireEditionPage } from "@/lib/wireEditionClient";
 
 beforeAll(() => {
   Object.defineProperty(globalThis, "Element", {
@@ -33,8 +35,12 @@ let restoreAuthSpy: (() => void) | undefined;
 let resolveEntryOpenUrlFromPds: ReturnType<
   typeof spyOn<typeof ResolveEntryOpenURL, "resolveEntryOpenUrlFromPds">
 >;
+let useWireEdition: ReturnType<
+  typeof spyOn<typeof WireEditionHook, "useWireEdition">
+>;
 
 beforeEach(() => {
+  process.env.NEXT_PUBLIC_WIRE_NEWS_EDITION_ENABLED = "true";
   window.localStorage.clear();
   renderedEntry = unresolvedEntry;
   renderedEntryListProps = {};
@@ -47,14 +53,39 @@ beforeEach(() => {
     ResolveEntryOpenURL,
     "resolveEntryOpenUrlFromPds",
   ).mockResolvedValue(undefined);
+  useWireEdition = spyOn(
+    WireEditionHook,
+    "useWireEdition",
+  ).mockImplementation(
+    () =>
+      ({
+        data: {
+          pages: [wireEditionPageForEntry(renderedEntry)],
+          pageParams: [undefined],
+        },
+        catalog: { isLoading: false },
+        isLoading: false,
+        isError: false,
+        error: null,
+        viewerModerationError: false,
+        moreStories: [],
+        hasNextPage: false,
+        isFetchingNextPage: false,
+        isFetchNextPageError: false,
+        fetchNextPage: async () => undefined,
+        retryTheWire: async () => undefined,
+      }) as unknown as ReturnType<typeof WireEditionHook.useWireEdition>,
+  );
 });
 
 afterEach(() => {
+  delete process.env.NEXT_PUBLIC_WIRE_NEWS_EDITION_ENABLED;
   cleanup();
   window.localStorage.clear();
   restoreAuthSpy?.();
   restoreAuthSpy = undefined;
   resolveEntryOpenUrlFromPds.mockRestore();
+  useWireEdition.mockRestore();
 });
 
 /** standard.site entry the AppView could not index a hosted URL for. */
@@ -69,6 +100,38 @@ let renderedEntryListProps: {
   readIndicatorsEnabled?: boolean;
   articleFilter?: string;
 } = {};
+
+function wireEditionPageForEntry(entry: EntryListItem): WireEditionPage {
+  const itemId = entry.wireItem?.itemId ?? entry.entryId;
+  return {
+    editionVersion: "1",
+    generationId: "test-generation",
+    generatedAt: "2026-08-20T12:00:00.000Z",
+    language: "en",
+    source: "ranked",
+    degraded: false,
+    stories: [
+      {
+        itemId,
+        canonicalUrl: entry.originalUrl ?? "https://news.example/story",
+        representativeUri: entry.entryId,
+        title: entry.title,
+        publishedAt: entry.publishedAt,
+        source: entry.wireItem?.source ?? {
+          name: "Example News",
+          domain: "news.example",
+        },
+        reasons: entry.wireItem?.reasons ?? [],
+        provenance: entry.wireItem?.provenance ?? [],
+      },
+    ],
+    topStoryIds: [itemId],
+    publicationSpotlights: [],
+    storyRails: [],
+    people: [],
+    trendingStoryIds: [],
+  };
+}
 
 mock.module("@/components/EntryList/EntryList", () => ({
   EntryList: ({
@@ -174,7 +237,7 @@ describe("ReadPubPage entry open fallback", () => {
     }
   });
 
-  it("opens The Wire stories without creating read state or unread UI semantics", () => {
+  it("opens The Wire stories through the isolated news surface without creating read state", async () => {
     renderedEntry = {
       entryId: "at://did:plc:writer/site.standard.document/wire-story",
       title: "The Wire Story",
@@ -196,13 +259,12 @@ describe("ReadPubPage entry open fallback", () => {
         <ReadPubPage wireFeed />,
         { wrapper: Wrapper },
       );
-      act(() => screen.getByTestId("entry-row").click());
+      const storyTitle = await screen.findByText("The Wire Story");
+      const story = storyTitle.closest('[role="link"]');
+      if (!story) throw new Error("Wire story card did not render");
+      act(() => (story as HTMLElement).click());
 
-      expect(renderedEntryListProps).toEqual({
-        wireFeed: true,
-        readIndicatorsEnabled: false,
-        articleFilter: "all",
-      });
+      expect(renderedEntryListProps).toEqual({});
       expect(tabs).toHaveLength(1);
       expect(window.localStorage.getItem(READ_STATE_STORAGE_KEY)).toBeNull();
       expect(resolveEntryOpenUrlFromPds).not.toHaveBeenCalled();
@@ -210,6 +272,19 @@ describe("ReadPubPage entry open fallback", () => {
       restore();
       renderedEntry = unresolvedEntry;
     }
+  });
+
+  it("keeps the existing Wire list active until the news edition rollout gate is enabled", () => {
+    delete process.env.NEXT_PUBLIC_WIRE_NEWS_EDITION_ENABLED;
+
+    render(<ReadPubPage wireFeed />, { wrapper: Wrapper });
+
+    expect(screen.getByTestId("entry-row")).toBeDefined();
+    expect(renderedEntryListProps).toEqual({
+      wireFeed: true,
+      readIndicatorsEnabled: false,
+      articleFilter: "all",
+    });
   });
 
   it("surfaces a message instead of silently doing nothing", async () => {

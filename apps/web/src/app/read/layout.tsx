@@ -14,6 +14,7 @@ import {
 import { normalizeAtRepoParam } from "@/lib/atprotoClient";
 import { ReadArticleFilterBar } from "@/app/read/ReadArticleFilterBar";
 import { ClosePublicationsSheetOnMobilePubRoute } from "@/app/read/ClosePublicationsSheetOnMobilePubRoute";
+import { isWireNewsEditionEnabled } from "@/lib/wireEditionClient";
 
 export default function ReadLayout({
   children,
@@ -51,7 +52,7 @@ export default function ReadLayout({
   return (
     <SidebarProvider
       defaultWidthPx={208}
-      className="mx-auto h-[calc(100svh-var(--environment-banner-height,0px))] min-h-[calc(100svh-var(--environment-banner-height,0px))] max-h-[calc(100svh-var(--environment-banner-height,0px))] max-w-[70rem] overflow-hidden overscroll-none"
+      className="mx-auto h-[calc(100svh-var(--environment-banner-height,0px))] min-h-[calc(100svh-var(--environment-banner-height,0px))] max-h-[calc(100svh-var(--environment-banner-height,0px))] max-w-[var(--reader-shell-width)] overflow-hidden overscroll-none [--reader-shell-width:70rem] has-[[data-wire-route=true]]:[--reader-shell-width:82rem]"
     >
       <PublicationSidebarProvider>
         <ReadRouteProvider>
@@ -90,9 +91,11 @@ function ReadContentInset({ children }: { children: React.ReactNode }) {
   const searchParams = useSearchParams();
   const wireRoute =
     pathname === "/read" && searchParams.get("feed") === "wire";
+  const wireNewsRoute = wireRoute && isWireNewsEditionEnabled();
 
   return (
     <SidebarInset
+      data-wire-route={wireNewsRoute ? "true" : undefined}
       className={`flex min-h-0 flex-1 flex-col overflow-hidden pb-16 md:pb-0 ${wireRoute ? "" : "lg:mr-64"}`}
     >
       <ReadArticleFilterBar />

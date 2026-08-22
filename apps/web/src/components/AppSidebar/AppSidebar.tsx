@@ -325,7 +325,7 @@ export function AppSidebar({
   useEffect(() => {
     if (!currentFeed) return;
     if (currentFeed === "wire") {
-      if (!wireCatalog.isLoading && !wireNavigationEnabled) {
+      if (wireCatalog.isFetched && !wireNavigationEnabled) {
         const remembered = loadReaderFeedSelection(window.localStorage);
         const replacement =
           remembered === "following" &&
@@ -348,7 +348,7 @@ export function AppSidebar({
     currentFeed,
     feedPreferences.visibleFeeds,
     router,
-    wireCatalog.isLoading,
+    wireCatalog.isFetched,
     wireNavigationEnabled,
   ]);
 
@@ -437,7 +437,10 @@ export function AppSidebar({
     <>
     <Sidebar
       className="transition-[width] [&_[data-slot=sidebar-inner]]:bg-background"
-      style={{ left: "max(0px, calc((100vw - 70rem) / 2))" }}
+      style={{
+        left:
+          "max(0px, calc((100vw - var(--reader-shell-width, 70rem)) / 2))",
+      }}
     >
       <AppSidebarBrandHeader />
 
@@ -503,7 +506,7 @@ export function AppSidebar({
           />
         </div>
         {showPublicationsRail && currentFeed !== "wire" ? (
-        <div className="flex min-w-0 flex-col gap-0 group-data-[collapsible=icon]:overflow-hidden lg:fixed lg:bottom-0 lg:right-[max(0px,calc((100vw-70rem)/2))] lg:top-[var(--environment-banner-height,0px)] lg:z-30 lg:w-64 lg:overflow-y-auto lg:border-l lg:border-sidebar-border/70 lg:bg-background">
+        <div className="flex min-w-0 flex-col gap-0 group-data-[collapsible=icon]:overflow-hidden lg:fixed lg:bottom-0 lg:right-[max(0px,calc((100vw-var(--reader-shell-width,70rem))/2))] lg:top-[var(--environment-banner-height,0px)] lg:z-30 lg:w-64 lg:overflow-y-auto lg:border-l lg:border-sidebar-border/70 lg:bg-background">
           <div className="hidden min-h-12 shrink-0 items-end px-4 pb-1 lg:flex">
             <p className="text-base font-bold text-sidebar-foreground">
               Publications

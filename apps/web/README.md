@@ -33,6 +33,7 @@ Copy `.env.example` to `.env.local` or create `.env.local` manually (see **Envir
 | `NEXT_PUBLIC_ATPROTO_LOOPBACK_CALLBACK_PATH` | Optional loopback redirect path (default `/callback`) |
 | `NEXT_PUBLIC_ATPROTO_LOOPBACK_FORCE` | Optional: `true` / `false` — override whether parameterized loopback OAuth is used in dev |
 | `NEXT_PUBLIC_USE_THIN_APPVIEW` | AppView read path switch. It is enabled unless explicitly set to `false`; current entry lists and detail require AppView routes |
+| `NEXT_PUBLIC_WIRE_NEWS_EDITION_ENABLED` | Enables the Wire News Edition UI only after Corpus Edge contract v2 is available. Local dummy-data previews enable it automatically |
 | `NEXT_PUBLIC_SOCIALWIRE_API_URL` | Social Wire gateway base URL for authenticated sidebar, AppView, and sync routes (default `https://api.thesocialwire.app`) |
 | `NEXT_PUBLIC_SITE_URL` | Canonical public Web origin for metadata and absolute URLs; set to the environment's Railway custom domain |
 

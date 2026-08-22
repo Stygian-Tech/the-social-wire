@@ -23,6 +23,7 @@ struct WireProxyRoutes {
 
   static let paths = [
     "/xrpc/app.thesocialwire.discovery.getWire",
+    "/xrpc/app.thesocialwire.discovery.getWireEdition",
     "/xrpc/app.thesocialwire.discovery.getWireItem",
     "/xrpc/app.thesocialwire.discovery.getFeedCatalog",
   ]
