@@ -94,6 +94,8 @@ struct HTTPWireLinkMetadataClient: WireLinkMetadataFetching {
           description: parsed.description,
           imageURL: parsed.imageURL,
           siteName: parsed.siteName,
+          authorName: parsed.authorName,
+          publishedAt: parsed.publishedAt,
           iconURL: parsed.iconURL,
           etag: responseETag,
           lastModified: responseLastModified,

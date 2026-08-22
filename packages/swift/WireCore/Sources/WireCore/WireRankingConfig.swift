@@ -4,8 +4,12 @@ public struct WireRankingConfig: Codable, Equatable, Sendable {
   public var version: String
   public var weights: WireRankingWeights
   public var diversity: WireDiversityPolicy
-  public var minimumDistinctActors: Int
+  public var minimumHighIntentActors: Int
   public var minimumRecommendations: Int
+  public var standardSiteMinimumHighIntentActors: Int
+  public var backfillMinimumHighIntentActors: Int
+  public var backfillMinimumRecommendations: Int
+  public var minimumRankedItems: Int
   public var minimumSourceConfidence: Double
   public var actorBreadthTarget: Int
   public var communityBreadthTarget: Int
@@ -14,11 +18,15 @@ public struct WireRankingConfig: Codable, Equatable, Sendable {
   public var maximumCandidateAge: TimeInterval
 
   public init(
-    version: String = "wire-v1",
+    version: String = "wire-v2",
     weights: WireRankingWeights = WireRankingWeights(),
     diversity: WireDiversityPolicy = WireDiversityPolicy(),
-    minimumDistinctActors: Int = 3,
-    minimumRecommendations: Int = 1,
+    minimumHighIntentActors: Int = 5,
+    minimumRecommendations: Int = 2,
+    standardSiteMinimumHighIntentActors: Int = 3,
+    backfillMinimumHighIntentActors: Int = 3,
+    backfillMinimumRecommendations: Int = 1,
+    minimumRankedItems: Int = 50,
     minimumSourceConfidence: Double = 0.25,
     actorBreadthTarget: Int = 30,
     communityBreadthTarget: Int = 5,
@@ -29,8 +37,12 @@ public struct WireRankingConfig: Codable, Equatable, Sendable {
     self.version = version
     self.weights = weights
     self.diversity = diversity
-    self.minimumDistinctActors = minimumDistinctActors
+    self.minimumHighIntentActors = minimumHighIntentActors
     self.minimumRecommendations = minimumRecommendations
+    self.standardSiteMinimumHighIntentActors = standardSiteMinimumHighIntentActors
+    self.backfillMinimumHighIntentActors = backfillMinimumHighIntentActors
+    self.backfillMinimumRecommendations = backfillMinimumRecommendations
+    self.minimumRankedItems = minimumRankedItems
     self.minimumSourceConfidence = minimumSourceConfidence
     self.actorBreadthTarget = actorBreadthTarget
     self.communityBreadthTarget = communityBreadthTarget
@@ -49,7 +61,10 @@ public struct WireRankingConfig: Codable, Equatable, Sendable {
     guard weights.all.reduce(0, +) > 0 else {
       throw WireRankingConfigError.zeroWeightTotal
     }
-    guard minimumDistinctActors >= 0, minimumRecommendations >= 0,
+    guard minimumHighIntentActors >= 0, minimumRecommendations >= 0,
+      standardSiteMinimumHighIntentActors >= 0,
+      backfillMinimumHighIntentActors >= 0, backfillMinimumRecommendations >= 0,
+      minimumRankedItems > 0,
       minimumSourceConfidence.isFinite, (0...1).contains(minimumSourceConfidence),
       actorBreadthTarget > 0, communityBreadthTarget > 0, engagementTarget > 0,
       freshnessHalfLife > 0, maximumCandidateAge > 0

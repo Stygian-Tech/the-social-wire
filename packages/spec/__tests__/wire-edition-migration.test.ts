@@ -6,6 +6,27 @@ const migration = readFileSync(
   join(import.meta.dir, "../../../database/migrations/20260821210000_add_wire_news_edition.sql"),
   "utf8",
 );
+const metadataDetailsMigration = readFileSync(
+  join(
+    import.meta.dir,
+    "../../../database/migrations/20260822120000_add_wire_link_metadata_details.sql",
+  ),
+  "utf8",
+);
+const metadataRecoveryMigration = readFileSync(
+  join(
+    import.meta.dir,
+    "../../../database/migrations/20260822200000_recover_wire_metadata_and_edition_v2.sql",
+  ),
+  "utf8",
+);
+const qualityIndexMigration = readFileSync(
+  join(
+    import.meta.dir,
+    "../../../database/migrations/20260822212900_prepare_wire_quality_ranking_index.sql",
+  ),
+  "utf8",
+);
 const generationStore = readFileSync(
   join(import.meta.dir, "../../../services/wire-worker/Sources/WireWorker/PostgresWireGenerationStore.swift"),
   "utf8",
@@ -42,6 +63,27 @@ describe("The Wire news edition migration", () => {
     expect(migration).toContain("wire_item_mentions_expiry_idx");
     expect(migration).toContain("wire_talked_accounts_refresh_idx");
     expect(migration).toContain("status IN ('pending', 'fresh', 'failed')");
+    expect(metadataDetailsMigration).toContain(
+      "ADD COLUMN IF NOT EXISTS author_name TEXT",
+    );
+    expect(metadataDetailsMigration).toContain(
+      "ADD COLUMN IF NOT EXISTS published_at TIMESTAMPTZ",
+    );
+    expect(metadataRecoveryMigration).toContain(
+      "'pending', 'fresh', 'stale', 'negative', 'retry', 'failed', 'fetching'",
+    );
+    expect(metadataRecoveryMigration).toContain(
+      "ALTER COLUMN algorithm_version SET DEFAULT 'wire-edition-v2'",
+    );
+  });
+
+  it("builds the quality-ranking support index without blocking rollup writes", () => {
+    expect(qualityIndexMigration).toContain("-- socialwire:transaction=off");
+    expect(qualityIndexMigration).toContain("SET lock_timeout = '5s'");
+    expect(qualityIndexMigration).toContain(
+      "CREATE INDEX CONCURRENTLY IF NOT EXISTS wire_signal_rollups_high_intent_rank_idx",
+    );
+    expect(qualityIndexMigration).toContain("RESET lock_timeout");
   });
 
   it("exposes only presentation-safe edition fields through Corpus Edge views", () => {

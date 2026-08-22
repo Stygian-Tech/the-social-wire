@@ -29,6 +29,8 @@ public struct WireCandidate: Codable, Equatable, Sendable {
   public var reposts1h: Int
   public var reposts24h: Int
   public var sourceConfidence: Double
+  public var isStandardSite: Bool?
+  public var hasUsableOpenGraphMetadata: Bool?
 
   public init(
     canonicalKey: String,
@@ -58,7 +60,9 @@ public struct WireCandidate: Codable, Equatable, Sendable {
     distinctReposts24h: Int = 0,
     reposts1h: Int = 0,
     reposts24h: Int = 0,
-    sourceConfidence: Double = 0.5
+    sourceConfidence: Double = 0.5,
+    isStandardSite: Bool = false,
+    hasUsableOpenGraphMetadata: Bool = false
   ) {
     self.canonicalKey = canonicalKey
     self.canonicalURL = canonicalURL
@@ -88,5 +92,7 @@ public struct WireCandidate: Codable, Equatable, Sendable {
     self.reposts1h = reposts1h
     self.reposts24h = reposts24h
     self.sourceConfidence = sourceConfidence
+    self.isStandardSite = isStandardSite
+    self.hasUsableOpenGraphMetadata = hasUsableOpenGraphMetadata
   }
 }

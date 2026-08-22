@@ -27,6 +27,7 @@ struct WireStandardSiteDocumentResolverTests {
     #expect(resolved.canonicalURL == "https://publication.example/stories/the-wire-fixture")
     #expect(resolved.publicationURI == "at://did:plc:author/site.standard.publication/main")
     #expect(resolved.publicationName == "Example Standard Site")
+    #expect(resolved.publicationHomepageURL == "https://publication.example")
   }
 
   @Test("resolves an HTTPS publication site plus relative path without a network lookup")
@@ -40,6 +41,7 @@ struct WireStandardSiteDocumentResolverTests {
       asOf: Date()
     )
     #expect(resolved.canonicalURL == "https://publisher.example/articles/example")
+    #expect(resolved.publicationHomepageURL == "https://publisher.example")
     #expect(await query.queryCount == 0)
   }
 
@@ -69,6 +71,33 @@ struct WireStandardSiteDocumentResolverTests {
       asOf: Date()
     )
     #expect(resolved.canonicalURL == "https://publisher.example/story")
+  }
+
+  @Test("direct canonical URLs retain authoritative publication branding")
+  func directURLWithPublication() async throws {
+    let publicationURI = "at://did:plc:author/site.standard.publication/main"
+    let publication = WirePublicationMetadata(
+      publicationURI: publicationURI,
+      repoDID: "did:plc:author",
+      siteURL: "https://publication.example",
+      name: "Example Standard Site"
+    )
+    let query = StubWirePublicationQuery(result: publication)
+    let resolved = try await WireStandardSiteDocumentResolver.resolve(
+      record: [
+        "canonicalUrl": "https://publication.example/story",
+        "site": publicationURI,
+      ],
+      publicationResolver: WirePublicationResolver(
+        store: InMemoryWirePublicationStore(), queryClient: query
+      ),
+      asOf: Date()
+    )
+
+    #expect(resolved.publicationURI == publicationURI)
+    #expect(resolved.publicationName == "Example Standard Site")
+    #expect(resolved.publicationHomepageURL == "https://publication.example")
+    #expect(await query.queryCount == 1)
   }
 
   private func fixture(_ name: String) throws -> [String: Any] {

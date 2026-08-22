@@ -65,9 +65,6 @@ actor PostgresWireCorpusStore: WireCorpusStoring {
       }
       generation = retained
     } else if let active = try await activeGeneration(language: language) {
-      if now.timeIntervalSince(active.generatedAt) > 30 * 60 {
-        return try await fallback(language: language, limit: limit, now: now)
-      }
       generation = active
     } else {
       return try await fallback(language: language, limit: limit, now: now)
@@ -95,10 +92,6 @@ actor PostgresWireCorpusStore: WireCorpusStoring {
     guard let generation = try await activeGeneration(language: language) else {
       return try await fallbackEdition(language: language, now: now)
     }
-    guard now.timeIntervalSince(generation.generatedAt) <= 30 * 60 else {
-      return try await fallbackEdition(language: language, now: now)
-    }
-
     let generationRows = try await pool.query(
       """
       SELECT algorithm_version, continuation_ordinal
@@ -311,7 +304,7 @@ actor PostgresWireCorpusStore: WireCorpusStoring {
       """
       SELECT generation_id, language_bucket, generated_at, expires_at
       FROM wire_serving.feed_state
-      WHERE generated_at >= \(now.addingTimeInterval(-30 * 60))
+      WHERE expires_at > \(now)
       """,
       logger: logger
     )
@@ -380,7 +373,8 @@ actor PostgresWireCorpusStore: WireCorpusStoring {
              publication_key, publication_homepage_url, publication_icon_url
       FROM wire_serving.fallback_items
       WHERE (\(language) = 'und' OR language_code = \(language))
-      ORDER BY COALESCE(published_at, first_seen_at) DESC, canonical_key
+      ORDER BY (provenance ? 'standard_site') DESC,
+               COALESCE(published_at, first_seen_at) DESC, canonical_key
       LIMIT 5000
       """,
       logger: logger
@@ -499,7 +493,7 @@ actor PostgresWireCorpusStore: WireCorpusStoring {
 
   private func fallbackEdition(language: String, now: Date) async throws -> WireEdition {
     let page = try await fallback(language: language, limit: 50, now: now)
-    return WireEditionAssembler.assemble(
+    let edition = WireEditionAssembler.assemble(
       generationID: page.generationID,
       generatedAt: page.generatedAt,
       language: page.language,
@@ -507,5 +501,45 @@ actor PostgresWireCorpusStore: WireCorpusStoring {
       degraded: page.degraded,
       rankedItems: page.rows.map(\.item)
     )
+    let accounts = try await latestMaterializedTalkedAccounts(language: page.language)
+    guard accounts.count >= 4 else { return edition }
+    return WireEdition(
+      algorithmVersion: edition.algorithmVersion,
+      generationID: edition.generationID,
+      generatedAt: edition.generatedAt,
+      language: edition.language,
+      cursor: edition.cursor,
+      source: edition.source,
+      degraded: edition.degraded,
+      leadStories: edition.leadStories,
+      publicationPanels: edition.publicationPanels,
+      storyRails: edition.storyRails,
+      generalStories: edition.generalStories,
+      trendingStories: edition.trendingStories,
+      talkedAboutAccounts: accounts
+    )
+  }
+
+  private func latestMaterializedTalkedAccounts(
+    language: String
+  ) async throws -> [WireTalkedAboutAccount] {
+    let rows = try await pool.query(
+      """
+      SELECT generation.generation_id
+      FROM wire_serving.edition_generations generation
+      WHERE generation.language_bucket = \(language)
+        AND EXISTS (
+          SELECT 1 FROM wire_serving.edition_talked_accounts account
+          WHERE account.generation_id = generation.generation_id
+        )
+      ORDER BY generation.generated_at DESC, generation.generation_id DESC
+      LIMIT 1
+      """,
+      logger: logger
+    )
+    for try await row in rows {
+      return try await materializedTalkedAccounts(generationID: row.decode(UUID.self))
+    }
+    return []
   }
 }

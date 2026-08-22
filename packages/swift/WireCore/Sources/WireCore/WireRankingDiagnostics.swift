@@ -4,6 +4,8 @@ public struct WireRankingDiagnostics: Codable, Equatable, Sendable {
   public var rejectedForAge: Int
   public var rejectedForQuality: Int
   public var rejectedForSignalFloor: Int
+  public var qualityBackfillCount: Int
+  public var generalBackfillCount: Int
   public var diversityDeferrals: Int
 
   public init(
@@ -12,6 +14,8 @@ public struct WireRankingDiagnostics: Codable, Equatable, Sendable {
     rejectedForAge: Int,
     rejectedForQuality: Int,
     rejectedForSignalFloor: Int,
+    qualityBackfillCount: Int = 0,
+    generalBackfillCount: Int = 0,
     diversityDeferrals: Int
   ) {
     self.candidateCount = candidateCount
@@ -19,6 +23,8 @@ public struct WireRankingDiagnostics: Codable, Equatable, Sendable {
     self.rejectedForAge = rejectedForAge
     self.rejectedForQuality = rejectedForQuality
     self.rejectedForSignalFloor = rejectedForSignalFloor
+    self.qualityBackfillCount = qualityBackfillCount
+    self.generalBackfillCount = generalBackfillCount
     self.diversityDeferrals = diversityDeferrals
   }
 }

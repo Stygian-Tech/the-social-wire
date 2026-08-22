@@ -75,15 +75,6 @@ actor PostgresWireFeedStore: WireFeedStore {
     }
 
     let age = now.timeIntervalSince(generation.generatedAt)
-    if cursor == nil, age > 30 * 60 {
-      return try await simplifiedFallback(
-        limit: safeLimit,
-        language: requestedLanguage,
-        viewerDID: viewerDid,
-        now: now
-      )
-    }
-
     let moderation = try await moderationSnapshot(viewerDID: viewerDid, now: now)
     var accepted: [RankedRow] = []
     var scanOrdinal = startOrdinal
@@ -150,9 +141,7 @@ actor PostgresWireFeedStore: WireFeedStore {
     guard mode.servesAPI else { throw WireServingError.unavailable }
     try await requireUsableBaselineLabels(now: now)
     let requestedLanguage = Self.primaryLanguage(language)
-    guard let generation = try await activeGeneration(language: requestedLanguage),
-      now.timeIntervalSince(generation.generatedAt) <= 30 * 60
-    else {
+    guard let generation = try await activeGeneration(language: requestedLanguage) else {
       let page = try await getFeed(
         cursor: nil,
         limit: 50,
@@ -160,7 +149,7 @@ actor PostgresWireFeedStore: WireFeedStore {
         viewerDid: viewerDid,
         now: now
       )
-      return WireEditionAssembler.assemble(
+      let edition = WireEditionAssembler.assemble(
         generationID: page.generationID,
         generatedAt: page.generatedAt,
         language: page.language,
@@ -168,6 +157,27 @@ actor PostgresWireFeedStore: WireFeedStore {
         source: page.source,
         degraded: page.degraded,
         rankedItems: page.items
+      )
+      let accounts = try await latestMaterializedTalkedAccounts(
+        language: page.language,
+        viewerDID: viewerDid,
+        now: now
+      )
+      guard accounts.count >= 4 else { return edition }
+      return WireEdition(
+        algorithmVersion: edition.algorithmVersion,
+        generationID: edition.generationID,
+        generatedAt: edition.generatedAt,
+        language: edition.language,
+        cursor: edition.cursor,
+        source: edition.source,
+        degraded: edition.degraded,
+        leadStories: edition.leadStories,
+        publicationPanels: edition.publicationPanels,
+        storyRails: edition.storyRails,
+        generalStories: edition.generalStories,
+        trendingStories: edition.trendingStories,
+        talkedAboutAccounts: accounts
       )
     }
 
@@ -455,7 +465,7 @@ actor PostgresWireFeedStore: WireFeedStore {
       FROM wire_feed_state state
       JOIN wire_rank_generations g ON g.generation_id = state.active_generation_id
       WHERE state.feed_key = 'wire' AND g.status = 'committed'
-        AND g.generated_at >= \(now.addingTimeInterval(-30 * 60))
+        AND g.expires_at > \(now)
       """,
       logger: logger
     )
@@ -528,11 +538,24 @@ actor PostgresWireFeedStore: WireFeedStore {
     let rows = try await pool.query(
       """
       SELECT COUNT(*)::bigint
-      FROM wire_items
-      WHERE eligible = TRUE AND expires_at > \(now) AND source_confidence >= 0.75
+      FROM wire_items item
+      JOIN wire_signal_rollups rollup ON rollup.canonical_key = item.canonical_key
+      LEFT JOIN wire_link_metadata_cache metadata ON metadata.canonical_key = item.canonical_key
+      WHERE item.eligible = TRUE AND item.expires_at > \(now)
+        AND item.source_confidence >= 0.25
+        AND (rollup.shares_24h >= 3 OR rollup.recommendations_24h >= 1)
+        AND (
+          item.provenance ? 'standard_site' OR item.source_confidence >= 0.75
+          OR (metadata.source = 'open_graph'
+            AND metadata.status IN ('fresh', 'stale')
+            AND metadata.stale_until > \(now)
+            AND num_nonnulls(metadata.title, metadata.description, metadata.image_url,
+              metadata.site_name, metadata.author_name, metadata.published_at::TEXT,
+              metadata.icon_url) >= 2)
+        )
         AND NOT EXISTS (
           SELECT 1 FROM wire_labels label
-          WHERE label.canonical_key = wire_items.canonical_key AND label.expires_at > \(now)
+          WHERE label.canonical_key = item.canonical_key AND label.expires_at > \(now)
             AND label.label_value IN ('block', 'exclude', 'adult', 'graphic', 'spam')
         )
       """,
@@ -552,21 +575,36 @@ actor PostgresWireFeedStore: WireFeedStore {
   ) async throws -> WirePage {
     let rows = try await pool.query(
       """
-      SELECT canonical_key, canonical_url, representative_uri, title, summary, published_at,
-             thumbnail_url, source_name, source_domain, publication_id, author_name,
-             provenance::text, author_key, topic_keys::text,
-             COALESCE(NULLIF(publication_id, ''), source_domain),
-             publication_homepage_url, publication_icon_url
-      FROM wire_items
-      WHERE eligible = TRUE AND expires_at > \(now)
-        AND (\(language) = 'und' OR language_code = \(language))
-        AND source_confidence >= 0.75
+      SELECT item.canonical_key, item.canonical_url, item.representative_uri, item.title,
+             item.summary, item.published_at, item.thumbnail_url, item.source_name,
+             item.source_domain, item.publication_id, item.author_name,
+             item.provenance::text, item.author_key, item.topic_keys::text,
+             COALESCE(NULLIF(item.publication_id, ''), item.source_domain),
+             item.publication_homepage_url, item.publication_icon_url
+      FROM wire_items item
+      JOIN wire_signal_rollups rollup ON rollup.canonical_key = item.canonical_key
+      LEFT JOIN wire_link_metadata_cache metadata ON metadata.canonical_key = item.canonical_key
+      WHERE item.eligible = TRUE AND item.expires_at > \(now)
+        AND (\(language) = 'und' OR item.language_code = \(language))
+        AND item.source_confidence >= 0.25
+        AND (rollup.shares_24h >= 3 OR rollup.recommendations_24h >= 1)
+        AND (
+          item.provenance ? 'standard_site' OR item.source_confidence >= 0.75
+          OR (metadata.source = 'open_graph'
+            AND metadata.status IN ('fresh', 'stale')
+            AND metadata.stale_until > \(now)
+            AND num_nonnulls(metadata.title, metadata.description, metadata.image_url,
+              metadata.site_name, metadata.author_name, metadata.published_at::TEXT,
+              metadata.icon_url) >= 2)
+        )
         AND NOT EXISTS (
           SELECT 1 FROM wire_labels label
-          WHERE label.canonical_key = wire_items.canonical_key AND label.expires_at > \(now)
+          WHERE label.canonical_key = item.canonical_key AND label.expires_at > \(now)
             AND label.label_value IN ('block', 'exclude', 'adult', 'graphic', 'spam')
         )
-      ORDER BY COALESCE(published_at, first_seen_at) DESC, canonical_key
+      ORDER BY (item.provenance ? 'standard_site') DESC,
+               rollup.shares_24h DESC, rollup.recommendations_24h DESC,
+               COALESCE(item.published_at, item.first_seen_at) DESC, item.canonical_key
       LIMIT 5000
       """,
       logger: logger
@@ -728,6 +766,38 @@ actor PostgresWireFeedStore: WireFeedStore {
       )
     }
     return result
+  }
+
+  private func latestMaterializedTalkedAccounts(
+    language: String,
+    viewerDID: String?,
+    now: Date
+  ) async throws -> [WireTalkedAboutAccount] {
+    let rows = try await pool.query(
+      """
+      SELECT generation.generation_id
+      FROM wire_edition_generations edition
+      JOIN wire_rank_generations generation ON generation.generation_id = edition.generation_id
+      WHERE edition.language_bucket = \(language)
+        AND generation.feed_key = 'wire'
+        AND generation.status IN ('committed', 'superseded')
+        AND EXISTS (
+          SELECT 1 FROM wire_edition_talked_accounts account
+          WHERE account.generation_id = generation.generation_id
+        )
+      ORDER BY generation.generated_at DESC, generation.generation_id DESC
+      LIMIT 1
+      """,
+      logger: logger
+    )
+    for try await row in rows {
+      return try await materializedTalkedAccounts(
+        generationID: row.decode(UUID.self),
+        viewerDID: viewerDID,
+        now: now
+      )
+    }
+    return []
   }
 
   private static func primaryLanguage(_ raw: String?) -> String {
