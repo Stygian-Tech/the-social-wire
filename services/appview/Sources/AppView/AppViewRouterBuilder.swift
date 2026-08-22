@@ -64,7 +64,11 @@ enum AppViewRouterBuilder {
         .add(middleware: XRPCErrorMiddleware())
         .add(middleware: wireInternalTrustMiddleware)
         .add(middleware: authMiddleware)
-      WireDiscoveryRoutes(store: wireFeedStore, moderation: wireModerationService).register(on: wire)
+      WireDiscoveryRoutes(
+        store: wireFeedStore,
+        moderation: wireModerationService,
+        telemetry: telemetry
+      ).register(on: wire)
     }
 
     guard config.thinAppView.enabled else { return router }

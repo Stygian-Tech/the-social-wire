@@ -13,10 +13,12 @@ export type PublicationChipModel = {
 export function PublicationChip({
   publication,
   className,
+  nameClassName,
   overlay = false,
 }: {
   publication: PublicationChipModel;
   className?: string;
+  nameClassName?: string;
   overlay?: boolean;
 }) {
   const content = (
@@ -27,7 +29,7 @@ export function PublicationChip({
         size={16}
         className="size-4 shrink-0"
       />
-      <span className="truncate">{publication.name}</span>
+      <span className={cn("truncate", nameClassName)}>{publication.name}</span>
     </>
   );
   const classes = cn(

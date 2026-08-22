@@ -1,0 +1,229 @@
+import Foundation
+import Logging
+import PostgresNIO
+
+struct PostgresWireLinkMetadataStore: WireLinkMetadataStoring {
+  let pool: PostgresClient
+  let logger: Logger
+
+  func seedEmbedded(
+    canonicalKey: String,
+    metadata: WireLinkMetadata,
+    asOf: Date
+  ) async throws {
+    try await pool.query(
+      """
+      INSERT INTO wire_link_metadata_cache
+        (canonical_key, canonical_url, title, description, image_url, site_name, icon_url,
+         etag, last_modified, source, status, fetched_at, fresh_until, stale_until,
+         retry_after, failure_count, updated_at)
+      VALUES
+        (\(canonicalKey), \(metadata.canonicalURL), \(metadata.title), \(metadata.description),
+         \(metadata.imageURL), \(metadata.siteName), \(metadata.iconURL), NULL, NULL,
+         'embedded_card', 'pending', \(asOf), \(asOf), \(asOf.addingTimeInterval(7 * 86_400)),
+         \(asOf), 0, \(asOf))
+      ON CONFLICT (canonical_key) DO UPDATE SET
+        title = CASE WHEN wire_link_metadata_cache.source = 'open_graph'
+          THEN wire_link_metadata_cache.title ELSE COALESCE(EXCLUDED.title, wire_link_metadata_cache.title) END,
+        description = CASE WHEN wire_link_metadata_cache.source = 'open_graph'
+          THEN wire_link_metadata_cache.description ELSE COALESCE(EXCLUDED.description, wire_link_metadata_cache.description) END,
+        image_url = CASE WHEN wire_link_metadata_cache.source = 'open_graph'
+          THEN wire_link_metadata_cache.image_url ELSE COALESCE(EXCLUDED.image_url, wire_link_metadata_cache.image_url) END,
+        stale_until = GREATEST(wire_link_metadata_cache.stale_until, EXCLUDED.stale_until),
+        retry_after = LEAST(wire_link_metadata_cache.retry_after, EXCLUDED.retry_after),
+        updated_at = EXCLUDED.updated_at
+      """,
+      logger: logger
+    )
+  }
+
+  func claimDue(limit: Int, asOf: Date) async throws -> [WireLinkMetadataTarget] {
+    let boundedLimit = max(1, min(limit, 250))
+    return try await pool.withTransaction(logger: logger) { connection in
+      try await connection.query(
+        """
+        INSERT INTO wire_link_metadata_cache
+          (canonical_key, canonical_url, source, status, fetched_at, fresh_until, stale_until,
+           retry_after, failure_count, updated_at)
+        SELECT canonical_key, canonical_url, 'fallback', 'pending', NULL, NULL, NULL, \(asOf), 0, \(asOf)
+        FROM wire_items item
+        WHERE item.eligible = TRUE AND item.expires_at > \(asOf)
+          AND item.canonical_url LIKE 'https://%'
+        ORDER BY item.last_signal_at DESC NULLS LAST, item.canonical_key
+        LIMIT \(boundedLimit * 4)
+        ON CONFLICT (canonical_key) DO NOTHING
+        """,
+        logger: logger
+      )
+      let rows = try await connection.query(
+        """
+        WITH due AS (
+          SELECT canonical_key
+          FROM wire_link_metadata_cache
+          WHERE retry_after <= \(asOf)
+            AND status IN ('pending', 'retry', 'negative', 'fresh')
+            AND (fresh_until IS NULL OR fresh_until <= \(asOf))
+          ORDER BY retry_after, canonical_key
+          FOR UPDATE SKIP LOCKED
+          LIMIT \(boundedLimit)
+        )
+        UPDATE wire_link_metadata_cache cache
+        SET status = 'fetching', retry_after = \(asOf.addingTimeInterval(300)), updated_at = \(asOf)
+        FROM due
+        WHERE cache.canonical_key = due.canonical_key
+        RETURNING cache.canonical_key, cache.canonical_url, cache.etag, cache.last_modified
+        """,
+        logger: logger
+      )
+      var targets: [WireLinkMetadataTarget] = []
+      for try await row in rows {
+        let value = try row.decode((String, String, String?, String?).self)
+        targets.append(
+          WireLinkMetadataTarget(
+            canonicalKey: value.0,
+            canonicalURL: value.1,
+            etag: value.2,
+            lastModified: value.3
+          )
+        )
+      }
+      return targets
+    }
+  }
+
+  func markNotModified(
+    canonicalKey: String,
+    etag: String?,
+    lastModified: String?,
+    asOf: Date
+  ) async throws {
+    try await pool.query(
+      """
+      UPDATE wire_link_metadata_cache
+      SET status = 'fresh', etag = COALESCE(\(etag), etag),
+          last_modified = COALESCE(\(lastModified), last_modified), fetched_at = \(asOf),
+          fresh_until = \(asOf.addingTimeInterval(86_400)),
+          stale_until = \(asOf.addingTimeInterval(7 * 86_400)),
+          retry_after = \(asOf.addingTimeInterval(86_400)), failure_count = 0, updated_at = \(asOf)
+      WHERE canonical_key = \(canonicalKey)
+      """,
+      logger: logger
+    )
+  }
+
+  func store(
+    canonicalKey: String,
+    metadata: WireLinkMetadata,
+    asOf: Date
+  ) async throws {
+    let homepageURL = Self.homepageURL(for: metadata.canonicalURL)
+    try await pool.withTransaction(logger: logger) { connection in
+      try await connection.query(
+        """
+        UPDATE wire_link_metadata_cache
+        SET canonical_url = \(metadata.canonicalURL), title = \(metadata.title),
+            description = \(metadata.description), image_url = \(metadata.imageURL),
+            site_name = \(metadata.siteName), icon_url = \(metadata.iconURL),
+            etag = \(metadata.etag), last_modified = \(metadata.lastModified),
+            source = 'open_graph', status = 'fresh', fetched_at = \(asOf),
+            fresh_until = \(asOf.addingTimeInterval(86_400)),
+            stale_until = \(asOf.addingTimeInterval(7 * 86_400)),
+            retry_after = \(asOf.addingTimeInterval(86_400)), failure_count = 0, updated_at = \(asOf)
+        WHERE canonical_key = \(canonicalKey)
+        """,
+        logger: logger
+      )
+      try await connection.query(
+        """
+        UPDATE wire_items
+        SET title = COALESCE(\(metadata.title), title),
+            summary = COALESCE(\(metadata.description), summary),
+            thumbnail_url = COALESCE(\(metadata.imageURL), thumbnail_url),
+            source_name = COALESCE(\(metadata.siteName), source_name),
+            publication_homepage_url = COALESCE(\(homepageURL), publication_homepage_url),
+            publication_icon_url = COALESCE(\(metadata.iconURL), publication_icon_url),
+            presentation_snapshot = presentation_snapshot || jsonb_strip_nulls(jsonb_build_object(
+              'metadataSource', 'open_graph',
+              'sourcePriority', 300,
+              'homepageUrl', \(homepageURL),
+              'iconUrl', \(metadata.iconURL)
+            )),
+            updated_at = \(asOf)
+        WHERE canonical_key = \(canonicalKey)
+          AND NOT (provenance ? 'standard_site')
+        """,
+        logger: logger
+      )
+    }
+  }
+
+  func markFailure(
+    canonicalKey: String,
+    negative: Bool,
+    asOf: Date
+  ) async throws {
+    let retryAfter = negative ? asOf.addingTimeInterval(6 * 3_600) : asOf.addingTimeInterval(900)
+    try await pool.query(
+      """
+      UPDATE wire_link_metadata_cache
+      SET status = \(negative ? "negative" : "retry"), retry_after = \(retryAfter),
+          failure_count = failure_count + 1, updated_at = \(asOf)
+      WHERE canonical_key = \(canonicalKey)
+      """,
+      logger: logger
+    )
+  }
+
+  func healthSnapshot(asOf: Date) async throws -> WireEnrichmentHealthSnapshot? {
+    let rows = try await pool.query(
+      """
+      WITH metadata AS (
+        SELECT
+          COUNT(*) FILTER (WHERE status = 'fresh' AND fresh_until > \(asOf))::bigint AS hits,
+          COUNT(*) FILTER (WHERE fresh_until <= \(asOf) AND stale_until > \(asOf))::bigint AS stale,
+          COUNT(*) FILTER (WHERE status IN ('pending', 'fetching', 'retry', 'negative'))::bigint AS misses,
+          COUNT(*) FILTER (WHERE status IN ('retry', 'negative', 'failed'))::bigint AS failures,
+          COALESCE(EXTRACT(EPOCH FROM (\(asOf) - MIN(updated_at) FILTER (
+            WHERE status IN ('retry', 'negative', 'failed')))), 0)::double precision AS failure_age
+        FROM wire_link_metadata_cache
+      ), eligible_people AS (
+        SELECT COUNT(*)::bigint AS count FROM (
+          SELECT subject_did FROM wire_item_mentions
+          WHERE expires_at > \(asOf)
+          GROUP BY subject_did
+          HAVING COUNT(DISTINCT canonical_key) >= 2
+             AND COUNT(DISTINCT speaker_key_hash) >= 3
+        ) eligible
+      ), fresh_people AS (
+        SELECT COUNT(*)::bigint AS count FROM wire_talked_accounts
+        WHERE status = 'fresh' AND expires_at > \(asOf)
+      )
+      SELECT metadata.hits, metadata.stale, metadata.misses, metadata.failures,
+             metadata.failure_age, eligible_people.count, fresh_people.count
+      FROM metadata, eligible_people, fresh_people
+      """,
+      logger: logger
+    )
+    for try await row in rows {
+      let value = try row.decode((Int64, Int64, Int64, Int64, Double, Int64, Int64).self)
+      return WireEnrichmentHealthSnapshot(
+        metadataHitCount: Int(value.0), metadataStaleCount: Int(value.1),
+        metadataMissCount: Int(value.2), metadataFailureCount: Int(value.3),
+        oldestFailureAgeSeconds: value.4, peopleEligibleCount: Int(value.5),
+        peopleFreshCount: Int(value.6)
+      )
+    }
+    return nil
+  }
+
+  private static func homepageURL(for articleURL: String) -> String? {
+    guard let url = URL(string: articleURL), let scheme = url.scheme, let host = url.host else {
+      return nil
+    }
+    var components = URLComponents()
+    components.scheme = scheme
+    components.host = host
+    components.port = url.port
+    return components.url?.absoluteString
+  }
+}

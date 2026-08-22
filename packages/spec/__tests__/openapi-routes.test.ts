@@ -79,6 +79,7 @@ describe("OpenAPI route drift", () => {
       "/v1/appview/entries": ['"/v1/appview/entries"'],
       "/v1/appview/feed": ['"/v1/appview/feed"'],
       "/xrpc/app.thesocialwire.discovery.getWire": ['"/xrpc/app.thesocialwire.discovery.getWire"'],
+      "/xrpc/app.thesocialwire.discovery.getWireEdition": ['"/xrpc/app.thesocialwire.discovery.getWireEdition"'],
       "/xrpc/app.thesocialwire.discovery.getWireItem": ['"/xrpc/app.thesocialwire.discovery.getWireItem"'],
       "/xrpc/app.thesocialwire.discovery.getFeedCatalog": ['"/xrpc/app.thesocialwire.discovery.getFeedCatalog"'],
       "/v1/appview/entry": ['"/v1/appview/entry"'],

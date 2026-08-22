@@ -29,8 +29,10 @@ function shouldPersistEntriesQuery(query: Query): boolean {
     !Array.isArray(key) ||
     (key[0] !== "entries" &&
       key[0] !== "aggregateEntries" &&
-      key[0] !== "wireEntries") ||
+      key[0] !== "wireEntries" &&
+      key[0] !== "wireEditionMore") ||
     (key[0] !== "wireEntries" &&
+      key[0] !== "wireEditionMore" &&
       (typeof key[1] !== "string" || key[1].length === 0)) ||
     query.state.status !== "success"
   ) {
@@ -53,9 +55,30 @@ function shouldPersistSidebarProjectionQuery(query: Query): boolean {
   return shouldPersistSidebarProjection(data);
 }
 
+function shouldPersistWireEditionQuery(query: Query): boolean {
+  const key = query.queryKey;
+  if (
+    !Array.isArray(key) ||
+    key[0] !== "wireEdition" ||
+    query.state.status !== "success"
+  ) {
+    return false;
+  }
+  const data = query.state.data as
+    | InfiniteData<{ stories?: unknown[] }>
+    | undefined;
+  if (!data?.pages?.length) return false;
+  const totalStories = data.pages.reduce(
+    (count, page) => count + (page.stories?.length ?? 0),
+    0,
+  );
+  return data.pages.length <= 3 && totalStories <= 150;
+}
+
 function shouldDehydrateQuery(query: Query): boolean {
   return (
     shouldPersistEntriesQuery(query) ||
+    shouldPersistWireEditionQuery(query) ||
     shouldPersistSidebarProjectionQuery(query)
   );
 }

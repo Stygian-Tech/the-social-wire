@@ -3,11 +3,13 @@ import GatewayCore
 import HTTPTypes
 import Hummingbird
 import NIOCore
+import OperationsCore
 import WireCore
 
 struct WireDiscoveryRoutes {
   let store: any WireFeedStore
   let moderation: WireViewerModerationService
+  let telemetry: OperationsTelemetryBuffer?
 
   func register(on group: RouterGroup<GatewayRequestContext>) {
     group.get("/xrpc/app.thesocialwire.discovery.getWire") {
@@ -32,6 +34,34 @@ struct WireDiscoveryRoutes {
         authenticated: Self.viewerDID(context) != nil,
         generationID: page.generationID,
         source: page.source.rawValue
+      )
+    }
+
+    group.get("/xrpc/app.thesocialwire.discovery.getWireEdition") {
+      request, context async throws -> Response in
+      let startedAt = Date()
+      try await moderation.requireSnapshot(
+        request: request,
+        auth: context.authContext,
+        now: Date()
+      )
+      let edition = try await store.getEdition(
+        language: request.uri.queryParameters.get("lang"),
+        viewerDid: Self.viewerDID(context),
+        now: Date()
+      )
+      await recordEditionMetrics(
+        edition,
+        latencyMilliseconds: Date().timeIntervalSince(startedAt) * 1_000,
+        authenticated: Self.viewerDID(context) != nil
+      )
+      return try Self.response(
+        WireEditionResponse(edition: edition),
+        etag: "\"wire-edition-\(edition.generationID)\"",
+        ifNoneMatch: request.headers[.ifNoneMatch],
+        authenticated: Self.viewerDID(context) != nil,
+        generationID: edition.generationID,
+        source: edition.source.rawValue
       )
     }
 
@@ -72,6 +102,54 @@ struct WireDiscoveryRoutes {
         generationID: catalog.latestGenerationID
       )
     }
+  }
+
+  private func recordEditionMetrics(
+    _ edition: WireEdition,
+    latencyMilliseconds: Double,
+    authenticated: Bool
+  ) async {
+    guard let telemetry else { return }
+    let base = [
+      "algorithm": edition.algorithmVersion,
+      "source": edition.source.rawValue,
+      "degraded": String(edition.degraded),
+      "auth": authenticated ? "viewer" : "public",
+    ]
+    _ = await telemetry.enqueue(.metric(OperationsMetricSample(
+      name: "wire.edition.endpoint.latency_ms",
+      value: latencyMilliseconds,
+      dimensions: base
+    )))
+    let fills: [(String, Int, Int)] = [
+      ("top_stories", edition.leadStories.count, WireEditionAssembler.maximumLeadStories),
+      ("publication_spotlights", edition.publicationPanels.count, WireEditionAssembler.maximumPublicationPanels),
+      ("people", edition.talkedAboutAccounts.count, WireEditionAssembler.maximumTalkedAboutAccounts),
+      ("trending", edition.trendingStories.count, WireEditionAssembler.maximumTrendingStories),
+    ]
+    for (section, count, target) in fills {
+      var dimensions = base
+      dimensions["section"] = section
+      _ = await telemetry.enqueue(.metric(OperationsMetricSample(
+        name: "wire.edition.section.fill",
+        value: Double(count),
+        dimensions: dimensions
+      )))
+      _ = await telemetry.enqueue(.metric(OperationsMetricSample(
+        name: "wire.edition.section.underfill",
+        value: Double(max(0, target - count)),
+        dimensions: dimensions
+      )))
+    }
+    let panelStories = edition.publicationPanels.map(\.stories.count)
+    let concentration = panelStories.reduce(0, +) == 0
+      ? 0
+      : Double(panelStories.max() ?? 0) / Double(panelStories.reduce(0, +))
+    _ = await telemetry.enqueue(.metric(OperationsMetricSample(
+      name: "wire.edition.publication.concentration",
+      value: concentration,
+      dimensions: base
+    )))
   }
 
   private static func viewerDID(_ context: GatewayRequestContext) -> String? {

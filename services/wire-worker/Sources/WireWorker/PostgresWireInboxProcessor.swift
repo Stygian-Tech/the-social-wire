@@ -36,6 +36,8 @@ struct PostgresWireInboxProcessor: Sendable {
   let logger: Logger
   let actorHasher: WireActorHasher
   let publicationResolver: any WirePublicationResolving
+  let linkMetadataStore: any WireLinkMetadataStoring
+  let mentionStore: any WireTalkedAccountMentionStoring
   let batchSize: Int
   let maximumConcurrentEvents: Int
 
@@ -44,6 +46,8 @@ struct PostgresWireInboxProcessor: Sendable {
     logger: Logger,
     actorSecret: String,
     publicationResolver: (any WirePublicationResolving)? = nil,
+    linkMetadataStore: (any WireLinkMetadataStoring)? = nil,
+    mentionStore: (any WireTalkedAccountMentionStoring)? = nil,
     batchSize: Int = 1_000,
     maximumConcurrentEvents: Int = 16
   ) throws {
@@ -56,6 +60,10 @@ struct PostgresWireInboxProcessor: Sendable {
         store: PostgresWirePublicationMetadataStore(pool: pool, logger: logger),
         queryClient: nil
       )
+    self.linkMetadataStore =
+      linkMetadataStore ?? PostgresWireLinkMetadataStore(pool: pool, logger: logger)
+    self.mentionStore =
+      mentionStore ?? PostgresWireTalkedAccountMentionStore(pool: pool, logger: logger)
     self.batchSize = max(1, min(batchSize, 5_000))
     self.maximumConcurrentEvents = max(1, min(maximumConcurrentEvents, 64))
   }
@@ -78,6 +86,7 @@ struct PostgresWireInboxProcessor: Sendable {
 
   func maintain(asOf: Date) async throws {
     try await pruneActiveGraph(asOf: asOf)
+    try await mentionStore.pruneExpired(asOf: asOf)
     try await refreshCommunitiesIfNeeded(asOf: asOf)
     try await refreshRollups(asOf: asOf)
   }
@@ -397,6 +406,10 @@ struct PostgresWireInboxProcessor: Sendable {
       publishedAt: publishedAt,
       provenance: ["standard_site"],
       confidence: 0.9,
+      presentationSource: "standard_site",
+      presentationPriority: 400,
+      publicationHomepageURL: Self.homepageURL(for: identity.canonicalURL),
+      publicationIconURL: nil,
       asOf: asOf
     )
     try await upsertAlias(
@@ -430,29 +443,48 @@ struct PostgresWireInboxProcessor: Sendable {
       let host = URL(string: identity.canonicalURL)?.host
     else { return }
     let text = Self.firstString(record, keys: ["text"])
-    let title =
-      text?.split(separator: "\n").first.map(String.init).flatMap {
-        $0.isEmpty ? nil : String($0.prefix(200))
-      } ?? host
+    let embedded = WireEmbeddedCardMetadata.extract(
+      from: record,
+      canonicalURL: identity.canonicalURL
+    )
+    let fallbackTitle: String?
+    if let firstLine = text?.split(separator: "\n").first {
+      let value = String(firstLine)
+      fallbackTitle = value.isEmpty ? nil : String(value.prefix(200))
+    } else {
+      fallbackTitle = nil
+    }
+    let title = embedded?.title ?? fallbackTitle ?? host
     let actorHash = try actorHasher.hash(event.repoDID)
     try await upsertItem(
       identity: identity,
       representativeURI: sourceURI,
       authorDID: nil,
-      sourceName: host,
+      sourceName: embedded?.siteName ?? host,
       host: host,
       publicationID: nil,
       authorName: nil,
       topicKeys: [],
       title: title,
-      summary: text,
-      thumbnail: nil,
+      summary: embedded?.description ?? text,
+      thumbnail: embedded?.imageURL,
       language: Self.primaryLanguage(Self.firstString(record, keys: ["langs", "lang"])),
       publishedAt: Self.date(Self.firstString(record, keys: ["createdAt"])),
       provenance: [Self.containsQuote(record) ? "quote" : "direct_share"],
       confidence: 0.6,
+      presentationSource: embedded == nil ? "fallback" : "embedded_card",
+      presentationPriority: embedded == nil ? 100 : 200,
+      publicationHomepageURL: Self.homepageURL(for: identity.canonicalURL),
+      publicationIconURL: embedded?.iconURL,
       asOf: asOf
     )
+    if let embedded {
+      try await linkMetadataStore.seedEmbedded(
+        canonicalKey: identity.canonicalKey,
+        metadata: embedded,
+        asOf: asOf
+      )
+    }
     try await upsertAlias(
       alias: sourceURI, type: "at_uri", canonicalKey: identity.canonicalKey, asOf: asOf)
     try await upsertAlias(
@@ -466,6 +498,14 @@ struct PostgresWireInboxProcessor: Sendable {
       sourceURI: sourceURI,
       kind: kind,
       asOf: asOf
+    )
+    try await mentionStore.replaceMentions(
+      sourceURI: sourceURI,
+      canonicalKey: identity.canonicalKey,
+      subjectDIDs: WireTalkedAccountMentionExtractor.subjects(in: record),
+      speakerKeyHash: actorHash,
+      occurredAt: event.eventTime,
+      expiresAt: event.eventTime.addingTimeInterval(WireDataPolicy.signalRetention)
     )
   }
 
@@ -572,9 +612,11 @@ struct PostgresWireInboxProcessor: Sendable {
         logger: logger
       )
     }
+    try await mentionStore.removeActor(did: event.repoDID, actorKeyHash: actorHash)
   }
 
   private func retract(sourceURI: String, eventTime: Date, asOf: Date) async throws {
+    try await mentionStore.retract(sourceURI: sourceURI, through: eventTime)
     try await pool.withTransaction(logger: logger) { connection in
       try await connection.query(
         "SELECT pg_advisory_xact_lock(hashtextextended(\(sourceURI), 0))",
@@ -622,23 +664,39 @@ struct PostgresWireInboxProcessor: Sendable {
     publishedAt: Date?,
     provenance: [String],
     confidence: Double,
+    presentationSource: String,
+    presentationPriority: Int,
+    publicationHomepageURL: String?,
+    publicationIconURL: String?,
     asOf: Date
   ) async throws {
     let provenanceJSON = String(decoding: try JSONEncoder().encode(provenance), as: UTF8.self)
     let topicsJSON = String(decoding: try JSONEncoder().encode(topicKeys), as: UTF8.self)
+    var presentation: [String: Any] = [
+      "metadataSource": presentationSource,
+      "sourcePriority": presentationPriority,
+    ]
+    presentation["homepageUrl"] = publicationHomepageURL
+    presentation["iconUrl"] = publicationIconURL
+    let presentationJSON = String(
+      decoding: try JSONSerialization.data(withJSONObject: presentation),
+      as: UTF8.self
+    )
     let expiresAt = asOf.addingTimeInterval(WireDataPolicy.itemRetention)
     try await pool.query(
       """
       INSERT INTO wire_items
         (canonical_key, canonical_url, representative_uri, publication_id, author_key,
          source_domain, source_name, author_name, title, summary, thumbnail_url,
+         publication_homepage_url, publication_icon_url,
          language_code, topic_keys, presentation_snapshot, provenance, published_at,
          first_seen_at, last_seen_at, last_signal_at,
          source_confidence, eligible, expires_at, updated_at)
       VALUES
         (\(identity.canonicalKey), \(identity.canonicalURL), \(representativeURI), \(publicationID),
          \(authorDID), \(host), \(sourceName), \(authorName), \(title), \(summary), \(thumbnail),
-         \(language), \(topicsJSON)::jsonb, '{}'::jsonb, \(provenanceJSON)::jsonb,
+         \(publicationHomepageURL), \(publicationIconURL),
+         \(language), \(topicsJSON)::jsonb, \(presentationJSON)::jsonb, \(provenanceJSON)::jsonb,
          \(publishedAt), \(asOf), \(asOf), \(asOf), \(confidence), TRUE, \(expiresAt), \(asOf))
       ON CONFLICT (canonical_key) DO UPDATE SET
         canonical_url = EXCLUDED.canonical_url,
@@ -646,10 +704,30 @@ struct PostgresWireInboxProcessor: Sendable {
         publication_id = COALESCE(wire_items.publication_id, EXCLUDED.publication_id),
         author_key = COALESCE(wire_items.author_key, EXCLUDED.author_key),
         author_name = COALESCE(wire_items.author_name, EXCLUDED.author_name),
-        title = CASE WHEN length(EXCLUDED.title) > length(wire_items.title)
+        source_name = CASE
+          WHEN COALESCE((EXCLUDED.presentation_snapshot->>'sourcePriority')::integer, 0)
+            >= COALESCE((wire_items.presentation_snapshot->>'sourcePriority')::integer, 0)
+          THEN EXCLUDED.source_name ELSE wire_items.source_name END,
+        title = CASE
+          WHEN COALESCE((EXCLUDED.presentation_snapshot->>'sourcePriority')::integer, 0)
+            >= COALESCE((wire_items.presentation_snapshot->>'sourcePriority')::integer, 0)
           THEN EXCLUDED.title ELSE wire_items.title END,
-        summary = COALESCE(wire_items.summary, EXCLUDED.summary),
-        thumbnail_url = COALESCE(wire_items.thumbnail_url, EXCLUDED.thumbnail_url),
+        summary = CASE
+          WHEN COALESCE((EXCLUDED.presentation_snapshot->>'sourcePriority')::integer, 0)
+            >= COALESCE((wire_items.presentation_snapshot->>'sourcePriority')::integer, 0)
+          THEN COALESCE(EXCLUDED.summary, wire_items.summary) ELSE wire_items.summary END,
+        thumbnail_url = CASE
+          WHEN COALESCE((EXCLUDED.presentation_snapshot->>'sourcePriority')::integer, 0)
+            >= COALESCE((wire_items.presentation_snapshot->>'sourcePriority')::integer, 0)
+          THEN COALESCE(EXCLUDED.thumbnail_url, wire_items.thumbnail_url) ELSE wire_items.thumbnail_url END,
+        presentation_snapshot = CASE
+          WHEN COALESCE((EXCLUDED.presentation_snapshot->>'sourcePriority')::integer, 0)
+            >= COALESCE((wire_items.presentation_snapshot->>'sourcePriority')::integer, 0)
+          THEN EXCLUDED.presentation_snapshot ELSE wire_items.presentation_snapshot END,
+        publication_homepage_url = COALESCE(
+          EXCLUDED.publication_homepage_url, wire_items.publication_homepage_url),
+        publication_icon_url = COALESCE(
+          EXCLUDED.publication_icon_url, wire_items.publication_icon_url),
         language_code = CASE WHEN wire_items.language_code = 'und'
           THEN EXCLUDED.language_code ELSE wire_items.language_code END,
         topic_keys = CASE WHEN jsonb_array_length(wire_items.topic_keys) = 0
@@ -1026,6 +1104,17 @@ struct PostgresWireInboxProcessor: Sendable {
       }
       return (scheme == "http" || scheme == "https") && url.host != nil
     }
+  }
+
+  private static func homepageURL(for articleURL: String) -> String? {
+    guard let url = URL(string: articleURL), let scheme = url.scheme, let host = url.host else {
+      return nil
+    }
+    var components = URLComponents()
+    components.scheme = scheme
+    components.host = host
+    components.port = url.port
+    return components.url?.absoluteString
   }
 
   private static func allStrings(_ value: Any, keys: Set<String>) -> [String] {

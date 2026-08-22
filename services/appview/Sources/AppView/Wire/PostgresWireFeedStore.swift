@@ -142,6 +142,199 @@ actor PostgresWireFeedStore: WireFeedStore {
     )
   }
 
+  func getEdition(
+    language: String?,
+    viewerDid: String?,
+    now: Date
+  ) async throws -> WireEdition {
+    guard mode.servesAPI else { throw WireServingError.unavailable }
+    try await requireUsableBaselineLabels(now: now)
+    let requestedLanguage = Self.primaryLanguage(language)
+    guard let generation = try await activeGeneration(language: requestedLanguage),
+      now.timeIntervalSince(generation.generatedAt) <= 30 * 60
+    else {
+      let page = try await getFeed(
+        cursor: nil,
+        limit: 50,
+        language: requestedLanguage,
+        viewerDid: viewerDid,
+        now: now
+      )
+      return WireEditionAssembler.assemble(
+        generationID: page.generationID,
+        generatedAt: page.generatedAt,
+        language: page.language,
+        cursor: page.cursor,
+        source: page.source,
+        degraded: page.degraded,
+        rankedItems: page.items
+      )
+    }
+
+    let generationRows = try await pool.query(
+      """
+      SELECT algorithm_version, continuation_ordinal
+      FROM wire_edition_generations
+      WHERE generation_id = \(generation.id)
+      LIMIT 1
+      """,
+      logger: logger
+    )
+    var algorithmVersion: String?
+    var continuationOrdinal = 0
+    for try await row in generationRows {
+      let value = try row.decode((String, Int).self)
+      algorithmVersion = value.0
+      continuationOrdinal = value.1
+    }
+    guard let algorithmVersion else { throw WireServingError.unavailable }
+
+    let itemRows = try await pool.query(
+      """
+      SELECT module.module_key, module.position, item.canonical_key, item.canonical_url,
+             item.representative_uri, item.title, item.summary, item.published_at,
+             item.thumbnail_url, item.source_name, item.source_domain, item.publication_id,
+             item.author_name, item.provenance::text, item.author_key,
+             ranked.reason_codes::text,
+             COALESCE(NULLIF(item.publication_id, ''), item.source_domain),
+             item.publication_homepage_url, item.publication_icon_url
+      FROM wire_edition_module_items module
+      JOIN wire_ranked_items ranked
+        ON ranked.generation_id = module.generation_id
+       AND ranked.canonical_key = module.canonical_key
+      JOIN wire_items item ON item.canonical_key = module.canonical_key
+      WHERE module.generation_id = \(generation.id)
+        AND item.eligible = TRUE AND item.expires_at > \(now)
+        AND NOT EXISTS (
+          SELECT 1 FROM wire_labels label
+          WHERE label.canonical_key = item.canonical_key AND label.expires_at > \(now)
+            AND label.label_value IN ('block', 'exclude', 'adult', 'graphic', 'spam')
+        )
+      ORDER BY module.module_key, module.position
+      """,
+      logger: logger
+    )
+    let moderation = try await moderationSnapshot(viewerDID: viewerDid, now: now)
+    var itemsByModule: [String: [WireFeedItem]] = [:]
+    for try await row in itemRows {
+      let cells = row.makeRandomAccess()
+      let key = try cells[0].decode(String.self)
+      let item = try Self.decodeItem(
+        row: row,
+        offset: 2,
+        reasonsJSON: try cells[15].decode(String.self),
+        metadataOffset: 16
+      )
+      let actorKey = try cells[14].decode(String?.self)
+      guard moderation?.allows(
+        item: actorKey ?? item.itemID,
+        title: item.title,
+        summary: item.summary,
+        representativeURI: item.representativeURI
+      ) ?? true else { continue }
+      itemsByModule[key, default: []].append(item)
+    }
+
+    let moduleRows = try await pool.query(
+      """
+      SELECT module_key, module_kind, title, position, reason_code,
+             publication_key, publication_name, publication_domain,
+             publication_homepage_url, publication_icon_url
+      FROM wire_edition_modules
+      WHERE generation_id = \(generation.id)
+      ORDER BY position
+      """,
+      logger: logger
+    )
+    var leads: [WireFeedItem] = []
+    var panels: [WireEditionPublicationPanel] = []
+    var rails: [WireEditionStoryRail] = []
+    var general: [WireFeedItem] = []
+    var trending: [WireFeedItem] = []
+    for try await row in moduleRows {
+      let value = try row.decode(
+        (String, String, String?, Int, String?, String?, String?, String?, String?, String?).self
+      )
+      let stories = itemsByModule[value.0] ?? []
+      switch value.1 {
+      case "top_stories":
+        leads = stories
+      case "publication_spotlight":
+        guard stories.count >= WireEditionAssembler.minimumStoriesPerPublicationPanel,
+          let key = value.5, let name = value.6, let domain = value.7
+        else { continue }
+        panels.append(
+          WireEditionPublicationPanel(
+            publication: WireEditionPublication(
+              key: key,
+              id: stories.first?.source.publication,
+              name: name,
+              domain: domain,
+              homepageURL: value.8,
+              iconURL: value.9
+            ),
+            stories: stories
+          )
+        )
+      case "story_rail":
+        guard stories.count >= WireEditionAssembler.minimumStoriesPerRail,
+          let reasonValue = value.4,
+          let reason = WireReasonCode(rawValue: reasonValue),
+          let title = value.2
+        else { continue }
+        rails.append(WireEditionStoryRail(id: value.0, title: title, reason: reason, stories: stories))
+      case "general":
+        general = stories
+      case "trending":
+        trending = stories
+      default:
+        throw WireServingError.unavailable
+      }
+    }
+
+    let moreRows = try await pool.query(
+      """
+      SELECT EXISTS(
+        SELECT 1 FROM wire_ranked_items
+        WHERE generation_id = \(generation.id) AND position >= \(continuationOrdinal)
+      )
+      """,
+      logger: logger
+    )
+    var hasMore = false
+    for try await row in moreRows { hasMore = try row.decode(Bool.self) }
+    let cursor = hasMore
+      ? try cursorCodec.encode(
+        WireCursor(
+          generationID: generation.id.uuidString.lowercased(),
+          language: generation.language,
+          nextOrdinal: continuationOrdinal
+        )
+      )
+      : nil
+    let accounts = try await materializedTalkedAccounts(
+      generationID: generation.id,
+      viewerDID: viewerDid,
+      now: now
+    )
+    let age = now.timeIntervalSince(generation.generatedAt)
+    return WireEdition(
+      algorithmVersion: algorithmVersion,
+      generationID: generation.id.uuidString.lowercased(),
+      generatedAt: generation.generatedAt,
+      language: generation.language,
+      cursor: cursor,
+      source: age > 10 * 60 ? .staleGeneration : .ranked,
+      degraded: age > 10 * 60,
+      leadStories: leads,
+      publicationPanels: panels,
+      storyRails: rails,
+      generalStories: general,
+      trendingStories: trending,
+      talkedAboutAccounts: accounts.count >= 4 ? accounts : []
+    )
+  }
+
   func getItem(itemId: String, viewerDid: String?) async throws -> WireItemDetail? {
     guard mode.servesAPI else { throw WireServingError.unavailable }
     try await requireUsableBaselineLabels(now: Date())
@@ -149,7 +342,9 @@ actor PostgresWireFeedStore: WireFeedStore {
       """
       SELECT canonical_key, canonical_url, representative_uri, title, summary, published_at,
              thumbnail_url, source_name, source_domain, publication_id, author_name,
-             provenance::text, author_key
+             provenance::text, author_key,
+             COALESCE(NULLIF(publication_id, ''), source_domain),
+             publication_homepage_url, publication_icon_url
       FROM wire_items
       WHERE canonical_key = \(itemId) AND eligible = TRUE AND expires_at > NOW()
         AND NOT EXISTS (
@@ -162,7 +357,7 @@ actor PostgresWireFeedStore: WireFeedStore {
       logger: logger
     )
     for try await row in rows {
-      let item = try Self.decodeItem(row: row, reasonsJSON: "[]")
+      let item = try Self.decodeItem(row: row, reasonsJSON: "[]", metadataOffset: 13)
       let actorKey = try row.makeRandomAccess()[12].decode(String?.self)
       let moderation = try await moderationSnapshot(viewerDID: viewerDid, now: Date())
       guard moderation?.allows(
@@ -290,7 +485,9 @@ actor PostgresWireFeedStore: WireFeedStore {
              item.title, item.summary, item.published_at, item.thumbnail_url, item.source_name,
              item.source_domain, item.publication_id, item.author_name, item.provenance::text,
              item.author_key,
-             ranked.reason_codes::text
+             ranked.reason_codes::text,
+             COALESCE(NULLIF(item.publication_id, ''), item.source_domain),
+             item.publication_homepage_url, item.publication_icon_url
       FROM wire_ranked_items ranked
       JOIN wire_items item ON item.canonical_key = ranked.canonical_key
       WHERE ranked.generation_id = \(generationID) AND ranked.position >= \(startOrdinal)
@@ -314,7 +511,12 @@ actor PostgresWireFeedStore: WireFeedStore {
       result.append(
         RankedRow(
           position: position,
-          item: try Self.decodeItem(row: row, offset: 1, reasonsJSON: reasons),
+          item: try Self.decodeItem(
+            row: row,
+            offset: 1,
+            reasonsJSON: reasons,
+            metadataOffset: 15
+          ),
           sourceActorKey: actorKey
         )
       )
@@ -352,7 +554,9 @@ actor PostgresWireFeedStore: WireFeedStore {
       """
       SELECT canonical_key, canonical_url, representative_uri, title, summary, published_at,
              thumbnail_url, source_name, source_domain, publication_id, author_name,
-             provenance::text, author_key, topic_keys::text
+             provenance::text, author_key, topic_keys::text,
+             COALESCE(NULLIF(publication_id, ''), source_domain),
+             publication_homepage_url, publication_icon_url
       FROM wire_items
       WHERE eligible = TRUE AND expires_at > \(now)
         AND (\(language) = 'und' OR language_code = \(language))
@@ -372,7 +576,7 @@ actor PostgresWireFeedStore: WireFeedStore {
     var ordinal = 0
     for try await row in rows {
       let cells = row.makeRandomAccess()
-      let item = try Self.decodeItem(row: row, reasonsJSON: "[]")
+      let item = try Self.decodeItem(row: row, reasonsJSON: "[]", metadataOffset: 14)
       let publication = try cells[9].decode(String?.self)
       let author = try cells[12].decode(String?.self)
       let topicsJSON = try cells[13].decode(String.self)
@@ -443,7 +647,8 @@ actor PostgresWireFeedStore: WireFeedStore {
   private static func decodeItem(
     row: PostgresRow,
     offset: Int = 0,
-    reasonsJSON: String
+    reasonsJSON: String,
+    metadataOffset: Int? = nil
   ) throws -> WireFeedItem {
     let cells = row.makeRandomAccess()
     let itemID = try cells[offset].decode(String.self)
@@ -474,11 +679,55 @@ actor PostgresWireFeedStore: WireFeedStore {
         name: sourceName,
         domain: sourceDomain,
         publication: publication,
-        author: authorName
+        author: authorName,
+        publicationKey: try metadataOffset.map { try cells[$0].decode(String?.self) } ?? nil,
+        homepageURL: try metadataOffset.map { try cells[$0 + 1].decode(String?.self) } ?? nil,
+        iconURL: try metadataOffset.map { try cells[$0 + 2].decode(String?.self) } ?? nil
       ),
       reasons: reasons,
       provenance: provenance
     )
+  }
+
+  private func materializedTalkedAccounts(
+    generationID: UUID,
+    viewerDID: String?,
+    now: Date
+  ) async throws -> [WireTalkedAboutAccount] {
+    let rows = try await pool.query(
+      """
+      SELECT selected.position, profile.subject_did, profile.handle,
+             profile.display_name, profile.avatar_url, profile.description
+      FROM wire_edition_talked_accounts selected
+      JOIN wire_talked_accounts profile ON profile.subject_did = selected.subject_did
+      WHERE selected.generation_id = \(generationID)
+        AND profile.status = 'fresh' AND profile.expires_at > \(now)
+      ORDER BY selected.position
+      LIMIT 10
+      """,
+      logger: logger
+    )
+    let moderation = try await moderationSnapshot(viewerDID: viewerDID, now: now)
+    var result: [WireTalkedAboutAccount] = []
+    for try await row in rows {
+      let value = try row.decode((Int, String, String?, String?, String?, String?).self)
+      guard moderation?.allows(
+        item: value.1,
+        title: value.3 ?? value.2 ?? value.1,
+        summary: nil,
+        representativeURI: nil
+      ) ?? true else { continue }
+      result.append(
+        WireTalkedAboutAccount(
+          did: value.1,
+          handle: value.2,
+          displayName: value.3,
+          avatarURL: value.4,
+          description: value.5
+        )
+      )
+    }
+    return result
   }
 
   private static func primaryLanguage(_ raw: String?) -> String {

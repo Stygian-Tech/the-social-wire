@@ -35,7 +35,7 @@ enum WireCorpusEdgeRouterBuilder {
     protected.get("/internal/wire/v1/contract") { request, _ async throws -> Response in
       try validateQuery(request.uri.query, allowed: [])
       try await store.ping()
-      return try response(["contractVersion": 1])
+      return try response(["contractVersion": 2])
     }
     protected.get("/internal/wire/v1/feed") { request, _ async throws -> Response in
       try validateQuery(
@@ -72,6 +72,15 @@ enum WireCorpusEdgeRouterBuilder {
         )
       )
     }
+    protected.get("/internal/wire/v1/edition") { request, _ async throws -> Response in
+      try validateQuery(request.uri.query, allowed: ["language"])
+      return try response(
+        await store.edition(
+          language: primaryLanguage(request.uri.queryParameters.get("language")),
+          now: Date()
+        )
+      )
+    }
     protected.get("/internal/wire/v1/item") { request, _ async throws -> Response in
       try validateQuery(request.uri.query, allowed: ["itemId"])
       guard let itemID = request.uri.queryParameters.get("itemId"),
@@ -98,7 +107,7 @@ enum WireCorpusEdgeRouterBuilder {
     var headers = HTTPFields()
     headers[.contentType] = "application/json"
     headers[.cacheControl] = "no-store"
-    if let name = HTTPField.Name("X-Wire-Corpus-Contract") { headers[name] = "1" }
+    if let name = HTTPField.Name("X-Wire-Corpus-Contract") { headers[name] = "2" }
     return Response(status: .ok, headers: headers, body: .init(byteBuffer: ByteBuffer(data: body)))
   }
 

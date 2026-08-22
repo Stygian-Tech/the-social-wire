@@ -39,6 +39,7 @@ struct WireWorkerCommand: AsyncParsableCommand {
       store: PostgresWirePublicationMetadataStore(pool: pool, logger: serviceLogger),
       queryClient: HTTPWirePublicationQueryClient(httpClient: httpClient)
     )
+    let linkMetadataStore = PostgresWireLinkMetadataStore(pool: pool, logger: serviceLogger)
     let inboxProcessor: PostgresWireInboxProcessor?
     if let actorSecret = config.actorHMACSecret {
       inboxProcessor = try PostgresWireInboxProcessor(
@@ -46,6 +47,7 @@ struct WireWorkerCommand: AsyncParsableCommand {
         logger: serviceLogger,
         actorSecret: actorSecret,
         publicationResolver: publicationResolver,
+        linkMetadataStore: linkMetadataStore,
         batchSize: config.inboxBatchSize,
         maximumConcurrentEvents: config.inboxConcurrency
       )
@@ -138,6 +140,36 @@ struct WireWorkerCommand: AsyncParsableCommand {
               logger: serviceLogger,
               batchSize: config.inboxCleanupBatchSize,
               idleMilliseconds: config.inboxCleanupIdleMilliseconds
+            )
+          }
+        }
+        if runtimePlan.runsMetadataEnrichment {
+          let enricher = WireLinkMetadataEnricher(
+            store: linkMetadataStore,
+            client: HTTPWireLinkMetadataClient(httpClient: httpClient),
+            logger: serviceLogger,
+            batchSize: config.metadataBatchSize,
+            maximumConcurrentFetches: config.metadataConcurrency
+          )
+          group.addTask {
+            try await WireMetadataEnrichmentRuntime.run(
+              enricher: enricher,
+              logger: serviceLogger,
+              idleMilliseconds: config.metadataIdleMilliseconds
+            )
+          }
+          let profileEnricher = WireTalkedAccountProfileEnricher(
+            store: PostgresWireTalkedAccountProfileStore(pool: pool, logger: serviceLogger),
+            client: HTTPWireTalkedAccountProfileClient(httpClient: httpClient),
+            logger: serviceLogger,
+            batchSize: min(config.metadataBatchSize, 100),
+            maximumConcurrentFetches: min(config.metadataConcurrency, 8)
+          )
+          group.addTask {
+            try await WireMetadataEnrichmentRuntime.runProfiles(
+              enricher: profileEnricher,
+              logger: serviceLogger,
+              idleMilliseconds: config.metadataIdleMilliseconds
             )
           }
         }

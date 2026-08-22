@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useCallback, useMemo, useState } from "react";
 import { EntryList } from "@/components/EntryList/EntryList";
 import { RssArticleReaderDialog } from "@/components/EntryDetail/RssArticleReaderDialog";
@@ -13,9 +14,22 @@ import type { EntryListItem } from "@/lib/atprotoClient";
 import type { AggregateAppViewFeed } from "@/lib/thinAppViewClient";
 import { useFeedDisplayPreferences } from "@/hooks/useFeedDisplayPreferences";
 import { useAuth } from "@/hooks/useAuth";
+import { isWireNewsEditionEnabled } from "@/lib/wireEditionClient";
 
 const ignoreTheWireReadState = () => undefined;
 const theWireEntryIsUnread = () => false;
+
+const WireNewsExperience = dynamic(
+  () => import("@/components/Wire/WireNewsExperience"),
+  {
+    loading: () => (
+      <div className="grid h-full gap-4 p-4 sm:grid-cols-2">
+        <div className="h-80 animate-pulse rounded-2xl bg-muted" />
+        <div className="h-80 animate-pulse rounded-2xl bg-muted" />
+      </div>
+    ),
+  },
+);
 
 export default function ReadPubPage({
   pubId,
@@ -26,6 +40,7 @@ export default function ReadPubPage({
   aggregateFeed?: AggregateAppViewFeed;
   wireFeed?: boolean;
 }) {
+  const wireNewsEditionEnabled = wireFeed && isWireNewsEditionEnabled();
   const [rssReaderEntry, setRssReaderEntry] = useState<{
     entryId: string;
     title: string;
@@ -182,23 +197,27 @@ export default function ReadPubPage({
           </div>
         ) : null}
         <div className="min-h-0 flex-1 overflow-hidden">
-          <EntryList
-            pubId={pubId}
-            aggregateFeed={aggregateFeed}
-            wireFeed={wireFeed}
-            selectedEntryId={rssReaderEntry?.entryId ?? null}
-            resolvingEntryId={resolvingEntryId}
-            onSelectEntry={handleSelectEntry}
-            isEntryRead={wireFeed ? theWireEntryIsUnread : isEntryRead}
-            readIndicatorsEnabled={!wireFeed}
-            articleFilter={wireFeed ? "all" : articleListFilter}
-            markEntryRead={
-              wireFeed ? ignoreTheWireReadState : markEntryReadForPub
-            }
-            markEntryUnread={
-              wireFeed ? ignoreTheWireReadState : markEntryUnreadForPub
-            }
-          />
+          {wireNewsEditionEnabled ? (
+            <WireNewsExperience onSelect={handleSelectEntry} />
+          ) : (
+            <EntryList
+              pubId={pubId}
+              aggregateFeed={aggregateFeed}
+              wireFeed={wireFeed}
+              selectedEntryId={rssReaderEntry?.entryId ?? null}
+              resolvingEntryId={resolvingEntryId}
+              onSelectEntry={handleSelectEntry}
+              isEntryRead={wireFeed ? theWireEntryIsUnread : isEntryRead}
+              readIndicatorsEnabled={!wireFeed}
+              articleFilter={wireFeed ? "all" : articleListFilter}
+              markEntryRead={
+                wireFeed ? ignoreTheWireReadState : markEntryReadForPub
+              }
+              markEntryUnread={
+                wireFeed ? ignoreTheWireReadState : markEntryUnreadForPub
+              }
+            />
+          )}
         </div>
       </div>
       <RssArticleReaderDialog

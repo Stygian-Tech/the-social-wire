@@ -177,6 +177,193 @@ struct PostgresWireGenerationStore: WireGenerationStore {
         )
       }
 
+      let editionRows = try await connection.query(
+        """
+        SELECT ranked.position, item.canonical_key, item.canonical_url, item.representative_uri,
+               item.title, item.summary, item.published_at, item.thumbnail_url, item.source_name,
+               item.source_domain, item.publication_id, item.author_name, item.provenance::text,
+               ranked.reason_codes::text,
+               COALESCE(NULLIF(item.publication_id, ''), item.source_domain),
+               item.publication_homepage_url, item.publication_icon_url
+        FROM wire_ranked_items ranked
+        JOIN wire_items item ON item.canonical_key = ranked.canonical_key
+        WHERE ranked.generation_id = \(generation.generationID) AND ranked.position < 50
+        ORDER BY ranked.position
+        """,
+        logger: logger
+      )
+      let decoder = JSONDecoder()
+      var editionItems: [WireFeedItem] = []
+      for try await row in editionRows {
+        let cells = row.makeRandomAccess()
+        let provenanceJSON = try cells[12].decode(String.self)
+        let reasonsJSON = try cells[13].decode(String.self)
+        editionItems.append(
+          WireFeedItem(
+            itemID: try cells[1].decode(String.self),
+            canonicalURL: try cells[2].decode(String.self),
+            representativeURI: try cells[3].decode(String?.self),
+            title: try cells[4].decode(String.self),
+            summary: try cells[5].decode(String?.self),
+            publishedAt: try cells[6].decode(Date?.self),
+            thumbnailURL: try cells[7].decode(String?.self),
+            source: WireItemSource(
+              name: try cells[8].decode(String.self),
+              domain: try cells[9].decode(String.self),
+              publication: try cells[10].decode(String?.self),
+              author: try cells[11].decode(String?.self),
+              publicationKey: try cells[14].decode(String?.self),
+              homepageURL: try cells[15].decode(String?.self),
+              iconURL: try cells[16].decode(String?.self)
+            ),
+            reasons: (try? decoder.decode(
+              [WireReasonCode].self, from: Data(reasonsJSON.utf8)
+            )) ?? [],
+            provenance: (try? decoder.decode(
+              [WireProvenanceKind].self, from: Data(provenanceJSON.utf8)
+            )) ?? []
+          )
+        )
+      }
+
+      let accountRows = try await connection.query(
+        """
+        SELECT mentions.subject_did, profile.handle, profile.display_name, profile.avatar_url,
+               profile.description,
+               COUNT(DISTINCT mentions.canonical_key)::bigint,
+               COUNT(DISTINCT mentions.speaker_key_hash)::bigint,
+               MIN(ranked.position), MAX(mentions.occurred_at)
+        FROM wire_item_mentions mentions
+        JOIN wire_talked_accounts profile ON profile.subject_did = mentions.subject_did
+        JOIN wire_ranked_items ranked
+          ON ranked.generation_id = \(generation.generationID)
+         AND ranked.canonical_key = mentions.canonical_key
+        WHERE mentions.expires_at > \(generation.generatedAt)
+          AND profile.status = 'fresh'
+          AND profile.expires_at > \(generation.generatedAt)
+        GROUP BY mentions.subject_did, profile.handle, profile.display_name,
+                 profile.avatar_url, profile.description
+        HAVING COUNT(DISTINCT mentions.canonical_key) >= 2
+           AND COUNT(DISTINCT mentions.speaker_key_hash) >= 3
+        ORDER BY COUNT(DISTINCT mentions.canonical_key) DESC,
+                 COUNT(DISTINCT mentions.speaker_key_hash) DESC,
+                 MIN(ranked.position), MAX(mentions.occurred_at) DESC,
+                 mentions.subject_did
+        LIMIT 10
+        """,
+        logger: logger
+      )
+      var accountCandidates: [WireTalkedAboutAccountCandidate] = []
+      for try await row in accountRows {
+        let value = try row.decode(
+          (String, String?, String?, String?, String?, Int64, Int64, Int, Date).self
+        )
+        accountCandidates.append(
+          WireTalkedAboutAccountCandidate(
+            account: WireTalkedAboutAccount(
+              did: value.0,
+              handle: value.1,
+              displayName: value.2,
+              avatarURL: value.3,
+              description: value.4
+            ),
+            distinctStoryCount: Int(value.5),
+            distinctSpeakerCount: Int(value.6),
+            bestStoryRank: value.7,
+            latestMentionAt: value.8
+          )
+        )
+      }
+      let edition = WireEditionAssembler.assemble(
+        generationID: generation.generationID.uuidString.lowercased(),
+        generatedAt: generation.generatedAt,
+        language: generation.languageBucket,
+        source: .ranked,
+        degraded: false,
+        rankedItems: editionItems,
+        talkedAboutAccountCandidates: accountCandidates
+      )
+      let continuationOrdinal = min(50, generation.result.items.count)
+      try await connection.query(
+        """
+        INSERT INTO wire_edition_generations
+          (generation_id, algorithm_version, language_bucket, continuation_ordinal, materialized_at)
+        VALUES
+          (\(generation.generationID), \(edition.algorithmVersion), \(generation.languageBucket),
+           \(continuationOrdinal), \(generation.generatedAt))
+        """,
+        logger: logger
+      )
+
+      var modulePosition = 0
+      func insertModule(
+        key: String,
+        kind: String,
+        title: String?,
+        reason: String?,
+        publication: WireEditionPublication?,
+        stories: [WireFeedItem]
+      ) async throws {
+        guard !stories.isEmpty else { return }
+        try await connection.query(
+          """
+          INSERT INTO wire_edition_modules
+            (generation_id, module_key, module_kind, title, position, reason_code,
+             publication_key, publication_name, publication_domain,
+             publication_homepage_url, publication_icon_url)
+          VALUES
+            (\(generation.generationID), \(key), \(kind), \(title), \(modulePosition), \(reason),
+             \(publication?.key), \(publication?.name), \(publication?.domain),
+             \(publication?.homepageURL), \(publication?.iconURL))
+          """,
+          logger: logger
+        )
+        for (position, story) in stories.enumerated() {
+          try await connection.query(
+            """
+            INSERT INTO wire_edition_module_items
+              (generation_id, module_key, position, canonical_key)
+            VALUES (\(generation.generationID), \(key), \(position), \(story.itemID))
+            """,
+            logger: logger
+          )
+        }
+        modulePosition += 1
+      }
+      try await insertModule(
+        key: "top-stories", kind: "top_stories", title: "Top Stories", reason: nil,
+        publication: nil, stories: edition.leadStories
+      )
+      for (index, panel) in edition.publicationPanels.enumerated() {
+        try await insertModule(
+          key: "publication-\(index)", kind: "publication_spotlight", title: panel.publication.name,
+          reason: nil, publication: panel.publication, stories: panel.stories
+        )
+      }
+      for rail in edition.storyRails {
+        try await insertModule(
+          key: rail.id, kind: "story_rail", title: rail.title,
+          reason: rail.reason.rawValue, publication: nil, stories: rail.stories
+        )
+      }
+      try await insertModule(
+        key: "general", kind: "general", title: "More Across the Social Web", reason: nil,
+        publication: nil, stories: edition.generalStories
+      )
+      try await insertModule(
+        key: "trending", kind: "trending", title: "Trending", reason: nil,
+        publication: nil, stories: edition.trendingStories
+      )
+      for (position, account) in edition.talkedAboutAccounts.enumerated() {
+        try await connection.query(
+          """
+          INSERT INTO wire_edition_talked_accounts (generation_id, position, subject_did)
+          VALUES (\(generation.generationID), \(position), \(account.did))
+          """,
+          logger: logger
+        )
+      }
+
       if generation.activate {
         try await connection.query(
           """

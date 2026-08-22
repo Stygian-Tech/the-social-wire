@@ -9,7 +9,10 @@
         "name": { "type": "string", "maxLength": 300 },
         "domain": { "type": "string", "maxLength": 253 },
         "publication": { "type": "string", "maxLength": 2048 },
-        "author": { "type": "string", "maxLength": 300 }
+        "author": { "type": "string", "maxLength": 300 },
+        "publicationKey": { "type": "string", "maxLength": 2048 },
+        "homepageUrl": { "type": "string", "format": "uri", "maxLength": 8192 },
+        "iconUrl": { "type": "string", "format": "uri", "maxLength": 8192 }
       }
     },
     "wireItem": {
@@ -55,6 +58,85 @@
         "source": { "type": "string", "knownValues": ["ranked", "stale_generation", "simplified_fallback"] },
         "degraded": { "type": "boolean" },
         "items": { "type": "array", "maxLength": 50, "items": { "type": "ref", "ref": "app.thesocialwire.discovery.defs#wireItem" } }
+      }
+    },
+    "wirePublicationSpotlight": {
+      "type": "object",
+      "required": ["id", "publication", "storyIds"],
+      "properties": {
+        "id": { "type": "string", "maxLength": 2048 },
+        "publication": { "type": "ref", "ref": "app.thesocialwire.discovery.defs#sourceAttribution" },
+        "storyIds": {
+          "type": "array",
+          "minLength": 2,
+          "maxLength": 3,
+          "items": { "type": "string", "maxLength": 128 }
+        }
+      }
+    },
+    "wireStoryRail": {
+      "type": "object",
+      "required": ["id", "title", "storyIds"],
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "title": { "type": "string", "maxLength": 160 },
+        "storyIds": {
+          "type": "array",
+          "minLength": 1,
+          "maxLength": 50,
+          "items": { "type": "string", "maxLength": 128 }
+        }
+      }
+    },
+    "wireTalkedAboutPerson": {
+      "type": "object",
+      "required": ["did", "handle", "displayName"],
+      "properties": {
+        "did": { "type": "string", "format": "did", "maxLength": 2048 },
+        "handle": { "type": "string", "maxLength": 253 },
+        "displayName": { "type": "string", "maxLength": 640 },
+        "avatarUrl": { "type": "string", "format": "uri", "maxLength": 8192 },
+        "description": { "type": "string", "maxLength": 10000 }
+      }
+    },
+    "wireEdition": {
+      "type": "object",
+      "required": [
+        "editionVersion", "generationId", "generatedAt", "language", "source", "degraded",
+        "stories", "topStoryIds", "publicationSpotlights", "storyRails", "people", "trendingStoryIds"
+      ],
+      "properties": {
+        "editionVersion": { "type": "string", "maxLength": 128 },
+        "generationId": { "type": "string", "maxLength": 128 },
+        "generatedAt": { "type": "string", "format": "datetime" },
+        "language": { "type": "string", "maxLength": 35 },
+        "source": { "type": "string", "knownValues": ["ranked", "stale_generation", "simplified_fallback"] },
+        "degraded": { "type": "boolean" },
+        "stories": {
+          "type": "array", "maxLength": 50,
+          "items": { "type": "ref", "ref": "app.thesocialwire.discovery.defs#wireItem" }
+        },
+        "topStoryIds": {
+          "type": "array", "maxLength": 4,
+          "items": { "type": "string", "maxLength": 128 }
+        },
+        "publicationSpotlights": {
+          "type": "array", "maxLength": 6,
+          "items": { "type": "ref", "ref": "app.thesocialwire.discovery.defs#wirePublicationSpotlight" }
+        },
+        "storyRails": {
+          "type": "array", "maxLength": 6,
+          "items": { "type": "ref", "ref": "app.thesocialwire.discovery.defs#wireStoryRail" }
+        },
+        "people": {
+          "type": "array", "maxLength": 10,
+          "items": { "type": "ref", "ref": "app.thesocialwire.discovery.defs#wireTalkedAboutPerson" }
+        },
+        "trendingStoryIds": {
+          "type": "array", "maxLength": 10,
+          "items": { "type": "string", "maxLength": 128 }
+        },
+        "moreCursor": { "type": "string", "maxLength": 4096 }
       }
     }
   }

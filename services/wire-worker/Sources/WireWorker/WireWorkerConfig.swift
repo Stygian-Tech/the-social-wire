@@ -20,6 +20,9 @@ struct WireWorkerConfig: Sendable {
   var inboxCleanupBatchSize: Int
   var inboxCleanupIdleMilliseconds: Int
   var inboxCleanupEnabled: Bool
+  var metadataBatchSize: Int
+  var metadataConcurrency: Int
+  var metadataIdleMilliseconds: Int
   var postgresMaximumConnections: Int
 
   static func load(_ environment: [String: String]) throws -> WireWorkerConfig {
@@ -85,6 +88,15 @@ struct WireWorkerConfig: Sendable {
       ),
       inboxCleanupEnabled: try boolean(
         environment, key: "WIRE_INBOX_CLEANUP_ENABLED", default: true
+      ),
+      metadataBatchSize: try boundedPositiveInt(
+        environment, key: "WIRE_METADATA_BATCH_SIZE", default: 32, maximum: 250
+      ),
+      metadataConcurrency: try boundedPositiveInt(
+        environment, key: "WIRE_METADATA_CONCURRENCY", default: 8, maximum: 32
+      ),
+      metadataIdleMilliseconds: try boundedPositiveInt(
+        environment, key: "WIRE_METADATA_IDLE_MILLISECONDS", default: 1_000, maximum: 60_000
       ),
       postgresMaximumConnections: try boundedPositiveInt(
         environment, key: "WIRE_POSTGRES_MAX_CONNECTIONS", default: 12, maximum: 64
