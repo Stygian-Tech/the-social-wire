@@ -447,10 +447,14 @@ struct PostgresWireInboxProcessor: Sendable {
       from: record,
       canonicalURL: identity.canonicalURL
     )
-    let title =
-      embedded?.title ?? text?.split(separator: "\n").first.map(String.init).flatMap {
-        $0.isEmpty ? nil : String($0.prefix(200))
-      } ?? host
+    let fallbackTitle: String?
+    if let firstLine = text?.split(separator: "\n").first {
+      let value = String(firstLine)
+      fallbackTitle = value.isEmpty ? nil : String(value.prefix(200))
+    } else {
+      fallbackTitle = nil
+    }
+    let title = embedded?.title ?? fallbackTitle ?? host
     let actorHash = try actorHasher.hash(event.repoDID)
     try await upsertItem(
       identity: identity,
