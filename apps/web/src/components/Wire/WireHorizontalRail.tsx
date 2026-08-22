@@ -115,7 +115,7 @@ export function WireHorizontalRail({
         role="group"
         aria-label={`${title} carousel`}
         tabIndex={0}
-        className="flex snap-x snap-mandatory scroll-pl-5 scroll-pr-4 gap-3 overflow-x-auto pb-2 pl-5 pr-4 outline-none [scrollbar-width:none] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:scroll-pl-6 sm:scroll-pr-5 sm:pl-6 sm:pr-5 [&::-webkit-scrollbar]:hidden"
+        className="flex snap-x snap-mandatory scroll-pl-5 scroll-pr-4 gap-3 overflow-x-auto pb-2 pl-5 pr-4 pt-2 outline-none [scrollbar-width:none] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:scroll-pl-6 sm:scroll-pr-5 sm:pl-6 sm:pr-5 [&::-webkit-scrollbar]:hidden"
       >
         {children}
       </div>

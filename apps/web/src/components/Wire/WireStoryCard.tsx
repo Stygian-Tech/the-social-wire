@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { EntryCardActionMenu } from "@/components/EntryList/EntryCardActionMenu";
 import { EntryRowActions } from "@/components/EntryList/EntryRowActions";
@@ -14,6 +14,7 @@ import {
 import { Tooltip, TooltipTrigger } from "@/components/ui/tooltip";
 import type { EntryListItem } from "@/lib/atprotoClient";
 import { decodeHtmlEntities } from "@/lib/decodeHtmlEntities";
+import { thumbnailImageSrcAttempts } from "@/lib/publicResourceUrl";
 import { cn } from "@/lib/utils";
 import { wireReasonLabel } from "@/lib/wireFeedClient";
 import { WireStoryHoverMetadata } from "./WireStoryHoverMetadata";
@@ -60,6 +61,17 @@ export function WireStoryCard({
     .map(wireReasonLabel)
     .find((label): label is string => Boolean(label));
   const showImage = variant !== "compact";
+  const thumbnailAttempts = useMemo(
+    () =>
+      thumbnailImageSrcAttempts(
+        story.thumbnailUrl,
+        story.thumbnailFallbackUrl,
+      ),
+    [story.thumbnailFallbackUrl, story.thumbnailUrl],
+  );
+  const [thumbnailAttempt, setThumbnailAttempt] = useState(0);
+  useEffect(() => setThumbnailAttempt(0), [thumbnailAttempts]);
+  const thumbnailUrl = thumbnailAttempts[thumbnailAttempt];
 
   const card = (
     <div
@@ -78,7 +90,7 @@ export function WireStoryCard({
           "lg:grid lg:grid-cols-[minmax(0,1fr)_9rem]",
         variant === "compact" && "rounded-xl shadow-sm",
         variant === "trending" &&
-          "grid grid-cols-[minmax(0,1fr)_4.75rem] rounded-xl shadow-sm",
+          "grid grid-cols-[minmax(0,1fr)_7rem] rounded-xl shadow-sm",
       )}
     >
       {showImage ? (
@@ -90,17 +102,22 @@ export function WireStoryCard({
               : variant === "supporting"
                 ? "aspect-[16/9] lg:col-start-2 lg:row-start-1 lg:my-1.5 lg:mr-1.5 lg:aspect-[4/3] lg:self-center lg:rounded-xl"
                 : variant === "trending"
-                  ? "col-start-2 row-start-1 m-1.5 min-h-[4.75rem] rounded-lg"
+                  ? "col-start-2 row-start-1 m-1.5 aspect-[4/3] self-center rounded-lg"
                 : "aspect-[16/9]",
           )}
         >
           <CachedImage
-            src={story.thumbnailUrl}
+            src={thumbnailUrl}
             alt=""
             width={variant === "lead" ? 960 : 480}
             height={variant === "lead" ? 450 : 270}
             loading={variant === "lead" ? "eager" : "lazy"}
             className="absolute inset-0 size-full object-cover transition-transform duration-300 group-hover/story:scale-[1.015]"
+            onError={() =>
+              setThumbnailAttempt((current) =>
+                Math.min(current + 1, thumbnailAttempts.length),
+              )
+            }
           />
           {rank && variant !== "trending" ? (
             <span className="absolute left-3 top-3 inline-flex size-8 items-center justify-center rounded-full bg-background/92 text-sm font-bold text-foreground shadow-sm backdrop-blur-sm">
@@ -111,7 +128,7 @@ export function WireStoryCard({
       ) : null}
       <div
         className={cn(
-          "relative p-3.5",
+          "relative min-w-0 overflow-hidden p-3.5",
           variant === "lead" && "p-4 sm:p-5",
           variant === "supporting" &&
             "lg:col-start-1 lg:row-start-1 lg:self-center lg:p-3",
@@ -175,7 +192,7 @@ export function WireStoryCard({
         </div>
         <h3
           className={cn(
-            "font-bold leading-tight text-foreground underline-offset-4 group-hover/story:underline",
+            "[overflow-wrap:anywhere] font-bold leading-tight text-foreground underline-offset-4 group-hover/story:underline",
             variant === "lead"
               ? "line-clamp-3 text-2xl sm:text-3xl"
               : variant === "compact"
