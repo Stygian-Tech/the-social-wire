@@ -146,14 +146,19 @@ struct WireEditionAssemblerTests {
 
   @Test("ranks only privacy-safe talked-about account cohorts deterministically")
   func talkedAboutAccounts() throws {
-    let candidates = (0..<12).map { index in
-      accountCandidate(
-        did: "did:plc:\(String(format: "%02d", index))",
-        stories: index == 11 ? 1 : 2 + (index % 3),
-        speakers: index == 10 ? 2 : 3 + (index % 2),
+    var candidates: [WireTalkedAboutAccountCandidate] = []
+    for index in 0..<12 {
+      let did = "did:plc:\(String(format: "%02d", index))"
+      let storyCount = index == 11 ? 1 : 2 + (index % 3)
+      let speakerCount = index == 10 ? 2 : 3 + (index % 2)
+      let candidate = accountCandidate(
+        did: did,
+        stories: storyCount,
+        speakers: speakerCount,
         bestStoryRank: 20 - index,
         latest: now.addingTimeInterval(Double(index))
       )
+      candidates.append(candidate)
     }
     let duplicateWeaker = accountCandidate(
       did: "DID:PLC:09",
