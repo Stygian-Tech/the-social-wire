@@ -9,12 +9,35 @@
 - `WIRE_FEED_MODE=api`: commit and serve the API while the catalog keeps navigation hidden (`enabled: true`, `available: false`).
 - `WIRE_FEED_MODE=visible`: commit and serve the API with catalog navigation enabled and available.
 
+## Roles
+
+- `WIRE_WORKER_ROLE=combined` (default): drain and clean the inbox, refresh moderation,
+  maintain graph/rollup projections, and build rank generations.
+- `WIRE_WORKER_ROLE=rank`: run only the moderation, graph/rollup, ranking, and generation
+  cycle. Keep exactly one rank replica active for a corpus.
+- `WIRE_WORKER_ROLE=drain`: drain and clean the inbox only. It never refreshes labels,
+  rebuilds rollups, ranks candidates, or commits a generation, so multiple drain-only
+  replicas can scale ingestion without racing the singleton generation cycle.
+
+The feed mode remains the remote kill switch for all roles. `WIRE_FEED_MODE=off`
+keeps only health probes active. A drain-only worker therefore uses the same non-off
+mode and actor HMAC secret as the combined worker, but its readiness requires only
+recent successful drain and cleanup activity; it does not depend on generation age.
+Set `WIRE_INBOX_CLEANUP_ENABLED=false` on drain replicas that should process events
+without also owning terminal-row cleanup.
+
+For the split Railway topology, configure **The Wire Worker** as `rank` with one
+replica and **The Wire Inbox Drain** as `drain` with as many replicas as PostgreSQL
+can sustain. Leave cleanup enabled on one drain replica; disable it on additional
+replicas when cleanup contention outweighs the reclaimed space.
+
 ## Configuration
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `DATABASE_URL` | required | Railway PostgreSQL connection string |
 | `WIRE_FEED_MODE` | `off` | Remote rollout switch (`off|shadow|api|visible`) |
+| `WIRE_WORKER_ROLE` | `combined` | Runtime responsibility (`combined|rank|drain`) |
 | `WIRE_RANK_INTERVAL_SECONDS` | `300` | Five-minute generation cadence |
 | `WIRE_CANDIDATE_LIMIT` | `5000` | Maximum rollup rows scored per cycle |
 | `WIRE_GENERATION_RETENTION_SECONDS` | `172800` | 48-hour superseded/shadow generation retention |
@@ -28,6 +51,7 @@
 | `WIRE_INBOX_IDLE_MILLISECONDS` | `250` | Backpressure delay after an empty claim; full batches continue immediately |
 | `WIRE_INBOX_CLEANUP_BATCH_SIZE` | `5000` | Maximum terminal inbox rows deleted by one cleanup iteration (maximum `20000`) |
 | `WIRE_INBOX_CLEANUP_IDLE_MILLISECONDS` | `1000` | Delay after a cleanup iteration that deletes fewer than one full batch |
+| `WIRE_INBOX_CLEANUP_ENABLED` | `true` | Whether a drain-capable role also runs terminal-row cleanup |
 | `WIRE_POSTGRES_MAX_CONNECTIONS` | `12` | Bounded pool shared by drain, maintenance, ranking, and health work (maximum `64`) |
 | `PORT` | `8080` | Health server port |
 
@@ -47,7 +71,7 @@ The isolated Go lane stages global events into `wire_ingestion_inbox`. A dedicat
 
 The default event concurrency of 16 intentionally exceeds the 12-connection PostgreSQL pool. PostgreSQL pool queuing is the database backpressure boundary while JSON decoding and canonicalization work remain in flight; the worker never opens more than `WIRE_POSTGRES_MAX_CONNECTIONS` database connections.
 
-Graph pruning, six-hour community refresh checks, and exact rollup rebuilding run once with the five-minute generation cycle rather than after every inbox batch. Baseline label refresh and ranking also remain on that five-minute cadence, so an archive drain cannot hammer labelers. Terminal inbox cleanup is a separate continuous bounded loop (`WIRE_INBOX_CLEANUP_BATCH_SIZE`, default 5,000; `WIRE_INBOX_CLEANUP_IDLE_MILLISECONDS`, default one second), so cleanup throughput is not tied to ranking. Applied inbox rows become cleanup-eligible after five minutes and dead letters after seven days. Pending, leased, and retry rows are never retention-deleted. Cleanup decrements the admission counter in the same transaction as deletion. Readiness requires recent successful generation, drain, and cleanup activity.
+Graph pruning, six-hour community refresh checks, and exact rollup rebuilding run once with the five-minute generation cycle rather than after every inbox batch. Baseline label refresh and ranking also remain on that five-minute cadence, so an archive drain cannot hammer labelers. Drain-only workers skip that entire generation cycle. Terminal inbox cleanup is a separate continuous bounded loop (`WIRE_INBOX_CLEANUP_BATCH_SIZE`, default 5,000; `WIRE_INBOX_CLEANUP_IDLE_MILLISECONDS`, default one second), so cleanup throughput is not tied to ranking. Applied inbox rows become cleanup-eligible after five minutes and dead letters after seven days. Pending, leased, and retry rows are never retention-deleted. Cleanup decrements the admission counter in the same transaction as deletion. Combined readiness requires recent successful generation, drain, and cleanup activity; drain-only readiness requires recent successful drain and cleanup activity.
 
 The worker observes `site.standard.publication` commits into the rebuildable `wire_publications` PostgreSQL projection. A Standard Site document with a publication AT-URI plus relative `path` resolves from that durable projection, then from a bounded public-HTTPS PLC/PDS lookup with 64 KiB response limits, timeouts, negative caching, and in-flight request coalescing. Immediately before every PLC and PDS request, the worker resolves DNS again and rejects the entire answer set if any address is loopback, link-local, private, documentation, multicast, or otherwise non-global. At most eight blocking resolver calls may remain active, each caller waits at most three seconds, and redirects are not followed. Direct article URLs and HTTPS publication-site-plus-path records remain local and require no network lookup. Unsafe or structurally invalid endpoints are terminal; absent, timed-out, or transient publication dependencies remain retryable within the 24-hour bound.
 

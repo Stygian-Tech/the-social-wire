@@ -158,6 +158,8 @@ PostgreSQL is authoritative for the inbox, items/aliases, short-retention signal
 Ranking defaults live in `WireRankingConfig`/`WireRankingWeights`/`WireDiversityPolicy` and are identified by `wire-v1`. Operational environment controls are:
 
 - `WIRE_FEED_MODE=off|shadow|api|visible`;
+- `WIRE_WORKER_ROLE=combined|rank|drain` (rank and drain split generation from scalable inbox work);
+- `WIRE_INBOX_CLEANUP_ENABLED=true|false` (assign terminal-row cleanup to selected drain replicas);
 - `WIRE_RANK_INTERVAL_SECONDS=300`;
 - `WIRE_CANDIDATE_LIMIT=5000`;
 - `WIRE_GENERATION_RETENTION_SECONDS=172800`;

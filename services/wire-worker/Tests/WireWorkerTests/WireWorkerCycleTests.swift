@@ -132,6 +132,7 @@ struct WireWorkerCycleTests {
     WireWorkerConfig(
       databaseURL: "postgres://unused/wire",
       mode: mode,
+      role: .combined,
       intervalSeconds: 60,
       candidateLimit: 500,
       generationRetentionSeconds: 3_600,
@@ -146,6 +147,7 @@ struct WireWorkerCycleTests {
       inboxIdleMilliseconds: 250,
       inboxCleanupBatchSize: 5_000,
       inboxCleanupIdleMilliseconds: 1_000,
+      inboxCleanupEnabled: true,
       postgresMaximumConnections: 12
     )
   }

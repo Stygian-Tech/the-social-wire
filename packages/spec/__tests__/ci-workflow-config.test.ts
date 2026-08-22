@@ -21,6 +21,7 @@ const railwayServices = [
   { service: "Jetstream V2 Ingest", config: "jetstream-ingest", restartPolicy: "ALWAYS" },
   { service: "The Wire Global Ingest", config: "wire-jetstream-ingest", restartPolicy: "ALWAYS" },
   { service: "The Wire Worker", config: "wire-worker", restartPolicy: "ALWAYS" },
+  { service: "The Wire Inbox Drain", config: "wire-inbox-drain", restartPolicy: "ALWAYS" },
   { service: "The Wire Corpus Edge", config: "wire-corpus-edge", restartPolicy: "ALWAYS" },
   { service: "Ops", config: "operations", restartPolicy: "ALWAYS" },
   { service: "Database Migrator", config: "database-migrator", restartPolicy: "NEVER" },
@@ -129,7 +130,7 @@ describe("CI workflow configuration", () => {
         expect(config.build.dockerfilePath).toMatch(/^\/services\//);
       }
       expect(config.deploy?.restartPolicyType).toBe(restartPolicy);
-      if (["jetstream-ingest", "wire-jetstream-ingest", "wire-worker", "charybdis"].includes(configName)) {
+      if (["jetstream-ingest", "wire-jetstream-ingest", "wire-worker", "wire-inbox-drain", "charybdis"].includes(configName)) {
         expect(config.deploy?.healthcheckPath).toBe("/startupz");
       }
       expect(deploymentReadme).toContain(
@@ -138,7 +139,9 @@ describe("CI workflow configuration", () => {
 
       const filterName = configName === "wire-jetstream-ingest"
         ? "wire_ingest"
-        : configName.replaceAll("-", "_");
+        : configName === "wire-inbox-drain"
+          ? "wire_worker"
+          : configName.replaceAll("-", "_");
       const filter = pathFilters
         .split("\n\n")
         .find((block) =>
