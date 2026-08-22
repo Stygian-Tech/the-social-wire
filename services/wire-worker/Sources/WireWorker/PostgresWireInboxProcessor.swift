@@ -183,11 +183,11 @@ struct PostgresWireInboxProcessor: Sendable {
     let leaseUntil = asOf.addingTimeInterval(120)
     let rows = try await pool.query(
       """
-      WITH candidates AS (
-        SELECT environment, source_generation, seq
+      WITH pending_retry_candidates AS (
+        SELECT environment, source_generation, seq, next_attempt_at AS eligible_at
         FROM wire_ingestion_inbox candidate
-        WHERE (((candidate.status IN ('pending', 'retry') AND candidate.next_attempt_at <= \(asOf))
-          OR (candidate.status = 'leased' AND candidate.lease_expires_at <= \(asOf))))
+        WHERE candidate.status IN ('pending', 'retry')
+          AND candidate.next_attempt_at <= \(asOf)
           AND NOT EXISTS (
             SELECT 1 FROM wire_ingestion_inbox earlier
             WHERE earlier.environment = candidate.environment
@@ -196,8 +196,36 @@ struct PostgresWireInboxProcessor: Sendable {
               AND earlier.seq < candidate.seq
               AND earlier.status IN ('pending', 'leased', 'retry')
           )
-        ORDER BY next_attempt_at, seq
+        ORDER BY candidate.next_attempt_at, candidate.seq,
+                 candidate.environment, candidate.source_generation
         FOR UPDATE SKIP LOCKED
+        LIMIT \(batchSize)
+      ),
+      expired_lease_candidates AS (
+        SELECT environment, source_generation, seq, lease_expires_at AS eligible_at
+        FROM wire_ingestion_inbox candidate
+        WHERE candidate.status = 'leased'
+          AND candidate.lease_expires_at <= \(asOf)
+          AND NOT EXISTS (
+            SELECT 1 FROM wire_ingestion_inbox earlier
+            WHERE earlier.environment = candidate.environment
+              AND earlier.source_generation = candidate.source_generation
+              AND earlier.repo_did = candidate.repo_did
+              AND earlier.seq < candidate.seq
+              AND earlier.status IN ('pending', 'leased', 'retry')
+          )
+        ORDER BY candidate.lease_expires_at, candidate.seq,
+                 candidate.environment, candidate.source_generation
+        FOR UPDATE SKIP LOCKED
+        LIMIT \(batchSize)
+      ),
+      candidates AS (
+        SELECT environment, source_generation, seq, eligible_at
+        FROM pending_retry_candidates
+        UNION ALL
+        SELECT environment, source_generation, seq, eligible_at
+        FROM expired_lease_candidates
+        ORDER BY eligible_at, seq, environment, source_generation
         LIMIT \(batchSize)
       )
       UPDATE wire_ingestion_inbox inbox
@@ -955,7 +983,8 @@ struct PostgresWireInboxProcessor: Sendable {
   ) async throws {
     let appliedAt: Date? = status == "applied" ? asOf : nil
     let deadAt: Date? = status == "dead_letter" ? asOf : nil
-    let expiresAt = status == "applied"
+    let expiresAt =
+      status == "applied"
       ? asOf.addingTimeInterval(300)
       : status == "dead_letter" ? asOf.addingTimeInterval(7 * 24 * 3_600) : .distantFuture
     try await pool.query(

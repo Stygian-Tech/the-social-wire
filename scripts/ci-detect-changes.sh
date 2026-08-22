@@ -166,6 +166,7 @@ filter_changed database_migrator \
   'database/migrations/**' \
   'scripts/apply-database-migrations.sh' \
   'scripts/verify-jetstream-v2-drain-indexes.sql' \
+  'scripts/verify-wire-inbox-claim-index.sql' \
   'scripts/verify-wire-corpus-serving.sql' \
   'services/database-migrator/**' \
   'railway/database-migrator.json' \
