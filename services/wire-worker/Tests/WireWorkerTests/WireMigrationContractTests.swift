@@ -107,6 +107,14 @@ struct WireMigrationContractTests {
     let firstBuild = try #require(claimSQL.range(of: "CREATE INDEX IF NOT EXISTS"))
     #expect(oldIndexDrop.lowerBound < firstBuild.lowerBound)
 
+    let qualityIndexMigration = migration.deletingLastPathComponent()
+      .appendingPathComponent("20260822212900_prepare_wire_quality_ranking_index.sql")
+    let qualityIndexSQL = try String(contentsOf: qualityIndexMigration, encoding: .utf8)
+    #expect(qualityIndexSQL.contains("-- socialwire:transaction=off"))
+    #expect(qualityIndexSQL.contains("SET lock_timeout = '5s'"))
+    #expect(qualityIndexSQL.contains("CREATE INDEX CONCURRENTLY IF NOT EXISTS wire_signal_rollups_high_intent_rank_idx"))
+    #expect(qualityIndexSQL.contains("RESET lock_timeout"))
+
     let qualityMigration = migration.deletingLastPathComponent()
       .appendingPathComponent("20260822213000_tune_wire_quality_ranking.sql")
     let qualitySQL = try String(contentsOf: qualityMigration, encoding: .utf8)
