@@ -54,20 +54,35 @@ actor WireWorkerHealthState {
     return now.timeIntervalSince(lastSuccessfulCleanupAt) <= maximumSuccessAge
   }
 
+  func isGenerationReady(at now: Date, maximumCycleAge: TimeInterval) -> Bool {
+    guard lastGenerationFailure == nil, let lastSuccessfulCycleAt else { return false }
+    return now.timeIntervalSince(lastSuccessfulCycleAt) <= maximumCycleAge
+  }
+
+  func isDrainReady(
+    at now: Date,
+    maximumSuccessAge: TimeInterval,
+    maximumOperationAge: TimeInterval
+  ) -> Bool {
+    guard lastDrainFailure == nil else { return false }
+    if let drainStartedAt {
+      return now.timeIntervalSince(drainStartedAt) <= maximumOperationAge
+    }
+    guard let lastSuccessfulDrainAt else { return false }
+    return now.timeIntervalSince(lastSuccessfulDrainAt) <= maximumSuccessAge
+  }
+
   func isReady(
     at now: Date,
     maximumCycleAge: TimeInterval,
     maximumDrainSuccessAge: TimeInterval,
     maximumDrainOperationAge: TimeInterval
   ) -> Bool {
-    guard lastGenerationFailure == nil, let lastSuccessfulCycleAt,
-      now.timeIntervalSince(lastSuccessfulCycleAt) <= maximumCycleAge,
-      lastDrainFailure == nil
-    else { return false }
-    if let drainStartedAt {
-      return now.timeIntervalSince(drainStartedAt) <= maximumDrainOperationAge
-    }
-    guard let lastSuccessfulDrainAt else { return false }
-    return now.timeIntervalSince(lastSuccessfulDrainAt) <= maximumDrainSuccessAge
+    isGenerationReady(at: now, maximumCycleAge: maximumCycleAge)
+      && isDrainReady(
+        at: now,
+        maximumSuccessAge: maximumDrainSuccessAge,
+        maximumOperationAge: maximumDrainOperationAge
+      )
   }
 }

@@ -14,6 +14,7 @@ These custom-named config-as-code files are inactive until each Railway service 
 | Jetstream V2 Ingest | `/railway/jetstream-ingest.json` |
 | The Wire Global Ingest | `/railway/wire-jetstream-ingest.json` |
 | The Wire Worker | `/railway/wire-worker.json` |
+| The Wire Inbox Drain | `/railway/wire-inbox-drain.json` |
 | The Wire Corpus Edge | `/railway/wire-corpus-edge.json` |
 | Ops | `/railway/operations.json` |
 | Database Migrator | `/railway/database-migrator.json` |
