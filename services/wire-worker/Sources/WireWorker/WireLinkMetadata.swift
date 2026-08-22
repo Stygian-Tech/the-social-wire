@@ -11,6 +11,8 @@ struct WireLinkMetadata: Equatable, Sendable {
   let description: String?
   let imageURL: String?
   let siteName: String?
+  let authorName: String?
+  let publishedAt: Date?
   let iconURL: String?
   let etag: String?
   let lastModified: String?

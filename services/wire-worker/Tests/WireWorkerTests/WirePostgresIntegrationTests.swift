@@ -785,6 +785,51 @@ struct WirePostgresIntegrationTests {
     try await pool.query(
       "DELETE FROM wire_active_actors WHERE actor_key_hash = \(actorHash)", logger: logger)
   }
+
+  @Test("metadata cache seeding progresses beyond the newest conflict window")
+  func metadataCacheSeedingProgresses() async throws {
+    guard let url = ProcessInfo.processInfo.environment["WIRE_TEST_DATABASE_URL"] else { return }
+    let logger = Logger(label: "wire-metadata-seeding-postgres.integration")
+    let configuration = try PostgresWireConfig.make(from: url, logger: logger)
+    let pool = PostgresClient(configuration: configuration, backgroundLogger: logger)
+    let runTask = Task { await pool.run() }
+    await Task.yield()
+    defer { runTask.cancel() }
+
+    let namespace = UUID().uuidString.lowercased()
+    let now = Date()
+    var canonicalKeys: [String] = []
+    for index in 0..<6 {
+      let canonicalKey = "url:metadata-seeding-\(namespace)-\(index)"
+      canonicalKeys.append(canonicalKey)
+      try await pool.query(
+        """
+        INSERT INTO wire_items
+          (canonical_key, canonical_url, source_domain, source_name, title,
+           first_seen_at, last_seen_at, last_signal_at, expires_at)
+        VALUES
+          (\(canonicalKey), \("https://metadata-\(namespace).example/story/\(index)"),
+           \("metadata-\(namespace).example"), 'Metadata Test', \("Story \(index)"),
+           \(now), \(now), \(now.addingTimeInterval(Double(index))),
+           \(now.addingTimeInterval(86_400)))
+        """,
+        logger: logger
+      )
+    }
+
+    let store = PostgresWireLinkMetadataStore(pool: pool, logger: logger)
+    var claimed = Set<String>()
+    for _ in 0..<canonicalKeys.count {
+      let targets = try await store.claimDue(limit: 1, asOf: now)
+      claimed.formUnion(targets.map(\.canonicalKey))
+    }
+    #expect(claimed == Set(canonicalKeys))
+
+    for canonicalKey in canonicalKeys {
+      try await pool.query(
+        "DELETE FROM wire_items WHERE canonical_key = \(canonicalKey)", logger: logger)
+    }
+  }
 }
 
 private actor IntegrationDrainSleeper: WireInboxDrainSleeping {

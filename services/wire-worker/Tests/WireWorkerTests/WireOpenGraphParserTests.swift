@@ -12,6 +12,8 @@ struct WireOpenGraphParserTests {
       <meta content="Newsroom" property="og:site_name">
       <meta property="og:title" content="Primary &amp; Accurate">
       <meta name="twitter:description" content="A useful description">
+      <meta name="author" content="Riley Reporter">
+      <meta property="article:published_time" content="2026-08-21T10:15:30Z">
       <meta property="og:image" content="/images/lead.jpg">
       <link href="/favicon.png" rel="icon">
       <link rel="canonical" href="/canonical-story">
@@ -23,6 +25,8 @@ struct WireOpenGraphParserTests {
     #expect(parsed.title == "Primary & Accurate")
     #expect(parsed.description == "A useful description")
     #expect(parsed.siteName == "Newsroom")
+    #expect(parsed.authorName == "Riley Reporter")
+    #expect(parsed.publishedAt == Date(timeIntervalSince1970: 1_787_307_330))
     #expect(parsed.imageURL == "https://news.example/images/lead.jpg")
     #expect(parsed.iconURL == "https://news.example/favicon.png")
     #expect(parsed.canonicalURL == "https://news.example/canonical-story")
@@ -40,5 +44,7 @@ struct WireOpenGraphParserTests {
     )
     #expect(parsed.title == "Plain Title")
     #expect(parsed.imageURL == nil)
+    #expect(parsed.authorName == nil)
+    #expect(parsed.publishedAt == nil)
   }
 }

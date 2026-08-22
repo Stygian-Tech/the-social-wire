@@ -11,16 +11,19 @@ import {
   ContextMenuContent,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
+import { Tooltip, TooltipTrigger } from "@/components/ui/tooltip";
 import type { EntryListItem } from "@/lib/atprotoClient";
 import { decodeHtmlEntities } from "@/lib/decodeHtmlEntities";
 import { cn } from "@/lib/utils";
 import { wireReasonLabel } from "@/lib/wireFeedClient";
+import { WireStoryHoverMetadata } from "./WireStoryHoverMetadata";
 
 export type WireStoryCardVariant =
   | "lead"
   | "supporting"
   | "standard"
-  | "compact";
+  | "compact"
+  | "trending";
 
 export function WireStoryCard({
   story,
@@ -36,7 +39,6 @@ export function WireStoryCard({
   const source = story.wireItem?.source;
   const publicationName =
     source?.name.trim() ||
-    source?.publication?.trim() ||
     source?.domain.trim() ||
     "Publication";
   const title = useMemo(() => decodeHtmlEntities(story.title), [story.title]);
@@ -48,6 +50,12 @@ export function WireStoryCard({
   const formattedDate = Number.isNaN(date.getTime())
     ? null
     : date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  const detailedDate = Number.isNaN(date.getTime())
+    ? undefined
+    : date.toLocaleString(undefined, {
+        dateStyle: "medium",
+        timeStyle: "short",
+      });
   const reason = story.wireItem?.reasons
     .map(wireReasonLabel)
     .find((label): label is string => Boolean(label));
@@ -69,6 +77,8 @@ export function WireStoryCard({
         variant === "supporting" &&
           "lg:grid lg:grid-cols-[minmax(0,1fr)_9rem]",
         variant === "compact" && "rounded-xl shadow-sm",
+        variant === "trending" &&
+          "grid grid-cols-[minmax(0,1fr)_4.75rem] rounded-xl shadow-sm",
       )}
     >
       {showImage ? (
@@ -79,6 +89,8 @@ export function WireStoryCard({
               ? "aspect-[16/7.5]"
               : variant === "supporting"
                 ? "aspect-[16/9] lg:col-start-2 lg:row-start-1 lg:my-1.5 lg:mr-1.5 lg:aspect-[4/3] lg:self-center lg:rounded-xl"
+                : variant === "trending"
+                  ? "col-start-2 row-start-1 m-1.5 min-h-[4.75rem] rounded-lg"
                 : "aspect-[16/9]",
           )}
         >
@@ -90,7 +102,7 @@ export function WireStoryCard({
             loading={variant === "lead" ? "eager" : "lazy"}
             className="absolute inset-0 size-full object-cover transition-transform duration-300 group-hover/story:scale-[1.015]"
           />
-          {rank ? (
+          {rank && variant !== "trending" ? (
             <span className="absolute left-3 top-3 inline-flex size-8 items-center justify-center rounded-full bg-background/92 text-sm font-bold text-foreground shadow-sm backdrop-blur-sm">
               {rank}
             </span>
@@ -103,6 +115,7 @@ export function WireStoryCard({
           variant === "lead" && "p-4 sm:p-5",
           variant === "supporting" &&
             "lg:col-start-1 lg:row-start-1 lg:self-center lg:p-3",
+          variant === "trending" && "col-start-1 row-start-1 p-2.5 pr-1",
         )}
       >
         <div
@@ -111,7 +124,7 @@ export function WireStoryCard({
             variant === "supporting" && "lg:mb-1.5",
           )}
         >
-          {variant === "compact" && rank ? (
+          {(variant === "compact" || variant === "trending") && rank ? (
             <span className="inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-[var(--purple-foreground)]">
               {rank}
             </span>
@@ -149,7 +162,7 @@ export function WireStoryCard({
               )}
             />
           </span>
-          {formattedDate ? (
+          {formattedDate && variant !== "trending" ? (
             <span
               className={cn(
                 "shrink-0 text-xs text-muted-foreground",
@@ -167,6 +180,8 @@ export function WireStoryCard({
               ? "line-clamp-3 text-2xl sm:text-3xl"
               : variant === "compact"
                 ? "line-clamp-2 text-sm"
+                : variant === "trending"
+                  ? "line-clamp-2 text-sm"
                 : variant === "supporting"
                   ? "line-clamp-2 text-base"
                   : "line-clamp-2 text-lg",
@@ -174,7 +189,10 @@ export function WireStoryCard({
         >
           {title}
         </h3>
-        {variant !== "compact" && variant !== "supporting" && summary ? (
+        {variant !== "compact" &&
+        variant !== "trending" &&
+        variant !== "supporting" &&
+        summary ? (
           <p
             className={cn(
               "mt-2 text-sm leading-5 text-muted-foreground",
@@ -186,7 +204,7 @@ export function WireStoryCard({
         ) : null}
         <div
           className={cn(
-            "mt-2 flex min-w-0 items-center gap-2 pr-8 text-xs text-muted-foreground",
+            "mt-2 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 pr-8 text-xs text-muted-foreground",
             variant === "supporting" && "lg:mt-1.5",
           )}
         >
@@ -196,7 +214,13 @@ export function WireStoryCard({
             </span>
           ) : null}
           {source?.author?.trim() ? (
-            <span className="truncate">{source.author}</span>
+            <span className="truncate">By {source.author}</span>
+          ) : null}
+          {variant === "trending" && formattedDate ? (
+            <span className="shrink-0">{formattedDate}</span>
+          ) : null}
+          {variant === "trending" && source?.domain.trim() ? (
+            <span className="basis-full truncate">{source.domain}</span>
           ) : null}
         </div>
         <div className="absolute bottom-2 right-2">
@@ -208,9 +232,18 @@ export function WireStoryCard({
 
   return (
     <ContextMenu>
-      <ContextMenuTrigger className="block h-full min-w-0">
-        {card}
-      </ContextMenuTrigger>
+      <Tooltip>
+        <ContextMenuTrigger className="block h-full min-w-0">
+          <TooltipTrigger delay={350} render={card} />
+        </ContextMenuTrigger>
+        <WireStoryHoverMetadata
+          title={title}
+          publicationName={publicationName}
+          site={source?.domain.trim() || publicationName}
+          author={source?.author?.trim() || undefined}
+          publishedAt={detailedDate}
+        />
+      </Tooltip>
       <ContextMenuContent className="min-w-[11rem]">
         <EntryRowActions
           entry={story}

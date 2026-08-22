@@ -26,7 +26,7 @@ export function WireTrendingStories({
           <WireStoryCard
             key={story.entryId}
             story={story}
-            variant="compact"
+            variant="trending"
             rank={index + 1}
             onSelect={onSelect}
           />

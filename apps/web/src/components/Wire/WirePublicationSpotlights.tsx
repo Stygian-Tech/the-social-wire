@@ -34,8 +34,8 @@ export function WirePublicationSpotlights({
         const publication = spotlight.publication;
         const name =
           publication.name.trim() ||
-          publication.publication?.trim() ||
-          publication.domain;
+          publication.domain.trim() ||
+          "Publication";
         return (
           <article
             key={spotlight.id}
