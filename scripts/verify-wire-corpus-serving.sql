@@ -8,7 +8,7 @@ BEGIN
   SELECT contract.contract_version
   INTO contract_version
   FROM wire_serving.contract AS contract;
-  IF contract_version <> 1 THEN
+  IF contract_version <> 2 THEN
     RAISE EXCEPTION 'unexpected wire_serving contract version: %', contract_version;
   END IF;
 
@@ -19,7 +19,8 @@ BEGIN
     AND column_name IN (
       'score', 'diversity_metadata', 'diagnostics', 'candidate_count', 'ranked_count',
       'source_confidence', 'label_count', 'target_count', 'actor_key_hash',
-      'community_key_hash', 'payload'
+      'community_key_hash', 'speaker_key_hash', 'story_count', 'speaker_count',
+      'best_story_rank', 'latest_mention_at', 'payload'
     );
   IF forbidden_columns <> 0 THEN
     RAISE EXCEPTION 'wire_serving exposes forbidden internal columns';
@@ -41,6 +42,14 @@ SELECT position, canonical_key, reason_codes
 FROM wire_serving.ranked_items LIMIT 1;
 SELECT canonical_key, canonical_url, author_key
 FROM wire_serving.items LIMIT 1;
+SELECT generation_id, algorithm_version, language_bucket, continuation_ordinal
+FROM wire_serving.edition_generations LIMIT 1;
+SELECT generation_id, module_key, module_kind, publication_key
+FROM wire_serving.edition_modules LIMIT 1;
+SELECT generation_id, module_key, module_position, canonical_key, publication_key
+FROM wire_serving.edition_module_items LIMIT 1;
+SELECT generation_id, position, subject_did, handle
+FROM wire_serving.edition_talked_accounts LIMIT 1;
 
 DO $$
 BEGIN
