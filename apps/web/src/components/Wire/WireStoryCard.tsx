@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 import { EntryCardActionMenu } from "@/components/EntryList/EntryCardActionMenu";
 import { EntryRowActions } from "@/components/EntryList/EntryRowActions";
@@ -69,9 +69,12 @@ export function WireStoryCard({
       ),
     [story.thumbnailFallbackUrl, story.thumbnailUrl],
   );
-  const [thumbnailAttempt, setThumbnailAttempt] = useState(0);
-  useEffect(() => setThumbnailAttempt(0), [thumbnailAttempts]);
-  const thumbnailUrl = thumbnailAttempts[thumbnailAttempt];
+  const [failedThumbnailUrls, setFailedThumbnailUrls] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const thumbnailUrl = thumbnailAttempts.find(
+    (attempt) => !failedThumbnailUrls.has(attempt),
+  );
 
   const card = (
     <div
@@ -113,11 +116,14 @@ export function WireStoryCard({
             height={variant === "lead" ? 450 : 270}
             loading={variant === "lead" ? "eager" : "lazy"}
             className="absolute inset-0 size-full object-cover transition-transform duration-300 group-hover/story:scale-[1.015]"
-            onError={() =>
-              setThumbnailAttempt((current) =>
-                Math.min(current + 1, thumbnailAttempts.length),
-              )
-            }
+            onError={() => {
+              if (!thumbnailUrl) return;
+              setFailedThumbnailUrls((current) => {
+                const next = new Set(current);
+                next.add(thumbnailUrl);
+                return next;
+              });
+            }}
           />
           {rank && variant !== "trending" ? (
             <span className="absolute left-3 top-3 inline-flex size-8 items-center justify-center rounded-full bg-background/92 text-sm font-bold text-foreground shadow-sm backdrop-blur-sm">
