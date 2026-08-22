@@ -65,9 +65,6 @@ actor PostgresWireCorpusStore: WireCorpusStoring {
       }
       generation = retained
     } else if let active = try await activeGeneration(language: language) {
-      if now.timeIntervalSince(active.generatedAt) > 30 * 60 {
-        return try await fallback(language: language, limit: limit, now: now)
-      }
       generation = active
     } else {
       return try await fallback(language: language, limit: limit, now: now)
@@ -95,10 +92,6 @@ actor PostgresWireCorpusStore: WireCorpusStoring {
     guard let generation = try await activeGeneration(language: language) else {
       return try await fallbackEdition(language: language, now: now)
     }
-    guard now.timeIntervalSince(generation.generatedAt) <= 30 * 60 else {
-      return try await fallbackEdition(language: language, now: now)
-    }
-
     let generationRows = try await pool.query(
       """
       SELECT algorithm_version, continuation_ordinal
@@ -311,7 +304,7 @@ actor PostgresWireCorpusStore: WireCorpusStoring {
       """
       SELECT generation_id, language_bucket, generated_at, expires_at
       FROM wire_serving.feed_state
-      WHERE generated_at >= \(now.addingTimeInterval(-30 * 60))
+      WHERE expires_at > \(now)
       """,
       logger: logger
     )
@@ -380,7 +373,8 @@ actor PostgresWireCorpusStore: WireCorpusStoring {
              publication_key, publication_homepage_url, publication_icon_url
       FROM wire_serving.fallback_items
       WHERE (\(language) = 'und' OR language_code = \(language))
-      ORDER BY COALESCE(published_at, first_seen_at) DESC, canonical_key
+      ORDER BY (provenance ? 'standard_site') DESC,
+               COALESCE(published_at, first_seen_at) DESC, canonical_key
       LIMIT 5000
       """,
       logger: logger

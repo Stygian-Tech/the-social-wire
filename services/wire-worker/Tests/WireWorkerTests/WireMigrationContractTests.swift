@@ -106,5 +106,15 @@ struct WireMigrationContractTests {
       claimSQL.range(of: "DROP INDEX IF EXISTS public.wire_ingestion_inbox_claim_idx"))
     let firstBuild = try #require(claimSQL.range(of: "CREATE INDEX IF NOT EXISTS"))
     #expect(oldIndexDrop.lowerBound < firstBuild.lowerBound)
+
+    let qualityMigration = migration.deletingLastPathComponent()
+      .appendingPathComponent("20260822213000_tune_wire_quality_ranking.sql")
+    let qualitySQL = try String(contentsOf: qualityMigration, encoding: .utf8)
+    #expect(qualitySQL.contains("wire_signal_rollups_high_intent_rank_idx"))
+    #expect(qualitySQL.contains("rollup.shares_24h >= 3"))
+    #expect(qualitySQL.contains("item.provenance ? 'standard_site'"))
+    #expect(qualitySQL.contains("metadata.source = 'open_graph'"))
+    #expect(qualitySQL.contains("metadata.stale_until > CURRENT_TIMESTAMP"))
+    #expect(!qualitySQL.contains("distinct_actors_24h"))
   }
 }

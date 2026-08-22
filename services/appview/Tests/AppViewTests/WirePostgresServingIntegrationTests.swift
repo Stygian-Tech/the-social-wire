@@ -56,7 +56,7 @@ struct WirePostgresServingIntegrationTests {
       try await insertGeneration(
         generationOne,
         keys: keys,
-        generatedAt: now.addingTimeInterval(-60),
+        generatedAt: now.addingTimeInterval(-(31 * 60)),
         active: true,
         pool: pool,
         logger: logger
@@ -192,6 +192,15 @@ struct WirePostgresServingIntegrationTests {
                'example.com', 'Example', 'Fallback story ' || sequence::text, 'und',
                '["standard_site"]'::jsonb, \(now), \(now), \(now), 0.9, TRUE,
                \(now.addingTimeInterval(86_400))
+        FROM generate_series(1, \(WireDataPolicy.minimumGlobalCandidates)) AS generated(sequence)
+        """,
+        logger: logger
+      )
+      try await pool.query(
+        """
+        INSERT INTO wire_signal_rollups
+          (canonical_key, shares_24h, recommendations_24h, updated_at)
+        SELECT \(keyPrefix) || sequence::text, 3, 1, \(now)
         FROM generate_series(1, \(WireDataPolicy.minimumGlobalCandidates)) AS generated(sequence)
         """,
         logger: logger

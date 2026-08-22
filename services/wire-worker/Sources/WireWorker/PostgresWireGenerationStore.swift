@@ -25,10 +25,7 @@ struct PostgresWireGenerationStore: WireGenerationStore {
       WHERE i.eligible = TRUE AND i.expires_at > \(asOf)
         AND i.language_code <> 'und'
         AND i.source_confidence >= 0.25
-        AND (r.distinct_actors_24h >= 3 OR r.recommendations_24h >= 1
-          OR (i.source_confidence >= 0.75
-            AND i.representative_uri LIKE 'at://%/site.standard.%'
-            AND COALESCE(i.published_at, i.first_seen_at) >= \(asOf.addingTimeInterval(-86_400))))
+        AND (r.shares_24h >= 3 OR r.recommendations_24h >= 1)
         AND NOT EXISTS (
           SELECT 1 FROM wire_labels l
           WHERE l.canonical_key = i.canonical_key AND l.expires_at > \(asOf)
@@ -57,6 +54,13 @@ struct PostgresWireGenerationStore: WireGenerationStore {
       SELECT i.canonical_key, i.canonical_url, i.representative_uri, i.source_domain,
              i.publication_id, i.author_key, i.topic_keys::text, i.published_at,
              i.first_seen_at, i.last_signal_at, i.source_confidence,
+             (i.provenance ? 'standard_site') AS is_standard_site,
+             COALESCE(metadata.source = 'open_graph'
+               AND metadata.status IN ('fresh', 'stale')
+               AND metadata.stale_until > \(asOf)
+               AND num_nonnulls(metadata.title, metadata.description, metadata.image_url,
+                 metadata.site_name, metadata.author_name, metadata.published_at::TEXT,
+                 metadata.icon_url) >= 2, FALSE) AS has_usable_open_graph,
              r.distinct_actors_1h, r.distinct_actors_24h, r.distinct_actors_7d,
              r.signals_1h, r.signals_24h, r.signals_7d, r.communities_24h,
              r.primary_community_key_hash, r.recommendations_24h,
@@ -64,6 +68,7 @@ struct PostgresWireGenerationStore: WireGenerationStore {
              r.distinct_reposters_24h, r.reposts_1h, r.reposts_24h
       FROM wire_items i
       JOIN wire_signal_rollups r ON r.canonical_key = i.canonical_key
+      LEFT JOIN wire_link_metadata_cache metadata ON metadata.canonical_key = i.canonical_key
       WHERE i.eligible = TRUE AND i.expires_at > \(asOf)
         AND (\(languageBucket) = 'und' OR i.language_code = \(languageBucket))
         AND NOT EXISTS (
@@ -72,7 +77,16 @@ struct PostgresWireGenerationStore: WireGenerationStore {
             AND l.label_key IN ('moderation', 'visibility')
             AND l.label_value IN ('block', 'exclude', 'adult', 'graphic', 'spam')
         )
-      ORDER BY r.distinct_actors_24h DESC, r.signals_1h DESC, i.canonical_key
+      ORDER BY
+        CASE
+          WHEN r.shares_24h >= 5 OR r.recommendations_24h >= 2 THEN 0
+          WHEN (i.provenance ? 'standard_site') AND r.shares_24h >= 3 THEN 1
+          WHEN (r.shares_24h >= 3 OR r.recommendations_24h >= 1) THEN 2
+          ELSE 3
+        END,
+        r.shares_24h DESC, r.recommendations_24h DESC,
+        (i.provenance ? 'standard_site') DESC,
+        has_usable_open_graph DESC, r.signals_1h DESC, i.canonical_key
       LIMIT \(limit)
       """,
       logger: logger
@@ -83,16 +97,18 @@ struct PostgresWireGenerationStore: WireGenerationStore {
         (String, String, String?, String, String?, String?, String, Date?, Date, Date?, Double).self
       )
       let cells = row.makeRandomAccess()
+      let isStandardSite = try cells[11].decode(Bool.self)
+      let hasUsableOpenGraph = try cells[12].decode(Bool.self)
       let rollup = try (
-        cells[11].decode(Int.self), cells[12].decode(Int.self),
         cells[13].decode(Int.self), cells[14].decode(Int.self),
         cells[15].decode(Int.self), cells[16].decode(Int.self),
-        cells[17].decode(Int.self), cells[18].decode(String?.self),
-        cells[19].decode(Int.self), cells[20].decode(Int.self),
+        cells[17].decode(Int.self), cells[18].decode(Int.self),
+        cells[19].decode(Int.self), cells[20].decode(String?.self),
         cells[21].decode(Int.self), cells[22].decode(Int.self),
         cells[23].decode(Int.self), cells[24].decode(Int.self),
         cells[25].decode(Int.self), cells[26].decode(Int.self),
-        cells[27].decode(Int.self)
+        cells[27].decode(Int.self), cells[28].decode(Int.self),
+        cells[29].decode(Int.self)
       )
       let topics = (try? JSONDecoder().decode([String].self, from: Data(identity.6.utf8))) ?? []
       candidates.append(
@@ -124,7 +140,9 @@ struct PostgresWireGenerationStore: WireGenerationStore {
           distinctReposts24h: rollup.14,
           reposts1h: rollup.15,
           reposts24h: rollup.16,
-          sourceConfidence: identity.10
+          sourceConfidence: identity.10,
+          isStandardSite: isStandardSite,
+          hasUsableOpenGraphMetadata: hasUsableOpenGraph
         )
       )
     }

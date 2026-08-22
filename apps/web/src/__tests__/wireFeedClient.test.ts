@@ -199,6 +199,17 @@ describe("The Wire client", () => {
   it("selects an exact or base language supported by the catalog", () => {
     expect(selectWireLanguage(["en", "fr"], ["fr-CA", "en-US"])).toBe("fr");
     expect(selectWireLanguage(["en-US", "es"], ["en-GB"])).toBe("en-US");
-    expect(selectWireLanguage([], ["en-US"])).toBeUndefined();
+  });
+
+  it("prefers the user's primary language over an unrelated catalog default", () => {
+    expect(selectWireLanguage(["en", "fr"], ["es-MX"])).toBe("es");
+    expect(selectWireLanguage([], ["de-DE"])).toBe("de");
+  });
+
+  it("falls back safely when no valid user language is available", () => {
+    expect(selectWireLanguage(["en", "fr"], ["", "1234"])).toBe(
+      "en",
+    );
+    expect(selectWireLanguage([], [])).toBeUndefined();
   });
 });

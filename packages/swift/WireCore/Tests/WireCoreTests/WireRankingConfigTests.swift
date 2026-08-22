@@ -20,7 +20,8 @@ struct WireRankingConfigTests {
       try WireRankingConfig(weights: .init(
         distinctSharers24h: 0, shareVelocity1h: 0, likeBreadthVelocity: 0,
         repostBreadthVelocity: 0, communitySpread: 0, freshness: 0,
-        resurfacingAcceleration: 0, sourceConfidence: 0
+        resurfacingAcceleration: 0, sourceConfidence: 0,
+        standardSiteAuthority: 0, openGraphMetadata: 0
       )).validate()
     }
 
