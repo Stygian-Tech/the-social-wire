@@ -99,8 +99,9 @@ describe("PublicationTabs", () => {
       </SidebarProvider>,
     );
 
-    const wire = screen.getByRole("tab", { name: "The Wire, Alpha" });
-    expect(screen.getByText("Alpha")).toBeDefined();
+    const wire = screen.getByRole("tab", { name: "The Wire, Beta" });
+    const beta = screen.getByText("Beta");
+    expect(beta.className).toContain("ml-auto");
     expect(wire.querySelector("svg")?.classList.contains("lucide-rss")).toBe(true);
     expect(wire.getAttribute("aria-selected")).toBe("true");
     fireEvent.click(wire);

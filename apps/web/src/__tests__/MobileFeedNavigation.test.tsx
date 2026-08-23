@@ -41,8 +41,8 @@ describe("MobileFeedNavigation", () => {
       />,
     );
 
-    const wire = screen.getByRole("button", { name: "The Wire, Alpha" });
-    expect(screen.getByText("Alpha")).toBeDefined();
+    const wire = screen.getByRole("button", { name: "The Wire, Beta" });
+    expect(screen.getByText("Beta")).toBeDefined();
     expect(wire.querySelector("svg")?.classList.contains("lucide-rss")).toBe(true);
     expect(wire.getAttribute("aria-current")).toBe("page");
     fireEvent.click(wire);
@@ -55,6 +55,6 @@ describe("MobileFeedNavigation", () => {
         onSelect={onSelect}
       />,
     );
-    expect(screen.queryByRole("button", { name: "The Wire, Alpha" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "The Wire, Beta" })).toBeNull();
   });
 });
