@@ -692,10 +692,10 @@ func (p *Postgres) stageWireInboxEvent(
 		   next_attempt_at, staged_at, updated_at, expires_at)
 		SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
 		       $13::jsonb, $14, 'pending', 0, NOW(), NOW(), NOW(), 'infinity'::timestamptz
-		WHERE NOT (
+		WHERE COALESCE(NOT (
 		  $8::text IN ('app.bsky.feed.like', 'app.bsky.feed.repost')
 		  AND $9::text IN ('create', 'update')
-		) OR EXISTS (
+		), TRUE) OR EXISTS (
 		  SELECT 1
 		  FROM wire_item_aliases alias
 		  WHERE alias.alias_key = $13::jsonb #>> '{commit,record,subject,uri}'
