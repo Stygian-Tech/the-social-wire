@@ -124,5 +124,19 @@ struct WireMigrationContractTests {
     #expect(qualitySQL.contains("metadata.source = 'open_graph'"))
     #expect(qualitySQL.contains("metadata.stale_until > CURRENT_TIMESTAMP"))
     #expect(!qualitySQL.contains("distinct_actors_24h"))
+
+    let feedbackMigration = migration.deletingLastPathComponent()
+      .appendingPathComponent("20260822220000_add_wire_article_feedback.sql")
+    let feedbackSQL = try String(contentsOf: feedbackMigration, encoding: .utf8)
+    #expect(feedbackSQL.contains("CREATE TABLE IF NOT EXISTS wire_article_feedback"))
+    #expect(feedbackSQL.contains("PRIMARY KEY (canonical_key, actor_key_hash)"))
+    #expect(feedbackSQL.contains("source_uri TEXT NOT NULL UNIQUE"))
+    #expect(feedbackSQL.contains("positive_feedback_24h"))
+    #expect(feedbackSQL.contains("negative_feedback_24h"))
+    #expect(!feedbackSQL.contains("repo_did"))
+
+    #expect(processor.contains("case \"app.thesocialwire.wireFeedback\""))
+    #expect(processor.contains("COUNT(DISTINCT actor_key_hash) FILTER (WHERE signal_kind = 'recommendation'"))
+    #expect(processor.contains("DELETE FROM wire_article_feedback WHERE source_uri"))
   }
 }

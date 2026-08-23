@@ -9,6 +9,9 @@ public struct WireRankingWeights: Codable, Equatable, Sendable {
   public var sourceConfidence: Double
   public var standardSiteAuthority: Double
   public var openGraphMetadata: Double
+  public var recommendationBreadth: Double
+  public var positiveFeedbackBreadth: Double
+  public var negativeFeedbackPenalty: Double
 
   public init(
     distinctSharers24h: Double = 0.22,
@@ -20,7 +23,10 @@ public struct WireRankingWeights: Codable, Equatable, Sendable {
     resurfacingAcceleration: Double = 0.06,
     sourceConfidence: Double = 0.08,
     standardSiteAuthority: Double = 0.09,
-    openGraphMetadata: Double = 0.05
+    openGraphMetadata: Double = 0.05,
+    recommendationBreadth: Double = 0.08,
+    positiveFeedbackBreadth: Double = 0.06,
+    negativeFeedbackPenalty: Double = 0.10
   ) {
     self.distinctSharers24h = distinctSharers24h
     self.shareVelocity1h = shareVelocity1h
@@ -32,6 +38,9 @@ public struct WireRankingWeights: Codable, Equatable, Sendable {
     self.sourceConfidence = sourceConfidence
     self.standardSiteAuthority = standardSiteAuthority
     self.openGraphMetadata = openGraphMetadata
+    self.recommendationBreadth = recommendationBreadth
+    self.positiveFeedbackBreadth = positiveFeedbackBreadth
+    self.negativeFeedbackPenalty = negativeFeedbackPenalty
   }
 
   var all: [Double] {
@@ -39,6 +48,7 @@ public struct WireRankingWeights: Codable, Equatable, Sendable {
       distinctSharers24h, shareVelocity1h, likeBreadthVelocity, repostBreadthVelocity,
       communitySpread, freshness, resurfacingAcceleration, sourceConfidence,
       standardSiteAuthority, openGraphMetadata,
+      recommendationBreadth, positiveFeedbackBreadth,
     ]
   }
 }

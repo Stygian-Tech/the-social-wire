@@ -20,6 +20,8 @@ public struct WireCandidate: Codable, Equatable, Sendable {
   public var communities24h: Int
   public var primaryCommunityKey: String?
   public var recommendations24h: Int
+  public var positiveFeedback24h: Int
+  public var negativeFeedback24h: Int
   public var shares1h: Int
   public var shares24h: Int
   public var distinctLikes24h: Int
@@ -52,6 +54,8 @@ public struct WireCandidate: Codable, Equatable, Sendable {
     communities24h: Int = 0,
     primaryCommunityKey: String? = nil,
     recommendations24h: Int = 0,
+    positiveFeedback24h: Int = 0,
+    negativeFeedback24h: Int = 0,
     shares1h: Int? = nil,
     shares24h: Int? = nil,
     distinctLikes24h: Int = 0,
@@ -83,6 +87,8 @@ public struct WireCandidate: Codable, Equatable, Sendable {
     self.communities24h = communities24h
     self.primaryCommunityKey = primaryCommunityKey
     self.recommendations24h = recommendations24h
+    self.positiveFeedback24h = positiveFeedback24h
+    self.negativeFeedback24h = negativeFeedback24h
     self.shares1h = shares1h ?? signals1h
     self.shares24h = shares24h ?? signals24h
     self.distinctLikes24h = distinctLikes24h

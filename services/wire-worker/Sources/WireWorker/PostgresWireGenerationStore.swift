@@ -64,6 +64,7 @@ struct PostgresWireGenerationStore: WireGenerationStore {
              r.distinct_actors_1h, r.distinct_actors_24h, r.distinct_actors_7d,
              r.signals_1h, r.signals_24h, r.signals_7d, r.communities_24h,
              r.primary_community_key_hash, r.recommendations_24h,
+             r.positive_feedback_24h, r.negative_feedback_24h,
              r.shares_1h, r.shares_24h, r.distinct_likers_24h, r.likes_1h, r.likes_24h,
              r.distinct_reposters_24h, r.reposts_1h, r.reposts_24h
       FROM wire_items i
@@ -108,7 +109,8 @@ struct PostgresWireGenerationStore: WireGenerationStore {
         cells[23].decode(Int.self), cells[24].decode(Int.self),
         cells[25].decode(Int.self), cells[26].decode(Int.self),
         cells[27].decode(Int.self), cells[28].decode(Int.self),
-        cells[29].decode(Int.self)
+        cells[29].decode(Int.self), cells[30].decode(Int.self),
+        cells[31].decode(Int.self)
       )
       let topics = (try? JSONDecoder().decode([String].self, from: Data(identity.6.utf8))) ?? []
       candidates.append(
@@ -132,14 +134,16 @@ struct PostgresWireGenerationStore: WireGenerationStore {
           communities24h: rollup.6,
           primaryCommunityKey: rollup.7,
           recommendations24h: rollup.8,
-          shares1h: rollup.9,
-          shares24h: rollup.10,
-          distinctLikes24h: rollup.11,
-          likes1h: rollup.12,
-          likes24h: rollup.13,
-          distinctReposts24h: rollup.14,
-          reposts1h: rollup.15,
-          reposts24h: rollup.16,
+          positiveFeedback24h: rollup.9,
+          negativeFeedback24h: rollup.10,
+          shares1h: rollup.11,
+          shares24h: rollup.12,
+          distinctLikes24h: rollup.13,
+          likes1h: rollup.14,
+          likes24h: rollup.15,
+          distinctReposts24h: rollup.16,
+          reposts1h: rollup.17,
+          reposts24h: rollup.18,
           sourceConfidence: identity.10,
           isStandardSite: isStandardSite,
           hasUsableOpenGraphMetadata: hasUsableOpenGraph

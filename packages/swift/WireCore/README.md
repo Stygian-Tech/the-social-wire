@@ -7,7 +7,7 @@
 1. Public Jetstream/RSS producers place idempotent envelopes in `wire_ingestion_inbox`. The durable inbox owns retry, lease, dead-letter, and expiry state; a network message is not considered accepted until PostgreSQL has it.
 2. A dedicated drain runtime continuously claims bounded inbox batches, applies different repositories concurrently while preserving repository FIFO, and uses bounded idle/error backoff. Claims order ready work by retry time before sequence so retries in one repository cannot starve unrelated pending repositories. The applier canonicalizes the linked story, upserts `wire_items` plus `wire_item_aliases`, records presentation-safe provenance, applies moderation/source labels, and inserts a deduplicated `wire_signal_events` row. Standard Site publication records form a rebuildable PostgreSQL resolver projection; documents carrying a publication AT-URI plus relative path use that projection or a bounded public PLC/PDS lookup. PLC/PDS DNS is revalidated immediately before every request, mixed or non-global answer sets fail closed, and redirects are not followed. Unresolved dependencies retry for no more than 24 hours.
 3. The applier updates bounded, keyed-hash graph state (`wire_active_actors`, `wire_follow_edges`, `wire_actor_communities`) and privacy-safe aggregate counts in `wire_signal_rollups`. DIDs for sharers, likers, reposters, and other engagement actors never enter a serving row. A public source/author DID may be retained only with its public item for attribution and viewer block/mute filtering; it is never a ranking feature or community identifier.
-4. Every five minutes by default, `wire-worker` prunes bounded graph state, refreshes community assignments when due, rebuilds exact rollups, refreshes baseline labels, loads eligible item/rollup/metadata rows, computes the deterministic `wire-v2` score, applies first-page diversity, and writes an immutable `wire_rank_generations` plus its `wire_ranked_items`. Continuous archive draining never increases labeler cadence.
+4. Every five minutes by default, `wire-worker` prunes bounded graph state, refreshes community assignments when due, rebuilds exact rollups, refreshes baseline labels, loads eligible item/rollup/metadata rows, computes the deterministic `wire-v3` score, applies first-page diversity, and writes an immutable `wire_rank_generations` plus its `wire_ranked_items`. Continuous archive draining never increases labeler cadence.
 5. In `shadow` mode the generation remains queryable for comparison but is not served. In `api` or `visible` mode the worker moves `wire_feed_state.active_generation_id` in the same PostgreSQL transaction as the completed generation. `off` performs read-only health probes and no data operation.
 6. An AppView `WireFeedStore` serving adapter reads the active generation, joins the presentation snapshot, filters labels again, and returns the approved `WirePage`, `WireItemDetail`, or singleton `WireFeedCatalog` contract. A Redis copy may be read first, but a miss or disagreement always resolves from PostgreSQL.
 
@@ -30,7 +30,7 @@ Example: `http://EXAMPLE.com:80/story/?utm_source=x&b=2&a=1#comments` becomes `h
 
 ## Eligible signals and exclusions
 
-Accepted public signal kinds are `recommendation`, `share`, `quote`, `reply`, `like`, `repost`, and `publication`. Presentation provenance is deliberately narrower and string-only: `standard_site`, `recommendation`, `direct_share`, `quote`, `repost`, `like`, and `rss`, capped at eight values. Replies contribute to private aggregates but are not presented as provenance.
+Accepted public conversation signal kinds are `recommendation`, `share`, `quote`, `reply`, `like`, `repost`, and `publication`. Viewer-authored `app.thesocialwire.wireFeedback` records are projected separately as `good` or `not_good` article-quality assessments. Presentation provenance is deliberately narrower and string-only: `standard_site`, `recommendation`, `direct_share`, `quote`, `repost`, `like`, and `rss`, capped at eight values. Feedback and replies contribute only to private aggregates and are never presented as provenance or public reasons.
 
 A candidate is eligible when all of these are true:
 
@@ -40,15 +40,18 @@ A candidate is eligible when all of these are true:
 - the item is marked eligible, not expired, and matches the generation language (unless the bucket is `und`);
 - no current `moderation`/`visibility` label has value `block`, `exclude`, `adult`, `graphic`, or `spam`.
 
-Do not ingest private posts, deleted/tombstoned records, blocks/mutes, DMs, raw viewer actions, non-public graph edges, bot/spam traffic identified by labels, or repeated events with the same transport key. That key is derived from environment, source host, cursor kind, and sequence; it deliberately excludes replay source generation. Source-record updates replace older raw signal state and deletes retract only state at or before their event time, so overlapping generation backfills remain idempotent without erasing newer updates. An actor contributes at most once to each distinct-actor window even if they emit several engagement events. High-intent actors are the distinct actors behind a share, quote, recommendation, or direct publication event; passive likes, reposts, and replies cannot admit a story on their own. Recommendation is an admission signal, not a guarantee of placement.
+Do not ingest private posts, deleted/tombstoned records, blocks/mutes, DMs, non-public graph edges, bot/spam traffic identified by labels, or repeated events with the same transport key. That key is derived from environment, source host, cursor kind, and sequence; it deliberately excludes replay source generation. Source-record updates replace older raw signal state and deletes retract only state at or before their event time, so overlapping generation backfills remain idempotent without erasing newer updates. An actor contributes at most once to each distinct-actor window even if they emit several engagement events. Recommendations are counted by distinct HMAC actor, so duplicate recommendation records from one account cannot satisfy the recommendation floor. High-intent actors are the distinct actors behind a share, quote, recommendation, or direct publication event; passive likes, reposts, replies, and Social Wire article feedback cannot admit a story on their own. Recommendation is an admission signal, not a guarantee of placement.
 
-To keep a sparse edition useful, `wire-v2` has a deterministic reserve. When the strict pool has fewer than 50 stories, candidates meeting the former three-high-intent-actor or one-recommendation floor may fill only the missing positions. The quality reserve takes usable Standard Site/OpenGraph-backed candidates first, then a general reserve. Metadata never admits an article by itself, and reserve stories never displace strict stories.
+Wire feedback is a public, viewer-owned PDS record with a deterministic per-URL key. The worker stores only the canonical story key, keyed actor hash, record URI, value, and expiring timestamps in `wire_article_feedback`; the raw viewer DID never enters PostgreSQL. One viewer contributes at most one current assessment per story, updates replace the earlier value, deletes retract it, and rows expire after seven days. Positive feedback is a bounded ranking boost and negative feedback a bounded penalty after a story has independently passed admission. Neither can create a candidate, satisfy admission, alter moderation, or leak through Wire/Corpus Edge responses. This separation limits brigading impact while still letting readers tune article quality.
+
+To keep a sparse edition useful, `wire-v3` has a deterministic reserve. When the strict pool has fewer than 50 stories, candidates meeting the former three-high-intent-actor or one-recommendation floor may fill only the missing positions. The quality reserve takes usable Standard Site/OpenGraph-backed candidates first, then a general reserve. Metadata and feedback never admit an article by themselves, and reserve stories never displace strict stories.
 
 Retention defaults are code constants in `WireDataPolicy`:
 
 | Data | Retention |
 | --- | --- |
 | Public signal events | 7 days |
+| Article-quality feedback projection | 7 days |
 | Applied inbox envelopes | 1 day |
 | Dead letters | 14 days |
 | Items/presentation snapshots | 30 days since final eligibility |
@@ -66,9 +69,9 @@ All cleanup is bounded by `WIRE_RETENTION_BATCH_SIZE` (default 5,000). The Datab
 
 The active graph is not the social graph archive. Keep at most the 250,000 most recently active actors from the last 30 days and at most the 200 most recently observed public follow edges per actor (`WireDataPolicy.maximumFollowEdgesPerActor`). Recompute deterministic community assignments every six hours using the current bounded graph, with a stable `algorithm_version` and stable tie ordering by hashed key. Assignments expire after seven days so an interrupted clustering job cannot become permanent authority. Serving sees only per-item community spread, never actor or edge rows.
 
-## Exact ranking algorithm (`wire-v2`)
+## Exact ranking algorithm (`wire-v3`)
 
-Let `clamp(x) = min(1, max(0, x))`, `age` be nonnegative seconds since `publishedAt` (or `firstSeenAt`), `sh1`/`sh24` be distinct high-intent actors in one/24 hours, `l1`/`l24` be likes, `r1`/`r24` be reposts, `la24`/`ra24` be their distinct actor counts, `s7` be all seven-day signals, and `c24` be distinct qualifying communities. `standardSiteAuthority` is one only for authoritative `standard_site` provenance. `openGraphMetadata` is one only while a successful OpenGraph cache row remains fresh or stale-safe and contains at least two useful presentation fields.
+Let `clamp(x) = min(1, max(0, x))`, `age` be nonnegative seconds since `publishedAt` (or `firstSeenAt`), `sh1`/`sh24` be distinct high-intent actors in one/24 hours, `l1`/`l24` be likes, `r1`/`r24` be reposts, `la24`/`ra24` be their distinct actor counts, `rec24` be distinct Standard Site recommenders, `good24`/`bad24` be distinct Social Wire assessments, `s7` be all seven-day signals, and `c24` be distinct qualifying communities. `standardSiteAuthority` is one only for authoritative `standard_site` provenance. `openGraphMetadata` is one only while a successful OpenGraph cache row remains fresh or stale-safe and contains at least two useful presentation fields.
 
 Normalized components:
 
@@ -85,6 +88,9 @@ resurfacingAcceleration = clamp(sh1 / (max(1, s7 / 168) * 3))
 sourceConfidence        = clamp(sourceConfidence)
 standardSiteAuthority   = isStandardSite ? 1 : 0
 openGraphMetadata       = hasUsableOpenGraphMetadata ? 1 : 0
+recommendationBreadth   = clamp(log1p(rec24) / log1p(10))
+positiveFeedbackBreadth = clamp(log1p(good24) / log1p(10))
+negativeFeedbackBreadth = clamp(log1p(bad24) / log1p(10))
 ```
 
 Score:
@@ -100,9 +106,13 @@ Score:
 + 0.08 * sourceConfidence
 + 0.09 * standardSiteAuthority
 + 0.05 * openGraphMetadata
++ 0.08 * recommendationBreadth
++ 0.06 * positiveFeedbackBreadth
 ```
 
-The implementation divides by the sum of weights, so validated future configurations remain normalized. Weights must be finite/nonnegative with a positive total. Thresholds/targets and time intervals must be positive and source confidence must stay in `[0, 1]`. Sort by score descending, then `canonicalKey` ascending; input order, database plan, clock locale, and process count must not change output.
+The implementation divides that positive score by the sum of positive weights, so validated future configurations remain normalized. It then subtracts `0.10 * negativeFeedbackBreadth`, clamps at zero, and subtracts the matching platform-destination penalty, again clamping at zero. Standard Site recommendation (`0.08`) therefore has a larger explicit coefficient than Social Wire positive feedback (`0.06`) and a Bluesky like (`0.04`); recommendations also participate in high-intent breadth and admission by design. Weights must be finite/nonnegative with a positive total. Thresholds/targets and time intervals must be positive and source confidence must stay in `[0, 1]`. Sort by score descending, then `canonicalKey` ascending; input order, database plan, clock locale, and process count must not change output.
+
+Platform-hosted/social-media destinations remain eligible but receive a bounded score subtraction because they are less likely to be the original publication. Matching is exact-host or dot-suffix only, so `news.youtube.com` matches while `notyoutube.com` does not. Defaults are `0.06` for `youtube.com`, `youtu.be`, and `twitch.tv`; `0.04` for `reddit.com` and `redd.it`; and `0.05` for `bsky.app`, `facebook.com`, `fb.com`, `fb.watch`, `instagram.com`, `linkedin.com`, `pinterest.com`, `threads.net`, `tiktok.com`, `twitter.com`, and `x.com`. The longest matching suffix wins. Each configured penalty must be finite and in `[0, 0.20]`. Penalties affect ordering only: they never change admission tier, exclude a story, or weaken moderation. A strong independently qualified story can still rank.
 
 ### Presentation reasons
 
@@ -118,7 +128,7 @@ Reasons are presentation-safe explanations, not raw counts. `WireFeedItem` also 
 
 ## Diversity
 
-Diversity applies to the first 50 items after deterministic score ordering. Greedily accept a candidate unless it would exceed, in this exact check order:
+Domain penalties apply before deterministic score ordering; diversity then applies to the first 50 items. Greedily accept a candidate unless it would exceed, in this exact check order:
 
 1. four items per source domain;
 2. three per publication;
@@ -130,7 +140,7 @@ Missing publication/author/community does not consume that dimension. Duplicate 
 
 ## News edition assembly (`wire-edition-v2`)
 
-`wire-v2` remains the sole authority for story eligibility and order. `wire-edition-v2`
+`wire-v3` remains the sole authority for story eligibility and order. `wire-edition-v2`
 is a deterministic presentation pass over that already-ranked order; it never changes a
 story score, exposes a score/rank, or creates a personalized order. Duplicate item IDs
 are removed by first occurrence before assembly.
@@ -214,6 +224,8 @@ Serving behavior:
 - fall back to the ranked `und` generation when a requested language has no eligible locale generation;
 - keep serving the last active quality generation as stale until its retention expiry rather than replacing it with a looser recency feed;
 - when no retained generation exists, serve a deterministic engagement-gated quality fallback that prefers Standard Site stories and requires trusted provenance, usable OpenGraph metadata, or high source confidence; never synthesize or merge a client-side feed.
+
+The simplified fallback is not numerically ranked and therefore does not apply feedback or platform-domain score adjustments. It preserves the same engagement admission floor and deterministic Standard Site/metadata/source-confidence preference without exposing any internal count. A retained ranked generation is always preferred, even when stale.
 
 ## Generations and cursors
 
