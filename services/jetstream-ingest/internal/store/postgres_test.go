@@ -109,6 +109,44 @@ func TestStageBatchNormalizesUnsupportedUnicodeOnlyForWireInbox(t *testing.T) {
 	}
 }
 
+func TestStageBatchFiltersUnresolvedPassiveWireEngagementBeforeInboxAdmission(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	postgres := New(db, wireTestSource())
+	postgres.ConfigureWireAdmission(5_000_000, 95<<30)
+	now := time.Unix(1_700_000_000, 0).UTC()
+	collection := "app.bsky.feed.like"
+	operation := "create"
+	event := ingest.InboxEvent{
+		Seq: 8, Time: now, Kind: "commit", RepoDID: "did:plc:liker",
+		Collection: &collection, Operation: &operation,
+		Payload: []byte(`{"commit":{"record":{"subject":{"uri":"at://did:plc:author/app.bsky.feed.post/post"}}}}`),
+	}
+	lease := Lease{Name: "wire-global-v3-ingest", OwnerID: "owner", FencingToken: 3}
+
+	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT TRUE").WillReturnRows(sqlmock.NewRows([]string{"valid"}).AddRow(true))
+	mock.ExpectQuery("SELECT retained_rows").
+		WillReturnRows(sqlmock.NewRows([]string{"retained_rows", "database_bytes"}).AddRow(int64(10), int64(20<<30)))
+	mock.ExpectExec("(?s)INSERT INTO wire_ingestion_inbox.*app.bsky.feed.like.*wire_item_aliases").
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec("INSERT INTO appview_jetstream_checkpoints").WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+
+	if err := postgres.StageBatch(
+		context.Background(), lease, []ingest.InboxEvent{event}, event.Seq, now,
+		ReplayProgress{State: "live"},
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestWireAdmissionAtCapAllowsDuplicateOnlyReplayToAdvanceCheckpoint(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {
