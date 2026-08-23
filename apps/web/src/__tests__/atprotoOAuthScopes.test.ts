@@ -8,6 +8,7 @@ import {
   SKYREADER_REPO_SCOPES,
   SOCIAL_WIRE_REPO_SCOPES,
   STANDARD_SITE_SOCIAL_PERMISSION_SCOPE,
+  WIRE_FEEDBACK_REPO_SCOPE,
   WIRE_MODERATION_RPC_SCOPES,
 } from "@/lib/atprotoOAuthScopes";
 import {
@@ -30,6 +31,7 @@ describe("atprotoOAuthScopes", () => {
   it("includes required repo collections", () => {
     expect(AT_PROTO_OAUTH_SCOPES).toContain("atproto");
     expect(AT_PROTO_OAUTH_SCOPES).toContain("app.thesocialwire.folder");
+    expect(AT_PROTO_OAUTH_SCOPES).toContain("app.thesocialwire.wireFeedback");
     expect(AT_PROTO_OAUTH_SCOPES).not.toContain(
       "app.thesocialwire.entryReadState"
     );
@@ -61,6 +63,9 @@ describe("atprotoOAuthScopes", () => {
         )
     ).toBe(true);
     expect(SOCIAL_WIRE_REPO_SCOPES).toHaveLength(6);
+    expect(WIRE_FEEDBACK_REPO_SCOPE).toContain(
+      "app.thesocialwire.wireFeedback"
+    );
     expect(BLUESKY_SOCIAL_PERMISSION_SCOPES).toEqual([
       "include:app.bsky.authCreatePosts?aud=did:web:api.bsky.app%23bsky_appview",
       "include:app.bsky.authDeleteContent?aud=did:web:api.bsky.app%23bsky_appview",

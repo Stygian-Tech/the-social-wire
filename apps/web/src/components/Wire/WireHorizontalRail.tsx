@@ -75,7 +75,7 @@ export function WireHorizontalRail({
 
   return (
     <section aria-labelledby={headingId} className="min-w-0">
-      <div className="mb-3 flex items-end justify-between gap-3 px-4 sm:px-5">
+      <div className="mb-3 flex items-end justify-between gap-3 pl-5 pr-4 sm:pl-6 sm:pr-5">
         <div className="min-w-0">
           {eyebrow ? (
             <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-[var(--purple-foreground)]">
@@ -115,7 +115,7 @@ export function WireHorizontalRail({
         role="group"
         aria-label={`${title} carousel`}
         tabIndex={0}
-        className="flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-2 outline-none [scrollbar-width:none] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:px-5 [&::-webkit-scrollbar]:hidden"
+        className="flex snap-x snap-mandatory scroll-pl-5 scroll-pr-4 gap-3 overflow-x-auto pb-2 pl-5 pr-4 pt-2 outline-none [scrollbar-width:none] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:scroll-pl-6 sm:scroll-pr-5 sm:pl-6 sm:pr-5 [&::-webkit-scrollbar]:hidden"
       >
         {children}
       </div>

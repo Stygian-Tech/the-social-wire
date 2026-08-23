@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 
 import { EntryCardActionMenu } from "@/components/EntryList/EntryCardActionMenu";
 import { EntryRowActions } from "@/components/EntryList/EntryRowActions";
@@ -11,16 +11,20 @@ import {
   ContextMenuContent,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
+import { Tooltip, TooltipTrigger } from "@/components/ui/tooltip";
 import type { EntryListItem } from "@/lib/atprotoClient";
 import { decodeHtmlEntities } from "@/lib/decodeHtmlEntities";
+import { thumbnailImageSrcAttempts } from "@/lib/publicResourceUrl";
 import { cn } from "@/lib/utils";
 import { wireReasonLabel } from "@/lib/wireFeedClient";
+import { WireStoryHoverMetadata } from "./WireStoryHoverMetadata";
 
 export type WireStoryCardVariant =
   | "lead"
   | "supporting"
   | "standard"
-  | "compact";
+  | "compact"
+  | "trending";
 
 export function WireStoryCard({
   story,
@@ -36,7 +40,6 @@ export function WireStoryCard({
   const source = story.wireItem?.source;
   const publicationName =
     source?.name.trim() ||
-    source?.publication?.trim() ||
     source?.domain.trim() ||
     "Publication";
   const title = useMemo(() => decodeHtmlEntities(story.title), [story.title]);
@@ -48,10 +51,30 @@ export function WireStoryCard({
   const formattedDate = Number.isNaN(date.getTime())
     ? null
     : date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  const detailedDate = Number.isNaN(date.getTime())
+    ? undefined
+    : date.toLocaleString(undefined, {
+        dateStyle: "medium",
+        timeStyle: "short",
+      });
   const reason = story.wireItem?.reasons
     .map(wireReasonLabel)
     .find((label): label is string => Boolean(label));
   const showImage = variant !== "compact";
+  const thumbnailAttempts = useMemo(
+    () =>
+      thumbnailImageSrcAttempts(
+        story.thumbnailUrl,
+        story.thumbnailFallbackUrl,
+      ),
+    [story.thumbnailFallbackUrl, story.thumbnailUrl],
+  );
+  const [failedThumbnailUrls, setFailedThumbnailUrls] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const thumbnailUrl = thumbnailAttempts.find(
+    (attempt) => !failedThumbnailUrls.has(attempt),
+  );
 
   const card = (
     <div
@@ -69,6 +92,8 @@ export function WireStoryCard({
         variant === "supporting" &&
           "lg:grid lg:grid-cols-[minmax(0,1fr)_9rem]",
         variant === "compact" && "rounded-xl shadow-sm",
+        variant === "trending" &&
+          "grid grid-cols-[minmax(0,1fr)_7rem] rounded-none border-0 bg-transparent shadow-none hover:border-transparent hover:bg-muted/35 hover:shadow-none dark:bg-transparent",
       )}
     >
       {showImage ? (
@@ -79,18 +104,28 @@ export function WireStoryCard({
               ? "aspect-[16/7.5]"
               : variant === "supporting"
                 ? "aspect-[16/9] lg:col-start-2 lg:row-start-1 lg:my-1.5 lg:mr-1.5 lg:aspect-[4/3] lg:self-center lg:rounded-xl"
+                : variant === "trending"
+                  ? "col-start-2 row-start-1 m-1.5 aspect-[4/3] self-center rounded-lg"
                 : "aspect-[16/9]",
           )}
         >
           <CachedImage
-            src={story.thumbnailUrl}
+            src={thumbnailUrl}
             alt=""
             width={variant === "lead" ? 960 : 480}
             height={variant === "lead" ? 450 : 270}
             loading={variant === "lead" ? "eager" : "lazy"}
             className="absolute inset-0 size-full object-cover transition-transform duration-300 group-hover/story:scale-[1.015]"
+            onError={() => {
+              if (!thumbnailUrl) return;
+              setFailedThumbnailUrls((current) => {
+                const next = new Set(current);
+                next.add(thumbnailUrl);
+                return next;
+              });
+            }}
           />
-          {rank ? (
+          {rank && variant !== "trending" ? (
             <span className="absolute left-3 top-3 inline-flex size-8 items-center justify-center rounded-full bg-background/92 text-sm font-bold text-foreground shadow-sm backdrop-blur-sm">
               {rank}
             </span>
@@ -99,16 +134,18 @@ export function WireStoryCard({
       ) : null}
       <div
         className={cn(
-          "relative p-3.5",
+          "relative min-w-0 overflow-hidden p-3.5",
           variant === "lead" && "p-4 sm:p-5",
           variant === "supporting" &&
             "lg:col-start-1 lg:row-start-1 lg:self-center lg:p-3",
+          variant === "trending" && "col-start-1 row-start-1 p-3 pr-1",
         )}
       >
         <div
           className={cn(
             "mb-2 flex min-w-0 items-center gap-2 pr-8",
             variant === "supporting" && "lg:mb-1.5",
+            variant === "trending" && "mb-1.5 pr-0",
           )}
         >
           {variant === "compact" && rank ? (
@@ -162,11 +199,13 @@ export function WireStoryCard({
         </div>
         <h3
           className={cn(
-            "font-bold leading-tight text-foreground underline-offset-4 group-hover/story:underline",
+            "[overflow-wrap:anywhere] font-bold leading-tight text-foreground underline-offset-4 group-hover/story:underline",
             variant === "lead"
               ? "line-clamp-3 text-2xl sm:text-3xl"
               : variant === "compact"
                 ? "line-clamp-2 text-sm"
+                : variant === "trending"
+                  ? "line-clamp-2 text-sm"
                 : variant === "supporting"
                   ? "line-clamp-2 text-base"
                   : "line-clamp-2 text-lg",
@@ -174,7 +213,10 @@ export function WireStoryCard({
         >
           {title}
         </h3>
-        {variant !== "compact" && variant !== "supporting" && summary ? (
+        {variant !== "compact" &&
+        variant !== "trending" &&
+        variant !== "supporting" &&
+        summary ? (
           <p
             className={cn(
               "mt-2 text-sm leading-5 text-muted-foreground",
@@ -184,33 +226,54 @@ export function WireStoryCard({
             {summary}
           </p>
         ) : null}
-        <div
-          className={cn(
-            "mt-2 flex min-w-0 items-center gap-2 pr-8 text-xs text-muted-foreground",
-            variant === "supporting" && "lg:mt-1.5",
-          )}
-        >
-          {reason ? (
-            <span className="rounded-full bg-primary/10 px-2 py-0.5 font-semibold text-[var(--purple-foreground)]">
-              {reason}
-            </span>
-          ) : null}
-          {source?.author?.trim() ? (
-            <span className="truncate">{source.author}</span>
-          ) : null}
-        </div>
-        <div className="absolute bottom-2 right-2">
-          <EntryCardActionMenu entry={story} />
-        </div>
+        {variant !== "trending" ? (
+          <div
+            className={cn(
+              "mt-2 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 pr-8 text-xs text-muted-foreground",
+              variant === "supporting" && "lg:mt-1.5",
+            )}
+          >
+            {reason ? (
+              <span className="rounded-full bg-primary/10 px-2 py-0.5 font-semibold text-[var(--purple-foreground)]">
+                {reason}
+              </span>
+            ) : null}
+            {source?.author?.trim() ? (
+              <span className="truncate">By {source.author}</span>
+            ) : null}
+          </div>
+        ) : null}
+        {variant !== "trending" ? (
+          <div className="absolute bottom-2 right-2">
+            <EntryCardActionMenu entry={story} showWireFeedback />
+          </div>
+        ) : null}
       </div>
+      {variant === "trending" ? (
+        <div
+          data-wire-trending-actions
+          className="absolute right-2 top-2 opacity-60 transition-opacity [@media(hover:hover)]:opacity-0 group-hover/story:opacity-100 group-focus-within/story:opacity-100"
+        >
+          <EntryCardActionMenu entry={story} showWireFeedback />
+        </div>
+      ) : null}
     </div>
   );
 
   return (
     <ContextMenu>
-      <ContextMenuTrigger className="block h-full min-w-0">
-        {card}
-      </ContextMenuTrigger>
+      <Tooltip>
+        <ContextMenuTrigger className="block h-full min-w-0">
+          <TooltipTrigger delay={350} render={card} />
+        </ContextMenuTrigger>
+        <WireStoryHoverMetadata
+          title={title}
+          publicationName={publicationName}
+          site={source?.domain.trim() || publicationName}
+          author={source?.author?.trim() || undefined}
+          publishedAt={detailedDate}
+        />
+      </Tooltip>
       <ContextMenuContent className="min-w-[11rem]">
         <EntryRowActions
           entry={story}

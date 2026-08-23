@@ -73,6 +73,13 @@ func run(logger *slog.Logger) error {
 		database.ConfigureWireAdmission(cfg.WireInboxMaxRows, cfg.WireDatabaseMaxBytes)
 	}
 	state.Database(true)
+	// Validate an existing generation's immutable source identity before taking
+	// its lease or reconciling the multi-million-row Wire admission counter. A
+	// stale deployment must fail closed without turning a configuration mismatch
+	// into a repeated full-inbox scan.
+	if _, err := database.LoadCheckpoint(ctx); err != nil {
+		return err
+	}
 
 	ownerID, err := newOwnerID()
 	if err != nil {

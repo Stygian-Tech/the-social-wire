@@ -321,20 +321,34 @@ export async function getWireItem(
 export function selectWireLanguage(
   supportedLanguages: readonly string[],
   requestedLanguages: readonly string[] =
-    typeof navigator === "undefined" ? [] : navigator.languages,
+    typeof navigator === "undefined"
+      ? []
+      : navigator.languages.length > 0
+        ? navigator.languages
+        : navigator.language
+          ? [navigator.language]
+          : [],
 ): string | undefined {
   const supported = new Map(
-    supportedLanguages.map((language) => [language.toLowerCase(), language]),
+    supportedLanguages
+      .map((language) => language.trim())
+      .filter(Boolean)
+      .map((language) => [language.toLowerCase(), language]),
   );
+  let preferredPrimaryLanguage: string | undefined;
   for (const requested of requestedLanguages) {
-    const exact = supported.get(requested.toLowerCase());
+    const normalized = requested.trim().replaceAll("_", "-");
+    const primary = normalized.split("-")[0]?.toLowerCase();
+    if (!primary || !/^[a-z]{2,8}$/.test(primary)) continue;
+    preferredPrimaryLanguage ??= primary;
+
+    const exact = supported.get(normalized.toLowerCase());
     if (exact) return exact;
-    const base = requested.split("-")[0]?.toLowerCase();
-    if (!base) continue;
     const baseMatch = [...supported.entries()].find(
-      ([candidate]) => candidate === base || candidate.startsWith(`${base}-`),
+      ([candidate]) =>
+        candidate === primary || candidate.startsWith(`${primary}-`),
     );
     if (baseMatch) return baseMatch[1];
   }
-  return supportedLanguages[0];
+  return preferredPrimaryLanguage ?? supported.values().next().value;
 }

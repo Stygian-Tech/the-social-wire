@@ -84,6 +84,16 @@ struct PostgresWireInboxProcessor: Sendable {
     return events.count
   }
 
+  static func boundedClaimLimit(batchSize: Int, maximumConcurrentEvents: Int) -> Int {
+    let boundedBatchSize = max(1, min(batchSize, 5_000))
+    let boundedConcurrency = max(1, min(maximumConcurrentEvents, 64))
+    return min(boundedBatchSize, boundedConcurrency)
+  }
+
+  static func retriesUnresolvedReference(collection: String?) -> Bool {
+    collection != "app.bsky.feed.like" && collection != "app.bsky.feed.repost"
+  }
+
   func maintain(asOf: Date) async throws {
     try await pruneActiveGraph(asOf: asOf)
     try await mentionStore.pruneExpired(asOf: asOf)
@@ -190,6 +200,10 @@ struct PostgresWireInboxProcessor: Sendable {
   private func claim(asOf: Date) async throws -> [InboxEvent] {
     let token = UUID().uuidString.lowercased()
     let leaseUntil = asOf.addingTimeInterval(120)
+    let claimLimit = Self.boundedClaimLimit(
+      batchSize: batchSize,
+      maximumConcurrentEvents: maximumConcurrentEvents
+    )
     let rows = try await pool.query(
       """
       WITH pending_retry_candidates AS (
@@ -208,7 +222,7 @@ struct PostgresWireInboxProcessor: Sendable {
         ORDER BY candidate.next_attempt_at, candidate.seq,
                  candidate.environment, candidate.source_generation
         FOR UPDATE SKIP LOCKED
-        LIMIT \(batchSize)
+        LIMIT \(claimLimit)
       ),
       expired_lease_candidates AS (
         SELECT environment, source_generation, seq, lease_expires_at AS eligible_at
@@ -226,7 +240,7 @@ struct PostgresWireInboxProcessor: Sendable {
         ORDER BY candidate.lease_expires_at, candidate.seq,
                  candidate.environment, candidate.source_generation
         FOR UPDATE SKIP LOCKED
-        LIMIT \(batchSize)
+        LIMIT \(claimLimit)
       ),
       candidates AS (
         SELECT environment, source_generation, seq, eligible_at
@@ -235,7 +249,7 @@ struct PostgresWireInboxProcessor: Sendable {
         SELECT environment, source_generation, seq, eligible_at
         FROM expired_lease_candidates
         ORDER BY eligible_at, seq, environment, source_generation
-        LIMIT \(batchSize)
+        LIMIT \(claimLimit)
       )
       UPDATE wire_ingestion_inbox inbox
       SET status = 'leased', lease_owner = 'wire-worker', lease_token = \(token),
@@ -537,8 +551,12 @@ struct PostgresWireInboxProcessor: Sendable {
     } else {
       subjectURI = (subject as? [String: Any])?["uri"] as? String
     }
-    guard let subjectURI, let canonicalKey = try await canonicalKey(alias: subjectURI) else {
-      throw ApplyError.unresolvedReference
+    guard let subjectURI else { throw ApplyError.malformed }
+    guard let canonicalKey = try await canonicalKey(alias: subjectURI) else {
+      if Self.retriesUnresolvedReference(collection: event.collection) {
+        throw ApplyError.unresolvedReference
+      }
+      return
     }
     let actorHash = try actorHasher.hash(event.repoDID)
     try await upsertActor(hash: actorHash, asOf: asOf)
@@ -565,7 +583,10 @@ struct PostgresWireInboxProcessor: Sendable {
       value == "good" || value == "not_good"
     else { throw ApplyError.malformed }
     guard try await itemExists(canonicalKey: identity.canonicalKey) else {
-      throw ApplyError.unresolvedReference
+      if Self.retriesUnresolvedReference(collection: event.collection) {
+        throw ApplyError.unresolvedReference
+      }
+      return
     }
 
     let actorHash = try actorHasher.hash(event.repoDID)

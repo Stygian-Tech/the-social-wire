@@ -256,7 +256,7 @@ func TestLoadWirePipelineUsesIndependentIdentityAndGlobalCollections(t *testing.
 	if cfg.SourceGeneration != WireSourceGeneration || cfg.ScopePolicy != WireScopePolicy {
 		t.Fatalf("wire identity = generation %q policy %q", cfg.SourceGeneration, cfg.ScopePolicy)
 	}
-	if cfg.LeaderLeaseName != "wire-global-v2-ingest" {
+	if cfg.LeaderLeaseName != "wire-global-v3-ingest" {
 		t.Fatalf("wire lease name = %q", cfg.LeaderLeaseName)
 	}
 	if cfg.SegmentStripes != WireSegmentStripes {

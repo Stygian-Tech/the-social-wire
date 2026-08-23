@@ -38,7 +38,10 @@ const titles = [
 ];
 
 function story(index: number): WireItem {
-  const source = publications[index % publications.length];
+  const source = {
+    ...publications[index % publications.length],
+    author: ["Maya Chen", "Jon Bell", "Imani Reed", "Alex Rivera"][index % 4],
+  };
   const reason = index < 13
     ? index % 2 === 0 ? "breaking_story" : "widely_discussed"
     : index < 17 ? "shared_across_communities"
@@ -63,7 +66,7 @@ function story(index: number): WireItem {
 export function dummyWireEdition(): WireEditionPage {
   const stories = titles.map((_, index) => story(index));
   return {
-    editionVersion: "wire-edition-v1",
+    editionVersion: "wire-edition-v2",
     generationId: "00000000-0000-4000-8000-000000000001",
     generatedAt: "2026-08-21T22:00:00.000Z",
     language: "en",

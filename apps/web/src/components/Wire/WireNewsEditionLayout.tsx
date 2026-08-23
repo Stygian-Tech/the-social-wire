@@ -81,9 +81,10 @@ export function WireNewsEditionLayout({
     <div
       data-wire-edition-version={edition.editionVersion}
       data-wire-generation={edition.generationId}
+      data-wire-scroll-container
       className="h-full overflow-y-auto overscroll-y-contain bg-background"
     >
-      <div className="grid min-w-0 xl:grid-cols-[minmax(0,1fr)_19rem] xl:gap-x-5">
+      <div className="grid w-full min-w-0 max-w-[calc(var(--reader-shell-width)-var(--sidebar-width))] xl:grid-cols-[minmax(0,1fr)_19rem] xl:gap-x-5">
         <div className="min-w-0 xl:col-start-1 xl:row-start-1">
           <WireTopStories stories={model.effectiveTopStories} onSelect={onSelect} />
         </div>
