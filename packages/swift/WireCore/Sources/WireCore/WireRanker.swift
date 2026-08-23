@@ -1,6 +1,9 @@
 import Foundation
 
 public enum WireRanker {
+  static let rotationInterval: TimeInterval = 1_800
+  static let maximumRotationNudge = 0.005
+
   private enum AdmissionTier {
     case primary
     case qualityBackfill
@@ -101,9 +104,9 @@ public enum WireRanker {
       let feedbackAdjustedScore = clamp(
         positiveScore - negativeFeedbackBreadth * config.weights.negativeFeedbackPenalty
       )
-      let score = max(
-        0,
+      let score = clamp(
         feedbackAdjustedScore - config.domainPenalties.penalty(for: candidate.sourceDomain)
+          + rotationNudge(canonicalKey: candidate.canonicalKey, asOf: asOf)
       )
 
       guard score.isFinite else { continue }
@@ -171,6 +174,16 @@ public enum WireRanker {
 
   private static func clamp(_ value: Double) -> Double {
     min(1, max(0, value))
+  }
+
+  static func rotationNudge(canonicalKey: String, asOf: Date) -> Double {
+    let bucket = Int64(floor(asOf.timeIntervalSince1970 / rotationInterval))
+    var hash: UInt64 = 14_695_981_039_346_656_037
+    for byte in "\(bucket)|\(canonicalKey)".utf8 {
+      hash ^= UInt64(byte)
+      hash &*= 1_099_511_628_211
+    }
+    return Double(hash % 1_000_001) / 1_000_000 * maximumRotationNudge
   }
 
   private static func velocity(hour: Int, day: Int) -> Double {

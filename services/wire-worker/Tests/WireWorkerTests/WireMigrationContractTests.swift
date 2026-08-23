@@ -60,6 +60,19 @@ struct WireMigrationContractTests {
     #expect(processor.contains("unresolved_publication_expired"))
     #expect(processor.contains("event.attemptCount >= 8"))
     #expect(processor.contains("DELETE FROM wire_follow_edges WHERE source_uri"))
+    #expect(processor.contains("func acknowledgeUnresolvedPassiveReferences"))
+    #expect(processor.contains("candidate.event_kind = 'commit'"))
+    #expect(
+      processor.contains(
+        "candidate.collection IN ('app.bsky.feed.like', 'app.bsky.feed.repost')"))
+    #expect(processor.contains("candidate.operation IN ('create', 'update')"))
+    #expect(processor.contains("candidate.payload #>> '{commit,record,subject,uri}'"))
+    #expect(processor.contains("alias.expires_at > \\(asOf)"))
+    #expect(processor.contains("FOR UPDATE SKIP LOCKED"))
+    #expect(processor.contains("AND inbox.status IN ('pending', 'retry')"))
+    #expect(
+      processor.contains("let fastPathCount = try await acknowledgeUnresolvedPassiveReferences"))
+    #expect(processor.contains("return fastPathCount + events.count"))
 
     let publicationMigration = migration.deletingLastPathComponent()
       .appendingPathComponent("20260821023000_add_wire_publication_metadata.sql")

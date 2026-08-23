@@ -208,7 +208,10 @@ export function ArticleSocialToolbar({
           >
             <MoreHorizontal className="size-4" />
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="min-w-52">
+          <DropdownMenuContent
+            align="end"
+            className="min-w-64 [&_[data-slot=dropdown-menu-item]]:whitespace-nowrap"
+          >
             {menuActions.showLinkedPostActions ? (
               <>
                 <DropdownMenuItem

@@ -28,6 +28,15 @@ import {
 export const WIRE_EDITION_QUERY_KEY = (language: string, modeKey: string) =>
   ["wireEdition", language, modeKey] as const;
 
+export const WIRE_EDITION_REFRESH_INTERVAL_MS = 5 * 60_000;
+export const WIRE_EDITION_REFRESH_POLICY = {
+  staleTime: WIRE_EDITION_REFRESH_INTERVAL_MS,
+  refetchInterval: WIRE_EDITION_REFRESH_INTERVAL_MS,
+  refetchIntervalInBackground: false,
+  refetchOnMount: "always" as const,
+  refetchOnWindowFocus: false,
+};
+
 const WIRE_MODERATION_SESSION_ERROR = new Error(
   "Your moderation settings could not be applied to The Wire; retry.",
 );
@@ -163,10 +172,8 @@ export function useWireEdition(args: {
       !moderationCapability.isError &&
       catalog.data?.enabled === true &&
       catalog.data.available === true,
-    staleTime: 60_000,
+    ...WIRE_EDITION_REFRESH_POLICY,
     gcTime: 7 * 24 * 60 * 60_000,
-    refetchOnMount: false,
-    refetchOnWindowFocus: false,
     retry: 1,
   });
 
