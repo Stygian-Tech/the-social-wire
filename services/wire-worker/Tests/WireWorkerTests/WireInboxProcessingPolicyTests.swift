@@ -54,4 +54,10 @@ struct WireInboxProcessingPolicyTests {
       )
     )
   }
+
+  @Test("self follows are ignored before they reach the graph constraint")
+  func selfFollowPolicy() {
+    #expect(PostgresWireInboxProcessor.isSelfFollow(follower: "actor-a", followee: "actor-a"))
+    #expect(!PostgresWireInboxProcessor.isSelfFollow(follower: "actor-a", followee: "actor-b"))
+  }
 }

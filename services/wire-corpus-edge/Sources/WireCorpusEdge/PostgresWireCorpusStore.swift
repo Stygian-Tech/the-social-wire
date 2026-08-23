@@ -64,7 +64,7 @@ actor PostgresWireCorpusStore: WireCorpusStoring {
         throw WireCorpusEdgeStoreError.cursorExpired
       }
       generation = retained
-    } else if let active = try await activeGeneration(language: language) {
+    } else if let active = try await activeGeneration(language: language, now: now) {
       generation = active
     } else {
       return try await fallback(language: language, limit: limit, now: now)
@@ -89,7 +89,7 @@ actor PostgresWireCorpusStore: WireCorpusStoring {
 
   func edition(language: String, region: WireViewerRegion?, now: Date) async throws -> WireEdition {
     try await requireFreshBaseline(now: now)
-    guard let generation = try await activeGeneration(language: language) else {
+    guard let generation = try await activeGeneration(language: language, now: now) else {
       return try await fallbackEdition(language: language, now: now)
     }
     let generationRows = try await pool.query(
@@ -285,19 +285,19 @@ actor PostgresWireCorpusStore: WireCorpusStoring {
     )
   }
 
-  private func activeGeneration(language: String) async throws -> Generation? {
-    if language != "und", let localized = try await activeGeneration(exactLanguage: language) {
+  private func activeGeneration(language: String, now: Date) async throws -> Generation? {
+    if language != "und", let localized = try await activeGeneration(exactLanguage: language, now: now) {
       return localized
     }
-    return try await activeGeneration(exactLanguage: "und")
+    return try await activeGeneration(exactLanguage: "und", now: now)
   }
 
-  private func activeGeneration(exactLanguage language: String) async throws -> Generation? {
+  private func activeGeneration(exactLanguage language: String, now: Date) async throws -> Generation? {
     let rows = try await pool.query(
       """
       SELECT generation_id, language_bucket, generated_at, expires_at
       FROM wire_serving.feed_state
-      WHERE language_bucket = \(language)
+      WHERE language_bucket = \(language) AND expires_at > \(now)
       LIMIT 1
       """,
       logger: logger

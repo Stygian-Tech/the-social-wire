@@ -24,7 +24,7 @@ import { cn } from "@/lib/utils";
 import { useWireEdition } from "@/hooks/useWireEdition";
 import { useWireFeedEntries } from "@/hooks/useWireFeed";
 import { isWireNewsEditionEnabled } from "@/lib/wireEditionClient";
-import { WireAlphaBadge } from "@/components/Wire/WireAlphaBadge";
+import { WireBetaBadge } from "@/components/Wire/WireBetaBadge";
 
 export function readFeedHeaderClassName(isWire: boolean) {
   return isWire ? "pt-3" : undefined;
@@ -79,11 +79,11 @@ export function ReadArticleFilterBar() {
       <FeedHeader
         title={
           <span
-            aria-label="The Wire, Alpha"
+            aria-label="The Wire, Beta"
             className="inline-flex items-center gap-2"
           >
             <span>The Wire</span>
-            <WireAlphaBadge />
+            <WireBetaBadge />
           </span>
         }
         className={readFeedHeaderClassName(isWire)}

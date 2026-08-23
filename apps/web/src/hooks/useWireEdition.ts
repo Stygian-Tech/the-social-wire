@@ -38,7 +38,7 @@ export const WIRE_EDITION_REFRESH_POLICY = {
   refetchInterval: WIRE_EDITION_REFRESH_INTERVAL_MS,
   refetchIntervalInBackground: false,
   refetchOnMount: "always" as const,
-  refetchOnWindowFocus: false,
+  refetchOnWindowFocus: "always" as const,
 };
 
 const WIRE_MODERATION_SESSION_ERROR = new Error(
@@ -145,10 +145,10 @@ export function useWireEdition(args: {
   ]);
 
   const fetchEditionPage = useCallback(
-    async (signal?: AbortSignal) => {
+    async (signal?: AbortSignal, bypassCache = false) => {
       requireModerationReady();
       if (!viewerModerationCapable) {
-        return getWireEdition({ language, region, signal });
+        return getWireEdition({ language, region, signal, bypassCache });
       }
       if (!oauthSession) throw WIRE_MODERATION_SESSION_ERROR;
       const moderationDpopProofPool =
@@ -159,6 +159,7 @@ export function useWireEdition(args: {
         signal,
         oauthSession,
         moderationDpopProofPool,
+        bypassCache,
       });
     },
     [
@@ -236,7 +237,7 @@ export function useWireEdition(args: {
 
   const refreshFirstPageMutation = useMutation({
     mutationKey: ["refreshWireEdition", languageKey, regionKey, modeKey],
-    mutationFn: async () => fetchEditionPage(),
+    mutationFn: async () => fetchEditionPage(undefined, true),
     onSuccess: (fresh) => {
       queryClient.removeQueries({
         queryKey: ["wireEditionMore", languageKey, regionKey, modeKey],

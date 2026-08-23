@@ -13,6 +13,7 @@ import { PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY } from "@/lib/sidebarQueryKeys
 import * as AuthHook from "@/hooks/useAuth";
 import * as ReadRouteContext from "@/contexts/ReadRouteContext";
 import * as PublicationProjectionClient from "@/lib/publicationProjectionClient";
+import type { PublicationSidebarProjection } from "@/lib/publicationProjectionClient";
 
 const markEntriesRead = mock(() => {});
 const markEntriesUnread = mock(() => {});
@@ -28,6 +29,30 @@ const pub: DiscoveredPublication = {
   discoveredAt: "2026-01-01T00:00:00.000Z",
 };
 const viewerDid = "did:plc:viewer";
+
+function sidebarProjection(unreadCount: number): PublicationSidebarProjection {
+  const row = {
+    publicationId: pub.publicationId,
+    authorDid: pub.authorDid,
+    title: pub.title,
+    unreadCount,
+  } as PublicationSidebarProjection["allPublicationRows"][number];
+  return {
+    viewerDid,
+    folders: [],
+    publicationPrefs: [],
+    folderSections: [],
+    allPublicationRows: [row],
+    myPublications: [],
+    subscribedUnfoldered: [row],
+    followingTabPublications: [],
+    enrollAuthorDids: [],
+    refreshedAt: "2026-01-01T00:00:00.000Z",
+    unreadCountsByPublicationId: { [pub.publicationId]: unreadCount },
+    unreadCountsGeneration: 7,
+    unreadCountsAccuracy: "estimated",
+  };
+}
 
 describe("useCachedBulkReadActions", () => {
   beforeEach(() => {
@@ -162,7 +187,7 @@ describe("useCachedBulkReadActions", () => {
     // guards against is this staying stale forever after a successful mark-all-read.
     queryClient.setQueryData(
       PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(viewerDid),
-      { stale: true }
+      sidebarProjection(4)
     );
     // An unread feed cache with no mounted observer: invalidation can never
     // refetch it (useEntries sets refetchOnMount: false), so it must be removed.
@@ -200,7 +225,15 @@ describe("useCachedBulkReadActions", () => {
     const gatewaySpy = spyOn(
       PublicationProjectionClient,
       "markAllReadOnGateway"
-    ).mockResolvedValue({} as never);
+    ).mockResolvedValue({
+      marked: 4,
+      confirmedAt: "2026-01-02T00:00:00.000Z",
+      boundaries: [{
+        publicationId: pub.publicationId,
+        createdAt: "2026-01-02T00:00:00.000Z",
+      }],
+      unreadCounts: { [pub.publicationId]: 0 },
+    });
 
     const wrapper = ({ children }: { children: React.ReactNode }) => (
       <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
@@ -223,6 +256,12 @@ describe("useCachedBulkReadActions", () => {
         )?.isInvalidated
       ).toBe(true)
     );
+    const confirmedProjection = queryClient.getQueryData<PublicationSidebarProjection>(
+      PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(viewerDid)
+    );
+    expect(confirmedProjection?.unreadCountsByPublicationId?.[pub.publicationId]).toBe(0);
+    expect(confirmedProjection?.subscribedUnfoldered[0]?.unreadCount).toBe(0);
+    expect(confirmedProjection?.unreadCountsAccuracy).toBe("exact");
     // The observer-less unread cache is gone entirely — not just invalidated.
     expect(queryClient.getQueryState(unreadQueryKey)).toBeUndefined();
     // The observed unread feed survives and refetches.
@@ -265,7 +304,15 @@ describe("useCachedBulkReadActions", () => {
           pageParams: [undefined],
         }
       );
-      return {} as never;
+      return {
+        marked: 1,
+        confirmedAt: "2026-01-02T00:00:00.000Z",
+        boundaries: [{
+          publicationId: pub.publicationId,
+          createdAt: "2026-01-02T00:00:00.000Z",
+        }],
+        unreadCounts: { [pub.publicationId]: 0 },
+      };
     });
 
     const wrapper = ({ children }: { children: React.ReactNode }) => (
