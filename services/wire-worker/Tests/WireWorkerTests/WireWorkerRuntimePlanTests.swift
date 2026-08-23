@@ -15,16 +15,16 @@ struct WireWorkerRuntimePlanTests {
     #expect(plan.requiresCleanupReadiness)
   }
 
-  @Test("rank worker never drains or cleans")
+  @Test("rank worker never drains and can own terminal cleanup")
   func rankEnabled() {
     let plan = WireWorkerRuntimePlan(mode: .api, role: .rank, cleanupEnabled: true)
     #expect(plan.runsGeneration)
     #expect(!plan.runsDrain)
-    #expect(!plan.runsCleanup)
-    #expect(!plan.runsMetadataEnrichment)
+    #expect(plan.runsCleanup)
+    #expect(plan.runsMetadataEnrichment)
     #expect(plan.requiresGenerationReadiness)
     #expect(!plan.requiresDrainReadiness)
-    #expect(!plan.requiresCleanupReadiness)
+    #expect(plan.requiresCleanupReadiness)
   }
 
   @Test("drain worker never enters generation")
@@ -33,7 +33,7 @@ struct WireWorkerRuntimePlanTests {
     #expect(!plan.runsGeneration)
     #expect(plan.runsDrain)
     #expect(plan.runsCleanup)
-    #expect(plan.runsMetadataEnrichment)
+    #expect(!plan.runsMetadataEnrichment)
     #expect(!plan.requiresGenerationReadiness)
     #expect(plan.requiresDrainReadiness)
     #expect(plan.requiresCleanupReadiness)
@@ -44,8 +44,20 @@ struct WireWorkerRuntimePlanTests {
     let plan = WireWorkerRuntimePlan(mode: .api, role: .drain, cleanupEnabled: false)
     #expect(plan.runsDrain)
     #expect(!plan.runsCleanup)
-    #expect(plan.runsMetadataEnrichment)
+    #expect(!plan.runsMetadataEnrichment)
     #expect(plan.requiresDrainReadiness)
+    #expect(!plan.requiresCleanupReadiness)
+  }
+
+  @Test("rank cleanup ownership can be disabled independently")
+  func rankCleanupDisabled() {
+    let plan = WireWorkerRuntimePlan(mode: .api, role: .rank, cleanupEnabled: false)
+    #expect(plan.runsGeneration)
+    #expect(!plan.runsDrain)
+    #expect(!plan.runsCleanup)
+    #expect(plan.runsMetadataEnrichment)
+    #expect(plan.requiresGenerationReadiness)
+    #expect(!plan.requiresDrainReadiness)
     #expect(!plan.requiresCleanupReadiness)
   }
 

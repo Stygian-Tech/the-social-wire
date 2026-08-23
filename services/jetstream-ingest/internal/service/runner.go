@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"math/big"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -23,29 +24,46 @@ import (
 var errSnapshotComplete = errors.New("bounded Jetstream archive snapshot completed")
 
 type Runner struct {
-	cfg        config.Config
-	store      *store.Postgres
-	health     *health.State
-	logger     *slog.Logger
-	budget     *ingest.ReplayBudget
-	registry   *DIDRegistry
-	lease      store.Lease
-	evidence   *ingest.TransportEvidence
-	lastSeq    atomic.Uint64
-	lastSealed atomic.Uint64
+	cfg                 config.Config
+	store               *store.Postgres
+	health              *health.State
+	logger              *slog.Logger
+	budget              *ingest.ReplayBudget
+	registry            *DIDRegistry
+	lease               store.Lease
+	evidence            *ingest.TransportEvidence
+	lastSeq             atomic.Uint64
+	lastSealed          atomic.Uint64
+	admissionLimiter    *ingest.AdmissionRateLimiter
+	initializationError error
 }
 
 func NewRunner(cfg config.Config, database *store.Postgres, lease store.Lease, state *health.State, logger *slog.Logger) *Runner {
-	return &Runner{
+	runner := &Runner{
 		cfg: cfg, store: database, health: state, logger: logger,
 		budget:   ingest.NewReplayBudget(cfg.ReplayIncidentBytes, cfg.ReplayDailyBytes),
 		registry: &DIDRegistry{store: database},
 		lease:    lease,
 		evidence: ingest.NewTransportEvidence(),
 	}
+	if cfg.PipelineMode == config.WirePipelineMode {
+		limiter, err := ingest.NewAdmissionRateLimiter(
+			cfg.WireAdmissionRate, cfg.WireAdmissionBurst, time.Now().UTC(),
+		)
+		if err != nil {
+			runner.initializationError = fmt.Errorf("configure Wire admission limiter: %w", err)
+			return runner
+		}
+		runner.admissionLimiter = limiter
+		state.AdmissionLimit(cfg.WireAdmissionRate, cfg.WireAdmissionBurst)
+	}
+	return runner
 }
 
 func (r *Runner) Run(ctx context.Context) error {
+	if r.initializationError != nil {
+		return r.initializationError
+	}
 	buckets, err := r.store.ReplayUsageBuckets(ctx)
 	if err != nil {
 		return err
@@ -293,7 +311,7 @@ func (r *Runner) runOnce(ctx context.Context) error {
 			RangeResumeCount: evidence.RangeResumeCount, ETag: evidence.ETag,
 			LastProgressAt: time.Now().UTC(),
 		}
-		if err := r.store.StageBatch(ctx, r.lease, prepared, lastSeq, lastEventTime, progress); err != nil {
+		if err := r.stagePreparedBatch(ctx, prepared, lastSeq, lastEventTime, progress); err != nil {
 			return err
 		}
 		r.health.Backpressure(false, 0, r.cfg.WireInboxMaxRows, 0, r.cfg.WireDatabaseMaxBytes)
@@ -323,6 +341,76 @@ func (r *Runner) runOnce(ctx context.Context) error {
 		}
 	}
 	return completionError
+}
+
+type wireStagingBatch struct {
+	events        []ingest.InboxEvent
+	lastSeq       uint64
+	lastEventTime time.Time
+}
+
+func wireStagingBatches(events []ingest.InboxEvent, finalSeq uint64, finalEventTime time.Time, burst int) []wireStagingBatch {
+	if burst < 1 || len(events) == 0 {
+		return []wireStagingBatch{{events: events, lastSeq: finalSeq, lastEventTime: finalEventTime}}
+	}
+	ordered := append([]ingest.InboxEvent(nil), events...)
+	slices.SortFunc(ordered, func(left, right ingest.InboxEvent) int {
+		if left.Seq < right.Seq {
+			return -1
+		}
+		if left.Seq > right.Seq {
+			return 1
+		}
+		return 0
+	})
+	batches := make([]wireStagingBatch, 0, (len(events)+burst-1)/burst+1)
+	for start := 0; start < len(ordered); start += burst {
+		end := min(start+burst, len(ordered))
+		chunk := ordered[start:end]
+		last := chunk[len(chunk)-1]
+		batches = append(batches, wireStagingBatch{
+			events: chunk, lastSeq: last.Seq, lastEventTime: last.Time,
+		})
+	}
+	if ordered[len(ordered)-1].Seq < finalSeq {
+		batches = append(batches, wireStagingBatch{lastSeq: finalSeq, lastEventTime: finalEventTime})
+	}
+	return batches
+}
+
+func (r *Runner) stagePreparedBatch(
+	ctx context.Context,
+	events []ingest.InboxEvent,
+	lastSeq uint64,
+	lastEventTime time.Time,
+	progress store.ReplayProgress,
+) error {
+	if r.admissionLimiter == nil {
+		return r.store.StageBatch(ctx, r.lease, events, lastSeq, lastEventTime, progress)
+	}
+	for _, batch := range wireStagingBatches(
+		events, lastSeq, lastEventTime, r.cfg.WireAdmissionBurst,
+	) {
+		if len(batch.events) > 0 {
+			wait, err := r.admissionLimiter.Reserve(len(batch.events), time.Now().UTC())
+			if err != nil {
+				return err
+			}
+			if wait > 0 {
+				r.health.AdmissionPacing(true, wait)
+				if !sleepContext(ctx, wait) {
+					return ctx.Err()
+				}
+				r.health.AdmissionPacing(false, 0)
+			}
+		}
+		if err := r.store.StageBatch(
+			ctx, r.lease, batch.events, batch.lastSeq, batch.lastEventTime, progress,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func replayOptions(cfg config.Config, afterSeq uint64) []jetstream.Option {

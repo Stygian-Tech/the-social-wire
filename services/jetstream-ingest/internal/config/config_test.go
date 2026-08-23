@@ -62,6 +62,7 @@ func TestLoadBoundedWireSnapshotUsesDistinctGenerationWithoutChangingFingerprint
 	t.Setenv("DATABASE_URL", "postgres://example.invalid/socialwire")
 	t.Setenv("JETSTREAM_API_KEY", "test-key")
 	t.Setenv("JETSTREAM_PIPELINE_MODE", WirePipelineMode)
+	setRequiredWireAdmission(t)
 
 	base, err := Load()
 	if err != nil {
@@ -104,6 +105,7 @@ func TestBoundedSnapshotConfigurationFailsClosed(t *testing.T) {
 		BackoffMin: 1, BackoffMax: 1,
 		WireInboxMaxRows: 1_000, WireDatabaseMaxBytes: 2 << 30,
 		WireAdmissionPause: time.Second,
+		WireAdmissionRate:  1.5, WireAdmissionBurst: 1,
 	}
 	after, before := uint64(100), uint64(200)
 	zero, tooLarge := uint64(0), uint64(math.MaxInt64)+1
@@ -248,6 +250,7 @@ func TestLoadWirePipelineUsesIndependentIdentityAndGlobalCollections(t *testing.
 	t.Setenv("DATABASE_URL", "postgres://example.invalid/socialwire")
 	t.Setenv("JETSTREAM_API_KEY", "test-key")
 	t.Setenv("JETSTREAM_PIPELINE_MODE", WirePipelineMode)
+	setRequiredWireAdmission(t)
 
 	cfg, err := Load()
 	if err != nil {
@@ -281,6 +284,7 @@ func TestLoadWirePipelineAllowsExplicitSegmentStripeOverride(t *testing.T) {
 	t.Setenv("DATABASE_URL", "postgres://example.invalid/socialwire")
 	t.Setenv("JETSTREAM_API_KEY", "test-key")
 	t.Setenv("JETSTREAM_PIPELINE_MODE", WirePipelineMode)
+	setRequiredWireAdmission(t)
 	t.Setenv("JETSTREAM_SEGMENT_STRIPES", "2")
 
 	cfg, err := Load()
@@ -290,4 +294,31 @@ func TestLoadWirePipelineAllowsExplicitSegmentStripeOverride(t *testing.T) {
 	if cfg.SegmentStripes != 2 {
 		t.Fatalf("wire segment stripes = %d, want explicit override 2", cfg.SegmentStripes)
 	}
+}
+
+func TestWireAdmissionRateFailsClosed(t *testing.T) {
+	t.Setenv("APP_ENV", "dev")
+	t.Setenv("DATABASE_URL", "postgres://example.invalid/socialwire")
+	t.Setenv("JETSTREAM_API_KEY", "test-key")
+	t.Setenv("JETSTREAM_PIPELINE_MODE", WirePipelineMode)
+
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "WIRE_ADMISSION_RATE_PER_SECOND") {
+		t.Fatalf("missing rate error = %v", err)
+	}
+	t.Setenv("WIRE_ADMISSION_RATE_PER_SECOND", "1.5")
+	t.Setenv("WIRE_ADMISSION_BURST_EVENTS", "257")
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "WIRE_ADMISSION_BURST_EVENTS") {
+		t.Fatalf("oversized burst error = %v", err)
+	}
+	// The publication-author-viewer pipeline remains unaffected by Wire-only controls.
+	t.Setenv("JETSTREAM_PIPELINE_MODE", DefaultPipelineMode)
+	if _, err := Load(); err != nil {
+		t.Fatalf("non-Wire pipeline rejected Wire-only controls: %v", err)
+	}
+}
+
+func setRequiredWireAdmission(t *testing.T) {
+	t.Helper()
+	t.Setenv("WIRE_ADMISSION_RATE_PER_SECOND", "1.5")
+	t.Setenv("WIRE_ADMISSION_BURST_EVENTS", "1")
 }

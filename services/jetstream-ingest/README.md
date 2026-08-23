@@ -3,7 +3,8 @@
 This private Railway service uses Bluesky's official Go client to consume
 Jetstream V2 from US West. It stages scope-filtered commits and tracked-repository
 lifecycle events in PostgreSQL before advancing the matching V2 sequence
-checkpoint. Charybdis drains the durable inbox separately.
+checkpoint. Charybdis drains the publication lane's durable inbox separately;
+the Wire-global lane uses the bounded UNLOGGED queue and replay boundary below.
 
 The staging transaction reads current AppView scope directly from PostgreSQL.
 Standard Site document and entry commits require a matching publication-author
@@ -70,6 +71,19 @@ an explicit override for either lane.
 - `JETSTREAM_API_KEY` — raw hosted replay key; never include `Bearer `.
 - `JETSTREAM_BOOTSTRAP_AFTER_SEQ` — required when the configured source generation has no checkpoint; set it to one less than the prior generation's last staged seam for an inclusive duplicate overlap.
 
+Wire-global lanes additionally require `WIRE_ADMISSION_RATE_PER_SECOND`, a reviewed
+positive rate no higher than the proven sustained drain rate after operational
+headroom. `WIRE_ADMISSION_BURST_EVENTS` defaults to `1` and may not exceed
+`JETSTREAM_BATCH_SIZE`. The producer token bucket splits prepared envelopes into
+burst-bounded staging transactions and delays them before commit. It paces the
+conservative prepared count, so SQL-side passive-signal exclusion can only lower the
+actual admitted rate. Filtered sequence gaps advance through the same fenced
+checkpoint without consuming tokens. `/status` exposes the configured rate/burst,
+whether pacing is active, its current deadline, and cumulative wait milliseconds;
+intentional pacing remains ready. Missing, non-finite, zero, or negative Wire rates
+fail startup, while the publication-author-viewer pipeline ignores these Wire-only
+controls.
+
 Bounded Wire snapshots additionally require all of:
 
 - `JETSTREAM_PIPELINE_MODE=wire-global-v1`
@@ -81,7 +95,12 @@ Bounded Wire snapshots additionally require all of:
   reposts only when their referenced post is already a live Wire item alias.
   Those passive signals can support ranking but cannot admit a story, so
   dropping unresolved envelopes prevents unrelated global engagement from
-  consuming the durable inbox without weakening the quality gate.
+  consuming the bounded Wire inbox without weakening the quality gate.
+  The producer also advances the checkpoint without staging identity/sync,
+  active-account, or linkless Bluesky post-create events because none can mutate
+  the Wire projection. Inactive-account events remain staged for privacy cleanup;
+  post updates and deletes remain staged even without a link so they can retract
+  an older linked story.
 - `JETSTREAM_BOOTSTRAP_AFTER_SEQ` — the exclusive lower sequence bound.
 - `JETSTREAM_REPLAY_BEFORE_SEQ` — the inclusive upper sequence bound. Both
   bounds must fit PostgreSQL's signed 64-bit cursor range.
@@ -156,6 +175,33 @@ ceiling. At either boundary the transaction rolls back, the checkpoint does not
 advance, the subscription reconnects from its durable cursor after
 `WIRE_ADMISSION_PAUSE`, and `/readyz` reports the backpressured row/byte evidence.
 The publication-author-viewer lane does not use this boundary.
+
+### The Wire UNLOGGED recovery boundary
+
+`wire_ingestion_inbox` is an UNLOGGED, rebuildable hot queue. PostgreSQL does not
+write its heap or indexes to WAL and truncates it after crash recovery. The same
+policy applies to short-retention signal-event partitions, signal rollups, active
+graph/community state, mentions, and article-feedback projections. Durable
+`wire_items`, aliases, rank generations and ranked items, `wire_feed_state`, and
+edition modules/items remain LOGGED, so the last committed edition continues to
+serve while the hot path rebuilds.
+
+The migration seeds an UNLOGGED epoch row for each Wire source generation and a
+LOGGED provider-authored recovery anchor before the first restart. That makes the
+planned cutover distinguishable from a crash. Each staged Wire batch retains at
+most one anchor per hour and prunes history behind a seven-day replay boundary.
+After PostgreSQL truncates UNLOGGED state, the fenced ingestion leader observes
+the missing generation epoch, rewinds only the matching immutable source identity
+to the oldest retained cursor, reconciles admission, and replays idempotently.
+The code never performs arithmetic on a provider cursor. A missing anchor, stale
+lease, or checkpoint identity mismatch fails closed before Jetstream opens.
+
+Because this lane intentionally trades queue durability for lower write
+amplification, a crash outside the retained replay window can lose older staged
+work. Recovery is therefore bounded by the same seven-day public-signal retention
+used by The Wire. Keep the ingest source paused until the compact-and-swap
+migration, index validation, drain catch-up, and measured drain-over-ingest gate
+have all passed.
 
 ## Local verification
 

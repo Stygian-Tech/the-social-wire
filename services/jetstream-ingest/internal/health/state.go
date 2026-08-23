@@ -8,20 +8,25 @@ import (
 )
 
 type State struct {
-	mu               sync.RWMutex
-	database         bool
-	lease            bool
-	stream           bool
-	paused           bool
-	backpressured    bool
-	inboxRows        int64
-	inboxMaxRows     int64
-	databaseBytes    int64
-	databaseMaxBytes int64
-	snapshotDone     bool
-	lastSeq          uint64
-	lastProgress     time.Time
-	lastError        string
+	mu                        sync.RWMutex
+	database                  bool
+	lease                     bool
+	stream                    bool
+	paused                    bool
+	backpressured             bool
+	inboxRows                 int64
+	inboxMaxRows              int64
+	databaseBytes             int64
+	databaseMaxBytes          int64
+	snapshotDone              bool
+	lastSeq                   uint64
+	lastProgress              time.Time
+	lastError                 string
+	admissionRate             float64
+	admissionBurst            int
+	admissionLimited          bool
+	admissionWaitUntil        time.Time
+	admissionWaitMilliseconds int64
 }
 
 func (s *State) Database(ready bool) { s.mu.Lock(); s.database = ready; s.mu.Unlock() }
@@ -65,6 +70,25 @@ func (s *State) Error(err error) {
 	s.mu.Unlock()
 }
 
+func (s *State) AdmissionLimit(ratePerSecond float64, burst int) {
+	s.mu.Lock()
+	s.admissionRate = ratePerSecond
+	s.admissionBurst = burst
+	s.mu.Unlock()
+}
+
+func (s *State) AdmissionPacing(active bool, wait time.Duration) {
+	s.mu.Lock()
+	s.admissionLimited = active
+	if active {
+		s.admissionWaitUntil = time.Now().UTC().Add(wait)
+		s.admissionWaitMilliseconds += wait.Milliseconds()
+	} else {
+		s.admissionWaitUntil = time.Time{}
+	}
+	s.mu.Unlock()
+}
+
 func (s *State) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(response http.ResponseWriter, _ *http.Request) {
@@ -93,20 +117,25 @@ func (s *State) Handler() http.Handler {
 }
 
 type Snapshot struct {
-	Ready            bool      `json:"ready"`
-	Database         bool      `json:"database"`
-	Lease            bool      `json:"lease"`
-	Stream           bool      `json:"stream"`
-	Paused           bool      `json:"paused"`
-	Backpressured    bool      `json:"backpressured"`
-	InboxRows        int64     `json:"inboxRows,omitempty"`
-	InboxMaxRows     int64     `json:"inboxMaxRows,omitempty"`
-	DatabaseBytes    int64     `json:"databaseBytes,omitempty"`
-	DatabaseMaxBytes int64     `json:"databaseMaxBytes,omitempty"`
-	SnapshotDone     bool      `json:"snapshotComplete"`
-	LastSeq          uint64    `json:"lastSeq"`
-	LastProgress     time.Time `json:"lastProgress,omitempty"`
-	LastError        string    `json:"lastError,omitempty"`
+	Ready                     bool      `json:"ready"`
+	Database                  bool      `json:"database"`
+	Lease                     bool      `json:"lease"`
+	Stream                    bool      `json:"stream"`
+	Paused                    bool      `json:"paused"`
+	Backpressured             bool      `json:"backpressured"`
+	InboxRows                 int64     `json:"inboxRows,omitempty"`
+	InboxMaxRows              int64     `json:"inboxMaxRows,omitempty"`
+	DatabaseBytes             int64     `json:"databaseBytes,omitempty"`
+	DatabaseMaxBytes          int64     `json:"databaseMaxBytes,omitempty"`
+	SnapshotDone              bool      `json:"snapshotComplete"`
+	LastSeq                   uint64    `json:"lastSeq"`
+	LastProgress              time.Time `json:"lastProgress,omitempty"`
+	LastError                 string    `json:"lastError,omitempty"`
+	AdmissionRateLimit        float64   `json:"admissionRateLimitEventsPerSecond,omitempty"`
+	AdmissionBurstLimit       int       `json:"admissionBurstLimitEvents,omitempty"`
+	AdmissionRateLimited      bool      `json:"admissionRateLimited"`
+	AdmissionWaitUntil        time.Time `json:"admissionWaitUntil,omitempty"`
+	AdmissionWaitMilliseconds int64     `json:"admissionWaitMilliseconds,omitempty"`
 }
 
 func (s *State) snapshot() Snapshot {
@@ -119,6 +148,9 @@ func (s *State) snapshot() Snapshot {
 		Backpressured: s.backpressured, InboxRows: s.inboxRows, InboxMaxRows: s.inboxMaxRows,
 		DatabaseBytes: s.databaseBytes, DatabaseMaxBytes: s.databaseMaxBytes,
 		LastProgress: s.lastProgress, LastError: s.lastError,
+		AdmissionRateLimit: s.admissionRate, AdmissionBurstLimit: s.admissionBurst,
+		AdmissionRateLimited: s.admissionLimited, AdmissionWaitUntil: s.admissionWaitUntil,
+		AdmissionWaitMilliseconds: s.admissionWaitMilliseconds,
 	}
 }
 

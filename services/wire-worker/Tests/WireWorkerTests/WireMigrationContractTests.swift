@@ -62,6 +62,8 @@ struct WireMigrationContractTests {
     #expect(processor.contains("DELETE FROM wire_follow_edges WHERE source_uri"))
     #expect(processor.contains("Self.isSelfFollow(follower: follower, followee: followee)"))
     #expect(processor.contains("pg_advisory_xact_lock(hashtext('wire_signal_rollups_refresh')::bigint)"))
+    #expect(processor.contains("TRUNCATE TABLE wire_signal_rollups"))
+    #expect(!processor.contains("\"DELETE FROM wire_signal_rollups\""))
     #expect(processor.contains("func acknowledgeUnresolvedPassiveReferences"))
     #expect(processor.contains("candidate.event_kind = 'commit'"))
     #expect(
@@ -123,6 +125,36 @@ struct WireMigrationContractTests {
       claimSQL.range(of: "DROP INDEX IF EXISTS public.wire_ingestion_inbox_claim_idx"))
     let firstBuild = try #require(claimSQL.range(of: "CREATE INDEX IF NOT EXISTS"))
     #expect(oldIndexDrop.lowerBound < firstBuild.lowerBound)
+
+    let unloggedMigration = migration.deletingLastPathComponent()
+      .appendingPathComponent("20260823190000_make_wire_hot_path_unlogged.sql")
+    let unloggedSQL = try String(contentsOf: unloggedMigration, encoding: .utf8)
+    for token in [
+      "LOCK TABLE wire_ingestion_inbox IN ACCESS EXCLUSIVE MODE",
+      "CREATE UNLOGGED TABLE wire_ingestion_inbox_unlogged",
+      "WHERE status IN ('pending', 'leased', 'retry')",
+      "SET status = 'retry'",
+      "DROP TABLE wire_ingestion_inbox",
+      "ALTER TABLE wire_ingestion_inbox_unlogged RENAME TO wire_ingestion_inbox",
+      "wire_ingestion_inbox_pending_retry_ready_idx",
+      "wire_ingestion_inbox_expired_lease_idx",
+      "wire_ingestion_inbox_repo_fifo_idx",
+      "CREATE UNLOGGED TABLE IF NOT EXISTS wire_ingestion_inbox_epochs",
+      "CREATE TABLE IF NOT EXISTS wire_ingestion_recovery_anchors",
+      "checkpoint.source_generation LIKE 'wire-%'",
+      "CREATE UNLOGGED TABLE %I PARTITION OF wire_signal_events",
+      "ALTER TABLE wire_signal_rollups SET UNLOGGED",
+      "ALTER TABLE wire_active_actors SET UNLOGGED",
+      "ALTER TABLE wire_follow_edges SET UNLOGGED",
+      "ALTER TABLE wire_actor_communities SET UNLOGGED",
+      "ALTER TABLE wire_item_mentions SET UNLOGGED",
+      "ALTER TABLE wire_article_feedback SET UNLOGGED",
+      "'wire_ranked_items'",
+      "must remain LOGGED",
+    ] {
+      #expect(unloggedSQL.contains(token), "UNLOGGED migration is missing: \(token)")
+    }
+    #expect(!unloggedSQL.contains("ALTER TABLE wire_ranked_items SET UNLOGGED"))
 
     let qualityIndexMigration = migration.deletingLastPathComponent()
       .appendingPathComponent("20260822212900_prepare_wire_quality_ranking_index.sql")

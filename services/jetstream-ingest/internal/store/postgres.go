@@ -16,6 +16,8 @@ import (
 var ErrLeaseUnavailable = errors.New("ingestion leader lease is held by another process")
 var ErrWireAdmissionPaused = errors.New("Wire inbox admission paused at configured capacity")
 
+const wireRecoveryAnchorRetention = 7 * 24 * time.Hour
+
 type WireCapacityExceededError struct {
 	InboxRows, InboxMaxRows, DatabaseBytes, DatabaseMaxBytes int64
 }
@@ -76,20 +78,101 @@ func (p *Postgres) ConfigureWireAdmission(inboxMaxRows, databaseMaxBytes int64) 
 	p.wireDatabaseMaxBytes = databaseMaxBytes
 }
 
-func (p *Postgres) ReconcileWireAdmission(ctx context.Context) error {
+func (p *Postgres) ReconcileWireAdmission(ctx context.Context, lease Lease) (bool, error) {
 	if !p.source.IsWire() {
-		return nil
+		return false, nil
 	}
 	tx, err := p.db.BeginTx(ctx, &sql.TxOptions{})
 	if err != nil {
-		return fmt.Errorf("begin Wire admission reconciliation: %w", err)
+		return false, fmt.Errorf("begin Wire admission reconciliation: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	var leaseValid bool
+	if err := tx.QueryRowContext(ctx, `
+		SELECT TRUE
+		FROM appview_ingestion_leases
+		WHERE environment = $1 AND lease_name = $2 AND source_generation = $3
+		  AND owner_id = $4 AND fencing_token = $5 AND released_at IS NULL
+		  AND lease_expires_at > NOW()
+		FOR SHARE`, p.source.Environment, lease.Name, p.source.Generation,
+		lease.OwnerID, lease.FencingToken).Scan(&leaseValid); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, ErrLeaseUnavailable
+		}
+		return false, fmt.Errorf("verify Wire recovery fencing token: %w", err)
+	}
+	if !leaseValid {
+		return false, ErrLeaseUnavailable
+	}
 	var ignored int64
 	if err := tx.QueryRowContext(ctx, `
 		SELECT retained_rows FROM wire_ingestion_admission
 		WHERE environment = $1 FOR UPDATE`, p.source.Environment).Scan(&ignored); err != nil {
-		return fmt.Errorf("lock Wire admission counter: %w", err)
+		return false, fmt.Errorf("lock Wire admission counter: %w", err)
+	}
+	var epochCreated bool
+	if err := tx.QueryRowContext(ctx, `
+		WITH inserted AS (
+		  INSERT INTO wire_ingestion_inbox_epochs
+		    (environment, source_generation, initialized_at)
+		  VALUES ($1, $2, NOW())
+		  ON CONFLICT (environment, source_generation) DO NOTHING
+		  RETURNING TRUE
+		)
+		SELECT EXISTS(SELECT 1 FROM inserted)`,
+		p.source.Environment, p.source.Generation).Scan(&epochCreated); err != nil {
+		return false, fmt.Errorf("inspect Wire inbox crash epoch: %w", err)
+	}
+
+	recovered := false
+	if epochCreated {
+		var checkpointExists bool
+		if err := tx.QueryRowContext(ctx, `
+			SELECT EXISTS(
+			  SELECT 1 FROM appview_jetstream_checkpoints
+			  WHERE environment = $1 AND source_generation = $2
+			)`, p.source.Environment, p.source.Generation).Scan(&checkpointExists); err != nil {
+			return false, fmt.Errorf("inspect Wire recovery checkpoint: %w", err)
+		}
+		if checkpointExists {
+			var recoverySeq int64
+			var recoveryEventTime time.Time
+			if err := tx.QueryRowContext(ctx, `
+				SELECT checkpoint_seq, checkpoint_event_time
+				FROM wire_ingestion_recovery_anchors
+				WHERE environment = $1 AND source_generation = $2
+				ORDER BY checkpoint_seq, anchor_bucket
+				LIMIT 1`, p.source.Environment, p.source.Generation).
+				Scan(&recoverySeq, &recoveryEventTime); err != nil {
+				if errors.Is(err, sql.ErrNoRows) {
+					return false, errors.New("Wire inbox crash detected without a recovery anchor")
+				}
+				return false, fmt.Errorf("load Wire recovery anchor: %w", err)
+			}
+			result, updateErr := tx.ExecContext(ctx, `
+				UPDATE appview_jetstream_checkpoints
+				SET last_staged_seq = $3,
+				    last_staged_event_at = $4,
+				    last_staged_at = NOW(),
+				    replay_state = 'replaying',
+				    updated_at = NOW()
+				WHERE environment = $1 AND source_generation = $2
+				  AND source_host = $5 AND stream_nsid = $6
+				  AND filter_fingerprint = $7 AND cursor_kind = $8`,
+				p.source.Environment, p.source.Generation, recoverySeq, recoveryEventTime,
+				p.source.Host, p.source.StreamNSID, p.source.FilterFingerprint, p.source.CursorKind)
+			if updateErr != nil {
+				return false, fmt.Errorf("rewind Wire crash recovery cursor: %w", updateErr)
+			}
+			rows, rowsErr := result.RowsAffected()
+			if rowsErr != nil {
+				return false, fmt.Errorf("inspect Wire recovery rewind: %w", rowsErr)
+			}
+			if rows != 1 {
+				return false, errors.New("Wire recovery checkpoint identity mismatch")
+			}
+			recovered = true
+		}
 	}
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE wire_ingestion_admission
@@ -97,12 +180,12 @@ func (p *Postgres) ReconcileWireAdmission(ctx context.Context) error {
 		  SELECT COUNT(*) FROM wire_ingestion_inbox WHERE environment = $1
 		), updated_at = NOW()
 		WHERE environment = $1`, p.source.Environment); err != nil {
-		return fmt.Errorf("reconcile Wire admission counter: %w", err)
+		return false, fmt.Errorf("reconcile Wire admission counter: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit Wire admission reconciliation: %w", err)
+		return false, fmt.Errorf("commit Wire admission reconciliation: %w", err)
 	}
-	return nil
+	return recovered, nil
 }
 
 func (p *Postgres) LoadCheckpoint(ctx context.Context) (*ingest.Checkpoint, error) {
@@ -461,6 +544,43 @@ func (p *Postgres) StageBatch(ctx context.Context, lease Lease, events []ingest.
 			SET retained_rows = retained_rows + $2, updated_at = NOW()
 			WHERE environment = $1`, p.source.Environment, admittedWireEvents); err != nil {
 			return fmt.Errorf("update Wire admission count: %w", err)
+		}
+	}
+	if p.source.IsWire() {
+		if _, err := tx.ExecContext(ctx, `
+			WITH upserted AS (
+			  INSERT INTO wire_ingestion_recovery_anchors
+			    (environment, source_generation, anchor_bucket, checkpoint_seq,
+			     checkpoint_event_time, captured_at)
+			  VALUES ($1, $2, date_trunc('hour', NOW()), $3, $4, NOW())
+			  ON CONFLICT (environment, source_generation, anchor_bucket) DO UPDATE
+			  SET checkpoint_seq = LEAST(
+			        wire_ingestion_recovery_anchors.checkpoint_seq,
+			        EXCLUDED.checkpoint_seq
+			      ),
+			      checkpoint_event_time = LEAST(
+			        wire_ingestion_recovery_anchors.checkpoint_event_time,
+			        EXCLUDED.checkpoint_event_time
+			      ),
+			      captured_at = LEAST(
+			        wire_ingestion_recovery_anchors.captured_at,
+			        EXCLUDED.captured_at
+			      )
+			  RETURNING anchor_bucket
+			), boundary AS (
+			  SELECT MAX(captured_at) AS captured_at
+			  FROM wire_ingestion_recovery_anchors
+			  WHERE environment = $1 AND source_generation = $2
+			    AND captured_at <= NOW() - $5::interval
+			)
+			DELETE FROM wire_ingestion_recovery_anchors anchor
+			USING boundary
+			WHERE anchor.environment = $1 AND anchor.source_generation = $2
+			  AND boundary.captured_at IS NOT NULL
+			  AND anchor.captured_at < boundary.captured_at`,
+			p.source.Environment, p.source.Generation, int64(checkpointSeq), checkpointEventTime,
+			fmt.Sprintf("%d seconds", int64(wireRecoveryAnchorRetention.Seconds()))); err != nil {
+			return fmt.Errorf("journal Wire recovery anchor: %w", err)
 		}
 	}
 

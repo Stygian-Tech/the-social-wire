@@ -3,12 +3,16 @@ package service
 import (
 	"context"
 	"errors"
+	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
 	jetstream "github.com/bluesky-social/jetstream"
 	"github.com/stygian-tech/the-social-wire/services/jetstream-ingest/internal/config"
+	"github.com/stygian-tech/the-social-wire/services/jetstream-ingest/internal/health"
 	"github.com/stygian-tech/the-social-wire/services/jetstream-ingest/internal/ingest"
+	"github.com/stygian-tech/the-social-wire/services/jetstream-ingest/internal/store"
 )
 
 func TestInclusiveReplayAfterRedeliversLastStagedSequence(t *testing.T) {
@@ -146,6 +150,50 @@ func TestDurableSnapshotCompletionMustMatchConfiguredBounds(t *testing.T) {
 	checkpoint.ReplayState = "live"
 	if _, err := snapshotCheckpointComplete(cfg, checkpoint); err == nil {
 		t.Fatal("bounded snapshot accepted live as a terminal completion state")
+	}
+}
+
+func TestWireStagingBatchesBoundAdmissionAndAdvanceFilteredTail(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0).UTC()
+	events := []ingest.InboxEvent{
+		{Seq: 8, Time: now.Add(8 * time.Second)},
+		{Seq: 2, Time: now.Add(2 * time.Second)},
+		{Seq: 5, Time: now.Add(5 * time.Second)},
+	}
+	batches := wireStagingBatches(events, 10, now.Add(10*time.Second), 2)
+	if len(batches) != 3 {
+		t.Fatalf("batches=%#v", batches)
+	}
+	if len(batches[0].events) != 2 || batches[0].lastSeq != 5 {
+		t.Fatalf("first batch=%#v", batches[0])
+	}
+	if len(batches[1].events) != 1 || batches[1].lastSeq != 8 {
+		t.Fatalf("second batch=%#v", batches[1])
+	}
+	if len(batches[2].events) != 0 || batches[2].lastSeq != 10 {
+		t.Fatalf("filtered tail batch=%#v", batches[2])
+	}
+}
+
+func TestWireStagingBatchesKeepNonWireSingleTransaction(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0).UTC()
+	events := []ingest.InboxEvent{{Seq: 1, Time: now}, {Seq: 2, Time: now}}
+	batches := wireStagingBatches(events, 2, now, 0)
+	if len(batches) != 1 || len(batches[0].events) != 2 || batches[0].lastSeq != 2 {
+		t.Fatalf("batches=%#v", batches)
+	}
+}
+
+func TestWireRunnerFailsClosedWithoutValidAdmissionLimiter(t *testing.T) {
+	runner := NewRunner(
+		config.Config{PipelineMode: config.WirePipelineMode},
+		nil,
+		store.Lease{},
+		&health.State{},
+		slog.Default(),
+	)
+	if err := runner.Run(context.Background()); err == nil || !strings.Contains(err.Error(), "admission limiter") {
+		t.Fatalf("runner error=%v", err)
 	}
 }
 
