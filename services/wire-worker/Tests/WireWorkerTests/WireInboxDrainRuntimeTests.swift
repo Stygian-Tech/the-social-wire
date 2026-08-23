@@ -49,6 +49,30 @@ struct WireInboxDrainRuntimeTests {
     #expect(await state.lastSuccessfulDrainAt != nil)
   }
 
+  @Test("drain records accurately separated attempted and applied event counts")
+  func recordsAppliedMetrics() async throws {
+    let processor = FakeMetricsDrainProcessor(
+      result: .init(attemptedEventCount: 7, appliedEventCount: 4)
+    )
+    let startedAt = Date(timeIntervalSince1970: 2_000_000_000)
+    let telemetry = WireInboxDrainTelemetryState(startedAt: startedAt)
+    try await WireInboxDrainRuntime.run(
+      processor: processor,
+      state: WireWorkerHealthState(),
+      logger: Logger(label: "wire-drain.test"),
+      configuration: .init(idleMilliseconds: 250),
+      telemetry: telemetry,
+      sleeper: RecordingDrainSleeper(),
+      iterationLimit: 1
+    )
+
+    let report = await telemetry.finishInterval(
+      at: startedAt.addingTimeInterval(60),
+      backlog: .init(actionableEventCount: 10, oldestActionableAgeSeconds: 2)
+    )
+    #expect(report.appliedEventCount == 4)
+  }
+
   @Test("readiness requires a recent generation and a healthy active or recent drain")
   func readiness() async {
     let now = Date(timeIntervalSince1970: 2_000_000_000)
@@ -97,6 +121,15 @@ struct WireInboxDrainRuntimeTests {
       maximumDrainOperationAge: 180
     )
   }
+}
+
+private actor FakeMetricsDrainProcessor: WireInboxProcessing {
+  let result: WireInboxDrainBatchMetrics
+
+  init(result: WireInboxDrainBatchMetrics) { self.result = result }
+
+  func process(asOf: Date) -> Int { result.attemptedEventCount }
+  func processWithMetrics(asOf: Date) -> WireInboxDrainBatchMetrics { result }
 }
 
 private actor FakeDrainProcessor: WireInboxProcessing {
