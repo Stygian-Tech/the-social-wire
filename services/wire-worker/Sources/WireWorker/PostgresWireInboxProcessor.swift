@@ -541,7 +541,12 @@ struct PostgresWireInboxProcessor: Sendable {
     guard let rawURL = Self.externalURL(record),
       let identity = WireCanonicalizer.canonicalize(rawURL),
       let host = URL(string: identity.canonicalURL)?.host
-    else { return }
+    else {
+      if Self.missingPostLinkRequiresRetraction(operation: event.operation) {
+        try await retract(sourceURI: sourceURI, eventTime: event.eventTime, asOf: asOf)
+      }
+      return
+    }
     let text = Self.firstString(record, keys: ["text"])
     let embedded = WireEmbeddedCardMetadata.extract(
       from: record,
@@ -607,6 +612,10 @@ struct PostgresWireInboxProcessor: Sendable {
       occurredAt: event.eventTime,
       expiresAt: event.eventTime.addingTimeInterval(WireDataPolicy.signalRetention)
     )
+  }
+
+  static func missingPostLinkRequiresRetraction(operation: String?) -> Bool {
+    operation == "update"
   }
 
   private func applyReferenceSignal(
@@ -1062,7 +1071,7 @@ struct PostgresWireInboxProcessor: Sendable {
         logger: logger
       )
       try await connection.query(
-        "DELETE FROM wire_signal_rollups",
+        "TRUNCATE TABLE wire_signal_rollups",
         logger: logger
       )
       try await connection.query(

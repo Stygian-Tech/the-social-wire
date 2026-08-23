@@ -76,6 +76,8 @@ type Config struct {
 	WireInboxMaxRows     int64
 	WireDatabaseMaxBytes int64
 	WireAdmissionPause   time.Duration
+	WireAdmissionRate    float64
+	WireAdmissionBurst   int
 	BootstrapAfterSeq    *uint64
 	ReplayBeforeSeq      *uint64
 	ReplaySnapshotOnly   bool
@@ -128,6 +130,8 @@ func Load() (Config, error) {
 		WireInboxMaxRows:     envInt64("WIRE_INBOX_MAX_ROWS", 5_000_000),
 		WireDatabaseMaxBytes: envInt64("WIRE_DATABASE_MAX_BYTES", 80<<30),
 		WireAdmissionPause:   envDuration("WIRE_ADMISSION_PAUSE", 5*time.Second),
+		WireAdmissionRate:    envFloat64("WIRE_ADMISSION_RATE_PER_SECOND", 0),
+		WireAdmissionBurst:   envInt("WIRE_ADMISSION_BURST_EVENTS", 1),
 		ReplaySnapshotOnly:   replaySnapshotOnly,
 	}
 	if value := strings.TrimSpace(os.Getenv("JETSTREAM_BOOTSTRAP_AFTER_SEQ")); value != "" {
@@ -219,6 +223,12 @@ func (c Config) Validate() error {
 		}
 		if c.WireAdmissionPause < time.Second {
 			problems = append(problems, errors.New("WIRE_ADMISSION_PAUSE must be at least 1s"))
+		}
+		if c.WireAdmissionRate <= 0 || math.IsNaN(c.WireAdmissionRate) || math.IsInf(c.WireAdmissionRate, 0) {
+			problems = append(problems, errors.New("WIRE_ADMISSION_RATE_PER_SECOND is required, finite, and positive for the Wire pipeline"))
+		}
+		if c.WireAdmissionBurst < 1 || c.WireAdmissionBurst > c.BatchSize {
+			problems = append(problems, errors.New("WIRE_ADMISSION_BURST_EVENTS must be between 1 and JETSTREAM_BATCH_SIZE"))
 		}
 	}
 	if (c.ReplayBeforeSeq != nil) != c.ReplaySnapshotOnly {
@@ -316,6 +326,18 @@ func envInt64(name string, fallback int64) int64 {
 		return fallback
 	}
 	parsed, err := strconv.ParseInt(value, 10, 64)
+	if err != nil {
+		return 0
+	}
+	return parsed
+}
+
+func envFloat64(name string, fallback float64) float64 {
+	value := strings.TrimSpace(os.Getenv(name))
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.ParseFloat(value, 64)
 	if err != nil {
 		return 0
 	}

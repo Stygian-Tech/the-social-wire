@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 func TestHealthAndReadinessEndpoints(t *testing.T) {
@@ -130,5 +131,30 @@ func TestBackpressureFailsReadinessAndReportsCapacity(t *testing.T) {
 	}
 	if !snapshot.Backpressured || snapshot.InboxRows != 21 || snapshot.DatabaseMaxBytes != 80 {
 		t.Fatalf("capacity snapshot = %+v", snapshot)
+	}
+}
+
+func TestAdmissionPacingIsVisibleWithoutFailingReadiness(t *testing.T) {
+	state := &State{}
+	state.Database(true)
+	state.Lease(true)
+	state.Stream(true)
+	state.AdmissionLimit(1.5, 2)
+	state.AdmissionPacing(true, 250*time.Millisecond)
+
+	response := httptest.NewRecorder()
+	state.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/status", nil))
+	var snapshot Snapshot
+	if err := json.NewDecoder(response.Body).Decode(&snapshot); err != nil {
+		t.Fatal(err)
+	}
+	if !snapshot.Ready || !snapshot.AdmissionRateLimited {
+		t.Fatalf("pacing snapshot=%+v", snapshot)
+	}
+	if snapshot.AdmissionRateLimit != 1.5 || snapshot.AdmissionBurstLimit != 2 || snapshot.AdmissionWaitMilliseconds != 250 {
+		t.Fatalf("pacing limits=%+v", snapshot)
+	}
+	if snapshot.AdmissionWaitUntil.IsZero() {
+		t.Fatal("missing admission wait deadline")
 	}
 }

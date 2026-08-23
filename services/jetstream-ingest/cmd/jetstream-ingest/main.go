@@ -103,8 +103,15 @@ func run(logger *slog.Logger) error {
 	state.Lease(true)
 	logger.Info("acquired fenced ingestion lease", "lease", lease.Name, "fencingToken", lease.FencingToken)
 	if cfg.PipelineMode == config.WirePipelineMode {
-		if err := database.ReconcileWireAdmission(ctx); err != nil {
-			return err
+		recovered, reconcileErr := database.ReconcileWireAdmission(ctx, lease)
+		if reconcileErr != nil {
+			return reconcileErr
+		}
+		if recovered {
+			logger.Warn(
+				"replaying Wire source after PostgreSQL truncated the UNLOGGED inbox",
+				"sourceGeneration", source.Generation,
+			)
 		}
 	}
 
