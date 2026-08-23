@@ -70,7 +70,13 @@ describe("PublicationTabs", () => {
       </SidebarProvider>,
     );
 
-    fireEvent.contextMenu(screen.getByRole("tab", { name: "Subscribed" }));
+    const subscribed = screen.getByRole("tab", { name: "Subscribed" });
+    expect(
+      subscribed
+        .querySelector("svg")
+        ?.classList.contains("lucide-newspaper"),
+    ).toBe(true);
+    fireEvent.contextMenu(subscribed);
 
     expect(await screen.findByText("Mark All As Read")).toBeDefined();
     expect(screen.queryByText("Mark All As Unread")).toBeNull();
@@ -93,7 +99,9 @@ describe("PublicationTabs", () => {
       </SidebarProvider>,
     );
 
-    const wire = screen.getByRole("tab", { name: "The Wire" });
+    const wire = screen.getByRole("tab", { name: "The Wire, Alpha" });
+    expect(screen.getByText("Alpha")).toBeDefined();
+    expect(wire.querySelector("svg")?.classList.contains("lucide-rss")).toBe(true);
     expect(wire.getAttribute("aria-selected")).toBe("true");
     fireEvent.click(wire);
     expect(onWireSelect).toHaveBeenCalledTimes(1);

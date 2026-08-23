@@ -20,6 +20,12 @@ describe("MobileFeedNavigation", () => {
     expect(
       screen.getByRole("button", { name: "Subscribed" }).getAttribute("aria-current"),
     ).toBe("page");
+    expect(
+      screen
+        .getByRole("button", { name: "Subscribed" })
+        .querySelector("svg")
+        ?.classList.contains("lucide-newspaper"),
+    ).toBe(true);
 
     fireEvent.click(screen.getByRole("button", { name: "Following" }));
     expect(onSelect).toHaveBeenCalledWith("following");
@@ -35,7 +41,9 @@ describe("MobileFeedNavigation", () => {
       />,
     );
 
-    const wire = screen.getByRole("button", { name: "The Wire" });
+    const wire = screen.getByRole("button", { name: "The Wire, Alpha" });
+    expect(screen.getByText("Alpha")).toBeDefined();
+    expect(wire.querySelector("svg")?.classList.contains("lucide-rss")).toBe(true);
     expect(wire.getAttribute("aria-current")).toBe("page");
     fireEvent.click(wire);
     expect(onSelect).toHaveBeenCalledWith("wire");
@@ -47,6 +55,6 @@ describe("MobileFeedNavigation", () => {
         onSelect={onSelect}
       />,
     );
-    expect(screen.queryByRole("button", { name: "The Wire" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "The Wire, Alpha" })).toBeNull();
   });
 });

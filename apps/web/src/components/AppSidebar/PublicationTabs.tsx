@@ -13,6 +13,7 @@ import type { DiscoveredPublication } from "@/lib/atprotoClient";
 import type { PublicationTab } from "./appSidebarConstants";
 import { SidebarMenuBadge } from "@/components/ui/sidebar";
 import { SidebarReadBulkMenuWrap } from "./SidebarReadBulkMenuWrap";
+import { WireAlphaBadge } from "@/components/Wire/WireAlphaBadge";
 
 export function PublicationTabs({
   activeTab,
@@ -50,12 +51,14 @@ export function PublicationTabs({
             <SidebarMenuButton
               type="button"
               role="tab"
+              aria-label="The Wire, Alpha"
               aria-selected={wireActive}
               isActive={wireActive}
               onClick={onWireSelect}
             >
-              <Newspaper />
+              <Rss />
               <span>The Wire</span>
+              <WireAlphaBadge />
             </SidebarMenuButton>
           </SidebarMenuItem>
         ) : null}
@@ -74,7 +77,7 @@ export function PublicationTabs({
                 isActive={activeTab === "subscribed"}
                 onClick={() => onTabChange("subscribed")}
               >
-                <Rss />
+                <Newspaper />
                 <span>Subscribed</span>
                 {showSubscribedUnreadCount && subscribedUnread > 0 ? (
                   <SidebarMenuBadge>{subscribedUnread}</SidebarMenuBadge>
