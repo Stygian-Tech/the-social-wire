@@ -8,11 +8,53 @@ struct WireRankerTests {
 
   @Test("is deterministic independent of input order")
   func deterministic() throws {
-    let candidates = [candidate("b", actors: 20, signals1h: 6), candidate("a", actors: 20, signals1h: 6)]
+    let candidates = [
+      candidate("b", actors: 20, signals1h: 6),
+      candidate("a", actors: 20, signals1h: 6),
+    ]
     let first = try WireRanker.rank(candidates: candidates, asOf: now, config: .init())
-    let second = try WireRanker.rank(candidates: Array(candidates.reversed()), asOf: now, config: .init())
+    let second = try WireRanker.rank(
+      candidates: Array(candidates.reversed()), asOf: now, config: .init())
     #expect(first == second)
-    #expect(first.items.map(\.candidate.canonicalKey) == ["a", "b"])
+    #expect(Set(first.items.map(\.candidate.canonicalKey)) == ["a", "b"])
+  }
+
+  @Test("eligible story ordering rotates deterministically at thirty-minute boundaries")
+  func deterministicRotation() throws {
+    let bucketStart = Date(
+      timeIntervalSince1970:
+        floor(now.timeIntervalSince1970 / WireRanker.rotationInterval)
+        * WireRanker.rotationInterval
+    )
+    let keys = (0..<20).map { "rotation-\($0)" }
+    let firstNudges = keys.map { WireRanker.rotationNudge(canonicalKey: $0, asOf: bucketStart) }
+    let sameBucketNudges = keys.map {
+      WireRanker.rotationNudge(
+        canonicalKey: $0,
+        asOf: bucketStart.addingTimeInterval(WireRanker.rotationInterval - 1)
+      )
+    }
+    let nextBucket = bucketStart.addingTimeInterval(WireRanker.rotationInterval)
+    let nextNudges = keys.map { WireRanker.rotationNudge(canonicalKey: $0, asOf: nextBucket) }
+
+    #expect(firstNudges == sameBucketNudges)
+    #expect(firstNudges != nextNudges)
+    #expect(firstNudges.allSatisfy { (0...WireRanker.maximumRotationNudge).contains($0) })
+    #expect(nextNudges.allSatisfy { (0...WireRanker.maximumRotationNudge).contains($0) })
+
+    let candidates = keys.map { candidate($0, actors: 8) }
+    let first = try WireRanker.rank(candidates: candidates, asOf: bucketStart, config: .init())
+    let repeated = try WireRanker.rank(
+      candidates: Array(candidates.reversed()), asOf: bucketStart, config: .init()
+    )
+    let rotated = try WireRanker.rank(
+      candidates: candidates, asOf: nextBucket, config: .init()
+    )
+    #expect(first == repeated)
+    #expect(
+      first.items.map(\.candidate.canonicalKey)
+        != rotated.items.map(\.candidate.canonicalKey)
+    )
   }
 
   @Test("filters candidates by age, quality, and signal floor")
@@ -31,6 +73,38 @@ struct WireRankerTests {
     #expect(result.diagnostics.rejectedForAge == 1)
     #expect(result.diagnostics.rejectedForQuality == 1)
     #expect(result.diagnostics.rejectedForSignalFloor == 1)
+  }
+
+  @Test("default freshness decays on a ten-hour half-life")
+  func freshnessHalfLife() throws {
+    var tenHoursOld = candidate("ten-hours", actors: 5)
+    tenHoursOld.publishedAt = now.addingTimeInterval(-36_000)
+    var twentyHoursOld = candidate("twenty-hours", actors: 5)
+    twentyHoursOld.publishedAt = now.addingTimeInterval(-72_000)
+    let freshnessOnly = WireRankingWeights(
+      distinctSharers24h: 0,
+      shareVelocity1h: 0,
+      likeBreadthVelocity: 0,
+      repostBreadthVelocity: 0,
+      communitySpread: 0,
+      freshness: 1,
+      resurfacingAcceleration: 0,
+      sourceConfidence: 0,
+      standardSiteAuthority: 0,
+      openGraphMetadata: 0,
+      recommendationBreadth: 0,
+      positiveFeedbackBreadth: 0
+    )
+    let result = try WireRanker.rank(
+      candidates: [twentyHoursOld, tenHoursOld],
+      asOf: now,
+      config: .init(weights: freshnessOnly)
+    )
+    let scores = Dictionary(
+      uniqueKeysWithValues: result.items.map { ($0.candidate.canonicalKey, $0.score) })
+
+    #expect((0.5...0.505).contains(try #require(scores["ten-hours"])))
+    #expect((0.25...0.255).contains(try #require(scores["twenty-hours"])))
   }
 
   @Test("emits public reason codes without actor data")
@@ -76,7 +150,13 @@ struct WireRankerTests {
     passive.distinctLikes24h = 20
     passive.distinctReposts24h = 20
     let result = try WireRanker.rank(candidates: [passive], asOf: now, config: .init())
+    let nextRotation = try WireRanker.rank(
+      candidates: [passive],
+      asOf: now.addingTimeInterval(WireRanker.rotationInterval),
+      config: .init()
+    )
     #expect(result.items.isEmpty)
+    #expect(nextRotation.items.isEmpty)
     #expect(result.diagnostics.rejectedForSignalFloor == 1)
   }
 

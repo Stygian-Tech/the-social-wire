@@ -3,6 +3,8 @@ import { QueryClient, type InfiniteData } from "@tanstack/react-query";
 
 import {
   replaceWireEditionQueryGeneration,
+  WIRE_EDITION_REFRESH_INTERVAL_MS,
+  WIRE_EDITION_REFRESH_POLICY,
   WIRE_EDITION_QUERY_KEY,
 } from "@/hooks/useWireEdition";
 import type { WireEditionPage } from "@/lib/wireEditionClient";
@@ -34,9 +36,20 @@ function edition(generationId: string, title: string): WireEditionPage {
 }
 
 describe("The Wire edition cache", () => {
+  it("refreshes on mount and every five minutes while visible", () => {
+    expect(WIRE_EDITION_REFRESH_INTERVAL_MS).toBe(5 * 60_000);
+    expect(WIRE_EDITION_REFRESH_POLICY).toEqual({
+      staleTime: 5 * 60_000,
+      refetchInterval: 5 * 60_000,
+      refetchIntervalInBackground: false,
+      refetchOnMount: "always",
+      refetchOnWindowFocus: false,
+    });
+  });
+
   it("replaces the complete generation instead of mixing old pagination", () => {
     const queryClient = new QueryClient();
-    const key = WIRE_EDITION_QUERY_KEY("en", "baseline");
+    const key = WIRE_EDITION_QUERY_KEY("en", "outside-us", "baseline");
     queryClient.setQueryData<InfiniteData<WireEditionPage, string | undefined>>(
       key,
       {
@@ -48,6 +61,7 @@ describe("The Wire edition cache", () => {
     replaceWireEditionQueryGeneration(
       queryClient,
       "en",
+      "outside-us",
       "baseline",
       edition("new", "New Lead"),
     );
@@ -59,5 +73,11 @@ describe("The Wire edition cache", () => {
     expect(cached?.pages[0]?.generationId).toBe("new");
     expect(cached?.pages[0]?.stories[0]?.title).toBe("New Lead");
     expect(cached?.pageParams).toEqual([undefined]);
+  });
+
+  it("isolates persisted editions by coarse browser region", () => {
+    expect(WIRE_EDITION_QUERY_KEY("en", "default", "baseline")).not.toEqual(
+      WIRE_EDITION_QUERY_KEY("en", "outside-us", "baseline"),
+    );
   });
 });

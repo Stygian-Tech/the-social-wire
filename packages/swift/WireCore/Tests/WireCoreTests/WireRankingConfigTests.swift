@@ -5,7 +5,18 @@ import Testing
 struct WireRankingConfigTests {
   @Test("default configuration is valid")
   func validDefault() throws {
-    try WireRankingConfig().validate()
+    let config = WireRankingConfig()
+    try config.validate()
+    #expect(config.version == "wire-v4")
+    #expect(config.freshnessHalfLife == 36_000)
+    #expect(config.weights.shareVelocity1h == 0.10)
+    #expect(config.weights.likeBreadthVelocity == 0.02)
+    #expect(config.weights.repostBreadthVelocity == 0.02)
+    #expect(config.weights.communitySpread == 0.14)
+    #expect(config.weights.freshness == 0.18)
+    #expect(config.weights.standardSiteAuthority == 0.11)
+    #expect(config.weights.recommendationBreadth == 0.10)
+    #expect(abs(config.weights.all.reduce(0, +) - 1.14) < 0.000_001)
   }
 
   @Test("rejects invalid weights and caps")

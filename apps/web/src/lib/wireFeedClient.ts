@@ -34,6 +34,8 @@ export type WirePageSource =
   | "stale_generation"
   | "simplified_fallback";
 
+export type WireViewerRegion = "outside-us";
+
 export type WireFeedCatalog = {
   enabled: boolean;
   available: boolean;
@@ -351,4 +353,26 @@ export function selectWireLanguage(
     if (baseMatch) return baseMatch[1];
   }
   return preferredPrimaryLanguage ?? supported.values().next().value;
+}
+
+export function selectWireViewerRegion(
+  requestedLanguages: readonly string[] =
+    typeof navigator === "undefined"
+      ? []
+      : navigator.languages.length > 0
+        ? navigator.languages
+        : navigator.language
+          ? [navigator.language]
+          : [],
+): WireViewerRegion | undefined {
+  for (const requested of requestedLanguages) {
+    const segments = requested.trim().replaceAll("_", "-").split("-");
+    if (!/^[a-z]{2,8}$/i.test(segments[0] ?? "")) continue;
+    for (const segment of segments.slice(1)) {
+      if (segment.toLowerCase() === "u" || segment.toLowerCase() === "x") break;
+      if (!/^(?:[a-z]{2}|\d{3})$/i.test(segment)) continue;
+      return segment.toUpperCase() === "US" ? undefined : "outside-us";
+    }
+  }
+  return undefined;
 }

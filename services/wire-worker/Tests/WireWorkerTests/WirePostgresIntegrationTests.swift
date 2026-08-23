@@ -15,6 +15,166 @@ import WireCore
   )
 )
 struct WirePostgresIntegrationTests {
+  @Test("passive-reference fast path is bounded, ordered, and leaves guarded events alone")
+  func passiveReferenceFastPath() async throws {
+    guard let url = ProcessInfo.processInfo.environment["WIRE_TEST_DATABASE_URL"] else { return }
+    let logger = Logger(label: "wire-passive-fast-path-postgres.integration")
+    let configuration = try PostgresWireConfig.make(from: url, logger: logger)
+    let pool = PostgresClient(configuration: configuration, backgroundLogger: logger)
+    let runTask = Task { await pool.run() }
+    await Task.yield()
+    defer { runTask.cancel() }
+
+    let suffix = UUID().uuidString.lowercased()
+    let environment = "wire-passive-fast-path-\(suffix)"
+    let generation = "wire-passive-fast-path-v1"
+    let liveSubject = "at://did:example:story/app.bsky.feed.post/live-\(suffix)"
+    let missingSubject = "at://did:example:story/app.bsky.feed.post/missing-\(suffix)"
+    let canonicalKey = "fast-path-\(suffix)"
+    let now = Date()
+    let processAt = now.addingTimeInterval(1)
+    let likePayload = """
+      {"commit":{"record":{"$type":"app.bsky.feed.like","subject":{"uri":"\(missingSubject)","cid":"bafymissing"}}}}
+      """
+    let repostPayload = """
+      {"commit":{"record":{"$type":"app.bsky.feed.repost","subject":"\(missingSubject)"}}}
+      """
+    let liveLikePayload = """
+      {"commit":{"record":{"$type":"app.bsky.feed.like","subject":{"uri":"\(liveSubject)","cid":"bafylive"}}}}
+      """
+    let recommendationPayload = """
+      {"commit":{"record":{"$type":"site.standard.graph.recommend","subject":{"uri":"\(missingSubject)","cid":"bafymissing"}}}}
+      """
+
+    try await pool.query(
+      """
+      INSERT INTO wire_items
+        (canonical_key, canonical_url, source_domain, source_name, title,
+         first_seen_at, last_seen_at, expires_at)
+      VALUES
+        (\(canonicalKey), \("https://example.test/\(suffix)"), 'example.test', 'Example',
+         'Live story', \(now), \(now), \(now.addingTimeInterval(3_600)))
+      """,
+      logger: logger
+    )
+    try await pool.query(
+      """
+      INSERT INTO wire_item_aliases (alias_key, canonical_key, alias_type, expires_at)
+      VALUES (\(liveSubject), \(canonicalKey), 'at_uri', \(now.addingTimeInterval(3_600)))
+      """,
+      logger: logger
+    )
+    try await pool.query(
+      "INSERT INTO wire_ingestion_admission (environment, retained_rows) VALUES (\(environment), 7)",
+      logger: logger
+    )
+    try await pool.query(
+      """
+      INSERT INTO wire_ingestion_inbox
+        (environment, source_generation, seq, source_host, cursor_kind, event_kind,
+         repo_did, collection, operation, record_key, payload, event_time)
+      VALUES
+        (\(environment), \(generation), 1, 'test', 'jetstream_v2_seq', 'commit',
+         \("did:example:like-\(suffix)"), 'app.bsky.feed.like', 'create', 'like',
+         \(likePayload)::jsonb, \(now)),
+        (\(environment), \(generation), 2, 'test', 'jetstream_v2_seq', 'commit',
+         \("did:example:repost-\(suffix)"), 'app.bsky.feed.repost', 'update', 'repost',
+         \(repostPayload)::jsonb, \(now)),
+        (\(environment), \(generation), 3, 'test', 'jetstream_v2_seq', 'commit',
+         \("did:example:malformed-\(suffix)"), 'app.bsky.feed.like', 'create', 'malformed',
+         '{"commit":{"record":{"$type":"app.bsky.feed.like"}}}'::jsonb, \(now)),
+        (\(environment), \(generation), 4, 'test', 'jetstream_v2_seq', 'commit',
+         \("did:example:recommend-\(suffix)"), 'site.standard.graph.recommend', 'create', 'recommend',
+         \(recommendationPayload)::jsonb, \(now)),
+        (\(environment), \(generation), 5, 'test', 'jetstream_v2_seq', 'commit',
+         \("did:example:live-like-\(suffix)"), 'app.bsky.feed.like', 'create', 'live-like',
+         \(liveLikePayload)::jsonb, \(now)),
+        (\(environment), \(generation), 6, 'test', 'jetstream_v2_seq', 'commit',
+         \("did:example:delete-\(suffix)"), 'app.bsky.feed.like', 'delete', 'delete',
+         \(likePayload)::jsonb, \(now)),
+        (\(environment), \(generation), 7, 'test', 'jetstream_v2_seq', 'commit',
+         \("did:example:blocked-\(suffix)"), 'app.bsky.feed.like', 'create', 'blocked',
+         \(likePayload)::jsonb, \(now))
+      """,
+      logger: logger
+    )
+    try await pool.query(
+      """
+      INSERT INTO wire_ingestion_inbox
+        (environment, source_generation, seq, source_host, cursor_kind, event_kind,
+         repo_did, payload, event_time)
+      VALUES
+        (\(environment), \(generation), 0, 'test', 'jetstream_v2_seq', 'identity',
+         \("did:example:blocked-\(suffix)"), '{}'::jsonb, \(now))
+      """,
+      logger: logger
+    )
+    try await pool.query(
+      "UPDATE wire_ingestion_admission SET retained_rows = 8 WHERE environment = \(environment)",
+      logger: logger
+    )
+
+    let processor = try PostgresWireInboxProcessor(
+      pool: pool,
+      logger: logger,
+      actorSecret: String(repeating: "s", count: 32)
+    )
+    #expect(
+      try await processor.acknowledgeUnresolvedPassiveReferences(
+        asOf: processAt, limit: 1) == 1
+    )
+    #expect(
+      try await processor.acknowledgeUnresolvedPassiveReferences(
+        asOf: processAt, limit: 5_000) == 1
+    )
+
+    let rows = try await pool.query(
+      """
+      SELECT seq, status, attempt_count, applied_at IS NOT NULL
+      FROM wire_ingestion_inbox
+      WHERE environment = \(environment) AND source_generation = \(generation)
+      ORDER BY seq
+      """,
+      logger: logger
+    )
+    var states: [(Int64, String, Int, Bool)] = []
+    for try await row in rows {
+      states.append(try row.decode((Int64, String, Int, Bool).self))
+    }
+    #expect(states.map(\.0) == [0, 1, 2, 3, 4, 5, 6, 7])
+    #expect(
+      states.map(\.1) == [
+        "pending", "applied", "applied", "pending", "pending", "pending", "pending", "pending",
+      ])
+    #expect(states.map(\.2) == [0, 1, 1, 0, 0, 0, 0, 0])
+    #expect(states.map(\.3) == [false, true, true, false, false, false, false, false])
+
+    let admissionRows = try await pool.query(
+      """
+      SELECT retained_rows FROM wire_ingestion_admission WHERE environment = \(environment)
+      """,
+      logger: logger
+    )
+    for try await row in admissionRows { #expect(try row.decode(Int64.self) == 8) }
+
+    _ = try await processor.deleteTerminal(
+      asOf: processAt.addingTimeInterval(301), batchSize: 20_000)
+    let retainedRows = try await pool.query(
+      """
+      SELECT retained_rows FROM wire_ingestion_admission WHERE environment = \(environment)
+      """,
+      logger: logger
+    )
+    for try await row in retainedRows { #expect(try row.decode(Int64.self) == 6) }
+
+    try await pool.query(
+      "DELETE FROM wire_ingestion_inbox WHERE environment = \(environment)", logger: logger)
+    try await pool.query(
+      "DELETE FROM wire_ingestion_admission WHERE environment = \(environment)", logger: logger)
+    try await pool.query(
+      "DELETE FROM wire_items WHERE canonical_key = \(canonicalKey)", logger: logger)
+  }
+
   @Test("unresolved passive engagement is applied while high-intent references retry")
   func unresolvedReferencePolicy() async throws {
     guard let url = ProcessInfo.processInfo.environment["WIRE_TEST_DATABASE_URL"] else { return }

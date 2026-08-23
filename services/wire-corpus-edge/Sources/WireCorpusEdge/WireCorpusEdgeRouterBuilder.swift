@@ -73,10 +73,12 @@ enum WireCorpusEdgeRouterBuilder {
       )
     }
     protected.get("/internal/wire/v1/edition") { request, _ async throws -> Response in
-      try validateQuery(request.uri.query, allowed: ["language"])
+      try validateQuery(request.uri.query, allowed: ["language", "region"])
       return try response(
         await store.edition(
           language: primaryLanguage(request.uri.queryParameters.get("language")),
+          region: request.uri.queryParameters.get("region")
+            .flatMap(WireViewerRegion.init(rawValue:)),
           now: Date()
         )
       )

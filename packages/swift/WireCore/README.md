@@ -7,7 +7,7 @@
 1. Public Jetstream/RSS producers place idempotent envelopes in `wire_ingestion_inbox`. The durable inbox owns retry, lease, dead-letter, and expiry state; a network message is not considered accepted until PostgreSQL has it.
 2. A dedicated drain runtime continuously claims bounded inbox batches, applies different repositories concurrently while preserving repository FIFO, and uses bounded idle/error backoff. Claims order ready work by retry time before sequence so retries in one repository cannot starve unrelated pending repositories. The applier canonicalizes the linked story, upserts `wire_items` plus `wire_item_aliases`, records presentation-safe provenance, applies moderation/source labels, and inserts a deduplicated `wire_signal_events` row. Standard Site publication records form a rebuildable PostgreSQL resolver projection; documents carrying a publication AT-URI plus relative path use that projection or a bounded public PLC/PDS lookup. PLC/PDS DNS is revalidated immediately before every request, mixed or non-global answer sets fail closed, and redirects are not followed. Unresolved dependencies retry for no more than 24 hours.
 3. The applier updates bounded, keyed-hash graph state (`wire_active_actors`, `wire_follow_edges`, `wire_actor_communities`) and privacy-safe aggregate counts in `wire_signal_rollups`. DIDs for sharers, likers, reposters, and other engagement actors never enter a serving row. A public source/author DID may be retained only with its public item for attribution and viewer block/mute filtering; it is never a ranking feature or community identifier.
-4. Every five minutes by default, `wire-worker` prunes bounded graph state, refreshes community assignments when due, rebuilds exact rollups, refreshes baseline labels, loads eligible item/rollup/metadata rows, computes the deterministic `wire-v3` score, applies first-page diversity, and writes an immutable `wire_rank_generations` plus its `wire_ranked_items`. Continuous archive draining never increases labeler cadence.
+4. Every five minutes by default, `wire-worker` prunes bounded graph state, refreshes community assignments when due, rebuilds exact rollups, refreshes baseline labels, loads eligible item/rollup/metadata rows, computes the deterministic `wire-v4` score, applies first-page diversity, and writes an immutable `wire_rank_generations` plus its `wire_ranked_items`. Continuous archive draining never increases labeler cadence.
 5. In `shadow` mode the generation remains queryable for comparison but is not served. In `api` or `visible` mode the worker moves `wire_feed_state.active_generation_id` in the same PostgreSQL transaction as the completed generation. `off` performs read-only health probes and no data operation.
 6. An AppView `WireFeedStore` serving adapter reads the active generation, joins the presentation snapshot, filters labels again, and returns the approved `WirePage`, `WireItemDetail`, or singleton `WireFeedCatalog` contract. A Redis copy may be read first, but a miss or disagreement always resolves from PostgreSQL.
 
@@ -44,7 +44,7 @@ Do not ingest private posts, deleted/tombstoned records, blocks/mutes, DMs, non-
 
 Wire feedback is a public, viewer-owned PDS record with a deterministic per-URL key. The worker stores only the canonical story key, keyed actor hash, record URI, value, and expiring timestamps in `wire_article_feedback`; the raw viewer DID never enters PostgreSQL. One viewer contributes at most one current assessment per story, updates replace the earlier value, deletes retract it, and rows expire after seven days. Positive feedback is a bounded ranking boost and negative feedback a bounded penalty after a story has independently passed admission. Neither can create a candidate, satisfy admission, alter moderation, or leak through Wire/Corpus Edge responses. This separation limits brigading impact while still letting readers tune article quality.
 
-To keep a sparse edition useful, `wire-v3` has a deterministic reserve. When the strict pool has fewer than 50 stories, candidates meeting the former three-high-intent-actor or one-recommendation floor may fill only the missing positions. The quality reserve takes usable Standard Site/OpenGraph-backed candidates first, then a general reserve. Metadata and feedback never admit an article by themselves, and reserve stories never displace strict stories.
+To keep a sparse edition useful, `wire-v4` has a deterministic reserve. When the strict pool has fewer than 50 stories, candidates meeting the former three-high-intent-actor or one-recommendation floor may fill only the missing positions. The quality reserve takes usable Standard Site/OpenGraph-backed candidates first, then a general reserve. Metadata and feedback never admit an article by themselves, and reserve stories never displace strict stories.
 
 Retention defaults are code constants in `WireDataPolicy`:
 
@@ -69,7 +69,7 @@ All cleanup is bounded by `WIRE_RETENTION_BATCH_SIZE` (default 5,000). The Datab
 
 The active graph is not the social graph archive. Keep at most the 250,000 most recently active actors from the last 30 days and at most the 200 most recently observed public follow edges per actor (`WireDataPolicy.maximumFollowEdgesPerActor`). Recompute deterministic community assignments every six hours using the current bounded graph, with a stable `algorithm_version` and stable tie ordering by hashed key. Assignments expire after seven days so an interrupted clustering job cannot become permanent authority. Serving sees only per-item community spread, never actor or edge rows.
 
-## Exact ranking algorithm (`wire-v3`)
+## Exact ranking algorithm (`wire-v4`)
 
 Let `clamp(x) = min(1, max(0, x))`, `age` be nonnegative seconds since `publishedAt` (or `firstSeenAt`), `sh1`/`sh24` be distinct high-intent actors in one/24 hours, `l1`/`l24` be likes, `r1`/`r24` be reposts, `la24`/`ra24` be their distinct actor counts, `rec24` be distinct Standard Site recommenders, `good24`/`bad24` be distinct Social Wire assessments, `s7` be all seven-day signals, and `c24` be distinct qualifying communities. `standardSiteAuthority` is one only for authoritative `standard_site` provenance. `openGraphMetadata` is one only while a successful OpenGraph cache row remains fresh or stale-safe and contains at least two useful presentation fields.
 
@@ -83,7 +83,7 @@ likeBreadthVelocity     = (clamp(log1p(la24) / log1p(30))
 repostBreadthVelocity   = (clamp(log1p(ra24) / log1p(30))
                            + clamp(r1 / (max(1, r24 / 24) * 4))) / 2
 communitySpread         = clamp(c24 / 5)
-freshness               = 0.5 ^ (age / 64,800)
+freshness               = 0.5 ^ (age / 36,000)
 resurfacingAcceleration = clamp(sh1 / (max(1, s7 / 168) * 3))
 sourceConfidence        = clamp(sourceConfidence)
 standardSiteAuthority   = isStandardSite ? 1 : 0
@@ -97,20 +97,22 @@ Score:
 
 ```text
 0.22 * distinctSharers24h
-+ 0.14 * shareVelocity1h
-+ 0.04 * likeBreadthVelocity
-+ 0.04 * repostBreadthVelocity
-+ 0.18 * communitySpread
-+ 0.10 * freshness
++ 0.10 * shareVelocity1h
++ 0.02 * likeBreadthVelocity
++ 0.02 * repostBreadthVelocity
++ 0.14 * communitySpread
++ 0.18 * freshness
 + 0.06 * resurfacingAcceleration
 + 0.08 * sourceConfidence
-+ 0.09 * standardSiteAuthority
++ 0.11 * standardSiteAuthority
 + 0.05 * openGraphMetadata
-+ 0.08 * recommendationBreadth
++ 0.10 * recommendationBreadth
 + 0.06 * positiveFeedbackBreadth
 ```
 
-The implementation divides that positive score by the sum of positive weights, so validated future configurations remain normalized. It then subtracts `0.10 * negativeFeedbackBreadth`, clamps at zero, and subtracts the matching platform-destination penalty, again clamping at zero. Standard Site recommendation (`0.08`) therefore has a larger explicit coefficient than Social Wire positive feedback (`0.06`) and a Bluesky like (`0.04`); recommendations also participate in high-intent breadth and admission by design. Weights must be finite/nonnegative with a positive total. Thresholds/targets and time intervals must be positive and source confidence must stay in `[0, 1]`. Sort by score descending, then `canonicalKey` ascending; input order, database plan, clock locale, and process count must not change output.
+The implementation divides that positive score by the sum of positive weights, so validated future configurations remain normalized. It then subtracts `0.10 * negativeFeedbackBreadth` and the matching platform-destination penalty. After admission, it adds a deterministic nudge in `[0, 0.005]` derived from FNV-1a over the canonical key and `floor(asOf / 1,800 seconds)`, then clamps the result to `[0, 1]`. The nudge is stable across every five-minute generation within a 30-minute bucket and changes only at a bucket boundary. Primary, quality-reserve, and general-reserve tiers are nudged and sorted separately, so rotation cannot admit a story or move reserve filler ahead of a strict story. A half-point maximum permits nearly tied eligible stories to rotate without overwhelming material quality differences.
+
+Standard Site authority (`0.11`) and Standard Site recommendation breadth (`0.10`) therefore have larger explicit coefficients than Social Wire positive feedback (`0.06`) and a Bluesky like (`0.02`); recommendations also participate in high-intent breadth and admission by design. The positive-weight total remains `1.14`, so the increased freshness, Standard Site, and recommendation emphasis does not silently dilute those authority signals. Weights must be finite/nonnegative with a positive total. Thresholds/targets and time intervals must be positive and source confidence must stay in `[0, 1]`. Sort each admission tier by nudged score descending, then `canonicalKey` ascending; input order, database plan, clock locale, and process count must not change output.
 
 Platform-hosted/social-media destinations remain eligible but receive a bounded score subtraction because they are less likely to be the original publication. Matching is exact-host or dot-suffix only, so `news.youtube.com` matches while `notyoutube.com` does not. Defaults are `0.06` for `youtube.com`, `youtu.be`, and `twitch.tv`; `0.04` for `reddit.com` and `redd.it`; and `0.05` for `bsky.app`, `facebook.com`, `fb.com`, `fb.watch`, `instagram.com`, `linkedin.com`, `pinterest.com`, `threads.net`, `tiktok.com`, `twitter.com`, and `x.com`. The longest matching suffix wins. Each configured penalty must be finite and in `[0, 0.20]`. Penalties affect ordering only: they never change admission tier, exclude a story, or weaken moderation. A strong independently qualified story can still rank.
 
@@ -140,7 +142,7 @@ Missing publication/author/community does not consume that dimension. Duplicate 
 
 ## News edition assembly (`wire-edition-v2`)
 
-`wire-v3` remains the sole authority for story eligibility and order. `wire-edition-v2`
+`wire-v4` remains the sole authority for story eligibility and order. `wire-edition-v2`
 is a deterministic presentation pass over that already-ranked order; it never changes a
 story score, exposes a score/rank, or creates a personalized order. Duplicate item IDs
 are removed by first occurrence before assembly.
@@ -152,7 +154,7 @@ The edition allocates primary story modules in this order:
    `site.standard.document` or `site.standard.entry`, the final supporting slot goes to the
    best such story within the canonical top ten when doing so preserves source diversity.
    The feature and first two supporting stories never move. This is a bounded presentation
-   tie-break; it does not alter `wire-v2` scores, eligibility, or continuation order.
+   tie-break; it does not alter `wire-v4` scores, eligibility, or continuation order.
 2. From the unallocated stories, select up to six publication panels in first-appearance
    order. A panel requires at least two remaining stories and contains at most three.
    Publication identity prefers the presentation-safe publication key, then publication
@@ -226,6 +228,26 @@ Serving behavior:
 - when no retained generation exists, serve a deterministic engagement-gated quality fallback that prefers Standard Site stories and requires trusted provenance, usable OpenGraph metadata, or high source confidence; never synthesize or merge a client-side feed.
 
 The simplified fallback is not numerically ranked and therefore does not apply feedback or platform-domain score adjustments. It preserves the same engagement admission floor and deterministic Standard Site/metadata/source-confidence preference without exposing any internal count. A retained ranked generation is always preferred, even when stale.
+
+### Regional presentation relevance
+
+The canonical generation remains language-scoped and country-neutral. When the browser's
+first usable BCP 47 language tag includes an explicit non-US region, the web client sends
+only the coarse `region=outside-us` hint. It does not send the exact locale or country. US
+and regionless/ambiguous language tags send no region hint and preserve canonical order.
+
+For `outside-us`, the worker materializes a second module set from the same admitted first 50
+stories. It applies a stable three-position penalty only when authoritative publisher tags
+explicitly identify US politics (for example `us-politics`, or separate `united-states` and
+`politics` tags). Stories marked Breaking, Widely Discussed, or Across Communities are exempt
+so globally important reporting keeps its canonical position. Headline text, domains, IP,
+timezone, DID, and raw browser locales do not participate.
+
+The adjustment never removes a story, changes admission, mutates the generation or
+continuation cursor, exposes topic tags or a score, or affects US/unknown viewers. Corpus Edge
+selects the regional materialization and falls back to canonical modules for older
+generations. The coarse region is part of the edition cache key and ETag so cached ordering
+cannot cross presentation variants. Continuation pages retain canonical generation order.
 
 ## Generations and cursors
 
@@ -305,7 +327,7 @@ At `asOf`, a six-hour-old story with 15 distinct 24-hour sharers, eight shares i
 distinctSharers24h = log1p(15) / log1p(30) ~= 0.807
 shareVelocity1h    = clamp(8/(max(1,16/24)*4)) = 1
 communitySpread    = clamp(4/5) = 0.8
-freshness          = 0.5^(21,600/64,800) ~= 0.794
+freshness          = 0.5^(21,600/36,000) ~= 0.660
 sourceConfidence   = 0.8
 ```
 

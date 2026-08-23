@@ -135,6 +135,7 @@ actor PostgresWireFeedStore: WireFeedStore {
 
   func getEdition(
     language: String?,
+    region: WireViewerRegion?,
     viewerDid: String?,
     now: Date
   ) async throws -> WireEdition {
@@ -199,6 +200,24 @@ actor PostgresWireFeedStore: WireFeedStore {
     }
     guard let algorithmVersion else { throw WireServingError.unavailable }
 
+    var modulePrefix = ""
+    if region == .outsideUnitedStates {
+      let prefix = "\(WireViewerRegion.outsideUnitedStates.rawValue):"
+      let variantRows = try await pool.query(
+        """
+        SELECT EXISTS(
+          SELECT 1 FROM wire_edition_modules
+          WHERE generation_id = \(generation.id) AND module_key LIKE \("\(prefix)%")
+        )
+        """,
+        logger: logger
+      )
+      for try await row in variantRows {
+        if try row.decode(Bool.self) { modulePrefix = prefix }
+      }
+    }
+    let modulePattern = "\(modulePrefix)%"
+
     let itemRows = try await pool.query(
       """
       SELECT module.module_key, module.position, item.canonical_key, item.canonical_url,
@@ -214,6 +233,8 @@ actor PostgresWireFeedStore: WireFeedStore {
        AND ranked.canonical_key = module.canonical_key
       JOIN wire_items item ON item.canonical_key = module.canonical_key
       WHERE module.generation_id = \(generation.id)
+        AND (\(modulePrefix) = '' AND POSITION(':' IN module.module_key) = 0
+          OR \(modulePrefix) <> '' AND module.module_key LIKE \(modulePattern))
         AND item.eligible = TRUE AND item.expires_at > \(now)
         AND NOT EXISTS (
           SELECT 1 FROM wire_labels label
@@ -252,6 +273,8 @@ actor PostgresWireFeedStore: WireFeedStore {
              publication_homepage_url, publication_icon_url
       FROM wire_edition_modules
       WHERE generation_id = \(generation.id)
+        AND (\(modulePrefix) = '' AND POSITION(':' IN module_key) = 0
+          OR \(modulePrefix) <> '' AND module_key LIKE \(modulePattern))
       ORDER BY position
       """,
       logger: logger
@@ -266,6 +289,9 @@ actor PostgresWireFeedStore: WireFeedStore {
         (String, String, String?, Int, String?, String?, String?, String?, String?, String?).self
       )
       let stories = itemsByModule[value.0] ?? []
+      let publicModuleKey = modulePrefix.isEmpty
+        ? value.0
+        : String(value.0.dropFirst(modulePrefix.count))
       switch value.1 {
       case "top_stories":
         leads = stories
@@ -292,7 +318,9 @@ actor PostgresWireFeedStore: WireFeedStore {
           let reason = WireReasonCode(rawValue: reasonValue),
           let title = value.2
         else { continue }
-        rails.append(WireEditionStoryRail(id: value.0, title: title, reason: reason, stories: stories))
+        rails.append(WireEditionStoryRail(
+          id: publicModuleKey, title: title, reason: reason, stories: stories
+        ))
       case "general":
         general = stories
       case "trending":

@@ -1786,6 +1786,7 @@ paths:
         - ATProtoOAuthDPoP: []
       parameters:
         - { name: lang, in: query, schema: { type: string, maxLength: 35 } }
+        - { name: region, in: query, schema: { type: string, enum: [outside-us] }, description: Coarse browser-locale relevance hint; omit for US or ambiguous locales. }
       responses:
         "200":
           description: Deterministic editorial modules for one immutable Wire generation.

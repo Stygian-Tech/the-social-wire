@@ -21,7 +21,7 @@ public struct WireRankingConfig: Codable, Equatable, Sendable {
   public var domainPenalties: WireDomainPenaltyPolicy
 
   public init(
-    version: String = "wire-v3",
+    version: String = "wire-v4",
     weights: WireRankingWeights = WireRankingWeights(),
     diversity: WireDiversityPolicy = WireDiversityPolicy(),
     minimumHighIntentActors: Int = 5,
@@ -36,7 +36,7 @@ public struct WireRankingConfig: Codable, Equatable, Sendable {
     feedbackBreadthTarget: Int = 10,
     communityBreadthTarget: Int = 5,
     engagementTarget: Int = 80,
-    freshnessHalfLife: TimeInterval = 64_800,
+    freshnessHalfLife: TimeInterval = 36_000,
     maximumCandidateAge: TimeInterval = 2_592_000,
     domainPenalties: WireDomainPenaltyPolicy = WireDomainPenaltyPolicy()
   ) {

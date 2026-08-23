@@ -87,7 +87,7 @@ actor PostgresWireCorpusStore: WireCorpusStoring {
     )
   }
 
-  func edition(language: String, now: Date) async throws -> WireEdition {
+  func edition(language: String, region: WireViewerRegion?, now: Date) async throws -> WireEdition {
     try await requireFreshBaseline(now: now)
     guard let generation = try await activeGeneration(language: language) else {
       return try await fallbackEdition(language: language, now: now)
@@ -110,6 +110,24 @@ actor PostgresWireCorpusStore: WireCorpusStoring {
     }
     guard let algorithmVersion else { throw WireCorpusEdgeStoreError.contractMismatch }
 
+    var modulePrefix = ""
+    if region == .outsideUnitedStates {
+      let prefix = "\(WireViewerRegion.outsideUnitedStates.rawValue):"
+      let variantRows = try await pool.query(
+        """
+        SELECT EXISTS(
+          SELECT 1 FROM wire_serving.edition_modules
+          WHERE generation_id = \(generation.id) AND module_key LIKE \("\(prefix)%")
+        )
+        """,
+        logger: logger
+      )
+      for try await row in variantRows {
+        if try row.decode(Bool.self) { modulePrefix = prefix }
+      }
+    }
+    let modulePattern = "\(modulePrefix)%"
+
     let itemRows = try await pool.query(
       """
       SELECT module_key, module_position, canonical_key, canonical_url, representative_uri,
@@ -118,6 +136,8 @@ actor PostgresWireCorpusStore: WireCorpusStoring {
              publication_key, publication_homepage_url, publication_icon_url
       FROM wire_serving.edition_module_items
       WHERE generation_id = \(generation.id)
+        AND (\(modulePrefix) = '' AND POSITION(':' IN module_key) = 0
+          OR \(modulePrefix) <> '' AND module_key LIKE \(modulePattern))
       ORDER BY module_key, module_position
       """,
       logger: logger
@@ -143,6 +163,8 @@ actor PostgresWireCorpusStore: WireCorpusStoring {
              publication_homepage_url, publication_icon_url
       FROM wire_serving.edition_modules
       WHERE generation_id = \(generation.id)
+        AND (\(modulePrefix) = '' AND POSITION(':' IN module_key) = 0
+          OR \(modulePrefix) <> '' AND module_key LIKE \(modulePattern))
       ORDER BY position
       """,
       logger: logger
@@ -157,6 +179,9 @@ actor PostgresWireCorpusStore: WireCorpusStoring {
         (String, String, String?, Int, String?, String?, String?, String?, String?, String?).self
       )
       let stories = itemsByModule[value.0] ?? []
+      let publicModuleKey = modulePrefix.isEmpty
+        ? value.0
+        : String(value.0.dropFirst(modulePrefix.count))
       switch value.1 {
       case "top_stories":
         leads = stories
@@ -182,7 +207,9 @@ actor PostgresWireCorpusStore: WireCorpusStoring {
           let reason = WireReasonCode(rawValue: reasonValue),
           let title = value.2
         else { throw WireCorpusEdgeStoreError.contractMismatch }
-        rails.append(WireEditionStoryRail(id: value.0, title: title, reason: reason, stories: stories))
+        rails.append(WireEditionStoryRail(
+          id: publicModuleKey, title: title, reason: reason, stories: stories
+        ))
       case "general":
         general = stories
       case "trending":

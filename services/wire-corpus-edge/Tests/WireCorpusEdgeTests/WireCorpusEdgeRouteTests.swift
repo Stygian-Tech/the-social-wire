@@ -74,7 +74,7 @@ struct WireCorpusEdgeRouteTests {
   @Test("signed edition route returns the bounded internal edition")
   func edition() async throws {
     let store = TestWireCorpusStore()
-    let target = "/internal/wire/v1/edition?language=en"
+    let target = "/internal/wire/v1/edition?language=en&region=outside-us"
     let headers = try requestHeaders(target: target)
     try await application(store: store).test(.router) { client in
       let response = try await client.execute(uri: target, method: .get, headers: headers)
@@ -83,6 +83,7 @@ struct WireCorpusEdgeRouteTests {
       #expect(response.body.readableBytes > 0)
     }
     #expect(await store.editionCalls == 1)
+    #expect(await store.lastEditionRegion == .outsideUnitedStates)
   }
 
   private func application(store: TestWireCorpusStore) -> Application<RouterResponder<WireCorpusEdgeRequestContext>> {
@@ -121,6 +122,7 @@ struct WireCorpusEdgeRouteTests {
 private actor TestWireCorpusStore: WireCorpusStoring {
   private(set) var feedCalls = 0
   private(set) var editionCalls = 0
+  private(set) var lastEditionRegion: WireViewerRegion?
   private(set) var catalogCalls = 0
 
   func ping() async throws {}
@@ -145,8 +147,13 @@ private actor TestWireCorpusStore: WireCorpusStoring {
     )
   }
 
-  func edition(language: String, now: Date) async throws -> WireEdition {
+  func edition(
+    language: String,
+    region: WireViewerRegion?,
+    now: Date
+  ) async throws -> WireEdition {
     editionCalls += 1
+    lastEditionRegion = region
     return WireEditionAssembler.assemble(
       generationID: UUID().uuidString.lowercased(),
       generatedAt: now,

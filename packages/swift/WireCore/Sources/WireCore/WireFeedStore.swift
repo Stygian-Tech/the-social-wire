@@ -11,6 +11,7 @@ public protocol WireFeedStore: Sendable {
 
   func getEdition(
     language: String?,
+    region: WireViewerRegion?,
     viewerDid: String?,
     now: Date
   ) async throws -> WireEdition

@@ -36,7 +36,10 @@ struct WireWorkerCycleTests {
     let commits = await store.snapshot().commits
     #expect(commits.count == 1)
     #expect(commits[0].activate == activated)
-    #expect(commits[0].result.items[0].candidate.canonicalKey == "item-0")
+    #expect(
+      Set(commits[0].result.items.map(\.candidate.canonicalKey))
+        == Set((0..<WireDataPolicy.minimumGlobalCandidates).map { "item-\($0)" })
+    )
   }
 
   @Test("an undersized locale generation cannot move the active pointer")
