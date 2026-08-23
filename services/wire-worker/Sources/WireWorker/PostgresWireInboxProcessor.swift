@@ -333,6 +333,13 @@ struct PostgresWireInboxProcessor: Sendable {
         kind: "recommendation",
         asOf: asOf
       )
+    case "app.thesocialwire.wireFeedback":
+      try await applyArticleFeedback(
+        record: record,
+        event: event,
+        sourceURI: sourceURI,
+        asOf: asOf
+      )
     case "app.bsky.feed.like":
       try await applyReferenceSignal(
         record: record, event: event, sourceURI: sourceURI, kind: "like", asOf: asOf
@@ -546,6 +553,60 @@ struct PostgresWireInboxProcessor: Sendable {
     )
   }
 
+  private func applyArticleFeedback(
+    record: [String: Any],
+    event: InboxEvent,
+    sourceURI: String,
+    asOf: Date
+  ) async throws {
+    guard let canonicalURL = record["canonicalUrl"] as? String,
+      let identity = WireCanonicalizer.canonicalize(canonicalURL),
+      let value = record["value"] as? String,
+      value == "good" || value == "not_good"
+    else { throw ApplyError.malformed }
+    guard try await itemExists(canonicalKey: identity.canonicalKey) else {
+      throw ApplyError.unresolvedReference
+    }
+
+    let actorHash = try actorHasher.hash(event.repoDID)
+    try await upsertActor(hash: actorHash, asOf: asOf)
+    try await pool.withTransaction(logger: logger) { connection in
+      try await connection.query(
+        "SELECT pg_advisory_xact_lock(hashtextextended(\(sourceURI), 0))",
+        logger: logger
+      )
+      try await connection.query(
+        "DELETE FROM wire_article_feedback WHERE source_uri = \(sourceURI) AND occurred_at <= \(event.eventTime)",
+        logger: logger
+      )
+      try await connection.query(
+        """
+        INSERT INTO wire_article_feedback
+          (canonical_key, actor_key_hash, source_uri, feedback_value, occurred_at, expires_at)
+        VALUES
+          (\(identity.canonicalKey), \(actorHash), \(sourceURI), \(value), \(event.eventTime),
+           \(event.eventTime.addingTimeInterval(WireDataPolicy.signalRetention)))
+        ON CONFLICT (canonical_key, actor_key_hash) DO UPDATE
+        SET source_uri = EXCLUDED.source_uri,
+            feedback_value = EXCLUDED.feedback_value,
+            occurred_at = EXCLUDED.occurred_at,
+            expires_at = EXCLUDED.expires_at
+        WHERE wire_article_feedback.occurred_at <= EXCLUDED.occurred_at
+        """,
+        logger: logger
+      )
+    }
+  }
+
+  private func itemExists(canonicalKey: String) async throws -> Bool {
+    let rows = try await pool.query(
+      "SELECT EXISTS(SELECT 1 FROM wire_items WHERE canonical_key = \(canonicalKey) AND expires_at > NOW())",
+      logger: logger
+    )
+    for try await row in rows { return try row.decode(Bool.self) }
+    return false
+  }
+
   private func applyFollow(
     record: [String: Any],
     event: InboxEvent,
@@ -615,6 +676,10 @@ struct PostgresWireInboxProcessor: Sendable {
         logger: logger
       )
       try await connection.query(
+        "DELETE FROM wire_article_feedback WHERE actor_key_hash = \(actorHash)",
+        logger: logger
+      )
+      try await connection.query(
         "DELETE FROM wire_publications WHERE repo_did = \(event.repoDID)",
         logger: logger
       )
@@ -635,6 +700,10 @@ struct PostgresWireInboxProcessor: Sendable {
       )
       try await connection.query(
         "DELETE FROM wire_follow_edges WHERE source_uri = \(sourceURI)",
+        logger: logger
+      )
+      try await connection.query(
+        "DELETE FROM wire_article_feedback WHERE source_uri = \(sourceURI) AND occurred_at <= \(eventTime)",
         logger: logger
       )
       try await connection.query(
@@ -894,6 +963,7 @@ struct PostgresWireInboxProcessor: Sendable {
           (canonical_key, distinct_actors_1h, distinct_actors_24h, distinct_actors_7d,
            signals_1h, signals_24h, signals_7d, communities_24h,
            primary_community_key_hash, recommendations_24h,
+           positive_feedback_24h, negative_feedback_24h,
            shares_1h, shares_24h, distinct_likers_24h, likes_1h, likes_24h,
            distinct_reposters_24h, reposts_1h, reposts_24h, updated_at)
         SELECT canonical_key,
@@ -907,8 +977,18 @@ struct PostgresWireInboxProcessor: Sendable {
             WHERE occurred_at >= \(asOf.addingTimeInterval(-86_400)) AND community_key_hash IS NOT NULL),
           MODE() WITHIN GROUP (ORDER BY community_key_hash) FILTER (
             WHERE occurred_at >= \(asOf.addingTimeInterval(-86_400)) AND community_key_hash IS NOT NULL),
-          COUNT(*) FILTER (WHERE signal_kind = 'recommendation'
+          COUNT(DISTINCT actor_key_hash) FILTER (WHERE signal_kind = 'recommendation'
             AND occurred_at >= \(asOf.addingTimeInterval(-86_400))),
+          COALESCE((SELECT COUNT(*) FROM wire_article_feedback feedback
+            WHERE feedback.canonical_key = wire_signal_events.canonical_key
+              AND feedback.feedback_value = 'good'
+              AND feedback.occurred_at >= \(asOf.addingTimeInterval(-86_400))
+              AND feedback.expires_at > \(asOf)), 0),
+          COALESCE((SELECT COUNT(*) FROM wire_article_feedback feedback
+            WHERE feedback.canonical_key = wire_signal_events.canonical_key
+              AND feedback.feedback_value = 'not_good'
+              AND feedback.occurred_at >= \(asOf.addingTimeInterval(-86_400))
+              AND feedback.expires_at > \(asOf)), 0),
           COUNT(DISTINCT actor_key_hash) FILTER (
             WHERE signal_kind IN ('share','quote','recommendation','publication')
             AND occurred_at >= \(asOf.addingTimeInterval(-3_600))),
@@ -963,6 +1043,10 @@ struct PostgresWireInboxProcessor: Sendable {
             SELECT 1 FROM wire_active_actors actor
             WHERE actor.actor_key_hash = edge.followee_key_hash)
         """,
+        logger: logger
+      )
+      try await connection.query(
+        "DELETE FROM wire_article_feedback WHERE expires_at <= \(asOf)",
         logger: logger
       )
     }

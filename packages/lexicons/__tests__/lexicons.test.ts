@@ -26,6 +26,7 @@ describe("lexicon JSON schemas", () => {
   it("includes expected Social Wire collections", () => {
     const ids = files.map((file) => JSON.parse(readFileSync(file, "utf8")).id);
     expect(ids).toContain("app.thesocialwire.folder");
+    expect(ids).toContain("app.thesocialwire.wireFeedback");
     expect(ids).not.toContain("app.thesocialwire.entryReadState");
     expect(ids).toContain("link.latr.saved.external");
   });

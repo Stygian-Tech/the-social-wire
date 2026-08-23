@@ -71,8 +71,20 @@ public enum WireRanker {
       let sourceConfidence = clamp(candidate.sourceConfidence)
       let standardSiteAuthority = candidate.isStandardSite == true ? 1.0 : 0.0
       let openGraphMetadata = candidate.hasUsableOpenGraphMetadata == true ? 1.0 : 0.0
+      let recommendationBreadth = logarithmicRatio(
+        candidate.recommendations24h,
+        target: config.recommendationBreadthTarget
+      )
+      let positiveFeedbackBreadth = logarithmicRatio(
+        candidate.positiveFeedback24h,
+        target: config.feedbackBreadthTarget
+      )
+      let negativeFeedbackBreadth = logarithmicRatio(
+        candidate.negativeFeedback24h,
+        target: config.feedbackBreadthTarget
+      )
       let weightTotal = config.weights.all.reduce(0, +)
-      let score = (
+      let positiveScore = (
         distinctSharers24h * config.weights.distinctSharers24h
           + shareVelocity1h * config.weights.shareVelocity1h
           + likeBreadthVelocity * config.weights.likeBreadthVelocity
@@ -83,7 +95,16 @@ public enum WireRanker {
           + sourceConfidence * config.weights.sourceConfidence
           + standardSiteAuthority * config.weights.standardSiteAuthority
           + openGraphMetadata * config.weights.openGraphMetadata
+          + recommendationBreadth * config.weights.recommendationBreadth
+          + positiveFeedbackBreadth * config.weights.positiveFeedbackBreadth
       ) / weightTotal
+      let feedbackAdjustedScore = clamp(
+        positiveScore - negativeFeedbackBreadth * config.weights.negativeFeedbackPenalty
+      )
+      let score = max(
+        0,
+        feedbackAdjustedScore - config.domainPenalties.penalty(for: candidate.sourceDomain)
+      )
 
       guard score.isFinite else { continue }
 
