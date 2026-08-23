@@ -15,16 +15,16 @@ public struct WireRankingWeights: Codable, Equatable, Sendable {
 
   public init(
     distinctSharers24h: Double = 0.22,
-    shareVelocity1h: Double = 0.14,
-    likeBreadthVelocity: Double = 0.04,
-    repostBreadthVelocity: Double = 0.04,
-    communitySpread: Double = 0.18,
-    freshness: Double = 0.10,
+    shareVelocity1h: Double = 0.10,
+    likeBreadthVelocity: Double = 0.02,
+    repostBreadthVelocity: Double = 0.02,
+    communitySpread: Double = 0.14,
+    freshness: Double = 0.18,
     resurfacingAcceleration: Double = 0.06,
     sourceConfidence: Double = 0.08,
-    standardSiteAuthority: Double = 0.09,
+    standardSiteAuthority: Double = 0.11,
     openGraphMetadata: Double = 0.05,
-    recommendationBreadth: Double = 0.08,
+    recommendationBreadth: Double = 0.10,
     positiveFeedbackBreadth: Double = 0.06,
     negativeFeedbackPenalty: Double = 0.10
   ) {

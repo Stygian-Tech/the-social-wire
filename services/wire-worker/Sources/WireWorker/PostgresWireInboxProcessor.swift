@@ -69,6 +69,10 @@ struct PostgresWireInboxProcessor: Sendable {
   }
 
   func process(asOf: Date) async throws -> Int {
+    let fastPathCount = try await acknowledgeUnresolvedPassiveReferences(
+      asOf: asOf,
+      limit: batchSize
+    )
     let events = try await claim(asOf: asOf)
     var iterator = events.makeIterator()
     try await withThrowingTaskGroup(of: Void.self) { tasks in
@@ -81,7 +85,7 @@ struct PostgresWireInboxProcessor: Sendable {
         tasks.addTask { try await process(event, asOf: asOf) }
       }
     }
-    return events.count
+    return fastPathCount + events.count
   }
 
   static func boundedClaimLimit(batchSize: Int, maximumConcurrentEvents: Int) -> Int {
@@ -92,6 +96,74 @@ struct PostgresWireInboxProcessor: Sendable {
 
   static func retriesUnresolvedReference(collection: String?) -> Bool {
     collection != "app.bsky.feed.like" && collection != "app.bsky.feed.repost"
+  }
+
+  func acknowledgeUnresolvedPassiveReferences(asOf: Date, limit: Int) async throws -> Int {
+    let expiresAt = asOf.addingTimeInterval(300)
+    let boundedLimit = max(1, min(limit, 5_000))
+    return try await pool.withTransaction(logger: logger) { connection in
+      let rows = try await connection.query(
+        """
+        WITH candidates AS (
+          SELECT candidate.environment, candidate.source_generation, candidate.seq
+          FROM wire_ingestion_inbox candidate
+          WHERE candidate.status IN ('pending', 'retry')
+            AND candidate.next_attempt_at <= \(asOf)
+            AND candidate.event_kind = 'commit'
+            AND candidate.collection IN ('app.bsky.feed.like', 'app.bsky.feed.repost')
+            AND candidate.operation IN ('create', 'update')
+            AND NULLIF(BTRIM(COALESCE(
+              candidate.payload #>> '{commit,record,subject,uri}',
+              CASE
+                WHEN jsonb_typeof(candidate.payload #> '{commit,record,subject}') = 'string'
+                THEN candidate.payload #>> '{commit,record,subject}'
+              END
+            )), '') IS NOT NULL
+            AND NOT EXISTS (
+              SELECT 1 FROM wire_item_aliases alias
+              WHERE alias.alias_key = COALESCE(
+                candidate.payload #>> '{commit,record,subject,uri}',
+                CASE
+                  WHEN jsonb_typeof(candidate.payload #> '{commit,record,subject}') = 'string'
+                  THEN candidate.payload #>> '{commit,record,subject}'
+                END
+              )
+                AND alias.expires_at > \(asOf)
+            )
+            AND NOT EXISTS (
+              SELECT 1 FROM wire_ingestion_inbox earlier
+              WHERE earlier.environment = candidate.environment
+                AND earlier.source_generation = candidate.source_generation
+                AND earlier.repo_did = candidate.repo_did
+                AND earlier.seq < candidate.seq
+                AND earlier.status IN ('pending', 'leased', 'retry')
+            )
+          ORDER BY candidate.next_attempt_at, candidate.seq,
+                   candidate.environment, candidate.source_generation
+          FOR UPDATE SKIP LOCKED
+          LIMIT \(boundedLimit)
+        )
+        UPDATE wire_ingestion_inbox inbox
+        SET status = 'applied', next_attempt_at = \(asOf),
+            failure_category = NULL, failure_reason = NULL,
+            applied_at = \(asOf), dead_lettered_at = NULL,
+            lease_owner = NULL, lease_token = NULL, lease_expires_at = NULL,
+            attempt_count = attempt_count + 1,
+            expires_at = \(expiresAt), updated_at = \(asOf)
+        FROM candidates
+        WHERE inbox.environment = candidates.environment
+          AND inbox.source_generation = candidates.source_generation
+          AND inbox.seq = candidates.seq
+          AND inbox.status IN ('pending', 'retry')
+          AND inbox.next_attempt_at <= \(asOf)
+        RETURNING inbox.seq
+        """,
+        logger: logger
+      )
+      var count = 0
+      for try await _ in rows { count += 1 }
+      return count
+    }
   }
 
   func maintain(asOf: Date) async throws {
