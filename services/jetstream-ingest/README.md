@@ -190,6 +190,9 @@ The migration seeds an UNLOGGED epoch row for each Wire source generation and a
 LOGGED provider-authored recovery anchor before the first restart. That makes the
 planned cutover distinguishable from a crash. Each staged Wire batch retains at
 most one anchor per hour and prunes history behind a seven-day replay boundary.
+An anchor preserves the complete cursor/event-time pair selected by the lowest
+cursor; event timestamps are not assumed to be monotonic and are never minimized
+independently of their provider cursor.
 After PostgreSQL truncates UNLOGGED state, the fenced ingestion leader observes
 the missing generation epoch, rewinds only the matching immutable source identity
 to the oldest retained cursor, reconciles admission, and replays idempotently.

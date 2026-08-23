@@ -245,6 +245,78 @@ func TestPostgresStageWireBatchNormalizesUnsupportedUnicode(t *testing.T) {
 	}
 }
 
+func TestPostgresStageBatchPreservesRecoveryAnchorCursorTimeTuple(t *testing.T) {
+	databaseURL := os.Getenv("JETSTREAM_INGEST_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("JETSTREAM_INGEST_TEST_DATABASE_URL is not set")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	db, err := sql.Open("pgx", databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	generation := fmt.Sprintf("integration-wire-anchor-%d", time.Now().UnixNano())
+	source := ingest.SourceIdentity{
+		PipelineMode: config.WirePipelineMode, Environment: "dev",
+		Host: "jetstream.us-west.bsky.network", StreamNSID: "network.bsky.jetstream.subscribeEvents",
+		FilterFingerprint: "integration-wire-anchor-filter", CursorKind: "jetstream_v2_seq",
+		Generation: generation,
+	}
+	postgres := New(db, source)
+	lease, err := postgres.AcquireLease(ctx, "integration-"+generation, "integration-owner", 30*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		cleanup, cleanupCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cleanupCancel()
+		_, _ = db.ExecContext(cleanup, "DELETE FROM wire_ingestion_recovery_anchors WHERE environment = $1 AND source_generation = $2", source.Environment, generation)
+		_, _ = db.ExecContext(cleanup, "DELETE FROM wire_ingestion_inbox WHERE environment = $1 AND source_generation = $2", source.Environment, generation)
+		_, _ = db.ExecContext(cleanup, "DELETE FROM appview_jetstream_checkpoints WHERE environment = $1 AND source_generation = $2", source.Environment, generation)
+		_, _ = db.ExecContext(cleanup, "DELETE FROM appview_ingestion_leases WHERE environment = $1 AND lease_name = $2", source.Environment, lease.Name)
+	})
+
+	earlierTime := time.Now().UTC().Add(-10 * time.Minute).Truncate(time.Microsecond)
+	laterTime := earlierTime.Add(5 * time.Minute)
+	higher := ingest.InboxEvent{
+		Seq: 200, Time: earlierTime, Kind: "commit", RepoDID: "did:plc:wire-anchor-higher",
+		Payload: []byte(`{"cursor":200,"kind":"commit"}`),
+	}
+	lower := ingest.InboxEvent{
+		Seq: 100, Time: laterTime, Kind: "commit", RepoDID: "did:plc:wire-anchor-lower",
+		Payload: []byte(`{"cursor":100,"kind":"commit"}`),
+	}
+	if err := postgres.StageBatch(
+		ctx, lease, []ingest.InboxEvent{higher}, higher.Seq, higher.Time,
+		ReplayProgress{State: "live", LastProgressAt: higher.Time},
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := postgres.StageBatch(
+		ctx, lease, []ingest.InboxEvent{lower}, lower.Seq, lower.Time,
+		ReplayProgress{State: "live", LastProgressAt: lower.Time},
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	var anchorSeq int64
+	var anchorTime time.Time
+	if err := db.QueryRowContext(ctx, `
+		SELECT checkpoint_seq, checkpoint_event_time
+		FROM wire_ingestion_recovery_anchors
+		WHERE environment = $1 AND source_generation = $2
+		ORDER BY anchor_bucket DESC
+		LIMIT 1`, source.Environment, generation).Scan(&anchorSeq, &anchorTime); err != nil {
+		t.Fatal(err)
+	}
+	if anchorSeq != int64(lower.Seq) || !anchorTime.Equal(laterTime) {
+		t.Fatalf("recovery anchor = (%d, %s), want exact lower cursor tuple (%d, %s)",
+			anchorSeq, anchorTime, lower.Seq, laterTime)
+	}
+}
+
 func TestPostgresStageBatchIntegration(t *testing.T) {
 	databaseURL := os.Getenv("JETSTREAM_INGEST_TEST_DATABASE_URL")
 	if databaseURL == "" {

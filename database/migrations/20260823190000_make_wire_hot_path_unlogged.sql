@@ -27,6 +27,13 @@ CROSS JOIN LATERAL aclexplode(
 ) grant_row
 WHERE relation.oid = 'wire_ingestion_inbox'::REGCLASS;
 
+-- Read the large logged heap once. The compact replacement and its exact
+-- recovery floor both consume this bounded temporary snapshot.
+CREATE TEMP TABLE wire_actionable_inbox ON COMMIT DROP AS
+SELECT *
+FROM wire_ingestion_inbox
+WHERE status IN ('pending', 'leased', 'retry');
+
 -- A logged hourly cursor journal gives crash recovery a provider-authored
 -- cursor. Never derive a Jetstream cursor by doing arithmetic on its value.
 CREATE TABLE IF NOT EXISTS wire_ingestion_recovery_anchors (
@@ -55,21 +62,22 @@ SELECT DISTINCT ON (environment, source_generation)
   seq,
   event_time,
   NOW()
-FROM wire_ingestion_inbox
-WHERE status IN ('pending', 'leased', 'retry')
+FROM wire_actionable_inbox
 ORDER BY environment, source_generation, seq
 ON CONFLICT (environment, source_generation, anchor_bucket) DO UPDATE
-SET checkpoint_seq = LEAST(
+SET checkpoint_event_time = CASE
+      WHEN EXCLUDED.checkpoint_seq < wire_ingestion_recovery_anchors.checkpoint_seq
+      THEN EXCLUDED.checkpoint_event_time
+      ELSE wire_ingestion_recovery_anchors.checkpoint_event_time
+    END,
+    captured_at = CASE
+      WHEN EXCLUDED.checkpoint_seq < wire_ingestion_recovery_anchors.checkpoint_seq
+      THEN EXCLUDED.captured_at
+      ELSE wire_ingestion_recovery_anchors.captured_at
+    END,
+    checkpoint_seq = LEAST(
       wire_ingestion_recovery_anchors.checkpoint_seq,
       EXCLUDED.checkpoint_seq
-    ),
-    checkpoint_event_time = LEAST(
-      wire_ingestion_recovery_anchors.checkpoint_event_time,
-      EXCLUDED.checkpoint_event_time
-    ),
-    captured_at = LEAST(
-      wire_ingestion_recovery_anchors.captured_at,
-      EXCLUDED.captured_at
     );
 
 -- A generation with no actionable rows still needs a provider-authored anchor
@@ -89,17 +97,19 @@ WHERE checkpoint.last_staged_seq IS NOT NULL
   AND checkpoint.last_staged_event_at IS NOT NULL
   AND checkpoint.source_generation LIKE 'wire-%'
 ON CONFLICT (environment, source_generation, anchor_bucket) DO UPDATE
-SET checkpoint_seq = LEAST(
+SET checkpoint_event_time = CASE
+      WHEN EXCLUDED.checkpoint_seq < wire_ingestion_recovery_anchors.checkpoint_seq
+      THEN EXCLUDED.checkpoint_event_time
+      ELSE wire_ingestion_recovery_anchors.checkpoint_event_time
+    END,
+    captured_at = CASE
+      WHEN EXCLUDED.checkpoint_seq < wire_ingestion_recovery_anchors.checkpoint_seq
+      THEN EXCLUDED.captured_at
+      ELSE wire_ingestion_recovery_anchors.captured_at
+    END,
+    checkpoint_seq = LEAST(
       wire_ingestion_recovery_anchors.checkpoint_seq,
       EXCLUDED.checkpoint_seq
-    ),
-    checkpoint_event_time = LEAST(
-      wire_ingestion_recovery_anchors.checkpoint_event_time,
-      EXCLUDED.checkpoint_event_time
-    ),
-    captured_at = LEAST(
-      wire_ingestion_recovery_anchors.captured_at,
-      EXCLUDED.captured_at
     );
 
 -- Clean shutdowns preserve this UNLOGGED marker. PostgreSQL crash recovery
@@ -129,8 +139,7 @@ CREATE UNLOGGED TABLE wire_ingestion_inbox_unlogged
 
 INSERT INTO wire_ingestion_inbox_unlogged
 SELECT *
-FROM wire_ingestion_inbox
-WHERE status IN ('pending', 'leased', 'retry');
+FROM wire_actionable_inbox;
 
 -- A stopped worker can leave valid leases behind. Return them to the retry lane
 -- without changing attempts or repository ordering.
@@ -281,7 +290,8 @@ BEGIN
     'wire_feed_state',
     'wire_edition_generations',
     'wire_edition_modules',
-    'wire_edition_module_items'
+    'wire_edition_module_items',
+    'wire_edition_talked_accounts'
   ] LOOP
     SELECT relpersistence INTO relation_persistence
     FROM pg_class
