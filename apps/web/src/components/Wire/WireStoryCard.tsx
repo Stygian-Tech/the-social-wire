@@ -245,7 +245,7 @@ export function WireStoryCard({
         ) : null}
         {variant !== "trending" ? (
           <div className="absolute bottom-2 right-2">
-            <EntryCardActionMenu entry={story} />
+            <EntryCardActionMenu entry={story} showWireFeedback />
           </div>
         ) : null}
       </div>
@@ -254,7 +254,7 @@ export function WireStoryCard({
           data-wire-trending-actions
           className="absolute right-2 top-2 opacity-60 transition-opacity [@media(hover:hover)]:opacity-0 group-hover/story:opacity-100 group-focus-within/story:opacity-100"
         >
-          <EntryCardActionMenu entry={story} />
+          <EntryCardActionMenu entry={story} showWireFeedback />
         </div>
       ) : null}
     </div>

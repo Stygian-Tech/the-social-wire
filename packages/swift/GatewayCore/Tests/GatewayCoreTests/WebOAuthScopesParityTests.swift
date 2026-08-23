@@ -51,6 +51,14 @@ struct WebOAuthScopesParityTests {
     #expect(ATProtoOAuthScopes.iosScope.contains("repo:site.standard.graph.subscription"))
   }
 
+  @Test("Wire article feedback permission is limited to the web client")
+  func wireFeedbackPermissionIsClientSpecific() {
+    let wireFeedback =
+      "repo:app.thesocialwire.wireFeedback?action=create&action=update&action=delete"
+    #expect(ATProtoOAuthScopes.webScope.contains(wireFeedback))
+    #expect(!ATProtoOAuthScopes.iosScope.contains(wireFeedback))
+  }
+
   @Test("UserInput permissions are limited to the web client that exposes feedback")
   func userInputPermissionsAreClientSpecific() {
     let userInput = "include:app.userinput.authFull"

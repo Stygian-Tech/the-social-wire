@@ -5,7 +5,13 @@ import { useMemo } from "react";
 import { ArticleSocialToolbar } from "@/components/EntryDetail/ArticleSocialToolbar";
 import type { EntryDetail, EntryListItem } from "@/lib/atprotoClient";
 
-export function EntryCardActionMenu({ entry }: { entry: EntryListItem }) {
+export function EntryCardActionMenu({
+  entry,
+  showWireFeedback = false,
+}: {
+  entry: EntryListItem;
+  showWireFeedback?: boolean;
+}) {
   const actionEntry = useMemo<EntryDetail>(
     () => ({
       entryId: entry.entryId,
@@ -34,6 +40,7 @@ export function EntryCardActionMenu({ entry }: { entry: EntryListItem }) {
         entry={actionEntry}
         variant="menu"
         className="size-8"
+        showWireFeedback={showWireFeedback}
       />
     </div>
   );

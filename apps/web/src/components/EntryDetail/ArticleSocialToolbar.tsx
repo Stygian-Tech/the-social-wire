@@ -10,6 +10,7 @@ import {
   Reply,
   Repeat,
   Send,
+  ThumbsDown,
   ThumbsUp,
 } from "lucide-react";
 import { articleSocialMenuActions } from "@/components/EntryDetail/articleSocialMenuActions";
@@ -36,6 +37,7 @@ import {
   useSaveReadLaterEntryMutation,
 } from "@/hooks/useLatrSaved";
 import { useStandardSiteRecommendation } from "@/hooks/useStandardSiteRecommendation";
+import { useWireArticleFeedback } from "@/hooks/useWireArticleFeedback";
 import type { EntryDetail } from "@/lib/atprotoClient";
 import { canonicalArticleHttpsUrl } from "@/lib/articleCanonicalUrl";
 import { outboundLinkProps } from "@/lib/outboundLinks";
@@ -58,6 +60,7 @@ interface ArticleSocialToolbarProps {
   showReadLaterSave?: boolean;
   extraActions?: ReactNode;
   variant?: "toolbar" | "menu";
+  showWireFeedback?: boolean;
 }
 
 export function ArticleSocialToolbar({
@@ -66,6 +69,7 @@ export function ArticleSocialToolbar({
   showReadLaterSave = true,
   extraActions,
   variant = "toolbar",
+  showWireFeedback = false,
 }: ArticleSocialToolbarProps) {
   const {
     viewerQuery,
@@ -81,6 +85,10 @@ export function ArticleSocialToolbar({
   const saveLaterMut = useSaveReadLaterEntryMutation();
   const standardSiteRecommendation = useStandardSiteRecommendation(
     entry?.entryId
+  );
+  const wireFeedback = useWireArticleFeedback(
+    showWireFeedback ? canonUrl : null,
+    entry?.entryId,
   );
 
   const [repostOpen, setRepostOpen] = useState(false);
@@ -258,6 +266,43 @@ export function ArticleSocialToolbar({
                   ? "Remove Recommendation"
                   : "Recommend"}
               </DropdownMenuItem>
+            ) : null}
+            {showWireFeedback && wireFeedback.applicable ? (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  disabled={
+                    !wireFeedback.signedIn ||
+                    wireFeedback.isLoading ||
+                    wireFeedback.mutation.isPending
+                  }
+                  onClick={() => wireFeedback.mutation.mutate("good")}
+                >
+                  <ThumbsUp
+                    className={cn(
+                      wireFeedback.value === "good" && "fill-current text-primary",
+                    )}
+                  />
+                  {wireFeedback.value === "good" ? "Rated Good" : "Good Article"}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  disabled={
+                    !wireFeedback.signedIn ||
+                    wireFeedback.isLoading ||
+                    wireFeedback.mutation.isPending
+                  }
+                  onClick={() => wireFeedback.mutation.mutate("not_good")}
+                >
+                  <ThumbsDown
+                    className={cn(
+                      wireFeedback.value === "not_good" && "fill-current text-primary",
+                    )}
+                  />
+                  {wireFeedback.value === "not_good"
+                    ? "Rated Not Good"
+                    : "Not a Good Article"}
+                </DropdownMenuItem>
+              </>
             ) : null}
             {canonUrl ? <DropdownMenuSeparator /> : null}
             {menuActions.showSaveToReadLater ? (

@@ -9,13 +9,15 @@ mock.module("@/components/EntryDetail/ArticleSocialToolbar", () => ({
   ArticleSocialToolbar: ({
     entry,
     variant,
+    showWireFeedback,
   }: {
     entry: EntryDetail | null;
     variant?: string;
+    showWireFeedback?: boolean;
   }) =>
     entry && variant === "menu" ? (
       <button type="button" aria-label="Article Actions">
-        {entry.title}
+        {entry.title}{showWireFeedback ? " Wire Feedback" : ""}
       </button>
     ) : null,
 }));
@@ -53,6 +55,22 @@ describe("article card actions", () => {
     expect(
       screen.getByRole("button", { name: "Article Actions" }).textContent,
     ).toBe(entry.title);
+  });
+
+  it("enables article-quality feedback only for Wire cards", async () => {
+    const { EntryCardActionMenu } = await import(
+      "@/components/EntryList/EntryCardActionMenu"
+    );
+    const entry: EntryListItem = {
+      entryId: "at://did:plc:author/app.bsky.feed.post/article",
+      title: "Wire Article",
+      publishedAt: "2026-08-22T00:00:00.000Z",
+      originalUrl: "https://example.com/article",
+    };
+    const { rerender } = render(<EntryCardActionMenu entry={entry} />);
+    expect(screen.getByRole("button").textContent).not.toContain("Wire Feedback");
+    rerender(<EntryCardActionMenu entry={entry} showWireFeedback />);
+    expect(screen.getByRole("button").textContent).toContain("Wire Feedback");
   });
 
   it("shows the L@tr-style open, archive, and remove button row", async () => {

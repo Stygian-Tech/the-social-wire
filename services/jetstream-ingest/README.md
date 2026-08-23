@@ -75,7 +75,9 @@ Bounded Wire snapshots additionally require all of:
 - `JETSTREAM_PIPELINE_MODE=wire-global-v1`
 - `JETSTREAM_SOURCE_GENERATION` — a new generation dedicated to this exact
   bounded range; never reuse the live Wire generation (whose default is
-  `wire-global-v1`) or another completed generation.
+  `wire-global-v2`) or another completed generation. The v2 source identity
+  includes public `app.thesocialwire.wireFeedback` records; it must not reuse a
+  v1 checkpoint or filter fingerprint.
 - `JETSTREAM_BOOTSTRAP_AFTER_SEQ` — the exclusive lower sequence bound.
 - `JETSTREAM_REPLAY_BEFORE_SEQ` — the inclusive upper sequence bound. Both
   bounds must fit PostgreSQL's signed 64-bit cursor range.
@@ -100,8 +102,8 @@ wanted for seven days, use two non-overlapping snapshots:
 | Missing seven-day range | `S7 - 1` | `S24 - 1` |
 
 Run each in Development with a distinct, descriptive source generation, for
-example `wire-global-v1-dev-24h-snapshot-v1` and
-`wire-global-v1-dev-7d-snapshot-v1`. Use a distinct leader lease name as well if
+example `wire-global-v2-dev-24h-snapshot-v1` and
+`wire-global-v2-dev-7d-snapshot-v1`. Use a distinct leader lease name as well if
 a bounded snapshot service runs alongside the live Wire service. Keep the Wire
 collection set and scope policy unchanged so only the source generation and
 checkpoint are isolated. Do not delete or edit the live Wire checkpoint, and do
