@@ -15,6 +15,92 @@ import WireCore
   )
 )
 struct WirePostgresIntegrationTests {
+  @Test("unresolved passive engagement is applied while high-intent references retry")
+  func unresolvedReferencePolicy() async throws {
+    guard let url = ProcessInfo.processInfo.environment["WIRE_TEST_DATABASE_URL"] else { return }
+    let logger = Logger(label: "wire-unresolved-reference-postgres.integration")
+    let configuration = try PostgresWireConfig.make(from: url, logger: logger)
+    let pool = PostgresClient(configuration: configuration, backgroundLogger: logger)
+    let runTask = Task { await pool.run() }
+    await Task.yield()
+    defer { runTask.cancel() }
+
+    let environment = "wire-unresolved-reference-\(UUID().uuidString.lowercased())"
+    let generation = "wire-unresolved-reference-v1"
+    let now = Date()
+    let missingSubject = "at://did:plc:missing/app.bsky.feed.post/story"
+    let likePayload = """
+      {"commit":{"record":{"$type":"app.bsky.feed.like","subject":{"uri":"\(missingSubject)","cid":"bafymissing"}}}}
+      """
+    let repostPayload = """
+      {"commit":{"record":{"$type":"app.bsky.feed.repost","subject":{"uri":"\(missingSubject)","cid":"bafymissing"}}}}
+      """
+    let recommendationPayload = """
+      {"commit":{"record":{"$type":"site.standard.graph.recommend","subject":{"uri":"\(missingSubject)","cid":"bafymissing"}}}}
+      """
+    let feedbackPayload = """
+      {"commit":{"record":{"$type":"app.thesocialwire.wireFeedback","canonicalUrl":"https://missing.example/story","value":"good"}}}
+      """
+    try await pool.query(
+      """
+      INSERT INTO wire_ingestion_inbox
+        (environment, source_generation, seq, source_host, cursor_kind, event_kind,
+         repo_did, collection, operation, record_key, payload, event_time)
+      VALUES
+        (\(environment), \(generation), 1, 'test', 'jetstream_v2_seq', 'commit',
+         'did:example:like', 'app.bsky.feed.like', 'create', 'like',
+         \(likePayload)::jsonb, \(now)),
+        (\(environment), \(generation), 2, 'test', 'jetstream_v2_seq', 'commit',
+         'did:example:repost', 'app.bsky.feed.repost', 'create', 'repost',
+         \(repostPayload)::jsonb, \(now)),
+        (\(environment), \(generation), 3, 'test', 'jetstream_v2_seq', 'commit',
+         'did:example:recommend', 'site.standard.graph.recommend', 'create', 'recommend',
+         \(recommendationPayload)::jsonb, \(now)),
+        (\(environment), \(generation), 4, 'test', 'jetstream_v2_seq', 'commit',
+         'did:example:feedback', 'app.thesocialwire.wireFeedback', 'create', 'feedback',
+         \(feedbackPayload)::jsonb, \(now))
+      """,
+      logger: logger
+    )
+    let processor = try PostgresWireInboxProcessor(
+      pool: pool,
+      logger: logger,
+      actorSecret: String(repeating: "s", count: 32),
+      batchSize: 4,
+      maximumConcurrentEvents: 4
+    )
+    #expect(try await processor.process(asOf: now.addingTimeInterval(1)) == 4)
+
+    let rows = try await pool.query(
+      """
+      SELECT collection, status, failure_reason
+      FROM wire_ingestion_inbox
+      WHERE environment = \(environment) AND source_generation = \(generation)
+      ORDER BY seq
+      """,
+      logger: logger
+    )
+    var states: [(String?, String, String?)] = []
+    for try await row in rows {
+      states.append(try row.decode((String?, String, String?).self))
+    }
+    #expect(
+      states.map(\.0) == [
+        "app.bsky.feed.like",
+        "app.bsky.feed.repost",
+        "site.standard.graph.recommend",
+        "app.thesocialwire.wireFeedback",
+      ]
+    )
+    #expect(states.map(\.1) == ["applied", "applied", "retry", "retry"])
+    #expect(states.map(\.2) == [nil, nil, "unresolved_subject", "unresolved_subject"])
+
+    try await pool.query(
+      "DELETE FROM wire_ingestion_inbox WHERE environment = \(environment)",
+      logger: logger
+    )
+  }
+
   @Test("a staged payload-normalization fallback is dead-lettered")
   func payloadNormalizationFallbackDeadLetters() async throws {
     guard let url = ProcessInfo.processInfo.environment["WIRE_TEST_DATABASE_URL"] else { return }
@@ -108,7 +194,7 @@ struct WirePostgresIntegrationTests {
       logger: logger,
       configuration: .init(idleMilliseconds: 250),
       sleeper: sleeper,
-      iterationLimit: 5
+      iterationLimit: 6
     )
 
     let rows = try await pool.query(
@@ -441,7 +527,7 @@ struct WirePostgresIntegrationTests {
       logger: logger,
       actorSecret: String(repeating: "s", count: 32),
       batchSize: 10,
-      maximumConcurrentEvents: 1
+      maximumConcurrentEvents: 2
     )
     #expect(try await processor.process(asOf: eventTime.addingTimeInterval(1)) == 2)
     let staleDeletePayload = """

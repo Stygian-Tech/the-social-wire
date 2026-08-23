@@ -53,6 +53,8 @@ struct WireMigrationContractTests {
     #expect(processor.contains("WITH pending_retry_candidates AS"))
     #expect(processor.contains("expired_lease_candidates AS"))
     #expect(processor.contains("ORDER BY eligible_at, seq, environment, source_generation"))
+    #expect(processor.contains("let claimLimit = Self.boundedClaimLimit"))
+    #expect(processor.components(separatedBy: "LIMIT \\(claimLimit)").count == 4)
     #expect(processor.contains("candidate.environment,"))
     #expect(processor.contains("candidate.source_generation"))
     #expect(processor.contains("unresolved_publication_expired"))
