@@ -119,16 +119,27 @@ actor RemoteWireFeedStore: WireFeedStore {
 
   func getEdition(
     language: String?,
+    region: WireViewerRegion?,
     viewerDid: String?,
     now: Date
   ) async throws -> WireEdition {
     guard mode.servesAPI else { throw WireServingError.unavailable }
     let requestedLanguage = Self.primaryLanguage(language)
-    let target = Self.target(
-      path: "/internal/wire/v1/edition",
-      query: [("language", requestedLanguage)]
-    )
-    let response = try await transportResponse(target: target, allowsNotFound: false)
+    var query = [("language", requestedLanguage)]
+    if let region { query.append(("region", region.rawValue)) }
+    let target = Self.target(path: "/internal/wire/v1/edition", query: query)
+    let response: WireCorpusTransportResponse
+    do {
+      response = try await transportResponse(target: target, allowsNotFound: false)
+    } catch WireServingError.invalidCursor where region != nil {
+      // During a staged rollout, an older Corpus Edge rejects the new query
+      // parameter. Preserve canonical service until the regional contract lands.
+      let canonicalTarget = Self.target(
+        path: "/internal/wire/v1/edition",
+        query: [("language", requestedLanguage)]
+      )
+      response = try await transportResponse(target: canonicalTarget, allowsNotFound: false)
+    }
     guard response.contractVersion == 2 else { throw WireServingError.unavailable }
     let edition: WireEdition = try decode(response.body)
     let moderation = try await moderationSnapshot(viewerDID: viewerDid, now: now)

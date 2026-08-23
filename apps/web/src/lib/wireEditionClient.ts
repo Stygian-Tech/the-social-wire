@@ -12,6 +12,7 @@ import {
   type WireItem,
   type WirePageSource,
   type WireSource,
+  type WireViewerRegion,
 } from "@/lib/wireFeedClient";
 import { dummyWireEdition } from "@/lib/dummyWireEditionData";
 import { isDummyReaderDataEnabled } from "@/lib/dummyReaderData";
@@ -81,6 +82,7 @@ async function responseError(response: Response): Promise<Error> {
 
 export async function getWireEdition(args: {
   language?: string;
+  region?: WireViewerRegion;
   signal?: AbortSignal;
   oauthSession?: OAuthSession;
   moderationDpopProofPool?: string;
@@ -88,6 +90,7 @@ export async function getWireEdition(args: {
   if (process.env.NEXT_PUBLIC_USE_DUMMY_DATA === "true") return dummyWireEdition();
   const params = new URLSearchParams();
   if (args.language) params.set("lang", args.language);
+  if (args.region) params.set("region", args.region);
   const query = params.size > 0 ? `?${params.toString()}` : "";
   const path = `${socialWireXrpc.getWireEdition}${query}`;
 

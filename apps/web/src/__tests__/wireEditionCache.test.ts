@@ -49,7 +49,7 @@ describe("The Wire edition cache", () => {
 
   it("replaces the complete generation instead of mixing old pagination", () => {
     const queryClient = new QueryClient();
-    const key = WIRE_EDITION_QUERY_KEY("en", "baseline");
+    const key = WIRE_EDITION_QUERY_KEY("en", "outside-us", "baseline");
     queryClient.setQueryData<InfiniteData<WireEditionPage, string | undefined>>(
       key,
       {
@@ -61,6 +61,7 @@ describe("The Wire edition cache", () => {
     replaceWireEditionQueryGeneration(
       queryClient,
       "en",
+      "outside-us",
       "baseline",
       edition("new", "New Lead"),
     );
@@ -72,5 +73,11 @@ describe("The Wire edition cache", () => {
     expect(cached?.pages[0]?.generationId).toBe("new");
     expect(cached?.pages[0]?.stories[0]?.title).toBe("New Lead");
     expect(cached?.pageParams).toEqual([undefined]);
+  });
+
+  it("isolates persisted editions by coarse browser region", () => {
+    expect(WIRE_EDITION_QUERY_KEY("en", "default", "baseline")).not.toEqual(
+      WIRE_EDITION_QUERY_KEY("en", "outside-us", "baseline"),
+    );
   });
 });

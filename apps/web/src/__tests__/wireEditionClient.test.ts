@@ -69,7 +69,10 @@ describe("The Wire edition client", () => {
     );
     globalThis.fetch = fetchMock as unknown as typeof fetch;
 
-    const result = await getWireEdition({ language: "en" });
+    const result = await getWireEdition({
+      language: "en",
+      region: "outside-us",
+    });
 
     expect(result.generationId).toBe("generation-1");
     expect(result.stories[0]?.source.iconUrl).toBe(
@@ -77,7 +80,7 @@ describe("The Wire edition client", () => {
     );
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(String(requests[0]?.input)).toBe(
-      "https://api.example.test/xrpc/app.thesocialwire.discovery.getWireEdition?lang=en",
+      "https://api.example.test/xrpc/app.thesocialwire.discovery.getWireEdition?lang=en&region=outside-us",
     );
     expect(requests[0]?.init?.credentials).toBe("omit");
   });

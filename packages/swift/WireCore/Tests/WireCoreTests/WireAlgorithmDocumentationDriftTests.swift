@@ -46,6 +46,8 @@ struct WireAlgorithmDocumentationDriftTests {
       "ten per dominant active-actor community",
       "up to four lead stories",
       "one feature and three supporting stories",
+      "stable three-position penalty",
+      "Stories marked Breaking, Widely Discussed, or Across Communities are exempt",
       "up to six publication panels",
       "fewer than four stories",
       "caps at ten",

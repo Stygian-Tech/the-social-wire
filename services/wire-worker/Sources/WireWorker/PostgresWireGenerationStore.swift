@@ -306,6 +306,26 @@ struct PostgresWireGenerationStore: WireGenerationStore {
         rankedItems: editionItems,
         talkedAboutAccountCandidates: accountCandidates
       )
+      let topicsByItemID = Dictionary(uniqueKeysWithValues: generation.result.items.map {
+        ($0.candidate.canonicalKey, $0.candidate.topicKeys)
+      })
+      let reasonsByItemID = Dictionary(uniqueKeysWithValues: generation.result.items.map {
+        ($0.candidate.canonicalKey, $0.reasonCodes)
+      })
+      let outsideUSItems = WireRegionalEditionRanker.downrankAmericanPolitics(
+        in: editionItems,
+        topicKeys: { topicsByItemID[$0.itemID] ?? [] },
+        reasons: { reasonsByItemID[$0.itemID] ?? [] }
+      )
+      let outsideUSEdition = WireEditionAssembler.assemble(
+        generationID: generation.generationID.uuidString.lowercased(),
+        generatedAt: generation.generatedAt,
+        language: generation.languageBucket,
+        source: .ranked,
+        degraded: false,
+        rankedItems: outsideUSItems,
+        talkedAboutAccountCandidates: accountCandidates
+      )
       let continuationOrdinal = min(50, generation.result.items.count)
       try await connection.query(
         """
@@ -318,65 +338,73 @@ struct PostgresWireGenerationStore: WireGenerationStore {
         logger: logger
       )
 
-      var modulePosition = 0
-      func insertModule(
-        key: String,
-        kind: String,
-        title: String?,
-        reason: String?,
-        publication: WireEditionPublication?,
-        stories: [WireFeedItem]
-      ) async throws {
-        guard !stories.isEmpty else { return }
-        try await connection.query(
-          """
-          INSERT INTO wire_edition_modules
-            (generation_id, module_key, module_kind, title, position, reason_code,
-             publication_key, publication_name, publication_domain,
-             publication_homepage_url, publication_icon_url)
-          VALUES
-            (\(generation.generationID), \(key), \(kind), \(title), \(modulePosition), \(reason),
-             \(publication?.key), \(publication?.name), \(publication?.domain),
-             \(publication?.homepageURL), \(publication?.iconURL))
-          """,
-          logger: logger
-        )
-        for (position, story) in stories.enumerated() {
+      func insertEdition(_ value: WireEdition, namespace: String?) async throws {
+        // Positions are unique across every variant in a generation.
+        var modulePosition = namespace == nil ? 0 : 1_000
+        let prefix = namespace.map { "\($0):" } ?? ""
+        func insertModule(
+          key: String,
+          kind: String,
+          title: String?,
+          reason: String?,
+          publication: WireEditionPublication?,
+          stories: [WireFeedItem]
+        ) async throws {
+          guard !stories.isEmpty else { return }
+          let storedKey = "\(prefix)\(key)"
           try await connection.query(
             """
-            INSERT INTO wire_edition_module_items
-              (generation_id, module_key, position, canonical_key)
-            VALUES (\(generation.generationID), \(key), \(position), \(story.itemID))
+            INSERT INTO wire_edition_modules
+              (generation_id, module_key, module_kind, title, position, reason_code,
+               publication_key, publication_name, publication_domain,
+               publication_homepage_url, publication_icon_url)
+            VALUES
+              (\(generation.generationID), \(storedKey), \(kind), \(title), \(modulePosition), \(reason),
+               \(publication?.key), \(publication?.name), \(publication?.domain),
+               \(publication?.homepageURL), \(publication?.iconURL))
             """,
             logger: logger
           )
+          for (position, story) in stories.enumerated() {
+            try await connection.query(
+              """
+              INSERT INTO wire_edition_module_items
+                (generation_id, module_key, position, canonical_key)
+              VALUES (\(generation.generationID), \(storedKey), \(position), \(story.itemID))
+              """,
+              logger: logger
+            )
+          }
+          modulePosition += 1
         }
-        modulePosition += 1
-      }
-      try await insertModule(
-        key: "top-stories", kind: "top_stories", title: "Top Stories", reason: nil,
-        publication: nil, stories: edition.leadStories
-      )
-      for (index, panel) in edition.publicationPanels.enumerated() {
         try await insertModule(
-          key: "publication-\(index)", kind: "publication_spotlight", title: panel.publication.name,
-          reason: nil, publication: panel.publication, stories: panel.stories
+          key: "top-stories", kind: "top_stories", title: "Top Stories", reason: nil,
+          publication: nil, stories: value.leadStories
+        )
+        for (index, panel) in value.publicationPanels.enumerated() {
+          try await insertModule(
+            key: "publication-\(index)", kind: "publication_spotlight",
+            title: panel.publication.name, reason: nil,
+            publication: panel.publication, stories: panel.stories
+          )
+        }
+        for rail in value.storyRails {
+          try await insertModule(
+            key: rail.id, kind: "story_rail", title: rail.title,
+            reason: rail.reason.rawValue, publication: nil, stories: rail.stories
+          )
+        }
+        try await insertModule(
+          key: "general", kind: "general", title: "More Across the Social Web", reason: nil,
+          publication: nil, stories: value.generalStories
+        )
+        try await insertModule(
+          key: "trending", kind: "trending", title: "Trending", reason: nil,
+          publication: nil, stories: value.trendingStories
         )
       }
-      for rail in edition.storyRails {
-        try await insertModule(
-          key: rail.id, kind: "story_rail", title: rail.title,
-          reason: rail.reason.rawValue, publication: nil, stories: rail.stories
-        )
-      }
-      try await insertModule(
-        key: "general", kind: "general", title: "More Across the Social Web", reason: nil,
-        publication: nil, stories: edition.generalStories
-      )
-      try await insertModule(
-        key: "trending", kind: "trending", title: "Trending", reason: nil,
-        publication: nil, stories: edition.trendingStories
-      )
+      try await insertEdition(edition, namespace: nil)
+      try await insertEdition(outsideUSEdition, namespace: WireViewerRegion.outsideUnitedStates.rawValue)
       for (position, account) in edition.talkedAboutAccounts.enumerated() {
         try await connection.query(
           """

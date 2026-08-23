@@ -22,11 +22,15 @@ import {
   createWireModerationDpopProofPool,
   getWire,
   selectWireLanguage,
+  selectWireViewerRegion,
   wirePageToEntriesPage,
 } from "@/lib/wireFeedClient";
 
-export const WIRE_EDITION_QUERY_KEY = (language: string, modeKey: string) =>
-  ["wireEdition", language, modeKey] as const;
+export const WIRE_EDITION_QUERY_KEY = (
+  language: string,
+  region: string,
+  modeKey: string,
+) => ["wireEdition", language, region, modeKey] as const;
 
 export const WIRE_EDITION_REFRESH_INTERVAL_MS = 5 * 60_000;
 export const WIRE_EDITION_REFRESH_POLICY = {
@@ -53,12 +57,13 @@ function hasModerationScopes(scope: unknown): boolean {
 export function replaceWireEditionQueryGeneration(
   queryClient: QueryClient,
   languageKey: string,
+  regionKey: string,
   modeKey: string,
   fresh: WireEditionPage,
 ): void {
   queryClient.setQueryData<
     InfiniteData<WireEditionPage, string | undefined>
-  >(WIRE_EDITION_QUERY_KEY(languageKey, modeKey), {
+  >(WIRE_EDITION_QUERY_KEY(languageKey, regionKey, modeKey), {
     pages: [fresh],
     pageParams: [undefined],
   });
@@ -82,6 +87,8 @@ export function useWireEdition(args: {
     [catalog.data?.supportedLanguages],
   );
   const languageKey = language ?? "default";
+  const region = useMemo(() => selectWireViewerRegion(), []);
+  const regionKey = region ?? "default";
   const oauthSession = getOAuthSession();
   const moderationCapability = useQuery({
     queryKey: [
@@ -108,7 +115,7 @@ export function useWireEdition(args: {
   const viewerModerationCapable = moderationCapability.data === true;
   const viewerModerationNeedsReauth =
     Boolean(session && oauthSession) && moderationCapability.data === false;
-  const modeKey =
+  const moderationModeKey =
     moderationCheckPending ||
     moderationSessionUnavailable ||
     moderationCapability.isError
@@ -116,7 +123,8 @@ export function useWireEdition(args: {
       : viewerModerationCapable
         ? `viewer:${session?.did ?? "unknown"}`
         : "baseline";
-  const queryKey = WIRE_EDITION_QUERY_KEY(languageKey, modeKey);
+  const modeKey = moderationModeKey;
+  const queryKey = WIRE_EDITION_QUERY_KEY(languageKey, regionKey, modeKey);
   const refreshKeyRef = useRef<string | null>(null);
 
   const requireModerationReady = useCallback(() => {
@@ -140,13 +148,14 @@ export function useWireEdition(args: {
     async (signal?: AbortSignal) => {
       requireModerationReady();
       if (!viewerModerationCapable) {
-        return getWireEdition({ language, signal });
+        return getWireEdition({ language, region, signal });
       }
       if (!oauthSession) throw WIRE_MODERATION_SESSION_ERROR;
       const moderationDpopProofPool =
         await createWireModerationDpopProofPool(oauthSession);
       return getWireEdition({
         language,
+        region,
         signal,
         oauthSession,
         moderationDpopProofPool,
@@ -154,6 +163,7 @@ export function useWireEdition(args: {
     },
     [
       language,
+      region,
       oauthSession,
       requireModerationReady,
       viewerModerationCapable,
@@ -211,6 +221,7 @@ export function useWireEdition(args: {
     queryKey: [
       "wireEditionMore",
       languageKey,
+      regionKey,
       modeKey,
       firstEdition?.generationId ?? "pending",
     ],
@@ -224,15 +235,16 @@ export function useWireEdition(args: {
   });
 
   const refreshFirstPageMutation = useMutation({
-    mutationKey: ["refreshWireEdition", languageKey, modeKey],
+    mutationKey: ["refreshWireEdition", languageKey, regionKey, modeKey],
     mutationFn: async () => fetchEditionPage(),
     onSuccess: (fresh) => {
       queryClient.removeQueries({
-        queryKey: ["wireEditionMore", languageKey, modeKey],
+        queryKey: ["wireEditionMore", languageKey, regionKey, modeKey],
       });
       replaceWireEditionQueryGeneration(
         queryClient,
         languageKey,
+        regionKey,
         modeKey,
         fresh,
       );
