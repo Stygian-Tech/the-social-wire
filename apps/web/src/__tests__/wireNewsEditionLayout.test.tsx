@@ -110,10 +110,9 @@ const page: WireEditionPage = {
     {
       id: "example-news",
       publication: {
-        name: "Example News",
+        name: "news.example",
         domain: "news.example",
         publication: "at://did:plc:news/site.standard.publication/main",
-        homepageUrl: "https://news.example",
       },
       storyIds: ["lead", "analysis"],
     },
@@ -206,6 +205,18 @@ describe("WireNewsEditionLayout", () => {
     expect(
       screen.getByRole("group", { name: "Publication Spotlights carousel" }).className,
     ).toContain("pt-2");
+    const publicationSpotlight = container.querySelector(
+      '[data-wire-publication-spotlight="example-news"]',
+    );
+    const publicationSpotlightHeader = publicationSpotlight?.firstElementChild;
+    expect(publicationSpotlightHeader?.textContent).toContain("Example News");
+    expect(publicationSpotlightHeader?.textContent).toContain("news.example");
+    expect(
+      publicationSpotlightHeader?.querySelector("a")?.getAttribute("href"),
+    ).toBe("https://news.example");
+    expect(
+      publicationSpotlightHeader?.querySelector("img")?.getAttribute("src"),
+    ).toBe("https://news.example/icon.png");
 
     const lead = container.querySelector('[data-wire-story-id="lead"]');
     const leadText = lead?.textContent ?? "";
@@ -257,6 +268,47 @@ describe("WireNewsEditionLayout", () => {
     expect(scrollContainer?.firstElementChild?.className).toContain(
       "max-w-[calc(var(--reader-shell-width)-var(--sidebar-width))]",
     );
+  });
+
+  it("keeps an authoritative spotlight name while filling missing artwork from its stories", async () => {
+    const { effectiveSpotlightPublication } = await import(
+      "@/components/Wire/WirePublicationSpotlights"
+    );
+    const resolved = effectiveSpotlightPublication(
+      {
+        id: "authoritative",
+        publication: {
+          name: "The Authoritative Daily",
+          domain: "authoritative.example",
+        },
+        storyIds: ["story"],
+      },
+      [
+        {
+          entryId: "story",
+          title: "Story",
+          publishedAt: "2026-08-21T12:00:00.000Z",
+          wireItem: {
+            itemId: "story",
+            source: {
+              name: "A Later Child Name",
+              domain: "authoritative.example",
+              homepageUrl: "https://authoritative.example",
+              iconUrl: "https://authoritative.example/icon.png",
+            },
+            reasons: [],
+            provenance: [],
+          },
+        },
+      ],
+    );
+
+    expect(resolved).toEqual({
+      name: "The Authoritative Daily",
+      domain: "authoritative.example",
+      homepageUrl: "https://authoritative.example",
+      iconUrl: "https://authoritative.example/icon.png",
+    });
   });
 
   it("provides keyboard-focusable carousel controls with reduced-motion-aware scrolling", async () => {

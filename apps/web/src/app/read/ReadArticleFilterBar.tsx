@@ -74,24 +74,9 @@ export function ReadArticleFilterBar() {
   const feedTitle = activeFeedScope.displayName.trim() || routeFeedTitle;
 
   if (isWire) {
-    const firstPage = wire.data?.pages[0];
-    const degraded =
-      firstPage?.degraded === true ||
-      (firstPage?.source != null && firstPage.source !== "ranked");
-    const subtitle = "Important stories across the social web";
-    const statusDetails: string[] = [];
-    if (degraded) statusDetails.push("Showing fallback results");
-    if (wire.viewerModerationNeedsReauth) {
-      statusDetails.push(
-        "Baseline moderation; sign out and sign in again to apply your Bluesky moderation settings",
-      );
-    } else if (wire.viewerModerationError) {
-      statusDetails.push("Your moderation settings could not be applied; retry");
-    }
     return (
       <FeedHeader
         title="The Wire"
-        subtitle={[subtitle, ...statusDetails].join(" · ")}
         className={readFeedHeaderClassName(isWire)}
       >
         <Button

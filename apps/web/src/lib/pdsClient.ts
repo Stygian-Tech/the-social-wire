@@ -39,6 +39,13 @@ import {
   USER_INPUT_UPVOTE_COLLECTION,
   type UserInputStrongRef,
 } from "@/lib/userInputFeedback";
+import {
+  normalizeWireFeedbackUrl,
+  WIRE_ARTICLE_FEEDBACK_COLLECTION,
+  wireFeedbackRkey,
+  type WireArticleFeedbackRecord,
+  type WireArticleFeedbackValue,
+} from "@/lib/wireArticleFeedback";
 
 // ── Lexicon collection IDs ────────────────────────────────────────────────────
 
@@ -764,6 +771,61 @@ export class PDSClient {
       repo: this.did,
       collection: STANDARD_SITE_RECOMMEND_COLLECTION,
       rkey: rkeyFromURI(uriOrRkey),
+    });
+  }
+
+  async listWireArticleFeedback(): Promise<
+    RepoRecord<WireArticleFeedbackRecord>[]
+  > {
+    const all: RepoRecord<WireArticleFeedbackRecord>[] = [];
+    let cursor: string | undefined;
+    do {
+      const response = await this.agent.api.com.atproto.repo.listRecords({
+        repo: this.did,
+        collection: WIRE_ARTICLE_FEEDBACK_COLLECTION,
+        limit: 100,
+        cursor,
+      });
+      all.push(
+        ...(response.data.records as unknown as RepoRecord<WireArticleFeedbackRecord>[]),
+      );
+      cursor = response.data.cursor ?? undefined;
+    } while (cursor);
+    return all;
+  }
+
+  async putWireArticleFeedback(input: {
+    canonicalUrl: string;
+    subject?: string;
+    value: WireArticleFeedbackValue;
+    createdAt?: string;
+  }): Promise<{ uri: string; cid: string }> {
+    const canonicalUrl = normalizeWireFeedbackUrl(input.canonicalUrl);
+    if (!canonicalUrl) {
+      throw new Error("Article feedback requires a public article URL.");
+    }
+    const now = new Date().toISOString();
+    const response = await this.agent.api.com.atproto.repo.putRecord({
+      repo: this.did,
+      collection: WIRE_ARTICLE_FEEDBACK_COLLECTION,
+      rkey: await wireFeedbackRkey(canonicalUrl),
+      record: {
+        $type: WIRE_ARTICLE_FEEDBACK_COLLECTION,
+        canonicalUrl,
+        ...(input.subject ? { subject: input.subject } : {}),
+        value: input.value,
+        createdAt: input.createdAt ?? now,
+        updatedAt: now,
+      } satisfies WireArticleFeedbackRecord,
+    });
+    return { uri: response.data.uri, cid: response.data.cid };
+  }
+
+  async deleteWireArticleFeedback(canonicalUrl: string): Promise<void> {
+    await this.agent.api.com.atproto.repo.deleteRecord({
+      repo: this.did,
+      collection: WIRE_ARTICLE_FEEDBACK_COLLECTION,
+      rkey: await wireFeedbackRkey(canonicalUrl),
     });
   }
 

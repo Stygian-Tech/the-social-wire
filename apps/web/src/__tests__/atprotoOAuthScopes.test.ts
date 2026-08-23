@@ -30,6 +30,7 @@ describe("atprotoOAuthScopes", () => {
   it("includes required repo collections", () => {
     expect(AT_PROTO_OAUTH_SCOPES).toContain("atproto");
     expect(AT_PROTO_OAUTH_SCOPES).toContain("app.thesocialwire.folder");
+    expect(AT_PROTO_OAUTH_SCOPES).toContain("app.thesocialwire.wireFeedback");
     expect(AT_PROTO_OAUTH_SCOPES).not.toContain(
       "app.thesocialwire.entryReadState"
     );
@@ -60,7 +61,7 @@ describe("atprotoOAuthScopes", () => {
             scope.startsWith("blob:")
         )
     ).toBe(true);
-    expect(SOCIAL_WIRE_REPO_SCOPES).toHaveLength(6);
+    expect(SOCIAL_WIRE_REPO_SCOPES).toHaveLength(7);
     expect(BLUESKY_SOCIAL_PERMISSION_SCOPES).toEqual([
       "include:app.bsky.authCreatePosts?aud=did:web:api.bsky.app%23bsky_appview",
       "include:app.bsky.authDeleteContent?aud=did:web:api.bsky.app%23bsky_appview",

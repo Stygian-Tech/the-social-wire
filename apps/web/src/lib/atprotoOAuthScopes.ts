@@ -26,6 +26,7 @@ export const SOCIAL_WIRE_REPO_SCOPES = [
   "repo:app.thesocialwire.folder?action=create&action=update&action=delete",
   "repo:app.thesocialwire.publicationPrefs?action=create&action=update&action=delete",
   "repo:app.thesocialwire.preferences?action=create&action=update&action=delete",
+  "repo:app.thesocialwire.wireFeedback?action=create&action=update&action=delete",
   "repo:com.thesocialwire.folder?action=create&action=update&action=delete",
   "repo:com.thesocialwire.publicationPrefs?action=create&action=update&action=delete",
   "repo:com.thesocialwire.preferences?action=create&action=update&action=delete",
