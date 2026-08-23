@@ -256,14 +256,15 @@ func TestLoadWirePipelineUsesIndependentIdentityAndGlobalCollections(t *testing.
 	if cfg.SourceGeneration != WireSourceGeneration || cfg.ScopePolicy != WireScopePolicy {
 		t.Fatalf("wire identity = generation %q policy %q", cfg.SourceGeneration, cfg.ScopePolicy)
 	}
-	if cfg.LeaderLeaseName != "wire-global-v1-ingest" {
+	if cfg.LeaderLeaseName != "wire-global-v2-ingest" {
 		t.Fatalf("wire lease name = %q", cfg.LeaderLeaseName)
 	}
 	if cfg.SegmentStripes != WireSegmentStripes {
 		t.Fatalf("wire segment stripes = %d, want %d", cfg.SegmentStripes, WireSegmentStripes)
 	}
 	for _, required := range []string{
-		"site.standard.graph.recommend", "app.bsky.feed.post", "app.bsky.feed.like",
+		"site.standard.graph.recommend", "app.thesocialwire.wireFeedback",
+		"app.bsky.feed.post", "app.bsky.feed.like",
 		"app.bsky.feed.repost", "app.bsky.graph.follow",
 	} {
 		if !slices.Contains(cfg.Collections, required) {

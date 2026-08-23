@@ -21,8 +21,8 @@ const (
 	DefaultScopePolicy      = "publication-author-viewer-v1"
 	DefaultPipelineMode     = "publication-author-viewer-v1"
 	WirePipelineMode        = "wire-global-v1"
-	WireSourceGeneration    = "wire-global-v1"
-	WireScopePolicy         = "wire-global-v1"
+	WireSourceGeneration    = "wire-global-v2"
+	WireScopePolicy         = "wire-global-v2"
 	DefaultSegmentStripes   = 4
 	WireSegmentStripes      = 1
 )
@@ -41,6 +41,7 @@ var WireCollections = []string{
 	"site.standard.entry",
 	"site.standard.publication",
 	"site.standard.graph.recommend",
+	"app.thesocialwire.wireFeedback",
 	"app.bsky.feed.post",
 	"app.bsky.feed.like",
 	"app.bsky.feed.repost",
@@ -91,7 +92,7 @@ func Load() (Config, error) {
 		defaultCollections = WireCollections
 		defaultGeneration = WireSourceGeneration
 		defaultScopePolicy = WireScopePolicy
-		defaultLeaseName = "wire-global-v1-ingest"
+		defaultLeaseName = "wire-global-v2-ingest"
 		defaultSegmentStripes = WireSegmentStripes
 	}
 	collections := envCSV("JETSTREAM_COLLECTIONS", defaultCollections)
@@ -180,7 +181,7 @@ func (c Config) Validate() error {
 		}
 	}
 	if c.PipelineMode == WirePipelineMode && c.ScopePolicy != WireScopePolicy {
-		problems = append(problems, errors.New("Wire pipeline must use the wire-global-v1 scope policy"))
+		problems = append(problems, errors.New("Wire pipeline must use the wire-global-v2 scope policy"))
 	}
 	if c.ScopePolicy == "" {
 		problems = append(problems, errors.New("Jetstream scope policy is required"))

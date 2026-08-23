@@ -21,12 +21,27 @@ struct WireRankingConfigTests {
         distinctSharers24h: 0, shareVelocity1h: 0, likeBreadthVelocity: 0,
         repostBreadthVelocity: 0, communitySpread: 0, freshness: 0,
         resurfacingAcceleration: 0, sourceConfidence: 0,
-        standardSiteAuthority: 0, openGraphMetadata: 0
+        standardSiteAuthority: 0, openGraphMetadata: 0,
+        recommendationBreadth: 0, positiveFeedbackBreadth: 0
       )).validate()
     }
 
     #expect(throws: WireRankingConfigError.invalidDiversityCap) {
       try WireRankingConfig(diversity: .init(maxPerDomain: 0)).validate()
+    }
+  }
+
+  @Test("rejects invalid domain penalties")
+  func rejectsInvalidDomainPenalties() {
+    #expect(throws: WireRankingConfigError.invalidThreshold) {
+      try WireRankingConfig(
+        domainPenalties: .init(penalties: ["youtube.com": 0.21])
+      ).validate()
+    }
+    #expect(throws: WireRankingConfigError.invalidThreshold) {
+      try WireRankingConfig(
+        domainPenalties: .init(penalties: ["YouTube.com": 0.06])
+      ).validate()
     }
   }
 }

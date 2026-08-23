@@ -103,6 +103,52 @@ struct WireRankerTests {
     ])
   }
 
+  @Test("explicit quality signals rank recommendation above feedback above a like")
+  func qualitySignalHierarchy() throws {
+    var liked = candidate("a-liked", actors: 5)
+    liked.likes24h = 1
+    liked.likes1h = 1
+    liked.distinctLikes24h = 1
+    var feedback = candidate("b-feedback", actors: 5)
+    feedback.positiveFeedback24h = 1
+    var recommended = candidate("c-recommended", actors: 5, recommendations: 1)
+    recommended.shares24h = 5
+    let result = try WireRanker.rank(
+      candidates: [liked, feedback, recommended], asOf: now, config: .init()
+    )
+    #expect(result.items.map(\.candidate.canonicalKey) == [
+      "c-recommended", "b-feedback", "a-liked",
+    ])
+  }
+
+  @Test("feedback cannot admit and negative feedback is bounded")
+  func feedbackIsBoundedAndCannotAdmit() throws {
+    var quiet = candidate("quiet-feedback", actors: 0)
+    quiet.shares24h = 0
+    quiet.positiveFeedback24h = 10
+    var discussed = candidate("discussed", actors: 5)
+    discussed.negativeFeedback24h = 10
+    let result = try WireRanker.rank(
+      candidates: [quiet, discussed], asOf: now, config: .init()
+    )
+    #expect(result.items.map(\.candidate.canonicalKey) == ["discussed"])
+    #expect(result.items[0].score >= 0)
+  }
+
+  @Test("platform destination penalties match exact hosts and subdomains only")
+  func platformDestinationPenalty() throws {
+    var publisher = candidate("a-publisher", actors: 5)
+    publisher.sourceDomain = "notyoutube.com"
+    var platform = candidate("b-platform", actors: 5)
+    platform.sourceDomain = "www.youtube.com"
+    let result = try WireRanker.rank(
+      candidates: [platform, publisher], asOf: now, config: .init()
+    )
+    #expect(result.items.map(\.candidate.canonicalKey) == ["a-publisher", "b-platform"])
+    #expect(WireDomainPenaltyPolicy().penalty(for: "www.instagram.com") == 0.05)
+    #expect(WireDomainPenaltyPolicy().penalty(for: "notreddit.com") == 0)
+  }
+
   @Test("quality backfill fills a sparse edition before general backfill")
   func qualityBackfill() throws {
     let quality = candidate("quality", actors: 3, openGraph: true)
