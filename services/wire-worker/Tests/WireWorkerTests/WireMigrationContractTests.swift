@@ -156,6 +156,26 @@ struct WireMigrationContractTests {
     }
     #expect(!unloggedSQL.contains("ALTER TABLE wire_ranked_items SET UNLOGGED"))
 
+    let anchorRepairMigration = migration.deletingLastPathComponent()
+      .appendingPathComponent("20260823210000_repair_wire_recovery_anchor_tuples.sql")
+    let anchorRepairSQL = try String(contentsOf: anchorRepairMigration, encoding: .utf8)
+    #expect(anchorRepairSQL.contains("CREATE TEMP TABLE wire_anchor_evidence"))
+    #expect(anchorRepairSQL.contains("DELETE FROM wire_ingestion_recovery_anchors anchor"))
+    #expect(anchorRepairSQL.contains("checkpoint_seq,\n         anchor.checkpoint_event_time"))
+    #expect(anchorRepairSQL.contains("ORDER BY environment, source_generation, seq, event_time"))
+    #expect(anchorRepairSQL.contains("Wire epoch has no exact recovery anchor"))
+
+    let ingestStore = migration.deletingLastPathComponent()
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+      .appendingPathComponent("services/jetstream-ingest/internal/store/postgres.go")
+    let ingestStoreSource = try String(contentsOf: ingestStore, encoding: .utf8)
+    #expect(ingestStoreSource.contains("WHEN EXCLUDED.checkpoint_seq"))
+    #expect(
+      ingestStoreSource.contains(
+        "THEN EXCLUDED.checkpoint_event_time\n\t\t\t        ELSE wire_ingestion_recovery_anchors.checkpoint_event_time"))
+    #expect(!ingestStoreSource.contains("checkpoint_event_time = LEAST("))
+
     let qualityIndexMigration = migration.deletingLastPathComponent()
       .appendingPathComponent("20260822212900_prepare_wire_quality_ranking_index.sql")
     let qualityIndexSQL = try String(contentsOf: qualityIndexMigration, encoding: .utf8)

@@ -554,18 +554,22 @@ func (p *Postgres) StageBatch(ctx context.Context, lease Lease, events []ingest.
 			     checkpoint_event_time, captured_at)
 			  VALUES ($1, $2, date_trunc('hour', NOW()), $3, $4, NOW())
 			  ON CONFLICT (environment, source_generation, anchor_bucket) DO UPDATE
-			  SET checkpoint_seq = LEAST(
+			  SET checkpoint_event_time = CASE
+			        WHEN EXCLUDED.checkpoint_seq
+			          < wire_ingestion_recovery_anchors.checkpoint_seq
+			        THEN EXCLUDED.checkpoint_event_time
+			        ELSE wire_ingestion_recovery_anchors.checkpoint_event_time
+			      END,
+			      checkpoint_seq = LEAST(
 			        wire_ingestion_recovery_anchors.checkpoint_seq,
 			        EXCLUDED.checkpoint_seq
 			      ),
-			      checkpoint_event_time = LEAST(
-			        wire_ingestion_recovery_anchors.checkpoint_event_time,
-			        EXCLUDED.checkpoint_event_time
-			      ),
-			      captured_at = LEAST(
-			        wire_ingestion_recovery_anchors.captured_at,
-			        EXCLUDED.captured_at
-			      )
+			      captured_at = CASE
+			        WHEN EXCLUDED.checkpoint_seq
+			          < wire_ingestion_recovery_anchors.checkpoint_seq
+			        THEN EXCLUDED.captured_at
+			        ELSE wire_ingestion_recovery_anchors.captured_at
+			      END
 			  RETURNING anchor_bucket
 			), boundary AS (
 			  SELECT MAX(captured_at) AS captured_at
