@@ -33,6 +33,7 @@ public enum ATProtoOAuthScopes {
   ]
 
   private static let webOnlyScopes = [
+    "repo:app.thesocialwire.wireFeedback?action=create&action=update&action=delete",
     "include:site.standard.authSocial",
     "repo:app.skyreader.feed.subscription?action=create&action=update&action=delete",
     "include:app.userinput.authFull",

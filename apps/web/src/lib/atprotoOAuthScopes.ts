@@ -26,7 +26,6 @@ export const SOCIAL_WIRE_REPO_SCOPES = [
   "repo:app.thesocialwire.folder?action=create&action=update&action=delete",
   "repo:app.thesocialwire.publicationPrefs?action=create&action=update&action=delete",
   "repo:app.thesocialwire.preferences?action=create&action=update&action=delete",
-  "repo:app.thesocialwire.wireFeedback?action=create&action=update&action=delete",
   "repo:com.thesocialwire.folder?action=create&action=update&action=delete",
   "repo:com.thesocialwire.publicationPrefs?action=create&action=update&action=delete",
   "repo:com.thesocialwire.preferences?action=create&action=update&action=delete",
@@ -55,6 +54,9 @@ export const WIRE_MODERATION_RPC_SCOPES = [
 export const STANDARD_SITE_SOCIAL_PERMISSION_SCOPE =
   "include:site.standard.authSocial";
 
+export const WIRE_FEEDBACK_REPO_SCOPE =
+  "repo:app.thesocialwire.wireFeedback?action=create&action=update&action=delete";
+
 export const SKYREADER_REPO_SCOPES = [
   "repo:app.skyreader.feed.subscription?action=create&action=update&action=delete",
 ] as const;
@@ -66,6 +68,7 @@ export const AT_PROTO_OAUTH_SCOPES = [
   ...WIRE_MODERATION_RPC_SCOPES,
   ...BLUESKY_SOCIAL_REPO_SCOPES,
   ...LATR_REPO_OAUTH_SCOPES,
+  WIRE_FEEDBACK_REPO_SCOPE,
   STANDARD_SITE_SOCIAL_PERMISSION_SCOPE,
   ...SKYREADER_REPO_SCOPES,
   USER_INPUT_OAUTH_SCOPE,
