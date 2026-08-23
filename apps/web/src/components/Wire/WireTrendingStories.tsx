@@ -21,13 +21,15 @@ export function WireTrendingStories({
       <h2 id="wire-trending-stories" className="mb-3 text-lg font-bold text-foreground">
         Trending Stories
       </h2>
-      <div className="grid gap-2">
-        {stories.slice(0, 10).map((story, index) => (
+      <div
+        data-wire-trending-list
+        className="grid divide-y divide-border/60 dark:divide-border/45"
+      >
+        {stories.slice(0, 10).map((story) => (
           <WireStoryCard
             key={story.entryId}
             story={story}
             variant="trending"
-            rank={index + 1}
             onSelect={onSelect}
           />
         ))}

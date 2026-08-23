@@ -165,17 +165,32 @@ describe("WireNewsEditionLayout", () => {
     expect(trending?.getAttribute("tabindex")).toBe("0");
     expect(trending?.className).toContain("xl:overflow-y-auto");
     expect(trending?.className).toContain("xl:[scrollbar-gutter:stable]");
+    expect(
+      trending?.querySelector("[data-wire-trending-list]")?.className,
+    ).toContain("divide-y");
     const trendingStory = trending?.querySelector(
       '[data-wire-story-id="analysis"]',
     );
     expect(trendingStory?.className).toContain(
       "grid-cols-[minmax(0,1fr)_7rem]",
     );
-    expect(trendingStory?.textContent).toContain("By Riley Reporter");
-    expect(trendingStory?.textContent).toContain("analysis.example");
+    expect(trendingStory?.className).toContain("rounded-none");
+    expect(trendingStory?.className).toContain("shadow-none");
+    expect(trendingStory?.textContent).toContain("Analysis Daily");
+    expect(trendingStory?.textContent).toContain("A Deeper Analysis");
+    expect(trendingStory?.textContent).toContain("Aug 21");
+    expect(trendingStory?.textContent).not.toContain("By Riley Reporter");
+    expect(trendingStory?.textContent).not.toContain("analysis.example");
+    expect(trendingStory?.textContent).not.toContain("Widely Discussed");
     expect(trendingStory?.querySelector("img")?.getAttribute("src")).toBe(
       "https://analysis.example/thumbnail.jpg",
     );
+    expect(
+      trendingStory?.querySelector("[data-wire-trending-actions]")?.className,
+    ).toContain("[@media(hover:hover)]:opacity-0");
+    expect(
+      trendingStory?.querySelector("[data-wire-trending-actions]")?.className,
+    ).toContain("group-focus-within/story:opacity-100");
     expect(screen.getByRole("heading", { name: "Widely Discussed" })).toBeDefined();
     expect(screen.getByRole("heading", { name: "More Stories" })).toBeDefined();
     expect(screen.getByText("Important Person")).toBeDefined();
