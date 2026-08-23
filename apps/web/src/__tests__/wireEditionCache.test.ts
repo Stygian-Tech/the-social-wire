@@ -43,7 +43,7 @@ describe("The Wire edition cache", () => {
       refetchInterval: 5 * 60_000,
       refetchIntervalInBackground: false,
       refetchOnMount: "always",
-      refetchOnWindowFocus: false,
+      refetchOnWindowFocus: "always",
     });
   });
 

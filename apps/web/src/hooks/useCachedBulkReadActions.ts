@@ -16,6 +16,8 @@ import {
 } from "@/lib/publicationProjectionClient";
 import { distinctCachedEntryIdsForPublications } from "@/lib/unreadCounts";
 import { PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY } from "@/lib/sidebarQueryKeys";
+import { applyUnreadCountsEvent } from "@/lib/bootstrapStreamState";
+import type { PublicationSidebarProjection } from "@/lib/publicationProjectionClient";
 import type { DiscoveredPublication } from "@/lib/atprotoClient";
 import type { EntriesPage } from "@/hooks/useEntries";
 
@@ -80,8 +82,39 @@ export function useCachedBulkReadActions(
       }));
     if (oauth && scopes.length > 0) {
       void Promise.all(scopes.map((scope) => markAllReadOnGateway(oauth, scope)))
-        .then(() => {
+        .then((confirmations) => {
           if (!viewerDid) return;
+          const confirmedCounts = Object.assign(
+            {},
+            ...confirmations.map((confirmation) => confirmation.unreadCounts ?? {})
+          ) as Record<string, number>;
+          const replacePublicationIds = [
+            ...new Set([
+              ...publications.map((publication) => publication.publicationId),
+              ...confirmations.flatMap((confirmation) =>
+                (confirmation.boundaries ?? []).map(
+                  (boundary) => boundary.publicationId
+                )
+              ),
+              ...Object.keys(confirmedCounts),
+            ]),
+          ];
+          const confirmedAt = confirmations
+            .map((confirmation) => confirmation.confirmedAt)
+            .filter(Boolean)
+            .sort()
+            .at(-1);
+          queryClient.setQueryData<PublicationSidebarProjection>(
+            PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(viewerDid),
+            (current) =>
+              current
+                ? applyUnreadCountsEvent(current, confirmedCounts, {
+                    replacePublicationIds,
+                    accuracy: "exact",
+                    countedAt: confirmedAt,
+                  })
+                : current
+          );
           // Entries that landed in the cache between the initial snapshot and
           // the gateway confirming (e.g. a background prefetch mid-flight)
           // never got an explicit local read mark. effectivePublicationUnreadCount
@@ -99,11 +132,8 @@ export function useCachedBulkReadActions(
               syncToAppView: false,
             });
           }
-          // The optimistic clearPublicationUnreadCounts patch above (via
-          // markEntriesRead) only lives in memory and can be lost to a reload
-          // before the persisted IndexedDB snapshot catches up (persist writes
-          // are throttled). Force a refetch against the now-confirmed server
-          // state so the sidebar badge can't get stuck showing a stale count.
+          // Persist the authoritative response immediately, then refetch to
+          // reconcile any entries that arrived after the server boundary.
           void queryClient.invalidateQueries({
             queryKey: PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(viewerDid),
           });

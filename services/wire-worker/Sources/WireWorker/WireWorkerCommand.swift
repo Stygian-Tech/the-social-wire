@@ -16,6 +16,7 @@ struct WireWorkerCommand: AsyncParsableCommand {
   @Option(name: .long) var hostname: String?
 
   mutating func run() async throws {
+    LoggingSystem.bootstrap { RailwaySeverityLogHandler(label: $0) }
     var logger = Logger(label: "com.thesocialwire.wire-worker")
     logger.logLevel = .info
     let serviceLogger = logger

@@ -13,7 +13,7 @@ import type { DiscoveredPublication } from "@/lib/atprotoClient";
 import type { PublicationTab } from "./appSidebarConstants";
 import { SidebarMenuBadge } from "@/components/ui/sidebar";
 import { SidebarReadBulkMenuWrap } from "./SidebarReadBulkMenuWrap";
-import { WireAlphaBadge } from "@/components/Wire/WireAlphaBadge";
+import { WireBetaBadge } from "@/components/Wire/WireBetaBadge";
 
 export function PublicationTabs({
   activeTab,
@@ -51,14 +51,14 @@ export function PublicationTabs({
             <SidebarMenuButton
               type="button"
               role="tab"
-              aria-label="The Wire, Alpha"
+              aria-label="The Wire, Beta"
               aria-selected={wireActive}
               isActive={wireActive}
               onClick={onWireSelect}
             >
               <Rss />
               <span>The Wire</span>
-              <WireAlphaBadge />
+              <WireBetaBadge className="ml-auto" />
             </SidebarMenuButton>
           </SidebarMenuItem>
         ) : null}

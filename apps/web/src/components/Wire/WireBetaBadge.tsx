@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils";
 
-export function WireAlphaBadge({ className }: { className?: string }) {
+export function WireBetaBadge({ className }: { className?: string }) {
   return (
     <span
       className={cn(
@@ -8,7 +8,7 @@ export function WireAlphaBadge({ className }: { className?: string }) {
         className,
       )}
     >
-      Alpha
+      Beta
     </span>
   );
 }
