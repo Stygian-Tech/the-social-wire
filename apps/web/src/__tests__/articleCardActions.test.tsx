@@ -64,6 +64,7 @@ describe("article card actions", () => {
     const entry: EntryListItem = {
       entryId: "at://did:plc:author/app.bsky.feed.post/article",
       title: "Wire Article",
+      publishedAt: "2026-08-22T00:00:00.000Z",
       originalUrl: "https://example.com/article",
     };
     const { rerender } = render(<EntryCardActionMenu entry={entry} />);
