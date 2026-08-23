@@ -62,7 +62,7 @@ actor PostgresWireFeedStore: WireFeedStore {
       }
       generation = retained
       startOrdinal = decoded.nextOrdinal
-    } else if let active = try await activeGeneration(language: requestedLanguage) {
+    } else if let active = try await activeGeneration(language: requestedLanguage, now: now) {
       generation = active
       startOrdinal = 0
     } else {
@@ -142,7 +142,7 @@ actor PostgresWireFeedStore: WireFeedStore {
     guard mode.servesAPI else { throw WireServingError.unavailable }
     try await requireUsableBaselineLabels(now: now)
     let requestedLanguage = Self.primaryLanguage(language)
-    guard let generation = try await activeGeneration(language: requestedLanguage) else {
+    guard let generation = try await activeGeneration(language: requestedLanguage, now: now) else {
       let page = try await getFeed(
         cursor: nil,
         limit: 50,
@@ -442,21 +442,21 @@ actor PostgresWireFeedStore: WireFeedStore {
     throw WireServingError.moderationUnavailable
   }
 
-  private func activeGeneration(language: String) async throws -> Generation? {
-    if language != "und", let localized = try await activeGeneration(exactLanguage: language) {
+  private func activeGeneration(language: String, now: Date) async throws -> Generation? {
+    if language != "und", let localized = try await activeGeneration(exactLanguage: language, now: now) {
       return localized
     }
-    return try await activeGeneration(exactLanguage: "und")
+    return try await activeGeneration(exactLanguage: "und", now: now)
   }
 
-  private func activeGeneration(exactLanguage language: String) async throws -> Generation? {
+  private func activeGeneration(exactLanguage language: String, now: Date) async throws -> Generation? {
     let rows = try await pool.query(
       """
       SELECT g.generation_id, g.language_bucket, g.generated_at, g.expires_at
       FROM wire_feed_state state
       JOIN wire_rank_generations g ON g.generation_id = state.active_generation_id
       WHERE state.feed_key = 'wire' AND state.language_bucket = \(language)
-        AND g.status = 'committed'
+        AND g.status = 'committed' AND g.expires_at > \(now)
       LIMIT 1
       """,
       logger: logger

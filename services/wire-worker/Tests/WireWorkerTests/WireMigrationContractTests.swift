@@ -60,6 +60,8 @@ struct WireMigrationContractTests {
     #expect(processor.contains("unresolved_publication_expired"))
     #expect(processor.contains("event.attemptCount >= 8"))
     #expect(processor.contains("DELETE FROM wire_follow_edges WHERE source_uri"))
+    #expect(processor.contains("Self.isSelfFollow(follower: follower, followee: followee)"))
+    #expect(processor.contains("pg_advisory_xact_lock(hashtext('wire_signal_rollups_refresh')::bigint)"))
     #expect(processor.contains("func acknowledgeUnresolvedPassiveReferences"))
     #expect(processor.contains("candidate.event_kind = 'commit'"))
     #expect(

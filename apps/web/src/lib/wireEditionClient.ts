@@ -60,11 +60,16 @@ export type WireEditionPage = {
   moreCursor?: string;
 };
 
-function publicGatewayFetch(path: string, signal?: AbortSignal): Promise<Response> {
+function publicGatewayFetch(
+  path: string,
+  signal?: AbortSignal,
+  bypassCache = false,
+): Promise<Response> {
   return fetch(`${gatewayBaseUrl()}${path}`, {
     method: "GET",
     credentials: "omit",
     signal,
+    cache: bypassCache ? "no-store" : "default",
     headers: { Accept: "application/json" },
   });
 }
@@ -86,6 +91,7 @@ export async function getWireEdition(args: {
   signal?: AbortSignal;
   oauthSession?: OAuthSession;
   moderationDpopProofPool?: string;
+  bypassCache?: boolean;
 } = {}): Promise<WireEditionPage> {
   if (process.env.NEXT_PUBLIC_USE_DUMMY_DATA === "true") return dummyWireEdition();
   const params = new URLSearchParams();
@@ -104,10 +110,11 @@ export async function getWireEdition(args: {
     response = await gatewayFetch(args.oauthSession, path, {
       method: "GET",
       signal: args.signal,
+      cache: args.bypassCache ? "no-store" : "default",
       headers: { [WIRE_MODERATION_DPOP_HEADER]: proofPool },
     });
   } else {
-    response = await publicGatewayFetch(path, args.signal);
+    response = await publicGatewayFetch(path, args.signal, args.bypassCache);
   }
 
   if (!response.ok) throw await responseError(response);

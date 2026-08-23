@@ -709,6 +709,13 @@ struct PostgresWireInboxProcessor: Sendable {
     guard let subject = record["subject"] as? String else { throw ApplyError.malformed }
     let follower = try actorHasher.hash(event.repoDID)
     let followee = try actorHasher.hash(subject)
+    if Self.isSelfFollow(follower: follower, followee: followee) {
+      try await pool.query(
+        "DELETE FROM wire_follow_edges WHERE source_uri = \(sourceURI)",
+        logger: logger
+      )
+      return
+    }
     guard try await isActiveActor(hash: follower, asOf: asOf) else { return }
     let expiresAt = asOf.addingTimeInterval(WireDataPolicy.followEdgeRetention)
     try await pool.withTransaction(logger: logger) { connection in
@@ -741,6 +748,10 @@ struct PostgresWireInboxProcessor: Sendable {
       """,
       logger: logger
     )
+  }
+
+  static func isSelfFollow(follower: String, followee: String) -> Bool {
+    follower == followee
   }
 
   private func applyAccountLifecycle(_ event: InboxEvent, asOf: Date) async throws {
@@ -1046,6 +1057,10 @@ struct PostgresWireInboxProcessor: Sendable {
 
   private func refreshRollups(asOf: Date) async throws {
     try await pool.withTransaction(logger: logger) { connection in
+      try await connection.query(
+        "SELECT pg_advisory_xact_lock(hashtext('wire_signal_rollups_refresh')::bigint)",
+        logger: logger
+      )
       try await connection.query(
         "DELETE FROM wire_signal_rollups",
         logger: logger
