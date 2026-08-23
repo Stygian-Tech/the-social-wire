@@ -25,6 +25,10 @@ import { useWireEdition } from "@/hooks/useWireEdition";
 import { useWireFeedEntries } from "@/hooks/useWireFeed";
 import { isWireNewsEditionEnabled } from "@/lib/wireEditionClient";
 
+export function readFeedHeaderClassName(isWire: boolean) {
+  return isWire ? "pt-3" : undefined;
+}
+
 /**
  * Global All / Unread toggle for the read shell (applies to whichever publication is open).
  */
@@ -88,6 +92,7 @@ export function ReadArticleFilterBar() {
       <FeedHeader
         title="The Wire"
         subtitle={[subtitle, ...statusDetails].join(" · ")}
+        className={readFeedHeaderClassName(isWire)}
       >
         <Button
           type="button"

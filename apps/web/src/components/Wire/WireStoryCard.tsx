@@ -93,7 +93,7 @@ export function WireStoryCard({
           "lg:grid lg:grid-cols-[minmax(0,1fr)_9rem]",
         variant === "compact" && "rounded-xl shadow-sm",
         variant === "trending" &&
-          "grid grid-cols-[minmax(0,1fr)_7rem] rounded-xl shadow-sm",
+          "grid grid-cols-[minmax(0,1fr)_7rem] rounded-none border-0 bg-transparent shadow-none hover:border-transparent hover:bg-muted/35 hover:shadow-none dark:bg-transparent",
       )}
     >
       {showImage ? (
@@ -138,16 +138,17 @@ export function WireStoryCard({
           variant === "lead" && "p-4 sm:p-5",
           variant === "supporting" &&
             "lg:col-start-1 lg:row-start-1 lg:self-center lg:p-3",
-          variant === "trending" && "col-start-1 row-start-1 p-2.5 pr-1",
+          variant === "trending" && "col-start-1 row-start-1 p-3 pr-1",
         )}
       >
         <div
           className={cn(
             "mb-2 flex min-w-0 items-center gap-2 pr-8",
             variant === "supporting" && "lg:mb-1.5",
+            variant === "trending" && "mb-1.5 pr-0",
           )}
         >
-          {(variant === "compact" || variant === "trending") && rank ? (
+          {variant === "compact" && rank ? (
             <span className="inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-[var(--purple-foreground)]">
               {rank}
             </span>
@@ -185,7 +186,7 @@ export function WireStoryCard({
               )}
             />
           </span>
-          {formattedDate && variant !== "trending" ? (
+          {formattedDate ? (
             <span
               className={cn(
                 "shrink-0 text-xs text-muted-foreground",
@@ -225,31 +226,37 @@ export function WireStoryCard({
             {summary}
           </p>
         ) : null}
+        {variant !== "trending" ? (
+          <div
+            className={cn(
+              "mt-2 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 pr-8 text-xs text-muted-foreground",
+              variant === "supporting" && "lg:mt-1.5",
+            )}
+          >
+            {reason ? (
+              <span className="rounded-full bg-primary/10 px-2 py-0.5 font-semibold text-[var(--purple-foreground)]">
+                {reason}
+              </span>
+            ) : null}
+            {source?.author?.trim() ? (
+              <span className="truncate">By {source.author}</span>
+            ) : null}
+          </div>
+        ) : null}
+        {variant !== "trending" ? (
+          <div className="absolute bottom-2 right-2">
+            <EntryCardActionMenu entry={story} />
+          </div>
+        ) : null}
+      </div>
+      {variant === "trending" ? (
         <div
-          className={cn(
-            "mt-2 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 pr-8 text-xs text-muted-foreground",
-            variant === "supporting" && "lg:mt-1.5",
-          )}
+          data-wire-trending-actions
+          className="absolute right-2 top-2 opacity-60 transition-opacity [@media(hover:hover)]:opacity-0 group-hover/story:opacity-100 group-focus-within/story:opacity-100"
         >
-          {reason ? (
-            <span className="rounded-full bg-primary/10 px-2 py-0.5 font-semibold text-[var(--purple-foreground)]">
-              {reason}
-            </span>
-          ) : null}
-          {source?.author?.trim() ? (
-            <span className="truncate">By {source.author}</span>
-          ) : null}
-          {variant === "trending" && formattedDate ? (
-            <span className="shrink-0">{formattedDate}</span>
-          ) : null}
-          {variant === "trending" && source?.domain.trim() ? (
-            <span className="basis-full truncate">{source.domain}</span>
-          ) : null}
-        </div>
-        <div className="absolute bottom-2 right-2">
           <EntryCardActionMenu entry={story} />
         </div>
-      </div>
+      ) : null}
     </div>
   );
 
