@@ -55,6 +55,9 @@ struct WireWorkerCommand: AsyncParsableCommand {
     } else {
       inboxProcessor = nil
     }
+    let drainTelemetry =
+      runtimePlan.runsDrain
+      ? WireInboxDrainTelemetryState(startedAt: Date()) : nil
     let cycle: WireWorkerCycle?
     if runtimePlan.runsGeneration {
       let labelStore = PostgresWireBaselineLabelStore(pool: pool, logger: serviceLogger)
@@ -129,7 +132,17 @@ struct WireWorkerCommand: AsyncParsableCommand {
               processor: inboxProcessor,
               state: state,
               logger: serviceLogger,
-              configuration: .init(idleMilliseconds: config.inboxIdleMilliseconds)
+              configuration: .init(idleMilliseconds: config.inboxIdleMilliseconds),
+              telemetry: drainTelemetry
+            )
+          }
+        }
+        if runtimePlan.runsDrain, let inboxProcessor, let drainTelemetry {
+          group.addTask {
+            try await WireInboxDrainTelemetryRuntime.run(
+              observer: inboxProcessor,
+              telemetry: drainTelemetry,
+              logger: serviceLogger
             )
           }
         }

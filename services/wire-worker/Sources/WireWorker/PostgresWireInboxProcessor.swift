@@ -69,23 +69,32 @@ struct PostgresWireInboxProcessor: Sendable {
   }
 
   func process(asOf: Date) async throws -> Int {
+    try await processWithMetrics(asOf: asOf).attemptedEventCount
+  }
+
+  func processWithMetrics(asOf: Date) async throws -> WireInboxDrainBatchMetrics {
     let fastPathCount = try await acknowledgeUnresolvedPassiveReferences(
       asOf: asOf,
       limit: batchSize
     )
     let events = try await claim(asOf: asOf)
     var iterator = events.makeIterator()
-    try await withThrowingTaskGroup(of: Void.self) { tasks in
+    var appliedEventCount = fastPathCount
+    try await withThrowingTaskGroup(of: Bool.self) { tasks in
       for _ in 0..<min(maximumConcurrentEvents, events.count) {
         guard let event = iterator.next() else { break }
         tasks.addTask { try await process(event, asOf: asOf) }
       }
-      while try await tasks.next() != nil {
+      while let applied = try await tasks.next() {
+        if applied { appliedEventCount += 1 }
         guard let event = iterator.next() else { continue }
         tasks.addTask { try await process(event, asOf: asOf) }
       }
     }
-    return fastPathCount + events.count
+    return WireInboxDrainBatchMetrics(
+      attemptedEventCount: fastPathCount + events.count,
+      appliedEventCount: appliedEventCount
+    )
   }
 
   static func boundedClaimLimit(batchSize: Int, maximumConcurrentEvents: Int) -> Int {
@@ -166,6 +175,43 @@ struct PostgresWireInboxProcessor: Sendable {
     }
   }
 
+  func actionableBacklogHealth(asOf: Date) async throws -> WireInboxBacklogHealth {
+    try await pool.withTransaction(logger: logger) { connection in
+      // This diagnostic uses the ready/expired-lease indexes and a hard query
+      // timeout. A slow observability scan therefore releases its single pool
+      // connection instead of competing indefinitely with the drain hot path.
+      _ = try await connection.query(
+        "SET LOCAL statement_timeout = '5s'",
+        logger: logger
+      )
+      let rows = try await connection.query(
+        """
+        SELECT COALESCE(SUM(actionable_count), 0)::bigint, MIN(oldest_staged_at)
+        FROM (
+          SELECT COUNT(*)::bigint AS actionable_count,
+                 MIN(staged_at) AS oldest_staged_at
+          FROM wire_ingestion_inbox
+          WHERE status IN ('pending', 'retry') AND next_attempt_at <= \(asOf)
+          UNION ALL
+          SELECT COUNT(*)::bigint AS actionable_count,
+                 MIN(staged_at) AS oldest_staged_at
+          FROM wire_ingestion_inbox
+          WHERE status = 'leased' AND lease_expires_at <= \(asOf)
+        ) actionable_branches
+        """,
+        logger: logger
+      )
+      for try await row in rows {
+        let value = try row.decode((Int64, Date?).self)
+        return WireInboxBacklogHealth(
+          actionableEventCount: value.0,
+          oldestActionableAgeSeconds: value.1.map { asOf.timeIntervalSince($0) }
+        )
+      }
+      return WireInboxBacklogHealth(actionableEventCount: 0, oldestActionableAgeSeconds: nil)
+    }
+  }
+
   func maintain(asOf: Date) async throws {
     try await pruneActiveGraph(asOf: asOf)
     try await mentionStore.pruneExpired(asOf: asOf)
@@ -208,10 +254,11 @@ struct PostgresWireInboxProcessor: Sendable {
     }
   }
 
-  private func process(_ event: InboxEvent, asOf: Date) async throws {
+  private func process(_ event: InboxEvent, asOf: Date) async throws -> Bool {
     do {
       try await apply(event, asOf: asOf)
       try await finish(event, status: "applied", retryAt: asOf, reason: nil, asOf: asOf)
+      return true
     } catch ApplyError.unresolvedReference {
       if asOf.timeIntervalSince(event.eventTime) < 24 * 3_600 {
         try await finish(
@@ -230,6 +277,7 @@ struct PostgresWireInboxProcessor: Sendable {
           asOf: asOf
         )
       }
+      return false
     } catch ApplyError.unresolvedPublication {
       if asOf.timeIntervalSince(event.eventTime) < 24 * 3_600 {
         try await finish(
@@ -249,6 +297,7 @@ struct PostgresWireInboxProcessor: Sendable {
           asOf: asOf
         )
       }
+      return false
     } catch ApplyError.malformed {
       try await finish(
         event,
@@ -257,6 +306,7 @@ struct PostgresWireInboxProcessor: Sendable {
         reason: "malformed_event",
         asOf: asOf
       )
+      return false
     } catch {
       let terminal = event.attemptCount >= 8
       try await finish(
@@ -266,6 +316,7 @@ struct PostgresWireInboxProcessor: Sendable {
         reason: String(reflecting: error).prefix(500).description,
         asOf: asOf
       )
+      return false
     }
   }
 

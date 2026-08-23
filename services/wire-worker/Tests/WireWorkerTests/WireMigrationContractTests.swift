@@ -76,7 +76,14 @@ struct WireMigrationContractTests {
     #expect(processor.contains("AND inbox.status IN ('pending', 'retry')"))
     #expect(
       processor.contains("let fastPathCount = try await acknowledgeUnresolvedPassiveReferences"))
-    #expect(processor.contains("return fastPathCount + events.count"))
+    #expect(processor.contains("attemptedEventCount: fastPathCount + events.count"))
+    #expect(processor.contains("appliedEventCount: appliedEventCount"))
+    #expect(processor.contains("SET LOCAL statement_timeout = '5s'"))
+    #expect(
+      processor.contains(
+        "status IN ('pending', 'retry') AND next_attempt_at <= \\(asOf)"
+      ))
+    #expect(processor.contains("status = 'leased' AND lease_expires_at <= \\(asOf)"))
 
     let publicationMigration = migration.deletingLastPathComponent()
       .appendingPathComponent("20260821023000_add_wire_publication_metadata.sql")

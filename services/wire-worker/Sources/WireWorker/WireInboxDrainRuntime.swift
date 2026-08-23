@@ -13,6 +13,7 @@ enum WireInboxDrainRuntime {
     state: WireWorkerHealthState,
     logger: Logger,
     configuration: Configuration,
+    telemetry: WireInboxDrainTelemetryState? = nil,
     sleeper: any WireInboxDrainSleeping = SystemWireInboxDrainSleeper(),
     iterationLimit: Int? = nil
   ) async throws {
@@ -24,14 +25,23 @@ enum WireInboxDrainRuntime {
       let startedAt = Date()
       await state.recordDrainStarted(at: startedAt)
       do {
-        let count = try await processor.process(asOf: startedAt)
+        let result = try await processor.processWithMetrics(asOf: startedAt)
+        if let telemetry {
+          await telemetry.recordAppliedEvents(result.appliedEventCount)
+        }
         await state.recordDrainSuccess(at: Date())
         errorBackoff = max(1, configuration.initialErrorBackoffMilliseconds)
         completedIterations += 1
-        if count == 0 {
+        if result.attemptedEventCount == 0 {
           try await sleeper.sleep(milliseconds: max(1, configuration.idleMilliseconds))
         } else {
-          logger.debug("The Wire inbox batch applied", metadata: ["event_count": .string(String(count))])
+          logger.debug(
+            "The Wire inbox batch processed",
+            metadata: [
+              "attempted_event_count": .string(String(result.attemptedEventCount)),
+              "applied_event_count": .string(String(result.appliedEventCount)),
+            ]
+          )
           await Task.yield()
         }
       } catch is CancellationError {
