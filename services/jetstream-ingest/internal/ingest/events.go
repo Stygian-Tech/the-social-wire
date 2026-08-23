@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"net/url"
+	"strings"
 	"time"
 
 	jetstream "github.com/bluesky-social/jetstream"
@@ -28,10 +30,11 @@ func PrepareBatch(events []jetstream.Event, trackedDIDs map[string]struct{}) ([]
 	return PrepareBatchForPipeline(events, trackedDIDs, false)
 }
 
-// PrepareBatchForPipeline preserves all account and identity lifecycle events for the global Wire
-// lane. The scoped publication lane continues to retain lifecycle events only for tracked DIDs.
-func PrepareBatchForPipeline(events []jetstream.Event, trackedDIDs map[string]struct{}, includeAllLifecycle bool) ([]InboxEvent, uint64, time.Time, error) {
-	prepared := make([]InboxEvent, 0, len(events))
+// PrepareBatchForPipeline keeps only events that can mutate the selected projection. The global
+// Wire lane retains inactive-account cleanup while discarding lifecycle and linkless-create events
+// that its worker would otherwise acknowledge without changing corpus state.
+func PrepareBatchForPipeline(events []jetstream.Event, trackedDIDs map[string]struct{}, wireGlobal bool) ([]InboxEvent, uint64, time.Time, error) {
+	var prepared []InboxEvent
 	var lastSeq uint64
 	var lastEventTime time.Time
 	for index := range events {
@@ -44,10 +47,17 @@ func PrepareBatchForPipeline(events []jetstream.Event, trackedDIDs map[string]st
 			lastEventTime = time.UnixMicro(event.TimeUS).UTC()
 		}
 
-		if event.Kind != jetstream.KindCommit && !includeAllLifecycle {
+		if wireGlobal && !projectsWireEvent(event) {
+			continue
+		}
+
+		if event.Kind != jetstream.KindCommit && !wireGlobal {
 			if _, tracked := trackedDIDs[event.DID]; !tracked {
 				continue
 			}
+		}
+		if prepared == nil {
+			prepared = make([]InboxEvent, 0, len(events))
 		}
 
 		payloadEvent := event
@@ -90,6 +100,56 @@ func PrepareBatchForPipeline(events []jetstream.Event, trackedDIDs map[string]st
 		prepared = append(prepared, row)
 	}
 	return prepared, lastSeq, lastEventTime, nil
+}
+
+func projectsWireEvent(event jetstream.Event) bool {
+	switch event.Kind {
+	case jetstream.KindAccount:
+		return event.Account != nil && !event.Account.Active
+	case jetstream.KindIdentity, jetstream.KindSync:
+		return false
+	case jetstream.KindCommit:
+		if event.Commit == nil || event.Commit.Collection != "app.bsky.feed.post" {
+			return true
+		}
+		// Updates and deletes must reach the worker so removing or replacing a
+		// previously linked article retracts the old signal and alias state.
+		if event.Commit.Operation != jetstream.OpCreate {
+			return true
+		}
+		return containsHTTPURL(event.Commit.Record)
+	default:
+		return false
+	}
+}
+
+func containsHTTPURL(value any) bool {
+	switch typed := value.(type) {
+	case map[string]any:
+		for key, child := range typed {
+			if key == "uri" || key == "url" {
+				if raw, ok := child.(string); ok {
+					parsed, err := url.Parse(raw)
+					if err == nil && parsed.Host != "" {
+						scheme := strings.ToLower(parsed.Scheme)
+						if scheme == "http" || scheme == "https" {
+							return true
+						}
+					}
+				}
+			}
+			if containsHTTPURL(child) {
+				return true
+			}
+		}
+	case []any:
+		for _, child := range typed {
+			if containsHTTPURL(child) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func validateEvent(event jetstream.Event) error {

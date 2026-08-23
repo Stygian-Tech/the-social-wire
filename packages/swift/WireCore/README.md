@@ -4,7 +4,7 @@
 
 ## End-to-end flow
 
-1. Public Jetstream/RSS producers place idempotent envelopes in `wire_ingestion_inbox`. The durable inbox owns retry, lease, dead-letter, and expiry state; a network message is not considered accepted until PostgreSQL has it.
+1. Public Jetstream/RSS producers place idempotent projection-bearing envelopes in `wire_ingestion_inbox`. Wire-global Jetstream preparation advances its fenced checkpoint without staging identity/sync, active-account, or linkless Bluesky post-create no-ops. It retains inactive-account cleanup plus every post update/delete needed to retract older linked state. The bounded inbox owns retry, lease, dead-letter, and expiry state during normal operation; after a PostgreSQL crash, the fenced producer rebuilds it from a logged provider cursor.
 2. A dedicated drain runtime continuously claims bounded inbox batches, applies different repositories concurrently while preserving repository FIFO, and uses bounded idle/error backoff. Claims order ready work by retry time before sequence so retries in one repository cannot starve unrelated pending repositories. The applier canonicalizes the linked story, upserts `wire_items` plus `wire_item_aliases`, records presentation-safe provenance, applies moderation/source labels, and inserts a deduplicated `wire_signal_events` row. Standard Site publication records form a rebuildable PostgreSQL resolver projection; documents carrying a publication AT-URI plus relative path use that projection or a bounded public PLC/PDS lookup. PLC/PDS DNS is revalidated immediately before every request, mixed or non-global answer sets fail closed, and redirects are not followed. Unresolved dependencies retry for no more than 24 hours.
 3. The applier updates bounded, keyed-hash graph state (`wire_active_actors`, `wire_follow_edges`, `wire_actor_communities`) and privacy-safe aggregate counts in `wire_signal_rollups`. DIDs for sharers, likers, reposters, and other engagement actors never enter a serving row. A public source/author DID may be retained only with its public item for attribution and viewer block/mute filtering; it is never a ranking feature or community identifier.
 4. Every five minutes by default, `wire-worker` prunes bounded graph state, refreshes community assignments when due, rebuilds exact rollups, refreshes baseline labels, loads eligible item/rollup/metadata rows, computes the deterministic `wire-v4` score, applies first-page diversity, and writes an immutable `wire_rank_generations` plus its `wire_ranked_items`. Continuous archive draining never increases labeler cadence.
@@ -267,15 +267,16 @@ Baseline label trust is currently constrained to a configured HTTPS query endpoi
 
 ## Authority and cache boundary
 
-PostgreSQL is authoritative for the inbox, items/aliases, short-retention signals, bounded graph, labels, rollups, generations, ranked items, and active pointer. Tables are rebuildable projections of public records, but are still durable operational state during a rollout. Redis is optional and may cache only a fully committed generation. It cannot choose an active generation, extend retention, bypass moderation, or keep serving after PostgreSQL declares a generation expired.
+PostgreSQL is authoritative for the current projection. The inbox, short-retention signals, graph, and rollups are UNLOGGED and rebuildable from a bounded provider replay; items/aliases, labels, generations, ranked items, editions, and the active pointer remain LOGGED so the last committed edition survives recovery. Redis is optional and may cache only a fully committed generation. It cannot choose an active generation, extend retention, bypass moderation, or keep serving after PostgreSQL declares a generation expired.
 
 ## Configuration and validation
 
 Ranking defaults live in `WireRankingConfig`/`WireRankingWeights`/`WireDiversityPolicy` and are identified by `wire-v2`. Operational environment controls are:
 
 - `WIRE_FEED_MODE=off|shadow|api|visible`;
-- `WIRE_WORKER_ROLE=combined|rank|drain` (rank and drain split generation from scalable inbox work);
-- `WIRE_INBOX_CLEANUP_ENABLED=true|false` (assign terminal-row cleanup to selected drain replicas);
+- `WIRE_WORKER_ROLE=combined|rank|drain` (rank owns generation plus metadata/profile
+  enrichment and may own terminal cleanup; drain owns scalable inbox work; combined owns both);
+- `WIRE_INBOX_CLEANUP_ENABLED=true|false` (assign terminal-row cleanup to exactly one selected role);
 - `WIRE_RANK_INTERVAL_SECONDS=300`;
 - `WIRE_CANDIDATE_LIMIT=5000`;
 - `WIRE_GENERATION_RETENTION_SECONDS=172800`;
@@ -285,6 +286,9 @@ Ranking defaults live in `WireRankingConfig`/`WireRankingWeights`/`WireDiversity
 - `WIRE_BASELINE_LABELERS` as comma-separated `source-did|https://labeler-host` authorities (default: Bluesky Moderation Service);
 - `WIRE_LABEL_REFRESH_MAX_AGE_SECONDS=900`.
 - `WIRE_INBOX_BATCH_SIZE=1000`, `WIRE_INBOX_CONCURRENCY=16`, and `WIRE_INBOX_IDLE_MILLISECONDS=250`;
+- producer `WIRE_ADMISSION_RATE_PER_SECOND` is required for Wire-global ingress and
+  must not exceed a measured sustained drain rate after operational headroom;
+  `WIRE_ADMISSION_BURST_EVENTS=1` bounds each token-bucket staging transaction;
 - `WIRE_METADATA_BATCH_SIZE=32`, `WIRE_METADATA_CONCURRENCY=8`, and `WIRE_METADATA_IDLE_MILLISECONDS=1000`;
 - `WIRE_POSTGRES_MAX_CONNECTIONS=12`.
 

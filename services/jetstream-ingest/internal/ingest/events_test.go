@@ -65,17 +65,99 @@ func TestPrepareBatchStagesLifecycleOnlyForTrackedDIDs(t *testing.T) {
 	}
 }
 
-func TestPrepareBatchWireStagesGlobalLifecycleEvents(t *testing.T) {
+func TestPrepareBatchWireStagesOnlyInactiveAccountLifecycle(t *testing.T) {
 	events := []jetstream.Event{
 		{DID: "did:plc:one", Seq: 11, Kind: jetstream.KindAccount, Account: &jetstream.Account{DID: "did:plc:one", Active: false}},
 		{DID: "did:plc:two", Seq: 12, Kind: jetstream.KindIdentity, Identity: &jetstream.Identity{DID: "did:plc:two"}},
+		{DID: "did:plc:three", Seq: 13, Kind: jetstream.KindAccount, Account: &jetstream.Account{DID: "did:plc:three", Active: true}},
+		{DID: "did:plc:four", Seq: 14, Kind: jetstream.KindSync, Sync: &jetstream.Sync{DID: "did:plc:four", Rev: "rev"}},
 	}
 	prepared, cursor, _, err := PrepareBatchForPipeline(events, nil, true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(prepared) != 2 || cursor != 12 {
+	if len(prepared) != 1 || prepared[0].RepoDID != "did:plc:one" || cursor != 14 {
 		t.Fatalf("prepared=%#v cursor=%d", prepared, cursor)
+	}
+}
+
+func TestPrepareBatchWireFiltersOnlyLinklessPostCreates(t *testing.T) {
+	collection := "app.bsky.feed.post"
+	events := []jetstream.Event{
+		{DID: "did:plc:plain", Seq: 20, Kind: jetstream.KindCommit, Commit: &jetstream.Commit{
+			Operation: jetstream.OpCreate, Collection: collection, Rkey: "plain", Rev: "one",
+			Record: map[string]any{"$type": collection, "text": "No external article"},
+		}},
+		{DID: "did:plc:linked", Seq: 21, Kind: jetstream.KindCommit, Commit: &jetstream.Commit{
+			Operation: jetstream.OpCreate, Collection: collection, Rkey: "linked", Rev: "one",
+			Record: map[string]any{"$type": collection, "embed": map[string]any{
+				"external": map[string]any{"uri": "https://publisher.example/story"},
+			}},
+		}},
+		{DID: "did:plc:linked", Seq: 22, Kind: jetstream.KindCommit, Commit: &jetstream.Commit{
+			Operation: jetstream.OpUpdate, Collection: collection, Rkey: "linked", Rev: "two",
+			Record: map[string]any{"$type": collection, "text": "Link removed"},
+		}},
+		{DID: "did:plc:linked", Seq: 23, Kind: jetstream.KindCommit, Commit: &jetstream.Commit{
+			Operation: jetstream.OpDelete, Collection: collection, Rkey: "linked", Rev: "three",
+		}},
+	}
+	prepared, cursor, _, err := PrepareBatchForPipeline(events, nil, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cursor != 23 {
+		t.Fatalf("checkpoint should advance over filtered post: %d", cursor)
+	}
+	if len(prepared) != 3 {
+		t.Fatalf("prepared=%#v", prepared)
+	}
+	for index, sequence := range []uint64{21, 22, 23} {
+		if prepared[index].Seq != sequence {
+			t.Fatalf("prepared sequences=%v", []uint64{prepared[0].Seq, prepared[1].Seq, prepared[2].Seq})
+		}
+	}
+}
+
+func TestWirePostLinkDetectionMatchesWorkerURLShape(t *testing.T) {
+	if !containsHTTPURL(map[string]any{"facets": []any{
+		map[string]any{"features": []any{map[string]any{"uri": "https://example.com/a"}}},
+	}}) {
+		t.Fatal("expected nested HTTPS URI")
+	}
+	for _, record := range []any{
+		map[string]any{"uri": "at://did:plc:author/app.bsky.feed.post/one"},
+		map[string]any{"url": "ftp://example.com/file"},
+		map[string]any{"text": "https://example.com is not a structured link"},
+	} {
+		if containsHTTPURL(record) {
+			t.Fatalf("unexpected public HTTP URL in %#v", record)
+		}
+	}
+}
+
+func BenchmarkPrepareWireBatchFiltersLinklessPosts(b *testing.B) {
+	events := make([]jetstream.Event, 1_000)
+	for index := range events {
+		events[index] = jetstream.Event{
+			DID: "did:plc:linkless", Seq: uint64(index + 1), Kind: jetstream.KindCommit,
+			Commit: &jetstream.Commit{
+				Operation: jetstream.OpCreate, Collection: "app.bsky.feed.post",
+				Rkey: "post", Rev: "rev",
+				Record: map[string]any{"$type": "app.bsky.feed.post", "text": "No link"},
+			},
+		}
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for range b.N {
+		prepared, cursor, _, err := PrepareBatchForPipeline(events, nil, true)
+		if err != nil {
+			b.Fatal(err)
+		}
+		if len(prepared) != 0 || cursor != 1_000 {
+			b.Fatalf("prepared=%d cursor=%d", len(prepared), cursor)
+		}
 	}
 }
 

@@ -1032,6 +1032,108 @@ struct WirePostgresIntegrationTests {
       "DELETE FROM wire_active_actors WHERE actor_key_hash = \(actorHash)", logger: logger)
   }
 
+  @Test("a linkless post update retracts the previously linked article")
+  func linklessPostUpdateRetractsSignal() async throws {
+    guard let url = ProcessInfo.processInfo.environment["WIRE_TEST_DATABASE_URL"] else { return }
+    let logger = Logger(label: "wire-linkless-post-update-postgres.integration")
+    let configuration = try PostgresWireConfig.make(from: url, logger: logger)
+    let pool = PostgresClient(configuration: configuration, backgroundLogger: logger)
+    let runTask = Task { await pool.run() }
+    await Task.yield()
+    defer { runTask.cancel() }
+
+    let suffix = UUID().uuidString.lowercased()
+    let environment = "wire-linkless-update-\(suffix)"
+    let generation = "wire-linkless-update-v1"
+    let did = "did:plc:linkless-update-\(suffix)"
+    let recordKey = "post"
+    let sourceURI = "at://\(did)/app.bsky.feed.post/\(recordKey)"
+    let articleURL = "https://example.com/linked/\(suffix)"
+    let now = Date()
+    let createPayload = """
+      {"commit":{"record":{"$type":"app.bsky.feed.post","text":"Linked article","embed":{"external":{"uri":"\(articleURL)","title":"Linked article"}}}}}
+      """
+    try await pool.query(
+      """
+      INSERT INTO wire_ingestion_inbox
+        (environment, source_generation, seq, source_host, cursor_kind, event_kind, repo_did,
+         collection, operation, repo_rev, record_key, payload, event_time)
+      VALUES
+        (\(environment), \(generation), 1, 'test', 'jetstream_v2_seq', 'commit', \(did),
+         'app.bsky.feed.post', 'create', 'one', \(recordKey), \(createPayload)::jsonb, \(now))
+      """,
+      logger: logger
+    )
+    let processor = try PostgresWireInboxProcessor(
+      pool: pool,
+      logger: logger,
+      actorSecret: String(repeating: "s", count: 32)
+    )
+    #expect(try await processor.process(asOf: now.addingTimeInterval(1)) == 1)
+
+    let canonical = try #require(WireCanonicalizer.canonicalize(articleURL))
+    let initialRows = try await pool.query(
+      """
+      SELECT
+        (SELECT COUNT(*)::bigint FROM wire_signal_events
+          WHERE canonical_key = \(canonical.canonicalKey)),
+        (SELECT COUNT(*)::bigint FROM wire_item_aliases WHERE alias_key = \(sourceURI))
+      """,
+      logger: logger
+    )
+    for try await row in initialRows {
+      let counts = try row.decode((Int64, Int64).self)
+      #expect(counts.0 == 1)
+      #expect(counts.1 == 1)
+    }
+
+    let updatePayload = """
+      {"commit":{"record":{"$type":"app.bsky.feed.post","text":"The link was removed"}}}
+      """
+    try await pool.query(
+      """
+      INSERT INTO wire_ingestion_inbox
+        (environment, source_generation, seq, source_host, cursor_kind, event_kind, repo_did,
+         collection, operation, repo_rev, record_key, payload, event_time)
+      VALUES
+        (\(environment), \(generation), 2, 'test', 'jetstream_v2_seq', 'commit', \(did),
+         'app.bsky.feed.post', 'update', 'two', \(recordKey), \(updatePayload)::jsonb,
+         \(now.addingTimeInterval(2)))
+      """,
+      logger: logger
+    )
+    #expect(try await processor.process(asOf: now.addingTimeInterval(3)) == 1)
+
+    let retractedRows = try await pool.query(
+      """
+      SELECT
+        (SELECT COUNT(*)::bigint FROM wire_signal_events
+          WHERE canonical_key = \(canonical.canonicalKey)),
+        (SELECT COUNT(*)::bigint FROM wire_item_aliases WHERE alias_key = \(sourceURI))
+      """,
+      logger: logger
+    )
+    for try await row in retractedRows {
+      let counts = try row.decode((Int64, Int64).self)
+      #expect(counts.0 == 0)
+      #expect(counts.1 == 0)
+    }
+
+    try await pool.query(
+      "DELETE FROM wire_ingestion_inbox WHERE environment = \(environment)", logger: logger)
+    try await pool.query(
+      "DELETE FROM wire_link_metadata_cache WHERE canonical_key = \(canonical.canonicalKey)",
+      logger: logger
+    )
+    try await pool.query(
+      "DELETE FROM wire_items WHERE canonical_key = \(canonical.canonicalKey)", logger: logger)
+    let actorHash = try WireActorHasher(
+      secret: Data(String(repeating: "s", count: 32).utf8)
+    ).hash(did)
+    try await pool.query(
+      "DELETE FROM wire_active_actors WHERE actor_key_hash = \(actorHash)", logger: logger)
+  }
+
   @Test("metadata cache seeding progresses beyond the newest conflict window")
   func metadataCacheSeedingProgresses() async throws {
     guard let url = ProcessInfo.processInfo.environment["WIRE_TEST_DATABASE_URL"] else { return }

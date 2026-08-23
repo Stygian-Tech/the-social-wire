@@ -60,4 +60,12 @@ struct WireInboxProcessingPolicyTests {
     #expect(PostgresWireInboxProcessor.isSelfFollow(follower: "actor-a", followee: "actor-a"))
     #expect(!PostgresWireInboxProcessor.isSelfFollow(follower: "actor-a", followee: "actor-b"))
   }
+
+  @Test("a post update that removes its article link retracts the prior signal")
+  func linklessPostUpdatePolicy() {
+    #expect(PostgresWireInboxProcessor.missingPostLinkRequiresRetraction(operation: "update"))
+    #expect(!PostgresWireInboxProcessor.missingPostLinkRequiresRetraction(operation: "create"))
+    #expect(!PostgresWireInboxProcessor.missingPostLinkRequiresRetraction(operation: "delete"))
+    #expect(!PostgresWireInboxProcessor.missingPostLinkRequiresRetraction(operation: nil))
+  }
 }

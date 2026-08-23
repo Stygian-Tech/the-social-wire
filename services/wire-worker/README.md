@@ -12,12 +12,14 @@
 ## Roles
 
 - `WIRE_WORKER_ROLE=combined` (default): drain and clean the inbox, refresh moderation,
-  maintain graph/rollup projections, and build rank generations.
-- `WIRE_WORKER_ROLE=rank`: run only the moderation, graph/rollup, ranking, and generation
-  cycle. Keep exactly one rank replica active for a corpus.
+  enrich metadata/profiles, maintain graph/rollup projections, and build rank generations.
+- `WIRE_WORKER_ROLE=rank`: run moderation, metadata/profile enrichment, graph/rollup,
+  ranking, generation, and optional terminal inbox cleanup. It never claims actionable
+  inbox rows. Keep exactly one rank replica active for a corpus.
 - `WIRE_WORKER_ROLE=drain`: drain and clean the inbox only. It never refreshes labels,
-  rebuilds rollups, ranks candidates, or commits a generation, so multiple drain-only
-  replicas can scale ingestion without racing the singleton generation cycle.
+  enriches metadata/profiles, rebuilds rollups, ranks candidates, or commits a generation,
+  so multiple drain-only replicas can dedicate their database and HTTP capacity to inbox
+  lag without racing the singleton generation cycle.
 
 The feed mode remains the remote kill switch for all roles. `WIRE_FEED_MODE=off`
 keeps only health probes active. A drain-only worker therefore uses the same non-off
@@ -28,8 +30,9 @@ without also owning terminal-row cleanup.
 
 For the split Railway topology, configure **The Wire Worker** as `rank` with one
 replica and **The Wire Inbox Drain** as `drain` with as many replicas as PostgreSQL
-can sustain. Leave cleanup enabled on one drain replica; disable it on additional
-replicas when cleanup contention outweighs the reclaimed space.
+can sustain. Leave cleanup enabled on the singleton rank replica and disable it on
+drain replicas so terminal cleanup has one owner without competing across the scaled
+drain lane.
 
 ## Configuration
 
@@ -73,7 +76,7 @@ Each ordinary claim is capped at `min(WIRE_INBOX_BATCH_SIZE, WIRE_INBOX_CONCURRE
 
 The default event concurrency of 16 intentionally exceeds the 12-connection PostgreSQL pool. PostgreSQL pool queuing is the database backpressure boundary while JSON decoding and canonicalization work remain in flight; the worker never opens more than `WIRE_POSTGRES_MAX_CONNECTIONS` database connections.
 
-Graph pruning, six-hour community refresh checks, and exact rollup rebuilding run once with the five-minute generation cycle rather than after every inbox batch. Baseline label refresh and ranking also remain on that five-minute cadence, so an archive drain cannot hammer labelers. Drain-only workers skip that entire generation cycle. Terminal inbox cleanup is a separate continuous bounded loop (`WIRE_INBOX_CLEANUP_BATCH_SIZE`, default 5,000; `WIRE_INBOX_CLEANUP_IDLE_MILLISECONDS`, default one second), so cleanup throughput is not tied to ranking. Applied inbox rows become cleanup-eligible after five minutes and dead letters after seven days. Pending, leased, and retry rows are never retention-deleted. Cleanup decrements the admission counter in the same transaction as deletion. Combined readiness requires recent successful generation, drain, and cleanup activity; drain-only readiness requires recent successful drain and cleanup activity.
+Graph pruning, six-hour community refresh checks, and exact rollup rebuilding run once with the five-minute generation cycle rather than after every inbox batch. Baseline label refresh and ranking also remain on that five-minute cadence, so an archive drain cannot hammer labelers. Drain-only workers skip that entire generation cycle. Terminal inbox cleanup is a separate continuous bounded loop (`WIRE_INBOX_CLEANUP_BATCH_SIZE`, default 5,000; `WIRE_INBOX_CLEANUP_IDLE_MILLISECONDS`, default one second), so cleanup throughput is not tied to ranking and may be owned by the singleton rank role. Applied inbox rows become cleanup-eligible after five minutes and dead letters after seven days. Pending, leased, and retry rows are never retention-deleted. Cleanup decrements the admission counter in the same transaction as deletion. Combined readiness requires recent successful generation, drain, and cleanup activity; rank readiness includes cleanup when enabled; drain-only readiness includes cleanup only when enabled.
 
 The worker observes `site.standard.publication` commits into the rebuildable `wire_publications` PostgreSQL projection. A Standard Site document with a publication AT-URI plus relative `path` resolves from that durable projection, then from a bounded public-HTTPS PLC/PDS lookup with 64 KiB response limits, timeouts, negative caching, and in-flight request coalescing. Immediately before every PLC and PDS request, the worker resolves DNS again and rejects the entire answer set if any address is loopback, link-local, private, documentation, multicast, or otherwise non-global. At most eight blocking resolver calls may remain active, each caller waits at most three seconds, and redirects are not followed. Direct article URLs and HTTPS publication-site-plus-path records remain local and require no network lookup. Unsafe or structurally invalid endpoints are terminal; absent, timed-out, or transient publication dependencies remain retryable within the 24-hour bound.
 
