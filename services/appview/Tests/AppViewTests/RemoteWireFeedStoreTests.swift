@@ -144,6 +144,7 @@ struct RemoteWireFeedStoreTests {
     )
     let result = try await store.getEdition(
       language: "en-US",
+      region: .outsideUnitedStates,
       viewerDid: nil,
       now: now
     )
@@ -152,7 +153,43 @@ struct RemoteWireFeedStoreTests {
     #expect(decoded.generationID == generationID)
     #expect(decoded.language == "en")
     #expect(decoded.nextOrdinal == 50)
-    #expect(await transport.targets == ["/internal/wire/v1/edition?language=en"])
+    #expect(await transport.targets == [
+      "/internal/wire/v1/edition?language=en&region=outside-us",
+    ])
+  }
+
+  @Test("regional edition falls back across a staged Corpus Edge rollout")
+  func regionalContractFallback() async throws {
+    let edition = WireEditionAssembler.assemble(
+      generationID: UUID().uuidString.lowercased(),
+      generatedAt: now,
+      language: "en",
+      source: .ranked,
+      degraded: false,
+      rankedItems: [item(id: "one", title: "One", actor: nil)]
+    )
+    let transport = StubWireCorpusTransport(responses: [
+      WireCorpusTransportResponse(statusCode: 400, contractVersion: 2, body: Data()),
+      try encodedResponse(edition),
+    ])
+    let store = try RemoteWireFeedStore(
+      transport: transport,
+      cursorSecret: cursorSecret,
+      mode: .visible,
+      moderationCache: WireViewerModerationCache()
+    )
+
+    _ = try await store.getEdition(
+      language: "en",
+      region: .outsideUnitedStates,
+      viewerDid: nil,
+      now: now
+    )
+
+    #expect(await transport.targets == [
+      "/internal/wire/v1/edition?language=en&region=outside-us",
+      "/internal/wire/v1/edition?language=en",
+    ])
   }
 
   private func item(id: String, title: String, actor: String?) -> WireFeedItem {

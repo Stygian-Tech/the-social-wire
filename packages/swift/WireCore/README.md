@@ -229,6 +229,26 @@ Serving behavior:
 
 The simplified fallback is not numerically ranked and therefore does not apply feedback or platform-domain score adjustments. It preserves the same engagement admission floor and deterministic Standard Site/metadata/source-confidence preference without exposing any internal count. A retained ranked generation is always preferred, even when stale.
 
+### Regional presentation relevance
+
+The canonical generation remains language-scoped and country-neutral. When the browser's
+first usable BCP 47 language tag includes an explicit non-US region, the web client sends
+only the coarse `region=outside-us` hint. It does not send the exact locale or country. US
+and regionless/ambiguous language tags send no region hint and preserve canonical order.
+
+For `outside-us`, the worker materializes a second module set from the same admitted first 50
+stories. It applies a stable three-position penalty only when authoritative publisher tags
+explicitly identify US politics (for example `us-politics`, or separate `united-states` and
+`politics` tags). Stories marked Breaking, Widely Discussed, or Across Communities are exempt
+so globally important reporting keeps its canonical position. Headline text, domains, IP,
+timezone, DID, and raw browser locales do not participate.
+
+The adjustment never removes a story, changes admission, mutates the generation or
+continuation cursor, exposes topic tags or a score, or affects US/unknown viewers. Corpus Edge
+selects the regional materialization and falls back to canonical modules for older
+generations. The coarse region is part of the edition cache key and ETag so cached ordering
+cannot cross presentation variants. Continuation pages retain canonical generation order.
+
 ## Generations and cursors
 
 A generation is immutable after commit. The worker inserts its metadata/items, marks the previous active generation superseded, marks the new generation committed, and moves `wire_feed_state` in one transaction. Concurrent workers serialize on the feed-state row. Shadow generations never move the pointer. The `WIRE_FEED_MODE` rollout values are exactly `off`, `shadow`, `api`, and `visible`, defaulting to `off`. `off` does no generation work. `shadow` builds without a pointer or public route. `api` commits/moves the pointer and serves API responses while the catalog hides navigation (`enabled: true`, `available: false`). `visible` commits/serves and reports catalog navigation enabled/available.

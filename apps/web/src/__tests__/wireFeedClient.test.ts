@@ -5,6 +5,7 @@ import {
   getWireFeedCatalog,
   getWireItem,
   selectWireLanguage,
+  selectWireViewerRegion,
   wireItemToEntryListItem,
   wirePageToEntriesPage,
   wireProvenanceLabel,
@@ -211,5 +212,13 @@ describe("The Wire client", () => {
       "en",
     );
     expect(selectWireLanguage([], [])).toBeUndefined();
+  });
+
+  it("sends only a coarse US relevance region from the browser locale", () => {
+    expect(selectWireViewerRegion(["en-US"])).toBeUndefined();
+    expect(selectWireViewerRegion(["en-GB"])).toBe("outside-us");
+    expect(selectWireViewerRegion(["zh-Hant-TW"])).toBe("outside-us");
+    expect(selectWireViewerRegion(["en"])).toBeUndefined();
+    expect(selectWireViewerRegion(["1234-GB"])).toBeUndefined();
   });
 });

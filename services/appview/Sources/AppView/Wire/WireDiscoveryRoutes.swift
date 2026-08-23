@@ -45,8 +45,10 @@ struct WireDiscoveryRoutes {
         auth: context.authContext,
         now: Date()
       )
+      let region = try Self.viewerRegion(request.uri.queryParameters.get("region"))
       let edition = try await store.getEdition(
         language: request.uri.queryParameters.get("lang"),
+        region: region,
         viewerDid: Self.viewerDID(context),
         now: Date()
       )
@@ -57,7 +59,7 @@ struct WireDiscoveryRoutes {
       )
       return try Self.response(
         WireEditionResponse(edition: edition),
-        etag: "\"wire-edition-\(edition.generationID)\"",
+        etag: "\"wire-edition-\(edition.generationID)-\(region?.rawValue ?? "default")\"",
         ifNoneMatch: request.headers[.ifNoneMatch],
         authenticated: Self.viewerDID(context) != nil,
         generationID: edition.generationID,
@@ -165,6 +167,14 @@ struct WireDiscoveryRoutes {
       throw WireServingError.invalidCursor
     }
     return value
+  }
+
+  private static func viewerRegion(_ raw: String?) throws -> WireViewerRegion? {
+    guard let raw else { return nil }
+    guard let region = WireViewerRegion(rawValue: raw) else {
+      throw WireServingError.invalidCursor
+    }
+    return region
   }
 
   static func response<Value: Encodable>(

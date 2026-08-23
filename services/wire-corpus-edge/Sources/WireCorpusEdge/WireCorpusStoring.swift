@@ -11,7 +11,7 @@ protocol WireCorpusStoring: Sendable {
     limit: Int,
     now: Date
   ) async throws -> WireCorpusPage
-  func edition(language: String, now: Date) async throws -> WireEdition
+  func edition(language: String, region: WireViewerRegion?, now: Date) async throws -> WireEdition
   func item(id: String, now: Date) async throws -> WireCorpusItem?
   func catalog(now: Date) async throws -> WireCorpusCatalog
 }
