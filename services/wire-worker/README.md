@@ -30,9 +30,12 @@ without also owning terminal-row cleanup.
 
 For the split Railway topology, configure **The Wire Worker** as `rank` with one
 replica and **The Wire Inbox Drain** as `drain` with as many replicas as PostgreSQL
-can sustain. Leave cleanup enabled on the singleton rank replica and disable it on
-drain replicas so terminal cleanup has one owner without competing across the scaled
-drain lane.
+can sustain. Assign terminal cleanup to exactly one lane. An unscoped topology may
+leave cleanup enabled on the singleton rank replica and disable it on drain replicas.
+When a drain uses `WIRE_INBOX_SOURCE_GENERATIONS` to isolate a successor generation,
+disable cleanup on the unscoped rank replica and enable it on one source-scoped drain;
+otherwise the rank replica can still delete expired terminal rows from retained
+historical generations.
 
 ## Configuration
 
@@ -54,7 +57,8 @@ drain lane.
 | `WIRE_INBOX_IDLE_MILLISECONDS` | `250` | Backpressure delay after an empty claim; full batches continue immediately |
 | `WIRE_INBOX_CLEANUP_BATCH_SIZE` | `5000` | Maximum terminal inbox rows deleted by one cleanup iteration (maximum `20000`) |
 | `WIRE_INBOX_CLEANUP_IDLE_MILLISECONDS` | `1000` | Delay after a cleanup iteration that deletes fewer than one full batch |
-| `WIRE_INBOX_CLEANUP_ENABLED` | `true` | Whether a drain-capable role also runs terminal-row cleanup |
+| `WIRE_INBOX_CLEANUP_ENABLED` | `true` | Whether the current non-off role also runs terminal-row cleanup |
+| `WIRE_INBOX_SOURCE_GENERATIONS` | unset | Optional comma-separated exact source-generation allowlist applied to drain claims, passive acknowledgements, health queries, and terminal cleanup |
 | `WIRE_POSTGRES_MAX_CONNECTIONS` | `12` | Bounded pool shared by drain, maintenance, ranking, and health work (maximum `64`) |
 | `PORT` | `8080` | Health server port |
 
