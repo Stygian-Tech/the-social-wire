@@ -15,6 +15,108 @@ import WireCore
   )
 )
 struct WirePostgresIntegrationTests {
+  @Test("source-scoped drain never applies or cleans historical generations")
+  func sourceScopedDrainIsolation() async throws {
+    guard let url = ProcessInfo.processInfo.environment["WIRE_TEST_DATABASE_URL"] else { return }
+    let logger = Logger(label: "wire-source-scoped-drain-postgres.integration")
+    let configuration = try PostgresWireConfig.make(from: url, logger: logger)
+    let pool = PostgresClient(configuration: configuration, backgroundLogger: logger)
+    let runTask = Task { await pool.run() }
+    await Task.yield()
+    defer { runTask.cancel() }
+
+    let suffix = UUID().uuidString.lowercased()
+    let environment = "wire-source-scope-\(suffix)"
+    let historyGeneration = "wire-global-v3-prod-live-v1"
+    let freshGeneration = "wire-global-v4-prod-live-tail-v1"
+    let missingSubject = "at://did:example:story/app.bsky.feed.post/missing-\(suffix)"
+    let now = Date()
+    let passivePayload = """
+      {"commit":{"record":{"$type":"app.bsky.feed.like","subject":{"uri":"\(missingSubject)","cid":"bafymissing"}}}}
+      """
+    try await pool.query(
+      "INSERT INTO wire_ingestion_admission (environment, retained_rows) VALUES (\(environment), 6)",
+      logger: logger
+    )
+    try await pool.query(
+      """
+      INSERT INTO wire_ingestion_inbox
+        (environment, source_generation, seq, source_host, cursor_kind, event_kind,
+         repo_did, collection, operation, record_key, payload, event_time, staged_at,
+         next_attempt_at, status, applied_at, expires_at)
+      VALUES
+        (\(environment), \(historyGeneration), 100, 'test', 'jetstream_v2_seq', 'identity',
+         'did:example:history-ordinary', NULL, NULL, NULL, '{}'::jsonb, \(now),
+         \(now.addingTimeInterval(-7_200)), \(now.addingTimeInterval(-1)),
+         'pending', NULL, 'infinity'),
+        (\(environment), \(freshGeneration), 200, 'test', 'jetstream_v2_seq', 'identity',
+         'did:example:fresh-ordinary', NULL, NULL, NULL, '{}'::jsonb, \(now),
+         \(now.addingTimeInterval(-60)), \(now.addingTimeInterval(-1)),
+         'pending', NULL, 'infinity'),
+        (\(environment), \(historyGeneration), 101, 'test', 'jetstream_v2_seq', 'commit',
+         'did:example:history-passive', 'app.bsky.feed.like', 'create', 'like',
+         \(passivePayload)::jsonb, \(now), \(now.addingTimeInterval(-7_200)),
+         \(now.addingTimeInterval(-1)), 'pending', NULL, 'infinity'),
+        (\(environment), \(freshGeneration), 201, 'test', 'jetstream_v2_seq', 'commit',
+         'did:example:fresh-passive', 'app.bsky.feed.like', 'create', 'like',
+         \(passivePayload)::jsonb, \(now), \(now.addingTimeInterval(-30)),
+         \(now.addingTimeInterval(-1)), 'pending', NULL, 'infinity'),
+        (\(environment), \(historyGeneration), 102, 'test', 'jetstream_v2_seq', 'identity',
+         'did:example:history-terminal', NULL, NULL, NULL, '{}'::jsonb, \(now), \(now),
+         \(now), 'applied', \(now.addingTimeInterval(-600)), \(now.addingTimeInterval(-1))),
+        (\(environment), \(freshGeneration), 202, 'test', 'jetstream_v2_seq', 'identity',
+         'did:example:fresh-terminal', NULL, NULL, NULL, '{}'::jsonb, \(now), \(now),
+         \(now), 'applied', \(now.addingTimeInterval(-600)), \(now.addingTimeInterval(-1)))
+      """,
+      logger: logger
+    )
+
+    let processor = try PostgresWireInboxProcessor(
+      pool: pool,
+      logger: logger,
+      actorSecret: String(repeating: "s", count: 32),
+      batchSize: 1,
+      maximumConcurrentEvents: 1,
+      sourceScope: WireInboxSourceScope(
+        environment: environment, sourceGenerations: [freshGeneration])
+    )
+    #expect(
+      try await processor.acknowledgeUnresolvedPassiveReferences(asOf: now, limit: 10) == 1)
+
+    let health = try await processor.actionableBacklogHealth(asOf: now)
+    #expect(health.actionableEventCount == 1)
+    let oldestAge = try #require(health.oldestActionableAgeSeconds)
+    #expect(oldestAge >= 55 && oldestAge < 120)
+
+    #expect(try await processor.process(asOf: now.addingTimeInterval(1)) == 1)
+    #expect(try await processor.deleteTerminal(asOf: now, batchSize: 10) == 1)
+
+    let rows = try await pool.query(
+      """
+      SELECT source_generation, seq, status
+      FROM wire_ingestion_inbox
+      WHERE environment = \(environment)
+      ORDER BY source_generation, seq
+      """,
+      logger: logger
+    )
+    var states: [(String, Int64, String)] = []
+    for try await row in rows {
+      states.append(try row.decode((String, Int64, String).self))
+    }
+    #expect(states.count == 5)
+    #expect(states.filter { $0.0 == historyGeneration }.map(\.1) == [100, 101, 102])
+    #expect(
+      states.filter { $0.0 == historyGeneration }.map(\.2) == ["pending", "pending", "applied"])
+    #expect(states.filter { $0.0 == freshGeneration }.map(\.1) == [200, 201])
+    #expect(states.filter { $0.0 == freshGeneration }.map(\.2) == ["applied", "applied"])
+
+    try await pool.query(
+      "DELETE FROM wire_ingestion_inbox WHERE environment = \(environment)", logger: logger)
+    try await pool.query(
+      "DELETE FROM wire_ingestion_admission WHERE environment = \(environment)", logger: logger)
+  }
+
   @Test("passive-reference fast path is bounded, ordered, and leaves guarded events alone")
   func passiveReferenceFastPath() async throws {
     guard let url = ProcessInfo.processInfo.environment["WIRE_TEST_DATABASE_URL"] else { return }

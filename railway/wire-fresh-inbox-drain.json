@@ -1,0 +1,18 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "build": {
+    "builder": "DOCKERFILE",
+    "dockerfilePath": "/services/wire-worker/Dockerfile",
+    "watchPatterns": [
+      "/services/wire-worker/**",
+      "/packages/swift/WireCore/**",
+      "/database/migrations/**",
+      "/railway/wire-fresh-inbox-drain.json"
+    ]
+  },
+  "deploy": {
+    "healthcheckPath": "/startupz",
+    "healthcheckTimeout": 120,
+    "restartPolicyType": "ALWAYS"
+  }
+}

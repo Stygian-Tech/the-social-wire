@@ -182,4 +182,73 @@ SELECT pg_temp.assert_plan_uses_all(
   $query$
 );
 
+-- A source-scoped fresh drain must enter through the exact environment and
+-- generation range instead of walking the older global eligibility backlog.
+SELECT pg_temp.assert_plan_uses_all(
+  ARRAY[
+    'wire_ingestion_inbox_pkey',
+    'wire_ingestion_inbox_repo_fifo_idx'
+  ],
+  $query$
+    WITH scoped_rows AS MATERIALIZED (
+      SELECT environment, source_generation, seq, repo_did, status,
+             next_attempt_at, lease_expires_at
+      FROM wire_ingestion_inbox
+      WHERE environment = 'wire-plan-dev'
+        AND source_generation = ANY(ARRAY['wire-plan-generation-b']::text[])
+        AND status IN ('pending', 'leased', 'retry')
+      ORDER BY environment, source_generation, seq
+    ),
+    pending_retry_candidates AS (
+      SELECT inbox.environment, inbox.source_generation, inbox.seq,
+             scoped.next_attempt_at AS eligible_at
+      FROM scoped_rows scoped
+      JOIN wire_ingestion_inbox inbox
+        ON inbox.environment = scoped.environment
+       AND inbox.source_generation = scoped.source_generation
+       AND inbox.seq = scoped.seq
+      WHERE scoped.status IN ('pending', 'retry')
+        AND scoped.next_attempt_at <= NOW()
+        AND NOT EXISTS (
+          SELECT 1 FROM scoped_rows earlier
+          WHERE earlier.environment = scoped.environment
+            AND earlier.source_generation = scoped.source_generation
+            AND earlier.repo_did = scoped.repo_did
+            AND earlier.seq < scoped.seq
+        )
+      ORDER BY scoped.seq, scoped.source_generation
+      FOR UPDATE OF inbox SKIP LOCKED
+      LIMIT 32
+    ),
+    expired_lease_candidates AS (
+      SELECT inbox.environment, inbox.source_generation, inbox.seq,
+             scoped.lease_expires_at AS eligible_at
+      FROM scoped_rows scoped
+      JOIN wire_ingestion_inbox inbox
+        ON inbox.environment = scoped.environment
+       AND inbox.source_generation = scoped.source_generation
+       AND inbox.seq = scoped.seq
+      WHERE scoped.status = 'leased'
+        AND scoped.lease_expires_at <= NOW()
+        AND NOT EXISTS (
+          SELECT 1 FROM scoped_rows earlier
+          WHERE earlier.environment = scoped.environment
+            AND earlier.source_generation = scoped.source_generation
+            AND earlier.repo_did = scoped.repo_did
+            AND earlier.seq < scoped.seq
+        )
+      ORDER BY scoped.seq, scoped.source_generation
+      FOR UPDATE OF inbox SKIP LOCKED
+      LIMIT 32
+    )
+    SELECT environment, source_generation, seq, eligible_at
+    FROM pending_retry_candidates
+    UNION ALL
+    SELECT environment, source_generation, seq, eligible_at
+    FROM expired_lease_candidates
+    ORDER BY eligible_at, seq, environment, source_generation
+    LIMIT 32
+  $query$
+);
+
 ROLLBACK;

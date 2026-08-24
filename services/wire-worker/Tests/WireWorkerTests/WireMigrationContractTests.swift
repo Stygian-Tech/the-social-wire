@@ -54,7 +54,7 @@ struct WireMigrationContractTests {
     #expect(processor.contains("expired_lease_candidates AS"))
     #expect(processor.contains("ORDER BY eligible_at, seq, environment, source_generation"))
     #expect(processor.contains("let claimLimit = Self.boundedClaimLimit"))
-    #expect(processor.components(separatedBy: "LIMIT \\(claimLimit)").count == 4)
+    #expect(processor.components(separatedBy: "LIMIT \\(claimLimit)").count == 7)
     #expect(processor.contains("candidate.environment,"))
     #expect(processor.contains("candidate.source_generation"))
     #expect(processor.contains("unresolved_publication_expired"))
@@ -84,6 +84,17 @@ struct WireMigrationContractTests {
         "status IN ('pending', 'retry') AND next_attempt_at <= \\(asOf)"
       ))
     #expect(processor.contains("status = 'leased' AND lease_expires_at <= \\(asOf)"))
+    #expect(
+      processor.components(
+        separatedBy: "source_generation = ANY(\\(sourceScope.sourceGenerations))"
+      ).count == 8)
+    #expect(processor.contains("WITH scoped_rows AS MATERIALIZED"))
+    #expect(
+      processor.contains(
+        "return try await acknowledgeScopedUnresolvedPassiveReferences"))
+    #expect(processor.contains("return try await scopedActionableBacklogHealth"))
+    #expect(processor.contains("return try await deleteScopedTerminal"))
+    #expect(processor.contains("return try await claimScoped"))
 
     let publicationMigration = migration.deletingLastPathComponent()
       .appendingPathComponent("20260821023000_add_wire_publication_metadata.sql")
