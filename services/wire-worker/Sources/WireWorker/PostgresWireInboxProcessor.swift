@@ -203,18 +203,19 @@ struct PostgresWireInboxProcessor: Sendable {
     return try await pool.withTransaction(logger: logger) { connection in
       let rows = try await connection.query(
         """
-        WITH scoped_rows AS MATERIALIZED (
-          SELECT environment, source_generation, seq, repo_did, status, next_attempt_at,
+        WITH scoped_heads AS MATERIALIZED (
+          SELECT DISTINCT ON (environment, source_generation, repo_did)
+                 environment, source_generation, seq, repo_did, status, next_attempt_at,
                  event_kind, collection, operation, payload
           FROM wire_ingestion_inbox
           WHERE environment = \(sourceScope.environment)
             AND source_generation = ANY(\(sourceScope.sourceGenerations))
             AND status IN ('pending', 'leased', 'retry')
-          ORDER BY environment, source_generation, seq
+          ORDER BY environment, source_generation, repo_did, seq
         ),
         candidates AS (
           SELECT inbox.environment, inbox.source_generation, inbox.seq
-          FROM scoped_rows scoped
+          FROM scoped_heads scoped
           JOIN wire_ingestion_inbox inbox
             ON inbox.environment = scoped.environment
            AND inbox.source_generation = scoped.source_generation
@@ -241,13 +242,6 @@ struct PostgresWireInboxProcessor: Sendable {
                 END
               )
                 AND alias.expires_at > \(asOf)
-            )
-            AND NOT EXISTS (
-              SELECT 1 FROM scoped_rows earlier
-              WHERE earlier.environment = scoped.environment
-                AND earlier.source_generation = scoped.source_generation
-                AND earlier.repo_did = scoped.repo_did
-                AND earlier.seq < scoped.seq
             )
           ORDER BY scoped.seq, scoped.source_generation
           FOR UPDATE OF inbox SKIP LOCKED
@@ -633,32 +627,26 @@ struct PostgresWireInboxProcessor: Sendable {
     )
     let rows = try await pool.query(
       """
-      WITH scoped_rows AS MATERIALIZED (
-        SELECT environment, source_generation, seq, repo_did, status,
+      WITH scoped_heads AS MATERIALIZED (
+        SELECT DISTINCT ON (environment, source_generation, repo_did)
+               environment, source_generation, seq, repo_did, status,
                next_attempt_at, lease_expires_at
         FROM wire_ingestion_inbox
         WHERE environment = \(sourceScope.environment)
           AND source_generation = ANY(\(sourceScope.sourceGenerations))
           AND status IN ('pending', 'leased', 'retry')
-        ORDER BY environment, source_generation, seq
+        ORDER BY environment, source_generation, repo_did, seq
       ),
       pending_retry_candidates AS (
         SELECT inbox.environment, inbox.source_generation, inbox.seq,
                scoped.next_attempt_at AS eligible_at
-        FROM scoped_rows scoped
+        FROM scoped_heads scoped
         JOIN wire_ingestion_inbox inbox
           ON inbox.environment = scoped.environment
          AND inbox.source_generation = scoped.source_generation
          AND inbox.seq = scoped.seq
         WHERE scoped.status IN ('pending', 'retry')
           AND scoped.next_attempt_at <= \(asOf)
-          AND NOT EXISTS (
-            SELECT 1 FROM scoped_rows earlier
-            WHERE earlier.environment = scoped.environment
-              AND earlier.source_generation = scoped.source_generation
-              AND earlier.repo_did = scoped.repo_did
-              AND earlier.seq < scoped.seq
-          )
         ORDER BY scoped.seq, scoped.source_generation
         FOR UPDATE OF inbox SKIP LOCKED
         LIMIT \(claimLimit)
@@ -666,20 +654,13 @@ struct PostgresWireInboxProcessor: Sendable {
       expired_lease_candidates AS (
         SELECT inbox.environment, inbox.source_generation, inbox.seq,
                scoped.lease_expires_at AS eligible_at
-        FROM scoped_rows scoped
+        FROM scoped_heads scoped
         JOIN wire_ingestion_inbox inbox
           ON inbox.environment = scoped.environment
          AND inbox.source_generation = scoped.source_generation
          AND inbox.seq = scoped.seq
         WHERE scoped.status = 'leased'
           AND scoped.lease_expires_at <= \(asOf)
-          AND NOT EXISTS (
-            SELECT 1 FROM scoped_rows earlier
-            WHERE earlier.environment = scoped.environment
-              AND earlier.source_generation = scoped.source_generation
-              AND earlier.repo_did = scoped.repo_did
-              AND earlier.seq < scoped.seq
-          )
         ORDER BY scoped.seq, scoped.source_generation
         FOR UPDATE OF inbox SKIP LOCKED
         LIMIT \(claimLimit)

@@ -88,6 +88,12 @@ struct WireMigrationContractTests {
       processor.components(
         separatedBy: "source_generation = ANY(\\(sourceScope.sourceGenerations))"
       ).count == 8)
+    #expect(processor.contains("WITH scoped_heads AS MATERIALIZED"))
+    #expect(
+      processor.contains(
+        "SELECT DISTINCT ON (environment, source_generation, repo_did)"
+      ))
+    #expect(processor.contains("FROM scoped_heads scoped"))
     #expect(processor.contains("WITH scoped_rows AS MATERIALIZED"))
     #expect(
       processor.contains(
