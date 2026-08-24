@@ -162,7 +162,8 @@ struct WirePostgresIntegrationTests {
         sourceGenerations: [firstGeneration, secondGeneration]
       )
     )
-    #expect(try await processor.process(asOf: now) == 3)
+    let firstProcessAt = now.addingTimeInterval(1)
+    #expect(try await processor.process(asOf: firstProcessAt) == 3)
 
     let firstRows = try await pool.query(
       """
@@ -180,7 +181,7 @@ struct WirePostgresIntegrationTests {
     #expect(firstStates.map(\.1) == [1, 2, 3, 4])
     #expect(firstStates.map(\.2) == ["applied", "pending", "applied", "applied"])
 
-    #expect(try await processor.process(asOf: now.addingTimeInterval(1)) == 1)
+    #expect(try await processor.process(asOf: firstProcessAt.addingTimeInterval(1)) == 1)
     let remainingRows = try await pool.query(
       """
       SELECT COUNT(*) FILTER (WHERE status = 'applied')::bigint,
