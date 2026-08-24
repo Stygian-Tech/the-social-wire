@@ -15,6 +15,7 @@ These custom-named config-as-code files are inactive until each Railway service 
 | The Wire Global Ingest | `/railway/wire-jetstream-ingest.json` |
 | The Wire Worker | `/railway/wire-worker.json` |
 | The Wire Inbox Drain | `/railway/wire-inbox-drain.json` |
+| The Wire Fresh Inbox Drain | `/railway/wire-fresh-inbox-drain.json` |
 | The Wire Corpus Edge | `/railway/wire-corpus-edge.json` |
 | Ops | `/railway/operations.json` |
 | Database Migrator | `/railway/database-migrator.json` |
@@ -54,3 +55,13 @@ only dedicated nonce-protected service signatures from Development App View;
 it never accepts viewer or Gateway/AppView trust credentials. Development
 App View receives only the edge URL and its edge-client secret, never a
 Production database credential.
+
+The Wire Fresh Inbox Drain is a separately scoped Production drain. Configure
+it with `APP_ENV=prod`, `WIRE_FEED_MODE=api`, `WIRE_WORKER_ROLE=drain`,
+and `WIRE_INBOX_SOURCE_GENERATIONS=wire-global-v4-prod-live-tail-v1`, plus the
+same Postgres, migrator, and actor HMAC references as the existing Wire drains.
+Keep inbox cleanup enabled: the source scope applies to terminal cleanup too,
+so it bounds v4 rows without changing retained historical rows. Before its
+first start, stop the v3 producer and every unscoped drain and wait more than
+the 120-second inbox lease period. Do not run an unscoped or historical drain
+alongside it.

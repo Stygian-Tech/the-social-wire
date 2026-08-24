@@ -50,7 +50,8 @@ struct WireWorkerCommand: AsyncParsableCommand {
         publicationResolver: publicationResolver,
         linkMetadataStore: linkMetadataStore,
         batchSize: config.inboxBatchSize,
-        maximumConcurrentEvents: config.inboxConcurrency
+        maximumConcurrentEvents: config.inboxConcurrency,
+        sourceScope: config.inboxSourceScope
       )
     } else {
       inboxProcessor = nil
@@ -86,6 +87,11 @@ struct WireWorkerCommand: AsyncParsableCommand {
       metadata: [
         "mode": .string(config.mode.rawValue),
         "role": .string(config.role.rawValue),
+        "inbox_source_scope": .string(
+          config.inboxSourceScope.map {
+            "\($0.environment):\($0.sourceGenerations.joined(separator: ","))"
+          } ?? "all"
+        ),
       ]
     )
     var runtimeError: Error?

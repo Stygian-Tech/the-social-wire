@@ -20,6 +20,7 @@ struct WireWorkerConfig: Sendable {
   var inboxCleanupBatchSize: Int
   var inboxCleanupIdleMilliseconds: Int
   var inboxCleanupEnabled: Bool
+  var inboxSourceScope: WireInboxSourceScope?
   var metadataBatchSize: Int
   var metadataConcurrency: Int
   var metadataIdleMilliseconds: Int
@@ -50,6 +51,7 @@ struct WireWorkerConfig: Sendable {
         throw WireWorkerConfigError.invalidActorHMACSecret
       }
     }
+    let inboxSourceScope = try inboxSourceScope(environment)
 
     return WireWorkerConfig(
       databaseURL: databaseURL,
@@ -89,6 +91,7 @@ struct WireWorkerConfig: Sendable {
       inboxCleanupEnabled: try boolean(
         environment, key: "WIRE_INBOX_CLEANUP_ENABLED", default: true
       ),
+      inboxSourceScope: inboxSourceScope,
       metadataBatchSize: try boundedPositiveInt(
         environment, key: "WIRE_METADATA_BATCH_SIZE", default: 32, maximum: 250
       ),
@@ -101,6 +104,31 @@ struct WireWorkerConfig: Sendable {
       postgresMaximumConnections: try boundedPositiveInt(
         environment, key: "WIRE_POSTGRES_MAX_CONNECTIONS", default: 12, maximum: 64
       )
+    )
+  }
+
+  private static func inboxSourceScope(
+    _ environment: [String: String]
+  ) throws -> WireInboxSourceScope? {
+    guard let raw = environment["WIRE_INBOX_SOURCE_GENERATIONS"] else { return nil }
+    let values = raw.split(separator: ",", omittingEmptySubsequences: false).map {
+      $0.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    guard !values.isEmpty, values.allSatisfy({ !$0.isEmpty }) else {
+      throw WireWorkerConfigError.invalidInboxSourceGenerations
+    }
+    var seen = Set<String>()
+    let generations = values.filter { seen.insert($0).inserted }
+    guard
+      let appEnvironment = environment["APP_ENV"]?.trimmingCharacters(in: .whitespacesAndNewlines),
+      !appEnvironment.isEmpty
+    else { throw WireWorkerConfigError.missingInboxEnvironment }
+    guard appEnvironment == "dev" || appEnvironment == "prod" else {
+      throw WireWorkerConfigError.invalidInboxEnvironment(appEnvironment)
+    }
+    return WireInboxSourceScope(
+      environment: appEnvironment,
+      sourceGenerations: generations
     )
   }
 

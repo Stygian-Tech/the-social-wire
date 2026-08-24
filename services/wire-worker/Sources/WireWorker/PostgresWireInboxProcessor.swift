@@ -40,6 +40,7 @@ struct PostgresWireInboxProcessor: Sendable {
   let mentionStore: any WireTalkedAccountMentionStoring
   let batchSize: Int
   let maximumConcurrentEvents: Int
+  let sourceScope: WireInboxSourceScope?
 
   init(
     pool: PostgresClient,
@@ -49,7 +50,8 @@ struct PostgresWireInboxProcessor: Sendable {
     linkMetadataStore: (any WireLinkMetadataStoring)? = nil,
     mentionStore: (any WireTalkedAccountMentionStoring)? = nil,
     batchSize: Int = 1_000,
-    maximumConcurrentEvents: Int = 16
+    maximumConcurrentEvents: Int = 16,
+    sourceScope: WireInboxSourceScope? = nil
   ) throws {
     self.pool = pool
     self.logger = logger
@@ -66,6 +68,7 @@ struct PostgresWireInboxProcessor: Sendable {
       mentionStore ?? PostgresWireTalkedAccountMentionStore(pool: pool, logger: logger)
     self.batchSize = max(1, min(batchSize, 5_000))
     self.maximumConcurrentEvents = max(1, min(maximumConcurrentEvents, 64))
+    self.sourceScope = sourceScope
   }
 
   func process(asOf: Date) async throws -> Int {
@@ -108,6 +111,10 @@ struct PostgresWireInboxProcessor: Sendable {
   }
 
   func acknowledgeUnresolvedPassiveReferences(asOf: Date, limit: Int) async throws -> Int {
+    if let sourceScope {
+      return try await acknowledgeScopedUnresolvedPassiveReferences(
+        asOf: asOf, limit: limit, sourceScope: sourceScope)
+    }
     let expiresAt = asOf.addingTimeInterval(300)
     let boundedLimit = max(1, min(limit, 5_000))
     return try await pool.withTransaction(logger: logger) { connection in
@@ -175,8 +182,96 @@ struct PostgresWireInboxProcessor: Sendable {
     }
   }
 
+  private func acknowledgeScopedUnresolvedPassiveReferences(
+    asOf: Date,
+    limit: Int,
+    sourceScope: WireInboxSourceScope
+  ) async throws -> Int {
+    let expiresAt = asOf.addingTimeInterval(300)
+    let boundedLimit = max(1, min(limit, 5_000))
+    return try await pool.withTransaction(logger: logger) { connection in
+      let rows = try await connection.query(
+        """
+        WITH scoped_rows AS MATERIALIZED (
+          SELECT environment, source_generation, seq, repo_did, status, next_attempt_at,
+                 event_kind, collection, operation, payload
+          FROM wire_ingestion_inbox
+          WHERE environment = \(sourceScope.environment)
+            AND source_generation = ANY(\(sourceScope.sourceGenerations))
+            AND status IN ('pending', 'leased', 'retry')
+          ORDER BY environment, source_generation, seq
+        ),
+        candidates AS (
+          SELECT inbox.environment, inbox.source_generation, inbox.seq
+          FROM scoped_rows scoped
+          JOIN wire_ingestion_inbox inbox
+            ON inbox.environment = scoped.environment
+           AND inbox.source_generation = scoped.source_generation
+           AND inbox.seq = scoped.seq
+          WHERE scoped.status IN ('pending', 'retry')
+            AND scoped.next_attempt_at <= \(asOf)
+            AND scoped.event_kind = 'commit'
+            AND scoped.collection IN ('app.bsky.feed.like', 'app.bsky.feed.repost')
+            AND scoped.operation IN ('create', 'update')
+            AND NULLIF(BTRIM(COALESCE(
+              scoped.payload #>> '{commit,record,subject,uri}',
+              CASE
+                WHEN jsonb_typeof(scoped.payload #> '{commit,record,subject}') = 'string'
+                THEN scoped.payload #>> '{commit,record,subject}'
+              END
+            )), '') IS NOT NULL
+            AND NOT EXISTS (
+              SELECT 1 FROM wire_item_aliases alias
+              WHERE alias.alias_key = COALESCE(
+                scoped.payload #>> '{commit,record,subject,uri}',
+                CASE
+                  WHEN jsonb_typeof(scoped.payload #> '{commit,record,subject}') = 'string'
+                  THEN scoped.payload #>> '{commit,record,subject}'
+                END
+              )
+                AND alias.expires_at > \(asOf)
+            )
+            AND NOT EXISTS (
+              SELECT 1 FROM scoped_rows earlier
+              WHERE earlier.environment = scoped.environment
+                AND earlier.source_generation = scoped.source_generation
+                AND earlier.repo_did = scoped.repo_did
+                AND earlier.seq < scoped.seq
+            )
+          ORDER BY scoped.seq, scoped.source_generation
+          FOR UPDATE OF inbox SKIP LOCKED
+          LIMIT \(boundedLimit)
+        )
+        UPDATE wire_ingestion_inbox inbox
+        SET status = 'applied', next_attempt_at = \(asOf),
+            failure_category = NULL, failure_reason = NULL,
+            applied_at = \(asOf), dead_lettered_at = NULL,
+            lease_owner = NULL, lease_token = NULL, lease_expires_at = NULL,
+            attempt_count = attempt_count + 1,
+            expires_at = \(expiresAt), updated_at = \(asOf)
+        FROM candidates
+        WHERE inbox.environment = candidates.environment
+          AND inbox.source_generation = candidates.source_generation
+          AND inbox.seq = candidates.seq
+          AND inbox.environment = \(sourceScope.environment)
+          AND inbox.source_generation = ANY(\(sourceScope.sourceGenerations))
+          AND inbox.status IN ('pending', 'retry')
+          AND inbox.next_attempt_at <= \(asOf)
+        RETURNING inbox.seq
+        """,
+        logger: logger
+      )
+      var count = 0
+      for try await _ in rows { count += 1 }
+      return count
+    }
+  }
+
   func actionableBacklogHealth(asOf: Date) async throws -> WireInboxBacklogHealth {
-    try await pool.withTransaction(logger: logger) { connection in
+    if let sourceScope {
+      return try await scopedActionableBacklogHealth(asOf: asOf, sourceScope: sourceScope)
+    }
+    return try await pool.withTransaction(logger: logger) { connection in
       // This diagnostic uses the ready/expired-lease indexes and a hard query
       // timeout. A slow observability scan therefore releases its single pool
       // connection instead of competing indefinitely with the drain hot path.
@@ -212,6 +307,52 @@ struct PostgresWireInboxProcessor: Sendable {
     }
   }
 
+  private func scopedActionableBacklogHealth(
+    asOf: Date,
+    sourceScope: WireInboxSourceScope
+  ) async throws -> WireInboxBacklogHealth {
+    return try await pool.withTransaction(logger: logger) { connection in
+      _ = try await connection.query(
+        "SET LOCAL statement_timeout = '5s'",
+        logger: logger
+      )
+      let rows = try await connection.query(
+        """
+        WITH scoped_rows AS MATERIALIZED (
+          SELECT environment, source_generation, seq, status, next_attempt_at,
+                 lease_expires_at, staged_at
+          FROM wire_ingestion_inbox
+          WHERE environment = \(sourceScope.environment)
+            AND source_generation = ANY(\(sourceScope.sourceGenerations))
+            AND status IN ('pending', 'leased', 'retry')
+          ORDER BY environment, source_generation, seq
+        )
+        SELECT COALESCE(SUM(actionable_count), 0)::bigint, MIN(oldest_staged_at)
+        FROM (
+          SELECT COUNT(*)::bigint AS actionable_count,
+                 MIN(staged_at) AS oldest_staged_at
+          FROM scoped_rows
+          WHERE status IN ('pending', 'retry') AND next_attempt_at <= \(asOf)
+          UNION ALL
+          SELECT COUNT(*)::bigint AS actionable_count,
+                 MIN(staged_at) AS oldest_staged_at
+          FROM scoped_rows
+          WHERE status = 'leased' AND lease_expires_at <= \(asOf)
+        ) actionable_branches
+        """,
+        logger: logger
+      )
+      for try await row in rows {
+        let value = try row.decode((Int64, Date?).self)
+        return WireInboxBacklogHealth(
+          actionableEventCount: value.0,
+          oldestActionableAgeSeconds: value.1.map { asOf.timeIntervalSince($0) }
+        )
+      }
+      return WireInboxBacklogHealth(actionableEventCount: 0, oldestActionableAgeSeconds: nil)
+    }
+  }
+
   func maintain(asOf: Date) async throws {
     try await pruneActiveGraph(asOf: asOf)
     try await mentionStore.pruneExpired(asOf: asOf)
@@ -220,7 +361,11 @@ struct PostgresWireInboxProcessor: Sendable {
   }
 
   func deleteTerminal(asOf: Date, batchSize: Int) async throws -> Int {
-    try await pool.withTransaction(logger: logger) { connection in
+    if let sourceScope {
+      return try await deleteScopedTerminal(
+        asOf: asOf, batchSize: batchSize, sourceScope: sourceScope)
+    }
+    return try await pool.withTransaction(logger: logger) { connection in
       let rows = try await connection.query(
         """
         DELETE FROM wire_ingestion_inbox
@@ -232,6 +377,49 @@ struct PostgresWireInboxProcessor: Sendable {
           FOR UPDATE SKIP LOCKED
           LIMIT \(max(1, min(batchSize, 20_000)))
         )
+        RETURNING environment
+        """,
+        logger: logger
+      )
+      var deletedByEnvironment: [String: Int64] = [:]
+      for try await row in rows {
+        deletedByEnvironment[try row.decode(String.self), default: 0] += 1
+      }
+      for (environment, count) in deletedByEnvironment {
+        try await connection.query(
+          """
+          UPDATE wire_ingestion_admission
+          SET retained_rows = GREATEST(0, retained_rows - \(count)), updated_at = \(asOf)
+          WHERE environment = \(environment)
+          """,
+          logger: logger
+        )
+      }
+      return deletedByEnvironment.values.reduce(0) { $0 + Int($1) }
+    }
+  }
+
+  private func deleteScopedTerminal(
+    asOf: Date,
+    batchSize: Int,
+    sourceScope: WireInboxSourceScope
+  ) async throws -> Int {
+    try await pool.withTransaction(logger: logger) { connection in
+      let rows = try await connection.query(
+        """
+        DELETE FROM wire_ingestion_inbox
+        WHERE (environment, source_generation, seq) IN (
+          SELECT environment, source_generation, seq
+          FROM wire_ingestion_inbox
+          WHERE environment = \(sourceScope.environment)
+            AND source_generation = ANY(\(sourceScope.sourceGenerations))
+            AND status IN ('applied', 'dead_letter') AND expires_at <= \(asOf)
+          ORDER BY expires_at, environment, source_generation, seq
+          FOR UPDATE SKIP LOCKED
+          LIMIT \(max(1, min(batchSize, 20_000)))
+        )
+          AND environment = \(sourceScope.environment)
+          AND source_generation = ANY(\(sourceScope.sourceGenerations))
         RETURNING environment
         """,
         logger: logger
@@ -321,6 +509,9 @@ struct PostgresWireInboxProcessor: Sendable {
   }
 
   private func claim(asOf: Date) async throws -> [InboxEvent] {
+    if let sourceScope {
+      return try await claimScoped(asOf: asOf, sourceScope: sourceScope)
+    }
     let token = UUID().uuidString.lowercased()
     let leaseUntil = asOf.addingTimeInterval(120)
     let claimLimit = Self.boundedClaimLimit(
@@ -382,6 +573,125 @@ struct PostgresWireInboxProcessor: Sendable {
       WHERE inbox.environment = candidates.environment
         AND inbox.source_generation = candidates.source_generation
         AND inbox.seq = candidates.seq
+      RETURNING inbox.environment, inbox.source_generation, inbox.seq,
+                inbox.source_host, inbox.cursor_kind, inbox.event_kind,
+                inbox.repo_did, inbox.collection, inbox.operation, inbox.record_key,
+                inbox.payload::text, inbox.event_time, inbox.lease_token, inbox.attempt_count
+      """,
+      logger: logger
+    )
+    var result: [InboxEvent] = []
+    for try await row in rows {
+      let value = try row.decode(
+        (
+          String, String, Int64, String, String, String, String, String?, String?, String?, String,
+          Date, String, Int
+        ).self
+      )
+      result.append(
+        InboxEvent(
+          environment: value.0,
+          sourceGeneration: value.1,
+          sequence: value.2,
+          sourceHost: value.3,
+          cursorKind: value.4,
+          eventKind: value.5,
+          repoDID: value.6,
+          collection: value.7,
+          operation: value.8,
+          recordKey: value.9,
+          payloadJSON: value.10,
+          eventTime: value.11,
+          leaseToken: value.12,
+          attemptCount: value.13
+        )
+      )
+    }
+    return result.sorted { $0.sequence < $1.sequence }
+  }
+
+  private func claimScoped(
+    asOf: Date,
+    sourceScope: WireInboxSourceScope
+  ) async throws -> [InboxEvent] {
+    let token = UUID().uuidString.lowercased()
+    let leaseUntil = asOf.addingTimeInterval(120)
+    let claimLimit = Self.boundedClaimLimit(
+      batchSize: batchSize,
+      maximumConcurrentEvents: maximumConcurrentEvents
+    )
+    let rows = try await pool.query(
+      """
+      WITH scoped_rows AS MATERIALIZED (
+        SELECT environment, source_generation, seq, repo_did, status,
+               next_attempt_at, lease_expires_at
+        FROM wire_ingestion_inbox
+        WHERE environment = \(sourceScope.environment)
+          AND source_generation = ANY(\(sourceScope.sourceGenerations))
+          AND status IN ('pending', 'leased', 'retry')
+        ORDER BY environment, source_generation, seq
+      ),
+      pending_retry_candidates AS (
+        SELECT inbox.environment, inbox.source_generation, inbox.seq,
+               scoped.next_attempt_at AS eligible_at
+        FROM scoped_rows scoped
+        JOIN wire_ingestion_inbox inbox
+          ON inbox.environment = scoped.environment
+         AND inbox.source_generation = scoped.source_generation
+         AND inbox.seq = scoped.seq
+        WHERE scoped.status IN ('pending', 'retry')
+          AND scoped.next_attempt_at <= \(asOf)
+          AND NOT EXISTS (
+            SELECT 1 FROM scoped_rows earlier
+            WHERE earlier.environment = scoped.environment
+              AND earlier.source_generation = scoped.source_generation
+              AND earlier.repo_did = scoped.repo_did
+              AND earlier.seq < scoped.seq
+          )
+        ORDER BY scoped.seq, scoped.source_generation
+        FOR UPDATE OF inbox SKIP LOCKED
+        LIMIT \(claimLimit)
+      ),
+      expired_lease_candidates AS (
+        SELECT inbox.environment, inbox.source_generation, inbox.seq,
+               scoped.lease_expires_at AS eligible_at
+        FROM scoped_rows scoped
+        JOIN wire_ingestion_inbox inbox
+          ON inbox.environment = scoped.environment
+         AND inbox.source_generation = scoped.source_generation
+         AND inbox.seq = scoped.seq
+        WHERE scoped.status = 'leased'
+          AND scoped.lease_expires_at <= \(asOf)
+          AND NOT EXISTS (
+            SELECT 1 FROM scoped_rows earlier
+            WHERE earlier.environment = scoped.environment
+              AND earlier.source_generation = scoped.source_generation
+              AND earlier.repo_did = scoped.repo_did
+              AND earlier.seq < scoped.seq
+          )
+        ORDER BY scoped.seq, scoped.source_generation
+        FOR UPDATE OF inbox SKIP LOCKED
+        LIMIT \(claimLimit)
+      ),
+      candidates AS (
+        SELECT environment, source_generation, seq, eligible_at
+        FROM pending_retry_candidates
+        UNION ALL
+        SELECT environment, source_generation, seq, eligible_at
+        FROM expired_lease_candidates
+        ORDER BY eligible_at, seq, environment, source_generation
+        LIMIT \(claimLimit)
+      )
+      UPDATE wire_ingestion_inbox inbox
+      SET status = 'leased', lease_owner = 'wire-worker', lease_token = \(token),
+          lease_expires_at = \(leaseUntil), attempt_count = attempt_count + 1,
+          updated_at = \(asOf)
+      FROM candidates
+      WHERE inbox.environment = candidates.environment
+        AND inbox.source_generation = candidates.source_generation
+        AND inbox.seq = candidates.seq
+        AND inbox.environment = \(sourceScope.environment)
+        AND inbox.source_generation = ANY(\(sourceScope.sourceGenerations))
       RETURNING inbox.environment, inbox.source_generation, inbox.seq,
                 inbox.source_host, inbox.cursor_kind, inbox.event_kind,
                 inbox.repo_did, inbox.collection, inbox.operation, inbox.record_key,
