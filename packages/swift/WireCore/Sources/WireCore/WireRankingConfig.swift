@@ -19,9 +19,10 @@ public struct WireRankingConfig: Codable, Equatable, Sendable {
   public var freshnessHalfLife: TimeInterval
   public var maximumCandidateAge: TimeInterval
   public var domainPenalties: WireDomainPenaltyPolicy
+  public var limitedCommercialPenalty: Double
 
   public init(
-    version: String = "wire-v4",
+    version: String = "wire-v5",
     weights: WireRankingWeights = WireRankingWeights(),
     diversity: WireDiversityPolicy = WireDiversityPolicy(),
     minimumHighIntentActors: Int = 5,
@@ -38,7 +39,8 @@ public struct WireRankingConfig: Codable, Equatable, Sendable {
     engagementTarget: Int = 80,
     freshnessHalfLife: TimeInterval = 36_000,
     maximumCandidateAge: TimeInterval = 2_592_000,
-    domainPenalties: WireDomainPenaltyPolicy = WireDomainPenaltyPolicy()
+    domainPenalties: WireDomainPenaltyPolicy = WireDomainPenaltyPolicy(),
+    limitedCommercialPenalty: Double = 0.15
   ) {
     self.version = version
     self.weights = weights
@@ -58,6 +60,7 @@ public struct WireRankingConfig: Codable, Equatable, Sendable {
     self.freshnessHalfLife = freshnessHalfLife
     self.maximumCandidateAge = maximumCandidateAge
     self.domainPenalties = domainPenalties
+    self.limitedCommercialPenalty = limitedCommercialPenalty
   }
 
   public func validate() throws {
@@ -80,7 +83,9 @@ public struct WireRankingConfig: Codable, Equatable, Sendable {
       freshnessHalfLife > 0, maximumCandidateAge > 0,
       weights.negativeFeedbackPenalty.isFinite,
       weights.negativeFeedbackPenalty >= 0,
-      weights.negativeFeedbackPenalty <= 1
+      weights.negativeFeedbackPenalty <= 1,
+      limitedCommercialPenalty.isFinite,
+      (0...1).contains(limitedCommercialPenalty)
     else {
       throw WireRankingConfigError.invalidThreshold
     }

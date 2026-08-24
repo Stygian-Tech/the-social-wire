@@ -1,6 +1,7 @@
 import Foundation
 import Logging
 import PostgresNIO
+import WireCore
 
 struct PostgresWireLinkMetadataStore: WireLinkMetadataStoring {
   let pool: PostgresClient
@@ -127,6 +128,15 @@ struct PostgresWireLinkMetadataStore: WireLinkMetadataStoring {
     asOf: Date
   ) async throws {
     let homepageURL = Self.homepageURL(for: metadata.canonicalURL)
+    let targetKind = WireContentQualityClassifier.targetKind(for: metadata.canonicalURL)
+    let commercial = WireContentQualityClassifier.assess(
+      canonicalURL: metadata.canonicalURL,
+      title: metadata.title,
+      summary: metadata.description,
+      hasProductOfferSchema: metadata.hasProductOfferSchema
+    )
+    let commercialReasons = String(
+      decoding: try JSONEncoder().encode(commercial.reasons.map(\.rawValue)), as: UTF8.self)
     try await pool.withTransaction(logger: logger) { connection in
       try await connection.query(
         """
@@ -196,7 +206,16 @@ struct PostgresWireLinkMetadataStore: WireLinkMetadataStoring {
               'iconUrl', CASE WHEN provenance ? 'standard_site'
                 THEN COALESCE(publication_icon_url, \(metadata.iconURL))
                 ELSE COALESCE(\(metadata.iconURL), publication_icon_url) END
-            )),
+            )), target_kind = CASE WHEN provenance ? 'standard_site'
+              THEN 'standard_site_document' ELSE \(targetKind.rawValue) END,
+            commercial_score = GREATEST(commercial_score, \(commercial.score)),
+            commercial_class = CASE
+              WHEN commercial_score > \(commercial.score) THEN commercial_class
+              ELSE \(commercial.classification.rawValue) END,
+            commercial_reasons = CASE
+              WHEN commercial_score > \(commercial.score) THEN commercial_reasons
+              ELSE \(commercialReasons)::jsonb END,
+            eligible = eligible AND \(targetKind.canCreateItem),
             updated_at = \(asOf)
         WHERE canonical_key = \(canonicalKey)
         """,

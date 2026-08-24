@@ -99,7 +99,8 @@ struct HTTPWireLinkMetadataClient: WireLinkMetadataFetching {
           iconURL: parsed.iconURL,
           etag: responseETag,
           lastModified: responseLastModified,
-          source: .openGraph
+          source: .openGraph,
+          hasProductOfferSchema: parsed.hasProductOfferSchema
         )
       )
     }

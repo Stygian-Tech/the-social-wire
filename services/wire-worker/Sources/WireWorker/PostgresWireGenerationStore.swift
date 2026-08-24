@@ -23,6 +23,8 @@ struct PostgresWireGenerationStore: WireGenerationStore {
       FROM wire_items i
       JOIN wire_signal_rollups r ON r.canonical_key = i.canonical_key
       WHERE i.eligible = TRUE AND i.expires_at > \(asOf)
+        AND i.target_kind IN ('external_article', 'standard_site_document')
+        AND i.commercial_class <> 'probable_ad'
         AND i.language_code <> 'und'
         AND i.source_confidence >= 0.25
         AND (r.shares_24h >= 3 OR r.recommendations_24h >= 1)
@@ -61,6 +63,7 @@ struct PostgresWireGenerationStore: WireGenerationStore {
                AND num_nonnulls(metadata.title, metadata.description, metadata.image_url,
                  metadata.site_name, metadata.author_name, metadata.published_at::TEXT,
                  metadata.icon_url) >= 2, FALSE) AS has_usable_open_graph,
+             i.target_kind, i.commercial_class, i.commercial_score,
              r.distinct_actors_1h, r.distinct_actors_24h, r.distinct_actors_7d,
              r.signals_1h, r.signals_24h, r.signals_7d, r.communities_24h,
              r.primary_community_key_hash, r.recommendations_24h,
@@ -71,6 +74,8 @@ struct PostgresWireGenerationStore: WireGenerationStore {
       JOIN wire_signal_rollups r ON r.canonical_key = i.canonical_key
       LEFT JOIN wire_link_metadata_cache metadata ON metadata.canonical_key = i.canonical_key
       WHERE i.eligible = TRUE AND i.expires_at > \(asOf)
+        AND i.target_kind IN ('external_article', 'standard_site_document')
+        AND i.commercial_class <> 'probable_ad'
         AND (\(languageBucket) = 'und' OR i.language_code = \(languageBucket))
         AND NOT EXISTS (
           SELECT 1 FROM wire_labels l
@@ -100,17 +105,21 @@ struct PostgresWireGenerationStore: WireGenerationStore {
       let cells = row.makeRandomAccess()
       let isStandardSite = try cells[11].decode(Bool.self)
       let hasUsableOpenGraph = try cells[12].decode(Bool.self)
+      let targetKind = WireTargetKind(rawValue: try cells[13].decode(String.self)) ?? .unsupported
+      let commercialClass = WireCommercialClass(
+        rawValue: try cells[14].decode(String.self)) ?? .probableAd
+      let commercialScore = try cells[15].decode(Double.self)
       let rollup = try (
-        cells[13].decode(Int.self), cells[14].decode(Int.self),
-        cells[15].decode(Int.self), cells[16].decode(Int.self),
-        cells[17].decode(Int.self), cells[18].decode(Int.self),
-        cells[19].decode(Int.self), cells[20].decode(String?.self),
-        cells[21].decode(Int.self), cells[22].decode(Int.self),
-        cells[23].decode(Int.self), cells[24].decode(Int.self),
-        cells[25].decode(Int.self), cells[26].decode(Int.self),
-        cells[27].decode(Int.self), cells[28].decode(Int.self),
-        cells[29].decode(Int.self), cells[30].decode(Int.self),
-        cells[31].decode(Int.self)
+        cells[16].decode(Int.self), cells[17].decode(Int.self),
+        cells[18].decode(Int.self), cells[19].decode(Int.self),
+        cells[20].decode(Int.self), cells[21].decode(Int.self),
+        cells[22].decode(Int.self), cells[23].decode(String?.self),
+        cells[24].decode(Int.self), cells[25].decode(Int.self),
+        cells[26].decode(Int.self), cells[27].decode(Int.self),
+        cells[28].decode(Int.self), cells[29].decode(Int.self),
+        cells[30].decode(Int.self), cells[31].decode(Int.self),
+        cells[32].decode(Int.self), cells[33].decode(Int.self),
+        cells[34].decode(Int.self)
       )
       let topics = (try? JSONDecoder().decode([String].self, from: Data(identity.6.utf8))) ?? []
       candidates.append(
@@ -146,7 +155,10 @@ struct PostgresWireGenerationStore: WireGenerationStore {
           reposts24h: rollup.18,
           sourceConfidence: identity.10,
           isStandardSite: isStandardSite,
-          hasUsableOpenGraphMetadata: hasUsableOpenGraph
+          hasUsableOpenGraphMetadata: hasUsableOpenGraph,
+          targetKind: targetKind,
+          commercialClass: commercialClass,
+          commercialScore: commercialScore
         )
       )
     }
