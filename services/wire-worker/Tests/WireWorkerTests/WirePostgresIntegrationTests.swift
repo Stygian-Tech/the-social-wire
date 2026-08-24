@@ -117,6 +117,92 @@ struct WirePostgresIntegrationTests {
       "DELETE FROM wire_ingestion_admission WHERE environment = \(environment)", logger: logger)
   }
 
+  @Test("source-scoped claims preserve FIFO independently per generation and repository")
+  func sourceScopedClaimRepositoryFIFO() async throws {
+    guard let url = ProcessInfo.processInfo.environment["WIRE_TEST_DATABASE_URL"] else { return }
+    let logger = Logger(label: "wire-source-scoped-fifo-postgres.integration")
+    let configuration = try PostgresWireConfig.make(from: url, logger: logger)
+    let pool = PostgresClient(configuration: configuration, backgroundLogger: logger)
+    let runTask = Task { await pool.run() }
+    await Task.yield()
+    defer { runTask.cancel() }
+
+    let environment = "wire-source-scope-fifo-\(UUID().uuidString.lowercased())"
+    let firstGeneration = "wire-source-scope-fifo-v1"
+    let secondGeneration = "wire-source-scope-fifo-v2"
+    let sharedRepo = "did:example:source-scope-shared-\(UUID().uuidString.lowercased())"
+    let otherRepo = "did:example:source-scope-other-\(UUID().uuidString.lowercased())"
+    let now = Date()
+    try await pool.query(
+      """
+      INSERT INTO wire_ingestion_inbox
+        (environment, source_generation, seq, source_host, cursor_kind, event_kind,
+         repo_did, payload, event_time)
+      VALUES
+        (\(environment), \(firstGeneration), 1, 'test', 'jetstream_v2_seq', 'identity',
+         \(sharedRepo), '{}'::jsonb, \(now)),
+        (\(environment), \(firstGeneration), 2, 'test', 'jetstream_v2_seq', 'identity',
+         \(sharedRepo), '{}'::jsonb, \(now)),
+        (\(environment), \(firstGeneration), 3, 'test', 'jetstream_v2_seq', 'identity',
+         \(otherRepo), '{}'::jsonb, \(now)),
+        (\(environment), \(secondGeneration), 4, 'test', 'jetstream_v2_seq', 'identity',
+         \(sharedRepo), '{}'::jsonb, \(now))
+      """,
+      logger: logger
+    )
+
+    let processor = try PostgresWireInboxProcessor(
+      pool: pool,
+      logger: logger,
+      actorSecret: String(repeating: "s", count: 32),
+      batchSize: 8,
+      maximumConcurrentEvents: 8,
+      sourceScope: WireInboxSourceScope(
+        environment: environment,
+        sourceGenerations: [firstGeneration, secondGeneration]
+      )
+    )
+    let firstProcessAt = now.addingTimeInterval(1)
+    #expect(try await processor.process(asOf: firstProcessAt) == 3)
+
+    let firstRows = try await pool.query(
+      """
+      SELECT source_generation, seq, status
+      FROM wire_ingestion_inbox
+      WHERE environment = \(environment)
+      ORDER BY source_generation, seq
+      """,
+      logger: logger
+    )
+    var firstStates: [(String, Int64, String)] = []
+    for try await row in firstRows {
+      firstStates.append(try row.decode((String, Int64, String).self))
+    }
+    #expect(firstStates.map(\.1) == [1, 2, 3, 4])
+    #expect(firstStates.map(\.2) == ["applied", "pending", "applied", "applied"])
+
+    #expect(try await processor.process(asOf: firstProcessAt.addingTimeInterval(1)) == 1)
+    let remainingRows = try await pool.query(
+      """
+      SELECT COUNT(*) FILTER (WHERE status = 'applied')::bigint,
+             COUNT(*) FILTER (WHERE status IN ('pending', 'leased', 'retry'))::bigint
+      FROM wire_ingestion_inbox
+      WHERE environment = \(environment)
+      """,
+      logger: logger
+    )
+    for try await row in remainingRows {
+      let counts = try row.decode((Int64, Int64).self)
+      #expect(counts.0 == 4)
+      #expect(counts.1 == 0)
+    }
+
+    try await pool.query(
+      "DELETE FROM wire_ingestion_inbox WHERE environment = \(environment)",
+      logger: logger
+    )
+  }
+
   @Test("passive-reference fast path is bounded, ordered, and leaves guarded events alone")
   func passiveReferenceFastPath() async throws {
     guard let url = ProcessInfo.processInfo.environment["WIRE_TEST_DATABASE_URL"] else { return }
