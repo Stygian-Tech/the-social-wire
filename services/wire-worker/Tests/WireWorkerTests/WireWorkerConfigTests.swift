@@ -19,10 +19,26 @@ struct WireWorkerConfigTests {
     #expect(config.inboxCleanupBatchSize == 5_000)
     #expect(config.inboxCleanupIdleMilliseconds == 1_000)
     #expect(config.inboxCleanupEnabled)
+    #expect(config.inboxSourceScope == nil)
     #expect(config.metadataBatchSize == 32)
     #expect(config.metadataConcurrency == 8)
     #expect(config.metadataIdleMilliseconds == 1_000)
     #expect(config.postgresMaximumConnections == 12)
+  }
+
+  @Test("loads a normalized inbox source-generation allowlist")
+  func loadsInboxSourceScope() throws {
+    let config = try WireWorkerConfig.load([
+      "DATABASE_URL": "postgres://localhost/wire",
+      "APP_ENV": "prod",
+      "WIRE_INBOX_SOURCE_GENERATIONS": " wire-global-v4-prod-live-tail-v1,wire-shadow,wire-shadow ",
+    ])
+    #expect(
+      config.inboxSourceScope
+        == WireInboxSourceScope(
+          environment: "prod",
+          sourceGenerations: ["wire-global-v4-prod-live-tail-v1", "wire-shadow"]
+        ))
   }
 
   @Test("loads drain-only role without generation labeler configuration")
@@ -108,6 +124,29 @@ struct WireWorkerConfigTests {
     #expect(throws: WireWorkerConfigError.invalidPositiveInteger("WIRE_INBOX_CONCURRENCY")) {
       try WireWorkerConfig.load([
         "DATABASE_URL": "postgres://db/wire", "WIRE_INBOX_CONCURRENCY": "65",
+      ])
+    }
+    #expect(throws: WireWorkerConfigError.invalidInboxSourceGenerations) {
+      try WireWorkerConfig.load([
+        "DATABASE_URL": "postgres://db/wire", "APP_ENV": "prod",
+        "WIRE_INBOX_SOURCE_GENERATIONS": "wire-v4,,wire-v5",
+      ])
+    }
+    #expect(throws: WireWorkerConfigError.invalidInboxSourceGenerations) {
+      try WireWorkerConfig.load([
+        "DATABASE_URL": "postgres://db/wire", "APP_ENV": "prod",
+        "WIRE_INBOX_SOURCE_GENERATIONS": "   ",
+      ])
+    }
+    #expect(throws: WireWorkerConfigError.missingInboxEnvironment) {
+      try WireWorkerConfig.load([
+        "DATABASE_URL": "postgres://db/wire", "WIRE_INBOX_SOURCE_GENERATIONS": "wire-v4",
+      ])
+    }
+    #expect(throws: WireWorkerConfigError.invalidInboxEnvironment("staging")) {
+      try WireWorkerConfig.load([
+        "DATABASE_URL": "postgres://db/wire", "APP_ENV": "staging",
+        "WIRE_INBOX_SOURCE_GENERATIONS": "wire-v4",
       ])
     }
   }
