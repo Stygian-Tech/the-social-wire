@@ -54,7 +54,7 @@ struct WireMigrationContractTests {
     #expect(processor.contains("expired_lease_candidates AS"))
     #expect(processor.contains("ORDER BY eligible_at, seq, environment, source_generation"))
     #expect(processor.contains("let claimLimit = Self.boundedClaimLimit"))
-    #expect(processor.components(separatedBy: "LIMIT \\(claimLimit)").count == 7)
+    #expect(processor.components(separatedBy: "LIMIT \\(claimLimit)").count == 8)
     #expect(processor.contains("candidate.environment,"))
     #expect(processor.contains("candidate.source_generation"))
     #expect(processor.contains("unresolved_publication_expired"))
@@ -87,7 +87,7 @@ struct WireMigrationContractTests {
     #expect(
       processor.components(
         separatedBy: "source_generation = ANY(\\(sourceScope.sourceGenerations))"
-      ).count == 8)
+      ).count == 10)
     #expect(processor.contains("WITH scoped_heads AS MATERIALIZED"))
     #expect(
       processor.contains(
@@ -101,6 +101,12 @@ struct WireMigrationContractTests {
     #expect(processor.contains("return try await scopedActionableBacklogHealth"))
     #expect(processor.contains("return try await deleteScopedTerminal"))
     #expect(processor.contains("return try await claimScoped"))
+    #expect(processor.contains("claimScopedPassiveDeletes(asOf: asOf)"))
+    #expect(
+      processor.contains(
+        "candidate.collection IN ('app.bsky.feed.like', 'app.bsky.feed.repost')"))
+    #expect(processor.contains("candidate.operation = 'delete'"))
+    #expect(processor.contains("LIMIT \\(claimLimit)"))
 
     let publicationMigration = migration.deletingLastPathComponent()
       .appendingPathComponent("20260821023000_add_wire_publication_metadata.sql")

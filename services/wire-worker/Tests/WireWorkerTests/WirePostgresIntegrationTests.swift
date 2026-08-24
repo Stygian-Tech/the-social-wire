@@ -203,6 +203,93 @@ struct WirePostgresIntegrationTests {
     )
   }
 
+  @Test("source-scoped drain batches a passive-delete prefix within one repository")
+  func sourceScopedPassiveDeletePrefix() async throws {
+    guard let url = ProcessInfo.processInfo.environment["WIRE_TEST_DATABASE_URL"] else { return }
+    let logger = Logger(label: "wire-source-scoped-passive-delete-postgres.integration")
+    let configuration = try PostgresWireConfig.make(from: url, logger: logger)
+    let pool = PostgresClient(configuration: configuration, backgroundLogger: logger)
+    let runTask = Task { await pool.run() }
+    await Task.yield()
+    defer { runTask.cancel() }
+
+    let environment = "wire-source-scope-delete-\(UUID().uuidString.lowercased())"
+    let generation = "wire-source-scope-delete-v1"
+    let repo = "did:example:source-scope-delete-\(UUID().uuidString.lowercased())"
+    let now = Date()
+    try await pool.query(
+      """
+      INSERT INTO wire_ingestion_inbox
+        (environment, source_generation, seq, source_host, cursor_kind, event_kind,
+         repo_did, collection, operation, record_key, payload, event_time)
+      VALUES
+        (\(environment), \(generation), 1, 'test', 'jetstream_v2_seq', 'commit',
+         \(repo), 'app.bsky.feed.repost', 'delete', 'repost-1', '{}'::jsonb, \(now)),
+        (\(environment), \(generation), 2, 'test', 'jetstream_v2_seq', 'commit',
+         \(repo), 'app.bsky.feed.repost', 'delete', 'repost-2', '{}'::jsonb, \(now)),
+        (\(environment), \(generation), 3, 'test', 'jetstream_v2_seq', 'commit',
+         \(repo), 'app.bsky.feed.like', 'delete', 'like-1', '{}'::jsonb, \(now)),
+        (\(environment), \(generation), 4, 'test', 'jetstream_v2_seq', 'identity',
+         \(repo), NULL, NULL, NULL, '{}'::jsonb, \(now)),
+        (\(environment), \(generation), 5, 'test', 'jetstream_v2_seq', 'commit',
+         \(repo), 'app.bsky.feed.repost', 'delete', 'blocked-repost', '{}'::jsonb, \(now))
+      """,
+      logger: logger
+    )
+
+    let processor = try PostgresWireInboxProcessor(
+      pool: pool,
+      logger: logger,
+      actorSecret: String(repeating: "s", count: 32),
+      batchSize: 8,
+      maximumConcurrentEvents: 8,
+      sourceScope: WireInboxSourceScope(
+        environment: environment,
+        sourceGenerations: [generation]
+      )
+    )
+    let firstProcessAt = now.addingTimeInterval(1)
+    #expect(try await processor.process(asOf: firstProcessAt) == 3)
+
+    let firstRows = try await pool.query(
+      """
+      SELECT seq, status
+      FROM wire_ingestion_inbox
+      WHERE environment = \(environment)
+      ORDER BY seq
+      """,
+      logger: logger
+    )
+    var firstStates: [(Int64, String)] = []
+    for try await row in firstRows {
+      firstStates.append(try row.decode((Int64, String).self))
+    }
+    #expect(firstStates.map(\.0) == [1, 2, 3, 4, 5])
+    #expect(firstStates.map(\.1) == ["applied", "applied", "applied", "pending", "pending"])
+
+    #expect(try await processor.process(asOf: firstProcessAt.addingTimeInterval(1)) == 1)
+    #expect(try await processor.process(asOf: firstProcessAt.addingTimeInterval(2)) == 1)
+    let remainingRows = try await pool.query(
+      """
+      SELECT COUNT(*) FILTER (WHERE status = 'applied')::bigint,
+             COUNT(*) FILTER (WHERE status IN ('pending', 'leased', 'retry'))::bigint
+      FROM wire_ingestion_inbox
+      WHERE environment = \(environment)
+      """,
+      logger: logger
+    )
+    for try await row in remainingRows {
+      let counts = try row.decode((Int64, Int64).self)
+      #expect(counts.0 == 5)
+      #expect(counts.1 == 0)
+    }
+
+    try await pool.query(
+      "DELETE FROM wire_ingestion_inbox WHERE environment = \(environment)",
+      logger: logger
+    )
+  }
+
   @Test("passive-reference fast path is bounded, ordered, and leaves guarded events alone")
   func passiveReferenceFastPath() async throws {
     guard let url = ProcessInfo.processInfo.environment["WIRE_TEST_DATABASE_URL"] else { return }
