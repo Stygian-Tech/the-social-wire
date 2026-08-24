@@ -55,6 +55,29 @@ struct WireInboxProcessingPolicyTests {
     )
   }
 
+  @Test("reference records use their collection-specific target field")
+  func referenceSubjectPolicy() {
+    let documentURI = "at://did:plc:publisher/site.standard.document/article"
+    #expect(
+      PostgresWireInboxProcessor.referenceSubjectURI(
+        record: ["document": documentURI],
+        collection: "site.standard.graph.recommend"
+      ) == documentURI
+    )
+    #expect(
+      PostgresWireInboxProcessor.referenceSubjectURI(
+        record: ["subject": ["uri": documentURI]],
+        collection: "app.bsky.feed.like"
+      ) == documentURI
+    )
+    #expect(
+      PostgresWireInboxProcessor.referenceSubjectURI(
+        record: ["subject": documentURI],
+        collection: "app.bsky.feed.repost"
+      ) == documentURI
+    )
+  }
+
   @Test("self follows are ignored before they reach the graph constraint")
   func selfFollowPolicy() {
     #expect(PostgresWireInboxProcessor.isSelfFollow(follower: "actor-a", followee: "actor-a"))
