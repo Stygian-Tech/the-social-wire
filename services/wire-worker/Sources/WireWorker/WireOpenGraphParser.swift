@@ -15,6 +15,7 @@ enum WireOpenGraphParser {
     var publishedAt: Date?
     var iconURL: String?
     var canonicalURL: String?
+    var hasProductOfferSchema = false
   }
 
   static func parse(html: String, pageURL: URL) -> WireLinkMetadata? {
@@ -92,7 +93,8 @@ enum WireOpenGraphParser {
       iconURL: icon,
       etag: nil,
       lastModified: nil,
-      source: .openGraph
+      source: .openGraph,
+      hasProductOfferSchema: jsonLD.hasProductOfferSchema
     )
   }
 
@@ -113,35 +115,44 @@ enum WireOpenGraphParser {
       options: [.caseInsensitive, .dotMatchesLineSeparators],
       capture: 1
     )
+    var hasProductOfferSchema = false
+    var articleObject: [String: Any]?
     for block in blocks.prefix(20) {
       guard block.utf8.count <= 256_000,
         let data = block.data(using: .utf8),
         let root = try? JSONSerialization.jsonObject(with: data)
       else { continue }
-      for object in jsonLDObjects(root).prefix(100) where isArticleLike(object) {
-        let publisher = object["publisher"] as? [String: Any]
-        let isPartOf = object["isPartOf"] as? [String: Any]
-        let author = object["author"]
-        let image = object["image"]
-        let mainEntity = object["mainEntityOfPage"]
-        return JSONLDMetadata(
-          title: first([string(object["headline"]), string(object["name"])]),
-          description: normalized(string(object["description"])),
-          imageURL: normalizedURL(jsonLDURLValue(image), relativeTo: pageURL),
-          siteName: first([
-            string(publisher?["name"]), string(isPartOf?["name"]),
-          ]),
-          authorName: jsonLDName(author),
-          publishedAt: string(object["datePublished"]).flatMap(parseDate),
-          iconURL: normalizedURL(jsonLDURLValue(publisher?["logo"]), relativeTo: pageURL),
-          canonicalURL: normalizedURL(
-            jsonLDURLValue(mainEntity) ?? string(object["url"]),
-            relativeTo: pageURL
-          )
-        )
-      }
+      let objects = Array(jsonLDObjects(root).prefix(100))
+      hasProductOfferSchema = hasProductOfferSchema || objects.contains(where: isProductOrOffer)
+      articleObject = articleObject ?? objects.first(where: isArticleLike)
     }
-    return JSONLDMetadata()
+    guard let object = articleObject else {
+      return JSONLDMetadata(hasProductOfferSchema: hasProductOfferSchema)
+    }
+    let publisher = object["publisher"] as? [String: Any]
+    let isPartOf = object["isPartOf"] as? [String: Any]
+    return JSONLDMetadata(
+      title: first([string(object["headline"]), string(object["name"])]),
+      description: normalized(string(object["description"])),
+      imageURL: normalizedURL(jsonLDURLValue(object["image"]), relativeTo: pageURL),
+      siteName: first([
+        string(publisher?["name"]), string(isPartOf?["name"]),
+      ]),
+      authorName: jsonLDName(object["author"]),
+      publishedAt: string(object["datePublished"]).flatMap(parseDate),
+      iconURL: normalizedURL(jsonLDURLValue(publisher?["logo"]), relativeTo: pageURL),
+      canonicalURL: normalizedURL(
+        jsonLDURLValue(object["mainEntityOfPage"]) ?? string(object["url"]),
+        relativeTo: pageURL
+      ),
+      hasProductOfferSchema: hasProductOfferSchema
+    )
+  }
+
+  private static func isProductOrOffer(_ object: [String: Any]) -> Bool {
+    let types = (object["@type"] as? [String]) ?? (object["@type"] as? String).map { [$0] } ?? []
+    return types.contains { ["product", "offer"].contains($0.lowercased()) }
+      || object["offers"] != nil
   }
 
   private static func jsonLDObjects(_ value: Any) -> [[String: Any]] {

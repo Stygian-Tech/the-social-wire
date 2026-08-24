@@ -4,6 +4,40 @@ import Testing
 
 @Suite("The Wire OpenGraph parser")
 struct WireOpenGraphParserTests {
+  @Test("carries Product and Offer JSON-LD into commercial classification")
+  func productOfferSchema() throws {
+    let html = """
+      <html><head>
+      <meta property="og:title" content="A useful product">
+      <script type="application/ld+json">
+      {"@context":"https://schema.org","@type":"Product","name":"Widget",
+       "offers":{"@type":"Offer","price":"19.99","priceCurrency":"USD"}}
+      </script>
+      </head></html>
+      """
+    let metadata = try #require(
+      WireOpenGraphParser.parse(html: html, pageURL: URL(string: "https://shop.example/widget")!))
+    #expect(metadata.hasProductOfferSchema)
+  }
+
+  @Test("detects Product schema after an earlier Article block")
+  func productSchemaAfterArticle() throws {
+    let html = """
+      <html><head>
+      <script type="application/ld+json">
+      {"@context":"https://schema.org","@type":"NewsArticle","headline":"Review"}
+      </script>
+      <script type="application/ld+json">
+      {"@context":"https://schema.org","@type":"Product","name":"Sponsored widget"}
+      </script>
+      </head></html>
+      """
+    let metadata = try #require(
+      WireOpenGraphParser.parse(html: html, pageURL: URL(string: "https://news.example/review")!))
+    #expect(metadata.title == "Review")
+    #expect(metadata.hasProductOfferSchema)
+  }
+
   @Test("prefers OpenGraph fields and resolves relative media")
   func parsesOpenGraph() throws {
     let html = """

@@ -229,6 +229,26 @@ struct WireRankerTests {
     #expect(WireDomainPenaltyPolicy().penalty(for: "notreddit.com") == 0)
   }
 
+  @Test("commercial and unsupported targets enforce the quality gate")
+  func commercialQualityGate() throws {
+    let normal = candidate("normal", actors: 5)
+    var limited = candidate("limited", actors: 5)
+    limited.commercialClass = .limited
+    limited.commercialScore = 4
+    var advertisement = candidate("advertisement", actors: 20)
+    advertisement.commercialClass = .probableAd
+    advertisement.commercialScore = 8
+    var socialPost = candidate("social-post", actors: 20)
+    socialPost.targetKind = .socialPost
+
+    let result = try WireRanker.rank(
+      candidates: [limited, advertisement, socialPost, normal], asOf: now, config: .init())
+
+    #expect(result.items.map(\.candidate.canonicalKey) == ["normal", "limited"])
+    #expect(result.items[0].score > result.items[1].score)
+    #expect(result.diagnostics.rejectedForQuality == 2)
+  }
+
   @Test("quality backfill fills a sparse edition before general backfill")
   func qualityBackfill() throws {
     let quality = candidate("quality", actors: 3, openGraph: true)
