@@ -416,6 +416,61 @@ struct WirePostgresIntegrationTests {
     )
   }
 
+  @Test("a valid pathless Standard Site document is applied as a no-op")
+  func pathlessStandardSiteDocumentAppliesNoOp() async throws {
+    guard let url = ProcessInfo.processInfo.environment["WIRE_TEST_DATABASE_URL"] else { return }
+    let logger = Logger(label: "wire-pathless-standard-site-postgres.integration")
+    let configuration = try PostgresWireConfig.make(from: url, logger: logger)
+    let pool = PostgresClient(configuration: configuration, backgroundLogger: logger)
+    let runTask = Task { await pool.run() }
+    await Task.yield()
+    defer { runTask.cancel() }
+
+    let environment = "wire-pathless-standard-site-\(UUID().uuidString.lowercased())"
+    let generation = "wire-pathless-standard-site-v1"
+    let now = Date()
+    let payload = """
+      {"commit":{"record":{"$type":"site.standard.document","site":"at://did:plc:author/site.standard.publication/main","title":"Valid pathless document","publishedAt":"2026-08-24T00:00:00Z"}}}
+      """
+    try await pool.query(
+      """
+      INSERT INTO wire_ingestion_inbox
+        (environment, source_generation, seq, source_host, cursor_kind, event_kind,
+         repo_did, collection, operation, record_key, payload, event_time)
+      VALUES
+        (\(environment), \(generation), 1, 'test', 'jetstream_v2_seq', 'commit',
+         'did:plc:author', 'site.standard.document', 'create', 'pathless',
+         \(payload)::jsonb, \(now))
+      """,
+      logger: logger
+    )
+    let processor = try PostgresWireInboxProcessor(
+      pool: pool,
+      logger: logger,
+      actorSecret: String(repeating: "s", count: 32)
+    )
+    #expect(try await processor.process(asOf: now.addingTimeInterval(1)) == 1)
+
+    let rows = try await pool.query(
+      """
+      SELECT status, failure_reason, dead_lettered_at
+      FROM wire_ingestion_inbox
+      WHERE environment = \(environment) AND source_generation = \(generation) AND seq = 1
+      """,
+      logger: logger
+    )
+    for try await row in rows {
+      let result = try row.decode((String, String?, Date?).self)
+      #expect(result.0 == "applied")
+      #expect(result.1 == nil)
+      #expect(result.2 == nil)
+    }
+    try await pool.query(
+      "DELETE FROM wire_ingestion_inbox WHERE environment = \(environment)",
+      logger: logger
+    )
+  }
+
   @Test("continuous runtime drains successive bounded PostgreSQL batches")
   func continuousPostgresDrain() async throws {
     guard let url = ProcessInfo.processInfo.environment["WIRE_TEST_DATABASE_URL"] else { return }

@@ -24,7 +24,12 @@ enum WireStandardSiteDocumentResolver {
       )
     }
     guard let path = firstString(record, keys: ["path"])
-    else { throw WireStandardSiteDocumentError.malformedDocument }
+    else {
+      if isValidUnaddressableDocument(record) {
+        throw WireStandardSiteDocumentError.unaddressableDocument
+      }
+      throw WireStandardSiteDocumentError.malformedDocument
+    }
     if let site = firstString(record, keys: ["site", "siteUrl", "homepage"]),
       let articleURL = WireStandardSiteURL.articleURL(path: path, publicationBase: site)
     {
@@ -106,5 +111,15 @@ enum WireStandardSiteDocumentResolver {
       }
     }
     return nil
+  }
+
+  private static func isValidUnaddressableDocument(_ record: [String: Any]) -> Bool {
+    guard
+      let site = firstString(record, keys: ["site"]),
+      firstString(record, keys: ["title"]) != nil,
+      firstString(record, keys: ["publishedAt"]) != nil
+    else { return false }
+    return WirePublicationReference.parse(site) != nil
+      || WireStandardSiteURL.publicationBase(from: ["url": site]) != nil
   }
 }

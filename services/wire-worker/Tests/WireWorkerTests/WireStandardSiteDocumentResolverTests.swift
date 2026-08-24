@@ -61,6 +61,24 @@ struct WireStandardSiteDocumentResolverTests {
     }
   }
 
+  @Test("a valid document without a path is explicitly unaddressable")
+  func validPathlessDocument() async {
+    await #expect(throws: WireStandardSiteDocumentError.unaddressableDocument) {
+      try await WireStandardSiteDocumentResolver.resolve(
+        record: [
+          "$type": "site.standard.document",
+          "site": "at://did:plc:author/site.standard.publication/main",
+          "title": "A valid pathless document",
+          "publishedAt": "2026-08-24T00:00:00Z",
+        ],
+        publicationResolver: WirePublicationResolver(
+          store: InMemoryWirePublicationStore(), queryClient: nil
+        ),
+        asOf: Date()
+      )
+    }
+  }
+
   @Test("direct canonical URLs remain backward compatible")
   func directURL() async throws {
     let resolved = try await WireStandardSiteDocumentResolver.resolve(

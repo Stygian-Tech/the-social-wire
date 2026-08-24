@@ -4,6 +4,8 @@ import PostgresNIO
 import WireCore
 
 actor PostgresWireFeedStore: WireFeedStore {
+  private static let generationFreshnessInterval: TimeInterval = 10 * 60
+
   private struct Generation: Sendable {
     let id: UUID
     let language: String
@@ -127,8 +129,8 @@ actor PostgresWireFeedStore: WireFeedStore {
       generatedAt: generation.generatedAt,
       language: generation.language,
       cursor: nextCursor,
-      source: age > 10 * 60 ? .staleGeneration : .ranked,
-      degraded: age > 10 * 60,
+      source: age > Self.generationFreshnessInterval ? .staleGeneration : .ranked,
+      degraded: age > Self.generationFreshnessInterval,
       items: pageItems
     )
   }
@@ -362,8 +364,8 @@ actor PostgresWireFeedStore: WireFeedStore {
       generatedAt: generation.generatedAt,
       language: generation.language,
       cursor: cursor,
-      source: age > 10 * 60 ? .staleGeneration : .ranked,
-      degraded: age > 10 * 60,
+      source: age > Self.generationFreshnessInterval ? .staleGeneration : .ranked,
+      degraded: age > Self.generationFreshnessInterval,
       leadStories: leads,
       publicationPanels: panels,
       storyRails: rails,
@@ -443,10 +445,34 @@ actor PostgresWireFeedStore: WireFeedStore {
   }
 
   private func activeGeneration(language: String, now: Date) async throws -> Generation? {
-    if language != "und", let localized = try await activeGeneration(exactLanguage: language, now: now) {
-      return localized
+    guard language != "und" else {
+      return try await activeGeneration(exactLanguage: "und", now: now)
     }
-    return try await activeGeneration(exactLanguage: "und", now: now)
+    let localized = try await activeGeneration(exactLanguage: language, now: now)
+    let global = try await activeGeneration(exactLanguage: "und", now: now)
+    switch (localized, global) {
+    case (.some(let localized), .some(let global)):
+      return Self.prefersLocalizedGeneration(
+        localizedGeneratedAt: localized.generatedAt,
+        globalGeneratedAt: global.generatedAt,
+        now: now
+      ) ? localized : global
+    case (.some(let localized), .none):
+      return localized
+    case (.none, .some(let global)):
+      return global
+    case (.none, .none):
+      return nil
+    }
+  }
+
+  static func prefersLocalizedGeneration(
+    localizedGeneratedAt: Date,
+    globalGeneratedAt: Date,
+    now: Date
+  ) -> Bool {
+    let localizedIsFresh = now.timeIntervalSince(localizedGeneratedAt) <= generationFreshnessInterval
+    return localizedIsFresh || localizedGeneratedAt >= globalGeneratedAt
   }
 
   private func activeGeneration(exactLanguage language: String, now: Date) async throws -> Generation? {
