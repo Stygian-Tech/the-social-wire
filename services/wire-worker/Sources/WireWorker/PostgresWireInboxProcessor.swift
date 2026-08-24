@@ -110,6 +110,17 @@ struct PostgresWireInboxProcessor: Sendable {
     collection != "app.bsky.feed.like" && collection != "app.bsky.feed.repost"
   }
 
+  static func referenceSubjectURI(record: [String: Any], collection: String?) -> String? {
+    if collection == "site.standard.graph.recommend",
+      let document = record["document"] as? String
+    {
+      return document
+    }
+    let subject = record["subject"]
+    if let string = subject as? String { return string }
+    return (subject as? [String: Any])?["uri"] as? String
+  }
+
   func acknowledgeUnresolvedPassiveReferences(asOf: Date, limit: Int) async throws -> Int {
     if let sourceScope {
       return try await acknowledgeScopedUnresolvedPassiveReferences(
@@ -986,14 +997,10 @@ struct PostgresWireInboxProcessor: Sendable {
     kind: String,
     asOf: Date
   ) async throws {
-    guard let subject = record["subject"] else { throw ApplyError.malformed }
-    let subjectURI: String?
-    if let string = subject as? String {
-      subjectURI = string
-    } else {
-      subjectURI = (subject as? [String: Any])?["uri"] as? String
-    }
-    guard let subjectURI else { throw ApplyError.malformed }
+    guard let subjectURI = Self.referenceSubjectURI(
+      record: record,
+      collection: event.collection
+    ) else { throw ApplyError.malformed }
     guard let canonicalKey = try await canonicalKey(alias: subjectURI) else {
       if Self.retriesUnresolvedReference(collection: event.collection) {
         throw ApplyError.unresolvedReference

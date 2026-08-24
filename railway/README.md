@@ -61,7 +61,9 @@ it with `APP_ENV=prod`, `WIRE_FEED_MODE=api`, `WIRE_WORKER_ROLE=drain`,
 and `WIRE_INBOX_SOURCE_GENERATIONS=wire-global-v4-prod-live-tail-v1`, plus the
 same Postgres, migrator, and actor HMAC references as the existing Wire drains.
 Keep inbox cleanup enabled: the source scope applies to terminal cleanup too,
-so it bounds v4 rows without changing retained historical rows. Before its
-first start, stop the v3 producer and every unscoped drain and wait more than
-the 120-second inbox lease period. Do not run an unscoped or historical drain
-alongside it.
+so it bounds v4 rows without changing retained historical rows. Set
+`WIRE_INBOX_CLEANUP_ENABLED=false` on the singleton rank service while this
+scoped drain owns cleanup; rank does not claim inbox work, but its cleanup loop
+is otherwise unscoped. Before the scoped drain's first start, stop the historical
+producer and every unscoped drain and wait more than the 120-second inbox lease
+period. Do not run an unscoped or historical drain alongside it.
