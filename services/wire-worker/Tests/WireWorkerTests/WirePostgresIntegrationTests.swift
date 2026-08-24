@@ -145,7 +145,7 @@ struct WirePostgresIntegrationTests {
       {"commit":{"record":{"$type":"app.bsky.feed.like","subject":{"uri":"\(liveSubject)","cid":"bafylive"}}}}
       """
     let recommendationPayload = """
-      {"commit":{"record":{"$type":"site.standard.graph.recommend","subject":{"uri":"\(missingSubject)","cid":"bafymissing"}}}}
+      {"commit":{"record":{"$type":"site.standard.graph.recommend","document":"\(missingSubject)"}}}
       """
 
     try await pool.query(
@@ -298,7 +298,7 @@ struct WirePostgresIntegrationTests {
       {"commit":{"record":{"$type":"app.bsky.feed.repost","subject":{"uri":"\(missingSubject)","cid":"bafymissing"}}}}
       """
     let recommendationPayload = """
-      {"commit":{"record":{"$type":"site.standard.graph.recommend","subject":{"uri":"\(missingSubject)","cid":"bafymissing"}}}}
+      {"commit":{"record":{"$type":"site.standard.graph.recommend","document":"\(missingSubject)"}}}
       """
     let feedbackPayload = """
       {"commit":{"record":{"$type":"app.thesocialwire.wireFeedback","canonicalUrl":"https://missing.example/story","value":"good"}}}
