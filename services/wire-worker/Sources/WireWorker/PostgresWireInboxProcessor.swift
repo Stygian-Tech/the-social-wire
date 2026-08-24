@@ -835,6 +835,8 @@ struct PostgresWireInboxProcessor: Sendable {
         publicationResolver: publicationResolver,
         asOf: asOf
       )
+    } catch WireStandardSiteDocumentError.unaddressableDocument {
+      return
     } catch WireStandardSiteDocumentError.unresolvedPublication {
       throw ApplyError.unresolvedPublication
     } catch WireStandardSiteDocumentError.malformedDocument,

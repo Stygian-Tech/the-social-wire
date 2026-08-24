@@ -241,6 +241,98 @@ struct WirePostgresServingIntegrationTests {
     )
   }
 
+  @Test("a stale localized generation yields to a fresh global generation")
+  func staleLocalizedGenerationUsesFreshGlobal() async throws {
+    guard let url = ProcessInfo.processInfo.environment["WIRE_TEST_DATABASE_URL"] else { return }
+    let logger = Logger(label: "wire-appview-postgres.fresh-global-integration")
+    var configuration = try makePostgresConfig(from: url, logger: logger)
+    configuration.options.maximumConnections = 2
+    let pool = PostgresClient(configuration: configuration, backgroundLogger: logger)
+    let runTask = Task { await pool.run() }
+    await Task.yield()
+    defer { runTask.cancel() }
+
+    let namespace = UUID().uuidString.lowercased()
+    let key = "url:\(namespace)-fresh-global"
+    let localizedGeneration = UUID()
+    let globalGeneration = UUID()
+    let now = Date()
+    let labelSource = "did:example:labeler:\(namespace)"
+    do {
+      try await setBaselineLabelState(
+        sourceDID: labelSource,
+        successfulAt: now,
+        pool: pool,
+        logger: logger
+      )
+      try await pool.query(
+        """
+        INSERT INTO wire_items
+          (canonical_key, canonical_url, source_domain, source_name, title, language_code,
+           provenance, first_seen_at, last_seen_at, published_at, source_confidence,
+           eligible, expires_at)
+        VALUES
+          (\(key), \("https://example.com/\(namespace)/fresh-global"), 'example.com',
+           'Example', 'Fresh global story', 'und', '["standard_site"]'::jsonb,
+           \(now), \(now), \(now), 0.9, TRUE, \(now.addingTimeInterval(86_400)))
+        """,
+        logger: logger
+      )
+      try await insertGeneration(
+        globalGeneration,
+        keys: [key],
+        generatedAt: now,
+        active: true,
+        pool: pool,
+        logger: logger
+      )
+      try await insertGeneration(
+        localizedGeneration,
+        keys: [key],
+        generatedAt: now.addingTimeInterval(-31 * 60),
+        active: true,
+        language: "en",
+        pool: pool,
+        logger: logger
+      )
+
+      let store = try PostgresWireFeedStore(
+        pool: pool,
+        logger: logger,
+        cursorSecret: String(repeating: "c", count: 32),
+        mode: .visible,
+        moderationCache: WireViewerModerationCache()
+      )
+      let page = try await store.getFeed(
+        cursor: nil,
+        limit: 1,
+        language: "en-US",
+        viewerDid: nil,
+        now: now
+      )
+      #expect(page.generationID == globalGeneration.uuidString.lowercased())
+      #expect(page.language == "und")
+      #expect(page.source == .ranked)
+      #expect(!page.degraded)
+    } catch {
+      Issue.record("PostgreSQL fresh-global integration failed: \(String(reflecting: error))")
+    }
+
+    try await pool.query(
+      "DELETE FROM wire_feed_state WHERE active_generation_id IN (\(localizedGeneration), \(globalGeneration))",
+      logger: logger
+    )
+    try await pool.query(
+      "DELETE FROM wire_rank_generations WHERE generation_id IN (\(localizedGeneration), \(globalGeneration))",
+      logger: logger
+    )
+    try await pool.query("DELETE FROM wire_items WHERE canonical_key = \(key)", logger: logger)
+    try await pool.query(
+      "DELETE FROM wire_label_refresh_state WHERE source_did = \(labelSource)",
+      logger: logger
+    )
+  }
+
   @Test("serving and catalog fail closed after the baseline label snapshot is thirty minutes stale")
   func staleBaselineFailsClosed() async throws {
     guard let url = ProcessInfo.processInfo.environment["WIRE_TEST_DATABASE_URL"] else { return }
@@ -323,6 +415,7 @@ struct WirePostgresServingIntegrationTests {
     keys: [String],
     generatedAt: Date,
     active: Bool,
+    language: String = "und",
     pool: PostgresClient,
     logger: Logger
   ) async throws {
@@ -333,7 +426,7 @@ struct WirePostgresServingIntegrationTests {
           (generation_id, feed_key, language_bucket, status, is_active, config_version,
            generated_at, committed_at, expires_at, candidate_count, ranked_count)
         VALUES
-          (\(id), 'wire', 'und', 'committed', \(active), 'wire-v1', \(generatedAt),
+          (\(id), 'wire', \(language), 'committed', \(active), 'wire-v1', \(generatedAt),
            \(generatedAt), \(generatedAt.addingTimeInterval(172_800)), \(keys.count), \(keys.count))
         """,
         logger: logger
@@ -351,7 +444,7 @@ struct WirePostgresServingIntegrationTests {
       try await connection.query(
         """
         INSERT INTO wire_feed_state (feed_key, language_bucket, active_generation_id, updated_at)
-        VALUES ('wire', 'und', \(id), \(generatedAt))
+        VALUES ('wire', \(language), \(id), \(generatedAt))
         ON CONFLICT (feed_key, language_bucket) DO UPDATE
         SET active_generation_id = EXCLUDED.active_generation_id, updated_at = EXCLUDED.updated_at
         """,

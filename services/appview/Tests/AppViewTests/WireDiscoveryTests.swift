@@ -100,6 +100,26 @@ struct WireDiscoveryTests {
     ))
   }
 
+  @Test("a fresh global generation replaces a stale localized generation")
+  func freshGlobalGenerationReplacesStaleLocale() {
+    let now = Date(timeIntervalSince1970: 2_000_000_000)
+    #expect(PostgresWireFeedStore.prefersLocalizedGeneration(
+      localizedGeneratedAt: now.addingTimeInterval(-60),
+      globalGeneratedAt: now,
+      now: now
+    ))
+    #expect(!PostgresWireFeedStore.prefersLocalizedGeneration(
+      localizedGeneratedAt: now.addingTimeInterval(-31 * 60),
+      globalGeneratedAt: now,
+      now: now
+    ))
+    #expect(PostgresWireFeedStore.prefersLocalizedGeneration(
+      localizedGeneratedAt: now.addingTimeInterval(-31 * 60),
+      globalGeneratedAt: now.addingTimeInterval(-32 * 60),
+      now: now
+    ))
+  }
+
   @Test("public edition response de-duplicates stories and exposes ID-based modules")
   func editionResponseShape() throws {
     let now = Date(timeIntervalSince1970: 2_000_000_000)
