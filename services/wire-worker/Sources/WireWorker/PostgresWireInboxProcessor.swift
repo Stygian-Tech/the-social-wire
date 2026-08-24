@@ -80,7 +80,8 @@ struct PostgresWireInboxProcessor: Sendable {
       asOf: asOf,
       limit: batchSize
     )
-    let events = try await claim(asOf: asOf)
+    let passiveDeleteEvents = try await claimScopedPassiveDeletes(asOf: asOf)
+    let events = passiveDeleteEvents + (try await claim(asOf: asOf))
     var iterator = events.makeIterator()
     var appliedEventCount = fastPathCount
     try await withThrowingTaskGroup(of: Bool.self) { tasks in
@@ -578,6 +579,110 @@ struct PostgresWireInboxProcessor: Sendable {
       WHERE inbox.environment = candidates.environment
         AND inbox.source_generation = candidates.source_generation
         AND inbox.seq = candidates.seq
+      RETURNING inbox.environment, inbox.source_generation, inbox.seq,
+                inbox.source_host, inbox.cursor_kind, inbox.event_kind,
+                inbox.repo_did, inbox.collection, inbox.operation, inbox.record_key,
+                inbox.payload::text, inbox.event_time, inbox.lease_token, inbox.attempt_count
+      """,
+      logger: logger
+    )
+    var result: [InboxEvent] = []
+    for try await row in rows {
+      let value = try row.decode(
+        (
+          String, String, Int64, String, String, String, String, String?, String?, String?, String,
+          Date, String, Int
+        ).self
+      )
+      result.append(
+        InboxEvent(
+          environment: value.0,
+          sourceGeneration: value.1,
+          sequence: value.2,
+          sourceHost: value.3,
+          cursorKind: value.4,
+          eventKind: value.5,
+          repoDID: value.6,
+          collection: value.7,
+          operation: value.8,
+          recordKey: value.9,
+          payloadJSON: value.10,
+          eventTime: value.11,
+          leaseToken: value.12,
+          attemptCount: value.13
+        )
+      )
+    }
+    return result.sorted { $0.sequence < $1.sequence }
+  }
+
+  private func claimScopedPassiveDeletes(asOf: Date) async throws -> [InboxEvent] {
+    guard let sourceScope else { return [] }
+    let token = UUID().uuidString.lowercased()
+    let leaseUntil = asOf.addingTimeInterval(120)
+    let claimLimit = Self.boundedClaimLimit(
+      batchSize: batchSize,
+      maximumConcurrentEvents: maximumConcurrentEvents
+    )
+    let rows = try await pool.query(
+      """
+      WITH scoped_active AS MATERIALIZED (
+        SELECT environment, source_generation, seq, repo_did, status,
+               next_attempt_at, lease_expires_at, event_kind, collection,
+               operation, record_key
+        FROM wire_ingestion_inbox
+        WHERE environment = \(sourceScope.environment)
+          AND source_generation = ANY(\(sourceScope.sourceGenerations))
+          AND status IN ('pending', 'leased', 'retry')
+      ),
+      repo_barriers AS MATERIALIZED (
+        SELECT environment, source_generation, repo_did,
+               MIN(seq) FILTER (
+                 WHERE event_kind <> 'commit'
+                    OR collection IS NULL
+                    OR collection NOT IN ('app.bsky.feed.like', 'app.bsky.feed.repost')
+                    OR operation IS DISTINCT FROM 'delete'
+                    OR record_key IS NULL
+               ) AS barrier_seq
+        FROM scoped_active
+        GROUP BY environment, source_generation, repo_did
+      ),
+      candidates AS (
+        SELECT inbox.environment, inbox.source_generation, inbox.seq
+        FROM scoped_active candidate
+        JOIN repo_barriers barrier
+          ON barrier.environment = candidate.environment
+         AND barrier.source_generation = candidate.source_generation
+         AND barrier.repo_did = candidate.repo_did
+        JOIN wire_ingestion_inbox inbox
+          ON inbox.environment = candidate.environment
+         AND inbox.source_generation = candidate.source_generation
+         AND inbox.seq = candidate.seq
+        WHERE (
+            (candidate.status IN ('pending', 'retry')
+              AND candidate.next_attempt_at <= \(asOf))
+            OR (candidate.status = 'leased'
+              AND candidate.lease_expires_at <= \(asOf))
+          )
+          AND candidate.event_kind = 'commit'
+          AND candidate.collection IN ('app.bsky.feed.like', 'app.bsky.feed.repost')
+          AND candidate.operation = 'delete'
+          AND candidate.record_key IS NOT NULL
+          AND (barrier.barrier_seq IS NULL OR candidate.seq < barrier.barrier_seq)
+        ORDER BY COALESCE(candidate.lease_expires_at, candidate.next_attempt_at), candidate.seq
+        FOR UPDATE OF inbox SKIP LOCKED
+        LIMIT \(claimLimit)
+      )
+      UPDATE wire_ingestion_inbox inbox
+      SET status = 'leased', lease_owner = 'wire-worker', lease_token = \(token),
+          lease_expires_at = \(leaseUntil), attempt_count = attempt_count + 1,
+          updated_at = \(asOf)
+      FROM candidates
+      WHERE inbox.environment = candidates.environment
+        AND inbox.source_generation = candidates.source_generation
+        AND inbox.seq = candidates.seq
+        AND inbox.environment = \(sourceScope.environment)
+        AND inbox.source_generation = ANY(\(sourceScope.sourceGenerations))
       RETURNING inbox.environment, inbox.source_generation, inbox.seq,
                 inbox.source_host, inbox.cursor_kind, inbox.event_kind,
                 inbox.repo_did, inbox.collection, inbox.operation, inbox.record_key,
