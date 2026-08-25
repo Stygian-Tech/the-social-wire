@@ -17,4 +17,33 @@ struct WireLinkMetadata: Equatable, Sendable {
   let etag: String?
   let lastModified: String?
   let source: Source
+  let hasProductOfferSchema: Bool
+
+  init(
+    canonicalURL: String,
+    title: String?,
+    description: String?,
+    imageURL: String?,
+    siteName: String?,
+    authorName: String?,
+    publishedAt: Date?,
+    iconURL: String?,
+    etag: String?,
+    lastModified: String?,
+    source: Source,
+    hasProductOfferSchema: Bool = false
+  ) {
+    self.canonicalURL = canonicalURL
+    self.title = title
+    self.description = description
+    self.imageURL = imageURL
+    self.siteName = siteName
+    self.authorName = authorName
+    self.publishedAt = publishedAt
+    self.iconURL = iconURL
+    self.etag = etag
+    self.lastModified = lastModified
+    self.source = source
+    self.hasProductOfferSchema = hasProductOfferSchema
+  }
 }

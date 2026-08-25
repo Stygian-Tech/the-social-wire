@@ -45,6 +45,10 @@ public enum WireRanker {
         rejectedForQuality += 1
         continue
       }
+      guard candidate.targetKind.canCreateItem, candidate.commercialClass != .probableAd else {
+        rejectedForQuality += 1
+        continue
+      }
       guard let tier = admissionTier(for: candidate, age: age, config: config) else {
         rejectedForSignalFloor += 1
         continue
@@ -106,6 +110,7 @@ public enum WireRanker {
       )
       let score = clamp(
         feedbackAdjustedScore - config.domainPenalties.penalty(for: candidate.sourceDomain)
+          - (candidate.commercialClass == .limited ? config.limitedCommercialPenalty : 0)
           + rotationNudge(canonicalKey: candidate.canonicalKey, asOf: asOf)
       )
 

@@ -933,6 +933,9 @@ struct PostgresWireInboxProcessor: Sendable {
     guard let identity = WireCanonicalizer.canonicalize(resolved.canonicalURL),
       let host = URL(string: identity.canonicalURL)?.host
     else { throw ApplyError.malformed }
+    let targetKind = WireContentQualityClassifier.targetKind(
+      for: identity.canonicalURL, standardSite: true)
+    guard targetKind.canCreateItem else { return }
     let title = Self.firstString(record, keys: ["title", "name"]) ?? host
     let summary = Self.firstString(record, keys: ["summary", "description", "text", "textContent"])
     let thumbnail = Self.firstString(
@@ -970,6 +973,9 @@ struct PostgresWireInboxProcessor: Sendable {
       publicationHomepageURL: resolved.publicationHomepageURL
         ?? Self.homepageURL(for: identity.canonicalURL),
       publicationIconURL: nil,
+      sourceText: nil,
+      targetKind: targetKind,
+      inspectionURL: resolved.canonicalURL,
       asOf: asOf
     )
     try await upsertAlias(
@@ -999,6 +1005,7 @@ struct PostgresWireInboxProcessor: Sendable {
     asOf: Date
   ) async throws {
     guard let rawURL = Self.externalURL(record),
+      WireContentQualityClassifier.targetKind(for: rawURL).canCreateItem,
       let identity = WireCanonicalizer.canonicalize(rawURL),
       let host = URL(string: identity.canonicalURL)?.host
     else {
@@ -1041,6 +1048,9 @@ struct PostgresWireInboxProcessor: Sendable {
       presentationPriority: embedded == nil ? 100 : 200,
       publicationHomepageURL: Self.homepageURL(for: identity.canonicalURL),
       publicationIconURL: embedded?.iconURL,
+      sourceText: text,
+      targetKind: .externalArticle,
+      inspectionURL: rawURL,
       asOf: asOf
     )
     if let embedded {
@@ -1313,10 +1323,22 @@ struct PostgresWireInboxProcessor: Sendable {
     presentationPriority: Int,
     publicationHomepageURL: String?,
     publicationIconURL: String?,
+    sourceText: String?,
+    targetKind: WireTargetKind,
+    inspectionURL: String,
     asOf: Date
   ) async throws {
     let provenanceJSON = String(decoding: try JSONEncoder().encode(provenance), as: UTF8.self)
     let topicsJSON = String(decoding: try JSONEncoder().encode(topicKeys), as: UTF8.self)
+    let commercial = WireContentQualityClassifier.assess(
+      canonicalURL: inspectionURL,
+      title: title,
+      summary: summary,
+      sourceText: sourceText,
+      topicKeys: topicKeys
+    )
+    let commercialReasonsJSON = String(
+      decoding: try JSONEncoder().encode(commercial.reasons.map(\.rawValue)), as: UTF8.self)
     var presentation: [String: Any] = [
       "metadataSource": presentationSource,
       "sourcePriority": presentationPriority,
@@ -1336,13 +1358,16 @@ struct PostgresWireInboxProcessor: Sendable {
          publication_homepage_url, publication_icon_url,
          language_code, topic_keys, presentation_snapshot, provenance, published_at,
          first_seen_at, last_seen_at, last_signal_at,
-         source_confidence, eligible, expires_at, updated_at)
+         source_confidence, eligible, target_kind, commercial_score, commercial_class,
+         commercial_reasons, expires_at, updated_at)
       VALUES
         (\(identity.canonicalKey), \(identity.canonicalURL), \(representativeURI), \(publicationID),
          \(authorDID), \(host), \(sourceName), \(authorName), \(title), \(summary), \(thumbnail),
          \(publicationHomepageURL), \(publicationIconURL),
          \(language), \(topicsJSON)::jsonb, \(presentationJSON)::jsonb, \(provenanceJSON)::jsonb,
-         \(publishedAt), \(asOf), \(asOf), \(asOf), \(confidence), TRUE, \(expiresAt), \(asOf))
+         \(publishedAt), \(asOf), \(asOf), \(asOf), \(confidence), TRUE, \(targetKind.rawValue),
+         \(commercial.score), \(commercial.classification.rawValue),
+         \(commercialReasonsJSON)::jsonb, \(expiresAt), \(asOf))
       ON CONFLICT (canonical_key) DO UPDATE SET
         canonical_url = EXCLUDED.canonical_url,
         representative_uri = COALESCE(wire_items.representative_uri, EXCLUDED.representative_uri),
@@ -1383,7 +1408,15 @@ struct PostgresWireInboxProcessor: Sendable {
             SELECT DISTINCT value
             FROM jsonb_array_elements_text(wire_items.provenance || EXCLUDED.provenance)
           ) unique_provenance
-        ),
+        ), target_kind = CASE WHEN wire_items.target_kind = 'standard_site_document'
+          THEN wire_items.target_kind ELSE EXCLUDED.target_kind END,
+        commercial_score = GREATEST(wire_items.commercial_score, EXCLUDED.commercial_score),
+        commercial_class = CASE
+          WHEN wire_items.commercial_score > EXCLUDED.commercial_score
+          THEN wire_items.commercial_class ELSE EXCLUDED.commercial_class END,
+        commercial_reasons = CASE
+          WHEN wire_items.commercial_score > EXCLUDED.commercial_score
+          THEN wire_items.commercial_reasons ELSE EXCLUDED.commercial_reasons END,
         published_at = COALESCE(wire_items.published_at, EXCLUDED.published_at),
         last_seen_at = EXCLUDED.last_seen_at, last_signal_at = EXCLUDED.last_signal_at,
         source_confidence = GREATEST(wire_items.source_confidence, EXCLUDED.source_confidence),
