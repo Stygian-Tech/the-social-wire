@@ -5,7 +5,7 @@
     "": {
       "name": "the-social-wire",
       "dependencies": {
-        "latr-packages": "github:Stygian-Tech/latr-packages#d686dd1f8e1185e8dc4b6010daae32aa5b1cc9c0",
+        "latr-packages": "github:Stygian-Tech/latr-packages#e959a47750a50de0f50a8b40820a027328ebf37d",
       },
       "devDependencies": {
         "turbo": "2.9.14",
@@ -1153,7 +1153,7 @@
 
     "language-tags": ["language-tags@1.0.9", "", { "dependencies": { "language-subtag-registry": "^0.3.20" } }, "sha512-MbjN408fEndfiQXbFQ1vnd+1NoLDsnQW41410oQBXiyXDMYH5z505juWa4KUE1LqxRC7DgOgZDbKLxHIwm27hA=="],
 
-    "latr-packages": ["latr-packages@github:Stygian-Tech/latr-packages#d686dd1", {}, "Stygian-Tech-latr-packages-d686dd1", "sha512-snruZVis8H3nu8f5vmKwpBN8MHuSTLw7ZLzp3yFbrXMKV3ql85Dd17uMvCiVTDjJVDB6XB91osKbH8DoItph6w=="],
+    "latr-packages": ["latr-packages@github:Stygian-Tech/latr-packages#e959a47", {}, "Stygian-Tech-latr-packages-e959a47", "sha512-VKv+ZljBpSv9bjXpqIF8LxOlSz2M+PE9WrY+OmMmi6c7x0rP8KYfycb/4hRI1DQcKd5xKyCq2EwgCb7t7jNlOA=="],
 
     "levn": ["levn@0.4.1", "", { "dependencies": { "prelude-ls": "^1.2.1", "type-check": "~0.4.0" } }, "sha512-+bT2uH4E5LGE7h/n3evcS/sQlJXCpIp6ym8OWJ5eV6+67Dsql/LaaT7qJBAt2rzfoa/5QBGBhxDix1dMt2kQKQ=="],
 
