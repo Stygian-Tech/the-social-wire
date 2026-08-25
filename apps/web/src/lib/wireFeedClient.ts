@@ -67,6 +67,8 @@ export type WireItem = {
   source: WireSource;
   reasons: string[];
   provenance: string[];
+  /** Non-production ranking diagnostic; omitted by production responses. */
+  rankingScore?: number;
 };
 
 export type WireItemDetail = {
@@ -231,6 +233,7 @@ export function wireItemToEntryListItem(
       reasons: item.reasons.filter(isWireReasonCode).slice(0, 2),
       provenance: item.provenance.filter(isWireProvenanceCode),
       publishedAt: item.publishedAt,
+      rankingScore: item.rankingScore,
     },
   };
 }

@@ -544,7 +544,7 @@
 			repositoryURL = "https://github.com/Stygian-Tech/latr-kit.git";
 			requirement = {
 				kind = revision;
-				revision = 286d3273bb2f5e971d2571bbc2c1158bbcc43f1b;
+				revision = f0e2ce680b07fa41d28d7b1cfeac01a25d5df2c6;
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */
