@@ -6,12 +6,18 @@ export function WireStoryHoverMetadata({
   site,
   author,
   publishedAt,
+  rankingDiagnostics,
 }: {
   title: string;
   publicationName: string;
   site: string;
   author?: string;
   publishedAt?: string;
+  rankingDiagnostics?: {
+    rank?: number;
+    score?: number;
+    scoreKind: "Ranking Score" | "Placement Score";
+  };
 }) {
   return (
     <TooltipContent
@@ -38,6 +44,33 @@ export function WireStoryHoverMetadata({
           <>
             <dt className="font-semibold opacity-70">Published</dt>
             <dd>{publishedAt}</dd>
+          </>
+        ) : null}
+        {rankingDiagnostics?.rank ? (
+          <>
+            <dt className="font-semibold opacity-70">Rank</dt>
+            <dd className="tabular-nums">#{rankingDiagnostics.rank}</dd>
+          </>
+        ) : null}
+        {Number.isFinite(rankingDiagnostics?.score) ? (
+          <>
+            <dt className="font-semibold opacity-70">
+              {rankingDiagnostics?.scoreKind}
+            </dt>
+            <dd className="tabular-nums">
+              {rankingDiagnostics?.score?.toFixed(4)} / 1.0000
+            </dd>
+          </>
+        ) : null}
+        {rankingDiagnostics ? (
+          <>
+            <dt className="font-semibold opacity-70">Weights</dt>
+            <dd className="leading-4">
+              Sharers 0.22× · Freshness 0.18× · Community 0.14× · Standard.site
+              0.11× · Velocity 0.10× · Recommendations 0.10× · Source 0.08× ·
+              Feedback 0.06× · Resurfacing 0.06× · Metadata 0.05× · Likes 0.02× ·
+              Reposts 0.02× · Negative Feedback −0.10×
+            </dd>
           </>
         ) : null}
       </dl>

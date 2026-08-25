@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/context-menu";
 import { Tooltip, TooltipTrigger } from "@/components/ui/tooltip";
 import type { EntryListItem } from "@/lib/atprotoClient";
+import { isDevDebugUiEnabled } from "@/lib/appEnv";
 import { decodeHtmlEntities } from "@/lib/decodeHtmlEntities";
 import { thumbnailImageSrcAttempts } from "@/lib/publicResourceUrl";
 import { cn } from "@/lib/utils";
@@ -272,6 +273,19 @@ export function WireStoryCard({
           site={source?.domain.trim() || publicationName}
           author={source?.author?.trim() || undefined}
           publishedAt={detailedDate}
+          rankingDiagnostics={
+            isDevDebugUiEnabled()
+              ? {
+                  rank,
+                  score:
+                    story.wireItem?.rankingScore ??
+                    (rank ? Math.max(0, 51 - rank) / 50 : undefined),
+                  scoreKind: story.wireItem?.rankingScore != null
+                    ? "Ranking Score"
+                    : "Placement Score",
+                }
+              : undefined
+          }
         />
       </Tooltip>
       <ContextMenuContent className="min-w-[11rem]">

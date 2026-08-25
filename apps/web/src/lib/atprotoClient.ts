@@ -104,6 +104,8 @@ export interface EntryListItem {
     provenance: string[];
     /** Omitted when the discovery item has no trustworthy publication date. */
     publishedAt?: string;
+    /** Non-production ranking diagnostic; omitted by production responses. */
+    rankingScore?: number;
   };
 }
 
