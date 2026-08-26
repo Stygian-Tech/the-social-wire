@@ -8,7 +8,7 @@ struct WireWorkerConfigTests {
     let config = try WireWorkerConfig.load(["DATABASE_URL": "postgres://localhost/wire"])
     #expect(config.mode == .off)
     #expect(config.role == .combined)
-    #expect(config.intervalSeconds == 300)
+    #expect(config.intervalSeconds == 60)
     #expect(config.generationRetentionSeconds == 172_800)
     #expect(config.baselineLabelers.count == 1)
     #expect(config.baselineLabelers[0].endpointHost == "mod.bsky.app")

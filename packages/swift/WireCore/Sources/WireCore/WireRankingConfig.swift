@@ -22,7 +22,7 @@ public struct WireRankingConfig: Codable, Equatable, Sendable {
   public var limitedCommercialPenalty: Double
 
   public init(
-    version: String = "wire-v5",
+    version: String = "wire-v6",
     weights: WireRankingWeights = WireRankingWeights(),
     diversity: WireDiversityPolicy = WireDiversityPolicy(),
     minimumHighIntentActors: Int = 5,

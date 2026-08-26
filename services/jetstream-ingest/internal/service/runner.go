@@ -268,9 +268,17 @@ func (r *Runner) runOnce(ctx context.Context) error {
 
 	for batch, streamErr := range client.Events(ctx) {
 		if streamErr != nil {
-			// Never allow a later batch to checkpoint past an undecoded or failed
-			// archive unit. A new client resumes from the last committed DB cursor.
-			return fmt.Errorf("Jetstream V2 stream: %w", streamErr)
+			// The SDK can surface recoverable transport errors while retaining the
+			// ordered stream and retrying internally. Closing that healthy client
+			// here turns one transient failure into an avoidable archive replay.
+			// ErrFatal is the boundary at which ordering can no longer continue;
+			// reconnect it from the last committed database cursor.
+			if streamErrorRequiresReconnect(streamErr) {
+				return fmt.Errorf("Jetstream V2 stream: %w", streamErr)
+			}
+			r.health.Error(streamErr)
+			r.logger.Warn("recoverable Jetstream V2 stream error; continuing subscription", "error", streamErr)
+			continue
 		}
 		if batch == nil || len(batch.Events()) == 0 {
 			continue
@@ -341,6 +349,10 @@ func (r *Runner) runOnce(ctx context.Context) error {
 		}
 	}
 	return completionError
+}
+
+func streamErrorRequiresReconnect(err error) bool {
+	return errors.Is(err, jetstream.ErrFatal)
 }
 
 type wireStagingBatch struct {

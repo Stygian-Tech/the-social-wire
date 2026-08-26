@@ -476,13 +476,19 @@ actor PostgresWireFeedStore: WireFeedStore {
   }
 
   private func activeGeneration(exactLanguage language: String, now: Date) async throws -> Generation? {
+    // The active pointer is the continuity contract. Generation expiry controls
+    // cursor retention and cleanup, but active generations are deliberately
+    // retained by the worker. Keep serving that snapshot as degraded while an
+    // ingest outage prevents a replacement; item expiry, eligibility, baseline
+    // labels, and viewer moderation are still enforced on every read.
+    _ = now
     let rows = try await pool.query(
       """
       SELECT g.generation_id, g.language_bucket, g.generated_at, g.expires_at
       FROM wire_feed_state state
       JOIN wire_rank_generations g ON g.generation_id = state.active_generation_id
       WHERE state.feed_key = 'wire' AND state.language_bucket = \(language)
-        AND g.status = 'committed' AND g.expires_at > \(now)
+        AND g.status = 'committed'
       LIMIT 1
       """,
       logger: logger
@@ -513,13 +519,15 @@ actor PostgresWireFeedStore: WireFeedStore {
   }
 
   private func acceptableGenerations(now: Date) async throws -> [Generation] {
+    // Match activeGeneration: an expired active snapshot is still available,
+    // although callers expose it as stale/degraded based on generatedAt.
+    _ = now
     let rows = try await pool.query(
       """
       SELECT g.generation_id, g.language_bucket, g.generated_at, g.expires_at
       FROM wire_feed_state state
       JOIN wire_rank_generations g ON g.generation_id = state.active_generation_id
       WHERE state.feed_key = 'wire' AND g.status = 'committed'
-        AND g.expires_at > \(now)
       """,
       logger: logger
     )

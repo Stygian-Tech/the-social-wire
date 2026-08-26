@@ -129,6 +129,24 @@ struct WireRankerTests {
     #expect(result.items.count == 1)
   }
 
+  @Test("a verified fresh burst enters before the daily conversation floor")
+  func breakingBurstAdmission() throws {
+    let burst = candidate("burst", actors: 3, signals1h: 3, openGraph: true)
+    let result = try WireRanker.rank(
+      candidates: [burst], asOf: now, config: .init(minimumRankedItems: 1)
+    )
+    #expect(result.items.map(\.candidate.canonicalKey) == ["burst"])
+    #expect(result.items[0].reasonCodes.contains(.breakingStory))
+  }
+
+  @Test("unverified presentation metadata cannot enter through backfill")
+  func metadataQualityGate() throws {
+    let unverified = candidate("unverified", actors: 20, openGraph: false)
+    let result = try WireRanker.rank(candidates: [unverified], asOf: now, config: .init())
+    #expect(result.items.isEmpty)
+    #expect(result.diagnostics.rejectedForQuality == 1)
+  }
+
   @Test("trusted direct publications have a bounded fresh-content lane")
   func freshPublicationLane() throws {
     let result = try WireRanker.rank(
@@ -249,10 +267,10 @@ struct WireRankerTests {
     #expect(result.diagnostics.rejectedForQuality == 2)
   }
 
-  @Test("quality backfill fills a sparse edition before general backfill")
+  @Test("quality backfill excludes candidates without verified presentation metadata")
   func qualityBackfill() throws {
     let quality = candidate("quality", actors: 3, openGraph: true)
-    let general = candidate("general", actors: 3)
+    let general = candidate("general", actors: 3, openGraph: false)
     let result = try WireRanker.rank(
       candidates: [general, quality], asOf: now, config: .init(minimumRankedItems: 1)
     )
@@ -268,7 +286,7 @@ struct WireRankerTests {
     communities: Int = 2,
     recommendations: Int = 0,
     standardSite: Bool = false,
-    openGraph: Bool = false
+    openGraph: Bool = true
   ) -> WireCandidate {
     WireCandidate(
       canonicalKey: key,
