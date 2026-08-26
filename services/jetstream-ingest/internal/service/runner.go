@@ -248,7 +248,10 @@ func (r *Runner) runOnce(ctx context.Context) error {
 		jetstream.WithBatchSize(r.cfg.BatchSize),
 		jetstream.WithDownloadConcurrency(r.cfg.DownloadConcurrency),
 		jetstream.WithSegmentStripes(r.cfg.SegmentStripes),
-		jetstream.WithMaxDownloadAttempts(r.cfg.MaxDownloadAttempts),
+		// Jetstream v0.2.1 builds a partial Atmos RetryPolicy when this option is
+		// supplied. A retry then calls Val() on unset delay fields and panics in
+		// the SDK goroutine, beyond the Runner's recovery boundary. Keep Atmos's
+		// complete default policy until the upstream option initializes every field.
 		jetstream.WithAPIKey(r.cfg.APIKey),
 		jetstream.WithLogger(r.logger),
 		jetstream.WithHTTPClient(&http.Client{Transport: ingest.BudgetTransport{
