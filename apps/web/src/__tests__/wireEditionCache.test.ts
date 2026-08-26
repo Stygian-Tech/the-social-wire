@@ -36,11 +36,11 @@ function edition(generationId: string, title: string): WireEditionPage {
 }
 
 describe("The Wire edition cache", () => {
-  it("refreshes on mount and every five minutes while visible", () => {
-    expect(WIRE_EDITION_REFRESH_INTERVAL_MS).toBe(5 * 60_000);
+  it("refreshes on mount and every minute while visible", () => {
+    expect(WIRE_EDITION_REFRESH_INTERVAL_MS).toBe(60_000);
     expect(WIRE_EDITION_REFRESH_POLICY).toEqual({
-      staleTime: 5 * 60_000,
-      refetchInterval: 5 * 60_000,
+      staleTime: 60_000,
+      refetchInterval: 60_000,
       refetchIntervalInBackground: false,
       refetchOnMount: "always",
       refetchOnWindowFocus: "always",

@@ -127,14 +127,16 @@ func run(logger *slog.Logger) error {
 			case <-workerContext.Done():
 				return
 			case <-ticker.C:
-				renewed, renewErr := database.RenewLease(workerContext, lease, cfg.LeaderLeaseTTL)
+				// Renewal changes only the expiry timestamp. Keep the immutable
+				// lease identity local to this goroutine so shutdown can release
+				// the original fenced lease without racing this assignment.
+				_, renewErr := database.RenewLease(workerContext, lease, cfg.LeaderLeaseTTL)
 				if renewErr != nil {
 					state.Lease(false)
 					leaseErrors <- renewErr
 					stopWorker()
 					return
 				}
-				lease = renewed
 			}
 		}
 	}()

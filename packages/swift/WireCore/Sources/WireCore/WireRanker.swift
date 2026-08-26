@@ -6,9 +6,12 @@ public enum WireRanker {
 
   private enum AdmissionTier {
     case primary
+    case breaking
     case qualityBackfill
-    case generalBackfill
   }
+
+  private static let breakingMaximumAge: TimeInterval = 6 * 60 * 60
+  private static let breakingMinimumShares1h = 3
 
   public static func rank(
     candidates: [WireCandidate],
@@ -22,7 +25,6 @@ public enum WireRanker {
     var rejectedForSignalFloor = 0
     var primary: [WireScoredCandidate] = []
     var qualityBackfill: [WireScoredCandidate] = []
-    var generalBackfill: [WireScoredCandidate] = []
 
     let signalEligible = candidates.filter { candidate in
       let age = max(0, asOf.timeIntervalSince(candidate.publishedAt ?? candidate.firstSeenAt))
@@ -46,6 +48,10 @@ public enum WireRanker {
         continue
       }
       guard candidate.targetKind.canCreateItem, candidate.commercialClass != .probableAd else {
+        rejectedForQuality += 1
+        continue
+      }
+      guard candidate.isStandardSite == true || candidate.hasUsableOpenGraphMetadata == true else {
         rejectedForQuality += 1
         continue
       }
@@ -129,8 +135,8 @@ public enum WireRanker {
       )
       switch tier {
       case .primary: primary.append(scoredCandidate)
+      case .breaking: primary.append(scoredCandidate)
       case .qualityBackfill: qualityBackfill.append(scoredCandidate)
-      case .generalBackfill: generalBackfill.append(scoredCandidate)
       }
     }
 
@@ -142,21 +148,14 @@ public enum WireRanker {
     }
     sort(&primary)
     sort(&qualityBackfill)
-    sort(&generalBackfill)
 
     let qualityCount = min(
       qualityBackfill.count,
       max(0, config.minimumRankedItems - primary.count)
     )
-    let generalCount = min(
-      generalBackfill.count,
-      max(0, config.minimumRankedItems - primary.count - qualityCount)
-    )
     rejectedForSignalFloor += qualityBackfill.count - qualityCount
-      + generalBackfill.count - generalCount
     let scored = primary
       + qualityBackfill.prefix(qualityCount)
-      + generalBackfill.prefix(generalCount)
     let diversity = WireDiversityReranker.rerank(scored, policy: config.diversity)
     return WireRankingResult(
       items: diversity.items,
@@ -167,7 +166,7 @@ public enum WireRanker {
         rejectedForQuality: rejectedForQuality,
         rejectedForSignalFloor: rejectedForSignalFloor,
         qualityBackfillCount: qualityCount,
-        generalBackfillCount: generalCount,
+        generalBackfillCount: 0,
         diversityDeferrals: diversity.interventions.count
       )
     )
@@ -247,6 +246,12 @@ public enum WireRanker {
     age: TimeInterval,
     config: WireRankingConfig
   ) -> AdmissionTier? {
+    if age <= breakingMaximumAge,
+      candidate.shares1h >= breakingMinimumShares1h,
+      candidate.shares24h >= breakingMinimumShares1h
+    {
+      return .breaking
+    }
     if candidate.shares24h >= config.minimumHighIntentActors
       || candidate.recommendations24h >= config.minimumRecommendations
       || (qualifiesFreshPublicationLane(candidate, age: age)
@@ -257,9 +262,6 @@ public enum WireRanker {
     guard candidate.shares24h >= config.backfillMinimumHighIntentActors
       || candidate.recommendations24h >= config.backfillMinimumRecommendations
     else { return nil }
-    if candidate.isStandardSite == true || candidate.hasUsableOpenGraphMetadata == true {
-      return .qualityBackfill
-    }
-    return .generalBackfill
+    return .qualityBackfill
   }
 }

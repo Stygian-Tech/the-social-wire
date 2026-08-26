@@ -54,7 +54,7 @@ struct WireMigrationContractTests {
     #expect(processor.contains("expired_lease_candidates AS"))
     #expect(processor.contains("ORDER BY eligible_at, seq, environment, source_generation"))
     #expect(processor.contains("let claimLimit = Self.boundedClaimLimit"))
-    #expect(processor.components(separatedBy: "LIMIT \\(claimLimit)").count == 8)
+    #expect(processor.components(separatedBy: "LIMIT \\(claimLimit)").count == 10)
     #expect(processor.contains("candidate.environment,"))
     #expect(processor.contains("candidate.source_generation"))
     #expect(processor.contains("unresolved_publication_expired"))
@@ -87,14 +87,14 @@ struct WireMigrationContractTests {
     #expect(
       processor.components(
         separatedBy: "source_generation = ANY(\\(sourceScope.sourceGenerations))"
-      ).count == 10)
-    #expect(processor.contains("WITH scoped_heads AS MATERIALIZED"))
+      ).count == 13)
+    #expect(!processor.contains("WITH scoped_heads AS MATERIALIZED"))
     #expect(
       processor.contains(
-        "SELECT DISTINCT ON (environment, source_generation, repo_did)"
+        "candidate.environment = \\(sourceScope.environment)"
       ))
-    #expect(processor.contains("FROM scoped_heads scoped"))
-    #expect(processor.contains("WITH scoped_rows AS MATERIALIZED"))
+    #expect(!processor.contains("FROM scoped_heads scoped"))
+    #expect(!processor.contains("WITH scoped_rows AS MATERIALIZED"))
     #expect(
       processor.contains(
         "return try await acknowledgeScopedUnresolvedPassiveReferences"))
@@ -155,6 +155,22 @@ struct WireMigrationContractTests {
       claimSQL.range(of: "DROP INDEX IF EXISTS public.wire_ingestion_inbox_claim_idx"))
     let firstBuild = try #require(claimSQL.range(of: "CREATE INDEX IF NOT EXISTS"))
     #expect(oldIndexDrop.lowerBound < firstBuild.lowerBound)
+
+    let scopedClaimMigration = migration.deletingLastPathComponent()
+      .appendingPathComponent("20260826010000_optimize_scoped_wire_inbox_drain.sql")
+    let scopedClaimSQL = try String(contentsOf: scopedClaimMigration, encoding: .utf8)
+    #expect(scopedClaimSQL.contains("-- socialwire:transaction=off"))
+    #expect(scopedClaimSQL.contains("CREATE INDEX CONCURRENTLY IF NOT EXISTS"))
+    #expect(scopedClaimSQL.contains("wire_ingestion_inbox_scoped_pending_retry_ready_idx"))
+    #expect(
+      scopedClaimSQL.contains(
+        "(environment, source_generation, next_attempt_at, seq)"))
+    #expect(scopedClaimSQL.contains("wire_ingestion_inbox_scoped_expired_lease_idx"))
+    #expect(
+      scopedClaimSQL.contains(
+        "(environment, source_generation, lease_expires_at, seq)"))
+    #expect(processor.contains("candidate.environment = \\(sourceScope.environment)"))
+    #expect(!processor.contains("WITH scoped_heads AS MATERIALIZED"))
 
     let unloggedMigration = migration.deletingLastPathComponent()
       .appendingPathComponent("20260823190000_make_wire_hot_path_unlogged.sql")
