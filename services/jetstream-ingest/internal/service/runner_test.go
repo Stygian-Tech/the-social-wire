@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"strings"
 	"testing"
@@ -67,6 +68,15 @@ func TestIncidentClassification(t *testing.T) {
 	}
 	if got := classifyIncident(jetstream.ErrFatal); got != "fatal_stream" {
 		t.Fatalf("fatal category = %q", got)
+	}
+}
+
+func TestOnlyFatalStreamErrorsRequireOuterReconnect(t *testing.T) {
+	if streamErrorRequiresReconnect(errors.New("temporary upstream failure")) {
+		t.Fatal("recoverable SDK error incorrectly requires an outer reconnect")
+	}
+	if !streamErrorRequiresReconnect(fmt.Errorf("download failed: %w", jetstream.ErrFatal)) {
+		t.Fatal("wrapped fatal SDK error did not require an outer reconnect")
 	}
 }
 

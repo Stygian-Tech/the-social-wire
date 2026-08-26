@@ -32,7 +32,7 @@ export const WIRE_EDITION_QUERY_KEY = (
   modeKey: string,
 ) => ["wireEdition", language, region, modeKey] as const;
 
-export const WIRE_EDITION_REFRESH_INTERVAL_MS = 5 * 60_000;
+export const WIRE_EDITION_REFRESH_INTERVAL_MS = 60_000;
 export const WIRE_EDITION_REFRESH_POLICY = {
   staleTime: WIRE_EDITION_REFRESH_INTERVAL_MS,
   refetchInterval: WIRE_EDITION_REFRESH_INTERVAL_MS,

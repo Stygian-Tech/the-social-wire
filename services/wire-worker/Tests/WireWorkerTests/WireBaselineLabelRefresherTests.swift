@@ -158,6 +158,30 @@ struct WireBaselineLabelRefresherTests {
     #expect(await store.snapshot().replaceCount == 0)
   }
 
+  @Test("successful snapshots throttle external label queries while remaining fail closed")
+  func throttlesRecentSnapshot() async throws {
+    let store = FakeBaselineLabelStore(targets: [])
+    let client = FakeLabelQueryClient(pages: [
+      nil: WireLabelQueryPage(cursor: nil, labels: [])
+    ])
+    let refresher = WireBaselineLabelRefresher(
+      store: store,
+      queryClient: client,
+      labelers: [labeler],
+      candidateLimit: 100,
+      maximumAge: 900,
+      minimumRefreshInterval: 300
+    )
+
+    try await refresher.refresh(asOf: now)
+    try await refresher.refresh(asOf: now.addingTimeInterval(60))
+
+    #expect(await client.requests.count == 1)
+    let snapshot = await store.snapshot()
+    #expect(snapshot.replaceCount == 1)
+    #expect(snapshot.verifyCount == 2)
+  }
+
   private func record(
     uri: String,
     value: String,

@@ -127,7 +127,8 @@ struct WireWorkerCycleTests {
       signals24h: 8,
       signals7d: 8,
       communities24h: 2,
-      sourceConfidence: 0.8
+      sourceConfidence: 0.8,
+      hasUsableOpenGraphMetadata: true
     )
   }
 

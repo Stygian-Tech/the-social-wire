@@ -204,48 +204,44 @@ struct PostgresWireInboxProcessor: Sendable {
     return try await pool.withTransaction(logger: logger) { connection in
       let rows = try await connection.query(
         """
-        WITH scoped_heads AS MATERIALIZED (
-          SELECT DISTINCT ON (environment, source_generation, repo_did)
-                 environment, source_generation, seq, repo_did, status, next_attempt_at,
-                 event_kind, collection, operation, payload
-          FROM wire_ingestion_inbox
-          WHERE environment = \(sourceScope.environment)
-            AND source_generation = ANY(\(sourceScope.sourceGenerations))
-            AND status IN ('pending', 'leased', 'retry')
-          ORDER BY environment, source_generation, repo_did, seq
-        ),
-        candidates AS (
-          SELECT inbox.environment, inbox.source_generation, inbox.seq
-          FROM scoped_heads scoped
-          JOIN wire_ingestion_inbox inbox
-            ON inbox.environment = scoped.environment
-           AND inbox.source_generation = scoped.source_generation
-           AND inbox.seq = scoped.seq
-          WHERE scoped.status IN ('pending', 'retry')
-            AND scoped.next_attempt_at <= \(asOf)
-            AND scoped.event_kind = 'commit'
-            AND scoped.collection IN ('app.bsky.feed.like', 'app.bsky.feed.repost')
-            AND scoped.operation IN ('create', 'update')
+        WITH candidates AS (
+          SELECT candidate.environment, candidate.source_generation, candidate.seq
+          FROM wire_ingestion_inbox candidate
+          WHERE candidate.environment = \(sourceScope.environment)
+            AND candidate.source_generation = ANY(\(sourceScope.sourceGenerations))
+            AND candidate.status IN ('pending', 'retry')
+            AND candidate.next_attempt_at <= \(asOf)
+            AND candidate.event_kind = 'commit'
+            AND candidate.collection IN ('app.bsky.feed.like', 'app.bsky.feed.repost')
+            AND candidate.operation IN ('create', 'update')
             AND NULLIF(BTRIM(COALESCE(
-              scoped.payload #>> '{commit,record,subject,uri}',
+              candidate.payload #>> '{commit,record,subject,uri}',
               CASE
-                WHEN jsonb_typeof(scoped.payload #> '{commit,record,subject}') = 'string'
-                THEN scoped.payload #>> '{commit,record,subject}'
+                WHEN jsonb_typeof(candidate.payload #> '{commit,record,subject}') = 'string'
+                THEN candidate.payload #>> '{commit,record,subject}'
               END
             )), '') IS NOT NULL
             AND NOT EXISTS (
               SELECT 1 FROM wire_item_aliases alias
               WHERE alias.alias_key = COALESCE(
-                scoped.payload #>> '{commit,record,subject,uri}',
+                candidate.payload #>> '{commit,record,subject,uri}',
                 CASE
-                  WHEN jsonb_typeof(scoped.payload #> '{commit,record,subject}') = 'string'
-                  THEN scoped.payload #>> '{commit,record,subject}'
+                  WHEN jsonb_typeof(candidate.payload #> '{commit,record,subject}') = 'string'
+                  THEN candidate.payload #>> '{commit,record,subject}'
                 END
               )
                 AND alias.expires_at > \(asOf)
             )
-          ORDER BY scoped.seq, scoped.source_generation
-          FOR UPDATE OF inbox SKIP LOCKED
+            AND NOT EXISTS (
+              SELECT 1 FROM wire_ingestion_inbox earlier
+              WHERE earlier.environment = candidate.environment
+                AND earlier.source_generation = candidate.source_generation
+                AND earlier.repo_did = candidate.repo_did
+                AND earlier.seq < candidate.seq
+                AND earlier.status IN ('pending', 'leased', 'retry')
+            )
+          ORDER BY candidate.next_attempt_at, candidate.seq, candidate.source_generation
+          FOR UPDATE SKIP LOCKED
           LIMIT \(boundedLimit)
         )
         UPDATE wire_ingestion_inbox inbox
@@ -324,26 +320,21 @@ struct PostgresWireInboxProcessor: Sendable {
       )
       let rows = try await connection.query(
         """
-        WITH scoped_rows AS MATERIALIZED (
-          SELECT environment, source_generation, seq, status, next_attempt_at,
-                 lease_expires_at, staged_at
-          FROM wire_ingestion_inbox
-          WHERE environment = \(sourceScope.environment)
-            AND source_generation = ANY(\(sourceScope.sourceGenerations))
-            AND status IN ('pending', 'leased', 'retry')
-          ORDER BY environment, source_generation, seq
-        )
         SELECT COALESCE(SUM(actionable_count), 0)::bigint, MIN(oldest_staged_at)
         FROM (
           SELECT COUNT(*)::bigint AS actionable_count,
                  MIN(staged_at) AS oldest_staged_at
-          FROM scoped_rows
-          WHERE status IN ('pending', 'retry') AND next_attempt_at <= \(asOf)
+          FROM wire_ingestion_inbox
+          WHERE environment = \(sourceScope.environment)
+            AND source_generation = ANY(\(sourceScope.sourceGenerations))
+            AND status IN ('pending', 'retry') AND next_attempt_at <= \(asOf)
           UNION ALL
           SELECT COUNT(*)::bigint AS actionable_count,
                  MIN(staged_at) AS oldest_staged_at
-          FROM scoped_rows
-          WHERE status = 'leased' AND lease_expires_at <= \(asOf)
+          FROM wire_ingestion_inbox
+          WHERE environment = \(sourceScope.environment)
+            AND source_generation = ANY(\(sourceScope.sourceGenerations))
+            AND status = 'leased' AND lease_expires_at <= \(asOf)
         ) actionable_branches
         """,
         logger: logger
@@ -626,51 +617,71 @@ struct PostgresWireInboxProcessor: Sendable {
     )
     let rows = try await pool.query(
       """
-      WITH scoped_active AS MATERIALIZED (
-        SELECT environment, source_generation, seq, repo_did, status,
-               next_attempt_at, lease_expires_at, event_kind, collection,
-               operation, record_key
-        FROM wire_ingestion_inbox
-        WHERE environment = \(sourceScope.environment)
-          AND source_generation = ANY(\(sourceScope.sourceGenerations))
-          AND status IN ('pending', 'leased', 'retry')
-      ),
-      repo_barriers AS MATERIALIZED (
-        SELECT environment, source_generation, repo_did,
-               MIN(seq) FILTER (
-                 WHERE event_kind <> 'commit'
-                    OR collection IS NULL
-                    OR collection NOT IN ('app.bsky.feed.like', 'app.bsky.feed.repost')
-                    OR operation IS DISTINCT FROM 'delete'
-                    OR record_key IS NULL
-               ) AS barrier_seq
-        FROM scoped_active
-        GROUP BY environment, source_generation, repo_did
-      ),
-      candidates AS (
-        SELECT inbox.environment, inbox.source_generation, inbox.seq
-        FROM scoped_active candidate
-        JOIN repo_barriers barrier
-          ON barrier.environment = candidate.environment
-         AND barrier.source_generation = candidate.source_generation
-         AND barrier.repo_did = candidate.repo_did
-        JOIN wire_ingestion_inbox inbox
-          ON inbox.environment = candidate.environment
-         AND inbox.source_generation = candidate.source_generation
-         AND inbox.seq = candidate.seq
-        WHERE (
-            (candidate.status IN ('pending', 'retry')
-              AND candidate.next_attempt_at <= \(asOf))
-            OR (candidate.status = 'leased'
-              AND candidate.lease_expires_at <= \(asOf))
-          )
+      WITH pending_retry_candidates AS (
+        SELECT candidate.environment, candidate.source_generation, candidate.seq,
+               candidate.next_attempt_at AS eligible_at
+        FROM wire_ingestion_inbox candidate
+        WHERE candidate.environment = \(sourceScope.environment)
+          AND candidate.source_generation = ANY(\(sourceScope.sourceGenerations))
+          AND candidate.status IN ('pending', 'retry')
+          AND candidate.next_attempt_at <= \(asOf)
           AND candidate.event_kind = 'commit'
           AND candidate.collection IN ('app.bsky.feed.like', 'app.bsky.feed.repost')
           AND candidate.operation = 'delete'
           AND candidate.record_key IS NOT NULL
-          AND (barrier.barrier_seq IS NULL OR candidate.seq < barrier.barrier_seq)
-        ORDER BY COALESCE(candidate.lease_expires_at, candidate.next_attempt_at), candidate.seq
-        FOR UPDATE OF inbox SKIP LOCKED
+          AND NOT EXISTS (
+            SELECT 1 FROM wire_ingestion_inbox earlier
+            WHERE earlier.environment = candidate.environment
+              AND earlier.source_generation = candidate.source_generation
+              AND earlier.repo_did = candidate.repo_did
+              AND earlier.seq < candidate.seq
+              AND earlier.status IN ('pending', 'leased', 'retry')
+              AND (earlier.event_kind <> 'commit'
+                OR earlier.collection IS NULL
+                OR earlier.collection NOT IN ('app.bsky.feed.like', 'app.bsky.feed.repost')
+                OR earlier.operation IS DISTINCT FROM 'delete'
+                OR earlier.record_key IS NULL)
+          )
+        ORDER BY candidate.next_attempt_at, candidate.seq
+        FOR UPDATE SKIP LOCKED
+        LIMIT \(claimLimit)
+      ),
+      expired_lease_candidates AS (
+        SELECT candidate.environment, candidate.source_generation, candidate.seq,
+               candidate.lease_expires_at AS eligible_at
+        FROM wire_ingestion_inbox candidate
+        WHERE candidate.environment = \(sourceScope.environment)
+          AND candidate.source_generation = ANY(\(sourceScope.sourceGenerations))
+          AND candidate.status = 'leased'
+          AND candidate.lease_expires_at <= \(asOf)
+          AND candidate.event_kind = 'commit'
+          AND candidate.collection IN ('app.bsky.feed.like', 'app.bsky.feed.repost')
+          AND candidate.operation = 'delete'
+          AND candidate.record_key IS NOT NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM wire_ingestion_inbox earlier
+            WHERE earlier.environment = candidate.environment
+              AND earlier.source_generation = candidate.source_generation
+              AND earlier.repo_did = candidate.repo_did
+              AND earlier.seq < candidate.seq
+              AND earlier.status IN ('pending', 'leased', 'retry')
+              AND (earlier.event_kind <> 'commit'
+                OR earlier.collection IS NULL
+                OR earlier.collection NOT IN ('app.bsky.feed.like', 'app.bsky.feed.repost')
+                OR earlier.operation IS DISTINCT FROM 'delete'
+                OR earlier.record_key IS NULL)
+          )
+        ORDER BY candidate.lease_expires_at, candidate.seq
+        FOR UPDATE SKIP LOCKED
+        LIMIT \(claimLimit)
+      ),
+      candidates AS (
+        SELECT environment, source_generation, seq, eligible_at
+        FROM pending_retry_candidates
+        UNION ALL
+        SELECT environment, source_generation, seq, eligible_at
+        FROM expired_lease_candidates
+        ORDER BY eligible_at, seq, environment, source_generation
         LIMIT \(claimLimit)
       )
       UPDATE wire_ingestion_inbox inbox
@@ -732,42 +743,44 @@ struct PostgresWireInboxProcessor: Sendable {
     )
     let rows = try await pool.query(
       """
-      WITH scoped_heads AS MATERIALIZED (
-        SELECT DISTINCT ON (environment, source_generation, repo_did)
-               environment, source_generation, seq, repo_did, status,
-               next_attempt_at, lease_expires_at
-        FROM wire_ingestion_inbox
-        WHERE environment = \(sourceScope.environment)
-          AND source_generation = ANY(\(sourceScope.sourceGenerations))
-          AND status IN ('pending', 'leased', 'retry')
-        ORDER BY environment, source_generation, repo_did, seq
-      ),
-      pending_retry_candidates AS (
-        SELECT inbox.environment, inbox.source_generation, inbox.seq,
-               scoped.next_attempt_at AS eligible_at
-        FROM scoped_heads scoped
-        JOIN wire_ingestion_inbox inbox
-          ON inbox.environment = scoped.environment
-         AND inbox.source_generation = scoped.source_generation
-         AND inbox.seq = scoped.seq
-        WHERE scoped.status IN ('pending', 'retry')
-          AND scoped.next_attempt_at <= \(asOf)
-        ORDER BY scoped.seq, scoped.source_generation
-        FOR UPDATE OF inbox SKIP LOCKED
+      WITH pending_retry_candidates AS (
+        SELECT candidate.environment, candidate.source_generation, candidate.seq,
+               candidate.next_attempt_at AS eligible_at
+        FROM wire_ingestion_inbox candidate
+        WHERE candidate.environment = \(sourceScope.environment)
+          AND candidate.source_generation = ANY(\(sourceScope.sourceGenerations))
+          AND candidate.status IN ('pending', 'retry')
+          AND candidate.next_attempt_at <= \(asOf)
+          AND NOT EXISTS (
+            SELECT 1 FROM wire_ingestion_inbox earlier
+            WHERE earlier.environment = candidate.environment
+              AND earlier.source_generation = candidate.source_generation
+              AND earlier.repo_did = candidate.repo_did
+              AND earlier.seq < candidate.seq
+              AND earlier.status IN ('pending', 'leased', 'retry')
+          )
+        ORDER BY candidate.next_attempt_at, candidate.seq, candidate.source_generation
+        FOR UPDATE SKIP LOCKED
         LIMIT \(claimLimit)
       ),
       expired_lease_candidates AS (
-        SELECT inbox.environment, inbox.source_generation, inbox.seq,
-               scoped.lease_expires_at AS eligible_at
-        FROM scoped_heads scoped
-        JOIN wire_ingestion_inbox inbox
-          ON inbox.environment = scoped.environment
-         AND inbox.source_generation = scoped.source_generation
-         AND inbox.seq = scoped.seq
-        WHERE scoped.status = 'leased'
-          AND scoped.lease_expires_at <= \(asOf)
-        ORDER BY scoped.seq, scoped.source_generation
-        FOR UPDATE OF inbox SKIP LOCKED
+        SELECT candidate.environment, candidate.source_generation, candidate.seq,
+               candidate.lease_expires_at AS eligible_at
+        FROM wire_ingestion_inbox candidate
+        WHERE candidate.environment = \(sourceScope.environment)
+          AND candidate.source_generation = ANY(\(sourceScope.sourceGenerations))
+          AND candidate.status = 'leased'
+          AND candidate.lease_expires_at <= \(asOf)
+          AND NOT EXISTS (
+            SELECT 1 FROM wire_ingestion_inbox earlier
+            WHERE earlier.environment = candidate.environment
+              AND earlier.source_generation = candidate.source_generation
+              AND earlier.repo_did = candidate.repo_did
+              AND earlier.seq < candidate.seq
+              AND earlier.status IN ('pending', 'leased', 'retry')
+          )
+        ORDER BY candidate.lease_expires_at, candidate.seq, candidate.source_generation
+        FOR UPDATE SKIP LOCKED
         LIMIT \(claimLimit)
       ),
       candidates AS (

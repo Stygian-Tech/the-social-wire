@@ -1,10 +1,10 @@
 module github.com/stygian-tech/the-social-wire/services/jetstream-ingest
 
-go 1.26.5
+go 1.26.6
 
 require (
 	github.com/DATA-DOG/go-sqlmock v1.5.2
-	github.com/bluesky-social/jetstream v0.2.0
+	github.com/bluesky-social/jetstream v0.2.1
 	github.com/jackc/pgx/v5 v5.7.6
 )
 
@@ -19,10 +19,10 @@ require (
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
-	github.com/jcalabro/atmos v0.3.6 // indirect
+	github.com/jcalabro/atmos v0.3.7 // indirect
 	github.com/jcalabro/gloom v0.1.0 // indirect
 	github.com/jcalabro/gt v0.0.14 // indirect
-	github.com/jcalabro/jttp v0.0.6 // indirect
+	github.com/jcalabro/jttp v0.0.7 // indirect
 	github.com/klauspost/compress v1.19.1 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/kr/pretty v0.3.1 // indirect

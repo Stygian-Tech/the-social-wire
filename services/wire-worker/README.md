@@ -44,7 +44,7 @@ historical generations.
 | `DATABASE_URL` | required | Railway PostgreSQL connection string |
 | `WIRE_FEED_MODE` | `off` | Remote rollout switch (`off|shadow|api|visible`) |
 | `WIRE_WORKER_ROLE` | `combined` | Runtime responsibility (`combined|rank|drain`) |
-| `WIRE_RANK_INTERVAL_SECONDS` | `300` | Five-minute generation cadence |
+| `WIRE_RANK_INTERVAL_SECONDS` | `60` | One-minute generation cadence; baseline labels remain throttled to five minutes |
 | `WIRE_CANDIDATE_LIMIT` | `5000` | Maximum rollup rows scored per cycle |
 | `WIRE_GENERATION_RETENTION_SECONDS` | `172800` | 48-hour superseded/shadow generation retention |
 | `WIRE_RETENTION_BATCH_SIZE` | `5000` | Bounded cleanup batch |
@@ -80,7 +80,7 @@ Each ordinary claim is capped at `min(WIRE_INBOX_BATCH_SIZE, WIRE_INBOX_CONCURRE
 
 The default event concurrency of 16 intentionally exceeds the 12-connection PostgreSQL pool. PostgreSQL pool queuing is the database backpressure boundary while JSON decoding and canonicalization work remain in flight; the worker never opens more than `WIRE_POSTGRES_MAX_CONNECTIONS` database connections.
 
-Graph pruning, six-hour community refresh checks, and exact rollup rebuilding run once with the five-minute generation cycle rather than after every inbox batch. Baseline label refresh and ranking also remain on that five-minute cadence, so an archive drain cannot hammer labelers. Drain-only workers skip that entire generation cycle. Terminal inbox cleanup is a separate continuous bounded loop (`WIRE_INBOX_CLEANUP_BATCH_SIZE`, default 5,000; `WIRE_INBOX_CLEANUP_IDLE_MILLISECONDS`, default one second), so cleanup throughput is not tied to ranking and may be owned by the singleton rank role. Applied inbox rows become cleanup-eligible after five minutes and dead letters after seven days. Pending, leased, and retry rows are never retention-deleted. Cleanup decrements the admission counter in the same transaction as deletion. Combined readiness requires recent successful generation, drain, and cleanup activity; rank readiness includes cleanup when enabled; drain-only readiness includes cleanup only when enabled.
+Graph pruning, six-hour community refresh checks, and exact rollup rebuilding run once with the one-minute generation cycle rather than after every inbox batch. Baseline label refresh is throttled to five minutes while ranking uses each fresh snapshot every minute, so an archive drain cannot hammer labelers. Drain-only workers skip that entire generation cycle. Terminal inbox cleanup is a separate continuous bounded loop (`WIRE_INBOX_CLEANUP_BATCH_SIZE`, default 5,000; `WIRE_INBOX_CLEANUP_IDLE_MILLISECONDS`, default one second), so cleanup throughput is not tied to ranking and may be owned by the singleton rank role. Applied inbox rows become cleanup-eligible after five minutes and dead letters after seven days. Pending, leased, and retry rows are never retention-deleted. Cleanup decrements the admission counter in the same transaction as deletion. Combined readiness requires recent successful generation, drain, and cleanup activity; rank readiness includes cleanup when enabled; drain-only readiness includes cleanup only when enabled.
 
 Each drain replica emits one info-level `The Wire drain interval health` event every
 60 seconds. Its metadata contains only the interval length, accurately applied event

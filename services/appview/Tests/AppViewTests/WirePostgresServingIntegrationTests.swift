@@ -15,6 +15,91 @@ import WireCore
   )
 )
 struct WirePostgresServingIntegrationTests {
+  @Test("an expired active generation remains available during an ingestion outage")
+  func expiredActiveGenerationContinuity() async throws {
+    guard let url = ProcessInfo.processInfo.environment["WIRE_TEST_DATABASE_URL"] else { return }
+    let logger = Logger(label: "wire-appview-postgres.continuity-integration")
+    var configuration = try makePostgresConfig(from: url, logger: logger)
+    configuration.options.maximumConnections = 2
+    let pool = PostgresClient(configuration: configuration, backgroundLogger: logger)
+    let runTask = Task { await pool.run() }
+    await Task.yield()
+    defer { runTask.cancel() }
+
+    let namespace = UUID().uuidString.lowercased()
+    let generation = UUID()
+    let now = Date()
+    let key = "url:\(namespace)-continuity"
+    let labelSource = "did:example:labeler:\(namespace)"
+    do {
+      try await setBaselineLabelState(
+        sourceDID: labelSource,
+        successfulAt: now,
+        pool: pool,
+        logger: logger
+      )
+      try await pool.query(
+        """
+        INSERT INTO wire_items
+          (canonical_key, canonical_url, source_domain, source_name, title, language_code,
+           provenance, first_seen_at, last_seen_at, source_confidence, eligible, expires_at)
+        VALUES
+          (\(key), \("https://example.com/\(namespace)/continuity"), 'example.com',
+           'Example', 'Continuity Story', 'und', '["standard_site"]'::jsonb,
+           \(now), \(now), 0.9, TRUE, \(now.addingTimeInterval(86_400)))
+        """,
+        logger: logger
+      )
+      try await insertGeneration(
+        generation,
+        keys: [key],
+        generatedAt: now.addingTimeInterval(-7_200),
+        expiresAt: now.addingTimeInterval(-3_600),
+        active: true,
+        pool: pool,
+        logger: logger
+      )
+
+      let store = try PostgresWireFeedStore(
+        pool: pool,
+        logger: logger,
+        cursorSecret: String(repeating: "c", count: 32),
+        mode: .visible,
+        moderationCache: WireViewerModerationCache()
+      )
+      let page = try await store.getFeed(
+        cursor: nil,
+        limit: 10,
+        language: nil,
+        viewerDid: nil,
+        now: now
+      )
+      #expect(page.generationID == generation.uuidString.lowercased())
+      #expect(page.source == .staleGeneration)
+      #expect(page.degraded)
+      #expect(page.items.map(\.itemID) == [key])
+      let catalog = try await store.getCatalog(now: now)
+      #expect(catalog.available)
+      #expect(catalog.latestGenerationID == generation.uuidString.lowercased())
+    } catch {
+      Issue.record("PostgreSQL continuity integration failed: \(String(reflecting: error))")
+    }
+
+    try await pool.query(
+      "DELETE FROM wire_feed_state WHERE active_generation_id = \(generation)",
+      logger: logger
+    )
+    try await pool.query(
+      "DELETE FROM wire_rank_generations WHERE generation_id = \(generation)",
+      logger: logger
+    )
+    try await pool.query("DELETE FROM wire_items WHERE canonical_key = \(key)", logger: logger)
+    try await pool.query(
+      "DELETE FROM wire_label_refresh_state WHERE source_did = \(labelSource)",
+      logger: logger
+    )
+  }
+
   @Test("pagination remains bound to its retained generation after activation advances")
   func stableGenerationPagination() async throws {
     guard let url = ProcessInfo.processInfo.environment["WIRE_TEST_DATABASE_URL"] else { return }
@@ -414,6 +499,7 @@ struct WirePostgresServingIntegrationTests {
     _ id: UUID,
     keys: [String],
     generatedAt: Date,
+    expiresAt: Date? = nil,
     active: Bool,
     language: String = "und",
     pool: PostgresClient,
@@ -427,7 +513,8 @@ struct WirePostgresServingIntegrationTests {
            generated_at, committed_at, expires_at, candidate_count, ranked_count)
         VALUES
           (\(id), 'wire', \(language), 'committed', \(active), 'wire-v1', \(generatedAt),
-           \(generatedAt), \(generatedAt.addingTimeInterval(172_800)), \(keys.count), \(keys.count))
+           \(generatedAt), \(expiresAt ?? generatedAt.addingTimeInterval(172_800)),
+           \(keys.count), \(keys.count))
         """,
         logger: logger
       )

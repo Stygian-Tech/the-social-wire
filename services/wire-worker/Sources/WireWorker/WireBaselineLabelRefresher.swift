@@ -1,6 +1,19 @@
 import Crypto
 import Foundation
 
+actor WireBaselineLabelRefreshThrottle {
+  private var lastSuccessfulRefresh: Date?
+
+  func shouldRefresh(asOf: Date, minimumInterval: TimeInterval) -> Bool {
+    guard let lastSuccessfulRefresh else { return true }
+    return asOf.timeIntervalSince(lastSuccessfulRefresh) >= minimumInterval
+  }
+
+  func recordSuccess(at date: Date) {
+    lastSuccessfulRefresh = date
+  }
+}
+
 struct WireBaselineLabelRefresher: WireBaselineLabelRefreshing {
   private struct LabelIdentity: Hashable, Sendable {
     let sourceDID: String
@@ -13,9 +26,18 @@ struct WireBaselineLabelRefresher: WireBaselineLabelRefreshing {
   let labelers: [WireLabelerEndpoint]
   let candidateLimit: Int
   let maximumAge: TimeInterval
+  var minimumRefreshInterval: TimeInterval = 300
   var refreshTimeout: Duration = .seconds(45)
+  var throttle = WireBaselineLabelRefreshThrottle()
 
   func refresh(asOf: Date) async throws {
+    guard await throttle.shouldRefresh(
+      asOf: asOf,
+      minimumInterval: minimumRefreshInterval
+    ) else {
+      try await store.verifyFresh(labelers: labelers, asOf: asOf, maximumAge: maximumAge)
+      return
+    }
     try await withThrowingTaskGroup(of: Void.self) { tasks in
       tasks.addTask { try await performRefresh(asOf: asOf) }
       tasks.addTask {
@@ -25,6 +47,7 @@ struct WireBaselineLabelRefresher: WireBaselineLabelRefreshing {
       _ = try await tasks.next()
       tasks.cancelAll()
     }
+    await throttle.recordSuccess(at: asOf)
   }
 
   private func performRefresh(asOf: Date) async throws {
