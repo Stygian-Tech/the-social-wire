@@ -172,6 +172,20 @@ struct WireMigrationContractTests {
     #expect(processor.contains("candidate.environment = \\(sourceScope.environment)"))
     #expect(!processor.contains("WITH scoped_heads AS MATERIALIZED"))
 
+    let autovacuumMigration = migration.deletingLastPathComponent()
+      .appendingPathComponent("20260827200000_tune_wire_inbox_autovacuum.sql")
+    let autovacuumSQL = try String(contentsOf: autovacuumMigration, encoding: .utf8)
+    for token in [
+      "ALTER TABLE wire_ingestion_inbox SET",
+      "autovacuum_vacuum_scale_factor = 0.005",
+      "autovacuum_vacuum_threshold = 5000",
+      "autovacuum_analyze_scale_factor = 0.0025",
+      "autovacuum_analyze_threshold = 2500",
+      "ANALYZE wire_ingestion_inbox",
+    ] {
+      #expect(autovacuumSQL.contains(token), "Autovacuum migration is missing: \(token)")
+    }
+
     let unloggedMigration = migration.deletingLastPathComponent()
       .appendingPathComponent("20260823190000_make_wire_hot_path_unlogged.sql")
     let unloggedSQL = try String(contentsOf: unloggedMigration, encoding: .utf8)
