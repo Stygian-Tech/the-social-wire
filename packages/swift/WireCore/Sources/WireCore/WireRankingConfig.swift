@@ -22,12 +22,12 @@ public struct WireRankingConfig: Codable, Equatable, Sendable {
   public var limitedCommercialPenalty: Double
 
   public init(
-    version: String = "wire-v6",
+    version: String = "wire-v7",
     weights: WireRankingWeights = WireRankingWeights(),
     diversity: WireDiversityPolicy = WireDiversityPolicy(),
     minimumHighIntentActors: Int = 5,
     minimumRecommendations: Int = 2,
-    standardSiteMinimumHighIntentActors: Int = 3,
+    standardSiteMinimumHighIntentActors: Int = 1,
     backfillMinimumHighIntentActors: Int = 3,
     backfillMinimumRecommendations: Int = 1,
     minimumRankedItems: Int = 50,
