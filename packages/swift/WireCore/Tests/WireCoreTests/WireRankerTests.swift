@@ -151,13 +151,24 @@ struct WireRankerTests {
   func freshPublicationLane() throws {
     let result = try WireRanker.rank(
       candidates: [
-        candidate("fresh", actors: 3, signals1h: 0, recommendations: 0, standardSite: true)
+        candidate("fresh", actors: 1, signals1h: 0, recommendations: 0, standardSite: true)
       ],
       asOf: now,
       config: .init()
     )
     #expect(result.items.count == 1)
     #expect(result.items[0].reasonCodes.contains(.freshPublication))
+  }
+
+  @Test("a single social share cannot use the authoritative publication lane")
+  func socialShareCannotUseFreshPublicationLane() throws {
+    let result = try WireRanker.rank(
+      candidates: [candidate("social", actors: 1, signals1h: 1, openGraph: true)],
+      asOf: now,
+      config: .init()
+    )
+    #expect(result.items.isEmpty)
+    #expect(result.diagnostics.rejectedForSignalFloor == 1)
   }
 
   @Test("passive engagement cannot satisfy the conversation gate")
@@ -178,14 +189,15 @@ struct WireRankerTests {
     #expect(result.diagnostics.rejectedForSignalFloor == 1)
   }
 
-  @Test("Standard Site still requires high-intent conversation")
-  func standardSiteRequiresConversation() throws {
-    let quiet = candidate("quiet-standard", actors: 2, standardSite: true)
-    let discussed = candidate("discussed-standard", actors: 3, standardSite: true)
+  @Test("fresh Standard Site publication needs one authoritative signal")
+  func freshStandardSiteNeedsAuthoritativeSignal() throws {
+    let quiet = candidate("quiet-standard", actors: 0, standardSite: true)
+    let published = candidate("published-standard", actors: 1, standardSite: true)
     let result = try WireRanker.rank(
-      candidates: [quiet, discussed], asOf: now, config: .init()
+      candidates: [quiet, published], asOf: now, config: .init()
     )
-    #expect(result.items.map(\.candidate.canonicalKey) == ["discussed-standard"])
+    #expect(result.items.map(\.candidate.canonicalKey) == ["published-standard"])
+    #expect(result.diagnostics.rejectedForSignalFloor == 1)
   }
 
   @Test("bounded source quality signals break otherwise equal ranking ties")

@@ -7,7 +7,8 @@ struct WireRankingConfigTests {
   func validDefault() throws {
     let config = WireRankingConfig()
     try config.validate()
-    #expect(config.version == "wire-v6")
+    #expect(config.version == "wire-v7")
+    #expect(config.standardSiteMinimumHighIntentActors == 1)
     #expect(config.freshnessHalfLife == 36_000)
     #expect(config.weights.shareVelocity1h == 0.10)
     #expect(config.weights.likeBreadthVelocity == 0.02)

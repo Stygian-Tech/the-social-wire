@@ -7,7 +7,7 @@
 1. Public Jetstream/RSS producers place idempotent projection-bearing envelopes in `wire_ingestion_inbox`. Wire-global Jetstream preparation advances its fenced checkpoint without staging identity/sync, active-account, or linkless Bluesky post-create no-ops. It retains inactive-account cleanup plus every post update/delete needed to retract older linked state. The bounded inbox owns retry, lease, dead-letter, and expiry state during normal operation; after a PostgreSQL crash, the fenced producer rebuilds it from a logged provider cursor.
 2. A dedicated drain runtime continuously claims bounded inbox batches, applies different repositories concurrently while preserving repository FIFO, and uses bounded idle/error backoff. Claims order ready work by retry time before sequence so retries in one repository cannot starve unrelated pending repositories. The applier canonicalizes the linked story, upserts `wire_items` plus `wire_item_aliases`, records presentation-safe provenance, applies moderation/source labels, and inserts a deduplicated `wire_signal_events` row. Standard Site publication records form a rebuildable PostgreSQL resolver projection; documents carrying a publication AT-URI plus relative path use that projection or a bounded public PLC/PDS lookup. PLC/PDS DNS is revalidated immediately before every request, mixed or non-global answer sets fail closed, and redirects are not followed. Unresolved dependencies retry for no more than 24 hours.
 3. The applier updates bounded, keyed-hash graph state (`wire_active_actors`, `wire_follow_edges`, `wire_actor_communities`) and privacy-safe aggregate counts in `wire_signal_rollups`. DIDs for sharers, likers, reposters, and other engagement actors never enter a serving row. A public source/author DID may be retained only with its public item for attribution and viewer block/mute filtering; it is never a ranking feature or community identifier.
-4. Every minute by default, `wire-worker` prunes bounded graph state, refreshes community assignments when due, rebuilds exact rollups, loads eligible item/rollup/metadata rows, computes the deterministic `wire-v6` score, applies first-page diversity, and writes an immutable `wire_rank_generations` plus its `wire_ranked_items`. Baseline label snapshots remain throttled to five minutes, so faster generation does not increase labeler cadence.
+4. Every minute by default, `wire-worker` prunes bounded graph state, refreshes community assignments when due, rebuilds exact rollups, loads eligible item/rollup/metadata rows, computes the deterministic `wire-v7` score, applies first-page diversity, and writes an immutable `wire_rank_generations` plus its `wire_ranked_items`. Baseline label snapshots remain throttled to five minutes, so faster generation does not increase labeler cadence.
 5. In `shadow` mode the generation remains queryable for comparison but is not served. In `api` or `visible` mode the worker moves `wire_feed_state.active_generation_id` in the same PostgreSQL transaction as the completed generation. `off` performs read-only health probes and no data operation.
 6. An AppView `WireFeedStore` serving adapter reads the active generation, joins the presentation snapshot, filters labels again, and returns the approved `WirePage`, `WireItemDetail`, or singleton `WireFeedCatalog` contract. A Redis copy may be read first, but a miss or disagreement always resolves from PostgreSQL.
 
@@ -46,7 +46,7 @@ Wire feedback is a public, viewer-owned PDS record with a deterministic per-URL 
 
 ### Commercial-content and target-quality gate
 
-`wire-v6` applies an explainable commercial-content assessment before generation ranking.
+`wire-v7` applies an explainable commercial-content assessment before generation ranking.
 Ingestion, metadata refresh, ranking, and every PostgreSQL serving view enforce the same
 target and commercial-quality boundary.
 
@@ -126,7 +126,7 @@ that the primary ranker rejected. Target kind and bounded commercial reasons rem
 do not expose raw post text, commercial feature vectors, or internal scores through serving
 DTOs.
 
-To keep a sparse edition useful, `wire-v6` has a deterministic quality reserve. When the strict pool has fewer than 50 stories, candidates meeting the former three-high-intent-actor or one-recommendation floor may fill only the missing positions, but only when backed by usable Standard Site or OpenGraph presentation metadata. A fresh six-hour burst with at least three distinct high-intent shares in the last hour may enter before reaching the normal daily floor. Metadata and feedback never admit an article by themselves, burst stories still pass every quality and moderation check, and reserve stories never displace strict stories.
+To keep a sparse edition useful, `wire-v7` has a deterministic quality reserve. When the strict pool has fewer than 50 stories, candidates meeting the former three-high-intent-actor or one-recommendation floor may fill only the missing positions, but only when backed by usable Standard Site or OpenGraph presentation metadata. A fresh six-hour burst with at least three distinct high-intent shares in the last hour may enter before reaching the normal daily floor. Trusted direct Standard Site content within 72 hours may enter from its authoritative publication signal; this lane does not apply to social shares or generic OpenGraph links. Metadata and feedback never admit an article by themselves, burst and publication-lane stories still pass every quality, commercial, diversity, and moderation check, and reserve stories never displace strict stories.
 
 Retention defaults are code constants in `WireDataPolicy`:
 
@@ -151,7 +151,7 @@ All cleanup is bounded by `WIRE_RETENTION_BATCH_SIZE` (default 5,000). The Datab
 
 The active graph is not the social graph archive. Keep at most the 250,000 most recently active actors from the last 30 days and at most the 200 most recently observed public follow edges per actor (`WireDataPolicy.maximumFollowEdgesPerActor`). Recompute deterministic community assignments every six hours using the current bounded graph, with a stable `algorithm_version` and stable tie ordering by hashed key. Assignments expire after seven days so an interrupted clustering job cannot become permanent authority. Serving sees only per-item community spread, never actor or edge rows.
 
-## Exact ranking algorithm (`wire-v6`)
+## Exact ranking algorithm (`wire-v7`)
 
 Let `clamp(x) = min(1, max(0, x))`, `age` be nonnegative seconds since `publishedAt` (or `firstSeenAt`), `sh1`/`sh24` be distinct high-intent actors in one/24 hours, `l1`/`l24` be likes, `r1`/`r24` be reposts, `la24`/`ra24` be their distinct actor counts, `rec24` be distinct Standard Site recommenders, `good24`/`bad24` be distinct Social Wire assessments, `s7` be all seven-day signals, and `c24` be distinct qualifying communities. `standardSiteAuthority` is one only for authoritative `standard_site` provenance. `openGraphMetadata` is one only while a successful OpenGraph cache row remains fresh or stale-safe and contains at least two useful presentation fields.
 
@@ -224,7 +224,7 @@ Missing publication/author/community does not consume that dimension. Duplicate 
 
 ## News edition assembly (`wire-edition-v2`)
 
-`wire-v6` remains the sole authority for story eligibility and order. `wire-edition-v2`
+`wire-v7` remains the sole authority for story eligibility and order. `wire-edition-v2`
 is a deterministic presentation pass over that already-ranked order; it never changes a
 story score, exposes a score/rank, or creates a personalized order. Duplicate item IDs
 are removed by first occurrence before assembly.
@@ -236,7 +236,7 @@ The edition allocates primary story modules in this order:
    `site.standard.document` or `site.standard.entry`, the final supporting slot goes to the
    best such story within the canonical top ten when doing so preserves source diversity.
    The feature and first two supporting stories never move. This is a bounded presentation
-   tie-break; it does not alter `wire-v6` scores, eligibility, or continuation order.
+   tie-break; it does not alter `wire-v7` scores, eligibility, or continuation order.
 2. From the unallocated stories, select up to six publication panels in first-appearance
    order. A panel requires at least two remaining stories and contains at most three.
    Publication identity prefers the presentation-safe publication key, then publication
@@ -353,7 +353,7 @@ PostgreSQL is authoritative for the current projection. The inbox, short-retenti
 
 ## Configuration and validation
 
-Ranking defaults live in `WireRankingConfig`/`WireRankingWeights`/`WireDiversityPolicy` and are identified by `wire-v6`. Operational environment controls are:
+Ranking defaults live in `WireRankingConfig`/`WireRankingWeights`/`WireDiversityPolicy` and are identified by `wire-v7`. Operational environment controls are:
 
 - `WIRE_FEED_MODE=off|shadow|api|visible`;
 - `WIRE_WORKER_ROLE=combined|rank|drain` (rank owns generation plus metadata/profile
