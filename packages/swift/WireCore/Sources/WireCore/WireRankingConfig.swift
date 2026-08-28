@@ -20,9 +20,10 @@ public struct WireRankingConfig: Codable, Equatable, Sendable {
   public var maximumCandidateAge: TimeInterval
   public var domainPenalties: WireDomainPenaltyPolicy
   public var limitedCommercialPenalty: Double
+  public var missingThumbnailPenalty: Double
 
   public init(
-    version: String = "wire-v7",
+    version: String = "wire-v8",
     weights: WireRankingWeights = WireRankingWeights(),
     diversity: WireDiversityPolicy = WireDiversityPolicy(),
     minimumHighIntentActors: Int = 5,
@@ -40,7 +41,8 @@ public struct WireRankingConfig: Codable, Equatable, Sendable {
     freshnessHalfLife: TimeInterval = 36_000,
     maximumCandidateAge: TimeInterval = 2_592_000,
     domainPenalties: WireDomainPenaltyPolicy = WireDomainPenaltyPolicy(),
-    limitedCommercialPenalty: Double = 0.15
+    limitedCommercialPenalty: Double = 0.15,
+    missingThumbnailPenalty: Double = 0.05
   ) {
     self.version = version
     self.weights = weights
@@ -61,6 +63,7 @@ public struct WireRankingConfig: Codable, Equatable, Sendable {
     self.maximumCandidateAge = maximumCandidateAge
     self.domainPenalties = domainPenalties
     self.limitedCommercialPenalty = limitedCommercialPenalty
+    self.missingThumbnailPenalty = missingThumbnailPenalty
   }
 
   public func validate() throws {
@@ -85,7 +88,9 @@ public struct WireRankingConfig: Codable, Equatable, Sendable {
       weights.negativeFeedbackPenalty >= 0,
       weights.negativeFeedbackPenalty <= 1,
       limitedCommercialPenalty.isFinite,
-      (0...1).contains(limitedCommercialPenalty)
+      (0...1).contains(limitedCommercialPenalty),
+      missingThumbnailPenalty.isFinite,
+      (0...1).contains(missingThumbnailPenalty)
     else {
       throw WireRankingConfigError.invalidThreshold
     }

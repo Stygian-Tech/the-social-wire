@@ -70,7 +70,9 @@ struct PostgresWireGenerationStore: WireGenerationStore {
              r.primary_community_key_hash, r.recommendations_24h,
              r.positive_feedback_24h, r.negative_feedback_24h,
              r.shares_1h, r.shares_24h, r.distinct_likers_24h, r.likes_1h, r.likes_24h,
-             r.distinct_reposters_24h, r.reposts_1h, r.reposts_24h
+             r.distinct_reposters_24h, r.reposts_1h, r.reposts_24h,
+             COALESCE(NULLIF(BTRIM(i.thumbnail_url), '') ~* '^https?://', FALSE)
+               AS has_usable_thumbnail
       FROM wire_items i
       JOIN wire_signal_rollups r ON r.canonical_key = i.canonical_key
       LEFT JOIN wire_link_metadata_cache metadata ON metadata.canonical_key = i.canonical_key
@@ -95,7 +97,8 @@ struct PostgresWireGenerationStore: WireGenerationStore {
         END,
         r.shares_24h DESC, r.recommendations_24h DESC,
         (i.provenance ? 'standard_site') DESC,
-        has_usable_open_graph DESC, r.signals_1h DESC, i.canonical_key
+        has_usable_thumbnail DESC, has_usable_open_graph DESC,
+        r.signals_1h DESC, i.canonical_key
       LIMIT \(limit)
       """,
       logger: logger
@@ -108,6 +111,7 @@ struct PostgresWireGenerationStore: WireGenerationStore {
       let cells = row.makeRandomAccess()
       let isStandardSite = try cells[11].decode(Bool.self)
       let hasUsableOpenGraph = try cells[12].decode(Bool.self)
+      let hasUsableThumbnail = try cells[35].decode(Bool.self)
       let targetKind = WireTargetKind(rawValue: try cells[13].decode(String.self)) ?? .unsupported
       let commercialClass = WireCommercialClass(
         rawValue: try cells[14].decode(String.self)) ?? .probableAd
@@ -159,6 +163,7 @@ struct PostgresWireGenerationStore: WireGenerationStore {
           sourceConfidence: identity.10,
           isStandardSite: isStandardSite,
           hasUsableOpenGraphMetadata: hasUsableOpenGraph,
+          hasUsableThumbnail: hasUsableThumbnail,
           targetKind: targetKind,
           commercialClass: commercialClass,
           commercialScore: commercialScore

@@ -33,6 +33,7 @@ public struct WireCandidate: Codable, Equatable, Sendable {
   public var sourceConfidence: Double
   public var isStandardSite: Bool?
   public var hasUsableOpenGraphMetadata: Bool?
+  public var hasUsableThumbnail: Bool?
   public var targetKind: WireTargetKind
   public var commercialClass: WireCommercialClass
   public var commercialScore: Double
@@ -70,6 +71,7 @@ public struct WireCandidate: Codable, Equatable, Sendable {
     sourceConfidence: Double = 0.5,
     isStandardSite: Bool = false,
     hasUsableOpenGraphMetadata: Bool = false,
+    hasUsableThumbnail: Bool = false,
     targetKind: WireTargetKind = .externalArticle,
     commercialClass: WireCommercialClass = .normal,
     commercialScore: Double = 0
@@ -106,6 +108,7 @@ public struct WireCandidate: Codable, Equatable, Sendable {
     self.sourceConfidence = sourceConfidence
     self.isStandardSite = isStandardSite
     self.hasUsableOpenGraphMetadata = hasUsableOpenGraphMetadata
+    self.hasUsableThumbnail = hasUsableThumbnail
     self.targetKind = targetKind
     self.commercialClass = commercialClass
     self.commercialScore = commercialScore

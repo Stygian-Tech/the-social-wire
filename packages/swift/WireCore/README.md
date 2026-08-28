@@ -7,7 +7,7 @@
 1. Public Jetstream/RSS producers place idempotent projection-bearing envelopes in `wire_ingestion_inbox`. Wire-global Jetstream preparation advances its fenced checkpoint without staging identity/sync, active-account, or linkless Bluesky post-create no-ops. It retains inactive-account cleanup plus every post update/delete needed to retract older linked state. The bounded inbox owns retry, lease, dead-letter, and expiry state during normal operation; after a PostgreSQL crash, the fenced producer rebuilds it from a logged provider cursor.
 2. A dedicated drain runtime continuously claims bounded inbox batches, applies different repositories concurrently while preserving repository FIFO, and uses bounded idle/error backoff. Claims order ready work by retry time before sequence so retries in one repository cannot starve unrelated pending repositories. The applier canonicalizes the linked story, upserts `wire_items` plus `wire_item_aliases`, records presentation-safe provenance, applies moderation/source labels, and inserts a deduplicated `wire_signal_events` row. Standard Site publication records form a rebuildable PostgreSQL resolver projection; documents carrying a publication AT-URI plus relative path use that projection or a bounded public PLC/PDS lookup. PLC/PDS DNS is revalidated immediately before every request, mixed or non-global answer sets fail closed, and redirects are not followed. Unresolved dependencies retry for no more than 24 hours.
 3. The applier updates bounded, keyed-hash graph state (`wire_active_actors`, `wire_follow_edges`, `wire_actor_communities`) and privacy-safe aggregate counts in `wire_signal_rollups`. DIDs for sharers, likers, reposters, and other engagement actors never enter a serving row. A public source/author DID may be retained only with its public item for attribution and viewer block/mute filtering; it is never a ranking feature or community identifier.
-4. Every minute by default, `wire-worker` prunes bounded graph state, refreshes community assignments when due, rebuilds exact rollups, loads eligible item/rollup/metadata rows, computes the deterministic `wire-v7` score, applies first-page diversity, and writes an immutable `wire_rank_generations` plus its `wire_ranked_items`. Baseline label snapshots remain throttled to five minutes, so faster generation does not increase labeler cadence.
+4. Every minute by default, `wire-worker` prunes bounded graph state, refreshes community assignments when due, rebuilds exact rollups, loads eligible item/rollup/metadata rows, computes the deterministic `wire-v8` score, applies first-page diversity, and writes an immutable `wire_rank_generations` plus its `wire_ranked_items`. Baseline label snapshots remain throttled to five minutes, so faster generation does not increase labeler cadence.
 5. In `shadow` mode the generation remains queryable for comparison but is not served. In `api` or `visible` mode the worker moves `wire_feed_state.active_generation_id` in the same PostgreSQL transaction as the completed generation. `off` performs read-only health probes and no data operation.
 6. An AppView `WireFeedStore` serving adapter reads the active generation, joins the presentation snapshot, filters labels again, and returns the approved `WirePage`, `WireItemDetail`, or singleton `WireFeedCatalog` contract. A Redis copy may be read first, but a miss or disagreement always resolves from PostgreSQL.
 
@@ -46,7 +46,7 @@ Wire feedback is a public, viewer-owned PDS record with a deterministic per-URL 
 
 ### Commercial-content and target-quality gate
 
-`wire-v7` applies an explainable commercial-content assessment before generation ranking.
+`wire-v8` applies an explainable commercial-content assessment before generation ranking.
 Ingestion, metadata refresh, ranking, and every PostgreSQL serving view enforce the same
 target and commercial-quality boundary.
 
@@ -126,7 +126,7 @@ that the primary ranker rejected. Target kind and bounded commercial reasons rem
 do not expose raw post text, commercial feature vectors, or internal scores through serving
 DTOs.
 
-To keep a sparse edition useful, `wire-v7` has a deterministic quality reserve. When the strict pool has fewer than 50 stories, candidates meeting the former three-high-intent-actor or one-recommendation floor may fill only the missing positions, but only when backed by usable Standard Site or OpenGraph presentation metadata. A fresh six-hour burst with at least three distinct high-intent shares in the last hour may enter before reaching the normal daily floor. Trusted direct Standard Site content within 72 hours may enter from its authoritative publication signal; this lane does not apply to social shares or generic OpenGraph links. Metadata and feedback never admit an article by themselves, burst and publication-lane stories still pass every quality, commercial, diversity, and moderation check, and reserve stories never displace strict stories.
+To keep a sparse edition useful, `wire-v8` has a deterministic quality reserve. When the strict pool has fewer than 50 stories, candidates meeting the former three-high-intent-actor or one-recommendation floor may fill only the missing positions, but only when backed by usable Standard Site or OpenGraph presentation metadata. A fresh six-hour burst with at least three distinct high-intent shares in the last hour may enter before reaching the normal daily floor. Trusted direct Standard Site content within 72 hours may enter from its authoritative publication signal; this lane does not apply to social shares or generic OpenGraph links. Metadata and feedback never admit an article by themselves, burst and publication-lane stories still pass every quality, commercial, diversity, and moderation check, and reserve stories never displace strict stories.
 
 Retention defaults are code constants in `WireDataPolicy`:
 
@@ -151,7 +151,7 @@ All cleanup is bounded by `WIRE_RETENTION_BATCH_SIZE` (default 5,000). The Datab
 
 The active graph is not the social graph archive. Keep at most the 250,000 most recently active actors from the last 30 days and at most the 200 most recently observed public follow edges per actor (`WireDataPolicy.maximumFollowEdgesPerActor`). Recompute deterministic community assignments every six hours using the current bounded graph, with a stable `algorithm_version` and stable tie ordering by hashed key. Assignments expire after seven days so an interrupted clustering job cannot become permanent authority. Serving sees only per-item community spread, never actor or edge rows.
 
-## Exact ranking algorithm (`wire-v7`)
+## Exact ranking algorithm (`wire-v8`)
 
 Let `clamp(x) = min(1, max(0, x))`, `age` be nonnegative seconds since `publishedAt` (or `firstSeenAt`), `sh1`/`sh24` be distinct high-intent actors in one/24 hours, `l1`/`l24` be likes, `r1`/`r24` be reposts, `la24`/`ra24` be their distinct actor counts, `rec24` be distinct Standard Site recommenders, `good24`/`bad24` be distinct Social Wire assessments, `s7` be all seven-day signals, and `c24` be distinct qualifying communities. `standardSiteAuthority` is one only for authoritative `standard_site` provenance. `openGraphMetadata` is one only while a successful OpenGraph cache row remains fresh or stale-safe and contains at least two useful presentation fields.
 
@@ -192,7 +192,7 @@ Score:
 + 0.06 * positiveFeedbackBreadth
 ```
 
-The implementation divides that positive score by the sum of positive weights, so validated future configurations remain normalized. It then subtracts `0.10 * negativeFeedbackBreadth`, the matching platform-destination penalty, and `0.15` when the commercial classifier returns `limited`. After admission, it adds a deterministic nudge in `[0, 0.005]` derived from FNV-1a over the canonical key and `floor(asOf / 1,800 seconds)`, then clamps the result to `[0, 1]`. The nudge is stable across every one-minute generation within a 30-minute bucket and changes only at a bucket boundary. Primary/burst and quality-reserve tiers are nudged and sorted separately, so rotation cannot admit a story or move reserve filler ahead of a strict story. A half-point maximum permits nearly tied eligible stories to rotate without overwhelming material quality differences.
+The implementation divides that positive score by the sum of positive weights, so validated future configurations remain normalized. It then subtracts `0.10 * negativeFeedbackBreadth`, the matching platform-destination penalty, `0.15` when the commercial classifier returns `limited`, and `0.05` when the story has no usable presentation thumbnail. The thumbnail adjustment is a bounded ordering preference, not an admission gate: a story without publisher artwork can still qualify and fill an edition. After admission, the ranker adds a deterministic nudge in `[0, 0.005]` derived from FNV-1a over the canonical key and `floor(asOf / 1,800 seconds)`, then clamps the result to `[0, 1]`. The nudge is stable across every one-minute generation within a 30-minute bucket and changes only at a bucket boundary. Primary/burst and quality-reserve tiers are nudged and sorted separately, so rotation cannot admit a story or move reserve filler ahead of a strict story. A half-point maximum permits nearly tied eligible stories to rotate without overwhelming material quality differences.
 
 Standard Site authority (`0.11`) and Standard Site recommendation breadth (`0.10`) therefore have larger explicit coefficients than Social Wire positive feedback (`0.06`) and a Bluesky like (`0.02`); recommendations also participate in high-intent breadth and admission by design. The positive-weight total remains `1.14`, so the increased freshness, Standard Site, and recommendation emphasis does not silently dilute those authority signals. Weights must be finite/nonnegative with a positive total. Thresholds/targets and time intervals must be positive and source confidence must stay in `[0, 1]`. Sort each admission tier by nudged score descending, then `canonicalKey` ascending; input order, database plan, clock locale, and process count must not change output.
 
@@ -224,7 +224,7 @@ Missing publication/author/community does not consume that dimension. Duplicate 
 
 ## News edition assembly (`wire-edition-v2`)
 
-`wire-v7` remains the sole authority for story eligibility and order. `wire-edition-v2`
+`wire-v8` remains the sole authority for story eligibility and order. `wire-edition-v2`
 is a deterministic presentation pass over that already-ranked order; it never changes a
 story score, exposes a score/rank, or creates a personalized order. Duplicate item IDs
 are removed by first occurrence before assembly.
@@ -236,7 +236,7 @@ The edition allocates primary story modules in this order:
    `site.standard.document` or `site.standard.entry`, the final supporting slot goes to the
    best such story within the canonical top ten when doing so preserves source diversity.
    The feature and first two supporting stories never move. This is a bounded presentation
-   tie-break; it does not alter `wire-v7` scores, eligibility, or continuation order.
+   tie-break; it does not alter `wire-v8` scores, eligibility, or continuation order.
 2. From the unallocated stories, select up to six publication panels in first-appearance
    order. A panel requires at least two remaining stories and contains at most three.
    Publication identity prefers the presentation-safe publication key, then publication
@@ -282,7 +282,10 @@ or description but cannot replace an authoritative non-empty value. The selected
 include bounded Schema.org JSON-LD article fallbacks after explicit OpenGraph/Twitter tags,
 which recovers publisher names, authors, dates, logos, and images from sites that omit OG.
 These fields are copied into the item presentation snapshot; browser clients never scrape
-or fetch metadata per card. `wire_link_metadata_cache`
+or fetch metadata per card. An effective HTTP(S) presentation thumbnail is tracked separately
+from the broad OpenGraph availability bit: bounded candidate loading prefers image-bearing
+stories, and the ranker applies only the documented missing-thumbnail penalty when artwork is
+absent. `wire_link_metadata_cache`
 keeps successful page metadata fresh for 24 hours and stale-safe for at most seven days,
 uses ETag/Last-Modified conditional refreshes, and negative-caches unusable pages for six
 hours. Fetches accept HTML only, cap response bodies at 512 KiB, use bounded request time,
@@ -299,15 +302,15 @@ to reconstruct identity or scrape page metadata.
 
 ## Languages and fallback
 
-`und` is the global/default bucket. Every global worker cycle builds it first, then discovers and builds at most 12 observed locale buckets. Global and language-specific generations require at least 50 eligible candidates, exactly the complete diverse first-page target. Language tags are lowercase BCP 47 primary languages, maximum 35 characters. Catalog languages are capped at 12.
+`und` is the multilingual global bucket used when a request resolves to no specific language. Every global worker cycle builds it first, then discovers and builds at most 12 observed locale buckets. Global and language-specific generations require at least 50 eligible candidates, exactly the complete diverse first-page target. Language tags are lowercase BCP 47 primary languages, maximum 35 characters. Catalog languages are capped at 12. Article metadata enrichment treats the page's normalized HTML `lang`, OpenGraph locale, or Schema.org `inLanguage` as stronger evidence than the language declared by a social post sharing that article. The metadata cache records when this language evaluation completed; older successful cache rows are re-fetched without conditional validators in bounded worker batches so a legacy ETag cannot preserve a weak share-post classification indefinitely.
 
 Serving behavior:
 
 - return `source: ranked`, `degraded: false` for a fresh active generation in the requested language;
 - return `source: stale_generation`, `degraded: true` when the last safe generation is beyond the freshness SLO but not expired;
-- fall back to the ranked `und` generation when a requested language has no eligible locale generation;
+- never substitute the multilingual `und` generation for an explicit locale request;
 - keep serving the last active quality generation as stale until its retention expiry rather than replacing it with a looser recency feed;
-- when no retained generation exists, serve a deterministic engagement-gated quality fallback that prefers Standard Site stories and requires trusted provenance, usable OpenGraph metadata, or high source confidence; never synthesize or merge a client-side feed.
+- when no retained generation exists, serve a deterministic engagement-gated quality fallback restricted to the exact requested language; the fallback prefers Standard Site stories and requires trusted provenance, usable OpenGraph metadata, or high source confidence, and it never synthesizes or merges a client-side feed.
 
 The simplified fallback is not numerically ranked and therefore does not apply feedback or platform-domain score adjustments. It preserves the same engagement admission floor and deterministic Standard Site/metadata/source-confidence preference without exposing any internal count. A retained ranked generation is always preferred, even when stale.
 
@@ -335,7 +338,7 @@ cannot cross presentation variants. Continuation pages retain canonical generati
 
 A generation is immutable after commit. The worker inserts its metadata/items, marks the previous active generation superseded, marks the new generation committed, and moves `wire_feed_state` in one transaction. Concurrent workers serialize on the feed-state row. Shadow generations never move the pointer. The `WIRE_FEED_MODE` rollout values are exactly `off`, `shadow`, `api`, and `visible`, defaulting to `off`. `off` does no generation work. `shadow` builds without a pointer or public route. `api` commits/moves the pointer and serves API responses while the catalog hides navigation (`enabled: true`, `available: false`). `visible` commits/serves and reports catalog navigation enabled/available.
 
-`WireCursorCodec` accepts at least 32 bytes of secret material. Its version-1 payload contains exactly the generation ID, language, and next ordinal; the token is `base64url(payload).base64url(HMAC-SHA256(payload))`. Decode rejects malformed, oversized (>4,096 bytes), invalid-signature, unsupported-version, negative-ordinal, empty/oversized-generation, and empty/oversized-language tokens. Serving must additionally reject a cursor when its language differs from the request or its generation has expired, returning `CursorExpired`. Cursor HMAC secrets are server-only and rotate with an overlap window.
+`WireCursorCodec` accepts at least 32 bytes of secret material. Its version-1 payload contains exactly the generation ID, language, and next ordinal; the token is `base64url(payload).base64url(HMAC-SHA256(payload))`. Decode rejects malformed, oversized (>4,096 bytes), invalid-signature, unsupported-version, negative-ordinal, empty/oversized-generation, and empty/oversized-language tokens. Serving rejects a cursor whose language differs from the request as `InvalidRequest`; a correctly scoped cursor whose retained generation has expired returns `CursorExpired`. Cursor HMAC secrets are server-only and rotate with an overlap window.
 
 ## Moderation, privacy, and presentation
 
@@ -353,7 +356,7 @@ PostgreSQL is authoritative for the current projection. The inbox, short-retenti
 
 ## Configuration and validation
 
-Ranking defaults live in `WireRankingConfig`/`WireRankingWeights`/`WireDiversityPolicy` and are identified by `wire-v7`. Operational environment controls are:
+Ranking defaults live in `WireRankingConfig`/`WireRankingWeights`/`WireDiversityPolicy` and are identified by `wire-v8`. Operational environment controls are:
 
 - `WIRE_FEED_MODE=off|shadow|api|visible`;
 - `WIRE_WORKER_ROLE=combined|rank|drain` (rank owns generation plus metadata/profile

@@ -1,9 +1,20 @@
 import Foundation
 
 enum WireOpenGraphParser {
+  private static let languageNameCodes: [String: String] = [
+    "arabic": "ar", "bengali": "bn", "chinese": "zh", "czech": "cs",
+    "danish": "da", "dutch": "nl", "english": "en", "finnish": "fi",
+    "french": "fr", "german": "de", "greek": "el", "hebrew": "he",
+    "hindi": "hi", "hungarian": "hu", "indonesian": "id", "italian": "it",
+    "japanese": "ja", "korean": "ko", "malay": "ms", "norwegian": "no",
+    "persian": "fa", "polish": "pl", "portuguese": "pt", "romanian": "ro",
+    "russian": "ru", "spanish": "es", "swedish": "sv", "thai": "th",
+    "turkish": "tr", "ukrainian": "uk", "vietnamese": "vi",
+  ]
   private static let tagPattern = #"<(meta|link)\b[^>]*>"#
   private static let attributePattern = #"([A-Za-z_:][-A-Za-z0-9_:.]*)\s*=\s*(?:\"([^\"]*)\"|'([^']*)'|([^\s>]+))"#
   private static let titlePattern = #"<title\b[^>]*>(.*?)</title>"#
+  private static let htmlPattern = #"<html\b[^>]*>"#
   private static let jsonLDPattern = #"<script\b[^>]*type\s*=\s*(?:\"application/ld\+json\"|'application/ld\+json'|application/ld\+json)[^>]*>(.*?)</script>"#
 
   private struct JSONLDMetadata {
@@ -15,6 +26,7 @@ enum WireOpenGraphParser {
     var publishedAt: Date?
     var iconURL: String?
     var canonicalURL: String?
+    var languageCode: String?
     var hasProductOfferSchema = false
   }
 
@@ -76,6 +88,11 @@ enum WireOpenGraphParser {
       canonicalURL ?? jsonLD.canonicalURL,
       relativeTo: pageURL
     ) ?? pageURL.absoluteString
+    let languageCode = firstLanguageCode([
+      jsonLD.languageCode,
+      properties["og:locale"],
+      htmlLanguage(in: html),
+    ])
     icon = icon ?? normalizedURL(jsonLD.iconURL, relativeTo: pageURL)
     guard title != nil || description != nil || imageURL != nil || siteName != nil
       || authorName != nil || publishedAt != nil || icon != nil
@@ -94,6 +111,7 @@ enum WireOpenGraphParser {
       etag: nil,
       lastModified: nil,
       source: .openGraph,
+      languageCode: languageCode,
       hasProductOfferSchema: jsonLD.hasProductOfferSchema
     )
   }
@@ -145,6 +163,7 @@ enum WireOpenGraphParser {
         jsonLDURLValue(object["mainEntityOfPage"]) ?? string(object["url"]),
         relativeTo: pageURL
       ),
+      languageCode: normalizedLanguageCode(jsonLDLanguageValue(object["inLanguage"])),
       hasProductOfferSchema: hasProductOfferSchema
     )
   }
@@ -194,6 +213,41 @@ enum WireOpenGraphParser {
       return array.lazy.compactMap(jsonLDURLValue).first
     }
     return nil
+  }
+
+  private static func jsonLDLanguageValue(_ value: Any?) -> String? {
+    if let value = string(value) { return value }
+    if let object = value as? [String: Any] {
+      return string(object["name"]) ?? string(object["@id"])
+    }
+    if let array = value as? [Any] {
+      return array.lazy.compactMap(jsonLDLanguageValue).first
+    }
+    return nil
+  }
+
+  private static func htmlLanguage(in html: String) -> String? {
+    guard let tag = matches(pattern: htmlPattern, in: html, options: [.caseInsensitive]).first else {
+      return nil
+    }
+    return attributes(in: tag)["lang"]
+  }
+
+  private static func firstLanguageCode(_ values: [String?]) -> String? {
+    values.lazy.compactMap(normalizedLanguageCode).first
+  }
+
+  private static func normalizedLanguageCode(_ raw: String?) -> String? {
+    guard let raw else { return nil }
+    let normalized = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+      .replacingOccurrences(of: "_", with: "-")
+      .lowercased()
+    if let mapped = languageNameCodes[normalized] { return mapped }
+    guard let primary = normalized.split(separator: "-").first,
+      primary.count == 2 || primary.count == 3,
+      primary.allSatisfy({ $0.isASCII && $0.isLetter })
+    else { return nil }
+    return String(primary)
   }
 
   private static func string(_ value: Any?) -> String? { value as? String }

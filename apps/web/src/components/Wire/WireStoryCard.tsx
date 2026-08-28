@@ -76,6 +76,7 @@ export function WireStoryCard({
   const thumbnailUrl = thumbnailAttempts.find(
     (attempt) => !failedThumbnailUrls.has(attempt),
   );
+  const rendersThumbnail = showImage && Boolean(thumbnailUrl);
 
   const card = (
     <div
@@ -90,15 +91,18 @@ export function WireStoryCard({
       }}
       className={cn(
         "group/story relative h-full cursor-pointer overflow-hidden rounded-2xl border border-border/70 bg-card/88 text-left shadow-[var(--soft-elevation)] outline-none transition-[border-color,background-color,box-shadow] hover:border-[var(--purple-border)] hover:bg-muted/30 hover:[box-shadow:var(--purple-glow-hover)] focus-visible:ring-2 focus-visible:ring-ring dark:border-border/55 dark:bg-card/82",
-        variant === "supporting" &&
+        variant === "supporting" && rendersThumbnail &&
           "lg:grid lg:grid-cols-[minmax(0,1fr)_9rem]",
         variant === "compact" && "rounded-xl shadow-sm",
         variant === "trending" &&
-          "grid grid-cols-[minmax(0,1fr)_7rem] rounded-none border-0 bg-transparent shadow-none hover:border-transparent hover:bg-muted/35 hover:shadow-none dark:bg-transparent",
+          "rounded-none border-0 bg-transparent shadow-none hover:border-transparent hover:bg-muted/35 hover:shadow-none dark:bg-transparent",
+        variant === "trending" && rendersThumbnail &&
+          "grid grid-cols-[minmax(0,1fr)_7rem]",
       )}
     >
-      {showImage ? (
+      {rendersThumbnail ? (
         <div
+          data-wire-story-media
           className={cn(
             "relative overflow-hidden bg-muted/45",
             variant === "lead"
@@ -137,9 +141,10 @@ export function WireStoryCard({
         className={cn(
           "relative min-w-0 overflow-hidden p-3.5",
           variant === "lead" && "p-4 sm:p-5",
-          variant === "supporting" &&
+          variant === "supporting" && rendersThumbnail &&
             "lg:col-start-1 lg:row-start-1 lg:self-center lg:p-3",
-          variant === "trending" && "col-start-1 row-start-1 p-3 pr-1",
+          variant === "trending" && rendersThumbnail &&
+            "col-start-1 row-start-1 p-3 pr-1",
         )}
       >
         <div

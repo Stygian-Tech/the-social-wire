@@ -38,7 +38,7 @@ actor RemoteWireFeedStore: WireFeedStore {
       } catch {
         throw WireServingError.invalidCursor
       }
-      guard decoded.language == requestedLanguage || decoded.language == "und",
+      guard decoded.language == requestedLanguage,
         UUID(uuidString: decoded.generationID) != nil
       else {
         throw WireServingError.invalidCursor
@@ -60,6 +60,7 @@ actor RemoteWireFeedStore: WireFeedStore {
         limit: 500
       )
       let page: WireCorpusPage = try await fetch(target: target)
+      guard page.language == requestedLanguage else { throw WireServingError.unavailable }
       if let pinned = generationID, page.generationID != pinned {
         throw WireServingError.cursorExpired
       }
@@ -142,6 +143,7 @@ actor RemoteWireFeedStore: WireFeedStore {
     }
     guard response.contractVersion == 2 else { throw WireServingError.unavailable }
     let edition: WireEdition = try decode(response.body)
+    guard edition.language == requestedLanguage else { throw WireServingError.unavailable }
     let moderation = try await moderationSnapshot(viewerDID: viewerDid, now: now)
     let allows: (WireFeedItem) -> Bool = { item in
       moderation?.allows(

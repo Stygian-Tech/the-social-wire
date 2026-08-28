@@ -3,8 +3,16 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 
 import type { WireEditionPage } from "@/lib/wireEditionClient";
 
+let cachedImageFailureSrc: string | null = null;
+
 mock.module("@/components/EntryList/EntryCardActionMenu", () => ({
   EntryCardActionMenu: () => <button type="button" aria-label="Story Actions" />,
+}));
+mock.module("@/hooks/useCachedImageUrl", () => ({
+  useCachedImageUrl: (src?: string | null) => ({
+    objectUrl: src?.trim() || undefined,
+    failed: Boolean(src && src === cachedImageFailureSrc),
+  }),
 }));
 beforeAll(() => {
   Object.defineProperty(globalThis, "Element", {
@@ -35,6 +43,7 @@ beforeAll(() => {
 
 afterEach(() => {
   cleanup();
+  cachedImageFailureSrc = null;
   delete document.documentElement.dataset.font;
   delete document.documentElement.dataset.boldText;
 });
@@ -132,6 +141,46 @@ const page: WireEditionPage = {
 };
 
 describe("WireNewsEditionLayout", () => {
+  it("collapses media when cached image resolution fails", async () => {
+    const failedURL = "https://analysis.example/cache-failure.jpg";
+    cachedImageFailureSrc = failedURL;
+    const failedPage: WireEditionPage = {
+      ...page,
+      stories: page.stories.map((story) =>
+        story.itemId === "analysis"
+          ? { ...story, thumbnailUrl: failedURL }
+          : story,
+      ),
+    };
+    const { WireNewsEditionLayout } = await import(
+      "@/components/Wire/WireNewsEditionLayout"
+    );
+    const { container } = render(
+      <WireNewsEditionLayout
+        pages={[failedPage]}
+        continuedStories={[]}
+        hasNextPage={false}
+        isFetchingNextPage={false}
+        isLoadMoreError={false}
+        onLoadMore={async () => undefined}
+        onSelect={() => undefined}
+      />,
+    );
+
+    const topStoriesGrid = container.querySelector(
+      "[data-wire-top-stories-grid]",
+    );
+    const supportingStory = topStoriesGrid?.querySelector(
+      '[data-wire-story-id="analysis"]',
+    );
+    await waitFor(() => {
+      expect(supportingStory?.querySelector("[data-wire-story-media]")).toBeNull();
+      expect(supportingStory?.className).not.toContain(
+        "lg:grid-cols-[minmax(0,1fr)_9rem]",
+      );
+    });
+  });
+
   it("renders the editorial modules and keeps publication identity ahead of titles", async () => {
     const { WireNewsEditionLayout } = await import(
       "@/components/Wire/WireNewsEditionLayout"
@@ -223,6 +272,7 @@ describe("WireNewsEditionLayout", () => {
     expect(leadText.indexOf("Example News")).toBeLessThan(
       leadText.indexOf("The Lead Story"),
     );
+    expect(lead?.querySelector("[data-wire-story-media]")).toBeNull();
     expect(container.firstElementChild?.getAttribute("data-wire-generation")).toBe(
       "generation-1",
     );
@@ -241,12 +291,24 @@ describe("WireNewsEditionLayout", () => {
     expect(supportingStory?.className).toContain(
       "lg:grid-cols-[minmax(0,1fr)_9rem]",
     );
+    const supportingImage = supportingStory?.querySelector(
+      "[data-wire-story-media] img",
+    );
+    expect(supportingImage).not.toBeNull();
     expect(supportingStory?.textContent).not.toContain(
       "Supporting summary should not render in the compact top slot.",
     );
     expect(
       supportingStory?.querySelector(".lg\\:whitespace-normal")?.textContent,
     ).toBe("Analysis Daily");
+
+    fireEvent.error(supportingImage as Element);
+    await waitFor(() => {
+      expect(supportingStory?.querySelector("[data-wire-story-media]")).toBeNull();
+      expect(supportingStory?.className).not.toContain(
+        "lg:grid-cols-[minmax(0,1fr)_9rem]",
+      );
+    });
 
     fireEvent.focus(trendingStory as Element);
     await waitFor(() => {

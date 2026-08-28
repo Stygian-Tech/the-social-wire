@@ -1515,6 +1515,272 @@ struct WirePostgresIntegrationTests {
         "DELETE FROM wire_items WHERE canonical_key = \(canonicalKey)", logger: logger)
     }
   }
+
+  @Test("authoritative Standard Site language replaces an earlier share language")
+  func standardSiteLanguageOverridesShareLanguage() async throws {
+    guard let url = ProcessInfo.processInfo.environment["WIRE_TEST_DATABASE_URL"] else { return }
+    let logger = Logger(label: "wire-standard-language-postgres.integration")
+    let configuration = try PostgresWireConfig.make(from: url, logger: logger)
+    let pool = PostgresClient(configuration: configuration, backgroundLogger: logger)
+    let runTask = Task { await pool.run() }
+    await Task.yield()
+    defer { runTask.cancel() }
+
+    let suffix = UUID().uuidString.lowercased()
+    let environment = "wire-standard-language-\(suffix)"
+    let generation = "wire-standard-language-v1"
+    let sharerDID = "did:plc:share-language-\(suffix)"
+    let authorDID = "did:plc:author-language-\(suffix)"
+    let articleURL = "https://example.com/language/\(suffix)"
+    let now = Date()
+    let sharePayload = """
+      {"commit":{"record":{"$type":"app.bsky.feed.post","text":"Shared article","langs":["en"],"embed":{"external":{"uri":"\(articleURL)","title":"Shared article"}}}}}
+      """
+    try await pool.query(
+      """
+      INSERT INTO wire_ingestion_inbox
+        (environment, source_generation, seq, source_host, cursor_kind, event_kind, repo_did,
+         collection, operation, repo_rev, record_key, payload, event_time)
+      VALUES
+        (\(environment), \(generation), 1, 'test', 'jetstream_v2_seq', 'commit', \(sharerDID),
+         'app.bsky.feed.post', 'create', 'share', 'share', \(sharePayload)::jsonb, \(now))
+      """,
+      logger: logger
+    )
+    let processor = try PostgresWireInboxProcessor(
+      pool: pool,
+      logger: logger,
+      actorSecret: String(repeating: "s", count: 32)
+    )
+    #expect(try await processor.process(asOf: now.addingTimeInterval(1)) == 1)
+
+    let canonical = try #require(WireCanonicalizer.canonicalize(articleURL))
+    let sharedRows = try await pool.query(
+      "SELECT language_code FROM wire_items WHERE canonical_key = \(canonical.canonicalKey)",
+      logger: logger
+    )
+    for try await row in sharedRows { #expect(try row.decode(String.self) == "en") }
+
+    let articlePayload = """
+      {"commit":{"record":{"$type":"site.standard.document","url":"\(articleURL)","title":"Article en francais","lang":"fr"}}}
+      """
+    try await pool.query(
+      """
+      INSERT INTO wire_ingestion_inbox
+        (environment, source_generation, seq, source_host, cursor_kind, event_kind, repo_did,
+         collection, operation, repo_rev, record_key, payload, event_time)
+      VALUES
+        (\(environment), \(generation), 2, 'test', 'jetstream_v2_seq', 'commit', \(authorDID),
+         'site.standard.document', 'create', 'article', 'article', \(articlePayload)::jsonb,
+         \(now.addingTimeInterval(2)))
+      """,
+      logger: logger
+    )
+    #expect(try await processor.process(asOf: now.addingTimeInterval(3)) == 1)
+
+    let articleRows = try await pool.query(
+      """
+      SELECT language_code, provenance ? 'standard_site'
+      FROM wire_items WHERE canonical_key = \(canonical.canonicalKey)
+      """,
+      logger: logger
+    )
+    for try await row in articleRows {
+      let value = try row.decode((String, Bool).self)
+      #expect(value.0 == "fr")
+      #expect(value.1)
+    }
+
+    try await pool.query(
+      "DELETE FROM wire_ingestion_inbox WHERE environment = \(environment)", logger: logger)
+    try await pool.query(
+      "DELETE FROM wire_link_metadata_cache WHERE canonical_key = \(canonical.canonicalKey)",
+      logger: logger)
+    try await pool.query(
+      "DELETE FROM wire_items WHERE canonical_key = \(canonical.canonicalKey)", logger: logger)
+  }
+
+  @Test("article metadata corrects a weaker share-post language")
+  func articleMetadataCorrectsShareLanguage() async throws {
+    guard let url = ProcessInfo.processInfo.environment["WIRE_TEST_DATABASE_URL"] else { return }
+    let logger = Logger(label: "wire-metadata-language-postgres.integration")
+    let configuration = try PostgresWireConfig.make(from: url, logger: logger)
+    let pool = PostgresClient(configuration: configuration, backgroundLogger: logger)
+    let runTask = Task { await pool.run() }
+    await Task.yield()
+    defer { runTask.cancel() }
+
+    let namespace = UUID().uuidString.lowercased()
+    let canonicalKey = "url:metadata-language-\(namespace)"
+    let canonicalURL = "https://metadata-language-\(namespace).example/story"
+    let staleImageURL = "https://metadata-language-\(namespace).example/old.jpg"
+    let now = Date()
+    try await pool.query(
+      """
+      INSERT INTO wire_items
+        (canonical_key, canonical_url, source_domain, source_name, title, language_code,
+         provenance, first_seen_at, last_seen_at, last_signal_at, expires_at)
+      VALUES
+        (\(canonicalKey), \(canonicalURL), \("metadata-language-\(namespace).example"),
+         'Metadata Language Test', 'Shared article', 'en', '["direct_share"]'::jsonb,
+         \(now), \(now), \(now), \(now.addingTimeInterval(86_400)))
+      """,
+      logger: logger
+    )
+
+    let store = PostgresWireLinkMetadataStore(pool: pool, logger: logger)
+    _ = try await store.claimDue(limit: 1, asOf: now)
+    try await store.store(
+      canonicalKey: canonicalKey,
+      metadata: WireLinkMetadata(
+        canonicalURL: canonicalURL,
+        title: "Article en francais",
+        description: nil,
+        imageURL: staleImageURL,
+        siteName: nil,
+        authorName: nil,
+        publishedAt: nil,
+        iconURL: nil,
+        etag: nil,
+        lastModified: nil,
+        source: .openGraph,
+        languageCode: "fr"
+      ),
+      asOf: now.addingTimeInterval(1)
+    )
+
+    let rows = try await pool.query(
+      """
+      SELECT item.language_code, cache.language_code, cache.language_checked_at IS NOT NULL,
+        item.thumbnail_url
+      FROM wire_items item
+      JOIN wire_link_metadata_cache cache ON cache.canonical_key = item.canonical_key
+      WHERE item.canonical_key = \(canonicalKey)
+      """,
+      logger: logger
+    )
+    for try await row in rows {
+      let value = try row.decode((String, String?, Bool, String?).self)
+      #expect(value.0 == "fr")
+      #expect(value.1 == "fr")
+      #expect(value.2)
+      #expect(value.3 == staleImageURL)
+    }
+    try await store.store(
+      canonicalKey: canonicalKey,
+      metadata: WireLinkMetadata(
+        canonicalURL: canonicalURL,
+        title: "Article en francais",
+        description: nil,
+        imageURL: nil,
+        siteName: nil,
+        authorName: nil,
+        publishedAt: nil,
+        iconURL: nil,
+        etag: nil,
+        lastModified: nil,
+        source: .openGraph,
+        languageCode: "fr"
+      ),
+      asOf: now.addingTimeInterval(2)
+    )
+    let clearedRows = try await pool.query(
+      """
+      SELECT thumbnail_url, presentation_snapshot ? 'thumbnailUrl',
+        presentation_snapshot ? 'thumbnailSource'
+      FROM wire_items WHERE canonical_key = \(canonicalKey)
+      """,
+      logger: logger
+    )
+    for try await row in clearedRows {
+      let value = try row.decode((String?, Bool, Bool).self)
+      #expect(value.0 == nil)
+      #expect(!value.1)
+      #expect(!value.2)
+    }
+    try await pool.query(
+      "DELETE FROM wire_items WHERE canonical_key = \(canonicalKey)", logger: logger)
+  }
+
+  @Test("a no-image OpenGraph refresh preserves authoritative thumbnails")
+  func noImageRefreshPreservesAuthoritativeThumbnails() async throws {
+    guard let url = ProcessInfo.processInfo.environment["WIRE_TEST_DATABASE_URL"] else { return }
+    let logger = Logger(label: "wire-thumbnail-preservation-postgres.integration")
+    let configuration = try PostgresWireConfig.make(from: url, logger: logger)
+    let pool = PostgresClient(configuration: configuration, backgroundLogger: logger)
+    let runTask = Task { await pool.run() }
+    await Task.yield()
+    defer { runTask.cancel() }
+
+    let namespace = UUID().uuidString.lowercased()
+    let now = Date()
+    let cases = [
+      (source: "standard_site", provenance: "standard_site"),
+      (source: "embedded_card", provenance: "direct_share"),
+    ]
+    let store = PostgresWireLinkMetadataStore(pool: pool, logger: logger)
+
+    for testCase in cases {
+      let canonicalKey = "url:thumbnail-preservation-\(testCase.source)-\(namespace)"
+      let canonicalURL = "https://thumbnail-preservation-\(namespace).example/\(testCase.source)"
+      let thumbnailURL = "https://thumbnail-preservation-\(namespace).example/\(testCase.source).jpg"
+      try await pool.query(
+        """
+        INSERT INTO wire_items
+          (canonical_key, canonical_url, source_domain, source_name, title, thumbnail_url,
+           language_code, provenance, presentation_snapshot, first_seen_at, last_seen_at,
+           last_signal_at, expires_at)
+        VALUES
+          (\(canonicalKey), \(canonicalURL), \("thumbnail-preservation-\(namespace).example"),
+           'Thumbnail Preservation Test', 'Article', \(thumbnailURL), 'en',
+           jsonb_build_array(\(testCase.provenance)),
+           jsonb_build_object(
+             'metadataSource', \(testCase.source),
+             'thumbnailUrl', \(thumbnailURL),
+             'thumbnailSource', \(testCase.source)),
+           \(now), \(now), \(now), \(now.addingTimeInterval(86_400)))
+        """,
+        logger: logger
+      )
+
+      try await store.store(
+        canonicalKey: canonicalKey,
+        metadata: WireLinkMetadata(
+          canonicalURL: canonicalURL,
+          title: "Article",
+          description: nil,
+          imageURL: nil,
+          siteName: nil,
+          authorName: nil,
+          publishedAt: nil,
+          iconURL: nil,
+          etag: nil,
+          lastModified: nil,
+          source: .openGraph,
+          languageCode: "en"
+        ),
+        asOf: now.addingTimeInterval(1)
+      )
+
+      let rows = try await pool.query(
+        """
+        SELECT thumbnail_url, presentation_snapshot->>'thumbnailUrl',
+          presentation_snapshot->>'thumbnailSource'
+        FROM wire_items WHERE canonical_key = \(canonicalKey)
+        """,
+        logger: logger
+      )
+      for try await row in rows {
+        let value = try row.decode((String?, String?, String?).self)
+        #expect(value.0 == thumbnailURL)
+        #expect(value.1 == thumbnailURL)
+        #expect(value.2 == testCase.source)
+      }
+
+      try await pool.query(
+        "DELETE FROM wire_items WHERE canonical_key = \(canonicalKey)", logger: logger)
+    }
+  }
 }
 
 private actor IntegrationDrainSleeper: WireInboxDrainSleeping {

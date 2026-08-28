@@ -60,7 +60,9 @@ actor PostgresWireCorpusStore: WireCorpusStoring {
     try await requireFreshBaseline(now: now)
     let generation: Generation
     if let generationID {
-      guard let retained = try await retainedGeneration(id: generationID, now: now) else {
+      guard let retained = try await retainedGeneration(id: generationID, now: now),
+        retained.language == language
+      else {
         throw WireCorpusEdgeStoreError.cursorExpired
       }
       generation = retained
@@ -286,10 +288,7 @@ actor PostgresWireCorpusStore: WireCorpusStoring {
   }
 
   private func activeGeneration(language: String, now: Date) async throws -> Generation? {
-    if language != "und", let localized = try await activeGeneration(exactLanguage: language, now: now) {
-      return localized
-    }
-    return try await activeGeneration(exactLanguage: "und", now: now)
+    try await activeGeneration(exactLanguage: language, now: now)
   }
 
   private func activeGeneration(exactLanguage language: String, now: Date) async throws -> Generation? {
@@ -436,9 +435,6 @@ actor PostgresWireCorpusStore: WireCorpusStoring {
         )
       )
       ordinal += 1
-    }
-    if language != "und", candidates.count < WireDataPolicy.diverseFirstPageCount {
-      return try await fallback(language: "und", limit: limit, now: now)
     }
     let reranked = WireDiversityReranker.rerank(candidates, policy: WireDiversityPolicy())
     let selected = reranked.items.prefix(limit)

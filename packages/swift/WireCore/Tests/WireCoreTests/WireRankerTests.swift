@@ -98,7 +98,7 @@ struct WireRankerTests {
     let result = try WireRanker.rank(
       candidates: [twentyHoursOld, tenHoursOld],
       asOf: now,
-      config: .init(weights: freshnessOnly)
+      config: .init(weights: freshnessOnly, missingThumbnailPenalty: 0)
     )
     let scores = Dictionary(
       uniqueKeysWithValues: result.items.map { ($0.candidate.canonicalKey, $0.score) })
@@ -213,6 +213,23 @@ struct WireRankerTests {
     ])
   }
 
+  @Test("a usable thumbnail breaks otherwise equal ranking ties without gating admission")
+  func usableThumbnailDownrank() throws {
+    let withoutThumbnail = candidate("a-without-thumbnail", actors: 8)
+    let withThumbnail = candidate("z-with-thumbnail", actors: 8, thumbnail: true)
+
+    let result = try WireRanker.rank(
+      candidates: [withoutThumbnail, withThumbnail], asOf: now,
+      config: .init(minimumRankedItems: 2)
+    )
+
+    #expect(result.items.map(\.candidate.canonicalKey) == [
+      "z-with-thumbnail", "a-without-thumbnail",
+    ])
+    #expect(result.items[0].score > result.items[1].score)
+    #expect(result.diagnostics.rejectedForQuality == 0)
+  }
+
   @Test("explicit quality signals rank recommendation above feedback above a like")
   func qualitySignalHierarchy() throws {
     var liked = candidate("a-liked", actors: 5)
@@ -298,7 +315,8 @@ struct WireRankerTests {
     communities: Int = 2,
     recommendations: Int = 0,
     standardSite: Bool = false,
-    openGraph: Bool = true
+    openGraph: Bool = true,
+    thumbnail: Bool = false
   ) -> WireCandidate {
     WireCandidate(
       canonicalKey: key,
@@ -323,7 +341,8 @@ struct WireRankerTests {
       shares24h: actors,
       sourceConfidence: 0.8,
       isStandardSite: standardSite,
-      hasUsableOpenGraphMetadata: openGraph
+      hasUsableOpenGraphMetadata: openGraph,
+      hasUsableThumbnail: thumbnail
     )
   }
 }
