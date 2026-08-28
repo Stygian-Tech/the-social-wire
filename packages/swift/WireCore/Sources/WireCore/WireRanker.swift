@@ -117,6 +117,7 @@ public enum WireRanker {
       let score = clamp(
         feedbackAdjustedScore - config.domainPenalties.penalty(for: candidate.sourceDomain)
           - (candidate.commercialClass == .limited ? config.limitedCommercialPenalty : 0)
+          - (candidate.hasUsableThumbnail == true ? 0 : config.missingThumbnailPenalty)
           + rotationNudge(canonicalKey: candidate.canonicalKey, asOf: asOf)
       )
 

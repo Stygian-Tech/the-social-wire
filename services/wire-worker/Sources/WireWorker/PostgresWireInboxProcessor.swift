@@ -1356,6 +1356,7 @@ struct PostgresWireInboxProcessor: Sendable {
       "metadataSource": presentationSource,
       "sourcePriority": presentationPriority,
     ]
+    if thumbnail != nil { presentation["thumbnailSource"] = presentationSource }
     presentation["homepageUrl"] = publicationHomepageURL
     presentation["iconUrl"] = publicationIconURL
     let presentationJSON = String(
@@ -1411,8 +1412,13 @@ struct PostgresWireInboxProcessor: Sendable {
           EXCLUDED.publication_homepage_url, wire_items.publication_homepage_url),
         publication_icon_url = COALESCE(
           EXCLUDED.publication_icon_url, wire_items.publication_icon_url),
-        language_code = CASE WHEN wire_items.language_code = 'und'
-          THEN EXCLUDED.language_code ELSE wire_items.language_code END,
+        language_code = CASE
+          WHEN EXCLUDED.language_code <> 'und'
+            AND COALESCE((EXCLUDED.presentation_snapshot->>'sourcePriority')::integer, 0)
+              > COALESCE((wire_items.presentation_snapshot->>'sourcePriority')::integer, 0)
+          THEN EXCLUDED.language_code
+          WHEN wire_items.language_code = 'und' THEN EXCLUDED.language_code
+          ELSE wire_items.language_code END,
         topic_keys = CASE WHEN jsonb_array_length(wire_items.topic_keys) = 0
           THEN EXCLUDED.topic_keys ELSE wire_items.topic_keys END,
         provenance = (

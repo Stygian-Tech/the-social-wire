@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect, useRef } from "react";
+
 import { useCachedImageUrl } from "@/hooks/useCachedImageUrl";
 
 interface CachedImageProps {
@@ -23,6 +25,20 @@ export function CachedImage({
   onError,
 }: CachedImageProps) {
   const { objectUrl, failed } = useCachedImageUrl(src);
+  const reportedFailureSrc = useRef<string | null>(null);
+
+  useEffect(() => {
+    const normalizedSrc = src?.trim() || null;
+    if (!failed) {
+      if (reportedFailureSrc.current === normalizedSrc) {
+        reportedFailureSrc.current = null;
+      }
+      return;
+    }
+    if (reportedFailureSrc.current === normalizedSrc) return;
+    reportedFailureSrc.current = normalizedSrc;
+    onError?.();
+  }, [failed, onError, src]);
 
   if (!objectUrl || failed) {
     return null;

@@ -13,7 +13,11 @@ struct HTTPWireLinkMetadataClientTests {
     headers.add(name: "Content-Type", value: "text/html; charset=utf-8")
     headers.add(name: "ETag", value: "\"edition-one\"")
     let transport = StubWireLinkTransport(responses: [
-      .init(status: .ok, headers: headers, body: #"<meta property="og:title" content="Story">"#)
+      .init(
+        status: .ok,
+        headers: headers,
+        body: #"<html lang="fr-CA"><meta property="og:title" content="Story"></html>"#
+      )
     ])
     let dns = StubWireLinkDNSResolver()
     let client = HTTPWireLinkMetadataClient(transport: transport, dnsResolver: dns)
@@ -30,6 +34,7 @@ struct HTTPWireLinkMetadataClientTests {
       return
     }
     #expect(metadata.title == "Story")
+    #expect(metadata.languageCode == "fr")
     #expect(metadata.etag == "\"edition-one\"")
     #expect(await dns.hosts == ["publisher.social"])
     let requests = await transport.requests

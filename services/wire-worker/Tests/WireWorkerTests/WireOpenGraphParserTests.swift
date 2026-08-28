@@ -158,4 +158,52 @@ struct WireOpenGraphParserTests {
     )
     #expect(parsed.title == "Fallback survives")
   }
+
+  @Test("normalizes article language from HTML, OpenGraph, and JSON-LD")
+  func articleLanguage() throws {
+    let pageURL = URL(string: "https://news.example/article-language")!
+    let htmlLanguage = try #require(WireOpenGraphParser.parse(
+      html: #"<html lang="fr-CA"><head><title>Article</title></head></html>"#,
+      pageURL: URL(string: "https://news.example/html-language")!
+    ))
+    #expect(htmlLanguage.languageCode == "fr")
+
+    let openGraphLocale = try #require(WireOpenGraphParser.parse(
+      html: #"<meta property="og:title" content="Article"><meta property="og:locale" content="pt_BR">"#,
+      pageURL: URL(string: "https://news.example/open-graph-language")!
+    ))
+    #expect(openGraphLocale.languageCode == "pt")
+
+    let jsonLDLanguage = try #require(WireOpenGraphParser.parse(
+      html: #"""
+        <html lang="fr"><head>
+        <meta property="og:locale" content="pt_BR">
+        <script type="application/ld+json">
+        {"@type":"NewsArticle","headline":"Article","inLanguage":"de-DE"}
+        </script>
+        </head></html>
+        """#,
+      pageURL: URL(string: "https://news.example/json-ld-language")!
+    ))
+    #expect(jsonLDLanguage.languageCode == "de")
+
+    let namedLanguage = try #require(WireOpenGraphParser.parse(
+      html: """
+        <html><head><script type="application/ld+json">
+        {"@type":"NewsArticle","headline":"Article","inLanguage":{"@type":"Language","name":"English"}}
+        </script></head></html>
+        """,
+      pageURL: pageURL
+    ))
+    #expect(namedLanguage.languageCode == "en")
+
+    let invalidLanguage = try #require(WireOpenGraphParser.parse(
+      html: """
+        <html><head><meta property="og:title" content="Article">
+        <meta property="og:locale" content="NotALanguage"></head></html>
+        """,
+      pageURL: pageURL
+    ))
+    #expect(invalidLanguage.languageCode == nil)
+  }
 }
