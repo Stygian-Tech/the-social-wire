@@ -51,6 +51,7 @@ struct PostgresWireGenerationStore: WireGenerationStore {
     limit: Int,
     asOf: Date
   ) async throws -> [WireCandidate] {
+    let freshPublicationCutoff = asOf.addingTimeInterval(-72 * 60 * 60)
     let rows = try await pool.query(
       """
       SELECT i.canonical_key, i.canonical_url, i.representative_uri, i.source_domain,
@@ -86,7 +87,9 @@ struct PostgresWireGenerationStore: WireGenerationStore {
       ORDER BY
         CASE
           WHEN r.shares_24h >= 5 OR r.recommendations_24h >= 2 THEN 0
-          WHEN (i.provenance ? 'standard_site') AND r.shares_24h >= 3 THEN 1
+          WHEN (i.provenance ? 'standard_site')
+            AND i.published_at >= \(freshPublicationCutoff)
+            AND r.shares_24h >= 1 THEN 1
           WHEN (r.shares_24h >= 3 OR r.recommendations_24h >= 1) THEN 2
           ELSE 3
         END,
