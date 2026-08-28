@@ -175,7 +175,7 @@ struct PostgresWireLinkMetadataStore: WireLinkMetadataStoring {
             thumbnail_url = CASE
               WHEN COALESCE(presentation_snapshot->>'thumbnailSource',
                 presentation_snapshot->>'metadataSource') = 'open_graph'
-                AND \(metadata.imageURL) IS NULL THEN NULL
+                AND \(metadata.imageURL)::text IS NULL THEN NULL
               WHEN provenance ? 'standard_site' THEN COALESCE(thumbnail_url, \(metadata.imageURL))
               ELSE COALESCE(\(metadata.imageURL), thumbnail_url) END,
             source_name = CASE WHEN provenance ? 'standard_site' THEN source_name
@@ -209,17 +209,17 @@ struct PostgresWireLinkMetadataStore: WireLinkMetadataStoring {
               'thumbnailUrl', CASE
                 WHEN COALESCE(presentation_snapshot->>'thumbnailSource',
                   presentation_snapshot->>'metadataSource') = 'open_graph'
-                  AND \(metadata.imageURL) IS NULL THEN NULL
+                  AND \(metadata.imageURL)::text IS NULL THEN NULL
                 WHEN provenance ? 'standard_site' THEN COALESCE(thumbnail_url, \(metadata.imageURL))
                 ELSE COALESCE(\(metadata.imageURL), thumbnail_url) END,
               'thumbnailSource', CASE
                 WHEN COALESCE(presentation_snapshot->>'thumbnailSource',
                   presentation_snapshot->>'metadataSource') = 'open_graph'
-                  AND \(metadata.imageURL) IS NULL THEN NULL
+                  AND \(metadata.imageURL)::text IS NULL THEN NULL
                 WHEN provenance ? 'standard_site' AND thumbnail_url IS NOT NULL
                   THEN COALESCE(presentation_snapshot->'thumbnailSource',
                     to_jsonb('standard_site'::text))
-                WHEN \(metadata.imageURL) IS NOT NULL THEN to_jsonb('open_graph'::text)
+                WHEN \(metadata.imageURL)::text IS NOT NULL THEN to_jsonb('open_graph'::text)
                 ELSE COALESCE(presentation_snapshot->'thumbnailSource',
                   presentation_snapshot->'metadataSource') END,
               'sourceName', CASE WHEN provenance ? 'standard_site' THEN source_name
