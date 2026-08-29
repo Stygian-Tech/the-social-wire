@@ -15,19 +15,40 @@ struct PostgresWireGenerationStore: WireGenerationStore {
   func eligibleLanguageBuckets(
     limit: Int,
     minimumCandidates: Int,
+    ranking: WireRankingConfig,
     asOf: Date
   ) async throws -> [String] {
+    let oldestCandidate = asOf.addingTimeInterval(-ranking.maximumCandidateAge)
+    let freshPublicationCutoff = asOf.addingTimeInterval(-72 * 60 * 60)
     let rows = try await pool.query(
       """
       SELECT i.language_code
       FROM wire_items i
       JOIN wire_signal_rollups r ON r.canonical_key = i.canonical_key
+      LEFT JOIN wire_link_metadata_cache metadata ON metadata.canonical_key = i.canonical_key
       WHERE i.eligible = TRUE AND i.expires_at > \(asOf)
         AND i.target_kind IN ('external_article', 'standard_site_document')
         AND i.commercial_class <> 'probable_ad'
         AND i.language_code <> 'und'
-        AND i.source_confidence >= 0.25
-        AND (r.shares_24h >= 3 OR r.recommendations_24h >= 1)
+        AND i.source_confidence >= \(ranking.minimumSourceConfidence)
+        AND COALESCE(i.published_at, i.first_seen_at) >= \(oldestCandidate)
+        AND (
+          i.provenance ? 'standard_site'
+          OR (metadata.source = 'open_graph'
+            AND metadata.status IN ('fresh', 'stale')
+            AND metadata.stale_until > \(asOf)
+            AND num_nonnulls(metadata.title, metadata.description, metadata.image_url,
+              metadata.site_name, metadata.author_name, metadata.published_at::TEXT,
+              metadata.icon_url) >= 2)
+        )
+        AND (
+          r.shares_24h >= \(ranking.backfillMinimumHighIntentActors)
+          OR r.recommendations_24h >= \(ranking.backfillMinimumRecommendations)
+          OR ((i.provenance ? 'standard_site')
+            AND COALESCE(i.published_at, i.first_seen_at) >= \(freshPublicationCutoff)
+            AND i.source_confidence >= \(ranking.standardSiteMinimumSourceConfidence)
+            AND r.shares_24h >= \(ranking.standardSiteMinimumHighIntentActors))
+        )
         AND NOT EXISTS (
           SELECT 1 FROM wire_labels l
           WHERE l.canonical_key = i.canonical_key AND l.expires_at > \(asOf)

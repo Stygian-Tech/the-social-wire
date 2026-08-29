@@ -193,7 +193,12 @@ private actor FakeWireStore: WireGenerationStore {
     self.languageBuckets = languageBuckets
   }
   func ping() { pingCount += 1 }
-  func eligibleLanguageBuckets(limit: Int, minimumCandidates: Int, asOf: Date) -> [String] {
+  func eligibleLanguageBuckets(
+    limit: Int,
+    minimumCandidates: Int,
+    ranking: WireRankingConfig,
+    asOf: Date
+  ) -> [String] {
     Array(languageBuckets.prefix(limit))
   }
   func loadCandidates(languageBucket: String, limit: Int, asOf: Date) -> [WireCandidate] {

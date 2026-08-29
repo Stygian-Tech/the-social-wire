@@ -11,6 +11,7 @@ public struct WireRankingConfig: Codable, Equatable, Sendable {
   public var backfillMinimumRecommendations: Int
   public var minimumRankedItems: Int
   public var minimumSourceConfidence: Double
+  public var standardSiteMinimumSourceConfidence: Double
   public var actorBreadthTarget: Int
   public var recommendationBreadthTarget: Int
   public var feedbackBreadthTarget: Int
@@ -23,7 +24,7 @@ public struct WireRankingConfig: Codable, Equatable, Sendable {
   public var missingThumbnailPenalty: Double
 
   public init(
-    version: String = "wire-v9",
+    version: String = "wire-v10",
     weights: WireRankingWeights = WireRankingWeights(),
     diversity: WireDiversityPolicy = WireDiversityPolicy(),
     minimumHighIntentActors: Int = 5,
@@ -33,6 +34,7 @@ public struct WireRankingConfig: Codable, Equatable, Sendable {
     backfillMinimumRecommendations: Int = 1,
     minimumRankedItems: Int = 50,
     minimumSourceConfidence: Double = 0.25,
+    standardSiteMinimumSourceConfidence: Double = 0.75,
     actorBreadthTarget: Int = 30,
     recommendationBreadthTarget: Int = 10,
     feedbackBreadthTarget: Int = 10,
@@ -54,6 +56,7 @@ public struct WireRankingConfig: Codable, Equatable, Sendable {
     self.backfillMinimumRecommendations = backfillMinimumRecommendations
     self.minimumRankedItems = minimumRankedItems
     self.minimumSourceConfidence = minimumSourceConfidence
+    self.standardSiteMinimumSourceConfidence = standardSiteMinimumSourceConfidence
     self.actorBreadthTarget = actorBreadthTarget
     self.recommendationBreadthTarget = recommendationBreadthTarget
     self.feedbackBreadthTarget = feedbackBreadthTarget
@@ -81,6 +84,8 @@ public struct WireRankingConfig: Codable, Equatable, Sendable {
       backfillMinimumHighIntentActors >= 0, backfillMinimumRecommendations >= 0,
       minimumRankedItems > 0,
       minimumSourceConfidence.isFinite, (0...1).contains(minimumSourceConfidence),
+      standardSiteMinimumSourceConfidence.isFinite,
+      (0...1).contains(standardSiteMinimumSourceConfidence),
       actorBreadthTarget > 0, recommendationBreadthTarget > 0, feedbackBreadthTarget > 0,
       communityBreadthTarget > 0, engagementTarget > 0,
       freshnessHalfLife > 0, maximumCandidateAge > 0,

@@ -1533,7 +1533,7 @@ struct WirePostgresIntegrationTests {
 
     let namespace = UUID().uuidString.lowercased()
     let backgroundKey = "url:metadata-background-\(namespace)"
-    let rankedKey = "url:metadata-ranked-\(namespace)"
+    let priorityKeys = (0..<4).map { "url:metadata-priority-\(namespace)-\($0)" }
     let now = Date()
     try await pool.query(
       """
@@ -1543,11 +1543,7 @@ struct WirePostgresIntegrationTests {
       VALUES
         (\(backgroundKey), \("https://metadata-background-\(namespace).example/story"),
          \("metadata-background-\(namespace).example"), 'Background Metadata Test',
-         'Background story', 'en', \(now), \(now), \(now), \(now.addingTimeInterval(86_400))),
-        (\(rankedKey), \("https://metadata-ranked-\(namespace).example/story"),
-         \("metadata-ranked-\(namespace).example"), 'Ranked Metadata Test',
-         'Ranked story', 'und', \(now), \(now), \(now.addingTimeInterval(-3_600)),
-         \(now.addingTimeInterval(86_400)))
+         'Background story', 'en', \(now), \(now), \(now), \(now.addingTimeInterval(86_400)))
       """,
       logger: logger
     )
@@ -1559,22 +1555,159 @@ struct WirePostgresIntegrationTests {
       VALUES
         (\(backgroundKey), \("https://metadata-background-\(namespace).example/story"),
          'open_graph', 'fresh', \(now), \(now.addingTimeInterval(86_400)),
-         \(now.addingTimeInterval(172_800)), \(now.addingTimeInterval(-86_400)), \(now)),
-        (\(rankedKey), \("https://metadata-ranked-\(namespace).example/story"),
-         'open_graph', 'fresh', \(now), \(now.addingTimeInterval(86_400)),
-         \(now.addingTimeInterval(172_800)), \(now), \(now))
+         \(now.addingTimeInterval(172_800)), \(now.addingTimeInterval(-86_400)), \(now))
+      """,
+      logger: logger
+    )
+    for (index, canonicalKey) in priorityKeys.enumerated() {
+      let canonicalURL = "https://metadata-priority-\(namespace).example/story/\(index)"
+      try await pool.query(
+        """
+        INSERT INTO wire_items
+          (canonical_key, canonical_url, source_domain, source_name, title, language_code,
+           first_seen_at, last_seen_at, last_signal_at, expires_at)
+        VALUES
+          (\(canonicalKey), \(canonicalURL), \("metadata-priority-\(namespace).example"),
+           'Priority Metadata Test', \("Priority story \(index)"), 'und', \(now), \(now),
+           \(now.addingTimeInterval(Double(-index))), \(now.addingTimeInterval(86_400)))
+        """,
+        logger: logger
+      )
+      try await pool.query(
+        """
+        INSERT INTO wire_link_metadata_cache
+          (canonical_key, canonical_url, source, status, fetched_at, fresh_until,
+           stale_until, retry_after, updated_at)
+        VALUES
+          (\(canonicalKey), \(canonicalURL), 'open_graph', 'fresh', \(now),
+           \(now.addingTimeInterval(86_400)), \(now.addingTimeInterval(172_800)), \(now), \(now))
+        """,
+        logger: logger
+      )
+    }
+
+    let store = PostgresWireLinkMetadataStore(pool: pool, logger: logger)
+    let claimed = try await store.claimDue(limit: 4, asOf: now)
+    #expect(claimed.count == 4)
+    #expect(claimed.contains { $0.canonicalKey == backgroundKey })
+    #expect(claimed.filter { priorityKeys.contains($0.canonicalKey) }.count == 3)
+
+    for canonicalKey in [backgroundKey] + priorityKeys {
+      try await pool.query(
+        "DELETE FROM wire_items WHERE canonical_key = \(canonicalKey)", logger: logger)
+    }
+  }
+
+  @Test("checked unknown language does not preempt unchecked metadata")
+  func checkedUnknownLanguageDoesNotPreemptUncheckedMetadata() async throws {
+    guard let url = ProcessInfo.processInfo.environment["WIRE_TEST_DATABASE_URL"] else { return }
+    let logger = Logger(label: "wire-metadata-checked-unknown-postgres.integration")
+    let configuration = try PostgresWireConfig.make(from: url, logger: logger)
+    let pool = PostgresClient(configuration: configuration, backgroundLogger: logger)
+    let runTask = Task { await pool.run() }
+    await Task.yield()
+    defer { runTask.cancel() }
+
+    let namespace = UUID().uuidString.lowercased()
+    let checkedKey = "url:metadata-checked-unknown-\(namespace)"
+    let uncheckedKey = "url:metadata-unchecked-\(namespace)"
+    let now = Date()
+    for canonicalKey in [checkedKey, uncheckedKey] {
+      let canonicalURL = "https://\(canonicalKey.dropFirst(4)).example/story"
+      try await pool.query(
+        """
+        INSERT INTO wire_items
+          (canonical_key, canonical_url, source_domain, source_name, title, language_code,
+           first_seen_at, last_seen_at, last_signal_at, expires_at)
+        VALUES
+          (\(canonicalKey), \(canonicalURL), 'metadata-check.example', 'Metadata Check',
+           'Metadata check story', 'und', \(now), \(now), \(now),
+           \(now.addingTimeInterval(86_400)))
+        """,
+        logger: logger
+      )
+    }
+    try await pool.query(
+      """
+      INSERT INTO wire_link_metadata_cache
+        (canonical_key, canonical_url, source, status, fetched_at, fresh_until,
+         stale_until, retry_after, language_checked_at, updated_at)
+      VALUES
+        (\(checkedKey), \("https://checked-\(namespace).example/story"), 'open_graph', 'fresh',
+         \(now), \(now.addingTimeInterval(-1)), \(now.addingTimeInterval(86_400)),
+         \(now.addingTimeInterval(-86_400)), \(now), \(now)),
+        (\(uncheckedKey), \("https://unchecked-\(namespace).example/story"), 'open_graph', 'fresh',
+         \(now), \(now.addingTimeInterval(86_400)), \(now.addingTimeInterval(172_800)),
+         \(now), NULL, \(now))
       """,
       logger: logger
     )
 
     let store = PostgresWireLinkMetadataStore(pool: pool, logger: logger)
     let claimed = try await store.claimDue(limit: 1, asOf: now)
-    #expect(claimed.map(\.canonicalKey) == [rankedKey])
+    #expect(claimed.map(\.canonicalKey) == [uncheckedKey])
 
-    try await pool.query(
-      "DELETE FROM wire_items WHERE canonical_key IN (\(backgroundKey), \(rankedKey))",
-      logger: logger
+    for canonicalKey in [checkedKey, uncheckedKey] {
+      try await pool.query(
+        "DELETE FROM wire_items WHERE canonical_key = \(canonicalKey)", logger: logger)
+    }
+  }
+
+  @Test("locale discovery matches fresh Standard Site authority confidence")
+  func localeDiscoveryMatchesFreshStandardSiteAuthorityConfidence() async throws {
+    guard let url = ProcessInfo.processInfo.environment["WIRE_TEST_DATABASE_URL"] else { return }
+    let logger = Logger(label: "wire-standard-locale-discovery-postgres.integration")
+    let configuration = try PostgresWireConfig.make(from: url, logger: logger)
+    let pool = PostgresClient(configuration: configuration, backgroundLogger: logger)
+    let runTask = Task { await pool.run() }
+    await Task.yield()
+    defer { runTask.cancel() }
+
+    let namespace = UUID().uuidString.lowercased()
+    let authoritativeKeys = (0..<50).map { "url:standard-locale-\(namespace)-\($0)" }
+    let weakKeys = (0..<50).map { "url:weak-standard-locale-\(namespace)-\($0)" }
+    let now = Date()
+    for (language, sourceConfidence, canonicalKeys) in [
+      ("en", 0.9, authoritativeKeys),
+      ("qaa", 0.5, weakKeys),
+    ] {
+      for (index, canonicalKey) in canonicalKeys.enumerated() {
+        let domain = "\(language)-standard-locale.example"
+        try await pool.query(
+          """
+          INSERT INTO wire_items
+            (canonical_key, canonical_url, source_domain, source_name, title, language_code,
+             provenance, published_at, first_seen_at, last_seen_at, last_signal_at,
+             source_confidence, target_kind, expires_at)
+          VALUES
+            (\(canonicalKey), \("https://\(domain)/story/\(namespace)/\(index)"),
+             \(domain), 'Standard Locale', \("Story \(index)"), \(language),
+             '["standard_site"]'::jsonb, \(now), \(now), \(now), \(now), \(sourceConfidence),
+             'standard_site_document', \(now.addingTimeInterval(86_400)))
+          """,
+          logger: logger
+        )
+        try await pool.query(
+          "INSERT INTO wire_signal_rollups (canonical_key, shares_24h) VALUES (\(canonicalKey), 1)",
+          logger: logger
+        )
+      }
+    }
+
+    let store = PostgresWireGenerationStore(pool: pool, logger: logger)
+    let buckets = try await store.eligibleLanguageBuckets(
+      limit: 12,
+      minimumCandidates: 50,
+      ranking: WireRankingConfig(),
+      asOf: now
     )
+    #expect(buckets.contains("en"))
+    #expect(!buckets.contains("qaa"))
+
+    for canonicalKey in authoritativeKeys + weakKeys {
+      try await pool.query(
+        "DELETE FROM wire_items WHERE canonical_key = \(canonicalKey)", logger: logger)
+    }
   }
 
   @Test("authoritative Standard Site language replaces an earlier share language")

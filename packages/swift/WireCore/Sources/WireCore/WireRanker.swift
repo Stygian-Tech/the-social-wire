@@ -131,7 +131,8 @@ public enum WireRanker {
           age: age,
           shareVelocityP90: shareVelocityP90,
           sharersP90: sharersP90,
-          communitiesP75: communitiesP75
+          communitiesP75: communitiesP75,
+          config: config
         )
       )
       switch tier {
@@ -208,7 +209,8 @@ public enum WireRanker {
     age: TimeInterval,
     shareVelocityP90: Int,
     sharersP90: Int,
-    communitiesP75: Int
+    communitiesP75: Int,
+    config: WireRankingConfig
   ) -> [WireReasonCode] {
     var result: [WireReasonCode] = []
     if age <= 21_600, candidate.shares1h >= max(1, shareVelocityP90) {
@@ -220,7 +222,7 @@ public enum WireRanker {
     {
       result.append(.sharedAcrossCommunities)
     }
-    if qualifiesFreshPublicationLane(candidate, age: age) {
+    if qualifiesFreshPublicationLane(candidate, age: age, config: config) {
       result.append(.freshPublication)
     }
     let baseline = max(1, Double(candidate.signals7d) / (7 * 24))
@@ -235,10 +237,11 @@ public enum WireRanker {
 
   private static func qualifiesFreshPublicationLane(
     _ candidate: WireCandidate,
-    age: TimeInterval
+    age: TimeInterval,
+    config: WireRankingConfig
   ) -> Bool {
     age <= 3 * 86_400
-      && candidate.sourceConfidence >= 0.75
+      && candidate.sourceConfidence >= config.standardSiteMinimumSourceConfidence
       && candidate.isStandardSite == true
   }
 
@@ -255,7 +258,7 @@ public enum WireRanker {
     }
     if candidate.shares24h >= config.minimumHighIntentActors
       || candidate.recommendations24h >= config.minimumRecommendations
-      || (qualifiesFreshPublicationLane(candidate, age: age)
+      || (qualifiesFreshPublicationLane(candidate, age: age, config: config)
         && candidate.shares24h >= config.standardSiteMinimumHighIntentActors)
     {
       return .primary

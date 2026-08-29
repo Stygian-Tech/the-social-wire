@@ -46,6 +46,7 @@ struct PostgresWireLinkMetadataStore: WireLinkMetadataStoring {
 
   func claimDue(limit: Int, asOf: Date) async throws -> [WireLinkMetadataTarget] {
     let boundedLimit = max(1, min(limit, 250))
+    let priorityLimit = boundedLimit == 1 ? 1 : max(1, boundedLimit * 3 / 4)
     return try await pool.withTransaction(logger: logger) { connection in
       try await connection.query(
         """
@@ -77,6 +78,7 @@ struct PostgresWireLinkMetadataStore: WireLinkMetadataStoring {
             AND item.target_kind IN ('external_article', 'standard_site_document')
             AND item.commercial_class <> 'probable_ad'
             AND item.source_confidence >= 0.25
+            AND cache.language_checked_at IS NULL
             AND cache.status IN ('pending', 'retry', 'negative', 'fresh', 'stale', 'failed', 'fetching')
             AND (
               (cache.retry_after <= \(asOf)
@@ -86,7 +88,7 @@ struct PostgresWireLinkMetadataStore: WireLinkMetadataStoring {
             )
           ORDER BY item.last_signal_at DESC NULLS LAST, cache.retry_after, cache.canonical_key
           FOR UPDATE OF cache SKIP LOCKED
-          LIMIT \(boundedLimit)
+          LIMIT \(priorityLimit)
         )
         UPDATE wire_link_metadata_cache cache
         SET status = 'fetching', retry_after = \(asOf.addingTimeInterval(300)),
