@@ -1521,6 +1521,62 @@ struct WirePostgresIntegrationTests {
     }
   }
 
+  @Test("metadata claims prioritize recent unclassified feed stories")
+  func metadataClaimsPrioritizeRecentUnclassifiedStories() async throws {
+    guard let url = ProcessInfo.processInfo.environment["WIRE_TEST_DATABASE_URL"] else { return }
+    let logger = Logger(label: "wire-metadata-language-priority-postgres.integration")
+    let configuration = try PostgresWireConfig.make(from: url, logger: logger)
+    let pool = PostgresClient(configuration: configuration, backgroundLogger: logger)
+    let runTask = Task { await pool.run() }
+    await Task.yield()
+    defer { runTask.cancel() }
+
+    let namespace = UUID().uuidString.lowercased()
+    let backgroundKey = "url:metadata-background-\(namespace)"
+    let rankedKey = "url:metadata-ranked-\(namespace)"
+    let now = Date()
+    try await pool.query(
+      """
+      INSERT INTO wire_items
+        (canonical_key, canonical_url, source_domain, source_name, title, language_code,
+         first_seen_at, last_seen_at, last_signal_at, expires_at)
+      VALUES
+        (\(backgroundKey), \("https://metadata-background-\(namespace).example/story"),
+         \("metadata-background-\(namespace).example"), 'Background Metadata Test',
+         'Background story', 'en', \(now), \(now), \(now), \(now.addingTimeInterval(86_400))),
+        (\(rankedKey), \("https://metadata-ranked-\(namespace).example/story"),
+         \("metadata-ranked-\(namespace).example"), 'Ranked Metadata Test',
+         'Ranked story', 'und', \(now), \(now), \(now.addingTimeInterval(-3_600)),
+         \(now.addingTimeInterval(86_400)))
+      """,
+      logger: logger
+    )
+    try await pool.query(
+      """
+      INSERT INTO wire_link_metadata_cache
+        (canonical_key, canonical_url, source, status, fetched_at, fresh_until,
+         stale_until, retry_after, updated_at)
+      VALUES
+        (\(backgroundKey), \("https://metadata-background-\(namespace).example/story"),
+         'open_graph', 'fresh', \(now), \(now.addingTimeInterval(86_400)),
+         \(now.addingTimeInterval(172_800)), \(now.addingTimeInterval(-86_400)), \(now)),
+        (\(rankedKey), \("https://metadata-ranked-\(namespace).example/story"),
+         'open_graph', 'fresh', \(now), \(now.addingTimeInterval(86_400)),
+         \(now.addingTimeInterval(172_800)), \(now), \(now))
+      """,
+      logger: logger
+    )
+
+    let store = PostgresWireLinkMetadataStore(pool: pool, logger: logger)
+    let claimed = try await store.claimDue(limit: 1, asOf: now)
+    #expect(claimed.map(\.canonicalKey) == [rankedKey])
+
+    try await pool.query(
+      "DELETE FROM wire_items WHERE canonical_key IN (\(backgroundKey), \(rankedKey))",
+      logger: logger
+    )
+  }
+
   @Test("authoritative Standard Site language replaces an earlier share language")
   func standardSiteLanguageOverridesShareLanguage() async throws {
     guard let url = ProcessInfo.processInfo.environment["WIRE_TEST_DATABASE_URL"] else { return }

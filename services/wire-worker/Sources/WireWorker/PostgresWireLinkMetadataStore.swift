@@ -66,19 +66,26 @@ struct PostgresWireLinkMetadataStore: WireLinkMetadataStoring {
         """,
         logger: logger
       )
-      let rows = try await connection.query(
+      let priorityRows = try await connection.query(
         """
         WITH due AS (
-          SELECT canonical_key
-          FROM wire_link_metadata_cache
-          WHERE status IN ('pending', 'retry', 'negative', 'fresh', 'stale', 'failed', 'fetching')
+          SELECT cache.canonical_key
+          FROM wire_items item
+          JOIN wire_link_metadata_cache cache ON cache.canonical_key = item.canonical_key
+          WHERE item.language_code = 'und'
+            AND item.eligible = TRUE AND item.expires_at > \(asOf)
+            AND item.target_kind IN ('external_article', 'standard_site_document')
+            AND item.commercial_class <> 'probable_ad'
+            AND item.source_confidence >= 0.25
+            AND cache.status IN ('pending', 'retry', 'negative', 'fresh', 'stale', 'failed', 'fetching')
             AND (
-              (retry_after <= \(asOf) AND (fresh_until IS NULL OR fresh_until <= \(asOf)))
-              OR (source = 'open_graph' AND status IN ('fresh', 'stale')
-                AND language_checked_at IS NULL)
+              (cache.retry_after <= \(asOf)
+                AND (cache.fresh_until IS NULL OR cache.fresh_until <= \(asOf)))
+              OR (cache.source = 'open_graph' AND cache.status IN ('fresh', 'stale')
+                AND cache.language_checked_at IS NULL)
             )
-          ORDER BY language_checked_at NULLS FIRST, retry_after, canonical_key
-          FOR UPDATE SKIP LOCKED
+          ORDER BY item.last_signal_at DESC NULLS LAST, cache.retry_after, cache.canonical_key
+          FOR UPDATE OF cache SKIP LOCKED
           LIMIT \(boundedLimit)
         )
         UPDATE wire_link_metadata_cache cache
@@ -96,7 +103,49 @@ struct PostgresWireLinkMetadataStore: WireLinkMetadataStoring {
         logger: logger
       )
       var targets: [WireLinkMetadataTarget] = []
-      for try await row in rows {
+      for try await row in priorityRows {
+        let value = try row.decode((String, String, String?, String?).self)
+        targets.append(
+          WireLinkMetadataTarget(
+            canonicalKey: value.0,
+            canonicalURL: value.1,
+            etag: value.2,
+            lastModified: value.3
+          )
+        )
+      }
+      let remaining = boundedLimit - targets.count
+      guard remaining > 0 else { return targets }
+      let generalRows = try await connection.query(
+        """
+        WITH due AS (
+          SELECT canonical_key
+          FROM wire_link_metadata_cache
+          WHERE status IN ('pending', 'retry', 'negative', 'fresh', 'stale', 'failed', 'fetching')
+            AND (
+              (retry_after <= \(asOf) AND (fresh_until IS NULL OR fresh_until <= \(asOf)))
+              OR (source = 'open_graph' AND status IN ('fresh', 'stale')
+                AND language_checked_at IS NULL)
+            )
+          ORDER BY language_checked_at NULLS FIRST, retry_after, canonical_key
+          FOR UPDATE SKIP LOCKED
+          LIMIT \(remaining)
+        )
+        UPDATE wire_link_metadata_cache cache
+        SET status = 'fetching', retry_after = \(asOf.addingTimeInterval(300)),
+            fresh_until = CASE WHEN cache.language_checked_at IS NULL
+              THEN LEAST(COALESCE(cache.fresh_until, \(asOf)), \(asOf))
+              ELSE cache.fresh_until END,
+            updated_at = \(asOf)
+        FROM due
+        WHERE cache.canonical_key = due.canonical_key
+        RETURNING cache.canonical_key, cache.canonical_url,
+          CASE WHEN cache.language_checked_at IS NULL THEN NULL ELSE cache.etag END,
+          CASE WHEN cache.language_checked_at IS NULL THEN NULL ELSE cache.last_modified END
+        """,
+        logger: logger
+      )
+      for try await row in generalRows {
         let value = try row.decode((String, String, String?, String?).self)
         targets.append(
           WireLinkMetadataTarget(

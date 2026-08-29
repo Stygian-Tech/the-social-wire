@@ -472,6 +472,16 @@ struct PostgresWireGenerationStore: WireGenerationStore {
         )
       }
     }
+    logger.info(
+      "The Wire language generation committed",
+      metadata: [
+        "generation_id": .string(generation.generationID.uuidString.lowercased()),
+        "language": .string(generation.languageBucket),
+        "candidate_count": .string(String(generation.result.diagnostics.candidateCount)),
+        "ranked_count": .string(String(generation.result.items.count)),
+        "activated": .string(String(generation.activate)),
+      ]
+    )
   }
 
   func deleteExpired(asOf: Date, batchSize: Int) async throws {
