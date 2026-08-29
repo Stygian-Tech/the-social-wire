@@ -7,7 +7,7 @@ struct WireRankingConfigTests {
   func validDefault() throws {
     let config = WireRankingConfig()
     try config.validate()
-    #expect(config.version == "wire-v8")
+    #expect(config.version == "wire-v9")
     #expect(config.standardSiteMinimumHighIntentActors == 1)
     #expect(config.freshnessHalfLife == 36_000)
     #expect(config.weights.shareVelocity1h == 0.10)
@@ -17,7 +17,7 @@ struct WireRankingConfigTests {
     #expect(config.weights.freshness == 0.18)
     #expect(config.weights.standardSiteAuthority == 0.11)
     #expect(config.weights.recommendationBreadth == 0.10)
-    #expect(config.missingThumbnailPenalty == 0.05)
+    #expect(config.missingThumbnailPenalty == 0.15)
     #expect(abs(config.weights.all.reduce(0, +) - 1.14) < 0.000_001)
   }
 
