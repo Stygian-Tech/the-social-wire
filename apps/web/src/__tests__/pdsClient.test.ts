@@ -23,6 +23,7 @@ import {
   mergeGatewayItemsWithExternalRecords,
   mergedLatrSavesFromGatewayItems,
   filterMergedLatrSavesByState,
+  skyreaderFeedSubscriptionRecord,
   type LatrSavedExternalRecord,
   type LatrSavedItemRecord,
   PSEUDO_FOLDER_MY_URI,
@@ -93,6 +94,44 @@ describe("collection constants", () => {
   it("my pseudo-folder URI is stable", () => {
     expect(PSEUDO_FOLDER_MY_URI).toBe("__my__");
     expect(rkeyFromURI(PSEUDO_FOLDER_MY_URI)).toBe(PSEUDO_FOLDER_MY_URI);
+  });
+});
+
+describe("Skyreader feed subscription records", () => {
+  it("defaults manual additions to The Social Wire", () => {
+    expect(
+      skyreaderFeedSubscriptionRecord(
+        { feedUrl: "https://example.com/feed.xml" },
+        "2026-08-29T00:00:00.000Z"
+      )
+    ).toMatchObject({
+      feedUrl: "https://example.com/feed.xml",
+      source: "the-social-wire",
+      sourceType: "rss",
+    });
+  });
+
+  it("records OPML as the source and trims optional metadata", () => {
+    expect(
+      skyreaderFeedSubscriptionRecord(
+        {
+          feedUrl: "https://example.com/feed.xml",
+          title: " Example Feed ",
+          siteUrl: " https://example.com ",
+          source: "opml",
+        },
+        "2026-08-29T00:00:00.000Z"
+      )
+    ).toEqual({
+      $type: COLLECTION_SKYREADER_FEED_SUBSCRIPTION,
+      createdAt: "2026-08-29T00:00:00.000Z",
+      updatedAt: "2026-08-29T00:00:00.000Z",
+      feedUrl: "https://example.com/feed.xml",
+      title: "Example Feed",
+      siteUrl: "https://example.com",
+      source: "opml",
+      sourceType: "rss",
+    });
   });
 });
 
