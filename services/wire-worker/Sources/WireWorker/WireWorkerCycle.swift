@@ -31,6 +31,7 @@ struct WireWorkerCycle: Sendable {
       ? try await store.eligibleLanguageBuckets(
         limit: 12,
         minimumCandidates: WireDataPolicy.minimumLocaleCandidates,
+        ranking: config.ranking,
         asOf: asOf
       )
       : []
