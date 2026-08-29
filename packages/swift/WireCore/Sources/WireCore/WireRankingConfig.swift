@@ -23,7 +23,7 @@ public struct WireRankingConfig: Codable, Equatable, Sendable {
   public var missingThumbnailPenalty: Double
 
   public init(
-    version: String = "wire-v8",
+    version: String = "wire-v9",
     weights: WireRankingWeights = WireRankingWeights(),
     diversity: WireDiversityPolicy = WireDiversityPolicy(),
     minimumHighIntentActors: Int = 5,
@@ -42,7 +42,7 @@ public struct WireRankingConfig: Codable, Equatable, Sendable {
     maximumCandidateAge: TimeInterval = 2_592_000,
     domainPenalties: WireDomainPenaltyPolicy = WireDomainPenaltyPolicy(),
     limitedCommercialPenalty: Double = 0.15,
-    missingThumbnailPenalty: Double = 0.05
+    missingThumbnailPenalty: Double = 0.15
   ) {
     self.version = version
     self.weights = weights

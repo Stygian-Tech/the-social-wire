@@ -213,20 +213,41 @@ struct WireRankerTests {
     ])
   }
 
-  @Test("a usable thumbnail breaks otherwise equal ranking ties without gating admission")
+  @Test("a usable thumbnail applies the full configured quality penalty without gating admission")
   func usableThumbnailDownrank() throws {
-    let withoutThumbnail = candidate("a-without-thumbnail", actors: 8)
-    let withThumbnail = candidate("z-with-thumbnail", actors: 8, thumbnail: true)
+    let withoutThumbnail = candidate("story", actors: 8)
+    let withThumbnail = candidate("story", actors: 8, thumbnail: true)
+    let config = WireRankingConfig(minimumRankedItems: 1)
+
+    let withoutResult = try WireRanker.rank(
+      candidates: [withoutThumbnail], asOf: now, config: config
+    )
+    let withResult = try WireRanker.rank(
+      candidates: [withThumbnail], asOf: now, config: config
+    )
+
+    #expect(withResult.items.count == 1)
+    #expect(withoutResult.items.count == 1)
+    #expect(
+      abs(withResult.items[0].score - withoutResult.items[0].score
+        - config.missingThumbnailPenalty) < 0.000_001
+    )
+    #expect(withoutResult.diagnostics.rejectedForQuality == 0)
+  }
+
+  @Test("an image-bearing article outranks a more discussed article without publisher artwork")
+  func thumbnailQualityOutweighsConversationDifference() throws {
+    let imageBearing = candidate("image-bearing", actors: 5, thumbnail: true)
+    let noImage = candidate("no-image", actors: 20)
 
     let result = try WireRanker.rank(
-      candidates: [withoutThumbnail, withThumbnail], asOf: now,
+      candidates: [noImage, imageBearing], asOf: now,
       config: .init(minimumRankedItems: 2)
     )
 
     #expect(result.items.map(\.candidate.canonicalKey) == [
-      "z-with-thumbnail", "a-without-thumbnail",
+      "image-bearing", "no-image",
     ])
-    #expect(result.items[0].score > result.items[1].score)
     #expect(result.diagnostics.rejectedForQuality == 0)
   }
 

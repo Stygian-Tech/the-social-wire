@@ -29,7 +29,7 @@ struct WireAlgorithmDocumentationDriftTests {
       "+ 0.10 * recommendationBreadth",
       "+ 0.06 * positiveFeedbackBreadth",
       "0.10 * negativeFeedbackBreadth",
-      "`0.05` when the story has no usable presentation thumbnail",
+      "`0.15` when the story has no usable presentation thumbnail",
       "never substitute the multilingual `und` generation",
       "floor(asOf / 1,800 seconds)",
       "nudge in `[0, 0.005]`",
