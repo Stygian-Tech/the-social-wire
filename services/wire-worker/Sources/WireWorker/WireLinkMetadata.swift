@@ -17,6 +17,7 @@ struct WireLinkMetadata: Equatable, Sendable {
   let etag: String?
   let lastModified: String?
   let source: Source
+  let languageCode: String?
   let hasProductOfferSchema: Bool
 
   init(
@@ -31,6 +32,7 @@ struct WireLinkMetadata: Equatable, Sendable {
     etag: String?,
     lastModified: String?,
     source: Source,
+    languageCode: String? = nil,
     hasProductOfferSchema: Bool = false
   ) {
     self.canonicalURL = canonicalURL
@@ -44,6 +46,7 @@ struct WireLinkMetadata: Equatable, Sendable {
     self.etag = etag
     self.lastModified = lastModified
     self.source = source
+    self.languageCode = languageCode
     self.hasProductOfferSchema = hasProductOfferSchema
   }
 }

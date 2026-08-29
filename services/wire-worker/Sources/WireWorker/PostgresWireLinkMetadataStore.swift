@@ -71,18 +71,27 @@ struct PostgresWireLinkMetadataStore: WireLinkMetadataStoring {
         WITH due AS (
           SELECT canonical_key
           FROM wire_link_metadata_cache
-          WHERE retry_after <= \(asOf)
-            AND status IN ('pending', 'retry', 'negative', 'fresh', 'stale', 'failed', 'fetching')
-            AND (fresh_until IS NULL OR fresh_until <= \(asOf))
-          ORDER BY retry_after, canonical_key
+          WHERE status IN ('pending', 'retry', 'negative', 'fresh', 'stale', 'failed', 'fetching')
+            AND (
+              (retry_after <= \(asOf) AND (fresh_until IS NULL OR fresh_until <= \(asOf)))
+              OR (source = 'open_graph' AND status IN ('fresh', 'stale')
+                AND language_checked_at IS NULL)
+            )
+          ORDER BY language_checked_at NULLS FIRST, retry_after, canonical_key
           FOR UPDATE SKIP LOCKED
           LIMIT \(boundedLimit)
         )
         UPDATE wire_link_metadata_cache cache
-        SET status = 'fetching', retry_after = \(asOf.addingTimeInterval(300)), updated_at = \(asOf)
+        SET status = 'fetching', retry_after = \(asOf.addingTimeInterval(300)),
+            fresh_until = CASE WHEN cache.language_checked_at IS NULL
+              THEN LEAST(COALESCE(cache.fresh_until, \(asOf)), \(asOf))
+              ELSE cache.fresh_until END,
+            updated_at = \(asOf)
         FROM due
         WHERE cache.canonical_key = due.canonical_key
-        RETURNING cache.canonical_key, cache.canonical_url, cache.etag, cache.last_modified
+        RETURNING cache.canonical_key, cache.canonical_url,
+          CASE WHEN cache.language_checked_at IS NULL THEN NULL ELSE cache.etag END,
+          CASE WHEN cache.language_checked_at IS NULL THEN NULL ELSE cache.last_modified END
         """,
         logger: logger
       )
@@ -146,6 +155,7 @@ struct PostgresWireLinkMetadataStore: WireLinkMetadataStoring {
             site_name = \(metadata.siteName), author_name = \(metadata.authorName),
             published_at = \(metadata.publishedAt), icon_url = \(metadata.iconURL),
             etag = \(metadata.etag), last_modified = \(metadata.lastModified),
+            language_code = \(metadata.languageCode), language_checked_at = \(asOf),
             source = 'open_graph', status = 'fresh', fetched_at = \(asOf),
             fresh_until = \(asOf.addingTimeInterval(86_400)),
             stale_until = \(asOf.addingTimeInterval(7 * 86_400)),
@@ -162,8 +172,11 @@ struct PostgresWireLinkMetadataStore: WireLinkMetadataStoring {
             summary = CASE WHEN provenance ? 'standard_site'
               THEN COALESCE(summary, \(metadata.description))
               ELSE COALESCE(\(metadata.description), summary) END,
-            thumbnail_url = CASE WHEN provenance ? 'standard_site'
-              THEN COALESCE(thumbnail_url, \(metadata.imageURL))
+            thumbnail_url = CASE
+              WHEN COALESCE(presentation_snapshot->>'thumbnailSource',
+                presentation_snapshot->>'metadataSource') = 'open_graph'
+                AND \(metadata.imageURL)::text IS NULL THEN NULL
+              WHEN provenance ? 'standard_site' THEN COALESCE(thumbnail_url, \(metadata.imageURL))
               ELSE COALESCE(\(metadata.imageURL), thumbnail_url) END,
             source_name = CASE WHEN provenance ? 'standard_site' THEN source_name
               ELSE COALESCE(\(metadata.siteName), source_name) END,
@@ -173,13 +186,17 @@ struct PostgresWireLinkMetadataStore: WireLinkMetadataStoring {
             published_at = CASE WHEN provenance ? 'standard_site'
               THEN COALESCE(published_at, \(metadata.publishedAt))
               ELSE COALESCE(\(metadata.publishedAt), published_at) END,
+            language_code = CASE
+              WHEN provenance ? 'standard_site' AND language_code <> 'und' THEN language_code
+              ELSE COALESCE(\(metadata.languageCode), language_code) END,
             publication_homepage_url = CASE WHEN provenance ? 'standard_site'
               THEN COALESCE(publication_homepage_url, \(homepageURL))
               ELSE COALESCE(\(homepageURL), publication_homepage_url) END,
             publication_icon_url = CASE WHEN provenance ? 'standard_site'
               THEN COALESCE(publication_icon_url, \(metadata.iconURL))
               ELSE COALESCE(\(metadata.iconURL), publication_icon_url) END,
-            presentation_snapshot = presentation_snapshot || jsonb_strip_nulls(jsonb_build_object(
+            presentation_snapshot = (presentation_snapshot - 'thumbnailUrl' - 'thumbnailSource')
+              || jsonb_strip_nulls(jsonb_build_object(
               'metadataSource', CASE WHEN provenance ? 'standard_site'
                 THEN presentation_snapshot->>'metadataSource' ELSE 'open_graph' END,
               'sourcePriority', CASE WHEN provenance ? 'standard_site'
@@ -189,9 +206,22 @@ struct PostgresWireLinkMetadataStore: WireLinkMetadataStoring {
               'summary', CASE WHEN provenance ? 'standard_site'
                 THEN COALESCE(summary, \(metadata.description))
                 ELSE COALESCE(\(metadata.description), summary) END,
-              'thumbnailUrl', CASE WHEN provenance ? 'standard_site'
-                THEN COALESCE(thumbnail_url, \(metadata.imageURL))
+              'thumbnailUrl', CASE
+                WHEN COALESCE(presentation_snapshot->>'thumbnailSource',
+                  presentation_snapshot->>'metadataSource') = 'open_graph'
+                  AND \(metadata.imageURL)::text IS NULL THEN NULL
+                WHEN provenance ? 'standard_site' THEN COALESCE(thumbnail_url, \(metadata.imageURL))
                 ELSE COALESCE(\(metadata.imageURL), thumbnail_url) END,
+              'thumbnailSource', CASE
+                WHEN COALESCE(presentation_snapshot->>'thumbnailSource',
+                  presentation_snapshot->>'metadataSource') = 'open_graph'
+                  AND \(metadata.imageURL)::text IS NULL THEN NULL
+                WHEN provenance ? 'standard_site' AND thumbnail_url IS NOT NULL
+                  THEN COALESCE(presentation_snapshot->'thumbnailSource',
+                    to_jsonb('standard_site'::text))
+                WHEN \(metadata.imageURL)::text IS NOT NULL THEN to_jsonb('open_graph'::text)
+                ELSE COALESCE(presentation_snapshot->'thumbnailSource',
+                  presentation_snapshot->'metadataSource') END,
               'sourceName', CASE WHEN provenance ? 'standard_site' THEN source_name
                 ELSE COALESCE(\(metadata.siteName), source_name) END,
               'author', CASE WHEN provenance ? 'standard_site'

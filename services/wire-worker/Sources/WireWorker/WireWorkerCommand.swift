@@ -36,9 +36,10 @@ struct WireWorkerCommand: AsyncParsableCommand {
     let pool = PostgresClient(configuration: postgresConfig, backgroundLogger: serviceLogger)
     let store = PostgresWireGenerationStore(pool: pool, logger: serviceLogger)
     let httpClient = HTTPClient(eventLoopGroupProvider: .singleton)
+    let publicRepoClient = HTTPWirePublicationQueryClient(httpClient: httpClient)
     let publicationResolver = WirePublicationResolver(
       store: PostgresWirePublicationMetadataStore(pool: pool, logger: serviceLogger),
-      queryClient: HTTPWirePublicationQueryClient(httpClient: httpClient)
+      queryClient: publicRepoClient
     )
     let linkMetadataStore = PostgresWireLinkMetadataStore(pool: pool, logger: serviceLogger)
     let inboxProcessor: PostgresWireInboxProcessor?
@@ -48,6 +49,7 @@ struct WireWorkerCommand: AsyncParsableCommand {
         logger: serviceLogger,
         actorSecret: actorSecret,
         publicationResolver: publicationResolver,
+        blobURLResolver: publicRepoClient,
         linkMetadataStore: linkMetadataStore,
         batchSize: config.inboxBatchSize,
         maximumConcurrentEvents: config.inboxConcurrency,

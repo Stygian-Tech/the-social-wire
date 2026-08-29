@@ -24,7 +24,7 @@ struct RemoteWireFeedStoreTests {
       WireCorpusPage(
         generationID: "fallback-1",
         generatedAt: now,
-        language: "und",
+        language: "en",
         source: .simplifiedFallback,
         degraded: true,
         rows: [
@@ -102,6 +102,67 @@ struct RemoteWireFeedStoreTests {
     let decoded = try WireCursorCodec(secret: cursorSecret).decode(cursor)
     #expect(decoded.generationID == generationID)
     #expect(decoded.nextOrdinal == 8)
+  }
+
+  @Test("rejects a global corpus response for an exact locale request")
+  func rejectsGlobalLocaleFallback() async throws {
+    let response = try encodedResponse(
+      WireCorpusPage(
+        generationID: UUID().uuidString.lowercased(),
+        generatedAt: now,
+        language: "und",
+        source: .ranked,
+        degraded: false,
+        rows: [],
+        exhausted: true
+      )
+    )
+    let store = try RemoteWireFeedStore(
+      transport: StubWireCorpusTransport(responses: [response]),
+      cursorSecret: cursorSecret,
+      mode: .visible,
+      moderationCache: WireViewerModerationCache()
+    )
+    await #expect(throws: WireServingError.self) {
+      _ = try await store.getFeed(
+        cursor: nil,
+        limit: 10,
+        language: "en-US",
+        viewerDid: nil,
+        now: now
+      )
+    }
+  }
+
+  @Test("rejects a cursor minted for a different language")
+  func rejectsCrossLanguageCursor() async throws {
+    let cursor = try WireCursorCodec(secret: cursorSecret).encode(
+      WireCursor(
+        generationID: UUID().uuidString.lowercased(),
+        language: "und",
+        nextOrdinal: 1
+      )
+    )
+    let store = try RemoteWireFeedStore(
+      transport: StubWireCorpusTransport(error: StubError.unavailable),
+      cursorSecret: cursorSecret,
+      mode: .visible,
+      moderationCache: WireViewerModerationCache()
+    )
+    do {
+      _ = try await store.getFeed(
+        cursor: cursor,
+        limit: 10,
+        language: "en",
+        viewerDid: nil,
+        now: now
+      )
+      Issue.record("Expected a cross-language cursor to be invalid")
+    } catch WireServingError.invalidCursor {
+      // Exact public contract: malformed request, not an expired scoped cursor.
+    } catch {
+      Issue.record("Expected invalidCursor, received \(String(reflecting: error))")
+    }
   }
 
   @Test("upstream failure is isolated to The Wire")

@@ -98,7 +98,7 @@ struct WireRankerTests {
     let result = try WireRanker.rank(
       candidates: [twentyHoursOld, tenHoursOld],
       asOf: now,
-      config: .init(weights: freshnessOnly)
+      config: .init(weights: freshnessOnly, missingThumbnailPenalty: 0)
     )
     let scores = Dictionary(
       uniqueKeysWithValues: result.items.map { ($0.candidate.canonicalKey, $0.score) })
@@ -213,6 +213,44 @@ struct WireRankerTests {
     ])
   }
 
+  @Test("a usable thumbnail applies the full configured quality penalty without gating admission")
+  func usableThumbnailDownrank() throws {
+    let withoutThumbnail = candidate("story", actors: 8)
+    let withThumbnail = candidate("story", actors: 8, thumbnail: true)
+    let config = WireRankingConfig(minimumRankedItems: 1)
+
+    let withoutResult = try WireRanker.rank(
+      candidates: [withoutThumbnail], asOf: now, config: config
+    )
+    let withResult = try WireRanker.rank(
+      candidates: [withThumbnail], asOf: now, config: config
+    )
+
+    #expect(withResult.items.count == 1)
+    #expect(withoutResult.items.count == 1)
+    #expect(
+      abs(withResult.items[0].score - withoutResult.items[0].score
+        - config.missingThumbnailPenalty) < 0.000_001
+    )
+    #expect(withoutResult.diagnostics.rejectedForQuality == 0)
+  }
+
+  @Test("an image-bearing article outranks a more discussed article without publisher artwork")
+  func thumbnailQualityOutweighsConversationDifference() throws {
+    let imageBearing = candidate("image-bearing", actors: 5, thumbnail: true)
+    let noImage = candidate("no-image", actors: 20)
+
+    let result = try WireRanker.rank(
+      candidates: [noImage, imageBearing], asOf: now,
+      config: .init(minimumRankedItems: 2)
+    )
+
+    #expect(result.items.map(\.candidate.canonicalKey) == [
+      "image-bearing", "no-image",
+    ])
+    #expect(result.diagnostics.rejectedForQuality == 0)
+  }
+
   @Test("explicit quality signals rank recommendation above feedback above a like")
   func qualitySignalHierarchy() throws {
     var liked = candidate("a-liked", actors: 5)
@@ -298,7 +336,8 @@ struct WireRankerTests {
     communities: Int = 2,
     recommendations: Int = 0,
     standardSite: Bool = false,
-    openGraph: Bool = true
+    openGraph: Bool = true,
+    thumbnail: Bool = false
   ) -> WireCandidate {
     WireCandidate(
       canonicalKey: key,
@@ -323,7 +362,8 @@ struct WireRankerTests {
       shares24h: actors,
       sourceConfidence: 0.8,
       isStandardSite: standardSite,
-      hasUsableOpenGraphMetadata: openGraph
+      hasUsableOpenGraphMetadata: openGraph,
+      hasUsableThumbnail: thumbnail
     )
   }
 }

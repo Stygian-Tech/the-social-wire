@@ -62,6 +62,71 @@ struct HTTPWirePublicationQueryClientTests {
     #expect(await transport.requestedURLs.count == 1)
   }
 
+  @Test("builds a public PDS blob URL from a Standard Site record CID")
+  func resolvesBlobURL() async throws {
+    let transport = StubWirePublicationHTTPTransport(responses: [
+      .init(
+        status: .ok,
+        json:
+          ##"{"service":[{"id":"#atproto_pds","type":"AtprotoPersonalDataServer","serviceEndpoint":"https://pds.publisher.social"}]}"##
+      )
+    ])
+    let client = HTTPWirePublicationQueryClient(
+      transport: transport,
+      dnsResolver: StubWireDNSResolver(),
+      plcDirectoryBase: URL(string: "https://plc.directory")!
+    )
+
+    let url = try await client.resolveBlobURL(repoDID: "did:plc:author", cid: "bafy cover")
+
+    #expect(
+      url
+        == "https://pds.publisher.social/xrpc/com.atproto.sync.getBlob?did=did:plc:author&cid=bafy%20cover"
+    )
+    #expect(await transport.requestedURLs.count == 1)
+  }
+
+  @Test("omits unreliable Bridgy blob endpoints")
+  func omitsBridgyBlobURL() async throws {
+    let transport = StubWirePublicationHTTPTransport(responses: [
+      .init(
+        status: .ok,
+        json:
+          ##"{"service":[{"id":"#atproto_pds","serviceEndpoint":"https://atproto.brid.gy"}]}"##
+      )
+    ])
+    let client = HTTPWirePublicationQueryClient(
+      transport: transport,
+      dnsResolver: StubWireDNSResolver(),
+      plcDirectoryBase: URL(string: "https://plc.directory")!
+    )
+
+    #expect(try await client.resolveBlobURL(repoDID: "did:plc:author", cid: "bafycover") == nil)
+  }
+
+  @Test("coalesces concurrent PDS endpoint lookups for one repository")
+  func coalescesConcurrentBlobResolution() async throws {
+    let transport = StubWirePublicationHTTPTransport(responses: [
+      .init(
+        status: .ok,
+        json:
+          ##"{"service":[{"id":"#atproto_pds","serviceEndpoint":"https://pds.publisher.social"}]}"##
+      )
+    ])
+    let client = HTTPWirePublicationQueryClient(
+      transport: transport,
+      dnsResolver: StubWireDNSResolver(),
+      plcDirectoryBase: URL(string: "https://plc.directory")!
+    )
+
+    async let first = client.resolveBlobURL(repoDID: "did:plc:author", cid: "bafyone")
+    async let second = client.resolveBlobURL(repoDID: "did:plc:author", cid: "bafytwo")
+    let values = try await [first, second]
+
+    #expect(values.allSatisfy { $0?.contains("pds.publisher.social") == true })
+    #expect(await transport.requestedURLs.count == 1)
+  }
+
   @Test("treats rate limits as retryable query errors")
   func rateLimit() async throws {
     let transport = StubWirePublicationHTTPTransport(responses: [

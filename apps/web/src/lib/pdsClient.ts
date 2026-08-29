@@ -131,6 +131,33 @@ export interface SkyreaderFeedSubscriptionRecord {
   externalRef?: string;
 }
 
+export interface CreateSkyreaderFeedSubscriptionInput {
+  feedUrl: string;
+  title?: string;
+  siteUrl?: string;
+  customIconUrl?: string;
+  source?: "opml" | "the-social-wire";
+}
+
+export function skyreaderFeedSubscriptionRecord(
+  input: CreateSkyreaderFeedSubscriptionInput,
+  now = new Date().toISOString()
+): SkyreaderFeedSubscriptionRecord {
+  return {
+    $type: COLLECTION_SKYREADER_FEED_SUBSCRIPTION,
+    createdAt: now,
+    updatedAt: now,
+    feedUrl: input.feedUrl,
+    source: input.source ?? "the-social-wire",
+    sourceType: "rss",
+    ...(input.title?.trim() ? { title: input.title.trim() } : {}),
+    ...(input.siteUrl?.trim() ? { siteUrl: input.siteUrl.trim() } : {}),
+    ...(input.customIconUrl?.trim()
+      ? { customIconUrl: input.customIconUrl.trim() }
+      : {}),
+  };
+}
+
 export type ReadLaterServicePreference =
   | "latr-link"
   | "latrkit"
@@ -852,28 +879,10 @@ export class PDSClient {
   /**
    * Creates a TID-keyed Skyreader feed subscription (`app.skyreader.feed.subscription`).
    */
-  async createSkyreaderFeedSubscription(input: {
-    feedUrl: string;
-    title?: string;
-    siteUrl?: string;
-    customIconUrl?: string;
-  }): Promise<{ uri: string; cid: string }> {
-    const now = new Date().toISOString();
-    const record: SkyreaderFeedSubscriptionRecord = {
-      $type: COLLECTION_SKYREADER_FEED_SUBSCRIPTION,
-      createdAt: now,
-      updatedAt: now,
-      feedUrl: input.feedUrl,
-      source: "the-social-wire",
-      sourceType: "rss",
-      ...(input.title?.trim() ? { title: input.title.trim() } : {}),
-      ...(input.siteUrl?.trim()
-        ? { siteUrl: input.siteUrl.trim() }
-        : {}),
-      ...(input.customIconUrl?.trim()
-        ? { customIconUrl: input.customIconUrl.trim() }
-        : {}),
-    };
+  async createSkyreaderFeedSubscription(
+    input: CreateSkyreaderFeedSubscriptionInput
+  ): Promise<{ uri: string; cid: string }> {
+    const record = skyreaderFeedSubscriptionRecord(input);
     const response = await this.agent.api.com.atproto.repo.createRecord({
       repo: this.did,
       collection: COLLECTION_SKYREADER_FEED_SUBSCRIPTION,

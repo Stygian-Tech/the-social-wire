@@ -54,11 +54,12 @@ actor PostgresWireFeedStore: WireFeedStore {
       } catch {
         throw WireServingError.invalidCursor
       }
-      guard decoded.language == requestedLanguage || decoded.language == "und" else {
+      guard decoded.language == requestedLanguage else {
         throw WireServingError.invalidCursor
       }
       guard let generationID = UUID(uuidString: decoded.generationID),
-        let retained = try await retainedGeneration(id: generationID, now: now)
+        let retained = try await retainedGeneration(id: generationID, now: now),
+        retained.language == requestedLanguage
       else {
         throw WireServingError.cursorExpired
       }
@@ -445,34 +446,7 @@ actor PostgresWireFeedStore: WireFeedStore {
   }
 
   private func activeGeneration(language: String, now: Date) async throws -> Generation? {
-    guard language != "und" else {
-      return try await activeGeneration(exactLanguage: "und", now: now)
-    }
-    let localized = try await activeGeneration(exactLanguage: language, now: now)
-    let global = try await activeGeneration(exactLanguage: "und", now: now)
-    switch (localized, global) {
-    case (.some(let localized), .some(let global)):
-      return Self.prefersLocalizedGeneration(
-        localizedGeneratedAt: localized.generatedAt,
-        globalGeneratedAt: global.generatedAt,
-        now: now
-      ) ? localized : global
-    case (.some(let localized), .none):
-      return localized
-    case (.none, .some(let global)):
-      return global
-    case (.none, .none):
-      return nil
-    }
-  }
-
-  static func prefersLocalizedGeneration(
-    localizedGeneratedAt: Date,
-    globalGeneratedAt: Date,
-    now: Date
-  ) -> Bool {
-    let localizedIsFresh = now.timeIntervalSince(localizedGeneratedAt) <= generationFreshnessInterval
-    return localizedIsFresh || localizedGeneratedAt >= globalGeneratedAt
+    try await activeGeneration(exactLanguage: language, now: now)
   }
 
   private func activeGeneration(exactLanguage language: String, now: Date) async throws -> Generation? {
@@ -701,17 +675,6 @@ actor PostgresWireFeedStore: WireFeedStore {
       )
       ordinal += 1
     }
-    if Self.requiresGlobalFallback(
-      requestedLanguage: language,
-      localizedCandidateCount: candidates.count
-    ) {
-      return try await simplifiedFallback(
-        limit: limit,
-        language: "und",
-        viewerDID: viewerDID,
-        now: now
-      )
-    }
     let reranked = WireDiversityReranker.rerank(candidates, policy: WireDiversityPolicy())
     let moderation = try await moderationSnapshot(viewerDID: viewerDID, now: now)
     let items = reranked.items.compactMap { candidate -> WireFeedItem? in
@@ -734,14 +697,6 @@ actor PostgresWireFeedStore: WireFeedStore {
       degraded: true,
       items: Array(items)
     )
-  }
-
-  static func requiresGlobalFallback(
-    requestedLanguage: String,
-    localizedCandidateCount: Int
-  ) -> Bool {
-    requestedLanguage != "und"
-      && localizedCandidateCount < WireDataPolicy.diverseFirstPageCount
   }
 
   private static func decodeItem(

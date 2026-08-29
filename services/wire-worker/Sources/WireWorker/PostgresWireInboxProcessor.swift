@@ -36,6 +36,7 @@ struct PostgresWireInboxProcessor: Sendable {
   let logger: Logger
   let actorHasher: WireActorHasher
   let publicationResolver: any WirePublicationResolving
+  let blobURLResolver: (any WireBlobURLResolving)?
   let linkMetadataStore: any WireLinkMetadataStoring
   let mentionStore: any WireTalkedAccountMentionStoring
   let batchSize: Int
@@ -47,6 +48,7 @@ struct PostgresWireInboxProcessor: Sendable {
     logger: Logger,
     actorSecret: String,
     publicationResolver: (any WirePublicationResolving)? = nil,
+    blobURLResolver: (any WireBlobURLResolving)? = nil,
     linkMetadataStore: (any WireLinkMetadataStoring)? = nil,
     mentionStore: (any WireTalkedAccountMentionStoring)? = nil,
     batchSize: Int = 1_000,
@@ -62,6 +64,7 @@ struct PostgresWireInboxProcessor: Sendable {
         store: PostgresWirePublicationMetadataStore(pool: pool, logger: logger),
         queryClient: nil
       )
+    self.blobURLResolver = blobURLResolver
     self.linkMetadataStore =
       linkMetadataStore ?? PostgresWireLinkMetadataStore(pool: pool, logger: logger)
     self.mentionStore =
@@ -951,9 +954,10 @@ struct PostgresWireInboxProcessor: Sendable {
     guard targetKind.canCreateItem else { return }
     let title = Self.firstString(record, keys: ["title", "name"]) ?? host
     let summary = Self.firstString(record, keys: ["summary", "description", "text", "textContent"])
-    let thumbnail = Self.firstString(
-      record,
-      keys: ["thumbnail", "thumbnailUrl", "coverImageUrl", "image"]
+    let thumbnail = try await WireStandardSiteRecordImage.resolveURL(
+      from: record,
+      repoDID: event.repoDID,
+      blobURLResolver: blobURLResolver
     )
     let language = Self.primaryLanguage(Self.firstString(record, keys: ["lang", "language"]))
     let publishedAt = Self.date(Self.firstString(record, keys: ["publishedAt", "createdAt"]))
@@ -1356,6 +1360,7 @@ struct PostgresWireInboxProcessor: Sendable {
       "metadataSource": presentationSource,
       "sourcePriority": presentationPriority,
     ]
+    if thumbnail != nil { presentation["thumbnailSource"] = presentationSource }
     presentation["homepageUrl"] = publicationHomepageURL
     presentation["iconUrl"] = publicationIconURL
     let presentationJSON = String(
@@ -1411,8 +1416,13 @@ struct PostgresWireInboxProcessor: Sendable {
           EXCLUDED.publication_homepage_url, wire_items.publication_homepage_url),
         publication_icon_url = COALESCE(
           EXCLUDED.publication_icon_url, wire_items.publication_icon_url),
-        language_code = CASE WHEN wire_items.language_code = 'und'
-          THEN EXCLUDED.language_code ELSE wire_items.language_code END,
+        language_code = CASE
+          WHEN EXCLUDED.language_code <> 'und'
+            AND COALESCE((EXCLUDED.presentation_snapshot->>'sourcePriority')::integer, 0)
+              > COALESCE((wire_items.presentation_snapshot->>'sourcePriority')::integer, 0)
+          THEN EXCLUDED.language_code
+          WHEN wire_items.language_code = 'und' THEN EXCLUDED.language_code
+          ELSE wire_items.language_code END,
         topic_keys = CASE WHEN jsonb_array_length(wire_items.topic_keys) = 0
           THEN EXCLUDED.topic_keys ELSE wire_items.topic_keys END,
         provenance = (

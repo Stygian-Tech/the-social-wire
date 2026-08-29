@@ -132,7 +132,7 @@ struct WirePostgresServingIntegrationTests {
              provenance, first_seen_at, last_seen_at, source_confidence, eligible, expires_at)
           VALUES
             (\(key), \("https://example.com/\(namespace)/\(position)"), 'example.com',
-             'Example', \("Story \(position)"), 'und', '["standard_site"]'::jsonb,
+             'Example', \("Story \(position)"), 'en', '["standard_site"]'::jsonb,
              \(now), \(now), 0.9, TRUE, \(now.addingTimeInterval(86_400)))
           """,
           logger: logger
@@ -143,6 +143,7 @@ struct WirePostgresServingIntegrationTests {
         keys: keys,
         generatedAt: now.addingTimeInterval(-(31 * 60)),
         active: true,
+        language: "en",
         pool: pool,
         logger: logger
       )
@@ -177,13 +178,13 @@ struct WirePostgresServingIntegrationTests {
             (generation_id, feed_key, language_bucket, status, is_active, config_version,
              generated_at, committed_at, expires_at, candidate_count, ranked_count)
           VALUES
-            (\(generationTwo), 'wire', 'und', 'committed', TRUE, 'wire-v1', \(now), \(now),
+            (\(generationTwo), 'wire', 'en', 'committed', TRUE, 'wire-v1', \(now), \(now),
              \(now.addingTimeInterval(172_800)), 3, 3)
           """,
           logger: logger
         )
         try await connection.query(
-          "UPDATE wire_feed_state SET active_generation_id = \(generationTwo), updated_at = \(now) WHERE feed_key = 'wire' AND language_bucket = 'und'",
+          "UPDATE wire_feed_state SET active_generation_id = \(generationTwo), updated_at = \(now) WHERE feed_key = 'wire' AND language_bucket = 'en'",
           logger: logger
         )
       }
@@ -207,6 +208,20 @@ struct WirePostgresServingIntegrationTests {
           viewerDid: nil,
           now: now
         )
+      }
+      do {
+        _ = try await store.getFeed(
+          cursor: cursor,
+          limit: 2,
+          language: "fr",
+          viewerDid: nil,
+          now: now
+        )
+        Issue.record("Expected a cross-language cursor to be invalid")
+      } catch WireServingError.invalidCursor {
+        // Exact public contract: malformed request, not an expired scoped cursor.
+      } catch {
+        Issue.record("Expected invalidCursor, received \(String(reflecting: error))")
       }
 
       try await pool.query(
@@ -244,8 +259,8 @@ struct WirePostgresServingIntegrationTests {
     )
   }
 
-  @Test("a sparse requested locale serves the available global fallback corpus")
-  func sparseLocaleGlobalFallback() async throws {
+  @Test("a sparse requested locale does not serve the global fallback corpus")
+  func sparseLocaleStaysIsolated() async throws {
     guard let url = ProcessInfo.processInfo.environment["WIRE_TEST_DATABASE_URL"] else { return }
     let logger = Logger(label: "wire-appview-postgres.fallback-integration")
     var configuration = try makePostgresConfig(from: url, logger: logger)
@@ -309,9 +324,8 @@ struct WirePostgresServingIntegrationTests {
         now: now
       )
       #expect(page.source == .simplifiedFallback)
-      #expect(page.language == "und")
-      #expect(page.items.count == 50)
-      #expect(page.items.allSatisfy { $0.itemID.hasPrefix(keyPrefix) })
+      #expect(page.language == "en")
+      #expect(page.items.isEmpty)
     } catch {
       Issue.record("PostgreSQL locale fallback integration failed: \(String(reflecting: error))")
     }
@@ -326,8 +340,8 @@ struct WirePostgresServingIntegrationTests {
     )
   }
 
-  @Test("a stale localized generation yields to a fresh global generation")
-  func staleLocalizedGenerationUsesFreshGlobal() async throws {
+  @Test("a stale localized generation remains isolated from a fresh global generation")
+  func staleLocalizedGenerationStaysIsolated() async throws {
     guard let url = ProcessInfo.processInfo.environment["WIRE_TEST_DATABASE_URL"] else { return }
     let logger = Logger(label: "wire-appview-postgres.fresh-global-integration")
     var configuration = try makePostgresConfig(from: url, logger: logger)
@@ -358,7 +372,7 @@ struct WirePostgresServingIntegrationTests {
            eligible, expires_at)
         VALUES
           (\(key), \("https://example.com/\(namespace)/fresh-global"), 'example.com',
-           'Example', 'Fresh global story', 'und', '["standard_site"]'::jsonb,
+           'Example', 'Localized story', 'en', '["standard_site"]'::jsonb,
            \(now), \(now), \(now), 0.9, TRUE, \(now.addingTimeInterval(86_400)))
         """,
         logger: logger
@@ -395,10 +409,10 @@ struct WirePostgresServingIntegrationTests {
         viewerDid: nil,
         now: now
       )
-      #expect(page.generationID == globalGeneration.uuidString.lowercased())
-      #expect(page.language == "und")
-      #expect(page.source == .ranked)
-      #expect(!page.degraded)
+      #expect(page.generationID == localizedGeneration.uuidString.lowercased())
+      #expect(page.language == "en")
+      #expect(page.source == .staleGeneration)
+      #expect(page.degraded)
     } catch {
       Issue.record("PostgreSQL fresh-global integration failed: \(String(reflecting: error))")
     }

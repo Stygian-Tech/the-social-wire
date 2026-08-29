@@ -62,6 +62,12 @@ import {
   removePublicationFromEntryCaches,
   removePublicationFromSidebarProjection,
 } from "@/lib/publicationUnsubscribeCache";
+import {
+  importOpmlFeedBatch,
+  type OpmlImportBatchResult,
+  type OpmlImportProgress,
+  type ParsedOpmlFeed,
+} from "@/lib/opmlImport";
 
 export type { DiscoveredPublication };
 
@@ -542,6 +548,87 @@ export function useCreateSkyreaderFeedSubscription() {
       qc.invalidateQueries({
         queryKey: SKYREADER_FEED_SUBSCRIPTIONS_QUERY_KEY,
       }),
+  });
+}
+
+export function useImportOpmlFeedSubscriptions() {
+  const client = usePDSClient();
+  const qc = useQueryClient();
+  const { session, getOAuthSession } = useAuth();
+  const did = session?.did ?? null;
+
+  return useMutation({
+    mutationFn: async (input: {
+      feeds: readonly ParsedOpmlFeed[];
+      onProgress?: (progress: OpmlImportProgress) => void;
+    }): Promise<OpmlImportBatchResult> => {
+      if (!client) throw new Error("OAuth session required");
+      const oauth = getOAuthSession();
+      if (!oauth) throw new Error("OAuth session required");
+
+      // Re-read immediately before writes: the review query may be stale or another tab may
+      // have added a feed while the importer was open.
+      const currentSubscriptions = await client.listSkyreaderFeedSubscriptions();
+      const existingFeedUrls = currentSubscriptions.flatMap((row) => {
+        const sourceType = row.value.sourceType?.trim().toLowerCase();
+        const feedUrl = row.value.feedUrl?.trim();
+        return feedUrl && (!sourceType || sourceType === "rss") ? [feedUrl] : [];
+      });
+
+      const result = await importOpmlFeedBatch({
+        feeds: input.feeds,
+        existingFeedUrls,
+        onProgress: input.onProgress,
+        createSubscription: async (feed) => {
+          let siteUrl = feed.htmlUrl;
+          if (!siteUrl) {
+            try {
+              siteUrl = new URL(feed.feedUrl).origin;
+            } catch {
+              siteUrl = undefined;
+            }
+          }
+          await client.createSkyreaderFeedSubscription({
+            feedUrl: feed.feedUrl,
+            title: feed.title,
+            siteUrl,
+            source: "opml",
+          });
+        },
+      });
+
+      if (result.imported.length > 0) {
+        const importedUrls = result.imported.map((feed) => feed.feedUrl);
+        try {
+          for (let index = 0; index < importedUrls.length; index += 1_000) {
+            await enrollAuthorsInAppView(
+              oauth,
+              [],
+              importedUrls.slice(index, index + 1_000)
+            );
+          }
+          await refreshSidebarAfterAddingPublication({
+            oauthSession: oauth,
+            viewerDid: did,
+            queryClient: qc,
+          });
+        } catch {
+          // PDS records are authoritative; query invalidation below lets a later refresh recover
+          // when AppView enrollment or sidebar projection refresh is temporarily unavailable.
+        }
+      }
+
+      return result;
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: SKYREADER_FEED_SUBSCRIPTIONS_QUERY_KEY });
+      qc.invalidateQueries({ queryKey: ["graphSubscriptionPublications"] });
+      if (did) {
+        qc.invalidateQueries({
+          queryKey: PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(did),
+        });
+      }
+    },
   });
 }
 

@@ -2,10 +2,17 @@ import AsyncHTTPClient
 import Foundation
 import NIOCore
 
-struct HTTPWirePublicationQueryClient: WirePublicationQuerying {
+actor HTTPWirePublicationQueryClient: WirePublicationQuerying, WireBlobURLResolving {
+  private struct CachedPDSEndpoint: Sendable {
+    let baseURL: String
+    let expiresAt: Date
+  }
+
   private let transport: any WirePublicationHTTPTransport
   private let dnsResolver: any WireDNSResolving
   private let plcDirectoryBase: URL
+  private var pdsEndpointCache: [String: CachedPDSEndpoint] = [:]
+  private var pdsEndpointTasks: [String: Task<String, Error>] = [:]
 
   init(httpClient: HTTPClient, plcDirectoryBase: URL = URL(string: "https://plc.directory")!) {
     self.init(
@@ -26,25 +33,7 @@ struct HTTPWirePublicationQueryClient: WirePublicationQuerying {
   }
 
   func query(publication: WirePublicationReference) async throws -> WirePublicationMetadata? {
-    guard
-      let didURL = Self.didDocumentURL(for: publication.repoDID, plcDirectoryBase: plcDirectoryBase)
-    else { throw WirePublicationQueryError.invalidDID }
-    try await validateDNS(for: didURL)
-    let didDocument = try await jsonObject(at: didURL, maximumBytes: 64 * 1024)
-    guard let services = didDocument?["service"] as? [[String: Any]] else {
-      throw WirePublicationQueryError.invalidResponse
-    }
-    guard
-      let rawEndpoint = services.lazy.compactMap({ service -> String? in
-        let id = service["id"] as? String
-        let type = service["type"] as? String
-        guard id == "#atproto_pds" || type == "AtprotoPersonalDataServer" else { return nil }
-        return service["serviceEndpoint"] as? String
-      }).first
-    else { throw WirePublicationQueryError.invalidResponse }
-    guard let pdsBase = WirePublicEndpointValidator.validatedBase(rawEndpoint) else {
-      throw WirePublicationQueryError.unsafeEndpoint
-    }
+    let pdsBase = try await pdsBase(for: publication.repoDID)
 
     var components = URLComponents(string: "\(pdsBase)/xrpc/com.atproto.repo.getRecord")
     components?.queryItems = [
@@ -68,6 +57,61 @@ struct HTTPWirePublicationQueryClient: WirePublicationQuerying {
       )
     else { throw WirePublicationQueryError.invalidResponse }
     return metadata
+  }
+
+  func resolveBlobURL(repoDID: String, cid: String) async throws -> String? {
+    let trimmedCID = cid.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmedCID.isEmpty, trimmedCID.count <= 512 else { return nil }
+    let pdsBase = try await pdsBase(for: repoDID)
+    guard !Self.isBridgyEndpoint(pdsBase) else { return nil }
+    var components = URLComponents(string: "\(pdsBase)/xrpc/com.atproto.sync.getBlob")
+    components?.queryItems = [
+      URLQueryItem(name: "did", value: repoDID),
+      URLQueryItem(name: "cid", value: trimmedCID),
+    ]
+    guard let blobURL = components?.url else { throw WirePublicationQueryError.invalidResponse }
+    try await validateDNS(for: blobURL)
+    return blobURL.absoluteString
+  }
+
+  private func pdsBase(for repoDID: String, asOf: Date = Date()) async throws -> String {
+    if let cached = pdsEndpointCache[repoDID], cached.expiresAt > asOf {
+      return cached.baseURL
+    }
+    pdsEndpointCache.removeValue(forKey: repoDID)
+    if let task = pdsEndpointTasks[repoDID] { return try await task.value }
+    let task = Task { try await self.fetchPDSBase(for: repoDID) }
+    pdsEndpointTasks[repoDID] = task
+    defer { pdsEndpointTasks.removeValue(forKey: repoDID) }
+    let pdsBase = try await task.value
+    if pdsEndpointCache.count >= 1_024 { pdsEndpointCache.removeAll(keepingCapacity: true) }
+    pdsEndpointCache[repoDID] = CachedPDSEndpoint(
+      baseURL: pdsBase,
+      expiresAt: asOf.addingTimeInterval(600)
+    )
+    return pdsBase
+  }
+
+  private func fetchPDSBase(for repoDID: String) async throws -> String {
+    guard let didURL = Self.didDocumentURL(for: repoDID, plcDirectoryBase: plcDirectoryBase)
+    else { throw WirePublicationQueryError.invalidDID }
+    try await validateDNS(for: didURL)
+    let didDocument = try await jsonObject(at: didURL, maximumBytes: 64 * 1024)
+    guard let services = didDocument?["service"] as? [[String: Any]] else {
+      throw WirePublicationQueryError.invalidResponse
+    }
+    guard
+      let rawEndpoint = services.lazy.compactMap({ service -> String? in
+        let id = service["id"] as? String
+        let type = service["type"] as? String
+        guard id == "#atproto_pds" || type == "AtprotoPersonalDataServer" else { return nil }
+        return service["serviceEndpoint"] as? String
+      }).first
+    else { throw WirePublicationQueryError.invalidResponse }
+    guard let pdsBase = WirePublicEndpointValidator.validatedBase(rawEndpoint) else {
+      throw WirePublicationQueryError.unsafeEndpoint
+    }
+    return pdsBase
   }
 
   private func validateDNS(for url: URL) async throws {
@@ -137,5 +181,10 @@ struct HTTPWirePublicationQueryClient: WirePublicationQuerying {
       ? "/.well-known/did.json"
       : "/\(pathParts.joined(separator: "/"))/did.json"
     return components.url
+  }
+
+  private static func isBridgyEndpoint(_ pdsBase: String) -> Bool {
+    guard let host = URL(string: pdsBase)?.host?.lowercased() else { return false }
+    return host == "atproto.brid.gy" || host.hasSuffix(".brid.gy")
   }
 }
