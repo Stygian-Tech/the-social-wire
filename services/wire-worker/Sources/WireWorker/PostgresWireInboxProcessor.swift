@@ -36,6 +36,7 @@ struct PostgresWireInboxProcessor: Sendable {
   let logger: Logger
   let actorHasher: WireActorHasher
   let publicationResolver: any WirePublicationResolving
+  let blobURLResolver: (any WireBlobURLResolving)?
   let linkMetadataStore: any WireLinkMetadataStoring
   let mentionStore: any WireTalkedAccountMentionStoring
   let batchSize: Int
@@ -47,6 +48,7 @@ struct PostgresWireInboxProcessor: Sendable {
     logger: Logger,
     actorSecret: String,
     publicationResolver: (any WirePublicationResolving)? = nil,
+    blobURLResolver: (any WireBlobURLResolving)? = nil,
     linkMetadataStore: (any WireLinkMetadataStoring)? = nil,
     mentionStore: (any WireTalkedAccountMentionStoring)? = nil,
     batchSize: Int = 1_000,
@@ -62,6 +64,7 @@ struct PostgresWireInboxProcessor: Sendable {
         store: PostgresWirePublicationMetadataStore(pool: pool, logger: logger),
         queryClient: nil
       )
+    self.blobURLResolver = blobURLResolver
     self.linkMetadataStore =
       linkMetadataStore ?? PostgresWireLinkMetadataStore(pool: pool, logger: logger)
     self.mentionStore =
@@ -951,9 +954,10 @@ struct PostgresWireInboxProcessor: Sendable {
     guard targetKind.canCreateItem else { return }
     let title = Self.firstString(record, keys: ["title", "name"]) ?? host
     let summary = Self.firstString(record, keys: ["summary", "description", "text", "textContent"])
-    let thumbnail = Self.firstString(
-      record,
-      keys: ["thumbnail", "thumbnailUrl", "coverImageUrl", "image"]
+    let thumbnail = try await WireStandardSiteRecordImage.resolveURL(
+      from: record,
+      repoDID: event.repoDID,
+      blobURLResolver: blobURLResolver
     )
     let language = Self.primaryLanguage(Self.firstString(record, keys: ["lang", "language"]))
     let publishedAt = Self.date(Self.firstString(record, keys: ["publishedAt", "createdAt"]))

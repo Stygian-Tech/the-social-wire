@@ -1102,12 +1102,13 @@ struct WirePostgresIntegrationTests {
     let repoDID = "did:plc:standardsite\(UUID().uuidString.lowercased())"
     let publicationURI = "at://\(repoDID)/site.standard.publication/main"
     let documentURI = "at://\(repoDID)/site.standard.document/story"
+    let thumbnailURL = "https://pds.publisher.social/xrpc/com.atproto.sync.getBlob?did=\(repoDID)&cid=bafycover"
     let now = Date()
     let publicationPayload = """
       {"commit":{"record":{"$type":"site.standard.publication","name":"Fixture Publication","url":"https://standard.example/"}}}
       """
     let documentPayload = """
-      {"commit":{"record":{"$type":"site.standard.document","site":"\(publicationURI)","path":"/stories/example","title":"Fixture Story","textContent":"Fixture body"}}}
+      {"commit":{"record":{"$type":"site.standard.document","site":"\(publicationURI)","path":"/stories/example","title":"Fixture Story","textContent":"Fixture body","coverImage":{"$type":"blob","ref":{"$link":"bafycover"},"mimeType":"image/jpeg","size":1234}}}}
       """
     try await pool.query(
       """
@@ -1126,7 +1127,8 @@ struct WirePostgresIntegrationTests {
     let processor = try PostgresWireInboxProcessor(
       pool: pool,
       logger: logger,
-      actorSecret: String(repeating: "s", count: 32)
+      actorSecret: String(repeating: "s", count: 32),
+      blobURLResolver: IntegrationWireBlobURLResolver(url: thumbnailURL)
     )
     #expect(try await processor.process(asOf: now.addingTimeInterval(1)) == 1)
     #expect(try await processor.process(asOf: now.addingTimeInterval(2)) == 1)
@@ -1144,17 +1146,20 @@ struct WirePostgresIntegrationTests {
       WireCanonicalizer.canonicalize("https://standard.example/stories/example"))
     let itemRows = try await pool.query(
       """
-      SELECT representative_uri, publication_id, source_name, summary
+      SELECT representative_uri, publication_id, source_name, summary, thumbnail_url,
+        presentation_snapshot->>'thumbnailSource'
       FROM wire_items WHERE canonical_key = \(canonical.canonicalKey)
       """,
       logger: logger
     )
     for try await row in itemRows {
-      let item = try row.decode((String?, String?, String, String?).self)
+      let item = try row.decode((String?, String?, String, String?, String?, String?).self)
       #expect(item.0 == documentURI)
       #expect(item.1 == publicationURI)
       #expect(item.2 == "Fixture Publication")
       #expect(item.3 == "Fixture body")
+      #expect(item.4 == thumbnailURL)
+      #expect(item.5 == "standard_site")
     }
 
     let deletePayload = """
@@ -1786,4 +1791,12 @@ struct WirePostgresIntegrationTests {
 private actor IntegrationDrainSleeper: WireInboxDrainSleeping {
   private(set) var delays: [Int] = []
   func sleep(milliseconds: Int) { delays.append(milliseconds) }
+}
+
+private struct IntegrationWireBlobURLResolver: WireBlobURLResolving {
+  let url: String
+
+  func resolveBlobURL(repoDID: String, cid: String) -> String? {
+    url
+  }
 }
