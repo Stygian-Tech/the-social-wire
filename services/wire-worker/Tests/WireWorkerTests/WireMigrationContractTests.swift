@@ -244,6 +244,28 @@ struct WireMigrationContractTests {
     #expect(qualityIndexSQL.contains("CREATE INDEX CONCURRENTLY IF NOT EXISTS wire_signal_rollups_high_intent_rank_idx"))
     #expect(qualityIndexSQL.contains("RESET lock_timeout"))
 
+    let localePriorityPreparation = migration.deletingLastPathComponent()
+      .appendingPathComponent("20260829052900_prepare_wire_locale_metadata_priority_index.sql")
+    let localePriorityPreparationSQL = try String(
+      contentsOf: localePriorityPreparation,
+      encoding: .utf8
+    )
+    for token in [
+      "-- socialwire:transaction=off",
+      "SET lock_timeout = '2min'",
+      "NOT index_state.indisvalid",
+      "DROP INDEX CONCURRENTLY IF EXISTS public.wire_items_unclassified_metadata_priority_idx",
+      "CREATE INDEX CONCURRENTLY IF NOT EXISTS wire_items_unclassified_metadata_priority_idx",
+      "index_state.indisvalid",
+      "valid Wire locale metadata priority index is required",
+      "RESET lock_timeout",
+    ] {
+      #expect(
+        localePriorityPreparationSQL.contains(token),
+        "Locale-priority preparation migration is missing: \(token)"
+      )
+    }
+
     let qualityMigration = migration.deletingLastPathComponent()
       .appendingPathComponent("20260822213000_tune_wire_quality_ranking.sql")
     let qualitySQL = try String(contentsOf: qualityMigration, encoding: .utf8)
