@@ -11,8 +11,9 @@ Generated `*.up.railway.app` domains are deployment diagnostics. OAuth client ID
 
 ## Deployed services
 
-Railway config-as-code files under `railway/` define seven long-running
-application services and one migration job:
+Railway config-as-code files under `railway/` define the public services,
+three replicated indexing service classes, compatibility rollback services,
+and one-shot jobs:
 
 | Service | Config |
 |---------|--------|
@@ -23,6 +24,10 @@ application services and one migration job:
 | Charybdis | `railway/charybdis.json` |
 | Operations | `railway/operations.json` |
 | Jetstream V2 Ingest | `railway/jetstream-ingest.json` |
+| Ingress Controller | `railway/ingress-controller.json` |
+| Projection Pool | `railway/projection-pool.json` |
+| Coordinator | `railway/coordinator.json` |
+| Ingress Snapshot Job | `railway/ingress-snapshot-job.json` |
 | Database Migrator | `railway/database-migrator.json` |
 
 Railway Postgres is the canonical hosted database. Database Migrator applies
@@ -36,7 +41,7 @@ operator action and is not performed by the source change.
 
 ## Internal networking and regions
 
-Gateway, AppView, Charybdis, Jetstream V2 Ingest, Operations, Database Migrator,
+Gateway, AppView, Ingress Controller, Projection Pool, Coordinator, Operations, Database Migrator,
 and their databases communicate over Railway private networking. Database-bound
 compute and its Postgres service must remain co-located in the same US West
 region. The hosted data-residency scope is the United States.
@@ -45,7 +50,7 @@ region. The hosted data-residency scope is the United States.
 
 Redis is architecturally optional and selected independently with
 `GATEWAY_PDS_CACHE_BACKEND` and `APPVIEW_CACHE_BACKEND`. As verified on
-2026-08-12, Gateway, AppView, and Charybdis select Redis in both Development and
+2026-08-12, Gateway, AppView, and the compatible AppView worker select Redis in both Development and
 Production. Postgres remains durable and its cache tables remain the rollback
 backend. Future Redis changes must still be exercised and soaked in Development
 before Production. See [[Redis]].

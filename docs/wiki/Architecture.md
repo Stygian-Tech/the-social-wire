@@ -7,8 +7,9 @@ The Social Wire separates portable user records from rebuildable application pro
 | **Web and Apple clients** | ATProto sign-in, direct or gateway-assisted PDS writes, local cache, reader UI |
 | **Gateway** | Public OAuth/DPoP edge, sync acceleration, publication writes for native clients, L@tr/Operations proxies, unbuffered AppView proxy |
 | **AppView** | Publication sidebar, indexed timelines/detail, unread state, bootstrap stream |
-| **Charybdis** | Jetstream ingestion and durable-inbox projection, RSS polling, backfill, repair, and retention cleanup |
-| **Jetstream V2 Ingest** | Fenced Jetstream V2 staging into PostgreSQL |
+| **Ingress Controller** | Independently supervised and fenced AppView/Wire Jetstream staging into PostgreSQL |
+| **Projection Pool** | Horizontally scaled AppView and Wire durable-inbox projection |
+| **Coordinator** | Fenced singleton RSS polling, backfill, repair, rank/enrichment, and cleanup |
 | **Operations** | Operator-only health, evidence, gaps, alerts, traces, and controlled recovery |
 
 ## Data ownership
@@ -37,9 +38,10 @@ Web / iOS / iPadOS
                   +---- Operations
                   `---- L@tr Gateway
 
-Jetstream V1 -------- Charybdis ---- Postgres
-Jetstream V2 Ingest -------┘
-RSS/Atom feeds -----------^             `---- optional Redis leases/cache
+Jetstream archive ---- Ingress Controller ---- Postgres inboxes
+                                             |
+                               Projection Pool + Coordinator
+RSS/Atom feeds -------------------------------^ `---- optional Redis leases/cache
 ```
 
 ## Canonical deep dives
@@ -48,6 +50,7 @@ RSS/Atom feeds -----------^             `---- optional Redis leases/cache
 - [Discovery chain](https://github.com/Stygian-Tech/the-social-wire/blob/main/docs/architecture/discovery.md)
 - [Lexicon architecture](https://github.com/Stygian-Tech/the-social-wire/blob/main/docs/architecture/lexicons.md)
 - [AppView architecture](https://github.com/Stygian-Tech/the-social-wire/blob/main/docs/architecture/appview.md)
+- [Replicated indexing services](https://github.com/Stygian-Tech/the-social-wire/blob/main/docs/architecture/indexing-services.md)
 - [Redis cache and coordination](https://github.com/Stygian-Tech/the-social-wire/blob/main/docs/architecture/redis.md)
 
 Related: [[Thin-AppView]], [[Service-API]], [[Database]], [[Redis]], [[Lexicons]].

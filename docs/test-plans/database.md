@@ -35,8 +35,8 @@ GitHub Actions does not connect to or mutate hosted databases. Railway's dedicat
 ## Manual verification
 
 - [ ] `scripts/apply-database-migrations.sh` succeeds from an empty database, is idempotent, and serializes concurrent runners with an advisory lock
-- [ ] Gateway, AppView, Charybdis, and Operations connect through private `DATABASE_URL` references when `APP_ENV=dev|prod`
-- [ ] Charybdis ingests into `content_items` after firehose connect
+- [ ] Gateway, AppView, Ingress Controller, Projection Pool, Coordinator, and Operations connect through private `DATABASE_URL` references when `APP_ENV=dev|prod`
+- [ ] Ingress checkpoints advance and Projection Pool writes `content_items` after firehose connect
 
 ## Related
 

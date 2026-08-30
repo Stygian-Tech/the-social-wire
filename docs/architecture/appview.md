@@ -24,8 +24,10 @@ The thin AppView is **not** a Bluesky proxy. It is Social Wire’s own index of 
 |---------|----------------|
 | **`services/gateway`** | Public OAuth/DPoP edge, PDS write-through, sync cache, unbuffered proxy to AppView |
 | **`services/appview`** | Hosted `/v1/*` routes and bootstrap stream; pending source adds Sidebar/AppView XRPC aliases; projection cache |
-| **Charybdis** (`services/appview-worker`) | Jetstream ingestion and durable-inbox projection, Skyreader RSS polling, proactive PDS backfill, TTL cleanup |
-| **`services/jetstream-ingest`** | Fenced Jetstream V2 ingestion into the durable PostgreSQL inbox |
+| **Ingress Controller** (`services/jetstream-ingest`) | Independently supervised AppView and Wire Jetstream lanes with fenced intake ownership |
+| **Projection Pool** (`services/indexing-worker`, `projection`) | Horizontally scaled AppView durable-inbox projection plus Wire inbox drain |
+| **Coordinator** (`services/indexing-worker`, `coordinator`) | Fenced singleton AppView RSS/backfill/retention/recovery plus Wire materialization/cleanup |
+| **Charybdis compatibility executable** (`services/appview-worker`) | Reusable AppView worker core and rollback entry point during the consolidation window |
 | **`packages/swift/ThinAppViewCore`** | Shared indexing, storage, worker runtime |
 
 Gateway→AppView trust uses **`GATEWAY_APPVIEW_INTERNAL_SECRET`** (HMAC on path only). Clients always call the gateway host.
@@ -33,12 +35,18 @@ Gateway→AppView trust uses **`GATEWAY_APPVIEW_INTERNAL_SECRET`** (HMAC on path
 ## Data flow
 
 ```
-Relay / Jetstream V1         Jetstream V2 Ingest
-        │
-        └──────────────┬──────────────┘
+Relay / Jetstream archive + live tail
+                       │
                        ▼
-Railway Charybdis (`appview-worker` source directory)
-  • consume legacy Jetstream or project the durable V2 inbox
+Railway Ingress Controller ×2
+  • independently lease AppView and Wire intake lanes
+  • append events to their durable PostgreSQL inboxes
+                       │
+                       ▼
+Railway Projection Pool ×N
+  • claim/project/ack AppView and Wire inbox rows
+                       │
+Railway Coordinator ×2 (one fenced owner per subsystem)
   • poll enrolled Skyreader RSS feed URLs
   • upsert content_items (title, publishedAt, summary, thumbnail ref)
   • proactive PDS backfill for subscribed authors
@@ -64,6 +72,8 @@ Railway Gateway — OAuth, proxy (no buffering on bootstrap-stream)
 Authenticated **`GET /v1/appview/bootstrap-stream`** returns NDJSON events as sidebar priority rows, per-folder `sidebarSection` slices, unread counts, first-unread publication selection, first feed page, and a legacy `sidebarFolders` payload for older clients. Web and iOS consume the same contract. Cache-first repeat visits paint persisted projection cache while the stream refreshes. Eligible non-streaming JSON calls use Lexicon-defined `/xrpc/app.thesocialwire.*` methods; `/v1/*` aliases remain for compatibility and OpenAPI documentation.
 
 Hosted cache behavior and rollout are documented in [redis.md](redis.md).
+The replicated worker topology and ownership rules are documented in
+[indexing-services.md](indexing-services.md).
 Postgres cache tables are active wherever Redis is not selected and are the
 rollback target for an environment in Redis mode. SQLite stores remain useful in
 package tests, but the current service entry points reject `APP_ENV=local`; local

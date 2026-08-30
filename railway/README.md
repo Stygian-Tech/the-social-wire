@@ -16,6 +16,10 @@ These custom-named config-as-code files are inactive until each Railway service 
 | The Wire Worker | `/railway/wire-worker.json` |
 | The Wire Inbox Drain | `/railway/wire-inbox-drain.json` |
 | The Wire Fresh Inbox Drain | `/railway/wire-fresh-inbox-drain.json` |
+| Ingress Controller | `/railway/ingress-controller.json` |
+| Ingress Snapshot Job | `/railway/ingress-snapshot-job.json` |
+| Projection Pool | `/railway/projection-pool.json` |
+| Coordinator | `/railway/coordinator.json` |
 | The Wire Corpus Edge | `/railway/wire-corpus-edge.json` |
 | Ops | `/railway/operations.json` |
 | Database Migrator | `/railway/database-migrator.json` |
@@ -37,17 +41,17 @@ migrator exits after applying pending migrations and uses restart policy
 `NEVER`; it has no public domain or long-running replica.
 
 Redis is currently provisioned in Development and Production with private
-networking, co-located with Gateway/App View/Charybdis and Postgres in US West.
-Those three services reference `REDIS_URL` and currently select the Redis
-backends. Jetstream V2 Ingest and The Wire Global Ingest deliberately keep
-cursor durability in Postgres and do not depend on Redis. The Wire Worker may
+networking, co-located with Gateway/App View/indexing workers and Postgres in US West.
+Those services reference `REDIS_URL` where their role uses projection caches.
+Ingress Controller deliberately keeps
+cursor durability in Postgres and does not depend on Redis. The Wire Worker may
 use Redis only for disposable candidate/page acceleration; PostgreSQL remains
 authoritative. Configure `allkeys-lru`, retain the Postgres cache
 tables as rollback targets, and follow the Development-first change discipline
 in [`docs/architecture/redis.md`](../docs/architecture/redis.md) before future
 Production changes.
 
-Secrets, reference variables, custom domains, volumes, and region placement remain environment-specific Railway settings. Gateway, App View, Charybdis, Ops, Jetstream V2 Ingest, The Wire Global Ingest, and The Wire Worker expose `/readyz`. Railway deploys Charybdis and both ingestion lanes against `/startupz` so durable catch-up or fenced-lease handoff can complete without weakening their operational readiness probes. The Wire Worker also deploys against `/startupz` while Development shadow generations warm.
+Secrets, reference variables, custom domains, volumes, and region placement remain environment-specific Railway settings. Gateway, App View, Ingress Controller, Projection Pool, Coordinator, and Ops expose `/readyz`. Railway deploys the three indexing service classes against `/startupz` so durable catch-up or fenced-lease handoff can complete without weakening their operational readiness probes. Compatibility worker configs remain checked in through the rollback window. The one-shot Ingress Snapshot Job has no health check and uses restart policy `NEVER`.
 
 The Wire Corpus Edge exists only in Production and connects to Production
 Postgres over the private network. Its narrowly exposed HTTPS domain accepts

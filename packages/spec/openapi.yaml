@@ -8,14 +8,16 @@ info:
 
     - **`services/gateway`** (this spec's `servers` URLs) — OAuth client metadata, DPoP verification, sync cache, unbuffered proxy to AppView.
     - **`services/appview`** — publication sidebar projection (`/v1/publications/*`), Thin AppView read index (`/v1/appview/*`), bootstrap stream.
-    - **Charybdis** (`services/appview-worker`) — Jetstream ingestion and durable-inbox projection, Skyreader RSS polling, proactive backfill, and cleanup (no HTTP surface).
+    - **Ingress Controller** (`services/jetstream-ingest`) — independently fenced AppView and Wire Jetstream intake lanes.
+    - **Projection Pool / Coordinator** (`services/indexing-worker`) — replicated durable-inbox projection plus fenced RSS, backfill, rank, enrichment, and cleanup jobs (health surface only).
+    - **Charybdis compatibility executable** (`services/appview-worker`) — rollback-compatible AppView worker entry point during consolidation.
     - **`services/operations`** — operator-only observability and recovery control plane, proxied by Gateway.
 
     **OAuth client metadata** mirrors SPA + ATS clients (`/oauth-client-metadata.json`, `/ios-client-metadata.json`) with scopes from **`ATProtoOAuthScopes`**.
 
     **Authenticated routes** require `Authorization: Bearer` or `Authorization: DPoP` plus RFC 9449 `DPoP` proof binding (`cnf.jkt` when emitted by the issuer).
 
-    **Thin AppView** (`ENABLE_THIN_APPVIEW` on AppView): data-minimized entry index and detail, unread counts, bootstrap-stream NDJSON initial load, scoped mark-all-read. Ingested by **Charybdis** (`services/appview-worker`).
+    **Thin AppView** (`ENABLE_THIN_APPVIEW` on AppView): data-minimized entry index and detail, unread counts, bootstrap-stream NDJSON initial load, scoped mark-all-read. Ingested by **Ingress Controller**, **Projection Pool**, and the fenced **Coordinator**.
 
     Native L@tr bookmark XRPC proxy routes are documented here. The web app's same-origin Next.js `/api/latr-gateway` proxy is a separate surface.
   version: "1.0.0"

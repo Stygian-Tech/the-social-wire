@@ -22,8 +22,10 @@ The endpoint manifest records the intended transport per operation.
 |---------|------|--------------|
 | **Gateway** | OAuth metadata, DPoP verification, sync/PDS acceleration, AppView/L@tr/Operations proxy | Public health/metadata, `/xrpc/app.thesocialwire.*`, and retained `/v1/*` adapters |
 | **AppView** | Sidebar projection, indexed reads, unread state, bootstrap stream | Private `/xrpc/app.thesocialwire.*`, retained `/v1/*` adapters, and NDJSON bootstrap |
-| **Charybdis** | Jetstream ingestion and durable-inbox projection, RSS polling, backfill, repair, TTL cleanup | No application HTTP API |
-| **Jetstream V2 Ingest** | Fenced Jetstream subscription and durable PostgreSQL inbox staging | Private health/readiness only |
+| **Ingress Controller** | Independently fenced AppView/Wire Jetstream subscription and durable inbox staging | Private aggregate and per-lane health/readiness only |
+| **Projection Pool** | Horizontally scaled AppView/Wire durable-inbox projection | Private aggregate health/readiness only |
+| **Coordinator** | Fenced singleton RSS/backfill/repair/rank/enrichment/cleanup | Private aggregate health/readiness only |
+| **Charybdis compatibility executable** | Rollback-compatible AppView worker entry point | No application HTTP API |
 | **Operations** | Operator evidence and controlled recovery | Private `/v1/operations/*`, proxied by Gateway; pending source adds Operations XRPC aliases |
 
 ## Gateway compatibility route groups

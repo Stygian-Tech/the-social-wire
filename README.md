@@ -17,7 +17,7 @@ User's ATProto PDS      Social Wire gateway (Railway)
   app.thesocialwire.*     /xrpc/app.thesocialwire.* + compatibility /v1/*
   link.latr.saved.*       bootstrap stream, PDS write-through, /v1/latr/*
                                │
-                               └── AppView + Charybdis
+                               └── AppView + replicated indexing services
                                    Redis (disposable cache/leases)
                                    Postgres (durable derived state)
 ```
@@ -38,8 +38,9 @@ the-social-wire/
   services/
     gateway/         # OAuth, sync, PDS writes, AppView proxy (Hummingbird; Railway)
     appview/         # Publication sidebar + Thin AppView read index (Railway)
-    appview-worker/  # Charybdis: Jetstream ingestion for Thin AppView (Railway)
-    jetstream-ingest/ # Durable Jetstream V2 replay + PostgreSQL inbox (Go; Railway)
+    appview-worker/  # Compatibility executable + reusable AppView worker core
+    jetstream-ingest/ # Replicated multi-lane Ingress Controller (Go; Railway)
+    indexing-worker/ # Projection Pool / Coordinator shared runtime (Swift; Railway)
     operations/      # Operations control plane (Railway)
   packages/
     lexicons/        # record schemas plus app.thesocialwire.* service XRPC lexicons
@@ -97,8 +98,8 @@ DATABASE_URL='postgresql://…' bash scripts/apply-database-migrations.sh
 # AppView (sidebar + Thin AppView reads)
 (cd services/appview && APP_ENV=dev DATABASE_URL='postgresql://…' ENABLE_THIN_APPVIEW=true GATEWAY_APPVIEW_INTERNAL_SECRET=local-development-only swift run AppView)
 
-# Charybdis (Jetstream ingestion and durable-inbox projection)
-(cd services/appview-worker && APP_ENV=dev DATABASE_URL='postgresql://…' ENABLE_THIN_APPVIEW=true swift run AppViewWorker)
+# Replicated projection role (AppView + Wire durable inboxes)
+(cd services/indexing-worker && APP_ENV=dev DATABASE_URL='postgresql://…' ENABLE_THIN_APPVIEW=true INDEXING_WORKER_ROLE=projection swift run IndexingWorker)
 ```
 
 ### Running tests
@@ -114,6 +115,7 @@ See **[docs/test-plans/README.md](docs/test-plans/README.md)** for per-surface p
 (cd services/appview && swift test)
 (cd packages/swift/ThinAppViewCore && swift test)
 (cd services/appview-worker && swift test)
+(cd services/indexing-worker && swift test)
 (cd packages/swift/OperationsCore && swift test)
 (cd services/operations && swift test)
 (cd services/jetstream-ingest && go test ./... && go vet ./...)
@@ -135,14 +137,14 @@ See **[docs/test-plans/README.md](docs/test-plans/README.md)** for per-surface p
 | Component | Where |
 |-----------|-------|
 | Web + Operations UI | Railway |
-| Gateway, AppView, Charybdis, Jetstream V2 Ingest | Railway |
+| Gateway, AppView, Ingress Controller, Projection Pool, Coordinator | Railway |
 | Operations | Railway |
 | Database migrations | Railway Database Migrator job |
 | Durable index/state | Railway Postgres (`database/migrations/`) |
 | Optional disposable cache/coordination | Private Railway Redis (currently selected in Development and Production) |
 | CI/CD | GitHub Actions validates source; Railway deploys through its Git integration |
 
-Charybdis retains the `appview-worker` directory, executable, and telemetry service key for compatibility.
+Charybdis retains the `appview-worker` directory, executable, and telemetry service key for migration rollback compatibility. See [the replicated indexing design](docs/architecture/indexing-services.md).
 
 See [docs/architecture/overview.md](docs/architecture/overview.md) for the full architecture narrative.
 
@@ -156,6 +158,7 @@ See [docs/architecture/overview.md](docs/architecture/overview.md) for the full 
 - [Lexicons](docs/architecture/lexicons.md)
 - [Discovery chain](docs/architecture/discovery.md)
 - [Thin AppView](docs/architecture/appview.md)
+- [Replicated indexing services](docs/architecture/indexing-services.md)
 - [Redis cache and coordination](docs/architecture/redis.md)
 - [Web app](apps/web/README.md)
 - [Apple app](apps/apple/README.md)

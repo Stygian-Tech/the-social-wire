@@ -11,9 +11,10 @@ the-social-wire/
   services/
     gateway/          # OAuth, sync, PDS writes, AppView proxy (Railway)
     appview/          # Sidebar projection + Thin AppView reads (Railway)
-    appview-worker/   # Charybdis: Jetstream ingestion (Railway)
+    appview-worker/   # AppView worker core + compatibility executable
+    indexing-worker/  # Projection Pool and Coordinator roles (Railway)
     operations/       # Operator control plane (Railway)
-    jetstream-ingest/ # Durable Jetstream V2 ingress (Railway)
+    jetstream-ingest/ # Multi-lane Ingress Controller (Railway)
   packages/
     lexicons/     # app.thesocialwire.* (and related) lexicons
     spec/         # OpenAPI compatibility contract + endpoint transport manifest
@@ -31,9 +32,12 @@ the-social-wire/
                   # required CI plus main-only GitHub Wiki publication
 ```
 
-The four shared Swift packages are `GatewayCore`, `OperationsCore`,
+The shared Swift packages include `GatewayCore`, `OperationsCore`,
 `SocialWireRedis`, and `ThinAppViewCore`. Each has its own `Package.swift` and is
 tested from its own directory; there is no root Swift package.
+
+The current worker topology is documented in
+[docs/architecture/indexing-services.md](https://github.com/Stygian-Tech/the-social-wire/blob/main/docs/architecture/indexing-services.md).
 
 **Pointers**
 
