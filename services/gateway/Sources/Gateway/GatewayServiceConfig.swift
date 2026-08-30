@@ -25,8 +25,8 @@ struct GatewayServiceConfig: Sendable {
   let appViewBaseURL: String?
   /// Dedicated control-plane origin for `/v1/operations/*`.
   let operationsBaseURL: String?
-  /// Charybdis health origin used by the public readiness aggregation endpoint.
-  let charybdisBaseURL: String?
+  /// Projection Pool health origin used by the public readiness aggregation endpoint.
+  let projectionPoolBaseURL: String?
   /// When set, `link.latr.bookmarks.*` XRPC is proxied to L@tr using iOS server credentials.
   let latrIosProxy: LatrIosProxyCredentials.Config?
   /// Shared across Gateway replicas so short-lived PDS attestations remain portable.
@@ -64,8 +64,11 @@ struct GatewayServiceConfig: Sendable {
     let appViewBaseURL = (appViewRaw?.isEmpty == false) ? appViewRaw : nil
     let operationsRaw = env["OPERATIONS_BASE_URL"]?.trimmingCharacters(in: .whitespacesAndNewlines)
     let operationsBaseURL = (operationsRaw?.isEmpty == false) ? operationsRaw : nil
-    let charybdisRaw = env["CHARYBDIS_BASE_URL"]?.trimmingCharacters(in: .whitespacesAndNewlines)
-    let charybdisBaseURL = (charybdisRaw?.isEmpty == false) ? charybdisRaw : nil
+    let projectionPoolRaw = (
+      env["PROJECTION_POOL_BASE_URL"] ?? env["CHARYBDIS_BASE_URL"]
+    )?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let projectionPoolBaseURL =
+      (projectionPoolRaw?.isEmpty == false) ? projectionPoolRaw : nil
     let latrIosProxy = LatrIosProxyCredentials.Config.fromEnvironment(env)
     let rawWireFeedMode = env["WIRE_FEED_MODE"]?.lowercased() ?? WireFeedMode.off.rawValue
     guard let wireFeedMode = WireFeedMode(rawValue: rawWireFeedMode) else {
@@ -80,7 +83,7 @@ struct GatewayServiceConfig: Sendable {
       cacheBackend: backend,
       appViewBaseURL: appViewBaseURL,
       operationsBaseURL: operationsBaseURL,
-      charybdisBaseURL: charybdisBaseURL,
+      projectionPoolBaseURL: projectionPoolBaseURL,
       latrIosProxy: latrIosProxy,
       pdsAttestationReceipt: pdsAttestationReceipt,
       wireFeedMode: wireFeedMode,

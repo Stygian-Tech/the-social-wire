@@ -29,7 +29,7 @@ enum GatewayRouterBuilder {
       try await GatewayReadinessProbe(
         operationsStore: operationsStore,
         appViewBaseURL: config.appViewBaseURL,
-        charybdisBaseURL: config.charybdisBaseURL,
+        projectionPoolBaseURL: config.projectionPoolBaseURL,
         httpClient: httpClient,
         recordFailure: { dependency in
           logger.error(

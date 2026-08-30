@@ -5,26 +5,26 @@ import OperationsCore
 enum GatewayReadinessDependency: String, CaseIterable, Equatable, Sendable {
   case database
   case appview
-  case charybdis
+  case projectionPool = "projection_pool"
 }
 
 struct GatewayReadinessProbe: Sendable {
   let checkDatabase: @Sendable () async throws -> Void
   let appViewBaseURL: String?
-  let charybdisBaseURL: String?
+  let projectionPoolBaseURL: String?
   let checkDependency: @Sendable (String) async throws -> Void
   let recordFailure: @Sendable (GatewayReadinessDependency) async -> Void
 
   init(
     operationsStore: (any OperationsStore)?,
     appViewBaseURL: String?,
-    charybdisBaseURL: String?,
+    projectionPoolBaseURL: String?,
     httpClient: HTTPClient,
     recordFailure: @escaping @Sendable (GatewayReadinessDependency) async -> Void = { _ in }
   ) {
     self.checkDatabase = { try await operationsStore?.ping() }
     self.appViewBaseURL = appViewBaseURL
-    self.charybdisBaseURL = charybdisBaseURL
+    self.projectionPoolBaseURL = projectionPoolBaseURL
     self.recordFailure = recordFailure
     self.checkDependency = { baseURL in
       var request = HTTPClientRequest(url: "\(baseURL)/readyz")
@@ -40,13 +40,13 @@ struct GatewayReadinessProbe: Sendable {
   init(
     checkDatabase: @escaping @Sendable () async throws -> Void = {},
     appViewBaseURL: String?,
-    charybdisBaseURL: String?,
+    projectionPoolBaseURL: String?,
     checkDependency: @escaping @Sendable (String) async throws -> Void,
     recordFailure: @escaping @Sendable (GatewayReadinessDependency) async -> Void = { _ in }
   ) {
     self.checkDatabase = checkDatabase
     self.appViewBaseURL = appViewBaseURL
-    self.charybdisBaseURL = charybdisBaseURL
+    self.projectionPoolBaseURL = projectionPoolBaseURL
     self.checkDependency = checkDependency
     self.recordFailure = recordFailure
   }
@@ -55,7 +55,7 @@ struct GatewayReadinessProbe: Sendable {
     try await check(.database, operation: checkDatabase)
 
     try await checkRequiredDependency(.appview, baseURL: appViewBaseURL)
-    try await checkRequiredDependency(.charybdis, baseURL: charybdisBaseURL)
+    try await checkRequiredDependency(.projectionPool, baseURL: projectionPoolBaseURL)
   }
 
   private func checkRequiredDependency(

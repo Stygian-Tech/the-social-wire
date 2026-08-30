@@ -9,14 +9,14 @@ struct GatewayReadinessProbeTests {
     let recorder = AppViewProbeRecorder()
     let probe = GatewayReadinessProbe(
       appViewBaseURL: "http://appview.railway.internal:8081/",
-      charybdisBaseURL: "http://charybdis.railway.internal:8082/",
+      projectionPoolBaseURL: "http://projection-pool.railway.internal:8080/",
       checkDependency: { baseURL in await recorder.record(baseURL) }
     )
 
     try await probe.run()
     #expect(await recorder.baseURLs == [
       "http://appview.railway.internal:8081",
-      "http://charybdis.railway.internal:8082",
+      "http://projection-pool.railway.internal:8080",
     ])
   }
 
@@ -25,7 +25,7 @@ struct GatewayReadinessProbeTests {
     let recorder = ReadinessFailureRecorder()
     let probe = GatewayReadinessProbe(
       appViewBaseURL: "http://appview.railway.internal:8081",
-      charybdisBaseURL: "http://charybdis.railway.internal:8082",
+      projectionPoolBaseURL: "http://projection-pool.railway.internal:8080",
       checkDependency: { _ in throw ProbeError.unavailable },
       recordFailure: { dependency in await recorder.record(dependency) }
     )
@@ -36,7 +36,7 @@ struct GatewayReadinessProbeTests {
     #expect(await recorder.dependencies == [.appview])
   }
 
-  @Test("readiness failures identify database, AppView, and Charybdis")
+  @Test("readiness failures identify database, AppView, and Projection Pool")
   func attributesRequiredDependencyFailures() async {
     for failedDependency in GatewayReadinessDependency.allCases {
       let recorder = ReadinessFailureRecorder()
@@ -45,9 +45,11 @@ struct GatewayReadinessProbeTests {
           if failedDependency == .database { throw ProbeError.unavailable }
         },
         appViewBaseURL: "http://appview.railway.internal:8081",
-        charybdisBaseURL: "http://charybdis.railway.internal:8082",
+        projectionPoolBaseURL: "http://projection-pool.railway.internal:8080",
         checkDependency: { baseURL in
-          if baseURL.contains(failedDependency.rawValue) {
+          let dependencyToken =
+            failedDependency == .projectionPool ? "projection-pool" : failedDependency.rawValue
+          if baseURL.contains(dependencyToken) {
             throw ProbeError.unavailable
           }
         },
@@ -66,7 +68,7 @@ struct GatewayReadinessProbeTests {
     let recorder = ReadinessFailureRecorder()
     let probe = GatewayReadinessProbe(
       appViewBaseURL: nil,
-      charybdisBaseURL: "http://charybdis.railway.internal:8082",
+      projectionPoolBaseURL: "http://projection-pool.railway.internal:8080",
       checkDependency: { _ in },
       recordFailure: { dependency in await recorder.record(dependency) }
     )
