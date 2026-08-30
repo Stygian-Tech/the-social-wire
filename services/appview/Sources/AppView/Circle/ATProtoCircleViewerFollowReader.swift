@@ -31,10 +31,11 @@ struct ATProtoCircleViewerFollowReader: CircleViewerFollowReading {
           followees.append(subject)
         }
       }
-      guard page.cursor != cursor else {
-        throw CircleGraphSnapshotError.incompleteFollowRead(actorDID: viewerDID)
-      }
-      cursor = page.cursor
+      cursor = try CircleFollowPagination.nextCursor(
+        current: cursor,
+        returned: page.cursor,
+        actorDID: viewerDID
+      )
     } while cursor != nil
     return CircleFollowList(actorDID: viewerDID, followeeDIDs: followees, isComplete: true)
   }

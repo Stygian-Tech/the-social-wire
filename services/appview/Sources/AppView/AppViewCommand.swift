@@ -207,6 +207,7 @@ struct Serve: AsyncParsableCommand {
             circlePrivateState = state
             circleDiscoveryService = CircleDiscoveryService(
               candidateFetcher: candidateFetcher,
+              mode: config.circle.mode,
               privateState: state,
               actorHasher: actorHasher,
               cursorCodec: try CircleCursorCodec(secret: circleCursorSecret),
