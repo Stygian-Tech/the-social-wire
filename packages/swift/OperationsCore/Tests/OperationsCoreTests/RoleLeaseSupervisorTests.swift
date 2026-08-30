@@ -66,7 +66,12 @@ struct RoleLeaseSupervisorTests {
     #expect(first.role == configuration.role)
     #expect(first.ownerID == configuration.ownerID)
     #expect(first.fencingToken == 1)
-    #expect(successor.fencingToken == first.fencingToken + 1)
+    // The deliberately oversleeping clock may drive more than one complete
+    // loss/reacquisition cycle before the AsyncStream consumer resumes. The
+    // store-level tests assert exact single-takeover increments; this
+    // supervisor test only needs to prove that rerun work receives a newer
+    // fence than the cancelled owner.
+    #expect(successor.fencingToken > first.fencingToken)
     #expect(await timing.requestedIntervals().contains(configuration.renewInterval))
     #expect(await timing.requestedIntervals().contains(configuration.standbyRetryInterval))
   }
