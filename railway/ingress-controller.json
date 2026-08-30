@@ -1,0 +1,17 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "build": {
+    "builder": "DOCKERFILE",
+    "dockerfilePath": "/services/jetstream-ingest/Dockerfile",
+    "watchPatterns": [
+      "/services/jetstream-ingest/**",
+      "/database/migrations/**",
+      "/railway/ingress-controller.json"
+    ]
+  },
+  "deploy": {
+    "healthcheckPath": "/startupz",
+    "healthcheckTimeout": 120,
+    "restartPolicyType": "ALWAYS"
+  }
+}

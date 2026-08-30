@@ -1,0 +1,23 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "build": {
+    "builder": "DOCKERFILE",
+    "dockerfilePath": "/services/indexing-worker/Dockerfile",
+    "watchPatterns": [
+      "/services/indexing-worker/**",
+      "/services/appview-worker/**",
+      "/services/wire-worker/**",
+      "/packages/swift/ThinAppViewCore/**",
+      "/packages/swift/OperationsCore/**",
+      "/packages/swift/SocialWireRedis/**",
+      "/packages/swift/WireCore/**",
+      "/database/migrations/**",
+      "/railway/coordinator.json"
+    ]
+  },
+  "deploy": {
+    "healthcheckPath": "/startupz",
+    "healthcheckTimeout": 120,
+    "restartPolicyType": "ALWAYS"
+  }
+}
