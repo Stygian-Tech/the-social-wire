@@ -25,6 +25,8 @@ import { useWireEdition } from "@/hooks/useWireEdition";
 import { useWireFeedEntries } from "@/hooks/useWireFeed";
 import { isWireNewsEditionEnabled } from "@/lib/wireEditionClient";
 import { WireBetaBadge } from "@/components/Wire/WireBetaBadge";
+import { useCircleEdition } from "@/hooks/useCircleFeed";
+import { editorialFeedForReadRoute } from "@/lib/editorialFeedRoute";
 
 export function readFeedHeaderClassName(isWire: boolean) {
   return isWire ? "pt-3" : undefined;
@@ -45,14 +47,19 @@ export function ReadArticleFilterBar() {
   const isTabletPortrait = useIsTabletPortrait();
   const clientHydrated = useClientHydrated();
   const { refresh } = useSidebarBootstrap();
-  const isWire =
-    pathname === "/read" && searchParams.get("feed") === "wire";
+  const editorialFeed = editorialFeedForReadRoute(
+    pathname,
+    searchParams.get("feed"),
+  );
+  const isWire = editorialFeed === "wire";
+  const isCircle = editorialFeed === "circle";
   const wireNewsEditionEnabled = isWire && isWireNewsEditionEnabled();
   const wireEdition = useWireEdition({ enabled: wireNewsEditionEnabled });
   const wireFeed = useWireFeedEntries({
     enabled: isWire && !wireNewsEditionEnabled,
   });
   const wire = wireNewsEditionEnabled ? wireEdition : wireFeed;
+  const circle = useCircleEdition({ enabled: isCircle });
 
   const { activeFeedScope } = useReadSidebarScope();
   const { bulkDisabled, applyMarkAllRead } =
@@ -74,39 +81,45 @@ export function ReadArticleFilterBar() {
     : "Articles";
   const feedTitle = activeFeedScope.displayName.trim() || routeFeedTitle;
 
-  if (isWire) {
+  if (editorialFeed) {
+    const isRefreshing = isCircle
+      ? circle.isRefetching
+      : wire.isRefreshingFirstPage;
+    const isRefreshDisabled = isCircle
+      ? circle.isLoading || circle.isRefetching
+      : wire.isRefreshingFirstPage ||
+        wire.isLoading ||
+        wire.viewerModerationRetryUnavailable;
+    const title = isCircle ? "Your Circle" : "The Wire";
     return (
       <FeedHeader
         title={
           <span
-            aria-label="The Wire, Beta"
+            aria-label={isCircle ? title : "The Wire, Beta"}
             className="inline-flex items-center gap-2"
           >
-            <span>The Wire</span>
-            <WireBetaBadge />
+            <span>{title}</span>
+            {isWire ? <WireBetaBadge /> : null}
           </span>
         }
-        className={readFeedHeaderClassName(isWire)}
+        className={readFeedHeaderClassName(true)}
       >
         <Button
           type="button"
           variant="ghost"
           size="icon-sm"
           className="size-8 shrink-0 rounded-md border-0 bg-transparent shadow-none hover:bg-muted/50 hover:text-foreground"
-          disabled={
-            wire.isRefreshingFirstPage ||
-            wire.isLoading ||
-            wire.viewerModerationRetryUnavailable
-          }
-          aria-label="Refresh The Wire"
-          title="Refresh The Wire"
+          disabled={isRefreshDisabled}
+          aria-label={`Refresh ${title}`}
+          title={`Refresh ${title}`}
           onClick={() => {
-            void wire.retryTheWire().catch(() => undefined);
+            if (isCircle) void circle.refetch();
+            else void wire.retryTheWire().catch(() => undefined);
           }}
         >
           <RefreshCw
             aria-hidden="true"
-            className={`size-3.5 ${wire.isRefreshingFirstPage ? "animate-spin" : ""}`}
+            className={`size-3.5 ${isRefreshing ? "animate-spin" : ""}`}
           />
         </Button>
       </FeedHeader>
