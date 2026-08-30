@@ -11,6 +11,10 @@ const pathFilters = readFileSync(
   join(repositoryRoot, "scripts/ci-detect-changes.sh"),
   "utf8",
 );
+const railwayInfrastructure = readFileSync(
+  join(repositoryRoot, ".railway/railway.ts"),
+  "utf8",
+);
 
 const railwayServices = [
   { service: "Web", config: "web", restartPolicy: "ALWAYS" },
@@ -22,10 +26,6 @@ const railwayServices = [
   { service: "The Wire Global Ingest", config: "wire-jetstream-ingest", restartPolicy: "ALWAYS" },
   { service: "The Wire Worker", config: "wire-worker", restartPolicy: "ALWAYS" },
   { service: "The Wire Inbox Drain", config: "wire-inbox-drain", restartPolicy: "ALWAYS" },
-  { service: "Ingress Controller", config: "ingress-controller", restartPolicy: "ALWAYS" },
-  { service: "Ingress Snapshot Job", config: "ingress-snapshot-job", restartPolicy: "NEVER" },
-  { service: "Projection Pool", config: "projection-pool", restartPolicy: "ALWAYS" },
-  { service: "Coordinator", config: "coordinator", restartPolicy: "ALWAYS" },
   { service: "The Wire Corpus Edge", config: "wire-corpus-edge", restartPolicy: "ALWAYS" },
   { service: "Ops", config: "operations", restartPolicy: "ALWAYS" },
   { service: "Database Migrator", config: "database-migrator", restartPolicy: "NEVER" },
@@ -108,7 +108,7 @@ describe("CI workflow configuration", () => {
     ).toBe(false);
   });
 
-  it("checks in Railway config-as-code for every deployed service", () => {
+  it("keeps grandfathered Railway config-as-code for compatibility services", () => {
     const deploymentReadme = readFileSync(
       join(repositoryRoot, "railway/README.md"),
       "utf8",
@@ -136,7 +136,7 @@ describe("CI workflow configuration", () => {
         expect(config.build.dockerfilePath).toMatch(/^\/services\//);
       }
       expect(config.deploy?.restartPolicyType).toBe(restartPolicy);
-      if (["jetstream-ingest", "wire-jetstream-ingest", "wire-worker", "wire-inbox-drain", "charybdis", "ingress-controller", "projection-pool", "coordinator"].includes(configName)) {
+      if (["jetstream-ingest", "wire-jetstream-ingest", "wire-worker", "wire-inbox-drain", "charybdis"].includes(configName)) {
         expect(config.deploy?.healthcheckPath).toBe("/startupz");
       }
       expect(deploymentReadme).toContain(
@@ -147,11 +147,7 @@ describe("CI workflow configuration", () => {
         ? "wire_ingest"
         : configName === "wire-inbox-drain"
           ? "wire_worker"
-          : ["ingress-controller", "ingress-snapshot-job"].includes(configName)
-            ? "jetstream_ingest"
-            : ["projection-pool", "coordinator"].includes(configName)
-              ? "indexing_worker"
-              : configName.replaceAll("-", "_");
+          : configName.replaceAll("-", "_");
       const filter = pathFilters
         .split("\n\n")
         .find((block) =>
@@ -162,6 +158,39 @@ describe("CI workflow configuration", () => {
         expect(filter ?? "").toContain(`'${watchPattern.slice(1)}'`);
       }
     }
+  });
+
+  it("owns consolidated indexing services through a Development-only IaC partial", () => {
+    expect(railwayInfrastructure).toContain(
+      'export const partial = "indexing-consolidation";',
+    );
+    expect(railwayInfrastructure).toContain(
+      'if (!context.isEnvironment("dev"))',
+    );
+    expect(railwayInfrastructure).toContain(
+      'return project("The Social Wire", { resources: [] });',
+    );
+
+    for (const serviceName of [
+      "Ingress Controller",
+      "Projection Pool",
+      "Coordinator",
+    ]) {
+      expect(railwayInfrastructure).toContain(`service("${serviceName}"`);
+    }
+
+    expect(railwayInfrastructure).toContain(
+      'dockerfilePath: "/services/jetstream-ingest/Dockerfile"',
+    );
+    expect(railwayInfrastructure).toContain(
+      'dockerfilePath: "/services/indexing-worker/Dockerfile"',
+    );
+    expect(railwayInfrastructure).toContain('healthcheckPath: "/startupz"');
+    expect(railwayInfrastructure).toContain('restartPolicyType: "ALWAYS"');
+    expect(railwayInfrastructure.match(/replicas: \{ \[region\]: 2 \}/g)).toHaveLength(
+      3,
+    );
+    expect(pathFilters.match(/'\.railway\/\*\*'/g)).toHaveLength(2);
   });
 
   it("uses the same service names in path detection", () => {

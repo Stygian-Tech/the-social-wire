@@ -58,6 +58,10 @@ apps/apple/*.xcodeproj/project.xcworkspace/xcuserdata/*/UserInterfaceState.xcuse
 
 # Railway CLI project/service link metadata
 .railway/
+!.railway/
+.railway/*
+!.railway/README.md
+!.railway/railway.ts
 
 # Local secret files
 /.secrets

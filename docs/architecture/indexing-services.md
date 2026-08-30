@@ -58,11 +58,14 @@ This allows one subsystem to fail over without moving the other. A replica with 
 
 ## Deployment ownership
 
-Railway config-as-code lives at:
+Railway Infrastructure as Code for the three long-running classes lives in
+`/.railway/railway.ts`. Its stable `indexing-consolidation` partial owns only
+Ingress Controller, Projection Pool, and Coordinator while compatibility
+services remain on grandfathered `railway/*.json` configuration. The partial
+is Development-only until a separately approved Production promotion.
 
-- `/railway/ingress-controller.json`
-- `/railway/projection-pool.json`
-- `/railway/coordinator.json`
-- `/railway/ingress-snapshot-job.json`
+Snapshots are temporary operator-created services, not persistent IaC
+resources. They use the ingress Dockerfile, bounded cursor variables, restart
+policy `NEVER`, and are removed after their completion evidence is captured.
 
 Database Migrator remains the only schema owner. All three long-running service classes reference its Railway service ID so a successful migration precedes application startup. Environment cutover and rollback steps are in [the consolidation runbook](../runbooks/operations/indexing-service-consolidation.md).

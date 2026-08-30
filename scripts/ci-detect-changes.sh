@@ -138,8 +138,7 @@ filter_changed jetstream_ingest \
   'database/migrations/**' \
   'packages/swift/ThinAppViewCore/Tests/ThinAppViewCoreTests/Fixtures/jetstream-v2-go-sdk-v0.2.0-events.json' \
   'railway/jetstream-ingest.json' \
-  'railway/ingress-controller.json' \
-  'railway/ingress-snapshot-job.json' \
+  '.railway/**' \
   '.github/workflows/ci.yml'
 
 filter_changed wire_ingest \
@@ -167,8 +166,7 @@ filter_changed indexing_worker \
   'packages/swift/SocialWireRedis/**' \
   'packages/swift/WireCore/**' \
   'database/migrations/**' \
-  'railway/projection-pool.json' \
-  'railway/coordinator.json' \
+  '.railway/**' \
   '.github/workflows/ci.yml'
 
 filter_changed wire_corpus_edge \
