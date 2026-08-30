@@ -167,9 +167,10 @@ describe("CI workflow configuration", () => {
     expect(railwayInfrastructure).toContain(
       'if (!context.isEnvironment("dev"))',
     );
-    expect(railwayInfrastructure).toContain(
+    expect(railwayInfrastructure).not.toContain(
       'return project("The Social Wire", { resources: [] });',
     );
+    expect(railwayInfrastructure).toContain("throw new Error(");
 
     for (const serviceName of [
       "Ingress Controller",
@@ -187,6 +188,12 @@ describe("CI workflow configuration", () => {
     );
     expect(railwayInfrastructure).toContain('healthcheckPath: "/startupz"');
     expect(railwayInfrastructure).toContain('restartPolicyType: "ALWAYS"');
+    expect(railwayInfrastructure).toContain(
+      'JETSTREAM_WIRE_ADMISSION_RATE_PER_SECOND: "3"',
+    );
+    expect(railwayInfrastructure).toContain(
+      'JETSTREAM_WIRE_ADMISSION_BURST_EVENTS: "1"',
+    );
     expect(railwayInfrastructure.match(/replicas: \{ \[region\]: 2 \}/g)).toHaveLength(
       3,
     );

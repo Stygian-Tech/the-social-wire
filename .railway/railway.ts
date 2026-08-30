@@ -57,7 +57,9 @@ export default defineRailway((context) => {
   // Production promotion is intentionally fail-closed until the Development
   // soak has passed and a separate source change enables the production graph.
   if (!context.isEnvironment("dev")) {
-    return project("The Social Wire", { resources: [] });
+    throw new Error(
+      "The indexing-consolidation partial is authorized only for Development",
+    );
   }
 
   const ingressController = service("Ingress Controller", {
@@ -83,6 +85,8 @@ export default defineRailway((context) => {
       JETSTREAM_APPVIEW_SOURCE_GENERATION: "jetstream-v2-us-west-v2",
       JETSTREAM_WIRE_BOOTSTRAP_AFTER_SEQ: "24924866033",
       JETSTREAM_WIRE_ENABLED: "true",
+      JETSTREAM_WIRE_ADMISSION_BURST_EVENTS: "1",
+      JETSTREAM_WIRE_ADMISSION_RATE_PER_SECOND: "3",
       JETSTREAM_WIRE_SOURCE_GENERATION: "wire-global-v1-dev-1h-20260820",
     },
   });

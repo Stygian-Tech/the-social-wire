@@ -51,11 +51,13 @@ Create snapshots as temporary operator services outside the long-running IaC par
 
 ## Development cutover
 
-1. Run `railway environment link dev`, review `railway config plan`, apply the `indexing-consolidation` partial, deploy the migration, and verify the role-lease table and index exist. The plan must contain only the three Development indexing resources and no destructive changes.
-2. Create Ingress Controller with two replicas. Verify both lane databases, leases, checkpoints, and `/readyz`. Stop the two superseded intake services only after the controller owns the same two leases and cursor movement is continuous.
-3. Create Projection Pool with the same aggregate drain concurrency as the old AppView projector and Wire drains. Verify claim/ack partitioning, no duplicate terminal rows, and falling or stable actionable age. Stop Charybdis projection and the old Wire drains after the new pool is caught up.
-4. Reconfigure the compatibility AppView worker to avoid singleton overlap, and stop the old Wire rank/materializer. Start Coordinator with two replicas. Verify exactly one owner for each role, distinct fencing tokens, one active component health endpoint, and one healthy standby path.
-5. Stop and remove the superseded hosted worker services only after the soak. Keep their config files and executable products through the rollback window.
+1. Deploy the migration and verify the role-lease table and index exist. Seed each target service with its database, migrator, Redis, API-key, and HMAC references before the first IaC apply; `preserve()` retains existing target values but does not copy them from compatibility services.
+2. Run `railway environment link dev` and review `railway config plan`. The plan must contain only the three Development indexing resources and no destructive changes. The partial aborts outside Development.
+3. Capture the singleton baseline, stop compatibility `Charybdis` and `The Wire Worker`, and verify their deployments are stopped before applying the `indexing-consolidation` partial. This creates a bounded maintenance gap and prevents the old unfenced RSS, recovery, retention, ranking, enrichment, and cleanup loops from overlapping the new Coordinator.
+4. Apply the partial. Verify Ingress Controller's two lane databases, leases, checkpoints, and `/readyz`. Stop the two superseded intake services only after the controller owns the same two leases and cursor movement is continuous.
+5. Verify Projection Pool claim/ack partitioning, no duplicate terminal rows, and falling or stable actionable age. Stop the old dedicated Wire drains after the new pool is caught up.
+6. Verify Coordinator has exactly one owner for each role, distinct fencing tokens, one active component health endpoint, and one healthy standby path. If the new deployment fails, stop all new Coordinator replicas before restoring either compatibility singleton.
+7. Stop and remove the superseded hosted worker services only after the soak. Keep their config files and executable products through the rollback window.
 
 ## Soak gates
 
