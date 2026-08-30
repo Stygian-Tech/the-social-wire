@@ -114,9 +114,13 @@ public enum WireRanker {
       let feedbackAdjustedScore = clamp(
         positiveScore - negativeFeedbackBreadth * config.weights.negativeFeedbackPenalty
       )
+      let limitedCommercialPenalty = limitedCommercialPenalty(
+        for: candidate,
+        config: config
+      )
       let score = clamp(
         feedbackAdjustedScore - config.domainPenalties.penalty(for: candidate.sourceDomain)
-          - (candidate.commercialClass == .limited ? config.limitedCommercialPenalty : 0)
+          - limitedCommercialPenalty
           - (candidate.hasUsableThumbnail == true ? 0 : config.missingThumbnailPenalty)
           + rotationNudge(canonicalKey: candidate.canonicalKey, asOf: asOf)
       )
@@ -172,6 +176,15 @@ public enum WireRanker {
         diversityDeferrals: diversity.interventions.count
       )
     )
+  }
+
+  static func limitedCommercialPenalty(
+    for candidate: WireCandidate,
+    config: WireRankingConfig
+  ) -> Double {
+    guard candidate.commercialClass == .limited else { return 0 }
+    let severity = min(max(candidate.commercialScore, 3), 5) / 5
+    return config.limitedCommercialPenalty * severity
   }
 
   private static func logarithmicRatio(_ value: Int, target: Int) -> Double {

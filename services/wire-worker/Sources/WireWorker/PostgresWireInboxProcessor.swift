@@ -1066,7 +1066,7 @@ struct PostgresWireInboxProcessor: Sendable {
       title: title,
       summary: embedded?.description ?? text,
       thumbnail: embedded?.imageURL,
-      language: Self.primaryLanguage(Self.firstString(record, keys: ["langs", "lang"])),
+      language: "und",
       publishedAt: Self.date(Self.firstString(record, keys: ["createdAt"])),
       provenance: [Self.containsQuote(record) ? "quote" : "direct_share"],
       confidence: 0.6,
@@ -1261,7 +1261,7 @@ struct PostgresWireInboxProcessor: Sendable {
       title: title,
       summary: summary,
       thumbnail: embedded?.imageURL,
-      language: Self.primaryLanguage(Self.firstString(record, keys: ["langs", "lang"])),
+      language: "und",
       publishedAt: Self.date(Self.firstString(record, keys: ["publishedAt", "createdAt"])),
       provenance: ["recommendation"],
       confidence: 0.6,
@@ -1514,6 +1514,8 @@ struct PostgresWireInboxProcessor: Sendable {
     var presentation: [String: Any] = [
       "metadataSource": presentationSource,
       "sourcePriority": presentationPriority,
+      "languageSource": presentationSource == "standard_site" && language != "und"
+        ? "standard_site_record" : "unknown",
     ]
     if thumbnail != nil { presentation["thumbnailSource"] = presentationSource }
     presentation["homepageUrl"] = publicationHomepageURL
@@ -1538,7 +1540,8 @@ struct PostgresWireInboxProcessor: Sendable {
          \(authorDID), \(host), \(sourceName), \(authorName), \(title), \(summary), \(thumbnail),
          \(publicationHomepageURL), \(publicationIconURL),
          \(language), \(topicsJSON)::jsonb, \(presentationJSON)::jsonb, \(provenanceJSON)::jsonb,
-         \(publishedAt), \(asOf), \(asOf), \(asOf), \(confidence), TRUE, \(targetKind.rawValue),
+         \(publishedAt), \(asOf), \(asOf), \(asOf), \(confidence), \(targetKind.canCreateItem),
+         \(targetKind.rawValue),
          \(commercial.score), \(commercial.classification.rawValue),
          \(commercialReasonsJSON)::jsonb, \(expiresAt), \(asOf))
       ON CONFLICT (canonical_key) DO UPDATE SET
@@ -1572,11 +1575,8 @@ struct PostgresWireInboxProcessor: Sendable {
         publication_icon_url = COALESCE(
           EXCLUDED.publication_icon_url, wire_items.publication_icon_url),
         language_code = CASE
-          WHEN EXCLUDED.language_code <> 'und'
-            AND COALESCE((EXCLUDED.presentation_snapshot->>'sourcePriority')::integer, 0)
-              > COALESCE((wire_items.presentation_snapshot->>'sourcePriority')::integer, 0)
+          WHEN EXCLUDED.presentation_snapshot->>'metadataSource' = 'standard_site'
           THEN EXCLUDED.language_code
-          WHEN wire_items.language_code = 'und' THEN EXCLUDED.language_code
           ELSE wire_items.language_code END,
         topic_keys = CASE WHEN jsonb_array_length(wire_items.topic_keys) = 0
           THEN EXCLUDED.topic_keys ELSE wire_items.topic_keys END,
@@ -1586,8 +1586,13 @@ struct PostgresWireInboxProcessor: Sendable {
             SELECT DISTINCT value
             FROM jsonb_array_elements_text(wire_items.provenance || EXCLUDED.provenance)
           ) unique_provenance
-        ), target_kind = CASE WHEN wire_items.target_kind = 'standard_site_document'
-          THEN wire_items.target_kind ELSE EXCLUDED.target_kind END,
+        ), target_kind = CASE
+          WHEN wire_items.target_kind NOT IN ('external_article', 'standard_site_document')
+            THEN wire_items.target_kind
+          WHEN EXCLUDED.target_kind NOT IN ('external_article', 'standard_site_document')
+            THEN EXCLUDED.target_kind
+          WHEN wire_items.target_kind = 'standard_site_document' THEN wire_items.target_kind
+          ELSE EXCLUDED.target_kind END,
         commercial_score = GREATEST(wire_items.commercial_score, EXCLUDED.commercial_score),
         commercial_class = CASE
           WHEN wire_items.commercial_score > EXCLUDED.commercial_score
@@ -1597,6 +1602,7 @@ struct PostgresWireInboxProcessor: Sendable {
           THEN wire_items.commercial_reasons ELSE EXCLUDED.commercial_reasons END,
         published_at = COALESCE(wire_items.published_at, EXCLUDED.published_at),
         last_seen_at = EXCLUDED.last_seen_at, last_signal_at = EXCLUDED.last_signal_at,
+        eligible = wire_items.eligible AND EXCLUDED.eligible,
         source_confidence = GREATEST(wire_items.source_confidence, EXCLUDED.source_confidence),
         expires_at = GREATEST(wire_items.expires_at, EXCLUDED.expires_at), updated_at = EXCLUDED.updated_at
       """,

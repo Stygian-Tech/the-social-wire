@@ -101,7 +101,8 @@ struct HTTPWireLinkMetadataClient: WireLinkMetadataFetching {
           lastModified: responseLastModified,
           source: .openGraph,
           languageCode: parsed.languageCode,
-          hasProductOfferSchema: parsed.hasProductOfferSchema
+          hasProductOfferSchema: parsed.hasProductOfferSchema,
+          hasAffiliateDisclosure: parsed.hasAffiliateDisclosure
         )
       )
     }

@@ -46,7 +46,7 @@ public struct WireRankingConfig: Codable, Equatable, Sendable {
     freshnessHalfLife: TimeInterval = 36_000,
     maximumCandidateAge: TimeInterval = 2_592_000,
     domainPenalties: WireDomainPenaltyPolicy = WireDomainPenaltyPolicy(),
-    limitedCommercialPenalty: Double = 0.15,
+    limitedCommercialPenalty: Double = 0.25,
     missingThumbnailPenalty: Double = 0.15
   ) {
     self.version = version

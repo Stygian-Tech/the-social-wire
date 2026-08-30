@@ -1714,7 +1714,7 @@ struct WirePostgresIntegrationTests {
     }
   }
 
-  @Test("authoritative Standard Site language replaces an earlier share language")
+  @Test("share language stays unknown until an authoritative Standard Site language arrives")
   func standardSiteLanguageOverridesShareLanguage() async throws {
     guard let url = ProcessInfo.processInfo.environment["WIRE_TEST_DATABASE_URL"] else { return }
     let logger = Logger(label: "wire-standard-language-postgres.integration")
@@ -1757,7 +1757,7 @@ struct WirePostgresIntegrationTests {
       "SELECT language_code FROM wire_items WHERE canonical_key = \(canonical.canonicalKey)",
       logger: logger
     )
-    for try await row in sharedRows { #expect(try row.decode(String.self) == "en") }
+    for try await row in sharedRows { #expect(try row.decode(String.self) == "und") }
 
     let articlePayload = """
       {"commit":{"record":{"$type":"site.standard.document","url":"\(articleURL)","title":"Article en francais","lang":"fr"}}}
@@ -1796,6 +1796,135 @@ struct WirePostgresIntegrationTests {
       logger: logger)
     try await pool.query(
       "DELETE FROM wire_items WHERE canonical_key = \(canonical.canonicalKey)", logger: logger)
+  }
+
+  @Test("page declarations cannot promote language-less Standard Site records")
+  func pageLanguageDoesNotPromoteStandardSite() async throws {
+    guard let url = ProcessInfo.processInfo.environment["WIRE_TEST_DATABASE_URL"] else { return }
+    let logger = Logger(label: "wire-standard-page-language-postgres.integration")
+    let configuration = try PostgresWireConfig.make(from: url, logger: logger)
+    let pool = PostgresClient(configuration: configuration, backgroundLogger: logger)
+    let runTask = Task { await pool.run() }
+    await Task.yield()
+    defer { runTask.cancel() }
+
+    let namespace = UUID().uuidString.lowercased()
+    let canonicalKey = "url:standard-page-language-\(namespace)"
+    let canonicalURL = "https://standard-page-language-\(namespace).example/story"
+    let now = Date()
+    try await pool.query(
+      """
+      INSERT INTO wire_items
+        (canonical_key, canonical_url, source_domain, source_name, title, language_code,
+         provenance, presentation_snapshot, first_seen_at, last_seen_at, last_signal_at, expires_at)
+      VALUES
+        (\(canonicalKey), \(canonicalURL), \("standard-page-language-\(namespace).example"),
+         'Standard Page Language Test', 'Kumustang balita', 'und', '["standard_site"]'::jsonb,
+         '{"metadataSource":"standard_site","languageSource":"unknown"}'::jsonb,
+         \(now), \(now), \(now), \(now.addingTimeInterval(86_400)))
+      """,
+      logger: logger
+    )
+
+    let store = PostgresWireLinkMetadataStore(pool: pool, logger: logger)
+    try await store.store(
+      canonicalKey: canonicalKey,
+      metadata: WireLinkMetadata(
+        canonicalURL: canonicalURL,
+        title: "Kumustang balita",
+        description: nil,
+        imageURL: nil,
+        siteName: nil,
+        authorName: nil,
+        publishedAt: nil,
+        iconURL: nil,
+        etag: nil,
+        lastModified: nil,
+        source: .openGraph,
+        languageCode: "en"
+      ),
+      asOf: now.addingTimeInterval(1)
+    )
+
+    let rows = try await pool.query(
+      """
+      SELECT language_code, presentation_snapshot->>'languageSource'
+      FROM wire_items WHERE canonical_key = \(canonicalKey)
+      """,
+      logger: logger
+    )
+    for try await row in rows {
+      let value = try row.decode((String, String).self)
+      #expect(value.0 == "und")
+      #expect(value.1 == "unknown")
+    }
+    try await pool.query(
+      "DELETE FROM wire_items WHERE canonical_key = \(canonicalKey)", logger: logger)
+  }
+
+  @Test("metadata refresh cannot upgrade an operational status page into an article")
+  func metadataRefreshSuppressesOperationalStatus() async throws {
+    guard let url = ProcessInfo.processInfo.environment["WIRE_TEST_DATABASE_URL"] else { return }
+    let logger = Logger(label: "wire-operational-status-postgres.integration")
+    let configuration = try PostgresWireConfig.make(from: url, logger: logger)
+    let pool = PostgresClient(configuration: configuration, backgroundLogger: logger)
+    let runTask = Task { await pool.run() }
+    await Task.yield()
+    defer { runTask.cancel() }
+
+    let namespace = UUID().uuidString.lowercased()
+    let canonicalKey = "url:operational-status-\(namespace)"
+    let canonicalURL = "https://status.example.com/incidents/\(namespace)"
+    let now = Date()
+    try await pool.query(
+      """
+      INSERT INTO wire_items
+        (canonical_key, canonical_url, source_domain, source_name, title, language_code,
+         provenance, first_seen_at, last_seen_at, last_signal_at, expires_at,
+         eligible, target_kind)
+      VALUES
+        (\(canonicalKey), \(canonicalURL), 'status.example.com', 'Example Status',
+         'Scheduled maintenance', 'en', '["standard_site"]'::jsonb,
+         \(now), \(now), \(now), \(now.addingTimeInterval(86_400)),
+         TRUE, 'standard_site_document')
+      """,
+      logger: logger
+    )
+
+    let store = PostgresWireLinkMetadataStore(pool: pool, logger: logger)
+    try await store.store(
+      canonicalKey: canonicalKey,
+      metadata: WireLinkMetadata(
+        canonicalURL: canonicalURL,
+        title: "Scheduled maintenance",
+        description: nil,
+        imageURL: nil,
+        siteName: "Example Status",
+        authorName: nil,
+        publishedAt: nil,
+        iconURL: nil,
+        etag: nil,
+        lastModified: nil,
+        source: .openGraph,
+        languageCode: "en"
+      ),
+      asOf: now.addingTimeInterval(1)
+    )
+
+    let rows = try await pool.query(
+      """
+      SELECT target_kind, eligible
+      FROM wire_items WHERE canonical_key = \(canonicalKey)
+      """,
+      logger: logger
+    )
+    for try await row in rows {
+      let value = try row.decode((String, Bool).self)
+      #expect(value.0 == "operational_status")
+      #expect(!value.1)
+    }
+    try await pool.query(
+      "DELETE FROM wire_items WHERE canonical_key = \(canonicalKey)", logger: logger)
   }
 
   @Test("article metadata corrects a weaker share-post language")

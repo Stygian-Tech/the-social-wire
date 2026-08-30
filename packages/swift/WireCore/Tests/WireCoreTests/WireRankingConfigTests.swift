@@ -9,6 +9,7 @@ struct WireRankingConfigTests {
     let config = WireRankingConfig()
     try config.validate()
     #expect(config.version == WireRankingConfig.baselineVersion)
+    #expect(config.limitedCommercialPenalty == 0.25)
     #expect(config.standardSiteMinimumHighIntentActors == 1)
     #expect(config.standardSiteMinimumSourceConfidence == 0.75)
     #expect(config.freshnessHalfLife == 36_000)
