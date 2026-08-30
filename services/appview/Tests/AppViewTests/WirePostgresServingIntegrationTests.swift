@@ -328,6 +328,8 @@ struct WirePostgresServingIntegrationTests {
       #expect(page.source == .simplifiedFallback)
       #expect(page.degraded)
       #expect(page.items.map(\.itemID) == [fallbackKey])
+      let catalog = try await store.getCatalog(now: now)
+      #expect(!catalog.supportedLanguages.contains("en"))
 
       let edition = try await store.getEdition(
         language: "en-US",

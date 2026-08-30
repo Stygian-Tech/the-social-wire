@@ -482,13 +482,27 @@ actor PostgresWireFeedStore: WireFeedStore {
   private func acceptableGenerations(now: Date) async throws -> [Generation] {
     // Match activeGeneration: an expired active snapshot is still available,
     // although callers expose it as stale/degraded based on generatedAt.
-    _ = now
     let rows = try await pool.query(
       """
       SELECT g.generation_id, g.language_bucket, g.generated_at, g.expires_at
       FROM wire_feed_state state
       JOIN wire_rank_generations g ON g.generation_id = state.active_generation_id
       WHERE state.feed_key = 'wire' AND g.status = 'committed'
+        AND (
+          g.language_bucket = 'und' OR EXISTS (
+            SELECT 1
+            FROM wire_ranked_items ranked
+            JOIN wire_items item ON item.canonical_key = ranked.canonical_key
+            WHERE ranked.generation_id = g.generation_id
+              AND item.eligible = TRUE AND item.expires_at > \(now)
+              AND item.language_code = g.language_bucket
+              AND NOT EXISTS (
+                SELECT 1 FROM wire_labels label
+                WHERE label.canonical_key = item.canonical_key AND label.expires_at > \(now)
+                  AND label.label_value IN ('block', 'exclude', 'adult', 'graphic', 'spam')
+              )
+          )
+        )
       """,
       logger: logger
     )
