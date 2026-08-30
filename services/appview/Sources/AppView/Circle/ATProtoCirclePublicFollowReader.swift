@@ -68,10 +68,11 @@ struct ATProtoCirclePublicFollowReader: CirclePublicFollowReading {
         if let did = profile["did"] as? String { followees.append(did) }
       }
       let nextCursor = document["cursor"] as? String
-      guard nextCursor != cursor else {
-        throw CircleGraphSnapshotError.incompleteFollowRead(actorDID: actorDID)
-      }
-      cursor = nextCursor
+      cursor = try CircleFollowPagination.nextCursor(
+        current: cursor,
+        returned: nextCursor,
+        actorDID: actorDID
+      )
     } while cursor != nil
     return CircleFollowList(actorDID: actorDID, followeeDIDs: followees, isComplete: true)
   }

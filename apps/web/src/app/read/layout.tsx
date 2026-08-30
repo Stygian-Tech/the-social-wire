@@ -15,6 +15,7 @@ import { normalizeAtRepoParam } from "@/lib/atprotoClient";
 import { ReadArticleFilterBar } from "@/app/read/ReadArticleFilterBar";
 import { ClosePublicationsSheetOnMobilePubRoute } from "@/app/read/ClosePublicationsSheetOnMobilePubRoute";
 import { isWireNewsEditionEnabled } from "@/lib/wireEditionClient";
+import { editorialFeedForReadRoute } from "@/lib/editorialFeedRoute";
 
 export default function ReadLayout({
   children,
@@ -89,14 +90,18 @@ export default function ReadLayout({
 function ReadContentInset({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const wireRoute =
-    pathname === "/read" && searchParams.get("feed") === "wire";
-  const wireNewsRoute = wireRoute && isWireNewsEditionEnabled();
+  const editorialFeed = editorialFeedForReadRoute(
+    pathname,
+    searchParams.get("feed"),
+  );
+  const editorialNewsRoute =
+    editorialFeed === "circle" ||
+    (editorialFeed === "wire" && isWireNewsEditionEnabled());
 
   return (
     <SidebarInset
-      data-wire-route={wireNewsRoute ? "true" : undefined}
-      className={`flex min-h-0 flex-1 flex-col overflow-hidden pb-16 md:pb-0 ${wireRoute ? "" : "lg:mr-64"}`}
+      data-wire-route={editorialNewsRoute ? "true" : undefined}
+      className={`flex min-h-0 flex-1 flex-col overflow-hidden pb-16 md:pb-0 ${editorialFeed ? "" : "lg:mr-64"}`}
     >
       <ReadArticleFilterBar />
       <main className="flex min-h-0 flex-1 overflow-hidden">{children}</main>

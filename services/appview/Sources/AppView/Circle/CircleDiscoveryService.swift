@@ -8,6 +8,7 @@ struct CircleDiscoveryService: Sendable {
   static let pageSize = 50
 
   private let candidateFetcher: any CircleCandidateFetching
+  private let mode: CircleDiscoveryMode
   private let privateState: any CirclePrivateStateStoring
   private let actorHasher: WireActorHasher
   private let cursorCodec: CircleCursorCodec
@@ -20,6 +21,7 @@ struct CircleDiscoveryService: Sendable {
 
   init(
     candidateFetcher: any CircleCandidateFetching,
+    mode: CircleDiscoveryMode,
     privateState: any CirclePrivateStateStoring,
     actorHasher: WireActorHasher,
     cursorCodec: CircleCursorCodec,
@@ -31,6 +33,7 @@ struct CircleDiscoveryService: Sendable {
     feedStore: any WireFeedStore
   ) {
     self.candidateFetcher = candidateFetcher
+    self.mode = mode
     self.privateState = privateState
     self.actorHasher = actorHasher
     self.cursorCodec = cursorCodec
@@ -44,8 +47,15 @@ struct CircleDiscoveryService: Sendable {
 
   func catalog(now: Date) async throws -> CircleCatalogResponse {
     let wireCatalog = try await feedStore.getCatalog(now: now)
+    return Self.catalogResponse(wireCatalog: wireCatalog, enabled: mode.isVisible)
+  }
+
+  static func catalogResponse(
+    wireCatalog: WireFeedCatalog,
+    enabled: Bool
+  ) -> CircleCatalogResponse {
     return CircleCatalogResponse(
-      enabled: true,
+      enabled: enabled,
       available: wireCatalog.available,
       title: "Your Circle",
       subtitle: "Stories shared and discussed by people you follow and the people they follow.",
