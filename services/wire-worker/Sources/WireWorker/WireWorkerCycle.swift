@@ -27,44 +27,54 @@ struct WireWorkerCycle: Sendable {
     guard let labelRefresher else { throw WireLabelQueryError.incompleteResponse }
     try await labelRefresher.refresh(asOf: asOf)
 
-    let localeBuckets = config.languageBucket == "und"
+    let rankingPlans = config.externalSignalMode.generationPlans(baseline: config.ranking)
+    let servingRanking = rankingPlans.first(where: \.activationEligible)?.config ?? config.ranking
+    let localeBuckets =
+      config.languageBucket == "und"
       ? try await store.eligibleLanguageBuckets(
         limit: 12,
         minimumCandidates: WireDataPolicy.minimumLocaleCandidates,
-        ranking: config.ranking,
+        ranking: servingRanking,
         asOf: asOf
       )
       : []
     let buckets = [config.languageBucket] + localeBuckets.filter { $0 != config.languageBucket }
     var primary: (id: UUID, count: Int, activated: Bool)?
     for bucket in buckets {
-      let candidates = try await store.loadCandidates(
-        languageBucket: bucket,
-        limit: config.candidateLimit,
-        asOf: asOf
-      )
-      let result = try WireRanker.rank(candidates: candidates, asOf: asOf, config: config.ranking)
-      let generationID = UUID()
-      let activationFloor = bucket == "und"
+      let activationFloor =
+        bucket == "und"
         ? WireDataPolicy.minimumGlobalCandidates
         : WireDataPolicy.minimumLocaleCandidates
-      let canFillFirstPage = result.items.count >= WireDataPolicy.diverseFirstPageCount
-      let eligible = result.items.count >= activationFloor && canFillFirstPage
-      let activate = (config.mode == .api || config.mode == .visible) && eligible
-      try await store.commit(
-        WireGenerationCommit(
-          generationID: generationID,
-          feedKey: "wire",
+      for plan in rankingPlans {
+        let candidates = try await store.loadCandidates(
           languageBucket: bucket,
-          configVersion: config.ranking.version,
-          generatedAt: asOf,
-          expiresAt: asOf.addingTimeInterval(Double(config.generationRetentionSeconds)),
-          activate: activate,
-          result: result
+          limit: config.candidateLimit,
+          ranking: plan.config,
+          asOf: asOf
         )
-      )
-      if bucket == config.languageBucket {
-        primary = (generationID, result.items.count, activate)
+        let result = try WireRanker.rank(candidates: candidates, asOf: asOf, config: plan.config)
+        let generationID = UUID()
+        let canFillFirstPage = result.items.count >= WireDataPolicy.diverseFirstPageCount
+        let eligible = result.items.count >= activationFloor && canFillFirstPage
+        let activate =
+          plan.activationEligible
+          && (config.mode == .api || config.mode == .visible)
+          && eligible
+        try await store.commit(
+          WireGenerationCommit(
+            generationID: generationID,
+            feedKey: "wire",
+            languageBucket: bucket,
+            configVersion: plan.config.version,
+            generatedAt: asOf,
+            expiresAt: asOf.addingTimeInterval(Double(config.generationRetentionSeconds)),
+            activate: activate,
+            result: result
+          )
+        )
+        if bucket == config.languageBucket, plan.activationEligible {
+          primary = (generationID, result.items.count, activate)
+        }
       }
     }
     guard let primary else { return .off }

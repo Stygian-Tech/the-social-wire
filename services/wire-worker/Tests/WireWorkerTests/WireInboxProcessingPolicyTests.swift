@@ -1,4 +1,5 @@
 import Testing
+
 @testable import WireWorker
 
 @Suite("The Wire inbox processing policy")
@@ -41,6 +42,11 @@ struct WireInboxProcessingPolicyTests {
     #expect(
       !PostgresWireInboxProcessor.retriesUnresolvedReference(
         collection: "app.bsky.feed.repost"
+      )
+    )
+    #expect(
+      !PostgresWireInboxProcessor.retriesUnresolvedReference(
+        collection: WireExternalSignalCollection.marginLike
       )
     )
     #expect(

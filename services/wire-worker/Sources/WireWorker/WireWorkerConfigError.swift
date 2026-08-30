@@ -1,6 +1,7 @@
 enum WireWorkerConfigError: Error, Equatable, Sendable {
   case missingDatabaseURL
   case invalidMode(String)
+  case invalidExternalSignalMode(String)
   case invalidRole(String)
   case invalidBoolean(String)
   case invalidPositiveInteger(String)

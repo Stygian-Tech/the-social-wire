@@ -27,7 +27,11 @@ struct WireWorkerCommand: AsyncParsableCommand {
       role: config.role,
       cleanupEnabled: config.inboxCleanupEnabled
     )
-    if runtimePlan.runsGeneration { try config.ranking.validate() }
+    if runtimePlan.runsGeneration {
+      for plan in config.externalSignalMode.generationPlans(baseline: config.ranking) {
+        try plan.config.validate()
+      }
+    }
     let postgresConfig = try PostgresWireConfig.make(
       from: config.databaseURL,
       maximumConnections: config.postgresMaximumConnections,
@@ -88,6 +92,11 @@ struct WireWorkerCommand: AsyncParsableCommand {
       "Starting The Wire worker",
       metadata: [
         "mode": .string(config.mode.rawValue),
+        "external_signal_mode": .string(config.externalSignalMode.rawValue),
+        "serving_algorithm_version": .string(
+          config.externalSignalMode.generationPlans(baseline: config.ranking)
+            .first(where: \.activationEligible)?.config.version ?? config.ranking.version
+        ),
         "role": .string(config.role.rawValue),
         "inbox_source_scope": .string(
           config.inboxSourceScope.map {
@@ -106,22 +115,28 @@ struct WireWorkerCommand: AsyncParsableCommand {
             readinessProbe: {
               let now = Date()
               if runtimePlan.requiresDrainReadiness {
-                guard await state.isDrainReady(
-                  at: now,
-                  maximumSuccessAge: 60,
-                  maximumOperationAge: 180
-                ) else { throw HealthError.runtimeStale }
+                guard
+                  await state.isDrainReady(
+                    at: now,
+                    maximumSuccessAge: 60,
+                    maximumOperationAge: 180
+                  )
+                else { throw HealthError.runtimeStale }
               }
               if runtimePlan.requiresCleanupReadiness {
-                guard await state.isCleanupReady(
-                  at: now, maximumSuccessAge: 60, maximumOperationAge: 180
-                ) else { throw HealthError.runtimeStale }
+                guard
+                  await state.isCleanupReady(
+                    at: now, maximumSuccessAge: 60, maximumOperationAge: 180
+                  )
+                else { throw HealthError.runtimeStale }
               }
               if runtimePlan.requiresGenerationReadiness {
-                guard await state.isGenerationReady(
-                  at: now,
-                  maximumCycleAge: TimeInterval(max(config.intervalSeconds * 2, 600))
-                ) else { throw HealthError.runtimeStale }
+                guard
+                  await state.isGenerationReady(
+                    at: now,
+                    maximumCycleAge: TimeInterval(max(config.intervalSeconds * 2, 600))
+                  )
+                else { throw HealthError.runtimeStale }
               }
             },
             host: host,
@@ -131,7 +146,8 @@ struct WireWorkerCommand: AsyncParsableCommand {
         }
         if let cycle {
           group.addTask {
-            try await WireWorkerRuntime.runForever(cycle: cycle, state: state, logger: serviceLogger)
+            try await WireWorkerRuntime.runForever(
+              cycle: cycle, state: state, logger: serviceLogger)
           }
         }
         if runtimePlan.runsDrain, let inboxProcessor {
