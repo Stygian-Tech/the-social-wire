@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 import WireCore
+
 @testable import WireWorker
 
 @Suite("The Wire worker cycle")
@@ -40,6 +41,44 @@ struct WireWorkerCycleTests {
       Set(commits[0].result.items.map(\.candidate.canonicalKey))
         == Set((0..<WireDataPolicy.minimumGlobalCandidates).map { "item-\($0)" })
     )
+  }
+
+  @Test("external-signal rollout preserves v10 until rank mode")
+  func externalSignalRollout() async throws {
+    let expected: [(WireExternalSignalMode, [(String, Bool)])] = [
+      (.off, [("wire-v10", true)]),
+      (.shadow, [("wire-v10", true), ("wire-v11", false)]),
+      (.rank, [("wire-v11", true)]),
+    ]
+
+    for (externalSignalMode, expectedCommits) in expected {
+      let store = FakeWireStore(candidates: activationCandidates)
+      _ = try await WireWorkerCycle(
+        store: store,
+        config: config(mode: .visible, externalSignalMode: externalSignalMode),
+        labelRefresher: SuccessfulLabelRefresher()
+      ).run(asOf: now)
+      let commits = await store.snapshot().commits
+      #expect(commits.count == expectedCommits.count)
+      for (commit, expectedCommit) in zip(commits, expectedCommits) {
+        #expect(commit.configVersion == expectedCommit.0)
+        #expect(commit.activate == expectedCommit.1)
+      }
+      #expect(await store.snapshot().loadedRankingVersions == expectedCommits.map(\.0))
+    }
+  }
+
+  @Test("external-signal shadow cannot activate while the feed itself is shadowed")
+  func externalSignalAndFeedShadow() async throws {
+    let store = FakeWireStore(candidates: activationCandidates)
+    _ = try await WireWorkerCycle(
+      store: store,
+      config: config(mode: .shadow, externalSignalMode: .shadow),
+      labelRefresher: SuccessfulLabelRefresher()
+    ).run(asOf: now)
+    let commits = await store.snapshot().commits
+    #expect(commits.map(\.configVersion) == ["wire-v10", "wire-v11"])
+    #expect(commits.allSatisfy { !$0.activate })
   }
 
   @Test("an undersized locale generation cannot move the active pointer")
@@ -132,10 +171,14 @@ struct WireWorkerCycleTests {
     )
   }
 
-  private func config(mode: WireFeedMode) -> WireWorkerConfig {
+  private func config(
+    mode: WireFeedMode,
+    externalSignalMode: WireExternalSignalMode = .off
+  ) -> WireWorkerConfig {
     WireWorkerConfig(
       databaseURL: "postgres://unused/wire",
       mode: mode,
+      externalSignalMode: externalSignalMode,
       role: .combined,
       intervalSeconds: 60,
       candidateLimit: 500,
@@ -178,6 +221,7 @@ private actor FakeWireStore: WireGenerationStore {
     var pingCount: Int
     var cleanupCount: Int
     var loadCount: Int
+    var loadedRankingVersions: [String]
     var commits: [WireGenerationCommit]
   }
 
@@ -186,6 +230,7 @@ private actor FakeWireStore: WireGenerationStore {
   var pingCount = 0
   var cleanupCount = 0
   var loadCount = 0
+  var loadedRankingVersions: [String] = []
   var commits: [WireGenerationCommit] = []
 
   init(candidates: [WireCandidate], languageBuckets: [String] = []) {
@@ -201,13 +246,25 @@ private actor FakeWireStore: WireGenerationStore {
   ) -> [String] {
     Array(languageBuckets.prefix(limit))
   }
-  func loadCandidates(languageBucket: String, limit: Int, asOf: Date) -> [WireCandidate] {
+  func loadCandidates(
+    languageBucket: String,
+    limit: Int,
+    ranking: WireRankingConfig,
+    asOf: Date
+  ) -> [WireCandidate] {
     loadCount += 1
+    loadedRankingVersions.append(ranking.version)
     return Array(candidates.prefix(limit))
   }
   func commit(_ generation: WireGenerationCommit) { commits.append(generation) }
   func deleteExpired(asOf: Date, batchSize: Int) { cleanupCount += 1 }
   func snapshot() -> Snapshot {
-    Snapshot(pingCount: pingCount, cleanupCount: cleanupCount, loadCount: loadCount, commits: commits)
+    Snapshot(
+      pingCount: pingCount,
+      cleanupCount: cleanupCount,
+      loadCount: loadCount,
+      loadedRankingVersions: loadedRankingVersions,
+      commits: commits
+    )
   }
 }

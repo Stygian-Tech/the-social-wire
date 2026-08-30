@@ -18,6 +18,7 @@ struct PostgresWireGenerationStore: WireGenerationStore {
     ranking: WireRankingConfig,
     asOf: Date
   ) async throws -> [String] {
+    let includeExternalSignals = ranking.version == WireRankingConfig.externalSignalVersion
     let oldestCandidate = asOf.addingTimeInterval(-ranking.maximumCandidateAge)
     let freshPublicationCutoff = asOf.addingTimeInterval(-72 * 60 * 60)
     let rows = try await pool.query(
@@ -42,12 +43,17 @@ struct PostgresWireGenerationStore: WireGenerationStore {
               metadata.icon_url) >= 2)
         )
         AND (
-          r.shares_24h >= \(ranking.backfillMinimumHighIntentActors)
-          OR r.recommendations_24h >= \(ranking.backfillMinimumRecommendations)
+          (CASE WHEN \(includeExternalSignals) THEN r.shares_24h ELSE r.baseline_shares_24h END)
+            >= \(ranking.backfillMinimumHighIntentActors)
+          OR (CASE WHEN \(includeExternalSignals) THEN r.recommendations_24h
+                   ELSE r.baseline_recommendations_24h END)
+            >= \(ranking.backfillMinimumRecommendations)
           OR ((i.provenance ? 'standard_site')
             AND COALESCE(i.published_at, i.first_seen_at) >= \(freshPublicationCutoff)
             AND i.source_confidence >= \(ranking.standardSiteMinimumSourceConfidence)
-            AND r.shares_24h >= \(ranking.standardSiteMinimumHighIntentActors))
+            AND (CASE WHEN \(includeExternalSignals) THEN r.shares_24h
+                      ELSE r.baseline_shares_24h END)
+              >= \(ranking.standardSiteMinimumHighIntentActors))
         )
         AND NOT EXISTS (
           SELECT 1 FROM wire_labels l
@@ -70,14 +76,19 @@ struct PostgresWireGenerationStore: WireGenerationStore {
   func loadCandidates(
     languageBucket: String,
     limit: Int,
+    ranking: WireRankingConfig,
     asOf: Date
   ) async throws -> [WireCandidate] {
+    let includeExternalSignals = ranking.version == WireRankingConfig.externalSignalVersion
     let freshPublicationCutoff = asOf.addingTimeInterval(-72 * 60 * 60)
     let rows = try await pool.query(
       """
       SELECT i.canonical_key, i.canonical_url, i.representative_uri, i.source_domain,
              i.publication_id, i.author_key, i.topic_keys::text, i.published_at,
-             i.first_seen_at, i.last_signal_at, i.source_confidence,
+             i.first_seen_at,
+             CASE WHEN \(includeExternalSignals) THEN i.last_signal_at
+                  ELSE r.baseline_last_signal_at END,
+             i.source_confidence,
              (i.provenance ? 'standard_site') AS is_standard_site,
              COALESCE(metadata.source = 'open_graph'
                AND metadata.status IN ('fresh', 'stale')
@@ -86,11 +97,25 @@ struct PostgresWireGenerationStore: WireGenerationStore {
                  metadata.site_name, metadata.author_name, metadata.published_at::TEXT,
                  metadata.icon_url) >= 2, FALSE) AS has_usable_open_graph,
              i.target_kind, i.commercial_class, i.commercial_score,
-             r.distinct_actors_1h, r.distinct_actors_24h, r.distinct_actors_7d,
-             r.signals_1h, r.signals_24h, r.signals_7d, r.communities_24h,
-             r.primary_community_key_hash, r.recommendations_24h,
+             CASE WHEN \(includeExternalSignals) THEN r.distinct_actors_1h
+                  ELSE r.baseline_distinct_actors_1h END,
+             CASE WHEN \(includeExternalSignals) THEN r.distinct_actors_24h
+                  ELSE r.baseline_distinct_actors_24h END,
+             CASE WHEN \(includeExternalSignals) THEN r.distinct_actors_7d
+                  ELSE r.baseline_distinct_actors_7d END,
+             CASE WHEN \(includeExternalSignals) THEN r.signals_1h ELSE r.baseline_signals_1h END,
+             CASE WHEN \(includeExternalSignals) THEN r.signals_24h ELSE r.baseline_signals_24h END,
+             CASE WHEN \(includeExternalSignals) THEN r.signals_7d ELSE r.baseline_signals_7d END,
+             r.communities_24h, r.primary_community_key_hash,
+             CASE WHEN \(includeExternalSignals) THEN r.recommendations_24h
+                  ELSE r.baseline_recommendations_24h END,
              r.positive_feedback_24h, r.negative_feedback_24h,
-             r.shares_1h, r.shares_24h, r.distinct_likers_24h, r.likes_1h, r.likes_24h,
+             CASE WHEN \(includeExternalSignals) THEN r.shares_1h ELSE r.baseline_shares_1h END,
+             CASE WHEN \(includeExternalSignals) THEN r.shares_24h ELSE r.baseline_shares_24h END,
+             CASE WHEN \(includeExternalSignals) THEN r.distinct_likers_24h
+                  ELSE r.baseline_distinct_likers_24h END,
+             CASE WHEN \(includeExternalSignals) THEN r.likes_1h ELSE r.baseline_likes_1h END,
+             CASE WHEN \(includeExternalSignals) THEN r.likes_24h ELSE r.baseline_likes_24h END,
              r.distinct_reposters_24h, r.reposts_1h, r.reposts_24h,
              COALESCE(NULLIF(BTRIM(i.thumbnail_url), '') ~* '^https?://', FALSE)
                AS has_usable_thumbnail
@@ -109,17 +134,29 @@ struct PostgresWireGenerationStore: WireGenerationStore {
         )
       ORDER BY
         CASE
-          WHEN r.shares_24h >= 5 OR r.recommendations_24h >= 2 THEN 0
+          WHEN (CASE WHEN \(includeExternalSignals) THEN r.shares_24h
+                     ELSE r.baseline_shares_24h END) >= 5
+            OR (CASE WHEN \(includeExternalSignals) THEN r.recommendations_24h
+                     ELSE r.baseline_recommendations_24h END) >= 2 THEN 0
           WHEN (i.provenance ? 'standard_site')
             AND i.published_at >= \(freshPublicationCutoff)
-            AND r.shares_24h >= 1 THEN 1
-          WHEN (r.shares_24h >= 3 OR r.recommendations_24h >= 1) THEN 2
+            AND (CASE WHEN \(includeExternalSignals) THEN r.shares_24h
+                      ELSE r.baseline_shares_24h END) >= 1 THEN 1
+          WHEN ((CASE WHEN \(includeExternalSignals) THEN r.shares_24h
+                      ELSE r.baseline_shares_24h END) >= 3
+            OR (CASE WHEN \(includeExternalSignals) THEN r.recommendations_24h
+                     ELSE r.baseline_recommendations_24h END) >= 1) THEN 2
           ELSE 3
         END,
-        r.shares_24h DESC, r.recommendations_24h DESC,
+        (CASE WHEN \(includeExternalSignals) THEN r.shares_24h
+              ELSE r.baseline_shares_24h END) DESC,
+        (CASE WHEN \(includeExternalSignals) THEN r.recommendations_24h
+              ELSE r.baseline_recommendations_24h END) DESC,
         (i.provenance ? 'standard_site') DESC,
         has_usable_thumbnail DESC, has_usable_open_graph DESC,
-        r.signals_1h DESC, i.canonical_key
+        (CASE WHEN \(includeExternalSignals) THEN r.signals_1h
+              ELSE r.baseline_signals_1h END) DESC,
+        i.canonical_key
       LIMIT \(limit)
       """,
       logger: logger
@@ -134,8 +171,9 @@ struct PostgresWireGenerationStore: WireGenerationStore {
       let hasUsableOpenGraph = try cells[12].decode(Bool.self)
       let hasUsableThumbnail = try cells[35].decode(Bool.self)
       let targetKind = WireTargetKind(rawValue: try cells[13].decode(String.self)) ?? .unsupported
-      let commercialClass = WireCommercialClass(
-        rawValue: try cells[14].decode(String.self)) ?? .probableAd
+      let commercialClass =
+        WireCommercialClass(
+          rawValue: try cells[14].decode(String.self)) ?? .probableAd
       let commercialScore = try cells[15].decode(Double.self)
       let rollup = try (
         cells[16].decode(Int.self), cells[17].decode(Int.self),
@@ -347,12 +385,14 @@ struct PostgresWireGenerationStore: WireGenerationStore {
         rankedItems: editionItems,
         talkedAboutAccountCandidates: accountCandidates
       )
-      let topicsByItemID = Dictionary(uniqueKeysWithValues: generation.result.items.map {
-        ($0.candidate.canonicalKey, $0.candidate.topicKeys)
-      })
-      let reasonsByItemID = Dictionary(uniqueKeysWithValues: generation.result.items.map {
-        ($0.candidate.canonicalKey, $0.reasonCodes)
-      })
+      let topicsByItemID = Dictionary(
+        uniqueKeysWithValues: generation.result.items.map {
+          ($0.candidate.canonicalKey, $0.candidate.topicKeys)
+        })
+      let reasonsByItemID = Dictionary(
+        uniqueKeysWithValues: generation.result.items.map {
+          ($0.candidate.canonicalKey, $0.reasonCodes)
+        })
       let outsideUSItems = WireRegionalEditionRanker.downrankAmericanPolitics(
         in: editionItems,
         topicKeys: { topicsByItemID[$0.itemID] ?? [] },
@@ -445,7 +485,8 @@ struct PostgresWireGenerationStore: WireGenerationStore {
         )
       }
       try await insertEdition(edition, namespace: nil)
-      try await insertEdition(outsideUSEdition, namespace: WireViewerRegion.outsideUnitedStates.rawValue)
+      try await insertEdition(
+        outsideUSEdition, namespace: WireViewerRegion.outsideUnitedStates.rawValue)
       for (position, account) in edition.talkedAboutAccounts.enumerated() {
         try await connection.query(
           """
@@ -497,6 +538,7 @@ struct PostgresWireGenerationStore: WireGenerationStore {
       "The Wire language generation committed",
       metadata: [
         "generation_id": .string(generation.generationID.uuidString.lowercased()),
+        "algorithm_version": .string(generation.configVersion),
         "language": .string(generation.languageBucket),
         "candidate_count": .string(String(generation.result.diagnostics.candidateCount)),
         "ranked_count": .string(String(generation.result.items.count)),

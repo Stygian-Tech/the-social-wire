@@ -4,6 +4,7 @@ import WireCore
 struct WireWorkerConfig: Sendable {
   var databaseURL: String
   var mode: WireFeedMode
+  var externalSignalMode: WireExternalSignalMode
   var role: WireWorkerRole
   var intervalSeconds: Int
   var candidateLimit: Int
@@ -27,7 +28,9 @@ struct WireWorkerConfig: Sendable {
   var postgresMaximumConnections: Int
 
   static func load(_ environment: [String: String]) throws -> WireWorkerConfig {
-    guard let databaseURL = environment["DATABASE_URL"]?.trimmingCharacters(in: .whitespacesAndNewlines),
+    guard
+      let databaseURL = environment["DATABASE_URL"]?.trimmingCharacters(
+        in: .whitespacesAndNewlines),
       !databaseURL.isEmpty
     else {
       throw WireWorkerConfigError.missingDatabaseURL
@@ -35,6 +38,12 @@ struct WireWorkerConfig: Sendable {
     let rawMode = environment["WIRE_FEED_MODE"]?.lowercased() ?? WireFeedMode.off.rawValue
     guard let mode = WireFeedMode(rawValue: rawMode) else {
       throw WireWorkerConfigError.invalidMode(rawMode)
+    }
+    let rawExternalSignalMode =
+      environment["WIRE_EXTERNAL_SIGNAL_MODE"]?.lowercased()
+      ?? WireExternalSignalMode.off.rawValue
+    guard let externalSignalMode = WireExternalSignalMode(rawValue: rawExternalSignalMode) else {
+      throw WireWorkerConfigError.invalidExternalSignalMode(rawExternalSignalMode)
     }
     let rawRole = environment["WIRE_WORKER_ROLE"]?.lowercased() ?? WireWorkerRole.combined.rawValue
     guard let role = WireWorkerRole(rawValue: rawRole) else {
@@ -56,13 +65,15 @@ struct WireWorkerConfig: Sendable {
     return WireWorkerConfig(
       databaseURL: databaseURL,
       mode: mode,
+      externalSignalMode: externalSignalMode,
       role: role,
       intervalSeconds: try positiveInt(environment, key: "WIRE_RANK_INTERVAL_SECONDS", default: 60),
       candidateLimit: try positiveInt(environment, key: "WIRE_CANDIDATE_LIMIT", default: 5_000),
       generationRetentionSeconds: try positiveInt(
         environment, key: "WIRE_GENERATION_RETENTION_SECONDS", default: 172_800
       ),
-      retentionBatchSize: try positiveInt(environment, key: "WIRE_RETENTION_BATCH_SIZE", default: 5_000),
+      retentionBatchSize: try positiveInt(
+        environment, key: "WIRE_RETENTION_BATCH_SIZE", default: 5_000),
       languageBucket: environment["WIRE_LANGUAGE_BUCKET"]?.lowercased() ?? "und",
       ranking: WireRankingConfig(),
       actorHMACSecret: actorHMACSecret,

@@ -9,6 +9,18 @@
 - `WIRE_FEED_MODE=api`: commit and serve the API while the catalog keeps navigation hidden (`enabled: true`, `available: false`).
 - `WIRE_FEED_MODE=visible`: commit and serve the API with catalog navigation enabled and available.
 
+External Margin and Semble signals have an independent ranking rollout:
+
+- `WIRE_EXTERNAL_SIGNAL_MODE=off` (default): generate and serve the current `wire-v10` baseline only.
+- `WIRE_EXTERNAL_SIGNAL_MODE=shadow`: keep `wire-v10` activation-eligible and also write a
+  non-activating `wire-v11` generation for the same language buckets and cycle timestamp.
+- `WIRE_EXTERNAL_SIGNAL_MODE=rank`: generate `wire-v11` only and make it activation-eligible.
+
+`WIRE_FEED_MODE` remains the outer kill switch and final serving authority. In particular,
+external-signal `shadow` never moves a serving pointer to v11, while feed `shadow` prevents
+either algorithm version from activating. Roll back external-signal ranking independently by
+setting `WIRE_EXTERNAL_SIGNAL_MODE=shadow` or `off`; no generation deletion is required.
+
 ## Roles
 
 - `WIRE_WORKER_ROLE=combined` (default): drain and clean the inbox, refresh moderation,
@@ -43,6 +55,7 @@ historical generations.
 | --- | --- | --- |
 | `DATABASE_URL` | required | Railway PostgreSQL connection string |
 | `WIRE_FEED_MODE` | `off` | Remote rollout switch (`off|shadow|api|visible`) |
+| `WIRE_EXTERNAL_SIGNAL_MODE` | `off` | Margin/Semble ranking rollout (`off|shadow|rank`) |
 | `WIRE_WORKER_ROLE` | `combined` | Runtime responsibility (`combined|rank|drain`) |
 | `WIRE_RANK_INTERVAL_SECONDS` | `60` | One-minute generation cadence; baseline labels remain throttled to five minutes |
 | `WIRE_CANDIDATE_LIMIT` | `5000` | Maximum rollup rows scored per cycle |

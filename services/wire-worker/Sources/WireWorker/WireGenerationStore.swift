@@ -9,7 +9,12 @@ protocol WireGenerationStore: Sendable {
     ranking: WireRankingConfig,
     asOf: Date
   ) async throws -> [String]
-  func loadCandidates(languageBucket: String, limit: Int, asOf: Date) async throws -> [WireCandidate]
+  func loadCandidates(
+    languageBucket: String,
+    limit: Int,
+    ranking: WireRankingConfig,
+    asOf: Date
+  ) async throws -> [WireCandidate]
   func commit(_ generation: WireGenerationCommit) async throws
   func deleteExpired(asOf: Date, batchSize: Int) async throws
 }

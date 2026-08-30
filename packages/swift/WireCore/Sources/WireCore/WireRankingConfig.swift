@@ -1,6 +1,9 @@
 import Foundation
 
 public struct WireRankingConfig: Codable, Equatable, Sendable {
+  public static let baselineVersion = "wire-v10"
+  public static let externalSignalVersion = "wire-v11"
+
   public var version: String
   public var weights: WireRankingWeights
   public var diversity: WireDiversityPolicy
@@ -24,7 +27,7 @@ public struct WireRankingConfig: Codable, Equatable, Sendable {
   public var missingThumbnailPenalty: Double
 
   public init(
-    version: String = "wire-v10",
+    version: String = WireRankingConfig.baselineVersion,
     weights: WireRankingWeights = WireRankingWeights(),
     diversity: WireDiversityPolicy = WireDiversityPolicy(),
     minimumHighIntentActors: Int = 5,
@@ -69,8 +72,12 @@ public struct WireRankingConfig: Codable, Equatable, Sendable {
     self.missingThumbnailPenalty = missingThumbnailPenalty
   }
 
+  public static func externalSignalsV11() -> WireRankingConfig {
+    WireRankingConfig(version: externalSignalVersion)
+  }
+
   public func validate() throws {
-    guard !version.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+    guard [Self.baselineVersion, Self.externalSignalVersion].contains(version) else {
       throw WireRankingConfigError.invalidVersion
     }
     guard weights.all.allSatisfy({ $0.isFinite && $0 >= 0 }) else {

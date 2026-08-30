@@ -1,4 +1,5 @@
 import Testing
+
 @testable import WireWorker
 
 @Suite("The Wire worker configuration")
@@ -7,6 +8,7 @@ struct WireWorkerConfigTests {
   func offDefault() throws {
     let config = try WireWorkerConfig.load(["DATABASE_URL": "postgres://localhost/wire"])
     #expect(config.mode == .off)
+    #expect(config.externalSignalMode == .off)
     #expect(config.role == .combined)
     #expect(config.intervalSeconds == 60)
     #expect(config.generationRetentionSeconds == 172_800)
@@ -24,6 +26,17 @@ struct WireWorkerConfigTests {
     #expect(config.metadataConcurrency == 8)
     #expect(config.metadataIdleMilliseconds == 1_000)
     #expect(config.postgresMaximumConnections == 12)
+  }
+
+  @Test("loads every external-signal rollout mode case insensitively")
+  func loadsExternalSignalModes() throws {
+    for mode in WireExternalSignalMode.allCases {
+      let config = try WireWorkerConfig.load([
+        "DATABASE_URL": "postgres://localhost/wire",
+        "WIRE_EXTERNAL_SIGNAL_MODE": mode.rawValue.uppercased(),
+      ])
+      #expect(config.externalSignalMode == mode)
+    }
   }
 
   @Test("loads a normalized inbox source-generation allowlist")
@@ -92,6 +105,11 @@ struct WireWorkerConfigTests {
     #expect(throws: WireWorkerConfigError.invalidMode("loud")) {
       try WireWorkerConfig.load(["DATABASE_URL": "postgres://db/wire", "WIRE_FEED_MODE": "loud"])
     }
+    #expect(throws: WireWorkerConfigError.invalidExternalSignalMode("loud")) {
+      try WireWorkerConfig.load([
+        "DATABASE_URL": "postgres://db/wire", "WIRE_EXTERNAL_SIGNAL_MODE": "loud",
+      ])
+    }
     #expect(throws: WireWorkerConfigError.invalidRole("loud")) {
       try WireWorkerConfig.load([
         "DATABASE_URL": "postgres://db/wire", "WIRE_WORKER_ROLE": "loud",
@@ -115,7 +133,8 @@ struct WireWorkerConfigTests {
         "DATABASE_URL": "postgres://db/wire", "WIRE_BASELINE_LABELERS": "not-a-labeler",
       ])
     }
-    #expect(throws: WireWorkerConfigError.invalidLabeler("did:example:test|http://labels.example")) {
+    #expect(throws: WireWorkerConfigError.invalidLabeler("did:example:test|http://labels.example"))
+    {
       try WireWorkerConfig.load([
         "DATABASE_URL": "postgres://db/wire",
         "WIRE_BASELINE_LABELERS": "did:example:test|http://labels.example",
