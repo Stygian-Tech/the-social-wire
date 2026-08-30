@@ -1,0 +1,31 @@
+{
+  "lexicon": 1,
+  "id": "app.thesocialwire.discovery.getCircleCatalog",
+  "defs": {
+    "main": {
+      "type": "query",
+      "description": "Get availability and presentation metadata for the authenticated viewer's Your Circle feed.",
+      "parameters": { "type": "params", "properties": {} },
+      "output": {
+        "encoding": "application/json",
+        "schema": {
+          "type": "object",
+          "required": ["enabled", "available", "title", "subtitle", "supportedLanguages"],
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "available": { "type": "boolean" },
+            "title": { "type": "string", "maxLength": 100 },
+            "subtitle": { "type": "string", "maxLength": 300 },
+            "supportedLanguages": { "type": "array", "maxLength": 12, "items": { "type": "string", "maxLength": 35 } },
+            "latestGenerationId": { "type": "string", "maxLength": 128 },
+            "generatedAt": { "type": "string", "format": "datetime" }
+          }
+        }
+      },
+      "errors": [
+        { "name": "Unauthorized" },
+        { "name": "FeedUnavailable" }
+      ]
+    }
+  }
+}

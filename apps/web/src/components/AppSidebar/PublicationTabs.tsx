@@ -28,6 +28,9 @@ export function PublicationTabs({
   wireEnabled = false,
   wireActive = false,
   onWireSelect,
+  circleEnabled = false,
+  circleActive = false,
+  onCircleSelect,
 }: {
   activeTab: PublicationTab | null;
   onTabChange: (tab: PublicationTab) => void;
@@ -41,6 +44,9 @@ export function PublicationTabs({
   wireEnabled?: boolean;
   wireActive?: boolean;
   onWireSelect?: () => void;
+  circleEnabled?: boolean;
+  circleActive?: boolean;
+  onCircleSelect?: () => void;
 }) {
   return (
     <SidebarGroup className="pb-1 pt-1">
@@ -59,6 +65,21 @@ export function PublicationTabs({
               <Rss />
               <span>The Wire</span>
               <WireBetaBadge className="ml-auto" />
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        ) : null}
+        {circleEnabled ? (
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              type="button"
+              role="tab"
+              aria-label="Your Circle"
+              aria-selected={circleActive}
+              isActive={circleActive}
+              onClick={onCircleSelect}
+            >
+              <Users />
+              <span>Your Circle</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
         ) : null}

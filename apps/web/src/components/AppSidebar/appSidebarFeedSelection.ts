@@ -17,6 +17,7 @@ export function currentAppSidebarFeed({
   if (!pathname.startsWith("/read")) return null;
   if (folderParam) return "subscribed";
   if (feedParam === "wire") return "wire";
+  if (feedParam === "circle") return "circle";
   if (feedParam === "following") return "following";
   if (feedParam === "subscribed") return "subscribed";
   return publicationTab;

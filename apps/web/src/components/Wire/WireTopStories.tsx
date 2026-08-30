@@ -4,9 +4,11 @@ import { WireStoryCard } from "./WireStoryCard";
 export function WireTopStories({
   stories,
   onSelect,
+  editionLabel = "The Wire Edition",
 }: {
   stories: EntryListItem[];
   onSelect: (entryId: string, entry?: EntryListItem) => void;
+  editionLabel?: string;
 }) {
   if (stories.length === 0) return null;
   const [lead, ...supporting] = stories;
@@ -14,7 +16,7 @@ export function WireTopStories({
     <section aria-labelledby="wire-top-stories" className="px-4 pt-4 sm:px-5 sm:pt-5">
       <div className="mb-3">
         <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-[var(--purple-foreground)]">
-          The Wire Edition
+          {editionLabel}
         </p>
         <h2 id="wire-top-stories" className="text-xl font-bold text-foreground">
           Top Stories

@@ -5,6 +5,7 @@ enum GatewayServiceConfigError: Error, Equatable {
   case missingPDSAttestationReceiptSecret
   case invalidPDSAttestationReceiptSecret
   case invalidWireFeedMode(String)
+  case invalidCircleFeedMode(String)
 }
 
 /// Gateway-specific configuration (PDS write-through, sync cache, optional AppView read proxy).
@@ -31,6 +32,7 @@ struct GatewayServiceConfig: Sendable {
   /// Shared across Gateway replicas so short-lived PDS attestations remain portable.
   let pdsAttestationReceipt: ATProtoSessionAttestationReceipt
   let wireFeedMode: WireFeedMode
+  let circleFeedMode: WireFeedMode
 
   enum CacheBackend: Sendable {
     case sqlite(path: String)
@@ -69,6 +71,10 @@ struct GatewayServiceConfig: Sendable {
     guard let wireFeedMode = WireFeedMode(rawValue: rawWireFeedMode) else {
       throw GatewayServiceConfigError.invalidWireFeedMode(rawWireFeedMode)
     }
+    let rawCircleFeedMode = env["CIRCLE_FEED_MODE"]?.lowercased() ?? WireFeedMode.off.rawValue
+    guard let circleFeedMode = WireFeedMode(rawValue: rawCircleFeedMode) else {
+      throw GatewayServiceConfigError.invalidCircleFeedMode(rawCircleFeedMode)
+    }
     return GatewayServiceConfig(
       core: core,
       cacheBackend: backend,
@@ -77,7 +83,8 @@ struct GatewayServiceConfig: Sendable {
       charybdisBaseURL: charybdisBaseURL,
       latrIosProxy: latrIosProxy,
       pdsAttestationReceipt: pdsAttestationReceipt,
-      wireFeedMode: wireFeedMode
+      wireFeedMode: wireFeedMode,
+      circleFeedMode: circleFeedMode
     )
   }
 

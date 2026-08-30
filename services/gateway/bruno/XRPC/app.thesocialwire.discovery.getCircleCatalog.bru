@@ -1,0 +1,21 @@
+meta {
+  name: XRPC app.thesocialwire.discovery.getCircleCatalog
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/xrpc/app.thesocialwire.discovery.getCircleCatalog
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+  Accept: application/json
+}
+
+docs {
+  Gateway proxy for the authenticated viewer's Your Circle catalog.
+}

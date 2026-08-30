@@ -35,7 +35,7 @@ enum WireCorpusEdgeRouterBuilder {
     protected.get("/internal/wire/v1/contract") { request, _ async throws -> Response in
       try validateQuery(request.uri.query, allowed: [])
       try await store.ping()
-      return try response(["contractVersion": 2])
+      return try response(["contractVersion": 3])
     }
     protected.get("/internal/wire/v1/feed") { request, _ async throws -> Response in
       try validateQuery(
@@ -99,6 +99,44 @@ enum WireCorpusEdgeRouterBuilder {
       try validateQuery(request.uri.query, allowed: [])
       return try response(await store.catalog(now: Date()))
     }
+    protected.post("/internal/wire/v1/circle-candidates") { request, _ async throws -> Response in
+      try validateQuery(request.uri.query, allowed: [])
+      let bodyBuffer = try await request.body.collect(upTo: 1 * 1_024 * 1_024)
+      let body = Data(buffer: bodyBuffer)
+      guard
+        let digestName = HTTPField.Name(WireCorpusServiceTrust.bodyDigestHeaderName),
+        let presentedDigest = request.headers[digestName],
+        presentedDigest == WireCorpusServiceTrust.bodyDigest(body)
+      else {
+        throw WireCorpusEdgeRequestError.unauthorized
+      }
+      let decoder = JSONDecoder()
+      decoder.dateDecodingStrategy = .iso8601
+      guard let input = try? decoder.decode(WireCorpusCandidateRequest.self, from: body) else {
+        throw WireCorpusEdgeRequestError.invalidRequest
+      }
+      let uniqueActors = Array(Set(input.actorHashes))
+      let now = Date()
+      guard !uniqueActors.isEmpty,
+        uniqueActors.count == input.actorHashes.count,
+        uniqueActors.count <= WireCorpusCandidateRequest.maximumActorHashesPerRequest,
+        uniqueActors.allSatisfy(validActorHash),
+        (1...WireCorpusCandidateRequest.maximumStoriesPerRequest).contains(input.limit),
+        input.since <= now.addingTimeInterval(60),
+        input.since >= now.addingTimeInterval(-7 * 24 * 60 * 60)
+      else {
+        throw WireCorpusEdgeRequestError.invalidRequest
+      }
+      return try response(
+        await store.circleCandidates(
+          actorHashes: uniqueActors,
+          language: primaryLanguage(input.language),
+          since: input.since,
+          limit: input.limit,
+          now: now
+        )
+      )
+    }
     return router
   }
 
@@ -109,7 +147,7 @@ enum WireCorpusEdgeRouterBuilder {
     var headers = HTTPFields()
     headers[.contentType] = "application/json"
     headers[.cacheControl] = "no-store"
-    if let name = HTTPField.Name("X-Wire-Corpus-Contract") { headers[name] = "2" }
+    if let name = HTTPField.Name("X-Wire-Corpus-Contract") { headers[name] = "3" }
     return Response(status: .ok, headers: headers, body: .init(byteBuffer: ByteBuffer(data: body)))
   }
 
@@ -146,6 +184,13 @@ enum WireCorpusEdgeRouterBuilder {
       else {
         throw WireCorpusEdgeRequestError.invalidRequest
       }
+    }
+  }
+
+  private static func validActorHash(_ value: String) -> Bool {
+    guard value.utf8.count == 67, value.hasPrefix("h1:") else { return false }
+    return value.dropFirst(3).utf8.allSatisfy { byte in
+      (48...57).contains(byte) || (97...102).contains(byte)
     }
   }
 }

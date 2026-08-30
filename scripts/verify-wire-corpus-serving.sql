@@ -4,11 +4,13 @@ DO $$
 DECLARE
   contract_version INTEGER;
   forbidden_columns INTEGER;
+  circle_required_columns INTEGER;
+  circle_forbidden_columns INTEGER;
 BEGIN
   SELECT contract.contract_version
   INTO contract_version
   FROM wire_serving.contract AS contract;
-  IF contract_version <> 2 THEN
+  IF contract_version <> 3 THEN
     RAISE EXCEPTION 'unexpected wire_serving contract version: %', contract_version;
   END IF;
 
@@ -21,9 +23,38 @@ BEGIN
       'source_confidence', 'label_count', 'target_count', 'actor_key_hash',
       'community_key_hash', 'speaker_key_hash', 'story_count', 'speaker_count',
       'best_story_rank', 'latest_mention_at', 'payload'
+    )
+    AND NOT (
+      table_name = 'circle_signal_facts'
+      AND column_name = 'actor_key_hash'
     );
   IF forbidden_columns <> 0 THEN
     RAISE EXCEPTION 'wire_serving exposes forbidden internal columns';
+  END IF;
+
+  SELECT COUNT(*)
+  INTO circle_required_columns
+  FROM information_schema.columns
+  WHERE table_schema = 'wire_serving'
+    AND table_name = 'circle_signal_facts'
+    AND column_name IN (
+      'actor_key_hash', 'signal_kind', 'source_collection', 'source_action',
+      'source_uri', 'occurred_at'
+    );
+  IF circle_required_columns <> 6 THEN
+    RAISE EXCEPTION 'circle_signal_facts is missing trusted candidate fields';
+  END IF;
+
+  SELECT COUNT(*)
+  INTO circle_forbidden_columns
+  FROM information_schema.columns
+  WHERE table_schema = 'wire_serving'
+    AND table_name = 'circle_signal_facts'
+    AND column_name IN (
+      'actor_did', 'viewer_did', 'ranking_score', 'score', 'diagnostics'
+    );
+  IF circle_forbidden_columns <> 0 THEN
+    RAISE EXCEPTION 'circle_signal_facts exposes raw identity or ranking data';
   END IF;
 END
 $$;
@@ -50,6 +81,8 @@ SELECT generation_id, module_key, module_position, canonical_key, publication_ke
 FROM wire_serving.edition_module_items LIMIT 1;
 SELECT generation_id, position, subject_did, handle
 FROM wire_serving.edition_talked_accounts LIMIT 1;
+SELECT canonical_key, actor_key_hash, signal_kind, source_uri, occurred_at
+FROM wire_serving.circle_signal_facts LIMIT 1;
 
 DO $$
 BEGIN

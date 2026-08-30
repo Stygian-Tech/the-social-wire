@@ -98,6 +98,15 @@ enum GatewayRouterBuilder {
           logger: logger
         ).register(on: optionalAuthentication)
       }
+      if config.circleFeedMode.servesAPI {
+        CircleProxyRoutes(
+          baseURL: appViewBase,
+          internalSecret: config.core.gatewayAppViewInternalSecret,
+          httpClient: httpClient,
+          limiter: wireLimiter,
+          logger: logger
+        ).register(on: protected)
+      }
     }
 
     if let operationsBase = config.operationsBaseURL {

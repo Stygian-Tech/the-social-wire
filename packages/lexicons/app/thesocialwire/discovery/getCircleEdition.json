@@ -1,0 +1,27 @@
+{
+  "lexicon": 1,
+  "id": "app.thesocialwire.discovery.getCircleEdition",
+  "defs": {
+    "main": {
+      "type": "query",
+      "description": "Get the generation-bound Your Circle edition for the authenticated viewer.",
+      "parameters": {
+        "type": "params",
+        "properties": {
+          "lang": { "type": "string", "maxLength": 35 },
+          "cursor": { "type": "string", "maxLength": 4096 }
+        }
+      },
+      "output": {
+        "encoding": "application/json",
+        "schema": { "type": "ref", "ref": "app.thesocialwire.discovery.defs#circleEdition" }
+      },
+      "errors": [
+        { "name": "InvalidRequest" },
+        { "name": "Unauthorized" },
+        { "name": "RateLimitExceeded" },
+        { "name": "FeedUnavailable" }
+      ]
+    }
+  }
+}

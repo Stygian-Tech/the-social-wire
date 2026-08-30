@@ -14,6 +14,8 @@ enum AppViewRouterBuilder {
     thinAppViewStore: any ThinAppViewStore,
     wireFeedStore: (any WireFeedStore)? = nil,
     wireModerationService: WireViewerModerationService? = nil,
+    circleDiscoveryService: CircleDiscoveryService? = nil,
+    circlePrivateState: (any CirclePrivateStateStoring)? = nil,
     projectionCache: (any AppViewProjectionCacheStore)?,
     operationsStore: (any OperationsStore)? = nil,
     telemetry: OperationsTelemetryBuffer? = nil,
@@ -71,6 +73,10 @@ enum AppViewRouterBuilder {
       ).register(on: wire)
     }
 
+    if let circleDiscoveryService, config.circle.mode.servesAPI {
+      CircleDiscoveryRoutes(service: circleDiscoveryService).register(on: protected)
+    }
+
     guard config.thinAppView.enabled else { return router }
 
     let projection = PublicationProjectionService(
@@ -119,6 +125,7 @@ enum AppViewRouterBuilder {
       store: thinAppViewStore,
       projectionCache: projectionCache,
       telemetry: telemetry,
+      circlePrivateState: circlePrivateState,
       logger: logger
     )
     let enrollService = ThinAppViewEnrollService(

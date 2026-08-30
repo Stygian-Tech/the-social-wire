@@ -8,6 +8,7 @@ public enum WireCorpusServiceTrust {
   public static let timestampHeaderName = "X-Wire-Corpus-Timestamp"
   public static let nonceHeaderName = "X-Wire-Corpus-Nonce"
   public static let signatureHeaderName = "X-Wire-Corpus-Signature"
+  public static let bodyDigestHeaderName = "X-Wire-Corpus-Body-SHA256"
   public static let maximumClockSkew: TimeInterval = 60
 
   public static func signedHeaders(
@@ -15,10 +16,12 @@ public enum WireCorpusServiceTrust {
     serviceID: String,
     method: String,
     target: String,
+    bodyDigest: String? = nil,
     timestamp: Date = Date(),
     nonce: String = UUID().uuidString.lowercased()
   ) throws -> WireCorpusServiceHeaders {
     try validate(secret: secret, serviceID: serviceID, target: target)
+    try validateBodyDigest(bodyDigest)
     try validateNonce(nonce)
     let seconds = Int64(timestamp.timeIntervalSince1970.rounded(.down))
     let timestampValue = String(seconds)
@@ -28,13 +31,15 @@ public enum WireCorpusServiceTrust {
       method: method,
       target: target,
       timestamp: timestampValue,
-      nonce: nonce
+      nonce: nonce,
+      bodyDigest: bodyDigest
     )
     return WireCorpusServiceHeaders(
       serviceID: serviceID,
       timestamp: timestampValue,
       nonce: nonce,
-      signature: signature
+      signature: signature,
+      bodyDigest: bodyDigest
     )
   }
 
@@ -47,6 +52,7 @@ public enum WireCorpusServiceTrust {
     timestamp: String,
     nonce: String,
     signature presentedSignature: String,
+    bodyDigest: String? = nil,
     now: Date = Date()
   ) throws {
     try validate(secret: secret, serviceID: expectedServiceID, target: target)
@@ -61,6 +67,7 @@ public enum WireCorpusServiceTrust {
       throw WireCorpusServiceTrustError.expiredTimestamp
     }
     try validateNonce(nonce)
+    try validateBodyDigest(bodyDigest)
     guard let decodedSignature = decodeBase64URL(presentedSignature) else {
       throw WireCorpusServiceTrustError.invalidSignature
     }
@@ -71,7 +78,8 @@ public enum WireCorpusServiceTrust {
         method: method,
         target: target,
         timestamp: timestamp,
-        nonce: nonce
+        nonce: nonce,
+        bodyDigest: bodyDigest
       ).utf8
     )
     guard HMAC<SHA256>.isValidAuthenticationCode(decodedSignature, authenticating: message, using: key)
@@ -107,7 +115,8 @@ public enum WireCorpusServiceTrust {
     method: String,
     target: String,
     timestamp: String,
-    nonce: String
+    nonce: String,
+    bodyDigest: String?
   ) -> String {
     let key = SymmetricKey(data: Data(secret.utf8))
     let message = Data(
@@ -116,7 +125,8 @@ public enum WireCorpusServiceTrust {
         method: method,
         target: target,
         timestamp: timestamp,
-        nonce: nonce
+        nonce: nonce,
+        bodyDigest: bodyDigest
       ).utf8
     )
     let code = HMAC<SHA256>.authenticationCode(for: message, using: key)
@@ -131,9 +141,28 @@ public enum WireCorpusServiceTrust {
     method: String,
     target: String,
     timestamp: String,
-    nonce: String
+    nonce: String,
+    bodyDigest: String?
   ) -> String {
-    "wire-corpus-v1\n\(serviceID)\n\(timestamp)\n\(nonce)\n\(method.uppercased())\n\(target)"
+    guard let bodyDigest else {
+      return "wire-corpus-v1\n\(serviceID)\n\(timestamp)\n\(nonce)\n\(method.uppercased())\n\(target)"
+    }
+    return "wire-corpus-v2\n\(serviceID)\n\(timestamp)\n\(nonce)\n\(method.uppercased())\n\(target)\n\(bodyDigest)"
+  }
+
+  public static func bodyDigest(_ data: Data) -> String {
+    SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+  }
+
+  private static func validateBodyDigest(_ bodyDigest: String?) throws {
+    guard let bodyDigest else { return }
+    guard bodyDigest.utf8.count == 64,
+      bodyDigest.utf8.allSatisfy({ byte in
+        (48...57).contains(byte) || (97...102).contains(byte)
+      })
+    else {
+      throw WireCorpusServiceTrustError.invalidSignature
+    }
   }
 
   private static func validateNonce(_ nonce: String) throws {

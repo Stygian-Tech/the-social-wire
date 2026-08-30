@@ -138,6 +138,120 @@
         },
         "moreCursor": { "type": "string", "maxLength": 4096 }
       }
+    },
+    "circlePublicIdentity": {
+      "type": "object",
+      "required": ["did", "handle"],
+      "properties": {
+        "did": { "type": "string", "format": "did", "maxLength": 2048 },
+        "handle": { "type": "string", "maxLength": 253 },
+        "displayName": { "type": "string", "maxLength": 640 },
+        "avatarUrl": { "type": "string", "format": "uri", "maxLength": 8192 }
+      }
+    },
+    "circleSharer": {
+      "type": "object",
+      "required": ["identity", "relationship", "action", "sourceUri", "timestamp"],
+      "properties": {
+        "identity": { "type": "ref", "ref": "app.thesocialwire.discovery.defs#circlePublicIdentity" },
+        "relationship": { "type": "string", "knownValues": ["direct", "one_hop"] },
+        "action": { "type": "string", "knownValues": ["recommended", "shared", "discussed"] },
+        "sourceUri": { "type": "string", "format": "at-uri", "maxLength": 2048 },
+        "timestamp": { "type": "string", "format": "datetime" }
+      }
+    },
+    "circleStory": {
+      "type": "object",
+      "required": ["storyId", "canonicalUrl", "title", "source", "reasons", "discussionCount", "sharers"],
+      "properties": {
+        "storyId": { "type": "string", "maxLength": 128 },
+        "canonicalUrl": { "type": "string", "format": "uri", "maxLength": 8192 },
+        "representativeUri": { "type": "string", "format": "at-uri", "maxLength": 2048 },
+        "title": { "type": "string", "maxLength": 1000 },
+        "summary": { "type": "string", "maxLength": 10000 },
+        "publishedAt": { "type": "string", "format": "datetime" },
+        "thumbnailUrl": { "type": "string", "format": "uri", "maxLength": 8192 },
+        "source": { "type": "ref", "ref": "app.thesocialwire.discovery.defs#sourceAttribution" },
+        "reasons": {
+          "type": "array",
+          "maxLength": 3,
+          "items": {
+            "type": "string",
+            "maxLength": 64,
+            "knownValues": ["shared_by_following", "shared_by_extended_circle", "popular_in_your_circle", "discussed_in_your_circle", "fresh_from_your_circle"]
+          }
+        },
+        "discussionCount": { "type": "integer", "minimum": 0 },
+        "sharers": {
+          "type": "array",
+          "maxLength": 8,
+          "items": { "type": "ref", "ref": "app.thesocialwire.discovery.defs#circleSharer" }
+        }
+      }
+    },
+    "circlePublicationSpotlight": {
+      "type": "object",
+      "required": ["id", "publication", "storyIds"],
+      "properties": {
+        "id": { "type": "string", "maxLength": 2048 },
+        "publication": { "type": "ref", "ref": "app.thesocialwire.discovery.defs#sourceAttribution" },
+        "storyIds": {
+          "type": "array",
+          "minLength": 2,
+          "maxLength": 3,
+          "items": { "type": "string", "maxLength": 128 }
+        }
+      }
+    },
+    "circleStoryRail": {
+      "type": "object",
+      "required": ["id", "title", "storyIds"],
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "title": { "type": "string", "maxLength": 160 },
+        "storyIds": {
+          "type": "array",
+          "minLength": 1,
+          "maxLength": 50,
+          "items": { "type": "string", "maxLength": 128 }
+        }
+      }
+    },
+    "circleEdition": {
+      "type": "object",
+      "required": [
+        "editionVersion", "generationId", "generatedAt", "language", "source", "degraded",
+        "stories", "topStoryIds", "publicationSpotlights", "storyRails", "trendingStoryIds"
+      ],
+      "properties": {
+        "editionVersion": { "type": "string", "maxLength": 128 },
+        "generationId": { "type": "string", "maxLength": 128 },
+        "generatedAt": { "type": "string", "format": "datetime" },
+        "language": { "type": "string", "maxLength": 35 },
+        "source": { "type": "string", "knownValues": ["ranked", "stale_generation", "simplified_fallback"] },
+        "degraded": { "type": "boolean" },
+        "stories": {
+          "type": "array", "maxLength": 50,
+          "items": { "type": "ref", "ref": "app.thesocialwire.discovery.defs#circleStory" }
+        },
+        "topStoryIds": {
+          "type": "array", "maxLength": 4,
+          "items": { "type": "string", "maxLength": 128 }
+        },
+        "publicationSpotlights": {
+          "type": "array", "maxLength": 6,
+          "items": { "type": "ref", "ref": "app.thesocialwire.discovery.defs#circlePublicationSpotlight" }
+        },
+        "storyRails": {
+          "type": "array", "maxLength": 6,
+          "items": { "type": "ref", "ref": "app.thesocialwire.discovery.defs#circleStoryRail" }
+        },
+        "trendingStoryIds": {
+          "type": "array", "maxLength": 10,
+          "items": { "type": "string", "maxLength": 128 }
+        },
+        "moreCursor": { "type": "string", "maxLength": 4096 }
+      }
     }
   }
 }
