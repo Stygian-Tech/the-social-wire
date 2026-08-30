@@ -27,7 +27,10 @@ struct WireWorkerConfig: Sendable {
   var metadataIdleMilliseconds: Int
   var postgresMaximumConnections: Int
 
-  static func load(_ environment: [String: String]) throws -> WireWorkerConfig {
+  static func load(
+    _ environment: [String: String],
+    role roleOverride: WireWorkerRole? = nil
+  ) throws -> WireWorkerConfig {
     guard
       let databaseURL = environment["DATABASE_URL"]?.trimmingCharacters(
         in: .whitespacesAndNewlines),
@@ -45,9 +48,16 @@ struct WireWorkerConfig: Sendable {
     guard let externalSignalMode = WireExternalSignalMode(rawValue: rawExternalSignalMode) else {
       throw WireWorkerConfigError.invalidExternalSignalMode(rawExternalSignalMode)
     }
-    let rawRole = environment["WIRE_WORKER_ROLE"]?.lowercased() ?? WireWorkerRole.combined.rawValue
-    guard let role = WireWorkerRole(rawValue: rawRole) else {
-      throw WireWorkerConfigError.invalidRole(rawRole)
+    let role: WireWorkerRole
+    if let roleOverride {
+      role = roleOverride
+    } else {
+      let rawRole =
+        environment["WIRE_WORKER_ROLE"]?.lowercased() ?? WireWorkerRole.combined.rawValue
+      guard let configuredRole = WireWorkerRole(rawValue: rawRole) else {
+        throw WireWorkerConfigError.invalidRole(rawRole)
+      }
+      role = configuredRole
     }
 
     let actorHMACSecret = environment["WIRE_ACTOR_HMAC_SECRET"]?

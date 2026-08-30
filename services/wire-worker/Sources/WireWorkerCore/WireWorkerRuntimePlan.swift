@@ -13,10 +13,11 @@ struct WireWorkerRuntimePlan: Equatable, Sendable {
     let feedEnabled = mode != .off
     runsGeneration = role.runsGeneration
     runsDrain = feedEnabled && role.runsDrain
-    runsCleanup = feedEnabled && cleanupEnabled
+    runsCleanup = feedEnabled && cleanupEnabled && role.runsGeneration
     // Enrichment is generation input, not inbox acknowledgement. Keep it on the
     // singleton rank lane so horizontally scaled drain replicas devote their
-    // database pool and HTTP capacity to reducing inbox lag.
+    // database pool and HTTP capacity to reducing inbox lag. Terminal cleanup
+    // follows the same ownership boundary.
     runsMetadataEnrichment = feedEnabled && runsGeneration
     requiresGenerationReadiness = feedEnabled && runsGeneration
     requiresDrainReadiness = runsDrain

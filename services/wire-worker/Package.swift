@@ -4,6 +4,10 @@ import PackageDescription
 let package = Package(
   name: "SocialWireWireWorker",
   platforms: [.macOS(.v14)],
+  products: [
+    .library(name: "WireWorkerCore", targets: ["WireWorkerCore"]),
+    .executable(name: "WireWorker", targets: ["WireWorker"]),
+  ],
   dependencies: [
     .package(path: "../../packages/swift/WireCore"),
     .package(url: "https://github.com/swift-server/async-http-client.git", from: "1.21.0"),
@@ -15,12 +19,11 @@ let package = Package(
     .package(url: "https://github.com/vapor/postgres-nio.git", from: "1.21.0"),
   ],
   targets: [
-    .executableTarget(
-      name: "WireWorker",
+    .target(
+      name: "WireWorkerCore",
       dependencies: [
         "WireCore",
         .product(name: "AsyncHTTPClient", package: "async-http-client"),
-        .product(name: "ArgumentParser", package: "swift-argument-parser"),
         .product(name: "Crypto", package: "swift-crypto"),
         .product(name: "Logging", package: "swift-log"),
         .product(name: "NIOCore", package: "swift-nio"),
@@ -28,6 +31,19 @@ let package = Package(
         .product(name: "NIOPosix", package: "swift-nio"),
         .product(name: "NIOSSL", package: "swift-nio-ssl"),
         .product(name: "PostgresNIO", package: "postgres-nio"),
+      ],
+      path: "Sources/WireWorkerCore",
+      swiftSettings: [
+        .swiftLanguageMode(.v6),
+        .unsafeFlags(["-warnings-as-errors"]),
+      ]
+    ),
+    .executableTarget(
+      name: "WireWorker",
+      dependencies: [
+        "WireWorkerCore",
+        .product(name: "ArgumentParser", package: "swift-argument-parser"),
+        .product(name: "Logging", package: "swift-log"),
       ],
       path: "Sources/WireWorker",
       swiftSettings: [
@@ -38,7 +54,7 @@ let package = Package(
     .testTarget(
       name: "WireWorkerTests",
       dependencies: [
-        "WireWorker", "WireCore",
+        "WireWorkerCore", "WireCore",
         .product(name: "PostgresNIO", package: "postgres-nio"),
         .product(name: "Logging", package: "swift-log"),
       ],

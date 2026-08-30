@@ -11,12 +11,12 @@ struct WireExternalSignalRollupContractTests {
       .deletingLastPathComponent()
     let processor = try String(
       contentsOf: root.appendingPathComponent(
-        "Sources/WireWorker/PostgresWireInboxProcessor.swift"),
+        "Sources/WireWorkerCore/PostgresWireInboxProcessor.swift"),
       encoding: .utf8
     )
     let store = try String(
       contentsOf: root.appendingPathComponent(
-        "Sources/WireWorker/PostgresWireGenerationStore.swift"),
+        "Sources/WireWorkerCore/PostgresWireGenerationStore.swift"),
       encoding: .utf8
     )
 
