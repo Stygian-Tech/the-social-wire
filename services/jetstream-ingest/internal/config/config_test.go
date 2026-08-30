@@ -187,11 +187,13 @@ func TestLoadBoundedWireSnapshotUsesDistinctGenerationWithoutChangingFingerprint
 	t.Setenv("JETSTREAM_BOOTSTRAP_AFTER_SEQ", "100")
 	t.Setenv("JETSTREAM_REPLAY_BEFORE_SEQ", "200")
 	t.Setenv("JETSTREAM_REPLAY_SNAPSHOT_ONLY", "true")
+	t.Setenv("JETSTREAM_EXIT_AFTER_SNAPSHOT", "true")
 	bounded, err := Load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bounded.ReplayBeforeSeq == nil || *bounded.ReplayBeforeSeq != 200 || !bounded.ReplaySnapshotOnly {
+	if bounded.ReplayBeforeSeq == nil || *bounded.ReplayBeforeSeq != 200 ||
+		!bounded.ReplaySnapshotOnly || !bounded.ExitAfterSnapshot {
 		t.Fatalf("bounded replay = before %v snapshot %t", bounded.ReplayBeforeSeq, bounded.ReplaySnapshotOnly)
 	}
 	if bounded.SourceGeneration == base.SourceGeneration {
@@ -239,6 +241,11 @@ func TestBoundedSnapshotConfigurationFailsClosed(t *testing.T) {
 			name:   "snapshot flag without before",
 			mutate: func(cfg *Config) { cfg.ReplaySnapshotOnly = true },
 			want:   "required together",
+		},
+		{
+			name:   "exit without snapshot",
+			mutate: func(cfg *Config) { cfg.ExitAfterSnapshot = true },
+			want:   "requires bounded snapshot replay",
 		},
 		{
 			name: "inverted range",
@@ -315,6 +322,23 @@ func TestBoundedSnapshotConfigurationFailsClosed(t *testing.T) {
 				t.Fatalf("validation error = %v, want %q", err, test.want)
 			}
 		})
+	}
+}
+
+func TestLoadControllerRejectsExitAfterSnapshotInSupervisedLane(t *testing.T) {
+	t.Setenv("APP_ENV", "dev")
+	t.Setenv("DATABASE_URL", "postgres://example.invalid/socialwire")
+	t.Setenv("JETSTREAM_API_KEY", "test-key")
+	t.Setenv("JETSTREAM_WIRE_ENABLED", "true")
+	t.Setenv("JETSTREAM_WIRE_SOURCE_GENERATION", "wire-snapshot-generation")
+	t.Setenv("JETSTREAM_WIRE_BOOTSTRAP_AFTER_SEQ", "100")
+	t.Setenv("JETSTREAM_WIRE_REPLAY_BEFORE_SEQ", "200")
+	t.Setenv("JETSTREAM_WIRE_REPLAY_SNAPSHOT_ONLY", "true")
+	t.Setenv("JETSTREAM_WIRE_EXIT_AFTER_SNAPSHOT", "true")
+	t.Setenv("JETSTREAM_WIRE_ADMISSION_RATE_PER_SECOND", "600")
+
+	if _, err := LoadController(); err == nil || !strings.Contains(err.Error(), "legacy single-lane") {
+		t.Fatalf("load error = %v", err)
 	}
 }
 

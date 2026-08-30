@@ -94,6 +94,7 @@ type Config struct {
 	BootstrapAfterSeq    *uint64
 	ReplayBeforeSeq      *uint64
 	ReplaySnapshotOnly   bool
+	ExitAfterSnapshot    bool
 }
 
 // Lane is one independently leased Jetstream ingestion pipeline.
@@ -168,6 +169,13 @@ func LoadController() (ControllerConfig, error) {
 		}
 		controller.Lanes = append(controller.Lanes, Lane{Name: WireLaneName, Config: cfg})
 	}
+	for _, lane := range controller.Lanes {
+		if lane.Config.ExitAfterSnapshot {
+			return ControllerConfig{}, errors.New(
+				"snapshot jobs that exit are supported only by legacy single-lane configuration",
+			)
+		}
+	}
 	return controller, nil
 }
 
@@ -186,6 +194,10 @@ func loadLane(pipelineMode, prefix string, legacy bool) (Config, error) {
 	}
 	collections := envCSV(prefix+"COLLECTIONS", defaultCollections)
 	replaySnapshotOnly, err := envBool(prefix+"REPLAY_SNAPSHOT_ONLY", false)
+	if err != nil {
+		return Config{}, err
+	}
+	exitAfterSnapshot, err := envBool(prefix+"EXIT_AFTER_SNAPSHOT", false)
 	if err != nil {
 		return Config{}, err
 	}
@@ -226,6 +238,7 @@ func loadLane(pipelineMode, prefix string, legacy bool) (Config, error) {
 		WireAdmissionRate:    envFloat64(wireVariable(prefix, legacy, "ADMISSION_RATE_PER_SECOND"), 0),
 		WireAdmissionBurst:   envInt(wireVariable(prefix, legacy, "ADMISSION_BURST_EVENTS"), 1),
 		ReplaySnapshotOnly:   replaySnapshotOnly,
+		ExitAfterSnapshot:    exitAfterSnapshot,
 	}
 	if value := strings.TrimSpace(os.Getenv(prefix + "BOOTSTRAP_AFTER_SEQ")); value != "" {
 		seq, err := strconv.ParseUint(value, 10, 64)
@@ -334,6 +347,11 @@ func (c Config) Validate() error {
 	if (c.ReplayBeforeSeq != nil) != c.ReplaySnapshotOnly {
 		problems = append(problems, errors.New(
 			"JETSTREAM_REPLAY_BEFORE_SEQ and JETSTREAM_REPLAY_SNAPSHOT_ONLY=true are required together",
+		))
+	}
+	if c.ExitAfterSnapshot && !c.ReplaySnapshotOnly {
+		problems = append(problems, errors.New(
+			"JETSTREAM_EXIT_AFTER_SNAPSHOT=true requires bounded snapshot replay",
 		))
 	}
 	if c.ReplayBeforeSeq != nil {
