@@ -1,7 +1,7 @@
 import Foundation
 import Testing
 
-@testable import WireWorker
+@testable import WireWorkerCore
 
 @Suite("Standard Site document resolution")
 struct WireStandardSiteDocumentResolverTests {

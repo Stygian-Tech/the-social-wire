@@ -106,6 +106,10 @@ Bounded Wire snapshots additionally require all of:
   bounds must fit PostgreSQL's signed 64-bit cursor range.
 - `JETSTREAM_REPLAY_SNAPSHOT_ONLY=true` — required with the upper bound and
   rejected when the upper bound is absent.
+- `JETSTREAM_EXIT_AFTER_SNAPSHOT=true` when running through
+  `/railway/ingress-snapshot-job.json`; this makes the legacy single-lane
+  process exit successfully after the durable completion marker. It is rejected
+  in the continuously supervised multi-lane controller.
 
 Leaving both bounded-replay variables unset preserves the existing unbounded
 publication-author-viewer and Wire behavior. Bounded replay is rejected for the

@@ -2,7 +2,7 @@ import Foundation
 import Testing
 import WireCore
 
-@testable import WireWorker
+@testable import WireWorkerCore
 
 @Suite("The Wire worker cycle")
 struct WireWorkerCycleTests {

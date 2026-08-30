@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import WireWorker
+@testable import WireWorkerCore
 
 @Suite("The Wire baseline label refresh")
 struct WireBaselineLabelRefresherTests {

@@ -37,30 +37,122 @@ func main() {
 }
 
 func run(logger *slog.Logger) error {
-	cfg, err := config.Load()
+	controllerConfig, err := config.LoadController()
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	if controllerConfig.LegacySingleLane {
+		return runSingleLane(ctx, controllerConfig.Lanes[0], controllerConfig.Port, logger)
+	}
+	return runController(ctx, controllerConfig, logger)
+}
 
+func runSingleLane(ctx context.Context, lane config.Lane, port int, logger *slog.Logger) error {
 	state := &health.State{}
+	server, serverErrors := startHealthServer(port, state.Handler(), logger)
+	defer shutdownHealthServer(server)
+
+	laneContext, stopLane := context.WithCancel(ctx)
+	defer stopLane()
+	laneErrors := make(chan error, 1)
+	go func() { laneErrors <- runLane(laneContext, lane, state, logger) }()
+	select {
+	case <-ctx.Done():
+		stopLane()
+		<-laneErrors
+		return nil
+	case err := <-serverErrors:
+		stopLane()
+		<-laneErrors
+		return err
+	case err := <-laneErrors:
+		return err
+	}
+}
+
+func runController(ctx context.Context, cfg config.ControllerConfig, logger *slog.Logger) error {
+	states := make(map[string]*health.State, len(cfg.Lanes))
+	lanes := make([]service.SupervisedLane, 0, len(cfg.Lanes))
+	for _, configuredLane := range cfg.Lanes {
+		lane := configuredLane
+		state := &health.State{}
+		states[string(lane.Name)] = state
+		lanes = append(lanes, service.SupervisedLane{
+			Name: string(lane.Name),
+			Run: func(laneContext context.Context) error {
+				return runLane(laneContext, lane, state, logger)
+			},
+		})
+	}
+
+	controller := health.NewController(states)
+	server, serverErrors := startHealthServer(cfg.Port, controller.Handler(), logger)
+	defer shutdownHealthServer(server)
+
+	supervisorContext, stopSupervisor := context.WithCancel(ctx)
+	defer stopSupervisor()
+	supervisorDone := make(chan struct{})
+	go func() {
+		service.Supervisor{Lanes: lanes, Logger: logger}.Run(supervisorContext)
+		close(supervisorDone)
+	}()
+
+	select {
+	case <-ctx.Done():
+		stopSupervisor()
+		<-supervisorDone
+		return nil
+	case err := <-serverErrors:
+		stopSupervisor()
+		<-supervisorDone
+		return err
+	}
+}
+
+func startHealthServer(
+	port int,
+	handler http.Handler,
+	logger *slog.Logger,
+) (*http.Server, <-chan error) {
 	server := &http.Server{
-		Addr: ":" + strconv.Itoa(cfg.Port), Handler: state.Handler(),
+		Addr: ":" + strconv.Itoa(port), Handler: handler,
 		ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second,
 		WriteTimeout: 10 * time.Second, IdleTimeout: 60 * time.Second,
 	}
 	serverErrors := make(chan error, 1)
 	go func() {
-		logger.Info("health server listening", "port", cfg.Port)
+		logger.Info("health server listening", "port", port)
 		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			serverErrors <- err
 		}
 	}()
+	return server, serverErrors
+}
+
+func shutdownHealthServer(server *http.Server) {
+	shutdownContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_ = server.Shutdown(shutdownContext)
+}
+
+func runLane(
+	ctx context.Context,
+	lane config.Lane,
+	state *health.State,
+	logger *slog.Logger,
+) (runErr error) {
+	cfg := lane.Config
+	laneLogger := logger.With("lane", lane.Name, "pipelineMode", cfg.PipelineMode)
+	state.Reset()
 	defer func() {
-		shutdownContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_ = server.Shutdown(shutdownContext)
+		state.Database(false)
+		state.Lease(false)
+		state.Stream(false)
+		if runErr != nil && !errors.Is(runErr, context.Canceled) {
+			state.Error(runErr)
+		}
 	}()
 
 	source := ingest.SourceFromConfig(cfg)
@@ -92,7 +184,7 @@ func run(logger *slog.Logger) error {
 		ownerID,
 		cfg.LeaderLeaseTTL,
 		leaseAcquireRetryInterval,
-		logger,
+		laneLogger,
 	)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
@@ -101,14 +193,25 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 	state.Lease(true)
-	logger.Info("acquired fenced ingestion lease", "lease", lease.Name, "fencingToken", lease.FencingToken)
+	laneLogger.Info("acquired fenced ingestion lease", "lease", lease.Name, "fencingToken", lease.FencingToken)
+	leaseReleased := false
+	defer func() {
+		if leaseReleased {
+			return
+		}
+		releaseContext, cancelRelease := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancelRelease()
+		if releaseErr := database.ReleaseLease(releaseContext, lease); releaseErr != nil && runErr == nil {
+			runErr = releaseErr
+		}
+	}()
 	if cfg.PipelineMode == config.WirePipelineMode {
 		recovered, reconcileErr := database.ReconcileWireAdmission(ctx, lease)
 		if reconcileErr != nil {
 			return reconcileErr
 		}
 		if recovered {
-			logger.Warn(
+			laneLogger.Warn(
 				"replaying Wire source after PostgreSQL truncated the UNLOGGED inbox",
 				"sourceGeneration", source.Generation,
 			)
@@ -142,11 +245,9 @@ func run(logger *slog.Logger) error {
 	}()
 
 	runnerErrors := make(chan error, 1)
-	go func() { runnerErrors <- service.NewRunner(cfg, database, lease, state, logger).Run(workerContext) }()
-	var runErr error
+	go func() { runnerErrors <- service.NewRunner(cfg, database, lease, state, laneLogger).Run(workerContext) }()
 	select {
 	case <-ctx.Done():
-	case runErr = <-serverErrors:
 	case runErr = <-leaseErrors:
 	case runErr = <-runnerErrors:
 	}
@@ -159,6 +260,7 @@ func run(logger *slog.Logger) error {
 	if releaseErr := database.ReleaseLease(releaseContext, lease); releaseErr != nil && runErr == nil {
 		runErr = releaseErr
 	}
+	leaseReleased = true
 	return runErr
 }
 

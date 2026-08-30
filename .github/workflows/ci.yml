@@ -35,6 +35,7 @@ jobs:
       jetstream_ingest: ${{ steps.filter.outputs.jetstream_ingest }}
       wire_ingest: ${{ steps.filter.outputs.wire_ingest }}
       wire_worker: ${{ steps.filter.outputs.wire_worker }}
+      indexing_worker: ${{ steps.filter.outputs.indexing_worker }}
       wire_corpus_edge: ${{ steps.filter.outputs.wire_corpus_edge }}
       database_migrator: ${{ steps.filter.outputs.database_migrator }}
       lexicons: ${{ steps.filter.outputs.lexicons }}
@@ -417,6 +418,35 @@ jobs:
       - name: Build The Wire worker production image
         run: docker build --file services/wire-worker/Dockerfile --tag the-social-wire-wire-worker:test .
 
+  indexing-worker:
+    name: Replicated Indexing Worker
+    needs: changes
+    if: needs.changes.result == 'success' && needs.changes.outputs.indexing_worker == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v6
+      - name: Cache consolidated indexing packages
+        uses: actions/cache@v5
+        with:
+          path: |
+            packages/swift/OperationsCore/.build
+            packages/swift/ThinAppViewCore/.build
+            packages/swift/WireCore/.build
+            services/appview-worker/.build
+            services/wire-worker/.build
+            services/indexing-worker/.build
+          key: ${{ runner.os }}-swift-indexing-worker-6.2.4-${{ hashFiles('services/indexing-worker/Package.resolved', 'services/appview-worker/Package.resolved', 'services/wire-worker/Package.resolved', 'packages/swift/OperationsCore/Package.resolved', 'packages/swift/ThinAppViewCore/Package.resolved', 'packages/swift/WireCore/Package.resolved') }}
+      - uses: swift-actions/setup-swift@v3
+        with:
+          swift-version: "6.2.4"
+          skip-verify-signature: true
+      - name: Test replicated indexing roles
+        working-directory: services/indexing-worker
+        run: swift test
+      - name: Build replicated indexing production image
+        run: docker build --file services/indexing-worker/Dockerfile --tag the-social-wire-indexing-worker:test .
+
   wire-corpus-edge:
     name: The Wire Corpus Edge
     needs: changes
@@ -583,6 +613,7 @@ jobs:
       - jetstream-ingest
       - wire-ingest
       - wire-worker
+      - indexing-worker
       - wire-corpus-edge
       - database-migrator
       - lexicons
@@ -605,6 +636,7 @@ jobs:
           JETSTREAM_INGEST_FLAG: ${{ needs.changes.outputs.jetstream_ingest }}
           WIRE_INGEST_FLAG: ${{ needs.changes.outputs.wire_ingest }}
           WIRE_WORKER_FLAG: ${{ needs.changes.outputs.wire_worker }}
+          INDEXING_WORKER_FLAG: ${{ needs.changes.outputs.indexing_worker }}
           WIRE_CORPUS_EDGE_FLAG: ${{ needs.changes.outputs.wire_corpus_edge }}
           DATABASE_MIGRATOR_FLAG: ${{ needs.changes.outputs.database_migrator }}
           LEXICONS_FLAG: ${{ needs.changes.outputs.lexicons }}
@@ -621,6 +653,7 @@ jobs:
           JETSTREAM_INGEST_RESULT: ${{ needs.jetstream-ingest.result }}
           WIRE_INGEST_RESULT: ${{ needs.wire-ingest.result }}
           WIRE_WORKER_RESULT: ${{ needs.wire-worker.result }}
+          INDEXING_WORKER_RESULT: ${{ needs.indexing-worker.result }}
           WIRE_CORPUS_EDGE_RESULT: ${{ needs.wire-corpus-edge.result }}
           DATABASE_MIGRATOR_RESULT: ${{ needs.database-migrator.result }}
           LEXICONS_RESULT: ${{ needs.lexicons.result }}
@@ -662,6 +695,7 @@ jobs:
           check "$JETSTREAM_INGEST_FLAG" "$JETSTREAM_INGEST_RESULT" "Jetstream V2 Ingest"
           check "$WIRE_INGEST_FLAG" "$WIRE_INGEST_RESULT" "The Wire Global Ingest"
           check "$WIRE_WORKER_FLAG" "$WIRE_WORKER_RESULT" "The Wire Worker"
+          check "$INDEXING_WORKER_FLAG" "$INDEXING_WORKER_RESULT" "Replicated Indexing Worker"
           check "$WIRE_CORPUS_EDGE_FLAG" "$WIRE_CORPUS_EDGE_RESULT" "The Wire Corpus Edge"
           check "$DATABASE_MIGRATOR_FLAG" "$DATABASE_MIGRATOR_RESULT" "Database Migrator"
           check "$LEXICONS_FLAG" "$LEXICONS_RESULT" "Lexicons"

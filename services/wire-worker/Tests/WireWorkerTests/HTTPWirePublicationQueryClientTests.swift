@@ -4,7 +4,7 @@ import NIOCore
 import NIOHTTP1
 import Testing
 
-@testable import WireWorker
+@testable import WireWorkerCore
 
 @Suite("Wire publication PDS query client")
 struct HTTPWirePublicationQueryClientTests {

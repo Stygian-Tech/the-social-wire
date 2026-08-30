@@ -55,6 +55,25 @@ public protocol OperationsStore: Actor {
     operation: @Sendable @escaping () async throws -> Void
   ) async throws
 
+  func acquireRoleLease(
+    role: String, ownerID: String, leaseUntil: Date, at: Date
+  ) async throws -> FencedRoleLease?
+  func renewRoleLease(
+    role: String, ownerID: String, fencingToken: Int64, leaseUntil: Date, at: Date
+  ) async throws -> FencedRoleLease
+  func releaseRoleLease(
+    role: String, ownerID: String, fencingToken: Int64, at: Date
+  ) async throws
+  /// Holds the role row fence for one singleton operation. A takeover cannot complete until the
+  /// operation returns, and an owner with a stale fencing token never enters the operation.
+  func withRoleLeaseFence(
+    role: String,
+    ownerID: String,
+    fencingToken: Int64,
+    at: Date,
+    operation: @Sendable @escaping () async throws -> Void
+  ) async throws
+
   func createCommand(
     action: OperationsCommandAction, operatorDid: String, auditNote: String, at: Date
   ) async throws -> OperationsWorkerCommand
@@ -223,6 +242,34 @@ extension OperationsStore {
 
   public func withIngestionLeaderLeaseFence(
     name: String,
+    ownerID: String,
+    fencingToken: Int64,
+    at: Date,
+    operation: @Sendable @escaping () async throws -> Void
+  ) async throws {
+    throw OperationsStoreError.notFound
+  }
+
+  public func acquireRoleLease(
+    role: String, ownerID: String, leaseUntil: Date, at: Date
+  ) async throws -> FencedRoleLease? {
+    throw OperationsStoreError.notFound
+  }
+
+  public func renewRoleLease(
+    role: String, ownerID: String, fencingToken: Int64, leaseUntil: Date, at: Date
+  ) async throws -> FencedRoleLease {
+    throw OperationsStoreError.notFound
+  }
+
+  public func releaseRoleLease(
+    role: String, ownerID: String, fencingToken: Int64, at: Date
+  ) async throws {
+    throw OperationsStoreError.notFound
+  }
+
+  public func withRoleLeaseFence(
+    role: String,
     ownerID: String,
     fencingToken: Int64,
     at: Date,

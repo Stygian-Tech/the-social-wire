@@ -1,6 +1,6 @@
 import Testing
 
-@testable import WireWorker
+@testable import WireWorkerCore
 
 struct WireDeclaredLanguageValidatorTests {
   @Test("rejects an English declaration contradicted by Japanese content")

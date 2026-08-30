@@ -1,6 +1,6 @@
 import Testing
 
-@testable import WireWorker
+@testable import WireWorkerCore
 
 @Suite("The Wire ingestion payload normalization failures")
 struct WirePayloadNormalizationFailureTests {

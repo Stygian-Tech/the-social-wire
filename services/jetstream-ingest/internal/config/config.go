@@ -13,18 +13,22 @@ import (
 	"time"
 )
 
+type LaneName string
+
 const (
-	DefaultHost             = "jetstream.us-west.bsky.network"
-	DefaultStreamNSID       = "network.bsky.jetstream.subscribeEvents"
-	DefaultCursorKind       = "jetstream_v2_seq"
-	DefaultSourceGeneration = "jetstream-v2-us-west-v2"
-	DefaultScopePolicy      = "publication-author-viewer-v1"
-	DefaultPipelineMode     = "publication-author-viewer-v1"
-	WirePipelineMode        = "wire-global-v1"
-	WireSourceGeneration    = "wire-global-v4"
-	WireScopePolicy         = "wire-global-v4"
-	DefaultSegmentStripes   = 4
-	WireSegmentStripes      = 1
+	AppViewLaneName         LaneName = "appview"
+	WireLaneName            LaneName = "wire"
+	DefaultHost                      = "jetstream.us-west.bsky.network"
+	DefaultStreamNSID                = "network.bsky.jetstream.subscribeEvents"
+	DefaultCursorKind                = "jetstream_v2_seq"
+	DefaultSourceGeneration          = "jetstream-v2-us-west-v2"
+	DefaultScopePolicy               = "publication-author-viewer-v1"
+	DefaultPipelineMode              = "publication-author-viewer-v1"
+	WirePipelineMode                 = "wire-global-v1"
+	WireSourceGeneration             = "wire-global-v4"
+	WireScopePolicy                  = "wire-global-v4"
+	DefaultSegmentStripes            = 4
+	WireSegmentStripes               = 1
 )
 
 var DefaultCollections = []string{
@@ -90,10 +94,92 @@ type Config struct {
 	BootstrapAfterSeq    *uint64
 	ReplayBeforeSeq      *uint64
 	ReplaySnapshotOnly   bool
+	ExitAfterSnapshot    bool
+}
+
+// Lane is one independently leased Jetstream ingestion pipeline.
+type Lane struct {
+	Name   LaneName
+	Config Config
+}
+
+// ControllerConfig describes the process-wide listener and the ingestion lanes
+// that should run behind it. LegacySingleLane is true when the old flat
+// JETSTREAM_* configuration selected the sole lane.
+type ControllerConfig struct {
+	Port             int
+	Lanes            []Lane
+	LegacySingleLane bool
 }
 
 func Load() (Config, error) {
 	pipelineMode := envString("JETSTREAM_PIPELINE_MODE", DefaultPipelineMode)
+	return loadLane(pipelineMode, "JETSTREAM_", true)
+}
+
+// LoadController loads either the existing single-lane configuration or the
+// namespaced multi-lane configuration. The namespaced mode is selected when at
+// least one JETSTREAM_APPVIEW_ENABLED or JETSTREAM_WIRE_ENABLED variable is
+// present; at least one of those flags must then be true.
+func LoadController() (ControllerConfig, error) {
+	_, appViewFlagPresent := os.LookupEnv("JETSTREAM_APPVIEW_ENABLED")
+	_, wireFlagPresent := os.LookupEnv("JETSTREAM_WIRE_ENABLED")
+	if !appViewFlagPresent && !wireFlagPresent {
+		cfg, err := Load()
+		if err != nil {
+			return ControllerConfig{}, err
+		}
+		name := AppViewLaneName
+		if cfg.PipelineMode == WirePipelineMode {
+			name = WireLaneName
+		}
+		return ControllerConfig{
+			Port:             cfg.Port,
+			Lanes:            []Lane{{Name: name, Config: cfg}},
+			LegacySingleLane: true,
+		}, nil
+	}
+
+	appViewEnabled, err := envBool("JETSTREAM_APPVIEW_ENABLED", false)
+	if err != nil {
+		return ControllerConfig{}, err
+	}
+	wireEnabled, err := envBool("JETSTREAM_WIRE_ENABLED", false)
+	if err != nil {
+		return ControllerConfig{}, err
+	}
+	if !appViewEnabled && !wireEnabled {
+		return ControllerConfig{}, errors.New(
+			"at least one of JETSTREAM_APPVIEW_ENABLED or JETSTREAM_WIRE_ENABLED must be true",
+		)
+	}
+
+	controller := ControllerConfig{Port: envInt("PORT", 8080)}
+	if appViewEnabled {
+		cfg, loadErr := loadLane(DefaultPipelineMode, "JETSTREAM_APPVIEW_", false)
+		if loadErr != nil {
+			return ControllerConfig{}, fmt.Errorf("%s lane: %w", AppViewLaneName, loadErr)
+		}
+		controller.Lanes = append(controller.Lanes, Lane{Name: AppViewLaneName, Config: cfg})
+	}
+	if wireEnabled {
+		cfg, loadErr := loadLane(WirePipelineMode, "JETSTREAM_WIRE_", false)
+		if loadErr != nil {
+			return ControllerConfig{}, fmt.Errorf("%s lane: %w", WireLaneName, loadErr)
+		}
+		controller.Lanes = append(controller.Lanes, Lane{Name: WireLaneName, Config: cfg})
+	}
+	for _, lane := range controller.Lanes {
+		if lane.Config.ExitAfterSnapshot {
+			return ControllerConfig{}, errors.New(
+				"snapshot jobs that exit are supported only by legacy single-lane configuration",
+			)
+		}
+	}
+	return controller, nil
+}
+
+func loadLane(pipelineMode, prefix string, legacy bool) (Config, error) {
 	defaultCollections := DefaultCollections
 	defaultGeneration := DefaultSourceGeneration
 	defaultScopePolicy := DefaultScopePolicy
@@ -106,54 +192,65 @@ func Load() (Config, error) {
 		defaultLeaseName = "wire-global-v4-ingest"
 		defaultSegmentStripes = WireSegmentStripes
 	}
-	collections := envCSV("JETSTREAM_COLLECTIONS", defaultCollections)
-	replaySnapshotOnly, err := envBool("JETSTREAM_REPLAY_SNAPSHOT_ONLY", false)
+	collections := envCSV(prefix+"COLLECTIONS", defaultCollections)
+	replaySnapshotOnly, err := envBool(prefix+"REPLAY_SNAPSHOT_ONLY", false)
 	if err != nil {
 		return Config{}, err
+	}
+	exitAfterSnapshot, err := envBool(prefix+"EXIT_AFTER_SNAPSHOT", false)
+	if err != nil {
+		return Config{}, err
+	}
+	hostFallback := DefaultHost
+	apiKeyFallback := ""
+	if !legacy {
+		hostFallback = envString("JETSTREAM_HOST", DefaultHost)
+		apiKeyFallback = strings.TrimSpace(os.Getenv("JETSTREAM_API_KEY"))
 	}
 	cfg := Config{
 		PipelineMode:         pipelineMode,
 		Environment:          strings.TrimSpace(os.Getenv("APP_ENV")),
 		DatabaseURL:          strings.TrimSpace(os.Getenv("DATABASE_URL")),
-		Host:                 envString("JETSTREAM_HOST", DefaultHost),
+		Host:                 envString(prefix+"HOST", hostFallback),
 		StreamNSID:           DefaultStreamNSID,
 		CursorKind:           DefaultCursorKind,
-		SourceGeneration:     envString("JETSTREAM_SOURCE_GENERATION", defaultGeneration),
+		SourceGeneration:     envString(prefix+"SOURCE_GENERATION", defaultGeneration),
 		Collections:          collections,
 		ScopePolicy:          defaultScopePolicy,
 		FilterFingerprint:    FilterFingerprint(DefaultStreamNSID, collections, defaultScopePolicy),
-		APIKey:               strings.TrimSpace(os.Getenv("JETSTREAM_API_KEY")),
+		APIKey:               envString(prefix+"API_KEY", apiKeyFallback),
 		Port:                 envInt("PORT", 8080),
-		BatchSize:            envInt("JETSTREAM_BATCH_SIZE", 256),
-		DownloadConcurrency:  envInt("JETSTREAM_DOWNLOAD_CONCURRENCY", 4),
-		SegmentStripes:       envInt("JETSTREAM_SEGMENT_STRIPES", defaultSegmentStripes),
-		MaxDownloadAttempts:  envInt("JETSTREAM_MAX_DOWNLOAD_ATTEMPTS", 8),
-		LeaderLeaseName:      envString("JETSTREAM_LEADER_LEASE_NAME", defaultLeaseName),
-		LeaderLeaseTTL:       envDuration("JETSTREAM_LEADER_LEASE_TTL", 30*time.Second),
-		TrackedDIDRefresh:    envDuration("JETSTREAM_TRACKED_DID_REFRESH", time.Minute),
-		ReplayIncidentBytes:  envInt64("JETSTREAM_REPLAY_INCIDENT_BYTES", 5<<30),
-		ReplayDailyBytes:     envInt64("JETSTREAM_REPLAY_DAILY_BYTES", 25<<30),
-		ReplayBudgetPause:    envDuration("JETSTREAM_REPLAY_BUDGET_PAUSE", 15*time.Minute),
-		BackoffMin:           envDuration("JETSTREAM_BACKOFF_MIN", 250*time.Millisecond),
-		BackoffMax:           envDuration("JETSTREAM_BACKOFF_MAX", 30*time.Second),
-		WireInboxMaxRows:     envInt64("WIRE_INBOX_MAX_ROWS", 5_000_000),
-		WireDatabaseMaxBytes: envInt64("WIRE_DATABASE_MAX_BYTES", 80<<30),
-		WireAdmissionPause:   envDuration("WIRE_ADMISSION_PAUSE", 5*time.Second),
-		WireAdmissionRate:    envFloat64("WIRE_ADMISSION_RATE_PER_SECOND", 0),
-		WireAdmissionBurst:   envInt("WIRE_ADMISSION_BURST_EVENTS", 1),
+		BatchSize:            envInt(prefix+"BATCH_SIZE", 256),
+		DownloadConcurrency:  envInt(prefix+"DOWNLOAD_CONCURRENCY", 4),
+		SegmentStripes:       envInt(prefix+"SEGMENT_STRIPES", defaultSegmentStripes),
+		MaxDownloadAttempts:  envInt(prefix+"MAX_DOWNLOAD_ATTEMPTS", 8),
+		LeaderLeaseName:      envString(prefix+"LEADER_LEASE_NAME", defaultLeaseName),
+		LeaderLeaseTTL:       envDuration(prefix+"LEADER_LEASE_TTL", 30*time.Second),
+		TrackedDIDRefresh:    envDuration(prefix+"TRACKED_DID_REFRESH", time.Minute),
+		ReplayIncidentBytes:  envInt64(prefix+"REPLAY_INCIDENT_BYTES", 5<<30),
+		ReplayDailyBytes:     envInt64(prefix+"REPLAY_DAILY_BYTES", 25<<30),
+		ReplayBudgetPause:    envDuration(prefix+"REPLAY_BUDGET_PAUSE", 15*time.Minute),
+		BackoffMin:           envDuration(prefix+"BACKOFF_MIN", 250*time.Millisecond),
+		BackoffMax:           envDuration(prefix+"BACKOFF_MAX", 30*time.Second),
+		WireInboxMaxRows:     envInt64(wireVariable(prefix, legacy, "INBOX_MAX_ROWS"), 5_000_000),
+		WireDatabaseMaxBytes: envInt64(wireVariable(prefix, legacy, "DATABASE_MAX_BYTES"), 80<<30),
+		WireAdmissionPause:   envDuration(wireVariable(prefix, legacy, "ADMISSION_PAUSE"), 5*time.Second),
+		WireAdmissionRate:    envFloat64(wireVariable(prefix, legacy, "ADMISSION_RATE_PER_SECOND"), 0),
+		WireAdmissionBurst:   envInt(wireVariable(prefix, legacy, "ADMISSION_BURST_EVENTS"), 1),
 		ReplaySnapshotOnly:   replaySnapshotOnly,
+		ExitAfterSnapshot:    exitAfterSnapshot,
 	}
-	if value := strings.TrimSpace(os.Getenv("JETSTREAM_BOOTSTRAP_AFTER_SEQ")); value != "" {
+	if value := strings.TrimSpace(os.Getenv(prefix + "BOOTSTRAP_AFTER_SEQ")); value != "" {
 		seq, err := strconv.ParseUint(value, 10, 64)
 		if err != nil {
-			return Config{}, fmt.Errorf("JETSTREAM_BOOTSTRAP_AFTER_SEQ: %w", err)
+			return Config{}, fmt.Errorf("%sBOOTSTRAP_AFTER_SEQ: %w", prefix, err)
 		}
 		cfg.BootstrapAfterSeq = &seq
 	}
-	if value := strings.TrimSpace(os.Getenv("JETSTREAM_REPLAY_BEFORE_SEQ")); value != "" {
+	if value := strings.TrimSpace(os.Getenv(prefix + "REPLAY_BEFORE_SEQ")); value != "" {
 		seq, err := strconv.ParseUint(value, 10, 64)
 		if err != nil {
-			return Config{}, fmt.Errorf("JETSTREAM_REPLAY_BEFORE_SEQ: %w", err)
+			return Config{}, fmt.Errorf("%sREPLAY_BEFORE_SEQ: %w", prefix, err)
 		}
 		cfg.ReplayBeforeSeq = &seq
 	}
@@ -161,6 +258,13 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 	return cfg, nil
+}
+
+func wireVariable(prefix string, legacy bool, suffix string) string {
+	if legacy {
+		return "WIRE_" + suffix
+	}
+	return prefix + suffix
 }
 
 func (c Config) Validate() error {
@@ -243,6 +347,11 @@ func (c Config) Validate() error {
 	if (c.ReplayBeforeSeq != nil) != c.ReplaySnapshotOnly {
 		problems = append(problems, errors.New(
 			"JETSTREAM_REPLAY_BEFORE_SEQ and JETSTREAM_REPLAY_SNAPSHOT_ONLY=true are required together",
+		))
+	}
+	if c.ExitAfterSnapshot && !c.ReplaySnapshotOnly {
+		problems = append(problems, errors.New(
+			"JETSTREAM_EXIT_AFTER_SNAPSHOT=true requires bounded snapshot replay",
 		))
 	}
 	if c.ReplayBeforeSeq != nil {

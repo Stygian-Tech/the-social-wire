@@ -1,4 +1,4 @@
-enum WireWorkerRole: String, CaseIterable, Sendable {
+public enum WireWorkerRole: String, CaseIterable, Sendable {
   case combined
   case rank
   case drain

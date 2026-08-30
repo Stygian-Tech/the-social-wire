@@ -3,7 +3,7 @@ import Foundation
 import NIOCore
 import NIOHTTP1
 import Testing
-@testable import WireWorker
+@testable import WireWorkerCore
 
 @Suite("The Wire OpenGraph HTTP client")
 struct HTTPWireLinkMetadataClientTests {

@@ -22,6 +22,10 @@ const railwayServices = [
   { service: "The Wire Global Ingest", config: "wire-jetstream-ingest", restartPolicy: "ALWAYS" },
   { service: "The Wire Worker", config: "wire-worker", restartPolicy: "ALWAYS" },
   { service: "The Wire Inbox Drain", config: "wire-inbox-drain", restartPolicy: "ALWAYS" },
+  { service: "Ingress Controller", config: "ingress-controller", restartPolicy: "ALWAYS" },
+  { service: "Ingress Snapshot Job", config: "ingress-snapshot-job", restartPolicy: "NEVER" },
+  { service: "Projection Pool", config: "projection-pool", restartPolicy: "ALWAYS" },
+  { service: "Coordinator", config: "coordinator", restartPolicy: "ALWAYS" },
   { service: "The Wire Corpus Edge", config: "wire-corpus-edge", restartPolicy: "ALWAYS" },
   { service: "Ops", config: "operations", restartPolicy: "ALWAYS" },
   { service: "Database Migrator", config: "database-migrator", restartPolicy: "NEVER" },
@@ -42,6 +46,7 @@ describe("CI workflow configuration", () => {
       "jetstream-ingest",
       "wire-ingest",
       "wire-worker",
+      "indexing-worker",
       "wire-corpus-edge",
       "database-migrator",
       "docs",
@@ -87,6 +92,7 @@ describe("CI workflow configuration", () => {
     expect(workflow).toContain("Build AppView production image");
     expect(workflow).toContain("Build Charybdis production image");
     expect(workflow).toContain("Build The Wire worker production image");
+    expect(workflow).toContain("Build replicated indexing production image");
     expect(workflow).toContain("Build The Wire Corpus Edge production image");
     expect(workflow).toContain("Build Operations production image");
     expect(workflow).toContain("Apply migrations from empty and verify idempotence");
@@ -130,7 +136,7 @@ describe("CI workflow configuration", () => {
         expect(config.build.dockerfilePath).toMatch(/^\/services\//);
       }
       expect(config.deploy?.restartPolicyType).toBe(restartPolicy);
-      if (["jetstream-ingest", "wire-jetstream-ingest", "wire-worker", "wire-inbox-drain", "charybdis"].includes(configName)) {
+      if (["jetstream-ingest", "wire-jetstream-ingest", "wire-worker", "wire-inbox-drain", "charybdis", "ingress-controller", "projection-pool", "coordinator"].includes(configName)) {
         expect(config.deploy?.healthcheckPath).toBe("/startupz");
       }
       expect(deploymentReadme).toContain(
@@ -141,7 +147,11 @@ describe("CI workflow configuration", () => {
         ? "wire_ingest"
         : configName === "wire-inbox-drain"
           ? "wire_worker"
-          : configName.replaceAll("-", "_");
+          : ["ingress-controller", "ingress-snapshot-job"].includes(configName)
+            ? "jetstream_ingest"
+            : ["projection-pool", "coordinator"].includes(configName)
+              ? "indexing_worker"
+              : configName.replaceAll("-", "_");
       const filter = pathFilters
         .split("\n\n")
         .find((block) =>
@@ -166,6 +176,7 @@ describe("CI workflow configuration", () => {
       "jetstream_ingest",
       "wire_ingest",
       "wire_worker",
+      "indexing_worker",
       "wire_corpus_edge",
       "database_migrator",
       "lexicons",

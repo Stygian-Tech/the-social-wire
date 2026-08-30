@@ -1,6 +1,6 @@
 import Testing
 import WireCore
-@testable import WireWorker
+@testable import WireWorkerCore
 
 struct WireWorkerRuntimePlanTests {
   @Test("combined worker owns every enabled runtime")
@@ -27,19 +27,19 @@ struct WireWorkerRuntimePlanTests {
     #expect(plan.requiresCleanupReadiness)
   }
 
-  @Test("drain worker never enters generation")
+  @Test("drain worker owns projection only")
   func drainEnabled() {
     let plan = WireWorkerRuntimePlan(mode: .api, role: .drain, cleanupEnabled: true)
     #expect(!plan.runsGeneration)
     #expect(plan.runsDrain)
-    #expect(plan.runsCleanup)
+    #expect(!plan.runsCleanup)
     #expect(!plan.runsMetadataEnrichment)
     #expect(!plan.requiresGenerationReadiness)
     #expect(plan.requiresDrainReadiness)
-    #expect(plan.requiresCleanupReadiness)
+    #expect(!plan.requiresCleanupReadiness)
   }
 
-  @Test("cleanup ownership can be disabled independently")
+  @Test("drain worker never owns cleanup")
   func cleanupDisabled() {
     let plan = WireWorkerRuntimePlan(mode: .api, role: .drain, cleanupEnabled: false)
     #expect(plan.runsDrain)

@@ -1,7 +1,7 @@
 import Foundation
 import Testing
 
-@testable import WireWorker
+@testable import WireWorkerCore
 
 #if canImport(Darwin)
   import Darwin

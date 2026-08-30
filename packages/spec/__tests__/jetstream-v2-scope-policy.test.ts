@@ -58,8 +58,12 @@ describe("Jetstream V2 role-aware scope policy", () => {
   })
 
   it("binds stable scope semantics to the durable source fingerprint", () => {
-    expect(goConfig).toContain('DefaultScopePolicy      = "publication-author-viewer-v1"')
-    expect(goConfig).toContain('DefaultSourceGeneration = "jetstream-v2-us-west-v2"')
+    expect(goConfig).toMatch(
+      /DefaultScopePolicy\s*=\s*"publication-author-viewer-v1"/,
+    )
+    expect(goConfig).toMatch(
+      /DefaultSourceGeneration\s*=\s*"jetstream-v2-us-west-v2"/,
+    )
     expect(goConfig).toContain('strings.TrimSpace(scopePolicy)')
     expect(swiftPolicy).toContain('version = "publication-author-viewer-v1"')
   })

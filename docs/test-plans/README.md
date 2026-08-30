@@ -11,6 +11,7 @@ Verification guides for each surface in the monorepo. Tests live **in the owning
 | Gateway | [api.md](./api.md) | `cd services/gateway && swift test` | `gateway` |
 | AppView | [appview.md](./appview.md) | `cd services/appview && swift test` | `appview` |
 | Charybdis | [worker.md](./worker.md) | `cd services/appview-worker && swift test` | `charybdis` |
+| Replicated indexing roles | [worker.md](./worker.md) | `cd services/indexing-worker && swift test` | `indexing-worker` |
 | ThinAppViewCore | [worker.md](./worker.md#thinappviewcore) | `cd packages/swift/ThinAppViewCore && swift test` | `charybdis` |
 | OperationsCore | [operations.md](./operations.md) | `cd packages/swift/OperationsCore && swift test` | `operations` |
 | Operations service | [operations.md](./operations.md) | `cd services/operations && swift test` | `operations` |
@@ -39,6 +40,7 @@ cd packages/swift/GatewayCore && swift test && cd ../../..
 cd services/gateway && swift test && cd ../..
 cd services/appview && swift test && cd ../..
 cd services/appview-worker && swift test && cd ../..
+cd services/indexing-worker && swift test && cd ../..
 cd packages/swift/OperationsCore && swift test && cd ../../..
 cd services/operations && swift test && cd ../..
 

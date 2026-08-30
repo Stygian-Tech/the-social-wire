@@ -1,6 +1,6 @@
 import Testing
 
-@testable import WireWorker
+@testable import WireWorkerCore
 
 @Suite("The Wire inbox processing policy")
 struct WireInboxProcessingPolicyTests {

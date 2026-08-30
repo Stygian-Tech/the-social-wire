@@ -2,7 +2,7 @@ import NIOHTTP1
 import Foundation
 import OperationsCore
 import Testing
-@testable import AppViewWorker
+@testable import AppViewWorkerCore
 
 @Suite("Charybdis health responses")
 struct WorkerHealthServerTests {

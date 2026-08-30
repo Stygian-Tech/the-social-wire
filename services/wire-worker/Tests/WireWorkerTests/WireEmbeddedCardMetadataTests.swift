@@ -1,5 +1,5 @@
 import Testing
-@testable import WireWorker
+@testable import WireWorkerCore
 
 @Suite("The Wire embedded card metadata")
 struct WireEmbeddedCardMetadataTests {

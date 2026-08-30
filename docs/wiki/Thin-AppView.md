@@ -17,10 +17,15 @@ For `standard.site`, the index stores render/detail fields (title, `publishedAt`
 ## Data flow
 
 ```
-Jetstream V1 / Jetstream V2 Ingest
+Jetstream archive / live tail
         │
         ▼
-Railway Charybdis (`appview-worker`) — ATProto ingest, Skyreader RSS polling, proactive PDS backfill, TTL cleanup
+Railway Ingress Controller ×2 — independently fenced AppView and Wire intake lanes
+        │
+        ▼
+Railway Projection Pool ×N — AppView and Wire durable-inbox projection
+        │
+Railway Coordinator ×2 — fenced RSS/backfill/retention/recovery and Wire materialization
         │
         ▼
 Railway Postgres — content_items, read marks/floors, materialized counters, ingestion/repair state
@@ -119,10 +124,10 @@ When the server flag is off, AppView routes are unavailable. Current web and iOS
 
 | Variable | Service | Description |
 |----------|---------|-------------|
-| `ENABLE_THIN_APPVIEW` | appview, appview-worker | Mount the AppView XRPC/compatibility routes and enable store bootstrap |
+| `ENABLE_THIN_APPVIEW` | appview, indexing-worker, appview-worker compatibility | Mount the AppView XRPC/compatibility routes and enable store bootstrap |
 | `APPVIEW_BASE_URL` | gateway | Internal AppView base URL for proxy routes |
 | `GATEWAY_APPVIEW_INTERNAL_SECRET` | gateway + appview | HMAC trust for gateway→AppView proxy |
-| `DATABASE_URL` | gateway, appview, appview-worker, operations | Railway Postgres private connection URL |
+| `DATABASE_URL` | gateway, appview, indexing-worker, appview-worker compatibility, operations | Railway Postgres private connection URL |
 | `THIN_APPVIEW_RELAY_WS_URLS` | appview-worker | Ordered, comma-separated Jetstream WebSocket URLs for active/passive failover (`THIN_APPVIEW_RELAY_WS_URL` remains a compatible single-primary override) |
 | `THIN_APPVIEW_JETSTREAM_MODE` | appview-worker | Select legacy V1 authority, V2 shadow staging, or durable V2 authority |
 | `JETSTREAM_SOURCE_GENERATION` | appview-worker + jetstream-ingest | Fence durable inbox generations during V2 replay and cutover |
@@ -130,12 +135,12 @@ When the server flag is off, AppView routes are unavailable. Current web and iOS
 | `THIN_APPVIEW_CONTENT_TTL_SECONDS` | appview, appview-worker | `content_items.expires_at` horizon used by stores and worker cleanup |
 | `THIN_APPVIEW_READ_MARK_TTL_SECONDS` | appview, appview-worker | `read_marks` retention used by stores and worker cleanup |
 | `GATEWAY_PDS_CACHE_BACKEND` | gateway | Select `postgres` or `redis` for hosted PDS-record caching |
-| `APPVIEW_CACHE_BACKEND` | appview, appview-worker | Select `postgres` or `redis` for hosted projection caching |
-| `REDIS_URL` | gateway, appview, appview-worker | Private Redis connection when the Redis backend is selected |
+| `APPVIEW_CACHE_BACKEND` | appview, indexing-worker, appview-worker compatibility | Select `postgres` or `redis` for hosted projection caching |
+| `REDIS_URL` | gateway, appview, indexing-worker, appview-worker compatibility | Private Redis connection when the Redis backend is selected |
 
 ## Deployment (Railway)
 
-Railway deploys seven independent services per environment from repository-level config-as-code files:
+Railway deploys independent public services plus three replicated indexing service classes from repository-level config-as-code files:
 
 | Service | Config |
 |---------|--------|
@@ -146,10 +151,13 @@ Railway deploys seven independent services per environment from repository-level
 | Charybdis | `railway/charybdis.json` |
 | Operations | `railway/operations.json` |
 | Jetstream V2 Ingest | `railway/jetstream-ingest.json` |
+| Ingress Controller | `railway/ingress-controller.json` |
+| Projection Pool | `railway/projection-pool.json` |
+| Coordinator | `railway/coordinator.json` |
 
 Development tracks `dev`; production tracks `main`. Gateway reaches AppView and
-Operations over Railway private domains; Jetstream V2 Ingest and Charybdis share
-the environment's durable PostgreSQL inbox.
+Operations over Railway private domains; Ingress Controller, Projection Pool,
+and Coordinator share the environment's durable PostgreSQL inbox and derived rows.
 Database-backed hosted services use their environment's Railway Postgres
 service. Redis is optional and does not replace Postgres. During the current
 hosted configuration, both environments select Redis backends, while Postgres
@@ -158,14 +166,17 @@ remains durable and its cache tables remain the rollback target.
 **Rollout checklist**
 
 1. Confirm the Database Migrator job succeeds against the environment's Railway Postgres service.
-2. Deploy Charybdis with `ENABLE_THIN_APPVIEW=true`.
-   Railway uses `/startupz` so the process can drain an accumulated durable inbox; `/readyz`
-   remains unavailable until authoritative transport, freshness, and completeness are healthy.
+2. Deploy Ingress Controller, Projection Pool, and Coordinator with
+   `ENABLE_THIN_APPVIEW=true` on the Swift roles. Railway uses `/startupz` so
+   catch-up and fenced standby handoff can complete; `/readyz` remains the
+   independent operational readiness signal.
 3. Deploy AppView with `ENABLE_THIN_APPVIEW=true`.
 4. Deploy Gateway with `APPVIEW_BASE_URL` and the shared internal secret.
 5. Ensure the web deployment does not explicitly set `NEXT_PUBLIC_USE_THIN_APPVIEW=false`.
 6. Validate signed-in Web and iOS flows against the testing gateway before Production or App Store changes.
-7. Treat future Redis changes as their own Development-first rollout; Redis is not required for correctness of the AppView read path.
+7. Verify the fenced ownership and backlog soak gates in the
+   [indexing consolidation runbook](https://github.com/Stygian-Tech/the-social-wire/blob/main/docs/runbooks/operations/indexing-service-consolidation.md).
+8. Treat future Redis changes as their own Development-first rollout; Redis is not required for correctness of the AppView read path.
 
 ## Client integration
 

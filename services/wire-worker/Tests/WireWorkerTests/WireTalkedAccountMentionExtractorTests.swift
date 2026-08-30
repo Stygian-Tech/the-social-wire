@@ -1,5 +1,5 @@
 import Testing
-@testable import WireWorker
+@testable import WireWorkerCore
 
 @Suite("The Wire talked-account mention extraction")
 struct WireTalkedAccountMentionExtractorTests {

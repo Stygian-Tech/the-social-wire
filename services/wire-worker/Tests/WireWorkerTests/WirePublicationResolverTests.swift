@@ -1,7 +1,7 @@
 import Foundation
 import Testing
 
-@testable import WireWorker
+@testable import WireWorkerCore
 
 @Suite("Wire publication resolver")
 struct WirePublicationResolverTests {

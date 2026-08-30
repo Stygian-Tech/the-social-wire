@@ -88,9 +88,9 @@ See [discovery.md](discovery.md) for the detailed walkthrough.
 
 ## Thin AppView
 
-With `ENABLE_THIN_APPVIEW` enabled on AppView, **Charybdis** (the
-`appview-worker` process) ingests standard.site commits from legacy Jetstream or
-projects the durable inbox populated by Jetstream V2 Ingest, polls subscribed Skyreader RSS feeds, and
+With `ENABLE_THIN_APPVIEW` enabled on AppView, the replicated **Ingress
+Controller** appends standard.site commits to the durable inbox, the
+**Projection Pool** projects those rows, and the fenced **Coordinator** polls subscribed Skyreader RSS feeds and
 writes derived `content_items`. Clients load the sidebar and first feed page via
 **`GET /v1/appview/bootstrap-stream`**, then use Lexicon-defined
 `app.thesocialwire.publication.*` and `app.thesocialwire.appview.*` XRPC methods
@@ -112,10 +112,10 @@ Full designs: [appview.md](appview.md) and [redis.md](redis.md). Railway deploys
 ### Infrastructure
 
 Development and production run as isolated Railway environments. Web,
-Operations Web, Gateway, AppView, Charybdis, Jetstream V2 Ingest, Operations,
+Operations Web, Gateway, AppView, Ingress Controller, Projection Pool, Coordinator, Operations,
 Database Migrator, and Railway Postgres deploy in each environment. A private
 disposable Redis is currently
-selected by Gateway, AppView, and Charybdis in both environments; Postgres cache
+selected by Gateway, AppView, and the indexing services in both environments; Postgres cache
 tables remain available as rollback backends. Service-to-service traffic uses
 Railway private networking.
 
@@ -126,7 +126,7 @@ GitHub (source)
 GitHub Actions
        │
        ├─ web / operations-web
-       ├─ gateway / appview / charybdis / jetstream-ingest / operations
+       ├─ gateway / appview / ingress-controller / indexing-worker / operations
        ├─ database-migrator
        └─ lexicons / spec → CI — Required
 ```
@@ -140,8 +140,8 @@ dependent application revisions start.
 
 | Environment | Branch | Backend hosting |
 |-------------|--------|-----------------|
-| Production | `main` | Railway Web, Operations Web, Gateway, AppView, Charybdis, Jetstream V2 Ingest, Operations, Database Migrator, and Postgres |
-| Development | `dev` | Railway Web, Operations Web, Gateway, AppView, Charybdis, Jetstream V2 Ingest, Operations, Database Migrator, and Postgres |
+| Production | `main` | Railway Web, Operations Web, Gateway, AppView, Ingress Controller, Projection Pool, Coordinator, Operations, Database Migrator, and Postgres |
+| Development | `dev` | Railway Web, Operations Web, Gateway, AppView, Ingress Controller, Projection Pool, Coordinator, Operations, Database Migrator, and Postgres |
 | Local | — | Web runs in local mode; Swift service integration uses `APP_ENV=dev` plus an isolated disposable Postgres URL |
 
 ### Local development
