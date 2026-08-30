@@ -69,6 +69,8 @@ export type WireItem = {
   provenance: string[];
   /** Non-production ranking diagnostic; omitted by production responses. */
   rankingScore?: number;
+  /** Viewer-scoped metadata retained when the Wire layout presents Your Circle. */
+  circleItem?: NonNullable<EntryListItem["circleItem"]>;
 };
 
 export type WireItemDetail = {
@@ -235,6 +237,7 @@ export function wireItemToEntryListItem(
       publishedAt: item.publishedAt,
       rankingScore: item.rankingScore,
     },
+    circleItem: item.circleItem,
   };
 }
 

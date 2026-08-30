@@ -31,16 +31,31 @@ const WireNewsExperience = dynamic(
   },
 );
 
+const CircleNewsExperience = dynamic(
+  () => import("@/components/Circle/CircleNewsExperience"),
+  {
+    loading: () => (
+      <div className="grid h-full gap-4 p-4 sm:grid-cols-2">
+        <div className="h-80 animate-pulse rounded-2xl bg-muted" />
+        <div className="h-80 animate-pulse rounded-2xl bg-muted" />
+      </div>
+    ),
+  },
+);
+
 export default function ReadPubPage({
   pubId,
   aggregateFeed,
   wireFeed = false,
+  circleFeed = false,
 }: {
   pubId?: string;
   aggregateFeed?: AggregateAppViewFeed;
   wireFeed?: boolean;
+  circleFeed?: boolean;
 }) {
   const wireNewsEditionEnabled = wireFeed && isWireNewsEditionEnabled();
+  const editorialFeed = wireFeed || circleFeed;
   const [rssReaderEntry, setRssReaderEntry] = useState<{
     entryId: string;
     title: string;
@@ -85,7 +100,7 @@ export default function ReadPubPage({
       if (target.kind === "rssReader") {
         pendingTab?.close();
         if (
-          !wireFeed &&
+          !editorialFeed &&
           articleListFilter === "unread" &&
           rssReaderEntry &&
           rssReaderEntry.entryId !== entryId
@@ -97,20 +112,20 @@ export default function ReadPubPage({
           title: entry.title ?? "RSS Article",
           url: target.url,
         });
-        if (!wireFeed && articleListFilter !== "unread") {
+        if (!editorialFeed && articleListFilter !== "unread") {
           markEntryReadForPub(entryId);
         }
         return;
       }
 
-      if (!wireFeed) markEntryReadForPub(entryId);
+      if (!editorialFeed) markEntryReadForPub(entryId);
       if (pendingTab) {
         pendingTab.location.href = target.url;
         return;
       }
       window.open(target.url, "_blank", OUTBOUND_WINDOW_FEATURES);
     },
-    [articleListFilter, markEntryReadForPub, rssReaderEntry, wireFeed],
+    [articleListFilter, editorialFeed, markEntryReadForPub, rssReaderEntry],
   );
 
   const handleSelectEntry = useCallback(
@@ -164,11 +179,11 @@ export default function ReadPubPage({
   );
 
   const closeRssReader = useCallback(() => {
-    if (!wireFeed && articleListFilter === "unread" && rssReaderEntry) {
+    if (!editorialFeed && articleListFilter === "unread" && rssReaderEntry) {
       markEntryReadForPub(rssReaderEntry.entryId);
     }
     setRssReaderEntry(null);
-  }, [articleListFilter, markEntryReadForPub, rssReaderEntry, wireFeed]);
+  }, [articleListFilter, editorialFeed, markEntryReadForPub, rssReaderEntry]);
 
   return (
     <>
@@ -197,7 +212,9 @@ export default function ReadPubPage({
           </div>
         ) : null}
         <div className="min-h-0 flex-1 overflow-hidden">
-          {wireNewsEditionEnabled ? (
+          {circleFeed ? (
+            <CircleNewsExperience onSelect={handleSelectEntry} />
+          ) : wireNewsEditionEnabled ? (
             <WireNewsExperience onSelect={handleSelectEntry} />
           ) : (
             <EntryList
@@ -207,14 +224,14 @@ export default function ReadPubPage({
               selectedEntryId={rssReaderEntry?.entryId ?? null}
               resolvingEntryId={resolvingEntryId}
               onSelectEntry={handleSelectEntry}
-              isEntryRead={wireFeed ? theWireEntryIsUnread : isEntryRead}
-              readIndicatorsEnabled={!wireFeed}
-              articleFilter={wireFeed ? "all" : articleListFilter}
+              isEntryRead={editorialFeed ? theWireEntryIsUnread : isEntryRead}
+              readIndicatorsEnabled={!editorialFeed}
+              articleFilter={editorialFeed ? "all" : articleListFilter}
               markEntryRead={
-                wireFeed ? ignoreTheWireReadState : markEntryReadForPub
+                editorialFeed ? ignoreTheWireReadState : markEntryReadForPub
               }
               markEntryUnread={
-                wireFeed ? ignoreTheWireReadState : markEntryUnreadForPub
+                editorialFeed ? ignoreTheWireReadState : markEntryUnreadForPub
               }
             />
           )}

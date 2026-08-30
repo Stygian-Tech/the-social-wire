@@ -60,6 +60,7 @@ import { MobileFeedNavigation } from "./MobileFeedNavigation";
 import { FeedbackDialog } from "./FeedbackDialog";
 import { AppSidebarBrandHeader } from "./AppSidebarBrandHeader";
 import { useWireFeedCatalog } from "@/hooks/useWireFeed";
+import { useCircleCatalog } from "@/hooks/useCircleFeed";
 import {
   loadReaderFeedSelection,
   saveReaderFeedSelection,
@@ -142,6 +143,10 @@ export function AppSidebar({
   const wireCatalog = useWireFeedCatalog();
   const wireNavigationEnabled =
     wireCatalog.data?.enabled === true && wireCatalog.data.available === true;
+  const circleCatalog = useCircleCatalog();
+  const circleNavigationEnabled =
+    circleCatalog.data?.enabled === true &&
+    circleCatalog.data.available === true;
   const savedSidebarRows = useMemo(
     () =>
       publicationSidebarProjection
@@ -225,16 +230,18 @@ export function AppSidebar({
   useEffect(() => {
     if (!setActiveReadFeedScope) return;
 
-    if (currentFeed === "wire") {
+    if (currentFeed === "wire" || currentFeed === "circle") {
+      const displayName =
+        currentFeed === "circle" ? "Your Circle" : "The Wire";
       setActiveReadFeedScope((previous) =>
         previous.gatewayScope === null &&
-        previous.displayName === "The Wire" &&
+        previous.displayName === displayName &&
         previous.publications.length === 0
           ? previous
           : {
               publications: [],
               gatewayScope: null,
-              displayName: "The Wire",
+              displayName,
             },
       );
       return;
@@ -336,6 +343,18 @@ export function AppSidebar({
       }
       return;
     }
+    if (currentFeed === "circle") {
+      if (circleCatalog.isFetched && !circleNavigationEnabled) {
+        const remembered = loadReaderFeedSelection(window.localStorage);
+        const replacement =
+          remembered === "following" &&
+          feedPreferences.visibleFeeds.includes("following")
+            ? "following"
+            : "subscribed";
+        router.replace(`/read?feed=${replacement}`);
+      }
+      return;
+    }
     if (feedPreferences.visibleFeeds.includes(currentFeed)) return;
     const replacement = nextVisibleFeed(
       currentFeed,
@@ -348,6 +367,8 @@ export function AppSidebar({
     currentFeed,
     feedPreferences.visibleFeeds,
     router,
+    circleCatalog.isFetched,
+    circleNavigationEnabled,
     wireCatalog.isFetched,
     wireNavigationEnabled,
   ]);
@@ -406,6 +427,7 @@ export function AppSidebar({
       : DEFAULT_FEED_DISPLAY_PREFERENCES.visibleFeeds,
   );
   if (wireNavigationEnabled) visible.add("wire");
+  if (circleNavigationEnabled) visible.add("circle");
 
   const selectTopLevelFeed = (feed: ReaderNavigationFeed) => {
     setSelectedFolderUri(null);
@@ -420,6 +442,11 @@ export function AppSidebar({
     if (feed === "wire") {
       saveReaderFeedSelection(window.localStorage, "wire");
       router.push("/read?feed=wire");
+      return;
+    }
+    if (feed === "circle") {
+      saveReaderFeedSelection(window.localStorage, "circle");
+      router.push("/read?feed=circle");
       return;
     }
     setPublicationTab(feed);
@@ -503,9 +530,14 @@ export function AppSidebar({
             wireEnabled={wireNavigationEnabled}
             wireActive={currentFeed === "wire"}
             onWireSelect={() => selectTopLevelFeed("wire")}
+            circleEnabled={circleNavigationEnabled}
+            circleActive={currentFeed === "circle"}
+            onCircleSelect={() => selectTopLevelFeed("circle")}
           />
         </div>
-        {showPublicationsRail && currentFeed !== "wire" ? (
+        {showPublicationsRail &&
+        currentFeed !== "wire" &&
+        currentFeed !== "circle" ? (
         <div className="flex min-w-0 flex-col gap-0 group-data-[collapsible=icon]:overflow-hidden lg:fixed lg:bottom-0 lg:right-[max(0px,calc((100vw-var(--reader-shell-width,70rem))/2))] lg:top-[var(--environment-banner-height,0px)] lg:z-30 lg:w-64 lg:overflow-y-auto lg:border-l lg:border-sidebar-border/70 lg:bg-background">
           <div className="hidden min-h-12 shrink-0 items-end px-4 pb-1 lg:flex">
             <p className="text-base font-bold text-sidebar-foreground">

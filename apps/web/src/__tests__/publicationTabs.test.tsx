@@ -109,4 +109,27 @@ describe("PublicationTabs", () => {
     fireEvent.contextMenu(wire);
     expect(screen.queryByText("Mark All As Read")).toBeNull();
   });
+
+  it("renders Your Circle as an independent authenticated feed tab", () => {
+    const onCircleSelect = mock(() => undefined);
+    render(
+      <SidebarProvider>
+        <PublicationTabs
+          activeTab={null}
+          onTabChange={() => undefined}
+          circleEnabled
+          circleActive
+          onCircleSelect={onCircleSelect}
+          visibleTabs={[]}
+        />
+      </SidebarProvider>,
+    );
+
+    const circle = screen.getByRole("tab", { name: "Your Circle" });
+    expect(circle.getAttribute("aria-selected")).toBe("true");
+    fireEvent.click(circle);
+    expect(onCircleSelect).toHaveBeenCalledTimes(1);
+    fireEvent.contextMenu(circle);
+    expect(screen.queryByText("Mark All As Read")).toBeNull();
+  });
 });

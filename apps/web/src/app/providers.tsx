@@ -13,6 +13,7 @@ import { LexiconMigrationRunner } from "@/hooks/useLexiconMigration";
 import { createIndexedDbQueryPersister } from "@/lib/indexedDbQueryPersister";
 import type { PublicationSidebarProjection } from "@/lib/publicationProjectionClient";
 import { shouldPersistSidebarProjection } from "@/lib/sidebarProjectionPersist";
+import { CircleViewerCacheCleanup } from "@/components/Circle/CircleViewerCacheCleanup";
 
 /** IndexedDB key for dehydrated React Query cache (sidebar + bounded entry lists). */
 const QUERY_PERSIST_KEY = "the-social-wire.react-query.v2";
@@ -75,10 +76,34 @@ function shouldPersistWireEditionQuery(query: Query): boolean {
   return data.pages.length <= 3 && totalStories <= 150;
 }
 
+/** Persist private Circle editions only under a concrete viewer DID key. */
+function shouldPersistCircleEditionQuery(query: Query): boolean {
+  const key = query.queryKey;
+  if (
+    !Array.isArray(key) ||
+    key[0] !== "circleEdition" ||
+    typeof key[1] !== "string" ||
+    !key[1].startsWith("did:") ||
+    query.state.status !== "success"
+  ) {
+    return false;
+  }
+  const data = query.state.data as
+    | InfiniteData<{ stories?: unknown[] }>
+    | undefined;
+  if (!data?.pages?.length) return false;
+  const totalStories = data.pages.reduce(
+    (count, page) => count + (page.stories?.length ?? 0),
+    0,
+  );
+  return data.pages.length <= 3 && totalStories <= 150;
+}
+
 function shouldDehydrateQuery(query: Query): boolean {
   return (
     shouldPersistEntriesQuery(query) ||
     shouldPersistWireEditionQuery(query) ||
+    shouldPersistCircleEditionQuery(query) ||
     shouldPersistSidebarProjectionQuery(query)
   );
 }
@@ -119,6 +144,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
         }}
       >
         <AuthProvider>
+          <CircleViewerCacheCleanup />
           <LexiconMigrationRunner />
           {children}
         </AuthProvider>

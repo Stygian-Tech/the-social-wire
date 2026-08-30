@@ -107,6 +107,35 @@ export interface EntryListItem {
     /** Non-production ranking diagnostic; omitted by production responses. */
     rankingScore?: number;
   };
+  /** Viewer-scoped Your Circle presentation metadata. Never persisted outside viewer-keyed caches. */
+  circleItem?: {
+    storyId: string;
+    representativeUri?: string;
+    source: {
+      name: string;
+      domain: string;
+      publication?: string;
+      author?: string;
+      publicationKey?: string;
+      homepageUrl?: string;
+      iconUrl?: string;
+    };
+    reasons: string[];
+    discussionCount: number;
+    sharers: Array<{
+      identity: {
+        did: string;
+        handle: string;
+        displayName?: string;
+        avatarUrl?: string;
+      };
+      relationship: "direct" | "one_hop";
+      action: "recommended" | "shared" | "discussed";
+      sourceUri: string;
+      timestamp: string;
+    }>;
+    publishedAt?: string;
+  };
 }
 
 export interface EntryDetail {

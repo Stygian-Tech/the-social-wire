@@ -18,4 +18,7 @@ export const socialWireXrpc = {
   getWireEdition: `${XRPC_PREFIX}app.thesocialwire.discovery.getWireEdition`,
   getWireItem: `${XRPC_PREFIX}app.thesocialwire.discovery.getWireItem`,
   getFeedCatalog: `${XRPC_PREFIX}app.thesocialwire.discovery.getFeedCatalog`,
+  getCircleCatalog: `${XRPC_PREFIX}app.thesocialwire.discovery.getCircleCatalog`,
+  getCircleEdition: `${XRPC_PREFIX}app.thesocialwire.discovery.getCircleEdition`,
+  setCircleItemHidden: `${XRPC_PREFIX}app.thesocialwire.discovery.setCircleItemHidden`,
 } as const;

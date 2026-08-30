@@ -1,9 +1,18 @@
-export type ReaderFeedSelection = "wire" | "subscribed" | "following";
+export type ReaderFeedSelection =
+  | "wire"
+  | "circle"
+  | "subscribed"
+  | "following";
 
 export function isReaderFeedSelection(
   value: string | null,
 ): value is ReaderFeedSelection {
-  return value === "wire" || value === "subscribed" || value === "following";
+  return (
+    value === "wire" ||
+    value === "circle" ||
+    value === "subscribed" ||
+    value === "following"
+  );
 }
 
 export const READER_FEED_SELECTION_STORAGE_KEY =

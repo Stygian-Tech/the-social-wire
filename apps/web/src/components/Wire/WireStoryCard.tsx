@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { EyeOff } from "lucide-react";
 
 import { EntryCardActionMenu } from "@/components/EntryList/EntryCardActionMenu";
 import { EntryRowActions } from "@/components/EntryList/EntryRowActions";
@@ -19,6 +20,9 @@ import { thumbnailImageSrcAttempts } from "@/lib/publicResourceUrl";
 import { cn } from "@/lib/utils";
 import { wireReasonLabel } from "@/lib/wireFeedClient";
 import { WireStoryHoverMetadata } from "./WireStoryHoverMetadata";
+import { CircleSharerStrip } from "@/components/Circle/CircleSharerStrip";
+import { useCircleStoryActions } from "@/components/Circle/CircleStoryActionsContext";
+import { circleReasonLabel } from "@/lib/circleFeedClient";
 
 export type WireStoryCardVariant =
   | "lead"
@@ -39,6 +43,8 @@ export function WireStoryCard({
   onSelect: (entryId: string, entry?: EntryListItem) => void;
 }) {
   const source = story.wireItem?.source;
+  const circleItem = story.circleItem;
+  const circleActions = useCircleStoryActions();
   const publicationName =
     source?.name.trim() ||
     source?.domain.trim() ||
@@ -58,9 +64,11 @@ export function WireStoryCard({
         dateStyle: "medium",
         timeStyle: "short",
       });
-  const reason = story.wireItem?.reasons
-    .map(wireReasonLabel)
-    .find((label): label is string => Boolean(label));
+  const reason = (
+    circleItem?.reasons.map(circleReasonLabel) ??
+    story.wireItem?.reasons.map(wireReasonLabel) ??
+    []
+  ).find((label): label is string => Boolean(label));
   const showImage = variant !== "compact";
   const thumbnailAttempts = useMemo(
     () =>
@@ -77,6 +85,22 @@ export function WireStoryCard({
     (attempt) => !failedThumbnailUrls.has(attempt),
   );
   const rendersThumbnail = showImage && Boolean(thumbnailUrl);
+
+  if (circleItem && circleActions?.isHidden(circleItem.storyId)) {
+    return (
+      <div className="flex min-h-24 items-center justify-between gap-3 rounded-2xl border border-dashed border-border bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
+        <span>Story hidden from Your Circle.</span>
+        <button
+          type="button"
+          disabled={circleActions.isPending(circleItem.storyId)}
+          className="font-semibold text-primary underline-offset-4 hover:underline disabled:opacity-50"
+          onClick={() => circleActions.undo(circleItem.storyId)}
+        >
+          Undo
+        </button>
+      </div>
+    );
+  }
 
   const card = (
     <div
@@ -249,8 +273,28 @@ export function WireStoryCard({
             ) : null}
           </div>
         ) : null}
+        {circleItem ? (
+          <CircleSharerStrip
+            sharers={circleItem.sharers}
+            compact={variant === "compact" || variant === "supporting"}
+          />
+        ) : null}
         {variant !== "trending" ? (
-          <div className="absolute bottom-2 right-2">
+          <div className="absolute bottom-2 right-2 flex items-center gap-1">
+            {circleItem && circleActions ? (
+              <button
+                type="button"
+                aria-label="Hide From Your Circle"
+                title="Hide From Your Circle"
+                className="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  circleActions.hide(circleItem.storyId);
+                }}
+              >
+                <EyeOff className="size-4" />
+              </button>
+            ) : null}
             <EntryCardActionMenu entry={story} showWireFeedback />
           </div>
         ) : null}
@@ -258,8 +302,22 @@ export function WireStoryCard({
       {variant === "trending" ? (
         <div
           data-wire-trending-actions
-          className="absolute right-2 top-2 opacity-60 transition-opacity [@media(hover:hover)]:opacity-0 group-hover/story:opacity-100 group-focus-within/story:opacity-100"
+          className="absolute right-2 top-2 flex items-center gap-1 opacity-60 transition-opacity [@media(hover:hover)]:opacity-0 group-hover/story:opacity-100 group-focus-within/story:opacity-100"
         >
+          {circleItem && circleActions ? (
+            <button
+              type="button"
+              aria-label="Hide From Your Circle"
+              title="Hide From Your Circle"
+              className="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+              onClick={(event) => {
+                event.stopPropagation();
+                circleActions.hide(circleItem.storyId);
+              }}
+            >
+              <EyeOff className="size-4" />
+            </button>
+          ) : null}
           <EntryCardActionMenu entry={story} showWireFeedback />
         </div>
       ) : null}
