@@ -141,7 +141,14 @@ actor RemoteWireFeedStore: WireFeedStore {
       )
       response = try await transportResponse(target: canonicalTarget, allowsNotFound: false)
     }
-    guard response.contractVersion == 2 else { throw WireServingError.unavailable }
+    // Contract v3 adds the authenticated Circle candidate operation without
+    // changing the existing Wire edition payload. Accept both revisions during
+    // the rolling Corpus Edge/AppView deployment.
+    guard let contractVersion = response.contractVersion,
+      (2...3).contains(contractVersion)
+    else {
+      throw WireServingError.unavailable
+    }
     let edition: WireEdition = try decode(response.body)
     guard edition.language == requestedLanguage else { throw WireServingError.unavailable }
     let moderation = try await moderationSnapshot(viewerDID: viewerDid, now: now)
