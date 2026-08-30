@@ -93,8 +93,9 @@ tracking parameters only               +0.25
 ```
 
 The aggregate classes are `normal` at `0...2`, `limited` at `3...5`, and
-`probable_ad` above `5`. `limited` candidates remain eligible and receive a bounded `0.15`
-score penalty; `probable_ad` candidates are excluded from general
+`probable_ad` above `5`. `limited` candidates remain eligible and receive a graduated
+score penalty from `0.15` at score `3` through `0.25` at score `5`; `probable_ad`
+candidates are excluded from general
 Wire editions. Known malicious, coordinated, or moderator-labeled spam remains a hard
 suppression outside this commercial score. Repeated campaigns, actor-to-domain
 concentration, near-duplicate pitches, landing-page aliases, community concentration, and
@@ -105,7 +106,7 @@ only; it does not make a Bluesky post, profile, or feed destination eligible.
 
 Target classification runs before canonical item creation and again after metadata
 redirect resolution. Active classification emits `external_article`,
-`standard_site_document`, `social_post`, `profile_or_feed`, or `unsupported`;
+`standard_site_document`, `social_post`, `profile_or_feed`, `operational_status`, or `unsupported`;
 `commerce_or_ad` is reserved while commercial disposition remains a separate class. Only
 `external_article` and `standard_site_document` may create a `wire_item`.
 
@@ -200,7 +201,7 @@ Score:
 + 0.06 * positiveFeedbackBreadth
 ```
 
-The implementation divides that positive score by the sum of positive weights, so validated future configurations remain normalized. It then subtracts `0.10 * negativeFeedbackBreadth`, the matching platform-destination penalty, `0.15` when the commercial classifier returns `limited`, and `0.15` when the story has no usable presentation thumbnail. The missing-thumbnail adjustment is a strong but bounded publication-quality preference: image-bearing reporting should dominate normal ordering, while a story without publisher artwork remains eligible to fill an edition when stronger presentation is unavailable. After admission, the ranker adds a deterministic nudge in `[0, 0.005]` derived from FNV-1a over the canonical key and `floor(asOf / 1,800 seconds)`, then clamps the result to `[0, 1]`. The nudge is stable across every one-minute generation within a 30-minute bucket and changes only at a bucket boundary. Primary/burst and quality-reserve tiers are nudged and sorted separately, so rotation cannot admit a story or move reserve filler ahead of a strict story. A half-point maximum permits nearly tied eligible stories to rotate without overwhelming material quality differences.
+The implementation divides that positive score by the sum of positive weights, so validated future configurations remain normalized. It then subtracts `0.10 * negativeFeedbackBreadth`, the matching platform-destination penalty, a commercial penalty scaled from `0.15` at limited score `3` through `0.25` at score `5`, and `0.15` when the story has no usable presentation thumbnail. The missing-thumbnail adjustment is a strong but bounded publication-quality preference: image-bearing reporting should dominate normal ordering, while a story without publisher artwork remains eligible to fill an edition when stronger presentation is unavailable. After admission, the ranker adds a deterministic nudge in `[0, 0.005]` derived from FNV-1a over the canonical key and `floor(asOf / 1,800 seconds)`, then clamps the result to `[0, 1]`. The nudge is stable across every one-minute generation within a 30-minute bucket and changes only at a bucket boundary. Primary/burst and quality-reserve tiers are nudged and sorted separately, so rotation cannot admit a story or move reserve filler ahead of a strict story. A half-point maximum permits nearly tied eligible stories to rotate without overwhelming material quality differences.
 
 Standard Site authority (`0.11`) and Standard Site recommendation breadth (`0.10`) therefore have larger explicit coefficients than Social Wire positive feedback (`0.06`) and a Bluesky like (`0.02`); recommendations also participate in high-intent breadth and admission by design. The positive-weight total remains `1.14`, so the increased freshness, Standard Site, and recommendation emphasis does not silently dilute those authority signals. Weights must be finite/nonnegative with a positive total. Thresholds/targets and time intervals must be positive and source confidence must stay in `[0, 1]`. Sort each admission tier by nudged score descending, then `canonicalKey` ascending; input order, database plan, clock locale, and process count must not change output.
 

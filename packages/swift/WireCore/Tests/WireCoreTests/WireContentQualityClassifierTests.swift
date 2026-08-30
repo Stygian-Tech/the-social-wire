@@ -15,6 +15,19 @@ struct WireContentQualityClassifierTests {
       for: "https://bsky.app/profile/alice.example/post/3abc").canCreateItem)
   }
 
+  @Test("rejects dedicated operational status hosts without path-only false positives")
+  func operationalStatusTargets() {
+    #expect(WireContentQualityClassifier.targetKind(
+      for: "https://status.strongvpn.com/incidents/mrwzl3d5fz3w",
+      standardSite: true
+    ) == .operationalStatus)
+    #expect(WireContentQualityClassifier.targetKind(
+      for: "https://example.statuspage.io/incident/1") == .operationalStatus)
+    #expect(WireContentQualityClassifier.targetKind(
+      for: "https://news.example/status/report") == .externalArticle)
+    #expect(!WireTargetKind.operationalStatus.canCreateItem)
+  }
+
   @Test("combines disclosure, CTA, price, slug, and affiliate evidence")
   func probableAdvertisement() {
     let result = WireContentQualityClassifier.assess(
@@ -50,6 +63,19 @@ struct WireContentQualityClassifierTests {
     )
     #expect(result.classification == .limited)
     #expect(result.reasons == [.productOfferSchema])
+  }
+
+  @Test("affiliate disclosure is strong evidence and shopping is weak corroboration")
+  func affiliateDisclosure() {
+    let result = WireContentQualityClassifier.assess(
+      canonicalURL: "https://publisher.example/shopping/roundup",
+      title: "A useful roundup",
+      summary: nil,
+      hasAffiliateDisclosure: true
+    )
+    #expect(result.score == 5)
+    #expect(result.classification == .limited)
+    #expect(Set(result.reasons) == [.explicitAdDisclosure, .commercialSlug])
   }
 
   @Test("does not treat hashtag prefixes as ad disclosures")

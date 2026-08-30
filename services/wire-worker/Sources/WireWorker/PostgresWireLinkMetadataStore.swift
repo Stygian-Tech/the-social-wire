@@ -193,7 +193,8 @@ struct PostgresWireLinkMetadataStore: WireLinkMetadataStoring {
       canonicalURL: metadata.canonicalURL,
       title: metadata.title,
       summary: metadata.description,
-      hasProductOfferSchema: metadata.hasProductOfferSchema
+      hasProductOfferSchema: metadata.hasProductOfferSchema,
+      hasAffiliateDisclosure: metadata.hasAffiliateDisclosure
     )
     let commercialReasons = String(
       decoding: try JSONEncoder().encode(commercial.reasons.map(\.rawValue)), as: UTF8.self)
@@ -238,7 +239,7 @@ struct PostgresWireLinkMetadataStore: WireLinkMetadataStoring {
               THEN COALESCE(published_at, \(metadata.publishedAt))
               ELSE COALESCE(\(metadata.publishedAt), published_at) END,
             language_code = CASE
-              WHEN provenance ? 'standard_site' AND language_code <> 'und' THEN language_code
+              WHEN provenance ? 'standard_site' THEN language_code
               ELSE COALESCE(\(metadata.languageCode), language_code) END,
             publication_homepage_url = CASE WHEN provenance ? 'standard_site'
               THEN COALESCE(publication_homepage_url, \(homepageURL))
@@ -281,14 +282,23 @@ struct PostgresWireLinkMetadataStore: WireLinkMetadataStoring {
               'publishedAt', CASE WHEN provenance ? 'standard_site'
                 THEN COALESCE(published_at, \(metadata.publishedAt))
                 ELSE COALESCE(\(metadata.publishedAt), published_at) END,
+              'languageSource', CASE
+                WHEN provenance ? 'standard_site'
+                  THEN COALESCE(presentation_snapshot->'languageSource', to_jsonb('unknown'::text))
+                WHEN \(metadata.languageCode)::text IS NOT NULL THEN to_jsonb('page_declared'::text)
+                ELSE COALESCE(presentation_snapshot->'languageSource', to_jsonb('unknown'::text))
+                END,
               'homepageUrl', CASE WHEN provenance ? 'standard_site'
                 THEN COALESCE(publication_homepage_url, \(homepageURL))
                 ELSE COALESCE(\(homepageURL), publication_homepage_url) END,
               'iconUrl', CASE WHEN provenance ? 'standard_site'
                 THEN COALESCE(publication_icon_url, \(metadata.iconURL))
                 ELSE COALESCE(\(metadata.iconURL), publication_icon_url) END
-            )), target_kind = CASE WHEN provenance ? 'standard_site'
-              THEN 'standard_site_document' ELSE \(targetKind.rawValue) END,
+            )), target_kind = CASE
+              WHEN target_kind NOT IN ('external_article', 'standard_site_document') THEN target_kind
+              WHEN NOT \(targetKind.canCreateItem) THEN \(targetKind.rawValue)
+              WHEN provenance ? 'standard_site' THEN 'standard_site_document'
+              ELSE \(targetKind.rawValue) END,
             commercial_score = GREATEST(commercial_score, \(commercial.score)),
             commercial_class = CASE
               WHEN commercial_score > \(commercial.score) THEN commercial_class
