@@ -343,10 +343,12 @@ export function selectWireLanguage(
       .filter(Boolean)
       .map((language) => [language.toLowerCase(), language]),
   );
+  let preferredPrimaryLanguage: string | undefined;
   for (const requested of requestedLanguages) {
     const normalized = requested.trim().replaceAll("_", "-");
     const primary = normalized.split("-")[0]?.toLowerCase();
     if (!primary || !/^[a-z]{2,8}$/.test(primary)) continue;
+    preferredPrimaryLanguage ??= primary;
 
     const exact = supported.get(normalized.toLowerCase());
     if (exact) return exact;
@@ -356,7 +358,11 @@ export function selectWireLanguage(
     );
     if (baseMatch) return baseMatch[1];
   }
-  return undefined;
+
+  // A missing localized generation must not silently opt the viewer into
+  // the multilingual global edition. The AppView accepts a coarse language
+  // and serves an exact-language fallback (including an honest empty page).
+  return preferredPrimaryLanguage;
 }
 
 export function selectWireViewerRegion(
