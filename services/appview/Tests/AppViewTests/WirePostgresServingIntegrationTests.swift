@@ -228,6 +228,144 @@ struct WirePostgresServingIntegrationTests {
     )
   }
 
+  @Test("an emptied localized generation serves the current exact-language fallback")
+  func emptiedLocalizedGenerationUsesExactLanguageFallback() async throws {
+    guard let url = ProcessInfo.processInfo.environment["WIRE_TEST_DATABASE_URL"] else { return }
+    let logger = Logger(label: "wire-appview-postgres.empty-language-generation-integration")
+    var configuration = try makePostgresConfig(from: url, logger: logger)
+    configuration.options.maximumConnections = 2
+    let pool = PostgresClient(configuration: configuration, backgroundLogger: logger)
+    let runTask = Task { await pool.run() }
+    await Task.yield()
+    defer { runTask.cancel() }
+
+    let namespace = UUID().uuidString.lowercased()
+    let generation = UUID()
+    let now = Date()
+    let reclassifiedKey = "url:\(namespace)-reclassified"
+    let fallbackKey = "url:\(namespace)-fallback"
+    let labelSource = "did:example:labeler:\(namespace)"
+    do {
+      try await setBaselineLabelState(
+        sourceDID: labelSource,
+        successfulAt: now,
+        pool: pool,
+        logger: logger
+      )
+      try await pool.query(
+        """
+        INSERT INTO wire_items
+          (canonical_key, canonical_url, source_domain, source_name, title, language_code,
+           provenance, first_seen_at, last_seen_at, source_confidence, eligible, expires_at)
+        VALUES
+          (\(reclassifiedKey), \("https://example.com/\(namespace)/reclassified"),
+           'example.com', 'Example', 'Reclassified Story', 'und',
+           '["bluesky_post"]'::jsonb, \(now), \(now), 0.9, TRUE,
+           \(now.addingTimeInterval(86_400))),
+          (\(fallbackKey), \("https://fallback.example/\(namespace)/english"),
+           'fallback.example', 'Fallback', 'Current English Story', 'en',
+           '["standard_site"]'::jsonb, \(now), \(now), 0.9, TRUE,
+           \(now.addingTimeInterval(86_400)))
+        """,
+        logger: logger
+      )
+      try await pool.query(
+        """
+        INSERT INTO wire_signal_rollups
+          (canonical_key, shares_24h, recommendations_24h, updated_at)
+        VALUES (\(fallbackKey), 3, 1, \(now))
+        """,
+        logger: logger
+      )
+      try await insertGeneration(
+        generation,
+        keys: [reclassifiedKey],
+        generatedAt: now.addingTimeInterval(-(31 * 60)),
+        active: true,
+        language: "en",
+        pool: pool,
+        logger: logger
+      )
+      try await pool.query(
+        """
+        INSERT INTO wire_edition_generations
+          (generation_id, algorithm_version, language_bucket, continuation_ordinal, materialized_at)
+        VALUES (\(generation), 'wire-v10', 'en', 1, \(now))
+        """,
+        logger: logger
+      )
+      try await pool.query(
+        """
+        INSERT INTO wire_edition_modules
+          (generation_id, module_key, module_kind, title, position)
+        VALUES (\(generation), 'top-stories', 'top_stories', 'Top Stories', 0)
+        """,
+        logger: logger
+      )
+      try await pool.query(
+        """
+        INSERT INTO wire_edition_module_items
+          (generation_id, module_key, position, canonical_key)
+        VALUES (\(generation), 'top-stories', 0, \(reclassifiedKey))
+        """,
+        logger: logger
+      )
+
+      let store = try PostgresWireFeedStore(
+        pool: pool,
+        logger: logger,
+        cursorSecret: String(repeating: "c", count: 32),
+        mode: .visible,
+        moderationCache: WireViewerModerationCache()
+      )
+      let page = try await store.getFeed(
+        cursor: nil,
+        limit: 10,
+        language: "en-US",
+        viewerDid: nil,
+        now: now
+      )
+      #expect(page.source == .simplifiedFallback)
+      #expect(page.degraded)
+      #expect(page.items.map(\.itemID) == [fallbackKey])
+
+      let edition = try await store.getEdition(
+        language: "en-US",
+        region: nil,
+        viewerDid: nil,
+        now: now
+      )
+      #expect(edition.source == .simplifiedFallback)
+      #expect(edition.degraded)
+      #expect(edition.leadStories.map(\.itemID) == [fallbackKey])
+    } catch {
+      Issue.record(
+        "PostgreSQL empty localized generation integration failed: \(String(reflecting: error))"
+      )
+    }
+
+    try await pool.query(
+      "DELETE FROM wire_feed_state WHERE active_generation_id = \(generation)",
+      logger: logger
+    )
+    try await pool.query(
+      "DELETE FROM wire_rank_generations WHERE generation_id = \(generation)",
+      logger: logger
+    )
+    try await pool.query(
+      "DELETE FROM wire_signal_rollups WHERE canonical_key = \(fallbackKey)",
+      logger: logger
+    )
+    try await pool.query(
+      "DELETE FROM wire_items WHERE canonical_key IN (\(reclassifiedKey), \(fallbackKey))",
+      logger: logger
+    )
+    try await pool.query(
+      "DELETE FROM wire_label_refresh_state WHERE source_did = \(labelSource)",
+      logger: logger
+    )
+  }
+
   @Test("pagination remains bound to its retained generation after activation advances")
   func stableGenerationPagination() async throws {
     guard let url = ProcessInfo.processInfo.environment["WIRE_TEST_DATABASE_URL"] else { return }

@@ -105,6 +105,14 @@ actor PostgresWireFeedStore: WireFeedStore {
       if rows.isEmpty { exhausted = true }
     }
     let pageItems = Array(accepted.prefix(safeLimit).map(\.item))
+    if cursor == nil, requestedLanguage != "und", pageItems.isEmpty {
+      return try await simplifiedFallback(
+        limit: safeLimit,
+        language: requestedLanguage,
+        viewerDID: viewerDid,
+        now: now
+      )
+    }
     let nextCursor: String?
     if accepted.count > safeLimit, let last = accepted.prefix(safeLimit).last {
       nextCursor = try cursorCodec.encode(
@@ -147,42 +155,10 @@ actor PostgresWireFeedStore: WireFeedStore {
     try await requireUsableBaselineLabels(now: now)
     let requestedLanguage = Self.primaryLanguage(language)
     guard let generation = try await activeGeneration(language: requestedLanguage, now: now) else {
-      let page = try await getFeed(
-        cursor: nil,
-        limit: 50,
+      return try await simplifiedFallbackEdition(
         language: requestedLanguage,
-        viewerDid: viewerDid,
-        now: now
-      )
-      let edition = WireEditionAssembler.assemble(
-        generationID: page.generationID,
-        generatedAt: page.generatedAt,
-        language: page.language,
-        cursor: page.cursor,
-        source: page.source,
-        degraded: page.degraded,
-        rankedItems: page.items
-      )
-      let accounts = try await latestMaterializedTalkedAccounts(
-        language: page.language,
         viewerDID: viewerDid,
         now: now
-      )
-      guard accounts.count >= 4 else { return edition }
-      return WireEdition(
-        algorithmVersion: edition.algorithmVersion,
-        generationID: edition.generationID,
-        generatedAt: edition.generatedAt,
-        language: edition.language,
-        cursor: edition.cursor,
-        source: edition.source,
-        degraded: edition.degraded,
-        leadStories: edition.leadStories,
-        publicationPanels: edition.publicationPanels,
-        storyRails: edition.storyRails,
-        generalStories: edition.generalStories,
-        trendingStories: edition.trendingStories,
-        talkedAboutAccounts: accounts
       )
     }
 
@@ -333,6 +309,15 @@ actor PostgresWireFeedStore: WireFeedStore {
       default:
         throw WireServingError.unavailable
       }
+    }
+    if requestedLanguage != "und",
+      leads.isEmpty, panels.isEmpty, rails.isEmpty, general.isEmpty, trending.isEmpty
+    {
+      return try await simplifiedFallbackEdition(
+        language: requestedLanguage,
+        viewerDID: viewerDid,
+        now: now
+      )
     }
 
     let moreRows = try await pool.query(
@@ -700,6 +685,49 @@ actor PostgresWireFeedStore: WireFeedStore {
       source: .simplifiedFallback,
       degraded: true,
       items: Array(items)
+    )
+  }
+
+  private func simplifiedFallbackEdition(
+    language: String,
+    viewerDID: String?,
+    now: Date
+  ) async throws -> WireEdition {
+    let page = try await simplifiedFallback(
+      limit: 50,
+      language: language,
+      viewerDID: viewerDID,
+      now: now
+    )
+    let edition = WireEditionAssembler.assemble(
+      generationID: page.generationID,
+      generatedAt: page.generatedAt,
+      language: page.language,
+      cursor: page.cursor,
+      source: page.source,
+      degraded: page.degraded,
+      rankedItems: page.items
+    )
+    let accounts = try await latestMaterializedTalkedAccounts(
+      language: page.language,
+      viewerDID: viewerDID,
+      now: now
+    )
+    guard accounts.count >= 4 else { return edition }
+    return WireEdition(
+      algorithmVersion: edition.algorithmVersion,
+      generationID: edition.generationID,
+      generatedAt: edition.generatedAt,
+      language: edition.language,
+      cursor: edition.cursor,
+      source: edition.source,
+      degraded: edition.degraded,
+      leadStories: edition.leadStories,
+      publicationPanels: edition.publicationPanels,
+      storyRails: edition.storyRails,
+      generalStories: edition.generalStories,
+      trendingStories: edition.trendingStories,
+      talkedAboutAccounts: accounts
     )
   }
 
