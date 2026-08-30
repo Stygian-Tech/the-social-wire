@@ -86,6 +86,7 @@ actor PostgresWireFeedStore: WireFeedStore {
     while accepted.count <= safeLimit, !exhausted, scanned < 5_000 {
       let rows = try await rankedItems(
         generationID: generation.id,
+        language: generation.language,
         startOrdinal: scanOrdinal,
         limit: 500,
         now: now
@@ -239,6 +240,7 @@ actor PostgresWireFeedStore: WireFeedStore {
         AND (\(modulePrefix) = '' AND POSITION(':' IN module.module_key) = 0
           OR \(modulePrefix) <> '' AND module.module_key LIKE \(modulePattern))
         AND item.eligible = TRUE AND item.expires_at > \(now)
+        AND (\(generation.language) = 'und' OR item.language_code = \(generation.language))
         AND NOT EXISTS (
           SELECT 1 FROM wire_labels label
           WHERE label.canonical_key = item.canonical_key AND label.expires_at > \(now)
@@ -521,6 +523,7 @@ actor PostgresWireFeedStore: WireFeedStore {
 
   private func rankedItems(
     generationID: UUID,
+    language: String,
     startOrdinal: Int,
     limit: Int,
     now: Date
@@ -538,6 +541,7 @@ actor PostgresWireFeedStore: WireFeedStore {
       JOIN wire_items item ON item.canonical_key = ranked.canonical_key
       WHERE ranked.generation_id = \(generationID) AND ranked.position >= \(startOrdinal)
         AND item.eligible = TRUE AND item.expires_at > \(now)
+        AND (\(language) = 'und' OR item.language_code = \(language))
         AND NOT EXISTS (
           SELECT 1 FROM wire_labels label
           WHERE label.canonical_key = item.canonical_key AND label.expires_at > \(now)
