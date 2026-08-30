@@ -83,11 +83,13 @@ export default defineRailway((context) => {
       JETSTREAM_APPVIEW_BOOTSTRAP_AFTER_SEQ: "24790001258",
       JETSTREAM_APPVIEW_ENABLED: "true",
       JETSTREAM_APPVIEW_SOURCE_GENERATION: "jetstream-v2-us-west-v2",
-      JETSTREAM_WIRE_BOOTSTRAP_AFTER_SEQ: "24924866033",
+      // The v1 checkpoint is immutable and bound to the original Wire filter.
+      // Start v4 one sequence before its last staged seam for duplicate overlap.
+      JETSTREAM_WIRE_BOOTSTRAP_AFTER_SEQ: "24941037520",
       JETSTREAM_WIRE_ENABLED: "true",
       JETSTREAM_WIRE_ADMISSION_BURST_EVENTS: "1",
       JETSTREAM_WIRE_ADMISSION_RATE_PER_SECOND: "3",
-      JETSTREAM_WIRE_SOURCE_GENERATION: "wire-global-v1-dev-1h-20260820",
+      JETSTREAM_WIRE_SOURCE_GENERATION: "wire-global-v4-dev-live-20260830",
     },
   });
 
