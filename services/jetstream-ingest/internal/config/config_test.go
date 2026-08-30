@@ -57,6 +57,121 @@ func TestLoadDefaultsToUSWestAndAllEventKinds(t *testing.T) {
 	}
 }
 
+func TestLoadControllerPreservesLegacySingleLaneConfiguration(t *testing.T) {
+	t.Setenv("APP_ENV", "dev")
+	t.Setenv("DATABASE_URL", "postgres://example.invalid/socialwire")
+	t.Setenv("JETSTREAM_API_KEY", "test-key")
+	t.Setenv("JETSTREAM_PIPELINE_MODE", WirePipelineMode)
+	setRequiredWireAdmission(t)
+
+	controller, err := LoadController()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !controller.LegacySingleLane || controller.Port != 8080 || len(controller.Lanes) != 1 {
+		t.Fatalf("legacy controller = %#v", controller)
+	}
+	if controller.Lanes[0].Name != WireLaneName || controller.Lanes[0].Config.PipelineMode != WirePipelineMode {
+		t.Fatalf("legacy lane = %#v", controller.Lanes[0])
+	}
+}
+
+func TestLoadControllerLoadsIndependentNamespacedLanes(t *testing.T) {
+	t.Setenv("APP_ENV", "prod")
+	t.Setenv("DATABASE_URL", "postgres://example.invalid/socialwire")
+	t.Setenv("JETSTREAM_API_KEY", "shared-test-key")
+	t.Setenv("PORT", "9090")
+	t.Setenv("JETSTREAM_APPVIEW_ENABLED", "true")
+	t.Setenv("JETSTREAM_WIRE_ENABLED", "true")
+	t.Setenv("JETSTREAM_APPVIEW_SOURCE_GENERATION", "appview-generation")
+	t.Setenv("JETSTREAM_APPVIEW_BATCH_SIZE", "111")
+	t.Setenv("JETSTREAM_APPVIEW_LEADER_LEASE_NAME", "appview-lease")
+	t.Setenv("JETSTREAM_WIRE_SOURCE_GENERATION", "wire-generation")
+	t.Setenv("JETSTREAM_WIRE_BATCH_SIZE", "222")
+	t.Setenv("JETSTREAM_WIRE_LEADER_LEASE_NAME", "wire-lease")
+	t.Setenv("JETSTREAM_WIRE_ADMISSION_RATE_PER_SECOND", "600")
+	t.Setenv("JETSTREAM_WIRE_ADMISSION_BURST_EVENTS", "200")
+
+	controller, err := LoadController()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if controller.LegacySingleLane || controller.Port != 9090 || len(controller.Lanes) != 2 {
+		t.Fatalf("multi-lane controller = %#v", controller)
+	}
+	appView, wire := controller.Lanes[0], controller.Lanes[1]
+	if appView.Name != AppViewLaneName || appView.Config.PipelineMode != DefaultPipelineMode ||
+		appView.Config.SourceGeneration != "appview-generation" || appView.Config.BatchSize != 111 ||
+		appView.Config.LeaderLeaseName != "appview-lease" {
+		t.Fatalf("appview lane = %#v", appView)
+	}
+	if wire.Name != WireLaneName || wire.Config.PipelineMode != WirePipelineMode ||
+		wire.Config.SourceGeneration != "wire-generation" || wire.Config.BatchSize != 222 ||
+		wire.Config.LeaderLeaseName != "wire-lease" || wire.Config.WireAdmissionRate != 600 ||
+		wire.Config.WireAdmissionBurst != 200 {
+		t.Fatalf("wire lane = %#v", wire)
+	}
+	if appView.Config.APIKey != "shared-test-key" || wire.Config.APIKey != "shared-test-key" {
+		t.Fatalf("shared API key was not inherited")
+	}
+	if appView.Config.FilterFingerprint == wire.Config.FilterFingerprint {
+		t.Fatal("namespaced lanes share a filter fingerprint")
+	}
+}
+
+func TestLoadControllerNamespacedModeRequiresAnEnabledLane(t *testing.T) {
+	t.Setenv("JETSTREAM_APPVIEW_ENABLED", "false")
+	if _, err := LoadController(); err == nil || !strings.Contains(err.Error(), "at least one") {
+		t.Fatalf("load error = %v", err)
+	}
+}
+
+func TestLoadControllerIgnoresLegacyLaneSettingsInNamespacedMode(t *testing.T) {
+	t.Setenv("APP_ENV", "dev")
+	t.Setenv("DATABASE_URL", "postgres://example.invalid/socialwire")
+	t.Setenv("JETSTREAM_API_KEY", "test-key")
+	t.Setenv("JETSTREAM_PIPELINE_MODE", WirePipelineMode)
+	t.Setenv("JETSTREAM_BATCH_SIZE", "999")
+	t.Setenv("WIRE_ADMISSION_RATE_PER_SECOND", "999")
+	t.Setenv("JETSTREAM_APPVIEW_ENABLED", "true")
+
+	controller, err := LoadController()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(controller.Lanes) != 1 || controller.Lanes[0].Name != AppViewLaneName {
+		t.Fatalf("lanes = %#v", controller.Lanes)
+	}
+	if controller.Lanes[0].Config.BatchSize != 256 || controller.Lanes[0].Config.PipelineMode != DefaultPipelineMode {
+		t.Fatalf("legacy settings leaked into namespaced lane: %#v", controller.Lanes[0].Config)
+	}
+}
+
+func TestLoadControllerPreservesNamespacedWireSnapshotBounds(t *testing.T) {
+	t.Setenv("APP_ENV", "dev")
+	t.Setenv("DATABASE_URL", "postgres://example.invalid/socialwire")
+	t.Setenv("JETSTREAM_API_KEY", "test-key")
+	t.Setenv("JETSTREAM_WIRE_ENABLED", "true")
+	t.Setenv("JETSTREAM_WIRE_SOURCE_GENERATION", "wire-snapshot-generation")
+	t.Setenv("JETSTREAM_WIRE_BOOTSTRAP_AFTER_SEQ", "100")
+	t.Setenv("JETSTREAM_WIRE_REPLAY_BEFORE_SEQ", "200")
+	t.Setenv("JETSTREAM_WIRE_REPLAY_SNAPSHOT_ONLY", "true")
+	t.Setenv("JETSTREAM_WIRE_ADMISSION_RATE_PER_SECOND", "600")
+
+	controller, err := LoadController()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(controller.Lanes) != 1 || controller.Lanes[0].Name != WireLaneName {
+		t.Fatalf("lanes = %#v", controller.Lanes)
+	}
+	cfg := controller.Lanes[0].Config
+	if cfg.BootstrapAfterSeq == nil || *cfg.BootstrapAfterSeq != 100 ||
+		cfg.ReplayBeforeSeq == nil || *cfg.ReplayBeforeSeq != 200 || !cfg.ReplaySnapshotOnly {
+		t.Fatalf("snapshot lane = %#v", cfg)
+	}
+}
+
 func TestLoadBoundedWireSnapshotUsesDistinctGenerationWithoutChangingFingerprint(t *testing.T) {
 	t.Setenv("APP_ENV", "dev")
 	t.Setenv("DATABASE_URL", "postgres://example.invalid/socialwire")

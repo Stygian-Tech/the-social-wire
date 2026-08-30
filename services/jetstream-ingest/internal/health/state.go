@@ -70,6 +70,28 @@ func (s *State) Error(err error) {
 	s.mu.Unlock()
 }
 
+// Reset clears process-lifecycle evidence before a supervised lane restart. Durable cursor and
+// replay evidence remains in PostgreSQL and is repopulated by the new runner.
+func (s *State) Reset() {
+	s.mu.Lock()
+	s.database = false
+	s.lease = false
+	s.stream = false
+	s.paused = false
+	s.backpressured = false
+	s.inboxRows = 0
+	s.inboxMaxRows = 0
+	s.databaseBytes = 0
+	s.databaseMaxBytes = 0
+	s.snapshotDone = false
+	s.lastError = ""
+	s.admissionRate = 0
+	s.admissionBurst = 0
+	s.admissionLimited = false
+	s.admissionWaitUntil = time.Time{}
+	s.mu.Unlock()
+}
+
 func (s *State) AdmissionLimit(ratePerSecond float64, burst int) {
 	s.mu.Lock()
 	s.admissionRate = ratePerSecond
@@ -153,6 +175,9 @@ func (s *State) snapshot() Snapshot {
 		AdmissionWaitMilliseconds: s.admissionWaitMilliseconds,
 	}
 }
+
+// Snapshot returns a concurrency-safe copy for controller-level aggregation.
+func (s *State) Snapshot() Snapshot { return s.snapshot() }
 
 func (s *State) LastProgress() time.Time {
 	s.mu.RLock()
