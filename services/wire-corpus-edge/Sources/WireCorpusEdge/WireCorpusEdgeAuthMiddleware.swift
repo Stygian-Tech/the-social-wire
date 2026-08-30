@@ -48,6 +48,8 @@ struct WireCorpusEdgeAuthMiddleware: RouterMiddleware {
       throw WireCorpusEdgeRequestError.unauthorized
     }
     let target = Self.target(request)
+    let bodyDigest = HTTPField.Name(WireCorpusServiceTrust.bodyDigestHeaderName)
+      .flatMap { request.headers[$0] }
     let now = Date()
     do {
       try WireCorpusServiceTrust.verify(
@@ -59,6 +61,7 @@ struct WireCorpusEdgeAuthMiddleware: RouterMiddleware {
         timestamp: timestamp,
         nonce: nonce,
         signature: signature,
+        bodyDigest: bodyDigest,
         now: now
       )
     } catch {

@@ -1,0 +1,37 @@
+{
+  "lexicon": 1,
+  "id": "app.thesocialwire.discovery.setCircleItemHidden",
+  "defs": {
+    "main": {
+      "type": "procedure",
+      "description": "Set whether a canonical Your Circle story is hidden for the authenticated viewer.",
+      "input": {
+        "encoding": "application/json",
+        "schema": {
+          "type": "object",
+          "required": ["storyId", "hidden"],
+          "properties": {
+            "storyId": { "type": "string", "maxLength": 128 },
+            "hidden": { "type": "boolean" }
+          }
+        }
+      },
+      "output": {
+        "encoding": "application/json",
+        "schema": {
+          "type": "object",
+          "required": ["storyId", "hidden"],
+          "properties": {
+            "storyId": { "type": "string", "maxLength": 128 },
+            "hidden": { "type": "boolean" }
+          }
+        }
+      },
+      "errors": [
+        { "name": "InvalidRequest" },
+        { "name": "Unauthorized" },
+        { "name": "FeedUnavailable" }
+      ]
+    }
+  }
+}

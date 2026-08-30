@@ -14,4 +14,11 @@ protocol WireCorpusStoring: Sendable {
   func edition(language: String, region: WireViewerRegion?, now: Date) async throws -> WireEdition
   func item(id: String, now: Date) async throws -> WireCorpusItem?
   func catalog(now: Date) async throws -> WireCorpusCatalog
+  func circleCandidates(
+    actorHashes: [String],
+    language: String,
+    since: Date,
+    limit: Int,
+    now: Date
+  ) async throws -> WireCorpusCandidateResponse
 }

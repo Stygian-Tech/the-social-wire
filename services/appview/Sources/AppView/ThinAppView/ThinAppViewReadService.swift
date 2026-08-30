@@ -10,16 +10,19 @@ actor ThinAppViewReadService {
   private let projectionCache: (any AppViewProjectionCacheStore)?
   private let telemetry: OperationsTelemetryBuffer?
   private let logger: Logger
+  private let circlePrivateState: (any CirclePrivateStateStoring)?
 
   init(
     store: any ThinAppViewStore,
     projectionCache: (any AppViewProjectionCacheStore)? = nil,
     telemetry: OperationsTelemetryBuffer? = nil,
+    circlePrivateState: (any CirclePrivateStateStoring)? = nil,
     logger: Logger
   ) {
     self.store = store
     self.projectionCache = projectionCache
     self.telemetry = telemetry
+    self.circlePrivateState = circlePrivateState
     self.logger = logger
   }
 
@@ -523,8 +526,9 @@ actor ThinAppViewReadService {
 
   func purge(auth: AuthContext) async throws {
     try await store.purgeReadMarks(viewerDid: auth.did)
+    try await circlePrivateState?.purge(viewerDID: auth.did)
     try await projectionCache?.invalidateUnreadCounts(viewerDid: auth.did, publicationId: nil)
-    logger.info("Purged thin AppView read marks", metadata: ["did": .string(auth.did)])
+    logger.info("Purged private AppView viewer state")
   }
 
   func entryDetail(auth: AuthContext, entryId: String) async throws -> AppViewEntryDetailResponse {

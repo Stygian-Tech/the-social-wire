@@ -1,0 +1,21 @@
+meta {
+  name: XRPC app.thesocialwire.discovery.getCircleEdition
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/xrpc/app.thesocialwire.discovery.getCircleEdition?lang=en
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+  Accept: application/json
+}
+
+docs {
+  Gets the authenticated viewer's personalized Your Circle edition.
+}

@@ -248,7 +248,7 @@ actor RemoteWireFeedStore: WireFeedStore {
     switch response.statusCode {
     case 200:
       guard let contractVersion = response.contractVersion,
-        (1...2).contains(contractVersion)
+        (1...3).contains(contractVersion)
       else {
         throw WireServingError.unavailable
       }

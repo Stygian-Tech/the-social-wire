@@ -72,12 +72,14 @@ public enum GatewayCORSPolicy {
       ATProtoSessionAttestationReceipt.upstreamPreparedHeaderName)!
     let latrGatewayDpopHeader = HTTPField.Name(LatrGatewayUpstreamDPoP.headerName)!
     let wireModerationDpopHeader = HTTPField.Name(WireModerationDPoP.headerName)!
+    let circleGraphDpopHeader = HTTPField.Name(CircleGraphDPoP.headerName)!
     return Middleware(base: CORSMiddleware(
       allowOrigin: allowOrigin,
       allowHeaders: [
         .accept, .authorization, .contentType, .origin, .ifNoneMatch,
         dpopHeader, requestIdHeader, traceparentHeader, idempotencyKeyHeader, lastEventIdHeader,
         upstreamDpopHeader, sessionDpopHeader, latrGatewayDpopHeader, wireModerationDpopHeader,
+        circleGraphDpopHeader,
         attestationReceiptHeader, attestationRequiredHeader, upstreamPreparedHeader,
       ],
       allowMethods: [.get, .post, .put, .patch, .delete, .head, .options],

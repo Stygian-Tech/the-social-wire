@@ -46,6 +46,25 @@ actor WireViewerModerationService {
     }
   }
 
+  func requireSnapshot(
+    auth: AuthContext,
+    proofs: [String],
+    now: Date
+  ) async throws -> WireViewerModerationSnapshot {
+    if let fresh = await cache.fresh(viewerDID: auth.did, now: now) { return fresh }
+    do {
+      guard proofs.count == WireModerationDPoP.methods.count else {
+        throw WireServingError.moderationUnavailable
+      }
+      let snapshot = try await fetchWithinDeadline(auth: auth, proofs: proofs, now: now)
+      await cache.store(snapshot, viewerDID: auth.did)
+      return snapshot
+    } catch {
+      if let stale = await cache.usable(viewerDID: auth.did, now: now) { return stale }
+      throw WireServingError.moderationUnavailable
+    }
+  }
+
   private func fetchWithinDeadline(
     auth: AuthContext,
     proofs: [String],
@@ -86,7 +105,7 @@ actor WireViewerModerationService {
     guard proofs.count == WireModerationDPoP.methods.count else {
       throw WireServingError.moderationUnavailable
     }
-    async let preferenceWords = collectMutedWords(
+    async let preferenceState = collectPreferences(
       base: pdsBase, method: WireModerationDPoP.methods[0], auth: auth, proof: proofs[0], query: []
     )
     async let blockedProfiles = collectProfiles(
@@ -103,8 +122,8 @@ actor WireViewerModerationService {
     async let blockedListURIs = collectListURIs(
       base: pdsBase, method: WireModerationDPoP.methods[4], auth: auth, proof: proofs[4]
     )
-    let (mutedWords, initialBlocked, muted, mutedLists, blockedLists) = try await (
-      preferenceWords, blockedProfiles, mutedProfiles, mutedListURIs, blockedListURIs
+    let (preferences, initialBlocked, muted, mutedLists, blockedLists) = try await (
+      preferenceState, blockedProfiles, mutedProfiles, mutedListURIs, blockedListURIs
     )
     var blocked = initialBlocked
     let listURIs = mutedLists.union(blockedLists)
@@ -116,7 +135,8 @@ actor WireViewerModerationService {
     return WireViewerModerationSnapshot(
       blockedDIDs: blocked,
       mutedDIDs: muted,
-      mutedWords: mutedWords.map { $0.lowercased() },
+      mutedWords: preferences.mutedWords.map { $0.lowercased() },
+      interestTags: Set(preferences.interestTags.map { $0.lowercased() }),
       fetchedAt: now
     )
   }
@@ -140,18 +160,17 @@ actor WireViewerModerationService {
     return result
   }
 
-  private func collectMutedWords(
+  private func collectPreferences(
     base: String,
     method: String,
     auth: AuthContext,
     proof: String,
     query: [URLQueryItem]
-  ) async throws -> [String] {
-    Self.mutedWords(
-      try await fetchDocument(
-        base: base, method: method, auth: auth, proof: proof, query: query
-      )
+  ) async throws -> (mutedWords: [String], interestTags: [String]) {
+    let document = try await fetchDocument(
+      base: base, method: method, auth: auth, proof: proof, query: query
     )
+    return (Self.mutedWords(document), Self.interestTags(document))
   }
 
   private func collectListURIs(
@@ -256,6 +275,18 @@ actor WireViewerModerationService {
       return items.compactMap { item in
         guard item["expiresAt"] == nil else { return nil }
         return (item["value"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+      }.filter { !$0.isEmpty }
+    }
+  }
+
+  private static func interestTags(_ document: [String: Any]) -> [String] {
+    guard let preferences = document["preferences"] as? [[String: Any]] else { return [] }
+    return preferences.flatMap { preference -> [String] in
+      guard (preference["$type"] as? String)?.contains("interestsPref") == true else {
+        return []
+      }
+      return (preference["tags"] as? [String] ?? []).map {
+        $0.trimmingCharacters(in: .whitespacesAndNewlines)
       }.filter { !$0.isEmpty }
     }
   }

@@ -4,7 +4,22 @@ struct WireViewerModerationSnapshot: Sendable {
   let blockedDIDs: Set<String>
   let mutedDIDs: Set<String>
   let mutedWords: [String]
+  let interestTags: Set<String>
   let fetchedAt: Date
+
+  init(
+    blockedDIDs: Set<String>,
+    mutedDIDs: Set<String>,
+    mutedWords: [String],
+    interestTags: Set<String> = [],
+    fetchedAt: Date
+  ) {
+    self.blockedDIDs = blockedDIDs
+    self.mutedDIDs = mutedDIDs
+    self.mutedWords = mutedWords
+    self.interestTags = interestTags
+    self.fetchedAt = fetchedAt
+  }
 
   func allows(item: String, title: String, summary: String?, representativeURI: String?) -> Bool {
     if let did = Self.subjectDID(item: item, representativeURI: representativeURI),

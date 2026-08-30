@@ -292,6 +292,129 @@ components:
         latestGenerationId: { type: string, maxLength: 128 }
         generatedAt: { type: string, format: date-time }
 
+    CirclePublicIdentity:
+      type: object
+      additionalProperties: false
+      required: [did, handle]
+      properties:
+        did: { type: string, maxLength: 2048 }
+        handle: { type: string, maxLength: 253 }
+        displayName: { type: string, maxLength: 640 }
+        avatarUrl: { type: string, format: uri }
+
+    CircleSharer:
+      type: object
+      additionalProperties: false
+      required: [identity, relationship, action, sourceUri, timestamp]
+      properties:
+        identity: { $ref: "#/components/schemas/CirclePublicIdentity" }
+        relationship: { type: string, enum: [direct, one_hop] }
+        action: { type: string, enum: [recommended, shared, discussed] }
+        sourceUri: { type: string, maxLength: 2048 }
+        timestamp: { type: string, format: date-time }
+
+    CircleStory:
+      type: object
+      additionalProperties: false
+      required: [storyId, canonicalUrl, title, source, reasons, discussionCount, sharers]
+      properties:
+        storyId: { type: string, maxLength: 128 }
+        canonicalUrl: { type: string, format: uri }
+        representativeUri: { type: string, maxLength: 2048 }
+        title: { type: string, maxLength: 1000 }
+        summary: { type: string, maxLength: 10000 }
+        publishedAt: { type: string, format: date-time }
+        thumbnailUrl: { type: string, format: uri }
+        source: { $ref: "#/components/schemas/WireSourceAttribution" }
+        reasons:
+          type: array
+          maxItems: 3
+          items:
+            type: string
+            enum: [shared_by_following, shared_by_extended_circle, popular_in_your_circle, discussed_in_your_circle, fresh_from_your_circle]
+        discussionCount: { type: integer, minimum: 0 }
+        sharers:
+          type: array
+          maxItems: 8
+          items: { $ref: "#/components/schemas/CircleSharer" }
+
+    CirclePublicationSpotlight:
+      type: object
+      additionalProperties: false
+      required: [id, publication, storyIds]
+      properties:
+        id: { type: string, maxLength: 2048 }
+        publication: { $ref: "#/components/schemas/WireSourceAttribution" }
+        storyIds:
+          type: array
+          minItems: 2
+          maxItems: 3
+          items: { type: string, maxLength: 128 }
+
+    CircleStoryRail:
+      type: object
+      additionalProperties: false
+      required: [id, title, storyIds]
+      properties:
+        id: { type: string, maxLength: 128 }
+        title: { type: string, maxLength: 160 }
+        storyIds:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items: { type: string, maxLength: 128 }
+
+    CircleEdition:
+      type: object
+      additionalProperties: false
+      required:
+        [editionVersion, generationId, generatedAt, language, source, degraded, stories,
+         topStoryIds, publicationSpotlights, storyRails, trendingStoryIds]
+      properties:
+        editionVersion: { type: string, maxLength: 128 }
+        generationId: { type: string, maxLength: 128 }
+        generatedAt: { type: string, format: date-time }
+        language: { type: string, maxLength: 35 }
+        source: { type: string, enum: [ranked, stale_generation, simplified_fallback] }
+        degraded: { type: boolean }
+        stories:
+          type: array
+          maxItems: 50
+          items: { $ref: "#/components/schemas/CircleStory" }
+        topStoryIds:
+          type: array
+          maxItems: 4
+          items: { type: string, maxLength: 128 }
+        publicationSpotlights:
+          type: array
+          maxItems: 6
+          items: { $ref: "#/components/schemas/CirclePublicationSpotlight" }
+        storyRails:
+          type: array
+          maxItems: 6
+          items: { $ref: "#/components/schemas/CircleStoryRail" }
+        trendingStoryIds:
+          type: array
+          maxItems: 10
+          items: { type: string, maxLength: 128 }
+        moreCursor: { type: string, maxLength: 4096 }
+
+    CircleCatalog:
+      type: object
+      additionalProperties: false
+      required: [enabled, available, title, subtitle, supportedLanguages]
+      properties:
+        enabled: { type: boolean }
+        available: { type: boolean }
+        title: { type: string, maxLength: 100 }
+        subtitle: { type: string, maxLength: 300 }
+        supportedLanguages:
+          type: array
+          maxItems: 12
+          items: { type: string, maxLength: 35 }
+        latestGenerationId: { type: string, maxLength: 128 }
+        generatedAt: { type: string, format: date-time }
+
     PublicationAppViewScope:
       type: object
       required: [authorDid, publicationScopeAtUris, publicationSiteUrls]
@@ -1786,6 +1909,7 @@ paths:
         - ATProtoOAuthDPoP: []
       parameters:
         - { name: lang, in: query, schema: { type: string, maxLength: 35 } }
+        - { name: cursor, in: query, schema: { type: string, maxLength: 4096 } }
         - { name: region, in: query, schema: { type: string, enum: [outside-us] }, description: Coarse browser-locale relevance hint; omit for US or ambiguous locales. }
       responses:
         "200":
@@ -1837,6 +1961,73 @@ paths:
               schema: { $ref: "#/components/schemas/WireFeedCatalog" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "503": { description: Catalog unavailable. }
+
+  /xrpc/app.thesocialwire.discovery.getCircleCatalog:
+    get:
+      operationId: getCircleCatalog
+      summary: Get availability metadata for the authenticated viewer's Your Circle feed
+      tags: [Discovery]
+      responses:
+        "200":
+          description: Your Circle capability and latest acceptable generation metadata.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CircleCatalog" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "503": { description: Catalog unavailable. }
+
+  /xrpc/app.thesocialwire.discovery.getCircleEdition:
+    get:
+      operationId: getCircleEdition
+      summary: Get the authenticated viewer's generation-bound Your Circle edition
+      tags: [Discovery]
+      parameters:
+        - { name: lang, in: query, schema: { type: string, maxLength: 35 } }
+      responses:
+        "200":
+          description: Personalized editorial modules composed from direct and one-hop circle activity.
+          headers:
+            ETag: { schema: { type: string } }
+            Cache-Control: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CircleEdition" }
+        "400": { description: Invalid language. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { description: Authenticated request budget exhausted. }
+        "503": { description: Circle edition unavailable. }
+
+  /xrpc/app.thesocialwire.discovery.setCircleItemHidden:
+    post:
+      operationId: setCircleItemHidden
+      summary: Hide or restore a canonical story in the authenticated viewer's Your Circle feed
+      tags: [Discovery]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [storyId, hidden]
+              properties:
+                storyId: { type: string, maxLength: 128 }
+                hidden: { type: boolean }
+      responses:
+        "200":
+          description: The viewer's effective hide state for the story.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [storyId, hidden]
+                properties:
+                  storyId: { type: string, maxLength: 128 }
+                  hidden: { type: boolean }
+        "400": { description: Invalid story identifier or hide state. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "503": { description: Circle hide state unavailable. }
 
   /v1/telemetry/client-performance:
     post:
