@@ -16,6 +16,13 @@ const languageValidationMigration = readFileSync(
   ),
   "utf8",
 );
+const operationalStatusVendorMigration = readFileSync(
+  join(
+    import.meta.dir,
+    "../../../database/migrations/20260830084000_block_wire_status_aggregators.sql",
+  ),
+  "utf8",
+);
 
 describe("The Wire feed quality migration", () => {
   it("makes operational status pages non-admissible", () => {
@@ -23,6 +30,13 @@ describe("The Wire feed quality migration", () => {
     expect(migration).toContain("eligible = FALSE");
     expect(migration).toContain("lower(source_domain) ~ '^(status|statuspage)\\.'");
     expect(migration).not.toContain("canonical_url ~ '.*incidents");
+    expect(operationalStatusVendorMigration).toContain(
+      "lower(source_domain) = 'fedilist.com'",
+    );
+    expect(operationalStatusVendorMigration).toContain(
+      "lower(source_domain) LIKE '%.fedilist.com'",
+    );
+    expect(operationalStatusVendorMigration).toContain("eligible = FALSE");
   });
 
   it("rebuilds strict language evidence without trusting share language", () => {
