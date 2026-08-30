@@ -2,7 +2,7 @@ import AsyncHTTPClient
 import NIOCore
 import Testing
 
-@testable import AppViewWorker
+@testable import AppViewWorkerCore
 
 @Test("Charybdis package resolves through the stable AppViewWorker product")
 func charybdisPackageResolves() {
@@ -11,7 +11,7 @@ func charybdisPackageResolves() {
 
 @Test("Charybdis bounds stalled response bodies without capping the ingestion pool at eight")
 func charybdisHTTPClientConfiguration() {
-  let configuration = CharybdisCommand.httpClientConfiguration()
+  let configuration = AppViewWorkerHost.httpClientConfiguration()
 
   #expect(configuration.timeout.read == .seconds(30))
   #expect(configuration.connectionPool.concurrentHTTP1ConnectionsPerHostSoftLimit == 50)
