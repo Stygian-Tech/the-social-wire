@@ -1688,7 +1688,11 @@ struct WirePostgresIntegrationTests {
           logger: logger
         )
         try await pool.query(
-          "INSERT INTO wire_signal_rollups (canonical_key, shares_24h) VALUES (\(canonicalKey), 1)",
+          """
+          INSERT INTO wire_signal_rollups
+            (canonical_key, shares_24h, baseline_shares_24h)
+          VALUES (\(canonicalKey), 1, 1)
+          """,
           logger: logger
         )
       }

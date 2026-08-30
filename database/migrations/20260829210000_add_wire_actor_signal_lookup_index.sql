@@ -60,6 +60,27 @@ ALTER TABLE public.wire_signal_rollups
   ADD COLUMN IF NOT EXISTS baseline_likes_1h INTEGER NOT NULL DEFAULT 0,
   ADD COLUMN IF NOT EXISTS baseline_likes_24h INTEGER NOT NULL DEFAULT 0;
 
+-- The migration runs before the worker revision that can ingest Margin and
+-- Semble, so every existing inclusive rollup is also an exact v10 baseline.
+-- Seed it synchronously to avoid an empty active feed between migration and
+-- the worker's first complete rollup refresh.
+UPDATE public.wire_signal_rollups AS rollup
+SET baseline_last_signal_at = item.last_signal_at,
+    baseline_distinct_actors_1h = distinct_actors_1h,
+    baseline_distinct_actors_24h = distinct_actors_24h,
+    baseline_distinct_actors_7d = distinct_actors_7d,
+    baseline_signals_1h = signals_1h,
+    baseline_signals_24h = signals_24h,
+    baseline_signals_7d = signals_7d,
+    baseline_recommendations_24h = recommendations_24h,
+    baseline_shares_1h = shares_1h,
+    baseline_shares_24h = shares_24h,
+    baseline_distinct_likers_24h = distinct_likers_24h,
+    baseline_likes_1h = likes_1h,
+    baseline_likes_24h = likes_24h
+FROM public.wire_items AS item
+WHERE item.canonical_key = rollup.canonical_key;
+
 COMMENT ON COLUMN public.wire_signal_rollups.baseline_distinct_actors_7d IS
   'Distinct seven-day actors excluding current Margin and Semble collections for wire-v10.';
 

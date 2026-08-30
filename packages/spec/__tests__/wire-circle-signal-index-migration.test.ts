@@ -81,6 +81,13 @@ describe("Your Circle signal lookup migration", () => {
     ]) {
       expect(migration).toContain(`ADD COLUMN IF NOT EXISTS ${column}`);
     }
+    expect(normalizedMigration).toContain(
+      "UPDATE public.wire_signal_rollups AS rollup SET " +
+        "baseline_last_signal_at = item.last_signal_at",
+    );
+    expect(normalizedMigration).toContain(
+      "baseline_shares_24h = shares_24h",
+    );
   });
 
   it("builds partition leaf indexes online and attaches them for future inheritance", () => {
