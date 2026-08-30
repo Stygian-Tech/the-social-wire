@@ -253,6 +253,35 @@ struct RemoteWireFeedStoreTests {
     ])
   }
 
+  @Test("edition accepts the Circle-compatible Corpus Edge contract")
+  func editionAcceptsContractVersionThree() async throws {
+    let edition = WireEditionAssembler.assemble(
+      generationID: UUID().uuidString.lowercased(),
+      generatedAt: now,
+      language: "en",
+      source: .ranked,
+      degraded: false,
+      rankedItems: [item(id: "one", title: "One", actor: nil)]
+    )
+    let store = try RemoteWireFeedStore(
+      transport: StubWireCorpusTransport(responses: [
+        try encodedResponse(edition, contractVersion: 3)
+      ]),
+      cursorSecret: cursorSecret,
+      mode: .visible,
+      moderationCache: WireViewerModerationCache()
+    )
+
+    let result = try await store.getEdition(
+      language: "en",
+      region: nil,
+      viewerDid: nil,
+      now: now
+    )
+
+    #expect(result.language == "en")
+  }
+
   private func item(id: String, title: String, actor: String?) -> WireFeedItem {
     WireFeedItem(
       itemID: id,
@@ -268,12 +297,15 @@ struct RemoteWireFeedStoreTests {
     )
   }
 
-  private func encodedResponse<Value: Encodable>(_ value: Value) throws -> WireCorpusTransportResponse {
+  private func encodedResponse<Value: Encodable>(
+    _ value: Value,
+    contractVersion: Int = 2
+  ) throws -> WireCorpusTransportResponse {
     let encoder = JSONEncoder()
     encoder.dateEncodingStrategy = .iso8601
     return WireCorpusTransportResponse(
       statusCode: 200,
-      contractVersion: 2,
+      contractVersion: contractVersion,
       body: try encoder.encode(value)
     )
   }

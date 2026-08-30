@@ -38,6 +38,24 @@ struct WireOpenGraphParserTests {
     #expect(metadata.hasProductOfferSchema)
   }
 
+  @Test("carries exact affiliate disclosure metadata into commercial classification")
+  func affiliateDisclosure() throws {
+    let html = """
+      <html><head>
+      <meta property="og:title" content="A shopping roundup">
+      <script type="application/ld+json">
+      {"@context":"https://schema.org","@type":"NewsArticle","headline":"Roundup",
+       "keywords":["shopping","affiliate","affiliate-social"]}
+      </script>
+      </head><body>We may receive a portion of sales if you purchase a product.</body></html>
+      """
+    let metadata = try #require(WireOpenGraphParser.parse(
+      html: html,
+      pageURL: URL(string: "https://publisher.example/shopping/roundup")!
+    ))
+    #expect(metadata.hasAffiliateDisclosure)
+  }
+
   @Test("prefers OpenGraph fields and resolves relative media")
   func parsesOpenGraph() throws {
     let html = """

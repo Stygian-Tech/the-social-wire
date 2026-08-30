@@ -8,6 +8,7 @@ import { WireBetaBadge } from "@/components/Wire/WireBetaBadge";
 
 const FEED_ITEMS = [
   { feed: "wire", label: "The Wire", icon: Rss },
+  { feed: "circle", label: "Your Circle", icon: Users },
   { feed: "readLater", label: "Saved", icon: Bookmark },
   { feed: "archive", label: "Archive", icon: Archive },
   { feed: "subscribed", label: "Subscribed", icon: Newspaper },

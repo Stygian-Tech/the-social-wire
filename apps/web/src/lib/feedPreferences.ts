@@ -9,7 +9,7 @@ export const TOP_LEVEL_FEEDS = [
 
 export type TopLevelFeed = (typeof TOP_LEVEL_FEEDS)[number];
 /** Reader navigation also includes server-capability feeds that are not PDS preferences. */
-export type ReaderNavigationFeed = TopLevelFeed | "wire";
+export type ReaderNavigationFeed = TopLevelFeed | "wire" | "circle";
 export type RssArticleOpenMode = "reader" | "original";
 
 export const TOP_LEVEL_FEED_LABELS: Record<TopLevelFeed, string> = {

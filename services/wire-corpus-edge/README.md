@@ -2,7 +2,7 @@
 
 The Wire Corpus Edge is the sole cross-environment presentation boundary for **The Wire** — **Important stories across the social web**. It runs only in Production, reads the canonical Production PostgreSQL corpus over Railway private networking, and exposes a small authenticated HTTPS API to Development AppView. Production AppView continues to use its local `PostgresWireFeedStore`; it never calls the public edge.
 
-It never accepts viewer access tokens, DPoP proofs, cookies, viewer DIDs, or Gateway/AppView trust headers. It never returns ranking scores, diagnostics, counts, raw labels, signals, actor hashes, graph state, inbox rows, or Operations/viewer data. Baseline-label freshness and presentation exclusions are enforced before every corpus response. Responses use `Cache-Control: no-store` and intentionally provide no CORS policy.
+It never accepts viewer access tokens, DPoP proofs, cookies, viewer DIDs, raw graph DIDs, or Gateway/AppView trust headers. The Circle candidate operation accepts chunked opaque actor hashes and returns only bounded eligible stories plus matched opaque signal facts; it never returns raw DIDs, ranking scores, diagnostics, raw labels, graph state, inbox rows, or Operations/viewer data. Baseline-label freshness and presentation exclusions are enforced before every corpus response. Responses use `Cache-Control: no-store` and intentionally provide no CORS policy.
 
 ## Configuration
 

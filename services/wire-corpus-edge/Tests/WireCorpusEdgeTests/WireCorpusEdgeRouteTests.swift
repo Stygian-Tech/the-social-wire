@@ -5,6 +5,7 @@ import HummingbirdTesting
 import Logging
 import Testing
 import WireCore
+
 @testable import WireCorpusEdge
 
 @Suite("The Wire Corpus Edge routes")
@@ -36,7 +37,7 @@ struct WireCorpusEdgeRouteTests {
       let first = try await client.execute(uri: target, method: .get, headers: headers)
       #expect(first.status == .ok)
       #expect(first.headers[.cacheControl] == "no-store")
-      #expect(first.headers[HTTPField.Name("X-Wire-Corpus-Contract")!] == "2")
+      #expect(first.headers[HTTPField.Name("X-Wire-Corpus-Contract")!] == "3")
       #expect(first.headers[.accessControlAllowOrigin] == nil)
 
       let replay = try await client.execute(uri: target, method: .get, headers: headers)
@@ -79,14 +80,95 @@ struct WireCorpusEdgeRouteTests {
     try await application(store: store).test(.router) { client in
       let response = try await client.execute(uri: target, method: .get, headers: headers)
       #expect(response.status == .ok)
-      #expect(response.headers[HTTPField.Name("X-Wire-Corpus-Contract")!] == "2")
+      #expect(response.headers[HTTPField.Name("X-Wire-Corpus-Contract")!] == "3")
       #expect(response.body.readableBytes > 0)
     }
     #expect(await store.editionCalls == 1)
     #expect(await store.lastEditionRegion == .outsideUnitedStates)
   }
 
-  private func application(store: TestWireCorpusStore) -> Application<RouterResponder<WireCorpusEdgeRequestContext>> {
+  @Test("circle candidates bind the signed request body and reject replay")
+  func circleCandidatesBindBodyAndRejectReplay() async throws {
+    let store = TestWireCorpusStore()
+    let target = "/internal/wire/v1/circle-candidates"
+    let actorHash = "h1:" + String(repeating: "a", count: 64)
+    let input = WireCorpusCandidateRequest(
+      actorHashes: [actorHash],
+      language: "en-US",
+      since: Date().addingTimeInterval(-60),
+      limit: 25
+    )
+    let encoder = JSONEncoder()
+    encoder.dateEncodingStrategy = .iso8601
+    let body = try encoder.encode(input)
+    let headers = try requestHeaders(
+      target: target,
+      method: "POST",
+      bodyDigest: WireCorpusServiceTrust.bodyDigest(body)
+    )
+
+    try await application(store: store).test(.router) { client in
+      let first = try await client.execute(
+        uri: target,
+        method: .post,
+        headers: headers,
+        body: ByteBuffer(data: body)
+      )
+      #expect(first.status == .ok)
+      #expect(first.headers[.cacheControl] == "no-store")
+
+      let replay = try await client.execute(
+        uri: target,
+        method: .post,
+        headers: headers,
+        body: ByteBuffer(data: body)
+      )
+      #expect(replay.status == .unauthorized)
+    }
+    #expect(await store.circleCalls == 1)
+    #expect(await store.lastCircleActorHashes == [actorHash])
+    #expect(await store.lastCircleLanguage == "en")
+    #expect(await store.lastCircleLimit == 25)
+  }
+
+  @Test("circle candidates reject a body that does not match the signed digest")
+  func circleCandidatesRejectTamperedBody() async throws {
+    let store = TestWireCorpusStore()
+    let target = "/internal/wire/v1/circle-candidates"
+    let actorHash = "h1:" + String(repeating: "b", count: 64)
+    let input = WireCorpusCandidateRequest(
+      actorHashes: [actorHash],
+      language: "en",
+      since: Date().addingTimeInterval(-60),
+      limit: 25
+    )
+    let encoder = JSONEncoder()
+    encoder.dateEncodingStrategy = .iso8601
+    let signedBody = try encoder.encode(input)
+    var tamperedBody = signedBody
+    tamperedBody.append(0x20)
+    let submittedBody = tamperedBody
+    let headers = try requestHeaders(
+      target: target,
+      method: "POST",
+      bodyDigest: WireCorpusServiceTrust.bodyDigest(signedBody)
+    )
+
+    try await application(store: store).test(.router) { client in
+      let response = try await client.execute(
+        uri: target,
+        method: .post,
+        headers: headers,
+        body: ByteBuffer(data: submittedBody)
+      )
+      #expect(response.status == .unauthorized)
+    }
+    #expect(await store.circleCalls == 0)
+  }
+
+  private func application(store: TestWireCorpusStore) -> Application<
+    RouterResponder<WireCorpusEdgeRequestContext>
+  > {
     let config = WireCorpusEdgeConfig(
       databaseURL: "postgresql://unused",
       sharedSecret: secret,
@@ -103,18 +185,26 @@ struct WireCorpusEdgeRouteTests {
     )
   }
 
-  private func requestHeaders(target: String) throws -> HTTPFields {
+  private func requestHeaders(
+    target: String,
+    method: String = "GET",
+    bodyDigest: String? = nil
+  ) throws -> HTTPFields {
     let trust = try WireCorpusServiceTrust.signedHeaders(
       secret: secret,
       serviceID: serviceID,
-      method: "GET",
-      target: target
+      method: method,
+      target: target,
+      bodyDigest: bodyDigest
     )
     var headers = HTTPFields()
     headers[HTTPField.Name(WireCorpusServiceTrust.serviceHeaderName)!] = trust.serviceID
     headers[HTTPField.Name(WireCorpusServiceTrust.timestampHeaderName)!] = trust.timestamp
     headers[HTTPField.Name(WireCorpusServiceTrust.nonceHeaderName)!] = trust.nonce
     headers[HTTPField.Name(WireCorpusServiceTrust.signatureHeaderName)!] = trust.signature
+    if let bodyDigest = trust.bodyDigest {
+      headers[HTTPField.Name(WireCorpusServiceTrust.bodyDigestHeaderName)!] = bodyDigest
+    }
     return headers
   }
 }
@@ -124,6 +214,10 @@ private actor TestWireCorpusStore: WireCorpusStoring {
   private(set) var editionCalls = 0
   private(set) var lastEditionRegion: WireViewerRegion?
   private(set) var catalogCalls = 0
+  private(set) var circleCalls = 0
+  private(set) var lastCircleActorHashes: [String] = []
+  private(set) var lastCircleLanguage: String?
+  private(set) var lastCircleLimit: Int?
 
   func ping() async throws {}
   func requireFreshBaseline(now: Date) async throws {}
@@ -173,6 +267,26 @@ private actor TestWireCorpusStore: WireCorpusStoring {
       supportedLanguages: ["en"],
       latestGenerationID: UUID().uuidString.lowercased(),
       generatedAt: now
+    )
+  }
+
+  func circleCandidates(
+    actorHashes: [String],
+    language: String,
+    since: Date,
+    limit: Int,
+    now: Date
+  ) async throws -> WireCorpusCandidateResponse {
+    circleCalls += 1
+    lastCircleActorHashes = actorHashes
+    lastCircleLanguage = language
+    lastCircleLimit = limit
+    return WireCorpusCandidateResponse(
+      generationID: "test-generation",
+      generatedAt: now,
+      language: language,
+      stories: [],
+      exhausted: true
     )
   }
 }

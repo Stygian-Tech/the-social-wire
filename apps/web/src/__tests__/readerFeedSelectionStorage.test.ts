@@ -10,13 +10,14 @@ import {
 describe("reader feed selection storage", () => {
   it("rejects unknown route feed parameters instead of falling through", () => {
     expect(isReaderFeedSelection("wire")).toBe(true);
+    expect(isReaderFeedSelection("circle")).toBe(true);
     expect(isReaderFeedSelection("subscribed")).toBe(true);
     expect(isReaderFeedSelection("following")).toBe(true);
     expect(isReaderFeedSelection("unknown")).toBe(false);
     expect(isReaderFeedSelection(null)).toBe(false);
   });
 
-  it("keeps The Wire choice separate from shared PDS feed preferences", () => {
+  it("keeps discovery-feed choices separate from shared PDS feed preferences", () => {
     const values = new Map<string, string>();
     const storage = {
       getItem: (key: string) => values.get(key) ?? null,
@@ -27,6 +28,9 @@ describe("reader feed selection storage", () => {
     saveReaderFeedSelection(storage, "wire");
     expect(values.get(READER_FEED_SELECTION_STORAGE_KEY)).toBe("wire");
     expect(loadReaderFeedSelection(storage)).toBe("wire");
+    saveReaderFeedSelection(storage, "circle");
+    expect(values.get(READER_FEED_SELECTION_STORAGE_KEY)).toBe("circle");
+    expect(loadReaderFeedSelection(storage)).toBe("circle");
   });
 
   it("rejects unknown stored values", () => {

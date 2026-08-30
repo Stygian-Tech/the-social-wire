@@ -20,6 +20,7 @@ export function WireNewsEditionLayout({
   isLoadMoreError,
   onLoadMore,
   onSelect,
+  editionLabel,
 }: {
   pages: WireEditionPage[];
   continuedStories: EntryListItem[];
@@ -28,6 +29,7 @@ export function WireNewsEditionLayout({
   isLoadMoreError: boolean;
   onLoadMore: () => Promise<unknown>;
   onSelect: (entryId: string, entry?: EntryListItem) => void;
+  editionLabel?: string;
 }) {
   const edition = pages[0];
   const model = useMemo(() => {
@@ -86,7 +88,11 @@ export function WireNewsEditionLayout({
     >
       <div className="grid w-full min-w-0 max-w-[calc(var(--reader-shell-width)-var(--sidebar-width))] xl:grid-cols-[minmax(0,1fr)_19rem] xl:gap-x-5">
         <div className="min-w-0 xl:col-start-1 xl:row-start-1">
-          <WireTopStories stories={model.effectiveTopStories} onSelect={onSelect} />
+          <WireTopStories
+            stories={model.effectiveTopStories}
+            onSelect={onSelect}
+            editionLabel={editionLabel}
+          />
         </div>
         <div className="min-w-0 xl:col-start-2 xl:row-span-2 xl:row-start-1">
           <WireTrendingStories stories={model.trendingStories} onSelect={onSelect} />

@@ -57,4 +57,20 @@ describe("MobileFeedNavigation", () => {
     );
     expect(screen.queryByRole("button", { name: "The Wire, Beta" })).toBeNull();
   });
+
+  it("shows Your Circle only when the authenticated catalog enables it", () => {
+    const onSelect = mock(() => undefined);
+    render(
+      <MobileFeedNavigation
+        currentFeed="circle"
+        visibleFeeds={new Set(["circle", "subscribed"])}
+        onSelect={onSelect}
+      />,
+    );
+
+    const circle = screen.getByRole("button", { name: "Your Circle" });
+    expect(circle.getAttribute("aria-current")).toBe("page");
+    fireEvent.click(circle);
+    expect(onSelect).toHaveBeenCalledWith("circle");
+  });
 });

@@ -133,6 +133,27 @@
     },
     {
       "surface": "openapi",
+      "method": "GET",
+      "path": "/xrpc/app.thesocialwire.discovery.getCircleCatalog",
+      "classification": "xrpc-migration",
+      "xrpcNsid": "app.thesocialwire.discovery.getCircleCatalog"
+    },
+    {
+      "surface": "openapi",
+      "method": "GET",
+      "path": "/xrpc/app.thesocialwire.discovery.getCircleEdition",
+      "classification": "xrpc-migration",
+      "xrpcNsid": "app.thesocialwire.discovery.getCircleEdition"
+    },
+    {
+      "surface": "openapi",
+      "method": "POST",
+      "path": "/xrpc/app.thesocialwire.discovery.setCircleItemHidden",
+      "classification": "xrpc-migration",
+      "xrpcNsid": "app.thesocialwire.discovery.setCircleItemHidden"
+    },
+    {
+      "surface": "openapi",
       "method": "POST",
       "path": "/v1/telemetry/client-performance",
       "classification": "telemetry"

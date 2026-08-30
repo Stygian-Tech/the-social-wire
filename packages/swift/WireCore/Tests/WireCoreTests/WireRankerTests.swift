@@ -317,6 +317,20 @@ struct WireRankerTests {
     #expect(result.diagnostics.rejectedForQuality == 2)
   }
 
+  @Test("suspected advertisements receive a graduated severity penalty")
+  func graduatedCommercialPenalty() {
+    let config = WireRankingConfig()
+    for (score, expected) in [(3.0, 0.15), (4.0, 0.20), (5.0, 0.25)] {
+      var item = candidate("commercial-\(score)", actors: 5)
+      item.commercialClass = .limited
+      item.commercialScore = score
+      #expect(WireRanker.limitedCommercialPenalty(for: item, config: config) == expected)
+    }
+    var normal = candidate("normal-commercial", actors: 5)
+    normal.commercialScore = 5
+    #expect(WireRanker.limitedCommercialPenalty(for: normal, config: config) == 0)
+  }
+
   @Test("quality backfill excludes candidates without verified presentation metadata")
   func qualityBackfill() throws {
     let quality = candidate("quality", actors: 3, openGraph: true)

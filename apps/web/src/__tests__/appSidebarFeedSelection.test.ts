@@ -88,4 +88,15 @@ describe("app sidebar feed selection", () => {
       }),
     ).toBe("wire");
   });
+
+  it("recognizes Your Circle without changing the remembered publication tab", () => {
+    expect(
+      currentAppSidebarFeed({
+        pathname: "/read",
+        feedParam: "circle",
+        folderParam: null,
+        publicationTab: "subscribed",
+      }),
+    ).toBe("circle");
+  });
 });

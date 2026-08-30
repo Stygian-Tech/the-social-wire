@@ -7,6 +7,7 @@ struct AppViewServiceConfig: Sendable {
   let thinAppView: ThinAppViewConfig
   let storeBackend: StoreBackend
   let wire: WireDiscoveryConfig
+  let circle: CircleDiscoveryConfig
 
   enum StoreBackend: Sendable {
     case sqlite(path: String)
@@ -29,7 +30,8 @@ struct AppViewServiceConfig: Sendable {
       backend = .postgres(url: dbURL)
     }
     let wire = try WireDiscoveryConfig.fromEnvironment(env)
-    if core.appEnv == .dev, wire.mode.servesAPI, wire.corpusEdge == nil {
+    let circle = try CircleDiscoveryConfig.fromEnvironment(env)
+    if core.appEnv == .dev, (wire.mode.servesAPI || circle.mode.servesAPI), wire.corpusEdge == nil {
       throw WireDiscoveryConfigError.missingCorpusEdgeForDevelopment
     }
     if core.appEnv == .prod, wire.corpusEdge != nil {
@@ -39,7 +41,8 @@ struct AppViewServiceConfig: Sendable {
       core: core,
       thinAppView: thin,
       storeBackend: backend,
-      wire: wire
+      wire: wire,
+      circle: circle
     )
   }
 }

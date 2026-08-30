@@ -1,4 +1,5 @@
 import Testing
+
 @testable import WireCore
 
 @Suite("The Wire ranking configuration")
@@ -7,7 +8,8 @@ struct WireRankingConfigTests {
   func validDefault() throws {
     let config = WireRankingConfig()
     try config.validate()
-    #expect(config.version == "wire-v10")
+    #expect(config.version == WireRankingConfig.baselineVersion)
+    #expect(config.limitedCommercialPenalty == 0.25)
     #expect(config.standardSiteMinimumHighIntentActors == 1)
     #expect(config.standardSiteMinimumSourceConfidence == 0.75)
     #expect(config.freshnessHalfLife == 36_000)
@@ -22,6 +24,25 @@ struct WireRankingConfigTests {
     #expect(abs(config.weights.all.reduce(0, +) - 1.14) < 0.000_001)
   }
 
+  @Test("external-signal configuration has a distinct valid version")
+  func validExternalSignalConfiguration() throws {
+    let config = WireRankingConfig.externalSignalsV11()
+    try config.validate()
+    #expect(config.version == "wire-v11")
+    #expect(config.weights == WireRankingConfig().weights)
+    #expect(config.diversity == WireRankingConfig().diversity)
+  }
+
+  @Test("rejects undocumented algorithm versions")
+  func rejectsInvalidVersion() {
+    #expect(throws: WireRankingConfigError.invalidVersion) {
+      try WireRankingConfig(version: "wire-v12").validate()
+    }
+    #expect(throws: WireRankingConfigError.invalidVersion) {
+      try WireRankingConfig(version: " wire-v11 ").validate()
+    }
+  }
+
   @Test("rejects invalid weights and caps")
   func rejectsInvalidConfiguration() {
     var weights = WireRankingWeights()
@@ -31,13 +52,15 @@ struct WireRankingConfigTests {
     }
 
     #expect(throws: WireRankingConfigError.zeroWeightTotal) {
-      try WireRankingConfig(weights: .init(
-        distinctSharers24h: 0, shareVelocity1h: 0, likeBreadthVelocity: 0,
-        repostBreadthVelocity: 0, communitySpread: 0, freshness: 0,
-        resurfacingAcceleration: 0, sourceConfidence: 0,
-        standardSiteAuthority: 0, openGraphMetadata: 0,
-        recommendationBreadth: 0, positiveFeedbackBreadth: 0
-      )).validate()
+      try WireRankingConfig(
+        weights: .init(
+          distinctSharers24h: 0, shareVelocity1h: 0, likeBreadthVelocity: 0,
+          repostBreadthVelocity: 0, communitySpread: 0, freshness: 0,
+          resurfacingAcceleration: 0, sourceConfidence: 0,
+          standardSiteAuthority: 0, openGraphMetadata: 0,
+          recommendationBreadth: 0, positiveFeedbackBreadth: 0
+        )
+      ).validate()
     }
 
     #expect(throws: WireRankingConfigError.invalidDiversityCap) {

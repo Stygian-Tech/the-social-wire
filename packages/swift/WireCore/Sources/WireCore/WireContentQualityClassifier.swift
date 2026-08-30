@@ -16,6 +16,9 @@ public enum WireContentQualityClassifier {
       }
       return .profileOrFeed
     }
+    if isOperationalStatusHost(host) {
+      return .operationalStatus
+    }
     return standardSite ? .standardSiteDocument : .externalArticle
   }
 
@@ -25,7 +28,8 @@ public enum WireContentQualityClassifier {
     summary: String?,
     sourceText: String? = nil,
     topicKeys: [String] = [],
-    hasProductOfferSchema: Bool = false
+    hasProductOfferSchema: Bool = false,
+    hasAffiliateDisclosure: Bool = false
   ) -> WireCommercialAssessment {
     let text = ([title, summary, sourceText].compactMap { $0 } + topicKeys)
       .joined(separator: " ").lowercased()
@@ -37,7 +41,8 @@ public enum WireContentQualityClassifier {
       score += value
     }
 
-    if containsAny(text, ["paid partnership", "sponsored post", "affiliate link"])
+    if hasAffiliateDisclosure
+      || containsAny(text, ["paid partnership", "sponsored post", "affiliate link"])
       || containsPattern(text, #"(?<![a-z0-9])#(?:ad|sponsored)(?![a-z0-9])"#)
     {
       add(.explicitAdDisclosure, 4)
@@ -76,7 +81,8 @@ public enum WireContentQualityClassifier {
         $0.split(whereSeparator: { $0 == "-" || $0 == "_" || $0 == "." }).map(String.init)
       })
       if !slugTokens.isDisjoint(with: [
-        "sponsored", "advertorial", "deals", "offers", "shop", "store", "product", "giveaway",
+        "sponsored", "advertorial", "deals", "offers", "shop", "shopping", "store", "product",
+        "giveaway",
       ]) || segments.contains(where: { ["partner-content", "brand-studio"].contains($0) }) {
         add(.commercialSlug, 1)
       }
@@ -90,5 +96,14 @@ public enum WireContentQualityClassifier {
 
   private static func containsPattern(_ text: String, _ pattern: String) -> Bool {
     text.range(of: pattern, options: .regularExpression) != nil
+  }
+
+  private static func isOperationalStatusHost(_ host: String) -> Bool {
+    let firstLabel = host.split(separator: ".").first.map(String.init)
+    if firstLabel == "status" || firstLabel == "statuspage" { return true }
+    return [
+      "statuspage.io", "status.io", "instatus.com", "betteruptime.com", "statuspal.io",
+      "statuscast.com",
+    ].contains { host == $0 || host.hasSuffix(".\($0)") }
   }
 }

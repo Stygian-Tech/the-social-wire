@@ -61,6 +61,9 @@ struct Serve: AsyncParsableCommand {
     do {
       switch config.storeBackend {
       case .sqlite(let path):
+        guard !config.circle.mode.servesAPI else {
+          throw AppViewStartupError.circleRequiresPostgres
+        }
         let store = try SQLiteThinAppViewStore(path: path, logger: logger)
         let operationsStore = try SQLiteOperationsStore(
           path: path,
@@ -132,16 +135,29 @@ struct Serve: AsyncParsableCommand {
         let store = PostgresThinAppViewStore(pool: pgPool, logger: logger)
         let wireFeedStore: (any WireFeedStore)?
         let wireModerationService: WireViewerModerationService?
-        if config.wire.mode.servesAPI {
-          guard let cursorSecret = config.wire.cursorSecret else {
+        let circleDiscoveryService: CircleDiscoveryService?
+        let circlePrivateState: (any CirclePrivateStateStoring)?
+        let servesDiscovery = config.wire.mode.servesAPI || config.circle.mode.servesAPI
+        if servesDiscovery {
+          guard let cursorSecret = config.wire.cursorSecret ?? config.circle.cursorSecret else {
             throw AppViewStartupError.missingWireCursorSecret
           }
           let moderationCache = WireViewerModerationCache()
-          if let corpusEdge = config.wire.corpusEdge {
+          let effectiveMode: WireDiscoveryMode = if config.wire.mode.servesAPI {
+            config.wire.mode
+          } else if config.circle.mode.isVisible {
+            .visible
+          } else {
+            .api
+          }
+          let corpusTransport = config.wire.corpusEdge.map {
+            HTTPWireCorpusTransport(config: $0, httpClient: httpClient)
+          }
+          if let corpusTransport {
             wireFeedStore = try RemoteWireFeedStore(
-              transport: HTTPWireCorpusTransport(config: corpusEdge, httpClient: httpClient),
+              transport: corpusTransport,
               cursorSecret: cursorSecret,
-              mode: config.wire.mode,
+              mode: effectiveMode,
               moderationCache: moderationCache
             )
           } else {
@@ -149,7 +165,7 @@ struct Serve: AsyncParsableCommand {
               pool: pgPool,
               logger: logger,
               cursorSecret: cursorSecret,
-              mode: config.wire.mode,
+              mode: effectiveMode,
               moderationCache: moderationCache
             )
           }
@@ -159,9 +175,61 @@ struct Serve: AsyncParsableCommand {
             cache: moderationCache,
             logger: logger
           )
+          if config.circle.mode.servesAPI,
+            let actorSecret = config.circle.actorSecret,
+            let circleCursorSecret = config.circle.cursorSecret,
+            let wireFeedStore,
+            let wireModerationService
+          {
+            let actorHasher = try WireActorHasher(secret: Data(actorSecret.utf8))
+            let candidateFetcher: any CircleCandidateFetching = if let corpusTransport {
+              RemoteCircleCandidateFetcher(transport: corpusTransport)
+            } else {
+              PostgresCircleCandidateFetcher(pool: pgPool, logger: logger)
+            }
+            let state = PostgresCirclePrivateStateStore(
+              pool: pgPool,
+              actorHasher: actorHasher,
+              logger: logger
+            )
+            let activityReader: any CircleRecentActivityReading = if corpusTransport != nil {
+              RemoteCircleRecentActivityReader(
+                fetcher: candidateFetcher,
+                actorHasher: actorHasher
+              )
+            } else {
+              PostgresCircleRecentActivityReader(
+                pool: pgPool,
+                actorHasher: actorHasher,
+                logger: logger
+              )
+            }
+            circlePrivateState = state
+            circleDiscoveryService = CircleDiscoveryService(
+              candidateFetcher: candidateFetcher,
+              privateState: state,
+              actorHasher: actorHasher,
+              cursorCodec: try CircleCursorCodec(secret: circleCursorSecret),
+              moderation: wireModerationService,
+              repo: ATProtoAuthenticatedRepoClient(
+                httpClient: httpClient,
+                plcURL: config.core.atprotoPLCURL,
+                logger: logger
+              ),
+              publicFollowReader: ATProtoCirclePublicFollowReader(httpClient: httpClient),
+              activityReader: activityReader,
+              profileReader: ATProtoCircleProfileReader(httpClient: httpClient),
+              feedStore: wireFeedStore
+            )
+          } else {
+            circlePrivateState = nil
+            circleDiscoveryService = nil
+          }
         } else {
           wireFeedStore = nil
           wireModerationService = nil
+          circlePrivateState = nil
+          circleDiscoveryService = nil
         }
         let operationsStore = PostgresOperationsStore(
           pool: pgPool,
@@ -204,6 +272,8 @@ struct Serve: AsyncParsableCommand {
           thinAppViewStore: store,
           wireFeedStore: wireFeedStore,
           wireModerationService: wireModerationService,
+          circleDiscoveryService: circleDiscoveryService,
+          circlePrivateState: circlePrivateState,
           projectionCache: projectionCache,
           operationsStore: operationsStore,
           telemetry: operationsConfig.enabled ? telemetry : nil,
@@ -260,6 +330,7 @@ private func appViewDependencyProbe(
 enum AppViewStartupError: Error, CustomStringConvertible {
   case thinAppViewDisabled
   case missingWireCursorSecret
+  case circleRequiresPostgres
 
   var description: String {
     switch self {
@@ -267,6 +338,8 @@ enum AppViewStartupError: Error, CustomStringConvertible {
       "ENABLE_THIN_APPVIEW must be true for the AppView service."
     case .missingWireCursorSecret:
       "WIRE_CURSOR_HMAC_SECRET must contain at least 32 bytes when The Wire API is enabled."
+    case .circleRequiresPostgres:
+      "Your Circle requires the Postgres AppView backend."
     }
   }
 }

@@ -259,7 +259,7 @@ func TestLoadWirePipelineUsesIndependentIdentityAndGlobalCollections(t *testing.
 	if cfg.SourceGeneration != WireSourceGeneration || cfg.ScopePolicy != WireScopePolicy {
 		t.Fatalf("wire identity = generation %q policy %q", cfg.SourceGeneration, cfg.ScopePolicy)
 	}
-	if cfg.LeaderLeaseName != "wire-global-v3-ingest" {
+	if cfg.LeaderLeaseName != "wire-global-v4-ingest" {
 		t.Fatalf("wire lease name = %q", cfg.LeaderLeaseName)
 	}
 	if cfg.SegmentStripes != WireSegmentStripes {
@@ -269,9 +269,18 @@ func TestLoadWirePipelineUsesIndependentIdentityAndGlobalCollections(t *testing.
 		"site.standard.graph.recommend", "app.thesocialwire.wireFeedback",
 		"app.bsky.feed.post", "app.bsky.feed.like",
 		"app.bsky.feed.repost", "app.bsky.graph.follow",
+		"at.margin.note", "at.margin.reply", "at.margin.like",
+		"at.margin.collectionItem", "at.margin.readingRoom",
+		"network.cosmik.card", "network.cosmik.connection",
+		"network.cosmik.collectionLink", "network.cosmik.collectionLinkRemoval",
 	} {
 		if !slices.Contains(cfg.Collections, required) {
 			t.Fatalf("wire collections missing %q: %#v", required, cfg.Collections)
+		}
+	}
+	for _, legacy := range []string{"at.margin.annotation", "at.margin.highlight", "at.margin.bookmark"} {
+		if slices.Contains(cfg.Collections, legacy) {
+			t.Fatalf("legacy Margin collection %q must not be consumed", legacy)
 		}
 	}
 	if cfg.FilterFingerprint == FilterFingerprint(DefaultStreamNSID, DefaultCollections, DefaultScopePolicy) {

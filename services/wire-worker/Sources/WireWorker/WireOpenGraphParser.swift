@@ -28,6 +28,7 @@ enum WireOpenGraphParser {
     var canonicalURL: String?
     var languageCode: String?
     var hasProductOfferSchema = false
+    var hasAffiliateDisclosure = false
   }
 
   static func parse(html: String, pageURL: URL) -> WireLinkMetadata? {
@@ -112,7 +113,8 @@ enum WireOpenGraphParser {
       lastModified: nil,
       source: .openGraph,
       languageCode: languageCode,
-      hasProductOfferSchema: jsonLD.hasProductOfferSchema
+      hasProductOfferSchema: jsonLD.hasProductOfferSchema,
+      hasAffiliateDisclosure: jsonLD.hasAffiliateDisclosure || hasAffiliateDisclosure(in: html)
     )
   }
 
@@ -134,6 +136,7 @@ enum WireOpenGraphParser {
       capture: 1
     )
     var hasProductOfferSchema = false
+    var hasAffiliateDisclosure = false
     var articleObject: [String: Any]?
     for block in blocks.prefix(20) {
       guard block.utf8.count <= 256_000,
@@ -142,10 +145,14 @@ enum WireOpenGraphParser {
       else { continue }
       let objects = Array(jsonLDObjects(root).prefix(100))
       hasProductOfferSchema = hasProductOfferSchema || objects.contains(where: isProductOrOffer)
+      hasAffiliateDisclosure = hasAffiliateDisclosure || objects.contains(where: hasAffiliateMarker)
       articleObject = articleObject ?? objects.first(where: isArticleLike)
     }
     guard let object = articleObject else {
-      return JSONLDMetadata(hasProductOfferSchema: hasProductOfferSchema)
+      return JSONLDMetadata(
+        hasProductOfferSchema: hasProductOfferSchema,
+        hasAffiliateDisclosure: hasAffiliateDisclosure
+      )
     }
     let publisher = object["publisher"] as? [String: Any]
     let isPartOf = object["isPartOf"] as? [String: Any]
@@ -164,8 +171,33 @@ enum WireOpenGraphParser {
         relativeTo: pageURL
       ),
       languageCode: normalizedLanguageCode(jsonLDLanguageValue(object["inLanguage"])),
-      hasProductOfferSchema: hasProductOfferSchema
+      hasProductOfferSchema: hasProductOfferSchema,
+      hasAffiliateDisclosure: hasAffiliateDisclosure
     )
+  }
+
+  private static func hasAffiliateMarker(_ object: [String: Any]) -> Bool {
+    ["keywords", "tags"].contains { key in
+      stringValues(object[key]).contains { value in
+        value.lowercased().split(whereSeparator: { !$0.isLetter && !$0.isNumber })
+          .contains { $0 == "affiliate" || $0 == "affiliate-social" }
+      }
+    }
+  }
+
+  private static func hasAffiliateDisclosure(in html: String) -> Bool {
+    let text = html.lowercased()
+    return [
+      "we may receive a portion of sales", "we may earn a commission",
+      "may earn an affiliate commission", "may receive compensation through affiliate",
+    ].contains { text.contains($0) }
+  }
+
+  private static func stringValues(_ value: Any?) -> [String] {
+    if let value = value as? String { return [value] }
+    if let values = value as? [String] { return values }
+    if let values = value as? [Any] { return values.compactMap { $0 as? String } }
+    return []
   }
 
   private static func isProductOrOffer(_ object: [String: Any]) -> Bool {

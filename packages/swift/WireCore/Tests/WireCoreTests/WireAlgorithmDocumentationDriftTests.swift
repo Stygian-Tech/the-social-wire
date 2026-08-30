@@ -15,6 +15,7 @@ struct WireAlgorithmDocumentationDriftTests {
     for token in [
       WireCanonicalizer.version,
       WireRankingConfig().version,
+      WireRankingConfig.externalSignalVersion,
       WireEditionAssembler.version,
       "0.22 * distinctSharers24h",
       "+ 0.10 * shareVelocity1h",
@@ -59,6 +60,8 @@ struct WireAlgorithmDocumentationDriftTests {
       "three distinct HMAC-counted public speakers",
       "The Wire",
       "Important stories across the social web",
+      "WIRE_EXTERNAL_SIGNAL_MODE=off|shadow|rank",
+      "v10/v11 shadow overlap",
       String(WireDataPolicy.maximumFollowEdgesPerActor),
       String(WireDataPolicy.minimumLocaleCandidates),
     ] {

@@ -112,6 +112,7 @@ struct PostgresWireInboxProcessor: Sendable {
 
   static func retriesUnresolvedReference(collection: String?) -> Bool {
     collection != "app.bsky.feed.like" && collection != "app.bsky.feed.repost"
+      && collection != WireExternalSignalCollection.marginLike
   }
 
   static func referenceSubjectURI(record: [String: Any], collection: String?) -> String? {
@@ -910,6 +911,14 @@ struct PostgresWireInboxProcessor: Sendable {
       )
     case "app.bsky.graph.follow":
       try await applyFollow(record: record, event: event, sourceURI: sourceURI, asOf: asOf)
+    case let collection where WireExternalSignalCollection.supported.contains(collection):
+      try await applyExternalSignalRecord(
+        collection: collection,
+        record: record,
+        event: event,
+        sourceURI: sourceURI,
+        asOf: asOf
+      )
     default:
       return
     }
@@ -1057,7 +1066,7 @@ struct PostgresWireInboxProcessor: Sendable {
       title: title,
       summary: embedded?.description ?? text,
       thumbnail: embedded?.imageURL,
-      language: Self.primaryLanguage(Self.firstString(record, keys: ["langs", "lang"])),
+      language: "und",
       publishedAt: Self.date(Self.firstString(record, keys: ["createdAt"])),
       provenance: [Self.containsQuote(record) ? "quote" : "direct_share"],
       confidence: 0.6,
@@ -1112,10 +1121,12 @@ struct PostgresWireInboxProcessor: Sendable {
     kind: String,
     asOf: Date
   ) async throws {
-    guard let subjectURI = Self.referenceSubjectURI(
-      record: record,
-      collection: event.collection
-    ) else { throw ApplyError.malformed }
+    guard
+      let subjectURI = Self.referenceSubjectURI(
+        record: record,
+        collection: event.collection
+      )
+    else { throw ApplyError.malformed }
     guard let canonicalKey = try await canonicalKey(alias: subjectURI) else {
       if Self.retriesUnresolvedReference(collection: event.collection) {
         throw ApplyError.unresolvedReference
@@ -1133,6 +1144,150 @@ struct PostgresWireInboxProcessor: Sendable {
       kind: kind,
       asOf: asOf
     )
+  }
+
+  private func applyExternalSignalRecord(
+    collection: String,
+    record: [String: Any],
+    event: InboxEvent,
+    sourceURI: String,
+    asOf: Date
+  ) async throws {
+    let normalized: WireExternalSignalRecord?
+    do {
+      normalized = try WireExternalSignalRecordNormalizer.normalize(
+        collection: collection,
+        record: record
+      )
+    } catch WireExternalSignalRecordError.malformed {
+      throw ApplyError.malformed
+    }
+    guard let normalized else {
+      if event.operation == "update" {
+        try await retract(sourceURI: sourceURI, eventTime: event.eventTime, asOf: asOf)
+      }
+      return
+    }
+
+    switch normalized.action {
+    case .retractRecord(let targetSourceURI):
+      try await retract(sourceURI: targetSourceURI, eventTime: event.eventTime, asOf: asOf)
+    case .replaceSignals(let kind, let targets):
+      var canonicalKeys: [String] = []
+      for target in targets {
+        let resolvedCanonicalKey: String?
+        switch target {
+        case .url(let rawURL):
+          resolvedCanonicalKey = try await ensureExternalSignalItem(
+            rawURL: rawURL,
+            record: record,
+            sourceURI: sourceURI,
+            asOf: asOf
+          )
+        case .reference(let reference):
+          resolvedCanonicalKey = try await canonicalKey(alias: reference)
+        }
+        guard let resolvedCanonicalKey else {
+          if Self.retriesUnresolvedReference(collection: collection) {
+            throw ApplyError.unresolvedReference
+          }
+          continue
+        }
+        if !canonicalKeys.contains(resolvedCanonicalKey) {
+          canonicalKeys.append(resolvedCanonicalKey)
+        }
+      }
+
+      let actorHash = try actorHasher.hash(event.repoDID)
+      if !canonicalKeys.isEmpty {
+        try await upsertActor(hash: actorHash, asOf: asOf)
+        for canonicalKey in canonicalKeys {
+          try await appendProvenance(kind, canonicalKey: canonicalKey, asOf: asOf)
+        }
+      }
+      try await replaceSignals(
+        event: event,
+        canonicalKeys: canonicalKeys,
+        actorHash: actorHash,
+        sourceURI: sourceURI,
+        kind: kind,
+        sourceCollection: normalized.sourceCollection,
+        sourceAction: normalized.sourceAction,
+        asOf: asOf
+      )
+      if normalized.aliasesSourceRecord, let canonicalKey = canonicalKeys.first {
+        try await upsertAlias(
+          alias: sourceURI,
+          type: "at_uri",
+          canonicalKey: canonicalKey,
+          asOf: asOf
+        )
+      }
+    }
+  }
+
+  private func ensureExternalSignalItem(
+    rawURL: String,
+    record: [String: Any],
+    sourceURI: String,
+    asOf: Date
+  ) async throws -> String? {
+    let targetKind = WireContentQualityClassifier.targetKind(for: rawURL)
+    guard targetKind.canCreateItem,
+      let identity = WireCanonicalizer.canonicalize(rawURL),
+      let host = URL(string: identity.canonicalURL)?.host
+    else { return nil }
+
+    let embedded = WireEmbeddedCardMetadata.extract(
+      from: record,
+      canonicalURL: identity.canonicalURL
+    )
+    let sourceText = Self.firstString(record, keys: ["text", "note", "description", "value"])
+    let title =
+      embedded?.title
+      ?? Self.firstString(record, keys: ["title", "name"])
+      ?? sourceText?.split(separator: "\n").first.map { String($0.prefix(200)) }
+      ?? host
+    let summary = embedded?.description ?? sourceText
+    try await upsertItem(
+      identity: identity,
+      representativeURI: sourceURI,
+      authorDID: nil,
+      sourceName: embedded?.siteName ?? host,
+      host: host,
+      publicationID: nil,
+      authorName: nil,
+      topicKeys: [],
+      title: title,
+      summary: summary,
+      thumbnail: embedded?.imageURL,
+      language: "und",
+      publishedAt: Self.date(Self.firstString(record, keys: ["publishedAt", "createdAt"])),
+      provenance: ["recommendation"],
+      confidence: 0.6,
+      presentationSource: embedded == nil ? "fallback" : "embedded_card",
+      presentationPriority: embedded == nil ? 100 : 200,
+      publicationHomepageURL: Self.homepageURL(for: identity.canonicalURL),
+      publicationIconURL: embedded?.iconURL,
+      sourceText: sourceText,
+      targetKind: targetKind,
+      inspectionURL: rawURL,
+      asOf: asOf
+    )
+    if let embedded {
+      try await linkMetadataStore.seedEmbedded(
+        canonicalKey: identity.canonicalKey,
+        metadata: embedded,
+        asOf: asOf
+      )
+    }
+    try await upsertAlias(
+      alias: identity.canonicalURL,
+      type: "url",
+      canonicalKey: identity.canonicalKey,
+      asOf: asOf
+    )
+    return identity.canonicalKey
   }
 
   private func applyArticleFeedback(
@@ -1359,6 +1514,8 @@ struct PostgresWireInboxProcessor: Sendable {
     var presentation: [String: Any] = [
       "metadataSource": presentationSource,
       "sourcePriority": presentationPriority,
+      "languageSource": presentationSource == "standard_site" && language != "und"
+        ? "standard_site_record" : "unknown",
     ]
     if thumbnail != nil { presentation["thumbnailSource"] = presentationSource }
     presentation["homepageUrl"] = publicationHomepageURL
@@ -1383,7 +1540,8 @@ struct PostgresWireInboxProcessor: Sendable {
          \(authorDID), \(host), \(sourceName), \(authorName), \(title), \(summary), \(thumbnail),
          \(publicationHomepageURL), \(publicationIconURL),
          \(language), \(topicsJSON)::jsonb, \(presentationJSON)::jsonb, \(provenanceJSON)::jsonb,
-         \(publishedAt), \(asOf), \(asOf), \(asOf), \(confidence), TRUE, \(targetKind.rawValue),
+         \(publishedAt), \(asOf), \(asOf), \(asOf), \(confidence), \(targetKind.canCreateItem),
+         \(targetKind.rawValue),
          \(commercial.score), \(commercial.classification.rawValue),
          \(commercialReasonsJSON)::jsonb, \(expiresAt), \(asOf))
       ON CONFLICT (canonical_key) DO UPDATE SET
@@ -1417,11 +1575,8 @@ struct PostgresWireInboxProcessor: Sendable {
         publication_icon_url = COALESCE(
           EXCLUDED.publication_icon_url, wire_items.publication_icon_url),
         language_code = CASE
-          WHEN EXCLUDED.language_code <> 'und'
-            AND COALESCE((EXCLUDED.presentation_snapshot->>'sourcePriority')::integer, 0)
-              > COALESCE((wire_items.presentation_snapshot->>'sourcePriority')::integer, 0)
+          WHEN EXCLUDED.presentation_snapshot->>'metadataSource' = 'standard_site'
           THEN EXCLUDED.language_code
-          WHEN wire_items.language_code = 'und' THEN EXCLUDED.language_code
           ELSE wire_items.language_code END,
         topic_keys = CASE WHEN jsonb_array_length(wire_items.topic_keys) = 0
           THEN EXCLUDED.topic_keys ELSE wire_items.topic_keys END,
@@ -1431,8 +1586,13 @@ struct PostgresWireInboxProcessor: Sendable {
             SELECT DISTINCT value
             FROM jsonb_array_elements_text(wire_items.provenance || EXCLUDED.provenance)
           ) unique_provenance
-        ), target_kind = CASE WHEN wire_items.target_kind = 'standard_site_document'
-          THEN wire_items.target_kind ELSE EXCLUDED.target_kind END,
+        ), target_kind = CASE
+          WHEN wire_items.target_kind NOT IN ('external_article', 'standard_site_document')
+            THEN wire_items.target_kind
+          WHEN EXCLUDED.target_kind NOT IN ('external_article', 'standard_site_document')
+            THEN EXCLUDED.target_kind
+          WHEN wire_items.target_kind = 'standard_site_document' THEN wire_items.target_kind
+          ELSE EXCLUDED.target_kind END,
         commercial_score = GREATEST(wire_items.commercial_score, EXCLUDED.commercial_score),
         commercial_class = CASE
           WHEN wire_items.commercial_score > EXCLUDED.commercial_score
@@ -1442,6 +1602,7 @@ struct PostgresWireInboxProcessor: Sendable {
           THEN wire_items.commercial_reasons ELSE EXCLUDED.commercial_reasons END,
         published_at = COALESCE(wire_items.published_at, EXCLUDED.published_at),
         last_seen_at = EXCLUDED.last_seen_at, last_signal_at = EXCLUDED.last_signal_at,
+        eligible = wire_items.eligible AND EXCLUDED.eligible,
         source_confidence = GREATEST(wire_items.source_confidence, EXCLUDED.source_confidence),
         expires_at = GREATEST(wire_items.expires_at, EXCLUDED.expires_at), updated_at = EXCLUDED.updated_at
       """,
@@ -1552,10 +1713,11 @@ struct PostgresWireInboxProcessor: Sendable {
         """
         INSERT INTO wire_signal_events
           (event_key, transport_event_key, canonical_key, signal_kind, actor_key_hash, source_uri,
-           occurred_at, expires_at)
+           source_collection, source_action, occurred_at, expires_at)
         SELECT
           \(eventKey), \(transportEventKey), \(canonicalKey), \(kind), \(actorHash), \(sourceURI),
-          \(event.eventTime), \(event.eventTime.addingTimeInterval(WireDataPolicy.signalRetention))
+          \(event.collection), \(kind), \(event.eventTime),
+          \(event.eventTime.addingTimeInterval(WireDataPolicy.signalRetention))
         WHERE NOT EXISTS (
           SELECT 1 FROM wire_signal_events
           WHERE source_uri = \(sourceURI) AND occurred_at > \(event.eventTime)
@@ -1564,6 +1726,61 @@ struct PostgresWireInboxProcessor: Sendable {
         """,
         logger: logger
       )
+    }
+  }
+
+  private func replaceSignals(
+    event: InboxEvent,
+    canonicalKeys: [String],
+    actorHash: String,
+    sourceURI: String,
+    kind: String,
+    sourceCollection: String,
+    sourceAction: String,
+    asOf: Date
+  ) async throws {
+    let orderedKeys = Array(Set(canonicalKeys)).sorted()
+    let eventKeyPrefix = "\(event.environment):\(event.sourceGeneration):\(event.sequence)"
+    let transportKeyPrefix = Self.transportEventKey(
+      environment: event.environment,
+      sourceHost: event.sourceHost,
+      cursorKind: event.cursorKind,
+      sequence: event.sequence
+    )
+    try await pool.withTransaction(logger: logger) { connection in
+      try await connection.query(
+        "SELECT pg_advisory_xact_lock(hashtextextended(\(sourceURI), 0))",
+        logger: logger
+      )
+      try await connection.query(
+        "SELECT ensure_wire_signal_event_partition((\(event.eventTime) AT TIME ZONE 'UTC')::date)",
+        logger: logger
+      )
+      try await connection.query(
+        "DELETE FROM wire_signal_events WHERE source_uri = \(sourceURI) AND occurred_at <= \(event.eventTime)",
+        logger: logger
+      )
+      for canonicalKey in orderedKeys {
+        let eventKey = "\(eventKeyPrefix):\(canonicalKey)"
+        let transportEventKey = "\(transportKeyPrefix):\(canonicalKey)"
+        try await connection.query(
+          """
+          INSERT INTO wire_signal_events
+            (event_key, transport_event_key, canonical_key, signal_kind, actor_key_hash, source_uri,
+             source_collection, source_action, occurred_at, expires_at)
+          SELECT
+            \(eventKey), \(transportEventKey), \(canonicalKey), \(kind), \(actorHash), \(sourceURI),
+            \(sourceCollection), \(sourceAction), \(event.eventTime),
+            \(event.eventTime.addingTimeInterval(WireDataPolicy.signalRetention))
+          WHERE NOT EXISTS (
+            SELECT 1 FROM wire_signal_events
+            WHERE source_uri = \(sourceURI) AND occurred_at > \(event.eventTime)
+          )
+          ON CONFLICT DO NOTHING
+          """,
+          logger: logger
+        )
+      }
     }
   }
 
@@ -1594,7 +1811,14 @@ struct PostgresWireInboxProcessor: Sendable {
            primary_community_key_hash, recommendations_24h,
            positive_feedback_24h, negative_feedback_24h,
            shares_1h, shares_24h, distinct_likers_24h, likes_1h, likes_24h,
-           distinct_reposters_24h, reposts_1h, reposts_24h, updated_at)
+           distinct_reposters_24h, reposts_1h, reposts_24h,
+           baseline_last_signal_at,
+           baseline_distinct_actors_1h, baseline_distinct_actors_24h,
+           baseline_distinct_actors_7d, baseline_signals_1h, baseline_signals_24h,
+           baseline_signals_7d, baseline_recommendations_24h,
+           baseline_shares_1h, baseline_shares_24h,
+           baseline_distinct_likers_24h, baseline_likes_1h, baseline_likes_24h,
+           updated_at)
         SELECT canonical_key,
           COUNT(DISTINCT actor_key_hash) FILTER (WHERE occurred_at >= \(asOf.addingTimeInterval(-3_600))),
           COUNT(DISTINCT actor_key_hash) FILTER (WHERE occurred_at >= \(asOf.addingTimeInterval(-86_400))),
@@ -1636,6 +1860,61 @@ struct PostgresWireInboxProcessor: Sendable {
             AND occurred_at >= \(asOf.addingTimeInterval(-3_600))),
           COUNT(DISTINCT actor_key_hash) FILTER (WHERE signal_kind = 'repost'
             AND occurred_at >= \(asOf.addingTimeInterval(-86_400))),
+          MAX(occurred_at) FILTER (
+            WHERE source_collection NOT LIKE 'at.margin.%'
+              AND source_collection NOT LIKE 'network.cosmik.%'),
+          COUNT(DISTINCT actor_key_hash) FILTER (
+            WHERE occurred_at >= \(asOf.addingTimeInterval(-3_600))
+              AND source_collection NOT LIKE 'at.margin.%'
+              AND source_collection NOT LIKE 'network.cosmik.%'),
+          COUNT(DISTINCT actor_key_hash) FILTER (
+            WHERE occurred_at >= \(asOf.addingTimeInterval(-86_400))
+              AND source_collection NOT LIKE 'at.margin.%'
+              AND source_collection NOT LIKE 'network.cosmik.%'),
+          COUNT(DISTINCT actor_key_hash) FILTER (
+            WHERE source_collection NOT LIKE 'at.margin.%'
+              AND source_collection NOT LIKE 'network.cosmik.%'),
+          COUNT(*) FILTER (
+            WHERE occurred_at >= \(asOf.addingTimeInterval(-3_600))
+              AND source_collection NOT LIKE 'at.margin.%'
+              AND source_collection NOT LIKE 'network.cosmik.%'),
+          COUNT(*) FILTER (
+            WHERE occurred_at >= \(asOf.addingTimeInterval(-86_400))
+              AND source_collection NOT LIKE 'at.margin.%'
+              AND source_collection NOT LIKE 'network.cosmik.%'),
+          COUNT(*) FILTER (
+            WHERE source_collection NOT LIKE 'at.margin.%'
+              AND source_collection NOT LIKE 'network.cosmik.%'),
+          COUNT(DISTINCT actor_key_hash) FILTER (
+            WHERE signal_kind = 'recommendation'
+              AND occurred_at >= \(asOf.addingTimeInterval(-86_400))
+              AND source_collection NOT LIKE 'at.margin.%'
+              AND source_collection NOT LIKE 'network.cosmik.%'),
+          COUNT(DISTINCT actor_key_hash) FILTER (
+            WHERE signal_kind IN ('share','quote','recommendation','publication')
+              AND occurred_at >= \(asOf.addingTimeInterval(-3_600))
+              AND source_collection NOT LIKE 'at.margin.%'
+              AND source_collection NOT LIKE 'network.cosmik.%'),
+          COUNT(DISTINCT actor_key_hash) FILTER (
+            WHERE signal_kind IN ('share','quote','recommendation','publication')
+              AND occurred_at >= \(asOf.addingTimeInterval(-86_400))
+              AND source_collection NOT LIKE 'at.margin.%'
+              AND source_collection NOT LIKE 'network.cosmik.%'),
+          COUNT(DISTINCT actor_key_hash) FILTER (
+            WHERE signal_kind = 'like'
+              AND occurred_at >= \(asOf.addingTimeInterval(-86_400))
+              AND source_collection NOT LIKE 'at.margin.%'
+              AND source_collection NOT LIKE 'network.cosmik.%'),
+          COUNT(DISTINCT actor_key_hash) FILTER (
+            WHERE signal_kind = 'like'
+              AND occurred_at >= \(asOf.addingTimeInterval(-3_600))
+              AND source_collection NOT LIKE 'at.margin.%'
+              AND source_collection NOT LIKE 'network.cosmik.%'),
+          COUNT(DISTINCT actor_key_hash) FILTER (
+            WHERE signal_kind = 'like'
+              AND occurred_at >= \(asOf.addingTimeInterval(-86_400))
+              AND source_collection NOT LIKE 'at.margin.%'
+              AND source_collection NOT LIKE 'network.cosmik.%'),
           \(asOf)
         FROM wire_signal_events
         WHERE occurred_at >= \(asOf.addingTimeInterval(-7 * 86_400)) AND expires_at > \(asOf)

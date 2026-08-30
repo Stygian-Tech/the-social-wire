@@ -93,8 +93,9 @@ tracking parameters only               +0.25
 ```
 
 The aggregate classes are `normal` at `0...2`, `limited` at `3...5`, and
-`probable_ad` above `5`. `limited` candidates remain eligible and receive a bounded `0.15`
-score penalty; `probable_ad` candidates are excluded from general
+`probable_ad` above `5`. `limited` candidates remain eligible and receive a graduated
+score penalty from `0.15` at score `3` through `0.25` at score `5`; `probable_ad`
+candidates are excluded from general
 Wire editions. Known malicious, coordinated, or moderator-labeled spam remains a hard
 suppression outside this commercial score. Repeated campaigns, actor-to-domain
 concentration, near-duplicate pitches, landing-page aliases, community concentration, and
@@ -105,7 +106,7 @@ only; it does not make a Bluesky post, profile, or feed destination eligible.
 
 Target classification runs before canonical item creation and again after metadata
 redirect resolution. Active classification emits `external_article`,
-`standard_site_document`, `social_post`, `profile_or_feed`, or `unsupported`;
+`standard_site_document`, `social_post`, `profile_or_feed`, `operational_status`, or `unsupported`;
 `commerce_or_ad` is reserved while commercial disposition remains a separate class. Only
 `external_article` and `standard_site_document` may create a `wire_item`.
 
@@ -153,6 +154,14 @@ The active graph is not the social graph archive. Keep at most the 250,000 most 
 
 ## Exact ranking algorithm (`wire-v10`)
 
+`wire-v11` is the versioned external-signal candidate. It retains the exact score,
+admission, moderation, quality-reserve, and diversity rules documented below, while allowing
+public Margin and Semble actions that have already been normalized to the existing Wire signal
+kinds to contribute to those aggregates. A new algorithm version is required even though the
+coefficients are unchanged because the eligible input-signal semantics change. The original
+record collection and application remain provenance/diagnostic dimensions; they do not create
+new public score fields or expose an engagement actor.
+
 Let `clamp(x) = min(1, max(0, x))`, `age` be nonnegative seconds since `publishedAt` (or `firstSeenAt`), `sh1`/`sh24` be distinct high-intent actors in one/24 hours, `l1`/`l24` be likes, `r1`/`r24` be reposts, `la24`/`ra24` be their distinct actor counts, `rec24` be distinct Standard Site recommenders, `good24`/`bad24` be distinct Social Wire assessments, `s7` be all seven-day signals, and `c24` be distinct qualifying communities. `standardSiteAuthority` is one only for authoritative `standard_site` provenance. `openGraphMetadata` is one only while a successful OpenGraph cache row remains fresh or stale-safe and contains at least two useful presentation fields.
 
 Normalized components:
@@ -192,7 +201,7 @@ Score:
 + 0.06 * positiveFeedbackBreadth
 ```
 
-The implementation divides that positive score by the sum of positive weights, so validated future configurations remain normalized. It then subtracts `0.10 * negativeFeedbackBreadth`, the matching platform-destination penalty, `0.15` when the commercial classifier returns `limited`, and `0.15` when the story has no usable presentation thumbnail. The missing-thumbnail adjustment is a strong but bounded publication-quality preference: image-bearing reporting should dominate normal ordering, while a story without publisher artwork remains eligible to fill an edition when stronger presentation is unavailable. After admission, the ranker adds a deterministic nudge in `[0, 0.005]` derived from FNV-1a over the canonical key and `floor(asOf / 1,800 seconds)`, then clamps the result to `[0, 1]`. The nudge is stable across every one-minute generation within a 30-minute bucket and changes only at a bucket boundary. Primary/burst and quality-reserve tiers are nudged and sorted separately, so rotation cannot admit a story or move reserve filler ahead of a strict story. A half-point maximum permits nearly tied eligible stories to rotate without overwhelming material quality differences.
+The implementation divides that positive score by the sum of positive weights, so validated future configurations remain normalized. It then subtracts `0.10 * negativeFeedbackBreadth`, the matching platform-destination penalty, a commercial penalty scaled from `0.15` at limited score `3` through `0.25` at score `5`, and `0.15` when the story has no usable presentation thumbnail. The missing-thumbnail adjustment is a strong but bounded publication-quality preference: image-bearing reporting should dominate normal ordering, while a story without publisher artwork remains eligible to fill an edition when stronger presentation is unavailable. After admission, the ranker adds a deterministic nudge in `[0, 0.005]` derived from FNV-1a over the canonical key and `floor(asOf / 1,800 seconds)`, then clamps the result to `[0, 1]`. The nudge is stable across every one-minute generation within a 30-minute bucket and changes only at a bucket boundary. Primary/burst and quality-reserve tiers are nudged and sorted separately, so rotation cannot admit a story or move reserve filler ahead of a strict story. A half-point maximum permits nearly tied eligible stories to rotate without overwhelming material quality differences.
 
 Standard Site authority (`0.11`) and Standard Site recommendation breadth (`0.10`) therefore have larger explicit coefficients than Social Wire positive feedback (`0.06`) and a Bluesky like (`0.02`); recommendations also participate in high-intent breadth and admission by design. The positive-weight total remains `1.14`, so the increased freshness, Standard Site, and recommendation emphasis does not silently dilute those authority signals. Weights must be finite/nonnegative with a positive total. Thresholds/targets and time intervals must be positive and source confidence must stay in `[0, 1]`. Sort each admission tier by nudged score descending, then `canonicalKey` ascending; input order, database plan, clock locale, and process count must not change output.
 
@@ -356,9 +365,14 @@ PostgreSQL is authoritative for the current projection. The inbox, short-retenti
 
 ## Configuration and validation
 
-Ranking defaults live in `WireRankingConfig`/`WireRankingWeights`/`WireDiversityPolicy` and are identified by `wire-v10`. Operational environment controls are:
+Ranking defaults live in `WireRankingConfig`/`WireRankingWeights`/`WireDiversityPolicy`.
+`wire-v10` is the baseline and `wire-v11` is the external-signal candidate; both use the
+documented coefficients and thresholds. Operational environment controls are:
 
 - `WIRE_FEED_MODE=off|shadow|api|visible`;
+- `WIRE_EXTERNAL_SIGNAL_MODE=off|shadow|rank` (`off` emits only activation-eligible v10,
+  `shadow` emits activation-eligible v10 plus non-activating v11, and `rank` makes only v11
+  activation-eligible);
 - `WIRE_WORKER_ROLE=combined|rank|drain` (rank owns generation plus metadata/profile
   enrichment and may own terminal cleanup; drain owns scalable inbox work; combined owns both);
 - `WIRE_INBOX_CLEANUP_ENABLED=true|false` (assign terminal-row cleanup to exactly one selected role);
@@ -381,7 +395,7 @@ Ranking defaults live in `WireRankingConfig`/`WireRankingWeights`/`WireDiversity
 
 ## Observability and rollout SLOs
 
-Emit privacy-safe metrics/logs for inbox pending/leased/dead-letter counts and oldest age; signal/rollup freshness; eligible/rejected counts by reason; generation duration/count/version/mode; diversity deferral count/dimension; active generation age; cursor failure category; moderation exclusions; fallback/stale responses; and PostgreSQL/optional-Redis latency/error rates. Generation IDs and canonical keys are allowed operational identifiers; actor/community hashes are not log fields.
+Emit privacy-safe metrics/logs for inbox pending/leased/dead-letter counts and oldest age; signal/rollup freshness; eligible/rejected counts by reason; generation duration/count/version/mode; external-signal rollout mode; v10/v11 shadow overlap and rank movement; diversity deferral count/dimension; active generation age; cursor failure category; moderation exclusions; fallback/stale responses; and PostgreSQL/optional-Redis latency/error rates. Every generation commit log includes its algorithm version and activation decision. Generation IDs and canonical keys are allowed operational identifiers; actor/community hashes are not log fields.
 
 The news edition additionally reports metadata cache hit/stale/miss/failure age, edition
 assembly duration, section fill and underfill, publication concentration, eligible people
@@ -406,7 +420,15 @@ Required deterministic fixtures cover URL aliases and semantic query separation;
 
 Replay a fixed, time-bounded input corpus with a fixed `asOf`, hashing the ordered `(canonicalKey, reasons)` output. Compare current vs candidate versions for overlap, source/domain/author/topic concentration, language coverage, label exclusions, and reason distribution. No production identities should appear in exported replay artifacts.
 
-Promotion is `off` -> Development `shadow` -> reviewed replay/metrics -> Development `api` -> authenticated and anonymous acceptance -> Development `visible` -> explicit Production approval. Roll back immediately to `api`, `shadow`, or `off` according to the failing surface, or atomically restore a still-valid previous generation pointer. Do not delete generations during rollback. Database migrations are forward-only and provider-neutral PostgreSQL; Redis deletion is never a rollback mechanism.
+External-signal promotion is `WIRE_EXTERNAL_SIGNAL_MODE=off` -> Development `shadow` ->
+reviewed v10/v11 replay and shadow metrics -> Development `rank` -> explicit Production approval.
+The feed itself retains the independent `WIRE_FEED_MODE=off` -> Development `shadow` ->
+Development `api` -> authenticated and anonymous acceptance -> Development `visible` gate.
+Roll external signals back to `shadow` or `off` without changing the active v10 generation;
+roll the feed back to `api`, `shadow`, or `off` according to the failing surface, or atomically
+restore a still-valid previous generation pointer. Do not delete generations during rollback.
+Database migrations are forward-only and provider-neutral PostgreSQL; Redis deletion is never
+a rollback mechanism.
 
 ### Worked ranking example
 

@@ -7,13 +7,14 @@ enum WireServingError: Error, HTTPResponseError, Sendable {
   case cursorExpired
   case itemNotFound
   case moderationUnavailable
+  case corpusContractMismatch
 
   var status: HTTPResponse.Status {
     switch self {
     case .invalidCursor: .badRequest
     case .cursorExpired: .gone
     case .itemNotFound: .notFound
-    case .unavailable, .moderationUnavailable: .serviceUnavailable
+    case .unavailable, .moderationUnavailable, .corpusContractMismatch: .serviceUnavailable
     }
   }
 
@@ -24,6 +25,7 @@ enum WireServingError: Error, HTTPResponseError, Sendable {
     case .cursorExpired: "CursorExpired"
     case .itemNotFound: "NotFound"
     case .moderationUnavailable: "ModerationUnavailable"
+    case .corpusContractMismatch: "FeedUnavailable"
     }
   }
 
