@@ -9,6 +9,10 @@ const migration = readFileSync(
   ),
   "utf8",
 );
+const servingVerifier = readFileSync(
+  join(import.meta.dir, "../../../scripts/verify-wire-corpus-serving.sql"),
+  "utf8",
+);
 
 describe("Your Circle private state migration", () => {
   test("stores only hashed viewer and actor identities", () => {
@@ -43,5 +47,21 @@ describe("Your Circle private state migration", () => {
     expect(migration).toContain("signal.source_action <> 'like'");
     expect(migration).not.toMatch(/circle_signal_facts[\s\S]*ranking_score/i);
     expect(migration).toContain("SELECT 3::INTEGER AS contract_version");
+  });
+
+  test("verifies the v3 trusted view without widening public provenance", () => {
+    expect(servingVerifier).toContain("IF contract_version <> 3 THEN");
+    expect(servingVerifier).toContain("table_name = 'circle_signal_facts'");
+    expect(servingVerifier).toContain("column_name = 'actor_key_hash'");
+    expect(servingVerifier).toContain("circle_required_columns <> 6");
+    for (const forbiddenColumn of [
+      "actor_did",
+      "viewer_did",
+      "ranking_score",
+      "score",
+      "diagnostics",
+    ]) {
+      expect(servingVerifier).toContain(`'${forbiddenColumn}'`);
+    }
   });
 });
