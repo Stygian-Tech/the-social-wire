@@ -2,7 +2,12 @@
 
 Railway is the canonical deployment platform for both Development and Production. GitHub Actions validates source changes; Railway deploys successful linked revisions through its GitHub integration.
 
-These custom-named config-as-code files are inactive until each Railway service selects its exact file under **Settings → Config-as-code**. Keep each service root directory at `/` so Docker and Railpack builds can access shared monorepo packages.
+The files in this directory are grandfathered per-service Config as Code for
+compatibility services. Railway no longer allows new services to select these
+files. The consolidated Ingress Controller, Projection Pool, and Coordinator
+are managed by the scoped Infrastructure as Code partial in
+`/.railway/railway.ts`. Keep service build roots at `/` so Docker and Railpack
+builds can access shared monorepo packages.
 
 | Railway Service | Config File |
 | --- | --- |
@@ -16,10 +21,6 @@ These custom-named config-as-code files are inactive until each Railway service 
 | The Wire Worker | `/railway/wire-worker.json` |
 | The Wire Inbox Drain | `/railway/wire-inbox-drain.json` |
 | The Wire Fresh Inbox Drain | `/railway/wire-fresh-inbox-drain.json` |
-| Ingress Controller | `/railway/ingress-controller.json` |
-| Ingress Snapshot Job | `/railway/ingress-snapshot-job.json` |
-| Projection Pool | `/railway/projection-pool.json` |
-| Coordinator | `/railway/coordinator.json` |
 | The Wire Corpus Edge | `/railway/wire-corpus-edge.json` |
 | Ops | `/railway/operations.json` |
 | Database Migrator | `/railway/database-migrator.json` |
@@ -51,7 +52,15 @@ tables as rollback targets, and follow the Development-first change discipline
 in [`docs/architecture/redis.md`](../docs/architecture/redis.md) before future
 Production changes.
 
-Secrets, reference variables, custom domains, volumes, and region placement remain environment-specific Railway settings. Gateway, App View, Ingress Controller, Projection Pool, Coordinator, and Ops expose `/readyz`. Railway deploys the three indexing service classes against `/startupz` so durable catch-up or fenced-lease handoff can complete without weakening their operational readiness probes. Compatibility worker configs remain checked in through the rollback window. The one-shot Ingress Snapshot Job has no health check and uses restart policy `NEVER`.
+Secrets and reference variables remain environment-specific Railway settings.
+The indexing IaC partial preserves them and owns the three services' source,
+Dockerfile, watch paths, US-West replica count, startup health check, and restart
+policy. Gateway, App View, Ingress Controller, Projection Pool, Coordinator,
+and Ops expose `/readyz`. Railway deploys the indexing classes against
+`/startupz` so durable catch-up or fenced-lease handoff can complete without
+weakening their operational readiness probes. Compatibility worker configs
+remain checked in through the rollback window. Snapshot jobs are temporary
+operator services with restart policy `NEVER`, not persistent IaC resources.
 
 The Wire Corpus Edge exists only in Production and connects to Production
 Postgres over the private network. Its narrowly exposed HTTPS domain accepts

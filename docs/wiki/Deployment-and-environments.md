@@ -11,9 +11,10 @@ Generated `*.up.railway.app` domains are deployment diagnostics. OAuth client ID
 
 ## Deployed services
 
-Railway config-as-code files under `railway/` define the public services,
-three replicated indexing service classes, compatibility rollback services,
-and one-shot jobs:
+Grandfathered Railway config files under `railway/` define the public and
+compatibility services. The scoped `/.railway/railway.ts` partial defines the
+three replicated Development indexing service classes. Snapshot jobs are
+temporary operator-created services:
 
 | Service | Config |
 |---------|--------|
@@ -24,10 +25,9 @@ and one-shot jobs:
 | Charybdis | `railway/charybdis.json` |
 | Operations | `railway/operations.json` |
 | Jetstream V2 Ingest | `railway/jetstream-ingest.json` |
-| Ingress Controller | `railway/ingress-controller.json` |
-| Projection Pool | `railway/projection-pool.json` |
-| Coordinator | `railway/coordinator.json` |
-| Ingress Snapshot Job | `railway/ingress-snapshot-job.json` |
+| Ingress Controller | `.railway/railway.ts` |
+| Projection Pool | `.railway/railway.ts` |
+| Coordinator | `.railway/railway.ts` |
 | Database Migrator | `railway/database-migrator.json` |
 
 Railway Postgres is the canonical hosted database. Database Migrator applies

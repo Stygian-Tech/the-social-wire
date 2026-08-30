@@ -14,7 +14,7 @@ This runbook replaces the separate AppView/Wire intake, projection, ranking, enr
 
 ### Ingress Controller
 
-Use `/railway/ingress-controller.json`, two replicas, and the existing shared `APP_ENV`, `DATABASE_URL`, Jetstream host/API key, and database-migrator reference. Enable both lanes:
+Apply the `Ingress Controller` resource from `/.railway/railway.ts`. It defines two replicas and preserves the existing shared `APP_ENV`, `DATABASE_URL`, Jetstream API key, and database-migrator reference. Enable both lanes:
 
 ```text
 JETSTREAM_APPVIEW_ENABLED=true
@@ -25,7 +25,7 @@ Move each old lane's settings to its namespaced equivalents (`JETSTREAM_APPVIEW_
 
 ### Projection Pool
 
-Use `/railway/projection-pool.json` and:
+Apply the `Projection Pool` resource from `/.railway/railway.ts` and:
 
 ```text
 INDEXING_WORKER_ROLE=projection
@@ -36,7 +36,7 @@ Carry forward the AppView durable-inbox and Wire drain variables. Start with the
 
 ### Coordinator
 
-Use `/railway/coordinator.json`, two replicas, and:
+Apply the `Coordinator` resource from `/.railway/railway.ts`, two replicas, and:
 
 ```text
 INDEXING_WORKER_ROLE=coordinator
@@ -47,15 +47,17 @@ Carry forward AppView RSS/backfill/retention/recovery settings and Wire rank/enr
 
 ### Snapshot job
 
-Use `/railway/ingress-snapshot-job.json` only for an operator-created one-shot service or scheduled job. Configure the legacy single Wire lane (`JETSTREAM_PIPELINE_MODE=wire-global-v1`) with `JETSTREAM_REPLAY_SNAPSHOT_ONLY=true`, `JETSTREAM_EXIT_AFTER_SNAPSHOT=true`, both cursor bounds, and a unique source generation. Do not set the namespaced controller enable flags; exit-after-snapshot is rejected in supervised multi-lane mode.
+Create snapshots as temporary operator services outside the long-running IaC partial. Set `RAILWAY_DOCKERFILE_PATH=/services/jetstream-ingest/Dockerfile`, configure the legacy single Wire lane (`JETSTREAM_PIPELINE_MODE=wire-global-v1`) with `JETSTREAM_REPLAY_SNAPSHOT_ONLY=true`, `JETSTREAM_EXIT_AFTER_SNAPSHOT=true`, both cursor bounds, a unique source generation, and restart policy `NEVER`. Do not set the namespaced controller enable flags; exit-after-snapshot is rejected in supervised multi-lane mode. Remove the temporary service after recording its completion marker and checkpoint.
 
 ## Development cutover
 
-1. Deploy the migration and verify the role-lease table and index exist.
-2. Create Ingress Controller with two replicas. Verify both lane databases, leases, checkpoints, and `/readyz`. Stop the two superseded intake services only after the controller owns the same two leases and cursor movement is continuous.
-3. Create Projection Pool with the same aggregate drain concurrency as the old AppView projector and Wire drains. Verify claim/ack partitioning, no duplicate terminal rows, and falling or stable actionable age. Stop Charybdis projection and the old Wire drains after the new pool is caught up.
-4. Reconfigure the compatibility AppView worker to avoid singleton overlap, and stop the old Wire rank/materializer. Start Coordinator with two replicas. Verify exactly one owner for each role, distinct fencing tokens, one active component health endpoint, and one healthy standby path.
-5. Stop and remove the superseded hosted worker services only after the soak. Keep their config files and executable products through the rollback window.
+1. Deploy the migration and verify the role-lease table and index exist. Seed each target service with its database, migrator, Redis, API-key, and HMAC references before the first IaC apply; `preserve()` retains existing target values but does not copy them from compatibility services.
+2. Run `railway environment link dev` and review `railway config plan`. The plan must contain only the three Development indexing resources and no destructive changes. The partial aborts outside Development.
+3. Capture the singleton baseline, stop compatibility `Charybdis` and `The Wire Worker`, and verify their deployments are stopped before applying the `indexing-consolidation` partial. This creates a bounded maintenance gap and prevents the old unfenced RSS, recovery, retention, ranking, enrichment, and cleanup loops from overlapping the new Coordinator.
+4. Apply the partial. Verify Ingress Controller's two lane databases, leases, checkpoints, and `/readyz`. Stop the two superseded intake services only after the controller owns the same two leases and cursor movement is continuous.
+5. Verify Projection Pool claim/ack partitioning, no duplicate terminal rows, and falling or stable actionable age. Stop the old dedicated Wire drains after the new pool is caught up.
+6. Verify Coordinator has exactly one owner for each role, distinct fencing tokens, one active component health endpoint, and one healthy standby path. If the new deployment fails, stop all new Coordinator replicas before restoring either compatibility singleton.
+7. Stop and remove the superseded hosted worker services only after the soak. Keep their config files and executable products through the rollback window.
 
 ## Soak gates
 

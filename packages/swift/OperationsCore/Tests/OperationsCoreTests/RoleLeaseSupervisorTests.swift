@@ -65,7 +65,10 @@ struct RoleLeaseSupervisorTests {
     #expect(first.environment == "dev")
     #expect(first.role == configuration.role)
     #expect(first.ownerID == configuration.ownerID)
-    #expect(first.fencingToken == 1)
+    // The renewal task can advance the deliberately oversleeping clock before
+    // the operation enters its first fence, so the first observable ownership
+    // may already be a reacquisition rather than token 1.
+    #expect(first.fencingToken > 0)
     // The deliberately oversleeping clock may drive more than one complete
     // loss/reacquisition cycle before the AsyncStream consumer resumes. The
     // store-level tests assert exact single-takeover increments; this

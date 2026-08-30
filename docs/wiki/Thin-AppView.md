@@ -140,7 +140,7 @@ When the server flag is off, AppView routes are unavailable. Current web and iOS
 
 ## Deployment (Railway)
 
-Railway deploys independent public services plus three replicated indexing service classes from repository-level config-as-code files:
+Railway deploys independent public services plus three replicated indexing service classes. Compatibility services still use grandfathered per-service config files; the consolidated indexing classes use the scoped `/.railway/railway.ts` partial:
 
 | Service | Config |
 |---------|--------|
@@ -151,9 +151,9 @@ Railway deploys independent public services plus three replicated indexing servi
 | Charybdis | `railway/charybdis.json` |
 | Operations | `railway/operations.json` |
 | Jetstream V2 Ingest | `railway/jetstream-ingest.json` |
-| Ingress Controller | `railway/ingress-controller.json` |
-| Projection Pool | `railway/projection-pool.json` |
-| Coordinator | `railway/coordinator.json` |
+| Ingress Controller | `.railway/railway.ts` |
+| Projection Pool | `.railway/railway.ts` |
+| Coordinator | `.railway/railway.ts` |
 
 Development tracks `dev`; production tracks `main`. Gateway reaches AppView and
 Operations over Railway private domains; Ingress Controller, Projection Pool,

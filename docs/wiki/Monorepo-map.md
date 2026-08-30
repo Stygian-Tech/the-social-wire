@@ -26,7 +26,8 @@ the-social-wire/
     runbooks/      # operator incident, recovery, and historical Tap cutover procedures
     test-plans/    # per-surface verification expectations
     wiki/         # canonical public wiki Markdown (GitHub sync; manual Lichen publish)
-  railway/        # one config-as-code file per deployed service
+  .railway/       # IaC partial for consolidated Development indexing services
+  railway/        # grandfathered config files for compatibility services
   scripts/        # CI change detection, migration runner, and benchmarks
   .github/workflows/
                   # required CI plus main-only GitHub Wiki publication
