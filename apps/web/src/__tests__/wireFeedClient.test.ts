@@ -202,9 +202,14 @@ describe("The Wire client", () => {
     expect(selectWireLanguage(["en-US", "es"], ["en-GB"])).toBe("en-US");
   });
 
-  it("uses the global Wire when the user's language is not advertised", () => {
-    expect(selectWireLanguage(["en", "fr"], ["es-MX"])).toBeUndefined();
-    expect(selectWireLanguage([], ["de-DE"])).toBeUndefined();
+  it("keeps the user's coarse language when no generation is advertised", () => {
+    expect(selectWireLanguage(["en", "fr"], ["es-MX"])).toBe("es");
+    expect(selectWireLanguage([], ["de-DE"])).toBe("de");
+    expect(selectWireLanguage(["fr"], ["en-US"])).toBe("en");
+  });
+
+  it("prefers a later advertised browser language before failing closed", () => {
+    expect(selectWireLanguage(["en"], ["es-MX", "en-US"])).toBe("en");
   });
 
   it("falls back safely when no valid user language is available", () => {
