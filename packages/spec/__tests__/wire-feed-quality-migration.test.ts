@@ -9,6 +9,13 @@ const migration = readFileSync(
   ),
   "utf8",
 );
+const languageValidationMigration = readFileSync(
+  join(
+    import.meta.dir,
+    "../../../database/migrations/20260830043000_validate_wire_page_languages.sql",
+  ),
+  "utf8",
+);
 
 describe("The Wire feed quality migration", () => {
   it("makes operational status pages non-admissible", () => {
@@ -23,5 +30,13 @@ describe("The Wire feed quality migration", () => {
     expect(migration).toContain("'{commit,record,lang}'");
     expect(migration).toContain("THEN 'unknown'::text ELSE 'standard_site_record'::text");
     expect(migration).toContain("metadata.language_checked_at IS NOT NULL");
+  });
+
+  it("keeps page-declared locale evidence only when bounded content corroborates it", () => {
+    expect(languageValidationMigration).toContain("language_lexicon");
+    expect(languageValidationMigration).toContain("declared_score >= 2");
+    expect(languageValidationMigration).toContain("declared_score >= strongest_contradiction");
+    expect(languageValidationMigration).toContain("content_validated_page");
+    expect(languageValidationMigration).toContain("WHEN declared = 'ja'");
   });
 });

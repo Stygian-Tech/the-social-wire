@@ -187,6 +187,11 @@ struct PostgresWireLinkMetadataStore: WireLinkMetadataStoring {
     metadata: WireLinkMetadata,
     asOf: Date
   ) async throws {
+    let validatedLanguageCode = WireDeclaredLanguageValidator.validatedLanguageCode(
+      declaredLanguageCode: metadata.languageCode,
+      title: metadata.title,
+      summary: metadata.description
+    )
     let homepageURL = Self.homepageURL(for: metadata.canonicalURL)
     let targetKind = WireContentQualityClassifier.targetKind(for: metadata.canonicalURL)
     let commercial = WireContentQualityClassifier.assess(
@@ -207,7 +212,7 @@ struct PostgresWireLinkMetadataStore: WireLinkMetadataStoring {
             site_name = \(metadata.siteName), author_name = \(metadata.authorName),
             published_at = \(metadata.publishedAt), icon_url = \(metadata.iconURL),
             etag = \(metadata.etag), last_modified = \(metadata.lastModified),
-            language_code = \(metadata.languageCode), language_checked_at = \(asOf),
+            language_code = \(validatedLanguageCode), language_checked_at = \(asOf),
             source = 'open_graph', status = 'fresh', fetched_at = \(asOf),
             fresh_until = \(asOf.addingTimeInterval(86_400)),
             stale_until = \(asOf.addingTimeInterval(7 * 86_400)),
@@ -240,7 +245,7 @@ struct PostgresWireLinkMetadataStore: WireLinkMetadataStoring {
               ELSE COALESCE(\(metadata.publishedAt), published_at) END,
             language_code = CASE
               WHEN provenance ? 'standard_site' THEN language_code
-              ELSE COALESCE(\(metadata.languageCode), language_code) END,
+              ELSE COALESCE(\(validatedLanguageCode), 'und') END,
             publication_homepage_url = CASE WHEN provenance ? 'standard_site'
               THEN COALESCE(publication_homepage_url, \(homepageURL))
               ELSE COALESCE(\(homepageURL), publication_homepage_url) END,
@@ -285,8 +290,9 @@ struct PostgresWireLinkMetadataStore: WireLinkMetadataStoring {
               'languageSource', CASE
                 WHEN provenance ? 'standard_site'
                   THEN COALESCE(presentation_snapshot->'languageSource', to_jsonb('unknown'::text))
-                WHEN \(metadata.languageCode)::text IS NOT NULL THEN to_jsonb('page_declared'::text)
-                ELSE COALESCE(presentation_snapshot->'languageSource', to_jsonb('unknown'::text))
+                WHEN \(validatedLanguageCode)::text IS NOT NULL
+                  THEN to_jsonb('content_validated_page'::text)
+                ELSE to_jsonb('unknown'::text)
                 END,
               'homepageUrl', CASE WHEN provenance ? 'standard_site'
                 THEN COALESCE(publication_homepage_url, \(homepageURL))
