@@ -103,7 +103,7 @@ public enum WireContentQualityClassifier {
     if firstLabel == "status" || firstLabel == "statuspage" { return true }
     return [
       "statuspage.io", "status.io", "instatus.com", "betteruptime.com", "statuspal.io",
-      "statuscast.com",
+      "statuscast.com", "fedilist.com",
     ].contains { host == $0 || host.hasSuffix(".\($0)") }
   }
 }

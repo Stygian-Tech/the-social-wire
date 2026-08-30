@@ -24,6 +24,14 @@ struct WireContentQualityClassifierTests {
     #expect(WireContentQualityClassifier.targetKind(
       for: "https://example.statuspage.io/incident/1") == .operationalStatus)
     #expect(WireContentQualityClassifier.targetKind(
+      for: "https://fedilist.com/instance/example.com",
+      standardSite: true
+    ) == .operationalStatus)
+    #expect(WireContentQualityClassifier.targetKind(
+      for: "https://notfedilist.com/instance/example.com") == .externalArticle)
+    #expect(WireContentQualityClassifier.targetKind(
+      for: "https://fedilist.com.evil.example/instance/example.com") == .externalArticle)
+    #expect(WireContentQualityClassifier.targetKind(
       for: "https://news.example/status/report") == .externalArticle)
     #expect(!WireTargetKind.operationalStatus.canCreateItem)
   }
