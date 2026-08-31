@@ -25,11 +25,16 @@ public enum ATProtoOAuthScopes {
     "repo:app.bsky.feed.like?action=create",
     "repo:app.bsky.feed.repost?action=create",
     "repo:community.lexicon.bookmarks.bookmark?action=create&action=update&action=delete",
-    "repo:link.latr.bookmarks.metadata?action=create&action=update&action=delete",
+    "include:link.latr.authFull",
     "repo:link.latr.saved.external?action=delete",
     "repo:link.latr.saved.item?action=delete",
     "repo:com.latr.saved.external?action=delete",
     "repo:com.latr.saved.item?action=delete",
+    "repo:network.cosmik.card?action=create&action=update&action=delete",
+    "repo:network.cosmik.collection?action=create&action=update&action=delete",
+    "repo:network.cosmik.collectionLink?action=create&action=update&action=delete",
+    "repo:network.cosmik.collectionLinkRemoval?action=create&action=update&action=delete",
+    "repo:network.cosmik.connection?action=create&action=update&action=delete",
   ]
 
   /// Feature scopes shared by every client that exposes the full reader action surface.

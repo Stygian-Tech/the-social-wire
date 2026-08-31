@@ -100,6 +100,66 @@ final class SocialWireGatewayClient {
         try await authorizedGET(path: SocialWireXRPCMethod.getPreferences, query: [:], ifNoneMatch: ifNoneMatch)
     }
 
+    func fetchSembleCollections(limit: Int = 100, cursor: String? = nil) async throws -> SembleCollectionPage {
+        var query = ["limit": String(limit)]
+        if let cursor, !cursor.isEmpty { query["cursor"] = cursor }
+        let result = try await authorizedGET(
+            path: "/v1/semble/collections",
+            query: query,
+            ifNoneMatch: nil
+        )
+        guard (200 ..< 300).contains(result.statusCode) else {
+            throw SocialWireError.badResponse("Semble collections failed (\(result.statusCode)).")
+        }
+        return try JSONDecoder().decode(SembleCollectionPage.self, from: result.body)
+    }
+
+    func fetchSembleCollection(
+        collectionURI: String,
+        limit: Int = 100,
+        cursor: String? = nil
+    ) async throws -> SembleCollectionItemsPage {
+        var query = ["collectionUri": collectionURI, "limit": String(limit)]
+        if let cursor, !cursor.isEmpty { query["cursor"] = cursor }
+        let result = try await authorizedGET(
+            path: "/v1/semble/collection",
+            query: query,
+            ifNoneMatch: nil
+        )
+        if result.statusCode == 404 {
+            throw SocialWireError.sembleCollectionUnavailable(
+                "The selected Semble collection no longer exists."
+            )
+        }
+        if result.statusCode == 403 {
+            throw SocialWireError.sembleCollectionUnavailable(
+                "You no longer own the selected Semble collection."
+            )
+        }
+        guard (200 ..< 300).contains(result.statusCode) else {
+            throw SocialWireError.badResponse("Semble collection failed (\(result.statusCode)).")
+        }
+        return try JSONDecoder().decode(SembleCollectionItemsPage.self, from: result.body)
+    }
+
+    func fetchSembleConnections(
+        url: String,
+        limit: Int = 100,
+        cursor: String? = nil
+    ) async throws -> SembleConnectionsPage {
+        var query = ["url": url, "limit": String(limit)]
+        if let cursor, !cursor.isEmpty { query["cursor"] = cursor }
+        let result = try await authorizedGET(
+            path: "/v1/semble/connections",
+            query: query,
+            ifNoneMatch: nil
+        )
+        guard (200 ..< 300).contains(result.statusCode) else {
+            throw SocialWireError.badResponse("Semble connections failed (\(result.statusCode)).")
+        }
+        return try JSONDecoder().decode(SembleConnectionsPage.self, from: result.body)
+    }
+
     func fetchCachedPdsRecord(collection: String, rkey: String, ifNoneMatch: String?) async throws -> GatewayHTTPResult {
         try await authorizedGET(
             path: "/v1/pds/cache/record",

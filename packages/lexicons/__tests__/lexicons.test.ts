@@ -31,6 +31,24 @@ describe("lexicon JSON schemas", () => {
     expect(ids).toContain("link.latr.saved.external");
   });
 
+  it("stores only non-sensitive Semble destination metadata", () => {
+    const schema = JSON.parse(
+      readFileSync(join(ROOT, "app/thesocialwire/preferences.json"), "utf8")
+    );
+    const record = schema.defs.main.record.properties;
+    expect(record.readLaterService.knownValues).toContain("semble");
+    expect(record.readLaterConnections.properties.semble.ref).toBe(
+      "#sembleConnection"
+    );
+    expect(schema.defs.sembleConnection.required).toEqual([
+      "collectionUri",
+      "collectionName",
+      "connectedAt",
+    ]);
+    expect(schema.defs.sembleConnection.properties).not.toHaveProperty("apiKey");
+    expect(schema.defs.sembleConnection.properties).not.toHaveProperty("token");
+  });
+
   for (const file of files) {
     it(`parses ${file.replace(ROOT + "/", "")}`, () => {
       const raw = readFileSync(file, "utf8");

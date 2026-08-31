@@ -26,6 +26,7 @@ describe("readLaterServices", () => {
       "Readwise Reader"
     );
     expect(findReadLaterService("latrkit").label).toBe("LatrKit");
+    expect(findReadLaterService("semble").label).toBe("Semble");
   });
 
   it("READ_LATER_SERVICES marks latr PDS providers as connected", () => {

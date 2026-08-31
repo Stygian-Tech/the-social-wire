@@ -1,0 +1,22 @@
+meta {
+  name: Get Semble Collection
+  type: http
+  seq: 20
+}
+
+get {
+  url: {{baseUrl}}/v1/semble/collection?collectionUri={{sembleCollectionUri}}&limit={{sembleLimit}}
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: DPoP {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}
+
+docs {
+  Gets one viewer-owned Semble collection page. `membershipComplete` and
+  `recordLinksComplete` are false when public-PDS enrichment is partial; retry
+  before offering unlink or edit actions.
+}

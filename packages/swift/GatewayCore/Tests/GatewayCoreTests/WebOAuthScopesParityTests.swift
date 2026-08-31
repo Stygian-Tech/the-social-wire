@@ -74,4 +74,18 @@ struct WebOAuthScopesParityTests {
     #expect(ATProtoOAuthScopes.webScope.contains("include:app.bsky.authDeleteContent"))
     #expect(!ATProtoOAuthScopes.webScope.contains("repo:app.bsky.feed.post?action=create"))
   }
+
+  @Test("Semble provider grants every user-owned record collection")
+  func sembleProviderScopes() {
+    for collection in [
+      "network.cosmik.card",
+      "network.cosmik.collection",
+      "network.cosmik.collectionLink",
+      "network.cosmik.collectionLinkRemoval",
+      "network.cosmik.connection",
+    ] {
+      #expect(ATProtoOAuthScopes.webScope.contains("repo:\(collection)?action=create&action=update&action=delete"))
+      #expect(ATProtoOAuthScopes.iosScope.contains("repo:\(collection)?action=create&action=update&action=delete"))
+    }
+  }
 }

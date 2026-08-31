@@ -3,6 +3,7 @@ import Foundation
 enum SocialWireError: LocalizedError {
     case notAuthenticated
     case badResponse(String)
+    case sembleCollectionUnavailable(String)
     /// `app.thesocialwire.appview.*` is not mounted (`ENABLE_THIN_APPVIEW` off on the gateway).
     case appViewUnavailable
     case invalidURL
@@ -13,6 +14,7 @@ enum SocialWireError: LocalizedError {
         switch self {
         case .notAuthenticated: "Sign in to continue."
         case .badResponse(let message): message
+        case .sembleCollectionUnavailable(let message): message
         case .appViewUnavailable: "Thin AppView is not enabled on this API host."
         case .invalidURL: "The URL is invalid."
         case .invalidATURI: "The AT-URI is invalid."

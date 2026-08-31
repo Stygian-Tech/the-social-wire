@@ -93,4 +93,18 @@ describe("atprotoOAuthScopes", () => {
       "rpc:app.bsky.graph.getList?aud=did:web:api.bsky.app%23bsky_appview",
     ]);
   });
+
+  it("grants direct viewer-PDS access for every Semble provider record", () => {
+    for (const collection of [
+      "network.cosmik.card",
+      "network.cosmik.collection",
+      "network.cosmik.collectionLink",
+      "network.cosmik.collectionLinkRemoval",
+      "network.cosmik.connection",
+    ]) {
+      expect(AT_PROTO_OAUTH_SCOPES).toContain(
+        `repo:${collection}?action=create&action=update&action=delete`
+      );
+    }
+  });
 });

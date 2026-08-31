@@ -25,7 +25,7 @@ export function EntryRowActions({
   variant: "context" | "dropdown";
 }) {
   const saveLaterMut = useSaveReadLaterEntryMutation();
-  const alreadySaved = useEntryIsLatrSaved(entry.entryId);
+  const alreadySaved = useEntryIsLatrSaved(entry.entryId, entry.originalUrl);
   const Item = variant === "context" ? ContextMenuItem : DropdownMenuItem;
   return (
     <>

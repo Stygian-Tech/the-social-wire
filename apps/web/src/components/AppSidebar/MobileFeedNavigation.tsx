@@ -19,10 +19,12 @@ export function MobileFeedNavigation({
   currentFeed,
   visibleFeeds,
   onSelect,
+  readLaterLabel = "Saved",
 }: {
   currentFeed: ReaderNavigationFeed | null;
   visibleFeeds: Set<ReaderNavigationFeed>;
   onSelect: (feed: ReaderNavigationFeed) => void;
+  readLaterLabel?: string;
 }) {
   const items = FEED_ITEMS.filter(({ feed }) => visibleFeeds.has(feed));
   if (items.length === 0) return null;
@@ -33,7 +35,8 @@ export function MobileFeedNavigation({
       className="fixed inset-x-0 bottom-0 z-40 grid border-t border-border/70 bg-background/95 px-2 pb-[env(safe-area-inset-bottom)] backdrop-blur-md md:hidden"
       style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}
     >
-      {items.map(({ feed, label, icon: Icon }) => {
+      {items.map(({ feed, label: defaultLabel, icon: Icon }) => {
+        const label = feed === "readLater" ? readLaterLabel : defaultLabel;
         const active = currentFeed === feed;
         return (
           <button

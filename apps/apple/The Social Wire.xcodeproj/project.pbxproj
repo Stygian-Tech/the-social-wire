@@ -7,6 +7,50 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		B40000000000000000000001 /* SembleSupportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B60000000000000000000001 /* SembleSupportTests.swift */; };
+		B50000000000000000000001 /* SembleSupportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B60000000000000000000001 /* SembleSupportTests.swift */; };
+		B20000000000000000000001 /* SembleCardRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000001 /* SembleCardRecord.swift */; };
+		B30000000000000000000001 /* SembleCardRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000001 /* SembleCardRecord.swift */; };
+		B20000000000000000000002 /* SembleCollectionItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000002 /* SembleCollectionItem.swift */; };
+		B30000000000000000000002 /* SembleCollectionItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000002 /* SembleCollectionItem.swift */; };
+		B20000000000000000000003 /* SembleCollectionItemsPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000003 /* SembleCollectionItemsPage.swift */; };
+		B30000000000000000000003 /* SembleCollectionItemsPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000003 /* SembleCollectionItemsPage.swift */; };
+		B20000000000000000000004 /* SembleCollectionLinkRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000004 /* SembleCollectionLinkRecord.swift */; };
+		B30000000000000000000004 /* SembleCollectionLinkRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000004 /* SembleCollectionLinkRecord.swift */; };
+		B20000000000000000000005 /* SembleCollectionLinkRemovalRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000005 /* SembleCollectionLinkRemovalRecord.swift */; };
+		B30000000000000000000005 /* SembleCollectionLinkRemovalRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000005 /* SembleCollectionLinkRemovalRecord.swift */; };
+		B20000000000000000000006 /* SembleCollectionPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000006 /* SembleCollectionPage.swift */; };
+		B30000000000000000000006 /* SembleCollectionPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000006 /* SembleCollectionPage.swift */; };
+		B20000000000000000000007 /* SembleCollectionSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000007 /* SembleCollectionSummary.swift */; };
+		B30000000000000000000007 /* SembleCollectionSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000007 /* SembleCollectionSummary.swift */; };
+		B20000000000000000000008 /* SembleConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000008 /* SembleConnection.swift */; };
+		B30000000000000000000008 /* SembleConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000008 /* SembleConnection.swift */; };
+		B20000000000000000000009 /* SembleConnectionRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000009 /* SembleConnectionRecord.swift */; };
+		B30000000000000000000009 /* SembleConnectionRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000009 /* SembleConnectionRecord.swift */; };
+		B20000000000000000000010 /* SembleConnectionsPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000010 /* SembleConnectionsPage.swift */; };
+		B30000000000000000000010 /* SembleConnectionsPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000010 /* SembleConnectionsPage.swift */; };
+		B20000000000000000000011 /* SembleContributor.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000011 /* SembleContributor.swift */; };
+		B30000000000000000000011 /* SembleContributor.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000011 /* SembleContributor.swift */; };
+		B20000000000000000000012 /* SembleMembership.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000012 /* SembleMembership.swift */; };
+		B30000000000000000000012 /* SembleMembership.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000012 /* SembleMembership.swift */; };
+		B20000000000000000000013 /* SembleNote.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000013 /* SembleNote.swift */; };
+		B30000000000000000000013 /* SembleNote.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000013 /* SembleNote.swift */; };
+		B20000000000000000000014 /* SembleRecordCollection.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000014 /* SembleRecordCollection.swift */; };
+		B30000000000000000000014 /* SembleRecordCollection.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000014 /* SembleRecordCollection.swift */; };
+		B20000000000000000000015 /* SembleSaveOutcome.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000015 /* SembleSaveOutcome.swift */; };
+		B30000000000000000000015 /* SembleSaveOutcome.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000015 /* SembleSaveOutcome.swift */; };
+		B20000000000000000000016 /* SembleSaveRetryState.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000016 /* SembleSaveRetryState.swift */; };
+		B30000000000000000000016 /* SembleSaveRetryState.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000016 /* SembleSaveRetryState.swift */; };
+		B20000000000000000000017 /* SembleCollectionListContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000017 /* SembleCollectionListContent.swift */; };
+		B30000000000000000000017 /* SembleCollectionListContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000017 /* SembleCollectionListContent.swift */; };
+		B20000000000000000000018 /* SembleItemDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000018 /* SembleItemDetailView.swift */; };
+		B30000000000000000000018 /* SembleItemDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000018 /* SembleItemDetailView.swift */; };
+		B20000000000000000000019 /* SembleItemRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000019 /* SembleItemRow.swift */; };
+		B30000000000000000000019 /* SembleItemRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000019 /* SembleItemRow.swift */; };
+		B20000000000000000000020 /* SembleNoteEditorSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000020 /* SembleNoteEditorSheet.swift */; };
+		B30000000000000000000020 /* SembleNoteEditorSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000020 /* SembleNoteEditorSheet.swift */; };
+		B20000000000000000000021 /* SembleRecordService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000021 /* SembleRecordService.swift */; };
+		B30000000000000000000021 /* SembleRecordService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000021 /* SembleRecordService.swift */; };
 		A20000000000000000000001 /* SavedTagCount.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000001 /* SavedTagCount.swift */; };
 		A20000000000000000000002 /* SavedTagMutationProgress.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000002 /* SavedTagMutationProgress.swift */; };
 		A20000000000000000000003 /* SavedTagSelectionStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000003 /* SavedTagSelectionStorage.swift */; };
@@ -729,6 +773,28 @@
 		FDC408F28017FEBDFF5C0394 /* SidebarCountLabel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarCountLabel.swift; sourceTree = "<group>"; };
 		FE44AAA8BB084667EBB8EA4A /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		FF4B30DBE504234972201CA5 /* CircleStory+Entry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CircleStory+Entry.swift"; sourceTree = "<group>"; };
+		B10000000000000000000001 /* SembleCardRecord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Semble/SembleCardRecord.swift; sourceTree = "<group>"; };
+		B10000000000000000000002 /* SembleCollectionItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Semble/SembleCollectionItem.swift; sourceTree = "<group>"; };
+		B10000000000000000000003 /* SembleCollectionItemsPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Semble/SembleCollectionItemsPage.swift; sourceTree = "<group>"; };
+		B10000000000000000000004 /* SembleCollectionLinkRecord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Semble/SembleCollectionLinkRecord.swift; sourceTree = "<group>"; };
+		B10000000000000000000005 /* SembleCollectionLinkRemovalRecord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Semble/SembleCollectionLinkRemovalRecord.swift; sourceTree = "<group>"; };
+		B10000000000000000000006 /* SembleCollectionPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Semble/SembleCollectionPage.swift; sourceTree = "<group>"; };
+		B10000000000000000000007 /* SembleCollectionSummary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Semble/SembleCollectionSummary.swift; sourceTree = "<group>"; };
+		B10000000000000000000008 /* SembleConnection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Semble/SembleConnection.swift; sourceTree = "<group>"; };
+		B10000000000000000000009 /* SembleConnectionRecord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Semble/SembleConnectionRecord.swift; sourceTree = "<group>"; };
+		B10000000000000000000010 /* SembleConnectionsPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Semble/SembleConnectionsPage.swift; sourceTree = "<group>"; };
+		B10000000000000000000011 /* SembleContributor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Semble/SembleContributor.swift; sourceTree = "<group>"; };
+		B10000000000000000000012 /* SembleMembership.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Semble/SembleMembership.swift; sourceTree = "<group>"; };
+		B10000000000000000000013 /* SembleNote.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Semble/SembleNote.swift; sourceTree = "<group>"; };
+		B10000000000000000000014 /* SembleRecordCollection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Semble/SembleRecordCollection.swift; sourceTree = "<group>"; };
+		B10000000000000000000015 /* SembleSaveOutcome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Semble/SembleSaveOutcome.swift; sourceTree = "<group>"; };
+		B10000000000000000000016 /* SembleSaveRetryState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Semble/SembleSaveRetryState.swift; sourceTree = "<group>"; };
+		B10000000000000000000017 /* SembleCollectionListContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Semble/SembleCollectionListContent.swift; sourceTree = "<group>"; };
+		B10000000000000000000018 /* SembleItemDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Semble/SembleItemDetailView.swift; sourceTree = "<group>"; };
+		B10000000000000000000019 /* SembleItemRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Semble/SembleItemRow.swift; sourceTree = "<group>"; };
+		B10000000000000000000020 /* SembleNoteEditorSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Semble/SembleNoteEditorSheet.swift; sourceTree = "<group>"; };
+		B10000000000000000000021 /* SembleRecordService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SembleRecordService.swift; sourceTree = "<group>"; };
+		B60000000000000000000001 /* SembleSupportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SembleSupportTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -801,6 +867,7 @@
 		206EB97A8511039A9F09E35C /* SocialWireTests */ = {
 			isa = PBXGroup;
 			children = (
+				B60000000000000000000001 /* SembleSupportTests.swift */,
 				A10000000000000000000007 /* SavedTagSupportTests.swift */,
 				45174D2C52F5FCB25C08615A /* ArticleSocialContractTests.swift */,
 				FD3FA2EC412B8A82067C7C9F /* ATProtoOAuthServiceTests.swift */,
@@ -911,6 +978,7 @@
 		4D407BCC35F7F0C80EA9DC89 /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				B10000000000000000000021 /* SembleRecordService.swift */,
 				56E8388BAFC7193DCD7E5BCE /* ATProtoOAuthService.swift */,
 				0FB9AEA3371D47E0E344B64B /* ATProtoResolver.swift */,
 				026C0C2F3E26CD3D93BD1810 /* DPoPService.swift */,
@@ -1026,6 +1094,22 @@
 		71F75ED212CC8522AA10A74F /* Models */ = {
 			isa = PBXGroup;
 			children = (
+				B10000000000000000000001 /* SembleCardRecord.swift */,
+				B10000000000000000000002 /* SembleCollectionItem.swift */,
+				B10000000000000000000003 /* SembleCollectionItemsPage.swift */,
+				B10000000000000000000004 /* SembleCollectionLinkRecord.swift */,
+				B10000000000000000000005 /* SembleCollectionLinkRemovalRecord.swift */,
+				B10000000000000000000006 /* SembleCollectionPage.swift */,
+				B10000000000000000000007 /* SembleCollectionSummary.swift */,
+				B10000000000000000000008 /* SembleConnection.swift */,
+				B10000000000000000000009 /* SembleConnectionRecord.swift */,
+				B10000000000000000000010 /* SembleConnectionsPage.swift */,
+				B10000000000000000000011 /* SembleContributor.swift */,
+				B10000000000000000000012 /* SembleMembership.swift */,
+				B10000000000000000000013 /* SembleNote.swift */,
+				B10000000000000000000014 /* SembleRecordCollection.swift */,
+				B10000000000000000000015 /* SembleSaveOutcome.swift */,
+				B10000000000000000000016 /* SembleSaveRetryState.swift */,
 				60F94E68F6A8F8D90DF15CD3 /* JSONValue.swift */,
 				5F040BB571094D427C1733A9 /* Appearance */,
 				3A3DFD3EA1789BD35B2DF33D /* ATProto */,
@@ -1186,6 +1270,10 @@
 		DBC6D10AC1BC45968195DB42 /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				B10000000000000000000017 /* SembleCollectionListContent.swift */,
+				B10000000000000000000018 /* SembleItemDetailView.swift */,
+				B10000000000000000000019 /* SembleItemRow.swift */,
+				B10000000000000000000020 /* SembleNoteEditorSheet.swift */,
 				50160666ACBE36188557F195 /* AddPublicationView.swift */,
 				31BFD0872FD9D6C71D80658C /* ArticleToolbar.swift */,
 				ACBCDD9F51513E4DCE5A640D /* EditFolderView.swift */,
@@ -1475,6 +1563,27 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B30000000000000000000001 /* SembleCardRecord.swift in Sources */,
+				B30000000000000000000002 /* SembleCollectionItem.swift in Sources */,
+				B30000000000000000000003 /* SembleCollectionItemsPage.swift in Sources */,
+				B30000000000000000000004 /* SembleCollectionLinkRecord.swift in Sources */,
+				B30000000000000000000005 /* SembleCollectionLinkRemovalRecord.swift in Sources */,
+				B30000000000000000000006 /* SembleCollectionPage.swift in Sources */,
+				B30000000000000000000007 /* SembleCollectionSummary.swift in Sources */,
+				B30000000000000000000008 /* SembleConnection.swift in Sources */,
+				B30000000000000000000009 /* SembleConnectionRecord.swift in Sources */,
+				B30000000000000000000010 /* SembleConnectionsPage.swift in Sources */,
+				B30000000000000000000011 /* SembleContributor.swift in Sources */,
+				B30000000000000000000012 /* SembleMembership.swift in Sources */,
+				B30000000000000000000013 /* SembleNote.swift in Sources */,
+				B30000000000000000000014 /* SembleRecordCollection.swift in Sources */,
+				B30000000000000000000015 /* SembleSaveOutcome.swift in Sources */,
+				B30000000000000000000016 /* SembleSaveRetryState.swift in Sources */,
+				B30000000000000000000017 /* SembleCollectionListContent.swift in Sources */,
+				B30000000000000000000018 /* SembleItemDetailView.swift in Sources */,
+				B30000000000000000000019 /* SembleItemRow.swift in Sources */,
+				B30000000000000000000020 /* SembleNoteEditorSheet.swift in Sources */,
+				B30000000000000000000021 /* SembleRecordService.swift in Sources */,
 				A30000000000000000000001 /* SavedTagCount.swift in Sources */,
 				A30000000000000000000002 /* SavedTagMutationProgress.swift in Sources */,
 				A30000000000000000000003 /* SavedTagSelectionStorage.swift in Sources */,
@@ -1693,6 +1802,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B50000000000000000000001 /* SembleSupportTests.swift in Sources */,
 				A50000000000000000000007 /* SavedTagSupportTests.swift in Sources */,
 				0CB5B4B32238F3E8BE68F12F /* ATProtoOAuthServiceTests.swift in Sources */,
 				5001A4B1D412EFD54BE8E9CB /* ATProtoSessionDPoPTests.swift in Sources */,
@@ -1721,6 +1831,27 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B20000000000000000000001 /* SembleCardRecord.swift in Sources */,
+				B20000000000000000000002 /* SembleCollectionItem.swift in Sources */,
+				B20000000000000000000003 /* SembleCollectionItemsPage.swift in Sources */,
+				B20000000000000000000004 /* SembleCollectionLinkRecord.swift in Sources */,
+				B20000000000000000000005 /* SembleCollectionLinkRemovalRecord.swift in Sources */,
+				B20000000000000000000006 /* SembleCollectionPage.swift in Sources */,
+				B20000000000000000000007 /* SembleCollectionSummary.swift in Sources */,
+				B20000000000000000000008 /* SembleConnection.swift in Sources */,
+				B20000000000000000000009 /* SembleConnectionRecord.swift in Sources */,
+				B20000000000000000000010 /* SembleConnectionsPage.swift in Sources */,
+				B20000000000000000000011 /* SembleContributor.swift in Sources */,
+				B20000000000000000000012 /* SembleMembership.swift in Sources */,
+				B20000000000000000000013 /* SembleNote.swift in Sources */,
+				B20000000000000000000014 /* SembleRecordCollection.swift in Sources */,
+				B20000000000000000000015 /* SembleSaveOutcome.swift in Sources */,
+				B20000000000000000000016 /* SembleSaveRetryState.swift in Sources */,
+				B20000000000000000000017 /* SembleCollectionListContent.swift in Sources */,
+				B20000000000000000000018 /* SembleItemDetailView.swift in Sources */,
+				B20000000000000000000019 /* SembleItemRow.swift in Sources */,
+				B20000000000000000000020 /* SembleNoteEditorSheet.swift in Sources */,
+				B20000000000000000000021 /* SembleRecordService.swift in Sources */,
 				A20000000000000000000001 /* SavedTagCount.swift in Sources */,
 				A20000000000000000000002 /* SavedTagMutationProgress.swift in Sources */,
 				A20000000000000000000003 /* SavedTagSelectionStorage.swift in Sources */,
@@ -1930,6 +2061,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B40000000000000000000001 /* SembleSupportTests.swift in Sources */,
 				A40000000000000000000007 /* SavedTagSupportTests.swift in Sources */,
 				A96FD7E9DC94ACFB4C9B18D2 /* ATProtoOAuthServiceTests.swift in Sources */,
 				B53246B0BA1039AEE8DDA9DF /* ATProtoSessionDPoPTests.swift in Sources */,

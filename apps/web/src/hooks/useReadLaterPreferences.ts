@@ -28,17 +28,23 @@ export function useAccountPreferences() {
   });
 }
 
-/** L@tr Link is the only supported read-later provider for now. */
 export function useConfiguredReadLaterService() {
   const prefs = useAccountPreferences();
+  const configured = prefs.data?.value.readLaterService;
+  const serviceId = configured === "semble" ? "semble" : DEFAULT_READ_LATER_SERVICE_ID;
+  const sembleConnection = prefs.data?.value.readLaterConnections?.semble;
 
   return useMemo(
     () => ({
       isLoading: prefs.isLoading,
       data: prefs.data as RepoRecord<PreferencesRecord> | null | undefined,
-      serviceId: DEFAULT_READ_LATER_SERVICE_ID,
-      service: findReadLaterService(DEFAULT_READ_LATER_SERVICE_ID),
+      serviceId,
+      service: findReadLaterService(serviceId),
+      sembleConnection:
+        serviceId === "semble" && sembleConnection?.collectionUri
+          ? sembleConnection
+          : null,
     }),
-    [prefs.isLoading, prefs.data]
+    [prefs.isLoading, prefs.data, sembleConnection, serviceId]
   );
 }

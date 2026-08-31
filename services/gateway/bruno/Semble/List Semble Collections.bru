@@ -1,0 +1,21 @@
+meta {
+  name: List Semble Collections
+  type: http
+  seq: 10
+}
+
+get {
+  url: {{baseUrl}}/v1/semble/collections?limit={{sembleLimit}}
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: DPoP {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}
+
+docs {
+  Lists the authenticated viewer's Semble collections. Collection ownership is
+  validated against the viewer DID. Repeat with the opaque cursor until exhausted.
+}

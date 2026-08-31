@@ -2,13 +2,16 @@
 
 import { Switch } from "@/components/ui/switch";
 import { AppearanceSettingsSection } from "@/components/Account/AppearanceSettingsSection";
+import { ReadLaterSettingsSection } from "@/components/Account/ReadLaterSettingsSection";
 import { useFeedDisplayPreferences } from "@/hooks/useFeedDisplayPreferences";
+import { useConfiguredReadLaterService } from "@/hooks/useReadLaterPreferences";
 import {
   TOP_LEVEL_FEEDS,
   TOP_LEVEL_FEED_LABELS,
 } from "@/lib/feedPreferences";
 
 export function FeedSettingsSection() {
+  const configuredReadLater = useConfiguredReadLaterService();
   const {
     preferences,
     setFeedVisible,
@@ -17,6 +20,13 @@ export function FeedSettingsSection() {
     isPending,
     error,
   } = useFeedDisplayPreferences();
+  const displayedFeeds = TOP_LEVEL_FEEDS.filter(
+    (feed) => configuredReadLater.serviceId !== "semble" || feed !== "archive",
+  );
+  const feedLabel = (feed: (typeof TOP_LEVEL_FEEDS)[number]) =>
+    feed === "readLater" && configuredReadLater.serviceId === "semble"
+      ? configuredReadLater.sembleConnection?.collectionName || "Semble Collection"
+      : TOP_LEVEL_FEED_LABELS[feed];
 
   return (
     <section
@@ -37,6 +47,7 @@ export function FeedSettingsSection() {
           </p>
         </header>
         <AppearanceSettingsSection />
+        <ReadLaterSettingsSection />
         <section className="rounded-2xl border bg-card p-4 shadow-[var(--soft-elevation)]">
           <h2 className="text-sm font-bold">RSS Articles</h2>
           <div className="mt-3 flex min-h-12 items-center justify-between gap-4">
@@ -66,7 +77,7 @@ export function FeedSettingsSection() {
             <span className="justify-self-center">Show Count</span>
           </div>
           <div className="mt-3 divide-y">
-            {TOP_LEVEL_FEEDS.map((feed) => {
+            {displayedFeeds.map((feed) => {
               const feedVisible = preferences.visibleFeeds.includes(feed);
               const countVisible =
                 preferences.feedsWithUnreadCounts.includes(feed);
@@ -77,7 +88,7 @@ export function FeedSettingsSection() {
                   key={feed}
                   className="grid min-h-12 grid-cols-[minmax(0,1fr)_5.5rem_5.5rem] items-center py-2 text-sm"
                 >
-                  <span>{TOP_LEVEL_FEED_LABELS[feed]}</span>
+                  <span>{feedLabel(feed)}</span>
                   <Switch
                     className="justify-self-center"
                     checked={feedVisible}
@@ -85,7 +96,7 @@ export function FeedSettingsSection() {
                     onCheckedChange={(value) =>
                       setFeedVisible(feed, value)
                     }
-                    aria-label={`Show ${TOP_LEVEL_FEED_LABELS[feed]}`}
+                    aria-label={`Show ${feedLabel(feed)}`}
                   />
                   <Switch
                     className="justify-self-center"
@@ -94,7 +105,7 @@ export function FeedSettingsSection() {
                     onCheckedChange={(value) =>
                       setFeedUnreadCountVisible(feed, value)
                     }
-                    aria-label={`Show ${TOP_LEVEL_FEED_LABELS[feed]} Count`}
+                    aria-label={`Show ${feedLabel(feed)} Count`}
                   />
                 </div>
               );

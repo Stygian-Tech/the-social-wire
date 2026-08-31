@@ -44,11 +44,12 @@ struct NewsShellView: View {
                 }
             }
 
-            Tab(NewsTab.saved.title, systemImage: NewsTab.saved.systemImage, value: NewsTab.saved) {
+            Tab(appModel.savedTabTitle, systemImage: NewsTab.saved.systemImage, value: NewsTab.saved) {
                 tabStack(.saved) {
                     SavedNewsView(sceneModel: sceneModel)
                 }
             }
+            .badge(appModel.savedTabCount)
 
             Tab(NewsTab.search.title, systemImage: NewsTab.search.systemImage, value: NewsTab.search, role: .search) {
                 tabStack(.search) {
@@ -151,6 +152,14 @@ private struct NewsRouteDestination: View {
                 SavedLinkDetailView(save: save)
             } else {
                 ContentUnavailableView("Saved Link Unavailable", systemImage: "bookmark.slash")
+            }
+        case .sembleItem(let id):
+            if let item = appModel.selectedSembleItem, item.id == id {
+                SembleItemDetailView(item: item)
+            } else if let item = appModel.sembleItems.first(where: { $0.id == id }) {
+                SembleItemDetailView(item: item)
+            } else {
+                ContentUnavailableView("Semble Card Unavailable", systemImage: "square.stack.3d.up.slash")
             }
         case .profile:
             ProfileView()

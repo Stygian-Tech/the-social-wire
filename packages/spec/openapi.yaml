@@ -1349,6 +1349,142 @@ components:
         truncated: { type: boolean }
         evidence: { $ref: "#/components/schemas/OperationsEvidenceMetadata" }
 
+    SembleCollection:
+      type: object
+      additionalProperties: false
+      required: [uri, name, cardCount]
+      properties:
+        uri: { type: string, format: uri }
+        name: { type: string }
+        description: { type: [string, "null"] }
+        accessType: { type: [string, "null"] }
+        cardCount: { type: integer, minimum: 0 }
+        createdAt: { type: [string, "null"], format: date-time }
+        updatedAt: { type: [string, "null"], format: date-time }
+
+    SembleCollectionsPage:
+      type: object
+      additionalProperties: false
+      required: [collections]
+      properties:
+        collections:
+          type: array
+          items: { $ref: "#/components/schemas/SembleCollection" }
+        cursor: { type: [string, "null"] }
+
+    SembleMembership:
+      type: object
+      additionalProperties: false
+      required: [linkUri, authorDid, addedBy, viewerOwned]
+      properties:
+        linkUri: { type: string, format: uri }
+        linkCid: { type: [string, "null"] }
+        authorDid: { type: string }
+        addedBy: { type: string }
+        addedAt: { type: [string, "null"], format: date-time }
+        viewerOwned: { type: boolean }
+
+    SembleContributor:
+      type: object
+      additionalProperties: false
+      required: [did]
+      properties:
+        did: { type: string }
+        handle: { type: [string, "null"] }
+        displayName: { type: [string, "null"] }
+        avatar: { type: [string, "null"], format: uri }
+
+    SembleNote:
+      type: object
+      additionalProperties: false
+      required: [uri, text, authorDid, editable]
+      properties:
+        uri:
+          type: [string, "null"]
+          format: uri
+          description: Null when the public projection cannot be linked to a proven PDS record.
+        text: { type: string }
+        authorDid: { type: string }
+        editable: { type: boolean }
+
+    SembleCollectionItem:
+      type: object
+      additionalProperties: false
+      required: [id, cardUri, cardType, membership, unlinkAvailable, contributor]
+      properties:
+        id: { type: string }
+        cardUri: { type: string, format: uri }
+        cardCid: { type: [string, "null"] }
+        cardType: { type: string, enum: [URL, NOTE] }
+        url: { type: [string, "null"], format: uri }
+        title: { type: [string, "null"] }
+        description: { type: [string, "null"] }
+        image: { type: [string, "null"], format: uri }
+        siteName: { type: [string, "null"] }
+        publishedAt: { type: [string, "null"], format: date-time }
+        createdAt: { type: [string, "null"], format: date-time }
+        membership:
+          description: Exact collection-link record, or null when public PDS enrichment cannot prove it.
+          anyOf:
+            - { $ref: "#/components/schemas/SembleMembership" }
+            - { type: "null" }
+        unlinkAvailable:
+          type: boolean
+          description: True only when membership contains a proven strong-reference link record.
+        contributor: { $ref: "#/components/schemas/SembleContributor" }
+        note:
+          anyOf:
+            - { $ref: "#/components/schemas/SembleNote" }
+            - { type: "null" }
+
+    SembleCollectionPage:
+      type: object
+      additionalProperties: false
+      required: [collection, items, membershipComplete, recordLinksComplete]
+      properties:
+        collection: { $ref: "#/components/schemas/SembleCollection" }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/SembleCollectionItem" }
+        cursor: { type: [string, "null"] }
+        membershipComplete:
+          type: boolean
+          description: False when any projected item lacks a proven collection-link record.
+        recordLinksComplete:
+          type: boolean
+          description: False when public PDS enrichment was incomplete; clients should expose retry.
+
+    SembleConnection:
+      type: object
+      additionalProperties: false
+      required: [uri, source, target, authorDid, editable]
+      properties:
+        uri:
+          type: [string, "null"]
+          format: uri
+          description: Null when the projected connection cannot be linked to a proven PDS record.
+        source: { type: string, format: uri }
+        target: { type: string, format: uri }
+        connectionType: { type: [string, "null"] }
+        note: { type: [string, "null"] }
+        createdAt: { type: [string, "null"], format: date-time }
+        updatedAt: { type: [string, "null"], format: date-time }
+        authorDid: { type: string }
+        editable: { type: boolean }
+
+    SembleConnectionsPage:
+      type: object
+      additionalProperties: false
+      required: [connections, recordLinksComplete]
+      properties:
+        connections:
+          type: array
+          items: { $ref: "#/components/schemas/SembleConnection" }
+        cursor: { type: [string, "null"] }
+        recordLinksComplete:
+          type: boolean
+          description: False when public PDS enrichment was incomplete; clients should expose retry.
+
   parameters:
     IdempotencyKey:
       name: Idempotency-Key
@@ -2381,6 +2517,95 @@ paths:
         "404":
           description: Route disabled when thin AppView flag is unset.
 
+  # ── Semble read-later projection ────────────────────────────────────
+
+  /v1/semble/collections:
+    get:
+      operationId: listSembleCollections
+      summary: List the authenticated viewer's Semble collections
+      description: |
+        Normalizes Semble's public collection projection. Every returned collection
+        AT-URI is fail-closed against the authenticated viewer DID.
+      tags: [Semble]
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100 } }
+        - { name: cursor, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: Viewer-owned Semble collection page.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SembleCollectionsPage" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "502":
+          description: Semble public projection failed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /v1/semble/collection:
+    get:
+      operationId: getSembleCollection
+      summary: Get a viewer-owned Semble collection with rich cards and proven record links
+      description: |
+        The requested collection AT-URI owner must equal the authenticated viewer DID.
+        Semble's public projection is preserved when optional public-PDS record enrichment
+        is unavailable; completeness flags and per-item editability make retry explicit.
+      tags: [Semble]
+      parameters:
+        - name: collectionUri
+          in: query
+          required: true
+          schema: { type: string, format: uri }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100 } }
+        - { name: cursor, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: Normalized collection page with optional partial-enrichment metadata.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SembleCollectionPage" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "502":
+          description: Semble public projection failed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /v1/semble/connections:
+    get:
+      operationId: listSembleConnections
+      summary: List Semble connections for a URL
+      description: |
+        Normalizes Semble's public connection projection. Record URIs and editability
+        are supplied only when public-PDS enrichment proves the underlying record.
+      tags: [Semble]
+      parameters:
+        - name: url
+          in: query
+          required: true
+          schema: { type: string, format: uri }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100 } }
+        - { name: cursor, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: Normalized connection page with record-link completeness metadata.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SembleConnectionsPage" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "502":
+          description: Semble public projection failed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
   # ── L@tr bookmark XRPC proxy (Social Wire Gateway iOS proxy) ───────────────
 
   /xrpc/link.latr.bookmarks.listBookmarks:
@@ -3194,5 +3419,7 @@ tags:
     description: Public optional-auth global discovery feeds and runtime capability catalog
   - name: Latr
     description: Authenticated L@tr read-later iOS proxy (`LATR_IOS_PROXY_*` server credentials)
+  - name: Semble
+    description: Authenticated, viewer-owned Semble read-later projections with public-PDS link enrichment
   - name: Operations
     description: Operator-DID-allowlisted observability and recovery control plane

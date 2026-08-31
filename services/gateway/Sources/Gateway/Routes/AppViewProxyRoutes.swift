@@ -34,6 +34,21 @@ struct AppViewProxyRoutes {
   let logger: Logger
 
   func register(on group: RouterGroup<GatewayRequestContext>) {
+    group.get("/v1/semble/collections") { request, context async throws -> Response in
+      try await forward(
+        request: request, context: context,
+        path: "/v1/semble/collections", method: "GET")
+    }
+    group.get("/v1/semble/collection") { request, context async throws -> Response in
+      try await forward(
+        request: request, context: context,
+        path: "/v1/semble/collection", method: "GET")
+    }
+    group.get("/v1/semble/connections") { request, context async throws -> Response in
+      try await forward(
+        request: request, context: context,
+        path: "/v1/semble/connections", method: "GET")
+    }
     group.get("/v1/publications/sidebar") { request, context async throws -> Response in
       try await forward(
         request: request, context: context,

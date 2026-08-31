@@ -25,7 +25,7 @@ struct LoginView: View {
                                 .multilineTextAlignment(.center)
                             if appModel.authService.reauthorizationRequired {
                                 Label(
-                                    "Sign in again to approve publishing, feedback, and photo permissions.",
+                                    "Sign in again to approve the current publishing, feedback, photo, L@tr Link, and Semble permissions.",
                                     systemImage: "key"
                                 )
                                 .font(.footnote)
