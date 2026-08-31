@@ -1,4 +1,4 @@
-import { Archive, ArchiveRestore, Trash2 } from "lucide-react";
+import { Archive, ArchiveRestore, Tags, Trash2 } from "lucide-react";
 import {
   ContextMenuItem,
   ContextMenuSeparator,
@@ -9,17 +9,23 @@ export function SavedLinkRowActions({
   row,
   isArchivedView,
   onArchive,
+  onEditTags,
   onUnarchive,
   onDelete,
 }: {
   row: MergedLatrSave;
   isArchivedView: boolean;
   onArchive: (row: MergedLatrSave) => void;
+  onEditTags: (row: MergedLatrSave) => void;
   onUnarchive: (row: MergedLatrSave) => void;
   onDelete: (row: MergedLatrSave) => void;
 }) {
   return (
     <>
+      <ContextMenuItem className="gap-2" onClick={() => onEditTags(row)}>
+        <Tags className="size-4" />
+        Edit Tags
+      </ContextMenuItem>
       {isArchivedView ? (
         <ContextMenuItem className="gap-2" onClick={() => onUnarchive(row)}>
           <ArchiveRestore className="size-4" />

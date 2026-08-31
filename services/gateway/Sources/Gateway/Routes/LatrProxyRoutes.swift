@@ -32,6 +32,14 @@ struct LatrProxyRoutes {
         method: "GET"
       )
     }
+    group.get("/xrpc/link.latr.bookmarks.listTags") { request, context async throws -> Response in
+      try await forward(
+        request: request,
+        context: context,
+        path: "/xrpc/link.latr.bookmarks.listTags",
+        method: "GET"
+      )
+    }
     group.get("/xrpc/link.latr.bookmarks.getBookmark") { request, context async throws -> Response in
       try await forward(
         request: request,
@@ -45,6 +53,30 @@ struct LatrProxyRoutes {
         request: request,
         context: context,
         path: "/xrpc/link.latr.bookmarks.saveBookmark",
+        method: "POST"
+      )
+    }
+    group.post("/xrpc/link.latr.bookmarks.setTags") { request, context async throws -> Response in
+      try await forward(
+        request: request,
+        context: context,
+        path: "/xrpc/link.latr.bookmarks.setTags",
+        method: "POST"
+      )
+    }
+    group.post("/xrpc/link.latr.bookmarks.renameTag") { request, context async throws -> Response in
+      try await forward(
+        request: request,
+        context: context,
+        path: "/xrpc/link.latr.bookmarks.renameTag",
+        method: "POST"
+      )
+    }
+    group.post("/xrpc/link.latr.bookmarks.deleteTag") { request, context async throws -> Response in
+      try await forward(
+        request: request,
+        context: context,
+        path: "/xrpc/link.latr.bookmarks.deleteTag",
         method: "POST"
       )
     }

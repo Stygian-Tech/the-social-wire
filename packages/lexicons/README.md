@@ -23,7 +23,7 @@ Feed read/unread state is not stored in ATProto repo records. Clients keep a loc
 
 ### L@tr (read-later) compatibility
 
-[L@tr / latr-link](https://tangled.org/samclemente.me/latr-link/) exposes the six **`link.latr.bookmarks.*`** XRPC methods used by The Social Wire. Community bookmarks are authoritative for subject, timestamp, and tags; **`link.latr.bookmarks.metadata`** preserves Archive, notes, and last-opened state. The older **`link.latr.saved.*`** and **`com.latr.saved.*`** collections remain delete-only migration inputs during the compatibility window and are never used for new writes.
+[L@tr / latr-link](https://tangled.org/samclemente.me/latr-link/) exposes the **`link.latr.bookmarks.*`** XRPC methods used by The Social Wire, including canonical per-bookmark tag listing, replacement, rename, and deletion. Community bookmarks are authoritative for subject, timestamp, and tags; **`link.latr.bookmarks.metadata`** preserves Archive, notes, and last-opened state. The older **`link.latr.saved.*`** and **`com.latr.saved.*`** collections remain delete-only migration inputs during the compatibility window and are never used for new writes.
 
 ---
 

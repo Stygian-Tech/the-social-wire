@@ -247,6 +247,7 @@ export type MergedLatrSave =
       externalUri: string;
       itemUri: string;
       subjectUri: string;
+      tags?: string[];
       state?: "unread" | "archived";
       lastOpenedAt?: string;
       title?: string;
@@ -264,6 +265,7 @@ export type MergedLatrSave =
       itemRkey: string;
       itemUri: string;
       subjectUri: string;
+      tags?: string[];
       state?: "unread" | "archived";
       lastOpenedAt?: string;
       title?: string;
@@ -390,6 +392,7 @@ export function mergeExternalsAndItemsToHttpsRows(
         itemRkey: rkeyFromURI(itemRec.uri),
         itemUri: itemRec.uri,
         subjectUri,
+        ...(itemRec.value.tags ? { tags: itemRec.value.tags } : {}),
         ...(itemRec.value.state ? { state: itemRec.value.state } : {}),
         ...(itemRec.value.lastOpenedAt ? { lastOpenedAt: itemRec.value.lastOpenedAt } : {}),
         ...metadata,
@@ -411,6 +414,7 @@ export function mergeExternalsAndItemsToHttpsRows(
       externalUri: ext.uri,
       itemUri: itemRec.uri,
       subjectUri,
+      ...(itemRec.value.tags ? { tags: itemRec.value.tags } : {}),
       ...(itemRec.value.state ? { state: itemRec.value.state } : {}),
       ...(itemRec.value.lastOpenedAt ? { lastOpenedAt: itemRec.value.lastOpenedAt } : {}),
       ...mergeLatrSaveMetadata(ext.value, itemRec.value),
@@ -458,6 +462,7 @@ export function mergedLatrSavesFromGatewayItems(
         itemRkey: rkeyFromURI(itemRec.uri),
         itemUri: itemRec.uri,
         subjectUri,
+        ...(itemRec.value.tags ? { tags: itemRec.value.tags } : {}),
         ...(itemRec.value.state ? { state: itemRec.value.state } : {}),
         ...(itemRec.value.lastOpenedAt ? { lastOpenedAt: itemRec.value.lastOpenedAt } : {}),
         ...metadata,
@@ -480,6 +485,7 @@ export function mergedLatrSavesFromGatewayItems(
       externalUri: subjectUri,
       itemUri: itemRec.uri,
       subjectUri,
+      ...(itemRec.value.tags ? { tags: itemRec.value.tags } : {}),
       ...(itemRec.value.state ? { state: itemRec.value.state } : {}),
       ...(itemRec.value.lastOpenedAt ? { lastOpenedAt: itemRec.value.lastOpenedAt } : {}),
       ...metadata,

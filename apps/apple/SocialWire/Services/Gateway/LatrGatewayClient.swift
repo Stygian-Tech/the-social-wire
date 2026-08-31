@@ -44,12 +44,14 @@ final class LatrGatewayClient {
         self.urlSession = urlSession
     }
 
-    func listBookmarks() async throws -> [MergedLatrSave] {
+    func listBookmarks(tag: String? = nil) async throws -> [MergedLatrSave] {
+        let normalizedTag = try tag.map(LatrPayloadValidator.validateTag)
         var cursor: String?
         var rows: [MergedLatrSave] = []
         repeat {
             var query = [URLQueryItem(name: "limit", value: "50")]
             if let cursor { query.append(URLQueryItem(name: "cursor", value: cursor)) }
+            if let normalizedTag { query.append(URLQueryItem(name: "tag", value: normalizedTag)) }
             let data = try await request(
                 method: "GET",
                 xrpc: .listBookmarks,
@@ -63,6 +65,27 @@ final class LatrGatewayClient {
         return rows.sorted { $0.savedAt > $1.savedAt }
     }
 
+    func listTags() async throws -> [LatrTagCount] {
+        var cursor: String?
+        var counts: [String: Int] = [:]
+        repeat {
+            var query = [URLQueryItem(name: "limit", value: "100")]
+            if let cursor { query.append(URLQueryItem(name: "cursor", value: cursor)) }
+            let data = try await request(
+                method: "GET",
+                xrpc: .listTags,
+                query: query
+            )
+            let page = try JSONDecoder().decode(LatrListTagsOutput.self, from: data)
+            for tagCount in page.tagCounts {
+                counts[tagCount.tag, default: 0] += tagCount.count
+            }
+            cursor = page.cursor?.trimmingCharacters(in: .whitespacesAndNewlines)
+            if cursor?.isEmpty == true { cursor = nil }
+        } while cursor != nil
+        return counts.keys.sorted().map { LatrTagCount(tag: $0, count: counts[$0] ?? 0) }
+    }
+
     func bookmark(subject: String) async throws -> MergedLatrSave? {
         let data = try await request(
             method: "GET",
@@ -72,12 +95,63 @@ final class LatrGatewayClient {
         return try JSONDecoder().decode(LatrGetBookmarkOutput.self, from: data).bookmark.map(Self.row)
     }
 
-    func save(subject: String) async throws {
+    func save(subject: String, tags: [String]? = nil) async throws {
+        let normalizedTags = try tags.map(LatrPayloadValidator.validateTags)
         _ = try await request(
             method: "POST",
             xrpc: .saveBookmark,
-            body: try JSONEncoder().encode(LatrSaveBookmarkInput(subject: subject))
+            body: try JSONEncoder().encode(
+                LatrSaveBookmarkInput(subject: subject, tags: normalizedTags)
+            )
         )
+    }
+
+    func setTags(bookmarkURI: String, tags: [String]) async throws -> MergedLatrSave {
+        let normalizedTags = try LatrPayloadValidator.validateTags(tags)
+        let data = try await request(
+            method: "POST",
+            xrpc: .setBookmarkTags,
+            body: try JSONEncoder().encode(
+                LatrSetBookmarkTagsInput(bookmarkUri: bookmarkURI, tags: normalizedTags)
+            )
+        )
+        return Self.row(try JSONDecoder().decode(BookmarkView.self, from: data))
+    }
+
+    func renameTag(
+        _ tag: String,
+        replacement: String,
+        cursor: String? = nil
+    ) async throws -> LatrTagMutationResult {
+        let rename = try BookmarkTags.normalizedRename(source: tag, target: replacement)
+        let data = try await request(
+            method: "POST",
+            xrpc: .renameBookmarkTag,
+            body: try JSONEncoder().encode(
+                LatrRenameBookmarkTagInput(
+                    tag: rename.source,
+                    replacement: rename.target,
+                    limit: 25,
+                    cursor: cursor
+                )
+            )
+        )
+        return try JSONDecoder().decode(LatrTagMutationResult.self, from: data)
+    }
+
+    func deleteTag(
+        _ tag: String,
+        cursor: String? = nil
+    ) async throws -> LatrTagMutationResult {
+        let normalizedTag = try LatrPayloadValidator.validateTag(tag)
+        let data = try await request(
+            method: "POST",
+            xrpc: .deleteBookmarkTag,
+            body: try JSONEncoder().encode(
+                LatrDeleteBookmarkTagInput(tag: normalizedTag, limit: 25, cursor: cursor)
+            )
+        )
+        return try JSONDecoder().decode(LatrTagMutationResult.self, from: data)
     }
 
     func archive(bookmarkURI: String) async throws {
@@ -459,10 +533,16 @@ final class LatrGatewayClient {
         switch method {
         case .listBookmarks:
             [("com.atproto.repo.listRecords", "GET", 9)]
+        case .listTags:
+            [("com.atproto.repo.listRecords", "GET", 1)]
         case .getBookmark:
             [("com.atproto.repo.listRecords", "GET", 8), ("com.atproto.repo.getRecord", "GET", 1)]
         case .saveBookmark:
             [("com.atproto.repo.listRecords", "GET", 8), ("com.atproto.repo.getRecord", "GET", 2), ("com.atproto.repo.applyWrites", "POST", 1)]
+        case .setBookmarkTags:
+            [("com.atproto.repo.getRecord", "GET", 3), ("com.atproto.repo.applyWrites", "POST", 1)]
+        case .renameBookmarkTag, .deleteBookmarkTag:
+            [("com.atproto.repo.listRecords", "GET", 1), ("com.atproto.repo.applyWrites", "POST", 1)]
         case .setBookmarkState, .deleteBookmark:
             [("com.atproto.repo.getRecord", "GET", 2), ("com.atproto.repo.applyWrites", "POST", 1)]
         case .migrateBookmarks:
@@ -515,7 +595,8 @@ final class LatrGatewayClient {
                 publishedAt: nil,
                 language: nil,
                 linkedWebUrl: nil,
-                rowSubtitle: nil
+                rowSubtitle: nil,
+                tags: view.value.tags
             ))
         }
         return .native(MergedLatrNativeSave(
@@ -533,7 +614,8 @@ final class LatrGatewayClient {
             publishedAt: nil,
             language: nil,
             linkedWebUrl: nil,
-            rowSubtitle: nil
+            rowSubtitle: nil,
+            tags: view.value.tags
         ))
     }
 }

@@ -1,4 +1,5 @@
 import Foundation
+import LatrKit
 import Observation
 import SwiftData
 
@@ -16,6 +17,7 @@ final class SocialWireAppModel {
     private let latrGateway: LatrGatewayClient
     private var readerCacheCoordinator: ReaderCacheCoordinator?
     private var attemptedBookmarkMigration = false
+    private var savedTagSelectionViewerDid: String?
 
     private static let preferencesSyncCacheKey = "v1/sync/preferences"
     private static let lastSelectedPublicationKey = "the-social-wire.last-selected-publication-id"
@@ -30,6 +32,9 @@ final class SocialWireAppModel {
     var selectedEntry: EntryDetail?
     var selectedSavedLink: MergedLatrSave?
     var selectedSavedSourceKey: String?
+    var selectedSavedTag: String?
+    var savedTagMutationProgress: SavedTagMutationProgress?
+    var isMutatingSavedTags = false
     var selectedSidebar: SidebarSelection?
     var feedSelection: FeedSelection = .topLevel(.subscribed)
     var publicationSidebarTab: PublicationSidebarTab = .subscribed
@@ -637,6 +642,10 @@ final class SocialWireAppModel {
         selectedPublication = nil
         selectedSavedLink = nil
         selectedSavedSourceKey = nil
+        selectedSavedTag = nil
+        savedTagSelectionViewerDid = nil
+        savedTagMutationProgress = nil
+        isMutatingSavedTags = false
         selectedSidebar = nil
         feedSelection = .topLevel(.subscribed)
         viewerProfile = nil
@@ -2690,10 +2699,19 @@ final class SocialWireAppModel {
     }
 
     var filteredCurrentSavedLinks: [MergedLatrSave] {
-        guard let selectedSavedSourceKey else { return currentSavedLinks }
-        return currentSavedLinks.filter {
-            savedFeedSourceKey(for: $0) == selectedSavedSourceKey
+        return currentSavedLinks.filter { save in
+            let matchesSource = selectedSavedSourceKey.map { sourceKey in
+                savedFeedSourceKey(for: save) == sourceKey
+            } ?? true
+            let matchesTag = selectedSavedTag.map { selectedTag in
+                save.tags.contains(selectedTag)
+            } ?? true
+            return matchesSource && matchesTag
         }
+    }
+
+    var currentSavedTagCounts: [SavedTagCount] {
+        SavedTagCatalog.counts(in: currentSavedLinks)
     }
 
     var currentSavedFeedSources: [SavedFeedSource] {
@@ -2727,6 +2745,15 @@ final class SocialWireAppModel {
         feedSelection = .topLevel(readerListSource)
         if let viewerDID {
             FeedSelectionStorage.save(feedSelection, viewerDid: viewerDID)
+        }
+    }
+
+    func selectSavedTag(_ tag: String?) {
+        selectedSavedTag = tag
+        selectedSavedLink = nil
+        if let viewerDID {
+            SavedTagSelectionStorage.save(tag, viewerDid: viewerDID)
+            savedTagSelectionViewerDid = viewerDID
         }
     }
 
@@ -2783,6 +2810,7 @@ final class SocialWireAppModel {
 
     func refreshSavedLinks() async {
         do {
+            restoreSavedTagSelectionIfNeeded()
             if !attemptedBookmarkMigration, let viewerDID {
                 attemptedBookmarkMigration = true
                 do {
@@ -2803,6 +2831,12 @@ final class SocialWireAppModel {
             // Passive refresh (runs on pane appear and after mutations). Keep whatever links are
             // already shown and don't interrupt navigation with a modal alert.
         }
+    }
+
+    private func restoreSavedTagSelectionIfNeeded() {
+        guard let viewerDID, savedTagSelectionViewerDid != viewerDID else { return }
+        selectedSavedTag = SavedTagSelectionStorage.load(viewerDid: viewerDID)
+        savedTagSelectionViewerDid = viewerDID
     }
 
     private func applyOptimisticLatrArchive(_ save: MergedLatrSave) {
@@ -2828,6 +2862,18 @@ final class SocialWireAppModel {
         archivedSavedLinks.removeAll { $0.id == save.id }
     }
 
+    private func replaceSavedLink(_ replacement: MergedLatrSave) {
+        if let index = savedLinks.firstIndex(where: { $0.itemRkey == replacement.itemRkey }) {
+            savedLinks[index] = replacement
+        }
+        if let index = archivedSavedLinks.firstIndex(where: { $0.itemRkey == replacement.itemRkey }) {
+            archivedSavedLinks[index] = replacement
+        }
+        if selectedSavedLink?.itemRkey == replacement.itemRkey {
+            selectedSavedLink = replacement
+        }
+    }
+
     func saveCurrentEntry() async {
         guard let selectedEntry else { return }
         await saveEntry(
@@ -2842,13 +2888,14 @@ final class SocialWireAppModel {
         url: URL?,
         title: String?,
         excerpt: String? = nil,
-        linkedWebURL: String? = nil
+        linkedWebURL: String? = nil,
+        tags: [String]? = nil
     ) async {
         do {
             let subject = url?.absoluteString
                 ?? linkedWebURL?.trimmingCharacters(in: .whitespacesAndNewlines)
                 ?? entryId
-            try await latrGateway.save(subject: subject)
+            try await latrGateway.save(subject: subject, tags: tags)
             await refreshSavedLinks()
         } catch {
             errorMessage = "Couldn't save this article to Read Later. \(error.localizedDescription)"
@@ -2904,6 +2951,102 @@ final class SocialWireAppModel {
             archivedSavedLinks = snapshotArchived
             errorMessage = "Couldn't delete this saved link. \(error.localizedDescription)"
         }
+    }
+
+    func replaceTags(on save: MergedLatrSave, with tags: [String]) async {
+        let snapshotActive = savedLinks
+        let snapshotArchived = archivedSavedLinks
+        let snapshotSelected = selectedSavedLink
+        replaceSavedLink(save.withTags(tags))
+        do {
+            let updated = try await latrGateway.setTags(
+                bookmarkURI: save.itemRkey,
+                tags: tags
+            )
+            replaceSavedLink(updated)
+        } catch {
+            savedLinks = snapshotActive
+            archivedSavedLinks = snapshotArchived
+            selectedSavedLink = snapshotSelected
+            errorMessage = "Couldn't update tags. \(error.localizedDescription)"
+        }
+    }
+
+    func clearTags(on save: MergedLatrSave) async {
+        await replaceTags(on: save, with: [])
+    }
+
+    func renameSavedTag(_ tag: String, replacement: String) async {
+        savedTagMutationProgress = SavedTagMutationProgress(
+            tag: tag,
+            action: .rename(replacement: replacement)
+        )
+        await resumeSavedTagMutation()
+    }
+
+    func deleteSavedTag(_ tag: String) async {
+        savedTagMutationProgress = SavedTagMutationProgress(tag: tag, action: .delete)
+        await resumeSavedTagMutation()
+    }
+
+    func resumeSavedTagMutation() async {
+        guard var progress = savedTagMutationProgress, !isMutatingSavedTags else { return }
+        isMutatingSavedTags = true
+        progress.errorMessage = nil
+        savedTagMutationProgress = progress
+        defer { isMutatingSavedTags = false }
+
+        do {
+            repeat {
+                let batchCursor = progress.cursor
+                let page: LatrTagMutationResult
+                switch progress.action {
+                case .rename(let replacement):
+                    page = try await latrGateway.renameTag(
+                        progress.tag,
+                        replacement: replacement,
+                        cursor: progress.cursor
+                    )
+                case .delete:
+                    page = try await latrGateway.deleteTag(
+                        progress.tag,
+                        cursor: progress.cursor
+                    )
+                }
+                progress.applyPage(
+                    scanned: page.scanned,
+                    matched: page.matched,
+                    updated: page.updated,
+                    cursor: page.cursor
+                )
+                if !page.ok {
+                    // Preserve the last safe cursor when the provider reports a partial batch
+                    // without advancing. Retrying tag mutations is idempotent.
+                    if progress.cursor == nil { progress.cursor = batchCursor }
+                    progress.errorMessage = "The last batch completed only partially. Resume to continue from the last safe cursor."
+                    savedTagMutationProgress = progress
+                    return
+                }
+                savedTagMutationProgress = progress
+                await Task.yield()
+            } while progress.cursor != nil
+
+            if selectedSavedTag == progress.tag {
+                switch progress.action {
+                case .rename(let replacement): selectSavedTag(replacement)
+                case .delete: selectSavedTag(nil)
+                }
+            }
+            await refreshSavedLinks()
+        } catch {
+            progress.errorMessage = error.localizedDescription
+            savedTagMutationProgress = progress
+        }
+    }
+
+    func dismissSavedTagMutationProgress() {
+        guard !isMutatingSavedTags else { return }
+        savedTagMutationProgress = nil
     }
 
     func savedLinkSocialEntry(for save: MergedLatrSave) async -> EntryDetail? {

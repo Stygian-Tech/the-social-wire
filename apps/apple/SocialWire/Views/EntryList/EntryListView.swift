@@ -6,6 +6,7 @@ struct EntryListView: View {
     var onEntryOpened: (() -> Void)? = nil
     @State private var refreshFeedback = 0
     @State private var saveFeedback = 0
+    @State private var entryPendingTaggedSave: EntryListItem?
 
     var body: some View {
         List {
@@ -87,6 +88,12 @@ struct EntryListView: View {
                                     Label("Save", systemImage: "bookmark")
                                 }
 
+                                Button {
+                                    entryPendingTaggedSave = entry
+                                } label: {
+                                    Label("Save With Tags", systemImage: "tag")
+                                }
+
                                 if appModel.readerListSource.supportsReadState {
                                     Button(appModel.readAtByEntryId[entry.entryId] == nil ? "Mark As Read" : "Mark As Unread") {
                                         Task { await appModel.toggleRead(entry) }
@@ -128,6 +135,22 @@ struct EntryListView: View {
         }
         .sensoryFeedback(.impact(flexibility: .soft), trigger: refreshFeedback)
         .sensoryFeedback(.success, trigger: saveFeedback)
+        .sheet(item: $entryPendingTaggedSave) { entry in
+            SavedTagEditorSheet(
+                title: "Save With Tags",
+                initialTags: [],
+                suggestions: appModel.currentSavedTagCounts.map(\.tag)
+            ) { tags in
+                saveFeedback += 1
+                await appModel.saveEntry(
+                    entryId: entry.entryId,
+                    url: entry.originalUrl.flatMap { URL(string: $0) },
+                    title: entry.title,
+                    excerpt: entry.summary,
+                    tags: tags
+                )
+            }
+        }
     }
 
     private func openEntry(

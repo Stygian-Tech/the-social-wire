@@ -20,4 +20,5 @@ struct MergedLatrExternalSave: Codable, Equatable, Hashable, Sendable {
     var language: String?
     var linkedWebUrl: String?
     var rowSubtitle: String?
+    var tags: [String]? = nil
 }

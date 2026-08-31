@@ -2399,6 +2399,21 @@ paths:
           description: Bookmark page with optional continuation cursor.
         "401": { $ref: "#/components/responses/Unauthorized" }
 
+  /xrpc/link.latr.bookmarks.listTags:
+    get:
+      operationId: listLatrBookmarkTags
+      summary: List canonical bookmark tags and counts
+      description: |
+        Proxies the foreign XRPC NSID to L@tr. Repeat with the returned cursor
+        until exhausted; the pinned L@tr implementation owns tag normalization.
+      tags: [Latr]
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 100 } }
+        - { name: cursor, in: query, schema: { type: string } }
+      responses:
+        "200": { description: Tag counts, scanned record count, and optional continuation cursor. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
   /xrpc/link.latr.bookmarks.getBookmark:
     get:
       operationId: getLatrBookmark
@@ -2427,6 +2442,69 @@ paths:
                 tags: { type: array, items: { type: string } }
       responses:
         "200": { description: Created or existing bookmark view. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /xrpc/link.latr.bookmarks.setTags:
+    post:
+      operationId: setLatrBookmarkTags
+      summary: Replace the canonical tags on one bookmark
+      tags: [Latr]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [bookmarkUri, tags]
+              properties:
+                bookmarkUri: { type: string }
+                tags:
+                  type: array
+                  maxItems: 100
+                  items: { type: string, maxLength: 640 }
+      responses:
+        "200": { description: Updated bookmark view. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /xrpc/link.latr.bookmarks.renameTag:
+    post:
+      operationId: renameLatrBookmarkTag
+      summary: Rewrite one canonical tag across a bounded bookmark page
+      tags: [Latr]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tag, replacement]
+              properties:
+                tag: { type: string, maxLength: 640 }
+                replacement: { type: string, maxLength: 640 }
+                limit: { type: integer, minimum: 1, maximum: 25, default: 25 }
+                cursor: { type: string }
+      responses:
+        "200": { description: Mutation counts and optional continuation cursor. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /xrpc/link.latr.bookmarks.deleteTag:
+    post:
+      operationId: deleteLatrBookmarkTag
+      summary: Remove one canonical tag across a bounded bookmark page
+      tags: [Latr]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tag]
+              properties:
+                tag: { type: string, maxLength: 640 }
+                limit: { type: integer, minimum: 1, maximum: 25, default: 25 }
+                cursor: { type: string }
+      responses:
+        "200": { description: Mutation counts and optional continuation cursor. }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
   /xrpc/link.latr.bookmarks.setState:

@@ -41,6 +41,7 @@ describe("bookmarkViewToRow", () => {
       "at://did:plc:viewer/community.lexicon.bookmarks.bookmark/one"
     );
     expect(row.state).toBe("archived");
+    expect(row.tags).toEqual(["news"]);
     expect(row.title).toBe("Article");
     expect(row.excerpt).toBe("Summary");
   });

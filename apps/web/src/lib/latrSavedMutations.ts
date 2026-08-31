@@ -83,3 +83,17 @@ export function applyOptimisticLatrSaveInsert(
   const active = qc.getQueryData<MergedLatrSave[]>(LATR_SAVED_QUERY_KEY);
   qc.setQueryData(LATR_SAVED_QUERY_KEY, upsertLatrSaveRow(active, row));
 }
+
+export function applyOptimisticLatrSaveTags(
+  qc: QueryClient,
+  bookmarkUri: string,
+  tags: string[]
+): void {
+  for (const key of [LATR_SAVED_QUERY_KEY, LATR_ARCHIVED_QUERY_KEY]) {
+    qc.setQueryData<MergedLatrSave[]>(key, (rows) =>
+      rows?.map((row) =>
+        row.itemRkey === bookmarkUri ? { ...row, tags: [...tags] } : row
+      )
+    );
+  }
+}
