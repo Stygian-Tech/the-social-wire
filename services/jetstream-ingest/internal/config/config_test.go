@@ -119,6 +119,100 @@ func TestLoadControllerLoadsIndependentNamespacedLanes(t *testing.T) {
 	}
 }
 
+func TestLoadControllerLoadsMultipleIndependentWireLanes(t *testing.T) {
+	t.Setenv("APP_ENV", "prod")
+	t.Setenv("DATABASE_URL", "postgres://example.invalid/socialwire")
+	t.Setenv("JETSTREAM_API_KEY", "shared-test-key")
+	t.Setenv("JETSTREAM_APPVIEW_ENABLED", "true")
+	t.Setenv("JETSTREAM_APPVIEW_SOURCE_GENERATION", "appview-generation")
+	t.Setenv("JETSTREAM_WIRE_LANES", "external,publication")
+	t.Setenv("JETSTREAM_WIRE_EXTERNAL_SOURCE_GENERATION", "external-generation")
+	t.Setenv("JETSTREAM_WIRE_EXTERNAL_LEADER_LEASE_NAME", "external-lease")
+	t.Setenv("JETSTREAM_WIRE_EXTERNAL_ADMISSION_RATE_PER_SECOND", "3")
+	t.Setenv("JETSTREAM_WIRE_PUBLICATION_SOURCE_GENERATION", "publication-generation")
+	t.Setenv("JETSTREAM_WIRE_PUBLICATION_LEADER_LEASE_NAME", "publication-lease")
+	t.Setenv("JETSTREAM_WIRE_PUBLICATION_HOST", "jetstream.us-east.bsky.network")
+	t.Setenv("JETSTREAM_WIRE_PUBLICATION_COLLECTIONS", "site.standard.document,site.standard.entry")
+	t.Setenv("JETSTREAM_WIRE_PUBLICATION_ADMISSION_RATE_PER_SECOND", "600")
+	t.Setenv("JETSTREAM_WIRE_PUBLICATION_ADMISSION_BURST_EVENTS", "128")
+
+	controller, err := LoadController()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(controller.Lanes) != 3 {
+		t.Fatalf("lanes = %#v", controller.Lanes)
+	}
+	external, publication := controller.Lanes[1], controller.Lanes[2]
+	if external.Name != "wire-external" || external.Config.SourceGeneration != "external-generation" ||
+		external.Config.WireAdmissionRate != 3 {
+		t.Fatalf("external lane = %#v", external)
+	}
+	if publication.Name != "wire-publication" ||
+		publication.Config.SourceGeneration != "publication-generation" ||
+		publication.Config.Host != "jetstream.us-east.bsky.network" ||
+		publication.Config.WireAdmissionRate != 600 || publication.Config.WireAdmissionBurst != 128 {
+		t.Fatalf("publication lane = %#v", publication)
+	}
+}
+
+func TestLoadControllerPreservesProductionLaneFingerprints(t *testing.T) {
+	t.Setenv("APP_ENV", "prod")
+	t.Setenv("DATABASE_URL", "postgres://example.invalid/socialwire")
+	t.Setenv("JETSTREAM_API_KEY", "shared-test-key")
+	t.Setenv("JETSTREAM_APPVIEW_ENABLED", "true")
+	t.Setenv("JETSTREAM_APPVIEW_SOURCE_GENERATION", "jetstream-v2-us-west-v2")
+	t.Setenv("JETSTREAM_WIRE_LANES", "external,publication")
+	t.Setenv("JETSTREAM_WIRE_EXTERNAL_SOURCE_GENERATION", "wire-global-v8-prod-external-live-v1")
+	t.Setenv("JETSTREAM_WIRE_EXTERNAL_LEADER_LEASE_NAME", "wire-global-v8-prod-external-live-v1")
+	t.Setenv("JETSTREAM_WIRE_EXTERNAL_ADMISSION_RATE_PER_SECOND", "3")
+	t.Setenv("JETSTREAM_WIRE_PUBLICATION_SOURCE_GENERATION", "wire-global-v8-prod-publication-live-tail-v1")
+	t.Setenv("JETSTREAM_WIRE_PUBLICATION_LEADER_LEASE_NAME", "wire-global-v8-prod-publication-live-tail-v1")
+	t.Setenv("JETSTREAM_WIRE_PUBLICATION_HOST", "jetstream.us-east.bsky.network")
+	t.Setenv(
+		"JETSTREAM_WIRE_PUBLICATION_COLLECTIONS",
+		"site.standard.document,site.standard.entry,site.standard.publication,site.standard.graph.recommend,app.thesocialwire.wireFeedback",
+	)
+	t.Setenv("JETSTREAM_WIRE_PUBLICATION_ADMISSION_RATE_PER_SECOND", "600")
+	t.Setenv("JETSTREAM_WIRE_PUBLICATION_ADMISSION_BURST_EVENTS", "256")
+
+	controller, err := LoadController()
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantFingerprints := map[LaneName]string{
+		AppViewLaneName:    "f7bfe3885b8032823ed7ce110563f7dcce83fa666355b8d04f23513631e4ba0f",
+		"wire-external":    "794c77ccea6e370e39bb081c2a2baeb0714ff7cb43aa92635cad4813e9c8ba68",
+		"wire-publication": "d2e371a6f7837416fc8f53af7747a8c575f7faed6e2f30f3bfb96b86311e911e",
+	}
+	for _, lane := range controller.Lanes {
+		if got, want := lane.Config.FilterFingerprint, wantFingerprints[lane.Name]; got != want {
+			t.Fatalf("%s fingerprint = %q, want %q", lane.Name, got, want)
+		}
+	}
+}
+
+func TestLoadControllerRejectsInvalidOrConflictingWireLanes(t *testing.T) {
+	t.Setenv("APP_ENV", "prod")
+	t.Setenv("DATABASE_URL", "postgres://example.invalid/socialwire")
+	t.Setenv("JETSTREAM_API_KEY", "shared-test-key")
+	t.Setenv("JETSTREAM_WIRE_LANES", "external,external")
+	if _, err := LoadController(); err == nil || !strings.Contains(err.Error(), "duplicate lane") {
+		t.Fatalf("duplicate lane error = %v", err)
+	}
+
+	t.Setenv("JETSTREAM_WIRE_LANES", "external,publication")
+	t.Setenv("JETSTREAM_WIRE_EXTERNAL_SOURCE_GENERATION", "shared-generation")
+	t.Setenv("JETSTREAM_WIRE_EXTERNAL_LEADER_LEASE_NAME", "external-lease")
+	t.Setenv("JETSTREAM_WIRE_EXTERNAL_ADMISSION_RATE_PER_SECOND", "3")
+	t.Setenv("JETSTREAM_WIRE_PUBLICATION_SOURCE_GENERATION", "shared-generation")
+	t.Setenv("JETSTREAM_WIRE_PUBLICATION_LEADER_LEASE_NAME", "publication-lease")
+	t.Setenv("JETSTREAM_WIRE_PUBLICATION_ADMISSION_RATE_PER_SECOND", "600")
+	if _, err := LoadController(); err == nil || !strings.Contains(err.Error(), "share source generation") {
+		t.Fatalf("shared generation error = %v", err)
+	}
+}
+
 func TestLoadControllerNamespacedModeRequiresAnEnabledLane(t *testing.T) {
 	t.Setenv("JETSTREAM_APPVIEW_ENABLED", "false")
 	if _, err := LoadController(); err == nil || !strings.Contains(err.Error(), "at least one") {

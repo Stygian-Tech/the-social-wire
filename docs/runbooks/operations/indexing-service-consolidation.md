@@ -23,6 +23,11 @@ JETSTREAM_WIRE_ENABLED=true
 
 Move each old lane's settings to its namespaced equivalents (`JETSTREAM_APPVIEW_*` and `JETSTREAM_WIRE_*`). Preserve source generation, cursor bounds, collections, scope policy, admission controls, and leader lease names exactly during the first cutover.
 
+Production has two Wire cursor domains. `JETSTREAM_WIRE_LANES=external,publication`
+loads `JETSTREAM_WIRE_EXTERNAL_*` and `JETSTREAM_WIRE_PUBLICATION_*` as separate
+supervised lanes. Do not collapse their US West/full-filter and US East/publication-filter
+identities or compare their sequence numbers as though they share a cursor domain.
+
 ### Projection Pool
 
 Apply the `Projection Pool` resource from `/.railway/railway.ts` and:
@@ -58,6 +63,21 @@ Create snapshots as temporary operator services outside the long-running IaC par
 5. Verify Projection Pool claim/ack partitioning, no duplicate terminal rows, and falling or stable actionable age. Stop the old dedicated Wire drains after the new pool is caught up.
 6. Verify Coordinator has exactly one owner for each role, distinct fencing tokens, one active component health endpoint, and one healthy standby path. If the new deployment fails, stop all new Coordinator replicas before restoring either compatibility singleton.
 7. Stop and remove the superseded hosted worker services only after the soak. Keep their config files and executable products through the rollback window.
+
+## Production cutover
+
+1. Confirm separate Production authorization, merge the reviewed source through `dev` and then protected `main`, and wait for `CI — Required` on both merge previews.
+2. Wait for Database Migrator on the exact `main` revision. Verify `20260830190000_add_fenced_role_leases.sql`, the `operations_role_leases` table, and its expiry index before starting Coordinator.
+3. Capture the AppView, external Wire, and publication Wire checkpoints, filter fingerprints, lease tokens, actionable backlog by source generation, role ownership, direct Gateway readiness, Wire response metadata, and database connection/storage headroom.
+4. Seed the three Production target services with the existing database/migrator references and required secrets before `preserve()` is planned. Do not print decrypted values or use `--show-values`.
+5. Link `production` and save a pinned `railway config plan`. Require exactly the three managed service classes, zero deletes, Ingress Controller `2 x us-west2`, Projection Pool `4 x sfo`, and Coordinator `2 x sfo`.
+6. Stop compatibility `Charybdis` and `The Wire Worker Production`; verify both are stopped and wait for the bounded singleton gap before applying the pinned plan. This prevents unfenced AppView maintenance and Wire rank/enrichment/cleanup overlap.
+7. Apply the pinned plan. Coordinator must show exactly one fenced owner for each role and a standby replica. Projection Pool must use the exact V1-V7 `WIRE_INBOX_SOURCE_GENERATIONS` union during the initial cutover; do not let it claim V8 snapshot or live backlog implicitly.
+8. Leave the three legacy intake services running until the new controller replicas are healthy in lease-waiting state. Stop `Jetstream V2 Ingest`, `The Wire Global Ingest Production`, and `The Wire Live Ingest Production`, then require token-incrementing takeover on all three unchanged leases and continuous checkpoint movement.
+9. Let Projection Pool overlap the legacy Wire drains using fenced `SKIP LOCKED` claims. Once AppView remains at zero actionable rows and the scoped Wire backlog/age is no worse than baseline, stop `The Wire Inbox Drain` and `The Wire Fresh Inbox Drain`.
+10. Set Gateway `PROJECTION_POOL_BASE_URL=http://projection-pool.railway.internal:8080`, redeploy Gateway, and require `/readyz` before considering Charybdis unavailable for rollback.
+11. Force one Ingress Controller replica handoff and one Coordinator replica handoff. Require incremented fencing tokens, no skipped/duplicated committed range, exactly one singleton owner per role, and continuing feed/generation progress.
+12. Keep all compatibility services stopped but deployable through the Production soak. Deletion is a separate rollback-window decision.
 
 ## Soak gates
 
