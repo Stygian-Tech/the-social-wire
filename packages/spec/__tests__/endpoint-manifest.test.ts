@@ -48,6 +48,9 @@ describe("endpoint transport manifest", () => {
     expect(byPath.get("POST /xrpc/link.latr.bookmarks.setTags")).toBe("foreign-xrpc");
     expect(byPath.get("POST /xrpc/link.latr.bookmarks.renameTag")).toBe("foreign-xrpc");
     expect(byPath.get("POST /xrpc/link.latr.bookmarks.deleteTag")).toBe("foreign-xrpc");
+    expect(byPath.get("GET /v1/semble/collections")).toBe("foreign-rest");
+    expect(byPath.get("GET /v1/semble/collection")).toBe("foreign-rest");
+    expect(byPath.get("GET /v1/semble/connections")).toBe("foreign-rest");
     expect(byPath.has("POST /channel")).toBe(false);
     expect(manifest.entries.some((entry) => entry.surface === "tap")).toBe(false);
   });

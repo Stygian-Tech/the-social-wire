@@ -16,6 +16,7 @@
             "knownValues": [
               "latr-link",
               "latrkit",
+              "semble",
               "instapaper",
               "omnivore",
               "readwise-reader",
@@ -30,7 +31,8 @@
               "instapaper": { "type": "ref", "ref": "#connection" },
               "omnivore": { "type": "ref", "ref": "#connection" },
               "readwise-reader": { "type": "ref", "ref": "#connection" },
-              "raindrop": { "type": "ref", "ref": "#connection" }
+              "raindrop": { "type": "ref", "ref": "#connection" },
+              "semble": { "type": "ref", "ref": "#sembleConnection" }
             }
           },
           "visibleFeeds": {
@@ -100,6 +102,27 @@
           "type": "string",
           "maxLength": 320,
           "description": "User-visible account identifier, such as a username or email. Do not store credentials."
+        }
+      }
+    },
+    "sembleConnection": {
+      "type": "object",
+      "description": "Non-sensitive Semble Read Later destination metadata. The collection AT-URI is authoritative; the name is a display fallback only.",
+      "required": ["collectionUri", "collectionName", "connectedAt"],
+      "properties": {
+        "collectionUri": {
+          "type": "string",
+          "format": "at-uri",
+          "maxLength": 2048
+        },
+        "collectionName": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "connectedAt": {
+          "type": "string",
+          "format": "datetime",
+          "maxLength": 64
         }
       }
     }

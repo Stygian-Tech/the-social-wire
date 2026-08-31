@@ -1,0 +1,21 @@
+meta {
+  name: Get Semble Connections
+  type: http
+  seq: 30
+}
+
+get {
+  url: {{baseUrl}}/v1/semble/connections?url={{sembleUrl}}&limit={{sembleLimit}}
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: DPoP {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}
+
+docs {
+  Lists on-demand Semble connections for a URL. A null record URI and
+  `recordLinksComplete: false` mean public-PDS linkage could not be proven.
+}

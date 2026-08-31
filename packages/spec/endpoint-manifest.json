@@ -217,6 +217,24 @@
     {
       "surface": "openapi",
       "method": "GET",
+      "path": "/v1/semble/collections",
+      "classification": "foreign-rest"
+    },
+    {
+      "surface": "openapi",
+      "method": "GET",
+      "path": "/v1/semble/collection",
+      "classification": "foreign-rest"
+    },
+    {
+      "surface": "openapi",
+      "method": "GET",
+      "path": "/v1/semble/connections",
+      "classification": "foreign-rest"
+    },
+    {
+      "surface": "openapi",
+      "method": "GET",
       "path": "/xrpc/link.latr.bookmarks.listBookmarks",
       "classification": "foreign-xrpc",
       "xrpcNsid": "link.latr.bookmarks.listBookmarks"

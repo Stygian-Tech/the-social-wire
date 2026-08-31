@@ -32,6 +32,8 @@ import { useSidebarChrome } from "@/contexts/SidebarChromeContext";
 import { useReadSidebarScopeOptional } from "@/contexts/ReadSidebarScopeContext";
 import { useViewerProfile } from "@/hooks/useViewerProfile";
 import { useLatrMergedHttpsSaves } from "@/hooks/useLatrSaved";
+import { useConfiguredReadLaterService } from "@/hooks/useReadLaterPreferences";
+import { useSembleCollectionItems } from "@/hooks/useSembleReadLater";
 import { rkeyFromURI } from "@/lib/pdsClient";
 import { type DiscoveredPublication } from "@/lib/atprotoClient";
 import { sumUnreadForPublications } from "@/lib/unreadCounts";
@@ -66,6 +68,7 @@ import {
   saveReaderFeedSelection,
 } from "@/lib/readerFeedSelectionStorage";
 import { SIDEBAR_PUBLICATION_TAB_STORAGE_KEY } from "@/lib/sidebarPublicationTabStorage";
+import { readLaterCapabilities } from "@/lib/semble";
 
 interface AppSidebarProps {
   selectedPubId: string | null;
@@ -133,12 +136,21 @@ export function AppSidebar({
   const sidebarDependentDataEnabled = hasSidebarSnapshot && !!session;
   const secondaryReaderSyncEnabled =
     sidebarDependentDataEnabled && bootstrapStreamComplete;
+  const configuredReadLater = useConfiguredReadLaterService();
+  const usingSemble = configuredReadLater.serviceId === "semble";
+  const readLaterCapabilitiesForProvider = readLaterCapabilities(
+    usingSemble ? "semble" : "latr-gateway",
+  );
   const { data: savedLinks = [] } = useLatrMergedHttpsSaves("active", {
-    enabled: sidebarDependentDataEnabled,
+    enabled: sidebarDependentDataEnabled && !usingSemble,
   });
   const { data: archivedLinks = [] } = useLatrMergedHttpsSaves("archived", {
-    enabled: sidebarDependentDataEnabled,
+    enabled: sidebarDependentDataEnabled && !usingSemble,
   });
+  const sembleItems = useSembleCollectionItems(
+    configuredReadLater.sembleConnection?.collectionUri,
+    { enabled: sidebarDependentDataEnabled && usingSemble },
+  );
   const { preferences: feedPreferences } = useFeedDisplayPreferences();
   const wireCatalog = useWireFeedCatalog();
   const wireNavigationEnabled =
@@ -154,12 +166,17 @@ export function AppSidebar({
         : [],
     [publicationSidebarProjection],
   );
-  const activeSavedRows = pathname.startsWith("/archive")
-    ? archivedLinks
-    : savedLinks;
   const savedSources = useMemo(
-    () => savedFeedSources(activeSavedRows, savedSidebarRows),
-    [activeSavedRows, savedSidebarRows],
+    () =>
+      savedFeedSources(
+        usingSemble
+          ? []
+          : pathname.startsWith("/archive")
+            ? archivedLinks
+            : savedLinks,
+        savedSidebarRows,
+      ),
+    [archivedLinks, pathname, savedLinks, savedSidebarRows, usingSemble],
   );
   const selectedSavedSource = searchParams.get("source");
   const selectedFolderRkey = searchParams.get("folder");
@@ -418,7 +435,9 @@ export function AppSidebar({
     (row) => !isEntryRead(row.subjectUri) && !row.lastOpenedAt,
   ).length;
   const displayedReadLaterUnread = showFeedCount("readLater")
-    ? readLaterUnread
+    ? usingSemble
+      ? (sembleItems.collection?.cardCount ?? sembleItems.items.length)
+      : readLaterUnread
     : 0;
   const displayedArchiveUnread = showFeedCount("archive") ? archiveUnread : 0;
   const visible = new Set<ReaderNavigationFeed>(
@@ -428,6 +447,12 @@ export function AppSidebar({
   );
   if (wireNavigationEnabled) visible.add("wire");
   if (circleNavigationEnabled) visible.add("circle");
+  if (!readLaterCapabilitiesForProvider.archive) {
+    const legacySavedDestinationWasVisible =
+      visible.has("readLater") || visible.has("archive");
+    visible.delete("archive");
+    if (legacySavedDestinationWasVisible) visible.add("readLater");
+  }
 
   const selectTopLevelFeed = (feed: ReaderNavigationFeed) => {
     setSelectedFolderUri(null);
@@ -436,7 +461,7 @@ export function AppSidebar({
       return;
     }
     if (feed === "archive") {
-      router.push("/archive");
+      router.push(usingSemble ? "/saved" : "/archive");
       return;
     }
     if (feed === "wire") {
@@ -475,18 +500,30 @@ export function AppSidebar({
         <div className="shrink-0">
           {visible.has("readLater") || visible.has("archive") ? (
           <SidebarGroup className="pb-1">
-            <SidebarGroupLabel>Read Later</SidebarGroupLabel>
+            <SidebarGroupLabel>
+              {usingSemble
+                ? configuredReadLater.sembleConnection?.collectionName || "Read Later"
+                : "Read Later"}
+            </SidebarGroupLabel>
             <SidebarMenu className="gap-0.5">
               {visible.has("readLater") ? <SidebarMenuItem>
                 <SidebarMenuButton
                   type="button"
-                  tooltip="Read Later Links"
+                  tooltip={
+                    usingSemble
+                      ? configuredReadLater.sembleConnection?.collectionName || "Semble Collection"
+                      : "Read Later Links"
+                  }
                   isActive={currentFeed === "readLater"}
                   onClick={() => selectTopLevelFeed("readLater")}
                   className={displayedReadLaterUnread > 0 ? "relative pr-8" : undefined}
                 >
                   <Bookmark />
-                  <span>Saved</span>
+                  <span>
+                    {usingSemble
+                      ? configuredReadLater.sembleConnection?.collectionName || "Saved"
+                      : "Saved"}
+                  </span>
                   <ReadLaterSidebarBadge
                     count={displayedReadLaterUnread}
                   />
@@ -698,6 +735,11 @@ export function AppSidebar({
       currentFeed={currentFeed}
       visibleFeeds={visible}
       onSelect={selectTopLevelFeed}
+      readLaterLabel={
+        usingSemble
+          ? configuredReadLater.sembleConnection?.collectionName || "Saved"
+          : "Saved"
+      }
     />
     </>
   );

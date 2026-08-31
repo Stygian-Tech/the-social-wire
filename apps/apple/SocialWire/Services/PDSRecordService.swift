@@ -215,13 +215,28 @@ final class PDSRecordService {
     }
 
     func upsertReadLaterServicePreference(_ serviceId: String) async throws {
+        try await upsertReadLaterPreference(serviceID: serviceId, sembleCollection: nil)
+    }
+
+    func upsertReadLaterPreference(
+        serviceID: String,
+        sembleCollection: SembleCollectionSummary?
+    ) async throws {
         let current = try await getPreferences()
         let prev = current?.value
         let now = DateFormatters.string()
+        var connections = prev?.readLaterConnections ?? [:]
+        if serviceID == "semble", let sembleCollection {
+            connections["semble"] = ReadLaterConnectionPreferenceRecord(
+                connectedAt: now,
+                collectionUri: sembleCollection.uri,
+                collectionName: sembleCollection.name
+            )
+        }
         let record = PreferencesRecord(
             type: Self.preferences,
-            readLaterService: serviceId,
-            readLaterConnections: prev?.readLaterConnections,
+            readLaterService: serviceID,
+            readLaterConnections: connections.isEmpty ? nil : connections,
             visibleFeeds: prev?.visibleFeeds,
             showTopLevelFeedUnreadCounts: prev?.showTopLevelFeedUnreadCounts,
             feedsWithUnreadCounts: prev?.feedsWithUnreadCounts,

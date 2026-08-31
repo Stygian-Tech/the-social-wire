@@ -93,6 +93,9 @@ describe("OpenAPI route drift", () => {
       "/v1/appview/privacy/purge": ['"/v1/appview/privacy/purge"'],
       "/v1/appview/mark-all-read": ['"/v1/appview/mark-all-read"'],
       "/v1/telemetry/client-performance": ['"/v1/telemetry/client-performance"'],
+      "/v1/semble/collections": ['"/v1/semble/collections"'],
+      "/v1/semble/collection": ['"/v1/semble/collection"'],
+      "/v1/semble/connections": ['"/v1/semble/connections"'],
       "/xrpc/link.latr.bookmarks.listBookmarks": ['"/xrpc/link.latr.bookmarks.listBookmarks"'],
       "/xrpc/link.latr.bookmarks.listTags": ['"/xrpc/link.latr.bookmarks.listTags"'],
       "/xrpc/link.latr.bookmarks.getBookmark": ['"/xrpc/link.latr.bookmarks.getBookmark"'],
@@ -159,6 +162,41 @@ describe("OpenAPI route drift", () => {
     for (const path of directlyRegistered) {
       expect(documented.has(path), path).toBe(true);
     }
+  });
+
+  it("documents Semble ownership, pagination, and partial record-link contracts", () => {
+    const document = Bun.YAML.parse(readFileSync(OPENAPI_PATH, "utf8")) as {
+      paths: Record<string, Record<string, any>>;
+      components: { schemas: Record<string, any> };
+    };
+    const schemas = document.components.schemas;
+
+    expect(document.paths["/v1/semble/collections"].get.responses["403"]).toBeDefined();
+    expect(document.paths["/v1/semble/collection"].get.responses["404"]).toBeDefined();
+    for (const path of [
+      "/v1/semble/collections",
+      "/v1/semble/collection",
+      "/v1/semble/connections",
+    ]) {
+      expect(document.paths[path].get.responses["502"], path).toBeDefined();
+      expect(document.paths[path].get.parameters.some((item: any) => item.name === "cursor"), path)
+        .toBe(true);
+    }
+
+    expect(schemas.SembleCollection.required).toEqual(["uri", "name", "cardCount"]);
+    expect(schemas.SembleCollectionPage.required).toEqual([
+      "collection",
+      "items",
+      "membershipComplete",
+      "recordLinksComplete",
+    ]);
+    expect(schemas.SembleCollectionItem.required).toContain("membership");
+    expect(schemas.SembleCollectionItem.required).toContain("unlinkAvailable");
+    expect(schemas.SembleNote.required).toContain("uri");
+    expect(schemas.SembleNote.properties.uri.type).toEqual(["string", "null"]);
+    expect(schemas.SembleConnection.required).toContain("uri");
+    expect(schemas.SembleConnection.properties.uri.type).toEqual(["string", "null"]);
+    expect(schemas.SembleConnectionsPage.required).toContain("recordLinksComplete");
   });
 
   it("defines machine-readable Operations request, response, evidence, and concurrency contracts", () => {

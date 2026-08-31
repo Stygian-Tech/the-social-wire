@@ -3,6 +3,7 @@
 import { Suspense, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
+import { useConfiguredReadLaterService } from "@/hooks/useReadLaterPreferences";
 import { AppSidebar } from "@/components/AppSidebar/AppSidebar";
 import { FeedHeader } from "@/components/FeedHeader/FeedHeader";
 import { PublicationSidebarProvider } from "@/contexts/PublicationSidebarContext";
@@ -16,6 +17,12 @@ import {
 export default function SavedLayout({ children }: { children: React.ReactNode }) {
   const { session, isLoading } = useAuth();
   const router = useRouter();
+  const configured = useConfiguredReadLaterService();
+  const title =
+    configured.serviceId === "semble"
+      ? configured.sembleConnection?.collectionName || "Semble Read Later"
+      : "Read Later";
+  const usingSemble = configured.serviceId === "semble";
 
   useEffect(() => {
     if (!isLoading && !session) {
@@ -40,10 +47,16 @@ export default function SavedLayout({ children }: { children: React.ReactNode })
       <PublicationSidebarProvider>
       <ReadRouteProvider>
         <Suspense fallback={null}>
-          <AppSidebar selectedPubId={null} onSelectPub={(pubId) => router.push(`/read/${encodeURIComponent(pubId)}`)} />
+          <AppSidebar
+            selectedPubId={null}
+            showPublicationsRail={!usingSemble}
+            onSelectPub={(pubId) => router.push(`/read/${encodeURIComponent(pubId)}`)}
+          />
         </Suspense>
-        <SidebarInset className="flex min-h-0 flex-1 flex-col overflow-hidden pb-16 md:pb-0 lg:mr-64">
-          <FeedHeader title="Read Later" />
+        <SidebarInset
+          className={`flex min-h-0 flex-1 flex-col overflow-hidden pb-16 md:pb-0 ${usingSemble ? "" : "lg:mr-64"}`}
+        >
+          <FeedHeader title={title} />
           <main className="flex min-h-0 flex-1 overflow-hidden">{children}</main>
         </SidebarInset>
       </ReadRouteProvider>

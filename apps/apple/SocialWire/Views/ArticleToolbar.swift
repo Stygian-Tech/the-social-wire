@@ -30,7 +30,10 @@ struct ArticleToolbar: View {
                 Button {
                     showingTaggedSave = true
                 } label: {
-                    Label("Save With Tags", systemImage: "tag")
+                    Label(
+                        appModel.isSembleReadLaterEnabled ? "Save With Note" : "Save With Tags",
+                        systemImage: appModel.isSembleReadLaterEnabled ? "note.text.badge.plus" : "tag"
+                    )
                 }
                 .buttonStyle(.bordered)
 
@@ -148,19 +151,32 @@ struct ArticleToolbar: View {
             }
         }
         .sheet(isPresented: $showingTaggedSave) {
-            SavedTagEditorSheet(
-                title: "Save With Tags",
-                initialTags: [],
-                suggestions: appModel.currentSavedTagCounts.map(\.tag)
-            ) { tags in
-                reactionFeedback += 1
-                await appModel.saveEntry(
-                    entryId: entry.entryId,
-                    url: entry.canonicalURL,
-                    title: entry.title,
-                    linkedWebURL: entry.embedUrl ?? entry.originalUrl,
-                    tags: tags
-                )
+            if appModel.isSembleReadLaterEnabled {
+                SembleNoteEditorSheet { note in
+                    reactionFeedback += 1
+                    await appModel.saveEntry(
+                        entryId: entry.entryId,
+                        url: entry.canonicalURL,
+                        title: entry.title,
+                        linkedWebURL: entry.embedUrl ?? entry.originalUrl,
+                        note: note
+                    )
+                }
+            } else {
+                SavedTagEditorSheet(
+                    title: "Save With Tags",
+                    initialTags: [],
+                    suggestions: appModel.currentSavedTagCounts.map(\.tag)
+                ) { tags in
+                    reactionFeedback += 1
+                    await appModel.saveEntry(
+                        entryId: entry.entryId,
+                        url: entry.canonicalURL,
+                        title: entry.title,
+                        linkedWebURL: entry.embedUrl ?? entry.originalUrl,
+                        tags: tags
+                    )
+                }
             }
         }
         .scrollBounceBehavior(.basedOnSize, axes: .vertical)

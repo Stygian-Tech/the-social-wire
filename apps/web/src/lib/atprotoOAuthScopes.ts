@@ -61,6 +61,15 @@ export const SKYREADER_REPO_SCOPES = [
   "repo:app.skyreader.feed.subscription?action=create&action=update&action=delete",
 ] as const;
 
+/** Direct viewer-PDS writes used by the Semble Read Later provider. */
+export const SEMBLE_REPO_OAUTH_SCOPES = [
+  "repo:network.cosmik.card?action=create&action=update&action=delete",
+  "repo:network.cosmik.collection?action=create&action=update&action=delete",
+  "repo:network.cosmik.collectionLink?action=create&action=update&action=delete",
+  "repo:network.cosmik.collectionLinkRemoval?action=create&action=update&action=delete",
+  "repo:network.cosmik.connection?action=create&action=update&action=delete",
+] as const;
+
 export const AT_PROTO_OAUTH_SCOPES = [
   "atproto",
   ...SOCIAL_WIRE_REPO_SCOPES,
@@ -68,6 +77,7 @@ export const AT_PROTO_OAUTH_SCOPES = [
   ...WIRE_MODERATION_RPC_SCOPES,
   ...BLUESKY_SOCIAL_REPO_SCOPES,
   ...LATR_REPO_OAUTH_SCOPES,
+  ...SEMBLE_REPO_OAUTH_SCOPES,
   WIRE_FEEDBACK_REPO_SCOPE,
   STANDARD_SITE_SOCIAL_PERMISSION_SCOPE,
   ...SKYREADER_REPO_SCOPES,

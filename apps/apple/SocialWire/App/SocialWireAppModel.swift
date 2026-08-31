@@ -10,6 +10,7 @@ final class SocialWireAppModel {
     let resolver: ATProtoResolver
     let xrpc: XRPCClient
     let pds: PDSRecordService
+    let sembleRecords: SembleRecordService
     let publicationsService: PublicationService
     let userInputFeedbackService: UserInputFeedbackService
     private let rss = RSSService()
@@ -31,6 +32,15 @@ final class SocialWireAppModel {
     var selectedPublication: DiscoveredPublication?
     var selectedEntry: EntryDetail?
     var selectedSavedLink: MergedLatrSave?
+    var sembleCollections: [SembleCollectionSummary] = []
+    var sembleCollection: SembleCollectionSummary?
+    var sembleItems: [SembleCollectionItem] = []
+    var selectedSembleItem: SembleCollectionItem?
+    var sembleConnections: [SembleConnection] = []
+    var pendingSembleSaveRetry: SembleSaveRetryState?
+    var isLoadingSemble = false
+    var sembleCollectionUnavailable = false
+    var sembleCollectionLoadFailed = false
     var selectedSavedSourceKey: String?
     var selectedSavedTag: String?
     var savedTagMutationProgress: SavedTagMutationProgress?
@@ -141,6 +151,7 @@ final class SocialWireAppModel {
         resolver = ATProtoResolver()
         xrpc = XRPCClient(auth: authService, resolver: resolver)
         pds = PDSRecordService(xrpc: xrpc)
+        sembleRecords = SembleRecordService(xrpc: xrpc)
         publicationsService = PublicationService(xrpc: xrpc)
         userInputFeedbackService = UserInputFeedbackService(auth: authService, xrpc: xrpc)
         gateway = SocialWireGatewayClient(auth: authService)
@@ -165,6 +176,34 @@ final class SocialWireAppModel {
 
     var viewerDID: String? {
         authService.session?.did
+    }
+
+    var isSembleReadLaterEnabled: Bool {
+        preferencesFromGateway?.readLaterService == "semble"
+    }
+
+    var configuredSembleCollectionURI: String? {
+        preferencesFromGateway?.readLaterConnections?["semble"]?.collectionUri
+    }
+
+    var configuredSembleCollectionName: String? {
+        preferencesFromGateway?.readLaterConnections?["semble"]?.collectionName
+    }
+
+    var savedTabTitle: String {
+        guard isSembleReadLaterEnabled else { return "Saved" }
+        return sembleCollection?.name ?? configuredSembleCollectionName ?? "Semble"
+    }
+
+    var savedTabCount: Int {
+        isSembleReadLaterEnabled
+            ? (sembleCollection?.cardCount ?? sembleItems.count)
+            : savedLinks.count
+    }
+
+    var needsSembleConfiguration: Bool {
+        isSembleReadLaterEnabled &&
+            (configuredSembleCollectionURI == nil || sembleCollectionUnavailable)
     }
 
     var visibleReaderListSources: [ReaderListSource] {
@@ -641,6 +680,13 @@ final class SocialWireAppModel {
         selectedEntry = nil
         selectedPublication = nil
         selectedSavedLink = nil
+        sembleCollections = []
+        sembleCollection = nil
+        sembleItems = []
+        selectedSembleItem = nil
+        sembleConnections = []
+        pendingSembleSaveRetry = nil
+        isLoadingSemble = false
         selectedSavedSourceKey = nil
         selectedSavedTag = nil
         savedTagSelectionViewerDid = nil
@@ -1850,6 +1896,9 @@ final class SocialWireAppModel {
         if let viewerDID {
             ReaderFeedPreferencesStorage.save(feedPreferences, viewerDid: viewerDID)
         }
+        if isSembleReadLaterEnabled {
+            Task { await refreshSembleCollection() }
+        }
     }
 
     private func prefetchSidebarPublicationsLimited() async {
@@ -2809,6 +2858,10 @@ final class SocialWireAppModel {
     }
 
     func refreshSavedLinks() async {
+        if isSembleReadLaterEnabled {
+            await refreshSembleCollection()
+            return
+        }
         do {
             restoreSavedTagSelectionIfNeeded()
             if !attemptedBookmarkMigration, let viewerDID {
@@ -2889,8 +2942,19 @@ final class SocialWireAppModel {
         title: String?,
         excerpt: String? = nil,
         linkedWebURL: String? = nil,
-        tags: [String]? = nil
+        tags: [String]? = nil,
+        note: String? = nil
     ) async {
+        if isSembleReadLaterEnabled {
+            await saveEntryToSemble(
+                entryId: entryId,
+                url: url,
+                title: title,
+                linkedWebURL: linkedWebURL,
+                note: note
+            )
+            return
+        }
         do {
             let subject = url?.absoluteString
                 ?? linkedWebURL?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2900,6 +2964,316 @@ final class SocialWireAppModel {
         } catch {
             errorMessage = "Couldn't save this article to Read Later. \(error.localizedDescription)"
         }
+    }
+
+    func loadOwnedSembleCollections() async {
+        guard let viewerDID else { return }
+        isLoadingSemble = true
+        defer { isLoadingSemble = false }
+        do {
+            var rows: [SembleCollectionSummary] = []
+            var cursor: String?
+            repeat {
+                let page = try await gateway.fetchSembleCollections(cursor: cursor)
+                rows.append(contentsOf: page.collections)
+                cursor = page.cursor
+            } while cursor != nil
+            sembleCollections = rows
+                .filter { $0.ownerDID == viewerDID }
+                .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        } catch {
+            errorMessage = "Couldn't load your Semble collections. \(error.localizedDescription)"
+        }
+    }
+
+    func configureReadLater(serviceID: String, sembleCollection selection: SembleCollectionSummary? = nil) async {
+        if serviceID == "semble", selection == nil {
+            errorMessage = "Choose a Semble collection before using it for Saved."
+            return
+        }
+        do {
+            try await pds.upsertReadLaterPreference(serviceID: serviceID, sembleCollection: selection)
+            let previous = preferencesFromGateway
+            let now = DateFormatters.string()
+            var connections = previous?.readLaterConnections ?? [:]
+            if let selection {
+                connections["semble"] = ReadLaterConnectionPreferenceRecord(
+                    connectedAt: now,
+                    collectionUri: selection.uri,
+                    collectionName: selection.name
+                )
+            }
+            preferencesFromGateway = PreferencesRecord(
+                type: PDSRecordService.preferences,
+                readLaterService: serviceID,
+                readLaterConnections: connections.isEmpty ? nil : connections,
+                visibleFeeds: previous?.visibleFeeds,
+                showTopLevelFeedUnreadCounts: previous?.showTopLevelFeedUnreadCounts,
+                feedsWithUnreadCounts: previous?.feedsWithUnreadCounts,
+                rssArticleOpenMode: previous?.rssArticleOpenMode,
+                createdAt: previous?.createdAt ?? now,
+                updatedAt: now
+            )
+            selectedSavedLink = nil
+            selectedSembleItem = nil
+            if serviceID == "semble" {
+                sembleCollectionUnavailable = false
+                sembleCollectionLoadFailed = false
+                await refreshSembleCollection()
+            } else {
+                await refreshSavedLinks()
+            }
+        } catch {
+            errorMessage = "Couldn't update the Saved provider. \(error.localizedDescription)"
+        }
+    }
+
+    func refreshSembleCollection() async {
+        guard let viewerDID, let collectionURI = configuredSembleCollectionURI else {
+            sembleCollection = nil
+            sembleItems = []
+            sembleCollectionUnavailable = false
+            sembleCollectionLoadFailed = false
+            return
+        }
+        let cacheKey = Self.sembleCollectionCacheKey(viewerDID: viewerDID, collectionURI: collectionURI)
+        var restoredCache = false
+        if let body = readerCacheCoordinator?.gatewayCachedBody(for: cacheKey),
+           let cached = try? JSONDecoder().decode(SembleCollectionItemsPage.self, from: body)
+        {
+            applySemblePage(cached)
+            restoredCache = true
+        }
+        if !restoredCache { isLoadingSemble = true }
+        defer { isLoadingSemble = false }
+
+        do {
+            var cursor: String?
+            var collection: SembleCollectionSummary?
+            var items: [SembleCollectionItem] = []
+            var membershipComplete = true
+            var recordLinksComplete = true
+            repeat {
+                let page = try await gateway.fetchSembleCollection(
+                    collectionURI: collectionURI,
+                    cursor: cursor
+                )
+                collection = page.collection
+                items.append(contentsOf: page.items)
+                membershipComplete = membershipComplete && page.membershipComplete
+                recordLinksComplete = recordLinksComplete && page.recordLinksComplete
+                cursor = page.cursor
+            } while cursor != nil
+            guard let collection else { return }
+            let page = SembleCollectionItemsPage(
+                collection: collection,
+                items: items,
+                cursor: nil,
+                membershipComplete: membershipComplete,
+                recordLinksComplete: recordLinksComplete
+            )
+            applySemblePage(page)
+            sembleCollectionUnavailable = false
+            sembleCollectionLoadFailed = false
+            if let body = try? JSONEncoder().encode(page) {
+                try? readerCacheCoordinator?.upsertGatewayResponse(cacheKey: cacheKey, etag: nil, body: body)
+            }
+        } catch let error as SocialWireError {
+            if case .sembleCollectionUnavailable = error {
+                sembleCollectionUnavailable = true
+                sembleCollectionLoadFailed = false
+                sembleCollection = nil
+                sembleItems = []
+                selectedSembleItem = nil
+            } else {
+                sembleCollectionLoadFailed = true
+            }
+            if !restoredCache {
+                errorMessage = "Couldn't load the Semble collection. \(error.localizedDescription)"
+            }
+        } catch {
+            sembleCollectionLoadFailed = true
+            if !restoredCache {
+                errorMessage = "Couldn't load the Semble collection. \(error.localizedDescription)"
+            }
+        }
+    }
+
+    func removeSembleItem(_ item: SembleCollectionItem) async {
+        guard let collectionURI = configuredSembleCollectionURI else { return }
+        let snapshot = sembleItems
+        sembleItems.removeAll { $0.id == item.id }
+        if selectedSembleItem?.id == item.id { selectedSembleItem = nil }
+        do {
+            try await sembleRecords.removeMembership(item: item, collectionURI: collectionURI)
+            await refreshSembleCollection()
+        } catch {
+            sembleItems = snapshot
+            errorMessage = "Couldn't remove this card from the collection. \(error.localizedDescription)"
+        }
+    }
+
+    func addSembleNote(_ text: String, to item: SembleCollectionItem) async {
+        guard let cardCID = item.cardCid else {
+            errorMessage = "This Semble card is missing the CID required for a note."
+            return
+        }
+        do {
+            _ = try await sembleRecords.addNote(text, to: StrongRef(uri: item.cardUri, cid: cardCID))
+            await refreshSembleCollection()
+        } catch {
+            errorMessage = "Couldn't add the note. \(error.localizedDescription)"
+        }
+    }
+
+    func updateSembleNote(_ text: String, on item: SembleCollectionItem) async {
+        guard let note = item.note, let noteURI = note.uri, let cardCID = item.cardCid else { return }
+        do {
+            try await sembleRecords.updateNote(
+                uri: noteURI,
+                text: text,
+                parentCard: StrongRef(uri: item.cardUri, cid: cardCID)
+            )
+            await refreshSembleCollection()
+        } catch {
+            errorMessage = "Couldn't update the note. \(error.localizedDescription)"
+        }
+    }
+
+    func loadSembleConnections(for item: SembleCollectionItem) async {
+        guard let url = item.url else {
+            sembleConnections = []
+            return
+        }
+        do {
+            var rows: [SembleConnection] = []
+            var cursor: String?
+            repeat {
+                let page = try await gateway.fetchSembleConnections(url: url, cursor: cursor)
+                rows.append(contentsOf: page.connections)
+                cursor = page.cursor
+            } while cursor != nil
+            sembleConnections = rows
+        } catch {
+            sembleConnections = []
+        }
+    }
+
+    func createSembleConnection(
+        from source: SembleCollectionItem,
+        to target: SembleCollectionItem,
+        connectionType: String?,
+        note: String?
+    ) async {
+        do {
+            _ = try await sembleRecords.createConnection(
+                source: source.cardUri,
+                target: target.cardUri,
+                connectionType: connectionType,
+                note: note
+            )
+            await loadSembleConnections(for: source)
+        } catch {
+            errorMessage = "Couldn't create the Semble connection. \(error.localizedDescription)"
+        }
+    }
+
+    func updateSembleConnection(
+        _ connection: SembleConnection,
+        from source: SembleCollectionItem,
+        to target: SembleCollectionItem,
+        connectionType: String?,
+        note: String?
+    ) async {
+        guard connection.editable, let connectionURI = connection.uri else { return }
+        do {
+            try await sembleRecords.updateConnection(
+                uri: connectionURI,
+                source: source.cardUri,
+                target: target.cardUri,
+                connectionType: connectionType,
+                note: note,
+                createdAt: connection.createdAt ?? DateFormatters.string()
+            )
+            await loadSembleConnections(for: source)
+        } catch {
+            errorMessage = "Couldn't update the Semble connection. \(error.localizedDescription)"
+        }
+    }
+
+    func deleteSembleConnection(_ connection: SembleConnection, from item: SembleCollectionItem) async {
+        guard connection.editable, let connectionURI = connection.uri else { return }
+        do {
+            try await sembleRecords.deleteConnection(uri: connectionURI)
+            await loadSembleConnections(for: item)
+        } catch {
+            errorMessage = "Couldn't delete the Semble connection. \(error.localizedDescription)"
+        }
+    }
+
+    func resumeSembleSave() async {
+        guard let pendingSembleSaveRetry else { return }
+        do {
+            try await sembleRecords.resumeSave(pendingSembleSaveRetry)
+            self.pendingSembleSaveRetry = nil
+            await refreshSembleCollection()
+        } catch {
+            errorMessage = "Couldn't finish adding this card to the collection. \(error.localizedDescription)"
+        }
+    }
+
+    private func saveEntryToSemble(
+        entryId: String,
+        url: URL?,
+        title: String?,
+        linkedWebURL: String?,
+        note: String?
+    ) async {
+        guard let collectionURI = configuredSembleCollectionURI else {
+            errorMessage = "Choose a Semble collection in Settings before saving."
+            return
+        }
+        guard !sembleCollectionUnavailable else {
+            errorMessage = "Choose another Semble collection in Settings before saving."
+            return
+        }
+        let rawURL = url?.absoluteString
+            ?? linkedWebURL?.trimmingCharacters(in: .whitespacesAndNewlines)
+            ?? (entryId.hasPrefix("http") ? entryId : nil)
+        guard let rawURL, let normalizedURL = SembleRecordService.normalizeURL(rawURL) else {
+            errorMessage = "This article doesn't have a web URL Semble can save."
+            return
+        }
+        if sembleItems.contains(where: { $0.url.flatMap(SembleRecordService.normalizeURL) == normalizedURL }) {
+            return
+        }
+        do {
+            switch try await sembleRecords.saveURL(normalizedURL, title: title, to: collectionURI) {
+            case .saved(let card):
+                pendingSembleSaveRetry = nil
+                if let note, !note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    _ = try await sembleRecords.addNote(note, to: card)
+                }
+                await refreshSembleCollection()
+            case .membershipRetry(let retry, let message):
+                pendingSembleSaveRetry = retry
+                errorMessage = "The card was created, but adding it to the collection needs to be resumed. \(message)"
+            }
+        } catch {
+            errorMessage = "Couldn't save this article to Semble. \(error.localizedDescription)"
+        }
+    }
+
+    private func applySemblePage(_ page: SembleCollectionItemsPage) {
+        sembleCollection = page.collection
+        sembleItems = page.items
+        if let selectedID = selectedSembleItem?.id {
+            selectedSembleItem = page.items.first { $0.id == selectedID }
+        }
+    }
+
+    nonisolated static func sembleCollectionCacheKey(viewerDID: String, collectionURI: String) -> String {
+        "semble:v1|viewer=\(viewerDID)|provider=semble|collection=\(collectionURI)"
     }
 
     func archive(_ save: MergedLatrSave) async {

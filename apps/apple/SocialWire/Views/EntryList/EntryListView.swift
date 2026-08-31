@@ -91,7 +91,10 @@ struct EntryListView: View {
                                 Button {
                                     entryPendingTaggedSave = entry
                                 } label: {
-                                    Label("Save With Tags", systemImage: "tag")
+                                    Label(
+                                        appModel.isSembleReadLaterEnabled ? "Save With Note" : "Save With Tags",
+                                        systemImage: appModel.isSembleReadLaterEnabled ? "note.text.badge.plus" : "tag"
+                                    )
                                 }
 
                                 if appModel.readerListSource.supportsReadState {
@@ -136,19 +139,32 @@ struct EntryListView: View {
         .sensoryFeedback(.impact(flexibility: .soft), trigger: refreshFeedback)
         .sensoryFeedback(.success, trigger: saveFeedback)
         .sheet(item: $entryPendingTaggedSave) { entry in
-            SavedTagEditorSheet(
-                title: "Save With Tags",
-                initialTags: [],
-                suggestions: appModel.currentSavedTagCounts.map(\.tag)
-            ) { tags in
-                saveFeedback += 1
-                await appModel.saveEntry(
-                    entryId: entry.entryId,
-                    url: entry.originalUrl.flatMap { URL(string: $0) },
-                    title: entry.title,
-                    excerpt: entry.summary,
-                    tags: tags
-                )
+            if appModel.isSembleReadLaterEnabled {
+                SembleNoteEditorSheet { note in
+                    saveFeedback += 1
+                    await appModel.saveEntry(
+                        entryId: entry.entryId,
+                        url: entry.originalUrl.flatMap { URL(string: $0) },
+                        title: entry.title,
+                        excerpt: entry.summary,
+                        note: note
+                    )
+                }
+            } else {
+                SavedTagEditorSheet(
+                    title: "Save With Tags",
+                    initialTags: [],
+                    suggestions: appModel.currentSavedTagCounts.map(\.tag)
+                ) { tags in
+                    saveFeedback += 1
+                    await appModel.saveEntry(
+                        entryId: entry.entryId,
+                        url: entry.originalUrl.flatMap { URL(string: $0) },
+                        title: entry.title,
+                        excerpt: entry.summary,
+                        tags: tags
+                    )
+                }
             }
         }
     }

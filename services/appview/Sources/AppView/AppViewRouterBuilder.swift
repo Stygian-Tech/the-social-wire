@@ -77,6 +77,21 @@ enum AppViewRouterBuilder {
       CircleDiscoveryRoutes(service: circleDiscoveryService).register(on: protected)
     }
 
+    let sembleRepo = ATProtoAuthenticatedRepoClient(
+      httpClient: httpClient,
+      plcURL: config.core.atprotoPLCURL,
+      logger: logger
+    )
+    SembleProjectionRoutes(
+      service: SembleProjectionService(
+        transport: HTTPSembleProjectionTransport(
+          baseURL: config.semble.baseURL,
+          httpClient: httpClient
+        ),
+        recordReader: ATProtoSemblePublicRecordReader(repo: sembleRepo)
+      )
+    ).register(on: protected)
+
     guard config.thinAppView.enabled else { return router }
 
     let projection = PublicationProjectionService(

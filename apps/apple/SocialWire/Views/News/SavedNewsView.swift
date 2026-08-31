@@ -39,21 +39,27 @@ struct SavedNewsView: View {
                 savedList
             }
         }
-        .navigationTitle("Saved")
+        .navigationTitle(appModel.savedTabTitle)
         .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button {
-                    showingTagManagement = true
-                } label: {
-                    Label("Manage Tags", systemImage: "tag")
+            if !appModel.isSembleReadLaterEnabled {
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        showingTagManagement = true
+                    } label: {
+                        Label("Manage Tags", systemImage: "tag")
+                    }
                 }
             }
         }
         .sheet(isPresented: $showingTagManagement) {
             SavedTagManagementView()
         }
-        .task {
-            applyMode(mode)
+        .task(id: appModel.isSembleReadLaterEnabled) {
+            if appModel.isSembleReadLaterEnabled {
+                await appModel.refreshSembleCollection()
+            } else {
+                applyMode(mode)
+            }
         }
         .onChange(of: mode) { _, newMode in
             applyMode(newMode)
@@ -61,28 +67,49 @@ struct SavedNewsView: View {
     }
 
     private var savedList: some View {
-        VStack(spacing: 0) {
-            Picker("Saved", selection: $mode) {
-                ForEach(SavedNewsMode.allCases) { mode in
-                    Text(mode.rawValue).tag(mode)
+        Group {
+            if appModel.isSembleReadLaterEnabled {
+                VStack(spacing: 0) {
+                    if appModel.pendingSembleSaveRetry != nil {
+                        HStack {
+                            Label("A card is waiting to be added to this collection.", systemImage: "exclamationmark.arrow.trianglehead.2.clockwise.rotate.90")
+                                .font(.footnote)
+                            Spacer()
+                            Button("Resume") { Task { await appModel.resumeSembleSave() } }
+                                .buttonStyle(.borderedProminent)
+                        }
+                        .padding()
+                        Divider()
+                    }
+                    SembleCollectionListContent(onItemTap: openSembleItem)
+                }
+            } else {
+                VStack(spacing: 0) {
+                    Picker("Saved", selection: $mode) {
+                        ForEach(SavedNewsMode.allCases) { mode in
+                            Text(mode.rawValue).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .padding()
+
+                    SavedTagFilterBar(
+                        tags: appModel.currentSavedTagCounts,
+                        selection: appModel.selectedSavedTag,
+                        onSelect: appModel.selectSavedTag
+                    )
+
+                    SavedLinksListContent(onSavedLinkTap: openSavedLink)
                 }
             }
-            .pickerStyle(.segmented)
-            .padding()
-
-            SavedTagFilterBar(
-                tags: appModel.currentSavedTagCounts,
-                selection: appModel.selectedSavedTag,
-                onSelect: appModel.selectSavedTag
-            )
-
-            SavedLinksListContent(onSavedLinkTap: openSavedLink)
         }
     }
 
     @ViewBuilder
     private var detail: some View {
-        if let save = appModel.selectedSavedLink {
+        if appModel.isSembleReadLaterEnabled, let item = appModel.selectedSembleItem {
+            SembleItemDetailView(item: item)
+        } else if !appModel.isSembleReadLaterEnabled, let save = appModel.selectedSavedLink {
             SavedLinkDetailView(save: save)
         } else {
             ContentUnavailableView(
@@ -102,5 +129,13 @@ struct SavedNewsView: View {
         appModel.selectedSavedLink = save
         guard !usesPersistentDetail else { return }
         sceneModel.navigate(to: .savedLink(id: save.id), in: .saved)
+    }
+
+    private func openSembleItem(_ item: SembleCollectionItem) {
+        appModel.selectedEntry = nil
+        appModel.selectedSavedLink = nil
+        appModel.selectedSembleItem = item
+        guard !usesPersistentDetail else { return }
+        sceneModel.navigate(to: .sembleItem(id: item.id), in: .saved)
     }
 }

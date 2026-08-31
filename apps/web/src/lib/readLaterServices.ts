@@ -14,6 +14,13 @@ export const READ_LATER_SERVICES = [
     loginUrl: null,
   },
   {
+    id: "semble",
+    label: "Semble",
+    connected: true,
+    loginLabel: null,
+    loginUrl: null,
+  },
+  {
     id: "instapaper",
     label: "Instapaper",
     connected: false,
