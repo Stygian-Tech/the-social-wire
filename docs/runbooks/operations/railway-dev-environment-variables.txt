@@ -198,7 +198,7 @@ ALREADY SET:
   DATABASE_URL=${{Postgres.DATABASE_URL}}
   DATABASE_MIGRATOR_SERVICE_ID=${{Database Migrator.RAILWAY_SERVICE_ID}}
   APPVIEW_BASE_URL=http://${{App View.RAILWAY_PRIVATE_DOMAIN}}:${{App View.PORT}}
-  PROJECTION_POOL_BASE_URL=http://${{Projection Pool.RAILWAY_PRIVATE_DOMAIN}}:${{Projection Pool.PORT}}
+  PROJECTION_POOL_BASE_URL=http://${{Projection Pool.RAILWAY_PRIVATE_DOMAIN}}:8080
   OPERATIONS_BASE_URL=http://${{Ops.RAILWAY_PRIVATE_DOMAIN}}:${{Ops.PORT}}
   OAUTH_PUBLIC_ORIGIN=https://web-dev-88e4.up.railway.app
   OAUTH_OPERATIONS_ORIGIN=https://operations-web-dev.up.railway.app
