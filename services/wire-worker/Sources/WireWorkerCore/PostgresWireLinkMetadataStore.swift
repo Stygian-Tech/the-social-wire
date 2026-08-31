@@ -244,7 +244,7 @@ struct PostgresWireLinkMetadataStore: WireLinkMetadataStoring {
               THEN COALESCE(published_at, \(metadata.publishedAt))
               ELSE COALESCE(\(metadata.publishedAt), published_at) END,
             language_code = CASE
-              WHEN provenance ? 'standard_site' THEN language_code
+              WHEN provenance ? 'standard_site' AND language_code <> 'und' THEN language_code
               ELSE COALESCE(\(validatedLanguageCode), 'und') END,
             publication_homepage_url = CASE WHEN provenance ? 'standard_site'
               THEN COALESCE(publication_homepage_url, \(homepageURL))
@@ -288,10 +288,12 @@ struct PostgresWireLinkMetadataStore: WireLinkMetadataStoring {
                 THEN COALESCE(published_at, \(metadata.publishedAt))
                 ELSE COALESCE(\(metadata.publishedAt), published_at) END,
               'languageSource', CASE
-                WHEN provenance ? 'standard_site'
+                WHEN provenance ? 'standard_site' AND language_code <> 'und'
                   THEN COALESCE(presentation_snapshot->'languageSource', to_jsonb('unknown'::text))
                 WHEN \(validatedLanguageCode)::text IS NOT NULL
                   THEN to_jsonb('content_validated_page'::text)
+                WHEN provenance ? 'standard_site'
+                  THEN COALESCE(presentation_snapshot->'languageSource', to_jsonb('unknown'::text))
                 ELSE to_jsonb('unknown'::text)
                 END,
               'homepageUrl', CASE WHEN provenance ? 'standard_site'

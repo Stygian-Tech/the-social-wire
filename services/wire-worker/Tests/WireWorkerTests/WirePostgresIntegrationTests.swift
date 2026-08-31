@@ -1798,8 +1798,8 @@ struct WirePostgresIntegrationTests {
       "DELETE FROM wire_items WHERE canonical_key = \(canonical.canonicalKey)", logger: logger)
   }
 
-  @Test("page declarations cannot promote language-less Standard Site records")
-  func pageLanguageDoesNotPromoteStandardSite() async throws {
+  @Test("uncorroborated page declarations cannot promote language-less Standard Site records")
+  func uncorroboratedPageLanguageDoesNotPromoteStandardSite() async throws {
     guard let url = ProcessInfo.processInfo.environment["WIRE_TEST_DATABASE_URL"] else { return }
     let logger = Logger(label: "wire-standard-page-language-postgres.integration")
     let configuration = try PostgresWireConfig.make(from: url, logger: logger)
@@ -1857,6 +1857,138 @@ struct WirePostgresIntegrationTests {
       let value = try row.decode((String, String).self)
       #expect(value.0 == "und")
       #expect(value.1 == "unknown")
+    }
+    try await pool.query(
+      "DELETE FROM wire_items WHERE canonical_key = \(canonicalKey)", logger: logger)
+  }
+
+  @Test("validated page language promotes an unknown Standard Site record")
+  func validatedPageLanguagePromotesUnknownStandardSite() async throws {
+    guard let url = ProcessInfo.processInfo.environment["WIRE_TEST_DATABASE_URL"] else { return }
+    let logger = Logger(label: "wire-standard-validated-page-language-postgres.integration")
+    let configuration = try PostgresWireConfig.make(from: url, logger: logger)
+    let pool = PostgresClient(configuration: configuration, backgroundLogger: logger)
+    let runTask = Task { await pool.run() }
+    await Task.yield()
+    defer { runTask.cancel() }
+
+    let namespace = UUID().uuidString.lowercased()
+    let canonicalKey = "url:standard-validated-page-language-\(namespace)"
+    let canonicalURL = "https://standard-validated-page-language-\(namespace).example/story"
+    let now = Date()
+    try await pool.query(
+      """
+      INSERT INTO wire_items
+        (canonical_key, canonical_url, source_domain, source_name, title, language_code,
+         provenance, presentation_snapshot, first_seen_at, last_seen_at, last_signal_at, expires_at)
+      VALUES
+        (\(canonicalKey), \(canonicalURL),
+         \("standard-validated-page-language-\(namespace).example"),
+         'Standard Validated Page Language Test', 'Breaking climate update', 'und',
+         '["standard_site"]'::jsonb,
+         '{"metadataSource":"standard_site","languageSource":"unknown"}'::jsonb,
+         \(now), \(now), \(now), \(now.addingTimeInterval(86_400)))
+      """,
+      logger: logger
+    )
+
+    let store = PostgresWireLinkMetadataStore(pool: pool, logger: logger)
+    try await store.store(
+      canonicalKey: canonicalKey,
+      metadata: WireLinkMetadata(
+        canonicalURL: canonicalURL,
+        title: "Breaking climate update",
+        description: "Officials shared a detailed update about the response and how it will proceed today.",
+        imageURL: nil,
+        siteName: nil,
+        authorName: nil,
+        publishedAt: nil,
+        iconURL: nil,
+        etag: nil,
+        lastModified: nil,
+        source: .openGraph,
+        languageCode: "en"
+      ),
+      asOf: now.addingTimeInterval(1)
+    )
+
+    let rows = try await pool.query(
+      """
+      SELECT language_code, presentation_snapshot->>'languageSource'
+      FROM wire_items WHERE canonical_key = \(canonicalKey)
+      """,
+      logger: logger
+    )
+    for try await row in rows {
+      let value = try row.decode((String, String).self)
+      #expect(value.0 == "en")
+      #expect(value.1 == "content_validated_page")
+    }
+    try await pool.query(
+      "DELETE FROM wire_items WHERE canonical_key = \(canonicalKey)", logger: logger)
+  }
+
+  @Test("validated page language cannot replace an explicit Standard Site language")
+  func validatedPageLanguagePreservesExplicitStandardSiteLanguage() async throws {
+    guard let url = ProcessInfo.processInfo.environment["WIRE_TEST_DATABASE_URL"] else { return }
+    let logger = Logger(label: "wire-standard-explicit-page-language-postgres.integration")
+    let configuration = try PostgresWireConfig.make(from: url, logger: logger)
+    let pool = PostgresClient(configuration: configuration, backgroundLogger: logger)
+    let runTask = Task { await pool.run() }
+    await Task.yield()
+    defer { runTask.cancel() }
+
+    let namespace = UUID().uuidString.lowercased()
+    let canonicalKey = "url:standard-explicit-page-language-\(namespace)"
+    let canonicalURL = "https://standard-explicit-page-language-\(namespace).example/story"
+    let now = Date()
+    try await pool.query(
+      """
+      INSERT INTO wire_items
+        (canonical_key, canonical_url, source_domain, source_name, title, language_code,
+         provenance, presentation_snapshot, first_seen_at, last_seen_at, last_signal_at, expires_at)
+      VALUES
+        (\(canonicalKey), \(canonicalURL),
+         \("standard-explicit-page-language-\(namespace).example"),
+         'Standard Explicit Page Language Test', 'Le point du jour', 'fr',
+         '["standard_site"]'::jsonb,
+         '{"metadataSource":"standard_site","languageSource":"standard_site_record"}'::jsonb,
+         \(now), \(now), \(now), \(now.addingTimeInterval(86_400)))
+      """,
+      logger: logger
+    )
+
+    let store = PostgresWireLinkMetadataStore(pool: pool, logger: logger)
+    try await store.store(
+      canonicalKey: canonicalKey,
+      metadata: WireLinkMetadata(
+        canonicalURL: canonicalURL,
+        title: "Breaking climate update",
+        description: "Officials shared a detailed update about the response today.",
+        imageURL: nil,
+        siteName: nil,
+        authorName: nil,
+        publishedAt: nil,
+        iconURL: nil,
+        etag: nil,
+        lastModified: nil,
+        source: .openGraph,
+        languageCode: "en"
+      ),
+      asOf: now.addingTimeInterval(1)
+    )
+
+    let rows = try await pool.query(
+      """
+      SELECT language_code, presentation_snapshot->>'languageSource'
+      FROM wire_items WHERE canonical_key = \(canonicalKey)
+      """,
+      logger: logger
+    )
+    for try await row in rows {
+      let value = try row.decode((String, String).self)
+      #expect(value.0 == "fr")
+      #expect(value.1 == "standard_site_record")
     }
     try await pool.query(
       "DELETE FROM wire_items WHERE canonical_key = \(canonicalKey)", logger: logger)
