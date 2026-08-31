@@ -1,0 +1,26 @@
+meta {
+  name: Set Bookmark Tags
+  type: http
+  seq: 35
+}
+
+post {
+  url: {{baseUrl}}/xrpc/link.latr.bookmarks.setTags
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: DPoP {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+  X-Latr-Gateway-DPoP: {{latrGatewayDpopProof}}
+  X-ATProto-Upstream-DPoP: {{upstreamDpopProof}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "bookmarkUri": "{{latrBookmarkUri}}",
+    "tags": ["Reading"]
+  }
+}

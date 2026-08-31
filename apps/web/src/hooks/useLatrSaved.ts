@@ -12,6 +12,7 @@ import {
   applyOptimisticLatrSaveArchive,
   applyOptimisticLatrSaveDelete,
   applyOptimisticLatrSaveInsert,
+  applyOptimisticLatrSaveTags,
   applyOptimisticLatrSaveUnarchive,
   invalidateLatrSaveQueries,
   LATR_ARCHIVED_QUERY_KEY,
@@ -19,6 +20,8 @@ import {
   restoreLatrSaveQueries,
   snapshotLatrSaveQueries,
 } from "@/lib/latrSavedMutations";
+import { LATR_TAG_PAGE_LIMIT, normalizeLatrTags } from "@/lib/latrTags";
+import type { LatrTagCount, LatrTagMutationResult } from "latr-packages/gateway-client";
 import type { LatrSaveListState, MergedLatrSave } from "@/lib/pdsClient";
 import { buildOptimisticBookmarkRow } from "@/lib/optimisticLatrSaves";
 import { normalizeLatrHttpsUrl } from "@/lib/latrSavedUrls";
@@ -34,6 +37,7 @@ import { usePDSClient } from "./usePDSClient";
 export { LATR_ARCHIVED_QUERY_KEY, LATR_SAVED_QUERY_KEY };
 
 const MIGRATION_QUERY_KEY = "latrBookmarkMigration";
+export const LATR_TAGS_QUERY_KEY = ["latrTags"] as const;
 
 function migrationStorageKey(did: string): string {
   return `the-social-wire.latr-migration.${LATR_BOOKMARK_CONTRACT_VERSION}.${did}`;
@@ -103,15 +107,41 @@ export function useLatrMergedHttpsSaves(
   };
 }
 
+export function useLatrTags() {
+  const clients = useReadLaterClients();
+  return useQuery({
+    queryKey: LATR_TAGS_QUERY_KEY,
+    queryFn: async (): Promise<LatrTagCount[]> => {
+      if (!clients) return [];
+      const counts = new Map<string, number>();
+      let cursor: string | undefined;
+      do {
+        const page = await clients.provider.listTags(cursor);
+        for (const item of page.tagCounts) {
+          counts.set(item.tag, (counts.get(item.tag) ?? 0) + item.count);
+        }
+        cursor = page.cursor?.trim() || undefined;
+      } while (cursor);
+      return [...counts.entries()]
+        .map(([tag, count]) => ({ tag, count }))
+        .sort((left, right) => left.tag.localeCompare(right.tag));
+    },
+    enabled: Boolean(clients),
+    staleTime: 15_000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  });
+}
+
 export function useSaveHttpsReadLaterMutation() {
   const clients = useReadLaterClients();
   const qc = useQueryClient();
   const dummy = isDummyReaderDataEnabled();
   return useMutation({
-    mutationFn: async (params: { url: string; title?: string; excerpt?: string }) => {
+    mutationFn: async (params: { url: string; title?: string; excerpt?: string; tags?: string[] }) => {
       if (dummy) return;
       if (!clients) throw new Error("No read-later provider — not signed in");
-      await clients.provider.saveSubject(params.url.trim());
+      await clients.provider.saveSubject(params.url.trim(), normalizeLatrTags(params.tags ?? []));
     },
     onMutate: async (params) => {
       const snapshot = await snapshotLatrSaveQueries(qc);
@@ -119,8 +149,79 @@ export function useSaveHttpsReadLaterMutation() {
       return snapshot;
     },
     onError: (_error, _params, context) => restoreLatrSaveQueries(qc, context),
-    onSettled: () => { if (!dummy) invalidateLatrSaveQueries(qc); },
+    onSettled: () => {
+      if (!dummy) invalidateLatrSaveQueries(qc);
+      void qc.invalidateQueries({ queryKey: LATR_TAGS_QUERY_KEY });
+    },
   });
+}
+
+export function useSetLatrSaveTagsMutation() {
+  const clients = useReadLaterClients();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (params: { bookmarkUri: string; tags: string[] }) => {
+      if (!clients) throw new Error("No read-later provider — not signed in");
+      const tags = normalizeLatrTags(params.tags);
+      await clients.provider.setSaveItemTags(params.bookmarkUri, tags);
+      return { ...params, tags };
+    },
+    onMutate: async ({ bookmarkUri, tags }) => {
+      const snapshot = await snapshotLatrSaveQueries(qc);
+      applyOptimisticLatrSaveTags(qc, bookmarkUri, normalizeLatrTags(tags));
+      return snapshot;
+    },
+    onError: (_error, _params, context) => restoreLatrSaveQueries(qc, context),
+    onSettled: () => {
+      invalidateLatrSaveQueries(qc);
+      void qc.invalidateQueries({ queryKey: LATR_TAGS_QUERY_KEY });
+    },
+  });
+}
+
+type LatrTagPageInput = {
+  tag: string;
+  replacement?: string;
+  cursor?: string;
+};
+
+function useLatrTagPageMutation(action: "rename" | "delete") {
+  const clients = useReadLaterClients();
+  const qc = useQueryClient();
+  return useMutation<LatrTagMutationResult, Error, LatrTagPageInput>({
+    mutationFn: async ({ tag, replacement, cursor }) => {
+      if (!clients) throw new Error("No read-later provider — not signed in");
+      if (action === "rename") {
+        const next = replacement?.trim();
+        if (!next) throw new Error("Enter a replacement tag.");
+        const result = await clients.provider.renameTagPage({
+          tag,
+          replacement: next,
+          cursor,
+          limit: LATR_TAG_PAGE_LIMIT,
+        });
+        return result;
+      }
+      const result = await clients.provider.deleteTagPage({
+        tag,
+        cursor,
+        limit: LATR_TAG_PAGE_LIMIT,
+      });
+      return result;
+    },
+    onSettled: () => {
+      invalidateLatrSaveQueries(qc);
+      void qc.invalidateQueries({ queryKey: LATR_TAGS_QUERY_KEY });
+    },
+  });
+}
+
+export function useRenameLatrTagPageMutation() {
+  return useLatrTagPageMutation("rename");
+}
+
+export function useDeleteLatrTagPageMutation() {
+  return useLatrTagPageMutation("delete");
 }
 
 function useBookmarkMutation(action: "delete" | "archive" | "unarchive") {
@@ -205,20 +306,27 @@ export function useSaveReadLaterEntryMutation() {
       url?: string;
       title?: string;
       excerpt?: string;
+      tags?: string[];
     }) => {
       if (!clients) throw new Error("No read-later provider — not signed in");
       const target = resolveReadLaterSaveTarget(params);
       if (!target.subject) throw new Error("Cannot save an empty bookmark subject");
-      await clients.provider.saveSubject(target.subject);
+      await clients.provider.saveSubject(target.subject, normalizeLatrTags(params.tags ?? []));
     },
     onMutate: async (params) => {
       const snapshot = await snapshotLatrSaveQueries(qc);
       const target = resolveReadLaterSaveTarget(params);
-      applyOptimisticLatrSaveInsert(qc, buildOptimisticBookmarkRow(target.subject, target));
+      applyOptimisticLatrSaveInsert(
+        qc,
+        buildOptimisticBookmarkRow(target.subject, { ...target, tags: params.tags })
+      );
       return snapshot;
     },
     onError: (_error, _params, context) => restoreLatrSaveQueries(qc, context),
-    onSettled: () => invalidateLatrSaveQueries(qc),
+    onSettled: () => {
+      invalidateLatrSaveQueries(qc);
+      void qc.invalidateQueries({ queryKey: LATR_TAGS_QUERY_KEY });
+    },
   });
 }
 

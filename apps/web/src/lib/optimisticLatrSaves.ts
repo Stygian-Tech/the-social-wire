@@ -16,7 +16,7 @@ export type LatrSaveCacheSnapshot = {
 
 export function buildOptimisticBookmarkRow(
   subject: string,
-  options?: { title?: string; excerpt?: string }
+  options?: { title?: string; excerpt?: string; tags?: string[] }
 ): MergedLatrSave {
   const trimmedSubject = subject.trim();
   const normalizedUrl = normalizeLatrHttpsUrl(trimmedSubject);
@@ -27,6 +27,7 @@ export function buildOptimisticBookmarkRow(
     itemUri: optimisticUri,
     subjectUri: trimmedSubject,
     state: "unread" as const,
+    ...(options?.tags ? { tags: [...options.tags] } : {}),
     ...(options?.title?.trim() ? { title: options.title.trim() } : {}),
     ...(options?.excerpt?.trim() ? { excerpt: options.excerpt.trim() } : {}),
   };

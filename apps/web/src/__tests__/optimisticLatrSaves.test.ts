@@ -4,6 +4,7 @@ import {
   applyLatrSaveArchive,
   applyLatrSaveDelete,
   applyLatrSaveUnarchive,
+  buildOptimisticBookmarkRow,
   upsertLatrSaveRow,
 } from "@/lib/optimisticLatrSaves";
 import type { MergedLatrSave } from "@/lib/pdsClient";
@@ -34,10 +35,14 @@ describe("optimisticLatrSaves", () => {
   });
 
   it("moves a row from active to archived", () => {
-    const active = [externalRow("A", "https://a.test", "2026-01-02T00:00:00.000Z")];
+    const active = [{
+      ...externalRow("A", "https://a.test", "2026-01-02T00:00:00.000Z"),
+      tags: ["Research"],
+    }];
     const next = applyLatrSaveArchive(active, [], "A");
     expect(next?.active).toEqual([]);
     expect(next?.archived[0]?.state).toBe("archived");
+    expect(next?.archived[0]?.tags).toEqual(["Research"]);
   });
 
   it("moves a row from archived back to active", () => {
@@ -59,5 +64,12 @@ describe("optimisticLatrSaves", () => {
       externalRow("NEW", "https://new.test", "2026-01-03T00:00:00.000Z")
     );
     expect(inserted.map((row) => row.itemRkey)).toEqual(["NEW", "OLD"]);
+  });
+
+  it("preserves tags on optimistic saves", () => {
+    const row = buildOptimisticBookmarkRow("https://example.com/tagged", {
+      tags: ["Research", "Weekend"],
+    });
+    expect(row.tags).toEqual(["Research", "Weekend"]);
   });
 });

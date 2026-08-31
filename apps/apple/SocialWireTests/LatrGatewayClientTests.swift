@@ -24,6 +24,17 @@ struct LatrGatewayEnvironmentTests {
 
 @Suite("L@tr bookmark proof pools")
 struct LatrBookmarkProofPoolTests {
+    @Test("tag writes use the pinned L@tr normalization contract")
+    func tagNormalization() throws {
+        #expect(
+            try LatrPayloadValidator.validateTags([" Reading ", "Reading", "News"])
+                == ["Reading", "News"]
+        )
+        #expect(throws: BookmarkTagValidationError.identicalRename) {
+            _ = try BookmarkTags.normalizedRename(source: "Reading", target: " Reading ")
+        }
+    }
+
     @Test("a prepared upstream proof pool is byte-stable across nonce retries")
     func preparedProofPoolIsPreserved() throws {
         let proofPool = "proof-one,proof-two,proof-three"
@@ -104,11 +115,15 @@ struct LatrBookmarkProofPoolTests {
         #expect(exhaustedAttempts == 2)
     }
 
-    @Test("all six NSIDs use the finalized ordered proof budgets")
+    @Test("all ten NSIDs use the finalized ordered proof budgets")
     func proofBudgets() {
         #expect(total(.listBookmarks) == 9)
+        #expect(total(.listTags) == 1)
         #expect(total(.getBookmark) == 9)
         #expect(total(.saveBookmark) == 11)
+        #expect(total(.setBookmarkTags) == 4)
+        #expect(total(.renameBookmarkTag) == 2)
+        #expect(total(.deleteBookmarkTag) == 2)
         #expect(total(.setBookmarkState) == 3)
         #expect(total(.deleteBookmark) == 3)
         #expect(total(.migrateBookmarks) == 90)

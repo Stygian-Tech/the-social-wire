@@ -7,6 +7,20 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A20000000000000000000001 /* SavedTagCount.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000001 /* SavedTagCount.swift */; };
+		A20000000000000000000002 /* SavedTagMutationProgress.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000002 /* SavedTagMutationProgress.swift */; };
+		A20000000000000000000003 /* SavedTagSelectionStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000003 /* SavedTagSelectionStorage.swift */; };
+		A20000000000000000000004 /* SavedTagEditorSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000004 /* SavedTagEditorSheet.swift */; };
+		A20000000000000000000005 /* SavedTagManagementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000005 /* SavedTagManagementView.swift */; };
+		A20000000000000000000006 /* SavedTagPills.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000006 /* SavedTagPills.swift */; };
+		A30000000000000000000001 /* SavedTagCount.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000001 /* SavedTagCount.swift */; };
+		A30000000000000000000002 /* SavedTagMutationProgress.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000002 /* SavedTagMutationProgress.swift */; };
+		A30000000000000000000003 /* SavedTagSelectionStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000003 /* SavedTagSelectionStorage.swift */; };
+		A30000000000000000000004 /* SavedTagEditorSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000004 /* SavedTagEditorSheet.swift */; };
+		A30000000000000000000005 /* SavedTagManagementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000005 /* SavedTagManagementView.swift */; };
+		A30000000000000000000006 /* SavedTagPills.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000006 /* SavedTagPills.swift */; };
+		A40000000000000000000007 /* SavedTagSupportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000007 /* SavedTagSupportTests.swift */; };
+		A50000000000000000000007 /* SavedTagSupportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000007 /* SavedTagSupportTests.swift */; };
 		0060D7A3219ACD0188E96E73 /* SavedLinksView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 505250F2A4975ACD9C2016C4 /* SavedLinksView.swift */; };
 		01D829665B73EBB749C3F383 /* EntryDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B6E3837892E5D405BA285B2 /* EntryDetail.swift */; };
 		01F3DBAD29ADCF893294792F /* OptimisticSidebarMutation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3718722F7C9C97A7BD646B7F /* OptimisticSidebarMutation.swift */; };
@@ -480,6 +494,13 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		A10000000000000000000001 /* SavedTagCount.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedTagCount.swift; sourceTree = "<group>"; };
+		A10000000000000000000002 /* SavedTagMutationProgress.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedTagMutationProgress.swift; sourceTree = "<group>"; };
+		A10000000000000000000003 /* SavedTagSelectionStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedTagSelectionStorage.swift; sourceTree = "<group>"; };
+		A10000000000000000000004 /* SavedTagEditorSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedTagEditorSheet.swift; sourceTree = "<group>"; };
+		A10000000000000000000005 /* SavedTagManagementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedTagManagementView.swift; sourceTree = "<group>"; };
+		A10000000000000000000006 /* SavedTagPills.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedTagPills.swift; sourceTree = "<group>"; };
+		A10000000000000000000007 /* SavedTagSupportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedTagSupportTests.swift; sourceTree = "<group>"; };
 		0147AAB6F7508BCF68B6F518 /* WireFeedCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WireFeedCatalog.swift; sourceTree = "<group>"; };
 		026C0C2F3E26CD3D93BD1810 /* DPoPService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DPoPService.swift; sourceTree = "<group>"; };
 		031EDB0D369585F464CE3B57 /* ApplePlatformAdapters.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApplePlatformAdapters.swift; sourceTree = "<group>"; };
@@ -733,6 +754,9 @@
 		012E751E2BDDAC349B609488 /* SavedLinks */ = {
 			isa = PBXGroup;
 			children = (
+				A10000000000000000000004 /* SavedTagEditorSheet.swift */,
+				A10000000000000000000005 /* SavedTagManagementView.swift */,
+				A10000000000000000000006 /* SavedTagPills.swift */,
 				0E82F58DFE099CB53A7A5E2C /* SavedLinkDetailView.swift */,
 				4466F1CFCB5D4A6BAD64E8FF /* SavedLinkPublicationChip.swift */,
 				3A58C6B8ABC37779026B919D /* SavedLinkRow.swift */,
@@ -777,6 +801,7 @@
 		206EB97A8511039A9F09E35C /* SocialWireTests */ = {
 			isa = PBXGroup;
 			children = (
+				A10000000000000000000007 /* SavedTagSupportTests.swift */,
 				45174D2C52F5FCB25C08615A /* ArticleSocialContractTests.swift */,
 				FD3FA2EC412B8A82067C7C9F /* ATProtoOAuthServiceTests.swift */,
 				04B8A8063426455E5AF6825D /* ATProtoSessionDPoPTests.swift */,
@@ -918,6 +943,8 @@
 		557E9783CF15346A8B4B464D /* Reader */ = {
 			isa = PBXGroup;
 			children = (
+				A10000000000000000000001 /* SavedTagCount.swift */,
+				A10000000000000000000002 /* SavedTagMutationProgress.swift */,
 				D213713330C38EE00173A381 /* ArticleOpenMode.swift */,
 				A745B172C93AD7C985D263D7 /* DiscoveredPublication.swift */,
 				3B6E3837892E5D405BA285B2 /* EntryDetail.swift */,
@@ -1220,6 +1247,7 @@
 		FA70275FCE784ACAB5616561 /* Persistence */ = {
 			isa = PBXGroup;
 			children = (
+				A10000000000000000000003 /* SavedTagSelectionStorage.swift */,
 				D40F510A95305DC99E07278A /* ReaderCacheCoordinator.swift */,
 				8465622134A65117ADE1EFCB /* ReaderCache */,
 			);
@@ -1447,6 +1475,12 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A30000000000000000000001 /* SavedTagCount.swift in Sources */,
+				A30000000000000000000002 /* SavedTagMutationProgress.swift in Sources */,
+				A30000000000000000000003 /* SavedTagSelectionStorage.swift in Sources */,
+				A30000000000000000000004 /* SavedTagEditorSheet.swift in Sources */,
+				A30000000000000000000005 /* SavedTagManagementView.swift in Sources */,
+				A30000000000000000000006 /* SavedTagPills.swift in Sources */,
 				7A9F480427462B0575C29341 /* ATProtoBlob.swift in Sources */,
 				13872B9DD6B5FB83C46186AA /* ATProtoOAuthConfig.swift in Sources */,
 				0F8875B3FE36C619B54299CB /* ATProtoOAuthService.swift in Sources */,
@@ -1659,6 +1693,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A50000000000000000000007 /* SavedTagSupportTests.swift in Sources */,
 				0CB5B4B32238F3E8BE68F12F /* ATProtoOAuthServiceTests.swift in Sources */,
 				5001A4B1D412EFD54BE8E9CB /* ATProtoSessionDPoPTests.swift in Sources */,
 				418B1519AC20097B2D047AEF /* ArticleSocialContractTests.swift in Sources */,
@@ -1686,6 +1721,12 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A20000000000000000000001 /* SavedTagCount.swift in Sources */,
+				A20000000000000000000002 /* SavedTagMutationProgress.swift in Sources */,
+				A20000000000000000000003 /* SavedTagSelectionStorage.swift in Sources */,
+				A20000000000000000000004 /* SavedTagEditorSheet.swift in Sources */,
+				A20000000000000000000005 /* SavedTagManagementView.swift in Sources */,
+				A20000000000000000000006 /* SavedTagPills.swift in Sources */,
 				868A6DDC9B182E72B6889BB3 /* ATProtoBlob.swift in Sources */,
 				4CE7098B11918CDACD5AA09C /* ATProtoOAuthConfig.swift in Sources */,
 				68209C85E92EA3DC4791D5C1 /* ATProtoOAuthService.swift in Sources */,
@@ -1889,6 +1930,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A40000000000000000000007 /* SavedTagSupportTests.swift in Sources */,
 				A96FD7E9DC94ACFB4C9B18D2 /* ATProtoOAuthServiceTests.swift in Sources */,
 				B53246B0BA1039AEE8DDA9DF /* ATProtoSessionDPoPTests.swift in Sources */,
 				3164A60DD4803F093B709A55 /* ArticleSocialContractTests.swift in Sources */,

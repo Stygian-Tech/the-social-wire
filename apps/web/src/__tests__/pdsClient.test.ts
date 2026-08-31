@@ -214,6 +214,7 @@ describe("mergeExternalsAndItemsToHttpsRows", () => {
           subjectUri: extUri,
           savedAt: "2026-06-01T12:00:00.000Z",
           state: "archived",
+          tags: ["Research", "Weekend"],
         } satisfies LatrSavedItemRecord,
       },
     ];
@@ -221,6 +222,10 @@ describe("mergeExternalsAndItemsToHttpsRows", () => {
     expect(mergeExternalsAndItemsToHttpsRows(externals, items)[0].state).toBe(
       "archived"
     );
+    expect(mergeExternalsAndItemsToHttpsRows(externals, items)[0].tags).toEqual([
+      "Research",
+      "Weekend",
+    ]);
   });
 
   it("merges external metadata with item preview fallbacks", () => {

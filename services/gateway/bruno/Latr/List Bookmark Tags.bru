@@ -1,0 +1,22 @@
+meta {
+  name: List Bookmark Tags
+  type: http
+  seq: 15
+}
+
+get {
+  url: {{baseUrl}}/xrpc/link.latr.bookmarks.listTags?limit=100
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: DPoP {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+  X-Latr-Gateway-DPoP: {{latrGatewayDpopProof}}
+  X-ATProto-Upstream-DPoP: {{upstreamDpopProof}}
+}
+
+docs {
+  Lists one canonical tag-count page. Repeat with the returned cursor until exhausted.
+}

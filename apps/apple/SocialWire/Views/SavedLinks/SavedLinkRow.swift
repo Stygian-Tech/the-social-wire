@@ -35,6 +35,8 @@ struct SavedLinkRow: View {
                         .font(.caption)
                         .foregroundStyle(.tertiary)
                         .lineLimit(2)
+
+                    SavedTagPills(tags: save.tags)
                 }
             }
         }

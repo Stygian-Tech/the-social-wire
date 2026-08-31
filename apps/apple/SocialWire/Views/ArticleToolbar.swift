@@ -7,6 +7,7 @@ struct ArticleToolbar: View {
     @Binding var showingQuote: Bool
     @Binding var showingReply: Bool
     @State private var reactionFeedback = 0
+    @State private var showingTaggedSave = false
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -23,6 +24,13 @@ struct ArticleToolbar: View {
                     }
                 } label: {
                     Label("Save", systemImage: "bookmark")
+                }
+                .buttonStyle(.bordered)
+
+                Button {
+                    showingTaggedSave = true
+                } label: {
+                    Label("Save With Tags", systemImage: "tag")
                 }
                 .buttonStyle(.bordered)
 
@@ -137,6 +145,22 @@ struct ArticleToolbar: View {
                 }
                 .buttonStyle(.bordered)
                 .disabled(entry.bskyPostUri == nil || appModel.isArticleSocialStateLoading(for: entry))
+            }
+        }
+        .sheet(isPresented: $showingTaggedSave) {
+            SavedTagEditorSheet(
+                title: "Save With Tags",
+                initialTags: [],
+                suggestions: appModel.currentSavedTagCounts.map(\.tag)
+            ) { tags in
+                reactionFeedback += 1
+                await appModel.saveEntry(
+                    entryId: entry.entryId,
+                    url: entry.canonicalURL,
+                    title: entry.title,
+                    linkedWebURL: entry.embedUrl ?? entry.originalUrl,
+                    tags: tags
+                )
             }
         }
         .scrollBounceBehavior(.basedOnSize, axes: .vertical)

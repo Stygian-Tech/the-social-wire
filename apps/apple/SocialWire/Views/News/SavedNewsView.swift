@@ -19,6 +19,7 @@ struct SavedNewsView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     let sceneModel: NewsSceneModel
     @State private var mode: SavedNewsMode = .readLater
+    @State private var showingTagManagement = false
 
     private var usesPersistentDetail: Bool {
         horizontalSizeClass != .compact
@@ -39,6 +40,18 @@ struct SavedNewsView: View {
             }
         }
         .navigationTitle("Saved")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    showingTagManagement = true
+                } label: {
+                    Label("Manage Tags", systemImage: "tag")
+                }
+            }
+        }
+        .sheet(isPresented: $showingTagManagement) {
+            SavedTagManagementView()
+        }
         .task {
             applyMode(mode)
         }
@@ -56,6 +69,12 @@ struct SavedNewsView: View {
             }
             .pickerStyle(.segmented)
             .padding()
+
+            SavedTagFilterBar(
+                tags: appModel.currentSavedTagCounts,
+                selection: appModel.selectedSavedTag,
+                onSelect: appModel.selectSavedTag
+            )
 
             SavedLinksListContent(onSavedLinkTap: openSavedLink)
         }
