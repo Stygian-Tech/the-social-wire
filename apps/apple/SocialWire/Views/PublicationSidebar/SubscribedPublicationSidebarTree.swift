@@ -7,7 +7,10 @@ struct SubscribedPublicationSidebarTree: View {
     @Binding var showingAddPublication: Bool
     var onPublicationTap: ((DiscoveredPublication) -> Void)? = nil
     @State private var folderPendingDelete: RepoRecord<FolderRecord>?
+    @State private var folderPendingEdit: RepoRecord<FolderRecord>?
     @State private var folderDeleteFeedback = 0
+    @State private var showingOPMLImport = false
+    @State private var publicationPendingUnsubscribe: DiscoveredPublication?
 
     var body: some View {
         @Bindable var model = appModel
@@ -58,6 +61,12 @@ struct SubscribedPublicationSidebarTree: View {
                     Label("Add Publication", systemImage: "plus.circle")
                 }
                 .readerClearListRow()
+                Button {
+                    showingOPMLImport = true
+                } label: {
+                    Label("Import OPML", systemImage: "square.and.arrow.down")
+                }
+                .readerClearListRow()
             }
         } header: {
             SidebarSectionLabel(
@@ -89,6 +98,31 @@ struct SubscribedPublicationSidebarTree: View {
             Text("This deletes \"\(folder.value.name)\" and does not unsubscribe from its publications.")
         }
         .sensoryFeedback(.success, trigger: folderDeleteFeedback)
+        .sheet(isPresented: $showingOPMLImport) {
+            OPMLImportView()
+        }
+        .sheet(item: $folderPendingEdit) { folder in
+            EditFolderView(folder: folder)
+        }
+        .confirmationDialog(
+            "Unsubscribe from publication?",
+            isPresented: Binding(
+                get: { publicationPendingUnsubscribe != nil },
+                set: { if !$0 { publicationPendingUnsubscribe = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: publicationPendingUnsubscribe
+        ) { publication in
+            Button("Unsubscribe", role: .destructive) {
+                Task { await appModel.unsubscribe(from: publication) }
+                publicationPendingUnsubscribe = nil
+            }
+            Button("Cancel", role: .cancel) {
+                publicationPendingUnsubscribe = nil
+            }
+        } message: { publication in
+            Text("Remove \"\(publication.title)\" from your subscriptions?")
+        }
     }
 
     @ViewBuilder
@@ -127,6 +161,18 @@ struct SubscribedPublicationSidebarTree: View {
             .buttonStyle(.plain)
         }
         .readerClearListRow()
+        .contextMenu {
+            Button {
+                folderPendingEdit = folder
+            } label: {
+                Label("Edit Folder", systemImage: "pencil")
+            }
+            Button(role: .destructive) {
+                folderPendingDelete = folder
+            } label: {
+                Label("Delete Folder", systemImage: "trash")
+            }
+        }
         .swipeActions {
             Button("Delete", role: .destructive) {
                 folderPendingDelete = folder
@@ -174,6 +220,11 @@ struct SubscribedPublicationSidebarTree: View {
                 Task { await appModel.refreshPublication(publication) }
             } label: {
                 Label("Refresh Publication", systemImage: "arrow.clockwise")
+            }
+            Button(role: .destructive) {
+                publicationPendingUnsubscribe = publication
+            } label: {
+                Label("Unsubscribe", systemImage: "minus.circle")
             }
         }
     }

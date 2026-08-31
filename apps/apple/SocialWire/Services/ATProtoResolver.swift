@@ -2,6 +2,7 @@ import Foundation
 
 actor ATProtoResolver {
     private let publicAppView = URL(string: "https://public.api.bsky.app")!
+    private let typeaheadService = URL(string: "https://typeahead.waow.tech")!
     private let plcDirectory = URL(string: "https://plc.directory")!
     private var pdsCache: [String: URL] = [:]
     private var handleCache: [String: String] = [:]
@@ -33,6 +34,32 @@ actor ATProtoResolver {
         return pdsURL
     }
 
+    func searchLoginActors(_ value: String, limit: Int = 6) async throws -> [LoginActorSuggestion] {
+        guard let query = Self.loginHandleSearchQuery(value) else { return [] }
+        var components = URLComponents(
+            url: typeaheadService.appending(path: "xrpc/app.bsky.actor.searchActorsTypeahead"),
+            resolvingAgainstBaseURL: false
+        )
+        components?.queryItems = [
+            URLQueryItem(name: "q", value: query),
+            URLQueryItem(name: "limit", value: String(limit)),
+        ]
+        guard let url = components?.url else { throw SocialWireError.invalidURL }
+        let response: LoginActorSearchResponse = try await fetchJSON(url)
+        return response.actors
+    }
+
+    static func loginHandleSearchQuery(_ value: String) -> String? {
+        var query = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if query.hasPrefix("@") { query.removeFirst() }
+        guard query.count >= 2,
+              !query.contains(":"),
+              !query.contains("/"),
+              !query.contains(where: { $0.isWhitespace })
+        else { return nil }
+        return query
+    }
+
     private func fetchJSON<T: Decodable>(_ url: URL) async throws -> T {
         var request = URLRequest(url: url)
         request.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -42,6 +69,10 @@ actor ATProtoResolver {
         }
         return try JSONDecoder().decode(T.self, from: data)
     }
+}
+
+private struct LoginActorSearchResponse: Decodable {
+    let actors: [LoginActorSuggestion]
 }
 
 private extension String {

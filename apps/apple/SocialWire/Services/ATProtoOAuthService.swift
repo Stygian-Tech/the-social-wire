@@ -32,7 +32,11 @@ final class ATProtoOAuthService: NSObject, ASWebAuthenticationPresentationContex
         "repo:link.latr.saved.item?action=delete",
         "repo:com.latr.saved.external?action=delete",
         "repo:com.latr.saved.item?action=delete",
+        "repo:app.thesocialwire.wireFeedback?action=create&action=update&action=delete",
+        "include:site.standard.authSocial",
         "repo:app.skyreader.feed.subscription?action=create&action=update&action=delete",
+        "include:app.userinput.authFull",
+        "blob:*/*",
         "repo:site.standard.graph.subscription?action=create&action=update&action=delete",
         // Quote/reply edits use putRecord; create/delete are covered by the Bluesky permission sets.
         // NOTE: the published client metadata at `/ios-client-metadata.json` must list these same
@@ -41,6 +45,14 @@ final class ATProtoOAuthService: NSObject, ASWebAuthenticationPresentationContex
     ].joined(separator: " ")
 
     private(set) var session: AuthSession?
+    private(set) var reauthorizationRequired = false
+
+    static let requiredFeatureScopes: Set<String> = [
+        "repo:app.thesocialwire.wireFeedback?action=create&action=update&action=delete",
+        "include:site.standard.authSocial",
+        "include:app.userinput.authFull",
+        "blob:*/*",
+    ]
 
     let dpop = DPoPService()
     private let keychain = KeychainStore()
@@ -70,6 +82,13 @@ final class ATProtoOAuthService: NSObject, ASWebAuthenticationPresentationContex
             await dpop.replacePrivateKey(base64: rawKey)
         }
 
+        let persistedScope = keychain.string(for: "oauth.scope")
+        guard Self.hasRequiredFeatureScopes(persistedScope) else {
+            clearSession()
+            reauthorizationRequired = true
+            return
+        }
+
         // Reuse a still-valid persisted access token to avoid a token-refresh round-trip on every
         // launch. validSession() refreshes lazily once <60s remain, so a stale token self-heals on
         // the first authenticated request.
@@ -85,6 +104,7 @@ final class ATProtoOAuthService: NSObject, ASWebAuthenticationPresentationContex
                 accessToken: accessToken,
                 refreshToken: refreshToken,
                 tokenType: keychain.string(for: "oauth.tokenType") ?? "DPoP",
+                scope: persistedScope,
                 expiresAt: Date(timeIntervalSince1970: expiresInterval)
             )
             return
@@ -99,6 +119,7 @@ final class ATProtoOAuthService: NSObject, ASWebAuthenticationPresentationContex
     }
 
     func signIn(handle: String) async throws {
+        reauthorizationRequired = false
         let did = try await resolver.resolveDID(handleOrDID: handle)
         let pdsURL = try await resolver.resolvePDSURL(did: did)
         let asMetadata = try await Self.fetchAuthorizationServerMetadata(pdsURL: pdsURL)
@@ -198,6 +219,7 @@ final class ATProtoOAuthService: NSObject, ASWebAuthenticationPresentationContex
 
     func signOut() {
         clearSession()
+        reauthorizationRequired = false
     }
 
     func validSession() async throws -> AuthSession {
@@ -401,6 +423,7 @@ final class ATProtoOAuthService: NSObject, ASWebAuthenticationPresentationContex
             accessToken: tokens.accessToken,
             refreshToken: tokens.refreshToken,
             tokenType: tokens.tokenType,
+            scope: tokens.scope ?? keychain.string(for: "oauth.scope") ?? Self.scopes,
             expiresAt: Date().addingTimeInterval(tokens.expiresIn ?? 3600)
         )
         session = next
@@ -412,6 +435,7 @@ final class ATProtoOAuthService: NSObject, ASWebAuthenticationPresentationContex
         // of forcing a token-refresh round-trip in restoreSession().
         keychain.set(next.accessToken, for: "oauth.accessToken")
         keychain.set(next.tokenType, for: "oauth.tokenType")
+        keychain.set(next.scope ?? Self.scopes, for: "oauth.scope")
         keychain.set(String(next.expiresAt.timeIntervalSince1970), for: "oauth.expiresAt")
         Task {
             let rawKey = await dpop.exportPrivateKey()
@@ -427,9 +451,16 @@ final class ATProtoOAuthService: NSObject, ASWebAuthenticationPresentationContex
         keychain.remove("oauth.refreshToken")
         keychain.remove("oauth.accessToken")
         keychain.remove("oauth.tokenType")
+        keychain.remove("oauth.scope")
         keychain.remove("oauth.expiresAt")
         keychain.remove("oauth.dpopKey")
         resetPendingOAuthState()
+    }
+
+    static func hasRequiredFeatureScopes(_ rawScope: String?) -> Bool {
+        guard let rawScope else { return false }
+        let granted = Set(rawScope.split(whereSeparator: { $0.isWhitespace }).map(String.init))
+        return requiredFeatureScopes.isSubset(of: granted)
     }
 
     private func resetPendingOAuthState() {

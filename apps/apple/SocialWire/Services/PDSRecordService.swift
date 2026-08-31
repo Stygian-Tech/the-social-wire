@@ -6,6 +6,8 @@ final class PDSRecordService {
     nonisolated static let publicationPrefs = "app.thesocialwire.publicationPrefs"
     nonisolated static let preferences = "app.thesocialwire.preferences"
     nonisolated static let standardSiteSubscription = "site.standard.graph.subscription"
+    nonisolated static let standardSiteRecommend = "site.standard.graph.recommend"
+    nonisolated static let wireArticleFeedback = "app.thesocialwire.wireFeedback"
     nonisolated static let skyreaderFeedSubscription = "app.skyreader.feed.subscription"
     nonisolated static let latrSavedExternal = "link.latr.saved.external"
     nonisolated static let latrSavedItem = "link.latr.saved.item"
@@ -33,6 +35,23 @@ final class PDSRecordService {
         let record = FolderRecord(type: Self.folder, name: name, sortOrder: 0, createdAt: DateFormatters.string())
         let uri = try await xrpc.createRecord(collection: Self.folder, record: record)
         return RecordWriteResponseDTO(uri: uri, rkey: rkey(from: uri))
+    }
+
+    func updateFolder(
+        rkey: String,
+        existing: FolderRecord,
+        name: String,
+        icon: String?
+    ) async throws {
+        let record = FolderRecord(
+            type: Self.folder,
+            name: name,
+            sortOrder: existing.sortOrder,
+            icon: icon,
+            iconImage: existing.iconImage,
+            createdAt: existing.createdAt
+        )
+        try await xrpc.putRecord(collection: Self.folder, rkey: rkey, record: record)
     }
 
     func deleteFolder(rkey: String) async throws {
@@ -68,6 +87,10 @@ final class PDSRecordService {
         )
     }
 
+    func deletePublicationSubscription(rkey: String) async throws {
+        try await xrpc.deleteRecord(collection: Self.standardSiteSubscription, rkey: rkey)
+    }
+
     func listSkyreaderSubscriptions() async throws -> [RepoRecord<SkyreaderFeedSubscriptionRecord>] {
         let page: ListRecordsResponse<SkyreaderFeedSubscriptionRecord> = try await xrpc.listRecords(repo: "", collection: Self.skyreaderFeedSubscription, authorized: true)
         return page.records
@@ -86,6 +109,105 @@ final class PDSRecordService {
             sourceType: "rss"
         )
         try await xrpc.createRecord(collection: Self.skyreaderFeedSubscription, record: record)
+    }
+
+    func deleteSkyreaderSubscription(rkey: String) async throws {
+        try await xrpc.deleteRecord(collection: Self.skyreaderFeedSubscription, rkey: rkey)
+    }
+
+    func listWireArticleFeedback() async throws -> [RepoRecord<WireArticleFeedbackRecord>] {
+        var records: [RepoRecord<WireArticleFeedbackRecord>] = []
+        var cursor: String?
+        repeat {
+            let page: ListRecordsResponse<WireArticleFeedbackRecord> = try await xrpc.listRecords(
+                repo: "",
+                collection: Self.wireArticleFeedback,
+                cursor: cursor,
+                authorized: true
+            )
+            records.append(contentsOf: page.records)
+            cursor = page.cursor
+        } while cursor != nil
+        return records
+    }
+
+    func toggleWireArticleFeedback(
+        canonicalURL: String,
+        subject: String?,
+        value: WireArticleFeedbackValue
+    ) async throws -> WireArticleFeedbackValue? {
+        guard let normalizedURL = WireArticleFeedbackContract.normalizeCanonicalURL(canonicalURL) else {
+            throw SocialWireError.invalidURL
+        }
+        let existing = try await listWireArticleFeedback().first { record in
+            WireArticleFeedbackContract.normalizeCanonicalURL(record.value.canonicalUrl) == normalizedURL
+        }
+        let recordKey = try WireArticleFeedbackContract.recordKey(canonicalURL: normalizedURL)
+
+        if existing?.value.value == value {
+            try await xrpc.deleteRecord(collection: Self.wireArticleFeedback, rkey: recordKey)
+            return nil
+        }
+
+        let now = DateFormatters.string()
+        let record = WireArticleFeedbackRecord(
+            type: Self.wireArticleFeedback,
+            canonicalUrl: normalizedURL,
+            subject: subject?.hasPrefix("at://") == true ? subject : nil,
+            value: value,
+            createdAt: existing?.value.createdAt ?? now,
+            updatedAt: now
+        )
+        try await xrpc.putRecord(
+            collection: Self.wireArticleFeedback,
+            rkey: recordKey,
+            record: record
+        )
+        return value
+    }
+
+    func listStandardSiteRecommendations() async throws -> [RepoRecord<StandardSiteRecommendRecord>] {
+        var records: [RepoRecord<StandardSiteRecommendRecord>] = []
+        var cursor: String?
+        repeat {
+            let page: ListRecordsResponse<StandardSiteRecommendRecord> = try await xrpc.listRecords(
+                repo: "",
+                collection: Self.standardSiteRecommend,
+                cursor: cursor,
+                authorized: true
+            )
+            records.append(contentsOf: page.records)
+            cursor = page.cursor
+        } while cursor != nil
+        return records
+    }
+
+    func toggleStandardSiteRecommendation(documentURI: String) async throws -> Bool {
+        guard let normalizedDocument = StandardSiteRecommendationContract.documentURI(from: documentURI) else {
+            throw SocialWireError.invalidATURI
+        }
+        let existing = try await listStandardSiteRecommendations().filter {
+            $0.value.document == normalizedDocument
+        }
+        if !existing.isEmpty {
+            for record in existing {
+                try await xrpc.deleteRecord(
+                    collection: Self.standardSiteRecommend,
+                    rkey: rkey(from: record.uri)
+                )
+            }
+            return false
+        }
+
+        try await xrpc.createRecord(
+            collection: Self.standardSiteRecommend,
+            record: StandardSiteRecommendRecord(
+                type: Self.standardSiteRecommend,
+                document: normalizedDocument,
+                createdAt: DateFormatters.string()
+            )
+        )
+        return true
     }
 
     func getPreferences() async throws -> RepoRecord<PreferencesRecord>? {
@@ -121,7 +243,29 @@ final class PDSRecordService {
             visibleFeeds: preferences.visibleFeeds.map(\.preferenceKey),
             showTopLevelFeedUnreadCounts: !preferences.feedsWithUnreadCounts.isEmpty,
             feedsWithUnreadCounts: preferences.feedsWithUnreadCounts.map(\.preferenceKey),
-            rssArticleOpenMode: prev?.rssArticleOpenMode,
+            rssArticleOpenMode: preferences.articleOpenMode.rawValue,
+            createdAt: prev?.createdAt ?? now,
+            updatedAt: now
+        )
+        try await xrpc.putRecord(
+            collection: Self.preferences,
+            rkey: Self.preferencesRKey,
+            record: record
+        )
+    }
+
+    func upsertArticleOpenMode(_ mode: ArticleOpenMode) async throws {
+        let current = try await getPreferences()
+        let prev = current?.value
+        let now = DateFormatters.string()
+        let record = PreferencesRecord(
+            type: Self.preferences,
+            readLaterService: prev?.readLaterService,
+            readLaterConnections: prev?.readLaterConnections,
+            visibleFeeds: prev?.visibleFeeds,
+            showTopLevelFeedUnreadCounts: prev?.showTopLevelFeedUnreadCounts,
+            feedsWithUnreadCounts: prev?.feedsWithUnreadCounts,
+            rssArticleOpenMode: mode.rawValue,
             createdAt: prev?.createdAt ?? now,
             updatedAt: now
         )

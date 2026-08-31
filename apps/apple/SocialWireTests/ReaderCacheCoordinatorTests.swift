@@ -102,4 +102,99 @@ struct ReaderCacheCoordinatorTests {
         #expect(coord.gatewayETag(for: "GET /preferences") == "\"v1\"")
         #expect(coord.gatewayCachedBody(for: "GET /preferences") == Data([0xDE, 0xAD]))
     }
+
+    @Test("editorial editions are isolated by viewer and language")
+    func editorialEditionsAreViewerScoped() throws {
+        let container = try ReaderSwiftDataStack.inMemoryTestContainer()
+        let coord = ReaderCacheCoordinator(modelContext: ModelContext(container))
+        let wireA = Self.wireEdition(generationId: "wire-a")
+        let wireB = Self.wireEdition(generationId: "wire-b")
+        let circleA = Self.circleEdition(generationId: "circle-a")
+        let circleB = Self.circleEdition(generationId: "circle-b")
+
+        try coord.upsertWireEditionPage(wireA, viewerDID: "did:plc:a", language: " EN ")
+        try coord.upsertWireEditionPage(wireB, viewerDID: "did:plc:b", language: "en")
+        try coord.upsertCircleEditionPage(circleA, viewerDID: "did:plc:a", language: "EN")
+        try coord.upsertCircleEditionPage(circleB, viewerDID: "did:plc:b", language: "en")
+
+        #expect(try coord.wireEditionPage(viewerDID: "did:plc:a", language: "en") == wireA)
+        #expect(try coord.wireEditionPage(viewerDID: "did:plc:b", language: "EN") == wireB)
+        #expect(try coord.wireEditionPage(viewerDID: "did:plc:c", language: "en") == nil)
+        #expect(try coord.circleEditionPage(viewerDID: "did:plc:a", language: "en") == circleA)
+        #expect(try coord.circleEditionPage(viewerDID: "did:plc:b", language: "EN") == circleB)
+        #expect(try coord.circleEditionPage(viewerDID: "did:plc:c", language: "en") == nil)
+    }
+
+    @Test("Circle logout cleanup removes only the signed-out viewer")
+    func circleCleanupIsViewerScoped() throws {
+        let container = try ReaderSwiftDataStack.inMemoryTestContainer()
+        let coord = ReaderCacheCoordinator(modelContext: ModelContext(container))
+        let wire = Self.wireEdition(generationId: "wire-a")
+        let circleA = Self.circleEdition(generationId: "circle-a")
+        let circleB = Self.circleEdition(generationId: "circle-b")
+        let detailA = Self.entryDetail(id: "story-a")
+        let detailB = Self.entryDetail(id: "story-b")
+
+        try coord.upsertWireEditionPage(wire, viewerDID: "did:plc:a", language: "en")
+        try coord.upsertCircleEditionPage(circleA, viewerDID: "did:plc:a", language: "en")
+        try coord.upsertCircleEditionPage(circleB, viewerDID: "did:plc:b", language: "en")
+        try coord.upsertCircleItemDetail(detailA, storyId: "story-a", viewerDID: "did:plc:a")
+        try coord.upsertCircleItemDetail(detailB, storyId: "story-b", viewerDID: "did:plc:b")
+
+        try coord.clearCircleDiscoveryCache(viewerDID: "did:plc:a")
+
+        #expect(try coord.circleEditionPage(viewerDID: "did:plc:a", language: "en") == nil)
+        #expect(try coord.circleItemDetail(storyId: detailA.entryId, viewerDID: "did:plc:a") == nil)
+        #expect(try coord.circleEditionPage(viewerDID: "did:plc:b", language: "en") == circleB)
+        #expect(try coord.circleItemDetail(storyId: detailB.entryId, viewerDID: "did:plc:b") == detailB)
+        #expect(try coord.wireEditionPage(viewerDID: "did:plc:a", language: "en") == wire)
+    }
+
+    private static func wireEdition(generationId: String) -> WireEditionPage {
+        WireEditionPage(
+            editionVersion: "1",
+            generationId: generationId,
+            generatedAt: "2026-08-30T12:00:00Z",
+            language: "en",
+            source: .ranked,
+            degraded: false,
+            stories: [],
+            topStoryIds: [],
+            publicationSpotlights: [],
+            storyRails: [],
+            people: [],
+            trendingStoryIds: [],
+            moreCursor: nil
+        )
+    }
+
+    private static func circleEdition(generationId: String) -> CircleEditionPage {
+        CircleEditionPage(
+            editionVersion: "1",
+            generationId: generationId,
+            generatedAt: "2026-08-30T12:00:00Z",
+            language: "en",
+            source: .ranked,
+            degraded: false,
+            stories: [],
+            topStoryIds: [],
+            publicationSpotlights: [],
+            storyRails: [],
+            trendingStoryIds: [],
+            moreCursor: nil
+        )
+    }
+
+    private static func entryDetail(id: String) -> EntryDetail {
+        EntryDetail(
+            entryId: id,
+            title: id,
+            publishedAt: "2026-08-30T12:00:00Z",
+            contentHtml: "<p>Cached</p>",
+            originalUrl: "https://example.com/\(id)",
+            embedUrl: "https://example.com/\(id)",
+            bskyPostUri: nil,
+            bskyPostCid: nil
+        )
+    }
 }

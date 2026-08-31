@@ -32,6 +32,20 @@ final class XRPCClient {
         return try await sendWithDPoPRetry(request, session: session)
     }
 
+    func authorizedServiceProxyGet<T: Decodable>(
+        method: String,
+        service: String,
+        query: [String: String?] = [:]
+    ) async throws -> T {
+        let session = try await auth.validSession()
+        let url = try xrpcURL(base: session.pdsURL, method: method, query: query)
+        var request = URLRequest(url: url)
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue(service, forHTTPHeaderField: "atproto-proxy")
+        try await sign(&request, session: session)
+        return try await sendWithDPoPRetry(request, session: session)
+    }
+
     func authorizedPost<Body: Encodable, T: Decodable>(_ base: URL, method: String, body: Body) async throws -> T {
         let session = try await auth.validSession()
         let url = try xrpcURL(base: base, method: method)
@@ -172,6 +186,10 @@ final class XRPCClient {
 
     @discardableResult
     func createRecord<Record: Encodable>(collection: String, record: Record) async throws -> String {
+        try await createRecordReference(collection: collection, record: record).uri
+    }
+
+    func createRecordReference<Record: Encodable>(collection: String, record: Record) async throws -> StrongRef {
         let session = try await auth.validSession()
         let body = CreateRecordRequest(repo: session.did, collection: collection, record: AnyEncodable(record))
         let response: CreateRecordResponse = try await authorizedPost(
@@ -179,7 +197,20 @@ final class XRPCClient {
             method: "com.atproto.repo.createRecord",
             body: body
         )
-        return response.uri
+        return StrongRef(uri: response.uri, cid: response.cid)
+    }
+
+    func uploadBlob(data: Data, mimeType: String) async throws -> ATProtoBlob {
+        let session = try await auth.validSession()
+        let url = try xrpcURL(base: session.pdsURL, method: "com.atproto.repo.uploadBlob")
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue(mimeType, forHTTPHeaderField: "Content-Type")
+        request.httpBody = data
+        try await sign(&request, session: session)
+        let response: UploadBlobResponse = try await sendWithDPoPRetry(request, session: session)
+        return response.blob
     }
 
     func deleteRecord(collection: String, rkey: String) async throws {
@@ -259,6 +290,11 @@ private struct CreateRecordRequest: Encodable {
 
 private struct CreateRecordResponse: Decodable {
     let uri: String
+    let cid: String
+}
+
+private struct UploadBlobResponse: Decodable {
+    let blob: ATProtoBlob
 }
 
 private struct DeleteRecordRequest: Encodable {

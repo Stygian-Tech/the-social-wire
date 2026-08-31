@@ -6,7 +6,8 @@ options:
   # per-file Target Membership for synchronized roots.
   defaultSourceDirectoryType: group
   deploymentTarget:
-    iOS: "17.0"
+    iOS: "18.0"
+    macOS: "15.0"
 configs:
   Debug: debug
   Beta: release
@@ -46,7 +47,6 @@ targets:
               - app.thesocialwire.testing.api
         LSRequiresIPhoneOS: true
         UIApplicationSupportsIndirectInputEvents: true
-        UIRequiresFullScreen: true
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
@@ -85,18 +85,99 @@ targets:
       configs:
         Beta:
           SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) SOCIALWIRE_TESTING_API
+  SocialWireUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: SocialWireUITests
+    dependencies:
+      - target: SocialWire
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.samclemente.the-social-wire.ui-tests
+        PRODUCT_NAME: SocialWireUITests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: SocialWire
+  SocialWireMac:
+    type: application
+    platform: macOS
+    sources:
+      - path: SocialWire
+        excludes:
+          - Info.plist
+          - SocialWire.entitlements
+      - path: SocialWireMac
+        excludes:
+          - Info.plist
+          - SocialWireMac.entitlements
+    dependencies:
+      - package: LatrKit
+    info:
+      path: SocialWireMac/Info.plist
+      properties:
+        CFBundleDisplayName: The Social Wire
+        CFBundleName: The Social Wire
+        CFBundleURLTypes:
+          - CFBundleURLName: com.samclemente.the-social-wire.oauth
+            CFBundleURLSchemes:
+              - app.thesocialwire
+              - app.thesocialwire.api
+              - app.thesocialwire.testing.api
+        LSApplicationCategoryType: public.app-category.news
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.samclemente.the-social-wire
+        PRODUCT_NAME: SocialWire
+        PRODUCT_MODULE_NAME: SocialWire
+        CODE_SIGN_ENTITLEMENTS: SocialWireMac/SocialWireMac.entitlements
+      configs:
+        Beta:
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) SOCIALWIRE_TESTING_API
+  SocialWireMacTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: SocialWireTests
+    dependencies:
+      - target: SocialWireMac
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.samclemente.the-social-wire.macos.tests
+        PRODUCT_NAME: SocialWireMacTests
+        PRODUCT_MODULE_NAME: SocialWireTests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/SocialWire.app/Contents/MacOS/SocialWire"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+      configs:
+        Beta:
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) SOCIALWIRE_TESTING_API
+  SocialWireMacUITests:
+    type: bundle.ui-testing
+    platform: macOS
+    sources:
+      - path: SocialWireMacUITests
+    dependencies:
+      - target: SocialWireMac
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.samclemente.the-social-wire.macos.ui-tests
+        PRODUCT_NAME: SocialWireMacUITests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: SocialWireMac
 schemes:
   SocialWire:
     build:
       targets:
         SocialWire: all
         SocialWireTests: [test]
+        SocialWireUITests: [test]
     run:
       config: Debug
     test:
       config: Debug
       targets:
         - SocialWireTests
+        - SocialWireUITests
     profile:
       config: Release
     analyze:
@@ -108,15 +189,36 @@ schemes:
       targets:
         SocialWire: all
         SocialWireTests: [test]
+        SocialWireUITests: [test]
     run:
       config: Beta
     test:
       config: Beta
       targets:
         - SocialWireTests
+        - SocialWireUITests
     profile:
       config: Beta
     analyze:
       config: Beta
     archive:
       config: Beta
+  SocialWire-macOS:
+    build:
+      targets:
+        SocialWireMac: all
+        SocialWireMacTests: [test]
+        SocialWireMacUITests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - SocialWireMacTests
+        - SocialWireMacUITests
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: Release

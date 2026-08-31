@@ -45,6 +45,13 @@ struct EntryRow: View {
                         )
                     )
                 }
+
+                if let sourceDomain = entry.sourceDomain {
+                    Label(sourceDomain, systemImage: "globe")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
                 Text(entry.title)
                     .font(.headline)
                     .foregroundStyle(showsReadState && isRead ? .secondary : .primary)

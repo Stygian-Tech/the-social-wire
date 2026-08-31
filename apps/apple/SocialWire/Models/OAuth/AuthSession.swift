@@ -8,5 +8,6 @@ struct AuthSession: Codable, Equatable, Sendable {
     var accessToken: String
     var refreshToken: String
     var tokenType: String
+    var scope: String?
     var expiresAt: Date
 }

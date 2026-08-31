@@ -32,7 +32,8 @@ public enum ATProtoOAuthScopes {
     "repo:com.latr.saved.item?action=delete",
   ]
 
-  private static let webOnlyScopes = [
+  /// Feature scopes shared by every client that exposes the full reader action surface.
+  private static let readerActionScopes = [
     "repo:app.thesocialwire.wireFeedback?action=create&action=update&action=delete",
     "include:site.standard.authSocial",
     "repo:app.skyreader.feed.subscription?action=create&action=update&action=delete",
@@ -41,12 +42,13 @@ public enum ATProtoOAuthScopes {
   ]
 
   private static let iosOnlyScopes = [
-    "repo:app.skyreader.feed.subscription?action=create&action=update&action=delete",
     "repo:site.standard.graph.subscription?action=create&action=update&action=delete",
     "repo:app.bsky.feed.post?action=update",
   ]
 
-  static let webScope = (sharedScopes + webOnlyScopes).joined(separator: " ")
+  static let webScope = (sharedScopes + readerActionScopes).joined(separator: " ")
 
-  static let iosScope = (sharedScopes + iosOnlyScopes).joined(separator: " ")
+  /// Kept as `iosScope` because `/ios-client-metadata.json` is a stable public client ID used by
+  /// the universal iPhone, iPad, and Mac app.
+  static let iosScope = (sharedScopes + readerActionScopes + iosOnlyScopes).joined(separator: " ")
 }

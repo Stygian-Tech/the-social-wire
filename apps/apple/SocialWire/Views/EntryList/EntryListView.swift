@@ -2,8 +2,8 @@ import SwiftUI
 
 struct EntryListView: View {
     @Environment(SocialWireAppModel.self) private var appModel
-    var navigationEpoch: (() -> UInt)? = nil
-    var onEntryOpened: ((UInt) -> Void)? = nil
+    @Environment(\.openURL) private var openURL
+    var onEntryOpened: (() -> Void)? = nil
     @State private var refreshFeedback = 0
     @State private var saveFeedback = 0
 
@@ -32,8 +32,12 @@ struct EntryListView: View {
                 Section("Articles") {
                     ForEach(appModel.filteredEntries) { entry in
                         Button {
-                            let epoch = navigationEpoch?() ?? 0
-                            Task { await openEntry(entry, navigationEpoch: epoch) }
+                            Task {
+                                await openEntry(
+                                    entry,
+                                    forceNativeReader: false
+                                )
+                            }
                         } label: {
                             EntryRow(
                                 entry: entry,
@@ -47,6 +51,28 @@ struct EntryListView: View {
                         .accessibilityElement(children: .combine)
                         .accessibilityValue(entryAccessibilityValue(entry))
                             .contextMenu {
+                                if let websiteURL = entry.originalWebsiteURL {
+                                    Button {
+                                        Task {
+                                            await appModel.recordExternalEntryOpen(entry)
+                                            openURL(websiteURL)
+                                        }
+                                    } label: {
+                                        Label("Open on Website", systemImage: "safari")
+                                    }
+
+                                    Button {
+                                        Task {
+                                            await openEntry(
+                                                entry,
+                                                forceNativeReader: true
+                                            )
+                                        }
+                                    } label: {
+                                        Label("Open in Native Reader", systemImage: "doc.richtext")
+                                    }
+                                }
+
                                 Button {
                                     saveFeedback += 1
                                     Task {
@@ -104,10 +130,20 @@ struct EntryListView: View {
         .sensoryFeedback(.success, trigger: saveFeedback)
     }
 
-    private func openEntry(_ entry: EntryListItem, navigationEpoch: UInt) async {
+    private func openEntry(
+        _ entry: EntryListItem,
+        forceNativeReader: Bool
+    ) async {
+        if !forceNativeReader,
+           appModel.feedPreferences.articleOpenMode == .original,
+           let websiteURL = entry.originalWebsiteURL {
+            await appModel.recordExternalEntryOpen(entry)
+            openURL(websiteURL)
+            return
+        }
         await appModel.selectEntry(entry)
         guard appModel.selectedEntry?.entryId == entry.entryId else { return }
-        onEntryOpened?(navigationEpoch)
+        onEntryOpened?()
     }
 
     private func entryAccessibilityValue(_ entry: EntryListItem) -> String {

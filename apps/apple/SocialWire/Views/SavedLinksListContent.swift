@@ -14,6 +14,22 @@ struct SavedLinksListContent: View {
         List {
             if !appModel.currentSavedFeedSources.isEmpty {
                 Section("Publications") {
+                    Button {
+                        appModel.clearSavedFeedSource()
+                    } label: {
+                        HStack {
+                            Label("All Saved Stories", systemImage: "tray.full")
+                            Spacer(minLength: 8)
+                            SidebarCountLabel(
+                                count: appModel.currentSavedLinks.count,
+                                accessibilityDescription: "saved articles"
+                            )
+                        }
+                        .readerFullWidthTapLabel()
+                    }
+                    .buttonStyle(.plain)
+                    .readerClearListRow()
+
                     ForEach(appModel.currentSavedFeedSources) { source in
                         Button {
                             appModel.selectSavedFeedSource(source)

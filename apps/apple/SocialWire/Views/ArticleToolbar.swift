@@ -26,6 +26,64 @@ struct ArticleToolbar: View {
                 }
                 .buttonStyle(.bordered)
 
+                if entry.standardSiteDocumentURI != nil {
+                    Button {
+                        reactionFeedback += 1
+                        Task { await appModel.toggleStandardSiteRecommendation(for: entry) }
+                    } label: {
+                        Label(
+                            appModel.isStandardSiteRecommended(entry)
+                                ? "Remove Recommendation"
+                                : "Recommend",
+                            systemImage: appModel.isStandardSiteRecommended(entry)
+                                ? "hand.thumbsup.fill"
+                                : "hand.thumbsup"
+                        )
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(appModel.isArticleSocialStateLoading(for: entry))
+                }
+
+                if WireArticleFeedbackContract.normalizeCanonicalURL(
+                    entry.wireFeedbackCanonicalUrl ?? ""
+                ) != nil {
+                    Button {
+                        reactionFeedback += 1
+                        Task {
+                            await appModel.toggleWireArticleFeedback(for: entry, value: .good)
+                        }
+                    } label: {
+                        Label(
+                            appModel.wireArticleFeedbackValue(for: entry) == .good
+                                ? "Rated Good"
+                                : "Good Article",
+                            systemImage: appModel.wireArticleFeedbackValue(for: entry) == .good
+                                ? "hand.thumbsup.fill"
+                                : "hand.thumbsup"
+                        )
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(appModel.isArticleSocialStateLoading(for: entry))
+
+                    Button {
+                        reactionFeedback += 1
+                        Task {
+                            await appModel.toggleWireArticleFeedback(for: entry, value: .notGood)
+                        }
+                    } label: {
+                        Label(
+                            appModel.wireArticleFeedbackValue(for: entry) == .notGood
+                                ? "Rated Not Good"
+                                : "Not a Good Article",
+                            systemImage: appModel.wireArticleFeedbackValue(for: entry) == .notGood
+                                ? "hand.thumbsdown.fill"
+                                : "hand.thumbsdown"
+                        )
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(appModel.isArticleSocialStateLoading(for: entry))
+                }
+
                 Button {
                     showingQuote = true
                 } label: {
@@ -51,7 +109,7 @@ struct ArticleToolbar: View {
                     Button {
                         openURL(url)
                     } label: {
-                        Label("Open", systemImage: "safari")
+                        Label("Open on Website", systemImage: "safari")
                     }
                     .buttonStyle(.bordered)
                 }
@@ -60,24 +118,33 @@ struct ArticleToolbar: View {
                     reactionFeedback += 1
                     Task { await appModel.likeEntry(entry) }
                 } label: {
-                    Label("Like", systemImage: "heart")
+                    Label(
+                        appModel.isEntryLiked(entry) ? "Unlike" : "Like",
+                        systemImage: appModel.isEntryLiked(entry) ? "heart.fill" : "heart"
+                    )
                 }
                 .buttonStyle(.bordered)
-                .disabled(entry.bskyPostUri == nil)
+                .disabled(entry.bskyPostUri == nil || appModel.isArticleSocialStateLoading(for: entry))
 
                 Button {
                     reactionFeedback += 1
                     Task { await appModel.repostEntry(entry) }
                 } label: {
-                    Label("Repost", systemImage: "repeat")
+                    Label(
+                        appModel.isEntryReposted(entry) ? "Undo Repost" : "Repost",
+                        systemImage: "repeat"
+                    )
                 }
                 .buttonStyle(.bordered)
-                .disabled(entry.bskyPostUri == nil)
+                .disabled(entry.bskyPostUri == nil || appModel.isArticleSocialStateLoading(for: entry))
             }
         }
         .scrollBounceBehavior(.basedOnSize, axes: .vertical)
         .fixedSize(horizontal: false, vertical: true)
         .accessibilityElement(children: .contain)
         .sensoryFeedback(.success, trigger: reactionFeedback)
+        .task(id: entry.entryId) {
+            await appModel.loadArticleSocialState(for: entry)
+        }
     }
 }
