@@ -8,15 +8,28 @@ struct RootView: View {
 
     var body: some View {
         Group {
-            if appModel.isSignedIn {
-                MainSplitView()
+#if DEBUG
+            if isNewsShellUITest {
+                NewsShellUITestHarness()
+            } else if appModel.isSignedIn {
+                NewsShellView()
             } else {
                 LoginView()
             }
+#else
+            if appModel.isSignedIn {
+                NewsShellView()
+            } else {
+                LoginView()
+            }
+#endif
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(.systemBackground))
         .task {
+#if DEBUG
+            guard !isNewsShellUITest else { return }
+#endif
             appModel.configureReaderPersistence(modelContext: modelContext)
             await appModel.restoreSession()
         }
@@ -33,4 +46,10 @@ struct RootView: View {
             Text(appModel.errorMessage ?? "Unknown error")
         }
     }
+
+#if DEBUG
+    private var isNewsShellUITest: Bool {
+        ProcessInfo.processInfo.arguments.contains("--ui-testing-news-shell")
+    }
+#endif
 }

@@ -8,7 +8,10 @@ enum ReaderSwiftDataStack {
             PersistedPublicationEntries.self,
             PersistedEntryDetail.self,
             PersistedWireFeedPage.self,
+            PersistedWireEditionPage.self,
             PersistedWireItemDetail.self,
+            PersistedCircleEditionPage.self,
+            PersistedCircleItemDetail.self,
         ])
         guard let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
             throw SocialWireError.badResponse("Application Support unavailable.")
@@ -26,7 +29,10 @@ enum ReaderSwiftDataStack {
             PersistedPublicationEntries.self,
             PersistedEntryDetail.self,
             PersistedWireFeedPage.self,
+            PersistedWireEditionPage.self,
             PersistedWireItemDetail.self,
+            PersistedCircleEditionPage.self,
+            PersistedCircleItemDetail.self,
         ])
         let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
         return try ModelContainer(for: schema, configurations: [config])

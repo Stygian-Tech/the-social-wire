@@ -50,5 +50,12 @@ struct FollowingPublicationSidebarTree: View {
         .buttonStyle(.plain)
         .readerClearListRow()
         .tag(SidebarSelection.publication(publication.publicationId))
+        .contextMenu {
+            Button {
+                Task { await appModel.subscribe(to: publication) }
+            } label: {
+                Label("Subscribe", systemImage: "plus.circle")
+            }
+        }
     }
 }

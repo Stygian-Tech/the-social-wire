@@ -3,13 +3,19 @@ import Foundation
 struct ReaderFeedPreferences: Codable, Equatable, Sendable {
     var visibleFeeds: [ReaderListSource]
     var feedsWithUnreadCounts: [ReaderListSource]
+    var articleOpenMode: ArticleOpenMode
 
     static let defaults = ReaderFeedPreferences(
         visibleFeeds: ReaderListSource.preferenceCases,
-        feedsWithUnreadCounts: ReaderListSource.preferenceCases
+        feedsWithUnreadCounts: ReaderListSource.preferenceCases,
+        articleOpenMode: .original
     )
 
-    init(visibleFeeds: [ReaderListSource], feedsWithUnreadCounts: [ReaderListSource]) {
+    init(
+        visibleFeeds: [ReaderListSource],
+        feedsWithUnreadCounts: [ReaderListSource],
+        articleOpenMode: ArticleOpenMode = .original
+    ) {
         let unique = visibleFeeds.reduce(into: [ReaderListSource]()) { result, source in
             if !result.contains(source) { result.append(source) }
         }
@@ -22,6 +28,7 @@ struct ReaderFeedPreferences: Codable, Equatable, Sendable {
             effectiveVisibleFeeds.contains(source)
                 && feedsWithUnreadCounts.contains(source)
         }
+        self.articleOpenMode = articleOpenMode
     }
 
     init(record: PreferencesRecord?) {
@@ -37,7 +44,9 @@ struct ReaderFeedPreferences: Codable, Equatable, Sendable {
         }
         self.init(
             visibleFeeds: visibleFeeds,
-            feedsWithUnreadCounts: feedsWithUnreadCounts
+            feedsWithUnreadCounts: feedsWithUnreadCounts,
+            articleOpenMode: record?.rssArticleOpenMode.flatMap(ArticleOpenMode.init(rawValue:))
+                ?? .original
         )
     }
 
@@ -49,6 +58,8 @@ struct ReaderFeedPreferences: Codable, Equatable, Sendable {
         case visibleFeeds
         case feedsWithUnreadCounts
         case showTopLevelFeedUnreadCounts
+        case articleOpenMode
+        case rssArticleOpenMode
     }
 
     init(from decoder: Decoder) throws {
@@ -68,9 +79,18 @@ struct ReaderFeedPreferences: Codable, Equatable, Sendable {
             ) ?? true
             feedsWithUnreadCounts = legacyShowCounts ? visibleFeeds : []
         }
+        let cachedArticleOpenMode = try container.decodeIfPresent(
+            ArticleOpenMode.self,
+            forKey: .articleOpenMode
+        )
+        let legacyArticleOpenMode = try container.decodeIfPresent(
+            ArticleOpenMode.self,
+            forKey: .rssArticleOpenMode
+        )
         self.init(
             visibleFeeds: visibleFeeds,
-            feedsWithUnreadCounts: feedsWithUnreadCounts
+            feedsWithUnreadCounts: feedsWithUnreadCounts,
+            articleOpenMode: cachedArticleOpenMode ?? legacyArticleOpenMode ?? .original
         )
     }
 
@@ -79,6 +99,7 @@ struct ReaderFeedPreferences: Codable, Equatable, Sendable {
         try container.encode(visibleFeeds, forKey: .visibleFeeds)
         try container.encode(feedsWithUnreadCounts, forKey: .feedsWithUnreadCounts)
         try container.encode(!feedsWithUnreadCounts.isEmpty, forKey: .showTopLevelFeedUnreadCounts)
+        try container.encode(articleOpenMode, forKey: .articleOpenMode)
     }
 }
 

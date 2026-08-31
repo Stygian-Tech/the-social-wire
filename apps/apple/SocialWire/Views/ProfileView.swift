@@ -42,6 +42,12 @@ struct ProfileView: View {
                 } label: {
                     Label("Settings", systemImage: "gearshape")
                 }
+
+                NavigationLink {
+                    UserInputFeedbackView()
+                } label: {
+                    Label("Send Feedback", systemImage: "bubble.left.and.bubble.right")
+                }
             }
 
             Section {
@@ -74,7 +80,7 @@ struct ProfileView: View {
             Text("This deletes AppView read marks for your account on the gateway.")
         }
         .navigationTitle("Profile")
-        .navigationBarTitleDisplayMode(.inline)
+        .platformInlineNavigationTitle()
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
                 Button("Done") {

@@ -22,7 +22,7 @@ describe("feed display preferences", () => {
     ).toEqual({
       visibleFeeds: DEFAULT_FEED_DISPLAY_PREFERENCES.visibleFeeds,
       feedsWithUnreadCounts: [],
-      rssArticleOpenMode: "reader",
+      rssArticleOpenMode: "original",
     });
   });
 
@@ -35,7 +35,7 @@ describe("feed display preferences", () => {
     ).toEqual({
       visibleFeeds: ["following", "readLater"],
       feedsWithUnreadCounts: ["readLater", "following"],
-      rssArticleOpenMode: "reader",
+      rssArticleOpenMode: "original",
     });
   });
 
@@ -53,7 +53,7 @@ describe("feed display preferences", () => {
         visibleFeeds: ["following"],
         rssArticleOpenMode: "unknown" as "reader",
       }).rssArticleOpenMode,
-    ).toBe("reader");
+    ).toBe("original");
   });
 
   test("keeps counts only for visible feeds in canonical order", () => {

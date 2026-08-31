@@ -1,21 +1,21 @@
 import Foundation
-import UIKit
+import ImageIO
 
 /// Shared remote image cache with large in-memory retention and URLSession disk backing.
 actor ImageCacheService {
     static let shared = ImageCacheService()
 
     private final class CacheEntry: NSObject {
-        let image: UIImage
+        let image: PlatformImage
 
-        init(_ image: UIImage) {
+        init(_ image: PlatformImage) {
             self.image = image
         }
     }
 
     private let memoryCache = NSCache<NSString, CacheEntry>()
     private let session: URLSession
-    private var inFlight: [String: Task<UIImage?, Never>] = [:]
+    private var inFlight: [String: Task<PlatformImage?, Never>] = [:]
 
     private init() {
         memoryCache.countLimit = 600
@@ -32,7 +32,7 @@ actor ImageCacheService {
         session = URLSession(configuration: configuration)
     }
 
-    func image(for url: URL, maxPixelSize: CGFloat) async -> UIImage? {
+    func image(for url: URL, maxPixelSize: CGFloat) async -> PlatformImage? {
         let key = cacheKey(url: url, maxPixelSize: maxPixelSize)
         if let cached = memoryCache.object(forKey: key as NSString)?.image {
             return cached
@@ -42,7 +42,7 @@ actor ImageCacheService {
             return await task.value
         }
 
-        let task = Task<UIImage?, Never> {
+        let task = Task<PlatformImage?, Never> {
             defer { Task { self.clearInFlight(key) } }
 
             do {
@@ -95,8 +95,8 @@ actor ImageCacheService {
         "\(url.absoluteString)|\(Int(maxPixelSize))"
     }
 
-    private static func decodeImage(data: Data, maxPixelSize: CGFloat) -> UIImage? {
-        guard maxPixelSize > 0 else { return UIImage(data: data) }
+    private static func decodeImage(data: Data, maxPixelSize: CGFloat) -> PlatformImage? {
+        guard maxPixelSize > 0 else { return PlatformImage(data: data) }
 
         let options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
@@ -106,8 +106,15 @@ actor ImageCacheService {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil),
               let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
         else {
-            return UIImage(data: data)
+            return PlatformImage(data: data)
         }
-        return UIImage(cgImage: cgImage)
+#if canImport(UIKit)
+        return PlatformImage(cgImage: cgImage)
+#elseif canImport(AppKit)
+        return PlatformImage(
+            cgImage: cgImage,
+            size: NSSize(width: cgImage.width, height: cgImage.height)
+        )
+#endif
     }
 }

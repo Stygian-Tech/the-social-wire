@@ -45,7 +45,7 @@ struct EntryDetailView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .navigationTitle("Article")
-        .navigationBarTitleDisplayMode(.inline)
+        .platformInlineNavigationTitle()
         .sheet(isPresented: $showingQuote) {
             composeSheet(title: "Quote Post", text: $quoteText) {
                 try await appModel.quoteEntry(entry, text: quoteText)

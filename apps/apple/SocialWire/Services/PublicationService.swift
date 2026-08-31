@@ -24,9 +24,9 @@ final class PublicationService {
     }
 
     func viewerState(for postURI: String) async throws -> ProfileViewResponse.Viewer? {
-        let response: PostsResponse = try await xrpc.publicGet(
-            Self.publicAppView,
+        let response: PostsResponse = try await xrpc.authorizedServiceProxyGet(
             method: "app.bsky.feed.getPosts",
+            service: "did:web:api.bsky.app#bsky_appview",
             query: ["uris": postURI]
         )
         return response.posts.first?.viewer
@@ -57,24 +57,32 @@ final class PublicationService {
         try await xrpc.putRecord(collection: "app.bsky.feed.post", rkey: DeterministicKeys.generateTID(), record: record)
     }
 
-    func createLike(entry: EntryDetail) async throws {
+    func createLike(entry: EntryDetail) async throws -> String {
         guard let uri = entry.bskyPostUri, let cid = entry.bskyPostCid else { throw SocialWireError.unsupported }
         let record: [String: JSONValue] = [
             "$type": .string("app.bsky.feed.like"),
             "subject": .object(["uri": .string(uri), "cid": .string(cid)]),
             "createdAt": .string(DateFormatters.string())
         ]
-        try await xrpc.createRecord(collection: "app.bsky.feed.like", record: record)
+        return try await xrpc.createRecord(collection: "app.bsky.feed.like", record: record)
     }
 
-    func createRepost(entry: EntryDetail) async throws {
+    func deleteLike(recordURI: String) async throws {
+        try await deleteReaction(recordURI: recordURI, collection: "app.bsky.feed.like")
+    }
+
+    func createRepost(entry: EntryDetail) async throws -> String {
         guard let uri = entry.bskyPostUri, let cid = entry.bskyPostCid else { throw SocialWireError.unsupported }
         let record: [String: JSONValue] = [
             "$type": .string("app.bsky.feed.repost"),
             "subject": .object(["uri": .string(uri), "cid": .string(cid)]),
             "createdAt": .string(DateFormatters.string())
         ]
-        try await xrpc.createRecord(collection: "app.bsky.feed.repost", record: record)
+        return try await xrpc.createRecord(collection: "app.bsky.feed.repost", record: record)
+    }
+
+    func deleteRepost(recordURI: String) async throws {
+        try await deleteReaction(recordURI: recordURI, collection: "app.bsky.feed.repost")
     }
 
     func createReply(text: String, entry: EntryDetail) async throws {
@@ -93,5 +101,12 @@ final class PublicationService {
             ]),
         ]
         try await xrpc.putRecord(collection: "app.bsky.feed.post", rkey: DeterministicKeys.generateTID(), record: record)
+    }
+
+    private func deleteReaction(recordURI: String, collection: String) async throws {
+        guard let uri = ATURI(recordURI), uri.collection == collection else {
+            throw SocialWireError.invalidATURI
+        }
+        try await xrpc.deleteRecord(collection: collection, rkey: uri.rkey)
     }
 }
