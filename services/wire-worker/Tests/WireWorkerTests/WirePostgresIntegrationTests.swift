@@ -1898,7 +1898,7 @@ struct WirePostgresIntegrationTests {
       metadata: WireLinkMetadata(
         canonicalURL: canonicalURL,
         title: "Breaking climate update",
-        description: "Officials shared a detailed update about the response today.",
+        description: "Officials shared a detailed update about the response and how it will proceed today.",
         imageURL: nil,
         siteName: nil,
         authorName: nil,
