@@ -144,10 +144,10 @@ describe("CI workflow configuration", () => {
       );
 
       const filterName = configName === "wire-jetstream-ingest"
-        ? "wire_ingest"
-        : configName === "wire-inbox-drain"
-          ? "wire_worker"
-          : configName.replaceAll("-", "_");
+          ? "wire_ingest"
+          : configName === "wire-inbox-drain"
+            ? "wire_worker"
+            : configName.replaceAll("-", "_");
       const filter = pathFilters
         .split("\n\n")
         .find((block) =>
@@ -160,12 +160,13 @@ describe("CI workflow configuration", () => {
     }
   });
 
-  it("owns consolidated indexing services through a Development-only IaC partial", () => {
+  it("owns consolidated indexing services through an environment-gated IaC partial", () => {
     expect(railwayInfrastructure).toContain(
       'export const partial = "indexing-consolidation";',
     );
+    expect(railwayInfrastructure).toContain('context.isEnvironment("dev")');
     expect(railwayInfrastructure).toContain(
-      'if (!context.isEnvironment("dev"))',
+      'context.isEnvironment("production")',
     );
     expect(railwayInfrastructure).not.toContain(
       'return project("The Social Wire", { resources: [] });',
@@ -194,10 +195,25 @@ describe("CI workflow configuration", () => {
     expect(railwayInfrastructure).toContain(
       'JETSTREAM_WIRE_ADMISSION_BURST_EVENTS: "1"',
     );
-    expect(railwayInfrastructure.match(/replicas: \{ \[region\]: 2 \}/g)).toHaveLength(
-      3,
+    expect(railwayInfrastructure).toContain(
+      'JETSTREAM_WIRE_LANES: "external,publication"',
     );
-    expect(pathFilters.match(/'\.railway\/\*\*'/g)).toHaveLength(2);
+    expect(railwayInfrastructure).toContain('WIRE_INBOX_CONCURRENCY: "52"');
+    expect(railwayInfrastructure).toContain('workerRegion: "sfo"');
+    expect(railwayInfrastructure).toContain('branch: "main"');
+    const productionProfile = railwayInfrastructure.slice(
+      railwayInfrastructure.indexOf("const productionProfile"),
+      railwayInfrastructure.indexOf("const indexingBuild"),
+    );
+    expect(productionProfile).toContain(
+      '"wire-global-v8-prod-external-live-v1"',
+    );
+    expect(productionProfile).toContain(
+      '"wire-global-v8-prod-publication-live-tail-v1"',
+    );
+    expect(productionProfile).not.toContain("wire-global-v4-dev-live-20260830");
+    expect(productionProfile).not.toContain("24790001258");
+    expect(pathFilters.match(/'\.railway\/\*\*'/g)).toHaveLength(3);
   });
 
   it("uses the same service names in path detection", () => {
