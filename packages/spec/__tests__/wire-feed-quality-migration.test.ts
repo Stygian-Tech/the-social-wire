@@ -23,6 +23,13 @@ const operationalStatusVendorMigration = readFileSync(
   ),
   "utf8",
 );
+const standardSiteLanguageRecoveryMigration = readFileSync(
+  join(
+    import.meta.dir,
+    "../../../database/migrations/20260831033000_recover_wire_standard_site_languages.sql",
+  ),
+  "utf8",
+);
 
 describe("The Wire feed quality migration", () => {
   it("makes operational status pages non-admissible", () => {
@@ -52,5 +59,31 @@ describe("The Wire feed quality migration", () => {
     expect(languageValidationMigration).toContain("declared_score >= strongest_contradiction");
     expect(languageValidationMigration).toContain("content_validated_page");
     expect(languageValidationMigration).toContain("WHEN declared = 'ja'");
+  });
+
+  it("backfills only unknown eligible Standard Site items from validated page evidence", () => {
+    expect(standardSiteLanguageRecoveryMigration).toContain("item.eligible = TRUE");
+    expect(standardSiteLanguageRecoveryMigration).toContain("item.expires_at > NOW()");
+    expect(standardSiteLanguageRecoveryMigration).toContain(
+      "item.target_kind = 'standard_site_document'",
+    );
+    expect(standardSiteLanguageRecoveryMigration).toContain(
+      "item.provenance ? 'standard_site'",
+    );
+    expect(standardSiteLanguageRecoveryMigration).toContain(
+      "item.language_code = 'und'",
+    );
+    expect(standardSiteLanguageRecoveryMigration).toContain(
+      "cache.language_checked_at IS NOT NULL",
+    );
+    expect(standardSiteLanguageRecoveryMigration).toContain(
+      "cache.language_code IS NOT NULL",
+    );
+    expect(standardSiteLanguageRecoveryMigration).toContain(
+      "cache.status IN ('fresh', 'stale')",
+    );
+    expect(standardSiteLanguageRecoveryMigration).toContain(
+      "'content_validated_page'",
+    );
   });
 });
