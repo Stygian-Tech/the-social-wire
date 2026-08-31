@@ -47,7 +47,7 @@ struct WireMigrationContractTests {
       .deletingLastPathComponent()
       .deletingLastPathComponent()
       .deletingLastPathComponent()
-      .appendingPathComponent("Sources/WireWorker/PostgresWireInboxProcessor.swift")
+      .appendingPathComponent("Sources/WireWorkerCore/PostgresWireInboxProcessor.swift")
     let processor = try String(contentsOf: processorSource, encoding: .utf8)
     #expect(processor.contains("earlier.repo_did = candidate.repo_did"))
     #expect(processor.contains("WITH pending_retry_candidates AS"))

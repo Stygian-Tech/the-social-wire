@@ -1,6 +1,6 @@
 import NIOHTTP1
 import Testing
-@testable import WireWorker
+@testable import WireWorkerCore
 
 @Suite("The Wire worker health responses")
 struct WireHealthResponseBuilderTests {

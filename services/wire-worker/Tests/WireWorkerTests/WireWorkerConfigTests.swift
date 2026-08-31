@@ -1,6 +1,6 @@
 import Testing
 
-@testable import WireWorker
+@testable import WireWorkerCore
 
 @Suite("The Wire worker configuration")
 struct WireWorkerConfigTests {
@@ -76,6 +76,30 @@ struct WireWorkerConfigTests {
       ])
       #expect(config.role == role)
     }
+  }
+
+  @Test("explicit host role overrides the legacy environment role")
+  func explicitRoleOverride() throws {
+    let drainConfig = try WireWorkerConfig.load(
+      [
+        "DATABASE_URL": "postgres://localhost/wire",
+        "WIRE_WORKER_ROLE": "rank",
+        "WIRE_BASELINE_LABELERS": "ignored-by-drain-role",
+      ],
+      role: .drain
+    )
+    #expect(drainConfig.role == .drain)
+    #expect(drainConfig.baselineLabelers.isEmpty)
+
+    let rankConfig = try WireWorkerConfig.load(
+      [
+        "DATABASE_URL": "postgres://localhost/wire",
+        "WIRE_WORKER_ROLE": "drain",
+      ],
+      role: .rank
+    )
+    #expect(rankConfig.role == .rank)
+    #expect(rankConfig.baselineLabelers.count == 1)
   }
 
   @Test("loads disabled inbox cleanup")

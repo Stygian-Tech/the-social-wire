@@ -6,6 +6,10 @@ let package = Package(
   platforms: [
     .macOS(.v14)
   ],
+  products: [
+    .library(name: "AppViewWorkerCore", targets: ["AppViewWorkerCore"]),
+    .executable(name: "AppViewWorker", targets: ["AppViewWorker"]),
+  ],
   dependencies: [
     .package(path: "../../packages/swift/ThinAppViewCore"),
     .package(path: "../../packages/swift/OperationsCore"),
@@ -17,8 +21,8 @@ let package = Package(
     .package(url: "https://github.com/apple/swift-nio-ssl.git", from: "2.25.0"),
   ],
   targets: [
-    .executableTarget(
-      name: "AppViewWorker",
+    .target(
+      name: "AppViewWorkerCore",
       dependencies: [
         .product(name: "ThinAppViewCore", package: "ThinAppViewCore"),
         .product(name: "OperationsCore", package: "OperationsCore"),
@@ -31,6 +35,19 @@ let package = Package(
         .product(name: "PostgresNIO", package: "postgres-nio"),
         .product(name: "NIOSSL", package: "swift-nio-ssl"),
       ],
+      path: "Sources/AppViewWorkerCore",
+      swiftSettings: [
+        .swiftLanguageMode(.v6),
+        .unsafeFlags(["-warnings-as-errors"]),
+      ]
+    ),
+    .executableTarget(
+      name: "AppViewWorker",
+      dependencies: [
+        "AppViewWorkerCore",
+        .product(name: "ThinAppViewCore", package: "ThinAppViewCore"),
+        .product(name: "ArgumentParser", package: "swift-argument-parser"),
+      ],
       path: "Sources/AppViewWorker",
       swiftSettings: [
         .swiftLanguageMode(.v6),
@@ -40,7 +57,7 @@ let package = Package(
     .testTarget(
       name: "AppViewWorkerTests",
       dependencies: [
-        "AppViewWorker",
+        "AppViewWorkerCore",
         .product(name: "ThinAppViewCore", package: "ThinAppViewCore"),
         .product(name: "AsyncHTTPClient", package: "async-http-client"),
         .product(name: "Logging", package: "swift-log"),

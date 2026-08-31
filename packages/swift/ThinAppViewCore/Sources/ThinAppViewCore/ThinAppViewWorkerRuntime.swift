@@ -8,6 +8,8 @@ public enum ThinAppViewWorkerRuntime {
   public static func run(
     store: any ThinAppViewStore,
     config: ThinAppViewConfig,
+    role: ThinAppViewWorkerRole = .combined,
+    serviceName: String = "appview-worker",
     logger: Logger,
     httpClient: HTTPClient? = nil,
     plcURL: String? = nil,
@@ -17,6 +19,7 @@ public enum ThinAppViewWorkerRuntime {
     operationsConfig: OperationsConfiguration? = nil,
     tapConfiguration: TapConsumerConfiguration? = nil
   ) async throws {
+    let runtimePlan = ThinAppViewWorkerRuntimePlan(role: role)
     if config.jetstreamMode == .v2Authoritative,
       tapConfiguration?.mode == .authoritative
     {
@@ -131,11 +134,17 @@ public enum ThinAppViewWorkerRuntime {
 
     logger.info(
       "Starting Charybdis",
-      metadata: ["jetstream_mode": .string(config.jetstreamMode.rawValue)]
+      metadata: [
+        "jetstream_mode": .string(config.jetstreamMode.rawValue),
+        "worker_role": .string(role.rawValue),
+      ]
     )
 
     try await withThrowingTaskGroup(of: Void.self) { group in
-      if tapConfiguration?.mode != .authoritative, config.jetstreamMode.runsLegacySubscriber {
+      if runtimePlan.runsLegacySubscriber,
+        tapConfiguration?.mode != .authoritative,
+        config.jetstreamMode.runsLegacySubscriber
+      {
         group.addTask {
           await LegacyJetstreamAuthorityLease.runForever(
             store: operationsStore,
@@ -146,16 +155,23 @@ public enum ThinAppViewWorkerRuntime {
           }
         }
       }
-      if let inboxWorker {
+      if runtimePlan.runsInboxProjection, let inboxWorker {
         group.addTask { await inboxWorker.runForever() }
       }
-      group.addTask { await cleanup.runForever() }
-      if tapConfiguration?.mode != .disabled {
+      if runtimePlan.runsTtlCleanup {
+        group.addTask { await cleanup.runForever() }
+      }
+      if runtimePlan.runsProjectionRepair, tapConfiguration?.mode != .disabled {
         group.addTask { await projectionRepair.runForever() }
       }
-      if let telemetry { group.addTask { await telemetry.runForever() } }
+      if runtimePlan.runsTelemetry, let telemetry {
+        group.addTask { await telemetry.runForever() }
+      }
 
-      if let tapConfiguration, tapConfiguration.mode != .disabled {
+      if runtimePlan.runsTapConsumer,
+        let tapConfiguration,
+        tapConfiguration.mode != .disabled
+      {
         let tapConsumer = TapConsumer(
           store: store,
           indexer: indexer,
@@ -179,7 +195,10 @@ public enum ThinAppViewWorkerRuntime {
       }
 
       if let backfill = enrollmentBackfill {
-        if config.proactiveBackfillEnabled && config.jetstreamMode.runsLegacyProactiveBackfill {
+        if runtimePlan.runsProactiveBackfill,
+          config.proactiveBackfillEnabled,
+          config.jetstreamMode.runsLegacyProactiveBackfill
+        {
           let proactive = ThinAppViewProactiveBackfillJob(
             store: store,
             backfill: backfill,
@@ -188,13 +207,17 @@ public enum ThinAppViewWorkerRuntime {
             extraAuthorDids: proactiveExtraAuthorDids
           )
           group.addTask { await proactive.runForever() }
-        } else if config.proactiveBackfillEnabled {
+        } else if runtimePlan.runsProactiveBackfill, config.proactiveBackfillEnabled {
           logger.info(
             "Suppressing legacy proactive AppView backfill under durable Jetstream V2 authority"
           )
         }
 
-        if let operationsStore, let operationsConfig, operationsConfig.recoveryEnabled {
+        if runtimePlan.runsRecovery,
+          let operationsStore,
+          let operationsConfig,
+          operationsConfig.recoveryEnabled
+        {
           let recovery = ThinAppViewRecoveryJobRunner(
             store: operationsStore,
             indexer: indexer,
@@ -207,7 +230,11 @@ public enum ThinAppViewWorkerRuntime {
         }
       }
 
-      if let operationsStore, let operationsConfig, operationsConfig.enabled {
+      if runtimePlan.runsHeartbeat,
+        let operationsStore,
+        let operationsConfig,
+        operationsConfig.enabled
+      {
         let dependencyProbe = workerDependencyProbe(
           store: store,
           operationsStore: operationsStore,
@@ -219,7 +246,7 @@ public enum ThinAppViewWorkerRuntime {
         )
         let heartbeat = OperationsHeartbeatJob(
           store: operationsStore,
-          service: "appview-worker",
+          service: serviceName,
           environment: operationsConfig.environment,
           instanceId: operationsConfig.instanceId,
           dependencyProbe: dependencyProbe,
@@ -229,7 +256,7 @@ public enum ThinAppViewWorkerRuntime {
         group.addTask { await heartbeat.runForever() }
       }
 
-      if config.rssFeedPollEnabled, let httpClient {
+      if runtimePlan.runsRssPolling, config.rssFeedPollEnabled, let httpClient {
         let rssIngestion = ThinAppViewRssIngestion(
           store: store,
           httpClient: httpClient,

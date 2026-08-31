@@ -85,6 +85,9 @@ func (r *Runner) Run(ctx context.Context) error {
 			"lastSeq", lastStagedSeq,
 			"beforeSeq", *r.cfg.ReplayBeforeSeq,
 		)
+		if r.cfg.ExitAfterSnapshot {
+			return nil
+		}
 		<-ctx.Done()
 		return nil
 	}
@@ -133,6 +136,9 @@ func (r *Runner) Run(ctx context.Context) error {
 				"lastSeq", r.lastSeq.Load(),
 				"beforeSeq", *r.cfg.ReplayBeforeSeq,
 			)
+			if r.cfg.ExitAfterSnapshot {
+				return nil
+			}
 			<-ctx.Done()
 			return nil
 		}

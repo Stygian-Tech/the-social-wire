@@ -102,6 +102,7 @@ describe("CI path detection", () => {
     expect(result.get("jetstream_ingest")).toBe("true");
     expect(result.get("wire_ingest")).toBe("true");
     expect(result.get("wire_worker")).toBe("true");
+    expect(result.get("indexing_worker")).toBe("true");
     expect(result.get("wire_corpus_edge")).toBe("true");
     expect(result.get("database_migrator")).toBe("true");
     expect(result.get("spec")).toBe("true");
@@ -135,6 +136,20 @@ describe("CI path detection", () => {
     expect(result.get("jetstream_ingest")).toBe("true");
     expect(result.get("spec")).toBe("true");
     expect(result.get("charybdis")).toBe("false");
+  });
+
+  it("runs the replicated worker check for either composed runtime", () => {
+    const appView = detect(
+      repositoryWithChange("services/appview-worker/Sources/AppViewWorkerCore/Host.swift"),
+      "pull_request",
+    );
+    expect(appView.get("indexing_worker")).toBe("true");
+
+    const wire = detect(
+      repositoryWithChange("services/wire-worker/Sources/WireWorkerCore/Host.swift"),
+      "pull_request",
+    );
+    expect(wire.get("indexing_worker")).toBe("true");
   });
 
   it("runs the retired-generation policy spec when its runbook changes", () => {

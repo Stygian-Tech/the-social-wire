@@ -1,6 +1,6 @@
 import Testing
 
-@testable import WireWorker
+@testable import WireWorkerCore
 
 @Suite("External Wire signal record normalization")
 struct WireExternalSignalRecordTests {

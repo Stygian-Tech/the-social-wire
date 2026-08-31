@@ -10,6 +10,7 @@ public actor SQLiteOperationsStore: OperationsStore {
   private let decoder = JSONDecoder()
   private let backfillFingerprintSecret: String?
   var ingestionLeaderFenceCounts: [String: IngestionLeaderFenceState] = [:]
+  var roleLeaseFenceCounts: [String: RoleLeaseFenceState] = [:]
 
   public init(
     path: String,
@@ -3230,6 +3231,18 @@ private enum Schema {
       lease_expires_at TEXT NOT NULL, released_at TEXT, updated_at TEXT NOT NULL,
       CHECK (fencing_token > 0), PRIMARY KEY (environment, lease_name)
     );
+    CREATE TABLE IF NOT EXISTS operations_role_leases (
+      environment TEXT NOT NULL, role TEXT NOT NULL, owner_id TEXT NOT NULL,
+      fencing_token INTEGER NOT NULL, acquired_at TEXT NOT NULL,
+      lease_expires_at TEXT NOT NULL, released_at TEXT, updated_at TEXT NOT NULL,
+      CHECK (length(environment) BETWEEN 1 AND 32),
+      CHECK (length(role) BETWEEN 1 AND 128),
+      CHECK (length(owner_id) BETWEEN 1 AND 255),
+      CHECK (fencing_token > 0), CHECK (lease_expires_at > acquired_at),
+      PRIMARY KEY (environment, role)
+    );
+    CREATE INDEX IF NOT EXISTS operations_role_leases_expiry_idx
+      ON operations_role_leases (environment, lease_expires_at, role);
     CREATE TABLE IF NOT EXISTS appview_ingestion_reconciliation_requests (
       environment TEXT NOT NULL, id TEXT NOT NULL, source_generation TEXT NOT NULL,
       repo_did TEXT NOT NULL, reason TEXT NOT NULL, trigger_seq INTEGER NOT NULL,

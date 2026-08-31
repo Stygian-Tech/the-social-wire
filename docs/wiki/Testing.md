@@ -15,6 +15,7 @@ Automated and manual verification for every package in the monorepo.
 | Gateway | `cd services/gateway && swift test` | `gateway` |
 | AppView | `cd services/appview && swift test` | `appview` |
 | Charybdis | `cd services/appview-worker && swift test` | `charybdis` |
+| Replicated indexing roles | `cd services/indexing-worker && swift test` | `indexing-worker` |
 | ThinAppViewCore | `cd packages/swift/ThinAppViewCore && swift test` | `charybdis` |
 | OperationsCore | `cd packages/swift/OperationsCore && swift test` | `operations` |
 | Operations service | `cd services/operations && swift test` | `operations` |
@@ -39,7 +40,7 @@ Tests live **inside the owning package** (`apps/web/src/__tests__/`, `services/g
 
 ## Full CI gate
 
-The single `.github/workflows/ci.yml` workflow detects changed paths and runs the relevant Web, Operations Web, Apple, Redis, Gateway, AppView, Charybdis, Operations, Jetstream V2 Ingest, database migration, Lexicon, OpenAPI, and documentation jobs. **CI — Required** is the aggregate branch-protection check. OpenAPI drift coverage checks both documented-to-source mappings and every directly registered literal `/v1/*` source path. GitHub Actions validates source only; Railway's Git integration is responsible for deployments.
+The single `.github/workflows/ci.yml` workflow detects changed paths and runs the relevant Web, Operations Web, Apple, Redis, Gateway, AppView, compatibility worker, replicated indexing worker, Operations, Ingress Controller, database migration, Lexicon, OpenAPI, and documentation jobs. **CI — Required** is the aggregate branch-protection check. OpenAPI drift coverage checks both documented-to-source mappings and every directly registered literal `/v1/*` source path. GitHub Actions validates source only; Railway's Git integration is responsible for deployments.
 
 Documentation-only changes should still run the wiki integrity checker and
 `git diff --check`. The main-only publish workflow runs the same checker before

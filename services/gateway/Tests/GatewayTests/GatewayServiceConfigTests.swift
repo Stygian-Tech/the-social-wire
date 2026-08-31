@@ -34,6 +34,31 @@ struct GatewayServiceConfigTests {
     ])
   }
 
+  @Test("Projection Pool readiness origin supersedes the legacy Charybdis variable")
+  func projectionPoolReadinessOrigin() throws {
+    let config = try GatewayServiceConfig.fromEnvironment([
+      "APP_ENV": "dev",
+      "DATABASE_URL": "postgresql://localhost/gateway-test",
+      "PDS_ATTESTATION_RECEIPT_SECRET": "shared-hosted-attestation-receipt-secret",
+      "PROJECTION_POOL_BASE_URL": " http://projection-pool.railway.internal:8080/ ",
+      "CHARYBDIS_BASE_URL": "http://charybdis.railway.internal:8082",
+    ])
+
+    #expect(config.projectionPoolBaseURL == "http://projection-pool.railway.internal:8080/")
+  }
+
+  @Test("legacy Charybdis readiness origin remains a rollout fallback")
+  func legacyCharybdisReadinessOrigin() throws {
+    let config = try GatewayServiceConfig.fromEnvironment([
+      "APP_ENV": "dev",
+      "DATABASE_URL": "postgresql://localhost/gateway-test",
+      "PDS_ATTESTATION_RECEIPT_SECRET": "shared-hosted-attestation-receipt-secret",
+      "CHARYBDIS_BASE_URL": "http://charybdis.railway.internal:8082",
+    ])
+
+    #expect(config.projectionPoolBaseURL == "http://charybdis.railway.internal:8082")
+  }
+
   @Test("invalid Wire modes fail closed")
   func invalidWireModeIsRejected() {
     #expect(throws: GatewayServiceConfigError.invalidWireFeedMode("enabled")) {

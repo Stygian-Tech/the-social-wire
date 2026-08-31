@@ -106,6 +106,11 @@ Bounded Wire snapshots additionally require all of:
   bounds must fit PostgreSQL's signed 64-bit cursor range.
 - `JETSTREAM_REPLAY_SNAPSHOT_ONLY=true` — required with the upper bound and
   rejected when the upper bound is absent.
+- `JETSTREAM_EXIT_AFTER_SNAPSHOT=true` when running as a temporary Railway
+  service with restart policy `NEVER`; this makes the legacy single-lane process
+  exit successfully after the durable completion marker. Snapshot jobs are not
+  persistent resources in `/.railway/railway.ts`. The option is rejected in the
+  continuously supervised multi-lane controller.
 
 Leaving both bounded-replay variables unset preserves the existing unbounded
 publication-author-viewer and Wire behavior. Bounded replay is rejected for the
@@ -144,6 +149,16 @@ The deployment defaults to:
 - `JETSTREAM_SOURCE_GENERATION=jetstream-v2-us-west-v2`
 - `JETSTREAM_REPLAY_INCIDENT_BYTES=5368709120`
 - `JETSTREAM_REPLAY_DAILY_BYTES=26843545600`
+
+The replicated controller accepts one AppView lane, the compatibility Wire
+lane, and additional independently fenced Wire lanes in one process. Set
+`JETSTREAM_WIRE_LANES` to comma-separated lowercase identifiers such as
+`external,publication`; each identifier loads its own
+`JETSTREAM_WIRE_<IDENTIFIER>_*` namespace. Every configured lane must use a
+distinct source generation and leader lease. Shared database and archive API
+credentials remain process-level variables. This preserves different hosts,
+filters, cursors, replay budgets, and admission rates without creating another
+long-running service class.
 
 Inbox retention is owned by Charybdis through its
 `THIN_APPVIEW_INGESTION_INBOX_*` settings; this ingress service never expires

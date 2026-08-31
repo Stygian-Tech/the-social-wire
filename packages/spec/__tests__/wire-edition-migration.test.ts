@@ -28,7 +28,10 @@ const qualityIndexMigration = readFileSync(
   "utf8",
 );
 const generationStore = readFileSync(
-  join(import.meta.dir, "../../../services/wire-worker/Sources/WireWorker/PostgresWireGenerationStore.swift"),
+  join(
+    import.meta.dir,
+    "../../../services/wire-worker/Sources/WireWorkerCore/PostgresWireGenerationStore.swift",
+  ),
   "utf8",
 );
 const corpusStore = readFileSync(

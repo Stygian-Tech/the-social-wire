@@ -1,7 +1,7 @@
 import Foundation
 import Logging
 import Testing
-@testable import WireWorker
+@testable import WireWorkerCore
 
 @Suite("The Wire continuous inbox drain")
 struct WireInboxDrainRuntimeTests {
