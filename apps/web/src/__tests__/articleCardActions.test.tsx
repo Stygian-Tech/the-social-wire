@@ -90,6 +90,7 @@ describe("article card actions", () => {
       title: "Saved Article",
     };
     const onOpen = mock(() => undefined);
+    const onEditTags = mock(() => undefined);
     const onArchive = mock(() => undefined);
     const onUnarchive = mock(() => undefined);
     const onDelete = mock(() => undefined);
@@ -100,6 +101,7 @@ describe("article card actions", () => {
         isArchivedView={false}
         disabled={false}
         onOpen={onOpen}
+        onEditTags={onEditTags}
         onArchive={onArchive}
         onUnarchive={onUnarchive}
         onDelete={onDelete}
@@ -107,6 +109,7 @@ describe("article card actions", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Open Saved Article" }));
+    fireEvent.click(screen.getByRole("button", { name: "Edit Tags for Saved Article" }));
     fireEvent.click(
       screen.getByRole("button", { name: "Archive Saved Article" }),
     );
@@ -117,6 +120,7 @@ describe("article card actions", () => {
     );
 
     expect(onOpen).toHaveBeenCalledWith(row);
+    expect(onEditTags).toHaveBeenCalledWith(row);
     expect(onArchive).toHaveBeenCalledWith(row);
     expect(onDelete).toHaveBeenCalledWith(row);
 
@@ -126,6 +130,7 @@ describe("article card actions", () => {
         isArchivedView
         disabled={false}
         onOpen={onOpen}
+        onEditTags={onEditTags}
         onArchive={onArchive}
         onUnarchive={onUnarchive}
         onDelete={onDelete}

@@ -1,12 +1,13 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { RssArticleReaderDialog } from "@/components/EntryDetail/RssArticleReaderDialog";
 import { SavedLinkPublicationChip } from "@/components/SavedLinks/SavedLinkPublicationChip";
 import { SavedLinkCardActions } from "@/components/SavedLinks/SavedLinkCardActions";
 import { SavedLinkRowActions } from "@/components/SavedLinks/SavedLinkRowActions";
+import { SavedLinksTagToolbar } from "@/components/SavedLinks/SavedLinksTagToolbar";
 import { ListColumnError } from "@/components/shared/ListColumnError";
 import {
   ContextMenu,
@@ -14,11 +15,23 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { useSidebarProjection } from "@/contexts/PublicationSidebarContext";
 import {
   useArchiveLatrSaveMutation,
   useDeleteLatrSaveMutation,
   useLatrMergedHttpsSaves,
+  useSetLatrSaveTagsMutation,
   useUnarchiveLatrSaveMutation,
 } from "@/hooks/useLatrSaved";
 import { useFeedDisplayPreferences } from "@/hooks/useFeedDisplayPreferences";
@@ -33,6 +46,7 @@ import { sidebarPublicationRows } from "@/lib/publicationProjectionClient";
 import { savedFeedSourceKey } from "@/lib/savedFeedSources";
 import { savedLinkOpenTarget } from "@/lib/savedLinkOpenTarget";
 import { resolveEntryOpenUrlFromPds } from "@/lib/resolveEntryOpenUrl";
+import { countLatrTags, filterLatrSavesByExactTag, parseLatrTagInput } from "@/lib/latrTags";
 
 export type SavedLinksBrowserMode = "active" | "archived";
 
@@ -64,7 +78,10 @@ function rowMetadata(row: MergedLatrSave): string {
 
 export function SavedLinksBrowser({ mode }: { mode: SavedLinksBrowserMode }) {
   const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
   const sourceFilter = searchParams.get("source");
+  const tagFilter = searchParams.get("tag");
   const { publicationSidebarProjection } = useSidebarProjection();
   const listState: LatrSaveListState =
     mode === "archived" ? "archived" : "active";
@@ -77,18 +94,19 @@ export function SavedLinksBrowser({ mode }: { mode: SavedLinksBrowserMode }) {
         : [],
     [publicationSidebarProjection],
   );
-  const filteredData = useMemo(
-    () =>
-      sourceFilter
+  const filteredData = useMemo(() => {
+    const sourceRows = sourceFilter
         ? data.filter(
             (row) => savedFeedSourceKey(row, sidebarRows) === sourceFilter,
           )
-        : data,
-    [data, sidebarRows, sourceFilter],
-  );
+        : data;
+    return filterLatrSavesByExactTag(sourceRows, tagFilter);
+  }, [data, sidebarRows, sourceFilter, tagFilter]);
+  const viewTagCounts = useMemo(() => countLatrTags(data), [data]);
   const archiveMutation = useArchiveLatrSaveMutation();
   const unarchiveMutation = useUnarchiveLatrSaveMutation();
   const deleteMutation = useDeleteLatrSaveMutation();
+  const setTagsMutation = useSetLatrSaveTagsMutation();
   const { preferences } = useFeedDisplayPreferences();
   const { getOAuthSession } = useAuth();
   const [rssReader, setRssReader] = useState<{
@@ -96,7 +114,37 @@ export function SavedLinksBrowser({ mode }: { mode: SavedLinksBrowserMode }) {
     entryId: string;
     url: string;
   } | null>(null);
+  const [tagEditorRow, setTagEditorRow] = useState<MergedLatrSave | null>(null);
+  const [tagEditorValue, setTagEditorValue] = useState("");
   const isArchivedView = mode === "archived";
+
+  const selectTag = useCallback(
+    (tag: string | null) => {
+      const params = new URLSearchParams(searchParams.toString());
+      if (tag) params.set("tag", tag);
+      else params.delete("tag");
+      const query = params.toString();
+      router.replace(query ? `${pathname}?${query}` : pathname);
+    },
+    [pathname, router, searchParams],
+  );
+
+  const openTagEditor = useCallback((row: MergedLatrSave) => {
+    setTagsMutation.reset();
+    setTagEditorRow(row);
+    setTagEditorValue((row.tags ?? []).join(", "));
+  }, [setTagsMutation]);
+
+  const saveEditedTags = useCallback(() => {
+    if (!tagEditorRow) return;
+    setTagsMutation.mutate(
+      {
+        bookmarkUri: tagEditorRow.itemRkey,
+        tags: parseLatrTagInput(tagEditorValue),
+      },
+      { onSuccess: () => setTagEditorRow(null) },
+    );
+  }, [setTagsMutation, tagEditorRow, tagEditorValue]);
 
   const closeReaderForRow = useCallback((row: MergedLatrSave) => {
     setRssReader((current) =>
@@ -227,6 +275,24 @@ export function SavedLinksBrowser({ mode }: { mode: SavedLinksBrowserMode }) {
                   <span aria-hidden>•</span>
                   <span>{rowMetadata(row)}</span>
                 </div>
+                {row.tags?.length ? (
+                  <div className="flex min-w-0 flex-wrap gap-1">
+                    {row.tags.map((tag) => (
+                      <button
+                        key={tag}
+                        type="button"
+                        className="rounded-full border border-border/70 bg-muted/50 px-2 py-0.5 text-xs font-medium text-muted-foreground hover:text-foreground"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          selectTag(tag);
+                        }}
+                        onKeyDown={(event) => event.stopPropagation()}
+                      >
+                        {tag}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
                 <p
                   className={`line-clamp-2 text-base font-semibold leading-snug text-foreground underline-offset-4 group-hover:underline ${row.excerpt ? "" : "pr-24"}`}
                 >
@@ -247,6 +313,7 @@ export function SavedLinksBrowser({ mode }: { mode: SavedLinksBrowserMode }) {
                       deleteMutation.isPending
                     }
                     onOpen={openRow}
+                    onEditTags={openTagEditor}
                     onArchive={handleArchive}
                     onUnarchive={handleUnarchive}
                     onDelete={handleDelete}
@@ -269,6 +336,7 @@ export function SavedLinksBrowser({ mode }: { mode: SavedLinksBrowserMode }) {
                   <SavedLinkRowActions
                     row={row}
                     isArchivedView={isArchivedView}
+                    onEditTags={openTagEditor}
                     onArchive={handleArchive}
                     onUnarchive={handleUnarchive}
                     onDelete={handleDelete}
@@ -285,6 +353,12 @@ export function SavedLinksBrowser({ mode }: { mode: SavedLinksBrowserMode }) {
   return (
     <>
       <div className="mx-auto flex h-full min-h-0 w-full max-w-3xl flex-1 flex-col overflow-hidden border-x border-border/70 bg-background">
+        <SavedLinksTagToolbar
+          viewTagCounts={viewTagCounts}
+          selectedTag={tagFilter}
+          showSaveComposer={!isArchivedView}
+          onSelectTag={selectTag}
+        />
         {migrationWarning ? (
           <div
             role="status"
@@ -302,6 +376,40 @@ export function SavedLinksBrowser({ mode }: { mode: SavedLinksBrowserMode }) {
         title={rssReader ? rowTitle(rssReader.row) : ""}
         onClose={() => setRssReader(null)}
       />
+      <Dialog
+        open={tagEditorRow !== null}
+        onOpenChange={(open) => {
+          if (!open) setTagEditorRow(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit Tags</DialogTitle>
+            <DialogDescription>
+              Replace the tags for this saved article. Leave the field empty to clear them.
+            </DialogDescription>
+          </DialogHeader>
+          <label className="grid gap-1.5 text-sm font-medium">
+            Tags
+            <Input
+              value={tagEditorValue}
+              onChange={(event) => setTagEditorValue(event.target.value)}
+              placeholder="Research, Weekend"
+            />
+          </label>
+          {setTagsMutation.error ? (
+            <p role="alert" className="text-sm text-destructive">
+              {setTagsMutation.error.message}
+            </p>
+          ) : null}
+          <DialogFooter>
+            <DialogClose render={<Button type="button" variant="outline" />}>Cancel</DialogClose>
+            <Button type="button" disabled={setTagsMutation.isPending} onClick={saveEditedTags}>
+              {setTagsMutation.isPending ? "Saving…" : "Save Tags"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

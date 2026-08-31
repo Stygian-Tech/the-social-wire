@@ -4,6 +4,7 @@ struct SavedLinksListContent: View {
     @Environment(SocialWireAppModel.self) private var appModel
     var onSavedLinkTap: ((MergedLatrSave) -> Void)? = nil
     @State private var savePendingDelete: MergedLatrSave?
+    @State private var tagEditorSave: MergedLatrSave?
     @State private var deleteFeedback = 0
 
     private var isArchivedView: Bool {
@@ -78,6 +79,14 @@ struct SavedLinksListContent: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .readerClearListRow()
                     .contextMenu {
+                        Button("Edit Tags") {
+                            tagEditorSave = save
+                        }
+                        if !save.tags.isEmpty {
+                            Button("Clear Tags") {
+                                Task { await appModel.clearTags(on: save) }
+                            }
+                        }
                         if isArchivedView {
                             Button("Unarchive") {
                                 Task { await appModel.unarchive(save) }
@@ -139,5 +148,14 @@ struct SavedLinksListContent: View {
             Text("This removes \"\(save.title)\" from \(isArchivedView ? "Archive" : "Read Later").")
         }
         .sensoryFeedback(.success, trigger: deleteFeedback)
+        .sheet(item: $tagEditorSave) { save in
+            SavedTagEditorSheet(
+                title: "Edit Tags",
+                initialTags: save.tags,
+                suggestions: appModel.currentSavedTagCounts.map(\.tag)
+            ) { tags in
+                await appModel.replaceTags(on: save, with: tags)
+            }
+        }
     }
 }

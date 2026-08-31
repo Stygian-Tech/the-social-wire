@@ -1,0 +1,30 @@
+meta {
+  name: Delete Bookmark Tag
+  type: http
+  seq: 37
+}
+
+post {
+  url: {{baseUrl}}/xrpc/link.latr.bookmarks.deleteTag
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: DPoP {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+  X-Latr-Gateway-DPoP: {{latrGatewayDpopProof}}
+  X-ATProto-Upstream-DPoP: {{upstreamDpopProof}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "tag": "Read Later",
+    "limit": 25
+  }
+}
+
+docs {
+  Re-submit with each returned cursor until the global rewrite is complete.
+}

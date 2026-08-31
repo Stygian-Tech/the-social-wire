@@ -132,6 +132,13 @@ enum MergedLatrSave: Identifiable, Codable, Equatable, Hashable, Sendable {
         }
     }
 
+    var tags: [String] {
+        switch self {
+        case .external(let save): save.tags ?? []
+        case .native(let save): save.tags ?? []
+        }
+    }
+
     func withState(_ state: String) -> MergedLatrSave {
         switch self {
         case .external(var save):
@@ -139,6 +146,17 @@ enum MergedLatrSave: Identifiable, Codable, Equatable, Hashable, Sendable {
             return .external(save)
         case .native(var save):
             save.state = state
+            return .native(save)
+        }
+    }
+
+    func withTags(_ tags: [String]) -> MergedLatrSave {
+        switch self {
+        case .external(var save):
+            save.tags = tags
+            return .external(save)
+        case .native(var save):
+            save.tags = tags
             return .native(save)
         }
     }
