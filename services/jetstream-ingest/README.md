@@ -150,6 +150,16 @@ The deployment defaults to:
 - `JETSTREAM_REPLAY_INCIDENT_BYTES=5368709120`
 - `JETSTREAM_REPLAY_DAILY_BYTES=26843545600`
 
+The replicated controller accepts one AppView lane, the compatibility Wire
+lane, and additional independently fenced Wire lanes in one process. Set
+`JETSTREAM_WIRE_LANES` to comma-separated lowercase identifiers such as
+`external,publication`; each identifier loads its own
+`JETSTREAM_WIRE_<IDENTIFIER>_*` namespace. Every configured lane must use a
+distinct source generation and leader lease. Shared database and archive API
+credentials remain process-level variables. This preserves different hosts,
+filters, cursors, replay budgets, and admission rates without creating another
+long-running service class.
+
 Inbox retention is owned by Charybdis through its
 `THIN_APPVIEW_INGESTION_INBOX_*` settings; this ingress service never expires
 work that has not yet been projected or intentionally scope-filtered.

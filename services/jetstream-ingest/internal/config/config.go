@@ -118,13 +118,14 @@ func Load() (Config, error) {
 }
 
 // LoadController loads either the existing single-lane configuration or the
-// namespaced multi-lane configuration. The namespaced mode is selected when at
-// least one JETSTREAM_APPVIEW_ENABLED or JETSTREAM_WIRE_ENABLED variable is
-// present; at least one of those flags must then be true.
+// namespaced multi-lane configuration. The namespaced mode is selected by an
+// AppView/Wire enable flag or JETSTREAM_WIRE_LANES; at least one resulting lane
+// must be enabled.
 func LoadController() (ControllerConfig, error) {
 	_, appViewFlagPresent := os.LookupEnv("JETSTREAM_APPVIEW_ENABLED")
 	_, wireFlagPresent := os.LookupEnv("JETSTREAM_WIRE_ENABLED")
-	if !appViewFlagPresent && !wireFlagPresent {
+	_, wireLanesPresent := os.LookupEnv("JETSTREAM_WIRE_LANES")
+	if !appViewFlagPresent && !wireFlagPresent && !wireLanesPresent {
 		cfg, err := Load()
 		if err != nil {
 			return ControllerConfig{}, err
@@ -148,9 +149,13 @@ func LoadController() (ControllerConfig, error) {
 	if err != nil {
 		return ControllerConfig{}, err
 	}
-	if !appViewEnabled && !wireEnabled {
+	wireLaneSuffixes, err := wireLaneSuffixes()
+	if err != nil {
+		return ControllerConfig{}, err
+	}
+	if !appViewEnabled && !wireEnabled && len(wireLaneSuffixes) == 0 {
 		return ControllerConfig{}, errors.New(
-			"at least one of JETSTREAM_APPVIEW_ENABLED or JETSTREAM_WIRE_ENABLED must be true",
+			"at least one controller lane must be enabled",
 		)
 	}
 
@@ -169,6 +174,18 @@ func LoadController() (ControllerConfig, error) {
 		}
 		controller.Lanes = append(controller.Lanes, Lane{Name: WireLaneName, Config: cfg})
 	}
+	for _, suffix := range wireLaneSuffixes {
+		laneName := LaneName("wire-" + strings.ToLower(suffix))
+		prefix := "JETSTREAM_WIRE_" + strings.ToUpper(suffix) + "_"
+		cfg, loadErr := loadLane(WirePipelineMode, prefix, false)
+		if loadErr != nil {
+			return ControllerConfig{}, fmt.Errorf("%s lane: %w", laneName, loadErr)
+		}
+		controller.Lanes = append(controller.Lanes, Lane{Name: laneName, Config: cfg})
+	}
+	if err := validateControllerLanes(controller.Lanes); err != nil {
+		return ControllerConfig{}, err
+	}
 	for _, lane := range controller.Lanes {
 		if lane.Config.ExitAfterSnapshot {
 			return ControllerConfig{}, errors.New(
@@ -177,6 +194,57 @@ func LoadController() (ControllerConfig, error) {
 		}
 	}
 	return controller, nil
+}
+
+func wireLaneSuffixes() ([]string, error) {
+	raw := strings.TrimSpace(os.Getenv("JETSTREAM_WIRE_LANES"))
+	if raw == "" {
+		return nil, nil
+	}
+	var result []string
+	seen := make(map[string]struct{})
+	for _, value := range strings.Split(raw, ",") {
+		suffix := strings.TrimSpace(value)
+		if suffix == "" {
+			return nil, errors.New("JETSTREAM_WIRE_LANES cannot contain empty lane names")
+		}
+		for _, character := range suffix {
+			if (character < 'a' || character > 'z') && (character < '0' || character > '9') {
+				return nil, fmt.Errorf(
+					"JETSTREAM_WIRE_LANES lane %q must use lowercase letters and digits",
+					suffix,
+				)
+			}
+		}
+		if _, exists := seen[suffix]; exists {
+			return nil, fmt.Errorf("JETSTREAM_WIRE_LANES contains duplicate lane %q", suffix)
+		}
+		seen[suffix] = struct{}{}
+		result = append(result, suffix)
+	}
+	return result, nil
+}
+
+func validateControllerLanes(lanes []Lane) error {
+	sourceGenerations := make(map[string]LaneName)
+	leaseNames := make(map[string]LaneName)
+	for _, lane := range lanes {
+		if existing, found := sourceGenerations[lane.Config.SourceGeneration]; found {
+			return fmt.Errorf(
+				"controller lanes %s and %s share source generation %q",
+				existing, lane.Name, lane.Config.SourceGeneration,
+			)
+		}
+		sourceGenerations[lane.Config.SourceGeneration] = lane.Name
+		if existing, found := leaseNames[lane.Config.LeaderLeaseName]; found {
+			return fmt.Errorf(
+				"controller lanes %s and %s share leader lease %q",
+				existing, lane.Name, lane.Config.LeaderLeaseName,
+			)
+		}
+		leaseNames[lane.Config.LeaderLeaseName] = lane.Name
+	}
+	return nil
 }
 
 func loadLane(pipelineMode, prefix string, legacy bool) (Config, error) {
