@@ -204,20 +204,34 @@ private struct CircleSharerStrip: View {
         if !sharers.isEmpty {
             HStack(spacing: 8) {
                 HStack(spacing: -8) {
-                    ForEach(sharers.prefix(2), id: \.identity.did) { sharer in
-                        Group {
-                            if let raw = sharer.identity.avatarUrl, let url = URL(string: raw) {
-                                CachedRemoteImage(urls: [url], maxPixelSize: 80) {
+                    ForEach(Array(visibleSharers.enumerated()), id: \.element.sourceUri) { index, sharer in
+                        ZStack(alignment: .bottomTrailing) {
+                            Group {
+                                if let raw = sharer.identity.avatarUrl, let url = URL(string: raw) {
+                                    CachedRemoteImage(urls: [url], maxPixelSize: 80) {
+                                        Circle().fill(.quaternary)
+                                    }
+                                    .scaledToFill()
+                                } else {
                                     Circle().fill(.quaternary)
                                 }
-                                .scaledToFill()
-                            } else {
-                                Circle().fill(.quaternary)
+                            }
+                            .frame(width: 30, height: 30)
+                            .clipShape(.circle)
+                            .overlay { Circle().stroke(.background, lineWidth: 2) }
+
+                            if sharer.relationship == "one_hop" {
+                                Text("+1")
+                                    .font(.caption2.weight(.bold))
+                                    .foregroundStyle(.primary)
+                                    .padding(.horizontal, 2)
+                                    .background(.background, in: Capsule())
+                                    .overlay { Capsule().stroke(.quaternary, lineWidth: 1) }
+                                    .offset(x: 2, y: 2)
+                                    .accessibilityHidden(true)
                             }
                         }
-                        .frame(width: 30, height: 30)
-                        .clipShape(.circle)
-                        .overlay { Circle().stroke(.background, lineWidth: 2) }
+                        .zIndex(Double(visibleSharers.count - index))
                     }
                 }
                 if overflowCount > 0 {
@@ -225,23 +239,28 @@ private struct CircleSharerStrip: View {
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(.secondary)
                 }
-                Text(sharerSummary)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
             }
-            .accessibilityElement(children: .combine)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(accessibilitySummary)
         }
     }
 
-    private var sharerSummary: String {
-        let names = sharers.prefix(2).map {
-            $0.identity.displayName?.isEmpty == false ? $0.identity.displayName! : $0.identity.handle
+    private var visibleSharers: [CircleSharer] {
+        Array(sharers.prefix(5))
+    }
+
+    private var accessibilitySummary: String {
+        let accounts = visibleSharers.map { sharer in
+            let name = sharer.identity.displayName?.isEmpty == false
+                ? sharer.identity.displayName!
+                : sharer.identity.handle
+            return sharer.relationship == "one_hop" ? "\(name), one hop away" : name
         }
-        return "Shared by \(names.joined(separator: ", "))"
+        let remainder = overflowCount > 0 ? ", and \(overflowCount) more accounts" : ""
+        return "Shared by \(accounts.joined(separator: ", "))\(remainder)"
     }
 
     private var overflowCount: Int {
-        max(0, totalCount - min(sharers.count, 2))
+        max(0, totalCount - visibleSharers.count)
     }
 }

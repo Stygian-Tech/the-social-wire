@@ -185,7 +185,7 @@
         "sharerCount": { "type": "integer", "minimum": 0 },
         "sharers": {
           "type": "array",
-          "maxLength": 2,
+          "maxLength": 5,
           "items": { "type": "ref", "ref": "app.thesocialwire.discovery.defs#circleSharer" }
         }
       }
