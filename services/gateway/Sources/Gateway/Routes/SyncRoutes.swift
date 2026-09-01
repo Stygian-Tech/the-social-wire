@@ -17,12 +17,17 @@ struct SyncRoutes {
           throw HTTPError(.unauthorized, message: "Missing auth context")
         }
 
-        _ = try await LexiconMigration.migrateLegacyLexiconsIfNeeded(repo: repo, auth: auth)
+        let freshParameter = request.uri.queryParameters.get("fresh")
+        let forceRefresh = freshParameter == "true" || freshParameter == "1"
+        if !forceRefresh {
+          _ = try await LexiconMigration.migrateLegacyLexiconsIfNeeded(repo: repo, auth: auth)
+        }
 
         let ifNoneMatchHeader = SyncRoutes.ifNoneMatch(from: request)
         return try await preferenceService.preferencesResponse(
           auth: auth,
-          ifNoneMatch: ifNoneMatchHeader
+          ifNoneMatch: ifNoneMatchHeader,
+          forceRefresh: forceRefresh
         )
       }
     }

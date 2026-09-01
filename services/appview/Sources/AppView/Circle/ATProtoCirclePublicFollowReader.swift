@@ -14,23 +14,31 @@ struct ATProtoCirclePublicFollowReader: CirclePublicFollowReading {
   func follows(of actorDIDs: Set<String>) async throws -> [CircleFollowList] {
     let actors = actorDIDs.sorted()
     guard !actors.isEmpty else { return [] }
-    return try await withThrowingTaskGroup(of: CircleFollowList.self) { group in
+    return await withTaskGroup(of: CircleFollowList.self) { group in
       var next = 0
       var result: [CircleFollowList] = []
       while next < min(Self.concurrency, actors.count) {
         let actor = actors[next]
-        group.addTask { try await list(actorDID: actor) }
+        group.addTask { await bestEffortList(actorDID: actor) }
         next += 1
       }
-      while let currentList = try await group.next() {
+      while let currentList = await group.next() {
         result.append(currentList)
         if next < actors.count {
           let actor = actors[next]
-          group.addTask { try await list(actorDID: actor) }
+          group.addTask { await bestEffortList(actorDID: actor) }
           next += 1
         }
       }
       return result
+    }
+  }
+
+  private func bestEffortList(actorDID: String) async -> CircleFollowList {
+    do {
+      return try await list(actorDID: actorDID)
+    } catch {
+      return CircleFollowList(actorDID: actorDID, followeeDIDs: [], isComplete: false)
     }
   }
 

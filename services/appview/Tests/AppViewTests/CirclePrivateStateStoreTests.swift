@@ -5,6 +5,19 @@ import Testing
 
 @Suite("Your Circle private state")
 struct CirclePrivateStateStoreTests {
+  @Test("decodes snapshots written before one-hop coverage metadata")
+  func decodesLegacySnapshot() throws {
+    let data = Data(
+      #"{"snapshotID":"00000000-0000-0000-0000-000000000040","viewerDID":"did:plc:viewer","directMembers":[],"oneHopMembers":[],"directCandidateCount":0,"oneHopCandidateCount":0,"generatedAt":"2033-05-18T03:33:20Z"}"#.utf8
+    )
+    let decoder = JSONDecoder()
+    decoder.dateDecodingStrategy = .iso8601
+
+    let snapshot = try decoder.decode(CircleGraphSnapshot.self, from: data)
+
+    #expect(snapshot.oneHopExpansionComplete == nil)
+  }
+
   private let now = Date(timeIntervalSince1970: 2_000_000_000)
 
   @Test("isolates hides and cached editions by viewer")
@@ -46,6 +59,7 @@ struct CirclePrivateStateStoreTests {
       oneHopMembers: [],
       directCandidateCount: 0,
       oneHopCandidateCount: 0,
+      oneHopExpansionComplete: true,
       generatedAt: now
     )
     try await store.store(snapshot, excludedDIDs: [])
@@ -85,6 +99,7 @@ struct CirclePrivateStateStoreTests {
       oneHopMembers: [],
       directCandidateCount: 0,
       oneHopCandidateCount: 0,
+      oneHopExpansionComplete: true,
       generatedAt: now
     )
     try await store.store(snapshot, excludedDIDs: ["did:plc:blocked"])

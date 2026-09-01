@@ -132,7 +132,7 @@ export function CircleNewsExperience({
             role="status"
             className="shrink-0 border-b border-amber-500/25 bg-amber-500/10 px-4 py-2 text-xs text-foreground"
           >
-            Showing a saved Circle edition while your network refreshes.
+            Your Circle is showing limited network coverage while it refreshes.
           </div>
         ) : null}
         <CircleActionsError />
