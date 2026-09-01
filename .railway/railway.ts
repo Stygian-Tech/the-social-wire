@@ -46,6 +46,8 @@ const productionWireSourceGenerations = [
   "wire-global-v5-prod-live-tail-v1",
   "wire-global-v6-prod-publication-live-v1",
   "wire-global-v7-prod-publication-live-tail-v1",
+  "wire-global-v8-prod-external-live-v1",
+  "wire-global-v8-prod-publication-live-tail-v1",
 ].join(",");
 
 const productionProfile = {
