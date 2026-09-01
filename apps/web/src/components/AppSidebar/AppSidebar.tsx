@@ -69,6 +69,7 @@ import {
 } from "@/lib/readerFeedSelectionStorage";
 import { SIDEBAR_PUBLICATION_TAB_STORAGE_KEY } from "@/lib/sidebarPublicationTabStorage";
 import { readLaterCapabilities } from "@/lib/semble";
+import { readLaterSidebarButtonClassName } from "./readLaterSidebarButtonStyles";
 
 interface AppSidebarProps {
   selectedPubId: string | null;
@@ -516,7 +517,10 @@ export function AppSidebar({
                   }
                   isActive={currentFeed === "readLater"}
                   onClick={() => selectTopLevelFeed("readLater")}
-                  className={displayedReadLaterUnread > 0 ? "relative pr-8" : undefined}
+                  className={readLaterSidebarButtonClassName({
+                    usingSemble,
+                    count: displayedReadLaterUnread,
+                  })}
                 >
                   <Bookmark />
                   <span>

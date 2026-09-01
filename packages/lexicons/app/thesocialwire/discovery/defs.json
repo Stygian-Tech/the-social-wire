@@ -162,7 +162,7 @@
     },
     "circleStory": {
       "type": "object",
-      "required": ["storyId", "canonicalUrl", "title", "source", "reasons", "discussionCount", "sharers"],
+      "required": ["storyId", "canonicalUrl", "title", "source", "reasons", "discussionCount", "sharerCount", "sharers"],
       "properties": {
         "storyId": { "type": "string", "maxLength": 128 },
         "canonicalUrl": { "type": "string", "format": "uri", "maxLength": 8192 },
@@ -182,9 +182,10 @@
           }
         },
         "discussionCount": { "type": "integer", "minimum": 0 },
+        "sharerCount": { "type": "integer", "minimum": 0 },
         "sharers": {
           "type": "array",
-          "maxLength": 8,
+          "maxLength": 2,
           "items": { "type": "ref", "ref": "app.thesocialwire.discovery.defs#circleSharer" }
         }
       }

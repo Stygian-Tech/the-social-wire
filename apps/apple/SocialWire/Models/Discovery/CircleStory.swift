@@ -9,6 +9,7 @@ struct CircleStory: Codable, Equatable, Sendable {
     let source: WireFeedSource
     let reasons: [String]
     let discussionCount: Int
+    let sharerCount: Int?
     let sharers: [CircleSharer]
 
 }

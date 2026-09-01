@@ -171,7 +171,7 @@ struct CircleGraphSnapshotServiceTests {
     #expect(result.snapshot.directWasCapped)
     #expect(result.snapshot.oneHopExpansionComplete == false)
     #expect(result.isDegraded)
-    #expect(await publicFollowReader.requestedActorSets.first?.count == 64)
+    #expect(await publicFollowReader.requestedActorSets.first?.count == 16)
   }
 
   @Test("enforces the 20,000 unique one-hop production ceiling")
@@ -304,7 +304,7 @@ struct CircleGraphSnapshotServiceTests {
       now: now
     )
     #expect(partialResult.snapshot.directMembers.map(\.actorDID) == ["did:plc:direct"])
-    #expect(partialResult.snapshot.oneHopMembers.isEmpty)
+    #expect(partialResult.snapshot.oneHopMembers.map(\.actorDID) == ["did:plc:candidate"])
     #expect(partialResult.snapshot.oneHopExpansionComplete == false)
     #expect(partialResult.isDegraded)
   }

@@ -86,6 +86,7 @@ describe("Your Circle web client", () => {
         source: { name: "News", domain: "news.example" },
         reasons: ["shared_by_following"],
         discussionCount: 3,
+        sharerCount: 4,
         sharers: [
           {
             identity: { did: "did:plc:alice", handle: "alice.example" },
@@ -101,6 +102,7 @@ describe("Your Circle web client", () => {
 
     expect(entry.originalUrl).toBe("https://news.example/story");
     expect(entry.circleItem?.storyId).toBe("story-1");
+    expect(entry.circleItem?.sharerCount).toBe(4);
     expect(entry.circleItem?.sharers[0]?.identity.handle).toBe("alice.example");
   });
 });

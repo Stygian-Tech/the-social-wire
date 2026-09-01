@@ -5,6 +5,7 @@ import ThinAppViewCore
 
 struct ATProtoCirclePublicFollowReader: CirclePublicFollowReading {
   private static let concurrency = 16
+  static let maximumPagesPerActor = 1
   private let httpClient: HTTPClient
 
   init(httpClient: HTTPClient) {
@@ -45,6 +46,7 @@ struct ATProtoCirclePublicFollowReader: CirclePublicFollowReading {
   private func list(actorDID: String) async throws -> CircleFollowList {
     var followees: [String] = []
     var cursor: String?
+    var pageCount = 0
     repeat {
       var components = URLComponents(
         string: "\(ATProtoPdsResolution.bskyAppViewPublic)/xrpc/app.bsky.graph.getFollows"
@@ -60,7 +62,7 @@ struct ATProtoCirclePublicFollowReader: CirclePublicFollowReading {
       }
       var request = HTTPClientRequest(url: url)
       request.headers.add(name: "Accept", value: "application/json")
-      let response = try await httpClient.execute(request, timeout: .seconds(15))
+      let response = try await httpClient.execute(request, timeout: .seconds(5))
       guard response.status.code == 200 else {
         throw CircleGraphSnapshotError.incompleteFollowRead(actorDID: actorDID)
       }
@@ -81,7 +83,12 @@ struct ATProtoCirclePublicFollowReader: CirclePublicFollowReading {
         returned: nextCursor,
         actorDID: actorDID
       )
-    } while cursor != nil
-    return CircleFollowList(actorDID: actorDID, followeeDIDs: followees, isComplete: true)
+      pageCount += 1
+    } while cursor != nil && pageCount < Self.maximumPagesPerActor
+    return CircleFollowList(
+      actorDID: actorDID,
+      followeeDIDs: followees,
+      isComplete: cursor == nil
+    )
   }
 }

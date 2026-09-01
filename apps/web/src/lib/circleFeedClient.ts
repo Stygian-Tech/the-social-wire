@@ -53,6 +53,7 @@ export type CircleStory = {
   source: WireSource;
   reasons: string[];
   discussionCount: number;
+  sharerCount: number;
   sharers: CircleSharer[];
 };
 
@@ -249,6 +250,7 @@ export function circleStoryToEntryListItem(
       },
       reasons: story.reasons,
       discussionCount: story.discussionCount,
+      sharerCount: story.sharerCount,
       sharers: story.sharers,
       publishedAt: story.publishedAt,
     },

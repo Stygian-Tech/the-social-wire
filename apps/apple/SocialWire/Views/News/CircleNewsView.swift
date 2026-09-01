@@ -147,7 +147,10 @@ private struct CircleStoryCard: View {
                 .accessibilityHidden(true)
             }
 
-            CircleSharerStrip(sharers: story.sharers)
+            CircleSharerStrip(
+                sharers: story.sharers,
+                totalCount: story.sharerCount ?? story.sharers.count
+            )
 
             Text(story.source.displayName)
                 .font(.caption.weight(.semibold))
@@ -195,12 +198,13 @@ private struct CircleStoryCard: View {
 
 private struct CircleSharerStrip: View {
     let sharers: [CircleSharer]
+    let totalCount: Int
 
     var body: some View {
         if !sharers.isEmpty {
             HStack(spacing: 8) {
                 HStack(spacing: -8) {
-                    ForEach(sharers.prefix(4), id: \.identity.did) { sharer in
+                    ForEach(sharers.prefix(2), id: \.identity.did) { sharer in
                         Group {
                             if let raw = sharer.identity.avatarUrl, let url = URL(string: raw) {
                                 CachedRemoteImage(urls: [url], maxPixelSize: 80) {
@@ -216,6 +220,11 @@ private struct CircleSharerStrip: View {
                         .overlay { Circle().stroke(.background, lineWidth: 2) }
                     }
                 }
+                if overflowCount > 0 {
+                    Text("+\(overflowCount)")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
                 Text(sharerSummary)
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -229,7 +238,10 @@ private struct CircleSharerStrip: View {
         let names = sharers.prefix(2).map {
             $0.identity.displayName?.isEmpty == false ? $0.identity.displayName! : $0.identity.handle
         }
-        let context = sharers.contains { $0.relationship == "direct" } ? "in your network" : "one hop away"
-        return "Shared by \(names.joined(separator: ", ")) · \(context)"
+        return "Shared by \(names.joined(separator: ", "))"
+    }
+
+    private var overflowCount: Int {
+        max(0, totalCount - min(sharers.count, 2))
     }
 }

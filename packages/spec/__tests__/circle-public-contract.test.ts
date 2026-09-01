@@ -79,7 +79,9 @@ describe("Your Circle public XRPC contract", () => {
     ]);
     expect(sharer.required).toContain("sourceUri");
     expect(sharer.required).toContain("timestamp");
-    expect(story.properties.sharers.maxLength).toBe(8);
+    expect(story.required).toContain("sharerCount");
+    expect(story.properties.sharerCount.minimum).toBe(0);
+    expect(story.properties.sharers.maxLength).toBe(2);
     expect(story.properties.discussionCount.minimum).toBe(0);
 
     expect(openAPISharer.properties.relationship.enum).toEqual([
@@ -91,7 +93,9 @@ describe("Your Circle public XRPC contract", () => {
       "shared",
       "discussed",
     ]);
-    expect(openAPIStory.properties.sharers.maxItems).toBe(8);
+    expect(openAPIStory.required).toContain("sharerCount");
+    expect(openAPIStory.properties.sharerCount.minimum).toBe(0);
+    expect(openAPIStory.properties.sharers.maxItems).toBe(2);
     expect(openAPIStory.properties.discussionCount.minimum).toBe(0);
   });
 

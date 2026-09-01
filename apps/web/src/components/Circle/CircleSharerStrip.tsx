@@ -3,7 +3,7 @@ import type { CircleSharer } from "@/lib/circleFeedClient";
 import { outboundLinkProps } from "@/lib/outboundLinks";
 import { cn } from "@/lib/utils";
 
-const MAX_VISIBLE_SHARERS = 3;
+const MAX_VISIBLE_SHARERS = 2;
 
 export function publicCircleShareURL(sharer: CircleSharer): string {
   const match = sharer.sourceUri.match(
@@ -19,19 +19,17 @@ export function publicCircleShareURL(sharer: CircleSharer): string {
   return `https://bsky.app/profile/${encodeURIComponent(profile)}`;
 }
 
-function relationshipLabel(sharer: CircleSharer): string {
-  return sharer.relationship === "direct" ? "Following" : "One Hop";
-}
-
 export function CircleSharerStrip({
   sharers,
+  totalCount = sharers.length,
   compact = false,
 }: {
   sharers: CircleSharer[];
+  totalCount?: number;
   compact?: boolean;
 }) {
   const visible = sharers.slice(0, MAX_VISIBLE_SHARERS);
-  const overflow = Math.max(0, sharers.length - visible.length);
+  const overflow = Math.max(0, totalCount - visible.length);
   if (visible.length === 0) return null;
 
   return (
@@ -63,9 +61,14 @@ export function CircleSharerStrip({
               className="shrink-0"
             />
             <span className="truncate">{name}</span>
-            <span className="shrink-0 text-[9px] uppercase tracking-wide text-muted-foreground/80">
-              {relationshipLabel(sharer)}
-            </span>
+            {sharer.relationship === "one_hop" ? (
+              <span
+                aria-label="One Hop"
+                className="shrink-0 text-[9px] font-semibold text-muted-foreground/80"
+              >
+                +1
+              </span>
+            ) : null}
           </a>
         );
       })}

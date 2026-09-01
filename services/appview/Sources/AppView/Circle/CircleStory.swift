@@ -12,10 +12,11 @@ struct CircleStory: Codable, Equatable, Sendable {
   let source: WireItemSource
   let reasons: [String]
   let discussionCount: Int
+  let sharerCount: Int
   let sharers: [CircleSharer]
 
   enum CodingKeys: String, CodingKey {
-    case title, summary, publishedAt, source, reasons, discussionCount, sharers
+    case title, summary, publishedAt, source, reasons, discussionCount, sharerCount, sharers
     case storyID = "storyId"
     case canonicalURL = "canonicalUrl"
     case representativeURI = "representativeUri"
