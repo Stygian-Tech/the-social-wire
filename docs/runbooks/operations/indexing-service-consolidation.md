@@ -75,9 +75,10 @@ Create snapshots as temporary operator services outside the long-running IaC par
 7. Apply the pinned plan. Coordinator must show exactly one fenced owner for each role and a standby replica. Projection Pool must use the exact V1-V7 `WIRE_INBOX_SOURCE_GENERATIONS` union during the initial cutover; do not let it claim V8 snapshot or live backlog implicitly.
 8. Leave the three legacy intake services running until the new controller replicas are healthy in lease-waiting state. Stop `Jetstream V2 Ingest`, `The Wire Global Ingest Production`, and `The Wire Live Ingest Production`, then require token-incrementing takeover on all three unchanged leases and continuous checkpoint movement.
 9. Let Projection Pool overlap the legacy Wire drains using fenced `SKIP LOCKED` claims. Once AppView remains at zero actionable rows and the scoped Wire backlog/age is no worse than baseline, stop `The Wire Inbox Drain` and `The Wire Fresh Inbox Drain`.
-10. Set Gateway `PROJECTION_POOL_BASE_URL=http://projection-pool.railway.internal:8080`, redeploy Gateway, and require `/readyz` before considering Charybdis unavailable for rollback.
-11. Force one Ingress Controller replica handoff and one Coordinator replica handoff. Require incremented fencing tokens, no skipped/duplicated committed range, exactly one singleton owner per role, and continuing feed/generation progress.
-12. Keep all compatibility services stopped but deployable through the Production soak. Deletion is a separate rollback-window decision.
+10. Widen Projection Pool and Coordinator from the initial V1–V7 source union to include both live V8 generations (`wire-global-v8-prod-external-live-v1` and `wire-global-v8-prod-publication-live-tail-v1`). Require the V8 actionable backlog to drain and a fresh, ranked, non-degraded 50-story Wire generation before completing the cutover.
+11. Set Gateway `PROJECTION_POOL_BASE_URL=http://projection-pool.railway.internal:8080`, redeploy Gateway, and require `/readyz` before considering Charybdis unavailable for rollback.
+12. Force one Ingress Controller replica handoff and one Coordinator replica handoff. Require incremented fencing tokens, no skipped/duplicated committed range, exactly one singleton owner per role, and continuing feed/generation progress.
+13. Keep all compatibility services stopped but deployable through the Production soak. Deletion is a separate rollback-window decision.
 
 ## Soak gates
 
