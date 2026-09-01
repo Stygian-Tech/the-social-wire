@@ -7,7 +7,9 @@ import {
 
 describe("syncPreferencesClient", () => {
   it("uses the authoritative refresh route after a direct PDS write", () => {
-    expect(syncPreferencesPath(true)).toBe("/v1/sync/preferences?fresh=1");
+    expect(syncPreferencesPath(true)).toBe(
+      "/xrpc/app.thesocialwire.sync.getPreferences?fresh=true",
+    );
   });
 
   it("does not turn an upstream failure into default L@tr preferences", async () => {

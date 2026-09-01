@@ -15,7 +15,7 @@ export type SyncPreferencesEnvelope = {
 
 export function syncPreferencesPath(forceRefresh = false): string {
   return forceRefresh
-    ? "/v1/sync/preferences?fresh=1"
+    ? `${socialWireXrpc.getPreferences}?fresh=true`
     : socialWireXrpc.getPreferences;
 }
 
