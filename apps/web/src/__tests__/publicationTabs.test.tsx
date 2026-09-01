@@ -127,6 +127,9 @@ describe("PublicationTabs", () => {
 
     const circle = screen.getByRole("tab", { name: "Your Circle, Beta" });
     expect(screen.getByText("Beta").className).toContain("ml-auto");
+    expect(circle.querySelector("svg")?.classList.contains("lucide-network")).toBe(
+      true,
+    );
     expect(circle.getAttribute("aria-selected")).toBe("true");
     fireEvent.click(circle);
     expect(onCircleSelect).toHaveBeenCalledTimes(1);
