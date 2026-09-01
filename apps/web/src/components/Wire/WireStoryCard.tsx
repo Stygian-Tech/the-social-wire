@@ -276,6 +276,7 @@ export function WireStoryCard({
         {circleItem ? (
           <CircleSharerStrip
             sharers={circleItem.sharers}
+            totalCount={circleItem.sharerCount}
             compact={variant === "compact" || variant === "supporting"}
           />
         ) : null}

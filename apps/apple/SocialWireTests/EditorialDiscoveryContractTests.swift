@@ -53,6 +53,7 @@ struct EditorialDiscoveryContractTests {
         #expect(edition.stories.count == 1)
         #expect(edition.stories[0].storyId == "circle-story-1")
         #expect(edition.stories[0].discussionCount == 3)
+        #expect(edition.stories[0].sharerCount == 5)
         #expect(edition.stories[0].sharers.count == 2)
         #expect(edition.stories[0].sharers[0].relationship == "direct")
         #expect(edition.stories[0].sharers[1].relationship == "one_hop")
@@ -215,6 +216,7 @@ struct EditorialDiscoveryContractTests {
         },
         "reasons": ["shared_by_following", "popular_in_your_circle"],
         "discussionCount": 3,
+        "sharerCount": 5,
         "rankingScore": 0.99,
         "privateProvenance": "margin",
         "sharers": [{

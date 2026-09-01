@@ -3,7 +3,7 @@ import Foundation
 struct CircleGraphSnapshotService: Sendable {
   static let maximumDirectFollows = 500
   static let maximumOneHopActors = 20_000
-  static let maximumOneHopExpansionSources = 64
+  static let maximumOneHopExpansionSources = 16
   static let freshTarget: TimeInterval = 10 * 60
   static let staleMaximum: TimeInterval = 24 * 60 * 60
 
@@ -180,9 +180,9 @@ struct CircleGraphSnapshotService: Sendable {
         allComplete = false
         continue
       }
-      guard read.isComplete else {
+      if !read.isComplete { allComplete = false }
+      guard read.isComplete || !read.followeeDIDs.isEmpty else {
         invalidActors.insert(actorDID)
-        allComplete = false
         continue
       }
       byActor[actorDID] = read

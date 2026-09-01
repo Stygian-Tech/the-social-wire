@@ -23,7 +23,7 @@ export const CIRCLE_EDITION_QUERY_KEY = (
   language: string,
 ) => ["circleEdition", viewerDid, language] as const;
 
-const CIRCLE_STALE_TIME_MS = 60_000;
+export const CIRCLE_STALE_TIME_MS = 10 * 60_000;
 
 export function useCircleCatalog() {
   const { session, isLoading, getOAuthSession, oauthSessionReloadSeq } =

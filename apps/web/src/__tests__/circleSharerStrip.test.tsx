@@ -22,14 +22,15 @@ const sharers: CircleSharer[] = Array.from({ length: 5 }, (_, index) => ({
 }));
 
 describe("CircleSharerStrip", () => {
-  it("shows at most three public sharers plus overflow and relationship labels", () => {
-    render(<CircleSharerStrip sharers={sharers} />);
+  it("shows at most two public sharers, compact one-hop context, and overflow", () => {
+    render(<CircleSharerStrip sharers={sharers.slice(0, 2)} totalCount={5} />);
 
     const links = screen.getAllByRole("link");
-    expect(links).toHaveLength(3);
-    expect(screen.getByText("+2")).toBeDefined();
-    expect(screen.getByText("Following")).toBeDefined();
-    expect(screen.getAllByText("One Hop")).toHaveLength(2);
+    expect(links).toHaveLength(2);
+    expect(screen.getByText("+3")).toBeDefined();
+    expect(screen.queryByText("Following")).toBeNull();
+    expect(screen.queryByText("One Hop")).toBeNull();
+    expect(screen.getByLabelText("One Hop").textContent).toBe("+1");
     expect(links[0]?.getAttribute("href")).toBe(
       "https://bsky.app/profile/did%3Aplc%3Aperson0/post/post0",
     );

@@ -51,6 +51,7 @@ function circlePageForWireLayout(page: CircleEditionPage): WireEditionPage {
         source: story.source,
         reasons: story.reasons,
         discussionCount: story.discussionCount,
+        sharerCount: story.sharerCount,
         sharers: story.sharers,
         publishedAt: story.publishedAt,
       },

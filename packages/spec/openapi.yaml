@@ -318,7 +318,7 @@ components:
     CircleStory:
       type: object
       additionalProperties: false
-      required: [storyId, canonicalUrl, title, source, reasons, discussionCount, sharers]
+      required: [storyId, canonicalUrl, title, source, reasons, discussionCount, sharerCount, sharers]
       properties:
         storyId: { type: string, maxLength: 128 }
         canonicalUrl: { type: string, format: uri }
@@ -335,9 +335,10 @@ components:
             type: string
             enum: [shared_by_following, shared_by_extended_circle, popular_in_your_circle, discussed_in_your_circle, fresh_from_your_circle]
         discussionCount: { type: integer, minimum: 0 }
+        sharerCount: { type: integer, minimum: 0 }
         sharers:
           type: array
-          maxItems: 8
+          maxItems: 2
           items: { $ref: "#/components/schemas/CircleSharer" }
 
     CirclePublicationSpotlight:
