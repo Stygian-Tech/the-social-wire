@@ -174,9 +174,17 @@ public enum JetstreamV2ProjectionEventParser {
         validDid(sync["did"]) == did,
         let syncSequence = int64(sync["seq"]),
         syncSequence >= 0,
-        let repoRev = nonEmptyString(sync["rev"]),
-        let eventTime = date(sync["time"])
+        let repoRev = nonEmptyString(sync["rev"])
       else { throw JetstreamV2ProjectionEventParseError.invalidSync }
+      let eventTime: Date
+      if let nestedTime = nonEmptyString(sync["time"]) {
+        guard let parsed = date(nestedTime) else {
+          throw JetstreamV2ProjectionEventParseError.invalidSync
+        }
+        eventTime = parsed
+      } else {
+        eventTime = envelopeTime
+      }
       _ = syncSequence
       return .sync(
         .init(

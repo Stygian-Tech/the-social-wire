@@ -15,8 +15,8 @@ struct PostgresWireBaselineLabelStore: WireBaselineLabelStore {
       WHERE item.eligible = TRUE AND item.expires_at > \(asOf)
         AND item.source_confidence >= 0.25
         AND (item.representative_uri IS NOT NULL OR item.author_key IS NOT NULL)
-        AND (rollup.shares_24h >= 3 OR rollup.recommendations_24h >= 1)
-      ORDER BY rollup.shares_24h DESC, rollup.recommendations_24h DESC,
+        AND (rollup.shares_24h >= 1 OR rollup.recommendations_24h >= 1)
+      ORDER BY rollup.recommendations_24h DESC, rollup.shares_24h DESC,
                item.canonical_key
       LIMIT \(max(1, min(limit, 10_000)))
       """,

@@ -13,6 +13,13 @@ const servingVerifier = readFileSync(
   join(import.meta.dir, "../../../scripts/verify-wire-corpus-serving.sql"),
   "utf8",
 );
+const snapshotPayloadFix = readFileSync(
+  join(
+    import.meta.dir,
+    "../../../database/migrations/20260901030500_fix_circle_graph_snapshot_payload.sql",
+  ),
+  "utf8",
+);
 
 describe("Your Circle private state migration", () => {
   test("stores only hashed viewer and actor identities", () => {
@@ -25,6 +32,14 @@ describe("Your Circle private state migration", () => {
     expect(migration).toContain("direct_count BETWEEN 0 AND 500");
     expect(migration).toContain("one_hop_count BETWEEN 0 AND 20000");
     expect(migration).toContain("generated_at <= fresh_until AND fresh_until <= stale_until");
+  });
+
+  test("accepts the complete encoded graph snapshot object", () => {
+    expect(snapshotPayloadFix).toContain(
+      "DROP CONSTRAINT IF EXISTS appview_circle_graph_actor_facts_array",
+    );
+    expect(snapshotPayloadFix).toContain("jsonb_typeof(actor_facts) = 'object'");
+    expect(snapshotPayloadFix).not.toContain("jsonb_typeof(actor_facts) = 'array'");
   });
 
   test("binds cached editions to viewer, snapshot, generation, and language", () => {

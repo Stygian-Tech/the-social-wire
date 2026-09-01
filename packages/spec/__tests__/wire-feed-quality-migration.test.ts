@@ -30,6 +30,13 @@ const standardSiteLanguageRecoveryMigration = readFileSync(
   ),
   "utf8",
 );
+const baseContentLabelMigration = readFileSync(
+  join(
+    import.meta.dir,
+    "../../../database/migrations/20260901030000_add_wire_base_content_labels.sql",
+  ),
+  "utf8",
+);
 
 describe("The Wire feed quality migration", () => {
   it("makes operational status pages non-admissible", () => {
@@ -85,5 +92,16 @@ describe("The Wire feed quality migration", () => {
     expect(standardSiteLanguageRecoveryMigration).toContain(
       "'content_validated_page'",
     );
+  });
+
+  it("projects conservative launch-time adult content into the existing moderation gate", () => {
+    expect(baseContentLabelMigration).toContain("INSERT INTO wire_labels");
+    expect(baseContentLabelMigration).toContain("'moderation', 'adult'");
+    expect(baseContentLabelMigration).toContain(
+      "'app.thesocialwire.base-content-labeler'",
+    );
+    expect(baseContentLabelMigration).toContain("LOWER(item.source_domain) = '3movs.com'");
+    expect(baseContentLabelMigration).toContain("LOWER(item.source_domain) = 'donmai.us'");
+    expect(baseContentLabelMigration).not.toContain("item.eligible = FALSE");
   });
 });
