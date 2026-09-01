@@ -24,8 +24,10 @@ import {
   mergedLatrSavesFromGatewayItems,
   filterMergedLatrSavesByState,
   skyreaderFeedSubscriptionRecord,
+  mergePreferencesRecord,
   type LatrSavedExternalRecord,
   type LatrSavedItemRecord,
+  type PreferencesRecord,
   PSEUDO_FOLDER_MY_URI,
 } from "@/lib/pdsClient";
 import { STANDARD_SITE_RECOMMEND_COLLECTION } from "@/lib/standardSiteRecommendation";
@@ -43,6 +45,36 @@ describe("rkeyFromURI", () => {
   it("handles at-uri for publicationPrefs", () => {
     const uri = `at://did:plc:bob/app.thesocialwire.publicationPrefs/abc123`;
     expect(rkeyFromURI(uri)).toBe("abc123");
+  });
+});
+
+describe("mergePreferencesRecord", () => {
+  it("preserves the Semble connection when unrelated feed preferences change", () => {
+    const previous: PreferencesRecord = {
+      $type: COLLECTION_PREFERENCES,
+      readLaterService: "semble" as const,
+      readLaterConnections: {
+        semble: {
+          collectionUri:
+            "at://did:plc:viewer/network.cosmik.collection/readlater",
+          collectionName: "Read Later",
+          connectedAt: "2026-08-30T00:00:00.000Z",
+        },
+      },
+      visibleFeeds: ["readLater", "subscribed"],
+      createdAt: "2026-08-30T00:00:00.000Z",
+      updatedAt: "2026-08-30T00:00:00.000Z",
+    };
+    const merged = mergePreferencesRecord(
+      { rssArticleOpenMode: "reader" },
+      previous,
+      "2026-08-31T00:00:00.000Z",
+    );
+    expect(merged.readLaterService).toBe("semble");
+    expect(merged.readLaterConnections?.semble).toEqual(
+      previous.readLaterConnections?.semble,
+    );
+    expect(merged.rssArticleOpenMode).toBe("reader");
   });
 });
 
@@ -214,6 +246,7 @@ describe("mergeExternalsAndItemsToHttpsRows", () => {
           subjectUri: extUri,
           savedAt: "2026-06-01T12:00:00.000Z",
           state: "archived",
+          tags: ["Research", "Weekend"],
         } satisfies LatrSavedItemRecord,
       },
     ];
@@ -221,6 +254,10 @@ describe("mergeExternalsAndItemsToHttpsRows", () => {
     expect(mergeExternalsAndItemsToHttpsRows(externals, items)[0].state).toBe(
       "archived"
     );
+    expect(mergeExternalsAndItemsToHttpsRows(externals, items)[0].tags).toEqual([
+      "Research",
+      "Weekend",
+    ]);
   });
 
   it("merges external metadata with item preview fallbacks", () => {

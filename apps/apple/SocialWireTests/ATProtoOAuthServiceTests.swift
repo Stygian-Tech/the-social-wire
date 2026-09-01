@@ -36,4 +36,13 @@ struct ATProtoOAuthServiceTests {
         let actual = Set(ATProtoOAuthService.scopes.split(separator: " ").map(String.init))
         #expect(expected.allSatisfy(actual.contains))
     }
+
+    @Test("universal Apple scopes cover parity actions and trigger old-session reauthorization")
+    func universalParityScopes() {
+        let actual = Set(ATProtoOAuthService.scopes.split(separator: " ").map(String.init))
+        #expect(ATProtoOAuthService.requiredFeatureScopes.isSubset(of: actual))
+        #expect(ATProtoOAuthService.hasRequiredFeatureScopes(ATProtoOAuthService.scopes))
+        #expect(!ATProtoOAuthService.hasRequiredFeatureScopes("atproto"))
+        #expect(!ATProtoOAuthService.hasRequiredFeatureScopes(nil))
+    }
 }

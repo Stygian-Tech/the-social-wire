@@ -14,6 +14,7 @@ struct ATProtoSessionDPoPTests {
             accessToken: "access-token",
             refreshToken: "refresh-token",
             tokenType: "DPoP",
+            scope: "atproto",
             expiresAt: Date().addingTimeInterval(300)
         )
         let url = ATProtoSessionDPoP.getSessionURL(for: session)

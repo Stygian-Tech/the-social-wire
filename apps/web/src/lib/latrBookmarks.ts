@@ -4,6 +4,8 @@ import {
   LATR_XRPC,
   latrXrpcPath,
   type LatrBookmarkView,
+  type LatrListTagsOutput,
+  type LatrTagMutationResult,
   type LatrMigrationResult,
 } from "latr-packages/gateway-client";
 
@@ -23,6 +25,7 @@ export function bookmarkViewToRow(view: LatrBookmarkView): MergedLatrSave {
     itemRkey: view.uri,
     itemUri: view.uri,
     subjectUri: subject,
+    ...(view.value.tags ? { tags: [...view.value.tags] } : {}),
     state: metadata?.state ?? ("unread" as const),
     ...(metadata?.lastOpenedAt ? { lastOpenedAt: metadata.lastOpenedAt } : {}),
     ...(preview?.title ? { title: preview.title } : {}),
@@ -48,12 +51,16 @@ export function bookmarkViewToRow(view: LatrBookmarkView): MergedLatrSave {
 export class LatrBookmarksClient {
   constructor(private readonly oauthSession: OAuthSession) {}
 
-  async listAll(state: LatrSaveListState = "all"): Promise<MergedLatrSave[]> {
+  async listAll(
+    state: LatrSaveListState = "all",
+    tag?: string
+  ): Promise<MergedLatrSave[]> {
     const rows: MergedLatrSave[] = [];
     let cursor: string | undefined;
     do {
       const query = new URLSearchParams({ limit: "50" });
       if (cursor) query.set("cursor", cursor);
+      if (tag?.trim()) query.set("tag", tag.trim());
       const page = await latrGatewayJson<{
         bookmarks: LatrBookmarkView[];
         cursor?: string;
@@ -96,6 +103,61 @@ export class LatrBookmarksClient {
       }
     );
     return bookmarkViewToRow(view);
+  }
+
+  async listTags(cursor?: string): Promise<LatrListTagsOutput> {
+    const query = new URLSearchParams({ limit: "100" });
+    if (cursor) query.set("cursor", cursor);
+    return latrGatewayJson<LatrListTagsOutput>(
+      this.oauthSession,
+      `${latrXrpcPath(LATR_XRPC.listTags)}?${query.toString()}`
+    );
+  }
+
+  async setTags(bookmarkUri: string, tags: string[]): Promise<MergedLatrSave> {
+    const view = await latrGatewayJson<LatrBookmarkView>(
+      this.oauthSession,
+      latrXrpcPath(LATR_XRPC.setBookmarkTags),
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ bookmarkUri, tags }),
+      }
+    );
+    return bookmarkViewToRow(view);
+  }
+
+  async renameTagPage(input: {
+    tag: string;
+    replacement: string;
+    cursor?: string;
+    limit?: number;
+  }): Promise<LatrTagMutationResult> {
+    return latrGatewayJson<LatrTagMutationResult>(
+      this.oauthSession,
+      latrXrpcPath(LATR_XRPC.renameBookmarkTag),
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...input, limit: input.limit ?? 25 }),
+      }
+    );
+  }
+
+  async deleteTagPage(input: {
+    tag: string;
+    cursor?: string;
+    limit?: number;
+  }): Promise<LatrTagMutationResult> {
+    return latrGatewayJson<LatrTagMutationResult>(
+      this.oauthSession,
+      latrXrpcPath(LATR_XRPC.deleteBookmarkTag),
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...input, limit: input.limit ?? 25 }),
+      }
+    );
   }
 
   async setState(

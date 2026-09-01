@@ -12,6 +12,8 @@ struct PDSRecordServiceTests {
         #expect(PDSRecordService.latrSavedExternal == "link.latr.saved.external")
         #expect(PDSRecordService.latrSavedItem == "link.latr.saved.item")
         #expect(PDSRecordService.standardSiteSubscription == "site.standard.graph.subscription")
+        #expect(PDSRecordService.standardSiteRecommend == "site.standard.graph.recommend")
+        #expect(PDSRecordService.wireArticleFeedback == "app.thesocialwire.wireFeedback")
         #expect(PDSRecordService.skyreaderFeedSubscription == "app.skyreader.feed.subscription")
     }
 }

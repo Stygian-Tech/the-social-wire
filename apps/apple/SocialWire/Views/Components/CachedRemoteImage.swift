@@ -5,7 +5,7 @@ struct CachedRemoteImage<Placeholder: View>: View {
     let maxPixelSize: CGFloat
     @ViewBuilder var placeholder: () -> Placeholder
 
-    @State private var loadedImage: UIImage?
+    @State private var loadedImage: PlatformImage?
 
     private var loadToken: String {
         urls.map(\.absoluteString).joined(separator: "|")
@@ -14,7 +14,7 @@ struct CachedRemoteImage<Placeholder: View>: View {
     var body: some View {
         Group {
             if let loadedImage {
-                Image(uiImage: loadedImage)
+                Image(platformImage: loadedImage)
                     .resizable()
             } else {
                 placeholder()

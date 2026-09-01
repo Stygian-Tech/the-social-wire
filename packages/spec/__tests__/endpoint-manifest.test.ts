@@ -44,6 +44,13 @@ describe("endpoint transport manifest", () => {
     expect(byPath.get("GET /v1/operations/events/stream")).toBe("stream");
     expect(byPath.get("GET /api/bluesky-card-thumb")).toBe("media-proxy");
     expect(byPath.get("GET /xrpc/link.latr.bookmarks.listBookmarks")).toBe("foreign-xrpc");
+    expect(byPath.get("GET /xrpc/link.latr.bookmarks.listTags")).toBe("foreign-xrpc");
+    expect(byPath.get("POST /xrpc/link.latr.bookmarks.setTags")).toBe("foreign-xrpc");
+    expect(byPath.get("POST /xrpc/link.latr.bookmarks.renameTag")).toBe("foreign-xrpc");
+    expect(byPath.get("POST /xrpc/link.latr.bookmarks.deleteTag")).toBe("foreign-xrpc");
+    expect(byPath.get("GET /v1/semble/collections")).toBe("foreign-rest");
+    expect(byPath.get("GET /v1/semble/collection")).toBe("foreign-rest");
+    expect(byPath.get("GET /v1/semble/connections")).toBe("foreign-rest");
     expect(byPath.has("POST /channel")).toBe(false);
     expect(manifest.entries.some((entry) => entry.surface === "tap")).toBe(false);
   });

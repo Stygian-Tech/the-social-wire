@@ -217,9 +217,34 @@
     {
       "surface": "openapi",
       "method": "GET",
+      "path": "/v1/semble/collections",
+      "classification": "foreign-rest"
+    },
+    {
+      "surface": "openapi",
+      "method": "GET",
+      "path": "/v1/semble/collection",
+      "classification": "foreign-rest"
+    },
+    {
+      "surface": "openapi",
+      "method": "GET",
+      "path": "/v1/semble/connections",
+      "classification": "foreign-rest"
+    },
+    {
+      "surface": "openapi",
+      "method": "GET",
       "path": "/xrpc/link.latr.bookmarks.listBookmarks",
       "classification": "foreign-xrpc",
       "xrpcNsid": "link.latr.bookmarks.listBookmarks"
+    },
+    {
+      "surface": "openapi",
+      "method": "GET",
+      "path": "/xrpc/link.latr.bookmarks.listTags",
+      "classification": "foreign-xrpc",
+      "xrpcNsid": "link.latr.bookmarks.listTags"
     },
     {
       "surface": "openapi",
@@ -234,6 +259,27 @@
       "path": "/xrpc/link.latr.bookmarks.saveBookmark",
       "classification": "foreign-xrpc",
       "xrpcNsid": "link.latr.bookmarks.saveBookmark"
+    },
+    {
+      "surface": "openapi",
+      "method": "POST",
+      "path": "/xrpc/link.latr.bookmarks.setTags",
+      "classification": "foreign-xrpc",
+      "xrpcNsid": "link.latr.bookmarks.setTags"
+    },
+    {
+      "surface": "openapi",
+      "method": "POST",
+      "path": "/xrpc/link.latr.bookmarks.renameTag",
+      "classification": "foreign-xrpc",
+      "xrpcNsid": "link.latr.bookmarks.renameTag"
+    },
+    {
+      "surface": "openapi",
+      "method": "POST",
+      "path": "/xrpc/link.latr.bookmarks.deleteTag",
+      "classification": "foreign-xrpc",
+      "xrpcNsid": "link.latr.bookmarks.deleteTag"
     },
     {
       "surface": "openapi",

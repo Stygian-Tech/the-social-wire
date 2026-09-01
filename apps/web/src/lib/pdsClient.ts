@@ -161,6 +161,7 @@ export function skyreaderFeedSubscriptionRecord(
 export type ReadLaterServicePreference =
   | "latr-link"
   | "latrkit"
+  | "semble"
   | "instapaper"
   | "omnivore"
   | "readwise-reader"
@@ -171,15 +172,24 @@ export interface ReadLaterConnectionPreference {
   accountLabel?: string;
 }
 
+export interface SembleReadLaterConnectionPreference {
+  collectionUri: string;
+  collectionName: string;
+  connectedAt: string;
+}
+
+export interface ReadLaterConnectionsPreference {
+  instapaper?: ReadLaterConnectionPreference;
+  omnivore?: ReadLaterConnectionPreference;
+  "readwise-reader"?: ReadLaterConnectionPreference;
+  raindrop?: ReadLaterConnectionPreference;
+  semble?: SembleReadLaterConnectionPreference;
+}
+
 export interface PreferencesRecord {
   $type: typeof COLLECTION_PREFERENCES;
   readLaterService?: ReadLaterServicePreference;
-  readLaterConnections?: Partial<
-    Record<
-      Exclude<ReadLaterServicePreference, "latr-link" | "latrkit">,
-      ReadLaterConnectionPreference
-    >
-  >;
+  readLaterConnections?: ReadLaterConnectionsPreference;
   visibleFeeds?: Array<"readLater" | "archive" | "subscribed" | "following">;
   showTopLevelFeedUnreadCounts?: boolean;
   feedsWithUnreadCounts?: Array<
@@ -188,6 +198,50 @@ export interface PreferencesRecord {
   rssArticleOpenMode?: "reader" | "original";
   createdAt: string;
   updatedAt: string;
+}
+
+export type PreferencesUpdates = Partial<
+  Pick<
+    PreferencesRecord,
+    | "readLaterService"
+    | "readLaterConnections"
+    | "visibleFeeds"
+    | "showTopLevelFeedUnreadCounts"
+    | "feedsWithUnreadCounts"
+    | "rssArticleOpenMode"
+  >
+>;
+
+export function mergePreferencesRecord(
+  updates: PreferencesUpdates,
+  previous: PreferencesRecord | null | undefined,
+  now = new Date().toISOString(),
+): PreferencesRecord {
+  return {
+    $type: COLLECTION_PREFERENCES,
+    createdAt: previous?.createdAt ?? now,
+    updatedAt: now,
+    ...(previous?.readLaterService
+      ? { readLaterService: previous.readLaterService }
+      : {}),
+    ...(previous?.readLaterConnections
+      ? { readLaterConnections: previous.readLaterConnections }
+      : {}),
+    ...(previous?.visibleFeeds ? { visibleFeeds: previous.visibleFeeds } : {}),
+    ...(previous?.showTopLevelFeedUnreadCounts !== undefined
+      ? {
+          showTopLevelFeedUnreadCounts:
+            previous.showTopLevelFeedUnreadCounts,
+        }
+      : {}),
+    ...(previous?.feedsWithUnreadCounts
+      ? { feedsWithUnreadCounts: previous.feedsWithUnreadCounts }
+      : {}),
+    ...(previous?.rssArticleOpenMode
+      ? { rssArticleOpenMode: previous.rssArticleOpenMode }
+      : {}),
+    ...updates,
+  };
 }
 
 export interface LatrSavedExternalRecord {
@@ -247,6 +301,7 @@ export type MergedLatrSave =
       externalUri: string;
       itemUri: string;
       subjectUri: string;
+      tags?: string[];
       state?: "unread" | "archived";
       lastOpenedAt?: string;
       title?: string;
@@ -264,6 +319,7 @@ export type MergedLatrSave =
       itemRkey: string;
       itemUri: string;
       subjectUri: string;
+      tags?: string[];
       state?: "unread" | "archived";
       lastOpenedAt?: string;
       title?: string;
@@ -390,6 +446,7 @@ export function mergeExternalsAndItemsToHttpsRows(
         itemRkey: rkeyFromURI(itemRec.uri),
         itemUri: itemRec.uri,
         subjectUri,
+        ...(itemRec.value.tags ? { tags: itemRec.value.tags } : {}),
         ...(itemRec.value.state ? { state: itemRec.value.state } : {}),
         ...(itemRec.value.lastOpenedAt ? { lastOpenedAt: itemRec.value.lastOpenedAt } : {}),
         ...metadata,
@@ -411,6 +468,7 @@ export function mergeExternalsAndItemsToHttpsRows(
       externalUri: ext.uri,
       itemUri: itemRec.uri,
       subjectUri,
+      ...(itemRec.value.tags ? { tags: itemRec.value.tags } : {}),
       ...(itemRec.value.state ? { state: itemRec.value.state } : {}),
       ...(itemRec.value.lastOpenedAt ? { lastOpenedAt: itemRec.value.lastOpenedAt } : {}),
       ...mergeLatrSaveMetadata(ext.value, itemRec.value),
@@ -458,6 +516,7 @@ export function mergedLatrSavesFromGatewayItems(
         itemRkey: rkeyFromURI(itemRec.uri),
         itemUri: itemRec.uri,
         subjectUri,
+        ...(itemRec.value.tags ? { tags: itemRec.value.tags } : {}),
         ...(itemRec.value.state ? { state: itemRec.value.state } : {}),
         ...(itemRec.value.lastOpenedAt ? { lastOpenedAt: itemRec.value.lastOpenedAt } : {}),
         ...metadata,
@@ -480,6 +539,7 @@ export function mergedLatrSavesFromGatewayItems(
       externalUri: subjectUri,
       itemUri: itemRec.uri,
       subjectUri,
+      ...(itemRec.value.tags ? { tags: itemRec.value.tags } : {}),
       ...(itemRec.value.state ? { state: itemRec.value.state } : {}),
       ...(itemRec.value.lastOpenedAt ? { lastOpenedAt: itemRec.value.lastOpenedAt } : {}),
       ...metadata,
@@ -1025,45 +1085,13 @@ export class PDSClient {
   }
 
   async upsertPreferences(
-    updates: Partial<
-      Pick<
-        PreferencesRecord,
-        | "readLaterService"
-        | "readLaterConnections"
-        | "visibleFeeds"
-        | "showTopLevelFeedUnreadCounts"
-        | "feedsWithUnreadCounts"
-        | "rssArticleOpenMode"
-      >
-    >,
+    updates: PreferencesUpdates,
     existing: RepoRecord<PreferencesRecord> | null | undefined = undefined
   ): Promise<{ uri: string; cid: string }> {
     const current = existing === undefined ? await this.getPreferences() : existing;
     const prev = current?.value ?? null;
     const now = new Date().toISOString();
-    const record: PreferencesRecord = {
-      $type: COLLECTION_PREFERENCES,
-      createdAt: prev?.createdAt ?? now,
-      updatedAt: now,
-      ...(prev?.readLaterService ? { readLaterService: prev.readLaterService } : {}),
-      ...(prev?.readLaterConnections
-        ? { readLaterConnections: prev.readLaterConnections }
-        : {}),
-      ...(prev?.visibleFeeds ? { visibleFeeds: prev.visibleFeeds } : {}),
-      ...(prev?.showTopLevelFeedUnreadCounts !== undefined
-        ? {
-            showTopLevelFeedUnreadCounts:
-              prev.showTopLevelFeedUnreadCounts,
-          }
-        : {}),
-      ...(prev?.feedsWithUnreadCounts
-        ? { feedsWithUnreadCounts: prev.feedsWithUnreadCounts }
-        : {}),
-      ...(prev?.rssArticleOpenMode
-        ? { rssArticleOpenMode: prev.rssArticleOpenMode }
-        : {}),
-      ...updates,
-    };
+    const record = mergePreferencesRecord(updates, prev, now);
 
     const updated = current
       ? await this.agent.api.com.atproto.repo.putRecord({

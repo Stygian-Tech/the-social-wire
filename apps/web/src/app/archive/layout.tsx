@@ -3,6 +3,7 @@
 import { Suspense, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
+import { useConfiguredReadLaterService } from "@/hooks/useReadLaterPreferences";
 import { AppSidebar } from "@/components/AppSidebar/AppSidebar";
 import { FeedHeader } from "@/components/FeedHeader/FeedHeader";
 import { PublicationSidebarProvider } from "@/contexts/PublicationSidebarContext";
@@ -15,6 +16,7 @@ import {
 /** Authenticated chrome with publication sidebar — same shell as `/read`. */
 export default function ArchiveLayout({ children }: { children: React.ReactNode }) {
   const { session, isLoading } = useAuth();
+  const configured = useConfiguredReadLaterService();
   const router = useRouter();
 
   useEffect(() => {
@@ -22,6 +24,12 @@ export default function ArchiveLayout({ children }: { children: React.ReactNode 
       router.replace("/login");
     }
   }, [isLoading, session, router]);
+
+  useEffect(() => {
+    if (!configured.isLoading && configured.serviceId === "semble") {
+      router.replace("/saved");
+    }
+  }, [configured.isLoading, configured.serviceId, router]);
 
   if (isLoading) {
     return (
@@ -31,7 +39,7 @@ export default function ArchiveLayout({ children }: { children: React.ReactNode 
     );
   }
 
-  if (!session) {
+  if (!session || configured.isLoading || configured.serviceId === "semble") {
     return null;
   }
 

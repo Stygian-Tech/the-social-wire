@@ -8,6 +8,7 @@ struct AppViewServiceConfig: Sendable {
   let storeBackend: StoreBackend
   let wire: WireDiscoveryConfig
   let circle: CircleDiscoveryConfig
+  let semble: SembleProjectionConfig
 
   enum StoreBackend: Sendable {
     case sqlite(path: String)
@@ -31,6 +32,7 @@ struct AppViewServiceConfig: Sendable {
     }
     let wire = try WireDiscoveryConfig.fromEnvironment(env)
     let circle = try CircleDiscoveryConfig.fromEnvironment(env)
+    let semble = SembleProjectionConfig.fromEnvironment(env)
     if core.appEnv == .dev, (wire.mode.servesAPI || circle.mode.servesAPI), wire.corpusEdge == nil {
       throw WireDiscoveryConfigError.missingCorpusEdgeForDevelopment
     }
@@ -42,7 +44,8 @@ struct AppViewServiceConfig: Sendable {
       thinAppView: thin,
       storeBackend: backend,
       wire: wire,
-      circle: circle
+      circle: circle,
+      semble: semble
     )
   }
 }

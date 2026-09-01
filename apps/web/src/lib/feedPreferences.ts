@@ -28,7 +28,7 @@ export type FeedDisplayPreferences = {
 export const DEFAULT_FEED_DISPLAY_PREFERENCES: FeedDisplayPreferences = {
   visibleFeeds: [...TOP_LEVEL_FEEDS],
   feedsWithUnreadCounts: [...TOP_LEVEL_FEEDS],
-  rssArticleOpenMode: "reader",
+  rssArticleOpenMode: "original",
 };
 
 const STORAGE_PREFIX = "the-social-wire.feed-display.v1";

@@ -1,4 +1,5 @@
 import Foundation
+import LatrKit
 import Observation
 import SwiftData
 
@@ -9,12 +10,15 @@ final class SocialWireAppModel {
     let resolver: ATProtoResolver
     let xrpc: XRPCClient
     let pds: PDSRecordService
+    let sembleRecords: SembleRecordService
     let publicationsService: PublicationService
+    let userInputFeedbackService: UserInputFeedbackService
     private let rss = RSSService()
     private let gateway: SocialWireGatewayClient
     private let latrGateway: LatrGatewayClient
     private var readerCacheCoordinator: ReaderCacheCoordinator?
     private var attemptedBookmarkMigration = false
+    private var savedTagSelectionViewerDid: String?
 
     private static let preferencesSyncCacheKey = "v1/sync/preferences"
     private static let lastSelectedPublicationKey = "the-social-wire.last-selected-publication-id"
@@ -28,7 +32,19 @@ final class SocialWireAppModel {
     var selectedPublication: DiscoveredPublication?
     var selectedEntry: EntryDetail?
     var selectedSavedLink: MergedLatrSave?
+    var sembleCollections: [SembleCollectionSummary] = []
+    var sembleCollection: SembleCollectionSummary?
+    var sembleItems: [SembleCollectionItem] = []
+    var selectedSembleItem: SembleCollectionItem?
+    var sembleConnections: [SembleConnection] = []
+    var pendingSembleSaveRetry: SembleSaveRetryState?
+    var isLoadingSemble = false
+    var sembleCollectionUnavailable = false
+    var sembleCollectionLoadFailed = false
     var selectedSavedSourceKey: String?
+    var selectedSavedTag: String?
+    var savedTagMutationProgress: SavedTagMutationProgress?
+    var isMutatingSavedTags = false
     var selectedSidebar: SidebarSelection?
     var feedSelection: FeedSelection = .topLevel(.subscribed)
     var publicationSidebarTab: PublicationSidebarTab = .subscribed
@@ -53,6 +69,17 @@ final class SocialWireAppModel {
     /// Lexical account preferences returned by **`app.thesocialwire.sync.getPreferences`** (optional read-later hints).
     var preferencesFromGateway: PreferencesRecord?
     var feedPreferences: ReaderFeedPreferences = .defaults
+    var wireEdition: WireEditionPage?
+    var circleCatalog: CircleFeedCatalog?
+    var circleEdition: CircleEditionPage?
+    var isLoadingCircle = false
+    var circleErrorMessage: String?
+    private(set) var circleHiddenStoryIds = Set<String>()
+    private(set) var wireFeedbackByCanonicalURL: [String: WireArticleFeedbackValue] = [:]
+    private(set) var recommendedStandardSiteDocumentURIs = Set<String>()
+    private(set) var likeRecordURIByEntryID: [String: String] = [:]
+    private(set) var repostRecordURIByEntryID: [String: String] = [:]
+    private var articleSocialStateLoadingKeys = Set<String>()
     var wireCatalog: WireFeedCatalog?
     var wireFeedNotice: String?
     var wireFeedLoadFailed = false
@@ -124,7 +151,9 @@ final class SocialWireAppModel {
         resolver = ATProtoResolver()
         xrpc = XRPCClient(auth: authService, resolver: resolver)
         pds = PDSRecordService(xrpc: xrpc)
+        sembleRecords = SembleRecordService(xrpc: xrpc)
         publicationsService = PublicationService(xrpc: xrpc)
+        userInputFeedbackService = UserInputFeedbackService(auth: authService, xrpc: xrpc)
         gateway = SocialWireGatewayClient(auth: authService)
         latrGateway = LatrGatewayClient(auth: authService)
         applyReaderListSource(ReaderListSourceStorage.load(), persist: false)
@@ -147,6 +176,34 @@ final class SocialWireAppModel {
 
     var viewerDID: String? {
         authService.session?.did
+    }
+
+    var isSembleReadLaterEnabled: Bool {
+        preferencesFromGateway?.readLaterService == "semble"
+    }
+
+    var configuredSembleCollectionURI: String? {
+        preferencesFromGateway?.readLaterConnections?["semble"]?.collectionUri
+    }
+
+    var configuredSembleCollectionName: String? {
+        preferencesFromGateway?.readLaterConnections?["semble"]?.collectionName
+    }
+
+    var savedTabTitle: String {
+        guard isSembleReadLaterEnabled else { return "Saved" }
+        return sembleCollection?.name ?? configuredSembleCollectionName ?? "Semble"
+    }
+
+    var savedTabCount: Int {
+        isSembleReadLaterEnabled
+            ? (sembleCollection?.cardCount ?? sembleItems.count)
+            : savedLinks.count
+    }
+
+    var needsSembleConfiguration: Bool {
+        isSembleReadLaterEnabled &&
+            (configuredSembleCollectionURI == nil || sembleCollectionUnavailable)
     }
 
     var visibleReaderListSources: [ReaderListSource] {
@@ -341,48 +398,34 @@ final class SocialWireAppModel {
         }
     }
 
-    var focusedEntryIdForMarkRead: String? {
-        selectedEntry?.entryId ?? unreadDeferredEntryId
-    }
-
-    func markReadScope(compactPane: ReaderPane?, isCompact: Bool) -> ReaderMarkReadScope {
-        guard readerListSource.supportsReadState else { return .unavailable }
-        if let entryId = focusedEntryIdForMarkRead, showsEntryMarkReadInChrome(
-            compactPane: compactPane,
-            isCompact: isCompact
-        ) {
-            return .entry(entryId: entryId)
+    func markUnread(for scope: ReaderMarkReadScope) async {
+        guard useAppViewEntryTimelines else { return }
+        let entryIds: [String]
+        switch scope {
+        case .unavailable:
+            return
+        case .entry(let entryId):
+            entryIds = readAtByEntryId[entryId] == nil ? [] : [entryId]
+        case .allLists, .list, .folder, .publication:
+            entryIds = cachedEntryIds(for: scope).filter { readAtByEntryId[$0] != nil }
         }
+        guard !entryIds.isEmpty else { return }
 
-        if isCompact, let compactPane {
-            switch compactPane {
-            case .lists:
-                return selectedFeedMarkReadScope
-            case .publications:
-                return selectedFeedMarkReadScope
-            case .articles:
-                return selectedFeedMarkReadScope
-            case .reader:
-                return selectedSavedLink != nil ? .unavailable : selectedFeedMarkReadScope
+        for entryId in entryIds {
+            do {
+                try await gateway.deleteReadMark(subjectUri: entryId)
+                readAtByEntryId.removeValue(forKey: entryId)
+                if let publicationId = publicationId(for: entryId) {
+                    adjustUnreadCount(publicationId: publicationId, entryId: entryId, delta: 1)
+                }
+            } catch {
+                markAppViewUnavailableIfNeeded(error)
             }
         }
-
-        if selectedSavedLink != nil {
-            return .unavailable
-        }
-        return selectedFeedMarkReadScope
-    }
-
-    private var selectedFeedMarkReadScope: ReaderMarkReadScope {
-        ReaderMarkReadScope.selectedFeed(feedSelection)
-    }
-
-    private func showsEntryMarkReadInChrome(compactPane: ReaderPane?, isCompact: Bool) -> Bool {
-        guard focusedEntryIdForMarkRead != nil else { return false }
-        if isCompact {
-            return compactPane == .reader
-        }
-        return selectedEntry != nil
+        sidebarUnread.bumpReadRevision()
+        await refreshSidebarUnreadCounts(
+            publicationIds: publicationsAffected(by: scope).map(\.publicationId)
+        )
     }
 
     var filteredEntries: [EntryListItem] {
@@ -608,6 +651,9 @@ final class SocialWireAppModel {
     }
 
     func signOut() {
+        if let viewerDID {
+            try? readerCacheCoordinator?.clearCircleDiscoveryCache(viewerDID: viewerDID)
+        }
         authService.signOut()
         folders = []
         publicationPrefs = [:]
@@ -634,7 +680,18 @@ final class SocialWireAppModel {
         selectedEntry = nil
         selectedPublication = nil
         selectedSavedLink = nil
+        sembleCollections = []
+        sembleCollection = nil
+        sembleItems = []
+        selectedSembleItem = nil
+        sembleConnections = []
+        pendingSembleSaveRetry = nil
+        isLoadingSemble = false
         selectedSavedSourceKey = nil
+        selectedSavedTag = nil
+        savedTagSelectionViewerDid = nil
+        savedTagMutationProgress = nil
+        isMutatingSavedTags = false
         selectedSidebar = nil
         feedSelection = .topLevel(.subscribed)
         viewerProfile = nil
@@ -643,6 +700,16 @@ final class SocialWireAppModel {
         wireCatalog = nil
         wireFeedNotice = nil
         wireFeedLoadFailed = false
+        wireEdition = nil
+        circleCatalog = nil
+        circleEdition = nil
+        circleHiddenStoryIds = []
+        circleErrorMessage = nil
+        wireFeedbackByCanonicalURL = [:]
+        recommendedStandardSiteDocumentURIs = []
+        likeRecordURIByEntryID = [:]
+        repostRecordURIByEntryID = [:]
+        articleSocialStateLoadingKeys = []
         wireGenerationId = nil
         unreadDeferredEntryId = nil
         sidebarFetching = false
@@ -884,10 +951,16 @@ final class SocialWireAppModel {
     }
 
     private var preferredWireLanguage: String {
+        preferredDiscoveryLanguage(supported: wireCatalog?.supportedLanguages)
+    }
+
+    private var preferredCircleLanguage: String {
+        preferredDiscoveryLanguage(supported: circleCatalog?.supportedLanguages)
+    }
+
+    private func preferredDiscoveryLanguage(supported: [String]?) -> String {
         let preferred = Locale.current.language.languageCode?.identifier ?? "en"
-        guard let supported = wireCatalog?.supportedLanguages, !supported.isEmpty else {
-            return preferred
-        }
+        guard let supported, !supported.isEmpty else { return preferred }
         if supported.contains(preferred) { return preferred }
         if let language = supported.first(where: { preferred.hasPrefix($0 + "-") }) {
             return language
@@ -994,7 +1067,11 @@ final class SocialWireAppModel {
         else { return }
         switch feedSelection {
         case .topLevel(.wire):
-            await loadWireFeed(cursor: cursor)
+            if wireEdition != nil {
+                await loadWireEdition(cursor: cursor)
+            } else {
+                await loadWireFeed(cursor: cursor)
+            }
         case .topLevel(.subscribed):
             await loadAggregateFeed(kind: "subscribed", cursor: cursor)
         case .topLevel(.following):
@@ -1004,6 +1081,193 @@ final class SocialWireAppModel {
         default:
             entriesPaginationTriggeredForEntryId = nil
         }
+    }
+
+    func loadWireEdition(cursor: String? = nil) async {
+        guard wireCatalog?.isAvailable == true, let viewerDID else { return }
+        let language = preferredWireLanguage
+        var restoredCache = false
+
+        if cursor == nil,
+           let coordinator = readerCacheCoordinator,
+           let cached = try? coordinator.wireEditionPage(
+               viewerDID: viewerDID,
+               language: language
+           ) {
+            let mapped = cached.stories.map { $0.toEntryListItem() }
+            wireEdition = cached
+            entries = mapped
+            wireGenerationId = cached.generationId
+            entriesNextCursor = cached.moreCursor
+            wireFeedNotice = cached.degraded ? "This cached edition is using a limited fallback." : nil
+            wireFeedLoadFailed = false
+            restoredCache = !mapped.isEmpty
+        }
+
+        if cursor == nil {
+            isLoadingEntries = !restoredCache
+        } else {
+            isLoadingMoreEntries = true
+        }
+        defer {
+            isLoadingEntries = false
+            isLoadingMoreEntries = false
+        }
+
+        do {
+            let page = try await gateway.fetchWireEdition(
+                language: language,
+                cursor: cursor
+            )
+            let mapped = page.stories.map { $0.toEntryListItem() }
+            entries = cursor == nil ? mapped : mergeEntryPages(existing: entries, newPage: mapped)
+            wireEdition = page
+            wireGenerationId = page.generationId
+            entriesNextCursor = page.moreCursor
+            wireFeedNotice = page.degraded ? "This edition is using a limited fallback." : nil
+            wireFeedLoadFailed = false
+            if cursor == nil {
+                try? readerCacheCoordinator?.upsertWireEditionPage(
+                    page,
+                    viewerDID: viewerDID,
+                    language: language
+                )
+            }
+        } catch {
+            if cursor == nil {
+                if restoredCache {
+                    wireFeedNotice = "Showing the most recently cached edition."
+                } else {
+                    wireEdition = nil
+                    await loadWireFeed()
+                }
+            } else {
+                wireFeedNotice = error.localizedDescription
+            }
+        }
+    }
+
+    func refreshCircleCatalog() async {
+        guard isSignedIn else {
+            circleCatalog = nil
+            return
+        }
+        do {
+            circleCatalog = try await gateway.fetchCircleCatalog()
+            if circleCatalog?.isAvailable != true {
+                circleEdition = nil
+            }
+        } catch {
+            circleCatalog = nil
+            circleEdition = nil
+        }
+    }
+
+    func loadCircleEdition(cursor: String? = nil) async {
+        guard circleCatalog?.isAvailable == true, let viewerDID else { return }
+        let language = preferredCircleLanguage
+        var restoredCache = false
+
+        if cursor == nil,
+           let coordinator = readerCacheCoordinator,
+           let cached = try? coordinator.circleEditionPage(
+               viewerDID: viewerDID,
+               language: language
+           ) {
+            circleEdition = cached
+            restoredCache = !cached.stories.isEmpty
+        }
+
+        isLoadingCircle = !restoredCache
+        circleErrorMessage = nil
+        defer { isLoadingCircle = false }
+        do {
+            let page = try await gateway.fetchCircleEdition(
+                language: language,
+                cursor: cursor
+            )
+            if cursor == nil || circleEdition == nil {
+                circleEdition = page
+            } else if let current = circleEdition {
+                circleEdition = CircleEditionPage(
+                    editionVersion: page.editionVersion,
+                    generationId: page.generationId,
+                    generatedAt: page.generatedAt,
+                    language: page.language,
+                    source: page.source,
+                    degraded: page.degraded,
+                    stories: mergeCircleStories(existing: current.stories, new: page.stories),
+                    topStoryIds: page.topStoryIds,
+                    publicationSpotlights: page.publicationSpotlights,
+                    storyRails: page.storyRails,
+                    trendingStoryIds: page.trendingStoryIds,
+                    moreCursor: page.moreCursor
+                )
+            }
+            if cursor == nil {
+                try? readerCacheCoordinator?.upsertCircleEditionPage(
+                    page,
+                    viewerDID: viewerDID,
+                    language: language
+                )
+            }
+        } catch {
+            circleErrorMessage = restoredCache
+                ? "Showing the most recently cached edition."
+                : error.localizedDescription
+        }
+    }
+
+    var visibleCircleStories: [CircleStory] {
+        circleEdition?.stories.filter { !circleHiddenStoryIds.contains($0.storyId) } ?? []
+    }
+
+    func selectCircleStory(_ story: CircleStory) {
+        if let viewerDID,
+           let cached = try? readerCacheCoordinator?.circleItemDetail(
+               storyId: story.storyId,
+               viewerDID: viewerDID
+           ) {
+            selectedEntry = cached
+        } else {
+            let detail = story.toEntryDetail()
+            selectedEntry = detail
+            if let viewerDID {
+                try? readerCacheCoordinator?.upsertCircleItemDetail(
+                    detail,
+                    storyId: story.storyId,
+                    viewerDID: viewerDID
+                )
+            }
+        }
+        selectedSavedLink = nil
+    }
+
+    func setCircleStory(_ story: CircleStory, hidden: Bool) async {
+        if hidden {
+            circleHiddenStoryIds.insert(story.storyId)
+        } else {
+            circleHiddenStoryIds.remove(story.storyId)
+        }
+        do {
+            _ = try await gateway.setCircleItemHidden(storyId: story.storyId, hidden: hidden)
+        } catch {
+            if hidden {
+                circleHiddenStoryIds.remove(story.storyId)
+            } else {
+                circleHiddenStoryIds.insert(story.storyId)
+            }
+            circleErrorMessage = error.localizedDescription
+        }
+    }
+
+    private func mergeCircleStories(existing: [CircleStory], new: [CircleStory]) -> [CircleStory] {
+        var result = existing
+        var ids = Set(existing.map(\.storyId))
+        for story in new where ids.insert(story.storyId).inserted {
+            result.append(story)
+        }
+        return result
     }
 
     func setFeedVisible(_ source: ReaderListSource, visible: Bool) async {
@@ -1019,7 +1283,8 @@ final class SocialWireAppModel {
             visibleFeeds: next,
             feedsWithUnreadCounts: visible
                 ? feedPreferences.feedsWithUnreadCounts
-                : feedPreferences.feedsWithUnreadCounts.filter { $0 != source }
+                : feedPreferences.feedsWithUnreadCounts.filter { $0 != source },
+            articleOpenMode: feedPreferences.articleOpenMode
         )
         if let viewerDID {
             ReaderFeedPreferencesStorage.save(feedPreferences, viewerDid: viewerDID)
@@ -1041,12 +1306,22 @@ final class SocialWireAppModel {
             : feedPreferences.feedsWithUnreadCounts.filter { $0 != source }
         feedPreferences = ReaderFeedPreferences(
             visibleFeeds: feedPreferences.visibleFeeds,
-            feedsWithUnreadCounts: feedsWithUnreadCounts
+            feedsWithUnreadCounts: feedsWithUnreadCounts,
+            articleOpenMode: feedPreferences.articleOpenMode
         )
         if let viewerDID {
             ReaderFeedPreferencesStorage.save(feedPreferences, viewerDid: viewerDID)
         }
         try? await pds.upsertFeedDisplayPreferences(feedPreferences)
+    }
+
+    func setArticleOpenMode(_ mode: ArticleOpenMode) async {
+        guard feedPreferences.articleOpenMode != mode else { return }
+        feedPreferences.articleOpenMode = mode
+        if let viewerDID {
+            ReaderFeedPreferencesStorage.save(feedPreferences, viewerDid: viewerDID)
+        }
+        try? await pds.upsertArticleOpenMode(mode)
     }
 
     private func nextVisibleReaderFeed(
@@ -1621,6 +1896,9 @@ final class SocialWireAppModel {
         if let viewerDID {
             ReaderFeedPreferencesStorage.save(feedPreferences, viewerDid: viewerDID)
         }
+        if isSembleReadLaterEnabled {
+            Task { await refreshSembleCollection() }
+        }
     }
 
     private func prefetchSidebarPublicationsLimited() async {
@@ -2122,6 +2400,11 @@ final class SocialWireAppModel {
         }
     }
 
+    func recordExternalEntryOpen(_ item: EntryListItem) async {
+        guard readerListSource.supportsReadState else { return }
+        await markReadIfNeeded(entryId: item.entryId)
+    }
+
     private func markReadIfNeeded(entryId: String) async {
         guard readAtByEntryId[entryId] == nil else { return }
         guard useAppViewEntryTimelines else { return }
@@ -2267,6 +2550,23 @@ final class SocialWireAppModel {
         }
     }
 
+    func updateFolder(_ folder: RepoRecord<FolderRecord>, name: String, icon: String?) async {
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty else { return }
+        let trimmedIcon = icon?.trimmingCharacters(in: .whitespacesAndNewlines)
+        do {
+            try await pds.updateFolder(
+                rkey: rkey(from: folder.uri),
+                existing: folder.value,
+                name: trimmedName,
+                icon: trimmedIcon?.isEmpty == false ? trimmedIcon : nil
+            )
+            await refreshSidebarProjection()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
     func assign(_ publication: DiscoveredPublication, to folder: RepoRecord<FolderRecord>?) async {
         let rollback = captureSidebarLayoutRollback()
         let toFolderRkey = folder.map { rkey(from: $0.uri) }
@@ -2304,22 +2604,7 @@ final class SocialWireAppModel {
             if let resolved = try? await gateway.resolveAddPublication(input: normalized),
                let result = resolved.result
             {
-                switch result.kind {
-                case "standard-site":
-                    if let publicationAtUri = result.publicationAtUri {
-                        try await pds.createPublicationSubscription(publication: publicationAtUri)
-                    }
-                case "rss":
-                    if let feedUrl = result.feedUrl {
-                        try await pds.createSkyreaderSubscription(
-                            feedURL: rss.normalizeFeedURL(feedUrl),
-                            title: title ?? result.title,
-                            siteURL: result.siteUrl
-                        )
-                    }
-                default:
-                    break
-                }
+                try await addResolvedPublication(result, title: title)
             } else if normalized.contains(".") || normalized.hasPrefix("http") {
                 try await pds.createSkyreaderSubscription(
                     feedURL: rss.normalizeFeedURL(normalized),
@@ -2335,15 +2620,147 @@ final class SocialWireAppModel {
         }
     }
 
+    func resolvePublication(input: String) async throws -> ResolveAddPublicationResultDTO {
+        let normalized = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else { throw SocialWireError.invalidURL }
+        let response = try await gateway.resolveAddPublication(input: normalized)
+        if let result = response.result { return result }
+        throw SocialWireError.badResponse(response.error ?? "Publication could not be resolved.")
+    }
+
+    func addResolvedPublication(
+        _ result: ResolveAddPublicationResultDTO,
+        title: String? = nil
+    ) async throws {
+        switch result.kind {
+        case "standard-site":
+            guard let publicationAtUri = result.publicationAtUri else {
+                throw SocialWireError.badResponse("The publication record is missing.")
+            }
+            try await pds.createPublicationSubscription(publication: publicationAtUri)
+        case "rss":
+            guard let feedUrl = result.feedUrl else {
+                throw SocialWireError.badResponse("The feed URL is missing.")
+            }
+            try await pds.createSkyreaderSubscription(
+                feedURL: rss.normalizeFeedURL(feedUrl),
+                title: title ?? result.title,
+                siteURL: result.siteUrl
+            )
+        default:
+            throw SocialWireError.badResponse("This publication type is not supported.")
+        }
+        await refreshAll()
+    }
+
+    func isSubscribed(to result: ResolveAddPublicationResultDTO) -> Bool {
+        if let publicationAtUri = result.publicationAtUri {
+            return subscribedPublications.contains {
+                normalizeATRepoParam($0.publicationId) == normalizeATRepoParam(publicationAtUri)
+                    || normalizeATRepoParam($0.subscriptionPublicationId ?? "")
+                        == normalizeATRepoParam(publicationAtUri)
+            }
+        }
+        if let feedUrl = result.feedUrl {
+            let publicationId = rss.publicationID(normalizedFeedURL: rss.normalizeFeedURL(feedUrl))
+            return subscribedPublications.contains { $0.publicationId == publicationId }
+        }
+        return false
+    }
+
+    func subscribe(to publication: DiscoveredPublication) async {
+        do {
+            if let feedURL = rss.normalizedFeedURL(from: publication.publicationId) {
+                try await pds.createSkyreaderSubscription(
+                    feedURL: feedURL,
+                    title: publication.title,
+                    siteURL: publication.publicationSiteUrls.first
+                )
+            } else {
+                try await pds.createPublicationSubscription(
+                    publication: publication.subscriptionPublicationId ?? publication.publicationId
+                )
+            }
+            await refreshAll()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func unsubscribe(from publication: DiscoveredPublication) async {
+        do {
+            if let feedURL = rss.normalizedFeedURL(from: publication.publicationId) {
+                let normalized = rss.normalizeFeedURL(feedURL)
+                let subscriptions = try await pds.listSkyreaderSubscriptions()
+                guard let record = subscriptions.first(where: {
+                    $0.value.feedUrl.map(rss.normalizeFeedURL) == normalized
+                }) else { return }
+                try await pds.deleteSkyreaderSubscription(rkey: rkey(from: record.uri))
+            } else {
+                let targetKeys = Set(publicationSubscriptionMatchKeys(for: publication))
+                let subscriptions = try await pds.listPublicationSubscriptions()
+                guard let record = subscriptions.first(where: { subscription in
+                    var keys = Set<String>()
+                    addPublicationSubscriptionLookupKeys(
+                        into: &keys,
+                        value: subscription.value.publication
+                    )
+                    return !targetKeys.isDisjoint(with: keys)
+                }) else { return }
+                try await pds.deletePublicationSubscription(rkey: rkey(from: record.uri))
+            }
+            await refreshAll()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func existingSkyreaderFeedURLs() async -> Set<String> {
+        guard let records = try? await pds.listSkyreaderSubscriptions() else { return [] }
+        return Set(records.compactMap { record in
+            record.value.feedUrl.flatMap(OPMLParser.normalizeFeedURL)
+        })
+    }
+
+    func importOPMLFeeds(
+        _ feeds: [OPMLFeed],
+        progress: @escaping @MainActor (_ completed: Int, _ total: Int) -> Void
+    ) async -> [OPMLImportFailure] {
+        var failures: [OPMLImportFailure] = []
+        for (index, feed) in feeds.enumerated() {
+            do {
+                try await pds.createSkyreaderSubscription(
+                    feedURL: feed.feedURL,
+                    title: feed.title,
+                    siteURL: feed.siteURL
+                )
+            } catch {
+                failures.append(OPMLImportFailure(feed: feed, message: error.localizedDescription))
+            }
+            progress(index + 1, feeds.count)
+        }
+        await refreshAll()
+        return failures
+    }
+
     var currentSavedLinks: [MergedLatrSave] {
         readerListSource == .archive ? archivedSavedLinks : savedLinks
     }
 
     var filteredCurrentSavedLinks: [MergedLatrSave] {
-        guard let selectedSavedSourceKey else { return currentSavedLinks }
-        return currentSavedLinks.filter {
-            savedFeedSourceKey(for: $0) == selectedSavedSourceKey
+        return currentSavedLinks.filter { save in
+            let matchesSource = selectedSavedSourceKey.map { sourceKey in
+                savedFeedSourceKey(for: save) == sourceKey
+            } ?? true
+            let matchesTag = selectedSavedTag.map { selectedTag in
+                save.tags.contains(selectedTag)
+            } ?? true
+            return matchesSource && matchesTag
         }
+    }
+
+    var currentSavedTagCounts: [SavedTagCount] {
+        SavedTagCatalog.counts(in: currentSavedLinks)
     }
 
     var currentSavedFeedSources: [SavedFeedSource] {
@@ -2368,6 +2785,24 @@ final class SocialWireAppModel {
         feedSelection = .savedSource(readerListSource, source.id)
         if let viewerDID {
             FeedSelectionStorage.save(feedSelection, viewerDid: viewerDID)
+        }
+    }
+
+    func clearSavedFeedSource() {
+        selectedSavedSourceKey = nil
+        selectedSavedLink = nil
+        feedSelection = .topLevel(readerListSource)
+        if let viewerDID {
+            FeedSelectionStorage.save(feedSelection, viewerDid: viewerDID)
+        }
+    }
+
+    func selectSavedTag(_ tag: String?) {
+        selectedSavedTag = tag
+        selectedSavedLink = nil
+        if let viewerDID {
+            SavedTagSelectionStorage.save(tag, viewerDid: viewerDID)
+            savedTagSelectionViewerDid = viewerDID
         }
     }
 
@@ -2423,7 +2858,12 @@ final class SocialWireAppModel {
     }
 
     func refreshSavedLinks() async {
+        if isSembleReadLaterEnabled {
+            await refreshSembleCollection()
+            return
+        }
         do {
+            restoreSavedTagSelectionIfNeeded()
             if !attemptedBookmarkMigration, let viewerDID {
                 attemptedBookmarkMigration = true
                 do {
@@ -2444,6 +2884,12 @@ final class SocialWireAppModel {
             // Passive refresh (runs on pane appear and after mutations). Keep whatever links are
             // already shown and don't interrupt navigation with a modal alert.
         }
+    }
+
+    private func restoreSavedTagSelectionIfNeeded() {
+        guard let viewerDID, savedTagSelectionViewerDid != viewerDID else { return }
+        selectedSavedTag = SavedTagSelectionStorage.load(viewerDid: viewerDID)
+        savedTagSelectionViewerDid = viewerDID
     }
 
     private func applyOptimisticLatrArchive(_ save: MergedLatrSave) {
@@ -2469,6 +2915,18 @@ final class SocialWireAppModel {
         archivedSavedLinks.removeAll { $0.id == save.id }
     }
 
+    private func replaceSavedLink(_ replacement: MergedLatrSave) {
+        if let index = savedLinks.firstIndex(where: { $0.itemRkey == replacement.itemRkey }) {
+            savedLinks[index] = replacement
+        }
+        if let index = archivedSavedLinks.firstIndex(where: { $0.itemRkey == replacement.itemRkey }) {
+            archivedSavedLinks[index] = replacement
+        }
+        if selectedSavedLink?.itemRkey == replacement.itemRkey {
+            selectedSavedLink = replacement
+        }
+    }
+
     func saveCurrentEntry() async {
         guard let selectedEntry else { return }
         await saveEntry(
@@ -2483,17 +2941,339 @@ final class SocialWireAppModel {
         url: URL?,
         title: String?,
         excerpt: String? = nil,
-        linkedWebURL: String? = nil
+        linkedWebURL: String? = nil,
+        tags: [String]? = nil,
+        note: String? = nil
     ) async {
+        if isSembleReadLaterEnabled {
+            await saveEntryToSemble(
+                entryId: entryId,
+                url: url,
+                title: title,
+                linkedWebURL: linkedWebURL,
+                note: note
+            )
+            return
+        }
         do {
             let subject = url?.absoluteString
                 ?? linkedWebURL?.trimmingCharacters(in: .whitespacesAndNewlines)
                 ?? entryId
-            try await latrGateway.save(subject: subject)
+            try await latrGateway.save(subject: subject, tags: tags)
             await refreshSavedLinks()
         } catch {
             errorMessage = "Couldn't save this article to Read Later. \(error.localizedDescription)"
         }
+    }
+
+    func loadOwnedSembleCollections() async {
+        guard let viewerDID else { return }
+        isLoadingSemble = true
+        defer { isLoadingSemble = false }
+        do {
+            var rows: [SembleCollectionSummary] = []
+            var cursor: String?
+            repeat {
+                let page = try await gateway.fetchSembleCollections(cursor: cursor)
+                rows.append(contentsOf: page.collections)
+                cursor = page.cursor
+            } while cursor != nil
+            sembleCollections = rows
+                .filter { $0.ownerDID == viewerDID }
+                .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        } catch {
+            errorMessage = "Couldn't load your Semble collections. \(error.localizedDescription)"
+        }
+    }
+
+    func configureReadLater(serviceID: String, sembleCollection selection: SembleCollectionSummary? = nil) async {
+        if serviceID == "semble", selection == nil {
+            errorMessage = "Choose a Semble collection before using it for Saved."
+            return
+        }
+        do {
+            try await pds.upsertReadLaterPreference(serviceID: serviceID, sembleCollection: selection)
+            let previous = preferencesFromGateway
+            let now = DateFormatters.string()
+            var connections = previous?.readLaterConnections ?? [:]
+            if let selection {
+                connections["semble"] = ReadLaterConnectionPreferenceRecord(
+                    connectedAt: now,
+                    collectionUri: selection.uri,
+                    collectionName: selection.name
+                )
+            }
+            preferencesFromGateway = PreferencesRecord(
+                type: PDSRecordService.preferences,
+                readLaterService: serviceID,
+                readLaterConnections: connections.isEmpty ? nil : connections,
+                visibleFeeds: previous?.visibleFeeds,
+                showTopLevelFeedUnreadCounts: previous?.showTopLevelFeedUnreadCounts,
+                feedsWithUnreadCounts: previous?.feedsWithUnreadCounts,
+                rssArticleOpenMode: previous?.rssArticleOpenMode,
+                createdAt: previous?.createdAt ?? now,
+                updatedAt: now
+            )
+            selectedSavedLink = nil
+            selectedSembleItem = nil
+            if serviceID == "semble" {
+                sembleCollectionUnavailable = false
+                sembleCollectionLoadFailed = false
+                await refreshSembleCollection()
+            } else {
+                await refreshSavedLinks()
+            }
+        } catch {
+            errorMessage = "Couldn't update the Saved provider. \(error.localizedDescription)"
+        }
+    }
+
+    func refreshSembleCollection() async {
+        guard let viewerDID, let collectionURI = configuredSembleCollectionURI else {
+            sembleCollection = nil
+            sembleItems = []
+            sembleCollectionUnavailable = false
+            sembleCollectionLoadFailed = false
+            return
+        }
+        let cacheKey = Self.sembleCollectionCacheKey(viewerDID: viewerDID, collectionURI: collectionURI)
+        var restoredCache = false
+        if let body = readerCacheCoordinator?.gatewayCachedBody(for: cacheKey),
+           let cached = try? JSONDecoder().decode(SembleCollectionItemsPage.self, from: body)
+        {
+            applySemblePage(cached)
+            restoredCache = true
+        }
+        if !restoredCache { isLoadingSemble = true }
+        defer { isLoadingSemble = false }
+
+        do {
+            var cursor: String?
+            var collection: SembleCollectionSummary?
+            var items: [SembleCollectionItem] = []
+            var membershipComplete = true
+            var recordLinksComplete = true
+            repeat {
+                let page = try await gateway.fetchSembleCollection(
+                    collectionURI: collectionURI,
+                    cursor: cursor
+                )
+                collection = page.collection
+                items.append(contentsOf: page.items)
+                membershipComplete = membershipComplete && page.membershipComplete
+                recordLinksComplete = recordLinksComplete && page.recordLinksComplete
+                cursor = page.cursor
+            } while cursor != nil
+            guard let collection else { return }
+            let page = SembleCollectionItemsPage(
+                collection: collection,
+                items: items,
+                cursor: nil,
+                membershipComplete: membershipComplete,
+                recordLinksComplete: recordLinksComplete
+            )
+            applySemblePage(page)
+            sembleCollectionUnavailable = false
+            sembleCollectionLoadFailed = false
+            if let body = try? JSONEncoder().encode(page) {
+                try? readerCacheCoordinator?.upsertGatewayResponse(cacheKey: cacheKey, etag: nil, body: body)
+            }
+        } catch let error as SocialWireError {
+            if case .sembleCollectionUnavailable = error {
+                sembleCollectionUnavailable = true
+                sembleCollectionLoadFailed = false
+                sembleCollection = nil
+                sembleItems = []
+                selectedSembleItem = nil
+            } else {
+                sembleCollectionLoadFailed = true
+            }
+            if !restoredCache {
+                errorMessage = "Couldn't load the Semble collection. \(error.localizedDescription)"
+            }
+        } catch {
+            sembleCollectionLoadFailed = true
+            if !restoredCache {
+                errorMessage = "Couldn't load the Semble collection. \(error.localizedDescription)"
+            }
+        }
+    }
+
+    func removeSembleItem(_ item: SembleCollectionItem) async {
+        guard let collectionURI = configuredSembleCollectionURI else { return }
+        let snapshot = sembleItems
+        sembleItems.removeAll { $0.id == item.id }
+        if selectedSembleItem?.id == item.id { selectedSembleItem = nil }
+        do {
+            try await sembleRecords.removeMembership(item: item, collectionURI: collectionURI)
+            await refreshSembleCollection()
+        } catch {
+            sembleItems = snapshot
+            errorMessage = "Couldn't remove this card from the collection. \(error.localizedDescription)"
+        }
+    }
+
+    func addSembleNote(_ text: String, to item: SembleCollectionItem) async {
+        guard let cardCID = item.cardCid else {
+            errorMessage = "This Semble card is missing the CID required for a note."
+            return
+        }
+        do {
+            _ = try await sembleRecords.addNote(text, to: StrongRef(uri: item.cardUri, cid: cardCID))
+            await refreshSembleCollection()
+        } catch {
+            errorMessage = "Couldn't add the note. \(error.localizedDescription)"
+        }
+    }
+
+    func updateSembleNote(_ text: String, on item: SembleCollectionItem) async {
+        guard let note = item.note, let noteURI = note.uri, let cardCID = item.cardCid else { return }
+        do {
+            try await sembleRecords.updateNote(
+                uri: noteURI,
+                text: text,
+                parentCard: StrongRef(uri: item.cardUri, cid: cardCID)
+            )
+            await refreshSembleCollection()
+        } catch {
+            errorMessage = "Couldn't update the note. \(error.localizedDescription)"
+        }
+    }
+
+    func loadSembleConnections(for item: SembleCollectionItem) async {
+        guard let url = item.url else {
+            sembleConnections = []
+            return
+        }
+        do {
+            var rows: [SembleConnection] = []
+            var cursor: String?
+            repeat {
+                let page = try await gateway.fetchSembleConnections(url: url, cursor: cursor)
+                rows.append(contentsOf: page.connections)
+                cursor = page.cursor
+            } while cursor != nil
+            sembleConnections = rows
+        } catch {
+            sembleConnections = []
+        }
+    }
+
+    func createSembleConnection(
+        from source: SembleCollectionItem,
+        to target: SembleCollectionItem,
+        connectionType: String?,
+        note: String?
+    ) async {
+        do {
+            _ = try await sembleRecords.createConnection(
+                source: source.cardUri,
+                target: target.cardUri,
+                connectionType: connectionType,
+                note: note
+            )
+            await loadSembleConnections(for: source)
+        } catch {
+            errorMessage = "Couldn't create the Semble connection. \(error.localizedDescription)"
+        }
+    }
+
+    func updateSembleConnection(
+        _ connection: SembleConnection,
+        from source: SembleCollectionItem,
+        to target: SembleCollectionItem,
+        connectionType: String?,
+        note: String?
+    ) async {
+        guard connection.editable, let connectionURI = connection.uri else { return }
+        do {
+            try await sembleRecords.updateConnection(
+                uri: connectionURI,
+                source: source.cardUri,
+                target: target.cardUri,
+                connectionType: connectionType,
+                note: note,
+                createdAt: connection.createdAt ?? DateFormatters.string()
+            )
+            await loadSembleConnections(for: source)
+        } catch {
+            errorMessage = "Couldn't update the Semble connection. \(error.localizedDescription)"
+        }
+    }
+
+    func deleteSembleConnection(_ connection: SembleConnection, from item: SembleCollectionItem) async {
+        guard connection.editable, let connectionURI = connection.uri else { return }
+        do {
+            try await sembleRecords.deleteConnection(uri: connectionURI)
+            await loadSembleConnections(for: item)
+        } catch {
+            errorMessage = "Couldn't delete the Semble connection. \(error.localizedDescription)"
+        }
+    }
+
+    func resumeSembleSave() async {
+        guard let pendingSembleSaveRetry else { return }
+        do {
+            try await sembleRecords.resumeSave(pendingSembleSaveRetry)
+            self.pendingSembleSaveRetry = nil
+            await refreshSembleCollection()
+        } catch {
+            errorMessage = "Couldn't finish adding this card to the collection. \(error.localizedDescription)"
+        }
+    }
+
+    private func saveEntryToSemble(
+        entryId: String,
+        url: URL?,
+        title: String?,
+        linkedWebURL: String?,
+        note: String?
+    ) async {
+        guard let collectionURI = configuredSembleCollectionURI else {
+            errorMessage = "Choose a Semble collection in Settings before saving."
+            return
+        }
+        guard !sembleCollectionUnavailable else {
+            errorMessage = "Choose another Semble collection in Settings before saving."
+            return
+        }
+        let rawURL = url?.absoluteString
+            ?? linkedWebURL?.trimmingCharacters(in: .whitespacesAndNewlines)
+            ?? (entryId.hasPrefix("http") ? entryId : nil)
+        guard let rawURL, let normalizedURL = SembleRecordService.normalizeURL(rawURL) else {
+            errorMessage = "This article doesn't have a web URL Semble can save."
+            return
+        }
+        if sembleItems.contains(where: { $0.url.flatMap(SembleRecordService.normalizeURL) == normalizedURL }) {
+            return
+        }
+        do {
+            switch try await sembleRecords.saveURL(normalizedURL, title: title, to: collectionURI) {
+            case .saved(let card):
+                pendingSembleSaveRetry = nil
+                if let note, !note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    _ = try await sembleRecords.addNote(note, to: card)
+                }
+                await refreshSembleCollection()
+            case .membershipRetry(let retry, let message):
+                pendingSembleSaveRetry = retry
+                errorMessage = "The card was created, but adding it to the collection needs to be resumed. \(message)"
+            }
+        } catch {
+            errorMessage = "Couldn't save this article to Semble. \(error.localizedDescription)"
+        }
+    }
+
+    private func applySemblePage(_ page: SembleCollectionItemsPage) {
+        sembleCollection = page.collection
+        sembleItems = page.items
+        if let selectedID = selectedSembleItem?.id {
+            selectedSembleItem = page.items.first { $0.id == selectedID }
+        }
+    }
+
+    nonisolated static func sembleCollectionCacheKey(viewerDID: String, collectionURI: String) -> String {
+        "semble:v1|viewer=\(viewerDID)|provider=semble|collection=\(collectionURI)"
     }
 
     func archive(_ save: MergedLatrSave) async {
@@ -2547,6 +3327,102 @@ final class SocialWireAppModel {
         }
     }
 
+    func replaceTags(on save: MergedLatrSave, with tags: [String]) async {
+        let snapshotActive = savedLinks
+        let snapshotArchived = archivedSavedLinks
+        let snapshotSelected = selectedSavedLink
+        replaceSavedLink(save.withTags(tags))
+        do {
+            let updated = try await latrGateway.setTags(
+                bookmarkURI: save.itemRkey,
+                tags: tags
+            )
+            replaceSavedLink(updated)
+        } catch {
+            savedLinks = snapshotActive
+            archivedSavedLinks = snapshotArchived
+            selectedSavedLink = snapshotSelected
+            errorMessage = "Couldn't update tags. \(error.localizedDescription)"
+        }
+    }
+
+    func clearTags(on save: MergedLatrSave) async {
+        await replaceTags(on: save, with: [])
+    }
+
+    func renameSavedTag(_ tag: String, replacement: String) async {
+        savedTagMutationProgress = SavedTagMutationProgress(
+            tag: tag,
+            action: .rename(replacement: replacement)
+        )
+        await resumeSavedTagMutation()
+    }
+
+    func deleteSavedTag(_ tag: String) async {
+        savedTagMutationProgress = SavedTagMutationProgress(tag: tag, action: .delete)
+        await resumeSavedTagMutation()
+    }
+
+    func resumeSavedTagMutation() async {
+        guard var progress = savedTagMutationProgress, !isMutatingSavedTags else { return }
+        isMutatingSavedTags = true
+        progress.errorMessage = nil
+        savedTagMutationProgress = progress
+        defer { isMutatingSavedTags = false }
+
+        do {
+            repeat {
+                let batchCursor = progress.cursor
+                let page: LatrTagMutationResult
+                switch progress.action {
+                case .rename(let replacement):
+                    page = try await latrGateway.renameTag(
+                        progress.tag,
+                        replacement: replacement,
+                        cursor: progress.cursor
+                    )
+                case .delete:
+                    page = try await latrGateway.deleteTag(
+                        progress.tag,
+                        cursor: progress.cursor
+                    )
+                }
+                progress.applyPage(
+                    scanned: page.scanned,
+                    matched: page.matched,
+                    updated: page.updated,
+                    cursor: page.cursor
+                )
+                if !page.ok {
+                    // Preserve the last safe cursor when the provider reports a partial batch
+                    // without advancing. Retrying tag mutations is idempotent.
+                    if progress.cursor == nil { progress.cursor = batchCursor }
+                    progress.errorMessage = "The last batch completed only partially. Resume to continue from the last safe cursor."
+                    savedTagMutationProgress = progress
+                    return
+                }
+                savedTagMutationProgress = progress
+                await Task.yield()
+            } while progress.cursor != nil
+
+            if selectedSavedTag == progress.tag {
+                switch progress.action {
+                case .rename(let replacement): selectSavedTag(replacement)
+                case .delete: selectSavedTag(nil)
+                }
+            }
+            await refreshSavedLinks()
+        } catch {
+            progress.errorMessage = error.localizedDescription
+            savedTagMutationProgress = progress
+        }
+    }
+
+    func dismissSavedTagMutationProgress() {
+        guard !isMutatingSavedTags else { return }
+        savedTagMutationProgress = nil
+    }
+
     func savedLinkSocialEntry(for save: MergedLatrSave) async -> EntryDetail? {
         if let originalEntryId = SavedLinkSocialTarget.originalEntryId(from: save) {
             if let cached = try? readerCacheCoordinator?.entryDetail(originalEntryId) {
@@ -2571,19 +3447,171 @@ final class SocialWireAppModel {
     }
 
     func likeEntry(_ entry: EntryDetail) async {
+        let loadingKey = "like:\(entry.entryId)"
+        guard articleSocialStateLoadingKeys.insert(loadingKey).inserted else { return }
+        defer { articleSocialStateLoadingKeys.remove(loadingKey) }
         do {
-            try await publicationsService.createLike(entry: entry)
+            if let recordURI = likeRecordURIByEntryID[entry.entryId] {
+                try await publicationsService.deleteLike(recordURI: recordURI)
+                likeRecordURIByEntryID.removeValue(forKey: entry.entryId)
+            } else {
+                likeRecordURIByEntryID[entry.entryId] = try await publicationsService.createLike(entry: entry)
+            }
         } catch {
-            errorMessage = "Couldn't like this post. \(error.localizedDescription)"
+            errorMessage = "Couldn't update your like. \(error.localizedDescription)"
         }
     }
 
     func repostEntry(_ entry: EntryDetail) async {
+        let loadingKey = "repost:\(entry.entryId)"
+        guard articleSocialStateLoadingKeys.insert(loadingKey).inserted else { return }
+        defer { articleSocialStateLoadingKeys.remove(loadingKey) }
         do {
-            try await publicationsService.createRepost(entry: entry)
+            if let recordURI = repostRecordURIByEntryID[entry.entryId] {
+                try await publicationsService.deleteRepost(recordURI: recordURI)
+                repostRecordURIByEntryID.removeValue(forKey: entry.entryId)
+            } else {
+                repostRecordURIByEntryID[entry.entryId] = try await publicationsService.createRepost(entry: entry)
+            }
         } catch {
-            errorMessage = "Couldn't repost this post. \(error.localizedDescription)"
+            errorMessage = "Couldn't update your repost. \(error.localizedDescription)"
         }
+    }
+
+    func isEntryLiked(_ entry: EntryDetail) -> Bool {
+        likeRecordURIByEntryID[entry.entryId] != nil
+    }
+
+    func isEntryReposted(_ entry: EntryDetail) -> Bool {
+        repostRecordURIByEntryID[entry.entryId] != nil
+    }
+
+    func wireArticleFeedbackValue(for entry: EntryDetail) -> WireArticleFeedbackValue? {
+        guard let canonicalURL = normalizedWireFeedbackURL(for: entry) else { return nil }
+        return wireFeedbackByCanonicalURL[canonicalURL]
+    }
+
+    func isStandardSiteRecommended(_ entry: EntryDetail) -> Bool {
+        guard let documentURI = entry.standardSiteDocumentURI else { return false }
+        return recommendedStandardSiteDocumentURIs.contains(documentURI)
+    }
+
+    func isArticleSocialStateLoading(for entry: EntryDetail) -> Bool {
+        articleSocialLoadingKeys(for: entry).contains { articleSocialStateLoadingKeys.contains($0) }
+    }
+
+    func loadArticleSocialState(for entry: EntryDetail) async {
+        let loadingKeys = articleSocialLoadingKeys(for: entry)
+        guard !loadingKeys.isEmpty,
+              loadingKeys.allSatisfy({ !articleSocialStateLoadingKeys.contains($0) })
+        else { return }
+        articleSocialStateLoadingKeys.formUnion(loadingKeys)
+        defer { articleSocialStateLoadingKeys.subtract(loadingKeys) }
+
+        if let canonicalURL = normalizedWireFeedbackURL(for: entry) {
+            do {
+                let records = try await pds.listWireArticleFeedback()
+                let matching = records.first { record in
+                    WireArticleFeedbackContract.normalizeCanonicalURL(record.value.canonicalUrl) == canonicalURL
+                }
+                if let value = matching?.value.value {
+                    wireFeedbackByCanonicalURL[canonicalURL] = value
+                } else {
+                    wireFeedbackByCanonicalURL.removeValue(forKey: canonicalURL)
+                }
+            } catch {
+                errorMessage = "Couldn't load your Wire rating. \(error.localizedDescription)"
+            }
+        }
+
+        if let documentURI = entry.standardSiteDocumentURI {
+            do {
+                let records = try await pds.listStandardSiteRecommendations()
+                if records.contains(where: { $0.value.document == documentURI }) {
+                    recommendedStandardSiteDocumentURIs.insert(documentURI)
+                } else {
+                    recommendedStandardSiteDocumentURIs.remove(documentURI)
+                }
+            } catch {
+                errorMessage = "Couldn't load your recommendation. \(error.localizedDescription)"
+            }
+        }
+
+        if let postURI = entry.bskyPostUri {
+            do {
+                let viewer = try await publicationsService.viewerState(for: postURI)
+                if let like = viewer?.like {
+                    likeRecordURIByEntryID[entry.entryId] = like
+                } else {
+                    likeRecordURIByEntryID.removeValue(forKey: entry.entryId)
+                }
+                if let repost = viewer?.repost {
+                    repostRecordURIByEntryID[entry.entryId] = repost
+                } else {
+                    repostRecordURIByEntryID.removeValue(forKey: entry.entryId)
+                }
+            } catch {
+                errorMessage = "Couldn't load your article reactions. \(error.localizedDescription)"
+            }
+        }
+    }
+
+    func toggleWireArticleFeedback(
+        for entry: EntryDetail,
+        value: WireArticleFeedbackValue
+    ) async {
+        guard let canonicalURL = normalizedWireFeedbackURL(for: entry) else { return }
+        let loadingKey = "wire:\(canonicalURL)"
+        guard articleSocialStateLoadingKeys.insert(loadingKey).inserted else { return }
+        defer { articleSocialStateLoadingKeys.remove(loadingKey) }
+        do {
+            let next = try await pds.toggleWireArticleFeedback(
+                canonicalURL: canonicalURL,
+                subject: entry.wireFeedbackSubject,
+                value: value
+            )
+            wireFeedbackByCanonicalURL[canonicalURL] = next
+        } catch {
+            errorMessage = "Couldn't rate this article. \(error.localizedDescription)"
+        }
+    }
+
+    func toggleStandardSiteRecommendation(for entry: EntryDetail) async {
+        guard let documentURI = entry.standardSiteDocumentURI else { return }
+        let loadingKey = "recommend:\(documentURI)"
+        guard articleSocialStateLoadingKeys.insert(loadingKey).inserted else { return }
+        defer { articleSocialStateLoadingKeys.remove(loadingKey) }
+        do {
+            let isRecommended = try await pds.toggleStandardSiteRecommendation(
+                documentURI: documentURI
+            )
+            if isRecommended {
+                recommendedStandardSiteDocumentURIs.insert(documentURI)
+            } else {
+                recommendedStandardSiteDocumentURIs.remove(documentURI)
+            }
+        } catch {
+            errorMessage = "Couldn't update your recommendation. \(error.localizedDescription)"
+        }
+    }
+
+    private func normalizedWireFeedbackURL(for entry: EntryDetail) -> String? {
+        entry.wireFeedbackCanonicalUrl.flatMap(WireArticleFeedbackContract.normalizeCanonicalURL)
+    }
+
+    private func articleSocialLoadingKeys(for entry: EntryDetail) -> Set<String> {
+        var keys = Set<String>()
+        if let canonicalURL = normalizedWireFeedbackURL(for: entry) {
+            keys.insert("wire:\(canonicalURL)")
+        }
+        if let documentURI = entry.standardSiteDocumentURI {
+            keys.insert("recommend:\(documentURI)")
+        }
+        if entry.bskyPostUri != nil {
+            keys.insert("like:\(entry.entryId)")
+            keys.insert("repost:\(entry.entryId)")
+        }
+        return keys
     }
 
     func replyToCurrentEntry(text: String) async {
@@ -2606,20 +3634,12 @@ final class SocialWireAppModel {
 
     func likeCurrentEntry() async {
         guard let selectedEntry else { return }
-        do {
-            try await publicationsService.createLike(entry: selectedEntry)
-        } catch {
-            errorMessage = "Couldn't like this post. \(error.localizedDescription)"
-        }
+        await likeEntry(selectedEntry)
     }
 
     func repostCurrentEntry() async {
         guard let selectedEntry else { return }
-        do {
-            try await publicationsService.createRepost(entry: selectedEntry)
-        } catch {
-            errorMessage = "Couldn't repost this post. \(error.localizedDescription)"
-        }
+        await repostEntry(selectedEntry)
     }
 
     private func publicationsAffected(by scope: ReaderMarkReadScope) -> [DiscoveredPublication] {

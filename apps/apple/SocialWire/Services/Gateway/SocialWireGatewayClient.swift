@@ -5,6 +5,11 @@ import Foundation
 final class SocialWireGatewayClient {
     private struct EmptyXRPCInput: Encodable {}
 
+    private struct CircleHiddenItemInput: Encodable {
+        let storyId: String
+        let hidden: Bool
+    }
+
     private let auth: ATProtoOAuthService
     private let baseURL: URL
     private let urlSession: URLSession
@@ -16,6 +21,13 @@ final class SocialWireGatewayClient {
         "app.bsky.graph.getListMutes",
         "app.bsky.graph.getListBlocks",
     ]
+
+    nonisolated static let circleViewerGraphNSIDs = wireViewerModerationNSIDs + [
+        "com.atproto.repo.listRecords",
+    ]
+
+    nonisolated static let wireModerationDPoPHeader = "X-Wire-Moderation-DPoP"
+    nonisolated static let circleGraphDPoPHeader = "X-Circle-Graph-DPoP"
 
     nonisolated static func wireQuery(
         language: String,
@@ -32,8 +44,46 @@ final class SocialWireGatewayClient {
         return query
     }
 
+    nonisolated static func wireEditionQuery(
+        language: String?,
+        region: WireViewerRegion?,
+        cursor: String? = nil
+    ) -> [String: String] {
+        var query: [String: String] = [:]
+        if let language, !language.isEmpty {
+            query["lang"] = language
+        }
+        if let region {
+            query["region"] = region.rawValue
+        }
+        if let cursor, !cursor.isEmpty {
+            query["cursor"] = cursor
+        }
+        return query
+    }
+
+    nonisolated static func circleEditionQuery(
+        language: String?,
+        cursor: String?
+    ) -> [String: String] {
+        var query: [String: String] = [:]
+        if let language, !language.isEmpty {
+            query["lang"] = language
+        }
+        if let cursor, !cursor.isEmpty {
+            query["cursor"] = cursor
+        }
+        return query
+    }
+
     nonisolated static func requiresWireModerationProofs(path: String) -> Bool {
-        path == SocialWireXRPCMethod.getWire || path == SocialWireXRPCMethod.getWireItem
+        path == SocialWireXRPCMethod.getWire
+            || path == SocialWireXRPCMethod.getWireEdition
+            || path == SocialWireXRPCMethod.getWireItem
+    }
+
+    nonisolated static func requiresCircleGraphProofs(path: String) -> Bool {
+        path == SocialWireXRPCMethod.getCircleEdition
     }
 
     init(
@@ -48,6 +98,66 @@ final class SocialWireGatewayClient {
 
     func fetchSyncPreferences(ifNoneMatch: String?) async throws -> GatewayHTTPResult {
         try await authorizedGET(path: SocialWireXRPCMethod.getPreferences, query: [:], ifNoneMatch: ifNoneMatch)
+    }
+
+    func fetchSembleCollections(limit: Int = 100, cursor: String? = nil) async throws -> SembleCollectionPage {
+        var query = ["limit": String(limit)]
+        if let cursor, !cursor.isEmpty { query["cursor"] = cursor }
+        let result = try await authorizedGET(
+            path: "/v1/semble/collections",
+            query: query,
+            ifNoneMatch: nil
+        )
+        guard (200 ..< 300).contains(result.statusCode) else {
+            throw SocialWireError.badResponse("Semble collections failed (\(result.statusCode)).")
+        }
+        return try JSONDecoder().decode(SembleCollectionPage.self, from: result.body)
+    }
+
+    func fetchSembleCollection(
+        collectionURI: String,
+        limit: Int = 100,
+        cursor: String? = nil
+    ) async throws -> SembleCollectionItemsPage {
+        var query = ["collectionUri": collectionURI, "limit": String(limit)]
+        if let cursor, !cursor.isEmpty { query["cursor"] = cursor }
+        let result = try await authorizedGET(
+            path: "/v1/semble/collection",
+            query: query,
+            ifNoneMatch: nil
+        )
+        if result.statusCode == 404 {
+            throw SocialWireError.sembleCollectionUnavailable(
+                "The selected Semble collection no longer exists."
+            )
+        }
+        if result.statusCode == 403 {
+            throw SocialWireError.sembleCollectionUnavailable(
+                "You no longer own the selected Semble collection."
+            )
+        }
+        guard (200 ..< 300).contains(result.statusCode) else {
+            throw SocialWireError.badResponse("Semble collection failed (\(result.statusCode)).")
+        }
+        return try JSONDecoder().decode(SembleCollectionItemsPage.self, from: result.body)
+    }
+
+    func fetchSembleConnections(
+        url: String,
+        limit: Int = 100,
+        cursor: String? = nil
+    ) async throws -> SembleConnectionsPage {
+        var query = ["url": url, "limit": String(limit)]
+        if let cursor, !cursor.isEmpty { query["cursor"] = cursor }
+        let result = try await authorizedGET(
+            path: "/v1/semble/connections",
+            query: query,
+            ifNoneMatch: nil
+        )
+        guard (200 ..< 300).contains(result.statusCode) else {
+            throw SocialWireError.badResponse("Semble connections failed (\(result.statusCode)).")
+        }
+        return try JSONDecoder().decode(SembleConnectionsPage.self, from: result.body)
     }
 
     func fetchCachedPdsRecord(collection: String, rkey: String, ifNoneMatch: String?) async throws -> GatewayHTTPResult {
@@ -203,6 +313,28 @@ final class SocialWireGatewayClient {
         return try JSONDecoder().decode(WireFeedPage.self, from: result.body)
     }
 
+    func fetchWireEdition(
+        language: String? = nil,
+        region: WireViewerRegion? = nil,
+        cursor: String? = nil
+    ) async throws -> WireEditionPage {
+        let result = try await authorizedFeedGET(
+            path: SocialWireXRPCMethod.getWireEdition,
+            query: Self.wireEditionQuery(
+                language: language,
+                region: region,
+                cursor: cursor
+            ),
+            includesWireModerationProofs: Self.requiresWireModerationProofs(
+                path: SocialWireXRPCMethod.getWireEdition
+            )
+        )
+        guard (200 ..< 300).contains(result.statusCode) else {
+            throw appViewFeedError(result, fallback: "The Wire edition failed")
+        }
+        return try JSONDecoder().decode(WireEditionPage.self, from: result.body)
+    }
+
     func fetchWireItem(itemId: String) async throws -> WireFeedItemResponse {
         let result = try await authorizedFeedGET(
             path: SocialWireXRPCMethod.getWireItem,
@@ -215,6 +347,51 @@ final class SocialWireGatewayClient {
             throw appViewFeedError(result, fallback: "The Wire item failed")
         }
         return try JSONDecoder().decode(WireFeedItemResponse.self, from: result.body)
+    }
+
+    func fetchCircleCatalog() async throws -> CircleFeedCatalog {
+        let result = try await authorizedFeedGET(
+            path: SocialWireXRPCMethod.getCircleCatalog,
+            query: [:]
+        )
+        guard (200 ..< 300).contains(result.statusCode) else {
+            throw appViewFeedError(result, fallback: "Your Circle catalog failed")
+        }
+        return try JSONDecoder().decode(CircleFeedCatalog.self, from: result.body)
+    }
+
+    func fetchCircleEdition(
+        language: String? = nil,
+        cursor: String? = nil
+    ) async throws -> CircleEditionPage {
+        let result = try await authorizedFeedGET(
+            path: SocialWireXRPCMethod.getCircleEdition,
+            query: Self.circleEditionQuery(language: language, cursor: cursor),
+            includesCircleGraphProofs: Self.requiresCircleGraphProofs(
+                path: SocialWireXRPCMethod.getCircleEdition
+            )
+        )
+        guard (200 ..< 300).contains(result.statusCode) else {
+            throw appViewFeedError(result, fallback: "Your Circle edition failed")
+        }
+        return try JSONDecoder().decode(CircleEditionPage.self, from: result.body)
+    }
+
+    func setCircleItemHidden(storyId: String, hidden: Bool) async throws -> CircleHiddenItemState {
+        let payload = try JSONEncoder().encode(
+            CircleHiddenItemInput(storyId: storyId, hidden: hidden)
+        )
+        let result = try await authorizedRequest(
+            method: "POST",
+            path: SocialWireXRPCMethod.setCircleItemHidden,
+            query: [:],
+            body: payload,
+            contentType: "application/json"
+        )
+        guard (200 ..< 300).contains(result.statusCode) else {
+            throw appViewFeedError(result, fallback: "Your Circle hide state failed")
+        }
+        return try JSONDecoder().decode(CircleHiddenItemState.self, from: result.body)
     }
 
     func fetchAppViewEntryDetail(entryId: String) async throws -> EntryDetail? {
@@ -424,7 +601,8 @@ final class SocialWireGatewayClient {
     private func authorizedFeedGET(
         path: String,
         query: [String: String],
-        includesWireModerationProofs: Bool = false
+        includesWireModerationProofs: Bool = false,
+        includesCircleGraphProofs: Bool = false
     ) async throws -> GatewayHTTPResult {
         let first = try await authorizedRequest(
             method: "GET",
@@ -432,7 +610,8 @@ final class SocialWireGatewayClient {
             query: query,
             body: nil,
             contentType: nil,
-            includesWireModerationProofs: includesWireModerationProofs
+            includesWireModerationProofs: includesWireModerationProofs,
+            includesCircleGraphProofs: includesCircleGraphProofs
         )
         guard !(200 ..< 300).contains(first.statusCode),
               let envelope = try? JSONDecoder().decode(AppViewErrorEnvelopeDTO.self, from: first.body),
@@ -446,7 +625,8 @@ final class SocialWireGatewayClient {
             query: query,
             body: nil,
             contentType: nil,
-            includesWireModerationProofs: includesWireModerationProofs
+            includesWireModerationProofs: includesWireModerationProofs,
+            includesCircleGraphProofs: includesCircleGraphProofs
         )
     }
 
@@ -471,7 +651,8 @@ final class SocialWireGatewayClient {
         body: Data?,
         contentType: String?,
         ifNoneMatch: String? = nil,
-        includesWireModerationProofs: Bool = false
+        includesWireModerationProofs: Bool = false,
+        includesCircleGraphProofs: Bool = false
     ) async throws -> GatewayHTTPResult {
         guard var comps = URLComponents(url: baseURL.appending(path: path), resolvingAgainstBaseURL: false) else {
             throw SocialWireError.invalidURL
@@ -490,6 +671,9 @@ final class SocialWireGatewayClient {
         let wireModerationProofs = includesWireModerationProofs
             ? try await wireViewerModerationProofPool(session: session)
             : nil
+        let circleGraphProofs = includesCircleGraphProofs
+            ? try await circleViewerGraphProofPool(session: session)
+            : nil
         var request = URLRequest(url: url)
         request.httpMethod = method
         request.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -502,7 +686,10 @@ final class SocialWireGatewayClient {
 
         try await authorize(&request, session: session)
         if let wireModerationProofs {
-            request.setValue(wireModerationProofs, forHTTPHeaderField: "X-Wire-Moderation-DPoP")
+            request.setValue(wireModerationProofs, forHTTPHeaderField: Self.wireModerationDPoPHeader)
+        }
+        if let circleGraphProofs {
+            request.setValue(circleGraphProofs, forHTTPHeaderField: Self.circleGraphDPoPHeader)
         }
 
         let trimmedNM = trimmedEntityTag(ifNoneMatch)
@@ -536,7 +723,10 @@ final class SocialWireGatewayClient {
             }
             try await authorize(&retry, session: session)
             if let wireModerationProofs {
-                retry.setValue(wireModerationProofs, forHTTPHeaderField: "X-Wire-Moderation-DPoP")
+                retry.setValue(wireModerationProofs, forHTTPHeaderField: Self.wireModerationDPoPHeader)
+            }
+            if let circleGraphProofs {
+                retry.setValue(circleGraphProofs, forHTTPHeaderField: Self.circleGraphDPoPHeader)
             }
             if let trimmedNM, !trimmedNM.isEmpty {
                 retry.setValue(trimmedNM, forHTTPHeaderField: "If-None-Match")
@@ -559,8 +749,16 @@ final class SocialWireGatewayClient {
     }
 
     private func wireViewerModerationProofPool(session: AuthSession) async throws -> String {
+        try await pdsProofPool(nsids: Self.wireViewerModerationNSIDs, session: session)
+    }
+
+    private func circleViewerGraphProofPool(session: AuthSession) async throws -> String {
+        try await pdsProofPool(nsids: Self.circleViewerGraphNSIDs, session: session)
+    }
+
+    private func pdsProofPool(nsids: [String], session: AuthSession) async throws -> String {
         var proofs: [String] = []
-        for nsid in Self.wireViewerModerationNSIDs {
+        for nsid in nsids {
             await auth.dpop.advancePdsDpopNonce(session: session, urlSession: urlSession)
             let url = session.pdsURL.appending(path: "xrpc/\(nsid)")
             proofs.append(

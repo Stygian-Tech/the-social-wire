@@ -357,6 +357,38 @@ struct HTTPRouteContractTests {
       try await app.test(.live) { c in
         let response = try await c.execute(uri: "/v1/publications/sidebar", method: .get)
         #expect(response.status.code == 404)
+        let sembleResponse = try await c.execute(uri: "/v1/semble/collections", method: .get)
+        #expect(sembleResponse.status.code == 404)
+      }
+    }
+  }
+
+  @Test("all Semble AppView projection routes reject unauthenticated calls when configured")
+  func sembleProjectionUnauthorizedWhenConfigured() async throws {
+    try await withSingletonHTTPClient { client in
+      let dbPath =
+        FileManager.default.temporaryDirectory
+        .appendingPathComponent("sw-http-\(UUID().uuidString).sqlite")
+        .path
+      defer { try? FileManager.default.removeItem(atPath: dbPath) }
+
+      let router = try gatewayRouter(
+        client: client,
+        dbPath: dbPath,
+        appViewBaseURL: "https://appview.example"
+      )
+      let app = Application(
+        router: router, configuration: .init(address: .hostname("127.0.0.1", port: 0)))
+      try await app.test(.live) { client in
+        let routes = [
+          "/v1/semble/collections?limit=50&cursor=opaque",
+          "/v1/semble/collection?collectionUri=at%3A%2F%2Fdid%3Aplc%3Aviewer%2Fnetwork.cosmik.collection%2Fread-later&limit=50",
+          "/v1/semble/connections?url=https%3A%2F%2Fexample.com&limit=50",
+        ]
+        for uri in routes {
+          let response = try await client.execute(uri: uri, method: .get)
+          #expect(response.status.code == 401)
+        }
       }
     }
   }
@@ -410,8 +442,12 @@ struct HTTPRouteContractTests {
       try await app.test(.live) { c in
         let routes: [(String, HTTPRequest.Method)] = [
           ("/xrpc/link.latr.bookmarks.listBookmarks?limit=25&cursor=next", .get),
+          ("/xrpc/link.latr.bookmarks.listTags?limit=100&cursor=next", .get),
           ("/xrpc/link.latr.bookmarks.getBookmark?subject=https%3A%2F%2Fexample.com", .get),
           ("/xrpc/link.latr.bookmarks.saveBookmark", .post),
+          ("/xrpc/link.latr.bookmarks.setTags", .post),
+          ("/xrpc/link.latr.bookmarks.renameTag", .post),
+          ("/xrpc/link.latr.bookmarks.deleteTag", .post),
           ("/xrpc/link.latr.bookmarks.setState", .post),
           ("/xrpc/link.latr.bookmarks.deleteBookmark", .post),
           ("/xrpc/link.latr.bookmarks.migrateLegacy", .post),

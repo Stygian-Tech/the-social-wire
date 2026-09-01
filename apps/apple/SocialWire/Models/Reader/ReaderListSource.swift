@@ -41,14 +41,6 @@ enum ReaderListSource: String, CaseIterable, Codable, Identifiable, Hashable {
         }
     }
 
-    var navigationShape: ReaderNavigationShape {
-        switch self {
-        case .wire: .wire
-        case .readLater, .archive: .savedLinks
-        case .subscribed, .following: .publicationFeed
-        }
-    }
-
     var supportsReadState: Bool {
         switch self {
         case .wire, .readLater, .archive: false

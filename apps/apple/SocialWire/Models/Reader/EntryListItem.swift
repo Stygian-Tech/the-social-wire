@@ -15,6 +15,19 @@ struct EntryListItem: Identifiable, Codable, Equatable, Sendable {
 
     var id: String { entryId }
 
+    var originalWebsiteURL: URL? {
+        guard let originalUrl else { return nil }
+        return URL(string: PublicURLNormalizer.normalizeHttpURLToHTTPS(originalUrl))
+    }
+
+    var sourceDomain: String? {
+        originalWebsiteURL?.host(percentEncoded: false)?.replacingOccurrences(
+            of: "www.",
+            with: "",
+            options: [.anchored, .caseInsensitive]
+        )
+    }
+
     var displayPublishedAt: String {
         formattedPublishedAt ?? Self.formatDisplayPublishedAt(publishedAt)
     }

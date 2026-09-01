@@ -1,6 +1,6 @@
 "use client";
 
-import { Archive, ArchiveRestore, ExternalLink, Trash2 } from "lucide-react";
+import { Archive, ArchiveRestore, ExternalLink, Tags, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import type { MergedLatrSave } from "@/lib/pdsClient";
@@ -10,6 +10,7 @@ export function SavedLinkCardActions({
   isArchivedView,
   disabled,
   onOpen,
+  onEditTags,
   onArchive,
   onUnarchive,
   onDelete,
@@ -18,6 +19,7 @@ export function SavedLinkCardActions({
   isArchivedView: boolean;
   disabled: boolean;
   onOpen: (row: MergedLatrSave) => void;
+  onEditTags: (row: MergedLatrSave) => void;
   onArchive: (row: MergedLatrSave) => void;
   onUnarchive: (row: MergedLatrSave) => void;
   onDelete: (row: MergedLatrSave) => void;
@@ -32,6 +34,18 @@ export function SavedLinkCardActions({
       onClick={(event) => event.stopPropagation()}
       onKeyDown={(event) => event.stopPropagation()}
     >
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-sm"
+        className="size-8"
+        disabled={disabled}
+        aria-label={`Edit Tags for ${title}`}
+        title="Edit Tags"
+        onClick={() => onEditTags(row)}
+      >
+        <Tags className="size-4" />
+      </Button>
       <Button
         type="button"
         variant="ghost"

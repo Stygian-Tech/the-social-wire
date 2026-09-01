@@ -113,7 +113,11 @@ struct WireFeedItem: Codable, Equatable, Sendable {
             embedUrl: (presentationEmbedURL ?? embedUrl)
                 .map(PublicURLNormalizer.normalizeHttpURLToHTTPS) ?? normalizedCanonical,
             bskyPostUri: validStrongRef ? representativeUri : nil,
-            bskyPostCid: validStrongRef ? representativeCid : nil
+            bskyPostCid: validStrongRef ? representativeCid : nil,
+            wireFeedbackCanonicalUrl: canonicalUrl,
+            wireFeedbackSubject: representativeUri?.hasPrefix("at://") == true
+                ? representativeUri
+                : nil
         )
     }
 }

@@ -43,29 +43,29 @@ struct WebOAuthScopesParityTests {
     #expect(iosScope == ATProtoOAuthScopes.iosScope)
   }
 
-  @Test("Standard.site social permissions are limited to the web client")
-  func standardSiteSocialPermissionsAreClientSpecific() {
+  @Test("Standard.site social permissions cover the universal Apple client")
+  func standardSiteSocialPermissionsCoverAppleClient() {
     let standardSocial = "include:site.standard.authSocial"
     #expect(ATProtoOAuthScopes.webScope.contains(standardSocial))
-    #expect(!ATProtoOAuthScopes.iosScope.contains(standardSocial))
+    #expect(ATProtoOAuthScopes.iosScope.contains(standardSocial))
     #expect(ATProtoOAuthScopes.iosScope.contains("repo:site.standard.graph.subscription"))
   }
 
-  @Test("Wire article feedback permission is limited to the web client")
-  func wireFeedbackPermissionIsClientSpecific() {
+  @Test("Wire article feedback permission covers the universal Apple client")
+  func wireFeedbackPermissionCoversAppleClient() {
     let wireFeedback =
       "repo:app.thesocialwire.wireFeedback?action=create&action=update&action=delete"
     #expect(ATProtoOAuthScopes.webScope.contains(wireFeedback))
-    #expect(!ATProtoOAuthScopes.iosScope.contains(wireFeedback))
+    #expect(ATProtoOAuthScopes.iosScope.contains(wireFeedback))
   }
 
-  @Test("UserInput permissions are limited to the web client that exposes feedback")
-  func userInputPermissionsAreClientSpecific() {
+  @Test("UserInput permissions cover the universal Apple client")
+  func userInputPermissionsCoverAppleClient() {
     let userInput = "include:app.userinput.authFull"
     #expect(ATProtoOAuthScopes.webScope.contains(userInput))
-    #expect(!ATProtoOAuthScopes.iosScope.contains(userInput))
+    #expect(ATProtoOAuthScopes.iosScope.contains(userInput))
     #expect(ATProtoOAuthScopes.webScope.contains("blob:*/*"))
-    #expect(!ATProtoOAuthScopes.iosScope.contains("blob:*/*"))
+    #expect(ATProtoOAuthScopes.iosScope.contains("blob:*/*"))
   }
 
   @Test("Bluesky actions use published application permission sets")
@@ -73,5 +73,19 @@ struct WebOAuthScopesParityTests {
     #expect(ATProtoOAuthScopes.webScope.contains("include:app.bsky.authCreatePosts"))
     #expect(ATProtoOAuthScopes.webScope.contains("include:app.bsky.authDeleteContent"))
     #expect(!ATProtoOAuthScopes.webScope.contains("repo:app.bsky.feed.post?action=create"))
+  }
+
+  @Test("Semble provider grants every user-owned record collection")
+  func sembleProviderScopes() {
+    for collection in [
+      "network.cosmik.card",
+      "network.cosmik.collection",
+      "network.cosmik.collectionLink",
+      "network.cosmik.collectionLinkRemoval",
+      "network.cosmik.connection",
+    ] {
+      #expect(ATProtoOAuthScopes.webScope.contains("repo:\(collection)?action=create&action=update&action=delete"))
+      #expect(ATProtoOAuthScopes.iosScope.contains("repo:\(collection)?action=create&action=update&action=delete"))
+    }
   }
 }
