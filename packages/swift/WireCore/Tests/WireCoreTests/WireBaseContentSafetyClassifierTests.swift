@@ -45,6 +45,25 @@ struct WireBaseContentSafetyClassifierTests {
     ))
   }
 
+  @Test("blocks explicit anatomy and contextual sexual language seen in live projections")
+  func liveProjectionLanguage() {
+    #expect(WireBaseContentSafetyClassifier.isExplicitAdultContent(
+      canonicalURL: "https://example.com/video/one",
+      title: "Daddy's Young Bitch Boi",
+      summary: "An amateur daddy with a cock shows his experience by dominating a young partner in a hot, steamy video."
+    ))
+    #expect(WireBaseContentSafetyClassifier.isExplicitAdultContent(
+      canonicalURL: "https://example.com/video/two",
+      title: "A lactation video",
+      summary: "An explicit description containing tits, dick, and pussy."
+    ))
+    #expect(!WireBaseContentSafetyClassifier.isExplicitAdultContent(
+      canonicalURL: "https://farm.example/show",
+      title: "Prize-winning cock",
+      summary: "An amateur poultry keeper shares a video from the county fair."
+    ))
+  }
+
   @Test("uses publisher tags only with an adult-media context")
   func taggedMediaContext() {
     #expect(WireBaseContentSafetyClassifier.isExplicitAdultContent(
