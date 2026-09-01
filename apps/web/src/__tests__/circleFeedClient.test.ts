@@ -15,10 +15,9 @@ import {
 } from "@/hooks/useCircleFeed";
 
 describe("Your Circle web client", () => {
-  it("renders only the generic Circle reason vocabulary", () => {
-    expect(circleReasonLabel("shared_by_following")).toBe(
-      "Shared By Following",
-    );
+  it("omits redundant relationship reasons from Circle cards", () => {
+    expect(circleReasonLabel("shared_by_following")).toBeNull();
+    expect(circleReasonLabel("shared_by_extended_circle")).toBeNull();
     expect(circleReasonLabel("discussed_in_your_circle")).toBe(
       "Discussed In Your Circle",
     );

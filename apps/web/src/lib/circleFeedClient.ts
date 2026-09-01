@@ -92,9 +92,8 @@ export type CircleHiddenItemState = {
 export function circleReasonLabel(reason: string): string | null {
   switch (reason) {
     case "shared_by_following":
-      return "Shared By Following";
     case "shared_by_extended_circle":
-      return "Shared By Extended Circle";
+      return null;
     case "popular_in_your_circle":
       return "Popular In Your Circle";
     case "discussed_in_your_circle":
