@@ -72,6 +72,45 @@ struct JetstreamV2ProjectionEventTests {
     }
   }
 
+  @Test("sync falls back to the validated envelope time when nested time is empty")
+  func syncFallsBackToEnvelopeTime() throws {
+    let payload = Data(
+      """
+      {"did":"did:plc:one","cursor":77,"time_us":1700000000000000,"kind":"sync",\
+      "sync":{"did":"did:plc:one","rev":"3kone","seq":9,"time":""}}
+      """.utf8
+    )
+    let event = try JetstreamV2ProjectionEventParser.parse(
+      payload,
+      expectedSequence: 77,
+      expectedKind: .sync,
+      expectedRepoDid: "did:plc:one"
+    )
+    guard case .sync(let sync) = event else {
+      Issue.record("Expected sync event")
+      return
+    }
+    #expect(sync.eventTime == Date(timeIntervalSince1970: 1_700_000_000))
+  }
+
+  @Test("sync still rejects a malformed nonempty nested time")
+  func syncRejectsMalformedNestedTime() {
+    let payload = Data(
+      """
+      {"did":"did:plc:one","cursor":77,"time_us":1700000000000000,"kind":"sync",\
+      "sync":{"did":"did:plc:one","rev":"3kone","seq":9,"time":"not-a-date"}}
+      """.utf8
+    )
+    #expect(throws: JetstreamV2ProjectionEventParseError.invalidSync) {
+      try JetstreamV2ProjectionEventParser.parse(
+        payload,
+        expectedSequence: 77,
+        expectedKind: .sync,
+        expectedRepoDid: "did:plc:one"
+      )
+    }
+  }
+
   @Test("configuration keeps V1 authoritative unless the V2 mode is explicit")
   func modeConfigurationIsFailClosed() {
     let defaults = ThinAppViewConfig.fromEnvironment([:])

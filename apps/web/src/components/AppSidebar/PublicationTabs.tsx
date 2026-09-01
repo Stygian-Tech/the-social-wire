@@ -73,13 +73,14 @@ export function PublicationTabs({
             <SidebarMenuButton
               type="button"
               role="tab"
-              aria-label="Your Circle"
+              aria-label="Your Circle, Beta"
               aria-selected={circleActive}
               isActive={circleActive}
               onClick={onCircleSelect}
             >
               <Users />
               <span>Your Circle</span>
+              <WireBetaBadge className="ml-auto" />
             </SidebarMenuButton>
           </SidebarMenuItem>
         ) : null}

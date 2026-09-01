@@ -1509,6 +1509,13 @@ struct PostgresWireInboxProcessor: Sendable {
       sourceText: sourceText,
       topicKeys: topicKeys
     )
+    let isExplicitAdultContent = WireBaseContentSafetyClassifier.isExplicitAdultContent(
+      canonicalURL: inspectionURL,
+      title: title,
+      summary: summary,
+      sourceText: sourceText,
+      topicKeys: topicKeys
+    )
     let commercialReasonsJSON = String(
       decoding: try JSONEncoder().encode(commercial.reasons.map(\.rawValue)), as: UTF8.self)
     var presentation: [String: Any] = [
@@ -1608,6 +1615,23 @@ struct PostgresWireInboxProcessor: Sendable {
       """,
       logger: logger
     )
+    if isExplicitAdultContent {
+      try await pool.query(
+        """
+        INSERT INTO wire_labels
+          (canonical_key, label_key, label_value, source, confidence, applied_at, expires_at)
+        VALUES
+          (\(identity.canonicalKey), 'moderation', 'adult',
+           \(WireBaseContentSafetyClassifier.labelSource), 1, \(asOf), \(expiresAt))
+        ON CONFLICT (canonical_key, label_key, source) DO UPDATE SET
+          label_value = EXCLUDED.label_value,
+          confidence = EXCLUDED.confidence,
+          applied_at = EXCLUDED.applied_at,
+          expires_at = EXCLUDED.expires_at
+        """,
+        logger: logger
+      )
+    }
   }
 
   private func upsertAlias(
