@@ -1,6 +1,6 @@
 "use client";
 
-import { Archive, Bookmark, Newspaper, Rss, Users } from "lucide-react";
+import { Archive, Bookmark, Network, Newspaper, Rss, Users } from "lucide-react";
 
 import type { ReaderNavigationFeed } from "@/lib/feedPreferences";
 import { cn } from "@/lib/utils";
@@ -8,7 +8,7 @@ import { WireBetaBadge } from "@/components/Wire/WireBetaBadge";
 
 const FEED_ITEMS = [
   { feed: "wire", label: "The Wire", icon: Rss },
-  { feed: "circle", label: "Your Circle", icon: Users },
+  { feed: "circle", label: "Your Circle", icon: Network },
   { feed: "readLater", label: "Saved", icon: Bookmark },
   { feed: "archive", label: "Archive", icon: Archive },
   { feed: "subscribed", label: "Subscribed", icon: Newspaper },
