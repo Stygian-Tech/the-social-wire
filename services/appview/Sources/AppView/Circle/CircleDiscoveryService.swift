@@ -342,7 +342,7 @@ struct CircleDiscoveryService: Sendable {
         }
         if lhs.0.occurredAt != rhs.0.occurredAt { return lhs.0.occurredAt > rhs.0.occurredAt }
         return lhs.1.actorDID < rhs.1.actorDID
-      }.prefix(2)
+      }.prefix(5)
       sharerCountsByStory[story.item.itemID] = bestByActor.count
       selectedFactsByStory[story.item.itemID] = Array(selected)
       actorDIDs.formUnion(selected.map { $0.1.actorDID })

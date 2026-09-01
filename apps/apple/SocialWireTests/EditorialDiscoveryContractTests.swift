@@ -54,7 +54,7 @@ struct EditorialDiscoveryContractTests {
         #expect(edition.stories[0].storyId == "circle-story-1")
         #expect(edition.stories[0].discussionCount == 3)
         #expect(edition.stories[0].sharerCount == 5)
-        #expect(edition.stories[0].sharers.count == 2)
+        #expect(edition.stories[0].sharers.count == 5)
         #expect(edition.stories[0].sharers[0].relationship == "direct")
         #expect(edition.stories[0].sharers[1].relationship == "one_hop")
         #expect(edition.stories[0].sharers[0].action == "recommended")
@@ -232,6 +232,24 @@ struct EditorialDiscoveryContractTests {
           "action": "discussed",
           "sourceUri": "at://did:plc:hop/app.bsky.feed.post/p1",
           "timestamp": "2026-08-30T11:20:00.000Z"
+        }, {
+          "identity": {"did":"did:plc:friend2","handle":"friend2.example.com","displayName":"Friend Two"},
+          "relationship": "direct",
+          "action": "shared",
+          "sourceUri": "at://did:plc:friend2/app.bsky.feed.post/p2",
+          "timestamp": "2026-08-30T11:10:00.000Z"
+        }, {
+          "identity": {"did":"did:plc:friend3","handle":"friend3.example.com","displayName":"Friend Three"},
+          "relationship": "one_hop",
+          "action": "shared",
+          "sourceUri": "at://did:plc:friend3/app.bsky.feed.post/p3",
+          "timestamp": "2026-08-30T11:00:00.000Z"
+        }, {
+          "identity": {"did":"did:plc:friend4","handle":"friend4.example.com","displayName":"Friend Four"},
+          "relationship": "direct",
+          "action": "shared",
+          "sourceUri": "at://did:plc:friend4/app.bsky.feed.post/p4",
+          "timestamp": "2026-08-30T10:50:00.000Z"
         }]
       }],
       "topStoryIds": ["circle-story-1"],
