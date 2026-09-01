@@ -24,8 +24,16 @@ actor PreferenceSyncService {
     self.logger = logger
   }
 
-  func preferencesResponse(auth: AuthContext, ifNoneMatch: String?) async throws -> Response {
-    try await lexicalPreferencesEnvelope(auth: auth, ifNoneMatch: ifNoneMatch)
+  func preferencesResponse(
+    auth: AuthContext,
+    ifNoneMatch: String?,
+    forceRefresh: Bool = false
+  ) async throws -> Response {
+    try await lexicalPreferencesEnvelope(
+      auth: auth,
+      ifNoneMatch: ifNoneMatch,
+      forceRefresh: forceRefresh
+    )
   }
 
   func genericCachedRecordGET(
@@ -100,15 +108,25 @@ actor PreferenceSyncService {
 
   // MARK: - Private
 
-  private func lexicalPreferencesEnvelope(auth: AuthContext, ifNoneMatch: String?) async throws -> Response {
+  private func lexicalPreferencesEnvelope(
+    auth: AuthContext,
+    ifNoneMatch: String?,
+    forceRefresh: Bool
+  ) async throws -> Response {
     let scope = "\(Self.preferencesCollection):\(Self.preferencesRKey)"
 
-    if let early304 = evaluate304(ifNoneMatch: ifNoneMatch, cid: try await currentCID(for: auth.did, scope: scope))
+    if !forceRefresh,
+      let early304 = evaluate304(
+        ifNoneMatch: ifNoneMatch,
+        cid: try await currentCID(for: auth.did, scope: scope)
+      )
     {
       return early304
     }
 
-    if let warm = try await cache.cachedPdsRepoRecord(ownerDid: auth.did, scopeKey: scope) {
+    if !forceRefresh,
+      let warm = try await cache.cachedPdsRepoRecord(ownerDid: auth.did, scopeKey: scope)
+    {
       if Date().timeIntervalSince(warm.cachedAt) < CacheStorePdsTTLs.preferencesCachedPayloadTTL {
         return try finalizePreferences(snapshot: warm, ifNoneMatch: ifNoneMatch)
       }
@@ -121,8 +139,9 @@ actor PreferenceSyncService {
       return try finalizePreferences(snapshot: warm, ifNoneMatch: ifNoneMatch)
     }
 
-    let refreshLease = await acquireColdRefreshLease(auth: auth, scope: scope)
-    if refreshLease == nil,
+    let refreshLease = forceRefresh ? nil : await acquireColdRefreshLease(auth: auth, scope: scope)
+    if !forceRefresh,
+       refreshLease == nil,
        let warmed = try await waitForContendedRefresh(ownerDid: auth.did, scope: scope)
     {
       return try finalizePreferences(snapshot: warmed, ifNoneMatch: ifNoneMatch)
@@ -346,17 +365,8 @@ actor PreferenceSyncService {
     var outbound = HTTPClientRequest(url: urlStr)
     outbound.headers.add(name: "Accept", value: "application/json")
 
-    let authPayload = auth.authorizationForwardingValue.trimmingCharacters(in: .whitespacesAndNewlines)
-
-    guard !authPayload.isEmpty else {
-      throw HTTPError(.unauthorized, message: "`Authorization` header echoed upstream unexpectedly empty.")
-    }
-
-    outbound.headers.add(name: "Authorization", value: authPayload)
-
-    if let dpopJWT = auth.dpopProof?.trimmingCharacters(in: .whitespacesAndNewlines), !dpopJWT.isEmpty {
-      outbound.headers.add(name: "DPoP", value: dpopJWT)
-    }
+    // `com.atproto.repo.getRecord` is a public read. Do not forward the
+    // Gateway-bound access token or DPoP proof to a different origin/HTU.
 
     let reply = try await httpClient.execute(outbound, timeout: .seconds(25))
 

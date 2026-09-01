@@ -75,6 +75,8 @@ struct CircleGraphSnapshotServiceTests {
     #expect(result.snapshot.oneHopCandidateCount == 3)
     #expect(result.snapshot.directWasCapped == false)
     #expect(result.snapshot.oneHopWasCapped == false)
+    #expect(result.snapshot.oneHopExpansionComplete == true)
+    #expect(result.isDegraded == false)
     #expect(await viewerFollowReader.requestedViewerDIDs == [viewer])
     #expect(
       await publicFollowReader.requestedActorSets == [
@@ -149,6 +151,7 @@ struct CircleGraphSnapshotServiceTests {
       uniqueKeysWithValues: directDIDs.map {
         ($0, CircleFollowList(actorDID: $0, followeeDIDs: [], isComplete: true))
       })
+    let publicFollowReader = CircleTestPublicFollowReader(lists: lists)
     let service = CircleGraphSnapshotService(
       viewerFollowReader: CircleTestViewerFollowReader(
         list: CircleFollowList(
@@ -156,7 +159,7 @@ struct CircleGraphSnapshotServiceTests {
           followeeDIDs: directDIDs,
           isComplete: true
         )),
-      publicFollowReader: CircleTestPublicFollowReader(lists: lists),
+      publicFollowReader: publicFollowReader,
       activityReader: CircleTestActivityReader(),
       cache: CircleTestSnapshotCache()
     )
@@ -166,6 +169,9 @@ struct CircleGraphSnapshotServiceTests {
     #expect(result.snapshot.directMembers.count == 500)
     #expect(result.snapshot.directCandidateCount == 501)
     #expect(result.snapshot.directWasCapped)
+    #expect(result.snapshot.oneHopExpansionComplete == false)
+    #expect(result.isDegraded)
+    #expect(await publicFollowReader.requestedActorSets.first?.count == 64)
   }
 
   @Test("enforces the 20,000 unique one-hop production ceiling")
@@ -256,8 +262,8 @@ struct CircleGraphSnapshotServiceTests {
     }
   }
 
-  @Test("never publishes a partial root or one-hop read")
-  func rejectsPartialReads() async {
+  @Test("rejects a partial root and degrades incomplete one-hop expansion")
+  func handlesPartialReads() async throws {
     let unusedPublicReader = CircleTestPublicFollowReader()
     let partialRoot = CircleGraphSnapshotService(
       viewerFollowReader: CircleTestViewerFollowReader(
@@ -292,11 +298,37 @@ struct CircleGraphSnapshotServiceTests {
       activityReader: CircleTestActivityReader(),
       cache: CircleTestSnapshotCache()
     )
-    await #expect(
-      throws: CircleGraphSnapshotError.incompleteFollowRead(actorDID: "did:plc:direct")
-    ) {
-      _ = try await partialOneHop.snapshot(viewerDID: viewer, excludedDIDs: [], now: now)
-    }
+    let partialResult = try await partialOneHop.snapshot(
+      viewerDID: viewer,
+      excludedDIDs: [],
+      now: now
+    )
+    #expect(partialResult.snapshot.directMembers.map(\.actorDID) == ["did:plc:direct"])
+    #expect(partialResult.snapshot.oneHopMembers.isEmpty)
+    #expect(partialResult.snapshot.oneHopExpansionComplete == false)
+    #expect(partialResult.isDegraded)
+  }
+
+  @Test("keeps direct members when public expansion throws")
+  func publicExpansionFailureReturnsDirectOnly() async throws {
+    let service = CircleGraphSnapshotService(
+      viewerFollowReader: CircleTestViewerFollowReader(
+        list: CircleFollowList(
+          actorDID: viewer,
+          followeeDIDs: ["did:plc:direct"],
+          isComplete: true
+        )),
+      publicFollowReader: CircleTestPublicFollowReader(error: .unavailable),
+      activityReader: CircleTestActivityReader(),
+      cache: CircleTestSnapshotCache()
+    )
+
+    let result = try await service.snapshot(viewerDID: viewer, excludedDIDs: [], now: now)
+
+    #expect(result.snapshot.directMembers.map(\.actorDID) == ["did:plc:direct"])
+    #expect(result.snapshot.oneHopMembers.isEmpty)
+    #expect(result.snapshot.oneHopExpansionComplete == false)
+    #expect(result.isDegraded)
   }
 
   @Test("reuses stale complete data instead of publishing a partial refresh")
@@ -328,9 +360,11 @@ struct CircleGraphSnapshotServiceTests {
       oneHopMembers: [],
       directCandidateCount: 0,
       oneHopCandidateCount: 0,
+      oneHopExpansionComplete: true,
       generatedAt: generatedAt
     )
   }
+
 }
 
 private enum CircleTestError: Error, Equatable, Sendable {

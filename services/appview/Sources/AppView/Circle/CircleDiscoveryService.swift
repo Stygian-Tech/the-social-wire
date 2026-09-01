@@ -201,7 +201,7 @@ struct CircleDiscoveryService: Sendable {
       language: language,
       cursor: moreCursor,
       source: source,
-      degraded: graph.freshness.isStale,
+      degraded: graph.isDegraded,
       rankedItems: presentationItems
     )
     let response = CircleEditionResponse(
@@ -210,7 +210,7 @@ struct CircleDiscoveryService: Sendable {
       generatedAt: candidates.generatedAt,
       language: language,
       source: source.rawValue,
-      degraded: graph.freshness.isStale,
+      degraded: graph.isDegraded,
       stories: pageStories.compactMap { publicByID[$0.item.itemID] },
       topStoryIDs: assembled.leadStories.map(\.itemID),
       publicationSpotlights: assembled.publicationPanels.map { panel in

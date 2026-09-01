@@ -7,18 +7,17 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
 import {
   ACCOUNT_PREFERENCES_QUERY_KEY,
-  useAccountPreferences,
   useConfiguredReadLaterService,
 } from "@/hooks/useReadLaterPreferences";
 import { usePDSClient } from "@/hooks/usePDSClient";
 import { useSembleCollections } from "@/hooks/useSembleReadLater";
 import { requireSembleScopes } from "@/lib/semble";
+import { fetchSyncPreferences } from "@/lib/syncPreferencesClient";
 
 export function ReadLaterSettingsSection() {
   const { getOAuthSession } = useAuth();
   const pdsClient = usePDSClient();
   const queryClient = useQueryClient();
-  const preferences = useAccountPreferences();
   const configured = useConfiguredReadLaterService();
   const collectionsQuery = useSembleCollections();
   const [selectedCollectionOverride, setSelectedCollectionOverride] =
@@ -40,39 +39,51 @@ export function ReadLaterSettingsSection() {
       collectionUri?: string;
     }) => {
       if (!pdsClient) throw new Error("Sign in to change Read Later settings.");
-      const current = preferences.data ?? null;
-      if (input.serviceId === "latr-link") {
-        await pdsClient.upsertPreferences({ readLaterService: "latr-link" }, current);
-        return;
-      }
       const oauthSession = getOAuthSession();
-      if (!oauthSession) throw new Error("Sign in to connect Semble.");
-      await requireSembleScopes(oauthSession);
-      const collection = collectionsQuery.collections.find(
-        (candidate) => candidate.uri === input.collectionUri,
-      );
-      if (!collection) throw new Error("Choose one of your Semble collections.");
-      await pdsClient.upsertPreferences(
-        {
-          readLaterService: "semble",
-          readLaterConnections: {
-            ...current?.value.readLaterConnections,
-            semble: {
-              collectionUri: collection.uri,
-              collectionName: collection.name,
-              connectedAt:
-                current?.value.readLaterConnections?.semble?.connectedAt ??
-                new Date().toISOString(),
+      if (!oauthSession) throw new Error("Sign in to change Read Later settings.");
+      const current = await pdsClient.getPreferences();
+      let committed;
+      if (input.serviceId === "latr-link") {
+        committed = await pdsClient.upsertPreferences(
+          { readLaterService: "latr-link" },
+          current,
+        );
+      } else {
+        await requireSembleScopes(oauthSession);
+        const collection = collectionsQuery.collections.find(
+          (candidate) => candidate.uri === input.collectionUri,
+        );
+        if (!collection) throw new Error("Choose one of your Semble collections.");
+        committed = await pdsClient.upsertPreferences(
+          {
+            readLaterService: "semble",
+            readLaterConnections: {
+              ...current?.value.readLaterConnections,
+              semble: {
+                collectionUri: collection.uri,
+                collectionName: collection.name,
+                connectedAt:
+                  current?.value.readLaterConnections?.semble?.connectedAt ??
+                  new Date().toISOString(),
+              },
             },
           },
-        },
-        current,
-      );
+          current,
+        );
+      }
+      try {
+        return (
+          (await fetchSyncPreferences(oauthSession, oauthSession.did, undefined, true)) ??
+          committed
+        );
+      } catch {
+        // The PDS write is authoritative. Keep the committed value visible even if
+        // the Gateway cache cannot be reconciled immediately.
+        return committed;
+      }
     },
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({
-        queryKey: ACCOUNT_PREFERENCES_QUERY_KEY,
-      });
+    onSuccess: (committed) => {
+      queryClient.setQueryData(ACCOUNT_PREFERENCES_QUERY_KEY, committed);
     },
   });
 

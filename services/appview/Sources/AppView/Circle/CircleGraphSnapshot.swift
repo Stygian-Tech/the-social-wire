@@ -7,6 +7,8 @@ struct CircleGraphSnapshot: Codable, Equatable, Sendable {
   let oneHopMembers: [CircleGraphMember]
   let directCandidateCount: Int
   let oneHopCandidateCount: Int
+  /// `nil` preserves compatibility with snapshots written before coverage was recorded.
+  let oneHopExpansionComplete: Bool?
   let generatedAt: Date
 
   var directWasCapped: Bool { directCandidateCount > directMembers.count }
