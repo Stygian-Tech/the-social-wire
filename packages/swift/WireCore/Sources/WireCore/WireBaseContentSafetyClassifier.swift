@@ -11,7 +11,9 @@ public enum WireBaseContentSafetyClassifier {
     topicKeys: [String] = []
   ) -> Bool {
     let host = URL(string: canonicalURL)?.host?.lowercased() ?? ""
-    if matches(host: host, domains: ["3movs.com"]) { return true }
+    if matches(host: host, domains: ["3movs.com", "3dporndude.com", "mengem.com"]) {
+      return true
+    }
 
     let text = ([title, summary, sourceText].compactMap { $0 } + topicKeys)
       .joined(separator: " ").lowercased()
@@ -30,6 +32,20 @@ public enum WireBaseContentSafetyClassifier {
       "naked", "pussy", "pussies", "stepsis", "stepbrother",
     ]
     if tokens.intersection(corroboratingTokens).count >= 2 { return true }
+
+    let explicitAnatomyTokens: Set<String> = [
+      "cock", "cocks", "dick", "dicks", "pussy", "pussies", "tit", "tits",
+    ]
+    if tokens.intersection(explicitAnatomyTokens).count >= 2 { return true }
+
+    let adultContextTokens: Set<String> = [
+      "daddy", "dominating", "fetish", "hardcore", "horny", "porno", "porn", "steamy",
+    ]
+    if !tokens.isDisjoint(with: explicitAnatomyTokens),
+      tokens.intersection(adultContextTokens).count >= 2
+    {
+      return true
+    }
 
     let adultTagTokens: Set<String> = corroboratingTokens.union([
       "breast", "breasts", "boob", "boobs", "groin", "nude",
