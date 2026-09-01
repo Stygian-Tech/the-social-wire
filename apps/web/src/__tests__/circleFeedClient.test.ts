@@ -18,8 +18,12 @@ describe("Your Circle web client", () => {
   it("omits redundant relationship reasons from Circle cards", () => {
     expect(circleReasonLabel("shared_by_following")).toBeNull();
     expect(circleReasonLabel("shared_by_extended_circle")).toBeNull();
+    expect(circleReasonLabel("popular_in_your_circle")).toBeNull();
     expect(circleReasonLabel("discussed_in_your_circle")).toBe(
       "Discussed In Your Circle",
+    );
+    expect(circleReasonLabel("fresh_from_your_circle")).toBe(
+      "Fresh From Your Circle",
     );
     expect(circleReasonLabel("at.margin.note")).toBeNull();
   });
