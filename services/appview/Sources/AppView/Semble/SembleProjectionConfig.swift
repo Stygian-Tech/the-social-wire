@@ -1,7 +1,7 @@
 import Foundation
 
 struct SembleProjectionConfig: Equatable, Sendable {
-  static let defaultBaseURL = "https://semble.so/api"
+  static let defaultBaseURL = "https://api.semble.so/api"
 
   let baseURL: String
 

@@ -12,7 +12,7 @@ struct SembleProjectionTests {
 
   @Test("configuration defaults to the public Semble projection and supports an override")
   func configuration() {
-    #expect(SembleProjectionConfig.fromEnvironment([:]).baseURL == "https://semble.so/api")
+    #expect(SembleProjectionConfig.fromEnvironment([:]).baseURL == "https://api.semble.so/api")
     #expect(
       SembleProjectionConfig.fromEnvironment([
         "SEMBLE_PUBLIC_API_BASE_URL": "https://api.semble.test/xrpc/"
