@@ -99,7 +99,8 @@ export function useFeedReadAgeActions(scope: GatewayMarkAllReadScope | null) {
       isViewerFeedQuery(query) && query.queryKey.at(-1) === "unread";
     // Inactive feeds opt out of refetch-on-mount, so discard stale unread pages.
     queryClient.removeQueries({ predicate: isUnreadFeedQuery, type: "inactive" });
-    void queryClient.invalidateQueries({ predicate: isUnreadFeedQuery });
+    // Restart every active feed request cancelled above, including an initial All load.
+    void queryClient.invalidateQueries({ predicate: isViewerFeedQuery });
   }, [beginAction, markEntriesRead, queryClient]);
 
   return { loadOptions, markBefore };

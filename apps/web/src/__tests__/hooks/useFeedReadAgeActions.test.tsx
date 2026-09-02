@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
-import { cleanup, renderHook } from "@testing-library/react";
+import { cleanup, renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider, QueryObserver } from "@tanstack/react-query";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 import React from "react";
@@ -160,6 +160,35 @@ describe("useFeedReadAgeActions", () => {
     await expect(result.current.markBefore(before)).rejects.toThrow("Unavailable");
     expect(markEntriesRead).not.toHaveBeenCalled();
     expect(queryClient.getQueryData<InfiniteData<EntriesPage>>(key)).toEqual(entries());
+  });
+
+  it("restarts an active All feed's initial load after cancelling its stale request", async () => {
+    const gateway = spyOn(ReadAgeClient, "markReadBefore").mockResolvedValue(confirmation());
+    restores.push(() => gateway.mockRestore());
+    const { queryClient, result } = harness();
+    const key = ["entries", viewerDid, "publication", "all"];
+    const staleRequest = pending<InfiniteData<EntriesPage>>();
+    const refreshed = entries();
+    refreshed.pages[0]!.entries[0]!.isRead = true;
+    const fetch = mock(async () => refreshed).mockImplementationOnce(() => staleRequest.promise);
+    const observer = new QueryObserver(queryClient, {
+      queryKey: key,
+      queryFn: fetch,
+      refetchOnMount: false,
+      refetchOnWindowFocus: false,
+    });
+    const unsubscribe = observer.subscribe(() => {});
+    restores.push(unsubscribe);
+    expect(queryClient.getQueryState(key)?.fetchStatus).toBe("fetching");
+
+    await result.current.markBefore(before);
+
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(queryClient.getQueryState(key)?.status).toBe("success"));
+    expect(queryClient.getQueryData<InfiniteData<EntriesPage>>(key)).toEqual(refreshed);
+    staleRequest.resolve(entries());
+    await staleRequest.promise;
+    expect(queryClient.getQueryData<InfiniteData<EntriesPage>>(key)).toEqual(refreshed);
   });
 
   for (const change of ["scope", "account", "session", "unmount"] as const) {
