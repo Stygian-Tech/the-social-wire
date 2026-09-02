@@ -671,6 +671,22 @@ actor ThinAppViewReadService {
     return (confirmed.counters, confirmed.boundaries, confirmedAt, marked)
   }
 
+  func readAgeOptions(
+    auth: AuthContext, rows: [SidebarPublicationRow], timeZone: String, now: Date
+  ) async throws -> ReadAgeOptionsResponse {
+    try await ReadAgeService(store: store, projectionCache: projectionCache).options(
+      viewerDid: auth.did, rows: rows, timeZone: timeZone, now: now
+    )
+  }
+
+  func markReadBefore(
+    auth: AuthContext, rows: [SidebarPublicationRow], before: String, now: Date
+  ) async throws -> MarkReadBeforeResponse {
+    try await ReadAgeService(store: store, projectionCache: projectionCache).markBefore(
+      viewerDid: auth.did, rows: rows, before: before, now: now
+    )
+  }
+
   func unreadCounts(
     auth: AuthContext,
     authorDid: String?,

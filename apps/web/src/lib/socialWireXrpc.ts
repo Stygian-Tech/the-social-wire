@@ -14,6 +14,8 @@ export const socialWireXrpc = {
   enrollSources: `${XRPC_PREFIX}app.thesocialwire.appview.enrollSources`,
   purgeViewerData: `${XRPC_PREFIX}app.thesocialwire.appview.purgeViewerData`,
   markAllRead: `${XRPC_PREFIX}app.thesocialwire.appview.markAllRead`,
+  getReadAgeOptions: `${XRPC_PREFIX}app.thesocialwire.appview.getReadAgeOptions`,
+  markReadBefore: `${XRPC_PREFIX}app.thesocialwire.appview.markReadBefore`,
   getWire: `${XRPC_PREFIX}app.thesocialwire.discovery.getWire`,
   getWireEdition: `${XRPC_PREFIX}app.thesocialwire.discovery.getWireEdition`,
   getWireItem: `${XRPC_PREFIX}app.thesocialwire.discovery.getWireItem`,

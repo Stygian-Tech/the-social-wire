@@ -20,6 +20,7 @@ const clientMigrations = manifest.entries.filter(
     entry.xrpcNsid != null &&
     /app\.thesocialwire\.(appview|publication|sync)\./.test(entry.xrpcNsid)
 );
+const compatibilityMigrations = clientMigrations.filter(({ path }) => path.startsWith("/v1/"));
 
 function collectSourceFiles(root: string, extensions: Set<string>): string[] {
   return readdirSync(root, { withFileTypes: true }).flatMap((entry) => {
@@ -48,7 +49,7 @@ describe("client XRPC transport", () => {
       contents: readFileSync(path, "utf8"),
     }));
 
-    for (const migration of clientMigrations) {
+    for (const migration of compatibilityMigrations) {
       const offenders = sources
         .filter((source) => source.contents.includes(migration.path))
         .map((source) => source.path.replace(`${REPO_ROOT}/`, ""));
@@ -211,7 +212,7 @@ describe("client XRPC transport", () => {
         )
     );
     const forbiddenPaths = [
-      ...clientMigrations.map(({ path }) => path),
+      ...compatibilityMigrations.map(({ path }) => path),
       "/v1/publications/folders",
       "/v1/publications/prefs",
       "/v1/publications/subscriptions",

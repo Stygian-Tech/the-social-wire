@@ -4,6 +4,7 @@ import SwiftUI
 struct WireNewsView: View {
     @Environment(SocialWireAppModel.self) private var appModel
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let sceneModel: NewsSceneModel
 
     private var usesPersistentDetail: Bool {
@@ -65,7 +66,10 @@ struct WireNewsView: View {
                     if !supporting.isEmpty {
                         WireSectionHeader(title: "Top Stories")
                         LazyVGrid(
-                            columns: [GridItem(.adaptive(minimum: 230), spacing: 18)],
+                            columns: [GridItem(
+                                dynamicTypeSize.isAccessibilitySize ? .flexible() : .adaptive(minimum: 280),
+                                spacing: 18
+                            )],
                             alignment: .leading,
                             spacing: 18
                         ) {
@@ -122,9 +126,6 @@ struct WireNewsView: View {
                 .foregroundStyle(.secondary)
             Text("The Wire")
                 .font(.largeTitle.bold())
-            Text("Important stories across the social web")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
         }
         .accessibilityElement(children: .combine)
     }
@@ -201,7 +202,8 @@ struct WireNewsView: View {
     }
 }
 
-private struct WireEditorialRail: View {
+struct WireEditorialRail: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let title: String
     let entries: [EntryListItem]
     let onOpen: (EntryListItem) -> Void
@@ -210,10 +212,17 @@ private struct WireEditorialRail: View {
         VStack(alignment: .leading, spacing: 12) {
             WireSectionHeader(title: title)
             ScrollView(.horizontal) {
-                LazyHStack(alignment: .top, spacing: 16) {
+                // These bounded editorial rails must measure every card's height;
+                // a lazy stack can clip taller cards after a horizontal swipe.
+                HStack(alignment: .top, spacing: 16) {
                     ForEach(entries) { entry in
                         WireStoryCard(entry: entry) { onOpen(entry) }
-                            .containerRelativeFrame(.horizontal, count: 2, spacing: 16)
+                            .containerRelativeFrame(.horizontal) { width, _ in
+                                let count = dynamicTypeSize.isAccessibilitySize
+                                    ? 1 : max(1, ((width + 16) / 296).rounded(.down))
+                                return (width - 16 * (count - 1)) / count
+                            }
+                            .accessibilityIdentifier("wire-card-\(entry.id)")
                     }
                 }
             }
@@ -222,22 +231,23 @@ private struct WireEditorialRail: View {
     }
 }
 
-private struct WireLeadStoryCard: View {
+struct WireLeadStoryCard: View {
     let entry: EntryListItem
     let onReadInApp: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            WireStoryImage(entry: entry, height: 280)
+            WireStoryImage(entry: entry, height: 220)
             WireSourceLine(entry: entry)
             websiteTitle
             if let summary = entry.summary, !summary.isEmpty {
                 Text(summary)
-                    .font(.title3)
+                    .font(.subheadline)
                     .foregroundStyle(.secondary)
-                    .lineLimit(3)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            WireStoryActions(entry: entry, onReadInApp: onReadInApp)
+            NewsStoryActions(websiteURL: entry.originalUrl.flatMap(URL.init(string:)), onReadInApp: onReadInApp)
         }
         .accessibilityElement(children: .contain)
     }
@@ -247,19 +257,19 @@ private struct WireLeadStoryCard: View {
         if let url = entry.originalUrl.flatMap(URL.init(string:)) {
             Link(destination: url) {
                 Text(entry.title)
-                    .font(.largeTitle.bold())
-                    .foregroundStyle(.primary)
+                    .font(.title2.bold())
+                    .foregroundStyle(Color.primary)
                     .multilineTextAlignment(.leading)
             }
             .accessibilityHint("Opens the publisher's website")
         } else {
             Text(entry.title)
-                .font(.largeTitle.bold())
+                .font(.title2.bold())
         }
     }
 }
 
-private struct WireStoryCard: View {
+struct WireStoryCard: View {
     let entry: EntryListItem
     let onReadInApp: () -> Void
 
@@ -268,41 +278,56 @@ private struct WireStoryCard: View {
             WireStoryImage(entry: entry, height: 150)
             WireSourceLine(entry: entry)
             if let url = entry.originalUrl.flatMap(URL.init(string:)) {
-                Link(entry.title, destination: url)
-                    .font(.title3.bold())
-                    .foregroundStyle(.primary)
-                    .lineLimit(3)
-                    .accessibilityHint("Opens the publisher's website")
+                Link(destination: url) {
+                    Text(entry.title)
+                        .font(.headline)
+                        .foregroundStyle(Color.primary)
+                        .lineLimit(3)
+                        .multilineTextAlignment(.leading)
+                }
+                .accessibilityHint("Opens the publisher's website")
             } else {
                 Text(entry.title)
-                    .font(.title3.bold())
+                    .font(.headline)
                     .lineLimit(3)
             }
-            WireStoryActions(entry: entry, onReadInApp: onReadInApp)
+            NewsStoryActions(websiteURL: entry.originalUrl.flatMap(URL.init(string:)), onReadInApp: onReadInApp)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .fixedSize(horizontal: false, vertical: true)
         .padding(14)
         .background(.thinMaterial, in: .rect(cornerRadius: 16))
+        .multilineTextAlignment(.leading)
         .accessibilityElement(children: .contain)
     }
 }
 
-private struct WireStoryRow: View {
+struct WireStoryRow: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let entry: EntryListItem
     let onReadInApp: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top, spacing: 14) {
-                WireStoryImage(entry: entry, height: 96)
-                    .frame(width: 128)
+                if !dynamicTypeSize.isAccessibilitySize,
+                   !ThumbnailImageURLAttempts.candidates(
+                       primary: entry.thumbnailUrl, fallback: entry.thumbnailFallbackUrl
+                   ).isEmpty {
+                    WireStoryImage(entry: entry, height: 72)
+                        .frame(width: 80)
+                }
                 VStack(alignment: .leading, spacing: 5) {
                     WireSourceLine(entry: entry)
                     if let url = entry.originalUrl.flatMap(URL.init(string:)) {
-                        Link(entry.title, destination: url)
-                            .font(.headline)
-                            .foregroundStyle(.primary)
-                            .lineLimit(3)
-                            .accessibilityHint("Opens the publisher's website")
+                        Link(destination: url) {
+                            Text(entry.title)
+                                .font(.headline)
+                                .foregroundStyle(Color.primary)
+                                .lineLimit(3)
+                                .multilineTextAlignment(.leading)
+                        }
+                        .accessibilityHint("Opens the publisher's website")
                     } else {
                         Text(entry.title)
                             .font(.headline)
@@ -313,10 +338,12 @@ private struct WireStoryRow: View {
                         .foregroundStyle(.tertiary)
                 }
             }
-            WireStoryActions(entry: entry, onReadInApp: onReadInApp)
+            NewsStoryActions(websiteURL: entry.originalUrl.flatMap(URL.init(string:)), onReadInApp: onReadInApp)
         }
+        .fixedSize(horizontal: false, vertical: true)
         .padding(.vertical, 8)
         .overlay(alignment: .bottom) { Divider() }
+        .multilineTextAlignment(.leading)
         .accessibilityElement(children: .contain)
     }
 }
@@ -330,21 +357,7 @@ private struct WireStoryImage: View {
             primary: entry.thumbnailUrl,
             fallback: entry.thumbnailFallbackUrl
         )
-        Group {
-            if urls.isEmpty {
-                Rectangle().fill(.quaternary)
-            } else {
-                CachedRemoteImage(urls: urls, maxPixelSize: 1_000) {
-                    Rectangle().fill(.quaternary)
-                }
-                .scaledToFill()
-            }
-        }
-        .frame(maxWidth: .infinity)
-        .frame(height: height)
-        .clipShape(.rect(cornerRadius: 14))
-        .clipped()
-        .accessibilityHidden(true)
+        NewsStoryImage(urls: urls, height: height)
     }
 }
 
@@ -352,42 +365,15 @@ private struct WireSourceLine: View {
     let entry: EntryListItem
 
     var body: some View {
-        HStack(spacing: 6) {
-            Text(entry.wireMetadata?.source.displayName ?? sourceHost ?? "The Social Wire")
-                .font(.caption.weight(.semibold))
-            if let sourceHost {
-                Text(sourceHost)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .lineLimit(1)
+        Text(entry.wireMetadata?.source.displayName ?? sourceHost ?? "The Social Wire")
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
     }
 
     private var sourceHost: String? {
         entry.wireMetadata?.source.domain
             ?? entry.originalUrl.flatMap(URL.init(string:))?.host
-    }
-}
-
-private struct WireStoryActions: View {
-    let entry: EntryListItem
-    let onReadInApp: () -> Void
-
-    var body: some View {
-        HStack(spacing: 14) {
-            if let url = entry.originalUrl.flatMap(URL.init(string:)) {
-                Link(destination: url) {
-                    Label("Open on Website", systemImage: "safari")
-                }
-                .buttonStyle(.borderedProminent)
-            }
-            Button(action: onReadInApp) {
-                Label("Read in App", systemImage: "doc.text")
-            }
-            .buttonStyle(.bordered)
-        }
-        .font(.caption.weight(.semibold))
     }
 }
 

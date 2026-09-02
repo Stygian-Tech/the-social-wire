@@ -17,6 +17,7 @@ enum SavedNewsMode: String, CaseIterable, Identifiable, Hashable {
 struct SavedNewsView: View {
     @Environment(SocialWireAppModel.self) private var appModel
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let sceneModel: NewsSceneModel
     @State private var mode: SavedNewsMode = .readLater
     @State private var showingTagManagement = false
@@ -72,11 +73,15 @@ struct SavedNewsView: View {
                 VStack(spacing: 0) {
                     if appModel.pendingSembleSaveRetry != nil {
                         HStack {
-                            Label("A card is waiting to be added to this collection.", systemImage: "exclamationmark.arrow.trianglehead.2.clockwise.rotate.90")
+                            Label("Save Pending", systemImage: "exclamationmark.arrow.trianglehead.2.clockwise.rotate.90")
                                 .font(.footnote)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .accessibilityLabel("A card is waiting to be added to this collection.")
                             Spacer()
                             Button("Resume") { Task { await appModel.resumeSembleSave() } }
                                 .buttonStyle(.borderedProminent)
+                                .lineLimit(1)
+                                .fixedSize(horizontal: true, vertical: false)
                         }
                         .padding()
                         Divider()
@@ -85,12 +90,13 @@ struct SavedNewsView: View {
                 }
             } else {
                 VStack(spacing: 0) {
-                    Picker("Saved", selection: $mode) {
-                        ForEach(SavedNewsMode.allCases) { mode in
-                            Text(mode.rawValue).tag(mode)
+                    Group {
+                        if dynamicTypeSize.isAccessibilitySize {
+                            savedPicker.pickerStyle(.menu)
+                        } else {
+                            savedPicker.pickerStyle(.segmented)
                         }
                     }
-                    .pickerStyle(.segmented)
                     .padding()
 
                     SavedTagFilterBar(
@@ -101,6 +107,14 @@ struct SavedNewsView: View {
 
                     SavedLinksListContent(onSavedLinkTap: openSavedLink)
                 }
+            }
+        }
+    }
+
+    private var savedPicker: some View {
+        Picker("Saved", selection: $mode) {
+            ForEach(SavedNewsMode.allCases) { mode in
+                Text(mode.rawValue).tag(mode)
             }
         }
     }

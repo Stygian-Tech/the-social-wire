@@ -2507,6 +2507,130 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
+  /xrpc/app.thesocialwire.appview.getReadAgeOptions:
+    get:
+      operationId: getAppViewReadAgeOptions
+      summary: Calendar-day read cutoffs for a feed scope
+      description: |
+        Returns only calendar-day ages represented by unread stories in the full indexed
+        scope, sorted ascending. Counts are cumulative before each exclusive cutoff.
+        One day includes yesterday and earlier; its cutoff is the start of today in
+        the supplied time zone. Day boundaries account for daylight-saving changes.
+      tags: [AppView]
+      parameters:
+        - name: kind
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [publication, folder, subscribed, following]
+        - name: publicationId
+          in: query
+          description: Required for the publication scope.
+          schema: { type: string, maxLength: 2048 }
+        - name: folderRkey
+          in: query
+          description: Required for the folder scope.
+          schema: { type: string, maxLength: 512 }
+        - name: timeZone
+          in: query
+          required: true
+          description: IANA identifier for the viewer's local calendar, such as America/Chicago.
+          schema: { type: string, minLength: 1, maxLength: 255 }
+      responses:
+        "200":
+          description: Available calendar-day cutoffs; options is empty if no older unread stories exist.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [referenceDay, options]
+                properties:
+                  referenceDay:
+                    type: string
+                    format: date-time
+                    description: Start of today in the supplied time zone, expressed as a UTC instant.
+                  options:
+                    type: array
+                    items:
+                      type: object
+                      required: [days, before, count]
+                      properties:
+                        days: { type: integer, minimum: 1 }
+                        before:
+                          type: string
+                          format: date-time
+                          description: Exclusive UTC publication-time cutoff, computed by subtracting days minus one calendar days from referenceDay.
+                        count:
+                          type: integer
+                          minimum: 1
+                          description: Number of unread stories before this cutoff.
+        "400":
+          description: Invalid scope or time zone.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Age-based read methods are unavailable on this server.
+
+  /xrpc/app.thesocialwire.appview.markReadBefore:
+    post:
+      operationId: markAppViewReadBefore
+      summary: Mark unread stories before a calendar-day cutoff read
+      description: |
+        Marks only unread indexed stories in the viewer-owned scope whose publication
+        time is strictly before the supplied cutoff. The cutoff comes from
+        getReadAgeOptions. Newer stories and stories exactly at the cutoff stay unread.
+        Clients reconcile returned entryIds in local read state using readAt. This method is
+        distinct from markAllRead so an older server cannot silently ignore the cutoff.
+        If recounting fails after the read marks commit, the request still succeeds
+        with the committed entryIds and an empty unreadCounts object.
+      tags: [AppView]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [scope, before]
+              properties:
+                scope:
+                  type: object
+                  required: [kind]
+                  properties:
+                    kind:
+                      type: string
+                      enum: [publication, folder, subscribed, following]
+                    publicationId: { type: string, maxLength: 2048 }
+                    folderRkey: { type: string, maxLength: 512 }
+                before:
+                  type: string
+                  format: date-time
+                  description: Exclusive publication-time cutoff from getReadAgeOptions.
+      responses:
+        "200":
+          description: Scoped stories marked read, with identifiers for client read-state reconciliation.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [marked, entryIds, readAt, unreadCounts]
+                properties:
+                  marked: { type: integer, minimum: 0 }
+                  entryIds:
+                    type: array
+                    items: { type: string, maxLength: 2048 }
+                  readAt: { type: string, format: date-time }
+                  unreadCounts:
+                    type: object
+                    description: Missing publication keys mean unknown; preserve existing counts until a later refresh. An empty object can indicate a recount failure after the read marks committed, and never means all counts are zero.
+                    additionalProperties: { type: integer, minimum: 0 }
+        "400":
+          description: Invalid scope or publication-time cutoff.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Age-based read methods are unavailable on this server.
+
   /v1/appview/privacy/purge:
     delete:
       operationId: purgeAppViewPrivacyData

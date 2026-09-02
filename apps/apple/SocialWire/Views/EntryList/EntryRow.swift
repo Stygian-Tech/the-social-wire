@@ -2,6 +2,7 @@ import SwiftUI
 
 struct EntryRow: View {
     @Environment(SocialWireAppModel.self) private var appModel
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let entry: EntryListItem
     let isRead: Bool
     let showsReadState: Bool
@@ -55,14 +56,14 @@ struct EntryRow: View {
                 Text(entry.title)
                     .font(.headline)
                     .foregroundStyle(showsReadState && isRead ? .secondary : .primary)
-                    .lineLimit(2)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
 
-                if let reasons = entry.wireMetadata?.reasonLabels, !reasons.isEmpty {
-                    ForEach(reasons, id: \.self) { reason in
-                        Label(reason, systemImage: "sparkles")
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(.secondary)
-                    }
+                if let wire = entry.wireMetadata, let reason = wire.primaryReasonLabel {
+                    Label(reason, systemImage: "sparkles")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .accessibilityLabel(wire.reasonLabels.joined(separator: ", "))
                 }
 
                 if let summary = entry.summary, !summary.isEmpty {
@@ -75,7 +76,10 @@ struct EntryRow: View {
                 Text(entry.displayPublishedAt)
                     .font(.caption)
                     .foregroundStyle(.tertiary)
+                    .lineLimit(1)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .fixedSize(horizontal: false, vertical: true)
         }
         .padding(.vertical, 6)
     }

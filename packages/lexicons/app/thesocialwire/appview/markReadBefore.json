@@ -1,0 +1,77 @@
+{
+  "lexicon": 1,
+  "id": "app.thesocialwire.appview.markReadBefore",
+  "defs": {
+    "main": {
+      "type": "procedure",
+      "description": "Mark only unread indexed stories published before an exclusive cutoff in a viewer-owned feed scope. Returns the marked entryIds for client read-state reconciliation.",
+      "input": {
+        "encoding": "application/json",
+        "schema": {
+          "type": "object",
+          "required": [
+            "scope",
+            "before"
+          ],
+          "properties": {
+            "scope": {
+              "type": "ref",
+              "ref": "app.thesocialwire.appview.markAllRead#scope"
+            },
+            "before": {
+              "type": "string",
+              "format": "datetime",
+              "description": "Exclusive publication-time cutoff from getReadAgeOptions."
+            }
+          }
+        }
+      },
+      "output": {
+        "encoding": "application/json",
+        "schema": {
+          "type": "object",
+          "required": [
+            "marked",
+            "entryIds",
+            "readAt",
+            "unreadCounts"
+          ],
+          "properties": {
+            "marked": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "entryIds": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "maxLength": 2048
+              },
+              "description": "Identifiers of stories marked by this request, for client read-state reconciliation."
+            },
+            "readAt": {
+              "type": "string",
+              "format": "datetime"
+            },
+            "unreadCounts": {
+              "type": "ref",
+              "ref": "#unreadCounts"
+            }
+          }
+        }
+      },
+      "errors": [
+        {
+          "name": "InvalidRequest"
+        },
+        {
+          "name": "UpstreamUnavailable"
+        }
+      ]
+    },
+    "unreadCounts": {
+      "type": "object",
+      "description": "Publication identifier to nonnegative integer unread count. If recounting fails after read marks commit, the procedure still succeeds with marked entryIds and an empty object here. Missing keys mean unknown: preserve existing counts until a later refresh rather than replacing them with zero."
+    }
+  }
+}

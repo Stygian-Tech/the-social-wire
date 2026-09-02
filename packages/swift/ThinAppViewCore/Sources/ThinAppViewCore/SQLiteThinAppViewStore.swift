@@ -1556,6 +1556,66 @@ public init(path dbPath: String, logger: Logger) throws {
     }
   }
 
+  public func upsertReadMarks(
+    viewerDid: String,
+    subjectUris: [String],
+    createdAt: Date
+  ) async throws {
+    let subjects = Array(Set(subjectUris)).sorted()
+    guard !subjects.isEmpty else { return }
+    let createdAtIso = Self.isoString(from: createdAt)
+    let countedAt = Date()
+    let generation = AppViewUnreadCounterSupport.generation(for: countedAt)
+    let countedAtIso = Self.isoString(from: countedAt)
+    try await db.write { db in
+      for start in stride(from: 0, to: subjects.count, by: 500) {
+        let batch = Array(subjects[start..<min(start + 500, subjects.count)])
+        let values = Array(repeating: "(?)", count: batch.count).joined(separator: ", ")
+        try db.execute(
+          sql: """
+            WITH subjects(subject_uri) AS (VALUES \(values))
+            INSERT INTO read_marks (viewer_did, subject_uri, created_at)
+            SELECT ?, subject_uri, ? FROM subjects WHERE true
+            ON CONFLICT (viewer_did, subject_uri) DO UPDATE SET created_at = excluded.created_at
+            """,
+          arguments: StatementArguments(batch + [viewerDid, createdAtIso])
+        )
+        let placeholders = Array(repeating: "?", count: batch.count).joined(separator: ", ")
+        try db.execute(
+          sql: """
+            DELETE FROM appview_unread_overrides
+            WHERE viewer_did = ? AND subject_uri IN (\(placeholders))
+            """,
+          arguments: StatementArguments([viewerDid] + batch)
+        )
+        var counterArguments: [DatabaseValueConvertible?] = [
+          generation, AppViewUnreadCounterAccuracy.estimated.rawValue, countedAtIso, viewerDid,
+        ]
+        counterArguments.append(contentsOf: batch)
+        try db.execute(
+          sql: """
+            INSERT INTO appview_unread_counters
+              (viewer_did, publication_id, unread_count, generation, accuracy, dirty, counted_at)
+            SELECT DISTINCT scope.viewer_did, scope.publication_id, 0, ?, ?, 1, ?
+            FROM appview_publication_scopes scope
+            JOIN content_items ci ON ci.author_did = scope.author_did
+              AND (
+                json_array_length(scope.scope_keys) = 0
+                OR EXISTS (SELECT 1 FROM json_each(scope.scope_keys) WHERE value = ci.publication_site)
+              )
+            WHERE scope.viewer_did = ? AND ci.uri IN (\(placeholders))
+            ON CONFLICT (viewer_did, publication_id) DO UPDATE SET
+              generation = excluded.generation,
+              accuracy = excluded.accuracy,
+              dirty = 1,
+              counted_at = excluded.counted_at
+            """,
+          arguments: StatementArguments(counterArguments)
+        )
+      }
+    }
+  }
+
   public func markEntryUnread(
     viewerDid: String,
     subjectUri: String,
@@ -1870,6 +1930,32 @@ public init(path dbPath: String, logger: Logger) throws {
     cursor: String?,
     limit: Int
   ) async throws -> AppViewAggregatePageResult {
+    try await listScopedEntries(
+      viewerDid: viewerDid, scopes: scopes, filter: filter, cursor: cursor,
+      limit: limit, deduplicateArticleURLs: true
+    )
+  }
+
+  public func listUnreadEntriesForReadMutation(
+    viewerDid: String,
+    scopes: [AppViewPublicationScope],
+    cursor: String?,
+    limit: Int
+  ) async throws -> AppViewEntryListResponse {
+    try await listScopedEntries(
+      viewerDid: viewerDid, scopes: scopes, filter: .unread, cursor: cursor,
+      limit: limit, deduplicateArticleURLs: false
+    ).response
+  }
+
+  private func listScopedEntries(
+    viewerDid: String,
+    scopes: [AppViewPublicationScope],
+    filter: EntryListFilter,
+    cursor: String?,
+    limit: Int,
+    deduplicateArticleURLs: Bool
+  ) async throws -> AppViewAggregatePageResult {
     let startedAt = Date()
     let pageLimit = max(1, min(limit, 100))
     let batchSize = max(100, min(1_000, pageLimit * 4))
@@ -1917,9 +2003,13 @@ public init(path dbPath: String, logger: Logger) throws {
         states: states,
         filter: filter
       )
-      let deduped = AggregateFeedQuerySupport.deduplicated(matches + filtered)
-      matches = deduped.entries
-      duplicatesSuppressed += deduped.duplicatesSuppressed
+      if deduplicateArticleURLs {
+        let deduped = AggregateFeedQuerySupport.deduplicated(matches + filtered)
+        matches = deduped.entries
+        duplicatesSuppressed += deduped.duplicatesSuppressed
+      } else {
+        matches.append(contentsOf: filtered)
+      }
 
       if matches.count > pageLimit || !databaseHasMore { break }
       guard let lastScanned else { break }

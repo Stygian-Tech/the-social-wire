@@ -27,8 +27,13 @@ final class SocialWireAppModel {
     var publicationPrefs: [String: RepoRecord<PublicationPrefsRecord>] = [:]
     var savedLinks: [MergedLatrSave] = []
     var archivedSavedLinks: [MergedLatrSave] = []
-    var readAtByEntryId: [String: Date] = [:]
-    var entries: [EntryListItem] = []
+    private(set) var readAgeRevision = 0
+    var readAtByEntryId: [String: Date] = [:] {
+        didSet { readAgeRevision &+= 1 }
+    }
+    var entries: [EntryListItem] = [] {
+        didSet { readAgeRevision &+= 1 }
+    }
     var selectedPublication: DiscoveredPublication?
     var selectedEntry: EntryDetail?
     var selectedSavedLink: MergedLatrSave?
@@ -396,6 +401,38 @@ final class SocialWireAppModel {
                 // optimistic counts above without interrupting the user with a modal alert.
             }
         }
+    }
+
+    func readAgeOptions(for scope: ReaderMarkReadScope) async throws -> [FeedReadAgeOption] {
+        let scopes = gatewayMarkAllReadScopes(for: scope)
+        guard scopes.count == 1, let gatewayScope = scopes.first else { return [] }
+        return try await gateway.fetchReadAgeOptions(scope: gatewayScope).options
+    }
+
+    func markRead(for scope: ReaderMarkReadScope, before: String) async throws {
+        let scopes = gatewayMarkAllReadScopes(for: scope)
+        guard scopes.count == 1, let gatewayScope = scopes.first else { return }
+        let viewer = viewerDID
+        let result = try await gateway.markReadBefore(scope: gatewayScope, before: before)
+        guard viewerDID == viewer else { return }
+        guard let readAt = DateFormatters.date(from: result.readAt) else {
+            throw SocialWireError.badResponse("The read confirmation contained an invalid date.")
+        }
+        var readMap = readAtByEntryId
+        for entryID in result.entryIds where readMap[entryID] == nil {
+            readMap[entryID] = readAt
+        }
+        readAtByEntryId = readMap
+        if let deferred = unreadDeferredEntryId, result.entryIds.contains(deferred) {
+            unreadDeferredEntryId = nil
+        }
+        sidebarUnread.bumpReadRevision()
+        // Partial marking must preserve newer unread entries and reconcile exact server counts.
+        applySectionUnreadCounts(result.unreadCounts, publicationIds: Array(result.unreadCounts.keys))
+        await refreshSidebarUnreadCounts(
+            publicationIds: publicationsAffected(by: scope).map(\.publicationId),
+            force: true
+        )
     }
 
     func markUnread(for scope: ReaderMarkReadScope) async {
@@ -1838,9 +1875,9 @@ final class SocialWireAppModel {
         return merged
     }
 
-    private func refreshSidebarUnreadCounts(publicationIds: [String]? = nil) async {
+    private func refreshSidebarUnreadCounts(publicationIds: [String]? = nil, force: Bool = false) async {
         guard useAppViewEntryTimelines else { return }
-        if SidebarFetchScheduler.shouldSkipUnreadRefresh(since: bootstrapCompletedAt) {
+        if !force, SidebarFetchScheduler.shouldSkipUnreadRefresh(since: bootstrapCompletedAt) {
             return
         }
         let ids = publicationIds ?? gatewayAllPublicationRows.map(\.publicationId)

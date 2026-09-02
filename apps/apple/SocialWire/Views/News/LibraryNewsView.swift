@@ -11,11 +11,10 @@ enum LibraryMode: String, CaseIterable, Identifiable, Hashable {
 struct LibraryNewsView: View {
     @Environment(SocialWireAppModel.self) private var appModel
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let sceneModel: NewsSceneModel
     @State private var mode: LibraryMode = .subscribed
     @State private var presentedSheet: LibrarySheet?
-    @State private var showingMarkAllReadConfirmation = false
-    @State private var bulkReadFeedback = 0
 
     private var usesPersistentDetail: Bool {
         horizontalSizeClass != .compact
@@ -42,34 +41,18 @@ struct LibraryNewsView: View {
         .toolbar {
             if bulkReadScope != .unavailable {
                 ToolbarItem(placement: .primaryAction) {
-                    Menu {
-                        Button("Mark All As Read") {
-                            showingMarkAllReadConfirmation = true
-                        }
-                        Button("Mark All As Unread") {
-                            Task {
-                                await appModel.markUnread(for: bulkReadScope)
-                                bulkReadFeedback += 1
-                            }
-                        }
-                    } label: {
-                        Label("Read State", systemImage: "checkmark.circle")
-                    }
+                    FeedMarkReadButton(
+                        contextID: "\(appModel.viewerDID ?? ""):library:\(bulkReadScope)",
+                        refreshRevision: appModel.readAgeRevision,
+                        scopeTitle: bulkReadTitle,
+                        loadOptions: { try await appModel.readAgeOptions(for: bulkReadScope) },
+                        markAllRead: { await appModel.markRead(for: bulkReadScope) },
+                        markOlderRead: { try await appModel.markRead(for: bulkReadScope, before: $0.before) },
+                        markAllUnread: { await appModel.markUnread(for: bulkReadScope) }
+                    )
                 }
             }
         }
-        .alert("Mark All As Read?", isPresented: $showingMarkAllReadConfirmation) {
-            Button("Mark All As Read") {
-                Task {
-                    await appModel.markRead(for: bulkReadScope)
-                    bulkReadFeedback += 1
-                }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("This marks every cached article in \(mode.rawValue) as read on your account.")
-        }
-        .sensoryFeedback(.success, trigger: bulkReadFeedback)
         .sheet(item: $presentedSheet) { sheet in
             switch sheet {
             case .addPublication:
@@ -96,12 +79,13 @@ struct LibraryNewsView: View {
 
     private var sourceColumn: some View {
         VStack(spacing: 0) {
-            Picker("Library", selection: $mode) {
-                ForEach(LibraryMode.allCases) { mode in
-                    Text(mode.rawValue).tag(mode)
+            Group {
+                if dynamicTypeSize.isAccessibilitySize {
+                    libraryPicker.pickerStyle(.menu)
+                } else {
+                    libraryPicker.pickerStyle(.segmented)
                 }
             }
-            .pickerStyle(.segmented)
             .padding()
 
             Group {
@@ -130,6 +114,16 @@ struct LibraryNewsView: View {
         }
         .refreshable {
             await appModel.refreshSidebarProjection()
+        }
+    }
+
+    private var libraryPicker: some View {
+        Picker("Library", selection: $mode) {
+            ForEach(LibraryMode.allCases) { mode in
+                Text(mode == .myPublications && !dynamicTypeSize.isAccessibilitySize ? "Mine" : mode.rawValue)
+                    .accessibilityLabel(mode.rawValue)
+                    .tag(mode)
+            }
         }
     }
 
@@ -184,13 +178,21 @@ struct LibraryNewsView: View {
     }
 
     private var bulkReadScope: ReaderMarkReadScope {
-        switch mode {
-        case .subscribed:
-            .list(.subscribed)
-        case .following:
-            .list(.following)
-        case .myPublications:
-            .unavailable
+        guard mode != .myPublications else { return .unavailable }
+        if usesPersistentDetail {
+            return ReaderMarkReadScope.selectedFeed(appModel.feedSelection)
+        }
+        return .list(mode == .following ? .following : .subscribed)
+    }
+
+    private var bulkReadTitle: String {
+        switch bulkReadScope {
+        case .publication(let id):
+            return appModel.publication(forId: id)?.title ?? "This Publication"
+        case .folder(let key):
+            return appModel.folders.first { $0.uri.hasSuffix("/\(key)") }?.value.name ?? "This Folder"
+        default:
+            return mode.rawValue
         }
     }
 
