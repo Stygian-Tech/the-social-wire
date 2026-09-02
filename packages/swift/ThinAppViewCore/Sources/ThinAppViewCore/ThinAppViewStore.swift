@@ -209,6 +209,9 @@ public protocol ThinAppViewStore: Actor {
   func fetchContentIdentity(uri: String) async throws -> IndexedContentIdentity?
 
   func upsertReadMark(viewerDid: String, subjectUri: String, createdAt: Date) async throws
+  /// Atomically marks the supplied subjects read without advancing any publication read floor.
+  /// Marks affected viewer counters dirty; callers refresh them and invalidate scoped caches.
+  func upsertReadMarks(viewerDid: String, subjectUris: [String], createdAt: Date) async throws
   func deleteReadMark(viewerDid: String, subjectUri: String) async throws
   func markEntryUnread(viewerDid: String, subjectUri: String, createdAt: Date) async throws
   func purgeReadMarks(viewerDid: String) async throws
@@ -262,6 +265,15 @@ public protocol ThinAppViewStore: Actor {
     cursor: String?,
     limit: Int
   ) async throws -> AppViewAggregatePageResult
+
+  /// Returns every unread record in scope, including records hidden by feed URL deduplication.
+  /// Bulk mutations must retain those identifiers so hidden duplicates cannot reappear unread.
+  func listUnreadEntriesForReadMutation(
+    viewerDid: String,
+    scopes: [AppViewPublicationScope],
+    cursor: String?,
+    limit: Int
+  ) async throws -> AppViewEntryListResponse
 
   func readBoundary(viewerDid: String, publicationId: String) async throws -> ReadWatermarkBoundary?
 

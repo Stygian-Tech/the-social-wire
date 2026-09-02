@@ -8,6 +8,8 @@ struct AppViewExtendedRoutes {
   let projectionService: PublicationProjectionService
 
   func register(on group: RouterGroup<GatewayRequestContext>) {
+    AppViewReadAgeRoutes(readService: readService, projectionService: projectionService)
+      .register(on: group)
     for path in ["/v1/appview/entry", "/xrpc/app.thesocialwire.appview.getEntry"] as [RouterPath] {
       group.get(path) { request, context async throws -> AppViewEntryDetailResponse in
         guard let auth = context.authContext else { throw HTTPError(.unauthorized) }
@@ -109,7 +111,7 @@ struct AppViewExtendedRoutes {
       .filter { !$0.isEmpty }
   }
 
-  private static func rows(
+  static func rows(
     for scope: ScopedMarkAllReadScope,
     sidebar: PublicationSidebarResponse
   ) -> [SidebarPublicationRow] {
