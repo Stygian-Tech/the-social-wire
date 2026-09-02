@@ -92,6 +92,8 @@ describe("OpenAPI route drift", () => {
       "/v1/appview/enroll": ['"/v1/appview/enroll"'],
       "/v1/appview/privacy/purge": ['"/v1/appview/privacy/purge"'],
       "/v1/appview/mark-all-read": ['"/v1/appview/mark-all-read"'],
+      "/xrpc/app.thesocialwire.appview.getReadAgeOptions": ['"/xrpc/app.thesocialwire.appview.getReadAgeOptions"'],
+      "/xrpc/app.thesocialwire.appview.markReadBefore": ['"/xrpc/app.thesocialwire.appview.markReadBefore"'],
       "/v1/telemetry/client-performance": ['"/v1/telemetry/client-performance"'],
       "/v1/semble/collections": ['"/v1/semble/collections"'],
       "/v1/semble/collection": ['"/v1/semble/collection"'],

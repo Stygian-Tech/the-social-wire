@@ -471,6 +471,49 @@ final class SocialWireGatewayClient {
         }
     }
 
+    func fetchReadAgeOptions(
+        scope: GatewayMarkAllReadScopeDTO,
+        timeZone: TimeZone = .current
+    ) async throws -> FeedReadAgeResponse {
+        var query = ["timeZone": timeZone.identifier]
+        switch scope {
+        case .subscribed: query["kind"] = "subscribed"
+        case .following: query["kind"] = "following"
+        case .publication(let id):
+            query["kind"] = "publication"
+            query["publicationId"] = id
+        case .folder(let id):
+            query["kind"] = "folder"
+            query["folderRkey"] = id
+        }
+        let result = try await authorizedRequest(
+            method: "GET",
+            path: SocialWireXRPCMethod.getReadAgeOptions,
+            query: query,
+            body: nil,
+            contentType: nil
+        )
+        guard (200 ..< 300).contains(result.statusCode) else {
+            throw SocialWireError.badResponse("Age-based read options are unavailable. Please try again.")
+        }
+        return try JSONDecoder().decode(FeedReadAgeResponse.self, from: result.body)
+    }
+
+    func markReadBefore(scope: GatewayMarkAllReadScopeDTO, before: String) async throws -> MarkReadBeforeResponse {
+        let payload = try JSONEncoder().encode(GatewayMarkReadBeforeBody(scope: scope, before: before))
+        let result = try await authorizedRequest(
+            method: "POST",
+            path: SocialWireXRPCMethod.markReadBefore,
+            query: [:],
+            body: payload,
+            contentType: "application/json"
+        )
+        guard (200 ..< 300).contains(result.statusCode) else {
+            throw SocialWireError.badResponse("Couldn't mark older stories as read. Please try again.")
+        }
+        return try JSONDecoder().decode(MarkReadBeforeResponse.self, from: result.body)
+    }
+
     func markAllRead(scope: GatewayMarkAllReadScopeDTO) async throws -> GatewayMarkAllReadResponseDTO {
         let payload = try JSONEncoder().encode(GatewayMarkAllReadBody(scope: scope))
         let result = try await authorizedRequest(

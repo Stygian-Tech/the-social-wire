@@ -156,6 +156,31 @@ struct HTTPRouteContractTests {
     }
   }
 
+  @Test("calendar-day read methods are protected and absent without AppView")
+  func readAgeRoutesRequireConfiguredAppViewAndAuthentication() async throws {
+    try await withSingletonHTTPClient { client in
+      for appViewBaseURL: String? in [nil, "https://appview.example"] {
+        let dbPath = FileManager.default.temporaryDirectory
+          .appendingPathComponent("sw-http-read-age-\(UUID().uuidString).sqlite").path
+        defer { try? FileManager.default.removeItem(atPath: dbPath) }
+
+        let router = try gatewayRouter(
+          client: client, dbPath: dbPath, appViewBaseURL: appViewBaseURL)
+        let app = Application(router: router)
+        try await app.test(.router) { testClient in
+          let routes: [(String, HTTPRequest.Method)] = [
+            ("/xrpc/app.thesocialwire.appview.getReadAgeOptions?kind=subscribed&timeZone=America%2FChicago", .get),
+            ("/xrpc/app.thesocialwire.appview.markReadBefore", .post),
+          ]
+          for (uri, method) in routes {
+            let response = try await testClient.execute(uri: uri, method: method)
+            #expect(response.status == (appViewBaseURL == nil ? .notFound : .unauthorized))
+          }
+        }
+      }
+    }
+  }
+
   @Test("client performance telemetry rejects unauthenticated calls")
   func clientPerformanceTelemetryUnauthorized() async throws {
     try await withSingletonHTTPClient { client in

@@ -51,3 +51,8 @@ enum GatewayMarkAllReadScopeDTO: Encodable, Sendable {
 struct GatewayMarkAllReadBody: Encodable, Sendable {
     let scope: GatewayMarkAllReadScopeDTO
 }
+
+struct GatewayMarkReadBeforeBody: Encodable, Sendable {
+    let scope: GatewayMarkAllReadScopeDTO
+    let before: String
+}
