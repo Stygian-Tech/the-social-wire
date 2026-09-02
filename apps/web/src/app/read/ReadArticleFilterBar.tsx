@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import { List, ListCollapse, RefreshCw } from "lucide-react";
 import { usePathname, useSearchParams } from "next/navigation";
 
@@ -12,14 +11,7 @@ import { useClientHydrated } from "@/hooks/useClientHydrated";
 import { useSidebarBootstrap } from "@/contexts/PublicationSidebarContext";
 import { FeedHeader } from "@/components/FeedHeader/FeedHeader";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { FeedMarkReadButton } from "./FeedMarkReadButton";
 import { cn } from "@/lib/utils";
 import { useWireEdition } from "@/hooks/useWireEdition";
 import { useWireFeedEntries } from "@/hooks/useWireFeed";
@@ -69,7 +61,6 @@ export function ReadArticleFilterBar() {
         : [],
     });
 
-  const [markAllReadOpen, setMarkAllReadOpen] = useState(false);
   const markAllReadDisabled =
     bulkDisabled || !activeFeedScope.displayName.trim();
   const routeFeedTitle = pathname === "/read"
@@ -151,49 +142,12 @@ export function ReadArticleFilterBar() {
             {isArticleListColumnOpen ? "Hide Articles" : "Show Articles"}
           </Button>
         ) : null}
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="min-w-0 shrink-0 rounded-md border-0 bg-transparent px-2 text-[11px] font-semibold text-muted-foreground shadow-none hover:bg-muted/50 hover:text-foreground"
+        <FeedMarkReadButton
+          scope={activeFeedScope.gatewayScope}
+          displayName={activeFeedScope.displayName}
           disabled={clientHydrated ? markAllReadDisabled : undefined}
-          onClick={() => setMarkAllReadOpen(true)}
-        >
-          Mark All As Read
-        </Button>
-        <Dialog open={markAllReadOpen} onOpenChange={setMarkAllReadOpen}>
-          <DialogContent showCloseButton>
-            <DialogHeader>
-              <DialogTitle>Mark All As Read?</DialogTitle>
-              <DialogDescription>
-                This marks every unread article in{" "}
-                <span className="font-medium text-foreground">
-                  {activeFeedScope.displayName}
-                </span>{" "}
-                as read.
-              </DialogDescription>
-            </DialogHeader>
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setMarkAllReadOpen(false)}
-              >
-                Cancel
-              </Button>
-              <Button
-                type="button"
-                disabled={markAllReadDisabled}
-                onClick={() => {
-                  applyMarkAllRead();
-                  setMarkAllReadOpen(false);
-                }}
-              >
-                Mark All As Read
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+          onMarkAllRead={applyMarkAllRead}
+        />
         <div
           role="tablist"
           aria-label="Articles filter"
