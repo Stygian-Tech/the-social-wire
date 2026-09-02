@@ -14,6 +14,94 @@ import Testing
   )
 )
 struct PostgresJetstreamInboxIntegrationTests {
+  @Test("Postgres bulk read snapshots retain hidden URL duplicates and isolate viewer counters")
+  func bulkReadSnapshotAndBatchMarks() async throws {
+    try await PostgresInboxFixture.withFixture { fixture in
+      let store = fixture.store
+      let viewer = "\(fixture.environment)-read-viewer"
+      let otherViewer = "\(fixture.environment)-other-read-viewer"
+      let author = "\(fixture.environment)-read-author"
+      let publication = "at://\(author)/site.standard.publication/main"
+      let now = Date()
+      let cutoff = now.addingTimeInterval(-3_600)
+      let oldIds = (0..<2).map { "at://\(author)/site.standard.document/old-\($0)" }
+      let todayId = "at://\(author)/site.standard.document/today"
+      let scope = AppViewUnreadCounterSupport.publicationScope(
+        viewerDid: viewer, publicationId: publication, authorDid: author,
+        publicationAtUri: publication, publicationScopeAtUris: [publication],
+        publicationSiteUrls: [], sectionKeys: []
+      )
+      let otherScope = AppViewUnreadCounterSupport.publicationScope(
+        viewerDid: otherViewer, publicationId: publication, authorDid: author,
+        publicationAtUri: publication, publicationScopeAtUris: [publication],
+        publicationSiteUrls: [], sectionKeys: []
+      )
+      let unreadScope = PublicationUnreadScope(
+        publicationId: publication, authorDid: author, publicationAtUri: publication,
+        publicationScopeAtUris: [publication], publicationSiteUrls: []
+      )
+      try await store.upsertPublicationScopes([scope, otherScope])
+      for (index, id) in (oldIds + [todayId]).enumerated() {
+        let publishedAt = id == todayId ? now : cutoff.addingTimeInterval(-60)
+        try await store.upsertContentItem(IndexedContentItem(
+          uri: id, cid: "fixture", authorDid: author, collection: "site.standard.document",
+          createdAt: now.addingTimeInterval(Double(index)), indexedAt: now,
+          publicationSite: publication,
+          render: ContentRenderFields(
+            title: id, publishedAt: ISO8601DateFormatter().string(from: publishedAt),
+            articleUrl: "https://example.com/shared-story"
+          ),
+          expiresAt: now.addingTimeInterval(3_600)
+        ))
+      }
+      try await store.markEntryUnread(viewerDid: viewer, subjectUri: oldIds[0], createdAt: now)
+      _ = try await store.refreshUnreadCounters(viewerDid: viewer, scopes: [unreadScope])
+      _ = try await store.refreshUnreadCounters(viewerDid: otherViewer, scopes: [unreadScope])
+      let otherBefore = try await store.fetchUnreadCounters(
+        viewerDid: otherViewer, publicationIds: [publication]
+      )
+      let presentation = try await store.listAggregateEntries(
+        viewerDid: viewer, scopes: [scope], filter: .unread, cursor: nil, limit: 100
+      )
+      #expect(presentation.response.entries.map(\.entryId) == [todayId])
+
+      var cursor: String?
+      var snapshot: [AppViewEntryListItem] = []
+      repeat {
+        let page = try await store.listUnreadEntriesForReadMutation(
+          viewerDid: viewer, scopes: [scope], cursor: cursor, limit: 1
+        )
+        snapshot.append(contentsOf: page.entries)
+        cursor = page.cursor
+      } while cursor != nil
+      let selected = snapshot.filter { $0.publishedAt < cutoff }.map(\.entryId)
+      #expect(Set(selected) == Set(oldIds))
+      try await store.upsertReadMarks(viewerDid: viewer, subjectUris: selected + selected, createdAt: now)
+      let dirty = try #require(try await store.fetchUnreadCounters(
+        viewerDid: viewer, publicationIds: [publication]
+      ).first)
+      #expect(dirty.dirty)
+      #expect(dirty.accuracy == .estimated)
+      #expect(dirty.unreadCount == 3)
+      #expect(try await store.fetchUnreadCounters(
+        viewerDid: otherViewer, publicationIds: [publication]
+      ) == otherBefore)
+      #expect(try await store.hasReadMark(viewerDid: otherViewer, subjectUri: oldIds[0]) == false)
+      #expect(try await store.hasReadMark(viewerDid: viewer, subjectUri: todayId) == false)
+      #expect(try await store.readBoundary(viewerDid: viewer, publicationId: publication) == nil)
+      let remaining = try await store.listUnreadEntriesForReadMutation(
+        viewerDid: viewer, scopes: [scope], cursor: nil, limit: 100
+      )
+      #expect(remaining.entries.map(\.entryId) == [todayId])
+      let recounted = try #require(try await store.refreshUnreadCounters(
+        viewerDid: viewer, scopes: [unreadScope]
+      ).first)
+      #expect(recounted.unreadCount == 1)
+      #expect(!recounted.dirty)
+      #expect(recounted.accuracy == .exact)
+    }
+  }
+
   @Test("Postgres resolves only proven terminal retired fatal-stream incidents")
   func resolvesOnlyTerminalRetiredGenerationIncidents() async throws {
     try await PostgresInboxFixture.withFixture { fixture in
@@ -850,6 +938,43 @@ private final class PostgresInboxFixture: @unchecked Sendable {
   private func installMinimalSchema() async throws {
     let statements: [PostgresQuery] = [
       """
+      CREATE TABLE IF NOT EXISTS content_items (
+        uri TEXT PRIMARY KEY, cid TEXT NOT NULL, author_did TEXT NOT NULL,
+        collection TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL,
+        indexed_at TIMESTAMPTZ NOT NULL, publication_site TEXT,
+        render_json JSONB NOT NULL, expires_at TIMESTAMPTZ NOT NULL
+      )
+      """,
+      """
+      CREATE TABLE IF NOT EXISTS read_marks (
+        viewer_did TEXT NOT NULL, subject_uri TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL,
+        PRIMARY KEY (viewer_did, subject_uri)
+      )
+      """,
+      """
+      CREATE TABLE IF NOT EXISTS appview_unread_overrides (
+        viewer_did TEXT NOT NULL, subject_uri TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL,
+        PRIMARY KEY (viewer_did, subject_uri)
+      )
+      """,
+      """
+      CREATE TABLE IF NOT EXISTS appview_publication_read_floors (
+        viewer_did TEXT NOT NULL, publication_id TEXT NOT NULL,
+        read_floor_at TIMESTAMPTZ NOT NULL, read_floor_uri TEXT,
+        generation BIGINT NOT NULL, updated_at TIMESTAMPTZ NOT NULL,
+        PRIMARY KEY (viewer_did, publication_id)
+      )
+      """,
+      """
+      CREATE TABLE IF NOT EXISTS appview_unread_counters (
+        viewer_did TEXT NOT NULL, publication_id TEXT NOT NULL,
+        unread_count INTEGER NOT NULL CHECK (unread_count >= 0), generation BIGINT NOT NULL,
+        accuracy TEXT NOT NULL CHECK (accuracy IN ('estimated', 'exact')),
+        dirty BOOLEAN NOT NULL, counted_at TIMESTAMPTZ NOT NULL,
+        PRIMARY KEY (viewer_did, publication_id)
+      )
+      """,
+      """
       CREATE TABLE IF NOT EXISTS appview_jetstream_checkpoints (
         environment TEXT NOT NULL,
         source_generation TEXT NOT NULL,
@@ -995,6 +1120,14 @@ private final class PostgresInboxFixture: @unchecked Sendable {
   }
 
   private func shutdown() async {
+    let readViewers = ["\(environment)-read-viewer", "\(environment)-other-read-viewer"]
+    try? await execute("DELETE FROM read_marks WHERE viewer_did = ANY(\(readViewers))")
+    try? await execute("DELETE FROM appview_unread_overrides WHERE viewer_did = ANY(\(readViewers))")
+    try? await execute("DELETE FROM appview_unread_counters WHERE viewer_did = ANY(\(readViewers))")
+    try? await execute("DELETE FROM appview_publication_scopes WHERE viewer_did = ANY(\(readViewers))")
+    try? await execute("DELETE FROM appview_publication_read_floors WHERE viewer_did = ANY(\(readViewers))")
+    let readAuthor = "\(environment)-read-author"
+    try? await execute("DELETE FROM content_items WHERE author_did = \(readAuthor)")
     try? await execute(
       """
       DELETE FROM appview_ingestion_incidents WHERE environment = \(environment)
