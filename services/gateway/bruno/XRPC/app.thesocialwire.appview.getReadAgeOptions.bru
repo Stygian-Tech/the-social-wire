@@ -1,0 +1,25 @@
+meta {
+  name: XRPC app.thesocialwire.appview.getReadAgeOptions
+  type: http
+  seq: 70
+}
+
+get {
+  url: {{baseUrl}}/xrpc/app.thesocialwire.appview.getReadAgeOptions?kind={{markAllReadScopeKind}}&publicationId={{publicationId}}&folderRkey={{folderRkey}}&timeZone={{readAgeTimeZone}}
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}
+
+docs {
+  Returns { referenceDay, options: [{ days, before, count }] } for the full indexed
+  feed scope. Only unread calendar ages represented by stories appear. Counts
+  include all unread stories before the exclusive cutoff. One day means yesterday
+  and earlier in readAgeTimeZone, not a rolling 24-hour period.
+
+  Copy an option's before value to readAgeBefore for markReadBefore.
+}

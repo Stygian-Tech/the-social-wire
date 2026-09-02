@@ -4,6 +4,7 @@ import type { EntryListItem } from "@/lib/atprotoClient";
 import { useWireEdition } from "@/hooks/useWireEdition";
 import { Skeleton } from "@/components/ui/skeleton";
 import { WireNewsEditionLayout } from "./WireNewsEditionLayout";
+import { shouldShowEditorialFeedLoading } from "./editorialFeedLoading";
 
 export function WireNewsExperience({
   onSelect,
@@ -15,8 +16,16 @@ export function WireNewsExperience({
     refreshCachedOnMount: true,
   });
   const pages = edition.data?.pages ?? [];
+  const storyCount = pages.reduce((count, page) => count + page.stories.length, 0);
 
-  if ((edition.isLoading || edition.catalog.isLoading) && pages.length === 0) {
+  if (
+    shouldShowEditorialFeedLoading(
+      storyCount,
+      edition.isLoading,
+      edition.catalog.isLoading,
+      edition.isRefreshingFirstPage,
+    )
+  ) {
     return (
       <div className="grid h-full gap-4 overflow-hidden p-4 sm:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_19rem]">
         <Skeleton className="h-80 rounded-2xl sm:col-span-2 xl:col-span-1" />

@@ -189,6 +189,18 @@ struct AppViewProxyRoutes {
         request: request, context: context, path: "/xrpc/app.thesocialwire.appview.markAllRead",
         method: "POST")
     }
+    group.get("/xrpc/app.thesocialwire.appview.getReadAgeOptions") {
+      request, context async throws -> Response in
+      try await forward(
+        request: request, context: context, path: "/xrpc/app.thesocialwire.appview.getReadAgeOptions",
+        method: "GET")
+    }
+    group.post("/xrpc/app.thesocialwire.appview.markReadBefore") {
+      request, context async throws -> Response in
+      try await forward(
+        request: request, context: context, path: "/xrpc/app.thesocialwire.appview.markReadBefore",
+        method: "POST")
+    }
   }
 
   private func forward(

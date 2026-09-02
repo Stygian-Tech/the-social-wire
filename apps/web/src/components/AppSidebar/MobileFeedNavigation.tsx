@@ -1,6 +1,6 @@
 "use client";
 
-import { Archive, Bookmark, Newspaper, Rss, Users } from "lucide-react";
+import { Archive, Bookmark, Network, Newspaper, Rss, Users } from "lucide-react";
 
 import type { ReaderNavigationFeed } from "@/lib/feedPreferences";
 import { cn } from "@/lib/utils";
@@ -8,7 +8,7 @@ import { WireBetaBadge } from "@/components/Wire/WireBetaBadge";
 
 const FEED_ITEMS = [
   { feed: "wire", label: "The Wire", icon: Rss },
-  { feed: "circle", label: "Your Circle", icon: Users },
+  { feed: "circle", label: "Your Circle", icon: Network },
   { feed: "readLater", label: "Saved", icon: Bookmark },
   { feed: "archive", label: "Archive", icon: Archive },
   { feed: "subscribed", label: "Subscribed", icon: Newspaper },
@@ -42,7 +42,9 @@ export function MobileFeedNavigation({
           <button
             key={feed}
             type="button"
-            aria-label={feed === "wire" ? "The Wire, Beta" : label}
+            aria-label={
+              feed === "wire" || feed === "circle" ? `${label}, Beta` : label
+            }
             aria-current={active ? "page" : undefined}
             className={cn(
               "flex min-h-16 min-w-0 flex-col items-center justify-center gap-1 px-1 text-[11px] font-medium text-muted-foreground transition-colors",
@@ -54,7 +56,7 @@ export function MobileFeedNavigation({
             <Icon className="size-5" aria-hidden="true" />
             <span className="flex min-w-0 items-center gap-1">
               <span className="truncate">{label}</span>
-              {feed === "wire" ? (
+              {feed === "wire" || feed === "circle" ? (
                 <WireBetaBadge className="px-1 py-px text-[7px]" />
               ) : null}
             </span>

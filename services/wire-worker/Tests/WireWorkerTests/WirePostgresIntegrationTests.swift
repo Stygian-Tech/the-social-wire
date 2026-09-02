@@ -1265,6 +1265,51 @@ struct WirePostgresIntegrationTests {
     }
   }
 
+  @Test("baseline label targets include the one-share Standard Site lane")
+  func baselineTargetsIncludeFreshStandardSiteLane() async throws {
+    guard let url = ProcessInfo.processInfo.environment["WIRE_TEST_DATABASE_URL"] else { return }
+    let logger = Logger(label: "wire-label-target-coverage-postgres.integration")
+    let configuration = try PostgresWireConfig.make(from: url, logger: logger)
+    let pool = PostgresClient(configuration: configuration, backgroundLogger: logger)
+    let runTask = Task { await pool.run() }
+    await Task.yield()
+    defer { runTask.cancel() }
+
+    let namespace = UUID().uuidString.lowercased()
+    let canonicalKey = "url:\(namespace)-one-share"
+    let representativeURI = "at://did:example:\(namespace)/site.standard.document/story"
+    let now = Date()
+    try await pool.query(
+      """
+      INSERT INTO wire_items
+        (canonical_key, canonical_url, representative_uri, source_domain, source_name, title,
+         provenance, published_at, first_seen_at, last_seen_at, last_signal_at,
+         source_confidence, target_kind, expires_at)
+      VALUES
+        (\(canonicalKey), \("https://example.com/\(namespace)"), \(representativeURI),
+         'example.com', 'Example', 'Fresh Standard Site story', '["standard_site"]'::jsonb,
+         \(now), \(now), \(now), \(now), 0.9, 'standard_site_document',
+         \(now.addingTimeInterval(86_400)))
+      """,
+      logger: logger
+    )
+    try await pool.query(
+      """
+      INSERT INTO wire_signal_rollups
+        (canonical_key, shares_24h, baseline_shares_24h)
+      VALUES (\(canonicalKey), 1, 1)
+      """,
+      logger: logger
+    )
+
+    let store = PostgresWireBaselineLabelStore(pool: pool, logger: logger)
+    let targets = try await store.loadTargets(limit: 5_000, asOf: now)
+    #expect(targets.contains { $0.canonicalKey == canonicalKey })
+
+    try await pool.query(
+      "DELETE FROM wire_items WHERE canonical_key = \(canonicalKey)", logger: logger)
+  }
+
   @Test("applies an article, builds exact rollups, and retracts its signal")
   func articleLifecycle() async throws {
     guard let url = ProcessInfo.processInfo.environment["WIRE_TEST_DATABASE_URL"] else { return }

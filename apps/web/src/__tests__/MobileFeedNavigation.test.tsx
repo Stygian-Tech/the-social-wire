@@ -68,7 +68,11 @@ describe("MobileFeedNavigation", () => {
       />,
     );
 
-    const circle = screen.getByRole("button", { name: "Your Circle" });
+    const circle = screen.getByRole("button", { name: "Your Circle, Beta" });
+    expect(screen.getByText("Beta")).toBeDefined();
+    expect(circle.querySelector("svg")?.classList.contains("lucide-network")).toBe(
+      true,
+    );
     expect(circle.getAttribute("aria-current")).toBe("page");
     fireEvent.click(circle);
     expect(onSelect).toHaveBeenCalledWith("circle");

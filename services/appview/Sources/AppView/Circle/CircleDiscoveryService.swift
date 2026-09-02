@@ -201,7 +201,7 @@ struct CircleDiscoveryService: Sendable {
       language: language,
       cursor: moreCursor,
       source: source,
-      degraded: graph.freshness.isStale,
+      degraded: graph.isDegraded,
       rankedItems: presentationItems
     )
     let response = CircleEditionResponse(
@@ -210,7 +210,7 @@ struct CircleDiscoveryService: Sendable {
       generatedAt: candidates.generatedAt,
       language: language,
       source: source.rawValue,
-      degraded: graph.freshness.isStale,
+      degraded: graph.isDegraded,
       stories: pageStories.compactMap { publicByID[$0.item.itemID] },
       topStoryIDs: assembled.leadStories.map(\.itemID),
       publicationSpotlights: assembled.publicationPanels.map { panel in
@@ -325,6 +325,7 @@ struct CircleDiscoveryService: Sendable {
     now: Date
   ) async throws -> [CircleStory] {
     var selectedFactsByStory: [String: [(WireCorpusSignalFact, Membership)]] = [:]
+    var sharerCountsByStory: [String: Int] = [:]
     var actorDIDs = Set<String>()
     for story in stories {
       var bestByActor: [String: (WireCorpusSignalFact, Membership)] = [:]
@@ -341,7 +342,8 @@ struct CircleDiscoveryService: Sendable {
         }
         if lhs.0.occurredAt != rhs.0.occurredAt { return lhs.0.occurredAt > rhs.0.occurredAt }
         return lhs.1.actorDID < rhs.1.actorDID
-      }.prefix(8)
+      }.prefix(5)
+      sharerCountsByStory[story.item.itemID] = bestByActor.count
       selectedFactsByStory[story.item.itemID] = Array(selected)
       actorDIDs.formUnion(selected.map { $0.1.actorDID })
     }
@@ -384,6 +386,7 @@ struct CircleDiscoveryService: Sendable {
         source: story.item.source,
         reasons: Array(reasons.prefix(3)),
         discussionCount: replies,
+        sharerCount: sharerCountsByStory[story.item.itemID] ?? 0,
         sharers: sharers
       )
     }

@@ -95,11 +95,11 @@ export function ReadArticleFilterBar() {
       <FeedHeader
         title={
           <span
-            aria-label={isCircle ? title : "The Wire, Beta"}
+            aria-label={`${title}, Beta`}
             className="inline-flex items-center gap-2"
           >
             <span>{title}</span>
-            {isWire ? <WireBetaBadge /> : null}
+            <WireBetaBadge />
           </span>
         }
         className={readFeedHeaderClassName(true)}

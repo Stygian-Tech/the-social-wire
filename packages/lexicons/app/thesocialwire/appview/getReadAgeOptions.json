@@ -1,0 +1,100 @@
+{
+  "lexicon": 1,
+  "id": "app.thesocialwire.appview.getReadAgeOptions",
+  "defs": {
+    "main": {
+      "type": "query",
+      "description": "Get calendar-day read cutoffs represented by unread stories in the full indexed feed scope.",
+      "parameters": {
+        "type": "params",
+        "required": [
+          "kind",
+          "timeZone"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "maxLength": 32,
+            "knownValues": [
+              "publication",
+              "folder",
+              "subscribed",
+              "following"
+            ]
+          },
+          "publicationId": {
+            "type": "string",
+            "maxLength": 2048
+          },
+          "folderRkey": {
+            "type": "string",
+            "maxLength": 512
+          },
+          "timeZone": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255,
+            "description": "IANA time zone identifier used for local calendar days, such as America/Chicago."
+          }
+        }
+      },
+      "output": {
+        "encoding": "application/json",
+        "schema": {
+          "type": "object",
+          "required": [
+            "referenceDay",
+            "options"
+          ],
+          "properties": {
+            "referenceDay": {
+              "type": "string",
+              "format": "datetime",
+              "description": "Start of the current local calendar day, expressed as a UTC instant."
+            },
+            "options": {
+              "type": "array",
+              "items": {
+                "type": "ref",
+                "ref": "#option"
+              }
+            }
+          }
+        }
+      },
+      "errors": [
+        {
+          "name": "InvalidRequest"
+        },
+        {
+          "name": "UpstreamUnavailable"
+        }
+      ]
+    },
+    "option": {
+      "type": "object",
+      "required": [
+        "days",
+        "before",
+        "count"
+      ],
+      "properties": {
+        "days": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Calendar-day age represented by at least one unread story. One includes yesterday and earlier."
+        },
+        "before": {
+          "type": "string",
+          "format": "datetime",
+          "description": "Exclusive UTC publication-time cutoff. For one day this is the start of today in the requested time zone."
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Number of unread stories in scope before this cutoff."
+        }
+      }
+    }
+  }
+}

@@ -205,6 +205,16 @@ describe("CI workflow configuration", () => {
       railwayInfrastructure.indexOf("const productionProfile"),
       railwayInfrastructure.indexOf("const indexingBuild"),
     );
+    const productionWireSourceGenerations = railwayInfrastructure.slice(
+      railwayInfrastructure.indexOf("const productionWireSourceGenerations"),
+      railwayInfrastructure.indexOf("const productionProfile"),
+    );
+    expect(productionWireSourceGenerations).toContain(
+      '"wire-global-v8-prod-external-live-v1"',
+    );
+    expect(productionWireSourceGenerations).toContain(
+      '"wire-global-v8-prod-publication-live-tail-v1"',
+    );
     expect(productionProfile).toContain(
       '"wire-global-v8-prod-external-live-v1"',
     );

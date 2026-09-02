@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct SembleItemRow: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let item: SembleCollectionItem
     var isSelected = false
 
@@ -11,12 +12,12 @@ struct SembleItemRow: View {
                 Text(item.displayTitle)
                     .font(.headline)
                     .foregroundStyle(isSelected ? Color.accentColor : Color.primary)
-                    .lineLimit(2)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
                 if let description = item.description, !description.isEmpty {
                     Text(description)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
-                        .lineLimit(2)
+                        .lineLimit(1)
                 }
                 HStack(spacing: 5) {
                     Text(item.contributor.label)
@@ -32,9 +33,11 @@ struct SembleItemRow: View {
                     Label(note.text, systemImage: "note.text")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                        .lineLimit(2)
+                        .lineLimit(1)
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 6)

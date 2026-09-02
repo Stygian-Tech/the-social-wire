@@ -8,6 +8,7 @@ import type { CircleEditionPage } from "@/lib/circleFeedClient";
 import type { WireEditionPage } from "@/lib/wireEditionClient";
 import { Skeleton } from "@/components/ui/skeleton";
 import { WireNewsEditionLayout } from "@/components/Wire/WireNewsEditionLayout";
+import { shouldShowEditorialFeedLoading } from "@/components/Wire/editorialFeedLoading";
 import {
   CircleStoryActionsProvider,
   useCircleStoryActions,
@@ -50,6 +51,7 @@ function circlePageForWireLayout(page: CircleEditionPage): WireEditionPage {
         source: story.source,
         reasons: story.reasons,
         discussionCount: story.discussionCount,
+        sharerCount: story.sharerCount,
         sharers: story.sharers,
         publishedAt: story.publishedAt,
       },
@@ -70,12 +72,20 @@ export function CircleNewsExperience({
 }) {
   const edition = useCircleEdition({ enabled: true });
   const pages = edition.data?.pages ?? EMPTY_CIRCLE_PAGES;
+  const storyCount = pages.reduce((count, page) => count + page.stories.length, 0);
   const layoutPages = useMemo(
     () => pages.map(circlePageForWireLayout),
     [pages],
   );
 
-  if ((edition.isLoading || edition.catalog.isLoading) && pages.length === 0) {
+  if (
+    shouldShowEditorialFeedLoading(
+      storyCount,
+      edition.isLoading,
+      edition.catalog.isLoading,
+      edition.isRefetching,
+    )
+  ) {
     return (
       <div className="grid h-full gap-4 overflow-hidden p-4 sm:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_19rem]">
         <Skeleton className="h-80 rounded-2xl sm:col-span-2 xl:col-span-1" />
@@ -123,7 +133,7 @@ export function CircleNewsExperience({
             role="status"
             className="shrink-0 border-b border-amber-500/25 bg-amber-500/10 px-4 py-2 text-xs text-foreground"
           >
-            Showing a saved Circle edition while your network refreshes.
+            Your Circle is showing limited network coverage while it refreshes.
           </div>
         ) : null}
         <CircleActionsError />

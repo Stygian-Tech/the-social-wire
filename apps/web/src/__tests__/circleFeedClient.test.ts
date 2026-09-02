@@ -15,12 +15,15 @@ import {
 } from "@/hooks/useCircleFeed";
 
 describe("Your Circle web client", () => {
-  it("renders only the generic Circle reason vocabulary", () => {
-    expect(circleReasonLabel("shared_by_following")).toBe(
-      "Shared By Following",
-    );
+  it("omits redundant relationship reasons from Circle cards", () => {
+    expect(circleReasonLabel("shared_by_following")).toBeNull();
+    expect(circleReasonLabel("shared_by_extended_circle")).toBeNull();
+    expect(circleReasonLabel("popular_in_your_circle")).toBeNull();
     expect(circleReasonLabel("discussed_in_your_circle")).toBe(
       "Discussed In Your Circle",
+    );
+    expect(circleReasonLabel("fresh_from_your_circle")).toBe(
+      "Fresh From Your Circle",
     );
     expect(circleReasonLabel("at.margin.note")).toBeNull();
   });
@@ -86,6 +89,7 @@ describe("Your Circle web client", () => {
         source: { name: "News", domain: "news.example" },
         reasons: ["shared_by_following"],
         discussionCount: 3,
+        sharerCount: 4,
         sharers: [
           {
             identity: { did: "did:plc:alice", handle: "alice.example" },
@@ -101,6 +105,7 @@ describe("Your Circle web client", () => {
 
     expect(entry.originalUrl).toBe("https://news.example/story");
     expect(entry.circleItem?.storyId).toBe("story-1");
+    expect(entry.circleItem?.sharerCount).toBe(4);
     expect(entry.circleItem?.sharers[0]?.identity.handle).toBe("alice.example");
   });
 });

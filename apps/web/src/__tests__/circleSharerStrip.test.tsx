@@ -9,7 +9,7 @@ import type { CircleSharer } from "@/lib/circleFeedClient";
 
 afterEach(cleanup);
 
-const sharers: CircleSharer[] = Array.from({ length: 5 }, (_, index) => ({
+const sharers: CircleSharer[] = Array.from({ length: 7 }, (_, index) => ({
   identity: {
     did: `did:plc:person${index}`,
     handle: `person${index}.example`,
@@ -22,14 +22,22 @@ const sharers: CircleSharer[] = Array.from({ length: 5 }, (_, index) => ({
 }));
 
 describe("CircleSharerStrip", () => {
-  it("shows at most three public sharers plus overflow and relationship labels", () => {
-    render(<CircleSharerStrip sharers={sharers} />);
+  it("shows five linked avatars without visible names before adding overflow", () => {
+    render(<CircleSharerStrip sharers={sharers.slice(0, 5)} totalCount={7} />);
 
     const links = screen.getAllByRole("link");
-    expect(links).toHaveLength(3);
+    expect(links).toHaveLength(5);
     expect(screen.getByText("+2")).toBeDefined();
-    expect(screen.getByText("Following")).toBeDefined();
-    expect(screen.getAllByText("One Hop")).toHaveLength(2);
+    expect(screen.queryByText("Following")).toBeNull();
+    for (let index = 0; index < 5; index += 1) {
+      expect(screen.queryByText(`Person ${index}`)).toBeNull();
+      expect(
+        screen.getByRole("link", {
+          name: new RegExp(`Open Person ${index}'s public share context`),
+        }),
+      ).toBeDefined();
+    }
+    expect(screen.getAllByText("+1")).toHaveLength(4);
     expect(links[0]?.getAttribute("href")).toBe(
       "https://bsky.app/profile/did%3Aplc%3Aperson0/post/post0",
     );

@@ -53,6 +53,7 @@ export type CircleStory = {
   source: WireSource;
   reasons: string[];
   discussionCount: number;
+  sharerCount: number;
   sharers: CircleSharer[];
 };
 
@@ -91,11 +92,9 @@ export type CircleHiddenItemState = {
 export function circleReasonLabel(reason: string): string | null {
   switch (reason) {
     case "shared_by_following":
-      return "Shared By Following";
     case "shared_by_extended_circle":
-      return "Shared By Extended Circle";
     case "popular_in_your_circle":
-      return "Popular In Your Circle";
+      return null;
     case "discussed_in_your_circle":
       return "Discussed In Your Circle";
     case "fresh_from_your_circle":
@@ -249,6 +248,7 @@ export function circleStoryToEntryListItem(
       },
       reasons: story.reasons,
       discussionCount: story.discussionCount,
+      sharerCount: story.sharerCount,
       sharers: story.sharers,
       publishedAt: story.publishedAt,
     },

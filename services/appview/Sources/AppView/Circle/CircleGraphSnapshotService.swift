@@ -3,6 +3,7 @@ import Foundation
 struct CircleGraphSnapshotService: Sendable {
   static let maximumDirectFollows = 500
   static let maximumOneHopActors = 20_000
+  static let maximumOneHopExpansionSources = 16
   static let freshTarget: TimeInterval = 10 * 60
   static let staleMaximum: TimeInterval = 24 * 60 * 60
 
@@ -12,6 +13,7 @@ struct CircleGraphSnapshotService: Sendable {
   private let cache: any CircleGraphSnapshotCaching
   private let directLimit: Int
   private let oneHopLimit: Int
+  private let oneHopExpansionSourceLimit: Int
   private let snapshotIDGenerator: @Sendable () -> UUID
 
   init(
@@ -21,6 +23,7 @@ struct CircleGraphSnapshotService: Sendable {
     cache: any CircleGraphSnapshotCaching,
     directLimit: Int = Self.maximumDirectFollows,
     oneHopLimit: Int = Self.maximumOneHopActors,
+    oneHopExpansionSourceLimit: Int = Self.maximumOneHopExpansionSources,
     snapshotIDGenerator: @escaping @Sendable () -> UUID = { UUID() }
   ) {
     self.viewerFollowReader = viewerFollowReader
@@ -29,6 +32,10 @@ struct CircleGraphSnapshotService: Sendable {
     self.cache = cache
     self.directLimit = min(max(1, directLimit), Self.maximumDirectFollows)
     self.oneHopLimit = min(max(1, oneHopLimit), Self.maximumOneHopActors)
+    self.oneHopExpansionSourceLimit = min(
+      max(1, oneHopExpansionSourceLimit),
+      Self.maximumOneHopExpansionSources
+    )
     self.snapshotIDGenerator = snapshotIDGenerator
   }
 
@@ -94,7 +101,11 @@ struct CircleGraphSnapshotService: Sendable {
     )
     let directSet = Set(selectedDirect)
 
-    let followLists = try await completeFollowLists(for: directSet)
+    let expansionSources = Set(selectedDirect.prefix(oneHopExpansionSourceLimit))
+    let followReads = await bestEffortFollowLists(for: expansionSources)
+    let followLists = followReads.lists
+    let oneHopExpansionComplete =
+      expansionSources.count == directSet.count && followReads.allComplete
     var pathsByCandidate: [String: Set<String>] = [:]
     let oneHopExclusions = excludedDIDs.union(directSet)
     for directDID in selectedDirect {
@@ -139,32 +150,49 @@ struct CircleGraphSnapshotService: Sendable {
       },
       directCandidateCount: directCandidates.count,
       oneHopCandidateCount: oneHopCandidates.count,
+      oneHopExpansionComplete: oneHopExpansionComplete,
       generatedAt: now
     )
   }
 
-  private func completeFollowLists(
+  private func bestEffortFollowLists(
     for actorDIDs: Set<String>
-  ) async throws -> [String: CircleFollowList] {
-    guard !actorDIDs.isEmpty else { return [:] }
-    let reads = try await publicFollowReader.follows(of: actorDIDs)
+  ) async -> (lists: [String: CircleFollowList], allComplete: Bool) {
+    guard !actorDIDs.isEmpty else { return ([:], true) }
+    let reads: [CircleFollowList]
+    do {
+      reads = try await publicFollowReader.follows(of: actorDIDs)
+    } catch {
+      return ([:], false)
+    }
     var byActor: [String: CircleFollowList] = [:]
+    var invalidActors: Set<String> = []
+    var allComplete = true
     for read in reads {
       let actorDID = Self.normalizeDID(read.actorDID)
-      guard byActor[actorDID] == nil else {
-        throw CircleGraphSnapshotError.duplicateFollowRead(actorDID: actorDID)
+      guard actorDIDs.contains(actorDID), !actorDID.isEmpty else {
+        allComplete = false
+        continue
+      }
+      guard byActor[actorDID] == nil, !invalidActors.contains(actorDID) else {
+        byActor.removeValue(forKey: actorDID)
+        invalidActors.insert(actorDID)
+        allComplete = false
+        continue
+      }
+      if !read.isComplete { allComplete = false }
+      guard read.isComplete || !read.followeeDIDs.isEmpty else {
+        invalidActors.insert(actorDID)
+        continue
       }
       byActor[actorDID] = read
     }
     for actorDID in actorDIDs {
-      guard let read = byActor[actorDID] else {
-        throw CircleGraphSnapshotError.missingFollowRead(actorDID: actorDID)
-      }
-      guard read.isComplete else {
-        throw CircleGraphSnapshotError.incompleteFollowRead(actorDID: actorDID)
+      if byActor[actorDID] == nil {
+        allComplete = false
       }
     }
-    return byActor
+    return (byActor, allComplete)
   }
 
   private func completeViewerFollowList(viewerDID: String) async throws -> CircleFollowList {

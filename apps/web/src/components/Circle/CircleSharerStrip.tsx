@@ -3,7 +3,7 @@ import type { CircleSharer } from "@/lib/circleFeedClient";
 import { outboundLinkProps } from "@/lib/outboundLinks";
 import { cn } from "@/lib/utils";
 
-const MAX_VISIBLE_SHARERS = 3;
+const MAX_VISIBLE_SHARERS = 5;
 
 export function publicCircleShareURL(sharer: CircleSharer): string {
   const match = sharer.sourceUri.match(
@@ -19,26 +19,25 @@ export function publicCircleShareURL(sharer: CircleSharer): string {
   return `https://bsky.app/profile/${encodeURIComponent(profile)}`;
 }
 
-function relationshipLabel(sharer: CircleSharer): string {
-  return sharer.relationship === "direct" ? "Following" : "One Hop";
-}
-
 export function CircleSharerStrip({
   sharers,
+  totalCount = sharers.length,
   compact = false,
 }: {
   sharers: CircleSharer[];
+  totalCount?: number;
   compact?: boolean;
 }) {
   const visible = sharers.slice(0, MAX_VISIBLE_SHARERS);
-  const overflow = Math.max(0, sharers.length - visible.length);
+  const overflow = Math.max(0, totalCount - visible.length);
+  const avatarSize = compact ? 22 : 24;
   if (visible.length === 0) return null;
 
   return (
     <div
       aria-label="Shared In Your Circle"
       className={cn(
-        "mt-2 flex min-w-0 flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground",
+        "mt-2 flex min-w-0 items-center text-[11px] text-muted-foreground",
         compact && "mt-1.5",
       )}
     >
@@ -51,26 +50,34 @@ export function CircleSharerStrip({
             href={publicCircleShareURL(sharer)}
             {...outboundLinkProps}
             data-source-uri={sharer.sourceUri}
-            aria-label={`Open ${name}'s public share context`}
-            className="inline-flex max-w-40 items-center gap-1 rounded-full border border-border/70 bg-background/80 py-0.5 pl-0.5 pr-2 hover:border-[var(--purple-border)] hover:text-foreground"
+            aria-label={`Open ${name}'s public share context${sharer.relationship === "one_hop" ? ", one hop away" : ""}`}
+            title={name}
+            className="relative -ml-2 inline-flex rounded-full first:ml-0 hover:z-10 focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--purple-border)] focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             onClick={(event) => event.stopPropagation()}
             onKeyDown={(event) => event.stopPropagation()}
           >
             <Avatar
               src={sharer.identity.avatarUrl}
               alt={name}
-              size={20}
-              className="shrink-0"
+              size={avatarSize}
+              className="shrink-0 border-2 border-background shadow-sm"
             />
-            <span className="truncate">{name}</span>
-            <span className="shrink-0 text-[9px] uppercase tracking-wide text-muted-foreground/80">
-              {relationshipLabel(sharer)}
-            </span>
+            {sharer.relationship === "one_hop" ? (
+              <span
+                aria-hidden="true"
+                className="absolute -bottom-1 -right-1 z-20 inline-flex min-w-4 items-center justify-center rounded-full border border-background bg-muted px-0.5 text-[8px] font-bold leading-3 text-foreground shadow-sm"
+              >
+                +1
+              </span>
+            ) : null}
           </a>
         );
       })}
       {overflow > 0 ? (
-        <span className="inline-flex min-h-5 items-center rounded-full bg-muted px-2 font-semibold text-foreground">
+        <span
+          aria-label={`${overflow} more accounts`}
+          className="ml-1.5 inline-flex min-h-5 items-center rounded-full bg-muted px-2 font-semibold text-foreground"
+        >
           +{overflow}
         </span>
       ) : null}

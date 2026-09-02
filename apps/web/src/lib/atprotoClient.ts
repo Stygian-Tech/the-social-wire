@@ -122,6 +122,7 @@ export interface EntryListItem {
     };
     reasons: string[];
     discussionCount: number;
+    sharerCount: number;
     sharers: Array<{
       identity: {
         did: string;

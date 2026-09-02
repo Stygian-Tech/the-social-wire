@@ -209,6 +209,20 @@
     },
     {
       "surface": "openapi",
+      "method": "GET",
+      "path": "/xrpc/app.thesocialwire.appview.getReadAgeOptions",
+      "classification": "xrpc-migration",
+      "xrpcNsid": "app.thesocialwire.appview.getReadAgeOptions"
+    },
+    {
+      "surface": "openapi",
+      "method": "POST",
+      "path": "/xrpc/app.thesocialwire.appview.markReadBefore",
+      "classification": "xrpc-migration",
+      "xrpcNsid": "app.thesocialwire.appview.markReadBefore"
+    },
+    {
+      "surface": "openapi",
       "method": "DELETE",
       "path": "/v1/appview/privacy/purge",
       "classification": "xrpc-migration",

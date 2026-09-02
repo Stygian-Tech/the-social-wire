@@ -13,23 +13,18 @@ export type SyncPreferencesEnvelope = {
   record?: PreferencesRecord | null;
 };
 
-export async function fetchSyncPreferences(
-  oauthSession: OAuthSession,
+export function syncPreferencesPath(forceRefresh = false): string {
+  return forceRefresh
+    ? `${socialWireXrpc.getPreferences}?fresh=true`
+    : socialWireXrpc.getPreferences;
+}
+
+export async function decodeSyncPreferencesResponse(
+  res: Response,
   viewerDid: string,
-  ifNoneMatch?: string | null
 ): Promise<RepoRecord<PreferencesRecord> | null> {
-  const res = await gatewayFetch(oauthSession, socialWireXrpc.getPreferences, {
-    method: "GET",
-    headers: ifNoneMatch ? { "If-None-Match": ifNoneMatch } : undefined,
-  });
-
-  if (res.status === 304) {
-    return null;
-  }
-
-  if (!res.ok) {
-    return null;
-  }
+  if (res.status === 304) return null;
+  if (!res.ok) throw new Error(`Preference sync failed (${res.status}).`);
 
   const envelope = (await res.json()) as SyncPreferencesEnvelope;
   const record = envelope.record;
@@ -46,4 +41,19 @@ export async function fetchSyncPreferences(
     cid: revision,
     value: record,
   };
+}
+
+export async function fetchSyncPreferences(
+  oauthSession: OAuthSession,
+  viewerDid: string,
+  ifNoneMatch?: string | null,
+  forceRefresh = false,
+): Promise<RepoRecord<PreferencesRecord> | null> {
+  const path = syncPreferencesPath(forceRefresh);
+  const res = await gatewayFetch(oauthSession, path, {
+    method: "GET",
+    headers: ifNoneMatch ? { "If-None-Match": ifNoneMatch } : undefined,
+  });
+
+  return decodeSyncPreferencesResponse(res, viewerDid);
 }

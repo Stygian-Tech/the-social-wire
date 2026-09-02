@@ -1,0 +1,41 @@
+meta {
+  name: XRPC app.thesocialwire.appview.markReadBefore
+  type: http
+  seq: 71
+}
+
+post {
+  url: {{baseUrl}}/xrpc/app.thesocialwire.appview.markReadBefore
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "scope": {
+      "kind": "{{markAllReadScopeKind}}",
+      "publicationId": "{{publicationId}}",
+      "folderRkey": "{{folderRkey}}"
+    },
+    "before": "{{readAgeBefore}}"
+  }
+}
+
+docs {
+  Set readAgeBefore to a before value returned by getReadAgeOptions.
+  Marks unread stories published strictly before that cutoff. Stories exactly at
+  the cutoff remain unread. Returns { marked, entryIds, readAt, unreadCounts };
+  clients reconcile entryIds in local read state using readAt.
+  If recounting fails after marks commit, success still returns the committed IDs
+  with unreadCounts: {}. Missing keys mean unknown: preserve their existing counts
+  until a later refresh rather than replacing them with zero.
+
+  This is a separate procedure from markAllRead; never send the cutoff to that
+  older procedure, which could ignore it and mark newer stories too.
+}

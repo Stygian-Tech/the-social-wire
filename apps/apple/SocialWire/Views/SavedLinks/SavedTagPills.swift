@@ -4,22 +4,22 @@ struct SavedTagPills: View {
     let tags: [String]
 
     var body: some View {
-        if !tags.isEmpty {
+        if let tag = tags.first {
             HStack(spacing: 6) {
-                ForEach(Array(tags.prefix(3)), id: \.self) { tag in
-                    Text(tag)
-                        .font(.caption2)
-                        .lineLimit(1)
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 3)
-                        .background(.quaternary, in: Capsule())
-                }
-                if tags.count > 3 {
-                    Text("+\(tags.count - 3)")
+                Text(tag)
+                    .font(.caption2)
+                    .lineLimit(1)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(.quaternary, in: Capsule())
+                if tags.count > 1 {
+                    Text("+\(tags.count - 1)")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
+                        .fixedSize()
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityElement(children: .combine)
             .accessibilityLabel("Tags: \(tags.joined(separator: ", "))")
         }
@@ -57,10 +57,14 @@ struct SavedTagFilterBar: View {
                 if let count { Text("\(count)").foregroundStyle(selected ? .white.opacity(0.8) : .secondary) }
             }
             .font(.caption.weight(.semibold))
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
             .foregroundStyle(selected ? Color.white : Color.primary)
             .background(selected ? Color.accentColor : Color.secondary.opacity(0.14), in: Capsule())
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(selected ? .isSelected : [])

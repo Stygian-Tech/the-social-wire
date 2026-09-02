@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SavedLinkRow: View {
     @Environment(SocialWireAppModel.self) private var appModel
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let save: MergedLatrSave
     var isSelected: Bool = false
 
@@ -22,22 +23,24 @@ struct SavedLinkRow: View {
                     Text(save.title)
                         .font(.headline)
                         .foregroundStyle(isSelected ? Color.accentColor : Color.primary)
-                        .lineLimit(2)
+                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
 
                     if let excerpt = save.excerpt, !excerpt.isEmpty {
                         Text(excerpt)
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
-                            .lineLimit(2)
+                            .lineLimit(1)
                     }
 
                     Text(save.rowSubtitle)
                         .font(.caption)
                         .foregroundStyle(.tertiary)
-                        .lineLimit(2)
+                        .lineLimit(1)
 
                     SavedTagPills(tags: save.tags)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

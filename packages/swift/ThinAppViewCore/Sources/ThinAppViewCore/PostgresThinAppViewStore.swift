@@ -849,6 +849,56 @@ public init(pool: PostgresClient, logger: Logger) {
     )
   }
 
+  public func upsertReadMarks(
+    viewerDid: String,
+    subjectUris: [String],
+    createdAt: Date
+  ) async throws {
+    let subjects = Array(Set(subjectUris)).sorted()
+    guard !subjects.isEmpty else { return }
+    let countedAt = Date()
+    let generation = AppViewUnreadCounterSupport.generation(for: countedAt)
+    try await pool.withTransaction(logger: logger) { connection in
+      try await connection.query(
+        """
+        INSERT INTO read_marks (viewer_did, subject_uri, created_at)
+        SELECT \(viewerDid), subject_uri, \(createdAt)
+        FROM unnest(\(subjects)::text[]) AS subjects(subject_uri)
+        ON CONFLICT (viewer_did, subject_uri) DO UPDATE SET created_at = EXCLUDED.created_at
+        """,
+        logger: logger
+      )
+      try await connection.query(
+        """
+        DELETE FROM appview_unread_overrides
+        WHERE viewer_did = \(viewerDid) AND subject_uri = ANY(\(subjects))
+        """,
+        logger: logger
+      )
+      try await connection.query(
+        """
+        INSERT INTO appview_unread_counters
+          (viewer_did, publication_id, unread_count, generation, accuracy, dirty, counted_at)
+        SELECT DISTINCT scope.viewer_did, scope.publication_id, 0,
+          \(generation), \(AppViewUnreadCounterAccuracy.estimated.rawValue), TRUE, \(countedAt)
+        FROM appview_publication_scopes scope
+        JOIN content_items ci ON ci.author_did = scope.author_did
+          AND (
+            jsonb_array_length(scope.scope_keys) = 0
+            OR (ci.publication_site IS NOT NULL AND scope.scope_keys ? ci.publication_site)
+          )
+        WHERE scope.viewer_did = \(viewerDid) AND ci.uri = ANY(\(subjects))
+        ON CONFLICT (viewer_did, publication_id) DO UPDATE SET
+          generation = EXCLUDED.generation,
+          accuracy = EXCLUDED.accuracy,
+          dirty = TRUE,
+          counted_at = EXCLUDED.counted_at
+        """,
+        logger: logger
+      )
+    }
+  }
+
   public func markEntryUnread(
     viewerDid: String,
     subjectUri: String,
@@ -1502,6 +1552,32 @@ public init(pool: PostgresClient, logger: Logger) {
     cursor: String?,
     limit: Int
   ) async throws -> AppViewAggregatePageResult {
+    try await listScopedEntries(
+      viewerDid: viewerDid, scopes: scopes, filter: filter, cursor: cursor,
+      limit: limit, deduplicateArticleURLs: true
+    )
+  }
+
+  public func listUnreadEntriesForReadMutation(
+    viewerDid: String,
+    scopes: [AppViewPublicationScope],
+    cursor: String?,
+    limit: Int
+  ) async throws -> AppViewEntryListResponse {
+    try await listScopedEntries(
+      viewerDid: viewerDid, scopes: scopes, filter: .unread, cursor: cursor,
+      limit: limit, deduplicateArticleURLs: false
+    ).response
+  }
+
+  private func listScopedEntries(
+    viewerDid: String,
+    scopes: [AppViewPublicationScope],
+    filter: EntryListFilter,
+    cursor: String?,
+    limit: Int,
+    deduplicateArticleURLs: Bool
+  ) async throws -> AppViewAggregatePageResult {
     let startedAt = Date()
     let pageLimit = max(1, min(limit, 100))
     let batchSize = max(100, min(1_000, pageLimit * 4))
@@ -1549,9 +1625,13 @@ public init(pool: PostgresClient, logger: Logger) {
         states: states,
         filter: filter
       )
-      let deduped = AggregateFeedQuerySupport.deduplicated(matches + filtered)
-      matches = deduped.entries
-      duplicatesSuppressed += deduped.duplicatesSuppressed
+      if deduplicateArticleURLs {
+        let deduped = AggregateFeedQuerySupport.deduplicated(matches + filtered)
+        matches = deduped.entries
+        duplicatesSuppressed += deduped.duplicatesSuppressed
+      } else {
+        matches.append(contentsOf: filtered)
+      }
 
       if matches.count > pageLimit || !databaseHasMore { break }
       guard let lastScanned else { break }

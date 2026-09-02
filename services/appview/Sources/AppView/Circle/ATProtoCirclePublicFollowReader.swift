@@ -5,6 +5,7 @@ import ThinAppViewCore
 
 struct ATProtoCirclePublicFollowReader: CirclePublicFollowReading {
   private static let concurrency = 16
+  static let maximumPagesPerActor = 1
   private let httpClient: HTTPClient
 
   init(httpClient: HTTPClient) {
@@ -14,19 +15,19 @@ struct ATProtoCirclePublicFollowReader: CirclePublicFollowReading {
   func follows(of actorDIDs: Set<String>) async throws -> [CircleFollowList] {
     let actors = actorDIDs.sorted()
     guard !actors.isEmpty else { return [] }
-    return try await withThrowingTaskGroup(of: CircleFollowList.self) { group in
+    return await withTaskGroup(of: CircleFollowList.self) { group in
       var next = 0
       var result: [CircleFollowList] = []
       while next < min(Self.concurrency, actors.count) {
         let actor = actors[next]
-        group.addTask { try await list(actorDID: actor) }
+        group.addTask { await bestEffortList(actorDID: actor) }
         next += 1
       }
-      while let currentList = try await group.next() {
+      while let currentList = await group.next() {
         result.append(currentList)
         if next < actors.count {
           let actor = actors[next]
-          group.addTask { try await list(actorDID: actor) }
+          group.addTask { await bestEffortList(actorDID: actor) }
           next += 1
         }
       }
@@ -34,9 +35,18 @@ struct ATProtoCirclePublicFollowReader: CirclePublicFollowReading {
     }
   }
 
+  private func bestEffortList(actorDID: String) async -> CircleFollowList {
+    do {
+      return try await list(actorDID: actorDID)
+    } catch {
+      return CircleFollowList(actorDID: actorDID, followeeDIDs: [], isComplete: false)
+    }
+  }
+
   private func list(actorDID: String) async throws -> CircleFollowList {
     var followees: [String] = []
     var cursor: String?
+    var pageCount = 0
     repeat {
       var components = URLComponents(
         string: "\(ATProtoPdsResolution.bskyAppViewPublic)/xrpc/app.bsky.graph.getFollows"
@@ -52,7 +62,7 @@ struct ATProtoCirclePublicFollowReader: CirclePublicFollowReading {
       }
       var request = HTTPClientRequest(url: url)
       request.headers.add(name: "Accept", value: "application/json")
-      let response = try await httpClient.execute(request, timeout: .seconds(15))
+      let response = try await httpClient.execute(request, timeout: .seconds(5))
       guard response.status.code == 200 else {
         throw CircleGraphSnapshotError.incompleteFollowRead(actorDID: actorDID)
       }
@@ -73,7 +83,12 @@ struct ATProtoCirclePublicFollowReader: CirclePublicFollowReading {
         returned: nextCursor,
         actorDID: actorDID
       )
-    } while cursor != nil
-    return CircleFollowList(actorDID: actorDID, followeeDIDs: followees, isComplete: true)
+      pageCount += 1
+    } while cursor != nil && pageCount < Self.maximumPagesPerActor
+    return CircleFollowList(
+      actorDID: actorDID,
+      followeeDIDs: followees,
+      isComplete: cursor == nil
+    )
   }
 }

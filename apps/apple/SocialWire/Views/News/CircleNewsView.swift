@@ -55,9 +55,6 @@ struct CircleNewsView: View {
                         .foregroundStyle(.secondary)
                     Text("Your Circle")
                         .font(.largeTitle.bold())
-                    Text(appModel.circleCatalog?.subtitle ?? "Stories shared across your network")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
                 }
 
                 if let message = appModel.circleErrorMessage {
@@ -128,7 +125,7 @@ struct CircleNewsView: View {
     }
 }
 
-private struct CircleStoryCard: View {
+struct CircleStoryCard: View {
     let story: CircleStory
     let onReadInApp: () -> Void
     let onHide: () -> Void
@@ -136,100 +133,122 @@ private struct CircleStoryCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             if let thumbnailUrl = story.thumbnailUrl {
-                CachedRemoteImage(urls: [URL(string: thumbnailUrl)].compactMap { $0 }, maxPixelSize: 1_000) {
-                    Rectangle().fill(.quaternary)
-                }
-                .scaledToFill()
-                .frame(maxWidth: .infinity)
-                .frame(height: 240)
-                .clipShape(.rect(cornerRadius: 16))
-                .clipped()
-                .accessibilityHidden(true)
+                NewsStoryImage(
+                    urls: [URL(string: thumbnailUrl)].compactMap { $0 },
+                    height: 200
+                )
             }
 
-            CircleSharerStrip(sharers: story.sharers)
+            CircleSharerStrip(
+                sharers: story.sharers,
+                totalCount: story.sharerCount ?? story.sharers.count
+            )
 
             Text(story.source.displayName)
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
+                .lineLimit(1)
 
             if let url = URL(string: story.canonicalUrl) {
-                Link(story.title, destination: url)
-                    .font(.title2.bold())
-                    .foregroundStyle(.primary)
-                    .accessibilityHint("Opens the publisher's website")
+                Link(destination: url) {
+                    Text(story.title)
+                        .font(.title3.bold())
+                        .foregroundStyle(Color.primary)
+                        .multilineTextAlignment(.leading)
+                }
+                .accessibilityHint("Opens the publisher's website")
             } else {
-                Text(story.title).font(.title2.bold())
+                Text(story.title).font(.title3.bold())
             }
 
             if let summary = story.summary, !summary.isEmpty {
                 Text(summary)
+                    .font(.subheadline)
                     .foregroundStyle(.secondary)
-                    .lineLimit(3)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
-            HStack(spacing: 12) {
-                if let url = URL(string: story.canonicalUrl) {
-                    Link(destination: url) {
-                        Label("Open on Website", systemImage: "safari")
-                    }
-                    .buttonStyle(.borderedProminent)
-                }
-                Button(action: onReadInApp) {
-                    Label("Read in App", systemImage: "doc.text")
-                }
-                .buttonStyle(.bordered)
-                Spacer()
-                Button(role: .destructive, action: onHide) {
-                    Label("Hide", systemImage: "eye.slash")
-                }
-                .buttonStyle(.borderless)
-            }
-            .font(.caption.weight(.semibold))
+            NewsStoryActions(
+                websiteURL: URL(string: story.canonicalUrl),
+                onReadInApp: onReadInApp,
+                onHide: onHide
+            )
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .fixedSize(horizontal: false, vertical: true)
         .padding(.bottom, 20)
         .overlay(alignment: .bottom) { Divider() }
+        .multilineTextAlignment(.leading)
         .accessibilityElement(children: .contain)
     }
 }
 
 private struct CircleSharerStrip: View {
     let sharers: [CircleSharer]
+    let totalCount: Int
 
     var body: some View {
         if !sharers.isEmpty {
             HStack(spacing: 8) {
                 HStack(spacing: -8) {
-                    ForEach(sharers.prefix(4), id: \.identity.did) { sharer in
-                        Group {
-                            if let raw = sharer.identity.avatarUrl, let url = URL(string: raw) {
-                                CachedRemoteImage(urls: [url], maxPixelSize: 80) {
+                    ForEach(Array(visibleSharers.enumerated()), id: \.element.sourceUri) { index, sharer in
+                        ZStack(alignment: .bottomTrailing) {
+                            Group {
+                                if let raw = sharer.identity.avatarUrl, let url = URL(string: raw) {
+                                    CachedRemoteImage(urls: [url], maxPixelSize: 80) {
+                                        Circle().fill(.quaternary)
+                                    }
+                                    .scaledToFill()
+                                } else {
                                     Circle().fill(.quaternary)
                                 }
-                                .scaledToFill()
-                            } else {
-                                Circle().fill(.quaternary)
+                            }
+                            .frame(width: 30, height: 30)
+                            .clipShape(.circle)
+                            .overlay { Circle().stroke(.background, lineWidth: 2) }
+
+                            if sharer.relationship == "one_hop" {
+                                Text("+1")
+                                    .font(.caption2.weight(.bold))
+                                    .foregroundStyle(Color.primary)
+                                    .padding(.horizontal, 2)
+                                    .background(.background, in: Capsule())
+                                    .overlay { Capsule().stroke(.quaternary, lineWidth: 1) }
+                                    .offset(x: 2, y: 2)
+                                    .accessibilityHidden(true)
                             }
                         }
-                        .frame(width: 30, height: 30)
-                        .clipShape(.circle)
-                        .overlay { Circle().stroke(.background, lineWidth: 2) }
+                        .zIndex(Double(visibleSharers.count - index))
                     }
                 }
-                Text(sharerSummary)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
+                if overflowCount > 0 {
+                    Text("+\(overflowCount)")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
             }
-            .accessibilityElement(children: .combine)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(accessibilitySummary)
         }
     }
 
-    private var sharerSummary: String {
-        let names = sharers.prefix(2).map {
-            $0.identity.displayName?.isEmpty == false ? $0.identity.displayName! : $0.identity.handle
+    private var visibleSharers: [CircleSharer] {
+        Array(sharers.prefix(5))
+    }
+
+    private var accessibilitySummary: String {
+        let accounts = visibleSharers.map { sharer in
+            let name = sharer.identity.displayName?.isEmpty == false
+                ? sharer.identity.displayName!
+                : sharer.identity.handle
+            return sharer.relationship == "one_hop" ? "\(name), one hop away" : name
         }
-        let context = sharers.contains { $0.relationship == "direct" } ? "in your network" : "one hop away"
-        return "Shared by \(names.joined(separator: ", ")) · \(context)"
+        let remainder = overflowCount > 0 ? ", and \(overflowCount) more accounts" : ""
+        return "Shared by \(accounts.joined(separator: ", "))\(remainder)"
+    }
+
+    private var overflowCount: Int {
+        max(0, totalCount - visibleSharers.count)
     }
 }

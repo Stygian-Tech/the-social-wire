@@ -1087,8 +1087,11 @@ export class PDSClient {
   async upsertPreferences(
     updates: PreferencesUpdates,
     existing: RepoRecord<PreferencesRecord> | null | undefined = undefined
-  ): Promise<{ uri: string; cid: string }> {
-    const current = existing === undefined ? await this.getPreferences() : existing;
+  ): Promise<RepoRecord<PreferencesRecord>> {
+    // A Gateway miss or stale read is represented as `null`; confirm directly with
+    // the authoritative PDS before deciding whether this is a create or an update.
+    const authoritative = await this.getPreferences();
+    const current = authoritative ?? existing ?? null;
     const prev = current?.value ?? null;
     const now = new Date().toISOString();
     const record = mergePreferencesRecord(updates, prev, now);
@@ -1107,7 +1110,7 @@ export class PDSClient {
           record: record as unknown as Record<string, unknown>,
         });
 
-    return { uri: updated.data.uri, cid: updated.data.cid };
+    return { uri: updated.data.uri, cid: updated.data.cid, value: record };
   }
 
   // ── L@tr read-later (`link.latr.saved.*`) ─────────────────────────────────

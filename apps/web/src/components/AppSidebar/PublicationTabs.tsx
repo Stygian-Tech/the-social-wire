@@ -1,6 +1,6 @@
 "use client";
 
-import { Newspaper, Rss, Users } from "lucide-react";
+import { Network, Newspaper, Rss, Users } from "lucide-react";
 
 import {
   SidebarGroup,
@@ -73,13 +73,14 @@ export function PublicationTabs({
             <SidebarMenuButton
               type="button"
               role="tab"
-              aria-label="Your Circle"
+              aria-label="Your Circle, Beta"
               aria-selected={circleActive}
               isActive={circleActive}
               onClick={onCircleSelect}
             >
-              <Users />
+              <Network />
               <span>Your Circle</span>
+              <WireBetaBadge className="ml-auto" />
             </SidebarMenuButton>
           </SidebarMenuItem>
         ) : null}

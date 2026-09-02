@@ -4,6 +4,11 @@ import Testing
 
 @Suite("Your Circle follow pagination")
 struct CircleFollowPaginationTests {
+  @Test("bounds public one-hop reads to one page per actor")
+  func publicOneHopPageLimit() {
+    #expect(ATProtoCirclePublicFollowReader.maximumPagesPerActor == 1)
+  }
+
   @Test("accepts a complete single-page response")
   func singlePage() throws {
     let cursor = try CircleFollowPagination.nextCursor(
