@@ -179,6 +179,12 @@ public enum WireWorkerHost {
             )
           }
         }
+        if runtimePlan.runsGraphMaintenance, let inboxProcessor {
+          group.addTask {
+            try await WireGraphMaintenanceRuntime.run(
+              maintainer: inboxProcessor, state: state, logger: logger)
+          }
+        }
         if runtimePlan.runsMetadataEnrichment {
           let enricher = WireLinkMetadataEnricher(
             store: linkMetadataStore,

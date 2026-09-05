@@ -77,10 +77,10 @@ struct WireWorkerConfig: Sendable {
       mode: mode,
       externalSignalMode: externalSignalMode,
       role: role,
-      intervalSeconds: try positiveInt(environment, key: "WIRE_RANK_INTERVAL_SECONDS", default: 60),
+      intervalSeconds: try positiveInt(environment, key: "WIRE_RANK_INTERVAL_SECONDS", default: 300),
       candidateLimit: try positiveInt(environment, key: "WIRE_CANDIDATE_LIMIT", default: 5_000),
       generationRetentionSeconds: try positiveInt(
-        environment, key: "WIRE_GENERATION_RETENTION_SECONDS", default: 172_800
+        environment, key: "WIRE_GENERATION_RETENTION_SECONDS", default: 7_200
       ),
       retentionBatchSize: try positiveInt(
         environment, key: "WIRE_RETENTION_BATCH_SIZE", default: 5_000),

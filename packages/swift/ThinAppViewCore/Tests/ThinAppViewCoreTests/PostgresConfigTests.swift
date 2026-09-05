@@ -35,4 +35,12 @@ struct PostgresConfigTests {
       ) == 2
     )
   }
+  @Test("Connection labels use Railway service names and bounded safe fallbacks")
+  func applicationName() {
+    #expect(postgresApplicationName(fallback: "appview.worker", environment: [:]) == "appview.worker")
+    #expect(postgresApplicationName(fallback: "worker", environment: ["RAILWAY_SERVICE_NAME": "App View"]) == "App-View")
+    #expect(postgresApplicationName(fallback: "worker", environment: ["RAILWAY_SERVICE_NAME": "  "]) == "worker")
+    #expect(postgresApplicationName(fallback: String(repeating: "x", count: 100), environment: [:]).utf8.count == 63)
+    #expect(postgresApplicationName(fallback: "hello\nworld", environment: [:]) == "hello-world")
+  }
 }

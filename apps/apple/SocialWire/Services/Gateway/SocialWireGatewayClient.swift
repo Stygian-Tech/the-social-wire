@@ -677,6 +677,9 @@ final class SocialWireGatewayClient {
         _ result: GatewayHTTPResult,
         fallback: String
     ) -> SocialWireError {
+        if SocialWireError.isExpiredFeedCursor(statusCode: result.statusCode, body: result.body) {
+            return .cursorExpired
+        }
         if let envelope = try? JSONDecoder().decode(AppViewErrorEnvelopeDTO.self, from: result.body) {
             return .badResponse(
                 "\(envelope.message) Request ID: \(envelope.requestId)"

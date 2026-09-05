@@ -8,6 +8,7 @@ protocol CirclePrivateStateStoring: CircleGraphSnapshotCaching {
     snapshotID: UUID,
     generationID: String,
     language: String,
+    hiddenStoryIDs: Set<String>,
     now: Date
   ) async throws -> Data?
   func storeEdition(
@@ -15,6 +16,7 @@ protocol CirclePrivateStateStoring: CircleGraphSnapshotCaching {
     snapshotID: UUID,
     generationID: String,
     language: String,
+    hiddenStoryIDs: Set<String>,
     expiresAt: Date,
     payload: Data
   ) async throws

@@ -14,13 +14,36 @@ import Testing
   )
 )
 struct PostgresJetstreamInboxIntegrationTests {
+  @Test("Unchanged content leaves its tuple intact while TTL and content changes update it")
+  func unchangedContentSkipsTupleRewrite() async throws {
+    try await PostgresInboxFixture.withFixture { fixture in
+      let now = Date()
+      let author = "\(fixture.sourceGeneration)-read-author"
+      let uri = "at://\(author)/site.standard.document/noop"
+      func item(indexedOffset: TimeInterval, expiryOffset: TimeInterval, title: String = "Original") -> IndexedContentItem {
+        IndexedContentItem(uri: uri, cid: "cid", authorDid: author, collection: "site.standard.document",
+          createdAt: now, indexedAt: now.addingTimeInterval(indexedOffset), publicationSite: nil,
+          render: ContentRenderFields(title: title, publishedAt: "2026-09-05T00:00:00Z"), expiresAt: now.addingTimeInterval(expiryOffset))
+      }
+      try await fixture.store.upsertContentItem(item(indexedOffset: 0, expiryOffset: 3600))
+      let initial = try await fixture.contentTuple(uri: uri)
+      try await fixture.store.upsertContentItem(item(indexedOffset: 1, expiryOffset: 3600))
+      #expect(try await fixture.contentTuple(uri: uri) == initial)
+      try await fixture.store.upsertContentItem(item(indexedOffset: 2, expiryOffset: 7200))
+      let renewed = try await fixture.contentTuple(uri: uri)
+      #expect(renewed != initial)
+      try await fixture.store.upsertContentItem(item(indexedOffset: 3, expiryOffset: 7200, title: "Updated"))
+      #expect(try await fixture.contentTuple(uri: uri) != renewed)
+    }
+  }
+
   @Test("Postgres bulk read snapshots retain hidden URL duplicates and isolate viewer counters")
   func bulkReadSnapshotAndBatchMarks() async throws {
     try await PostgresInboxFixture.withFixture { fixture in
       let store = fixture.store
-      let viewer = "\(fixture.environment)-read-viewer"
-      let otherViewer = "\(fixture.environment)-other-read-viewer"
-      let author = "\(fixture.environment)-read-author"
+      let viewer = "\(fixture.sourceGeneration)-read-viewer"
+      let otherViewer = "\(fixture.sourceGeneration)-other-read-viewer"
+      let author = "\(fixture.sourceGeneration)-read-author"
       let publication = "at://\(author)/site.standard.publication/main"
       let now = Date()
       let cutoff = now.addingTimeInterval(-3_600)
@@ -280,7 +303,7 @@ struct PostgresJetstreamInboxIntegrationTests {
   func scopeFilterUsesCurrentRoles() async throws {
     try await PostgresInboxFixture.withFixture { fixture in
       let now = Date()
-      let prefix = "did:plc:\(fixture.environment)"
+      let prefix = "did:plc:\(fixture.sourceGeneration)"
       try await fixture.seedCheckpoint(lastStagedSequence: 5, at: now)
       try await fixture.seedAuthorScope(did: "\(prefix)-author-in", at: now)
       try await fixture.seedViewerScope(did: "\(prefix)-viewer-in", at: now)
@@ -583,7 +606,7 @@ private final class PostgresInboxFixture: @unchecked Sendable {
   private let runTask: Task<Void, Never>
 
   private init(url: String, maximumConnections: Int) async throws {
-    environment = "swift-integration-\(UUID().uuidString.lowercased())"
+    environment = "dev"
     sourceGeneration = "jetstream-integration-\(UUID().uuidString.lowercased())"
     logger = Logger(label: "postgres-inbox.integration")
     var configuration = try makePostgresConfig(from: url, logger: logger)
@@ -613,6 +636,13 @@ private final class PostgresInboxFixture: @unchecked Sendable {
       throw error
     }
     await fixture.shutdown()
+  }
+
+  func contentTuple(uri: String) async throws -> String? {
+    let rows = try await pool.query(
+      "SELECT xmin::text || ':' || ctid::text FROM content_items WHERE uri = \(uri)", logger: logger)
+    for try await row in rows { return try row.decode(String.self) }
+    return nil
   }
 
   func claim(
@@ -705,9 +735,9 @@ private final class PostgresInboxFixture: @unchecked Sendable {
     try await execute(
       """
       INSERT INTO appview_ingestion_reconciliation_requests
-        (environment, id, source_generation, repo_did, status)
+        (environment, id, source_generation, repo_did, status, reason, trigger_seq, created_at, updated_at)
       VALUES (\(environment), \("\(sourceGeneration):\(sequence)"), \(sourceGeneration),
-              'did:plc:reconciliation', \(status))
+              'did:plc:reconciliation', \(status), 'integration', \(sequence), \(now), \(now))
       """
     )
   }
@@ -752,7 +782,7 @@ private final class PostgresInboxFixture: @unchecked Sendable {
          start_cursor, end_cursor, category, status, occurrence_count,
          first_detected_at, last_detected_at, last_error, replay_state,
          verification_evidence, updated_at, version)
-      VALUES (\(environment), \(id), \(sourceGeneration), 'integration.jetstream.invalid',
+      VALUES (\(environment), \("\(self.sourceGeneration):\(id)"), \(sourceGeneration), 'integration.jetstream.invalid',
               'jetstream-v2', 'jetstream_v2_seq', \(sequence), \(sequence), \(category),
               \(status), 1, \(now), \(now), 'TLS handshake timeout', 'live',
               '{}'::jsonb, \(now), 0)
@@ -764,7 +794,7 @@ private final class PostgresInboxFixture: @unchecked Sendable {
     let rows = try await pool.query(
       """
       SELECT status FROM appview_ingestion_incidents
-      WHERE environment = \(environment) AND id = \(id)
+      WHERE environment = \(environment) AND id = \("\(sourceGeneration):\(id)")
       """,
       logger: logger
     )
@@ -779,7 +809,7 @@ private final class PostgresInboxFixture: @unchecked Sendable {
       """
       SELECT status, recovered_through_cursor, verification_evidence::text
       FROM appview_ingestion_incidents
-      WHERE environment = \(environment) AND id = \(id)
+      WHERE environment = \(environment) AND id = \("\(sourceGeneration):\(id)")
       """,
       logger: logger
     )
@@ -813,11 +843,12 @@ private final class PostgresInboxFixture: @unchecked Sendable {
       INSERT INTO appview_ingestion_inbox
         (environment, source_generation, seq, source_host, cursor_kind, event_kind, repo_did,
          collection, payload, event_time, status, attempt_count, next_attempt_at, lease_owner, lease_token,
-         lease_expires_at, staged_at, reconciled_at, updated_at)
+         lease_expires_at, staged_at, reconciled_at, updated_at, applied_at, dead_lettered_at)
       VALUES
         (\(environment), \(inboxSourceGeneration), \(sequence), 'integration.jetstream.invalid',
          'jetstream_v2_seq', \(eventKind), \(repoDid), \(collection), \(payload)::jsonb, \(now), \(status), 0,
-         \(now), \(leaseOwner), \(leaseToken), \(leaseExpiresAt), \(now), \(reconciledAt), \(now))
+         \(now), \(leaseOwner), \(leaseToken), \(leaseExpiresAt), \(now), \(reconciledAt), \(now),
+         \(status == "applied" ? now : nil), \(status == "dead_letter" ? now : nil))
       """
     )
   }
@@ -1064,6 +1095,10 @@ private final class PostgresInboxFixture: @unchecked Sendable {
         source_generation TEXT NOT NULL,
         repo_did TEXT NOT NULL,
         status TEXT NOT NULL DEFAULT 'pending',
+        reason TEXT NOT NULL,
+        trigger_seq BIGINT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL,
         PRIMARY KEY (environment, id)
       )
       """,
@@ -1120,40 +1155,40 @@ private final class PostgresInboxFixture: @unchecked Sendable {
   }
 
   private func shutdown() async {
-    let readViewers = ["\(environment)-read-viewer", "\(environment)-other-read-viewer"]
+    let readViewers = ["\(sourceGeneration)-read-viewer", "\(sourceGeneration)-other-read-viewer"]
     try? await execute("DELETE FROM read_marks WHERE viewer_did = ANY(\(readViewers))")
     try? await execute("DELETE FROM appview_unread_overrides WHERE viewer_did = ANY(\(readViewers))")
     try? await execute("DELETE FROM appview_unread_counters WHERE viewer_did = ANY(\(readViewers))")
     try? await execute("DELETE FROM appview_publication_scopes WHERE viewer_did = ANY(\(readViewers))")
     try? await execute("DELETE FROM appview_publication_read_floors WHERE viewer_did = ANY(\(readViewers))")
-    let readAuthor = "\(environment)-read-author"
+    let readAuthor = "\(sourceGeneration)-read-author"
     try? await execute("DELETE FROM content_items WHERE author_did = \(readAuthor)")
     try? await execute(
       """
-      DELETE FROM appview_ingestion_incidents WHERE environment = \(environment)
+      DELETE FROM appview_ingestion_incidents WHERE environment = \(environment) AND source_generation LIKE \(sourceGeneration + "%")
       """
     )
     try? await execute(
       """
-      DELETE FROM appview_ingestion_leases WHERE environment = \(environment)
+      DELETE FROM appview_ingestion_leases WHERE environment = \(environment) AND source_generation LIKE \(sourceGeneration + "%")
       """
     )
     try? await execute(
       """
       DELETE FROM appview_ingestion_reconciliation_requests
-      WHERE environment = \(environment) AND source_generation = \(sourceGeneration)
+      WHERE environment = \(environment) AND source_generation LIKE \(sourceGeneration + "%")
       """
     )
     try? await execute(
       """
       DELETE FROM appview_ingestion_inbox
-      WHERE environment = \(environment) AND source_generation = \(sourceGeneration)
+      WHERE environment = \(environment) AND source_generation LIKE \(sourceGeneration + "%")
       """
     )
     try? await execute(
       """
       DELETE FROM appview_jetstream_checkpoints
-      WHERE environment = \(environment) AND source_generation = \(sourceGeneration)
+      WHERE environment = \(environment) AND source_generation LIKE \(sourceGeneration + "%")
       """
     )
     runTask.cancel()

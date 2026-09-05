@@ -9,10 +9,13 @@ public actor PostgresOperationsStore: OperationsStore {
   private let encoder = JSONEncoder()
   private let decoder = JSONDecoder()
   private let backfillFingerprintSecret: String?
+  var isDatabaseCostObservationRunning = false
+  var lastDatabaseCostObservation: Date?
+  var lastDatabaseWALObservation: (bytes: Double, reset: Double, at: Date)?
   private var lastDatabaseObservation: (transactions: Int64, statsResetAt: Date?, at: Date)?
 
   private enum PreparedTelemetry: Sendable {
-    case metric(OperationsMetricSample, dimensionsJSON: String, dimensionsHash: String, bucket: Date)
+    case metric(OperationsMetricBatch)
     case event(OperationsEvent, attributesJSON: String)
     case span(TraceSpan, attributesJSON: String)
   }
@@ -146,6 +149,7 @@ public actor PostgresOperationsStore: OperationsStore {
         DatabaseTableRecordCount(schema: value.0, table: value.1, estimatedRecords: value.2))
     }
 
+    await recordDatabaseCostTelemetry(at: observedAt)
     return DatabaseObservabilitySnapshot(
       databaseSizeBytes: summary.0,
       activeConnections: summary.1,
@@ -2144,8 +2148,16 @@ public actor PostgresOperationsStore: OperationsStore {
   }
 
   public func recordTelemetryBatch(_ signals: [OperationsTelemetrySignal]) async throws {
+    try await recordTelemetryBatch(signals, statementTimeoutMilliseconds: nil)
+  }
+
+  func recordTelemetryBatch(
+    _ signals: [OperationsTelemetrySignal],
+    statementTimeoutMilliseconds: Int?
+  ) async throws {
     guard !signals.isEmpty else { return }
     var prepared: [PreparedTelemetry] = []
+    var metricBatches: [String: OperationsMetricBatch] = [:]
     prepared.reserveCapacity(signals.count)
     // Every writer must acquire rollup index keys in the same order. Without this ordering,
     // concurrent batches containing the same metrics in different sequences can deadlock while
@@ -2161,11 +2173,14 @@ public actor PostgresOperationsStore: OperationsStore {
         let dimensionsJSON = try json(dimensions)
         let key = dimensions.sorted { $0.key < $1.key }
           .map { "\($0.key)=\($0.value)" }.joined(separator: "&")
-        let bucket = Date(
-          timeIntervalSince1970: floor(sample.recordedAt.timeIntervalSince1970 / 60) * 60)
-        prepared.append(.metric(
-          sample, dimensionsJSON: dimensionsJSON,
-          dimensionsHash: OperationsRedactor.hashIdentity(key), bucket: bucket))
+        let batch = OperationsMetricBatch(
+          sample: sample, dimensionsJSON: dimensionsJSON,
+          dimensionsHash: OperationsRedactor.hashIdentity(key))
+        if metricBatches[batch.key] != nil {
+          metricBatches[batch.key]?.add(sample.value)
+        } else {
+          metricBatches[batch.key] = batch
+        }
       case .event(let event):
         guard event.environment == environment else {
           throw OperationsStoreError.environmentMismatch(expected: environment, actual: event.environment)
@@ -2180,20 +2195,30 @@ public actor PostgresOperationsStore: OperationsStore {
           span, attributesJSON: try json(OperationsRedactor.boundedAttributes(span.attributes))))
       }
     }
+    // Sort the coalesced keys too: all writers must retain one lock order.
+    prepared.insert(contentsOf: metricBatches.keys.sorted().compactMap {
+      metricBatches[$0].map(PreparedTelemetry.metric)
+    }, at: 0)
     try await pool.withTransaction(logger: logger) { connection in
+      if let statementTimeoutMilliseconds {
+        try await connection.query(
+          "SELECT set_config('statement_timeout', \(String(max(1, statementTimeoutMilliseconds))), true)",
+          logger: logger)
+      }
       for item in prepared {
         switch item {
-        case .metric(let sample, let dimensionsJSON, let dimensionsHash, let bucket):
+        case .metric(let batch):
           try await connection.query(
             """
             INSERT INTO operations_metric_rollups
               (environment, bucket_start, metric_name, dimensions_hash, dimensions, sample_count,
                value_sum, value_min, value_max, histogram_buckets, expires_at)
-            VALUES (\(environment), \(bucket), \(String(sample.name.prefix(160))),
-              \(dimensionsHash), \(dimensionsJSON)::jsonb, 1, \(sample.value), \(sample.value),
-              \(sample.value), '{}'::jsonb, \(bucket.addingTimeInterval(90 * 86_400)))
+            VALUES (\(environment), \(batch.bucket), \(batch.name),
+              \(batch.dimensionsHash), \(batch.dimensionsJSON)::jsonb, \(batch.count),
+              \(batch.sum), \(batch.minimum), \(batch.maximum), '{}'::jsonb,
+              \(batch.bucket.addingTimeInterval(90 * 86_400)))
             ON CONFLICT (environment, bucket_start, metric_name, dimensions_hash) DO UPDATE SET
-              sample_count = operations_metric_rollups.sample_count + 1,
+              sample_count = operations_metric_rollups.sample_count + EXCLUDED.sample_count,
               value_sum = operations_metric_rollups.value_sum + EXCLUDED.value_sum,
               value_min = LEAST(operations_metric_rollups.value_min, EXCLUDED.value_min),
               value_max = GREATEST(operations_metric_rollups.value_max, EXCLUDED.value_max)

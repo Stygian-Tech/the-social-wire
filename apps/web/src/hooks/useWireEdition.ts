@@ -1,5 +1,8 @@
 "use client";
 
+import { isExpiredFeedCursor } from "@/lib/feedResponseError";
+import { useExpiredFeedCursorRecovery } from "@/hooks/useExpiredFeedCursorRecovery";
+
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import {
   useInfiniteQuery,
@@ -185,7 +188,7 @@ export function useWireEdition(args: {
       catalog.data.available === true,
     ...WIRE_EDITION_REFRESH_POLICY,
     gcTime: 7 * 24 * 60 * 60_000,
-    retry: 1,
+    retry: (count, error) => !isExpiredFeedCursor(error) && count < 1,
   });
 
   const firstEdition = query.data?.pages[0];
@@ -232,26 +235,29 @@ export function useWireEdition(args: {
     enabled: false,
     staleTime: 60_000,
     gcTime: 7 * 24 * 60 * 60_000,
-    retry: 1,
+    retry: (count, error) => !isExpiredFeedCursor(error) && count < 1,
   });
 
   const refreshFirstPageMutation = useMutation({
     mutationKey: ["refreshWireEdition", languageKey, regionKey, modeKey],
     mutationFn: async () => fetchEditionPage(undefined, true),
-    onSuccess: (fresh) => {
+    onMutate: () => ({ languageKey, regionKey, modeKey, oauthSession }),
+    onSuccess: async (fresh, _variables, context) => {
+      if (!context || getOAuthSession() !== context.oauthSession) return;
+      await queryClient.cancelQueries({
+        queryKey: WIRE_EDITION_QUERY_KEY(context.languageKey, context.regionKey, context.modeKey), exact: true,
+      });
+      if (getOAuthSession() !== context.oauthSession) return;
       queryClient.removeQueries({
-        queryKey: ["wireEditionMore", languageKey, regionKey, modeKey],
+        queryKey: ["wireEditionMore", context.languageKey, context.regionKey, context.modeKey],
       });
       replaceWireEditionQueryGeneration(
-        queryClient,
-        languageKey,
-        regionKey,
-        modeKey,
-        fresh,
+        queryClient, context.languageKey, context.regionKey, context.modeKey, fresh,
       );
     },
   });
   const refreshFirstPage = refreshFirstPageMutation.mutateAsync;
+  useExpiredFeedCursorRecovery(moreQuery.error, refreshFirstPage, args.enabled);
   const retryTheWire = useCallback(async (): Promise<unknown> => {
     if (moderationCapability.isError) return moderationCapability.refetch();
     if (moderationSessionUnavailable) throw WIRE_MODERATION_SESSION_ERROR;
@@ -296,10 +302,11 @@ export function useWireEdition(args: {
       moderationCapability.error ??
       (moderationSessionUnavailable
         ? WIRE_MODERATION_SESSION_ERROR
-        : query.error),
+        : refreshFirstPageMutation.error ?? query.error),
     isError:
       moderationSessionUnavailable ||
       moderationCapability.isError ||
+      refreshFirstPageMutation.isError ||
       query.isError,
     isLoading: moderationCheckPending || query.isLoading,
     catalog,

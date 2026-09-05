@@ -11,6 +11,10 @@ const goStore = readFileSync(
   join(repositoryRoot, "services/jetstream-ingest/internal/store/postgres.go"),
   "utf8",
 )
+const goInboxBatch = readFileSync(
+  join(repositoryRoot, "services/jetstream-ingest/internal/store/inbox_batch.go"),
+  "utf8",
+)
 const swiftPolicy = readFileSync(
   join(repositoryRoot, "packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/ThinAppViewStore.swift"),
   "utf8",
@@ -42,15 +46,22 @@ const viewerCollections = [
 describe("Jetstream V2 role-aware scope policy", () => {
   it("keeps the Go admission and Swift projection collection roles aligned", () => {
     for (const collection of authorCollections) {
-      expect(goStore).toContain(`'${collection}'`)
+      expect(goInboxBatch).toContain(`'${collection}'`)
       expect(swiftPolicy).toContain(`"${collection}"`)
     }
     for (const collection of viewerCollections) {
-      expect(goStore).toContain(`'${collection}'`)
+      expect(goInboxBatch).toContain(`'${collection}'`)
       expect(swiftPolicy).toContain(`"${collection}"`)
     }
-    expect(goStore).toContain("scope.author_did = $7")
-    expect(goStore).toContain("feed.viewer_did = $7")
+    expect(goStore).toContain("p.stageInboxEvents(ctx, tx, events[start:end])")
+    expect(goInboxBatch).toContain("scope.author_did = incoming.repo_did")
+    expect(goInboxBatch).toContain("feed.viewer_did = incoming.repo_did")
+    expect(goInboxBatch).toContain("scope.viewer_did = incoming.repo_did")
+    const authorAdmission = goInboxBatch.split("OR (incoming.collection IN ('site.standard.document'")[1]
+      ?.split("OR (incoming.collection IN ('app.skyreader.feed.subscription'")[0]
+    expect(authorAdmission).toContain("scope.author_did = incoming.repo_did")
+    expect(authorAdmission).not.toContain("viewer_did")
+    expect(goInboxBatch).toContain("ON CONFLICT (environment, source_generation, seq) DO NOTHING")
     expect(postgresStore).toContain("scope.author_did = inbox.repo_did")
     expect(postgresStore).toContain("feed.viewer_did = inbox.repo_did")
     expect(goConfig).not.toContain('"app.thesocialwire.entryReadState",')

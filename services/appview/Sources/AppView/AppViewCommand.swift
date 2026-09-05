@@ -135,6 +135,32 @@ struct Serve: AsyncParsableCommand {
         let store = PostgresThinAppViewStore(pool: pgPool, logger: logger)
         let wireFeedStore: (any WireFeedStore)?
         let wireModerationService: WireViewerModerationService?
+        let operationsStore = PostgresOperationsStore(
+          pool: pgPool,
+          environment: operationsEnvironment,
+          backfillFingerprintSecret: operationsConfig.backfillFingerprintSecret,
+          logger: logger
+        )
+        let telemetry = OperationsTelemetryBuffer(store: operationsStore, logger: logger)
+        let cacheBackend = try AppViewProjectionCacheBackend.fromEnvironment(
+          environment,
+          default: .postgres
+        )
+        let redisRuntime = cacheBackend == .redis
+          ? RedisProjectionCacheRuntime.make(
+            environment: environment,
+            appEnvironment: config.core.appEnv.rawValue,
+            logger: logger,
+            telemetry: RedisOperationsTelemetryAdapter.sink(
+              telemetry: operationsConfig.enabled ? telemetry : nil,
+              service: "appview"
+            )
+          )
+          : nil
+        let projectionCache: (any AppViewProjectionCacheStore)? = cacheBackend == .redis
+          ? redisRuntime?.store
+          : PostgresAppViewProjectionCacheStore(pool: pgPool, logger: logger)
+        await redisRuntime?.installResolutionCache()
         let circleDiscoveryService: CircleDiscoveryService?
         let circlePrivateState: (any CirclePrivateStateStoring)?
         let servesDiscovery = config.wire.mode.servesAPI || config.circle.mode.servesAPI
@@ -189,6 +215,11 @@ struct Serve: AsyncParsableCommand {
             }
             let state = PostgresCirclePrivateStateStore(
               pool: pgPool,
+              cache: redisRuntime.map {
+                RedisCircleDisposableCache(
+                  commands: $0.client, environment: config.core.appEnv.rawValue
+                )
+              },
               actorHasher: actorHasher,
               logger: logger
             )
@@ -232,32 +263,6 @@ struct Serve: AsyncParsableCommand {
           circlePrivateState = nil
           circleDiscoveryService = nil
         }
-        let operationsStore = PostgresOperationsStore(
-          pool: pgPool,
-          environment: operationsEnvironment,
-          backfillFingerprintSecret: operationsConfig.backfillFingerprintSecret,
-          logger: logger
-        )
-        let telemetry = OperationsTelemetryBuffer(store: operationsStore, logger: logger)
-        let cacheBackend = try AppViewProjectionCacheBackend.fromEnvironment(
-          environment,
-          default: .postgres
-        )
-        let redisRuntime = cacheBackend == .redis
-          ? RedisProjectionCacheRuntime.make(
-            environment: environment,
-            appEnvironment: config.core.appEnv.rawValue,
-            logger: logger,
-            telemetry: RedisOperationsTelemetryAdapter.sink(
-              telemetry: operationsConfig.enabled ? telemetry : nil,
-              service: "appview"
-            )
-          )
-          : nil
-        let projectionCache: (any AppViewProjectionCacheStore)? = cacheBackend == .redis
-          ? redisRuntime?.store
-          : PostgresAppViewProjectionCacheStore(pool: pgPool, logger: logger)
-        await redisRuntime?.installResolutionCache()
         let heartbeat = OperationsHeartbeatJob(
           store: operationsStore,
           service: "appview",

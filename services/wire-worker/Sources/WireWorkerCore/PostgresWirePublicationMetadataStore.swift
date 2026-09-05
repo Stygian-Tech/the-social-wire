@@ -44,6 +44,10 @@ struct PostgresWirePublicationMetadataStore: WirePublicationMetadataStoring {
         last_seen_at = EXCLUDED.last_seen_at, expires_at = EXCLUDED.expires_at,
         updated_at = EXCLUDED.updated_at
       WHERE wire_publications.last_seen_at <= EXCLUDED.last_seen_at
+        AND (wire_publications.repo_did, wire_publications.site_url, wire_publications.name,
+             wire_publications.last_seen_at, wire_publications.expires_at)
+          IS DISTINCT FROM (EXCLUDED.repo_did, EXCLUDED.site_url, EXCLUDED.name,
+                            EXCLUDED.last_seen_at, EXCLUDED.expires_at)
       """,
       logger: logger
     )

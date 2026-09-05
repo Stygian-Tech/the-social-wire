@@ -5,6 +5,19 @@ import Testing
 
 @Suite("The Wire feed")
 struct WireFeedTests {
+    @Test("only structured expired pagination cursors restart from the current edition")
+    func expiredCursorRecoveryPolicy() {
+        let expired = Data(#"{"error":"CursorExpired","message":"expired"}"#.utf8)
+        #expect(SocialWireError.isExpiredFeedCursor(statusCode: 410, body: expired))
+        #expect(!SocialWireError.isExpiredFeedCursor(statusCode: 503, body: expired))
+        #expect(!SocialWireError.isExpiredFeedCursor(statusCode: 410, body: Data(#"{"error":"NotFound"}"#.utf8)))
+        #expect(!SocialWireError.isExpiredFeedCursor(statusCode: 410, body: Data("not-json".utf8)))
+        #expect(SocialWireError.cursorExpired.shouldRestartFeed(cursor: "old-generation"))
+        #expect(!SocialWireError.cursorExpired.shouldRestartFeed(cursor: nil))
+        #expect(!SocialWireError.cursorExpired.shouldRestartFeed(cursor: ""))
+        #expect(!SocialWireError.badResponse("network").shouldRestartFeed(cursor: "old-generation"))
+    }
+
     @Test("catalog availability requires enabled and available")
     func catalogAvailability() {
         let enabled = WireFeedCatalog(

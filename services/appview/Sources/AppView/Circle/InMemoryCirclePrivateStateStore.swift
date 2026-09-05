@@ -12,6 +12,7 @@ actor InMemoryCirclePrivateStateStore: CirclePrivateStateStoring {
     let snapshotID: UUID
     let generationID: String
     let language: String
+    let hiddenStoryIDs: Set<String>
   }
 
   private struct EditionEntry {
@@ -55,13 +56,15 @@ actor InMemoryCirclePrivateStateStore: CirclePrivateStateStoring {
     snapshotID: UUID,
     generationID: String,
     language: String,
+    hiddenStoryIDs: Set<String> = [],
     now: Date
   ) async throws -> Data? {
     let key = EditionKey(
       viewerDID: viewerDID,
       snapshotID: snapshotID,
       generationID: generationID,
-      language: language
+      language: language,
+      hiddenStoryIDs: hiddenStoryIDs
     )
     guard let entry = editions[key], entry.expiresAt > now else { return nil }
     return entry.payload
@@ -72,6 +75,7 @@ actor InMemoryCirclePrivateStateStore: CirclePrivateStateStoring {
     snapshotID: UUID,
     generationID: String,
     language: String,
+    hiddenStoryIDs: Set<String> = [],
     expiresAt: Date,
     payload: Data
   ) async throws {
@@ -80,7 +84,8 @@ actor InMemoryCirclePrivateStateStore: CirclePrivateStateStoring {
         viewerDID: viewerDID,
         snapshotID: snapshotID,
         generationID: generationID,
-        language: language
+        language: language,
+        hiddenStoryIDs: hiddenStoryIDs
       )] = EditionEntry(expiresAt: expiresAt, payload: payload)
   }
 
