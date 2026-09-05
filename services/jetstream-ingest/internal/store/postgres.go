@@ -7,9 +7,11 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"os"
 	"time"
 
-	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/stygian-tech/the-social-wire/services/jetstream-ingest/internal/ingest"
 )
 
@@ -51,10 +53,12 @@ type ReplayProgress struct {
 }
 
 func Open(ctx context.Context, databaseURL string, source ingest.SourceIdentity) (*Postgres, error) {
-	db, err := sql.Open("pgx", databaseURL)
+	config, err := pgx.ParseConfig(databaseURL)
 	if err != nil {
-		return nil, fmt.Errorf("open PostgreSQL: %w", err)
+		return nil, errors.New("invalid PostgreSQL connection configuration")
 	}
+	config.RuntimeParams["application_name"] = postgresApplicationName(os.Getenv("RAILWAY_SERVICE_NAME"))
+	db := stdlib.OpenDB(*config)
 	db.SetMaxOpenConns(8)
 	db.SetMaxIdleConns(4)
 	db.SetConnMaxLifetime(30 * time.Minute)
@@ -478,59 +482,16 @@ func (p *Postgres) StageBatch(ctx context.Context, lease Lease, events []ingest.
 		}
 	}
 
-	for _, event := range events {
+	for start := 0; start < len(events); {
+		end := inboxBatchEnd(events, start)
+		inserted, err := p.stageInboxEvents(ctx, tx, events[start:end])
+		if err != nil {
+			return err
+		}
 		if p.source.IsWire() {
-			inserted, err := p.stageWireInboxEvent(ctx, tx, event)
-			if err != nil {
-				return err
-			}
-			if inserted {
-				admittedWireEvents++
-			}
-			continue
+			admittedWireEvents += inserted
 		}
-		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO appview_ingestion_inbox
-			  (environment, source_generation, seq, source_host, cursor_kind,
-			   event_kind, repo_did, collection, operation, repo_rev, record_key,
-			   record_cid, payload, event_time, status, attempt_count,
-			   next_attempt_at, staged_at)
-			SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
-			       $13::jsonb, $14, 'pending', 0, NOW(), NOW()
-			WHERE $8::text IS NULL
-			   OR (
-			     $8::text IN (
-			       'site.standard.document', 'site.standard.entry',
-			       'com.standard.document', 'com.standard.entry'
-			     )
-			     AND EXISTS (
-			       SELECT 1 FROM appview_publication_scopes scope
-			       WHERE scope.author_did = $7
-			     )
-			   )
-			   OR (
-			     $8::text IN (
-			       'app.skyreader.feed.subscription',
-			       'site.standard.graph.subscription'
-			     )
-			     AND (
-			       EXISTS (
-			         SELECT 1 FROM appview_viewer_feeds feed
-			         WHERE feed.viewer_did = $7
-			       )
-			       OR EXISTS (
-			         SELECT 1 FROM appview_publication_scopes scope
-			         WHERE scope.viewer_did = $7
-			       )
-			     )
-			   )
-			ON CONFLICT (environment, source_generation, seq) DO NOTHING`,
-			p.source.Environment, p.source.Generation, int64(event.Seq), p.source.Host,
-			p.source.CursorKind, event.Kind, event.RepoDID, event.Collection, event.Operation,
-			event.RepoRev, event.RecordKey, event.RecordCID, string(event.Payload), event.Time,
-		); err != nil {
-			return fmt.Errorf("insert inbox event %d: %w", event.Seq, err)
-		}
+		start = end
 	}
 	if p.source.IsWire() && p.wireInboxMaxRows > 0 && wireInboxRows+admittedWireEvents > p.wireInboxMaxRows {
 		return &WireCapacityExceededError{
@@ -554,22 +515,10 @@ func (p *Postgres) StageBatch(ctx context.Context, lease Lease, events []ingest.
 			     checkpoint_event_time, captured_at)
 			  VALUES ($1, $2, date_trunc('hour', NOW()), $3, $4, NOW())
 			  ON CONFLICT (environment, source_generation, anchor_bucket) DO UPDATE
-			  SET checkpoint_event_time = CASE
-			        WHEN EXCLUDED.checkpoint_seq
-			          < wire_ingestion_recovery_anchors.checkpoint_seq
-			        THEN EXCLUDED.checkpoint_event_time
-			        ELSE wire_ingestion_recovery_anchors.checkpoint_event_time
-			      END,
-			      checkpoint_seq = LEAST(
-			        wire_ingestion_recovery_anchors.checkpoint_seq,
-			        EXCLUDED.checkpoint_seq
-			      ),
-			      captured_at = CASE
-			        WHEN EXCLUDED.checkpoint_seq
-			          < wire_ingestion_recovery_anchors.checkpoint_seq
-			        THEN EXCLUDED.captured_at
-			        ELSE wire_ingestion_recovery_anchors.captured_at
-			      END
+			  SET checkpoint_event_time = EXCLUDED.checkpoint_event_time,
+			      checkpoint_seq = EXCLUDED.checkpoint_seq,
+			      captured_at = EXCLUDED.captured_at
+			  WHERE EXCLUDED.checkpoint_seq < wire_ingestion_recovery_anchors.checkpoint_seq
 			  RETURNING anchor_bucket
 			), boundary AS (
 			  SELECT MAX(captured_at) AS captured_at
@@ -800,44 +749,6 @@ func (p *Postgres) CompleteSnapshot(
 		return fmt.Errorf("commit bounded snapshot completion: %w", err)
 	}
 	return nil
-}
-
-func (p *Postgres) stageWireInboxEvent(
-	ctx context.Context,
-	tx *sql.Tx,
-	event ingest.InboxEvent,
-) (bool, error) {
-	payload := wireJSONPayloadForPostgres(event.Payload)
-	result, err := tx.ExecContext(ctx, `
-		INSERT INTO wire_ingestion_inbox
-		  (environment, source_generation, seq, source_host, cursor_kind,
-		   event_kind, repo_did, collection, operation, repo_rev, record_key,
-		   record_cid, payload, event_time, status, attempt_count,
-		   next_attempt_at, staged_at, updated_at, expires_at)
-		SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
-		       $13::jsonb, $14, 'pending', 0, NOW(), NOW(), NOW(), 'infinity'::timestamptz
-		WHERE COALESCE(NOT (
-		  $8::text IN ('app.bsky.feed.like', 'app.bsky.feed.repost')
-		  AND $9::text IN ('create', 'update')
-		), TRUE) OR EXISTS (
-		  SELECT 1
-		  FROM wire_item_aliases alias
-		  WHERE alias.alias_key = $13::jsonb #>> '{commit,record,subject,uri}'
-		    AND alias.expires_at > NOW()
-		)
-		ON CONFLICT (environment, source_generation, seq) DO NOTHING`,
-		p.source.Environment, p.source.Generation, int64(event.Seq), p.source.Host,
-		p.source.CursorKind, event.Kind, event.RepoDID, event.Collection, event.Operation,
-		event.RepoRev, event.RecordKey, event.RecordCID, string(payload), event.Time,
-	)
-	if err != nil {
-		return false, fmt.Errorf("insert Wire inbox event %d: %w", event.Seq, err)
-	}
-	rows, err := result.RowsAffected()
-	if err != nil {
-		return false, fmt.Errorf("inspect Wire inbox insert %d: %w", event.Seq, err)
-	}
-	return rows == 1, nil
 }
 
 func nullableString(value string) any {

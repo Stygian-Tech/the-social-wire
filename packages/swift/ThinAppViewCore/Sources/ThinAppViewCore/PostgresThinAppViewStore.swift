@@ -740,6 +740,13 @@ public init(pool: PostgresClient, logger: Logger) {
         publication_site = EXCLUDED.publication_site,
         render_json = EXCLUDED.render_json,
         expires_at = EXCLUDED.expires_at
+        WHERE (content_items.cid, content_items.author_did, content_items.collection,
+               content_items.created_at, content_items.publication_site,
+               content_items.render_json, content_items.expires_at)
+          IS DISTINCT FROM
+              (EXCLUDED.cid, EXCLUDED.author_did, EXCLUDED.collection,
+               EXCLUDED.created_at, EXCLUDED.publication_site,
+               EXCLUDED.render_json, EXCLUDED.expires_at)
       """,
       logger: logger
     )
@@ -2663,6 +2670,44 @@ public init(pool: PostgresClient, logger: Logger) {
     }
   }
 
+  /// Drain legacy Circle cache rows independently of the selected projection cache backend.
+  public func deleteExpiredCircleCaches(before: Date, batchSize: Int) async throws -> Int {
+    let limit = max(1, min(batchSize, 10_000))
+    let graphs = try await pool.query(
+      """
+      WITH doomed AS (
+        SELECT ctid FROM appview_circle_graph_snapshots
+        WHERE stale_until <= \(before)
+        ORDER BY stale_until, viewer_key_hash
+        LIMIT \(limit)
+        FOR UPDATE SKIP LOCKED
+      )
+      DELETE FROM appview_circle_graph_snapshots AS target USING doomed
+      WHERE target.ctid = doomed.ctid
+      RETURNING target.viewer_key_hash
+      """, logger: logger
+    )
+    var deleted = 0
+    for try await _ in graphs { deleted += 1 }
+    guard deleted < limit else { return deleted }
+    let editions = try await pool.query(
+      """
+      WITH doomed AS (
+        SELECT ctid FROM appview_circle_edition_cache
+        WHERE expires_at <= \(before)
+        ORDER BY expires_at, viewer_key_hash
+        LIMIT \(limit - deleted)
+        FOR UPDATE SKIP LOCKED
+      )
+      DELETE FROM appview_circle_edition_cache AS target USING doomed
+      WHERE target.ctid = doomed.ctid
+      RETURNING target.viewer_key_hash
+      """, logger: logger
+    )
+    for try await _ in editions { deleted += 1 }
+    return deleted
+  }
+
   public func deleteExpiredContent(before: Date, batchSize: Int) async throws -> Int {
     let batchSize = max(1, min(batchSize, 10_000))
     let rows = try await pool.query(
@@ -2672,6 +2717,7 @@ public init(pool: PostgresClient, logger: Logger) {
         WHERE expires_at <= \(before)
         ORDER BY expires_at, uri
         LIMIT \(batchSize)
+        FOR UPDATE SKIP LOCKED
       )
       DELETE FROM content_items AS target USING doomed
       WHERE target.ctid = doomed.ctid
@@ -2693,6 +2739,7 @@ public init(pool: PostgresClient, logger: Logger) {
         WHERE created_at <= \(before)
         ORDER BY created_at, viewer_did, subject_uri
         LIMIT \(batchSize)
+        FOR UPDATE SKIP LOCKED
       )
       DELETE FROM read_marks AS target USING doomed
       WHERE target.ctid = doomed.ctid
@@ -2718,6 +2765,7 @@ public init(pool: PostgresClient, logger: Logger) {
         WHERE environment = \(environment) AND expires_at <= \(before)
         ORDER BY expires_at, event_id
         LIMIT \(batchSize)
+        FOR UPDATE SKIP LOCKED
       )
       DELETE FROM appview_tap_event_receipts AS target USING doomed
       WHERE target.ctid = doomed.ctid
@@ -2743,6 +2791,7 @@ public init(pool: PostgresClient, logger: Logger) {
         WHERE environment = \(environment) AND status = 'failed' AND expires_at <= \(before)
         ORDER BY expires_at, id
         LIMIT \(batchSize)
+        FOR UPDATE SKIP LOCKED
       )
       DELETE FROM appview_projection_repair_outbox AS target USING doomed
       WHERE target.ctid = doomed.ctid
@@ -3147,6 +3196,13 @@ public init(pool: PostgresClient, logger: Logger) {
             publication_site = EXCLUDED.publication_site,
             render_json = EXCLUDED.render_json,
             expires_at = EXCLUDED.expires_at
+            WHERE (content_items.cid, content_items.author_did, content_items.collection,
+                   content_items.created_at, content_items.publication_site,
+                   content_items.render_json, content_items.expires_at)
+              IS DISTINCT FROM
+                  (EXCLUDED.cid, EXCLUDED.author_did, EXCLUDED.collection,
+                   EXCLUDED.created_at, EXCLUDED.publication_site,
+                   EXCLUDED.render_json, EXCLUDED.expires_at)
           """,
           logger: logger
         )

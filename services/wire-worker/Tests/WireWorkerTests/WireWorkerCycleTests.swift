@@ -1,4 +1,5 @@
 import Foundation
+import Logging
 import Testing
 import WireCore
 
@@ -143,6 +144,31 @@ struct WireWorkerCycleTests {
     #expect(await maintainer.callCount == 1)
   }
 
+  @Test("publication proceeds during graph work and owner cancellation stops graph work")
+  func graphLifetimeDoesNotBlockPublication() async throws {
+    let maintainer = SuspendedGraphMaintainer()
+    let store = FakeWireStore(candidates: activationCandidates)
+    let cycle = WireWorkerCycle(
+      store: store, config: config(mode: .visible), inboxMaintainer: maintainer,
+      labelRefresher: SuccessfulLabelRefresher())
+    try await withThrowingTaskGroup(of: Void.self) { group in
+      group.addTask {
+        try await WireGraphMaintenanceRuntime.run(
+          maintainer: maintainer, state: WireWorkerHealthState(),
+          logger: Logger(label: "graph-lifetime.tests"))
+      }
+      await maintainer.waitUntilStarted()
+      _ = try await cycle.run(asOf: now)
+      #expect(await store.snapshot().commits.count == 1)
+      #expect(await maintainer.rollupCalls == 1)
+      #expect(!(await maintainer.cancelled))
+      group.cancelAll()
+      do { try await group.waitForAll() }
+      catch is CancellationError {}
+    }
+    #expect(await maintainer.cancelled)
+  }
+
   private var candidate: WireCandidate {
     candidate(index: nil)
   }
@@ -266,5 +292,26 @@ private actor FakeWireStore: WireGenerationStore {
       loadedRankingVersions: loadedRankingVersions,
       commits: commits
     )
+  }
+}
+
+private actor SuspendedGraphMaintainer: WireInboxMaintaining, WireGraphMaintaining {
+  private var started = false
+  private var startedWaiter: CheckedContinuation<Void, Never>?
+  var cancelled = false
+  var rollupCalls = 0
+
+  func maintain(asOf: Date) { rollupCalls += 1 }
+  func maintainGraph(asOf: Date) async throws -> Date {
+    started = true
+    startedWaiter?.resume()
+    startedWaiter = nil
+    do { try await Task.sleep(for: .seconds(21_600)) }
+    catch { cancelled = true; throw error }
+    return asOf.addingTimeInterval(21_600)
+  }
+  func waitUntilStarted() async {
+    guard !started else { return }
+    await withCheckedContinuation { startedWaiter = $0 }
   }
 }

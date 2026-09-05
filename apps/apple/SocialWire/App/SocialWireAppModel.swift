@@ -1029,12 +1029,12 @@ final class SocialWireAppModel {
         }
     }
 
-    func loadWireFeed(cursor: String? = nil) async {
+    func loadWireFeed(cursor: String? = nil, restoringCache: Bool = true) async {
         guard wireCatalog?.isAvailable == true, let viewerDID else { return }
         let language = preferredWireLanguage
         var restoredCache = false
 
-        if cursor == nil,
+        if cursor == nil, restoringCache,
            let coordinator = readerCacheCoordinator,
            let cached = try? coordinator.wireFeedPage(
                viewerDID: viewerDID,
@@ -1071,7 +1071,13 @@ final class SocialWireAppModel {
             }
             await prefetchThumbnailImages(for: page.items.map { $0.toEntryListItem() })
         } catch {
-            guard readerListSource == .wire else { return }
+            guard readerListSource == .wire, self.viewerDID == viewerDID else { return }
+            if (error as? SocialWireError)?.shouldRestartFeed(cursor: cursor) == true {
+                entriesNextCursor = nil
+                entriesPaginationTriggeredForEntryId = nil
+                await loadWireFeed(restoringCache: false)
+                return
+            }
             wireFeedLoadFailed = entries.isEmpty
             if !entries.isEmpty {
                 wireFeedNotice = "Showing the most recently cached edition."
@@ -1120,12 +1126,12 @@ final class SocialWireAppModel {
         }
     }
 
-    func loadWireEdition(cursor: String? = nil) async {
+    func loadWireEdition(cursor: String? = nil, restoringCache: Bool = true) async {
         guard wireCatalog?.isAvailable == true, let viewerDID else { return }
         let language = preferredWireLanguage
         var restoredCache = false
 
-        if cursor == nil,
+        if cursor == nil, restoringCache,
            let coordinator = readerCacheCoordinator,
            let cached = try? coordinator.wireEditionPage(
                viewerDID: viewerDID,
@@ -1171,6 +1177,13 @@ final class SocialWireAppModel {
                 )
             }
         } catch {
+            guard self.viewerDID == viewerDID else { return }
+            if (error as? SocialWireError)?.shouldRestartFeed(cursor: cursor) == true {
+                entriesNextCursor = nil
+                entriesPaginationTriggeredForEntryId = nil
+                await loadWireEdition(restoringCache: false)
+                return
+            }
             if cursor == nil {
                 if restoredCache {
                     wireFeedNotice = "Showing the most recently cached edition."
@@ -1200,12 +1213,12 @@ final class SocialWireAppModel {
         }
     }
 
-    func loadCircleEdition(cursor: String? = nil) async {
+    func loadCircleEdition(cursor: String? = nil, restoringCache: Bool = true) async {
         guard circleCatalog?.isAvailable == true, let viewerDID else { return }
         let language = preferredCircleLanguage
         var restoredCache = false
 
-        if cursor == nil,
+        if cursor == nil, restoringCache,
            let coordinator = readerCacheCoordinator,
            let cached = try? coordinator.circleEditionPage(
                viewerDID: viewerDID,
@@ -1249,6 +1262,12 @@ final class SocialWireAppModel {
                 )
             }
         } catch {
+            guard self.viewerDID == viewerDID else { return }
+            if (error as? SocialWireError)?.shouldRestartFeed(cursor: cursor) == true {
+                circleEdition = nil
+                await loadCircleEdition(restoringCache: false)
+                return
+            }
             circleErrorMessage = restoredCache
                 ? "Showing the most recently cached edition."
                 : error.localizedDescription

@@ -338,6 +338,7 @@ public protocol ThinAppViewStore: Actor {
     readAt: Date
   ) async throws -> (counters: [AppViewUnreadCounter], boundaries: [ReadWatermarkBoundary])
 
+  func deleteExpiredCircleCaches(before: Date, batchSize: Int) async throws -> Int
   func deleteExpiredContent(before: Date, batchSize: Int) async throws -> Int
   func deleteExpiredReadMarks(before: Date, batchSize: Int) async throws -> Int
   func deleteExpiredTapEventReceipts(
@@ -450,6 +451,9 @@ public protocol ThinAppViewStore: Actor {
 }
 
 public extension ThinAppViewStore {
+  /// SQLite and test stores do not contain the PostgreSQL-only Circle rollback caches.
+  func deleteExpiredCircleCaches(before: Date, batchSize: Int) async throws -> Int { 0 }
+
   /// Default for external store conformers that have not adopted retired-generation recovery.
   /// Remaining unresolved is the fail-closed, source-compatible behavior.
   func resolveTerminalRetiredGenerationIncidents(

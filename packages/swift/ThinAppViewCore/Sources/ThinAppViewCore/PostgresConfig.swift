@@ -16,8 +16,8 @@ public func makePostgresConfig(
     let host = url.host,
     !host.isEmpty
   else {
-    logger.critical("DATABASE_URL is not a valid URL", metadata: ["url": .string(urlString)])
-    throw PostgresConfigError.invalidURL(urlString)
+    logger.critical("DATABASE_URL is not a valid URL")
+    throw PostgresConfigError.invalidURL("DATABASE_URL")
   }
 
   let port = url.port ?? 5432
@@ -41,6 +41,9 @@ public func makePostgresConfig(
   )
 
   config.options.maximumConnections = postgresMaximumConnections()
+  config.options.additionalStartupParameters = [
+    ("application_name", postgresApplicationName(fallback: logger.label))
+  ]
 
   return config
 }
@@ -54,4 +57,16 @@ func postgresMaximumConnections(
   // One connection may hold the V1 authority row fence while the fenced message performs its
   // projection writes through the same shared pool. Fewer than two would deadlock that handoff.
   return max(2, configured)
+}
+
+func postgresApplicationName(
+  fallback: String,
+  environment: [String: String] = ProcessInfo.processInfo.environment
+) -> String {
+  let supplied = environment["RAILWAY_SERVICE_NAME"]?.trimmingCharacters(in: .whitespacesAndNewlines)
+  let source = supplied.flatMap { $0.isEmpty ? nil : $0 } ?? fallback
+  // ASCII and a byte-bound label keep pg_stat_activity readable and avoid control characters.
+  let allowed = Set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.")
+  let label = String(source.map { allowed.contains($0) ? $0 : "-" }.prefix(63))
+  return label.isEmpty ? "thin-appview" : label
 }

@@ -4,6 +4,7 @@ struct WireWorkerRuntimePlan: Equatable, Sendable {
   var runsGeneration: Bool
   var runsDrain: Bool
   var runsCleanup: Bool
+  var runsGraphMaintenance: Bool
   var runsMetadataEnrichment: Bool
   var requiresGenerationReadiness: Bool
   var requiresDrainReadiness: Bool
@@ -18,6 +19,7 @@ struct WireWorkerRuntimePlan: Equatable, Sendable {
     // singleton rank lane so horizontally scaled drain replicas devote their
     // database pool and HTTP capacity to reducing inbox lag. Terminal cleanup
     // follows the same ownership boundary.
+    runsGraphMaintenance = feedEnabled && runsGeneration
     runsMetadataEnrichment = feedEnabled && runsGeneration
     requiresGenerationReadiness = feedEnabled && runsGeneration
     requiresDrainReadiness = runsDrain

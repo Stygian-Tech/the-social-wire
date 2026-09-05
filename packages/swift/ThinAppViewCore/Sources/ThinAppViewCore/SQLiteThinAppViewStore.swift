@@ -1441,6 +1441,13 @@ public init(path dbPath: String, logger: Logger) throws {
             publication_site = excluded.publication_site,
             render_json = excluded.render_json,
             expires_at = excluded.expires_at
+            WHERE (content_items.cid, content_items.author_did, content_items.collection,
+                   content_items.created_at, content_items.publication_site,
+                   content_items.render_json, content_items.expires_at)
+              IS NOT
+                  (excluded.cid, excluded.author_did, excluded.collection,
+                   excluded.created_at, excluded.publication_site,
+                   excluded.render_json, excluded.expires_at)
           """,
         arguments: [
           item.uri,
@@ -3382,6 +3389,13 @@ public init(path dbPath: String, logger: Logger) throws {
               publication_site = excluded.publication_site,
               render_json = excluded.render_json,
               expires_at = excluded.expires_at
+              WHERE (content_items.cid, content_items.author_did, content_items.collection,
+                     content_items.created_at, content_items.publication_site,
+                     content_items.render_json, content_items.expires_at)
+                IS NOT
+                    (excluded.cid, excluded.author_did, excluded.collection,
+                     excluded.created_at, excluded.publication_site,
+                     excluded.render_json, excluded.expires_at)
             """,
           arguments: [
             item.uri,

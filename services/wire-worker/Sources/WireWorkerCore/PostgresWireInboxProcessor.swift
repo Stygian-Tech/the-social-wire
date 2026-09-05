@@ -354,10 +354,12 @@ struct PostgresWireInboxProcessor: Sendable {
     }
   }
 
-  func maintain(asOf: Date) async throws {
-    try await pruneActiveGraph(asOf: asOf)
-    try await mentionStore.pruneExpired(asOf: asOf)
+  func maintainGraph(asOf: Date) async throws -> Date {
     try await refreshCommunitiesIfNeeded(asOf: asOf)
+  }
+
+  func maintain(asOf: Date) async throws {
+    try await mentionStore.pruneExpired(asOf: asOf)
     try await refreshRollups(asOf: asOf)
   }
 
@@ -1646,6 +1648,8 @@ struct PostgresWireInboxProcessor: Sendable {
       VALUES (\(alias), \(canonicalKey), \(type), \(asOf.addingTimeInterval(WireDataPolicy.itemRetention)))
       ON CONFLICT (alias_key) DO UPDATE SET canonical_key = EXCLUDED.canonical_key,
         expires_at = EXCLUDED.expires_at
+      WHERE (wire_item_aliases.canonical_key, wire_item_aliases.expires_at)
+        IS DISTINCT FROM (EXCLUDED.canonical_key, EXCLUDED.expires_at)
       """,
       logger: logger
     )
@@ -1667,7 +1671,7 @@ struct PostgresWireInboxProcessor: Sendable {
           FROM jsonb_array_elements_text(item.provenance || to_jsonb(ARRAY[\(kind)]::text[]))
         ) unique_provenance
       ), updated_at = \(asOf)
-      WHERE canonical_key = \(canonicalKey)
+      WHERE canonical_key = \(canonicalKey) AND NOT (item.provenance ? \(kind))
       """,
       logger: logger
     )
@@ -1984,7 +1988,7 @@ struct PostgresWireInboxProcessor: Sendable {
     }
   }
 
-  private func refreshCommunitiesIfNeeded(asOf: Date) async throws {
+  private func refreshCommunitiesIfNeeded(asOf: Date) async throws -> Date {
     let rows = try await pool.query(
       "SELECT MAX(assigned_at) FROM wire_actor_communities",
       logger: logger
@@ -1994,9 +1998,10 @@ struct PostgresWireInboxProcessor: Sendable {
     if let lastAssigned,
       asOf.timeIntervalSince(lastAssigned) < WireDataPolicy.clusteringCadence
     {
-      return
+      return lastAssigned.addingTimeInterval(WireDataPolicy.clusteringCadence)
     }
 
+    try await pruneActiveGraph(asOf: asOf)
     try await pool.withTransaction(logger: logger) { connection in
       try await connection.query(
         """
@@ -2035,6 +2040,7 @@ struct PostgresWireInboxProcessor: Sendable {
             GROUP BY actor_key_hash
           ) neighbor
           WHERE current.actor_key_hash = neighbor.actor_key_hash
+            AND current.label > neighbor.minimum_label
           """,
           logger: logger
         )
@@ -2059,6 +2065,7 @@ struct PostgresWireInboxProcessor: Sendable {
         SET community_key_hash = community.community_key_hash
         FROM wire_actor_communities community
         WHERE community.actor_key_hash = signal.actor_key_hash
+          AND signal.community_key_hash IS DISTINCT FROM community.community_key_hash
         """,
         logger: logger
       )
@@ -2066,13 +2073,14 @@ struct PostgresWireInboxProcessor: Sendable {
         """
         UPDATE wire_signal_events signal
         SET community_key_hash = NULL
-        WHERE NOT EXISTS (
+        WHERE signal.community_key_hash IS NOT NULL AND NOT EXISTS (
           SELECT 1 FROM wire_actor_communities community
           WHERE community.actor_key_hash = signal.actor_key_hash)
         """,
         logger: logger
       )
     }
+    return asOf.addingTimeInterval(WireDataPolicy.clusteringCadence)
   }
 
   private func finish(

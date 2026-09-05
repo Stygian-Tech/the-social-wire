@@ -130,6 +130,7 @@ struct CircleDiscoveryService: Sendable {
         snapshotID: graph.snapshot.snapshotID,
         generationID: candidates.generationID,
         language: language,
+        hiddenStoryIDs: hidden,
         now: now
       )
     {
@@ -234,6 +235,7 @@ struct CircleDiscoveryService: Sendable {
         snapshotID: graph.snapshot.snapshotID,
         generationID: candidates.generationID,
         language: language,
+        hiddenStoryIDs: hidden,
         expiresAt: min(
           now.addingTimeInterval(10 * 60),
           graph.snapshot.generatedAt.addingTimeInterval(CircleGraphSnapshotService.staleMaximum)

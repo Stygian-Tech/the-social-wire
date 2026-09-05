@@ -1,5 +1,8 @@
 "use client";
 
+import { isExpiredFeedCursor } from "@/lib/feedResponseError";
+import { useExpiredFeedCursorRecovery } from "@/hooks/useExpiredFeedCursorRecovery";
+
 import { useMemo } from "react";
 import {
   useInfiniteQuery,
@@ -37,13 +40,12 @@ export function useCircleCatalog() {
       oauthSessionReloadSeq,
     ],
     queryFn: ({ signal }) => {
-      const currentSession = getOAuthSession();
-      if (!currentSession) throw new Error("Your Circle requires sign-in.");
-      return getCircleCatalog({ oauthSession: currentSession, signal });
+      if (!oauthSession) throw new Error("Your Circle requires sign-in.");
+      return getCircleCatalog({ oauthSession, signal });
     },
     enabled: !isLoading && Boolean(session && oauthSession),
     staleTime: 5 * 60_000,
-    retry: 1,
+    retry: (count, error) => !isExpiredFeedCursor(error) && count < 1,
   });
 }
 
@@ -51,6 +53,7 @@ export function useCircleEdition(args: { enabled: boolean }) {
   const { session, isLoading, getOAuthSession, oauthSessionReloadSeq } =
     useAuth();
   const catalog = useCircleCatalog();
+  const queryClient = useQueryClient();
   const viewerDid = session?.did ?? "signed-out";
   const oauthSession = getOAuthSession();
   const language = useMemo(
@@ -65,10 +68,9 @@ export function useCircleEdition(args: { enabled: boolean }) {
       oauthSessionReloadSeq,
     ],
     queryFn: ({ pageParam, signal }) => {
-      const currentSession = getOAuthSession();
-      if (!currentSession) throw new Error("Your Circle requires sign-in.");
+      if (!oauthSession) throw new Error("Your Circle requires sign-in.");
       return getCircleEdition({
-        oauthSession: currentSession,
+        oauthSession,
         language,
         cursor: pageParam,
         signal,
@@ -84,10 +86,34 @@ export function useCircleEdition(args: { enabled: boolean }) {
       catalog.data.available === true,
     staleTime: CIRCLE_STALE_TIME_MS,
     refetchOnWindowFocus: true,
-    retry: 1,
+    retry: (count, error) => !isExpiredFeedCursor(error) && count < 1,
   });
 
-  return { ...query, catalog, language };
+  const refreshGeneration = useMutation({
+    mutationKey: ["refreshCircleEdition", viewerDid, languageKey, oauthSessionReloadSeq],
+    onMutate: () => ({
+      queryKey: [...CIRCLE_EDITION_QUERY_KEY(viewerDid, languageKey), oauthSessionReloadSeq],
+      oauthSession,
+    }),
+    mutationFn: async () => {
+      if (!oauthSession) throw new Error("Your Circle requires sign-in.");
+      return getCircleEdition({ oauthSession, language, bypassCache: true });
+    },
+    onSuccess: async (fresh, _variables, context) => {
+      // Mutation completion can outlive an account switch or sign-out. Only the
+      // session that started this request may publish its private generation.
+      if (!context || getOAuthSession() !== context.oauthSession) return;
+      await queryClient.cancelQueries({ queryKey: context.queryKey, exact: true });
+      if (getOAuthSession() !== context.oauthSession) return;
+      queryClient.setQueryData(context.queryKey, { pages: [fresh], pageParams: [undefined] });
+    },
+  });
+  useExpiredFeedCursorRecovery(query.error, refreshGeneration.mutateAsync, args.enabled);
+  return {
+    ...query, catalog, language,
+    error: refreshGeneration.error ?? query.error,
+    isError: refreshGeneration.isError || query.isError,
+  };
 }
 
 export function useSetCircleItemHidden() {
