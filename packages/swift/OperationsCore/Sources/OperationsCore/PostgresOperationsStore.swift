@@ -149,7 +149,6 @@ public actor PostgresOperationsStore: OperationsStore {
         DatabaseTableRecordCount(schema: value.0, table: value.1, estimatedRecords: value.2))
     }
 
-    await recordDatabaseCostTelemetry(at: observedAt)
     return DatabaseObservabilitySnapshot(
       databaseSizeBytes: summary.0,
       activeConnections: summary.1,

@@ -91,13 +91,54 @@ acceptance or recovery gates fail.
 
 ## Implementation evidence — September 5, 2026 UTC
 
+- PR [#314](https://github.com/Stygian-Tech/the-social-wire/pull/314) merged into
+  Development as `c3150a02e8fe7fed2960c8c50572c5be0715036d` after all required
+  CI passed. All affected Development services deployed that revision. Database
+  Migrator completed at 04:50:53; direct SQL verified both surviving unique
+  ranked-item indexes are valid and `pg_stat_statements` 1.12 is installed.
+  A new generation has exactly two hours of retention; older generations still
+  have their original 48-hour expiry. The extra legacy Wire worker now runs only
+  its drain role, with observed processing and zero actionable backlog.
+- Public smoke tests initially saw Wire 503/stale responses during an upstream
+  Production ranking-task restart. Both environments subsequently returned the
+  same non-degraded ranked generation, with sampled latency 0.440 seconds in
+  Development and 0.263 seconds in Production. This verifies the normal remote
+  Corpus Edge path, not local ranking capacity or authenticated user acceptance.
+  Production source checks at 05:01 confirmed its August 30 postmaster start,
+  archiving on, compression off, 1 GB max WAL and five-minute checkpoints.
 - Development WAL trial applied and verified: LZ4, 8192 MB max WAL, 900-second
   checkpoints, completion target 0.9; fsync and full-page writes remain on. No
   restart is pending. Preflight found approximately 87 GB free. Rollback values
   are compression `off`, max WAL `1GB`, checkpoint timeout `5min`, target `0.9`.
-- Development safety volume backup `54357efb-ec88-46e9-820d-82f41319abfc` was
-  created before testing replacement daily backups. Its restore is not yet
-  verified. PITR and the existing schedule remain in place until that gate passes.
+- Development volume backup `54357efb-ec88-46e9-820d-82f41319abfc`, taken at
+  04:15:57 UTC, was restored through Railway's volume-snapshot mechanism into an
+  isolated clone after a disposable marker fixture proved the staged rewire safe.
+  The clone reached SQL readiness at 04:49:20 (snapshot age 33m23s; startup and
+  crash recovery about five seconds) and restarted successfully at 04:51:44.
+  After restart, bounded comparisons matched 1,000 read marks, 25 content URI/CID
+  pairs, 100 logged Wire items, and 100 historical recovery anchors. Circle hides
+  were empty. These samples establish retained rows, not exhaustive integrity.
+  Schema verification passed for all 54 backup-time migrations; Development had
+  advanced to 56. The newest restored operations heartbeat was 04:15:57.178692;
+  the exact last committed transaction timestamp was unavailable. Discovery
+  reconstruction within one hour remains a separate replay gate.
+  Daily-only scheduling is now effective (`21 1 * * *`, UTC), with Railway's
+  [six-day retention](https://docs.railway.com/volumes/backups). Existing weekly
+  snapshots retained their original September 11/18/25 expiration dates;
+  manual snapshots remain non-expiring. Source Postgres restarted at 04:56:47:
+  archiving is off, LZ4/8 GB/15-minute tuning and fsync/full-page writes remain
+  enabled, and the bounded inbox sample fell from 171 to zero. Its original
+  volume remains mounted. The exclusively Development PITR bucket (137.836 GB,
+  71,218 objects) was retired using Railway's supported environment-scoped bucket
+  deletion after confirming no service references in either environment;
+  Production's distinct bucket remains present. Retain the verified manual
+  snapshot until the first scheduled daily snapshot exists and is usable, then
+  delete that manual snapshot after the follow-up verifies those conditions. This is a concrete
+  cleanup condition, not a requirement to retain the retired PITR archive.
+  The temporary restore service was removed after evidence capture; its detached
+  volume is pending Railway deletion on September 7 at 05:00 UTC. Final staged
+  changes are empty. Provider deletion grace periods mean this is retirement
+  evidence, not proof of an immediate billing reduction.
 - Isolated Production restore service `tsw92-production-restore-drill`
   (`7cbb895a-2e6d-471e-9e2c-7bbb019ee2cb`) targets August 29, 03:00 UTC, using
   the August 26 full backup. Base restore completed and WAL replay started;
@@ -106,26 +147,45 @@ acceptance or recovery gates fail.
   account for drill compute/storage separately from steady-state savings. The
   temporary Development manual backup should also be retired after the replacement
   backup policy is verified, since manual backups do not expire with that policy.
-- At 04:22 UTC the **isolated restore clone only** was tuned to asynchronous WAL
-  fetching, two pgBackRest processes, and a 128 MiB fetch queue. A 119-second sample
-  improved from 14.3 to 22.6 MiB/s (about 58%). Durability and the recovery target
-  remain unchanged, with approximately 61 GB disk free. Rollback copies with
-  `.tsw92-rollback` suffix are stored alongside the clone's edited configuration
-  files. The saved 8 GB max WAL and 15-minute checkpoint settings are **not effective
-  during bootstrap recovery**: the image starts Postgres with overriding 512 MB
-  max WAL and 30-second checkpoint arguments. No restart was attempted. Source
-  Production retains its original settings. Large historic WAL volume still
-  implies hours-to-days; this short sample cannot establish a recovery-time promise.
-  The wrapper regenerates the recovery pgBackRest config at boot, so the async
-  change is not deployment-persistent. Future replay boots expose
-  `PITR_RECOVERY_CHECKPOINT_TIMEOUT` and `PITR_RECOVERY_MAX_WAL_SIZE`; the default
-  overrides intentionally constrain replay disk growth. After promotion, an
-  ordinary boot may use the saved 8 GB/15-minute settings. Re-verify all settings
-  after any clone restart.
+- At 04:31 UTC on September 5, the **isolated restore clone only** was redeployed
+  as `c0d5a612-708b-44d6-a25a-f8f180608143` with persistent service variables
+  `PITR_RECOVERY_CHECKPOINT_TIMEOUT=15min`, `PITR_RECOVERY_MAX_WAL_SIZE=8GB`,
+  `PGBACKREST_ARCHIVE_ASYNC=y`, `PGBACKREST_PROCESS_MAX=2`, and
+  `PGBACKREST_ARCHIVE_GET_QUEUE_MAX=128MiB`. Actual postmaster arguments and
+  archive-get logs confirm these settings are effective, overriding the image's
+  default recovery-only 512 MB/30-second limits. Recovery source and target
+  fingerprints match their pre-restart values; fsync, full-page writes, and
+  checkpoint completion target 0.9 are preserved. The 04:32:15–04:34:13 UTC
+  sample replayed at **32.09 MiB/s**, versus 14.30 baseline and 22.61 with async
+  fetching alone. At 04:36:48 UTC a restartpoint reclaimed 252 WAL segments
+  (approximately 3.94 GiB); at 04:37 UTC pg_wal occupied 5.2 GiB, with 57 GB disk
+  free and 2.76 GB memory used. Replay was still processing August 26 transactions;
+  reaching the August 29 target, integrity checks, seven-day recovery coverage,
+  and the separate one-hour discovery rebuild test remain **unverified gates**.
+  Source Production settings and retention are unchanged. Keep monitoring replay
+  and disk headroom: max WAL is a soft recovery limit, and this short throughput
+  sample is not a recovery-time promise. Re-verify settings after any clone restart.
 - A Production `pgbackrest expire --dry-run` using time-based seven-day retention
   succeeded. It would remove the August 12 and 19 full backups and retain August
   26 and September 2, with required WAL retained from the August 26 backup.
   No backup or WAL was deleted. Run as the `postgres` OS user, not root.
+- A bounded Production bucket-prefix inventory found only `pgbackrest/`, with
+  one cluster prefix matching the active system identifier. pgBackRest reports
+  one stanza and archive history `18-1`, with four full and fourteen differential
+  backups. No abandoned cluster prefix was found. Backup repository deltas total
+  approximately 91.3 GB; WAL objects were not enumerated in this metadata check.
+- Read-only Production watcher tracing matched six 60-second asynchronous
+  archive-push timeouts to six recovery-triggered differential backups between
+  September 4 01:13 UTC and September 5 00:40 UTC. Each entry had catalog lag
+  zero and recovered without an async-daemon kill. For the latest event, WAL
+  `000000010000090F00000006` timed out at 00:40:18.592, succeeded on retry at
+  00:40:20.228, and triggered a differential at 00:41:23. The installed watcher
+  enters recovery on any increase in the archive failure counter, then takes a
+  differential when the catalog advances. This explains repeated backups after
+  transient errors; it does not prove historical continuity or justify disabling
+  gap recovery. Effective archive-push uses three processes, a 5120 MiB queue,
+  and zstd level 3. Reduce WAL pressure first, then measure timeout/backup
+  frequency and verify continuity before considering watcher changes.
 - Web: 704 tests, typecheck, lint, and production build pass. Apple: simulator
   app build and all 129 unit tests pass. Full contract suite: 118 tests pass;
   four additional opt-in PostgreSQL index-preflight cases pass against an
@@ -138,11 +198,51 @@ acceptance or recovery gates fail.
   Coordinator lease, keeping its six-hour cadence. Required rollups remain before
   ranking publication. Cost instrumentation uses bounded two-second statements,
   one sample per minute, and explicitly marks capped expiry counts as lower bounds.
-- Application deployment, required hosted CI, authenticated Development QA,
-  representative replay, memory trials, restore acceptance, and 24-hour/seven-day
-  cost comparisons remain release gates. No measured savings are claimed.
+- An explicitly synthetic local capacity trial used the exact baseline and
+  candidate revisions, sequentially on an isolated PostgreSQL 18 instance. Each
+  revision published 5,000 candidates in each of three cycles. Durations were
+  2464/2296/2439 ms before and 300/279/276 ms after (about 88% lower). Insertion-LSN
+  WAL deltas were 9,552,664 and 7,441,344 bytes (about 22% lower). Short-interval
+  `pg_stat_wal` publication lag made its candidate delta unsuitable for this
+  comparison. This capacity fixture does not establish real-workload distribution,
+  full Production capacity, or Railway spend reduction. A separate matched public
+  archive replay is in progress.
+- The matched **publication-only** public archive pilot completed at 05:42 UTC.
+  Both exact revisions passed the same 900-second observation, drained all 3,719
+  events (3,267 publication-profile commits plus 452 account events), and ended
+  with zero actionable rows or dead letters. The identical seed contained four
+  genuine public document items and eight aliases, preserving their original
+  dates and CIDs; no popularity signals were fabricated. WAL was 88,343,442 bytes
+  before and 46,103,737 after (47.8% lower). Ranked-item inserts were 42,435 versus
+  6,242 (85.3% lower); successful local ranked reads were 166 versus 118, with
+  p95 12.45 ms versus 12.97 ms (4.2% higher). Both ended with 3,222 candidates and
+  2,687 ranked items. The candidate published two observed nonempty generations
+  and retained the configured two-hour expiry. The five-second probe interval,
+  small seed and publication-only profile do not establish full-social capacity,
+  one-hour corpus reconstruction, or Railway savings. Partition-parent signal
+  counters are not total signal counts and must not be interpreted as zero.
+- TSW-98 tracks the hosted verification finding that database cost metrics were
+  collected only when the Operations overview was read. A dedicated serial
+  collector is being validated; do not start the measured soak until independent
+  minute buckets are verified in Development with the dashboard closed.
+- Authenticated Development QA, representative replay, memory trials, Production
+  restore acceptance, discovery rebuild timing, and 24-hour/seven-day cost
+  comparisons remain release gates. No measured billing savings are claimed.
 
 Track updates in TSW-92 and its TSW-93, TSW-94, and TSW-95 children. Do not use
 `railway postgres pitr backup restore` as a staging-only command: it commits the
 volume replacement after copying. Review the underlying staged restore workflow
 before any attempt to isolate a volume-backup drill.
+
+The tested API procedure is: call `volumeInstanceBackupRestore`, wait for its
+cloned volume and staged mount replacement, assert the patch contains only that
+restore, and replace it with a target-service-only mount patch. Commit that
+explicit patch with `environmentPatchCommit`; never commit all staged changes.
+Preserve the source service's original mount and match the clone's region to the
+source volume. Inspect and clear only the known residual staged patch afterward:
+explicit patch commits do not consume staging automatically. A custom start
+command must retain the image's `tini`/`wrapper.sh` entrypoint so PostgreSQL runs
+as its service user. Distinct service/volume identities establish isolation;
+physical snapshots correctly share the PostgreSQL system identifier. Delete
+temporary services and explicitly delete their confirmed-owned volumes after
+evidence is saved; service deletion alone can leave billable detached volumes.

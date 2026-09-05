@@ -180,6 +180,7 @@ filter_changed wire_corpus_edge \
 filter_changed database_migrator \
   'database/migrations/**' \
   'scripts/apply-database-migrations.sh' \
+  'scripts/verify-postgres-restore.sh' \
   'scripts/verify-jetstream-v2-drain-indexes.sql' \
   'scripts/verify-wire-inbox-claim-index.sql' \
   'scripts/verify-wire-corpus-serving.sql' \
@@ -196,6 +197,9 @@ filter_changed lexicons \
 
 filter_changed spec \
   'packages/spec/**' \
+  'scripts/benchmarks/**' \
+  'scripts/capture-postgres-cost.sql' \
+  'scripts/verify-postgres-restore.sh' \
   '.railway/**' \
   'docs/runbooks/operations/jetstream-v2-durable-replay.md' \
   'packages/lexicons/**' \
