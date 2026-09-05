@@ -3,7 +3,8 @@ import PostgresNIO
 
 extension PostgresOperationsStore {
   /// Bounded catalog and indexed expiry samples; never expose query text or private row identifiers.
-  func recordDatabaseCostTelemetry(at: Date) async {
+  public func recordDatabaseCostTelemetry(at: Date) async {
+    guard !Task.isCancelled else { return }
     guard !isDatabaseCostObservationRunning else { return }
     if let last = lastDatabaseCostObservation, at.timeIntervalSince(last) < 60 { return }
     isDatabaseCostObservationRunning = true
@@ -45,6 +46,7 @@ extension PostgresOperationsStore {
         }
         lastDatabaseWALObservation = (v.0, v.6, at)
       }
+      guard !Task.isCancelled else { return }
       let tables = try await databaseCostRows(
         """
         SELECT relname, pg_total_relation_size(relid)::double precision,
@@ -65,10 +67,11 @@ extension PostgresOperationsStore {
         metric("hot_updates_total", v.4, table: v.0)
       }
     } catch {
-      // Telemetry must not make the Operations overview unavailable on older PG
-      // versions or restricted roles. Database readiness remains independently checked.
+      // Older PG versions and restricted roles may omit these counters. Database
+      // readiness remains independently checked, and later samples can recover.
       logger.debug("Database cost counters unavailable")
     }
+    guard !Task.isCancelled else { return }
     do {
       let rows = try await databaseCostRows(
         """
@@ -87,6 +90,7 @@ extension PostgresOperationsStore {
     } catch {
       logger.debug("Statement cost counters unavailable; check extension and preload")
     }
+    guard !Task.isCancelled else { return }
     do {
       for row in try await databaseExpiryBacklogRows(at: at) {
         let value = try row.decode((String, Int64, Bool).self)
@@ -96,6 +100,7 @@ extension PostgresOperationsStore {
     } catch {
       logger.debug("Expiry backlog sample unavailable")
     }
+    guard !Task.isCancelled else { return }
     do {
       for row in try await databaseGenerationDurationRows() {
         let value = try row.decode((String, String?).self)
@@ -114,12 +119,13 @@ extension PostgresOperationsStore {
     } catch {
       logger.debug("Generation duration sample unavailable")
     }
+    guard !Task.isCancelled else { return }
     do { try await recordTelemetryBatch(samples, statementTimeoutMilliseconds: 2_000) } catch {
       logger.debug("Database cost telemetry export unavailable")
     }
   }
 
-  /// A stalled catalog/statistics query must not indefinitely delay the overview. The local
+  /// A stalled catalog/statistics query must not indefinitely delay the collector. The local
   /// setting rolls back with this transaction and never changes another caller's pooled session.
   func databaseCostRows(_ query: PostgresQuery) async throws -> [PostgresRow] {
     try await pool.withTransaction(logger: logger) { connection in

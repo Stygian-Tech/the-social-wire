@@ -133,7 +133,7 @@ acceptance or recovery gates fail.
   deletion after confirming no service references in either environment;
   Production's distinct bucket remains present. Retain the verified manual
   snapshot until the first scheduled daily snapshot exists and is usable, then
-  delete that manual snapshot through the active follow-up. This is a concrete
+  delete that manual snapshot after the follow-up verifies those conditions. This is a concrete
   cleanup condition, not a requirement to retain the retired PITR archive.
   The temporary restore service was removed after evidence capture; its detached
   volume is pending Railway deletion on September 7 at 05:00 UTC. Final staged
@@ -207,6 +207,24 @@ acceptance or recovery gates fail.
   comparison. This capacity fixture does not establish real-workload distribution,
   full Production capacity, or Railway spend reduction. A separate matched public
   archive replay is in progress.
+- The matched **publication-only** public archive pilot completed at 05:42 UTC.
+  Both exact revisions passed the same 900-second observation, drained all 3,719
+  events (3,267 publication-profile commits plus 452 account events), and ended
+  with zero actionable rows or dead letters. The identical seed contained four
+  genuine public document items and eight aliases, preserving their original
+  dates and CIDs; no popularity signals were fabricated. WAL was 88,343,442 bytes
+  before and 46,103,737 after (47.8% lower). Ranked-item inserts were 42,435 versus
+  6,242 (85.3% lower); successful local ranked reads were 166 versus 118, with
+  p95 12.45 ms versus 12.97 ms (4.2% higher). Both ended with 3,222 candidates and
+  2,687 ranked items. The candidate published two observed nonempty generations
+  and retained the configured two-hour expiry. The five-second probe interval,
+  small seed and publication-only profile do not establish full-social capacity,
+  one-hour corpus reconstruction, or Railway savings. Partition-parent signal
+  counters are not total signal counts and must not be interpreted as zero.
+- TSW-98 tracks the hosted verification finding that database cost metrics were
+  collected only when the Operations overview was read. A dedicated serial
+  collector is being validated; do not start the measured soak until independent
+  minute buckets are verified in Development with the dashboard closed.
 - Authenticated Development QA, representative replay, memory trials, Production
   restore acceptance, discovery rebuild timing, and 24-hour/seven-day cost
   comparisons remain release gates. No measured billing savings are claimed.
