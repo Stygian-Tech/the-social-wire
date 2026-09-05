@@ -174,6 +174,18 @@ acceptance or recovery gates fail.
   one stanza and archive history `18-1`, with four full and fourteen differential
   backups. No abandoned cluster prefix was found. Backup repository deltas total
   approximately 91.3 GB; WAL objects were not enumerated in this metadata check.
+- Read-only Production watcher tracing matched six 60-second asynchronous
+  archive-push timeouts to six recovery-triggered differential backups between
+  September 4 01:13 UTC and September 5 00:40 UTC. Each entry had catalog lag
+  zero and recovered without an async-daemon kill. For the latest event, WAL
+  `000000010000090F00000006` timed out at 00:40:18.592, succeeded on retry at
+  00:40:20.228, and triggered a differential at 00:41:23. The installed watcher
+  enters recovery on any increase in the archive failure counter, then takes a
+  differential when the catalog advances. This explains repeated backups after
+  transient errors; it does not prove historical continuity or justify disabling
+  gap recovery. Effective archive-push uses three processes, a 5120 MiB queue,
+  and zstd level 3. Reduce WAL pressure first, then measure timeout/backup
+  frequency and verify continuity before considering watcher changes.
 - Web: 704 tests, typecheck, lint, and production build pass. Apple: simulator
   app build and all 129 unit tests pass. Full contract suite: 118 tests pass;
   four additional opt-in PostgreSQL index-preflight cases pass against an
