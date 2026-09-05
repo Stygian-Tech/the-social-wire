@@ -57,9 +57,9 @@ historical generations.
 | `WIRE_FEED_MODE` | `off` | Remote rollout switch (`off|shadow|api|visible`) |
 | `WIRE_EXTERNAL_SIGNAL_MODE` | `off` | Margin/Semble ranking rollout (`off|shadow|rank`) |
 | `WIRE_WORKER_ROLE` | `combined` | Runtime responsibility (`combined|rank|drain`) |
-| `WIRE_RANK_INTERVAL_SECONDS` | `60` | One-minute generation cadence; baseline labels remain throttled to five minutes |
+| `WIRE_RANK_INTERVAL_SECONDS` | `300` | Five-minute start-to-start generation cadence; slow cycles never overlap |
 | `WIRE_CANDIDATE_LIMIT` | `5000` | Maximum rollup rows scored per cycle |
-| `WIRE_GENERATION_RETENTION_SECONDS` | `172800` | 48-hour superseded/shadow generation retention |
+| `WIRE_GENERATION_RETENTION_SECONDS` | `7200` | Two-hour retention for newly generated superseded/shadow generations; existing expiry times and active generations are preserved |
 | `WIRE_RETENTION_BATCH_SIZE` | `5000` | Bounded cleanup batch |
 | `WIRE_LANGUAGE_BUCKET` | `und` | Global or language-specific feed bucket |
 | `WIRE_ACTOR_HMAC_SECRET` | required outside `off` | Versioned 256-bit minimum actor-key secret |

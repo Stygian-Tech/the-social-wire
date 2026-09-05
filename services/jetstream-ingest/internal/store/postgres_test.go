@@ -314,7 +314,6 @@ func TestWireAdmissionMixedReplayRollsBackWhenActualNewRowsExceedCap(t *testing.
 	mock.ExpectQuery("SELECT retained_rows").
 		WithArgs("dev").
 		WillReturnRows(sqlmock.NewRows([]string{"retained_rows", "database_bytes"}).AddRow(int64(5_000_000), int64(20<<30)))
-	mock.ExpectExec("INSERT INTO wire_ingestion_inbox").WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectExec("INSERT INTO wire_ingestion_inbox").WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectRollback()
 

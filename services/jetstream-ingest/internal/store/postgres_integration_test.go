@@ -315,6 +315,33 @@ func TestPostgresStageBatchPreservesRecoveryAnchorCursorTimeTuple(t *testing.T) 
 		t.Fatalf("recovery anchor = (%d, %s), want exact lower cursor tuple (%d, %s)",
 			anchorSeq, anchorTime, lower.Seq, laterTime)
 	}
+	var beforeTuple, afterTuple string
+	anchorTuple := `SELECT xmin::text || ':' || ctid::text FROM wire_ingestion_recovery_anchors
+		WHERE environment = $1 AND source_generation = $2 ORDER BY anchor_bucket DESC LIMIT 1`
+	if err := db.QueryRowContext(ctx, anchorTuple, source.Environment, generation).Scan(&beforeTuple); err != nil {
+		t.Fatal(err)
+	}
+	// A duplicate and a later cursor in the same bucket must neither rewrite the
+	// logged anchor nor duplicate the inbox rows in a multi-row insertion.
+	if err := postgres.StageBatch(ctx, lease, []ingest.InboxEvent{lower, higher, higher}, higher.Seq, higher.Time,
+		ReplayProgress{State: "live", LastProgressAt: higher.Time}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRowContext(ctx, anchorTuple, source.Environment, generation).Scan(&afterTuple); err != nil {
+		t.Fatal(err)
+	}
+	if beforeTuple != afterTuple {
+		t.Fatalf("unchanged recovery anchor was rewritten: %s -> %s", beforeTuple, afterTuple)
+	}
+	var retained int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM wire_ingestion_inbox
+		WHERE environment = $1 AND source_generation = $2`, source.Environment, generation).Scan(&retained); err != nil {
+		t.Fatal(err)
+	}
+	if retained != 2 {
+		t.Fatalf("batched sequence deduplication retained %d rows, want 2", retained)
+	}
+
 }
 
 func TestPostgresStageBatchIntegration(t *testing.T) {

@@ -264,19 +264,21 @@ struct PostgresWireGenerationStore: WireGenerationStore {
         """,
         logger: logger
       )
-      for (position, item) in generation.result.items.enumerated() {
-        let reasons = try json(item.reasonCodes.map(\.rawValue))
-        try await connection.query(
-          """
-          INSERT INTO wire_ranked_items
-            (generation_id, position, canonical_key, score, reason_codes, diversity_metadata)
-          VALUES
-            (\(generation.generationID), \(position), \(item.candidate.canonicalKey), \(item.score),
-             \(reasons)::jsonb, '{}'::jsonb)
-          """,
-          logger: logger
-        )
-      }
+      let rankedKeys = generation.result.items.map { $0.candidate.canonicalKey }
+      let rankedScores = generation.result.items.map(\.score)
+      let rankedReasons = try generation.result.items.map { try json($0.reasonCodes.map(\.rawValue)) }
+      try await connection.query(
+        """
+        INSERT INTO wire_ranked_items
+          (generation_id, position, canonical_key, score, reason_codes, diversity_metadata)
+        SELECT \(generation.generationID), (ranked.ordinality - 1)::integer,
+               ranked.canonical_key, ranked.score, ranked.reasons::jsonb, '{}'::jsonb
+        FROM unnest(\(rankedKeys)::text[], \(rankedScores)::double precision[],
+                    \(rankedReasons)::text[])
+          WITH ORDINALITY AS ranked(canonical_key, score, reasons, ordinality)
+        """,
+        logger: logger
+      )
 
       let editionRows = try await connection.query(
         """
@@ -419,83 +421,101 @@ struct PostgresWireGenerationStore: WireGenerationStore {
         logger: logger
       )
 
-      func insertEdition(_ value: WireEdition, namespace: String?) async throws {
+      var moduleRows: [WireEditionModuleRecord] = []
+      var moduleItemRows: [WireEditionModuleItemRecord] = []
+      func appendEdition(_ value: WireEdition, namespace: String?) {
         // Positions are unique across every variant in a generation.
         var modulePosition = namespace == nil ? 0 : 1_000
         let prefix = namespace.map { "\($0):" } ?? ""
-        func insertModule(
+        func appendModule(
           key: String,
           kind: String,
           title: String?,
           reason: String?,
           publication: WireEditionPublication?,
           stories: [WireFeedItem]
-        ) async throws {
+        ) {
           guard !stories.isEmpty else { return }
           let storedKey = "\(prefix)\(key)"
-          try await connection.query(
-            """
-            INSERT INTO wire_edition_modules
-              (generation_id, module_key, module_kind, title, position, reason_code,
-               publication_key, publication_name, publication_domain,
-               publication_homepage_url, publication_icon_url)
-            VALUES
-              (\(generation.generationID), \(storedKey), \(kind), \(title), \(modulePosition), \(reason),
-               \(publication?.key), \(publication?.name), \(publication?.domain),
-               \(publication?.homepageURL), \(publication?.iconURL))
-            """,
-            logger: logger
-          )
-          for (position, story) in stories.enumerated() {
-            try await connection.query(
-              """
-              INSERT INTO wire_edition_module_items
-                (generation_id, module_key, position, canonical_key)
-              VALUES (\(generation.generationID), \(storedKey), \(position), \(story.itemID))
-              """,
-              logger: logger
-            )
-          }
+          moduleRows.append(WireEditionModuleRecord(
+            moduleKey: storedKey, moduleKind: kind, title: title, position: modulePosition,
+            reasonCode: reason, publicationKey: publication?.key,
+            publicationName: publication?.name, publicationDomain: publication?.domain,
+            publicationHomepageUrl: publication?.homepageURL,
+            publicationIconUrl: publication?.iconURL
+          ))
+          moduleItemRows.append(contentsOf: stories.enumerated().map { position, story in
+            WireEditionModuleItemRecord(
+              moduleKey: storedKey, position: position, canonicalKey: story.itemID)
+          })
           modulePosition += 1
         }
-        try await insertModule(
+        appendModule(
           key: "top-stories", kind: "top_stories", title: "Top Stories", reason: nil,
           publication: nil, stories: value.leadStories
         )
         for (index, panel) in value.publicationPanels.enumerated() {
-          try await insertModule(
+          appendModule(
             key: "publication-\(index)", kind: "publication_spotlight",
             title: panel.publication.name, reason: nil,
             publication: panel.publication, stories: panel.stories
           )
         }
         for rail in value.storyRails {
-          try await insertModule(
+          appendModule(
             key: rail.id, kind: "story_rail", title: rail.title,
             reason: rail.reason.rawValue, publication: nil, stories: rail.stories
           )
         }
-        try await insertModule(
+        appendModule(
           key: "general", kind: "general", title: "More Across the Social Web", reason: nil,
           publication: nil, stories: value.generalStories
         )
-        try await insertModule(
+        appendModule(
           key: "trending", kind: "trending", title: "Trending", reason: nil,
           publication: nil, stories: value.trendingStories
         )
       }
-      try await insertEdition(edition, namespace: nil)
-      try await insertEdition(
-        outsideUSEdition, namespace: WireViewerRegion.outsideUnitedStates.rawValue)
-      for (position, account) in edition.talkedAboutAccounts.enumerated() {
-        try await connection.query(
-          """
-          INSERT INTO wire_edition_talked_accounts (generation_id, position, subject_did)
-          VALUES (\(generation.generationID), \(position), \(account.did))
-          """,
-          logger: logger
-        )
-      }
+      appendEdition(edition, namespace: nil)
+      appendEdition(outsideUSEdition, namespace: WireViewerRegion.outsideUnitedStates.rawValue)
+      let rowEncoder = JSONEncoder()
+      rowEncoder.keyEncodingStrategy = .convertToSnakeCase
+      let modulesJSON = String(decoding: try rowEncoder.encode(moduleRows), as: UTF8.self)
+      let moduleItemsJSON = String(decoding: try rowEncoder.encode(moduleItemRows), as: UTF8.self)
+      try await connection.query(
+        """
+        INSERT INTO wire_edition_modules
+          (generation_id, module_key, module_kind, title, position, reason_code,
+           publication_key, publication_name, publication_domain,
+           publication_homepage_url, publication_icon_url)
+        SELECT \(generation.generationID), module_key, module_kind, title, position, reason_code,
+               publication_key, publication_name, publication_domain,
+               publication_homepage_url, publication_icon_url
+        FROM jsonb_to_recordset(\(modulesJSON)::jsonb) AS module(
+          module_key text, module_kind text, title text, position integer, reason_code text,
+          publication_key text, publication_name text, publication_domain text,
+          publication_homepage_url text, publication_icon_url text)
+        """,
+        logger: logger
+      )
+      try await connection.query(
+        """
+        INSERT INTO wire_edition_module_items (generation_id, module_key, position, canonical_key)
+        SELECT \(generation.generationID), module_key, position, canonical_key
+        FROM jsonb_to_recordset(\(moduleItemsJSON)::jsonb) AS item(
+          module_key text, position integer, canonical_key text)
+        """,
+        logger: logger
+      )
+      let accountDIDs = edition.talkedAboutAccounts.map(\.did)
+      try await connection.query(
+        """
+        INSERT INTO wire_edition_talked_accounts (generation_id, position, subject_did)
+        SELECT \(generation.generationID), (ordinality - 1)::integer, subject_did
+        FROM unnest(\(accountDIDs)::text[]) WITH ORDINALITY AS account(subject_did, ordinality)
+        """,
+        logger: logger
+      )
 
       if generation.activate {
         try await connection.query(
@@ -547,100 +567,127 @@ struct PostgresWireGenerationStore: WireGenerationStore {
     )
   }
 
-  func deleteExpired(asOf: Date, batchSize: Int) async throws {
+  func recordCycleDuration(milliseconds: Double, generationID: UUID) async throws {
+    guard milliseconds.isFinite, milliseconds >= 0 else { return }
+    // The primary generation identifies this completed cycle. Its primary-key lookup keeps
+    // telemetry bounded even while an older generation archive is being drained.
     try await pool.withTransaction(logger: logger) { connection in
+      try await connection.query("SET LOCAL statement_timeout = '2s'", logger: logger)
       try await connection.query(
+        """
+        UPDATE wire_rank_generations
+        SET diagnostics = diagnostics || jsonb_build_object('cycleDurationMilliseconds', \(milliseconds)::double precision)
+        WHERE generation_id = \(generationID) AND status IN ('committed', 'shadow', 'superseded')
+        """, logger: logger)
+    }
+  }
+
+  func deleteExpired(asOf: Date, batchSize: Int) async throws {
+    let batchSize = max(1, min(batchSize, 5_000))
+    let generationBatchSize = min(batchSize, 4)
+    // Each statement commits separately. Generation deletes cascade into ranked/edition rows,
+    // so their limit is deliberately smaller than the leaf-table retention batch.
+    let retentionClock = ContinuousClock()
+    let retentionStart = retentionClock.now
+    for _ in 0..<16 {
+      let deleted = try await pool.query(
         """
         DELETE FROM wire_rank_generations
         WHERE generation_id IN (
           SELECT generation_id FROM wire_rank_generations
           WHERE expires_at <= \(asOf) AND is_active = FALSE
-          ORDER BY expires_at LIMIT \(batchSize)
+          ORDER BY expires_at LIMIT \(generationBatchSize) FOR UPDATE SKIP LOCKED
         )
+        RETURNING 1
         """,
         logger: logger
       )
-      try await connection.query(
-        """
-        DELETE FROM wire_signal_events
-        WHERE (occurred_at, id) IN (
-          SELECT occurred_at, id FROM wire_signal_events WHERE expires_at <= \(asOf)
-          ORDER BY expires_at, occurred_at, id LIMIT \(batchSize)
-        )
-        """,
-        logger: logger
-      )
-      try await connection.query(
-        """
-        DELETE FROM wire_follow_edges
-        WHERE (follower_key_hash, followee_key_hash) IN (
-          SELECT follower_key_hash, followee_key_hash FROM wire_follow_edges
-          WHERE expires_at <= \(asOf) ORDER BY expires_at LIMIT \(batchSize)
-        )
-        """,
-        logger: logger
-      )
-      try await connection.query(
-        """
-        DELETE FROM wire_actor_communities
-        WHERE actor_key_hash IN (
-          SELECT actor_key_hash FROM wire_actor_communities
-          WHERE expires_at <= \(asOf) ORDER BY expires_at LIMIT \(batchSize)
-        )
-        """,
-        logger: logger
-      )
-      try await connection.query(
-        """
-        DELETE FROM wire_active_actors
-        WHERE actor_key_hash IN (
-          SELECT actor_key_hash FROM wire_active_actors
-          WHERE expires_at <= \(asOf) ORDER BY expires_at LIMIT \(batchSize)
-        )
-        """,
-        logger: logger
-      )
-      try await connection.query(
-        """
-        DELETE FROM wire_publications
-        WHERE publication_uri IN (
-          SELECT publication_uri FROM wire_publications
-          WHERE expires_at <= \(asOf) ORDER BY expires_at LIMIT \(batchSize)
-        )
-        """,
-        logger: logger
-      )
-      try await connection.query(
-        """
-        DELETE FROM wire_item_aliases
-        WHERE alias_key IN (
-          SELECT alias_key FROM wire_item_aliases
-          WHERE expires_at <= \(asOf) ORDER BY expires_at LIMIT \(batchSize)
-        )
-        """,
-        logger: logger
-      )
-      try await connection.query(
-        """
-        DELETE FROM wire_labels
-        WHERE (canonical_key, label_key, source) IN (
-          SELECT canonical_key, label_key, source FROM wire_labels
-          WHERE expires_at <= \(asOf) ORDER BY expires_at LIMIT \(batchSize)
-        )
-        """,
-        logger: logger
-      )
-      try await connection.query(
-        """
-        DELETE FROM wire_items
-        WHERE canonical_key IN (
-          SELECT canonical_key FROM wire_items WHERE expires_at <= \(asOf)
-          ORDER BY expires_at LIMIT \(batchSize)
-        )
-        """,
-        logger: logger
-      )
+      var count = 0
+      for try await _ in deleted { count += 1 }
+      if count < generationBatchSize || retentionStart.duration(to: retentionClock.now) >= .seconds(15) {
+        break
+      }
     }
+    try await pool.query(
+      """
+      DELETE FROM wire_signal_events
+      WHERE (occurred_at, id) IN (
+        SELECT occurred_at, id FROM wire_signal_events WHERE expires_at <= \(asOf)
+        ORDER BY expires_at, occurred_at, id LIMIT \(batchSize) FOR UPDATE SKIP LOCKED
+      )
+      """,
+      logger: logger
+    )
+    try await pool.query(
+      """
+      DELETE FROM wire_follow_edges
+      WHERE (follower_key_hash, followee_key_hash) IN (
+        SELECT follower_key_hash, followee_key_hash FROM wire_follow_edges
+        WHERE expires_at <= \(asOf) ORDER BY expires_at LIMIT \(batchSize) FOR UPDATE SKIP LOCKED
+      )
+      """,
+      logger: logger
+    )
+    try await pool.query(
+      """
+      DELETE FROM wire_actor_communities
+      WHERE actor_key_hash IN (
+        SELECT actor_key_hash FROM wire_actor_communities
+        WHERE expires_at <= \(asOf) ORDER BY expires_at LIMIT \(batchSize) FOR UPDATE SKIP LOCKED
+      )
+      """,
+      logger: logger
+    )
+    try await pool.query(
+      """
+      DELETE FROM wire_active_actors
+      WHERE actor_key_hash IN (
+        SELECT actor_key_hash FROM wire_active_actors
+        WHERE expires_at <= \(asOf) ORDER BY expires_at LIMIT \(batchSize) FOR UPDATE SKIP LOCKED
+      )
+      """,
+      logger: logger
+    )
+    try await pool.query(
+      """
+      DELETE FROM wire_publications
+      WHERE publication_uri IN (
+        SELECT publication_uri FROM wire_publications
+        WHERE expires_at <= \(asOf) ORDER BY expires_at LIMIT \(batchSize) FOR UPDATE SKIP LOCKED
+      )
+      """,
+      logger: logger
+    )
+    try await pool.query(
+      """
+      DELETE FROM wire_item_aliases
+      WHERE alias_key IN (
+        SELECT alias_key FROM wire_item_aliases
+        WHERE expires_at <= \(asOf) ORDER BY expires_at LIMIT \(batchSize) FOR UPDATE SKIP LOCKED
+      )
+      """,
+      logger: logger
+    )
+    try await pool.query(
+      """
+      DELETE FROM wire_labels
+      WHERE (canonical_key, label_key, source) IN (
+        SELECT canonical_key, label_key, source FROM wire_labels
+        WHERE expires_at <= \(asOf) ORDER BY expires_at LIMIT \(batchSize) FOR UPDATE SKIP LOCKED
+      )
+      """,
+      logger: logger
+    )
+    try await pool.query(
+      """
+      DELETE FROM wire_items
+      WHERE canonical_key IN (
+        SELECT canonical_key FROM wire_items WHERE expires_at <= \(asOf)
+        ORDER BY expires_at LIMIT \(batchSize) FOR UPDATE SKIP LOCKED
+      )
+      """,
+      logger: logger
+    )
   }
 
   private func json<T: Encodable>(_ value: T) throws -> String {

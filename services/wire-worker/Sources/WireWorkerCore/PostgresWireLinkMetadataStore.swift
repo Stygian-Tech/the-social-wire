@@ -39,6 +39,26 @@ struct PostgresWireLinkMetadataStore: WireLinkMetadataStoring {
         stale_until = GREATEST(wire_link_metadata_cache.stale_until, EXCLUDED.stale_until),
         retry_after = LEAST(wire_link_metadata_cache.retry_after, EXCLUDED.retry_after),
         updated_at = EXCLUDED.updated_at
+      WHERE ROW(
+        wire_link_metadata_cache.title,
+        wire_link_metadata_cache.description,
+        wire_link_metadata_cache.image_url,
+        wire_link_metadata_cache.author_name,
+        wire_link_metadata_cache.published_at,
+        wire_link_metadata_cache.stale_until,
+        wire_link_metadata_cache.retry_after)
+        IS DISTINCT FROM ROW(CASE WHEN wire_link_metadata_cache.source = 'open_graph'
+          THEN wire_link_metadata_cache.title ELSE COALESCE(EXCLUDED.title, wire_link_metadata_cache.title) END,
+        CASE WHEN wire_link_metadata_cache.source = 'open_graph'
+          THEN wire_link_metadata_cache.description ELSE COALESCE(EXCLUDED.description, wire_link_metadata_cache.description) END,
+        CASE WHEN wire_link_metadata_cache.source = 'open_graph'
+          THEN wire_link_metadata_cache.image_url ELSE COALESCE(EXCLUDED.image_url, wire_link_metadata_cache.image_url) END,
+        CASE WHEN wire_link_metadata_cache.source = 'open_graph'
+          THEN wire_link_metadata_cache.author_name ELSE COALESCE(EXCLUDED.author_name, wire_link_metadata_cache.author_name) END,
+        CASE WHEN wire_link_metadata_cache.source = 'open_graph'
+          THEN wire_link_metadata_cache.published_at ELSE COALESCE(EXCLUDED.published_at, wire_link_metadata_cache.published_at) END,
+        GREATEST(wire_link_metadata_cache.stale_until, EXCLUDED.stale_until),
+        LEAST(wire_link_metadata_cache.retry_after, EXCLUDED.retry_after))
       """,
       logger: logger
     )

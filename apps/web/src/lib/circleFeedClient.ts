@@ -1,3 +1,4 @@
+import { feedResponseError } from "@/lib/feedResponseError";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 
 import { createUpstreamDpopProofPool } from "@/lib/latrGatewayUpstreamDpop";
@@ -152,17 +153,7 @@ export function circleHiddenItemRequest(args: {
   };
 }
 
-async function circleResponseError(
-  response: Response,
-  fallback: string,
-): Promise<Error> {
-  try {
-    const body = (await response.json()) as { message?: string };
-    return new Error(body.message?.trim() || `${fallback} (${response.status})`);
-  } catch {
-    return new Error(`${fallback} (${response.status})`);
-  }
-}
+const circleResponseError = feedResponseError;
 
 export async function getCircleCatalog(args: {
   oauthSession: OAuthSession;

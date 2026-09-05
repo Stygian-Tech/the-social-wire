@@ -32,6 +32,7 @@ public enum WireWorkerHost {
     let postgresConfig = try PostgresWireConfig.make(
       from: config.databaseURL,
       maximumConnections: config.postgresMaximumConnections,
+      environment: environment,
       logger: logger
     )
     let pool = PostgresClient(configuration: postgresConfig, backgroundLogger: logger)
@@ -177,6 +178,12 @@ public enum WireWorkerHost {
               batchSize: config.inboxCleanupBatchSize,
               idleMilliseconds: config.inboxCleanupIdleMilliseconds
             )
+          }
+        }
+        if runtimePlan.runsGraphMaintenance, let inboxProcessor {
+          group.addTask {
+            try await WireGraphMaintenanceRuntime.run(
+              maintainer: inboxProcessor, state: state, logger: logger)
           }
         }
         if runtimePlan.runsMetadataEnrichment {

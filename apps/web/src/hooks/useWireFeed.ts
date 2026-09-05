@@ -1,5 +1,8 @@
 "use client";
 
+import { isExpiredFeedCursor } from "@/lib/feedResponseError";
+import { useExpiredFeedCursorRecovery } from "@/hooks/useExpiredFeedCursorRecovery";
+
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import {
   useInfiniteQuery,
@@ -86,7 +89,7 @@ export function useWireFeedCatalog() {
     queryFn: ({ signal }) => getWireFeedCatalog(signal),
     staleTime: 60_000,
     gcTime: 60 * 60_000,
-    retry: 1,
+    retry: (count, error) => !isExpiredFeedCursor(error) && count < 1,
     refetchOnWindowFocus: false,
   });
 }
@@ -214,7 +217,7 @@ export function useWireFeedEntries(args: {
     gcTime: 7 * 24 * 60 * 60_000,
     refetchOnMount: false,
     refetchOnWindowFocus: false,
-    retry: 1,
+    retry: (count, error) => !isExpiredFeedCursor(error) && count < 1,
   });
 
   const refreshFirstPageMutation = useMutation({
@@ -225,24 +228,34 @@ export function useWireFeedEntries(args: {
         isPending: true,
         error: null,
       });
+      return { languageKey, modeKey, oauthSession };
     },
-    onSuccess: (fresh) => {
-      replaceWireQueryGeneration(queryClient, languageKey, modeKey, fresh);
-      setWireRefreshStatus(
-        queryClient,
-        languageKey,
-        modeKey,
-        IDLE_WIRE_REFRESH_STATUS,
-      );
+    onSuccess: async (fresh, _variables, context) => {
+      if (!context || getOAuthSession() !== context.oauthSession) return;
+      await queryClient.cancelQueries({
+        queryKey: WIRE_ENTRIES_QUERY_KEY(context.languageKey, context.modeKey), exact: true,
+      });
+      if (getOAuthSession() !== context.oauthSession) return;
+      replaceWireQueryGeneration(queryClient, context.languageKey, context.modeKey, fresh);
+      setWireRefreshStatus(queryClient, context.languageKey, context.modeKey, IDLE_WIRE_REFRESH_STATUS);
     },
-    onError: (error) => {
-      setWireRefreshStatus(queryClient, languageKey, modeKey, {
+    onError: (error, _variables, context) => {
+      if (!context || getOAuthSession() !== context.oauthSession) return;
+      setWireRefreshStatus(queryClient, context.languageKey, context.modeKey, {
         isPending: false,
         error,
       });
     },
+    onSettled: (_data, _error, _variables, context) => {
+      if (!context || getOAuthSession() === context.oauthSession) return;
+      const key = WIRE_REFRESH_STATUS_QUERY_KEY(context.languageKey, context.modeKey);
+      if (queryClient.getQueryData(key) !== undefined) {
+        setWireRefreshStatus(queryClient, context.languageKey, context.modeKey, IDLE_WIRE_REFRESH_STATUS);
+      }
+    },
   });
   const refreshFirstPage = refreshFirstPageMutation.mutateAsync;
+  useExpiredFeedCursorRecovery(query.error, refreshFirstPage, args.enabled);
   const retryTheWire = useCallback(async (): Promise<unknown> => {
     if (moderationCapability.isError) {
       return moderationCapability.refetch();
@@ -344,10 +357,11 @@ export function useWireFeedEntries(args: {
       moderationCapability.error ??
       (moderationSessionUnavailable
         ? WIRE_MODERATION_SESSION_ERROR
-        : query.error),
+        : refreshStatus.data.error ?? query.error),
     isError:
       moderationSessionUnavailable ||
       moderationCapability.isError ||
+      refreshStatus.data.error !== null ||
       query.isError,
     isLoading: moderationCheckPending || query.isLoading,
     catalog,

@@ -5,7 +5,8 @@ import SocialWireRedis
 public struct RedisProjectionCacheRuntime: Sendable {
   public let store: any AppViewProjectionCacheStore
   public let resolutionCache: any PDSResolutionCache
-  private let client: any RedisCommandClient
+  /// Shared connection pool for service-owned disposable caches. Runtime owns shutdown.
+  public let client: any RedisCommandClient
   private let infoSampler: RedisInfoSampler
 
   public static func make(

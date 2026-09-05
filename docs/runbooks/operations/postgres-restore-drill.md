@@ -31,7 +31,12 @@ environment with `psql`. Do not
 paste URLs into tickets, logs, or chat. Record only the date, source backup
 timestamp, duration, schema migration count, outcome, and follow-up issue.
 
-The drill passes only when the target is a distinct database, its migration
+The script passes its schema checks only when the target is a distinct database, its migration
 history is non-empty and no newer than the source, and the migration, content,
-durable-ingestion, and Operations heartbeat tables are present. Delete the
+durable-ingestion, and Operations service-state tables are present. Physical
+clones retain the source system identifier: rename the database on the isolated
+clone to the required `_restore_drill` name before running this check. Never rename
+the source database. Verify the selected recovery point, representative content,
+nonempty durable user state, restart recovery, and discovery rebuild separately;
+the schema check alone does not establish backup acceptance. Delete the
 disposable restore service through Railway only after recording the result.

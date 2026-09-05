@@ -32,6 +32,8 @@ let package = Package(
       dependencies: [
         "OperationsCore",
         .product(name: "GRDB", package: "GRDB.swift"),
+        .product(name: "PostgresNIO", package: "postgres-nio"),
+        .product(name: "Logging", package: "swift-log"),
       ],
       swiftSettings: [
         .swiftLanguageMode(.v6),

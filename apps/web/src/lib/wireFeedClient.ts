@@ -1,3 +1,4 @@
+import { feedResponseError } from "@/lib/feedResponseError";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 
 import { createUpstreamDpopProofPool } from "@/lib/latrGatewayUpstreamDpop";
@@ -148,17 +149,7 @@ async function discoveryGatewayFetch(args: {
   });
 }
 
-async function publicResponseError(
-  response: Response,
-  fallback: string,
-): Promise<Error> {
-  try {
-    const body = (await response.json()) as { message?: string };
-    return new Error(body.message?.trim() || `${fallback} (${response.status})`);
-  } catch {
-    return new Error(`${fallback} (${response.status})`);
-  }
-}
+const publicResponseError = feedResponseError;
 
 function normalizeHttpsUrl(value: string | undefined): string | undefined {
   const trimmed = value?.trim();

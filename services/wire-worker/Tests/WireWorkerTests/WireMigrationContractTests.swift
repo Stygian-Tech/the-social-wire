@@ -230,10 +230,11 @@ struct WireMigrationContractTests {
       .deletingLastPathComponent()
       .appendingPathComponent("services/jetstream-ingest/internal/store/postgres.go")
     let ingestStoreSource = try String(contentsOf: ingestStore, encoding: .utf8)
-    #expect(ingestStoreSource.contains("WHEN EXCLUDED.checkpoint_seq"))
-    #expect(
-      ingestStoreSource.contains(
-        "THEN EXCLUDED.checkpoint_event_time\n\t\t\t        ELSE wire_ingestion_recovery_anchors.checkpoint_event_time"))
+    #expect(ingestStoreSource.contains("checkpoint_event_time = EXCLUDED.checkpoint_event_time"))
+    #expect(ingestStoreSource.contains("checkpoint_seq = EXCLUDED.checkpoint_seq"))
+    #expect(ingestStoreSource.contains("captured_at = EXCLUDED.captured_at"))
+    #expect(ingestStoreSource.contains(
+      "WHERE EXCLUDED.checkpoint_seq < wire_ingestion_recovery_anchors.checkpoint_seq"))
     #expect(!ingestStoreSource.contains("checkpoint_event_time = LEAST("))
 
     let qualityIndexMigration = migration.deletingLastPathComponent()

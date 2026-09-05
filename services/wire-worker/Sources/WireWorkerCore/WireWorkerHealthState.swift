@@ -3,6 +3,10 @@ import Foundation
 actor WireWorkerHealthState {
   private(set) var lastSuccessfulCycleAt: Date?
   private(set) var lastGenerationFailure: String?
+  private(set) var lastGenerationDurationMilliseconds: Double?
+  private(set) var lastGraphMaintenanceAt: Date?
+  private(set) var lastGraphMaintenanceFailure: String?
+  private(set) var lastGraphMaintenanceDurationMilliseconds: Double?
   private(set) var drainStartedAt: Date?
   private(set) var lastSuccessfulDrainAt: Date?
   private(set) var lastDrainFailure: String?
@@ -11,9 +15,20 @@ actor WireWorkerHealthState {
   private(set) var lastCleanupFailure: String?
   private(set) var lastCleanupDeletedCount = 0
 
-  func recordGenerationSuccess(at: Date) {
+  func recordGenerationSuccess(at: Date, durationMilliseconds: Double? = nil) {
     lastSuccessfulCycleAt = at
+    lastGenerationDurationMilliseconds = durationMilliseconds
     lastGenerationFailure = nil
+  }
+
+  func recordGraphSuccess(at: Date, durationMilliseconds: Double) {
+    lastGraphMaintenanceAt = at
+    lastGraphMaintenanceDurationMilliseconds = durationMilliseconds
+    lastGraphMaintenanceFailure = nil
+  }
+
+  func recordGraphFailure(_ error: Error) {
+    lastGraphMaintenanceFailure = String(reflecting: error)
   }
 
   func recordGenerationFailure(_ error: Error) {
