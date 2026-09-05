@@ -1,6 +1,7 @@
 # TSW-92 database cost rollout
 
-Production mutations require separate approval after Development acceptance.
+The user authorized all actions related to resolving TSW-92 on September 4, 2026.
+Production rollout still requires Development acceptance and the recovery gates below.
 Run migrations only through Database Migrator. The concurrent index migration
 fails closed unless its surviving unique index is valid and equivalent.
 
