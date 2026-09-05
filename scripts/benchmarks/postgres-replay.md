@@ -54,6 +54,27 @@ Run harness safety tests with:
 python3 -m unittest discover -s scripts/benchmarks/tests
 ```
 
+## Checkpoint Phase Control
+
+Each variant now completes one explicit `CHECKPOINT` after restoring its seed and
+applying its migrations, immediately before the initial counter sample and child
+startup. This runs only on an owned `tsw92_bench_*` database after another check
+that the dedicated server has no other client connections. The standalone
+checkpoint has a ten-second server deadline; failure aborts the variant before
+workers start and retains the existing owned-database cleanup behavior.
+
+`checkpoint_phase` records completion and before/after insertion LSNs and
+`pg_stat_checkpointer` snapshots. The observation's `initial` and `final` samples
+also contain insertion LSNs and checkpointer snapshots. No statistics are reset.
+The barrier puts both variants at the start of a checkpoint phase; it does not
+promise identical checkpoint counts if workloads trigger different WAL limits.
+
+Earlier pilot runs lacked this barrier. In particular, dropping the preceding
+variant's database can force a checkpoint and shift the next variant's phase.
+Do not present those pilots as checkpoint-phase-matched savings evidence; preserve
+their original artifacts and use a new output directory for controlled runs.
+This correction applies only to newly started harness processes.
+
 ## Separate synthetic 5,000-candidate capacity trial
 
 When the real archive has too few eligible stories to exercise generation writes,

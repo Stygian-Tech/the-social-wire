@@ -108,7 +108,7 @@ class Postgres:
     def __init__(self, binary):
         self.binary = binary
 
-    def run(self, url, sql=None, file=None):
+    def run(self, url, sql=None, file=None, statement_timeout_seconds=None):
         # Credentials stay out of argv, process logs and evidence.
         connection = validate_target(url)
         env = {key:value for key,value in os.environ.items() if not key.startswith("PG")}
@@ -119,6 +119,8 @@ class Postgres:
                     "PGCONNECT_TIMEOUT":"5","PGAPPNAME":"tsw92-benchmark"})
         sslmode = urllib.parse.parse_qs(connection.query).get("sslmode",["prefer"])[0]
         env["PGSSLMODE"] = sslmode
+        if statement_timeout_seconds is not None:
+            env["PGOPTIONS"] = "-c statement_timeout=%d" % (statement_timeout_seconds * 1000)
         command = [self.binary, "-X", "-qAt", "-v", "ON_ERROR_STOP=1"]
         command += ["-f", str(file)] if file else ["-c", sql]
         result = subprocess.run(command, env=env, capture_output=True, text=True, timeout=60 if file else 12)
@@ -148,6 +150,22 @@ def signal_cardinality(pg, url):
     """)
 
 
+def checkpoint_phase(pg, url):
+    connection = validate_target(url)
+    if not re.fullmatch(r"tsw92_bench_[a-f0-9]{12}", connection.path.removeprefix("/")):
+        raise BenchmarkError("Checkpoint phase control requires an owned benchmark database")
+    if pg.query(url, "SELECT count(*) FROM pg_stat_activity WHERE backend_type='client backend' AND pid<>pg_backend_pid()"):
+        raise BenchmarkError("Checkpoint phase control requires an idle dedicated database server")
+    snapshot_sql = """SELECT json_build_object(
+      'captured_at', now(), 'wal_insert_lsn', pg_current_wal_insert_lsn()::text,
+      'checkpointer', (SELECT row_to_json(c) FROM pg_stat_checkpointer c))"""
+    before = pg.query(url, snapshot_sql)
+    # A standalone command, outside a transaction, with a server-side deadline.
+    pg.run(url, sql="CHECKPOINT", statement_timeout_seconds=10)
+    after = pg.query(url, snapshot_sql)
+    return {"completed": True, "before": before, "after": after}
+
+
 def sample_database(pg, url, generation):
     # generation is generated locally, never interpolated from a public event.
     if not re.fullmatch(r"wire-global-v4-tsw92-bench-[a-f0-9]{12}", generation):
@@ -156,6 +174,8 @@ def sample_database(pg, url, generation):
       SELECT json_build_object(
         'captured_at', now(),
         'wal', (SELECT row_to_json(w) FROM pg_stat_wal w),
+        'wal_insert_lsn', pg_current_wal_insert_lsn()::text,
+        'checkpointer', (SELECT row_to_json(c) FROM pg_stat_checkpointer c),
         'cluster_bytes', (SELECT sum(pg_database_size(oid)) FROM pg_database WHERE datallowconn),
         'wal_directory_bytes', (SELECT coalesce(sum(size),0) FROM pg_ls_waldir()),
         'checkpoint', (SELECT row_to_json(c) FROM (
@@ -285,6 +305,7 @@ def run_variant(config, variant, pg, admin_url, output, secrets, generation, see
         for key in ("ingest", "wire", "appview"):
             result[key + "_sha256"] = hashlib.sha256(Path(variant[key]).read_bytes()).hexdigest()
         result["initial_signal_cardinality"] = signal_cardinality(pg, url)
+        result["checkpoint_phase"] = checkpoint_phase(pg, url)
         initial = sample_database(pg, url, generation)
         check_limits(initial, 0, 0, config["maximum_seconds"], config["maximum_database_and_wal_bytes"])
         # Worker startup, ingestion, generation and reads all fall inside the observation.

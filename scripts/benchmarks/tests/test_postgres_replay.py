@@ -218,6 +218,32 @@ class ProcessSafetyTests(unittest.TestCase):
 
 
 class PostgresConnectionTests(unittest.TestCase):
+    def test_observation_samples_include_lsn_and_checkpointer_without_resetting_counters(self):
+        expected = {"wal_insert_lsn": "0/123", "checkpointer": {"num_timed": 2, "stats_reset": "epoch-a"}}
+        with patch.object(replay.Postgres, "query", return_value=expected) as query:
+            result = replay.sample_database(replay.Postgres("psql"), "postgresql://localhost:55492/admin",
+                "wire-global-v4-tsw92-bench-012345abcdef")
+        self.assertEqual(result, expected)
+        sql = query.call_args.args[1]
+        self.assertIn("pg_current_wal_insert_lsn()::text", sql)
+        self.assertIn("FROM pg_stat_checkpointer", sql)
+        self.assertNotIn("pg_stat_reset", sql)
+
+    def test_checkpoint_is_standalone_with_server_side_deadline(self):
+        with patch.object(replay.subprocess, "run", return_value=subprocess.CompletedProcess(["psql"], 0, stdout="")) as run:
+            replay.Postgres("psql").run("postgresql://localhost:55492/tsw92_bench_012345abcdef",
+                sql="CHECKPOINT", statement_timeout_seconds=10)
+        self.assertEqual(run.call_args.args[0][-2:], ["-c", "CHECKPOINT"])
+        self.assertEqual(run.call_args.kwargs["env"]["PGOPTIONS"], "-c statement_timeout=10000")
+        self.assertEqual(run.call_args.kwargs["timeout"], 12)
+
+    def test_checkpoint_rejects_unowned_targets_and_other_clients(self):
+        pg = type("FakePostgres", (), {"query": lambda *args: 1})()
+        with self.assertRaisesRegex(replay.BenchmarkError, "owned benchmark"):
+            replay.checkpoint_phase(pg, "postgresql://localhost:55492/production")
+        with self.assertRaisesRegex(replay.BenchmarkError, "idle dedicated"):
+            replay.checkpoint_phase(pg, "postgresql://localhost:55492/tsw92_bench_012345abcdef")
+
     def test_signal_cardinality_reads_partition_rows_with_existing_read_only_timeout(self):
         counts = {"total": 3, "by_signal_kind": {"like": 2, "share": 1}}
         with patch.object(replay.Postgres, "run", return_value=json.dumps(counts)) as run:
@@ -320,8 +346,15 @@ class ReplayOrchestrationTests(unittest.TestCase):
             path.write_bytes(b"unit-test executable identity only")
             self.variant[binary] = str(path)
         self.generation = "wire-global-v4-tsw92-bench-012345abcdef"
-        self.pg = type("FakePostgres", (), {"run": lambda _, url, sql=None, file=None: self.events.append(("sql", sql, str(file)))})()
+        self.pg = type("FakePostgres", (), {"run": lambda _, url, sql=None, file=None, **kwargs: self.events.append(("sql", sql, str(file)))})()
         def count_signals(url, sql):
+            if "pg_stat_activity" in sql:
+                self.events.append(("idle_check",))
+                return 0
+            if "pg_stat_checkpointer" in sql:
+                self.events.append(("checkpoint_snapshot",))
+                return {"captured_at": "2026-09-05T00:00:00Z", "wal_insert_lsn": "0/123",
+                        "checkpointer": {"num_timed": 3, "num_requested": 1, "stats_reset": "epoch-a"}}
             self.events.append(("signal_count",))
             return {"total": 3, "by_signal_kind": {"like": 2, "share": 1}}
         self.pg.query = count_signals
@@ -339,7 +372,12 @@ class ReplayOrchestrationTests(unittest.TestCase):
             return {"status": 200, "matches_local_active": True, "generation_id": generation,
                     "source": "ranked", "degraded": False, "item_count": 50}
 
-        with patch.object(replay, "sample_database", side_effect=samples), \
+        sample_iterator = iter(samples)
+        def database_sample(*args):
+            self.events.append(("sample",))
+            return next(sample_iterator)
+
+        with patch.object(replay, "sample_database", side_effect=database_sample), \
              patch.object(replay, "start_process", side_effect=start), \
              patch.object(replay, "read_probe", side_effect=probe), \
              patch.object(replay.time, "sleep"), \
@@ -371,13 +409,49 @@ class ReplayOrchestrationTests(unittest.TestCase):
         self.assertGreater(counts[1], max(i for i, event in enumerate(self.events) if event[0] == "wait"))
         self.assertEqual(result["initial_signal_cardinality"]["total"], 3)
         self.assertEqual(result["final_signal_cardinality"]["by_signal_kind"], {"like": 2, "share": 1})
+        checkpoint = next(i for i, event in enumerate(self.events) if event[:2] == ("sql", "CHECKPOINT"))
+        snapshots = [i for i, event in enumerate(self.events) if event[0] == "checkpoint_snapshot"]
+        self.assertEqual(len(snapshots), 2)
+        self.assertLess(snapshots[0], checkpoint)
+        self.assertGreater(snapshots[1], checkpoint)
+        self.assertLess(snapshots[1], next(i for i, event in enumerate(self.events) if event[0] == "sample"))
+        self.assertTrue(result["checkpoint_phase"]["completed"])
+        self.assertEqual(result["checkpoint_phase"]["after"]["checkpointer"]["stats_reset"], "epoch-a")
+
+    def test_each_variant_gets_exactly_one_checkpoint_after_restoring_its_seed(self):
+        for name in ("baseline", "candidate"):
+            self.variant["name"] = name
+            self.run_replay([sample(), sample(pending=1), sample(generation="generation-b")])
+        checkpoints = [i for i, event in enumerate(self.events) if event[:2] == ("sql", "CHECKPOINT")]
+        restores = [i for i, event in enumerate(self.events) if event[0] == "sql" and event[2] == str(self.seed)]
+        self.assertEqual(len(checkpoints), 2)
+        self.assertEqual(len(restores), 2)
+        self.assertLess(restores[0], checkpoints[0])
+        self.assertLess(checkpoints[0], restores[1])
+        self.assertLess(restores[1], checkpoints[1])
+
+    def test_checkpoint_failure_starts_no_child_and_removes_only_owned_database(self):
+        original = self.pg.run
+        def fail_checkpoint(url, sql=None, file=None, **kwargs):
+            original(url, sql=sql, file=file, **kwargs)
+            if sql == "CHECKPOINT":
+                raise replay.BenchmarkError("Checkpoint deadline exceeded")
+        self.pg.run = fail_checkpoint
+        with self.assertRaisesRegex(replay.BenchmarkError, "Checkpoint deadline"):
+            self.run_replay([])
+        self.assertFalse(any(event[0] in {"start", "sample"} for event in self.events))
+        self.assertRegex(self.events[-1][1], r'^DROP DATABASE "tsw92_bench_[a-f0-9]{12}" WITH \(FORCE\)$')
+        result = json.loads((self.output / "result.json").read_text())
+        self.assertEqual(result["status"], "failed")
+        self.assertNotIn("checkpoint_phase", result)
 
     def test_final_signal_count_timeout_fails_acceptance_but_still_cleans_up(self):
         original = self.pg.query
         calls = 0
         def timeout_final(url, sql):
             nonlocal calls
-            calls += 1
+            if "public.wire_signal_events" in sql:
+                calls += 1
             if calls == 2:
                 raise replay.BenchmarkError("bounded signal count timed out")
             return original(url, sql)
