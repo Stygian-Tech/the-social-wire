@@ -26,6 +26,22 @@ class BenchmarkError(RuntimeError):
     pass
 
 
+def actor_hmac_secret(config):
+    # Public preseeded actor hashes must use the same isolated key during replay.
+    # Configuration records only the variable name, never the resolved value.
+    if "actor_hmac_secret_environment" not in config:
+        return uuid.uuid4().hex + uuid.uuid4().hex
+    name = config["actor_hmac_secret_environment"]
+    if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name):
+        raise BenchmarkError("actor_hmac_secret_environment must name an environment variable")
+    secret = os.environ.get(name, "").strip()
+    if not secret:
+        raise BenchmarkError("Configured actor HMAC environment input is missing or empty")
+    if len(secret.encode("utf-8")) < 32:
+        raise BenchmarkError("Configured actor HMAC environment input requires at least 32 UTF-8 bytes")
+    return secret
+
+
 def validate_target(url):
     parsed = urllib.parse.urlsplit(url)
     host = parsed.hostname or ""
@@ -114,6 +130,22 @@ class Postgres:
     def query(self, url, sql):
         output = self.run(url, "BEGIN READ ONLY; SET LOCAL statement_timeout='5s'; " + sql + "; COMMIT;")
         return json.loads(output)
+
+
+def signal_cardinality(pg, url):
+    # Scan the partitioned relation once, outside the timed observation; parent
+    # pg_stat_user_tables counters do not include the child partition rows.
+    return pg.query(url, """
+      WITH counts AS (
+        SELECT signal_kind, count(*) AS row_count
+        FROM public.wire_signal_events GROUP BY signal_kind
+      )
+      SELECT json_build_object(
+        'captured_at', now(),
+        'total', coalesce(sum(row_count), 0),
+        'by_signal_kind', coalesce(json_object_agg(signal_kind, row_count), '{}'::json)
+      ) FROM counts
+    """)
 
 
 def sample_database(pg, url, generation):
@@ -252,6 +284,7 @@ def run_variant(config, variant, pg, admin_url, output, secrets, generation, see
             pg.run(url, file=path)
         for key in ("ingest", "wire", "appview"):
             result[key + "_sha256"] = hashlib.sha256(Path(variant[key]).read_bytes()).hexdigest()
+        result["initial_signal_cardinality"] = signal_cardinality(pg, url)
         initial = sample_database(pg, url, generation)
         check_limits(initial, 0, 0, config["maximum_seconds"], config["maximum_database_and_wal_bytes"])
         # Worker startup, ingestion, generation and reads all fall inside the observation.
@@ -315,6 +348,11 @@ def run_variant(config, variant, pg, admin_url, output, secrets, generation, see
                            "database_retained":database})
             raise
         finally:
+            if stopped and result.get("observation_complete"):
+                try:
+                    result["final_signal_cardinality"] = signal_cardinality(pg, url)
+                except (BenchmarkError, subprocess.TimeoutExpired) as error:
+                    result.update({"status":"failed", "signal_cardinality_error":type(error).__name__})
             (output / "result.json").write_text(json.dumps(result,indent=2))
         # Only the random DB created by this call can be removed, after every child stopped.
         if created and stopped:
@@ -330,6 +368,7 @@ def main():
     config = json.loads(args.config.read_text())
     if any(re.search(r"SECRET|PASSWORD|TOKEN|API_KEY|DATABASE_URL",key) for key in config["common_environment"]):
         raise BenchmarkError("Keep credentials out of configuration; only named environment inputs are accepted")
+    actor_secret = actor_hmac_secret(config)
     admin_url = os.environ[config["admin_url_environment"]]
     validate_target(admin_url)
     if config["maximum_seconds"]>7200 or config["maximum_seconds"]<60 or not 1<=config["sample_seconds"]<=30:
@@ -356,9 +395,10 @@ def main():
         raise BenchmarkError("Use a bounded schema/public-input seed no larger than 256 MiB; full database copies need a separate restore drill")
     seed_hash = hashlib.sha256(seed.read_bytes()).hexdigest()
     (args.output/"configuration.json").write_text(json.dumps(config,indent=2))
-    # Identical fresh source identity and HMAC material on both disposable seeded DBs.
+    # Resolve the actor key once so both variants preserve preseeded identities.
+    # Other HMAC material and source identity remain fresh for each comparison.
     generation = "wire-global-v4-tsw92-bench-" + uuid.uuid4().hex[:12]
-    secrets = {"JETSTREAM_API_KEY":api_key,"WIRE_ACTOR_HMAC_SECRET":uuid.uuid4().hex+uuid.uuid4().hex,
+    secrets = {"JETSTREAM_API_KEY":api_key,"WIRE_ACTOR_HMAC_SECRET":actor_secret,
                "WIRE_CURSOR_HMAC_SECRET":uuid.uuid4().hex+uuid.uuid4().hex,
                "GATEWAY_APPVIEW_INTERNAL_SECRET":uuid.uuid4().hex+uuid.uuid4().hex}
     results=[]

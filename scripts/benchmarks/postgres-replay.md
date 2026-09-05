@@ -12,6 +12,16 @@ This is a real recent archive pilot, not a synthetic performance fixture or proo
 4. Ensure the target has no other client workloads. Record volume free space before starting and leave at least 16 GiB headroom above the configured database+WAL cap. The cap sums all database sizes and the WAL directory; it does not account for every filesystem file, backup staging or OS cache. Monitor Railway's actual volume during the run as well. Do not run backup/restore drills on this target concurrently.
 5. Copy `postgres-replay.example.json`, change binary/seed paths and exact candidate SHA as needed, and retain the same common limits for both variants. Explicit treatment fields remain visible in the manifest. Inject `TSW92_BENCH_ADMIN_URL` and `TSW92_ARCHIVE_API_KEY` from Railway references; do not put credential values in JSON or shell history. API keys are sent only to the fixed US-West archive host. Configuration is saved in evidence, so it must remain secret-free.
 
+When the common seed includes actor hashes projected from public posts, use the
+same isolated actor key for seeding and both measured variants. Set the optional
+configuration field `actor_hmac_secret_environment` to the name of a private
+environment variable (for example `TSW92_REPLAY_ACTOR_HMAC_SECRET`), containing at
+least 32 UTF-8 bytes after trimming. Only the variable name is saved in evidence.
+Missing, blank, or short configured keys fail before the run; omitting the field
+preserves the default fresh random key shared by both variants. Never reuse a
+Production actor key. A seed created with a different key cannot measure correct
+actor deduplication across its boundary.
+
 ## Run
 
 ```sh
@@ -30,6 +40,11 @@ It aborts on child failure, runtime safety deadline, counter reset, database+WAL
 Each variant records binary and seed hashes, treatment migration hashes, samples, private child logs and a result. Samples include WAL/reset epoch, database/WAL bytes, bounded actionable/dead-letter counts (10001 means a lower bound), oldest actionable age, checkpoint progress, inserted/updated/deleted table counters, active generation/duration and private read latency. Derive ingestion rate from `wire_ingestion_inbox.n_tup_ins` counter deltas divided by elapsed time; source sequence subtraction is not an event count. Use the samples for latency distributions, excluding failed/empty/remote responses and reporting exclusions separately. Keep child logs private; they can include public source identifiers.
 
 The first and last counter samples define the measured WAL interval. Candidate duration diagnostics are expected; the baseline binary may not export them, so its generation cadence comes from timestamps/logs. Capture `scripts/capture-postgres-cost.sql` and Railway CPU/RAM/volume independently around each run; the script does not claim container CPU/memory attribution. `pg_stat_statements` comparisons must retain its own reset/deallocation metadata as well as WAL/database reset epochs.
+
+Results also include exact partition-spanning signal totals and counts by kind,
+captured before the timed observation and after all children stop. These bounded
+read-only queries avoid treating partition-parent statistics as total signal
+cardinality. A failed final count marks acceptance failed while preserving cleanup.
 
 Sequential runs avoid competing worker CPU/disk, but external label/metadata cache state, archive throttling and wall-clock ranking age can still differ. Record those limits, repeat in reversed order if they materially affect results, and do not call unmatched samples equivalent. This pilot does not replace authenticated web/iOS bootstrap/pagination/expiry QA, a full-day live input soak, seven-day retained-state evaluation or the backup restore gate. Those require the dedicated isolated AppView/Gateway test path; normal Development's remote Wire responses are not local database evidence.
 
