@@ -20,6 +20,7 @@ SPEC.loader.exec_module(replay)
 def sample(sequence=200, *, pending=0, generation="generation-a", wal_bytes=100):
     return {
         "wal": {"stats_reset": "2026-09-05T00:00:00Z", "wal_bytes": wal_bytes},
+        "wal_insert_lsn": "0/%X" % (wal_bytes * 2),
         "cluster_bytes": 400,
         "wal_directory_bytes": 100,
         "checkpoint": {
@@ -119,6 +120,22 @@ class ActorHMACSecretTests(unittest.TestCase):
 
 
 class ObservationSafetyTests(unittest.TestCase):
+    def test_lsn_span_handles_cross_highword_rollover_and_unsigned_64bit_bounds(self):
+        self.assertEqual(replay.wal_lsn_span_bytes("0/FFFFFFFF", "1/0"), 1)
+        self.assertEqual(replay.wal_lsn_span_bytes("ABC/FFFFFFF0", "ABD/10"), 32)
+        self.assertEqual(replay.wal_lsn_span_bytes("0/0", "FFFFFFFF/FFFFFFFF"), (1 << 64) - 1)
+        self.assertEqual(replay.wal_lsn_span_bytes("a/b", "A/B"), 0)
+        self.assertEqual(replay.wal_lsn_span_bytes("00000000/00000000", "0/0"), 0)
+
+    def test_lsn_span_rejects_malformed_out_of_range_and_backwards_positions(self):
+        for invalid in (None, 0, "", "0", "0/", "/0", "-1/0", "+1/0", "0x1/0",
+                        "0/G", "1/2/3", " 0/0", "0/0\n", "100000000/0", "0/100000000"):
+            for before, after in ((invalid, "0/1"), ("0/0", invalid)):
+                with self.subTest(before=before, after=after), self.assertRaises(replay.BenchmarkError):
+                    replay.wal_lsn_span_bytes(before, after)
+        with self.assertRaisesRegex(replay.BenchmarkError, "backwards"):
+            replay.wal_lsn_span_bytes("1/0", "0/FFFFFFFF")
+
     def test_wal_delta_matches_one_unreset_counter_epoch(self):
         before = {"wal_bytes": "100", "stats_reset": "epoch-a"}
         self.assertEqual(replay.wal_delta(before, {"wal_bytes": "140", "stats_reset": "epoch-a"}), 40)
@@ -400,6 +417,8 @@ class ReplayOrchestrationTests(unittest.TestCase):
         result = self.run_replay([sample(), sample(pending=1, wal_bytes=140), sample(generation="generation-b", wal_bytes=180)])
         self.assertEqual(result["status"], "passed")
         self.assertEqual(result["wal_bytes"], 80)
+        # Address span is intentionally distinct from asynchronously visible counters.
+        self.assertEqual(result["wal_lsn_span_bytes"], 160)
         self.assertEqual(result["observed_generations"], 2)
         self.assertEqual(result["successful_reads"], 2)
         self.assert_cleanup_after_children()
@@ -483,6 +502,16 @@ class ReplayOrchestrationTests(unittest.TestCase):
         with self.assertRaisesRegex(replay.BenchmarkError, "statistics reset"):
             self.run_replay([sample(), reset])
         self.assert_cleanup_after_children()
+
+    def test_backward_lsn_aborts_and_cleans_up_without_a_valid_span(self):
+        backwards = sample(wal_bytes=140)
+        backwards["wal_insert_lsn"] = "0/1"
+        with self.assertRaisesRegex(replay.BenchmarkError, "LSN moved backwards"):
+            self.run_replay([sample(), backwards])
+        self.assert_cleanup_after_children()
+        result = json.loads((self.output / "result.json").read_text())
+        self.assertEqual(result["status"], "failed")
+        self.assertNotIn("wal_lsn_span_bytes", result)
 
     def test_unconfirmed_process_shutdown_never_drops_the_database(self):
         with patch.object(replay, "stop_processes", side_effect=subprocess.TimeoutExpired("child", 5)):

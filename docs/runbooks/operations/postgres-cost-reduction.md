@@ -212,8 +212,8 @@ acceptance or recovery gates fail.
   events (3,267 publication-profile commits plus 452 account events), and ended
   with zero actionable rows or dead letters. The identical seed contained four
   genuine public document items and eight aliases, preserving their original
-  dates and CIDs; no popularity signals were fabricated. WAL was 88,343,442 bytes
-  before and 46,103,737 after (47.8% lower). Ranked-item inserts were 42,435 versus
+  dates and CIDs; no popularity signals were fabricated. Reported WAL counter
+  deltas were 88,343,442 bytes before and 46,103,737 after (47.8% lower). Ranked-item inserts were 42,435 versus
   6,242 (85.3% lower); successful local ranked reads were 166 versus 118, with
   p95 12.45 ms versus 12.97 ms (4.2% higher). Both ended with 3,222 candidates and
   2,687 ranked items. The candidate published two observed nonempty generations
@@ -223,7 +223,8 @@ acceptance or recovery gates fail.
   counters are not total signal counts and must not be interpreted as zero.
   This initial harness did not align checkpoint phase before each variant:
   database cleanup forces a checkpoint. Its WAL percentages include that timing
-  effect and must not be treated as a precise causal estimate of application savings.
+  effect and counter-visibility lag; they are not a precise causal estimate
+  of application savings.
 - The full-social public archive pilot completed at 14:59:56 UTC. Both variants
   passed fixed 900-second observations using the same 26,047-item public seed,
   isolated actor key and sealed four-minute archive interval. Each admitted
@@ -237,21 +238,44 @@ acceptance or recovery gates fail.
   Only 1,924 upcoming like/repost events referenced seeded link targets; this
   limited reference coverage does not represent Production's full social graph.
   Ranked inserts were 728 before versus 102 after; rollup inserts were 406,323
-  versus 80,424. Both served 5,000 candidates, with 50–58 eligible ranked items.
+  versus 80,424. Both considered 5,000 candidates, with 50–58 eligible ranked items.
   Successful local ranked reads were 152 versus 118; p95 was 6.59 versus 6.41 ms.
   Cold first-ranked readiness increased from 136.3 to 308.6 seconds. Candidate
   generation starts were 300 seconds apart and completed in about 6–7 seconds.
-  WAL was 176,125,707 versus 123,372,386 bytes (29.95% lower), but cleanup changed
-  checkpoint phase between variants. A retained candidate middle/tail WAL slice
+  Reported WAL counter deltas were 176,125,707 versus 123,372,386 bytes (29.95%
+  lower), but cleanup changed checkpoint phase and final counters can lag. A retained candidate middle/tail WAL slice
   was 82.35% full-page-image bytes, supporting a separate LZ4/checkpoint trial.
   Sampled database CPU and working memory did not show savings (about 0.096
   versus 0.099 cores and 350 versus 418 MiB); the database had a two-CPU/two-GiB
   local limit and workers ran outside it. These are not Railway memory trials.
-  Item insert counters differed by two rows (27,195 versus 27,193), so exact
-  corpus parity is not established by the matching signal totals. External
+  Item insert counters differed by two (27,195 versus 27,193). Actual item
+  counts and identities were not captured, so this does not establish a corpus
+  mismatch or prove exact corpus parity. External
   metadata, warm-cache order, small eligible rankings and checkpoint phase limit
   causal attribution. The corrected harness now checkpoints before measurement
   and records WAL LSN/checkpointer boundaries for newly started trials.
+- The separate tuned candidate trial passed at 15:16:34 UTC after 900.47 seconds.
+  It used the identical seed, archive, isolated actor key and candidate binaries,
+  with verified LZ4, 8 GB max WAL, 15-minute checkpoints and completion target 0.9.
+  Fsync/full-page writes, 128 MiB shared buffers and 4 MiB work_mem stayed unchanged.
+  The new pre-observation checkpoint completed. The exact total remained 33,218
+  signals, matching each kind's earlier count; final queue/dead-letter counts were zero.
+  There were 118 successful ranked reads across two generations (50/53 items),
+  with p95 7.02 ms and cold readiness 308.48 seconds. Direct final counts were
+  27,191 items and 58,165 aliases; ordered identity hashes are retained privately.
+  No OOM events occurred. This local fixture does not establish a Railway memory
+  limit, archive-upload capacity, or full-corpus rebuild time.
+  The measured insertion-LSN span was 102,960,096 bytes. Bounded WAL decoding
+  found 101,911,926 record/image bytes: 45,508,015 record bytes and 56,403,911
+  full-page-image bytes. The final cumulative counter delta was only 87,703,396
+  bytes. Subsequent counters advanced 14,727,092 bytes while physical WAL grew
+  just 500,688 bytes, demonstrating delayed visibility of earlier writes. Prefer
+  physical interval evidence; the harness now records `wal_lsn_span_bytes` while
+  preserving the explicitly documented legacy counter field. No original artifacts
+  were rewritten. The earlier runs lack phase control and LSN boundaries, so the
+  tuned result is not a clean before/after savings percentage. One timed checkpoint
+  began near the observation boundary; none completed inside it. Crash recovery,
+  WAL-size-triggered checkpoint pressure and the hosted soak remain unverified.
 - TSW-98 tracks the hosted verification finding that database cost metrics were
   collected only when the Operations overview was read. PR
   [#315](https://github.com/Stygian-Tech/the-social-wire/pull/315) merged to
@@ -291,11 +315,13 @@ acceptance or recovery gates fail.
   200 at 14:05:57. Normal generation staleness returns degraded 200; the observed
   failures indicate upstream database/transport pressure. The exact blocked query
   was not logged. This remains a rollout acceptance limitation.
-- At 14:44 UTC the isolated Production restore was still replaying, with REDO
-  `264/F315D0E8`, 56 GB free, and 6.4 GB of WAL. Its latest logged completed
-  transaction was August 27 at 01:02:58 UTC, short of the August 29 target.
-  Archive reads continued advancing. SQL remains unavailable while the clone
-  recovers with hot standby disabled; deployment health is not recovery proof.
+- At 15:09 UTC the isolated Production restore was still replaying, with REDO
+  `26F/96724978`, 54 GB free, and 8.2 GB of WAL. Its latest logged completed
+  transaction was August 27 at 01:59:14 UTC, short of the August 29 target.
+  Effective `recovery_target_action=promote` means it should become queryable
+  after reaching that target. `hot_standby=off` explains current SQL unavailability;
+  `archive_mode=off` prevents normal clone WAL uploads after promotion. No active
+  backup watcher was visible. Deployment health remains insufficient recovery proof.
 - A billing checkpoint at 14:33 UTC recorded $91.54 in project service usage
   for September 2, 21:40:15 through October 2, 21:40:15. Postgres accounted for
   $83.18, including $49.11 in service egress, $21.58 in memory, $9.53 in CPU,

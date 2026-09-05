@@ -39,7 +39,20 @@ It aborts on child failure, runtime safety deadline, counter reset, database+WAL
 
 Each variant records binary and seed hashes, treatment migration hashes, samples, private child logs and a result. Samples include WAL/reset epoch, database/WAL bytes, bounded actionable/dead-letter counts (10001 means a lower bound), oldest actionable age, checkpoint progress, inserted/updated/deleted table counters, active generation/duration and private read latency. Derive ingestion rate from `wire_ingestion_inbox.n_tup_ins` counter deltas divided by elapsed time; source sequence subtraction is not an event count. Use the samples for latency distributions, excluding failed/empty/remote responses and reporting exclusions separately. Keep child logs private; they can include public source identifiers.
 
-The first and last counter samples define the measured WAL interval. Candidate duration diagnostics are expected; the baseline binary may not export them, so its generation cadence comes from timestamps/logs. Capture `scripts/capture-postgres-cost.sql` and Railway CPU/RAM/volume independently around each run; the script does not claim container CPU/memory attribution. `pg_stat_statements` comparisons must retain its own reset/deallocation metadata as well as WAL/database reset epochs.
+The first and last samples define the measured WAL interval. `wal_bytes` remains
+the legacy `pg_stat_wal.wal_bytes` delta, whose visibility can lag. Prefer physical
+interval evidence: `wal_lsn_span_bytes` subtracts those samples' insertion LSNs,
+with strict unsigned 64-bit parsing and a backwards-position guard. This address
+span includes WAL headers and padding; it is neither summed WAL record payload
+bytes nor billable archive-upload bytes. Preserve both numbers and explain their
+divergence rather than substituting one for the other. When retained WAL is
+available, bounded `pg_waldump` statistics over the same LSN interval can separately
+measure physical record bytes. A tuned pilot exposed 101,911,926 record bytes
+versus an 87,703,396-byte counter delta; neither is an LSN span or an upload bill.
+Earlier artifacts remain unchanged and must not be relabeled as capturing the
+new field.
+
+Candidate duration diagnostics are expected; the baseline binary may not export them, so its generation cadence comes from timestamps/logs. Capture `scripts/capture-postgres-cost.sql` and Railway CPU/RAM/volume independently around each run; the script does not claim container CPU/memory attribution. `pg_stat_statements` comparisons must retain its own reset/deallocation metadata as well as WAL/database reset epochs.
 
 Results also include exact partition-spanning signal totals and counts by kind,
 captured before the timed observation and after all children stop. These bounded

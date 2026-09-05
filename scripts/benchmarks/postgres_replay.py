@@ -75,6 +75,19 @@ def wal_delta(before, after):
     return delta
 
 
+def wal_lsn_span_bytes(before, after):
+    def parse(value):
+        if not isinstance(value, str) or not re.fullmatch(r"[0-9A-Fa-f]{1,8}/[0-9A-Fa-f]{1,8}", value):
+            raise BenchmarkError("Invalid unsigned 64-bit PostgreSQL WAL LSN")
+        high, low = value.split("/")
+        return (int(high, 16) << 32) | int(low, 16)
+
+    span = parse(after) - parse(before)
+    if span < 0:
+        raise BenchmarkError("WAL insertion LSN moved backwards")
+    return span
+
+
 def check_limits(sample, started, now, maximum_seconds, maximum_bytes):
     if now - started >= maximum_seconds:
         raise BenchmarkError("Replay reached the configured wall-clock deadline")
@@ -326,6 +339,7 @@ def run_variant(config, variant, pg, admin_url, output, secrets, generation, see
                 sample["elapsed_seconds"] = elapsed
                 check_limits(sample, started, time.monotonic(), config["maximum_seconds"], config["maximum_database_and_wal_bytes"])
                 wal_delta(initial["wal"],sample["wal"])
+                lsn_span = wal_lsn_span_bytes(initial.get("wal_insert_lsn"), sample.get("wal_insert_lsn"))
                 for index, process in enumerate(processes):
                     status = process.poll()
                     if status is not None and (index != 3 or status != 0):
@@ -350,6 +364,7 @@ def run_variant(config, variant, pg, admin_url, output, secrets, generation, see
                     if len(observed_generations) < 2 or good_reads < config["minimum_successful_reads"]:
                         failures.append("insufficient nonempty local generations/reads")
                     result.update({"elapsed_seconds":elapsed,"wal_bytes":wal_delta(initial["wal"],sample["wal"]),
+                                   "wal_lsn_span_bytes":lsn_span,
                                    "initial":initial,"final":sample,"successful_reads":good_reads,
                                    "observed_generations":len(observed_generations),
                                    "status":"failed" if failures else "passed", "acceptance_errors":failures,
