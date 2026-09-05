@@ -205,8 +205,8 @@ acceptance or recovery gates fail.
   WAL deltas were 9,552,664 and 7,441,344 bytes (about 22% lower). Short-interval
   `pg_stat_wal` publication lag made its candidate delta unsuitable for this
   comparison. This capacity fixture does not establish real-workload distribution,
-  full Production capacity, or Railway spend reduction. A separate matched public
-  archive replay is in progress.
+  full Production capacity, or Railway spend reduction. The separate matched
+  public archive pilot is recorded below.
 - The matched **publication-only** public archive pilot completed at 05:42 UTC.
   Both exact revisions passed the same 900-second observation, drained all 3,719
   events (3,267 publication-profile commits plus 452 account events), and ended
@@ -222,10 +222,39 @@ acceptance or recovery gates fail.
   one-hour corpus reconstruction, or Railway savings. Partition-parent signal
   counters are not total signal counts and must not be interpreted as zero.
 - TSW-98 tracks the hosted verification finding that database cost metrics were
-  collected only when the Operations overview was read. A dedicated serial
-  collector is being validated; do not start the measured soak until independent
-  minute buckets are verified in Development with the dashboard closed.
-- Authenticated Development QA, representative replay, memory trials, Production
+  collected only when the Operations overview was read. PR
+  [#315](https://github.com/Stygian-Tech/the-social-wire/pull/315) merged to
+  Development at 14:16:49 UTC as `b2d1d1c2467547f4faf239917197126e835b5d51`
+  after all CI passed. Its dedicated serial collector passed 31 Operations,
+  64 OperationsCore, and eight PostgreSQL telemetry integration tests. A
+  dashboard-closed control at 14:12:26 found no database metric rows in the
+  preceding 15 minutes. Do not start the measured soak until independent minute
+  buckets are verified after the new Operations deployment.
+- Live connection attribution found ten unnamed clients belonging to Coordinator,
+  Projection Pool, and the legacy Wire worker. The separate Wire database config
+  now receives the host's service environment and supplies a sanitized, bounded
+  application name without changing pool limits. All 157 WireWorker tests pass,
+  including five new configuration tests. Hosted attribution remains to verify.
+- Authenticated Development web QA verified nonblank Subscribed/Wire views,
+  successful Wire pagination, and client recovery from a one-shot injected
+  `CursorExpired` 410 through successful edition refreshes. The temporary fetch
+  shim was removed. This is client fault injection, not proof of server expiry.
+  Opening one previously unread RSS article wrote its read mark successfully;
+  the exact timestamp survived reload. The application's read-state context
+  restored only that article to unread (`deleteReadMark` 200), and reload confirmed
+  removal. The card menu currently lacks an individual unread action. Circle's
+  Development catalog remains `enabled=false`, so hosted Circle interaction and
+  privacy acceptance are not claimed.
+- Intermittent authenticated Wire `FeedUnavailable` 503 responses at 14:03–14:05
+  matched six-second client-aborted Production Corpus Edge edition requests and
+  a ten-second PostgreSQL connection-creation timeout. Responses recovered to
+  200 at 14:05:57. Normal generation staleness returns degraded 200; the observed
+  failures indicate upstream database/transport pressure. The exact blocked query
+  was not logged. This remains a rollout acceptance limitation.
+- At 14:12 UTC the isolated Production restore was still replaying, with REDO
+  `256/3E56DE88`, 57 GB free, and 5.6 GB of WAL. Its latest logged completed
+  transaction was August 26 at 23:54:21 UTC, short of the August 29 target.
+- Complete authenticated acceptance, representative replay, memory trials, Production
   restore acceptance, discovery rebuild timing, and 24-hour/seven-day cost
   comparisons remain release gates. No measured billing savings are claimed.
 

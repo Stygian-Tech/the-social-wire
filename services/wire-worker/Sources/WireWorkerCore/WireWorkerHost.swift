@@ -32,6 +32,7 @@ public enum WireWorkerHost {
     let postgresConfig = try PostgresWireConfig.make(
       from: config.databaseURL,
       maximumConnections: config.postgresMaximumConnections,
+      environment: environment,
       logger: logger
     )
     let pool = PostgresClient(configuration: postgresConfig, backgroundLogger: logger)
