@@ -1,0 +1,68 @@
+{
+  "admin_url_environment": "TSW92_BENCH_ADMIN_URL",
+  "archive_key_environment": "TSW92_ARCHIVE_API_KEY",
+  "psql": "psql",
+  "seed_sql": "/benchmark/seed.sql",
+  "archive_host": "https://jetstream.us-west.bsky.network",
+  "after_seq": 25539389975,
+  "before_seq": 25541831042,
+  "archive_segments": [
+    {"name": "seg_00000005pf.jss", "checksum": "13d9bc719f9bc318"}
+  ],
+  "collections": [
+    "site.standard.document", "site.standard.entry", "site.standard.publication",
+    "site.standard.graph.recommend", "app.thesocialwire.wireFeedback",
+    "app.bsky.feed.post", "app.bsky.feed.like", "app.bsky.feed.repost", "app.bsky.graph.follow",
+    "at.margin.note", "at.margin.reply", "at.margin.like", "at.margin.collectionItem",
+    "at.margin.readingRoom", "network.cosmik.card", "network.cosmik.connection",
+    "network.cosmik.collectionLink", "network.cosmik.collectionLinkRemoval"
+  ],
+  "maximum_seconds": 3600,
+  "maximum_database_and_wal_bytes": 17179869184,
+  "settle_seconds": 900,
+  "sample_seconds": 5,
+  "minimum_successful_reads": 100,
+  "common_environment": {
+    "ENABLE_THIN_APPVIEW": "true",
+    "CIRCLE_FEED_MODE": "off",
+    "OPERATIONS_TELEMETRY_ENABLED": "true",
+    "OPERATIONS_RECOVERY_ENABLED": "false",
+    "POSTGRES_MAX_CONNECTIONS": "8",
+    "WIRE_POSTGRES_MAX_CONNECTIONS": "12",
+    "WIRE_INBOX_CONCURRENCY": "24",
+    "WIRE_INBOX_BATCH_SIZE": "1000",
+    "WIRE_METADATA_BATCH_SIZE": "40",
+    "WIRE_METADATA_CONCURRENCY": "8",
+    "WIRE_ADMISSION_RATE_PER_SECOND": "3",
+    "WIRE_ADMISSION_BURST_EVENTS": "1",
+    "WIRE_INBOX_MAX_ROWS": "100000",
+    "WIRE_DATABASE_MAX_BYTES": "17179869184",
+    "JETSTREAM_REPLAY_INCIDENT_BYTES": "5368709120",
+    "JETSTREAM_REPLAY_DAILY_BYTES": "26843545600"
+  },
+  "variants": [
+    {
+      "name": "baseline",
+      "revision": "b90cb13184c85673490769646714270c12e789fe",
+      "ingest": "/benchmark/baseline/jetstream-ingest",
+      "wire": "/benchmark/baseline/WireWorker",
+      "appview": "/benchmark/baseline/AppView",
+      "rank_interval_seconds": 60,
+      "generation_retention_seconds": 172800,
+      "upgrade_sql": []
+    },
+    {
+      "name": "candidate",
+      "revision": "bda2c3af046ec2ab5703f9e888e1ca5ae5dd9e77",
+      "ingest": "/benchmark/candidate/jetstream-ingest",
+      "wire": "/benchmark/candidate/WireWorker",
+      "appview": "/benchmark/candidate/AppView",
+      "rank_interval_seconds": 300,
+      "generation_retention_seconds": 7200,
+      "upgrade_sql": [
+        "/benchmark/candidate/20260905040000_remove_redundant_wire_ranked_lookup.sql",
+        "/benchmark/candidate/20260905040100_enable_statement_cost_observability.sql"
+      ]
+    }
+  ]
+}

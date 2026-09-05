@@ -26,6 +26,7 @@ SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_stat_statements')
   AND current_setting('shared_preload_libraries') LIKE '%pg_stat_statements%'
   AS statements_available \gset
 \if :statements_available
+SELECT dealloc, stats_reset FROM pg_stat_statements_info;
 -- Query IDs identify statements without exporting user values or SQL text.
 SELECT queryid, calls, total_exec_time, mean_exec_time, rows, wal_bytes,
   shared_blks_read, shared_blks_hit, temp_blks_written

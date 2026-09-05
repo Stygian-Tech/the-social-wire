@@ -43,7 +43,7 @@ verified="$(psql "$RESTORE_DATABASE_URL" -X -Atqc "
     to_regclass('public.schema_migrations') IS NOT NULL
     AND to_regclass('public.content_items') IS NOT NULL
     AND to_regclass('public.appview_ingestion_inbox') IS NOT NULL
-    AND to_regclass('public.operations_service_heartbeats') IS NOT NULL;
+    AND to_regclass('public.operations_service_state') IS NOT NULL;
 ")"
 if [ "$verified" != "t" ]; then
   echo 'error: restored database is missing one or more required tables.' >&2
@@ -57,4 +57,5 @@ if [ "$restore_migration_count" -le 0 ] || [ "$restore_migration_count" -gt "$so
   exit 1
 fi
 
-echo "Restore drill passed ($restore_migration_count of $source_migration_count source migrations present)."
+echo "Restore schema checks passed ($restore_migration_count of $source_migration_count source migrations present)."
+echo 'Recovery-point, durable-row integrity, restart, and rebuild checks are still required.'
