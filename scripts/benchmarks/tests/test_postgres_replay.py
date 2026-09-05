@@ -267,7 +267,7 @@ class ReplayOrchestrationTests(unittest.TestCase):
             "after_seq": 100, "before_seq": 200, "collections": ["app.bsky.feed.post"],
             "common_environment": {"WIRE_FEED_ENABLED": "true"},
             "maximum_seconds": 60, "maximum_database_and_wal_bytes": 1000,
-            "settle_seconds": 0, "sample_seconds": 1, "minimum_successful_reads": 2,
+            "observation_seconds": 0.25, "sample_seconds": 1, "minimum_successful_reads": 2,
         }
         self.variant = {"name": "candidate", "revision": "a" * 40,
                         "rank_interval_seconds": 300, "generation_retention_seconds": 7200}
@@ -378,14 +378,45 @@ class ReplayOrchestrationTests(unittest.TestCase):
 
     def test_snapshot_marker_does_not_accept_a_still_running_ingester(self):
         self.config["maximum_seconds"] = 0.5
-        with self.assertRaisesRegex(replay.BenchmarkError, "deadline"):
-            self.run_replay([sample()] + [sample(generation=str(n)) for n in range(10)], ingest_status=None)
+        result = self.run_replay([sample()] + [sample(generation=str(n)) for n in range(10)], ingest_status=None)
+        self.assertEqual(result["status"], "failed")
+        self.assertIn("snapshot incomplete", result["acceptance_errors"][0])
         self.assert_cleanup_after_children()
 
     def test_one_generation_cannot_pass_even_when_http_reads_succeed(self):
-        with self.assertRaisesRegex(replay.BenchmarkError, "insufficient nonempty local generations"):
-            self.run_replay([sample(), sample()])
+        result = self.run_replay([sample(), sample(), sample()])
+        self.assertEqual(result["status"], "failed")
+        self.assertIn("insufficient nonempty local generations/reads", result["acceptance_errors"])
         self.assert_cleanup_after_children()
+
+    def test_fixed_observation_preserves_unresolved_backlog_as_failed_acceptance(self):
+        result = self.run_replay([sample(), sample(pending=7), sample(pending=7, generation="generation-b")])
+        self.assertTrue(result["observation_complete"])
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(result["final"]["actionable_count"], 7)
+        self.assertIn("snapshot incomplete or unresolved actionable backlog", result["acceptance_errors"])
+        self.assert_cleanup_after_children()
+        self.assertFalse(any(event[0] == "sql" and "UPDATE" in (event[1] or "") for event in self.events))
+
+    def test_failed_acceptance_still_observes_both_variants_and_exits_nonzero(self):
+        config = dict(self.config, observation_seconds=60, maximum_seconds=120,
+            seed_sql=str(self.seed), admin_url_environment="TEST_BENCH_URL",
+            archive_key_environment="TEST_ARCHIVE_KEY",
+            variants=[dict(self.variant, name="baseline"), self.variant])
+        config_path = self.root / "comparison-config.json"
+        config_path.write_text(json.dumps(config))
+        output = self.root / "comparison-output"
+        results = [{"variant":"baseline", "status":"failed", "observation_complete":True},
+                   {"variant":"candidate", "status":"passed", "observation_complete":True}]
+        with patch.object(replay.os.sys, "argv", [str(MODULE_PATH), str(config_path), "--output", str(output)]), \
+             patch.dict(replay.os.environ, {"TEST_BENCH_URL":"postgresql://localhost:55492/admin", "TEST_ARCHIVE_KEY":"fixture-only"}), \
+             patch.object(replay, "archive_plan", return_value={}), \
+             patch.object(replay.Postgres, "query", return_value=0), \
+             patch.object(replay, "run_variant", side_effect=results) as run:
+            with self.assertRaisesRegex(replay.BenchmarkError, "observations completed but acceptance failed"):
+                replay.main()
+        self.assertEqual([call.args[1]["name"] for call in run.call_args_list], ["baseline", "candidate"])
+        self.assertEqual(json.loads((output / "comparison.json").read_text()), results)
 
     def test_child_environment_pins_the_same_real_snapshot_and_isolates_sources(self):
         self.config["common_environment"].update({

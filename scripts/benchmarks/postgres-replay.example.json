@@ -19,7 +19,7 @@
   ],
   "maximum_seconds": 3600,
   "maximum_database_and_wal_bytes": 17179869184,
-  "settle_seconds": 900,
+  "observation_seconds": 900,
   "sample_seconds": 5,
   "minimum_successful_reads": 100,
   "common_environment": {

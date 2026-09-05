@@ -263,7 +263,6 @@ def run_variant(config, variant, pg, admin_url, output, secrets, generation, see
         processes.append(start_process(variant["wire"], dict(base, PORT="18082", WIRE_WORKER_ROLE="drain"), output / "drain.log"))
         processes.append(start_process(variant["wire"], dict(base, PORT="18083", WIRE_WORKER_ROLE="rank"), output / "rank.log"))
         processes.append(start_process(variant["ingest"], dict(base, PORT="18084"), output / "ingest.log"))
-        completed_at = None
         good_reads = 0
         observed_generations = set()
         with open(output / "samples.jsonl", "w") as evidence:
@@ -287,14 +286,20 @@ def run_variant(config, variant, pg, admin_url, output, secrets, generation, see
                 evidence.flush()
                 if sample.get("dead_letters",0):
                     raise BenchmarkError("Isolated replay produced unresolved dead letters")
-                if snapshot_complete(sample, config["before_seq"]) and processes[3].poll() == 0:
-                    completed_at = completed_at or time.monotonic()
-                if completed_at and time.monotonic()-completed_at >= config["settle_seconds"]:
-                    if len(observed_generations)<2 or good_reads<config["minimum_successful_reads"]:
-                        raise BenchmarkError("Real replay completed but insufficient nonempty local generations/reads for load acceptance")
+                # Every variant observes the same elapsed interval, even when a
+                # short archive lacks older references needed to drain completely.
+                # Completing the experiment does not imply passing its quality gate.
+                if elapsed >= config["observation_seconds"]:
+                    failures = []
+                    if not snapshot_complete(sample, config["before_seq"]) or processes[3].poll() != 0:
+                        failures.append("snapshot incomplete or unresolved actionable backlog")
+                    if len(observed_generations) < 2 or good_reads < config["minimum_successful_reads"]:
+                        failures.append("insufficient nonempty local generations/reads")
                     result.update({"elapsed_seconds":elapsed,"wal_bytes":wal_delta(initial["wal"],sample["wal"]),
                                    "initial":initial,"final":sample,"successful_reads":good_reads,
-                                   "observed_generations":len(observed_generations),"status":"passed"})
+                                   "observed_generations":len(observed_generations),
+                                   "status":"failed" if failures else "passed", "acceptance_errors":failures,
+                                   "observation_complete":True})
                     break
                 time.sleep(config["sample_seconds"])
     except BaseException as error:
@@ -329,6 +334,8 @@ def main():
     validate_target(admin_url)
     if config["maximum_seconds"]>7200 or config["maximum_seconds"]<60 or not 1<=config["sample_seconds"]<=30:
         raise BenchmarkError("Use a 60–7200 second runtime and a 1–30 second sampling interval")
+    if not 60 <= config["observation_seconds"] < config["maximum_seconds"]:
+        raise BenchmarkError("Observation must be at least 60 seconds and shorter than the safety deadline")
     if config["after_seq"]>=config["before_seq"] or len(config["variants"])!=2:
         raise BenchmarkError("Exactly two sequential variants and one positive sealed interval are required")
     for variant in config["variants"]:
@@ -363,6 +370,8 @@ def main():
         output.mkdir(mode=0o700)
         results.append(run_variant(config,variant,pg,admin_url,output,secrets,generation,seed))
     (args.output/"comparison.json").write_text(json.dumps(results,indent=2))
+    if any(result["status"] != "passed" for result in results):
+        raise BenchmarkError("Comparison observations completed but acceptance failed; inspect comparison.json")
 
 
 if __name__ == "__main__":
