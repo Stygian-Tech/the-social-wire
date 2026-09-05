@@ -26,6 +26,22 @@ class BenchmarkError(RuntimeError):
     pass
 
 
+def actor_hmac_secret(config):
+    # Public preseeded actor hashes must use the same isolated key during replay.
+    # Configuration records only the variable name, never the resolved value.
+    if "actor_hmac_secret_environment" not in config:
+        return uuid.uuid4().hex + uuid.uuid4().hex
+    name = config["actor_hmac_secret_environment"]
+    if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name):
+        raise BenchmarkError("actor_hmac_secret_environment must name an environment variable")
+    secret = os.environ.get(name, "").strip()
+    if not secret:
+        raise BenchmarkError("Configured actor HMAC environment input is missing or empty")
+    if len(secret.encode("utf-8")) < 32:
+        raise BenchmarkError("Configured actor HMAC environment input requires at least 32 UTF-8 bytes")
+    return secret
+
+
 def validate_target(url):
     parsed = urllib.parse.urlsplit(url)
     host = parsed.hostname or ""
@@ -57,6 +73,19 @@ def wal_delta(before, after):
     if delta < 0:
         raise BenchmarkError("WAL counter moved backwards")
     return delta
+
+
+def wal_lsn_span_bytes(before, after):
+    def parse(value):
+        if not isinstance(value, str) or not re.fullmatch(r"[0-9A-Fa-f]{1,8}/[0-9A-Fa-f]{1,8}", value):
+            raise BenchmarkError("Invalid unsigned 64-bit PostgreSQL WAL LSN")
+        high, low = value.split("/")
+        return (int(high, 16) << 32) | int(low, 16)
+
+    span = parse(after) - parse(before)
+    if span < 0:
+        raise BenchmarkError("WAL insertion LSN moved backwards")
+    return span
 
 
 def check_limits(sample, started, now, maximum_seconds, maximum_bytes):
@@ -92,7 +121,7 @@ class Postgres:
     def __init__(self, binary):
         self.binary = binary
 
-    def run(self, url, sql=None, file=None):
+    def run(self, url, sql=None, file=None, statement_timeout_seconds=None):
         # Credentials stay out of argv, process logs and evidence.
         connection = validate_target(url)
         env = {key:value for key,value in os.environ.items() if not key.startswith("PG")}
@@ -103,6 +132,8 @@ class Postgres:
                     "PGCONNECT_TIMEOUT":"5","PGAPPNAME":"tsw92-benchmark"})
         sslmode = urllib.parse.parse_qs(connection.query).get("sslmode",["prefer"])[0]
         env["PGSSLMODE"] = sslmode
+        if statement_timeout_seconds is not None:
+            env["PGOPTIONS"] = "-c statement_timeout=%d" % (statement_timeout_seconds * 1000)
         command = [self.binary, "-X", "-qAt", "-v", "ON_ERROR_STOP=1"]
         command += ["-f", str(file)] if file else ["-c", sql]
         result = subprocess.run(command, env=env, capture_output=True, text=True, timeout=60 if file else 12)
@@ -116,6 +147,38 @@ class Postgres:
         return json.loads(output)
 
 
+def signal_cardinality(pg, url):
+    # Scan the partitioned relation once, outside the timed observation; parent
+    # pg_stat_user_tables counters do not include the child partition rows.
+    return pg.query(url, """
+      WITH counts AS (
+        SELECT signal_kind, count(*) AS row_count
+        FROM public.wire_signal_events GROUP BY signal_kind
+      )
+      SELECT json_build_object(
+        'captured_at', now(),
+        'total', coalesce(sum(row_count), 0),
+        'by_signal_kind', coalesce(json_object_agg(signal_kind, row_count), '{}'::json)
+      ) FROM counts
+    """)
+
+
+def checkpoint_phase(pg, url):
+    connection = validate_target(url)
+    if not re.fullmatch(r"tsw92_bench_[a-f0-9]{12}", connection.path.removeprefix("/")):
+        raise BenchmarkError("Checkpoint phase control requires an owned benchmark database")
+    if pg.query(url, "SELECT count(*) FROM pg_stat_activity WHERE backend_type='client backend' AND pid<>pg_backend_pid()"):
+        raise BenchmarkError("Checkpoint phase control requires an idle dedicated database server")
+    snapshot_sql = """SELECT json_build_object(
+      'captured_at', now(), 'wal_insert_lsn', pg_current_wal_insert_lsn()::text,
+      'checkpointer', (SELECT row_to_json(c) FROM pg_stat_checkpointer c))"""
+    before = pg.query(url, snapshot_sql)
+    # A standalone command, outside a transaction, with a server-side deadline.
+    pg.run(url, sql="CHECKPOINT", statement_timeout_seconds=10)
+    after = pg.query(url, snapshot_sql)
+    return {"completed": True, "before": before, "after": after}
+
+
 def sample_database(pg, url, generation):
     # generation is generated locally, never interpolated from a public event.
     if not re.fullmatch(r"wire-global-v4-tsw92-bench-[a-f0-9]{12}", generation):
@@ -124,6 +187,8 @@ def sample_database(pg, url, generation):
       SELECT json_build_object(
         'captured_at', now(),
         'wal', (SELECT row_to_json(w) FROM pg_stat_wal w),
+        'wal_insert_lsn', pg_current_wal_insert_lsn()::text,
+        'checkpointer', (SELECT row_to_json(c) FROM pg_stat_checkpointer c),
         'cluster_bytes', (SELECT sum(pg_database_size(oid)) FROM pg_database WHERE datallowconn),
         'wal_directory_bytes', (SELECT coalesce(sum(size),0) FROM pg_ls_waldir()),
         'checkpoint', (SELECT row_to_json(c) FROM (
@@ -252,6 +317,8 @@ def run_variant(config, variant, pg, admin_url, output, secrets, generation, see
             pg.run(url, file=path)
         for key in ("ingest", "wire", "appview"):
             result[key + "_sha256"] = hashlib.sha256(Path(variant[key]).read_bytes()).hexdigest()
+        result["initial_signal_cardinality"] = signal_cardinality(pg, url)
+        result["checkpoint_phase"] = checkpoint_phase(pg, url)
         initial = sample_database(pg, url, generation)
         check_limits(initial, 0, 0, config["maximum_seconds"], config["maximum_database_and_wal_bytes"])
         # Worker startup, ingestion, generation and reads all fall inside the observation.
@@ -272,6 +339,7 @@ def run_variant(config, variant, pg, admin_url, output, secrets, generation, see
                 sample["elapsed_seconds"] = elapsed
                 check_limits(sample, started, time.monotonic(), config["maximum_seconds"], config["maximum_database_and_wal_bytes"])
                 wal_delta(initial["wal"],sample["wal"])
+                lsn_span = wal_lsn_span_bytes(initial.get("wal_insert_lsn"), sample.get("wal_insert_lsn"))
                 for index, process in enumerate(processes):
                     status = process.poll()
                     if status is not None and (index != 3 or status != 0):
@@ -296,6 +364,7 @@ def run_variant(config, variant, pg, admin_url, output, secrets, generation, see
                     if len(observed_generations) < 2 or good_reads < config["minimum_successful_reads"]:
                         failures.append("insufficient nonempty local generations/reads")
                     result.update({"elapsed_seconds":elapsed,"wal_bytes":wal_delta(initial["wal"],sample["wal"]),
+                                   "wal_lsn_span_bytes":lsn_span,
                                    "initial":initial,"final":sample,"successful_reads":good_reads,
                                    "observed_generations":len(observed_generations),
                                    "status":"failed" if failures else "passed", "acceptance_errors":failures,
@@ -315,6 +384,11 @@ def run_variant(config, variant, pg, admin_url, output, secrets, generation, see
                            "database_retained":database})
             raise
         finally:
+            if stopped and result.get("observation_complete"):
+                try:
+                    result["final_signal_cardinality"] = signal_cardinality(pg, url)
+                except (BenchmarkError, subprocess.TimeoutExpired) as error:
+                    result.update({"status":"failed", "signal_cardinality_error":type(error).__name__})
             (output / "result.json").write_text(json.dumps(result,indent=2))
         # Only the random DB created by this call can be removed, after every child stopped.
         if created and stopped:
@@ -330,6 +404,7 @@ def main():
     config = json.loads(args.config.read_text())
     if any(re.search(r"SECRET|PASSWORD|TOKEN|API_KEY|DATABASE_URL",key) for key in config["common_environment"]):
         raise BenchmarkError("Keep credentials out of configuration; only named environment inputs are accepted")
+    actor_secret = actor_hmac_secret(config)
     admin_url = os.environ[config["admin_url_environment"]]
     validate_target(admin_url)
     if config["maximum_seconds"]>7200 or config["maximum_seconds"]<60 or not 1<=config["sample_seconds"]<=30:
@@ -356,9 +431,10 @@ def main():
         raise BenchmarkError("Use a bounded schema/public-input seed no larger than 256 MiB; full database copies need a separate restore drill")
     seed_hash = hashlib.sha256(seed.read_bytes()).hexdigest()
     (args.output/"configuration.json").write_text(json.dumps(config,indent=2))
-    # Identical fresh source identity and HMAC material on both disposable seeded DBs.
+    # Resolve the actor key once so both variants preserve preseeded identities.
+    # Other HMAC material and source identity remain fresh for each comparison.
     generation = "wire-global-v4-tsw92-bench-" + uuid.uuid4().hex[:12]
-    secrets = {"JETSTREAM_API_KEY":api_key,"WIRE_ACTOR_HMAC_SECRET":uuid.uuid4().hex+uuid.uuid4().hex,
+    secrets = {"JETSTREAM_API_KEY":api_key,"WIRE_ACTOR_HMAC_SECRET":actor_secret,
                "WIRE_CURSOR_HMAC_SECRET":uuid.uuid4().hex+uuid.uuid4().hex,
                "GATEWAY_APPVIEW_INTERNAL_SECRET":uuid.uuid4().hex+uuid.uuid4().hex}
     results=[]

@@ -20,6 +20,7 @@ SPEC.loader.exec_module(replay)
 def sample(sequence=200, *, pending=0, generation="generation-a", wal_bytes=100):
     return {
         "wal": {"stats_reset": "2026-09-05T00:00:00Z", "wal_bytes": wal_bytes},
+        "wal_insert_lsn": "0/%X" % (wal_bytes * 2),
         "cluster_bytes": 400,
         "wal_directory_bytes": 100,
         "checkpoint": {
@@ -87,7 +88,54 @@ class TargetSafetyTests(unittest.TestCase):
                     replay.database_url(admin, database)
 
 
+class ActorHMACSecretTests(unittest.TestCase):
+    def test_default_key_is_fresh_and_does_not_inherit_a_service_key(self):
+        with patch.dict(replay.os.environ, {"WIRE_ACTOR_HMAC_SECRET": "inherited-service-secret"}):
+            first = replay.actor_hmac_secret({})
+            second = replay.actor_hmac_secret({})
+        self.assertRegex(first, r"^[a-f0-9]{64}$")
+        self.assertRegex(second, r"^[a-f0-9]{64}$")
+        self.assertNotEqual(first, second)
+
+    def test_named_key_matches_worker_whitespace_and_utf8_validation(self):
+        config = {"actor_hmac_secret_environment": "TEST_ACTOR_KEY"}
+        for secret in ("a" * 32, "é" * 16):
+            with self.subTest(secret_bytes=len(secret.encode())), \
+                 patch.dict(replay.os.environ, {"TEST_ACTOR_KEY": " \n" + secret + "\t"}):
+                self.assertEqual(replay.actor_hmac_secret(config), secret)
+
+    def test_invalid_inputs_fail_without_exposing_the_value(self):
+        config = {"actor_hmac_secret_environment": "TEST_ACTOR_KEY"}
+        for secret in (None, "", " \n\t", "private-short-key", "é" * 15):
+            with self.subTest(secret=secret), patch.dict(replay.os.environ, {}, clear=True):
+                if secret is not None:
+                    replay.os.environ["TEST_ACTOR_KEY"] = secret
+                with self.assertRaises(replay.BenchmarkError) as raised:
+                    replay.actor_hmac_secret(config)
+                if secret and secret.strip():
+                    self.assertNotIn(secret, str(raised.exception))
+        for name in (None, 123, "", "INVALID-NAME", "literal key material"):
+            with self.subTest(name=name), self.assertRaises(replay.BenchmarkError):
+                replay.actor_hmac_secret({"actor_hmac_secret_environment": name})
+
+
 class ObservationSafetyTests(unittest.TestCase):
+    def test_lsn_span_handles_cross_highword_rollover_and_unsigned_64bit_bounds(self):
+        self.assertEqual(replay.wal_lsn_span_bytes("0/FFFFFFFF", "1/0"), 1)
+        self.assertEqual(replay.wal_lsn_span_bytes("ABC/FFFFFFF0", "ABD/10"), 32)
+        self.assertEqual(replay.wal_lsn_span_bytes("0/0", "FFFFFFFF/FFFFFFFF"), (1 << 64) - 1)
+        self.assertEqual(replay.wal_lsn_span_bytes("a/b", "A/B"), 0)
+        self.assertEqual(replay.wal_lsn_span_bytes("00000000/00000000", "0/0"), 0)
+
+    def test_lsn_span_rejects_malformed_out_of_range_and_backwards_positions(self):
+        for invalid in (None, 0, "", "0", "0/", "/0", "-1/0", "+1/0", "0x1/0",
+                        "0/G", "1/2/3", " 0/0", "0/0\n", "100000000/0", "0/100000000"):
+            for before, after in ((invalid, "0/1"), ("0/0", invalid)):
+                with self.subTest(before=before, after=after), self.assertRaises(replay.BenchmarkError):
+                    replay.wal_lsn_span_bytes(before, after)
+        with self.assertRaisesRegex(replay.BenchmarkError, "backwards"):
+            replay.wal_lsn_span_bytes("1/0", "0/FFFFFFFF")
+
     def test_wal_delta_matches_one_unreset_counter_epoch(self):
         before = {"wal_bytes": "100", "stats_reset": "epoch-a"}
         self.assertEqual(replay.wal_delta(before, {"wal_bytes": "140", "stats_reset": "epoch-a"}), 40)
@@ -187,6 +235,45 @@ class ProcessSafetyTests(unittest.TestCase):
 
 
 class PostgresConnectionTests(unittest.TestCase):
+    def test_observation_samples_include_lsn_and_checkpointer_without_resetting_counters(self):
+        expected = {"wal_insert_lsn": "0/123", "checkpointer": {"num_timed": 2, "stats_reset": "epoch-a"}}
+        with patch.object(replay.Postgres, "query", return_value=expected) as query:
+            result = replay.sample_database(replay.Postgres("psql"), "postgresql://localhost:55492/admin",
+                "wire-global-v4-tsw92-bench-012345abcdef")
+        self.assertEqual(result, expected)
+        sql = query.call_args.args[1]
+        self.assertIn("pg_current_wal_insert_lsn()::text", sql)
+        self.assertIn("FROM pg_stat_checkpointer", sql)
+        self.assertNotIn("pg_stat_reset", sql)
+
+    def test_checkpoint_is_standalone_with_server_side_deadline(self):
+        with patch.object(replay.subprocess, "run", return_value=subprocess.CompletedProcess(["psql"], 0, stdout="")) as run:
+            replay.Postgres("psql").run("postgresql://localhost:55492/tsw92_bench_012345abcdef",
+                sql="CHECKPOINT", statement_timeout_seconds=10)
+        self.assertEqual(run.call_args.args[0][-2:], ["-c", "CHECKPOINT"])
+        self.assertEqual(run.call_args.kwargs["env"]["PGOPTIONS"], "-c statement_timeout=10000")
+        self.assertEqual(run.call_args.kwargs["timeout"], 12)
+
+    def test_checkpoint_rejects_unowned_targets_and_other_clients(self):
+        pg = type("FakePostgres", (), {"query": lambda *args: 1})()
+        with self.assertRaisesRegex(replay.BenchmarkError, "owned benchmark"):
+            replay.checkpoint_phase(pg, "postgresql://localhost:55492/production")
+        with self.assertRaisesRegex(replay.BenchmarkError, "idle dedicated"):
+            replay.checkpoint_phase(pg, "postgresql://localhost:55492/tsw92_bench_012345abcdef")
+
+    def test_signal_cardinality_reads_partition_rows_with_existing_read_only_timeout(self):
+        counts = {"total": 3, "by_signal_kind": {"like": 2, "share": 1}}
+        with patch.object(replay.Postgres, "run", return_value=json.dumps(counts)) as run:
+            self.assertEqual(replay.signal_cardinality(replay.Postgres("psql"),
+                "postgresql://localhost:55492/tsw92_admin"), counts)
+        sql = run.call_args.args[1]
+        self.assertIn("BEGIN READ ONLY; SET LOCAL statement_timeout='5s';", sql)
+        self.assertIn("FROM public.wire_signal_events GROUP BY signal_kind", sql)
+        self.assertIn("count(*)", sql)
+        self.assertNotIn("pg_stat_user_tables", sql)
+        self.assertNotIn("ONLY", sql.split("SET LOCAL", 1)[1])
+        self.assertNotIn("reset", sql.lower())
+
     def test_uri_values_are_decoded_into_libpq_environment_without_inherited_overrides(self):
         url = "postgresql://bench%20user:p%40ss%2Fword%3Asecret@localhost:55492/tsw92%20fixture?sslmode=verify-full"
         inherited = {"PGSERVICE": "production", "PGOPTIONS": "-c default_transaction_read_only=off",
@@ -276,7 +363,18 @@ class ReplayOrchestrationTests(unittest.TestCase):
             path.write_bytes(b"unit-test executable identity only")
             self.variant[binary] = str(path)
         self.generation = "wire-global-v4-tsw92-bench-012345abcdef"
-        self.pg = type("FakePostgres", (), {"run": lambda _, url, sql=None, file=None: self.events.append(("sql", sql, str(file)))})()
+        self.pg = type("FakePostgres", (), {"run": lambda _, url, sql=None, file=None, **kwargs: self.events.append(("sql", sql, str(file)))})()
+        def count_signals(url, sql):
+            if "pg_stat_activity" in sql:
+                self.events.append(("idle_check",))
+                return 0
+            if "pg_stat_checkpointer" in sql:
+                self.events.append(("checkpoint_snapshot",))
+                return {"captured_at": "2026-09-05T00:00:00Z", "wal_insert_lsn": "0/123",
+                        "checkpointer": {"num_timed": 3, "num_requested": 1, "stats_reset": "epoch-a"}}
+            self.events.append(("signal_count",))
+            return {"total": 3, "by_signal_kind": {"like": 2, "share": 1}}
+        self.pg.query = count_signals
 
     def run_replay(self, samples, *, failed_child=None, ingest_status=0):
         def start(binary, env, log_path):
@@ -291,7 +389,12 @@ class ReplayOrchestrationTests(unittest.TestCase):
             return {"status": 200, "matches_local_active": True, "generation_id": generation,
                     "source": "ranked", "degraded": False, "item_count": 50}
 
-        with patch.object(replay, "sample_database", side_effect=samples), \
+        sample_iterator = iter(samples)
+        def database_sample(*args):
+            self.events.append(("sample",))
+            return next(sample_iterator)
+
+        with patch.object(replay, "sample_database", side_effect=database_sample), \
              patch.object(replay, "start_process", side_effect=start), \
              patch.object(replay, "read_probe", side_effect=probe), \
              patch.object(replay.time, "sleep"), \
@@ -314,8 +417,68 @@ class ReplayOrchestrationTests(unittest.TestCase):
         result = self.run_replay([sample(), sample(pending=1, wal_bytes=140), sample(generation="generation-b", wal_bytes=180)])
         self.assertEqual(result["status"], "passed")
         self.assertEqual(result["wal_bytes"], 80)
+        # Address span is intentionally distinct from asynchronously visible counters.
+        self.assertEqual(result["wal_lsn_span_bytes"], 160)
         self.assertEqual(result["observed_generations"], 2)
         self.assertEqual(result["successful_reads"], 2)
+        self.assert_cleanup_after_children()
+        counts = [i for i, event in enumerate(self.events) if event[0] == "signal_count"]
+        self.assertEqual(len(counts), 2)
+        self.assertLess(counts[0], next(i for i, event in enumerate(self.events) if event[0] == "start"))
+        self.assertGreater(counts[1], max(i for i, event in enumerate(self.events) if event[0] == "wait"))
+        self.assertEqual(result["initial_signal_cardinality"]["total"], 3)
+        self.assertEqual(result["final_signal_cardinality"]["by_signal_kind"], {"like": 2, "share": 1})
+        checkpoint = next(i for i, event in enumerate(self.events) if event[:2] == ("sql", "CHECKPOINT"))
+        snapshots = [i for i, event in enumerate(self.events) if event[0] == "checkpoint_snapshot"]
+        self.assertEqual(len(snapshots), 2)
+        self.assertLess(snapshots[0], checkpoint)
+        self.assertGreater(snapshots[1], checkpoint)
+        self.assertLess(snapshots[1], next(i for i, event in enumerate(self.events) if event[0] == "sample"))
+        self.assertTrue(result["checkpoint_phase"]["completed"])
+        self.assertEqual(result["checkpoint_phase"]["after"]["checkpointer"]["stats_reset"], "epoch-a")
+
+    def test_each_variant_gets_exactly_one_checkpoint_after_restoring_its_seed(self):
+        for name in ("baseline", "candidate"):
+            self.variant["name"] = name
+            self.run_replay([sample(), sample(pending=1), sample(generation="generation-b")])
+        checkpoints = [i for i, event in enumerate(self.events) if event[:2] == ("sql", "CHECKPOINT")]
+        restores = [i for i, event in enumerate(self.events) if event[0] == "sql" and event[2] == str(self.seed)]
+        self.assertEqual(len(checkpoints), 2)
+        self.assertEqual(len(restores), 2)
+        self.assertLess(restores[0], checkpoints[0])
+        self.assertLess(checkpoints[0], restores[1])
+        self.assertLess(restores[1], checkpoints[1])
+
+    def test_checkpoint_failure_starts_no_child_and_removes_only_owned_database(self):
+        original = self.pg.run
+        def fail_checkpoint(url, sql=None, file=None, **kwargs):
+            original(url, sql=sql, file=file, **kwargs)
+            if sql == "CHECKPOINT":
+                raise replay.BenchmarkError("Checkpoint deadline exceeded")
+        self.pg.run = fail_checkpoint
+        with self.assertRaisesRegex(replay.BenchmarkError, "Checkpoint deadline"):
+            self.run_replay([])
+        self.assertFalse(any(event[0] in {"start", "sample"} for event in self.events))
+        self.assertRegex(self.events[-1][1], r'^DROP DATABASE "tsw92_bench_[a-f0-9]{12}" WITH \(FORCE\)$')
+        result = json.loads((self.output / "result.json").read_text())
+        self.assertEqual(result["status"], "failed")
+        self.assertNotIn("checkpoint_phase", result)
+
+    def test_final_signal_count_timeout_fails_acceptance_but_still_cleans_up(self):
+        original = self.pg.query
+        calls = 0
+        def timeout_final(url, sql):
+            nonlocal calls
+            if "public.wire_signal_events" in sql:
+                calls += 1
+            if calls == 2:
+                raise replay.BenchmarkError("bounded signal count timed out")
+            return original(url, sql)
+        self.pg.query = timeout_final
+        result = self.run_replay([sample(), sample(pending=1), sample(generation="generation-b")])
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(result["signal_cardinality_error"], "BenchmarkError")
+        self.assertNotIn("final_signal_cardinality", result)
         self.assert_cleanup_after_children()
 
     def test_failed_child_aborts_and_reaps_before_removing_owned_database(self):
@@ -339,6 +502,16 @@ class ReplayOrchestrationTests(unittest.TestCase):
         with self.assertRaisesRegex(replay.BenchmarkError, "statistics reset"):
             self.run_replay([sample(), reset])
         self.assert_cleanup_after_children()
+
+    def test_backward_lsn_aborts_and_cleans_up_without_a_valid_span(self):
+        backwards = sample(wal_bytes=140)
+        backwards["wal_insert_lsn"] = "0/1"
+        with self.assertRaisesRegex(replay.BenchmarkError, "LSN moved backwards"):
+            self.run_replay([sample(), backwards])
+        self.assert_cleanup_after_children()
+        result = json.loads((self.output / "result.json").read_text())
+        self.assertEqual(result["status"], "failed")
+        self.assertNotIn("wal_lsn_span_bytes", result)
 
     def test_unconfirmed_process_shutdown_never_drops_the_database(self):
         with patch.object(replay, "stop_processes", side_effect=subprocess.TimeoutExpired("child", 5)):
@@ -383,6 +556,60 @@ class ReplayOrchestrationTests(unittest.TestCase):
         self.assertIn("snapshot incomplete", result["acceptance_errors"][0])
         self.assert_cleanup_after_children()
 
+    def test_missing_named_actor_key_fails_before_network_or_output_creation(self):
+        config_path = self.root / "missing-key-config.json"
+        config_path.write_text(json.dumps({"common_environment": {},
+            "actor_hmac_secret_environment": "TEST_MISSING_ACTOR_KEY"}))
+        output = self.root / "missing-key-output"
+        with patch.dict(replay.os.environ, {}, clear=True), \
+             patch.object(replay.os.sys, "argv", [str(MODULE_PATH), str(config_path), "--output", str(output)]), \
+             patch.object(replay, "archive_plan") as archive:
+            with self.assertRaisesRegex(replay.BenchmarkError, "missing or empty"):
+                replay.main()
+            archive.assert_not_called()
+            self.assertFalse(output.exists())
+
+    def test_comparison_shares_one_actor_key_without_serializing_its_value(self):
+        for configured in (False, True):
+            with self.subTest(configured=configured):
+                config = dict(self.config, observation_seconds=60, maximum_seconds=120,
+                    seed_sql=str(self.seed), admin_url_environment="TEST_BENCH_URL",
+                    archive_key_environment="TEST_ARCHIVE_KEY",
+                    variants=[dict(self.variant, name="baseline"), self.variant])
+                if configured:
+                    config["actor_hmac_secret_environment"] = "TEST_SEEDED_ACTOR_KEY"
+                config_path = self.root / ("actor-config-%s.json" % configured)
+                config_path.write_text(json.dumps(config))
+                output = self.root / ("actor-output-%s" % configured)
+                secret = "isolated-preseed-actor-key-" + "a" * 32
+                keys = []
+
+                def run(config, variant, pg, admin_url, output, secrets, generation, seed):
+                    env = replay.process_environment(config, variant, admin_url, generation, secrets)
+                    keys.append(env["WIRE_ACTOR_HMAC_SECRET"])
+                    self.assertNotIn("TEST_SEEDED_ACTOR_KEY", env)
+                    # Later environment changes must not change the candidate's key.
+                    replay.os.environ["TEST_SEEDED_ACTOR_KEY"] = "changed-after-baseline-" + "b" * 32
+                    return {"variant": variant["name"], "status": "passed"}
+
+                with patch.object(replay.os.sys, "argv", [str(MODULE_PATH), str(config_path), "--output", str(output)]), \
+                     patch.dict(replay.os.environ, {"TEST_BENCH_URL": "postgresql://localhost:55492/admin",
+                         "TEST_ARCHIVE_KEY": "fixture-only", "TEST_SEEDED_ACTOR_KEY": secret}), \
+                     patch.object(replay, "archive_plan", return_value={}), \
+                     patch.object(replay.Postgres, "query", return_value=0), \
+                     patch.object(replay, "run_variant", side_effect=run):
+                    replay.main()
+                self.assertEqual(len(keys), 2)
+                self.assertEqual(keys[0], keys[1])
+                if configured:
+                    self.assertEqual(keys[0], secret)
+                else:
+                    self.assertNotEqual(keys[0], secret)
+                evidence = "".join(path.read_text() for path in output.rglob("*.json"))
+                self.assertNotIn(keys[0], evidence)
+                self.assertNotIn(secret, evidence)
+                self.assertEqual(json.loads((output / "configuration.json").read_text()), config)
+
     def test_one_generation_cannot_pass_even_when_http_reads_succeed(self):
         result = self.run_replay([sample(), sample(), sample()])
         self.assertEqual(result["status"], "failed")
@@ -394,6 +621,7 @@ class ReplayOrchestrationTests(unittest.TestCase):
         self.assertTrue(result["observation_complete"])
         self.assertEqual(result["status"], "failed")
         self.assertEqual(result["final"]["actionable_count"], 7)
+        self.assertEqual(result["final_signal_cardinality"]["total"], 3)
         self.assertIn("snapshot incomplete or unresolved actionable backlog", result["acceptance_errors"])
         self.assert_cleanup_after_children()
         self.assertFalse(any(event[0] == "sql" and "UPDATE" in (event[1] or "") for event in self.events))

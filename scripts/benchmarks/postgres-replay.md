@@ -12,6 +12,16 @@ This is a real recent archive pilot, not a synthetic performance fixture or proo
 4. Ensure the target has no other client workloads. Record volume free space before starting and leave at least 16 GiB headroom above the configured database+WAL cap. The cap sums all database sizes and the WAL directory; it does not account for every filesystem file, backup staging or OS cache. Monitor Railway's actual volume during the run as well. Do not run backup/restore drills on this target concurrently.
 5. Copy `postgres-replay.example.json`, change binary/seed paths and exact candidate SHA as needed, and retain the same common limits for both variants. Explicit treatment fields remain visible in the manifest. Inject `TSW92_BENCH_ADMIN_URL` and `TSW92_ARCHIVE_API_KEY` from Railway references; do not put credential values in JSON or shell history. API keys are sent only to the fixed US-West archive host. Configuration is saved in evidence, so it must remain secret-free.
 
+When the common seed includes actor hashes projected from public posts, use the
+same isolated actor key for seeding and both measured variants. Set the optional
+configuration field `actor_hmac_secret_environment` to the name of a private
+environment variable (for example `TSW92_REPLAY_ACTOR_HMAC_SECRET`), containing at
+least 32 UTF-8 bytes after trimming. Only the variable name is saved in evidence.
+Missing, blank, or short configured keys fail before the run; omitting the field
+preserves the default fresh random key shared by both variants. Never reuse a
+Production actor key. A seed created with a different key cannot measure correct
+actor deduplication across its boundary.
+
 ## Run
 
 ```sh
@@ -29,7 +39,25 @@ It aborts on child failure, runtime safety deadline, counter reset, database+WAL
 
 Each variant records binary and seed hashes, treatment migration hashes, samples, private child logs and a result. Samples include WAL/reset epoch, database/WAL bytes, bounded actionable/dead-letter counts (10001 means a lower bound), oldest actionable age, checkpoint progress, inserted/updated/deleted table counters, active generation/duration and private read latency. Derive ingestion rate from `wire_ingestion_inbox.n_tup_ins` counter deltas divided by elapsed time; source sequence subtraction is not an event count. Use the samples for latency distributions, excluding failed/empty/remote responses and reporting exclusions separately. Keep child logs private; they can include public source identifiers.
 
-The first and last counter samples define the measured WAL interval. Candidate duration diagnostics are expected; the baseline binary may not export them, so its generation cadence comes from timestamps/logs. Capture `scripts/capture-postgres-cost.sql` and Railway CPU/RAM/volume independently around each run; the script does not claim container CPU/memory attribution. `pg_stat_statements` comparisons must retain its own reset/deallocation metadata as well as WAL/database reset epochs.
+The first and last samples define the measured WAL interval. `wal_bytes` remains
+the legacy `pg_stat_wal.wal_bytes` delta, whose visibility can lag. Prefer physical
+interval evidence: `wal_lsn_span_bytes` subtracts those samples' insertion LSNs,
+with strict unsigned 64-bit parsing and a backwards-position guard. This address
+span includes WAL headers and padding; it is neither summed WAL record payload
+bytes nor billable archive-upload bytes. Preserve both numbers and explain their
+divergence rather than substituting one for the other. When retained WAL is
+available, bounded `pg_waldump` statistics over the same LSN interval can separately
+measure physical record bytes. A tuned pilot exposed 101,911,926 record bytes
+versus an 87,703,396-byte counter delta; neither is an LSN span or an upload bill.
+Earlier artifacts remain unchanged and must not be relabeled as capturing the
+new field.
+
+Candidate duration diagnostics are expected; the baseline binary may not export them, so its generation cadence comes from timestamps/logs. Capture `scripts/capture-postgres-cost.sql` and Railway CPU/RAM/volume independently around each run; the script does not claim container CPU/memory attribution. `pg_stat_statements` comparisons must retain its own reset/deallocation metadata as well as WAL/database reset epochs.
+
+Results also include exact partition-spanning signal totals and counts by kind,
+captured before the timed observation and after all children stop. These bounded
+read-only queries avoid treating partition-parent statistics as total signal
+cardinality. A failed final count marks acceptance failed while preserving cleanup.
 
 Sequential runs avoid competing worker CPU/disk, but external label/metadata cache state, archive throttling and wall-clock ranking age can still differ. Record those limits, repeat in reversed order if they materially affect results, and do not call unmatched samples equivalent. This pilot does not replace authenticated web/iOS bootstrap/pagination/expiry QA, a full-day live input soak, seven-day retained-state evaluation or the backup restore gate. Those require the dedicated isolated AppView/Gateway test path; normal Development's remote Wire responses are not local database evidence.
 
@@ -38,6 +66,27 @@ Run harness safety tests with:
 ```sh
 python3 -m unittest discover -s scripts/benchmarks/tests
 ```
+
+## Checkpoint Phase Control
+
+Each variant now completes one explicit `CHECKPOINT` after restoring its seed and
+applying its migrations, immediately before the initial counter sample and child
+startup. This runs only on an owned `tsw92_bench_*` database after another check
+that the dedicated server has no other client connections. The standalone
+checkpoint has a ten-second server deadline; failure aborts the variant before
+workers start and retains the existing owned-database cleanup behavior.
+
+`checkpoint_phase` records completion and before/after insertion LSNs and
+`pg_stat_checkpointer` snapshots. The observation's `initial` and `final` samples
+also contain insertion LSNs and checkpointer snapshots. No statistics are reset.
+The barrier puts both variants at the start of a checkpoint phase; it does not
+promise identical checkpoint counts if workloads trigger different WAL limits.
+
+Earlier pilot runs lacked this barrier. In particular, dropping the preceding
+variant's database can force a checkpoint and shift the next variant's phase.
+Do not present those pilots as checkpoint-phase-matched savings evidence; preserve
+their original artifacts and use a new output directory for controlled runs.
+This correction applies only to newly started harness processes.
 
 ## Separate synthetic 5,000-candidate capacity trial
 
