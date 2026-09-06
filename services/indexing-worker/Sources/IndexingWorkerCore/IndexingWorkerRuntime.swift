@@ -11,7 +11,8 @@ public enum IndexingWorkerRuntime {
   public static func run(
     environment: [String: String],
     config: IndexingWorkerConfig,
-    logger: Logger
+    logger: Logger,
+    terminateUnresponsiveProcess: @escaping @Sendable () -> Void
   ) async throws {
     guard let databaseURL = environment["DATABASE_URL"], !databaseURL.isEmpty else {
       throw IndexingWorkerRuntimeError.missingDatabaseURL
@@ -41,6 +42,12 @@ public enum IndexingWorkerRuntime {
     do {
       try await withThrowingTaskGroup(of: Void.self) { group in
         group.addTask { await pool.run() }
+        if config.role == .coordinator {
+          group.addTask {
+            try await IndexingWorkerShutdownWatchdog.run(
+              state: laneState, logger: logger, terminate: terminateUnresponsiveProcess)
+          }
+        }
         group.addTask {
           try await IndexingWorkerHealthServer.run(
             role: config.role,
@@ -113,7 +120,8 @@ public enum IndexingWorkerRuntime {
               lane: .appView,
               state: laneState,
               store: operationsStore,
-              config: config
+              config: config,
+              logger: logger
             ) {
               try await AppViewWorkerHost.run(
                 environment: environment,
@@ -132,7 +140,8 @@ public enum IndexingWorkerRuntime {
               lane: .wire,
               state: laneState,
               store: operationsStore,
-              config: config
+              config: config,
+              logger: logger
             ) {
               try await WireWorkerHost.run(
                 environment: environment,
@@ -162,9 +171,10 @@ public enum IndexingWorkerRuntime {
     state: IndexingWorkerLaneState,
     store: any OperationsStore,
     config: IndexingWorkerConfig,
+    logger: Logger,
     operation: @Sendable @escaping () async throws -> Void
   ) async {
-    await state.set(.standby, for: lane)
+    await state.set(.starting, for: lane)
     guard
       let leaseConfiguration = try? RoleLeaseSupervisorConfiguration(
         role: roleName,
@@ -175,17 +185,24 @@ public enum IndexingWorkerRuntime {
       )
     else { return }
 
-    let supervisor = RoleLeaseSupervisor(store: store, configuration: leaseConfiguration)
-    await supervisor.run { _ in
-      await state.set(.running, for: lane)
-      do {
-        try await operation()
-      } catch {
-        await state.set(.standby, for: lane)
-        throw error
+    let (events, continuation) = AsyncStream<RoleLeaseSupervisorEvent>.makeStream()
+    let observer = Task {
+      for await event in events {
+        await state.record(event, for: lane)
+        if event != .acquiring && event != .contended {
+          logger.info("Indexing role lifecycle", metadata: [
+            "role": .string(roleName), "owner_id": .string(config.ownerID),
+            "event": .string(String(describing: event)),
+          ])
+        }
       }
-      await state.set(.standby, for: lane)
     }
+    let supervisor = RoleLeaseSupervisor(
+      store: store, configuration: leaseConfiguration,
+      onEvent: { continuation.yield($0) })
+    await supervisor.run { _ in try await operation() }
+    continuation.finish()
+    await observer.value
   }
 
   private static func probeLanes(
@@ -207,7 +224,7 @@ public enum IndexingWorkerRuntime {
         try await IndexingWorkerLocalHealthProbe.run(client: client, port: port, path: path)
       case (_, .starting):
         throw IndexingWorkerHealthError.laneNotStarted(lane)
-      case (_, .restarting):
+      case (_, .restarting), (_, .stopping):
         throw IndexingWorkerHealthError.laneRestarting(lane)
       case (.projection, .standby):
         throw IndexingWorkerHealthError.laneNotStarted(lane)

@@ -3,6 +3,12 @@ import Foundation
 import IndexingWorkerCore
 import Logging
 
+#if canImport(Glibc)
+  import Glibc
+#else
+  import Darwin
+#endif
+
 @main
 @available(macOS 10.15, macCatalyst 13, iOS 13, tvOS 13, watchOS 6, *)
 struct IndexingWorkerCommand: AsyncParsableCommand {
@@ -25,7 +31,14 @@ struct IndexingWorkerCommand: AsyncParsableCommand {
     try await IndexingWorkerRuntime.run(
       environment: environment,
       config: config,
-      logger: logger
+      logger: logger,
+      terminateUnresponsiveProcess: {
+        #if canImport(Glibc)
+          Glibc.exit(1)
+        #else
+          Darwin.exit(1)
+        #endif
+      }
     )
   }
 }

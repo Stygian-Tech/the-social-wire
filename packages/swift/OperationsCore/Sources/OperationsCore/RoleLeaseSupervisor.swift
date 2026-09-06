@@ -83,15 +83,20 @@ public struct RoleLeaseSupervisor: Sendable {
   private let store: any OperationsStore
   private let configuration: RoleLeaseSupervisorConfiguration
   private let timing: any RoleLeaseSupervisorTiming
+  private let onEvent: @Sendable (RoleLeaseSupervisorEvent) -> Void
 
+  /// `onEvent` is synchronous and may run concurrently from renewal and operation tasks.
+  /// Keep it nonblocking; an AsyncStream continuation can forward ordered signals to an actor.
   public init(
     store: any OperationsStore,
     configuration: RoleLeaseSupervisorConfiguration,
-    timing: any RoleLeaseSupervisorTiming = SystemRoleLeaseSupervisorTiming()
+    timing: any RoleLeaseSupervisorTiming = SystemRoleLeaseSupervisorTiming(),
+    onEvent: @escaping @Sendable (RoleLeaseSupervisorEvent) -> Void = { _ in }
   ) {
     self.store = store
     self.configuration = configuration
     self.timing = timing
+    self.onEvent = onEvent
   }
 
   /// Repeatedly acquires the configured role and runs `operation` only while this owner holds it.
@@ -102,6 +107,7 @@ public struct RoleLeaseSupervisor: Sendable {
   ) async {
     while !Task.isCancelled {
       do {
+        onEvent(.acquiring)
         let acquiredAt = await timing.now()
         if let lease = try await store.acquireRoleLease(
           role: configuration.role,
@@ -109,9 +115,13 @@ public struct RoleLeaseSupervisor: Sendable {
           leaseUntil: acquiredAt.addingTimeInterval(configuration.leaseDuration),
           at: acquiredAt
         ) {
+          onEvent(.acquired(fencingToken: lease.fencingToken))
           await runOwned(lease: lease, operation: operation)
+        } else {
+          onEvent(.contended)
         }
       } catch {
+        onEvent(.acquisitionFailed)
         // Fail closed: the operation never starts when durable ownership is unavailable.
       }
       guard !Task.isCancelled else { return }
@@ -126,21 +136,52 @@ public struct RoleLeaseSupervisor: Sendable {
     let ownership = RoleLeaseOwnership(lease: lease, store: store)
     do {
       let validationTime = await timing.now()
-      try await ownership.withFence(at: validationTime) {}
+      do {
+        try await ownership.withFence(at: validationTime) {}
+      } catch {
+        onEvent(.validationFailed)
+        throw error
+      }
       try await withThrowingTaskGroup(of: Void.self) { group in
-        group.addTask { try await operation(ownership) }
+        group.addTask {
+          try await withTaskCancellationHandler {
+            do {
+              try Task.checkCancellation()
+              onEvent(.operationStarted)
+              try await operation(ownership)
+              onEvent(.operationStopped(reason: Task.isCancelled ? .cancelled : .completed))
+            } catch {
+              let reason: RoleLeaseSupervisorEvent.StopReason =
+                Task.isCancelled || error is CancellationError ? .cancelled : .failed
+              onEvent(.operationStopped(reason: reason))
+              throw error
+            }
+          } onCancel: {
+            // This runs synchronously when cancellation begins, before structured teardown
+            // waits for the operation's children. Observers must not block this callback.
+            onEvent(.operationStopping(reason: .cancelled))
+          }
+        }
         group.addTask {
           while !Task.isCancelled {
             await timing.sleep(for: configuration.renewInterval)
             try Task.checkCancellation()
             let renewedAt = await timing.now()
-            _ = try await store.renewRoleLease(
-              role: configuration.role,
-              ownerID: configuration.ownerID,
-              fencingToken: lease.fencingToken,
-              leaseUntil: renewedAt.addingTimeInterval(configuration.leaseDuration),
-              at: renewedAt
-            )
+            do {
+              _ = try await store.renewRoleLease(
+                role: configuration.role,
+                ownerID: configuration.ownerID,
+                fencingToken: lease.fencingToken,
+                leaseUntil: renewedAt.addingTimeInterval(configuration.leaseDuration),
+                at: renewedAt
+              )
+            } catch {
+              if !Task.isCancelled {
+                onEvent(.renewalFailed)
+                onEvent(.operationStopping(reason: .leaseLost))
+              }
+              throw error
+            }
           }
         }
         _ = try await group.next()
@@ -150,11 +191,17 @@ public struct RoleLeaseSupervisor: Sendable {
       // A lost lease or operation failure cancels its sibling and returns to standby.
     }
     let releasedAt = await timing.now()
-    try? await store.releaseRoleLease(
-      role: configuration.role,
-      ownerID: configuration.ownerID,
-      fencingToken: lease.fencingToken,
-      at: releasedAt
-    )
+    onEvent(.releasing)
+    do {
+      try await store.releaseRoleLease(
+        role: configuration.role,
+        ownerID: configuration.ownerID,
+        fencingToken: lease.fencingToken,
+        at: releasedAt
+      )
+      onEvent(.released)
+    } catch {
+      onEvent(.releaseFailed)
+    }
   }
 }
