@@ -492,8 +492,9 @@ public init(pool: PostgresClient, logger: Logger) {
         WHERE checkpoint.environment = \(environment)
           AND checkpoint.source_generation = \(activeSourceGeneration)
           AND checkpoint.replay_state = 'live'
-      ), retired AS (
-        SELECT checkpoint.source_generation, checkpoint.last_staged_seq,
+      ), retired_candidates AS MATERIALIZED (
+        -- Empty polls must not scan retained inbox history without an incident to resolve.
+        SELECT checkpoint.environment, checkpoint.source_generation, checkpoint.last_staged_seq,
                checkpoint.last_applied_seq
         FROM appview_jetstream_checkpoints checkpoint
         CROSS JOIN successor
@@ -508,7 +509,23 @@ public init(pool: PostgresClient, logger: Logger) {
           AND checkpoint.last_staged_seq IS NOT NULL
           AND checkpoint.last_applied_seq IS NOT NULL
           AND checkpoint.last_applied_seq >= checkpoint.last_staged_seq
-          AND NOT EXISTS (
+          AND EXISTS (
+            SELECT 1 FROM appview_ingestion_incidents incident
+            WHERE incident.environment = checkpoint.environment
+              AND incident.source_generation = checkpoint.source_generation
+              AND incident.source = 'jetstream-v2'
+              AND incident.cursor_kind = 'jetstream_v2_seq'
+              AND incident.category = 'fatal_stream'
+              AND incident.status IN ('open', 'recovering')
+              AND (incident.start_cursor IS NULL
+                OR incident.start_cursor <= checkpoint.last_applied_seq)
+              AND (incident.end_cursor IS NULL
+                OR incident.end_cursor <= checkpoint.last_applied_seq))
+      ), retired AS (
+        SELECT checkpoint.source_generation, checkpoint.last_staged_seq,
+               checkpoint.last_applied_seq
+        FROM retired_candidates checkpoint
+        WHERE NOT EXISTS (
             SELECT 1 FROM appview_ingestion_leases retired_lease
             WHERE retired_lease.environment = checkpoint.environment
               AND retired_lease.source_generation = checkpoint.source_generation

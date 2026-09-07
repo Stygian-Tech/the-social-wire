@@ -521,51 +521,35 @@ struct PostgresWireInboxProcessor: Sendable {
       batchSize: batchSize,
       maximumConcurrentEvents: maximumConcurrentEvents
     )
+    // Read repository heads in one FIFO index pass. An anti-join over every
+    // queued follower becomes quadratic when a few repositories have deep queues.
+    // Project index columns only; fetch readiness from the handful of head rows.
+    // Filter readiness after finding the head so future retries and live leases
+    // remain barriers, and lock the actual inbox rows before claiming them.
     let rows = try await pool.query(
       """
-      WITH pending_retry_candidates AS (
-        SELECT environment, source_generation, seq, next_attempt_at AS eligible_at
+      WITH repository_heads AS MATERIALIZED (
+        SELECT DISTINCT ON (candidate.environment, candidate.source_generation, candidate.repo_did)
+               candidate.environment, candidate.source_generation, candidate.repo_did,
+               candidate.seq
         FROM wire_ingestion_inbox candidate
-        WHERE candidate.status IN ('pending', 'retry')
-          AND candidate.next_attempt_at <= \(asOf)
-          AND NOT EXISTS (
-            SELECT 1 FROM wire_ingestion_inbox earlier
-            WHERE earlier.environment = candidate.environment
-              AND earlier.source_generation = candidate.source_generation
-              AND earlier.repo_did = candidate.repo_did
-              AND earlier.seq < candidate.seq
-              AND earlier.status IN ('pending', 'leased', 'retry')
-          )
-        ORDER BY candidate.next_attempt_at, candidate.seq,
-                 candidate.environment, candidate.source_generation
-        FOR UPDATE SKIP LOCKED
-        LIMIT \(claimLimit)
-      ),
-      expired_lease_candidates AS (
-        SELECT environment, source_generation, seq, lease_expires_at AS eligible_at
-        FROM wire_ingestion_inbox candidate
-        WHERE candidate.status = 'leased'
-          AND candidate.lease_expires_at <= \(asOf)
-          AND NOT EXISTS (
-            SELECT 1 FROM wire_ingestion_inbox earlier
-            WHERE earlier.environment = candidate.environment
-              AND earlier.source_generation = candidate.source_generation
-              AND earlier.repo_did = candidate.repo_did
-              AND earlier.seq < candidate.seq
-              AND earlier.status IN ('pending', 'leased', 'retry')
-          )
-        ORDER BY candidate.lease_expires_at, candidate.seq,
-                 candidate.environment, candidate.source_generation
-        FOR UPDATE SKIP LOCKED
-        LIMIT \(claimLimit)
+        WHERE candidate.status IN ('pending', 'leased', 'retry')
+        ORDER BY candidate.environment, candidate.source_generation,
+                 candidate.repo_did, candidate.seq
       ),
       candidates AS (
-        SELECT environment, source_generation, seq, eligible_at
-        FROM pending_retry_candidates
-        UNION ALL
-        SELECT environment, source_generation, seq, eligible_at
-        FROM expired_lease_candidates
-        ORDER BY eligible_at, seq, environment, source_generation
+        SELECT candidate.environment, candidate.source_generation, candidate.seq,
+               CASE WHEN candidate.status = 'leased' THEN candidate.lease_expires_at
+                    ELSE candidate.next_attempt_at END AS eligible_at
+        FROM repository_heads head
+        JOIN wire_ingestion_inbox candidate
+          ON candidate.environment = head.environment
+          AND candidate.source_generation = head.source_generation
+          AND candidate.seq = head.seq
+        WHERE (candidate.status IN ('pending', 'retry') AND candidate.next_attempt_at <= \(asOf))
+          OR (candidate.status = 'leased' AND candidate.lease_expires_at <= \(asOf))
+        ORDER BY eligible_at, candidate.seq, candidate.environment, candidate.source_generation
+        FOR UPDATE OF candidate SKIP LOCKED
         LIMIT \(claimLimit)
       )
       UPDATE wire_ingestion_inbox inbox
@@ -747,55 +731,34 @@ struct PostgresWireInboxProcessor: Sendable {
       batchSize: batchSize,
       maximumConcurrentEvents: maximumConcurrentEvents
     )
+    // Keep the same repository-head scan as the global claim, restricted to
+    // this drain's environment and source generations in the FIFO index.
     let rows = try await pool.query(
       """
-      WITH pending_retry_candidates AS (
-        SELECT candidate.environment, candidate.source_generation, candidate.seq,
-               candidate.next_attempt_at AS eligible_at
+      WITH repository_heads AS MATERIALIZED (
+        SELECT DISTINCT ON (candidate.environment, candidate.source_generation, candidate.repo_did)
+               candidate.environment, candidate.source_generation, candidate.repo_did,
+               candidate.seq
         FROM wire_ingestion_inbox candidate
         WHERE candidate.environment = \(sourceScope.environment)
           AND candidate.source_generation = ANY(\(sourceScope.sourceGenerations))
-          AND candidate.status IN ('pending', 'retry')
-          AND candidate.next_attempt_at <= \(asOf)
-          AND NOT EXISTS (
-            SELECT 1 FROM wire_ingestion_inbox earlier
-            WHERE earlier.environment = candidate.environment
-              AND earlier.source_generation = candidate.source_generation
-              AND earlier.repo_did = candidate.repo_did
-              AND earlier.seq < candidate.seq
-              AND earlier.status IN ('pending', 'leased', 'retry')
-          )
-        ORDER BY candidate.next_attempt_at, candidate.seq, candidate.source_generation
-        FOR UPDATE SKIP LOCKED
-        LIMIT \(claimLimit)
-      ),
-      expired_lease_candidates AS (
-        SELECT candidate.environment, candidate.source_generation, candidate.seq,
-               candidate.lease_expires_at AS eligible_at
-        FROM wire_ingestion_inbox candidate
-        WHERE candidate.environment = \(sourceScope.environment)
-          AND candidate.source_generation = ANY(\(sourceScope.sourceGenerations))
-          AND candidate.status = 'leased'
-          AND candidate.lease_expires_at <= \(asOf)
-          AND NOT EXISTS (
-            SELECT 1 FROM wire_ingestion_inbox earlier
-            WHERE earlier.environment = candidate.environment
-              AND earlier.source_generation = candidate.source_generation
-              AND earlier.repo_did = candidate.repo_did
-              AND earlier.seq < candidate.seq
-              AND earlier.status IN ('pending', 'leased', 'retry')
-          )
-        ORDER BY candidate.lease_expires_at, candidate.seq, candidate.source_generation
-        FOR UPDATE SKIP LOCKED
-        LIMIT \(claimLimit)
+          AND candidate.status IN ('pending', 'leased', 'retry')
+        ORDER BY candidate.environment, candidate.source_generation,
+                 candidate.repo_did, candidate.seq
       ),
       candidates AS (
-        SELECT environment, source_generation, seq, eligible_at
-        FROM pending_retry_candidates
-        UNION ALL
-        SELECT environment, source_generation, seq, eligible_at
-        FROM expired_lease_candidates
-        ORDER BY eligible_at, seq, environment, source_generation
+        SELECT candidate.environment, candidate.source_generation, candidate.seq,
+               CASE WHEN candidate.status = 'leased' THEN candidate.lease_expires_at
+                    ELSE candidate.next_attempt_at END AS eligible_at
+        FROM repository_heads head
+        JOIN wire_ingestion_inbox candidate
+          ON candidate.environment = head.environment
+          AND candidate.source_generation = head.source_generation
+          AND candidate.seq = head.seq
+        WHERE (candidate.status IN ('pending', 'retry') AND candidate.next_attempt_at <= \(asOf))
+          OR (candidate.status = 'leased' AND candidate.lease_expires_at <= \(asOf))
+        ORDER BY eligible_at, candidate.seq, candidate.environment, candidate.source_generation
+        FOR UPDATE OF candidate SKIP LOCKED
         LIMIT \(claimLimit)
       )
       UPDATE wire_ingestion_inbox inbox
@@ -1822,135 +1785,7 @@ struct PostgresWireInboxProcessor: Sendable {
   }
 
   private func refreshRollups(asOf: Date) async throws {
-    try await pool.withTransaction(logger: logger) { connection in
-      try await connection.query(
-        "SELECT pg_advisory_xact_lock(hashtext('wire_signal_rollups_refresh')::bigint)",
-        logger: logger
-      )
-      try await connection.query(
-        "TRUNCATE TABLE wire_signal_rollups",
-        logger: logger
-      )
-      try await connection.query(
-        """
-        INSERT INTO wire_signal_rollups
-          (canonical_key, distinct_actors_1h, distinct_actors_24h, distinct_actors_7d,
-           signals_1h, signals_24h, signals_7d, communities_24h,
-           primary_community_key_hash, recommendations_24h,
-           positive_feedback_24h, negative_feedback_24h,
-           shares_1h, shares_24h, distinct_likers_24h, likes_1h, likes_24h,
-           distinct_reposters_24h, reposts_1h, reposts_24h,
-           baseline_last_signal_at,
-           baseline_distinct_actors_1h, baseline_distinct_actors_24h,
-           baseline_distinct_actors_7d, baseline_signals_1h, baseline_signals_24h,
-           baseline_signals_7d, baseline_recommendations_24h,
-           baseline_shares_1h, baseline_shares_24h,
-           baseline_distinct_likers_24h, baseline_likes_1h, baseline_likes_24h,
-           updated_at)
-        SELECT canonical_key,
-          COUNT(DISTINCT actor_key_hash) FILTER (WHERE occurred_at >= \(asOf.addingTimeInterval(-3_600))),
-          COUNT(DISTINCT actor_key_hash) FILTER (WHERE occurred_at >= \(asOf.addingTimeInterval(-86_400))),
-          COUNT(DISTINCT actor_key_hash),
-          COUNT(*) FILTER (WHERE occurred_at >= \(asOf.addingTimeInterval(-3_600))),
-          COUNT(*) FILTER (WHERE occurred_at >= \(asOf.addingTimeInterval(-86_400))),
-          COUNT(*),
-          COUNT(DISTINCT community_key_hash) FILTER (
-            WHERE occurred_at >= \(asOf.addingTimeInterval(-86_400)) AND community_key_hash IS NOT NULL),
-          MODE() WITHIN GROUP (ORDER BY community_key_hash) FILTER (
-            WHERE occurred_at >= \(asOf.addingTimeInterval(-86_400)) AND community_key_hash IS NOT NULL),
-          COUNT(DISTINCT actor_key_hash) FILTER (WHERE signal_kind = 'recommendation'
-            AND occurred_at >= \(asOf.addingTimeInterval(-86_400))),
-          COALESCE((SELECT COUNT(*) FROM wire_article_feedback feedback
-            WHERE feedback.canonical_key = wire_signal_events.canonical_key
-              AND feedback.feedback_value = 'good'
-              AND feedback.occurred_at >= \(asOf.addingTimeInterval(-86_400))
-              AND feedback.expires_at > \(asOf)), 0),
-          COALESCE((SELECT COUNT(*) FROM wire_article_feedback feedback
-            WHERE feedback.canonical_key = wire_signal_events.canonical_key
-              AND feedback.feedback_value = 'not_good'
-              AND feedback.occurred_at >= \(asOf.addingTimeInterval(-86_400))
-              AND feedback.expires_at > \(asOf)), 0),
-          COUNT(DISTINCT actor_key_hash) FILTER (
-            WHERE signal_kind IN ('share','quote','recommendation','publication')
-            AND occurred_at >= \(asOf.addingTimeInterval(-3_600))),
-          COUNT(DISTINCT actor_key_hash) FILTER (
-            WHERE signal_kind IN ('share','quote','recommendation','publication')
-            AND occurred_at >= \(asOf.addingTimeInterval(-86_400))),
-          COUNT(DISTINCT actor_key_hash) FILTER (WHERE signal_kind = 'like'
-            AND occurred_at >= \(asOf.addingTimeInterval(-86_400))),
-          COUNT(DISTINCT actor_key_hash) FILTER (WHERE signal_kind = 'like'
-            AND occurred_at >= \(asOf.addingTimeInterval(-3_600))),
-          COUNT(DISTINCT actor_key_hash) FILTER (WHERE signal_kind = 'like'
-            AND occurred_at >= \(asOf.addingTimeInterval(-86_400))),
-          COUNT(DISTINCT actor_key_hash) FILTER (WHERE signal_kind = 'repost'
-            AND occurred_at >= \(asOf.addingTimeInterval(-86_400))),
-          COUNT(DISTINCT actor_key_hash) FILTER (WHERE signal_kind = 'repost'
-            AND occurred_at >= \(asOf.addingTimeInterval(-3_600))),
-          COUNT(DISTINCT actor_key_hash) FILTER (WHERE signal_kind = 'repost'
-            AND occurred_at >= \(asOf.addingTimeInterval(-86_400))),
-          MAX(occurred_at) FILTER (
-            WHERE source_collection NOT LIKE 'at.margin.%'
-              AND source_collection NOT LIKE 'network.cosmik.%'),
-          COUNT(DISTINCT actor_key_hash) FILTER (
-            WHERE occurred_at >= \(asOf.addingTimeInterval(-3_600))
-              AND source_collection NOT LIKE 'at.margin.%'
-              AND source_collection NOT LIKE 'network.cosmik.%'),
-          COUNT(DISTINCT actor_key_hash) FILTER (
-            WHERE occurred_at >= \(asOf.addingTimeInterval(-86_400))
-              AND source_collection NOT LIKE 'at.margin.%'
-              AND source_collection NOT LIKE 'network.cosmik.%'),
-          COUNT(DISTINCT actor_key_hash) FILTER (
-            WHERE source_collection NOT LIKE 'at.margin.%'
-              AND source_collection NOT LIKE 'network.cosmik.%'),
-          COUNT(*) FILTER (
-            WHERE occurred_at >= \(asOf.addingTimeInterval(-3_600))
-              AND source_collection NOT LIKE 'at.margin.%'
-              AND source_collection NOT LIKE 'network.cosmik.%'),
-          COUNT(*) FILTER (
-            WHERE occurred_at >= \(asOf.addingTimeInterval(-86_400))
-              AND source_collection NOT LIKE 'at.margin.%'
-              AND source_collection NOT LIKE 'network.cosmik.%'),
-          COUNT(*) FILTER (
-            WHERE source_collection NOT LIKE 'at.margin.%'
-              AND source_collection NOT LIKE 'network.cosmik.%'),
-          COUNT(DISTINCT actor_key_hash) FILTER (
-            WHERE signal_kind = 'recommendation'
-              AND occurred_at >= \(asOf.addingTimeInterval(-86_400))
-              AND source_collection NOT LIKE 'at.margin.%'
-              AND source_collection NOT LIKE 'network.cosmik.%'),
-          COUNT(DISTINCT actor_key_hash) FILTER (
-            WHERE signal_kind IN ('share','quote','recommendation','publication')
-              AND occurred_at >= \(asOf.addingTimeInterval(-3_600))
-              AND source_collection NOT LIKE 'at.margin.%'
-              AND source_collection NOT LIKE 'network.cosmik.%'),
-          COUNT(DISTINCT actor_key_hash) FILTER (
-            WHERE signal_kind IN ('share','quote','recommendation','publication')
-              AND occurred_at >= \(asOf.addingTimeInterval(-86_400))
-              AND source_collection NOT LIKE 'at.margin.%'
-              AND source_collection NOT LIKE 'network.cosmik.%'),
-          COUNT(DISTINCT actor_key_hash) FILTER (
-            WHERE signal_kind = 'like'
-              AND occurred_at >= \(asOf.addingTimeInterval(-86_400))
-              AND source_collection NOT LIKE 'at.margin.%'
-              AND source_collection NOT LIKE 'network.cosmik.%'),
-          COUNT(DISTINCT actor_key_hash) FILTER (
-            WHERE signal_kind = 'like'
-              AND occurred_at >= \(asOf.addingTimeInterval(-3_600))
-              AND source_collection NOT LIKE 'at.margin.%'
-              AND source_collection NOT LIKE 'network.cosmik.%'),
-          COUNT(DISTINCT actor_key_hash) FILTER (
-            WHERE signal_kind = 'like'
-              AND occurred_at >= \(asOf.addingTimeInterval(-86_400))
-              AND source_collection NOT LIKE 'at.margin.%'
-              AND source_collection NOT LIKE 'network.cosmik.%'),
-          \(asOf)
-        FROM wire_signal_events
-        WHERE occurred_at >= \(asOf.addingTimeInterval(-7 * 86_400)) AND expires_at > \(asOf)
-        GROUP BY canonical_key
-        """,
-        logger: logger
-      )
-    }
+    try await PostgresWireSignalRollupStore(pool: pool, logger: logger).refresh(asOf: asOf)
   }
 
   private func pruneActiveGraph(asOf: Date) async throws {

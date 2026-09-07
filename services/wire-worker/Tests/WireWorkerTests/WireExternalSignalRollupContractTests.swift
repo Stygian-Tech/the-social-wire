@@ -9,9 +9,9 @@ struct WireExternalSignalRollupContractTests {
       .deletingLastPathComponent()
       .deletingLastPathComponent()
       .deletingLastPathComponent()
-    let processor = try String(
+    let rollups = try String(
       contentsOf: root.appendingPathComponent(
-        "Sources/WireWorkerCore/PostgresWireInboxProcessor.swift"),
+        "Sources/WireWorkerCore/PostgresWireSignalRollupStore.swift"),
       encoding: .utf8
     )
     let store = try String(
@@ -20,9 +20,9 @@ struct WireExternalSignalRollupContractTests {
       encoding: .utf8
     )
 
-    #expect(processor.contains("baseline_last_signal_at"))
-    #expect(processor.contains("source_collection NOT LIKE 'at.margin.%'"))
-    #expect(processor.contains("source_collection NOT LIKE 'network.cosmik.%'"))
+    #expect(rollups.contains("baseline_last_signal_at"))
+    #expect(rollups.contains("source_collection NOT LIKE 'at.margin.%'"))
+    #expect(rollups.contains("source_collection NOT LIKE 'network.cosmik.%'"))
     #expect(store.contains("ranking.version == WireRankingConfig.externalSignalVersion"))
     #expect(store.contains("ELSE r.baseline_shares_24h END"))
     #expect(store.contains("ELSE r.baseline_recommendations_24h END"))
