@@ -102,127 +102,131 @@ public enum WireWorkerHost {
       ]
     )
 
-    var runtimeError: Error?
-    do {
-      try await withThrowingTaskGroup(of: Void.self) { group in
-        group.addTask { await pool.run() }
-        if case .enabled(let hostname, let port) = healthListener {
-          group.addTask {
-            try await WireHealthServer.run(
-              databaseProbe: { try await store.ping() },
-              readinessProbe: {
-                let now = Date()
-                if runtimePlan.requiresDrainReadiness {
-                  guard
-                    await state.isDrainReady(
-                      at: now,
-                      maximumSuccessAge: 60,
-                      maximumOperationAge: 180
-                    )
-                  else { throw HealthError.runtimeStale }
-                }
-                if runtimePlan.requiresCleanupReadiness {
-                  guard
-                    await state.isCleanupReady(
-                      at: now, maximumSuccessAge: 60, maximumOperationAge: 180
-                    )
-                  else { throw HealthError.runtimeStale }
-                }
-                if runtimePlan.requiresGenerationReadiness {
-                  guard
-                    await state.isGenerationReady(
-                      at: now,
-                      maximumCycleAge: TimeInterval(max(config.intervalSeconds * 2, 600))
-                    )
-                  else { throw HealthError.runtimeStale }
-                }
-              },
-              host: hostname,
-              port: port,
-              logger: logger
-            )
-          }
-        }
-        if let cycle {
-          group.addTask {
-            try await WireWorkerRuntime.runForever(
-              cycle: cycle, state: state, logger: logger)
-          }
-        }
-        if runtimePlan.runsDrain, let inboxProcessor {
-          group.addTask {
-            try await WireInboxDrainRuntime.run(
-              processor: inboxProcessor,
-              state: state,
-              logger: logger,
-              configuration: .init(idleMilliseconds: config.inboxIdleMilliseconds),
-              telemetry: drainTelemetry
-            )
-          }
-        }
-        if runtimePlan.runsDrain, let inboxProcessor, let drainTelemetry {
-          group.addTask {
-            try await WireInboxDrainTelemetryRuntime.run(
-              observer: inboxProcessor,
-              telemetry: drainTelemetry,
-              logger: logger
-            )
-          }
-        }
-        if runtimePlan.runsCleanup, let inboxProcessor {
-          group.addTask {
-            try await WireInboxCleanupRuntime.run(
-              cleaner: inboxProcessor,
-              state: state,
-              logger: logger,
-              batchSize: config.inboxCleanupBatchSize,
-              idleMilliseconds: config.inboxCleanupIdleMilliseconds
-            )
-          }
-        }
-        if runtimePlan.runsGraphMaintenance, let inboxProcessor {
-          group.addTask {
-            try await WireGraphMaintenanceRuntime.run(
-              maintainer: inboxProcessor, state: state, logger: logger)
-          }
-        }
-        if runtimePlan.runsMetadataEnrichment {
-          let enricher = WireLinkMetadataEnricher(
-            store: linkMetadataStore,
-            client: HTTPWireLinkMetadataClient(httpClient: httpClient),
-            logger: logger,
-            batchSize: config.metadataBatchSize,
-            maximumConcurrentFetches: config.metadataConcurrency
-          )
-          group.addTask {
-            try await WireMetadataEnrichmentRuntime.run(
-              enricher: enricher,
-              logger: logger,
-              idleMilliseconds: config.metadataIdleMilliseconds
-            )
-          }
-          let profileEnricher = WireTalkedAccountProfileEnricher(
-            store: PostgresWireTalkedAccountProfileStore(pool: pool, logger: logger),
-            client: HTTPWireTalkedAccountProfileClient(httpClient: httpClient),
-            logger: logger,
-            batchSize: min(config.metadataBatchSize, 100),
-            maximumConcurrentFetches: min(config.metadataConcurrency, 8)
-          )
-          group.addTask {
-            try await WireMetadataEnrichmentRuntime.runProfiles(
-              enricher: profileEnricher,
-              logger: logger,
-              idleMilliseconds: config.metadataIdleMilliseconds
-            )
-          }
-        }
-        try await group.next()
-        group.cancelAll()
+    try await WireWorkerLifetime.run(
+      logger: logger, shutdown: { try await httpClient.shutdown() }
+    ) { group in
+      group.addTask {
+        defer { logger.info("The Wire component stopped", metadata: ["component": "postgres"]) }
+        await pool.run()
       }
-    } catch {
-      runtimeError = error
+      if case .enabled(let hostname, let port) = healthListener {
+        group.addTask {
+          defer { logger.info("The Wire component stopped", metadata: ["component": "health"]) }
+          try await WireHealthServer.run(
+            databaseProbe: { try await store.ping() },
+            readinessProbe: {
+              let now = Date()
+              if runtimePlan.requiresDrainReadiness {
+                guard
+                  await state.isDrainReady(
+                    at: now,
+                    maximumSuccessAge: 60,
+                    maximumOperationAge: 180
+                  )
+                else { throw HealthError.runtimeStale }
+              }
+              if runtimePlan.requiresCleanupReadiness {
+                guard
+                  await state.isCleanupReady(
+                    at: now, maximumSuccessAge: 60, maximumOperationAge: 180
+                  )
+                else { throw HealthError.runtimeStale }
+              }
+              if runtimePlan.requiresGenerationReadiness {
+                guard
+                  await state.isGenerationReady(
+                    at: now,
+                    maximumCycleAge: TimeInterval(max(config.intervalSeconds * 2, 600))
+                  )
+                else { throw HealthError.runtimeStale }
+              }
+            },
+            host: hostname,
+            port: port,
+            logger: logger
+          )
+        }
+      }
+      if let cycle {
+        group.addTask {
+          defer { logger.info("The Wire component stopped", metadata: ["component": "generation"]) }
+          try await WireWorkerRuntime.runForever(
+            cycle: cycle, state: state, logger: logger)
+        }
+      }
+      if runtimePlan.runsDrain, let inboxProcessor {
+        group.addTask {
+          defer { logger.info("The Wire component stopped", metadata: ["component": "drain"]) }
+          try await WireInboxDrainRuntime.run(
+            processor: inboxProcessor,
+            state: state,
+            logger: logger,
+            configuration: .init(idleMilliseconds: config.inboxIdleMilliseconds),
+            telemetry: drainTelemetry
+          )
+        }
+      }
+      if runtimePlan.runsDrain, let inboxProcessor, let drainTelemetry {
+        group.addTask {
+          defer { logger.info("The Wire component stopped", metadata: ["component": "drain-telemetry"]) }
+          try await WireInboxDrainTelemetryRuntime.run(
+            observer: inboxProcessor,
+            telemetry: drainTelemetry,
+            logger: logger
+          )
+        }
+      }
+      if runtimePlan.runsCleanup, let inboxProcessor {
+        group.addTask {
+          defer { logger.info("The Wire component stopped", metadata: ["component": "cleanup"]) }
+          try await WireInboxCleanupRuntime.run(
+            cleaner: inboxProcessor,
+            state: state,
+            logger: logger,
+            batchSize: config.inboxCleanupBatchSize,
+            idleMilliseconds: config.inboxCleanupIdleMilliseconds
+          )
+        }
+      }
+      if runtimePlan.runsGraphMaintenance, let inboxProcessor {
+        group.addTask {
+          defer { logger.info("The Wire component stopped", metadata: ["component": "graph"]) }
+          try await WireGraphMaintenanceRuntime.run(
+            maintainer: inboxProcessor, state: state, logger: logger)
+        }
+      }
+      if runtimePlan.runsMetadataEnrichment {
+        let enricher = WireLinkMetadataEnricher(
+          store: linkMetadataStore,
+          client: HTTPWireLinkMetadataClient(httpClient: httpClient),
+          logger: logger,
+          batchSize: config.metadataBatchSize,
+          maximumConcurrentFetches: config.metadataConcurrency
+        )
+        group.addTask {
+          defer { logger.info("The Wire component stopped", metadata: ["component": "metadata"]) }
+          try await WireMetadataEnrichmentRuntime.run(
+            enricher: enricher,
+            logger: logger,
+            idleMilliseconds: config.metadataIdleMilliseconds
+          )
+        }
+        let profileEnricher = WireTalkedAccountProfileEnricher(
+          store: PostgresWireTalkedAccountProfileStore(pool: pool, logger: logger),
+          client: HTTPWireTalkedAccountProfileClient(httpClient: httpClient),
+          logger: logger,
+          batchSize: min(config.metadataBatchSize, 100),
+          maximumConcurrentFetches: min(config.metadataConcurrency, 8)
+        )
+        group.addTask {
+          defer { logger.info("The Wire component stopped", metadata: ["component": "profiles"]) }
+          try await WireMetadataEnrichmentRuntime.runProfiles(
+            enricher: profileEnricher,
+            logger: logger,
+            idleMilliseconds: config.metadataIdleMilliseconds
+          )
+        }
+      }
     }
-    try? await httpClient.shutdown()
-    if let runtimeError { throw runtimeError }
   }
 }
