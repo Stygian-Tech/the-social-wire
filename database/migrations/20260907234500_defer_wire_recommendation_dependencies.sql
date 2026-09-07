@@ -36,8 +36,6 @@ CREATE INDEX wire_recommendation_journal_ready_idx
 CREATE INDEX wire_recommendation_journal_scoped_ready_idx
   ON wire_recommendation_journal (environment, source_generation, next_attempt_at, seq)
   WHERE status = 'pending';
-CREATE INDEX wire_recommendation_journal_source_idx
-  ON wire_recommendation_journal (environment, source_uri);
 CREATE INDEX wire_recommendation_journal_resolved_idx
   ON wire_recommendation_journal (event_time, environment, source_generation, seq)
   WHERE status = 'resolved';

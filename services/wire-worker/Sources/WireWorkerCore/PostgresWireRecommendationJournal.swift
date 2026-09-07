@@ -179,7 +179,8 @@ struct PostgresWireRecommendationJournal: Sendable {
               AND ((status = 'pending' AND next_attempt_at <= \(asOf))
                 OR (status = 'resolved' AND event_time > \(asOf.addingTimeInterval(-WireDataPolicy.signalRetention))
                   AND NOT EXISTS (SELECT 1 FROM wire_signal_events
-                    WHERE source_uri = journal.source_uri AND transport_event_key = \(current.transportKey)))))
+                    WHERE occurred_at = \(current.time) AND source_uri = journal.source_uri
+                      AND transport_event_key = \(current.transportKey)))))
           """, logger: logger)
         var ready = false
         for try await row in readyRows { ready = try row.decode(Bool.self) }
@@ -243,12 +244,16 @@ struct PostgresWireRecommendationJournal: Sendable {
     query.appendLiteral("""
         ORDER BY event_time, environment, source_generation, seq LIMIT 256
       )
-      SELECT environment, source_generation, seq, event_time,
-        NOT EXISTS (SELECT 1 FROM wire_signal_events signal
-          WHERE signal.source_uri = page.source_uri
-            AND signal.transport_event_key = 'transport:' || page.environment || ':'
-              || page.source_host || ':' || page.cursor_kind || ':' || page.seq::text)
-      FROM page ORDER BY event_time, environment, source_generation, seq
+      SELECT page.environment, page.source_generation, page.seq, page.event_time,
+             projection.found IS NULL
+      FROM page LEFT JOIN LATERAL (
+        SELECT TRUE AS found FROM wire_signal_events signal
+        WHERE signal.occurred_at = page.event_time AND signal.source_uri = page.source_uri
+          AND signal.transport_event_key = 'transport:' || page.environment || ':'
+            || page.source_host || ':' || page.cursor_kind || ':' || page.seq::text
+        LIMIT 1 OFFSET 0
+      ) projection ON TRUE
+      ORDER BY page.event_time, page.environment, page.source_generation, page.seq
       """)
     let rows = try await pool.query(PostgresQuery(stringInterpolation: query), logger: logger)
     var result: [(String, String, Int64)] = []
@@ -442,7 +447,7 @@ struct PostgresWireRecommendationJournal: Sendable {
     let existingRows = try await connection.query(
       """
       SELECT EXISTS(SELECT 1 FROM wire_signal_events
-        WHERE source_uri = \(entry.uri) AND transport_event_key = \(entry.transportKey)
+        WHERE occurred_at = \(entry.time) AND source_uri = \(entry.uri) AND transport_event_key = \(entry.transportKey)
           AND canonical_key = \(canonical))
       """, logger: logger)
     var exists = false

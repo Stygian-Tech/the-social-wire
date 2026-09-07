@@ -179,4 +179,31 @@ extension WirePostgresIntegrationTests {
       #expect(try await fixture.journalStatus(sequence: 1) == "resolved")
     }
   }
+
+  @Test("a signal on another date cannot hide the missing projection of a journal event")
+  func recommendationJournalRecoveryMatchesEventDate() async throws {
+    try await WireRecommendationJournalFixture.run { fixture in
+      _ = try await fixture.publishSubject()
+      try await fixture.insertRecommendation(sequence: 1)
+      #expect(try await fixture.apply(sequence: 1) == .applied)
+      let differentDate = fixture.now.addingTimeInterval(-86_400)
+      try await fixture.pool.query(
+        "SELECT ensure_wire_signal_event_partition((\(differentDate) AT TIME ZONE 'UTC')::date)",
+        logger: fixture.logger)
+      // Preserve the transport identity but move the row to a different day.
+      // The current journal event's projection is therefore still missing.
+      try await fixture.pool.query(
+        "UPDATE wire_signal_events SET occurred_at = \(differentDate) WHERE source_uri = \(fixture.sourceURI)",
+        logger: fixture.logger)
+      #expect(try await fixture.signalCount() == 1)
+      #expect(try await fixture.recover().resolved == 1)
+      #expect(try await fixture.signalCount() == 1)
+      #expect(try await fixture.scalar(
+        """
+        SELECT COUNT(*)::bigint FROM wire_signal_events
+        WHERE source_uri = \(fixture.sourceURI) AND occurred_at = \(fixture.now.addingTimeInterval(1))
+        """) == 1)
+      #expect(try await fixture.actorSignalCount() == 1)
+    }
+  }
 }
