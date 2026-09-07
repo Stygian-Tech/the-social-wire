@@ -234,6 +234,57 @@ struct PostgresJetstreamInboxIntegrationTests {
     }
   }
 
+  @Test("Postgres retired resolver rechecks newly eligible incidents after empty polls")
+  func retiredResolverRechecksNewIncidents() async throws {
+    try await PostgresInboxFixture.withFixture { fixture in
+      let now = Date()
+      let retiredGeneration = "\(fixture.sourceGeneration)-retired"
+      try await fixture.seedCheckpoint(
+        lastStagedSequence: 100, lastAppliedSequence: 100, at: now)
+      try await fixture.seedIntakeLease(
+        sourceGeneration: fixture.sourceGeneration,
+        expiresAt: now.addingTimeInterval(60), at: now)
+      try await fixture.seedGenerationCheckpoint(
+        sourceGeneration: retiredGeneration,
+        lastStagedSequence: 50, lastAppliedSequence: 50, at: now)
+      try await fixture.seedInbox(
+        sequence: 50, repoDid: "did:plc:retired-terminal",
+        sourceGeneration: retiredGeneration, trackedLifecycle: false,
+        status: "applied", at: now)
+      try await fixture.seedIncident(
+        id: "nonfatal", sourceGeneration: retiredGeneration,
+        category: "transport_error", status: "open", sequence: 50, at: now)
+      try await fixture.seedIncident(
+        id: "beyond-terminal-prefix", sourceGeneration: retiredGeneration,
+        category: "fatal_stream", status: "open", sequence: 51, at: now)
+
+      #expect(
+        try await fixture.store.resolveTerminalRetiredGenerationIncidents(
+          environment: fixture.environment, activeSourceGeneration: fixture.sourceGeneration,
+          at: now) == 0)
+
+      // A prior empty candidate set must not suppress newly recoverable incidents.
+      try await fixture.seedIncident(
+        id: "new-fatal", sourceGeneration: retiredGeneration,
+        category: "fatal_stream", status: "recovering", sequence: 50, at: now)
+      #expect(
+        try await fixture.store.resolveTerminalRetiredGenerationIncidents(
+          environment: fixture.environment, activeSourceGeneration: fixture.sourceGeneration,
+          at: now.addingTimeInterval(1)) == 1)
+      let resolved = try await fixture.incidentEvidence(id: "new-fatal")
+      #expect(resolved.status == "resolved")
+      #expect(resolved.recoveredThroughCursor == 50)
+      #expect(try await fixture.incidentStatus(id: "nonfatal") == "open")
+      #expect(try await fixture.incidentStatus(id: "beyond-terminal-prefix") == "open")
+
+      #expect(
+        try await fixture.store.resolveTerminalRetiredGenerationIncidents(
+          environment: fixture.environment, activeSourceGeneration: fixture.sourceGeneration,
+          at: now.addingTimeInterval(2)) == 0)
+      #expect(try await fixture.incidentEvidence(id: "new-fatal").evidence == resolved.evidence)
+    }
+  }
+
   @Test("Postgres retired resolver enforces the terminal inbox allowlist")
   func retiredResolverTerminalInboxAllowlist() async throws {
     try await PostgresInboxFixture.withFixture { fixture in
