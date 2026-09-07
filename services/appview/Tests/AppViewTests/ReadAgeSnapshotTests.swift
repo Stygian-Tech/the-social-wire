@@ -21,6 +21,36 @@ struct ReadAgeSnapshotTests {
     #expect(result.map(\.entryId) == ["first", "second"])
   }
 
+  @Test("publishes deduplicated page batches before requesting the next page")
+  func progressiveSnapshots() async throws {
+    let first = entry("first")
+    let second = entry("second")
+    let recorder = PageRecorder()
+    try await ReadAgeSnapshot.forEachPage { cursor in
+      if cursor == nil { return AppViewEntryListResponse(entries: [first], cursor: "next") }
+      #expect(await recorder.snapshots == [["first"]])
+      return AppViewEntryListResponse(entries: [first, second], cursor: nil)
+    } onPage: { entries in
+      await recorder.append(entries.map(\.entryId))
+    }
+    #expect(await recorder.snapshots == [["first"], ["second"]])
+  }
+
+  @Test("a failed later page never emits a completed snapshot")
+  func failedPage() async {
+    let first = entry("first")
+    let recorder = PageRecorder()
+    await #expect(throws: HTTPError.self) {
+      try await ReadAgeSnapshot.forEachPage { cursor in
+        guard cursor == nil else { throw HTTPError(.serviceUnavailable) }
+        return AppViewEntryListResponse(entries: [first], cursor: "next")
+      } onPage: { entries in
+        await recorder.append(entries.map(\.entryId))
+      }
+    }
+    #expect(await recorder.snapshots == [["first"]])
+  }
+
   @Test("rejects both stuck cursors and multi-page cursor cycles")
   func cursorCycles() async {
     await #expect(throws: HTTPError.self) {
@@ -38,4 +68,9 @@ struct ReadAgeSnapshotTests {
   private func entry(_ id: String) -> AppViewEntryListItem {
     AppViewEntryListItem(entryId: id, title: id, publishedAt: Date(timeIntervalSince1970: 100))
   }
+}
+
+private actor PageRecorder {
+  private(set) var snapshots: [[String]] = []
+  func append(_ ids: [String]) { snapshots.append(ids) }
 }

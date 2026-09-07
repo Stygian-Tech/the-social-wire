@@ -14,26 +14,9 @@ enum ReadAgeCalendar {
   static func options(
     publishedDates: [Date], timeZone: String, now: Date
   ) throws -> ReadAgeOptionsResponse {
-    let calendar = try calendar(timeZone: timeZone)
-    let today = calendar.startOfDay(for: now)
-    var countsByDay: [Int: Int] = [:]
-    for publishedAt in publishedDates where publishedAt < today {
-      let publicationDay = calendar.startOfDay(for: publishedAt)
-      guard let days = calendar.dateComponents([.day], from: publicationDay, to: today).day,
-            days >= 1
-      else { continue }
-      countsByDay[days, default: 0] += 1
-    }
-    var cumulative = 0
-    var options: [ReadAgeOption] = []
-    for days in countsByDay.keys.sorted(by: >) {
-      cumulative += countsByDay[days, default: 0]
-      guard let before = calendar.date(byAdding: .day, value: -(days - 1), to: today) else {
-        throw HTTPError(.badRequest, message: "Cannot calculate calendar-day cutoff")
-      }
-      options.append(ReadAgeOption(days: days, before: timestamp(before), count: cumulative))
-    }
-    return ReadAgeOptionsResponse(options: options.reversed(), referenceDay: timestamp(today))
+    var accumulator = try ReadAgeOptionAccumulator(timeZone: timeZone, now: now)
+    accumulator.append(publishedDates: publishedDates)
+    return try accumulator.response()
   }
 
   static func cutoff(_ raw: String, now: Date) throws -> Date {

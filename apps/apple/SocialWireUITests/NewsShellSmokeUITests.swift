@@ -47,6 +47,8 @@ final class NewsShellSmokeUITests: XCTestCase {
         XCTAssertTrue(app.buttons["mark-read-age-2"].exists)
         XCTAssertTrue(app.buttons["mark-read-age-4"].exists)
         XCTAssertFalse(app.buttons["mark-read-age-3"].exists)
+        XCTAssertTrue(app.buttons["mark-read-age-7"].exists)
+        XCTAssertFalse(app.buttons["mark-read-age-8"].exists)
         app.buttons["mark-read-age-2"].tap()
         let olderConfirmation = app.alerts["Mark Older Stories As Read?"]
         XCTAssertTrue(olderConfirmation.waitForExistence(timeout: 3))

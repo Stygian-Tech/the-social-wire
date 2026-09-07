@@ -2,6 +2,7 @@ import Foundation
 import GatewayCore
 import Hummingbird
 import Logging
+import NIOCore
 import ThinAppViewCore
 
 struct ReadAgeService: Sendable {
@@ -16,6 +17,49 @@ struct ReadAgeService: Sendable {
     return try ReadAgeCalendar.options(
       publishedDates: entries.map(\.publishedAt), timeZone: timeZone, now: now
     )
+  }
+
+  func writeOptionsStream(
+    viewerDid: String, rows: [SidebarPublicationRow], timeZone: String, now: Date,
+    writer: inout any ResponseBodyWriter
+  ) async throws {
+    do {
+      var accumulator = try ReadAgeOptionAccumulator(timeZone: timeZone, now: now)
+      let scopes = Self.scopes(viewerDid: viewerDid, rows: rows)
+      try await ReadAgeSnapshot.forEachPage { cursor in
+        guard !scopes.isEmpty else {
+          return AppViewEntryListResponse(entries: [], cursor: nil)
+        }
+        return try await store.listUnreadEntriesForReadMutation(
+          viewerDid: viewerDid, scopes: scopes, cursor: cursor, limit: 100
+        )
+      } onPage: { entries in
+        accumulator.append(publishedDates: entries.map(\.publishedAt))
+        let options = try accumulator.response()
+        try await Self.writeEvent(
+          ReadAgeStreamEvent(type: "options", options: options.options, referenceDay: options.referenceDay),
+          writer: &writer
+        )
+      }
+      try await Self.writeEvent(ReadAgeStreamEvent(type: "done"), writer: &writer)
+    } catch is CancellationError {
+      throw CancellationError()
+    } catch {
+      try await Self.writeEvent(
+        ReadAgeStreamEvent(type: "error", message: "Couldn't load read-age options."),
+        writer: &writer
+      )
+    }
+    try await writer.finish(nil)
+  }
+
+  private static func writeEvent(
+    _ event: ReadAgeStreamEvent, writer: inout any ResponseBodyWriter
+  ) async throws {
+    var buffer = ByteBuffer()
+    buffer.writeBytes(try JSONEncoder().encode(event))
+    buffer.writeString("\n")
+    try await writer.write(buffer)
   }
 
   func markBefore(
@@ -78,7 +122,19 @@ struct ReadAgeService: Sendable {
   private func unreadSnapshot(
     viewerDid: String, rows: [SidebarPublicationRow]
   ) async throws -> [AppViewEntryListItem] {
-    let scopes = Self.uniqueRows(rows).map { row in
+    let scopes = Self.scopes(viewerDid: viewerDid, rows: rows)
+    guard !scopes.isEmpty else { return [] }
+    return try await ReadAgeSnapshot.collect { cursor in
+      try await store.listUnreadEntriesForReadMutation(
+        viewerDid: viewerDid, scopes: scopes, cursor: cursor, limit: 100
+      )
+    }
+  }
+
+  private static func scopes(
+    viewerDid: String, rows: [SidebarPublicationRow]
+  ) -> [AppViewPublicationScope] {
+    uniqueRows(rows).map { row in
       AppViewUnreadCounterSupport.publicationScope(
         viewerDid: viewerDid,
         publicationId: row.publicationId,
@@ -87,12 +143,6 @@ struct ReadAgeService: Sendable {
         publicationScopeAtUris: row.appViewScope.publicationScopeAtUris,
         publicationSiteUrls: row.appViewScope.publicationSiteUrls,
         sectionKeys: []
-      )
-    }
-    guard !scopes.isEmpty else { return [] }
-    return try await ReadAgeSnapshot.collect { cursor in
-      try await store.listUnreadEntriesForReadMutation(
-        viewerDid: viewerDid, scopes: scopes, cursor: cursor, limit: 100
       )
     }
   }

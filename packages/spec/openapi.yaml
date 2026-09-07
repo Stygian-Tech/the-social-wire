@@ -2513,9 +2513,16 @@ paths:
       summary: Calendar-day read cutoffs for a feed scope
       description: |
         Returns only calendar-day ages represented by unread stories in the full indexed
-        scope, sorted ascending. Counts are cumulative before each exclusive cutoff.
+        scope, sorted ascending and capped at seven days. Counts are cumulative before
+        each exclusive cutoff. The seven-day option includes all unread stories aged
+        seven calendar days or more, even when there are no stories aged exactly seven days.
         One day includes yesterday and earlier; its cutoff is the start of today in
         the supplied time zone. Day boundaries account for daylight-saving changes.
+
+        The default response is application/json. Send `Accept: application/x-ndjson`
+        to receive progressive snapshots as indexed scope pages are read. Each options
+        event replaces the previous snapshot; counts remain partial until a done event.
+        An error event terminates an incomplete stream and must not be treated as done.
       tags: [AppView]
       parameters:
         - name: kind
@@ -2552,11 +2559,12 @@ paths:
                     description: Start of today in the supplied time zone, expressed as a UTC instant.
                   options:
                     type: array
+                    maxItems: 7
                     items:
                       type: object
                       required: [days, before, count]
                       properties:
-                        days: { type: integer, minimum: 1 }
+                        days: { type: integer, minimum: 1, maximum: 7 }
                         before:
                           type: string
                           format: date-time
@@ -2565,6 +2573,20 @@ paths:
                           type: integer
                           minimum: 1
                           description: Number of unread stories before this cutoff.
+            application/x-ndjson:
+              schema:
+                type: string
+                description: |
+                  One JSON object per line. An options event has shape
+                  `{ "type": "options", "referenceDay": "2026-09-07T05:00:00Z", "options": [{ "days": 7, "before": "2026-09-01T05:00:00Z", "count": 3 }] }`.
+                  Its referenceDay and options follow the application/json schema,
+                  including the maximum of seven options and days from one through seven.
+                  Snapshots contain cumulative counts across pages processed so far and
+                  replace earlier snapshots. The complete result is the last options
+                  snapshot before `{ "type": "done" }`. A failure after streaming starts
+                  is `{ "type": "error", "message": "Read age options unavailable" }`;
+                  partial options must not be treated as complete after an error or EOF
+                  without done. JSON clients receive the complete snapshot in one response.
         "400":
           description: Invalid scope or time zone.
         "401":

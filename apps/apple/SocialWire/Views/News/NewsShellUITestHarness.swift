@@ -24,12 +24,20 @@ struct NewsShellUITestHarness: View {
                 contextID: "read-age-fixture",
                 refreshRevision: readAgeRevision,
                 scopeTitle: "Test Feed",
-                loadOptions: {
-                    [
+                loadOptions: { onOptions in
+                    let options = [
                         FeedReadAgeOption(days: 1, before: "2026-09-02T05:00:00Z", count: 6),
                         FeedReadAgeOption(days: 2, before: "2026-09-01T05:00:00Z", count: 4),
                         FeedReadAgeOption(days: 4, before: "2026-08-30T05:00:00Z", count: 1),
+                        FeedReadAgeOption(days: 7, before: "2026-08-27T05:00:00Z", count: 1),
+                        FeedReadAgeOption(days: 8, before: "2026-08-26T05:00:00Z", count: 1),
                     ].filter { readAgeRevision == 0 || $0.days != 2 }
+                    if ProcessInfo.processInfo.arguments.contains("--ui-testing-read-age-stream") {
+                        onOptions(Array(options.prefix(1)))
+                        try await Task.sleep(for: .seconds(5))
+                    }
+                    onOptions(options)
+                    return options
                 },
                 markAllRead: { lastFeedAction = "All Read" },
                 markOlderRead: { lastFeedAction = "Read Before \($0.before)" },
