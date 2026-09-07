@@ -31,6 +31,35 @@ describe("LiveStream", () => {
     expect(screen.queryByText("410 ms / 1.82 s")).toBeNull()
   })
 
+  it("omits retired Tap sources while preserving stale current-source evidence", () => {
+    const source = demoOverview.ingestion!
+    renderStream({
+      ...demoOverview,
+      ingestionSources: [
+        { ...source, source: "tap" },
+        { ...source, source: "tap-shadow" },
+        { ...source, source: "rss-poll", transportHeartbeatAt: "2020-01-01T00:00:00Z" },
+      ],
+    })
+    expect(screen.queryByRole("heading", { name: "tap" })).toBeNull()
+    expect(screen.queryByRole("heading", { name: "tap-shadow" })).toBeNull()
+    expect(screen.getByRole("heading", { name: "rss-poll" })).toBeTruthy()
+    expect(screen.getByRole("heading", { name: "rss-poll" }).parentElement?.textContent).toContain("unknown")
+  })
+
+  it("omits retired V1 status widgets when V2 owns ingestion", () => {
+    renderStream({
+      ...demoOverview,
+      ingestion: { ...demoOverview.ingestion!, source: "jetstream_v2_inbox" },
+      ingestionSources: [{ ...demoOverview.ingestion!, source: "jetstream" }],
+      commands: [{ ...demoOverview.commands[0]!, action: "reconnect_jetstream" }],
+    })
+    expect(screen.queryByRole("heading", { name: "Jetstream · unverified supplemental" })).toBeNull()
+    expect(screen.queryByRole("link", { name: "View All Endpoints" })).toBeNull()
+    expect(screen.queryByText(/Latest reconnect:/)).toBeNull()
+    expect(screen.getByText("V2 Inbox Staged Sequence")).toBeTruthy()
+  })
+
   it("treats a recent disconnect as reconnecting while polling can bridge the gap", () => {
     renderStream({
       ...demoOverview,

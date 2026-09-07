@@ -382,6 +382,7 @@ export type Overview = {
   capabilities: OperationsCapabilities
   counts: OperationsCounts
   viewers?: ViewerCounts
+  viewerHistory?: ViewerCounts[]
   durability?: IngestionDurability
 }
 export type BackfillDryRun = {

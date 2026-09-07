@@ -79,8 +79,8 @@ export function CollectionHealth({
                       { key: "maximum", points: row.maximumCommitMilliseconds },
                     ])}
                     series={[
-                      { key: "average", label: "Average", color: "var(--primary)" },
-                      { key: "maximum", label: "Maximum", color: "var(--warning)", dashed: true },
+                      { key: "average", label: "Average", color: "var(--chart-1)" },
+                      { key: "maximum", label: "Maximum", color: "var(--chart-4)", dashed: true },
                     ]}
                     title="Database Commit Duration"
                     description="Average and maximum by closed one-minute bucket"
@@ -95,8 +95,8 @@ export function CollectionHealth({
                       { key: "maximum", points: row.maximumLagSeconds },
                     ])}
                     series={[
-                      { key: "average", label: "Average", color: "var(--info)" },
-                      { key: "maximum", label: "Maximum", color: "var(--warning)", dashed: true },
+                      { key: "average", label: "Average", color: "var(--chart-2)" },
+                      { key: "maximum", label: "Maximum", color: "var(--chart-4)", dashed: true },
                     ]}
                     title="Committed Event Lag"
                     description="Average and maximum by closed one-minute bucket"

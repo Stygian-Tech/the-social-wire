@@ -4,6 +4,7 @@ public protocol OperationsStore: Actor {
   func ping() async throws
   func fetchDatabaseObservability() async throws -> DatabaseObservabilitySnapshot?
   func fetchViewerCounts(at: Date) async throws -> OperationsViewerCounts?
+  func fetchViewerHistory(at: Date) async throws -> [OperationsViewerCounts]
   func upsertServiceState(_ state: OperationsServiceState) async throws
   func listServiceStates() async throws -> [OperationsServiceState]
 
@@ -202,6 +203,8 @@ extension OperationsStore {
 
   public func fetchViewerCounts(at: Date) async throws -> OperationsViewerCounts? { nil }
 
+  public func fetchViewerHistory(at: Date) async throws -> [OperationsViewerCounts] { [] }
+
   // Keep lightweight/test stores source-compatible while durable ingestion is rolled out.
   // Production stores override these methods with the provider-specific implementation.
   public func fetchIngestionDurabilitySnapshot(at: Date) async throws
@@ -296,6 +299,7 @@ extension OperationsStore {
     async let streamStates = listStreamStates()
     async let database = fetchDatabaseObservability()
     async let viewers = fetchViewerCounts(at: at)
+    async let viewerHistory = fetchViewerHistory(at: at)
     async let counts = lifecycleCounts()
     let resolvedServices = try await services
     let resolvedStreamStates = try await streamStates
@@ -309,6 +313,7 @@ extension OperationsStore {
       at: at)
     let databaseSnapshot = try? await database
     let viewerCounts = try? await viewers
+    let history = (try? await viewerHistory) ?? []
     var evidence: [String: OperationsEvidenceMetadata] = [
       "services": serviceEvidence,
       "ingestion": ingestion.evidence,
@@ -339,6 +344,7 @@ extension OperationsStore {
       capabilities: capabilities,
       counts: resolvedCounts,
       viewers: viewerCounts ?? nil,
+      viewerHistory: history,
       durability: durability
     )
   }

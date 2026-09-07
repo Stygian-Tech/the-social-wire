@@ -73,11 +73,11 @@
   --sidebar-accent: oklch(0.965 0 0);
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
-  --chart-1: oklch(0.809 0.105 251.813);
-  --chart-2: oklch(0.623 0.214 259.815);
-  --chart-3: oklch(0.546 0.245 262.881);
-  --chart-4: oklch(0.488 0.243 264.376);
-  --chart-5: oklch(0.424 0.199 265.638);
+  --chart-1: hsl(221 83% 53%);
+  --chart-2: hsl(262 83% 58%);
+  --chart-3: hsl(142 71% 38%);
+  --chart-4: hsl(32 90% 43%);
+  --chart-5: hsl(0 72% 51%);
   --success: oklch(0.56 0.17 145);
   --success-surface: oklch(0.96 0.04 145);
   --warning: oklch(0.5 0.15 60);
@@ -90,6 +90,11 @@
 @media (prefers-color-scheme: dark) {
   :root {
     color-scheme: dark;
+    --chart-1: hsl(217 91% 68%);
+    --chart-2: hsl(263 90% 76%);
+    --chart-3: hsl(142 69% 58%);
+    --chart-4: hsl(38 92% 64%);
+    --chart-5: hsl(0 91% 71%);
     --background: oklch(0.145 0 0);
     --foreground: oklch(0.985 0 0);
     --card: oklch(0.205 0 0);
@@ -143,6 +148,12 @@
   .ops-touch-link { @apply inline-flex h-8 items-center rounded-lg px-2.5 [@media(pointer:coarse)]:min-h-11; }
   .ops-success { color: var(--success); }
   .ops-warning { color: var(--warning); }
+  .ops-chart-card { @apply rounded-lg border border-border/60 bg-background shadow-none ring-0; }
+  .ops-chart-tooltip {
+    @apply rounded-lg border-zinc-700 bg-zinc-950 text-zinc-50 shadow-xl;
+    & .text-muted-foreground { @apply text-zinc-400; }
+    & .text-foreground { @apply text-zinc-50; }
+  }
 }
 
 @keyframes ops-indeterminate {

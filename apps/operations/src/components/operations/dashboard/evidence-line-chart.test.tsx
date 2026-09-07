@@ -29,7 +29,10 @@ test("renders visible provenance, window, latest value, and missing-bucket cover
   expect(screen.getByText("Partial")).toBeTruthy()
   expect(screen.getByRole("img").querySelector("svg")?.getAttribute("viewBox")).toBe("0 0 480 280")
   expect(screen.getByText("Coverage: 2/3 buckets (67%)").closest("[data-slot=card-footer]")?.className).toContain("text-[11px]")
-  expect(screen.getByRole("img").querySelector(".recharts-line-curve")).toBeTruthy()
+  const curve = screen.getByRole("img").querySelector(".recharts-area-curve")
+  expect(curve).toBeTruthy()
+  expect(curve?.getAttribute("d")?.match(/M/g)).toHaveLength(2)
+  expect(screen.getByRole("img").querySelector(".recharts-area-area")?.getAttribute("fill-opacity")).toBe("0.25")
 })
 
 test("ages previously fresh chart evidence against current time", () => {

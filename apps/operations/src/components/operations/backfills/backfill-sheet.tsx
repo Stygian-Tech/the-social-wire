@@ -71,18 +71,15 @@ export function BackfillSheet({
   const [auditNote, setAuditNote] = useState("")
   const [reviewed, setReviewed] = useState(false)
   const [productionConfirmation, setProductionConfirmation] = useState("")
-  const [chosenSourceMode, setChosenSourceMode] = useState<BackfillDryRun["sourceMode"] | null>(null)
+  const [chosenSourceMode, setChosenSourceMode] = useState<Exclude<BackfillDryRun["sourceMode"], "tap_verified_resync"> | null>(null)
   const [authorDidInput, setAuthorDidInput] = useState("")
   const [batchSize, setBatchSize] = useState(1000)
   const [rateLimit, setRateLimit] = useState(500)
   const [maxConcurrency, setMaxConcurrency] = useState(2)
   const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID())
   const [chosenCollections, setChosenCollections] = useState<string[] | null>(null)
-  // Capabilities load after mount, and `tap_verified_resync` is reported disabled unconditionally,
-  // so opening on it would leave both dry-run and queue disabled with nothing the operator could
-  // change. Default to an enabled mode until they pick one; fall back so its reason stays visible.
-  const sourceMode =
-    chosenSourceMode ?? preferredRecoveryMode(recoveryModes) ?? "tap_verified_resync"
+  // Prefer an enabled current mode; keep its disabled reason visible while capabilities load.
+  const sourceMode = chosenSourceMode ?? preferredRecoveryMode(recoveryModes) ?? "jetstream_replay"
   const collections =
     chosenCollections ?? initialBackfillCollections(gap?.collections ?? [], sourceMode)
   const [createdJobId, setCreatedJobId] = useState<string>()
@@ -90,11 +87,9 @@ export function BackfillSheet({
   const [validationTime, setValidationTime] = useState(() => Date.now())
   const authorDids = useMemo(() => parseAuthorDids(authorDidInput), [authorDidInput])
   const selectedModeCapability =
-    sourceMode === "tap_verified_resync"
-      ? recoveryModes?.tapVerifiedResync
-      : sourceMode === "jetstream_replay"
-        ? recoveryModes?.jetstreamReplay
-        : recoveryModes?.pdsReconciliation
+    sourceMode === "jetstream_replay"
+      ? recoveryModes?.jetstreamReplay
+      : recoveryModes?.pdsReconciliation
   const selectedModeEnabled = mutationsEnabled && (selectedModeCapability?.enabled ?? false)
   const supportedCollections = recoveryCollectionOptions(sourceMode)
   const effectiveConcurrency = sourceMode === "pds_reconciliation" ? maxConcurrency : 1
@@ -132,7 +127,8 @@ export function BackfillSheet({
       new Date(dryRun.data.validUntil).getTime() > validationTime,
   )
   const changeSourceMode = (value: string) => {
-    const mode = value as BackfillDryRun["sourceMode"]
+    if (value !== "jetstream_replay" && value !== "pds_reconciliation") return
+    const mode = value
     setChosenSourceMode(mode)
     setChosenCollections(
       collections.filter((collection) => recoveryCollectionOptions(mode).includes(collection)),
@@ -379,11 +375,6 @@ export function BackfillSheet({
                     onValueChange={changeSourceMode}
                     options={[
                       {
-                        value: "tap_verified_resync",
-                        label: "Tap Verified Resync",
-                        disabled: !(recoveryModes?.tapVerifiedResync.enabled ?? false),
-                      },
-                      {
                         value: "jetstream_replay",
                         label: "Jetstream Replay",
                         disabled: !(recoveryModes?.jetstreamReplay.enabled ?? false),
@@ -410,7 +401,7 @@ export function BackfillSheet({
                   {sourceMode !== "jetstream_replay" ? (
                     <>
                       <FieldLabel htmlFor="recovery-author-dids">
-                        {sourceMode === "tap_verified_resync" ? "Repository DIDs" : "Author DIDs"}
+                        Author DIDs
                       </FieldLabel>
                       <div>
                         <Textarea
@@ -491,20 +482,7 @@ export function BackfillSheet({
                   </p>
                 ) : null}
               </section>
-              {sourceMode === "tap_verified_resync" ? (
-                <Alert variant={selectedModeCapability?.enabled ? "default" : "warning"} className="mt-4">
-                  <ShieldAlert className="mb-1 size-3.5" />
-                  <AlertTitle>
-                    {selectedModeCapability?.enabled ? "Verified Repository Recovery" : "Tap Verified Resync Unavailable"}
-                  </AlertTitle>
-                  <AlertDescription>
-                    {selectedModeCapability?.enabled
-                      ? "Only exact-scope, zero-failure, non-truncated Tap recovery can verify completeness and resolve the linked gap."
-                      : selectedModeCapability?.disabledReason ??
-                        "The capability response did not authorize a safe Tap resync for this environment."}
-                  </AlertDescription>
-                </Alert>
-              ) : sourceMode === "jetstream_replay" ? (
+              {sourceMode === "jetstream_replay" ? (
                 <Alert variant="warning" className="mt-4">
                   <ShieldAlert className="mb-1 size-3.5" />
                   <AlertTitle>Unverified Supplemental Source</AlertTitle>

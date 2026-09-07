@@ -1056,6 +1056,7 @@ public struct OperationsOverview: Codable, Sendable {
   public let capabilities: OperationsCapabilities?
   public let counts: OperationsLifecycleCounts
   public let viewers: OperationsViewerCounts?
+  public let viewerHistory: [OperationsViewerCounts]
   public let durability: IngestionDurabilitySnapshot?
 
   public init(
@@ -1075,6 +1076,7 @@ public struct OperationsOverview: Codable, Sendable {
     capabilities: OperationsCapabilities? = nil,
     counts: OperationsLifecycleCounts = OperationsLifecycleCounts(),
     viewers: OperationsViewerCounts? = nil,
+    viewerHistory: [OperationsViewerCounts] = [],
     durability: IngestionDurabilitySnapshot? = nil
   ) {
     self.services = services
@@ -1093,6 +1095,7 @@ public struct OperationsOverview: Codable, Sendable {
     self.capabilities = capabilities
     self.counts = counts
     self.viewers = viewers
+    self.viewerHistory = viewerHistory
     self.durability = durability
   }
 }

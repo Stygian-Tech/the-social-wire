@@ -231,6 +231,30 @@ test("rejects an overview that omits a named preview list", () => {
   )
 })
 
+test("accepts overview responses before daily viewer history is deployed", async () => {
+  delete process.env.NEXT_PUBLIC_OPERATIONS_DEMO_MODE
+  const { viewerHistory: _history, ...overview } = demoOverview
+  void _history
+  const response = await operationsRequest(jsonSession(overview), "/v1/operations/overview")
+  expect(response).toEqual(overview)
+})
+
+test("rejects malformed daily viewer history at the API boundary", async () => {
+  delete process.env.NEXT_PUBLIC_OPERATIONS_DEMO_MODE
+  for (const viewerHistory of [
+    null,
+    {},
+    [{ ...demoOverview.viewers, knownViewers: -1 }],
+    [{ ...demoOverview.viewers, activeViewers7d: 1.5 }],
+    [{ ...demoOverview.viewers, activeViewers30d: "906" }],
+    [{ ...demoOverview.viewers, observedAt: "invalid" }],
+    Array.from({ length: 91 }, () => demoOverview.viewers),
+  ]) {
+    await expect(operationsRequest(jsonSession({ ...demoOverview, viewerHistory }), "/v1/operations/overview"))
+      .rejects.toThrow("Operations viewer history failed runtime contract validation")
+  }
+})
+
 test("rejects overview evidence without its validity and age contract", () => {
   delete process.env.NEXT_PUBLIC_OPERATIONS_DEMO_MODE
   const invalid = {

@@ -46,9 +46,17 @@ struct OperationsCommand: AsyncParsableCommand {
       let databaseCostCollector = OperationsDatabaseCostCollector(collect: { at in
         await store.recordDatabaseCostTelemetry(at: at)
       })
+      let viewerHistoryCollector = OperationsViewerHistoryCollector(collect: { at in
+        do {
+          try await store.recordViewerHistory(at: at)
+        } catch {
+          serviceLogger.warning("Daily viewer history observation unavailable")
+        }
+      })
       try await withThrowingTaskGroup(of: Void.self) { group in
         group.addTask { await pool.run() }
         group.addTask { await databaseCostCollector.runForever() }
+        group.addTask { await viewerHistoryCollector.runForever() }
         group.addTask {
           try await Self.runServer(
             config: config, store: store, httpClient: httpClient, logger: serviceLogger, host: host, port: port

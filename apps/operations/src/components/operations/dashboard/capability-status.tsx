@@ -12,7 +12,6 @@ export function CapabilityStatus({ overview }: { overview: Overview }) {
   const items = [
     ["Telemetry", capabilities.telemetry],
     ["Recovery Global Gate", capabilities.recovery],
-    ["Tap Verified Resync", capabilities.recoveryModes.tapVerifiedResync],
     ["Jetstream Replay", capabilities.recoveryModes.jetstreamReplay],
     ["PDS Diagnostic", capabilities.recoveryModes.pdsReconciliation],
     ["Alert Delivery", capabilities.alertDelivery],

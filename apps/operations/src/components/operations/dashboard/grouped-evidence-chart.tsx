@@ -1,7 +1,7 @@
 "use client"
 
 import { useId } from "react"
-import { CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts"
+import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts"
 
 import { Badge } from "@/components/ui/badge"
 import {
@@ -40,6 +40,9 @@ export function GroupedEvidenceChart({
   source,
   valueFormatter = formatChartTick,
   sampleCount,
+  timeFormatter = formatChartTime,
+  bucketLabel = "one-minute buckets",
+  showIsolatedDots = false,
 }: {
   data: GroupedChartDatum[]
   series: GroupedChartSeries[]
@@ -49,6 +52,9 @@ export function GroupedEvidenceChart({
   source: string
   valueFormatter?: (value: number) => string
   sampleCount?: number
+  timeFormatter?: (timestamp: number) => string
+  bucketLabel?: string
+  showIsolatedDots?: boolean
 }) {
   const dataTableId = useId()
   const config = Object.fromEntries(
@@ -68,10 +74,10 @@ export function GroupedEvidenceChart({
   )
   const total = data.length * series.length
   const coverage = total ? observed / total : 0
-  const ariaDescription = `${title}. ${series.length} series over ${data.length} one-minute buckets. ${observed} of ${total} values observed. Source ${source}.`
+  const ariaDescription = `${title}. ${series.length} series over ${data.length} ${bucketLabel}. ${observed} of ${total} values observed. Source ${source}.`
 
   return (
-    <Card size="sm" className="rounded-none bg-transparent shadow-none ring-0" aria-label={title}>
+    <Card size="sm" className="ops-chart-card" aria-label={title}>
       <CardHeader>
         <CardTitle className="text-xs"><h3>{title}</h3></CardTitle>
         <CardDescription className="text-[11px]">
@@ -90,8 +96,8 @@ export function GroupedEvidenceChart({
           aria-label={ariaDescription}
           aria-describedby={dataTableId}
         >
-          <LineChart accessibilityLayer data={chartData} margin={{ top: 8, right: 18, bottom: 12, left: 4 }}>
-            <CartesianGrid vertical={false} />
+          <AreaChart accessibilityLayer data={chartData} margin={{ top: 8, right: 12, bottom: 8, left: 0 }}>
+            <CartesianGrid vertical={false} stroke="var(--border)" strokeOpacity={0.55} strokeDasharray="3 3" />
             <XAxis
               dataKey="timestamp"
               type="number"
@@ -101,7 +107,8 @@ export function GroupedEvidenceChart({
               axisLine={false}
               tickMargin={8}
               minTickGap={24}
-              tickFormatter={formatChartTime}
+              tick={{ fontSize: 10 }}
+              tickFormatter={timeFormatter}
             />
             <YAxis
               domain={[0, "auto"]}
@@ -109,17 +116,22 @@ export function GroupedEvidenceChart({
               axisLine={false}
               tickMargin={8}
               width={50}
-              tickFormatter={valueFormatter}
+              tick={{ fontSize: 10 }}
+              tickFormatter={formatChartTick}
             />
             <ChartTooltip
-              cursor={false}
+              cursor={{ stroke: "var(--muted-foreground)", strokeOpacity: 0.4, strokeDasharray: "3 3" }}
               content={
                 <ChartTooltipContent
-                  indicator="line"
-                  labelFormatter={(_, payload) => formatChartTime(Number(payload[0]?.payload?.timestamp))}
+                  className="ops-chart-tooltip"
+                  indicator="dot"
+                  labelFormatter={(_, payload) => timeFormatter(Number(payload[0]?.payload?.timestamp))}
                   formatter={(value, name) => (
                     <div className="flex w-full min-w-44 items-center justify-between gap-3">
-                      <span className="text-muted-foreground">{config[String(name)]?.label ?? String(name)}</span>
+                      <span className="flex items-center gap-2 text-muted-foreground">
+                        <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ backgroundColor: `var(--color-${name})` }} />
+                        {config[String(name)]?.label ?? String(name)}
+                      </span>
                       <span className="font-mono font-medium text-foreground tabular-nums">
                         {typeof value === "number" ? valueFormatter(value) : "— Missing"}
                       </span>
@@ -130,20 +142,30 @@ export function GroupedEvidenceChart({
             />
             <ChartLegend content={<ChartLegendContent className="flex-wrap gap-x-3 gap-y-1" />} />
             {series.map((item, index) => (
-              <Line
+              <Area
                 key={item.key}
                 dataKey={item.key}
                 name={item.key}
-                type="linear"
+                type="monotone"
                 stroke={`var(--color-${item.key})`}
+                fill={`var(--color-${item.key})`}
+                fillOpacity={series.length === 1 ? 0.25 : 0.12}
+                baseValue={0}
                 strokeWidth={2}
-                strokeDasharray={item.dashed ? "5 4" : [undefined, "8 3", "2 3", "9 3 2 3"][index % 4]}
+                strokeDasharray={item.dashed ? "5 4" : undefined}
+                activeDot={{ r: 4, stroke: "var(--background)", strokeWidth: 2 }}
                 connectNulls={false}
-                dot={chartData.length === 1 ? { r: 3 + (index % 2) } : false}
+                dot={showIsolatedDots ? ({ cx, cy, index: pointIndex }) => {
+                  const current = chartData[pointIndex ?? 0]?.[item.key]
+                  const previous = chartData[(pointIndex ?? 0) - 1]?.[item.key]
+                  const next = chartData[(pointIndex ?? 0) + 1]?.[item.key]
+                  const isolated = typeof current === "number" && previous == null && next == null
+                  return <circle key={pointIndex} cx={cx} cy={cy} r={isolated ? 3 : 0} fill={`var(--color-${item.key})`} />
+                } : chartData.length === 1 ? { r: 3 + (index % 2) } : false}
                 isAnimationActive={false}
               />
             ))}
-          </LineChart>
+          </AreaChart>
         </ChartContainer>
         <table id={dataTableId} className="sr-only">
           <caption>{title} time-series data</caption>
@@ -156,7 +178,7 @@ export function GroupedEvidenceChart({
           <tbody>
             {chartData.map((datum) => (
               <tr key={datum.timestamp}>
-                <th scope="row">{formatChartTime(datum.timestamp)}</th>
+                <th scope="row">{timeFormatter(datum.timestamp)}</th>
                 {series.map((item) => {
                   const value = datum[item.key]
                   return <td key={item.key}>{typeof value === "number" ? valueFormatter(value) : "Missing"}</td>

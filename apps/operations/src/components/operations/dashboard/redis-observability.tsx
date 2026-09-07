@@ -41,11 +41,11 @@ export function RedisObservability({ metricRollups }: { metricRollups: MetricRol
             source="Operations metric rollups"
             data={trends}
             series={[
-              { key: "freshLookups", label: "Fresh", color: "var(--success)" },
-              { key: "staleLookups", label: "Stale", color: "var(--warning)" },
-              { key: "missedLookups", label: "Missed", color: "var(--primary)" },
-              { key: "malformedLookups", label: "Malformed", color: "var(--destructive)", dashed: true },
-              { key: "fallbackLookups", label: "Fallback", color: "var(--info)", dashed: true },
+              { key: "freshLookups", label: "Fresh", color: "var(--chart-3)" },
+              { key: "staleLookups", label: "Stale", color: "var(--chart-4)" },
+              { key: "missedLookups", label: "Missed", color: "var(--chart-1)" },
+              { key: "malformedLookups", label: "Malformed", color: "var(--chart-5)", dashed: true },
+              { key: "fallbackLookups", label: "Fallback", color: "var(--chart-2)", dashed: true },
             ]}
             valueFormatter={integer}
           />
@@ -56,8 +56,8 @@ export function RedisObservability({ metricRollups }: { metricRollups: MetricRol
             source="Operations metric rollups"
             data={trends}
             series={[
-              { key: "averageOperationMilliseconds", label: "Average", color: "var(--primary)" },
-              { key: "maximumOperationMilliseconds", label: "Maximum", color: "var(--warning)", dashed: true },
+              { key: "averageOperationMilliseconds", label: "Average", color: "var(--chart-1)" },
+              { key: "maximumOperationMilliseconds", label: "Maximum", color: "var(--chart-4)", dashed: true },
             ]}
             valueFormatter={milliseconds}
             sampleCount={summary.operationSamples}
@@ -69,11 +69,11 @@ export function RedisObservability({ metricRollups }: { metricRollups: MetricRol
             source="Operations metric rollups"
             data={trends}
             series={[
-              { key: "locksAcquired", label: "Locks Acquired", color: "var(--success)" },
-              { key: "lockContention", label: "Lock Contention", color: "var(--warning)" },
-              { key: "unreadRecomputes", label: "Unread Recomputation", color: "var(--primary)" },
-              { key: "circuitOpenSamples", label: "Circuit Open", color: "var(--info)", dashed: true },
-              { key: "errors", label: "Errors", color: "var(--destructive)", dashed: true },
+              { key: "locksAcquired", label: "Locks Acquired", color: "var(--chart-3)" },
+              { key: "lockContention", label: "Lock Contention", color: "var(--chart-4)" },
+              { key: "unreadRecomputes", label: "Unread Recomputation", color: "var(--chart-1)" },
+              { key: "circuitOpenSamples", label: "Circuit Open", color: "var(--chart-2)", dashed: true },
+              { key: "errors", label: "Errors", color: "var(--chart-5)", dashed: true },
             ]}
             valueFormatter={integer}
           />
@@ -84,8 +84,8 @@ export function RedisObservability({ metricRollups }: { metricRollups: MetricRol
             source="Operations metric rollups"
             data={trends}
             series={[
-              { key: "expiredKeys", label: "Expired", color: "var(--primary)" },
-              { key: "evictedKeys", label: "Evicted", color: "var(--warning)", dashed: true },
+              { key: "expiredKeys", label: "Expired", color: "var(--chart-1)" },
+              { key: "evictedKeys", label: "Evicted", color: "var(--chart-4)", dashed: true },
             ]}
             valueFormatter={integer}
           />
@@ -96,7 +96,7 @@ export function RedisObservability({ metricRollups }: { metricRollups: MetricRol
               unit="bytes"
               source="Operations metric rollups"
               data={trends}
-              series={[{ key: "memoryUsedBytes", label: "Memory Used", color: "var(--primary)" }]}
+              series={[{ key: "memoryUsedBytes", label: "Memory Used", color: "var(--chart-1)" }]}
               valueFormatter={bytes}
             />
           </div>

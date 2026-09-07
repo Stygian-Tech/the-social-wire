@@ -7,7 +7,7 @@ struct OperationsCapabilityResolver: Sendable {
   static let fallbackPollMilliseconds = 2_500
 
   static let tapVerifiedResyncDisabledReason =
-    "Pinned Tap has no safe resync API or complete delete and job-watermark verification."
+    "Tap ingestion is retired; verified resync is unavailable."
 
   let store: any OperationsStore
   let config: OperationsConfiguration

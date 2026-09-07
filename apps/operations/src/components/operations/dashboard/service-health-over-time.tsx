@@ -41,10 +41,10 @@ export function ServiceHealthOverTime({ metricRollups }: { metricRollups: Metric
             source="socialwire.service.health.samples_total"
             data={trends as unknown as GroupedChartDatum[]}
             series={[
-              { key: "liveness", label: "Required Services Liveness", color: "var(--success)" },
-              { key: "readiness", label: "Required Services Readiness", color: "var(--primary)" },
-              { key: "freshness", label: "Worker Freshness", color: "var(--info)" },
-              { key: "completeness", label: "Worker Completeness", color: "var(--warning)", dashed: true },
+              { key: "liveness", label: "Required Services Liveness", color: "var(--chart-3)" },
+              { key: "readiness", label: "Required Services Readiness", color: "var(--chart-1)" },
+              { key: "freshness", label: "Worker Freshness", color: "var(--chart-2)" },
+              { key: "completeness", label: "Worker Completeness", color: "var(--chart-4)", dashed: true },
             ]}
             valueFormatter={percentage}
           />

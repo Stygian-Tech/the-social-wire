@@ -5,8 +5,6 @@ src/app/callback/page.tsx
 src/app/layout.tsx
 src/app/operations-client-metadata.json/route.ts
 src/app/providers.tsx
-src/components/operations/backfills/backfill-sheet.tsx
-src/components/operations/backfills/backfill-summary.tsx
 src/components/operations/dashboard/endpoint-inventory.tsx
 src/components/operations/dashboard/operations-commands-table.tsx
 src/components/operations/dashboard/overview-skeleton.tsx
@@ -23,4 +21,3 @@ src/components/operations/shell/operations-view-types.ts
 src/components/operations/traces/trace-detail.tsx
 src/components/ui/skeleton.tsx
 src/lib/operations-types.ts
-src/lib/use-document-visibility.ts

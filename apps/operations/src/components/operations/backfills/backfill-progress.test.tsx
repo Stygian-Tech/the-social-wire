@@ -48,6 +48,13 @@ describe("BackfillProgress", () => {
     expect(progressbar.getAttribute("aria-valuenow")).toBe("50")
   })
 
+  it("keeps retired Tap jobs readable without recommending new Tap recovery", () => {
+    render(<BackfillProgress job={{ ...job, sourceMode: "tap_verified_resync" }} refreshing={false} />)
+    expect(screen.getByText("Tap verified resync")).toBeTruthy()
+    expect(screen.queryByText(/authoritative Tap resync/)).toBeNull()
+    expect(screen.getByText(/durable replay checkpoints before resolution/)).toBeTruthy()
+  })
+
   it("stops describing terminal jobs as live", () => {
     render(<BackfillProgress job={{ ...job, status: "completed", processedCount: 0 }} refreshing={false} />)
 
