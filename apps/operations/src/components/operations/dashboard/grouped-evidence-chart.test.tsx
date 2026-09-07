@@ -8,6 +8,39 @@ import {
 
 afterEach(cleanup)
 
+test("automatically marks sparse observations in each series, including zero", () => {
+  const { container } = render(
+    <GroupedEvidenceChart
+      title="Sparse Commit Duration"
+      description="Average and maximum"
+      unit="milliseconds"
+      source="Observed rollups"
+      data={[null, 0, null, 4, null, 2, 3, null].map((average, minute) => ({
+        timestamp: Date.UTC(2026, 6, 22, 1, minute),
+        average,
+        maximum: average === null ? null : average * 2,
+      }))}
+      series={[
+        { key: "average", label: "Average", color: "var(--chart-1)" },
+        { key: "maximum", label: "Maximum", color: "var(--chart-4)", dashed: true },
+      ]}
+    />,
+  )
+
+  const areas = container.querySelectorAll(".recharts-area")
+  expect(areas).toHaveLength(2)
+  for (const key of ["average", "maximum"]) {
+    const dots = container.querySelectorAll(`circle[r='3'][fill='var(--color-${key})']`)
+    expect(dots).toHaveLength(2)
+    expect(Number(dots[0].getAttribute("cy"))).toBeGreaterThan(Number(dots[1].getAttribute("cy")))
+  }
+  for (const area of areas) {
+    expect(area.querySelector(".recharts-area-curve")?.getAttribute("d")?.match(/M/g)).toHaveLength(3)
+  }
+  expect(screen.getByText("Coverage: 8/16 values (50%)")).toBeTruthy()
+  expect(screen.getAllByText("Missing")).toHaveLength(8)
+})
+
 test("merges related series onto one timeline without connecting missing values", () => {
   expect(mergeGroupedSeries([
     { key: "average", points: [{ timestamp: 1, value: 2 }, { timestamp: 2, value: null }] },

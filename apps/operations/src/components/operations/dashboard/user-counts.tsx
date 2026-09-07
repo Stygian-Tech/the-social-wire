@@ -66,7 +66,6 @@ export function UserCounts({ overview, referenceTime = overview.refreshedAt }: {
             timeFormatter={formatUserCountDate}
             valueFormatter={(value) => value.toLocaleString()}
             bucketLabel="UTC days"
-            showIsolatedDots
             sampleCount={observedDays}
           />
         </div>
