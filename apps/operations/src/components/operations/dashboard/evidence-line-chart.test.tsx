@@ -1,8 +1,20 @@
 import { afterEach, expect, test } from "bun:test"
 import { cleanup, render, screen } from "@testing-library/react"
-import { EvidenceLineChart } from "@/components/operations/dashboard/evidence-line-chart"
+import { EvidenceLineChart, formatChartTick } from "@/components/operations/dashboard/evidence-line-chart"
 
 afterEach(cleanup)
+
+test("distinguishes low-volume rate ticks without rounding observations down to zero", () => {
+  expect([0, 0.004, 0.008, 0.012, 0.016].map(formatChartTick)).toEqual([
+    "0", "0.004", "0.008", "0.012", "0.016",
+  ])
+  expect(formatChartTick(1 / 60)).toBe("0.017")
+  expect(formatChartTick(0.00004)).toBe("0.00004")
+  expect(formatChartTick(0.5)).toBe("0.5")
+  expect(formatChartTick(1_611)).toBe("1.6K")
+  expect(formatChartTick(1_600_000)).toBe("1.6M")
+  expect(formatChartTick(16_000_000_000)).toBe("16B")
+})
 
 test("keeps isolated zero and nonzero observations visible without bridging missing buckets", () => {
   const { container } = render(
