@@ -193,7 +193,14 @@ export function EvidenceLineChart({
               strokeWidth={2}
               activeDot={{ r: 4, stroke: "var(--background)", strokeWidth: 2 }}
               connectNulls={false}
-              dot={model.points.length === 1 ? { r: 3 } : false}
+              dot={({ cx, cy, index }) => {
+                const pointIndex = index ?? 0
+                const current = chartPoints[pointIndex]?.value
+                const previous = chartPoints[pointIndex - 1]?.value
+                const next = chartPoints[pointIndex + 1]?.value
+                const isolated = typeof current === "number" && previous == null && next == null
+                return <circle key={pointIndex} cx={cx} cy={cy} r={isolated ? 3 : 0} fill="var(--color-value)" />
+              }}
               isAnimationActive={false}
             />
           </AreaChart>

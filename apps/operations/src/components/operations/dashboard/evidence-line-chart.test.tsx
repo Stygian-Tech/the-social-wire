@@ -4,6 +4,29 @@ import { EvidenceLineChart } from "@/components/operations/dashboard/evidence-li
 
 afterEach(cleanup)
 
+test("keeps isolated zero and nonzero observations visible without bridging missing buckets", () => {
+  const { container } = render(
+    <EvidenceLineChart
+      title="Sparse Collection Activity"
+      unit="events per second"
+      source="Observed rollups"
+      format={String}
+      refreshedAt="2026-07-22T01:08:00Z"
+      points={[null, 0, null, 4, null, 2, 3, null].map((value, minute) => ({
+        timestamp: Date.UTC(2026, 6, 22, 1, minute),
+        value,
+      }))}
+    />,
+  )
+
+  const dots = container.querySelectorAll("circle[r='3']")
+  expect(dots).toHaveLength(2)
+  expect(Number(dots[0].getAttribute("cy"))).toBeGreaterThan(Number(dots[1].getAttribute("cy")))
+  expect(container.querySelector(".recharts-area-curve")?.getAttribute("d")?.match(/M/g)).toHaveLength(3)
+  expect(screen.getByText("Coverage: 4/8 buckets (50%)")).toBeTruthy()
+  expect(screen.getAllByText("Missing")).toHaveLength(4)
+})
+
 test("renders visible provenance, window, latest value, and missing-bucket coverage", () => {
   render(
     <EvidenceLineChart
