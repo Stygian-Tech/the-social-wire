@@ -54,16 +54,15 @@ struct WireMigrationContractTests {
     #expect(processor.contains("expired_lease_candidates AS"))
     #expect(processor.contains("ORDER BY eligible_at, seq, environment, source_generation"))
     #expect(processor.contains("let claimLimit = Self.boundedClaimLimit"))
-    #expect(processor.components(separatedBy: "LIMIT \\(claimLimit)").count == 10)
+    #expect(processor.contains("WITH repository_heads AS MATERIALIZED"))
+    #expect(processor.contains("FOR UPDATE OF candidate SKIP LOCKED"))
     #expect(processor.contains("candidate.environment,"))
     #expect(processor.contains("candidate.source_generation"))
     #expect(processor.contains("unresolved_publication_expired"))
     #expect(processor.contains("event.attemptCount >= 8"))
     #expect(processor.contains("DELETE FROM wire_follow_edges WHERE source_uri"))
     #expect(processor.contains("Self.isSelfFollow(follower: follower, followee: followee)"))
-    #expect(processor.contains("pg_advisory_xact_lock(hashtext('wire_signal_rollups_refresh')::bigint)"))
-    #expect(processor.contains("TRUNCATE TABLE wire_signal_rollups"))
-    #expect(!processor.contains("\"DELETE FROM wire_signal_rollups\""))
+    #expect(processor.contains("PostgresWireSignalRollupStore(pool: pool, logger: logger)"))
     #expect(processor.contains("func acknowledgeUnresolvedPassiveReferences"))
     #expect(processor.contains("candidate.event_kind = 'commit'"))
     #expect(
@@ -87,7 +86,7 @@ struct WireMigrationContractTests {
     #expect(
       processor.components(
         separatedBy: "source_generation = ANY(\\(sourceScope.sourceGenerations))"
-      ).count == 13)
+      ).count == 12)
     #expect(!processor.contains("WITH scoped_heads AS MATERIALIZED"))
     #expect(
       processor.contains(
@@ -288,7 +287,6 @@ struct WireMigrationContractTests {
     #expect(!feedbackSQL.contains("repo_did"))
 
     #expect(processor.contains("case \"app.thesocialwire.wireFeedback\""))
-    #expect(processor.contains("COUNT(DISTINCT actor_key_hash) FILTER (WHERE signal_kind = 'recommendation'"))
     #expect(processor.contains("DELETE FROM wire_article_feedback WHERE source_uri"))
   }
 }

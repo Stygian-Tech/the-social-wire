@@ -403,9 +403,27 @@ This is initial trial evidence, not 24-hour acceptance or measured billing
 savings. Restore the 24 GB limit on OOM, sustained latency regression, or growing
 ingestion lag. Do not advance to 12 or 8 GB without evaluating the 16 GB trial.
 Production WAL settings and backup retention were not changed by this action.
-The Coordinator cancellation fix remains pushed in PR #323, with its required
-CI passed at commit `504d4f0016a1092632947d75d3f6e95123c0fb7c`; it is not yet
-merged or deployed.
+The Coordinator cancellation fix passed required CI and reached Production in
+PR #325 at 05:08:40 UTC as `26eaf7c05c444472466fe4a944430402d07d8a96`.
+Its watchdog recovers stalled shutdowns, but does not resolve the underlying
+database contention. Deployment completion is not memory-trial acceptance.
+
+### Backlog and write attribution
+
+Record live statement deltas and queue diagnostics in TSW-92. Do not infer
+memory exhaustion from Railway's memory chart alone. Measure OOM counters,
+database waits and ingestion arrival/application rates together. The actionable
+count includes FIFO-blocked followers, so report it separately from eligible
+repository heads. Distinguish large publication batches from unresolved-reference
+retries tracked by TSW-102.
+
+The corrective application work targets changed-only atomic rollup publication,
+indexed selection of eligible repository heads, and avoiding retired-generation
+verification scans when no eligible recovery incident exists. Preserve source
+events, leases, ordering, recovery checks, ranking values and durability. Validate
+these changes with database integration and representative queue fixtures before
+Development and Production rollout. Keep the 24 GB rollback available, but do not
+claim that additional memory alone can fix repository ordering or repeated work.
 
 Track updates in TSW-92 and its TSW-93, TSW-94, and TSW-95 children. Do not use
 `railway postgres pitr backup restore` as a staging-only command: it commits the
