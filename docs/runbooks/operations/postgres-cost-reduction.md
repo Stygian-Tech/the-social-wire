@@ -1,7 +1,17 @@
 # TSW-92 database cost rollout
 
 The user authorized all actions related to resolving TSW-92 on September 4, 2026.
-Production rollout still requires Development acceptance and the recovery gates below.
+Following the September 5 request to expedite, roll out in separate stages. The
+tested application write reductions may reach Production after required release
+CI passes, using the recorded Development deployment, replay, and authenticated
+QA evidence with its stated limitations. Immediately verify Production service
+health, authenticated feeds and read state, generation freshness, and ingestion
+backlog and latency against the pre-deployment baseline; pause further rollout
+and revert the affected application change on regression. This stage does not
+change backup retention, WAL settings, or memory limits. A successful seven-day
+restore remains mandatory before shortening Production retention. Memory limits
+remain separate measured trials with the rollback criteria below. Outstanding
+acceptance and savings evidence must not be reported as complete.
 Run migrations only through Database Migrator. The concurrent index migration
 fails closed unless its surviving unique index is valid and equivalent.
 
@@ -86,11 +96,36 @@ At 24 hours and seven days, compare total DB-related cost against the recorded
 baseline. Targets are >=70% cost reduction, >=80% WAL/upload reduction, >=95%
 fewer retained ranking rows, no growing queue age, no lost read state or hides,
 and no user-visible latency regression. These are acceptance targets, not measured
-savings until the hosted soak completes. Keep Production unchanged if Development
-acceptance or recovery gates fail.
+savings until the hosted soak completes. The expedited application stage does not
+waive these final acceptance checks. A failed recovery gate blocks retention
+shortening; a failed workload or memory trial blocks the corresponding tuning or
+limit change. Address observed application regressions before proceeding further.
 
 ## Implementation evidence — September 5, 2026 UTC
 
+- Expedited Production application release [#320](https://github.com/Stygian-Tech/the-social-wire/pull/320)
+  merged at 17:05:33 UTC as `c59279a5b571fecd51bfa30450f860eec1b98a7e`.
+  All required CI passed; a failed-only retry resolved an Operations Web package
+  extraction failure without source changes. The audited dev-to-main range
+  contained only TSW-92 work. Production Migrator deployment
+  `71ab66d5-eb05-46b2-a65f-507ab314f46a` succeeded: its index preflight, concurrent
+  drop, and extension creation completed at 17:06 UTC. Subsequent cgroup memory
+  was 15,742,050,304 bytes versus a pre-release sample of 23,401,086,976 bytes,
+  with the 24 GB limit unchanged. These snapshots do not establish sustained
+  savings or isolate all causes. All affected application deployments subsequently
+  reached SUCCESS. Coordinator acquired its lease at 17:11:28 with external
+  signals off and the wire-v10 serving algorithm preserved. Its first cycle
+  completed at 17:14:31 in 183,075 milliseconds, publishing all 11 supported
+  language buckets without shadow generations. English generation
+  `776a8ca4-48da-48bd-9d0a-8d59beb53e5d` contained 3,207 items. Public feed and
+  edition reads served this exact generation, ranked and non-degraded, in sampled
+  0.257/0.351 seconds. Memory after the first cycle was 16,134,369,280 bytes,
+  still with a 24 GB limit; this remains a short observation. Subsequent cadence,
+  stored two-hour expiration, and direct SQL checks remain separate verification;
+  the configured SSH signer was unavailable.
+  Production Coordinator has explicit off/300/7200 shadow/cadence/retention
+  settings for the new deployment. The legacy Production Wire worker already
+  has the drain-only role. Backup retention and Production memory are unchanged.
 - PR [#314](https://github.com/Stygian-Tech/the-social-wire/pull/314) merged into
   Development as `c3150a02e8fe7fed2960c8c50572c5be0715036d` after all required
   CI passed. All affected Development services deployed that revision. Database
@@ -110,6 +145,16 @@ acceptance or recovery gates fail.
   checkpoints, completion target 0.9; fsync and full-page writes remain on. No
   restart is pending. Preflight found approximately 87 GB free. Rollback values
   are compression `off`, max WAL `1GB`, checkpoint timeout `5min`, target `0.9`.
+- The first Development memory trial started at approximately 16:57 UTC:
+  a service-scoped limit update reduced 16 GB to 4 GB while preserving the
+  24-vCPU ceiling. The running container's limit became 3,999,997,952 bytes;
+  usage fell from 5,070,540,800 to 3,981,946,880 bytes as file cache was reclaimed.
+  No new deployment was created. Through 17:13 the OOM/kill/max counters remained
+  zero, the original postmaster start was unchanged, and actionable backlog
+  returned to zero after one transient 64-millisecond-old item. This is initial
+  trial evidence, not representative-load or 24-hour acceptance. Restore the
+  Development limit to 16 GB on the rollback conditions above. Do not advance
+  to 2 GB or declare a Production memory limit validated from these samples.
 - Development volume backup `54357efb-ec88-46e9-820d-82f41319abfc`, taken at
   04:15:57 UTC, was restored through Railway's volume-snapshot mechanism into an
   isolated clone after a disposable marker fixture proved the staged rewire safe.
@@ -337,7 +382,30 @@ acceptance or recovery gates fail.
   rather than assuming the service subtotal includes them.
 - Complete authenticated acceptance, representative replay, memory trials, Production
   restore acceptance, discovery rebuild timing, and 24-hour/seven-day cost
-  comparisons remain release gates. No measured billing savings are claimed.
+  comparisons remain outstanding. The expedited application stage uses the
+  existing CI and Development evidence plus immediate Production verification;
+  it does not establish these remaining acceptance results. Seven-day restore
+  acceptance still gates retention shortening, and measured memory trials gate
+  each separate limit reduction. No measured billing savings are claimed.
+
+## Production memory trial — September 7, 2026 UTC
+
+The user explicitly authorized applying the Production memory reduction now.
+The first step changed only Production Postgres's Railway memory limit from
+24 GB to 16 GB; no source change or redeployment was required. At 04:24:34 UTC,
+the running cgroup reported `memory.max=16000000000` and 13,325,697,024 bytes
+used. The CPU ceiling remained 24 cores (`cpu.max=2400000 100000`). OOM and
+OOM-kill counters remained zero, and the memory-limit event count remained
+7,868, unchanged from the immediate pre-change sample. SQL succeeded and the
+postmaster start remained August 30 at 00:32:30 UTC: no database restart occurred.
+
+This is initial trial evidence, not 24-hour acceptance or measured billing
+savings. Restore the 24 GB limit on OOM, sustained latency regression, or growing
+ingestion lag. Do not advance to 12 or 8 GB without evaluating the 16 GB trial.
+Production WAL settings and backup retention were not changed by this action.
+The Coordinator cancellation fix remains pushed in PR #323, with its required
+CI passed at commit `504d4f0016a1092632947d75d3f6e95123c0fb7c`; it is not yet
+merged or deployed.
 
 Track updates in TSW-92 and its TSW-93, TSW-94, and TSW-95 children. Do not use
 `railway postgres pitr backup restore` as a staging-only command: it commits the
