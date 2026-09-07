@@ -9,17 +9,20 @@ struct WireLinkMetadataEnricher: Sendable {
   let maximumConcurrentFetches: Int
 
   func runBatch(asOf: Date) async throws -> Int {
+    try Task.checkCancellation()
     let targets = try await store.claimDue(limit: batchSize, asOf: asOf)
+    try Task.checkCancellation()
     guard !targets.isEmpty else { return 0 }
     var iterator = targets.makeIterator()
     try await withThrowingTaskGroup(of: Void.self) { group in
       for _ in 0..<min(maximumConcurrentFetches, targets.count) {
         guard let target = iterator.next() else { break }
-        group.addTask { await enrich(target, asOf: asOf) }
+        group.addTask { try await enrich(target, asOf: asOf) }
       }
       while try await group.next() != nil {
+        try Task.checkCancellation()
         guard let target = iterator.next() else { continue }
-        group.addTask { await enrich(target, asOf: asOf) }
+        group.addTask { try await enrich(target, asOf: asOf) }
       }
     }
     return targets.count
@@ -29,9 +32,12 @@ struct WireLinkMetadataEnricher: Sendable {
     try await store.healthSnapshot(asOf: asOf)
   }
 
-  private func enrich(_ target: WireLinkMetadataTarget, asOf: Date) async {
+  private func enrich(_ target: WireLinkMetadataTarget, asOf: Date) async throws {
     do {
-      switch try await client.fetch(target) {
+      try Task.checkCancellation()
+      let result = try await client.fetch(target)
+      try Task.checkCancellation()
+      switch result {
       case .notModified(let etag, let lastModified):
         try await store.markNotModified(
           canonicalKey: target.canonicalKey,
@@ -43,10 +49,12 @@ struct WireLinkMetadataEnricher: Sendable {
         try await store.store(canonicalKey: target.canonicalKey, metadata: metadata, asOf: asOf)
       }
     } catch is CancellationError {
-      try? await store.markFailure(canonicalKey: target.canonicalKey, negative: false, asOf: asOf)
+      throw CancellationError()
     } catch {
+      try Task.checkCancellation()
       let negative = Self.isNegative(error)
       try? await store.markFailure(canonicalKey: target.canonicalKey, negative: negative, asOf: asOf)
+      try Task.checkCancellation()
       logger.debug(
         "The Wire metadata enrichment failed",
         metadata: ["category": .string(negative ? "negative" : "retry")]
