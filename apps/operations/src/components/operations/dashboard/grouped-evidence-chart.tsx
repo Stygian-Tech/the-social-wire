@@ -42,7 +42,6 @@ export function GroupedEvidenceChart({
   sampleCount,
   timeFormatter = formatChartTime,
   bucketLabel = "one-minute buckets",
-  showIsolatedDots = false,
 }: {
   data: GroupedChartDatum[]
   series: GroupedChartSeries[]
@@ -54,7 +53,6 @@ export function GroupedEvidenceChart({
   sampleCount?: number
   timeFormatter?: (timestamp: number) => string
   bucketLabel?: string
-  showIsolatedDots?: boolean
 }) {
   const dataTableId = useId()
   const config = Object.fromEntries(
@@ -141,7 +139,7 @@ export function GroupedEvidenceChart({
               }
             />
             <ChartLegend content={<ChartLegendContent className="flex-wrap gap-x-3 gap-y-1" />} />
-            {series.map((item, index) => (
+            {series.map((item) => (
               <Area
                 key={item.key}
                 dataKey={item.key}
@@ -155,13 +153,13 @@ export function GroupedEvidenceChart({
                 strokeDasharray={item.dashed ? "5 4" : undefined}
                 activeDot={{ r: 4, stroke: "var(--background)", strokeWidth: 2 }}
                 connectNulls={false}
-                dot={showIsolatedDots ? ({ cx, cy, index: pointIndex }) => {
+                dot={({ cx, cy, index: pointIndex }) => {
                   const current = chartData[pointIndex ?? 0]?.[item.key]
                   const previous = chartData[(pointIndex ?? 0) - 1]?.[item.key]
                   const next = chartData[(pointIndex ?? 0) + 1]?.[item.key]
                   const isolated = typeof current === "number" && previous == null && next == null
                   return <circle key={pointIndex} cx={cx} cy={cy} r={isolated ? 3 : 0} fill={`var(--color-${item.key})`} />
-                } : chartData.length === 1 ? { r: 3 + (index % 2) } : false}
+                }}
                 isAnimationActive={false}
               />
             ))}

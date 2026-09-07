@@ -38,6 +38,7 @@ export function formatChartTick(value: number) {
   if (value >= 1_000_000_000) return compact(1_000_000_000, "B")
   if (value >= 1_000_000) return compact(1_000_000, "M")
   if (value >= 1_000) return compact(1_000, "K")
+  if (value !== 0 && Math.abs(value) < 1) return Number(value.toPrecision(2)).toString()
   return value.toFixed(value >= 10 ? 0 : 2).replace(/\.0+$|(?<=\.[0-9])0$/, "")
 }
 
@@ -193,7 +194,14 @@ export function EvidenceLineChart({
               strokeWidth={2}
               activeDot={{ r: 4, stroke: "var(--background)", strokeWidth: 2 }}
               connectNulls={false}
-              dot={model.points.length === 1 ? { r: 3 } : false}
+              dot={({ cx, cy, index }) => {
+                const pointIndex = index ?? 0
+                const current = chartPoints[pointIndex]?.value
+                const previous = chartPoints[pointIndex - 1]?.value
+                const next = chartPoints[pointIndex + 1]?.value
+                const isolated = typeof current === "number" && previous == null && next == null
+                return <circle key={pointIndex} cx={cx} cy={cy} r={isolated ? 3 : 0} fill="var(--color-value)" />
+              }}
               isAnimationActive={false}
             />
           </AreaChart>
