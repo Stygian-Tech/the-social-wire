@@ -38,6 +38,7 @@ export function formatChartTick(value: number) {
   if (value >= 1_000_000_000) return compact(1_000_000_000, "B")
   if (value >= 1_000_000) return compact(1_000_000, "M")
   if (value >= 1_000) return compact(1_000, "K")
+  if (value !== 0 && Math.abs(value) < 1) return Number(value.toPrecision(2)).toString()
   return value.toFixed(value >= 10 ? 0 : 2).replace(/\.0+$|(?<=\.[0-9])0$/, "")
 }
 
