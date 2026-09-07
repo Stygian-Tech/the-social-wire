@@ -15,6 +15,8 @@ describe("calendar-day feed read contracts", () => {
     expect(output.required).toEqual(["referenceDay", "options"]);
     expect(output.properties.options.items.required).toEqual(["days", "before", "count"]);
     expect(output.properties.options.items.properties.days.minimum).toBe(1);
+    expect(output.properties.options.items.properties.days.maximum).toBe(7);
+    expect(output.properties.options.maxItems).toBe(7);
 
     const mutation = document.paths["/xrpc/app.thesocialwire.appview.markReadBefore"].post;
     expect(mutation.requestBody.content["application/json"].schema.required).toEqual(["scope", "before"]);
@@ -24,6 +26,25 @@ describe("calendar-day feed read contracts", () => {
     expect(result.properties.unreadCounts.description).toContain("Missing publication keys mean unknown");
     expect(query.responses["404"]).toBeDefined();
     expect(mutation.responses["404"]).toBeDefined();
+  });
+
+  it("documents opt-in progressive snapshots and explicit stream completion", () => {
+    const query = document.paths["/xrpc/app.thesocialwire.appview.getReadAgeOptions"].get;
+    expect(query.description).toContain("Accept: application/x-ndjson");
+    expect(query.description).toContain("seven calendar days or more");
+    const stream = query.responses["200"].content["application/x-ndjson"].schema;
+    expect(stream.type).toBe("string");
+    for (const event of ["options", "done", "error"]) {
+      expect(stream.description).toContain(`"type": "${event}"`);
+    }
+    expect(stream.description).toContain('"message"');
+    expect(stream.description).toContain("replace earlier snapshots");
+    expect(stream.description).toContain("without done");
+
+    const lexicon = JSON.parse(readFileSync(join(root, "packages/lexicons/app/thesocialwire/appview/getReadAgeOptions.json"), "utf8"));
+    const output = query.responses["200"].content["application/json"].schema;
+    expect(output.properties.options.maxItems).toBe(lexicon.defs.main.output.schema.properties.options.maxLength);
+    expect(output.properties.options.items.properties.days.maximum).toBe(lexicon.defs.option.properties.days.maximum);
   });
 
   it("keeps age-based calls separate from the existing mark-all contract", () => {

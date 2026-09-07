@@ -679,6 +679,15 @@ actor ThinAppViewReadService {
     )
   }
 
+  nonisolated func writeReadAgeOptionsStream(
+    auth: AuthContext, rows: [SidebarPublicationRow], timeZone: String, now: Date,
+    writer: inout any ResponseBodyWriter
+  ) async throws {
+    try await ReadAgeService(store: store, projectionCache: projectionCache).writeOptionsStream(
+      viewerDid: auth.did, rows: rows, timeZone: timeZone, now: now, writer: &writer
+    )
+  }
+
   func markReadBefore(
     auth: AuthContext, rows: [SidebarPublicationRow], before: String, now: Date
   ) async throws -> MarkReadBeforeResponse {

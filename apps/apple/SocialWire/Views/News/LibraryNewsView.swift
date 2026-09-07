@@ -45,7 +45,9 @@ struct LibraryNewsView: View {
                         contextID: "\(appModel.viewerDID ?? ""):library:\(bulkReadScope)",
                         refreshRevision: appModel.readAgeRevision,
                         scopeTitle: bulkReadTitle,
-                        loadOptions: { try await appModel.readAgeOptions(for: bulkReadScope) },
+                        loadOptions: { onOptions in
+                            try await appModel.readAgeOptions(for: bulkReadScope, onOptions: onOptions)
+                        },
                         markAllRead: { await appModel.markRead(for: bulkReadScope) },
                         markOlderRead: { try await appModel.markRead(for: bulkReadScope, before: $0.before) },
                         markAllUnread: { await appModel.markUnread(for: bulkReadScope) }

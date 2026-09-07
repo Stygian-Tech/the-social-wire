@@ -1,6 +1,8 @@
 import Foundation
 import GatewayCore
 import GRDB
+import Hummingbird
+import NIOCore
 import Logging
 import Testing
 import ThinAppViewCore
@@ -49,6 +51,23 @@ struct ReadAgeServiceTests {
     )
     #expect(options.options.map(\.days) == [1])
     #expect(options.options.map(\.count) == [205])
+    let recording = ReadAgeStreamRecording()
+    var writer: any ResponseBodyWriter = ReadAgeTestWriter(recording: recording)
+    try await service.writeOptionsStream(
+      viewerDid: "did:plc:viewer", rows: [row, row], timeZone: "America/Chicago", now: now,
+      writer: &writer
+    )
+    let chunks = await recording.chunks
+    let events = try chunks.map { try JSONSerialization.jsonObject(with: Data($0.utf8)) as! [String: Any] }
+    #expect(events.last?["type"] as? String == "done")
+    let snapshots = events.filter { $0["type"] as? String == "options" }
+    #expect(snapshots.count == 3)
+    let counts = snapshots.map { ($0["options"] as! [[String: Any]])[0]["count"] as! Int }
+    #expect(counts == [99, 199, 205])
+    #expect(await recording.finished)
+    #expect(chunks.allSatisfy { $0.hasSuffix("\n") })
+    #expect(try await store.hasReadMark(viewerDid: "did:plc:viewer", subjectUri: oldIds[0]) == false)
+
     let marked = try await service.markBefore(
       viewerDid: "did:plc:viewer", rows: [row, row], before: "2026-09-02T05:00:00Z", now: now
     )
@@ -76,9 +95,40 @@ struct ReadAgeServiceTests {
     let service = ReadAgeService(store: store, projectionCache: nil)
     let now = date("2026-09-02T17:00:00Z")
     #expect(try await service.options(viewerDid: "did:plc:viewer", rows: [], timeZone: "UTC", now: now).options.isEmpty)
+    let recording = ReadAgeStreamRecording()
+    var writer: any ResponseBodyWriter = ReadAgeTestWriter(recording: recording)
+    try await service.writeOptionsStream(
+      viewerDid: "did:plc:viewer", rows: [], timeZone: "UTC", now: now, writer: &writer
+    )
+    let events = try await recording.chunks.map {
+      try JSONSerialization.jsonObject(with: Data($0.utf8)) as! [String: Any]
+    }
+    #expect(events.map { $0["type"] as? String } == ["options", "done"])
+    #expect((events.first?["options"] as? [Any])?.isEmpty == true)
+
     let result = try await service.markBefore(viewerDid: "did:plc:viewer", rows: [], before: "2026-09-02T00:00:00Z", now: now)
     #expect(result.marked == 0)
     #expect(result.unreadCounts.isEmpty)
+  }
+
+  @Test("a stream failure emits an error without claiming completion")
+  func failedStream() async throws {
+    let path = FileManager.default.temporaryDirectory
+      .appendingPathComponent("read-age-stream-failed-\(UUID().uuidString).sqlite").path
+    defer { try? FileManager.default.removeItem(atPath: path) }
+    let store = try SQLiteThinAppViewStore(path: path, logger: Logger(label: "read-age-failed.test"))
+    let service = ReadAgeService(store: store, projectionCache: nil)
+    let recording = ReadAgeStreamRecording()
+    var writer: any ResponseBodyWriter = ReadAgeTestWriter(recording: recording)
+    try await service.writeOptionsStream(
+      viewerDid: "did:plc:viewer", rows: [], timeZone: "Invalid/Zone", now: Date(), writer: &writer
+    )
+    let events = try await recording.chunks.map {
+      try JSONSerialization.jsonObject(with: Data($0.utf8)) as! [String: Any]
+    }
+    #expect(events.map { $0["type"] as? String } == ["error"])
+    #expect(events.first?["message"] as? String == "Couldn't load read-age options.")
+    #expect(await recording.finished)
   }
 
   @Test("marks every older record hidden behind a shared article URL across pages")
@@ -214,5 +264,22 @@ struct ReadAgeServiceTests {
 
   private func date(_ raw: String) -> Date {
     ISO8601DateFormatter().date(from: raw)!
+  }
+}
+
+private actor ReadAgeStreamRecording {
+  private(set) var chunks: [String] = []
+  private(set) var finished = false
+  func append(_ chunk: String) { chunks.append(chunk) }
+  func finish() { finished = true }
+}
+
+private struct ReadAgeTestWriter: ResponseBodyWriter {
+  let recording: ReadAgeStreamRecording
+  mutating func write(_ buffer: ByteBuffer) async throws {
+    await recording.append(String(buffer: buffer))
+  }
+  consuming func finish(_ trailingHeaders: HTTPFields?) async throws {
+    await recording.finish()
   }
 }

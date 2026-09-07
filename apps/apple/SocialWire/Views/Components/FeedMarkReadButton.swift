@@ -6,7 +6,7 @@ struct FeedMarkReadButton: View {
     let contextID: String
     var refreshRevision = 0
     let scopeTitle: String
-    let loadOptions: () async throws -> [FeedReadAgeOption]
+    let loadOptions: (@escaping @MainActor ([FeedReadAgeOption]) -> Void) async throws -> [FeedReadAgeOption]
     let markAllRead: () async -> Void
     let markOlderRead: (FeedReadAgeOption) async throws -> Void
     let markAllUnread: () async -> Void
@@ -21,6 +21,7 @@ struct FeedMarkReadButton: View {
     @State private var successFeedback = 0
     @State private var refreshID = UUID()
     @State private var loadedContextID: String?
+    @State private var refreshTask: Task<Void, Never>?
 
     var body: some View {
         Button("Mark All As Read", systemImage: "checkmark.circle") {
@@ -31,25 +32,25 @@ struct FeedMarkReadButton: View {
         .disabled(isMarking)
         .contextMenu {
             Section("Older Than") {
+                ForEach(options) { option in
+                    Button {
+                        selectedAge = option
+                        showsConfirmation = true
+                    } label: {
+                        Text("\(option.title) (\(option.count)\(isLoading ? "+" : ""))")
+                    }
+                    .disabled(isLoading || isMarking || loadedContextID != contextID)
+                    .accessibilityLabel("Older Than \(option.title), \(isLoading ? "At Least " : "")\(option.count) Unread Stories")
+                    .accessibilityIdentifier("mark-read-age-\(option.days)")
+                }
                 if isLoading {
-                    Text("Loading Days…")
+                    Text(options.isEmpty ? "Loading Days…" : "Counting Stories…")
                 } else if loadFailed {
                     Button("Retry Loading Days", systemImage: "arrow.clockwise") {
                         Task { await refreshOptions() }
                     }
                 } else if options.isEmpty {
                     Text("No Older Unread Stories")
-                } else {
-                    ForEach(options) { option in
-                        Button {
-                            selectedAge = option
-                            showsConfirmation = true
-                        } label: {
-                            Text("\(option.title) (\(option.count))")
-                        }
-                        .accessibilityLabel("Older Than \(option.title), \(option.count) Unread Stories")
-                        .accessibilityIdentifier("mark-read-age-\(option.days)")
-                    }
                 }
             }
             Divider()
@@ -85,17 +86,18 @@ struct FeedMarkReadButton: View {
         }
         .sensoryFeedback(.success, trigger: successFeedback)
         .task(id: "\(contextID):\(refreshRevision)") {
-            if loadedContextID != contextID {
+            let contextChanged = loadedContextID != contextID
+            if contextChanged {
                 loadedContextID = contextID
                 showsConfirmation = false
                 selectedAge = nil
                 options = []
-            } else {
-                // Coalesce read-state and page updates without dismissing an open confirmation.
-                do { try await Task.sleep(for: .milliseconds(350)) }
-                catch { return }
             }
-            await refreshOptions()
+            await refreshOptions(debounce: !contextChanged)
+        }
+        .onDisappear {
+            refreshTask?.cancel()
+            refreshID = UUID()
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
@@ -107,21 +109,41 @@ struct FeedMarkReadButton: View {
         }
     }
 
-    private func refreshOptions() async {
+    private func refreshOptions(debounce: Bool = false) async {
+        refreshTask?.cancel()
         let requestID = UUID()
         refreshID = requestID
+        options = []
         isLoading = true
         loadFailed = false
-        do {
-            let loaded = try await loadOptions()
-            guard !Task.isCancelled, refreshID == requestID else { return }
-            options = loaded.filter { $0.days > 0 && $0.count > 0 && $0.cutoffDate != nil }
-                .sorted { $0.days < $1.days }
-        } catch {
-            guard !Task.isCancelled, refreshID == requestID else { return }
-            loadFailed = true
+        let task = Task { @MainActor in
+            do {
+                // Coalesce read-state updates while immediately invalidating the prior stream.
+                if debounce { try await Task.sleep(for: .milliseconds(350)) }
+                let loaded = try await loadOptions { partial in
+                    guard !Task.isCancelled, refreshID == requestID else { return }
+                    options = validOptions(partial)
+                }
+                guard !Task.isCancelled, refreshID == requestID else { return }
+                options = validOptions(loaded)
+            } catch {
+                guard !Task.isCancelled, refreshID == requestID else { return }
+                options = []
+                loadFailed = true
+            }
+            isLoading = false
         }
-        isLoading = false
+        refreshTask = task
+        await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
+        }
+    }
+
+    private func validOptions(_ options: [FeedReadAgeOption]) -> [FeedReadAgeOption] {
+        options.filter { (1...7).contains($0.days) && $0.count > 0 && $0.cutoffDate != nil }
+            .sorted { $0.days < $1.days }
     }
 
     private func confirm(age: FeedReadAgeOption?) async {
