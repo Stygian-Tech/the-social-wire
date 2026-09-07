@@ -74,6 +74,7 @@ final class ATProtoOAuthService: NSObject, ASWebAuthenticationPresentationContex
     private var pendingTokenEndpoint: URL?
     private var pendingAuthorizationIssuer: String?
     private var pendingOAuthState: String?
+    private var webAuthenticationSession: ASWebAuthenticationSession?
 
     func restoreSession() async {
         guard
@@ -158,9 +159,9 @@ final class ATProtoOAuthService: NSObject, ASWebAuthenticationPresentationContex
 
         do {
             let callbackURL: URL = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<URL, Error>) in
-                let webSession = ASWebAuthenticationSession(url: authURL, callbackURLScheme: ATProtoOAuthConfig.callbackURLScheme) { url, error in
-                    // Completion may not be on the main actor; hop before touching OAuth state.
+                let completion: @Sendable (URL?, Error?) -> Void = { url, error in
                     Task { @MainActor in
+                        self.webAuthenticationSession = nil
                         if let error {
                             continuation.resume(throwing: error)
                         } else if let url {
@@ -170,12 +171,24 @@ final class ATProtoOAuthService: NSObject, ASWebAuthenticationPresentationContex
                         }
                     }
                 }
+                let webSession = ASWebAuthenticationSession(
+                    url: authURL,
+                    callbackURLScheme: ATProtoOAuthConfig.callbackURLScheme,
+                    completionHandler: completion
+                )
                 webSession.presentationContextProvider = self
                 webSession.prefersEphemeralWebBrowserSession = false
-                webSession.start()
+                webAuthenticationSession = webSession
+                guard webSession.start() else {
+                    webAuthenticationSession = nil
+                    continuation.resume(throwing: SocialWireError.badResponse("Could not start the OAuth browser session."))
+                    return
+                }
             }
             try await handleCallbackURL(callbackURL)
         } catch {
+            webAuthenticationSession?.cancel()
+            webAuthenticationSession = nil
             resetPendingOAuthState()
             throw error
         }

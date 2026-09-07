@@ -62,7 +62,7 @@ struct SavedTagFilterBar: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
             .foregroundStyle(selected ? Color.white : Color.primary)
-            .background(selected ? Color.accentColor : Color.secondary.opacity(0.14), in: Capsule())
+            .background(selected ? Color.indigo : Color.secondary.opacity(0.14), in: Capsule())
             .frame(minHeight: 44)
             .contentShape(Rectangle())
         }

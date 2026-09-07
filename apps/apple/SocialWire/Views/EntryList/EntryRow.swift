@@ -8,25 +8,10 @@ struct EntryRow: View {
     let showsReadState: Bool
 
     var body: some View {
-        HStack(alignment: .center, spacing: 12) {
-            if showsReadState {
-                Group {
-                    if !isRead {
-                        Circle()
-                            .fill(Color.primary)
-                            .frame(width: 8, height: 8)
-                    } else {
-                        Color.clear
-                            .frame(width: 8, height: 8)
-                    }
-                }
-                .frame(width: 8, height: 8)
-                .accessibilityHidden(true)
-            }
-
+        HStack(alignment: .top, spacing: 14) {
             thumbnail
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 6) {
                 if let wire = entry.wireMetadata {
                     SavedLinkPublicationChip(
                         model: SavedLinkPublicationChipModel(
@@ -36,8 +21,9 @@ struct EntryRow: View {
                             homepageURL: URL(string: "https://\(wire.source.domain)")
                         )
                     )
+                    .padding(.leading, -10)
                 } else if let publicationId = entry.publicationId,
-                   let publication = appModel.publication(forId: publicationId) {
+                          let publication = appModel.publication(forId: publicationId) {
                     SavedLinkPublicationChip(
                         model: SavedLinkPublicationChipModel(
                             name: publication.title,
@@ -45,13 +31,7 @@ struct EntryRow: View {
                             homepageURL: nil
                         )
                     )
-                }
-
-                if let sourceDomain = entry.sourceDomain {
-                    Label(sourceDomain, systemImage: "globe")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                    .padding(.leading, -10)
                 }
                 Text(entry.title)
                     .font(.headline)
@@ -81,7 +61,7 @@ struct EntryRow: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(.vertical, 6)
+        .padding(12)
     }
 
     @ViewBuilder
@@ -90,18 +70,23 @@ struct EntryRow: View {
             primary: entry.thumbnailUrl,
             fallback: entry.thumbnailFallbackUrl
         )
-        Group {
+        ZStack {
+            Rectangle()
+                .fill(Color(.tertiarySystemFill))
             if urls.isEmpty {
-                thumbnailPlaceholder
+                Image(systemName: "photo")
+                    .font(.title2)
+                    .foregroundStyle(.tertiary)
             } else {
-                CachedRemoteImage(urls: urls, maxPixelSize: 168) {
+                CachedRemoteImage(urls: urls, maxPixelSize: 400) {
                     thumbnailPlaceholder
                 }
                 .scaledToFill()
             }
         }
-        .frame(width: 56, height: 56)
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .frame(width: 156, height: 104)
+        .clipShape(.rect(cornerRadius: 10))
+        .clipped()
         .accessibilityHidden(true)
     }
 

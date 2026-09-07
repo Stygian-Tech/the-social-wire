@@ -7,6 +7,7 @@ final class NewsShellSmokeUITests: XCTestCase {
         app.launchArguments.append("--ui-testing-news-shell")
         app.launch()
 
+        XCTAssertTrue(app.descendants(matching: .any)["news-sidebar-column"].waitForExistence(timeout: 5))
         XCTAssertTrue(content(for: "wire", in: app).waitForExistence(timeout: 5))
 
         let destinations = [
@@ -102,8 +103,8 @@ final class NewsShellSmokeUITests: XCTestCase {
         }
 
         let actionIDs = circle
-            ? ["story-website", "story-read", "story-hide"]
-            : ["story-website", "story-read"]
+            ? ["story-open", "story-hide"]
+            : ["story-open"]
         let actions = actionIDs.map { identifier in
             app.descendants(matching: .any).matching(identifier: identifier).firstMatch
         }
@@ -127,7 +128,7 @@ final class NewsShellSmokeUITests: XCTestCase {
         }
 
         let result = app.staticTexts["feed-action-result"]
-        let expectedResults = circle ? ["Website", "Read", "Hidden"] : ["Website", "Read"]
+        let expectedResults = circle ? ["Open", "Hidden"] : ["Open"]
         for (action, expected) in zip(actions, expectedResults) {
             reveal(action, in: canvas)
             XCTAssertTrue(action.isHittable)
@@ -142,9 +143,9 @@ final class NewsShellSmokeUITests: XCTestCase {
             let secondCard = app.descendants(matching: .any)["wire-card-ui-story-2"]
             XCTAssertTrue(secondCard.waitForExistence(timeout: 2))
             XCTAssertGreaterThanOrEqual(secondCard.frame.width, 250)
-            let secondRead = secondCard.descendants(matching: .any)["story-read"]
-            XCTAssertTrue(secondRead.isHittable, "The longer second card must remain usable")
-            XCTAssertLessThanOrEqual(secondRead.frame.maxY, rail.frame.maxY + 1)
+            let secondOpen = secondCard.descendants(matching: .any)["story-open"]
+            XCTAssertTrue(secondOpen.isHittable, "The longer second card must remain usable")
+            XCTAssertLessThanOrEqual(secondOpen.frame.maxY, rail.frame.maxY + 1)
         }
     }
 

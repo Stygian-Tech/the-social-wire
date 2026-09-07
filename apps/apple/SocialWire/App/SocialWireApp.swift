@@ -22,7 +22,7 @@ struct SocialWireApp: App {
             SocialWireMacCommands(appModel: appModel)
         }
 
-        WindowGroup("Article", for: String.self) { $entryID in
+        WindowGroup("RSS Story", for: String.self) { $entryID in
             NavigationStack {
                 if let entryID,
                    let entry = appModel.selectedEntry,

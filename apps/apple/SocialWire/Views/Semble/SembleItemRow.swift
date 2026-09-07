@@ -11,7 +11,7 @@ struct SembleItemRow: View {
             VStack(alignment: .leading, spacing: 5) {
                 Text(item.displayTitle)
                     .font(.headline)
-                    .foregroundStyle(isSelected ? Color.accentColor : Color.primary)
+                    .foregroundStyle(isSelected ? Color.indigo : Color.primary)
                     .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
                 if let description = item.description, !description.isEmpty {
                     Text(description)

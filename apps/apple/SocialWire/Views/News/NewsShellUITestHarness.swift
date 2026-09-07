@@ -41,39 +41,31 @@ struct NewsShellUITestHarness: View {
     }
 
     private var shell: some View {
-        VStack(spacing: 0) {
-#if os(macOS)
-            HStack {
-                ForEach(NewsTab.allCases) { tab in
-                    Button(tab.title) {
-                        selectedTab = tab
-                    }
-                    .accessibilityIdentifier("news-tab-button-\(tab.rawValue)")
+        HStack(spacing: 0) {
+            List(NewsTab.allCases) { tab in
+                Button {
+                    selectedTab = tab
+                } label: {
+                    Label(tab.title, systemImage: tab.systemImage)
                 }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("news-tab-button-\(tab.rawValue)")
             }
-            .buttonStyle(.borderless)
-            .padding(10)
-            Divider()
-#endif
-            adaptiveTabs
-        }
-    }
+            .listStyle(.sidebar)
+            .frame(minWidth: 150, idealWidth: 220, maxWidth: 260)
+            .accessibilityIdentifier("news-sidebar-column")
 
-    private var adaptiveTabs: some View {
-        TabView(selection: $selectedTab) {
-            ForEach(NewsTab.allCases) { tab in
-                Tab(tab.title, systemImage: tab.systemImage, value: tab) {
-                    NavigationStack {
-                        Text(tab.title)
-                            .font(.largeTitle.bold())
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .accessibilityIdentifier("news-tab-content-\(tab.rawValue)")
-                            .navigationTitle(tab.title)
-                    }
-                }
+            Divider()
+
+            NavigationStack {
+                Text(selectedTab.title)
+                    .font(.largeTitle.bold())
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .accessibilityIdentifier("news-tab-content-\(selectedTab.rawValue)")
+                    .navigationTitle(selectedTab.title)
             }
+            .accessibilityIdentifier("news-detail-column")
         }
-        .tabViewStyle(.sidebarAdaptable)
     }
 
     private var feedCardFixture: some View {
@@ -88,14 +80,14 @@ struct NewsShellUITestHarness: View {
                     if ProcessInfo.processInfo.arguments.contains("--ui-testing-circle") {
                         CircleStoryCard(
                             story: Self.circleStory,
-                            onReadInApp: { lastFeedAction = "Read" },
+                            onReadInApp: { lastFeedAction = "Open" },
                             onHide: { lastFeedAction = "Hidden" }
                         )
                     } else {
                         WireEditorialRail(
                             title: "Trending",
                             entries: [Self.entry(index: 1), Self.entry(index: 2)],
-                            onOpen: { _ in lastFeedAction = "Read" }
+                            onOpen: { _ in lastFeedAction = "Open" }
                         )
                     }
                 }

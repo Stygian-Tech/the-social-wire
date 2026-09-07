@@ -7,6 +7,22 @@ struct LoginView: View {
     @State private var suggestions: [LoginActorSuggestion] = []
     @State private var selectedSuggestionIndex = 0
 
+    private var contentMaxWidth: CGFloat {
+#if os(macOS)
+        440
+#else
+        560
+#endif
+    }
+
+    private var contentHorizontalPadding: CGFloat {
+#if os(macOS)
+        64
+#else
+        24
+#endif
+    }
+
     var body: some View {
         NavigationStack {
             ZStack {
@@ -43,6 +59,13 @@ struct LoginView: View {
                             .textFieldStyle(.roundedBorder)
                             .multilineTextAlignment(.center)
 
+                        if let errorMessage = appModel.errorMessage {
+                            Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
+                                .font(.footnote)
+                                .foregroundStyle(.red)
+                                .multilineTextAlignment(.center)
+                        }
+
                         if !suggestions.isEmpty {
                             VStack(spacing: 0) {
                                 ForEach(Array(suggestions.enumerated()), id: \.element.id) { index, actor in
@@ -73,7 +96,7 @@ struct LoginView: View {
                                         }
                                         .padding(.horizontal, 12)
                                         .padding(.vertical, 8)
-                                        .background(index == selectedSuggestionIndex ? Color.accentColor.opacity(0.12) : .clear)
+                                        .background(index == selectedSuggestionIndex ? Color.indigo.opacity(0.12) : .clear)
                                         .contentShape(.rect)
                                     }
                                     .buttonStyle(.plain)
@@ -100,8 +123,9 @@ struct LoginView: View {
                         .disabled(handle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSigningIn)
                         .buttonStyle(.borderedProminent)
                     }
-                    .frame(maxWidth: 560, alignment: .center)
-                    .padding(24)
+                    .frame(maxWidth: contentMaxWidth, alignment: .center)
+                    .padding(.horizontal, contentHorizontalPadding)
+                    .padding(.vertical, 24)
                     Spacer(minLength: 24)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -112,7 +136,7 @@ struct LoginView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .task(id: handle) {
             do {
-                try await Task.sleep(for: .milliseconds(250))
+                try await Task.sleep(for: .milliseconds(125))
                 suggestions = try await appModel.resolver.searchLoginActors(handle)
                 selectedSuggestionIndex = 0
             } catch is CancellationError {

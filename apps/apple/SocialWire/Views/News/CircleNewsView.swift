@@ -2,26 +2,12 @@ import SwiftUI
 
 struct CircleNewsView: View {
     @Environment(SocialWireAppModel.self) private var appModel
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.openURL) private var openURL
     let sceneModel: NewsSceneModel
     @State private var lastHiddenStory: CircleStory?
 
-    private var usesPersistentDetail: Bool { horizontalSizeClass != .compact }
-
     var body: some View {
-        Group {
-            if usesPersistentDetail {
-                HStack(spacing: 0) {
-                    editorialCanvas
-                        .frame(minWidth: 360, idealWidth: 560, maxWidth: 680)
-                    Divider()
-                    detail
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
-            } else {
-                editorialCanvas
-            }
-        }
+        editorialCanvas
         .navigationTitle("Your Circle")
         .task {
             if appModel.circleEdition == nil {
@@ -74,17 +60,19 @@ struct CircleNewsView: View {
                     )
                     .frame(maxWidth: .infinity, minHeight: 260)
                 } else {
-                    ForEach(appModel.visibleCircleStories, id: \.storyId) { story in
-                        CircleStoryCard(
-                            story: story,
-                            onReadInApp: { openInReader(story) },
-                            onHide: { hide(story) }
-                        )
-                        .onAppear {
-                            guard story.storyId == appModel.visibleCircleStories.last?.storyId,
-                                  let cursor = appModel.circleEdition?.moreCursor
-                            else { return }
-                            Task { await appModel.loadCircleEdition(cursor: cursor) }
+                    EditorialCardLayout(spacing: 18, minimumCardWidth: 240) {
+                        ForEach(appModel.visibleCircleStories, id: \.storyId) { story in
+                            CircleStoryCard(
+                                story: story,
+                                onReadInApp: { openStory(story) },
+                                onHide: { hide(story) }
+                            )
+                            .onAppear {
+                                guard story.storyId == appModel.visibleCircleStories.last?.storyId,
+                                      let cursor = appModel.circleEdition?.moreCursor
+                                else { return }
+                                Task { await appModel.loadCircleEdition(cursor: cursor) }
+                            }
                         }
                     }
                     if appModel.isLoadingCircle {
@@ -99,23 +87,21 @@ struct CircleNewsView: View {
         .refreshable { await appModel.loadCircleEdition() }
     }
 
-    @ViewBuilder
-    private var detail: some View {
-        if let entry = appModel.selectedEntry {
-            EntryDetailView(entry: entry)
-        } else {
-            ContentUnavailableView(
-                "Select a Story",
-                systemImage: "doc.text",
-                description: Text("Open a story here or continue to the publisher's website.")
-            )
-        }
-    }
-
-    private func openInReader(_ story: CircleStory) {
-        appModel.selectCircleStory(story)
-        if !usesPersistentDetail {
+    private func openStory(_ story: CircleStory) {
+        let target = EntryOpenTargetResolver.resolve(
+            entryId: story.storyId,
+            originalURL: story.canonicalUrl,
+            rssArticleOpenMode: appModel.feedPreferences.articleOpenMode
+        )
+        switch target {
+        case .external(let websiteURL):
+            openURL(websiteURL)
+        case .nativeRSS:
+            appModel.selectCircleStory(story)
+            guard appModel.selectedEntry?.entryId == story.storyId else { return }
             sceneModel.navigate(to: .entry(id: story.storyId), in: .circle)
+        case nil:
+            appModel.errorMessage = "Couldn't Find A Link For This Article."
         }
     }
 
@@ -131,7 +117,7 @@ struct CircleStoryCard: View {
     let onHide: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 0) {
             if let thumbnailUrl = story.thumbnailUrl {
                 NewsStoryImage(
                     urls: [URL(string: thumbnailUrl)].compactMap { $0 },
@@ -139,10 +125,11 @@ struct CircleStoryCard: View {
                 )
             }
 
-            CircleSharerStrip(
-                sharers: story.sharers,
-                totalCount: story.sharerCount ?? story.sharers.count
-            )
+            VStack(alignment: .leading, spacing: 12) {
+                CircleSharerStrip(
+                    sharers: story.sharers,
+                    totalCount: story.sharerCount ?? story.sharers.count
+                )
 
             Text(story.source.displayName)
                 .font(.caption.weight(.semibold))
@@ -169,16 +156,17 @@ struct CircleStoryCard: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            NewsStoryActions(
-                websiteURL: URL(string: story.canonicalUrl),
-                onReadInApp: onReadInApp,
-                onHide: onHide
-            )
+                NewsStoryActions(
+                    onOpenStory: onReadInApp,
+                    onHide: onHide
+                )
+            }
+            .padding(16)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .fixedSize(horizontal: false, vertical: true)
-        .padding(.bottom, 20)
-        .overlay(alignment: .bottom) { Divider() }
+        .background(.thinMaterial, in: .rect(cornerRadius: 16))
+        .clipShape(.rect(cornerRadius: 16))
         .multilineTextAlignment(.leading)
         .accessibilityElement(children: .contain)
     }

@@ -105,7 +105,7 @@ struct SavedLinksListContent: View {
                             Button("Unarchive") {
                                 Task { await appModel.unarchive(save) }
                             }
-                            .tint(.blue)
+                            .tint(.indigo)
                         } else {
                             Button("Archive") {
                                 Task { await appModel.archive(save) }

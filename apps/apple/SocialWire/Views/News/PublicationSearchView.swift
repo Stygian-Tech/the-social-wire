@@ -3,7 +3,8 @@ import SwiftUI
 struct PublicationSearchView: View {
     @Environment(SocialWireAppModel.self) private var appModel
 
-    @State private var query = ""
+    let query: String
+
     @State private var result: ResolveAddPublicationResultDTO?
     @State private var isResolving = false
     @State private var isAdding = false
@@ -18,21 +19,6 @@ struct PublicationSearchView: View {
                     Text("Search by website, feed URL, handle, DID, or publication AT-URI.")
                         .font(.title3)
                         .foregroundStyle(.secondary)
-                }
-
-                HStack(spacing: 10) {
-                    TextField("URL, handle, DID, or AT-URI", text: $query)
-                        .textFieldStyle(.roundedBorder)
-                        .autocorrectionDisabled()
-                        .onSubmit { resolve() }
-                        .onChange(of: query) { _, _ in
-                            result = nil
-                            errorMessage = nil
-                        }
-
-                    Button("Search", systemImage: "magnifyingglass", action: resolve)
-                        .buttonStyle(.borderedProminent)
-                        .disabled(normalizedQuery.isEmpty || isResolving)
                 }
 
                 if isResolving {
@@ -73,24 +59,26 @@ struct PublicationSearchView: View {
             .frame(maxWidth: .infinity, alignment: .center)
         }
         .navigationTitle("Search")
+        .task(id: normalizedQuery) {
+            await resolve()
+        }
     }
 
     private var normalizedQuery: String {
         query.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private func resolve() {
+    private func resolve() async {
         guard !normalizedQuery.isEmpty else { return }
-        Task {
-            isResolving = true
-            errorMessage = nil
-            defer { isResolving = false }
-            do {
-                result = try await appModel.resolvePublication(input: normalizedQuery)
-            } catch {
-                result = nil
-                errorMessage = error.localizedDescription
-            }
+        isResolving = true
+        result = nil
+        errorMessage = nil
+        defer { isResolving = false }
+        do {
+            result = try await appModel.resolvePublication(input: normalizedQuery)
+        } catch {
+            result = nil
+            errorMessage = error.localizedDescription
         }
     }
 

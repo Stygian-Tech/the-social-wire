@@ -43,7 +43,7 @@ struct SavedTagEditorSheet: View {
                     Section("Existing Tags") {
                         ForEach(suggestions, id: \.self) { tag in
                             Button(tag) { toggle(tag) }
-                                .foregroundStyle(parsedTags.contains(tag) ? Color.accentColor : Color.primary)
+                                .foregroundStyle(parsedTags.contains(tag) ? Color.indigo : Color.primary)
                         }
                     }
                 }

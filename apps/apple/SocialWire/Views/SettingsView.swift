@@ -29,7 +29,7 @@ struct SettingsView: View {
 
             Section("Articles") {
                 Picker(
-                    "Open Articles In",
+                    "Open RSS Articles In",
                     selection: Binding(
                         get: { appModel.feedPreferences.articleOpenMode },
                         set: { mode in
@@ -42,7 +42,7 @@ struct SettingsView: View {
                     }
                 }
 
-                Text("Original Website opens the publisher's webpage by default. The Native Reader remains available from story actions.")
+                Text("Original Website opens RSS stories on the publisher's webpage. Native Reader keeps RSS stories inside the app. Other stories always open on their publisher's website.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }

@@ -7,6 +7,7 @@ final class MacNewsShellSmokeUITests: XCTestCase {
         app.launchArguments.append("--ui-testing-news-shell")
         app.launch()
 
+        XCTAssertTrue(app.descendants(matching: .any)["news-sidebar-column"].waitForExistence(timeout: 5))
         XCTAssertTrue(content(for: "wire", in: app).waitForExistence(timeout: 5))
 
         for (label, identifier) in [

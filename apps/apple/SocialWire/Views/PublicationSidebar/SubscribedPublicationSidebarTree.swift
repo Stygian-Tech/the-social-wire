@@ -5,11 +5,11 @@ struct SubscribedPublicationSidebarTree: View {
     @Environment(SocialWireAppModel.self) private var appModel
     @Binding var showingNewFolder: Bool
     @Binding var showingAddPublication: Bool
+    var onFolderTap: (() -> Void)? = nil
     var onPublicationTap: ((DiscoveredPublication) -> Void)? = nil
     @State private var folderPendingDelete: RepoRecord<FolderRecord>?
     @State private var folderPendingEdit: RepoRecord<FolderRecord>?
     @State private var folderDeleteFeedback = 0
-    @State private var showingOPMLImport = false
     @State private var publicationPendingUnsubscribe: DiscoveredPublication?
 
     var body: some View {
@@ -29,12 +29,6 @@ struct SubscribedPublicationSidebarTree: View {
                 ForEach(appModel.folders) { folder in
                     folderSection(folder, tree: tree)
                 }
-                Button {
-                    showingNewFolder = true
-                } label: {
-                    Label("New Folder", systemImage: "folder.badge.plus")
-                }
-                .readerClearListRow()
             }
         } header: {
             SidebarSectionLabel(title: "Folders", unreadCount: 0)
@@ -55,18 +49,6 @@ struct SubscribedPublicationSidebarTree: View {
                 ForEach(appModel.subscribedUnfolderedPublications) { publication in
                     publicationRow(publication, tree: tree)
                 }
-                Button {
-                    showingAddPublication = true
-                } label: {
-                    Label("Add Publication", systemImage: "plus.circle")
-                }
-                .readerClearListRow()
-                Button {
-                    showingOPMLImport = true
-                } label: {
-                    Label("Import OPML", systemImage: "square.and.arrow.down")
-                }
-                .readerClearListRow()
             }
         } header: {
             SidebarSectionLabel(
@@ -98,9 +80,6 @@ struct SubscribedPublicationSidebarTree: View {
             Text("This deletes \"\(folder.value.name)\" and does not unsubscribe from its publications.")
         }
         .sensoryFeedback(.success, trigger: folderDeleteFeedback)
-        .sheet(isPresented: $showingOPMLImport) {
-            OPMLImportView()
-        }
         .sheet(item: $folderPendingEdit) { folder in
             EditFolderView(folder: folder)
         }
@@ -148,7 +127,10 @@ struct SubscribedPublicationSidebarTree: View {
             .accessibilityLabel("\(isExpanded ? "Collapse" : "Expand") \(folder.value.name)")
 
             Button {
-                Task { await appModel.selectFolderFeed(folderRkey: folderRkey) }
+                Task {
+                    await appModel.selectFolderFeed(folderRkey: folderRkey)
+                    onFolderTap?()
+                }
             } label: {
                 HStack(spacing: 8) {
                 Text(folder.value.name)
@@ -160,7 +142,7 @@ struct SubscribedPublicationSidebarTree: View {
             }
             .buttonStyle(.plain)
         }
-        .readerClearListRow()
+        .readerSidebarListRow()
         .contextMenu {
             Button {
                 folderPendingEdit = folder
@@ -192,7 +174,7 @@ struct SubscribedPublicationSidebarTree: View {
                     Text("No publications in this folder.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                        .readerClearListRow()
+                        .readerSidebarListRow()
                 }
             }
         }
@@ -213,7 +195,7 @@ struct SubscribedPublicationSidebarTree: View {
             .readerFullWidthTapLabel()
         }
         .buttonStyle(.plain)
-        .readerClearListRow()
+        .readerSidebarListRow()
         .tag(SidebarSelection.publication(publication.publicationId))
         .contextMenu {
             Button {

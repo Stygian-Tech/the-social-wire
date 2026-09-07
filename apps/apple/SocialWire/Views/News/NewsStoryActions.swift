@@ -2,8 +2,7 @@ import SwiftUI
 
 /// Keep the visible copy short while retaining explicit VoiceOver action names.
 struct NewsStoryActions: View {
-    let websiteURL: URL?
-    let onReadInApp: () -> Void
+    let onOpenStory: () -> Void
     var onHide: (() -> Void)?
 
     var body: some View {
@@ -23,23 +22,14 @@ struct NewsStoryActions: View {
 
     @ViewBuilder
     private var actions: some View {
-        if let websiteURL {
-            Link(destination: websiteURL) {
-                Text("Website")
-                    .frame(minHeight: 32)
-            }
-            .buttonStyle(.borderedProminent)
-            .accessibilityLabel("Open on Website")
-            .accessibilityIdentifier("story-website")
-        }
-
-        Button(action: onReadInApp) {
-            Text("Read")
+        Button(action: onOpenStory) {
+            Text("Open Story")
                 .frame(minHeight: 32)
         }
-        .buttonStyle(.bordered)
-        .accessibilityLabel("Read in App")
-        .accessibilityIdentifier("story-read")
+        .buttonStyle(.borderedProminent)
+        .accessibilityLabel("Open Story")
+        .accessibilityHint("Opens the publisher's website unless this is an RSS story set to use the native reader.")
+        .accessibilityIdentifier("story-open")
 
         if let onHide {
             Button(role: .destructive, action: onHide) {

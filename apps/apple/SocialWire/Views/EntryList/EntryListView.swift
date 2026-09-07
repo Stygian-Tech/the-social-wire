@@ -9,48 +9,49 @@ struct EntryListView: View {
     @State private var entryPendingTaggedSave: EntryListItem?
 
     var body: some View {
-        List {
-            if appModel.readerListSource == .wire, let notice = appModel.wireFeedNotice {
-                Label(notice, systemImage: "exclamationmark.triangle")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .readerClearListRow()
-                    .accessibilityLabel(notice)
-            }
+        Group {
             if appModel.filteredEntries.isEmpty,
                appModel.hasSelectedArticleFeed,
                (appModel.isLoadingEntries || appModel.sidebarFetching) {
-                ProgressView()
-                    .frame(maxWidth: .infinity)
-                    .readerClearListRow()
+                ReaderFeedLoadingView()
             } else if appModel.filteredEntries.isEmpty {
-                ContentUnavailableView(
-                    appModel.wireFeedLoadFailed ? "The Wire Is Unavailable" : "No Articles",
-                    systemImage: appModel.wireFeedLoadFailed ? "wifi.exclamationmark" : "doc.text"
+                ReaderFeedEmptyStateView(
+                    isUnreadFilter: appModel.readerFilter == .unread,
+                    action: emptyStateAction
                 )
-                    .readerClearListRow()
             } else {
-                Section("Articles") {
-                    ForEach(appModel.filteredEntries) { entry in
-                        Button {
-                            Task {
-                                await openEntry(
-                                    entry,
-                                    forceNativeReader: false
-                                )
-                            }
-                        } label: {
-                            EntryRow(
-                                entry: entry,
-                                isRead: appModel.readAtByEntryId[entry.entryId] != nil,
-                                showsReadState: appModel.readerListSource.supportsReadState
-                            )
-                                .readerFullWidthTapLabel()
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 16) {
+                        if appModel.readerListSource == .wire, let notice = appModel.wireFeedNotice {
+                            Label(notice, systemImage: "exclamationmark.triangle")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                                .accessibilityLabel(notice)
                         }
-                        .buttonStyle(.plain)
-                        .readerClearListRow()
-                        .accessibilityElement(children: .combine)
-                        .accessibilityValue(entryAccessibilityValue(entry))
+
+                        Text("Articles")
+                            .font(.title2.bold())
+                            .frame(maxWidth: .infinity, alignment: .leading)
+
+                        LazyVStack(spacing: 16) {
+                            ForEach(appModel.filteredEntries) { entry in
+                                Button {
+                                    Task {
+                                        await openEntry(entry)
+                                    }
+                                } label: {
+                                    EntryRow(
+                                        entry: entry,
+                                        isRead: appModel.readAtByEntryId[entry.entryId] != nil,
+                                        showsReadState: appModel.readerListSource.supportsReadState
+                                    )
+                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                                .background(.thinMaterial, in: .rect(cornerRadius: 16))
+                                .clipShape(.rect(cornerRadius: 16))
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityElement(children: .combine)
+                                .accessibilityValue(entryAccessibilityValue(entry))
                             .contextMenu {
                                 if let websiteURL = entry.originalWebsiteURL {
                                     Button {
@@ -62,15 +63,14 @@ struct EntryListView: View {
                                         Label("Open on Website", systemImage: "safari")
                                     }
 
-                                    Button {
-                                        Task {
-                                            await openEntry(
-                                                entry,
-                                                forceNativeReader: true
-                                            )
+                                    if EntryOpenTargetResolver.isRSSEntry(entry.entryId) {
+                                        Button {
+                                            Task {
+                                                await openEntry(entry, rssModeOverride: .reader)
+                                            }
+                                        } label: {
+                                            Label("Open in Native Reader", systemImage: "doc.richtext")
                                         }
-                                    } label: {
-                                        Label("Open in Native Reader", systemImage: "doc.richtext")
                                     }
                                 }
 
@@ -103,7 +103,7 @@ struct EntryListView: View {
                                     }
                                 }
                             }
-                            .onAppear {
+                                .onAppear {
                                 guard entry.entryId == appModel.filteredEntries.last?.entryId else {
                                     return
                                 }
@@ -113,25 +113,20 @@ struct EntryListView: View {
                                     )
                                 }
                             }
-                            .swipeActions(edge: .trailing, allowsFullSwipe: appModel.readerListSource.supportsReadState) {
-                                if appModel.readerListSource.supportsReadState {
-                                    Button(appModel.readAtByEntryId[entry.entryId] == nil ? "Read" : "Unread") {
-                                        Task { await appModel.toggleRead(entry) }
-                                    }
-                                    .tint(.indigo)
-                                }
                             }
-                    }
+                        }
 
-                    if appModel.isLoadingMoreEntries {
-                        ProgressView()
-                            .frame(maxWidth: .infinity)
-                            .readerClearListRow()
+                        if appModel.isLoadingMoreEntries {
+                            ProgressView()
+                                .frame(maxWidth: .infinity)
+                        }
                     }
+                    .padding()
+                    .frame(maxWidth: 700, alignment: .leading)
+                    .frame(maxWidth: .infinity, alignment: .center)
                 }
             }
         }
-        .readerListCanvas()
         .refreshable {
             await appModel.refreshSelectedArticleFeed()
             refreshFeedback += 1
@@ -169,20 +164,50 @@ struct EntryListView: View {
         }
     }
 
+    private func emptyStateAction() {
+        Task {
+            if appModel.readerFilter == .unread {
+                await appModel.applyReaderFilter(.all)
+            } else {
+                await appModel.refreshSelectedArticleFeed()
+                refreshFeedback += 1
+            }
+        }
+    }
+
     private func openEntry(
         _ entry: EntryListItem,
-        forceNativeReader: Bool
+        rssModeOverride: ArticleOpenMode? = nil
     ) async {
-        if !forceNativeReader,
-           appModel.feedPreferences.articleOpenMode == .original,
-           let websiteURL = entry.originalWebsiteURL {
+        let rssMode = rssModeOverride ?? appModel.feedPreferences.articleOpenMode
+        var target = EntryOpenTargetResolver.resolve(
+            entryId: entry.entryId,
+            originalURL: entry.originalUrl,
+            rssArticleOpenMode: rssMode
+        )
+
+        if target == nil {
+            await appModel.selectEntry(entry)
+            target = EntryOpenTargetResolver.resolve(
+                entryId: entry.entryId,
+                originalURL: appModel.selectedEntry?.originalUrl,
+                rssArticleOpenMode: rssMode
+            )
+        }
+
+        switch target {
+        case .external(let websiteURL):
             await appModel.recordExternalEntryOpen(entry)
             openURL(websiteURL)
-            return
+        case .nativeRSS:
+            if appModel.selectedEntry?.entryId != entry.entryId {
+                await appModel.selectEntry(entry)
+            }
+            guard appModel.selectedEntry?.entryId == entry.entryId else { return }
+            onEntryOpened?()
+        case nil:
+            appModel.errorMessage = "Couldn't Find A Link For This Article."
         }
-        await appModel.selectEntry(entry)
-        guard appModel.selectedEntry?.entryId == entry.entryId else { return }
-        onEntryOpened?()
     }
 
     private func entryAccessibilityValue(_ entry: EntryListItem) -> String {

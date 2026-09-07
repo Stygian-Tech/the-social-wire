@@ -91,6 +91,59 @@ struct UnifiedFeedSelectionTests {
     }
 }
 
+@Suite("Entry open target")
+struct EntryOpenTargetResolverTests {
+    @Test("non-RSS stories always open on the publisher website")
+    func nonRSSStoriesAlwaysOpenExternally() {
+        let target = EntryOpenTargetResolver.resolve(
+            entryId: "at://did:plc:writer/site.standard.document/story",
+            originalURL: "https://publisher.example/story",
+            rssArticleOpenMode: .reader
+        )
+
+        #expect(target == .external(URL(string: "https://publisher.example/story")!))
+    }
+
+    @Test("RSS stories use the native reader only when requested")
+    func rssPreferenceControlsNativeReader() {
+        let entryID = "rssentry:stable-story"
+        let url = URL(string: "https://publisher.example/story")!
+
+        #expect(
+            EntryOpenTargetResolver.resolve(
+                entryId: entryID,
+                originalURL: url.absoluteString,
+                rssArticleOpenMode: .reader
+            ) == .nativeRSS(url)
+        )
+        #expect(
+            EntryOpenTargetResolver.resolve(
+                entryId: entryID,
+                originalURL: url.absoluteString,
+                rssArticleOpenMode: .original
+            ) == .external(url)
+        )
+    }
+
+    @Test("missing and non-web URLs do not produce a target")
+    func invalidURLsAreRejected() {
+        #expect(
+            EntryOpenTargetResolver.resolve(
+                entryId: "rssentry:missing",
+                originalURL: nil,
+                rssArticleOpenMode: .reader
+            ) == nil
+        )
+        #expect(
+            EntryOpenTargetResolver.resolve(
+                entryId: "rssentry:file",
+                originalURL: "file:///tmp/story.html",
+                rssArticleOpenMode: .reader
+            ) == nil
+        )
+    }
+}
+
 @Suite("PublicationUnreadCountLookup")
 struct PublicationUnreadCountLookupTests {
     @Test("top-level sums count each publication once")

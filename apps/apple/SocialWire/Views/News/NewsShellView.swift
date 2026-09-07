@@ -1,63 +1,41 @@
 import SwiftUI
 
-/// Adaptive application shell: bottom tabs on compact devices and a customizable sidebar on larger ones.
+/// Two-column application shell with navigation and sources in one sidebar.
 struct NewsShellView: View {
     @Environment(SocialWireAppModel.self) private var appModel
     @SceneStorage("the-social-wire.news-window-id.v1") private var windowID = UUID().uuidString
     @State private var sceneModel = NewsSceneModel()
+    @State private var preferredCompactColumn = NavigationSplitViewColumn.sidebar
+    @State private var searchText = ""
+    @State private var submittedSearch = ""
 
     private var availableTabs: [NewsTab] {
         NewsTab.available(
             wire: appModel.wireCatalog?.isAvailable == true,
-            circle: appModel.circleCatalog?.isAvailable == true
-        )
-    }
-
-    private var selection: Binding<NewsTab> {
-        Binding(
-            get: { sceneModel.selectedTab },
-            set: { sceneModel.select($0, availableTabs: availableTabs) }
+            circle: true
         )
     }
 
     var body: some View {
-        TabView(selection: selection) {
-            if availableTabs.contains(.wire) {
-                Tab(NewsTab.wire.title, systemImage: NewsTab.wire.systemImage, value: NewsTab.wire) {
-                    tabStack(.wire) {
-                        WireNewsView(sceneModel: sceneModel)
-                    }
-                }
-            }
-
-            if availableTabs.contains(.circle) {
-                Tab(NewsTab.circle.title, systemImage: NewsTab.circle.systemImage, value: NewsTab.circle) {
-                    tabStack(.circle) {
-                        CircleNewsView(sceneModel: sceneModel)
-                    }
-                }
-            }
-
-            Tab(NewsTab.library.title, systemImage: NewsTab.library.systemImage, value: NewsTab.library) {
-                tabStack(.library) {
-                    LibraryNewsView(sceneModel: sceneModel)
-                }
-            }
-
-            Tab(appModel.savedTabTitle, systemImage: NewsTab.saved.systemImage, value: NewsTab.saved) {
-                tabStack(.saved) {
-                    SavedNewsView(sceneModel: sceneModel)
-                }
-            }
-            .badge(appModel.savedTabCount)
-
-            Tab(NewsTab.search.title, systemImage: NewsTab.search.systemImage, value: NewsTab.search, role: .search) {
-                tabStack(.search) {
-                    PublicationSearchView()
-                }
-            }
+        NavigationSplitView(preferredCompactColumn: $preferredCompactColumn) {
+            NewsSidebarView(
+                availableTabs: availableTabs,
+                sceneModel: sceneModel,
+                preferredCompactColumn: $preferredCompactColumn
+            )
+        } detail: {
+            detailStack
         }
-        .tabViewStyle(.sidebarAdaptable)
+        .navigationSplitViewStyle(.balanced)
+        .searchable(text: $searchText, placement: .toolbar, prompt: "Find Publications")
+        .onSubmit(of: .search) {
+            let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !query.isEmpty else { return }
+            submittedSearch = query
+            sceneModel.select(.search, availableTabs: availableTabs)
+            sceneModel.resetPath(for: .search)
+            preferredCompactColumn = .detail
+        }
         .task {
             sceneModel.configureWindow(identifier: windowID)
             await appModel.refreshCircleCatalog()
@@ -74,8 +52,35 @@ struct NewsShellView: View {
             configureAppModel(for: tab)
         }
         .onChange(of: appModel.selectedSidebar) { _, selection in
-            guard selection == .myPublications else { return }
+            guard case .myPublications = selection else { return }
             sceneModel.select(.library, availableTabs: availableTabs)
+        }
+    }
+
+    private var detailStack: some View {
+        NavigationStack(path: pathBinding(for: sceneModel.selectedTab)) {
+            detailContent
+                .accessibilityIdentifier("news-tab-content-\(sceneModel.selectedTab.rawValue)")
+                .navigationDestination(for: NewsRoute.self) { route in
+                    NewsRouteDestination(route: route, tab: sceneModel.selectedTab, sceneModel: sceneModel)
+                }
+        }
+        .id(sceneModel.selectedTab)
+    }
+
+    @ViewBuilder
+    private var detailContent: some View {
+        switch sceneModel.selectedTab {
+        case .wire:
+            WireNewsView(sceneModel: sceneModel)
+        case .circle:
+            CircleNewsView(sceneModel: sceneModel)
+        case .library:
+            LibraryNewsView(sceneModel: sceneModel)
+        case .saved:
+            SavedNewsView(sceneModel: sceneModel)
+        case .search:
+            PublicationSearchView(query: submittedSearch)
         }
     }
 
@@ -84,30 +89,6 @@ struct NewsShellView: View {
             get: { sceneModel.path(for: tab) },
             set: { sceneModel.setPath($0, for: tab) }
         )
-    }
-
-    private func tabStack<Content: View>(
-        _ tab: NewsTab,
-        @ViewBuilder content: () -> Content
-    ) -> some View {
-        NavigationStack(path: pathBinding(for: tab)) {
-            content()
-                .navigationDestination(for: NewsRoute.self) { route in
-                    NewsRouteDestination(route: route, tab: tab, sceneModel: sceneModel)
-                }
-                .toolbar {
-                    ToolbarItem(placement: .automatic) {
-                        Button {
-                            sceneModel.navigate(to: .profile, in: tab)
-                        } label: {
-                            ViewerProfileAvatar(size: 30)
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Profile")
-                    }
-                }
-        }
-        .accessibilityIdentifier("news-tab-content-\(tab.rawValue)")
     }
 
     private func configureAppModel(for tab: NewsTab) {

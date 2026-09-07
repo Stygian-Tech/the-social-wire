@@ -48,7 +48,7 @@ struct FollowingPublicationSidebarTree: View {
             .readerFullWidthTapLabel()
         }
         .buttonStyle(.plain)
-        .readerClearListRow()
+        .readerSidebarListRow()
         .tag(SidebarSelection.publication(publication.publicationId))
         .contextMenu {
             Button {

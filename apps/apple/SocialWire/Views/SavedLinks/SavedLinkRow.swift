@@ -22,7 +22,7 @@ struct SavedLinkRow: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(save.title)
                         .font(.headline)
-                        .foregroundStyle(isSelected ? Color.accentColor : Color.primary)
+                        .foregroundStyle(isSelected ? Color.indigo : Color.primary)
                         .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
 
                     if let excerpt = save.excerpt, !excerpt.isEmpty {
