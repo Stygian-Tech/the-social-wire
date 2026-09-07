@@ -46,10 +46,10 @@ export function SubscribedFeedPerformance({
           <GroupedEvidenceChart
             data={trends}
             series={[
-              { key: "firstPageAverageQueryMilliseconds", label: "First Page Average", color: "var(--primary)" },
-              { key: "firstPageMaximumQueryMilliseconds", label: "First Page Maximum", color: "var(--primary)", dashed: true },
-              { key: "paginationAverageQueryMilliseconds", label: "Pagination Average", color: "var(--info)" },
-              { key: "paginationMaximumQueryMilliseconds", label: "Pagination Maximum", color: "var(--warning)", dashed: true },
+              { key: "firstPageAverageQueryMilliseconds", label: "First Page Average", color: "var(--chart-1)" },
+              { key: "firstPageMaximumQueryMilliseconds", label: "First Page Maximum", color: "var(--chart-1)", dashed: true },
+              { key: "paginationAverageQueryMilliseconds", label: "Pagination Average", color: "var(--chart-2)" },
+              { key: "paginationMaximumQueryMilliseconds", label: "Pagination Maximum", color: "var(--chart-4)", dashed: true },
             ]}
             title="Query Duration"
             description="First-page and pagination average/maximum by closed bucket; maxima are not percentiles"
@@ -61,10 +61,10 @@ export function SubscribedFeedPerformance({
           <GroupedEvidenceChart
             data={trends}
             series={[
-              { key: "firstPageAverageRowsScanned", label: "First Page Scanned", color: "var(--warning)" },
-              { key: "firstPageAverageRowsReturned", label: "First Page Returned", color: "var(--success)" },
-              { key: "paginationAverageRowsScanned", label: "Pagination Scanned", color: "var(--info)" },
-              { key: "paginationAverageRowsReturned", label: "Pagination Returned", color: "var(--primary)" },
+              { key: "firstPageAverageRowsScanned", label: "First Page Scanned", color: "var(--chart-4)" },
+              { key: "firstPageAverageRowsReturned", label: "First Page Returned", color: "var(--chart-3)" },
+              { key: "paginationAverageRowsScanned", label: "Pagination Scanned", color: "var(--chart-2)" },
+              { key: "paginationAverageRowsReturned", label: "Pagination Returned", color: "var(--chart-1)" },
             ]}
             title="Rows Scanned and Returned"
             description="Average query scan work and result yield by page kind"
@@ -76,8 +76,8 @@ export function SubscribedFeedPerformance({
           <GroupedEvidenceChart
             data={trends}
             series={[
-              { key: "firstPageAveragePayloadBytes", label: "First Page", color: "var(--primary)" },
-              { key: "paginationAveragePayloadBytes", label: "Pagination", color: "var(--info)" },
+              { key: "firstPageAveragePayloadBytes", label: "First Page", color: "var(--chart-1)" },
+              { key: "paginationAveragePayloadBytes", label: "Pagination", color: "var(--chart-2)" },
             ]}
             title="Encoded Payload Size"
             description="Average encoded response payload by page kind"
@@ -89,8 +89,8 @@ export function SubscribedFeedPerformance({
           <GroupedEvidenceChart
             data={trends}
             series={[
-              { key: "firstPageDuplicatesSuppressed", label: "First Page", color: "var(--warning)" },
-              { key: "paginationDuplicatesSuppressed", label: "Pagination", color: "var(--info)" },
+              { key: "firstPageDuplicatesSuppressed", label: "First Page", color: "var(--chart-4)" },
+              { key: "paginationDuplicatesSuppressed", label: "Pagination", color: "var(--chart-2)" },
             ]}
             title="Canonical Duplicates Suppressed"
             description="Deduplication work by page kind and closed bucket"

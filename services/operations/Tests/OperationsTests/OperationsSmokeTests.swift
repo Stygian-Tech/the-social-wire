@@ -134,6 +134,9 @@ func recoveryCapabilitiesAreIndependent() async throws {
   let capabilities = await OperationsCapabilityResolver(store: store, config: config)
     .resolve(at: now)
 
+  #expect(!capabilities.recoveryModes.tapVerifiedResync.enabled)
+  #expect(capabilities.recoveryModes.tapVerifiedResync.disabledReason
+    == "Tap ingestion is retired; verified resync is unavailable.")
   #expect(capabilities.recovery.enabled)
   #expect(capabilities.recoveryModes.jetstreamReplay.enabled)
   #expect(!capabilities.recoveryModes.pdsReconciliation.enabled)

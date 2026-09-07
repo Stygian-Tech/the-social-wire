@@ -292,6 +292,10 @@ struct SQLiteOperationsStoreTests {
 
     let overview = try await store.overview(at: Date())
     #expect(overview.viewers == nil)
+    #expect(overview.viewerHistory.isEmpty)
+    let encoded = try JSONEncoder().encode(overview)
+    let decoded = try JSONDecoder().decode(OperationsOverview.self, from: encoded)
+    #expect(decoded.viewerHistory.isEmpty)
   }
 
   @Test("Received and committed cursors advance independently and never regress")

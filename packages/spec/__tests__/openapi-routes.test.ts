@@ -358,6 +358,14 @@ describe("OpenAPI route drift", () => {
     expect(schemas.OperationsServiceListResponse.required).toEqual(["services", "evidence"]);
     expect(schemas.OperationsIngestionResponse.required).toEqual(["sources", "evidence"]);
     expect(schemas.OperationsAppViewResponse.required).toEqual(["services", "evidence"]);
+    expect(schemas.OperationsOverview.properties.viewerHistory).toMatchObject({
+      type: "array",
+      maxItems: 90,
+      items: { $ref: "#/components/schemas/OperationsViewerCounts" },
+    });
+    expect(schemas.OperationsViewerCounts.required).toEqual([
+      "knownViewers", "activeViewers7d", "activeViewers30d", "observedAt",
+    ]);
 
     expect(document.paths["/v1/operations/services"].get.responses["200"].content["application/json"].schema.$ref)
       .toBe("#/components/schemas/OperationsServiceListResponse");

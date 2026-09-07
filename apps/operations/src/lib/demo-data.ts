@@ -601,6 +601,12 @@ export const demoOverview: Overview = {
     activeViewers30d: 906,
     observedAt: iso(),
   },
+  viewerHistory: Array.from({ length: 90 }, (_, index) => ({
+    knownViewers: 750 + index * 6,
+    activeViewers7d: 234 + index * 2,
+    activeViewers30d: 550 + index * 4,
+    observedAt: new Date(now.getTime() - (89 - index) * 86_400_000).toISOString(),
+  })),
   evidence: {
     overview: {
       source: "Synthetic demo fixture",
