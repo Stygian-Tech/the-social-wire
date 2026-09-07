@@ -29,6 +29,7 @@ describe("calendar-day read Lexicons", () => {
     })).not.toThrow();
     for (const option of [
       { days: 0, before, count: 1 },
+      { days: 8, before, count: 1 },
       { days: 1, before, count: 0 },
       { days: 1, before: "yesterday", count: 1 },
       { days: 1, before },
@@ -37,6 +38,18 @@ describe("calendar-day read Lexicons", () => {
         referenceDay: before, options: [option],
       })).toThrow();
     }
+  });
+
+  it("caps options at seven calendar days while retaining the JSON XRPC output", () => {
+    const options = Array.from({ length: 7 }, (_, index) => ({ days: index + 1, before, count: 1 }));
+    expect(() => lexicons.assertValidXrpcOutput(nsid("getReadAgeOptions"), {
+      referenceDay: before, options,
+    })).not.toThrow();
+    expect(() => lexicons.assertValidXrpcOutput(nsid("getReadAgeOptions"), {
+      referenceDay: before, options: [...options, options[6]],
+    })).toThrow();
+    expect(documents[1].defs.main.output.encoding).toBe("application/json");
+    expect(documents[1].defs.main.description).toContain("Accept: application/x-ndjson");
   });
 
   it("requires the exclusive cutoff on a distinct mutation without changing markAllRead", () => {
