@@ -53,20 +53,13 @@ export function jetstreamV2CheckpointForOverview(overview: Overview) {
   return checkpoints.length === 1 ? checkpoints[0] : undefined
 }
 
-/**
- * Picks a recovery source mode the Operations service currently enables.
- *
- * `tap_verified_resync` is reported disabled unconditionally while pinned Tap has no safe resync
- * API, so it can never be the opening selection: it would leave both the dry-run and queue actions
- * disabled with no configuration the operator could change to recover.
- */
+/** Picks an enabled recovery mode for new jobs; retired Tap jobs remain readable. */
 export function preferredRecoveryMode(
   recoveryModes?: RecoveryModeCapabilities,
-): BackfillDryRun["sourceMode"] | undefined {
+): Exclude<BackfillDryRun["sourceMode"], "tap_verified_resync"> | undefined {
   if (!recoveryModes) return undefined
   if (recoveryModes.jetstreamReplay?.enabled) return "jetstream_replay"
   if (recoveryModes.pdsReconciliation?.enabled) return "pds_reconciliation"
-  if (recoveryModes.tapVerifiedResync?.enabled) return "tap_verified_resync"
   return undefined
 }
 

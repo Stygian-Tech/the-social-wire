@@ -558,6 +558,11 @@ function assertOverviewResponse(value: unknown): asserts value is Overview {
   value.alerts.forEach((item: unknown) => assertAlert(item, environment))
   value.recentTraces.forEach((item: unknown) => assertSpan(item, environment))
   value.metricRollups.forEach((item: unknown) => assertMetric(item, environment))
+  if (value.viewerHistory !== undefined) {
+    if (!Array.isArray(value.viewerHistory) || value.viewerHistory.length > 90)
+      throw new Error("Operations viewer history failed runtime contract validation")
+    value.viewerHistory.forEach(assertViewerCounts)
+  }
   if (value.database !== undefined && value.database !== null) assertDatabase(value.database)
   if (value.durability !== undefined && value.durability !== null)
     assertIngestionDurability(value.durability, environment)
@@ -1111,6 +1116,16 @@ function assertBackfillAuthorResult(value: unknown) {
     !isOptionalString(value.error)
   )
     throw new Error("Operations backfill author result failed runtime contract validation")
+}
+
+function assertViewerCounts(value: unknown) {
+  if (
+    !isRecord(value) ||
+    !isNonNegativeInteger(value.knownViewers) ||
+    !isNonNegativeInteger(value.activeViewers7d) ||
+    !isNonNegativeInteger(value.activeViewers30d) ||
+    !isDateString(value.observedAt)
+  ) throw new Error("Operations viewer history failed runtime contract validation")
 }
 
 function assertDatabase(value: unknown) {

@@ -52,6 +52,11 @@ export function LiveStream({
   const authoritySource = ingestionAuthoritySource(data)
   const v2InboxAuthority = isJetstreamV2InboxSource(authoritySource)
   const v2Checkpoint = v2InboxAuthority ? jetstreamV2CheckpointForOverview(data) : undefined
+  const currentSources = data.ingestionSources.filter(({ source }) => {
+    const normalized = source.trim().toLowerCase()
+    return normalized !== "tap" && normalized !== "tap-shadow" &&
+      !(v2InboxAuthority && normalized === "jetstream")
+  })
   const jetstreamState = jetstreamStateForOverview(data)
   const receivedCursor = boundedNonNegativeInteger(
     state?.lastReceivedCursor ?? (v2InboxAuthority ? v2Checkpoint?.lastStagedSequence : undefined),
@@ -122,9 +127,9 @@ export function LiveStream({
           </div>
         ))}
       </div>
-      <JetstreamEndpointStatus endpoints={data.jetstreamEndpoints ?? []} reference={referenceTime} />
+      {!v2InboxAuthority ? <JetstreamEndpointStatus endpoints={data.jetstreamEndpoints ?? []} reference={referenceTime} /> : null}
       <nav aria-label="Ingestion drill-downs" className="flex flex-wrap gap-3 border-t px-3 py-2 text-[10px]">
-        <Link href="/endpoints" className="ops-touch-link text-primary">View All Endpoints</Link>
+        {!v2InboxAuthority ? <Link href="/endpoints" className="ops-touch-link text-primary">View All Endpoints</Link> : null}
         <Link href="/commands" className="ops-touch-link text-primary">View Command History</Link>
       </nav>
       <section className="border-t" aria-labelledby="ingestion-source-status">
@@ -133,12 +138,12 @@ export function LiveStream({
             Source-Specific Pipeline Status
           </h3>
           <p className="mt-1 text-[9px] text-muted-foreground">
-            Tap, Jetstream, RSS polling, projection repair, and cache maintenance remain independent evidence domains.
+            Jetstream V2, RSS polling, projection repair, and cache maintenance report independent evidence.
           </p>
         </header>
-        {data.ingestionSources.length ? (
+        {currentSources.length ? (
           <div className="ops-metric-grid border-t sm:grid-cols-2 xl:grid-cols-4">
-            {data.ingestionSources.map((source) => {
+            {currentSources.map((source) => {
               const sourceState = effectiveConnectionState({
                 connectionState: source.connectionState,
                 transportHeartbeatAt: source.transportHeartbeatAt,
@@ -188,7 +193,7 @@ export function LiveStream({
             : "Processing queue depth is withheld because measured capacity evidence is unavailable."}
         </p>
       ) : null}
-      {reconnect ? (
+      {reconnect && !v2InboxAuthority ? (
         <p className="border-t px-3 py-2 text-[10px] text-muted-foreground">
           Latest reconnect: <span className="font-medium text-foreground">{reconnect.status}</span>
           {reconnect.failureReason ? ` — ${reconnect.failureReason}` : ""}

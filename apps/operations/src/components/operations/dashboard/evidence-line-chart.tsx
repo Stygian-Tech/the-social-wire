@@ -1,7 +1,7 @@
 "use client"
 
 import { useId } from "react"
-import { CartesianGrid, Line, LineChart, ReferenceLine, XAxis, YAxis } from "recharts"
+import { Area, AreaChart, CartesianGrid, ReferenceLine, XAxis, YAxis } from "recharts"
 
 import { Badge } from "@/components/ui/badge"
 import {
@@ -38,6 +38,7 @@ export function formatChartTick(value: number) {
   if (value >= 1_000_000_000) return compact(1_000_000_000, "B")
   if (value >= 1_000_000) return compact(1_000_000, "M")
   if (value >= 1_000) return compact(1_000, "K")
+  if (value !== 0 && Math.abs(value) < 1) return Number(value.toPrecision(2)).toString()
   return value.toFixed(value >= 10 ? 0 : 2).replace(/\.0+$|(?<=\.[0-9])0$/, "")
 }
 
@@ -101,12 +102,12 @@ export function EvidenceLineChart({
   const chartConfig = {
     value: {
       label: title,
-      color: tone === "warning" ? "var(--warning)" : "var(--primary)",
+      color: tone === "warning" ? "var(--chart-4)" : "var(--chart-1)",
     },
   } satisfies ChartConfig
 
   return (
-    <Card size="sm" className="rounded-none bg-transparent shadow-none ring-0" aria-label={title}>
+    <Card size="sm" className="ops-chart-card" aria-label={title}>
       <CardHeader>
         <CardTitle className="text-xs"><h3>{title}</h3></CardTitle>
         <CardDescription className="text-[11px]">
@@ -132,8 +133,8 @@ export function EvidenceLineChart({
           aria-label={description}
           aria-describedby={dataTableId}
         >
-          <LineChart accessibilityLayer data={chartPoints} margin={{ top: 18, right: 18, bottom: 12, left: 4 }}>
-            <CartesianGrid vertical={false} />
+          <AreaChart accessibilityLayer data={chartPoints} margin={{ top: 18, right: 12, bottom: 8, left: 0 }}>
+            <CartesianGrid vertical={false} stroke="var(--border)" strokeOpacity={0.55} strokeDasharray="3 3" />
             <XAxis
               dataKey="timestamp"
               type="number"
@@ -143,6 +144,7 @@ export function EvidenceLineChart({
               axisLine={false}
               tickMargin={8}
               minTickGap={24}
+              tick={{ fontSize: 10 }}
               tickFormatter={formatChartTime}
             />
             <YAxis
@@ -151,13 +153,15 @@ export function EvidenceLineChart({
               axisLine={false}
               tickMargin={8}
               width={50}
+              tick={{ fontSize: 10 }}
               tickFormatter={formatChartTick}
             />
             <ChartTooltip
-              cursor={false}
+              cursor={{ stroke: "var(--muted-foreground)", strokeOpacity: 0.4, strokeDasharray: "3 3" }}
               content={
                 <ChartTooltipContent
-                  indicator="line"
+                  className="ops-chart-tooltip"
+                  indicator="dot"
                   labelFormatter={(_, payload) => formatChartTime(Number(payload[0]?.payload?.timestamp))}
                   formatter={(value) => (
                     <span className="font-mono font-medium text-foreground tabular-nums">
@@ -180,16 +184,27 @@ export function EvidenceLineChart({
                 }}
               />
             ) : null}
-            <Line
+            <Area
               dataKey="value"
-              type="linear"
+              type="monotone"
               stroke="var(--color-value)"
+              fill="var(--color-value)"
+              fillOpacity={0.25}
+              baseValue={0}
               strokeWidth={2}
+              activeDot={{ r: 4, stroke: "var(--background)", strokeWidth: 2 }}
               connectNulls={false}
-              dot={model.points.length === 1 ? { r: 3 } : false}
+              dot={({ cx, cy, index }) => {
+                const pointIndex = index ?? 0
+                const current = chartPoints[pointIndex]?.value
+                const previous = chartPoints[pointIndex - 1]?.value
+                const next = chartPoints[pointIndex + 1]?.value
+                const isolated = typeof current === "number" && previous == null && next == null
+                return <circle key={pointIndex} cx={cx} cy={cy} r={isolated ? 3 : 0} fill="var(--color-value)" />
+              }}
               isAnimationActive={false}
             />
-          </LineChart>
+          </AreaChart>
         </ChartContainer>
         <table id={dataTableId} className="sr-only">
           <caption>{title} time-series data</caption>

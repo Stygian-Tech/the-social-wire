@@ -14,3 +14,17 @@ headers {
   Authorization: Bearer {{oauthAccessToken}}
   DPoP: {{dpopProof}}
 }
+
+tests {
+  test("Daily user history is bounded and contains aggregate observations", function () {
+    const history = res.getBody().viewerHistory;
+    expect(history).to.be.an("array");
+    expect(history.length).to.be.at.most(90);
+    for (const observation of history) {
+      expect(observation.knownViewers).to.be.at.least(observation.activeViewers30d);
+      expect(observation.activeViewers30d).to.be.at.least(observation.activeViewers7d);
+      expect(observation.activeViewers7d).to.be.at.least(0);
+      expect(Number.isFinite(Date.parse(observation.observedAt))).to.equal(true);
+    }
+  });
+}
