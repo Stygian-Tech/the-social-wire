@@ -1,7 +1,7 @@
 meta {
-  name: XRPC app.thesocialwire.appview.getReadAgeOptions
+  name: Stream read-age options
   type: http
-  seq: 70
+  seq: 72
 }
 
 get {
@@ -11,6 +11,7 @@ get {
 }
 
 headers {
+  Accept: application/x-ndjson
   Authorization: Bearer {{oauthAccessToken}}
   DPoP: {{dpopProof}}
 }
