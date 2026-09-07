@@ -22,6 +22,7 @@ struct PostgresWireInboxProcessor: Sendable {
   let batchSize: Int
   let maximumConcurrentEvents: Int
   let sourceScope: WireInboxSourceScope?
+  let deferredRecommendationsEnabled: Bool
 
   init(
     pool: PostgresClient,
@@ -33,7 +34,8 @@ struct PostgresWireInboxProcessor: Sendable {
     mentionStore: (any WireTalkedAccountMentionStoring)? = nil,
     batchSize: Int = 1_000,
     maximumConcurrentEvents: Int = 16,
-    sourceScope: WireInboxSourceScope? = nil
+    sourceScope: WireInboxSourceScope? = nil,
+    deferredRecommendationsEnabled: Bool = false
   ) throws {
     self.pool = pool
     self.logger = logger
@@ -52,6 +54,7 @@ struct PostgresWireInboxProcessor: Sendable {
     self.batchSize = max(1, min(batchSize, 5_000))
     self.maximumConcurrentEvents = max(1, min(maximumConcurrentEvents, 64))
     self.sourceScope = sourceScope
+    self.deferredRecommendationsEnabled = deferredRecommendationsEnabled
   }
 
   func process(asOf: Date) async throws -> Int {
@@ -355,7 +358,13 @@ struct PostgresWireInboxProcessor: Sendable {
         WHERE (environment, source_generation, seq) IN (
           SELECT environment, source_generation, seq
           FROM wire_ingestion_inbox
-          WHERE status IN ('applied', 'dead_letter') AND expires_at <= \(asOf)
+          WHERE (status IN ('applied', 'dead_letter') OR (
+            status IN ('deferred', 'superseded') AND EXISTS (
+              SELECT 1 FROM wire_recommendation_journal journal
+              WHERE journal.environment = wire_ingestion_inbox.environment
+                AND journal.source_generation = wire_ingestion_inbox.source_generation
+                AND journal.seq = wire_ingestion_inbox.seq
+            ))) AND expires_at <= \(asOf)
           ORDER BY expires_at, environment, source_generation, seq
           FOR UPDATE SKIP LOCKED
           LIMIT \(max(1, min(batchSize, 20_000)))
@@ -396,7 +405,13 @@ struct PostgresWireInboxProcessor: Sendable {
           FROM wire_ingestion_inbox
           WHERE environment = \(sourceScope.environment)
             AND source_generation = ANY(\(sourceScope.sourceGenerations))
-            AND status IN ('applied', 'dead_letter') AND expires_at <= \(asOf)
+            AND (status IN ('applied', 'dead_letter') OR (
+            status IN ('deferred', 'superseded') AND EXISTS (
+              SELECT 1 FROM wire_recommendation_journal journal
+              WHERE journal.environment = wire_ingestion_inbox.environment
+                AND journal.source_generation = wire_ingestion_inbox.source_generation
+                AND journal.seq = wire_ingestion_inbox.seq
+            ))) AND expires_at <= \(asOf)
           ORDER BY expires_at, environment, source_generation, seq
           FOR UPDATE SKIP LOCKED
           LIMIT \(max(1, min(batchSize, 20_000)))
@@ -432,6 +447,13 @@ struct PostgresWireInboxProcessor: Sendable {
   func applyClaimed(_ event: WireInboxEvent, asOf: Date) async throws -> WireInboxEventOutcome {
     try Task.checkCancellation()
     do {
+      if event.eventKind == "commit",
+        event.collection == "site.standard.graph.recommend"
+      {
+        return try await PostgresWireRecommendationJournal(pool: pool, logger: logger)
+          .process(event: event, actorHasher: actorHasher, asOf: asOf,
+            deferUnresolved: deferredRecommendationsEnabled)
+      }
       try await apply(event, asOf: asOf)
       try Task.checkCancellation()
       return try await finish(event, status: "applied", retryAt: asOf, reason: nil, asOf: asOf)
@@ -1356,10 +1378,14 @@ struct PostgresWireInboxProcessor: Sendable {
       let document = try JSONSerialization.jsonObject(with: Data(event.payloadJSON.utf8))
         as? [String: Any],
       let account = document["account"] as? [String: Any],
-      account["active"] as? Bool == false
+      let active = account["active"] as? Bool
     else { return }
     let actorHash = try actorHasher.hash(event.repoDID)
-    try await pool.withTransaction(logger: logger) { connection in
+    let retracted = try await pool.withTransaction(logger: logger) { connection in
+      guard try await PostgresWireRecommendationJournal.observeAccount(
+        event: event, on: connection, asOf: asOf)
+      else { return false }
+      guard !active else { return false }
       try await connection.query(
         "UPDATE wire_items SET eligible = FALSE, updated_at = \(asOf) WHERE author_key = \(event.repoDID)",
         logger: logger
@@ -1384,8 +1410,11 @@ struct PostgresWireInboxProcessor: Sendable {
         "DELETE FROM wire_publications WHERE repo_did = \(event.repoDID)",
         logger: logger
       )
+      return true
     }
-    try await mentionStore.removeActor(did: event.repoDID, actorKeyHash: actorHash)
+    if retracted {
+      try await mentionStore.removeActor(did: event.repoDID, actorKeyHash: actorHash)
+    }
   }
 
   private func retract(sourceURI: String, eventTime: Date, asOf: Date) async throws {

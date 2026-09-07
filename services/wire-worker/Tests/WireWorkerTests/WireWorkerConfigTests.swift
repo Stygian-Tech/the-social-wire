@@ -17,6 +17,7 @@ struct WireWorkerConfigTests {
     #expect(config.labelRefreshMaximumAgeSeconds == 900)
     #expect(config.inboxBatchSize == 1_000)
     #expect(config.inboxConcurrency == 16)
+    #expect(!config.deferredRecommendationsEnabled)
     #expect(config.inboxIdleMilliseconds == 250)
     #expect(config.inboxCleanupBatchSize == 5_000)
     #expect(config.inboxCleanupIdleMilliseconds == 1_000)
@@ -26,6 +27,21 @@ struct WireWorkerConfigTests {
     #expect(config.metadataConcurrency == 8)
     #expect(config.metadataIdleMilliseconds == 1_000)
     #expect(config.postgresMaximumConnections == 12)
+  }
+
+  @Test("durable recommendation recovery requires an explicit rollout switch")
+  func deferredRecommendationRollout() throws {
+    let config = try WireWorkerConfig.load([
+      "DATABASE_URL": "postgres://localhost/wire",
+      "WIRE_DEFERRED_RECOMMENDATIONS_ENABLED": "TRUE",
+    ])
+    #expect(config.deferredRecommendationsEnabled)
+    #expect(throws: WireWorkerConfigError.invalidBoolean("WIRE_DEFERRED_RECOMMENDATIONS_ENABLED")) {
+      try WireWorkerConfig.load([
+        "DATABASE_URL": "postgres://localhost/wire",
+        "WIRE_DEFERRED_RECOMMENDATIONS_ENABLED": "sometimes",
+      ])
+    }
   }
 
   @Test("loads every external-signal rollout mode case insensitively")

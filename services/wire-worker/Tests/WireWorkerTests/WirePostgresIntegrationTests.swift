@@ -528,12 +528,16 @@ struct WirePostgresIntegrationTests {
       ]
     )
     #expect(states.map(\.1) == ["applied", "applied", "retry", "retry"])
-    #expect(states.map(\.2) == [nil, nil, "unresolved_subject", "unresolved_subject"])
+    #expect(states.map(\.2) == [nil, nil, "recommendation_pending", "unresolved_subject"])
 
     try await pool.query(
       "DELETE FROM wire_ingestion_inbox WHERE environment = \(environment)",
       logger: logger
     )
+    try await pool.query(
+      "DELETE FROM wire_recommendation_record_fences WHERE environment = \(environment)", logger: logger)
+    try await pool.query(
+      "DELETE FROM wire_recommendation_journal WHERE environment = \(environment)", logger: logger)
   }
 
   @Test("a staged payload-normalization fallback is dead-lettered")
