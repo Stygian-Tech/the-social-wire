@@ -6,6 +6,6 @@ struct FeedReadAgeOption: Codable, Equatable, Identifiable, Sendable {
     let count: Int
 
     var id: Int { days }
-    var title: String { days == 1 ? "1 Day" : "\(days) Days" }
+    var title: String { days == 7 ? "1 Week" : days == 1 ? "1 Day" : "\(days) Days" }
     var cutoffDate: Date? { DateFormatters.date(from: before) }
 }
