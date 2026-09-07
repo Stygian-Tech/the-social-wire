@@ -4,27 +4,7 @@ import PostgresNIO
 import WireCore
 
 struct PostgresWireInboxProcessor: Sendable {
-  private struct InboxEvent: Sendable {
-    let environment: String
-    let sourceGeneration: String
-    let sequence: Int64
-    let sourceHost: String
-    let cursorKind: String
-    let eventKind: String
-    let repoDID: String
-    let collection: String?
-    let operation: String?
-    let recordKey: String?
-    let payloadJSON: String
-    let eventTime: Date
-    let leaseToken: String
-    let attemptCount: Int
-
-    var sourceURI: String? {
-      guard let collection, let recordKey else { return nil }
-      return "at://\(repoDID)/\(collection)/\(recordKey)"
-    }
-  }
+  private typealias InboxEvent = WireInboxEvent
 
   private enum ApplyError: Error {
     case unresolvedReference
@@ -446,68 +426,73 @@ struct PostgresWireInboxProcessor: Sendable {
   }
 
   private func process(_ event: InboxEvent, asOf: Date) async throws -> Bool {
+    try await applyClaimed(event, asOf: asOf) == .applied
+  }
+
+  func applyClaimed(_ event: WireInboxEvent, asOf: Date) async throws -> WireInboxEventOutcome {
+    try Task.checkCancellation()
     do {
       try await apply(event, asOf: asOf)
-      try await finish(event, status: "applied", retryAt: asOf, reason: nil, asOf: asOf)
-      return true
+      try Task.checkCancellation()
+      return try await finish(event, status: "applied", retryAt: asOf, reason: nil, asOf: asOf)
+        ? .applied : .leaseLost
+    } catch is CancellationError {
+      throw CancellationError()
     } catch ApplyError.unresolvedReference {
       if asOf.timeIntervalSince(event.eventTime) < 24 * 3_600 {
-        try await finish(
+        return try await finish(
           event,
           status: "retry",
           retryAt: asOf.addingTimeInterval(30),
           reason: "unresolved_subject",
           asOf: asOf
-        )
+        ) ? .retry : .leaseLost
       } else {
-        try await finish(
+        return try await finish(
           event,
           status: "dead_letter",
           retryAt: asOf,
           reason: "unresolved_subject_expired",
           asOf: asOf
-        )
+        ) ? .terminal : .leaseLost
       }
-      return false
     } catch ApplyError.unresolvedPublication {
       if asOf.timeIntervalSince(event.eventTime) < 24 * 3_600 {
-        try await finish(
+        return try await finish(
           event,
           status: "retry",
           retryAt: asOf.addingTimeInterval(
             Self.publicationRetryDelay(attemptCount: event.attemptCount)),
           reason: "unresolved_publication",
           asOf: asOf
-        )
+        ) ? .retry : .leaseLost
       } else {
-        try await finish(
+        return try await finish(
           event,
           status: "dead_letter",
           retryAt: asOf,
           reason: "unresolved_publication_expired",
           asOf: asOf
-        )
+        ) ? .terminal : .leaseLost
       }
-      return false
     } catch ApplyError.malformed {
-      try await finish(
+      return try await finish(
         event,
         status: "dead_letter",
         retryAt: asOf,
         reason: "malformed_event",
         asOf: asOf
-      )
-      return false
+      ) ? .terminal : .leaseLost
     } catch {
+      try Task.checkCancellation()
       let terminal = event.attemptCount >= 8
-      try await finish(
+      return try await finish(
         event,
         status: terminal ? "dead_letter" : "retry",
         retryAt: terminal ? asOf : asOf.addingTimeInterval(60),
         reason: String(reflecting: error).prefix(500).description,
         asOf: asOf
-      )
-      return false
+      ) ? (terminal ? .terminal : .retry) : .leaseLost
     }
   }
 
@@ -597,13 +582,13 @@ struct PostgresWireInboxProcessor: Sendable {
     return result.sorted { $0.sequence < $1.sequence }
   }
 
-  private func claimScopedPassiveDeletes(asOf: Date) async throws -> [InboxEvent] {
+  func claimScopedPassiveDeletes(asOf: Date, limit: Int? = nil) async throws -> [WireInboxEvent] {
     guard let sourceScope else { return [] }
     let token = UUID().uuidString.lowercased()
     let leaseUntil = asOf.addingTimeInterval(120)
     let claimLimit = Self.boundedClaimLimit(
       batchSize: batchSize,
-      maximumConcurrentEvents: maximumConcurrentEvents
+      maximumConcurrentEvents: min(maximumConcurrentEvents, limit ?? maximumConcurrentEvents)
     )
     let rows = try await pool.query(
       """
@@ -1924,14 +1909,15 @@ struct PostgresWireInboxProcessor: Sendable {
     retryAt: Date,
     reason: String?,
     asOf: Date
-  ) async throws {
+  ) async throws -> Bool {
+    try Task.checkCancellation()
     let appliedAt: Date? = status == "applied" ? asOf : nil
     let deadAt: Date? = status == "dead_letter" ? asOf : nil
     let expiresAt =
       status == "applied"
       ? asOf.addingTimeInterval(300)
       : status == "dead_letter" ? asOf.addingTimeInterval(7 * 24 * 3_600) : .distantFuture
-    try await pool.query(
+    let rows = try await pool.query(
       """
       UPDATE wire_ingestion_inbox
       SET status = \(status), next_attempt_at = \(retryAt), failure_category = \(reason),
@@ -1940,9 +1926,13 @@ struct PostgresWireInboxProcessor: Sendable {
           expires_at = \(expiresAt), updated_at = \(asOf)
       WHERE environment = \(event.environment) AND source_generation = \(event.sourceGeneration)
         AND seq = \(event.sequence) AND lease_token = \(event.leaseToken)
+        AND status = 'leased'
+      RETURNING seq
       """,
       logger: logger
     )
+    for try await _ in rows { return true }
+    return false
   }
 
   private static func firstString(_ value: Any, keys: [String]) -> String? {

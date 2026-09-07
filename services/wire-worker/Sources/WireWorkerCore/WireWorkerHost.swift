@@ -157,11 +157,13 @@ public enum WireWorkerHost {
       if runtimePlan.runsDrain, let inboxProcessor {
         group.addTask {
           defer { logger.info("The Wire component stopped", metadata: ["component": "drain"]) }
-          try await WireInboxDrainRuntime.run(
+          try await WireInboxRepositoryDrainRuntime.run(
             processor: inboxProcessor,
             state: state,
             logger: logger,
-            configuration: .init(idleMilliseconds: config.inboxIdleMilliseconds),
+            configuration: .init(
+              maximumConcurrentEvents: config.inboxConcurrency,
+              idleMilliseconds: config.inboxIdleMilliseconds),
             telemetry: drainTelemetry
           )
         }
