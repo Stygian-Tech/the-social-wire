@@ -1090,6 +1090,11 @@ components:
         capabilities: { $ref: "#/components/schemas/OperationsCapabilities" }
         counts: { $ref: "#/components/schemas/OperationsLifecycleCounts" }
         viewers: { anyOf: [{ $ref: "#/components/schemas/OperationsViewerCounts" }, { type: "null" }] }
+        viewerHistory:
+          type: array
+          maxItems: 90
+          description: Latest hourly observation per UTC day for the last 90 calendar dates, oldest first. Missing days have no entry. History begins with real observations and is never backfilled from current counts.
+          items: { $ref: "#/components/schemas/OperationsViewerCounts" }
         durability: { anyOf: [{ $ref: "#/components/schemas/IngestionDurabilitySnapshot" }, { type: "null" }] }
 
     OperationsMutationRequest:

@@ -121,7 +121,7 @@ export function BackfillProgress({ job, refreshing }: { job: Backfill; refreshin
           <AlertTitle>Verification Required</AlertTitle>
           <AlertDescription>
             This run cannot resolve its linked gap automatically. Review exact scope, failures, truncation, and an
-            authoritative Tap resync before resolution.
+            durable replay checkpoints before resolution. PDS enumeration cannot prove historical deletes.
             {job.verificationReason ? ` Reason: ${job.verificationReason}.` : ""}
           </AlertDescription>
         </Alert>

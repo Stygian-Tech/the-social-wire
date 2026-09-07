@@ -63,6 +63,11 @@ describe("operations mutation safeguards", () => {
       }),
     ).toBeUndefined()
     expect(preferredRecoveryMode(undefined)).toBeUndefined()
+    expect(preferredRecoveryMode({
+      tapVerifiedResync: enabled,
+      jetstreamReplay: disabled,
+      pdsReconciliation: disabled,
+    })).toBeUndefined()
   })
 
   test("reports the exact unmet backfill requirements", () => {
