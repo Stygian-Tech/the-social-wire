@@ -8,6 +8,7 @@ actor WireWorkerHealthState {
   private(set) var lastGraphMaintenanceFailure: String?
   private(set) var lastGraphMaintenanceDurationMilliseconds: Double?
   private(set) var drainStartedAt: Date?
+  private var activeDrainEvents: [String: Date] = [:]
   private(set) var lastSuccessfulDrainAt: Date?
   private(set) var lastDrainFailure: String?
   private(set) var cleanupStartedAt: Date?
@@ -37,6 +38,25 @@ actor WireWorkerHealthState {
 
   func recordDrainStarted(at: Date) {
     drainStartedAt = at
+  }
+
+  func recordDrainEventStarted(id: String, at: Date) {
+    activeDrainEvents[id] = at
+  }
+
+  func recordDrainEventFinished(id: String, at: Date) {
+    activeDrainEvents.removeValue(forKey: id)
+    lastSuccessfulDrainAt = at
+    lastDrainFailure = nil
+  }
+
+  func recordDrainEventStopped(id: String) {
+    activeDrainEvents.removeValue(forKey: id)
+  }
+
+  func recordDrainEventFailed(id: String, error: Error) {
+    activeDrainEvents.removeValue(forKey: id)
+    lastDrainFailure = String(reflecting: error)
   }
 
   func recordDrainSuccess(at: Date) {
@@ -80,6 +100,8 @@ actor WireWorkerHealthState {
     maximumOperationAge: TimeInterval
   ) -> Bool {
     guard lastDrainFailure == nil else { return false }
+    guard activeDrainEvents.values.allSatisfy({ now.timeIntervalSince($0) <= maximumOperationAge })
+    else { return false }
     if let drainStartedAt {
       return now.timeIntervalSince(drainStartedAt) <= maximumOperationAge
     }
