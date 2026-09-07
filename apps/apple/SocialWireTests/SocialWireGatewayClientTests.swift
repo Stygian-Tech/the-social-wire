@@ -5,6 +5,60 @@ import Testing
 @Suite("SocialWireGatewayClient")
 @MainActor
 struct SocialWireGatewayClientTests {
+    @Test("Read-age snapshots stream before completion and replace prior counts")
+    func readAgeSnapshotsStreamProgressively() async throws {
+        let (stream, continuation) = AsyncThrowingStream<String, Error>.makeStream()
+        continuation.yield(#"{"type":"options","referenceDay":"2026-09-07","options":[{"days":7,"before":"2026-08-31T05:00:00Z","count":2}]}"#)
+        var snapshots: [[FeedReadAgeOption]] = []
+        let response = try await FeedReadAgeStreamEvent.consume(stream) { options in
+            snapshots.append(options)
+            if snapshots.count == 1 {
+                // No next event exists until the first snapshot is delivered to the menu.
+                continuation.yield(#"{"type":"options","referenceDay":"2026-09-07","options":[{"days":7,"before":"2026-08-31T05:00:00Z","count":5}]}"#)
+            } else {
+                continuation.yield(#"{"type":"done"}"#)
+                continuation.finish()
+            }
+        }
+        #expect(snapshots.map { $0[0].count } == [2, 5])
+        #expect(response.options[0].count == 5)
+        #expect(response.options[0].title == "1 Week")
+    }
+
+    @Test("Read-age partial responses require a terminal done event")
+    func readAgeTruncationFails() async {
+        let stream = AsyncThrowingStream<String, Error> { continuation in
+            continuation.yield(#"{"type":"options","referenceDay":"2026-09-07","options":[]}"#)
+            continuation.finish()
+        }
+        await #expect(throws: (any Error).self) {
+            try await FeedReadAgeStreamEvent.consume(stream) { _ in }
+        }
+    }
+
+    @Test("Read-age server errors fail even after options arrive")
+    func readAgeTerminalErrorFails() async {
+        let stream = AsyncThrowingStream<String, Error> { continuation in
+            continuation.yield(#"{"type":"options","referenceDay":"2026-09-07","options":[]}"#)
+            continuation.yield(#"{"type":"error","message":"Read query failed"}"#)
+            continuation.finish()
+        }
+        await #expect(throws: (any Error).self) {
+            try await FeedReadAgeStreamEvent.consume(stream) { _ in }
+        }
+    }
+
+    @Test("Read-age done without options fails")
+    func readAgeMissingSnapshotFails() async {
+        let stream = AsyncThrowingStream<String, Error> { continuation in
+            continuation.yield(#"{"type":"done"}"#)
+            continuation.finish()
+        }
+        await #expect(throws: (any Error).self) {
+            try await FeedReadAgeStreamEvent.consume(stream) { _ in }
+        }
+    }
+
     @Test("AppViewEnrollResponse decodes indexed count")
     func appViewEnrollResponseDecodesIndexedCount() throws {
         let data = Data("""

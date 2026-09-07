@@ -30,6 +30,27 @@ final class MacNewsShellSmokeUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Send Feedback"].waitForExistence(timeout: 3))
     }
 
+    func testReadAgeMenuStreamsCountsAndCapsAtOneWeek() {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "--ui-testing-news-shell", "--ui-testing-read-age", "--ui-testing-read-age-stream",
+        ]
+        app.launch()
+        let markRead = app.buttons["feed-mark-all-read"]
+        XCTAssertTrue(markRead.waitForExistence(timeout: 5))
+        markRead.rightClick()
+        let firstDay = app.menuItems["mark-read-age-1"]
+        XCTAssertTrue(firstDay.waitForExistence(timeout: 2))
+        XCTAssertFalse(firstDay.isEnabled)
+        let week = app.menuItems["mark-read-age-7"]
+        XCTAssertTrue(week.waitForExistence(timeout: 10))
+        XCTAssertTrue(week.isEnabled)
+        XCTAssertFalse(app.menuItems["mark-read-age-8"].exists)
+        week.click()
+        XCTAssertTrue(app.staticTexts["Mark Older Stories As Read?"].waitForExistence(timeout: 3))
+        app.buttons["Cancel"].click()
+    }
+
     private func content(for tab: String, in app: XCUIApplication) -> XCUIElement {
         app.descendants(matching: .any)["news-tab-content-\(tab)"]
     }

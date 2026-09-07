@@ -403,10 +403,13 @@ final class SocialWireAppModel {
         }
     }
 
-    func readAgeOptions(for scope: ReaderMarkReadScope) async throws -> [FeedReadAgeOption] {
+    func readAgeOptions(
+        for scope: ReaderMarkReadScope,
+        onOptions: @escaping @MainActor ([FeedReadAgeOption]) -> Void
+    ) async throws -> [FeedReadAgeOption] {
         let scopes = gatewayMarkAllReadScopes(for: scope)
         guard scopes.count == 1, let gatewayScope = scopes.first else { return [] }
-        return try await gateway.fetchReadAgeOptions(scope: gatewayScope).options
+        return try await gateway.fetchReadAgeOptions(scope: gatewayScope, onOptions: onOptions).options
     }
 
     func markRead(for scope: ReaderMarkReadScope, before: String) async throws {
