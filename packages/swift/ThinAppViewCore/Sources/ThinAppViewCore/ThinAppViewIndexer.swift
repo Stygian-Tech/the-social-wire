@@ -78,7 +78,7 @@ public actor ThinAppViewIndexer {
   /// later manifest commit. Existing authority and complete-chain checks still apply.
   func reconcilePDSReadState(viewerDid: String) async throws -> Bool {
     guard let readStateProjector,
-      try await readStateProjector.reconcile(viewerDid: viewerDid) else { return false }
+      try await readStateProjector.reconcile(viewerDid: viewerDid, rebuildEvicted: false) else { return false }
     try await projectionCache?.invalidateSidebarProjection(viewerDid: viewerDid)
     try await projectionCache?.invalidateUnreadCounts(viewerDid: viewerDid, publicationId: nil)
     try await projectionCache?.invalidateFirstPage(viewerDid: viewerDid, publicationId: nil)

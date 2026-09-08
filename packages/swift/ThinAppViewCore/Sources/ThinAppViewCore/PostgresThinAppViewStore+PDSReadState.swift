@@ -6,7 +6,7 @@ extension PostgresThinAppViewStore: PDSReadStateStoring {
   public func pdsReadStateStatus(viewerDid: String) async throws -> PDSReadStateStatus {
     for try await row in try await pool.query(
       """
-      SELECT legacy_revision, manifest::text, manifest_cid
+      SELECT legacy_revision, manifest::text, manifest_cid, projection_ready
       FROM appview_pds_read_state_authority WHERE viewer_did = \(viewerDid)
       """, logger: logger) {
       return try Self.pdsStatus(row)
@@ -57,19 +57,21 @@ extension PostgresThinAppViewStore: PDSReadStateStoring {
       // Only new actions cross the database connection. Repacking/rebuilds diff
       // a complete temporary projection and suppress unchanged persistent writes.
       let previousSequence = status.manifest?.lastSequence ?? 0
-      let incremental = status.manifestCid != manifestCid && status.authority == .pds
+      let incremental = status.manifestCid != manifestCid && status.authority == .pds && status.projectionReady
         && status.manifest?.head.map { projection.sourceReferences.contains($0) } == true
       let operations = incremental
         ? projection.operations.filter { $0.sequence > previousSequence } : projection.operations
       try await persistPDSProjection(viewerDid: viewerDid, operations: operations,
         incremental: incremental, on: connection)
+      try Task.checkCancellation()
       try await connection.query(
         """
         UPDATE appview_pds_read_state_authority SET manifest = \(manifestJSON)::jsonb,
           manifest_cid = \(manifestCid), last_sequence = \(manifest.lastSequence),
-          activated_at = COALESCE(activated_at, NOW()), updated_at = NOW()
+          activated_at = COALESCE(activated_at, NOW()), updated_at = NOW(), projection_ready = TRUE,
+          last_accessed_at = CASE WHEN manifest_cid IS NULL THEN NOW() ELSE last_accessed_at END
         WHERE viewer_did = \(viewerDid)
-          AND (manifest_cid IS DISTINCT FROM \(manifestCid) OR manifest IS DISTINCT FROM \(manifestJSON)::jsonb)
+          AND (manifest_cid IS DISTINCT FROM \(manifestCid) OR manifest IS DISTINCT FROM \(manifestJSON)::jsonb OR NOT projection_ready)
         """, logger: logger)
       try await connection.query(
         "UPDATE appview_unread_counters SET dirty = TRUE WHERE viewer_did = \(viewerDid) AND dirty = FALSE", logger: logger)
@@ -124,18 +126,18 @@ extension PostgresThinAppViewStore: PDSReadStateStoring {
       "INSERT INTO appview_pds_read_state_authority(viewer_did) VALUES (\(viewerDid)) ON CONFLICT DO NOTHING", logger: logger)
     for try await row in try await connection.query(
       """
-      SELECT legacy_revision, manifest::text, manifest_cid
+      SELECT legacy_revision, manifest::text, manifest_cid, projection_ready
       FROM appview_pds_read_state_authority WHERE viewer_did = \(viewerDid) FOR UPDATE
       """, logger: logger) { return try Self.pdsStatus(row) }
     throw PDSReadStateStorageError.revisionChanged
   }
 
   private static func pdsStatus(_ row: PostgresRow) throws -> PDSReadStateStatus {
-    let value = try row.decode((Int64, String?, String?).self)
+    let value = try row.decode((Int64, String?, String?, Bool).self)
     let manifest = try value.1.map { try JSONDecoder().decode(ReadStateManifest.self, from: Data($0.utf8)) }
     return PDSReadStateStatus(authority: manifest == nil ? .appview : .pds,
       migrationState: manifest == nil ? .notStarted : .verified, legacyRevision: value.0,
-      manifest: manifest, manifestCid: value.2)
+      manifest: manifest, manifestCid: value.2, projectionReady: value.3)
   }
 
   private struct PDSExportPosition: Codable, Sendable {

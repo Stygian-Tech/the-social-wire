@@ -40,10 +40,14 @@ final class LivePDSReadStateRecordFetcher: Sendable {
       throw ReadStateError.incompleteGeneration
     }
     let body = try await response.body.collect(upTo: ReadStateValidation.maximumRecordBytes + 4096)
-    guard let envelope = try JSONSerialization.jsonObject(with: Data(buffer: body)) as? [String: Any],
+    return try Self.record(from: Data(buffer: body))
+  }
+
+  static func record(from data: Data) throws -> PDSReadStateFetchedRecord {
+    guard let envelope = try JSONSerialization.jsonObject(with: data) as? [String: Any],
       let uri = envelope["uri"] as? String, let returnedCID = envelope["cid"] as? String,
       let record = envelope["value"] as? [String: Any] else { throw ReadStateError.invalidRecord }
     return PDSReadStateFetchedRecord(uri: uri, cid: returnedCID,
-      json: try JSONSerialization.data(withJSONObject: record))
+      json: try JSONSerialization.data(withJSONObject: record, options: [.withoutEscapingSlashes]))
   }
 }

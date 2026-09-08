@@ -1210,6 +1210,16 @@ final class PostgresInboxFixture: @unchecked Sendable {
       // reviewed migration in one DO statement so its function bodies stay intact.
       try await execute(PostgresQuery(unsafeSQL: "DO $fixture$ BEGIN\n" + migration + "\nEND $fixture$;"))
     }
+    let readiness = try await pool.query("SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'appview_pds_read_state_authority' AND column_name = 'projection_ready')", logger: logger)
+    var needsReadiness = true
+    for try await row in readiness { needsReadiness = !(try row.decode(Bool.self)) }
+    if needsReadiness {
+      var root = URL(fileURLWithPath: #filePath)
+      for _ in 0..<6 { root.deleteLastPathComponent() }
+      let migration = try String(contentsOf: root.appendingPathComponent(
+        "database/migrations/20260909020000_add_pds_projection_readiness.sql"), encoding: .utf8)
+      try await execute(PostgresQuery(unsafeSQL: "DO $fixture$ BEGIN\n" + migration + "\nEND $fixture$;"))
+    }
 
   }
 

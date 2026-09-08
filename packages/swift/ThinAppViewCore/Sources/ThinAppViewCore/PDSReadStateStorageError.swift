@@ -4,5 +4,6 @@ public enum PDSReadStateStorageError: Error, Equatable {
   case legacyScopeUnavailable
   case parityMismatch
   case invalidCursor
+  case projectionNotReady
   case staleGeneration
 }

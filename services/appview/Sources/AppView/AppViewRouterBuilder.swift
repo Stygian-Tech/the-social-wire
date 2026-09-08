@@ -50,11 +50,17 @@ enum AppViewRouterBuilder {
       supplementalJwksJSON: config.core.oauthAccessTokenSupplementalJwksJSON,
       logger: logger
     )
+    let readStateRecovery: PDSReadStateRecoveryCoordinator?
+    if let lifecycleStore = thinAppViewStore as? any PDSReadStateLifecycleStoring, let operationsStore {
+      readStateRecovery = PDSReadStateRecoveryCoordinator(store: lifecycleStore, operations: operationsStore,
+        projectionCache: projectionCache, plcURL: config.core.atprotoPLCURL, logger: logger)
+    } else { readStateRecovery = nil }
     let protected = router.group()
       .add(middleware: XRPCErrorMiddleware())
       .add(middleware: AppViewFeedErrorMiddleware())
       .add(middleware: internalTrustMiddleware)
       .add(middleware: authMiddleware)
+      .add(middleware: PDSReadStateReadinessMiddleware(store: thinAppViewStore as? any PDSReadStateLifecycleStoring, recovery: readStateRecovery))
 
     if let wireFeedStore, let wireModerationService, config.wire.mode.servesAPI {
       let wireInternalTrustMiddleware = GatewayInternalTrustAuthMiddleware(

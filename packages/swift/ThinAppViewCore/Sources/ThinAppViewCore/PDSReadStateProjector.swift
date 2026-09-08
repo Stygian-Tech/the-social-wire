@@ -15,8 +15,9 @@ struct PDSReadStateProjector: Sendable {
     self.cache = cache
   }
 
-  func reconcile(viewerDid: String) async throws -> Bool {
-    guard try await store.pdsReadStateStatus(viewerDid: viewerDid).authority == .pds else { return false }
+  func reconcile(viewerDid: String, rebuildEvicted: Bool = true) async throws -> Bool {
+    let status = try await store.pdsReadStateStatus(viewerDid: viewerDid)
+    guard status.authority == .pds, status.projectionReady || rebuildEvicted else { return false }
     let record = try await fetchRecord(viewerDid, ReadStateManifest.collection, "self", nil)
     let manifest: ReadStateManifest = try record.decode(viewerDid: viewerDid,
       collection: ReadStateManifest.collection, key: "self")

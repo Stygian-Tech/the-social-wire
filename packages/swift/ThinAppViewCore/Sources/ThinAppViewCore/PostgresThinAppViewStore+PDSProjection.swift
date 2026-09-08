@@ -13,6 +13,7 @@ extension PostgresThinAppViewStore {
       try await connection.query("CREATE TEMP TABLE tsw_pds_boundary_stage (LIKE appview_pds_read_state_boundaries INCLUDING ALL) ON COMMIT DROP", logger: logger)
     }
     for start in stride(from: 0, to: operations.count, by: 250) {
+      try Task.checkCancellation()
       let batch = Array(operations[start..<min(start + 250, operations.count)])
       let json = String(decoding: try JSONEncoder().encode(batch), as: UTF8.self)
       try await connection.query(

@@ -6,11 +6,45 @@ import Testing
 
 @Suite("Verified manifest projection")
 struct PDSReadStateProjectorTests {
+  @Test func nearLimitRecordDoesNotGrowWhenExtractedFromPDSEnvelope() throws {
+    let prefix = "at://did:plc:viewer/site.standard.document/"
+    let uris = (0..<32).map { prefix + String(repeating: "a/", count: 980) + String($0) }
+    let chunk = ReadStateChunk(operations: [ReadStateOperation(actionId: "near-limit", sequence: 1,
+      state: .read, actedAt: "2026-09-08T00:00:00Z", subjectUris: uris)], previous: nil)
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.withoutEscapingSlashes]
+    let data = try encoder.encode(chunk)
+    #expect(data.count == 64_440)
+    let envelope: [String: Any] = [
+      "uri": "at://did:plc:viewer/app.thesocialwire.readStateChunk/a",
+      "cid": "bafyreib4cw6rmb3qrcyxibmqumt4bd277e7kpl2ojetscnjkmpy7ntch2i",
+      "value": try JSONSerialization.jsonObject(with: data),
+    ]
+    let extracted = try LivePDSReadStateRecordFetcher.record(from:
+      JSONSerialization.data(withJSONObject: envelope, options: [.withoutEscapingSlashes]))
+    #expect(extracted.json.count == data.count)
+    let verified: ReadStateChunk = try extracted.decode(viewerDid: "did:plc:viewer",
+      collection: ReadStateChunk.collection, key: "a")
+    try ReadStateValidation.validate(verified, viewerDid: "did:plc:viewer")
+    #expect(verified.operations.first?.subjectUris == uris)
+  }
+
   @Test func unmigratedViewerDoesNotFetchOrActivate() async throws {
     let store = ProjectionStore(active: false)
     let remote = Records()
     let projector = PDSReadStateProjector(store: store, fetchRecord: { try await remote.fetch(viewerDid: $0, collection: $1, key: $2, cid: $3) })
     #expect(try await projector.reconcile(viewerDid: Records.viewer) == false)
+    #expect(await remote.requests == 0)
+    #expect(await store.activations == 0)
+  }
+
+  @Test func backgroundManifestEventsDoNotRebuildEvictedViewers() async throws {
+    let store = ProjectionStore(active: true, ready: false)
+    let remote = Records()
+    let projector = PDSReadStateProjector(store: store, fetchRecord: {
+      try await remote.fetch(viewerDid: $0, collection: $1, key: $2, cid: $3)
+    })
+    #expect(try await projector.reconcile(viewerDid: Records.viewer, rebuildEvicted: false) == false)
     #expect(await remote.requests == 0)
     #expect(await store.activations == 0)
   }
@@ -53,12 +87,13 @@ struct PDSReadStateProjectorTests {
 
   private actor ProjectionStore: PDSReadStateStoring {
     let active: Bool
+    let ready: Bool
     var activations = 0
     var lastProjection: ReadStateProjection?
-    init(active: Bool) { self.active = active }
+    init(active: Bool, ready: Bool = true) { self.active = active; self.ready = ready }
     func pdsReadStateStatus(viewerDid: String) -> PDSReadStateStatus {
       PDSReadStateStatus(authority: active ? .pds : .appview,
-        migrationState: active ? .verified : .notStarted, legacyRevision: 0)
+        migrationState: active ? .verified : .notStarted, legacyRevision: 0, projectionReady: ready)
     }
     func activatePDSReadState(viewerDid: String, manifest: ReadStateManifest, manifestCid: String,
       projection: ReadStateProjection, expectedLegacyRevision: Int64?) -> PDSReadStateStatus {

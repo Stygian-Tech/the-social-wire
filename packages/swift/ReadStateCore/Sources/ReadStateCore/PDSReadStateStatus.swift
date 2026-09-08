@@ -27,4 +27,3 @@ public struct PDSReadStateStatus: Codable, Sendable, Equatable {
     projectionReady = try values.decodeIfPresent(Bool.self, forKey: .projectionReady) ?? true
   }
 }
-
