@@ -24,4 +24,14 @@ test("pending and denied-access history remains visible without claiming synchro
     outbox: { viewerDid: "did:plc:alice", lastError: "reauthorize", entries: [{ intent: { actionId: "pending", state: "unread", actedAt: "2026-09-08T00:00:00Z", selection: "exact", subjectUris: ["article"] }, attempts: 1, retryAt: 0 }] } });
   expect(renderToStaticMarkup(<PDSReadStateSyncNotice />)).toContain("Sign in again to synchronize");
   expect(renderToStaticMarkup(<PDSReadStateSettingsSection />)).toContain("1 change is waiting to sync");
+  expect(renderToStaticMarkup(<PDSReadStateSettingsSection />)).toContain("Sign in again");
+});
+
+test("an unready projection remains visibly restoring with no pending writes", () => {
+  snapshot({ status: { authority: "pds", migrationState: "verified", legacyRevision: 1, projectionReady: false },
+    outbox: { viewerDid: "did:plc:alice", entries: [] } });
+  const settings = renderToStaticMarkup(<PDSReadStateSettingsSection />);
+  expect(settings).toContain("Restoring read history");
+  expect(settings).not.toContain("Your PDS stores your read history.");
+  expect(renderToStaticMarkup(<PDSReadStateSyncNotice />)).toContain("Restoring read history");
 });

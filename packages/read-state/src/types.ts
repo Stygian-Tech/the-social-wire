@@ -21,6 +21,6 @@ export type Subject = { uri: string; authorDid: string; publicationSite?: string
 export type Resolution = { isRead: boolean; sequence: number; actionId?: string; readAt?: string };
 export class ReadStateError extends Error {
   constructor(public readonly code: "invalid_record" | "invalid_reference" | "size_limit" | "incomplete_generation"
-    | "conflicting_sequence" | "invalid_cid" | "conflict" | "unavailable" | "reauthorize" | "outbox_unavailable",
+    | "migration_scope_conflict" | "projection_not_ready" | "conflicting_sequence" | "invalid_cid" | "conflict" | "unavailable" | "reauthorize" | "outbox_unavailable",
   message: string = code) { super(message); this.name = "ReadStateError"; }
 }

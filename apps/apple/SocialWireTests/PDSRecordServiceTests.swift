@@ -6,6 +6,60 @@ import Testing
 @Suite("PDSRecordService")
 @MainActor
 struct PDSRecordServiceTests {
+    @Test("Gateway recovery and migration errors preserve actionable codes")
+    func actionableGatewayErrors() throws {
+        do {
+            try ReadStateHTTPFailure.checkGatewayCode(Data(#"{"error":"ReadStateMigrationScopeConflict"}"#.utf8), statusCode: 409)
+            Issue.record("Expected migration scope conflict")
+        } catch ReadStateSyncFailure.migrationScopeConflict {
+            #expect(ReadStateSyncFailure.migrationScopeConflict.localizedDescription.contains("Mark All As Read"))
+            #expect(!ReadStateSyncFailure.migrationScopeConflict.localizedDescription.contains("Sign In"))
+        }
+        do {
+            try ReadStateHTTPFailure.checkGatewayCode(Data(#"{"error":"ReadStateNotReady"}"#.utf8), statusCode: 503)
+            Issue.record("Expected unready projection")
+        } catch ReadStateSyncFailure.projectionNotReady {
+            #expect(ReadStateSyncFailure.projectionNotReady.localizedDescription.contains("Restoring Read History"))
+        }
+        try ReadStateHTTPFailure.checkGatewayCode(Data(#"{"error":"ReadStateNotReady"}"#.utf8), statusCode: 409)
+        try ReadStateHTTPFailure.checkGatewayCode(Data("malformed".utf8), statusCode: 503)
+    }
+
+    @Test("Restoring projection notice survives an empty flush and clears only after ready status")
+    func projectionReadinessSurvivesEmptyFlush() async throws {
+        let viewer = "did:plc:recovering"
+        let suite = "read-state-readiness-" + UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        let directory = FileManager.default.temporaryDirectory.appending(path: suite)
+        defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: directory) }
+        let auth = ATProtoOAuthService()
+        let xrpc = XRPCClient(auth: auth, resolver: ATProtoResolver())
+        var ready = false
+        let transport = ReadStateSyncTransport(readManifest: { throw URLError(.notConnectedToInternet) },
+            loadProjection: { _ in throw URLError(.notConnectedToInternet) },
+            putChunk: { _, _ in throw URLError(.notConnectedToInternet) },
+            putManifest: { _, _ in throw URLError(.notConnectedToInternet) },
+            confirm: { _, _ in throw URLError(.notConnectedToInternet) })
+        let service = PDSReadStateSyncService(xrpc: xrpc, gateway: SocialWireGatewayClient(auth: auth), defaults: defaults,
+            currentViewer: { viewer }, statusProvider: { _ in
+                .init(authority: .pds, migrationState: .verified, legacyRevision: 1, projectionReady: ready)
+            }, engineProvider: { did in try ReadStateSyncEngine(viewerDid: did,
+                file: directory.appending(path: "outbox.json"), transport: transport) })
+        #expect(try await service.ensureAuthority(viewer: viewer))
+        #expect(service.statusMessage == PDSReadStateSyncService.restoringMessage)
+        await service.flush()
+        #expect(service.pendingCount == 0)
+        #expect(service.statusMessage == PDSReadStateSyncService.restoringMessage)
+        try await service.setExact(viewer: viewer, subjectUris: ["story"], state: .unread, actedAt: "2026-09-08T00:00:00Z")
+        #expect(service.pendingCount == 1)
+        #expect(service.statusMessage == PDSReadStateSyncService.restoringMessage)
+        ready = true
+        try await service.refreshStatus(viewer: viewer)
+        #expect(service.statusMessage == nil)
+        service.reset()
+        #expect(service.projectionReady)
+    }
+
     @Test("collection constants match lexicons")
     func collectionConstantsMatchLexicons() {
         #expect(PDSRecordService.folder == "app.thesocialwire.folder")

@@ -467,6 +467,7 @@ final class SocialWireGatewayClient {
         let result = try await authorizedRequest(method: body == nil ? "GET" : "POST",
             path: path, query: [:], body: body,
             contentType: body == nil ? nil : "application/json", expectedViewer: expectedViewer)
+        try ReadStateHTTPFailure.checkGatewayCode(result.body, statusCode: result.statusCode)
         if result.statusCode == 404 { throw SocialWireError.appViewUnavailable }
         if result.statusCode == 409 { throw ReadStateSyncFailure.conflict }
         if [401, 403].contains(result.statusCode) { throw ReadStateSyncFailure.reauthorizationRequired }

@@ -2,8 +2,19 @@ import Foundation
 import ReadStateCore
 
 enum ReadStateHTTPFailure {
+    static func checkGatewayCode(_ data: Data, statusCode: Int) throws {
+        let body = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        if statusCode == 409, body?["error"] as? String == "ReadStateMigrationScopeConflict" {
+            throw ReadStateSyncFailure.migrationScopeConflict
+        }
+        if statusCode == 503, body?["error"] as? String == "ReadStateNotReady" {
+            throw ReadStateSyncFailure.projectionNotReady
+        }
+    }
+
     static func check(_ data: Data, response: HTTPURLResponse, now: Date = Date()) throws {
         guard !(200..<300).contains(response.statusCode) else { return }
+        try checkGatewayCode(data, statusCode: response.statusCode)
         let body = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
         if response.statusCode == 409 || body?["error"] as? String == "InvalidSwap" {
             throw ReadStateSyncFailure.conflict

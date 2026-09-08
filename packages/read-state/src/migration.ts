@@ -3,7 +3,7 @@ import { ReadStateError, type Boundary, type Intent, type Manifest, type Referen
 import { jsonBytes } from "./validation";
 
 export type ReadStateStatus = { authority: "appview" | "pds"; migrationState: "notStarted" | "verified";
-  legacyRevision: number; manifest?: Manifest; manifestCid?: string };
+  legacyRevision: number; projectionReady?: boolean; manifest?: Manifest; manifestCid?: string };
 export type LegacyRow = { kind: "boundary" | "unread" | "read"; actedAt: string; boundary?: Boundary; subjectUri?: string };
 export type MigrationExportPage = { legacyRevision: number; rows: LegacyRow[]; cursor?: string };
 export type MigrationCheckpoint = { id: string; viewerDid: string; expectedManifestCid: string | null;

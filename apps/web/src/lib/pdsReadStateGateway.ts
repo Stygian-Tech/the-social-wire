@@ -1,6 +1,7 @@
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 import { PDSRequestError, ReadStateError, type Boundary, type CalendarSelection, type MigrationExportPage,
   type ReadStateMigrationGateway, type ReadStateStatus, type Reference } from "@thesocialwire/read-state";
+import { READ_STATE_RESTORING_MESSAGE, READ_STATE_SCOPE_CONFLICT_MESSAGE } from "@/lib/pdsReadStateMessages";
 import { gatewayFetch } from "@/lib/socialWireGatewayClient";
 import { socialWireXrpc } from "@/lib/socialWireXrpc";
 import type { GatewayMarkAllReadScope } from "@/lib/publicationProjectionClient";
@@ -16,6 +17,11 @@ export class PDSReadStateGateway implements ReadStateMigrationGateway {
       body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     this.assertCurrent();
     if (!response.ok) {
+      const failure = await response.json().catch(() => null) as { error?: string } | null;
+      if (response.status === 409 && failure?.error === "ReadStateMigrationScopeConflict")
+        throw new ReadStateError("migration_scope_conflict", READ_STATE_SCOPE_CONFLICT_MESSAGE);
+      if (response.status === 503 && failure?.error === "ReadStateNotReady")
+        throw new ReadStateError("projection_not_ready", READ_STATE_RESTORING_MESSAGE);
       if (response.status === 409) throw new ReadStateError("conflict");
       if (response.status === 401 || response.status === 403) throw new ReadStateError("reauthorize");
       throw new PDSRequestError(response.status, response.headers.get("retry-after") ?? undefined,

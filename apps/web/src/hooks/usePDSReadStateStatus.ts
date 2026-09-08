@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { OutboxState, ReadStateStatus } from "@thesocialwire/read-state";
+import { readStateErrorMessage, readStateStatusMessage } from "@/lib/pdsReadStateMessages";
 import { useAuth } from "@/hooks/useAuth";
 import { PDS_READ_STATE_SYNC_EVENT, pdsReadStateEnabled, pdsReadStateSync } from "@/lib/pdsReadStateSync";
 
@@ -17,7 +18,7 @@ export function usePDSReadStateStatus() {
     const refresh = async () => {
       try {
         const [status, outbox] = await Promise.all([runtime.status(), runtime.snapshot()]);
-        if (current) setSnapshot({ viewer, status, outbox, error: runtime.localError });
+        if (current) setSnapshot({ viewer, status, outbox, error: runtime.localError ?? readStateStatusMessage(status, outbox) });
       } catch { if (current) setSnapshot(previous => ({ ...previous, viewer, error: "Read history sync is unavailable. Your saved pending changes will retry." })); }
     };
     const changed = (event: Event) => {
@@ -44,9 +45,9 @@ export function usePDSReadStateStatus() {
     try {
       const status = await pdsReadStateSync(oauth).migrate();
       if (getOAuthSession() === oauth) setSnapshot(previous => ({ ...previous, viewer, status, migrating: false }));
-    } catch {
+    } catch (error) {
       if (getOAuthSession() === oauth) setSnapshot(previous => ({ ...previous, viewer, migrating: false,
-        error: "Migration is not complete. Existing read history remains protected. Sign in again if access was denied, then retry." }));
+        error: readStateErrorMessage(error) ?? "Migration is not complete. Existing read history remains protected. Please retry when the service is available." }));
     }
   }, [getOAuthSession, viewer]);
   return { enabled, ...(snapshot.viewer === viewer ? snapshot : {}), migrate };

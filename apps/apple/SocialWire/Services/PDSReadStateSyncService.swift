@@ -23,6 +23,9 @@ final class PDSReadStateSyncService {
     private var engine: ReadStateSyncEngine?
     private var wakeup: Task<Void, Never>?
     private(set) var pendingCount = 0
+    private(set) var projectionReady = true
+    static let restoringMessage = ReadStateSyncFailure.projectionNotReady.localizedDescription
+    static let scopeConflictMessage = ReadStateSyncFailure.migrationScopeConflict.localizedDescription
     private(set) var statusMessage: String?
     private(set) var authority: PDSReadStateStatus.Authority?
     private(set) var isMigrating = false
@@ -50,7 +53,7 @@ final class PDSReadStateSyncService {
         epoch = UUID()
         wakeup?.cancel(); wakeup = nil
         engine = nil; viewerDid = nil; pendingCount = 0; statusMessage = nil
-        authority = nil; isMigrating = false; requiresReauthentication = false
+        authority = nil; projectionReady = true; isMigrating = false; requiresReauthentication = false
         pendingExactOverrides = [:]
     }
 
@@ -87,7 +90,9 @@ final class PDSReadStateSyncService {
         do {
             let status = try await checkedStatus(viewer, epoch: expected)
             authority = status.authority
-            if !status.projectionReady { statusMessage = "Restoring Read History. Please Try Again Shortly." }
+            projectionReady = status.projectionReady
+            if !projectionReady { statusMessage = Self.restoringMessage }
+            else if statusMessage == Self.restoringMessage { statusMessage = nil }
             if status.authority == .pds {
                 knownPDSViewers.insert(viewer)
                 let engine = try engineForViewer(viewer)
@@ -116,7 +121,7 @@ final class PDSReadStateSyncService {
             try await migrate(viewer: viewer, epoch: expected)
             try await check(viewer, epoch: expected)
             authority = .pds; knownPDSViewers.insert(viewer)
-            requiresReauthentication = false; statusMessage = nil
+            requiresReauthentication = false; statusMessage = projectionReady ? nil : Self.restoringMessage
             if let engine { try await updatePending(engine, viewer: viewer, epoch: expected) }
             await onSynchronized?(viewer)
         } catch {
@@ -169,7 +174,7 @@ final class PDSReadStateSyncService {
             try await check(viewer, epoch: expected)
             try await engine.flush()
             try await updatePending(engine, viewer: viewer, epoch: expected)
-            requiresReauthentication = false; statusMessage = nil
+            requiresReauthentication = false; statusMessage = projectionReady ? nil : Self.restoringMessage
         } catch {
             guard epoch == expected else { return }
             show(error)
@@ -178,7 +183,7 @@ final class PDSReadStateSyncService {
         guard epoch == expected, viewerDid == viewer else { return }
         if previousCount > 0 && pendingCount == 0 { await onSynchronized?(viewer) }
         guard epoch == expected, viewerDid == viewer, pendingCount > 0 else { return }
-        if !requiresReauthentication { statusMessage = "\(pendingCount) Read History Changes Waiting to Sync" }
+        if !requiresReauthentication { statusMessage = projectionReady ? "\(pendingCount) Read History Changes Waiting to Sync" : Self.restoringMessage }
         guard !requiresReauthentication else { return }
         let deadline = await engine.retryAfter ?? Date().addingTimeInterval(2)
         guard epoch == expected else { return }
@@ -196,7 +201,7 @@ final class PDSReadStateSyncService {
         guard isPDSAuthoritative, let engine else { throw ReadStateSyncFailure.conflict }
         try await engine.enqueue(operations, localOverlay: localOverlay)
         try await updatePending(engine, viewer: viewer, epoch: expected)
-        statusMessage = pendingCount == 0 ? nil : "\(pendingCount) Read History Changes Waiting to Sync"
+        statusMessage = projectionReady ? (pendingCount == 0 ? nil : "\(pendingCount) Read History Changes Waiting to Sync") : Self.restoringMessage
         // Return after durable enqueue; the caller can update its UI before network work.
         Task { [weak self] in
             await Task.yield()
@@ -220,6 +225,11 @@ final class PDSReadStateSyncService {
         if case ReadStateSyncFailure.reauthorizationRequired = error {
             requiresReauthentication = true
             statusMessage = "Sign In Again to Sync Public Read History. Pending Changes Remain on This Device."
+        } else if case ReadStateSyncFailure.migrationScopeConflict = error {
+            statusMessage = Self.scopeConflictMessage
+        } else if case ReadStateSyncFailure.projectionNotReady = error {
+            projectionReady = false
+            statusMessage = Self.restoringMessage
         } else { statusMessage = "Read History Sync Pending. \(error.localizedDescription)" }
     }
 
