@@ -55,7 +55,8 @@ public enum WireWorkerHost {
         linkMetadataStore: linkMetadataStore,
         batchSize: config.inboxBatchSize,
         maximumConcurrentEvents: config.inboxConcurrency,
-        sourceScope: config.inboxSourceScope
+        sourceScope: config.inboxSourceScope,
+        deferredRecommendationsEnabled: config.deferredRecommendationsEnabled
       )
     } else {
       inboxProcessor = nil
@@ -176,6 +177,20 @@ public enum WireWorkerHost {
             telemetry: drainTelemetry,
             logger: logger
           )
+        }
+      }
+      if runtimePlan.runsDrain, config.deferredRecommendationsEnabled {
+        group.addTask {
+          defer {
+            logger.info("The Wire component stopped", metadata: ["component": "recommendation-recovery"])
+          }
+          try await WireRecommendationRecoveryRuntime.run(
+            journal: PostgresWireRecommendationJournal(pool: pool, logger: logger),
+            // Intake generations can retire while their logged dependencies remain.
+            sourceScope: config.inboxSourceScope.map {
+              WireInboxSourceScope(environment: $0.environment, sourceGenerations: [])
+            },
+            logger: logger)
         }
       }
       if runtimePlan.runsCleanup, let inboxProcessor {

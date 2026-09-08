@@ -71,11 +71,38 @@ historical generations.
 | `WIRE_INBOX_CLEANUP_BATCH_SIZE` | `5000` | Maximum terminal inbox rows deleted by one cleanup iteration (maximum `20000`) |
 | `WIRE_INBOX_CLEANUP_IDLE_MILLISECONDS` | `1000` | Delay after a cleanup iteration that deletes fewer than one full batch |
 | `WIRE_INBOX_CLEANUP_ENABLED` | `true` | Whether the current non-off role also runs terminal-row cleanup |
+| `WIRE_DEFERRED_RECOMMENDATIONS_ENABLED` | `false` | Hand unresolved recommendations to the logged dependency journal and run independent bounded recovery; enable only after every recommendation consumer runs the journal/fence release |
 | `WIRE_INBOX_SOURCE_GENERATIONS` | unset | Optional comma-separated exact source-generation allowlist applied to drain claims, passive acknowledgements, health queries, and terminal cleanup |
 | `WIRE_POSTGRES_MAX_CONNECTIONS` | `12` | Bounded pool shared by drain, maintenance, ranking, and health work (maximum `64`) |
 | `PORT` | `8080` | Health server port |
 
 Health endpoints are `/health`, `/livez`, `/startupz`, and `/readyz`. Startup and readiness fail closed when PostgreSQL cannot be reached. Database migrations remain owned by the dedicated Database Migrator service.
+
+## Deferred Recommendation Rollout
+
+Apply the recommendation journal migration through Database Migrator first. Deploy
+this worker version to every drain/combined consumer with deferral disabled. All new
+workers record recommendation versions, deletes, and account lifecycle fences even
+while deferral is disabled; unresolved recommendations retain their inbox retry barrier.
+Once every active consumer runs this version, enable
+`WIRE_DEFERRED_RECOMMENDATIONS_ENABLED=true` on the drain lanes. Mixed flag values are
+safe among these new workers because they all maintain the same durable fences.
+
+Deferred events are not counted as applied. Their logged envelopes remain pending until
+the canonical subject exists, a newer version supersedes them, or an ordering conflict
+requires reconciliation. Cleanup removes an expired deferred inbox copy only when its
+logged journal entry exists. Recovery shares the existing connection pool, attempts at
+most 16 entries per five-second poll, backs off failed batches for 30 seconds, and scans
+lost unlogged projections in bounded keyset pages. Separate minute metrics report
+pending/conflict counts (capped at 1,000) and oldest ages, including dependencies in backoff.
+
+Disable deferral to stop new handoffs and recovery while retaining all journal state.
+Do not roll consumers back to a pre-journal binary after enabling deferral without
+quiescing them and reconciling outstanding dependencies: old binaries do not maintain
+delete/account fences. Pending and conflicting journal entries have no automatic expiry;
+resolved envelopes and current fences currently remain retained as well. Establish safe
+replay boundaries before introducing journal compaction, and include journal storage/WAL
+in the cost comparison.
 
 ## Baseline moderation labels
 
