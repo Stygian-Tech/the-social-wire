@@ -57,7 +57,7 @@ final class ATProtoOAuthService: NSObject, ASWebAuthenticationPresentationContex
     // Existing sessions remain usable until the viewer explicitly opts into PDS history.
     static let pdsReadStateScopes: Set<String> = [
         "repo:app.thesocialwire.readState?action=create&action=update",
-        "repo:app.thesocialwire.readStateChunk?action=create&action=update&action=delete",
+        "repo:app.thesocialwire.readStateChunk?action=create&action=update",
     ]
 
     static let requiredFeatureScopes: Set<String> = [
@@ -476,9 +476,27 @@ final class ATProtoOAuthService: NSObject, ASWebAuthenticationPresentationContex
     }
 
     static func hasPDSReadStateScopes(_ rawScope: String?) -> Bool {
+        hasReadStateActions(rawScope, collection: "app.thesocialwire.readState", required: ["create", "update"])
+            && hasReadStateActions(rawScope, collection: "app.thesocialwire.readStateChunk", required: ["create", "update"])
+    }
+
+    /// Cleanup remains optional; lacking delete must not block normal history writes.
+    static func hasPDSReadStateCleanupScopes(_ rawScope: String?) -> Bool {
+        hasPDSReadStateScopes(rawScope)
+            && hasReadStateActions(rawScope, collection: "app.thesocialwire.readStateChunk", required: ["delete"])
+    }
+
+    private static func hasReadStateActions(_ rawScope: String?, collection: String, required: Set<String>) -> Bool {
         guard let rawScope else { return false }
-        let granted = Set(rawScope.split(whereSeparator: { $0.isWhitespace }).map(String.init))
-        return pdsReadStateScopes.isSubset(of: granted)
+        let prefix = "repo:\(collection)?"
+        var actions = Set<String>()
+        for token in rawScope.split(whereSeparator: { $0.isWhitespace }) where token.hasPrefix(prefix) {
+            let parameters = token.dropFirst(prefix.count).split(separator: "&")
+            // Unknown constraints cannot be treated as an unrestricted permission.
+            guard !parameters.isEmpty, parameters.allSatisfy({ $0.hasPrefix("action=") }) else { continue }
+            actions.formUnion(parameters.map { String($0.dropFirst("action=".count)) })
+        }
+        return required.isSubset(of: actions)
     }
 
     static func hasRequiredFeatureScopes(_ rawScope: String?) -> Bool {

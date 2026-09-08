@@ -150,6 +150,59 @@ struct PDSRecordServiceTests {
         service.reset()
     }
 
+    @Test("Confirmed migration keeps PDS authority when optional v2 maintenance fails", arguments: [false, true])
+    func confirmedMigrationSurvivesUpgradeFailure(afterPublication: Bool) async throws {
+        let viewer = "did:plc:confirmed-migration"
+        let suite = "read-state-upgrade-" + UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        let directory = FileManager.default.temporaryDirectory.appending(path: suite)
+        defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: directory) }
+        let auth = ATProtoOAuthService()
+        let xrpc = XRPCClient(auth: auth, resolver: ATProtoResolver())
+        let baseline = ReadStateManifest(generation: "confirmed", lastSequence: 0, head: nil)
+        let transport = ReadStateSyncTransport(readManifest: { .init(manifest: baseline, cid: "v1") },
+            loadProjection: { _ in try ReadStateProjection(operations: [], lastSequence: 0) },
+            putChunk: { _, _ in throw URLError(.notConnectedToInternet) },
+            putManifest: { _, _ in "v2" },
+            confirm: { cid, _ in if cid == "v2" { throw URLError(.notConnectedToInternet) } },
+            putV2Chunk: { key, _ in
+                if !afterPublication { throw URLError(.notConnectedToInternet) }
+                return .init(uri: "at://\(viewer)/\(ReadStateChunk.collection)/\(key)", cid: key)
+            })
+        var confirmed = false
+        var offline = false
+        let service = PDSReadStateSyncService(xrpc: xrpc, gateway: SocialWireGatewayClient(auth: auth), defaults: defaults,
+            currentViewer: { viewer }, statusProvider: { _ in
+                if offline { throw URLError(.notConnectedToInternet) }
+                return confirmed
+                    ? .init(authority: .pds, migrationState: .verified, legacyRevision: 1, manifest: baseline, manifestCid: "v1")
+                    : .init(authority: .appview, migrationState: .notStarted, legacyRevision: 1)
+            }, engineProvider: { did in try ReadStateSyncEngine(viewerDid: did,
+                file: directory.appending(path: "outbox.json"), transport: transport) })
+        #expect(try await !service.ensureAuthority(viewer: viewer))
+        // Models the already-confirmed server result at migration completion;
+        // the same completion helper handles confirmation by another device.
+        confirmed = true
+        try await service.publishReadHistory(viewer: viewer)
+        #expect(service.authority == .pds)
+        #expect(service.isPDSAuthoritative)
+        #expect(service.projectionReady)
+        #expect(service.pendingCount == 0)
+        #expect(service.statusMessage?.contains("Read History Is Published") == true)
+        await service.flush()
+        #expect(service.statusMessage?.contains("Optimization Is Pending") == true)
+        #expect(try await service.ensureAuthority(viewer: viewer))
+        try await service.setExact(viewer: viewer, subjectUris: ["story"], state: .unread, actedAt: "2026-09-08T00:00:00Z")
+        #expect(service.pendingCount == 1)
+        #expect(service.pendingExactOverrides["story"] == .unread)
+        service.reset()
+        offline = true
+        #expect(try await service.ensureAuthority(viewer: viewer))
+        #expect(service.isPDSAuthoritative)
+        #expect(service.pendingCount == 1)
+        service.reset()
+    }
+
     @Test("Native first migration accepts only exact RecordNotFound 400 as an absent manifest")
     func absentManifestTransportResponse() throws {
         let client = XRPCClient(auth: ATProtoOAuthService(), resolver: ATProtoResolver())

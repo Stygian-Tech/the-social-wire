@@ -22,6 +22,7 @@ final class PDSReadStateSyncService {
     private var epoch = UUID()
     private var engine: ReadStateSyncEngine?
     private var wakeup: Task<Void, Never>?
+    private var maintenanceWarning: String?
     private(set) var pendingCount = 0
     private(set) var projectionReady = true
     static let restoringMessage = ReadStateSyncFailure.projectionNotReady.localizedDescription
@@ -52,7 +53,7 @@ final class PDSReadStateSyncService {
     func reset() {
         epoch = UUID()
         wakeup?.cancel(); wakeup = nil
-        engine = nil; viewerDid = nil; pendingCount = 0; statusMessage = nil
+        engine = nil; viewerDid = nil; pendingCount = 0; statusMessage = nil; maintenanceWarning = nil
         authority = nil; projectionReady = true; isMigrating = false; requiresReauthentication = false
         pendingExactOverrides = [:]
     }
@@ -98,7 +99,10 @@ final class PDSReadStateSyncService {
                 let engine = try engineForViewer(viewer)
                 try await engine.discardVerifiedMigration()
                 if status.manifest?.version == 1, await engine.pendingCount == 0 {
-                    try await engine.upgradeToV2()
+                    try await finishConfirmedMigration(status, viewer: viewer, epoch: expected)
+                } else if status.manifest?.version == 2 {
+                    if statusMessage == maintenanceWarning { statusMessage = nil }
+                    maintenanceWarning = nil
                 }
                 try await updatePending(engine, viewer: viewer, epoch: expected)
             }
@@ -124,7 +128,8 @@ final class PDSReadStateSyncService {
             try await migrate(viewer: viewer, epoch: expected)
             try await check(viewer, epoch: expected)
             authority = .pds; knownPDSViewers.insert(viewer)
-            requiresReauthentication = false; statusMessage = projectionReady ? nil : Self.restoringMessage
+            if maintenanceWarning == nil { requiresReauthentication = false }
+            statusMessage = projectionReady ? maintenanceWarning : Self.restoringMessage
             if let engine { try await updatePending(engine, viewer: viewer, epoch: expected) }
             await onSynchronized?(viewer)
         } catch {
@@ -177,7 +182,8 @@ final class PDSReadStateSyncService {
             try await check(viewer, epoch: expected)
             try await engine.flush()
             try await updatePending(engine, viewer: viewer, epoch: expected)
-            requiresReauthentication = false; statusMessage = projectionReady ? nil : Self.restoringMessage
+            if maintenanceWarning == nil { requiresReauthentication = false }
+            statusMessage = projectionReady ? maintenanceWarning : Self.restoringMessage
         } catch {
             guard epoch == expected else { return }
             show(error)
@@ -246,7 +252,10 @@ final class PDSReadStateSyncService {
     private func migrate(viewer: String, epoch expected: UUID) async throws {
         let status = try await checkedStatus(viewer, epoch: expected)
         let engine = try engineForViewer(viewer)
-        if status.authority == .pds { try await engine.discardVerifiedMigration(); return }
+        if status.authority == .pds {
+            try await finishConfirmedMigration(status, viewer: viewer, epoch: expected)
+            return
+        }
         try await xrpc.requireReadStateWriteScopes(viewerDid: viewer)
         try await check(viewer, epoch: expected)
         var rows: [ReadStateLegacyRow] = []
@@ -266,7 +275,10 @@ final class PDSReadStateSyncService {
             if let cursor, !seen.insert(cursor).inserted { throw ReadStateSyncFailure.conflict }
         } while cursor != nil
         let latest = try await checkedStatus(viewer, epoch: expected)
-        if latest.authority == .pds { try await engine.discardVerifiedMigration(); return }
+        if latest.authority == .pds {
+            try await finishConfirmedMigration(latest, viewer: viewer, epoch: expected)
+            return
+        }
         guard latest.legacyRevision == revision else { throw ReadStateSyncFailure.conflict }
         let current: RepoRecord<ReadStateManifest>? = try await xrpc.readStateRecord(viewerDid: viewer,
             collection: ReadStateManifest.collection, rkey: "self")
@@ -277,8 +289,35 @@ final class PDSReadStateSyncService {
             replacingManifestCid: current?.cid)
         try await engine.flush()
         let confirmed = try await checkedStatus(viewer, epoch: expected)
+        try await finishConfirmedMigration(confirmed, viewer: viewer, epoch: expected)
+    }
+
+    /// Server confirmation makes authority durable before optional protocol maintenance.
+    /// A failed upgrade must never send later actions back through legacy writers.
+    private func finishConfirmedMigration(_ confirmed: PDSReadStateStatus, viewer: String, epoch expected: UUID) async throws {
+        try await check(viewer, epoch: expected)
         guard confirmed.authority == .pds else { throw ReadStateSyncFailure.conflict }
-        try await engine.upgradeToV2()
+        authority = .pds
+        knownPDSViewers.insert(viewer)
+        projectionReady = confirmed.projectionReady
+        let engine = try engineForViewer(viewer)
+        try await engine.discardVerifiedMigration()
+        guard confirmed.manifest?.version == 1, await engine.pendingCount == 0 else { return }
+        do {
+            try await engine.upgradeToV2()
+            try await check(viewer, epoch: expected)
+            if statusMessage == maintenanceWarning { statusMessage = nil }
+            maintenanceWarning = nil
+            requiresReauthentication = false
+        } catch {
+            try await check(viewer, epoch: expected)
+            show(error)
+            maintenanceWarning = "Read History Is Published. History Optimization Is Pending."
+            if requiresReauthentication {
+                maintenanceWarning = "Read History Is Published. Sign In Again to Finish History Optimization."
+            }
+            statusMessage = projectionReady ? maintenanceWarning : Self.restoringMessage
+        }
     }
 
     private func engineForViewer(_ viewer: String) throws -> ReadStateSyncEngine {

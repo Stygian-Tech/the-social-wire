@@ -54,6 +54,20 @@ struct ATProtoOAuthServiceTests {
         #expect(ATProtoOAuthService.hasRequiredFeatureScopes(createOnlyChunk))
     }
 
+    @Test("Optional cleanup permission never blocks ordinary PDS history writes")
+    func cleanupPermissionIsIndependentOfHistoryWrites() {
+        let writeOnly = "repo:app.thesocialwire.readState?action=create&action=update repo:app.thesocialwire.readStateChunk?action=create&action=update"
+        #expect(ATProtoOAuthService.hasPDSReadStateScopes(writeOnly))
+        #expect(!ATProtoOAuthService.hasPDSReadStateCleanupScopes(writeOnly))
+        #expect(ATProtoOAuthService.hasPDSReadStateScopes(ATProtoOAuthService.scopes))
+        #expect(ATProtoOAuthService.hasPDSReadStateCleanupScopes(ATProtoOAuthService.scopes))
+        #expect(!ATProtoOAuthService.hasPDSReadStateCleanupScopes(nil))
+        let reordered = "repo:app.thesocialwire.readState?action=update&action=create repo:app.thesocialwire.readStateChunk?action=delete&action=update&action=create"
+        #expect(ATProtoOAuthService.hasPDSReadStateScopes(reordered))
+        #expect(ATProtoOAuthService.hasPDSReadStateCleanupScopes(reordered))
+        #expect(!ATProtoOAuthService.hasPDSReadStateScopes(writeOnly + "&unknownConstraint=other"))
+    }
+
     @Test("universal Apple scopes cover parity actions and trigger old-session reauthorization")
     func universalParityScopes() {
         let actual = Set(ATProtoOAuthService.scopes.split(separator: " ").map(String.init))
