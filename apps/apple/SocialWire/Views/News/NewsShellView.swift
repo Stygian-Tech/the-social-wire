@@ -166,7 +166,7 @@ private struct NewsRouteDestination: View {
                 ContentUnavailableView("Semble Card Unavailable", systemImage: "square.stack.3d.up.slash")
             }
         case .profile:
-            ProfileView()
+            ProfileView(settingsRoute: .settings)
         case .settings:
             SettingsView(showsDoneButton: false)
         }

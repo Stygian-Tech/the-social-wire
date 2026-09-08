@@ -86,6 +86,7 @@ struct NewsSceneModelTests {
             let model = NewsSceneModel(defaults: defaults)
             model.updateContext(viewerDID: "did:plc:alice", availableTabs: NewsTab.allCases)
             model.select(tab, availableTabs: NewsTab.allCases)
+            model.navigate(to: .profile, in: tab)
             model.navigate(to: .settings, in: tab)
 
             model.updateContext(
@@ -94,6 +95,7 @@ struct NewsSceneModelTests {
             )
             #expect(model.selectedTab == .library)
             #expect(model.path(for: .library).last == .settings)
+            #expect(model.path(for: tab) == [.profile, .settings])
         }
     }
 
