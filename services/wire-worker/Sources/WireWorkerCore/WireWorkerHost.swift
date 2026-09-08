@@ -62,6 +62,13 @@ public enum WireWorkerHost {
     } else {
       inboxProcessor = nil
     }
+    let publicationRecovery: PostgresWirePublicationSignalRecovery?
+    if runtimePlan.runsDrain, let actorSecret = config.actorHMACSecret, let scope = config.inboxSourceScope {
+      publicationRecovery = try PostgresWirePublicationSignalRecovery(
+        pool: pool, logger: logger, actorSecret: actorSecret, scope: scope)
+    } else {
+      publicationRecovery = nil
+    }
     let drainTelemetry =
       runtimePlan.runsDrain
       ? WireInboxDrainTelemetryState(startedAt: Date()) : nil
@@ -157,6 +164,11 @@ public enum WireWorkerHost {
         }
       }
       if runtimePlan.runsDrain, let inboxProcessor {
+        if let publicationRecovery {
+          group.addTask {
+            try await WirePublicationSignalRecoveryRuntime.run(recovery: publicationRecovery, logger: logger)
+          }
+        }
         group.addTask {
           defer { logger.info("The Wire component stopped", metadata: ["component": "drain"]) }
           try await WireInboxRepositoryDrainRuntime.run(

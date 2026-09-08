@@ -15,6 +15,69 @@ import WireCore
   )
 )
 struct WirePostgresServingIntegrationTests {
+  @Test("fresh recovery generations remain degraded until archive replay completes")
+  func recoveryBaselineDoesNotClaimCompleteHistory() async throws {
+    guard let url = ProcessInfo.processInfo.environment["WIRE_TEST_DATABASE_URL"] else { return }
+    let logger = Logger(label: "wire-appview-postgres.recovery-integration")
+    var configuration = try makePostgresConfig(from: url, logger: logger)
+    configuration.options.maximumConnections = 2
+    let pool = PostgresClient(configuration: configuration, backgroundLogger: logger)
+    let runTask = Task { await pool.run() }
+    await Task.yield()
+    defer { runTask.cancel() }
+    let source = UUID().uuidString.lowercased()
+    let generation = UUID()
+    let now = Date()
+    let key = "url:recovery-\(source)"
+    let labelSource = "did:example:labeler:\(source)"
+    do {
+      try await setBaselineLabelState(sourceDID: labelSource, successfulAt: now, pool: pool, logger: logger)
+      try await pool.query(
+        """
+        INSERT INTO wire_items
+          (canonical_key, canonical_url, source_domain, source_name, title, language_code,
+           provenance, first_seen_at, last_seen_at, source_confidence, eligible, expires_at)
+        VALUES (\(key), \("https://example.com/\(source)"), 'example.com', 'Example',
+          'Recovered Story', 'und', '["standard_site"]'::jsonb, \(now), \(now), 0.9, TRUE,
+          \(now.addingTimeInterval(86_400)))
+        """, logger: logger)
+      try await insertGeneration(generation, keys: [key], generatedAt: now, active: true, pool: pool, logger: logger)
+      let store = try PostgresWireFeedStore(pool: pool, logger: logger,
+        cursorSecret: String(repeating: "c", count: 32), mode: .visible,
+        moderationCache: WireViewerModerationCache())
+      let baseline = try await store.getFeed(cursor: nil, limit: 10, language: nil, viewerDid: nil, now: now)
+      #expect(!baseline.degraded)
+      try await pool.query(
+        """
+        INSERT INTO wire_publication_signal_recovery_jobs
+          (environment, source_generation, inbox_initialized_at, maximum_source_seq, completed_at)
+        VALUES ('test', \(source), \(now), 100, \(now))
+        """, logger: logger)
+      let recovering = try await store.getFeed(cursor: nil, limit: 10, language: nil, viewerDid: nil, now: now)
+      #expect(recovering.source == .ranked)
+      #expect(recovering.degraded)
+      #expect(recovering.items.map(\.itemID) == [key])
+      // A newer completed recovery supersedes an abandoned epoch; retaining that
+      // older audit record must not leave this source permanently degraded.
+      try await pool.query(
+        """
+        INSERT INTO wire_publication_signal_recovery_jobs
+          (environment, source_generation, inbox_initialized_at, maximum_source_seq,
+           completed_at, replay_completed_at)
+        VALUES ('test', \(source), \(now.addingTimeInterval(1)), 200, \(now), \(now))
+        """, logger: logger)
+      let recovered = try await store.getFeed(cursor: nil, limit: 10, language: nil, viewerDid: nil, now: now)
+      #expect(!recovered.degraded)
+    } catch {
+      Issue.record("PostgreSQL recovery integration failed: \(String(reflecting: error))")
+    }
+    try await pool.query("DELETE FROM wire_publication_signal_recovery_jobs WHERE source_generation = \(source)", logger: logger)
+    try await pool.query("DELETE FROM wire_feed_state WHERE active_generation_id = \(generation)", logger: logger)
+    try await pool.query("DELETE FROM wire_rank_generations WHERE generation_id = \(generation)", logger: logger)
+    try await pool.query("DELETE FROM wire_items WHERE canonical_key = \(key)", logger: logger)
+    try await pool.query("DELETE FROM wire_label_refresh_state WHERE source_did = \(labelSource)", logger: logger)
+  }
+
   @Test("an expired active generation remains available during an ingestion outage")
   func expiredActiveGenerationContinuity() async throws {
     guard let url = ProcessInfo.processInfo.environment["WIRE_TEST_DATABASE_URL"] else { return }
