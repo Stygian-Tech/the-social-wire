@@ -11,6 +11,7 @@ actor PostgresWireFeedStore: WireFeedStore {
     let language: String
     let generatedAt: Date
     let expiresAt: Date
+    let recovering: Bool
   }
 
   private let pool: PostgresClient
@@ -140,7 +141,7 @@ actor PostgresWireFeedStore: WireFeedStore {
       language: generation.language,
       cursor: nextCursor,
       source: age > Self.generationFreshnessInterval ? .staleGeneration : .ranked,
-      degraded: age > Self.generationFreshnessInterval,
+      degraded: generation.recovering || age > Self.generationFreshnessInterval,
       items: pageItems
     )
   }
@@ -353,7 +354,7 @@ actor PostgresWireFeedStore: WireFeedStore {
       language: generation.language,
       cursor: cursor,
       source: age > Self.generationFreshnessInterval ? .staleGeneration : .ranked,
-      degraded: age > Self.generationFreshnessInterval,
+      degraded: generation.recovering || age > Self.generationFreshnessInterval,
       leadStories: leads,
       publicationPanels: panels,
       storyRails: rails,
@@ -445,7 +446,8 @@ actor PostgresWireFeedStore: WireFeedStore {
     _ = now
     let rows = try await pool.query(
       """
-      SELECT g.generation_id, g.language_bucket, g.generated_at, g.expires_at
+      SELECT g.generation_id, g.language_bucket, g.generated_at, g.expires_at,
+             (SELECT recovering FROM wire_publication_recovery_health)
       FROM wire_feed_state state
       JOIN wire_rank_generations g ON g.generation_id = state.active_generation_id
       WHERE state.feed_key = 'wire' AND state.language_bucket = \(language)
@@ -455,8 +457,9 @@ actor PostgresWireFeedStore: WireFeedStore {
       logger: logger
     )
     for try await row in rows {
-      let value = try row.decode((UUID, String, Date, Date).self)
-      return Generation(id: value.0, language: value.1, generatedAt: value.2, expiresAt: value.3)
+      let value = try row.decode((UUID, String, Date, Date, Bool).self)
+      return Generation(id: value.0, language: value.1, generatedAt: value.2, expiresAt: value.3,
+        recovering: value.4)
     }
     return nil
   }
@@ -464,7 +467,8 @@ actor PostgresWireFeedStore: WireFeedStore {
   private func retainedGeneration(id: UUID, now: Date) async throws -> Generation? {
     let rows = try await pool.query(
       """
-      SELECT generation_id, language_bucket, generated_at, expires_at
+      SELECT generation_id, language_bucket, generated_at, expires_at,
+             (SELECT recovering FROM wire_publication_recovery_health)
       FROM wire_rank_generations
       WHERE generation_id = \(id) AND status IN ('committed', 'superseded')
         AND expires_at > \(now)
@@ -473,8 +477,9 @@ actor PostgresWireFeedStore: WireFeedStore {
       logger: logger
     )
     for try await row in rows {
-      let value = try row.decode((UUID, String, Date, Date).self)
-      return Generation(id: value.0, language: value.1, generatedAt: value.2, expiresAt: value.3)
+      let value = try row.decode((UUID, String, Date, Date, Bool).self)
+      return Generation(id: value.0, language: value.1, generatedAt: value.2, expiresAt: value.3,
+        recovering: value.4)
     }
     return nil
   }
@@ -484,7 +489,8 @@ actor PostgresWireFeedStore: WireFeedStore {
     // although callers expose it as stale/degraded based on generatedAt.
     let rows = try await pool.query(
       """
-      SELECT g.generation_id, g.language_bucket, g.generated_at, g.expires_at
+      SELECT g.generation_id, g.language_bucket, g.generated_at, g.expires_at,
+             (SELECT recovering FROM wire_publication_recovery_health)
       FROM wire_feed_state state
       JOIN wire_rank_generations g ON g.generation_id = state.active_generation_id
       WHERE state.feed_key = 'wire' AND g.status = 'committed'
@@ -508,8 +514,9 @@ actor PostgresWireFeedStore: WireFeedStore {
     )
     var result: [Generation] = []
     for try await row in rows {
-      let value = try row.decode((UUID, String, Date, Date).self)
-      result.append(Generation(id: value.0, language: value.1, generatedAt: value.2, expiresAt: value.3))
+      let value = try row.decode((UUID, String, Date, Date, Bool).self)
+      result.append(Generation(id: value.0, language: value.1, generatedAt: value.2, expiresAt: value.3,
+        recovering: value.4))
     }
     return result
   }

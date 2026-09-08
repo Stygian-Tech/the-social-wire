@@ -497,6 +497,8 @@ jobs:
           skip-verify-signature: true
       - name: Test The Wire Corpus Edge
         working-directory: services/wire-corpus-edge
+        env:
+          WIRE_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/socialwire_wire_corpus_test?sslmode=disable
         run: swift test
       - name: Build The Wire Corpus Edge production image
         run: docker build --file services/wire-corpus-edge/Dockerfile --tag the-social-wire-wire-corpus-edge:test .

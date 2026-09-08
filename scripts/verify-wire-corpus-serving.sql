@@ -67,8 +67,9 @@ SET LOCAL ROLE wire_corpus_edge_contract_test;
 
 SELECT contract_version FROM wire_serving.contract;
 SELECT has_current_snapshot, oldest_successful_at FROM wire_serving.label_health;
-SELECT generation_id, language_bucket, generated_at, expires_at
+SELECT generation_id, language_bucket, generated_at, expires_at, recovering
 FROM wire_serving.feed_state LIMIT 1;
+SELECT generation_id, recovering FROM wire_serving.generations LIMIT 1;
 SELECT position, canonical_key, reason_codes
 FROM wire_serving.ranked_items LIMIT 1;
 SELECT canonical_key, canonical_url, author_key
