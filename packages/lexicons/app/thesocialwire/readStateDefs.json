@@ -136,6 +136,126 @@
         }
       },
       "description": "Exact age selection audit metadata. Reference date is YYYY-MM-DD in the IANA timezone; cutoff is resolved UTC. Matching uses exact subject IDs, not recomputed calendar dates."
+    },
+    "receipt": {
+      "type": "object",
+      "description": "A devices chunk requires deviceId, committedCounter and prefixHash only. A legacyReceipts chunk requires actionId, originalSequence and originalIntentHash only. Version-aware clients and projectors enforce the complete disjoint shape. Receipts never execute read actions.",
+      "properties": {
+        "deviceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "committedCounter": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "prefixHash": {
+          "type": "string",
+          "minLength": 64,
+          "maxLength": 64
+        },
+        "actionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "originalSequence": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "originalIntentHash": {
+          "type": "string",
+          "minLength": 64,
+          "maxLength": 64
+        }
+      }
+    },
+    "fragment": {
+      "type": "object",
+      "required": [
+        "actionId",
+        "sequence",
+        "state",
+        "actedAt",
+        "selection",
+        "fragment",
+        "intentHash"
+      ],
+      "properties": {
+        "actionId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "state": {
+          "type": "string",
+          "maxLength": 6,
+          "enum": [
+            "read",
+            "unread"
+          ]
+        },
+        "actedAt": {
+          "type": "string",
+          "maxLength": 2048,
+          "format": "datetime"
+        },
+        "selection": {
+          "type": "string",
+          "maxLength": 10,
+          "enum": [
+            "boundaries",
+            "exact"
+          ]
+        },
+        "boundaries": {
+          "type": "array",
+          "items": {
+            "type": "ref",
+            "ref": "#boundary"
+          },
+          "maxLength": 128
+        },
+        "subjectUris": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 2048
+          },
+          "maxLength": 256
+        },
+        "calendar": {
+          "type": "ref",
+          "ref": "#calendar"
+        },
+        "fragment": {
+          "type": "boolean",
+          "const": true
+        },
+        "intentHash": {
+          "type": "string",
+          "minLength": 64,
+          "maxLength": 64
+        },
+        "deviceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "deviceCounter": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      },
+      "description": "Surviving semantic fragment with its original whole-intent digest. Device identity/counter must appear together; otherwise a matching finite legacy receipt is required."
     }
   }
 }

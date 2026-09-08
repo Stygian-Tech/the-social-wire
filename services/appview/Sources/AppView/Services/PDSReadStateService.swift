@@ -10,18 +10,19 @@ struct PDSReadStateService: Sendable {
   let repo: ATProtoAuthenticatedRepoClient
   let publicationService: PublicationProjectionService
   let projectionCache: (any AppViewProjectionCacheStore)?
-  private let verifiedChunks = ReadStateVerifiedChunkCache()
+  private let verifiedChunks = PDSReadStateVerifiedRecordCache()
 
   func confirm(viewerDid: String, request: PDSReadStateConfirmRequest) async throws -> PDSReadStateStatus {
     guard !request.manifestCid.isEmpty, request.manifestCid.utf8.count <= 256 else {
       throw HTTPError(.badRequest, message: "manifestCid is required")
     }
     guard let record = try await repo.getRecordWithMetadata(auth: nil, repo: viewerDid,
-      collection: ReadStateManifest.collection, rkey: "self"), record.cid == request.manifestCid else {
+      collection: ReadStateManifest.collection, rkey: "self"), record.cid == request.manifestCid,
+      record.uri == "at://\(viewerDid)/\(ReadStateManifest.collection)/self" else {
       throw HTTPError(.conflict, message: "Read-state manifest changed; refresh and retry")
     }
     let manifest: ReadStateManifest = try Self.decode(record.value, cid: request.manifestCid)
-    let projection = try await ReadStateGenerationLoader.load(manifest: manifest, viewerDid: viewerDid) { reference in
+    let projection = try await ReadStateGenerationLoader.loadRecords(manifest: manifest, viewerDid: viewerDid) { reference in
       try ReadStateValidation.validate(reference, viewerDid: viewerDid)
       if let cached = await verifiedChunks.value(for: reference) { return cached }
       let key = String(reference.uri.split(separator: "/").last ?? "")
@@ -30,9 +31,9 @@ struct PDSReadStateService: Sendable {
         chunkRecord.cid == reference.cid, chunkRecord.uri == reference.uri else {
         throw ReadStateError.incompleteGeneration
       }
-      let chunk: ReadStateChunk = try Self.decode(chunkRecord.value, cid: reference.cid)
-      try await verifiedChunks.insertVerified(chunk, for: reference)
-      return chunk
+      let data = try Self.recordData(chunkRecord.value, cid: reference.cid)
+      try await verifiedChunks.insert(data, for: reference)
+      return data
     }
     // A newer manifest may have committed while the chain was being loaded.
     guard let current = try await repo.getRecordWithMetadata(auth: nil, repo: viewerDid,
@@ -136,9 +137,13 @@ struct PDSReadStateService: Sendable {
   }
 
   private static func decode<T: Decodable>(_ record: PdsRecordJSON, cid: String) throws -> T {
+    try JSONDecoder().decode(T.self, from: recordData(record, cid: cid))
+  }
+
+  private static func recordData(_ record: PdsRecordJSON, cid: String) throws -> Data {
     let data = try JSONSerialization.data(withJSONObject: record.values, options: [.withoutEscapingSlashes])
     guard data.count <= ReadStateValidation.maximumRecordBytes else { throw ReadStateError.sizeLimit }
     try ReadStateRecordCID.verify(json: data, cid: cid)
-    return try JSONDecoder().decode(T.self, from: data)
+    return data
   }
 }

@@ -5,17 +5,17 @@
     "main": {
       "type": "record",
       "key": "any",
-      "description": "Public immutable read-history chunk, at most 64 KiB JSON application payload. Ignored until reachable from the current manifest. Previous links may reuse older chunks; readers verify every CID and fail closed on missing chunks.",
+      "description": "Public immutable chunk, at most64KiB. V1 requires operations. V2 requires kind with exactly fragments for state or receipts for devices/legacyReceipts. Applications enforce the complete version/kind shape and all roots before publication; unreferenced chunks are ignored.",
       "record": {
         "type": "object",
         "required": [
-          "version",
-          "operations"
+          "version"
         ],
         "properties": {
           "version": {
             "type": "integer",
-            "const": 1
+            "minimum": 1,
+            "maximum": 2
           },
           "operations": {
             "type": "array",
@@ -28,6 +28,31 @@
           "previous": {
             "type": "ref",
             "ref": "com.atproto.repo.strongRef"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "state",
+              "devices",
+              "legacyReceipts"
+            ],
+            "maxLength": 14
+          },
+          "fragments": {
+            "type": "array",
+            "maxLength": 128,
+            "items": {
+              "type": "ref",
+              "ref": "app.thesocialwire.readStateDefs#fragment"
+            }
+          },
+          "receipts": {
+            "type": "array",
+            "maxLength": 128,
+            "items": {
+              "type": "ref",
+              "ref": "app.thesocialwire.readStateDefs#receipt"
+            }
           }
         }
       }

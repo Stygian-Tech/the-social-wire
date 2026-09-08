@@ -97,6 +97,9 @@ final class PDSReadStateSyncService {
                 knownPDSViewers.insert(viewer)
                 let engine = try engineForViewer(viewer)
                 try await engine.discardVerifiedMigration()
+                if status.manifest?.version == 1, await engine.pendingCount == 0 {
+                    try await engine.upgradeToV2()
+                }
                 try await updatePending(engine, viewer: viewer, epoch: expected)
             }
         } catch SocialWireError.appViewUnavailable {
@@ -275,6 +278,7 @@ final class PDSReadStateSyncService {
         try await engine.flush()
         let confirmed = try await checkedStatus(viewer, epoch: expected)
         guard confirmed.authority == .pds else { throw ReadStateSyncFailure.conflict }
+        try await engine.upgradeToV2()
     }
 
     private func engineForViewer(_ viewer: String) throws -> ReadStateSyncEngine {
@@ -303,12 +307,15 @@ final class PDSReadStateSyncService {
                 return record.flatMap { record in record.cid.map { .init(manifest: record.value, cid: $0) } }
             }, loadProjection: { manifest in
                 try await verify()
-                return try await ReadStateGenerationLoader.load(manifest: manifest, viewerDid: viewer) { reference in
+                return try await ReadStateGenerationLoader.loadRecords(manifest: manifest, viewerDid: viewer) { reference in
                     let key = String(reference.uri.split(separator: "/").last ?? "")
-                    let record: RepoRecord<ReadStateChunk>? = try await xrpc.readStateRecord(viewerDid: viewer,
+                    let record: RepoRecord<ReadStateJSONValue>? = try await xrpc.readStateRecord(viewerDid: viewer,
                         collection: ReadStateChunk.collection, rkey: key, cid: reference.cid)
+                    try await verify()
                     guard let record else { throw ReadStateError.incompleteGeneration }
-                    return record.value
+                    let encoder = JSONEncoder()
+                    encoder.outputFormatting = [.withoutEscapingSlashes]
+                    return try encoder.encode(record.value)
                 }
             }, putChunk: { key, chunk in
                 try await verify()
@@ -330,6 +337,18 @@ final class PDSReadStateSyncService {
                 let _: PDSReadStateStatus = try await gateway.pdsReadStateRequest("confirmReadState",
                     body: JSONEncoder().encode(ReadStateConfirmInput(manifestCid: cid, expectedLegacyRevision: revision)), expectedViewer: viewer)
                 try await verify()
+            }, putV2Chunk: { key, chunk in
+                try await verify()
+                do {
+                    return try await xrpc.putReadStateRecord(viewerDid: viewer, collection: ReadStateChunk.collection,
+                        rkey: key, record: chunk, expectedCid: nil)
+                } catch ReadStateSyncFailure.conflict {
+                    let old: RepoRecord<ReadStateV2Chunk>? = try await xrpc.readStateRecord(viewerDid: viewer,
+                        collection: ReadStateChunk.collection, rkey: key)
+                    try await verify()
+                    guard let old, old.value == chunk, let cid = old.cid else { throw ReadStateSyncFailure.conflict }
+                    return .init(uri: old.uri, cid: cid)
+                }
             })
         let engine = try ReadStateSyncEngine(viewerDid: viewer, file: directory.appending(path: hash + ".json"), transport: transport)
         self.engine = engine

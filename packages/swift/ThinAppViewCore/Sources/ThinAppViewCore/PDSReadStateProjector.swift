@@ -6,10 +6,10 @@ struct PDSReadStateProjector: Sendable {
   typealias FetchRecord = @Sendable (_ viewerDid: String, _ collection: String, _ key: String, _ cid: String?) async throws -> PDSReadStateFetchedRecord
   let store: any PDSReadStateStoring
   let fetchRecord: FetchRecord
-  let cache: ReadStateVerifiedChunkCache
+  let cache: PDSReadStateVerifiedRecordCache
 
   init(store: any PDSReadStateStoring, fetchRecord: @escaping FetchRecord,
-       cache: ReadStateVerifiedChunkCache = ReadStateVerifiedChunkCache()) {
+       cache: PDSReadStateVerifiedRecordCache = PDSReadStateVerifiedRecordCache()) {
     self.store = store
     self.fetchRecord = fetchRecord
     self.cache = cache
@@ -21,15 +21,14 @@ struct PDSReadStateProjector: Sendable {
     let record = try await fetchRecord(viewerDid, ReadStateManifest.collection, "self", nil)
     let manifest: ReadStateManifest = try record.decode(viewerDid: viewerDid,
       collection: ReadStateManifest.collection, key: "self")
-    let projection = try await ReadStateGenerationLoader.load(manifest: manifest, viewerDid: viewerDid) { reference in
+    let projection = try await ReadStateGenerationLoader.loadRecords(manifest: manifest, viewerDid: viewerDid) { reference in
       try ReadStateValidation.validate(reference, viewerDid: viewerDid)
       if let cached = await cache.value(for: reference) { return cached }
       let key = String(reference.uri.split(separator: "/").last ?? "")
       let record = try await fetchRecord(viewerDid, ReadStateChunk.collection, key, reference.cid)
-      guard record.cid == reference.cid else { throw ReadStateError.invalidReference }
-      let chunk: ReadStateChunk = try record.decode(viewerDid: viewerDid, collection: ReadStateChunk.collection, key: key)
-      try await cache.insertVerified(chunk, for: reference)
-      return chunk
+      guard record.cid == reference.cid, record.uri == reference.uri else { throw ReadStateError.invalidReference }
+      try await cache.insert(record.json, for: reference)
+      return record.json
     }
     let current = try await fetchRecord(viewerDid, ReadStateManifest.collection, "self", nil)
     guard current.cid == record.cid else { throw PDSReadStateStorageError.staleGeneration }

@@ -36,45 +36,56 @@ extension PostgresThinAppViewStore: PDSReadStateStoring {
     projection: ReadStateProjection, expectedLegacyRevision: Int64?
   ) async throws -> PDSReadStateStatus {
     try ReadStateValidation.validate(manifest, viewerDid: viewerDid)
-    guard !manifestCid.isEmpty, projection.lastSequence == manifest.lastSequence else {
+    guard !manifestCid.isEmpty, projection.lastSequence == manifest.lastSequence,
+      projection.protocolVersion == manifest.version else {
       throw ReadStateError.incompleteGeneration
     }
     let manifestJSON = String(decoding: try JSONEncoder().encode(manifest), as: UTF8.self)
     return try await pdsReadStateTransaction { connection in
       let status = try await lockedPDSStatus(viewerDid: viewerDid, on: connection)
       if status.authority == .appview {
+        // Prove the full legacy export before allowing semantic compaction.
+        guard manifest.version == 1 else { throw PDSReadStateStorageError.parityMismatch }
         guard expectedLegacyRevision == status.legacyRevision else {
           throw PDSReadStateStorageError.revisionChanged
         }
         try await verifyLegacyPDSParity(viewerDid: viewerDid, projection: projection, on: connection)
       } else {
-        guard status.manifestCid == manifestCid
-          || manifest.lastSequence > (status.manifest?.lastSequence ?? 0) else {
-          throw PDSReadStateStorageError.staleGeneration
+        guard let previous = status.manifest, let previousCID = status.manifestCid else {
+          throw ReadStateError.incompleteGeneration
         }
+        try PDSReadStateManifestTransition.validate(previous: previous, previousCID: previousCID,
+          candidate: manifest, candidateCID: manifestCid)
       }
       // An immutable ancestor proves ordinary appends cannot change old actions.
       // Only new actions cross the database connection. Repacking/rebuilds diff
       // a complete temporary projection and suppress unchanged persistent writes.
       let previousSequence = status.manifest?.lastSequence ?? 0
       let incremental = status.manifestCid != manifestCid && status.authority == .pds && status.projectionReady
-        && status.manifest?.head.map { projection.sourceReferences.contains($0) } == true
+        && status.manifest?.effectiveStateHead.map { projection.sourceReferences.contains($0) } == true
       let operations = incremental
         ? projection.operations.filter { $0.sequence > previousSequence } : projection.operations
-      try await persistPDSProjection(viewerDid: viewerDid, operations: operations,
-        incremental: incremental, on: connection)
+      let unchangedState = status.projectionReady && status.authority == .pds
+        && PDSReadStateManifestTransition.isMaintenance(previous: status.manifest, candidate: manifest)
+      if !unchangedState {
+        try await persistPDSProjection(viewerDid: viewerDid, operations: operations,
+          incremental: incremental, on: connection)
+      }
       try Task.checkCancellation()
       try await connection.query(
         """
         UPDATE appview_pds_read_state_authority SET manifest = \(manifestJSON)::jsonb,
           manifest_cid = \(manifestCid), last_sequence = \(manifest.lastSequence),
+          manifest_revision = \(manifest.effectiveRevision),
           activated_at = COALESCE(activated_at, NOW()), updated_at = NOW(), projection_ready = TRUE,
           last_accessed_at = CASE WHEN manifest_cid IS NULL THEN NOW() ELSE last_accessed_at END
         WHERE viewer_did = \(viewerDid)
           AND (manifest_cid IS DISTINCT FROM \(manifestCid) OR manifest IS DISTINCT FROM \(manifestJSON)::jsonb OR NOT projection_ready)
         """, logger: logger)
-      try await connection.query(
-        "UPDATE appview_unread_counters SET dirty = TRUE WHERE viewer_did = \(viewerDid) AND dirty = FALSE", logger: logger)
+      if !unchangedState {
+        try await connection.query(
+          "UPDATE appview_unread_counters SET dirty = TRUE WHERE viewer_did = \(viewerDid) AND dirty = FALSE", logger: logger)
+      }
       return PDSReadStateStatus(authority: .pds, migrationState: .verified,
         legacyRevision: status.legacyRevision, manifest: manifest, manifestCid: manifestCid)
     }

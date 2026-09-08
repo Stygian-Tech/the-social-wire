@@ -5,7 +5,7 @@
     "main": {
       "type": "record",
       "key": "literal:self",
-      "description": "Public canonical read/unread state manifest. Publish with compare-and-swap only after every immutable chunk is stored. Never activate an incomplete generation.",
+      "description": "Public canonical read/unread manifest. V1 uses head; V2 requires revision and compactionVersion=1 with separate state/device/legacy-receipt roots. Every root must be fully CID-verified before atomic activation. Maintenance revisions never invent user-action sequences.",
       "record": {
         "type": "object",
         "required": [
@@ -16,7 +16,8 @@
         "properties": {
           "version": {
             "type": "integer",
-            "const": 1
+            "minimum": 1,
+            "maximum": 2
           },
           "generation": {
             "type": "string",
@@ -28,6 +29,27 @@
             "maximum": 9007199254740991
           },
           "head": {
+            "type": "ref",
+            "ref": "com.atproto.repo.strongRef"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "compactionVersion": {
+            "type": "integer",
+            "const": 1
+          },
+          "stateHead": {
+            "type": "ref",
+            "ref": "com.atproto.repo.strongRef"
+          },
+          "devicesHead": {
+            "type": "ref",
+            "ref": "com.atproto.repo.strongRef"
+          },
+          "legacyReceiptsHead": {
             "type": "ref",
             "ref": "com.atproto.repo.strongRef"
           }
