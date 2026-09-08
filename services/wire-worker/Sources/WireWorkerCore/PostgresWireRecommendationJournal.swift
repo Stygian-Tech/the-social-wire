@@ -8,11 +8,13 @@ import WireCore
 struct PostgresWireRecommendationJournal: Sendable {
   let pool: PostgresClient
   let logger: Logger
+  let dependencyVerificationEnabled: Bool
   private let recoveryCursor = WireRecommendationRecoveryCursor()
 
-  init(pool: PostgresClient, logger: Logger) {
+  init(pool: PostgresClient, logger: Logger, dependencyVerificationEnabled: Bool = false) {
     self.pool = pool
     self.logger = logger
+    self.dependencyVerificationEnabled = dependencyVerificationEnabled
   }
 
   private enum JournalError: Error { case malformedRecommendation }
@@ -33,6 +35,7 @@ struct PostgresWireRecommendationJournal: Sendable {
     let subject: String?
     let status: String
     let attempts: Int
+    let requiresDependencyVerification: Bool
 
     var eventKey: String { "\(environment):\(generation):\(sequence)" }
     var transportKey: String { "transport:\(environment):\(host):\(cursor):\(sequence)" }
@@ -92,11 +95,11 @@ struct PostgresWireRecommendationJournal: Sendable {
         INSERT INTO wire_recommendation_journal
           (environment, source_generation, seq, source_host, cursor_kind, repo_did,
            source_uri, operation, repo_rev, record_cid, payload, event_time,
-           actor_key_hash, subject_uri, next_attempt_at, created_at, updated_at)
+           actor_key_hash, subject_uri, next_attempt_at, created_at, updated_at, dependency_verification_required)
         VALUES (\(event.environment), \(event.sourceGeneration), \(event.sequence),
                 \(event.sourceHost), \(event.cursorKind), \(event.repoDID), \(uri),
                 \(operation), \(version.0), \(version.1), \(event.payloadJSON)::jsonb,
-                \(event.eventTime), \(actor), \(subject), \(asOf), \(asOf), \(asOf))
+                \(event.eventTime), \(actor), \(subject), \(asOf), \(asOf), \(asOf), FALSE)
         ON CONFLICT (environment, source_generation, seq) DO NOTHING
         """, logger: logger)
       guard let entry = try await read(
@@ -346,17 +349,17 @@ struct PostgresWireRecommendationJournal: Sendable {
       """
       SELECT environment, source_generation, seq, source_host, cursor_kind, repo_did,
              source_uri, operation, repo_rev, record_cid, event_time, actor_key_hash,
-             subject_uri, status, attempt_count
+             subject_uri, status, attempt_count, dependency_verification_required
       FROM wire_recommendation_journal
       WHERE environment = \(environment) AND source_generation = \(generation) AND seq = \(sequence)
       """, logger: logger)
     for try await row in rows {
       let v = try row.decode(
         (String, String, Int64, String, String, String, String, String, String?, String?,
-         Date, String, String?, String, Int).self)
+         Date, String, String?, String, Int, Bool).self)
       return Entry(environment: v.0, generation: v.1, sequence: v.2, host: v.3, cursor: v.4,
         repo: v.5, uri: v.6, operation: v.7, revision: v.8, cid: v.9, time: v.10,
-        actor: v.11, subject: v.12, status: v.13, attempts: v.14)
+        actor: v.11, subject: v.12, status: v.13, attempts: v.14, requiresDependencyVerification: v.15)
     }
     return nil
   }
@@ -413,6 +416,11 @@ struct PostgresWireRecommendationJournal: Sendable {
         "DELETE FROM wire_signal_events WHERE source_uri = \(entry.uri)", logger: logger)
       return try await setStatus(entry, "deleted", reason: nil, on: connection, asOf: asOf)
     }
+    guard entry.time.addingTimeInterval(WireDataPolicy.signalRetention) > asOf else {
+      try await connection.query(
+        "DELETE FROM wire_signal_events WHERE source_uri = \(entry.uri)", logger: logger)
+      return try await setStatus(entry, "expired", reason: "signal_retention_elapsed", on: connection, asOf: asOf)
+    }
     let accountRows = try await connection.query(
       """
       SELECT active, inactive_through FROM wire_recommendation_account_fences
@@ -425,6 +433,20 @@ struct PostgresWireRecommendationJournal: Sendable {
       }
       if !value.0 {
         return try await setStatus(entry, "pending", reason: "account_inactive", on: connection, asOf: asOf)
+      }
+    }
+    if dependencyVerificationEnabled {
+      switch try await PostgresWireDependencyGuard.decision(
+        environment: entry.environment, sourceURI: entry.uri, generation: entry.generation,
+        sequence: entry.sequence, cid: entry.cid, subject: entry.subject, revision: entry.revision,
+        requiresVerification: entry.status == "pending" && entry.requiresDependencyVerification,
+        on: connection, asOf: asOf, logger: logger)
+      {
+      case .proceed: break
+      case .pending:
+        return try await setStatus(entry, "pending", reason: "dependency_verification_required", on: connection, asOf: asOf)
+      case .superseded(let reason):
+        return try await setStatus(entry, "superseded", reason: reason, on: connection, asOf: asOf)
       }
     }
     let aliasRows = try await connection.query(
@@ -440,9 +462,6 @@ struct PostgresWireRecommendationJournal: Sendable {
       try await connection.query(
         "DELETE FROM wire_signal_events WHERE source_uri = \(entry.uri)", logger: logger)
       return try await setStatus(entry, "pending", reason: "unresolved_subject", on: connection, asOf: asOf)
-    }
-    guard entry.time.addingTimeInterval(WireDataPolicy.signalRetention) > asOf else {
-      return try await setStatus(entry, "expired", reason: "signal_retention_elapsed", on: connection, asOf: asOf)
     }
     let existingRows = try await connection.query(
       """
@@ -529,10 +548,33 @@ struct PostgresWireRecommendationJournal: Sendable {
       UPDATE wire_recommendation_journal
       SET status = \(status), failure_reason = \(reason), updated_at = \(asOf),
           actor_recorded = actor_recorded OR \(status == "resolved"),
+          dependency_verification_required = dependency_verification_required OR \(status == "pending"),
           attempt_count = attempt_count + 1,
           next_attempt_at = \(asOf.addingTimeInterval(status == "pending" ? delay : 3_600))
       WHERE environment = \(entry.environment) AND source_generation = \(entry.generation) AND seq = \(entry.sequence)
       """, logger: logger)
+    if dependencyVerificationEnabled, status == "pending", entry.status == "resolved" {
+      // Disposable aliases can disappear on restart after a completed dependency
+      // was parked. Re-arm that exact record without clearing absence controls.
+      try await connection.query(
+        """
+        UPDATE wire_recommendation_dependency_recovery
+        SET next_attempt_at = \(asOf), updated_at = \(asOf)
+        WHERE environment = \(entry.environment) AND source_uri = \(entry.uri)
+          AND source_generation = \(entry.generation) AND seq = \(entry.sequence)
+          AND status NOT IN ('absent', 'changed', 'unsupported')
+        """, logger: logger)
+    }
+    if dependencyVerificationEnabled, ["resolved", "deleted", "superseded", "expired"].contains(status) {
+      try await connection.query(
+        """
+        UPDATE wire_recommendation_dependency_recovery
+        SET next_attempt_at = \(Date.distantFuture), lease_token = NULL, lease_expires_at = NULL,
+            updated_at = \(asOf)
+        WHERE environment = \(entry.environment) AND source_uri = \(entry.uri)
+          AND source_generation = \(entry.generation) AND seq = \(entry.sequence)
+        """, logger: logger)
+    }
     return status
   }
 }
