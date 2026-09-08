@@ -41,6 +41,11 @@ struct PDSReadStateRoutes {
       return Response(status: .ok, headers: [.contentType: "application/json", .cacheControl: "no-store"],
         body: .init(byteBuffer: .init(data: body)))
     } catch let error as PDSReadStateStorageError {
+      if error == .legacyScopeOverlap {
+        throw AppViewFeedError(status: .conflict, code: "ReadStateMigrationScopeConflict",
+          message: "Overlapping publications have different read boundaries. Your existing read state is preserved; reconcile those boundaries before retrying migration.",
+          requestId: context.requestId, retryable: true)
+      }
       throw HTTPError(error == .invalidCursor ? .badRequest : .conflict,
         message: "Read-state migration could not be confirmed: \(error)")
     } catch is ReadStateError {

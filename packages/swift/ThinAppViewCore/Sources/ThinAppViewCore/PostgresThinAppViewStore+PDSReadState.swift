@@ -203,6 +203,26 @@ extension PostgresThinAppViewStore: PDSReadStateStoring {
   private func verifyLegacyPDSParity(
     viewerDid: String, projection: ReadStateProjection, on connection: PostgresConnection
   ) async throws {
+    // Canonical subject state cannot represent two publication views that apply
+    // different floors to the same possible article. Check scopes, not only the
+    // currently retained corpus: a future backfill must preserve parity too.
+    for try await _ in try await connection.query(
+      """
+      SELECT 1
+      FROM appview_publication_scopes a
+      JOIN appview_publication_read_floors af
+        ON af.viewer_did = a.viewer_did AND af.publication_id = a.publication_id
+      JOIN appview_publication_scopes b
+        ON b.viewer_did = a.viewer_did AND b.author_did = a.author_did
+          AND b.publication_id <> a.publication_id
+      LEFT JOIN appview_publication_read_floors bf
+        ON bf.viewer_did = b.viewer_did AND bf.publication_id = b.publication_id
+      WHERE a.viewer_did = \(viewerDid)
+        AND (a.scope_keys = '[]'::jsonb OR b.scope_keys = '[]'::jsonb
+          OR a.scope_keys ?| ARRAY(SELECT jsonb_array_elements_text(b.scope_keys)))
+        AND (af.read_floor_at, af.read_floor_uri) IS DISTINCT FROM (bf.read_floor_at, bf.read_floor_uri)
+      LIMIT 1
+      """, logger: logger) { throw PDSReadStateStorageError.legacyScopeOverlap }
     for try await _ in try await connection.query(
       """
       SELECT 1 FROM read_marks read JOIN appview_unread_overrides unread
