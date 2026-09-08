@@ -518,6 +518,8 @@
 		FEC324A3A69FABA95E723B36 /* NewsSceneModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C500604EB8688863B9C8181 /* NewsSceneModelTests.swift */; };
 		FF97964879710270D92F2D16 /* StandardSiteRecommendRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE822842FE05262330E519E4 /* StandardSiteRecommendRecord.swift */; };
 		FFE46CED3F1CFF1335140BD8 /* LibraryNewsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0F6A7CA7D8969DB8EC6E06D /* LibraryNewsView.swift */; };
+		CB1100000000000000000002 /* CircleContentState.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB1100000000000000000001 /* CircleContentState.swift */; };
+		CB1100000000000000000003 /* CircleContentState.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB1100000000000000000001 /* CircleContentState.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -816,6 +818,7 @@
 		B10000000000000000000020 /* SembleNoteEditorSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Semble/SembleNoteEditorSheet.swift; sourceTree = "<group>"; };
 		B10000000000000000000021 /* SembleRecordService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SembleRecordService.swift; sourceTree = "<group>"; };
 		B60000000000000000000001 /* SembleSupportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SembleSupportTests.swift; sourceTree = "<group>"; };
+		CB1100000000000000000001 /* CircleContentState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CircleContentState.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -857,6 +860,7 @@
 			isa = PBXGroup;
 			children = (
 				F2578F0EFDCD166ED764A764 /* CircleEditionPage.swift */,
+				CB1100000000000000000001 /* CircleContentState.swift */,
 				170B6F2782B18239A43F80AB /* CircleFeedCatalog.swift */,
 				C3174B18A28C142BEC29018B /* CircleHiddenItemState.swift */,
 				AC52423382E1AE939FC9FD10 /* CirclePublicationSpotlight.swift */,
@@ -1643,6 +1647,7 @@
 				F6AEE6D36851968317C2CA99 /* BootstrapStreamModels.swift in Sources */,
 				320065D90248E039F9B5E2BB /* CachedRemoteImage.swift in Sources */,
 				A1D223E7DCAE9E597A305E96 /* CircleEditionPage.swift in Sources */,
+				CB1100000000000000000002 /* CircleContentState.swift in Sources */,
 				AA098A0219D0D19AA8E81C5B /* CircleFeedCatalog.swift in Sources */,
 				D826C797529A1B76E26B8E41 /* CircleHiddenItemState.swift in Sources */,
 				E3813402BB66FF667C70DFE6 /* CircleNewsView.swift in Sources */,
@@ -1918,6 +1923,7 @@
 				06D03C021DC5F59BC7CEEA2A /* BootstrapStreamModels.swift in Sources */,
 				4144981A5925919C7F510B88 /* CachedRemoteImage.swift in Sources */,
 				3DB191B00EFE48D5650949A7 /* CircleEditionPage.swift in Sources */,
+				CB1100000000000000000003 /* CircleContentState.swift in Sources */,
 				64EE0073BC82101062E43499 /* CircleFeedCatalog.swift in Sources */,
 				EAD187BCC5F475377EAC7160 /* CircleHiddenItemState.swift in Sources */,
 				81F426D0A7D60C5F27FA1D8B /* CircleNewsView.swift in Sources */,

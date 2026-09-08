@@ -79,7 +79,6 @@ src/components/Account/OpmlImportSection.tsx
 # OAuth/PDS provider selection and Semble collection preferences; client contracts are covered.
 src/components/Account/ReadLaterSettingsSection.tsx
 # Circle query/action provider integration with the editorial layout; feed/action contracts are covered.
-src/components/Circle/CircleNewsExperience.tsx
 # Stateful tag dialogs and paginated mutations; tag parsing and PDS operations are covered.
 src/components/SavedLinks/SavedLinksTagToolbar.tsx
 # Semble collection query, save/retry, and detail composition; Semble client contracts are covered.
