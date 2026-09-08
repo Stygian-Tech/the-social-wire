@@ -51,9 +51,20 @@ public enum ATProtoOAuthScopes {
     "repo:app.bsky.feed.post?action=update",
   ]
 
-  static let webScope = (sharedScopes + readerActionScopes).joined(separator: " ")
+  private static let webReadStateScopes = [
+    "repo:app.thesocialwire.readState?action=create&action=update&action=delete",
+    "repo:app.thesocialwire.readStateChunk?action=create&action=update&action=delete",
+  ]
+
+  private static let iosReadStateScopes = [
+    "repo:app.thesocialwire.readState?action=create&action=update",
+    "repo:app.thesocialwire.readStateChunk?action=create&action=update",
+  ]
+
+  static let webScope = (webReadStateScopes + sharedScopes + readerActionScopes).joined(separator: " ")
 
   /// Kept as `iosScope` because `/ios-client-metadata.json` is a stable public client ID used by
   /// the universal iPhone, iPad, and Mac app.
-  static let iosScope = (sharedScopes + readerActionScopes + iosOnlyScopes).joined(separator: " ")
+  static let iosScope = (["atproto"] + iosReadStateScopes + sharedScopes.dropFirst()
+    + readerActionScopes + iosOnlyScopes).joined(separator: " ")
 }
