@@ -442,3 +442,50 @@ as its service user. Distinct service/volume identities establish isolation;
 physical snapshots correctly share the PostgreSQL system identifier. Delete
 temporary services and explicitly delete their confirmed-owned volumes after
 evidence is saved; service deletion alone can leave billable detached volumes.
+
+
+## September 8 ingestion pressure correction
+
+The 12 GB Production trial did not pass: two bursts exceeded 40,000 actionable
+rows, oldest age exceeded 22 minutes, and a later small queue stalled during an
+8.4-minute ranking cycle. The user authorized necessary corrective changes. At
+approximately 16:39 UTC the Postgres ceiling returned to 16 GB, preserving 24 vCPU.
+The running cgroup confirmed 16,000,000,000 bytes with zero OOM/kill events; the
+postmaster still dates to August 30. Most memory was filesystem cache. This is a
+rollback of a failed trial, not evidence that memory caused every stall.
+
+Live waits included WALWrite/WalSync, with ingestion lease writers queued behind
+those operations. Short statement deltas identified duplicate full inbox status
+scans, while query plans showed account lifecycle updates scanning about 1.8
+million Wire items and metadata claims sorting about 1.7 million cache rows.
+Graph maintenance completed in about two seconds outside the stalled windows;
+its cadence and ranking semantics are unchanged.
+
+The corrective release adds concurrent author/metadata-priority indexes, combines
+inbox status totals with their source breakdown, and coalesces observational inbox
+reads for at most five seconds per store. Checkpoints, incidents, recovery and
+fencing reads remain live. Telemetry metric writes use sorted 250-row batches,
+a 500 ms lock wait, two-second statement limits and a five-second cumulative
+write budget. That budget begins after pool acquisition and does not bound a
+network failure or WAL-stalled commit. Contention tests require atomic rollback,
+exact retry statistics and reusable pooled sessions.
+
+At 16:44 UTC Production WAL tuning was applied and verified in a fresh session:
+LZ4, 8192 MB max WAL, 900-second checkpoints and completion target 0.9. Fsync,
+full-page writes and archiving remain on; global work_mem (4 MB) and shared buffers
+(128 MiB) are unchanged. There was about 37 GiB free on the volume, and no restart
+was required. Development already runs these settings. A separate PostgreSQL
+18.6 local crash fixture retained exact committed fingerprints for 100,000 corpus
+and 20,000 ranking rows, rolled back an interrupted transaction, restarted in
+0.421 seconds, and passed offline checksums over 14,044 blocks. Its 121 MB WAL
+volume does not prove an 8 GB recovery duration or Railway PITR coverage.
+
+Monitor disk headroom (retain at least 16 GiB free), archive failures, WAL/upload
+rates, queue age and feed latency. Roll back WAL tuning to compression off,
+max_wal_size 1 GB and checkpoint_timeout five minutes if it causes regression;
+completion target was already 0.9. Do not advance to 12/8 GB again until the
+corrected workload passes a representative comparison. Production retention is
+unchanged, and continuous seven-day recovery/discovery rebuild and matched cost
+acceptance remain open. The code release requires separate Development and
+Production deployment verification; these observations do not themselves prove
+that a new revision is running.
