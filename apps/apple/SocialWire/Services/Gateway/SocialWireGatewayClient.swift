@@ -459,10 +459,13 @@ final class SocialWireGatewayClient {
     }
 
     func pdsReadStateRequest<T: Decodable>(_ method: String, body: Data? = nil, expectedViewer: String? = nil) async throws -> T {
-        let allowed = ["getReadStateStatus", "exportReadState", "prepareReadState", "confirmReadState"]
-        guard allowed.contains(method) else { throw SocialWireError.unsupported }
+        let methods = ["getReadStateStatus": SocialWireXRPCMethod.getReadStateStatus,
+                       "exportReadState": SocialWireXRPCMethod.exportReadState,
+                       "prepareReadState": SocialWireXRPCMethod.prepareReadState,
+                       "confirmReadState": SocialWireXRPCMethod.confirmReadState]
+        guard let path = methods[method] else { throw SocialWireError.unsupported }
         let result = try await authorizedRequest(method: body == nil ? "GET" : "POST",
-            path: "xrpc/app.thesocialwire.appview.\(method)", query: [:], body: body,
+            path: path, query: [:], body: body,
             contentType: body == nil ? nil : "application/json", expectedViewer: expectedViewer)
         if result.statusCode == 404 { throw SocialWireError.appViewUnavailable }
         if result.statusCode == 409 { throw ReadStateSyncFailure.conflict }

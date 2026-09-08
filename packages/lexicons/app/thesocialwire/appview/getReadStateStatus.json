@@ -5,6 +5,7 @@
     "main": {
       "type": "query",
       "description": "Read the authenticated viewer migration authority and verified manifest. No public or shared cache.",
+      "parameters": { "type": "params", "properties": {} },
       "output": {
         "encoding": "application/json",
         "schema": {

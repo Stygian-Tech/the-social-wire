@@ -2,6 +2,7 @@ import type { OAuthSession } from "@atproto/oauth-client-browser";
 import { PDSRequestError, ReadStateError, type Boundary, type CalendarSelection, type MigrationExportPage,
   type ReadStateMigrationGateway, type ReadStateStatus, type Reference } from "@thesocialwire/read-state";
 import { gatewayFetch } from "@/lib/socialWireGatewayClient";
+import { socialWireXrpc } from "@/lib/socialWireXrpc";
 import type { GatewayMarkAllReadScope } from "@/lib/publicationProjectionClient";
 
 export type PreparedReadState = { actedAt: string; legacyRevision: number; manifestCid?: string; calendar?: CalendarSelection; previewSubjectUris?: string[] }
@@ -9,9 +10,9 @@ export type PreparedReadState = { actedAt: string; legacyRevision: number; manif
     | { selection: "boundaries"; boundaries: Boundary[]; subjectUris?: never });
 export class PDSReadStateGateway implements ReadStateMigrationGateway {
   constructor(private readonly oauth: OAuthSession, private readonly assertCurrent: () => void) {}
-  private async request<T>(method: string, body?: unknown): Promise<T> {
+  private async request<T>(method: "getReadStateStatus" | "exportReadState" | "prepareReadState" | "confirmReadState", body?: unknown): Promise<T> {
     this.assertCurrent();
-    const response = await gatewayFetch(this.oauth, `/xrpc/app.thesocialwire.appview.${method}`,
+    const response = await gatewayFetch(this.oauth, socialWireXrpc[method],
       body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     this.assertCurrent();
     if (!response.ok) {
