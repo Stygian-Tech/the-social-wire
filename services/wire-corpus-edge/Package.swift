@@ -32,6 +32,7 @@ let package = Package(
     .testTarget(
       name: "WireCorpusEdgeTests",
       dependencies: [
+        .product(name: "PostgresNIO", package: "postgres-nio"),
         "WireCorpusEdge",
         "WireCore",
         .product(name: "HummingbirdTesting", package: "hummingbird"),
