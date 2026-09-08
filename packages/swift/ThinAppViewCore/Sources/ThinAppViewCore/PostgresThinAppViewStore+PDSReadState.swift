@@ -66,7 +66,8 @@ extension PostgresThinAppViewStore: PDSReadStateStoring {
       let operations = incremental
         ? projection.operations.filter { $0.sequence > previousSequence } : projection.operations
       let unchangedState = status.projectionReady && status.authority == .pds
-        && PDSReadStateManifestTransition.isMaintenance(previous: status.manifest, candidate: manifest)
+        && (status.manifestCid == manifestCid
+          || PDSReadStateManifestTransition.isMaintenance(previous: status.manifest, candidate: manifest))
       if !unchangedState {
         try await persistPDSProjection(viewerDid: viewerDid, operations: operations,
           incremental: incremental, on: connection)

@@ -125,7 +125,8 @@ extension PostgresJetstreamInboxIntegrationTests {
         Issue.record("A legacy mutation changed an active PDS viewer")
       } catch {}
       #expect(try await store.hasReadMark(viewerDid: viewer, subjectUri: ids[1]))
-      // A clean projection rebuild from the same verified CID must work.
+      // A clean projection rebuild marks the derived state unavailable first.
+      try await pool.query("UPDATE appview_pds_read_state_authority SET projection_ready = FALSE WHERE viewer_did = \(viewer)", logger: logger)
       try await pool.query("DELETE FROM appview_pds_read_state_exact WHERE viewer_did = \(viewer)", logger: logger)
       try await pool.query("DELETE FROM appview_pds_read_state_boundaries WHERE viewer_did = \(viewer)", logger: logger)
       _ = try await store.activatePDSReadState(viewerDid: viewer, manifest: next, manifestCid: "manifest-two",
