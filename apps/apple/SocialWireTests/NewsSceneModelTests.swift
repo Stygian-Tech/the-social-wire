@@ -14,6 +14,38 @@ struct NewsSceneModelTests {
         )
     }
 
+    @Test("Circle stays reachable while its catalog loads or lacks stories")
+    func circleNavigationDoesNotRequireAvailableStories() {
+        for available in [false, true] {
+            let catalog = CircleFeedCatalog(
+                enabled: true, available: available, title: "Your Circle", subtitle: "",
+                supportedLanguages: ["en"], latestGenerationId: nil, generatedAt: nil
+            )
+            #expect(NewsTab.available(
+                preferences: .defaults, wireCatalog: nil, circleCatalog: catalog
+            ).contains(.circle))
+        }
+        #expect(NewsTab.available(
+            preferences: .defaults, wireCatalog: nil, circleCatalog: nil
+        ).contains(.circle))
+    }
+
+    @Test("Explicit Circle hide and global disable still remove its destination")
+    func circleNavigationHonorsVisibilityControls() {
+        let disabled = CircleFeedCatalog(
+            enabled: false, available: true, title: "Your Circle", subtitle: "",
+            supportedLanguages: ["en"], latestGenerationId: nil, generatedAt: nil
+        )
+        #expect(!NewsTab.available(
+            preferences: .defaults, wireCatalog: nil, circleCatalog: disabled
+        ).contains(.circle))
+        var preferences = ReaderFeedPreferences.defaults
+        preferences.showCircle = false
+        #expect(!NewsTab.available(
+            preferences: preferences, wireCatalog: nil, circleCatalog: nil
+        ).contains(.circle))
+    }
+
     @Test("Last tab is restored per viewer")
     func restoresSelectedTabPerViewer() {
         let suiteName = "NewsSceneModelTests.\(UUID().uuidString)"

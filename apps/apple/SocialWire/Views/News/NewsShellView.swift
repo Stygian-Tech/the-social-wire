@@ -8,8 +8,9 @@ struct NewsShellView: View {
 
     private var availableTabs: [NewsTab] {
         NewsTab.available(
-            wire: appModel.feedPreferences.showWire && appModel.wireCatalog?.isAvailable == true,
-            circle: appModel.feedPreferences.showCircle && appModel.circleCatalog?.isAvailable == true
+            preferences: appModel.feedPreferences,
+            wireCatalog: appModel.wireCatalog,
+            circleCatalog: appModel.circleCatalog
         )
     }
 
