@@ -14,6 +14,63 @@ import Testing
   )
 )
 struct PostgresTelemetryIntegrationTests {
+  @Test("blocked rollups abort promptly and roll back earlier bulk chunks before a successful retry")
+  func blockedRollupExport() async throws {
+    try await withStore { store, pool, logger in
+      let prefix = "blocked.\(UUID().uuidString)"
+      let now = Date()
+      let samples = (0..<260).map { index in
+        OperationsTelemetrySignal.metric(.init(
+          name: "\(prefix).\(String(format: "%03d", index))", value: Double(index),
+          dimensions: ["environment": "prod"], recordedAt: now))
+      }
+      let blockedName = "\(prefix).259"
+      try await store.recordTelemetryBatch([try #require(samples.last)])
+      try await pool.withTransaction(logger: logger) { blocker in
+        try await blocker.query(
+          "UPDATE operations_metric_rollups SET sample_count = sample_count WHERE metric_name = \(blockedName)",
+          logger: logger)
+        let started = ContinuousClock.now
+        await #expect(throws: (any Error).self) {
+          try await store.recordTelemetryBatch(samples)
+        }
+        #expect(started.duration(to: .now) < .seconds(3))
+        let rows = try await pool.query(
+          "SELECT COUNT(*)::bigint FROM operations_metric_rollups WHERE metric_name LIKE \(prefix + "%")",
+          logger: logger)
+        for try await row in rows { #expect(try row.decode(Int64.self) == 1) }
+      }
+      // The same batch succeeds after contention clears, with no duplicated earlier chunk.
+      try await store.recordTelemetryBatch(samples)
+      let rows = try await pool.query(
+        """
+        SELECT COUNT(*)::bigint, SUM(sample_count)::bigint, SUM(value_sum)::double precision
+        FROM operations_metric_rollups WHERE metric_name LIKE \(prefix + "%")
+        """, logger: logger)
+      for try await row in rows {
+        let value = try row.decode((Int64, Int64, Double).self)
+        #expect(value.0 == 260 && value.1 == 261 && value.2 == 33_929)
+      }
+      // Exercise pooled sessions concurrently: local timeout settings must not leak.
+      try await withThrowingTaskGroup(of: Void.self) { tasks in
+        for _ in 0..<4 {
+          tasks.addTask {
+            try await pool.withConnection { connection in
+              let settings = try await connection.query(
+                "SELECT current_setting('statement_timeout'), current_setting('lock_timeout')",
+                logger: logger)
+              for try await row in settings {
+                let value = try row.decode((String, String).self)
+                #expect(value.0 == "0" && value.1 == "0")
+              }
+            }
+          }
+        }
+        try await tasks.waitForAll()
+      }
+    }
+  }
+
   @Test("coalesced writes retain count sum extrema and separate minute and dimension keys")
   func coalescedStatistics() async throws {
     try await withStore { store, pool, logger in

@@ -7,8 +7,11 @@ import WireCore
 @testable import WireWorkerCore
 
 extension WirePostgresIntegrationTests {
-  @Test("deep repository queues skip locked heads without bypassing FIFO", arguments: [false, true])
-  func deepRepositoryHeads(scoped: Bool) async throws {
+  @Test(
+    "deep repository queues skip locked heads without bypassing FIFO",
+    arguments: [false, true], [false, true]
+  )
+  func deepRepositoryHeads(scoped: Bool, repositoryAdmission: Bool) async throws {
     guard let url = ProcessInfo.processInfo.environment["WIRE_TEST_DATABASE_URL"] else { return }
     let logger = Logger(label: "wire-deep-repository.integration")
     let configuration = try PostgresWireConfig.make(from: url, maximumConnections: 8, logger: logger)
@@ -53,6 +56,17 @@ extension WirePostgresIntegrationTests {
       sourceScope: scoped
         ? WireInboxSourceScope(environment: environment, sourceGenerations: [generation]) : nil)
 
+    // Exercise the continuously replenished runtime's admission path as well
+    // as the older batch API against the same deep FIFO and lease barriers.
+    func process(asOf: Date) async throws -> Int {
+      guard repositoryAdmission else { return try await processor.process(asOf: asOf) }
+      let batch = try await processor.claimWork(asOf: asOf, limit: 8)
+      for event in batch.events {
+        #expect(try await processor.applyClaimed(event, asOf: asOf) == .applied)
+      }
+      return batch.events.count + batch.appliedPassiveEventCount
+    }
+
     try await pool.withTransaction(logger: logger) { connection in
       try await connection.query(
         """
@@ -60,7 +74,7 @@ extension WirePostgresIntegrationTests {
         WHERE environment = \(environment) AND source_generation = \(generation) AND seq = 1
         FOR UPDATE
         """, logger: logger)
-      #expect(try await processor.process(asOf: now) == 2)
+      #expect(try await process(asOf: now) == 2)
     }
     let rows = try await pool.query(
       """
@@ -70,7 +84,7 @@ extension WirePostgresIntegrationTests {
     var applied: [Int64] = []
     for try await row in rows { applied.append(try row.decode(Int64.self)) }
     #expect(applied == [60001, 90001, 90002])
-    #expect(try await processor.process(asOf: now.addingTimeInterval(120)) == 4)
+    #expect(try await process(asOf: now.addingTimeInterval(120)) == 4)
     try await pool.query(
       "DELETE FROM wire_ingestion_inbox WHERE environment = \(environment)", logger: logger)
   }
