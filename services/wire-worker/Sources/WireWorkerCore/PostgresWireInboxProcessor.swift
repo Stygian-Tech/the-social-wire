@@ -1199,6 +1199,10 @@ struct PostgresWireInboxProcessor: Sendable {
     else { return }
     try await upsertActor(hash: actorHash, asOf: incrementsActorActivity ? (signalTime ?? asOf) : event.eventTime,
       connection: projectionConnection, incrementsActivity: incrementsActorActivity)
+    // Recovery must still project the corpus and record its version/activity
+    // fence, but an expired signal cannot contribute to any ranking window.
+    // Avoid rebuilding throwaway partitions and rows for that replay history.
+    guard event.eventTime.addingTimeInterval(WireDataPolicy.signalRetention) > asOf else { return }
     try await insertSignal(
       event: event,
       canonicalKey: identity.canonicalKey,
