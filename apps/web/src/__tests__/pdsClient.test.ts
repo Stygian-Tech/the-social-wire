@@ -49,6 +49,16 @@ describe("rkeyFromURI", () => {
 });
 
 describe("mergePreferencesRecord", () => {
+  it("preserves hidden discovery feeds through unrelated saves and supports re-enabling", () => {
+    const hidden = mergePreferencesRecord({ showWire: false, showCircle: false }, null);
+    const updated = mergePreferencesRecord({ rssArticleOpenMode: "reader" }, hidden);
+    expect(updated.showWire).toBe(false);
+    expect(updated.showCircle).toBe(false);
+    const enabled = mergePreferencesRecord({ showWire: true }, updated);
+    expect(enabled.showWire).toBe(true);
+    expect(enabled.showCircle).toBe(false);
+  });
+
   it("preserves the Semble connection when unrelated feed preferences change", () => {
     const previous: PreferencesRecord = {
       $type: COLLECTION_PREFERENCES,
