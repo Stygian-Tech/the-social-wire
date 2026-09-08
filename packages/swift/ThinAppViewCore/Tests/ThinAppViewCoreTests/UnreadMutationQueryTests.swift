@@ -260,6 +260,22 @@ struct UnreadMutationQueryTests {
       viewerDid: viewer, scopes: [broad, specific], cursor: nil, limit: 100)
     #expect(overridden.entries.map(\.title) == ["newer-alias", "no-site", "older-alias"])
     #expect(overridden.entries.map(\.publicationId) == [specificId, broadId, specificId])
+
+    // Alias discovery for one broad author must not widen another author's coarse scope.
+    let otherAuthor = "\(prefix)-other-read-author"
+    let otherSpecific = AppViewUnreadCounterSupport.publicationScope(
+      viewerDid: viewer, publicationId: "https://example.com/other-publication", authorDid: otherAuthor,
+      publicationAtUri: nil, publicationScopeAtUris: [], publicationSiteUrls: [canonicalSite], sectionKeys: [])
+    let otherId = "at://\(otherAuthor)/site.standard.document/alias"
+    try await store.upsertContentItem(IndexedContentItem(
+      uri: otherId, cid: "fixture", authorDid: otherAuthor, collection: "site.standard.document",
+      createdAt: timestamp, indexedAt: timestamp, publicationSite: storedSite,
+      render: ContentRenderFields(title: "Other Alias", publishedAt: "2100-01-01T00:00:00Z"),
+      expiresAt: timestamp.addingTimeInterval(86_400)
+    ))
+    let scoped = try await store.listUnreadEntriesForReadMutation(
+      viewerDid: viewer, scopes: [broad, specific, otherSpecific], cursor: nil, limit: 100)
+    #expect(scoped.entries.map(\.entryId) == overridden.entries.map(\.entryId))
   }
 
   private static func makeScope(

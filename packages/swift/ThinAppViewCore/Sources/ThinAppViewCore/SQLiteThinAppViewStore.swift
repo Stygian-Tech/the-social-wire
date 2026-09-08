@@ -1952,6 +1952,12 @@ public init(path dbPath: String, logger: Logger) throws {
     let pageLimit = max(1, min(limit, 100))
     guard !scopes.isEmpty else { return AppViewEntryListResponse(entries: [], cursor: nil) }
     let overlappingAuthors = UnreadReadMutationScope.overlappingAuthors(scopes)
+    let unscopedAuthorsJSON = String(decoding: try JSONEncoder().encode(
+      Array(Set(scopes.filter(\.scopeKeys.isEmpty).map(\.authorDid)))
+    ), as: UTF8.self)
+    let scopeKeysJSON = String(decoding: try JSONEncoder().encode(
+      Array(Set(scopes.flatMap(\.scopeKeys)))
+    ), as: UTF8.self)
     let now = Self.isoString(from: Date())
     let decodedCursor = cursor.flatMap(ThinAppViewCursor.decode)
     let cursorAt = decodedCursor.map { Self.isoString(from: $0.createdAt) } ?? now
@@ -2005,10 +2011,8 @@ public init(path dbPath: String, logger: Logger) throws {
           LEFT JOIN appview_unread_overrides uo ON uo.viewer_did = ? AND uo.subject_uri = ci.uri
           WHERE ci.author_did IN (SELECT author_did FROM requested_scopes)
             AND (
-              ci.author_did IN (SELECT author_did FROM requested_scopes WHERE unscoped = 1)
-              OR ci.publication_site IN (
-                SELECT value FROM requested_scopes, json_each(requested_scopes.scope_keys)
-              )
+              ci.author_did IN (SELECT value FROM json_each(?))
+              OR ci.publication_site IN (SELECT value FROM json_each(?))
             )
             AND ci.expires_at > ?
             AND rm.subject_uri IS NULL
@@ -2021,7 +2025,7 @@ public init(path dbPath: String, logger: Logger) throws {
             AND (? = 0 OR ci.created_at < ? OR (ci.created_at = ? AND ci.uri < ?))
           ORDER BY ci.created_at DESC, ci.uri DESC LIMIT ?
           """,
-        arguments: [scopeJSON, viewerDid, viewerDid, viewerDid, now,
+        arguments: [scopeJSON, viewerDid, viewerDid, viewerDid, unscopedAuthorsJSON, scopeKeysJSON, now,
                     decodedCursor != nil, cursorAt, cursorAt, cursorUri, pageLimit + 1]
       )
       let entries = rows.compactMap { row -> AppViewEntryListItem? in

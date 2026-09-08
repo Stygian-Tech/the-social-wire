@@ -19,10 +19,24 @@ struct UnreadReadMutationScope: Encodable {
   ) throws -> String {
     let ordered = scopes.sorted { $0.publicationId < $1.publicationId }
     let candidates = Set(scopes.flatMap(\.scopeKeys) + additionalSites)
+    // Normalize each candidate once. The final matcher still decides query-specific feed
+    // membership, while unrelated publications no longer cause a quadratic URL-parsing pass.
+    var candidatesByIdentity: [String: Set<String>] = [:]
+    for candidate in candidates {
+      for identity in identityKeys(candidate) {
+        candidatesByIdentity[identity, default: []].insert(candidate)
+      }
+    }
     let values = ordered.enumerated().map { position, scope in
-      Self(
+      var relatedCandidates = Set<String>()
+      for key in scope.scopeKeys {
+        for identity in identityKeys(key) {
+          relatedCandidates.formUnion(candidatesByIdentity[identity] ?? [])
+        }
+      }
+      return Self(
         publicationId: scope.publicationId, authorDid: scope.authorDid,
-        scopeKeys: candidates.filter {
+        scopeKeys: relatedCandidates.filter {
           AppViewUnreadCounterSupport.contentMatchesScope(
             authorDid: scope.authorDid, publicationSite: $0, scope: scope
           )
@@ -30,5 +44,19 @@ struct UnreadReadMutationScope: Encodable {
       )
     }
     return String(decoding: try JSONEncoder().encode(values), as: UTF8.self)
+  }
+
+  private static func identityKeys(_ site: String) -> [String] {
+    var keys: [String] = []
+    if let atUri = RenderFieldExtractor.canonicalPublicationAtUriKey(site) {
+      keys.append("at:\(atUri)")
+    }
+    if let feed = RssFeedIdentity.normalizeFeedUrl(site) {
+      keys.append("feed:\(feed)")
+    }
+    if let url = RenderFieldExtractor.normalizePublicationSiteUrl(site) {
+      keys.append("site:\(url)")
+    }
+    return keys
   }
 }
