@@ -53,15 +53,15 @@ struct PostgresWireRecommendationJournal: Sendable {
     return try await pool.withTransaction(logger: logger) { connection in
       let leaseRows = try await connection.query(
         """
-        SELECT repo_rev, record_cid
+        SELECT repo_rev, record_cid, attempt_count
         FROM wire_ingestion_inbox
         WHERE environment = \(event.environment) AND source_generation = \(event.sourceGeneration)
           AND seq = \(event.sequence) AND status = 'leased' AND lease_token = \(event.leaseToken)
           AND lease_expires_at > \(asOf)
         FOR UPDATE
         """, logger: logger)
-      var version: (String?, String?)?
-      for try await row in leaseRows { version = try row.decode((String?, String?).self) }
+      var version: (String?, String?, Int)?
+      for try await row in leaseRows { version = try row.decode((String?, String?, Int).self) }
       guard let version else { return .leaseLost }
       try Task.checkCancellation()
       try await lockRecord(event.environment, repo: event.repoDID, uri: uri, on: connection)
@@ -90,6 +90,9 @@ struct PostgresWireRecommendationJournal: Sendable {
         }
         subject = value
       }
+      // A first live claim stays on the direct path. Retried originals, including
+      // retained deadletters replayed after their alias appears, require their own
+      // current-record proof. Trust the locked durable count, not caller metadata.
       try await connection.query(
         """
         INSERT INTO wire_recommendation_journal
@@ -99,8 +102,12 @@ struct PostgresWireRecommendationJournal: Sendable {
         VALUES (\(event.environment), \(event.sourceGeneration), \(event.sequence),
                 \(event.sourceHost), \(event.cursorKind), \(event.repoDID), \(uri),
                 \(operation), \(version.0), \(version.1), \(event.payloadJSON)::jsonb,
-                \(event.eventTime), \(actor), \(subject), \(asOf), \(asOf), \(asOf), FALSE)
-        ON CONFLICT (environment, source_generation, seq) DO NOTHING
+                \(event.eventTime), \(actor), \(subject), \(asOf), \(asOf), \(asOf), \(version.2 > 1))
+        ON CONFLICT (environment, source_generation, seq) DO UPDATE
+          SET dependency_verification_required = TRUE
+          WHERE wire_recommendation_journal.status = 'pending'
+            AND NOT wire_recommendation_journal.dependency_verification_required
+            AND EXCLUDED.dependency_verification_required
         """, logger: logger)
       guard let entry = try await read(
         environment: event.environment, generation: event.sourceGeneration,

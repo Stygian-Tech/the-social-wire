@@ -12,9 +12,9 @@ final class WirePublicRecordAddressCapture: @unchecked Sendable {
     value = addresses
   }
 
-  func first() -> String? {
+  func addresses() -> [String]? {
     lock.lock()
     defer { lock.unlock() }
-    return value?.first
+    return value
   }
 }
