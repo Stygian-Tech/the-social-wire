@@ -447,6 +447,11 @@ struct PostgresWireInboxProcessor: Sendable {
   func applyClaimed(_ event: WireInboxEvent, asOf: Date) async throws -> WireInboxEventOutcome {
     try Task.checkCancellation()
     do {
+      if event.eventKind == "snapshot" || event.cursorKind == "pds_record_snapshot"
+        || (event.eventKind == "commit" && ["site.standard.document", "site.standard.entry", "site.standard.publication"].contains(event.collection ?? ""))
+      {
+        return try await applyStandardRecord(event, asOf: asOf)
+      }
       if event.eventKind == "commit",
         event.collection == "site.standard.graph.recommend"
       {
@@ -905,27 +910,227 @@ struct PostgresWireInboxProcessor: Sendable {
     return error["code"] as? String == "payload_normalization_failed"
   }
 
-  private func applyArticle(
-    record: [String: Any],
-    event: InboxEvent,
-    sourceURI: String,
-    asOf: Date
-  ) async throws {
-    let resolved: WireResolvedStandardSiteDocument
+  /// PDS observations hydrate discovery without inventing publication activity.
+  /// Live mutations share the durable version fence, including deletion tombstones.
+  private func applyStandardRecord(_ event: InboxEvent, asOf: Date) async throws -> WireInboxEventOutcome {
+    let record = try standardRecord(event)
+    guard let version = try await standardRecordLease(event, asOf: asOf) else { return .leaseLost }
+    let candidate = PostgresWireStandardRecordFence(event: event, revision: version.0, cid: version.1)
+    let existing = try await pool.withConnection { connection in
+      try await PostgresWireStandardRecordFence.load(event: event, on: connection, logger: logger)
+    }
+    let preflightOrder = existing.map { candidate.compared(to: $0) } ?? .newer
+    let resolved: WireResolvedStandardSiteDocument?
+    let thumbnail: String?
+    if event.collection == "site.standard.publication" || preflightOrder == .older || preflightOrder == .conflict {
+      resolved = nil
+      thumbnail = nil
+    } else if let record {
+      // All publication and image resolution happens before reserving the
+      // transaction connection, including when the pool has only one slot.
+      resolved = try await resolveArticle(record: record, asOf: asOf)
+      thumbnail = try await WireStandardSiteRecordImage.resolveURL(
+        from: record, repoDID: event.repoDID, blobURLResolver: blobURLResolver)
+    } else {
+      resolved = nil
+      thumbnail = nil
+    }
+    return try await pool.withTransaction(logger: logger) { connection in
+      guard let version = try await standardRecordLease(event, asOf: asOf, connection: connection) else {
+        return .leaseLost
+      }
+      guard let sourceURI = event.sourceURI else { throw ApplyError.malformed }
+      // Same order as the recommendation/account path: inbox, account, source.
+      let accountLock = "wire-recommendation-account:\(event.environment):\(event.repoDID)"
+      try await connection.query(
+        "SELECT pg_advisory_xact_lock(hashtextextended(\(accountLock), 0))", logger: logger)
+      try await connection.query(
+        "SELECT pg_advisory_xact_lock(hashtextextended(\(sourceURI), 0))", logger: logger)
+      let candidate = PostgresWireStandardRecordFence(event: event, revision: version.0, cid: version.1)
+      let previous = try await PostgresWireStandardRecordFence.load(event: event, on: connection, logger: logger)
+      let order = previous.map { candidate.compared(to: $0) } ?? .newer
+      switch order {
+      case .older:
+        return try await finish(event, status: "dead_letter", retryAt: asOf,
+          reason: "standard_record_superseded", asOf: asOf, connection: connection) ? .terminal : .leaseLost
+      case .conflict:
+        // Unknown clocks retain the original payload for explicit reconciliation.
+        return try await finish(event, status: "retry", retryAt: asOf.addingTimeInterval(300),
+          reason: "standard_record_order_conflict", asOf: asOf, connection: connection) ? .retry : .leaseLost
+      case .newer, .same: break
+      }
+      if event.collection != "site.standard.publication", event.operation != "delete",
+        preflightOrder == .older || preflightOrder == .conflict
+      {
+        // Another worker may reconcile a previously incomparable fence while
+        // preflight runs. Resolve metadata on the next attempt, never publish an
+        // accepted record whose expensive resolution was deliberately skipped.
+        return try await finish(event, status: "retry", retryAt: asOf.addingTimeInterval(1),
+          reason: "standard_record_resolve_again", asOf: asOf, connection: connection) ? .retry : .leaseLost
+      }
+      let effectiveEventTime = order == .same
+        ? min(event.eventTime, previous?.time ?? event.eventTime) : event.eventTime
+      let accountRows = try await connection.query(
+        """
+        SELECT active, inactive_through FROM wire_recommendation_account_fences
+        WHERE environment = \(event.environment) AND repo_did = \(event.repoDID)
+        """, logger: logger)
+      for try await row in accountRows {
+        let account = try row.decode((Bool, Date?).self)
+        if event.operation != "delete", !account.0 || account.1.map({ effectiveEventTime <= $0 }) == true {
+          let reason = event.eventKind == "snapshot" ? "snapshot_account_inactive" : "standard_record_account_inactive"
+          return try await finish(event, status: "dead_letter", retryAt: asOf,
+            reason: reason, asOf: asOf, connection: connection) ? .terminal : .leaseLost
+        }
+      }
+      try Task.checkCancellation()
+      let record = try standardRecord(event)
+      let store = PostgresWirePublicationMetadataStore(pool: pool, logger: logger)
+      let isSnapshot = event.eventKind == "snapshot"
+      let hadActivity = order == .same && previous?.activityRecorded == true
+      let activityEvent = hadActivity ? previous!.originalEvent(using: event) : event
+      if event.operation == "delete" {
+        if event.collection == "site.standard.publication" {
+          try await store.remove(publicationURI: sourceURI, observedAt: event.eventTime, connection: connection, versionIsFenced: true)
+        } else {
+          try await retractStandardRecord(sourceURI: sourceURI, asOf: asOf, on: connection)
+        }
+      } else if event.collection == "site.standard.publication", let record {
+        guard let metadata = WirePublicationMetadata.parse(
+          publicationURI: sourceURI, repoDID: event.repoDID, record: record)
+        else { throw ApplyError.malformed }
+        try await store.upsert(metadata, asOf: event.eventTime, connection: connection, versionIsFenced: true)
+      } else if let resolved, let record {
+        try await applyArticle(record: record, event: activityEvent, sourceURI: sourceURI,
+          asOf: asOf, resolvedDocument: resolved, projectionConnection: connection,
+          resolvedThumbnail: thumbnail, recordsActivity: !isSnapshot,
+          incrementsActorActivity: !hadActivity, refreshesSignalTime: !isSnapshot && !hadActivity,
+          signalTime: order == .same && previous?.kind == "snapshot" ? event.eventTime : nil)
+      }
+      let recordsActivity = !isSnapshot && event.operation != "delete"
+        && event.collection != "site.standard.publication" && resolved != nil
+      // Replays keep the first real commit's transport and timestamp so an
+      // unlogged signal repair cannot gain a later observed-at publication boost.
+      let fence: PostgresWireStandardRecordFence
+      if order == .same, let previous, previous.activityRecorded || !recordsActivity {
+        fence = previous.observing(isSnapshot ? version.0 : nil)
+      } else {
+        fence = PostgresWireStandardRecordFence(event: event, revision: version.0, cid: version.1,
+          activityRecorded: recordsActivity)
+          .observing(order == .same ? previous?.observedRevision : nil)
+      }
+      try await fence.save(event: event, on: connection, asOf: asOf, logger: logger)
+      try Task.checkCancellation()
+      return try await finish(event, status: "applied", retryAt: asOf, reason: nil,
+        asOf: asOf, connection: connection) ? .applied : .leaseLost
+    }
+  }
+
+  private func standardRecord(_ event: InboxEvent) throws -> [String: Any]? {
+    guard !Self.isPayloadNormalizationFailure(event.payloadJSON), let collection = event.collection,
+      ["site.standard.document", "site.standard.entry", "site.standard.publication"].contains(collection),
+      let key = event.recordKey, !key.isEmpty, !key.contains("/"),
+      let document = try? JSONSerialization.jsonObject(with: Data(event.payloadJSON.utf8)) as? [String: Any]
+    else { throw ApplyError.malformed }
+    if event.eventKind == "snapshot" || event.cursorKind == "pds_record_snapshot" {
+      guard event.eventKind == "snapshot", event.cursorKind == "pds_record_snapshot", event.operation == "update",
+        let snapshot = document["snapshot"] as? [String: Any],
+        let cid = snapshot["cid"] as? String, !cid.isEmpty,
+        let rev = snapshot["rev"] as? String, PostgresWireStandardRecordFence.validRevision(rev),
+        let record = snapshot["record"] as? [String: Any], record["$type"] as? String == collection
+      else { throw ApplyError.malformed }
+      return record
+    }
+    guard event.eventKind == "commit", ["create", "update", "delete"].contains(event.operation ?? "")
+    else { throw ApplyError.malformed }
+    if event.operation == "delete" { return nil }
+    guard let commit = document["commit"] as? [String: Any], let record = commit["record"] as? [String: Any],
+      record["$type"] == nil || record["$type"] as? String == collection
+    else { throw ApplyError.malformed }
+    return record
+  }
+
+  /// Revalidate the complete claim and retained snapshot identity under its row
+  /// lock. CID/revision come from the inbox, not caller-created claim metadata.
+  private func standardRecordLease(
+    _ event: InboxEvent, asOf: Date, connection: PostgresConnection? = nil
+  ) async throws -> (String?, String?)? {
+    var query: PostgresQuery = """
+      SELECT repo_rev, record_cid,
+        payload = \(event.payloadJSON)::jsonb
+        AND event_kind = \(event.eventKind) AND cursor_kind = \(event.cursorKind)
+        AND operation = \(event.operation) AND collection = \(event.collection)
+        AND repo_did = \(event.repoDID) AND record_key = \(event.recordKey)
+        AND source_host = \(event.sourceHost) AND event_time = \(event.eventTime)
+        AND (event_kind <> 'snapshot' OR (record_cid IS NOT NULL AND repo_rev IS NOT NULL
+          AND record_cid = payload #>> '{snapshot,cid}' AND repo_rev = payload #>> '{snapshot,rev}'))
+      FROM wire_ingestion_inbox
+      WHERE environment = \(event.environment) AND source_generation = \(event.sourceGeneration)
+        AND seq = \(event.sequence) AND status = 'leased' AND lease_token = \(event.leaseToken)
+        AND lease_expires_at > \(asOf)
+      """
+    if connection != nil { query.sql += " FOR UPDATE" }
+    for try await row in try await projectionQuery(query, on: connection) {
+      let value = try row.decode((String?, String?, Bool?).self)
+      guard value.2 == true else { throw ApplyError.malformed }
+      return (value.0, value.1)
+    }
+    return nil
+  }
+
+  private func retractStandardRecord(sourceURI: String, asOf: Date, on connection: PostgresConnection) async throws {
+    // Revision ordering has already rejected stale deletes. A snapshot's newer
+    // observation time must not protect its aliases from an authoritative delete.
+    try await connection.query("DELETE FROM wire_signal_events WHERE source_uri = \(sourceURI)", logger: logger)
+    try await connection.query("DELETE FROM wire_item_aliases WHERE alias_key = \(sourceURI)", logger: logger)
+    try await connection.query(
+      "UPDATE wire_items SET updated_at = \(asOf) WHERE representative_uri = \(sourceURI)", logger: logger)
+  }
+
+  @discardableResult
+  private func projectionQuery(_ query: PostgresQuery, on connection: PostgresConnection?)
+    async throws -> PostgresRowSequence
+  {
+    if let connection { return try await connection.query(query, logger: logger) }
+    return try await pool.query(query, logger: logger)
+  }
+
+  private func resolveArticle(record: [String: Any], asOf: Date) async throws
+    -> WireResolvedStandardSiteDocument?
+  {
     do {
-      resolved = try await WireStandardSiteDocumentResolver.resolve(
-        record: record,
-        publicationResolver: publicationResolver,
-        asOf: asOf
-      )
+      return try await WireStandardSiteDocumentResolver.resolve(
+        record: record, publicationResolver: publicationResolver, asOf: asOf)
     } catch WireStandardSiteDocumentError.unaddressableDocument {
-      return
+      return nil
     } catch WireStandardSiteDocumentError.unresolvedPublication {
       throw ApplyError.unresolvedPublication
     } catch WireStandardSiteDocumentError.malformedDocument,
       WireStandardSiteDocumentError.invalidPublication
     {
       throw ApplyError.malformed
+    }
+  }
+
+  private func applyArticle(
+    record: [String: Any],
+    event: InboxEvent,
+    sourceURI: String,
+    asOf: Date,
+    resolvedDocument: WireResolvedStandardSiteDocument? = nil,
+    projectionConnection: PostgresConnection? = nil,
+    resolvedThumbnail: String? = nil,
+    recordsActivity: Bool = true,
+    incrementsActorActivity: Bool = true,
+    refreshesSignalTime: Bool = true,
+    signalTime: Date? = nil
+  ) async throws {
+    let resolved: WireResolvedStandardSiteDocument
+    if let resolvedDocument {
+      resolved = resolvedDocument
+    } else {
+      guard let document = try await resolveArticle(record: record, asOf: asOf) else { return }
+      resolved = document
     }
     guard let identity = WireCanonicalizer.canonicalize(resolved.canonicalURL),
       let host = URL(string: identity.canonicalURL)?.host
@@ -935,11 +1140,13 @@ struct PostgresWireInboxProcessor: Sendable {
     guard targetKind.canCreateItem else { return }
     let title = Self.firstString(record, keys: ["title", "name"]) ?? host
     let summary = Self.firstString(record, keys: ["summary", "description", "text", "textContent"])
-    let thumbnail = try await WireStandardSiteRecordImage.resolveURL(
-      from: record,
-      repoDID: event.repoDID,
-      blobURLResolver: blobURLResolver
-    )
+    let thumbnail: String?
+    if projectionConnection != nil {
+      thumbnail = resolvedThumbnail
+    } else {
+      thumbnail = try await WireStandardSiteRecordImage.resolveURL(
+        from: record, repoDID: event.repoDID, blobURLResolver: blobURLResolver)
+    }
     let language = Self.primaryLanguage(Self.firstString(record, keys: ["lang", "language"]))
     let publishedAt = Self.date(Self.firstString(record, keys: ["publishedAt", "createdAt"]))
     let publicationID = resolved.publicationURI
@@ -974,20 +1181,29 @@ struct PostgresWireInboxProcessor: Sendable {
       sourceText: nil,
       targetKind: targetKind,
       inspectionURL: resolved.canonicalURL,
-      asOf: asOf
+      asOf: asOf,
+      connection: projectionConnection,
+      recordsActivity: refreshesSignalTime,
+      signalTime: signalTime
     )
     try await upsertAlias(
-      alias: sourceURI, type: "at_uri", canonicalKey: identity.canonicalKey, asOf: asOf)
+      alias: sourceURI, type: "at_uri", canonicalKey: identity.canonicalKey, asOf: asOf, connection: projectionConnection)
     try await upsertAlias(
-      alias: identity.canonicalURL, type: "url", canonicalKey: identity.canonicalKey, asOf: asOf)
-    try await upsertActor(hash: actorHash, asOf: asOf)
+      alias: identity.canonicalURL, type: "url", canonicalKey: identity.canonicalKey, asOf: asOf, connection: projectionConnection)
+    guard recordsActivity,
+      (incrementsActorActivity && signalTime == nil)
+        || event.eventTime.addingTimeInterval(WireDataPolicy.signalRetention) > asOf
+    else { return }
+    try await upsertActor(hash: actorHash, asOf: incrementsActorActivity ? (signalTime ?? asOf) : event.eventTime,
+      connection: projectionConnection, incrementsActivity: incrementsActorActivity)
     try await insertSignal(
       event: event,
       canonicalKey: identity.canonicalKey,
       actorHash: actorHash,
       sourceURI: sourceURI,
       kind: "publication",
-      asOf: asOf
+      asOf: asOf,
+      connection: projectionConnection
     )
   }
 
@@ -1477,7 +1693,10 @@ struct PostgresWireInboxProcessor: Sendable {
     sourceText: String?,
     targetKind: WireTargetKind,
     inspectionURL: String,
-    asOf: Date
+    asOf: Date,
+    connection: PostgresConnection? = nil,
+    recordsActivity: Bool = true,
+    signalTime: Date? = nil
   ) async throws {
     let provenanceJSON = String(decoding: try JSONEncoder().encode(provenance), as: UTF8.self)
     let topicsJSON = String(decoding: try JSONEncoder().encode(topicKeys), as: UTF8.self)
@@ -1511,7 +1730,8 @@ struct PostgresWireInboxProcessor: Sendable {
       as: UTF8.self
     )
     let expiresAt = asOf.addingTimeInterval(WireDataPolicy.itemRetention)
-    try await pool.query(
+    let signalAt: Date? = recordsActivity ? (signalTime ?? asOf) : nil
+    try await projectionQuery(
       """
       INSERT INTO wire_items
         (canonical_key, canonical_url, representative_uri, publication_id, author_key,
@@ -1526,7 +1746,7 @@ struct PostgresWireInboxProcessor: Sendable {
          \(authorDID), \(host), \(sourceName), \(authorName), \(title), \(summary), \(thumbnail),
          \(publicationHomepageURL), \(publicationIconURL),
          \(language), \(topicsJSON)::jsonb, \(presentationJSON)::jsonb, \(provenanceJSON)::jsonb,
-         \(publishedAt), \(asOf), \(asOf), \(asOf), \(confidence), \(targetKind.canCreateItem),
+         \(publishedAt), \(asOf), \(asOf), \(signalAt), \(confidence), \(targetKind.canCreateItem),
          \(targetKind.rawValue),
          \(commercial.score), \(commercial.classification.rawValue),
          \(commercialReasonsJSON)::jsonb, \(expiresAt), \(asOf))
@@ -1587,15 +1807,16 @@ struct PostgresWireInboxProcessor: Sendable {
           WHEN wire_items.commercial_score > EXCLUDED.commercial_score
           THEN wire_items.commercial_reasons ELSE EXCLUDED.commercial_reasons END,
         published_at = COALESCE(wire_items.published_at, EXCLUDED.published_at),
-        last_seen_at = EXCLUDED.last_seen_at, last_signal_at = EXCLUDED.last_signal_at,
+        last_seen_at = EXCLUDED.last_seen_at,
+        last_signal_at = COALESCE(EXCLUDED.last_signal_at, wire_items.last_signal_at),
         eligible = wire_items.eligible AND EXCLUDED.eligible,
         source_confidence = GREATEST(wire_items.source_confidence, EXCLUDED.source_confidence),
         expires_at = GREATEST(wire_items.expires_at, EXCLUDED.expires_at), updated_at = EXCLUDED.updated_at
       """,
-      logger: logger
+      on: connection
     )
     if isExplicitAdultContent {
-      try await pool.query(
+      try await projectionQuery(
         """
         INSERT INTO wire_labels
           (canonical_key, label_key, label_value, source, confidence, applied_at, expires_at)
@@ -1608,7 +1829,7 @@ struct PostgresWireInboxProcessor: Sendable {
           applied_at = EXCLUDED.applied_at,
           expires_at = EXCLUDED.expires_at
         """,
-        logger: logger
+        on: connection
       )
     }
   }
@@ -1617,9 +1838,10 @@ struct PostgresWireInboxProcessor: Sendable {
     alias: String,
     type: String,
     canonicalKey: String,
-    asOf: Date
+    asOf: Date,
+    connection: PostgresConnection? = nil
   ) async throws {
-    try await pool.query(
+    try await projectionQuery(
       """
       INSERT INTO wire_item_aliases (alias_key, canonical_key, alias_type, expires_at)
       VALUES (\(alias), \(canonicalKey), \(type), \(asOf.addingTimeInterval(WireDataPolicy.itemRetention)))
@@ -1628,7 +1850,7 @@ struct PostgresWireInboxProcessor: Sendable {
       WHERE (wire_item_aliases.canonical_key, wire_item_aliases.expires_at)
         IS DISTINCT FROM (EXCLUDED.canonical_key, EXCLUDED.expires_at)
       """,
-      logger: logger
+      on: connection
     )
   }
 
@@ -1663,17 +1885,20 @@ struct PostgresWireInboxProcessor: Sendable {
     return nil
   }
 
-  private func upsertActor(hash: String, asOf: Date) async throws {
-    try await pool.query(
+  private func upsertActor(
+    hash: String, asOf: Date, connection: PostgresConnection? = nil, incrementsActivity: Bool = true
+  ) async throws {
+    try await projectionQuery(
       """
       INSERT INTO wire_active_actors
         (actor_key_hash, first_active_at, last_active_at, public_signal_count, expires_at)
       VALUES (\(hash), \(asOf), \(asOf), 1, \(asOf.addingTimeInterval(WireDataPolicy.activeActorRetention)))
-      ON CONFLICT (actor_key_hash) DO UPDATE SET last_active_at = EXCLUDED.last_active_at,
+      ON CONFLICT (actor_key_hash) DO UPDATE SET last_active_at = GREATEST(wire_active_actors.last_active_at, EXCLUDED.last_active_at),
         public_signal_count = wire_active_actors.public_signal_count + 1,
-        expires_at = EXCLUDED.expires_at
+        expires_at = GREATEST(wire_active_actors.expires_at, EXCLUDED.expires_at)
+      WHERE \(incrementsActivity)
       """,
-      logger: logger
+      on: connection
     )
   }
 
@@ -1692,7 +1917,8 @@ struct PostgresWireInboxProcessor: Sendable {
     actorHash: String,
     sourceURI: String,
     kind: String,
-    asOf: Date
+    asOf: Date,
+    connection: PostgresConnection? = nil
   ) async throws {
     let eventKey = "\(event.environment):\(event.sourceGeneration):\(event.sequence)"
     let transportEventKey = Self.transportEventKey(
@@ -1701,37 +1927,52 @@ struct PostgresWireInboxProcessor: Sendable {
       cursorKind: event.cursorKind,
       sequence: event.sequence
     )
-    try await pool.withTransaction(logger: logger) { connection in
-      try await connection.query(
-        "SELECT pg_advisory_xact_lock(hashtextextended(\(sourceURI), 0))",
-        logger: logger
-      )
-      try await connection.query(
-        "SELECT ensure_wire_signal_event_partition((\(event.eventTime) AT TIME ZONE 'UTC')::date)",
-        logger: logger
-      )
-      try await connection.query(
-        "DELETE FROM wire_signal_events WHERE source_uri = \(sourceURI) AND occurred_at <= \(event.eventTime)",
-        logger: logger
-      )
-      try await connection.query(
-        """
-        INSERT INTO wire_signal_events
-          (event_key, transport_event_key, canonical_key, signal_kind, actor_key_hash, source_uri,
-           source_collection, source_action, occurred_at, expires_at)
-        SELECT
-          \(eventKey), \(transportEventKey), \(canonicalKey), \(kind), \(actorHash), \(sourceURI),
-          \(event.collection), \(kind), \(event.eventTime),
-          \(event.eventTime.addingTimeInterval(WireDataPolicy.signalRetention))
-        WHERE NOT EXISTS (
-          SELECT 1 FROM wire_signal_events
-          WHERE source_uri = \(sourceURI) AND occurred_at > \(event.eventTime)
-        )
-        ON CONFLICT DO NOTHING
-        """,
-        logger: logger
-      )
+    if let connection {
+      try await insertSignal(event: event, canonicalKey: canonicalKey, actorHash: actorHash,
+        sourceURI: sourceURI, kind: kind, eventKey: eventKey, transportEventKey: transportEventKey,
+        on: connection)
+    } else {
+      try await pool.withTransaction(logger: logger) { connection in
+        try await insertSignal(event: event, canonicalKey: canonicalKey, actorHash: actorHash,
+          sourceURI: sourceURI, kind: kind, eventKey: eventKey, transportEventKey: transportEventKey,
+          on: connection)
+      }
     }
+  }
+
+  private func insertSignal(
+    event: InboxEvent, canonicalKey: String, actorHash: String, sourceURI: String,
+    kind: String, eventKey: String, transportEventKey: String, on connection: PostgresConnection
+  ) async throws {
+    try await connection.query(
+      "SELECT pg_advisory_xact_lock(hashtextextended(\(sourceURI), 0))",
+      logger: logger
+    )
+    try await connection.query(
+      "SELECT ensure_wire_signal_event_partition((\(event.eventTime) AT TIME ZONE 'UTC')::date)",
+      logger: logger
+    )
+    try await connection.query(
+      "DELETE FROM wire_signal_events WHERE source_uri = \(sourceURI) AND occurred_at <= \(event.eventTime)",
+      logger: logger
+    )
+    try await connection.query(
+      """
+      INSERT INTO wire_signal_events
+        (event_key, transport_event_key, canonical_key, signal_kind, actor_key_hash, source_uri,
+         source_collection, source_action, occurred_at, expires_at)
+      SELECT
+        \(eventKey), \(transportEventKey), \(canonicalKey), \(kind), \(actorHash), \(sourceURI),
+        \(event.collection), \(kind), \(event.eventTime),
+        \(event.eventTime.addingTimeInterval(WireDataPolicy.signalRetention))
+      WHERE NOT EXISTS (
+        SELECT 1 FROM wire_signal_events
+        WHERE source_uri = \(sourceURI) AND occurred_at > \(event.eventTime)
+      )
+      ON CONFLICT DO NOTHING
+      """,
+      logger: logger
+    )
   }
 
   private func replaceSignals(
@@ -1937,7 +2178,8 @@ struct PostgresWireInboxProcessor: Sendable {
     status: String,
     retryAt: Date,
     reason: String?,
-    asOf: Date
+    asOf: Date,
+    connection: PostgresConnection? = nil
   ) async throws -> Bool {
     try Task.checkCancellation()
     let appliedAt: Date? = status == "applied" ? asOf : nil
@@ -1946,7 +2188,7 @@ struct PostgresWireInboxProcessor: Sendable {
       status == "applied"
       ? asOf.addingTimeInterval(300)
       : status == "dead_letter" ? asOf.addingTimeInterval(7 * 24 * 3_600) : .distantFuture
-    let rows = try await pool.query(
+    let rows = try await projectionQuery(
       """
       UPDATE wire_ingestion_inbox
       SET status = \(status), next_attempt_at = \(retryAt), failure_category = \(reason),
@@ -1958,7 +2200,7 @@ struct PostgresWireInboxProcessor: Sendable {
         AND status = 'leased'
       RETURNING seq
       """,
-      logger: logger
+      on: connection
     )
     for try await _ in rows { return true }
     return false
