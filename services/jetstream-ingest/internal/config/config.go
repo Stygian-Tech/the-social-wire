@@ -355,7 +355,7 @@ func (c Config) Validate() error {
 	if len(c.Collections) == 0 {
 		problems = append(problems, errors.New("at least one JETSTREAM_COLLECTIONS value is required"))
 	} else {
-		allowedCollections := DefaultCollections
+		allowedCollections := append(slices.Clone(DefaultCollections), "app.thesocialwire.readState")
 		if c.PipelineMode == WirePipelineMode {
 			allowedCollections = WireCollections
 		}

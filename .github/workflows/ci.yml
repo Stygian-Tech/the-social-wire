@@ -72,6 +72,10 @@ jobs:
         run: bunx turbo typecheck --filter=web
       - name: Lint
         run: bunx turbo lint --filter=web
+      - name: Test shared PDS read-state protocol
+        run: bun --cwd packages/read-state test
+      - name: Typecheck shared PDS read-state protocol
+        run: bun --cwd packages/read-state typecheck
       - name: Test
         run: bun --cwd apps/web run test:coverage
         env:
@@ -227,6 +231,9 @@ jobs:
         with:
           swift-version: "6.2.4"
           skip-verify-signature: true
+      - name: Test portable read-state protocol
+        working-directory: packages/swift/ReadStateCore
+        run: swift test
       - name: Test AppView
         working-directory: services/appview
         env:

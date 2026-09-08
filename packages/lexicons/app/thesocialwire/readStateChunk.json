@@ -1,0 +1,36 @@
+{
+  "lexicon": 1,
+  "id": "app.thesocialwire.readStateChunk",
+  "defs": {
+    "main": {
+      "type": "record",
+      "key": "any",
+      "description": "Public immutable read-history chunk, at most 64 KiB JSON application payload. Ignored until reachable from the current manifest. Previous links may reuse older chunks; readers verify every CID and fail closed on missing chunks.",
+      "record": {
+        "type": "object",
+        "required": [
+          "version",
+          "operations"
+        ],
+        "properties": {
+          "version": {
+            "type": "integer",
+            "const": 1
+          },
+          "operations": {
+            "type": "array",
+            "items": {
+              "type": "ref",
+              "ref": "app.thesocialwire.readStateDefs#operation"
+            },
+            "maxLength": 128
+          },
+          "previous": {
+            "type": "ref",
+            "ref": "com.atproto.repo.strongRef"
+          }
+        }
+      }
+    }
+  }
+}

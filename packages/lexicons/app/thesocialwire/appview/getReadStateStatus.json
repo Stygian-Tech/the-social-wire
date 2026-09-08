@@ -1,0 +1,68 @@
+{
+  "lexicon": 1,
+  "id": "app.thesocialwire.appview.getReadStateStatus",
+  "defs": {
+    "main": {
+      "type": "query",
+      "description": "Read the authenticated viewer migration authority and verified manifest. No public or shared cache.",
+      "output": {
+        "encoding": "application/json",
+        "schema": {
+          "type": "object",
+          "required": [
+            "authority",
+            "migrationState",
+            "legacyRevision"
+          ],
+          "properties": {
+            "authority": {
+              "type": "string",
+              "maxLength": 7,
+              "enum": [
+                "appview",
+                "pds"
+              ]
+            },
+            "migrationState": {
+              "type": "string",
+              "maxLength": 10,
+              "enum": [
+                "notStarted",
+                "verified"
+              ]
+            },
+            "legacyRevision": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "manifest": {
+              "type": "ref",
+              "ref": "app.thesocialwire.readState"
+            },
+            "manifestCid": {
+              "type": "string",
+              "maxLength": 256,
+              "format": "cid"
+            },
+            "projectionReady": {
+              "type": "boolean",
+              "description": "False while the rebuildable projection is being restored; read requests fail with a retryable unavailable response."
+            }
+          }
+        }
+      },
+      "errors": [
+        {
+          "name": "InvalidRequest"
+        },
+        {
+          "name": "Conflict"
+        },
+        {
+          "name": "UpstreamUnavailable"
+        }
+      ]
+    }
+  }
+}

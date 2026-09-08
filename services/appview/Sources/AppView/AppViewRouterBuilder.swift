@@ -163,6 +163,12 @@ enum AppViewRouterBuilder {
       projectionService: projection
     ).register(on: protected)
 
+    if let pdsReadStateStore = thinAppViewStore as? any PDSReadStateStoring {
+      PDSReadStateRoutes(service: PDSReadStateService(store: pdsReadStateStore,
+        thinStore: thinAppViewStore, repo: repo, publicationService: projection, projectionCache: projectionCache))
+        .register(on: protected)
+    }
+
     let bootstrapStream = BootstrapStreamService(
       projectionService: projection,
       readService: readService,

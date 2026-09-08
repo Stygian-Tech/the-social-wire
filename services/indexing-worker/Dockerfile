@@ -12,6 +12,8 @@ COPY packages/swift/SocialWireRedis/Sources packages/swift/SocialWireRedis/Sourc
 COPY packages/swift/OperationsCore/Package.swift packages/swift/OperationsCore/Package.resolved* packages/swift/OperationsCore/
 COPY packages/swift/OperationsCore/Sources packages/swift/OperationsCore/Sources
 
+COPY packages/swift/ReadStateCore packages/swift/ReadStateCore
+
 COPY packages/swift/ThinAppViewCore/Package.swift packages/swift/ThinAppViewCore/Package.resolved* packages/swift/ThinAppViewCore/
 COPY packages/swift/ThinAppViewCore/Sources packages/swift/ThinAppViewCore/Sources
 

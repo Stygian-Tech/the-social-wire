@@ -7,6 +7,7 @@ let package = Package(
     .macOS(.v14)
   ],
   dependencies: [
+    .package(path: "../../packages/swift/ReadStateCore"),
     .package(path: "../../packages/swift/GatewayCore"),
     .package(path: "../../packages/swift/OperationsCore"),
     .package(path: "../../packages/swift/ThinAppViewCore"),
@@ -25,6 +26,7 @@ let package = Package(
     .executableTarget(
       name: "AppView",
       dependencies: [
+        .product(name: "ReadStateCore", package: "ReadStateCore"),
         "GatewayCore",
         "OperationsCore",
         .product(name: "ThinAppViewCore", package: "ThinAppViewCore"),

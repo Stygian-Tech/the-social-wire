@@ -57,7 +57,7 @@ public init(path dbPath: String, logger: Logger) throws {
                   SELECT 1 FROM appview_publication_scopes scope
                   WHERE scope.author_did = i.repo_did))
               OR (i.collection IN (
-                  'app.skyreader.feed.subscription', 'site.standard.graph.subscription'
+                  'app.skyreader.feed.subscription', 'site.standard.graph.subscription', 'app.thesocialwire.readState'
                 ) AND (
                   EXISTS (
                     SELECT 1 FROM appview_viewer_feeds feed
@@ -171,7 +171,7 @@ public init(path dbPath: String, logger: Logger) throws {
                 inbox.collection IS NULL OR inbox.collection NOT IN (
                   'site.standard.document', 'site.standard.entry',
                   'com.standard.document', 'com.standard.entry',
-                  'app.skyreader.feed.subscription', 'site.standard.graph.subscription'
+                  'app.skyreader.feed.subscription', 'site.standard.graph.subscription', 'app.thesocialwire.readState'
                 )
                 OR (inbox.collection IN (
                     'site.standard.document', 'site.standard.entry',
@@ -180,7 +180,7 @@ public init(path dbPath: String, logger: Logger) throws {
                     SELECT 1 FROM appview_publication_scopes scope
                     WHERE scope.author_did = inbox.repo_did))
                 OR (inbox.collection IN (
-                    'app.skyreader.feed.subscription', 'site.standard.graph.subscription'
+                    'app.skyreader.feed.subscription', 'site.standard.graph.subscription', 'app.thesocialwire.readState'
                   ) AND NOT EXISTS (
                     SELECT 1 FROM appview_viewer_feeds feed
                     WHERE feed.viewer_did = inbox.repo_did)

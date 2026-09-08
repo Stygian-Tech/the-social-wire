@@ -55,7 +55,7 @@ func (p *Postgres) stageInboxEvents(ctx context.Context, tx *sql.Tx, events []in
 		OR (incoming.collection IN ('site.standard.document', 'site.standard.entry',
 		  'com.standard.document', 'com.standard.entry')
 		  AND EXISTS (SELECT 1 FROM appview_publication_scopes scope WHERE scope.author_did = incoming.repo_did))
-		OR (incoming.collection IN ('app.skyreader.feed.subscription', 'site.standard.graph.subscription')
+		OR (incoming.collection IN ('app.skyreader.feed.subscription', 'site.standard.graph.subscription', 'app.thesocialwire.readState')
 		  AND (EXISTS (SELECT 1 FROM appview_viewer_feeds feed WHERE feed.viewer_did = incoming.repo_did)
 		    OR EXISTS (SELECT 1 FROM appview_publication_scopes scope WHERE scope.viewer_did = incoming.repo_did)))`
 	if p.source.IsWire() {

@@ -1,0 +1,141 @@
+{
+  "lexicon": 1,
+  "id": "app.thesocialwire.readStateDefs",
+  "defs": {
+    "scope": {
+      "type": "object",
+      "required": [
+        "publicationId",
+        "authorDid",
+        "publicationSiteKeys"
+      ],
+      "properties": {
+        "publicationId": {
+          "type": "string",
+          "maxLength": 2048
+        },
+        "authorDid": {
+          "type": "string",
+          "maxLength": 2048,
+          "format": "did"
+        },
+        "publicationSiteKeys": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 2048
+          },
+          "maxLength": 128
+        }
+      }
+    },
+    "boundary": {
+      "type": "object",
+      "required": [
+        "scope",
+        "createdAt"
+      ],
+      "properties": {
+        "scope": {
+          "type": "ref",
+          "ref": "#scope"
+        },
+        "createdAt": {
+          "type": "string",
+          "maxLength": 2048,
+          "format": "datetime"
+        },
+        "entryId": {
+          "type": "string",
+          "maxLength": 2048
+        }
+      }
+    },
+    "operation": {
+      "type": "object",
+      "required": [
+        "actionId",
+        "sequence",
+        "state",
+        "actedAt",
+        "selection"
+      ],
+      "properties": {
+        "actionId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "state": {
+          "type": "string",
+          "maxLength": 6,
+          "enum": [
+            "read",
+            "unread"
+          ]
+        },
+        "actedAt": {
+          "type": "string",
+          "maxLength": 2048,
+          "format": "datetime"
+        },
+        "selection": {
+          "type": "string",
+          "maxLength": 10,
+          "enum": [
+            "boundaries",
+            "exact"
+          ]
+        },
+        "boundaries": {
+          "type": "array",
+          "items": {
+            "type": "ref",
+            "ref": "#boundary"
+          },
+          "maxLength": 128
+        },
+        "subjectUris": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 2048
+          },
+          "maxLength": 256
+        },
+        "calendar": {
+          "type": "ref",
+          "ref": "#calendar"
+        }
+      },
+      "description": "Public read-history operation. Exactly one nonempty boundaries or subjectUris array must match selection. Sequence is allocated using manifest CAS, never device time. Splits of one action share sequence, actionId, state and actedAt."
+    },
+    "calendar": {
+      "type": "object",
+      "required": [
+        "cutoff",
+        "timeZone",
+        "referenceDate"
+      ],
+      "properties": {
+        "cutoff": {
+          "type": "string",
+          "format": "datetime"
+        },
+        "timeZone": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "referenceDate": {
+          "type": "string",
+          "maxLength": 10
+        }
+      },
+      "description": "Exact age selection audit metadata. Reference date is YYYY-MM-DD in the IANA timezone; cutoff is resolved UTC. Matching uses exact subject IDs, not recomputed calendar dates."
+    }
+  }
+}

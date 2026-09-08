@@ -1,0 +1,38 @@
+{
+  "lexicon": 1,
+  "id": "app.thesocialwire.readState",
+  "defs": {
+    "main": {
+      "type": "record",
+      "key": "literal:self",
+      "description": "Public canonical read/unread state manifest. Publish with compare-and-swap only after every immutable chunk is stored. Never activate an incomplete generation.",
+      "record": {
+        "type": "object",
+        "required": [
+          "version",
+          "generation",
+          "lastSequence"
+        ],
+        "properties": {
+          "version": {
+            "type": "integer",
+            "const": 1
+          },
+          "generation": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "lastSequence": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "head": {
+            "type": "ref",
+            "ref": "com.atproto.repo.strongRef"
+          }
+        }
+      }
+    }
+  }
+}
