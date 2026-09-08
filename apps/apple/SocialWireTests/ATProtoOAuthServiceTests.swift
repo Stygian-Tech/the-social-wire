@@ -48,7 +48,7 @@ struct ATProtoOAuthServiceTests {
         #expect(ATProtoOAuthService.hasPDSReadStateScopes(ATProtoOAuthService.scopes))
         #expect(!ATProtoOAuthService.hasPDSReadStateScopes(nil))
         let createOnlyChunk = ATProtoOAuthService.scopes.replacingOccurrences(
-            of: "repo:app.thesocialwire.readStateChunk?action=create&action=update",
+            of: "repo:app.thesocialwire.readStateChunk?action=create&action=update&action=delete",
             with: "repo:app.thesocialwire.readStateChunk?action=create")
         #expect(!ATProtoOAuthService.hasPDSReadStateScopes(createOnlyChunk))
         #expect(ATProtoOAuthService.hasRequiredFeatureScopes(createOnlyChunk))

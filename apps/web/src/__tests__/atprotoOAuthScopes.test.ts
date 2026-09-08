@@ -117,5 +117,5 @@ it("keeps published native OAuth scopes exactly aligned with the native authoriz
   const nativeScopes = [...scopeArray!.matchAll(/^\s*"([^"\n]+)"/gm)].map(match => match[1]);
   expect(metadata.scope).toBe(nativeScopes.join(" "));
   expect(nativeScopes).toContain("repo:app.thesocialwire.readState?action=create&action=update");
-  expect(nativeScopes).toContain("repo:app.thesocialwire.readStateChunk?action=create&action=update");
+  expect(nativeScopes).toContain("repo:app.thesocialwire.readStateChunk?action=create&action=update&action=delete");
 });

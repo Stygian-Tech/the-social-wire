@@ -11,7 +11,7 @@ final class ATProtoOAuthService: NSObject, ASWebAuthenticationPresentationContex
     static let scopes = [
         "atproto",
         "repo:app.thesocialwire.readState?action=create&action=update",
-        "repo:app.thesocialwire.readStateChunk?action=create&action=update",
+        "repo:app.thesocialwire.readStateChunk?action=create&action=update&action=delete",
         "repo:app.thesocialwire.folder?action=create&action=update&action=delete",
         "repo:app.thesocialwire.publicationPrefs?action=create&action=update&action=delete",
         "repo:app.thesocialwire.preferences?action=create&action=update&action=delete",
@@ -57,7 +57,7 @@ final class ATProtoOAuthService: NSObject, ASWebAuthenticationPresentationContex
     // Existing sessions remain usable until the viewer explicitly opts into PDS history.
     static let pdsReadStateScopes: Set<String> = [
         "repo:app.thesocialwire.readState?action=create&action=update",
-        "repo:app.thesocialwire.readStateChunk?action=create&action=update",
+        "repo:app.thesocialwire.readStateChunk?action=create&action=update&action=delete",
     ]
 
     static let requiredFeatureScopes: Set<String> = [

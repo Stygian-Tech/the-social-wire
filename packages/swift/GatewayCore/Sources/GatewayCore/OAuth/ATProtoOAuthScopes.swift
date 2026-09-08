@@ -58,7 +58,7 @@ public enum ATProtoOAuthScopes {
 
   private static let iosReadStateScopes = [
     "repo:app.thesocialwire.readState?action=create&action=update",
-    "repo:app.thesocialwire.readStateChunk?action=create&action=update",
+    "repo:app.thesocialwire.readStateChunk?action=create&action=update&action=delete",
   ]
 
   static let webScope = (webReadStateScopes + sharedScopes + readerActionScopes).joined(separator: " ")
