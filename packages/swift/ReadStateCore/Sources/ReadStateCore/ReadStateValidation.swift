@@ -39,11 +39,22 @@ public enum ReadStateValidation {
   }
 
   public static func validate(_ manifest: ReadStateManifest, viewerDid: String) throws {
-    guard manifest.type == ReadStateManifest.collection, manifest.version == 1,
-          !manifest.generation.isEmpty, manifest.generation.utf8.count <= 128,
-          (0...maximumSequence).contains(manifest.lastSequence),
-          manifest.head != nil || manifest.lastSequence == 0 else { throw ReadStateError.invalidRecord }
-    if let head = manifest.head { try validate(head, viewerDid: viewerDid) }
+    guard manifest.type == ReadStateManifest.collection, [1, 2].contains(manifest.version),
+      !manifest.generation.isEmpty, manifest.generation.utf8.count <= 128,
+      (0...maximumSequence).contains(manifest.lastSequence) else { throw ReadStateError.invalidRecord }
+    if manifest.version == 1 {
+      guard manifest.head != nil || manifest.lastSequence == 0,
+        manifest.revision == nil, manifest.stateHead == nil, manifest.devicesHead == nil,
+        manifest.legacyReceiptsHead == nil, manifest.compactionVersion == nil else { throw ReadStateError.invalidRecord }
+      if let head = manifest.head { try validate(head, viewerDid: viewerDid) }
+    } else {
+      guard let revision = manifest.revision, (1...maximumSequence).contains(revision),
+        manifest.head == nil, manifest.compactionVersion == 1, manifest.extensions.isEmpty,
+        manifest.lastSequence == 0 || manifest.stateHead != nil else { throw ReadStateError.invalidRecord }
+      for reference in [manifest.stateHead, manifest.devicesHead, manifest.legacyReceiptsHead].compactMap({ $0 }) {
+        try validate(reference, viewerDid: viewerDid)
+      }
+    }
     try validateSize(manifest)
   }
 

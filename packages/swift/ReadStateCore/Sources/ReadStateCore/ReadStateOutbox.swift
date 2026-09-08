@@ -8,6 +8,8 @@ public struct ReadStateOutbox: Codable, Sendable {
     public var replacingManifestCid: String?
     public var publication: Publication?
     public var localOverlay: [ReadStateOperation]? = nil
+    public var v2Actions: [ReadStateOutboxV2State.Action]? = nil
+    public var v2Publication: ReadStateV2Publication? = nil
   }
 
   public struct Publication: Codable, Sendable {
@@ -30,6 +32,7 @@ public struct ReadStateOutbox: Codable, Sendable {
   public var jobs: [Job] = []
   public var retryAfter: Date?
   public var failures = 0
+  public var v2: ReadStateOutboxV2State? = nil
 
   public init(viewerDid: String) { self.viewerDid = viewerDid }
 }

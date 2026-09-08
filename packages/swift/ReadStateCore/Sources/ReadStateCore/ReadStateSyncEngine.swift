@@ -3,12 +3,12 @@ import Foundation
 /// Serial, durable publication. A failed upload resumes the same immutable chunks;
 /// only the final manifest makes an action visible to projections.
 public actor ReadStateSyncEngine {
-  private let viewerDid: String
-  private let storage: ReadStateOutboxStorage
-  private let transport: ReadStateSyncTransport
-  private var outbox: ReadStateOutbox
-  private var flushing = false
-  private var cachedProjection: (cid: String, projection: ReadStateProjection)?
+  let viewerDid: String
+  let storage: ReadStateOutboxStorage
+  let transport: ReadStateSyncTransport
+  var outbox: ReadStateOutbox
+  var flushing = false
+  var cachedProjection: (cid: String, projection: ReadStateProjection)?
 
   public init(viewerDid: String, file: URL, transport: ReadStateSyncTransport) throws {
     self.viewerDid = viewerDid
@@ -52,6 +52,11 @@ public actor ReadStateSyncEngine {
   public func enqueue(_ operations: [ReadStateOperation], expectedLegacyRevision: Int64? = nil,
       localOverlay: [ReadStateOperation]? = nil) throws {
     guard !operations.isEmpty || expectedLegacyRevision != nil else { return }
+    if outbox.v2 != nil {
+      guard expectedLegacyRevision == nil else { throw ReadStateSyncFailure.conflict }
+      try enqueueV2(operations, localOverlay: localOverlay)
+      return
+    }
     for operation in operations + (localOverlay ?? []) { try ReadStateValidation.validate(operation) }
     let previous = outbox
     // Coalesce only an unstarted individual intent. Never rewrite a published or
@@ -80,6 +85,10 @@ public actor ReadStateSyncEngine {
         try Task.checkCancellation()
         let jobId = outbox.jobs[0].id
         let current = try await transport.readManifest()
+        if let current, current.manifest.version == 2 || outbox.v2 != nil {
+          try await flushV2(current: current)
+          continue
+        }
         // Only a revision-fenced initial migration may create the singleton.
         // A missing manifest for an active viewer is a recovery failure, not empty history.
         if current == nil, outbox.jobs[0].expectedLegacyRevision == nil {
@@ -206,7 +215,7 @@ public actor ReadStateSyncEngine {
       lastSequence: sequence, committedCid: nil, manifestExtensions: current?.manifest.extensions)
   }
 
-  private func persist() throws {
+  func persist() throws {
     try storage.write(outbox)
   }
 }

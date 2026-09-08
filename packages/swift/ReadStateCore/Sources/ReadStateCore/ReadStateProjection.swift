@@ -8,13 +8,22 @@ public struct ReadStateProjection: Sendable {
   public let actionIds: Set<String>
   public let operations: [ReadStateOperation]
   public let sourceChunkCount: Int
+  public let sourceBytesByKind: [String: Int]
+  public let sourceChunksByKind: [String: Int]
   public let sourceBytes: Int
   public let allowsRepacking: Bool
   public let sourceReferences: Set<ReadStateReference>
+  public let protocolVersion: Int
+  public let v2Fragments: [ReadStateV2Fragment]
+  public let deviceReceipts: [ReadStateDeviceReceipt]
+  public let legacyReceipts: [ReadStateLegacyActionReceipt]
 
   public init(operations: [ReadStateOperation], lastSequence: Int64,
               sourceChunkCount: Int = 0, sourceBytes: Int = 0, allowsRepacking: Bool = true,
-              sourceReferences: Set<ReadStateReference> = []) throws {
+              sourceReferences: Set<ReadStateReference> = [], protocolVersion: Int = 1,
+              v2Fragments: [ReadStateV2Fragment] = [], deviceReceipts: [ReadStateDeviceReceipt] = [],
+              legacyReceipts: [ReadStateLegacyActionReceipt] = [],
+              sourceBytesByKind: [String: Int] = [:], sourceChunksByKind: [String: Int] = [:]) throws {
     guard (0...ReadStateValidation.maximumSequence).contains(lastSequence) else {
       throw ReadStateError.invalidRecord
     }
@@ -43,7 +52,7 @@ public struct ReadStateProjection: Sendable {
           (boundary, try ReadStateValidation.date(boundary.createdAt), operation))
       }
     }
-    guard operations.map(\.sequence).max() ?? 0 == lastSequence else { throw ReadStateError.incompleteGeneration }
+    guard [1, 2].contains(protocolVersion), protocolVersion == 2 || operations.map(\.sequence).max() ?? 0 == lastSequence else { throw ReadStateError.incompleteGeneration }
     self.exact = exact
     self.scoped = scoped
     self.lastSequence = lastSequence
@@ -51,8 +60,11 @@ public struct ReadStateProjection: Sendable {
     self.operations = operations
     self.sourceChunkCount = sourceChunkCount
     self.sourceBytes = sourceBytes
+    self.sourceBytesByKind = sourceBytesByKind; self.sourceChunksByKind = sourceChunksByKind
     self.allowsRepacking = allowsRepacking
     self.sourceReferences = sourceReferences
+    self.protocolVersion = protocolVersion; self.v2Fragments = v2Fragments
+    self.deviceReceipts = deviceReceipts; self.legacyReceipts = legacyReceipts
   }
 
   public func resolve(_ subject: ReadStateSubject) -> ReadStateResolution {

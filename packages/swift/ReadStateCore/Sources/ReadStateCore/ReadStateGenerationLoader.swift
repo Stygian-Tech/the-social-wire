@@ -10,6 +10,7 @@ public enum ReadStateGenerationLoader {
     fetchVerifiedChunk: @Sendable (ReadStateReference) async throws -> ReadStateChunk
   ) async throws -> ReadStateProjection {
     try ReadStateValidation.validate(manifest, viewerDid: viewerDid)
+    guard manifest.version == 1 else { throw ReadStateError.invalidRecord }
     var reference = manifest.head
     var visited = Set<ReadStateReference>()
     var operations: [ReadStateOperation] = []
