@@ -149,7 +149,7 @@ export function CircleNewsExperience({
         title="Your Circle Is Not Ready Yet"
         onRetry={() => void edition.catalog.refetch()}
       >
-        There aren’t enough available stories to build Your Circle yet. Please check back later.
+        Stories for Your Circle aren’t available right now. Please check back later.
       </CircleFeedMessage>
     );
   }

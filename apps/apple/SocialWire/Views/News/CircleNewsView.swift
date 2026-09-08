@@ -84,7 +84,7 @@ struct CircleNewsView: View {
                     ContentUnavailableView(
                         "Your Circle Is Not Ready Yet",
                         systemImage: "person.2.wave.2",
-                        description: Text("There aren’t enough available stories to build Your Circle yet. Please check back later.")
+                        description: Text("Stories for Your Circle aren’t available right now. Please check back later.")
                     )
                     .frame(maxWidth: .infinity, minHeight: 260)
                 case .refreshing:
