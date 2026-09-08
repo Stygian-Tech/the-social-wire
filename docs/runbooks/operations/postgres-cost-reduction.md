@@ -8,8 +8,10 @@ QA evidence with its stated limitations. Immediately verify Production service
 health, authenticated feeds and read state, generation freshness, and ingestion
 backlog and latency against the pre-deployment baseline; pause further rollout
 and revert the affected application change on regression. This stage does not
-change backup retention, WAL settings, or memory limits. A successful seven-day
-restore remains mandatory before shortening Production retention. Memory limits
+change backup retention, WAL settings, or memory limits. On September 8 the user
+replaced the Production seven-day PITR requirement with daily Railway snapshots
+and accepted their six-day retention. The replacement snapshot restore and
+discovery recovery gates below now govern PITR retirement. Memory limits
 remain separate measured trials with the rollback criteria below. Outstanding
 acceptance and savings evidence must not be reported as complete.
 Run migrations only through Database Migrator. The concurrent index migration
@@ -44,8 +46,9 @@ ALTER SYSTEM SET checkpoint_completion_target = '0.9';
 SELECT pg_reload_conf();
 ```
 
-Verify effective settings in a new session. Preserve fsync, full_page_writes,
-archive_mode and archive_timeout. max_wal_size is a soft checkpoint threshold,
+Verify effective settings in a new session. Preserve fsync and full_page_writes;
+change archiving only through the separately verified backup cutover below.
+max_wal_size is a soft checkpoint threshold,
 not a storage cap. Leave work_mem/shared_buffers unchanged initially. Replay
 representative ingestion with concurrent ranked reads; compare before/after
 over one hour and a full day. Validate crash recovery in an isolated copy.
@@ -58,45 +61,50 @@ rewrite; normal vacuum reuses space and targeted index rebuilds need headroom.
 
 ## Backup gate
 
-Production's intended **effective** pgBackRest settings are:
+Production and Development use daily-only Railway volume snapshots with the
+provider's six-day retention. This permits losing changes since the latest usable
+snapshot, normally up to about 24 hours; it does not provide arbitrary point-in-time
+recovery. Alert if no successful daily snapshot exists within 26 hours. Verify the
+effective schedule, snapshot timestamps and expirations instead of inferring them
+from a configured daily flag.
 
-```text
-repo1-retention-full-type=time
-repo1-retention-full=7
-repo1-retention-archive-type=full
-```
+Before retiring an environment's PITR archive, restore a daily snapshot through
+the **same volume-backup mechanism** into an isolated verifier. Railway's restore
+operation stages a replacement of the source volume. Redirect only the verified
+cloned volume to the verifier, commit an explicit verifier-only patch, and prove
+the live volume and postmaster remain unchanged. Do not use the CLI restore flow
+that automatically commits a live replacement. Remove archive/recovery credentials
+from the verifier and explicitly disable its archive and restore commands before
+startup. Preserve source corpus, read state, hides and recovery controls; verify
+their integrity and repeat after restart. Rebuild discovery within one hour.
 
-Use the image contract `WAL_BACKUP_RETENTION_FULL=7`, native
-`PGBACKREST_REPO1_RETENTION_FULL_TYPE=time`, weekly fulls (168 hours), and daily
-differentials (24 hours); remove test-only seconds overrides. Leave explicit
-archive-retention unset so the full backups pin their required WAL. Verify native
-environment precedence against the effective pgBackRest command before expiration.
-Weekly fulls retain roughly 7–14 days of history. Preview `expire --dry-run` and
-restore a seven-day-old point before changing retention. Never use bucket TTLs or
-manual WAL deletion. Keep gap recovery enabled; correlate its extra differentials
-with archive timeouts, queue health, and repository continuity. Current zero lag
-does not prove historic coverage. Inventory obsolete archive prefixes separately.
-
-For Development, configure daily-only Railway volume backups with Railway's
-six-day retention (explicitly accepted on September 4, 2026). Restore one through the **same volume-backup mechanism** into
-an isolated target before retiring Development PITR. A PITR restore alone is not
-evidence that the replacement daily-backup path works. Preserve old archives until
-the replacement restore is verified. Inspect staged changes so disabling PITR
-cannot silently delete needed history or deploy unrelated changes.
+After the replacement proof, remove the six `WAL_ARCHIVE_*` variables from the
+source through an explicit service-only Railway configuration change. Read back
+`archive_mode=off`, preserved crash-safety/WAL tuning, the original mounted volume,
+and daily snapshots after the controlled restart. Keep the old bucket until those
+checks pass. Verify ownership and references in both environments before retiring
+the exclusively owned archive bucket and obsolete restore service/volume through
+Railway. Never manually delete WAL files from an active repository, apply bucket
+TTLs, or commit unrelated staged changes. Account for temporary restore resources
+and provider deletion grace periods separately from steady-state savings.
 
 ## Acceptance evidence
 
 Run the repository restore-drill checks on isolated targets only. Record source
 recovery time, actual replay stop time, migrations, representative content and
 durable user-state checks, plus restart/rebuild completion. Discovery must recover
-within one hour; test several points around archive failures, not merely an archive
-start/end range. Never report restored user state from an empty cache as success.
+within one hour. Record snapshot creation, restore request, database readiness and
+discovery readiness separately. Never report restored user state from an empty
+cache as success. Historical PITR experiments below describe the policy at the
+time and do not reinstate the superseded seven-day PITR gate.
 
 At 24 hours and seven days, compare total DB-related cost against the recorded
-baseline. Targets are >=70% cost reduction, >=80% WAL/upload reduction, >=95%
+baseline. Targets are >=70% cost reduction, cessation of PITR uploads, >=95%
 fewer retained ranking rows, no growing queue age, no lost read state or hides,
 and no user-visible latency regression. These are acceptance targets, not measured
-savings until the hosted soak completes. The expedited application stage does not
+savings until the hosted soak completes. Continue measuring local WAL generation
+as a workload diagnostic; archiving being intentionally idle is not a failure.
+The expedited application stage does not
 waive these final acceptance checks. A failed recovery gate blocks retention
 shortening; a failed workload or memory trial blocks the corresponding tuning or
 limit change. Address observed application regressions before proceeding further.
