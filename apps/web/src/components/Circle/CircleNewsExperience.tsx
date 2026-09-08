@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import { Network } from "lucide-react";
 
 import type { EntryListItem } from "@/lib/atprotoClient";
 import { useCircleEdition } from "@/hooks/useCircleFeed";
@@ -15,6 +16,33 @@ import {
 } from "@/components/Circle/CircleStoryActionsContext";
 
 const EMPTY_CIRCLE_PAGES: CircleEditionPage[] = [];
+
+function CircleFeedMessage({
+  title,
+  children,
+  onRetry,
+}: {
+  title: string;
+  children: React.ReactNode;
+  onRetry?: () => void;
+}) {
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
+      <Network className="size-10 text-muted-foreground" aria-hidden="true" />
+      <h2 className="text-lg font-semibold">{title}</h2>
+      <p className="max-w-md text-sm text-muted-foreground">{children}</p>
+      {onRetry ? (
+        <button
+          type="button"
+          className="text-sm text-primary underline-offset-4 hover:underline"
+          onClick={onRetry}
+        >
+          Retry
+        </button>
+      ) : null}
+    </div>
+  );
+}
 
 function CircleActionsError() {
   const actions = useCircleStoryActions();
@@ -96,30 +124,60 @@ export function CircleNewsExperience({
     );
   }
 
-  if (edition.isError && pages.length === 0) {
+  if (storyCount === 0 && edition.catalog.isError) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center text-sm text-muted-foreground">
-        <p>
-          {edition.error instanceof Error
-            ? edition.error.message
-            : "Your Circle could not load."}
-        </p>
-        <button
-          type="button"
-          className="text-primary underline-offset-4 hover:underline"
-          onClick={() => void edition.refetch()}
-        >
-          Retry
-        </button>
-      </div>
+      <CircleFeedMessage
+        title="Your Circle Could Not Load"
+        onRetry={() => void edition.catalog.refetch()}
+      >
+        We couldn’t check whether Your Circle is ready. Please try again.
+      </CircleFeedMessage>
     );
   }
 
-  if (!pages[0] || pages[0].stories.length === 0) {
+  if (edition.catalog.data?.enabled === false) {
     return (
-      <div className="flex h-full items-center justify-center p-8 text-center text-sm text-muted-foreground">
-        No stories have reached Your Circle yet.
-      </div>
+      <CircleFeedMessage title="Your Circle Is Unavailable">
+        Your Circle is currently unavailable. Please check back later.
+      </CircleFeedMessage>
+    );
+  }
+
+  if (storyCount === 0 && edition.catalog.data?.available === false) {
+    return (
+      <CircleFeedMessage
+        title="Your Circle Is Not Ready Yet"
+        onRetry={() => void edition.catalog.refetch()}
+      >
+        There aren’t enough available stories to build Your Circle yet. Please check back later.
+      </CircleFeedMessage>
+    );
+  }
+
+  if (edition.isError && storyCount === 0) {
+    return (
+      <CircleFeedMessage
+        title="Your Circle Could Not Load"
+        onRetry={() => void edition.refetch()}
+      >
+        {edition.error instanceof Error
+          ? edition.error.message
+          : "Please try again."}
+      </CircleFeedMessage>
+    );
+  }
+
+  if (storyCount === 0) {
+    const limitedCoverage = pages[0]?.degraded || pages[0]?.source === "stale_generation";
+    return (
+      <CircleFeedMessage
+        title={limitedCoverage ? "Your Circle Is Refreshing" : "Your Circle Is Still Taking Shape"}
+        onRetry={() => void edition.refetch()}
+      >
+        {limitedCoverage
+          ? "Network coverage is limited right now. Please check back as Your Circle refreshes."
+          : "Your Circle needs recent shared links from people you follow and their connections. Stories will appear here when there’s enough activity to build your feed."}
+      </CircleFeedMessage>
     );
   }
 
