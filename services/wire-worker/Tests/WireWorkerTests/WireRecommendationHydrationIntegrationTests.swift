@@ -4,6 +4,43 @@ import Testing
 @testable import WireWorkerCore
 
 extension WirePostgresIntegrationTests {
+  @Test("missing or inactive subjects retain a typed retry without treating the recommendation as withdrawn",
+    arguments: ["subject_record_absent", "subject_repo_inactive"])
+  func recommendationHydrationRetainsSubjectFailure(reason: String) async throws {
+    try await WireRecommendationHydrationFixture.run { fixture in
+      try await fixture.seed()
+      let observation = WirePublicRecordObservation(uri: fixture.subjectURI, expectedCID: nil,
+        repositoryRevision: fixture.revision, pdsBase: "https://pds.publisher.social", observedAt: fixture.base.now)
+      await fixture.verifier.set(reason == "subject_record_absent" ? .missing(observation) : .inactive(observation),
+        for: fixture.subjectURI)
+      let hydrator = WireRecommendationHydrator(pool: fixture.base.pool, logger: fixture.base.logger,
+        environment: fixture.base.environment, verifier: fixture.verifier, processor: try fixture.processor())
+      let result = try await hydrator.hydrate(asOf: fixture.base.now, limit: 16)
+      #expect(result.verified == 1)
+      #expect(result.staged == 0)
+      #expect(result.unavailable == 1)
+      #expect(try await fixture.base.scalar(
+        """
+        SELECT COUNT(*)::bigint FROM wire_recommendation_dependency_recovery
+        WHERE environment = \(fixture.base.environment) AND source_uri = \(fixture.sourceURI())
+          AND status = 'unavailable' AND failure_reason = \(reason)
+          AND next_attempt_at > \(fixture.base.now.addingTimeInterval(1)) AND lease_token IS NULL
+        """) == 1)
+      #expect(try await fixture.base.scalar(
+        """
+        SELECT COUNT(*)::bigint FROM wire_recommendation_journal
+        WHERE environment = \(fixture.base.environment) AND status = 'pending' AND operation = 'create'
+          AND record_cid = \(fixture.cid) AND payload->'commit'->'record'->>'document' = \(fixture.subjectURI)
+        """) == 1)
+      #expect(try await fixture.base.scalar(
+        """
+        SELECT COUNT(*)::bigint FROM wire_ingestion_inbox
+        WHERE environment = \(fixture.base.environment) AND (status = 'applied' OR operation = 'delete' OR event_kind = 'snapshot')
+        """) == 0)
+      #expect(try await fixture.signalCount() == 0)
+    }
+  }
+
   @Test("recommendations beyond signal retention retain their envelope without dependency network work")
   func recommendationHydrationSkipsExpiredSignals() async throws {
     try await WireRecommendationHydrationFixture.run { fixture in
