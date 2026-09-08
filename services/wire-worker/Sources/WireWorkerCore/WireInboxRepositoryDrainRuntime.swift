@@ -105,6 +105,9 @@ enum WireInboxRepositoryDrainRuntime {
         if outcome == .applied, let telemetry {
           await telemetry.recordAppliedEvents(1)
         }
+        if outcome == .deferred, let telemetry {
+          await telemetry.recordDeferredEvents(1)
+        }
         try Task.checkCancellation()
         guard outcome.permitsContinuation, !event.isPassiveDelete,
           index + 1 < maximumEvents,

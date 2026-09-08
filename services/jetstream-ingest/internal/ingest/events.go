@@ -31,8 +31,9 @@ func PrepareBatch(events []jetstream.Event, trackedDIDs map[string]struct{}) ([]
 }
 
 // PrepareBatchForPipeline keeps only events that can mutate the selected projection. The global
-// Wire lane retains inactive-account cleanup while discarding lifecycle and linkless-create events
-// that its worker would otherwise acknowledge without changing corpus state.
+// Wire retains account state transitions so a reactivation can release a durable
+// recommendation account fence. Identity/sync and linkless creates do not mutate
+// this projection and remain filtered.
 func PrepareBatchForPipeline(events []jetstream.Event, trackedDIDs map[string]struct{}, wireGlobal bool) ([]InboxEvent, uint64, time.Time, error) {
 	var prepared []InboxEvent
 	var lastSeq uint64
@@ -105,7 +106,7 @@ func PrepareBatchForPipeline(events []jetstream.Event, trackedDIDs map[string]st
 func projectsWireEvent(event jetstream.Event) bool {
 	switch event.Kind {
 	case jetstream.KindAccount:
-		return event.Account != nil && !event.Account.Active
+		return event.Account != nil
 	case jetstream.KindIdentity, jetstream.KindSync:
 		return false
 	case jetstream.KindCommit:

@@ -26,6 +26,7 @@ struct WireWorkerConfig: Sendable {
   var metadataConcurrency: Int
   var metadataIdleMilliseconds: Int
   var postgresMaximumConnections: Int
+  var deferredRecommendationsEnabled: Bool = false
 
   static func load(
     _ environment: [String: String],
@@ -124,6 +125,9 @@ struct WireWorkerConfig: Sendable {
       ),
       postgresMaximumConnections: try boundedPositiveInt(
         environment, key: "WIRE_POSTGRES_MAX_CONNECTIONS", default: 12, maximum: 64
+      ),
+      deferredRecommendationsEnabled: try boolean(
+        environment, key: "WIRE_DEFERRED_RECOMMENDATIONS_ENABLED", default: false
       )
     )
   }
