@@ -67,12 +67,14 @@ export function useFeedDisplayPreferences() {
 
   const mutation = useMutation({
     mutationFn: async (next: FeedDisplayPreferences) => {
-      if (isDummyReaderDataEnabled()) return next;
+      if (isDummyReaderDataEnabled()) return null;
       if (!client) throw new Error("PDS session required");
       const existing = accountPreferences.data ?? null;
-      await client.upsertPreferences(
+      return client.upsertPreferences(
         {
           visibleFeeds: next.visibleFeeds,
+          showWire: next.showWire,
+          showCircle: next.showCircle,
           feedsWithUnreadCounts: next.feedsWithUnreadCounts,
           rssArticleOpenMode: next.rssArticleOpenMode,
           showTopLevelFeedUnreadCounts:
@@ -80,9 +82,16 @@ export function useFeedDisplayPreferences() {
         },
         existing,
       );
-      return next;
     },
     onMutate: async (next) => {
+      await queryClient.cancelQueries({
+        queryKey: ACCOUNT_PREFERENCES_QUERY_KEY,
+      });
+      const previous =
+        queryClient.getQueryData<RepoRecord<PreferencesRecord> | null>(
+          ACCOUNT_PREFERENCES_QUERY_KEY,
+        );
+      const previousPreferences = preferences;
       const normalized = normalizeFeedDisplayPreferences(next);
       setOptimistic(normalized);
       setCached(normalized);
@@ -106,6 +115,8 @@ export function useFeedDisplayPreferences() {
             updatedAt: new Date().toISOString(),
             ...previous?.value,
             visibleFeeds: normalized.visibleFeeds,
+            showWire: normalized.showWire,
+            showCircle: normalized.showCircle,
             feedsWithUnreadCounts: normalized.feedsWithUnreadCounts,
             rssArticleOpenMode: normalized.rssArticleOpenMode,
             showTopLevelFeedUnreadCounts:
@@ -113,12 +124,30 @@ export function useFeedDisplayPreferences() {
           },
         }),
       );
+      return { previous, previousPreferences };
     },
-    onSuccess: () => {
+    onSuccess: (saved) => {
+      if (saved) {
+        queryClient.setQueryData(ACCOUNT_PREFERENCES_QUERY_KEY, saved);
+      }
       setOptimistic(null);
     },
-    onError: () => {
+    onError: (_error, _next, context) => {
       setOptimistic(null);
+      if (context) {
+        queryClient.setQueryData(
+          ACCOUNT_PREFERENCES_QUERY_KEY,
+          context.previous ?? null,
+        );
+        setCached(context.previousPreferences);
+        if (session && typeof window !== "undefined") {
+          saveCachedFeedDisplayPreferences(
+            window.localStorage,
+            session.did,
+            context.previousPreferences,
+          );
+        }
+      }
       void queryClient.invalidateQueries({
         queryKey: ACCOUNT_PREFERENCES_QUERY_KEY,
       });
@@ -167,6 +196,16 @@ export function useFeedDisplayPreferences() {
     [mutation, preferences],
   );
 
+  const setDiscoveryFeedVisible = useCallback(
+    (feed: "wire" | "circle", visible: boolean) => {
+      mutation.mutate({
+        ...preferences,
+        [feed === "wire" ? "showWire" : "showCircle"]: visible,
+      });
+    },
+    [mutation, preferences],
+  );
+
   const setRssArticleOpenInReader = useCallback(
     (openInReader: boolean) => {
       mutation.mutate({
@@ -180,6 +219,7 @@ export function useFeedDisplayPreferences() {
   return {
     preferences,
     setFeedVisible,
+    setDiscoveryFeedVisible,
     setFeedUnreadCountVisible,
     setRssArticleOpenInReader,
     isPending: mutation.isPending,
