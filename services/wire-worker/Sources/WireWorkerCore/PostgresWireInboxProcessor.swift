@@ -23,6 +23,7 @@ struct PostgresWireInboxProcessor: Sendable {
   let maximumConcurrentEvents: Int
   let sourceScope: WireInboxSourceScope?
   let deferredRecommendationsEnabled: Bool
+  let dependencyVerificationEnabled: Bool
 
   init(
     pool: PostgresClient,
@@ -35,7 +36,8 @@ struct PostgresWireInboxProcessor: Sendable {
     batchSize: Int = 1_000,
     maximumConcurrentEvents: Int = 16,
     sourceScope: WireInboxSourceScope? = nil,
-    deferredRecommendationsEnabled: Bool = false
+    deferredRecommendationsEnabled: Bool = false,
+    dependencyVerificationEnabled: Bool = false
   ) throws {
     self.pool = pool
     self.logger = logger
@@ -55,6 +57,7 @@ struct PostgresWireInboxProcessor: Sendable {
     self.maximumConcurrentEvents = max(1, min(maximumConcurrentEvents, 64))
     self.sourceScope = sourceScope
     self.deferredRecommendationsEnabled = deferredRecommendationsEnabled
+    self.dependencyVerificationEnabled = dependencyVerificationEnabled
   }
 
   func process(asOf: Date) async throws -> Int {
@@ -455,7 +458,7 @@ struct PostgresWireInboxProcessor: Sendable {
       if event.eventKind == "commit",
         event.collection == "site.standard.graph.recommend"
       {
-        return try await PostgresWireRecommendationJournal(pool: pool, logger: logger)
+        return try await PostgresWireRecommendationJournal(pool: pool, logger: logger, dependencyVerificationEnabled: dependencyVerificationEnabled)
           .process(event: event, actorHasher: actorHasher, asOf: asOf,
             deferUnresolved: deferredRecommendationsEnabled)
       }

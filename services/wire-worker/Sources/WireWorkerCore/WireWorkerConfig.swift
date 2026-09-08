@@ -27,6 +27,7 @@ struct WireWorkerConfig: Sendable {
   var metadataIdleMilliseconds: Int
   var postgresMaximumConnections: Int
   var deferredRecommendationsEnabled: Bool = false
+  var dependencyVerificationEnabled: Bool = false
 
   static func load(
     _ environment: [String: String],
@@ -72,6 +73,14 @@ struct WireWorkerConfig: Sendable {
       }
     }
     let inboxSourceScope = try inboxSourceScope(environment)
+    let dependencyVerificationEnabled = try boolean(
+      environment, key: "WIRE_DEPENDENCY_HYDRATION_ENABLED", default: false)
+    // Drains validate each event's own environment and retain their existing
+    // intake scope. Only the Coordinator's automatic fetch/staging lane needs
+    // one explicit environment for its durable recovery controls.
+    if dependencyVerificationEnabled && role == .rank && inboxSourceScope == nil {
+      throw WireWorkerConfigError.missingInboxEnvironment
+    }
 
     return WireWorkerConfig(
       databaseURL: databaseURL,
@@ -128,7 +137,8 @@ struct WireWorkerConfig: Sendable {
       ),
       deferredRecommendationsEnabled: try boolean(
         environment, key: "WIRE_DEFERRED_RECOMMENDATIONS_ENABLED", default: false
-      )
+      ),
+      dependencyVerificationEnabled: dependencyVerificationEnabled
     )
   }
 
