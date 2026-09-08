@@ -40,6 +40,17 @@ enum NewsTab: String, CaseIterable, Codable, Identifiable, Hashable, Sendable {
         }
     }
 
+    static func available(
+        preferences: ReaderFeedPreferences,
+        wireCatalog: WireFeedCatalog?,
+        circleCatalog: CircleFeedCatalog?
+    ) -> [NewsTab] {
+        available(
+            wire: preferences.showWire && wireCatalog?.isAvailable == true,
+            circle: preferences.showCircle && circleCatalog?.enabled != false
+        )
+    }
+
     static func defaultTab(in availableTabs: [NewsTab]) -> NewsTab {
         if availableTabs.contains(.wire) { return .wire }
         if availableTabs.contains(.library) { return .library }

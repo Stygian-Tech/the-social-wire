@@ -1610,10 +1610,92 @@ public init(pool: PostgresClient, logger: Logger) {
     cursor: String?,
     limit: Int
   ) async throws -> AppViewEntryListResponse {
-    try await listScopedEntries(
-      viewerDid: viewerDid, scopes: scopes, filter: .unread, cursor: cursor,
-      limit: limit, deduplicateArticleURLs: false
-    ).response
+    let pageLimit = max(1, min(limit, 100))
+    guard !scopes.isEmpty else { return AppViewEntryListResponse(entries: [], cursor: nil) }
+    let now = Date()
+    let overlappingAuthors = UnreadReadMutationScope.overlappingAuthors(scopes)
+    var additionalSites: [String] = []
+    if !overlappingAuthors.isEmpty {
+      // Broad author scopes can expose noncanonical sites not present in sidebar scope keys.
+      // Resolve those distinct keys with the shared matcher so the first scope's floor wins.
+      let sites = try await pool.query(
+        """
+        SELECT DISTINCT publication_site FROM content_items
+        WHERE author_did = ANY(\(overlappingAuthors)) AND expires_at > \(now)
+          AND publication_site IS NOT NULL
+        """, logger: logger
+      )
+      for try await site in sites { additionalSites.append(try site.decode(String.self)) }
+    }
+    let scopeJSON = try UnreadReadMutationScope.json(scopes, additionalSites: additionalSites)
+    let authorDids = Array(Set(scopes.map(\.authorDid))).sorted()
+    let unscopedAuthorDids = Array(Set(scopes.filter(\.scopeKeys.isEmpty).map(\.authorDid))).sorted()
+    let scopeKeys = Array(Set(scopes.flatMap(\.scopeKeys))).sorted()
+    let decodedCursor = cursor.flatMap(ThinAppViewCursor.decode)
+    let cursorAt = decodedCursor?.createdAt ?? now
+    let cursorUri = decodedCursor?.uri ?? ""
+    let hasCursor = decodedCursor != nil
+    // Resolve the first matching publication before applying its watermark. Read rows never
+    // leave the database or consume a page, even when almost all historical content is read.
+    let rows = try await pool.query(
+      """
+      WITH requested_scopes AS (
+        SELECT * FROM jsonb_to_recordset(\(scopeJSON)::jsonb)
+          AS s("publicationId" text, "authorDid" text, "scopeKeys" jsonb, position integer, unscoped boolean)
+      )
+      SELECT ci.uri, ci.author_did, ci.publication_site, ci.created_at,
+             COALESCE(ci.render_json->>'title', ''), ci.render_json->>'publishedAt',
+             ci.render_json->>'summary', ci.render_json->>'thumbnailUrl',
+             ci.render_json->>'articleUrl', scope."publicationId"
+      FROM content_items ci
+      JOIN LATERAL (
+        SELECT s."publicationId" FROM requested_scopes s
+        WHERE s."authorDid" = ci.author_did
+          AND (s.unscoped OR s."scopeKeys" ? ci.publication_site)
+        ORDER BY s.position LIMIT 1
+      ) scope ON TRUE
+      LEFT JOIN appview_publication_read_floors floor
+        ON floor.viewer_did = \(viewerDid) AND floor.publication_id = scope."publicationId"
+      LEFT JOIN read_marks rm
+        ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = ci.uri
+      LEFT JOIN appview_unread_overrides uo
+        ON uo.viewer_did = \(viewerDid) AND uo.subject_uri = ci.uri
+      LEFT JOIN LATERAL appview_effective_entry_read_state(\(viewerDid), ci.uri,
+        ci.author_did, ci.publication_site, ci.created_at, rm.subject_uri, uo.subject_uri) read_state ON TRUE
+      WHERE ci.author_did = ANY(\(authorDids))
+        AND (ci.author_did = ANY(\(unscopedAuthorDids)) OR ci.publication_site = ANY(\(scopeKeys)))
+        AND ci.expires_at > \(now)
+        AND read_state.read_uri IS NULL
+        AND (
+          floor.read_floor_at IS NULL OR ci.created_at > floor.read_floor_at
+          OR (floor.read_floor_uri IS NOT NULL AND ci.created_at = floor.read_floor_at
+              AND ci.uri > floor.read_floor_uri)
+          OR read_state.unread_uri IS NOT NULL
+        )
+        AND (\(hasCursor) = FALSE OR ci.created_at < \(cursorAt)
+             OR (ci.created_at = \(cursorAt) AND ci.uri < \(cursorUri)))
+      ORDER BY ci.created_at DESC, ci.uri DESC
+      LIMIT \(pageLimit + 1)
+      """,
+      logger: logger
+    )
+    var entries: [AppViewEntryListItem] = []
+    for try await row in rows {
+      let (uri, authorDid, publicationSite, createdAt, title, publishedAt,
+           summary, thumbnailUrl, articleUrl, publicationId) = try row.decode(
+        (String, String, String?, Date, String, String?, String?, String?, String?, String).self
+      )
+      entries.append(AggregateFeedQuerySupport.entry(
+        from: AggregateFeedDatabaseRow(
+          uri: uri, authorDid: authorDid, publicationSite: publicationSite,
+          createdAt: createdAt, title: title, publishedAt: publishedAt,
+          summary: summary, thumbnailUrl: thumbnailUrl, articleUrl: articleUrl
+        ), publicationId: publicationId
+      ).withReadState(false))
+    }
+    return AggregateFeedQuerySupport.response(
+      matches: entries, pageLimit: pageLimit, lastScanned: nil, databaseHasMore: false
+    )
   }
 
   private func listScopedEntries(

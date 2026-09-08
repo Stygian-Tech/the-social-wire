@@ -2,6 +2,7 @@
 
 import { PDSReadStateSettingsSection } from "@/components/Account/PDSReadStateSettingsSection";
 import { Switch } from "@/components/ui/switch";
+import { DiscoveryFeedDisplaySettings } from "@/components/Account/DiscoveryFeedDisplaySettings";
 import { AppearanceSettingsSection } from "@/components/Account/AppearanceSettingsSection";
 import { ReadLaterSettingsSection } from "@/components/Account/ReadLaterSettingsSection";
 import { useFeedDisplayPreferences } from "@/hooks/useFeedDisplayPreferences";
@@ -16,6 +17,7 @@ export function FeedSettingsSection() {
   const {
     preferences,
     setFeedVisible,
+    setDiscoveryFeedVisible,
     setFeedUnreadCountVisible,
     setRssArticleOpenInReader,
     isPending,
@@ -79,6 +81,11 @@ export function FeedSettingsSection() {
             <span className="justify-self-center">Show Count</span>
           </div>
           <div className="mt-3 divide-y">
+            <DiscoveryFeedDisplaySettings
+              preferences={preferences}
+              disabled={isPending}
+              onVisibilityChange={setDiscoveryFeedVisible}
+            />
             {displayedFeeds.map((feed) => {
               const feedVisible = preferences.visibleFeeds.includes(feed);
               const countVisible =

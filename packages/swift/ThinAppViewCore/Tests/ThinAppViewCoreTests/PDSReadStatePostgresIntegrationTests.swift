@@ -60,6 +60,12 @@ extension PostgresJetstreamInboxIntegrationTests {
         publicationAtUri: publication, publicationScopeAtUris: [publication], publicationSiteUrls: [],
         filter: .unread, cursor: nil, limit: 100, readBoundary: nil)
       #expect(Set(unread.entries.map(\.entryId)) == Set([ids[0], ids[2]]))
+      let mutationPage = try await store.listUnreadEntriesForReadMutation(
+        viewerDid: viewer, scopes: [publicationScope], cursor: nil, limit: 1)
+      #expect(mutationPage.entries.map(\.entryId) == [ids[2]])
+      #expect(try await store.listUnreadEntriesForReadMutation(
+        viewerDid: viewer, scopes: [publicationScope], cursor: mutationPage.cursor, limit: 1
+      ).entries.map(\.entryId) == [ids[0]])
       #expect(try await store.countUnreadEntriesBatch(viewerDid: viewer, scopes: [scope])[publication] == 2)
       #expect(try await store.refreshUnreadCounters(viewerDid: viewer, scopes: [scope]).first?.unreadCount == 2)
       #expect(try await store.listFeedEntries(viewerDid: viewer, scopes: [scope], filter: .read,
@@ -90,6 +96,8 @@ extension PostgresJetstreamInboxIntegrationTests {
         #expect(try row.decode(Int.self) == 1)
       }
       #expect(try await store.countUnreadEntriesBatch(viewerDid: viewer, scopes: [scope])[publication] == 0)
+      #expect(try await store.listUnreadEntriesForReadMutation(
+        viewerDid: viewer, scopes: [publicationScope], cursor: nil, limit: 100).entries.isEmpty)
       // Two confirmations of different same-sequence forks cannot overwrite one another.
       do {
         _ = try await store.activatePDSReadState(viewerDid: viewer, manifest: next, manifestCid: "stale-fork",
@@ -131,6 +139,15 @@ extension PostgresJetstreamInboxIntegrationTests {
         expectedLegacyRevision: nil)
       #expect(try await store.hasReadMark(viewerDid: viewer, subjectUri: ids[0]))
       #expect(try await store.hasReadMark(viewerDid: viewer, subjectUri: ids[1]) == false)
+      // The retained legacy floor must not hide PDS-unread rows after a verified repack.
+      #expect(try await store.listUnreadEntriesForReadMutation(
+        viewerDid: viewer, scopes: [publicationScope], cursor: nil, limit: 100
+      ).entries.map(\.entryId) == [ids[2], ids[1]])
+      try await pool.query("UPDATE appview_pds_read_state_authority SET projection_ready = FALSE WHERE viewer_did = \(viewer)", logger: logger)
+      await #expect(throws: (any Error).self) {
+        try await store.listUnreadEntriesForReadMutation(
+          viewerDid: viewer, scopes: [publicationScope], cursor: nil, limit: 100)
+      }
       for try await row in try await pool.query("SELECT COUNT(*)::int FROM appview_pds_read_state_boundaries WHERE viewer_did = \(viewer)", logger: logger) {
         #expect(try row.decode(Int.self) == 0)
       }

@@ -14,6 +14,46 @@ import Testing
   )
 )
 struct PostgresJetstreamInboxIntegrationTests {
+  @Test("Postgres unread mutation queries retain specific aliases ahead of broad scopes")
+  func mixedBroadAndSpecificUnreadMutationScopes() async throws {
+    try await PostgresInboxFixture.withFixture { fixture in
+      try await UnreadMutationQueryTests.verifyMixedBroadAndSpecificScopes(
+        store: fixture.store, prefix: fixture.sourceGeneration)
+    }
+  }
+
+  @Test("Postgres unread mutation queries paginate sparse unread history")
+  func sparseUnreadMutationPagination() async throws {
+    try await PostgresInboxFixture.withFixture { fixture in
+      try await UnreadMutationQueryTests.verifySparseUnreadPagination(
+        store: fixture.store, prefix: fixture.sourceGeneration)
+    }
+  }
+
+  @Test("Postgres unread mutation queries preserve overlapping ad hoc scope floors")
+  func overlappingUnreadMutationScopeFloors() async throws {
+    try await PostgresInboxFixture.withFixture { fixture in
+      try await UnreadMutationQueryTests.verifyOverlappingScopeReadFloors(
+        store: fixture.store, prefix: fixture.sourceGeneration)
+    }
+  }
+
+  @Test("Postgres unread mutation queries preserve timestamp-only floors")
+  func timestampOnlyUnreadMutationFloor() async throws {
+    try await PostgresInboxFixture.withFixture { fixture in
+      try await UnreadMutationQueryTests.verifyTimestampOnlyReadFloor(
+        store: fixture.store, prefix: fixture.sourceGeneration)
+    }
+  }
+
+  @Test("Postgres unread mutation queries preserve query-specific feed scopes")
+  func querySpecificUnreadMutationScope() async throws {
+    try await PostgresInboxFixture.withFixture { fixture in
+      try await UnreadMutationQueryTests.verifyQuerySpecificFeedScope(
+        store: fixture.store, prefix: fixture.sourceGeneration)
+    }
+  }
+
   @Test("Unchanged content leaves its tuple intact while TTL and content changes update it")
   func unchangedContentSkipsTupleRewrite() async throws {
     try await PostgresInboxFixture.withFixture { fixture in

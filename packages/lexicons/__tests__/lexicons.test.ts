@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { Lexicons } from "@atproto/lexicon";
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 
@@ -47,6 +48,48 @@ describe("lexicon JSON schemas", () => {
     ]);
     expect(schema.defs.sembleConnection.properties).not.toHaveProperty("apiKey");
     expect(schema.defs.sembleConnection.properties).not.toHaveProperty("token");
+  });
+
+  it("adds optional discovery feed visibility without changing legacy feed preferences", () => {
+    const schema = JSON.parse(
+      readFileSync(join(ROOT, "app/thesocialwire/preferences.json"), "utf8")
+    );
+    const record = schema.defs.main.record;
+    for (const field of ["showWire", "showCircle"]) {
+      expect(record.properties[field].type).toBe("boolean");
+      expect(record.required).not.toContain(field);
+      expect(record.properties[field].description).toContain("Defaults to true when absent");
+    }
+    expect(record.properties.visibleFeeds.items.knownValues).toEqual([
+      "readLater",
+      "archive",
+      "subscribed",
+      "following",
+    ]);
+    expect(record.properties.feedsWithUnreadCounts.items.knownValues).toEqual(
+      record.properties.visibleFeeds.items.knownValues
+    );
+
+    const lexicons = new Lexicons([schema]);
+    const legacyRecord = {
+      $type: schema.id,
+      createdAt: "2026-09-08T12:00:00Z",
+      updatedAt: "2026-09-08T12:00:00Z",
+      visibleFeeds: ["subscribed"],
+    };
+    expect(() => lexicons.assertValidRecord(schema.id, legacyRecord)).not.toThrow();
+    for (const showWire of [true, false]) {
+      for (const showCircle of [true, false]) {
+        expect(() => lexicons.assertValidRecord(schema.id, {
+          ...legacyRecord, showWire, showCircle,
+        })).not.toThrow();
+      }
+    }
+    for (const field of ["showWire", "showCircle"]) {
+      expect(() => lexicons.assertValidRecord(schema.id, {
+        ...legacyRecord, [field]: "false",
+      })).toThrow();
+    }
   });
 
   for (const file of files) {

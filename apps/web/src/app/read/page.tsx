@@ -5,7 +5,6 @@ import { Suspense } from "react";
 import { useEffect, useState } from "react";
 import ReadPubPage from "./[...pubId]/ReadPubPage";
 import { useWireFeedCatalog } from "@/hooks/useWireFeed";
-import { useCircleCatalog } from "@/hooks/useCircleFeed";
 import {
   isReaderFeedSelection,
   loadReaderFeedSelection,
@@ -26,7 +25,6 @@ function ReadIndexContent() {
   const folder = params.get("folder");
   const feed = params.get("feed");
   const catalog = useWireFeedCatalog();
-  const circleCatalog = useCircleCatalog();
   const [selectionState, setSelectionState] = useState<{
     loaded: boolean;
     feed: ReaderFeedSelection | null;
@@ -65,18 +63,8 @@ function ReadIndexContent() {
       </div>
     );
   }
-  const circleAvailable =
-    circleCatalog.data?.enabled === true &&
-    circleCatalog.data.available === true;
   if (feed === "circle") {
-    if (circleAvailable) return <ReadPubPage key="circle" circleFeed />;
-    return (
-      <div className="flex h-full flex-1 items-center justify-center p-8 text-sm text-muted-foreground">
-        {circleCatalog.isLoading
-          ? "Loading Your Circle…"
-          : "Your Circle is unavailable."}
-      </div>
-    );
+    return <ReadPubPage key="circle" circleFeed />;
   }
   if (feed && !isReaderFeedSelection(feed)) {
     return (
