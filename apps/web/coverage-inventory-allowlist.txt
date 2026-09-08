@@ -15,7 +15,6 @@ src/app/providers.tsx
 src/app/read/ClosePublicationsSheetOnMobilePubRoute.tsx
 src/app/read/[...pubId]/page.tsx
 src/app/read/layout.tsx
-src/app/read/page.tsx
 src/app/saved/layout.tsx
 src/app/saved/page.tsx
 src/app/saved/settings/page.tsx
@@ -47,7 +46,6 @@ src/components/EntryDetail/EntryArticleEmbedTypes.ts
 src/components/EntryDetail/EntryDetail.tsx
 src/components/EntryDetail/IframeArticleEmbed.tsx
 src/components/EntryDetail/OEmbedArticleView.tsx
-src/components/EntryList/EntryList.tsx
 src/components/EntryList/EntryListVirtualPane.types.ts
 src/components/SavedLinks/SavedLinkPublicationChip.tsx
 src/components/SavedLinks/SavedLinkRowActions.tsx
@@ -71,7 +69,6 @@ src/lib/oEmbedCache.ts
 src/lib/oEmbedClient.ts
 src/lib/sanitizeOEmbedHtml.ts
 src/lib/savedFeedSources.ts
-src/lib/subscribedFeedPerf.ts
 
 # TSW-107: Existing authenticated integration surfaces awaiting rendered coverage.
 # OPML subscription-hook wiring; parser and import panel are covered separately.
