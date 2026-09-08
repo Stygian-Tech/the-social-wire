@@ -39,10 +39,23 @@ struct PDSReadStateService: Sendable {
       collection: ReadStateManifest.collection, rkey: "self"), current.cid == request.manifestCid else {
       throw HTTPError(.conflict, message: "Read-state manifest changed during verification")
     }
+    return try await Self.activateVerifiedGeneration(store: store, projectionCache: projectionCache,
+      viewerDid: viewerDid, manifest: manifest, manifestCid: request.manifestCid,
+      projection: projection, expectedLegacyRevision: request.expectedLegacyRevision)
+  }
+
+  static func activateVerifiedGeneration(store: any PDSReadStateStoring,
+    projectionCache: (any AppViewProjectionCacheStore)?, viewerDid: String,
+    manifest: ReadStateManifest, manifestCid: String, projection: ReadStateProjection,
+    expectedLegacyRevision: Int64?
+  ) async throws -> PDSReadStateStatus {
     let status = try await store.activatePDSReadState(viewerDid: viewerDid, manifest: manifest,
-      manifestCid: request.manifestCid, projection: projection,
-      expectedLegacyRevision: request.expectedLegacyRevision)
+      manifestCid: manifestCid, projection: projection, expectedLegacyRevision: expectedLegacyRevision)
+    // Confirmation must invalidate the same viewer projections as manifest ingestion.
+    // Otherwise cached bootstrap can emit its previous dirty counter snapshot.
+    try await projectionCache?.invalidateSidebarProjection(viewerDid: viewerDid)
     try await projectionCache?.invalidateUnreadCounts(viewerDid: viewerDid, publicationId: nil)
+    try await projectionCache?.invalidateFirstPage(viewerDid: viewerDid, publicationId: nil)
     return status
   }
 
