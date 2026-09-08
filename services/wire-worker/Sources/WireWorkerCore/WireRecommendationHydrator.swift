@@ -111,7 +111,13 @@ actor WireRecommendationHydrator {
       throw CancellationError()
     } catch {
       try Task.checkCancellation()
-      try await store.postpone(job, reason: "dependency_fetch_unavailable", asOf: Self.elapsedTime(asOf: asOf, since: started))
+      let reason: String
+      switch error {
+      case HydrationError.subjectRecordAbsent: reason = "subject_record_absent"
+      case HydrationError.subjectRepoInactive: reason = "subject_repo_inactive"
+      default: reason = "dependency_fetch_unavailable"
+      }
+      try await store.postpone(job, reason: reason, asOf: Self.elapsedTime(asOf: asOf, since: started))
       counts.unavailable = 1
     }
     return counts
@@ -131,8 +137,14 @@ actor WireRecommendationHydrator {
 
   private func fetchAndProject(_ subject: String, for job: WireRecommendationHydrationJob, asOf: Date) async throws -> Int {
     let started = ContinuousClock.now
-    guard case .verified(let document) = try await verify(subject, expectedCID: nil),
-      ["site.standard.document", "site.standard.entry"].contains(document.collection), document.uri == subject,
+    let document: WireVerifiedPublicRecord
+    switch try await verify(subject, expectedCID: nil) {
+    case .verified(let value): document = value
+    case .missing: throw HydrationError.subjectRecordAbsent
+    case .inactive: throw HydrationError.subjectRepoInactive
+    case .changed: throw HydrationError.unavailableSubject
+    }
+    guard ["site.standard.document", "site.standard.entry"].contains(document.collection), document.uri == subject,
       let value = try JSONSerialization.jsonObject(with: document.recordJSON) as? [String: Any]
     else { throw HydrationError.unavailableSubject }
     var records: [WireVerifiedPublicRecord] = []
@@ -174,5 +186,6 @@ actor WireRecommendationHydrator {
 
   private enum HydrationError: Error {
     case unavailableSubject, unavailablePublication, projectionUnavailable, timeout, batchDeadline
+    case subjectRecordAbsent, subjectRepoInactive
   }
 }
