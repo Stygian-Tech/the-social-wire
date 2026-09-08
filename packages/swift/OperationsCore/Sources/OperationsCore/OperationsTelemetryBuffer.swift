@@ -39,9 +39,10 @@ public actor OperationsTelemetryBuffer {
   private let capacity: Int
   private let batchSize: Int
   private let maxRetryAttempts: Int
+  private let batchDelay: Duration
   private let logger: Logger
   private let exporter: BatchExporter
-  private var queue: [Signal] = []
+  private var queue: [(signal: Signal, enqueuedAt: ContinuousClock.Instant)] = []
   private var inFlightCount = 0
   public private(set) var droppedCount = 0
   public private(set) var consecutiveFailures = 0
@@ -52,11 +53,13 @@ public actor OperationsTelemetryBuffer {
     capacity: Int = 4_096,
     batchSize: Int = 100,
     maxRetryAttempts: Int = 5,
+    batchDelay: Duration = .seconds(1),
     logger: Logger
   ) {
     self.capacity = max(1, capacity)
     self.batchSize = max(1, min(batchSize, capacity))
     self.maxRetryAttempts = max(1, maxRetryAttempts)
+    self.batchDelay = max(.zero, batchDelay)
     self.logger = logger
     self.exporter = { signals in try await store.recordTelemetryBatch(signals) }
   }
@@ -65,41 +68,59 @@ public actor OperationsTelemetryBuffer {
     capacity: Int,
     batchSize: Int = 100,
     maxRetryAttempts: Int = 5,
+    batchDelay: Duration = .seconds(1),
     logger: Logger,
     exporter: @escaping BatchExporter
   ) {
     self.capacity = max(1, capacity)
     self.batchSize = max(1, min(batchSize, capacity))
     self.maxRetryAttempts = max(1, maxRetryAttempts)
+    self.batchDelay = max(.zero, batchDelay)
     self.logger = logger
     self.exporter = exporter
   }
 
   @discardableResult
   public func enqueue(_ signal: Signal) -> Bool {
+    enqueue(signal, at: ContinuousClock.now)
+  }
+
+  @discardableResult
+  func enqueue(_ signal: Signal, at enqueuedAt: ContinuousClock.Instant) -> Bool {
     guard queue.count + inFlightCount < capacity else {
       droppedCount += 1
       return false
     }
-    queue.append(signal)
+    queue.append((signal, enqueuedAt))
     return true
   }
 
   public func runForever() async {
     while !Task.isCancelled {
-      if queue.isEmpty {
+      let exported = await flushIfReady(at: ContinuousClock.now)
+      if exported == 0 {
+        // Polling also wakes a newly full batch promptly while a partial batch accumulates.
         try? await Task.sleep(for: .milliseconds(100))
-        continue
       }
-      _ = await flushOnce()
     }
   }
 
   @discardableResult
+  func flushIfReady(at now: ContinuousClock.Instant) async -> Int {
+    guard let oldest = queue.first else { return 0 }
+    guard queue.count >= batchSize || oldest.enqueuedAt.duration(to: now) >= batchDelay else {
+      return 0
+    }
+    return await flushOnce()
+  }
+
+  @discardableResult
   public func flushOnce() async -> Int {
-    guard !queue.isEmpty else { return 0 }
+    // Actor methods can reenter while the exporter or a retry is suspended. Keep the
+    // original batch counted against capacity and preserve FIFO across every retry.
+    guard inFlightCount == 0, !queue.isEmpty else { return 0 }
     let count = min(batchSize, queue.count)
-    let batch = Array(queue.prefix(count))
+    let batch = queue.prefix(count).map(\.signal)
     queue.removeFirst(count)
     inFlightCount = batch.count
     defer { inFlightCount = 0 }

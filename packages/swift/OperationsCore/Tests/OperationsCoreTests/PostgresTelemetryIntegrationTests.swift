@@ -108,6 +108,62 @@ struct PostgresTelemetryIntegrationTests {
     }
   }
 
+  @Test("delayed buffer exports preserve metric totals and event and span identities")
+  func delayedMixedBufferBatch() async throws {
+    try await withStore { store, pool, logger in
+      let suffix = UUID().uuidString.lowercased()
+      let at = Date(timeIntervalSince1970: floor(Date().timeIntervalSince1970 / 60) * 60)
+      let clock = ContinuousClock.now
+      let buffer = OperationsTelemetryBuffer(store: store, batchDelay: .seconds(1), logger: logger)
+      for value in 1...10 {
+        #expect(await buffer.enqueue(.metric(.init(
+          name: "buffer.\(suffix)", value: Double(value), dimensions: [:], recordedAt: at)), at: clock))
+      }
+      #expect(await buffer.enqueue(.event(.init(
+        id: suffix, service: "test", environment: "prod", instanceId: "test",
+        name: "buffer.event", occurredAt: at, traceId: "trace-\(suffix)")), at: clock))
+      #expect(await buffer.enqueue(.span(.init(
+        id: suffix, environment: "prod", traceId: "trace-\(suffix)", service: "test",
+        name: "buffer.span", startedAt: at, durationMs: 12.5, status: "ok", attributes: [:],
+        expiresAt: at.addingTimeInterval(86400))), at: clock))
+      #expect(await buffer.flushIfReady(at: clock.advanced(by: .milliseconds(999))) == 0)
+      #expect(await buffer.flushIfReady(at: clock.advanced(by: .seconds(1))) == 12)
+      let metrics = try await pool.query(
+        """
+        SELECT sample_count, value_sum, value_min, value_max, bucket_start
+        FROM operations_metric_rollups WHERE environment = 'prod' AND metric_name = \("buffer." + suffix)
+        """, logger: logger)
+      var metricCount = 0
+      for try await row in metrics {
+        let value = try row.decode((Int64, Double, Double, Double, Date).self)
+        #expect(value.0 == 10 && value.1 == 55 && value.2 == 1 && value.3 == 10 && value.4 == at)
+        metricCount += 1
+      }
+      #expect(metricCount == 1)
+      let events = try await pool.query(
+        "SELECT event_name, occurred_at, trace_id FROM operations_events WHERE environment = 'prod' AND id = \(suffix)",
+        logger: logger)
+      var eventCount = 0
+      for try await row in events {
+        let value = try row.decode((String, Date, String).self)
+        #expect(value.0 == "buffer.event" && value.1 == at && value.2 == "trace-\(suffix)")
+        eventCount += 1
+      }
+      #expect(eventCount == 1)
+      let spans = try await pool.query(
+        "SELECT name, started_at, duration_ms, trace_id FROM operations_trace_spans WHERE environment = 'prod' AND id = \(suffix)",
+        logger: logger)
+      var spanCount = 0
+      for try await row in spans {
+        let value = try row.decode((String, Date, Double, String).self)
+        #expect(value.0 == "buffer.span" && value.1 == at && value.2 == 12.5 && value.3 == "trace-\(suffix)")
+        spanCount += 1
+      }
+      #expect(spanCount == 1)
+      #expect(await buffer.snapshot().droppedCount == 0)
+    }
+  }
+
   @Test("concurrent writers use the same lock order and retain every coalesced sample")
   func concurrentWriters() async throws {
     try await withStore { _, pool, logger in
