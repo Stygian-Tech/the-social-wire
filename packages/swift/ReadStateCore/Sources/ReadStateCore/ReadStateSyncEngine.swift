@@ -4,7 +4,7 @@ import Foundation
 /// only the final manifest makes an action visible to projections.
 public actor ReadStateSyncEngine {
   private let viewerDid: String
-  private let file: URL
+  private let storage: ReadStateOutboxStorage
   private let transport: ReadStateSyncTransport
   private var outbox: ReadStateOutbox
   private var flushing = false
@@ -12,12 +12,9 @@ public actor ReadStateSyncEngine {
 
   public init(viewerDid: String, file: URL, transport: ReadStateSyncTransport) throws {
     self.viewerDid = viewerDid
-    self.file = file
+    self.storage = ReadStateOutboxStorage(file: file)
     self.transport = transport
-    if FileManager.default.fileExists(atPath: file.path) {
-      outbox = try JSONDecoder().decode(ReadStateOutbox.self, from: Data(contentsOf: file))
-      guard outbox.viewerDid == viewerDid else { throw ReadStateSyncFailure.accountChanged }
-    } else { outbox = ReadStateOutbox(viewerDid: viewerDid) }
+    outbox = try storage.claim(viewerDid: viewerDid)
   }
 
   public var pendingCount: Int { outbox.jobs.count }
@@ -210,7 +207,6 @@ public actor ReadStateSyncEngine {
   }
 
   private func persist() throws {
-    try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
-    try JSONEncoder().encode(outbox).write(to: file, options: .atomic)
+    try storage.write(outbox)
   }
 }
