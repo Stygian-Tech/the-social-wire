@@ -79,7 +79,16 @@ struct PostgresWireTalkedAccountMentionStore: WireTalkedAccountMentionStoring {
         logger: logger
       )
       try await connection.query(
-        "DELETE FROM wire_link_metadata_cache WHERE stale_until IS NOT NULL AND stale_until <= \(asOf)",
+        """
+        DELETE FROM wire_link_metadata_cache cache
+        WHERE cache.stale_until IS NOT NULL AND cache.stale_until <= \(asOf)
+          AND NOT (cache.status = 'fetching' AND cache.retry_after > \(asOf))
+          AND NOT EXISTS (
+            SELECT 1 FROM wire_items item WHERE item.canonical_key = cache.canonical_key
+              AND item.eligible AND item.expires_at > \(asOf)
+              AND item.canonical_url LIKE 'https://%'
+          )
+        """,
         logger: logger
       )
     }

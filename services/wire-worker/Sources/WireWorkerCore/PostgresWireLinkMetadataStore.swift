@@ -26,6 +26,8 @@ struct PostgresWireLinkMetadataStore: WireLinkMetadataStoring {
          'embedded_card', 'pending', \(asOf), \(asOf), \(asOf.addingTimeInterval(7 * 86_400)),
          \(asOf), 0, \(asOf))
       ON CONFLICT (canonical_key) DO UPDATE SET
+        source = CASE WHEN wire_link_metadata_cache.source IN ('pending', 'fallback')
+          THEN 'embedded_card' ELSE wire_link_metadata_cache.source END,
         title = CASE WHEN wire_link_metadata_cache.source = 'open_graph'
           THEN wire_link_metadata_cache.title ELSE COALESCE(EXCLUDED.title, wire_link_metadata_cache.title) END,
         description = CASE WHEN wire_link_metadata_cache.source = 'open_graph'
@@ -36,10 +38,19 @@ struct PostgresWireLinkMetadataStore: WireLinkMetadataStoring {
           THEN wire_link_metadata_cache.author_name ELSE COALESCE(EXCLUDED.author_name, wire_link_metadata_cache.author_name) END,
         published_at = CASE WHEN wire_link_metadata_cache.source = 'open_graph'
           THEN wire_link_metadata_cache.published_at ELSE COALESCE(EXCLUDED.published_at, wire_link_metadata_cache.published_at) END,
+        site_name = CASE WHEN wire_link_metadata_cache.source IN ('pending', 'fallback')
+          THEN COALESCE(EXCLUDED.site_name, wire_link_metadata_cache.site_name)
+          ELSE wire_link_metadata_cache.site_name END,
+        icon_url = CASE WHEN wire_link_metadata_cache.source IN ('pending', 'fallback')
+          THEN COALESCE(EXCLUDED.icon_url, wire_link_metadata_cache.icon_url)
+          ELSE wire_link_metadata_cache.icon_url END,
         stale_until = GREATEST(wire_link_metadata_cache.stale_until, EXCLUDED.stale_until),
         retry_after = LEAST(wire_link_metadata_cache.retry_after, EXCLUDED.retry_after),
         updated_at = EXCLUDED.updated_at
       WHERE ROW(
+        wire_link_metadata_cache.source,
+        wire_link_metadata_cache.site_name,
+        wire_link_metadata_cache.icon_url,
         wire_link_metadata_cache.title,
         wire_link_metadata_cache.description,
         wire_link_metadata_cache.image_url,
@@ -47,7 +58,16 @@ struct PostgresWireLinkMetadataStore: WireLinkMetadataStoring {
         wire_link_metadata_cache.published_at,
         wire_link_metadata_cache.stale_until,
         wire_link_metadata_cache.retry_after)
-        IS DISTINCT FROM ROW(CASE WHEN wire_link_metadata_cache.source = 'open_graph'
+        IS DISTINCT FROM ROW(
+        CASE WHEN wire_link_metadata_cache.source IN ('pending', 'fallback')
+          THEN 'embedded_card' ELSE wire_link_metadata_cache.source END,
+        CASE WHEN wire_link_metadata_cache.source IN ('pending', 'fallback')
+          THEN COALESCE(EXCLUDED.site_name, wire_link_metadata_cache.site_name)
+          ELSE wire_link_metadata_cache.site_name END,
+        CASE WHEN wire_link_metadata_cache.source IN ('pending', 'fallback')
+          THEN COALESCE(EXCLUDED.icon_url, wire_link_metadata_cache.icon_url)
+          ELSE wire_link_metadata_cache.icon_url END,
+        CASE WHEN wire_link_metadata_cache.source = 'open_graph'
           THEN wire_link_metadata_cache.title ELSE COALESCE(EXCLUDED.title, wire_link_metadata_cache.title) END,
         CASE WHEN wire_link_metadata_cache.source = 'open_graph'
           THEN wire_link_metadata_cache.description ELSE COALESCE(EXCLUDED.description, wire_link_metadata_cache.description) END,
@@ -67,26 +87,8 @@ struct PostgresWireLinkMetadataStore: WireLinkMetadataStoring {
   func claimDue(limit: Int, asOf: Date) async throws -> [WireLinkMetadataTarget] {
     let boundedLimit = max(1, min(limit, 250))
     let priorityLimit = boundedLimit == 1 ? 1 : max(1, boundedLimit * 3 / 4)
+    try await repairMissingMetadata(asOf: asOf)
     return try await pool.withTransaction(logger: logger) { connection in
-      try await connection.query(
-        """
-        INSERT INTO wire_link_metadata_cache
-          (canonical_key, canonical_url, source, status, fetched_at, fresh_until, stale_until,
-           retry_after, failure_count, updated_at)
-        SELECT canonical_key, canonical_url, 'fallback', 'pending', NULL, NULL, NULL, \(asOf), 0, \(asOf)
-        FROM wire_items item
-        WHERE item.eligible = TRUE AND item.expires_at > \(asOf)
-          AND item.canonical_url LIKE 'https://%'
-          AND NOT EXISTS (
-            SELECT 1 FROM wire_link_metadata_cache cache
-            WHERE cache.canonical_key = item.canonical_key
-          )
-        ORDER BY item.last_signal_at DESC NULLS LAST, item.canonical_key
-        LIMIT \(boundedLimit * 4)
-        ON CONFLICT (canonical_key) DO NOTHING
-        """,
-        logger: logger
-      )
       let priorityRows = try await connection.query(
         """
         WITH due AS (
