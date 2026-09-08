@@ -51,6 +51,8 @@ struct UnifiedFeedSelectionTests {
         #expect(defaults.visibleFeeds == ReaderListSource.preferenceCases)
         #expect(defaults.feedsWithUnreadCounts == ReaderListSource.preferenceCases)
         #expect(defaults.articleOpenMode == .original)
+        #expect(defaults.showWire)
+        #expect(defaults.showCircle)
         let ignoresWire = ReaderFeedPreferences(
             visibleFeeds: [.wire, .following],
             feedsWithUnreadCounts: [.wire, .following]
@@ -88,6 +90,43 @@ struct UnifiedFeedSelectionTests {
         let perFeedPreferences = ReaderFeedPreferences(record: perFeedRecord)
         #expect(perFeedPreferences.feedsWithUnreadCounts == [.following])
         #expect(perFeedPreferences.articleOpenMode == .original)
+    }
+
+    @Test(
+        "discovery feed visibility round-trips independently of legacy feed lists",
+        arguments: [true, false], [true, false]
+    )
+    func discoveryFeedVisibilityRoundTrip(showWire: Bool, showCircle: Bool) throws {
+        let data = Data("""
+        {
+          "$type": "app.thesocialwire.preferences",
+          "visibleFeeds": ["following"],
+          "showWire": \(showWire),
+          "showCircle": \(showCircle),
+          "createdAt": "2026-09-08T00:00:00Z",
+          "updatedAt": "2026-09-08T00:00:00Z"
+        }
+        """.utf8)
+        let record = try JSONDecoder().decode(PreferencesRecord.self, from: data)
+        let preferences = ReaderFeedPreferences(record: record)
+        #expect(preferences.showWire == showWire)
+        #expect(preferences.showCircle == showCircle)
+        #expect(preferences.visibleFeeds == [.following])
+        let cached = try JSONEncoder().encode(preferences)
+        #expect(try JSONDecoder().decode(ReaderFeedPreferences.self, from: cached) == preferences)
+        let stored = try JSONEncoder().encode(record)
+        #expect(try JSONDecoder().decode(PreferencesRecord.self, from: stored) == record)
+    }
+
+    @Test("older cached preferences keep both discovery feeds visible")
+    func legacyDiscoveryFeedVisibilityDefaults() throws {
+        let preferences = try JSONDecoder().decode(
+            ReaderFeedPreferences.self,
+            from: Data("{}".utf8)
+        )
+        #expect(preferences.showWire)
+        #expect(preferences.showCircle)
+        #expect(preferences.visibleFeeds == ReaderListSource.preferenceCases)
     }
 }
 

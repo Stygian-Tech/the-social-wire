@@ -191,6 +191,8 @@ export interface PreferencesRecord {
   readLaterService?: ReadLaterServicePreference;
   readLaterConnections?: ReadLaterConnectionsPreference;
   visibleFeeds?: Array<"readLater" | "archive" | "subscribed" | "following">;
+  showWire?: boolean;
+  showCircle?: boolean;
   showTopLevelFeedUnreadCounts?: boolean;
   feedsWithUnreadCounts?: Array<
     "readLater" | "archive" | "subscribed" | "following"
@@ -206,6 +208,8 @@ export type PreferencesUpdates = Partial<
     | "readLaterService"
     | "readLaterConnections"
     | "visibleFeeds"
+    | "showWire"
+    | "showCircle"
     | "showTopLevelFeedUnreadCounts"
     | "feedsWithUnreadCounts"
     | "rssArticleOpenMode"
@@ -228,6 +232,8 @@ export function mergePreferencesRecord(
       ? { readLaterConnections: previous.readLaterConnections }
       : {}),
     ...(previous?.visibleFeeds ? { visibleFeeds: previous.visibleFeeds } : {}),
+    ...(previous?.showWire !== undefined ? { showWire: previous.showWire } : {}),
+    ...(previous?.showCircle !== undefined ? { showCircle: previous.showCircle } : {}),
     ...(previous?.showTopLevelFeedUnreadCounts !== undefined
       ? {
           showTopLevelFeedUnreadCounts:

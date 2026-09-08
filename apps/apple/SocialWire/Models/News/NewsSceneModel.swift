@@ -59,6 +59,8 @@ final class NewsSceneModel {
             return
         }
 
+        let previousTab = selectedTab
+        let wasShowingSettings = path(for: previousTab).last == .settings
         if let preferredUnavailableTab, availableTabs.contains(preferredUnavailableTab) {
             selectedTab = preferredUnavailableTab
             self.preferredUnavailableTab = nil
@@ -66,6 +68,12 @@ final class NewsSceneModel {
         } else if !availableTabs.contains(selectedTab) {
             preferredUnavailableTab = selectedTab
             selectedTab = NewsTab.defaultTab(in: availableTabs)
+        }
+        // Feed visibility can change from Settings inside the selected feed's stack.
+        // Keep Settings open when that feed disappears or becomes available again.
+        if selectedTab != previousTab, wasShowingSettings,
+           path(for: selectedTab).last != .settings {
+            navigate(to: .settings, in: selectedTab)
         }
     }
 

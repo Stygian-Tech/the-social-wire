@@ -11,8 +11,8 @@ struct NewsShellView: View {
 
     private var availableTabs: [NewsTab] {
         NewsTab.available(
-            wire: appModel.wireCatalog?.isAvailable == true,
-            circle: true
+            wire: appModel.feedPreferences.showWire && appModel.wireCatalog?.isAvailable == true,
+            circle: appModel.feedPreferences.showCircle
         )
     }
 
@@ -102,7 +102,11 @@ struct NewsShellView: View {
                 return
             }
             if appModel.readerListSource != .subscribed && appModel.readerListSource != .following {
-                appModel.selectReaderListSource(.subscribed)
+                if let source = [ReaderListSource.subscribed, .following].first(where: {
+                    appModel.feedPreferences.visibleFeeds.contains($0)
+                }) {
+                    appModel.selectReaderListSource(source)
+                }
             }
         case .saved:
             if appModel.readerListSource != .readLater && appModel.readerListSource != .archive {

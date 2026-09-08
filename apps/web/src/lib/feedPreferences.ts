@@ -20,12 +20,16 @@ export const TOP_LEVEL_FEED_LABELS: Record<TopLevelFeed, string> = {
 };
 
 export type FeedDisplayPreferences = {
+  showWire: boolean;
+  showCircle: boolean;
   visibleFeeds: TopLevelFeed[];
   feedsWithUnreadCounts: TopLevelFeed[];
   rssArticleOpenMode: RssArticleOpenMode;
 };
 
 export const DEFAULT_FEED_DISPLAY_PREFERENCES: FeedDisplayPreferences = {
+  showWire: true,
+  showCircle: true,
   visibleFeeds: [...TOP_LEVEL_FEEDS],
   feedsWithUnreadCounts: [...TOP_LEVEL_FEEDS],
   rssArticleOpenMode: "original",
@@ -51,6 +55,8 @@ export function normalizeFeedDisplayPreferences(
     | Pick<
         PreferencesRecord,
         | "visibleFeeds"
+        | "showWire"
+        | "showCircle"
         | "showTopLevelFeedUnreadCounts"
         | "feedsWithUnreadCounts"
         | "rssArticleOpenMode"
@@ -77,6 +83,8 @@ export function normalizeFeedDisplayPreferences(
       : [];
   const requestedCountFeedSet = new Set(requestedCountFeeds);
   return {
+    showWire: value?.showWire !== false,
+    showCircle: value?.showCircle !== false,
     visibleFeeds,
     feedsWithUnreadCounts: TOP_LEVEL_FEEDS.filter(
       (feed) => visibleFeeds.includes(feed) && requestedCountFeedSet.has(feed),

@@ -49,6 +49,14 @@
               ]
             }
           },
+          "showWire": {
+            "type": "boolean",
+            "description": "Whether The Wire appears in reader navigation when available. Defaults to true when absent. Independent of visibleFeeds for compatibility with existing preferences."
+          },
+          "showCircle": {
+            "type": "boolean",
+            "description": "Whether Your Circle appears in reader navigation when available. Defaults to true when absent. Independent of visibleFeeds for compatibility with existing preferences."
+          },
           "showTopLevelFeedUnreadCounts": {
             "type": "boolean",
             "description": "Legacy global switch for aggregate unread badges. New clients use feedsWithUnreadCounts."

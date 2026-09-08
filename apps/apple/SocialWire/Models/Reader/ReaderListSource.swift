@@ -52,8 +52,8 @@ enum ReaderListSource: String, CaseIterable, Codable, Identifiable, Hashable {
         self == .wire ? "Important stories across the social web" : nil
     }
 
-    /// Feed-display preferences predate The Wire. Keep the server-gated feed outside the
-    /// shared PDS preference so older clients cannot erase it when rewriting that record.
+    /// The legacy feed arrays retain their original values; discovery feed visibility
+    /// uses the separate showWire and showCircle preferences.
     static let preferenceCases: [ReaderListSource] = [
         .readLater, .archive, .subscribed, .following,
     ]

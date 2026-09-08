@@ -108,6 +108,27 @@ struct SettingsView: View {
             }
 
             Section("Feed Display") {
+                Toggle(
+                    "Show The Wire",
+                    isOn: Binding(
+                        get: { appModel.feedPreferences.showWire },
+                        set: { value in Task { await appModel.setWireVisible(value) } }
+                    )
+                )
+                .disabled(appModel.isSavingDiscoveryFeedVisibility)
+                Toggle(
+                    "Show Your Circle",
+                    isOn: Binding(
+                        get: { appModel.feedPreferences.showCircle },
+                        set: { value in Task { await appModel.setCircleVisible(value) } }
+                    )
+                )
+                .disabled(appModel.isSavingDiscoveryFeedVisibility)
+                if let error = appModel.discoveryFeedSaveError {
+                    Text(error)
+                        .font(.footnote)
+                        .foregroundStyle(.red)
+                }
                 ForEach(ReaderListSource.preferenceCases) { source in
                     let isVisible = appModel.visibleReaderListSources.contains(source)
                     VStack(alignment: .leading, spacing: 8) {
@@ -124,7 +145,7 @@ struct SettingsView: View {
                                 }
                             )
                         )
-                        .disabled(isVisible && appModel.visibleReaderListSources.count == 1)
+                        .disabled(isVisible && appModel.feedPreferences.visibleFeeds.count == 1)
                         Toggle(
                             "Show Count",
                             isOn: Binding(
