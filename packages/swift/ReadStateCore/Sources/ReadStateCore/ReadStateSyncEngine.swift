@@ -83,6 +83,11 @@ public actor ReadStateSyncEngine {
         try Task.checkCancellation()
         let jobId = outbox.jobs[0].id
         let current = try await transport.readManifest()
+        // Only a revision-fenced initial migration may create the singleton.
+        // A missing manifest for an active viewer is a recovery failure, not empty history.
+        if current == nil, outbox.jobs[0].expectedLegacyRevision == nil {
+          throw ReadStateError.incompleteGeneration
+        }
         if let publication = outbox.jobs[0].publication,
            let committed = publication.committedCid, current?.cid == committed {
           try await transport.confirm(committed, outbox.jobs[0].expectedLegacyRevision)

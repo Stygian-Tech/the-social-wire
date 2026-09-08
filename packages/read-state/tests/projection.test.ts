@@ -32,3 +32,11 @@ test("microsecond boundary comparison does not mark a later timestamp within the
   expect(projection.resolve({ uri: "a", authorDid: "did:plc:a", createdAt: "2026-09-08T10:00:00.123457Z" }).isRead).toBe(false);
   expect(projection.resolve({ uri: "a", authorDid: "did:plc:a", createdAt: "2026-09-08T05:00:00.123456-05:00" }).isRead).toBe(true);
 });
+
+
+test("operation timestamps reject precision unsupported by the shared native/backend protocol", async () => {
+  const { validateIntent } = await import("../src");
+  const value = { actionId: "precise", state: "read" as const, selection: "exact" as const, subjectUris: ["article"], actedAt: "2026-09-08T12:00:00.123456789Z" };
+  expect(() => validateIntent(value)).not.toThrow();
+  expect(() => validateIntent({ ...value, actedAt: "2026-09-08T12:00:00.1234567890Z" })).toThrow("invalid_record");
+});

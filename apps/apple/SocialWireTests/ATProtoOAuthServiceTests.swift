@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import SocialWire
 
@@ -35,6 +36,22 @@ struct ATProtoOAuthServiceTests {
         ].map { "rpc:\($0)\(audience)" }
         let actual = Set(ATProtoOAuthService.scopes.split(separator: " ").map(String.init))
         #expect(expected.allSatisfy(actual.contains))
+    }
+
+    @Test("Existing scopes restore normally while PDS writes require explicit reauthorization")
+    func readStatePermissionsDoNotInvalidateOrdinarySessions() {
+        let oldScopes = ATProtoOAuthService.scopes.split(separator: " ")
+            .map(String.init).filter { !ATProtoOAuthService.pdsReadStateScopes.contains($0) }
+            .joined(separator: " ")
+        #expect(ATProtoOAuthService.hasRequiredFeatureScopes(oldScopes))
+        #expect(!ATProtoOAuthService.hasPDSReadStateScopes(oldScopes))
+        #expect(ATProtoOAuthService.hasPDSReadStateScopes(ATProtoOAuthService.scopes))
+        #expect(!ATProtoOAuthService.hasPDSReadStateScopes(nil))
+        let createOnlyChunk = ATProtoOAuthService.scopes.replacingOccurrences(
+            of: "repo:app.thesocialwire.readStateChunk?action=create&action=update",
+            with: "repo:app.thesocialwire.readStateChunk?action=create")
+        #expect(!ATProtoOAuthService.hasPDSReadStateScopes(createOnlyChunk))
+        #expect(ATProtoOAuthService.hasRequiredFeatureScopes(createOnlyChunk))
     }
 
     @Test("universal Apple scopes cover parity actions and trigger old-session reauthorization")

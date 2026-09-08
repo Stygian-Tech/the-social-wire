@@ -147,12 +147,13 @@ function matchingIntent(projection: ReadStateProjection, intent: Intent): boolea
   return true;
 }
 export async function commitIntents(repository: ReadStateRepository, intents: Intent[],
-  options: { maximumConflicts?: number; beforeWrite?: () => Promise<void> } = {}): Promise<Reference> {
+  options: { maximumConflicts?: number; beforeWrite?: () => Promise<void>; requireExistingManifest?: boolean } = {}): Promise<Reference> {
   if (!intents.length || new Set(intents.map(intent => intent.actionId)).size !== intents.length)
     throw new ReadStateError("invalid_record");
   intents.forEach(intent => validateIntent(intent));
   for (let attempt = 0; attempt <= (options.maximumConflicts ?? 3); attempt++) {
     const generation = await loadGeneration(repository);
+    if (options.requireExistingManifest && !generation.record) throw new ReadStateError("incomplete_generation");
     const missing = intents.filter(intent => !matchingIntent(generation.projection, intent));
     if (!missing.length) return generation.record!;
     const operations = missing.flatMap((intent, index) => packIntent(intent, generation.manifest.lastSequence + index + 1).flat());
@@ -173,7 +174,7 @@ export async function commitIntents(repository: ReadStateRepository, intents: In
   throw new ReadStateError("conflict", "Read state changed on another device; retry after refreshing.");
 }
 export async function commitIntent(repository: ReadStateRepository, intent: Intent,
-  options: { maximumConflicts?: number; beforeWrite?: () => Promise<void> } = {}): Promise<Reference> {
+  options: { maximumConflicts?: number; beforeWrite?: () => Promise<void>; requireExistingManifest?: boolean } = {}): Promise<Reference> {
   return commitIntents(repository, [intent], options);
 }
 /** Initial migration only: the server revision fence and parity check authorize activation. */

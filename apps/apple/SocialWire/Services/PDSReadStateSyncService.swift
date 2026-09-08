@@ -234,6 +234,8 @@ final class PDSReadStateSyncService {
         let status = try await checkedStatus(viewer, epoch: expected)
         let engine = try engineForViewer(viewer)
         if status.authority == .pds { try await engine.discardVerifiedMigration(); return }
+        try await xrpc.requireReadStateWriteScopes(viewerDid: viewer)
+        try await check(viewer, epoch: expected)
         var rows: [ReadStateLegacyRow] = []
         var cursor: String?
         var seen = Set<String>()

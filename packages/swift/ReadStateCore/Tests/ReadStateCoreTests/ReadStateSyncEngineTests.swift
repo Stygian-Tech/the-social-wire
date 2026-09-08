@@ -104,7 +104,7 @@ import Testing
   }
 
   @Test func migrationCanReplaceOnlyTheExplicitUnverifiedCandidate() async throws {
-    let fixture = SyncFixture()
+    let fixture = SyncFixture(activated: false)
     let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: directory) }
     let engine = try ReadStateSyncEngine(viewerDid: fixture.viewer,
@@ -150,6 +150,27 @@ import Testing
     #expect(await fixture.record?.manifest.extensions == extensions)
   }
 
+
+  @Test func missingActiveManifestNeverCreatesAnEmptyReplacement() async throws {
+    let fixture = SyncFixture()
+    let file = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString + "/outbox.json")
+    defer { try? FileManager.default.removeItem(at: file.deletingLastPathComponent()) }
+    let engine = try ReadStateSyncEngine(viewerDid: fixture.viewer, file: file, transport: fixture.transport())
+    try await engine.enqueue([operation("existing", uri: "story-one")])
+    try await engine.flush()
+    try await engine.enqueue([operation("pending", uri: "story-two", state: .unread)])
+    await fixture.removeManifest()
+    await #expect(throws: ReadStateError.self) { try await engine.flush() }
+    #expect(await fixture.manifestWrites == 1)
+    #expect(await fixture.chunkCount == 1)
+    #expect(await fixture.record == nil)
+    let restarted = try ReadStateSyncEngine(viewerDid: fixture.viewer, file: file, transport: fixture.transport())
+    #expect(await restarted.pendingCount == 1)
+    await #expect(throws: ReadStateError.self) { try await restarted.flush(now: Date().addingTimeInterval(1000)) }
+    #expect(await fixture.manifestWrites == 1)
+    #expect(await fixture.chunkCount == 1)
+  }
+
   private func operation(_ id: String, uri: String, state: ReadStateOperation.State = .read) -> ReadStateOperation {
     .init(actionId: id, sequence: 1, state: state, actedAt: "2026-09-08T00:00:00Z", subjectUris: [uri])
   }
@@ -158,6 +179,10 @@ import Testing
 private actor SyncFixture {
   nonisolated let viewer = "did:plc:fixture"
   var record: ReadStateManifestRecord?
+  init(activated: Bool = true) {
+    if activated { record = .init(manifest: .init(generation: "activated", lastSequence: 0, head: nil), cid: "activated") }
+  }
+  func removeManifest() { record = nil }
   var chunks: [String: ReadStateChunk] = [:]
   var reads = 0
   var manifestWrites = 0

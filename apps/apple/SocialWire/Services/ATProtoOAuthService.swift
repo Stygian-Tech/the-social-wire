@@ -11,7 +11,7 @@ final class ATProtoOAuthService: NSObject, ASWebAuthenticationPresentationContex
     static let scopes = [
         "atproto",
         "repo:app.thesocialwire.readState?action=create&action=update",
-        "repo:app.thesocialwire.readStateChunk?action=create",
+        "repo:app.thesocialwire.readStateChunk?action=create&action=update",
         "repo:app.thesocialwire.folder?action=create&action=update&action=delete",
         "repo:app.thesocialwire.publicationPrefs?action=create&action=update&action=delete",
         "repo:app.thesocialwire.preferences?action=create&action=update&action=delete",
@@ -54,9 +54,13 @@ final class ATProtoOAuthService: NSObject, ASWebAuthenticationPresentationContex
     private(set) var session: AuthSession?
     private(set) var reauthorizationRequired = false
 
-    static let requiredFeatureScopes: Set<String> = [
+    // Existing sessions remain usable until the viewer explicitly opts into PDS history.
+    static let pdsReadStateScopes: Set<String> = [
         "repo:app.thesocialwire.readState?action=create&action=update",
-        "repo:app.thesocialwire.readStateChunk?action=create",
+        "repo:app.thesocialwire.readStateChunk?action=create&action=update",
+    ]
+
+    static let requiredFeatureScopes: Set<String> = [
         "repo:app.thesocialwire.wireFeedback?action=create&action=update&action=delete",
         "include:site.standard.authSocial",
         "include:app.userinput.authFull",
@@ -469,6 +473,12 @@ final class ATProtoOAuthService: NSObject, ASWebAuthenticationPresentationContex
         keychain.remove("oauth.expiresAt")
         keychain.remove("oauth.dpopKey")
         resetPendingOAuthState()
+    }
+
+    static func hasPDSReadStateScopes(_ rawScope: String?) -> Bool {
+        guard let rawScope else { return false }
+        let granted = Set(rawScope.split(whereSeparator: { $0.isWhitespace }).map(String.init))
+        return pdsReadStateScopes.isSubset(of: granted)
     }
 
     static func hasRequiredFeatureScopes(_ rawScope: String?) -> Bool {

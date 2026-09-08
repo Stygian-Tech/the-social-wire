@@ -8,7 +8,7 @@ function requireValue(condition: unknown): asserts condition {
 const text = (value: unknown, maximum: number): value is string =>
   typeof value === "string" && value.length > 0 && new TextEncoder().encode(value).length <= maximum;
 export function dateValue(value: unknown): number {
-  requireValue(typeof value === "string" && /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?(?:Z|[+-]\d\d:\d\d)$/.test(value));
+  requireValue(typeof value === "string" && /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,9})?(?:Z|[+-]\d\d:\d\d)$/.test(value));
   const date = Date.parse(value);
   requireValue(Number.isFinite(date));
   return date;

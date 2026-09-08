@@ -41,3 +41,13 @@ export function lock() {
     const result = tail.then(operation); tail = result.catch(() => {}); return result;
   };
 }
+
+/** Ordinary outbox fixtures begin after a verified (possibly empty) migration. */
+export async function activatedRepository(): Promise<Repository> {
+  const repository = new Repository();
+  await repository.putRecord(MANIFEST_COLLECTION, "self", {
+    $type: MANIFEST_COLLECTION, version: 1, generation: "activated", lastSequence: 0,
+  }, null);
+  repository.writes = [];
+  return repository;
+}

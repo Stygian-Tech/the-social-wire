@@ -96,4 +96,36 @@ struct PDSRecordServiceTests {
         service.reset()
     }
 
+    @Test("Native first migration accepts only exact RecordNotFound 400 as an absent manifest")
+    func absentManifestTransportResponse() throws {
+        let client = XRPCClient(auth: ATProtoOAuthService(), resolver: ATProtoResolver())
+        let response = HTTPURLResponse(url: URL(string: "https://pds.example/xrpc/com.atproto.repo.getRecord")!,
+            statusCode: 400, httpVersion: nil, headerFields: nil)!
+        let absent: RepoRecord<ReadStateManifest>? = try client.decodeReadStateResponse(
+            data: Data(#"{"error":"RecordNotFound","message":"Could not locate record"}"#.utf8), response: response,
+            viewerDid: "did:plc:viewer", collection: ReadStateManifest.collection, rkey: "self")
+        #expect(absent == nil)
+        for data in [Data(#"{"error":"InvalidRequest","message":"Bad collection"}"#.utf8),
+                     Data(#"{"error":"recordnotfound"}"#.utf8), Data("malformed".utf8)] {
+            #expect(throws: (any Error).self) {
+                let _: RepoRecord<ReadStateManifest>? = try client.decodeReadStateResponse(data: data, response: response,
+                    viewerDid: "did:plc:viewer", collection: ReadStateManifest.collection, rkey: "self")
+            }
+        }
+    }
+
+    @Test("RecordNotFound body never hides denied access or a throttled PDS")
+    func recordNotFoundDoesNotHideTransportFailures() throws {
+        let client = XRPCClient(auth: ATProtoOAuthService(), resolver: ATProtoResolver())
+        for status in [401, 403, 429, 500] {
+            let response = HTTPURLResponse(url: URL(string: "https://pds.example/xrpc/com.atproto.repo.getRecord")!,
+                statusCode: status, httpVersion: nil, headerFields: nil)!
+            #expect(throws: (any Error).self) {
+                let _: RepoRecord<ReadStateManifest>? = try client.decodeReadStateResponse(
+                    data: Data(#"{"error":"RecordNotFound"}"#.utf8), response: response,
+                    viewerDid: "did:plc:viewer", collection: ReadStateManifest.collection, rkey: "self")
+            }
+        }
+    }
+
 }

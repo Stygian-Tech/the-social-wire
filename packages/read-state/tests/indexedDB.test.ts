@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { IDBFactory } from "fake-indexeddb";
 import { IndexedDBReadStateOutbox, ReadStateOutbox } from "../src";
-import { Repository, intent, lock, viewer, at } from "./fixture";
+import { activatedRepository, intent, lock, viewer, at } from "./fixture";
 
 test("IndexedDB queue survives store recreation, isolates viewers, and atomically retains concurrent enqueues", async () => {
   const factory = new IDBFactory(); const store = new IndexedDBReadStateOutbox(factory);
@@ -14,7 +14,7 @@ test("IndexedDB queue survives store recreation, isolates viewers, and atomicall
   expect((await reopened.read(viewer)).entries).toHaveLength(10);
 });
 test("slow PDS export does not block durably accepting a newer offline intent", async () => {
-  const factory = new IDBFactory(); const store = new IndexedDBReadStateOutbox(factory); const repo = new Repository();
+  const factory = new IDBFactory(); const store = new IndexedDBReadStateOutbox(factory); const repo = await activatedRepository();
   let release!: () => void; let entered!: () => void;
   const started = new Promise<void>(resolve => { entered = resolve; });
   const pending = new Promise<void>(resolve => { release = resolve; });
@@ -29,7 +29,7 @@ test("slow PDS export does not block durably accepting a newer offline intent", 
 });
 
 test("server-validated boundary previews survive storage restart and never enter public operations", async () => {
-  const repository = new Repository();
+  const repository = await activatedRepository();
   const factory = new IDBFactory();
   const store = new IndexedDBReadStateOutbox(factory);
   const outbox = new ReadStateOutbox(store, repository, async () => {}, lock());

@@ -67,7 +67,7 @@ export class ReadStateOutbox {
       const ids = new Set(batch.map(item => item.intent.actionId));
       try {
         // Always reload/merge after retries. A newer manifest can contain this already committed action.
-        const reference = await commitIntents(this.repository, batch.map(item => item.intent));
+        const reference = await commitIntents(this.repository, batch.map(item => item.intent), { requireExistingManifest: true });
         await this.store.update(this.repository.viewerDid, current => ({ ...current,
           entries: current.entries.map(item => ids.has(item.intent.actionId) ? { ...item, committed: reference } : item) }));
         await this.confirm(reference);
