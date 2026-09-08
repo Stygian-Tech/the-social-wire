@@ -169,6 +169,73 @@ struct WireGenerationPersistenceTests {
     }
   }
 
+  @Test("one-hour retention honors old promises, exact expiry and complete active generations")
+  func shorterRetentionTransition() async throws {
+    try await withStore { store, pool, logger in
+      let start = Date(timeIntervalSince1970: floor(Date().timeIntervalSince1970))
+      let suffix = UUID().uuidString.lowercased()
+      let feed = "transition-\(suffix)"
+      let keys = (0..<20).map { "transition-\(suffix)-\($0)" }
+      try await seedItems(keys, at: start, pool: pool, logger: logger)
+      let old = makeGeneration(keys: keys, at: start, feed: feed)
+      try await store.commit(old)
+      var firstNew = makeGeneration(keys: keys, at: start.addingTimeInterval(300), feed: feed)
+      firstNew.expiresAt = firstNew.generatedAt.addingTimeInterval(3600)
+      try await store.commit(firstNew)
+      var active = makeGeneration(keys: keys, at: start.addingTimeInterval(600), feed: feed)
+      active.expiresAt = active.generatedAt.addingTimeInterval(3600)
+      try await store.commit(active)
+
+      // Changing the configured lifetime must not rewrite older promises or delete early.
+      try await store.deleteExpired(asOf: firstNew.expiresAt.addingTimeInterval(-1), batchSize: 5000)
+      let beforeRows = try await pool.query(
+        "SELECT generation_id, expires_at FROM wire_rank_generations WHERE feed_key = \(feed)",
+        logger: logger)
+      var before: [UUID: Date] = [:]
+      for try await row in beforeRows {
+        let value = try row.decode((UUID, Date).self)
+        before[value.0] = value.1
+      }
+      #expect(before == [old.generationID: old.expiresAt,
+                         firstNew.generationID: firstNew.expiresAt, active.generationID: active.expiresAt])
+
+      // At the exact new boundary, only the expired superseded generation and its children go.
+      try await store.deleteExpired(asOf: firstNew.expiresAt, batchSize: 5000)
+      let retainedRows = try await pool.query(
+        "SELECT generation_id FROM wire_rank_generations WHERE feed_key = \(feed)", logger: logger)
+      var retained = Set<UUID>()
+      for try await row in retainedRows { retained.insert(try row.decode(UUID.self)) }
+      #expect(retained == [old.generationID, active.generationID])
+      let deletedChildren = try await pool.query(
+        """
+        SELECT (SELECT COUNT(*) FROM wire_ranked_items WHERE generation_id = \(firstNew.generationID)),
+               (SELECT COUNT(*) FROM wire_edition_modules WHERE generation_id = \(firstNew.generationID)),
+               (SELECT COUNT(*) FROM wire_edition_module_items WHERE generation_id = \(firstNew.generationID))
+        """, logger: logger)
+      for try await row in deletedChildren {
+        let counts = try row.decode((Int64, Int64, Int64).self)
+        #expect(counts.0 == 0 && counts.1 == 0 && counts.2 == 0)
+      }
+
+      // Even past its own expiry, the complete active edition stays until a replacement commits.
+      try await store.deleteExpired(asOf: old.expiresAt, batchSize: 5000)
+      let activeRows = try await pool.query(
+        """
+        SELECT state.active_generation_id,
+               (SELECT COUNT(*) FROM wire_rank_generations WHERE feed_key = \(feed)),
+               (SELECT COUNT(*) FROM wire_ranked_items WHERE generation_id = state.active_generation_id),
+               (SELECT COUNT(*) FROM wire_edition_modules WHERE generation_id = state.active_generation_id),
+               (SELECT COUNT(*) FROM wire_edition_module_items WHERE generation_id = state.active_generation_id)
+        FROM wire_feed_state state WHERE feed_key = \(feed)
+        """, logger: logger)
+      for try await row in activeRows {
+        let value = try row.decode((UUID, Int64, Int64, Int64, Int64).self)
+        #expect(value.0 == active.generationID && value.1 == 1 && value.2 == Int64(keys.count))
+        #expect(value.3 > 0 && value.4 > 0)
+      }
+    }
+  }
+
   @Test("identical metadata refreshes avoid new row versions without suppressing expiry extensions")
   func metadataNoOp() async throws {
     try await withStore { _, pool, logger in

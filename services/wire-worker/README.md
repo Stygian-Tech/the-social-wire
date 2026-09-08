@@ -59,7 +59,7 @@ historical generations.
 | `WIRE_WORKER_ROLE` | `combined` | Runtime responsibility (`combined|rank|drain`) |
 | `WIRE_RANK_INTERVAL_SECONDS` | `300` | Five-minute start-to-start generation cadence; slow cycles never overlap |
 | `WIRE_CANDIDATE_LIMIT` | `5000` | Maximum rollup rows scored per cycle |
-| `WIRE_GENERATION_RETENTION_SECONDS` | `7200` | Two-hour retention for newly generated superseded/shadow generations; existing expiry times and active generations are preserved |
+| `WIRE_GENERATION_RETENTION_SECONDS` | `3600` | One-hour retention for newly generated superseded/shadow generations; existing expiry times and active generations are preserved |
 | `WIRE_RETENTION_BATCH_SIZE` | `5000` | Bounded cleanup batch |
 | `WIRE_LANGUAGE_BUCKET` | `und` | Global or language-specific feed bucket |
 | `WIRE_ACTOR_HMAC_SECRET` | required outside `off` | Versioned 256-bit minimum actor-key secret |
