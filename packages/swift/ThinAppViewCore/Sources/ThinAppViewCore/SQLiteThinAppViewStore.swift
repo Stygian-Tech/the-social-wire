@@ -1949,10 +1949,95 @@ public init(path dbPath: String, logger: Logger) throws {
     cursor: String?,
     limit: Int
   ) async throws -> AppViewEntryListResponse {
-    try await listScopedEntries(
-      viewerDid: viewerDid, scopes: scopes, filter: .unread, cursor: cursor,
-      limit: limit, deduplicateArticleURLs: false
-    ).response
+    let pageLimit = max(1, min(limit, 100))
+    guard !scopes.isEmpty else { return AppViewEntryListResponse(entries: [], cursor: nil) }
+    let overlappingAuthors = UnreadReadMutationScope.overlappingAuthors(scopes)
+    let now = Self.isoString(from: Date())
+    let decodedCursor = cursor.flatMap(ThinAppViewCursor.decode)
+    let cursorAt = decodedCursor.map { Self.isoString(from: $0.createdAt) } ?? now
+    let cursorUri = decodedCursor?.uri ?? ""
+    return try await db.read { db in
+      // Only mixed broad/specific author scopes need live keys to preserve normalized matching.
+      var additionalSites: [String] = []
+      if !overlappingAuthors.isEmpty {
+        let placeholders = overlappingAuthors.map { _ in "?" }.joined(separator: ", ")
+        additionalSites = try String.fetchAll(
+          db,
+          sql: """
+            SELECT DISTINCT publication_site FROM content_items
+            WHERE author_did IN (\(placeholders)) AND expires_at > ?
+              AND publication_site IS NOT NULL
+            """,
+          arguments: StatementArguments(overlappingAuthors + [now])
+        )
+      }
+      let scopeJSON = try UnreadReadMutationScope.json(scopes, additionalSites: additionalSites)
+      // Apply unread state before LIMIT; duplicate article URLs retain their record identities.
+      let rows = try Row.fetchAll(
+        db,
+        sql: """
+          WITH requested_scopes AS (
+            SELECT json_extract(value, '$.publicationId') AS publication_id,
+                   json_extract(value, '$.authorDid') AS author_did,
+                   json_extract(value, '$.scopeKeys') AS scope_keys,
+                   json_extract(value, '$.position') AS position,
+                   json_extract(value, '$.unscoped') AS unscoped
+            FROM json_each(?)
+          )
+          SELECT ci.uri, ci.author_did, ci.publication_site, ci.created_at,
+                 COALESCE(json_extract(ci.render_json, '$.title'), '') AS title,
+                 json_extract(ci.render_json, '$.publishedAt') AS published_at,
+                 json_extract(ci.render_json, '$.summary') AS summary,
+                 json_extract(ci.render_json, '$.thumbnailUrl') AS thumbnail_url,
+                 json_extract(ci.render_json, '$.articleUrl') AS article_url,
+                 scope.publication_id
+          FROM content_items ci
+          JOIN requested_scopes scope ON scope.position = (
+            SELECT s.position FROM requested_scopes s
+            WHERE s.author_did = ci.author_did
+              AND (s.unscoped = 1
+                   OR ci.publication_site IN (SELECT value FROM json_each(s.scope_keys)))
+            ORDER BY s.position LIMIT 1
+          )
+          LEFT JOIN appview_publication_read_floors floor
+            ON floor.viewer_did = ? AND floor.publication_id = scope.publication_id
+          LEFT JOIN read_marks rm ON rm.viewer_did = ? AND rm.subject_uri = ci.uri
+          LEFT JOIN appview_unread_overrides uo ON uo.viewer_did = ? AND uo.subject_uri = ci.uri
+          WHERE ci.author_did IN (SELECT author_did FROM requested_scopes)
+            AND (
+              ci.author_did IN (SELECT author_did FROM requested_scopes WHERE unscoped = 1)
+              OR ci.publication_site IN (
+                SELECT value FROM requested_scopes, json_each(requested_scopes.scope_keys)
+              )
+            )
+            AND ci.expires_at > ?
+            AND rm.subject_uri IS NULL
+            AND (
+              floor.read_floor_at IS NULL OR ci.created_at > floor.read_floor_at
+              OR (floor.read_floor_uri IS NOT NULL AND ci.created_at = floor.read_floor_at
+                  AND ci.uri > floor.read_floor_uri)
+              OR uo.subject_uri IS NOT NULL
+            )
+            AND (? = 0 OR ci.created_at < ? OR (ci.created_at = ? AND ci.uri < ?))
+          ORDER BY ci.created_at DESC, ci.uri DESC LIMIT ?
+          """,
+        arguments: [scopeJSON, viewerDid, viewerDid, viewerDid, now,
+                    decodedCursor != nil, cursorAt, cursorAt, cursorUri, pageLimit + 1]
+      )
+      let entries = rows.compactMap { row -> AppViewEntryListItem? in
+        guard let createdAt = Self.date(fromIso: row["created_at"]) else { return nil }
+        return AggregateFeedQuerySupport.entry(
+          from: AggregateFeedDatabaseRow(
+            uri: row["uri"], authorDid: row["author_did"], publicationSite: row["publication_site"],
+            createdAt: createdAt, title: row["title"], publishedAt: row["published_at"],
+            summary: row["summary"], thumbnailUrl: row["thumbnail_url"], articleUrl: row["article_url"]
+          ), publicationId: row["publication_id"]
+        ).withReadState(false)
+      }
+      return AggregateFeedQuerySupport.response(
+        matches: entries, pageLimit: pageLimit, lastScanned: nil, databaseHasMore: false
+      )
+    }
   }
 
   private func listScopedEntries(
