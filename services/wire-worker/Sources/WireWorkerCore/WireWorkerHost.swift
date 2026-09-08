@@ -56,7 +56,8 @@ public enum WireWorkerHost {
         batchSize: config.inboxBatchSize,
         maximumConcurrentEvents: config.inboxConcurrency,
         sourceScope: config.inboxSourceScope,
-        deferredRecommendationsEnabled: config.deferredRecommendationsEnabled
+        deferredRecommendationsEnabled: config.deferredRecommendationsEnabled,
+        dependencyVerificationEnabled: config.dependencyVerificationEnabled
       )
     } else {
       inboxProcessor = nil
@@ -185,12 +186,32 @@ public enum WireWorkerHost {
             logger.info("The Wire component stopped", metadata: ["component": "recommendation-recovery"])
           }
           try await WireRecommendationRecoveryRuntime.run(
-            journal: PostgresWireRecommendationJournal(pool: pool, logger: logger),
+            journal: PostgresWireRecommendationJournal(pool: pool, logger: logger,
+              dependencyVerificationEnabled: config.dependencyVerificationEnabled),
             // Intake generations can retire while their logged dependencies remain.
             sourceScope: config.inboxSourceScope.map {
               WireInboxSourceScope(environment: $0.environment, sourceGenerations: [])
             },
             logger: logger)
+        }
+      }
+      if runtimePlan.runsGraphMaintenance, config.role == .rank, config.dependencyVerificationEnabled,
+        let recoveryEnvironment = config.dependencyRecoveryEnvironment,
+        let actorSecret = config.actorHMACSecret, let inboxProcessor
+      {
+        group.addTask {
+          let snapshots = try PostgresWireInboxProcessor(
+            pool: pool, logger: logger, actorSecret: actorSecret,
+            publicationResolver: publicationResolver, blobURLResolver: publicRepoClient,
+            linkMetadataStore: linkMetadataStore, batchSize: 16, maximumConcurrentEvents: 2,
+            sourceScope: WireInboxSourceScope(environment: recoveryEnvironment,
+              sourceGenerations: [PostgresWireDependencyRecoveryStore.snapshotGeneration]),
+            deferredRecommendationsEnabled: config.deferredRecommendationsEnabled,
+            dependencyVerificationEnabled: true)
+          let hydrator = WireRecommendationHydrator(pool: pool, logger: logger, environment: recoveryEnvironment,
+            verifier: HTTPWirePublicRecordVerifier(httpClient: httpClient), processor: inboxProcessor)
+          defer { logger.info("The Wire component stopped", metadata: ["component": "dependency-hydration"]) }
+          try await WireRecommendationHydrationRuntime.run(hydrator: hydrator, snapshots: snapshots, logger: logger)
         }
       }
       if runtimePlan.runsCleanup, let inboxProcessor {

@@ -27,6 +27,8 @@ struct WireWorkerConfig: Sendable {
   var metadataIdleMilliseconds: Int
   var postgresMaximumConnections: Int
   var deferredRecommendationsEnabled: Bool = false
+  var dependencyVerificationEnabled: Bool = false
+  var dependencyRecoveryEnvironment: String? = nil
 
   static func load(
     _ environment: [String: String],
@@ -72,6 +74,13 @@ struct WireWorkerConfig: Sendable {
       }
     }
     let inboxSourceScope = try inboxSourceScope(environment)
+    let dependencyVerificationEnabled = try boolean(
+      environment, key: "WIRE_DEPENDENCY_HYDRATION_ENABLED", default: false)
+    // Recovery owns an environment, not an intake-generation filter. Coordinator
+    // cleanup may intentionally cover every generation while hydration still
+    // needs an explicit environment for its durable controls and snapshot lane.
+    let dependencyRecoveryEnvironment = dependencyVerificationEnabled && role == .rank
+      ? try requiredAppEnvironment(environment) : nil
 
     return WireWorkerConfig(
       databaseURL: databaseURL,
@@ -128,7 +137,9 @@ struct WireWorkerConfig: Sendable {
       ),
       deferredRecommendationsEnabled: try boolean(
         environment, key: "WIRE_DEFERRED_RECOMMENDATIONS_ENABLED", default: false
-      )
+      ),
+      dependencyVerificationEnabled: dependencyVerificationEnabled,
+      dependencyRecoveryEnvironment: dependencyRecoveryEnvironment
     )
   }
 
@@ -144,6 +155,13 @@ struct WireWorkerConfig: Sendable {
     }
     var seen = Set<String>()
     let generations = values.filter { seen.insert($0).inserted }
+    return WireInboxSourceScope(
+      environment: try requiredAppEnvironment(environment),
+      sourceGenerations: generations
+    )
+  }
+
+  private static func requiredAppEnvironment(_ environment: [String: String]) throws -> String {
     guard
       let appEnvironment = environment["APP_ENV"]?.trimmingCharacters(in: .whitespacesAndNewlines),
       !appEnvironment.isEmpty
@@ -151,10 +169,7 @@ struct WireWorkerConfig: Sendable {
     guard appEnvironment == "dev" || appEnvironment == "prod" else {
       throw WireWorkerConfigError.invalidInboxEnvironment(appEnvironment)
     }
-    return WireInboxSourceScope(
-      environment: appEnvironment,
-      sourceGenerations: generations
-    )
+    return appEnvironment
   }
 
   private static func positiveInt(
