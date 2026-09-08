@@ -1,3 +1,4 @@
+import { pdsReadStateSync, usesPDSReadState } from "@/lib/pdsReadStateSync";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 
 import {
@@ -142,20 +143,29 @@ export async function resolveAddPublicationOnGateway(
 
 export async function markAllReadOnGateway(
   oauthSession: OAuthSession,
-  scope: GatewayMarkAllReadScope
+  scope: GatewayMarkAllReadScope,
+  previewSubjectUris?: string[]
 ): Promise<GatewayMarkAllReadResponse> {
+  if (await usesPDSReadState(oauthSession)) {
+    const prepared = await pdsReadStateSync(oauthSession).bulk(scope, undefined, previewSubjectUris);
+    return { marked: 0, confirmedAt: prepared.actedAt, pendingSync: true,
+      boundaries: (prepared.boundaries ?? []).map(boundary => ({ publicationId: boundary.scope.publicationId,
+        createdAt: boundary.createdAt, ...(boundary.entryId ? { entryId: boundary.entryId } : {}) })), unreadCounts: {} };
+  }
   const res = await gatewayFetch(oauthSession, socialWireXrpc.markAllRead, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ scope }),
   });
   if (!res.ok) {
+    if (res.status === 409 && await usesPDSReadState(oauthSession, true)) return markAllReadOnGateway(oauthSession, scope, previewSubjectUris);
     throw new Error(`Mark all read failed (${res.status})`);
   }
   return (await res.json()) as GatewayMarkAllReadResponse;
 }
 
 export type GatewayMarkAllReadResponse = {
+  pendingSync?: boolean;
   marked: number;
   confirmedAt: string;
   boundaries: Array<{

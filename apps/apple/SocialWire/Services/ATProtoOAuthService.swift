@@ -10,6 +10,8 @@ import SwiftUI
 final class ATProtoOAuthService: NSObject, ASWebAuthenticationPresentationContextProviding {
     static let scopes = [
         "atproto",
+        "repo:app.thesocialwire.readState?action=create&action=update",
+        "repo:app.thesocialwire.readStateChunk?action=create",
         "repo:app.thesocialwire.folder?action=create&action=update&action=delete",
         "repo:app.thesocialwire.publicationPrefs?action=create&action=update&action=delete",
         "repo:app.thesocialwire.preferences?action=create&action=update&action=delete",
@@ -53,6 +55,8 @@ final class ATProtoOAuthService: NSObject, ASWebAuthenticationPresentationContex
     private(set) var reauthorizationRequired = false
 
     static let requiredFeatureScopes: Set<String> = [
+        "repo:app.thesocialwire.readState?action=create&action=update",
+        "repo:app.thesocialwire.readStateChunk?action=create",
         "repo:app.thesocialwire.wireFeedback?action=create&action=update&action=delete",
         "include:site.standard.authSocial",
         "include:app.userinput.authFull",

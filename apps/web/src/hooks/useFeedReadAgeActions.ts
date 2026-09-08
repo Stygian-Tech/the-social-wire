@@ -1,5 +1,6 @@
 "use client";
 
+import { pdsReadStateEnabled } from "@/lib/pdsReadStateSync";
 import { useCallback, useLayoutEffect, useMemo, useRef } from "react";
 import { useQueryClient, type InfiniteData, type QueryKey } from "@tanstack/react-query";
 
@@ -24,6 +25,7 @@ export function useFeedReadAgeActions(scope: GatewayMarkAllReadScope | null) {
     () => ({ viewerDid, scopeKey, oauthSessionReloadSeq }),
     [viewerDid, scopeKey, oauthSessionReloadSeq]
   );
+  const calendarSnapshot = useRef<{ context: object; timeZone: string; referenceDate: string } | null>(null);
   const activeContext = useRef<typeof context | null>(context);
   useLayoutEffect(() => {
     activeContext.current = context;
@@ -57,12 +59,17 @@ export function useFeedReadAgeActions(scope: GatewayMarkAllReadScope | null) {
       },
     });
     action.assertCurrent();
+    calendarSnapshot.current = { context, timeZone,
+      referenceDate: new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(response.referenceDay)) };
     return response.options;
-  }, [beginAction]);
+  }, [beginAction, context]);
 
   const markBefore = useCallback(async (before: string) => {
     const action = beginAction();
-    const confirmation = await markReadBefore(action.oauth, action.scope, before);
+    const selectedCalendar = calendarSnapshot.current;
+    const confirmation = pdsReadStateEnabled() && selectedCalendar?.context === context
+      ? await markReadBefore(action.oauth, action.scope, before, selectedCalendar)
+      : await markReadBefore(action.oauth, action.scope, before);
     action.assertCurrent();
     const isViewerFeedQuery = ({ queryKey }: { queryKey: QueryKey }) =>
       (queryKey[0] === "entries" || queryKey[0] === "aggregateEntries") &&
@@ -88,6 +95,7 @@ export function useFeedReadAgeActions(scope: GatewayMarkAllReadScope | null) {
       );
     }
 
+    if (confirmation.pendingSync) return;
     const sidebarKey = PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY(action.viewerDid);
     // Empty counts mean the recount was unavailable, not that the feed is empty.
     const countKeys = Object.keys(confirmation.unreadCounts);
@@ -107,7 +115,7 @@ export function useFeedReadAgeActions(scope: GatewayMarkAllReadScope | null) {
     queryClient.removeQueries({ predicate: isUnreadFeedQuery, type: "inactive" });
     // Restart every active feed request cancelled above, including an initial All load.
     void queryClient.invalidateQueries({ predicate: isViewerFeedQuery });
-  }, [beginAction, markEntriesRead, queryClient]);
+  }, [beginAction, context, markEntriesRead, queryClient]);
 
   return { loadOptions, markBefore };
 }
