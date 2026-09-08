@@ -60,7 +60,6 @@ src/components/shared/ListColumnError.tsx
 src/components/shared/ResizableListColumn.tsx
 src/components/ui/button.tsx
 src/components/ui/scroll-area.tsx
-src/components/ui/switch.tsx
 src/contexts/ReadSidebarScopeContext.tsx
 src/hooks/use-tablet-portrait.ts
 src/hooks/useClientHydrated.ts

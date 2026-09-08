@@ -76,6 +76,27 @@ struct NewsSceneModelTests {
         #expect(model.path(for: .library).isEmpty)
     }
 
+    @Test("Hiding the active discovery feed selects a visible tab and keeps Settings open")
+    func hiddenFeedPreservesSettings() {
+        let suiteName = "NewsSceneModelTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        for tab in [NewsTab.wire, .circle] {
+            let model = NewsSceneModel(defaults: defaults)
+            model.updateContext(viewerDID: "did:plc:alice", availableTabs: NewsTab.allCases)
+            model.select(tab, availableTabs: NewsTab.allCases)
+            model.navigate(to: .settings, in: tab)
+
+            model.updateContext(
+                viewerDID: "did:plc:alice",
+                availableTabs: [.library, .saved, .search]
+            )
+            #expect(model.selectedTab == .library)
+            #expect(model.path(for: .library).last == .settings)
+        }
+    }
+
     @Test("Routes restore independently for each viewer and window")
     func restoresRoutesPerViewerAndWindow() {
         let suiteName = "NewsSceneModelRouteTests.\(UUID().uuidString)"
