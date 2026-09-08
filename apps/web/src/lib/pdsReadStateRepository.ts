@@ -1,6 +1,6 @@
 import { Agent } from "@atproto/api";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
-import { PDSRequestError, ReadStateError, type Chunk, type Manifest,
+import { PDSRequestError, ReadStateError, type Chunk, type Manifest, type V2Chunk, type V2Manifest,
   type ReadStateRepository, type RepositoryRecord } from "@thesocialwire/read-state";
 
 function repositoryError(error: unknown): never {
@@ -32,7 +32,7 @@ export class OAuthReadStateRepository implements ReadStateRepository {
       return repositoryError(error);
     }
   }
-  async putRecord(collection: string, rkey: string, value: Chunk | Manifest, swapRecord: string | null) {
+  async putRecord(collection: string, rkey: string, value: Chunk | Manifest | V2Chunk | V2Manifest, swapRecord: string | null) {
     this.assertCurrent();
     try {
       const result = await this.agent.com.atproto.repo.putRecord({ repo: this.viewerDid, collection, rkey,

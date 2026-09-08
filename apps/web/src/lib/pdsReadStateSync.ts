@@ -1,6 +1,6 @@
 import type { OAuthSession } from "@atproto/oauth-client-browser";
-import { IndexedDBReadStateOutbox, ReadStateError, ReadStateOutbox, browserReadStateLock, migrateReadState,
-  MANIFEST_COLLECTION, recordCID, validateManifest, type Intent, type MigrationCheckpointStore, type OutboxState, type ReadStateStatus } from "@thesocialwire/read-state";
+import { IndexedDBReadStateOutbox, ReadStateError, V2ReadStateOutbox, browserReadStateLock, migrateReadState,
+  MANIFEST_COLLECTION, recordCID, validateManifest, validateV2Manifest, type Intent, type MigrationCheckpointStore, type OutboxState, type ReadStateStatus } from "@thesocialwire/read-state";
 import { OAuthReadStateRepository } from "./pdsReadStateRepository";
 import { PDSReadStateGateway } from "./pdsReadStateGateway";
 import type { GatewayMarkAllReadScope } from "./publicationProjectionClient";
@@ -17,7 +17,7 @@ export class PDSReadStateSync {
   private readonly store = new IndexedDBReadStateOutbox();
   private readonly repository: OAuthReadStateRepository;
   readonly gateway: PDSReadStateGateway;
-  private readonly outbox: ReadStateOutbox;
+  private readonly outbox: V2ReadStateOutbox;
   private readonly migrationStore: MigrationCheckpointStore;
   private statusValue?: ReadStateStatus;
   private timer?: ReturnType<typeof setInterval>;
@@ -25,7 +25,7 @@ export class PDSReadStateSync {
     const assertCurrent = () => { if (!this.active) throw new ReadStateError("reauthorize"); };
     this.repository = new OAuthReadStateRepository(oauth, assertCurrent);
     this.gateway = new PDSReadStateGateway(oauth, assertCurrent);
-    this.outbox = new ReadStateOutbox(this.store, this.repository, async reference => {
+    this.outbox = new V2ReadStateOutbox(this.store, this.repository, async reference => {
       const status = await this.gateway.confirm(reference);
       if (status.authority !== "pds" || status.migrationState !== "verified") throw new ReadStateError("incomplete_generation");
       this.statusValue = status;
@@ -61,7 +61,8 @@ export class PDSReadStateSync {
     if (status.authority === "pds") {
       const current = await this.repository.getRecord(MANIFEST_COLLECTION, "self");
       if (!current) throw new ReadStateError("incomplete_generation");
-      validateManifest(current.value, this.oauth.did);
+      if ((current.value as { version?: number }).version === 2) validateV2Manifest(current.value, this.oauth.did);
+      else validateManifest(current.value, this.oauth.did);
       if (current.cid !== await recordCID(current.value)) throw new ReadStateError("invalid_cid");
       if (current.cid !== status.manifestCid) this.statusValue = await this.gateway.confirm(current);
       this.changed("confirmed");

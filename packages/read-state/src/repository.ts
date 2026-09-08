@@ -1,3 +1,4 @@
+import type { V2Chunk, V2Manifest } from "./v2Types";
 import { cidForLex, type LexValue } from "@atproto/lex-cbor";
 import { CHUNK_COLLECTION, MANIFEST_COLLECTION, MAX_RECORD_BYTES, ReadStateError,
   type Chunk, type Intent, type Manifest, type Operation, type Reference } from "./types";
@@ -8,7 +9,7 @@ export type RepositoryRecord = Reference & { value: unknown };
 export interface ReadStateRepository {
   readonly viewerDid: string;
   getRecord(collection: string, rkey: string, cid?: string): Promise<RepositoryRecord | null>;
-  putRecord(collection: string, rkey: string, value: Chunk | Manifest, swapRecord: string | null): Promise<Reference>;
+  putRecord(collection: string, rkey: string, value: Chunk | Manifest | V2Chunk | V2Manifest, swapRecord: string | null): Promise<Reference>;
 }
 export type LoadedGeneration = { record: RepositoryRecord | null; manifest: Manifest; projection: ReadStateProjection; chunkCount: number; chunkBytes: number; repackAllowed: boolean };
 export async function recordCID(record: unknown): Promise<string> {

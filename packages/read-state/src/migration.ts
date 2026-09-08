@@ -1,9 +1,10 @@
+import type { V2Manifest } from "./v2Types";
 import { loadGeneration, publishMigration, type ReadStateRepository } from "./repository";
 import { ReadStateError, type Boundary, type Intent, type Manifest, type Reference } from "./types";
 import { jsonBytes } from "./validation";
 
 export type ReadStateStatus = { authority: "appview" | "pds"; migrationState: "notStarted" | "verified";
-  legacyRevision: number; projectionReady?: boolean; manifest?: Manifest; manifestCid?: string };
+  legacyRevision: number; projectionReady?: boolean; manifest?: Manifest | V2Manifest; manifestCid?: string };
 export type LegacyRow = { kind: "boundary" | "unread" | "read"; actedAt: string; boundary?: Boundary; subjectUri?: string };
 export type MigrationExportPage = { legacyRevision: number; rows: LegacyRow[]; cursor?: string };
 export type MigrationCheckpoint = { id: string; viewerDid: string; expectedManifestCid: string | null;

@@ -11,7 +11,7 @@ export class ReadStateProjection {
   readonly actionIds = new Set<string>();
   private exact = new Map<string, Operation>();
   private scoped = new Map<string, { boundary: Boundary; timestamp: bigint; operation: Operation }[]>();
-  constructor(readonly operations: readonly Operation[], readonly lastSequence: number) {
+  constructor(readonly operations: readonly Operation[], readonly lastSequence: number, allowSparseHistory = false) {
     if (!Number.isSafeInteger(lastSequence) || lastSequence < 0) throw new ReadStateError("invalid_record");
     const sequences = new Map<number, Operation>(); const actions = new Map<string, number>();
     let maximum = 0;
@@ -32,7 +32,7 @@ export class ReadStateProjection {
         this.scoped.set(boundary.scope.authorDid, group);
       }
     }
-    if (maximum !== lastSequence) throw new ReadStateError("incomplete_generation");
+    if (!allowSparseHistory && maximum !== lastSequence) throw new ReadStateError("incomplete_generation");
   }
   resolve(subject: Subject): Resolution {
     let latest = this.exact.get(subject.uri);

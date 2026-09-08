@@ -6,11 +6,21 @@ export class IndexedDBReadStateOutbox implements OutboxStore {
   constructor(private readonly factory: IDBFactory = indexedDB) {}
   private open(): Promise<IDBDatabase> {
     return this.database ??= new Promise((resolve, reject) => {
-      const request = this.factory.open("the-social-wire.pds-read-state.v1", 1);
-      request.onupgradeneeded = () => request.result.createObjectStore("viewers", { keyPath: "viewerDid" });
-      request.onsuccess = () => resolve(request.result);
+      let blocked = false;
+      const request = this.factory.open("the-social-wire.pds-read-state.v1", 2);
+      request.onupgradeneeded = () => {
+        if (!request.result.objectStoreNames.contains("viewers")) request.result.createObjectStore("viewers", { keyPath: "viewerDid" });
+      };
+      request.onsuccess = () => {
+        if (blocked) { request.result.close(); this.database = undefined; return; }
+        request.result.onversionchange = () => { request.result.close(); this.database = undefined; };
+        resolve(request.result);
+      };
       request.onerror = () => { this.database = undefined; reject(new ReadStateError("outbox_unavailable")); };
-      request.onblocked = () => reject(new ReadStateError("outbox_unavailable"));
+      request.onblocked = () => {
+        blocked = true; this.database = undefined;
+        reject(new ReadStateError("outbox_unavailable", "Close other Social Wire tabs, then retry. Your pending read changes are preserved."));
+      };
     });
   }
   async read(viewer: string): Promise<OutboxState> {

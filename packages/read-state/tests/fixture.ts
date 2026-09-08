@@ -1,6 +1,6 @@
 import { CHUNK_COLLECTION, MANIFEST_COLLECTION, ReadStateError, recordCID,
   type Chunk, type Intent, type Manifest, type OutboxState, type OutboxStore,
-  type ReadStateRepository, type RepositoryRecord } from "../src";
+  type V2Chunk, type V2Manifest, type ReadStateRepository, type RepositoryRecord } from "../src";
 export const viewer = "did:plc:alice";
 export const at = "2026-09-08T10:00:00Z";
 export function intent(actionId: string, state: "read" | "unread" = "read", uris = ["at://article/a"]): Intent {
@@ -16,11 +16,12 @@ export class Repository implements ReadStateRepository {
     const record = this.records.get(`${collection}/${rkey}`);
     return record && (!cid || record.cid === cid) ? structuredClone(record) : null;
   }
-  async putRecord(collection: string, rkey: string, value: Chunk | Manifest, swapRecord: string | null) {
+  async putRecord(collection: string, rkey: string, value: Chunk | Manifest | V2Chunk | V2Manifest, swapRecord: string | null) {
     await this.beforePut?.(collection);
     const key = `${collection}/${rkey}`;
+    const cid = await recordCID(value);
     if ((this.records.get(key)?.cid ?? null) !== swapRecord) throw new ReadStateError("conflict");
-    const record = { uri: `at://${viewer}/${key}`, cid: await recordCID(value), value: structuredClone(value) };
+    const record = { uri: `at://${viewer}/${key}`, cid, value: structuredClone(value) };
     this.records.set(key, record); this.writes.push(collection);
     if (this.failAfterManifest && collection === MANIFEST_COLLECTION) { this.failAfterManifest = false; throw new Error("Lost response"); }
     return { uri: record.uri, cid: record.cid };
