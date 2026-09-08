@@ -1210,12 +1210,12 @@ final class SocialWireAppModel {
         }
         do {
             circleCatalog = try await gateway.fetchCircleCatalog()
+            circleErrorMessage = nil
             if circleCatalog?.isAvailable != true {
                 circleEdition = nil
             }
         } catch {
-            circleCatalog = nil
-            circleEdition = nil
+            circleErrorMessage = error.localizedDescription
         }
     }
 
