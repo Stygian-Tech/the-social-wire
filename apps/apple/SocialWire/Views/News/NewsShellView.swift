@@ -8,8 +8,8 @@ struct NewsShellView: View {
 
     private var availableTabs: [NewsTab] {
         NewsTab.available(
-            wire: appModel.wireCatalog?.isAvailable == true,
-            circle: appModel.circleCatalog?.isAvailable == true
+            wire: appModel.feedPreferences.showWire && appModel.wireCatalog?.isAvailable == true,
+            circle: appModel.feedPreferences.showCircle && appModel.circleCatalog?.isAvailable == true
         )
     }
 
@@ -121,7 +121,11 @@ struct NewsShellView: View {
                 return
             }
             if appModel.readerListSource != .subscribed && appModel.readerListSource != .following {
-                appModel.selectReaderListSource(.subscribed)
+                if let source = [ReaderListSource.subscribed, .following].first(where: {
+                    appModel.feedPreferences.visibleFeeds.contains($0)
+                }) {
+                    appModel.selectReaderListSource(source)
+                }
             }
         case .saved:
             if appModel.readerListSource != .readLater && appModel.readerListSource != .archive {
@@ -162,7 +166,7 @@ private struct NewsRouteDestination: View {
                 ContentUnavailableView("Semble Card Unavailable", systemImage: "square.stack.3d.up.slash")
             }
         case .profile:
-            ProfileView()
+            ProfileView(settingsRoute: .settings)
         case .settings:
             SettingsView(showsDoneButton: false)
         }

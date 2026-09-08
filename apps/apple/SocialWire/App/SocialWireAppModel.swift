@@ -74,6 +74,8 @@ final class SocialWireAppModel {
     /// Lexical account preferences returned by **`app.thesocialwire.sync.getPreferences`** (optional read-later hints).
     var preferencesFromGateway: PreferencesRecord?
     var feedPreferences: ReaderFeedPreferences = .defaults
+    private(set) var isSavingDiscoveryFeedVisibility = false
+    private(set) var discoveryFeedSaveError: String?
     var wireEdition: WireEditionPage?
     var circleCatalog: CircleFeedCatalog?
     var circleEdition: CircleEditionPage?
@@ -213,7 +215,7 @@ final class SocialWireAppModel {
 
     var visibleReaderListSources: [ReaderListSource] {
         var sources = feedPreferences.visibleFeeds
-        if wireCatalog?.isAvailable == true {
+        if feedPreferences.showWire && wireCatalog?.isAvailable == true {
             sources.insert(.wire, at: 0)
         }
         return sources
@@ -737,6 +739,7 @@ final class SocialWireAppModel {
         viewerProfile = nil
         preferencesFromGateway = nil
         feedPreferences = .defaults
+        discoveryFeedSaveError = nil
         wireCatalog = nil
         wireFeedNotice = nil
         wireFeedLoadFailed = false
@@ -1329,6 +1332,45 @@ final class SocialWireAppModel {
         return result
     }
 
+    func setWireVisible(_ visible: Bool) async {
+        await setDiscoveryFeedVisible(visible, keyPath: \.showWire)
+        if !feedPreferences.showWire, readerListSource == .wire,
+           let replacement = feedPreferences.visibleFeeds.first {
+            selectReaderListSource(replacement)
+        }
+    }
+
+    func setCircleVisible(_ visible: Bool) async {
+        await setDiscoveryFeedVisible(visible, keyPath: \.showCircle)
+    }
+
+    private func setDiscoveryFeedVisible(
+        _ visible: Bool,
+        keyPath: WritableKeyPath<ReaderFeedPreferences, Bool>
+    ) async {
+        guard !isSavingDiscoveryFeedVisibility,
+              feedPreferences[keyPath: keyPath] != visible else { return }
+        let previousValue = feedPreferences[keyPath: keyPath]
+        let savingViewerDID = viewerDID
+        isSavingDiscoveryFeedVisibility = true
+        discoveryFeedSaveError = nil
+        defer { isSavingDiscoveryFeedVisibility = false }
+        feedPreferences[keyPath: keyPath] = visible
+        if let viewerDID {
+            ReaderFeedPreferencesStorage.save(feedPreferences, viewerDid: viewerDID)
+        }
+        do {
+            try await pds.upsertFeedDisplayPreferences(feedPreferences)
+        } catch {
+            guard viewerDID == savingViewerDID else { return }
+            feedPreferences[keyPath: keyPath] = previousValue
+            if let viewerDID {
+                ReaderFeedPreferencesStorage.save(feedPreferences, viewerDid: viewerDID)
+            }
+            discoveryFeedSaveError = "Couldn't save feed visibility. Your previous setting was restored. \(error.localizedDescription)"
+        }
+    }
+
     func setFeedVisible(_ source: ReaderListSource, visible: Bool) async {
         guard source != .wire else { return }
         var next = feedPreferences.visibleFeeds
@@ -1343,6 +1385,8 @@ final class SocialWireAppModel {
             feedsWithUnreadCounts: visible
                 ? feedPreferences.feedsWithUnreadCounts
                 : feedPreferences.feedsWithUnreadCounts.filter { $0 != source },
+            showWire: feedPreferences.showWire,
+            showCircle: feedPreferences.showCircle,
             articleOpenMode: feedPreferences.articleOpenMode
         )
         if let viewerDID {
@@ -1366,6 +1410,8 @@ final class SocialWireAppModel {
         feedPreferences = ReaderFeedPreferences(
             visibleFeeds: feedPreferences.visibleFeeds,
             feedsWithUnreadCounts: feedsWithUnreadCounts,
+            showWire: feedPreferences.showWire,
+            showCircle: feedPreferences.showCircle,
             articleOpenMode: feedPreferences.articleOpenMode
         )
         if let viewerDID {
@@ -3067,6 +3113,8 @@ final class SocialWireAppModel {
                 readLaterService: serviceID,
                 readLaterConnections: connections.isEmpty ? nil : connections,
                 visibleFeeds: previous?.visibleFeeds,
+                showWire: previous?.showWire,
+                showCircle: previous?.showCircle,
                 showTopLevelFeedUnreadCounts: previous?.showTopLevelFeedUnreadCounts,
                 feedsWithUnreadCounts: previous?.feedsWithUnreadCounts,
                 rssArticleOpenMode: previous?.rssArticleOpenMode,

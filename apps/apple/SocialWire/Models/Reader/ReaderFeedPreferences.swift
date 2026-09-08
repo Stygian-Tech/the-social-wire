@@ -3,6 +3,8 @@ import Foundation
 struct ReaderFeedPreferences: Codable, Equatable, Sendable {
     var visibleFeeds: [ReaderListSource]
     var feedsWithUnreadCounts: [ReaderListSource]
+    var showWire: Bool
+    var showCircle: Bool
     var articleOpenMode: ArticleOpenMode
 
     static let defaults = ReaderFeedPreferences(
@@ -14,6 +16,8 @@ struct ReaderFeedPreferences: Codable, Equatable, Sendable {
     init(
         visibleFeeds: [ReaderListSource],
         feedsWithUnreadCounts: [ReaderListSource],
+        showWire: Bool = true,
+        showCircle: Bool = true,
         articleOpenMode: ArticleOpenMode = .original
     ) {
         let unique = visibleFeeds.reduce(into: [ReaderListSource]()) { result, source in
@@ -29,6 +33,8 @@ struct ReaderFeedPreferences: Codable, Equatable, Sendable {
                 && feedsWithUnreadCounts.contains(source)
         }
         self.articleOpenMode = articleOpenMode
+        self.showWire = showWire
+        self.showCircle = showCircle
     }
 
     init(record: PreferencesRecord?) {
@@ -45,6 +51,8 @@ struct ReaderFeedPreferences: Codable, Equatable, Sendable {
         self.init(
             visibleFeeds: visibleFeeds,
             feedsWithUnreadCounts: feedsWithUnreadCounts,
+            showWire: record?.showWire ?? true,
+            showCircle: record?.showCircle ?? true,
             articleOpenMode: record?.rssArticleOpenMode.flatMap(ArticleOpenMode.init(rawValue:))
                 ?? .original
         )
@@ -57,6 +65,8 @@ struct ReaderFeedPreferences: Codable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case visibleFeeds
         case feedsWithUnreadCounts
+        case showWire
+        case showCircle
         case showTopLevelFeedUnreadCounts
         case articleOpenMode
         case rssArticleOpenMode
@@ -90,6 +100,8 @@ struct ReaderFeedPreferences: Codable, Equatable, Sendable {
         self.init(
             visibleFeeds: visibleFeeds,
             feedsWithUnreadCounts: feedsWithUnreadCounts,
+            showWire: try container.decodeIfPresent(Bool.self, forKey: .showWire) ?? true,
+            showCircle: try container.decodeIfPresent(Bool.self, forKey: .showCircle) ?? true,
             articleOpenMode: cachedArticleOpenMode ?? legacyArticleOpenMode ?? .original
         )
     }
@@ -98,6 +110,8 @@ struct ReaderFeedPreferences: Codable, Equatable, Sendable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(visibleFeeds, forKey: .visibleFeeds)
         try container.encode(feedsWithUnreadCounts, forKey: .feedsWithUnreadCounts)
+        try container.encode(showWire, forKey: .showWire)
+        try container.encode(showCircle, forKey: .showCircle)
         try container.encode(!feedsWithUnreadCounts.isEmpty, forKey: .showTopLevelFeedUnreadCounts)
         try container.encode(articleOpenMode, forKey: .articleOpenMode)
     }

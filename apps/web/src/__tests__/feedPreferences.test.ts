@@ -4,9 +4,39 @@ import {
   feedDisplaysUnreadCount,
   nextVisibleFeed,
   normalizeFeedDisplayPreferences,
+  loadCachedFeedDisplayPreferences,
+  saveCachedFeedDisplayPreferences,
 } from "@/lib/feedPreferences";
 
 describe("feed display preferences", () => {
+  test("preserves independent discovery visibility without changing legacy feeds", () => {
+    for (const showWire of [true, false]) {
+      for (const showCircle of [true, false]) {
+        const preferences = normalizeFeedDisplayPreferences({
+          visibleFeeds: ["following"],
+          feedsWithUnreadCounts: [],
+          showWire,
+          showCircle,
+        });
+        expect(preferences).toEqual({
+          visibleFeeds: ["following"],
+          feedsWithUnreadCounts: [],
+          rssArticleOpenMode: "original",
+          showWire,
+          showCircle,
+        });
+        const cache = new Map<string, string>();
+        const storage = {
+          getItem: (key: string) => cache.get(key) ?? null,
+          setItem: (key: string, value: string) => { cache.set(key, value); },
+        };
+        saveCachedFeedDisplayPreferences(storage, "did:plc:viewer", preferences);
+        expect(loadCachedFeedDisplayPreferences(storage, "did:plc:viewer")).toEqual(preferences);
+        expect(loadCachedFeedDisplayPreferences(storage, "did:plc:other")).toBeNull();
+      }
+    }
+  });
+
   test("defaults absent additive fields", () => {
     expect(normalizeFeedDisplayPreferences(undefined)).toEqual(
       DEFAULT_FEED_DISPLAY_PREFERENCES,
@@ -22,6 +52,8 @@ describe("feed display preferences", () => {
     ).toEqual({
       visibleFeeds: DEFAULT_FEED_DISPLAY_PREFERENCES.visibleFeeds,
       feedsWithUnreadCounts: [],
+      showWire: true,
+      showCircle: true,
       rssArticleOpenMode: "original",
     });
   });
@@ -35,6 +67,8 @@ describe("feed display preferences", () => {
     ).toEqual({
       visibleFeeds: ["following", "readLater"],
       feedsWithUnreadCounts: ["readLater", "following"],
+      showWire: true,
+      showCircle: true,
       rssArticleOpenMode: "original",
     });
   });
