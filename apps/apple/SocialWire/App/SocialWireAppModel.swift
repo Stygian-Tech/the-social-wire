@@ -1,6 +1,7 @@
 import Foundation
 import LatrKit
 import Observation
+import ReadStateCore
 import SwiftData
 
 @Observable
@@ -15,6 +16,7 @@ final class SocialWireAppModel {
     let userInputFeedbackService: UserInputFeedbackService
     private let rss = RSSService()
     private let gateway: SocialWireGatewayClient
+    let readStateSync: PDSReadStateSyncService
     private let latrGateway: LatrGatewayClient
     private var readerCacheCoordinator: ReaderCacheCoordinator?
     private var attemptedBookmarkMigration = false
@@ -160,8 +162,22 @@ final class SocialWireAppModel {
         publicationsService = PublicationService(xrpc: xrpc)
         userInputFeedbackService = UserInputFeedbackService(auth: authService, xrpc: xrpc)
         gateway = SocialWireGatewayClient(auth: authService)
+        readStateSync = PDSReadStateSyncService(xrpc: xrpc, gateway: gateway)
         latrGateway = LatrGatewayClient(auth: authService)
         applyReaderListSource(ReaderListSourceStorage.load(), persist: false)
+        readStateSync.onPendingChanged = { [weak self] viewer in
+            guard let self, self.viewerDID == viewer else { return }
+            for (uri, state) in self.readStateSync.pendingExactOverrides {
+                if state == .read { self.readAtByEntryId[uri] = self.readAtByEntryId[uri] ?? Date.distantPast }
+                else { self.readAtByEntryId.removeValue(forKey: uri) }
+            }
+        }
+        readStateSync.onSynchronized = { [weak self] viewer in
+            guard let self, self.viewerDID == viewer else { return }
+            await self.refreshSidebarUnreadCounts(force: true)
+            guard self.viewerDID == viewer else { return }
+            await self.refreshActivePublicationFeedIfNeeded(skipEnroll: true)
+        }
     }
 
     /// Call once SwiftData injects **`ModelContext`** (see **`RootView`**).
@@ -375,6 +391,23 @@ final class SocialWireAppModel {
             let scopes = gatewayMarkAllReadScopes(for: scope)
             guard !scopes.isEmpty else { return }
 
+            guard let viewer = viewerDID else { return }
+            do {
+                if try await readStateUsesPDS() {
+                    let cachedIds = cachedEntryIds(for: scope)
+                    for gatewayScope in scopes {
+                        let selection = try await readStateSync.setScope(viewer: viewer, scope: gatewayScope,
+                            previewSubjectUris: cachedIds)
+                        guard viewerDID == viewer else { return }
+                        let readAt = DateFormatters.date(from: selection.actedAt) ?? Date()
+                        for entryId in selection.previewSubjectUris ?? [] { readAtByEntryId[entryId] = readAt }
+                    }
+                    clearUnreadCounts(for: publicationsAffected(by: scope))
+                    unreadDeferredEntryId = nil
+                    sidebarUnread.bumpReadRevision()
+                    return
+                }
+            } catch { if viewerDID == viewer { errorMessage = error.localizedDescription }; return }
             let entryIds = cachedEntryIds(for: scope).filter { readAtByEntryId[$0] == nil }
             let readAt = Date()
             let savedUnreadCounts = unreadCountsByPublicationId
@@ -388,12 +421,13 @@ final class SocialWireAppModel {
 
             do {
                 for gatewayScope in scopes {
-                    _ = try await gateway.markAllRead(scope: gatewayScope)
+                    try await writeAllRead(scope: gatewayScope)
                 }
                 await refreshSidebarUnreadCounts(
                     publicationIds: publicationsAffected(by: scope).map(\.publicationId)
                 )
             } catch {
+                guard viewerDID == viewer else { return }
                 unreadCountsByPublicationId = savedUnreadCounts
                 readAtByEntryId = savedReadAtByEntryId
                 markAppViewUnavailableIfNeeded(error)
@@ -416,7 +450,7 @@ final class SocialWireAppModel {
         let scopes = gatewayMarkAllReadScopes(for: scope)
         guard scopes.count == 1, let gatewayScope = scopes.first else { return }
         let viewer = viewerDID
-        let result = try await gateway.markReadBefore(scope: gatewayScope, before: before)
+        let result = try await writeReadBefore(scope: gatewayScope, before: before)
         guard viewerDID == viewer else { return }
         guard let readAt = DateFormatters.date(from: result.readAt) else {
             throw SocialWireError.badResponse("The read confirmation contained an invalid date.")
@@ -449,11 +483,28 @@ final class SocialWireAppModel {
         case .allLists, .list, .folder, .publication:
             entryIds = cachedEntryIds(for: scope).filter { readAtByEntryId[$0] != nil }
         }
-        guard !entryIds.isEmpty else { return }
+        guard !entryIds.isEmpty, let viewer = viewerDID else { return }
+
+        do {
+            if try await readStateUsesPDS() {
+                try await readStateSync.setExact(viewer: viewer, subjectUris: entryIds, state: .unread,
+                    actedAt: DateFormatters.string())
+                guard viewerDID == viewer else { return }
+                for entryId in entryIds {
+                    readAtByEntryId.removeValue(forKey: entryId)
+                    if let publicationId = publicationId(for: entryId) {
+                        adjustUnreadCount(publicationId: publicationId, entryId: entryId, delta: 1)
+                    }
+                }
+                sidebarUnread.bumpReadRevision()
+                return
+            }
+        } catch { errorMessage = error.localizedDescription; return }
 
         for entryId in entryIds {
             do {
-                try await gateway.deleteReadMark(subjectUri: entryId)
+                try await gateway.deleteReadMark(subjectUri: entryId, expectedViewer: viewer)
+                guard viewerDID == viewer else { return }
                 readAtByEntryId.removeValue(forKey: entryId)
                 if let publicationId = publicationId(for: entryId) {
                     adjustUnreadCount(publicationId: publicationId, entryId: entryId, delta: 1)
@@ -645,6 +696,7 @@ final class SocialWireAppModel {
         accuracy: String? = nil,
         countedAt: String? = nil
     ) {
+        guard !(readStateSync.isPDSAuthoritative && readStateSync.pendingCount > 0) else { return }
         guard shouldApplyUnreadCountsSnapshot(generation: generation, accuracy: accuracy) else {
             return
         }
@@ -691,6 +743,8 @@ final class SocialWireAppModel {
     }
 
     func signOut() {
+        readStateSync.reset()
+        readAtByEntryId = [:]
         if let viewerDID {
             try? readerCacheCoordinator?.clearCircleDiscoveryCache(viewerDID: viewerDID)
         }
@@ -968,6 +1022,7 @@ final class SocialWireAppModel {
             if cursor == nil { isLoadingEntries = false }
             else { isLoadingMoreEntries = false }
         }
+        let requestViewer = viewerDID
         do {
             let page = try await gateway.fetchAggregateAppViewFeed(
                 kind: kind,
@@ -975,6 +1030,7 @@ final class SocialWireAppModel {
                 filter: readerFilter,
                 cursor: cursor
             )
+            guard viewerDID == requestViewer else { return }
             applyAuthoritativeReadState(from: page.entries)
             entries = cursor == nil
                 ? page.entries
@@ -1400,6 +1456,14 @@ final class SocialWireAppModel {
     }
 
     func refreshAll() async {
+        if PDSReadStateSyncService.isEnabled, let viewer = viewerDID {
+            Task { [weak self] in
+                guard let self, self.viewerDID == viewer else { return }
+                try? await self.readStateSync.refreshStatus(viewer: viewer)
+                guard self.viewerDID == viewer else { return }
+                await self.readStateSync.flush()
+            }
+        }
         await refreshWireCatalog()
         await refreshSidebarProjection()
         await refreshActiveReaderContentIfNeeded()
@@ -1723,6 +1787,8 @@ final class SocialWireAppModel {
     }
 
     private func applySectionUnreadCounts(_ counts: [String: Int], publicationIds: [String]) {
+        guard !(readStateSync.isPDSAuthoritative && readStateSync.pendingCount > 0) else { return }
+
         var map = unreadCountsByPublicationId
         for publicationId in publicationIds {
             let count = PublicationUnreadCountLookup.lookup(in: counts, publicationId: publicationId)
@@ -1904,8 +1970,10 @@ final class SocialWireAppModel {
         }
         let ids = publicationIds ?? gatewayAllPublicationRows.map(\.publicationId)
         guard !ids.isEmpty else { return }
+        let requestViewer = viewerDID
         do {
             let snapshot = try await gateway.fetchAppViewUnreadCounts(publicationIds: ids)
+            guard viewerDID == requestViewer else { return }
             applyFetchedUnreadCounts(
                 snapshot.counts ?? [:],
                 publicationIds: ids,
@@ -2092,20 +2160,28 @@ final class SocialWireAppModel {
         guard let scope = sidebarScopesByPublicationId[publication.publicationId] else {
             throw SocialWireError.badResponse("Missing AppView scope for publication.")
         }
+        let requestViewer = viewerDID
         let page = try await gateway.fetchAppViewEntries(
             scope: scope,
             filter: filter ?? readerFilter,
             cursor: cursor,
             maxEntries: maxEntries
         )
+        guard viewerDID == requestViewer else { throw ReadStateSyncFailure.accountChanged }
         applyAuthoritativeReadState(from: page.entries)
         return page
     }
 
     private func applyAuthoritativeReadState(from pageEntries: [EntryListItem]) {
-        let confirmedAt = Date.distantPast
-        for entry in pageEntries where entry.isRead && readAtByEntryId[entry.entryId] == nil {
-            readAtByEntryId[entry.entryId] = confirmedAt
+        for entry in pageEntries {
+            if let pending = readStateSync.pendingExactOverrides[entry.entryId] {
+                if pending == .read { readAtByEntryId[entry.entryId] = readAtByEntryId[entry.entryId] ?? Date.distantPast }
+                else { readAtByEntryId.removeValue(forKey: entry.entryId) }
+            } else if entry.isRead {
+                readAtByEntryId[entry.entryId] = readAtByEntryId[entry.entryId] ?? Date.distantPast
+            } else if readStateSync.isPDSAuthoritative {
+                readAtByEntryId.removeValue(forKey: entry.entryId)
+            }
         }
     }
 
@@ -2470,7 +2546,7 @@ final class SocialWireAppModel {
 
         do {
             let readAt = Date()
-            try await gateway.upsertReadMark(subjectUri: entryId, readAt: readAt)
+            try await writeReadMark(subjectUri: entryId, readAt: readAt)
             var readMap = readAtByEntryId
             readMap[entryId] = readAt
             readAtByEntryId = readMap
@@ -2494,7 +2570,7 @@ final class SocialWireAppModel {
         do {
             if markingRead {
                 let readAt = Date()
-                try await gateway.upsertReadMark(subjectUri: item.entryId, readAt: readAt)
+                try await writeReadMark(subjectUri: item.entryId, readAt: readAt)
                 var readMap = readAtByEntryId
                 readMap[item.entryId] = readAt
                 readAtByEntryId = readMap
@@ -2509,7 +2585,7 @@ final class SocialWireAppModel {
                     rebuildSidebarTreeViewModel()
                 }
             } else {
-                try await gateway.deleteReadMark(subjectUri: item.entryId)
+                try await removeReadMark(subjectUri: item.entryId)
                 var readMap = readAtByEntryId
                 readMap.removeValue(forKey: item.entryId)
                 readAtByEntryId = readMap
@@ -2531,20 +2607,84 @@ final class SocialWireAppModel {
         }
     }
 
-    /// Refresh AppView unread baselines after another client may have changed them.
+    /// Foreground checks never start migration. They resume only opted-in history.
     func syncCrossClientReadState() async {
-        guard isSignedIn else { return }
+        guard let viewer = viewerDID else { return }
+        if PDSReadStateSyncService.isEnabled {
+            try? await readStateSync.refreshStatus(viewer: viewer)
+            guard viewerDID == viewer else { return }
+            await readStateSync.flush()
+        }
+        guard viewerDID == viewer else { return }
         await refreshSidebarUnreadCounts()
+        guard viewerDID == viewer else { return }
         await refreshActivePublicationFeedIfNeeded(skipEnroll: true)
     }
 
-    func purgeIndexedAppViewData() async {
-        guard useAppViewEntryTimelines else { return }
-        do {
-            try await gateway.purgeAppViewPrivacyData()
-        } catch {
-            errorMessage = error.localizedDescription
+    func refreshPublicReadHistoryStatus() async {
+        guard PDSReadStateSyncService.isEnabled, let viewer = viewerDID else { return }
+        try? await readStateSync.refreshStatus(viewer: viewer)
+    }
+
+    func enablePublicReadHistory() async {
+        guard PDSReadStateSyncService.isEnabled, let viewer = viewerDID else { return }
+        do { try await readStateSync.publishReadHistory(viewer: viewer) }
+        catch { if viewerDID == viewer { errorMessage = error.localizedDescription } }
+    }
+
+    private func readStateUsesPDS() async throws -> Bool {
+        guard PDSReadStateSyncService.isEnabled, let viewer = viewerDID else { return false }
+        let usesPDS = try await readStateSync.ensureAuthority(viewer: viewer)
+        guard viewerDID == viewer else { throw ReadStateSyncFailure.accountChanged }
+        return usesPDS
+    }
+
+    private func writeReadMark(subjectUri: String, readAt: Date) async throws {
+        guard let viewer = viewerDID else { throw ReadStateSyncFailure.accountChanged }
+        if try await readStateUsesPDS() {
+            try await readStateSync.setExact(viewer: viewer, subjectUris: [subjectUri], state: .read,
+                actedAt: DateFormatters.string(from: readAt))
+        } else { try await gateway.upsertReadMark(subjectUri: subjectUri, readAt: readAt, expectedViewer: viewer) }
+        guard viewerDID == viewer else { throw ReadStateSyncFailure.accountChanged }
+    }
+
+    private func removeReadMark(subjectUri: String) async throws {
+        guard let viewer = viewerDID else { throw ReadStateSyncFailure.accountChanged }
+        if try await readStateUsesPDS() {
+            try await readStateSync.setExact(viewer: viewer, subjectUris: [subjectUri], state: .unread,
+                actedAt: DateFormatters.string())
+        } else { try await gateway.deleteReadMark(subjectUri: subjectUri, expectedViewer: viewer) }
+        guard viewerDID == viewer else { throw ReadStateSyncFailure.accountChanged }
+    }
+
+    private func writeAllRead(scope: GatewayMarkAllReadScopeDTO) async throws {
+        guard let viewer = viewerDID else { throw ReadStateSyncFailure.accountChanged }
+        _ = try await gateway.markAllRead(scope: scope, expectedViewer: viewer)
+        guard viewerDID == viewer else { throw ReadStateSyncFailure.accountChanged }
+    }
+
+    private func writeReadBefore(scope: GatewayMarkAllReadScopeDTO, before: String) async throws -> MarkReadBeforeResponse {
+        guard let viewer = viewerDID else { throw ReadStateSyncFailure.accountChanged }
+        if try await readStateUsesPDS() {
+            let selection = try await readStateSync.setScope(viewer: viewer, scope: scope, before: before)
+            guard viewerDID == viewer else { throw ReadStateSyncFailure.accountChanged }
+            let ids = selection.subjectUris ?? []
+            return .init(marked: ids.count, entryIds: ids, readAt: selection.actedAt, unreadCounts: [:])
         }
+        let result = try await gateway.markReadBefore(scope: scope, before: before, expectedViewer: viewer)
+        guard viewerDID == viewer else { throw ReadStateSyncFailure.accountChanged }
+        return result
+    }
+
+    func purgeIndexedAppViewData() async {
+        guard useAppViewEntryTimelines, let viewer = viewerDID else { return }
+        do {
+            guard try await !readStateUsesPDS() else {
+                errorMessage = "Your PDS controls public read history. Purging the index cannot erase those records."
+                return
+            }
+            try await gateway.purgeAppViewPrivacyData(expectedViewer: viewer)
+        } catch { if viewerDID == viewer { errorMessage = error.localizedDescription } }
     }
 
     func createFolder(name: String) async {

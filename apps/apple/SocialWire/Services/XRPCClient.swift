@@ -1,4 +1,5 @@
 import Foundation
+import ReadStateCore
 
 @MainActor
 final class XRPCClient {
@@ -176,6 +177,61 @@ final class XRPCClient {
             query: ["repo": repo, "collection": collection, "rkey": rkey]
         )
         return response
+    }
+
+    func readStateRecord<Value: Codable & Sendable>(
+        viewerDid: String, collection: String, rkey: String, cid: String? = nil
+    ) async throws -> RepoRecord<Value>? {
+        let session = try await auth.validSession()
+        guard session.did == viewerDid else { throw ReadStateSyncFailure.accountChanged }
+        let url = try xrpcURL(base: session.pdsURL, method: "com.atproto.repo.getRecord",
+            query: ["repo": viewerDid, "collection": collection, "rkey": rkey, "cid": cid])
+        let result = try await readStateRequest(url: url, session: session, body: nil)
+        if result.1.statusCode == 404 { return nil }
+        try ReadStateHTTPFailure.check(result.0, response: result.1)
+        let record = try jsonDecoder.decode(RepoRecord<Value>.self, from: result.0)
+        guard record.uri == "at://\(viewerDid)/\(collection)/\(rkey)",
+              let returnedCid = record.cid, !returnedCid.isEmpty,
+              cid == nil || cid == returnedCid else { throw ReadStateError.invalidReference }
+        guard let envelope = try JSONSerialization.jsonObject(with: result.0) as? [String: Any],
+              let value = envelope["value"] else { throw ReadStateError.invalidRecord }
+        try ReadStateRecordCID.verify(json: JSONSerialization.data(withJSONObject: value, options: [.withoutEscapingSlashes]), cid: returnedCid)
+        return record
+    }
+
+    /// Explicit null means create-only; omitting swapRecord would silently overwrite.
+    func putReadStateRecord<Record: Encodable>(
+        viewerDid: String, collection: String, rkey: String, record: Record, expectedCid: String?
+    ) async throws -> ReadStateReference {
+        let session = try await auth.validSession()
+        guard session.did == viewerDid else { throw ReadStateSyncFailure.accountChanged }
+        let body = try jsonEncoder.encode(ReadStatePutRecordRequest(repo: viewerDid, collection: collection,
+            rkey: rkey, record: AnyEncodable(record), swapRecord: expectedCid))
+        let url = try xrpcURL(base: session.pdsURL, method: "com.atproto.repo.putRecord")
+        let result = try await readStateRequest(url: url, session: session, body: body)
+        try ReadStateHTTPFailure.check(result.0, response: result.1)
+        let reference = try jsonDecoder.decode(ReadStateReference.self, from: result.0)
+        guard reference.uri == "at://\(viewerDid)/\(collection)/\(rkey)", !reference.cid.isEmpty else {
+            throw ReadStateError.invalidReference
+        }
+        return reference
+    }
+
+    private func readStateRequest(url: URL, session: AuthSession, body: Data?) async throws -> (Data, HTTPURLResponse) {
+        var request = URLRequest(url: url)
+        request.httpMethod = body == nil ? "GET" : "POST"
+        request.httpBody = body
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        if body != nil { request.setValue("application/json", forHTTPHeaderField: "Content-Type") }
+        for attempt in 0...1 {
+            try await sign(&request, session: session)
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse else { throw SocialWireError.badResponse("Missing PDS response.") }
+            await auth.dpop.updateNonce(from: http)
+            if attempt == 0, [400, 401].contains(http.statusCode), http.value(forHTTPHeaderField: "DPoP-Nonce") != nil { continue }
+            return (data, http)
+        }
+        throw SocialWireError.notAuthenticated
     }
 
     func putRecord<Record: Encodable>(collection: String, rkey: String, record: Record) async throws {
