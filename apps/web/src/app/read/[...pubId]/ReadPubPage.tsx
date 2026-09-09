@@ -72,6 +72,7 @@ export default function ReadPubPage({
     markEntryRead,
     markEntryUnread,
     isEntryRead,
+    pendingEntryReadState,
     articleListFilter,
   } = useReadRoute();
 
@@ -225,6 +226,7 @@ export default function ReadPubPage({
               resolvingEntryId={resolvingEntryId}
               onSelectEntry={handleSelectEntry}
               isEntryRead={editorialFeed ? theWireEntryIsUnread : isEntryRead}
+              pendingEntryReadState={editorialFeed ? undefined : pendingEntryReadState}
               readIndicatorsEnabled={!editorialFeed}
               articleFilter={editorialFeed ? "all" : articleListFilter}
               markEntryRead={

@@ -398,6 +398,7 @@ public final class JetstreamInboxProjectionWorker: Sendable {
       guard report.complete else {
         throw JetstreamInboxProjectionError.repositoryReconciliationIncomplete
       }
+      _ = try await indexer.reconcilePDSReadState(viewerDid: sync.did)
       try await store.markIngestionInboxReconciled(
         environment: item.environment,
         sourceGeneration: item.sourceGeneration,
@@ -498,6 +499,7 @@ public final class JetstreamInboxProjectionWorker: Sendable {
     let allowlist: Set<String> = [
       "site.standard.document", "site.standard.entry", "site.standard.publication",
       "site.standard.graph.subscription",
+      "app.thesocialwire.readState",
       "app.skyreader.feed.subscription", "app.thesocialwire.entryReadState",
     ]
     return allowlist.contains(value) ? value : "other"

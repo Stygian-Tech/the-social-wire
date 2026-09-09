@@ -1,0 +1,145 @@
+{
+  "lexicon": 1,
+  "id": "app.thesocialwire.appview.prepareReadState",
+  "defs": {
+    "main": {
+      "type": "procedure",
+      "description": "Freeze a bulk-read selection without changing state. No cutoff returns publication boundaries; an age cutoff returns exact existing unread subject IDs plus calendar metadata. Clients split the selection into immutable PDS chunks. An excessive selection fails, never truncates.",
+      "output": {
+        "encoding": "application/json",
+        "schema": {
+          "type": "object",
+          "required": [
+            "actedAt",
+            "selection",
+            "legacyRevision"
+          ],
+          "properties": {
+            "actedAt": {
+              "type": "string",
+              "maxLength": 2048,
+              "format": "datetime"
+            },
+            "selection": {
+              "type": "string",
+              "maxLength": 10,
+              "enum": [
+                "boundaries",
+                "exact"
+              ]
+            },
+            "boundaries": {
+              "type": "array",
+              "items": {
+                "type": "ref",
+                "ref": "app.thesocialwire.readStateDefs#boundary"
+              },
+              "maxLength": 100000
+            },
+            "subjectUris": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "maxLength": 2048
+              },
+              "maxLength": 100000
+            },
+            "calendar": {
+              "type": "ref",
+              "ref": "app.thesocialwire.readStateDefs#calendar"
+            },
+            "legacyRevision": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "manifestCid": {
+              "type": "string",
+              "maxLength": 256,
+              "format": "cid"
+            },
+            "previewSubjectUris": {
+              "type": "array",
+              "maxLength": 1000,
+              "items": {
+                "type": "string",
+                "maxLength": 2048
+              },
+              "description": "Cached subject IDs for an optional server-verified local preview; never part of canonical PDS operations."
+            }
+          }
+        }
+      },
+      "errors": [
+        {
+          "name": "InvalidRequest"
+        },
+        {
+          "name": "Conflict"
+        },
+        {
+          "name": "UpstreamUnavailable"
+        }
+      ],
+      "input": {
+        "encoding": "application/json",
+        "schema": {
+          "type": "object",
+          "required": [
+            "scope"
+          ],
+          "properties": {
+            "scope": {
+              "type": "object",
+              "required": [
+                "kind"
+              ],
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "maxLength": 32,
+                  "knownValues": [
+                    "publication",
+                    "folder",
+                    "subscribed",
+                    "following"
+                  ]
+                },
+                "publicationId": {
+                  "type": "string",
+                  "maxLength": 2048
+                },
+                "folderRkey": {
+                  "type": "string",
+                  "maxLength": 512
+                }
+              }
+            },
+            "before": {
+              "type": "string",
+              "maxLength": 2048,
+              "format": "datetime"
+            },
+            "timeZone": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "referenceDate": {
+              "type": "string",
+              "maxLength": 10
+            },
+            "previewSubjectUris": {
+              "type": "array",
+              "maxLength": 1000,
+              "items": {
+                "type": "string",
+                "maxLength": 2048
+              },
+              "description": "Cached subject IDs for an optional server-verified local preview; never part of canonical PDS operations."
+            }
+          }
+        }
+      }
+    }
+  }
+}

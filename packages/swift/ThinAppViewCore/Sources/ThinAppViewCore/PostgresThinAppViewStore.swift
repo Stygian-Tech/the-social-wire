@@ -4,8 +4,8 @@ import OperationsCore
 import PostgresNIO
 
 public actor PostgresThinAppViewStore: ThinAppViewStore {
-  private let pool: PostgresClient
-  private let logger: Logger
+  let pool: PostgresClient
+  let logger: Logger
 
 public init(pool: PostgresClient, logger: Logger) {
     self.pool = pool
@@ -1035,6 +1035,9 @@ public init(pool: PostgresClient, logger: Logger) {
   }
 
   public func hasReadMark(viewerDid: String, subjectUri: String) async throws -> Bool {
+    if try await pdsReadStateStatus(viewerDid: viewerDid).authority == .pds {
+      return try await pdsEntryReadState(viewerDid: viewerDid, subjectUri: subjectUri)
+    }
     let rows = try await pool.query(
       """
       SELECT 1 AS present
@@ -1054,6 +1057,21 @@ public init(pool: PostgresClient, logger: Logger) {
   ) async throws -> [String: Bool] {
     guard !entries.isEmpty else { return [:] }
     let entryIds = Array(Set(entries.map(\.entryId))).sorted()
+    if try await pdsReadStateStatus(viewerDid: viewerDid).authority == .pds {
+      var result: [String: Bool] = [:]
+      for try await row in try await pool.query(
+        """
+        SELECT subject.uri, COALESCE(appview_pds_entry_is_read(\(viewerDid), subject.uri,
+          ci.author_did, ci.publication_site, ci.created_at), FALSE)
+        FROM unnest(\(entryIds)::text[]) subject(uri)
+        LEFT JOIN content_items ci ON ci.uri = subject.uri
+        """, logger: logger) {
+        let value = try row.decode((String, Bool).self)
+        result[value.0] = value.1
+      }
+      return result
+    }
+
     let publicationIds = Array(Set(entries.compactMap(\.publicationId))).sorted()
     let readRows = try await pool.query(
       """
@@ -1269,10 +1287,10 @@ public init(pool: PostgresClient, logger: Logger) {
       LEFT JOIN appview_publication_read_floors floor
         ON floor.viewer_did = scope.viewer_did
        AND floor.publication_id = scope.publication_id
-      LEFT JOIN read_marks rm
-        ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = ci.uri
-      LEFT JOIN appview_unread_overrides uo
-        ON uo.viewer_did = \(viewerDid) AND uo.subject_uri = ci.uri
+      LEFT JOIN read_marks rm ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = ci.uri
+      LEFT JOIN appview_unread_overrides uo ON uo.viewer_did = \(viewerDid) AND uo.subject_uri = ci.uri
+      LEFT JOIN LATERAL appview_effective_entry_read_state(\(viewerDid), ci.uri,
+        ci.author_did, ci.publication_site, ci.created_at, rm.subject_uri, uo.subject_uri) read_state ON TRUE
       WHERE scope.viewer_did = \(viewerDid)
         AND scope.publication_id = ANY(\(publicationIds))
         AND ci.expires_at > \(now)
@@ -1280,7 +1298,7 @@ public init(pool: PostgresClient, logger: Logger) {
         \(includeAll)
         OR (
           \(includeUnread)
-          AND rm.subject_uri IS NULL
+          AND read_state.read_uri IS NULL
           AND (
             floor.read_floor_at IS NULL
             OR ci.created_at > floor.read_floor_at
@@ -1289,16 +1307,16 @@ public init(pool: PostgresClient, logger: Logger) {
               AND ci.created_at = floor.read_floor_at
               AND ci.uri > floor.read_floor_uri
             )
-            OR uo.subject_uri IS NOT NULL
+            OR read_state.unread_uri IS NOT NULL
           )
         )
         OR (
           \(includeRead)
           AND (
-            rm.subject_uri IS NOT NULL
+            read_state.read_uri IS NOT NULL
             OR (
               floor.read_floor_at IS NOT NULL
-              AND uo.subject_uri IS NULL
+              AND read_state.unread_uri IS NULL
               AND (
                 ci.created_at < floor.read_floor_at
                 OR (
@@ -1417,7 +1435,9 @@ public init(pool: PostgresClient, logger: Logger) {
           scope.publication_id,
           ci.uri,
           ci.render_json,
-          ci.created_at
+          ci.created_at,
+          ci.author_did,
+          ci.publication_site
         FROM matching_scope_keys scope
         JOIN content_items ci
           ON ci.author_did = scope.author_did
@@ -1435,7 +1455,9 @@ public init(pool: PostgresClient, logger: Logger) {
           scope.publication_id,
           ci.uri,
           ci.render_json,
-          ci.created_at
+          ci.created_at,
+          ci.author_did,
+          ci.publication_site
         FROM matching_scope_keys scope
         JOIN content_items ci ON ci.author_did = scope.author_did
         WHERE scope.scope_key = ''
@@ -1452,8 +1474,8 @@ public init(pool: PostgresClient, logger: Logger) {
           content.created_at,
           content.publication_id,
           CASE
-            WHEN uo.subject_uri IS NOT NULL THEN FALSE
-            WHEN rm.subject_uri IS NOT NULL THEN TRUE
+            WHEN read_state.unread_uri IS NOT NULL THEN FALSE
+            WHEN read_state.read_uri IS NOT NULL THEN TRUE
             WHEN floor.read_floor_at IS NULL THEN FALSE
             WHEN content.created_at < floor.read_floor_at THEN TRUE
             WHEN content.created_at = floor.read_floor_at
@@ -1468,11 +1490,11 @@ public init(pool: PostgresClient, logger: Logger) {
         LEFT JOIN appview_publication_read_floors floor
           ON floor.viewer_did = content.viewer_did
          AND floor.publication_id = content.publication_id
-        LEFT JOIN read_marks rm
-          ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = content.uri
-        LEFT JOIN appview_unread_overrides uo
-          ON uo.viewer_did = \(viewerDid) AND uo.subject_uri = content.uri
-      ), page AS (
+        LEFT JOIN read_marks rm ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = content.uri
+        LEFT JOIN appview_unread_overrides uo ON uo.viewer_did = \(viewerDid) AND uo.subject_uri = content.uri
+        LEFT JOIN LATERAL appview_effective_entry_read_state(\(viewerDid), content.uri,
+          content.author_did, content.publication_site, content.created_at, rm.subject_uri, uo.subject_uri) read_state ON TRUE
+        ), page AS (
         SELECT uri, render_json, created_at, publication_id, is_read
         FROM candidates
         WHERE duplicate_rank = 1
@@ -1638,15 +1660,17 @@ public init(pool: PostgresClient, logger: Logger) {
         ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = ci.uri
       LEFT JOIN appview_unread_overrides uo
         ON uo.viewer_did = \(viewerDid) AND uo.subject_uri = ci.uri
+      LEFT JOIN LATERAL appview_effective_entry_read_state(\(viewerDid), ci.uri,
+        ci.author_did, ci.publication_site, ci.created_at, rm.subject_uri, uo.subject_uri) read_state ON TRUE
       WHERE ci.author_did = ANY(\(authorDids))
         AND (ci.author_did = ANY(\(unscopedAuthorDids)) OR ci.publication_site = ANY(\(scopeKeys)))
         AND ci.expires_at > \(now)
-        AND rm.subject_uri IS NULL
+        AND read_state.read_uri IS NULL
         AND (
           floor.read_floor_at IS NULL OR ci.created_at > floor.read_floor_at
           OR (floor.read_floor_uri IS NOT NULL AND ci.created_at = floor.read_floor_at
               AND ci.uri > floor.read_floor_uri)
-          OR uo.subject_uri IS NOT NULL
+          OR read_state.unread_uri IS NOT NULL
         )
         AND (\(hasCursor) = FALSE OR ci.created_at < \(cursorAt)
              OR (ci.created_at = \(cursorAt) AND ci.uri < \(cursorUri)))
@@ -1886,14 +1910,16 @@ public init(pool: PostgresClient, logger: Logger) {
         FROM content_items ci
         LEFT JOIN read_marks rm ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = ci.uri
         LEFT JOIN appview_unread_overrides uo ON uo.viewer_did = \(viewerDid) AND uo.subject_uri = ci.uri
+        LEFT JOIN LATERAL appview_effective_entry_read_state(\(viewerDid), ci.uri,
+          ci.author_did, ci.publication_site, ci.created_at, rm.subject_uri, uo.subject_uri) read_state ON TRUE
         WHERE ci.author_did = \(authorDid)
           AND ci.expires_at > \(now)
-          AND rm.subject_uri IS NULL
+          AND read_state.read_uri IS NULL
           AND (
             \(hasReadBoundary) = FALSE
             OR ci.created_at > \(unreadFloor)
             OR (\(hasUnreadFloorUri) = TRUE AND ci.created_at = \(unreadFloor) AND ci.uri > \(unreadFloorUri))
-            OR uo.subject_uri IS NOT NULL
+            OR read_state.unread_uri IS NOT NULL
           )
           AND ci.publication_site = ANY(\(siteKeys))
         ORDER BY ci.created_at DESC, ci.uri DESC
@@ -1908,13 +1934,15 @@ public init(pool: PostgresClient, logger: Logger) {
         FROM content_items ci
         LEFT JOIN read_marks rm ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = ci.uri
         LEFT JOIN appview_unread_overrides uo ON uo.viewer_did = \(viewerDid) AND uo.subject_uri = ci.uri
+        LEFT JOIN LATERAL appview_effective_entry_read_state(\(viewerDid), ci.uri,
+          ci.author_did, ci.publication_site, ci.created_at, rm.subject_uri, uo.subject_uri) read_state ON TRUE
         WHERE ci.author_did = \(authorDid)
           AND ci.expires_at > \(now)
           AND (
-            rm.subject_uri IS NOT NULL
+            read_state.read_uri IS NOT NULL
             OR (
               \(hasReadBoundary) = TRUE
-              AND uo.subject_uri IS NULL
+              AND read_state.unread_uri IS NULL
               AND (
                 ci.created_at < \(unreadFloor)
                 OR (ci.created_at = \(unreadFloor) AND (\(hasUnreadFloorUri) = FALSE OR ci.uri <= \(unreadFloorUri)))
@@ -1948,14 +1976,16 @@ public init(pool: PostgresClient, logger: Logger) {
         FROM content_items ci
         LEFT JOIN read_marks rm ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = ci.uri
         LEFT JOIN appview_unread_overrides uo ON uo.viewer_did = \(viewerDid) AND uo.subject_uri = ci.uri
+        LEFT JOIN LATERAL appview_effective_entry_read_state(\(viewerDid), ci.uri,
+          ci.author_did, ci.publication_site, ci.created_at, rm.subject_uri, uo.subject_uri) read_state ON TRUE
         WHERE ci.author_did = \(authorDid)
           AND ci.expires_at > \(now)
-          AND rm.subject_uri IS NULL
+          AND read_state.read_uri IS NULL
           AND (
             \(hasReadBoundary) = FALSE
             OR ci.created_at > \(unreadFloor)
             OR (\(hasUnreadFloorUri) = TRUE AND ci.created_at = \(unreadFloor) AND ci.uri > \(unreadFloorUri))
-            OR uo.subject_uri IS NOT NULL
+            OR read_state.unread_uri IS NOT NULL
           )
           AND ci.publication_site = ANY(\(siteKeys))
           AND (ci.created_at < \(decoded.createdAt) OR (ci.created_at = \(decoded.createdAt) AND ci.uri < \(decoded.uri)))
@@ -1971,13 +2001,15 @@ public init(pool: PostgresClient, logger: Logger) {
         FROM content_items ci
         LEFT JOIN read_marks rm ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = ci.uri
         LEFT JOIN appview_unread_overrides uo ON uo.viewer_did = \(viewerDid) AND uo.subject_uri = ci.uri
+        LEFT JOIN LATERAL appview_effective_entry_read_state(\(viewerDid), ci.uri,
+          ci.author_did, ci.publication_site, ci.created_at, rm.subject_uri, uo.subject_uri) read_state ON TRUE
         WHERE ci.author_did = \(authorDid)
           AND ci.expires_at > \(now)
           AND (
-            rm.subject_uri IS NOT NULL
+            read_state.read_uri IS NOT NULL
             OR (
               \(hasReadBoundary) = TRUE
-              AND uo.subject_uri IS NULL
+              AND read_state.unread_uri IS NULL
               AND (
                 ci.created_at < \(unreadFloor)
                 OR (ci.created_at = \(unreadFloor) AND (\(hasUnreadFloorUri) = FALSE OR ci.uri <= \(unreadFloorUri)))
@@ -2036,12 +2068,14 @@ public init(pool: PostgresClient, logger: Logger) {
         FROM content_items ci
         LEFT JOIN read_marks rm ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = ci.uri
         LEFT JOIN appview_unread_overrides uo ON uo.viewer_did = \(viewerDid) AND uo.subject_uri = ci.uri
-        WHERE ci.author_did = \(authorDid) AND ci.expires_at > \(now) AND rm.subject_uri IS NULL
+        LEFT JOIN LATERAL appview_effective_entry_read_state(\(viewerDid), ci.uri,
+          ci.author_did, ci.publication_site, ci.created_at, rm.subject_uri, uo.subject_uri) read_state ON TRUE
+        WHERE ci.author_did = \(authorDid) AND ci.expires_at > \(now) AND read_state.read_uri IS NULL
           AND (
             \(hasReadBoundary) = FALSE
             OR ci.created_at > \(unreadFloor)
             OR (\(hasUnreadFloorUri) = TRUE AND ci.created_at = \(unreadFloor) AND ci.uri > \(unreadFloorUri))
-            OR uo.subject_uri IS NOT NULL
+            OR read_state.unread_uri IS NOT NULL
           )
         ORDER BY ci.created_at DESC, ci.uri DESC
         LIMIT \(limit)
@@ -2055,12 +2089,14 @@ public init(pool: PostgresClient, logger: Logger) {
         FROM content_items ci
         LEFT JOIN read_marks rm ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = ci.uri
         LEFT JOIN appview_unread_overrides uo ON uo.viewer_did = \(viewerDid) AND uo.subject_uri = ci.uri
+        LEFT JOIN LATERAL appview_effective_entry_read_state(\(viewerDid), ci.uri,
+          ci.author_did, ci.publication_site, ci.created_at, rm.subject_uri, uo.subject_uri) read_state ON TRUE
         WHERE ci.author_did = \(authorDid) AND ci.expires_at > \(now)
           AND (
-            rm.subject_uri IS NOT NULL
+            read_state.read_uri IS NOT NULL
             OR (
               \(hasReadBoundary) = TRUE
-              AND uo.subject_uri IS NULL
+              AND read_state.unread_uri IS NULL
               AND (
                 ci.created_at < \(unreadFloor)
                 OR (ci.created_at = \(unreadFloor) AND (\(hasUnreadFloorUri) = FALSE OR ci.uri <= \(unreadFloorUri)))
@@ -2091,12 +2127,14 @@ public init(pool: PostgresClient, logger: Logger) {
         FROM content_items ci
         LEFT JOIN read_marks rm ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = ci.uri
         LEFT JOIN appview_unread_overrides uo ON uo.viewer_did = \(viewerDid) AND uo.subject_uri = ci.uri
-        WHERE ci.author_did = \(authorDid) AND ci.expires_at > \(now) AND rm.subject_uri IS NULL
+        LEFT JOIN LATERAL appview_effective_entry_read_state(\(viewerDid), ci.uri,
+          ci.author_did, ci.publication_site, ci.created_at, rm.subject_uri, uo.subject_uri) read_state ON TRUE
+        WHERE ci.author_did = \(authorDid) AND ci.expires_at > \(now) AND read_state.read_uri IS NULL
           AND (
             \(hasReadBoundary) = FALSE
             OR ci.created_at > \(unreadFloor)
             OR (\(hasUnreadFloorUri) = TRUE AND ci.created_at = \(unreadFloor) AND ci.uri > \(unreadFloorUri))
-            OR uo.subject_uri IS NOT NULL
+            OR read_state.unread_uri IS NOT NULL
           )
           AND (ci.created_at < \(decoded.createdAt) OR (ci.created_at = \(decoded.createdAt) AND ci.uri < \(decoded.uri)))
         ORDER BY ci.created_at DESC, ci.uri DESC
@@ -2111,12 +2149,14 @@ public init(pool: PostgresClient, logger: Logger) {
         FROM content_items ci
         LEFT JOIN read_marks rm ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = ci.uri
         LEFT JOIN appview_unread_overrides uo ON uo.viewer_did = \(viewerDid) AND uo.subject_uri = ci.uri
+        LEFT JOIN LATERAL appview_effective_entry_read_state(\(viewerDid), ci.uri,
+          ci.author_did, ci.publication_site, ci.created_at, rm.subject_uri, uo.subject_uri) read_state ON TRUE
         WHERE ci.author_did = \(authorDid) AND ci.expires_at > \(now)
           AND (
-            rm.subject_uri IS NOT NULL
+            read_state.read_uri IS NOT NULL
             OR (
               \(hasReadBoundary) = TRUE
-              AND uo.subject_uri IS NULL
+              AND read_state.unread_uri IS NULL
               AND (
                 ci.created_at < \(unreadFloor)
                 OR (ci.created_at = \(unreadFloor) AND (\(hasUnreadFloorUri) = FALSE OR ci.uri <= \(unreadFloorUri)))
@@ -2161,7 +2201,10 @@ public init(pool: PostgresClient, logger: Logger) {
         SELECT COUNT(*)::int
         FROM content_items ci
         LEFT JOIN read_marks rm ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = ci.uri
-        WHERE ci.author_did = \(authorDid) AND ci.expires_at > \(now) AND rm.subject_uri IS NULL
+        LEFT JOIN appview_unread_overrides uo ON uo.viewer_did = \(viewerDid) AND uo.subject_uri = ci.uri
+        LEFT JOIN LATERAL appview_effective_entry_read_state(\(viewerDid), ci.uri,
+          ci.author_did, ci.publication_site, ci.created_at, rm.subject_uri, uo.subject_uri) read_state ON TRUE
+        WHERE ci.author_did = \(authorDid) AND ci.expires_at > \(now) AND read_state.read_uri IS NULL
         """,
         logger: logger
       )
@@ -2182,9 +2225,12 @@ public init(pool: PostgresClient, logger: Logger) {
         SELECT COUNT(*)::int
         FROM content_items ci
         LEFT JOIN read_marks rm ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = ci.uri
+        LEFT JOIN appview_unread_overrides uo ON uo.viewer_did = \(viewerDid) AND uo.subject_uri = ci.uri
+        LEFT JOIN LATERAL appview_effective_entry_read_state(\(viewerDid), ci.uri,
+          ci.author_did, ci.publication_site, ci.created_at, rm.subject_uri, uo.subject_uri) read_state ON TRUE
         WHERE ci.author_did = \(authorDid)
           AND ci.expires_at > \(now)
-          AND rm.subject_uri IS NULL
+          AND read_state.read_uri IS NULL
           AND ci.publication_site = ANY(\(siteKeys))
         """,
         logger: logger
@@ -2200,7 +2246,10 @@ public init(pool: PostgresClient, logger: Logger) {
       SELECT ci.publication_site
       FROM content_items ci
       LEFT JOIN read_marks rm ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = ci.uri
-      WHERE ci.author_did = \(authorDid) AND ci.expires_at > \(now) AND rm.subject_uri IS NULL
+      LEFT JOIN appview_unread_overrides uo ON uo.viewer_did = \(viewerDid) AND uo.subject_uri = ci.uri
+      LEFT JOIN LATERAL appview_effective_entry_read_state(\(viewerDid), ci.uri,
+        ci.author_did, ci.publication_site, ci.created_at, rm.subject_uri, uo.subject_uri) read_state ON TRUE
+      WHERE ci.author_did = \(authorDid) AND ci.expires_at > \(now) AND read_state.read_uri IS NULL
       """,
       logger: logger
     )
@@ -2230,9 +2279,12 @@ public init(pool: PostgresClient, logger: Logger) {
       SELECT ci.author_did, ci.publication_site, COUNT(*)::int
       FROM content_items ci
       LEFT JOIN read_marks rm ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = ci.uri
+      LEFT JOIN appview_unread_overrides uo ON uo.viewer_did = \(viewerDid) AND uo.subject_uri = ci.uri
+      LEFT JOIN LATERAL appview_effective_entry_read_state(\(viewerDid), ci.uri,
+        ci.author_did, ci.publication_site, ci.created_at, rm.subject_uri, uo.subject_uri) read_state ON TRUE
       WHERE ci.author_did = ANY(\(authorDids))
         AND ci.expires_at > \(now)
-        AND rm.subject_uri IS NULL
+        AND read_state.read_uri IS NULL
       GROUP BY ci.author_did, ci.publication_site
       """,
       logger: logger
@@ -2671,10 +2723,10 @@ public init(pool: PostgresClient, logger: Logger) {
               """
               SELECT COUNT(*)::int
               FROM content_items ci
-              LEFT JOIN read_marks rm
-                ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = ci.uri
-              LEFT JOIN appview_unread_overrides uo
-                ON uo.viewer_did = \(viewerDid) AND uo.subject_uri = ci.uri
+              LEFT JOIN read_marks rm ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = ci.uri
+              LEFT JOIN appview_unread_overrides uo ON uo.viewer_did = \(viewerDid) AND uo.subject_uri = ci.uri
+              LEFT JOIN LATERAL appview_effective_entry_read_state(\(viewerDid), ci.uri,
+                ci.author_did, ci.publication_site, ci.created_at, rm.subject_uri, uo.subject_uri) read_state ON TRUE
               WHERE ci.author_did = \(scope.authorDid)
                 AND ci.expires_at > \(now)
                 AND (
@@ -2684,10 +2736,10 @@ public init(pool: PostgresClient, logger: Logger) {
                     AND ci.created_at = \(confirmed.createdAt)
                     AND ci.uri > \(confirmed.entryId)
                   )
-                  OR uo.subject_uri IS NOT NULL
+                  OR read_state.unread_uri IS NOT NULL
                 )
                 AND ci.publication_site = ANY(\(siteKeys))
-                AND rm.subject_uri IS NULL
+                AND read_state.read_uri IS NULL
               """,
               logger: logger
             )
@@ -2696,10 +2748,10 @@ public init(pool: PostgresClient, logger: Logger) {
               """
               SELECT COUNT(*)::int
               FROM content_items ci
-              LEFT JOIN read_marks rm
-                ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = ci.uri
-              LEFT JOIN appview_unread_overrides uo
-                ON uo.viewer_did = \(viewerDid) AND uo.subject_uri = ci.uri
+              LEFT JOIN read_marks rm ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = ci.uri
+              LEFT JOIN appview_unread_overrides uo ON uo.viewer_did = \(viewerDid) AND uo.subject_uri = ci.uri
+              LEFT JOIN LATERAL appview_effective_entry_read_state(\(viewerDid), ci.uri,
+                ci.author_did, ci.publication_site, ci.created_at, rm.subject_uri, uo.subject_uri) read_state ON TRUE
               WHERE ci.author_did = \(scope.authorDid)
                 AND ci.expires_at > \(now)
                 AND (
@@ -2709,9 +2761,9 @@ public init(pool: PostgresClient, logger: Logger) {
                     AND ci.created_at = \(confirmed.createdAt)
                     AND ci.uri > \(confirmed.entryId)
                   )
-                  OR uo.subject_uri IS NOT NULL
+                  OR read_state.unread_uri IS NOT NULL
                 )
-                AND rm.subject_uri IS NULL
+                AND read_state.read_uri IS NULL
               """,
               logger: logger
             )
@@ -2834,6 +2886,8 @@ public init(pool: PostgresClient, logger: Logger) {
       WITH doomed AS (
         SELECT ctid FROM read_marks
         WHERE created_at <= \(before)
+          AND NOT EXISTS (SELECT 1 FROM appview_pds_read_state_authority authority
+            WHERE authority.viewer_did = read_marks.viewer_did AND authority.manifest_cid IS NOT NULL)
         ORDER BY created_at, viewer_did, subject_uri
         LIMIT \(batchSize)
         FOR UPDATE SKIP LOCKED
@@ -3630,6 +3684,7 @@ public init(pool: PostgresClient, logger: Logger) {
     viewerDid: String,
     publicationIds: [String]
   ) async throws -> [String: ReadWatermarkBoundary] {
+    if try await pdsReadStateStatus(viewerDid: viewerDid).authority == .pds { return [:] }
     let uniqueIds = Array(Set(publicationIds)).sorted()
     guard !uniqueIds.isEmpty else { return [:] }
     let rows = try await pool.query(
@@ -3659,6 +3714,7 @@ public init(pool: PostgresClient, logger: Logger) {
     viewerDid: String,
     publicationId: String
   ) async throws -> ReadWatermarkBoundary? {
+    if try await pdsReadStateStatus(viewerDid: viewerDid).authority == .pds { return nil }
     let rows = try await pool.query(
       """
       SELECT read_floor_at, read_floor_uri
@@ -3704,6 +3760,8 @@ public init(pool: PostgresClient, logger: Logger) {
         FROM content_items ci
         LEFT JOIN read_marks rm ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = ci.uri
         LEFT JOIN appview_unread_overrides uo ON uo.viewer_did = \(viewerDid) AND uo.subject_uri = ci.uri
+        LEFT JOIN LATERAL appview_effective_entry_read_state(\(viewerDid), ci.uri,
+          ci.author_did, ci.publication_site, ci.created_at, rm.subject_uri, uo.subject_uri) read_state ON TRUE
         WHERE ci.author_did = \(scope.authorDid)
           AND ci.expires_at > \(now)
           AND (
@@ -3713,10 +3771,10 @@ public init(pool: PostgresClient, logger: Logger) {
               AND ci.created_at = \(readBoundary.createdAt)
               AND ci.uri > \(readBoundary.entryId)
             )
-            OR uo.subject_uri IS NOT NULL
+            OR read_state.unread_uri IS NOT NULL
           )
           AND ci.publication_site = ANY(\(siteKeys))
-          AND rm.subject_uri IS NULL
+          AND read_state.read_uri IS NULL
         """,
         logger: logger
       )
@@ -3732,6 +3790,8 @@ public init(pool: PostgresClient, logger: Logger) {
       FROM content_items ci
       LEFT JOIN read_marks rm ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = ci.uri
       LEFT JOIN appview_unread_overrides uo ON uo.viewer_did = \(viewerDid) AND uo.subject_uri = ci.uri
+      LEFT JOIN LATERAL appview_effective_entry_read_state(\(viewerDid), ci.uri,
+        ci.author_did, ci.publication_site, ci.created_at, rm.subject_uri, uo.subject_uri) read_state ON TRUE
       WHERE ci.author_did = \(scope.authorDid)
         AND ci.expires_at > \(now)
         AND (
@@ -3741,9 +3801,9 @@ public init(pool: PostgresClient, logger: Logger) {
             AND ci.created_at = \(readBoundary.createdAt)
             AND ci.uri > \(readBoundary.entryId)
           )
-          OR uo.subject_uri IS NOT NULL
+          OR read_state.unread_uri IS NOT NULL
         )
-        AND rm.subject_uri IS NULL
+        AND read_state.read_uri IS NULL
       """,
       logger: logger
     )
@@ -3766,6 +3826,9 @@ public init(pool: PostgresClient, logger: Logger) {
     viewerDid: String,
     subjectUri: String
   ) async throws -> Bool {
+    if try await pdsReadStateStatus(viewerDid: viewerDid).authority == .pds {
+      return try await !pdsEntryReadState(viewerDid: viewerDid, subjectUri: subjectUri)
+    }
     let rows = try await pool.query(
       """
       SELECT 1

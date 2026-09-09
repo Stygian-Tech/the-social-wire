@@ -22,9 +22,9 @@ export function parseReadStateJson(raw: string | null): EntryReadStateV1 {
   }
 }
 
-export function loadReadState(storage: Pick<Storage, "getItem">): EntryReadStateV1 {
+export function loadReadState(storage: Pick<Storage, "getItem">, key = READ_STATE_STORAGE_KEY): EntryReadStateV1 {
   try {
-    return parseReadStateJson(storage.getItem(READ_STATE_STORAGE_KEY));
+    return parseReadStateJson(storage.getItem(key));
   } catch {
     return {};
   }
@@ -32,11 +32,17 @@ export function loadReadState(storage: Pick<Storage, "getItem">): EntryReadState
 
 export function saveReadState(
   storage: Pick<Storage, "setItem">,
-  state: EntryReadStateV1
+  state: EntryReadStateV1,
+  key = READ_STATE_STORAGE_KEY
 ): void {
   try {
-    storage.setItem(READ_STATE_STORAGE_KEY, JSON.stringify(state));
+    storage.setItem(key, JSON.stringify(state));
   } catch {
     // quota / private mode
   }
+}
+
+/** Do not import the former shared-device cache into an authenticated viewer. */
+export function viewerReadStateStorageKey(viewerDid?: string): string {
+  return `the-social-wire.read-state.v2:${viewerDid ?? "anonymous"}`;
 }

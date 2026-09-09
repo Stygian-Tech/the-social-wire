@@ -11,6 +11,7 @@ let package = Package(
   ],
   dependencies: [
     .package(path: "../OperationsCore"),
+    .package(path: "../ReadStateCore"),
     .package(path: "../SocialWireRedis"),
     .package(url: "https://github.com/swift-server/async-http-client.git", from: "1.23.0"),
     .package(url: "https://github.com/vapor/postgres-nio.git", from: "1.21.0"),
@@ -25,6 +26,7 @@ let package = Package(
       name: "ThinAppViewCore",
       dependencies: [
         "OperationsCore",
+        "ReadStateCore",
         "SocialWireRedis",
         .product(name: "AsyncHTTPClient", package: "async-http-client"),
         .product(name: "PostgresNIO", package: "postgres-nio"),

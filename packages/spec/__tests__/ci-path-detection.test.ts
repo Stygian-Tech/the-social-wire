@@ -75,6 +75,17 @@ function detect(
 }
 
 describe("CI path detection", () => {
+  it("tests portable read-state changes in native and server consumers", () => {
+    const result = detect(repositoryWithChange("packages/swift/ReadStateCore/Sources/ReadStateCore/State.swift"), "pull_request");
+    for (const job of ["apple", "gateway", "appview", "charybdis", "operations", "indexing_worker"]) {
+      expect(result.get(job)).toBe("true");
+    }
+  });
+
+  it("tests shared TypeScript read-state changes in the Web job", () => {
+    const result = detect(repositoryWithChange("packages/read-state/src/index.ts"), "pull_request");
+    expect(result.get("web")).toBe("true");
+  });
   it("uses the push before SHA instead of running the full matrix", () => {
     const result = detect(repositoryWithChange("docs/wiki/Testing.md"), "push");
     expect(result.get("docs")).toBe("true");

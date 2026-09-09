@@ -206,6 +206,22 @@ struct AppViewProxyRoutes {
         request: request, context: context, path: "/xrpc/app.thesocialwire.appview.markReadBefore",
         method: "POST")
     }
+    group.get("/xrpc/app.thesocialwire.appview.getReadStateStatus") { request, context async throws -> Response in
+      try await forward(request: request, context: context,
+        path: "/xrpc/app.thesocialwire.appview.getReadStateStatus", method: "GET")
+    }
+    group.post("/xrpc/app.thesocialwire.appview.exportReadState") { request, context async throws -> Response in
+      try await forward(request: request, context: context,
+        path: "/xrpc/app.thesocialwire.appview.exportReadState", method: "POST")
+    }
+    group.post("/xrpc/app.thesocialwire.appview.prepareReadState") { request, context async throws -> Response in
+      try await forward(request: request, context: context,
+        path: "/xrpc/app.thesocialwire.appview.prepareReadState", method: "POST")
+    }
+    group.post("/xrpc/app.thesocialwire.appview.confirmReadState") { request, context async throws -> Response in
+      try await forward(request: request, context: context,
+        path: "/xrpc/app.thesocialwire.appview.confirmReadState", method: "POST")
+    }
   }
 
   private func forward(

@@ -153,6 +153,20 @@ func (p *Postgres) ReconcileWireAdmission(ctx context.Context, lease Lease) (boo
 				}
 				return false, fmt.Errorf("load Wire recovery anchor: %w", err)
 			}
+			// Preserve the pre-rewind boundary. The publication worker may repair
+			// exact logged activity without inventing signals or advancing replay.
+			if _, err := tx.ExecContext(ctx, `
+				INSERT INTO wire_publication_signal_recovery_jobs
+				  (environment, source_generation, inbox_initialized_at, maximum_source_seq)
+				SELECT checkpoint.environment, checkpoint.source_generation,
+				       epoch.initialized_at, checkpoint.last_staged_seq
+				FROM appview_jetstream_checkpoints checkpoint
+				JOIN wire_ingestion_inbox_epochs epoch USING (environment, source_generation)
+				WHERE checkpoint.environment = $1 AND checkpoint.source_generation = $2
+				  AND checkpoint.last_staged_seq IS NOT NULL
+				ON CONFLICT DO NOTHING`, p.source.Environment, p.source.Generation); err != nil {
+				return false, fmt.Errorf("register Wire publication recovery: %w", err)
+			}
 			result, updateErr := tx.ExecContext(ctx, `
 				UPDATE appview_jetstream_checkpoints
 				SET last_staged_seq = $3,

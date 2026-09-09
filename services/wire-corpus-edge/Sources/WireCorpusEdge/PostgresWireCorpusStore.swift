@@ -9,6 +9,7 @@ actor PostgresWireCorpusStore: WireCorpusStoring {
     let language: String
     let generatedAt: Date
     let expiresAt: Date
+    let recovering: Bool
   }
 
   private let pool: PostgresClient
@@ -193,7 +194,7 @@ actor PostgresWireCorpusStore: WireCorpusStoring {
       generatedAt: generation.generatedAt,
       language: generation.language,
       source: age > 10 * 60 ? .staleGeneration : .ranked,
-      degraded: age > 10 * 60,
+      degraded: generation.recovering || age > 10 * 60,
       rows: rows,
       exhausted: rows.count < limit
     )
@@ -351,7 +352,7 @@ actor PostgresWireCorpusStore: WireCorpusStoring {
       language: generation.language,
       cursor: hasMore ? String(continuationOrdinal) : nil,
       source: age > 10 * 60 ? .staleGeneration : .ranked,
-      degraded: age > 10 * 60,
+      degraded: generation.recovering || age > 10 * 60,
       leadStories: leads,
       publicationPanels: panels,
       storyRails: rails,
@@ -404,7 +405,7 @@ actor PostgresWireCorpusStore: WireCorpusStoring {
   private func activeGeneration(exactLanguage language: String, now: Date) async throws -> Generation? {
     let rows = try await pool.query(
       """
-      SELECT generation_id, language_bucket, generated_at, expires_at
+      SELECT generation_id, language_bucket, generated_at, expires_at, recovering
       FROM wire_serving.feed_state
       WHERE language_bucket = \(language) AND expires_at > \(now)
       LIMIT 1
@@ -412,8 +413,9 @@ actor PostgresWireCorpusStore: WireCorpusStoring {
       logger: logger
     )
     for try await row in rows {
-      let value = try row.decode((UUID, String, Date, Date).self)
-      return Generation(id: value.0, language: value.1, generatedAt: value.2, expiresAt: value.3)
+      let value = try row.decode((UUID, String, Date, Date, Bool).self)
+      return Generation(id: value.0, language: value.1, generatedAt: value.2, expiresAt: value.3,
+        recovering: value.4)
     }
     return nil
   }
@@ -421,7 +423,7 @@ actor PostgresWireCorpusStore: WireCorpusStoring {
   private func retainedGeneration(id: UUID, now: Date) async throws -> Generation? {
     let rows = try await pool.query(
       """
-      SELECT generation_id, language_bucket, generated_at, expires_at
+      SELECT generation_id, language_bucket, generated_at, expires_at, recovering
       FROM wire_serving.generations
       WHERE generation_id = \(id) AND expires_at > \(now)
       LIMIT 1
@@ -429,8 +431,9 @@ actor PostgresWireCorpusStore: WireCorpusStoring {
       logger: logger
     )
     for try await row in rows {
-      let value = try row.decode((UUID, String, Date, Date).self)
-      return Generation(id: value.0, language: value.1, generatedAt: value.2, expiresAt: value.3)
+      let value = try row.decode((UUID, String, Date, Date, Bool).self)
+      return Generation(id: value.0, language: value.1, generatedAt: value.2, expiresAt: value.3,
+        recovering: value.4)
     }
     return nil
   }
@@ -438,7 +441,7 @@ actor PostgresWireCorpusStore: WireCorpusStoring {
   private func acceptableGenerations(now: Date) async throws -> [Generation] {
     let rows = try await pool.query(
       """
-      SELECT generation_id, language_bucket, generated_at, expires_at
+      SELECT generation_id, language_bucket, generated_at, expires_at, recovering
       FROM wire_serving.feed_state
       WHERE expires_at > \(now)
       """,
@@ -446,8 +449,9 @@ actor PostgresWireCorpusStore: WireCorpusStoring {
     )
     var result: [Generation] = []
     for try await row in rows {
-      let value = try row.decode((UUID, String, Date, Date).self)
-      result.append(Generation(id: value.0, language: value.1, generatedAt: value.2, expiresAt: value.3))
+      let value = try row.decode((UUID, String, Date, Date, Bool).self)
+      result.append(Generation(id: value.0, language: value.1, generatedAt: value.2, expiresAt: value.3,
+        recovering: value.4))
     }
     return result
   }

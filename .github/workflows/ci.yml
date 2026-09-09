@@ -72,6 +72,10 @@ jobs:
         run: bunx turbo typecheck --filter=web
       - name: Lint
         run: bunx turbo lint --filter=web
+      - name: Test shared PDS read-state protocol
+        run: bun --cwd packages/read-state test
+      - name: Typecheck shared PDS read-state protocol
+        run: bun --cwd packages/read-state typecheck
       - name: Test
         run: bun --cwd apps/web run test:coverage
         env:
@@ -227,6 +231,9 @@ jobs:
         with:
           swift-version: "6.2.4"
           skip-verify-signature: true
+      - name: Test portable read-state protocol
+        working-directory: packages/swift/ReadStateCore
+        run: swift test
       - name: Test AppView
         working-directory: services/appview
         env:
@@ -490,6 +497,8 @@ jobs:
           skip-verify-signature: true
       - name: Test The Wire Corpus Edge
         working-directory: services/wire-corpus-edge
+        env:
+          WIRE_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/socialwire_wire_corpus_test?sslmode=disable
         run: swift test
       - name: Build The Wire Corpus Edge production image
         run: docker build --file services/wire-corpus-edge/Dockerfile --tag the-social-wire-wire-corpus-edge:test .
@@ -516,6 +525,8 @@ jobs:
           --health-retries 30
     steps:
       - uses: actions/checkout@v6
+      - name: Verify PostgreSQL clean shutdown
+        run: services/postgres/tests/shutdown.sh
       - name: Check migration runner syntax
         run: |
           bash -n scripts/apply-database-migrations.sh

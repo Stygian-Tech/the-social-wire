@@ -685,15 +685,15 @@ struct PostgresJetstreamInboxIntegrationTests {
   }
 }
 
-private final class PostgresInboxFixture: @unchecked Sendable {
+final class PostgresInboxFixture: @unchecked Sendable {
   static let testURL = ProcessInfo.processInfo.environment["THIN_APPVIEW_TEST_DATABASE_URL"]
 
   let environment: String
   let sourceGeneration: String
   let store: PostgresThinAppViewStore
 
-  private let pool: PostgresClient
-  private let logger: Logger
+  let pool: PostgresClient
+  let logger: Logger
   private let runTask: Task<Void, Never>
 
   private init(url: String, maximumConnections: Int) async throws {
@@ -1015,7 +1015,7 @@ private final class PostgresInboxFixture: @unchecked Sendable {
     return nil
   }
 
-  func holdFirstClaimTransaction(
+  fileprivate func holdFirstClaimTransaction(
     sequences: Set<Int64>,
     workerId: String,
     at now: Date,
@@ -1238,6 +1238,38 @@ private final class PostgresInboxFixture: @unchecked Sendable {
       """,
     ]
     for statement in statements { try await execute(statement) }
+    let installed = try await pool.query("SELECT to_regclass('appview_pds_read_state_authority') IS NOT NULL", logger: logger)
+    var needsPDSMigration = true
+    for try await row in installed { needsPDSMigration = !(try row.decode(Bool.self)) }
+    if needsPDSMigration {
+      var root = URL(fileURLWithPath: #filePath)
+      for _ in 0..<6 { root.deleteLastPathComponent() }
+      let migration = try String(contentsOf: root.appendingPathComponent(
+        "database/migrations/20260909010000_add_pds_read_state_projection.sql"), encoding: .utf8)
+      // PostgresNIO uses the extended protocol even for simpleQuery. Wrap the
+      // reviewed migration in one DO statement so its function bodies stay intact.
+      try await execute(PostgresQuery(unsafeSQL: "DO $fixture$ BEGIN\n" + migration + "\nEND $fixture$;"))
+    }
+    let readiness = try await pool.query("SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'appview_pds_read_state_authority' AND column_name = 'projection_ready')", logger: logger)
+    var needsReadiness = true
+    for try await row in readiness { needsReadiness = !(try row.decode(Bool.self)) }
+    if needsReadiness {
+      var root = URL(fileURLWithPath: #filePath)
+      for _ in 0..<6 { root.deleteLastPathComponent() }
+      let migration = try String(contentsOf: root.appendingPathComponent(
+        "database/migrations/20260909020000_add_pds_projection_readiness.sql"), encoding: .utf8)
+      try await execute(PostgresQuery(unsafeSQL: "DO $fixture$ BEGIN\n" + migration + "\nEND $fixture$;"))
+    }
+    let maintenance = try await pool.query("SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'appview_pds_read_state_authority' AND column_name = 'manifest_revision')", logger: logger)
+    var needsMaintenance = true
+    for try await row in maintenance { needsMaintenance = !(try row.decode(Bool.self)) }
+    if needsMaintenance {
+      var root = URL(fileURLWithPath: #filePath)
+      for _ in 0..<6 { root.deleteLastPathComponent() }
+      let migration = try String(contentsOf: root.appendingPathComponent(
+        "database/migrations/20260909030000_fence_pds_manifest_maintenance.sql"), encoding: .utf8)
+      try await execute(PostgresQuery(unsafeSQL: "DO $fixture$ BEGIN\n" + migration + "\nEND $fixture$;"))
+    }
   }
 
   private func execute(_ query: PostgresQuery) async throws {

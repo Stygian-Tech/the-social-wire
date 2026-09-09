@@ -1,5 +1,6 @@
 "use client";
 
+import { effectiveEntryReadState } from "@/lib/pendingReadStateOverlay";
 import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -25,6 +26,7 @@ export function EntryListVirtualPane({
   resolvingEntryId = null,
   onSelectEntry,
   isEntryRead,
+  pendingEntryReadState,
   readIndicatorsEnabled,
   hasNextPage,
   isFetchingNextPage,
@@ -231,7 +233,7 @@ export function EntryListVirtualPane({
                 isSelected={selectedEntryId === entry.entryId}
                 isResolving={resolvingEntryId === entry.entryId}
                 onSelect={onSelectEntry}
-                isRead={entry.isRead === true || isEntryRead(entry.entryId)}
+                isRead={effectiveEntryReadState(entry.entryId, entry.isRead, isEntryRead, pendingEntryReadState)}
                 readIndicatorsEnabled={readIndicatorsEnabled}
                 onMarkEntryRead={markEntryRead}
                 onMarkEntryUnread={markEntryUnread}

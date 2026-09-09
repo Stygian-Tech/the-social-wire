@@ -378,7 +378,7 @@ documented coefficients and thresholds. Operational environment controls are:
 - `WIRE_INBOX_CLEANUP_ENABLED=true|false` (assign terminal-row cleanup to exactly one selected role);
 - `WIRE_RANK_INTERVAL_SECONDS=300`;
 - `WIRE_CANDIDATE_LIMIT=5000`;
-- `WIRE_GENERATION_RETENTION_SECONDS=172800`;
+- `WIRE_GENERATION_RETENTION_SECONDS=3600` for new generations (existing expirations and active generations are preserved);
 - `WIRE_RETENTION_BATCH_SIZE=5000`;
 - `WIRE_LANGUAGE_BUCKET=und`;
 - `WIRE_ACTOR_HMAC_SECRET` with at least 32 bytes outside `off` mode.

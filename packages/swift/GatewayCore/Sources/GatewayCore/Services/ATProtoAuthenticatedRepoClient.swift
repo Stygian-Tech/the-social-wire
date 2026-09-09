@@ -154,6 +154,46 @@ public actor ATProtoAuthenticatedRepoClient {
     return PdsRecordJSON(values: value)
   }
 
+  /// Reads from the resolved author PDS and retains the repository URI/CID.
+  /// Supplying a CID pins immutable chunk reads during a concurrent manifest update.
+  public func getRecordWithMetadata(
+    auth: AuthContext?, repo: String, collection: String, rkey: String, cid: String? = nil
+  ) async throws -> RepoRecord? {
+    guard
+      let repoDid = try await ATProtoPdsResolution.resolveRepoDid(
+        handleOrDid: repo,
+        httpClient: httpClient
+      )
+    else { return nil }
+
+    guard
+      let pdsBase = try await ATProtoPdsResolution.resolvePdsBase(
+        repoDid: repoDid,
+        plcBase: plcURL,
+        httpClient: httpClient
+      )
+    else { return nil }
+
+    guard var comps = URLComponents(string: "\(ATProtoPdsResolution.normalizePdsBase(pdsBase))/xrpc/com.atproto.repo.getRecord") else {
+      return nil
+    }
+    comps.queryItems = [
+      URLQueryItem(name: "repo", value: repoDid),
+      URLQueryItem(name: "collection", value: collection),
+      URLQueryItem(name: "rkey", value: rkey),
+    ]
+    if let cid { comps.queryItems?.append(URLQueryItem(name: "cid", value: cid)) }
+    guard let url = comps.url?.absoluteString else { return nil }
+
+    let json = try await executeJSON(url: url, auth: auth)
+    guard let value = json["value"] as? [String: Any],
+          let returnedURI = json["uri"] as? String,
+          let returnedCID = json["cid"] as? String,
+          returnedURI == "at://\(repoDid)/\(collection)/\(rkey)",
+          cid == nil || cid == returnedCID else { return nil }
+    return RepoRecord(uri: returnedURI, cid: returnedCID, value: PdsRecordJSON(values: value))
+  }
+
   public func getRecordByAtUri(auth: AuthContext?, atUri: String) async throws -> PdsRecordJSON? {
     guard let parsed = RenderFieldExtractor.parseAtUri(AtUriNormalization.normalizeAtRepoParam(atUri)) else {
       return nil

@@ -1,0 +1,28 @@
+meta {
+  name: XRPC app.thesocialwire.appview.confirmReadState
+  type: http
+  seq: 83
+}
+
+post {
+  url: {{baseUrl}}/xrpc/app.thesocialwire.appview.confirmReadState
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "manifestCid": "{{readStateManifestCid}}",
+    "expectedLegacyRevision": 0
+  }
+}
+
+docs {
+  Fetch the viewer manifest and complete CID-pinned chain from their resolved PDS. Initial activation requires expectedLegacyRevision and structural parity with the complete legacy export. A manifest CID alone from a client is not proof. No source rows are deleted.
+}

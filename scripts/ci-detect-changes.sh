@@ -70,6 +70,7 @@ filter_changed() {
 filter_changed web \
   'apps/web/**' \
   'packages/record-keys/**' \
+  'packages/read-state/**' \
   'package.json' \
   'bun.lock' \
   'turbo.json' \
@@ -89,12 +90,14 @@ filter_changed operations_web \
 
 filter_changed apple \
   'apps/apple/**' \
+  'packages/swift/ReadStateCore/**' \
   '.github/workflows/ci.yml'
 
 filter_changed operations \
   'services/operations/**' \
   'packages/swift/GatewayCore/**' \
   'packages/swift/ThinAppViewCore/**' \
+  'packages/swift/ReadStateCore/**' \
   'packages/swift/SocialWireRedis/**' \
   'packages/swift/OperationsCore/**' \
   'railway/operations.json' \
@@ -108,6 +111,7 @@ filter_changed gateway \
   'services/gateway/**' \
   'packages/swift/GatewayCore/**' \
   'packages/swift/ThinAppViewCore/**' \
+  'packages/swift/ReadStateCore/**' \
   'packages/swift/OperationsCore/**' \
   'packages/swift/SocialWireRedis/**' \
   'packages/swift/WireCore/**' \
@@ -119,6 +123,7 @@ filter_changed appview \
   'database/migrations/**' \
   'packages/swift/GatewayCore/**' \
   'packages/swift/ThinAppViewCore/**' \
+  'packages/swift/ReadStateCore/**' \
   'packages/swift/OperationsCore/**' \
   'packages/swift/SocialWireRedis/**' \
   'packages/swift/WireCore/**' \
@@ -128,6 +133,7 @@ filter_changed appview \
 filter_changed charybdis \
   'services/appview-worker/**' \
   'packages/swift/ThinAppViewCore/**' \
+  'packages/swift/ReadStateCore/**' \
   'packages/swift/OperationsCore/**' \
   'packages/swift/SocialWireRedis/**' \
   'railway/charybdis.json' \
@@ -162,6 +168,7 @@ filter_changed indexing_worker \
   'services/appview-worker/**' \
   'services/wire-worker/**' \
   'packages/swift/ThinAppViewCore/**' \
+  'packages/swift/ReadStateCore/**' \
   'packages/swift/OperationsCore/**' \
   'packages/swift/SocialWireRedis/**' \
   'packages/swift/WireCore/**' \
@@ -185,6 +192,8 @@ filter_changed database_migrator \
   'scripts/verify-wire-inbox-claim-index.sql' \
   'scripts/verify-wire-corpus-serving.sql' \
   'services/database-migrator/**' \
+  'services/postgres/**' \
+  'railway/postgres.json' \
   'railway/database-migrator.json' \
   '.github/workflows/ci.yml'
 
@@ -196,6 +205,7 @@ filter_changed lexicons \
   '.github/workflows/ci.yml'
 
 filter_changed spec \
+  'packages/read-state/**' \
   'packages/spec/**' \
   'scripts/benchmarks/**' \
   'scripts/capture-postgres-cost.sql' \
@@ -205,6 +215,7 @@ filter_changed spec \
   'packages/lexicons/**' \
   'apps/web/**' \
   'apps/apple/**' \
+  'packages/swift/ReadStateCore/**' \
   'railway/**' \
   '**/migrations/**' \
   'services/**/bruno/**' \
@@ -215,6 +226,7 @@ filter_changed spec \
   'services/jetstream-ingest/internal/store/postgres.go' \
   'packages/swift/GatewayCore/**' \
   'packages/swift/ThinAppViewCore/**' \
+  'packages/swift/ReadStateCore/**' \
   'packages/swift/OperationsCore/**' \
   'packages/swift/WireCore/**' \
   'services/wire-worker/**' \

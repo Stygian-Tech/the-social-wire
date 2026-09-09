@@ -1,3 +1,4 @@
+import { pdsReadStateSync, usesPDSReadState } from "@/lib/pdsReadStateSync";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 
 import type { GatewayMarkAllReadScope } from "@/lib/publicationProjectionClient";
@@ -16,6 +17,7 @@ export type ReadAgeOptionsResponse = {
 };
 
 export type MarkReadBeforeResponse = {
+  pendingSync?: boolean;
   marked: number;
   entryIds: string[];
   readAt: string;
@@ -102,8 +104,16 @@ export async function fetchReadAgeOptions(
 export async function markReadBefore(
   oauthSession: OAuthSession,
   scope: GatewayMarkAllReadScope,
-  before: string
+  before: string,
+  calendar?: { timeZone: string; referenceDate: string }
 ): Promise<MarkReadBeforeResponse> {
+  if (await usesPDSReadState(oauthSession)) {
+    const timeZone = calendar?.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const referenceDate = calendar?.referenceDate ?? new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+    const prepared = await pdsReadStateSync(oauthSession).bulk(scope, { before, timeZone, referenceDate });
+    return { marked: prepared.subjectUris?.length ?? 0, entryIds: prepared.subjectUris ?? [],
+      readAt: prepared.actedAt, unreadCounts: {}, pendingSync: true };
+  }
   // Keep this separate from markAllRead: old servers ignore unknown cutoff fields.
   const response = await gatewayFetch(oauthSession, socialWireXrpc.markReadBefore, {
     method: "POST",
@@ -111,6 +121,7 @@ export async function markReadBefore(
     body: JSON.stringify({ scope, before }),
   });
   if (!response.ok) {
+    if (response.status === 409 && await usesPDSReadState(oauthSession, true)) return markReadBefore(oauthSession, scope, before, calendar);
     throw new Error(`Mark older stories read failed (${response.status})`);
   }
   return (await response.json()) as MarkReadBeforeResponse;
