@@ -10,7 +10,8 @@ docker build -q -f services/postgres/Dockerfile -t "$image" . >/dev/null
 # Local trust only; no published ports, credentials or external network.
 docker run -d --name "$name" --network none --memory 1g \
   -e POSTGRES_HOST_AUTH_METHOD=trust -e PGDATA=/var/lib/postgresql/data/pgdata \
-  -e POSTGRES_USER=postgres -e POSTGRES_DB=postgres "$image" >/dev/null
+  -e POSTGRES_USER=postgres -e POSTGRES_DB=postgres --entrypoint bash "$image" \
+  -c "$(cat services/postgres/railway-entrypoint.sh)" -- postgres -p 5432 -c listen_addresses=* >/dev/null
 ready() {
   for _ in $(seq 1 90); do
     if docker exec "$name" pg_isready -h 127.0.0.1 -U postgres -q; then return; fi
