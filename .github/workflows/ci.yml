@@ -309,6 +309,22 @@ jobs:
           --health-retries 30
     steps:
       - uses: actions/checkout@v6
+      - name: Preload statement statistics for telemetry integration tests
+        env:
+          POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
+        run: |
+          docker exec "$POSTGRES_CONTAINER" psql -U postgres -d socialwire_operations_test -v ON_ERROR_STOP=1 \
+            -c "ALTER SYSTEM SET shared_preload_libraries = 'pg_stat_statements'"
+          docker restart "$POSTGRES_CONTAINER"
+          for attempt in $(seq 1 30); do
+            echo "Waiting for Postgres after preload restart ($attempt/30)"
+            if docker exec "$POSTGRES_CONTAINER" pg_isready -U postgres -d socialwire_operations_test; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs "$POSTGRES_CONTAINER"
+          exit 1
       - name: Build migration image for telemetry integration tests
         run: docker build --file services/database-migrator/Dockerfile --tag the-social-wire-operations-migrator:test .
       - name: Apply telemetry database migrations
@@ -316,6 +332,12 @@ jobs:
           docker run --rm --network host \
             --env DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/socialwire_operations_test \
             the-social-wire-operations-migrator:test
+      - name: Verify statement statistics are available
+        env:
+          POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
+        run: |
+          docker exec "$POSTGRES_CONTAINER" psql -U postgres -d socialwire_operations_test -v ON_ERROR_STOP=1 \
+            -c "SELECT count(*) FROM pg_stat_statements"
       - name: Cache Operations packages
         uses: actions/cache@v5
         with:
