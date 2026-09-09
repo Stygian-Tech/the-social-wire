@@ -511,6 +511,32 @@ Production restarted at `2026-09-08T23:53:56.148777Z` with `archive_mode=off`. T
 
 The daily schedule remains 04:37 UTC with the accepted six-day retention and nine existing snapshots. The September 8 snapshot expires September 14. Continuous archive upload cessation and archive-resource deletion are separate evidence: cleanup was still underway at this checkpoint. Production cost PR #360 merged at `25b2381f8b0eb5a63e8d36e9e81d2f71e41a422e`; exact deployment verification remains required. The 16,000,000,000-byte Production cap is unchanged pending representative replay. No lower-cap acceptance or aggregate savings is claimed.
 
+### September 9 clean restart verification
+
+Shutdown PR #362 passed all required CI and merged as `66d3686f`. Production
+deployment `16dbae59-ad65-4df9-b442-634f786e4354` preserves the Railway managed
+image and its automatic vulnerability updates. Only the rendered startup adapter
+and 120-second draining grace changed. The original running wrapper had 60 seconds
+of grace but TERM requested smart shutdown, leaving pooled clients holding it open.
+
+For the one-time handoff, the actual postmaster parent was verified as the vendor
+wrapper and paused. PostgreSQL fast shutdown completed at 01:25:32 UTC; the new
+instance accepted connections at 01:27:40 UTC, about 128 seconds later. Startup
+reported the prior clean shutdown. Both unlogged Wire inbox epochs and recovery
+jobs survived, along with the original cluster identity and volume. At 01:28:53,
+publication ingestion was live and advancing at sequence `25633257393`, with no
+pending, leased or retry work. The 461 historical Wire diagnostics and 70 old
+AppView dead letters were retained. The external lane's pre-existing budget pause
+and incomplete historical recovery acceptance are separate from this result.
+
+PITR remains off. Fsync, full-page writes, LZ4, 8 GB max WAL, 15-minute checkpoints,
+completion target 0.9, 4 MiB work memory and 128 MiB shared buffers were verified
+unchanged. The 16 GB decimal memory cap remains pending representative load tests.
+The isolated restored database is stopped; its volume remains for those tests.
+Provider deletion grace still separates retired archive/volume deletion requests
+from actual storage billing cessation. No net savings claim follows from this
+restart proof.
+
 
 ### September 9 post-cutover recovery and cleanup
 

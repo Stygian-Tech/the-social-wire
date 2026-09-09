@@ -134,8 +134,13 @@ final class NewsShellSmokeUITests: XCTestCase {
             reveal(action, in: canvas)
             XCTAssertTrue(action.isHittable)
             action.tap()
-            XCTAssertTrue(result.waitForExistence(timeout: 2))
-            XCTAssertEqual(result.label, expected)
+            // The result exists before the tap. Wait for the action's state
+            // update, rather than treating existence as completion.
+            let updated = XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "label == %@", expected),
+                object: result
+            )
+            XCTAssertEqual(XCTWaiter.wait(for: [updated], timeout: 2), .completed)
         }
 
         if !circle {
