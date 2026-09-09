@@ -5,6 +5,26 @@ import Testing
 @Suite("SocialWireGatewayClient")
 @MainActor
 struct SocialWireGatewayClientTests {
+    @Test("Post-write preference reads bypass both gateway and conditional caches")
+    func postWritePreferencesRequireFreshSnapshot() {
+        let request = SocialWireGatewayClient.preferencesSyncRequest(
+            ifNoneMatch: "\"previous-revision\"",
+            forceRefresh: true
+        )
+        #expect(request.query["fresh"] == "true")
+        #expect(request.ifNoneMatch == nil)
+    }
+
+    @Test("Ordinary preference reads retain conditional cache validation")
+    func ordinaryPreferencesKeepConditionalCache() {
+        let request = SocialWireGatewayClient.preferencesSyncRequest(
+            ifNoneMatch: "\"current-revision\"",
+            forceRefresh: false
+        )
+        #expect(request.query.isEmpty)
+        #expect(request.ifNoneMatch == "\"current-revision\"")
+    }
+
     @Test("Read-age snapshots stream before completion and replace prior counts")
     func readAgeSnapshotsStreamProgressively() async throws {
         let (stream, continuation) = AsyncThrowingStream<String, Error>.makeStream()

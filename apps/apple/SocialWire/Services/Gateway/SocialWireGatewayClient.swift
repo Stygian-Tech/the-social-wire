@@ -97,8 +97,24 @@ final class SocialWireGatewayClient {
         self.urlSession = urlSession
     }
 
-    func fetchSyncPreferences(ifNoneMatch: String?) async throws -> GatewayHTTPResult {
-        try await authorizedGET(path: SocialWireXRPCMethod.getPreferences, query: [:], ifNoneMatch: ifNoneMatch)
+    nonisolated static func preferencesSyncRequest(
+        ifNoneMatch: String?,
+        forceRefresh: Bool
+    ) -> (query: [String: String], ifNoneMatch: String?) {
+        // A post-write read must reach the PDS and replace the shared gateway snapshot.
+        (forceRefresh ? ["fresh": "true"] : [:], forceRefresh ? nil : ifNoneMatch)
+    }
+
+    func fetchSyncPreferences(
+        ifNoneMatch: String?,
+        forceRefresh: Bool = false
+    ) async throws -> GatewayHTTPResult {
+        let request = Self.preferencesSyncRequest(ifNoneMatch: ifNoneMatch, forceRefresh: forceRefresh)
+        return try await authorizedGET(
+            path: SocialWireXRPCMethod.getPreferences,
+            query: request.query,
+            ifNoneMatch: request.ifNoneMatch
+        )
     }
 
     func fetchSembleCollections(limit: Int = 100, cursor: String? = nil) async throws -> SembleCollectionPage {
