@@ -543,3 +543,25 @@ restart proof.
 All required Production cost-release services subsequently reached success at `25b2381f`. The immediately clear queue was not sustained acceptance: the restart reset the unlogged inbox epochs and triggered historical recovery replay. Startup logs explicitly reported an interrupted database, followed by redo. The shutdown cause is under investigation; this was not a clean-restart proof. Publication recovery seeding progressed from retained fences while archive batches produced a bursty Wire backlog. At 00:19 UTC, about 8,000 pending events belonged to only three repositories. Repository ordering limited useful parallelism despite spare worker CPU; raising concurrency alone was not justified. Existing payloads, leases, version fences and terminal classifications remain preserved. AppView's 70 old dead letters remain distinct from newly classified historical Wire events. The queue gate remains open until replay catches up and live work stays current.
 
 After the user explicitly approved permanent destruction, deletion of the retired PITR bucket was submitted and the bucket disappeared from both environment configurations. Provider metadata persists during Railway's 52-hour bucket restoration grace; permanent object removal and stopped storage billing are not yet verified. The old PITR verifier service was deleted, and its obsolete volume plus the failed first daily clone volume entered the provider's 48-hour volume deletion grace. Four fresh verifier deployments were removed, stopping their compute. The approximately 45 GB successful restore volume remains attached to a stopped verifier for memory testing and continues to incur storage cost. The original Production volume, daily schedule and nine listed snapshots were preserved. PITR remains off; the historical ingestion archive replay is a separate source and must not be mistaken for resumed backup uploads.
+
+
+### Telemetry write migration (TSW-92, September 9)
+
+`20260909130000_remove_redundant_telemetry_indexes.sql` removes only the duplicate
+change-event replay, event identity, and trace identity indexes. All three are
+checked against valid equivalent primary keys, including dependencies and replica
+identity, before any concurrent drop. The migrator can retry after a partial run.
+Rows, primary keys, expiry indexes, change-event watermarks, and trigger behavior
+are preserved; no table rewrite or retention reduction is part of this migration.
+
+The paired OperationsCore change inserts events and spans in bounded 250-row
+chunks within the existing atomic metrics/events/spans transaction. This reduces
+round trips while metric locks are held. Keep the existing two-second transaction
+budget and 500 ms lock timeout. The previous writer remains compatible with the
+migration, so an application rollback does not require rebuilding duplicate indexes.
+
+Validate fresh/upgrade/retry migrations and PostgreSQL mixed-batch rollback,
+concurrent writers, null IDs, retention timestamps, and environment isolation.
+After Development and Production rollout, compare rollup lock timeouts, telemetry
+export drops, query/WAL counter deltas, and actionable inbox age under equivalent
+load. Index removal and batching do not establish a passing 12 GB memory limit.
