@@ -489,3 +489,25 @@ unchanged, and continuous seven-day recovery/discovery rebuild and matched cost
 acceptance remain open. The code release requires separate Development and
 Production deployment verification; these observations do not themselves prove
 that a new revision is running.
+
+
+### Telemetry write migration (TSW-92, September 9)
+
+`20260909130000_remove_redundant_telemetry_indexes.sql` removes only the duplicate
+change-event replay, event identity, and trace identity indexes. All three are
+checked against valid equivalent primary keys, including dependencies and replica
+identity, before any concurrent drop. The migrator can retry after a partial run.
+Rows, primary keys, expiry indexes, change-event watermarks, and trigger behavior
+are preserved; no table rewrite or retention reduction is part of this migration.
+
+The paired OperationsCore change inserts events and spans in bounded 250-row
+chunks within the existing atomic metrics/events/spans transaction. This reduces
+round trips while metric locks are held. Keep the existing two-second transaction
+budget and 500 ms lock timeout. The previous writer remains compatible with the
+migration, so an application rollback does not require rebuilding duplicate indexes.
+
+Validate fresh/upgrade/retry migrations and PostgreSQL mixed-batch rollback,
+concurrent writers, null IDs, retention timestamps, and environment isolation.
+After Development and Production rollout, compare rollup lock timeouts, telemetry
+export drops, query/WAL counter deltas, and actionable inbox age under equivalent
+load. Index removal and batching do not establish a passing 12 GB memory limit.
