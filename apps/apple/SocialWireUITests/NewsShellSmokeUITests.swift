@@ -177,13 +177,34 @@ final class NewsShellSmokeUITests: XCTestCase {
 
     private func reveal(_ element: XCUIElement, in scrollView: XCUIElement) {
         for _ in 0..<6 {
-            if element.isHittable { return }
-            if element.frame.midY < scrollView.frame.minY {
+            let frame = element.frame
+            let viewport = scrollView.frame
+            // Hittability alone can accept a clipped action near a scroll edge.
+            if frame.minY >= viewport.minY, frame.maxY <= viewport.maxY,
+               element.isHittable { break }
+            if frame.minY < viewport.minY {
                 scrollView.swipeDown()
-            } else {
+            } else if frame.maxY > viewport.maxY {
                 scrollView.swipeUp()
+            } else {
+                // Scrolling cannot resolve an action that is fully visible but blocked.
+                break
             }
         }
+        let frame = element.frame
+        let viewport = scrollView.frame
+        XCTAssertGreaterThanOrEqual(
+            frame.minY, viewport.minY,
+            "Action must be fully visible before tapping: \(frame), viewport: \(viewport)"
+        )
+        XCTAssertLessThanOrEqual(
+            frame.maxY, viewport.maxY,
+            "Action must be fully visible before tapping: \(frame), viewport: \(viewport)"
+        )
+        XCTAssertTrue(
+            element.isHittable,
+            "Action must accept a tap after reveal: \(frame), viewport: \(viewport)"
+        )
     }
 
     private func content(for tab: String, in app: XCUIApplication) -> XCUIElement {
