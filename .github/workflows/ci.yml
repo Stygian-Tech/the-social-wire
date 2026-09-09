@@ -518,6 +518,8 @@ jobs:
           --health-retries 30
     steps:
       - uses: actions/checkout@v6
+      - name: Verify PostgreSQL clean shutdown
+        run: services/postgres/tests/shutdown.sh
       - name: Check migration runner syntax
         run: |
           bash -n scripts/apply-database-migrations.sh
