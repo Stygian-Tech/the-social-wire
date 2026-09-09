@@ -5,8 +5,21 @@ struct CircleNewsView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     let sceneModel: NewsSceneModel
     @State private var lastHiddenStory: CircleStory?
+    @State private var isRefreshing = false
 
     private var usesPersistentDetail: Bool { horizontalSizeClass != .compact }
+
+    private var contentState: CircleContentState {
+        CircleContentState(
+            catalog: appModel.circleCatalog,
+            storyCount: appModel.circleEdition?.stories.count,
+            visibleStoryCount: appModel.visibleCircleStories.count,
+            isLoading: appModel.isLoadingCircle,
+            errorMessage: appModel.circleErrorMessage,
+            limitedCoverage: appModel.circleEdition?.degraded == true
+                || appModel.circleEdition?.source == .staleGeneration
+        )
+    }
 
     var body: some View {
         Group {
@@ -23,8 +36,8 @@ struct CircleNewsView: View {
             }
         }
         .navigationTitle("Your Circle")
-        .task {
-            if appModel.circleEdition == nil {
+        .task(id: appModel.circleCatalog?.isAvailable) {
+            if appModel.circleEdition == nil, !isRefreshing {
                 await appModel.loadCircleEdition()
             }
         }
@@ -63,17 +76,46 @@ struct CircleNewsView: View {
                         .foregroundStyle(.secondary)
                 }
 
-                if appModel.visibleCircleStories.isEmpty, appModel.isLoadingCircle {
+                switch contentState {
+                case .loading:
                     ProgressView()
                         .frame(maxWidth: .infinity, minHeight: 260)
-                } else if appModel.visibleCircleStories.isEmpty {
+                case .notReady:
+                    ContentUnavailableView(
+                        "Your Circle Is Not Ready Yet",
+                        systemImage: "person.2.wave.2",
+                        description: Text("Stories for Your Circle aren’t available right now. Please check back later.")
+                    )
+                    .frame(maxWidth: .infinity, minHeight: 260)
+                case .refreshing:
+                    ContentUnavailableView(
+                        "Your Circle Is Refreshing",
+                        systemImage: "person.2.wave.2",
+                        description: Text("Network coverage is limited right now. Please check back as Your Circle refreshes.")
+                    )
+                    .frame(maxWidth: .infinity, minHeight: 260)
+                case .buildingNetwork:
+                    ContentUnavailableView(
+                        "Your Circle Is Still Taking Shape",
+                        systemImage: "person.2.wave.2",
+                        description: Text("Your Circle needs recent shared links from people you follow and their connections. Stories will appear here when there’s enough activity to build your feed.")
+                    )
+                    .frame(maxWidth: .infinity, minHeight: 260)
+                case .failed:
+                    ContentUnavailableView(
+                        "Your Circle Couldn’t Load",
+                        systemImage: "exclamationmark.triangle",
+                        description: Text("Refresh to try again.")
+                    )
+                    .frame(maxWidth: .infinity, minHeight: 260)
+                case .noVisibleStories:
                     ContentUnavailableView(
                         "Nothing from Your Circle Yet",
                         systemImage: "person.2.wave.2",
                         description: Text("New stories will appear as people in your network share them.")
                     )
                     .frame(maxWidth: .infinity, minHeight: 260)
-                } else {
+                case .stories:
                     ForEach(appModel.visibleCircleStories, id: \.storyId) { story in
                         CircleStoryCard(
                             story: story,
@@ -91,12 +133,27 @@ struct CircleNewsView: View {
                         ProgressView().frame(maxWidth: .infinity)
                     }
                 }
+                if contentState != .loading, contentState != .stories {
+                    Button("Retry") {
+                        Task { await refreshCircle() }
+                    }
+                    .disabled(isRefreshing || appModel.isLoadingCircle)
+                    .frame(maxWidth: .infinity)
+                }
             }
             .padding()
             .frame(maxWidth: 900, alignment: .leading)
             .frame(maxWidth: .infinity)
         }
-        .refreshable { await appModel.loadCircleEdition() }
+        .refreshable { await refreshCircle() }
+    }
+
+    private func refreshCircle() async {
+        guard !isRefreshing, !appModel.isLoadingCircle else { return }
+        isRefreshing = true
+        defer { isRefreshing = false }
+        await appModel.refreshCircleCatalog()
+        await appModel.loadCircleEdition()
     }
 
     @ViewBuilder

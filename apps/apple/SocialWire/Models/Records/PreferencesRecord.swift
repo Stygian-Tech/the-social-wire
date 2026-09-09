@@ -5,6 +5,8 @@ struct PreferencesRecord: Codable, Equatable, Sendable {
     var readLaterService: String?
     var readLaterConnections: [String: ReadLaterConnectionPreferenceRecord]?
     var visibleFeeds: [String]?
+    var showWire: Bool?
+    var showCircle: Bool?
     var showTopLevelFeedUnreadCounts: Bool?
     var feedsWithUnreadCounts: [String]?
     var rssArticleOpenMode: String?
@@ -16,6 +18,8 @@ struct PreferencesRecord: Codable, Equatable, Sendable {
         case readLaterService
         case readLaterConnections
         case visibleFeeds
+        case showWire
+        case showCircle
         case showTopLevelFeedUnreadCounts
         case feedsWithUnreadCounts
         case rssArticleOpenMode
