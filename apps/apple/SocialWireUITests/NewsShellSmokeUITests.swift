@@ -134,24 +134,39 @@ final class NewsShellSmokeUITests: XCTestCase {
             reveal(action, in: canvas)
             XCTAssertTrue(action.isHittable)
             action.tap()
-            // The result exists before the tap. Wait for the action's state
-            // update, rather than treating existence as completion.
-            let updated = XCTNSPredicateExpectation(
+            // The result exists before tapping; wait for the callback to update it.
+            let callback = XCTNSPredicateExpectation(
                 predicate: NSPredicate(format: "label == %@", expected),
                 object: result
             )
-            XCTAssertEqual(XCTWaiter.wait(for: [updated], timeout: 2), .completed)
+            XCTAssertEqual(XCTWaiter.wait(for: [callback], timeout: 5), .completed)
+            XCTAssertEqual(result.label, expected)
         }
 
         if !circle {
             let rail = canvas.scrollViews.firstMatch
-            rail.swipeLeft()
             let secondCard = app.descendants(matching: .any)["wire-card-ui-story-2"]
             XCTAssertTrue(secondCard.waitForExistence(timeout: 2))
             XCTAssertGreaterThanOrEqual(secondCard.frame.width, 250)
             let secondRead = secondCard.descendants(matching: .any)["story-read"]
+            revealHorizontally(secondRead, in: rail)
+            reveal(secondRead, in: canvas)
             XCTAssertTrue(secondRead.isHittable, "The longer second card must remain usable")
             XCTAssertLessThanOrEqual(secondRead.frame.maxY, rail.frame.maxY + 1)
+        }
+    }
+
+    private func revealHorizontally(_ element: XCUIElement, in scrollView: XCUIElement) {
+        // A single swipe does not guarantee the same resting offset on every runner.
+        for _ in 0..<6 {
+            let frame = element.frame
+            let viewport = scrollView.frame
+            if frame.minX >= viewport.minX, frame.maxX <= viewport.maxX { return }
+            if frame.minX < viewport.minX {
+                scrollView.swipeRight()
+            } else {
+                scrollView.swipeLeft()
+            }
         }
     }
 
