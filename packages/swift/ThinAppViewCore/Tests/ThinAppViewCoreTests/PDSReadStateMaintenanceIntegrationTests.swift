@@ -28,7 +28,7 @@ extension PostgresJetstreamInboxIntegrationTests {
       }
       #expect(tuple != nil)
       try await fixture.pool.query(
-        "INSERT INTO appview_unread_counters(viewer_did,publication_id,generation,accuracy,dirty) VALUES (\(viewer),'test',1,'exact',FALSE)", logger: fixture.logger)
+        "INSERT INTO appview_unread_counters(viewer_did,publication_id,unread_count,generation,accuracy,dirty,counted_at) VALUES (\(viewer),'test',0,1,'exact',FALSE,NOW())", logger: fixture.logger)
       _ = try await store.activatePDSReadState(viewerDid: viewer, manifest: upgraded, manifestCid: "v2",
         projection: projection, expectedLegacyRevision: nil)
       for try await row in try await fixture.pool.query(

@@ -17,7 +17,9 @@ extension PostgresJetstreamInboxIntegrationTests {
         publicationScopeAtUris: [site], publicationSiteUrls: [], sectionKeys: []) }
       let unreadScopes = ids.map { PublicationUnreadScope(publicationId: $0, authorDid: author,
         publicationAtUri: site, publicationScopeAtUris: [site], publicationSiteUrls: []) }
-      let now = Date().addingTimeInterval(-100)
+      // Compare the same exact instant before and after PostgreSQL's microsecond
+      // encoding; a live Date can contain sub-microsecond precision on Linux.
+      let now = Date(timeIntervalSince1970: 1_788_825_600)
       let uri = "at://\(author)/site.standard.document/item"
       try await store.upsertPublicationScopes(scopes)
       try await store.upsertContentItem(IndexedContentItem(uri: uri, cid: "fixture", authorDid: author,

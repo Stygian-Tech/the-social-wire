@@ -1260,7 +1260,16 @@ final class PostgresInboxFixture: @unchecked Sendable {
         "database/migrations/20260909020000_add_pds_projection_readiness.sql"), encoding: .utf8)
       try await execute(PostgresQuery(unsafeSQL: "DO $fixture$ BEGIN\n" + migration + "\nEND $fixture$;"))
     }
-
+    let maintenance = try await pool.query("SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'appview_pds_read_state_authority' AND column_name = 'manifest_revision')", logger: logger)
+    var needsMaintenance = true
+    for try await row in maintenance { needsMaintenance = !(try row.decode(Bool.self)) }
+    if needsMaintenance {
+      var root = URL(fileURLWithPath: #filePath)
+      for _ in 0..<6 { root.deleteLastPathComponent() }
+      let migration = try String(contentsOf: root.appendingPathComponent(
+        "database/migrations/20260909030000_fence_pds_manifest_maintenance.sql"), encoding: .utf8)
+      try await execute(PostgresQuery(unsafeSQL: "DO $fixture$ BEGIN\n" + migration + "\nEND $fixture$;"))
+    }
   }
 
   private func execute(_ query: PostgresQuery) async throws {
