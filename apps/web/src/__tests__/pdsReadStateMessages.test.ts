@@ -37,3 +37,14 @@ test("persisted denied access and readiness survive an empty queue/status refres
   expect(readStateStatusMessage({ ...status, projectionReady: true })).toBeUndefined();
   expect(readStateErrorMessage("unavailable")).toContain("pending changes");
 });
+
+test("durable receipt conflicts and blocked storage explain preservation rather than repeatedly requesting sign-in", () => {
+  expect(readStateErrorMessage("conflicting_sequence")).toContain("Pending changes remain protected");
+  expect(readStateErrorMessage("outbox_unavailable")).toContain("Close other Social Wire tabs");
+});
+
+test("optional cleanup permission is surfaced without overriding canonical restoration or write failures", () => {
+  const outbox={viewerDid:"did:plc:alice",entries:[],garbageCollection:{viewerDid:"did:plc:alice",candidates:[],lastError:"reauthorize"}};
+  expect(readStateStatusMessage(undefined,outbox)).toContain("allow cleanup");
+  expect(readStateStatusMessage({authority:"pds",migrationState:"verified",legacyRevision:0,projectionReady:false},outbox)).toBe(READ_STATE_RESTORING_MESSAGE);
+});

@@ -4,7 +4,7 @@ import { ReadStateError, type Intent, type Reference } from "./types";
 import { validateIntent } from "./validation";
 
 export type OutboxEntry = { intent: Intent; attempts: number; retryAt: number; committed?: Reference; previewSubjectUris?: string[]; deviceCounter?: number; intentHash?: string };
-export type OutboxState = { device?: V2DeviceState; publication?: V2PublicationCheckpoint; viewerDid: string; entries: OutboxEntry[]; lastError?: string; migration?: import("./migration").MigrationCheckpoint; verifiedAuthority?: import("./migration").ReadStateStatus };
+export type OutboxState = { garbageCollection?: import("./v2GarbageCollection").ReadStateGarbageCollectionState; device?: V2DeviceState; publication?: V2PublicationCheckpoint; viewerDid: string; entries: OutboxEntry[]; lastError?: string; migration?: import("./migration").MigrationCheckpoint; verifiedAuthority?: import("./migration").ReadStateStatus };
 export interface OutboxStore {
   read(viewer: string): Promise<OutboxState>;
   update(viewer: string, update: (state: OutboxState) => OutboxState): Promise<OutboxState>;

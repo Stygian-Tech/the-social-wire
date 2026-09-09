@@ -33,3 +33,17 @@ describe("authenticated PDS read-state transport", () => {
     catch (error) { expect(error).toMatchObject({ status: 429, retryAfter: "120" }); }
   });
 });
+
+test("v2 chunks remain create-only while the singleton uses the exact prior CID", async () => {
+  const requests: {url:string;body:Record<string,unknown>}[]=[];
+  const oauth={did:"did:plc:alice",fetchHandler:async(url:URL,init?:RequestInit)=>{
+    const body=JSON.parse(await new Response(init?.body).text()) as Record<string,unknown>;requests.push({url:String(url),body});
+    return Response.json({uri:`at://did:plc:alice/${body.collection}/${body.rkey}`,cid:await recordCID(body.record)});
+  }} as unknown as OAuthSession;
+  const repo=new OAuthReadStateRepository(oauth,()=>{});
+  await repo.putRecord(CHUNK_COLLECTION,"chunk",{$type:CHUNK_COLLECTION,version:2,kind:"devices",receipts:[{deviceId:"00000000-0000-0000-0000-000000000000",committedCounter:1,prefixHash:"0".repeat(64)}]},null);
+  await repo.putRecord(MANIFEST_COLLECTION,"self",{$type:MANIFEST_COLLECTION,version:2,generation:"generation",revision:2,lastSequence:1,compactionVersion:1},"prior-manifest-cid");
+  expect(requests.every(request=>request.url.includes("com.atproto.repo.putRecord"))).toBe(true);
+  expect(requests[0].body.swapRecord).toBeNull();expect(requests[1].body.swapRecord).toBe("prior-manifest-cid");
+  expect(requests[0].body.record).toMatchObject({version:2,kind:"devices"});expect(requests[1].body.record).toMatchObject({version:2,revision:2});
+});

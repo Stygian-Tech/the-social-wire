@@ -1,6 +1,7 @@
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 import { IndexedDBReadStateOutbox, ReadStateError, V2ReadStateOutbox, browserReadStateLock, migrateReadState,
-  MANIFEST_COLLECTION, recordCID, validateManifest, validateV2Manifest, type Intent, type MigrationCheckpointStore, type OutboxState, type ReadStateStatus } from "@thesocialwire/read-state";
+  MANIFEST_COLLECTION, collectReadStateGarbage, recordCID, validateManifest, validateV2Manifest, type Intent, type MigrationCheckpointStore, type OutboxState, type ReadStateStatus } from "@thesocialwire/read-state";
+import { IndexedDBReadStateGarbageCollectionStore, OAuthReadStateGarbageCollection, pdsReadStateGarbageCollectionEnabled } from "./pdsReadStateGarbageCollection";
 import { OAuthReadStateRepository } from "./pdsReadStateRepository";
 import { PDSReadStateGateway } from "./pdsReadStateGateway";
 import type { GatewayMarkAllReadScope } from "./publicationProjectionClient";
@@ -12,6 +13,7 @@ const runtimes = new WeakMap<OAuthSession, PDSReadStateSync>();
 
 export class PDSReadStateSync {
   private active = true;
+  private cleanupAttemptedAt = 0;
   private consumers = 0;
   localError?: string;
   private readonly store = new IndexedDBReadStateOutbox();
@@ -74,6 +76,42 @@ export class PDSReadStateSync {
     const exported = await this.outbox.flushOnce();
     const pending = await this.outbox.snapshot();
     if (exported || pending.lastError) this.changed(exported ? "confirmed" : "error");
+    if (pdsReadStateGarbageCollectionEnabled() && Date.now() - this.cleanupAttemptedAt >= 3_600_000
+      && Date.now() - (pending.garbageCollection?.observedAt ?? 0) >= 3_600_000) {
+      this.cleanupAttemptedAt = Date.now();
+      // Cleanup has its own gate and retry cadence; a denied delete scope never blocks reading or normal writes.
+      void this.collectGarbage().catch(async error => {
+        await this.store.update(this.oauth.did, state => ({ ...state, garbageCollection: {
+          ...(state.garbageCollection ?? { viewerDid: this.oauth.did, candidates: [] }),
+          lastError: error instanceof ReadStateError ? error.code : "unavailable",
+        } })).catch(() => {});
+        this.changed("error");
+      });
+    }
+  }
+  async collectGarbage(): Promise<void> {
+    if (!pdsReadStateGarbageCollectionEnabled() || !this.active || (await this.status()).authority !== "pds") return;
+    await browserReadStateLock(this.oauth.did, async () => {
+      const [{ readStateProofSession }, { getOAuthClient }] = await Promise.all([import("./pdsReadStateProof"), import("./auth")]);
+      const proof = await readStateProofSession(this.oauth.did, async () => {
+        const identity = await (await getOAuthClient()).identityResolver.resolve(this.oauth.did, { noCache: true, signal: AbortSignal.timeout(20_000) });
+        const keys = identity.didDoc.verificationMethod?.filter(key =>
+          (key.id === `${this.oauth.did}#atproto` || key.id === "#atproto") && key.controller === this.oauth.did) ?? [];
+        if (identity.did !== this.oauth.did || keys.length !== 1 || keys[0].type !== "Multikey" || !keys[0].publicKeyMultibase?.startsWith("z"))
+          throw new ReadStateError("invalid_reference");
+        return `did:key:${keys[0].publicKeyMultibase}`;
+      });
+      const repository = new OAuthReadStateGarbageCollection(this.oauth, () => {
+        if (!this.active) throw new ReadStateError("reauthorize");
+      }, proof.verify, proof.assertSigningKeyCurrent);
+      const pending = await this.outbox.snapshot();
+      await collectReadStateGarbage(repository, new IndexedDBReadStateGarbageCollectionStore(this.store), async reference => {
+        const status = await this.gateway.confirm(reference);
+        if (status.projectionReady === false) throw new ReadStateError("projection_not_ready");
+        if (status.authority !== "pds" || status.migrationState !== "verified") throw new ReadStateError("incomplete_generation");
+        this.statusValue = status; await this.rememberAuthority(status);
+      }, { enabled: true, now: Date.now(), protectedUploads: pending.publication?.uploaded });
+    });
   }
   async migrate(): Promise<ReadStateStatus> {
     // Uses the same cross-tab/account lock as normal writes; a partial migration never grants authority.

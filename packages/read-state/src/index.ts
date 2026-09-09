@@ -9,3 +9,4 @@ export * from "./v2Types";
 export * from "./v2Validation";
 export * from "./v2Repository";
 export * from "./v2Outbox";
+export * from "./v2GarbageCollection";
