@@ -1368,7 +1368,11 @@ final class SocialWireAppModel {
                 ReaderFeedPreferencesStorage.save(feedPreferences, viewerDid: viewerDID)
             }
             discoveryFeedSaveError = "Couldn't save feed visibility. Your previous setting was restored. \(error.localizedDescription)"
+            return
         }
+        guard viewerDID == savingViewerDID else { return }
+        // The PDS write is already committed; a failed cache refresh must not undo it.
+        await refreshGatewayPreferencesSnapshot(forceRefetch: true)
     }
 
     func setFeedVisible(_ source: ReaderListSource, visible: Bool) async {
@@ -1966,12 +1970,17 @@ final class SocialWireAppModel {
 
     private func refreshGatewayPreferencesSnapshot(forceRefetch: Bool = false) async {
         guard let coordinator = readerCacheCoordinator else { return }
+        let refreshingViewerDID = viewerDID
         if forceRefetch {
             try? coordinator.removeGatewayCachedResponse(for: Self.preferencesSyncCacheKey)
         }
         do {
             let storedETag = forceRefetch ? nil : coordinator.gatewayETag(for: Self.preferencesSyncCacheKey)
-            let response = try await gateway.fetchSyncPreferences(ifNoneMatch: storedETag)
+            let response = try await gateway.fetchSyncPreferences(
+                ifNoneMatch: storedETag,
+                forceRefresh: forceRefetch
+            )
+            guard viewerDID == refreshingViewerDID else { return }
 
             if response.statusCode == 304, let body = coordinator.gatewayCachedBody(for: Self.preferencesSyncCacheKey) {
                 applyPreferencesGatewayBody(body)
