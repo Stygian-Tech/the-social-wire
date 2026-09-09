@@ -192,6 +192,8 @@ filter_changed database_migrator \
   'scripts/verify-wire-inbox-claim-index.sql' \
   'scripts/verify-wire-corpus-serving.sql' \
   'services/database-migrator/**' \
+  'services/postgres/**' \
+  'railway/postgres.json' \
   'railway/database-migrator.json' \
   '.github/workflows/ci.yml'
 
