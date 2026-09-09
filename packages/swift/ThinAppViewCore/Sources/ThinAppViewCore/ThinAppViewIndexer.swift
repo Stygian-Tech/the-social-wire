@@ -1,6 +1,7 @@
 import AsyncHTTPClient
 import Foundation
 import Logging
+import ReadStateCore
 
 enum ThinAppViewIndexingOutcome: Equatable, Sendable {
   case projectionMutation
@@ -18,6 +19,7 @@ public actor ThinAppViewIndexer {
   private let plcURL: String?
   private let rssIngestion: ThinAppViewRssIngestion?
   private let projectionCache: (any AppViewProjectionCacheStore)?
+  private let readStateProjector: PDSReadStateProjector?
   private let publicationSiteResolver: (any PublicationSiteBaseResolving)?
   private var pdsBaseCache: [String: String] = [:]
   private var lastProjectionCacheFailureLogAt = Date.distantPast
@@ -64,6 +66,23 @@ public actor ThinAppViewIndexer {
     self.rssIngestion = rssIngestion
     self.projectionCache = projectionCache
     self.publicationSiteResolver = publicationSiteResolver
+    if httpClient != nil, let plcURL, let readStore = store as? any PDSReadStateStoring {
+      let fetcher = LivePDSReadStateRecordFetcher(plcURL: plcURL)
+      self.readStateProjector = PDSReadStateProjector(store: readStore, fetchRecord: fetcher.fetch)
+    } else {
+      self.readStateProjector = nil
+    }
+  }
+
+  /// Also used after a repository sync so recovery does not depend on seeing a
+  /// later manifest commit. Existing authority and complete-chain checks still apply.
+  func reconcilePDSReadState(viewerDid: String) async throws -> Bool {
+    guard let readStateProjector,
+      try await readStateProjector.reconcile(viewerDid: viewerDid, rebuildEvicted: false) else { return false }
+    try await projectionCache?.invalidateSidebarProjection(viewerDid: viewerDid)
+    try await projectionCache?.invalidateUnreadCounts(viewerDid: viewerDid, publicationId: nil)
+    try await projectionCache?.invalidateFirstPage(viewerDid: viewerDid, publicationId: nil)
+    return true
   }
 
   public func handleCommit(
@@ -110,6 +129,12 @@ public actor ThinAppViewIndexer {
     cursor: String? = nil,
     eventTime: Date? = nil
   ) async throws -> ThinAppViewIndexingOutcome {
+    if collection == ReadStateManifest.collection {
+      guard rkey == "self" else { return .skipped }
+      // Read the current authoritative head even for a delete event: unsupported
+      // deletion must retry and retain the last complete state, never erase it.
+      return try await reconcilePDSReadState(viewerDid: repoDid) ? .projectionMutation : .skipped
+    }
     let record = (try JSONSerialization.jsonObject(with: recordJSON) as? [String: Any]) ?? [:]
 
     if collection == RssFeedLexicons.skyreaderFeedSubscription {

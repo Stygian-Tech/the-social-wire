@@ -10,6 +10,7 @@ import { useCachedBulkReadActions } from "@/hooks/useCachedBulkReadActions";
 import type { DiscoveredPublication } from "@/lib/atprotoClient";
 import { ENTRIES_QUERY_KEY } from "@/hooks/useEntries";
 import { PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY } from "@/lib/sidebarQueryKeys";
+import * as PDSState from "@/lib/pdsReadStateSync";
 import * as AuthHook from "@/hooks/useAuth";
 import * as ReadRouteContext from "@/contexts/ReadRouteContext";
 import * as PublicationProjectionClient from "@/lib/publicationProjectionClient";
@@ -338,4 +339,23 @@ describe("useCachedBulkReadActions", () => {
     authSpy.mockRestore();
     gatewaySpy.mockRestore();
   });
+  it("requests validated cached previews without marking unverified boundary members optimistically", async () => {
+    const queryClient = new QueryClient();
+    const queryKey = [...ENTRIES_QUERY_KEY(viewerDid, pub.publicationId), "all"];
+    const entry = { entryId: "at://did:plc:alice/site.standard.document/cached", title: "Cached", publishedAt: "2026-01-01T00:00:00Z", isRead: false };
+    queryClient.setQueryData(queryKey, { pages: [{ entries: [entry] }], pageParams: [undefined] });
+    const enabled = spyOn(PDSState, "pdsReadStateEnabled").mockReturnValue(true);
+    const oauth = { did: viewerDid } as unknown as NonNullable<ReturnType<ReturnType<typeof AuthHook.useAuth>["getOAuthSession"]>>;
+    const auth = spyOn(AuthHook, "useAuth").mockReturnValue({ session: { did: viewerDid }, getOAuthSession: () => oauth } as ReturnType<typeof AuthHook.useAuth>);
+    const gateway = spyOn(PublicationProjectionClient, "markAllReadOnGateway").mockResolvedValue({ marked: 0, confirmedAt: "2026-01-02T00:00:00Z", pendingSync: true, boundaries: [], unreadCounts: {} });
+    try {
+      const wrapper = ({ children }: { children: React.ReactNode }) => <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+      const hook = renderHook(() => useCachedBulkReadActions([pub], { gatewayScopes: [{ kind: "subscribed" }] }), { wrapper });
+      hook.result.current.applyMarkAllRead();
+      await waitFor(() => expect(gateway).toHaveBeenCalledWith(oauth, { kind: "subscribed" }, [entry.entryId]));
+      expect(markEntriesRead).not.toHaveBeenCalled();
+      expect(queryClient.getQueryData<unknown>(queryKey)).toEqual({ pages: [{ entries: [entry] }], pageParams: [undefined] });
+    } finally { enabled.mockRestore(); auth.mockRestore(); gateway.mockRestore(); }
+  });
+
 });

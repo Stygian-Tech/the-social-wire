@@ -570,6 +570,34 @@
       "method": "GET",
       "path": "/api/oauth/web-client-metadata",
       "classification": "oauth-metadata"
+    },
+    {
+      "surface": "openapi",
+      "method": "GET",
+      "path": "/xrpc/app.thesocialwire.appview.getReadStateStatus",
+      "classification": "xrpc-migration",
+      "xrpcNsid": "app.thesocialwire.appview.getReadStateStatus"
+    },
+    {
+      "surface": "openapi",
+      "method": "POST",
+      "path": "/xrpc/app.thesocialwire.appview.exportReadState",
+      "classification": "xrpc-migration",
+      "xrpcNsid": "app.thesocialwire.appview.exportReadState"
+    },
+    {
+      "surface": "openapi",
+      "method": "POST",
+      "path": "/xrpc/app.thesocialwire.appview.prepareReadState",
+      "classification": "xrpc-migration",
+      "xrpcNsid": "app.thesocialwire.appview.prepareReadState"
+    },
+    {
+      "surface": "openapi",
+      "method": "POST",
+      "path": "/xrpc/app.thesocialwire.appview.confirmReadState",
+      "classification": "xrpc-migration",
+      "xrpcNsid": "app.thesocialwire.appview.confirmReadState"
     }
   ]
 }

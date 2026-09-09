@@ -1,0 +1,29 @@
+meta {
+  name: XRPC app.thesocialwire.appview.prepareReadState
+  type: http
+  seq: 82
+}
+
+post {
+  url: {{baseUrl}}/xrpc/app.thesocialwire.appview.prepareReadState
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "scope": {
+      "kind": "subscribed"
+    }
+  }
+}
+
+docs {
+  Freeze a bulk-read selection without changing state. No cutoff returns publication boundaries; an age cutoff returns exact existing unread subject IDs plus calendar metadata. Clients split the selection into immutable PDS chunks. An excessive selection fails, never truncates.
+}

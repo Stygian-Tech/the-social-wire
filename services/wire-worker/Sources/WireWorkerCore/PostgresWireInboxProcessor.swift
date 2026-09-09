@@ -453,7 +453,19 @@ struct PostgresWireInboxProcessor: Sendable {
       if event.eventKind == "snapshot" || event.cursorKind == "pds_record_snapshot"
         || (event.eventKind == "commit" && ["site.standard.document", "site.standard.entry", "site.standard.publication"].contains(event.collection ?? ""))
       {
-        return try await applyStandardRecord(event, asOf: asOf)
+        do {
+          return try await applyStandardRecord(event, asOf: asOf)
+        } catch let transaction as PostgresTransactionError {
+          // A successful rollback preserves the original application outcome.
+          // Keep uncertain begin/commit/rollback failures on the retry path.
+          if transaction.beginError == nil, transaction.commitError == nil,
+            transaction.rollbackError == nil, let cause = transaction.closureError,
+            cause is ApplyError || cause is CancellationError
+          {
+            throw cause
+          }
+          throw transaction
+        }
       }
       if event.eventKind == "commit",
         event.collection == "site.standard.graph.recommend"
@@ -1199,6 +1211,10 @@ struct PostgresWireInboxProcessor: Sendable {
     else { return }
     try await upsertActor(hash: actorHash, asOf: incrementsActorActivity ? (signalTime ?? asOf) : event.eventTime,
       connection: projectionConnection, incrementsActivity: incrementsActorActivity)
+    // Recovery must still project the corpus and record its version/activity
+    // fence, but an expired signal cannot contribute to any ranking window.
+    // Avoid rebuilding throwaway partitions and rows for that replay history.
+    guard event.eventTime.addingTimeInterval(WireDataPolicy.signalRetention) > asOf else { return }
     try await insertSignal(
       event: event,
       canonicalKey: identity.canonicalKey,

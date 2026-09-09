@@ -1,0 +1,25 @@
+meta {
+  name: XRPC app.thesocialwire.appview.exportReadState
+  type: http
+  seq: 81
+}
+
+post {
+  url: {{baseUrl}}/xrpc/app.thesocialwire.appview.exportReadState
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+  Content-Type: application/json
+}
+
+body:json {
+  {}
+}
+
+docs {
+  Export legacy read state in stable boundary, unread, read order. Supply expectedLegacyRevision on every continuation; any concurrent legacy mutation invalidates the export. No source data is deleted.
+}

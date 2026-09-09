@@ -1,0 +1,101 @@
+{
+  "lexicon": 1,
+  "id": "app.thesocialwire.appview.exportReadState",
+  "defs": {
+    "main": {
+      "type": "procedure",
+      "description": "Export legacy read state in stable boundary, unread, read order. Supply expectedLegacyRevision on every continuation; any concurrent legacy mutation invalidates the export. No source data is deleted.",
+      "output": {
+        "encoding": "application/json",
+        "schema": {
+          "type": "object",
+          "required": [
+            "legacyRevision",
+            "rows"
+          ],
+          "properties": {
+            "legacyRevision": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "rows": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "kind",
+                  "actedAt"
+                ],
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "maxLength": 8,
+                    "enum": [
+                      "boundary",
+                      "unread",
+                      "read"
+                    ]
+                  },
+                  "actedAt": {
+                    "type": "string",
+                    "maxLength": 2048,
+                    "format": "datetime"
+                  },
+                  "boundary": {
+                    "type": "ref",
+                    "ref": "app.thesocialwire.readStateDefs#boundary"
+                  },
+                  "subjectUri": {
+                    "type": "string",
+                    "maxLength": 2048
+                  }
+                }
+              },
+              "maxLength": 500
+            },
+            "cursor": {
+              "type": "string",
+              "maxLength": 4096
+            }
+          }
+        }
+      },
+      "errors": [
+        {
+          "name": "InvalidRequest"
+        },
+        {
+          "name": "Conflict"
+        },
+        {
+          "name": "UpstreamUnavailable"
+        }
+      ],
+      "input": {
+        "encoding": "application/json",
+        "schema": {
+          "type": "object",
+          "required": [],
+          "properties": {
+            "cursor": {
+              "type": "string",
+              "maxLength": 4096
+            },
+            "expectedLegacyRevision": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500,
+              "default": 100
+            }
+          }
+        }
+      }
+    }
+  }
+}

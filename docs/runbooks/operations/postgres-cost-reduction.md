@@ -8,8 +8,10 @@ QA evidence with its stated limitations. Immediately verify Production service
 health, authenticated feeds and read state, generation freshness, and ingestion
 backlog and latency against the pre-deployment baseline; pause further rollout
 and revert the affected application change on regression. This stage does not
-change backup retention, WAL settings, or memory limits. A successful seven-day
-restore remains mandatory before shortening Production retention. Memory limits
+change backup retention, WAL settings, or memory limits. On September 8 the user
+replaced the Production seven-day PITR requirement with daily Railway snapshots
+and accepted their six-day retention. The replacement snapshot restore and
+discovery recovery gates below now govern PITR retirement. Memory limits
 remain separate measured trials with the rollback criteria below. Outstanding
 acceptance and savings evidence must not be reported as complete.
 Run migrations only through Database Migrator. The concurrent index migration
@@ -44,8 +46,9 @@ ALTER SYSTEM SET checkpoint_completion_target = '0.9';
 SELECT pg_reload_conf();
 ```
 
-Verify effective settings in a new session. Preserve fsync, full_page_writes,
-archive_mode and archive_timeout. max_wal_size is a soft checkpoint threshold,
+Verify effective settings in a new session. Preserve fsync and full_page_writes;
+change archiving only through the separately verified backup cutover below.
+max_wal_size is a soft checkpoint threshold,
 not a storage cap. Leave work_mem/shared_buffers unchanged initially. Replay
 representative ingestion with concurrent ranked reads; compare before/after
 over one hour and a full day. Validate crash recovery in an isolated copy.
@@ -58,45 +61,50 @@ rewrite; normal vacuum reuses space and targeted index rebuilds need headroom.
 
 ## Backup gate
 
-Production's intended **effective** pgBackRest settings are:
+Production and Development use daily-only Railway volume snapshots with the
+provider's six-day retention. This permits losing changes since the latest usable
+snapshot, normally up to about 24 hours; it does not provide arbitrary point-in-time
+recovery. Alert if no successful daily snapshot exists within 26 hours. Verify the
+effective schedule, snapshot timestamps and expirations instead of inferring them
+from a configured daily flag.
 
-```text
-repo1-retention-full-type=time
-repo1-retention-full=7
-repo1-retention-archive-type=full
-```
+Before retiring an environment's PITR archive, restore a daily snapshot through
+the **same volume-backup mechanism** into an isolated verifier. Railway's restore
+operation stages a replacement of the source volume. Redirect only the verified
+cloned volume to the verifier, commit an explicit verifier-only patch, and prove
+the live volume and postmaster remain unchanged. Do not use the CLI restore flow
+that automatically commits a live replacement. Remove archive/recovery credentials
+from the verifier and explicitly disable its archive and restore commands before
+startup. Preserve source corpus, read state, hides and recovery controls; verify
+their integrity and repeat after restart. Rebuild discovery within one hour.
 
-Use the image contract `WAL_BACKUP_RETENTION_FULL=7`, native
-`PGBACKREST_REPO1_RETENTION_FULL_TYPE=time`, weekly fulls (168 hours), and daily
-differentials (24 hours); remove test-only seconds overrides. Leave explicit
-archive-retention unset so the full backups pin their required WAL. Verify native
-environment precedence against the effective pgBackRest command before expiration.
-Weekly fulls retain roughly 7–14 days of history. Preview `expire --dry-run` and
-restore a seven-day-old point before changing retention. Never use bucket TTLs or
-manual WAL deletion. Keep gap recovery enabled; correlate its extra differentials
-with archive timeouts, queue health, and repository continuity. Current zero lag
-does not prove historic coverage. Inventory obsolete archive prefixes separately.
-
-For Development, configure daily-only Railway volume backups with Railway's
-six-day retention (explicitly accepted on September 4, 2026). Restore one through the **same volume-backup mechanism** into
-an isolated target before retiring Development PITR. A PITR restore alone is not
-evidence that the replacement daily-backup path works. Preserve old archives until
-the replacement restore is verified. Inspect staged changes so disabling PITR
-cannot silently delete needed history or deploy unrelated changes.
+After the replacement proof, remove the six `WAL_ARCHIVE_*` variables from the
+source through an explicit service-only Railway configuration change. Read back
+`archive_mode=off`, preserved crash-safety/WAL tuning, the original mounted volume,
+and daily snapshots after the controlled restart. Keep the old bucket until those
+checks pass. Verify ownership and references in both environments before retiring
+the exclusively owned archive bucket and obsolete restore service/volume through
+Railway. Never manually delete WAL files from an active repository, apply bucket
+TTLs, or commit unrelated staged changes. Account for temporary restore resources
+and provider deletion grace periods separately from steady-state savings.
 
 ## Acceptance evidence
 
 Run the repository restore-drill checks on isolated targets only. Record source
 recovery time, actual replay stop time, migrations, representative content and
 durable user-state checks, plus restart/rebuild completion. Discovery must recover
-within one hour; test several points around archive failures, not merely an archive
-start/end range. Never report restored user state from an empty cache as success.
+within one hour. Record snapshot creation, restore request, database readiness and
+discovery readiness separately. Never report restored user state from an empty
+cache as success. Historical PITR experiments below describe the policy at the
+time and do not reinstate the superseded seven-day PITR gate.
 
 At 24 hours and seven days, compare total DB-related cost against the recorded
-baseline. Targets are >=70% cost reduction, >=80% WAL/upload reduction, >=95%
+baseline. Targets are >=70% cost reduction, cessation of PITR uploads, >=95%
 fewer retained ranking rows, no growing queue age, no lost read state or hides,
 and no user-visible latency regression. These are acceptance targets, not measured
-savings until the hosted soak completes. The expedited application stage does not
+savings until the hosted soak completes. Continue measuring local WAL generation
+as a workload diagnostic; archiving being intentionally idle is not a failure.
+The expedited application stage does not
 waive these final acceptance checks. A failed recovery gate blocks retention
 shortening; a failed workload or memory trial blocks the corresponding tuning or
 limit change. Address observed application regressions before proceeding further.
@@ -394,7 +402,9 @@ The user explicitly authorized applying the Production memory reduction now.
 The first step changed only Production Postgres's Railway memory limit from
 24 GB to 16 GB; no source change or redeployment was required. At 04:24:34 UTC,
 the running cgroup reported `memory.max=16000000000` and 13,325,697,024 bytes
-used. The CPU ceiling remained 24 cores (`cpu.max=2400000 100000`). OOM and
+used. This is a decimal 16 GB cap, not 16 GiB. Isolated comparison rounds must
+set `memory_limit_bytes` to this exact value, then `12000000000` and
+`8000000000` for the planned 12 GB and 8 GB steps. The CPU ceiling remained 24 cores (`cpu.max=2400000 100000`). OOM and
 OOM-kill counters remained zero, and the memory-limit event count remained
 7,868, unchanged from the immediate pre-change sample. SQL succeeded and the
 postmaster start remained August 30 at 00:32:30 UTC: no database restart occurred.
@@ -489,3 +499,47 @@ unchanged, and continuous seven-day recovery/discovery rebuild and matched cost
 acceptance remain open. The code release requires separate Development and
 Production deployment verification; these observations do not themselves prove
 that a new revision is running.
+
+
+### September 8 Production daily-backup cutover
+
+Production PITR was disabled after a new daily-snapshot restore demonstrated usable discovery in approximately 46 minutes, including snapshot copy, migrations, bounded recovery, moderation refresh, signed private feed/edition responses, and database restart. The first drill failed its one-hour gate because full archive replay hit provider byte-rate limits; that result remains a failure. The successful repeat used retained logged publication fences and downloaded zero archive bytes. Its feeds correctly reported `degraded=true` while historical replay remained incomplete. This was service-to-service acceptance, not end-user OAuth/UI QA or complete historical signal parity.
+
+The repeat preserved 1,000 sampled read marks, 534 read floors and one unread override across restart. Wire corpus and alias samples matched the source; every still-present sampled content record matched. Existing gap/backfill/recovery controls and hide tables remained logged and retained. The original Production volume stayed attached throughout both drills.
+
+Production restarted at `2026-09-08T23:53:56.148777Z` with `archive_mode=off`. The six archive variables were removed through an explicit source-only configuration patch. `fsync`, full-page writes, LZ4, the 8 GB WAL allowance, 15-minute checkpoints and completion target 0.9 were preserved. Both actionable queues were clear. Seventy AppView dead letters predated the cutover (August 19 through September 1); no cutover dead letters were added or deleted.
+
+The daily schedule remains 04:37 UTC with the accepted six-day retention and nine existing snapshots. The September 8 snapshot expires September 14. Continuous archive upload cessation and archive-resource deletion are separate evidence: cleanup was still underway at this checkpoint. Production cost PR #360 merged at `25b2381f8b0eb5a63e8d36e9e81d2f71e41a422e`; exact deployment verification remains required. The 16,000,000,000-byte Production cap is unchanged pending representative replay. No lower-cap acceptance or aggregate savings is claimed.
+
+### September 9 clean restart verification
+
+Shutdown PR #362 passed all required CI and merged as `66d3686f`. Production
+deployment `16dbae59-ad65-4df9-b442-634f786e4354` preserves the Railway managed
+image and its automatic vulnerability updates. Only the rendered startup adapter
+and 120-second draining grace changed. The original running wrapper had 60 seconds
+of grace but TERM requested smart shutdown, leaving pooled clients holding it open.
+
+For the one-time handoff, the actual postmaster parent was verified as the vendor
+wrapper and paused. PostgreSQL fast shutdown completed at 01:25:32 UTC; the new
+instance accepted connections at 01:27:40 UTC, about 128 seconds later. Startup
+reported the prior clean shutdown. Both unlogged Wire inbox epochs and recovery
+jobs survived, along with the original cluster identity and volume. At 01:28:53,
+publication ingestion was live and advancing at sequence `25633257393`, with no
+pending, leased or retry work. The 461 historical Wire diagnostics and 70 old
+AppView dead letters were retained. The external lane's pre-existing budget pause
+and incomplete historical recovery acceptance are separate from this result.
+
+PITR remains off. Fsync, full-page writes, LZ4, 8 GB max WAL, 15-minute checkpoints,
+completion target 0.9, 4 MiB work memory and 128 MiB shared buffers were verified
+unchanged. The 16 GB decimal memory cap remains pending representative load tests.
+The isolated restored database is stopped; its volume remains for those tests.
+Provider deletion grace still separates retired archive/volume deletion requests
+from actual storage billing cessation. No net savings claim follows from this
+restart proof.
+
+
+### September 9 post-cutover recovery and cleanup
+
+All required Production cost-release services subsequently reached success at `25b2381f`. The immediately clear queue was not sustained acceptance: the restart reset the unlogged inbox epochs and triggered historical recovery replay. Startup logs explicitly reported an interrupted database, followed by redo. The shutdown cause is under investigation; this was not a clean-restart proof. Publication recovery seeding progressed from retained fences while archive batches produced a bursty Wire backlog. At 00:19 UTC, about 8,000 pending events belonged to only three repositories. Repository ordering limited useful parallelism despite spare worker CPU; raising concurrency alone was not justified. Existing payloads, leases, version fences and terminal classifications remain preserved. AppView's 70 old dead letters remain distinct from newly classified historical Wire events. The queue gate remains open until replay catches up and live work stays current.
+
+After the user explicitly approved permanent destruction, deletion of the retired PITR bucket was submitted and the bucket disappeared from both environment configurations. Provider metadata persists during Railway's 52-hour bucket restoration grace; permanent object removal and stopped storage billing are not yet verified. The old PITR verifier service was deleted, and its obsolete volume plus the failed first daily clone volume entered the provider's 48-hour volume deletion grace. Four fresh verifier deployments were removed, stopping their compute. The approximately 45 GB successful restore volume remains attached to a stopped verifier for memory testing and continues to incur storage cost. The original Production volume, daily schedule and nine listed snapshots were preserved. PITR remains off; the historical ingestion archive replay is a separate source and must not be mistaken for resumed backup uploads.

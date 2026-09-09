@@ -108,3 +108,14 @@ describe("atprotoOAuthScopes", () => {
     }
   });
 });
+
+it("keeps published native OAuth scopes exactly aligned with the native authorization request", () => {
+  const metadata = JSON.parse(readFileSync(join(import.meta.dir, "../../public/ios-client-metadata.json"), "utf8")) as { scope: string };
+  const native = readFileSync(join(import.meta.dir, "../../../apple/SocialWire/Services/ATProtoOAuthService.swift"), "utf8");
+  const scopeArray = native.split("static let scopes = [")[1]?.split("].joined(separator:")[0];
+  expect(scopeArray).toBeDefined();
+  const nativeScopes = [...scopeArray!.matchAll(/^\s*"([^"\n]+)"/gm)].map(match => match[1]);
+  expect(metadata.scope).toBe(nativeScopes.join(" "));
+  expect(nativeScopes).toContain("repo:app.thesocialwire.readState?action=create&action=update");
+  expect(nativeScopes).toContain("repo:app.thesocialwire.readStateChunk?action=create&action=update&action=delete");
+});

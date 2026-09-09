@@ -122,11 +122,33 @@ func Load() (Config, error) {
 // AppView/Wire enable flag or JETSTREAM_WIRE_LANES; at least one resulting lane
 // must be enabled.
 func LoadController() (ControllerConfig, error) {
+	return loadController(true)
+}
+
+// LoadWireRecovery selects an enabled lane without requiring provider credentials.
+// All immutable source/scope validation is shared with the normal daemon.
+func LoadWireRecovery(name string) (Lane, error) {
+	controller, err := loadController(false)
+	if err != nil {
+		return Lane{}, err
+	}
+	for _, lane := range controller.Lanes {
+		if string(lane.Name) == name {
+			if lane.Config.PipelineMode != WirePipelineMode {
+				return Lane{}, errors.New("recovery preparation requires an enabled Wire lane")
+			}
+			return lane, nil
+		}
+	}
+	return Lane{}, errors.New("recovery lane is not enabled or does not exist")
+}
+
+func loadController(requireAPIKey bool) (ControllerConfig, error) {
 	_, appViewFlagPresent := os.LookupEnv("JETSTREAM_APPVIEW_ENABLED")
 	_, wireFlagPresent := os.LookupEnv("JETSTREAM_WIRE_ENABLED")
 	_, wireLanesPresent := os.LookupEnv("JETSTREAM_WIRE_LANES")
 	if !appViewFlagPresent && !wireFlagPresent && !wireLanesPresent {
-		cfg, err := Load()
+		cfg, err := loadLaneConfiguration(envString("JETSTREAM_PIPELINE_MODE", DefaultPipelineMode), "JETSTREAM_", true, requireAPIKey)
 		if err != nil {
 			return ControllerConfig{}, err
 		}
@@ -161,14 +183,14 @@ func LoadController() (ControllerConfig, error) {
 
 	controller := ControllerConfig{Port: envInt("PORT", 8080)}
 	if appViewEnabled {
-		cfg, loadErr := loadLane(DefaultPipelineMode, "JETSTREAM_APPVIEW_", false)
+		cfg, loadErr := loadLaneConfiguration(DefaultPipelineMode, "JETSTREAM_APPVIEW_", false, requireAPIKey)
 		if loadErr != nil {
 			return ControllerConfig{}, fmt.Errorf("%s lane: %w", AppViewLaneName, loadErr)
 		}
 		controller.Lanes = append(controller.Lanes, Lane{Name: AppViewLaneName, Config: cfg})
 	}
 	if wireEnabled {
-		cfg, loadErr := loadLane(WirePipelineMode, "JETSTREAM_WIRE_", false)
+		cfg, loadErr := loadLaneConfiguration(WirePipelineMode, "JETSTREAM_WIRE_", false, requireAPIKey)
 		if loadErr != nil {
 			return ControllerConfig{}, fmt.Errorf("%s lane: %w", WireLaneName, loadErr)
 		}
@@ -177,7 +199,7 @@ func LoadController() (ControllerConfig, error) {
 	for _, suffix := range wireLaneSuffixes {
 		laneName := LaneName("wire-" + strings.ToLower(suffix))
 		prefix := "JETSTREAM_WIRE_" + strings.ToUpper(suffix) + "_"
-		cfg, loadErr := loadLane(WirePipelineMode, prefix, false)
+		cfg, loadErr := loadLaneConfiguration(WirePipelineMode, prefix, false, requireAPIKey)
 		if loadErr != nil {
 			return ControllerConfig{}, fmt.Errorf("%s lane: %w", laneName, loadErr)
 		}
@@ -248,6 +270,10 @@ func validateControllerLanes(lanes []Lane) error {
 }
 
 func loadLane(pipelineMode, prefix string, legacy bool) (Config, error) {
+	return loadLaneConfiguration(pipelineMode, prefix, legacy, true)
+}
+
+func loadLaneConfiguration(pipelineMode, prefix string, legacy, requireAPIKey bool) (Config, error) {
 	defaultCollections := DefaultCollections
 	defaultGeneration := DefaultSourceGeneration
 	defaultScopePolicy := DefaultScopePolicy
@@ -322,7 +348,7 @@ func loadLane(pipelineMode, prefix string, legacy bool) (Config, error) {
 		}
 		cfg.ReplayBeforeSeq = &seq
 	}
-	if err := cfg.Validate(); err != nil {
+	if err := cfg.validate(requireAPIKey); err != nil {
 		return Config{}, err
 	}
 	return cfg, nil
@@ -336,6 +362,10 @@ func wireVariable(prefix string, legacy bool, suffix string) string {
 }
 
 func (c Config) Validate() error {
+	return c.validate(true)
+}
+
+func (c Config) validate(requireAPIKey bool) error {
 	var problems []error
 	if c.PipelineMode != DefaultPipelineMode && c.PipelineMode != WirePipelineMode {
 		problems = append(problems, fmt.Errorf("unsupported JETSTREAM_PIPELINE_MODE %q", c.PipelineMode))
@@ -355,7 +385,7 @@ func (c Config) Validate() error {
 	if len(c.Collections) == 0 {
 		problems = append(problems, errors.New("at least one JETSTREAM_COLLECTIONS value is required"))
 	} else {
-		allowedCollections := DefaultCollections
+		allowedCollections := append(slices.Clone(DefaultCollections), "app.thesocialwire.readState")
 		if c.PipelineMode == WirePipelineMode {
 			allowedCollections = WireCollections
 		}
@@ -371,7 +401,7 @@ func (c Config) Validate() error {
 	if c.ScopePolicy == "" {
 		problems = append(problems, errors.New("Jetstream scope policy is required"))
 	}
-	if c.APIKey == "" {
+	if requireAPIKey && c.APIKey == "" {
 		problems = append(problems, errors.New("JETSTREAM_API_KEY is required for durable archive replay"))
 	}
 	if c.Port < 1 || c.Port > 65535 {

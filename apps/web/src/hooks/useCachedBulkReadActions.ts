@@ -7,6 +7,7 @@ import {
   type QueryKey,
 } from "@tanstack/react-query";
 
+import { pdsReadStateEnabled } from "@/lib/pdsReadStateSync";
 import { useAuth } from "@/hooks/useAuth";
 import { useReadRoute } from "@/contexts/ReadRouteContext";
 import { useEntriesCacheEpoch } from "@/hooks/useEntriesCacheEpoch";
@@ -48,6 +49,7 @@ export function useCachedBulkReadActions(
     (options?.gatewayScopes?.length ?? 0) === 0;
 
   const applyMarkAllRead = useCallback(() => {
+    const deferOptimism = pdsReadStateEnabled();
     const entryWasRead = isEntryRead ?? (() => false);
     const previouslyRead = cachedEntryIds.filter(entryWasRead);
     const newlyRead = cachedEntryIds.filter((entryId) => !entryWasRead(entryId));
@@ -55,11 +57,11 @@ export function useCachedBulkReadActions(
       predicate: ({ queryKey }) =>
         queryKey[0] === "entries" || queryKey[0] === "aggregateEntries",
     });
-    markEntriesRead(cachedEntryIds, {
+    if (!deferOptimism) markEntriesRead(cachedEntryIds, {
       publications,
       syncToAppView: false,
     });
-    for (const [queryKey, data] of cacheSnapshots) {
+    for (const [queryKey, data] of deferOptimism ? [] : cacheSnapshots) {
       if (!data) continue;
       queryClient.setQueryData<InfiniteData<EntriesPage>>(queryKey, {
         ...data,
@@ -81,9 +83,10 @@ export function useCachedBulkReadActions(
         publicationId: publication.publicationId,
       }));
     if (oauth && scopes.length > 0) {
-      void Promise.all(scopes.map((scope) => markAllReadOnGateway(oauth, scope)))
+      void Promise.all(scopes.map((scope) => pdsReadStateEnabled()
+        ? markAllReadOnGateway(oauth, scope, cachedEntryIds.slice(0, 1000)) : markAllReadOnGateway(oauth, scope)))
         .then((confirmations) => {
-          if (!viewerDid) return;
+          if (!viewerDid || confirmations.some(confirmation => confirmation.pendingSync)) return;
           const confirmedCounts = Object.assign(
             {},
             ...confirmations.map((confirmation) => confirmation.unreadCounts ?? {})
@@ -155,6 +158,7 @@ export function useCachedBulkReadActions(
           void queryClient.invalidateQueries({ predicate: isUnreadFeedQuery });
         })
         .catch(() => {
+          if (deferOptimism) return;
           for (const [queryKey, snapshot] of cacheSnapshots) {
             queryClient.setQueryData(queryKey as QueryKey, snapshot);
           }
@@ -166,7 +170,7 @@ export function useCachedBulkReadActions(
             });
           }
         });
-    } else if (scopes.length > 0) {
+    } else if (scopes.length > 0 && !deferOptimism) {
       for (const [queryKey, snapshot] of cacheSnapshots) {
         queryClient.setQueryData(queryKey as QueryKey, snapshot);
       }

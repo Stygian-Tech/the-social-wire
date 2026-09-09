@@ -20,6 +20,8 @@ settings:
     DEVELOPMENT_TEAM: G39TU2R26A
     CODE_SIGN_STYLE: Automatic
 packages:
+  ReadStateCore:
+    path: ../../packages/swift/ReadStateCore
   LatrKit:
     url: https://github.com/Stygian-Tech/latr-kit.git
     revision: f0e2ce680b07fa41d28d7b1cfeac01a25d5df2c6
@@ -32,6 +34,7 @@ targets:
       # `.xcassets` outside this folder — e.g. `apps/apple/Media.xcassets` — will NOT be merged in; move it under
       # `SocialWire/` or add a second `- path:` entry with `type: folder.assetcatalog`, then run `xcodegen generate`.
     dependencies:
+      - package: ReadStateCore
       - package: LatrKit
     info:
       path: SocialWire/Info.plist
@@ -111,6 +114,7 @@ targets:
           - Info.plist
           - SocialWireMac.entitlements
     dependencies:
+      - package: ReadStateCore
       - package: LatrKit
     info:
       path: SocialWireMac/Info.plist

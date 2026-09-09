@@ -1,0 +1,21 @@
+meta {
+  name: XRPC app.thesocialwire.appview.getReadStateStatus
+  type: http
+  seq: 80
+}
+
+get {
+  url: {{baseUrl}}/xrpc/app.thesocialwire.appview.getReadStateStatus
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+  Content-Type: application/json
+}
+
+docs {
+  Read the authenticated viewer migration authority and verified manifest. No public or shared cache.
+}
