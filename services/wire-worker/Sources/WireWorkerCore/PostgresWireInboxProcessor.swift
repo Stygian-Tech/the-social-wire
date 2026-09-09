@@ -1199,6 +1199,10 @@ struct PostgresWireInboxProcessor: Sendable {
     else { return }
     try await upsertActor(hash: actorHash, asOf: incrementsActorActivity ? (signalTime ?? asOf) : event.eventTime,
       connection: projectionConnection, incrementsActivity: incrementsActorActivity)
+    // Recovery must still project the corpus and record its version/activity
+    // fence, but an expired signal cannot contribute to any ranking window.
+    // Avoid rebuilding throwaway partitions and rows for that replay history.
+    guard event.eventTime.addingTimeInterval(WireDataPolicy.signalRetention) > asOf else { return }
     try await insertSignal(
       event: event,
       canonicalKey: identity.canonicalKey,
@@ -1736,6 +1740,7 @@ struct PostgresWireInboxProcessor: Sendable {
     let signalAt: Date? = recordsActivity ? (signalTime ?? asOf) : nil
     try await projectionQuery(
       """
+      WITH upserted_item AS (
       INSERT INTO wire_items
         (canonical_key, canonical_url, representative_uri, publication_id, author_key,
          source_domain, source_name, author_name, title, summary, thumbnail_url,
@@ -1815,6 +1820,18 @@ struct PostgresWireInboxProcessor: Sendable {
         eligible = wire_items.eligible AND EXCLUDED.eligible,
         source_confidence = GREATEST(wire_items.source_confidence, EXCLUDED.source_confidence),
         expires_at = GREATEST(wire_items.expires_at, EXCLUDED.expires_at), updated_at = EXCLUDED.updated_at
+      RETURNING canonical_key, canonical_url, eligible, expires_at
+      )
+      INSERT INTO wire_link_metadata_cache
+        (canonical_key, canonical_url, source, status, retry_after, failure_count, updated_at)
+      SELECT canonical_key, canonical_url, 'fallback', 'pending', \(asOf), 0, \(asOf)
+      FROM upserted_item item
+      WHERE eligible AND expires_at > \(asOf) AND canonical_url LIKE 'https://%'
+        AND NOT EXISTS (
+          SELECT 1 FROM wire_link_metadata_cache cache
+          WHERE cache.canonical_key = item.canonical_key
+        )
+      ON CONFLICT (canonical_key) DO NOTHING
       """,
       on: connection
     )

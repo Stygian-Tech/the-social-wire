@@ -24,7 +24,7 @@ stats reset. Record Railway CPU/RAM, volume and bucket bytes, and service egress
 alongside generation age, terminal/expired queue backlog, actionable oldest age,
 and authenticated bootstrap/feed latency. Include all services in cost totals.
 
-The approved profiles are five-minute ranking and two-hour expiry for **new**
+The approved profiles are five-minute ranking and one-hour expiry for **new**
 generations; existing generations retain their promised expiry. Disable
 non-serving external-signal shadow rankings on Coordinator. Do not change worker
 replicas while establishing this baseline. Circle caches are disposable Redis;

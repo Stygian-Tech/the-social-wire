@@ -11,7 +11,7 @@ struct WireWorkerConfigTests {
     #expect(config.externalSignalMode == .off)
     #expect(config.role == .combined)
     #expect(config.intervalSeconds == 300)
-    #expect(config.generationRetentionSeconds == 7_200)
+    #expect(config.generationRetentionSeconds == 3_600)
     #expect(config.baselineLabelers.count == 1)
     #expect(config.baselineLabelers[0].endpointHost == "mod.bsky.app")
     #expect(config.labelRefreshMaximumAgeSeconds == 900)
