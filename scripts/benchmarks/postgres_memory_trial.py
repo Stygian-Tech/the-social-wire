@@ -15,7 +15,7 @@ SPEC = importlib.util.spec_from_file_location("replay", Path(__file__).with_name
 replay = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(replay)
 Error = replay.BenchmarkError
-GIB = 1024 ** 3
+RAILWAY_MEMORY_LIMITS_BYTES = (16_000_000_000, 12_000_000_000, 8_000_000_000)
 IDENTITIES = {"project_id": "RAILWAY_PROJECT_ID", "environment_id": "RAILWAY_ENVIRONMENT_ID",
               "service_id": "RAILWAY_SERVICE_ID", "volume_id": "RAILWAY_VOLUME_ID"}
 
@@ -34,8 +34,11 @@ def validate_config(config):
         raise Error("An isolated tsw92 Railway host is required")
     if not re.fullmatch(r"tsw92_memory_[a-f0-9]{12}", target["database"]):
         raise Error("Explicit isolated memory-trial database is required")
-    if config["memory_gib"] not in (16, 12, 8):
-        raise Error("Memory rounds must use 16, 12, or 8 GiB")
+    if "memory_gib" in config:
+        raise Error("Replace memory_gib with explicit Railway memory_limit_bytes; no implicit unit conversion")
+    memory_limit = config.get("memory_limit_bytes")
+    if type(memory_limit) is not int or memory_limit not in RAILWAY_MEMORY_LIMITS_BYTES:
+        raise Error("Memory rounds require exact byte caps: 16000000000, 12000000000, or 8000000000 (decimal GB)")
     for key in ("snapshot_sha256", "workload_sha256", "binary_manifest_sha256"):
         if not re.fullmatch(r"[a-f0-9]{64}", config[key]):
             raise Error("Content hashes are required for comparable rounds")
@@ -83,7 +86,7 @@ def sample(config, pg, environment=os.environ, cgroup=Path("/sys/fs/cgroup")):
             or not manifest.get("restore_epoch")):
         raise Error("Full-snapshot restore attestation is absent or mismatched")
     memory_limit = (cgroup / "memory.max").read_text().strip()
-    if memory_limit != str(config["memory_gib"] * GIB):
+    if memory_limit != str(config["memory_limit_bytes"]):
         raise Error("Observed cgroup memory limit differs from this round")
     free = os.statvfs(mount)
     queue_sql = []
@@ -129,7 +132,7 @@ class Round:
         for key in IDENTITIES:
             if sample["identity"][key] != c["target"][key]:
                 raise Error("Target identity changed")
-        if sample["memory_max"] != c["memory_gib"] * GIB:
+        if type(sample["memory_max"]) is not int or sample["memory_max"] != c["memory_limit_bytes"]:
             raise Error("Memory limit changed within a round")
         if (sample["restore"]["snapshot_sha256"] != c["snapshot_sha256"]
                 or sample["restore"]["dataset"] != "full_snapshot"
@@ -211,7 +214,7 @@ class Round:
             raise Error("Missing five-minute burst, ten-minute recovery load, or a verified restart")
         if any(queue["rows_lower_bound"] for queue in self.last["db"]["queues"].values()):
             raise Error("Final actionable backlog has not drained")
-        return {"status": "passed_evidence_gates", "memory_gib": self.config["memory_gib"],
+        return {"status": "passed_evidence_gates", "memory_limit_bytes": self.config["memory_limit_bytes"],
                 "observed_seconds": self.observed_seconds, "phase_seconds": self.phase_seconds, "wal_lsn_span_bytes_excluding_restart_gap": sum(self.wal_spans),
                 "capacity_claim": "Requires reviewed representative trace and authenticated QA; not a synthetic capacity proof"}
 

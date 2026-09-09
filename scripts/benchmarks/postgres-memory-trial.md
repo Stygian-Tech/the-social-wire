@@ -7,9 +7,9 @@ This companion **does not replace** `postgres_replay.py` or loosen its 256 MiB s
 ## Preparation and comparison order
 
 1. An operator provisions an isolated Railway environment, Postgres service and volume, plus co-located isolated application services. Record actual IDs, CPU allocation, pool/replica limits, region, database version/settings and extension versions. Use separate application credentials and private endpoints; restored sessions/control state must not reconnect to normal workers or upstream mutation endpoints. Snapshot data stays private. No automatic preparation is performed by this script.
-2. Restore the same approved **full** snapshot before **each** 16 → 12 → 8 GiB round, using the recovery procedure rather than the pilot's SQL seed loader. Verify the actual restored relation sizes/cardinalities against the source inventory. Keep all non-memory settings and application binary hashes unchanged. Do not reuse the database left after the preceding workload. Stop descent at the first failed round; the preceding passing level is the candidate for further QA, not automatic Production approval.
+2. Restore the same approved **full** snapshot before **each** 16 → 12 → 8 GB round (decimal Railway limits), using the recovery procedure rather than the pilot's SQL seed loader. Verify the actual restored relation sizes/cardinalities against the source inventory. Keep all non-memory settings and application binary hashes unchanged. Do not reuse the database left after the preceding workload. Stop descent at the first failed round; the preceding passing level is the candidate for further QA, not automatic Production approval.
 3. Write `memory-trial-snapshot.json` on the isolated mounted volume after restore verification: `{"dataset":"full_snapshot","snapshot_sha256":"<64 hex>","restored_bytes":<verified bytes>,"restore_epoch":"<unique restore ID>"}`. This is a reviewed operator attestation, **not cryptographic proof that a physical restore is correct**. `minimum_restore_bytes` must come from the reviewed source inventory, not a conveniently small fixture; the probe also checks actual database bytes. Preserve restore logs/manifests alongside evidence.
-4. Set the memory limit externally for that round and verify `memory.max` reports exactly the intended bytes. The collector refuses a mismatch. A Railway restart/OOM receipt from outside the database container is required across restart: `{"previous_container_epoch":<previous probe epoch>,"termination_reason":"operator_restart","oom_killed":false}`. Local counters alone cannot prove that the previous container did not die from OOM. Do not fabricate this receipt from a scheduled restart timestamp; verify the actual provider result and stop if unavailable.
+4. Set the memory limit externally for that round and copy its exact Railway `memoryBytes` value into `memory_limit_bytes`: **16 GB = 16,000,000,000 bytes**, **12 GB = 12,000,000,000 bytes**, **8 GB = 8,000,000,000 bytes**. Verify `memory.max` reports exactly that integer; do not convert these decimal limits to GiB. The collector refuses a mismatch. A Railway restart/OOM receipt from outside the database container is required across restart: `{"previous_container_epoch":<previous probe epoch>,"termination_reason":"operator_restart","oom_killed":false}`. Local counters alone cannot prove that the previous container did not die from OOM. Do not fabricate this receipt from a scheduled restart timestamp; verify the actual provider result and stop if unavailable.
 
 ## Concrete timing and inputs
 
@@ -31,9 +31,19 @@ Each round configuration supplies:
 - `target`: `project_id`, `environment_id`, `service_id`, `volume_id`, `host`, `database`.
 - `protected_source_ids`: actual normal-service/volume/environment IDs, never empty.
 - `database_url_environment`: for example `TSW92_MEMORY_DATABASE_URL`; optional `psql` binary.
-- `memory_gib`: 16, 12 or 8; `snapshot_sha256`, `workload_sha256`, `binary_manifest_sha256`, identical `seed`.
+- `memory_limit_bytes`: exactly `16000000000`, `12000000000` or `8000000000` as a JSON integer; `snapshot_sha256`, `workload_sha256`, `binary_manifest_sha256`, identical `seed`.
 - The timing fields above.
-- Positive reviewed stops: `minimum_free_bytes` (include backup/WAL/headroom reserve), `minimum_restore_bytes`, `maximum_queue_age_seconds`, `maximum_queue_rows` (<10001), `maximum_connections`, `maximum_p95_ms`. Set latency/queue limits from the measured 16 GiB baseline and product SLOs **before** lower-memory rounds. No default thresholds imply capacity acceptance.
+- Positive reviewed stops: `minimum_free_bytes` (include backup/WAL/headroom reserve), `minimum_restore_bytes`, `maximum_queue_age_seconds`, `maximum_queue_rows` (<10001), `maximum_connections`, `maximum_p95_ms`. Set latency/queue limits from the measured 16 GB (16,000,000,000-byte) baseline and product SLOs **before** lower-memory rounds. No default thresholds imply capacity acceptance.
+
+The legacy `memory_gib` key is rejected, including configurations that also supply `memory_limit_bytes`. Prepare newly reviewed round configurations; do not silently reinterpret old binary-limit evidence as a decimal Railway round. Probe, preflight and per-sample gates compare exact byte values, and the final summary records `memory_limit_bytes`. A cap differing by one byte, a binary 16 GiB cap (17,179,869,184 bytes), or an unlimited cgroup is a mismatch.
+
+The memory field in the reviewed 16 GB round configuration is:
+
+```json
+{"memory_limit_bytes": 16000000000}
+```
+
+This is a configuration fragment, not a runnable round on its own. The 12 GB and 8 GB configurations use `12000000000` and `8000000000` respectively; all other comparable workload inputs remain unchanged.
 
 ## Collection and stop contract
 

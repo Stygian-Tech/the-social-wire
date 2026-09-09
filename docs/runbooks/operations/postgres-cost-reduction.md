@@ -402,7 +402,9 @@ The user explicitly authorized applying the Production memory reduction now.
 The first step changed only Production Postgres's Railway memory limit from
 24 GB to 16 GB; no source change or redeployment was required. At 04:24:34 UTC,
 the running cgroup reported `memory.max=16000000000` and 13,325,697,024 bytes
-used. The CPU ceiling remained 24 cores (`cpu.max=2400000 100000`). OOM and
+used. This is a decimal 16 GB cap, not 16 GiB. Isolated comparison rounds must
+set `memory_limit_bytes` to this exact value, then `12000000000` and
+`8000000000` for the planned 12 GB and 8 GB steps. The CPU ceiling remained 24 cores (`cpu.max=2400000 100000`). OOM and
 OOM-kill counters remained zero, and the memory-limit event count remained
 7,868, unchanged from the immediate pre-change sample. SQL succeeded and the
 postmaster start remained August 30 at 00:32:30 UTC: no database restart occurred.
@@ -497,3 +499,14 @@ unchanged, and continuous seven-day recovery/discovery rebuild and matched cost
 acceptance remain open. The code release requires separate Development and
 Production deployment verification; these observations do not themselves prove
 that a new revision is running.
+
+
+### September 8 Production daily-backup cutover
+
+Production PITR was disabled after a new daily-snapshot restore demonstrated usable discovery in approximately 46 minutes, including snapshot copy, migrations, bounded recovery, moderation refresh, signed private feed/edition responses, and database restart. The first drill failed its one-hour gate because full archive replay hit provider byte-rate limits; that result remains a failure. The successful repeat used retained logged publication fences and downloaded zero archive bytes. Its feeds correctly reported `degraded=true` while historical replay remained incomplete. This was service-to-service acceptance, not end-user OAuth/UI QA or complete historical signal parity.
+
+The repeat preserved 1,000 sampled read marks, 534 read floors and one unread override across restart. Wire corpus and alias samples matched the source; every still-present sampled content record matched. Existing gap/backfill/recovery controls and hide tables remained logged and retained. The original Production volume stayed attached throughout both drills.
+
+Production restarted at `2026-09-08T23:53:56.148777Z` with `archive_mode=off`. The six archive variables were removed through an explicit source-only configuration patch. `fsync`, full-page writes, LZ4, the 8 GB WAL allowance, 15-minute checkpoints and completion target 0.9 were preserved. Both actionable queues were clear. Seventy AppView dead letters predated the cutover (August 19 through September 1); no cutover dead letters were added or deleted.
+
+The daily schedule remains 04:37 UTC with the accepted six-day retention and nine existing snapshots. The September 8 snapshot expires September 14. Continuous archive upload cessation and archive-resource deletion are separate evidence: cleanup was still underway at this checkpoint. Production cost PR #360 merged at `25b2381f8b0eb5a63e8d36e9e81d2f71e41a422e`; exact deployment verification remains required. The 16,000,000,000-byte Production cap is unchanged pending representative replay. No lower-cap acceptance or aggregate savings is claimed.

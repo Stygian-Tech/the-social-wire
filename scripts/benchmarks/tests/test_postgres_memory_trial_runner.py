@@ -60,6 +60,15 @@ class RunnerTests(unittest.TestCase):
             data["rates"]["burst"] = 1; trace.write_text(json.dumps(data)); c["workload_sha256"] = m.digest(trace)
             with self.assertRaises(m.Error): m.validate_inputs(c, trace, env)
 
+    def test_preflight_requires_exact_railway_decimal_byte_cap(self):
+        for cap in (16_000_000_000, 12_000_000_000, 8_000_000_000):
+            config = configuration(cap)
+            with self.subTest(cap=cap):
+                m.initial_probe(probe(memory_limit_bytes=cap), config)
+                for wrong in (cap + 1, cap - 1, (cap // 1_000_000_000) * 1024 ** 3, float(cap)):
+                    with self.subTest(wrong=wrong), self.assertRaises(m.Error):
+                        m.initial_probe(probe(memory_limit_bytes=wrong), config)
+
     def test_preflight_rejects_oom_wrong_snapshot_and_disk_before_work(self):
         c = configuration(); m.initial_probe(probe(), c)
         for mutate in (lambda p: p["memory_events"].update(oom_kill=1), lambda p: p.update(volume_free_bytes=1),

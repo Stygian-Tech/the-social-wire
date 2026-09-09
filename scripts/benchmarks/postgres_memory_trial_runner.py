@@ -279,9 +279,11 @@ def progress_reader(process, name, events):
 
 
 def initial_probe(evidence, config):
+    trial.validate_config(config)
     # No fabricated load is attached to this preflight observation.
     if (evidence["identity"] != {key: config["target"][key] for key in trial.IDENTITIES}
-            or evidence["memory_max"] != config["memory_gib"] * trial.GIB
+            or type(evidence["memory_max"]) is not int
+            or evidence["memory_max"] != config["memory_limit_bytes"]
             or evidence["restore"]["snapshot_sha256"] != config["snapshot_sha256"]
             or evidence["restore"]["dataset"] != "full_snapshot"
             or evidence["restore"]["restored_bytes"] < config["minimum_restore_bytes"]
