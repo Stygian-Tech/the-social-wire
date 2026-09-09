@@ -97,17 +97,22 @@ final class NewsShellSmokeUITests: XCTestCase {
         XCTAssertTrue(canvas.waitForExistence(timeout: 5))
         XCTAssertEqual(canvas.frame.width, 320, accuracy: 1)
 
-        if !circle {
-            let firstCard = app.descendants(matching: .any)["wire-card-ui-story-1"]
+        let actionContainer: XCUIElement
+        if circle {
+            actionContainer = canvas
+        } else {
+            let firstCard = canvas.descendants(matching: .any)["wire-card-ui-story-1"]
             XCTAssertTrue(firstCard.waitForExistence(timeout: 2))
             XCTAssertGreaterThanOrEqual(firstCard.frame.width, 250)
+            actionContainer = firstCard
         }
 
         let actionIDs = circle
             ? ["story-website", "story-read", "story-hide"]
             : ["story-website", "story-read"]
         let actions = actionIDs.map { identifier in
-            app.descendants(matching: .any).matching(identifier: identifier).firstMatch
+            // Every Wire card repeats these IDs; bind actions to the card under test.
+            actionContainer.buttons[identifier]
         }
         for action in actions {
             XCTAssertTrue(action.waitForExistence(timeout: 2))
@@ -145,10 +150,10 @@ final class NewsShellSmokeUITests: XCTestCase {
 
         if !circle {
             let rail = canvas.scrollViews.firstMatch
-            let secondCard = app.descendants(matching: .any)["wire-card-ui-story-2"]
+            let secondCard = canvas.descendants(matching: .any)["wire-card-ui-story-2"]
             XCTAssertTrue(secondCard.waitForExistence(timeout: 2))
             XCTAssertGreaterThanOrEqual(secondCard.frame.width, 250)
-            let secondRead = secondCard.descendants(matching: .any)["story-read"]
+            let secondRead = secondCard.buttons["story-read"]
             revealHorizontally(secondRead, in: rail)
             reveal(secondRead, in: canvas)
             XCTAssertTrue(secondRead.isHittable, "The longer second card must remain usable")
