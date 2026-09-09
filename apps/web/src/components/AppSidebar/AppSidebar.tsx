@@ -40,6 +40,7 @@ import { sumUnreadForPublications } from "@/lib/unreadCounts";
 import { PublicationTabs } from "./PublicationTabs";
 import { ReadLaterSidebarBadge } from "./ReadLaterSidebarBadge";
 import { useFeedDisplayPreferences } from "@/hooks/useFeedDisplayPreferences";
+import { isCircleNavigationEnabled } from "@/lib/circleFeedAvailability";
 import { defaultSidebarExpandedKeys } from "@/lib/sidebarExpandedKeysStorage";
 import {
   DEFAULT_FEED_DISPLAY_PREFERENCES,
@@ -155,11 +156,14 @@ export function AppSidebar({
   const { preferences: feedPreferences } = useFeedDisplayPreferences();
   const wireCatalog = useWireFeedCatalog();
   const wireNavigationEnabled =
-    wireCatalog.data?.enabled === true && wireCatalog.data.available === true;
+    feedPreferences.showWire &&
+    wireCatalog.data?.enabled === true &&
+    wireCatalog.data.available === true;
   const circleCatalog = useCircleCatalog();
-  const circleNavigationEnabled =
-    circleCatalog.data?.enabled === true &&
-    circleCatalog.data.available === true;
+  const circleNavigationEnabled = isCircleNavigationEnabled(
+    circleCatalog.data,
+    feedPreferences.showCircle,
+  );
   const savedSidebarRows = useMemo(
     () =>
       publicationSidebarProjection
@@ -349,27 +353,27 @@ export function AppSidebar({
 
   useEffect(() => {
     if (!currentFeed) return;
-    if (currentFeed === "wire") {
-      if (wireCatalog.isFetched && !wireNavigationEnabled) {
+    if (currentFeed === "wire" || currentFeed === "circle") {
+      const hidden =
+        currentFeed === "wire"
+          ? !feedPreferences.showWire ||
+            (wireCatalog.isFetched && !wireNavigationEnabled)
+          : !feedPreferences.showCircle ||
+            (circleCatalog.isFetched && !circleNavigationEnabled);
+      if (hidden) {
         const remembered = loadReaderFeedSelection(window.localStorage);
         const replacement =
           remembered === "following" &&
           feedPreferences.visibleFeeds.includes("following")
             ? "following"
-            : "subscribed";
-        router.replace(`/read?feed=${replacement}`);
-      }
-      return;
-    }
-    if (currentFeed === "circle") {
-      if (circleCatalog.isFetched && !circleNavigationEnabled) {
-        const remembered = loadReaderFeedSelection(window.localStorage);
-        const replacement =
-          remembered === "following" &&
-          feedPreferences.visibleFeeds.includes("following")
-            ? "following"
-            : "subscribed";
-        router.replace(`/read?feed=${replacement}`);
+            : feedPreferences.visibleFeeds.includes("subscribed")
+              ? "subscribed"
+              : feedPreferences.visibleFeeds[0]!;
+        if (replacement === "readLater") router.replace("/saved");
+        else if (replacement === "archive") {
+          router.replace(usingSemble ? "/saved" : "/archive");
+        }
+        else router.replace(`/read?feed=${replacement}`);
       }
       return;
     }
@@ -384,6 +388,9 @@ export function AppSidebar({
   }, [
     currentFeed,
     feedPreferences.visibleFeeds,
+    feedPreferences.showWire,
+    feedPreferences.showCircle,
+    usingSemble,
     router,
     circleCatalog.isFetched,
     circleNavigationEnabled,

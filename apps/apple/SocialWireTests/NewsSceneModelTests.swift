@@ -14,6 +14,38 @@ struct NewsSceneModelTests {
         )
     }
 
+    @Test("Circle stays reachable while its catalog loads or lacks stories")
+    func circleNavigationDoesNotRequireAvailableStories() {
+        for available in [false, true] {
+            let catalog = CircleFeedCatalog(
+                enabled: true, available: available, title: "Your Circle", subtitle: "",
+                supportedLanguages: ["en"], latestGenerationId: nil, generatedAt: nil
+            )
+            #expect(NewsTab.available(
+                preferences: .defaults, wireCatalog: nil, circleCatalog: catalog
+            ).contains(.circle))
+        }
+        #expect(NewsTab.available(
+            preferences: .defaults, wireCatalog: nil, circleCatalog: nil
+        ).contains(.circle))
+    }
+
+    @Test("Explicit Circle hide and global disable still remove its destination")
+    func circleNavigationHonorsVisibilityControls() {
+        let disabled = CircleFeedCatalog(
+            enabled: false, available: true, title: "Your Circle", subtitle: "",
+            supportedLanguages: ["en"], latestGenerationId: nil, generatedAt: nil
+        )
+        #expect(!NewsTab.available(
+            preferences: .defaults, wireCatalog: nil, circleCatalog: disabled
+        ).contains(.circle))
+        var preferences = ReaderFeedPreferences.defaults
+        preferences.showCircle = false
+        #expect(!NewsTab.available(
+            preferences: preferences, wireCatalog: nil, circleCatalog: nil
+        ).contains(.circle))
+    }
+
     @Test("Last tab is restored per viewer")
     func restoresSelectedTabPerViewer() {
         let suiteName = "NewsSceneModelTests.\(UUID().uuidString)"
@@ -74,6 +106,29 @@ struct NewsSceneModelTests {
         #expect(model.path(for: .wire) == [.entry(id: "wire-story")])
         #expect(model.path(for: .saved) == [.savedLink(id: "saved-story")])
         #expect(model.path(for: .library).isEmpty)
+    }
+
+    @Test("Hiding the active discovery feed selects a visible tab and keeps Settings open")
+    func hiddenFeedPreservesSettings() {
+        let suiteName = "NewsSceneModelTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        for tab in [NewsTab.wire, .circle] {
+            let model = NewsSceneModel(defaults: defaults)
+            model.updateContext(viewerDID: "did:plc:alice", availableTabs: NewsTab.allCases)
+            model.select(tab, availableTabs: NewsTab.allCases)
+            model.navigate(to: .profile, in: tab)
+            model.navigate(to: .settings, in: tab)
+
+            model.updateContext(
+                viewerDID: "did:plc:alice",
+                availableTabs: [.library, .saved, .search]
+            )
+            #expect(model.selectedTab == .library)
+            #expect(model.path(for: .library).last == .settings)
+            #expect(model.path(for: tab) == [.profile, .settings])
+        }
     }
 
     @Test("Routes restore independently for each viewer and window")
