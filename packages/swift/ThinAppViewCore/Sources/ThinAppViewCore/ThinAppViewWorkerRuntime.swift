@@ -300,14 +300,15 @@ public enum ThinAppViewWorkerRuntime {
         try await operationsStore.fetchStreamState(source: "tap"),
         at: now
       )
-      let durability = try await operationsStore.fetchIngestionDurabilitySnapshot(at: now)
-      let durableCheckpoint = durability.checkpoints.first {
-        $0.sourceGeneration == jetstreamV2SourceGeneration
-      }
-      let durableInbox = Self.durableInboxMetrics(
-        durability,
-        sourceGeneration: jetstreamV2SourceGeneration
-      )
+      let health = try await operationsStore.fetchIngestionGenerationHealth(
+        sourceGeneration: jetstreamV2SourceGeneration, at: now)
+      let durableCheckpoint = health.checkpoint
+      // Existing health evaluators use actionable fields only. Retained-history
+      // totals remain exclusive to the Operations dashboard's durability snapshot.
+      let durableInbox = IngestionInboxMetrics(
+        pending: health.pending, leased: health.leased, retrying: health.retrying,
+        deadLetters: health.deadLetters, oldestPendingAt: health.oldestPendingAt,
+        oldestPendingAgeSeconds: health.oldestPendingAt.map { max(0, now.timeIntervalSince($0)) })
       let durableTransport = Self.durableTransportEvidence(durableCheckpoint, at: now)
       let durableProjection = Self.durableProjectionHealthEvidence(
         durableInbox,

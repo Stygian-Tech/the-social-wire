@@ -83,6 +83,19 @@ struct OperationsHeartbeatJobTests {
     #expect(staleActiveGeneration.completeness == .unhealthy)
   }
 
+  @Test("generation health keeps exact backlog age thresholds", arguments: [60.0, 60.001, 900.0, 900.001])
+  func generationHealthAgeBoundaries(age: Double) {
+    let checkpoint = JetstreamDurabilityCheckpoint(
+      environment: "test", sourceGeneration: "active", sourceHost: "test", streamNSID: "test",
+      filterFingerprint: "test", cursorKind: .jetstreamV2Sequence, replayState: .live, updatedAt: Date())
+    let health = ThinAppViewWorkerRuntime.durableProjectionHealthEvidence(
+      IngestionInboxMetrics(retrying: 1, oldestPendingAgeSeconds: age), checkpoint: checkpoint)
+    #expect(health.freshness == (age > 900 ? .unhealthy : age > 60 ? .degraded : .healthy))
+    #expect(health.completeness == .healthy)
+    #expect(ThinAppViewWorkerRuntime.durableProjectionHealthEvidence(
+      IngestionInboxMetrics(), checkpoint: nil).freshness == .unknown)
+  }
+
   @Test("projection backlog fail-closes freshness and completeness")
   func projectionBacklogHealth() {
     let now = Date(timeIntervalSince1970: 1_800_000_000)
@@ -282,6 +295,12 @@ struct OperationsHeartbeatJobTests {
       jetstreamV2SourceGeneration: generation
     )
 
+    // Heartbeats must not depend on retained-history queries or replay accounting.
+    // The dashboard snapshot would fail after removing these unrelated tables.
+    try await operationsDatabase.write { database in
+      try database.execute(sql: "DROP TABLE appview_ingestion_incidents")
+      try database.execute(sql: "DROP TABLE appview_ingestion_replay_usage")
+    }
     let projectionOnly = try await probe()
     #expect(projectionOnly.liveness == .unknown)
     #expect(projectionOnly.readiness == .unknown)
@@ -338,6 +357,16 @@ struct OperationsHeartbeatJobTests {
     #expect(intakeStopped.liveness == .unknown)
     #expect(intakeStopped.readiness == .unknown)
     #expect(intakeStopped.dependencyState["ingestion_transport"] == "missing")
+
+    try await operationsDatabase.write { database in
+      try database.execute(sql: "UPDATE appview_jetstream_checkpoints SET replay_state = 'snapshot_complete', replay_after_seq = 0, replay_before_seq = 200, replay_sealed_seq = 200 WHERE source_generation = ?", arguments: [generation])
+    }
+    // A completed replay does not replace the live worker intake lease requirement.
+    #expect(try await probe().readiness == .unknown)
+    try await operationsDatabase.write { database in
+      try database.execute(sql: "DROP TABLE appview_jetstream_checkpoints")
+    }
+    await #expect(throws: (any Error).self) { _ = try await probe() }
   }
 
   @Test("missing service-specific probe publishes Unknown, never Healthy")
