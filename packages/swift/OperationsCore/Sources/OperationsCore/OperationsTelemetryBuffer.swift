@@ -14,6 +14,8 @@ public struct OperationsTelemetryBufferSnapshot: Sendable, Equatable {
   public let droppedCount: Int
   public let consecutiveFailures: Int
   public let lastSuccessfulExportAt: Date?
+  public let lastDropAt: Date?
+  public let lastDropRecoveredAt: Date?
 
   public init(
     queueDepth: Int,
@@ -21,7 +23,9 @@ public struct OperationsTelemetryBufferSnapshot: Sendable, Equatable {
     capacity: Int,
     droppedCount: Int,
     consecutiveFailures: Int,
-    lastSuccessfulExportAt: Date?
+    lastSuccessfulExportAt: Date?,
+    lastDropAt: Date? = nil,
+    lastDropRecoveredAt: Date? = nil
   ) {
     self.queueDepth = queueDepth
     self.inFlightCount = inFlightCount
@@ -29,6 +33,8 @@ public struct OperationsTelemetryBufferSnapshot: Sendable, Equatable {
     self.droppedCount = droppedCount
     self.consecutiveFailures = consecutiveFailures
     self.lastSuccessfulExportAt = lastSuccessfulExportAt
+    self.lastDropAt = lastDropAt
+    self.lastDropRecoveredAt = lastDropRecoveredAt
   }
 }
 
@@ -42,11 +48,14 @@ public actor OperationsTelemetryBuffer {
   private let batchDelay: Duration
   private let logger: Logger
   private let exporter: BatchExporter
+  private let now: @Sendable () -> Date
   private var queue: [(signal: Signal, enqueuedAt: ContinuousClock.Instant)] = []
   private var inFlightCount = 0
   public private(set) var droppedCount = 0
   public private(set) var consecutiveFailures = 0
   public private(set) var lastSuccessfulExportAt: Date?
+  private var lastDropAt: Date?
+  private var lastDropRecoveredAt: Date?
 
   public init(
     store: any OperationsStore,
@@ -54,13 +63,15 @@ public actor OperationsTelemetryBuffer {
     batchSize: Int = 100,
     maxRetryAttempts: Int = 5,
     batchDelay: Duration = .seconds(1),
-    logger: Logger
+    logger: Logger,
+    now: @escaping @Sendable () -> Date = Date.init
   ) {
     self.capacity = max(1, capacity)
     self.batchSize = max(1, min(batchSize, capacity))
     self.maxRetryAttempts = max(1, maxRetryAttempts)
     self.batchDelay = max(.zero, batchDelay)
     self.logger = logger
+    self.now = now
     self.exporter = { signals in try await store.recordTelemetryBatch(signals) }
   }
 
@@ -70,6 +81,7 @@ public actor OperationsTelemetryBuffer {
     maxRetryAttempts: Int = 5,
     batchDelay: Duration = .seconds(1),
     logger: Logger,
+    now: @escaping @Sendable () -> Date = Date.init,
     exporter: @escaping BatchExporter
   ) {
     self.capacity = max(1, capacity)
@@ -77,6 +89,7 @@ public actor OperationsTelemetryBuffer {
     self.maxRetryAttempts = max(1, maxRetryAttempts)
     self.batchDelay = max(.zero, batchDelay)
     self.logger = logger
+    self.now = now
     self.exporter = exporter
   }
 
@@ -88,7 +101,7 @@ public actor OperationsTelemetryBuffer {
   @discardableResult
   func enqueue(_ signal: Signal, at enqueuedAt: ContinuousClock.Instant) -> Bool {
     guard queue.count + inFlightCount < capacity else {
-      droppedCount += 1
+      recordDrop(count: 1)
       return false
     }
     queue.append((signal, enqueuedAt))
@@ -129,12 +142,18 @@ public actor OperationsTelemetryBuffer {
       do {
         try await exporter(batch)
         consecutiveFailures = 0
-        lastSuccessfulExportAt = Date()
+        let exportedAt = now()
+        lastSuccessfulExportAt = exportedAt
+        // Only a successful drain establishes recovery. Keep it latched so ordinary
+        // subsequent partial batches do not revive a historical loss incident.
+        if queue.isEmpty, lastDropRecoveredAt == nil, let lastDropAt, exportedAt > lastDropAt {
+          lastDropRecoveredAt = exportedAt
+        }
         return batch.count
       } catch {
         consecutiveFailures += 1
         guard attempt + 1 < maxRetryAttempts else {
-          droppedCount += batch.count
+          recordDrop(count: batch.count)
           logger.error(
             "Telemetry export exhausted bounded retries",
             metadata: [
@@ -151,6 +170,12 @@ public actor OperationsTelemetryBuffer {
     return 0
   }
 
+  private func recordDrop(count: Int) {
+    droppedCount += count
+    lastDropAt = now()
+    lastDropRecoveredAt = nil
+  }
+
   public func pendingCount() -> Int { queue.count }
 
   public func snapshot() -> OperationsTelemetryBufferSnapshot {
@@ -160,6 +185,8 @@ public actor OperationsTelemetryBuffer {
       capacity: capacity,
       droppedCount: droppedCount,
       consecutiveFailures: consecutiveFailures,
-      lastSuccessfulExportAt: lastSuccessfulExportAt)
+      lastSuccessfulExportAt: lastSuccessfulExportAt,
+      lastDropAt: lastDropAt,
+      lastDropRecoveredAt: lastDropRecoveredAt)
   }
 }
