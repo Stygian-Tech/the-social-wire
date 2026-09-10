@@ -263,6 +263,9 @@ public struct OperationsHeartbeatJob: Sendable {
       "telemetry_consecutive_failures": String(snapshot.consecutiveFailures),
       "telemetry_last_successful_export_at": snapshot.lastSuccessfulExportAt.map(formatter.string)
         ?? "none",
+      "telemetry_last_drop_at": snapshot.lastDropAt.map(formatter.string) ?? "unknown",
+      "telemetry_last_drop_recovered_at": snapshot.lastDropRecoveredAt.map(formatter.string)
+        ?? "none",
       "telemetry_snapshot_observed_at": formatter.string(from: observedAt),
     ]
 
@@ -272,6 +275,7 @@ public struct OperationsHeartbeatJob: Sendable {
       && snapshot.capacity > 0
       && snapshot.droppedCount >= 0
       && snapshot.consecutiveFailures >= 0
+      && (snapshot.droppedCount > 0 || snapshot.lastDropAt == nil)
       && !occupied.overflow
       && occupied.partialValue <= snapshot.capacity
 
@@ -292,7 +296,18 @@ public struct OperationsHeartbeatJob: Sendable {
       dependencies["telemetry_last_export_age_seconds"] = "unknown"
     }
 
-    guard structurallyValid, lastExportTimeValid else {
+    let dropTimesValid = [snapshot.lastDropAt, snapshot.lastDropRecoveredAt]
+      .compactMap { $0 }
+      .allSatisfy { $0.timeIntervalSince1970.isFinite && $0 <= observedAt }
+    let recoveryValid: Bool
+    if let recoveredAt = snapshot.lastDropRecoveredAt {
+      recoveryValid = snapshot.droppedCount > 0
+        && snapshot.lastDropAt.map { recoveredAt > $0 } == true
+        && snapshot.lastSuccessfulExportAt.map { recoveredAt <= $0 } == true
+    } else {
+      recoveryValid = true
+    }
+    guard structurallyValid, lastExportTimeValid, dropTimesValid, recoveryValid else {
       dependencies["telemetry_exporter"] = "unknown_invalid_snapshot"
       return OperationsTelemetryHeartbeatEvidence(
         dependencyState: dependencies,
@@ -304,7 +319,11 @@ public struct OperationsHeartbeatJob: Sendable {
     }
 
     let exportFailureObserved = snapshot.consecutiveFailures > 0
-    let dropObserved = snapshot.droppedCount > 0
+    // Cumulative loss remains diagnostic history. Legacy snapshots without explicit
+    // successful-drain evidence remain degraded; never infer recovery from an empty queue.
+    let dropObserved = snapshot.droppedCount > 0 && snapshot.lastDropRecoveredAt == nil
+    dependencies["telemetry_loss_state"] = snapshot.droppedCount == 0
+      ? "none" : dropObserved ? "unrecovered" : "recovered"
     if exportFailureObserved || dropObserved {
       dependencies["telemetry_exporter"] = "degraded"
     } else if snapshot.inFlightCount > 0 {
