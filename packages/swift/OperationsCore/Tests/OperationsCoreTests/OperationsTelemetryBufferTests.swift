@@ -132,9 +132,12 @@ struct OperationsTelemetryBufferTests {
     #expect(suspended.queueDepth == 2)
     #expect(suspended.inFlightCount == 1)
     #expect(suspended.droppedCount == 1)
+    #expect(suspended.lastDropAt != nil)
+    #expect(suspended.lastDropRecoveredAt == nil)
 
     await recorder.releaseFirstExport()
     #expect(await first.value == 1)
+    #expect(await buffer.snapshot().lastDropRecoveredAt == nil)
     #expect(await buffer.flushOnce() == 1)
     #expect(await buffer.flushOnce() == 1)
     #expect(await recorder.values == [[1], [2], [3]])
@@ -179,6 +182,58 @@ struct OperationsTelemetryBufferTests {
     #expect(await buffer.pendingCount() == 1)
     #expect(await buffer.flushOnce() == 1)
     #expect(await recorder.values == [[7]])
+  }
+
+  @Test("loss recovers only after a successful drain and preserves lifetime evidence")
+  func lossRecoveryAfterDrain() async {
+    let clock = TestClock()
+    let recorder = ExportRecorder(failFirst: true)
+    let buffer = OperationsTelemetryBuffer(
+      capacity: 2, batchSize: 1, maxRetryAttempts: 1,
+      logger: Logger(label: "operations-buffer-recovery-tests"), now: { clock.next() },
+      exporter: { try await recorder.record($0) })
+    #expect(await buffer.enqueue(Self.metric(1)))
+    #expect(await buffer.flushOnce() == 0)
+    let failed = await buffer.snapshot()
+    #expect(failed.droppedCount == 1)
+    #expect(failed.lastDropAt != nil)
+    #expect(failed.lastDropRecoveredAt == nil)
+    #expect(failed.consecutiveFailures == 1)
+
+    #expect(await buffer.enqueue(Self.metric(2)))
+    #expect(await buffer.enqueue(Self.metric(3)))
+    #expect(await buffer.flushOnce() == 1)
+    let partial = await buffer.snapshot()
+    #expect(partial.consecutiveFailures == 0)
+    #expect(partial.lastDropRecoveredAt == nil)
+    #expect(partial.queueDepth == 1)
+    #expect(await buffer.flushOnce() == 1)
+    let recovered = await buffer.snapshot()
+    #expect(recovered.droppedCount == 1)
+    #expect(recovered.lastDropAt == failed.lastDropAt)
+    #expect(recovered.lastDropRecoveredAt == recovered.lastSuccessfulExportAt)
+    #expect(recovered.lastDropRecoveredAt! > failed.lastDropAt!)
+    #expect(recovered.inFlightCount == 0)
+
+    #expect(await buffer.enqueue(Self.metric(4)))
+    #expect(await buffer.snapshot().lastDropRecoveredAt == recovered.lastDropRecoveredAt)
+    #expect(await buffer.enqueue(Self.metric(5)))
+    #expect(!(await buffer.enqueue(Self.metric(6))))
+    let recurrence = await buffer.snapshot()
+    #expect(recurrence.droppedCount == 2)
+    #expect(recurrence.lastDropAt! > recovered.lastDropRecoveredAt!)
+    #expect(recurrence.lastDropRecoveredAt == nil)
+  }
+
+  private final class TestClock: @unchecked Sendable {
+    private let lock = NSLock()
+    private var time = Date(timeIntervalSince1970: 1_800_000_000)
+    func next() -> Date {
+      lock.lock()
+      defer { lock.unlock() }
+      time = time.addingTimeInterval(1)
+      return time
+    }
   }
 
   private static func metric(_ value: Int) -> OperationsTelemetrySignal {
