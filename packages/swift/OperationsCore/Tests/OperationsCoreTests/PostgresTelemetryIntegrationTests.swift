@@ -164,6 +164,122 @@ struct PostgresTelemetryIntegrationTests {
     }
   }
 
+  @Test("bulk event and span chunks preserve optional IDs, expiry, duplicate identity and environment isolation")
+  func bulkEventAndSpanChunks() async throws {
+    try await withStore { store, pool, logger in
+      let prefix = "bulk.\(UUID().uuidString)"
+      let at = Date(timeIntervalSince1970: 1_789_000_000)
+      var signals: [OperationsTelemetrySignal] = []
+      for index in 0..<260 {
+        let id = "\(prefix).\(String(format: "%03d", index))"
+        let optional: String? = index % 3 == 0 ? nil : (index % 3 == 1 ? "" : "linked")
+        signals.append(.event(.init(
+          id: id, service: "test", environment: "prod", instanceId: "instance",
+          name: "bulk.event", occurredAt: at, requestId: optional, traceId: optional,
+          attributes: ["lane": "test"])))
+        signals.append(.span(.init(
+          id: id, environment: "prod", traceId: "trace", parentSpanId: optional,
+          service: "test", name: "bulk.span", startedAt: at, durationMs: 12.5,
+          status: "ok", attributes: ["lane": "test"], expiresAt: at.addingTimeInterval(86400))))
+      }
+      signals.append(try #require(signals.first))
+      signals.append(try #require(signals.dropFirst().first))
+      try await store.recordTelemetryBatch(signals)
+      // A replay must not rewrite existing event/span identities or extend their retention.
+      try await store.recordTelemetryBatch(signals.reversed())
+      let events = try await pool.query(
+        """
+        SELECT id, request_id, trace_id, occurred_at, expires_at, attributes->>'lane'
+        FROM operations_events WHERE environment = 'prod' AND id LIKE \(prefix + "%") ORDER BY id
+        """, logger: logger)
+      var eventCount = 0
+      for try await row in events {
+        let v = try row.decode((String, String?, String?, Date, Date, String).self)
+        let expected: String? = eventCount % 3 == 0 ? nil : (eventCount % 3 == 1 ? "" : "linked")
+        #expect(v.1 == expected && v.2 == expected && v.3 == at)
+        #expect(v.4 == at.addingTimeInterval(30 * 86400) && v.5 == "test")
+        eventCount += 1
+      }
+      #expect(eventCount == 260)
+      let spans = try await pool.query(
+        """
+        SELECT parent_span_id, started_at, expires_at, duration_ms, attributes->>'lane'
+        FROM operations_trace_spans WHERE environment = 'prod' AND id LIKE \(prefix + "%") ORDER BY id
+        """, logger: logger)
+      var spanCount = 0
+      for try await row in spans {
+        let v = try row.decode((String?, Date, Date, Double, String).self)
+        let expected: String? = spanCount % 3 == 0 ? nil : (spanCount % 3 == 1 ? "" : "linked")
+        #expect(v.0 == expected && v.1 == at && v.2 == at.addingTimeInterval(86400))
+        #expect(v.3 == 12.5 && v.4 == "test")
+        spanCount += 1
+      }
+      #expect(spanCount == 260)
+      let other = PostgresOperationsStore(pool: pool, environment: "dev", logger: logger)
+      try await other.recordTelemetryBatch([
+        .event(.init(id: prefix + ".000", service: "test", environment: "dev", instanceId: "test",
+          name: "isolated", occurredAt: at)),
+        .span(.init(id: prefix + ".000", environment: "dev", traceId: "other", service: "test",
+          name: "isolated", startedAt: at, durationMs: 1, status: "ok", attributes: [:],
+          expiresAt: at.addingTimeInterval(86400))),
+      ])
+      let counts = try await pool.query(
+        """
+        SELECT (SELECT COUNT(*) FROM operations_events WHERE id = \(prefix + ".000")),
+          (SELECT COUNT(*) FROM operations_trace_spans WHERE id = \(prefix + ".000"))
+        """, logger: logger)
+      for try await row in counts {
+        let v = try row.decode((Int64, Int64).self)
+        #expect(v.0 == 2 && v.1 == 2)
+      }
+    }
+  }
+
+  @Test("a blocked last span rolls back earlier event chunks and metrics before a lossless retry")
+  func blockedSpanRollsBackMixedBatch() async throws {
+    try await withStore { store, pool, logger in
+      let prefix = "mixed-blocked.\(UUID().uuidString)"
+      let at = Date()
+      var signals: [OperationsTelemetrySignal] = [.metric(.init(name: prefix, value: 7, dimensions: [:], recordedAt: at))]
+      for index in 0..<260 {
+        let id = "\(prefix).\(String(format: "%03d", index))"
+        signals.append(.event(.init(id: id, service: "test", environment: "prod", instanceId: "test",
+          name: prefix, occurredAt: at)))
+        signals.append(.span(.init(id: id, environment: "prod", traceId: prefix, service: "test",
+          name: prefix, startedAt: at, durationMs: 1, status: "ok", attributes: [:],
+          expiresAt: at.addingTimeInterval(86400))))
+      }
+      try await store.recordTelemetryBatch([try #require(signals.last)])
+      try await pool.withTransaction(logger: logger) { blocker in
+        try await blocker.query(
+          "UPDATE operations_trace_spans SET status = status WHERE environment = 'prod' AND id = \(prefix + ".259")",
+          logger: logger)
+        await #expect(throws: (any Error).self) { try await store.recordTelemetryBatch(signals) }
+        let counts = try await pool.query(
+          """
+          SELECT (SELECT COUNT(*) FROM operations_metric_rollups WHERE metric_name = \(prefix)),
+            (SELECT COUNT(*) FROM operations_events WHERE event_name = \(prefix)),
+            (SELECT COUNT(*) FROM operations_trace_spans WHERE name = \(prefix))
+          """, logger: logger)
+        for try await row in counts {
+          let v = try row.decode((Int64, Int64, Int64).self)
+          #expect(v.0 == 0 && v.1 == 0 && v.2 == 1)
+        }
+      }
+      try await store.recordTelemetryBatch(signals)
+      let counts = try await pool.query(
+        """
+        SELECT (SELECT SUM(sample_count)::bigint FROM operations_metric_rollups WHERE metric_name = \(prefix)),
+          (SELECT COUNT(*) FROM operations_events WHERE event_name = \(prefix)),
+          (SELECT COUNT(*) FROM operations_trace_spans WHERE name = \(prefix))
+        """, logger: logger)
+      for try await row in counts {
+        let v = try row.decode((Int64, Int64, Int64).self)
+        #expect(v.0 == 1 && v.1 == 260 && v.2 == 260)
+      }
+    }
+  }
+
   @Test("concurrent writers use the same lock order and retain every coalesced sample")
   func concurrentWriters() async throws {
     try await withStore { _, pool, logger in
@@ -185,7 +301,13 @@ struct PostgresTelemetryIntegrationTests {
                     recordedAt: now))
               }
             }
-            try await store.recordTelemetryBatch(samples)
+            let event = OperationsTelemetrySignal.event(.init(
+              id: prefix, service: "test", environment: "prod", instanceId: "test", name: prefix))
+            let span = OperationsTelemetrySignal.span(.init(
+              id: prefix, environment: "prod", traceId: prefix, service: "test", name: prefix,
+              startedAt: now, durationMs: 1, status: "ok", attributes: [:],
+              expiresAt: now.addingTimeInterval(86400)))
+            try await store.recordTelemetryBatch(samples + [event, span])
           }
         }
         try await tasks.waitForAll()

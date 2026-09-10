@@ -15,11 +15,6 @@ public actor PostgresOperationsStore: OperationsStore {
   var lastDatabaseWALObservation: (bytes: Double, reset: Double, at: Date)?
   private var lastDatabaseObservation: (transactions: Int64, statsResetAt: Date?, at: Date)?
 
-  private enum PreparedTelemetry: Sendable {
-    case event(OperationsEvent, attributesJSON: String)
-    case span(TraceSpan, attributesJSON: String)
-  }
-
   public init(
     pool: PostgresClient,
     environment: String,
@@ -2115,9 +2110,9 @@ public actor PostgresOperationsStore: OperationsStore {
     statementTimeoutMilliseconds: Int
   ) async throws {
     guard !signals.isEmpty else { return }
-    var prepared: [PreparedTelemetry] = []
+    var events: [(event: OperationsEvent, attributesJSON: String)] = []
+    var spans: [(span: TraceSpan, attributesJSON: String)] = []
     var metricBatches: [String: OperationsMetricBatch] = [:]
-    prepared.reserveCapacity(signals.count)
     // Every writer must acquire rollup index keys in the same order. Without this ordering,
     // concurrent batches containing the same metrics in different sequences can deadlock while
     // PostgreSQL resolves their ON CONFLICT updates.
@@ -2144,13 +2139,13 @@ public actor PostgresOperationsStore: OperationsStore {
         guard event.environment == environment else {
           throw OperationsStoreError.environmentMismatch(expected: environment, actual: event.environment)
         }
-        prepared.append(.event(
+        events.append((
           event, attributesJSON: try json(OperationsRedactor.boundedAttributes(event.attributes))))
       case .span(let span):
         guard span.environment == environment else {
           throw OperationsStoreError.environmentMismatch(expected: environment, actual: span.environment)
         }
-        prepared.append(.span(
+        spans.append((
           span, attributesJSON: try json(OperationsRedactor.boundedAttributes(span.attributes))))
       }
     }
@@ -2186,33 +2181,62 @@ public actor PostgresOperationsStore: OperationsStore {
             value_max = GREATEST(operations_metric_rollups.value_max, EXCLUDED.value_max)
           """, logger: logger)
       }
-      for item in prepared {
+      // Bulk inserts keep metric row locks from spanning one round trip per event/span.
+      // Retain the global metrics -> events -> spans order and the transaction-wide budget.
+      // The driver encodes nonoptional arrays; presence masks distinguish NULL from empty text.
+      for offset in stride(from: 0, to: events.count, by: 250) {
         try await Self.configureTelemetryStatement(connection, budget: budget, logger: logger)
-        switch item {
-        case .event(let event, let attributesJSON):
-          try await connection.query(
-            """
-            INSERT INTO operations_events
-              (id, service, environment, instance_id, event_name, occurred_at, request_id,
-               trace_id, attributes, expires_at)
-            VALUES (\(event.id), \(event.service), \(event.environment), \(event.instanceId),
-              \(String(event.name.prefix(160))), \(event.occurredAt), \(event.requestId),
-              \(event.traceId), \(attributesJSON)::jsonb,
-              \(event.occurredAt.addingTimeInterval(30 * 86_400)))
-            ON CONFLICT (environment, id) DO NOTHING
-            """, logger: logger)
-        case .span(let span, let attributesJSON):
-          try await connection.query(
-            """
-            INSERT INTO operations_trace_spans
-              (environment, id, trace_id, parent_span_id, service, name, started_at, duration_ms,
-               status, attributes, expires_at)
-            VALUES (\(environment), \(span.id), \(span.traceId), \(span.parentSpanId),
-              \(span.service), \(span.name), \(span.startedAt), \(span.durationMs),
-              \(span.status), \(attributesJSON)::jsonb, \(span.expiresAt))
-            ON CONFLICT (environment, id) DO NOTHING
-            """, logger: logger)
-        }
+        let chunk = Array(events[offset..<min(offset + 250, events.count)])
+        try await connection.query(
+          """
+          INSERT INTO operations_events
+            (id, service, environment, instance_id, event_name, occurred_at, request_id,
+             trace_id, attributes, expires_at)
+          SELECT sample.id, sample.service, \(environment), sample.instance_id,
+            sample.event_name, sample.occurred_at,
+            CASE WHEN sample.has_request_id THEN sample.request_id END,
+            CASE WHEN sample.has_trace_id THEN sample.trace_id END,
+            sample.attributes::jsonb, sample.expires_at
+          FROM unnest(\(chunk.map(\.event.id))::text[], \(chunk.map(\.event.service))::text[],
+            \(chunk.map(\.event.instanceId))::text[],
+            \(chunk.map { String($0.event.name.prefix(160)) })::text[],
+            \(chunk.map(\.event.occurredAt))::timestamptz[],
+            \(chunk.map { $0.event.requestId ?? "" })::text[],
+            \(chunk.map { $0.event.requestId != nil })::boolean[],
+            \(chunk.map { $0.event.traceId ?? "" })::text[],
+            \(chunk.map { $0.event.traceId != nil })::boolean[],
+            \(chunk.map(\.attributesJSON))::text[],
+            \(chunk.map { $0.event.occurredAt.addingTimeInterval(30 * 86_400) })::timestamptz[])
+          WITH ORDINALITY AS sample(id, service, instance_id, event_name, occurred_at,
+            request_id, has_request_id, trace_id, has_trace_id, attributes, expires_at, ordinal)
+          ORDER BY sample.ordinal
+          ON CONFLICT (environment, id) DO NOTHING
+          """, logger: logger)
+      }
+      for offset in stride(from: 0, to: spans.count, by: 250) {
+        try await Self.configureTelemetryStatement(connection, budget: budget, logger: logger)
+        let chunk = Array(spans[offset..<min(offset + 250, spans.count)])
+        try await connection.query(
+          """
+          INSERT INTO operations_trace_spans
+            (environment, id, trace_id, parent_span_id, service, name, started_at, duration_ms,
+             status, attributes, expires_at)
+          SELECT \(environment), sample.id, sample.trace_id,
+            CASE WHEN sample.has_parent_span_id THEN sample.parent_span_id END,
+            sample.service, sample.name, sample.started_at, sample.duration_ms,
+            sample.status, sample.attributes::jsonb, sample.expires_at
+          FROM unnest(\(chunk.map(\.span.id))::text[], \(chunk.map(\.span.traceId))::text[],
+            \(chunk.map { $0.span.parentSpanId ?? "" })::text[],
+            \(chunk.map { $0.span.parentSpanId != nil })::boolean[],
+            \(chunk.map(\.span.service))::text[],
+            \(chunk.map(\.span.name))::text[], \(chunk.map(\.span.startedAt))::timestamptz[],
+            \(chunk.map(\.span.durationMs))::double precision[], \(chunk.map(\.span.status))::text[],
+            \(chunk.map(\.attributesJSON))::text[], \(chunk.map(\.span.expiresAt))::timestamptz[])
+          WITH ORDINALITY AS sample(id, trace_id, parent_span_id, has_parent_span_id, service, name, started_at,
+            duration_ms, status, attributes, expires_at, ordinal)
+          ORDER BY sample.ordinal
+          ON CONFLICT (environment, id) DO NOTHING
+          """, logger: logger)
       }
       try Task.checkCancellation()
       _ = try budget.remainingStatementMilliseconds()
