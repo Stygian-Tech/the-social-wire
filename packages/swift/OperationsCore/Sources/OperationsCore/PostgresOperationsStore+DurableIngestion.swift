@@ -388,7 +388,7 @@ extension PostgresOperationsStore {
     }
   }
 
-  private static func durabilityCheckpoint(_ row: PostgresRow) throws
+  static func durabilityCheckpoint(_ row: PostgresRow) throws
     -> JetstreamDurabilityCheckpoint
   {
     let value = row.makeRandomAccess()
