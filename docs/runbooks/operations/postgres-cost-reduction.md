@@ -547,6 +547,19 @@ After the user explicitly approved permanent destruction, deletion of the retire
 
 ### Telemetry write migration (TSW-92, September 9)
 
+September 11 follow-up: live lock sampling found telemetry transactions waiting
+on `WALWrite` during `COMMIT`, retaining minute-rollup locks and making other
+exporters time out. `recordTelemetryBatch` now prepares bindings before `BEGIN`
+and executes independently of the store actor, with transaction-local
+`synchronous_commit=off` for metrics, diagnostic events, and traces only. A crash
+may lose recent diagnostic samples; ingestion, user state, audit records, and
+recovery controls retain their existing synchronous commit policy. This setting
+does not change global `fsync`, full-page writes, or WAL generation volume.
+Every retry of additive PostgreSQL telemetry requires a confirmed rollback;
+ambiguous commit outcomes remain visible in cumulative loss evidence and are
+never replayed. Compare successful drains and loss timestamps as well as lock
+timeouts; disappearance of errors alone is not recovery acceptance.
+
 `20260909130000_remove_redundant_telemetry_indexes.sql` removes only the duplicate
 change-event replay, event identity, and trace identity indexes. All three are
 checked against valid equivalent primary keys, including dependencies and replica
@@ -556,8 +569,9 @@ are preserved; no table rewrite or retention reduction is part of this migration
 
 The paired OperationsCore change inserts events and spans in bounded 250-row
 chunks within the existing atomic metrics/events/spans transaction. This reduces
-round trips while metric locks are held. Keep the existing two-second transaction
-budget and 500 ms lock timeout. The previous writer remains compatible with the
+round trips while metric locks are held. Keep the two-second statement limit,
+five-second transaction-work budget, and 500 ms lock timeout. Pool acquisition
+and commit acknowledgement are outside that work budget. The previous writer remains compatible with the
 migration, so an application rollback does not require rebuilding duplicate indexes.
 
 Validate fresh/upgrade/retry migrations and PostgreSQL mixed-batch rollback,
