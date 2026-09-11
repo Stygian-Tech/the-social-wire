@@ -656,21 +656,22 @@ struct JetstreamInboxProjectionWorkerTests {
     )
 
     #expect(try await fixture.worker().drainOnce(at: now) == 1)
+    let reconciliationAt = Date()
     let laterInbox = try await fixture.store.claimIngestionInbox(
       environment: "dev",
       sourceGeneration: Fixture.generation,
       workerId: "later-worker",
       limit: 1,
-      leaseUntil: now.addingTimeInterval(60),
-      at: now.addingTimeInterval(1)
+      leaseUntil: reconciliationAt.addingTimeInterval(60),
+      at: reconciliationAt
     )
     let reconciliation = try await fixture.store.claimIngestionReconciliationRequests(
       environment: "dev",
       sourceGeneration: Fixture.generation,
       workerId: "reconciliation-worker",
       limit: 1,
-      leaseUntil: now.addingTimeInterval(60),
-      at: now.addingTimeInterval(1)
+      leaseUntil: reconciliationAt.addingTimeInterval(60),
+      at: reconciliationAt
     )
 
     #expect(laterInbox.isEmpty)
@@ -760,7 +761,7 @@ struct JetstreamInboxProjectionWorkerTests {
     #expect(try fixture.appliedWatermark() == nil)
 
     let restorer = SuccessfulRestorer()
-    #expect(try await fixture.worker(restorer: restorer).drainOnce(at: now.addingTimeInterval(1)) == 1)
+    #expect(try await fixture.worker(restorer: restorer).drainOnce(at: Date()) == 1)
     #expect(await restorer.restoredDids() == ["did:plc:poison"])
     #expect(try fixture.incidentStatus() == "resolved")
     #expect(try fixture.appliedWatermark() == 500)
@@ -1206,7 +1207,7 @@ struct JetstreamInboxProjectionWorkerTests {
       reconciliationMaxConcurrency: 1
     )
     let drain = Task {
-      try await worker.drainReconciliationsUntilIdle(at: now.addingTimeInterval(1))
+      try await worker.drainReconciliationsUntilIdle(at: Date())
     }
 
     #expect(await Self.eventually { await restorer.startedCount == 1 })
@@ -1379,7 +1380,7 @@ struct JetstreamInboxProjectionWorkerTests {
         restorer: restorer,
         maxConcurrency: 3,
         reconciliationMaxConcurrency: 2
-      ).drainOnce(at: now.addingTimeInterval(1))
+      ).drainOnce(at: Date())
     }
 
     #expect(await Self.eventually { await restorer.startedCount == 2 })
