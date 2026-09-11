@@ -161,6 +161,18 @@ public actor OperationsTelemetryBuffer {
         return batch.count
       } catch {
         consecutiveFailures += 1
+        guard PostgresTelemetryRetryPolicy.canRetry(error) else {
+          // An unknown commit outcome must remain visible instead of replaying an
+          // additive batch and potentially counting every metric twice.
+          recordDrop(count: batch.count)
+          logger.error(
+            "Telemetry export stopped without a safe retry",
+            metadata: [
+              "error_type": .string(OperationsRedactor.errorCategory(error)),
+              "batch_size": .string(String(batch.count)),
+            ])
+          return 0
+        }
         guard attempt + 1 < maxRetryAttempts else {
           if PostgresTelemetryRetryPolicy.canDefer(error) {
             // A short database lock is not telemetry loss. Keep the same FIFO batch
