@@ -91,10 +91,15 @@ def sample(config, pg, environment=os.environ, cgroup=Path("/sys/fs/cgroup")):
     free = os.statvfs(mount)
     queue_sql = []
     for table in ("wire_ingestion_inbox", "appview_ingestion_inbox"):
-        queue_sql.append("'%s', (SELECT json_build_object('rows_lower_bound', " % table
-            + "(SELECT count(*) FROM (SELECT 1 FROM public.%s WHERE status IN ('pending','retry','leased') LIMIT 10001) q), " % table
-            + "'oldest_seconds', coalesce((SELECT extract(epoch FROM now()-staged_at) FROM public.%s " % table
-            + "WHERE status IN ('pending','retry','leased') ORDER BY staged_at LIMIT 1),0)))")
+        queue_sql.append(f"""'{table}', (SELECT json_build_object(
+          'rows_lower_bound', (SELECT count(*) FROM (SELECT 1 FROM public.{table}
+            WHERE status IN ('pending','retry','leased') LIMIT 10001) q),
+          'oldest_seconds', coalesce((SELECT extract(epoch FROM now()-staged_at) FROM public.{table}
+            WHERE status IN ('pending','retry','leased') ORDER BY staged_at LIMIT 1),0),
+          'unreconciled_dead_letters', (SELECT json_build_object(
+            'rows_lower_bound', count(*), 'latest_at', extract(epoch FROM max(dead_lettered_at)))
+            FROM (SELECT dead_lettered_at FROM public.{table}
+              WHERE status = 'dead_letter' AND reconciled_at IS NULL LIMIT 10001) d)))""")
     database = pg.query(url, """SELECT json_build_object(
       'postmaster_started', pg_postmaster_start_time(),
       'database', current_database(), 'database_bytes', pg_database_size(current_database()),
@@ -159,9 +164,26 @@ class Round:
             raise Error("Load interval does not match this telemetry sample")
         if not math.isfinite(load["p95_ms"]) or load["p95_ms"] < 0 or load["attempted"] <= 0 or load["successful"] != load["attempted"] or load["p95_ms"] > c["maximum_p95_ms"]:
             raise Error("Missing successful load, request errors, or latency stop threshold exceeded")
-        for queue in sample["db"]["queues"].values():
+        for name, queue in sample["db"]["queues"].items():
             if queue["oldest_seconds"] > c["maximum_queue_age_seconds"] or queue["rows_lower_bound"] > c["maximum_queue_rows"]:
                 raise Error("Queue age/size stop threshold exceeded")
+            dead = queue.get("unreconciled_dead_letters")
+            if not isinstance(dead, dict):
+                raise Error("Unreconciled dead-letter evidence is missing")
+            count, latest = dead.get("rows_lower_bound"), dead.get("latest_at")
+            if (type(count) is not int or not 0 <= count < 10001 or "latest_at" not in dead
+                    or (count == 0 and latest is not None)
+                    or (count > 0 and (isinstance(latest, bool) or not isinstance(latest, (int, float))
+                                      or not math.isfinite(latest) or latest > sample["time"]))):
+                raise Error("Unreconciled dead-letter evidence is invalid or truncated")
+            if self.last:
+                previous_dead = self.last["db"]["queues"][name]["unreconciled_dead_letters"]
+                # Keep the restored historical baseline. Fail if failed work replaces
+                # actionable rows, even when simultaneous reconciliation hides its count.
+                if (count > previous_dead["rows_lower_bound"] or
+                        (latest is not None and (previous_dead["latest_at"] is None
+                                                 or latest > previous_dead["latest_at"]))):
+                    raise Error("New unreconciled dead letters appeared during the memory trial")
         self.phases.add(load["phase"])
         if self.first is None:
             self.first = sample

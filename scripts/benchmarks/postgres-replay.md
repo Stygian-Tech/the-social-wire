@@ -157,3 +157,15 @@ the first cycle is cold. WAL is cluster-wide, so concurrent clients invalidate
 attribution. After every test process has stopped, the enclosing operator or
 harness removes only the database it created. See `fixtures/README.md` for scope
 and cleanup details.
+
+The replay now writes `acceptance.json` alongside the raw variant results.
+It compares healthy read p95 and unsuccessful-read proportions, rejecting a p95
+regression above 10% or a higher unsuccessful-read proportion even when both
+final queues are empty. Each result retains a peak backlog row lower bound (the query caps at 10,001)
+and peak age. Startup
+failures remain counted; latency percentiles use nonempty, non-degraded ranked
+responses matching the local active generation. Missing latency or mismatched
+seed evidence cannot pass. This archive experiment does not establish memory,
+restore, or billing acceptance; use the dedicated memory-trial runner for
+load/restart gates, verify restores independently, and collect aligned Railway
+resource costs separately.
