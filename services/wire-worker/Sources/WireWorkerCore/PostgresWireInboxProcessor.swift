@@ -1834,7 +1834,15 @@ struct PostgresWireInboxProcessor: Sendable {
         eligible = wire_items.eligible AND EXCLUDED.eligible,
         source_confidence = GREATEST(wire_items.source_confidence, EXCLUDED.source_confidence),
         expires_at = GREATEST(wire_items.expires_at, EXCLUDED.expires_at), updated_at = EXCLUDED.updated_at
-      WHERE ROW(
+      WHERE CASE
+        -- Advancing observations already require an update; avoid merging JSON twice.
+        WHEN wire_items.last_seen_at IS DISTINCT FROM EXCLUDED.last_seen_at
+          OR wire_items.last_signal_at IS DISTINCT FROM
+            COALESCE(EXCLUDED.last_signal_at, wire_items.last_signal_at)
+          OR wire_items.expires_at IS DISTINCT FROM
+            GREATEST(wire_items.expires_at, EXCLUDED.expires_at)
+        THEN TRUE
+        ELSE ROW(
         wire_items.canonical_url,
         wire_items.representative_uri,
         wire_items.publication_id,
@@ -1855,11 +1863,8 @@ struct PostgresWireInboxProcessor: Sendable {
         wire_items.commercial_class,
         wire_items.commercial_reasons,
         wire_items.published_at,
-        wire_items.last_seen_at,
-        wire_items.last_signal_at,
         wire_items.eligible,
-        wire_items.source_confidence,
-        wire_items.expires_at)
+        wire_items.source_confidence)
         IS DISTINCT FROM ROW(
         EXCLUDED.canonical_url,
         COALESCE(wire_items.representative_uri, EXCLUDED.representative_uri),
@@ -1918,11 +1923,9 @@ struct PostgresWireInboxProcessor: Sendable {
           WHEN wire_items.commercial_score > EXCLUDED.commercial_score
           THEN wire_items.commercial_reasons ELSE EXCLUDED.commercial_reasons END,
         COALESCE(wire_items.published_at, EXCLUDED.published_at),
-        EXCLUDED.last_seen_at,
-        COALESCE(EXCLUDED.last_signal_at, wire_items.last_signal_at),
         wire_items.eligible AND EXCLUDED.eligible,
-        GREATEST(wire_items.source_confidence, EXCLUDED.source_confidence),
-        GREATEST(wire_items.expires_at, EXCLUDED.expires_at))
+        GREATEST(wire_items.source_confidence, EXCLUDED.source_confidence))
+      END
       RETURNING canonical_key, canonical_url, eligible, expires_at
       )
       INSERT INTO wire_link_metadata_cache
