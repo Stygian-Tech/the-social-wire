@@ -236,10 +236,10 @@ struct WireGenerationPersistenceTests {
     }
   }
 
-  @Test("identical metadata refreshes avoid new row versions without suppressing expiry extensions")
+  @Test("identical metadata refreshes coalesce hourly expiry extensions")
   func metadataNoOp() async throws {
     try await withStore { _, pool, logger in
-      let now = Date()
+      let now = Date(timeIntervalSince1970: floor(Date().timeIntervalSince1970 / 3_600) * 3_600 + 60)
       let suffix = UUID().uuidString.lowercased()
       let key = "metadata-\(suffix)"
       try await seedItems([key], at: now, pool: pool, logger: logger)
@@ -253,6 +253,8 @@ struct WireGenerationPersistenceTests {
       try await cache.seedEmbedded(canonicalKey: key, metadata: metadata, asOf: now)
       #expect(try await metadataVersion(key: key, pool: pool, logger: logger) == originalVersion)
       try await cache.seedEmbedded(canonicalKey: key, metadata: metadata, asOf: now.addingTimeInterval(60))
+      #expect(try await metadataVersion(key: key, pool: pool, logger: logger) == originalVersion)
+      try await cache.seedEmbedded(canonicalKey: key, metadata: metadata, asOf: now.addingTimeInterval(3_600))
       #expect(try await metadataVersion(key: key, pool: pool, logger: logger) != originalVersion)
     }
   }
