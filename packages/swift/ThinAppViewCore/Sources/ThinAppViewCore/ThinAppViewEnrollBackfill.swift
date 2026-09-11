@@ -261,6 +261,18 @@ public struct ThinAppViewEnrollBackfill: Sendable {
     shouldContinue: @Sendable @escaping () async -> Bool = { true },
     onProgress: @Sendable @escaping (PDSReconciliationProgress) async -> Void = { _ in }
   ) async throws -> PDSReconciliationReport {
+    try await reconcile(authorDids: authorDids, collections: collections, options: options,
+      shouldContinue: shouldContinue, onProgress: onProgress, recovery: nil)
+  }
+
+  func reconcile(
+    authorDids: [String],
+    collections: [String] = ThinAppViewConfig.canonicalContentCollections,
+    options: PDSReconciliationOptions,
+    shouldContinue: @Sendable @escaping () async -> Bool = { true },
+    onProgress: @Sendable @escaping (PDSReconciliationProgress) async -> Void = { _ in },
+    recovery: PDSRepositoryRecovery?
+  ) async throws -> PDSReconciliationReport {
     try Task.checkCancellation()
     let authorScope = Self.validateAuthorScope(
       authorDids,
@@ -313,7 +325,8 @@ public struct ThinAppViewEnrollBackfill: Sendable {
             options: options,
             transport: rateLimitedTransport,
             shouldContinue: shouldContinue,
-            onProgress: onProgress
+            onProgress: onProgress,
+            recovery: recovery
           )
         }
       }
@@ -409,7 +422,8 @@ public struct ThinAppViewEnrollBackfill: Sendable {
     options: PDSReconciliationOptions,
     transport: any PDSHTTPTransport,
     shouldContinue: @Sendable @escaping () async -> Bool,
-    onProgress: @Sendable @escaping (PDSReconciliationProgress) async -> Void
+    onProgress: @Sendable @escaping (PDSReconciliationProgress) async -> Void,
+    recovery: PDSRepositoryRecovery?
   ) async throws -> PDSAuthorReconciliationResult {
     try Task.checkCancellation()
     guard await shouldContinue() else {
@@ -447,6 +461,7 @@ public struct ThinAppViewEnrollBackfill: Sendable {
       )
     }
 
+    try await recovery?.validateEndpoint(pds)
     var collectionResults: [PDSCollectionReconciliationResult] = []
     var recordBudget = PDSAuthorRecordBudget(limit: options.recordCapPerAuthor)
     for collection in collections {
@@ -459,7 +474,14 @@ public struct ThinAppViewEnrollBackfill: Sendable {
           issues: [.init(kind: .cancelled, detail: "cancelled_between_collections")]
         )
       }
+      let previous = await recovery?.collection(collection)
+      if let previous, previous.complete {
+        collectionResults.append(.init(collection: collection, observedCount: previous.observedCount,
+          indexedCount: previous.indexedCount, truncated: false, issues: []))
+        continue
+      }
       guard recordBudget.remaining > 0 else {
+        if recovery != nil { throw PDSRepositoryRecoveryError.yielded }
         collectionResults.append(
           PDSCollectionReconciliationResult(
             collection: collection,
@@ -479,10 +501,11 @@ public struct ThinAppViewEnrollBackfill: Sendable {
         recordBudget: recordBudget.remaining,
         transport: transport,
         shouldContinue: shouldContinue,
-        onProgress: onProgress
+        onProgress: onProgress,
+        recovery: recovery
       )
       collectionResults.append(result)
-      recordBudget.consume(result.observedCount)
+      recordBudget.consume(result.observedCount - (previous?.observedCount ?? 0))
     }
     return PDSAuthorReconciliationResult(
       authorDid: authorDid,
@@ -500,10 +523,12 @@ public struct ThinAppViewEnrollBackfill: Sendable {
     recordBudget: Int,
     transport: any PDSHTTPTransport,
     shouldContinue: @Sendable @escaping () async -> Bool,
-    onProgress: @Sendable @escaping (PDSReconciliationProgress) async -> Void
+    onProgress: @Sendable @escaping (PDSReconciliationProgress) async -> Void,
+    recovery: PDSRepositoryRecovery?
   ) async throws -> PDSCollectionReconciliationResult {
-    var cursor: String?
-    var seenCursors: Set<String> = []
+    let previous = await recovery?.collection(collection)
+    var cursor: String? = previous?.cursor
+    var seenCursors: Set<String> = previous?.seenCursors ?? []
     var observedCount = 0
     var count = 0
     var issues: [PDSReconciliationIssue] = []
@@ -563,13 +588,18 @@ public struct ThinAppViewEnrollBackfill: Sendable {
         break
       }
 
+      if recovery != nil, records.count > Self.listRecordsPageLimit(for: collection) {
+        issues.append(.init(kind: .malformedResponse, detail: "page_exceeds_requested_limit"))
+        break
+      }
+      var pageURIs: [String] = []
       for row in records {
         try Task.checkCancellation()
         guard await shouldContinue() else {
           issues.append(.init(kind: .cancelled, detail: "cancelled_during_page"))
           break
         }
-        if observedCount >= recordBudget {
+        if recovery == nil, observedCount >= recordBudget {
           truncated = true
           issues.append(.init(kind: .recordCapReached, detail: "record_cap_per_author"))
           break
@@ -601,6 +631,7 @@ public struct ThinAppViewEnrollBackfill: Sendable {
             ingestionSource: "pds_reconciliation"
           )
           count += 1
+          pageURIs.append(uri)
           await onProgress(
             PDSReconciliationProgress(
               authorDid: authorDid,
@@ -630,6 +661,22 @@ public struct ThinAppViewEnrollBackfill: Sendable {
         issues.append(.init(kind: .malformedResponse, detail: reason))
         break pageLoop
       }
+      if let recovery {
+        // Only fully applied pages advance. A crash replays at most one idempotent page, and a
+        // malformed/indexing-failed record can never disappear behind a saved continuation.
+        guard issues.isEmpty else { break }
+        var checkpoint = PDSRepositoryRecoveryState.Collection()
+        checkpoint.cursor = nextCursor
+        checkpoint.seenCursors = seenCursors
+        if let nextCursor { checkpoint.seenCursors.insert(nextCursor) }
+        checkpoint.observedCount = (previous?.observedCount ?? 0) + observedCount
+        checkpoint.indexedCount = (previous?.indexedCount ?? 0) + count
+        checkpoint.complete = nextCursor == nil
+        try await recovery.checkpoint(collection: collection, value: checkpoint, observedURIs: pageURIs)
+        if observedCount >= recordBudget, nextCursor != nil {
+          throw PDSRepositoryRecoveryError.yielded
+        }
+      }
       if options.recentOnly {
         truncated = nextCursor != nil
         break
@@ -646,8 +693,8 @@ public struct ThinAppViewEnrollBackfill: Sendable {
 
     return PDSCollectionReconciliationResult(
       collection: collection,
-      observedCount: observedCount,
-      indexedCount: count,
+      observedCount: (previous?.observedCount ?? 0) + observedCount,
+      indexedCount: (previous?.indexedCount ?? 0) + count,
       truncated: truncated,
       issues: issues,
       rateLimitRetries: rateLimitRetries

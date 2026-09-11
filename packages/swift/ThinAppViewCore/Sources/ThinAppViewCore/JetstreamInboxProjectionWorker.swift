@@ -331,6 +331,12 @@ public final class JetstreamInboxProjectionWorker: Sendable {
         }
       }
       return true
+    } catch PDSRepositoryRecoveryError.yielded {
+      do {
+        guard let recoveryStore = store as? any PDSRepositoryRecoveryStore else { return false }
+        try await recoveryStore.yieldRepositoryRecovery(recoveryContext(item))
+      } catch { return false }
+      return false
     } catch is CancellationError {
       return false
     } catch {
@@ -394,7 +400,7 @@ public final class JetstreamInboxProjectionWorker: Sendable {
       guard let repositoryRestorer else {
         throw JetstreamInboxProjectionError.repositoryReconciliationUnavailable
       }
-      let report = try await repositoryRestorer.restoreCurrentRepository(repoDid: sync.did)
+      let report = try await repositoryRestorer.restoreCurrentRepository(repoDid: sync.did, recovery: recoveryContext(item))
       guard report.complete else {
         throw JetstreamInboxProjectionError.repositoryReconciliationIncomplete
       }
@@ -553,6 +559,12 @@ public final class JetstreamInboxProjectionWorker: Sendable {
         }
       }
       return true
+    } catch PDSRepositoryRecoveryError.yielded {
+      do {
+        guard let recoveryStore = store as? any PDSRepositoryRecoveryStore else { return false }
+        try await recoveryStore.yieldRepositoryRecovery(recoveryContext(request))
+      } catch { return false }
+      return false
     } catch is CancellationError {
       return false
     } catch {
@@ -565,7 +577,7 @@ public final class JetstreamInboxProjectionWorker: Sendable {
           requestId: request.id,
           workerId: workerId,
           leaseToken: request.leaseToken,
-          failureReason: String(describing: error),
+          failureReason: Self.failureReason(error),
           nextAttemptAt: Date().addingTimeInterval(delay),
           at: Date()
         )
@@ -585,7 +597,7 @@ public final class JetstreamInboxProjectionWorker: Sendable {
     guard let repositoryRestorer else {
       throw JetstreamInboxProjectionError.repositoryReconciliationUnavailable
     }
-    let report = try await repositoryRestorer.restoreCurrentRepository(repoDid: request.repoDid)
+    let report = try await repositoryRestorer.restoreCurrentRepository(repoDid: request.repoDid, recovery: recoveryContext(request))
     guard report.complete else {
       throw JetstreamInboxProjectionError.repositoryReconciliationIncomplete
     }
@@ -642,7 +654,7 @@ public final class JetstreamInboxProjectionWorker: Sendable {
   private func handleFailure(_ error: any Error, item: AppViewIngestionInboxItem) async -> Bool {
     let attempt = item.attemptCount + 1
     let category = Self.failureCategory(error)
-    let reason = String(describing: error)
+    let reason = Self.failureReason(error)
     do {
       if attempt >= 10 {
         try await store.deadLetterIngestionInbox(
@@ -703,6 +715,37 @@ public final class JetstreamInboxProjectionWorker: Sendable {
       )
       return false
     }
+  }
+
+  private func recoveryContext(_ item: AppViewIngestionInboxItem) -> PDSRepositoryRecoveryContext {
+    .init(environment: item.environment, sourceGeneration: item.sourceGeneration,
+      sequence: item.sequence, repoDid: item.repoDid, requestId: nil,
+      workerId: workerId, leaseToken: item.leaseToken)
+  }
+
+  private func recoveryContext(_ request: AppViewIngestionReconciliationRequest)
+    -> PDSRepositoryRecoveryContext {
+    .init(environment: request.environment, sourceGeneration: request.sourceGeneration,
+      sequence: request.triggerSequence, repoDid: request.repoDid, requestId: request.id,
+      workerId: workerId, leaseToken: request.leaseToken)
+  }
+
+  static func failureReason(_ error: any Error) -> String {
+    if case TapRepositoryRestorationError.incomplete(let report) = error {
+      let kinds = Set(report.authors.flatMap { author in
+        author.issues.map(\.kind.rawValue) + author.collections.flatMap { $0.issues.map(\.kind.rawValue) }
+      }).sorted()
+      return "repository_reconciliation_incomplete: " + kinds.joined(separator: ",")
+    }
+    if let recovery = error as? PDSRepositoryRecoveryError {
+      switch recovery {
+      case .yielded: return "repository_recovery_yielded"
+      case .pageLimitExceeded: return "repository_recovery_page_limit_exceeded"
+      case .unavailable: return "repository_recovery_unavailable"
+      }
+    }
+    // Error descriptions may contain a full SQL statement, repository data, or a huge report.
+    return failureCategory(error)
   }
 
   static func retryDelaySeconds(attempt: Int, jitterUnit: Double) -> TimeInterval {

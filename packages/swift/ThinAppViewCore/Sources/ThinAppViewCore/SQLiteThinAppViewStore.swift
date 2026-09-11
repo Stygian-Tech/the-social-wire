@@ -4,7 +4,7 @@ import Logging
 import OperationsCore
 
 public actor SQLiteThinAppViewStore: ThinAppViewStore {
-  private let db: DatabasePool
+  let db: DatabasePool
   private let logger: Logger
 
 public init(path dbPath: String, logger: Logger) throws {
@@ -14,6 +14,7 @@ public init(path dbPath: String, logger: Logger) throws {
     self.db = try DatabasePool(path: dbPath, configuration: config)
     try db.write { db in
       try Self.migrate(db)
+      try Self.migrateRepositoryRecovery(db)
     }
     logger.info("SQLiteThinAppViewStore initialised", metadata: ["path": .string(dbPath)])
   }
