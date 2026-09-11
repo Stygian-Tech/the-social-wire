@@ -51,6 +51,7 @@ public actor OperationsTelemetryBuffer {
   private let now: @Sendable () -> Date
   private var queue: [(signal: Signal, enqueuedAt: ContinuousClock.Instant)] = []
   private var inFlightCount = 0
+  private var retryNotBefore: ContinuousClock.Instant?
   public private(set) var droppedCount = 0
   public private(set) var consecutiveFailures = 0
   public private(set) var lastSuccessfulExportAt: Date?
@@ -124,16 +125,23 @@ public actor OperationsTelemetryBuffer {
     guard queue.count >= batchSize || oldest.enqueuedAt.duration(to: now) >= batchDelay else {
       return 0
     }
-    return await flushOnce()
+    return await flushOnce(at: now)
   }
 
   @discardableResult
   public func flushOnce() async -> Int {
+    await flushOnce(at: .now)
+  }
+
+  @discardableResult
+  func flushOnce(at instant: ContinuousClock.Instant) async -> Int {
     // Actor methods can reenter while the exporter or a retry is suspended. Keep the
     // original batch counted against capacity and preserve FIFO across every retry.
     guard inFlightCount == 0, !queue.isEmpty else { return 0 }
+    if let retryNotBefore, instant < retryNotBefore { return 0 }
     let count = min(batchSize, queue.count)
-    let batch = queue.prefix(count).map(\.signal)
+    let queuedBatch = Array(queue.prefix(count))
+    let batch = queuedBatch.map(\.signal)
     queue.removeFirst(count)
     inFlightCount = batch.count
     defer { inFlightCount = 0 }
@@ -141,6 +149,7 @@ public actor OperationsTelemetryBuffer {
     for attempt in 0..<maxRetryAttempts {
       do {
         try await exporter(batch)
+        retryNotBefore = nil
         consecutiveFailures = 0
         let exportedAt = now()
         lastSuccessfulExportAt = exportedAt
@@ -153,6 +162,20 @@ public actor OperationsTelemetryBuffer {
       } catch {
         consecutiveFailures += 1
         guard attempt + 1 < maxRetryAttempts else {
+          if PostgresTelemetryRetryPolicy.canDefer(error) {
+            // A short database lock is not telemetry loss. Keep the same FIFO batch
+            // within its existing capacity reservation, then yield before retrying.
+            // Overflow remains visible through droppedCount; this never grows memory.
+            queue.insert(contentsOf: queuedBatch, at: 0)
+            retryNotBefore = ContinuousClock.now.advanced(by: .seconds(5))
+            logger.warning(
+              "Telemetry export deferred after rolled-back contention",
+              metadata: [
+                "error_type": .string(OperationsRedactor.errorCategory(error)),
+                "batch_size": .string(String(batch.count)),
+              ])
+            return 0
+          }
           recordDrop(count: batch.count)
           logger.error(
             "Telemetry export exhausted bounded retries",
