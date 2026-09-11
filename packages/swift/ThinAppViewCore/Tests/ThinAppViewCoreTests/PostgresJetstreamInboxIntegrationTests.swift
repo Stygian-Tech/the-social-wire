@@ -832,9 +832,10 @@ final class PostgresInboxFixture: @unchecked Sendable {
     try await execute(
       """
       INSERT INTO appview_ingestion_reconciliation_requests
-        (environment, id, source_generation, repo_did, status, reason, trigger_seq, created_at, updated_at)
+        (environment, id, source_generation, repo_did, status, reason, trigger_seq,
+         next_attempt_at, created_at, updated_at)
       VALUES (\(environment), \("\(sourceGeneration):\(sequence)"), \(sourceGeneration),
-              'did:plc:reconciliation', \(status), 'integration', \(sequence), \(now), \(now))
+              'did:plc:reconciliation', \(status), 'integration', \(sequence), \(now), \(now), \(now))
       """
     )
   }
