@@ -811,11 +811,20 @@ type Lease struct {
 }
 
 func (p *Postgres) AcquireLease(ctx context.Context, name, ownerID string, ttl time.Duration) (Lease, error) {
+	// Avoid taking the live owner's row lock for a known losing contender. The
+	// conflict predicate remains authoritative if the snapshot races acquisition,
+	// renewal, or release; the precheck alone never grants ownership.
 	row := p.db.QueryRowContext(ctx, `
 		INSERT INTO appview_ingestion_leases
 		  (environment, lease_name, source_generation, owner_id, fencing_token,
 		   acquired_at, lease_expires_at, updated_at)
-		VALUES ($1, $2, $3, $4, 1, NOW(), NOW() + $5::interval, NOW())
+		SELECT $1, $2, $3, $4, 1, NOW(), NOW() + $5::interval, NOW()
+		WHERE NOT EXISTS (
+		  SELECT 1 FROM appview_ingestion_leases held
+		  WHERE held.environment = $1 AND held.lease_name = $2
+		    AND held.owner_id <> $4 AND held.released_at IS NULL
+		    AND held.lease_expires_at > NOW()
+		)
 		ON CONFLICT (environment, lease_name) DO UPDATE SET
 		  source_generation = EXCLUDED.source_generation,
 		  owner_id = EXCLUDED.owner_id,
