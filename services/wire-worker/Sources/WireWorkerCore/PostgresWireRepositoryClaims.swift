@@ -79,39 +79,53 @@ extension PostgresWireInboxProcessor: WireInboxRepositoryProcessing {
   private func claimRepositoryHeads(
     asOf: Date, limit: Int, after: WireInboxRepository?
   ) async throws -> [WireInboxEvent] {
-    let token = UUID().uuidString.lowercased()
-    var query = PostgresQuery.StringInterpolation(literalCapacity: 3_000, interpolationCount: 12)
-    query.appendLiteral(
-      """
-      WITH repository_heads AS MATERIALIZED (
-        SELECT DISTINCT ON (candidate.environment, candidate.source_generation, candidate.repo_did)
-               candidate.environment, candidate.source_generation, candidate.repo_did, candidate.seq
-        FROM wire_ingestion_inbox candidate
-        WHERE candidate.status IN ('pending', 'leased', 'retry')
-      """)
-    // Omit absent predicates entirely: nullable-parameter ORs force generic
-    // plans to scan and sort unrelated source generations. Values stay bound.
-    if let sourceScope {
-      query.appendLiteral(" AND candidate.environment = ")
-      query.appendInterpolation(sourceScope.environment)
-      query.appendLiteral(" AND candidate.source_generation = ANY(")
-      query.appendInterpolation(sourceScope.sourceGenerations)
-      query.appendLiteral(")")
-    }
-    if let after {
-      query.appendLiteral(
-        " AND (candidate.environment, candidate.source_generation, candidate.repo_did) > (")
-      query.appendInterpolation(after.environment)
-      query.appendLiteral(", ")
-      query.appendInterpolation(after.sourceGeneration)
-      query.appendLiteral(", ")
-      query.appendInterpolation(after.repoDID)
-      query.appendLiteral(")")
-    }
-    query.appendLiteral(
-      """
+    let rows = try await pool.query(
+      repositoryHeadsQuery(asOf: asOf, limit: limit, after: after), logger: logger)
+    return try await Self.decodeClaimedEvents(rows)
+  }
 
-        ORDER BY candidate.environment, candidate.source_generation, candidate.repo_did, candidate.seq
+  func repositoryHeadsQuery(
+    asOf: Date, limit: Int, after: WireInboxRepository?
+  ) -> PostgresQuery {
+    let token = UUID().uuidString.lowercased()
+    var query = PostgresQuery.StringInterpolation(literalCapacity: 4_000, interpolationCount: 16)
+    // Seek directly to the next repository using the unfinished-head index.
+    // DISTINCT ON reads every queued event in a deep repository on each admission.
+    query.appendLiteral("WITH RECURSIVE repository_heads AS ((")
+    appendRepositoryHeadScan(to: &query)
+    if let after {
+      if let sourceScope, sourceScope.environment == after.environment,
+        sourceScope.sourceGenerations.count == 1,
+        sourceScope.sourceGenerations.first == after.sourceGeneration
+      {
+        query.appendLiteral(" AND candidate.repo_did > ")
+        query.appendInterpolation(after.repoDID)
+      } else {
+        query.appendLiteral(
+          " AND (candidate.environment, candidate.source_generation, candidate.repo_did) > (")
+        query.appendInterpolation(after.environment)
+        query.appendLiteral(", ")
+        query.appendInterpolation(after.sourceGeneration)
+        query.appendLiteral(", ")
+        query.appendInterpolation(after.repoDID)
+        query.appendLiteral(")")
+      }
+    }
+    query.appendLiteral(" ORDER BY candidate.environment, candidate.source_generation, candidate.repo_did, candidate.seq LIMIT 1)")
+    query.appendLiteral(" UNION ALL SELECT successor.* FROM repository_heads previous CROSS JOIN LATERAL (")
+    appendRepositoryHeadScan(to: &query)
+    if let sourceScope, sourceScope.sourceGenerations.count == 1 {
+      query.appendLiteral(" AND candidate.repo_did > previous.repo_did")
+    } else if sourceScope != nil {
+      query.appendLiteral(" AND (candidate.source_generation, candidate.repo_did) > (previous.source_generation, previous.repo_did)")
+    } else {
+      query.appendLiteral(" AND (candidate.environment, candidate.source_generation, candidate.repo_did) > (previous.environment, previous.source_generation, previous.repo_did)")
+    }
+    query.appendLiteral(
+      """
+       ORDER BY candidate.environment, candidate.source_generation, candidate.repo_did, candidate.seq
+       LIMIT 1
+      ) successor
       ), candidates AS (
         SELECT candidate.environment, candidate.source_generation, candidate.seq
         FROM repository_heads head JOIN wire_ingestion_inbox candidate
@@ -155,8 +169,28 @@ extension PostgresWireInboxProcessor: WireInboxRepositoryProcessing {
              lease_token, attempt_count
       FROM claimed ORDER BY environment, source_generation, repo_did
       """)
-    let rows = try await pool.query(PostgresQuery(stringInterpolation: query), logger: logger)
-    return try await Self.decodeClaimedEvents(rows)
+    return PostgresQuery(stringInterpolation: query)
+  }
+
+  private func appendRepositoryHeadScan(to query: inout PostgresQuery.StringInterpolation) {
+    query.appendLiteral(
+      """
+      SELECT candidate.environment, candidate.source_generation, candidate.repo_did, candidate.seq
+      FROM wire_ingestion_inbox candidate
+      WHERE candidate.status IN ('pending', 'leased', 'retry')
+      """)
+    if let sourceScope {
+      query.appendLiteral(" AND candidate.environment = ")
+      query.appendInterpolation(sourceScope.environment)
+      if sourceScope.sourceGenerations.count == 1, let generation = sourceScope.sourceGenerations.first {
+        query.appendLiteral(" AND candidate.source_generation = ")
+        query.appendInterpolation(generation)
+      } else {
+        query.appendLiteral(" AND candidate.source_generation = ANY(")
+        query.appendInterpolation(sourceScope.sourceGenerations)
+        query.appendLiteral(")")
+      }
+    }
   }
 
   private static func decodeClaimedEvents(_ rows: PostgresRowSequence) async throws

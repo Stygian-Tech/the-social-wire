@@ -56,6 +56,39 @@ extension WirePostgresIntegrationTests {
       sourceScope: scoped
         ? WireInboxSourceScope(environment: environment, sourceGenerations: [generation]) : nil)
 
+    if repositoryAdmission {
+      try await pool.query("VACUUM ANALYZE wire_ingestion_inbox", logger: logger)
+      enum PlanRollback: Error { case complete }
+      let cursors: [WireInboxRepository?] = [nil, .init(
+        environment: environment, sourceGeneration: generation, repoDID: "did:example:deep-1")]
+      for cursor in cursors {
+        do {
+          try await pool.withTransaction(logger: logger) { connection in
+            // Exercise the reusable-plan setting used after statements warm up.
+            try await connection.query("SET LOCAL plan_cache_mode = force_generic_plan", logger: logger)
+            let query = processor.repositoryHeadsQuery(asOf: now, limit: 8, after: cursor)
+            let rows = try await connection.query(
+              PostgresQuery(unsafeSQL: "EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) " + query.sql, binds: query.binds),
+              logger: logger)
+            for try await row in rows {
+              let json = try row.decode(String.self)
+              let plans = try #require(JSONSerialization.jsonObject(with: Data(json.utf8)) as? [[String: Any]])
+              let plan = try #require(plans.first?["Plan"] as? [String: Any])
+              let hits = try #require(plan["Shared Hit Blocks"] as? Int)
+              let reads = try #require(plan["Shared Read Blocks"] as? Int)
+              // Admission must seek four repository heads, not walk 120k queued events.
+              #expect(hits + reads < 5_000)
+              #expect(!json.contains("Seq Scan"))
+              print("Deep repository admission: \(hits + reads) shared blocks")
+            }
+            throw PlanRollback.complete
+          }
+        } catch let error as PostgresTransactionError {
+          guard error.closureError is PlanRollback, error.rollbackError == nil else { throw error }
+        }
+      }
+    }
+
     // Exercise the continuously replenished runtime's admission path as well
     // as the older batch API against the same deep FIFO and lease barriers.
     func process(asOf: Date) async throws -> Int {
