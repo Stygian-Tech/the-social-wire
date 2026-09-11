@@ -14,6 +14,89 @@ import Testing
   )
 )
 struct PostgresTelemetryIntegrationTests {
+  @Test("a blocked event does not hold shared metric keys and rolled-back telemetry survives retry exhaustion")
+  func blockedEventDoesNotBlockMetrics() async throws {
+    try await withStore { store, pool, logger in
+      let name = "identity-lock.\(UUID().uuidString)"
+      let at = Date()
+      let metric = OperationsTelemetrySignal.metric(.init(
+        name: name, value: 7, dimensions: [:], recordedAt: at))
+      let event = OperationsTelemetrySignal.event(.init(
+        id: name, service: "test", environment: "prod", instanceId: "test", name: name))
+      let buffer = OperationsTelemetryBuffer(
+        store: store, capacity: 3, batchSize: 2, maxRetryAttempts: 1, logger: logger)
+      #expect(await buffer.enqueue(metric))
+      #expect(await buffer.enqueue(event))
+      try await pool.withTransaction(logger: logger) { blocker in
+        try await blocker.query(
+          """
+          INSERT INTO operations_events
+            (id, service, environment, instance_id, event_name, occurred_at, attributes, expires_at)
+          VALUES (\(name), 'test', 'prod', 'test', \(name), \(at), '{}'::jsonb,
+            \(at.addingTimeInterval(86400)))
+          """, logger: logger)
+        let flush = Task { await buffer.flushOnce() }
+        var waiting = false
+        for _ in 0..<30 {
+          let rows = try await pool.query(
+            """
+            SELECT EXISTS (SELECT 1 FROM pg_stat_activity
+              WHERE datname = current_database() AND wait_event_type = 'Lock'
+                AND query LIKE '%INSERT INTO operations_events%')
+            """, logger: logger)
+          for try await row in rows { waiting = try row.decode(Bool.self) }
+          if waiting { break }
+          try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(waiting)
+        // This fails with the former metrics-first transaction: its rollup key is
+        // locked until the unrelated event insert times out half a second later.
+        try await store.recordTelemetryBatch([metric], statementTimeoutMilliseconds: 100)
+        #expect(await buffer.enqueue(metric))
+        #expect(await flush.value == 0)
+        let deferred = await buffer.snapshot()
+        #expect(deferred.queueDepth == 3 && deferred.inFlightCount == 0)
+        #expect(deferred.droppedCount == 0 && deferred.consecutiveFailures == 1)
+        #expect(deferred.lastSuccessfulExportAt == nil)
+        // Exhaustion yields instead of immediately hammering the same lock again.
+        #expect(await buffer.flushOnce() == 0)
+      }
+      #expect(await buffer.flushOnce(at: .now.advanced(by: .seconds(6))) == 2)
+      #expect(await buffer.flushOnce() == 1)
+      let recovered = await buffer.snapshot()
+      #expect(recovered.queueDepth == 0 && recovered.droppedCount == 0)
+      #expect(recovered.consecutiveFailures == 0 && recovered.lastSuccessfulExportAt != nil)
+      let rows = try await pool.query(
+        """
+        SELECT sample_count, value_sum,
+          (SELECT COUNT(*) FROM operations_events WHERE environment = 'prod' AND id = \(name))
+        FROM operations_metric_rollups WHERE environment = 'prod' AND metric_name = \(name)
+        """, logger: logger)
+      var found = false
+      for try await row in rows {
+        let value = try row.decode((Int64, Double, Int64).self)
+        #expect(value.0 == 3 && value.1 == 21 && value.2 == 1)
+        found = true
+      }
+      #expect(found)
+    }
+  }
+
+  @Test("permanent database errors are not deferred even after a successful rollback")
+  func permanentFailureIsNotDeferred() async throws {
+    try await withStore { _, pool, logger in
+      do {
+        try await pool.withTransaction(logger: logger) { connection in
+          _ = try await connection.query("SELECT 1 / 0", logger: logger)
+        }
+        Issue.record("Expected division by zero to abort the transaction")
+      } catch let error as PostgresTransactionError {
+        #expect(error.closureError != nil && error.rollbackError == nil)
+        #expect(!PostgresTelemetryRetryPolicy.canDefer(error))
+      }
+    }
+  }
+
   @Test("blocked rollups abort promptly and roll back earlier bulk chunks before a successful retry")
   func blockedRollupExport() async throws {
     try await withStore { store, pool, logger in
@@ -31,8 +114,23 @@ struct PostgresTelemetryIntegrationTests {
           "UPDATE operations_metric_rollups SET sample_count = sample_count WHERE metric_name = \(blockedName)",
           logger: logger)
         let started = ContinuousClock.now
-        await #expect(throws: (any Error).self) {
+        do {
           try await store.recordTelemetryBatch(samples)
+          Issue.record("Expected the rollup lock to abort the transaction")
+        } catch var error as PostgresTransactionError {
+          #expect(PostgresTelemetryRetryPolicy.canDefer(error))
+          // Replaying additive metrics is safe only when rollback is confirmed.
+          error.commitError = CancellationError()
+          #expect(!PostgresTelemetryRetryPolicy.canDefer(error))
+          error.commitError = nil
+          error.rollbackError = CancellationError()
+          #expect(!PostgresTelemetryRetryPolicy.canDefer(error))
+          error.rollbackError = nil
+          error.beginError = CancellationError()
+          #expect(!PostgresTelemetryRetryPolicy.canDefer(error))
+          error.beginError = nil
+          error.closureError = CancellationError()
+          #expect(!PostgresTelemetryRetryPolicy.canDefer(error))
         }
         #expect(started.duration(to: .now) < .seconds(3))
         let rows = try await pool.query(

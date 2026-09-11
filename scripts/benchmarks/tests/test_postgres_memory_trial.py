@@ -30,7 +30,9 @@ def probe(t=0, epoch=1, phase="mixed", memory_limit_bytes=16_000_000_000):
             "memory_events": {"oom": 0, "oom_kill": 0}, "container_epoch": [epoch], "volume_free_bytes": 1000,
             "restore": {"dataset": "full_snapshot", "snapshot_sha256": c["snapshot_sha256"], "restored_bytes": 1000, "restore_epoch": "restore1"},
             "db": {"database_bytes": 1000, "postmaster_started": str(epoch), "connections": 10,
-                   "queues": {key: {"rows_lower_bound": 0, "oldest_seconds": 0} for key in ("wire_ingestion_inbox", "appview_ingestion_inbox")},
+                   "queues": {key: {"rows_lower_bound": 0, "oldest_seconds": 0,
+                                    "unreconciled_dead_letters": {"rows_lower_bound": 0, "latest_at": None}}
+                              for key in ("wire_ingestion_inbox", "appview_ingestion_inbox")},
                    "wal": {**stats, "wal_bytes": t * 10}, "wal_insert_lsn": "0/%X" % (t * 20),
                    "checkpointer": dict(stats), "archiver": {**stats, "failed_count": 0}, "database_stats": dict(stats)},
             "load": {"workload_sha256": c["workload_sha256"], "binary_manifest_sha256": c["binary_manifest_sha256"],
@@ -120,6 +122,38 @@ class MemoryTrialTests(unittest.TestCase):
                        lambda p: p.update(time=121), lambda p: p["db"].update(wal_insert_lsn="0/0")):
             r = m.Round(configuration()); r.accept(probe(30)); p = probe(60); mutate(p)
             with self.assertRaises(m.Error): r.accept(p)
+
+    def test_historical_dead_letters_survive_but_new_failed_work_cannot_look_drained(self):
+        for name in ("wire_ingestion_inbox", "appview_ingestion_inbox"):
+            def with_dead(t, count, latest):
+                p = probe(t)
+                p["db"]["queues"][name]["unreconciled_dead_letters"] = {
+                    "rows_lower_bound": count, "latest_at": latest}
+                return p
+            r = m.Round(configuration())
+            r.accept(with_dead(0, 4, -10))
+            r.accept(with_dead(30, 4, -10))
+            r.accept(with_dead(60, 3, -10))  # Reconciliation of old failures is allowed.
+            for count, latest in ((4, -10), (3, 70), (1, 70)):
+                with self.subTest(queue=name, count=count, latest=latest), self.assertRaises(m.Error):
+                    r.accept(with_dead(90, count, latest))
+            r.accept(with_dead(90, 0, None))
+            with self.assertRaises(m.Error):
+                r.accept(with_dead(120, 1, 100))
+
+    def test_missing_invalid_or_capped_dead_letter_evidence_fails_closed(self):
+        for dead in (None, {}, {"rows_lower_bound": 0},
+                     {"rows_lower_bound": True, "latest_at": None},
+                     {"rows_lower_bound": 10001, "latest_at": 0},
+                     {"rows_lower_bound": -1, "latest_at": None},
+                     {"rows_lower_bound": 1, "latest_at": None},
+                     {"rows_lower_bound": 0, "latest_at": 0},
+                     {"rows_lower_bound": 1, "latest_at": float("nan")},
+                     {"rows_lower_bound": 1, "latest_at": 999}):
+            p = probe()
+            p["db"]["queues"]["wire_ingestion_inbox"]["unreconciled_dead_letters"] = dead
+            with self.subTest(dead=dead), self.assertRaises(m.Error):
+                m.Round(configuration()).accept(p)
 
     def test_hour_excludes_restart_gap_and_requires_external_oom_receipt(self):
         r = m.Round(configuration())

@@ -10,6 +10,7 @@ import base64
 import hashlib
 import hmac
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -299,6 +300,65 @@ def process_environment(config, variant, url, generation, secrets):
     return env
 
 
+def summarize_observation(samples):
+    """Report measured reads and backlog; never infer memory acceptance from drainage."""
+    healthy = []
+    failures = 0
+    peak_count = 0
+    peak_age = 0.0
+    for sample in samples:
+        probe = sample.get("read") or {}
+        seconds = probe.get("seconds")
+        valid_latency = (isinstance(seconds, (int, float)) and not isinstance(seconds, bool)
+                         and math.isfinite(seconds) and seconds >= 0)
+        if (probe.get("status") == 200 and probe.get("matches_local_active")
+                and probe.get("source") == "ranked" and not probe.get("degraded")
+                and probe.get("item_count", 0) > 0 and valid_latency):
+            healthy.append(seconds)
+        else:
+            failures += 1
+        peak_count = max(peak_count, sample.get("actionable_count", 0))
+        peak_age = max(peak_age, sample.get("oldest_actionable_seconds") or 0)
+    healthy.sort()
+    return {"read_samples": len(samples), "healthy_reads": len(healthy),
+            "failed_reads": failures,
+            "read_p95_seconds": healthy[math.ceil(len(healthy) * .95) - 1] if healthy else None,
+            "peak_actionable_rows_lower_bound": peak_count,
+            "peak_oldest_actionable_seconds": peak_age}
+
+
+def compare_observations(results):
+    """A cleared end queue cannot erase an observed latency regression."""
+    errors = []
+    if len(results) != 2 or [r.get("variant") for r in results] != ["baseline", "candidate"]:
+        raise BenchmarkError("Comparison requires baseline then candidate observations")
+    before, after = results
+    if any(r.get("status") != "passed" for r in results):
+        errors.append("one or more replay variants failed")
+    if before.get("seed_sha256") != after.get("seed_sha256") or not before.get("seed_sha256"):
+        errors.append("seed identity is missing or mismatched")
+    baseline = before.get("observation", {})
+    candidate = after.get("observation", {})
+    latencies = [o.get("read_p95_seconds") for o in (baseline, candidate)]
+    valid = all(isinstance(x, (int, float)) and not isinstance(x, bool)
+                and math.isfinite(x) and x > 0 for x in latencies)
+    regression = None
+    if not valid:
+        errors.append("usable p95 latency evidence is missing")
+    else:
+        regression = latencies[1] / latencies[0] - 1
+        if regression > .10 + 1e-9:
+            errors.append("candidate read p95 regressed by more than 10 percent")
+    counts = [o.get("read_samples", 0) for o in (baseline, candidate)]
+    if not all(counts):
+        errors.append("read sample evidence is missing")
+    elif candidate.get("failed_reads", 0) / counts[1] > baseline.get("failed_reads", 0) / counts[0]:
+        errors.append("candidate unsuccessful-read proportion increased")
+    return {"status": "failed" if errors else "passed", "acceptance_errors": errors,
+            "read_p95_regression_fraction": regression,
+            "scope": "sealed archive replay and reader comparison; not memory, restore, or billing acceptance"}
+
+
 def run_variant(config, variant, pg, admin_url, output, secrets, generation, seed):
     database = "tsw92_bench_" + uuid.uuid4().hex[:12]
     url = database_url(admin_url, database)
@@ -332,6 +392,7 @@ def run_variant(config, variant, pg, admin_url, output, secrets, generation, see
         processes.append(start_process(variant["ingest"], dict(base, PORT="18084"), output / "ingest.log"))
         good_reads = 0
         observed_generations = set()
+        observed_samples = []
         with open(output / "samples.jsonl", "w") as evidence:
             while True:
                 sample = sample_database(pg, url, generation)
@@ -347,6 +408,8 @@ def run_variant(config, variant, pg, admin_url, output, secrets, generation, see
                 active = sample.get("active_generation") or {}
                 probe = read_probe(18081, active.get("generation_id"), secrets["GATEWAY_APPVIEW_INTERNAL_SECRET"])
                 sample["read"] = probe
+                observed_samples.append({"read": probe, "actionable_count": sample.get("actionable_count", 0),
+                                         "oldest_actionable_seconds": sample.get("oldest_actionable_seconds")})
                 if probe.get("matches_local_active") and probe.get("source") == "ranked" and not probe.get("degraded") and probe.get("item_count",0)>0:
                     good_reads += 1
                     observed_generations.add(active["generation_id"])
@@ -368,7 +431,7 @@ def run_variant(config, variant, pg, admin_url, output, secrets, generation, see
                                    "initial":initial,"final":sample,"successful_reads":good_reads,
                                    "observed_generations":len(observed_generations),
                                    "status":"failed" if failures else "passed", "acceptance_errors":failures,
-                                   "observation_complete":True})
+                                   "observation_complete":True, "observation":summarize_observation(observed_samples)})
                     break
                 time.sleep(config["sample_seconds"])
     except BaseException as error:
@@ -446,8 +509,10 @@ def main():
         output.mkdir(mode=0o700)
         results.append(run_variant(config,variant,pg,admin_url,output,secrets,generation,seed))
     (args.output/"comparison.json").write_text(json.dumps(results,indent=2))
-    if any(result["status"] != "passed" for result in results):
-        raise BenchmarkError("Comparison observations completed but acceptance failed; inspect comparison.json")
+    acceptance = compare_observations(results)
+    (args.output/"acceptance.json").write_text(json.dumps(acceptance, indent=2))
+    if acceptance["status"] != "passed":
+        raise BenchmarkError("Comparison observations completed but acceptance failed; inspect acceptance.json")
 
 
 if __name__ == "__main__":

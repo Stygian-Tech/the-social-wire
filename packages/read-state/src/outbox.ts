@@ -19,7 +19,11 @@ export function retryDelay(error: unknown, attempts: number, now: number, jitter
     const retryAt = error.retryAfter
       ? (Number.isFinite(seconds) ? now + Math.max(0, seconds) * 1000 : Date.parse(error.retryAfter)) : 0;
     const reset = Number(error.rateLimitReset) * 1000;
-    if (retryAt > now || reset > now) return Math.max(retryAt || 0, reset || 0) - now;
+    // Malformed or overflowing provider headers must not persist an infinite
+    // retry barrier that strands every later action in this account's FIFO.
+    const retryDeadline = Number.isFinite(retryAt) && retryAt > now ? retryAt : now;
+    const resetDeadline = Number.isFinite(reset) && reset > now ? reset : now;
+    if (retryDeadline > now || resetDeadline > now) return Math.max(retryDeadline, resetDeadline) - now;
   }
   return Math.min(3_600_000, 1000 * 2 ** Math.min(12, attempts)) * (1 + Math.max(0, Math.min(1, jitter)) / 4);
 }

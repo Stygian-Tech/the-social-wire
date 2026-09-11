@@ -24,6 +24,7 @@ function sameSelection(first: Intent, second: Intent): boolean {
 }
 /** FIFO device receipts survive semantic pruning and unknown-success retries. */
 export class V2ReadStateOutbox {
+  private flushing = false;
   constructor(private readonly store: OutboxStore, private readonly repository: ReadStateRepository,
     private readonly confirm: (reference: Reference) => Promise<void>,
     private readonly withLock: <T>(key: string, operation: () => Promise<T>) => Promise<T>,
@@ -89,6 +90,15 @@ export class V2ReadStateOutbox {
     });
   }
   async flushOnce(): Promise<boolean> {
+    // Timer and foreground wakeups must not accumulate lock waiters while a
+    // slow PDS request is running. Cross-tab serialization remains below.
+    if (this.flushing) return false;
+    this.flushing = true;
+    try { return await this.flushWithLock(); }
+    finally { this.flushing = false; }
+  }
+
+  private async flushWithLock(): Promise<boolean> {
     return this.withLock(this.repository.viewerDid, async () => {
       await this.assignLegacyQueue();
       let state = await this.snapshot(); checkQueue(state);
@@ -114,7 +124,9 @@ export class V2ReadStateOutbox {
             await this.confirm(generation.record);
             await this.acknowledge(state, count, remote); return true;
           }
-          const selected = state.entries.slice(0, 32);
+          // A CAS retry may see newly enqueued entries. Only publish the prefix
+          // marked attempted above: later entries may still be coalesced by enqueue.
+          const selected = state.entries.slice(0, batch.length);
           try {
             const reference = await publishV2Intents(this.repository, generation, selected.map(entry => ({ intent: entry.intent,
               deviceId: state.device!.deviceId, deviceCounter: entry.deviceCounter!, intentHash: entry.intentHash! })), remote,
