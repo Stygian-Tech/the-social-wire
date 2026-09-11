@@ -378,8 +378,8 @@ struct PostgresTelemetryIntegrationTests {
     }
   }
 
-  @Test("concurrent writers use the same lock order and retain every coalesced sample")
-  func concurrentWriters() async throws {
+  @Test("concurrent batches with shared event and span identities retain every coalesced sample")
+  func concurrentSharedIdentities() async throws {
     try await withStore { _, pool, logger in
       let prefix = "concurrent.\(UUID().uuidString)"
       let now = Date()
@@ -423,6 +423,79 @@ struct PostgresTelemetryIntegrationTests {
         count += 1
       }
       #expect(count == 2)
+    }
+  }
+
+  @Test("concurrent rollup writers preserve every sample across chunks", arguments: [false, true])
+  func concurrentRollupWriters(includeUniqueIdentities: Bool) async throws {
+    try await withStore { _, pool, logger in
+      let prefix = "rollup-concurrent.\(UUID().uuidString)"
+      let recordedAt = Date()
+      let writerCount = 8
+      let keyCount = 260
+      let gate = TelemetryWriterStartGate(participants: writerCount)
+      try await withThrowingTaskGroup(of: Void.self) { tasks in
+        for writer in 0..<writerCount {
+          tasks.addTask {
+            let store = PostgresOperationsStore(pool: pool, environment: "prod", logger: logger)
+            let indices = writer.isMultiple(of: 2)
+              ? Array(0..<keyCount) : Array((0..<keyCount).reversed())
+            var signals = indices.flatMap { index in
+              [-2.0, Double(index), 10.0].map { value in
+                OperationsTelemetrySignal.metric(.init(
+                  name: "\(prefix).\(String(format: "%03d", index))", value: value,
+                  dimensions: ["environment": "prod"], recordedAt: recordedAt))
+              }
+            }
+            if includeUniqueIdentities {
+              // Shared identities serialize exports before rollups and hide conflicting
+              // metric lock orders. Every mixed writer must own different identities.
+              let identity = "\(prefix).writer-\(writer)"
+              signals.append(.event(.init(
+                id: identity, service: "test", environment: "prod", instanceId: identity,
+                name: prefix, occurredAt: recordedAt)))
+              signals.append(.span(.init(
+                id: identity, environment: "prod", traceId: identity, service: "test",
+                name: prefix, startedAt: recordedAt, durationMs: 1, status: "ok",
+                attributes: [:], expiresAt: recordedAt.addingTimeInterval(86400))))
+            }
+            await gate.wait()
+            // More than 250 coalesced keys forces multiple SQL chunks while all
+            // transactions compete for the same rollups in opposite input orders.
+            try await store.recordTelemetryBatch(signals)
+          }
+        }
+        try await tasks.waitForAll()
+      }
+      let rows = try await pool.query(
+        """
+        SELECT metric_name, sample_count, value_sum, value_min, value_max
+        FROM operations_metric_rollups
+        WHERE environment = 'prod' AND metric_name LIKE \(prefix + "%")
+        ORDER BY metric_name
+        """, logger: logger)
+      var count = 0
+      for try await row in rows {
+        let value = try row.decode((String, Int64, Double, Double, Double).self)
+        #expect(value.0 == "\(prefix).\(String(format: "%03d", count))")
+        #expect(value.1 == Int64(writerCount * 3))
+        #expect(value.2 == Double(writerCount * (count + 8)))
+        #expect(value.3 == -2 && value.4 == max(10, Double(count)))
+        count += 1
+      }
+      #expect(count == keyCount)
+      let identities = try await pool.query(
+        """
+        SELECT (SELECT COUNT(*) FROM operations_events
+          WHERE environment = 'prod' AND event_name = \(prefix)),
+          (SELECT COUNT(*) FROM operations_trace_spans
+          WHERE environment = 'prod' AND name = \(prefix))
+        """, logger: logger)
+      for try await row in identities {
+        let value = try row.decode((Int64, Int64).self)
+        let expected = includeUniqueIdentities ? Int64(writerCount) : 0
+        #expect(value.0 == expected && value.1 == expected)
+      }
     }
   }
 
@@ -664,5 +737,25 @@ struct PostgresTelemetryIntegrationTests {
     defer { task.cancel() }
     try await body(
       PostgresOperationsStore(pool: pool, environment: "prod", logger: logger), pool, logger)
+  }
+}
+
+private actor TelemetryWriterStartGate {
+  private let participants: Int
+  private var waiting: [CheckedContinuation<Void, Never>] = []
+
+  init(participants: Int) {
+    self.participants = participants
+  }
+
+  func wait() async {
+    await withCheckedContinuation { continuation in
+      waiting.append(continuation)
+      if waiting.count == participants {
+        let ready = waiting
+        waiting.removeAll()
+        for participant in ready { participant.resume() }
+      }
+    }
   }
 }

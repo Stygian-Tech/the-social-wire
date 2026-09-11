@@ -3,6 +3,15 @@ import PostgresNIO
 /// Only a completed rollback permits replaying additive metrics beyond the initial retry budget.
 /// A lost COMMIT response is ambiguous and must never be treated as database contention.
 enum PostgresTelemetryRetryPolicy {
+  /// Apply before every retry: a commit response can be lost on the first attempt, too.
+  static func canRetry(_ error: any Error) -> Bool {
+    if error is PostgresTransactionError { return canDefer(error) }
+    // A bare driver error carries no proof that additive writes rolled back.
+    if error is PSQLError || error is CancellationError { return false }
+    // Keep the existing bounded retry contract for non-Postgres exporters.
+    return true
+  }
+
   static func canDefer(_ error: any Error) -> Bool {
     guard let transaction = error as? PostgresTransactionError,
       transaction.beginError == nil, transaction.commitError == nil,

@@ -184,6 +184,32 @@ struct OperationsTelemetryBufferTests {
     #expect(await recorder.values == [[7]])
   }
 
+  @Test("a cancelled exporter is not replayed and releases reserved capacity")
+  func cancelledExportDoesNotRetry() async {
+    let recorder = CancelledExportRecorder()
+    let buffer = OperationsTelemetryBuffer(
+      capacity: 2, batchSize: 1, maxRetryAttempts: 5,
+      logger: Logger(label: "operations-buffer-cancelled-export-tests"),
+      exporter: { _ in try await recorder.export() })
+    #expect(await buffer.enqueue(Self.metric(1)))
+    #expect(await buffer.enqueue(Self.metric(2)))
+    #expect(await buffer.flushOnce() == 0)
+    #expect(await recorder.attempts == 1)
+    let snapshot = await buffer.snapshot()
+    #expect(snapshot.queueDepth == 1 && snapshot.inFlightCount == 0)
+    #expect(snapshot.droppedCount == 1 && snapshot.consecutiveFailures == 1)
+    #expect(snapshot.lastDropAt != nil && snapshot.lastDropRecoveredAt == nil)
+  }
+
+  private actor CancelledExportRecorder {
+    private(set) var attempts = 0
+
+    func export() throws {
+      attempts += 1
+      throw CancellationError()
+    }
+  }
+
   @Test("loss recovers only after a successful drain and preserves lifetime evidence")
   func lossRecoveryAfterDrain() async {
     let clock = TestClock()
