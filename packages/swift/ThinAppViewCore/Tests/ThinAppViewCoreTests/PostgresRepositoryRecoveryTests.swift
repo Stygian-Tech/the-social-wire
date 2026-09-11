@@ -95,11 +95,14 @@ struct PostgresRepositoryRecoveryTests {
   func reconciliationProgress() async throws {
     try await PostgresInboxFixture.withFixture { fixture in
       let now = Date()
+      // Deliberately precede the database clock: fixture scheduling must use the supplied due
+      // timestamp rather than DEFAULT NOW(), which made same-instant claims race in Linux CI.
+      let dueAt = Date(timeIntervalSince1970: 1_700_000_000)
       try await fixture.seedReconciliationRequest(sourceGeneration: fixture.sourceGeneration,
-        sequence: 7, status: "pending", at: now)
+        sequence: 7, status: "pending", at: dueAt)
       let request = try #require(try await fixture.store.claimIngestionReconciliationRequests(
         environment: fixture.environment, sourceGeneration: fixture.sourceGeneration,
-        workerId: "worker", limit: 1, leaseUntil: now.addingTimeInterval(60), at: now).first)
+        workerId: "worker", limit: 1, leaseUntil: now.addingTimeInterval(60), at: dueAt).first)
       let context = PDSRepositoryRecoveryContext(environment: request.environment,
         sourceGeneration: request.sourceGeneration, sequence: request.triggerSequence,
         repoDid: request.repoDid, requestId: request.id, workerId: "worker", leaseToken: request.leaseToken)
@@ -109,7 +112,7 @@ struct PostgresRepositoryRecoveryTests {
       try await fixture.store.yieldRepositoryRecovery(context)
       let claimed = try await fixture.store.claimIngestionReconciliationRequests(
         environment: fixture.environment, sourceGeneration: fixture.sourceGeneration,
-        workerId: "next", limit: 1, leaseUntil: now.addingTimeInterval(60), at: now.addingTimeInterval(1))
+        workerId: "next", limit: 1, leaseUntil: now.addingTimeInterval(60), at: Date().addingTimeInterval(1))
       #expect(claimed.first?.attemptCount == 0)
       #expect(claimed.first?.id == request.id)
     }

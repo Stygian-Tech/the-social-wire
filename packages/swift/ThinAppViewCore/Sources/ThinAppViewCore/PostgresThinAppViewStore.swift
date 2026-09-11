@@ -4,8 +4,8 @@ import OperationsCore
 import PostgresNIO
 
 public actor PostgresThinAppViewStore: ThinAppViewStore {
-  private let pool: PostgresClient
-  private let logger: Logger
+  let pool: PostgresClient
+  let logger: Logger
 
 public init(pool: PostgresClient, logger: Logger) {
     self.pool = pool
