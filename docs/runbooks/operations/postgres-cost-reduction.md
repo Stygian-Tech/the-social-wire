@@ -503,7 +503,10 @@ recovery controls retain their existing synchronous commit policy. This setting
 does not change global `fsync`, full-page writes, or WAL generation volume.
 Every retry of additive PostgreSQL telemetry requires a confirmed rollback;
 ambiguous commit outcomes remain visible in cumulative loss evidence and are
-never replayed. Compare successful drains and loss timestamps as well as lock
+never replayed. Failed transaction begin, commit, or rollback retires the telemetry
+connection before returning its pool lease, preventing later borrowers from
+inheriting an aborted session. Confirmed rollbacks keep healthy sessions reusable.
+Compare successful drains and loss timestamps as well as lock
 timeouts; disappearance of errors alone is not recovery acceptance.
 
 `20260909130000_remove_redundant_telemetry_indexes.sql` removes only the duplicate
