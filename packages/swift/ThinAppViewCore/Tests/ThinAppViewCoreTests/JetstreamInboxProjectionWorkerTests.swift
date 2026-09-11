@@ -1338,7 +1338,7 @@ struct JetstreamInboxProjectionWorkerTests {
       try await fixture.worker(
         restorer: restorer,
         reconciliationMaxConcurrency: 1
-      ).drainOnce(at: now.addingTimeInterval(1))
+      ).drainOnce(at: Date())
     }
 
     #expect(await Self.eventually { await restorer.startedCount == 1 })
