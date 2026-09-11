@@ -387,7 +387,7 @@ class ReplayOrchestrationTests(unittest.TestCase):
         def probe(port, generation, trust_secret):
             self.assertEqual(trust_secret, "unit-test-gateway-secret")
             return {"status": 200, "matches_local_active": True, "generation_id": generation,
-                    "source": "ranked", "degraded": False, "item_count": 50}
+                    "source": "ranked", "degraded": False, "item_count": 50, "seconds": .01}
 
         sample_iterator = iter(samples)
         def database_sample(*args):
@@ -590,7 +590,8 @@ class ReplayOrchestrationTests(unittest.TestCase):
                     self.assertNotIn("TEST_SEEDED_ACTOR_KEY", env)
                     # Later environment changes must not change the candidate's key.
                     replay.os.environ["TEST_SEEDED_ACTOR_KEY"] = "changed-after-baseline-" + "b" * 32
-                    return {"variant": variant["name"], "status": "passed"}
+                    return {"variant": variant["name"], "status": "passed", "seed_sha256": "fixture",
+                            "observation": {"read_samples": 100, "failed_reads": 0, "read_p95_seconds": .1}}
 
                 with patch.object(replay.os.sys, "argv", [str(MODULE_PATH), str(config_path), "--output", str(output)]), \
                      patch.dict(replay.os.environ, {"TEST_BENCH_URL": "postgresql://localhost:55492/admin",
@@ -673,6 +674,39 @@ class ReplayOrchestrationTests(unittest.TestCase):
         self.assertNotIn("unit-test-only", serialized)
         self.assertNotIn("unit-test-gateway-secret", serialized)
         self.assertNotIn("DATABASE_URL", serialized)
+
+
+
+
+class ObservationComparisonTests(unittest.TestCase):
+    def result(self, variant, p95=.1, failed=0):
+        return {"variant": variant, "status": "passed", "seed_sha256": "same-seed",
+                "observation": {"read_samples": 100, "failed_reads": failed, "read_p95_seconds": p95}}
+
+    def test_p95_and_backlog_keep_bad_reads_and_peak_age_visible(self):
+        samples = [{"read": {"status": 200, "seconds": i / 100, "matches_local_active": True,
+                             "source": "ranked", "degraded": False, "item_count": 2},
+                    "actionable_count": 100-i, "oldest_actionable_seconds": i} for i in range(1, 101)]
+        samples.append({"read": {"status": 500, "seconds": 5}, "actionable_count": 0})
+        summary = replay.summarize_observation(samples)
+        self.assertEqual(summary["read_p95_seconds"], .95)
+        self.assertEqual(summary["failed_reads"], 1)
+        self.assertEqual(summary["peak_actionable_rows_lower_bound"], 99)
+        self.assertEqual(summary["peak_oldest_actionable_seconds"], 100)
+
+    def test_cleared_variants_do_not_hide_latency_or_read_failure_regression(self):
+        baseline = self.result("baseline")
+        for candidate in (self.result("candidate", .111), self.result("candidate", .1, 1)):
+            self.assertEqual(replay.compare_observations([baseline, candidate])["status"], "failed")
+        self.assertEqual(replay.compare_observations([baseline, self.result("candidate", .11)])["status"], "passed")
+
+    def test_missing_invalid_or_mismatched_evidence_cannot_pass(self):
+        for latency in (None, 0, float("nan"), float("inf"), True):
+            self.assertEqual(replay.compare_observations([self.result("baseline"),
+                             self.result("candidate", latency)])["status"], "failed")
+        candidate = self.result("candidate")
+        candidate["seed_sha256"] = "other"
+        self.assertEqual(replay.compare_observations([self.result("baseline"), candidate])["status"], "failed")
 
 
 if __name__ == "__main__":

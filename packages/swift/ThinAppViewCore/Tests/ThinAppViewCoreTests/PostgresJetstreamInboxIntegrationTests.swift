@@ -685,15 +685,15 @@ struct PostgresJetstreamInboxIntegrationTests {
   }
 }
 
-private final class PostgresInboxFixture: @unchecked Sendable {
+final class PostgresInboxFixture: @unchecked Sendable {
   static let testURL = ProcessInfo.processInfo.environment["THIN_APPVIEW_TEST_DATABASE_URL"]
 
   let environment: String
   let sourceGeneration: String
   let store: PostgresThinAppViewStore
 
-  private let pool: PostgresClient
-  private let logger: Logger
+  let pool: PostgresClient
+  let logger: Logger
   private let runTask: Task<Void, Never>
 
   private init(url: String, maximumConnections: Int) async throws {
@@ -708,7 +708,13 @@ private final class PostgresInboxFixture: @unchecked Sendable {
     runTask = Task { await pool.run() }
     await Task.yield()
     try await store.ping()
-    try await installMinimalSchema()
+    // Suites can create their first fixtures concurrently. PostgreSQL's IF NOT EXISTS does not
+    // serialize the underlying pg_type inserts, so use one transaction/connection for all DDL.
+    try await pool.withTransaction(logger: logger) { connection in
+      try await connection.query(
+        "SELECT pg_advisory_xact_lock(hashtextextended('thin-appview-test-schema', 0))", logger: logger)
+      try await self.installMinimalSchema(on: connection)
+    }
   }
 
   static func withFixture(
@@ -826,9 +832,10 @@ private final class PostgresInboxFixture: @unchecked Sendable {
     try await execute(
       """
       INSERT INTO appview_ingestion_reconciliation_requests
-        (environment, id, source_generation, repo_did, status, reason, trigger_seq, created_at, updated_at)
+        (environment, id, source_generation, repo_did, status, reason, trigger_seq,
+         next_attempt_at, created_at, updated_at)
       VALUES (\(environment), \("\(sourceGeneration):\(sequence)"), \(sourceGeneration),
-              'did:plc:reconciliation', \(status), 'integration', \(sequence), \(now), \(now))
+              'did:plc:reconciliation', \(status), 'integration', \(sequence), \(now), \(now), \(now))
       """
     )
   }
@@ -1015,7 +1022,7 @@ private final class PostgresInboxFixture: @unchecked Sendable {
     return nil
   }
 
-  func holdFirstClaimTransaction(
+  fileprivate func holdFirstClaimTransaction(
     sequences: Set<Int64>,
     workerId: String,
     at now: Date,
@@ -1057,7 +1064,10 @@ private final class PostgresInboxFixture: @unchecked Sendable {
     }
   }
 
-  private func installMinimalSchema() async throws {
+  private func installMinimalSchema(on connection: PostgresConnection) async throws {
+    func execute(_ query: PostgresQuery) async throws {
+      for try await _ in try await connection.query(query, logger: logger) {}
+    }
     let statements: [PostgresQuery] = [
       """
       CREATE TABLE IF NOT EXISTS content_items (
@@ -1188,10 +1198,25 @@ private final class PostgresInboxFixture: @unchecked Sendable {
         status TEXT NOT NULL DEFAULT 'pending',
         reason TEXT NOT NULL,
         trigger_seq BIGINT NOT NULL,
+        attempt_count INTEGER NOT NULL DEFAULT 0,
+        next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        lease_owner TEXT,
+        lease_token TEXT,
+        lease_expires_at TIMESTAMPTZ,
         created_at TIMESTAMPTZ NOT NULL,
         updated_at TIMESTAMPTZ NOT NULL,
+        completed_at TIMESTAMPTZ,
         PRIMARY KEY (environment, id)
       )
+      """,
+      """
+      ALTER TABLE appview_ingestion_reconciliation_requests
+        ADD COLUMN IF NOT EXISTS attempt_count INTEGER NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        ADD COLUMN IF NOT EXISTS lease_owner TEXT,
+        ADD COLUMN IF NOT EXISTS lease_token TEXT,
+        ADD COLUMN IF NOT EXISTS lease_expires_at TIMESTAMPTZ,
+        ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ
       """,
       """
       CREATE TABLE IF NOT EXISTS appview_ingestion_leases (
@@ -1238,6 +1263,18 @@ private final class PostgresInboxFixture: @unchecked Sendable {
       """,
     ]
     for statement in statements { try await execute(statement) }
+    let recovery = try await connection.query(
+      "SELECT to_regclass('appview_repository_recovery_records') IS NOT NULL", logger: logger)
+    var needsRecovery = true
+    for try await row in recovery { needsRecovery = !(try row.decode(Bool.self)) }
+    if needsRecovery {
+      var root = URL(fileURLWithPath: #filePath)
+      for _ in 0..<6 { root.deleteLastPathComponent() }
+      let migration = try String(contentsOf: root.appendingPathComponent(
+        "database/migrations/20260911010000_resumable_repository_recovery.sql"), encoding: .utf8)
+      try await execute(PostgresQuery(unsafeSQL: "DO $fixture$ BEGIN\n" + migration + "\nEND $fixture$;"))
+    }
+
   }
 
   private func execute(_ query: PostgresQuery) async throws {

@@ -2155,34 +2155,9 @@ public actor PostgresOperationsStore: OperationsStore {
       let budget = PostgresTelemetryWriteBudget(
         statementTimeoutMilliseconds: statementTimeoutMilliseconds)
       try await connection.query("SET LOCAL lock_timeout = '500ms'", logger: logger)
-      for offset in stride(from: 0, to: metrics.count, by: 250) {
-        try await Self.configureTelemetryStatement(connection, budget: budget, logger: logger)
-        let chunk = Array(metrics[offset..<min(offset + 250, metrics.count)])
-        try await connection.query(
-          """
-          INSERT INTO operations_metric_rollups
-            (environment, bucket_start, metric_name, dimensions_hash, dimensions, sample_count,
-             value_sum, value_min, value_max, histogram_buckets, expires_at)
-          SELECT \(environment), sample.bucket_start, sample.metric_name, sample.dimensions_hash,
-            sample.dimensions::jsonb, sample.sample_count, sample.value_sum, sample.value_min,
-            sample.value_max, '{}'::jsonb, sample.expires_at
-          FROM unnest(\(chunk.map(\.bucket))::timestamptz[], \(chunk.map(\.name))::text[],
-            \(chunk.map(\.dimensionsHash))::text[], \(chunk.map(\.dimensionsJSON))::text[],
-            \(chunk.map(\.count))::bigint[], \(chunk.map(\.sum))::double precision[],
-            \(chunk.map(\.minimum))::double precision[], \(chunk.map(\.maximum))::double precision[],
-            \(chunk.map { $0.bucket.addingTimeInterval(90 * 86_400) })::timestamptz[])
-          WITH ORDINALITY AS sample(bucket_start, metric_name, dimensions_hash, dimensions,
-            sample_count, value_sum, value_min, value_max, expires_at, ordinal)
-          ORDER BY sample.ordinal
-          ON CONFLICT (environment, bucket_start, metric_name, dimensions_hash) DO UPDATE SET
-            sample_count = operations_metric_rollups.sample_count + EXCLUDED.sample_count,
-            value_sum = operations_metric_rollups.value_sum + EXCLUDED.value_sum,
-            value_min = LEAST(operations_metric_rollups.value_min, EXCLUDED.value_min),
-            value_max = GREATEST(operations_metric_rollups.value_max, EXCLUDED.value_max)
-          """, logger: logger)
-      }
-      // Bulk inserts keep metric row locks from spanning one round trip per event/span.
-      // Retain the global metrics -> events -> spans order and the transaction-wide budget.
+      // Acquire event and span identities before hot metric keys. A duplicate identity
+      // blocked by another writer must not hold every shared minute rollup hostage.
+      // All exporters retain the same events -> spans -> metrics order and atomic budget.
       // The driver encodes nonoptional arrays; presence masks distinguish NULL from empty text.
       for offset in stride(from: 0, to: events.count, by: 250) {
         try await Self.configureTelemetryStatement(connection, budget: budget, logger: logger)
@@ -2236,6 +2211,32 @@ public actor PostgresOperationsStore: OperationsStore {
             duration_ms, status, attributes, expires_at, ordinal)
           ORDER BY sample.ordinal
           ON CONFLICT (environment, id) DO NOTHING
+          """, logger: logger)
+      }
+      for offset in stride(from: 0, to: metrics.count, by: 250) {
+        try await Self.configureTelemetryStatement(connection, budget: budget, logger: logger)
+        let chunk = Array(metrics[offset..<min(offset + 250, metrics.count)])
+        try await connection.query(
+          """
+          INSERT INTO operations_metric_rollups
+            (environment, bucket_start, metric_name, dimensions_hash, dimensions, sample_count,
+             value_sum, value_min, value_max, histogram_buckets, expires_at)
+          SELECT \(environment), sample.bucket_start, sample.metric_name, sample.dimensions_hash,
+            sample.dimensions::jsonb, sample.sample_count, sample.value_sum, sample.value_min,
+            sample.value_max, '{}'::jsonb, sample.expires_at
+          FROM unnest(\(chunk.map(\.bucket))::timestamptz[], \(chunk.map(\.name))::text[],
+            \(chunk.map(\.dimensionsHash))::text[], \(chunk.map(\.dimensionsJSON))::text[],
+            \(chunk.map(\.count))::bigint[], \(chunk.map(\.sum))::double precision[],
+            \(chunk.map(\.minimum))::double precision[], \(chunk.map(\.maximum))::double precision[],
+            \(chunk.map { $0.bucket.addingTimeInterval(90 * 86_400) })::timestamptz[])
+          WITH ORDINALITY AS sample(bucket_start, metric_name, dimensions_hash, dimensions,
+            sample_count, value_sum, value_min, value_max, expires_at, ordinal)
+          ORDER BY sample.ordinal
+          ON CONFLICT (environment, bucket_start, metric_name, dimensions_hash) DO UPDATE SET
+            sample_count = operations_metric_rollups.sample_count + EXCLUDED.sample_count,
+            value_sum = operations_metric_rollups.value_sum + EXCLUDED.value_sum,
+            value_min = LEAST(operations_metric_rollups.value_min, EXCLUDED.value_min),
+            value_max = GREATEST(operations_metric_rollups.value_max, EXCLUDED.value_max)
           """, logger: logger)
       }
       try Task.checkCancellation()
