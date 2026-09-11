@@ -2151,108 +2151,92 @@ public actor PostgresOperationsStore: OperationsStore {
     }
     // Sorting before chunking preserves one lock order across all exporters.
     let metrics = metricBatches.keys.sorted().compactMap { metricBatches[$0] }
-    try await pool.withTransaction(logger: logger) { connection in
-      let budget = PostgresTelemetryWriteBudget(
-        statementTimeoutMilliseconds: statementTimeoutMilliseconds)
-      try await connection.query("SET LOCAL lock_timeout = '500ms'", logger: logger)
-      // Acquire event and span identities before hot metric keys. A duplicate identity
-      // blocked by another writer must not hold every shared minute rollup hostage.
-      // All exporters retain the same events -> spans -> metrics order and atomic budget.
-      // The driver encodes nonoptional arrays; presence masks distinguish NULL from empty text.
-      for offset in stride(from: 0, to: events.count, by: 250) {
-        try await Self.configureTelemetryStatement(connection, budget: budget, logger: logger)
-        let chunk = Array(events[offset..<min(offset + 250, events.count)])
-        try await connection.query(
-          """
-          INSERT INTO operations_events
-            (id, service, environment, instance_id, event_name, occurred_at, request_id,
-             trace_id, attributes, expires_at)
-          SELECT sample.id, sample.service, \(environment), sample.instance_id,
-            sample.event_name, sample.occurred_at,
-            CASE WHEN sample.has_request_id THEN sample.request_id END,
-            CASE WHEN sample.has_trace_id THEN sample.trace_id END,
-            sample.attributes::jsonb, sample.expires_at
-          FROM unnest(\(chunk.map(\.event.id))::text[], \(chunk.map(\.event.service))::text[],
-            \(chunk.map(\.event.instanceId))::text[],
-            \(chunk.map { String($0.event.name.prefix(160)) })::text[],
-            \(chunk.map(\.event.occurredAt))::timestamptz[],
-            \(chunk.map { $0.event.requestId ?? "" })::text[],
-            \(chunk.map { $0.event.requestId != nil })::boolean[],
-            \(chunk.map { $0.event.traceId ?? "" })::text[],
-            \(chunk.map { $0.event.traceId != nil })::boolean[],
-            \(chunk.map(\.attributesJSON))::text[],
-            \(chunk.map { $0.event.occurredAt.addingTimeInterval(30 * 86_400) })::timestamptz[])
-          WITH ORDINALITY AS sample(id, service, instance_id, event_name, occurred_at,
-            request_id, has_request_id, trace_id, has_trace_id, attributes, expires_at, ordinal)
-          ORDER BY sample.ordinal
-          ON CONFLICT (environment, id) DO NOTHING
-          """, logger: logger)
-      }
-      for offset in stride(from: 0, to: spans.count, by: 250) {
-        try await Self.configureTelemetryStatement(connection, budget: budget, logger: logger)
-        let chunk = Array(spans[offset..<min(offset + 250, spans.count)])
-        try await connection.query(
-          """
-          INSERT INTO operations_trace_spans
-            (environment, id, trace_id, parent_span_id, service, name, started_at, duration_ms,
-             status, attributes, expires_at)
-          SELECT \(environment), sample.id, sample.trace_id,
-            CASE WHEN sample.has_parent_span_id THEN sample.parent_span_id END,
-            sample.service, sample.name, sample.started_at, sample.duration_ms,
-            sample.status, sample.attributes::jsonb, sample.expires_at
-          FROM unnest(\(chunk.map(\.span.id))::text[], \(chunk.map(\.span.traceId))::text[],
-            \(chunk.map { $0.span.parentSpanId ?? "" })::text[],
-            \(chunk.map { $0.span.parentSpanId != nil })::boolean[],
-            \(chunk.map(\.span.service))::text[],
-            \(chunk.map(\.span.name))::text[], \(chunk.map(\.span.startedAt))::timestamptz[],
-            \(chunk.map(\.span.durationMs))::double precision[], \(chunk.map(\.span.status))::text[],
-            \(chunk.map(\.attributesJSON))::text[], \(chunk.map(\.span.expiresAt))::timestamptz[])
-          WITH ORDINALITY AS sample(id, trace_id, parent_span_id, has_parent_span_id, service, name, started_at,
-            duration_ms, status, attributes, expires_at, ordinal)
-          ORDER BY sample.ordinal
-          ON CONFLICT (environment, id) DO NOTHING
-          """, logger: logger)
-      }
-      for offset in stride(from: 0, to: metrics.count, by: 250) {
-        try await Self.configureTelemetryStatement(connection, budget: budget, logger: logger)
-        let chunk = Array(metrics[offset..<min(offset + 250, metrics.count)])
-        try await connection.query(
-          """
-          INSERT INTO operations_metric_rollups
-            (environment, bucket_start, metric_name, dimensions_hash, dimensions, sample_count,
-             value_sum, value_min, value_max, histogram_buckets, expires_at)
-          SELECT \(environment), sample.bucket_start, sample.metric_name, sample.dimensions_hash,
-            sample.dimensions::jsonb, sample.sample_count, sample.value_sum, sample.value_min,
-            sample.value_max, '{}'::jsonb, sample.expires_at
-          FROM unnest(\(chunk.map(\.bucket))::timestamptz[], \(chunk.map(\.name))::text[],
-            \(chunk.map(\.dimensionsHash))::text[], \(chunk.map(\.dimensionsJSON))::text[],
-            \(chunk.map(\.count))::bigint[], \(chunk.map(\.sum))::double precision[],
-            \(chunk.map(\.minimum))::double precision[], \(chunk.map(\.maximum))::double precision[],
-            \(chunk.map { $0.bucket.addingTimeInterval(90 * 86_400) })::timestamptz[])
-          WITH ORDINALITY AS sample(bucket_start, metric_name, dimensions_hash, dimensions,
-            sample_count, value_sum, value_min, value_max, expires_at, ordinal)
-          ORDER BY sample.ordinal
-          ON CONFLICT (environment, bucket_start, metric_name, dimensions_hash) DO UPDATE SET
-            sample_count = operations_metric_rollups.sample_count + EXCLUDED.sample_count,
-            value_sum = operations_metric_rollups.value_sum + EXCLUDED.value_sum,
-            value_min = LEAST(operations_metric_rollups.value_min, EXCLUDED.value_min),
-            value_max = GREATEST(operations_metric_rollups.value_max, EXCLUDED.value_max)
-          """, logger: logger)
-      }
-      try Task.checkCancellation()
-      _ = try budget.remainingStatementMilliseconds()
+    // Encode all bindings before BEGIN so chunk preparation holds no database locks.
+    var queries: [PostgresQuery] = []
+    // Acquire event and span identities before hot metric keys. A duplicate identity
+    // blocked by another writer must not hold every shared minute rollup hostage.
+    // All exporters retain the same events -> spans -> metrics order and atomic budget.
+    // The driver encodes nonoptional arrays; presence masks distinguish NULL from empty text.
+    for offset in stride(from: 0, to: events.count, by: 250) {
+      let chunk = Array(events[offset..<min(offset + 250, events.count)])
+      queries.append(
+        """
+        INSERT INTO operations_events
+          (id, service, environment, instance_id, event_name, occurred_at, request_id,
+           trace_id, attributes, expires_at)
+        SELECT sample.id, sample.service, \(environment), sample.instance_id,
+          sample.event_name, sample.occurred_at,
+          CASE WHEN sample.has_request_id THEN sample.request_id END,
+          CASE WHEN sample.has_trace_id THEN sample.trace_id END,
+          sample.attributes::jsonb, sample.expires_at
+        FROM unnest(\(chunk.map(\.event.id))::text[], \(chunk.map(\.event.service))::text[],
+          \(chunk.map(\.event.instanceId))::text[],
+          \(chunk.map { String($0.event.name.prefix(160)) })::text[],
+          \(chunk.map(\.event.occurredAt))::timestamptz[],
+          \(chunk.map { $0.event.requestId ?? "" })::text[],
+          \(chunk.map { $0.event.requestId != nil })::boolean[],
+          \(chunk.map { $0.event.traceId ?? "" })::text[],
+          \(chunk.map { $0.event.traceId != nil })::boolean[],
+          \(chunk.map(\.attributesJSON))::text[],
+          \(chunk.map { $0.event.occurredAt.addingTimeInterval(30 * 86_400) })::timestamptz[])
+        WITH ORDINALITY AS sample(id, service, instance_id, event_name, occurred_at,
+          request_id, has_request_id, trace_id, has_trace_id, attributes, expires_at, ordinal)
+        ORDER BY sample.ordinal
+        ON CONFLICT (environment, id) DO NOTHING
+        """)
     }
-  }
-
-  private static func configureTelemetryStatement(
-    _ connection: PostgresConnection,
-    budget: PostgresTelemetryWriteBudget,
-    logger: Logger
-  ) async throws {
-    try Task.checkCancellation()
-    let timeout = try budget.remainingStatementMilliseconds()
-    try await connection.query(
-      "SELECT set_config('statement_timeout', \(String(timeout)), true)", logger: logger)
+    for offset in stride(from: 0, to: spans.count, by: 250) {
+      let chunk = Array(spans[offset..<min(offset + 250, spans.count)])
+      queries.append(
+        """
+        INSERT INTO operations_trace_spans
+          (environment, id, trace_id, parent_span_id, service, name, started_at, duration_ms,
+           status, attributes, expires_at)
+        SELECT \(environment), sample.id, sample.trace_id,
+          CASE WHEN sample.has_parent_span_id THEN sample.parent_span_id END,
+          sample.service, sample.name, sample.started_at, sample.duration_ms,
+          sample.status, sample.attributes::jsonb, sample.expires_at
+        FROM unnest(\(chunk.map(\.span.id))::text[], \(chunk.map(\.span.traceId))::text[],
+          \(chunk.map { $0.span.parentSpanId ?? "" })::text[],
+          \(chunk.map { $0.span.parentSpanId != nil })::boolean[],
+          \(chunk.map(\.span.service))::text[],
+          \(chunk.map(\.span.name))::text[], \(chunk.map(\.span.startedAt))::timestamptz[],
+          \(chunk.map(\.span.durationMs))::double precision[], \(chunk.map(\.span.status))::text[],
+          \(chunk.map(\.attributesJSON))::text[], \(chunk.map(\.span.expiresAt))::timestamptz[])
+        WITH ORDINALITY AS sample(id, trace_id, parent_span_id, has_parent_span_id, service, name, started_at,
+          duration_ms, status, attributes, expires_at, ordinal)
+        ORDER BY sample.ordinal
+        ON CONFLICT (environment, id) DO NOTHING
+        """)
+    }
+    for offset in stride(from: 0, to: metrics.count, by: 250) {
+      let chunk = Array(metrics[offset..<min(offset + 250, metrics.count)])
+      queries.append(
+        """
+        INSERT INTO operations_metric_rollups
+          (environment, bucket_start, metric_name, dimensions_hash, dimensions, sample_count,
+           value_sum, value_min, value_max, histogram_buckets, expires_at)
+        SELECT \(environment), sample.bucket_start, sample.metric_name, sample.dimensions_hash,
+          sample.dimensions::jsonb, sample.sample_count, sample.value_sum, sample.value_min,
+          sample.value_max, '{}'::jsonb, sample.expires_at
+        FROM unnest(\(chunk.map(\.bucket))::timestamptz[], \(chunk.map(\.name))::text[],
+          \(chunk.map(\.dimensionsHash))::text[], \(chunk.map(\.dimensionsJSON))::text[],
+          \(chunk.map(\.count))::bigint[], \(chunk.map(\.sum))::double precision[],
+          \(chunk.map(\.minimum))::double precision[], \(chunk.map(\.maximum))::double precision[],
+          \(chunk.map { $0.bucket.addingTimeInterval(90 * 86_400) })::timestamptz[])
+        WITH ORDINALITY AS sample(bucket_start, metric_name, dimensions_hash, dimensions,
+          sample_count, value_sum, value_min, value_max, expires_at, ordinal)
+        ORDER BY sample.ordinal
+        ON CONFLICT (environment, bucket_start, metric_name, dimensions_hash) DO UPDATE SET
+          sample_count = operations_metric_rollups.sample_count + EXCLUDED.sample_count,
+          value_sum = operations_metric_rollups.value_sum + EXCLUDED.value_sum,
+          value_min = LEAST(operations_metric_rollups.value_min, EXCLUDED.value_min),
+          value_max = GREATEST(operations_metric_rollups.value_max, EXCLUDED.value_max)
+        """)
+    }
+    try await PostgresTelemetryWriter.write(
+      queries, pool: pool, logger: logger,
+      statementTimeoutMilliseconds: statementTimeoutMilliseconds)
   }
 
   public func appendChangeEvent(

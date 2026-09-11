@@ -850,21 +850,31 @@ struct PDSAuthorRecordBudget: Sendable, Equatable {
 actor PDSRequestRateLimiter {
   private let interval: TimeInterval
   private var nextPermitAt = Date.distantPast
+  private let now: @Sendable () -> Date
+  private let sleep: @Sendable (TimeInterval) async throws -> Void
 
-  init(requestsPerSecond: Int) {
+  init(
+    requestsPerSecond: Int,
+    now: @escaping @Sendable () -> Date = Date.init,
+    sleep: @escaping @Sendable (TimeInterval) async throws -> Void = {
+      try await Task.sleep(for: .seconds($0))
+    }
+  ) {
     interval = 1 / Double(max(1, requestsPerSecond))
+    self.now = now
+    self.sleep = sleep
   }
 
   func waitForPermit() async throws {
     try Task.checkCancellation()
-    let now = Date()
+    let now = now()
     let permitAt = max(nextPermitAt, now)
 
     // Reserve the next slot before suspending. Updating after sleep lets actor reentrancy give every
     // concurrent waiter the same timestamp and burst above the configured rate.
     nextPermitAt = permitAt.addingTimeInterval(interval)
     guard permitAt > now else { return }
-    try await Task.sleep(for: .seconds(permitAt.timeIntervalSince(now)))
+    try await sleep(permitAt.timeIntervalSince(now))
     try Task.checkCancellation()
   }
 }
