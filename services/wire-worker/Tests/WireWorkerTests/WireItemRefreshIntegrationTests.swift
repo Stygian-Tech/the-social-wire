@@ -91,6 +91,28 @@ extension WirePostgresIntegrationTests {
     }
   }
 
+  @Test("material edits at the same observation time still update the item")
+  func changedContentAtSameObservationIsNotSuppressed() async throws {
+    try await WireSourceVersionFixture.run { fixture in
+      let at = fixture.base.now.addingTimeInterval(60)
+      try await fixture.insert(sequence: 1, revision: WireSourceVersionFixture.olderRevision, snapshot: true)
+      #expect(try await fixture.base.apply(sequence: 1, asOf: at) == .applied)
+      let version = try await fixture.base.scalar(
+        "SELECT xmin::text::bigint FROM wire_items WHERE canonical_key = \(fixture.key)")
+      try await fixture.insert(sequence: 2, revision: WireSourceVersionFixture.newerRevision,
+        title: "Updated Snapshot", snapshot: true)
+      #expect(try await fixture.base.apply(sequence: 2, asOf: at) == .applied)
+      #expect(try await fixture.base.scalar(
+        "SELECT xmin::text::bigint FROM wire_items WHERE canonical_key = \(fixture.key)") != version)
+      #expect(try await fixture.base.scalar(
+        """
+        SELECT COUNT(*)::bigint FROM wire_items WHERE canonical_key = \(fixture.key)
+          AND title = 'Updated Snapshot' AND last_seen_at = \(at) AND last_signal_at IS NULL
+        """) == 1)
+      #expect(try await fixture.signalCount() == 0)
+    }
+  }
+
   @Test("lower priority content and longer retained expirations are preserved")
   func priorityAndLongerRetentionArePreserved() async throws {
     try await WireSourceVersionFixture.run { fixture in
