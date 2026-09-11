@@ -708,7 +708,13 @@ final class PostgresInboxFixture: @unchecked Sendable {
     runTask = Task { await pool.run() }
     await Task.yield()
     try await store.ping()
-    try await installMinimalSchema()
+    // Suites can create their first fixtures concurrently. PostgreSQL's IF NOT EXISTS does not
+    // serialize the underlying pg_type inserts, so use one transaction/connection for all DDL.
+    try await pool.withTransaction(logger: logger) { connection in
+      try await connection.query(
+        "SELECT pg_advisory_xact_lock(hashtextextended('thin-appview-test-schema', 0))", logger: logger)
+      try await self.installMinimalSchema(on: connection)
+    }
   }
 
   static func withFixture(
@@ -1057,7 +1063,10 @@ final class PostgresInboxFixture: @unchecked Sendable {
     }
   }
 
-  private func installMinimalSchema() async throws {
+  private func installMinimalSchema(on connection: PostgresConnection) async throws {
+    func execute(_ query: PostgresQuery) async throws {
+      for try await _ in try await connection.query(query, logger: logger) {}
+    }
     let statements: [PostgresQuery] = [
       """
       CREATE TABLE IF NOT EXISTS content_items (
@@ -1188,10 +1197,25 @@ final class PostgresInboxFixture: @unchecked Sendable {
         status TEXT NOT NULL DEFAULT 'pending',
         reason TEXT NOT NULL,
         trigger_seq BIGINT NOT NULL,
+        attempt_count INTEGER NOT NULL DEFAULT 0,
+        next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        lease_owner TEXT,
+        lease_token TEXT,
+        lease_expires_at TIMESTAMPTZ,
         created_at TIMESTAMPTZ NOT NULL,
         updated_at TIMESTAMPTZ NOT NULL,
+        completed_at TIMESTAMPTZ,
         PRIMARY KEY (environment, id)
       )
+      """,
+      """
+      ALTER TABLE appview_ingestion_reconciliation_requests
+        ADD COLUMN IF NOT EXISTS attempt_count INTEGER NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        ADD COLUMN IF NOT EXISTS lease_owner TEXT,
+        ADD COLUMN IF NOT EXISTS lease_token TEXT,
+        ADD COLUMN IF NOT EXISTS lease_expires_at TIMESTAMPTZ,
+        ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ
       """,
       """
       CREATE TABLE IF NOT EXISTS appview_ingestion_leases (
@@ -1238,7 +1262,7 @@ final class PostgresInboxFixture: @unchecked Sendable {
       """,
     ]
     for statement in statements { try await execute(statement) }
-    let installed = try await pool.query("SELECT to_regclass('appview_pds_read_state_authority') IS NOT NULL", logger: logger)
+    let installed = try await connection.query("SELECT to_regclass('appview_pds_read_state_authority') IS NOT NULL", logger: logger)
     var needsPDSMigration = true
     for try await row in installed { needsPDSMigration = !(try row.decode(Bool.self)) }
     if needsPDSMigration {
@@ -1250,7 +1274,7 @@ final class PostgresInboxFixture: @unchecked Sendable {
       // reviewed migration in one DO statement so its function bodies stay intact.
       try await execute(PostgresQuery(unsafeSQL: "DO $fixture$ BEGIN\n" + migration + "\nEND $fixture$;"))
     }
-    let readiness = try await pool.query("SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'appview_pds_read_state_authority' AND column_name = 'projection_ready')", logger: logger)
+    let readiness = try await connection.query("SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'appview_pds_read_state_authority' AND column_name = 'projection_ready')", logger: logger)
     var needsReadiness = true
     for try await row in readiness { needsReadiness = !(try row.decode(Bool.self)) }
     if needsReadiness {
@@ -1260,7 +1284,7 @@ final class PostgresInboxFixture: @unchecked Sendable {
         "database/migrations/20260909020000_add_pds_projection_readiness.sql"), encoding: .utf8)
       try await execute(PostgresQuery(unsafeSQL: "DO $fixture$ BEGIN\n" + migration + "\nEND $fixture$;"))
     }
-    let maintenance = try await pool.query("SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'appview_pds_read_state_authority' AND column_name = 'manifest_revision')", logger: logger)
+    let maintenance = try await connection.query("SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'appview_pds_read_state_authority' AND column_name = 'manifest_revision')", logger: logger)
     var needsMaintenance = true
     for try await row in maintenance { needsMaintenance = !(try row.decode(Bool.self)) }
     if needsMaintenance {
@@ -1270,6 +1294,18 @@ final class PostgresInboxFixture: @unchecked Sendable {
         "database/migrations/20260909030000_fence_pds_manifest_maintenance.sql"), encoding: .utf8)
       try await execute(PostgresQuery(unsafeSQL: "DO $fixture$ BEGIN\n" + migration + "\nEND $fixture$;"))
     }
+    let recovery = try await connection.query(
+      "SELECT to_regclass('appview_repository_recovery_records') IS NOT NULL", logger: logger)
+    var needsRecovery = true
+    for try await row in recovery { needsRecovery = !(try row.decode(Bool.self)) }
+    if needsRecovery {
+      var root = URL(fileURLWithPath: #filePath)
+      for _ in 0..<6 { root.deleteLastPathComponent() }
+      let migration = try String(contentsOf: root.appendingPathComponent(
+        "database/migrations/20260911010000_resumable_repository_recovery.sql"), encoding: .utf8)
+      try await execute(PostgresQuery(unsafeSQL: "DO $fixture$ BEGIN\n" + migration + "\nEND $fixture$;"))
+    }
+
   }
 
   private func execute(_ query: PostgresQuery) async throws {
