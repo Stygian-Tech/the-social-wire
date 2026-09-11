@@ -12,6 +12,9 @@ struct PostgresWireLinkMetadataStore: WireLinkMetadataStoring {
     metadata: WireLinkMetadata,
     asOf: Date
   ) async throws {
+    // A mention can improve embedded fields without expediting a fetch. On conflict,
+    // an existing retry_after belongs to the enrichment lease/backoff; initialize only
+    // missing schedules so legacy rows can still become claimable.
     try await pool.query(
       """
       INSERT INTO wire_link_metadata_cache
@@ -23,7 +26,8 @@ struct PostgresWireLinkMetadataStore: WireLinkMetadataStoring {
         (\(canonicalKey), \(metadata.canonicalURL), \(metadata.title), \(metadata.description),
          \(metadata.imageURL), \(metadata.siteName), \(metadata.authorName),
          \(metadata.publishedAt), \(metadata.iconURL), NULL, NULL,
-         'embedded_card', 'pending', \(asOf), \(asOf), \(asOf.addingTimeInterval(7 * 86_400)),
+         'embedded_card', 'pending', \(asOf), \(asOf),
+         \(WireCacheExpiry.hourlyDeadline(asOf: asOf, retention: 7 * 86_400)),
          \(asOf), 0, \(asOf))
       ON CONFLICT (canonical_key) DO UPDATE SET
         source = CASE WHEN wire_link_metadata_cache.source IN ('pending', 'fallback')
@@ -45,7 +49,7 @@ struct PostgresWireLinkMetadataStore: WireLinkMetadataStoring {
           THEN COALESCE(EXCLUDED.icon_url, wire_link_metadata_cache.icon_url)
           ELSE wire_link_metadata_cache.icon_url END,
         stale_until = GREATEST(wire_link_metadata_cache.stale_until, EXCLUDED.stale_until),
-        retry_after = LEAST(wire_link_metadata_cache.retry_after, EXCLUDED.retry_after),
+        retry_after = COALESCE(wire_link_metadata_cache.retry_after, EXCLUDED.retry_after),
         updated_at = EXCLUDED.updated_at
       WHERE ROW(
         wire_link_metadata_cache.source,
@@ -78,7 +82,7 @@ struct PostgresWireLinkMetadataStore: WireLinkMetadataStoring {
         CASE WHEN wire_link_metadata_cache.source = 'open_graph'
           THEN wire_link_metadata_cache.published_at ELSE COALESCE(EXCLUDED.published_at, wire_link_metadata_cache.published_at) END,
         GREATEST(wire_link_metadata_cache.stale_until, EXCLUDED.stale_until),
-        LEAST(wire_link_metadata_cache.retry_after, EXCLUDED.retry_after))
+        COALESCE(wire_link_metadata_cache.retry_after, EXCLUDED.retry_after))
       """,
       logger: logger
     )

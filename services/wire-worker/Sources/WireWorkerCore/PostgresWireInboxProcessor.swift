@@ -1736,8 +1736,10 @@ struct PostgresWireInboxProcessor: Sendable {
       decoding: try JSONSerialization.data(withJSONObject: presentation),
       as: UTF8.self
     )
-    let expiresAt = asOf.addingTimeInterval(WireDataPolicy.itemRetention)
+    let expiresAt = WireCacheExpiry.hourlyDeadline(asOf: asOf, retention: WireDataPolicy.itemRetention)
     let signalAt: Date? = recordsActivity ? (signalTime ?? asOf) : nil
+    // Compare the effective merged row, including exact activity times. A skipped
+    // update still seeds missing metadata from the existing item for cache recovery.
     try await projectionQuery(
       """
       WITH upserted_item AS (
@@ -1820,12 +1822,107 @@ struct PostgresWireInboxProcessor: Sendable {
         eligible = wire_items.eligible AND EXCLUDED.eligible,
         source_confidence = GREATEST(wire_items.source_confidence, EXCLUDED.source_confidence),
         expires_at = GREATEST(wire_items.expires_at, EXCLUDED.expires_at), updated_at = EXCLUDED.updated_at
+      WHERE ROW(
+        wire_items.canonical_url,
+        wire_items.representative_uri,
+        wire_items.publication_id,
+        wire_items.author_key,
+        wire_items.author_name,
+        wire_items.source_name,
+        wire_items.title,
+        wire_items.summary,
+        wire_items.thumbnail_url,
+        wire_items.presentation_snapshot,
+        wire_items.publication_homepage_url,
+        wire_items.publication_icon_url,
+        wire_items.language_code,
+        wire_items.topic_keys,
+        wire_items.provenance,
+        wire_items.target_kind,
+        wire_items.commercial_score,
+        wire_items.commercial_class,
+        wire_items.commercial_reasons,
+        wire_items.published_at,
+        wire_items.last_seen_at,
+        wire_items.last_signal_at,
+        wire_items.eligible,
+        wire_items.source_confidence,
+        wire_items.expires_at)
+        IS DISTINCT FROM ROW(
+        EXCLUDED.canonical_url,
+        COALESCE(wire_items.representative_uri, EXCLUDED.representative_uri),
+        COALESCE(wire_items.publication_id, EXCLUDED.publication_id),
+        COALESCE(wire_items.author_key, EXCLUDED.author_key),
+        COALESCE(wire_items.author_name, EXCLUDED.author_name),
+        CASE
+          WHEN COALESCE((EXCLUDED.presentation_snapshot->>'sourcePriority')::integer, 0)
+            >= COALESCE((wire_items.presentation_snapshot->>'sourcePriority')::integer, 0)
+          THEN EXCLUDED.source_name ELSE wire_items.source_name END,
+        CASE
+          WHEN COALESCE((EXCLUDED.presentation_snapshot->>'sourcePriority')::integer, 0)
+            >= COALESCE((wire_items.presentation_snapshot->>'sourcePriority')::integer, 0)
+          THEN EXCLUDED.title ELSE wire_items.title END,
+        CASE
+          WHEN COALESCE((EXCLUDED.presentation_snapshot->>'sourcePriority')::integer, 0)
+            >= COALESCE((wire_items.presentation_snapshot->>'sourcePriority')::integer, 0)
+          THEN COALESCE(EXCLUDED.summary, wire_items.summary) ELSE wire_items.summary END,
+        CASE
+          WHEN COALESCE((EXCLUDED.presentation_snapshot->>'sourcePriority')::integer, 0)
+            >= COALESCE((wire_items.presentation_snapshot->>'sourcePriority')::integer, 0)
+          THEN COALESCE(EXCLUDED.thumbnail_url, wire_items.thumbnail_url) ELSE wire_items.thumbnail_url END,
+        CASE
+          WHEN COALESCE((EXCLUDED.presentation_snapshot->>'sourcePriority')::integer, 0)
+            >= COALESCE((wire_items.presentation_snapshot->>'sourcePriority')::integer, 0)
+          THEN EXCLUDED.presentation_snapshot ELSE wire_items.presentation_snapshot END,
+        COALESCE(
+          EXCLUDED.publication_homepage_url, wire_items.publication_homepage_url),
+        COALESCE(
+          EXCLUDED.publication_icon_url, wire_items.publication_icon_url),
+        CASE
+          WHEN EXCLUDED.presentation_snapshot->>'metadataSource' = 'standard_site'
+          THEN EXCLUDED.language_code
+          ELSE wire_items.language_code END,
+        CASE WHEN jsonb_array_length(wire_items.topic_keys) = 0
+          THEN EXCLUDED.topic_keys ELSE wire_items.topic_keys END,
+        (
+          SELECT COALESCE(jsonb_agg(value ORDER BY value), '[]'::jsonb)
+          FROM (
+            SELECT DISTINCT value
+            FROM jsonb_array_elements_text(wire_items.provenance || EXCLUDED.provenance)
+          ) unique_provenance
+        ),
+        CASE
+          WHEN wire_items.target_kind NOT IN ('external_article', 'standard_site_document')
+            THEN wire_items.target_kind
+          WHEN EXCLUDED.target_kind NOT IN ('external_article', 'standard_site_document')
+            THEN EXCLUDED.target_kind
+          WHEN wire_items.target_kind = 'standard_site_document' THEN wire_items.target_kind
+          ELSE EXCLUDED.target_kind END,
+        GREATEST(wire_items.commercial_score, EXCLUDED.commercial_score),
+        CASE
+          WHEN wire_items.commercial_score > EXCLUDED.commercial_score
+          THEN wire_items.commercial_class ELSE EXCLUDED.commercial_class END,
+        CASE
+          WHEN wire_items.commercial_score > EXCLUDED.commercial_score
+          THEN wire_items.commercial_reasons ELSE EXCLUDED.commercial_reasons END,
+        COALESCE(wire_items.published_at, EXCLUDED.published_at),
+        EXCLUDED.last_seen_at,
+        COALESCE(EXCLUDED.last_signal_at, wire_items.last_signal_at),
+        wire_items.eligible AND EXCLUDED.eligible,
+        GREATEST(wire_items.source_confidence, EXCLUDED.source_confidence),
+        GREATEST(wire_items.expires_at, EXCLUDED.expires_at))
       RETURNING canonical_key, canonical_url, eligible, expires_at
       )
       INSERT INTO wire_link_metadata_cache
         (canonical_key, canonical_url, source, status, retry_after, failure_count, updated_at)
       SELECT canonical_key, canonical_url, 'fallback', 'pending', \(asOf), 0, \(asOf)
-      FROM upserted_item item
+      FROM (
+        SELECT canonical_key, canonical_url, eligible, expires_at FROM upserted_item
+        UNION ALL
+        SELECT canonical_key, canonical_url, eligible, expires_at FROM wire_items
+        WHERE canonical_key = \(identity.canonicalKey)
+          AND NOT EXISTS (SELECT 1 FROM upserted_item)
+      ) item
       WHERE eligible AND expires_at > \(asOf) AND canonical_url LIKE 'https://%'
         AND NOT EXISTS (
           SELECT 1 FROM wire_link_metadata_cache cache
@@ -1864,11 +1961,12 @@ struct PostgresWireInboxProcessor: Sendable {
     try await projectionQuery(
       """
       INSERT INTO wire_item_aliases (alias_key, canonical_key, alias_type, expires_at)
-      VALUES (\(alias), \(canonicalKey), \(type), \(asOf.addingTimeInterval(WireDataPolicy.itemRetention)))
+      VALUES (\(alias), \(canonicalKey), \(type), \(WireCacheExpiry.hourlyDeadline(asOf: asOf, retention: WireDataPolicy.itemRetention)))
       ON CONFLICT (alias_key) DO UPDATE SET canonical_key = EXCLUDED.canonical_key,
-        expires_at = EXCLUDED.expires_at
+        expires_at = GREATEST(wire_item_aliases.expires_at, EXCLUDED.expires_at)
       WHERE (wire_item_aliases.canonical_key, wire_item_aliases.expires_at)
-        IS DISTINCT FROM (EXCLUDED.canonical_key, EXCLUDED.expires_at)
+        IS DISTINCT FROM (
+          EXCLUDED.canonical_key, GREATEST(wire_item_aliases.expires_at, EXCLUDED.expires_at))
       """,
       on: connection
     )
