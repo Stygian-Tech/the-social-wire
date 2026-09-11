@@ -150,3 +150,60 @@ test("missing authoritative manifest never creates an empty v2 baseline or consu
   repo.records.delete(`${MANIFEST_COLLECTION}/self`);expect(await queue.flushOnce()).toBe(false);expect(repo.writes).toHaveLength(writes);
   expect((await queue.snapshot()).device).toEqual(before.device);expect((await queue.snapshot()).entries).toHaveLength(1);
 });
+
+
+test("a CAS retry does not publish newly enqueued coalescible entries", async () => {
+  const { repo, outbox } = await setup();
+  const queue = outbox();
+  await queue.enqueue(intent("first"));
+  let raced = false, toggled = false;
+  repo.beforePut = async collection => {
+    if (collection === MANIFEST_COLLECTION && !raced) {
+      raced = true;
+      await queue.enqueue(intent("second", "read", ["at://article/b"]));
+      const live = await loadV2Generation(repo);
+      const value: V2Manifest = { ...live.manifest, generation: "other-device", revision: live.manifest.revision + 1 };
+      repo.records.set(`${MANIFEST_COLLECTION}/self`, { ...live.record, value, cid: await recordCID(value) });
+    } else if (collection === CHUNK_COLLECTION && raced && !toggled) {
+      toggled = true;
+      await queue.enqueue(intent("third", "unread", ["at://article/b"]));
+    }
+  };
+  expect(await queue.flushOnce()).toBe(true);
+  const pending = await queue.snapshot();
+  expect(pending.entries.map(entry => entry.intent.actionId)).toEqual(["third"]);
+  expect(pending.entries[0].attempts).toBe(0);
+  expect(pending.device?.acknowledgedCounter).toBe(1);
+  expect((await loadV2Generation(repo)).devices[0].committedCounter).toBe(1);
+  expect(await outbox().flushOnce()).toBe(true);
+  const generation = await loadV2Generation(repo);
+  expect(generation.devices[0].committedCounter).toBe(2);
+  expect(generation.projection.resolve({ uri: "at://article/b", authorDid: viewer, createdAt: at }).isRead).toBe(false);
+  expect((await queue.snapshot()).entries).toHaveLength(0);
+});
+
+
+test("repeated wakeups do not accumulate account lock waiters during a slow flush", async () => {
+  const { repo, store, confirm } = await setup();
+  let lockCalls = 0;
+  const sharedLock = lock();
+  const queue = new V2ReadStateOutbox(store, repo, confirm, (key, operation) => {
+    lockCalls++; return sharedLock(key, operation);
+  });
+  await queue.enqueue(intent("first"));
+  let entered!: () => void, release!: () => void;
+  const waiting = new Promise<void>(resolve => { entered = resolve; });
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  let paused = false;
+  repo.beforePut = async () => { if (!paused) { paused = true; entered(); await gate; } };
+  const flushing = queue.flushOnce();
+  await waiting;
+  expect(await Promise.all(Array.from({ length: 60 }, () => queue.flushOnce()))).toEqual(Array(60).fill(false));
+  expect(lockCalls).toBe(1);
+  await queue.enqueue(intent("later", "unread"));
+  release(); expect(await flushing).toBe(true);
+  expect((await queue.snapshot()).entries).toHaveLength(1);
+  expect(await queue.flushOnce()).toBe(true);
+  expect(lockCalls).toBe(2);
+  expect((await queue.snapshot()).entries).toHaveLength(0);
+});

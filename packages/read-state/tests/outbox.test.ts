@@ -69,3 +69,13 @@ test("missing manifest after activation preserves the outbox without creating a 
   expect((await queue.snapshot()).entries.map(entry => entry.intent.actionId)).toEqual(["pending-after-deletion"]);
   expect((await queue.snapshot()).lastError).toBe("incomplete_generation");
 });
+
+
+test("malformed rate-limit headers cannot strand pending changes behind an infinite deadline", async () => {
+  const { retryDelay } = await import("../src");
+  expect(retryDelay(new PDSRequestError(429, "1e308", "Infinity"), 0, 1000, 0)).toBe(1000);
+  expect(retryDelay(new PDSRequestError(429, "invalid", "1e308"), 0, 1000, 0)).toBe(1000);
+  expect(retryDelay(new PDSRequestError(429, "120", "Infinity"), 0, 1000, 0)).toBe(120_000);
+  expect(retryDelay(new PDSRequestError(429, "1e308", "121"), 0, 1000, 0)).toBe(120_000);
+  expect(retryDelay(new PDSRequestError(429, "120", "181"), 0, 1000, 0)).toBe(180_000);
+});

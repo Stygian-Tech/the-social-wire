@@ -83,6 +83,29 @@ import Testing
     #expect(try await fixture.currentProjection().lastSequence == 2)
   }
 
+  @Test func successfulV2RecoveryClearsPersistedBackoffBeforeTheNextFailure() async throws {
+    let fixture = V2SyncFixture(); let url = file()
+    defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+    let engine = try ReadStateSyncEngine(viewerDid: viewer, file: url, transport: fixture.transport())
+    try await engine.upgradeToV2()
+    try await engine.enqueue([operation("first")])
+    await fixture.failConfirmAfterNextWrite()
+    await #expect(throws: URLError.self) { try await engine.flush() }
+    #expect(await engine.outbox.failures == 1)
+    #expect(await engine.retryAfter != nil)
+    let recoveredAt = Date().addingTimeInterval(1000)
+    try await engine.flush(now: recoveredAt)
+    #expect(await engine.pendingCount == 0)
+    #expect(await engine.retryAfter == nil)
+    let restarted = try ReadStateSyncEngine(viewerDid: viewer, file: url, transport: fixture.transport())
+    #expect(await restarted.outbox.failures == 0)
+    try await restarted.enqueue([operation("second", state: .unread)])
+    await fixture.failConfirmAfterNextWrite()
+    await #expect(throws: URLError.self) { try await restarted.flush(now: recoveredAt) }
+    #expect(await restarted.outbox.failures == 1)
+    #expect(await restarted.pendingCount == 1)
+  }
+
   @Test func legacyRetryAdvancesOnlyReceipt() async throws {
     let fixture = V2SyncFixture(); let url = file()
     defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }

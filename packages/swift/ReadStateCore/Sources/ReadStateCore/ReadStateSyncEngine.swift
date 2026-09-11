@@ -161,6 +161,13 @@ public actor ReadStateSyncEngine {
         outbox.retryAfter = nil
         try persist()
       }
+      // V2 receipt acknowledgments also finish a successful drain. Do not carry
+      // an old outage's backoff into unrelated changes after recovery or restart.
+      if outbox.failures != 0 || outbox.retryAfter != nil {
+        outbox.failures = 0
+        outbox.retryAfter = nil
+        try persist()
+      }
     } catch {
       outbox.failures = min(outbox.failures + 1, 10)
       if case ReadStateSyncFailure.rateLimited(let until) = error {
