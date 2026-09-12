@@ -1,5 +1,6 @@
 import Foundation
 import Logging
+import OperationsCore
 import PostgresNIO
 import WireCore
 
@@ -7,6 +8,7 @@ struct PostgresWireLinkMetadataStore: WireLinkMetadataStoring {
   let pool: PostgresClient
   let logger: Logger
   var schedulingReadEnabled = false
+  var roleLeaseAuthority: RoleLeaseAuthority? = nil
 
   func seedEmbedded(
     canonicalKey: String,
