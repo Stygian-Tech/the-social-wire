@@ -25,10 +25,13 @@ Lease renewal and completion fencing are unchanged.
 - `WIRE_METADATA_SCHEDULING_MAINTENANCE_ENABLED=false` disables experimental
   projection backfill/parity/cleanup work.
 - Missing-cache repair runs independently on the rank Coordinator, at most 1,000
-  rows per page, with `WIRE_METADATA_REPAIR_INTERVAL_MS=2000` between pages. Its
+  rows per page, with `WIRE_METADATA_REPAIR_INTERVAL_MS=1000` between pages. Its
   existing durable cursor survives lane restarts. This replaces repair-on-claim.
-  The theoretical ceiling is 1.8 million rows/hour before query time; the actual
-  full-corpus sweep and discovery rebuild still need a measured one-hour test.
+  The theoretical ceiling is 3.6 million rows/hour before query time. With the
+  observed approximately 2.02 million Production items, a one-hour sweep requires
+  average page database wait/execution below approximately 779 ms. The loop waits
+  after completion, with no overlap or catch-up; a measured full-corpus sweep and
+  discovery rebuild are still required to prove the one-hour target.
   Bounded logs report actual rows scanned/repaired, accumulated database wait and
   execution time, and the last fully observed sweep duration. A restarted loop
   waits for a complete cursor wrap before timing a full sweep. An unchanged empty
