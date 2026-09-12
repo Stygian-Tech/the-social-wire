@@ -47,7 +47,8 @@ public enum WireWorkerHost {
     )
     let metadataScheduling = WireMetadataSchedulingConfiguration.load(environment)
     let linkMetadataStore = PostgresWireLinkMetadataStore(
-      pool: pool, logger: logger, schedulingReadEnabled: metadataScheduling.readerEnabled)
+      pool: pool, logger: logger, schedulingReadEnabled: metadataScheduling.readerEnabled,
+      roleLeaseAuthority: roleLeaseAuthority)
     let inboxProcessor: PostgresWireInboxProcessor?
     if let actorSecret = config.actorHMACSecret {
       inboxProcessor = try PostgresWireInboxProcessor(

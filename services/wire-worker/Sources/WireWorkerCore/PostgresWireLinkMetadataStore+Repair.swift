@@ -1,4 +1,5 @@
 import Foundation
+import OperationsCore
 import PostgresNIO
 
 extension PostgresWireLinkMetadataStore {
@@ -14,11 +15,18 @@ extension PostgresWireLinkMetadataStore {
       try await connection.query("SET LOCAL lock_timeout = '500ms'", logger: logger)
       try await connection.query("SET LOCAL statement_timeout = '5s'", logger: logger)
       let rows = try await connection.query(Self.metadataRepairQuery(asOf: asOf, pageSize: pageSize), logger: logger)
+      var progress = WireMetadataRepairProgress(scanned: 0, repaired: 0, wrapped: false)
       for try await row in rows {
         let value = try row.decode((Int64, Int64, Bool).self)
-        return WireMetadataRepairProgress(scanned: value.0, repaired: value.1, wrapped: value.2)
+        progress = WireMetadataRepairProgress(scanned: value.0, repaired: value.1, wrapped: value.2)
       }
-      return WireMetadataRepairProgress(scanned: 0, repaired: 0, wrapped: false)
+      // The page and cursor remain uncommitted until current Coordinator authority
+      // is confirmed. Acquire the lease lock only after bounded repair work finishes.
+      if let roleLeaseAuthority {
+        try await PostgresRoleLeaseFence.lockAndValidate(
+          roleLeaseAuthority, connection: connection, logger: logger)
+      }
+      return progress
     }
   }
 
