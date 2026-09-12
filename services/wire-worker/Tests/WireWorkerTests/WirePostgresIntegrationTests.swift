@@ -1551,6 +1551,11 @@ struct WirePostgresIntegrationTests {
 
     let store = PostgresWireLinkMetadataStore(pool: pool, logger: logger)
     var claimed = Set<String>()
+    // Repair now runs independently of claims and HTTP batch duration.
+    try await pool.query(
+      "UPDATE wire_metadata_repair_cursor SET canonical_key = \("url:metadata-seeding-\(namespace)-") WHERE singleton",
+      logger: logger)
+    try await store.repairMissingMetadata(asOf: now)
     for _ in 0..<canonicalKeys.count {
       let targets = try await store.claimDue(limit: 1, asOf: now)
       claimed.formUnion(targets.map(\.canonicalKey))

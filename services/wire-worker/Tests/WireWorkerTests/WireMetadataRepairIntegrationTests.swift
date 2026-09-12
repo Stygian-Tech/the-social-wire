@@ -61,7 +61,8 @@ extension WirePostgresIntegrationTests {
       try await pool.withTransaction(logger: logger) { connection in
         try await connection.query(
           "SELECT canonical_key FROM wire_metadata_repair_cursor WHERE singleton FOR UPDATE", logger: logger)
-        try await store.repairMissingMetadata(asOf: now)
+        let skipped = try await store.repairMetadataPage(asOf: now)
+        #expect(skipped.scanned == 0 && skipped.repaired == 0 && !skipped.wrapped)
         for try await row in try await connection.query(
           "SELECT canonical_key FROM wire_metadata_repair_cursor WHERE singleton", logger: logger)
         { #expect(try row.decode(String.self) == prefix + "01000") }

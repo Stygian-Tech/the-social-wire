@@ -45,7 +45,9 @@ public enum WireWorkerHost {
       store: PostgresWirePublicationMetadataStore(pool: pool, logger: logger),
       queryClient: publicRepoClient
     )
-    let linkMetadataStore = PostgresWireLinkMetadataStore(pool: pool, logger: logger)
+    let metadataScheduling = WireMetadataSchedulingConfiguration.load(environment)
+    let linkMetadataStore = PostgresWireLinkMetadataStore(
+      pool: pool, logger: logger, schedulingReadEnabled: metadataScheduling.readerEnabled)
     let inboxProcessor: PostgresWireInboxProcessor?
     if let actorSecret = config.actorHMACSecret {
       inboxProcessor = try PostgresWireInboxProcessor(
@@ -248,6 +250,16 @@ public enum WireWorkerHost {
         }
       }
       if runtimePlan.runsMetadataEnrichment {
+        group.addTask {
+          try await WireMetadataMaintenanceRuntime.runRepair(
+            store: linkMetadataStore, logger: logger,
+            intervalMilliseconds: metadataScheduling.repairIntervalMilliseconds)
+        }
+        if metadataScheduling.maintenanceEnabled {
+          group.addTask {
+            try await WireMetadataMaintenanceRuntime.runScheduling(store: linkMetadataStore, logger: logger)
+          }
+        }
         let enricher = WireLinkMetadataEnricher(
           store: linkMetadataStore,
           client: HTTPWireLinkMetadataClient(httpClient: httpClient),
