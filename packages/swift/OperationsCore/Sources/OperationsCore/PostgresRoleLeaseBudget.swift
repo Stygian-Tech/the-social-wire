@@ -18,11 +18,14 @@ enum PostgresRoleLeaseBudget {
   static func withTransaction<Value: Sendable>(
     pool: PostgresClient,
     logger: Logger,
+    deadline suppliedDeadline: RoleLeaseOperationDeadline? = nil,
     operation: @escaping @Sendable (PostgresConnection) async throws -> Value
   ) async throws -> Value {
     let start = ContinuousClock.now
-    let connectionLifetime = RoleLeaseConnectionLifetime()
-    return try await withThrowingTaskGroup(of: Value.self) { group in
+    let deadline = suppliedDeadline ?? RoleLeaseOperationDeadline(startedAt: start)
+    try deadline.check()
+    let connectionLifetime = RoleLeaseConnectionLifetime(deadline: deadline)
+    let result = try await withThrowingTaskGroup(of: Value.self) { group in
       defer { group.cancelAll() }
       group.addTask {
         try await withTaskCancellationHandler {
@@ -39,9 +42,11 @@ enum PostgresRoleLeaseBudget {
                 try await PostgresRoleLeaseFence.setTimeouts(connection: connection, logger: logger)
                 let result = try await operation(connection)
                 try Task.checkCancellation()
+                try deadline.check()
                 _ = try await query("COMMIT", connection: connection, logger: logger)
                 return result
               }
+              try deadline.check()
               await connectionLifetime.finish()
               return result
             } catch {
@@ -59,12 +64,17 @@ enum PostgresRoleLeaseBudget {
         }
       }
       group.addTask {
-        try await ContinuousClock().sleep(until: start.advanced(by: .seconds(3)))
+        try await ContinuousClock().sleep(until: deadline.instant)
         throw RoleLeaseFailure.operationTimedOut
       }
       guard let value = try await group.next() else { throw CancellationError() }
+      try deadline.check()
       return value
     }
+    // Joining cancelled siblings may itself be delayed by executor pressure.
+    // A result that resumes after the deadline must not become a successful grant.
+    try deadline.check()
+    return result
   }
 
   private static func milliseconds(_ duration: Duration) -> Double {

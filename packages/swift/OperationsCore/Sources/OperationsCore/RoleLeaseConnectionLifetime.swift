@@ -6,27 +6,35 @@ import PostgresNIO
 /// either closes the acquired connection or prevents it from being used.
 final class RoleLeaseConnectionLifetime: @unchecked Sendable {
   private let lock = NSLock()
+  private let deadline: RoleLeaseOperationDeadline
   private var connection: PostgresConnection?
   private var cancelled = false
 
+  init(deadline: RoleLeaseOperationDeadline) { self.deadline = deadline }
+
   func install(_ connection: PostgresConnection) async throws {
-    let rejected = lock.withLock {
-      if cancelled { return true }
-      self.connection = connection
-      return false
-    }
-    if rejected {
+    do {
+      try lock.withLock {
+        guard !cancelled else { throw CancellationError() }
+        try deadline.check()
+        self.connection = connection
+      }
+    } catch {
       try? await connection.close()
-      throw CancellationError()
+      throw error
     }
   }
 
   func query(_ query: PostgresQuery, connection: PostgresConnection, logger: Logger) async throws -> [PostgresRow] {
     let future = try lock.withLock {
       guard !cancelled, !connection.isClosed else { throw CancellationError() }
-      return connection.query(query, logger: logger).flatMapThrowing { $0.rows }
+      return try deadline.submit {
+        connection.query(query, logger: logger).flatMapThrowing { $0.rows }
+      }
     }
-    return try await future.get()
+    let rows = try await future.get()
+    try deadline.check()
+    return rows
   }
 
   func finish() async {

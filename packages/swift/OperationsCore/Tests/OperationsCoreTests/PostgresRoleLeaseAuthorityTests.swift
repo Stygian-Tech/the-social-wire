@@ -165,6 +165,51 @@ struct PostgresRoleLeaseAuthorityTests {
     }
   }
 
+  @Test("an executor-delayed operation cannot commit after its deadline", arguments: [false, true])
+  func absoluteCommitDeadline(expired: Bool) async throws {
+    try await withPool { pool, _ in
+      let clock = LeaseOperationTestClock()
+      let deadline = RoleLeaseOperationDeadline(startedAt: clock.now, now: { clock.now })
+      let environment = "deadline-\(UUID().uuidString.prefix(12))"
+      do {
+        try await PostgresRoleLeaseBudget.withTransaction(pool: pool, logger: logger, deadline: deadline) { connection in
+          _ = try await PostgresRoleLeaseBudget.query(
+            """
+            INSERT INTO operations_role_leases
+              (environment, role, owner_id, fencing_token, acquired_at, lease_expires_at, updated_at)
+            VALUES (\(environment), 'deadline', 'owner', 1, clock_timestamp(),
+              clock_timestamp() + INTERVAL '30 seconds', clock_timestamp())
+            """, connection: connection, logger: logger)
+          // Advance authority time, not wall time: the timer task has not fired.
+          clock.advance(expired ? .seconds(3) : .seconds(2))
+        }
+        #expect(!expired)
+      } catch {
+        #expect(expired)
+        #expect(RoleLeaseFailure.classify(error) == .operationTimedOut)
+      }
+      let rows = try await pool.query(
+        "SELECT COUNT(*) FROM operations_role_leases WHERE environment = \(environment)", logger: logger)
+      for try await row in rows { #expect(try row.decode(Int64.self) == (expired ? 0 : 1)) }
+    }
+  }
+
+  @Test("a control attempt already out of time cannot acquire a pool connection")
+  func expiredAdmission() async throws {
+    try await withPool(maximumConnections: 1) { pool, _ in
+      let clock = LeaseOperationTestClock()
+      let deadline = RoleLeaseOperationDeadline(startedAt: clock.now, now: { clock.now })
+      clock.advance(.seconds(3))
+      _ = try await pool.withConnection { _ in
+        await #expect(throws: RoleLeaseFailure.operationTimedOut) {
+          try await PostgresRoleLeaseBudget.withTransaction(pool: pool, logger: logger, deadline: deadline) { _ in
+            Issue.record("Expired attempt must not enter transaction body")
+          }
+        }
+      }
+    }
+  }
+
   private func withPool(
     maximumConnections: Int = 4,
     _ body: @Sendable (PostgresClient, PostgresOperationsStore) async throws -> Void
