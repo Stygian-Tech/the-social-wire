@@ -76,26 +76,31 @@ extension PostgresOperationsStore {
       generatedAt: at)
   }
 
-  private func loadIngestionInboxMetrics() async throws -> [String: IngestionInboxMetrics] {
-    let generationInboxRows = try await pool.query(
-      """
-      SELECT source_generation,
-        COUNT(*) FILTER (WHERE status = 'pending')::bigint,
-        COUNT(*) FILTER (WHERE status = 'leased')::bigint,
-        COUNT(*) FILTER (WHERE status = 'retry')::bigint,
-        COUNT(*) FILTER (WHERE status = 'applied')::bigint,
-        COUNT(*) FILTER (WHERE status = 'filtered_scope')::bigint,
-        COUNT(*) FILTER (WHERE status = 'dead_letter' AND reconciled_at IS NULL)::bigint,
-        COUNT(*)::bigint,
-        MIN(staged_at) FILTER (WHERE status IN ('pending', 'leased', 'retry'))
-      FROM appview_ingestion_inbox
-      WHERE environment = \(environment)
-      GROUP BY source_generation
-      """,
-      logger: logger
-    )
+  /// Contain this exact census without turning an unavailable scan into a healthy zero.
+  /// The shared diagnostic budget covers pool wait, SQL and connection retirement.
+  func loadIngestionInboxMetrics() async throws -> [String: IngestionInboxMetrics] {
+    try Task.checkCancellation()
+    let generationInboxRows = try await PostgresRoleLeaseBudget.withTransaction(pool: pool, logger: logger) { [self] connection in
+      try await PostgresRoleLeaseBudget.query(
+        """
+        SELECT source_generation,
+          COUNT(*) FILTER (WHERE status = 'pending')::bigint,
+          COUNT(*) FILTER (WHERE status = 'leased')::bigint,
+          COUNT(*) FILTER (WHERE status = 'retry')::bigint,
+          COUNT(*) FILTER (WHERE status = 'applied')::bigint,
+          COUNT(*) FILTER (WHERE status = 'filtered_scope')::bigint,
+          COUNT(*) FILTER (WHERE status = 'dead_letter' AND reconciled_at IS NULL)::bigint,
+          COUNT(*)::bigint,
+          MIN(staged_at) FILTER (WHERE status IN ('pending', 'leased', 'retry'))
+        FROM appview_ingestion_inbox
+        WHERE environment = \(environment)
+        GROUP BY source_generation
+        """,
+        connection: connection, logger: logger)
+    }
+    try Task.checkCancellation()
     var inboxBySourceGeneration: [String: IngestionInboxMetrics] = [:]
-    for try await row in generationInboxRows {
+    for row in generationInboxRows {
       let value = try row.decode(
         (String, Int64, Int64, Int64, Int64, Int64, Int64, Int64, Date?).self
       )
