@@ -114,11 +114,9 @@ private struct LeaseDiagnosticTestLogHandler: LogHandler {
     get { metadata[key] }
     set { metadata[key] = newValue }
   }
-  #if compiler(>=6.4)
   func log(event: LogEvent) {
     recorder.append(self.metadata.merging(event.metadata ?? [:]) { _, value in value })
   }
-  #endif
 
   func log(level: Logger.Level, message: Logger.Message, metadata: Logger.Metadata?,
     source: String, file: String, function: String, line: UInt) {
