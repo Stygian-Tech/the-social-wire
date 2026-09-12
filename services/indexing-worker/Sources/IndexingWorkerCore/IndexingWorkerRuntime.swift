@@ -19,8 +19,24 @@ public enum IndexingWorkerRuntime {
     }
     let appEnvironment = try OperationsConfiguration.requireEnvironment(environment)
     let operationsConfiguration = OperationsConfiguration.fromEnvironment(environment)
-    let postgresConfiguration = try makePostgresConfig(from: databaseURL, logger: logger)
+    var postgresConfiguration = try makePostgresConfig(from: databaseURL, logger: logger)
+    if config.role == .coordinator {
+      // Dedicated control capacity: hosted lane workloads have separate pools.
+      postgresConfiguration.options.maximumConnections = 2
+    }
     let pool = PostgresClient(configuration: postgresConfiguration, backgroundLogger: logger)
+    // Failure diagnostics never borrow the two authority-control connections. This
+    // lazy connection is opened only after a failure and retired after idle time.
+    var diagnosticConfiguration = postgresConfiguration
+    diagnosticConfiguration.options.minimumConnections = 0
+    diagnosticConfiguration.options.maximumConnections = 1
+    diagnosticConfiguration.options.connectionIdleTimeout = .seconds(10)
+    diagnosticConfiguration.options.additionalStartupParameters.removeAll { $0.0 == "application_name" }
+    diagnosticConfiguration.options.additionalStartupParameters.append(("application_name", "coordinator-lease-diagnostics"))
+    let diagnosticPool = PostgresClient(configuration: diagnosticConfiguration,
+      backgroundLogger: Logger(label: "lease-diagnostic-pool", factory: { _ in SwiftLogNoOpLogHandler() }))
+    let leaseDiagnostics = PostgresRoleLeaseDiagnosticSampler(
+      pool: diagnosticPool, environment: appEnvironment, logger: logger)
     let operationsStore = PostgresOperationsStore(
       pool: pool,
       environment: appEnvironment,
@@ -43,6 +59,7 @@ public enum IndexingWorkerRuntime {
       try await withThrowingTaskGroup(of: Void.self) { group in
         group.addTask { await pool.run() }
         if config.role == .coordinator {
+          group.addTask { await diagnosticPool.run() }
           group.addTask {
             try await IndexingWorkerShutdownWatchdog.run(
               state: laneState, logger: logger, terminate: terminateUnresponsiveProcess)
@@ -52,7 +69,13 @@ public enum IndexingWorkerRuntime {
           try await IndexingWorkerHealthServer.run(
             role: config.role,
             startupProbe: {
-              try await operationsStore.ping()
+              if config.role == .coordinator {
+                guard await laneState.hasRecentControlEvidence(maximumAge: config.controlEvidenceMaximumAge) else {
+                  throw IndexingWorkerRuntimeError.controlEvidenceUnavailable
+                }
+              } else {
+                try await operationsStore.ping()
+              }
               try await probeLanes(
                 role: config.role,
                 path: "/startupz",
@@ -62,7 +85,13 @@ public enum IndexingWorkerRuntime {
               )
             },
             readinessProbe: {
-              try await operationsStore.ping()
+              if config.role == .coordinator {
+                guard await laneState.hasRecentControlEvidence(maximumAge: config.controlEvidenceMaximumAge) else {
+                  throw IndexingWorkerRuntimeError.controlEvidenceUnavailable
+                }
+              } else {
+                try await operationsStore.ping()
+              }
               try await probeLanes(
                 role: config.role,
                 path: "/readyz",
@@ -120,9 +149,10 @@ public enum IndexingWorkerRuntime {
               lane: .appView,
               state: laneState,
               store: operationsStore,
+              diagnostics: leaseDiagnostics,
               config: config,
               logger: logger
-            ) {
+            ) { ownership in
               try await AppViewWorkerHost.run(
                 environment: environment,
                 role: .coordinator,
@@ -130,6 +160,7 @@ public enum IndexingWorkerRuntime {
                 healthListener: .enabled(
                   hostname: "127.0.0.1", port: config.appViewHealthPort
                 ),
+                roleLeaseAuthority: ownership.authority,
                 logger: logger
               )
             }
@@ -140,15 +171,17 @@ public enum IndexingWorkerRuntime {
               lane: .wire,
               state: laneState,
               store: operationsStore,
+              diagnostics: leaseDiagnostics,
               config: config,
               logger: logger
-            ) {
+            ) { ownership in
               try await WireWorkerHost.run(
                 environment: environment,
                 role: .rank,
                 healthListener: .enabled(
                   hostname: "127.0.0.1", port: config.wireHealthPort
                 ),
+                roleLeaseAuthority: ownership.authority,
                 logger: logger
               )
             }
@@ -170,9 +203,10 @@ public enum IndexingWorkerRuntime {
     lane: IndexingWorkerLane,
     state: IndexingWorkerLaneState,
     store: any OperationsStore,
+    diagnostics: PostgresRoleLeaseDiagnosticSampler,
     config: IndexingWorkerConfig,
     logger: Logger,
-    operation: @Sendable @escaping () async throws -> Void
+    operation: @Sendable @escaping (RoleLeaseOwnership) async throws -> Void
   ) async {
     await state.set(.starting, for: lane)
     guard
@@ -187,8 +221,33 @@ public enum IndexingWorkerRuntime {
 
     let (events, continuation) = AsyncStream<RoleLeaseSupervisorEvent>.makeStream()
     let observer = Task {
+      var lastSuccessfulControlLogAt = ContinuousClock.now
+      var successfulRenewals = 0
+      var maximumAttemptMilliseconds = 0.0
+      var maximumPoolWaitMilliseconds = 0.0
       for await event in events {
         await state.record(event, for: lane)
+        if case .controlAttempt(let observation) = event, observation.failure != nil {
+          await diagnostics.capture(role: roleName)
+        }
+        if case .controlAttempt(let observation) = event, observation.failure == nil {
+          guard observation.operation == .renew else { continue }
+          successfulRenewals += 1
+          maximumAttemptMilliseconds = max(maximumAttemptMilliseconds, observation.totalMilliseconds)
+          maximumPoolWaitMilliseconds = max(maximumPoolWaitMilliseconds, observation.poolWaitMilliseconds ?? 0)
+          let now = ContinuousClock.now
+          guard lastSuccessfulControlLogAt.duration(to: now) >= .seconds(60) else { continue }
+          logger.info("Indexing successful lease renewals", metadata: [
+            "role": .string(roleName), "count": .stringConvertible(successfulRenewals),
+            "maximum_attempt_ms": .stringConvertible(maximumAttemptMilliseconds),
+            "maximum_pool_wait_ms": .stringConvertible(maximumPoolWaitMilliseconds),
+          ])
+          lastSuccessfulControlLogAt = now
+          successfulRenewals = 0
+          maximumAttemptMilliseconds = 0
+          maximumPoolWaitMilliseconds = 0
+          continue
+        }
         if event != .acquiring && event != .contended {
           logger.info("Indexing role lifecycle", metadata: [
             "role": .string(roleName), "owner_id": .string(config.ownerID),
@@ -200,7 +259,7 @@ public enum IndexingWorkerRuntime {
     let supervisor = RoleLeaseSupervisor(
       store: store, configuration: leaseConfiguration,
       onEvent: { continuation.yield($0) })
-    await supervisor.run { _ in try await operation() }
+    await supervisor.run { ownership in try await operation(ownership) }
     continuation.finish()
     await observer.value
   }
@@ -235,4 +294,5 @@ public enum IndexingWorkerRuntime {
 
 public enum IndexingWorkerRuntimeError: Error, Equatable {
   case missingDatabaseURL
+  case controlEvidenceUnavailable
 }

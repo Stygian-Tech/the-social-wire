@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Supervise an explicitly isolated memory trial. Requires reviewed trace and adapters."""
 import argparse
+from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import importlib.util
@@ -25,6 +26,177 @@ trial = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(trial)
 Error = trial.Error
 CATEGORIES = {"sidebar", "bootstrap", "pagination", "detail", "language_feed"}
+# Verified against Gateway AppViewProxyRoutes and the discovery.getWire lexicon.
+READ_ROUTES = {
+    "/v1/publications/sidebar": ("sidebar", {"sidebar"}),
+    "/xrpc/app.thesocialwire.publication.getSidebar": ("sidebar", {"sidebar"}),
+    "/v1/appview/bootstrap-stream": ("bootstrap", {"bootstrap"}),
+    "/v1/appview/entries": ("entries", {"pagination"}),
+    "/xrpc/app.thesocialwire.appview.listEntries": ("entries", {"pagination"}),
+    "/v1/appview/feed": ("entries", {"pagination"}),
+    "/xrpc/app.thesocialwire.appview.getFeed": ("entries", {"pagination"}),
+    "/v1/appview/entry": ("detail", {"detail"}),
+    "/xrpc/app.thesocialwire.appview.getEntry": ("detail", {"detail"}),
+    "/xrpc/app.thesocialwire.discovery.getWire": ("wire", {"language_feed", "pagination"}),
+}
+
+
+def read_contract(item):
+    path = item.get("path", "")
+    if not isinstance(path, str) or len(path) > 32768 or any(ord(c) < 33 or ord(c) == 127 for c in path):
+        raise Error("Read path must be bounded and contain no whitespace or controls")
+    parsed = urllib.parse.urlsplit(path)
+    contract = READ_ROUTES.get(parsed.path)
+    if parsed.scheme or parsed.netloc or "#" in path or not contract or item.get("category") not in contract[1]:
+        raise Error("Read route/category is not an allowlisted existing GET contract")
+    if item.get("method", "GET") != "GET":
+        raise Error("Trial requests must use GET")
+    if contract[0] == "wire":
+        wire_expectation(item)
+    elif any(key in item for key in ("expected_degraded", "expected_source", "baseline_evidence")):
+        raise Error("Wire baseline expectations apply only to Wire read contracts")
+    return contract[0]
+
+
+def wire_expectation(item):
+    degraded = item.get("expected_degraded", False)
+    source = item.get("expected_source", "ranked")
+    if type(degraded) is not bool or source not in ("ranked", "stale_generation", "simplified_fallback"):
+        raise Error("Wire baseline expectations must specify an exact supported source and boolean degradation")
+    if degraded or source != "ranked" or "baseline_evidence" in item:
+        evidence = item.get("baseline_evidence")
+        if (not isinstance(evidence, str) or not evidence.strip() or len(evidence) > 512
+                or "expected_degraded" not in item or "expected_source" not in item):
+            raise Error("Degraded baseline requires explicit expectations and a reviewed source evidence reference")
+    return source, degraded
+
+
+def json_object(raw):
+    def unique(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError()
+            result[key] = value
+        return result
+    def invalid_constant(_):
+        raise ValueError()
+    try:
+        value = json.loads(raw, object_pairs_hook=unique, parse_constant=invalid_constant)
+    except (ValueError, UnicodeError):
+        raise Error("Response is not complete valid JSON") from None
+    if not isinstance(value, dict) or "error" in value or "errors" in value:
+        raise Error("Response is an error or lacks an object payload")
+    return value
+
+
+def text_field(value, key):
+    return isinstance(value.get(key), str) and bool(value[key])
+
+
+def timestamp(value):
+    try:
+        return isinstance(value, str) and datetime.fromisoformat(value.replace("Z", "+00:00")).tzinfo is not None
+    except ValueError:
+        return False
+
+
+def validate_entry(value):
+    if (not isinstance(value, dict) or not text_field(value, "entryId") or not isinstance(value.get("title"), str)
+            or not timestamp(value.get("publishedAt")) or type(value.get("isRead")) is not bool):
+        raise Error("Entry payload does not match the current AppView contract")
+
+
+def validate_entries(value):
+    if not isinstance(value.get("entries"), list) or (value.get("cursor") is not None and not text_field(value, "cursor")):
+        raise Error("Entries page is missing entries or has an invalid cursor")
+    for entry in value["entries"]:
+        validate_entry(entry)
+
+
+def validate_sidebar(value):
+    arrays = ("folders", "publicationPrefs", "allPublicationRows", "myPublications",
+              "subscribedUnfoldered", "followingTabPublications", "enrollAuthorDids")
+    if (not text_field(value, "viewerDid") or not value["viewerDid"].startswith("did:")
+            or not timestamp(value.get("refreshedAt")) or any(not isinstance(value.get(key), list) for key in arrays)):
+        raise Error("Sidebar payload does not match the current projection contract")
+
+
+def validate_response(item, raw, content_type):
+    contract = read_contract(item)
+    mime = content_type.split(";", 1)[0].strip().lower()
+    if contract == "bootstrap":
+        if mime != "application/x-ndjson":
+            raise Error("Bootstrap response must be NDJSON")
+        events = [json_object(line) for line in raw.splitlines() if line.strip()]
+        kinds = [event.get("kind") for event in events]
+        allowed = {"sidebarPriority", "sidebarSection", "unreadCounts", "selectedPublication", "entriesPage", "sidebarFolders", "done"}
+        if (not kinds or kinds[-1] != "done" or kinds.count("done") != 1
+                or kinds.count("sidebarPriority") != 1 or any(not isinstance(kind, str) or kind not in allowed for kind in kinds)):
+            raise Error("Bootstrap stream is incomplete, degraded or contains an error")
+        selected, pages = set(), set()
+        for event in events:
+            kind = event["kind"]
+            payload = event.get(kind)
+            if (not isinstance(payload, dict) or ("source" in payload
+                    and payload["source"] not in {"live_projection", "projection_cache"})):
+                raise Error("Bootstrap event payload is invalid or unavailable")
+            if kind == "sidebarPriority":
+                validate_sidebar(payload)
+            elif kind == "sidebarSection" and (not text_field(payload, "sectionKey")
+                    or not isinstance(payload.get("publications"), list) or not timestamp(payload.get("refreshedAt"))):
+                raise Error("Bootstrap sidebar section is incomplete")
+            elif kind == "sidebarFolders" and any(not isinstance(payload.get(key), list)
+                    for key in ("folderSections", "allPublicationRows")):
+                raise Error("Bootstrap sidebar folders are incomplete")
+            elif kind == "unreadCounts" and (not isinstance(payload.get("counts"), dict)
+                    or any(type(count) is not int or count < 0 for count in payload["counts"].values())):
+                raise Error("Bootstrap unread counts are invalid")
+            elif kind == "done" and not timestamp(payload.get("refreshedAt")):
+                raise Error("Bootstrap completion lacks its observed timestamp")
+            elif kind in {"entriesPage", "selectedPublication"}:
+                if not text_field(payload, "publicationId"):
+                    raise Error("Bootstrap publication identity is missing")
+                if kind == "selectedPublication":
+                    selected.add(payload["publicationId"])
+                else:
+                    validate_entries(payload)
+                    if payload.get("source") not in {"live_projection", "projection_cache"}:
+                        raise Error("Bootstrap entries lack available projection evidence")
+                    pages.add(payload["publicationId"])
+        if selected - pages:
+            raise Error("Bootstrap completed without the selected publication entries")
+        return
+    if mime != "application/json":
+        raise Error("Read response must be JSON")
+    value = json_object(raw)
+    if contract == "sidebar":
+        validate_sidebar(value)
+    elif contract == "entries":
+        validate_entries(value)
+    elif contract == "detail":
+        validate_entry(value)
+        expected = urllib.parse.parse_qs(urllib.parse.urlsplit(item["path"]).query).get("entryId")
+        if expected and expected != [value["entryId"]]:
+            raise Error("Entry detail does not match the requested identity")
+    elif contract == "wire":
+        expected_source, expected_degraded = wire_expectation(item)
+        if (not text_field(value, "generationId") or not timestamp(value.get("generatedAt"))
+                or not text_field(value, "language") or value.get("source") != expected_source
+                or value.get("degraded") is not expected_degraded or not isinstance(value.get("items"), list)
+                or not 1 <= len(value["items"]) <= 50
+                or (value.get("cursor") is not None and not text_field(value, "cursor"))):
+            raise Error("Wire response lacks a nonempty complete generation matching the reviewed baseline")
+        language = urllib.parse.parse_qs(urllib.parse.urlsplit(item["path"]).query).get("lang")
+        if language and language != [value["language"]]:
+            raise Error("Wire response does not match the requested language")
+        for entry in value["items"]:
+            if (not isinstance(entry, dict) or not text_field(entry, "itemId") or not text_field(entry, "canonicalUrl")
+                    or not isinstance(entry.get("title"), str) or not isinstance(entry.get("source"), dict)
+                    or any(not isinstance(entry["source"].get(key), str) for key in ("name", "domain"))
+                    or any(not isinstance(entry.get(key), list) or any(not isinstance(x, str) for x in entry[key])
+                           for key in ("reasons", "provenance"))):
+                raise Error("Wire item payload does not match its read contract")
 
 
 def digest(path):
@@ -78,8 +250,7 @@ def validate_inputs(config, trace_path, environment=os.environ):
             raise Error("Read targets must be explicit isolated private Railway origins")
         if origin["service_id"] in config["protected_source_ids"] or origin["service_id"] == config["target"]["service_id"]:
             raise Error("Read target cannot be a protected service or the database")
-        if not item["path"].startswith("/xrpc/") or urllib.parse.urlsplit(item["path"]).netloc or "#" in item["path"]:
-            raise Error("Only relative XRPC GET paths are accepted")
+        read_contract(item)
         if not isinstance(item["id"], str) or not item["id"] or len(item["id"]) > 128:
             raise Error("Trace request IDs must be short nonsecret identifiers")
     token = Path(runner["token_file"])
@@ -194,6 +365,7 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 def request(item, config, children, env):
+    read_contract(item)
     url = config["read_targets"][item["target"]]["origin"].rstrip("/") + item["path"]
     started = time.monotonic()
     headers = invoke(children, config["runner"]["adapters"]["signer"], env,
@@ -208,6 +380,7 @@ def request(item, config, children, env):
         try:
             with opener.open(urllib.request.Request(url, headers=headers, method="GET"), timeout=config["runner"]["request_timeout_seconds"]) as response:
                 size = 0
+                body = bytearray()
                 while True:
                     chunk = response.read1(65536)
                     size += len(chunk)
@@ -216,6 +389,13 @@ def request(item, config, children, env):
                         raise Error("Read response failed or exceeded its byte/time bound")
                     if not chunk:
                         break
+                    body.extend(chunk)
+                length = response.headers.get("Content-Length")
+                if length is not None and (not length.isdecimal() or int(length) != size):
+                    raise Error("Read response body is incomplete")
+                validate_response(item, body, response.headers.get("Content-Type", ""))
+                if time.monotonic() - started > 2 * config["runner"]["request_timeout_seconds"]:
+                    raise Error("Read validation exceeded its time bound")
             break
         except urllib.error.HTTPError as error:
             nonce = error.headers.get("DPoP-Nonce")

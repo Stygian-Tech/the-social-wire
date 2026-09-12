@@ -156,6 +156,7 @@ filter_changed wire_ingest \
 filter_changed wire_worker \
   'services/wire-worker/**' \
   'packages/swift/WireCore/**' \
+  'packages/swift/OperationsCore/**' \
   'packages/swift/SocialWireRedis/**' \
   'database/migrations/**' \
   'railway/wire-worker.json' \

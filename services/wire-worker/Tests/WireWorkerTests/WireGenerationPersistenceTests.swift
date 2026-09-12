@@ -1,5 +1,6 @@
 import Foundation
 import Logging
+import OperationsCore
 import PostgresNIO
 import Testing
 import WireCore
@@ -15,6 +16,51 @@ import WireCore
   )
 )
 struct WireGenerationPersistenceTests {
+  @Test("an expired or replaced Coordinator cannot publish or leave partial generation rows",
+    arguments: [false, true])
+  func rejectsStaleCoordinator(withSuccessor: Bool) async throws {
+    try await withStore { store, pool, logger in
+      let now = Date()
+      let suffix = UUID().uuidString.lowercased()
+      let environment = "fence-\(suffix.prefix(12))"
+      let role = "indexing.wire-materializer"
+      let keys = ["fence-item-\(suffix)"]
+      try await seedItems(keys, at: now, pool: pool, logger: logger)
+      let control = PostgresOperationsStore(pool: pool, environment: environment, logger: logger)
+      let lease = try #require(try await control.acquireRoleLease(
+        role: role, ownerID: "old", leaseUntil: now.addingTimeInterval(30), at: now))
+      var predecessor = store
+      predecessor.roleLeaseAuthority = RoleLeaseAuthority(
+        environment: environment, role: role, ownerID: "old", fencingToken: lease.fencingToken)
+      var generation = makeGeneration(keys: keys, at: now, feed: "fence-feed-\(suffix)")
+      try await predecessor.commit(generation)
+      var activeID = generation.generationID
+      try await pool.query(
+        "UPDATE operations_role_leases SET acquired_at = clock_timestamp() - INTERVAL '2 seconds', lease_expires_at = clock_timestamp() - INTERVAL '1 second' WHERE environment = \(environment) AND role = \(role)",
+        logger: logger)
+      if withSuccessor {
+        let replacement = try #require(try await control.acquireRoleLease(
+          role: role, ownerID: "new", leaseUntil: now.addingTimeInterval(30), at: now))
+        var successor = store
+        successor.roleLeaseAuthority = RoleLeaseAuthority(
+          environment: environment, role: role, ownerID: "new", fencingToken: replacement.fencingToken)
+        generation.generationID = UUID()
+        try await successor.commit(generation)
+        activeID = generation.generationID
+      }
+      generation.generationID = UUID()
+      await #expect(throws: (any Error).self) { try await predecessor.commit(generation) }
+      let state = try await pool.query(
+        "SELECT active_generation_id FROM wire_feed_state WHERE feed_key = \(generation.feedKey)",
+        logger: logger)
+      for try await row in state { #expect(try row.decode(UUID.self) == activeID) }
+      let partial = try await pool.query(
+        "SELECT COUNT(*)::bigint FROM wire_rank_generations WHERE generation_id = \(generation.generationID)",
+        logger: logger)
+      for try await row in partial { #expect(try row.decode(Int64.self) == 0) }
+    }
+  }
+
   @Test("bulk rows preserve ranking order, scores, reasons and both edition variants")
   func bulkGenerationAndRollback() async throws {
     try await withStore { store, pool, logger in

@@ -4,7 +4,7 @@
 
 Run only in a **separate isolated Railway runner**, co-located with the isolated database/application environment. The database probe must still execute inside the database service's cgroup. The runner verifies its actual Railway environment variables, the original database service/volume/snapshot identity contract, private read origins and a provider-derived identity adapter response before starting load. Its adapters must be reviewed executable files with pinned SHA-256 digests; they receive configuration through `TSW92_TRIAL_CONFIG`. A separate reviewed binary manifest must include their exact `adapters` hash map and the deployed application hashes/configuration. Scripts cannot prove that an operator-provided adapter or a trace is representative merely from these labels.
 
-Use the round config's explicit `memory_limit_bytes` unchanged in the runner and database probe: `16000000000`, `12000000000`, then `8000000000` for Railway's decimal 16, 12 and 8 GB limits. Preflight and every observed sample must match that integer exactly; neither the runner nor probe translates GB to GiB or accepts the retired `memory_gib` field. The final summary retains the exact byte cap.
+Use the round config's explicit `memory_limit_bytes` unchanged in the runner and database probe: `13000000000`, `12000000000`, `11000000000`, then `10000000000` for Railway's decimal 13, 12, 11 and 10 GB trials (`16000000000` remains the baseline). Preflight and every observed sample must match that integer exactly; neither the runner nor probe translates GB to GiB or accepts the retired `memory_gib` field. The final summary retains the exact byte cap.
 
 Extend the existing round config with:
 
@@ -37,12 +37,26 @@ Supply the trace file separately; its exact bytes must match `workload_sha256`:
   "source_evidence": "<reviewed private trace/inventory reference>",
   "rates": {"mixed": 10, "burst": 20, "recovery": 10},
   "requests": [
-    {"id": "sidebar-viewer-a", "category": "sidebar", "target": "gateway", "path": "/xrpc/<reviewed actual method and query>"}
+    {"id": "sidebar-viewer-a", "category": "sidebar", "target": "gateway", "path": "/v1/publications/sidebar"}
   ]
 }
 ```
 
 The example is intentionally incomplete and **will fail** until actual requests cover `sidebar`, `bootstrap`, `pagination`, `detail`, and `language_feed`. The example rates are illustrative, not recommended capacity levels. Replay segment hashes/bounds, corpus age treatment, per-request viewer identity and application binary/configuration evidence belong in the reviewed manifest/trace and signer adapter; keep them identical between memory rounds. Requests are GET-only: any required authenticated mutation/action replay needs a separately reviewed adapter before claiming that the full product workload was represented.
+
+The driver permits only these verified GET contracts, with query strings preserved for the signer:
+
+| Category | Allowed routes |
+|---|---|
+| `sidebar` | `/v1/publications/sidebar`, `/xrpc/app.thesocialwire.publication.getSidebar` |
+| `bootstrap` | `/v1/appview/bootstrap-stream` |
+| `pagination` | `/v1/appview/entries`, `/v1/appview/feed`, `/xrpc/app.thesocialwire.appview.listEntries`, `/xrpc/app.thesocialwire.appview.getFeed`, `/xrpc/app.thesocialwire.discovery.getWire` |
+| `detail` | `/v1/appview/entry`, `/xrpc/app.thesocialwire.appview.getEntry` |
+| `language_feed` | `/xrpc/app.thesocialwire.discovery.getWire` |
+
+Unknown XRPC methods, mutations, category/route mismatches, redirects and non-private origins fail closed before load. These aliases are verified against Gateway `AppViewProxyRoutes.swift`, AppView entry models, the bootstrap stream contract and the `discovery.getWire` lexicon.
+
+A successful response must finish within the existing time/8 MiB bounds and match its JSON or NDJSON contract. Error objects, malformed/truncated JSON, incorrect detail identity, malformed entries, and Wire source/degradation mismatches fail. Wire reads must return nonempty generation-bound items and match an explicitly requested language. By default each Wire trace item requires `expected_source: "ranked"` and `expected_degraded: false`. A documented degraded baseline may instead pin both explicit values and a nonempty `baseline_evidence` reference on that item; each response must match them exactly, so a new source/degradation change still fails. Those trace fields are hashed with the workload and cannot establish baseline validity without independent source evidence review. Bootstrap streams require a sidebar projection, one terminal `done` event with its observation timestamp, no warning/error/unavailable events, and entries for any selected publication. Empty AppView pages and a complete bootstrap for a viewer without a selection remain valid contract responses. Payloads are checked only in memory and never written to evidence. These checks do not establish trace representativeness, pagination traversal, viewer isolation, generation freshness per language, or discovery rebuild acceptance; those remain separate trial gates.
 
 After provisioning, restoring and reviewing all inputs, an operator can invoke:
 
