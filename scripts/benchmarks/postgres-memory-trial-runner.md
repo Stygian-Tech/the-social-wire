@@ -4,7 +4,7 @@
 
 Run only in a **separate isolated Railway runner**, co-located with the isolated database/application environment. The database probe must still execute inside the database service's cgroup. The runner verifies its actual Railway environment variables, the original database service/volume/snapshot identity contract, private read origins and a provider-derived identity adapter response before starting load. Its adapters must be reviewed executable files with pinned SHA-256 digests; they receive configuration through `TSW92_TRIAL_CONFIG`. A separate reviewed binary manifest must include their exact `adapters` hash map and the deployed application hashes/configuration. Scripts cannot prove that an operator-provided adapter or a trace is representative merely from these labels.
 
-Use the round config's explicit `memory_limit_bytes` unchanged in the runner and database probe: `16000000000`, `12000000000`, then `8000000000` for Railway's decimal 16, 12 and 8 GB limits. Preflight and every observed sample must match that integer exactly; neither the runner nor probe translates GB to GiB or accepts the retired `memory_gib` field. The final summary retains the exact byte cap.
+Use the round config's explicit `memory_limit_bytes` unchanged in the runner and database probe: `13000000000`, `12000000000`, `11000000000`, then `10000000000` for Railway's decimal 13, 12, 11 and 10 GB trials (`16000000000` remains the baseline). Preflight and every observed sample must match that integer exactly; neither the runner nor probe translates GB to GiB or accepts the retired `memory_gib` field. The final summary retains the exact byte cap.
 
 Extend the existing round config with:
 

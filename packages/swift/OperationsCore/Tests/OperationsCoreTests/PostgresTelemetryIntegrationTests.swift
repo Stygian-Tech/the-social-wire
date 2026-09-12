@@ -536,17 +536,19 @@ struct PostgresTelemetryIntegrationTests {
         "DELETE FROM operations_metric_rollups WHERE environment = 'prod' AND metric_name LIKE 'socialwire.database.%'",
         logger: logger)
       let now = Date(timeIntervalSince1970: floor(Date().timeIntervalSince1970 / 60) * 60)
-      async let first: Void = store.recordDatabaseCostTelemetry(at: now)
-      async let duplicate: Void = store.recordDatabaseCostTelemetry(at: now)
+      async let first: Void = store.recordDatabaseCostTelemetry(group: .counters, at: now)
+      async let duplicate: Void = store.recordDatabaseCostTelemetry(group: .counters, at: now)
       _ = await (first, duplicate)
       let baseline = try await metricCounts(pool: pool, logger: logger)
       #expect(baseline["socialwire.database.wal_bytes_total"] == 1)
-      #expect(baseline["socialwire.database.statement_execution_ms_total"] == 1)
+      #expect(baseline["socialwire.database.statement_execution_ms_total"] == nil)
+      #expect(baseline["socialwire.database.table_bytes"] == nil)
+      #expect(baseline["socialwire.database.expired_rows_lower_bound"] == nil)
       #expect(baseline["socialwire.database.wal_bytes_per_second"] == nil)
       #expect(baseline.count <= 16)
-      await store.recordDatabaseCostTelemetry(at: now.addingTimeInterval(59))
+      await store.recordDatabaseCostTelemetry(group: .counters, at: now.addingTimeInterval(59))
       #expect(try await metricCounts(pool: pool, logger: logger) == baseline)
-      await store.recordDatabaseCostTelemetry(at: now.addingTimeInterval(60))
+      await store.recordDatabaseCostTelemetry(group: .counters, at: now.addingTimeInterval(60))
       let subsequent = try await metricCounts(pool: pool, logger: logger)
       #expect(subsequent["socialwire.database.wal_bytes_total"] == 2)
       #expect(subsequent["socialwire.database.wal_bytes_per_second"] == 1)
@@ -558,6 +560,108 @@ struct PostgresTelemetryIntegrationTests {
       for try await row in rows {
         let value = try row.decode((Int64, Int64, Bool).self)
         #expect(value.0 <= 160 && value.1 == 1 && value.2)
+      }
+    }
+  }
+
+  @Test("cost groups have independent throttles and do not redate dashboard evidence")
+  func independentCostGroups() async throws {
+    try await withStore { store, pool, logger in
+      try await pool.query(
+        "DELETE FROM operations_metric_rollups WHERE environment = 'prod' AND metric_name LIKE 'socialwire.database.%'",
+        logger: logger)
+      let now = Date(timeIntervalSince1970: floor(Date().timeIntervalSince1970 / 60) * 60)
+      #expect(try await store.fetchDatabaseObservability() == nil)
+      await store.recordDatabaseCostTelemetry(group: .counters, at: now)
+      #expect(try await store.fetchDatabaseObservability() == nil)
+      await store.recordDatabaseCostTelemetry(group: .statements, at: now)
+      await store.recordDatabaseCostTelemetry(group: .tables, at: now)
+      let initial = try await metricCounts(pool: pool, logger: logger)
+      #expect(initial["socialwire.database.statement_execution_ms_total"] == 1)
+      #expect((initial["socialwire.database.table_bytes"] ?? 0) > 0)
+      #expect(initial["socialwire.database.expired_rows_lower_bound"] == nil)
+      for _ in 0..<3 {
+        let snapshot = try #require(try await store.fetchDatabaseObservability())
+        #expect(snapshot.observedAt == now)
+        #expect(snapshot.evidenceAgeSeconds >= 0)
+      }
+      #expect(try await metricCounts(pool: pool, logger: logger) == initial)
+      await store.recordDatabaseCostTelemetry(group: .statements, at: now.addingTimeInterval(299))
+      await store.recordDatabaseCostTelemetry(group: .tables, at: now.addingTimeInterval(899))
+      #expect(try await metricCounts(pool: pool, logger: logger) == initial)
+      await store.recordDatabaseCostTelemetry(group: .counters, at: now.addingTimeInterval(60))
+      let snapshot = try #require(try await store.fetchDatabaseObservability())
+      #expect(snapshot.observedAt == now) // Fresh counters do not redate the old size sample.
+      await store.recordDatabaseCostTelemetry(group: .statements, at: now.addingTimeInterval(300))
+      await store.recordDatabaseCostTelemetry(group: .tables, at: now.addingTimeInterval(900))
+      let later = try await metricCounts(pool: pool, logger: logger)
+      #expect(later["socialwire.database.wal_bytes_total"] == 2)
+      #expect(later["socialwire.database.statement_execution_ms_total"] == 2)
+      #expect(later["socialwire.database.table_bytes"] == (initial["socialwire.database.table_bytes"] ?? 0) * 2)
+    }
+  }
+
+  @Test("expiry rotation samples exactly one table per tick and finishes ten tables in five minutes")
+  func rotatingExpirySamples() async throws {
+    try await withStore { store, pool, logger in
+      try await pool.query(
+        "DELETE FROM operations_metric_rollups WHERE environment = 'prod' AND metric_name LIKE 'socialwire.database.expired_rows_%'",
+        logger: logger)
+      let now = Date(timeIntervalSince1970: floor(Date().timeIntervalSince1970 / 60) * 60)
+      let tables = DatabaseExpiryTelemetryTable.allCases
+      #expect(tables.count == 10)
+      for (index, table) in tables.enumerated() {
+        let at = now.addingTimeInterval(Double(index) * 30)
+        await store.recordDatabaseCostTelemetry(group: .expiry, at: at)
+        await store.recordDatabaseCostTelemetry(group: .expiry, at: at.addingTimeInterval(29))
+        let rows = try await pool.query(
+          """
+          SELECT dimensions->>'table', bucket_start, sample_count
+          FROM operations_metric_rollups WHERE environment = 'prod'
+            AND metric_name = 'socialwire.database.expired_rows_lower_bound'
+          ORDER BY bucket_start, dimensions->>'table'
+          """, logger: logger)
+        var seen: [String: (Date, Int64)] = [:]
+        for try await row in rows {
+          let value = try row.decode((String, Date, Int64).self)
+          seen[value.0] = (value.1, value.2)
+        }
+        #expect(seen.count == index + 1)
+        #expect(seen[table.rawValue]?.0 == Date(timeIntervalSince1970: floor(at.timeIntervalSince1970 / 60) * 60))
+        #expect(seen.values.allSatisfy { $0.1 == 1 })
+      }
+      await store.recordDatabaseCostTelemetry(group: .expiry, at: now.addingTimeInterval(300))
+      let counts = try await metricCounts(pool: pool, logger: logger)
+      #expect(counts["socialwire.database.expired_rows_lower_bound"] == 11)
+    }
+  }
+
+  @Test("an unavailable expiry table does not emit zero or discard counter samples or pin the rotation")
+  func expiryFailureIsolation() async throws {
+    try await withStore { store, pool, logger in
+      try await pool.query(
+        "DELETE FROM operations_metric_rollups WHERE environment = 'prod' AND metric_name LIKE 'socialwire.database.%'",
+        logger: logger)
+      let now = Date(timeIntervalSince1970: floor(Date().timeIntervalSince1970 / 60) * 60)
+      try await pool.withTransaction(logger: logger) { blocker in
+        try await blocker.query("LOCK TABLE content_items IN ACCESS EXCLUSIVE MODE", logger: logger)
+        async let expiry: Void = store.recordDatabaseCostTelemetry(group: .expiry, at: now)
+        async let counters: Void = store.recordDatabaseCostTelemetry(group: .counters, at: now)
+        _ = await (expiry, counters)
+        let counts = try await metricCounts(pool: pool, logger: logger)
+        #expect(counts["socialwire.database.expired_rows_lower_bound"] == nil)
+        #expect(counts["socialwire.database.expired_rows_truncated"] == nil)
+        #expect(counts["socialwire.database.wal_bytes_total"] == 1)
+        // content_items remains blocked. The next tick must select wire_items alone.
+        await store.recordDatabaseCostTelemetry(group: .expiry, at: now.addingTimeInterval(30))
+        let rows = try await pool.query(
+          """
+          SELECT dimensions->>'table' FROM operations_metric_rollups
+          WHERE environment = 'prod' AND metric_name = 'socialwire.database.expired_rows_lower_bound'
+          """, logger: logger)
+        var observed: [String] = []
+        for try await row in rows { observed.append(try row.decode(String.self)) }
+        #expect(observed == ["wire_items"])
       }
     }
   }
@@ -577,8 +681,8 @@ struct PostgresTelemetryIntegrationTests {
           """, logger: logger)
       }
       func circleSample() async throws -> (Int64, Bool) {
-        let rows = try await store.databaseExpiryBacklogRows(at: cutoff, sampleLimit: 2)
-        #expect(rows.count == 10)
+        let rows = try await store.databaseExpiryBacklogRows(table: .circleEditionCache, at: cutoff, sampleLimit: 2)
+        #expect(rows.count == 1)
         for row in rows {
           let value = try row.decode((String, Int64, Bool).self)
           if value.0 == "appview_circle_edition_cache" { return (value.1, value.2) }
@@ -628,20 +732,20 @@ struct PostgresTelemetryIntegrationTests {
             \(status == "filtered_scope" ? cutoff : nil as Date?))
           """, logger: logger)
       }
-      for row in try await store.databaseExpiryBacklogRows(at: cutoff, sampleLimit: 2) {
+      for row in try await store.databaseExpiryBacklogRows(table: .appviewInbox, at: cutoff, sampleLimit: 2) {
         let sample = try row.decode((String, Int64, Bool).self)
         if sample.0 == "appview_ingestion_inbox" {
           #expect(sample.1 == 0 && sample.2)  // Full protected prefix is not an empty backlog.
         }
       }
-      for row in try await store.databaseExpiryBacklogRows(at: cutoff, sampleLimit: 10) {
+      for row in try await store.databaseExpiryBacklogRows(table: .appviewInbox, at: cutoff, sampleLimit: 10) {
         let sample = try row.decode((String, Int64, Bool).self)
         if sample.0 == "appview_ingestion_inbox" {
           #expect(sample.1 == 3 && !sample.2)
         }
       }
       let other = PostgresOperationsStore(pool: pool, environment: "dev", logger: logger)
-      for row in try await other.databaseExpiryBacklogRows(at: cutoff, sampleLimit: 10) {
+      for row in try await other.databaseExpiryBacklogRows(table: .appviewInbox, at: cutoff, sampleLimit: 10) {
         let sample = try row.decode((String, Int64, Bool).self)
         if sample.0 == "appview_ingestion_inbox" { #expect(sample.1 == 0 && !sample.2) }
       }
@@ -670,7 +774,7 @@ struct PostgresTelemetryIntegrationTests {
             \(now), \(now), \(now.addingTimeInterval(3600)), \(diagnostic)::jsonb)
           """, logger: logger)
       }
-      await store.recordDatabaseCostTelemetry(at: now)
+      await store.recordDatabaseCostTelemetry(group: .counters, at: now)
       let rows = try await pool.query(
         """
         SELECT dimensions->>'language', value_sum, sample_count
