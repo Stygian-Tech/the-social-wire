@@ -17,6 +17,7 @@ import stat
 import subprocess
 import threading
 import time
+import uuid
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -453,11 +454,37 @@ def progress_reader(process, name, events):
             if len(line) > 65536 or not line.endswith(b"\n"):
                 raise Error("Oversized worker progress evidence")
             event = json.loads(line)
-            if type(event["completed"]) is not int or event["completed"] < 0:
-                raise Error("Invalid worker completion count")
-            events.put((name, event["completed"], time.monotonic()))
+            validate_worker_progress(name, event)
+            events.put((name, event, time.monotonic()))
     except Exception:
         events.put((name, None, time.monotonic()))
+
+
+def validate_worker_progress(name, event):
+    if not isinstance(event, dict) or type(event.get("completed")) is not int or event["completed"] < 0:
+        raise Error("Invalid worker completion count")
+    if name == "replay" and any(type(event.get(key)) is not bool for key in ("snapshot_complete", "drain_complete")):
+        raise Error("Replay requires independent sealed-snapshot and exact-drain receipts")
+
+
+def require_final_replay(event, observed_at, now, maximum_age):
+    validate_worker_progress("replay", event)
+    if (event["snapshot_complete"] is not True or event["drain_complete"] is not True
+            or not 0 <= now - observed_at <= maximum_age):
+        raise Error("Final replay receipt is incomplete or stale; empty queues do not prove archive completion")
+
+
+def check_replay_exhaustion(event, remaining_seconds, throughput_window_seconds):
+    if (event is not None and event["snapshot_complete"] and event["drain_complete"]
+            and remaining_seconds > throughput_window_seconds):
+        raise Error("Fixed archive exhausted before the final throughput window; load is not representative")
+
+
+def reset_progress_window(current, recovered_at):
+    # Discard the explicit restart gap and its partial throughput window. Work
+    # observed through recovery is retained cumulatively but never credited to
+    # the new measured window. The reset is recorded in sample evidence.
+    return current.copy(), recovered_at
 
 
 def initial_probe(evidence, config):
@@ -510,6 +537,8 @@ def run(config_path, trace_path, output):
             workers[name] = process
             threading.Thread(target=progress_reader, args=(process, name, events), daemon=True).start()
         previous_progress = progress.copy()
+        replay_receipt = None
+        replay_observed_at = 0
         coverage = set()
         rng = random.Random(config["seed"])
         beginning = time.monotonic()
@@ -519,13 +548,23 @@ def run(config_path, trace_path, output):
         receipt = None
         with private_file(output / "samples.jsonl") as samples, private_file(output / "requests.jsonl") as requests:
             while round_state.observed_seconds < config["observation_seconds"]:
+                progress_restarted = False
                 elapsed = time.monotonic() - beginning
                 if elapsed > config["observation_seconds"] + config["restart_grace_seconds"] + 120:
                     raise Error("Round exceeded maximum wall time")
                 if not restarted and elapsed >= config["restart_at_seconds"]:
-                    receipt = invoke(children, adapters["restart"], env, {"previous_container_epoch": round_state.last["container_epoch"]}, config["restart_grace_seconds"])
+                    restart_request = {"previous_container_epoch": round_state.last["container_epoch"]}
+                    if config.get("restart", {}).get("mode") == "postgres_process":
+                        restart_request.update(nonce=uuid.uuid4().hex,
+                            previous_postmaster_started=round_state.last["db"]["postmaster_started"],
+                            recorded_at=time.time(), target=config["target"], snapshot_sha256=config["snapshot_sha256"])
+                        with private_file(output / "restart-request.json") as request_file:
+                            json.dump(restart_request, request_file); request_file.flush(); os.fsync(request_file.fileno())
+                        round_state.expect_restart(restart_request)
+                    receipt = invoke(children, adapters["restart"], env, restart_request, config["restart_grace_seconds"])
                     restarted = True
                     recovery_started = time.monotonic()
+                    progress_restarted = True
                 phase = "recovery" if recovery_started is not None and time.monotonic() - recovery_started < 610 else "burst" if 900 <= elapsed < 1210 else "mixed"
                 load = load_interval(trace, phase, config["sample_seconds"], config, children, env, rng, requests, coverage)
                 evidence = invoke(children, adapters["probe"], env, {}, config["sample_seconds"])
@@ -534,14 +573,24 @@ def run(config_path, trace_path, output):
                     evidence["restart_receipt"] = receipt
                     receipt = None
                 while not events.empty():
-                    name, count, _ = events.get_nowait()
-                    if count is None or count < progress[name]:
+                    name, event, observed_at = events.get_nowait()
+                    if event is None or event["completed"] < progress[name]:
                         raise Error("Worker evidence missing or completion counter regressed")
-                    progress[name] = count
+                    progress[name] = event["completed"]
+                    if name == "replay":
+                        replay_receipt, replay_observed_at = event, observed_at
+                if progress_restarted:
+                    previous_progress, progress_start = reset_progress_window(progress, time.monotonic())
+                    evidence["throughput_window_reset"] = "verified_database_restart"
+                if replay_receipt is not None:
+                    evidence["replay_receipt"] = replay_receipt
                 evidence["worker_progress"] = progress.copy()
                 # Preserve rejected samples as evidence, then stop every owned process.
                 samples.write(json.dumps(evidence) + "\n"); samples.flush()
                 round_state.accept(evidence)
+                check_replay_exhaustion(replay_receipt,
+                    config["observation_seconds"] - round_state.observed_seconds,
+                    config["runner"]["throughput_window_seconds"])
                 if any(process.poll() is not None for process in workers.values()):
                     raise Error("Owned replay or ranking worker exited early")
                 if time.monotonic() - progress_start >= config["runner"]["throughput_window_seconds"]:
@@ -550,7 +599,9 @@ def run(config_path, trace_path, output):
                     progress_start = time.monotonic()
             if coverage != CATEGORIES:
                 raise Error("Observed successful reads did not cover the reviewed workload categories")
+            require_final_replay(replay_receipt, replay_observed_at, time.monotonic(), config["sample_seconds"] * 2)
             summary = round_state.finish()
+            summary["replay_receipt"] = replay_receipt
             summary["worker_progress"] = progress.copy()
             summary["read_categories"] = sorted(coverage)
             with private_file(output / "summary.json") as handle:

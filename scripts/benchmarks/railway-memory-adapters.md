@@ -40,11 +40,11 @@ Omit both token fields only when the runner has its own already-authenticated CL
 
 The subprocess transport caps stdin at 64 KiB, stdout at 2 MiB, CLI/SSH commands at 12 seconds, and the remote read-only process group at ten seconds plus one second of forced termination grace. The runner's existing shorter per-adapter deadline still applies; adapter latency that exceeds the configured sampling budget fails the trial. Cancellation or timeout retires only owned local process groups; an independent remote `timeout` bounds reads even if SSH disconnects. Remote Python bytecode writes are disabled. Errors do not echo provider output, SQL, credentials or raw exceptions.
 
-## Restart remains unsupported
+## Container replacement remains unsupported
 
 The Railway public schema inspected on September 12 exposes deployment-instance `id` and `status`, not a termination reason or OOM flag. `Deployment.diagnosis` is an untyped scalar and was null on the inspected deployment. Restart success, a scheduled timestamp or absence of a diagnosis cannot prove `oom_killed: false` for a previous container epoch.
 
-Therefore this change deliberately includes **no restart executable or mutation** and does not make the full runner ready to launch. A reviewed independent provider receipt source, or a separately reviewed protocol for an in-container database restart with continuous container/OOM evidence, is still needed. OAuth signing, representative replay, ranking and their remote workload ownership are separate remaining adapters. Do not fill the missing entries with test fixtures or lower the existing acceptance gates.
+The identity/probe adapters remain read-only. A separate [trial-only clean process restart](trial-postgres-process-restart.md) now supplies the explicit `retained_container_kernel` path: the same container and kernel OOM counters survive while the owned PostgreSQL subtree restarts. Its reviewed supervisor, additional pinned modules and independent nonce record are mandatory. It cannot substitute for a missing provider receipt after container loss or prove crash/discovery recovery. The full runner still requires every workload, restore, lifecycle and acceptance gate; do not fill missing evidence with test fixtures.
 
 Validation uses local fixtures and owned subprocesses only:
 
