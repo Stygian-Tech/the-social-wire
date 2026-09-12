@@ -1,6 +1,6 @@
 import Foundation
 
-public protocol OperationsStore: Actor {
+public protocol OperationsStore: Actor, RoleLeaseStoring {
   func ping() async throws
   func fetchDatabaseObservability() async throws -> DatabaseObservabilitySnapshot?
   func fetchViewerCounts(at: Date) async throws -> OperationsViewerCounts?

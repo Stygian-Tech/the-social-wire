@@ -6,7 +6,22 @@ actor IngestionInboxSnapshotCache {
 
   private let lifetime: Duration
   private var cached: (value: Value, expiresAt: ContinuousClock.Instant)?
-  private var inFlight: Task<Value, any Error>?
+  private struct Waiter {
+    let continuation: CheckedContinuation<Value, any Error>
+    let startedAt: ContinuousClock.Instant
+    let load: @Sendable () async throws -> Value
+  }
+  private struct Flight {
+    let id: UUID
+    let task: Task<Void, Never>
+    let startedAt: ContinuousClock.Instant
+    var cancelled = false
+    var waiters: [UUID: Waiter]
+  }
+  private var inFlight: Flight?
+  private var pending: [UUID: Waiter] = [:]
+
+  var waiterCount: Int { (inFlight?.waiters.count ?? 0) + pending.count }
 
   init(lifetime: Duration = .seconds(5)) {
     self.lifetime = lifetime
@@ -16,15 +31,68 @@ actor IngestionInboxSnapshotCache {
     now: ContinuousClock.Instant = .now,
     load: @escaping @Sendable () async throws -> Value
   ) async throws -> Value {
+    try Task.checkCancellation()
     if let cached, now < cached.expiresAt { return cached.value }
-    if let inFlight { return try await inFlight.value }
-    let task = Task { try await load() }
-    inFlight = task
-    defer { inFlight = nil }
-    let value = try await task.value
-    // Start the TTL before the query, so a slow query cannot acquire a fresh five seconds.
-    cached = (value, now.advanced(by: lifetime))
-    return value
+    let id = UUID()
+    let result = try await withTaskCancellationHandler {
+      try await withCheckedThrowingContinuation { continuation in
+        let waiter = Waiter(continuation: continuation, startedAt: now, load: load)
+        if inFlight?.cancelled == true {
+          // Do not overlap a replacement with a cancelled loader still retiring its connection.
+          pending[id] = waiter
+        } else if inFlight != nil {
+          inFlight?.waiters[id] = waiter
+        } else {
+          start(waiters: [id: waiter])
+        }
+      }
+    } onCancel: {
+      Task { await self.cancelWaiter(id) }
+    }
+    try Task.checkCancellation()
+    return result
+  }
+
+  private func start(waiters: [UUID: Waiter]) {
+    guard let first = waiters.values.min(by: { $0.startedAt < $1.startedAt }) else { return }
+    let id = UUID()
+    let task = Task {
+      let result: Result<Value, any Error>
+      do {
+        try Task.checkCancellation()
+        let value = try await first.load()
+        try Task.checkCancellation()
+        result = .success(value)
+      } catch { result = .failure(error) }
+      self.complete(id: id, result: result)
+    }
+    inFlight = Flight(id: id, task: task, startedAt: first.startedAt, waiters: waiters)
+  }
+
+  private func cancelWaiter(_ id: UUID) {
+    if let waiter = pending.removeValue(forKey: id) {
+      waiter.continuation.resume(throwing: CancellationError())
+      return
+    }
+    guard let waiter = inFlight?.waiters.removeValue(forKey: id) else { return }
+    waiter.continuation.resume(throwing: CancellationError())
+    if inFlight?.waiters.isEmpty == true {
+      inFlight?.cancelled = true
+      inFlight?.task.cancel()
+    }
+  }
+
+  private func complete(id: UUID, result: Result<Value, any Error>) {
+    guard let flight = inFlight, flight.id == id else { return }
+    inFlight = nil
+    if !flight.cancelled, case .success(let value) = result {
+      // Start the TTL before collection; query or teardown time never refreshes old evidence.
+      cached = (value, flight.startedAt.advanced(by: lifetime))
+    }
+    for waiter in flight.waiters.values { waiter.continuation.resume(with: result) }
+    let next = pending
+    pending.removeAll()
+    start(waiters: next)
   }
 
   nonisolated static func aged(_ value: IngestionInboxMetrics, at: Date) -> IngestionInboxMetrics {

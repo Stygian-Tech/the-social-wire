@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { spawnSync } from "node:child_process";
 
 const repositoryRoot = join(import.meta.dir, "../../..");
 const workflow = readFileSync(
@@ -60,6 +61,39 @@ describe("CI workflow configuration", () => {
     expect(workflow).toContain("  spec:");
     expect(workflow).toContain("  required:");
     expect(workflow).toContain("name: CI — Required");
+  });
+
+  it("runs bounded benchmark tests with an isolated receipt fixture and requires success", () => {
+    const parsed = Bun.YAML.parse(workflow) as {
+      jobs: Record<string, {
+        "timeout-minutes"?: number;
+        needs?: string[];
+        services?: Record<string, { image: string; ports: string[]; options: string }>;
+        steps: { run?: string; env?: Record<string, string> }[];
+      }>;
+    };
+    const tools = parsed.jobs["benchmark-tools"];
+    expect(tools["timeout-minutes"]).toBe(5);
+    expect(tools.services?.postgres.image).toBe("postgres:18-alpine");
+    expect(tools.services?.postgres.ports).toEqual(["5432:5432"]);
+    expect(tools.services?.postgres.options).toContain("pg_isready -U postgres -d postgres");
+    expect(tools.steps.find((step) => step.env?.TSW_RECEIPT_TEST_ADMIN_URL)?.env?.TSW_RECEIPT_TEST_ADMIN_URL)
+      .toBe("postgresql://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable");
+    expect(tools.steps.some((step) => step.run ===
+      "python3 -W error::ResourceWarning -m unittest discover -s scripts/benchmarks/tests")).toBe(true);
+    expect(parsed.jobs.required.needs).toContain("benchmark-tools");
+    const gate = parsed.jobs.required.steps.find((step) => step.run)!;
+    const env: Record<string, string> = { ...process.env as Record<string, string>, CHANGES_RESULT: "success" };
+    for (const key of Object.keys(gate.env ?? {})) {
+      if (key.endsWith("_FLAG")) env[key] = "false";
+      if (key.endsWith("_RESULT") && key !== "CHANGES_RESULT") env[key] = "skipped";
+    }
+    env.BENCHMARK_TOOLS_FLAG = "true";
+    for (const result of ["skipped", "failure", "cancelled", "success"]) {
+      env.BENCHMARK_TOOLS_RESULT = result;
+      const run = spawnSync("bash", ["-c", gate.run!], { env, encoding: "utf8" });
+      expect(run.status).toBe(result === "success" ? 0 : 1);
+    }
   });
 
   it("tests merge previews once and supports merge queues", () => {

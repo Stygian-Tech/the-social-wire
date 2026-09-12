@@ -15,9 +15,28 @@ SPEC = importlib.util.spec_from_file_location("replay", Path(__file__).with_name
 replay = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(replay)
 Error = replay.BenchmarkError
-RAILWAY_MEMORY_LIMITS_BYTES = (16_000_000_000, 12_000_000_000, 8_000_000_000)
+RAILWAY_MEMORY_LIMITS_BYTES = (
+    16_000_000_000, 13_000_000_000, 12_000_000_000,
+    11_000_000_000, 10_000_000_000, 8_000_000_000,
+)
 IDENTITIES = {"project_id": "RAILWAY_PROJECT_ID", "environment_id": "RAILWAY_ENVIRONMENT_ID",
               "service_id": "RAILWAY_SERVICE_ID", "volume_id": "RAILWAY_VOLUME_ID"}
+
+
+# Verified with getconf PAGESIZE inside Railway Development Postgres (2026-09-12).
+# A different kernel page size requires explicit review, not a broader byte tolerance.
+RAILWAY_PAGE_SIZE_BYTES = 4096
+LEGACY_EXACT_CAPS = (16_000_000_000, 8_000_000_000)
+
+
+def memory_limit_matches(requested, observed, page_size):
+    if type(requested) is not int or requested <= 0 or type(observed) is not int:
+        return False
+    if page_size is None:
+        # Preserve old exact/aligned 16 GB and 8 GB evidence without inventing page metadata.
+        return requested in LEGACY_EXACT_CAPS and observed == requested
+    return (type(page_size) is int and page_size == RAILWAY_PAGE_SIZE_BYTES
+            and observed == (requested // page_size) * page_size)
 
 
 def validate_config(config):
@@ -38,7 +57,7 @@ def validate_config(config):
         raise Error("Replace memory_gib with explicit Railway memory_limit_bytes; no implicit unit conversion")
     memory_limit = config.get("memory_limit_bytes")
     if type(memory_limit) is not int or memory_limit not in RAILWAY_MEMORY_LIMITS_BYTES:
-        raise Error("Memory rounds require exact byte caps: 16000000000, 12000000000, or 8000000000 (decimal GB)")
+        raise Error("Memory rounds require an explicit supported decimal-GB byte cap (16, 13, 12, 11, 10, or legacy 8 GB)")
     for key in ("snapshot_sha256", "workload_sha256", "binary_manifest_sha256"):
         if not re.fullmatch(r"[a-f0-9]{64}", config[key]):
             raise Error("Content hashes are required for comparable rounds")
@@ -86,8 +105,11 @@ def sample(config, pg, environment=os.environ, cgroup=Path("/sys/fs/cgroup")):
             or not manifest.get("restore_epoch")):
         raise Error("Full-snapshot restore attestation is absent or mismatched")
     memory_limit = (cgroup / "memory.max").read_text().strip()
-    if memory_limit != str(config["memory_limit_bytes"]):
-        raise Error("Observed cgroup memory limit differs from this round")
+    page_size = os.sysconf("SC_PAGE_SIZE")
+    if type(page_size) is not int or page_size != RAILWAY_PAGE_SIZE_BYTES:
+        raise Error("Target kernel page size is unavailable or has not been verified for Railway")
+    if not memory_limit.isdecimal() or not memory_limit_matches(config["memory_limit_bytes"], int(memory_limit), page_size):
+        raise Error("Observed cgroup memory limit differs from this round's verified page-aligned cap")
     free = os.statvfs(mount)
     queue_sql = []
     for table in ("wire_ingestion_inbox", "appview_ingestion_inbox"):
@@ -110,7 +132,18 @@ def sample(config, pg, environment=os.environ, cgroup=Path("/sys/fs/cgroup")):
       'database_stats', (SELECT row_to_json(d) FROM pg_stat_database d WHERE datname=current_database()),
       'connections', (SELECT count(*) FROM pg_stat_activity),
       'queues', json_build_object(%s))""" % ",".join(queue_sql))
-    return {"time": time.time(), "identity": identity, "memory_max": int(memory_limit),
+    extra = {}
+    if config.get("restart", {}).get("mode") == "postgres_process":
+        spec = importlib.util.spec_from_file_location("restart_evidence", Path(__file__).with_name("trial_restart_evidence.py"))
+        module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+        extra["kernel_identity"] = module.kernel_identity(config, cgroup)
+        data = Path(environment["PGDATA"]).resolve()
+        if mount not in data.parents:
+            raise Error("Postmaster data path is outside the trial volume")
+        pid = int((data / "postmaster.pid").read_text().splitlines()[0])
+        extra["postmaster_process"] = [pid, module.start_ticks(pid)]
+    return {**extra, "time": time.time(), "identity": identity, "memory_limit_bytes": config["memory_limit_bytes"],
+            "memory_max": int(memory_limit), "page_size_bytes": page_size,
             "memory_current": int((cgroup / "memory.current").read_text()),
             "memory_stat": pairs(cgroup / "memory.stat"), "memory_events": pairs(cgroup / "memory.events"),
             "container_epoch": [environment.get("RAILWAY_DEPLOYMENT_ID"), cgroup.stat().st_ino,
@@ -125,10 +158,20 @@ class Round:
         self.config = validate_config(config)
         self.first = self.last = None
         self.restart_count = 0
+        self.restart_nonce = None
+        self.restart_request = None
         self.phases = set()
         self.phase_seconds = {key: 0 for key in ("mixed", "burst", "recovery")}
         self.observed_seconds = 0
         self.wal_spans = []
+
+    def expect_restart(self, request):
+        if (self.restart_request is not None or not isinstance(request, dict)
+                or not re.fullmatch(r"[a-f0-9]{32}", request.get("nonce", ""))
+                or request.get("target") != self.config["target"]
+                or request.get("snapshot_sha256") != self.config["snapshot_sha256"]):
+            raise Error("An independent round-bound restart request is required")
+        self.restart_request, self.restart_nonce = request, request["nonce"]
 
     def accept(self, sample):
         c = self.config
@@ -137,8 +180,20 @@ class Round:
         for key in IDENTITIES:
             if sample["identity"][key] != c["target"][key]:
                 raise Error("Target identity changed")
-        if type(sample["memory_max"]) is not int or sample["memory_max"] != c["memory_limit_bytes"]:
-            raise Error("Memory limit changed within a round")
+        if (not memory_limit_matches(c["memory_limit_bytes"], sample["memory_max"], sample.get("page_size_bytes"))
+                or ("memory_limit_bytes" in sample and (type(sample["memory_limit_bytes"]) is not int
+                    or sample["memory_limit_bytes"] != c["memory_limit_bytes"]))):
+            raise Error("Memory limit does not match the requested cap and measured page size")
+        if c.get("restart", {}).get("mode") == "postgres_process":
+            for key in ("kernel_identity", "provider_instance_id", "provider_service_instance_id", "postmaster_process"):
+                if key not in sample:
+                    raise Error("Clean process trial requires complete container/process evidence")
+            if self.last:
+                for key in ("kernel_identity", "provider_instance_id", "provider_service_instance_id", "container_epoch", "restore"):
+                    if sample[key] != self.last[key]:
+                        raise Error("Retained-container trial lost its independently observed identity")
+        if self.last and (sample["memory_max"], sample.get("page_size_bytes")) != (self.last["memory_max"], self.last.get("page_size_bytes")):
+            raise Error("Observed memory cap or page-size evidence changed within a round")
         if (sample["restore"]["snapshot_sha256"] != c["snapshot_sha256"]
                 or sample["restore"]["dataset"] != "full_snapshot"
                 or sample["restore"]["restored_bytes"] < c["minimum_restore_bytes"]):
@@ -196,13 +251,29 @@ class Round:
                 raise Error("Sample clock moved backwards")
             elapsed = sample["time"] - self.first["time"]
             restarted = (sample["container_epoch"] != previous["container_epoch"]
-                         or sample["db"]["postmaster_started"] != previous["db"]["postmaster_started"])
+                         or sample["db"]["postmaster_started"] != previous["db"]["postmaster_started"]
+                         or (c.get("restart", {}).get("mode") == "postgres_process"
+                             and sample["postmaster_process"] != previous["postmaster_process"]))
             if restarted:
                 if (self.restart_count or abs(elapsed - c["restart_at_seconds"]) > c["restart_grace_seconds"]
                         or load["phase"] != "recovery" or gap > c["restart_grace_seconds"]):
                     raise Error("Unexpected restart or recovery exceeded deadline")
                 receipt = sample.get("restart_receipt", {})
-                if (receipt.get("previous_container_epoch") != previous["container_epoch"]
+                if c.get("restart", {}).get("mode") == "postgres_process":
+                    spec = importlib.util.spec_from_file_location("restart_evidence", Path(__file__).with_name("trial_restart_evidence.py"))
+                    module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+                    try:
+                        request = self.restart_request
+                        if (request is None or request["previous_container_epoch"] != previous["container_epoch"]
+                                or request["previous_postmaster_started"] != previous["db"]["postmaster_started"]
+                                or type(request["recorded_at"]) not in (int, float)
+                                or not previous["time"] <= request["recorded_at"] <= receipt["requested_at"]):
+                            raise ValueError("Independent request does not match adjacent evidence")
+                        module.validate_receipt(c, receipt, previous, sample, self.restart_nonce)
+                    except (ValueError, KeyError, TypeError):
+                        raise Error("Clean process restart lacks continuous independent kernel evidence") from None
+                elif (receipt.get("previous_container_epoch") != previous["container_epoch"]
+                        or receipt.get("evidence_kind") == "retained_container_kernel"
                         or receipt.get("termination_reason") != "operator_restart" or receipt.get("oom_killed") is not False):
                     raise Error("Independent provider restart/OOM receipt is required across epoch loss")
                 self.restart_count += 1
@@ -237,6 +308,7 @@ class Round:
         if any(queue["rows_lower_bound"] for queue in self.last["db"]["queues"].values()):
             raise Error("Final actionable backlog has not drained")
         return {"status": "passed_evidence_gates", "memory_limit_bytes": self.config["memory_limit_bytes"],
+                "memory_max": self.first["memory_max"], "page_size_bytes": self.first.get("page_size_bytes"),
                 "observed_seconds": self.observed_seconds, "phase_seconds": self.phase_seconds, "wal_lsn_span_bytes_excluding_restart_gap": sum(self.wal_spans),
                 "capacity_claim": "Requires reviewed representative trace and authenticated QA; not a synthetic capacity proof"}
 
@@ -246,8 +318,15 @@ def main():
     parser.add_argument("mode", choices=("sample", "validate", "watch"))
     parser.add_argument("config", type=Path)
     parser.add_argument("--samples", type=Path)
+    parser.add_argument("--restart-request", type=Path, help="Independent request recorded before the clean restart")
     args = parser.parse_args()
     config = json.loads(args.config.read_text())
+    def accept_observation(state, value):
+        if config.get("restart", {}).get("mode") == "postgres_process" and value.get("restart_receipt") and state.restart_request is None:
+            if args.restart_request is None or args.restart_request.is_symlink() or args.restart_request.stat().st_size > 16384:
+                raise Error("Provide the independently recorded restart request file")
+            state.expect_restart(json.loads(args.restart_request.read_text()))
+        state.accept(value)
     if args.mode == "sample":
         print(json.dumps(sample(config, replay.Postgres(config.get("psql", "psql")))))
     elif args.mode == "watch":
@@ -267,7 +346,7 @@ def main():
                 raise Error("Oversized or unterminated telemetry record")
             while b"\n" in buffer:
                 line, buffer = buffer.split(b"\n", 1)
-                trial.accept(json.loads(line))
+                accept_observation(trial, json.loads(line))
                 print(line.decode(), flush=True)
         if buffer:
             raise Error("Incomplete telemetry at stream end")
@@ -278,7 +357,7 @@ def main():
         trial = Round(config)
         with args.samples.open() as samples:
             for line in samples:
-                trial.accept(json.loads(line))
+                accept_observation(trial, json.loads(line))
         print(json.dumps(trial.finish(), indent=2))
 
 

@@ -26,7 +26,8 @@ def configuration(memory_limit_bytes=16_000_000_000):
 def probe(t=0, epoch=1, phase="mixed", memory_limit_bytes=16_000_000_000):
     c = configuration(memory_limit_bytes)
     stats = {"stats_reset": str(epoch)}
-    return {"time": t, "identity": {key: c["target"][key] for key in m.IDENTITIES}, "memory_max": memory_limit_bytes,
+    return {"time": t, "identity": {key: c["target"][key] for key in m.IDENTITIES}, "memory_limit_bytes": memory_limit_bytes,
+            "memory_max": (memory_limit_bytes // 4096) * 4096, "page_size_bytes": 4096,
             "memory_events": {"oom": 0, "oom_kill": 0}, "container_epoch": [epoch], "volume_free_bytes": 1000,
             "restore": {"dataset": "full_snapshot", "snapshot_sha256": c["snapshot_sha256"], "restored_bytes": 1000, "restore_epoch": "restore1"},
             "db": {"database_bytes": 1000, "postmaster_started": str(epoch), "connections": 10,
@@ -41,14 +42,15 @@ def probe(t=0, epoch=1, phase="mixed", memory_limit_bytes=16_000_000_000):
 
 class MemoryTrialTests(unittest.TestCase):
     def test_exact_decimal_byte_caps_are_required_without_unit_coercion(self):
-        for cap in (16_000_000_000, 12_000_000_000, 8_000_000_000):
+        for cap in (16_000_000_000, 13_000_000_000, 12_000_000_000, 11_000_000_000, 10_000_000_000, 8_000_000_000):
             with self.subTest(cap=cap):
                 config = configuration(cap)
                 m.validate_config(config)
                 m.Round(config).accept(probe(memory_limit_bytes=cap))
                 for observed in (cap + 1, cap - 1, (cap // 1_000_000_000) * 1024 ** 3, float(cap)):
                     with self.subTest(observed=observed), self.assertRaises(m.Error):
-                        m.Round(config).accept(probe(memory_limit_bytes=observed))
+                        sample = probe(memory_limit_bytes=cap); sample["memory_max"] = observed
+                        m.Round(config).accept(sample)
         for cap in (16 * 1024 ** 3, 16, 16_000_000_001, "16000000000", 16_000_000_000.0, True, None):
             with self.subTest(configured=cap), self.assertRaises(m.Error):
                 m.validate_config(configuration(cap))
@@ -72,18 +74,48 @@ class MemoryTrialTests(unittest.TestCase):
             pg = Mock(); pg.query.return_value = probe()["db"]
             def fixture_path(value):
                 return boot if value == "/proc/sys/kernel/random/boot_id" else Path(value)
-            with patch.object(m, "Path", side_effect=fixture_path):
-                for cap in (16_000_000_000, 12_000_000_000, 8_000_000_000):
+            with patch.object(m, "Path", side_effect=fixture_path), patch.object(m.os, "sysconf", return_value=4096) as page_size:
+                for cap in (16_000_000_000, 13_000_000_000, 12_000_000_000, 11_000_000_000, 10_000_000_000, 8_000_000_000):
                     config["memory_limit_bytes"] = cap
-                    (cgroup / "memory.max").write_text(str(cap) + "\n")
+                    observed = (cap // 4096) * 4096
+                    (cgroup / "memory.max").write_text(str(observed) + "\n")
                     with self.subTest(cap=cap):
-                        self.assertEqual(m.sample(config, pg, environment, cgroup)["memory_max"], cap)
-                    for wrong in (cap + 1, (cap // 1_000_000_000) * 1024 ** 3, "max"):
+                        sample = m.sample(config, pg, environment, cgroup)
+                        self.assertEqual(sample["memory_max"], observed)
+                        self.assertEqual(sample["memory_limit_bytes"], cap)
+                        self.assertEqual(sample["page_size_bytes"], 4096)
+                        page_size.assert_called_with("SC_PAGE_SIZE")
+                    for wrong in (observed + 1, observed - 1, observed + 4096, (cap // 1_000_000_000) * 1024 ** 3, "max"):
                         (cgroup / "memory.max").write_text(str(wrong))
                         calls = pg.query.call_count
                         with self.subTest(cap=cap, wrong=wrong), self.assertRaises(m.Error):
                             m.sample(config, pg, environment, cgroup)
                         self.assertEqual(pg.query.call_count, calls)
+                (cgroup / "memory.max").write_text("8000000000")
+                for invalid_page in (None, 4096.0, 16384, 65536):
+                    page_size.return_value = invalid_page
+                    calls = pg.query.call_count
+                    with self.assertRaises(m.Error): m.sample(config, pg, environment, cgroup)
+                    self.assertEqual(pg.query.call_count, calls)
+
+    def test_only_verified_page_floor_is_accepted_and_legacy_aligned_evidence_remains_explicit(self):
+        self.assertTrue(m.memory_limit_matches(4_000_000_000, 3_999_997_952, 4096))
+        for cap in m.RAILWAY_MEMORY_LIMITS_BYTES:
+            observed = cap // 4096 * 4096
+            self.assertTrue(m.memory_limit_matches(cap, observed, 4096))
+            for wrong in (observed + 1, observed - 1, observed + 4096, float(observed), str(observed), True, None):
+                self.assertFalse(m.memory_limit_matches(cap, wrong, 4096))
+            for page in (0, -4096, 4095, 8192, 16384, 65536, 4096.0, True, "4096"):
+                self.assertFalse(m.memory_limit_matches(cap, observed, page))
+            self.assertEqual(m.memory_limit_matches(cap, cap, None), cap in m.LEGACY_EXACT_CAPS)
+        for cap in m.LEGACY_EXACT_CAPS:
+            sample = probe(memory_limit_bytes=cap); sample.pop("page_size_bytes"); sample.pop("memory_limit_bytes")
+            m.Round(configuration(cap)).accept(sample)
+        sample = probe(memory_limit_bytes=13_000_000_000); sample.pop("page_size_bytes")
+        with self.assertRaises(m.Error): m.Round(configuration(13_000_000_000)).accept(sample)
+        state = m.Round(configuration()); state.accept(probe())
+        changed = probe(t=30); changed.pop("page_size_bytes")
+        with self.assertRaises(m.Error): state.accept(changed)
 
     def test_target_and_limit_identity_fail_closed(self):
         c = configuration()
@@ -167,6 +199,8 @@ class MemoryTrialTests(unittest.TestCase):
         r.accept(probe(3630, epoch=2))
         self.assertEqual(r.finish()["observed_seconds"], 3600)
         self.assertEqual(r.finish()["memory_limit_bytes"], 16_000_000_000)
+        self.assertEqual(r.finish()["memory_max"], 16_000_000_000)
+        self.assertEqual(r.finish()["page_size_bytes"], 4096)
         self.assertNotIn("memory_gib", r.finish())
         r.last["db"]["queues"]["appview_ingestion_inbox"]["rows_lower_bound"] = 1
         with self.assertRaises(m.Error): r.finish()

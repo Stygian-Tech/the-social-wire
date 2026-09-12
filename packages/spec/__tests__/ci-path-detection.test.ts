@@ -164,6 +164,20 @@ describe("CI path detection", () => {
     expect(result.get("charybdis")).toBe("false");
   });
 
+  it("runs Python benchmark safety tests when a tool or its tests change", () => {
+    for (const path of [
+      "scripts/benchmarks/railway_memory_adapters.py",
+      "scripts/benchmarks/tests/test_memory_step_acceptance.py",
+    ]) {
+      const result = detect(repositoryWithChange(path), "pull_request");
+      expect(result.get("benchmark_tools")).toBe("true");
+      expect(result.get("spec")).toBe("true");
+      expect(result.get("gateway")).toBe("false");
+    }
+    const unrelated = detect(repositoryWithChange("docs/wiki/Testing.md"), "pull_request");
+    expect(unrelated.get("benchmark_tools")).toBe("false");
+  });
+
   it("runs the full matrix when the detector changes", () => {
     const result = detect(
       repositoryWithChange("scripts/ci-detect-changes.sh"),

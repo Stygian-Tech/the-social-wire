@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Supervise an explicitly isolated memory trial. Requires reviewed trace and adapters."""
 import argparse
+from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import importlib.util
@@ -16,6 +17,7 @@ import stat
 import subprocess
 import threading
 import time
+import uuid
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -25,6 +27,177 @@ trial = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(trial)
 Error = trial.Error
 CATEGORIES = {"sidebar", "bootstrap", "pagination", "detail", "language_feed"}
+# Verified against Gateway AppViewProxyRoutes and the discovery.getWire lexicon.
+READ_ROUTES = {
+    "/v1/publications/sidebar": ("sidebar", {"sidebar"}),
+    "/xrpc/app.thesocialwire.publication.getSidebar": ("sidebar", {"sidebar"}),
+    "/v1/appview/bootstrap-stream": ("bootstrap", {"bootstrap"}),
+    "/v1/appview/entries": ("entries", {"pagination"}),
+    "/xrpc/app.thesocialwire.appview.listEntries": ("entries", {"pagination"}),
+    "/v1/appview/feed": ("entries", {"pagination"}),
+    "/xrpc/app.thesocialwire.appview.getFeed": ("entries", {"pagination"}),
+    "/v1/appview/entry": ("detail", {"detail"}),
+    "/xrpc/app.thesocialwire.appview.getEntry": ("detail", {"detail"}),
+    "/xrpc/app.thesocialwire.discovery.getWire": ("wire", {"language_feed", "pagination"}),
+}
+
+
+def read_contract(item):
+    path = item.get("path", "")
+    if not isinstance(path, str) or len(path) > 32768 or any(ord(c) < 33 or ord(c) == 127 for c in path):
+        raise Error("Read path must be bounded and contain no whitespace or controls")
+    parsed = urllib.parse.urlsplit(path)
+    contract = READ_ROUTES.get(parsed.path)
+    if parsed.scheme or parsed.netloc or "#" in path or not contract or item.get("category") not in contract[1]:
+        raise Error("Read route/category is not an allowlisted existing GET contract")
+    if item.get("method", "GET") != "GET":
+        raise Error("Trial requests must use GET")
+    if contract[0] == "wire":
+        wire_expectation(item)
+    elif any(key in item for key in ("expected_degraded", "expected_source", "baseline_evidence")):
+        raise Error("Wire baseline expectations apply only to Wire read contracts")
+    return contract[0]
+
+
+def wire_expectation(item):
+    degraded = item.get("expected_degraded", False)
+    source = item.get("expected_source", "ranked")
+    if type(degraded) is not bool or source not in ("ranked", "stale_generation", "simplified_fallback"):
+        raise Error("Wire baseline expectations must specify an exact supported source and boolean degradation")
+    if degraded or source != "ranked" or "baseline_evidence" in item:
+        evidence = item.get("baseline_evidence")
+        if (not isinstance(evidence, str) or not evidence.strip() or len(evidence) > 512
+                or "expected_degraded" not in item or "expected_source" not in item):
+            raise Error("Degraded baseline requires explicit expectations and a reviewed source evidence reference")
+    return source, degraded
+
+
+def json_object(raw):
+    def unique(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError()
+            result[key] = value
+        return result
+    def invalid_constant(_):
+        raise ValueError()
+    try:
+        value = json.loads(raw, object_pairs_hook=unique, parse_constant=invalid_constant)
+    except (ValueError, UnicodeError):
+        raise Error("Response is not complete valid JSON") from None
+    if not isinstance(value, dict) or "error" in value or "errors" in value:
+        raise Error("Response is an error or lacks an object payload")
+    return value
+
+
+def text_field(value, key):
+    return isinstance(value.get(key), str) and bool(value[key])
+
+
+def timestamp(value):
+    try:
+        return isinstance(value, str) and datetime.fromisoformat(value.replace("Z", "+00:00")).tzinfo is not None
+    except ValueError:
+        return False
+
+
+def validate_entry(value):
+    if (not isinstance(value, dict) or not text_field(value, "entryId") or not isinstance(value.get("title"), str)
+            or not timestamp(value.get("publishedAt")) or type(value.get("isRead")) is not bool):
+        raise Error("Entry payload does not match the current AppView contract")
+
+
+def validate_entries(value):
+    if not isinstance(value.get("entries"), list) or (value.get("cursor") is not None and not text_field(value, "cursor")):
+        raise Error("Entries page is missing entries or has an invalid cursor")
+    for entry in value["entries"]:
+        validate_entry(entry)
+
+
+def validate_sidebar(value):
+    arrays = ("folders", "publicationPrefs", "allPublicationRows", "myPublications",
+              "subscribedUnfoldered", "followingTabPublications", "enrollAuthorDids")
+    if (not text_field(value, "viewerDid") or not value["viewerDid"].startswith("did:")
+            or not timestamp(value.get("refreshedAt")) or any(not isinstance(value.get(key), list) for key in arrays)):
+        raise Error("Sidebar payload does not match the current projection contract")
+
+
+def validate_response(item, raw, content_type):
+    contract = read_contract(item)
+    mime = content_type.split(";", 1)[0].strip().lower()
+    if contract == "bootstrap":
+        if mime != "application/x-ndjson":
+            raise Error("Bootstrap response must be NDJSON")
+        events = [json_object(line) for line in raw.splitlines() if line.strip()]
+        kinds = [event.get("kind") for event in events]
+        allowed = {"sidebarPriority", "sidebarSection", "unreadCounts", "selectedPublication", "entriesPage", "sidebarFolders", "done"}
+        if (not kinds or kinds[-1] != "done" or kinds.count("done") != 1
+                or kinds.count("sidebarPriority") != 1 or any(not isinstance(kind, str) or kind not in allowed for kind in kinds)):
+            raise Error("Bootstrap stream is incomplete, degraded or contains an error")
+        selected, pages = set(), set()
+        for event in events:
+            kind = event["kind"]
+            payload = event.get(kind)
+            if (not isinstance(payload, dict) or ("source" in payload
+                    and payload["source"] not in {"live_projection", "projection_cache"})):
+                raise Error("Bootstrap event payload is invalid or unavailable")
+            if kind == "sidebarPriority":
+                validate_sidebar(payload)
+            elif kind == "sidebarSection" and (not text_field(payload, "sectionKey")
+                    or not isinstance(payload.get("publications"), list) or not timestamp(payload.get("refreshedAt"))):
+                raise Error("Bootstrap sidebar section is incomplete")
+            elif kind == "sidebarFolders" and any(not isinstance(payload.get(key), list)
+                    for key in ("folderSections", "allPublicationRows")):
+                raise Error("Bootstrap sidebar folders are incomplete")
+            elif kind == "unreadCounts" and (not isinstance(payload.get("counts"), dict)
+                    or any(type(count) is not int or count < 0 for count in payload["counts"].values())):
+                raise Error("Bootstrap unread counts are invalid")
+            elif kind == "done" and not timestamp(payload.get("refreshedAt")):
+                raise Error("Bootstrap completion lacks its observed timestamp")
+            elif kind in {"entriesPage", "selectedPublication"}:
+                if not text_field(payload, "publicationId"):
+                    raise Error("Bootstrap publication identity is missing")
+                if kind == "selectedPublication":
+                    selected.add(payload["publicationId"])
+                else:
+                    validate_entries(payload)
+                    if payload.get("source") not in {"live_projection", "projection_cache"}:
+                        raise Error("Bootstrap entries lack available projection evidence")
+                    pages.add(payload["publicationId"])
+        if selected - pages:
+            raise Error("Bootstrap completed without the selected publication entries")
+        return
+    if mime != "application/json":
+        raise Error("Read response must be JSON")
+    value = json_object(raw)
+    if contract == "sidebar":
+        validate_sidebar(value)
+    elif contract == "entries":
+        validate_entries(value)
+    elif contract == "detail":
+        validate_entry(value)
+        expected = urllib.parse.parse_qs(urllib.parse.urlsplit(item["path"]).query).get("entryId")
+        if expected and expected != [value["entryId"]]:
+            raise Error("Entry detail does not match the requested identity")
+    elif contract == "wire":
+        expected_source, expected_degraded = wire_expectation(item)
+        if (not text_field(value, "generationId") or not timestamp(value.get("generatedAt"))
+                or not text_field(value, "language") or value.get("source") != expected_source
+                or value.get("degraded") is not expected_degraded or not isinstance(value.get("items"), list)
+                or not 1 <= len(value["items"]) <= 50
+                or (value.get("cursor") is not None and not text_field(value, "cursor"))):
+            raise Error("Wire response lacks a nonempty complete generation matching the reviewed baseline")
+        language = urllib.parse.parse_qs(urllib.parse.urlsplit(item["path"]).query).get("lang")
+        if language and language != [value["language"]]:
+            raise Error("Wire response does not match the requested language")
+        for entry in value["items"]:
+            if (not isinstance(entry, dict) or not text_field(entry, "itemId") or not text_field(entry, "canonicalUrl")
+                    or not isinstance(entry.get("title"), str) or not isinstance(entry.get("source"), dict)
+                    or any(not isinstance(entry["source"].get(key), str) for key in ("name", "domain"))
+                    or any(not isinstance(entry.get(key), list) or any(not isinstance(x, str) for x in entry[key])
+                           for key in ("reasons", "provenance"))):
+                raise Error("Wire item payload does not match its read contract")
 
 
 def digest(path):
@@ -78,8 +251,7 @@ def validate_inputs(config, trace_path, environment=os.environ):
             raise Error("Read targets must be explicit isolated private Railway origins")
         if origin["service_id"] in config["protected_source_ids"] or origin["service_id"] == config["target"]["service_id"]:
             raise Error("Read target cannot be a protected service or the database")
-        if not item["path"].startswith("/xrpc/") or urllib.parse.urlsplit(item["path"]).netloc or "#" in item["path"]:
-            raise Error("Only relative XRPC GET paths are accepted")
+        read_contract(item)
         if not isinstance(item["id"], str) or not item["id"] or len(item["id"]) > 128:
             raise Error("Trace request IDs must be short nonsecret identifiers")
     token = Path(runner["token_file"])
@@ -156,8 +328,10 @@ def private_file(path):
 
 
 def adapter_environment(config_path, config):
-    # Explicit configuration carries target identity; no inherited Production DB/token settings.
-    return {key: os.environ[key] for key in ("PATH", "LANG", "HOME") if key in os.environ} | {
+    # Preserve observed provider identity for independent verification inside adapters.
+    # Never substitute configured IDs or inherit database/token settings.
+    return {key: os.environ[key] for key in ("PATH", "LANG", "HOME", "RAILWAY_PROJECT_ID",
+        "RAILWAY_ENVIRONMENT_ID", "RAILWAY_SERVICE_ID", "RAILWAY_DEPLOYMENT_ID") if key in os.environ} | {
         "TSW92_TRIAL_CONFIG": str(config_path.resolve()),
         "TSW92_TOKEN_FILE": config["runner"]["token_file"],
     }
@@ -194,6 +368,7 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 def request(item, config, children, env):
+    read_contract(item)
     url = config["read_targets"][item["target"]]["origin"].rstrip("/") + item["path"]
     started = time.monotonic()
     headers = invoke(children, config["runner"]["adapters"]["signer"], env,
@@ -208,6 +383,7 @@ def request(item, config, children, env):
         try:
             with opener.open(urllib.request.Request(url, headers=headers, method="GET"), timeout=config["runner"]["request_timeout_seconds"]) as response:
                 size = 0
+                body = bytearray()
                 while True:
                     chunk = response.read1(65536)
                     size += len(chunk)
@@ -216,6 +392,13 @@ def request(item, config, children, env):
                         raise Error("Read response failed or exceeded its byte/time bound")
                     if not chunk:
                         break
+                    body.extend(chunk)
+                length = response.headers.get("Content-Length")
+                if length is not None and (not length.isdecimal() or int(length) != size):
+                    raise Error("Read response body is incomplete")
+                validate_response(item, body, response.headers.get("Content-Type", ""))
+                if time.monotonic() - started > 2 * config["runner"]["request_timeout_seconds"]:
+                    raise Error("Read validation exceeded its time bound")
             break
         except urllib.error.HTTPError as error:
             nonce = error.headers.get("DPoP-Nonce")
@@ -271,19 +454,46 @@ def progress_reader(process, name, events):
             if len(line) > 65536 or not line.endswith(b"\n"):
                 raise Error("Oversized worker progress evidence")
             event = json.loads(line)
-            if type(event["completed"]) is not int or event["completed"] < 0:
-                raise Error("Invalid worker completion count")
-            events.put((name, event["completed"], time.monotonic()))
+            validate_worker_progress(name, event)
+            events.put((name, event, time.monotonic()))
     except Exception:
         events.put((name, None, time.monotonic()))
+
+
+def validate_worker_progress(name, event):
+    if not isinstance(event, dict) or type(event.get("completed")) is not int or event["completed"] < 0:
+        raise Error("Invalid worker completion count")
+    if name == "replay" and any(type(event.get(key)) is not bool for key in ("snapshot_complete", "drain_complete")):
+        raise Error("Replay requires independent sealed-snapshot and exact-drain receipts")
+
+
+def require_final_replay(event, observed_at, now, maximum_age):
+    validate_worker_progress("replay", event)
+    if (event["snapshot_complete"] is not True or event["drain_complete"] is not True
+            or not 0 <= now - observed_at <= maximum_age):
+        raise Error("Final replay receipt is incomplete or stale; empty queues do not prove archive completion")
+
+
+def check_replay_exhaustion(event, remaining_seconds, throughput_window_seconds):
+    if (event is not None and event["snapshot_complete"] and event["drain_complete"]
+            and remaining_seconds > throughput_window_seconds):
+        raise Error("Fixed archive exhausted before the final throughput window; load is not representative")
+
+
+def reset_progress_window(current, recovered_at):
+    # Discard the explicit restart gap and its partial throughput window. Work
+    # observed through recovery is retained cumulatively but never credited to
+    # the new measured window. The reset is recorded in sample evidence.
+    return current.copy(), recovered_at
 
 
 def initial_probe(evidence, config):
     trial.validate_config(config)
     # No fabricated load is attached to this preflight observation.
     if (evidence["identity"] != {key: config["target"][key] for key in trial.IDENTITIES}
-            or type(evidence["memory_max"]) is not int
-            or evidence["memory_max"] != config["memory_limit_bytes"]
+            or not trial.memory_limit_matches(config["memory_limit_bytes"], evidence["memory_max"], evidence.get("page_size_bytes"))
+            or ("memory_limit_bytes" in evidence and (type(evidence["memory_limit_bytes"]) is not int
+                or evidence["memory_limit_bytes"] != config["memory_limit_bytes"]))
             or evidence["restore"]["snapshot_sha256"] != config["snapshot_sha256"]
             or evidence["restore"]["dataset"] != "full_snapshot"
             or evidence["restore"]["restored_bytes"] < config["minimum_restore_bytes"]
@@ -327,6 +537,8 @@ def run(config_path, trace_path, output):
             workers[name] = process
             threading.Thread(target=progress_reader, args=(process, name, events), daemon=True).start()
         previous_progress = progress.copy()
+        replay_receipt = None
+        replay_observed_at = 0
         coverage = set()
         rng = random.Random(config["seed"])
         beginning = time.monotonic()
@@ -336,13 +548,23 @@ def run(config_path, trace_path, output):
         receipt = None
         with private_file(output / "samples.jsonl") as samples, private_file(output / "requests.jsonl") as requests:
             while round_state.observed_seconds < config["observation_seconds"]:
+                progress_restarted = False
                 elapsed = time.monotonic() - beginning
                 if elapsed > config["observation_seconds"] + config["restart_grace_seconds"] + 120:
                     raise Error("Round exceeded maximum wall time")
                 if not restarted and elapsed >= config["restart_at_seconds"]:
-                    receipt = invoke(children, adapters["restart"], env, {"previous_container_epoch": round_state.last["container_epoch"]}, config["restart_grace_seconds"])
+                    restart_request = {"previous_container_epoch": round_state.last["container_epoch"]}
+                    if config.get("restart", {}).get("mode") == "postgres_process":
+                        restart_request.update(nonce=uuid.uuid4().hex,
+                            previous_postmaster_started=round_state.last["db"]["postmaster_started"],
+                            recorded_at=time.time(), target=config["target"], snapshot_sha256=config["snapshot_sha256"])
+                        with private_file(output / "restart-request.json") as request_file:
+                            json.dump(restart_request, request_file); request_file.flush(); os.fsync(request_file.fileno())
+                        round_state.expect_restart(restart_request)
+                    receipt = invoke(children, adapters["restart"], env, restart_request, config["restart_grace_seconds"])
                     restarted = True
                     recovery_started = time.monotonic()
+                    progress_restarted = True
                 phase = "recovery" if recovery_started is not None and time.monotonic() - recovery_started < 610 else "burst" if 900 <= elapsed < 1210 else "mixed"
                 load = load_interval(trace, phase, config["sample_seconds"], config, children, env, rng, requests, coverage)
                 evidence = invoke(children, adapters["probe"], env, {}, config["sample_seconds"])
@@ -351,14 +573,24 @@ def run(config_path, trace_path, output):
                     evidence["restart_receipt"] = receipt
                     receipt = None
                 while not events.empty():
-                    name, count, _ = events.get_nowait()
-                    if count is None or count < progress[name]:
+                    name, event, observed_at = events.get_nowait()
+                    if event is None or event["completed"] < progress[name]:
                         raise Error("Worker evidence missing or completion counter regressed")
-                    progress[name] = count
+                    progress[name] = event["completed"]
+                    if name == "replay":
+                        replay_receipt, replay_observed_at = event, observed_at
+                if progress_restarted:
+                    previous_progress, progress_start = reset_progress_window(progress, time.monotonic())
+                    evidence["throughput_window_reset"] = "verified_database_restart"
+                if replay_receipt is not None:
+                    evidence["replay_receipt"] = replay_receipt
                 evidence["worker_progress"] = progress.copy()
                 # Preserve rejected samples as evidence, then stop every owned process.
                 samples.write(json.dumps(evidence) + "\n"); samples.flush()
                 round_state.accept(evidence)
+                check_replay_exhaustion(replay_receipt,
+                    config["observation_seconds"] - round_state.observed_seconds,
+                    config["runner"]["throughput_window_seconds"])
                 if any(process.poll() is not None for process in workers.values()):
                     raise Error("Owned replay or ranking worker exited early")
                 if time.monotonic() - progress_start >= config["runner"]["throughput_window_seconds"]:
@@ -367,7 +599,9 @@ def run(config_path, trace_path, output):
                     progress_start = time.monotonic()
             if coverage != CATEGORIES:
                 raise Error("Observed successful reads did not cover the reviewed workload categories")
+            require_final_replay(replay_receipt, replay_observed_at, time.monotonic(), config["sample_seconds"] * 2)
             summary = round_state.finish()
+            summary["replay_receipt"] = replay_receipt
             summary["worker_progress"] = progress.copy()
             summary["read_categories"] = sorted(coverage)
             with private_file(output / "summary.json") as handle:

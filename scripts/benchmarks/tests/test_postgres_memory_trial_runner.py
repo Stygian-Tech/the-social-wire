@@ -31,7 +31,7 @@ class RunnerTests(unittest.TestCase):
             "minimum_replay_per_minute": 10, "minimum_rankings_per_minute": 1, "throughput_window_seconds": 60}
         c["read_targets"] = {"gateway": {"origin": "http://tsw92-gateway.railway.internal:8080", "service_id": "00000006-0000-0000-0000-000000000000"}}
         trace = directory / "trace.json"; trace.write_text(json.dumps({"dataset": "reviewed_authenticated_trace", "source_evidence": "fixture-only",
-            "rates": {"mixed": 1, "burst": 2, "recovery": 1}, "requests": [{"id": key, "target": "gateway", "category": key, "path": "/xrpc/test"} for key in sorted(m.CATEGORIES)]}))
+            "rates": {"mixed": 1, "burst": 2, "recovery": 1}, "requests": [{"id": key, "target": "gateway", "category": key, "path": {"sidebar": "/v1/publications/sidebar", "bootstrap": "/v1/appview/bootstrap-stream", "pagination": "/v1/appview/entries?authorDid=did:plc:test", "detail": "/v1/appview/entry?entryId=entry-one", "language_feed": "/xrpc/app.thesocialwire.discovery.getWire?lang=en"}[key]} for key in sorted(m.CATEGORIES)]}))
         c["workload_sha256"] = m.digest(trace)
         env = {m.trial.IDENTITIES[key]: c["runner"][key] for key in ("project_id", "environment_id", "service_id")}
         return c, trace, env
@@ -60,14 +60,158 @@ class RunnerTests(unittest.TestCase):
             data["rates"]["burst"] = 1; trace.write_text(json.dumps(data)); c["workload_sha256"] = m.digest(trace)
             with self.assertRaises(m.Error): m.validate_inputs(c, trace, env)
 
+    def sidebar(self):
+        return {"viewerDid": "did:plc:test", "refreshedAt": "2026-09-12T00:00:00Z",
+                **{key: [] for key in ("folders", "publicationPrefs", "allPublicationRows", "myPublications",
+                                       "subscribedUnfoldered", "followingTabPublications", "enrollAuthorDids")}}
+
+    def entry(self):
+        return {"entryId": "entry-one", "title": "A story", "publishedAt": "2026-09-12T00:00:00Z", "isRead": False}
+
+    def wire(self):
+        return {"generationId": "generation-one", "generatedAt": "2026-09-12T00:00:00Z", "language": "en",
+                "source": "ranked", "degraded": False, "items": [{"itemId": "item-one", "canonicalUrl": "https://example.com/story",
+                "title": "A story", "source": {"name": "Example", "domain": "example.com"}, "reasons": [], "provenance": []}]}
+
+    def bootstrap(self):
+        return [{"kind": "sidebarPriority", "sidebarPriority": self.sidebar()},
+                {"kind": "selectedPublication", "selectedPublication": {"publicationId": "pub-one"}},
+                {"kind": "entriesPage", "entriesPage": {"publicationId": "pub-one", "entries": [self.entry()], "source": "live_projection"}},
+                {"kind": "done", "done": {"refreshedAt": "2026-09-12T00:00:00Z", "source": "live_projection"}}]
+
+    def test_allowlist_matches_current_gateway_routes_and_category(self):
+        for route, (contract, categories) in m.READ_ROUTES.items():
+            with self.subTest(route=route):
+                self.assertEqual(m.read_contract({"path": route + "?cursor=opaque%2Bcursor", "category": sorted(categories)[0]}), contract)
+        for path in ("/v1/publications/refresh", "/xrpc/app.thesocialwire.appview.putReadMark", "/xrpc/test",
+                     "//evil.test/xrpc/test", "https://evil.test/v1/appview/entry", "/v1/appview/entry/",
+                     "/v1/appview/%65ntry", "/v1/appview/entry#fragment", "/v1/appview/entry\n"):
+            with self.subTest(path=path), self.assertRaises(m.Error):
+                m.read_contract({"path": path, "category": "detail"})
+        with self.assertRaises(m.Error): m.read_contract({"path": "/v1/appview/entry", "category": "bootstrap"})
+        with self.assertRaises(m.Error): m.read_contract({"path": "/v1/appview/entry", "category": "detail", "method": "POST"})
+
+    def test_real_json_contracts_and_aliases_accept_complete_payloads(self):
+        for route, (contract, categories) in m.READ_ROUTES.items():
+            if contract == "bootstrap": continue
+            value = {"sidebar": self.sidebar(), "detail": self.entry(), "entries": {"entries": [self.entry()], "cursor": "next"}, "wire": self.wire()}[contract]
+            m.validate_response({"path": route, "category": sorted(categories)[0]}, json.dumps(value).encode(), "application/json; charset=utf-8")
+        # Empty AppView pages are legitimate; this is contract validation, not a representativeness claim.
+        m.validate_response({"path": "/v1/appview/feed", "category": "pagination"}, b'{"entries":[]}', "application/json")
+
+    def test_http_200_error_malformed_and_wrong_payloads_do_not_pass(self):
+        item = {"path": "/v1/appview/entries", "category": "pagination"}
+        for raw in (b'{"error":"private server detail"}', b'{"errors":[]}', b'{}', b'[]', b'{"entries":',
+                    b'{"entries":{},"cursor":123}', b'{"entries":[{}]}', b'{"entries":[],"entries":[]}', b'{"entries":[],"x":NaN}'):
+            with self.subTest(raw=raw), self.assertRaises(m.Error) as error:
+                m.validate_response(item, raw, "application/json")
+            self.assertNotIn("private server detail", str(error.exception))
+        with self.assertRaises(m.Error): m.validate_response(item, b'{"entries":[]}', "text/html")
+        with self.assertRaises(m.Error):
+            m.validate_response({"path": "/v1/appview/entry?entryId=wrong", "category": "detail"}, json.dumps(self.entry()).encode(), "application/json")
+
+    def test_ranked_feed_requires_nonempty_matching_language_and_complete_items(self):
+        item = {"path": "/xrpc/app.thesocialwire.discovery.getWire?lang=en", "category": "language_feed"}
+        mutations = [lambda x: x.update(items=[]), lambda x: x.update(degraded=True), lambda x: x.update(source="stale_generation"),
+                     lambda x: x.update(language="fr"), lambda x: x.pop("generationId"), lambda x: x.update(items=[{}]),
+                     lambda x: x.update(generatedAt="not-a-date")]
+        for mutate in mutations:
+            value = self.wire(); mutate(value)
+            with self.assertRaises(m.Error): m.validate_response(item, json.dumps(value).encode(), "application/json")
+
+    def test_degraded_baseline_requires_explicit_pinned_expectations_and_exact_match(self):
+        item = {"path": "/xrpc/app.thesocialwire.discovery.getWire?lang=en", "category": "language_feed",
+                "expected_degraded": True, "expected_source": "ranked", "baseline_evidence": "reviewed-baseline-reference"}
+        value = self.wire(); value["degraded"] = True
+        m.validate_response(item, json.dumps(value).encode(), "application/json")
+        for key in ("baseline_evidence", "expected_degraded", "expected_source"):
+            invalid = dict(item); invalid.pop(key)
+            with self.assertRaises(m.Error): m.read_contract(invalid)
+        with self.assertRaises(m.Error): m.validate_response(item, json.dumps(self.wire()).encode(), "application/json")
+        value["source"] = "simplified_fallback"
+        with self.assertRaises(m.Error): m.validate_response(item, json.dumps(value).encode(), "application/json")
+        invalid = dict(item); invalid["expected_degraded"] = "true"
+        with self.assertRaises(m.Error): m.read_contract(invalid)
+
+    def test_bootstrap_requires_complete_done_and_available_selected_entries(self):
+        item = {"path": "/v1/appview/bootstrap-stream", "category": "bootstrap"}
+        encode = lambda events: b"\n".join(json.dumps(event).encode() for event in events)
+        m.validate_response(item, encode(self.bootstrap()), "application/x-ndjson")
+        # A viewer with no selection may validly complete without an entries page.
+        m.validate_response(item, encode([self.bootstrap()[0], self.bootstrap()[-1]]), "application/x-ndjson")
+        variants = [self.bootstrap()[:-1], self.bootstrap()[1:], self.bootstrap() + [self.bootstrap()[-1]],
+                    [self.bootstrap()[0], self.bootstrap()[1], self.bootstrap()[-1]],
+                    self.bootstrap() + [{"kind": "warning", "warning": {"message": "private detail"}}]]
+        unavailable = self.bootstrap(); unavailable[2]["entriesPage"]["source"] = "unavailable"; variants.append(unavailable)
+        error = self.bootstrap(); error.insert(1, {"kind": "error", "error": {"message": "private detail"}}); variants.append(error)
+        for events in variants:
+            with self.assertRaises(m.Error): m.validate_response(item, encode(events), "application/x-ndjson")
+        with self.assertRaises(m.Error): m.validate_response(item, encode(self.bootstrap()) + b'\n{"kind":', "application/x-ndjson")
+
+    def test_request_checks_chunked_response_completeness_before_counting_success(self):
+        item = {"path": "/v1/appview/entry?entryId=entry-one", "category": "detail", "id": "detail", "target": "gateway"}
+        class Response:
+            status = 200
+            def __init__(self, raw, length=None):
+                self.chunks = [raw[:7], raw[7:], b""]
+                self.headers = {"Content-Type": "application/json"}
+                if length is not None: self.headers["Content-Length"] = length
+            def __enter__(self): return self
+            def __exit__(self, *_): pass
+            def read1(self, _): return self.chunks.pop(0)
+        with tempfile.TemporaryDirectory() as raw:
+            config, _, _ = self.fixture(Path(raw))
+            from unittest.mock import Mock
+            for body, length, passes in ((json.dumps(self.entry()).encode(), None, True),
+                                         (b'{"error":"private detail"}', None, False),
+                                         (json.dumps(self.entry()).encode(), "9999", False)):
+                opener = Mock(); opener.open.return_value = Response(body, length)
+                with patch.object(m, "invoke", return_value={"Authorization": "DPoP test", "DPoP": "test-proof"}), \
+                     patch.object(m.urllib.request, "build_opener", return_value=opener):
+                    if passes: self.assertEqual(m.request(item, config, m.Children(), {})["category"], "detail")
+                    else:
+                        with self.assertRaises(m.Error): m.request(item, config, m.Children(), {})
+
+    def test_nonce_retry_validates_final_body_and_never_counts_an_oversized_response(self):
+        from unittest.mock import Mock
+        from urllib.error import HTTPError
+        item = {"path": "/v1/appview/entries", "category": "pagination", "id": "page", "target": "gateway"}
+        class Response:
+            status = 200
+            headers = {"Content-Type": "application/json"}
+            def __init__(self, size=0): self.size = size; self.finished = False
+            def __enter__(self): return self
+            def __exit__(self, *_): pass
+            def read1(self, maximum):
+                if self.size:
+                    count = min(maximum, self.size); self.size -= count
+                    return b" " * count
+                if self.finished: return b""
+                self.finished = True
+                return b'{"entries":[]}'
+        with tempfile.TemporaryDirectory() as raw:
+            config, _, _ = self.fixture(Path(raw))
+            opener = Mock()
+            opener.open.side_effect = [HTTPError("http://isolated", 401, "nonce", {"DPoP-Nonce": "test-nonce"}, None), Response()]
+            with patch.object(m, "invoke", return_value={"Authorization": "DPoP test", "DPoP": "test-proof"}) as signer, \
+                 patch.object(m.urllib.request, "build_opener", return_value=opener):
+                self.assertEqual(m.request(item, config, m.Children(), {})["category"], "pagination")
+                self.assertEqual(signer.call_args_list[1].args[3]["nonce"], "test-nonce")
+                self.assertEqual(opener.open.call_count, 2)
+            opener.open.side_effect = None; opener.open.return_value = Response(size=8 * 1024 * 1024 + 1)
+            with patch.object(m, "invoke", return_value={"Authorization": "DPoP test", "DPoP": "test-proof"}), \
+                 patch.object(m.urllib.request, "build_opener", return_value=opener):
+                with self.assertRaises(m.Error): m.request(item, config, m.Children(), {})
+
     def test_preflight_requires_exact_railway_decimal_byte_cap(self):
-        for cap in (16_000_000_000, 12_000_000_000, 8_000_000_000):
+        for cap in (16_000_000_000, 13_000_000_000, 12_000_000_000, 11_000_000_000, 10_000_000_000, 8_000_000_000):
             config = configuration(cap)
             with self.subTest(cap=cap):
                 m.initial_probe(probe(memory_limit_bytes=cap), config)
                 for wrong in (cap + 1, cap - 1, (cap // 1_000_000_000) * 1024 ** 3, float(cap)):
                     with self.subTest(wrong=wrong), self.assertRaises(m.Error):
-                        m.initial_probe(probe(memory_limit_bytes=wrong), config)
+                        sample = probe(memory_limit_bytes=cap); sample["memory_max"] = wrong
+                        m.initial_probe(sample, config)
 
     def test_preflight_rejects_oom_wrong_snapshot_and_disk_before_work(self):
         c = configuration(); m.initial_probe(probe(), c)
@@ -136,3 +280,42 @@ class RunnerTests(unittest.TestCase):
 
 
 if __name__ == "__main__": unittest.main()
+
+
+class ReplayReceiptContractTests(unittest.TestCase):
+    def test_transport_count_and_approximate_flags_cannot_finish(self):
+        for event in (None, {"completed": 10},
+                {"completed": 10, "snapshot_complete": 1, "drain_complete": True}):
+            with self.assertRaises(m.Error): m.require_final_replay(event, 99, 100, 10)
+        event = {"completed": 10, "snapshot_complete": True, "drain_complete": True}
+        m.require_final_replay(event, 99, 100, 10)
+        for broken, observed in [(event | {"snapshot_complete": False}, 99),
+                (event | {"drain_complete": False}, 99), (event, 80), (event, 101)]:
+            with self.assertRaises(m.Error): m.require_final_replay(broken, observed, 100, 10)
+
+    def test_early_exhaustion_fails_instead_of_parking_as_representative(self):
+        event = {"completed": 10, "snapshot_complete": True, "drain_complete": True}
+        with self.assertRaises(m.Error): m.check_replay_exhaustion(event, 601, 600)
+        m.check_replay_exhaustion(event, 600, 600)
+        m.check_replay_exhaustion(event | {"drain_complete": False}, 601, 600)
+
+    def test_restart_does_not_credit_old_work_or_outage_wall_time(self):
+        current = {"replay": 1000, "ranking": 8}
+        previous, started = m.reset_progress_window(current, 900)
+        current["replay"] += 30; current["ranking"] += 1
+        self.assertEqual(previous, {"replay": 1000, "ranking": 8})
+        self.assertEqual(started, 900)
+        config = {"runner": {"minimum_replay_per_minute": 30, "minimum_rankings_per_minute": 1}}
+        m.check_progress(current, previous, config, 60)
+        with self.assertRaises(m.Error): m.check_progress(previous, previous, config, 60)
+
+    def test_progress_reader_preserves_receipts_and_rejects_old_replay_contract(self):
+        import io
+        import queue
+        from types import SimpleNamespace
+        event = {"completed": 7, "snapshot_complete": False, "drain_complete": False}
+        events = queue.Queue()
+        m.progress_reader(SimpleNamespace(stdout=io.BytesIO((json.dumps(event) + "\n").encode())), "replay", events)
+        self.assertEqual(events.get_nowait()[:2], ("replay", event))
+        m.progress_reader(SimpleNamespace(stdout=io.BytesIO(b'{"completed":7}\n')), "replay", events)
+        self.assertEqual(events.get_nowait()[:2], ("replay", None))

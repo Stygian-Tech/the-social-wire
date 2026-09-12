@@ -1,11 +1,13 @@
 import Foundation
 import Logging
+import OperationsCore
 import PostgresNIO
 import WireCore
 
 struct PostgresWireGenerationStore: WireGenerationStore {
   let pool: PostgresClient
   let logger: Logger
+  var roleLeaseAuthority: RoleLeaseAuthority? = nil
 
   func ping() async throws {
     let rows = try await pool.query("SELECT 1", logger: logger)
@@ -517,6 +519,12 @@ struct PostgresWireGenerationStore: WireGenerationStore {
         logger: logger
       )
 
+      // Fence only the publication boundary, after building the generation. A cancelled
+      // predecessor must not replace a successor's feed even if teardown is delayed.
+      if let roleLeaseAuthority {
+        try await PostgresRoleLeaseFence.lockAndValidate(
+          roleLeaseAuthority, connection: connection, logger: logger)
+      }
       if generation.activate {
         try await connection.query(
           """

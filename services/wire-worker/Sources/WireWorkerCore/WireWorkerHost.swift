@@ -1,6 +1,7 @@
 import AsyncHTTPClient
 import Foundation
 import Logging
+import OperationsCore
 import PostgresNIO
 
 public enum WireWorkerHealthListener: Sendable {
@@ -15,6 +16,7 @@ public enum WireWorkerHost {
     environment: [String: String],
     role: WireWorkerRole? = nil,
     healthListener: WireWorkerHealthListener = .disabled,
+    roleLeaseAuthority: RoleLeaseAuthority? = nil,
     logger: Logger
   ) async throws {
     let config = try WireWorkerConfig.load(environment, role: role)
@@ -36,14 +38,17 @@ public enum WireWorkerHost {
       logger: logger
     )
     let pool = PostgresClient(configuration: postgresConfig, backgroundLogger: logger)
-    let store = PostgresWireGenerationStore(pool: pool, logger: logger)
+    let store = PostgresWireGenerationStore(pool: pool, logger: logger, roleLeaseAuthority: roleLeaseAuthority)
     let httpClient = HTTPClient(eventLoopGroupProvider: .singleton)
     let publicRepoClient = HTTPWirePublicationQueryClient(httpClient: httpClient)
     let publicationResolver = WirePublicationResolver(
       store: PostgresWirePublicationMetadataStore(pool: pool, logger: logger),
       queryClient: publicRepoClient
     )
-    let linkMetadataStore = PostgresWireLinkMetadataStore(pool: pool, logger: logger)
+    let metadataScheduling = WireMetadataSchedulingConfiguration.load(environment)
+    let linkMetadataStore = PostgresWireLinkMetadataStore(
+      pool: pool, logger: logger, schedulingReadEnabled: metadataScheduling.readerEnabled,
+      roleLeaseAuthority: roleLeaseAuthority)
     let inboxProcessor: PostgresWireInboxProcessor?
     if let actorSecret = config.actorHMACSecret {
       inboxProcessor = try PostgresWireInboxProcessor(
@@ -246,6 +251,16 @@ public enum WireWorkerHost {
         }
       }
       if runtimePlan.runsMetadataEnrichment {
+        group.addTask {
+          try await WireMetadataMaintenanceRuntime.runRepair(
+            store: linkMetadataStore, logger: logger,
+            intervalMilliseconds: metadataScheduling.repairIntervalMilliseconds)
+        }
+        if metadataScheduling.maintenanceEnabled {
+          group.addTask {
+            try await WireMetadataMaintenanceRuntime.runScheduling(store: linkMetadataStore, logger: logger)
+          }
+        }
         let enricher = WireLinkMetadataEnricher(
           store: linkMetadataStore,
           client: HTTPWireLinkMetadataClient(httpClient: httpClient),
