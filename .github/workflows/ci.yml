@@ -353,7 +353,13 @@ jobs:
         working-directory: packages/swift/OperationsCore
         env:
           OPERATIONS_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/socialwire_operations_test?sslmode=disable
-        run: swift test
+        run: swift test --skip 'PostgresRoleLeaseAuthorityTests|PostgresRoleLeaseDiagnosticIntegrationTests|PostgresRoleLeaseDiagnosticTransportTests'
+      - name: Test lease deadlines without unrelated test load
+        working-directory: packages/swift/OperationsCore
+        env:
+          OPERATIONS_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/socialwire_operations_test?sslmode=disable
+        # Integration tests still exercise their own concurrent transactions.
+        run: swift test --skip-build --no-parallel --filter 'PostgresRoleLeaseAuthorityTests|PostgresRoleLeaseDiagnosticIntegrationTests|PostgresRoleLeaseDiagnosticTransportTests'
       - name: Test Operations
         working-directory: services/operations
         run: swift test

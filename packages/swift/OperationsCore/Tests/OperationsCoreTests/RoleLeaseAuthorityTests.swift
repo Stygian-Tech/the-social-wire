@@ -107,6 +107,30 @@ struct RoleLeaseAuthorityTests {
     #expect(events.values.filter { $0 == .operationStarted }.count == 1)
   }
 
+  @Test("delayed watchdog sleep entry retains the original authority deadline")
+  func delayedWatchdogSleepEntry() async throws {
+    let clock = ControlledLeaseClock()
+    let timing = DelayedWatchdogLeaseClock(clock: clock)
+    let store = ControlledLeaseStore(clock: clock, holdRenewal: true)
+    let events = ControlledLeaseEvents()
+    let task = Task { await (try makeSupervisor(store, timing, events)).run { _ in try await Task.sleep(for: .seconds(1_000)) } }
+    await events.wait { $0 == .operationStarted }
+    await clock.waitForSleeper(at: 10)
+    await timing.entered.wait()
+    clock.advance(by: 10)
+    await store.waitUntilRenewing()
+    clock.advance(by: 15)
+    // The sleep implementation only starts now. Relative sleep would incorrectly
+    // wait another 25 seconds, despite authority already having expired.
+    await timing.resume.open()
+    await events.wait { $0 == .authorityExpired }
+    await events.wait { $0 == .operationStopped(reason: .cancelled) }
+    task.cancel()
+    await store.releaseRenewal()
+    _ = try await task.value
+    #expect(events.values.filter { $0 == .operationStarted }.count == 1)
+  }
+
   @Test("fencing conflict immediately tears down and restarts with new authority")
   func conflictRestarts() async throws {
     let clock = ControlledLeaseClock()
@@ -150,7 +174,7 @@ struct RoleLeaseAuthorityTests {
   }
 
   private func makeSupervisor(
-    _ store: ControlledLeaseStore, _ clock: ControlledLeaseClock, _ events: ControlledLeaseEvents
+    _ store: ControlledLeaseStore, _ clock: any RoleLeaseSupervisorTiming, _ events: ControlledLeaseEvents
   ) throws -> RoleLeaseSupervisor {
     RoleLeaseSupervisor(store: store, configuration: try RoleLeaseSupervisorConfiguration(
       role: "wire", ownerID: "replica", leaseDuration: 30, renewInterval: 10, standbyRetryInterval: 5),
@@ -165,10 +189,14 @@ private final class ControlledLeaseClock: RoleLeaseSupervisorTiming, @unchecked 
   var instant: TimeInterval { lock.withLock { value } }
   func now() async -> Date { Date(timeIntervalSince1970: instant) }
   func monotonicNow() async -> TimeInterval { instant }
-  func sleep(for interval: TimeInterval) async {
+  func sleep(for interval: TimeInterval) async { await sleep(until: instant + interval) }
+  func sleep(until deadline: TimeInterval) async {
     let id = UUID()
     let (stream, continuation) = AsyncStream.makeStream(of: Void.self)
-    let deadline = lock.withLock { let end = value + interval; sleepers[id] = (end, continuation); return end }
+    lock.withLock {
+      if value >= deadline { continuation.finish() }
+      else { sleepers[id] = (deadline, continuation) }
+    }
     defer { _ = lock.withLock { sleepers.removeValue(forKey: id) }; continuation.finish() }
     for await _ in stream { if instant >= deadline { return } }
   }
@@ -234,4 +262,24 @@ private final class ControlledLeaseEvents: @unchecked Sendable {
     if values.contains(where: predicate) { return }
     for await event in stream where predicate(event) { return }
   }
+}
+
+private struct DelayedWatchdogLeaseClock: RoleLeaseSupervisorTiming {
+  let clock: ControlledLeaseClock
+  let entered = ControlledLeaseGate()
+  let resume = ControlledLeaseGate()
+  func now() async -> Date { await clock.now() }
+  func monotonicNow() async -> TimeInterval { clock.instant }
+  func sleep(for interval: TimeInterval) async { await clock.sleep(for: interval) }
+  func sleep(until deadline: TimeInterval) async {
+    if deadline == 25 { await entered.open(); await resume.wait() }
+    await clock.sleep(until: deadline)
+  }
+}
+
+private actor ControlledLeaseGate {
+  private var opened = false
+  private var continuations: [CheckedContinuation<Void, Never>] = []
+  func wait() async { if !opened { await withCheckedContinuation { continuations.append($0) } } }
+  func open() { opened = true; let pending = continuations; continuations = []; pending.forEach { $0.resume() } }
 }

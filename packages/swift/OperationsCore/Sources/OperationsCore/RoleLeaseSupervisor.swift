@@ -4,11 +4,16 @@ public protocol RoleLeaseSupervisorTiming: Sendable {
   func now() async -> Date
   func monotonicNow() async -> TimeInterval
   func sleep(for interval: TimeInterval) async
+  func sleep(until deadline: TimeInterval) async
 }
 
 public extension RoleLeaseSupervisorTiming {
   // Test clocks may derive both views from a single controlled timeline.
   func monotonicNow() async -> TimeInterval { await now().timeIntervalSince1970 }
+  func sleep(until deadline: TimeInterval) async {
+    let remaining = deadline - (await monotonicNow())
+    if remaining > 0 { await sleep(for: remaining) }
+  }
 }
 
 public struct SystemRoleLeaseSupervisorTiming: RoleLeaseSupervisorTiming {
@@ -23,6 +28,12 @@ public struct SystemRoleLeaseSupervisorTiming: RoleLeaseSupervisorTiming {
 
   public func sleep(for interval: TimeInterval) async {
     try? await Task.sleep(for: .seconds(interval))
+  }
+
+  public func sleep(until deadline: TimeInterval) async {
+    // Keep the original authority deadline even if entering this async method
+    // is delayed by executor pressure. A past deadline wakes immediately.
+    try? await ContinuousClock().sleep(until: Self.epoch.advanced(by: .seconds(deadline)))
   }
 }
 
@@ -200,7 +211,7 @@ public struct RoleLeaseSupervisor: Sendable {
               onEvent(.operationStopping(reason: .leaseLost))
               throw RoleLeaseFailure.authorityExpired
             }
-            await timing.sleep(for: remaining)
+            await timing.sleep(until: now + remaining)
           }
           throw CancellationError()
         }
@@ -233,8 +244,7 @@ public struct RoleLeaseSupervisor: Sendable {
   ) async throws {
     var scheduled = firstStart + configuration.renewInterval
     while !Task.isCancelled {
-      let delay = scheduled - (await timing.monotonicNow())
-      if delay > 0 { await timing.sleep(for: delay) }
+      await timing.sleep(until: scheduled)
       try Task.checkCancellation()
       let cycleStart = await timing.monotonicNow()
       var retry = 0
@@ -268,7 +278,8 @@ public struct RoleLeaseSupervisor: Sendable {
           guard failure.isTransient, retry < 2, remaining > 4 else { throw error }
           retry += 1
           onEvent(.renewalRetryScheduled(attempt: retry, failure: failure))
-          await timing.sleep(for: 1)
+          let retryAt = await timing.monotonicNow() + 1
+          await timing.sleep(until: retryAt)
         }
       }
       scheduled += configuration.renewInterval
