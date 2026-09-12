@@ -41,7 +41,7 @@ def fixture(stage="development", cap=13_000_000_000):
         samples.append({"available": True, "evidence_ref": f"synthetic/minute/{len(samples)}",
                         "started_at": cursor, "ended_at": cursor + 60,
                         "observed_at": cursor + 60, "collected_at": cursor + 60,
-                        "memory_limit_bytes": cap, "oom_events": 0, "oom_kills": 0,
+                        "memory_limit_bytes": cap, "memory_max": cap // 4096 * 4096, "page_size_bytes": 4096, "oom_events": 0, "oom_kills": 0,
                         "avoidable_coordinator_restarts": 0, "lease_loss_events": 0,
                         "generations": dict.fromkeys(config["supported_languages"], cursor + 60 - 300),
                         "actionable_queue_age_seconds": dict.fromkeys(config["queue_names"], 0)})
@@ -89,6 +89,26 @@ class MemoryStepAcceptanceTests(unittest.TestCase):
         for cap in (13_000_000_001, 13_000_000_000.0, None):
             item = fixture(); item["samples"][10]["memory_limit_bytes"] = cap
             self.blocked(item, "memory cap mismatch")
+
+    def test_raw_page_floor_is_preserved_and_missing_or_invented_alignment_is_rejected(self):
+        for cap in m.CAPS:
+            result = m.assess(fixture(cap=cap))
+            self.assertEqual(result["memory_limit_bytes"], cap)
+            self.assertEqual(result["memory_max"], cap // 4096 * 4096)
+            self.assertEqual(result["page_size_bytes"], 4096)
+        observed = 13_000_000_000 // 4096 * 4096
+        for wrong in (observed + 1, observed - 1, observed + 4096, 13_000_000_000, 13 * 1024**3, float(observed)):
+            value = fixture(); value["samples"][0]["memory_max"] = wrong
+            self.blocked(value, "observed memory cap mismatch")
+        for wrong in (None, 4096.0, "4096", 8192, 16384, 65536, 0, True):
+            value = fixture(); value["samples"][0]["page_size_bytes"] = wrong
+            self.blocked(value, "observed memory cap mismatch")
+        value = fixture(); value["samples"][0].pop("memory_max")
+        self.blocked(value, "observed memory cap mismatch")
+        value = fixture(); value["samples"][0].pop("page_size_bytes")
+        self.blocked(value, "observed memory cap mismatch")
+        value = fixture(); value["baseline"].update(memory_max=16_000_000_001, page_size_bytes=4096)
+        self.blocked(value, "baseline: observed memory cap mismatch")
 
     def test_generation_freshness_boundary_and_explicit_supported_language_coverage(self):
         item = fixture(); sample = item["samples"][4]
