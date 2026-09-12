@@ -23,6 +23,22 @@ IDENTITIES = {"project_id": "RAILWAY_PROJECT_ID", "environment_id": "RAILWAY_ENV
               "service_id": "RAILWAY_SERVICE_ID", "volume_id": "RAILWAY_VOLUME_ID"}
 
 
+# Verified with getconf PAGESIZE inside Railway Development Postgres (2026-09-12).
+# A different kernel page size requires explicit review, not a broader byte tolerance.
+RAILWAY_PAGE_SIZE_BYTES = 4096
+LEGACY_EXACT_CAPS = (16_000_000_000, 8_000_000_000)
+
+
+def memory_limit_matches(requested, observed, page_size):
+    if type(requested) is not int or requested <= 0 or type(observed) is not int:
+        return False
+    if page_size is None:
+        # Preserve old exact/aligned 16 GB and 8 GB evidence without inventing page metadata.
+        return requested in LEGACY_EXACT_CAPS and observed == requested
+    return (type(page_size) is int and page_size == RAILWAY_PAGE_SIZE_BYTES
+            and observed == (requested // page_size) * page_size)
+
+
 def validate_config(config):
     target = config["target"]
     for key in IDENTITIES:
@@ -89,8 +105,11 @@ def sample(config, pg, environment=os.environ, cgroup=Path("/sys/fs/cgroup")):
             or not manifest.get("restore_epoch")):
         raise Error("Full-snapshot restore attestation is absent or mismatched")
     memory_limit = (cgroup / "memory.max").read_text().strip()
-    if memory_limit != str(config["memory_limit_bytes"]):
-        raise Error("Observed cgroup memory limit differs from this round")
+    page_size = os.sysconf("SC_PAGE_SIZE")
+    if type(page_size) is not int or page_size != RAILWAY_PAGE_SIZE_BYTES:
+        raise Error("Target kernel page size is unavailable or has not been verified for Railway")
+    if not memory_limit.isdecimal() or not memory_limit_matches(config["memory_limit_bytes"], int(memory_limit), page_size):
+        raise Error("Observed cgroup memory limit differs from this round's verified page-aligned cap")
     free = os.statvfs(mount)
     queue_sql = []
     for table in ("wire_ingestion_inbox", "appview_ingestion_inbox"):
@@ -113,7 +132,8 @@ def sample(config, pg, environment=os.environ, cgroup=Path("/sys/fs/cgroup")):
       'database_stats', (SELECT row_to_json(d) FROM pg_stat_database d WHERE datname=current_database()),
       'connections', (SELECT count(*) FROM pg_stat_activity),
       'queues', json_build_object(%s))""" % ",".join(queue_sql))
-    return {"time": time.time(), "identity": identity, "memory_max": int(memory_limit),
+    return {"time": time.time(), "identity": identity, "memory_limit_bytes": config["memory_limit_bytes"],
+            "memory_max": int(memory_limit), "page_size_bytes": page_size,
             "memory_current": int((cgroup / "memory.current").read_text()),
             "memory_stat": pairs(cgroup / "memory.stat"), "memory_events": pairs(cgroup / "memory.events"),
             "container_epoch": [environment.get("RAILWAY_DEPLOYMENT_ID"), cgroup.stat().st_ino,
@@ -140,8 +160,12 @@ class Round:
         for key in IDENTITIES:
             if sample["identity"][key] != c["target"][key]:
                 raise Error("Target identity changed")
-        if type(sample["memory_max"]) is not int or sample["memory_max"] != c["memory_limit_bytes"]:
-            raise Error("Memory limit changed within a round")
+        if (not memory_limit_matches(c["memory_limit_bytes"], sample["memory_max"], sample.get("page_size_bytes"))
+                or ("memory_limit_bytes" in sample and (type(sample["memory_limit_bytes"]) is not int
+                    or sample["memory_limit_bytes"] != c["memory_limit_bytes"]))):
+            raise Error("Memory limit does not match the requested cap and measured page size")
+        if self.last and (sample["memory_max"], sample.get("page_size_bytes")) != (self.last["memory_max"], self.last.get("page_size_bytes")):
+            raise Error("Observed memory cap or page-size evidence changed within a round")
         if (sample["restore"]["snapshot_sha256"] != c["snapshot_sha256"]
                 or sample["restore"]["dataset"] != "full_snapshot"
                 or sample["restore"]["restored_bytes"] < c["minimum_restore_bytes"]):
@@ -240,6 +264,7 @@ class Round:
         if any(queue["rows_lower_bound"] for queue in self.last["db"]["queues"].values()):
             raise Error("Final actionable backlog has not drained")
         return {"status": "passed_evidence_gates", "memory_limit_bytes": self.config["memory_limit_bytes"],
+                "memory_max": self.first["memory_max"], "page_size_bytes": self.first.get("page_size_bytes"),
                 "observed_seconds": self.observed_seconds, "phase_seconds": self.phase_seconds, "wal_lsn_span_bytes_excluding_restart_gap": sum(self.wal_spans),
                 "capacity_claim": "Requires reviewed representative trace and authenticated QA; not a synthetic capacity proof"}
 

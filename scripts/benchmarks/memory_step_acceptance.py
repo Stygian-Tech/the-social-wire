@@ -3,10 +3,15 @@
 import argparse
 from decimal import Decimal
 import json
+import importlib.util
 import math
 from pathlib import Path
 import re
 import sys
+
+SPEC = importlib.util.spec_from_file_location("memory_trial", Path(__file__).with_name("postgres_memory_trial.py"))
+trial = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(trial)
 
 CAPS = {13_000_000_000, 12_000_000_000, 11_000_000_000, 10_000_000_000}
 COMPARISON_KEYS = ("workload_sha256", "non_memory_settings_sha256", "binary_manifest_sha256")
@@ -103,6 +108,8 @@ def validate(document, *, allow_production=True):
     baseline_start, baseline_end = validate_latency(baseline, config, "baseline")
     require(type(baseline.get("memory_limit_bytes")) is int and baseline["memory_limit_bytes"] == 16_000_000_000,
             "baseline: exact 16 GB comparison cap required")
+    require(trial.memory_limit_matches(baseline["memory_limit_bytes"], baseline.get("memory_max", baseline["memory_limit_bytes"]), baseline.get("page_size_bytes")),
+            "baseline: observed memory cap mismatch")
     require(baseline_end <= start and baseline_end - baseline_start >= 3600,
             "baseline: at least one prior measured hour required")
     max_baseline_age = number(config.get("maximum_baseline_age_seconds"), "maximum_baseline_age_seconds", 1)
@@ -137,6 +144,7 @@ def validate(document, *, allow_production=True):
     pause_consumed = False
     streaks = dict.fromkeys(config["queue_names"], 0)
     lease_losses = 0
+    memory_observation = None
     for index, sample in enumerate(samples):
         label = f"sample[{index}]"
         sample = available(sample, label)
@@ -155,7 +163,12 @@ def validate(document, *, allow_production=True):
                 and collected_at - observed_at <= 60 and sample_end - observed_at < 60,
                 f"{label}: stale or invalid observation timestamps")
         require(type(sample.get("memory_limit_bytes")) is int and sample["memory_limit_bytes"] == cap,
-                f"{label}: exact observed memory cap mismatch")
+                f"{label}: requested memory cap mismatch")
+        observed_memory = (sample.get("memory_max", sample["memory_limit_bytes"]), sample.get("page_size_bytes"))
+        require(trial.memory_limit_matches(cap, *observed_memory), f"{label}: observed memory cap mismatch")
+        require(memory_observation is None or memory_observation == observed_memory,
+                f"{label}: memory cap or page-size evidence changed within the step")
+        memory_observation = observed_memory
         for counter in ("oom_events", "oom_kills", "avoidable_coordinator_restarts"):
             require(integer(sample.get(counter), f"{label}.{counter}") == 0, f"{label}: {counter} observed")
         lease_losses += integer(sample.get("lease_loss_events"), f"{label}.lease_loss_events")
@@ -211,7 +224,8 @@ def validate(document, *, allow_production=True):
         require(development["ended_at"] <= start, "development_evidence: prerequisite must precede Production")
         require(start - development["ended_at"] <= max_baseline_age, "development_evidence: stale prerequisite")
         require(development_result["stage"] == "development", "development_evidence: invalid stage")
-    return {"stage": stage, "memory_limit_bytes": cap, "observed_seconds": observed_seconds,
+    return {"stage": stage, "memory_limit_bytes": cap, "memory_max": memory_observation[0],
+            "page_size_bytes": memory_observation[1], "observed_seconds": observed_seconds,
             "window_started_at": start, "window_ended_at": end, "assessed_at": assessed_at,
             "lease_loss_events": lease_losses, "supported_languages": config["supported_languages"]}
 

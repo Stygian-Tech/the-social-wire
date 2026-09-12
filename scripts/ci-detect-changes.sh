@@ -234,3 +234,7 @@ filter_changed docs \
   'docs/wiki/**' \
   'scripts/check-wiki-links.sh' \
   '.github/workflows/ci.yml'
+
+filter_changed benchmark_tools \
+  'scripts/benchmarks/**' \
+  '.github/workflows/ci.yml'

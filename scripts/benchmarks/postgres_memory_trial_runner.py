@@ -327,8 +327,10 @@ def private_file(path):
 
 
 def adapter_environment(config_path, config):
-    # Explicit configuration carries target identity; no inherited Production DB/token settings.
-    return {key: os.environ[key] for key in ("PATH", "LANG", "HOME") if key in os.environ} | {
+    # Preserve observed provider identity for independent verification inside adapters.
+    # Never substitute configured IDs or inherit database/token settings.
+    return {key: os.environ[key] for key in ("PATH", "LANG", "HOME", "RAILWAY_PROJECT_ID",
+        "RAILWAY_ENVIRONMENT_ID", "RAILWAY_SERVICE_ID", "RAILWAY_DEPLOYMENT_ID") if key in os.environ} | {
         "TSW92_TRIAL_CONFIG": str(config_path.resolve()),
         "TSW92_TOKEN_FILE": config["runner"]["token_file"],
     }
@@ -462,8 +464,9 @@ def initial_probe(evidence, config):
     trial.validate_config(config)
     # No fabricated load is attached to this preflight observation.
     if (evidence["identity"] != {key: config["target"][key] for key in trial.IDENTITIES}
-            or type(evidence["memory_max"]) is not int
-            or evidence["memory_max"] != config["memory_limit_bytes"]
+            or not trial.memory_limit_matches(config["memory_limit_bytes"], evidence["memory_max"], evidence.get("page_size_bytes"))
+            or ("memory_limit_bytes" in evidence and (type(evidence["memory_limit_bytes"]) is not int
+                or evidence["memory_limit_bytes"] != config["memory_limit_bytes"]))
             or evidence["restore"]["snapshot_sha256"] != config["snapshot_sha256"]
             or evidence["restore"]["dataset"] != "full_snapshot"
             or evidence["restore"]["restored_bytes"] < config["minimum_restore_bytes"]

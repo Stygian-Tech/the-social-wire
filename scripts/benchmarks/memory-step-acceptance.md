@@ -2,7 +2,7 @@
 
 `memory_step_acceptance.py` validates a local JSON evidence document. It does not collect observations, contact Railway/Postgres, run load, change limits, restart services, or verify the contents of referenced artifacts. No hosted trial has been performed by adding this tool. Unit fixtures are synthetic safety tests, never capacity evidence.
 
-This complements `postgres_memory_trial.py` and its owned-process runner. Keep their identity, restore, source inventory, headroom, workload, connection, archive, throughput and restart gates. This tool does not replace `Round`, relax its immediate stop limits, or make its stricter queue/restart rules disappear. The supplemental queue rule below expresses the new step criterion; the existing runner can still stop a trial earlier.
+This shares the page-alignment rule from the adjacent `postgres_memory_trial.py` (and its adjacent `postgres_replay.py` dependency); keep those reviewed files together. It complements `postgres_memory_trial.py` and its owned-process runner. Keep their identity, restore, source inventory, headroom, workload, connection, archive, throughput and restart gates. This tool does not replace `Round`, relax its immediate stop limits, or make its stricter queue/restart rules disappear. The supplemental queue rule below expresses the new step criterion; the existing runner can still stop a trial earlier.
 
 Run after collecting evidence:
 
@@ -34,14 +34,14 @@ The top-level object contains `schema_version: 1`, `config`, `started_at`, `ende
 `config` contains:
 
 - `stage`: `development` or `production`.
-- `memory_limit_bytes`: exactly `13000000000`, `12000000000`, `11000000000` or `10000000000`. Every observed cap must match exactly. The retired `memory_gib` key is rejected.
+- `memory_limit_bytes`: exactly `13000000000`, `12000000000`, `11000000000` or `10000000000`. Every requested sample cap must match exactly; its separate raw cgroup cap must match the verified page floor. The retired `memory_gib` key is rejected.
 - `supported_languages`: the complete configured language list; no default language is inferred. Each minute must include every language's latest **committed, complete, currently served** generation, not a generation that merely started processing.
 - `queue_names`: the complete reviewed actionable-queue inventory, including Wire and AppView ingestion. Name each queue consistently; exclude terminal history, while preserving all durable recovery state.
 - `latency_groups`: the complete reviewed user-facing request groups. Keep matching request mix and offered rates in the reviewed workload; do not select a conveniently fast subset.
 - `comparison`: exactly `workload_sha256`, `non_memory_settings_sha256` and `binary_manifest_sha256`, each a lowercase SHA-256. Non-memory settings include CPU, pools, replicas, admission, languages and offered-load schedules. Lower-cap trials and the 16 GB baseline must use the same fingerprints.
 - `maximum_baseline_age_seconds`: a reviewed positive age limit no greater than seven days. Both the baseline and a Production step's Development prerequisite must be within this limit when the step starts. A reused stale baseline is not accepted silently.
 
-`baseline` and `latency` contain `available`, `evidence_ref`, `comparison`, `started_at`, `ended_at`, `method: "raw_request_percentile"`, `p95_ms`, and `request_counts`. The latter two maps contain every configured latency group with positive values/counts. Baseline additionally has `memory_limit_bytes: 16000000000` and covers at least one prior hour. Candidate latency covers the exact assessed window. Percentiles come from the matching raw request samples, including successful authentication handshake time, never an average of interval p95 values. A group's p95 at exactly 110% of baseline passes; anything greater blocks. The tool checks the declared values/method, not the referenced raw requests.
+`baseline` and `latency` contain `available`, `evidence_ref`, `comparison`, `started_at`, `ended_at`, `method: "raw_request_percentile"`, `p95_ms`, and `request_counts`. The latter two maps contain every configured latency group with positive values/counts. Baseline additionally has `memory_limit_bytes: 16000000000` and covers at least one prior hour. New baseline evidence includes raw `memory_max` and measured `page_size_bytes`; legacy exact 16 GB baseline evidence without those fields remains accepted without inventing a page measurement. Candidate latency covers the exact assessed window. Percentiles come from the matching raw request samples, including successful authentication handshake time, never an average of interval p95 values. A group's p95 at exactly 110% of baseline passes; anything greater blocks. The tool checks the declared values/method, not the referenced raw requests.
 
 ## Minute observations
 
@@ -52,7 +52,8 @@ Each sample contains:
 | `started_at`, `ended_at` | A complete 60-second observation interval. Intervals must partition the window without duplication, overlap or unaccounted gaps. |
 | `observed_at`, `collected_at` | Actual source observation and collection times. Observation falls within its minute; collection cannot precede it, be over 60 seconds later, or follow assessment. Never relabel an old cached observation with a new time. |
 | `available`, `evidence_ref` | All required measurements are available; reference the source ledger/log. Unavailable is not zero. |
-| `memory_limit_bytes` | Actual database cgroup limit, as an exact integer. |
+| `memory_limit_bytes` | Requested Railway cap, as an exact decimal-byte integer matching the step configuration. |
+| `memory_max`, `page_size_bytes` | Raw target cgroup cap and target `SC_PAGE_SIZE` measurement. Require the exact page floor of the requested cap; the currently verified Railway page size is 4096 bytes. A one-byte drift, unknown/missing page size, rounded-up value or GiB cap fails. Preserve both fields unchanged across the step. |
 | `oom_events`, `oom_kills` | Event **deltas during this minute**, including external provider termination evidence across container changes. Both must be zero. |
 | `avoidable_coordinator_restarts` | Event delta from the reviewed Coordinator lifecycle ledger. Must be zero. A deliberate isolated database restart is recorded separately, not reclassified as an avoidable Coordinator restart. |
 | `lease_loss_events` | Final authority-loss events, deduplicated across lifecycle log messages. Successfully recovered transient renewal attempts are not separate authority losses. Two or more final losses anywhere in the step block it. |
@@ -76,3 +77,5 @@ Tests are deterministic and use no hosted calls:
 ```sh
 python3 -m unittest discover -s scripts/benchmarks/tests -p test_memory_step_acceptance.py
 ```
+
+Requested caps remain unchanged: a 13 GB request is 13,000,000,000 bytes while its verified 4096-byte-page cgroup cap is 12,999,999,488 bytes. Assessment output preserves `memory_limit_bytes`, `memory_max`, and `page_size_bytes`; it does not independently verify the submitted page measurement or its source artifact.
