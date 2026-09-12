@@ -20,25 +20,52 @@ import memory_ranking_evidence as evidence
 URL = os.environ.get("RANKING_TEST_DATABASE_URL")
 
 
+def fixture_environment(url):
+    connection = urllib.parse.urlsplit(url)
+    if (connection.scheme not in {"postgres", "postgresql"}
+            or connection.hostname not in {"127.0.0.1", "localhost", "::1"}
+            or connection.port == 0 or not connection.path.startswith("/") or len(connection.path) <= 1
+            or connection.query not in ("", "sslmode=disable") or connection.fragment):
+        raise RuntimeError("Ranking SQL tests require an explicit disposable loopback PostgreSQL database")
+    return {key: os.environ[key] for key in ("PATH", "LANG") if key in os.environ} | {
+        "PGHOST": connection.hostname, "PGPORT": str(connection.port or 5432),
+        "PGDATABASE": urllib.parse.unquote(connection.path[1:]),
+        "PGUSER": urllib.parse.unquote(connection.username or "postgres"),
+        "PGPASSWORD": urllib.parse.unquote(connection.password or ""), "PGCONNECT_TIMEOUT": "2",
+        "PGSSLMODE": "disable", "PGAPPNAME": "tsw114-ranking-fixture"}
+
+
+class RankingFixtureConfigurationTests(unittest.TestCase):
+    def test_ci_and_local_loopback_urls_preserve_explicit_target(self):
+        for host, port, database in (("127.0.0.1", "5432", "postgres"),
+                ("localhost", "55414", "tsw114_ranking_adapter"), ("::1", "5432", "fixture")):
+            authority = "[::1]" if host == "::1" else host
+            environment = fixture_environment(f"postgresql://postgres:fixture%40password@{authority}:{port}/{database}?sslmode=disable")
+            self.assertEqual((environment["PGHOST"], environment["PGPORT"], environment["PGDATABASE"]), (host, port, database))
+            self.assertEqual(environment["PGPASSWORD"], "fixture@password")
+            self.assertNotIn("PGOPTIONS", environment)
+        self.assertEqual(fixture_environment("postgresql://localhost/postgres")["PGPORT"], "5432")
+
+    def test_remote_hosts_and_connection_option_overrides_fail_before_sql(self):
+        for url in ("postgresql://postgres.railway.internal/railway", "postgresql://example.com/postgres",
+                "postgresql://127.0.0.1/", "postgresql://127.0.0.1:0/postgres",
+                "postgresql://127.0.0.1/postgres?host=remote.example", "postgresql://127.0.0.1/postgres?options=-csearch_path=public",
+                "postgresql://127.0.0.1/postgres#fragment", "https://127.0.0.1/postgres"):
+            with self.subTest(url=url), self.assertRaises(RuntimeError): fixture_environment(url)
+
+
 @unittest.skipUnless(URL, "Set RANKING_TEST_DATABASE_URL for the dedicated local fixture")
 class RankingPostgresTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        connection = urllib.parse.urlsplit(URL)
-        if (connection.scheme not in {"postgres", "postgresql"} or connection.hostname != "127.0.0.1"
-                or connection.port != 55414 or connection.path != "/tsw114_ranking_adapter"
-                or connection.query not in ("", "sslmode=disable") or connection.fragment):
-            raise RuntimeError("Ranking SQL tests require the exact authorized disposable local database")
-        cls.psql = os.environ.get("RANKING_TEST_PSQL", "/opt/homebrew/opt/libpq/bin/psql")
-        cls.environment = {key: os.environ[key] for key in ("PATH", "LANG") if key in os.environ} | {
-            "PGHOST": "127.0.0.1", "PGPORT": "55414", "PGDATABASE": "tsw114_ranking_adapter",
-            "PGUSER": urllib.parse.unquote(connection.username or "postgres"),
-            "PGPASSWORD": urllib.parse.unquote(connection.password or ""), "PGCONNECT_TIMEOUT": "2",
-            "PGSSLMODE": "disable", "PGAPPNAME": "tsw114-ranking-fixture"}
+        cls.environment = fixture_environment(URL)
+        cls.psql = os.environ.get("RANKING_TEST_PSQL", "psql")
         # A dedicated schema avoids taking ownership of any preexisting fixture tables.
         cls.schema = "ranking_test_" + uuid.uuid4().hex
         cls.sql(f"CREATE SCHEMA {cls.schema}")
-        cls.environment["PGOPTIONS"] = "-c search_path=" + cls.schema + ",public"
+        cls.addClassCleanup(cls.sql, f"DROP SCHEMA {cls.schema} CASCADE")
+        # Never fall back to public tables, including if fixture setup fails partway.
+        cls.environment["PGOPTIONS"] = "-c search_path=" + cls.schema
         migration = ROOT.parents[1] / "database/migrations/20260820120000_add_wire_discovery_feed.sql"
         source = migration.read_text()
         generation = source[source.index("CREATE TABLE IF NOT EXISTS wire_rank_generations ("):]
@@ -47,10 +74,6 @@ class RankingPostgresTests(unittest.TestCase):
         generation = generation[:generation.index(");", end) + 2]
         cls.sql("CREATE TABLE wire_items (canonical_key TEXT PRIMARY KEY);" + generation)
         cls.sql((ROOT.parents[1] / "database/migrations/20260830190000_add_fenced_role_leases.sql").read_text())
-
-    @classmethod
-    def tearDownClass(cls):
-        cls.sql(f"DROP SCHEMA {cls.schema} CASCADE")
 
     @classmethod
     def sql(cls, query):
@@ -62,7 +85,7 @@ class RankingPostgresTests(unittest.TestCase):
 
     def setUp(self):
         self.sql("TRUNCATE wire_feed_state, wire_ranked_items, wire_rank_generations, wire_items, operations_role_leases")
-        self.config = {"target": {"database": "tsw114_ranking_adapter"}, "ranking": {
+        self.config = {"target": {"database": self.environment["PGDATABASE"]}, "ranking": {
             "supported_languages": ["und", "en"], "config_version": "wire-v10", "maximum_stale_seconds": 720}}
         self.after = 0
         self.state = evidence.RankingEvidence(self.config, "fixture-owned", self.observe(), time.monotonic())
