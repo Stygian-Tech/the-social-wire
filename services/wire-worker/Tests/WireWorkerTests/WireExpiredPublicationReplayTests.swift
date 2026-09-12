@@ -6,6 +6,29 @@ import WireCore
 @testable import WireWorkerCore
 
 extension WirePostgresIntegrationTests {
+  @Test("retention removes a replay signal at exact expiry while preserving corpus and activity")
+  func publicationReplaySignalRetentionBoundary() async throws {
+    try await WireSourceVersionFixture.run { fixture in
+      let processAt = fixture.base.now.addingTimeInterval(60)
+      let expiresAt = processAt.addingTimeInterval(1)
+      try await fixture.insert(sequence: 1, revision: WireSourceVersionFixture.olderRevision,
+        title: "Recovered Corpus", operation: "create",
+        occurredAt: expiresAt.addingTimeInterval(-WireDataPolicy.signalRetention))
+      #expect(try await fixture.apply(sequence: 1) == .applied)
+      let store = PostgresWireGenerationStore(pool: fixture.base.pool, logger: fixture.base.logger)
+      try await store.deleteExpired(asOf: processAt, batchSize: 5000)
+      #expect(try await fixture.signalCount() == 1)
+
+      // This database-wide cleanup caused the cross-suite failure when the
+      // generation tests advanced their own clock concurrently with replay.
+      try await store.deleteExpired(asOf: expiresAt, batchSize: 5000)
+      #expect(try await fixture.signalCount() == 0)
+      #expect(try await fixture.title() == "Recovered Corpus")
+      #expect(try await fixture.projectionExists())
+      #expect(try await fixture.actorSignals() == 1)
+    }
+  }
+
   @Test("publication replay keeps corpus and activity but omits signals at or beyond expiration",
     arguments: [-1.0, 0.0, 1.0])
   func publicationReplaySignalExpirationBoundary(remainingLifetime: Double) async throws {
