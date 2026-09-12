@@ -15,7 +15,10 @@ SPEC = importlib.util.spec_from_file_location("replay", Path(__file__).with_name
 replay = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(replay)
 Error = replay.BenchmarkError
-RAILWAY_MEMORY_LIMITS_BYTES = (16_000_000_000, 12_000_000_000, 8_000_000_000)
+RAILWAY_MEMORY_LIMITS_BYTES = (
+    16_000_000_000, 13_000_000_000, 12_000_000_000,
+    11_000_000_000, 10_000_000_000, 8_000_000_000,
+)
 IDENTITIES = {"project_id": "RAILWAY_PROJECT_ID", "environment_id": "RAILWAY_ENVIRONMENT_ID",
               "service_id": "RAILWAY_SERVICE_ID", "volume_id": "RAILWAY_VOLUME_ID"}
 
@@ -38,7 +41,7 @@ def validate_config(config):
         raise Error("Replace memory_gib with explicit Railway memory_limit_bytes; no implicit unit conversion")
     memory_limit = config.get("memory_limit_bytes")
     if type(memory_limit) is not int or memory_limit not in RAILWAY_MEMORY_LIMITS_BYTES:
-        raise Error("Memory rounds require exact byte caps: 16000000000, 12000000000, or 8000000000 (decimal GB)")
+        raise Error("Memory rounds require an explicit supported decimal-GB byte cap (16, 13, 12, 11, 10, or legacy 8 GB)")
     for key in ("snapshot_sha256", "workload_sha256", "binary_manifest_sha256"):
         if not re.fullmatch(r"[a-f0-9]{64}", config[key]):
             raise Error("Content hashes are required for comparable rounds")

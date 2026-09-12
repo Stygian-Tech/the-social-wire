@@ -41,7 +41,7 @@ def probe(t=0, epoch=1, phase="mixed", memory_limit_bytes=16_000_000_000):
 
 class MemoryTrialTests(unittest.TestCase):
     def test_exact_decimal_byte_caps_are_required_without_unit_coercion(self):
-        for cap in (16_000_000_000, 12_000_000_000, 8_000_000_000):
+        for cap in (16_000_000_000, 13_000_000_000, 12_000_000_000, 11_000_000_000, 10_000_000_000, 8_000_000_000):
             with self.subTest(cap=cap):
                 config = configuration(cap)
                 m.validate_config(config)
@@ -73,7 +73,7 @@ class MemoryTrialTests(unittest.TestCase):
             def fixture_path(value):
                 return boot if value == "/proc/sys/kernel/random/boot_id" else Path(value)
             with patch.object(m, "Path", side_effect=fixture_path):
-                for cap in (16_000_000_000, 12_000_000_000, 8_000_000_000):
+                for cap in (16_000_000_000, 13_000_000_000, 12_000_000_000, 11_000_000_000, 10_000_000_000, 8_000_000_000):
                     config["memory_limit_bytes"] = cap
                     (cgroup / "memory.max").write_text(str(cap) + "\n")
                     with self.subTest(cap=cap):

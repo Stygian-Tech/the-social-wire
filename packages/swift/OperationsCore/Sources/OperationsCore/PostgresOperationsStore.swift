@@ -11,10 +11,11 @@ public actor PostgresOperationsStore: OperationsStore {
   private let encoder = JSONEncoder()
   private let decoder = JSONDecoder()
   private let backfillFingerprintSecret: String?
-  var isDatabaseCostObservationRunning = false
-  var lastDatabaseCostObservation: Date?
+  var runningDatabaseCostObservations: Set<DatabaseCostTelemetryGroup> = []
+  var lastDatabaseCostObservations: [DatabaseCostTelemetryGroup: Date] = [:]
+  var nextDatabaseExpiryTableIndex = 0
   var lastDatabaseWALObservation: (bytes: Double, reset: Double, at: Date)?
-  private var lastDatabaseObservation: (transactions: Int64, statsResetAt: Date?, at: Date)?
+  var databaseObservabilitySamples = DatabaseObservabilitySamples()
 
   public init(
     pool: PostgresClient,
@@ -36,92 +37,8 @@ public actor PostgresOperationsStore: OperationsStore {
   }
 
   public func fetchDatabaseObservability() async throws -> DatabaseObservabilitySnapshot? {
-    let observedAt = Date()
-    let summaryRows = try await pool.query(
-      """
-      SELECT
-        pg_database_size(current_database())::bigint,
-        numbackends::bigint,
-        current_setting('max_connections')::bigint,
-        (xact_commit + xact_rollback)::bigint,
-        CASE
-          WHEN (blks_hit + blks_read) = 0 THEN NULL::double precision
-          ELSE blks_hit::double precision / (blks_hit + blks_read)::double precision
-        END,
-        stats_reset
-      FROM pg_stat_database
-      WHERE datname = current_database()
-      """,
-      logger: logger
-    )
-    var summary: (Int64, Int64, Int64, Int64, Double?, Date?)?
-    for try await row in summaryRows {
-      summary = try row.decode((Int64, Int64, Int64, Int64, Double?, Date?).self)
-      break
-    }
-    guard let summary else { return nil }
-
-    let activeQueryRows = try await pool.query(
-      """
-      SELECT COUNT(*)::bigint FROM pg_stat_activity
-      WHERE datname = current_database() AND state = 'active' AND pid <> pg_backend_pid()
-      """, logger: logger)
-    var activeQueries: Int64 = 0
-    for try await row in activeQueryRows { activeQueries = try row.decode(Int64.self); break }
-    let transactionRate: Double?
-    if let previous = lastDatabaseObservation,
-      observedAt.timeIntervalSince(previous.at) > 0,
-      previous.statsResetAt == summary.5,
-      summary.3 >= previous.transactions
-    {
-      transactionRate = Double(summary.3 - previous.transactions)
-        / observedAt.timeIntervalSince(previous.at)
-    } else {
-      transactionRate = nil
-    }
-    lastDatabaseObservation = (summary.3, summary.5, observedAt)
-
-    let recordCountRows = try await pool.query(
-      "SELECT COALESCE(SUM(n_live_tup), 0)::bigint FROM pg_stat_user_tables",
-      logger: logger
-    )
-    var estimatedRecords: Int64 = 0
-    for try await row in recordCountRows {
-      estimatedRecords = try row.decode(Int64.self)
-      break
-    }
-
-    let tableRows = try await pool.query(
-      """
-      SELECT schemaname, relname, n_live_tup::bigint
-      FROM pg_stat_user_tables
-      ORDER BY n_live_tup DESC, schemaname, relname
-      LIMIT 10
-      """,
-      logger: logger
-    )
-    var topTables: [DatabaseTableRecordCount] = []
-    for try await row in tableRows {
-      let value = try row.decode((String, String, Int64).self)
-      topTables.append(
-        DatabaseTableRecordCount(schema: value.0, table: value.1, estimatedRecords: value.2))
-    }
-
-    return DatabaseObservabilitySnapshot(
-      databaseSizeBytes: summary.0,
-      activeConnections: summary.1,
-      maxConnections: summary.2,
-      transactionsTotal: summary.3,
-      estimatedRecords: estimatedRecords,
-      cacheHitRatio: summary.4,
-      statsResetAt: summary.5,
-      topTables: topTables,
-      connectedBackends: summary.1,
-      activeQueries: activeQueries,
-      transactionRatePerSecond: transactionRate,
-      observedAt: observedAt,
-      evidenceAgeSeconds: 0
-    )
+    // Collector-owned evidence only: dashboard reads never trigger database cost scans.
+    databaseObservabilitySamples.snapshot(at: Date())
   }
 
   public func upsertServiceState(_ state: OperationsServiceState) async throws {

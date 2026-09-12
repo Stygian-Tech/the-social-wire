@@ -4,6 +4,20 @@ import Testing
 
 @Suite("The Wire worker configuration")
 struct WireWorkerConfigTests {
+  @Test("ten-minute Coordinator cadence preserves the two-hour generation window")
+  func productionCadence() throws {
+    let config = try WireWorkerConfig.load([
+      "DATABASE_URL": "postgres://localhost/wire",
+      "WIRE_WORKER_ROLE": "rank",
+      "WIRE_RANK_INTERVAL_SECONDS": "600",
+      "WIRE_GENERATION_RETENTION_SECONDS": "7200",
+    ])
+    #expect(config.intervalSeconds == 600)
+    #expect(config.generationRetentionSeconds == 7200)
+    #expect(WireGenerationSchedule.remainingDelay(interval: .seconds(600), elapsed: .seconds(60)) == .seconds(540))
+    #expect(WireGenerationSchedule.remainingDelay(interval: .seconds(600), elapsed: .seconds(700)) == .zero)
+  }
+
   @Test("defaults to off")
   func offDefault() throws {
     let config = try WireWorkerConfig.load(["DATABASE_URL": "postgres://localhost/wire"])

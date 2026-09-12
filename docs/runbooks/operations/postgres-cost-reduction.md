@@ -53,10 +53,18 @@ not a storage cap. Leave work_mem/shared_buffers unchanged initially. Replay
 representative ingestion with concurrent ranked reads; compare before/after
 over one hour and a full day. Validate crash recovery in an isolated copy.
 
-After the write reduction passes, test Development memory limits 4 then 2 GB;
-Production's approved later sequence is 16, 12 then 8 GB. Keep the lowest level
-that passes a representative load and a 24-hour soak. Revert immediately on OOM,
-growing actionable queue age or >10% p95 latency regression. No whole-database
+After the workload changes pass, the approved Production sequence is now
+13 → 12 → 11 → 10 decimal GB, starting from the current 16 GB limit. Before each
+step, run at least one hour of representative Development replay at that limit,
+including a burst and restart; then observe Production for 24 hours before
+lowering again. Keep the last passing limit if 10 GB fails. Revert immediately on
+OOM, repeated lease loss, growing actionable queue age or >10% p95 latency regression.
+Fail a step if actionable queue age exceeds 60 seconds for three consecutive minute
+samples. Require burst drainage within five minutes, every supported language to publish
+within 12 minutes, and discovery recovery within one hour. Do not change shared
+buffers, global work_mem, durability, backups or replicas during the trial. Compare
+seven days of total database, Redis, worker, storage, backup and network costs after
+choosing the lowest passing limit. No whole-database
 rewrite; normal vacuum reuses space and targeted index rebuilds need headroom.
 
 ## Backup gate
