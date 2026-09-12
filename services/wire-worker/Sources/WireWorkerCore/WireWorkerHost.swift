@@ -1,6 +1,7 @@
 import AsyncHTTPClient
 import Foundation
 import Logging
+import OperationsCore
 import PostgresNIO
 
 public enum WireWorkerHealthListener: Sendable {
@@ -15,6 +16,7 @@ public enum WireWorkerHost {
     environment: [String: String],
     role: WireWorkerRole? = nil,
     healthListener: WireWorkerHealthListener = .disabled,
+    roleLeaseAuthority: RoleLeaseAuthority? = nil,
     logger: Logger
   ) async throws {
     let config = try WireWorkerConfig.load(environment, role: role)
@@ -36,7 +38,7 @@ public enum WireWorkerHost {
       logger: logger
     )
     let pool = PostgresClient(configuration: postgresConfig, backgroundLogger: logger)
-    let store = PostgresWireGenerationStore(pool: pool, logger: logger)
+    let store = PostgresWireGenerationStore(pool: pool, logger: logger, roleLeaseAuthority: roleLeaseAuthority)
     let httpClient = HTTPClient(eventLoopGroupProvider: .singleton)
     let publicRepoClient = HTTPWirePublicationQueryClient(httpClient: httpClient)
     let publicationResolver = WirePublicationResolver(

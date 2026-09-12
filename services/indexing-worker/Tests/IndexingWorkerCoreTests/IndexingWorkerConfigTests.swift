@@ -34,12 +34,14 @@ struct IndexingWorkerConfigTests {
         "INDEXING_APPVIEW_HEALTH_PORT": "8080",
       ])
     }
-    #expect(throws: IndexingWorkerConfigError.invalidLeaseTiming) {
-      try IndexingWorkerConfig.load([
-        "INDEXING_WORKER_ROLE": "coordinator",
-        "INDEXING_ROLE_LEASE_SECONDS": "10",
-        "INDEXING_ROLE_LEASE_RENEW_SECONDS": "10",
-      ])
+    for (ttl, cadence) in [("10", "10"), ("30", "25"), ("5", "1")] {
+      #expect(throws: IndexingWorkerConfigError.invalidLeaseTiming) {
+        try IndexingWorkerConfig.load([
+          "INDEXING_WORKER_ROLE": "coordinator",
+          "INDEXING_ROLE_LEASE_SECONDS": ttl,
+          "INDEXING_ROLE_LEASE_RENEW_SECONDS": cadence,
+        ])
+      }
     }
     #expect(throws: IndexingWorkerConfigError.invalidPositiveInteger("INDEXING_WIRE_HEALTH_PORT")) {
       try IndexingWorkerConfig.load([

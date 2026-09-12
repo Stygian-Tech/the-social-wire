@@ -17,6 +17,7 @@ public enum IndexingWorkerLanePhase: String, Sendable, Equatable {
 public actor IndexingWorkerLaneState {
   private var phases: [IndexingWorkerLane: IndexingWorkerLanePhase] = [:]
   private var stoppingSince: [IndexingWorkerLane: Date] = [:]
+  private var controlObservedAt: [IndexingWorkerLane: Date] = [:]
 
   public init() {}
 
@@ -28,9 +29,19 @@ public actor IndexingWorkerLaneState {
   func record(_ event: RoleLeaseSupervisorEvent, for lane: IndexingWorkerLane, at: Date = Date()) {
     switch event {
     case .acquiring: break
-    case .acquired: set(.starting, for: lane)
+    case .acquired:
+      controlObservedAt[lane] = at
+      set(.starting, for: lane)
     case .operationStarted: set(.running, for: lane)
-    case .contended: set(.standby, for: lane)
+    case .contended:
+      controlObservedAt[lane] = at
+      set(.standby, for: lane)
+    case .controlAttempt(let observation):
+      if observation.failure == nil { controlObservedAt[lane] = at }
+    case .renewalRetryScheduled: break
+    case .authorityExpired:
+      phases[lane] = .stopping
+      if stoppingSince[lane] == nil { stoppingSince[lane] = at }
     case .operationStopping, .operationStopped, .releasing:
       phases[lane] = .stopping
       if stoppingSince[lane] == nil { stoppingSince[lane] = at }
@@ -52,5 +63,14 @@ public actor IndexingWorkerLaneState {
 
   public func snapshot() -> [IndexingWorkerLane: IndexingWorkerLanePhase] {
     phases
+  }
+
+  /// Health requests consume recent control evidence rather than competing with renewals.
+  func hasRecentControlEvidence(at now: Date = Date(), maximumAge: TimeInterval = 30) -> Bool {
+    IndexingWorkerLane.allCases.allSatisfy { lane in
+      guard let observedAt = controlObservedAt[lane] else { return false }
+      let age = now.timeIntervalSince(observedAt)
+      return age >= 0 && age <= maximumAge
+    }
   }
 }

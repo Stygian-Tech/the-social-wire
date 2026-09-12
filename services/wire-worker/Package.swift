@@ -10,6 +10,7 @@ let package = Package(
   ],
   dependencies: [
     .package(path: "../../packages/swift/WireCore"),
+    .package(path: "../../packages/swift/OperationsCore"),
     .package(url: "https://github.com/swift-server/async-http-client.git", from: "1.21.0"),
     .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.4.0"),
     .package(url: "https://github.com/apple/swift-crypto.git", from: "3.0.0"),
@@ -23,6 +24,7 @@ let package = Package(
       name: "WireWorkerCore",
       dependencies: [
         "WireCore",
+        "OperationsCore",
         .product(name: "AsyncHTTPClient", package: "async-http-client"),
         .product(name: "Crypto", package: "swift-crypto"),
         .product(name: "Logging", package: "swift-log"),
@@ -54,7 +56,7 @@ let package = Package(
     .testTarget(
       name: "WireWorkerTests",
       dependencies: [
-        "WireWorkerCore", "WireCore",
+        "WireWorkerCore", "WireCore", "OperationsCore",
         .product(name: "PostgresNIO", package: "postgres-nio"),
         .product(name: "Logging", package: "swift-log"),
       ],
