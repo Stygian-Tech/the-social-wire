@@ -42,6 +42,69 @@ struct IngestionInboxSnapshotCacheTests {
     #expect(value["recovered"]?.pending == 3)
   }
 
+  @Test("one cancelled waiter leaves shared work available to the remaining caller")
+  func cancellationKeepsOtherWaiter() async throws {
+    let cache = IngestionInboxSnapshotCache()
+    let probe = LoadProbe()
+    let first = Task { try await cache.value { await probe.load() } }
+    await probe.waitUntilStarted()
+    let second = Task { try await cache.value { await probe.load() } }
+    try await waitForWaiters(2, cache: cache)
+    first.cancel()
+    await #expect(throws: CancellationError.self) { try await first.value }
+    #expect(await cache.waiterCount == 1)
+    await probe.release()
+    #expect(try await second.value["source"]?.pending == 1)
+    #expect(await probe.count == 1)
+    #expect(await probe.cancelledLoads == 0)
+  }
+
+  @Test("final cancellation returns promptly and replacement waits for retiring loader")
+  func finalCancellationRetiresBeforeReplacement() async throws {
+    let cache = IngestionInboxSnapshotCache()
+    let probe = LoadProbe()
+    let first = Task { try await cache.value { await probe.load() } }
+    await probe.waitUntilStarted()
+    first.cancel()
+    await #expect(throws: CancellationError.self) { try await first.value }
+    let replacement = Task { try await cache.value { await probe.load() } }
+    try await waitForWaiters(1, cache: cache)
+    #expect(await probe.count == 1)
+    await probe.release()
+    #expect(try await replacement.value["source"]?.pending == 2)
+    #expect(await probe.count == 2)
+    #expect(await probe.cancelledLoads == 1)
+  }
+
+  @Test("cancelled queued replacement never starts and cancelled callers cannot read cache")
+  func cancelledPendingCaller() async throws {
+    let cache = IngestionInboxSnapshotCache()
+    let probe = LoadProbe()
+    let first = Task { try await cache.value { await probe.load() } }
+    await probe.waitUntilStarted()
+    first.cancel()
+    await #expect(throws: CancellationError.self) { try await first.value }
+    let pending = Task { try await cache.value { await probe.load() } }
+    try await waitForWaiters(1, cache: cache)
+    pending.cancel()
+    await #expect(throws: CancellationError.self) { try await pending.value }
+    await probe.release()
+    let cancelled = Task {
+      withUnsafeCurrentTask { $0?.cancel() }
+      return try await cache.value { await probe.load() }
+    }
+    await #expect(throws: CancellationError.self) { try await cancelled.value }
+    #expect(await probe.count == 1)
+  }
+
+  private func waitForWaiters(_ count: Int, cache: IngestionInboxSnapshotCache) async throws {
+    let deadline = ContinuousClock.now.advanced(by: .seconds(5))
+    while await cache.waiterCount != count {
+      guard ContinuousClock.now < deadline else { throw CancellationError() }
+      await Task.yield()
+    }
+  }
+
   @Test("global metrics preserve every counter and advance oldest age without a database refresh")
   func aggregationAndAge() {
     let start = Date(timeIntervalSince1970: 1_000)
@@ -68,6 +131,7 @@ struct IngestionInboxSnapshotCacheTests {
 
   private actor LoadProbe {
     var count = 0
+    var cancelledLoads = 0
     private var released = false
     private var startedWaiters: [CheckedContinuation<Void, Never>] = []
     private var loadWaiters: [CheckedContinuation<Void, Never>] = []
@@ -80,6 +144,7 @@ struct IngestionInboxSnapshotCacheTests {
       if !released {
         await withCheckedContinuation { loadWaiters.append($0) }
       }
+      if Task.isCancelled { cancelledLoads += 1 }
       return ["source": .init(pending: result)]
     }
 

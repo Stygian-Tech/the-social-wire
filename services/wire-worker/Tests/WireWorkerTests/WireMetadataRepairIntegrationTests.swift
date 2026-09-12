@@ -48,7 +48,8 @@ extension WirePostgresIntegrationTests {
         logger: logger)
       var plan = ""
       for try await row in explained { plan += try row.decode(String.self) + "\n" }
-      #expect(plan.contains("Index Scan using wire_items_pkey"))
+      #expect(plan.contains("Index Only Scan using wire_items_pkey"))
+      #expect(plan.contains("CTE missing"))
       #expect(!plan.contains("Seq Scan on wire_items"))
       #expect(!plan.contains("Seq Scan on wire_link_metadata_cache"))
       #expect(!plan.contains("temp read="))
