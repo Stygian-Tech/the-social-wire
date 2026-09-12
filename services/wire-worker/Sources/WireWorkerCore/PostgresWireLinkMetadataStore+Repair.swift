@@ -32,6 +32,8 @@ extension PostgresWireLinkMetadataStore {
 
   static func metadataRepairQuery(asOf: Date, pageSize: Int) -> PostgresQuery {
     let boundedPageSize = max(1, min(pageSize, 1_000))
+    // Most pages already have cache rows. Probe their keys before loading wide
+    // item tuples; materializing holes prevents planner reordering that heap work.
     return """
       WITH cursor AS MATERIALIZED (
         SELECT canonical_key FROM wire_metadata_repair_cursor
@@ -39,23 +41,27 @@ extension PostgresWireLinkMetadataStore {
       ), candidates AS MATERIALIZED (
         SELECT item.* FROM cursor
         CROSS JOIN LATERAL (
-          SELECT canonical_key, canonical_url, eligible, expires_at
+          SELECT canonical_key
           FROM wire_items
           WHERE canonical_key > cursor.canonical_key
           ORDER BY canonical_key
           LIMIT \(boundedPageSize)
         ) item
+      ), missing AS MATERIALIZED (
+        SELECT candidate.canonical_key FROM candidates candidate
+        LEFT JOIN LATERAL (
+          SELECT canonical_key FROM wire_link_metadata_cache
+          WHERE canonical_key = candidate.canonical_key LIMIT 1
+        ) existing ON TRUE
+        WHERE existing.canonical_key IS NULL
       ), seeded AS (
         INSERT INTO wire_link_metadata_cache
           (canonical_key, canonical_url, source, status, retry_after, failure_count, updated_at)
         SELECT item.canonical_key, item.canonical_url, 'fallback', 'pending', \(asOf), 0, \(asOf)
-        FROM candidates item
-        LEFT JOIN LATERAL (
-          SELECT canonical_key FROM wire_link_metadata_cache
-          WHERE canonical_key = item.canonical_key LIMIT 1
-        ) existing ON TRUE
+        FROM missing
+        JOIN wire_items item ON item.canonical_key = missing.canonical_key
         WHERE item.eligible AND item.expires_at > \(asOf)
-          AND item.canonical_url LIKE 'https://%' AND existing.canonical_key IS NULL
+          AND item.canonical_url LIKE 'https://%'
         ON CONFLICT (canonical_key) DO NOTHING
         RETURNING canonical_key
       ), advanced AS (
