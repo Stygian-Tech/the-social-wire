@@ -204,13 +204,14 @@ class RunnerTests(unittest.TestCase):
                 with self.assertRaises(m.Error): m.request(item, config, m.Children(), {})
 
     def test_preflight_requires_exact_railway_decimal_byte_cap(self):
-        for cap in (16_000_000_000, 12_000_000_000, 8_000_000_000):
+        for cap in (16_000_000_000, 13_000_000_000, 12_000_000_000, 11_000_000_000, 10_000_000_000, 8_000_000_000):
             config = configuration(cap)
             with self.subTest(cap=cap):
                 m.initial_probe(probe(memory_limit_bytes=cap), config)
                 for wrong in (cap + 1, cap - 1, (cap // 1_000_000_000) * 1024 ** 3, float(cap)):
                     with self.subTest(wrong=wrong), self.assertRaises(m.Error):
-                        m.initial_probe(probe(memory_limit_bytes=wrong), config)
+                        sample = probe(memory_limit_bytes=cap); sample["memory_max"] = wrong
+                        m.initial_probe(sample, config)
 
     def test_preflight_rejects_oom_wrong_snapshot_and_disk_before_work(self):
         c = configuration(); m.initial_probe(probe(), c)

@@ -41,6 +41,7 @@ jobs:
       lexicons: ${{ steps.filter.outputs.lexicons }}
       spec: ${{ steps.filter.outputs.spec }}
       docs: ${{ steps.filter.outputs.docs }}
+      benchmark_tools: ${{ steps.filter.outputs.benchmark_tools }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -665,6 +666,40 @@ jobs:
         working-directory: packages/spec
         run: bun test
 
+  benchmark-tools:
+    name: Benchmark Tools
+    needs: changes
+    if: needs.changes.result == 'success' && needs.changes.outputs.benchmark_tools == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_DB: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 2s
+          --health-timeout 2s
+          --health-retries 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+      - name: Install PostgreSQL client for isolated receipt tests
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes postgresql-client
+      - name: Test benchmark safety and evidence tools
+        env:
+          TSW_RECEIPT_TEST_ADMIN_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable
+        run: python3 -W error::ResourceWarning -m unittest discover -s scripts/benchmarks/tests
+
   docs:
     name: Documentation
     needs: changes
@@ -697,6 +732,7 @@ jobs:
       - lexicons
       - spec
       - docs
+      - benchmark-tools
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -720,6 +756,7 @@ jobs:
           LEXICONS_FLAG: ${{ needs.changes.outputs.lexicons }}
           SPEC_FLAG: ${{ needs.changes.outputs.spec }}
           DOCS_FLAG: ${{ needs.changes.outputs.docs }}
+          BENCHMARK_TOOLS_FLAG: ${{ needs.changes.outputs.benchmark_tools }}
           WEB_RESULT: ${{ needs.web.result }}
           OPERATIONS_WEB_RESULT: ${{ needs.operations-web.result }}
           APPLE_RESULT: ${{ needs.apple.result }}
@@ -737,6 +774,7 @@ jobs:
           LEXICONS_RESULT: ${{ needs.lexicons.result }}
           SPEC_RESULT: ${{ needs.spec.result }}
           DOCS_RESULT: ${{ needs.docs.result }}
+          BENCHMARK_TOOLS_RESULT: ${{ needs.benchmark-tools.result }}
         run: |
           set -euo pipefail
 
@@ -779,3 +817,4 @@ jobs:
           check "$LEXICONS_FLAG" "$LEXICONS_RESULT" "Lexicons"
           check "$SPEC_FLAG" "$SPEC_RESULT" "OpenAPI Spec"
           check "$DOCS_FLAG" "$DOCS_RESULT" "Documentation"
+          check "$BENCHMARK_TOOLS_FLAG" "$BENCHMARK_TOOLS_RESULT" "Benchmark Tools"
