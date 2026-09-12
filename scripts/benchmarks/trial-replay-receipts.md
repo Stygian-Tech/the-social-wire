@@ -1,6 +1,6 @@
 # Isolated replay acknowledgement receipts
 
-`trial_replay_receipts.py` provides the install/sample building blocks for the memory runner's real replay adapter. **It does not launch Go intake or Swift drain.** Do not configure its one-shot sample command as `runner.adapters.replay`. The owned launcher, reviewed archive/rate manifest, process supervision and private runtime environment remain required before running a trial.
+`trial_replay_receipts.py` provides the install/sample building blocks used by `trial_replay_adapter.py`, the owned Go-intake/Swift-drain adapter described in `trial-replay-adapter.md`. Do not configure the one-shot receipt sample command as `runner.adapters.replay`. A reviewed archive/rate manifest and private runtime environment remain required before running a trial.
 
 The existing Go `snapshot_complete` checkpoint proves a sealed `(after_seq,before_seq]` archive traversal. It is not an application count. Swift drain telemetry is an interval accumulator and can miss acknowledged work when another concurrent task fails; inbox terminal rows expire after 300 seconds. Neither is used for cumulative throughput evidence here.
 
