@@ -162,12 +162,13 @@ private actor MetadataCancellationStore: WireLinkMetadataStoring {
   var writes: [String] = []
   func claimDue(limit: Int, asOf: Date) -> [WireLinkMetadataTarget] {
     claimCount += 1
-    return (0..<3).map { WireLinkMetadataTarget(canonicalKey: "\($0)", canonicalURL: "https://example.test/\($0)", etag: nil, lastModified: nil) }
+    return (0..<min(limit, 3)).map { WireLinkMetadataTarget(canonicalKey: "\($0)", canonicalURL: "https://example.test/\($0)", etag: nil, lastModified: nil) }
   }
+  func renewClaim(_ target: WireLinkMetadataTarget, asOf: Date) -> WireLinkMetadataTarget? { target }
   func seedEmbedded(canonicalKey: String, metadata: WireLinkMetadata, asOf: Date) { writes.append("seed") }
-  func markNotModified(canonicalKey: String, etag: String?, lastModified: String?, asOf: Date) { writes.append("notModified") }
-  func store(canonicalKey: String, metadata: WireLinkMetadata, asOf: Date) { writes.append("success") }
-  func markFailure(canonicalKey: String, negative: Bool, asOf: Date) { writes.append(negative ? "negative" : "retry") }
+  func markNotModified(canonicalKey: String, etag: String?, lastModified: String?, asOf: Date, leaseExpiresAt: Date?) { writes.append("notModified") }
+  func store(canonicalKey: String, metadata: WireLinkMetadata, asOf: Date, leaseExpiresAt: Date?) { writes.append("success") }
+  func markFailure(canonicalKey: String, negative: Bool, asOf: Date, leaseExpiresAt: Date?) { writes.append(negative ? "negative" : "retry") }
 }
 
 private actor ProfileCancellationStore: WireTalkedAccountProfileStoring {

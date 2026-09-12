@@ -1,0 +1,1 @@
+struct WireLinkMetadataFetchTimeout: Error, Sendable {}
