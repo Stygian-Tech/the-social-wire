@@ -93,6 +93,7 @@ struct PostgresWireLinkMetadataStore: WireLinkMetadataStoring {
     let priorityLimit = boundedLimit == 1 ? 1 : max(1, boundedLimit * 3 / 4)
     try await repairMissingMetadata(asOf: asOf)
     return try await pool.withTransaction(logger: logger) { connection in
+      var targets: [WireLinkMetadataTarget] = []
       let priorityRows = try await connection.query(
         """
         WITH due AS (
@@ -126,19 +127,20 @@ struct PostgresWireLinkMetadataStore: WireLinkMetadataStoring {
         WHERE cache.canonical_key = due.canonical_key
         RETURNING cache.canonical_key, cache.canonical_url,
           CASE WHEN cache.language_checked_at IS NULL THEN NULL ELSE cache.etag END,
-          CASE WHEN cache.language_checked_at IS NULL THEN NULL ELSE cache.last_modified END
+          CASE WHEN cache.language_checked_at IS NULL THEN NULL ELSE cache.last_modified END,
+          cache.retry_after
         """,
         logger: logger
       )
-      var targets: [WireLinkMetadataTarget] = []
       for try await row in priorityRows {
-        let value = try row.decode((String, String, String?, String?).self)
+        let value = try row.decode((String, String, String?, String?, Date).self)
         targets.append(
           WireLinkMetadataTarget(
             canonicalKey: value.0,
             canonicalURL: value.1,
             etag: value.2,
-            lastModified: value.3
+            lastModified: value.3,
+            leaseExpiresAt: value.4
           )
         )
       }
@@ -169,18 +171,20 @@ struct PostgresWireLinkMetadataStore: WireLinkMetadataStoring {
         WHERE cache.canonical_key = due.canonical_key
         RETURNING cache.canonical_key, cache.canonical_url,
           CASE WHEN cache.language_checked_at IS NULL THEN NULL ELSE cache.etag END,
-          CASE WHEN cache.language_checked_at IS NULL THEN NULL ELSE cache.last_modified END
+          CASE WHEN cache.language_checked_at IS NULL THEN NULL ELSE cache.last_modified END,
+          cache.retry_after
         """,
         logger: logger
       )
       for try await row in generalRows {
-        let value = try row.decode((String, String, String?, String?).self)
+        let value = try row.decode((String, String, String?, String?, Date).self)
         targets.append(
           WireLinkMetadataTarget(
             canonicalKey: value.0,
             canonicalURL: value.1,
             etag: value.2,
-            lastModified: value.3
+            lastModified: value.3,
+            leaseExpiresAt: value.4
           )
         )
       }
@@ -188,11 +192,37 @@ struct PostgresWireLinkMetadataStore: WireLinkMetadataStoring {
     }
   }
 
+  func renewClaim(_ target: WireLinkMetadataTarget, asOf: Date) async throws -> WireLinkMetadataTarget? {
+    guard let leaseExpiresAt = target.leaseExpiresAt else { return nil }
+    // A queued target may have expired, but renewal is safe only while the exact
+    // original claim is still present. Competing claims serialize on this row.
+    let rows = try await pool.query(
+      """
+      UPDATE wire_link_metadata_cache
+      SET retry_after = GREATEST(\(asOf.addingTimeInterval(300)), retry_after + INTERVAL '1 second'),
+          updated_at = \(asOf)
+      WHERE canonical_key = \(target.canonicalKey)
+        AND status = 'fetching' AND retry_after = \(leaseExpiresAt)
+      RETURNING canonical_key, canonical_url,
+        CASE WHEN language_checked_at IS NULL THEN NULL ELSE etag END,
+        CASE WHEN language_checked_at IS NULL THEN NULL ELSE last_modified END,
+        retry_after
+      """, logger: logger)
+    for try await row in rows {
+      let value = try row.decode((String, String, String?, String?, Date).self)
+      return WireLinkMetadataTarget(
+        canonicalKey: value.0, canonicalURL: value.1, etag: value.2,
+        lastModified: value.3, leaseExpiresAt: value.4)
+    }
+    return nil
+  }
+
   func markNotModified(
     canonicalKey: String,
     etag: String?,
     lastModified: String?,
-    asOf: Date
+    asOf: Date,
+    leaseExpiresAt: Date?
   ) async throws {
     try await pool.query(
       """
@@ -203,6 +233,9 @@ struct PostgresWireLinkMetadataStore: WireLinkMetadataStoring {
           stale_until = \(asOf.addingTimeInterval(7 * 86_400)),
           retry_after = \(asOf.addingTimeInterval(86_400)), failure_count = 0, updated_at = \(asOf)
       WHERE canonical_key = \(canonicalKey)
+        AND (\(leaseExpiresAt)::timestamptz IS NULL OR (
+          status = 'fetching' AND retry_after = \(leaseExpiresAt)::timestamptz
+          AND retry_after > \(asOf)))
       """,
       logger: logger
     )
@@ -211,7 +244,8 @@ struct PostgresWireLinkMetadataStore: WireLinkMetadataStoring {
   func store(
     canonicalKey: String,
     metadata: WireLinkMetadata,
-    asOf: Date
+    asOf: Date,
+    leaseExpiresAt: Date?
   ) async throws {
     let validatedLanguageCode = WireDeclaredLanguageValidator.validatedLanguageCode(
       declaredLanguageCode: metadata.languageCode,
@@ -230,7 +264,7 @@ struct PostgresWireLinkMetadataStore: WireLinkMetadataStoring {
     let commercialReasons = String(
       decoding: try JSONEncoder().encode(commercial.reasons.map(\.rawValue)), as: UTF8.self)
     try await pool.withTransaction(logger: logger) { connection in
-      try await connection.query(
+      let acceptedRows = try await connection.query(
         """
         UPDATE wire_link_metadata_cache
         SET canonical_url = \(metadata.canonicalURL), title = \(metadata.title),
@@ -244,9 +278,18 @@ struct PostgresWireLinkMetadataStore: WireLinkMetadataStoring {
             stale_until = \(asOf.addingTimeInterval(7 * 86_400)),
             retry_after = \(asOf.addingTimeInterval(86_400)), failure_count = 0, updated_at = \(asOf)
         WHERE canonical_key = \(canonicalKey)
+        AND (\(leaseExpiresAt)::timestamptz IS NULL OR (
+          status = 'fetching' AND retry_after = \(leaseExpiresAt)::timestamptz
+          AND retry_after > \(asOf)))
+        RETURNING canonical_key
         """,
         logger: logger
       )
+      var accepted = false
+      for try await _ in acceptedRows { accepted = true }
+      // Keep item enrichment atomic with the fenced cache update. An expired or
+      // superseded claimant must not update either representation.
+      guard leaseExpiresAt == nil || accepted else { return }
       try await connection.query(
         """
         UPDATE wire_items
@@ -352,7 +395,8 @@ struct PostgresWireLinkMetadataStore: WireLinkMetadataStoring {
   func markFailure(
     canonicalKey: String,
     negative: Bool,
-    asOf: Date
+    asOf: Date,
+    leaseExpiresAt: Date?
   ) async throws {
     let retryAfter = negative ? asOf.addingTimeInterval(6 * 3_600) : asOf.addingTimeInterval(900)
     try await pool.query(
@@ -361,6 +405,9 @@ struct PostgresWireLinkMetadataStore: WireLinkMetadataStoring {
       SET status = \(negative ? "negative" : "retry"), retry_after = \(retryAfter),
           failure_count = failure_count + 1, updated_at = \(asOf)
       WHERE canonical_key = \(canonicalKey)
+        AND (\(leaseExpiresAt)::timestamptz IS NULL OR (
+          status = 'fetching' AND retry_after = \(leaseExpiresAt)::timestamptz
+          AND retry_after > \(asOf)))
       """,
       logger: logger
     )
