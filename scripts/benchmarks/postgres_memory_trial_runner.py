@@ -17,6 +17,7 @@ import stat
 import subprocess
 import threading
 import time
+import uuid
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -552,7 +553,15 @@ def run(config_path, trace_path, output):
                 if elapsed > config["observation_seconds"] + config["restart_grace_seconds"] + 120:
                     raise Error("Round exceeded maximum wall time")
                 if not restarted and elapsed >= config["restart_at_seconds"]:
-                    receipt = invoke(children, adapters["restart"], env, {"previous_container_epoch": round_state.last["container_epoch"]}, config["restart_grace_seconds"])
+                    restart_request = {"previous_container_epoch": round_state.last["container_epoch"]}
+                    if config.get("restart", {}).get("mode") == "postgres_process":
+                        restart_request.update(nonce=uuid.uuid4().hex,
+                            previous_postmaster_started=round_state.last["db"]["postmaster_started"],
+                            recorded_at=time.time(), target=config["target"], snapshot_sha256=config["snapshot_sha256"])
+                        with private_file(output / "restart-request.json") as request_file:
+                            json.dump(restart_request, request_file); request_file.flush(); os.fsync(request_file.fileno())
+                        round_state.expect_restart(restart_request)
+                    receipt = invoke(children, adapters["restart"], env, restart_request, config["restart_grace_seconds"])
                     restarted = True
                     recovery_started = time.monotonic()
                     progress_restarted = True
