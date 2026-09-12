@@ -6,6 +6,7 @@ public actor PostgresOperationsStore: OperationsStore {
   public nonisolated let environment: String
   let pool: PostgresClient
   let logger: Logger
+  let coordinatorAuthority: RoleLeaseAuthority?
   let ingestionInboxSnapshotCache = IngestionInboxSnapshotCache()
   private let encoder = JSONEncoder()
   private let decoder = JSONDecoder()
@@ -19,11 +20,13 @@ public actor PostgresOperationsStore: OperationsStore {
     pool: PostgresClient,
     environment: String,
     backfillFingerprintSecret: String? = nil,
+    coordinatorAuthority: RoleLeaseAuthority? = nil,
     logger: Logger
   ) {
     self.pool = pool
     self.environment = environment
     self.backfillFingerprintSecret = backfillFingerprintSecret
+    self.coordinatorAuthority = coordinatorAuthority
     self.logger = logger
   }
 
@@ -1261,6 +1264,7 @@ public actor PostgresOperationsStore: OperationsStore {
         "status": status.rawValue,
       ])
     return try await pool.withTransaction(logger: logger) { connection in
+      try await lockCoordinatorAuthority(on: connection)
       if let existing = try await existingIdempotency(
         connection: connection, key: idempotencyKey, action: actionName,
         targetType: "backfill", targetId: id, requestFingerprint: requestFingerprint)
@@ -1394,6 +1398,7 @@ public actor PostgresOperationsStore: OperationsStore {
     -> BackfillJob?
   {
     return try await pool.withTransaction(logger: logger) { connection in
+      try await lockCoordinatorAuthority(on: connection)
       let rows = try await connection.query(
         """
         UPDATE appview_backfill_jobs
@@ -1475,7 +1480,7 @@ public actor PostgresOperationsStore: OperationsStore {
   ) async throws -> BackfillJob {
     try Self.validateAuthorResults(results)
     let encodedResults = try json(results)
-    let rows = try await pool.query(
+    let rows = try await coordinatorControlRows(
       """
       UPDATE appview_backfill_jobs
       SET author_results = \(encodedResults)::jsonb, updated_at = \(at), version = version + 1
@@ -1488,8 +1493,8 @@ public actor PostgresOperationsStore: OperationsStore {
         audit_note, failure_reason, lease_owner, lease_expires_at, created_at, updated_at,
         completed_at, version, verification_status, verification_reason, scope_truncated,
         validation_watermark, author_results::text
-      """, logger: logger)
-    for try await row in rows { return try decodeBackfill(row) }
+      """)
+    for row in rows { return try decodeBackfill(row) }
     throw OperationsStoreError.leaseConflict
   }
 
@@ -2609,7 +2614,7 @@ public actor PostgresOperationsStore: OperationsStore {
     let verificationReason = verification?.1
     let scopeTruncated = verification?.2
     let validationWatermark = verification?.3
-    let rows = try await pool.query(
+    let rows = try await coordinatorControlRows(
       """
       UPDATE appview_backfill_jobs SET
         checkpoint_cursor = COALESCE(\(checkpoint), checkpoint_cursor),
@@ -2629,8 +2634,8 @@ public actor PostgresOperationsStore: OperationsStore {
         audit_note, failure_reason, lease_owner, lease_expires_at, created_at, updated_at,
         completed_at, version, verification_status, verification_reason, scope_truncated,
         validation_watermark, author_results::text
-      """, logger: logger)
-    for try await row in rows { return try decodeBackfill(row) }
+      """)
+    for row in rows { return try decodeBackfill(row) }
     throw OperationsStoreError.leaseConflict
   }
 

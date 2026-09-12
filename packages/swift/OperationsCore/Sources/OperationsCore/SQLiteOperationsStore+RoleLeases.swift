@@ -9,12 +9,16 @@ extension SQLiteOperationsStore {
     at: Date
   ) async throws -> FencedRoleLease? {
     try FencedRoleLease.validate(role: role, ownerID: ownerID)
-    guard leaseUntil > at else { throw OperationsStoreError.invalidProgress }
+    guard leaseUntil.timeIntervalSince(at).isFinite, leaseUntil > at else { throw OperationsStoreError.invalidProgress }
     let activeFence = roleLeaseFenceCounts[role]
     if let activeFence, activeFence.ownerID != ownerID {
       return nil
     }
+    let duration = leaseUntil.timeIntervalSince(at)
+    let clock = roleLeaseClock
     return try await db.write { database in
+      let at = clock(at)
+      let leaseUntil = at.addingTimeInterval(duration)
       let existing = try Row.fetchOne(
         database,
         sql: "SELECT * FROM operations_role_leases WHERE environment = ? AND role = ?",
@@ -67,13 +71,17 @@ extension SQLiteOperationsStore {
     at: Date
   ) async throws -> FencedRoleLease {
     try FencedRoleLease.validate(role: role, ownerID: ownerID)
-    guard leaseUntil > at else { throw OperationsStoreError.invalidProgress }
+    guard leaseUntil.timeIntervalSince(at).isFinite, leaseUntil > at else { throw OperationsStoreError.invalidProgress }
+    let duration = leaseUntil.timeIntervalSince(at)
+    let clock = roleLeaseClock
     return try await db.write { database in
+      let at = clock(at)
+      let leaseUntil = at.addingTimeInterval(duration)
       try database.execute(
         sql: """
           UPDATE operations_role_leases SET lease_expires_at = ?, updated_at = ?
           WHERE environment = ? AND role = ? AND owner_id = ? AND fencing_token = ?
-            AND released_at IS NULL AND lease_expires_at >= ?
+            AND released_at IS NULL AND lease_expires_at > ?
           """,
         arguments: [
           Self.iso(leaseUntil), Self.iso(at), environment, role, ownerID, fencingToken,
@@ -103,7 +111,9 @@ extension SQLiteOperationsStore {
     {
       throw OperationsStoreError.leaseConflict
     }
+    let clock = roleLeaseClock
     try await db.write { database in
+      let at = clock(at)
       try database.execute(
         sql: """
           UPDATE operations_role_leases SET released_at = ?, updated_at = ?
@@ -147,14 +157,16 @@ extension SQLiteOperationsStore {
         }
       }
     }
+    let clock = roleLeaseClock
     let valid = try await db.read { database in
-      try Bool.fetchOne(
+      let at = clock(at)
+      return try Bool.fetchOne(
         database,
         sql: """
           SELECT EXISTS(
             SELECT 1 FROM operations_role_leases
             WHERE environment = ? AND role = ? AND owner_id = ? AND fencing_token = ?
-              AND released_at IS NULL AND lease_expires_at >= ?)
+              AND released_at IS NULL AND lease_expires_at > ?)
           """,
         arguments: [environment, role, ownerID, fencingToken, Self.iso(at)]
       ) ?? false

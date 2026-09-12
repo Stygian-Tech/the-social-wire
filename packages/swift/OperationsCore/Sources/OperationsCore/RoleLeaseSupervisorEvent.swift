@@ -11,6 +11,9 @@ public enum RoleLeaseSupervisorEvent: Sendable, Equatable {
   case validationFailed
   case operationStarted
   case renewalFailed
+  case controlAttempt(RoleLeaseControlObservation)
+  case renewalRetryScheduled(attempt: Int, failure: RoleLeaseFailure)
+  case authorityExpired
   case operationStopping(reason: StopReason)
   case operationStopped(reason: StopReason)
   case releasing
