@@ -280,3 +280,42 @@ class RunnerTests(unittest.TestCase):
 
 
 if __name__ == "__main__": unittest.main()
+
+
+class ReplayReceiptContractTests(unittest.TestCase):
+    def test_transport_count_and_approximate_flags_cannot_finish(self):
+        for event in (None, {"completed": 10},
+                {"completed": 10, "snapshot_complete": 1, "drain_complete": True}):
+            with self.assertRaises(m.Error): m.require_final_replay(event, 99, 100, 10)
+        event = {"completed": 10, "snapshot_complete": True, "drain_complete": True}
+        m.require_final_replay(event, 99, 100, 10)
+        for broken, observed in [(event | {"snapshot_complete": False}, 99),
+                (event | {"drain_complete": False}, 99), (event, 80), (event, 101)]:
+            with self.assertRaises(m.Error): m.require_final_replay(broken, observed, 100, 10)
+
+    def test_early_exhaustion_fails_instead_of_parking_as_representative(self):
+        event = {"completed": 10, "snapshot_complete": True, "drain_complete": True}
+        with self.assertRaises(m.Error): m.check_replay_exhaustion(event, 601, 600)
+        m.check_replay_exhaustion(event, 600, 600)
+        m.check_replay_exhaustion(event | {"drain_complete": False}, 601, 600)
+
+    def test_restart_does_not_credit_old_work_or_outage_wall_time(self):
+        current = {"replay": 1000, "ranking": 8}
+        previous, started = m.reset_progress_window(current, 900)
+        current["replay"] += 30; current["ranking"] += 1
+        self.assertEqual(previous, {"replay": 1000, "ranking": 8})
+        self.assertEqual(started, 900)
+        config = {"runner": {"minimum_replay_per_minute": 30, "minimum_rankings_per_minute": 1}}
+        m.check_progress(current, previous, config, 60)
+        with self.assertRaises(m.Error): m.check_progress(previous, previous, config, 60)
+
+    def test_progress_reader_preserves_receipts_and_rejects_old_replay_contract(self):
+        import io
+        import queue
+        from types import SimpleNamespace
+        event = {"completed": 7, "snapshot_complete": False, "drain_complete": False}
+        events = queue.Queue()
+        m.progress_reader(SimpleNamespace(stdout=io.BytesIO((json.dumps(event) + "\n").encode())), "replay", events)
+        self.assertEqual(events.get_nowait()[:2], ("replay", event))
+        m.progress_reader(SimpleNamespace(stdout=io.BytesIO(b'{"completed":7}\n')), "replay", events)
+        self.assertEqual(events.get_nowait()[:2], ("replay", None))

@@ -80,7 +80,13 @@ def validate_config(config):
     if not re.fullmatch(r"/[A-Za-z0-9_/-]+", directory) or ".." in Path(directory).parts:
         raise Error("Remote probe directory must be an explicit absolute path")
     hashes = provider["probe_sha256"]
-    if set(hashes) != {"postgres_memory_trial.py", "postgres_replay.py"} or any(not re.fullmatch(r"[a-f0-9]{64}", value) for value in hashes.values()):
+    required_hashes = {"postgres_memory_trial.py", "postgres_replay.py"}
+    if config.get("restart", {}).get("mode") == "postgres_process":
+        required_hashes |= {"trial_restart_evidence.py", "trial_postgres_supervisor.py"}
+        for name, key in (("trial_restart_evidence.py", "evidence_sha256"), ("trial_postgres_supervisor.py", "supervisor_sha256")):
+            if hashes.get(name) != config["restart"].get(key):
+                raise Error("Restart module hashes differ from the reviewed probes")
+    if set(hashes) != required_hashes or any(not re.fullmatch(r"[a-f0-9]{64}", value) for value in hashes.values()):
         raise Error("Both remote read-only probe modules require reviewed hashes")
     if provider["module_sha256"] != hashlib.sha256(Path(__file__).read_bytes()).hexdigest():
         raise Error("Provider adapter module differs from its reviewed hash")
@@ -252,6 +258,9 @@ print(json.dumps(m.sample(c,m.replay.Postgres(c.get('psql','psql')))))
                 or result["db"]["database"] != config["target"]["database"]
                 or result["restore"]["snapshot_sha256"] != config["snapshot_sha256"]):
             raise Error("Remote probe does not match provider identity or restored snapshot")
+        if config.get("restart", {}).get("mode") == "postgres_process":
+            result["provider_instance_id"] = deployment["instances"][0]["id"]
+            result["provider_service_instance_id"] = instance
         return result
 
 
