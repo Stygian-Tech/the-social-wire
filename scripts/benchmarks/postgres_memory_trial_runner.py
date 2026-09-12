@@ -327,8 +327,10 @@ def private_file(path):
 
 
 def adapter_environment(config_path, config):
-    # Explicit configuration carries target identity; no inherited Production DB/token settings.
-    return {key: os.environ[key] for key in ("PATH", "LANG", "HOME") if key in os.environ} | {
+    # Preserve observed provider identity for independent verification inside adapters.
+    # Never substitute configured IDs or inherit database/token settings.
+    return {key: os.environ[key] for key in ("PATH", "LANG", "HOME", "RAILWAY_PROJECT_ID",
+        "RAILWAY_ENVIRONMENT_ID", "RAILWAY_SERVICE_ID", "RAILWAY_DEPLOYMENT_ID") if key in os.environ} | {
         "TSW92_TRIAL_CONFIG": str(config_path.resolve()),
         "TSW92_TOKEN_FILE": config["runner"]["token_file"],
     }
