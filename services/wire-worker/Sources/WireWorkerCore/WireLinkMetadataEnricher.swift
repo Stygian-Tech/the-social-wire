@@ -69,14 +69,18 @@ struct WireLinkMetadataEnricher: Sendable {
           asOf: completedAt, leaseExpiresAt: target.leaseExpiresAt
         )
       case .metadata(let metadata):
-        try await store.store(canonicalKey: target.canonicalKey, metadata: metadata, asOf: completedAt, leaseExpiresAt: target.leaseExpiresAt)
+        try await store.store(
+          canonicalKey: target.canonicalKey, metadata: metadata,
+          asOf: completedAt, leaseExpiresAt: target.leaseExpiresAt)
       }
     } catch is CancellationError {
       throw CancellationError()
     } catch {
       try Task.checkCancellation()
       let negative = Self.isNegative(error)
-      try? await store.markFailure(canonicalKey: target.canonicalKey, negative: negative, asOf: now(), leaseExpiresAt: target.leaseExpiresAt)
+      try? await store.markFailure(
+        canonicalKey: target.canonicalKey, negative: negative,
+        asOf: now(), leaseExpiresAt: target.leaseExpiresAt)
       try Task.checkCancellation()
       logger.debug(
         "The Wire metadata enrichment failed",
@@ -85,7 +89,9 @@ struct WireLinkMetadataEnricher: Sendable {
     }
   }
 
-  private func fetch(_ target: WireLinkMetadataTarget, timeout: Duration) async throws -> WireLinkMetadataFetchResult {
+  private func fetch(
+    _ target: WireLinkMetadataTarget, timeout: Duration
+  ) async throws -> WireLinkMetadataFetchResult {
     // Bound the entire redirect/DNS/body operation below the five-minute lease.
     // Structured cancellation waits for transport teardown before this slot is reused.
     try await withThrowingTaskGroup(of: WireLinkMetadataFetchResult.self) { group in
