@@ -7,15 +7,10 @@ import WireCore
 
 @testable import WireWorkerCore
 
-@Suite(
-  "Wire bulk generation persistence",
-  .serialized,
-  .enabled(
-    if: ProcessInfo.processInfo.environment["WIRE_TEST_DATABASE_URL"] != nil,
-    "Requires an explicitly disposable migrated PostgreSQL database."
-  )
-)
-struct WireGenerationPersistenceTests {
+// Retention advances a database-wide cleanup clock, including signal expiry.
+// Share the ingestion/rollup suite's serialization boundary so these tests
+// cannot remove another fixture's still-live signal or projection rows.
+extension WirePostgresIntegrationTests {
   @Test("an expired or replaced Coordinator cannot publish or leave partial generation rows",
     arguments: [false, true])
   func rejectsStaleCoordinator(withSuccessor: Bool) async throws {
