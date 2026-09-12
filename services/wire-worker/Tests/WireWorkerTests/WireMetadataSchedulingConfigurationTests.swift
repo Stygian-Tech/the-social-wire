@@ -7,7 +7,10 @@ struct WireMetadataSchedulingConfigurationTests {
   func defaultsAndBounds() {
     let defaults = WireMetadataSchedulingConfiguration.load([:])
     #expect(!defaults.readerEnabled && !defaults.maintenanceEnabled)
-    #expect(defaults.repairIntervalMilliseconds == 2_000)
+    #expect(defaults.repairIntervalMilliseconds == 1_000)
+    #expect(WireMetadataSchedulingConfiguration().repairIntervalMilliseconds == 1_000)
+    #expect(WireMetadataSchedulingConfiguration.load(["WIRE_METADATA_REPAIR_INTERVAL_MS": "invalid"])
+      .repairIntervalMilliseconds == 1_000)
     #expect(WireMetadataSchedulingConfiguration.load(["WIRE_METADATA_REPAIR_INTERVAL_MS": "-10"])
       .repairIntervalMilliseconds == 250)
     #expect(WireMetadataSchedulingConfiguration.load(["WIRE_METADATA_REPAIR_INTERVAL_MS": "999999"])
