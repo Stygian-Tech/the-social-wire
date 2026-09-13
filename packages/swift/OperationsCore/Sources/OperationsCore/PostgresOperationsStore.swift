@@ -1180,8 +1180,7 @@ public actor PostgresOperationsStore: OperationsStore {
         "operatorDid": operatorDid, "note": note, "failureReason": failureReason,
         "status": status.rawValue,
       ])
-    return try await pool.withTransaction(logger: logger) { connection in
-      try await lockCoordinatorAuthority(on: connection)
+    return try await withCoordinatorTransaction { connection in
       if let existing = try await existingIdempotency(
         connection: connection, key: idempotencyKey, action: actionName,
         targetType: "backfill", targetId: id, requestFingerprint: requestFingerprint)
@@ -1314,8 +1313,7 @@ public actor PostgresOperationsStore: OperationsStore {
   public func claimNextBackfill(workerId: String, leaseUntil: Date, at: Date) async throws
     -> BackfillJob?
   {
-    return try await pool.withTransaction(logger: logger) { connection in
-      try await lockCoordinatorAuthority(on: connection)
+    return try await withCoordinatorTransaction { connection in
       let rows = try await connection.query(
         """
         UPDATE appview_backfill_jobs
