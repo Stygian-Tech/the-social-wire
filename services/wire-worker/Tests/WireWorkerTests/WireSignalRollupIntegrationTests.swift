@@ -7,9 +7,9 @@ import Testing
 // Extend the existing serialized suite: refresh replaces a database-wide
 // derived snapshot, so these fixtures must not race other ingestion tests.
 extension WirePostgresIntegrationTests {
-  @Test("rollup refresh preserves unchanged tuples and exact baseline counts")
-  func rollupRefreshSkipsUnchangedRows() async throws {
-    try await WireRollupIntegrationFixture.run { fixture in
+  @Test("rollup refresh preserves unchanged tuples and exact baseline counts", arguments: [false, true])
+  func rollupRefreshSkipsUnchangedRows(incremental: Bool) async throws {
+    try await WireRollupIntegrationFixture.run(incremental: incremental) { fixture in
       let key = try await fixture.item("baseline")
       try await fixture.signal(
         key, actor: "baseline", occurredAt: fixture.now.addingTimeInterval(-60),
@@ -53,9 +53,9 @@ extension WirePostgresIntegrationTests {
     }
   }
 
-  @Test("rollups age exactly across hourly daily and weekly windows and signal expiry")
-  func rollupRefreshExpiresWindows() async throws {
-    try await WireRollupIntegrationFixture.run { fixture in
+  @Test("rollups age exactly across hourly daily and weekly windows and signal expiry", arguments: [false, true])
+  func rollupRefreshExpiresWindows(incremental: Bool) async throws {
+    try await WireRollupIntegrationFixture.run(incremental: incremental) { fixture in
       let hourly = try await fixture.item("hourly")
       let daily = try await fixture.item("daily")
       let weekly = try await fixture.item("weekly")
@@ -87,9 +87,9 @@ extension WirePostgresIntegrationTests {
     }
   }
 
-  @Test("a failed refresh rolls back changes and leaves the complete prior snapshot")
-  func rollupRefreshRollsBackAtomically() async throws {
-    try await WireRollupIntegrationFixture.run { fixture in
+  @Test("a failed refresh rolls back changes and leaves the complete prior snapshot", arguments: [false, true])
+  func rollupRefreshRollsBackAtomically(incremental: Bool) async throws {
+    try await WireRollupIntegrationFixture.run(incremental: incremental) { fixture in
       let key = try await fixture.item("rollback")
       let removed = try await fixture.item("rollback-removed")
       try await fixture.signal(key, actor: key, occurredAt: fixture.now)

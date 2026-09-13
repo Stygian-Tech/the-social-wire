@@ -1,5 +1,81 @@
 # TSW-92 database cost rollout
 
+## Current memory policy — September 13, 2026
+
+Keep Production's hard ceiling at 16 decimal GB while reducing the working set.
+The 10 GB trial was reverted after Coordinator lease failures; similar failures
+also occurred at 16 GB. A completed ranking cycle taking longer than 26 seconds
+is acceptable. Interrupted publication, growing ingestion lag, OOMs and the
+existing latency/recovery gates remain failures. Ranking refresh is ten minutes.
+
+Ranking scores already run in workers. Reduce the database's repeated signal
+aggregation reads before moving raw signal history to workers: transferring the
+entire seven-day history would retain the database reads and add network and
+worker memory costs. Incremental refresh must preserve exact distinct actors,
+window boundaries, feedback, moderation and deletion/restart recovery.
+
+Railway's inspected public `ServiceInstanceLimitsUpdateInput` exposes `memoryGB`
+and `vCPUs`, but no separate soft memory boundary. Production `memory.high` reads
+`max`. Linux `memory.high` is a total-memory reclaim/throttle boundary, not a
+file-cache cap or a reservation for PostgreSQL. Do not substitute a lower hard
+limit, periodic global cache drops, or an undocumented cgroup write for a
+supported soft-limit trial. Keep shared buffers, global work_mem, durability,
+CPU and replica counts unchanged while measuring workload changes.
+
+The current backup policy supersedes the historical PITR instructions below:
+Production and Development use daily Railway snapshots with the user-accepted
+six-day retention; PITR is intentionally disabled. Snapshot existence does not
+replace restore and discovery-rebuild verification.
+
+## Incremental signal rollup trial
+
+The migration creates disposable dirty-key and expiry scheduling tables without
+scanning the corpus. Source triggers are installed disabled, and the worker flag
+`WIRE_SIGNAL_ROLLUP_INCREMENTAL_ENABLED` defaults to false. Both controls must be
+enabled for incremental refresh. Deploying the migration alone does not enable
+tracking or eliminate any existing scans.
+
+Compare the exact full-refresh oracle with incremental refresh under sparse,
+dense, popular-article, cleanup and concurrent ingestion workloads. Include the
+initial rebuild, rolling-window expiry and restart recovery. Require at least
+80% fewer sparse aggregation buffer accesses, no scenario's p95 above 110% of its
+baseline, and no more than 5% additional combined CPU or WAL before enabling.
+Shared-buffer restart measurements are not cold filesystem-cache measurements.
+Record trigger contention and ingestion latency alongside aggregation savings.
+
+Only after those gates pass, enable tracking in Development over an operator
+database connection with bounded waits:
+
+```sql
+BEGIN;
+SET LOCAL lock_timeout = '2s';
+SET LOCAL statement_timeout = '10s';
+SELECT wire_set_signal_rollup_tracking(true);
+COMMIT;
+```
+
+The function drains existing source writers and invalidates coverage. Set
+`WIRE_SIGNAL_ROLLUP_INCREMENTAL_ENABLED=true` on Coordinator, then verify its
+first full rebuild completes, subsequent selected-key counts shrink, and all
+ranking and ingestion gates pass. Do not enable the flag on unrelated ingestion
+workers. Incremental refresh sets `jit=off` only within its transaction, avoiding
+the observed compilation threshold overhead without changing global settings
+or the full reader. Repeat the measured rollout in Production only after Development
+acceptance. Publication remains atomic; concurrent dirty revisions survive for
+the next refresh. Dirty hints use at most 16 writer lanes per canonical key to
+reduce popular-article contention. Colliding writers can still serialize; include
+that case in replay. Work selection deduplicates keys and acknowledgment checks
+globally unique revisions across all lanes. Restart, source partition changes or lost disposable state
+require a full rebuild, so retain enough capacity for that recovery path.
+
+To stop the experiment, set the Coordinator flag to false and call
+`wire_set_signal_rollup_tracking(false)` in the same bounded transaction above.
+Verify both controls are off. Disabling tracking removes source-trigger work;
+the existing full reader remains available. Never directly modify the control
+row to enable tracking, since that bypasses the source-writer synchronization.
+
+## Historical rollout baseline
+
 The user authorized all actions related to resolving TSW-92 on September 4, 2026.
 Following the September 5 request to expedite, roll out in separate stages. The
 tested application write reductions may reach Production after required release
