@@ -110,7 +110,7 @@ struct PostgresWireTalkedAccountMentionStore: WireTalkedAccountMentionStoring {
     }
     // The total budget is checked between transactions; a final query can take up to its
     // statement timeout beyond that soft budget. Pool acquisition/commit time is additional.
-    try await metadataPruneCursor.run(
+    let report = try await metadataPruneCursor.run(
       maximumBatches: metadataPruneMaximumBatches, timeBudget: metadataPruneTimeBudget
     ) { position in
       try await pool.withTransaction(logger: logger) { connection in
@@ -119,16 +119,31 @@ struct PostgresWireTalkedAccountMentionStore: WireTalkedAccountMentionStoring {
         try await connection.query("SET LOCAL lock_timeout = '500ms'", logger: logger)
         let rows = try await connection.query(
           WireMetadataPruneQuery.make(asOf: asOf, position: position), logger: logger)
-        var next: WireMetadataPruneCursor.Position?
+        var batch = WireMetadataPruneCursor.Batch(position: nil)
         for try await row in rows {
-          let (examined, staleUntil, canonicalKey) = try row.decode((Int64, String?, String?).self)
+          let (examined, staleUntil, canonicalKey, deleted) =
+            try row.decode((Int64, String?, String?, Int64).self)
+          var next: WireMetadataPruneCursor.Position?
           if examined == 500, let staleUntil, let canonicalKey {
             next = .init(staleUntil: staleUntil, canonicalKey: canonicalKey)
           }
+          batch = .init(position: next, examined: examined, deleted: deleted)
         }
         try Task.checkCancellation()
-        return next
+        return batch
       }
+    }
+    if let report {
+      let duration = report.duration.components
+      logger.info("Wire metadata cleanup pass completed", metadata: [
+        "examined_rows": .stringConvertible(report.examined),
+        "deleted_rows": .stringConvertible(report.deleted),
+        "committed_batches": .stringConvertible(report.batches),
+        "wrapped": .stringConvertible(report.wrapped),
+        "duration_ms": .stringConvertible(
+          Double(duration.seconds) * 1_000 + Double(duration.attoseconds) / 1e15),
+        "observed_at": .stringConvertible(Date().timeIntervalSince1970),
+      ])
     }
   }
 }

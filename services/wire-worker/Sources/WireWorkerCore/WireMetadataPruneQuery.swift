@@ -50,8 +50,10 @@ enum WireMetadataPruneQuery {
       ), deleted AS (
         DELETE FROM wire_link_metadata_cache cache USING deletable
         WHERE cache.canonical_key = deletable.canonical_key
+        RETURNING 1
       )
-      SELECT (SELECT count(*) FROM candidates), last.stale_until::text, last.canonical_key
+      SELECT (SELECT count(*) FROM candidates), last.stale_until::text, last.canonical_key,
+             (SELECT count(*) FROM deleted)
       FROM (SELECT 1) singleton
       LEFT JOIN LATERAL (
         SELECT stale_until, canonical_key FROM candidates

@@ -1,8 +1,8 @@
 import Foundation
 import Logging
 
-/// Disposable expiry work must not block ranking publication. Each store call
-/// bounds each source to 500 rows and releases its transaction before the next.
+/// Disposable expiry work must not block ranking publication. Stores use at most 500 rows
+/// per transaction; metadata scans up to 20 batches per pass within a soft two-second budget.
 enum WireDisposableCacheMaintenanceRuntime {
   static func run(
     store: any WireTalkedAccountMentionStoring,
