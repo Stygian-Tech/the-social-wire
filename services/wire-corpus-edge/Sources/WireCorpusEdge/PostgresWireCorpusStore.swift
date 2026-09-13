@@ -14,10 +14,12 @@ actor PostgresWireCorpusStore: WireCorpusStoring {
 
   private let pool: PostgresClient
   private let logger: Logger
+  private let payloadCache: WireCorpusPayloadCache?
 
-  init(pool: PostgresClient, logger: Logger) {
+  init(pool: PostgresClient, logger: Logger, payloadCache: WireCorpusPayloadCache? = nil) {
     self.pool = pool
     self.logger = logger
+    self.payloadCache = payloadCache
   }
 
   func ping() async throws {
@@ -183,10 +185,10 @@ actor PostgresWireCorpusStore: WireCorpusStoring {
       return try await fallback(language: language, limit: limit, now: now)
     }
 
-    let rows = try await rankedRows(
+    let rows = try await cachedRankedRows(
       generationID: generation.id,
       startOrdinal: startOrdinal,
-      limit: limit
+      limit: limit, language: generation.language, now: now, expiresAt: generation.expiresAt
     )
     let age = now.timeIntervalSince(generation.generatedAt)
     return WireCorpusPage(
@@ -205,6 +207,38 @@ actor PostgresWireCorpusStore: WireCorpusStoring {
     guard let generation = try await activeGeneration(language: language, now: now) else {
       return try await fallbackEdition(language: language, now: now)
     }
+    let result: WireEdition
+    if let payloadCache {
+      let revision = try await editionRevision(generationID: generation.id)
+      let allowedItems = Self.revisionIdentities(revision, kind: "item", index: 3)
+      let allowedAccounts = Self.revisionIdentities(revision, kind: "account", index: 2)
+      result = try await payloadCache.value(
+        WireEdition.self,
+        scope: ["edition", generation.id.uuidString, language, region?.rawValue ?? "default"],
+        revision: revision, now: now,
+        lifetime: min(60, generation.expiresAt.timeIntervalSince(now)),
+        currentRevision: { try await self.editionRevision(generationID: generation.id) },
+        validatesMembership: { edition in
+          let stories = edition.leadStories + edition.generalStories + edition.trendingStories
+            + edition.publicationPanels.flatMap(\.stories) + edition.storyRails.flatMap(\.stories)
+          return stories.allSatisfy { allowedItems.contains($0.itemID) }
+            && edition.talkedAboutAccounts.allSatisfy { allowedAccounts.contains($0.did) }
+        },
+        load: { try await self.loadEdition(generation: generation, region: region, now: now) })
+    } else {
+      result = try await loadEdition(generation: generation, region: region, now: now)
+    }
+    let stale = now.timeIntervalSince(generation.generatedAt) > 10 * 60
+    return WireEdition(
+      algorithmVersion: result.algorithmVersion, generationID: result.generationID,
+      generatedAt: result.generatedAt, language: result.language, cursor: result.cursor,
+      source: stale ? .staleGeneration : .ranked, degraded: generation.recovering || stale,
+      leadStories: result.leadStories, publicationPanels: result.publicationPanels,
+      storyRails: result.storyRails, generalStories: result.generalStories,
+      trendingStories: result.trendingStories, talkedAboutAccounts: result.talkedAboutAccounts)
+  }
+
+  private func loadEdition(generation: Generation, region: WireViewerRegion?, now: Date) async throws -> WireEdition {
     let generationRows = try await pool.query(
       """
       SELECT algorithm_version, continuation_ordinal
@@ -364,6 +398,17 @@ actor PostgresWireCorpusStore: WireCorpusStoring {
 
   func item(id: String, now: Date) async throws -> WireCorpusItem? {
     try await requireFreshBaseline(now: now)
+    guard let payloadCache else { return try await loadItem(id: id) }
+    let revision = try await itemRevision(id: id)
+    guard !revision.isEmpty else { return nil }
+    return try await payloadCache.value(
+      WireCorpusItem?.self, scope: ["item", id], revision: revision, now: now,
+      currentRevision: { try await self.itemRevision(id: id) },
+      validatesMembership: { $0?.item.itemID == id },
+      load: { try await self.loadItem(id: id) })
+  }
+
+  private func loadItem(id: String) async throws -> WireCorpusItem? {
     let rows = try await pool.query(
       """
       SELECT canonical_key, canonical_url, representative_uri, title, summary, published_at,
@@ -385,17 +430,33 @@ actor PostgresWireCorpusStore: WireCorpusStoring {
     return nil
   }
 
+  private struct CatalogSnapshot: Codable, Sendable {
+    let value: WireCorpusCatalog
+    let expiresAt: Date
+  }
+
   func catalog(now: Date) async throws -> WireCorpusCatalog {
     try await requireFreshBaseline(now: now)
+    guard let payloadCache else { return try await loadCatalog(now: now).value }
+    // Catalog is advisory, contains no item payloads, and may lag publication by
+    // five seconds. Feed/edition generation selection and all moderation remain live.
+    let snapshot = try await payloadCache.value(
+      CatalogSnapshot.self, scope: ["catalog"], revision: "advisory-v1", now: now, lifetime: 5,
+      currentRevision: { "advisory-v1" }, load: { try await self.loadCatalog(now: now) })
+    guard snapshot.expiresAt > now else { return try await loadCatalog(now: now).value }
+    return snapshot.value
+  }
+
+  private func loadCatalog(now: Date) async throws -> CatalogSnapshot {
     let generations = try await acceptableGenerations(now: now)
     let latest = generations.max { $0.generatedAt < $1.generatedAt }
     let fallbackAvailable = latest == nil ? try await hasFallbackCorpus() : false
-    return WireCorpusCatalog(
-      available: latest != nil || fallbackAvailable,
-      supportedLanguages: generations.map(\.language).filter { $0 != "und" }.sorted(),
-      latestGenerationID: latest?.id.uuidString.lowercased(),
-      generatedAt: latest?.generatedAt
-    )
+    return CatalogSnapshot(
+      value: WireCorpusCatalog(
+        available: latest != nil || fallbackAvailable,
+        supportedLanguages: generations.map(\.language).filter { $0 != "und" }.sorted(),
+        latestGenerationID: latest?.id.uuidString.lowercased(), generatedAt: latest?.generatedAt),
+      expiresAt: generations.map(\.expiresAt).min() ?? now.addingTimeInterval(5))
   }
 
   private func activeGeneration(language: String, now: Date) async throws -> Generation? {
@@ -456,6 +517,89 @@ actor PostgresWireCorpusStore: WireCorpusStoring {
     return result
   }
 
+  private func cachedRankedRows(
+    generationID: UUID, startOrdinal: Int, limit: Int, language: String, now: Date, expiresAt: Date
+  ) async throws -> [WireCorpusRow] {
+    guard let payloadCache else {
+      return try await rankedRows(generationID: generationID, startOrdinal: startOrdinal, limit: limit)
+    }
+    let revision = try await rankedRevision(generationID: generationID, startOrdinal: startOrdinal, limit: limit)
+    let expectedKeys = Self.revisionIdentities(revision, index: 1)
+    return try await payloadCache.value(
+      [WireCorpusRow].self,
+      scope: ["feed", generationID.uuidString, language, String(startOrdinal), String(limit)],
+      revision: revision, now: now, lifetime: min(60, expiresAt.timeIntervalSince(now)),
+      currentRevision: {
+        try await self.rankedRevision(generationID: generationID, startOrdinal: startOrdinal, limit: limit)
+      }, validatesMembership: { rows in
+        rows.count == expectedKeys.count && rows.allSatisfy { expectedKeys.contains($0.item.itemID) }
+      }, load: {
+        try await self.rankedRows(generationID: generationID, startOrdinal: startOrdinal, limit: limit)
+      })
+  }
+
+  private func rankedRevision(generationID: UUID, startOrdinal: Int, limit: Int) async throws -> String {
+    try await revisionRows("""
+      SELECT json_build_array(position, canonical_key, cache_revision)::text
+      FROM wire_serving.ranked_items
+      WHERE generation_id = \(generationID) AND position >= \(startOrdinal)
+      ORDER BY position LIMIT \(limit)
+      """)
+  }
+
+  private func itemRevision(id: String) async throws -> String {
+    try await revisionRows("""
+      SELECT json_build_array(canonical_key, cache_revision)::text
+      FROM wire_serving.items WHERE canonical_key = \(id) LIMIT 1
+      """)
+  }
+
+  private func editionRevision(generationID: UUID) async throws -> String {
+    // One bounded result set covers all variant membership, module presentation,
+    // continuation eligibility and profile expiry; no per-item database round trips.
+    try await revisionRows("""
+      SELECT token FROM (
+        SELECT 'generation' AS kind, '' AS ordering,
+          json_build_array('generation', cache_revision, continuation_ordinal)::text AS token
+        FROM wire_serving.edition_generations WHERE generation_id = \(generationID)
+        UNION ALL
+        SELECT 'module', module_key, json_build_array('module', module_key, cache_revision)::text
+        FROM wire_serving.edition_modules WHERE generation_id = \(generationID)
+        UNION ALL
+        SELECT 'item', module_key || ':' || module_position::text,
+          json_build_array('item', module_key, module_position, canonical_key, cache_revision)::text
+        FROM wire_serving.edition_module_items WHERE generation_id = \(generationID)
+        UNION ALL
+        SELECT 'account', position::text,
+          json_build_array('account', position, subject_did, cache_revision)::text
+        FROM wire_serving.edition_talked_accounts WHERE generation_id = \(generationID)
+        UNION ALL
+        SELECT 'continuation', '', json_build_array('continuation', EXISTS(
+          SELECT 1 FROM wire_serving.ranked_items AS ranked
+          JOIN wire_serving.edition_generations AS edition USING (generation_id)
+          WHERE ranked.generation_id = \(generationID) AND ranked.position >= edition.continuation_ordinal
+        ))::text
+      ) AS revisions ORDER BY kind, ordering, token
+      """)
+  }
+
+  private static func revisionIdentities(_ revision: String, kind: String? = nil, index: Int) -> Set<String> {
+    Set(revision.split(separator: "\n").compactMap { token in
+      guard let fields = try? JSONSerialization.jsonObject(with: Data(token.utf8)) as? [Any],
+        fields.count > index, kind == nil || fields.first as? String == kind
+      else { return nil }
+      return fields[index] as? String
+    })
+  }
+
+  private func revisionRows(_ query: PostgresQuery) async throws -> String {
+    let rows = try await pool.query(query, logger: logger)
+    var tokens: [String] = []
+    for try await row in rows { tokens.append(try row.decode(String.self)) }
+    // JSON arrays encode boundaries unambiguously, including keys containing separators.
+    return tokens.joined(separator: "\n")
+  }
+
   private func rankedRows(
     generationID: UUID,
     startOrdinal: Int,
@@ -495,7 +639,7 @@ actor PostgresWireCorpusStore: WireCorpusStoring {
 
   private func hasFallbackCorpus() async throws -> Bool {
     let rows = try await pool.query(
-      "SELECT COUNT(*)::bigint FROM wire_serving.fallback_items",
+      "SELECT COUNT(*)::bigint FROM (SELECT 1 FROM wire_serving.fallback_items LIMIT \(WireDataPolicy.minimumGlobalCandidates)) AS bounded",
       logger: logger
     )
     for try await row in rows {
