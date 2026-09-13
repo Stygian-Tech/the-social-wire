@@ -13,6 +13,8 @@ COPY packages/swift/WireCore/Package.swift packages/swift/WireCore/Package.resol
 COPY packages/swift/WireCore/Sources packages/swift/WireCore/Sources
 COPY packages/swift/WireCore/Tests packages/swift/WireCore/Tests
 
+COPY packages/swift/SocialWireRedis packages/swift/SocialWireRedis
+
 COPY services/wire-worker/Package.swift services/wire-worker/Package.resolved* services/wire-worker/
 COPY services/wire-worker/Sources services/wire-worker/Sources
 COPY services/wire-worker/Tests services/wire-worker/Tests

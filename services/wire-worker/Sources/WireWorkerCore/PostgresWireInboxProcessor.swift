@@ -938,7 +938,11 @@ struct PostgresWireInboxProcessor: Sendable {
       resolved = nil
       thumbnail = nil
     }
-    return try await pool.withTransaction(logger: logger) { connection in
+    let publicationURI = event.collection == "site.standard.publication" ? event.sourceURI : nil
+    if let publicationURI { await publicationResolver.invalidate(publicationURI: publicationURI) }
+    let outcome: WireInboxEventOutcome
+    do {
+      outcome = try await pool.withTransaction(logger: logger) { connection in
       guard let version = try await standardRecordLease(event, asOf: asOf, connection: connection) else {
         return .leaseLost
       }
@@ -1026,7 +1030,15 @@ struct PostgresWireInboxProcessor: Sendable {
       try Task.checkCancellation()
       return try await finish(event, status: "applied", retryAt: asOf, reason: nil,
         asOf: asOf, connection: connection) ? .applied : .leaseLost
+      }
+    } catch {
+      if let publicationURI { await publicationResolver.invalidate(publicationURI: publicationURI) }
+      throw error
     }
+    // withTransaction has committed (or rolled back) before invalidating. Doing
+    // this inside its closure would let another replica refill pre-commit data.
+    if let publicationURI { await publicationResolver.invalidate(publicationURI: publicationURI) }
+    return outcome
   }
 
   private func standardRecord(_ event: InboxEvent) throws -> [String: Any]? {
@@ -1604,7 +1616,10 @@ struct PostgresWireInboxProcessor: Sendable {
       let active = account["active"] as? Bool
     else { return }
     let actorHash = try actorHasher.hash(event.repoDID)
-    let retracted = try await pool.withTransaction(logger: logger) { connection in
+    if !active { await publicationResolver.invalidateAccount(repoDID: event.repoDID) }
+    let retracted: Bool
+    do {
+      retracted = try await pool.withTransaction(logger: logger) { connection in
       guard try await PostgresWireRecommendationJournal.observeAccount(
         event: event, on: connection, asOf: asOf)
       else { return false }
@@ -1634,7 +1649,12 @@ struct PostgresWireInboxProcessor: Sendable {
         logger: logger
       )
       return true
+      }
+    } catch {
+      if !active { await publicationResolver.invalidateAccount(repoDID: event.repoDID) }
+      throw error
     }
+    if !active { await publicationResolver.invalidateAccount(repoDID: event.repoDID) }
     if retracted {
       try await mentionStore.removeActor(did: event.repoDID, actorKeyHash: actorHash)
     }

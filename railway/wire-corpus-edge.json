@@ -6,6 +6,7 @@
     "watchPatterns": [
       "/services/wire-corpus-edge/**",
       "/packages/swift/WireCore/**",
+      "/packages/swift/SocialWireRedis/**",
       "/database/migrations/**",
       "/railway/wire-corpus-edge.json"
     ]

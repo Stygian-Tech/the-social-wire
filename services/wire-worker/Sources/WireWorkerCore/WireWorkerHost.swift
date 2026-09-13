@@ -41,9 +41,15 @@ public enum WireWorkerHost {
     let store = PostgresWireGenerationStore(pool: pool, logger: logger, roleLeaseAuthority: roleLeaseAuthority)
     let httpClient = HTTPClient(eventLoopGroupProvider: .singleton)
     let publicRepoClient = HTTPWirePublicationQueryClient(httpClient: httpClient)
+    let publicationCache = WirePublicationCacheRuntime.make(environment: environment, logger: logger)
     let publicationResolver = WirePublicationResolver(
       store: PostgresWirePublicationMetadataStore(pool: pool, logger: logger),
-      queryClient: publicRepoClient
+      queryClient: publicRepoClient,
+      cache: publicationCache?.cache,
+      positiveCacheTTL: WirePublicationCacheRuntime.ttl(
+        environment["WIRE_PUBLICATION_CACHE_TTL_SECONDS"], fallback: 60, maximum: 60),
+      sharedNegativeCacheTTL: WirePublicationCacheRuntime.ttl(
+        environment["WIRE_PUBLICATION_NEGATIVE_CACHE_TTL_SECONDS"], fallback: 15, maximum: 15)
     )
     let metadataScheduling = WireMetadataSchedulingConfiguration.load(environment)
     let linkMetadataStore = PostgresWireLinkMetadataStore(
@@ -117,8 +123,14 @@ public enum WireWorkerHost {
     )
 
     try await WireWorkerLifetime.run(
-      logger: logger, shutdown: { try await httpClient.shutdown() }
+      logger: logger, shutdown: {
+        try? await publicationCache?.client.shutdown()
+        try await httpClient.shutdown()
+      }
     ) { group in
+      if let publicationCache {
+        group.addTask { try await publicationCache.runTelemetry(logger: logger) }
+      }
       group.addTask {
         defer { logger.info("The Wire component stopped", metadata: ["component": "postgres"]) }
         await pool.run()
