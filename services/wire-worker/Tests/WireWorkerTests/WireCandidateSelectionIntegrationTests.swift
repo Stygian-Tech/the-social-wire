@@ -7,8 +7,8 @@ import WireCore
 @testable import WireWorkerCore
 
 extension WirePostgresIntegrationTests {
-  @Test("narrow candidate selection preserves full legacy values and ordering across ranking modes")
-  func narrowCandidateParity() async throws {
+  @Test("narrow candidate selection preserves full legacy values and ordering across ranking modes", arguments: [false, true])
+  func narrowCandidateParity(globalProjectionEnabled: Bool) async throws {
     try await WireRollupIntegrationFixture.run { fixture in
       let pool = fixture.pool
       let logger = fixture.logger
@@ -59,7 +59,8 @@ extension WirePostgresIntegrationTests {
           \(now) + CASE WHEN n % 2 = 0 THEN interval '0 seconds' ELSE interval '1 day' END
         FROM generate_series(1, 60) n WHERE n % 7 = 0
         """, logger: logger)
-      let store = PostgresWireGenerationStore(pool: pool, logger: logger)
+      let store = PostgresWireGenerationStore(
+        pool: pool, logger: logger, globalCandidateProjectionEnabled: globalProjectionEnabled)
       for ranking in [WireRankingConfig(), WireRankingConfig.externalSignalsV11()] {
         for language in ["und", "en", "es", "zz"] {
           for limit in [0, 1, 7, 5000] {
