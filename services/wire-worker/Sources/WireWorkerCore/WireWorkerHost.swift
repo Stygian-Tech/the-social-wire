@@ -163,9 +163,9 @@ public enum WireWorkerHost {
               }
               if runtimePlan.requiresGenerationReadiness {
                 guard
-                  await state.isGenerationReady(
-                    at: now,
-                    maximumCycleAge: TimeInterval(max(config.intervalSeconds * 2, 600))
+                  await rankingScheduler.isGenerationReady(
+                    at: .now,
+                    maximumCycleAge: .seconds(max(config.intervalSeconds * 2, 600))
                   )
                 else { throw HealthError.runtimeStale }
               }
