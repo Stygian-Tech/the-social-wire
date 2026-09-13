@@ -2,8 +2,13 @@
 SET LOCAL lock_timeout = '5s';
 CREATE UNLOGGED SEQUENCE wire_signal_rollup_revision;
 CREATE UNLOGGED TABLE wire_signal_rollup_dirty (
-  canonical_key text PRIMARY KEY,
-  revision bigint NOT NULL DEFAULT nextval('wire_signal_rollup_revision')
+  canonical_key text NOT NULL,
+  -- Independent database writers should not serialize a popular story behind
+  -- one hint tuple. The bounded lanes remain hints; global revisions preserve
+  -- exact acknowledgment and work selection deduplicates the canonical key.
+  shard smallint NOT NULL DEFAULT (pg_backend_pid() % 16) CHECK (shard BETWEEN 0 AND 15),
+  revision bigint NOT NULL DEFAULT nextval('wire_signal_rollup_revision'),
+  PRIMARY KEY (canonical_key, shard)
 );
 CREATE UNLOGGED TABLE wire_signal_rollup_schedule (
   canonical_key text PRIMARY KEY,
@@ -42,11 +47,11 @@ BEGIN
   END IF;
   IF TG_OP = 'DELETE' OR (TG_OP = 'UPDATE' AND OLD.canonical_key <> NEW.canonical_key) THEN
     INSERT INTO wire_signal_rollup_dirty (canonical_key) VALUES (OLD.canonical_key)
-      ON CONFLICT (canonical_key) DO UPDATE SET revision = EXCLUDED.revision;
+      ON CONFLICT (canonical_key, shard) DO UPDATE SET revision = EXCLUDED.revision;
   END IF;
   IF TG_OP <> 'DELETE' THEN
     INSERT INTO wire_signal_rollup_dirty (canonical_key) VALUES (NEW.canonical_key)
-      ON CONFLICT (canonical_key) DO UPDATE SET revision = EXCLUDED.revision;
+      ON CONFLICT (canonical_key, shard) DO UPDATE SET revision = EXCLUDED.revision;
   END IF;
   RETURN NULL;
 END $$;

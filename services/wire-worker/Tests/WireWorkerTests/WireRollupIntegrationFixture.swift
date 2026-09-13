@@ -87,11 +87,13 @@ struct WireRollupIntegrationFixture {
 
   static func run(
     incremental: Bool = false,
+    maximumConnections: Int = 2,
     _ operation: (WireRollupIntegrationFixture) async throws -> Void
   ) async throws {
     guard let url = ProcessInfo.processInfo.environment["WIRE_TEST_DATABASE_URL"] else { return }
     let logger = Logger(label: "wire-rollup-postgres.integration")
-    let configuration = try PostgresWireConfig.make(from: url, logger: logger)
+    let configuration = try PostgresWireConfig.make(
+      from: url, maximumConnections: maximumConnections, logger: logger)
     let pool = PostgresClient(configuration: configuration, backgroundLogger: logger)
     let task = Task { await pool.run() }
     defer { task.cancel() }

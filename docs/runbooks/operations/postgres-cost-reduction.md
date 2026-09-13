@@ -62,7 +62,10 @@ workers. Incremental refresh sets `jit=off` only within its transaction, avoidin
 the observed compilation threshold overhead without changing global settings
 or the full reader. Repeat the measured rollout in Production only after Development
 acceptance. Publication remains atomic; concurrent dirty revisions survive for
-the next refresh. Restart, source partition changes or lost disposable state
+the next refresh. Dirty hints use at most 16 writer lanes per canonical key to
+reduce popular-article contention. Colliding writers can still serialize; include
+that case in replay. Work selection deduplicates keys and acknowledgment checks
+globally unique revisions across all lanes. Restart, source partition changes or lost disposable state
 require a full rebuild, so retain enough capacity for that recovery path.
 
 To stop the experiment, set the Coordinator flag to false and call
