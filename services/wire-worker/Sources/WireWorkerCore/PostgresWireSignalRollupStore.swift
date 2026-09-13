@@ -169,207 +169,214 @@ struct PostgresWireSignalRollupStore: Sendable {
         "ANALYZE wire_signal_rollups_next (canonical_key)",
         logger: logger
       )
-      // Unchanged rows keep their tuple and timestamp. Re-inserting every row
-      // also locks every referenced wire_items row through the foreign key,
-      // generating WAL on that logged parent even though rollups are unlogged.
-      try await connection.query(
-        """
-        UPDATE wire_signal_rollups current
-        SET distinct_actors_1h = staged.distinct_actors_1h,
-            distinct_actors_24h = staged.distinct_actors_24h,
-            distinct_actors_7d = staged.distinct_actors_7d,
-            signals_1h = staged.signals_1h,
-            signals_24h = staged.signals_24h,
-            signals_7d = staged.signals_7d,
-            communities_24h = staged.communities_24h,
-            primary_community_key_hash = staged.primary_community_key_hash,
-            recommendations_24h = staged.recommendations_24h,
-            positive_feedback_24h = staged.positive_feedback_24h,
-            negative_feedback_24h = staged.negative_feedback_24h,
-            shares_1h = staged.shares_1h,
-            shares_24h = staged.shares_24h,
-            distinct_likers_24h = staged.distinct_likers_24h,
-            likes_1h = staged.likes_1h,
-            likes_24h = staged.likes_24h,
-            distinct_reposters_24h = staged.distinct_reposters_24h,
-            reposts_1h = staged.reposts_1h,
-            reposts_24h = staged.reposts_24h,
-            baseline_last_signal_at = staged.baseline_last_signal_at,
-            baseline_distinct_actors_1h = staged.baseline_distinct_actors_1h,
-            baseline_distinct_actors_24h = staged.baseline_distinct_actors_24h,
-            baseline_distinct_actors_7d = staged.baseline_distinct_actors_7d,
-            baseline_signals_1h = staged.baseline_signals_1h,
-            baseline_signals_24h = staged.baseline_signals_24h,
-            baseline_signals_7d = staged.baseline_signals_7d,
-            baseline_recommendations_24h = staged.baseline_recommendations_24h,
-            baseline_shares_1h = staged.baseline_shares_1h,
-            baseline_shares_24h = staged.baseline_shares_24h,
-            baseline_distinct_likers_24h = staged.baseline_distinct_likers_24h,
-            baseline_likes_1h = staged.baseline_likes_1h,
-            baseline_likes_24h = staged.baseline_likes_24h,
-            updated_at = staged.updated_at
-        FROM wire_signal_rollups_next staged
-        WHERE current.canonical_key = staged.canonical_key
-          AND ROW(
-          current.distinct_actors_1h,
-          current.distinct_actors_24h,
-          current.distinct_actors_7d,
-          current.signals_1h,
-          current.signals_24h,
-          current.signals_7d,
-          current.communities_24h,
-          current.primary_community_key_hash,
-          current.recommendations_24h,
-          current.positive_feedback_24h,
-          current.negative_feedback_24h,
-          current.shares_1h,
-          current.shares_24h,
-          current.distinct_likers_24h,
-          current.likes_1h,
-          current.likes_24h,
-          current.distinct_reposters_24h,
-          current.reposts_1h,
-          current.reposts_24h,
-          current.baseline_last_signal_at,
-          current.baseline_distinct_actors_1h,
-          current.baseline_distinct_actors_24h,
-          current.baseline_distinct_actors_7d,
-          current.baseline_signals_1h,
-          current.baseline_signals_24h,
-          current.baseline_signals_7d,
-          current.baseline_recommendations_24h,
-          current.baseline_shares_1h,
-          current.baseline_shares_24h,
-          current.baseline_distinct_likers_24h,
-          current.baseline_likes_1h,
-          current.baseline_likes_24h
-          ) IS DISTINCT FROM ROW(
-          staged.distinct_actors_1h,
-          staged.distinct_actors_24h,
-          staged.distinct_actors_7d,
-          staged.signals_1h,
-          staged.signals_24h,
-          staged.signals_7d,
-          staged.communities_24h,
-          staged.primary_community_key_hash,
-          staged.recommendations_24h,
-          staged.positive_feedback_24h,
-          staged.negative_feedback_24h,
-          staged.shares_1h,
-          staged.shares_24h,
-          staged.distinct_likers_24h,
-          staged.likes_1h,
-          staged.likes_24h,
-          staged.distinct_reposters_24h,
-          staged.reposts_1h,
-          staged.reposts_24h,
-          staged.baseline_last_signal_at,
-          staged.baseline_distinct_actors_1h,
-          staged.baseline_distinct_actors_24h,
-          staged.baseline_distinct_actors_7d,
-          staged.baseline_signals_1h,
-          staged.baseline_signals_24h,
-          staged.baseline_signals_7d,
-          staged.baseline_recommendations_24h,
-          staged.baseline_shares_1h,
-          staged.baseline_shares_24h,
-          staged.baseline_distinct_likers_24h,
-          staged.baseline_likes_1h,
-          staged.baseline_likes_24h
-          )
-        """,
-        logger: logger
-      )
-      try await connection.query(
-        """
-        INSERT INTO wire_signal_rollups
-          (canonical_key,
-           distinct_actors_1h,
-           distinct_actors_24h,
-           distinct_actors_7d,
-           signals_1h,
-           signals_24h,
-           signals_7d,
-           communities_24h,
-           primary_community_key_hash,
-           recommendations_24h,
-           positive_feedback_24h,
-           negative_feedback_24h,
-           shares_1h,
-           shares_24h,
-           distinct_likers_24h,
-           likes_1h,
-           likes_24h,
-           distinct_reposters_24h,
-           reposts_1h,
-           reposts_24h,
-           baseline_last_signal_at,
-           baseline_distinct_actors_1h,
-           baseline_distinct_actors_24h,
-           baseline_distinct_actors_7d,
-           baseline_signals_1h,
-           baseline_signals_24h,
-           baseline_signals_7d,
-           baseline_recommendations_24h,
-           baseline_shares_1h,
-           baseline_shares_24h,
-           baseline_distinct_likers_24h,
-           baseline_likes_1h,
-           baseline_likes_24h,
-           updated_at)
-        SELECT staged.canonical_key,
-          staged.distinct_actors_1h,
-          staged.distinct_actors_24h,
-          staged.distinct_actors_7d,
-          staged.signals_1h,
-          staged.signals_24h,
-          staged.signals_7d,
-          staged.communities_24h,
-          staged.primary_community_key_hash,
-          staged.recommendations_24h,
-          staged.positive_feedback_24h,
-          staged.negative_feedback_24h,
-          staged.shares_1h,
-          staged.shares_24h,
-          staged.distinct_likers_24h,
-          staged.likes_1h,
-          staged.likes_24h,
-          staged.distinct_reposters_24h,
-          staged.reposts_1h,
-          staged.reposts_24h,
-          staged.baseline_last_signal_at,
-          staged.baseline_distinct_actors_1h,
-          staged.baseline_distinct_actors_24h,
-          staged.baseline_distinct_actors_7d,
-          staged.baseline_signals_1h,
-          staged.baseline_signals_24h,
-          staged.baseline_signals_7d,
-          staged.baseline_recommendations_24h,
-          staged.baseline_shares_1h,
-          staged.baseline_shares_24h,
-          staged.baseline_distinct_likers_24h,
-          staged.baseline_likes_1h,
-          staged.baseline_likes_24h,
-          staged.updated_at
-        FROM wire_signal_rollups_next staged
-        WHERE NOT EXISTS (
-          SELECT 1 FROM wire_signal_rollups current
+      // These three serial publication joins spill at the global 4MB budget.
+      // Scope the measured allowance to publication; aggregation retains its
+      // existing budget and transaction completion restores the pooled session.
+      try await PostgresWireQueryMemory.withWorkMemory(
+        megabytes: 64, connection: connection, logger: logger
+      ) {
+        // Unchanged rows keep their tuple and timestamp. Re-inserting every row
+        // also locks every referenced wire_items row through the foreign key,
+        // generating WAL on that logged parent even though rollups are unlogged.
+        try await connection.query(
+          """
+          UPDATE wire_signal_rollups current
+          SET distinct_actors_1h = staged.distinct_actors_1h,
+              distinct_actors_24h = staged.distinct_actors_24h,
+              distinct_actors_7d = staged.distinct_actors_7d,
+              signals_1h = staged.signals_1h,
+              signals_24h = staged.signals_24h,
+              signals_7d = staged.signals_7d,
+              communities_24h = staged.communities_24h,
+              primary_community_key_hash = staged.primary_community_key_hash,
+              recommendations_24h = staged.recommendations_24h,
+              positive_feedback_24h = staged.positive_feedback_24h,
+              negative_feedback_24h = staged.negative_feedback_24h,
+              shares_1h = staged.shares_1h,
+              shares_24h = staged.shares_24h,
+              distinct_likers_24h = staged.distinct_likers_24h,
+              likes_1h = staged.likes_1h,
+              likes_24h = staged.likes_24h,
+              distinct_reposters_24h = staged.distinct_reposters_24h,
+              reposts_1h = staged.reposts_1h,
+              reposts_24h = staged.reposts_24h,
+              baseline_last_signal_at = staged.baseline_last_signal_at,
+              baseline_distinct_actors_1h = staged.baseline_distinct_actors_1h,
+              baseline_distinct_actors_24h = staged.baseline_distinct_actors_24h,
+              baseline_distinct_actors_7d = staged.baseline_distinct_actors_7d,
+              baseline_signals_1h = staged.baseline_signals_1h,
+              baseline_signals_24h = staged.baseline_signals_24h,
+              baseline_signals_7d = staged.baseline_signals_7d,
+              baseline_recommendations_24h = staged.baseline_recommendations_24h,
+              baseline_shares_1h = staged.baseline_shares_1h,
+              baseline_shares_24h = staged.baseline_shares_24h,
+              baseline_distinct_likers_24h = staged.baseline_distinct_likers_24h,
+              baseline_likes_1h = staged.baseline_likes_1h,
+              baseline_likes_24h = staged.baseline_likes_24h,
+              updated_at = staged.updated_at
+          FROM wire_signal_rollups_next staged
           WHERE current.canonical_key = staged.canonical_key
+            AND ROW(
+            current.distinct_actors_1h,
+            current.distinct_actors_24h,
+            current.distinct_actors_7d,
+            current.signals_1h,
+            current.signals_24h,
+            current.signals_7d,
+            current.communities_24h,
+            current.primary_community_key_hash,
+            current.recommendations_24h,
+            current.positive_feedback_24h,
+            current.negative_feedback_24h,
+            current.shares_1h,
+            current.shares_24h,
+            current.distinct_likers_24h,
+            current.likes_1h,
+            current.likes_24h,
+            current.distinct_reposters_24h,
+            current.reposts_1h,
+            current.reposts_24h,
+            current.baseline_last_signal_at,
+            current.baseline_distinct_actors_1h,
+            current.baseline_distinct_actors_24h,
+            current.baseline_distinct_actors_7d,
+            current.baseline_signals_1h,
+            current.baseline_signals_24h,
+            current.baseline_signals_7d,
+            current.baseline_recommendations_24h,
+            current.baseline_shares_1h,
+            current.baseline_shares_24h,
+            current.baseline_distinct_likers_24h,
+            current.baseline_likes_1h,
+            current.baseline_likes_24h
+            ) IS DISTINCT FROM ROW(
+            staged.distinct_actors_1h,
+            staged.distinct_actors_24h,
+            staged.distinct_actors_7d,
+            staged.signals_1h,
+            staged.signals_24h,
+            staged.signals_7d,
+            staged.communities_24h,
+            staged.primary_community_key_hash,
+            staged.recommendations_24h,
+            staged.positive_feedback_24h,
+            staged.negative_feedback_24h,
+            staged.shares_1h,
+            staged.shares_24h,
+            staged.distinct_likers_24h,
+            staged.likes_1h,
+            staged.likes_24h,
+            staged.distinct_reposters_24h,
+            staged.reposts_1h,
+            staged.reposts_24h,
+            staged.baseline_last_signal_at,
+            staged.baseline_distinct_actors_1h,
+            staged.baseline_distinct_actors_24h,
+            staged.baseline_distinct_actors_7d,
+            staged.baseline_signals_1h,
+            staged.baseline_signals_24h,
+            staged.baseline_signals_7d,
+            staged.baseline_recommendations_24h,
+            staged.baseline_shares_1h,
+            staged.baseline_shares_24h,
+            staged.baseline_distinct_likers_24h,
+            staged.baseline_likes_1h,
+            staged.baseline_likes_24h
+            )
+          """,
+          logger: logger
         )
-        """,
-        logger: logger
-      )
-      try await connection.query(
-        """
-        DELETE FROM wire_signal_rollups current
-        WHERE NOT EXISTS (
-          SELECT 1 FROM wire_signal_rollups_next staged
-          WHERE staged.canonical_key = current.canonical_key
+        try await connection.query(
+          """
+          INSERT INTO wire_signal_rollups
+            (canonical_key,
+             distinct_actors_1h,
+             distinct_actors_24h,
+             distinct_actors_7d,
+             signals_1h,
+             signals_24h,
+             signals_7d,
+             communities_24h,
+             primary_community_key_hash,
+             recommendations_24h,
+             positive_feedback_24h,
+             negative_feedback_24h,
+             shares_1h,
+             shares_24h,
+             distinct_likers_24h,
+             likes_1h,
+             likes_24h,
+             distinct_reposters_24h,
+             reposts_1h,
+             reposts_24h,
+             baseline_last_signal_at,
+             baseline_distinct_actors_1h,
+             baseline_distinct_actors_24h,
+             baseline_distinct_actors_7d,
+             baseline_signals_1h,
+             baseline_signals_24h,
+             baseline_signals_7d,
+             baseline_recommendations_24h,
+             baseline_shares_1h,
+             baseline_shares_24h,
+             baseline_distinct_likers_24h,
+             baseline_likes_1h,
+             baseline_likes_24h,
+             updated_at)
+          SELECT staged.canonical_key,
+            staged.distinct_actors_1h,
+            staged.distinct_actors_24h,
+            staged.distinct_actors_7d,
+            staged.signals_1h,
+            staged.signals_24h,
+            staged.signals_7d,
+            staged.communities_24h,
+            staged.primary_community_key_hash,
+            staged.recommendations_24h,
+            staged.positive_feedback_24h,
+            staged.negative_feedback_24h,
+            staged.shares_1h,
+            staged.shares_24h,
+            staged.distinct_likers_24h,
+            staged.likes_1h,
+            staged.likes_24h,
+            staged.distinct_reposters_24h,
+            staged.reposts_1h,
+            staged.reposts_24h,
+            staged.baseline_last_signal_at,
+            staged.baseline_distinct_actors_1h,
+            staged.baseline_distinct_actors_24h,
+            staged.baseline_distinct_actors_7d,
+            staged.baseline_signals_1h,
+            staged.baseline_signals_24h,
+            staged.baseline_signals_7d,
+            staged.baseline_recommendations_24h,
+            staged.baseline_shares_1h,
+            staged.baseline_shares_24h,
+            staged.baseline_distinct_likers_24h,
+            staged.baseline_likes_1h,
+            staged.baseline_likes_24h,
+            staged.updated_at
+          FROM wire_signal_rollups_next staged
+          WHERE NOT EXISTS (
+            SELECT 1 FROM wire_signal_rollups current
+            WHERE current.canonical_key = staged.canonical_key
+          )
+          """,
+          logger: logger
         )
-        \(unescaped: deleteFilter)
-        """,
-        logger: logger
-      )
+        try await connection.query(
+          """
+          DELETE FROM wire_signal_rollups current
+          WHERE NOT EXISTS (
+            SELECT 1 FROM wire_signal_rollups_next staged
+            WHERE staged.canonical_key = current.canonical_key
+          )
+          \(unescaped: deleteFilter)
+          """,
+          logger: logger
+        )
+      }
       if incremental {
         try await finishIncrementalRefresh(connection: connection, asOf: asOf)
       } else {
