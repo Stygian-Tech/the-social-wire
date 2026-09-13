@@ -210,23 +210,16 @@ actor PostgresWireCorpusStore: WireCorpusStoring {
     let result: WireEdition
     if let payloadCache {
       let revision = try await editionRevision(generationID: generation.id)
-      let allowedItems = Self.revisionIdentities(revision, kind: "item", index: 3)
-      let allowedAccounts = Self.revisionIdentities(revision, kind: "account", index: 2)
       result = try await payloadCache.value(
-        WireEdition.self,
+        CachedEdition.self,
         scope: ["edition", generation.id.uuidString, language, region?.rawValue ?? "default"],
         revision: revision, now: now,
         lifetime: min(60, generation.expiresAt.timeIntervalSince(now)),
         currentRevision: { try await self.editionRevision(generationID: generation.id) },
-        validatesMembership: { edition in
-          let stories = edition.leadStories + edition.generalStories + edition.trendingStories
-            + edition.publicationPanels.flatMap(\.stories) + edition.storyRails.flatMap(\.stories)
-          return stories.allSatisfy { allowedItems.contains($0.itemID) }
-            && edition.talkedAboutAccounts.allSatisfy { allowedAccounts.contains($0.did) }
-        },
-        load: { try await self.loadEdition(generation: generation, region: region, now: now) })
+        validatesMembership: { $0.proof.matches(revision: revision, region: region) },
+        load: { try await self.loadEdition(generation: generation, region: region, now: now) }).value
     } else {
-      result = try await loadEdition(generation: generation, region: region, now: now)
+      result = try await loadEdition(generation: generation, region: region, now: now).value
     }
     let stale = now.timeIntervalSince(generation.generatedAt) > 10 * 60
     return WireEdition(
@@ -238,7 +231,12 @@ actor PostgresWireCorpusStore: WireCorpusStoring {
       trendingStories: result.trendingStories, talkedAboutAccounts: result.talkedAboutAccounts)
   }
 
-  private func loadEdition(generation: Generation, region: WireViewerRegion?, now: Date) async throws -> WireEdition {
+  private struct CachedEdition: Codable, Sendable {
+    let value: WireEdition
+    let proof: WireEditionCacheProof
+  }
+
+  private func loadEdition(generation: Generation, region: WireViewerRegion?, now: Date) async throws -> CachedEdition {
     let generationRows = try await pool.query(
       """
       SELECT algorithm_version, continuation_ordinal
@@ -316,6 +314,7 @@ actor PostgresWireCorpusStore: WireCorpusStoring {
       """,
       logger: logger
     )
+    var rawModuleKeys: [String] = []
     var leads: [WireFeedItem] = []
     var panels: [WireEditionPublicationPanel] = []
     var rails: [WireEditionStoryRail] = []
@@ -325,6 +324,7 @@ actor PostgresWireCorpusStore: WireCorpusStoring {
       let value = try row.decode(
         (String, String, String?, Int, String?, String?, String?, String?, String?, String?).self
       )
+      rawModuleKeys.append(value.0)
       let stories = itemsByModule[value.0] ?? []
       let publicModuleKey = modulePrefix.isEmpty
         ? value.0
@@ -379,7 +379,7 @@ actor PostgresWireCorpusStore: WireCorpusStoring {
     for try await row in moreRows { hasMore = try row.decode(Bool.self) }
     let accounts = try await materializedTalkedAccounts(generationID: generation.id)
     let age = now.timeIntervalSince(generation.generatedAt)
-    return WireEdition(
+    let value = WireEdition(
       algorithmVersion: algorithmVersion,
       generationID: generation.id.uuidString.lowercased(),
       generatedAt: generation.generatedAt,
@@ -394,6 +394,10 @@ actor PostgresWireCorpusStore: WireCorpusStoring {
       trendingStories: trending,
       talkedAboutAccounts: accounts.count >= 4 ? accounts : []
     )
+    return CachedEdition(value: value, proof: WireEditionCacheProof(
+      modulePrefix: modulePrefix, moduleKeys: rawModuleKeys,
+      stories: itemsByModule.flatMap { key, items in items.map { [key, $0.itemID] } },
+      accounts: accounts.map(\.did), hasMore: hasMore))
   }
 
   func item(id: String, now: Date) async throws -> WireCorpusItem? {
