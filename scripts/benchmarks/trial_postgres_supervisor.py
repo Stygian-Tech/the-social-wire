@@ -115,8 +115,11 @@ def observe(config):
     restored = json.loads((mount / "memory-trial-snapshot.json").read_text())
     evidence.require(restored.get("dataset") == "full_snapshot" and restored.get("snapshot_sha256") == config["snapshot_sha256"]
         and restored.get("restored_bytes", 0) >= config["minimum_restore_bytes"] and restored.get("restore_epoch"), "Restore attestation changed")
+    # The image initializes with a temporary Unix-socket-only postmaster. Observing
+    # it would certify readiness just before its shutdown and invalidate restart identity.
+    # The supervised final command explicitly enables TCP; wait for that listener.
     pg = subprocess.run(["/usr/local/bin/gosu", "postgres", "psql", "-X", "-At", "-v", "ON_ERROR_STOP=1",
-        "-h", "/var/run/postgresql", "-U", "postgres", "-d", config["target"]["database"], "-c",
+        "-h", "127.0.0.1", "-U", "postgres", "-d", config["target"]["database"], "-c",
         "SELECT json_build_object('postmaster_started',pg_postmaster_start_time(),'database',current_database(),"
         "'system_identifier',(SELECT system_identifier::text FROM pg_control_system()),'data_directory',current_setting('data_directory'))"],
         stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=3, check=True,
