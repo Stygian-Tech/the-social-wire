@@ -19,7 +19,9 @@ struct WireCorpusCacheIntegrationTests {
     let key = UUID().uuidString.lowercased()
     let labeler = "did:example:\(key)"
     let generation = UUID()
-    let now = Date()
+    // PostgreSQL stores microsecond timestamps while Date can carry finer precision.
+    // Use whole seconds so the exact millisecond TTL assertion survives the round trip.
+    let now = Date(timeIntervalSince1970: Date().timeIntervalSince1970.rounded(.down))
     let commands = CorpusCacheCommands()
     let cached = PostgresWireCorpusStore(pool: pool, logger: logger,
       payloadCache: WireCorpusPayloadCache(commands: commands, environment: "test"))
