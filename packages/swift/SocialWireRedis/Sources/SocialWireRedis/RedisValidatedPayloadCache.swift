@@ -37,7 +37,7 @@ public actor RedisValidatedPayloadCache {
     scope: [String],
     revision: String,
     now: Date,
-    lifetime: TimeInterval = 60,
+    lifetime: TimeInterval = 600,
     currentRevision: @escaping @Sendable () async throws -> String,
     validatesMembership: @escaping @Sendable (Value) -> Bool = { _ in true },
     load: @escaping @Sendable () async throws -> Value
@@ -86,6 +86,12 @@ public actor RedisValidatedPayloadCache {
     inFlight[flightKey] = task
     defer { inFlight.removeValue(forKey: flightKey) }
     return try JSONDecoder().decode(Value.self, from: await task.value)
+  }
+
+  /// Retention saves payload reloads across a ranking cycle; callers must still
+  /// validate authoritative revisions on every read, including after source expiry.
+  public static func generationLifetime(expiresAt: Date, now: Date) -> TimeInterval {
+    max(0, min(600, expiresAt.timeIntervalSince(now)))
   }
 
   public func statistics() -> [String: Int] { counts }

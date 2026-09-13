@@ -63,19 +63,26 @@ struct WireCorpusCacheIntegrationTests {
         INSERT INTO wire_edition_module_items (generation_id, module_key, position, canonical_key)
         VALUES (\(generation), 'top', 0, \(key))
         """, logger: logger)
-      for _ in 0..<2 {
-        let feed = try await cached.feed(language: "en", generationID: generation, startOrdinal: 0, limit: 10, now: now)
-        let baseline = try await plain.feed(language: "en", generationID: generation, startOrdinal: 0, limit: 10, now: now)
+      for elapsed in [0.0, 120.0] {
+        let observedAt = now.addingTimeInterval(elapsed)
+        let feed = try await cached.feed(language: "en", generationID: generation, startOrdinal: 0, limit: 10, now: observedAt)
+        let baseline = try await plain.feed(language: "en", generationID: generation, startOrdinal: 0, limit: 10, now: observedAt)
         // Recovery state is deliberately live and can change between these two
         // reads; compare the cached payload and pinned generation separately.
         #expect(feed.rows == baseline.rows)
         #expect(feed.generationID == baseline.generationID)
         #expect(feed.generatedAt == baseline.generatedAt)
         #expect(feed.rows.count == 1)
-        #expect(try await cached.edition(language: "en", region: nil, now: now).leadStories.count == 1)
-        #expect(try await cached.item(id: key, now: now)?.item.title == "Before")
+        #expect(try await cached.edition(language: "en", region: nil, now: observedAt).leadStories.count == 1)
+        #expect(try await cached.item(id: key, now: observedAt)?.item.title == "Before")
       }
       #expect(await commands.writes == 3)
+      #expect(await commands.expirations == [600_000, 600_000, 600_000])
+      // A new page near the generation boundary must not outlive its cursor authority.
+      try await pool.query("UPDATE wire_rank_generations SET expires_at = \(now.addingTimeInterval(90)) WHERE generation_id = \(generation)", logger: logger)
+      _ = try await cached.feed(language: "en", generationID: generation, startOrdinal: 0, limit: 9, now: now)
+      #expect(await commands.expirations.last == 90_000)
+      try await pool.query("UPDATE wire_rank_generations SET expires_at = \(now.addingTimeInterval(3600)) WHERE generation_id = \(generation)", logger: logger)
       try await pool.query("UPDATE wire_items SET title = 'After' WHERE canonical_key = \(key)", logger: logger)
       #expect(try await cached.item(id: key, now: now)?.item.title == "After")
       #expect(try await cached.edition(language: "en", region: nil, now: now).leadStories.first?.title == "After")

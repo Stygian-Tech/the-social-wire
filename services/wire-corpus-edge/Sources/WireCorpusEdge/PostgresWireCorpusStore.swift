@@ -214,7 +214,7 @@ actor PostgresWireCorpusStore: WireCorpusStoring {
         CachedEdition.self,
         scope: ["edition", generation.id.uuidString, language, region?.rawValue ?? "default"],
         revision: revision, now: now,
-        lifetime: min(60, generation.expiresAt.timeIntervalSince(now)),
+        lifetime: WireCorpusPayloadCache.generationLifetime(expiresAt: generation.expiresAt, now: now),
         currentRevision: { try await self.editionRevision(generationID: generation.id) },
         validatesMembership: { $0.proof.matches(revision: revision, region: region) },
         load: { try await self.loadEdition(generation: generation, region: region, now: now) }).value
@@ -532,7 +532,7 @@ actor PostgresWireCorpusStore: WireCorpusStoring {
     return try await payloadCache.value(
       [WireCorpusRow].self,
       scope: ["feed", generationID.uuidString, language, String(startOrdinal), String(limit)],
-      revision: revision, now: now, lifetime: min(60, expiresAt.timeIntervalSince(now)),
+      revision: revision, now: now, lifetime: WireCorpusPayloadCache.generationLifetime(expiresAt: expiresAt, now: now),
       currentRevision: {
         try await self.rankedRevision(generationID: generationID, startOrdinal: startOrdinal, limit: limit)
       }, validatesMembership: { rows in
