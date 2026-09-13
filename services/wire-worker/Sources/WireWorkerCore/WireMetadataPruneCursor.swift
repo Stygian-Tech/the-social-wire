@@ -1,6 +1,6 @@
 import Foundation
 
-/// Disposable progress shared by store copies. A restarted process safely repeats a sweep.
+/// Disposable progress shared by store copies. Recreating the hosted store resets the sweep.
 actor WireMetadataPruneCursor {
   struct Position: Sendable, Equatable {
     // Preserve PostgreSQL's exact timestamp; Date round-trips can lose submicrosecond precision.
