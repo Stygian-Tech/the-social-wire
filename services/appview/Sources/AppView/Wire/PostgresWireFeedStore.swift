@@ -461,11 +461,15 @@ actor PostgresWireFeedStore: WireFeedStore {
       return try await loadEditionItems(generationID: generationID, language: language, modulePrefix: modulePrefix, now: now)
     }
     let revision = try await editionItemsRevision(generationID: generationID, language: language, modulePrefix: modulePrefix, now: now)
-    let keys = Self.cacheIdentities(revision, index: 2)
+    let membership = RedisPayloadMembership.fields(in: revision, indices: [0, 2])
     return try await payloadCache.value([EditionItemRow].self,
       scope: ["edition", generationID.uuidString, language, modulePrefix], revision: revision, now: now,
       currentRevision: { try await self.editionItemsRevision(generationID: generationID, language: language, modulePrefix: modulePrefix, now: now) },
-      validatesMembership: { $0.allSatisfy { keys.contains($0.item.itemID) } },
+      validatesMembership: { rows in
+        guard let membership else { return false }
+        return RedisPayloadMembership.matches(
+          rows.map { [$0.moduleKey, $0.item.itemID] }, expected: membership)
+      },
       load: { try await self.loadEditionItems(generationID: generationID, language: language, modulePrefix: modulePrefix, now: now) })
   }
 

@@ -45,7 +45,9 @@ public actor RedisValidatedPayloadCache {
     let key = namespace.key(domain: domain, identifiers: scope)
     do {
       let lookup = try await cache.lookup(Entry<Value>.self, key: key, now: now)
-      if case .fresh(let envelope) = lookup, envelope.value.revision == revision {
+      if case .fresh(let envelope) = lookup, envelope.value.revision == revision,
+        validatesMembership(envelope.value.value)
+      {
         record("hit", scope: scope, now: now)
         return envelope.value.value
       }

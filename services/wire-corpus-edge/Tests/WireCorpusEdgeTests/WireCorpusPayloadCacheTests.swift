@@ -1,4 +1,5 @@
 import Foundation
+import SocialWireRedis
 import Testing
 @testable import WireCorpusEdge
 
@@ -114,6 +115,30 @@ struct WireCorpusPayloadCacheTests {
     let result = try await cache.value([String].self, scope: ["feed", "one"], revision: "empty", now: now,
       currentRevision: { "empty" }, validatesMembership: { $0.isEmpty }, load: { [] })
     #expect(result.isEmpty)
+  }
+
+
+  @Test("edition subset ABA cannot populate a complete-revision cache or survive hit validation")
+  func editionSubsetABA() async throws {
+    let commands = CorpusCacheCommands()
+    let cache = WireCorpusPayloadCache(commands: commands, environment: "prod")
+    let revision = "[\"top\",0,\"a\",\"v1\"]\n[\"top\",1,\"b\",\"v2\"]"
+    let expected = try #require(RedisPayloadMembership.fields(in: revision, indices: [0, 2]))
+    let subset = [["top", "a"]]
+    _ = try await cache.value([[String]].self, scope: ["edition", "aba"], revision: revision, now: now,
+      currentRevision: { revision },
+      validatesMembership: { RedisPayloadMembership.matches($0, expected: expected) }, load: { subset })
+    #expect(await commands.writes == 0)
+    // Simulate an entry written before exact-membership validation was introduced.
+    _ = try await cache.value([[String]].self, scope: ["edition", "aba"], revision: revision, now: now,
+      currentRevision: { revision }, load: { subset })
+    #expect(await commands.writes == 1)
+    let restored = try await cache.value([[String]].self, scope: ["edition", "aba"], revision: revision, now: now,
+      currentRevision: { revision },
+      validatesMembership: { RedisPayloadMembership.matches($0, expected: expected) }, load: { expected })
+    #expect(restored == expected)
+    #expect(await commands.writes == 2)
+    #expect(!RedisPayloadMembership.matches([["top", "a"]], expected: [["top", "a"], ["top", "a"]]))
   }
 
 }
