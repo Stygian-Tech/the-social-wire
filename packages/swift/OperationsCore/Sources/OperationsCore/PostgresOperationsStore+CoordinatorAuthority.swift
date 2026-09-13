@@ -17,11 +17,28 @@ extension PostgresOperationsStore {
       for try await row in rows { result.append(row) }
       return result
     }
-    return try await pool.withTransaction(logger: logger) { connection in
-      try await lockCoordinatorAuthority(on: connection)
+    return try await withCoordinatorTransaction { connection in
       let rows = try await connection.query(query, logger: logger)
       var result: [PostgresRow] = []
       for try await row in rows { result.append(row) }
+      return result
+    }
+  }
+
+  /// Prepare durable control changes before taking the role lock. Every successful
+  /// return, including an empty claim or idempotent replay, must pass the final
+  /// database-time authority check. Failure rolls back all prepared changes.
+  func withCoordinatorTransaction<Value: Sendable>(
+    _ operation: (PostgresConnection) async throws -> Value
+  ) async throws -> Value {
+    try await pool.withTransaction(logger: logger) { connection in
+      // Preserve the existing per-statement bounds throughout preparation; moving
+      // the fence must not remove its previous timeout coverage.
+      if coordinatorAuthority != nil {
+        try await PostgresRoleLeaseFence.setTimeouts(connection: connection, logger: logger)
+      }
+      let result = try await operation(connection)
+      try await lockCoordinatorAuthority(on: connection)
       return result
     }
   }
