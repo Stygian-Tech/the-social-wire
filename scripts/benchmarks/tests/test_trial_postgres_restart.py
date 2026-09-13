@@ -44,6 +44,20 @@ def receipt_fixture():
 
 
 class RestartEvidenceTests(unittest.TestCase):
+    def test_socket_only_initialization_server_is_not_observation_readiness(self):
+        config = configuration()
+        def temporary_server(command, **_kwargs):
+            if command[command.index("-h") + 1] == "127.0.0.1":
+                raise subprocess.CalledProcessError(2, command)
+            # Docker initialization can answer SQL over the Unix socket before
+            # stopping that temporary postmaster to launch the final TCP server.
+            return Mock(stdout=b"{}")
+        with patch.dict(os.environ, {"RAILWAY_VOLUME_MOUNT_PATH": "/var/lib/postgresql/data"}), \
+             patch.object(Path, "read_text", return_value=json.dumps(probe()["restore"])), \
+             patch.object(supervisor.subprocess, "run", side_effect=temporary_server):
+            with self.assertRaises(subprocess.CalledProcessError):
+                supervisor.observe(config)
+
     def test_explicit_round_accepts_one_clean_process_restart(self):
         config, first, previous, current, _ = receipt_fixture()
         state = trial.Round(config)
