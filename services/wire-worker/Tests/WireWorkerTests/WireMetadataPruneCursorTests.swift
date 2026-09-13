@@ -11,27 +11,27 @@ struct WireMetadataPruneCursorTests {
   @Test("only committed batches advance; rollback and uncertain commit retry the same page")
   func commitAndRollback() async throws {
     let cursor = WireMetadataPruneCursor()
-    try await cursor.run(maximumBatches: 1) { position in
+    _ = try await cursor.run(maximumBatches: 1) { position in
       #expect(position == nil)
-      return first
+      return .init(position: first)
     }
     await #expect(throws: CancellationError.self) {
-      try await cursor.run { position in
+      _ = try await cursor.run { position in
         #expect(position == first)
         throw CancellationError()
       }
     }
-    try await cursor.run(maximumBatches: 1) { position in
+    _ = try await cursor.run(maximumBatches: 1) { position in
       #expect(position == first)
-      return second
+      return .init(position: second)
     }
-    try await cursor.run { position in
+    _ = try await cursor.run { position in
       #expect(position == second)
-      return nil
+      return .init(position: nil)
     }
-    try await cursor.run { position in
+    _ = try await cursor.run { position in
       #expect(position == nil)
-      return nil
+      return .init(position: nil)
     }
   }
 
@@ -39,19 +39,27 @@ struct WireMetadataPruneCursorTests {
   func batchLimitAndWrap() async throws {
     let cursor = WireMetadataPruneCursor()
     let calls = Calls()
-    try await cursor.run(maximumBatches: 3) { _ in
+    let full = try await cursor.run(maximumBatches: 3) { _ in
       await calls.increment()
-      return first
+      return .init(position: first, examined: 500, deleted: 0)
     }
     #expect(await calls.count == 3)
-    try await cursor.run(maximumBatches: 20) { _ in
+    #expect(full?.examined == 1_500)
+    #expect(full?.deleted == 0)
+    #expect(full?.batches == 3)
+    #expect(full?.wrapped == false)
+    let tail = try await cursor.run(maximumBatches: 20) { _ in
       await calls.increment()
-      return nil
+      return .init(position: nil, examined: 3, deleted: 2)
     }
     #expect(await calls.count == 4)
-    try await cursor.run(timeBudget: .zero) { _ in
+    #expect(tail?.examined == 3)
+    #expect(tail?.deleted == 2)
+    #expect(tail?.batches == 1)
+    #expect(tail?.wrapped == true)
+    _ = try await cursor.run(timeBudget: .zero) { _ in
       Issue.record("An exhausted budget must not begin another transaction")
-      return nil
+      return .init(position: nil)
     }
   }
 
@@ -59,15 +67,15 @@ struct WireMetadataPruneCursorTests {
   func partialPassFailure() async throws {
     let cursor = WireMetadataPruneCursor()
     await #expect(throws: CancellationError.self) {
-      try await cursor.run { position in
-        if position == nil { return first }
+      _ = try await cursor.run { position in
+        if position == nil { return .init(position: first) }
         #expect(position == first)
         throw CancellationError()
       }
     }
-    try await cursor.run { position in
+    _ = try await cursor.run { position in
       #expect(position == first)
-      return nil
+      return .init(position: nil)
     }
   }
 
@@ -75,10 +83,10 @@ struct WireMetadataPruneCursorTests {
   func elapsedBudget() async throws {
     let cursor = WireMetadataPruneCursor()
     let calls = Calls()
-    try await cursor.run(timeBudget: .seconds(1)) { _ in
+    _ = try await cursor.run(timeBudget: .seconds(1)) { _ in
       await calls.increment()
       try await Task.sleep(for: .milliseconds(1_010))
-      return first
+      return .init(position: first)
     }
     #expect(await calls.count == 1)
   }
@@ -88,22 +96,22 @@ struct WireMetadataPruneCursorTests {
     let cursor = WireMetadataPruneCursor()
     let started = Calls()
     let task = Task {
-      try await cursor.run { _ in
+      _ = try await cursor.run { _ in
         await started.increment()
         try await Task.sleep(for: .seconds(60))
-        return first
+        return .init(position: first)
       }
     }
     while await started.count == 0 { await Task.yield() }
-    try await cursor.run { _ in
+    _ = try await cursor.run { _ in
       Issue.record("Concurrent cleanup must not start another pass")
-      return nil
+      return .init(position: nil)
     }
     task.cancel()
     await #expect(throws: CancellationError.self) { try await task.value }
-    try await cursor.run { position in
+    _ = try await cursor.run { position in
       #expect(position == nil)
-      return nil
+      return .init(position: nil)
     }
   }
 

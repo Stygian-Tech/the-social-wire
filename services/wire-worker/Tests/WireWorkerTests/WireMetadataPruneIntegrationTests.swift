@@ -54,31 +54,31 @@ extension WirePostgresIntegrationTests {
       try await seedMetadataPrune(fixture, count: 501, protected: 0)
       let cursor = WireMetadataPruneCursor()
       await #expect(throws: (any Error).self) {
-        try await cursor.run(maximumBatches: 1) { position in
+        _ = try await cursor.run(maximumBatches: 1) { position in
           #expect(position == nil)
           return try await fixture.pool.withTransaction(logger: fixture.logger) { connection in
             _ = try await metadataPruneBatch(fixture, connection: connection, position: position)
             // A failing statement after DELETE exercises actual PostgreSQL rollback.
             try await connection.query("SELECT 1 / 0", logger: fixture.logger)
-            return nil
+            return .init(position: nil)
           }
         }
       }
       #expect(try await metadataPruneCount(fixture) == 501)
       let cancellation = Task {
-        try await cursor.run(maximumBatches: 1) { position in
+        _ = try await cursor.run(maximumBatches: 1) { position in
           #expect(position == nil)
           return try await fixture.pool.withTransaction(logger: fixture.logger) { connection in
             _ = try await metadataPruneBatch(fixture, connection: connection, position: position)
             withUnsafeCurrentTask { $0?.cancel() }
             try Task.checkCancellation()
-            return nil
+            return .init(position: nil)
           }
         }
       }
       await #expect(throws: (any Error).self) { try await cancellation.value }
       #expect(try await metadataPruneCount(fixture) == 501)
-      try await cursor.run(maximumBatches: 1) { position in
+      _ = try await cursor.run(maximumBatches: 1) { position in
         #expect(position == nil)
         return try await fixture.pool.withTransaction(logger: fixture.logger) { connection in
           try await metadataPruneBatch(fixture, connection: connection, position: position)
@@ -120,15 +120,16 @@ extension WirePostgresIntegrationTests {
   private func metadataPruneBatch(
     _ fixture: WireRollupIntegrationFixture, connection: PostgresConnection,
     position: WireMetadataPruneCursor.Position?
-  ) async throws -> WireMetadataPruneCursor.Position? {
+  ) async throws -> WireMetadataPruneCursor.Batch {
     let rows = try await connection.query(
       WireMetadataPruneQuery.make(asOf: fixture.now, position: position), logger: fixture.logger)
     for try await row in rows {
-      let (count, staleUntil, key) = try row.decode((Int64, String?, String?).self)
+      let (count, staleUntil, key, deleted) = try row.decode((Int64, String?, String?, Int64).self)
       if count == 500, let staleUntil, let key {
-        return .init(staleUntil: staleUntil, canonicalKey: key)
+        return .init(position: .init(staleUntil: staleUntil, canonicalKey: key), examined: count, deleted: deleted)
       }
+      return .init(position: nil, examined: count, deleted: deleted)
     }
-    return nil
+    return .init(position: nil)
   }
 }
