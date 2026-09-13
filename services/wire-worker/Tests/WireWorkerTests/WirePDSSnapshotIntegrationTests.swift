@@ -173,3 +173,31 @@ private extension WireRecommendationJournalFixture {
       """, logger: logger)
   }
 }
+
+extension WirePostgresIntegrationTests {
+  @Test("fenced publication invalidation observes the committed row through a separate connection")
+  func publicationCacheInvalidatesAfterCommit() async throws {
+    try await WireRecommendationJournalFixture.runPDSSnapshot { fixture in
+      let store = PostgresWirePublicationMetadataStore(pool: fixture.pool, logger: fixture.logger)
+      let resolver = PublicationInvalidationObserver(store: store)
+      let processor = try PostgresWireInboxProcessor(pool: fixture.pool, logger: fixture.logger,
+        actorSecret: String(repeating: "s", count: 32), publicationResolver: resolver,
+        sourceScope: fixture.scope, deferredRecommendationsEnabled: true)
+      for sequence: Int64 in [1, 2] {
+        try await fixture.insertPDSSnapshot(sequence: sequence, collection: "site.standard.publication",
+          key: "publication", fields: ["url": fixture.snapshotURL, "name": "Version \(sequence)"])
+        let event = try await fixture.claim(sequence: sequence)
+        #expect(try await processor.applyClaimed(event, asOf: fixture.now.addingTimeInterval(60)) == .applied)
+      }
+      #expect(await resolver.observedNames == [nil, "Version 1", "Version 1", "Version 2"])
+      let uri = "at://\(fixture.repoDID)/site.standard.publication/publication"
+      let sourceExpiry = fixture.now.addingTimeInterval(5)
+      try await fixture.pool.query(
+        "UPDATE wire_publications SET expires_at = \(sourceExpiry) WHERE publication_uri = \(uri)",
+        logger: fixture.logger)
+      let cached = try await store.loadForCaching(publicationURI: uri, asOf: fixture.now)
+      #expect(cached.expiresAt == sourceExpiry)
+      #expect(try await store.loadForCaching(publicationURI: uri, asOf: sourceExpiry).metadata == nil)
+    }
+  }
+}

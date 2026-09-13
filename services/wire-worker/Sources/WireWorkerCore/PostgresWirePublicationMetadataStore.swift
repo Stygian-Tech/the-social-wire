@@ -8,9 +8,13 @@ struct PostgresWirePublicationMetadataStore: WirePublicationMetadataStoring {
   let logger: Logger
 
   func load(publicationURI: String, asOf: Date) async throws -> WirePublicationMetadata? {
+    try await loadForCaching(publicationURI: publicationURI, asOf: asOf).metadata
+  }
+
+  func loadForCaching(publicationURI: String, asOf: Date) async throws -> WirePublicationCacheValue {
     let rows = try await pool.query(
       """
-      SELECT publication_uri, repo_did, site_url, name
+      SELECT publication_uri, repo_did, site_url, name, expires_at
       FROM wire_publications
       WHERE publication_uri = \(publicationURI) AND expires_at > \(asOf)
       LIMIT 1
@@ -18,15 +22,15 @@ struct PostgresWirePublicationMetadataStore: WirePublicationMetadataStoring {
       logger: logger
     )
     for try await row in rows {
-      let value = try row.decode((String, String, String, String).self)
-      return WirePublicationMetadata(
+      let value = try row.decode((String, String, String, String, Date).self)
+      return WirePublicationCacheValue(metadata: WirePublicationMetadata(
         publicationURI: value.0,
         repoDID: value.1,
         siteURL: value.2,
         name: value.3
-      )
+      ), expiresAt: value.4)
     }
-    return nil
+    return .init(metadata: nil, expiresAt: asOf.addingTimeInterval(15))
   }
 
   func upsert(_ metadata: WirePublicationMetadata, asOf: Date) async throws {
