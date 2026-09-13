@@ -83,21 +83,68 @@ struct PostgresWireGenerationStore: WireGenerationStore {
   ) async throws -> [WireCandidate] {
     let includeExternalSignals = ranking.version == WireRankingConfig.externalSignalVersion
     let freshPublicationCutoff = asOf.addingTimeInterval(-72 * 60 * 60)
+    // Limit narrow sort tuples before joining the full item/rollup payload. The CTE and
+    // hydration remain one statement, so eligibility, moderation, and values share a snapshot.
     let rows = try await pool.query(
       """
+      WITH candidate_keys AS MATERIALIZED (
+        SELECT i.canonical_key,
+          CASE
+            WHEN (CASE WHEN \(includeExternalSignals) THEN r.shares_24h
+                       ELSE r.baseline_shares_24h END) >= 5
+              OR (CASE WHEN \(includeExternalSignals) THEN r.recommendations_24h
+                       ELSE r.baseline_recommendations_24h END) >= 2 THEN 0
+            WHEN (i.provenance ? 'standard_site')
+              AND i.published_at >= \(freshPublicationCutoff)
+              AND (CASE WHEN \(includeExternalSignals) THEN r.shares_24h
+                        ELSE r.baseline_shares_24h END) >= 1 THEN 1
+            WHEN ((CASE WHEN \(includeExternalSignals) THEN r.shares_24h
+                        ELSE r.baseline_shares_24h END) >= 3
+              OR (CASE WHEN \(includeExternalSignals) THEN r.recommendations_24h
+                       ELSE r.baseline_recommendations_24h END) >= 1) THEN 2
+            ELSE 3
+          END AS priority,
+          (CASE WHEN \(includeExternalSignals) THEN r.shares_24h
+                ELSE r.baseline_shares_24h END) AS shares_24h,
+          (CASE WHEN \(includeExternalSignals) THEN r.recommendations_24h
+                ELSE r.baseline_recommendations_24h END) AS recommendations_24h,
+          (i.provenance ? 'standard_site') AS is_standard_site,
+          COALESCE(NULLIF(BTRIM(i.thumbnail_url), '') ~* '^https?://', FALSE)
+            AS has_usable_thumbnail,
+          COALESCE(metadata.source = 'open_graph'
+            AND metadata.status IN ('fresh', 'stale')
+            AND metadata.stale_until > \(asOf)
+            AND num_nonnulls(metadata.title, metadata.description, metadata.image_url,
+              metadata.site_name, metadata.author_name, metadata.published_at::TEXT,
+              metadata.icon_url) >= 2, FALSE) AS has_usable_open_graph,
+          (CASE WHEN \(includeExternalSignals) THEN r.signals_1h
+                ELSE r.baseline_signals_1h END) AS signals_1h
+        FROM wire_items i
+        JOIN wire_signal_rollups r ON r.canonical_key = i.canonical_key
+        LEFT JOIN wire_link_metadata_cache metadata ON metadata.canonical_key = i.canonical_key
+        WHERE i.eligible = TRUE AND i.expires_at > \(asOf)
+          AND i.target_kind IN ('external_article', 'standard_site_document')
+          AND i.commercial_class <> 'probable_ad'
+          AND (\(languageBucket) = 'und' OR i.language_code = \(languageBucket))
+          AND NOT EXISTS (
+            SELECT 1 FROM wire_labels l
+            WHERE l.canonical_key = i.canonical_key AND l.expires_at > \(asOf)
+              AND l.label_key IN ('moderation', 'visibility')
+              AND l.label_value IN ('block', 'exclude', 'adult', 'graphic', 'spam')
+          )
+        ORDER BY priority, shares_24h DESC, recommendations_24h DESC,
+          is_standard_site DESC, has_usable_thumbnail DESC, has_usable_open_graph DESC,
+          signals_1h DESC, i.canonical_key
+        LIMIT \(limit)
+      )
       SELECT i.canonical_key, i.canonical_url, i.representative_uri, i.source_domain,
              i.publication_id, i.author_key, i.topic_keys::text, i.published_at,
              i.first_seen_at,
              CASE WHEN \(includeExternalSignals) THEN i.last_signal_at
                   ELSE r.baseline_last_signal_at END,
              i.source_confidence,
-             (i.provenance ? 'standard_site') AS is_standard_site,
-             COALESCE(metadata.source = 'open_graph'
-               AND metadata.status IN ('fresh', 'stale')
-               AND metadata.stale_until > \(asOf)
-               AND num_nonnulls(metadata.title, metadata.description, metadata.image_url,
-                 metadata.site_name, metadata.author_name, metadata.published_at::TEXT,
-                 metadata.icon_url) >= 2, FALSE) AS has_usable_open_graph,
+             selected.is_standard_site,
+             selected.has_usable_open_graph,
              i.target_kind, i.commercial_class, i.commercial_score,
              CASE WHEN \(includeExternalSignals) THEN r.distinct_actors_1h
                   ELSE r.baseline_distinct_actors_1h END,
@@ -119,47 +166,13 @@ struct PostgresWireGenerationStore: WireGenerationStore {
              CASE WHEN \(includeExternalSignals) THEN r.likes_1h ELSE r.baseline_likes_1h END,
              CASE WHEN \(includeExternalSignals) THEN r.likes_24h ELSE r.baseline_likes_24h END,
              r.distinct_reposters_24h, r.reposts_1h, r.reposts_24h,
-             COALESCE(NULLIF(BTRIM(i.thumbnail_url), '') ~* '^https?://', FALSE)
-               AS has_usable_thumbnail
-      FROM wire_items i
-      JOIN wire_signal_rollups r ON r.canonical_key = i.canonical_key
-      LEFT JOIN wire_link_metadata_cache metadata ON metadata.canonical_key = i.canonical_key
-      WHERE i.eligible = TRUE AND i.expires_at > \(asOf)
-        AND i.target_kind IN ('external_article', 'standard_site_document')
-        AND i.commercial_class <> 'probable_ad'
-        AND (\(languageBucket) = 'und' OR i.language_code = \(languageBucket))
-        AND NOT EXISTS (
-          SELECT 1 FROM wire_labels l
-          WHERE l.canonical_key = i.canonical_key AND l.expires_at > \(asOf)
-            AND l.label_key IN ('moderation', 'visibility')
-            AND l.label_value IN ('block', 'exclude', 'adult', 'graphic', 'spam')
-        )
-      ORDER BY
-        CASE
-          WHEN (CASE WHEN \(includeExternalSignals) THEN r.shares_24h
-                     ELSE r.baseline_shares_24h END) >= 5
-            OR (CASE WHEN \(includeExternalSignals) THEN r.recommendations_24h
-                     ELSE r.baseline_recommendations_24h END) >= 2 THEN 0
-          WHEN (i.provenance ? 'standard_site')
-            AND i.published_at >= \(freshPublicationCutoff)
-            AND (CASE WHEN \(includeExternalSignals) THEN r.shares_24h
-                      ELSE r.baseline_shares_24h END) >= 1 THEN 1
-          WHEN ((CASE WHEN \(includeExternalSignals) THEN r.shares_24h
-                      ELSE r.baseline_shares_24h END) >= 3
-            OR (CASE WHEN \(includeExternalSignals) THEN r.recommendations_24h
-                     ELSE r.baseline_recommendations_24h END) >= 1) THEN 2
-          ELSE 3
-        END,
-        (CASE WHEN \(includeExternalSignals) THEN r.shares_24h
-              ELSE r.baseline_shares_24h END) DESC,
-        (CASE WHEN \(includeExternalSignals) THEN r.recommendations_24h
-              ELSE r.baseline_recommendations_24h END) DESC,
-        (i.provenance ? 'standard_site') DESC,
-        has_usable_thumbnail DESC, has_usable_open_graph DESC,
-        (CASE WHEN \(includeExternalSignals) THEN r.signals_1h
-              ELSE r.baseline_signals_1h END) DESC,
-        i.canonical_key
-      LIMIT \(limit)
+             selected.has_usable_thumbnail
+      FROM candidate_keys selected
+      JOIN wire_items i ON i.canonical_key = selected.canonical_key
+      JOIN wire_signal_rollups r ON r.canonical_key = selected.canonical_key
+      ORDER BY selected.priority, selected.shares_24h DESC, selected.recommendations_24h DESC,
+        selected.is_standard_site DESC, selected.has_usable_thumbnail DESC,
+        selected.has_usable_open_graph DESC, selected.signals_1h DESC, selected.canonical_key
       """,
       logger: logger
     )

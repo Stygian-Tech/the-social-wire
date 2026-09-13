@@ -27,6 +27,36 @@ Production and Development use daily Railway snapshots with the user-accepted
 six-day retention; PITR is intentionally disabled. Snapshot existence does not
 replace restore and discovery-rebuild verification.
 
+## September 13 write-stall remediation
+
+The 17:02 UTC incident still had repeated Coordinator lease losses and no logged
+ranking activation after 14:10 UTC. Public English feeds remained available from
+that stale generation. A matched 73-second diagnostic window measured only
+6.16 MB of WAL but about 1.77 GB of temporary writes from one candidate query.
+WAL flushes accumulated approximately 45 seconds across backend classes. These
+measurements establish competing query and flush work, not provider fault.
+The volume was 36% occupied with 70 MB/s and 3,000 IOPS limits per direction.
+I/O timing was enabled after measuring timing overhead; counters were not reset.
+
+Candidate selection now materializes compact ordering keys before fetching full
+payloads in the same statement. Exact legacy-query parity covers 32 ranking,
+language, and limit combinations. A 100,000-row fixture at unchanged 4 MB
+work_mem reduced temporary writes from about 479 MB to 18 MB and runtime by
+about 45%; buffer lookups increased due to hydration. Verify the production
+tradeoff rather than treating this as a measured RAM saving.
+
+Graph attempts receive a 60-second startup grace and retain bounded exponential
+backoff across lease-host replacement. Successful graph cadence remains six
+hours. Disposable mention/profile/metadata cleanup runs independently of
+publication, at most 500 rows per source per pass, with separate transactions,
+2-second statement and 500 ms lock limits, and ten-second pacing. Active fetches
+and required live-item metadata remain protected. Safe lease diagnostics include
+allowlisted application names, query IDs and transaction/query ages.
+
+Before further memory reductions, verify fresh publications, lease stability,
+ingestion age, public latency, temporary-file deltas and I/O pressure. The
+incremental and worker aggregation experiments remain separately gated.
+
 ## Incremental signal rollup trial
 
 The migration creates disposable dirty-key and expiry scheduling tables without
