@@ -48,6 +48,7 @@ public enum IndexingWorkerRuntime {
     // This actor outlives individual materializer lease ownership closures, so
     // a recreated Wire host cannot immediately replay canceled graph work.
     let graphMaintenanceScheduler = WireGraphMaintenanceScheduler()
+    let rankingScheduler = WireRankingScheduler()
 
     logger.info(
       "Starting consolidated indexing worker",
@@ -186,6 +187,7 @@ public enum IndexingWorkerRuntime {
                 ),
                 roleLeaseAuthority: ownership.authority,
                 graphMaintenanceScheduler: graphMaintenanceScheduler,
+                rankingScheduler: rankingScheduler,
                 logger: logger
               )
             }
