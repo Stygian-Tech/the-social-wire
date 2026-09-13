@@ -486,7 +486,9 @@ struct WirePostgresServingIntegrationTests {
       )
 
       let cache = WireViewerModerationCache()
-      let payloadCache = cacheForTest(usesRedis)
+      let commands = WirePayloadCacheCommands()
+      let payloadCache = usesRedis
+        ? RedisValidatedPayloadCache(commands: commands, environment: "test", domain: "appview-wire-public-payload") : nil
       let store = try PostgresWireFeedStore(
         pool: pool,
         logger: logger,
@@ -505,13 +507,16 @@ struct WirePostgresServingIntegrationTests {
       #expect(first.items.map(\.itemID) == Array(keys.prefix(2)))
       let cursor = try #require(first.cursor)
       let repeated = try await store.getFeed(cursor: nil, limit: 2, language: "en",
-        viewerDid: nil, now: now)
+        viewerDid: nil, now: now.addingTimeInterval(120))
       #expect(repeated.items == first.items)
       #expect(repeated.generationID == first.generationID)
       #expect(repeated.generatedAt == first.generatedAt)
       let codec = try WireCursorCodec(secret: String(repeating: "c", count: 32))
       #expect(try codec.decode(#require(repeated.cursor)) == codec.decode(cursor))
-      if let payloadCache { #expect(await payloadCache.statistics()["feed_hit"] == 1) }
+      if usesRedis {
+        #expect(await commands.writes == 1)
+        #expect(await commands.expirations == [600_000])
+      }
       let viewer = "did:example:cache-viewer"
       await cache.store(WireViewerModerationSnapshot(blockedDIDs: [], mutedDIDs: [],
         mutedWords: ["story 0"], fetchedAt: now), viewerDID: viewer)
