@@ -40,7 +40,9 @@ public enum WireWorkerHost {
       logger: logger
     )
     let pool = PostgresClient(configuration: postgresConfig, backgroundLogger: logger)
-    let store = PostgresWireGenerationStore(pool: pool, logger: logger, roleLeaseAuthority: roleLeaseAuthority)
+    let store = PostgresWireGenerationStore(
+      pool: pool, logger: logger, roleLeaseAuthority: roleLeaseAuthority,
+      globalCandidateProjectionEnabled: config.globalCandidateProjectionEnabled)
     let httpClient = HTTPClient(eventLoopGroupProvider: .singleton)
     let publicRepoClient = HTTPWirePublicationQueryClient(httpClient: httpClient)
     let publicationCache = WirePublicationCacheRuntime.make(environment: environment, logger: logger)
