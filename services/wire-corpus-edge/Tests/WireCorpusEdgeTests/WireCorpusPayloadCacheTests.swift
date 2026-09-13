@@ -1,0 +1,119 @@
+import Foundation
+import Testing
+@testable import WireCorpusEdge
+
+@Suite("Authoritative public corpus payload cache")
+struct WireCorpusPayloadCacheTests {
+  actor Source {
+    var revision = "first"
+    var payload = "original"
+    var loads = 0
+    func change(_ revision: String, _ payload: String) {
+      self.revision = revision
+      self.payload = payload
+    }
+    func current() -> String { revision }
+    func load() -> String { loads += 1; return payload }
+  }
+  private let now = Date(timeIntervalSince1970: 1_700_000_000)
+
+  private func read(_ cache: WireCorpusPayloadCache, _ source: Source, at: Date,
+    scope: [String] = ["feed", "generation", "en", "0", "10"]
+  ) async throws -> String {
+    try await cache.value(String.self, scope: scope, revision: source.current(), now: at,
+      currentRevision: { await source.current() }, load: { await source.load() })
+  }
+
+  @Test("cold miss, shared hit, hard expiry and flush rebuild")
+  func lifecycle() async throws {
+    let commands = CorpusCacheCommands()
+    let cache = WireCorpusPayloadCache(commands: commands, environment: "prod")
+    let source = Source()
+    #expect(try await read(cache, source, at: now) == "original")
+    #expect(try await read(cache, source, at: now.addingTimeInterval(59)) == "original")
+    #expect(await source.loads == 1)
+    #expect(await cache.statistics()["feed_hit"] == 1)
+    #expect(await cache.statistics()["feed_miss"] == 1)
+    #expect(try await read(cache, source, at: now.addingTimeInterval(60)) == "original")
+    #expect(await source.loads == 2)
+    await commands.flush()
+    _ = try await read(cache, source, at: now.addingTimeInterval(61))
+    #expect(await source.loads == 3)
+    #expect(await commands.expirations.allSatisfy { $0 == 60_000 })
+  }
+
+  @Test("moderation deletion, resurrection and payload updates invalidate by authoritative revision")
+  func authorityChanges() async throws {
+    let commands = CorpusCacheCommands()
+    let cache = WireCorpusPayloadCache(commands: commands, environment: "prod")
+    let source = Source()
+    _ = try await read(cache, source, at: now)
+    await source.change("empty-membership", "empty")
+    #expect(try await read(cache, source, at: now) == "empty")
+    await source.change("restored-row-version", "restored")
+    #expect(try await read(cache, source, at: now) == "restored")
+    await source.change("edited-row-version", "edited")
+    #expect(try await read(cache, source, at: now) == "edited")
+    #expect(await source.loads == 4)
+  }
+
+  @Test("failed Redis and oversized results use the authoritative source")
+  func unavailableAndSizeLimit() async throws {
+    let commands = CorpusCacheCommands()
+    let cache = WireCorpusPayloadCache(commands: commands, environment: "prod", maximumPayloadBytes: 2)
+    let source = Source()
+    _ = try await read(cache, source, at: now)
+    _ = try await read(cache, source, at: now)
+    #expect(await commands.writes == 0)
+    await commands.fail(true)
+    #expect(try await read(cache, source, at: now) == "original")
+    #expect(await source.loads == 3)
+    #expect(await cache.statistics()["feed_redis_error"] == 1)
+  }
+
+  @Test("keys isolate environment, generation, region, language and page size")
+  func scopeIsolation() async throws {
+    let commands = CorpusCacheCommands()
+    let prod = WireCorpusPayloadCache(commands: commands, environment: "prod")
+    let dev = WireCorpusPayloadCache(commands: commands, environment: "dev")
+    let source = Source()
+    for scope in [
+      ["edition", "generation-a", "en", "us"], ["edition", "generation-a", "en", "outside_us"],
+      ["edition", "generation-a", "zh", "us"], ["edition", "generation-b", "en", "us"],
+      ["feed", "generation-a", "0", "10"], ["feed", "generation-a", "0", "20"],
+      ["item", "https://private-looking.example/item"]
+    ] { _ = try await read(prod, source, at: now, scope: scope) }
+    _ = try await read(dev, source, at: now, scope: ["edition", "generation-a", "en", "us"])
+    #expect(await source.loads == 8)
+    #expect(await commands.keys().allSatisfy { !$0.contains("private-looking") })
+  }
+
+  @Test("a source change during fill never stores a mismatched payload")
+  func concurrentFill() async throws {
+    let commands = CorpusCacheCommands()
+    let cache = WireCorpusPayloadCache(commands: commands, environment: "prod")
+    let source = Source()
+    let value = try await cache.value(String.self, scope: ["item", "one"], revision: "first", now: now,
+      currentRevision: { await source.current() }, load: {
+        await source.change("second", "changed")
+        return await source.load()
+      })
+    #expect(value == "changed")
+    #expect(await commands.writes == 0)
+  }
+
+  @Test("temporary membership changes cannot poison a stable empty revision")
+  func membershipABA() async throws {
+    let commands = CorpusCacheCommands()
+    let cache = WireCorpusPayloadCache(commands: commands, environment: "prod")
+    // A label can be removed and restored during a multi-query miss: both
+    // revision reads say empty while the intermediate payload contains a story.
+    _ = try await cache.value([String].self, scope: ["feed", "one"], revision: "empty", now: now,
+      currentRevision: { "empty" }, validatesMembership: { $0.isEmpty }, load: { ["blocked-story"] })
+    #expect(await commands.writes == 0)
+    let result = try await cache.value([String].self, scope: ["feed", "one"], revision: "empty", now: now,
+      currentRevision: { "empty" }, validatesMembership: { $0.isEmpty }, load: { [] })
+    #expect(result.isEmpty)
+  }
+
+}

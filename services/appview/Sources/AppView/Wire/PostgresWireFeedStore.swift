@@ -1,6 +1,7 @@
 import Foundation
 import Logging
 import PostgresNIO
+import SocialWireRedis
 import WireCore
 
 actor PostgresWireFeedStore: WireFeedStore {
@@ -19,19 +20,22 @@ actor PostgresWireFeedStore: WireFeedStore {
   private let cursorCodec: WireCursorCodec
   private let mode: WireDiscoveryMode
   private let moderationCache: WireViewerModerationCache
+  private let payloadCache: RedisValidatedPayloadCache?
 
   init(
     pool: PostgresClient,
     logger: Logger,
     cursorSecret: String,
     mode: WireDiscoveryMode,
-    moderationCache: WireViewerModerationCache
+    moderationCache: WireViewerModerationCache,
+    payloadCache: RedisValidatedPayloadCache? = nil
   ) throws {
     self.pool = pool
     self.logger = logger
     self.cursorCodec = try WireCursorCodec(secret: cursorSecret)
     self.mode = mode
     self.moderationCache = moderationCache
+    self.payloadCache = payloadCache
   }
 
   func getFeed(
@@ -199,46 +203,14 @@ actor PostgresWireFeedStore: WireFeedStore {
     }
     let modulePattern = "\(modulePrefix)%"
 
-    let itemRows = try await pool.query(
-      """
-      SELECT module.module_key, module.position, item.canonical_key, item.canonical_url,
-             item.representative_uri, item.title, item.summary, item.published_at,
-             item.thumbnail_url, item.source_name, item.source_domain, item.publication_id,
-             item.author_name, item.provenance::text, item.author_key,
-             ranked.reason_codes::text,
-             COALESCE(NULLIF(item.publication_id, ''), item.source_domain),
-             item.publication_homepage_url, item.publication_icon_url
-      FROM wire_edition_module_items module
-      JOIN wire_ranked_items ranked
-        ON ranked.generation_id = module.generation_id
-       AND ranked.canonical_key = module.canonical_key
-      JOIN wire_items item ON item.canonical_key = module.canonical_key
-      WHERE module.generation_id = \(generation.id)
-        AND (\(modulePrefix) = '' AND POSITION(':' IN module.module_key) = 0
-          OR \(modulePrefix) <> '' AND module.module_key LIKE \(modulePattern))
-        AND item.eligible = TRUE AND item.expires_at > \(now)
-        AND (\(generation.language) = 'und' OR item.language_code = \(generation.language))
-        AND NOT EXISTS (
-          SELECT 1 FROM wire_labels label
-          WHERE label.canonical_key = item.canonical_key AND label.expires_at > \(now)
-            AND label.label_value IN ('block', 'exclude', 'adult', 'graphic', 'spam')
-        )
-      ORDER BY module.module_key, module.position
-      """,
-      logger: logger
-    )
+    let itemRows = try await cachedEditionItems(
+      generationID: generation.id, language: generation.language, modulePrefix: modulePrefix, now: now)
     let moderation = try await moderationSnapshot(viewerDID: viewerDid, now: now)
     var itemsByModule: [String: [WireFeedItem]] = [:]
-    for try await row in itemRows {
-      let cells = row.makeRandomAccess()
-      let key = try cells[0].decode(String.self)
-      let item = try Self.decodeItem(
-        row: row,
-        offset: 2,
-        reasonsJSON: try cells[15].decode(String.self),
-        metadataOffset: 16
-      )
-      let actorKey = try cells[14].decode(String?.self)
+    for row in itemRows {
+      let key = row.moduleKey
+      let item = row.item
+      let actorKey = row.sourceActorKey
       guard moderation?.allows(
         item: actorKey ?? item.itemID,
         title: item.title,
@@ -366,7 +338,143 @@ actor PostgresWireFeedStore: WireFeedStore {
 
   func getItem(itemId: String, viewerDid: String?) async throws -> WireItemDetail? {
     guard mode.servesAPI else { throw WireServingError.unavailable }
-    try await requireUsableBaselineLabels(now: Date())
+    let now = Date()
+    try await requireUsableBaselineLabels(now: now)
+    guard let raw = try await cachedRawItem(itemId: itemId, now: now) else { return nil }
+    let item = raw.item
+    let moderation = try await moderationSnapshot(viewerDID: viewerDid, now: now)
+    guard moderation?.allows(item: raw.sourceActorKey ?? item.itemID, title: item.title,
+      summary: item.summary, representativeURI: item.representativeURI) ?? true else { return nil }
+    return WireItemDetail(item: item, embedURL: item.canonicalURL)
+  }
+
+  private struct CachedCatalog: Codable, Sendable {
+    let value: WireFeedCatalog
+    let expiresAt: Date
+  }
+
+  func getCatalog(now: Date) async throws -> WireFeedCatalog {
+    if mode.servesAPI { try await requireUsableBaselineLabels(now: now) }
+    guard let payloadCache else { return try await loadCatalog(now: now).value }
+    let snapshot = try await payloadCache.value(CachedCatalog.self,
+      scope: ["catalog", String(mode.servesAPI), String(mode.isVisible)], revision: "advisory-v1", now: now,
+      lifetime: 5, currentRevision: { "advisory-v1" }, load: { try await self.loadCatalog(now: now) })
+    guard snapshot.expiresAt > now else { return try await loadCatalog(now: now).value }
+    return snapshot.value
+  }
+
+  private func loadCatalog(now: Date) async throws -> CachedCatalog {
+    let generations = try await acceptableGenerations(now: now)
+    let latest = generations.max { $0.generatedAt < $1.generatedAt }
+    let fallbackAvailable = latest == nil ? try await hasFallbackCorpus(now: now) : false
+    let value = WireFeedCatalog(
+      enabled: mode.servesAPI,
+      available: mode.isVisible && (latest != nil || fallbackAvailable),
+      supportedLanguages: generations.map(\.language).filter { $0 != "und" }.sorted(),
+      latestGenerationID: latest?.id.uuidString.lowercased(),
+      generatedAt: latest?.generatedAt
+    )
+    return CachedCatalog(value: value, expiresAt: generations.map(\.expiresAt).min() ?? now.addingTimeInterval(5))
+  }
+
+  private struct EditionItemRow: Codable, Sendable {
+    let moduleKey: String
+    let item: WireFeedItem
+    let sourceActorKey: String?
+  }
+
+  private func loadEditionItems(
+    generationID: UUID, language: String, modulePrefix: String, now: Date
+  ) async throws -> [EditionItemRow] {
+    let modulePattern = "\(modulePrefix)%"
+    let rows = try await pool.query(
+      """
+      SELECT module.module_key, module.position, item.canonical_key, item.canonical_url,
+             item.representative_uri, item.title, item.summary, item.published_at,
+             item.thumbnail_url, item.source_name, item.source_domain, item.publication_id,
+             item.author_name, item.provenance::text, item.author_key,
+             ranked.reason_codes::text,
+             COALESCE(NULLIF(item.publication_id, ''), item.source_domain),
+             item.publication_homepage_url, item.publication_icon_url
+      FROM wire_edition_module_items module
+      JOIN wire_ranked_items ranked
+        ON ranked.generation_id = module.generation_id
+       AND ranked.canonical_key = module.canonical_key
+      JOIN wire_items item ON item.canonical_key = module.canonical_key
+      WHERE module.generation_id = \(generationID)
+        AND (\(modulePrefix) = '' AND POSITION(':' IN module.module_key) = 0
+          OR \(modulePrefix) <> '' AND module.module_key LIKE \(modulePattern))
+        AND item.eligible = TRUE AND item.expires_at > \(now)
+        AND (\(language) = 'und' OR item.language_code = \(language))
+        AND NOT EXISTS (
+          SELECT 1 FROM wire_labels label
+          WHERE label.canonical_key = item.canonical_key AND label.expires_at > \(now)
+            AND label.label_value IN ('block', 'exclude', 'adult', 'graphic', 'spam')
+        )
+      ORDER BY module.module_key, module.position
+      """,
+      logger: logger
+    )
+    var result: [EditionItemRow] = []
+    for try await row in rows {
+      let cells = row.makeRandomAccess()
+      result.append(EditionItemRow(moduleKey: try cells[0].decode(String.self),
+        item: try Self.decodeItem(row: row, offset: 2,
+          reasonsJSON: cells[15].decode(String.self), metadataOffset: 16),
+        sourceActorKey: try cells[14].decode(String?.self)))
+    }
+    return result
+  }
+
+  private func editionItemsRevision(
+    generationID: UUID, language: String, modulePrefix: String, now: Date
+  ) async throws -> String {
+    let modulePattern = "\(modulePrefix)%"
+    return try await cacheRevision(
+      """
+      SELECT json_build_array(module.module_key, module.position, item.canonical_key,
+        item.xmin::text, item.ctid::text, ranked.xmin::text, ranked.ctid::text,
+        module.xmin::text, module.ctid::text)::text
+      FROM wire_edition_module_items module
+      JOIN wire_ranked_items ranked
+        ON ranked.generation_id = module.generation_id
+       AND ranked.canonical_key = module.canonical_key
+      JOIN wire_items item ON item.canonical_key = module.canonical_key
+      WHERE module.generation_id = \(generationID)
+        AND (\(modulePrefix) = '' AND POSITION(':' IN module.module_key) = 0
+          OR \(modulePrefix) <> '' AND module.module_key LIKE \(modulePattern))
+        AND item.eligible = TRUE AND item.expires_at > \(now)
+        AND (\(language) = 'und' OR item.language_code = \(language))
+        AND NOT EXISTS (
+          SELECT 1 FROM wire_labels label
+          WHERE label.canonical_key = item.canonical_key AND label.expires_at > \(now)
+            AND label.label_value IN ('block', 'exclude', 'adult', 'graphic', 'spam')
+        )
+      ORDER BY module.module_key, module.position
+      """)
+  }
+
+  private func cachedEditionItems(
+    generationID: UUID, language: String, modulePrefix: String, now: Date
+  ) async throws -> [EditionItemRow] {
+    guard let payloadCache else {
+      return try await loadEditionItems(generationID: generationID, language: language, modulePrefix: modulePrefix, now: now)
+    }
+    let revision = try await editionItemsRevision(generationID: generationID, language: language, modulePrefix: modulePrefix, now: now)
+    let keys = Self.cacheIdentities(revision, index: 2)
+    return try await payloadCache.value([EditionItemRow].self,
+      scope: ["edition", generationID.uuidString, language, modulePrefix], revision: revision, now: now,
+      currentRevision: { try await self.editionItemsRevision(generationID: generationID, language: language, modulePrefix: modulePrefix, now: now) },
+      validatesMembership: { $0.allSatisfy { keys.contains($0.item.itemID) } },
+      load: { try await self.loadEditionItems(generationID: generationID, language: language, modulePrefix: modulePrefix, now: now) })
+  }
+
+  private struct RawItem: Codable, Sendable {
+    let item: WireFeedItem
+    let sourceActorKey: String?
+  }
+
+  private func loadRawItem(itemId: String) async throws -> RawItem? {
     let rows = try await pool.query(
       """
       SELECT canonical_key, canonical_url, representative_uri, title, summary, published_at,
@@ -386,32 +494,49 @@ actor PostgresWireFeedStore: WireFeedStore {
       logger: logger
     )
     for try await row in rows {
-      let item = try Self.decodeItem(row: row, reasonsJSON: "[]", metadataOffset: 13)
-      let actorKey = try row.makeRandomAccess()[12].decode(String?.self)
-      let moderation = try await moderationSnapshot(viewerDID: viewerDid, now: Date())
-      guard moderation?.allows(
-        item: actorKey ?? item.itemID,
-        title: item.title,
-        summary: item.summary,
-        representativeURI: item.representativeURI
-      ) ?? true else { return nil }
-      return WireItemDetail(item: item, embedURL: item.canonicalURL)
+      return RawItem(item: try Self.decodeItem(row: row, reasonsJSON: "[]", metadataOffset: 13),
+        sourceActorKey: try row.makeRandomAccess()[12].decode(String?.self))
     }
     return nil
   }
 
-  func getCatalog(now: Date) async throws -> WireFeedCatalog {
-    if mode.servesAPI { try await requireUsableBaselineLabels(now: now) }
-    let generations = try await acceptableGenerations(now: now)
-    let latest = generations.max { $0.generatedAt < $1.generatedAt }
-    let fallbackAvailable = latest == nil ? try await hasFallbackCorpus(now: now) : false
-    return WireFeedCatalog(
-      enabled: mode.servesAPI,
-      available: mode.isVisible && (latest != nil || fallbackAvailable),
-      supportedLanguages: generations.map(\.language).filter { $0 != "und" }.sorted(),
-      latestGenerationID: latest?.id.uuidString.lowercased(),
-      generatedAt: latest?.generatedAt
-    )
+  private func rawItemRevision(itemId: String) async throws -> String {
+    try await cacheRevision(
+      """
+      SELECT json_build_array(canonical_key, wire_items.xmin::text, wire_items.ctid::text)::text
+      FROM wire_items
+      WHERE canonical_key = \(itemId) AND eligible = TRUE AND expires_at > NOW()
+        AND NOT EXISTS (
+          SELECT 1 FROM wire_labels label
+          WHERE label.canonical_key = wire_items.canonical_key AND label.expires_at > NOW()
+            AND label.label_value IN ('block', 'exclude', 'adult', 'graphic', 'spam')
+        )
+      LIMIT 1
+      """)
+  }
+
+  private func cachedRawItem(itemId: String, now: Date) async throws -> RawItem? {
+    guard let payloadCache else { return try await loadRawItem(itemId: itemId) }
+    let revision = try await rawItemRevision(itemId: itemId)
+    guard !revision.isEmpty else { return nil }
+    return try await payloadCache.value(RawItem?.self, scope: ["item", itemId], revision: revision, now: now,
+      currentRevision: { try await self.rawItemRevision(itemId: itemId) },
+      validatesMembership: { $0?.item.itemID == itemId }, load: { try await self.loadRawItem(itemId: itemId) })
+  }
+
+  private func cacheRevision(_ query: PostgresQuery) async throws -> String {
+    let rows = try await pool.query(query, logger: logger)
+    var tokens: [String] = []
+    for try await row in rows { tokens.append(try row.decode(String.self)) }
+    return tokens.joined(separator: "\n")
+  }
+
+  private static func cacheIdentities(_ revision: String, index: Int) -> Set<String> {
+    Set(revision.split(separator: "\n").compactMap { token in
+      guard let fields = try? JSONSerialization.jsonObject(with: Data(token.utf8)) as? [Any],
+        fields.count > index else { return nil }
+      return fields[index] as? String
+    })
   }
 
   private func requireUsableBaselineLabels(now: Date) async throws {
@@ -521,13 +646,55 @@ actor PostgresWireFeedStore: WireFeedStore {
     return result
   }
 
-  private struct RankedRow: Sendable {
+  private struct RankedRow: Codable, Sendable {
     let position: Int
     let item: WireFeedItem
     let sourceActorKey: String?
   }
 
   private func rankedItems(
+    generationID: UUID, language: String, startOrdinal: Int, limit: Int, now: Date
+  ) async throws -> [RankedRow] {
+    guard let payloadCache else {
+      return try await loadRankedItems(generationID: generationID, language: language,
+        startOrdinal: startOrdinal, limit: limit, now: now)
+    }
+    let revision = try await rankedRevision(generationID: generationID, language: language,
+      startOrdinal: startOrdinal, limit: limit, now: now)
+    let keys = Self.cacheIdentities(revision, index: 1)
+    return try await payloadCache.value([RankedRow].self,
+      scope: ["feed", generationID.uuidString, language, String(startOrdinal), String(limit)],
+      revision: revision, now: now,
+      currentRevision: { try await self.rankedRevision(generationID: generationID, language: language,
+        startOrdinal: startOrdinal, limit: limit, now: now) },
+      validatesMembership: { rows in rows.count == keys.count && rows.allSatisfy { keys.contains($0.item.itemID) } },
+      load: { try await self.loadRankedItems(generationID: generationID, language: language,
+        startOrdinal: startOrdinal, limit: limit, now: now) })
+  }
+
+  private func rankedRevision(
+    generationID: UUID, language: String, startOrdinal: Int, limit: Int, now: Date
+  ) async throws -> String {
+    try await cacheRevision(
+      """
+      SELECT json_build_array(ranked.position, item.canonical_key,
+        item.xmin::text, item.ctid::text, ranked.xmin::text, ranked.ctid::text)::text
+      FROM wire_ranked_items ranked
+      JOIN wire_items item ON item.canonical_key = ranked.canonical_key
+      WHERE ranked.generation_id = \(generationID) AND ranked.position >= \(startOrdinal)
+        AND item.eligible = TRUE AND item.expires_at > \(now)
+        AND (\(language) = 'und' OR item.language_code = \(language))
+        AND NOT EXISTS (
+          SELECT 1 FROM wire_labels label
+          WHERE label.canonical_key = item.canonical_key AND label.expires_at > \(now)
+            AND label.label_value IN ('block', 'exclude', 'adult', 'graphic', 'spam')
+        )
+      ORDER BY ranked.position
+      LIMIT \(limit)
+      """)
+  }
+
+  private func loadRankedItems(
     generationID: UUID,
     language: String,
     startOrdinal: Int,
@@ -583,7 +750,7 @@ actor PostgresWireFeedStore: WireFeedStore {
   private func hasFallbackCorpus(now: Date) async throws -> Bool {
     let rows = try await pool.query(
       """
-      SELECT COUNT(*)::bigint
+      SELECT COUNT(*)::bigint FROM (SELECT 1
       FROM wire_items item
       JOIN wire_signal_rollups rollup ON rollup.canonical_key = item.canonical_key
       LEFT JOIN wire_link_metadata_cache metadata ON metadata.canonical_key = item.canonical_key
@@ -604,6 +771,7 @@ actor PostgresWireFeedStore: WireFeedStore {
           WHERE label.canonical_key = item.canonical_key AND label.expires_at > \(now)
             AND label.label_value IN ('block', 'exclude', 'adult', 'graphic', 'spam')
         )
+      LIMIT \(WireDataPolicy.minimumGlobalCandidates)) AS bounded
       """,
       logger: logger
     )
