@@ -1,6 +1,6 @@
 import Foundation
 
-struct WirePublicationMetadata: Equatable, Sendable {
+struct WirePublicationMetadata: Codable, Equatable, Sendable {
   let publicationURI: String
   let repoDID: String
   let siteURL: String
