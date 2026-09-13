@@ -41,6 +41,22 @@ struct WireWorkerConfigTests {
     #expect(config.metadataConcurrency == 8)
     #expect(config.metadataIdleMilliseconds == 1_000)
     #expect(config.postgresMaximumConnections == 12)
+    #expect(!config.incrementalSignalRollupsEnabled)
+  }
+
+  @Test("incremental signal rollups require an explicit valid rollout switch")
+  func incrementalSignalRollupRollout() throws {
+    let config = try WireWorkerConfig.load([
+      "DATABASE_URL": "postgres://localhost/wire",
+      "WIRE_SIGNAL_ROLLUP_INCREMENTAL_ENABLED": "TRUE",
+    ])
+    #expect(config.incrementalSignalRollupsEnabled)
+    #expect(throws: WireWorkerConfigError.invalidBoolean("WIRE_SIGNAL_ROLLUP_INCREMENTAL_ENABLED")) {
+      try WireWorkerConfig.load([
+        "DATABASE_URL": "postgres://localhost/wire",
+        "WIRE_SIGNAL_ROLLUP_INCREMENTAL_ENABLED": "sometimes",
+      ])
+    }
   }
 
   @Test("durable recommendation recovery requires an explicit rollout switch")

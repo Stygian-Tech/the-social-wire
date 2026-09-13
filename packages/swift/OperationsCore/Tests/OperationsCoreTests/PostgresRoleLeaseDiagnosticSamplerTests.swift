@@ -87,6 +87,47 @@ struct PostgresRoleLeaseDiagnosticSamplerTests {
     #expect(Self.snapshot.metadata["backends"]?.description.components(separatedBy: "wait_event_type").count == 17)
   }
 
+  @Test("attribution is allowlisted and handles unavailable query IDs and clock corrections")
+  func attributionSafety() throws {
+    let backend = RoleLeaseDiagnosticSnapshot.Backend(
+      pid: 123, waitEventType: "IO", waitEvent: "WALWrite", blockingPIDs: [456],
+      blockersTruncated: false, applicationName: "Coordinator",
+      queryID: "-9223372036854775808", transactionAgeMilliseconds: 1234.5,
+      queryAgeMilliseconds: 456.25)
+    let decoded = try JSONDecoder().decode(RoleLeaseDiagnosticSnapshot.Backend.self,
+      from: JSONEncoder().encode(backend))
+    #expect(decoded.queryID == "-9223372036854775808")
+    let metadata = Self.snapshotWith(backend: decoded).metadata["backends"]?.description ?? ""
+    #expect(metadata.contains("Coordinator"))
+    #expect(metadata.contains("-9223372036854775808"))
+    #expect(metadata.contains("1234.5") && metadata.contains("456.25"))
+
+    var privateBackend = backend
+    privateBackend.applicationName = "Coordinator-private_sql_parameter"
+    privateBackend.queryID = "SELECT private_sql_parameter"
+    privateBackend.transactionAgeMilliseconds = -.infinity
+    privateBackend.queryAgeMilliseconds = -123
+    let privateMetadata = Self.snapshotWith(backend: privateBackend).metadata["backends"]?.description ?? ""
+    #expect(privateMetadata.contains("unknown") && privateMetadata.contains("unavailable"))
+    #expect(!privateMetadata.contains("private_sql_parameter"))
+    #expect(!privateMetadata.contains("-123"))
+    #expect(RoleLeaseDiagnosticSnapshot.applicationCategory(nil) == "unknown")
+    #expect(RoleLeaseDiagnosticSnapshot.applicationCategory("Coordinator\n") == "unknown")
+
+    // Old/missing optional server evidence must remain unavailable, not falsely zero.
+    let absent = try JSONDecoder().decode(RoleLeaseDiagnosticSnapshot.Backend.self,
+      from: Data(#"{"pid":1,"blockingPIDs":[],"blockersTruncated":false}"#.utf8))
+    #expect(absent.queryID == nil && absent.queryAgeMilliseconds == nil)
+    let absentMetadata = Self.snapshotWith(backend: absent).metadata["backends"]?.description ?? ""
+    #expect(absentMetadata.components(separatedBy: "unavailable").count == 4)
+  }
+
+  private static func snapshotWith(backend: RoleLeaseDiagnosticSnapshot.Backend) -> RoleLeaseDiagnosticSnapshot {
+    .init(databaseTime: Date(timeIntervalSince1970: 40), ownerID: nil, fencingToken: nil,
+      expiresAt: nil, totalConnections: 1, activeConnections: 1, idleConnections: 0,
+      waitingConnections: 1, backends: [backend], sampledBackendCandidates: 1)
+  }
+
   private static var snapshot: RoleLeaseDiagnosticSnapshot {
     .init(databaseTime: Date(timeIntervalSince1970: 40), ownerID: "owner\nfirst", fencingToken: 7,
       expiresAt: Date(timeIntervalSince1970: 100), totalConnections: 20,

@@ -57,6 +57,10 @@ struct PostgresRoleLeaseDiagnosticIntegrationTests {
         #expect(record["database_time"] != nil && record["process_time"] != nil)
         #expect(record["backends"]?.contains("Lock") == true)
         #expect(record["backends"]?.contains("blocking_pids") == true)
+        #expect(record["backends"]?.contains("application_name") == true)
+        #expect(record["backends"]?.contains("transaction_age_ms") == true)
+        #expect(record["backends"]?.contains("query_age_ms") == true)
+        #expect(record["backends"]?.contains("query_id") == true)
         #expect(!String(describing: record).contains("private_sql_parameter"))
         #expect(!String(describing: record).contains("owner-other"))
       }

@@ -29,6 +29,7 @@ struct WireWorkerConfig: Sendable {
   var deferredRecommendationsEnabled: Bool = false
   var dependencyVerificationEnabled: Bool = false
   var dependencyRecoveryEnvironment: String? = nil
+  var incrementalSignalRollupsEnabled: Bool = false
 
   static func load(
     _ environment: [String: String],
@@ -139,7 +140,10 @@ struct WireWorkerConfig: Sendable {
         environment, key: "WIRE_DEFERRED_RECOMMENDATIONS_ENABLED", default: false
       ),
       dependencyVerificationEnabled: dependencyVerificationEnabled,
-      dependencyRecoveryEnvironment: dependencyRecoveryEnvironment
+      dependencyRecoveryEnvironment: dependencyRecoveryEnvironment,
+      incrementalSignalRollupsEnabled: try boolean(
+        environment, key: "WIRE_SIGNAL_ROLLUP_INCREMENTAL_ENABLED", default: false
+      )
     )
   }
 

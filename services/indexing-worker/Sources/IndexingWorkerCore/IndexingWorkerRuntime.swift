@@ -45,6 +45,9 @@ public enum IndexingWorkerRuntime {
     )
     let healthClient = HTTPClient(eventLoopGroupProvider: .singleton)
     let laneState = IndexingWorkerLaneState()
+    // This actor outlives individual materializer lease ownership closures, so
+    // a recreated Wire host cannot immediately replay canceled graph work.
+    let graphMaintenanceScheduler = WireGraphMaintenanceScheduler()
 
     logger.info(
       "Starting consolidated indexing worker",
@@ -182,6 +185,7 @@ public enum IndexingWorkerRuntime {
                   hostname: "127.0.0.1", port: config.wireHealthPort
                 ),
                 roleLeaseAuthority: ownership.authority,
+                graphMaintenanceScheduler: graphMaintenanceScheduler,
                 logger: logger
               )
             }
