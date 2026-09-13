@@ -53,6 +53,13 @@ publication, at most 500 rows per source per pass, with separate transactions,
 and required live-item metadata remain protected. Safe lease diagnostics include
 allowlisted application names, query IDs and transaction/query ages.
 
+Ranking also retains its process-owned schedule across lease-host replacement.
+A complete cycle keeps the configured 600-second interval, including processing
+time; failure or cancellation retains a 60-second retry delay after teardown.
+The active attempt stays reserved until awaited work exits, and slow cycles do
+not accumulate catch-up runs. Completion means every language and plan returned
+successfully. A full process restart still permits an immediate first cycle.
+
 Before further memory reductions, verify fresh publications, lease stability,
 ingestion age, public latency, temporary-file deltas and I/O pressure. The
 incremental and worker aggregation experiments remain separately gated.
