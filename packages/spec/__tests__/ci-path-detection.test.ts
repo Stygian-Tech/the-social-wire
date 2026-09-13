@@ -119,6 +119,16 @@ describe("CI path detection", () => {
     expect(result.get("spec")).toBe("true");
   });
 
+  it("checks Corpus Edge when its Redis runtime changes", () => {
+    const result = detect(
+      repositoryWithChange("packages/swift/SocialWireRedis/Sources/SocialWireRedis/RedisCacheClient.swift"),
+      "pull_request",
+    );
+    expect(result.get("wire_corpus_edge")).toBe("true");
+    expect(result.get("wire_worker")).toBe("true");
+    expect(result.get("indexing_worker")).toBe("true");
+  });
+
   it("runs deterministic spec coverage when the migration runner changes", () => {
     const result = detect(
       repositoryWithChange("scripts/apply-database-migrations.sh"),
