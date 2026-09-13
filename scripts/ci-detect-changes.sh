@@ -173,6 +173,7 @@ filter_changed indexing_worker \
 filter_changed wire_corpus_edge \
   'services/wire-corpus-edge/**' \
   'packages/swift/WireCore/**' \
+  'packages/swift/SocialWireRedis/**' \
   'database/migrations/**' \
   'scripts/verify-wire-corpus-serving.sql' \
   'railway/wire-corpus-edge.json' \
