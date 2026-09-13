@@ -94,6 +94,7 @@ actor PostgresWireFeedStore: WireFeedStore {
         language: generation.language,
         startOrdinal: scanOrdinal,
         limit: 500,
+        expiresAt: generation.expiresAt,
         now: now
       )
       exhausted = rows.count < 500
@@ -204,7 +205,8 @@ actor PostgresWireFeedStore: WireFeedStore {
     let modulePattern = "\(modulePrefix)%"
 
     let itemRows = try await cachedEditionItems(
-      generationID: generation.id, language: generation.language, modulePrefix: modulePrefix, now: now)
+      generationID: generation.id, language: generation.language, modulePrefix: modulePrefix,
+      expiresAt: generation.expiresAt, now: now)
     let moderation = try await moderationSnapshot(viewerDID: viewerDid, now: now)
     var itemsByModule: [String: [WireFeedItem]] = [:]
     for row in itemRows {
@@ -455,7 +457,7 @@ actor PostgresWireFeedStore: WireFeedStore {
   }
 
   private func cachedEditionItems(
-    generationID: UUID, language: String, modulePrefix: String, now: Date
+    generationID: UUID, language: String, modulePrefix: String, expiresAt: Date, now: Date
   ) async throws -> [EditionItemRow] {
     guard let payloadCache else {
       return try await loadEditionItems(generationID: generationID, language: language, modulePrefix: modulePrefix, now: now)
@@ -464,6 +466,7 @@ actor PostgresWireFeedStore: WireFeedStore {
     let membership = RedisPayloadMembership.fields(in: revision, indices: [0, 2])
     return try await payloadCache.value([EditionItemRow].self,
       scope: ["edition", generationID.uuidString, language, modulePrefix], revision: revision, now: now,
+      lifetime: RedisValidatedPayloadCache.generationLifetime(expiresAt: expiresAt, now: now),
       currentRevision: { try await self.editionItemsRevision(generationID: generationID, language: language, modulePrefix: modulePrefix, now: now) },
       validatesMembership: { rows in
         guard let membership else { return false }
@@ -657,7 +660,7 @@ actor PostgresWireFeedStore: WireFeedStore {
   }
 
   private func rankedItems(
-    generationID: UUID, language: String, startOrdinal: Int, limit: Int, now: Date
+    generationID: UUID, language: String, startOrdinal: Int, limit: Int, expiresAt: Date, now: Date
   ) async throws -> [RankedRow] {
     guard let payloadCache else {
       return try await loadRankedItems(generationID: generationID, language: language,
@@ -669,6 +672,7 @@ actor PostgresWireFeedStore: WireFeedStore {
     return try await payloadCache.value([RankedRow].self,
       scope: ["feed", generationID.uuidString, language, String(startOrdinal), String(limit)],
       revision: revision, now: now,
+      lifetime: RedisValidatedPayloadCache.generationLifetime(expiresAt: expiresAt, now: now),
       currentRevision: { try await self.rankedRevision(generationID: generationID, language: language,
         startOrdinal: startOrdinal, limit: limit, now: now) },
       validatesMembership: { rows in rows.count == keys.count && rows.allSatisfy { keys.contains($0.item.itemID) } },
