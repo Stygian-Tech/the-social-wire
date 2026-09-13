@@ -17,6 +17,7 @@ public enum WireWorkerHost {
     role: WireWorkerRole? = nil,
     healthListener: WireWorkerHealthListener = .disabled,
     roleLeaseAuthority: RoleLeaseAuthority? = nil,
+    graphMaintenanceScheduler: WireGraphMaintenanceScheduler = WireGraphMaintenanceScheduler(),
     logger: Logger
   ) async throws {
     let config = try WireWorkerConfig.load(environment, role: role)
@@ -260,10 +261,16 @@ public enum WireWorkerHost {
         group.addTask {
           defer { logger.info("The Wire component stopped", metadata: ["component": "graph"]) }
           try await WireGraphMaintenanceRuntime.run(
-            maintainer: inboxProcessor, state: state, logger: logger)
+            maintainer: inboxProcessor, state: state, logger: logger,
+            scheduler: graphMaintenanceScheduler)
         }
       }
       if runtimePlan.runsMetadataEnrichment {
+        group.addTask {
+          try await WireDisposableCacheMaintenanceRuntime.run(
+            store: PostgresWireTalkedAccountMentionStore(pool: pool, logger: logger),
+            logger: logger)
+        }
         group.addTask {
           try await WireMetadataMaintenanceRuntime.runRepair(
             store: linkMetadataStore, logger: logger,

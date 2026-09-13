@@ -348,7 +348,6 @@ struct PostgresWireInboxProcessor: Sendable {
   }
 
   func maintain(asOf: Date) async throws {
-    try await mentionStore.pruneExpired(asOf: asOf)
     try await refreshRollups(asOf: asOf)
   }
 

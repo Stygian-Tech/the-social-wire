@@ -9,17 +9,25 @@ enum WireGraphMaintenanceRuntime {
     maintainer: any WireGraphMaintaining,
     state: WireWorkerHealthState,
     logger: Logger,
+    scheduler: WireGraphMaintenanceScheduler = WireGraphMaintenanceScheduler(),
     clock: any WireInboxDrainClock = SystemWireInboxDrainClock(),
     sleeper: any WireInboxDrainSleeping = SystemWireInboxDrainSleeper(),
+    monotonicNow: @Sendable () async -> ContinuousClock.Instant = { .now },
     iterationLimit: Int? = nil
   ) async throws {
     var iterations = 0
-    var retryMilliseconds = 60_000
     while !Task.isCancelled, iterationLimit.map({ iterations < $0 }) ?? true {
+      let reservation = await scheduler.reserve(at: monotonicNow())
+      guard case .run(let token) = reservation else {
+        if case .wait(let milliseconds) = reservation {
+          try await sleeper.sleep(milliseconds: milliseconds)
+        }
+        continue
+      }
       let startedAt = await clock.now()
       let started = ContinuousClock.now
-      let delayMilliseconds: Int
       do {
+        try Task.checkCancellation()
         let nextRunAt = try await maintainer.maintainGraph(asOf: startedAt)
         try Task.checkCancellation()
         let completedAt = await clock.now()
@@ -31,22 +39,22 @@ enum WireGraphMaintenanceRuntime {
           "duration_ms": .stringConvertible(milliseconds),
         ])
         let delay = min(WireDataPolicy.clusteringCadence, max(1, nextRunAt.timeIntervalSince(completedAt)))
-        delayMilliseconds = Int(delay * 1_000)
-        retryMilliseconds = 60_000
-      } catch is CancellationError {
-        throw CancellationError()
+        await scheduler.succeeded(token, at: monotonicNow(), nextDelayMilliseconds: Int(delay * 1_000))
       } catch {
-        if Task.isCancelled { throw CancellationError() }
+        let retryMilliseconds = await scheduler.failed(token, at: monotonicNow()) ?? 60_000
+        if error is CancellationError || Task.isCancelled {
+          logger.info("The Wire graph maintenance canceled with retry retained", metadata: [
+            "retry_milliseconds": .stringConvertible(retryMilliseconds),
+          ])
+          throw CancellationError()
+        }
         await state.recordGraphFailure(error)
         logger.error("The Wire graph maintenance failed", metadata: [
           "error": .string(String(reflecting: error).prefix(500).description),
           "retry_milliseconds": .stringConvertible(retryMilliseconds),
         ])
-        delayMilliseconds = retryMilliseconds
-        retryMilliseconds = min(retryMilliseconds * 2, 300_000)
       }
       iterations += 1
-      try await sleeper.sleep(milliseconds: delayMilliseconds)
     }
   }
 }
