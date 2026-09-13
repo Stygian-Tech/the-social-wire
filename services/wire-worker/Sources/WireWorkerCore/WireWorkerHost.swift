@@ -18,6 +18,7 @@ public enum WireWorkerHost {
     healthListener: WireWorkerHealthListener = .disabled,
     roleLeaseAuthority: RoleLeaseAuthority? = nil,
     graphMaintenanceScheduler: WireGraphMaintenanceScheduler = WireGraphMaintenanceScheduler(),
+    rankingScheduler: WireRankingScheduler = WireRankingScheduler(),
     logger: Logger
   ) async throws {
     let config = try WireWorkerConfig.load(environment, role: role)
@@ -162,9 +163,9 @@ public enum WireWorkerHost {
               }
               if runtimePlan.requiresGenerationReadiness {
                 guard
-                  await state.isGenerationReady(
-                    at: now,
-                    maximumCycleAge: TimeInterval(max(config.intervalSeconds * 2, 600))
+                  await rankingScheduler.isGenerationReady(
+                    at: .now,
+                    maximumCycleAge: .seconds(max(config.intervalSeconds * 2, 600))
                   )
                 else { throw HealthError.runtimeStale }
               }
@@ -179,7 +180,7 @@ public enum WireWorkerHost {
         group.addTask {
           defer { logger.info("The Wire component stopped", metadata: ["component": "generation"]) }
           try await WireWorkerRuntime.runForever(
-            cycle: cycle, state: state, logger: logger)
+            cycle: cycle, state: state, scheduler: rankingScheduler, logger: logger)
         }
       }
       if runtimePlan.runsDrain, let inboxProcessor {
