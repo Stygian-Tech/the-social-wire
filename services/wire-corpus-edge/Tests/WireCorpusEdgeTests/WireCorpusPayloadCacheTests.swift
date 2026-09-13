@@ -35,12 +35,14 @@ struct WireCorpusPayloadCacheTests {
     #expect(await source.loads == 1)
     #expect(await cache.statistics()["feed_hit"] == 1)
     #expect(await cache.statistics()["feed_miss"] == 1)
-    #expect(try await read(cache, source, at: now.addingTimeInterval(60)) == "original")
+    #expect(try await read(cache, source, at: now.addingTimeInterval(599)) == "original")
+    #expect(await source.loads == 1)
+    #expect(try await read(cache, source, at: now.addingTimeInterval(600)) == "original")
     #expect(await source.loads == 2)
     await commands.flush()
-    _ = try await read(cache, source, at: now.addingTimeInterval(61))
+    _ = try await read(cache, source, at: now.addingTimeInterval(601))
     #expect(await source.loads == 3)
-    #expect(await commands.expirations.allSatisfy { $0 == 60_000 })
+    #expect(await commands.expirations.allSatisfy { $0 == 600_000 })
   }
 
   @Test("moderation deletion, resurrection and payload updates invalidate by authoritative revision")
@@ -50,12 +52,33 @@ struct WireCorpusPayloadCacheTests {
     let source = Source()
     _ = try await read(cache, source, at: now)
     await source.change("empty-membership", "empty")
-    #expect(try await read(cache, source, at: now) == "empty")
+    let later = now.addingTimeInterval(120)
+    #expect(try await read(cache, source, at: later) == "empty")
     await source.change("restored-row-version", "restored")
-    #expect(try await read(cache, source, at: now) == "restored")
+    #expect(try await read(cache, source, at: later) == "restored")
     await source.change("edited-row-version", "edited")
-    #expect(try await read(cache, source, at: now) == "edited")
+    #expect(try await read(cache, source, at: later) == "edited")
     #expect(await source.loads == 4)
+  }
+
+  @Test("generation retention caps Redis TTL and expired generations cannot fill it")
+  func generationExpiryCap() async throws {
+    let commands = CorpusCacheCommands()
+    let cache = WireCorpusPayloadCache(commands: commands, environment: "prod")
+    let expiry = now.addingTimeInterval(90)
+    let lifetime = WireCorpusPayloadCache.generationLifetime(expiresAt: expiry, now: now)
+    _ = try await cache.value(String.self, scope: ["feed", "short"], revision: "first", now: now,
+      lifetime: lifetime, currentRevision: { "first" }, load: { "payload" })
+    #expect(await commands.expirations == [90_000])
+    for at in [expiry, expiry.addingTimeInterval(1)] {
+      let remaining = WireCorpusPayloadCache.generationLifetime(expiresAt: expiry, now: at)
+      #expect(remaining == 0)
+      _ = try await cache.value(String.self, scope: ["feed", "expired"], revision: "first", now: at,
+        lifetime: remaining, currentRevision: { "first" }, load: { "payload" })
+    }
+    #expect(await commands.writes == 1)
+    #expect(WireCorpusPayloadCache.generationLifetime(
+      expiresAt: now.addingTimeInterval(7200), now: now) == 600)
   }
 
   @Test("failed Redis and oversized results use the authoritative source")
@@ -133,7 +156,7 @@ struct WireCorpusPayloadCacheTests {
     _ = try await cache.value([[String]].self, scope: ["edition", "aba"], revision: revision, now: now,
       currentRevision: { revision }, load: { subset })
     #expect(await commands.writes == 1)
-    let restored = try await cache.value([[String]].self, scope: ["edition", "aba"], revision: revision, now: now,
+    let restored = try await cache.value([[String]].self, scope: ["edition", "aba"], revision: revision, now: now.addingTimeInterval(120),
       currentRevision: { revision },
       validatesMembership: { RedisPayloadMembership.matches($0, expected: expected) }, load: { expected })
     #expect(restored == expected)
