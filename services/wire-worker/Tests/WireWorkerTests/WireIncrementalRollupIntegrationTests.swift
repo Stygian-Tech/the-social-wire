@@ -329,4 +329,59 @@ extension WirePostgresIntegrationTests {
     }
   }
 
+
+  @Test("sharded hints deduplicate work and preserve locked, revised and new lanes")
+  func incrementalRollupShardedAcknowledgment() async throws {
+    try await WireRollupIntegrationFixture.run(incremental: true, maximumConnections: 4) { fixture in
+      let key = try await fixture.item("sharded")
+      try await fixture.signal(key, actor: "first", occurredAt: fixture.now)
+      try await fixture.signal(key, actor: "second", occurredAt: fixture.now)
+      try await fixture.store.refresh(asOf: fixture.now)
+      try await fixture.signal(key, actor: "third", occurredAt: fixture.now)
+      // Force known lanes so correctness does not depend on the operating
+      // system's allocation of backend PIDs in this test environment.
+      try await fixture.pool.query(
+        "DELETE FROM wire_signal_rollup_dirty WHERE canonical_key = \(key)", logger: fixture.logger)
+      try await fixture.pool.query(
+        "INSERT INTO wire_signal_rollup_dirty (canonical_key, shard) VALUES (\(key), 0), (\(key), 1), (\(key), 2)",
+        logger: fixture.logger)
+      try await fixture.pool.withTransaction(logger: fixture.logger) { writer in
+        try await writer.query("SET LOCAL idle_in_transaction_session_timeout = '5s'", logger: fixture.logger)
+        try await writer.query(
+          "SELECT revision FROM wire_signal_rollup_dirty WHERE canonical_key = \(key) AND shard = 0 FOR UPDATE",
+          logger: fixture.logger)
+        try await fixture.pool.withTransaction(logger: fixture.logger) { refresher in
+          #expect(try await fixture.store.prepareIncrementalRefresh(connection: refresher, asOf: fixture.now))
+          let keys = try await refresher.query(
+            "SELECT count(*) FROM wire_signal_rollup_keys WHERE canonical_key = \(key)", logger: fixture.logger)
+          for try await row in keys { #expect(try row.decode(Int64.self) == 1) }
+          // A colliding writer revises lane 1 and another writer adds lane 3
+          // after selection. Both commits must survive acknowledgment.
+          try await fixture.pool.query(
+            """
+            INSERT INTO wire_signal_rollup_dirty (canonical_key, shard) VALUES (\(key), 1), (\(key), 3)
+            ON CONFLICT (canonical_key, shard) DO UPDATE SET revision = EXCLUDED.revision
+            """, logger: fixture.logger)
+          try await refresher.query(
+            "CREATE TEMP TABLE wire_signal_rollups_next ON COMMIT DROP AS SELECT rollup.*, now() + interval '1 hour' AS next_due_at FROM wire_signal_rollups rollup",
+            logger: fixture.logger)
+          try await fixture.store.finishIncrementalRefresh(connection: refresher, asOf: fixture.now)
+        }
+        var remaining: [Int16] = []
+        let rows = try await writer.query(
+          "SELECT shard FROM wire_signal_rollup_dirty WHERE canonical_key = \(key) ORDER BY shard", logger: fixture.logger)
+        for try await row in rows { remaining.append(try row.decode(Int16.self)) }
+        #expect(remaining == [0, 1, 3])
+      }
+      try await fixture.store.refresh(asOf: fixture.now)
+      #expect(try await fixture.counts(key)["signals_7d"] == 3)
+      let pending = try await fixture.pool.query(
+        "SELECT count(*) FROM wire_signal_rollup_dirty WHERE canonical_key = \(key)", logger: fixture.logger)
+      for try await row in pending { #expect(try row.decode(Int64.self) == 0) }
+      let published = try await fixture.pool.query(
+        "SELECT count(*) FROM wire_signal_rollups WHERE canonical_key = \(key)", logger: fixture.logger)
+      for try await row in published { #expect(try row.decode(Int64.self) == 1) }
+    }
+  }
+
 }
