@@ -47,7 +47,8 @@ struct WireCorpusRecoveryIntegrationTests {
           (generation_id, algorithm_version, language_bucket, continuation_ordinal, materialized_at)
         VALUES (\(generation), 'wire-v1', 'und', 0, \(now))
         """, logger: logger)
-      let store = PostgresWireCorpusStore(pool: pool, logger: logger)
+      let store = PostgresWireCorpusStore(pool: pool, logger: logger,
+        payloadCache: WireCorpusPayloadCache(commands: CorpusCacheCommands(), environment: "test"))
       let before = try await store.feed(language: "und", generationID: nil, startOrdinal: 0, limit: 10, now: now)
       #expect(!before.degraded)
       try await pool.query(

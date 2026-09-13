@@ -1,6 +1,7 @@
 import Foundation
 import Logging
 import PostgresNIO
+import SocialWireRedis
 import Testing
 import ThinAppViewCore
 import WireCore
@@ -15,8 +16,13 @@ import WireCore
   )
 )
 struct WirePostgresServingIntegrationTests {
-  @Test("fresh recovery generations remain degraded until archive replay completes")
-  func recoveryBaselineDoesNotClaimCompleteHistory() async throws {
+  private func cacheForTest(_ enabled: Bool) -> RedisValidatedPayloadCache? {
+    enabled ? RedisValidatedPayloadCache(commands: WirePayloadCacheCommands(), environment: "test",
+      domain: "wire-appview-public-payload") : nil
+  }
+
+  @Test("fresh recovery generations remain degraded until archive replay completes", arguments: [false, true])
+  func recoveryBaselineDoesNotClaimCompleteHistory(usesRedis: Bool) async throws {
     guard let url = ProcessInfo.processInfo.environment["WIRE_TEST_DATABASE_URL"] else { return }
     let logger = Logger(label: "wire-appview-postgres.recovery-integration")
     var configuration = try makePostgresConfig(from: url, logger: logger)
@@ -44,7 +50,7 @@ struct WirePostgresServingIntegrationTests {
       try await insertGeneration(generation, keys: [key], generatedAt: now, active: true, pool: pool, logger: logger)
       let store = try PostgresWireFeedStore(pool: pool, logger: logger,
         cursorSecret: String(repeating: "c", count: 32), mode: .visible,
-        moderationCache: WireViewerModerationCache())
+        moderationCache: WireViewerModerationCache(), payloadCache: cacheForTest(usesRedis))
       let baseline = try await store.getFeed(cursor: nil, limit: 10, language: nil, viewerDid: nil, now: now)
       #expect(!baseline.degraded)
       try await pool.query(
@@ -78,8 +84,8 @@ struct WirePostgresServingIntegrationTests {
     try await pool.query("DELETE FROM wire_label_refresh_state WHERE source_did = \(labelSource)", logger: logger)
   }
 
-  @Test("an expired active generation remains available during an ingestion outage")
-  func expiredActiveGenerationContinuity() async throws {
+  @Test("an expired active generation remains available during an ingestion outage", arguments: [false, true])
+  func expiredActiveGenerationContinuity(usesRedis: Bool) async throws {
     guard let url = ProcessInfo.processInfo.environment["WIRE_TEST_DATABASE_URL"] else { return }
     let logger = Logger(label: "wire-appview-postgres.continuity-integration")
     var configuration = try makePostgresConfig(from: url, logger: logger)
@@ -128,7 +134,7 @@ struct WirePostgresServingIntegrationTests {
         logger: logger,
         cursorSecret: String(repeating: "c", count: 32),
         mode: .visible,
-        moderationCache: WireViewerModerationCache()
+        moderationCache: WireViewerModerationCache(), payloadCache: cacheForTest(usesRedis)
       )
       let page = try await store.getFeed(
         cursor: nil,
@@ -163,8 +169,8 @@ struct WirePostgresServingIntegrationTests {
     )
   }
 
-  @Test("stale localized generations drop items reclassified out of the requested language")
-  func staleLocalizedGenerationRechecksItemLanguage() async throws {
+  @Test("stale localized generations drop items reclassified out of the requested language", arguments: [false, true])
+  func staleLocalizedGenerationRechecksItemLanguage(usesRedis: Bool) async throws {
     guard let url = ProcessInfo.processInfo.environment["WIRE_TEST_DATABASE_URL"] else { return }
     let logger = Logger(label: "wire-appview-postgres.language-recheck-integration")
     var configuration = try makePostgresConfig(from: url, logger: logger)
@@ -248,7 +254,7 @@ struct WirePostgresServingIntegrationTests {
         logger: logger,
         cursorSecret: String(repeating: "c", count: 32),
         mode: .visible,
-        moderationCache: WireViewerModerationCache()
+        moderationCache: WireViewerModerationCache(), payloadCache: cacheForTest(usesRedis)
       )
       let page = try await store.getFeed(
         cursor: nil,
@@ -291,8 +297,8 @@ struct WirePostgresServingIntegrationTests {
     )
   }
 
-  @Test("an emptied localized generation serves the current exact-language fallback")
-  func emptiedLocalizedGenerationUsesExactLanguageFallback() async throws {
+  @Test("an emptied localized generation serves the current exact-language fallback", arguments: [false, true])
+  func emptiedLocalizedGenerationUsesExactLanguageFallback(usesRedis: Bool) async throws {
     guard let url = ProcessInfo.processInfo.environment["WIRE_TEST_DATABASE_URL"] else { return }
     let logger = Logger(label: "wire-appview-postgres.empty-language-generation-integration")
     var configuration = try makePostgresConfig(from: url, logger: logger)
@@ -379,7 +385,7 @@ struct WirePostgresServingIntegrationTests {
         logger: logger,
         cursorSecret: String(repeating: "c", count: 32),
         mode: .visible,
-        moderationCache: WireViewerModerationCache()
+        moderationCache: WireViewerModerationCache(), payloadCache: cacheForTest(usesRedis)
       )
       let page = try await store.getFeed(
         cursor: nil,
@@ -431,8 +437,8 @@ struct WirePostgresServingIntegrationTests {
     )
   }
 
-  @Test("pagination remains bound to its retained generation after activation advances")
-  func stableGenerationPagination() async throws {
+  @Test("pagination remains bound to its retained generation after activation advances", arguments: [false, true])
+  func stableGenerationPagination(usesRedis: Bool) async throws {
     guard let url = ProcessInfo.processInfo.environment["WIRE_TEST_DATABASE_URL"] else { return }
     let logger = Logger(label: "wire-appview-postgres.integration")
     var configuration = try makePostgresConfig(from: url, logger: logger)
@@ -480,12 +486,13 @@ struct WirePostgresServingIntegrationTests {
       )
 
       let cache = WireViewerModerationCache()
+      let payloadCache = cacheForTest(usesRedis)
       let store = try PostgresWireFeedStore(
         pool: pool,
         logger: logger,
         cursorSecret: String(repeating: "c", count: 32),
         mode: .visible,
-        moderationCache: cache
+        moderationCache: cache, payloadCache: payloadCache
       )
       let first = try await store.getFeed(
         cursor: nil,
@@ -497,6 +504,23 @@ struct WirePostgresServingIntegrationTests {
       #expect(first.generationID == generationOne.uuidString.lowercased())
       #expect(first.items.map(\.itemID) == Array(keys.prefix(2)))
       let cursor = try #require(first.cursor)
+      let repeated = try await store.getFeed(cursor: nil, limit: 2, language: "en",
+        viewerDid: nil, now: now)
+      #expect(repeated.items == first.items)
+      #expect(repeated.generationID == first.generationID)
+      #expect(repeated.generatedAt == first.generatedAt)
+      let codec = try WireCursorCodec(secret: String(repeating: "c", count: 32))
+      #expect(try codec.decode(#require(repeated.cursor)) == codec.decode(cursor))
+      if let payloadCache { #expect(await payloadCache.statistics()["feed_hit"] == 1) }
+      let viewer = "did:example:cache-viewer"
+      await cache.store(WireViewerModerationSnapshot(blockedDIDs: [], mutedDIDs: [],
+        mutedWords: ["story 0"], fetchedAt: now), viewerDID: viewer)
+      let personalized = try await store.getFeed(cursor: nil, limit: 2, language: "en",
+        viewerDid: viewer, now: now)
+      #expect(personalized.items.map(\.itemID) == Array(keys.suffix(2)))
+      #expect(try await store.getItem(itemId: keys[0], viewerDid: nil) != nil)
+      #expect(try await store.getItem(itemId: keys[0], viewerDid: viewer) == nil)
+      #expect(try await store.getItem(itemId: keys[0], viewerDid: nil) != nil)
 
       try await pool.withTransaction(logger: logger) { connection in
         try await connection.query(
@@ -590,8 +614,8 @@ struct WirePostgresServingIntegrationTests {
     )
   }
 
-  @Test("a sparse requested locale does not serve the global fallback corpus")
-  func sparseLocaleStaysIsolated() async throws {
+  @Test("a sparse requested locale does not serve the global fallback corpus", arguments: [false, true])
+  func sparseLocaleStaysIsolated(usesRedis: Bool) async throws {
     guard let url = ProcessInfo.processInfo.environment["WIRE_TEST_DATABASE_URL"] else { return }
     let logger = Logger(label: "wire-appview-postgres.fallback-integration")
     var configuration = try makePostgresConfig(from: url, logger: logger)
@@ -642,7 +666,7 @@ struct WirePostgresServingIntegrationTests {
         logger: logger,
         cursorSecret: String(repeating: "c", count: 32),
         mode: .visible,
-        moderationCache: WireViewerModerationCache()
+        moderationCache: WireViewerModerationCache(), payloadCache: cacheForTest(usesRedis)
       )
       let catalog = try await store.getCatalog(now: now)
       #expect(catalog.available)
@@ -671,8 +695,8 @@ struct WirePostgresServingIntegrationTests {
     )
   }
 
-  @Test("a stale localized generation remains isolated from a fresh global generation")
-  func staleLocalizedGenerationStaysIsolated() async throws {
+  @Test("a stale localized generation remains isolated from a fresh global generation", arguments: [false, true])
+  func staleLocalizedGenerationStaysIsolated(usesRedis: Bool) async throws {
     guard let url = ProcessInfo.processInfo.environment["WIRE_TEST_DATABASE_URL"] else { return }
     let logger = Logger(label: "wire-appview-postgres.fresh-global-integration")
     var configuration = try makePostgresConfig(from: url, logger: logger)
@@ -731,7 +755,7 @@ struct WirePostgresServingIntegrationTests {
         logger: logger,
         cursorSecret: String(repeating: "c", count: 32),
         mode: .visible,
-        moderationCache: WireViewerModerationCache()
+        moderationCache: WireViewerModerationCache(), payloadCache: cacheForTest(usesRedis)
       )
       let page = try await store.getFeed(
         cursor: nil,
@@ -763,8 +787,8 @@ struct WirePostgresServingIntegrationTests {
     )
   }
 
-  @Test("serving and catalog fail closed after the baseline label snapshot is thirty minutes stale")
-  func staleBaselineFailsClosed() async throws {
+  @Test("serving and catalog fail closed after the baseline label snapshot is thirty minutes stale", arguments: [false, true])
+  func staleBaselineFailsClosed(usesRedis: Bool) async throws {
     guard let url = ProcessInfo.processInfo.environment["WIRE_TEST_DATABASE_URL"] else { return }
     let logger = Logger(label: "wire-appview-postgres.label-freshness-integration")
     var configuration = try makePostgresConfig(from: url, logger: logger)
@@ -787,7 +811,7 @@ struct WirePostgresServingIntegrationTests {
       logger: logger,
       cursorSecret: String(repeating: "c", count: 32),
       mode: .visible,
-      moderationCache: WireViewerModerationCache()
+      moderationCache: WireViewerModerationCache(), payloadCache: cacheForTest(usesRedis)
     )
 
     await #expect(throws: WireServingError.moderationUnavailable) {
