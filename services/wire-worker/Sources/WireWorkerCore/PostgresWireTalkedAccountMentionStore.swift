@@ -5,6 +5,19 @@ import PostgresNIO
 struct PostgresWireTalkedAccountMentionStore: WireTalkedAccountMentionStoring {
   let pool: PostgresClient
   let logger: Logger
+  private let metadataPruneCursor = WireMetadataPruneCursor()
+  private let metadataPruneMaximumBatches: Int
+  private let metadataPruneTimeBudget: Duration
+
+  init(
+    pool: PostgresClient, logger: Logger,
+    metadataPruneMaximumBatches: Int = 20, metadataPruneTimeBudget: Duration = .seconds(2)
+  ) {
+    self.pool = pool
+    self.logger = logger
+    self.metadataPruneMaximumBatches = metadataPruneMaximumBatches
+    self.metadataPruneTimeBudget = metadataPruneTimeBudget
+  }
 
   func replaceMentions(
     sourceURI: String,
@@ -69,8 +82,8 @@ struct PostgresWireTalkedAccountMentionStore: WireTalkedAccountMentionStoring {
   }
 
   func pruneExpired(asOf: Date) async throws {
-    // One batch per source prevents accumulated maintenance from delaying publication.
-    // Separate transactions release each batch's locks before touching the next source.
+    // Mentions/accounts use one batch each. Metadata scans at most 10,000 raw rows across
+    // short transactions so protected prefixes do not prevent eventual cleanup.
     let queries: [PostgresQuery] = [
       """
       DELETE FROM wire_item_mentions
@@ -87,27 +100,34 @@ struct PostgresWireTalkedAccountMentionStore: WireTalkedAccountMentionStoring {
         ORDER BY expires_at, subject_did LIMIT 500 FOR UPDATE SKIP LOCKED
       )
       """,
-      """
-      DELETE FROM wire_link_metadata_cache
-      WHERE canonical_key IN (
-        SELECT cache.canonical_key FROM wire_link_metadata_cache cache
-        WHERE cache.stale_until IS NOT NULL AND cache.stale_until <= \(asOf)
-          AND NOT (cache.status = 'fetching' AND cache.retry_after > \(asOf))
-          AND NOT EXISTS (
-            SELECT 1 FROM wire_items item WHERE item.canonical_key = cache.canonical_key
-              AND item.eligible AND item.expires_at > \(asOf)
-              AND item.canonical_url LIKE 'https://%'
-          )
-        ORDER BY cache.stale_until, cache.canonical_key
-        LIMIT 500 FOR UPDATE OF cache SKIP LOCKED
-      )
-      """,
     ]
     for query in queries {
       try await pool.withTransaction(logger: logger) { connection in
         try await connection.query("SET LOCAL statement_timeout = '2s'", logger: logger)
         try await connection.query("SET LOCAL lock_timeout = '500ms'", logger: logger)
         try await connection.query(query, logger: logger)
+      }
+    }
+    // The total budget is checked between transactions; a final query can take up to its
+    // statement timeout beyond that soft budget. Pool acquisition/commit time is additional.
+    try await metadataPruneCursor.run(
+      maximumBatches: metadataPruneMaximumBatches, timeBudget: metadataPruneTimeBudget
+    ) { position in
+      try await pool.withTransaction(logger: logger) { connection in
+        try Task.checkCancellation()
+        try await connection.query("SET LOCAL statement_timeout = '2s'", logger: logger)
+        try await connection.query("SET LOCAL lock_timeout = '500ms'", logger: logger)
+        let rows = try await connection.query(
+          WireMetadataPruneQuery.make(asOf: asOf, position: position), logger: logger)
+        var next: WireMetadataPruneCursor.Position?
+        for try await row in rows {
+          let (examined, staleUntil, canonicalKey) = try row.decode((Int64, String?, String?).self)
+          if examined == 500, let staleUntil, let canonicalKey {
+            next = .init(staleUntil: staleUntil, canonicalKey: canonicalKey)
+          }
+        }
+        try Task.checkCancellation()
+        return next
       }
     }
   }

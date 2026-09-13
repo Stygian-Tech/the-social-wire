@@ -11,7 +11,8 @@ extension WirePostgresIntegrationTests {
       let prefix = fixture.prefix + "-prune-"
       let old = fixture.now.addingTimeInterval(-86_400)
       let future = fixture.now.addingTimeInterval(86_400)
-      let store = PostgresWireTalkedAccountMentionStore(pool: fixture.pool, logger: fixture.logger)
+      let store = PostgresWireTalkedAccountMentionStore(
+        pool: fixture.pool, logger: fixture.logger, metadataPruneMaximumBatches: 1)
       do {
         try await fixture.pool.query(
           """
@@ -70,10 +71,12 @@ extension WirePostgresIntegrationTests {
             let (mentions, accounts, metadata, lockedSurvives) = try row.decode((Int64, Int64, Int64, Bool).self)
             #expect(mentions == 4)
             #expect(accounts == 4)
-            #expect(metadata == 5)
+            #expect(metadata == 8)
             #expect(lockedSurvives)
           }
         }
+        // The tail advances/wraps first, then the previously locked row is revisited.
+        try await store.pruneExpired(asOf: fixture.now)
         try await store.pruneExpired(asOf: fixture.now)
         let rows = try await fixture.pool.query(
           """
