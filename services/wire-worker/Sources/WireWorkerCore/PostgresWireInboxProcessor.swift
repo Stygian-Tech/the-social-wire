@@ -24,6 +24,7 @@ struct PostgresWireInboxProcessor: Sendable {
   let sourceScope: WireInboxSourceScope?
   let deferredRecommendationsEnabled: Bool
   let dependencyVerificationEnabled: Bool
+  let incrementalSignalRollupsEnabled: Bool
 
   init(
     pool: PostgresClient,
@@ -37,7 +38,8 @@ struct PostgresWireInboxProcessor: Sendable {
     maximumConcurrentEvents: Int = 16,
     sourceScope: WireInboxSourceScope? = nil,
     deferredRecommendationsEnabled: Bool = false,
-    dependencyVerificationEnabled: Bool = false
+    dependencyVerificationEnabled: Bool = false,
+    incrementalSignalRollupsEnabled: Bool = false
   ) throws {
     self.pool = pool
     self.logger = logger
@@ -58,6 +60,7 @@ struct PostgresWireInboxProcessor: Sendable {
     self.sourceScope = sourceScope
     self.deferredRecommendationsEnabled = deferredRecommendationsEnabled
     self.dependencyVerificationEnabled = dependencyVerificationEnabled
+    self.incrementalSignalRollupsEnabled = incrementalSignalRollupsEnabled
   }
 
   func process(asOf: Date) async throws -> Int {
@@ -2193,7 +2196,9 @@ struct PostgresWireInboxProcessor: Sendable {
   }
 
   private func refreshRollups(asOf: Date) async throws {
-    try await PostgresWireSignalRollupStore(pool: pool, logger: logger).refresh(asOf: asOf)
+    try await PostgresWireSignalRollupStore(
+      pool: pool, logger: logger, incrementalEnabled: incrementalSignalRollupsEnabled
+    ).refresh(asOf: asOf)
   }
 
   private func pruneActiveGraph(asOf: Date) async throws {

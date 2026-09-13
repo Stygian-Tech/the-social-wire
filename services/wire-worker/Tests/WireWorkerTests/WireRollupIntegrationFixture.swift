@@ -8,11 +8,12 @@ import Testing
 struct WireRollupIntegrationFixture {
   let pool: PostgresClient
   let logger: Logger
+  var incremental = false
   let prefix = "rollup-test-\(UUID().uuidString.lowercased())"
   let now = Date(timeIntervalSince1970: floor(Date().timeIntervalSince1970))
 
   var store: PostgresWireSignalRollupStore {
-    PostgresWireSignalRollupStore(pool: pool, logger: logger)
+    PostgresWireSignalRollupStore(pool: pool, logger: logger, incrementalEnabled: incremental)
   }
 
   func item(_ suffix: String) async throws -> String {
@@ -58,6 +59,14 @@ struct WireRollupIntegrationFixture {
     return nil
   }
 
+  func values(_ key: String) async throws -> String? {
+    let rows = try await pool.query(
+      "SELECT (to_jsonb(rollup) - 'updated_at')::text FROM wire_signal_rollups rollup WHERE canonical_key = \(key)",
+      logger: logger)
+    for try await row in rows { return try row.decode(String.self) }
+    return nil
+  }
+
   func counts(_ key: String) async throws -> [String: Int] {
     let rows = try await pool.query(
       "SELECT to_jsonb(rollup)::text FROM wire_signal_rollups rollup WHERE canonical_key = \(key)",
@@ -77,20 +86,32 @@ struct WireRollupIntegrationFixture {
   }
 
   static func run(
+    incremental: Bool = false,
+    maximumConnections: Int = 2,
     _ operation: (WireRollupIntegrationFixture) async throws -> Void
   ) async throws {
     guard let url = ProcessInfo.processInfo.environment["WIRE_TEST_DATABASE_URL"] else { return }
     let logger = Logger(label: "wire-rollup-postgres.integration")
-    let configuration = try PostgresWireConfig.make(from: url, logger: logger)
+    let configuration = try PostgresWireConfig.make(
+      from: url, maximumConnections: maximumConnections, logger: logger)
     let pool = PostgresClient(configuration: configuration, backgroundLogger: logger)
     let task = Task { await pool.run() }
     defer { task.cancel() }
-    let fixture = WireRollupIntegrationFixture(pool: pool, logger: logger)
+    let fixture = WireRollupIntegrationFixture(pool: pool, logger: logger, incremental: incremental)
+    if incremental {
+      try await pool.query("SELECT wire_set_signal_rollup_tracking(true)", logger: logger)
+    }
     do {
       try await operation(fixture)
       try await fixture.clean()
+      if incremental {
+        try await pool.query("SELECT wire_set_signal_rollup_tracking(false)", logger: logger)
+      }
     } catch {
       try await fixture.clean()
+      if incremental {
+        try await pool.query("SELECT wire_set_signal_rollup_tracking(false)", logger: logger)
+      }
       throw error
     }
   }

@@ -68,7 +68,8 @@ public enum WireWorkerHost {
         maximumConcurrentEvents: config.inboxConcurrency,
         sourceScope: config.inboxSourceScope,
         deferredRecommendationsEnabled: config.deferredRecommendationsEnabled,
-        dependencyVerificationEnabled: config.dependencyVerificationEnabled
+        dependencyVerificationEnabled: config.dependencyVerificationEnabled,
+        incrementalSignalRollupsEnabled: config.incrementalSignalRollupsEnabled
       )
     } else {
       inboxProcessor = nil

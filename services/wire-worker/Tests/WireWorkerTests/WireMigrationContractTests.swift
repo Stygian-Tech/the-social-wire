@@ -62,7 +62,7 @@ struct WireMigrationContractTests {
     #expect(processor.contains("event.attemptCount >= 8"))
     #expect(processor.contains("DELETE FROM wire_follow_edges WHERE source_uri"))
     #expect(processor.contains("Self.isSelfFollow(follower: follower, followee: followee)"))
-    #expect(processor.contains("PostgresWireSignalRollupStore(pool: pool, logger: logger)"))
+    #expect(processor.contains("incrementalEnabled: incrementalSignalRollupsEnabled"))
     #expect(processor.contains("func acknowledgeUnresolvedPassiveReferences"))
     #expect(processor.contains("candidate.event_kind = 'commit'"))
     #expect(

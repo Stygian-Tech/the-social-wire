@@ -5,6 +5,7 @@ import PostgresNIO
 struct PostgresWireSignalRollupStore: Sendable {
   let pool: PostgresClient
   let logger: Logger
+  var incrementalEnabled = false
 
   func refresh(asOf: Date) async throws {
     try await pool.withTransaction(logger: logger) { connection in
@@ -12,12 +13,19 @@ struct PostgresWireSignalRollupStore: Sendable {
         "SELECT pg_advisory_xact_lock(hashtext('wire_signal_rollups_refresh')::bigint)",
         logger: logger
       )
+      let incremental = incrementalEnabled
+        ? try await prepareIncrementalRefresh(connection: connection, asOf: asOf) : false
+      // SQL fragments are fixed literals, never caller input.
+      let keyFilter = incremental
+        ? "AND canonical_key IN (SELECT canonical_key FROM wire_signal_rollup_keys)" : ""
+      let deleteFilter = incremental
+        ? "AND current.canonical_key IN (SELECT canonical_key FROM wire_signal_rollup_keys)" : ""
       // Build one exact rolling-window snapshot without holding an exclusive
       // lock on the serving table. Temporary staging produces no table WAL.
       try await connection.query(
         """
         CREATE TEMP TABLE wire_signal_rollups_next
-          (LIKE wire_signal_rollups INCLUDING DEFAULTS) ON COMMIT DROP
+          (LIKE wire_signal_rollups INCLUDING DEFAULTS, next_due_at timestamptz) ON COMMIT DROP
         """,
         logger: logger
       )
@@ -36,7 +44,8 @@ struct PostgresWireSignalRollupStore: Sendable {
            baseline_signals_7d, baseline_recommendations_24h,
            baseline_shares_1h, baseline_shares_24h,
            baseline_distinct_likers_24h, baseline_likes_1h, baseline_likes_24h,
-           updated_at)
+           updated_at, next_due_at)
+        \(unescaped: incremental ? Self.incrementalSignalPrefix : "")
         SELECT canonical_key,
           COUNT(DISTINCT actor_key_hash) FILTER (WHERE occurred_at >= \(asOf.addingTimeInterval(-3_600))),
           COUNT(DISTINCT actor_key_hash) FILTER (WHERE occurred_at >= \(asOf.addingTimeInterval(-86_400))),
@@ -50,16 +59,16 @@ struct PostgresWireSignalRollupStore: Sendable {
             WHERE occurred_at >= \(asOf.addingTimeInterval(-86_400)) AND community_key_hash IS NOT NULL),
           COUNT(DISTINCT actor_key_hash) FILTER (WHERE signal_kind = 'recommendation'
             AND occurred_at >= \(asOf.addingTimeInterval(-86_400))),
-          COALESCE((SELECT COUNT(*) FROM wire_article_feedback feedback
+          CASE WHEN \(incremental) THEN 0 ELSE COALESCE((SELECT COUNT(*) FROM wire_article_feedback feedback
             WHERE feedback.canonical_key = wire_signal_events.canonical_key
               AND feedback.feedback_value = 'good'
               AND feedback.occurred_at >= \(asOf.addingTimeInterval(-86_400))
-              AND feedback.expires_at > \(asOf)), 0),
-          COALESCE((SELECT COUNT(*) FROM wire_article_feedback feedback
+              AND feedback.expires_at > \(asOf)), 0) END,
+          CASE WHEN \(incremental) THEN 0 ELSE COALESCE((SELECT COUNT(*) FROM wire_article_feedback feedback
             WHERE feedback.canonical_key = wire_signal_events.canonical_key
               AND feedback.feedback_value = 'not_good'
               AND feedback.occurred_at >= \(asOf.addingTimeInterval(-86_400))
-              AND feedback.expires_at > \(asOf)), 0),
+              AND feedback.expires_at > \(asOf)), 0) END,
           COUNT(DISTINCT actor_key_hash) FILTER (
             WHERE signal_kind IN ('share','quote','recommendation','publication')
             AND occurred_at >= \(asOf.addingTimeInterval(-3_600))),
@@ -133,10 +142,22 @@ struct PostgresWireSignalRollupStore: Sendable {
               AND occurred_at >= \(asOf.addingTimeInterval(-86_400))
               AND source_collection NOT LIKE 'at.margin.%'
               AND source_collection NOT LIKE 'network.cosmik.%'),
-          \(asOf)
+          \(asOf),
+          -- Inclusive event windows change one PostgreSQL microsecond after
+          -- their boundary; expiry is exclusive and changes at expires_at.
+          CASE WHEN \(incremental) THEN LEAST(
+            MIN(expires_at),
+            MIN(occurred_at) FILTER (WHERE occurred_at >= \(asOf.addingTimeInterval(-3_600)))
+              + interval '1 hour 1 microsecond',
+            MIN(occurred_at) FILTER (WHERE occurred_at >= \(asOf.addingTimeInterval(-86_400)))
+              + interval '24 hours 1 microsecond',
+            MIN(occurred_at) + interval '168 hours 1 microsecond'
+          ) ELSE NULL END
         FROM wire_signal_events
         WHERE occurred_at >= \(asOf.addingTimeInterval(-7 * 86_400)) AND expires_at > \(asOf)
+        \(unescaped: keyFilter)
         GROUP BY canonical_key
+        \(unescaped: incremental ? Self.incrementalFeedbackSuffix : "")
         """,
         logger: logger
       )
@@ -345,9 +366,19 @@ struct PostgresWireSignalRollupStore: Sendable {
           SELECT 1 FROM wire_signal_rollups_next staged
           WHERE staged.canonical_key = current.canonical_key
         )
+        \(unescaped: deleteFilter)
         """,
         logger: logger
       )
+      if incremental {
+        try await finishIncrementalRefresh(connection: connection, asOf: asOf)
+      } else {
+        // An oracle refresh may use another asOf, so the next opt-in refresh
+        // must rebuild scheduling coverage rather than trust an older cursor.
+        try await connection.query(
+          "UPDATE wire_signal_rollup_control SET last_as_of = NULL WHERE singleton AND last_as_of IS NOT NULL",
+          logger: logger)
+      }
       // All changes commit together. A concurrent parent deletion or any other
       // failure rolls back the refresh, preserving the prior complete snapshot.
     }
