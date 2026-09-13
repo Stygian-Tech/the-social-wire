@@ -90,3 +90,8 @@ other writers invalidate the comparison. Tuple-change counts observe the item,
 its AT-URI alias, and metadata row, not the separate URL alias or every WAL record.
 Use equivalent fresh clusters and identical fixture bytes for paired results;
 Production savings still require matched workload and billing windows.
+
+## Incremental Wire Rollup Benchmark
+
+See [Wire Rollup Benchmark](wire-rollup-benchmark.md) for isolated query, cache,
+and concurrent trigger measurements using the actual aggregate SQL.
