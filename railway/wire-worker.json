@@ -6,6 +6,7 @@
     "watchPatterns": [
       "/services/wire-worker/**",
       "/packages/swift/WireCore/**",
+      "/packages/swift/SocialWireRedis/**",
       "/packages/swift/OperationsCore/**",
       "/database/migrations/**",
       "/railway/wire-worker.json"

@@ -20,8 +20,15 @@ struct RedisBlackholeTests {
           count += 1
           return count
         }
-        return channel.pipeline.addHandler(BlackholeRedisPeer(
-          blackhole: ordinal == 1, received: received, closed: closed))
+        do {
+          // Channel initializers execute on the channel's event loop. Keep this
+          // stateful test peer there instead of transferring it as Sendable.
+          try channel.pipeline.syncOperations.addHandler(BlackholeRedisPeer(
+            blackhole: ordinal == 1, received: received, closed: closed))
+          return channel.eventLoop.makeSucceededVoidFuture()
+        } catch {
+          return channel.eventLoop.makeFailedFuture(error)
+        }
       }
       .bind(host: "127.0.0.1", port: 0).get()
     do {
