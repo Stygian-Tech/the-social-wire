@@ -46,6 +46,82 @@ struct PostgresRoleLeaseAuthorityTests {
     }
   }
 
+  @Test("standby skips locked healthy and expired leases without waiting", arguments: [false, true])
+  func standbySkipsLockedOwner(expired: Bool) async throws {
+    try await withPool { pool, store in
+      let now = Date()
+      let lease = try #require(try await store.acquireRoleLease(
+        role: "wire", ownerID: "one", leaseUntil: now.addingTimeInterval(30), at: now))
+      if expired {
+        try await pool.query(
+          "UPDATE operations_role_leases SET acquired_at = clock_timestamp() - INTERVAL '2 seconds', lease_expires_at = clock_timestamp() - INTERVAL '1 second' WHERE environment = \(lease.environment)", logger: logger)
+      }
+      // Keep the owner locked until acquisition finishes: the old unconditional
+      // FOR UPDATE fails with lock_timeout, rather than returning a standby result.
+      try await pool.withTransaction(logger: logger) { connection in
+        let rows = try await connection.query(
+          "SELECT fencing_token FROM operations_role_leases WHERE environment = \(lease.environment) AND role = 'wire' FOR UPDATE", logger: logger)
+        for try await _ in rows {}
+        let contender = try await store.acquireRoleLease(
+          role: "wire", ownerID: "two", leaseUntil: now.addingTimeInterval(30), at: now)
+        #expect(contender == nil)
+      }
+      let contender = try await store.acquireRoleLease(
+        role: "wire", ownerID: "two", leaseUntil: now.addingTimeInterval(30), at: now)
+      #expect((contender != nil) == expired)
+      if let contender { #expect(contender.fencingToken == lease.fencingToken + 1) }
+    }
+  }
+
+  @Test("healthy foreign-owner polls do not rewrite or tuple-lock the lease")
+  func standbyLeavesLeaseUntouched() async throws {
+    try await withPool { pool, store in
+      let now = Date()
+      let lease = try #require(try await store.acquireRoleLease(
+        role: "wire", ownerID: "one", leaseUntil: now.addingTimeInterval(30), at: now))
+      let beforeRows = try await pool.query(
+        "SELECT xmin::text, xmax::text, updated_at FROM operations_role_leases WHERE environment = \(lease.environment) AND role = 'wire'", logger: logger)
+      var before: (String, String, Date)?
+      for try await row in beforeRows { before = try row.decode((String, String, Date).self) }
+      let previous = try #require(before)
+      for _ in 0..<3 {
+        let contender = try await store.acquireRoleLease(
+          role: "wire", ownerID: "two", leaseUntil: now.addingTimeInterval(30), at: now)
+        #expect(contender == nil)
+      }
+      let afterRows = try await pool.query(
+        "SELECT xmin::text, xmax::text, updated_at FROM operations_role_leases WHERE environment = \(lease.environment) AND role = 'wire'", logger: logger)
+      for try await row in afterRows {
+        let current = try row.decode((String, String, Date).self)
+        #expect(current.0 == previous.0)
+        #expect(current.1 == previous.1)
+        #expect(current.2 == previous.2)
+      }
+    }
+  }
+
+  @Test("acquisition preserves same-owner, released, and expired fencing semantics", arguments: ["active", "released", "expired"])
+  func reacquisitionSemantics(state: String) async throws {
+    try await withPool { pool, store in
+      let now = Date()
+      let lease = try #require(try await store.acquireRoleLease(
+        role: "wire", ownerID: "one", leaseUntil: now.addingTimeInterval(30), at: now))
+      if state == "released" {
+        try await store.releaseRoleLease(role: "wire", ownerID: "one", fencingToken: lease.fencingToken, at: now)
+      } else if state == "expired" {
+        try await pool.query(
+          "UPDATE operations_role_leases SET acquired_at = clock_timestamp() - INTERVAL '2 seconds', lease_expires_at = clock_timestamp() - INTERVAL '1 second' WHERE environment = \(lease.environment)", logger: logger)
+      }
+      let skewed = Date(timeIntervalSince1970: 1)
+      let acquired = try #require(try await store.acquireRoleLease(
+        role: "wire", ownerID: "one", leaseUntil: skewed.addingTimeInterval(30), at: skewed))
+      #expect(acquired.fencingToken == lease.fencingToken + (state == "active" ? 0 : 1))
+      if state == "active" { #expect(acquired.acquiredAt == lease.acquiredAt) }
+      #expect(abs(acquired.updatedAt.timeIntervalSince(Date())) < 3)
+      #expect(abs(acquired.expiresAt.timeIntervalSince(acquired.updatedAt) - 30) < 0.001)
+    }
+  }
+
   @Test("expiry is checked after waiting for the publication row lock")
   func expiryAfterLock() async throws {
     try await withPool { pool, store in

@@ -24,9 +24,14 @@ extension PostgresOperationsStore {
       let locked = try await PostgresRoleLeaseBudget.query(
         """
         SELECT fencing_token FROM operations_role_leases
-        WHERE environment = \(environment) AND role = \(role) FOR UPDATE
+        WHERE environment = \(environment) AND role = \(role)
+          AND (released_at IS NOT NULL OR lease_expires_at <= clock_timestamp()
+            OR owner_id = \(ownerID))
+        FOR UPDATE SKIP LOCKED
         """, connection: connection, logger: logger)
-      for _ in locked {}
+      // Standby polls must not lock a healthy owner's row or queue behind a
+      // renewal/publication. The update below rechecks eligibility after locking.
+      guard !locked.isEmpty else { return nil }
       // Sample server time after INSERT/row-lock waits have finished.
       let rows = try await PostgresRoleLeaseBudget.query(
         """
