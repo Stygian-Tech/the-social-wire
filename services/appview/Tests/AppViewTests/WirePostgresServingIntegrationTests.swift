@@ -506,7 +506,11 @@ struct WirePostgresServingIntegrationTests {
       let cursor = try #require(first.cursor)
       let repeated = try await store.getFeed(cursor: nil, limit: 2, language: "en",
         viewerDid: nil, now: now)
-      #expect(repeated == first)
+      #expect(repeated.items == first.items)
+      #expect(repeated.generationID == first.generationID)
+      #expect(repeated.generatedAt == first.generatedAt)
+      let codec = try WireCursorCodec(secret: String(repeating: "c", count: 32))
+      #expect(try codec.decode(#require(repeated.cursor)) == codec.decode(cursor))
       if let payloadCache { #expect(await payloadCache.statistics()["feed_hit"] == 1) }
       let viewer = "did:example:cache-viewer"
       await cache.store(WireViewerModerationSnapshot(blockedDIDs: [], mutedDIDs: [],
