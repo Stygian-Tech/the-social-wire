@@ -42,6 +42,22 @@ struct WireWorkerConfigTests {
     #expect(config.metadataIdleMilliseconds == 1_000)
     #expect(config.postgresMaximumConnections == 12)
     #expect(!config.incrementalSignalRollupsEnabled)
+    #expect(!config.globalCandidateProjectionEnabled)
+  }
+
+  @Test("global candidate projection requires an explicit valid rollout switch")
+  func globalCandidateProjectionRollout() throws {
+    let config = try WireWorkerConfig.load([
+      "DATABASE_URL": "postgres://localhost/wire",
+      "WIRE_GLOBAL_CANDIDATE_PROJECTION_ENABLED": "TRUE",
+    ])
+    #expect(config.globalCandidateProjectionEnabled)
+    #expect(throws: WireWorkerConfigError.invalidBoolean("WIRE_GLOBAL_CANDIDATE_PROJECTION_ENABLED")) {
+      try WireWorkerConfig.load([
+        "DATABASE_URL": "postgres://localhost/wire",
+        "WIRE_GLOBAL_CANDIDATE_PROJECTION_ENABLED": "sometimes",
+      ])
+    }
   }
 
   @Test("incremental signal rollups require an explicit valid rollout switch")

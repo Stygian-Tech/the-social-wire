@@ -16,7 +16,7 @@ struct WireExternalSignalRollupContractTests {
     )
     let store = try String(
       contentsOf: root.appendingPathComponent(
-        "Sources/WireWorkerCore/PostgresWireGenerationStore.swift"),
+        "Sources/WireWorkerCore/PostgresWireCandidateQuery.swift"),
       encoding: .utf8
     )
 
