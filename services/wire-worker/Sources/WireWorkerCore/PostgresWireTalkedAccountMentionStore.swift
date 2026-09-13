@@ -69,18 +69,28 @@ struct PostgresWireTalkedAccountMentionStore: WireTalkedAccountMentionStoring {
   }
 
   func pruneExpired(asOf: Date) async throws {
-    try await pool.withTransaction(logger: logger) { connection in
-      try await connection.query(
-        "DELETE FROM wire_item_mentions WHERE expires_at <= \(asOf)",
-        logger: logger
+    // One batch per source prevents accumulated maintenance from delaying publication.
+    // Separate transactions release each batch's locks before touching the next source.
+    let queries: [PostgresQuery] = [
+      """
+      DELETE FROM wire_item_mentions
+      WHERE ctid IN (
+        SELECT ctid FROM wire_item_mentions WHERE expires_at <= \(asOf)
+        ORDER BY expires_at, source_uri, canonical_key, subject_did
+        LIMIT 500 FOR UPDATE SKIP LOCKED
       )
-      try await connection.query(
-        "DELETE FROM wire_talked_accounts WHERE expires_at <= \(asOf)",
-        logger: logger
+      """,
+      """
+      DELETE FROM wire_talked_accounts
+      WHERE subject_did IN (
+        SELECT subject_did FROM wire_talked_accounts WHERE expires_at <= \(asOf)
+        ORDER BY expires_at, subject_did LIMIT 500 FOR UPDATE SKIP LOCKED
       )
-      try await connection.query(
-        """
-        DELETE FROM wire_link_metadata_cache cache
+      """,
+      """
+      DELETE FROM wire_link_metadata_cache
+      WHERE canonical_key IN (
+        SELECT cache.canonical_key FROM wire_link_metadata_cache cache
         WHERE cache.stale_until IS NOT NULL AND cache.stale_until <= \(asOf)
           AND NOT (cache.status = 'fetching' AND cache.retry_after > \(asOf))
           AND NOT EXISTS (
@@ -88,9 +98,17 @@ struct PostgresWireTalkedAccountMentionStore: WireTalkedAccountMentionStoring {
               AND item.eligible AND item.expires_at > \(asOf)
               AND item.canonical_url LIKE 'https://%'
           )
-        """,
-        logger: logger
+        ORDER BY cache.stale_until, cache.canonical_key
+        LIMIT 500 FOR UPDATE OF cache SKIP LOCKED
       )
+      """,
+    ]
+    for query in queries {
+      try await pool.withTransaction(logger: logger) { connection in
+        try await connection.query("SET LOCAL statement_timeout = '2s'", logger: logger)
+        try await connection.query("SET LOCAL lock_timeout = '500ms'", logger: logger)
+        try await connection.query(query, logger: logger)
+      }
     }
   }
 }

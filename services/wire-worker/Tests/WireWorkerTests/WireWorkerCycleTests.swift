@@ -155,7 +155,8 @@ struct WireWorkerCycleTests {
       group.addTask {
         try await WireGraphMaintenanceRuntime.run(
           maintainer: maintainer, state: WireWorkerHealthState(),
-          logger: Logger(label: "graph-lifetime.tests"))
+          logger: Logger(label: "graph-lifetime.tests"),
+          scheduler: WireGraphMaintenanceScheduler(initialDelayMilliseconds: 0))
       }
       await maintainer.waitUntilStarted()
       _ = try await cycle.run(asOf: now)
