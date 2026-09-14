@@ -1,6 +1,31 @@
 # TSW-92 database cost rollout
 
-## Current memory policy — September 13, 2026
+## Expedited beta memory trial — September 14, 2026
+
+The user explicitly accepted brief beta downtime and requested faster memory
+reductions. This supersedes the earlier requirement to wait 24 hours before
+each Production step for this trial. Start with a supported, service-scoped
+Railway reduction from 16 to 12 decimal GB, observe a complete scheduled ranking
+cycle and ingestion, then consider 10 GB. This abbreviated live experiment does
+not constitute representative Development replay, restart/restore verification,
+authenticated latency acceptance, or proof of sustained cost savings.
+
+PR #415 permits lease renewal during protected publication commits while
+preserving exclusive ownership changes and stale-owner rejection. The previous
+10 GB trial's lease failures also occurred at 16 GB; reassess the new workload
+instead of assuming the old failure established a permanent memory minimum.
+
+Keep 24 vCPUs, replicas, ranking cadence, global memory settings, durability and
+daily snapshots unchanged. Verify Railway configuration and the running cgroup
+after each change. At a verified 4096-byte page size, the kernel caps are
+11,999,997,952 bytes for 12 GB and 9,999,998,976 bytes for 10 GB. Sample actionable
+queue age, lease ownership, generation completion, public availability, memory
+pressure and OOM events. Restore the preceding usable limit immediately on OOM,
+repeated ownership loss or growing actionable backlog; return to 16 GB if the
+preceding step is also unhealthy. A rising `memory.events.max` alone is not an
+OOM. Check process/container identity because replacement can reset counters.
+
+## Previous memory policy — September 13, 2026
 
 Keep Production's hard ceiling at 16 decimal GB while reducing the working set.
 The 10 GB trial was reverted after Coordinator lease failures; similar failures
