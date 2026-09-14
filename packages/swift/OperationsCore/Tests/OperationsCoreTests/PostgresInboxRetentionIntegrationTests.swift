@@ -23,8 +23,13 @@ struct PostgresInboxRetentionIntegrationTests {
     let pool = PostgresClient(configuration: config, backgroundLogger: logger)
     let runner = Task { await pool.run() }
     defer { runner.cancel() }
-    let store = PostgresOperationsStore(pool: pool, environment: "prod", logger: logger)
-    let generation = "retention-test-\(UUID())"
+    let fixtureID = UUID()
+    // Other suites observe environment-wide inbox counts, so isolate both sides
+    // of the cross-environment retention check from their dev/prod fixtures.
+    let environment = "retention-\(fixtureID)"
+    let otherEnvironment = "retention-other-\(fixtureID)"
+    let store = PostgresOperationsStore(pool: pool, environment: environment, logger: logger)
+    let generation = "retention-test-\(fixtureID)"
     // Keep this test's clock before normal fixture data so the public cleanup method
     // does not expire unrelated current telemetry in the disposable database.
     let cutoff = Date(timeIntervalSince1970: 86_400)
@@ -34,7 +39,7 @@ struct PostgresInboxRetentionIntegrationTests {
          repo_did, payload, event_time, status, lease_owner, lease_token, lease_expires_at,
          applied_at, dead_lettered_at, reconciled_at, expires_at,
          filtered_scope_policy, filtered_scope_at)
-      SELECT CASE WHEN seq = 13 THEN 'dev' ELSE 'prod' END, \(generation), seq,
+      SELECT CASE WHEN seq = 13 THEN \(otherEnvironment) ELSE \(environment) END, \(generation), seq,
         'fixture', 'jetstream_v2_seq', 'commit', 'did:plc:retention', '{}', \(cutoff), status,
         CASE WHEN status = 'leased' THEN 'worker' END,
         CASE WHEN status = 'leased' THEN 'lease-token' END,
@@ -57,7 +62,7 @@ struct PostgresInboxRetentionIntegrationTests {
       try await pool.withTransaction(logger: logger) { blocker in
         _ = try await blocker.query("""
           SELECT seq FROM appview_ingestion_inbox
-          WHERE environment = 'prod' AND source_generation = \(generation) AND seq = 7
+          WHERE environment = \(environment) AND source_generation = \(generation) AND seq = 7
           FOR UPDATE
           """, logger: logger)
         #expect(try await store.cleanupExpired(at: cutoff, batchSize: 2) == 2)
