@@ -27,7 +27,10 @@ BEGIN
     AND NOT (
       table_name = 'circle_signal_facts'
       AND column_name = 'actor_key_hash'
-    );
+    )
+    -- Confidence is a required shared-ranker input only in the internal fallback
+    -- projection; it is never included in a Wire public response.
+    AND NOT (table_name = 'fallback_candidates' AND column_name = 'source_confidence');
   IF forbidden_columns <> 0 THEN
     RAISE EXCEPTION 'wire_serving exposes forbidden internal columns';
   END IF;
@@ -74,6 +77,8 @@ SELECT position, canonical_key, reason_codes
 FROM wire_serving.ranked_items LIMIT 1;
 SELECT canonical_key, canonical_url, author_key
 FROM wire_serving.items LIMIT 1;
+SELECT canonical_key, source_confidence, baseline_shares_24h, baseline_admitted
+FROM wire_serving.fallback_candidates LIMIT 1;
 SELECT generation_id, algorithm_version, language_bucket, continuation_ordinal
 FROM wire_serving.edition_generations LIMIT 1;
 SELECT generation_id, module_key, module_kind, publication_key

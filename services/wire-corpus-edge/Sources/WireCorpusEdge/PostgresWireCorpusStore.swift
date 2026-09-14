@@ -168,6 +168,7 @@ actor PostgresWireCorpusStore: WireCorpusStoring {
     generationID: UUID?,
     startOrdinal: Int,
     limit: Int,
+    fallbackLimit: Int? = nil,
     now: Date
   ) async throws -> WireCorpusPage {
     try await requireFreshBaseline(now: now)
@@ -182,7 +183,7 @@ actor PostgresWireCorpusStore: WireCorpusStoring {
     } else if let active = try await activeGeneration(language: language, now: now) {
       generation = active
     } else {
-      return try await fallback(language: language, limit: limit, now: now)
+      return try await fallback(language: language, limit: min(5000, max(1, fallbackLimit ?? limit)), now: now)
     }
 
     let rows = try await cachedRankedRows(
@@ -190,6 +191,9 @@ actor PostgresWireCorpusStore: WireCorpusStoring {
       startOrdinal: startOrdinal,
       limit: limit, language: generation.language, now: now, expiresAt: generation.expiresAt
     )
+    if rows.isEmpty, generationID == nil {
+      return try await fallback(language: language, limit: min(5000, max(1, fallbackLimit ?? limit)), now: now)
+    }
     let age = now.timeIntervalSince(generation.generatedAt)
     return WireCorpusPage(
       generationID: generation.id.uuidString.lowercased(),
@@ -202,37 +206,45 @@ actor PostgresWireCorpusStore: WireCorpusStoring {
     )
   }
 
-  func edition(language: String, region: WireViewerRegion?, now: Date) async throws -> WireEdition {
+  func edition(
+    language: String, region: WireViewerRegion?, fallbackLimit: Int? = nil, now: Date
+  ) async throws -> WireCorpusEdition {
     try await requireFreshBaseline(now: now)
     guard let generation = try await activeGeneration(language: language, now: now) else {
-      return try await fallbackEdition(language: language, now: now)
+      return try await fallbackEdition(language: language, fallbackLimit: fallbackLimit, now: now)
     }
-    let result: WireEdition
+    let payload: WireCorpusEdition
     if let payloadCache {
       let revision = try await editionRevision(generationID: generation.id)
-      result = try await payloadCache.value(
+      payload = try await payloadCache.value(
         CachedEdition.self,
-        scope: ["edition", generation.id.uuidString, language, region?.rawValue ?? "default"],
+        scope: ["edition", "actor-v2", generation.id.uuidString, language, region?.rawValue ?? "default"],
         revision: revision, now: now,
         lifetime: WireCorpusPayloadCache.generationLifetime(expiresAt: generation.expiresAt, now: now),
         currentRevision: { try await self.editionRevision(generationID: generation.id) },
         validatesMembership: { $0.proof.matches(revision: revision, region: region) },
         load: { try await self.loadEdition(generation: generation, region: region, now: now) }).value
     } else {
-      result = try await loadEdition(generation: generation, region: region, now: now).value
+      payload = try await loadEdition(generation: generation, region: region, now: now).value
+    }
+    let result = payload.edition
+    if result.leadStories.isEmpty && result.publicationPanels.isEmpty
+      && result.storyRails.isEmpty && result.generalStories.isEmpty && result.trendingStories.isEmpty {
+      return try await fallbackEdition(language: language, fallbackLimit: fallbackLimit, now: now)
     }
     let stale = now.timeIntervalSince(generation.generatedAt) > 10 * 60
-    return WireEdition(
+    return WireCorpusEdition(edition: WireEdition(
       algorithmVersion: result.algorithmVersion, generationID: result.generationID,
       generatedAt: result.generatedAt, language: result.language, cursor: result.cursor,
       source: stale ? .staleGeneration : .ranked, degraded: generation.recovering || stale,
       leadStories: result.leadStories, publicationPanels: result.publicationPanels,
       storyRails: result.storyRails, generalStories: result.generalStories,
-      trendingStories: result.trendingStories, talkedAboutAccounts: result.talkedAboutAccounts)
+      trendingStories: result.trendingStories, talkedAboutAccounts: result.talkedAboutAccounts),
+      sourceActorKeysByItemID: payload.sourceActorKeysByItemID ?? [:])
   }
 
   private struct CachedEdition: Codable, Sendable {
-    let value: WireEdition
+    let value: WireCorpusEdition
     let proof: WireEditionCacheProof
   }
 
@@ -287,10 +299,14 @@ actor PostgresWireCorpusStore: WireCorpusStoring {
       """,
       logger: logger
     )
+    var sourceActorKeysByItemID: [String: String] = [:]
     var itemsByModule: [String: [WireFeedItem]] = [:]
     for try await row in itemRows {
       let cells = row.makeRandomAccess()
       let key = try cells[0].decode(String.self)
+      if let actorKey = try cells[14].decode(String?.self) {
+        sourceActorKeysByItemID[try cells[2].decode(String.self)] = actorKey
+      }
       itemsByModule[key, default: []].append(
         try Self.decodeItem(
           row: row,
@@ -394,7 +410,8 @@ actor PostgresWireCorpusStore: WireCorpusStoring {
       trendingStories: trending,
       talkedAboutAccounts: accounts.count >= 4 ? accounts : []
     )
-    return CachedEdition(value: value, proof: WireEditionCacheProof(
+    return CachedEdition(value: WireCorpusEdition(edition: value,
+      sourceActorKeysByItemID: sourceActorKeysByItemID), proof: WireEditionCacheProof(
       modulePrefix: modulePrefix, moduleKeys: rawModuleKeys,
       stories: itemsByModule.flatMap { key, items in items.map { [key, $0.itemID] } },
       accounts: accounts.map(\.did), hasMore: hasMore))
@@ -643,7 +660,7 @@ actor PostgresWireCorpusStore: WireCorpusStoring {
 
   private func hasFallbackCorpus() async throws -> Bool {
     let rows = try await pool.query(
-      "SELECT COUNT(*)::bigint FROM (SELECT 1 FROM wire_serving.fallback_items LIMIT \(WireDataPolicy.minimumGlobalCandidates)) AS bounded",
+      "SELECT COUNT(*)::bigint FROM (SELECT 1 FROM wire_serving.fallback_candidates WHERE baseline_admitted LIMIT \(WireDataPolicy.minimumGlobalCandidates)) AS bounded",
       logger: logger
     )
     for try await row in rows {
@@ -653,67 +670,124 @@ actor PostgresWireCorpusStore: WireCorpusStoring {
   }
 
   private func fallback(language: String, limit: Int, now: Date) async throws -> WireCorpusPage {
+    // Select bounded, narrow ranking inputs before joining presentation payloads.
+    // The serving view owns serving eligibility and labels; ranker admission follows
+    // the same bounded selection as the Coordinator. Scoring is shared
+    // with the Coordinator and the direct Postgres fallback.
     let rows = try await pool.query(
       """
-      SELECT canonical_key, canonical_url, representative_uri, title, summary, published_at,
-             thumbnail_url, source_name, source_domain, publication_id, author_name,
-             provenance::text, author_key, topic_keys::text, first_seen_at,
-             publication_key, publication_homepage_url, publication_icon_url
-      FROM wire_serving.fallback_items
-      WHERE (\(language) = 'und' OR language_code = \(language))
-      ORDER BY (provenance ? 'standard_site') DESC,
-               COALESCE(published_at, first_seen_at) DESC, canonical_key
-      LIMIT 5000
-      """,
-      logger: logger
-    )
-    var itemsByKey: [String: (WireFeedItem, String?)] = [:]
-    var candidates: [WireScoredCandidate] = []
-    var ordinal = 0
-    for try await row in rows {
-      let cells = row.makeRandomAccess()
-      let item = try Self.decodeItem(row: row, reasonsJSON: "[]", metadataOffset: 15)
-      let publication = try cells[9].decode(String?.self)
-      let author = try cells[12].decode(String?.self)
-      let topicsJSON = try cells[13].decode(String.self)
-      let firstSeenAt = try cells[14].decode(Date.self)
-      let topics = (try? JSONDecoder().decode([String].self, from: Data(topicsJSON.utf8))) ?? []
-      itemsByKey[item.itemID] = (item, author)
-      candidates.append(
-        WireScoredCandidate(
-          candidate: WireCandidate(
-            canonicalKey: item.itemID,
-            canonicalURL: item.canonicalURL,
-            representativeURI: item.representativeURI,
-            sourceDomain: item.source.domain,
-            publicationID: publication,
-            authorKey: author,
-            topicKeys: topics,
-            publishedAt: item.publishedAt,
-            firstSeenAt: firstSeenAt
-          ),
-          score: Double(5_000 - ordinal),
-          reasonCodes: []
-        )
+      WITH candidate_keys AS MATERIALIZED (
+        SELECT canonical_key, topic_keys, first_seen_at, source_confidence,
+          target_kind, commercial_class, commercial_score, is_standard_site,
+          has_usable_open_graph, has_usable_thumbnail,
+          baseline_last_signal_at, baseline_distinct_actors_1h,
+          baseline_distinct_actors_24h, baseline_distinct_actors_7d,
+          baseline_signals_1h, baseline_signals_24h,
+          baseline_signals_7d, communities_24h,
+          primary_community_key_hash, baseline_recommendations_24h,
+          positive_feedback_24h, negative_feedback_24h,
+          baseline_shares_1h, baseline_shares_24h,
+          baseline_distinct_likers_24h, baseline_likes_1h,
+          baseline_likes_24h, distinct_reposters_24h,
+          reposts_1h, reposts_24h,
+          CASE WHEN baseline_shares_24h >= 5 OR baseline_recommendations_24h >= 2 THEN 0
+            WHEN is_standard_site AND published_at >= \(now.addingTimeInterval(-3 * 86_400))
+              AND baseline_shares_24h >= 1 THEN 1
+            WHEN baseline_shares_24h >= 3 OR baseline_recommendations_24h >= 1 THEN 2
+            ELSE 3 END AS priority
+        FROM wire_serving.fallback_candidates
+        WHERE (\(language) = 'und' OR language_code = \(language))
+        ORDER BY priority, baseline_shares_24h DESC, baseline_recommendations_24h DESC,
+          is_standard_site DESC, has_usable_thumbnail DESC, has_usable_open_graph DESC,
+          baseline_signals_1h DESC, canonical_key
+        LIMIT 5000
       )
-      ordinal += 1
+      SELECT item.canonical_key, item.canonical_url, item.representative_uri, item.title,
+        item.summary, item.published_at, item.thumbnail_url, item.source_name,
+        item.source_domain, item.publication_id, item.author_name, item.provenance::text,
+        item.author_key, selected.topic_keys::text, item.publication_key,
+        item.publication_homepage_url, item.publication_icon_url,
+        selected.first_seen_at, selected.baseline_last_signal_at, selected.source_confidence,
+        selected.is_standard_site, selected.has_usable_open_graph, selected.has_usable_thumbnail,
+        selected.target_kind, selected.commercial_class, selected.commercial_score,
+        selected.baseline_distinct_actors_1h, selected.baseline_distinct_actors_24h,
+        selected.baseline_distinct_actors_7d, selected.baseline_signals_1h,
+        selected.baseline_signals_24h, selected.baseline_signals_7d,
+        selected.communities_24h, selected.primary_community_key_hash,
+        selected.baseline_recommendations_24h, selected.positive_feedback_24h,
+        selected.negative_feedback_24h, selected.baseline_shares_1h, selected.baseline_shares_24h,
+        selected.baseline_distinct_likers_24h, selected.baseline_likes_1h,
+        selected.baseline_likes_24h, selected.distinct_reposters_24h,
+        selected.reposts_1h, selected.reposts_24h
+      FROM candidate_keys selected
+      JOIN LATERAL (
+        SELECT * FROM wire_serving.items
+        WHERE canonical_key = selected.canonical_key
+        LIMIT 1
+      ) item ON TRUE
+      ORDER BY selected.priority, selected.baseline_shares_24h DESC,
+        selected.baseline_recommendations_24h DESC, selected.is_standard_site DESC,
+        selected.has_usable_thumbnail DESC, selected.has_usable_open_graph DESC,
+        selected.baseline_signals_1h DESC, selected.canonical_key
+      """, logger: logger)
+    var itemsByKey: [String: WireFeedItem] = [:]
+    var candidates: [WireCandidate] = []
+    for try await row in rows {
+      try Task.checkCancellation()
+      let cells = row.makeRandomAccess()
+      let item = try Self.decodeItem(row: row, reasonsJSON: "[]", metadataOffset: 14)
+      let topicsJSON = try cells[13].decode(String.self)
+      let topics = (try? JSONDecoder().decode([String].self, from: Data(topicsJSON.utf8))) ?? []
+      itemsByKey[item.itemID] = item
+      candidates.append(WireCandidate(
+        canonicalKey: item.itemID, canonicalURL: item.canonicalURL,
+        representativeURI: item.representativeURI, sourceDomain: item.source.domain,
+        publicationID: try cells[9].decode(String?.self),
+        authorKey: try cells[12].decode(String?.self), topicKeys: topics,
+        publishedAt: item.publishedAt, firstSeenAt: try cells[17].decode(Date.self),
+        lastSignalAt: try cells[18].decode(Date?.self),
+        distinctActors1h: try cells[26].decode(Int.self),
+        distinctActors24h: try cells[27].decode(Int.self),
+        distinctActors7d: try cells[28].decode(Int.self),
+        signals1h: try cells[29].decode(Int.self), signals24h: try cells[30].decode(Int.self),
+        signals7d: try cells[31].decode(Int.self), communities24h: try cells[32].decode(Int.self),
+        primaryCommunityKey: try cells[33].decode(String?.self),
+        recommendations24h: try cells[34].decode(Int.self),
+        positiveFeedback24h: try cells[35].decode(Int.self),
+        negativeFeedback24h: try cells[36].decode(Int.self),
+        shares1h: try cells[37].decode(Int.self), shares24h: try cells[38].decode(Int.self),
+        distinctLikes24h: try cells[39].decode(Int.self),
+        likes1h: try cells[40].decode(Int.self), likes24h: try cells[41].decode(Int.self),
+        distinctReposts24h: try cells[42].decode(Int.self),
+        reposts1h: try cells[43].decode(Int.self), reposts24h: try cells[44].decode(Int.self),
+        sourceConfidence: try cells[19].decode(Double.self),
+        isStandardSite: try cells[20].decode(Bool.self),
+        hasUsableOpenGraphMetadata: try cells[21].decode(Bool.self),
+        hasUsableThumbnail: try cells[22].decode(Bool.self),
+        targetKind: WireTargetKind(rawValue: try cells[23].decode(String.self)) ?? .unsupported,
+        commercialClass: WireCommercialClass(rawValue: try cells[24].decode(String.self)) ?? .probableAd,
+        commercialScore: try cells[25].decode(Double.self)
+      ))
     }
-    let reranked = WireDiversityReranker.rerank(candidates, policy: WireDiversityPolicy())
-    let selected = reranked.items.prefix(limit)
-    let resultRows = selected.enumerated().compactMap { index, candidate -> WireCorpusRow? in
-      guard let stored = itemsByKey[candidate.candidate.canonicalKey] else { return nil }
-      return WireCorpusRow(ordinal: index, item: stored.0, sourceActorKey: stored.1)
+    try Task.checkCancellation()
+    let ranked = try WireRanker.rank(candidates: candidates, asOf: now, config: WireRankingConfig())
+    try Task.checkCancellation()
+    let resultRows = ranked.items.prefix(limit).enumerated().compactMap { index, candidate -> WireCorpusRow? in
+      guard let item = itemsByKey[candidate.candidate.canonicalKey] else { return nil }
+      let rankedItem = WireFeedItem(
+        itemID: item.itemID, canonicalURL: item.canonicalURL,
+        representativeURI: item.representativeURI, title: item.title, summary: item.summary,
+        publishedAt: item.publishedAt, thumbnailURL: item.thumbnailURL, source: item.source,
+        reasons: candidate.reasonCodes, provenance: item.provenance)
+      return WireCorpusRow(ordinal: index, item: rankedItem,
+        sourceActorKey: candidate.candidate.authorKey)
     }
     let bucket = Int(now.timeIntervalSince1970 / 300)
     return WireCorpusPage(
       generationID: "fallback-\(bucket)",
       generatedAt: Date(timeIntervalSince1970: Double(bucket * 300)),
-      language: language,
-      source: .simplifiedFallback,
-      degraded: true,
-      rows: resultRows,
-      exhausted: true
-    )
+      language: language, source: .simplifiedFallback, degraded: true,
+      rows: resultRows, exhausted: true)
   }
 
   private static func decodeItem(
@@ -776,19 +850,27 @@ actor PostgresWireCorpusStore: WireCorpusStoring {
     return result
   }
 
-  private func fallbackEdition(language: String, now: Date) async throws -> WireEdition {
-    let page = try await fallback(language: language, limit: 50, now: now)
+  private func fallbackEdition(
+    language: String, fallbackLimit: Int?, now: Date
+  ) async throws -> WireCorpusEdition {
+    let page = try await fallback(language: language, limit: min(5000, max(1, fallbackLimit ?? 50)), now: now)
+    let actorKeys = Dictionary(page.rows.compactMap { row in
+      row.sourceActorKey.map { (row.item.itemID, $0) }
+    }, uniquingKeysWith: { first, _ in first })
     let edition = WireEditionAssembler.assemble(
       generationID: page.generationID,
       generatedAt: page.generatedAt,
       language: page.language,
       source: page.source,
       degraded: page.degraded,
-      rankedItems: page.rows.map(\.item)
+      rankedItems: Array(page.rows.prefix(50)).map(\.item)
     )
     let accounts = try await latestMaterializedTalkedAccounts(language: page.language)
-    guard accounts.count >= 4 else { return edition }
-    return WireEdition(
+    guard accounts.count >= 4 else {
+      return WireCorpusEdition(edition: edition, sourceActorKeysByItemID: actorKeys,
+        fallbackRows: fallbackLimit == nil ? nil : page.rows)
+    }
+    return WireCorpusEdition(edition: WireEdition(
       algorithmVersion: edition.algorithmVersion,
       generationID: edition.generationID,
       generatedAt: edition.generatedAt,
@@ -802,7 +884,8 @@ actor PostgresWireCorpusStore: WireCorpusStoring {
       generalStories: edition.generalStories,
       trendingStories: edition.trendingStories,
       talkedAboutAccounts: accounts
-    )
+    ), sourceActorKeysByItemID: actorKeys,
+      fallbackRows: fallbackLimit == nil ? nil : page.rows)
   }
 
   private func latestMaterializedTalkedAccounts(
