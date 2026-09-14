@@ -1,29 +1,52 @@
 # TSW-92 database cost rollout
 
-## Expedited beta memory trial — September 14, 2026
+## Expedited beta memory trials — September 14, 2026
 
-The user explicitly accepted brief beta downtime and requested faster memory
-reductions. This supersedes the earlier requirement to wait 24 hours before
-each Production step for this trial. Start with a supported, service-scoped
-Railway reduction from 16 to 12 decimal GB, observe a complete scheduled ranking
-cycle and ingestion, then consider 10 GB. This abbreviated live experiment does
-not constitute representative Development replay, restart/restore verification,
-authenticated latency acceptance, or proof of sustained cost savings.
+Production is back at **12 decimal GB**. After explicitly requesting trials at
+6, 4 and 8 GB, the user reported persistent TestFlight AppView 500s and asked to
+restore 12 GB while continuing query optimization. This latest instruction
+supersedes the temporary request to hold 8 GB. Do not lower the cap again based
+only on an empty inbox or a successful cached feed request.
 
-PR #415 permits lease renewal during protected publication commits while
-preserving exclusive ownership changes and stale-owner rejection. The previous
-10 GB trial's lease failures also occurred at 16 GB; reassess the new workload
-instead of assuming the old failure established a permanent memory minimum.
+The user accepted brief beta downtime and waived the earlier 24-hour wait before
+each step for these experiments. This did not establish sustained performance,
+representative Development replay, restart/restore verification, authenticated
+latency acceptance, or actual cost savings.
+
+| Trial | Observed result |
+| --- | --- |
+| 12 GB | First complete scheduled ranking cycle took 44.492 seconds; ownership remained stable. |
+| 10 GB | Complete cycle took 183.652 seconds, with heavy I/O pressure and maintenance timeouts. |
+| 6 GB | Sustained query stalls; memory pressure reached about 46% and I/O pressure about 74% over a minute. |
+| 4 GB | Repeated renewal timeouts exhausted retries; Wire materializer ownership changed. Reverted promptly. |
+| 8 GB | Backlog temporarily drained and ranking recovered, but authenticated AppView requests continued returning 500/502/504. Restored 12 GB at the user's request. |
+
+No OOM appeared in captured samples, and the original September 9 Postgres
+process persisted. These observations do not make the failed limits viable:
+cache eviction can cause disk contention and service timeouts without an OOM.
+The recovery cycle spanning the 4/10/8 GB transitions took 348.986 seconds; it is
+not a clean benchmark of any one cap.
 
 Keep 24 vCPUs, replicas, ranking cadence, global memory settings, durability and
 daily snapshots unchanged. Verify Railway configuration and the running cgroup
-after each change. At a verified 4096-byte page size, the kernel caps are
-11,999,997,952 bytes for 12 GB and 9,999,998,976 bytes for 10 GB. Sample actionable
-queue age, lease ownership, generation completion, public availability, memory
-pressure and OOM events. Restore the preceding usable limit immediately on OOM,
-repeated ownership loss or growing actionable backlog; return to 16 GB if the
-preceding step is also unhealthy. A rising `memory.events.max` alone is not an
-OOM. Check process/container identity because replacement can reset counters.
+after changes. With 4096-byte pages, observed kernel caps were 11,999,997,952
+bytes for 12 GB, 9,999,998,976 for 10 GB, 8,000,000,000 for 8 GB,
+5,999,996,928 for 6 GB and 3,999,997,952 for 4 GB. A rising
+`memory.events.max` alone is not an OOM; compare process identity and OOM events.
+
+Monitor actual authenticated HTTP failures alongside queue readiness, lease
+ownership, all-language generation completion, memory and I/O pressure.
+For operational inbox checks, avoid sorting all due rows by unindexed
+`staged_at`. Use stable `statement_timestamp()` readiness predicates and the
+existing partial readiness indexes. An indexed earliest-due sample provides
+exact due age but only a lower bound on oldest staged age; label these separately.
+A diagnostic timeout is unavailable evidence, never an empty queue.
+
+PR #415 permits renewal during protected publication while preserving exclusive
+ownership changes and stale-owner rejection. PR #417 separates the logging-only
+enrichment health scan from fetching, schedules it every 15 minutes, and bounds
+its database statements. Further AppView query reductions are required before
+repeating lower-memory trials.
 
 ## Previous memory policy — September 13, 2026
 
