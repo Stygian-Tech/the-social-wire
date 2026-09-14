@@ -270,6 +270,9 @@ public enum WireWorkerHost {
       }
       if runtimePlan.runsMetadataEnrichment {
         group.addTask {
+          try await WireEnrichmentHealthRuntime.run(store: linkMetadataStore, logger: logger)
+        }
+        group.addTask {
           try await WireDisposableCacheMaintenanceRuntime.run(
             store: PostgresWireTalkedAccountMentionStore(pool: pool, logger: logger),
             logger: logger)
