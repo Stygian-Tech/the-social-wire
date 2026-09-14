@@ -437,7 +437,7 @@ extension SQLiteOperationsStore {
     try await operation()
   }
 
-  private static func durabilityCheckpoint(_ row: Row) -> JetstreamDurabilityCheckpoint? {
+  static func durabilityCheckpoint(_ row: Row) -> JetstreamDurabilityCheckpoint? {
     guard let updatedAt = date(row["updated_at"]) else { return nil }
     return JetstreamDurabilityCheckpoint(
       environment: row["environment"], sourceGeneration: row["source_generation"],

@@ -6,6 +6,7 @@ import Hummingbird
 import Logging
 import OperationsCore
 import PostgresNIO
+import SocialWireRedis
 import ThinAppViewCore
 import WireCore
 
@@ -192,7 +193,13 @@ struct Serve: AsyncParsableCommand {
               logger: logger,
               cursorSecret: cursorSecret,
               mode: effectiveMode,
-              moderationCache: moderationCache
+              moderationCache: moderationCache,
+              payloadCache: environment["WIRE_SERVING_REDIS_CACHE_ENABLED"]?.lowercased() == "false"
+                ? nil : redisRuntime.map {
+                  RedisValidatedPayloadCache(commands: $0.client,
+                    environment: config.core.appEnv.rawValue, logger: logger,
+                    domain: "wire-appview-public-payload")
+                }
             )
           }
           wireModerationService = WireViewerModerationService(

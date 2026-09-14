@@ -7,7 +7,7 @@ struct AppViewReadAgeRoutes {
   let projectionService: PublicationProjectionService
 
   func register(on group: RouterGroup<GatewayRequestContext>) {
-    group.get("/xrpc/app.thesocialwire.appview.getReadAgeOptions") { request, context async throws -> ReadAgeOptionsResponse in
+    group.get("/xrpc/app.thesocialwire.appview.getReadAgeOptions") { request, context async throws -> Response in
       guard let auth = context.authContext else { throw HTTPError(.unauthorized) }
       let now = Date()
       let scope = ScopedMarkAllReadScope(
@@ -21,9 +21,20 @@ struct AppViewReadAgeRoutes {
       }
       _ = try ReadAgeCalendar.calendar(timeZone: timeZone)
       let rows = try await rows(for: scope, auth: auth)
-      return try await readService.readAgeOptions(
+      if request.headers[.accept]?.contains("application/x-ndjson") == true {
+        var headers = HTTPFields()
+        headers[.contentType] = "application/x-ndjson"
+        headers[.cacheControl] = "no-cache"
+        return Response(status: .ok, headers: headers, body: ResponseBody { writer in
+          try await readService.writeReadAgeOptionsStream(
+            auth: auth, rows: rows, timeZone: timeZone, now: now, writer: &writer
+          )
+        })
+      }
+      let response = try await readService.readAgeOptions(
         auth: auth, rows: rows, timeZone: timeZone, now: now
       )
+      return try response.response(from: request, context: context)
     }
 
     group.post("/xrpc/app.thesocialwire.appview.markReadBefore") { request, context async throws -> MarkReadBeforeResponse in

@@ -30,6 +30,7 @@ enum WireInboxDrainTelemetryRuntime {
           metadata: [
             "interval_seconds": .string("\(report.intervalSeconds)"),
             "applied_event_count": .string("\(report.appliedEventCount)"),
+            "deferred_event_count": .string("\(report.deferredEventCount)"),
             "applied_events_per_second": .string("\(report.appliedEventsPerSecond)"),
             "actionable_backlog_count": .string("\(report.backlog.actionableEventCount)"),
             "actionable_backlog_oldest_age_seconds": .string(

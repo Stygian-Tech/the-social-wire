@@ -3,6 +3,7 @@ import Foundation
 actor WireInboxDrainTelemetryState {
   private var intervalStartedAt: Date
   private var appliedEventCount = 0
+  private var deferredEventCount = 0
 
   init(startedAt: Date) {
     intervalStartedAt = startedAt
@@ -10,6 +11,10 @@ actor WireInboxDrainTelemetryState {
 
   func recordAppliedEvents(_ count: Int) {
     appliedEventCount += max(0, count)
+  }
+
+  func recordDeferredEvents(_ count: Int) {
+    deferredEventCount += max(0, count)
   }
 
   func finishInterval(
@@ -20,11 +25,13 @@ actor WireInboxDrainTelemetryState {
     let report = WireInboxDrainTelemetryReport(
       intervalSeconds: interval,
       appliedEventCount: appliedEventCount,
+      deferredEventCount: deferredEventCount,
       appliedEventsPerSecond: Double(appliedEventCount) / interval,
       backlog: backlog
     )
     intervalStartedAt = finishedAt
     appliedEventCount = 0
+    deferredEventCount = 0
     return report
   }
 }

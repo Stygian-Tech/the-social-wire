@@ -16,6 +16,7 @@ enum PDSListRecordsCursor {
     guard json.keys.contains("cursor") else { return .end }
     guard let raw = json["cursor"] as? String else { return .invalid("cursor_not_string") }
     let cursor = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard cursor.utf8.count <= 2_048 else { return .invalid("cursor_too_long") }
     guard !cursor.isEmpty else { return .invalid("cursor_empty") }
     guard cursor != current, !seen.contains(cursor) else { return .invalid("cursor_cycle") }
     guard !pageIsEmpty else { return .invalid("empty_page_with_cursor") }

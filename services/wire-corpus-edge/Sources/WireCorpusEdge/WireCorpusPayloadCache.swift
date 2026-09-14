@@ -1,0 +1,3 @@
+import SocialWireRedis
+
+typealias WireCorpusPayloadCache = RedisValidatedPayloadCache

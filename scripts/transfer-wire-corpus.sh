@@ -22,12 +22,12 @@ if [[ -z "$source_major" || "$source_major" != "$destination_major" ]]; then
   exit 1
 fi
 
-required_migration="20260821190000"
+required_migration="20260908220000"
 for database_url in "$SOURCE_DATABASE_URL" "$DESTINATION_DATABASE_URL"; do
   applied="$($PSQL_BIN "$database_url" -X -Atqc \
     "SELECT EXISTS (SELECT 1 FROM schema_migrations WHERE version = '$required_migration')")"
   if [[ "$applied" != "t" ]]; then
-    echo "error: required Wire serving migration is missing" >&2
+    echo "error: required Wire metadata repair migration is missing" >&2
     exit 1
   fi
 done
@@ -71,9 +71,9 @@ stream_copy() {
 }
 
 stream_copy \
-  "SELECT * FROM public.wire_items WHERE expires_at > clock_timestamp()" \
+  "SELECT canonical_key, canonical_url, representative_uri, publication_id, author_key, source_domain, source_name, author_name, title, summary, thumbnail_url, language_code, topic_keys, presentation_snapshot, provenance, published_at, first_seen_at, last_seen_at, last_signal_at, source_confidence, eligible, expires_at, updated_at, publication_homepage_url, publication_icon_url, target_kind, commercial_score, commercial_class, commercial_reasons FROM public.wire_items WHERE expires_at > clock_timestamp()" \
   "wire_corpus_transfer.items" \
-  "canonical_key, canonical_url, representative_uri, publication_id, author_key, source_domain, source_name, author_name, title, summary, thumbnail_url, language_code, topic_keys, presentation_snapshot, provenance, published_at, first_seen_at, last_seen_at, last_signal_at, source_confidence, eligible, expires_at, updated_at"
+  "canonical_key, canonical_url, representative_uri, publication_id, author_key, source_domain, source_name, author_name, title, summary, thumbnail_url, language_code, topic_keys, presentation_snapshot, provenance, published_at, first_seen_at, last_seen_at, last_signal_at, source_confidence, eligible, expires_at, updated_at, publication_homepage_url, publication_icon_url, target_kind, commercial_score, commercial_class, commercial_reasons"
 
 stream_copy \
   "SELECT * FROM public.wire_item_aliases WHERE expires_at > clock_timestamp()" \
@@ -152,6 +152,20 @@ ON CONFLICT (canonical_key) DO UPDATE SET
     SELECT COALESCE(jsonb_agg(value ORDER BY value), '[]'::jsonb)
     FROM (SELECT DISTINCT value FROM jsonb_array_elements_text(public.wire_items.provenance || EXCLUDED.provenance)) values
   ),
+  publication_homepage_url = COALESCE(public.wire_items.publication_homepage_url, EXCLUDED.publication_homepage_url),
+  publication_icon_url = COALESCE(public.wire_items.publication_icon_url, EXCLUDED.publication_icon_url),
+  target_kind = CASE
+    WHEN public.wire_items.target_kind NOT IN ('external_article', 'standard_site_document')
+      THEN public.wire_items.target_kind
+    WHEN EXCLUDED.target_kind NOT IN ('external_article', 'standard_site_document')
+      THEN EXCLUDED.target_kind
+    WHEN public.wire_items.target_kind = 'standard_site_document' THEN public.wire_items.target_kind
+    ELSE EXCLUDED.target_kind END,
+  commercial_score = GREATEST(public.wire_items.commercial_score, EXCLUDED.commercial_score),
+  commercial_class = CASE WHEN public.wire_items.commercial_score > EXCLUDED.commercial_score
+    THEN public.wire_items.commercial_class ELSE EXCLUDED.commercial_class END,
+  commercial_reasons = CASE WHEN public.wire_items.commercial_score > EXCLUDED.commercial_score
+    THEN public.wire_items.commercial_reasons ELSE EXCLUDED.commercial_reasons END,
   published_at = COALESCE(public.wire_items.published_at, EXCLUDED.published_at),
   first_seen_at = LEAST(public.wire_items.first_seen_at, EXCLUDED.first_seen_at),
   last_seen_at = GREATEST(public.wire_items.last_seen_at, EXCLUDED.last_seen_at),
@@ -160,6 +174,16 @@ ON CONFLICT (canonical_key) DO UPDATE SET
   eligible = public.wire_items.eligible AND EXCLUDED.eligible,
   expires_at = GREATEST(public.wire_items.expires_at, EXCLUDED.expires_at),
   updated_at = GREATEST(public.wire_items.updated_at, EXCLUDED.updated_at);
+
+-- Seed imported items in the same transaction. The routine repair cursor only
+-- visits a bounded page, so imports must not depend on a corpus-wide anti-join.
+INSERT INTO public.wire_link_metadata_cache
+  (canonical_key, canonical_url, source, status, retry_after, failure_count, updated_at)
+SELECT item.canonical_key, item.canonical_url, 'fallback', 'pending', NOW(), 0, NOW()
+FROM wire_corpus_transfer.items incoming
+JOIN public.wire_items item USING (canonical_key)
+WHERE item.eligible AND item.expires_at > NOW() AND item.canonical_url LIKE 'https://%'
+ON CONFLICT (canonical_key) DO NOTHING;
 
 INSERT INTO public.wire_item_aliases
 SELECT * FROM wire_corpus_transfer.aliases

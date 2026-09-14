@@ -1,5 +1,5 @@
 {
-  "originHash" : "1fc8b56d557a95917e549a65bc48d71005701d2c05241284173abe8ac5f491cc",
+  "originHash" : "8b9aa04b7183b4385aa0560ba92b5aac747cc5b03bbd86bbaa16c9af09ea9a01",
   "pins" : [
     {
       "identity" : "async-http-client",
@@ -11,12 +11,30 @@
       }
     },
     {
+      "identity" : "grdb.swift",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/groue/GRDB.swift.git",
+      "state" : {
+        "revision" : "b83108d10f42680d78f23fe4d4d80fc88dab3212",
+        "version" : "7.11.1"
+      }
+    },
+    {
       "identity" : "postgres-nio",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/vapor/postgres-nio.git",
       "state" : {
         "revision" : "39ce38a93408937bcd27f521f3cdf88266136b80",
         "version" : "1.33.1"
+      }
+    },
+    {
+      "identity" : "redistack",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/swift-server/RediStack.git",
+      "state" : {
+        "revision" : "8c4ce10883e405cdbde52855f97f1ec9468c889b",
+        "version" : "1.6.3"
       }
     },
     {

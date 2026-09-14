@@ -24,6 +24,29 @@ struct ReadAgeCalendarTests {
     #expect(result.referenceDay == "2026-09-02T05:00:00.000Z")
   }
 
+  @Test("the final week bucket retains every older story and cumulative counts")
+  func cappedWeekBucket() throws {
+    let result = try ReadAgeCalendar.options(
+      publishedDates: [
+        date("2026-09-01T12:00:00Z"),
+        date("2026-08-27T12:00:00Z"),
+        date("2026-08-26T12:00:00Z"),
+        date("2026-08-25T12:00:00Z"),
+        date("2025-01-01T12:00:00Z"),
+      ],
+      timeZone: "America/Chicago", now: date("2026-09-02T17:00:00Z")
+    )
+    #expect(result.options.map(\.days) == [1, 6, 7])
+    #expect(result.options.map(\.count) == [5, 4, 3])
+    #expect(result.options.last?.before == "2026-08-27T05:00:00.000Z")
+    let onlyOld = try ReadAgeCalendar.options(
+      publishedDates: [date("2025-01-01T12:00:00Z")], timeZone: "UTC",
+      now: date("2026-09-02T17:00:00Z")
+    )
+    #expect(onlyOld.options.map(\.days) == [7])
+    #expect(onlyOld.options.map(\.count) == [1])
+  }
+
   @Test("calendar subtraction handles spring and fall daylight-saving changes")
   func daylightSaving() throws {
     let spring = try ReadAgeCalendar.options(

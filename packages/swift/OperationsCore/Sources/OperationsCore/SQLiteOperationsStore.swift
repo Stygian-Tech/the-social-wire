@@ -10,6 +10,8 @@ public actor SQLiteOperationsStore: OperationsStore {
   private let decoder = JSONDecoder()
   private let backfillFingerprintSecret: String?
   var ingestionLeaderFenceCounts: [String: IngestionLeaderFenceState] = [:]
+  // Internal test seam; production lease authority uses the storage clock after queueing.
+  var roleLeaseClock: @Sendable (Date) -> Date = { _ in Date() }
   var roleLeaseFenceCounts: [String: RoleLeaseFenceState] = [:]
 
   public init(

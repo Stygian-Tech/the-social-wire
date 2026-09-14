@@ -153,6 +153,20 @@ func (p *Postgres) ReconcileWireAdmission(ctx context.Context, lease Lease) (boo
 				}
 				return false, fmt.Errorf("load Wire recovery anchor: %w", err)
 			}
+			// Preserve the pre-rewind boundary. The publication worker may repair
+			// exact logged activity without inventing signals or advancing replay.
+			if _, err := tx.ExecContext(ctx, `
+				INSERT INTO wire_publication_signal_recovery_jobs
+				  (environment, source_generation, inbox_initialized_at, maximum_source_seq)
+				SELECT checkpoint.environment, checkpoint.source_generation,
+				       epoch.initialized_at, checkpoint.last_staged_seq
+				FROM appview_jetstream_checkpoints checkpoint
+				JOIN wire_ingestion_inbox_epochs epoch USING (environment, source_generation)
+				WHERE checkpoint.environment = $1 AND checkpoint.source_generation = $2
+				  AND checkpoint.last_staged_seq IS NOT NULL
+				ON CONFLICT DO NOTHING`, p.source.Environment, p.source.Generation); err != nil {
+				return false, fmt.Errorf("register Wire publication recovery: %w", err)
+			}
 			result, updateErr := tx.ExecContext(ctx, `
 				UPDATE appview_jetstream_checkpoints
 				SET last_staged_seq = $3,
@@ -797,11 +811,20 @@ type Lease struct {
 }
 
 func (p *Postgres) AcquireLease(ctx context.Context, name, ownerID string, ttl time.Duration) (Lease, error) {
+	// Avoid taking the live owner's row lock for a known losing contender. The
+	// conflict predicate remains authoritative if the snapshot races acquisition,
+	// renewal, or release; the precheck alone never grants ownership.
 	row := p.db.QueryRowContext(ctx, `
 		INSERT INTO appview_ingestion_leases
 		  (environment, lease_name, source_generation, owner_id, fencing_token,
 		   acquired_at, lease_expires_at, updated_at)
-		VALUES ($1, $2, $3, $4, 1, NOW(), NOW() + $5::interval, NOW())
+		SELECT $1, $2, $3, $4, 1, NOW(), NOW() + $5::interval, NOW()
+		WHERE NOT EXISTS (
+		  SELECT 1 FROM appview_ingestion_leases held
+		  WHERE held.environment = $1 AND held.lease_name = $2
+		    AND held.owner_id <> $4 AND held.released_at IS NULL
+		    AND held.lease_expires_at > NOW()
+		)
 		ON CONFLICT (environment, lease_name) DO UPDATE SET
 		  source_generation = EXCLUDED.source_generation,
 		  owner_id = EXCLUDED.owner_id,

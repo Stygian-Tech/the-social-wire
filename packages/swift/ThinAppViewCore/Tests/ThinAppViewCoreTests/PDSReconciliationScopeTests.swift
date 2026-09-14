@@ -139,20 +139,28 @@ struct PDSReconciliationScopeTests {
 @Suite("PDS reconciliation rate limiting")
 struct PDSReconciliationRateLimitTests {
   @Test("concurrent callers reserve distinct permits before suspension")
-  func concurrentPermitsRemainRateLimited() async {
-    let limiter = PDSRequestRateLimiter(requestsPerSecond: 20)
-    let clock = ContinuousClock()
-    let startedAt = clock.now
-
-    await withTaskGroup(of: Void.self) { group in
-      for _ in 0..<5 {
-        group.addTask { try? await limiter.waitForPermit() }
+  func concurrentPermitsRemainRateLimited() async throws {
+    let sleeper = GatedPermitSleeper()
+    let limiter = PDSRequestRateLimiter(
+      requestsPerSecond: 20,
+      now: { Date(timeIntervalSinceReferenceDate: 0) },
+      sleep: { await sleeper.suspend(for: $0) })
+    let callers = Task {
+      try await withThrowingTaskGroup(of: Void.self) { group in
+        for _ in 0..<5 {
+          group.addTask { try await limiter.waitForPermit() }
+        }
+        try await group.waitForAll()
       }
     }
-
-    let elapsed = startedAt.duration(to: clock.now)
-    #expect(elapsed >= .milliseconds(140))
-    #expect(elapsed < .seconds(2))
+    await sleeper.waitForSuspendedPermits()
+    let delays = await sleeper.delays.sorted()
+    #expect(delays.count == 4)
+    for (actual, expected) in zip(delays, [0.05, 0.10, 0.15, 0.20]) {
+      #expect(abs(actual - expected) < 0.000_001)
+    }
+    await sleeper.releaseAll()
+    try await callers.value
   }
 
   @Test("Retry-After delta seconds is parsed, jittered, and capped")
@@ -212,5 +220,33 @@ struct PDSReconciliationRateLimitTests {
     #expect(exhausted.outcome == .exhausted)
     #expect(exhausted.appliedDelaySeconds == 0)
     #expect(exhausted.jitterSeconds == 0)
+  }
+}
+
+private actor GatedPermitSleeper {
+  private(set) var delays: [TimeInterval] = []
+  private var permits: [CheckedContinuation<Void, Never>] = []
+  private var observer: CheckedContinuation<Void, Never>?
+
+  func suspend(for delay: TimeInterval) async {
+    await withCheckedContinuation { continuation in
+      delays.append(delay)
+      permits.append(continuation)
+      if permits.count == 4 {
+        observer?.resume()
+        observer = nil
+      }
+    }
+  }
+
+  func waitForSuspendedPermits() async {
+    if permits.count == 4 { return }
+    await withCheckedContinuation { observer = $0 }
+  }
+
+  func releaseAll() {
+    let ready = permits
+    permits.removeAll()
+    for permit in ready { permit.resume() }
   }
 }

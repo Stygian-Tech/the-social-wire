@@ -7,7 +7,7 @@ import { useReadRoute } from "@/contexts/ReadRouteContext";
 import { useAuth } from "@/hooks/useAuth";
 import type { EntriesPage } from "@/hooks/useEntries";
 import { applyUnreadCountsEvent } from "@/lib/bootstrapStreamState";
-import { fetchReadAgeOptions, markReadBefore } from "@/lib/feedReadAgeClient";
+import { fetchReadAgeOptions, markReadBefore, type ReadAgeOption } from "@/lib/feedReadAgeClient";
 import type {
   GatewayMarkAllReadScope,
   PublicationSidebarProjection,
@@ -46,10 +46,16 @@ export function useFeedReadAgeActions(scope: GatewayMarkAllReadScope | null) {
     return { oauth, scope, viewerDid, assertCurrent };
   }, [context, getOAuthSession, scope, viewerDid]);
 
-  const loadOptions = useCallback(async () => {
+  const loadOptions = useCallback(async (onOptions?: (options: ReadAgeOption[]) => void, signal?: AbortSignal) => {
     const action = beginAction();
     const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    const response = await fetchReadAgeOptions(action.oauth, action.scope, timeZone);
+    const response = await fetchReadAgeOptions(action.oauth, action.scope, timeZone, {
+      signal,
+      onOptions: (options) => {
+        action.assertCurrent();
+        onOptions?.(options);
+      },
+    });
     action.assertCurrent();
     return response.options;
   }, [beginAction]);

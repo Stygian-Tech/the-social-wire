@@ -19,8 +19,9 @@ struct NewsShellView: View {
 
     private var availableTabs: [NewsTab] {
         NewsTab.available(
-            wire: appModel.feedPreferences.showWire && appModel.wireCatalog?.isAvailable == true,
-            circle: appModel.feedPreferences.showCircle
+            preferences: appModel.feedPreferences,
+            wireCatalog: appModel.wireCatalog,
+            circleCatalog: appModel.circleCatalog
         )
     }
 
@@ -53,6 +54,10 @@ struct NewsShellView: View {
         .onChange(of: appModel.viewerDID, viewerDidChange)
         .onChange(of: appModel.primaryTabFeeds, primaryTabFeedsChanged)
         .onChange(of: appModel.feedPreferences) { _, _ in
+            appModel.loadPrimaryTabPreferences()
+            reconcileVisibleSelection()
+        }
+        .onChange(of: appModel.visiblePrimaryTabFeedChoices) { _, _ in
             appModel.loadPrimaryTabPreferences()
             reconcileVisibleSelection()
         }
@@ -131,7 +136,9 @@ struct NewsShellView: View {
                                 contextID: "\(appModel.viewerDID ?? ""):news:\(bulkReadScope)",
                                 refreshRevision: appModel.readAgeRevision,
                                 scopeTitle: bulkReadTitle,
-                                loadOptions: { try await appModel.readAgeOptions(for: bulkReadScope) },
+                                loadOptions: { onOptions in
+                                    try await appModel.readAgeOptions(for: bulkReadScope, onOptions: onOptions)
+                                },
                                 markAllRead: { await appModel.markRead(for: bulkReadScope) },
                                 markOlderRead: {
                                     try await appModel.markRead(for: bulkReadScope, before: $0.before)
@@ -345,7 +352,15 @@ struct NewsShellView: View {
         case .library:
             // A disappearing discovery tab can select Library before the reader source
             // has changed. Never turn that fallback into a hidden Wire tab.
-            selectPrimaryFeed(appModel.readerListSource == .following ? .following : .subscribed)
+            let preferred: NewsPrimaryFeed = appModel.readerListSource == .following ? .following : .subscribed
+            let choices = appModel.visiblePrimaryTabFeedChoices
+            if choices.contains(preferred) {
+                selectPrimaryFeed(preferred)
+            } else if let feed = choices.first(where: { $0 == .subscribed || $0 == .following }) {
+                selectPrimaryFeed(feed)
+            } else {
+                selectedSlot = .readLater
+            }
         case .saved:
             selectedSlot = .readLater
         case .search:

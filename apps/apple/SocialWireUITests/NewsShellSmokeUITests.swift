@@ -60,6 +60,8 @@ final class NewsShellSmokeUITests: XCTestCase {
         XCTAssertTrue(ageButton(days: 2, in: app).exists)
         XCTAssertTrue(ageButton(days: 4, in: app).exists)
         XCTAssertFalse(ageButton(days: 3, in: app).exists)
+        XCTAssertTrue(ageButton(days: 7, in: app).exists)
+        XCTAssertFalse(ageButton(days: 8, in: app).exists)
         ageButton(days: 2, in: app).tap()
         let olderConfirmation = app.alerts["Mark Older Stories As Read?"]
         XCTAssertTrue(olderConfirmation.waitForExistence(timeout: 3))
@@ -108,18 +110,22 @@ final class NewsShellSmokeUITests: XCTestCase {
         XCTAssertTrue(canvas.waitForExistence(timeout: 5))
         XCTAssertEqual(canvas.frame.width, 320, accuracy: 1)
 
-        if !circle {
-            let firstCard = app.descendants(matching: .any)["wire-card-ui-story-1"]
+        let actionContainer: XCUIElement
+        if circle {
+            actionContainer = canvas
+        } else {
+            let firstCard = canvas.descendants(matching: .any)["wire-card-ui-story-1"]
             XCTAssertTrue(firstCard.waitForExistence(timeout: 2))
             XCTAssertGreaterThanOrEqual(firstCard.frame.width, 250)
+            actionContainer = firstCard
         }
 
         let actionSpecs = circle
             ? [("story-open", "Open Story"), ("story-hide", "Hide Story")]
             : [("story-open", "Open Story")]
         let actions = actionSpecs.map { identifier, label in
-            let identified = app.descendants(matching: .any).matching(identifier: identifier).firstMatch
-            return identified.exists ? identified : app.buttons[label]
+            let identified = actionContainer.descendants(matching: .any).matching(identifier: identifier).firstMatch
+            return identified.exists ? identified : actionContainer.buttons[label]
         }
         let actionIDs = actionSpecs.map(\.0)
         for action in actions {
@@ -147,17 +153,23 @@ final class NewsShellSmokeUITests: XCTestCase {
             reveal(action, in: canvas)
             XCTAssertTrue(action.isHittable)
             action.tap()
-            XCTAssertTrue(result.waitForExistence(timeout: 2))
+            // The result exists before tapping; wait for the callback to update it.
+            let callback = XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "label == %@", expected),
+                object: result
+            )
+            XCTAssertEqual(XCTWaiter.wait(for: [callback], timeout: 5), .completed)
             XCTAssertEqual(result.label, expected)
         }
 
         if !circle {
             let rail = canvas.scrollViews.firstMatch
-            rail.swipeLeft()
-            let secondCard = app.descendants(matching: .any)["wire-card-ui-story-2"]
+            let secondCard = canvas.descendants(matching: .any)["wire-card-ui-story-2"]
             XCTAssertTrue(secondCard.waitForExistence(timeout: 2))
             XCTAssertGreaterThanOrEqual(secondCard.frame.width, 250)
             let secondOpen = secondCard.descendants(matching: .any)["story-open"]
+            revealHorizontally(secondOpen, in: rail)
+            reveal(secondOpen, in: canvas)
             XCTAssertTrue(secondOpen.isHittable, "The longer second card must remain usable")
             XCTAssertLessThanOrEqual(secondOpen.frame.maxY, rail.frame.maxY + 1)
         }
@@ -173,15 +185,49 @@ final class NewsShellSmokeUITests: XCTestCase {
         ).firstMatch
     }
 
-    private func reveal(_ element: XCUIElement, in scrollView: XCUIElement) {
+    private func revealHorizontally(_ element: XCUIElement, in scrollView: XCUIElement) {
         for _ in 0..<6 {
-            if element.isHittable { return }
-            if element.frame.midY < scrollView.frame.minY {
-                scrollView.swipeDown()
+            let frame = element.frame
+            let viewport = scrollView.frame
+            if frame.minX >= viewport.minX, frame.maxX <= viewport.maxX { return }
+            if frame.minX < viewport.minX {
+                scrollView.swipeRight()
             } else {
-                scrollView.swipeUp()
+                scrollView.swipeLeft()
             }
         }
+    }
+
+    private func reveal(_ element: XCUIElement, in scrollView: XCUIElement) {
+        for _ in 0..<6 {
+            let frame = element.frame
+            let viewport = scrollView.frame
+            // Hittability alone can accept a clipped action near a scroll edge.
+            if frame.minY >= viewport.minY, frame.maxY <= viewport.maxY,
+               element.isHittable { break }
+            if frame.minY < viewport.minY {
+                scrollView.swipeDown()
+            } else if frame.maxY > viewport.maxY {
+                scrollView.swipeUp()
+            } else {
+                // Scrolling cannot resolve an action that is fully visible but blocked.
+                break
+            }
+        }
+        let frame = element.frame
+        let viewport = scrollView.frame
+        XCTAssertGreaterThanOrEqual(
+            frame.minY, viewport.minY,
+            "Action must be fully visible before tapping: \(frame), viewport: \(viewport)"
+        )
+        XCTAssertLessThanOrEqual(
+            frame.maxY, viewport.maxY,
+            "Action must be fully visible before tapping: \(frame), viewport: \(viewport)"
+        )
+        XCTAssertTrue(
+            element.isHittable,
+            "Action must accept a tap after reveal: \(frame), viewport: \(viewport)"
+        )
     }
 
     private func content(for tab: String, in app: XCUIApplication) -> XCUIElement {

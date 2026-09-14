@@ -6,6 +6,7 @@ let package = Package(
   platforms: [.macOS(.v14)],
   dependencies: [
     .package(path: "../../packages/swift/WireCore"),
+    .package(path: "../../packages/swift/SocialWireRedis"),
     .package(url: "https://github.com/hummingbird-project/hummingbird.git", from: "2.6.0"),
     .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.4.0"),
     .package(url: "https://github.com/apple/swift-log.git", from: "1.6.0"),
@@ -17,6 +18,7 @@ let package = Package(
       name: "WireCorpusEdge",
       dependencies: [
         "WireCore",
+        "SocialWireRedis",
         .product(name: "ArgumentParser", package: "swift-argument-parser"),
         .product(name: "Hummingbird", package: "hummingbird"),
         .product(name: "Logging", package: "swift-log"),
@@ -32,8 +34,10 @@ let package = Package(
     .testTarget(
       name: "WireCorpusEdgeTests",
       dependencies: [
+        .product(name: "PostgresNIO", package: "postgres-nio"),
         "WireCorpusEdge",
         "WireCore",
+        "SocialWireRedis",
         .product(name: "HummingbirdTesting", package: "hummingbird"),
         .product(name: "Logging", package: "swift-log"),
       ],

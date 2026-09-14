@@ -74,10 +74,10 @@ export function ReadArticleFilterBar() {
 
   if (editorialFeed) {
     const isRefreshing = isCircle
-      ? circle.isRefetching
+      ? circle.isRefetching || circle.catalog.isFetching
       : wire.isRefreshingFirstPage;
     const isRefreshDisabled = isCircle
-      ? circle.isLoading || circle.isRefetching
+      ? circle.isLoading || circle.isRefetching || circle.catalog.isFetching
       : wire.isRefreshingFirstPage ||
         wire.isLoading ||
         wire.viewerModerationRetryUnavailable;
@@ -104,8 +104,14 @@ export function ReadArticleFilterBar() {
           aria-label={`Refresh ${title}`}
           title={`Refresh ${title}`}
           onClick={() => {
-            if (isCircle) void circle.refetch();
-            else void wire.retryTheWire().catch(() => undefined);
+            if (isCircle) {
+              if (
+                circle.catalog.isError ||
+                circle.catalog.data?.enabled !== true ||
+                circle.catalog.data.available !== true
+              ) void circle.catalog.refetch();
+              else void circle.refetch();
+            } else void wire.retryTheWire().catch(() => undefined);
           }}
         >
           <RefreshCw

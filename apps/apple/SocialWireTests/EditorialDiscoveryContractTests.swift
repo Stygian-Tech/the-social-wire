@@ -70,6 +70,52 @@ struct EditorialDiscoveryContractTests {
         #expect(hidden == CircleHiddenItemState(storyId: "circle-story-1", hidden: true))
     }
 
+    @Test("Circle explains unavailable corpus and a successful empty network separately")
+    func circleEmptyStates() {
+        let ready = CircleFeedCatalog(
+            enabled: true, available: true, title: "Your Circle", subtitle: "",
+            supportedLanguages: ["en"], latestGenerationId: nil, generatedAt: nil
+        )
+        let unavailable = CircleFeedCatalog(
+            enabled: true, available: false, title: "Your Circle", subtitle: "",
+            supportedLanguages: ["en"], latestGenerationId: nil, generatedAt: nil
+        )
+        #expect(CircleContentState(catalog: unavailable, storyCount: nil,
+            visibleStoryCount: 0, isLoading: false, errorMessage: nil) == .notReady)
+        #expect(CircleContentState(catalog: ready, storyCount: 0,
+            visibleStoryCount: 0, isLoading: false, errorMessage: nil) == .buildingNetwork)
+        #expect(CircleContentState(catalog: ready, storyCount: 3,
+            visibleStoryCount: 0, isLoading: false, errorMessage: nil) == .noVisibleStories)
+    }
+
+    @Test("Limited Circle coverage is not presented as an inactive network")
+    func circleLimitedCoverageEmptyState() {
+        #expect(CircleContentState(catalog: nil, storyCount: 0,
+            visibleStoryCount: 0, isLoading: false, errorMessage: nil,
+            limitedCoverage: true) == .refreshing)
+        #expect(CircleContentState(catalog: nil, storyCount: 0,
+            visibleStoryCount: 0, isLoading: false, errorMessage: "Offline",
+            limitedCoverage: true) == .failed)
+        #expect(CircleContentState(catalog: nil, storyCount: 3,
+            visibleStoryCount: 3, isLoading: false, errorMessage: nil,
+            limitedCoverage: true) == .stories)
+        #expect(CircleContentState(catalog: nil, storyCount: 3,
+            visibleStoryCount: 0, isLoading: false, errorMessage: nil,
+            limitedCoverage: true) == .noVisibleStories)
+    }
+
+    @Test("Circle preserves loading, errors, and cached stories during refresh")
+    func circleContentStatePrecedence() {
+        #expect(CircleContentState(catalog: nil, storyCount: nil,
+            visibleStoryCount: 0, isLoading: false, errorMessage: nil) == .loading)
+        #expect(CircleContentState(catalog: nil, storyCount: 0,
+            visibleStoryCount: 0, isLoading: true, errorMessage: nil) == .loading)
+        #expect(CircleContentState(catalog: nil, storyCount: 0,
+            visibleStoryCount: 0, isLoading: false, errorMessage: "Offline") == .failed)
+        #expect(CircleContentState(catalog: nil, storyCount: 3,
+            visibleStoryCount: 3, isLoading: true, errorMessage: "Offline") == .stories)
+    }
+
     @Test("Circle DTOs do not retain private graph or ranking fields")
     func circlePrivacyBoundary() throws {
         let decoded = try JSONDecoder().decode(

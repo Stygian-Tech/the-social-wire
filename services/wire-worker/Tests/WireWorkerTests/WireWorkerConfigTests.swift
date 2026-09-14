@@ -4,6 +4,20 @@ import Testing
 
 @Suite("The Wire worker configuration")
 struct WireWorkerConfigTests {
+  @Test("ten-minute Coordinator cadence preserves the two-hour generation window")
+  func productionCadence() throws {
+    let config = try WireWorkerConfig.load([
+      "DATABASE_URL": "postgres://localhost/wire",
+      "WIRE_WORKER_ROLE": "rank",
+      "WIRE_RANK_INTERVAL_SECONDS": "600",
+      "WIRE_GENERATION_RETENTION_SECONDS": "7200",
+    ])
+    #expect(config.intervalSeconds == 600)
+    #expect(config.generationRetentionSeconds == 7200)
+    #expect(WireGenerationSchedule.remainingDelay(interval: .seconds(600), elapsed: .seconds(60)) == .seconds(540))
+    #expect(WireGenerationSchedule.remainingDelay(interval: .seconds(600), elapsed: .seconds(700)) == .zero)
+  }
+
   @Test("defaults to off")
   func offDefault() throws {
     let config = try WireWorkerConfig.load(["DATABASE_URL": "postgres://localhost/wire"])
@@ -11,12 +25,13 @@ struct WireWorkerConfigTests {
     #expect(config.externalSignalMode == .off)
     #expect(config.role == .combined)
     #expect(config.intervalSeconds == 300)
-    #expect(config.generationRetentionSeconds == 7_200)
+    #expect(config.generationRetentionSeconds == 3_600)
     #expect(config.baselineLabelers.count == 1)
     #expect(config.baselineLabelers[0].endpointHost == "mod.bsky.app")
     #expect(config.labelRefreshMaximumAgeSeconds == 900)
     #expect(config.inboxBatchSize == 1_000)
     #expect(config.inboxConcurrency == 16)
+    #expect(!config.deferredRecommendationsEnabled)
     #expect(config.inboxIdleMilliseconds == 250)
     #expect(config.inboxCleanupBatchSize == 5_000)
     #expect(config.inboxCleanupIdleMilliseconds == 1_000)
@@ -26,6 +41,53 @@ struct WireWorkerConfigTests {
     #expect(config.metadataConcurrency == 8)
     #expect(config.metadataIdleMilliseconds == 1_000)
     #expect(config.postgresMaximumConnections == 12)
+    #expect(!config.incrementalSignalRollupsEnabled)
+    #expect(!config.globalCandidateProjectionEnabled)
+  }
+
+  @Test("global candidate projection requires an explicit valid rollout switch")
+  func globalCandidateProjectionRollout() throws {
+    let config = try WireWorkerConfig.load([
+      "DATABASE_URL": "postgres://localhost/wire",
+      "WIRE_GLOBAL_CANDIDATE_PROJECTION_ENABLED": "TRUE",
+    ])
+    #expect(config.globalCandidateProjectionEnabled)
+    #expect(throws: WireWorkerConfigError.invalidBoolean("WIRE_GLOBAL_CANDIDATE_PROJECTION_ENABLED")) {
+      try WireWorkerConfig.load([
+        "DATABASE_URL": "postgres://localhost/wire",
+        "WIRE_GLOBAL_CANDIDATE_PROJECTION_ENABLED": "sometimes",
+      ])
+    }
+  }
+
+  @Test("incremental signal rollups require an explicit valid rollout switch")
+  func incrementalSignalRollupRollout() throws {
+    let config = try WireWorkerConfig.load([
+      "DATABASE_URL": "postgres://localhost/wire",
+      "WIRE_SIGNAL_ROLLUP_INCREMENTAL_ENABLED": "TRUE",
+    ])
+    #expect(config.incrementalSignalRollupsEnabled)
+    #expect(throws: WireWorkerConfigError.invalidBoolean("WIRE_SIGNAL_ROLLUP_INCREMENTAL_ENABLED")) {
+      try WireWorkerConfig.load([
+        "DATABASE_URL": "postgres://localhost/wire",
+        "WIRE_SIGNAL_ROLLUP_INCREMENTAL_ENABLED": "sometimes",
+      ])
+    }
+  }
+
+  @Test("durable recommendation recovery requires an explicit rollout switch")
+  func deferredRecommendationRollout() throws {
+    let config = try WireWorkerConfig.load([
+      "DATABASE_URL": "postgres://localhost/wire",
+      "WIRE_DEFERRED_RECOMMENDATIONS_ENABLED": "TRUE",
+    ])
+    #expect(config.deferredRecommendationsEnabled)
+    #expect(throws: WireWorkerConfigError.invalidBoolean("WIRE_DEFERRED_RECOMMENDATIONS_ENABLED")) {
+      try WireWorkerConfig.load([
+        "DATABASE_URL": "postgres://localhost/wire",
+        "WIRE_DEFERRED_RECOMMENDATIONS_ENABLED": "sometimes",
+      ])
+    }
   }
 
   @Test("loads every external-signal rollout mode case insensitively")

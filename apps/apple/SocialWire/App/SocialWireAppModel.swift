@@ -409,10 +409,13 @@ final class SocialWireAppModel {
         }
     }
 
-    func readAgeOptions(for scope: ReaderMarkReadScope) async throws -> [FeedReadAgeOption] {
+    func readAgeOptions(
+        for scope: ReaderMarkReadScope,
+        onOptions: @escaping @MainActor ([FeedReadAgeOption]) -> Void
+    ) async throws -> [FeedReadAgeOption] {
         let scopes = gatewayMarkAllReadScopes(for: scope)
         guard scopes.count == 1, let gatewayScope = scopes.first else { return [] }
-        return try await gateway.fetchReadAgeOptions(scope: gatewayScope).options
+        return try await gateway.fetchReadAgeOptions(scope: gatewayScope, onOptions: onOptions).options
     }
 
     func markRead(for scope: ReaderMarkReadScope, before: String) async throws {
@@ -1214,12 +1217,12 @@ final class SocialWireAppModel {
         }
         do {
             circleCatalog = try await gateway.fetchCircleCatalog()
+            circleErrorMessage = nil
             if circleCatalog?.isAvailable != true {
                 circleEdition = nil
             }
         } catch {
-            circleCatalog = nil
-            circleEdition = nil
+            circleErrorMessage = error.localizedDescription
         }
     }
 
@@ -1349,16 +1352,15 @@ final class SocialWireAppModel {
         let feeds = NewsPrimaryFeedStorage.configuredFeeds(viewerDID: viewerDID)
             .filter(availableFeeds.contains)
         primaryTabFeeds = feeds
-        NewsPrimaryFeedStorage.saveConfiguredFeeds(feeds, viewerDID: viewerDID)
     }
 
     var visiblePrimaryTabFeedChoices: [NewsPrimaryFeed] {
         NewsPrimaryFeed.allCases.filter { feed in
             switch feed {
             case .wire:
-                feedPreferences.showWire
+                feedPreferences.showWire && wireCatalog?.isAvailable == true
             case .circle:
-                feedPreferences.showCircle
+                feedPreferences.showCircle && circleCatalog?.enabled != false
             case .subscribed:
                 visibleReaderListSources.contains(.subscribed)
             case .following:
@@ -1368,7 +1370,9 @@ final class SocialWireAppModel {
     }
 
     func setPrimaryTabFeedEnabled(_ enabled: Bool, feed: NewsPrimaryFeed) {
-        var feeds = primaryTabFeeds
+        // Availability affects displayed slots, not the user's persisted selection.
+        var feeds = viewerDID.map(NewsPrimaryFeedStorage.configuredFeeds)
+            ?? NewsPrimaryFeed.defaultFeeds
         if enabled {
             if !feeds.contains(feed), visiblePrimaryTabFeedChoices.contains(feed), feeds.count < 4 {
                 feeds.append(feed)
@@ -1376,7 +1380,7 @@ final class SocialWireAppModel {
         } else {
             feeds.removeAll { $0 == feed }
         }
-        primaryTabFeeds = feeds
+        primaryTabFeeds = feeds.filter(visiblePrimaryTabFeedChoices.contains)
         if let viewerDID {
             NewsPrimaryFeedStorage.saveConfiguredFeeds(feeds, viewerDID: viewerDID)
         }
@@ -1469,7 +1473,11 @@ final class SocialWireAppModel {
                 ReaderFeedPreferencesStorage.save(feedPreferences, viewerDid: viewerDID)
             }
             discoveryFeedSaveError = "Couldn't save feed visibility. Your previous setting was restored. \(error.localizedDescription)"
+            return
         }
+        guard viewerDID == savingViewerDID else { return }
+        // The PDS write is already committed; a failed cache refresh must not undo it.
+        await refreshGatewayPreferencesSnapshot(forceRefetch: true)
     }
 
     func setFeedVisible(_ source: ReaderListSource, visible: Bool) async {
@@ -2067,12 +2075,17 @@ final class SocialWireAppModel {
 
     private func refreshGatewayPreferencesSnapshot(forceRefetch: Bool = false) async {
         guard let coordinator = readerCacheCoordinator else { return }
+        let refreshingViewerDID = viewerDID
         if forceRefetch {
             try? coordinator.removeGatewayCachedResponse(for: Self.preferencesSyncCacheKey)
         }
         do {
             let storedETag = forceRefetch ? nil : coordinator.gatewayETag(for: Self.preferencesSyncCacheKey)
-            let response = try await gateway.fetchSyncPreferences(ifNoneMatch: storedETag)
+            let response = try await gateway.fetchSyncPreferences(
+                ifNoneMatch: storedETag,
+                forceRefresh: forceRefetch
+            )
+            guard viewerDID == refreshingViewerDID else { return }
 
             if response.statusCode == 304, let body = coordinator.gatewayCachedBody(for: Self.preferencesSyncCacheKey) {
                 applyPreferencesGatewayBody(body)

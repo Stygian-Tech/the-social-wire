@@ -1,5 +1,143 @@
 # TSW-92 database cost rollout
 
+## Expedited beta memory trial — September 14, 2026
+
+The user explicitly accepted brief beta downtime and requested faster memory
+reductions. This supersedes the earlier requirement to wait 24 hours before
+each Production step for this trial. Start with a supported, service-scoped
+Railway reduction from 16 to 12 decimal GB, observe a complete scheduled ranking
+cycle and ingestion, then consider 10 GB. This abbreviated live experiment does
+not constitute representative Development replay, restart/restore verification,
+authenticated latency acceptance, or proof of sustained cost savings.
+
+PR #415 permits lease renewal during protected publication commits while
+preserving exclusive ownership changes and stale-owner rejection. The previous
+10 GB trial's lease failures also occurred at 16 GB; reassess the new workload
+instead of assuming the old failure established a permanent memory minimum.
+
+Keep 24 vCPUs, replicas, ranking cadence, global memory settings, durability and
+daily snapshots unchanged. Verify Railway configuration and the running cgroup
+after each change. At a verified 4096-byte page size, the kernel caps are
+11,999,997,952 bytes for 12 GB and 9,999,998,976 bytes for 10 GB. Sample actionable
+queue age, lease ownership, generation completion, public availability, memory
+pressure and OOM events. Restore the preceding usable limit immediately on OOM,
+repeated ownership loss or growing actionable backlog; return to 16 GB if the
+preceding step is also unhealthy. A rising `memory.events.max` alone is not an
+OOM. Check process/container identity because replacement can reset counters.
+
+## Previous memory policy — September 13, 2026
+
+Keep Production's hard ceiling at 16 decimal GB while reducing the working set.
+The 10 GB trial was reverted after Coordinator lease failures; similar failures
+also occurred at 16 GB. A completed ranking cycle taking longer than 26 seconds
+is acceptable. Interrupted publication, growing ingestion lag, OOMs and the
+existing latency/recovery gates remain failures. Ranking refresh is ten minutes.
+
+Ranking scores already run in workers. Reduce the database's repeated signal
+aggregation reads before moving raw signal history to workers: transferring the
+entire seven-day history would retain the database reads and add network and
+worker memory costs. Incremental refresh must preserve exact distinct actors,
+window boundaries, feedback, moderation and deletion/restart recovery.
+
+Railway's inspected public `ServiceInstanceLimitsUpdateInput` exposes `memoryGB`
+and `vCPUs`, but no separate soft memory boundary. Production `memory.high` reads
+`max`. Linux `memory.high` is a total-memory reclaim/throttle boundary, not a
+file-cache cap or a reservation for PostgreSQL. Do not substitute a lower hard
+limit, periodic global cache drops, or an undocumented cgroup write for a
+supported soft-limit trial. Keep shared buffers, global work_mem, durability,
+CPU and replica counts unchanged while measuring workload changes.
+
+The current backup policy supersedes the historical PITR instructions below:
+Production and Development use daily Railway snapshots with the user-accepted
+six-day retention; PITR is intentionally disabled. Snapshot existence does not
+replace restore and discovery-rebuild verification.
+
+## September 13 write-stall remediation
+
+The 17:02 UTC incident still had repeated Coordinator lease losses and no logged
+ranking activation after 14:10 UTC. Public English feeds remained available from
+that stale generation. A matched 73-second diagnostic window measured only
+6.16 MB of WAL but about 1.77 GB of temporary writes from one candidate query.
+WAL flushes accumulated approximately 45 seconds across backend classes. These
+measurements establish competing query and flush work, not provider fault.
+The volume was 36% occupied with 70 MB/s and 3,000 IOPS limits per direction.
+I/O timing was enabled after measuring timing overhead; counters were not reset.
+
+Candidate selection now materializes compact ordering keys before fetching full
+payloads in the same statement. Exact legacy-query parity covers 32 ranking,
+language, and limit combinations. A 100,000-row fixture at unchanged 4 MB
+work_mem reduced temporary writes from about 479 MB to 18 MB and runtime by
+about 45%; buffer lookups increased due to hydration. Verify the production
+tradeoff rather than treating this as a measured RAM saving.
+
+Graph attempts receive a 60-second startup grace and retain bounded exponential
+backoff across lease-host replacement. Successful graph cadence remains six
+hours. Disposable mention/profile/metadata cleanup runs independently of
+publication, at most 500 rows per source per pass, with separate transactions,
+2-second statement and 500 ms lock limits, and ten-second pacing. Active fetches
+and required live-item metadata remain protected. Safe lease diagnostics include
+allowlisted application names, query IDs and transaction/query ages.
+
+Ranking also retains its process-owned schedule across lease-host replacement.
+A complete cycle keeps the configured 600-second interval, including processing
+time; failure or cancellation retains a 60-second retry delay after teardown.
+The active attempt stays reserved until awaited work exits, and slow cycles do
+not accumulate catch-up runs. Completion means every language and plan returned
+successfully. A full process restart still permits an immediate first cycle.
+
+Before further memory reductions, verify fresh publications, lease stability,
+ingestion age, public latency, temporary-file deltas and I/O pressure. The
+incremental and worker aggregation experiments remain separately gated.
+
+## Incremental signal rollup trial
+
+The migration creates disposable dirty-key and expiry scheduling tables without
+scanning the corpus. Source triggers are installed disabled, and the worker flag
+`WIRE_SIGNAL_ROLLUP_INCREMENTAL_ENABLED` defaults to false. Both controls must be
+enabled for incremental refresh. Deploying the migration alone does not enable
+tracking or eliminate any existing scans.
+
+Compare the exact full-refresh oracle with incremental refresh under sparse,
+dense, popular-article, cleanup and concurrent ingestion workloads. Include the
+initial rebuild, rolling-window expiry and restart recovery. Require at least
+80% fewer sparse aggregation buffer accesses, no scenario's p95 above 110% of its
+baseline, and no more than 5% additional combined CPU or WAL before enabling.
+Shared-buffer restart measurements are not cold filesystem-cache measurements.
+Record trigger contention and ingestion latency alongside aggregation savings.
+
+Only after those gates pass, enable tracking in Development over an operator
+database connection with bounded waits:
+
+```sql
+BEGIN;
+SET LOCAL lock_timeout = '2s';
+SET LOCAL statement_timeout = '10s';
+SELECT wire_set_signal_rollup_tracking(true);
+COMMIT;
+```
+
+The function drains existing source writers and invalidates coverage. Set
+`WIRE_SIGNAL_ROLLUP_INCREMENTAL_ENABLED=true` on Coordinator, then verify its
+first full rebuild completes, subsequent selected-key counts shrink, and all
+ranking and ingestion gates pass. Do not enable the flag on unrelated ingestion
+workers. Incremental refresh sets `jit=off` only within its transaction, avoiding
+the observed compilation threshold overhead without changing global settings
+or the full reader. Repeat the measured rollout in Production only after Development
+acceptance. Publication remains atomic; concurrent dirty revisions survive for
+the next refresh. Dirty hints use at most 16 writer lanes per canonical key to
+reduce popular-article contention. Colliding writers can still serialize; include
+that case in replay. Work selection deduplicates keys and acknowledgment checks
+globally unique revisions across all lanes. Restart, source partition changes or lost disposable state
+require a full rebuild, so retain enough capacity for that recovery path.
+
+To stop the experiment, set the Coordinator flag to false and call
+`wire_set_signal_rollup_tracking(false)` in the same bounded transaction above.
+Verify both controls are off. Disabling tracking removes source-trigger work;
+the existing full reader remains available. Never directly modify the control
+row to enable tracking, since that bypasses the source-writer synchronization.
+
+## Historical rollout baseline
+
 The user authorized all actions related to resolving TSW-92 on September 4, 2026.
 Following the September 5 request to expedite, roll out in separate stages. The
 tested application write reductions may reach Production after required release
@@ -24,7 +162,7 @@ stats reset. Record Railway CPU/RAM, volume and bucket bytes, and service egress
 alongside generation age, terminal/expired queue backlog, actionable oldest age,
 and authenticated bootstrap/feed latency. Include all services in cost totals.
 
-The approved profiles are five-minute ranking and two-hour expiry for **new**
+The approved profiles are five-minute ranking and one-hour expiry for **new**
 generations; existing generations retain their promised expiry. Disable
 non-serving external-signal shadow rankings on Coordinator. Do not change worker
 replicas while establishing this baseline. Circle caches are disposable Redis;
@@ -50,10 +188,18 @@ not a storage cap. Leave work_mem/shared_buffers unchanged initially. Replay
 representative ingestion with concurrent ranked reads; compare before/after
 over one hour and a full day. Validate crash recovery in an isolated copy.
 
-After the write reduction passes, test Development memory limits 4 then 2 GB;
-Production's approved later sequence is 16, 12 then 8 GB. Keep the lowest level
-that passes a representative load and a 24-hour soak. Revert immediately on OOM,
-growing actionable queue age or >10% p95 latency regression. No whole-database
+After the workload changes pass, the approved Production sequence is now
+13 → 12 → 11 → 10 decimal GB, starting from the current 16 GB limit. Before each
+step, run at least one hour of representative Development replay at that limit,
+including a burst and restart; then observe Production for 24 hours before
+lowering again. Keep the last passing limit if 10 GB fails. Revert immediately on
+OOM, repeated lease loss, growing actionable queue age or >10% p95 latency regression.
+Fail a step if actionable queue age exceeds 60 seconds for three consecutive minute
+samples. Require burst drainage within five minutes, every supported language to publish
+within 12 minutes, and discovery recovery within one hour. Do not change shared
+buffers, global work_mem, durability, backups or replicas during the trial. Compare
+seven days of total database, Redis, worker, storage, backup and network costs after
+choosing the lowest passing limit. No whole-database
 rewrite; normal vacuum reuses space and targeted index rebuilds need headroom.
 
 ## Backup gate
@@ -403,9 +549,27 @@ This is initial trial evidence, not 24-hour acceptance or measured billing
 savings. Restore the 24 GB limit on OOM, sustained latency regression, or growing
 ingestion lag. Do not advance to 12 or 8 GB without evaluating the 16 GB trial.
 Production WAL settings and backup retention were not changed by this action.
-The Coordinator cancellation fix remains pushed in PR #323, with its required
-CI passed at commit `504d4f0016a1092632947d75d3f6e95123c0fb7c`; it is not yet
-merged or deployed.
+The Coordinator cancellation fix passed required CI and reached Production in
+PR #325 at 05:08:40 UTC as `26eaf7c05c444472466fe4a944430402d07d8a96`.
+Its watchdog recovers stalled shutdowns, but does not resolve the underlying
+database contention. Deployment completion is not memory-trial acceptance.
+
+### Backlog and write attribution
+
+Record live statement deltas and queue diagnostics in TSW-92. Do not infer
+memory exhaustion from Railway's memory chart alone. Measure OOM counters,
+database waits and ingestion arrival/application rates together. The actionable
+count includes FIFO-blocked followers, so report it separately from eligible
+repository heads. Distinguish large publication batches from unresolved-reference
+retries tracked by TSW-102.
+
+The corrective application work targets changed-only atomic rollup publication,
+indexed selection of eligible repository heads, and avoiding retired-generation
+verification scans when no eligible recovery incident exists. Preserve source
+events, leases, ordering, recovery checks, ranking values and durability. Validate
+these changes with database integration and representative queue fixtures before
+Development and Production rollout. Keep the 24 GB rollback available, but do not
+claim that additional memory alone can fix repository ordering or repeated work.
 
 Track updates in TSW-92 and its TSW-93, TSW-94, and TSW-95 children. Do not use
 `railway postgres pitr backup restore` as a staging-only command: it commits the
@@ -424,3 +588,89 @@ as its service user. Distinct service/volume identities establish isolation;
 physical snapshots correctly share the PostgreSQL system identifier. Delete
 temporary services and explicitly delete their confirmed-owned volumes after
 evidence is saved; service deletion alone can leave billable detached volumes.
+
+
+## September 8 ingestion pressure correction
+
+The 12 GB Production trial did not pass: two bursts exceeded 40,000 actionable
+rows, oldest age exceeded 22 minutes, and a later small queue stalled during an
+8.4-minute ranking cycle. The user authorized necessary corrective changes. At
+approximately 16:39 UTC the Postgres ceiling returned to 16 GB, preserving 24 vCPU.
+The running cgroup confirmed 16,000,000,000 bytes with zero OOM/kill events; the
+postmaster still dates to August 30. Most memory was filesystem cache. This is a
+rollback of a failed trial, not evidence that memory caused every stall.
+
+Live waits included WALWrite/WalSync, with ingestion lease writers queued behind
+those operations. Short statement deltas identified duplicate full inbox status
+scans, while query plans showed account lifecycle updates scanning about 1.8
+million Wire items and metadata claims sorting about 1.7 million cache rows.
+Graph maintenance completed in about two seconds outside the stalled windows;
+its cadence and ranking semantics are unchanged.
+
+The corrective release adds concurrent author/metadata-priority indexes, combines
+inbox status totals with their source breakdown, and coalesces observational inbox
+reads for at most five seconds per store. Checkpoints, incidents, recovery and
+fencing reads remain live. Telemetry metric writes use sorted 250-row batches,
+a 500 ms lock wait, two-second statement limits and a five-second cumulative
+write budget. That budget begins after pool acquisition and does not bound a
+network failure or WAL-stalled commit. Contention tests require atomic rollback,
+exact retry statistics and reusable pooled sessions.
+
+At 16:44 UTC Production WAL tuning was applied and verified in a fresh session:
+LZ4, 8192 MB max WAL, 900-second checkpoints and completion target 0.9. Fsync,
+full-page writes and archiving remain on; global work_mem (4 MB) and shared buffers
+(128 MiB) are unchanged. There was about 37 GiB free on the volume, and no restart
+was required. Development already runs these settings. A separate PostgreSQL
+18.6 local crash fixture retained exact committed fingerprints for 100,000 corpus
+and 20,000 ranking rows, rolled back an interrupted transaction, restarted in
+0.421 seconds, and passed offline checksums over 14,044 blocks. Its 121 MB WAL
+volume does not prove an 8 GB recovery duration or Railway PITR coverage.
+
+Monitor disk headroom (retain at least 16 GiB free), archive failures, WAL/upload
+rates, queue age and feed latency. Roll back WAL tuning to compression off,
+max_wal_size 1 GB and checkpoint_timeout five minutes if it causes regression;
+completion target was already 0.9. Do not advance to 12/8 GB again until the
+corrected workload passes a representative comparison. Production retention is
+unchanged, and continuous seven-day recovery/discovery rebuild and matched cost
+acceptance remain open. The code release requires separate Development and
+Production deployment verification; these observations do not themselves prove
+that a new revision is running.
+
+
+### Telemetry write migration (TSW-92, September 9)
+
+September 11 follow-up: live lock sampling found telemetry transactions waiting
+on `WALWrite` during `COMMIT`, retaining minute-rollup locks and making other
+exporters time out. `recordTelemetryBatch` now prepares bindings before `BEGIN`
+and executes independently of the store actor, with transaction-local
+`synchronous_commit=off` for metrics, diagnostic events, and traces only. A crash
+may lose recent diagnostic samples; ingestion, user state, audit records, and
+recovery controls retain their existing synchronous commit policy. This setting
+does not change global `fsync`, full-page writes, or WAL generation volume.
+Every retry of additive PostgreSQL telemetry requires a confirmed rollback;
+ambiguous commit outcomes remain visible in cumulative loss evidence and are
+never replayed. Failed transaction begin, commit, or rollback retires the telemetry
+connection before returning its pool lease, preventing later borrowers from
+inheriting an aborted session. Confirmed rollbacks keep healthy sessions reusable.
+Compare successful drains and loss timestamps as well as lock
+timeouts; disappearance of errors alone is not recovery acceptance.
+
+`20260909130000_remove_redundant_telemetry_indexes.sql` removes only the duplicate
+change-event replay, event identity, and trace identity indexes. All three are
+checked against valid equivalent primary keys, including dependencies and replica
+identity, before any concurrent drop. The migrator can retry after a partial run.
+Rows, primary keys, expiry indexes, change-event watermarks, and trigger behavior
+are preserved; no table rewrite or retention reduction is part of this migration.
+
+The paired OperationsCore change inserts events and spans in bounded 250-row
+chunks within the existing atomic metrics/events/spans transaction. This reduces
+round trips while metric locks are held. Keep the two-second statement limit,
+five-second transaction-work budget, and 500 ms lock timeout. Pool acquisition
+and commit acknowledgement are outside that work budget. The previous writer remains compatible with the
+migration, so an application rollback does not require rebuilding duplicate indexes.
+
+Validate fresh/upgrade/retry migrations and PostgreSQL mixed-batch rollback,
+concurrent writers, null IDs, retention timestamps, and environment isolation.
+After Development and Production rollout, compare rollup lock timeouts, telemetry
+export drops, query/WAL counter deltas, and actionable inbox age under equivalent
+load. Index removal and batching do not establish a passing 12 GB memory limit.

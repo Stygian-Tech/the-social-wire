@@ -30,7 +30,7 @@ type leaseAcquirer interface {
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
-	if err := run(logger); err != nil {
+	if err := runArguments(os.Args[1:], logger); err != nil {
 		logger.Error("Jetstream V2 ingest stopped", "error", err)
 		os.Exit(1)
 	}

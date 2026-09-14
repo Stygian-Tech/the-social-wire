@@ -89,6 +89,9 @@ func TestReconcileWireAdmissionRewindsSameGenerationFromLoggedAnchorAfterCrash(t
 		WithArgs("dev", config.WireSourceGeneration).
 		WillReturnRows(sqlmock.NewRows([]string{"checkpoint_seq", "checkpoint_event_time"}).
 			AddRow(int64(24_900_000_000), recoveryTime))
+	mock.ExpectExec("INSERT INTO wire_publication_signal_recovery_jobs").
+		WithArgs("dev", config.WireSourceGeneration).
+		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec("UPDATE appview_jetstream_checkpoints").
 		WithArgs(
 			"dev", config.WireSourceGeneration, int64(24_900_000_000), recoveryTime,

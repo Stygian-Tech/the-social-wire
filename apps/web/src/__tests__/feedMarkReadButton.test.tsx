@@ -10,7 +10,7 @@ const ages: ReadAgeOption[] = [
   { days: 1, before: "2026-09-02T05:00:00Z", count: 12 },
   { days: 3, before: "2026-08-31T05:00:00Z", count: 4 },
 ];
-const loadOptions = mock(async () => ages);
+const loadOptions = mock(async (onOptions?: (options: ReadAgeOption[]) => void, signal?: AbortSignal) => { void onOptions; void signal; return ages; });
 const markBefore = mock(async (before: string) => { void before; });
 const markAll = mock(() => {});
 const props = {
@@ -147,4 +147,47 @@ describe("FeedMarkReadButton", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(loadOptions).not.toHaveBeenCalled();
   });
+});
+
+
+it("renders partial ages, then enables completed counts and the week option", async () => {
+  let publish!: (options: ReadAgeOption[]) => void;
+  let finish!: (options: ReadAgeOption[]) => void;
+  loadOptions.mockImplementationOnce((onOptions) => {
+    publish = onOptions!;
+    return new Promise((resolve) => { finish = resolve; });
+  });
+  render(<FeedMarkReadButton {...props} />);
+  await openMenu();
+  const week = [{ days: 7, before: ages[1].before, count: 4 }];
+  await act(async () => publish(week));
+  const partial = await screen.findByRole("menuitem", { name: "Older Than 1 Week, 4+ Unread Stories" });
+  expect(partial.getAttribute("aria-disabled")).toBe("true");
+  expect(screen.getByText("Counting Stories…")).toBeDefined();
+  fireEvent.click(partial);
+  expect(screen.queryByRole("dialog")).toBeNull();
+  await act(async () => finish([{ ...week[0], count: 20 }]));
+  const complete = await screen.findByRole("menuitem", { name: "Older Than 1 Week, 20 Unread Stories" });
+  expect(complete.getAttribute("aria-disabled")).not.toBe("true");
+  fireEvent.click(complete);
+  expect(await screen.findByRole("dialog")).toBeDefined();
+});
+
+it("clears partial ages on failure and aborts when closed", async () => {
+  let publish!: (options: ReadAgeOption[]) => void;
+  let fail!: (error: Error) => void;
+  let signal!: AbortSignal;
+  loadOptions.mockImplementationOnce((onOptions, pendingSignal) => {
+    publish = onOptions!;
+    signal = pendingSignal!;
+    return new Promise((_, reject) => { fail = reject; });
+  });
+  render(<FeedMarkReadButton {...props} />);
+  const menu = await openMenu();
+  await act(async () => publish(ages));
+  await act(async () => fail(new Error("offline")));
+  expect(await screen.findByText("Couldn’t Load Ages. Retry")).toBeDefined();
+  expect(screen.queryByText("1 Day")).toBeNull();
+  fireEvent.keyDown(menu, { key: "Escape" });
+  await waitFor(() => expect(signal.aborted).toBe(true));
 });

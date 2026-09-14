@@ -4,7 +4,7 @@
   "defs": {
     "main": {
       "type": "query",
-      "description": "Get calendar-day read cutoffs represented by unread stories in the full indexed feed scope.",
+      "description": "Get calendar-day read cutoffs represented by unread stories in the full indexed feed scope, capped at seven days. The seven-day option includes all older unread stories. The default output is application/json. Clients may request Accept: application/x-ndjson for progressive options snapshots; each line is an options event with type, referenceDay, and options, a done event with type, or an error event with type and message. Options snapshots replace earlier snapshots and remain partial until done.",
       "parameters": {
         "type": "params",
         "required": [
@@ -57,7 +57,8 @@
               "items": {
                 "type": "ref",
                 "ref": "#option"
-              }
+              },
+              "maxLength": 7
             }
           }
         }
@@ -82,7 +83,8 @@
         "days": {
           "type": "integer",
           "minimum": 1,
-          "description": "Calendar-day age represented by at least one unread story. One includes yesterday and earlier."
+          "description": "Calendar-day age represented by unread stories, capped at seven days. One includes yesterday and earlier; seven includes all stories aged seven calendar days or more.",
+          "maximum": 7
         },
         "before": {
           "type": "string",

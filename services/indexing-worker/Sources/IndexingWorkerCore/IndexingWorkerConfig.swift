@@ -16,6 +16,10 @@ public struct IndexingWorkerConfig: Sendable, Equatable {
   public let leaseRenewInterval: TimeInterval
   public let standbyRetryInterval: TimeInterval
 
+  var controlEvidenceMaximumAge: TimeInterval {
+    max(30, max(leaseRenewInterval, standbyRetryInterval) + 5)
+  }
+
   public static func load(
     _ environment: [String: String],
     hostname: String? = nil,
@@ -53,7 +57,7 @@ public struct IndexingWorkerConfig: Sendable, Equatable {
     let standbyRetryInterval = try positiveSeconds(
       environment, key: "INDEXING_ROLE_STANDBY_RETRY_SECONDS", default: 5
     )
-    guard renewInterval < leaseDuration else {
+    guard leaseDuration > 5, renewInterval < leaseDuration - 5 else {
       throw IndexingWorkerConfigError.invalidLeaseTiming
     }
 
@@ -94,7 +98,7 @@ public struct IndexingWorkerConfig: Sendable, Equatable {
     _ environment: [String: String], key: String, default defaultValue: TimeInterval
   ) throws -> TimeInterval {
     guard let raw = environment[key] else { return defaultValue }
-    guard let value = TimeInterval(raw), value > 0 else {
+    guard let value = TimeInterval(raw), value.isFinite, value > 0 else {
       throw IndexingWorkerConfigError.invalidPositiveSeconds(key)
     }
     return value

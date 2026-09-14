@@ -123,6 +123,38 @@ describe("feed display preference persistence", () => {
         ACCOUNT_PREFERENCES_QUERY_KEY,
       )).toEqual(saved);
       expect(loadCachedFeedDisplayPreferences(window.localStorage, did)?.[field]).toBe(false);
+      expect(fetchPreferences).toHaveBeenCalledWith(expect.anything(), did, undefined, true);
+    });
+
+    it(`refreshes the Gateway after saving ${feed} before a new reader mounts`, async () => {
+      const saved = { ...initial, cid: "new-cid", value: { ...initial.value, [field]: false } };
+      let gatewayRecord = initial;
+      upsertPreferences.mockResolvedValue(saved);
+      fetchPreferences.mockImplementation(async (_oauth, _did, _etag, fresh) => {
+        if (fresh) gatewayRecord = saved;
+        return gatewayRecord;
+      });
+      const first = renderHook(useSettingsAndSidebar, { wrapper });
+      act(() => first.result.current.settings.setDiscoveryFeedVisible(feed, false));
+      await waitFor(() => expect(first.result.current.settings.isPending).toBe(false));
+      await waitFor(() => expect(gatewayRecord).toEqual(saved));
+      first.unmount();
+      queryClient.clear();
+      const reloaded = renderHook(useSettingsAndSidebar, { wrapper });
+      await waitFor(() => expect(fetchPreferences).toHaveBeenCalledTimes(2));
+      await waitFor(() => expect(reloaded.result.current.sidebar.preferences[field]).toBe(false));
+    });
+
+    it(`retains the committed ${feed} preference if the Gateway refresh fails`, async () => {
+      const saved = { ...initial, cid: "new-cid", value: { ...initial.value, [field]: false } };
+      upsertPreferences.mockResolvedValue(saved);
+      fetchPreferences.mockRejectedValue(new Error("Gateway unavailable"));
+      const { result } = renderHook(useSettingsAndSidebar, { wrapper });
+      act(() => result.current.settings.setDiscoveryFeedVisible(feed, false));
+      await waitFor(() => expect(fetchPreferences).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(result.current.settings.isPending).toBe(false));
+      expect(result.current.sidebar.preferences[field]).toBe(false);
+      expect(result.current.settings.error).toBeNull();
     });
 
     it(`rolls back hiding ${feed} in both observers and local storage when saving fails`, async () => {

@@ -14,6 +14,67 @@ struct NewsSceneModelTests {
         )
     }
 
+    @Test("Circle stays reachable while its catalog loads or lacks stories")
+    func circleNavigationDoesNotRequireAvailableStories() {
+        for available in [false, true] {
+            let catalog = CircleFeedCatalog(
+                enabled: true, available: available, title: "Your Circle", subtitle: "",
+                supportedLanguages: ["en"], latestGenerationId: nil, generatedAt: nil
+            )
+            #expect(NewsTab.available(
+                preferences: .defaults, wireCatalog: nil, circleCatalog: catalog
+            ).contains(.circle))
+        }
+        #expect(NewsTab.available(
+            preferences: .defaults, wireCatalog: nil, circleCatalog: nil
+        ).contains(.circle))
+    }
+
+    @Test("Explicit Circle hide and global disable still remove its destination")
+    func circleNavigationHonorsVisibilityControls() {
+        let disabled = CircleFeedCatalog(
+            enabled: false, available: true, title: "Your Circle", subtitle: "",
+            supportedLanguages: ["en"], latestGenerationId: nil, generatedAt: nil
+        )
+        #expect(!NewsTab.available(
+            preferences: .defaults, wireCatalog: nil, circleCatalog: disabled
+        ).contains(.circle))
+        var preferences = ReaderFeedPreferences.defaults
+        preferences.showCircle = false
+        #expect(!NewsTab.available(
+            preferences: preferences, wireCatalog: nil, circleCatalog: nil
+        ).contains(.circle))
+    }
+
+    @Test("Primary slots follow catalog gates and return when availability recovers")
+    func primarySlotsRespectCatalogAvailability() {
+        let model = SocialWireAppModel()
+        model.loadPrimaryTabPreferences()
+        #expect(!model.primaryTabFeeds.contains(.wire))
+        #expect(model.primaryTabFeeds.contains(.circle))
+
+        model.wireCatalog = WireFeedCatalog(
+            enabled: true, available: true, title: "The Wire", subtitle: "",
+            supportedLanguages: ["en"], latestGenerationId: "g1", generatedAt: nil
+        )
+        model.circleCatalog = CircleFeedCatalog(
+            enabled: false, available: true, title: "Your Circle", subtitle: "",
+            supportedLanguages: ["en"], latestGenerationId: nil, generatedAt: nil
+        )
+        model.loadPrimaryTabPreferences()
+        #expect(model.primaryTabFeeds.contains(.wire))
+        #expect(!model.primaryTabFeeds.contains(.circle))
+
+        model.circleCatalog = CircleFeedCatalog(
+            enabled: true, available: false, title: "Your Circle", subtitle: "",
+            supportedLanguages: ["en"], latestGenerationId: nil, generatedAt: nil
+        )
+        model.feedPreferences.showWire = false
+        model.loadPrimaryTabPreferences()
+        #expect(!model.primaryTabFeeds.contains(.wire))
+        #expect(model.primaryTabFeeds.contains(.circle))
+    }
+
     @Test("Last tab is restored per viewer")
     func restoresSelectedTabPerViewer() {
         let suiteName = "NewsSceneModelTests.\(UUID().uuidString)"
@@ -103,6 +164,7 @@ struct NewsSceneModelTests {
             let model = NewsSceneModel(defaults: defaults)
             model.updateContext(viewerDID: "did:plc:alice", availableTabs: NewsTab.allCases)
             model.select(tab, availableTabs: NewsTab.allCases)
+            model.navigate(to: .profile, in: tab)
             model.navigate(to: .settings, in: tab)
 
             model.updateContext(
@@ -111,6 +173,7 @@ struct NewsSceneModelTests {
             )
             #expect(model.selectedTab == .library)
             #expect(model.path(for: .library).last == .settings)
+            #expect(model.path(for: tab) == [.profile, .settings])
         }
     }
 

@@ -1,4 +1,5 @@
 import Foundation
+import GRDB
 import Logging
 import OperationsCore
 import Testing
@@ -13,7 +14,7 @@ struct LegacyJetstreamAuthorityLeaseTests {
     defer { try? FileManager.default.removeItem(at: url) }
     let store = try SQLiteOperationsStore(
       path: url.path, environment: "dev", logger: Logger(label: "legacy-authority.store.test"))
-    let initial = Date()
+    let initial = Date(timeIntervalSince1970: 1_800_000_000)
     let external = try #require(await store.acquireIngestionLeaderLease(
       name: LegacyJetstreamAuthorityLease.leaseName,
       sourceGeneration: LegacyJetstreamAuthorityLease.sourceGeneration,
@@ -29,7 +30,8 @@ struct LegacyJetstreamAuthorityLeaseTests {
         leaseSeconds: 0.9,
         minimumLeaseSeconds: 0.3,
         contentionSleepSeconds: 0.01,
-        logger: Logger(label: "legacy-authority.test")
+        logger: Logger(label: "legacy-authority.test"),
+        now: { initial }
       ) { lease in
         await state.started(lease: lease)
         while !Task.isCancelled {
@@ -39,24 +41,27 @@ struct LegacyJetstreamAuthorityLeaseTests {
       }
     }
 
+    defer { runner.cancel() }
     try await Task.sleep(for: .milliseconds(40))
     #expect(await state.startCount() == 0)
     try await store.releaseIngestionLeaderLease(
       name: external.name, ownerID: external.ownerID,
-      fencingToken: external.fencingToken, at: Date())
+      fencingToken: external.fencingToken, at: initial)
     try await waitUntil { await state.isActive() }
 
     let workerLease = try #require(await state.currentLease())
-    try await store.releaseIngestionLeaderLease(
-      name: workerLease.name, ownerID: workerLease.ownerID,
-      fencingToken: workerLease.fencingToken, at: Date())
-    _ = try #require(await store.acquireIngestionLeaderLease(
-      name: LegacyJetstreamAuthorityLease.leaseName,
-      sourceGeneration: LegacyJetstreamAuthorityLease.sourceGeneration,
-      ownerID: "takeover",
-      leaseUntil: Date().addingTimeInterval(1),
-      at: Date()
-    ))
+    // Replace ownership atomically. A release/acquire pair allows the worker to
+    // renew or reacquire between calls when the test runner is under load.
+    let database = try DatabaseQueue(path: url.path)
+    try await database.write { db in
+      try db.execute(
+        sql: """
+          UPDATE appview_ingestion_leases SET owner_id = 'takeover', fencing_token = fencing_token + 1
+          WHERE environment = 'dev' AND lease_name = ? AND owner_id = ? AND fencing_token = ?
+          """,
+        arguments: [workerLease.name, workerLease.ownerID, workerLease.fencingToken])
+      #expect(db.changesCount == 1)
+    }
     try await waitUntil { !(await state.isActive()) }
     runner.cancel()
     await runner.value

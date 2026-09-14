@@ -52,7 +52,7 @@ struct NewsRouteDestination: View {
                 ContentUnavailableView("Semble Card Unavailable", systemImage: "square.stack.3d.up.slash")
             }
         case .profile:
-            ProfileView()
+            ProfileView(settingsRoute: .settings)
         case .settings:
             SettingsView(showsDoneButton: false)
         }
@@ -87,7 +87,9 @@ struct PublicationFeedRouteView: View {
                     contextID: "\(appModel.viewerDID ?? ""):publication:\(publicationID)",
                     refreshRevision: appModel.readAgeRevision,
                     scopeTitle: appModel.selectedPublication?.title ?? "This Feed",
-                    loadOptions: { try await appModel.readAgeOptions(for: scope) },
+                    loadOptions: { onOptions in
+                        try await appModel.readAgeOptions(for: scope, onOptions: onOptions)
+                    },
                     markAllRead: { await appModel.markRead(for: scope) },
                     markOlderRead: { try await appModel.markRead(for: scope, before: $0.before) },
                     markAllUnread: { await appModel.markUnread(for: scope) }

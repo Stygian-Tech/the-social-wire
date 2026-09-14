@@ -12,6 +12,7 @@ struct RoleLeaseSupervisorEventTests {
   func cancellationBeforeTeardown() async throws {
     let fixture = try makeFixture()
     defer { try? FileManager.default.removeItem(at: fixture.url) }
+    await fixture.store.useCallerRoleLeaseTestClock()
     let events = LeaseEventRecorder()
     let operationGate = LeaseOperationGate()
     let supervisor = RoleLeaseSupervisor(
@@ -26,7 +27,10 @@ struct RoleLeaseSupervisorEventTests {
     #expect(!events.snapshot.contains(.releasing))
     await operationGate.release()
     await task.value
-    let values = events.snapshot
+    let values = events.snapshot.filter {
+      if case .controlAttempt = $0 { return false }
+      return true
+    }
     #expect(values.contains(.operationStopped(reason: .cancelled)))
     #expect(values.dropLast().last == .releasing)
     // Release remains best effort: GRDB can reject the write in an already cancelled task.
@@ -37,6 +41,7 @@ struct RoleLeaseSupervisorEventTests {
   func renewalFailureBeforeTeardownAndRestart() async throws {
     let fixture = try makeFixture()
     defer { try? FileManager.default.removeItem(at: fixture.url) }
+    await fixture.store.useCallerRoleLeaseTestClock()
     let events = LeaseEventRecorder()
     let operationGate = LeaseOperationGate()
     let renewalGate = LeaseOperationGate()
@@ -53,7 +58,7 @@ struct RoleLeaseSupervisorEventTests {
     await operationGate.waitUntilEntered()
     await renewalGate.release()
     await events.wait(for: .operationStopping(reason: .leaseLost))
-    #expect(events.snapshot.contains(.renewalFailed))
+    #expect(events.snapshot.contains(.renewalFailed) || events.snapshot.contains(.authorityExpired))
     #expect(!events.snapshot.contains(.operationStopped(reason: .cancelled)))
     await operationGate.release()
     await events.waitForStarts(2)
@@ -67,8 +72,10 @@ struct RoleLeaseSupervisorEventTests {
   func acquisitionFailureVersusContention() async throws {
     let fixture = try makeFixture()
     defer { try? FileManager.default.removeItem(at: fixture.url) }
+    await fixture.store.useCallerRoleLeaseTestClock()
     _ = try await fixture.store.acquireRoleLease(
       role: "wire-rank", ownerID: "another-owner", leaseUntil: now.addingTimeInterval(60), at: now)
+    await fixture.store.useCallerRoleLeaseTestClock()
     let events = LeaseEventRecorder()
     let timing = LeaseEventTiming(now: now, renewalGate: LeaseOperationGate())
     let supervisor = RoleLeaseSupervisor(

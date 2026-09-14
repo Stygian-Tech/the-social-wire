@@ -40,6 +40,7 @@ import { sumUnreadForPublications } from "@/lib/unreadCounts";
 import { PublicationTabs } from "./PublicationTabs";
 import { ReadLaterSidebarBadge } from "./ReadLaterSidebarBadge";
 import { useFeedDisplayPreferences } from "@/hooks/useFeedDisplayPreferences";
+import { isCircleNavigationEnabled } from "@/lib/circleFeedAvailability";
 import { defaultSidebarExpandedKeys } from "@/lib/sidebarExpandedKeysStorage";
 import {
   DEFAULT_FEED_DISPLAY_PREFERENCES,
@@ -159,10 +160,10 @@ export function AppSidebar({
     wireCatalog.data?.enabled === true &&
     wireCatalog.data.available === true;
   const circleCatalog = useCircleCatalog();
-  const circleNavigationEnabled =
-    feedPreferences.showCircle &&
-    circleCatalog.data?.enabled === true &&
-    circleCatalog.data.available === true;
+  const circleNavigationEnabled = isCircleNavigationEnabled(
+    circleCatalog.data,
+    feedPreferences.showCircle,
+  );
   const savedSidebarRows = useMemo(
     () =>
       publicationSidebarProjection

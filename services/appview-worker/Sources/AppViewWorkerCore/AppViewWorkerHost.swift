@@ -16,6 +16,7 @@ public enum AppViewWorkerHost {
     role: ThinAppViewWorkerRole = .combined,
     serviceName: String = "appview-worker",
     healthListener: AppViewWorkerHealthListener = .disabled,
+    roleLeaseAuthority: RoleLeaseAuthority? = nil,
     logger: Logger
   ) async throws {
     let operationsEnvironment = try OperationsConfiguration.requireEnvironment(environment)
@@ -114,6 +115,7 @@ public enum AppViewWorkerHost {
         pool: pgPool,
         environment: operationsEnvironment,
         backfillFingerprintSecret: operationsConfig.backfillFingerprintSecret,
+        coordinatorAuthority: roleLeaseAuthority,
         logger: logger
       )
       let telemetry = OperationsTelemetryBuffer(store: operationsStore, logger: logger)

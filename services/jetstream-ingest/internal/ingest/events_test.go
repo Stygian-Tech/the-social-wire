@@ -2,6 +2,7 @@ package ingest
 
 import (
 	"bytes"
+	"encoding/json"
 	"testing"
 
 	jetstream "github.com/bluesky-social/jetstream"
@@ -65,7 +66,7 @@ func TestPrepareBatchStagesLifecycleOnlyForTrackedDIDs(t *testing.T) {
 	}
 }
 
-func TestPrepareBatchWireStagesOnlyInactiveAccountLifecycle(t *testing.T) {
+func TestPrepareBatchWireStagesBothAccountStates(t *testing.T) {
 	events := []jetstream.Event{
 		{DID: "did:plc:one", Seq: 11, Kind: jetstream.KindAccount, Account: &jetstream.Account{DID: "did:plc:one", Active: false}},
 		{DID: "did:plc:two", Seq: 12, Kind: jetstream.KindIdentity, Identity: &jetstream.Identity{DID: "did:plc:two"}},
@@ -76,8 +77,46 @@ func TestPrepareBatchWireStagesOnlyInactiveAccountLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(prepared) != 1 || prepared[0].RepoDID != "did:plc:one" || cursor != 14 {
+	if len(prepared) != 2 || prepared[0].RepoDID != "did:plc:one" || prepared[1].RepoDID != "did:plc:three" || cursor != 14 {
 		t.Fatalf("prepared=%#v cursor=%d", prepared, cursor)
+	}
+}
+
+func TestPrepareWireAccountReactivationPrecedesLaterRecommendation(t *testing.T) {
+	const did = "did:plc:reactivated"
+	events := []jetstream.Event{
+		{DID: did, Seq: 101, TimeUS: 1_000_001, Kind: jetstream.KindAccount, Account: &jetstream.Account{DID: did, Active: false}},
+		{DID: did, Seq: 102, TimeUS: 1_000_002, Kind: jetstream.KindAccount, Account: &jetstream.Account{DID: did, Active: true}},
+		{DID: did, Seq: 103, TimeUS: 1_000_003, Kind: jetstream.KindCommit, Commit: &jetstream.Commit{
+			Operation: jetstream.OpCreate, Collection: "site.standard.graph.recommend", Rkey: "after-reactivation", Rev: "3m22222222224",
+			Record: map[string]any{"$type": "site.standard.graph.recommend", "document": "at://did:plc:author/site.standard.document/article"},
+		}},
+	}
+	prepared, cursor, eventTime, err := PrepareBatchForPipeline(events, nil, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(prepared) != 3 || cursor != 103 || eventTime.UnixMicro() != 1_000_003 {
+		t.Fatalf("reactivation must survive before recommendation: rows=%d cursor=%d time=%s", len(prepared), cursor, eventTime)
+	}
+	for index, expectedActive := range []bool{false, true} {
+		if prepared[index].Seq != uint64(101+index) || prepared[index].Kind != "account" || prepared[index].RepoDID != did {
+			t.Fatalf("account event order changed: %#v", prepared[index])
+		}
+		var payload struct {
+			Account struct {
+				Active bool `json:"active"`
+			} `json:"account"`
+		}
+		if err := json.Unmarshal(prepared[index].Payload, &payload); err != nil {
+			t.Fatal(err)
+		}
+		if payload.Account.Active != expectedActive {
+			t.Fatalf("account active=%t want %t", payload.Account.Active, expectedActive)
+		}
+	}
+	if prepared[2].Seq != 103 || prepared[2].Collection == nil || *prepared[2].Collection != "site.standard.graph.recommend" {
+		t.Fatalf("recommendation did not follow reactivation: %#v", prepared[2])
 	}
 }
 

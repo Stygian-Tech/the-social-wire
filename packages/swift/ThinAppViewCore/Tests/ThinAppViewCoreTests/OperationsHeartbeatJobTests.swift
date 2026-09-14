@@ -83,6 +83,19 @@ struct OperationsHeartbeatJobTests {
     #expect(staleActiveGeneration.completeness == .unhealthy)
   }
 
+  @Test("generation health keeps exact backlog age thresholds", arguments: [60.0, 60.001, 900.0, 900.001])
+  func generationHealthAgeBoundaries(age: Double) {
+    let checkpoint = JetstreamDurabilityCheckpoint(
+      environment: "test", sourceGeneration: "active", sourceHost: "test", streamNSID: "test",
+      filterFingerprint: "test", cursorKind: .jetstreamV2Sequence, replayState: .live, updatedAt: Date())
+    let health = ThinAppViewWorkerRuntime.durableProjectionHealthEvidence(
+      IngestionInboxMetrics(retrying: 1, oldestPendingAgeSeconds: age), checkpoint: checkpoint)
+    #expect(health.freshness == (age > 900 ? .unhealthy : age > 60 ? .degraded : .healthy))
+    #expect(health.completeness == .healthy)
+    #expect(ThinAppViewWorkerRuntime.durableProjectionHealthEvidence(
+      IngestionInboxMetrics(), checkpoint: nil).freshness == .unknown)
+  }
+
   @Test("projection backlog fail-closes freshness and completeness")
   func projectionBacklogHealth() {
     let now = Date(timeIntervalSince1970: 1_800_000_000)
@@ -282,6 +295,12 @@ struct OperationsHeartbeatJobTests {
       jetstreamV2SourceGeneration: generation
     )
 
+    // Heartbeats must not depend on retained-history queries or replay accounting.
+    // The dashboard snapshot would fail after removing these unrelated tables.
+    try await operationsDatabase.write { database in
+      try database.execute(sql: "DROP TABLE appview_ingestion_incidents")
+      try database.execute(sql: "DROP TABLE appview_ingestion_replay_usage")
+    }
     let projectionOnly = try await probe()
     #expect(projectionOnly.liveness == .unknown)
     #expect(projectionOnly.readiness == .unknown)
@@ -338,6 +357,16 @@ struct OperationsHeartbeatJobTests {
     #expect(intakeStopped.liveness == .unknown)
     #expect(intakeStopped.readiness == .unknown)
     #expect(intakeStopped.dependencyState["ingestion_transport"] == "missing")
+
+    try await operationsDatabase.write { database in
+      try database.execute(sql: "UPDATE appview_jetstream_checkpoints SET replay_state = 'snapshot_complete', replay_after_seq = 0, replay_before_seq = 200, replay_sealed_seq = 200 WHERE source_generation = ?", arguments: [generation])
+    }
+    // A completed replay does not replace the live worker intake lease requirement.
+    #expect(try await probe().readiness == .unknown)
+    try await operationsDatabase.write { database in
+      try database.execute(sql: "DROP TABLE appview_jetstream_checkpoints")
+    }
+    await #expect(throws: (any Error).self) { _ = try await probe() }
   }
 
   @Test("missing service-specific probe publishes Unknown, never Healthy")
@@ -546,6 +575,70 @@ struct OperationsHeartbeatJobTests {
     #expect(state.dependencyState["telemetry_consecutive_failures"] == "1")
     #expect(state.dependencyState["telemetry_last_successful_export_at"] == "none")
     #expect(state.dependencyState["telemetry_last_export_age_seconds"] == "unknown")
+  }
+
+  @Test("historical telemetry loss requires explicit valid successful-drain evidence")
+  func telemetryRecoveryEvidence() {
+    let now = Date(timeIntervalSince1970: 1_800_000_000)
+    func evidence(drop: Date?, recovery: Date?, success: Date? = nil,
+                  queued: Int = 0, failures: Int = 0) -> OperationsTelemetryHeartbeatEvidence {
+      OperationsHeartbeatJob.telemetryEvidence(.init(
+        queueDepth: queued, inFlightCount: 0, capacity: 10, droppedCount: 4,
+        consecutiveFailures: failures, lastSuccessfulExportAt: success ?? now.addingTimeInterval(-1),
+        lastDropAt: drop, lastDropRecoveredAt: recovery), at: now)
+    }
+    let drop = now.addingTimeInterval(-10)
+    let recovery = now.addingTimeInterval(-5)
+    let recovered = evidence(drop: drop, recovery: recovery)
+    #expect(!recovered.dropObserved)
+    #expect(recovered.dependencyState["telemetry_loss_state"] == "recovered")
+    #expect(recovered.dependencyState["telemetry_dropped_total"] == "4")
+    #expect(recovered.dependencyState["telemetry_exporter"] == "idle")
+    let queued = evidence(drop: drop, recovery: recovery, queued: 2)
+    #expect(!queued.dropObserved)
+    #expect(queued.dependencyState["telemetry_exporter"] == "queued")
+    #expect(evidence(drop: drop, recovery: recovery, failures: 1).exportFailureObserved)
+    #expect(evidence(drop: drop, recovery: nil).dropObserved)
+    #expect(evidence(drop: nil, recovery: nil).dropObserved)
+    for invalid in [
+      evidence(drop: nil, recovery: recovery),
+      evidence(drop: recovery, recovery: drop),
+      evidence(drop: drop, recovery: drop),
+      evidence(drop: drop, recovery: now.addingTimeInterval(1)),
+      evidence(drop: now.addingTimeInterval(1), recovery: nil),
+      evidence(drop: drop, recovery: recovery, success: drop),
+    ] {
+      #expect(invalid.completenessUncertain)
+      #expect(invalid.freshnessUncertain)
+      #expect(invalid.dependencyState["telemetry_exporter"] == "unknown_invalid_snapshot")
+    }
+  }
+
+  @Test("recovered telemetry never upgrades unhealthy or unavailable ingestion evidence")
+  func telemetryRecoveryPreservesIngestionHealth() async throws {
+    let fixture = try Fixture()
+    let telemetry = OperationsTelemetryBuffer(
+      capacity: 4, logger: Logger(label: "heartbeat.telemetry.recovery"), exporter: { _ in })
+    for value in 0..<4 {
+      #expect(await telemetry.enqueue(.metric(.init(name: "test", value: Double(value), dimensions: [:]))))
+    }
+    #expect(!(await telemetry.enqueue(.metric(.init(name: "test", value: 5, dimensions: [:])))))
+    #expect(await telemetry.flushOnce() == 4)
+    #expect(await telemetry.snapshot().lastDropRecoveredAt != nil)
+    for health in [OperationsHealthState.healthy, .degraded, .unhealthy, .unknown] {
+      let now = Date()
+      let job = fixture.job(telemetry: telemetry) {
+        .init(liveness: .healthy, readiness: .healthy, freshness: health, completeness: health,
+              dependencyState: ["appview_database": "ready"], observedAt: now, validUntil: now.addingTimeInterval(30))
+      }
+      try await job.runOnce(startedAt: now.addingTimeInterval(-60), at: now)
+      let state = try #require(try await fixture.store.listServiceStates().first)
+      #expect(state.freshness == health)
+      #expect(state.completeness == health)
+      #expect(state.dependencyState["telemetry_loss_state"] == "recovered")
+      #expect(state.dependencyState["telemetry_dropped_total"] == "1")
+      #expect(await telemetry.flushOnce() == 4)
+    }
   }
 
   @Test("heartbeat emits bounded samples for all health dimensions")

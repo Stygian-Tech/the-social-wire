@@ -11,6 +11,7 @@ import { usePDSClient } from "@/hooks/usePDSClient";
 import { useAuth } from "@/hooks/useAuth";
 import type { PreferencesRecord, RepoRecord } from "@/lib/pdsClient";
 import { isDummyReaderDataEnabled } from "@/lib/dummyReaderData";
+import { fetchSyncPreferences } from "@/lib/syncPreferencesClient";
 import {
   DEFAULT_FEED_DISPLAY_PREFERENCES,
   TOP_LEVEL_FEEDS,
@@ -22,7 +23,7 @@ import {
 } from "@/lib/feedPreferences";
 
 export function useFeedDisplayPreferences() {
-  const { session } = useAuth();
+  const { session, getOAuthSession } = useAuth();
   const client = usePDSClient();
   const queryClient = useQueryClient();
   const accountPreferences = useAccountPreferences();
@@ -70,7 +71,7 @@ export function useFeedDisplayPreferences() {
       if (isDummyReaderDataEnabled()) return null;
       if (!client) throw new Error("PDS session required");
       const existing = accountPreferences.data ?? null;
-      return client.upsertPreferences(
+      const saved = await client.upsertPreferences(
         {
           visibleFeeds: next.visibleFeeds,
           showWire: next.showWire,
@@ -82,6 +83,17 @@ export function useFeedDisplayPreferences() {
         },
         existing,
       );
+      // Reads use the Gateway cache, while writes go directly to the PDS.
+      // Rewarm it before a reload can replace the committed visibility settings.
+      const oauth = getOAuthSession();
+      if (oauth && session) {
+        try {
+          await fetchSyncPreferences(oauth, session.did, undefined, true);
+        } catch {
+          // A cache refresh failure cannot undo a successful PDS write.
+        }
+      }
+      return saved;
     },
     onMutate: async (next) => {
       await queryClient.cancelQueries({

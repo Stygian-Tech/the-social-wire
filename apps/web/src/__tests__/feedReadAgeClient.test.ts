@@ -65,3 +65,59 @@ describe("feedReadAgeClient", () => {
     expect(gateway.mock.calls.some(([, path]) => path === socialWireXrpc.markAllRead)).toBe(false);
   });
 });
+
+describe("progressive read age stream", () => {
+  function streamResponse() {
+    let controller!: ReadableStreamDefaultController<Uint8Array>;
+    const body = new ReadableStream<Uint8Array>({ start(value) { controller = value; } });
+    const gateway = spyOn(GatewayClient, "gatewayFetch").mockResolvedValue(
+      new Response(body, { headers: { "Content-Type": "application/x-ndjson" } })
+    );
+    restoreGateway = () => gateway.mockRestore();
+    return { controller, send: (text: string) => controller.enqueue(new TextEncoder().encode(text)) };
+  }
+  const first = { referenceDay: before, options: [{ days: 7, before, count: 3 }] };
+  const final = { ...first, options: [{ days: 7, before, count: 12 }] };
+
+  it("delivers split chunks progressively and finishes only on done", async () => {
+    const { send } = streamResponse();
+    const snapshots: unknown[] = [];
+    let firstArrived!: () => void;
+    const arrived = new Promise<void>((resolve) => { firstArrived = resolve; });
+    let complete = false;
+    const operation = fetchReadAgeOptions(oauth, { kind: "subscribed" }, "UTC", {
+      onOptions: (options) => { snapshots.push(options); firstArrived(); },
+    }).then((result) => { complete = true; return result; });
+    const event = JSON.stringify({ type: "options", ...first });
+    send(event.slice(0, 18));
+    send(event.slice(18) + "\n");
+    await arrived;
+    expect(snapshots).toEqual([first.options]);
+    expect(complete).toBe(false);
+    send(JSON.stringify({ type: "options", ...final }) + '\n{"type":"done"}\n');
+    expect(await operation).toEqual(final);
+    expect(snapshots).toEqual([first.options, final.options]);
+  });
+
+  for (const ending of ["truncated", "error", "malformed", "out-of-range", "no-options"] as const) {
+    it(`rejects ${ending} streams`, async () => {
+      const { send, controller } = streamResponse();
+      const operation = fetchReadAgeOptions(oauth, { kind: "subscribed" }, "UTC");
+      if (ending !== "no-options") send(JSON.stringify({ type: "options", ...first }) + "\n");
+      if (ending === "error") send('{"type":"error","message":"private upstream detail"}\n');
+      if (ending === "malformed") send('{bad json}\n');
+      if (ending === "out-of-range") send(JSON.stringify({ type: "options", ...first, options: [{ days: 8, before, count: 1 }] }) + "\n");
+      if (ending === "no-options") send('{"type":"done"}\n');
+      controller.close();
+      await expect(operation).rejects.toThrow();
+    });
+  }
+
+  it("keeps JSON rollout fallback capped at a week", async () => {
+    const gateway = spyOn(GatewayClient, "gatewayFetch").mockResolvedValue(Response.json({
+      ...first, options: [...first.options, { days: 30, before, count: 2 }],
+    }));
+    restoreGateway = () => gateway.mockRestore();
+    expect(await fetchReadAgeOptions(oauth, { kind: "subscribed" }, "UTC")).toEqual(first);
+  });
+});

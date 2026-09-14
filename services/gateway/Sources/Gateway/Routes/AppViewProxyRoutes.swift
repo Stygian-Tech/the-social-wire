@@ -191,7 +191,12 @@ struct AppViewProxyRoutes {
     }
     group.get("/xrpc/app.thesocialwire.appview.getReadAgeOptions") {
       request, context async throws -> Response in
-      try await forward(
+      if request.headers[.accept]?.contains("application/x-ndjson") == true {
+        return try await forwardStreaming(
+          request: request, context: context, path: "/xrpc/app.thesocialwire.appview.getReadAgeOptions",
+          method: "GET")
+      }
+      return try await forward(
         request: request, context: context, path: "/xrpc/app.thesocialwire.appview.getReadAgeOptions",
         method: "GET")
     }
@@ -327,7 +332,7 @@ struct AppViewProxyRoutes {
 
     let reply = try await httpClient.execute(fwd, timeout: .seconds(60))
     var headers = HTTPFields()
-    headers[.contentType] = "application/x-ndjson"
+    headers[.contentType] = reply.headers.first(name: "Content-Type") ?? "application/x-ndjson"
     headers[.cacheControl] = "no-cache"
     let status = HTTPResponse.Status.from(code: Int(reply.status.code)) ?? .badGateway
     let streamStarted = Date()

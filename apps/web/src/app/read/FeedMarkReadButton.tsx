@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -59,16 +59,30 @@ function ScopedFeedMarkReadButton({
   const [mutationError, setMutationError] = useState(false);
   const request = useRef(0);
 
+  const stream = useRef<AbortController | null>(null);
+  useEffect(() => () => {
+    request.current += 1;
+    stream.current?.abort();
+  }, []);
+
   async function refreshOptions() {
     const current = ++request.current;
+    stream.current?.abort();
+    const controller = new AbortController();
+    stream.current = controller;
     setLoading(true);
     setLoadError(false);
     setOptions([]);
     try {
-      const result = await loadOptions();
+      const result = await loadOptions((next) => {
+        if (current === request.current) setOptions(next);
+      }, controller.signal);
       if (current === request.current) setOptions(result);
     } catch {
-      if (current === request.current) setLoadError(true);
+      if (current === request.current) {
+        setOptions([]);
+        setLoadError(true);
+      }
     } finally {
       if (current === request.current) setLoading(false);
     }
@@ -95,7 +109,10 @@ function ScopedFeedMarkReadButton({
           if (disabled || pending || !scope) return;
           setMenuOpen(open);
           if (open) void refreshOptions();
-          else request.current += 1;
+          else {
+            request.current += 1;
+            stream.current?.abort();
+          }
         }}
       >
         <ContextMenuTrigger
@@ -116,7 +133,7 @@ function ScopedFeedMarkReadButton({
         <ContextMenuContent className="min-w-48" aria-label="Mark Older Stories As Read">
           <ContextMenuGroup>
             <ContextMenuLabel>Older Than</ContextMenuLabel>
-            {loading ? <ContextMenuItem disabled>Loading Ages…</ContextMenuItem> : null}
+            {loading ? <ContextMenuItem disabled>{options.length ? "Counting Stories…" : "Loading Ages…"}</ContextMenuItem> : null}
             {loadError ? (
               <ContextMenuItem closeOnClick={false} onClick={() => void refreshOptions()}>
                 Couldn’t Load Ages. Retry
@@ -128,12 +145,13 @@ function ScopedFeedMarkReadButton({
             {options.map((option) => (
               <ContextMenuItem
                 key={option.days}
-                aria-label={`Older Than ${option.days} ${option.days === 1 ? "Day" : "Days"}, ${option.count} Unread Stories`}
+                disabled={loading || loadError}
+                aria-label={`Older Than ${option.days === 7 ? "1 Week" : `${option.days} ${option.days === 1 ? "Day" : "Days"}`}, ${option.count}${loading ? "+" : ""} Unread Stories`}
                 onClick={() => confirm(option)}
               >
-                <span>{option.days} {option.days === 1 ? "Day" : "Days"}</span>
+                <span>{option.days === 7 ? "1 Week" : `${option.days} ${option.days === 1 ? "Day" : "Days"}`}</span>
                 <span className="ml-auto pl-4 text-xs tabular-nums text-muted-foreground">
-                  {option.count.toLocaleString()}
+                  {option.count.toLocaleString()}{loading ? "+" : ""}
                 </span>
               </ContextMenuItem>
             ))}

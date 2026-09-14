@@ -152,6 +152,18 @@ struct FencedRoleLeaseTests {
     }
   }
 
+  @Test("SQLite storage time ignores skewed lease request clocks")
+  func storageClock() async throws {
+    let url = FileManager.default.temporaryDirectory.appendingPathComponent("lease-clock-\(UUID().uuidString).sqlite")
+    defer { try? FileManager.default.removeItem(at: url) }
+    let store = try SQLiteOperationsStore(path: url.path, environment: "test", logger: Logger(label: "lease-clock"))
+    let skewed = Date(timeIntervalSince1970: 1)
+    let lease = try #require(try await store.acquireRoleLease(
+      role: "wire", ownerID: "one", leaseUntil: skewed.addingTimeInterval(30), at: skewed))
+    #expect(abs(lease.updatedAt.timeIntervalSince(Date())) < 1)
+    #expect(abs(lease.expiresAt.timeIntervalSince(lease.updatedAt) - 30) < 0.001)
+  }
+
   @Test("non-positive lease durations fail before touching storage")
   func invalidLeaseDuration() async throws {
     try await withStore { store in
@@ -186,6 +198,12 @@ struct FencedRoleLeaseTests {
       environment: "dev",
       logger: Logger(label: "operations.role-lease.test")
     )
+    await store.useCallerRoleLeaseTestClock()
     try await operation(store)
   }
+}
+
+// Preserve synthetic historical-time scenarios explicitly; application code has no public override.
+extension SQLiteOperationsStore {
+  func useCallerRoleLeaseTestClock() { roleLeaseClock = { $0 } }
 }

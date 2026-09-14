@@ -1,20 +1,61 @@
 import Foundation
 import Logging
+import OperationsCore
 import PostgresNIO
 import Testing
 import WireCore
 
 @testable import WireWorkerCore
 
-@Suite(
-  "Wire bulk generation persistence",
-  .serialized,
-  .enabled(
-    if: ProcessInfo.processInfo.environment["WIRE_TEST_DATABASE_URL"] != nil,
-    "Requires an explicitly disposable migrated PostgreSQL database."
-  )
-)
-struct WireGenerationPersistenceTests {
+// Retention advances a database-wide cleanup clock, including signal expiry.
+// Share the ingestion/rollup suite's serialization boundary so these tests
+// cannot remove another fixture's still-live signal or projection rows.
+extension WirePostgresIntegrationTests {
+  @Test("an expired or replaced Coordinator cannot publish or leave partial generation rows",
+    arguments: [false, true])
+  func rejectsStaleCoordinator(withSuccessor: Bool) async throws {
+    try await withStore { store, pool, logger in
+      let now = Date()
+      let suffix = UUID().uuidString.lowercased()
+      let environment = "fence-\(suffix.prefix(12))"
+      let role = "indexing.wire-materializer"
+      let keys = ["fence-item-\(suffix)"]
+      try await seedItems(keys, at: now, pool: pool, logger: logger)
+      let control = PostgresOperationsStore(pool: pool, environment: environment, logger: logger)
+      let lease = try #require(try await control.acquireRoleLease(
+        role: role, ownerID: "old", leaseUntil: now.addingTimeInterval(30), at: now))
+      var predecessor = store
+      predecessor.roleLeaseAuthority = RoleLeaseAuthority(
+        environment: environment, role: role, ownerID: "old", fencingToken: lease.fencingToken)
+      var generation = makeGeneration(keys: keys, at: now, feed: "fence-feed-\(suffix)")
+      try await predecessor.commit(generation)
+      var activeID = generation.generationID
+      try await pool.query(
+        "UPDATE operations_role_leases SET acquired_at = clock_timestamp() - INTERVAL '2 seconds', lease_expires_at = clock_timestamp() - INTERVAL '1 second' WHERE environment = \(environment) AND role = \(role)",
+        logger: logger)
+      if withSuccessor {
+        let replacement = try #require(try await control.acquireRoleLease(
+          role: role, ownerID: "new", leaseUntil: now.addingTimeInterval(30), at: now))
+        var successor = store
+        successor.roleLeaseAuthority = RoleLeaseAuthority(
+          environment: environment, role: role, ownerID: "new", fencingToken: replacement.fencingToken)
+        generation.generationID = UUID()
+        try await successor.commit(generation)
+        activeID = generation.generationID
+      }
+      generation.generationID = UUID()
+      await #expect(throws: (any Error).self) { try await predecessor.commit(generation) }
+      let state = try await pool.query(
+        "SELECT active_generation_id FROM wire_feed_state WHERE feed_key = \(generation.feedKey)",
+        logger: logger)
+      for try await row in state { #expect(try row.decode(UUID.self) == activeID) }
+      let partial = try await pool.query(
+        "SELECT COUNT(*)::bigint FROM wire_rank_generations WHERE generation_id = \(generation.generationID)",
+        logger: logger)
+      for try await row in partial { #expect(try row.decode(Int64.self) == 0) }
+    }
+  }
+
   @Test("bulk rows preserve ranking order, scores, reasons and both edition variants")
   func bulkGenerationAndRollback() async throws {
     try await withStore { store, pool, logger in
@@ -169,10 +210,77 @@ struct WireGenerationPersistenceTests {
     }
   }
 
-  @Test("identical metadata refreshes avoid new row versions without suppressing expiry extensions")
+  @Test("one-hour retention honors old promises, exact expiry and complete active generations")
+  func shorterRetentionTransition() async throws {
+    try await withStore { store, pool, logger in
+      let start = Date(timeIntervalSince1970: floor(Date().timeIntervalSince1970))
+      let suffix = UUID().uuidString.lowercased()
+      let feed = "transition-\(suffix)"
+      let keys = (0..<20).map { "transition-\(suffix)-\($0)" }
+      try await seedItems(keys, at: start, pool: pool, logger: logger)
+      let old = makeGeneration(keys: keys, at: start, feed: feed)
+      try await store.commit(old)
+      var firstNew = makeGeneration(keys: keys, at: start.addingTimeInterval(300), feed: feed)
+      firstNew.expiresAt = firstNew.generatedAt.addingTimeInterval(3600)
+      try await store.commit(firstNew)
+      var active = makeGeneration(keys: keys, at: start.addingTimeInterval(600), feed: feed)
+      active.expiresAt = active.generatedAt.addingTimeInterval(3600)
+      try await store.commit(active)
+
+      // Changing the configured lifetime must not rewrite older promises or delete early.
+      try await store.deleteExpired(asOf: firstNew.expiresAt.addingTimeInterval(-1), batchSize: 5000)
+      let beforeRows = try await pool.query(
+        "SELECT generation_id, expires_at FROM wire_rank_generations WHERE feed_key = \(feed)",
+        logger: logger)
+      var before: [UUID: Date] = [:]
+      for try await row in beforeRows {
+        let value = try row.decode((UUID, Date).self)
+        before[value.0] = value.1
+      }
+      #expect(before == [old.generationID: old.expiresAt,
+                         firstNew.generationID: firstNew.expiresAt, active.generationID: active.expiresAt])
+
+      // At the exact new boundary, only the expired superseded generation and its children go.
+      try await store.deleteExpired(asOf: firstNew.expiresAt, batchSize: 5000)
+      let retainedRows = try await pool.query(
+        "SELECT generation_id FROM wire_rank_generations WHERE feed_key = \(feed)", logger: logger)
+      var retained = Set<UUID>()
+      for try await row in retainedRows { retained.insert(try row.decode(UUID.self)) }
+      #expect(retained == [old.generationID, active.generationID])
+      let deletedChildren = try await pool.query(
+        """
+        SELECT (SELECT COUNT(*) FROM wire_ranked_items WHERE generation_id = \(firstNew.generationID)),
+               (SELECT COUNT(*) FROM wire_edition_modules WHERE generation_id = \(firstNew.generationID)),
+               (SELECT COUNT(*) FROM wire_edition_module_items WHERE generation_id = \(firstNew.generationID))
+        """, logger: logger)
+      for try await row in deletedChildren {
+        let counts = try row.decode((Int64, Int64, Int64).self)
+        #expect(counts.0 == 0 && counts.1 == 0 && counts.2 == 0)
+      }
+
+      // Even past its own expiry, the complete active edition stays until a replacement commits.
+      try await store.deleteExpired(asOf: old.expiresAt, batchSize: 5000)
+      let activeRows = try await pool.query(
+        """
+        SELECT state.active_generation_id,
+               (SELECT COUNT(*) FROM wire_rank_generations WHERE feed_key = \(feed)),
+               (SELECT COUNT(*) FROM wire_ranked_items WHERE generation_id = state.active_generation_id),
+               (SELECT COUNT(*) FROM wire_edition_modules WHERE generation_id = state.active_generation_id),
+               (SELECT COUNT(*) FROM wire_edition_module_items WHERE generation_id = state.active_generation_id)
+        FROM wire_feed_state state WHERE feed_key = \(feed)
+        """, logger: logger)
+      for try await row in activeRows {
+        let value = try row.decode((UUID, Int64, Int64, Int64, Int64).self)
+        #expect(value.0 == active.generationID && value.1 == 1 && value.2 == Int64(keys.count))
+        #expect(value.3 > 0 && value.4 > 0)
+      }
+    }
+  }
+
+  @Test("identical metadata refreshes coalesce hourly expiry extensions")
   func metadataNoOp() async throws {
     try await withStore { _, pool, logger in
-      let now = Date()
+      let now = Date(timeIntervalSince1970: floor(Date().timeIntervalSince1970 / 3_600) * 3_600 + 60)
       let suffix = UUID().uuidString.lowercased()
       let key = "metadata-\(suffix)"
       try await seedItems([key], at: now, pool: pool, logger: logger)
@@ -186,6 +294,8 @@ struct WireGenerationPersistenceTests {
       try await cache.seedEmbedded(canonicalKey: key, metadata: metadata, asOf: now)
       #expect(try await metadataVersion(key: key, pool: pool, logger: logger) == originalVersion)
       try await cache.seedEmbedded(canonicalKey: key, metadata: metadata, asOf: now.addingTimeInterval(60))
+      #expect(try await metadataVersion(key: key, pool: pool, logger: logger) == originalVersion)
+      try await cache.seedEmbedded(canonicalKey: key, metadata: metadata, asOf: now.addingTimeInterval(3_600))
       #expect(try await metadataVersion(key: key, pool: pool, logger: logger) != originalVersion)
     }
   }

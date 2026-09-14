@@ -4,27 +4,7 @@ import PostgresNIO
 import WireCore
 
 struct PostgresWireInboxProcessor: Sendable {
-  private struct InboxEvent: Sendable {
-    let environment: String
-    let sourceGeneration: String
-    let sequence: Int64
-    let sourceHost: String
-    let cursorKind: String
-    let eventKind: String
-    let repoDID: String
-    let collection: String?
-    let operation: String?
-    let recordKey: String?
-    let payloadJSON: String
-    let eventTime: Date
-    let leaseToken: String
-    let attemptCount: Int
-
-    var sourceURI: String? {
-      guard let collection, let recordKey else { return nil }
-      return "at://\(repoDID)/\(collection)/\(recordKey)"
-    }
-  }
+  private typealias InboxEvent = WireInboxEvent
 
   private enum ApplyError: Error {
     case unresolvedReference
@@ -42,6 +22,9 @@ struct PostgresWireInboxProcessor: Sendable {
   let batchSize: Int
   let maximumConcurrentEvents: Int
   let sourceScope: WireInboxSourceScope?
+  let deferredRecommendationsEnabled: Bool
+  let dependencyVerificationEnabled: Bool
+  let incrementalSignalRollupsEnabled: Bool
 
   init(
     pool: PostgresClient,
@@ -53,7 +36,10 @@ struct PostgresWireInboxProcessor: Sendable {
     mentionStore: (any WireTalkedAccountMentionStoring)? = nil,
     batchSize: Int = 1_000,
     maximumConcurrentEvents: Int = 16,
-    sourceScope: WireInboxSourceScope? = nil
+    sourceScope: WireInboxSourceScope? = nil,
+    deferredRecommendationsEnabled: Bool = false,
+    dependencyVerificationEnabled: Bool = false,
+    incrementalSignalRollupsEnabled: Bool = false
   ) throws {
     self.pool = pool
     self.logger = logger
@@ -72,6 +58,9 @@ struct PostgresWireInboxProcessor: Sendable {
     self.batchSize = max(1, min(batchSize, 5_000))
     self.maximumConcurrentEvents = max(1, min(maximumConcurrentEvents, 64))
     self.sourceScope = sourceScope
+    self.deferredRecommendationsEnabled = deferredRecommendationsEnabled
+    self.dependencyVerificationEnabled = dependencyVerificationEnabled
+    self.incrementalSignalRollupsEnabled = incrementalSignalRollupsEnabled
   }
 
   func process(asOf: Date) async throws -> Int {
@@ -359,7 +348,6 @@ struct PostgresWireInboxProcessor: Sendable {
   }
 
   func maintain(asOf: Date) async throws {
-    try await mentionStore.pruneExpired(asOf: asOf)
     try await refreshRollups(asOf: asOf)
   }
 
@@ -375,7 +363,13 @@ struct PostgresWireInboxProcessor: Sendable {
         WHERE (environment, source_generation, seq) IN (
           SELECT environment, source_generation, seq
           FROM wire_ingestion_inbox
-          WHERE status IN ('applied', 'dead_letter') AND expires_at <= \(asOf)
+          WHERE (status IN ('applied', 'dead_letter') OR (
+            status IN ('deferred', 'superseded') AND EXISTS (
+              SELECT 1 FROM wire_recommendation_journal journal
+              WHERE journal.environment = wire_ingestion_inbox.environment
+                AND journal.source_generation = wire_ingestion_inbox.source_generation
+                AND journal.seq = wire_ingestion_inbox.seq
+            ))) AND expires_at <= \(asOf)
           ORDER BY expires_at, environment, source_generation, seq
           FOR UPDATE SKIP LOCKED
           LIMIT \(max(1, min(batchSize, 20_000)))
@@ -416,7 +410,13 @@ struct PostgresWireInboxProcessor: Sendable {
           FROM wire_ingestion_inbox
           WHERE environment = \(sourceScope.environment)
             AND source_generation = ANY(\(sourceScope.sourceGenerations))
-            AND status IN ('applied', 'dead_letter') AND expires_at <= \(asOf)
+            AND (status IN ('applied', 'dead_letter') OR (
+            status IN ('deferred', 'superseded') AND EXISTS (
+              SELECT 1 FROM wire_recommendation_journal journal
+              WHERE journal.environment = wire_ingestion_inbox.environment
+                AND journal.source_generation = wire_ingestion_inbox.source_generation
+                AND journal.seq = wire_ingestion_inbox.seq
+            ))) AND expires_at <= \(asOf)
           ORDER BY expires_at, environment, source_generation, seq
           FOR UPDATE SKIP LOCKED
           LIMIT \(max(1, min(batchSize, 20_000)))
@@ -446,68 +446,85 @@ struct PostgresWireInboxProcessor: Sendable {
   }
 
   private func process(_ event: InboxEvent, asOf: Date) async throws -> Bool {
+    try await applyClaimed(event, asOf: asOf) == .applied
+  }
+
+  func applyClaimed(_ event: WireInboxEvent, asOf: Date) async throws -> WireInboxEventOutcome {
+    try Task.checkCancellation()
     do {
+      if event.eventKind == "snapshot" || event.cursorKind == "pds_record_snapshot"
+        || (event.eventKind == "commit" && ["site.standard.document", "site.standard.entry", "site.standard.publication"].contains(event.collection ?? ""))
+      {
+        return try await applyStandardRecord(event, asOf: asOf)
+      }
+      if event.eventKind == "commit",
+        event.collection == "site.standard.graph.recommend"
+      {
+        return try await PostgresWireRecommendationJournal(pool: pool, logger: logger, dependencyVerificationEnabled: dependencyVerificationEnabled)
+          .process(event: event, actorHasher: actorHasher, asOf: asOf,
+            deferUnresolved: deferredRecommendationsEnabled)
+      }
       try await apply(event, asOf: asOf)
-      try await finish(event, status: "applied", retryAt: asOf, reason: nil, asOf: asOf)
-      return true
+      try Task.checkCancellation()
+      return try await finish(event, status: "applied", retryAt: asOf, reason: nil, asOf: asOf)
+        ? .applied : .leaseLost
+    } catch is CancellationError {
+      throw CancellationError()
     } catch ApplyError.unresolvedReference {
       if asOf.timeIntervalSince(event.eventTime) < 24 * 3_600 {
-        try await finish(
+        return try await finish(
           event,
           status: "retry",
           retryAt: asOf.addingTimeInterval(30),
           reason: "unresolved_subject",
           asOf: asOf
-        )
+        ) ? .retry : .leaseLost
       } else {
-        try await finish(
+        return try await finish(
           event,
           status: "dead_letter",
           retryAt: asOf,
           reason: "unresolved_subject_expired",
           asOf: asOf
-        )
+        ) ? .terminal : .leaseLost
       }
-      return false
     } catch ApplyError.unresolvedPublication {
       if asOf.timeIntervalSince(event.eventTime) < 24 * 3_600 {
-        try await finish(
+        return try await finish(
           event,
           status: "retry",
           retryAt: asOf.addingTimeInterval(
             Self.publicationRetryDelay(attemptCount: event.attemptCount)),
           reason: "unresolved_publication",
           asOf: asOf
-        )
+        ) ? .retry : .leaseLost
       } else {
-        try await finish(
+        return try await finish(
           event,
           status: "dead_letter",
           retryAt: asOf,
           reason: "unresolved_publication_expired",
           asOf: asOf
-        )
+        ) ? .terminal : .leaseLost
       }
-      return false
     } catch ApplyError.malformed {
-      try await finish(
+      return try await finish(
         event,
         status: "dead_letter",
         retryAt: asOf,
         reason: "malformed_event",
         asOf: asOf
-      )
-      return false
+      ) ? .terminal : .leaseLost
     } catch {
+      try Task.checkCancellation()
       let terminal = event.attemptCount >= 8
-      try await finish(
+      return try await finish(
         event,
         status: terminal ? "dead_letter" : "retry",
         retryAt: terminal ? asOf : asOf.addingTimeInterval(60),
         reason: String(reflecting: error).prefix(500).description,
         asOf: asOf
-      )
-      return false
+      ) ? (terminal ? .terminal : .retry) : .leaseLost
     }
   }
 
@@ -521,51 +538,35 @@ struct PostgresWireInboxProcessor: Sendable {
       batchSize: batchSize,
       maximumConcurrentEvents: maximumConcurrentEvents
     )
+    // Read repository heads in one FIFO index pass. An anti-join over every
+    // queued follower becomes quadratic when a few repositories have deep queues.
+    // Project index columns only; fetch readiness from the handful of head rows.
+    // Filter readiness after finding the head so future retries and live leases
+    // remain barriers, and lock the actual inbox rows before claiming them.
     let rows = try await pool.query(
       """
-      WITH pending_retry_candidates AS (
-        SELECT environment, source_generation, seq, next_attempt_at AS eligible_at
+      WITH repository_heads AS MATERIALIZED (
+        SELECT DISTINCT ON (candidate.environment, candidate.source_generation, candidate.repo_did)
+               candidate.environment, candidate.source_generation, candidate.repo_did,
+               candidate.seq
         FROM wire_ingestion_inbox candidate
-        WHERE candidate.status IN ('pending', 'retry')
-          AND candidate.next_attempt_at <= \(asOf)
-          AND NOT EXISTS (
-            SELECT 1 FROM wire_ingestion_inbox earlier
-            WHERE earlier.environment = candidate.environment
-              AND earlier.source_generation = candidate.source_generation
-              AND earlier.repo_did = candidate.repo_did
-              AND earlier.seq < candidate.seq
-              AND earlier.status IN ('pending', 'leased', 'retry')
-          )
-        ORDER BY candidate.next_attempt_at, candidate.seq,
-                 candidate.environment, candidate.source_generation
-        FOR UPDATE SKIP LOCKED
-        LIMIT \(claimLimit)
-      ),
-      expired_lease_candidates AS (
-        SELECT environment, source_generation, seq, lease_expires_at AS eligible_at
-        FROM wire_ingestion_inbox candidate
-        WHERE candidate.status = 'leased'
-          AND candidate.lease_expires_at <= \(asOf)
-          AND NOT EXISTS (
-            SELECT 1 FROM wire_ingestion_inbox earlier
-            WHERE earlier.environment = candidate.environment
-              AND earlier.source_generation = candidate.source_generation
-              AND earlier.repo_did = candidate.repo_did
-              AND earlier.seq < candidate.seq
-              AND earlier.status IN ('pending', 'leased', 'retry')
-          )
-        ORDER BY candidate.lease_expires_at, candidate.seq,
-                 candidate.environment, candidate.source_generation
-        FOR UPDATE SKIP LOCKED
-        LIMIT \(claimLimit)
+        WHERE candidate.status IN ('pending', 'leased', 'retry')
+        ORDER BY candidate.environment, candidate.source_generation,
+                 candidate.repo_did, candidate.seq
       ),
       candidates AS (
-        SELECT environment, source_generation, seq, eligible_at
-        FROM pending_retry_candidates
-        UNION ALL
-        SELECT environment, source_generation, seq, eligible_at
-        FROM expired_lease_candidates
-        ORDER BY eligible_at, seq, environment, source_generation
+        SELECT candidate.environment, candidate.source_generation, candidate.seq,
+               CASE WHEN candidate.status = 'leased' THEN candidate.lease_expires_at
+                    ELSE candidate.next_attempt_at END AS eligible_at
+        FROM repository_heads head
+        JOIN wire_ingestion_inbox candidate
+          ON candidate.environment = head.environment
+          AND candidate.source_generation = head.source_generation
+          AND candidate.seq = head.seq
+        WHERE (candidate.status IN ('pending', 'retry') AND candidate.next_attempt_at <= \(asOf))
+          OR (candidate.status = 'leased' AND candidate.lease_expires_at <= \(asOf))
+        ORDER BY eligible_at, candidate.seq, candidate.environment, candidate.source_generation
+        FOR UPDATE OF candidate SKIP LOCKED
         LIMIT \(claimLimit)
       )
       UPDATE wire_ingestion_inbox inbox
@@ -613,13 +614,13 @@ struct PostgresWireInboxProcessor: Sendable {
     return result.sorted { $0.sequence < $1.sequence }
   }
 
-  private func claimScopedPassiveDeletes(asOf: Date) async throws -> [InboxEvent] {
+  func claimScopedPassiveDeletes(asOf: Date, limit: Int? = nil) async throws -> [WireInboxEvent] {
     guard let sourceScope else { return [] }
     let token = UUID().uuidString.lowercased()
     let leaseUntil = asOf.addingTimeInterval(120)
     let claimLimit = Self.boundedClaimLimit(
       batchSize: batchSize,
-      maximumConcurrentEvents: maximumConcurrentEvents
+      maximumConcurrentEvents: min(maximumConcurrentEvents, limit ?? maximumConcurrentEvents)
     )
     let rows = try await pool.query(
       """
@@ -747,55 +748,34 @@ struct PostgresWireInboxProcessor: Sendable {
       batchSize: batchSize,
       maximumConcurrentEvents: maximumConcurrentEvents
     )
+    // Keep the same repository-head scan as the global claim, restricted to
+    // this drain's environment and source generations in the FIFO index.
     let rows = try await pool.query(
       """
-      WITH pending_retry_candidates AS (
-        SELECT candidate.environment, candidate.source_generation, candidate.seq,
-               candidate.next_attempt_at AS eligible_at
+      WITH repository_heads AS MATERIALIZED (
+        SELECT DISTINCT ON (candidate.environment, candidate.source_generation, candidate.repo_did)
+               candidate.environment, candidate.source_generation, candidate.repo_did,
+               candidate.seq
         FROM wire_ingestion_inbox candidate
         WHERE candidate.environment = \(sourceScope.environment)
           AND candidate.source_generation = ANY(\(sourceScope.sourceGenerations))
-          AND candidate.status IN ('pending', 'retry')
-          AND candidate.next_attempt_at <= \(asOf)
-          AND NOT EXISTS (
-            SELECT 1 FROM wire_ingestion_inbox earlier
-            WHERE earlier.environment = candidate.environment
-              AND earlier.source_generation = candidate.source_generation
-              AND earlier.repo_did = candidate.repo_did
-              AND earlier.seq < candidate.seq
-              AND earlier.status IN ('pending', 'leased', 'retry')
-          )
-        ORDER BY candidate.next_attempt_at, candidate.seq, candidate.source_generation
-        FOR UPDATE SKIP LOCKED
-        LIMIT \(claimLimit)
-      ),
-      expired_lease_candidates AS (
-        SELECT candidate.environment, candidate.source_generation, candidate.seq,
-               candidate.lease_expires_at AS eligible_at
-        FROM wire_ingestion_inbox candidate
-        WHERE candidate.environment = \(sourceScope.environment)
-          AND candidate.source_generation = ANY(\(sourceScope.sourceGenerations))
-          AND candidate.status = 'leased'
-          AND candidate.lease_expires_at <= \(asOf)
-          AND NOT EXISTS (
-            SELECT 1 FROM wire_ingestion_inbox earlier
-            WHERE earlier.environment = candidate.environment
-              AND earlier.source_generation = candidate.source_generation
-              AND earlier.repo_did = candidate.repo_did
-              AND earlier.seq < candidate.seq
-              AND earlier.status IN ('pending', 'leased', 'retry')
-          )
-        ORDER BY candidate.lease_expires_at, candidate.seq, candidate.source_generation
-        FOR UPDATE SKIP LOCKED
-        LIMIT \(claimLimit)
+          AND candidate.status IN ('pending', 'leased', 'retry')
+        ORDER BY candidate.environment, candidate.source_generation,
+                 candidate.repo_did, candidate.seq
       ),
       candidates AS (
-        SELECT environment, source_generation, seq, eligible_at
-        FROM pending_retry_candidates
-        UNION ALL
-        SELECT environment, source_generation, seq, eligible_at
-        FROM expired_lease_candidates
-        ORDER BY eligible_at, seq, environment, source_generation
+        SELECT candidate.environment, candidate.source_generation, candidate.seq,
+               CASE WHEN candidate.status = 'leased' THEN candidate.lease_expires_at
+                    ELSE candidate.next_attempt_at END AS eligible_at
+        FROM repository_heads head
+        JOIN wire_ingestion_inbox candidate
+          ON candidate.environment = head.environment
+          AND candidate.source_generation = head.source_generation
+          AND candidate.seq = head.seq
+        WHERE (candidate.status IN ('pending', 'retry') AND candidate.next_attempt_at <= \(asOf))
+          OR (candidate.status = 'leased' AND candidate.lease_expires_at <= \(asOf))
+        ORDER BY eligible_at, candidate.seq, candidate.environment, candidate.source_generation
+        FOR UPDATE OF candidate SKIP LOCKED
         LIMIT \(claimLimit)
       )
       UPDATE wire_ingestion_inbox inbox
@@ -935,27 +915,239 @@ struct PostgresWireInboxProcessor: Sendable {
     return error["code"] as? String == "payload_normalization_failed"
   }
 
-  private func applyArticle(
-    record: [String: Any],
-    event: InboxEvent,
-    sourceURI: String,
-    asOf: Date
-  ) async throws {
-    let resolved: WireResolvedStandardSiteDocument
+  /// PDS observations hydrate discovery without inventing publication activity.
+  /// Live mutations share the durable version fence, including deletion tombstones.
+  private func applyStandardRecord(_ event: InboxEvent, asOf: Date) async throws -> WireInboxEventOutcome {
+    let record = try standardRecord(event)
+    guard let version = try await standardRecordLease(event, asOf: asOf) else { return .leaseLost }
+    let candidate = PostgresWireStandardRecordFence(event: event, revision: version.0, cid: version.1)
+    let existing = try await pool.withConnection { connection in
+      try await PostgresWireStandardRecordFence.load(event: event, on: connection, logger: logger)
+    }
+    let preflightOrder = existing.map { candidate.compared(to: $0) } ?? .newer
+    let resolved: WireResolvedStandardSiteDocument?
+    let thumbnail: String?
+    if event.collection == "site.standard.publication" || preflightOrder == .older || preflightOrder == .conflict {
+      resolved = nil
+      thumbnail = nil
+    } else if let record {
+      // All publication and image resolution happens before reserving the
+      // transaction connection, including when the pool has only one slot.
+      resolved = try await resolveArticle(record: record, asOf: asOf)
+      thumbnail = try await WireStandardSiteRecordImage.resolveURL(
+        from: record, repoDID: event.repoDID, blobURLResolver: blobURLResolver)
+    } else {
+      resolved = nil
+      thumbnail = nil
+    }
+    let publicationURI = event.collection == "site.standard.publication" ? event.sourceURI : nil
+    if let publicationURI { await publicationResolver.invalidate(publicationURI: publicationURI) }
+    let outcome: WireInboxEventOutcome
     do {
-      resolved = try await WireStandardSiteDocumentResolver.resolve(
-        record: record,
-        publicationResolver: publicationResolver,
-        asOf: asOf
-      )
+      outcome = try await pool.withTransaction(logger: logger) { connection in
+      guard let version = try await standardRecordLease(event, asOf: asOf, connection: connection) else {
+        return .leaseLost
+      }
+      guard let sourceURI = event.sourceURI else { throw ApplyError.malformed }
+      // Same order as the recommendation/account path: inbox, account, source.
+      let accountLock = "wire-recommendation-account:\(event.environment):\(event.repoDID)"
+      try await connection.query(
+        "SELECT pg_advisory_xact_lock(hashtextextended(\(accountLock), 0))", logger: logger)
+      try await connection.query(
+        "SELECT pg_advisory_xact_lock(hashtextextended(\(sourceURI), 0))", logger: logger)
+      let candidate = PostgresWireStandardRecordFence(event: event, revision: version.0, cid: version.1)
+      let previous = try await PostgresWireStandardRecordFence.load(event: event, on: connection, logger: logger)
+      let order = previous.map { candidate.compared(to: $0) } ?? .newer
+      switch order {
+      case .older:
+        return try await finish(event, status: "dead_letter", retryAt: asOf,
+          reason: "standard_record_superseded", asOf: asOf, connection: connection) ? .terminal : .leaseLost
+      case .conflict:
+        // Unknown clocks retain the original payload for explicit reconciliation.
+        return try await finish(event, status: "retry", retryAt: asOf.addingTimeInterval(300),
+          reason: "standard_record_order_conflict", asOf: asOf, connection: connection) ? .retry : .leaseLost
+      case .newer, .same: break
+      }
+      if event.collection != "site.standard.publication", event.operation != "delete",
+        preflightOrder == .older || preflightOrder == .conflict
+      {
+        // Another worker may reconcile a previously incomparable fence while
+        // preflight runs. Resolve metadata on the next attempt, never publish an
+        // accepted record whose expensive resolution was deliberately skipped.
+        return try await finish(event, status: "retry", retryAt: asOf.addingTimeInterval(1),
+          reason: "standard_record_resolve_again", asOf: asOf, connection: connection) ? .retry : .leaseLost
+      }
+      let effectiveEventTime = order == .same
+        ? min(event.eventTime, previous?.time ?? event.eventTime) : event.eventTime
+      let accountRows = try await connection.query(
+        """
+        SELECT active, inactive_through FROM wire_recommendation_account_fences
+        WHERE environment = \(event.environment) AND repo_did = \(event.repoDID)
+        """, logger: logger)
+      for try await row in accountRows {
+        let account = try row.decode((Bool, Date?).self)
+        if event.operation != "delete", !account.0 || account.1.map({ effectiveEventTime <= $0 }) == true {
+          let reason = event.eventKind == "snapshot" ? "snapshot_account_inactive" : "standard_record_account_inactive"
+          return try await finish(event, status: "dead_letter", retryAt: asOf,
+            reason: reason, asOf: asOf, connection: connection) ? .terminal : .leaseLost
+        }
+      }
+      try Task.checkCancellation()
+      let record = try standardRecord(event)
+      let store = PostgresWirePublicationMetadataStore(pool: pool, logger: logger)
+      let isSnapshot = event.eventKind == "snapshot"
+      let hadActivity = order == .same && previous?.activityRecorded == true
+      let activityEvent = hadActivity ? previous!.originalEvent(using: event) : event
+      if event.operation == "delete" {
+        if event.collection == "site.standard.publication" {
+          try await store.remove(publicationURI: sourceURI, observedAt: event.eventTime, connection: connection, versionIsFenced: true)
+        } else {
+          try await retractStandardRecord(sourceURI: sourceURI, asOf: asOf, on: connection)
+        }
+      } else if event.collection == "site.standard.publication", let record {
+        guard let metadata = WirePublicationMetadata.parse(
+          publicationURI: sourceURI, repoDID: event.repoDID, record: record)
+        else { throw ApplyError.malformed }
+        try await store.upsert(metadata, asOf: event.eventTime, connection: connection, versionIsFenced: true)
+      } else if let resolved, let record {
+        try await applyArticle(record: record, event: activityEvent, sourceURI: sourceURI,
+          asOf: asOf, resolvedDocument: resolved, projectionConnection: connection,
+          resolvedThumbnail: thumbnail, recordsActivity: !isSnapshot,
+          incrementsActorActivity: !hadActivity, refreshesSignalTime: !isSnapshot && !hadActivity,
+          signalTime: order == .same && previous?.kind == "snapshot" ? event.eventTime : nil)
+      }
+      let recordsActivity = !isSnapshot && event.operation != "delete"
+        && event.collection != "site.standard.publication" && resolved != nil
+      // Replays keep the first real commit's transport and timestamp so an
+      // unlogged signal repair cannot gain a later observed-at publication boost.
+      let fence: PostgresWireStandardRecordFence
+      if order == .same, let previous, previous.activityRecorded || !recordsActivity {
+        fence = previous.observing(isSnapshot ? version.0 : nil)
+      } else {
+        fence = PostgresWireStandardRecordFence(event: event, revision: version.0, cid: version.1,
+          activityRecorded: recordsActivity)
+          .observing(order == .same ? previous?.observedRevision : nil)
+      }
+      try await fence.save(event: event, on: connection, asOf: asOf, logger: logger)
+      try Task.checkCancellation()
+      return try await finish(event, status: "applied", retryAt: asOf, reason: nil,
+        asOf: asOf, connection: connection) ? .applied : .leaseLost
+      }
+    } catch {
+      if let publicationURI { await publicationResolver.invalidate(publicationURI: publicationURI) }
+      throw error
+    }
+    // withTransaction has committed (or rolled back) before invalidating. Doing
+    // this inside its closure would let another replica refill pre-commit data.
+    if let publicationURI { await publicationResolver.invalidate(publicationURI: publicationURI) }
+    return outcome
+  }
+
+  private func standardRecord(_ event: InboxEvent) throws -> [String: Any]? {
+    guard !Self.isPayloadNormalizationFailure(event.payloadJSON), let collection = event.collection,
+      ["site.standard.document", "site.standard.entry", "site.standard.publication"].contains(collection),
+      let key = event.recordKey, !key.isEmpty, !key.contains("/"),
+      let document = try? JSONSerialization.jsonObject(with: Data(event.payloadJSON.utf8)) as? [String: Any]
+    else { throw ApplyError.malformed }
+    if event.eventKind == "snapshot" || event.cursorKind == "pds_record_snapshot" {
+      guard event.eventKind == "snapshot", event.cursorKind == "pds_record_snapshot", event.operation == "update",
+        let snapshot = document["snapshot"] as? [String: Any],
+        let cid = snapshot["cid"] as? String, !cid.isEmpty,
+        let rev = snapshot["rev"] as? String, PostgresWireStandardRecordFence.validRevision(rev),
+        let record = snapshot["record"] as? [String: Any], record["$type"] as? String == collection
+      else { throw ApplyError.malformed }
+      return record
+    }
+    guard event.eventKind == "commit", ["create", "update", "delete"].contains(event.operation ?? "")
+    else { throw ApplyError.malformed }
+    if event.operation == "delete" { return nil }
+    guard let commit = document["commit"] as? [String: Any], let record = commit["record"] as? [String: Any],
+      record["$type"] == nil || record["$type"] as? String == collection
+    else { throw ApplyError.malformed }
+    return record
+  }
+
+  /// Revalidate the complete claim and retained snapshot identity under its row
+  /// lock. CID/revision come from the inbox, not caller-created claim metadata.
+  private func standardRecordLease(
+    _ event: InboxEvent, asOf: Date, connection: PostgresConnection? = nil
+  ) async throws -> (String?, String?)? {
+    var query: PostgresQuery = """
+      SELECT repo_rev, record_cid,
+        payload = \(event.payloadJSON)::jsonb
+        AND event_kind = \(event.eventKind) AND cursor_kind = \(event.cursorKind)
+        AND operation = \(event.operation) AND collection = \(event.collection)
+        AND repo_did = \(event.repoDID) AND record_key = \(event.recordKey)
+        AND source_host = \(event.sourceHost) AND event_time = \(event.eventTime)
+        AND (event_kind <> 'snapshot' OR (record_cid IS NOT NULL AND repo_rev IS NOT NULL
+          AND record_cid = payload #>> '{snapshot,cid}' AND repo_rev = payload #>> '{snapshot,rev}'))
+      FROM wire_ingestion_inbox
+      WHERE environment = \(event.environment) AND source_generation = \(event.sourceGeneration)
+        AND seq = \(event.sequence) AND status = 'leased' AND lease_token = \(event.leaseToken)
+        AND lease_expires_at > \(asOf)
+      """
+    if connection != nil { query.sql += " FOR UPDATE" }
+    for try await row in try await projectionQuery(query, on: connection) {
+      let value = try row.decode((String?, String?, Bool?).self)
+      guard value.2 == true else { throw ApplyError.malformed }
+      return (value.0, value.1)
+    }
+    return nil
+  }
+
+  private func retractStandardRecord(sourceURI: String, asOf: Date, on connection: PostgresConnection) async throws {
+    // Revision ordering has already rejected stale deletes. A snapshot's newer
+    // observation time must not protect its aliases from an authoritative delete.
+    try await connection.query("DELETE FROM wire_signal_events WHERE source_uri = \(sourceURI)", logger: logger)
+    try await connection.query("DELETE FROM wire_item_aliases WHERE alias_key = \(sourceURI)", logger: logger)
+    try await connection.query(
+      "UPDATE wire_items SET updated_at = \(asOf) WHERE representative_uri = \(sourceURI)", logger: logger)
+  }
+
+  @discardableResult
+  private func projectionQuery(_ query: PostgresQuery, on connection: PostgresConnection?)
+    async throws -> PostgresRowSequence
+  {
+    if let connection { return try await connection.query(query, logger: logger) }
+    return try await pool.query(query, logger: logger)
+  }
+
+  private func resolveArticle(record: [String: Any], asOf: Date) async throws
+    -> WireResolvedStandardSiteDocument?
+  {
+    do {
+      return try await WireStandardSiteDocumentResolver.resolve(
+        record: record, publicationResolver: publicationResolver, asOf: asOf)
     } catch WireStandardSiteDocumentError.unaddressableDocument {
-      return
+      return nil
     } catch WireStandardSiteDocumentError.unresolvedPublication {
       throw ApplyError.unresolvedPublication
     } catch WireStandardSiteDocumentError.malformedDocument,
       WireStandardSiteDocumentError.invalidPublication
     {
       throw ApplyError.malformed
+    }
+  }
+
+  private func applyArticle(
+    record: [String: Any],
+    event: InboxEvent,
+    sourceURI: String,
+    asOf: Date,
+    resolvedDocument: WireResolvedStandardSiteDocument? = nil,
+    projectionConnection: PostgresConnection? = nil,
+    resolvedThumbnail: String? = nil,
+    recordsActivity: Bool = true,
+    incrementsActorActivity: Bool = true,
+    refreshesSignalTime: Bool = true,
+    signalTime: Date? = nil
+  ) async throws {
+    let resolved: WireResolvedStandardSiteDocument
+    if let resolvedDocument {
+      resolved = resolvedDocument
+    } else {
+      guard let document = try await resolveArticle(record: record, asOf: asOf) else { return }
+      resolved = document
     }
     guard let identity = WireCanonicalizer.canonicalize(resolved.canonicalURL),
       let host = URL(string: identity.canonicalURL)?.host
@@ -965,11 +1157,13 @@ struct PostgresWireInboxProcessor: Sendable {
     guard targetKind.canCreateItem else { return }
     let title = Self.firstString(record, keys: ["title", "name"]) ?? host
     let summary = Self.firstString(record, keys: ["summary", "description", "text", "textContent"])
-    let thumbnail = try await WireStandardSiteRecordImage.resolveURL(
-      from: record,
-      repoDID: event.repoDID,
-      blobURLResolver: blobURLResolver
-    )
+    let thumbnail: String?
+    if projectionConnection != nil {
+      thumbnail = resolvedThumbnail
+    } else {
+      thumbnail = try await WireStandardSiteRecordImage.resolveURL(
+        from: record, repoDID: event.repoDID, blobURLResolver: blobURLResolver)
+    }
     let language = Self.primaryLanguage(Self.firstString(record, keys: ["lang", "language"]))
     let publishedAt = Self.date(Self.firstString(record, keys: ["publishedAt", "createdAt"]))
     let publicationID = resolved.publicationURI
@@ -1004,20 +1198,33 @@ struct PostgresWireInboxProcessor: Sendable {
       sourceText: nil,
       targetKind: targetKind,
       inspectionURL: resolved.canonicalURL,
-      asOf: asOf
+      asOf: asOf,
+      connection: projectionConnection,
+      recordsActivity: refreshesSignalTime,
+      signalTime: signalTime
     )
     try await upsertAlias(
-      alias: sourceURI, type: "at_uri", canonicalKey: identity.canonicalKey, asOf: asOf)
+      alias: sourceURI, type: "at_uri", canonicalKey: identity.canonicalKey, asOf: asOf, connection: projectionConnection)
     try await upsertAlias(
-      alias: identity.canonicalURL, type: "url", canonicalKey: identity.canonicalKey, asOf: asOf)
-    try await upsertActor(hash: actorHash, asOf: asOf)
+      alias: identity.canonicalURL, type: "url", canonicalKey: identity.canonicalKey, asOf: asOf, connection: projectionConnection)
+    guard recordsActivity,
+      (incrementsActorActivity && signalTime == nil)
+        || event.eventTime.addingTimeInterval(WireDataPolicy.signalRetention) > asOf
+    else { return }
+    try await upsertActor(hash: actorHash, asOf: incrementsActorActivity ? (signalTime ?? asOf) : event.eventTime,
+      connection: projectionConnection, incrementsActivity: incrementsActorActivity)
+    // Recovery must still project the corpus and record its version/activity
+    // fence, but an expired signal cannot contribute to any ranking window.
+    // Avoid rebuilding throwaway partitions and rows for that replay history.
+    guard event.eventTime.addingTimeInterval(WireDataPolicy.signalRetention) > asOf else { return }
     try await insertSignal(
       event: event,
       canonicalKey: identity.canonicalKey,
       actorHash: actorHash,
       sourceURI: sourceURI,
       kind: "publication",
-      asOf: asOf
+      asOf: asOf,
+      connection: projectionConnection
     )
   }
 
@@ -1408,10 +1615,17 @@ struct PostgresWireInboxProcessor: Sendable {
       let document = try JSONSerialization.jsonObject(with: Data(event.payloadJSON.utf8))
         as? [String: Any],
       let account = document["account"] as? [String: Any],
-      account["active"] as? Bool == false
+      let active = account["active"] as? Bool
     else { return }
     let actorHash = try actorHasher.hash(event.repoDID)
-    try await pool.withTransaction(logger: logger) { connection in
+    if !active { await publicationResolver.invalidateAccount(repoDID: event.repoDID) }
+    let retracted: Bool
+    do {
+      retracted = try await pool.withTransaction(logger: logger) { connection in
+      guard try await PostgresWireRecommendationJournal.observeAccount(
+        event: event, on: connection, asOf: asOf)
+      else { return false }
+      guard !active else { return false }
       try await connection.query(
         "UPDATE wire_items SET eligible = FALSE, updated_at = \(asOf) WHERE author_key = \(event.repoDID)",
         logger: logger
@@ -1436,8 +1650,16 @@ struct PostgresWireInboxProcessor: Sendable {
         "DELETE FROM wire_publications WHERE repo_did = \(event.repoDID)",
         logger: logger
       )
+      return true
+      }
+    } catch {
+      if !active { await publicationResolver.invalidateAccount(repoDID: event.repoDID) }
+      throw error
     }
-    try await mentionStore.removeActor(did: event.repoDID, actorKeyHash: actorHash)
+    if !active { await publicationResolver.invalidateAccount(repoDID: event.repoDID) }
+    if retracted {
+      try await mentionStore.removeActor(did: event.repoDID, actorKeyHash: actorHash)
+    }
   }
 
   private func retract(sourceURI: String, eventTime: Date, asOf: Date) async throws {
@@ -1500,7 +1722,10 @@ struct PostgresWireInboxProcessor: Sendable {
     sourceText: String?,
     targetKind: WireTargetKind,
     inspectionURL: String,
-    asOf: Date
+    asOf: Date,
+    connection: PostgresConnection? = nil,
+    recordsActivity: Bool = true,
+    signalTime: Date? = nil
   ) async throws {
     let provenanceJSON = String(decoding: try JSONEncoder().encode(provenance), as: UTF8.self)
     let topicsJSON = String(decoding: try JSONEncoder().encode(topicKeys), as: UTF8.self)
@@ -1533,9 +1758,13 @@ struct PostgresWireInboxProcessor: Sendable {
       decoding: try JSONSerialization.data(withJSONObject: presentation),
       as: UTF8.self
     )
-    let expiresAt = asOf.addingTimeInterval(WireDataPolicy.itemRetention)
-    try await pool.query(
+    let expiresAt = WireCacheExpiry.hourlyDeadline(asOf: asOf, retention: WireDataPolicy.itemRetention)
+    let signalAt: Date? = recordsActivity ? (signalTime ?? asOf) : nil
+    // Compare the effective merged row, including exact activity times. A skipped
+    // update still seeds missing metadata from the existing item for cache recovery.
+    try await projectionQuery(
       """
+      WITH upserted_item AS (
       INSERT INTO wire_items
         (canonical_key, canonical_url, representative_uri, publication_id, author_key,
          source_domain, source_name, author_name, title, summary, thumbnail_url,
@@ -1549,7 +1778,7 @@ struct PostgresWireInboxProcessor: Sendable {
          \(authorDID), \(host), \(sourceName), \(authorName), \(title), \(summary), \(thumbnail),
          \(publicationHomepageURL), \(publicationIconURL),
          \(language), \(topicsJSON)::jsonb, \(presentationJSON)::jsonb, \(provenanceJSON)::jsonb,
-         \(publishedAt), \(asOf), \(asOf), \(asOf), \(confidence), \(targetKind.canCreateItem),
+         \(publishedAt), \(asOf), \(asOf), \(signalAt), \(confidence), \(targetKind.canCreateItem),
          \(targetKind.rawValue),
          \(commercial.score), \(commercial.classification.rawValue),
          \(commercialReasonsJSON)::jsonb, \(expiresAt), \(asOf))
@@ -1610,15 +1839,126 @@ struct PostgresWireInboxProcessor: Sendable {
           WHEN wire_items.commercial_score > EXCLUDED.commercial_score
           THEN wire_items.commercial_reasons ELSE EXCLUDED.commercial_reasons END,
         published_at = COALESCE(wire_items.published_at, EXCLUDED.published_at),
-        last_seen_at = EXCLUDED.last_seen_at, last_signal_at = EXCLUDED.last_signal_at,
+        last_seen_at = EXCLUDED.last_seen_at,
+        last_signal_at = COALESCE(EXCLUDED.last_signal_at, wire_items.last_signal_at),
         eligible = wire_items.eligible AND EXCLUDED.eligible,
         source_confidence = GREATEST(wire_items.source_confidence, EXCLUDED.source_confidence),
         expires_at = GREATEST(wire_items.expires_at, EXCLUDED.expires_at), updated_at = EXCLUDED.updated_at
+      WHERE CASE
+        -- Advancing observations already require an update; avoid merging JSON twice.
+        WHEN wire_items.last_seen_at IS DISTINCT FROM EXCLUDED.last_seen_at
+          OR wire_items.last_signal_at IS DISTINCT FROM
+            COALESCE(EXCLUDED.last_signal_at, wire_items.last_signal_at)
+          OR wire_items.expires_at IS DISTINCT FROM
+            GREATEST(wire_items.expires_at, EXCLUDED.expires_at)
+        THEN TRUE
+        ELSE ROW(
+        wire_items.canonical_url,
+        wire_items.representative_uri,
+        wire_items.publication_id,
+        wire_items.author_key,
+        wire_items.author_name,
+        wire_items.source_name,
+        wire_items.title,
+        wire_items.summary,
+        wire_items.thumbnail_url,
+        wire_items.presentation_snapshot,
+        wire_items.publication_homepage_url,
+        wire_items.publication_icon_url,
+        wire_items.language_code,
+        wire_items.topic_keys,
+        wire_items.provenance,
+        wire_items.target_kind,
+        wire_items.commercial_score,
+        wire_items.commercial_class,
+        wire_items.commercial_reasons,
+        wire_items.published_at,
+        wire_items.eligible,
+        wire_items.source_confidence)
+        IS DISTINCT FROM ROW(
+        EXCLUDED.canonical_url,
+        COALESCE(wire_items.representative_uri, EXCLUDED.representative_uri),
+        COALESCE(wire_items.publication_id, EXCLUDED.publication_id),
+        COALESCE(wire_items.author_key, EXCLUDED.author_key),
+        COALESCE(wire_items.author_name, EXCLUDED.author_name),
+        CASE
+          WHEN COALESCE((EXCLUDED.presentation_snapshot->>'sourcePriority')::integer, 0)
+            >= COALESCE((wire_items.presentation_snapshot->>'sourcePriority')::integer, 0)
+          THEN EXCLUDED.source_name ELSE wire_items.source_name END,
+        CASE
+          WHEN COALESCE((EXCLUDED.presentation_snapshot->>'sourcePriority')::integer, 0)
+            >= COALESCE((wire_items.presentation_snapshot->>'sourcePriority')::integer, 0)
+          THEN EXCLUDED.title ELSE wire_items.title END,
+        CASE
+          WHEN COALESCE((EXCLUDED.presentation_snapshot->>'sourcePriority')::integer, 0)
+            >= COALESCE((wire_items.presentation_snapshot->>'sourcePriority')::integer, 0)
+          THEN COALESCE(EXCLUDED.summary, wire_items.summary) ELSE wire_items.summary END,
+        CASE
+          WHEN COALESCE((EXCLUDED.presentation_snapshot->>'sourcePriority')::integer, 0)
+            >= COALESCE((wire_items.presentation_snapshot->>'sourcePriority')::integer, 0)
+          THEN COALESCE(EXCLUDED.thumbnail_url, wire_items.thumbnail_url) ELSE wire_items.thumbnail_url END,
+        CASE
+          WHEN COALESCE((EXCLUDED.presentation_snapshot->>'sourcePriority')::integer, 0)
+            >= COALESCE((wire_items.presentation_snapshot->>'sourcePriority')::integer, 0)
+          THEN EXCLUDED.presentation_snapshot ELSE wire_items.presentation_snapshot END,
+        COALESCE(
+          EXCLUDED.publication_homepage_url, wire_items.publication_homepage_url),
+        COALESCE(
+          EXCLUDED.publication_icon_url, wire_items.publication_icon_url),
+        CASE
+          WHEN EXCLUDED.presentation_snapshot->>'metadataSource' = 'standard_site'
+          THEN EXCLUDED.language_code
+          ELSE wire_items.language_code END,
+        CASE WHEN jsonb_array_length(wire_items.topic_keys) = 0
+          THEN EXCLUDED.topic_keys ELSE wire_items.topic_keys END,
+        (
+          SELECT COALESCE(jsonb_agg(value ORDER BY value), '[]'::jsonb)
+          FROM (
+            SELECT DISTINCT value
+            FROM jsonb_array_elements_text(wire_items.provenance || EXCLUDED.provenance)
+          ) unique_provenance
+        ),
+        CASE
+          WHEN wire_items.target_kind NOT IN ('external_article', 'standard_site_document')
+            THEN wire_items.target_kind
+          WHEN EXCLUDED.target_kind NOT IN ('external_article', 'standard_site_document')
+            THEN EXCLUDED.target_kind
+          WHEN wire_items.target_kind = 'standard_site_document' THEN wire_items.target_kind
+          ELSE EXCLUDED.target_kind END,
+        GREATEST(wire_items.commercial_score, EXCLUDED.commercial_score),
+        CASE
+          WHEN wire_items.commercial_score > EXCLUDED.commercial_score
+          THEN wire_items.commercial_class ELSE EXCLUDED.commercial_class END,
+        CASE
+          WHEN wire_items.commercial_score > EXCLUDED.commercial_score
+          THEN wire_items.commercial_reasons ELSE EXCLUDED.commercial_reasons END,
+        COALESCE(wire_items.published_at, EXCLUDED.published_at),
+        wire_items.eligible AND EXCLUDED.eligible,
+        GREATEST(wire_items.source_confidence, EXCLUDED.source_confidence))
+      END
+      RETURNING canonical_key, canonical_url, eligible, expires_at
+      )
+      INSERT INTO wire_link_metadata_cache
+        (canonical_key, canonical_url, source, status, retry_after, failure_count, updated_at)
+      SELECT canonical_key, canonical_url, 'fallback', 'pending', \(asOf), 0, \(asOf)
+      FROM (
+        SELECT canonical_key, canonical_url, eligible, expires_at FROM upserted_item
+        UNION ALL
+        SELECT canonical_key, canonical_url, eligible, expires_at FROM wire_items
+        WHERE canonical_key = \(identity.canonicalKey)
+          AND NOT EXISTS (SELECT 1 FROM upserted_item)
+      ) item
+      WHERE eligible AND expires_at > \(asOf) AND canonical_url LIKE 'https://%'
+        AND NOT EXISTS (
+          SELECT 1 FROM wire_link_metadata_cache cache
+          WHERE cache.canonical_key = item.canonical_key
+        )
+      ON CONFLICT (canonical_key) DO NOTHING
       """,
-      logger: logger
+      on: connection
     )
     if isExplicitAdultContent {
-      try await pool.query(
+      try await projectionQuery(
         """
         INSERT INTO wire_labels
           (canonical_key, label_key, label_value, source, confidence, applied_at, expires_at)
@@ -1631,7 +1971,7 @@ struct PostgresWireInboxProcessor: Sendable {
           applied_at = EXCLUDED.applied_at,
           expires_at = EXCLUDED.expires_at
         """,
-        logger: logger
+        on: connection
       )
     }
   }
@@ -1640,18 +1980,20 @@ struct PostgresWireInboxProcessor: Sendable {
     alias: String,
     type: String,
     canonicalKey: String,
-    asOf: Date
+    asOf: Date,
+    connection: PostgresConnection? = nil
   ) async throws {
-    try await pool.query(
+    try await projectionQuery(
       """
       INSERT INTO wire_item_aliases (alias_key, canonical_key, alias_type, expires_at)
-      VALUES (\(alias), \(canonicalKey), \(type), \(asOf.addingTimeInterval(WireDataPolicy.itemRetention)))
+      VALUES (\(alias), \(canonicalKey), \(type), \(WireCacheExpiry.hourlyDeadline(asOf: asOf, retention: WireDataPolicy.itemRetention)))
       ON CONFLICT (alias_key) DO UPDATE SET canonical_key = EXCLUDED.canonical_key,
-        expires_at = EXCLUDED.expires_at
+        expires_at = GREATEST(wire_item_aliases.expires_at, EXCLUDED.expires_at)
       WHERE (wire_item_aliases.canonical_key, wire_item_aliases.expires_at)
-        IS DISTINCT FROM (EXCLUDED.canonical_key, EXCLUDED.expires_at)
+        IS DISTINCT FROM (
+          EXCLUDED.canonical_key, GREATEST(wire_item_aliases.expires_at, EXCLUDED.expires_at))
       """,
-      logger: logger
+      on: connection
     )
   }
 
@@ -1686,17 +2028,20 @@ struct PostgresWireInboxProcessor: Sendable {
     return nil
   }
 
-  private func upsertActor(hash: String, asOf: Date) async throws {
-    try await pool.query(
+  private func upsertActor(
+    hash: String, asOf: Date, connection: PostgresConnection? = nil, incrementsActivity: Bool = true
+  ) async throws {
+    try await projectionQuery(
       """
       INSERT INTO wire_active_actors
         (actor_key_hash, first_active_at, last_active_at, public_signal_count, expires_at)
       VALUES (\(hash), \(asOf), \(asOf), 1, \(asOf.addingTimeInterval(WireDataPolicy.activeActorRetention)))
-      ON CONFLICT (actor_key_hash) DO UPDATE SET last_active_at = EXCLUDED.last_active_at,
+      ON CONFLICT (actor_key_hash) DO UPDATE SET last_active_at = GREATEST(wire_active_actors.last_active_at, EXCLUDED.last_active_at),
         public_signal_count = wire_active_actors.public_signal_count + 1,
-        expires_at = EXCLUDED.expires_at
+        expires_at = GREATEST(wire_active_actors.expires_at, EXCLUDED.expires_at)
+      WHERE \(incrementsActivity)
       """,
-      logger: logger
+      on: connection
     )
   }
 
@@ -1715,7 +2060,8 @@ struct PostgresWireInboxProcessor: Sendable {
     actorHash: String,
     sourceURI: String,
     kind: String,
-    asOf: Date
+    asOf: Date,
+    connection: PostgresConnection? = nil
   ) async throws {
     let eventKey = "\(event.environment):\(event.sourceGeneration):\(event.sequence)"
     let transportEventKey = Self.transportEventKey(
@@ -1724,37 +2070,52 @@ struct PostgresWireInboxProcessor: Sendable {
       cursorKind: event.cursorKind,
       sequence: event.sequence
     )
-    try await pool.withTransaction(logger: logger) { connection in
-      try await connection.query(
-        "SELECT pg_advisory_xact_lock(hashtextextended(\(sourceURI), 0))",
-        logger: logger
-      )
-      try await connection.query(
-        "SELECT ensure_wire_signal_event_partition((\(event.eventTime) AT TIME ZONE 'UTC')::date)",
-        logger: logger
-      )
-      try await connection.query(
-        "DELETE FROM wire_signal_events WHERE source_uri = \(sourceURI) AND occurred_at <= \(event.eventTime)",
-        logger: logger
-      )
-      try await connection.query(
-        """
-        INSERT INTO wire_signal_events
-          (event_key, transport_event_key, canonical_key, signal_kind, actor_key_hash, source_uri,
-           source_collection, source_action, occurred_at, expires_at)
-        SELECT
-          \(eventKey), \(transportEventKey), \(canonicalKey), \(kind), \(actorHash), \(sourceURI),
-          \(event.collection), \(kind), \(event.eventTime),
-          \(event.eventTime.addingTimeInterval(WireDataPolicy.signalRetention))
-        WHERE NOT EXISTS (
-          SELECT 1 FROM wire_signal_events
-          WHERE source_uri = \(sourceURI) AND occurred_at > \(event.eventTime)
-        )
-        ON CONFLICT DO NOTHING
-        """,
-        logger: logger
-      )
+    if let connection {
+      try await insertSignal(event: event, canonicalKey: canonicalKey, actorHash: actorHash,
+        sourceURI: sourceURI, kind: kind, eventKey: eventKey, transportEventKey: transportEventKey,
+        on: connection)
+    } else {
+      try await pool.withTransaction(logger: logger) { connection in
+        try await insertSignal(event: event, canonicalKey: canonicalKey, actorHash: actorHash,
+          sourceURI: sourceURI, kind: kind, eventKey: eventKey, transportEventKey: transportEventKey,
+          on: connection)
+      }
     }
+  }
+
+  private func insertSignal(
+    event: InboxEvent, canonicalKey: String, actorHash: String, sourceURI: String,
+    kind: String, eventKey: String, transportEventKey: String, on connection: PostgresConnection
+  ) async throws {
+    try await connection.query(
+      "SELECT pg_advisory_xact_lock(hashtextextended(\(sourceURI), 0))",
+      logger: logger
+    )
+    try await connection.query(
+      "SELECT ensure_wire_signal_event_partition((\(event.eventTime) AT TIME ZONE 'UTC')::date)",
+      logger: logger
+    )
+    try await connection.query(
+      "DELETE FROM wire_signal_events WHERE source_uri = \(sourceURI) AND occurred_at <= \(event.eventTime)",
+      logger: logger
+    )
+    try await connection.query(
+      """
+      INSERT INTO wire_signal_events
+        (event_key, transport_event_key, canonical_key, signal_kind, actor_key_hash, source_uri,
+         source_collection, source_action, occurred_at, expires_at)
+      SELECT
+        \(eventKey), \(transportEventKey), \(canonicalKey), \(kind), \(actorHash), \(sourceURI),
+        \(event.collection), \(kind), \(event.eventTime),
+        \(event.eventTime.addingTimeInterval(WireDataPolicy.signalRetention))
+      WHERE NOT EXISTS (
+        SELECT 1 FROM wire_signal_events
+        WHERE source_uri = \(sourceURI) AND occurred_at > \(event.eventTime)
+      )
+      ON CONFLICT DO NOTHING
+      """,
+      logger: logger
+    )
   }
 
   private func replaceSignals(
@@ -1822,135 +2183,9 @@ struct PostgresWireInboxProcessor: Sendable {
   }
 
   private func refreshRollups(asOf: Date) async throws {
-    try await pool.withTransaction(logger: logger) { connection in
-      try await connection.query(
-        "SELECT pg_advisory_xact_lock(hashtext('wire_signal_rollups_refresh')::bigint)",
-        logger: logger
-      )
-      try await connection.query(
-        "TRUNCATE TABLE wire_signal_rollups",
-        logger: logger
-      )
-      try await connection.query(
-        """
-        INSERT INTO wire_signal_rollups
-          (canonical_key, distinct_actors_1h, distinct_actors_24h, distinct_actors_7d,
-           signals_1h, signals_24h, signals_7d, communities_24h,
-           primary_community_key_hash, recommendations_24h,
-           positive_feedback_24h, negative_feedback_24h,
-           shares_1h, shares_24h, distinct_likers_24h, likes_1h, likes_24h,
-           distinct_reposters_24h, reposts_1h, reposts_24h,
-           baseline_last_signal_at,
-           baseline_distinct_actors_1h, baseline_distinct_actors_24h,
-           baseline_distinct_actors_7d, baseline_signals_1h, baseline_signals_24h,
-           baseline_signals_7d, baseline_recommendations_24h,
-           baseline_shares_1h, baseline_shares_24h,
-           baseline_distinct_likers_24h, baseline_likes_1h, baseline_likes_24h,
-           updated_at)
-        SELECT canonical_key,
-          COUNT(DISTINCT actor_key_hash) FILTER (WHERE occurred_at >= \(asOf.addingTimeInterval(-3_600))),
-          COUNT(DISTINCT actor_key_hash) FILTER (WHERE occurred_at >= \(asOf.addingTimeInterval(-86_400))),
-          COUNT(DISTINCT actor_key_hash),
-          COUNT(*) FILTER (WHERE occurred_at >= \(asOf.addingTimeInterval(-3_600))),
-          COUNT(*) FILTER (WHERE occurred_at >= \(asOf.addingTimeInterval(-86_400))),
-          COUNT(*),
-          COUNT(DISTINCT community_key_hash) FILTER (
-            WHERE occurred_at >= \(asOf.addingTimeInterval(-86_400)) AND community_key_hash IS NOT NULL),
-          MODE() WITHIN GROUP (ORDER BY community_key_hash) FILTER (
-            WHERE occurred_at >= \(asOf.addingTimeInterval(-86_400)) AND community_key_hash IS NOT NULL),
-          COUNT(DISTINCT actor_key_hash) FILTER (WHERE signal_kind = 'recommendation'
-            AND occurred_at >= \(asOf.addingTimeInterval(-86_400))),
-          COALESCE((SELECT COUNT(*) FROM wire_article_feedback feedback
-            WHERE feedback.canonical_key = wire_signal_events.canonical_key
-              AND feedback.feedback_value = 'good'
-              AND feedback.occurred_at >= \(asOf.addingTimeInterval(-86_400))
-              AND feedback.expires_at > \(asOf)), 0),
-          COALESCE((SELECT COUNT(*) FROM wire_article_feedback feedback
-            WHERE feedback.canonical_key = wire_signal_events.canonical_key
-              AND feedback.feedback_value = 'not_good'
-              AND feedback.occurred_at >= \(asOf.addingTimeInterval(-86_400))
-              AND feedback.expires_at > \(asOf)), 0),
-          COUNT(DISTINCT actor_key_hash) FILTER (
-            WHERE signal_kind IN ('share','quote','recommendation','publication')
-            AND occurred_at >= \(asOf.addingTimeInterval(-3_600))),
-          COUNT(DISTINCT actor_key_hash) FILTER (
-            WHERE signal_kind IN ('share','quote','recommendation','publication')
-            AND occurred_at >= \(asOf.addingTimeInterval(-86_400))),
-          COUNT(DISTINCT actor_key_hash) FILTER (WHERE signal_kind = 'like'
-            AND occurred_at >= \(asOf.addingTimeInterval(-86_400))),
-          COUNT(DISTINCT actor_key_hash) FILTER (WHERE signal_kind = 'like'
-            AND occurred_at >= \(asOf.addingTimeInterval(-3_600))),
-          COUNT(DISTINCT actor_key_hash) FILTER (WHERE signal_kind = 'like'
-            AND occurred_at >= \(asOf.addingTimeInterval(-86_400))),
-          COUNT(DISTINCT actor_key_hash) FILTER (WHERE signal_kind = 'repost'
-            AND occurred_at >= \(asOf.addingTimeInterval(-86_400))),
-          COUNT(DISTINCT actor_key_hash) FILTER (WHERE signal_kind = 'repost'
-            AND occurred_at >= \(asOf.addingTimeInterval(-3_600))),
-          COUNT(DISTINCT actor_key_hash) FILTER (WHERE signal_kind = 'repost'
-            AND occurred_at >= \(asOf.addingTimeInterval(-86_400))),
-          MAX(occurred_at) FILTER (
-            WHERE source_collection NOT LIKE 'at.margin.%'
-              AND source_collection NOT LIKE 'network.cosmik.%'),
-          COUNT(DISTINCT actor_key_hash) FILTER (
-            WHERE occurred_at >= \(asOf.addingTimeInterval(-3_600))
-              AND source_collection NOT LIKE 'at.margin.%'
-              AND source_collection NOT LIKE 'network.cosmik.%'),
-          COUNT(DISTINCT actor_key_hash) FILTER (
-            WHERE occurred_at >= \(asOf.addingTimeInterval(-86_400))
-              AND source_collection NOT LIKE 'at.margin.%'
-              AND source_collection NOT LIKE 'network.cosmik.%'),
-          COUNT(DISTINCT actor_key_hash) FILTER (
-            WHERE source_collection NOT LIKE 'at.margin.%'
-              AND source_collection NOT LIKE 'network.cosmik.%'),
-          COUNT(*) FILTER (
-            WHERE occurred_at >= \(asOf.addingTimeInterval(-3_600))
-              AND source_collection NOT LIKE 'at.margin.%'
-              AND source_collection NOT LIKE 'network.cosmik.%'),
-          COUNT(*) FILTER (
-            WHERE occurred_at >= \(asOf.addingTimeInterval(-86_400))
-              AND source_collection NOT LIKE 'at.margin.%'
-              AND source_collection NOT LIKE 'network.cosmik.%'),
-          COUNT(*) FILTER (
-            WHERE source_collection NOT LIKE 'at.margin.%'
-              AND source_collection NOT LIKE 'network.cosmik.%'),
-          COUNT(DISTINCT actor_key_hash) FILTER (
-            WHERE signal_kind = 'recommendation'
-              AND occurred_at >= \(asOf.addingTimeInterval(-86_400))
-              AND source_collection NOT LIKE 'at.margin.%'
-              AND source_collection NOT LIKE 'network.cosmik.%'),
-          COUNT(DISTINCT actor_key_hash) FILTER (
-            WHERE signal_kind IN ('share','quote','recommendation','publication')
-              AND occurred_at >= \(asOf.addingTimeInterval(-3_600))
-              AND source_collection NOT LIKE 'at.margin.%'
-              AND source_collection NOT LIKE 'network.cosmik.%'),
-          COUNT(DISTINCT actor_key_hash) FILTER (
-            WHERE signal_kind IN ('share','quote','recommendation','publication')
-              AND occurred_at >= \(asOf.addingTimeInterval(-86_400))
-              AND source_collection NOT LIKE 'at.margin.%'
-              AND source_collection NOT LIKE 'network.cosmik.%'),
-          COUNT(DISTINCT actor_key_hash) FILTER (
-            WHERE signal_kind = 'like'
-              AND occurred_at >= \(asOf.addingTimeInterval(-86_400))
-              AND source_collection NOT LIKE 'at.margin.%'
-              AND source_collection NOT LIKE 'network.cosmik.%'),
-          COUNT(DISTINCT actor_key_hash) FILTER (
-            WHERE signal_kind = 'like'
-              AND occurred_at >= \(asOf.addingTimeInterval(-3_600))
-              AND source_collection NOT LIKE 'at.margin.%'
-              AND source_collection NOT LIKE 'network.cosmik.%'),
-          COUNT(DISTINCT actor_key_hash) FILTER (
-            WHERE signal_kind = 'like'
-              AND occurred_at >= \(asOf.addingTimeInterval(-86_400))
-              AND source_collection NOT LIKE 'at.margin.%'
-              AND source_collection NOT LIKE 'network.cosmik.%'),
-          \(asOf)
-        FROM wire_signal_events
-        WHERE occurred_at >= \(asOf.addingTimeInterval(-7 * 86_400)) AND expires_at > \(asOf)
-        GROUP BY canonical_key
-        """,
-        logger: logger
-      )
-    }
+    try await PostgresWireSignalRollupStore(
+      pool: pool, logger: logger, incrementalEnabled: incrementalSignalRollupsEnabled
+    ).refresh(asOf: asOf)
   }
 
   private func pruneActiveGraph(asOf: Date) async throws {
@@ -2088,15 +2323,17 @@ struct PostgresWireInboxProcessor: Sendable {
     status: String,
     retryAt: Date,
     reason: String?,
-    asOf: Date
-  ) async throws {
+    asOf: Date,
+    connection: PostgresConnection? = nil
+  ) async throws -> Bool {
+    try Task.checkCancellation()
     let appliedAt: Date? = status == "applied" ? asOf : nil
     let deadAt: Date? = status == "dead_letter" ? asOf : nil
     let expiresAt =
       status == "applied"
       ? asOf.addingTimeInterval(300)
       : status == "dead_letter" ? asOf.addingTimeInterval(7 * 24 * 3_600) : .distantFuture
-    try await pool.query(
+    let rows = try await projectionQuery(
       """
       UPDATE wire_ingestion_inbox
       SET status = \(status), next_attempt_at = \(retryAt), failure_category = \(reason),
@@ -2105,9 +2342,13 @@ struct PostgresWireInboxProcessor: Sendable {
           expires_at = \(expiresAt), updated_at = \(asOf)
       WHERE environment = \(event.environment) AND source_generation = \(event.sourceGeneration)
         AND seq = \(event.sequence) AND lease_token = \(event.leaseToken)
+        AND status = 'leased'
+      RETURNING seq
       """,
-      logger: logger
+      on: connection
     )
+    for try await _ in rows { return true }
+    return false
   }
 
   private static func firstString(_ value: Any, keys: [String]) -> String? {

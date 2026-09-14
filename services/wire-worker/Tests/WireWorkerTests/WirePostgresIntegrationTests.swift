@@ -528,12 +528,16 @@ struct WirePostgresIntegrationTests {
       ]
     )
     #expect(states.map(\.1) == ["applied", "applied", "retry", "retry"])
-    #expect(states.map(\.2) == [nil, nil, "unresolved_subject", "unresolved_subject"])
+    #expect(states.map(\.2) == [nil, nil, "recommendation_pending", "unresolved_subject"])
 
     try await pool.query(
       "DELETE FROM wire_ingestion_inbox WHERE environment = \(environment)",
       logger: logger
     )
+    try await pool.query(
+      "DELETE FROM wire_recommendation_record_fences WHERE environment = \(environment)", logger: logger)
+    try await pool.query(
+      "DELETE FROM wire_recommendation_journal WHERE environment = \(environment)", logger: logger)
   }
 
   @Test("a staged payload-normalization fallback is dead-lettered")
@@ -1547,6 +1551,11 @@ struct WirePostgresIntegrationTests {
 
     let store = PostgresWireLinkMetadataStore(pool: pool, logger: logger)
     var claimed = Set<String>()
+    // Repair now runs independently of claims and HTTP batch duration.
+    try await pool.query(
+      "UPDATE wire_metadata_repair_cursor SET canonical_key = \("url:metadata-seeding-\(namespace)-") WHERE singleton",
+      logger: logger)
+    try await store.repairMissingMetadata(asOf: now)
     for _ in 0..<canonicalKeys.count {
       let targets = try await store.claimDue(limit: 1, asOf: now)
       claimed.formUnion(targets.map(\.canonicalKey))

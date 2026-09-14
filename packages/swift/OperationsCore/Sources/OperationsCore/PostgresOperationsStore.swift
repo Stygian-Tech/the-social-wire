@@ -6,29 +6,28 @@ public actor PostgresOperationsStore: OperationsStore {
   public nonisolated let environment: String
   let pool: PostgresClient
   let logger: Logger
+  let coordinatorAuthority: RoleLeaseAuthority?
+  let ingestionInboxSnapshotCache = IngestionInboxSnapshotCache()
   private let encoder = JSONEncoder()
   private let decoder = JSONDecoder()
   private let backfillFingerprintSecret: String?
-  var isDatabaseCostObservationRunning = false
-  var lastDatabaseCostObservation: Date?
+  var runningDatabaseCostObservations: Set<DatabaseCostTelemetryGroup> = []
+  var lastDatabaseCostObservations: [DatabaseCostTelemetryGroup: Date] = [:]
+  var nextDatabaseExpiryTableIndex = 0
   var lastDatabaseWALObservation: (bytes: Double, reset: Double, at: Date)?
-  private var lastDatabaseObservation: (transactions: Int64, statsResetAt: Date?, at: Date)?
-
-  private enum PreparedTelemetry: Sendable {
-    case metric(OperationsMetricBatch)
-    case event(OperationsEvent, attributesJSON: String)
-    case span(TraceSpan, attributesJSON: String)
-  }
+  var databaseObservabilitySamples = DatabaseObservabilitySamples()
 
   public init(
     pool: PostgresClient,
     environment: String,
     backfillFingerprintSecret: String? = nil,
+    coordinatorAuthority: RoleLeaseAuthority? = nil,
     logger: Logger
   ) {
     self.pool = pool
     self.environment = environment
     self.backfillFingerprintSecret = backfillFingerprintSecret
+    self.coordinatorAuthority = coordinatorAuthority
     self.logger = logger
   }
 
@@ -38,92 +37,8 @@ public actor PostgresOperationsStore: OperationsStore {
   }
 
   public func fetchDatabaseObservability() async throws -> DatabaseObservabilitySnapshot? {
-    let observedAt = Date()
-    let summaryRows = try await pool.query(
-      """
-      SELECT
-        pg_database_size(current_database())::bigint,
-        numbackends::bigint,
-        current_setting('max_connections')::bigint,
-        (xact_commit + xact_rollback)::bigint,
-        CASE
-          WHEN (blks_hit + blks_read) = 0 THEN NULL::double precision
-          ELSE blks_hit::double precision / (blks_hit + blks_read)::double precision
-        END,
-        stats_reset
-      FROM pg_stat_database
-      WHERE datname = current_database()
-      """,
-      logger: logger
-    )
-    var summary: (Int64, Int64, Int64, Int64, Double?, Date?)?
-    for try await row in summaryRows {
-      summary = try row.decode((Int64, Int64, Int64, Int64, Double?, Date?).self)
-      break
-    }
-    guard let summary else { return nil }
-
-    let activeQueryRows = try await pool.query(
-      """
-      SELECT COUNT(*)::bigint FROM pg_stat_activity
-      WHERE datname = current_database() AND state = 'active' AND pid <> pg_backend_pid()
-      """, logger: logger)
-    var activeQueries: Int64 = 0
-    for try await row in activeQueryRows { activeQueries = try row.decode(Int64.self); break }
-    let transactionRate: Double?
-    if let previous = lastDatabaseObservation,
-      observedAt.timeIntervalSince(previous.at) > 0,
-      previous.statsResetAt == summary.5,
-      summary.3 >= previous.transactions
-    {
-      transactionRate = Double(summary.3 - previous.transactions)
-        / observedAt.timeIntervalSince(previous.at)
-    } else {
-      transactionRate = nil
-    }
-    lastDatabaseObservation = (summary.3, summary.5, observedAt)
-
-    let recordCountRows = try await pool.query(
-      "SELECT COALESCE(SUM(n_live_tup), 0)::bigint FROM pg_stat_user_tables",
-      logger: logger
-    )
-    var estimatedRecords: Int64 = 0
-    for try await row in recordCountRows {
-      estimatedRecords = try row.decode(Int64.self)
-      break
-    }
-
-    let tableRows = try await pool.query(
-      """
-      SELECT schemaname, relname, n_live_tup::bigint
-      FROM pg_stat_user_tables
-      ORDER BY n_live_tup DESC, schemaname, relname
-      LIMIT 10
-      """,
-      logger: logger
-    )
-    var topTables: [DatabaseTableRecordCount] = []
-    for try await row in tableRows {
-      let value = try row.decode((String, String, Int64).self)
-      topTables.append(
-        DatabaseTableRecordCount(schema: value.0, table: value.1, estimatedRecords: value.2))
-    }
-
-    return DatabaseObservabilitySnapshot(
-      databaseSizeBytes: summary.0,
-      activeConnections: summary.1,
-      maxConnections: summary.2,
-      transactionsTotal: summary.3,
-      estimatedRecords: estimatedRecords,
-      cacheHitRatio: summary.4,
-      statsResetAt: summary.5,
-      topTables: topTables,
-      connectedBackends: summary.1,
-      activeQueries: activeQueries,
-      transactionRatePerSecond: transactionRate,
-      observedAt: observedAt,
-      evidenceAgeSeconds: 0
-    )
+    // Collector-owned evidence only: dashboard reads never trigger database cost scans.
+    databaseObservabilitySamples.snapshot(at: Date())
   }
 
   public func upsertServiceState(_ state: OperationsServiceState) async throws {
@@ -1265,7 +1180,7 @@ public actor PostgresOperationsStore: OperationsStore {
         "operatorDid": operatorDid, "note": note, "failureReason": failureReason,
         "status": status.rawValue,
       ])
-    return try await pool.withTransaction(logger: logger) { connection in
+    return try await withCoordinatorTransaction { connection in
       if let existing = try await existingIdempotency(
         connection: connection, key: idempotencyKey, action: actionName,
         targetType: "backfill", targetId: id, requestFingerprint: requestFingerprint)
@@ -1398,7 +1313,7 @@ public actor PostgresOperationsStore: OperationsStore {
   public func claimNextBackfill(workerId: String, leaseUntil: Date, at: Date) async throws
     -> BackfillJob?
   {
-    return try await pool.withTransaction(logger: logger) { connection in
+    return try await withCoordinatorTransaction { connection in
       let rows = try await connection.query(
         """
         UPDATE appview_backfill_jobs
@@ -1480,7 +1395,7 @@ public actor PostgresOperationsStore: OperationsStore {
   ) async throws -> BackfillJob {
     try Self.validateAuthorResults(results)
     let encodedResults = try json(results)
-    let rows = try await pool.query(
+    let rows = try await coordinatorControlRows(
       """
       UPDATE appview_backfill_jobs
       SET author_results = \(encodedResults)::jsonb, updated_at = \(at), version = version + 1
@@ -1493,8 +1408,8 @@ public actor PostgresOperationsStore: OperationsStore {
         audit_note, failure_reason, lease_owner, lease_expires_at, created_at, updated_at,
         completed_at, version, verification_status, verification_reason, scope_truncated,
         validation_watermark, author_results::text
-      """, logger: logger)
-    for try await row in rows { return try decodeBackfill(row) }
+      """)
+    for row in rows { return try decodeBackfill(row) }
     throw OperationsStoreError.leaseConflict
   }
 
@@ -2107,17 +2022,17 @@ public actor PostgresOperationsStore: OperationsStore {
   }
 
   public func recordTelemetryBatch(_ signals: [OperationsTelemetrySignal]) async throws {
-    try await recordTelemetryBatch(signals, statementTimeoutMilliseconds: nil)
+    try await recordTelemetryBatch(signals, statementTimeoutMilliseconds: 2_000)
   }
 
   func recordTelemetryBatch(
     _ signals: [OperationsTelemetrySignal],
-    statementTimeoutMilliseconds: Int?
+    statementTimeoutMilliseconds: Int
   ) async throws {
     guard !signals.isEmpty else { return }
-    var prepared: [PreparedTelemetry] = []
+    var events: [(event: OperationsEvent, attributesJSON: String)] = []
+    var spans: [(span: TraceSpan, attributesJSON: String)] = []
     var metricBatches: [String: OperationsMetricBatch] = [:]
-    prepared.reserveCapacity(signals.count)
     // Every writer must acquire rollup index keys in the same order. Without this ordering,
     // concurrent batches containing the same metrics in different sequences can deadlock while
     // PostgreSQL resolves their ON CONFLICT updates.
@@ -2144,70 +2059,104 @@ public actor PostgresOperationsStore: OperationsStore {
         guard event.environment == environment else {
           throw OperationsStoreError.environmentMismatch(expected: environment, actual: event.environment)
         }
-        prepared.append(.event(
+        events.append((
           event, attributesJSON: try json(OperationsRedactor.boundedAttributes(event.attributes))))
       case .span(let span):
         guard span.environment == environment else {
           throw OperationsStoreError.environmentMismatch(expected: environment, actual: span.environment)
         }
-        prepared.append(.span(
+        spans.append((
           span, attributesJSON: try json(OperationsRedactor.boundedAttributes(span.attributes))))
       }
     }
-    // Sort the coalesced keys too: all writers must retain one lock order.
-    prepared.insert(contentsOf: metricBatches.keys.sorted().compactMap {
-      metricBatches[$0].map(PreparedTelemetry.metric)
-    }, at: 0)
-    try await pool.withTransaction(logger: logger) { connection in
-      if let statementTimeoutMilliseconds {
-        try await connection.query(
-          "SELECT set_config('statement_timeout', \(String(max(1, statementTimeoutMilliseconds))), true)",
-          logger: logger)
-      }
-      for item in prepared {
-        switch item {
-        case .metric(let batch):
-          try await connection.query(
-            """
-            INSERT INTO operations_metric_rollups
-              (environment, bucket_start, metric_name, dimensions_hash, dimensions, sample_count,
-               value_sum, value_min, value_max, histogram_buckets, expires_at)
-            VALUES (\(environment), \(batch.bucket), \(batch.name),
-              \(batch.dimensionsHash), \(batch.dimensionsJSON)::jsonb, \(batch.count),
-              \(batch.sum), \(batch.minimum), \(batch.maximum), '{}'::jsonb,
-              \(batch.bucket.addingTimeInterval(90 * 86_400)))
-            ON CONFLICT (environment, bucket_start, metric_name, dimensions_hash) DO UPDATE SET
-              sample_count = operations_metric_rollups.sample_count + EXCLUDED.sample_count,
-              value_sum = operations_metric_rollups.value_sum + EXCLUDED.value_sum,
-              value_min = LEAST(operations_metric_rollups.value_min, EXCLUDED.value_min),
-              value_max = GREATEST(operations_metric_rollups.value_max, EXCLUDED.value_max)
-            """, logger: logger)
-        case .event(let event, let attributesJSON):
-          try await connection.query(
-            """
-            INSERT INTO operations_events
-              (id, service, environment, instance_id, event_name, occurred_at, request_id,
-               trace_id, attributes, expires_at)
-            VALUES (\(event.id), \(event.service), \(event.environment), \(event.instanceId),
-              \(String(event.name.prefix(160))), \(event.occurredAt), \(event.requestId),
-              \(event.traceId), \(attributesJSON)::jsonb,
-              \(event.occurredAt.addingTimeInterval(30 * 86_400)))
-            ON CONFLICT (environment, id) DO NOTHING
-            """, logger: logger)
-        case .span(let span, let attributesJSON):
-          try await connection.query(
-            """
-            INSERT INTO operations_trace_spans
-              (environment, id, trace_id, parent_span_id, service, name, started_at, duration_ms,
-               status, attributes, expires_at)
-            VALUES (\(environment), \(span.id), \(span.traceId), \(span.parentSpanId),
-              \(span.service), \(span.name), \(span.startedAt), \(span.durationMs),
-              \(span.status), \(attributesJSON)::jsonb, \(span.expiresAt))
-            ON CONFLICT (environment, id) DO NOTHING
-            """, logger: logger)
-        }
-      }
+    // Sorting before chunking preserves one lock order across all exporters.
+    let metrics = metricBatches.keys.sorted().compactMap { metricBatches[$0] }
+    // Encode all bindings before BEGIN so chunk preparation holds no database locks.
+    var queries: [PostgresQuery] = []
+    // Acquire event and span identities before hot metric keys. A duplicate identity
+    // blocked by another writer must not hold every shared minute rollup hostage.
+    // All exporters retain the same events -> spans -> metrics order and atomic budget.
+    // The driver encodes nonoptional arrays; presence masks distinguish NULL from empty text.
+    for offset in stride(from: 0, to: events.count, by: 250) {
+      let chunk = Array(events[offset..<min(offset + 250, events.count)])
+      queries.append(
+        """
+        INSERT INTO operations_events
+          (id, service, environment, instance_id, event_name, occurred_at, request_id,
+           trace_id, attributes, expires_at)
+        SELECT sample.id, sample.service, \(environment), sample.instance_id,
+          sample.event_name, sample.occurred_at,
+          CASE WHEN sample.has_request_id THEN sample.request_id END,
+          CASE WHEN sample.has_trace_id THEN sample.trace_id END,
+          sample.attributes::jsonb, sample.expires_at
+        FROM unnest(\(chunk.map(\.event.id))::text[], \(chunk.map(\.event.service))::text[],
+          \(chunk.map(\.event.instanceId))::text[],
+          \(chunk.map { String($0.event.name.prefix(160)) })::text[],
+          \(chunk.map(\.event.occurredAt))::timestamptz[],
+          \(chunk.map { $0.event.requestId ?? "" })::text[],
+          \(chunk.map { $0.event.requestId != nil })::boolean[],
+          \(chunk.map { $0.event.traceId ?? "" })::text[],
+          \(chunk.map { $0.event.traceId != nil })::boolean[],
+          \(chunk.map(\.attributesJSON))::text[],
+          \(chunk.map { $0.event.occurredAt.addingTimeInterval(30 * 86_400) })::timestamptz[])
+        WITH ORDINALITY AS sample(id, service, instance_id, event_name, occurred_at,
+          request_id, has_request_id, trace_id, has_trace_id, attributes, expires_at, ordinal)
+        ORDER BY sample.ordinal
+        ON CONFLICT (environment, id) DO NOTHING
+        """)
     }
+    for offset in stride(from: 0, to: spans.count, by: 250) {
+      let chunk = Array(spans[offset..<min(offset + 250, spans.count)])
+      queries.append(
+        """
+        INSERT INTO operations_trace_spans
+          (environment, id, trace_id, parent_span_id, service, name, started_at, duration_ms,
+           status, attributes, expires_at)
+        SELECT \(environment), sample.id, sample.trace_id,
+          CASE WHEN sample.has_parent_span_id THEN sample.parent_span_id END,
+          sample.service, sample.name, sample.started_at, sample.duration_ms,
+          sample.status, sample.attributes::jsonb, sample.expires_at
+        FROM unnest(\(chunk.map(\.span.id))::text[], \(chunk.map(\.span.traceId))::text[],
+          \(chunk.map { $0.span.parentSpanId ?? "" })::text[],
+          \(chunk.map { $0.span.parentSpanId != nil })::boolean[],
+          \(chunk.map(\.span.service))::text[],
+          \(chunk.map(\.span.name))::text[], \(chunk.map(\.span.startedAt))::timestamptz[],
+          \(chunk.map(\.span.durationMs))::double precision[], \(chunk.map(\.span.status))::text[],
+          \(chunk.map(\.attributesJSON))::text[], \(chunk.map(\.span.expiresAt))::timestamptz[])
+        WITH ORDINALITY AS sample(id, trace_id, parent_span_id, has_parent_span_id, service, name, started_at,
+          duration_ms, status, attributes, expires_at, ordinal)
+        ORDER BY sample.ordinal
+        ON CONFLICT (environment, id) DO NOTHING
+        """)
+    }
+    for offset in stride(from: 0, to: metrics.count, by: 250) {
+      let chunk = Array(metrics[offset..<min(offset + 250, metrics.count)])
+      queries.append(
+        """
+        INSERT INTO operations_metric_rollups
+          (environment, bucket_start, metric_name, dimensions_hash, dimensions, sample_count,
+           value_sum, value_min, value_max, histogram_buckets, expires_at)
+        SELECT \(environment), sample.bucket_start, sample.metric_name, sample.dimensions_hash,
+          sample.dimensions::jsonb, sample.sample_count, sample.value_sum, sample.value_min,
+          sample.value_max, '{}'::jsonb, sample.expires_at
+        FROM unnest(\(chunk.map(\.bucket))::timestamptz[], \(chunk.map(\.name))::text[],
+          \(chunk.map(\.dimensionsHash))::text[], \(chunk.map(\.dimensionsJSON))::text[],
+          \(chunk.map(\.count))::bigint[], \(chunk.map(\.sum))::double precision[],
+          \(chunk.map(\.minimum))::double precision[], \(chunk.map(\.maximum))::double precision[],
+          \(chunk.map { $0.bucket.addingTimeInterval(90 * 86_400) })::timestamptz[])
+        WITH ORDINALITY AS sample(bucket_start, metric_name, dimensions_hash, dimensions,
+          sample_count, value_sum, value_min, value_max, expires_at, ordinal)
+        ORDER BY sample.ordinal
+        ON CONFLICT (environment, bucket_start, metric_name, dimensions_hash) DO UPDATE SET
+          sample_count = operations_metric_rollups.sample_count + EXCLUDED.sample_count,
+          value_sum = operations_metric_rollups.value_sum + EXCLUDED.value_sum,
+          value_min = LEAST(operations_metric_rollups.value_min, EXCLUDED.value_min),
+          value_max = GREATEST(operations_metric_rollups.value_max, EXCLUDED.value_max)
+        """)
+    }
+    try await PostgresTelemetryWriter.write(
+      queries, pool: pool, logger: logger,
+      statementTimeoutMilliseconds: statementTimeoutMilliseconds)
   }
 
   public func appendChangeEvent(
@@ -2580,7 +2529,7 @@ public actor PostgresOperationsStore: OperationsStore {
     let verificationReason = verification?.1
     let scopeTruncated = verification?.2
     let validationWatermark = verification?.3
-    let rows = try await pool.query(
+    let rows = try await coordinatorControlRows(
       """
       UPDATE appview_backfill_jobs SET
         checkpoint_cursor = COALESCE(\(checkpoint), checkpoint_cursor),
@@ -2600,8 +2549,8 @@ public actor PostgresOperationsStore: OperationsStore {
         audit_note, failure_reason, lease_owner, lease_expires_at, created_at, updated_at,
         completed_at, version, verification_status, verification_reason, scope_truncated,
         validation_watermark, author_results::text
-      """, logger: logger)
-    for try await row in rows { return try decodeBackfill(row) }
+      """)
+    for row in rows { return try decodeBackfill(row) }
     throw OperationsStoreError.leaseConflict
   }
 

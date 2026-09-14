@@ -1,6 +1,6 @@
 import Foundation
 
-public protocol OperationsStore: Actor {
+public protocol OperationsStore: Actor, RoleLeaseStoring {
   func ping() async throws
   func fetchDatabaseObservability() async throws -> DatabaseObservabilitySnapshot?
   func fetchViewerCounts(at: Date) async throws -> OperationsViewerCounts?
@@ -31,6 +31,8 @@ public protocol OperationsStore: Actor {
     jobId: String?, identityHash: String, collection: String, operation: String, cursor: Int64?,
     errorCategory: String, at: Date) async throws
 
+  func fetchIngestionGenerationHealth(sourceGeneration: String, at: Date) async throws
+    -> IngestionGenerationHealthSnapshot
   func fetchIngestionDurabilitySnapshot(at: Date) async throws -> IngestionDurabilitySnapshot
   func listIngestionIncidents(limit: Int, before: String?) async throws
     -> OperationsPage<IngestionIncident>
@@ -207,6 +209,12 @@ extension OperationsStore {
 
   // Keep lightweight/test stores source-compatible while durable ingestion is rolled out.
   // Production stores override these methods with the provider-specific implementation.
+  public func fetchIngestionGenerationHealth(sourceGeneration: String, at: Date) async throws
+    -> IngestionGenerationHealthSnapshot
+  {
+    throw OperationsStoreError.notFound
+  }
+
   public func fetchIngestionDurabilitySnapshot(at: Date) async throws
     -> IngestionDurabilitySnapshot
   {

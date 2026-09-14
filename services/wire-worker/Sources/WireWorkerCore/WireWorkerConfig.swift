@@ -26,6 +26,11 @@ struct WireWorkerConfig: Sendable {
   var metadataConcurrency: Int
   var metadataIdleMilliseconds: Int
   var postgresMaximumConnections: Int
+  var deferredRecommendationsEnabled: Bool = false
+  var dependencyVerificationEnabled: Bool = false
+  var dependencyRecoveryEnvironment: String? = nil
+  var incrementalSignalRollupsEnabled: Bool = false
+  var globalCandidateProjectionEnabled: Bool = false
 
   static func load(
     _ environment: [String: String],
@@ -71,6 +76,13 @@ struct WireWorkerConfig: Sendable {
       }
     }
     let inboxSourceScope = try inboxSourceScope(environment)
+    let dependencyVerificationEnabled = try boolean(
+      environment, key: "WIRE_DEPENDENCY_HYDRATION_ENABLED", default: false)
+    // Recovery owns an environment, not an intake-generation filter. Coordinator
+    // cleanup may intentionally cover every generation while hydration still
+    // needs an explicit environment for its durable controls and snapshot lane.
+    let dependencyRecoveryEnvironment = dependencyVerificationEnabled && role == .rank
+      ? try requiredAppEnvironment(environment) : nil
 
     return WireWorkerConfig(
       databaseURL: databaseURL,
@@ -80,7 +92,7 @@ struct WireWorkerConfig: Sendable {
       intervalSeconds: try positiveInt(environment, key: "WIRE_RANK_INTERVAL_SECONDS", default: 300),
       candidateLimit: try positiveInt(environment, key: "WIRE_CANDIDATE_LIMIT", default: 5_000),
       generationRetentionSeconds: try positiveInt(
-        environment, key: "WIRE_GENERATION_RETENTION_SECONDS", default: 7_200
+        environment, key: "WIRE_GENERATION_RETENTION_SECONDS", default: 3_600
       ),
       retentionBatchSize: try positiveInt(
         environment, key: "WIRE_RETENTION_BATCH_SIZE", default: 5_000),
@@ -124,6 +136,17 @@ struct WireWorkerConfig: Sendable {
       ),
       postgresMaximumConnections: try boundedPositiveInt(
         environment, key: "WIRE_POSTGRES_MAX_CONNECTIONS", default: 12, maximum: 64
+      ),
+      deferredRecommendationsEnabled: try boolean(
+        environment, key: "WIRE_DEFERRED_RECOMMENDATIONS_ENABLED", default: false
+      ),
+      dependencyVerificationEnabled: dependencyVerificationEnabled,
+      dependencyRecoveryEnvironment: dependencyRecoveryEnvironment,
+      incrementalSignalRollupsEnabled: try boolean(
+        environment, key: "WIRE_SIGNAL_ROLLUP_INCREMENTAL_ENABLED", default: false
+      ),
+      globalCandidateProjectionEnabled: try boolean(
+        environment, key: "WIRE_GLOBAL_CANDIDATE_PROJECTION_ENABLED", default: false
       )
     )
   }
@@ -140,6 +163,13 @@ struct WireWorkerConfig: Sendable {
     }
     var seen = Set<String>()
     let generations = values.filter { seen.insert($0).inserted }
+    return WireInboxSourceScope(
+      environment: try requiredAppEnvironment(environment),
+      sourceGenerations: generations
+    )
+  }
+
+  private static func requiredAppEnvironment(_ environment: [String: String]) throws -> String {
     guard
       let appEnvironment = environment["APP_ENV"]?.trimmingCharacters(in: .whitespacesAndNewlines),
       !appEnvironment.isEmpty
@@ -147,10 +177,7 @@ struct WireWorkerConfig: Sendable {
     guard appEnvironment == "dev" || appEnvironment == "prod" else {
       throw WireWorkerConfigError.invalidInboxEnvironment(appEnvironment)
     }
-    return WireInboxSourceScope(
-      environment: appEnvironment,
-      sourceGenerations: generations
-    )
+    return appEnvironment
   }
 
   private static func positiveInt(

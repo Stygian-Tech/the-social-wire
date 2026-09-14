@@ -173,8 +173,12 @@ struct HTTPRouteContractTests {
             ("/xrpc/app.thesocialwire.appview.markReadBefore", .post),
           ]
           for (uri, method) in routes {
-            let response = try await testClient.execute(uri: uri, method: method)
-            #expect(response.status == (appViewBaseURL == nil ? .notFound : .unauthorized))
+            for accept in ["application/json", "application/x-ndjson"] {
+              let response = try await testClient.execute(
+                uri: uri, method: method, headers: [.accept: accept]
+              )
+              #expect(response.status == (appViewBaseURL == nil ? .notFound : .unauthorized))
+            }
           }
         }
       }

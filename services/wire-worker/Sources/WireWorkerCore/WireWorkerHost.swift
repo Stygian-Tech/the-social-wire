@@ -1,6 +1,7 @@
 import AsyncHTTPClient
 import Foundation
 import Logging
+import OperationsCore
 import PostgresNIO
 
 public enum WireWorkerHealthListener: Sendable {
@@ -15,6 +16,9 @@ public enum WireWorkerHost {
     environment: [String: String],
     role: WireWorkerRole? = nil,
     healthListener: WireWorkerHealthListener = .disabled,
+    roleLeaseAuthority: RoleLeaseAuthority? = nil,
+    graphMaintenanceScheduler: WireGraphMaintenanceScheduler = WireGraphMaintenanceScheduler(),
+    rankingScheduler: WireRankingScheduler = WireRankingScheduler(),
     logger: Logger
   ) async throws {
     let config = try WireWorkerConfig.load(environment, role: role)
@@ -36,14 +40,25 @@ public enum WireWorkerHost {
       logger: logger
     )
     let pool = PostgresClient(configuration: postgresConfig, backgroundLogger: logger)
-    let store = PostgresWireGenerationStore(pool: pool, logger: logger)
+    let store = PostgresWireGenerationStore(
+      pool: pool, logger: logger, roleLeaseAuthority: roleLeaseAuthority,
+      globalCandidateProjectionEnabled: config.globalCandidateProjectionEnabled)
     let httpClient = HTTPClient(eventLoopGroupProvider: .singleton)
     let publicRepoClient = HTTPWirePublicationQueryClient(httpClient: httpClient)
+    let publicationCache = WirePublicationCacheRuntime.make(environment: environment, logger: logger)
     let publicationResolver = WirePublicationResolver(
       store: PostgresWirePublicationMetadataStore(pool: pool, logger: logger),
-      queryClient: publicRepoClient
+      queryClient: publicRepoClient,
+      cache: publicationCache?.cache,
+      positiveCacheTTL: WirePublicationCacheRuntime.ttl(
+        environment["WIRE_PUBLICATION_CACHE_TTL_SECONDS"], fallback: 60, maximum: 60),
+      sharedNegativeCacheTTL: WirePublicationCacheRuntime.ttl(
+        environment["WIRE_PUBLICATION_NEGATIVE_CACHE_TTL_SECONDS"], fallback: 15, maximum: 15)
     )
-    let linkMetadataStore = PostgresWireLinkMetadataStore(pool: pool, logger: logger)
+    let metadataScheduling = WireMetadataSchedulingConfiguration.load(environment)
+    let linkMetadataStore = PostgresWireLinkMetadataStore(
+      pool: pool, logger: logger, schedulingReadEnabled: metadataScheduling.readerEnabled,
+      roleLeaseAuthority: roleLeaseAuthority)
     let inboxProcessor: PostgresWireInboxProcessor?
     if let actorSecret = config.actorHMACSecret {
       inboxProcessor = try PostgresWireInboxProcessor(
@@ -55,10 +70,20 @@ public enum WireWorkerHost {
         linkMetadataStore: linkMetadataStore,
         batchSize: config.inboxBatchSize,
         maximumConcurrentEvents: config.inboxConcurrency,
-        sourceScope: config.inboxSourceScope
+        sourceScope: config.inboxSourceScope,
+        deferredRecommendationsEnabled: config.deferredRecommendationsEnabled,
+        dependencyVerificationEnabled: config.dependencyVerificationEnabled,
+        incrementalSignalRollupsEnabled: config.incrementalSignalRollupsEnabled
       )
     } else {
       inboxProcessor = nil
+    }
+    let publicationRecovery: PostgresWirePublicationSignalRecovery?
+    if runtimePlan.runsDrain, let actorSecret = config.actorHMACSecret, let scope = config.inboxSourceScope {
+      publicationRecovery = try PostgresWirePublicationSignalRecovery(
+        pool: pool, logger: logger, actorSecret: actorSecret, scope: scope)
+    } else {
+      publicationRecovery = nil
     }
     let drainTelemetry =
       runtimePlan.runsDrain
@@ -103,8 +128,14 @@ public enum WireWorkerHost {
     )
 
     try await WireWorkerLifetime.run(
-      logger: logger, shutdown: { try await httpClient.shutdown() }
+      logger: logger, shutdown: {
+        try? await publicationCache?.client.shutdown()
+        try await httpClient.shutdown()
+      }
     ) { group in
+      if let publicationCache {
+        group.addTask { try await publicationCache.runTelemetry(logger: logger) }
+      }
       group.addTask {
         defer { logger.info("The Wire component stopped", metadata: ["component": "postgres"]) }
         await pool.run()
@@ -134,9 +165,9 @@ public enum WireWorkerHost {
               }
               if runtimePlan.requiresGenerationReadiness {
                 guard
-                  await state.isGenerationReady(
-                    at: now,
-                    maximumCycleAge: TimeInterval(max(config.intervalSeconds * 2, 600))
+                  await rankingScheduler.isGenerationReady(
+                    at: .now,
+                    maximumCycleAge: .seconds(max(config.intervalSeconds * 2, 600))
                   )
                 else { throw HealthError.runtimeStale }
               }
@@ -151,17 +182,24 @@ public enum WireWorkerHost {
         group.addTask {
           defer { logger.info("The Wire component stopped", metadata: ["component": "generation"]) }
           try await WireWorkerRuntime.runForever(
-            cycle: cycle, state: state, logger: logger)
+            cycle: cycle, state: state, scheduler: rankingScheduler, logger: logger)
         }
       }
       if runtimePlan.runsDrain, let inboxProcessor {
+        if let publicationRecovery {
+          group.addTask {
+            try await WirePublicationSignalRecoveryRuntime.run(recovery: publicationRecovery, logger: logger)
+          }
+        }
         group.addTask {
           defer { logger.info("The Wire component stopped", metadata: ["component": "drain"]) }
-          try await WireInboxDrainRuntime.run(
+          try await WireInboxRepositoryDrainRuntime.run(
             processor: inboxProcessor,
             state: state,
             logger: logger,
-            configuration: .init(idleMilliseconds: config.inboxIdleMilliseconds),
+            configuration: .init(
+              maximumConcurrentEvents: config.inboxConcurrency,
+              idleMilliseconds: config.inboxIdleMilliseconds),
             telemetry: drainTelemetry
           )
         }
@@ -174,6 +212,40 @@ public enum WireWorkerHost {
             telemetry: drainTelemetry,
             logger: logger
           )
+        }
+      }
+      if runtimePlan.runsDrain, config.deferredRecommendationsEnabled {
+        group.addTask {
+          defer {
+            logger.info("The Wire component stopped", metadata: ["component": "recommendation-recovery"])
+          }
+          try await WireRecommendationRecoveryRuntime.run(
+            journal: PostgresWireRecommendationJournal(pool: pool, logger: logger,
+              dependencyVerificationEnabled: config.dependencyVerificationEnabled),
+            // Intake generations can retire while their logged dependencies remain.
+            sourceScope: config.inboxSourceScope.map {
+              WireInboxSourceScope(environment: $0.environment, sourceGenerations: [])
+            },
+            logger: logger)
+        }
+      }
+      if runtimePlan.runsGraphMaintenance, config.role == .rank, config.dependencyVerificationEnabled,
+        let recoveryEnvironment = config.dependencyRecoveryEnvironment,
+        let actorSecret = config.actorHMACSecret, let inboxProcessor
+      {
+        group.addTask {
+          let snapshots = try PostgresWireInboxProcessor(
+            pool: pool, logger: logger, actorSecret: actorSecret,
+            publicationResolver: publicationResolver, blobURLResolver: publicRepoClient,
+            linkMetadataStore: linkMetadataStore, batchSize: 16, maximumConcurrentEvents: 2,
+            sourceScope: WireInboxSourceScope(environment: recoveryEnvironment,
+              sourceGenerations: [PostgresWireDependencyRecoveryStore.snapshotGeneration]),
+            deferredRecommendationsEnabled: config.deferredRecommendationsEnabled,
+            dependencyVerificationEnabled: true)
+          let hydrator = WireRecommendationHydrator(pool: pool, logger: logger, environment: recoveryEnvironment,
+            verifier: HTTPWirePublicRecordVerifier(httpClient: httpClient), processor: inboxProcessor)
+          defer { logger.info("The Wire component stopped", metadata: ["component": "dependency-hydration"]) }
+          try await WireRecommendationHydrationRuntime.run(hydrator: hydrator, snapshots: snapshots, logger: logger)
         }
       }
       if runtimePlan.runsCleanup, let inboxProcessor {
@@ -192,10 +264,29 @@ public enum WireWorkerHost {
         group.addTask {
           defer { logger.info("The Wire component stopped", metadata: ["component": "graph"]) }
           try await WireGraphMaintenanceRuntime.run(
-            maintainer: inboxProcessor, state: state, logger: logger)
+            maintainer: inboxProcessor, state: state, logger: logger,
+            scheduler: graphMaintenanceScheduler)
         }
       }
       if runtimePlan.runsMetadataEnrichment {
+        group.addTask {
+          try await WireEnrichmentHealthRuntime.run(store: linkMetadataStore, logger: logger)
+        }
+        group.addTask {
+          try await WireDisposableCacheMaintenanceRuntime.run(
+            store: PostgresWireTalkedAccountMentionStore(pool: pool, logger: logger),
+            logger: logger)
+        }
+        group.addTask {
+          try await WireMetadataMaintenanceRuntime.runRepair(
+            store: linkMetadataStore, logger: logger,
+            intervalMilliseconds: metadataScheduling.repairIntervalMilliseconds)
+        }
+        if metadataScheduling.maintenanceEnabled {
+          group.addTask {
+            try await WireMetadataMaintenanceRuntime.runScheduling(store: linkMetadataStore, logger: logger)
+          }
+        }
         let enricher = WireLinkMetadataEnricher(
           store: linkMetadataStore,
           client: HTTPWireLinkMetadataClient(httpClient: httpClient),

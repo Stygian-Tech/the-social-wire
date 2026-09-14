@@ -96,8 +96,24 @@ final class SocialWireGatewayClient {
         self.urlSession = urlSession
     }
 
-    func fetchSyncPreferences(ifNoneMatch: String?) async throws -> GatewayHTTPResult {
-        try await authorizedGET(path: SocialWireXRPCMethod.getPreferences, query: [:], ifNoneMatch: ifNoneMatch)
+    nonisolated static func preferencesSyncRequest(
+        ifNoneMatch: String?,
+        forceRefresh: Bool
+    ) -> (query: [String: String], ifNoneMatch: String?) {
+        // A post-write read must reach the PDS and replace the shared gateway snapshot.
+        (forceRefresh ? ["fresh": "true"] : [:], forceRefresh ? nil : ifNoneMatch)
+    }
+
+    func fetchSyncPreferences(
+        ifNoneMatch: String?,
+        forceRefresh: Bool = false
+    ) async throws -> GatewayHTTPResult {
+        let request = Self.preferencesSyncRequest(ifNoneMatch: ifNoneMatch, forceRefresh: forceRefresh)
+        return try await authorizedGET(
+            path: SocialWireXRPCMethod.getPreferences,
+            query: request.query,
+            ifNoneMatch: request.ifNoneMatch
+        )
     }
 
     func fetchSembleCollections(limit: Int = 100, cursor: String? = nil) async throws -> SembleCollectionPage {
@@ -473,7 +489,8 @@ final class SocialWireGatewayClient {
 
     func fetchReadAgeOptions(
         scope: GatewayMarkAllReadScopeDTO,
-        timeZone: TimeZone = .current
+        timeZone: TimeZone = .current,
+        onOptions: @escaping @MainActor ([FeedReadAgeOption]) -> Void = { _ in }
     ) async throws -> FeedReadAgeResponse {
         var query = ["timeZone": timeZone.identifier]
         switch scope {
@@ -486,17 +503,61 @@ final class SocialWireGatewayClient {
             query["kind"] = "folder"
             query["folderRkey"] = id
         }
-        let result = try await authorizedRequest(
-            method: "GET",
-            path: SocialWireXRPCMethod.getReadAgeOptions,
-            query: query,
-            body: nil,
-            contentType: nil
-        )
-        guard (200 ..< 300).contains(result.statusCode) else {
+        guard var components = URLComponents(
+            url: baseURL.appending(path: SocialWireXRPCMethod.getReadAgeOptions),
+            resolvingAgainstBaseURL: false
+        ) else { throw SocialWireError.invalidURL }
+        components.queryItems = query.map { URLQueryItem(name: $0.key, value: $0.value) }
+        guard let url = components.url else { throw SocialWireError.invalidURL }
+        let session = try await auth.validSession()
+
+        func request() async throws -> URLRequest {
+            var request = URLRequest(url: url)
+            request.httpMethod = "GET"
+            request.setValue("application/x-ndjson", forHTTPHeaderField: "Accept")
+            try await authorize(&request, session: session)
+            return request
+        }
+
+        var (bytes, response) = try await urlSession.bytes(for: request())
+        guard var http = response as? HTTPURLResponse else {
+            throw SocialWireError.badResponse("Missing gateway response.")
+        }
+        await captureNonces(from: http, session: session)
+        if shouldRetryNonceChallenge(http) {
+            bytes.task.cancel()
+            (bytes, response) = try await urlSession.bytes(for: request())
+            guard let retryHTTP = response as? HTTPURLResponse else {
+                throw SocialWireError.badResponse("Missing gateway response.")
+            }
+            http = retryHTTP
+            await captureNonces(from: http, session: session)
+        }
+        guard (200 ..< 300).contains(http.statusCode) else {
+            bytes.task.cancel()
             throw SocialWireError.badResponse("Age-based read options are unavailable. Please try again.")
         }
-        return try JSONDecoder().decode(FeedReadAgeResponse.self, from: result.body)
+
+        let streamBytes = bytes
+        let isStream = http.value(forHTTPHeaderField: "Content-Type")?
+            .lowercased().contains("application/x-ndjson") == true
+        return try await withTaskCancellationHandler {
+            defer { streamBytes.task.cancel() }
+            if !isStream {
+                var data = Data()
+                for try await byte in streamBytes {
+                    try Task.checkCancellation()
+                    data.append(byte)
+                }
+                let result = try JSONDecoder().decode(FeedReadAgeResponse.self, from: data)
+                onOptions(result.options)
+                return result
+            }
+
+            return try await FeedReadAgeStreamEvent.consume(streamBytes.lines, onOptions: onOptions)
+        } onCancel: {
+            streamBytes.task.cancel()
+        }
     }
 
     func markReadBefore(scope: GatewayMarkAllReadScopeDTO, before: String) async throws -> MarkReadBeforeResponse {

@@ -43,8 +43,15 @@ struct OperationsCommand: AsyncParsableCommand {
         pool: pool, environment: config.operations.environment,
         backfillFingerprintSecret: config.operations.backfillFingerprintSecret,
         logger: serviceLogger)
-      let databaseCostCollector = OperationsDatabaseCostCollector(collect: { at in
-        await store.recordDatabaseCostTelemetry(at: at)
+      let databaseCostCollector = OperationsDatabaseCostCollector(collect: { group, at in
+        await store.recordDatabaseCostTelemetry(group: group, at: at)
+      })
+      let viewerHistoryCollector = OperationsViewerHistoryCollector(collect: { at in
+        do {
+          try await store.recordViewerHistory(at: at)
+        } catch {
+          serviceLogger.warning("Daily viewer history observation unavailable")
+        }
       })
       let viewerHistoryCollector = OperationsViewerHistoryCollector(collect: { at in
         do {

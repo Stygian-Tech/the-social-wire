@@ -13,6 +13,7 @@ struct WireInboxDrainTelemetryTests {
     let telemetry = WireInboxDrainTelemetryState(startedAt: startedAt)
     await telemetry.recordAppliedEvents(60)
     await telemetry.recordAppliedEvents(30)
+    await telemetry.recordDeferredEvents(12)
 
     let first = await telemetry.finishInterval(
       at: startedAt.addingTimeInterval(60),
@@ -20,6 +21,7 @@ struct WireInboxDrainTelemetryTests {
     )
     #expect(first.intervalSeconds == 60)
     #expect(first.appliedEventCount == 90)
+    #expect(first.deferredEventCount == 12)
     #expect(first.appliedEventsPerSecond == 1.5)
     #expect(first.backlog.actionableEventCount == 4_200)
     #expect(first.backlog.oldestActionableAgeSeconds == 75)
@@ -29,6 +31,7 @@ struct WireInboxDrainTelemetryTests {
       backlog: .init(actionableEventCount: 0, oldestActionableAgeSeconds: nil)
     )
     #expect(second.appliedEventCount == 0)
+    #expect(second.deferredEventCount == 0)
     #expect(second.appliedEventsPerSecond == 0)
   }
 

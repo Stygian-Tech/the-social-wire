@@ -21,5 +21,9 @@ docs {
   include all unread stories before the exclusive cutoff. One day means yesterday
   and earlier in readAgeTimeZone, not a rolling 24-hour period.
 
+  Options stop at 7 Days: that final bucket includes all older unread stories.
+  Set Accept: application/x-ndjson to receive progressive options snapshots followed
+  by a done event. Counts are partial until done; an error event means the scan failed.
+
   Copy an option's before value to readAgeBefore for markReadBefore.
 }

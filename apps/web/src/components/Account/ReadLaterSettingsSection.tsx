@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { ChevronDown } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
@@ -119,19 +120,25 @@ export function ReadLaterSettingsSection() {
       </div>
       <label className="mt-4 grid gap-1.5 text-sm font-medium">
         Semble Collection
-        <select
-          value={selectedCollectionUri}
-          disabled={collectionsQuery.isLoading || mutation.isPending}
-          onChange={(event) => setSelectedCollectionOverride(event.target.value)}
-          className="h-10 rounded-md border border-input bg-background px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <option value="">Choose A Collection</option>
-          {collectionsQuery.collections.map((collection) => (
-            <option key={collection.uri} value={collection.uri}>
-              {collection.name} ({collection.cardCount})
-            </option>
-          ))}
-        </select>
+        <span className="relative">
+          <select
+            value={selectedCollectionUri}
+            disabled={collectionsQuery.isLoading || mutation.isPending}
+            onChange={(event) => setSelectedCollectionOverride(event.target.value)}
+            className="h-10 w-full appearance-none rounded-md border border-input bg-background pl-3 pr-10 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <option value="">Choose A Collection</option>
+            {collectionsQuery.collections.map((collection) => (
+              <option key={collection.uri} value={collection.uri}>
+                {collection.name} ({collection.cardCount})
+              </option>
+            ))}
+          </select>
+          <ChevronDown
+            aria-hidden="true"
+            className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+          />
+        </span>
       </label>
       {collectionsQuery.isError ? (
         <p role="alert" className="mt-2 text-sm text-destructive">

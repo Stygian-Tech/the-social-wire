@@ -4,6 +4,7 @@ struct ProfileView: View {
     @Environment(SocialWireAppModel.self) private var appModel
     @Environment(\.dismiss) private var dismiss
     @State private var showPurgeIndexedDataConfirm = false
+    var settingsRoute: NewsRoute? = nil
 
     var body: some View {
         List {
@@ -66,10 +67,16 @@ struct ProfileView: View {
             }
 
             Section {
-                NavigationLink {
-                    SettingsView(showsDoneButton: false)
-                } label: {
-                    Label("Settings", systemImage: "gearshape")
+                if let settingsRoute {
+                    NavigationLink(value: settingsRoute) {
+                        Label("Settings", systemImage: "gearshape")
+                    }
+                } else {
+                    NavigationLink {
+                        SettingsView(showsDoneButton: false)
+                    } label: {
+                        Label("Settings", systemImage: "gearshape")
+                    }
                 }
 
                 NavigationLink {

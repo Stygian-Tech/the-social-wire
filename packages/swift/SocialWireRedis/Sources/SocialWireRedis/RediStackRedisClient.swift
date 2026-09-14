@@ -8,7 +8,6 @@ import NIOPosix
 public actor RediStackRedisClient: RedisCommandClient {
   private let eventLoopGroup: MultiThreadedEventLoopGroup
   private let pool: RedisConnectionPool
-  private let commandTimeout: Duration
   private let telemetry: RedisTelemetrySink?
   private let logger: Logger
   private let redisHost: String
@@ -28,12 +27,14 @@ public actor RediStackRedisClient: RedisCommandClient {
       configuration.host,
       port: configuration.port
     )
-    let bootstrap: ClientBootstrap?
+    let commandTimeout = TimeAmount.milliseconds(Int64(configuration.commandTimeoutMilliseconds))
+    let bootstrap: ClientBootstrap
     if configuration.usesTLS {
       var tlsConfiguration = TLSConfiguration.makeClientConfiguration()
       tlsConfiguration.certificateVerification = .fullVerification
       let context = try NIOSSLContext(configuration: tlsConfiguration)
       bootstrap = ClientBootstrap(group: eventLoopGroup)
+        .connectTimeout(commandTimeout)
         .channelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
         .channelInitializer { channel in
           do {
@@ -42,13 +43,21 @@ public actor RediStackRedisClient: RedisCommandClient {
               serverHostname: configuration.host
             )
             try channel.pipeline.syncOperations.addHandler(tlsHandler)
-            return channel.pipeline.addBaseRedisHandlers()
+            return channel.pipeline.addBaseRedisHandlers().flatMap {
+              channel.pipeline.addHandler(RedisCommandDeadlineHandler(timeout: commandTimeout))
+            }
           } catch {
             return channel.eventLoop.makeFailedFuture(error)
           }
         }
     } else {
-      bootstrap = nil
+      bootstrap = ClientBootstrap(group: eventLoopGroup)
+        .connectTimeout(commandTimeout)
+        .channelInitializer { channel in
+          channel.pipeline.addBaseRedisHandlers().flatMap {
+            channel.pipeline.addHandler(RedisCommandDeadlineHandler(timeout: commandTimeout))
+          }
+        }
     }
     var poolLogger = logger
     poolLogger.logLevel = .critical
@@ -70,7 +79,6 @@ public actor RediStackRedisClient: RedisCommandClient {
       poolDefaultLogger: poolLogger
     )
     self.eventLoopGroup = eventLoopGroup
-    self.commandTimeout = .milliseconds(configuration.commandTimeoutMilliseconds)
     self.telemetry = telemetry
     self.logger = logger
     self.redisHost = configuration.host
@@ -156,28 +164,16 @@ public actor RediStackRedisClient: RedisCommandClient {
     try await eventLoopGroup.shutdownGracefully()
   }
 
-  private func bounded<Value: Sendable>(
-    operation: @escaping @Sendable () async throws -> Value
-  ) async throws -> Value {
-    try await withThrowingTaskGroup(of: Value.self) { group in
-      group.addTask { try await operation() }
-      group.addTask {
-        try await Task.sleep(for: self.commandTimeout)
-        throw RedisCommandTimeoutError()
-      }
-      guard let result = try await group.next() else { throw RedisCommandTimeoutError() }
-      group.cancelAll()
-      return result
-    }
-  }
-
   private func measured<Value: Sendable>(
     operation: String,
     body: @escaping @Sendable () async throws -> Value
   ) async throws -> Value {
     let startedAt = Date()
     do {
-      let value = try await bounded(operation: body)
+      // Pool acquisition is bounded by connectionRetryTimeout; once written,
+      // the pipeline deadline closes an unresponsive connection. A task race
+      // cannot provide this guarantee because NIO future.get ignores cancellation.
+      let value = try await body()
       telemetry?(.init(
         kind: .operation,
         operation: operation,

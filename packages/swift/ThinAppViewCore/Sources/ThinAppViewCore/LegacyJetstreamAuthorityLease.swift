@@ -13,6 +13,7 @@ enum LegacyJetstreamAuthorityLease {
     minimumLeaseSeconds: TimeInterval = 15,
     contentionSleepSeconds: TimeInterval = 1,
     logger: Logger,
+    now: @escaping @Sendable () -> Date = Date.init,
     authority: @escaping @Sendable (IngestionLeaderLease?) async -> Void
   ) async {
     guard let store else {
@@ -22,13 +23,13 @@ enum LegacyJetstreamAuthorityLease {
     let duration = max(minimumLeaseSeconds, leaseSeconds)
     while !Task.isCancelled {
       do {
-        let now = Date()
+        let acquiredAt = now()
         guard let lease = try await store.acquireIngestionLeaderLease(
           name: leaseName,
           sourceGeneration: sourceGeneration,
           ownerID: ownerID,
-          leaseUntil: now.addingTimeInterval(duration),
-          at: now
+          leaseUntil: acquiredAt.addingTimeInterval(duration),
+          at: acquiredAt
         ) else {
           try await Task.sleep(for: .seconds(contentionSleepSeconds))
           continue
@@ -45,7 +46,7 @@ enum LegacyJetstreamAuthorityLease {
               while !Task.isCancelled {
                 try await Task.sleep(for: .seconds(duration / 3))
                 try Task.checkCancellation()
-                let renewedAt = Date()
+                let renewedAt = now()
                 current = try await store.renewIngestionLeaderLease(
                   name: leaseName,
                   ownerID: ownerID,
@@ -60,7 +61,7 @@ enum LegacyJetstreamAuthorityLease {
           }
         } catch is CancellationError {
           try? await store.releaseIngestionLeaderLease(
-            name: leaseName, ownerID: ownerID, fencingToken: lease.fencingToken, at: Date())
+            name: leaseName, ownerID: ownerID, fencingToken: lease.fencingToken, at: now())
           return
         } catch {
           logger.warning(
@@ -69,7 +70,7 @@ enum LegacyJetstreamAuthorityLease {
           )
         }
         try? await store.releaseIngestionLeaderLease(
-          name: leaseName, ownerID: ownerID, fencingToken: lease.fencingToken, at: Date())
+          name: leaseName, ownerID: ownerID, fencingToken: lease.fencingToken, at: now())
       } catch is CancellationError {
         return
       } catch {

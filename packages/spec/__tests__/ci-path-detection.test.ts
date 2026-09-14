@@ -108,6 +108,16 @@ describe("CI path detection", () => {
     expect(result.get("spec")).toBe("true");
   });
 
+  it("checks Corpus Edge when its Redis runtime changes", () => {
+    const result = detect(
+      repositoryWithChange("packages/swift/SocialWireRedis/Sources/SocialWireRedis/RedisCacheClient.swift"),
+      "pull_request",
+    );
+    expect(result.get("wire_corpus_edge")).toBe("true");
+    expect(result.get("wire_worker")).toBe("true");
+    expect(result.get("indexing_worker")).toBe("true");
+  });
+
   it("runs deterministic spec coverage when the migration runner changes", () => {
     const result = detect(
       repositoryWithChange("scripts/apply-database-migrations.sh"),
@@ -162,6 +172,20 @@ describe("CI path detection", () => {
     expect(result.get("spec")).toBe("true");
     expect(result.get("operations_web")).toBe("true");
     expect(result.get("charybdis")).toBe("false");
+  });
+
+  it("runs Python benchmark safety tests when a tool or its tests change", () => {
+    for (const path of [
+      "scripts/benchmarks/railway_memory_adapters.py",
+      "scripts/benchmarks/tests/test_memory_step_acceptance.py",
+    ]) {
+      const result = detect(repositoryWithChange(path), "pull_request");
+      expect(result.get("benchmark_tools")).toBe("true");
+      expect(result.get("spec")).toBe("true");
+      expect(result.get("gateway")).toBe("false");
+    }
+    const unrelated = detect(repositoryWithChange("docs/wiki/Testing.md"), "pull_request");
+    expect(unrelated.get("benchmark_tools")).toBe("false");
   });
 
   it("runs the full matrix when the detector changes", () => {

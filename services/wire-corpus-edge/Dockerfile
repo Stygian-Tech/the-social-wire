@@ -6,6 +6,10 @@ COPY packages/swift/WireCore/Package.swift packages/swift/WireCore/Package.resol
 COPY packages/swift/WireCore/Sources packages/swift/WireCore/Sources
 COPY packages/swift/WireCore/Tests packages/swift/WireCore/Tests
 
+COPY packages/swift/SocialWireRedis/Package.swift packages/swift/SocialWireRedis/Package.resolved* packages/swift/SocialWireRedis/
+COPY packages/swift/SocialWireRedis/Sources packages/swift/SocialWireRedis/Sources
+COPY packages/swift/SocialWireRedis/Tests packages/swift/SocialWireRedis/Tests
+
 COPY services/wire-corpus-edge/Package.swift services/wire-corpus-edge/Package.resolved* services/wire-corpus-edge/
 COPY services/wire-corpus-edge/Sources services/wire-corpus-edge/Sources
 COPY services/wire-corpus-edge/Tests services/wire-corpus-edge/Tests

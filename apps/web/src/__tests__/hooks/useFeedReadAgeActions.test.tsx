@@ -95,7 +95,7 @@ describe("useFeedReadAgeActions", () => {
 
     expect(fetch).not.toHaveBeenCalled();
     expect(await result.current.loadOptions()).toEqual(options);
-    expect(fetch).toHaveBeenCalledWith(oauth, scope, Intl.DateTimeFormat().resolvedOptions().timeZone);
+    expect(fetch).toHaveBeenCalledWith(oauth, scope, Intl.DateTimeFormat().resolvedOptions().timeZone, { signal: undefined, onOptions: expect.any(Function) });
   });
 
   it("updates only confirmed IDs, preserving newer deferred rows and other viewers", async () => {
@@ -237,4 +237,23 @@ describe("useFeedReadAgeActions", () => {
     await expect(result.current.markBefore(before)).rejects.toThrow("Sign in and select a feed");
     expect(gateway).not.toHaveBeenCalled();
   });
+});
+
+
+it("guards streamed snapshots after feed changes", async () => {
+  const request = pending<ReadAgeClient.ReadAgeOptionsResponse>();
+  const fetch = spyOn(ReadAgeClient, "fetchReadAgeOptions").mockReturnValue(request.promise);
+  restores.push(() => fetch.mockRestore());
+  const { result, rerender } = harness();
+  const onOptions = mock(() => {});
+  const operation = result.current.loadOptions(onOptions);
+  const progress = fetch.mock.calls[0]![3]!;
+  const options = [{ days: 1, before, count: 1 }];
+  progress.onOptions!(options);
+  expect(onOptions).toHaveBeenCalledWith(options);
+  rerender({ selectedScope: { kind: "following" } });
+  expect(() => progress.onOptions!(options)).toThrow("account or feed changed");
+  expect(onOptions).toHaveBeenCalledTimes(1);
+  request.resolve({ referenceDay: before, options });
+  await expect(operation).rejects.toThrow("account or feed changed");
 });
