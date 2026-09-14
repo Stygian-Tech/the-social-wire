@@ -1,5 +1,6 @@
 import Foundation
 import Logging
+import NIOCore
 import PostgresNIO
 import Testing
 @testable import ThinAppViewCore
@@ -119,6 +120,59 @@ struct PostgresFeedQueryDeadlineTests {
         }
         #expect(active == 0)
       }
+    }
+  }
+
+  @Test("a queued channel close cannot strand the next query's completion promise")
+  func closeQueuedBeforeSubmission() async throws {
+    try await withPool { pool in
+      try await pool.withConnection { connection in
+        let lifetime = AppViewFeedConnectionLifetime(deadline: .init())
+        try await lifetime.install(connection)
+        let entered = AsyncStream<Void>.makeStream()
+        let release = DispatchSemaphore(value: 0)
+        connection.eventLoop.execute {
+          entered.continuation.yield(())
+          entered.continuation.finish()
+          // The fixture's gate opens automatically even if an assertion fails.
+          _ = release.wait(timeout: .now() + 1)
+        }
+        var entryIterator = entered.stream.makeAsyncIterator()
+        _ = await entryIterator.next()
+        defer { release.signal() }
+        // Enqueue close before submission while the channel still appears open
+        // off-loop. This deterministically reproduces the former race window.
+        #expect(!connection.isClosed)
+        let closing: EventLoopFuture<Void> = connection.close()
+        let result = lifetime.submitQuery("SELECT 1", connection: connection, logger: logger)
+        let started = ContinuousClock.now
+        let completion = AsyncStream<Result<[PostgresRow], any Error>>.makeStream()
+        result.whenComplete {
+          completion.continuation.yield($0)
+          completion.continuation.finish()
+        }
+        let timeout = Task {
+          try await Task.sleep(for: .seconds(1))
+          completion.continuation.finish()
+        }
+        defer { timeout.cancel(); completion.continuation.finish() }
+        release.signal()
+        var iterator = completion.stream.makeAsyncIterator()
+        let outcome = try #require(await iterator.next(), "Submission left an unresolved completion promise")
+        do {
+          _ = try outcome.get()
+          Issue.record("A retired connection accepted new work")
+        } catch {
+          guard let postgres = error as? PostgresError, case .connectionClosed = postgres else {
+            Issue.record("A channel retired before submission must report dependency unavailability")
+            throw error
+          }
+        }
+        #expect(started.duration(to: .now) < .seconds(1))
+        try await closing.get()
+        await lifetime.finish()
+      }
+      try await expectHealthy(pool)
     }
   }
 

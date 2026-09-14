@@ -47,6 +47,9 @@ enum AppViewFeedErrorClassifier {
     if error is AppViewFeedQueryDeadline.Failure {
       return postgresFailure(status: .gatewayTimeout, requestId: requestId)
     }
+    if let postgres = error as? PostgresError, case .connectionClosed = postgres {
+      return postgresFailure(status: .serviceUnavailable, requestId: requestId)
+    }
     if let postgres = postgresError(error) {
       return postgresFailure(
         status: postgresStatus(code: postgres.code, sqlState: postgres.serverInfo?[.sqlState]),
