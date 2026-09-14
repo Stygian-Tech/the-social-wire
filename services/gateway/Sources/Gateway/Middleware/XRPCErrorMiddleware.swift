@@ -17,6 +17,8 @@ struct XRPCErrorMiddleware: RouterMiddleware {
     }
     do {
       return try await next(request, context)
+    } catch is CancellationError {
+      throw CancellationError()
     } catch {
       let status = (error as? any HTTPResponseError)?.status ?? .internalServerError
       let envelope = XRPCErrorEnvelope(
@@ -38,6 +40,7 @@ struct XRPCErrorMiddleware: RouterMiddleware {
     case 403: "Forbidden"
     case 404: "NotFound"
     case 429: "RateLimitExceeded"
+    case 502: "UpstreamUnavailable"
     case 503: "ServiceUnavailable"
     case 504: "UpstreamTimeout"
     default: "InternalServerError"
