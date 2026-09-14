@@ -434,3 +434,21 @@ describe("OpenAPI route drift", () => {
     expect(proxy).toContain("status: Self.status(Int(reply.status.code))");
   });
 });
+
+
+describe("L@tr bookmark state transport compatibility", () => {
+  it("documents and exercises the protected PATCH alias alongside canonical POST", () => {
+    const yaml = readFileSync(OPENAPI_PATH, "utf8");
+    const block = yaml.split("  /xrpc/link.latr.bookmarks.setState:\n")[1]?.split("\n  /xrpc/")[0] ?? "";
+    expect(block).toContain("    post:");
+    expect(block).toContain("    patch:");
+    expect(block).toContain("operationId: setLatrBookmarkStatePatchCompatibility");
+    expect(block.match(/responses:\n[\s\S]*?401/g)).toHaveLength(2);
+    const routes = readFileSync(join(GATEWAY_SOURCES, "Routes/LatrProxyRoutes.swift"), "utf8");
+    expect(routes).toContain('group.patch("/xrpc/link.latr.bookmarks.setState")');
+    expect(routes).toContain('group.post("/xrpc/link.latr.bookmarks.setState")');
+    const bruno = readFileSync(join(import.meta.dir, "../../../services/gateway/bruno/Latr/Set Bookmark State PATCH Compatibility.bru"), "utf8");
+    expect(bruno).toContain("patch {");
+    expect(bruno).toContain("X-Latr-Gateway-DPoP:");
+  });
+});
