@@ -14,6 +14,14 @@ import Testing
   )
 )
 struct PostgresJetstreamInboxIntegrationTests {
+  @Test("Postgres minimal read mutation pages preserve dates and cursors")
+  func minimalUnreadMutationProjection() async throws {
+    try await PostgresInboxFixture.withFixture { fixture in
+      try await UnreadMutationQueryTests.verifyMinimalProjection(
+        store: fixture.store, prefix: fixture.sourceGeneration)
+    }
+  }
+
   @Test("Postgres unread mutation queries retain specific aliases ahead of broad scopes")
   func mixedBroadAndSpecificUnreadMutationScopes() async throws {
     try await PostgresInboxFixture.withFixture { fixture in
@@ -129,7 +137,7 @@ struct PostgresJetstreamInboxIntegrationTests {
       #expect(presentation.response.entries.map(\.entryId) == [todayId])
 
       var cursor: String?
-      var snapshot: [AppViewEntryListItem] = []
+      var snapshot: [UnreadReadMutationEntry] = []
       repeat {
         let page = try await store.listUnreadEntriesForReadMutation(
           viewerDid: viewer, scopes: [scope], cursor: cursor, limit: 1
