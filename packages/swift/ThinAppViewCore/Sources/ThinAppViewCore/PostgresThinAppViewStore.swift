@@ -1256,7 +1256,7 @@ public init(pool: PostgresClient, logger: Logger) {
     let includeAll = filter == .all
     let includeUnread = filter == .unread
     let includeRead = filter == .read
-    let rows = try await pool.query(
+    let rows = try await PostgresFeedQueryExecutor.query(
       """
       SELECT ci.uri, ci.render_json::text, ci.created_at, scope.publication_id
       FROM appview_publication_scopes scope
@@ -1318,11 +1318,11 @@ public init(pool: PostgresClient, logger: Logger) {
       ORDER BY ci.created_at DESC, ci.uri DESC
       LIMIT \(pageLimit + 1)
       """,
-      logger: logger
+      pool: pool, logger: logger
     )
 
     var entries: [AppViewEntryListItem] = []
-    for try await row in rows {
+    for row in rows {
       let (uri, renderJSON, createdAt, publicationId) = try row.decode(
         (String, String, Date, String).self
       )
@@ -1364,7 +1364,7 @@ public init(pool: PostgresClient, logger: Logger) {
 
     // Keep full render payloads out of the deduplication and page sorts. Hydrate only the
     // selected URIs in the same statement so publication, read state, and content share a snapshot.
-    let rows = try await pool.query(
+    let rows = try await PostgresFeedQueryExecutor.query(
       """
       WITH feed_definition AS (
         SELECT MAX(updated_at) AS updated_at
@@ -1500,12 +1500,12 @@ public init(pool: PostgresClient, logger: Logger) {
       WHERE definition.updated_at IS NOT NULL
       ORDER BY page.created_at DESC NULLS LAST, page.uri DESC NULLS LAST
       """,
-      logger: logger
+      pool: pool, logger: logger
     )
 
     var membershipUpdatedAt: Date?
     var entries: [AppViewEntryListItem] = []
-    for try await row in rows {
+    for row in rows {
       let (updatedAt, uri, renderJSON, createdAt, publicationId, isRead) = try row.decode(
         (Date, String?, String?, Date?, String?, Bool?).self
       )

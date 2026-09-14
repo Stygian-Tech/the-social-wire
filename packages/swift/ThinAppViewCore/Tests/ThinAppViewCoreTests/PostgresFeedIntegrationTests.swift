@@ -107,8 +107,10 @@ struct PostgresFeedIntegrationTests {
           (.unread, ["b", "override", "wild"]),
           (.read, ["new-duplicate", "a", "old"]),
         ] {
-          let page = try #require(try await fixture.store.listFeedEntries(
-            viewerDid: viewer, selector: selector, filter: filter, cursor: nil, limit: 100))
+          let page = try #require(try await AppViewFeedQueryDeadline.$current.withValue(.init()) {
+            try await fixture.store.listFeedEntries(
+              viewerDid: viewer, selector: selector, filter: filter, cursor: nil, limit: 100)
+          })
           #expect(page.membershipUpdatedAt == now)
           #expect(page.response.entries.map(\.entryId) == expected.map(uri))
           #expect(page.response.cursor == nil)
