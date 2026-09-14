@@ -478,6 +478,7 @@ struct HTTPRouteContractTests {
           ("/xrpc/link.latr.bookmarks.renameTag", .post),
           ("/xrpc/link.latr.bookmarks.deleteTag", .post),
           ("/xrpc/link.latr.bookmarks.setState", .post),
+          ("/xrpc/link.latr.bookmarks.setState", .patch),
           ("/xrpc/link.latr.bookmarks.deleteBookmark", .post),
           ("/xrpc/link.latr.bookmarks.migrateLegacy", .post),
         ]

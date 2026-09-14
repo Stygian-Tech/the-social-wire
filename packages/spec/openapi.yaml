@@ -2911,6 +2911,32 @@ paths:
         "200": { description: State updated. }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
+    patch:
+      operationId: setLatrBookmarkStatePatchCompatibility
+      summary: Archive or unarchive through the deployed upstream PATCH compatibility route
+      description: >-
+        The canonical Lexicon remains a POST procedure. The deployed L@tr bookmark
+        state handler accepts PATCH, so Social Wire clients select PATCH before
+        signing both gateway DPoP proofs. This protected alias forwards PATCH
+        unchanged; existing POST requests retain their signed method and are not
+        rewritten. Existing native clients require an updated app build.
+      tags: [Latr]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [bookmarkUri, state]
+              properties:
+                bookmarkUri: { type: string }
+                state:
+                  type: string
+                  enum: [archived, unread]
+      responses:
+        "200": { description: State updated. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
   /xrpc/link.latr.bookmarks.deleteBookmark:
     post:
       operationId: deleteLatrBookmark

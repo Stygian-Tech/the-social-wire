@@ -266,3 +266,54 @@ describe("latrGatewayFetch", () => {
     expect(new Set(upstreamClaims.map((claims) => claims.nonce)).size).toBe(8);
   });
 });
+
+
+describe("bookmark state transport compatibility", () => {
+  for (const state of ["archived", "unread"]) {
+    it(`uses PATCH for ${state}, both gateway proofs, and nonce retry`, async () => {
+      Object.defineProperty(globalThis, "location", {
+        configurable: true,
+        value: new URL("https://testing.thesocialwire.app/saved"),
+      });
+      const path = "/xrpc/link.latr.bookmarks.setState";
+      const claims: Array<Record<string, string | number>> = [];
+      let calls = 0;
+      const body = JSON.stringify({ bookmarkUri: "at://did:plc:viewer/community.lexicon.bookmarks.bookmark/one", state });
+      globalThis.fetch = mock(async (_url: string, init?: RequestInit) => {
+        calls += 1;
+        expect(init?.method).toBe("PATCH");
+        expect(init?.body).toBe(body);
+        expect(new Headers(init?.headers).get(LATR_UPSTREAM_DPOP_HEADER)?.split(",")).toHaveLength(3);
+        return calls === 1
+          ? new Response("{}", { status: 401, headers: { "DPoP-Nonce": "fresh-nonce" } })
+          : new Response("{}", { status: 200 });
+      }) as unknown as typeof fetch;
+      const session = {
+        did: "did:plc:viewer",
+        getTokenSet: async () => ({ access_token: "token", token_type: "DPoP" }),
+        getTokenInfo: async () => ({ aud: "https://pds.example" }),
+        fetchHandler: async () => new Response("{}", { status: 400, headers: { "DPoP-Nonce": "pds-nonce" } }),
+        server: {
+          dpopKey: {
+            bareJwk: { kty: "EC", crv: "P-256", x: "x", y: "y" },
+            algorithms: ["ES256"],
+            createJwt: async (_header: unknown, value: Record<string, string | number>) => {
+              claims.push(value);
+              return `proof-${claims.length}`;
+            },
+          },
+          dpopNonces: { get: async () => undefined, set: async () => {} },
+          serverMetadata: { dpop_signing_alg_values_supported: ["ES256"] },
+        },
+      } as never;
+      expect((await latrGatewayFetch(session, path, { method: "POST", body })).status).toBe(200);
+      expect(calls).toBe(2);
+      const gatewayClaims = claims.filter(c => String(c.htu).endsWith(path));
+      expect(gatewayClaims).toHaveLength(4);
+      expect(gatewayClaims.every(c => c.htm === "PATCH")).toBe(true);
+      const pdsClaims = claims.filter(c => String(c.htu).startsWith("https://pds.example/"));
+      expect(pdsClaims.filter(c => c.htm === "GET")).toHaveLength(4);
+      expect(pdsClaims.filter(c => c.htm === "POST")).toHaveLength(2);
+    });
+  }
+});
