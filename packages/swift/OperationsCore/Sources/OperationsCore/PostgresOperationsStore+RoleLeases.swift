@@ -67,7 +67,7 @@ extension PostgresOperationsStore {
     let authority = RoleLeaseAuthority(environment: environment, role: role, ownerID: ownerID, fencingToken: fencingToken)
     let logger = logger
     return try await PostgresRoleLeaseBudget.withTransaction(pool: pool, logger: logger) { connection in
-      try await PostgresRoleLeaseFence.lockAndValidate(authority, connection: connection, logger: logger)
+      try await PostgresRoleLeaseFence.lockForRenewalAndValidate(authority, connection: connection, logger: logger)
       let rows = try await PostgresRoleLeaseBudget.query(
         """
         WITH instant AS (SELECT clock_timestamp() AS now)
@@ -90,6 +90,14 @@ extension PostgresOperationsStore {
     let environment = environment
     let logger = logger
     try await PostgresRoleLeaseBudget.withTransaction(pool: pool, logger: logger) { connection in
+      // Revocation waits for every protected commit, unlike expiry-only renewal.
+      _ = try await PostgresRoleLeaseBudget.query(
+        """
+        SELECT fencing_token FROM operations_role_leases
+        WHERE environment = \(environment) AND role = \(role)
+          AND owner_id = \(ownerID) AND fencing_token = \(fencingToken) AND released_at IS NULL
+        FOR UPDATE
+        """, connection: connection, logger: logger)
       let rows = try await PostgresRoleLeaseBudget.query(
         """
         UPDATE operations_role_leases SET released_at = clock_timestamp(), updated_at = clock_timestamp()
