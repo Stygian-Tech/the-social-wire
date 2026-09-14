@@ -23,7 +23,7 @@ public struct WireCorpusPage: Codable, Equatable, Sendable {
     self.language = language
     self.source = source
     self.degraded = degraded
-    self.rows = Array(rows.prefix(500))
+    self.rows = Array(rows.prefix(source == .simplifiedFallback ? 5000 : 500))
     self.exhausted = exhausted
   }
 
