@@ -48,8 +48,11 @@ struct Serve: AsyncParsableCommand {
     )
 
     let httpClient = HTTPClient(eventLoopGroupProvider: .singleton)
+    let ingestionHealth = GatewayIngestionHealth(
+      baseURL: config.projectionPoolBaseURL, httpClient: httpClient)
     let dependencyProbe = Self.gatewayDependencyProbe(
       appViewBaseURL: config.appViewBaseURL,
+      ingestionHealth: ingestionHealth,
       httpClient: httpClient
     )
     var serverError: Error?
@@ -101,6 +104,7 @@ struct Serve: AsyncParsableCommand {
             redis: redisRuntime?.client,
             environment: config.core.appEnv.rawValue
           ),
+          ingestionHealth: ingestionHealth,
           operationsStore: operationsStore,
           telemetry: operationsConfig.enabled ? telemetry : nil,
           telemetryEnvironment: operationsEnvironment,
@@ -113,6 +117,7 @@ struct Serve: AsyncParsableCommand {
         )
         try await withThrowingTaskGroup(of: Void.self) { group in
           group.addTask { try await app.run() }
+          group.addTask { try await ingestionHealth.runForever() }
           if operationsConfig.enabled { group.addTask { await telemetry.runForever() } }
           if operationsConfig.enabled { group.addTask { await heartbeat.runForever() } }
           try await group.next()
@@ -166,6 +171,7 @@ struct Serve: AsyncParsableCommand {
             redis: redisRuntime?.client,
             environment: config.core.appEnv.rawValue
           ),
+          ingestionHealth: ingestionHealth,
           operationsStore: operationsStore,
           telemetry: operationsConfig.enabled ? telemetry : nil,
           telemetryEnvironment: operationsEnvironment,
@@ -179,6 +185,7 @@ struct Serve: AsyncParsableCommand {
         try await withThrowingTaskGroup(of: Void.self) { group in
           group.addTask { await pgPool.run() }
           group.addTask { try await app.run() }
+          group.addTask { try await ingestionHealth.runForever() }
           if operationsConfig.enabled { group.addTask { await telemetry.runForever() } }
           if operationsConfig.enabled { group.addTask { await heartbeat.runForever() } }
           try await group.next()
@@ -195,6 +202,7 @@ struct Serve: AsyncParsableCommand {
 
   static func gatewayDependencyProbe(
     appViewBaseURL: String?,
+    ingestionHealth: GatewayIngestionHealth,
     httpClient: HTTPClient
   ) -> OperationsServiceDependencyProbe {
     let normalizedBase = appViewBaseURL?.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
@@ -212,23 +220,30 @@ struct Serve: AsyncParsableCommand {
         )
       }
 
-      var request = HTTPClientRequest(url: "\(normalizedBase)/readyz")
-      request.method = .GET
-      let response = try await httpClient.execute(request, timeout: .seconds(5))
-      _ = try await response.body.collect(upTo: 4 * 1024)
-      let ready = (200..<300).contains(Int(response.status.code))
+      let status = try await GatewayDependencyHTTPProbe.status(baseURL: normalizedBase, httpClient: httpClient)
+      let ready = (200..<300).contains(Int(status))
+      let ingestion = await ingestionHealth.snapshot()
+      let validUntil = observedAt.addingTimeInterval(30)
+      // The heartbeat may be consumed until its own expiry. Do not extend a shorter-lived
+      // ingestion sample merely by republishing it under a newer heartbeat timestamp.
+      let evidenceCoversHeartbeat = ingestion.validUntil.map { $0 >= validUntil } ?? false
+      let completeness: OperationsHealthState = evidenceCoversHeartbeat ? ingestion.completeness : .unknown
+      var dependencies = ingestion.dependencyState
+      dependencies["ingestion_completeness"] = completeness.rawValue
+      if !evidenceCoversHeartbeat, ingestion.checkedAt != nil {
+        dependencies["projection_pool"] = "stale"
+      }
       return OperationsServiceProbeResult(
         liveness: .healthy,
         readiness: ready ? .healthy : .degraded,
         freshness: .unknown,
-        completeness: .unknown,
-        dependencyState: [
-          "appview": ready ? "ready" : "failed_http_\(response.status.code)",
-          "appview_projection_freshness": "unmeasured",
-          "appview_projection_completeness": "unmeasured",
-        ],
+        completeness: completeness,
+        dependencyState: dependencies.merging([
+          "appview": ready ? "ready" : "failed_http_\(status)",
+        ]) { _, new in new },
+        requiredDependencyKeys: ["appview"],
         observedAt: observedAt,
-        validUntil: observedAt.addingTimeInterval(30)
+        validUntil: validUntil
       )
     }
   }
