@@ -112,6 +112,34 @@ describe("bootstrap feed recovery", () => {
     queryClient.clear();
   });
 
+  it("keeps viewers isolated when they share a query client and publication", () => {
+    const queryClient = new QueryClient();
+    const otherViewer = "did:plc:other-bootstrap-viewer";
+    const otherKey = [...ENTRIES_QUERY_KEY(otherViewer, publicationKey), "all"];
+    queryClient.setQueryData(otherKey, { pages: [page], pageParams: [undefined] }, { updatedAt: 123 });
+    const callbacks: (() => void)[] = [];
+    const timer = spyOn(window, "setTimeout").mockImplementation(((callback: TimerHandler) => {
+      callbacks.push(callback as () => void);
+      return callbacks.length;
+    }) as typeof window.setTimeout);
+    try {
+      const args = { queryClient, viewerDid, publicationKey, oauthSession: oauthSession() };
+      queueBootstrapFeedRefresh(args);
+      queueBootstrapFeedRefresh({ ...args, viewerDid: otherViewer });
+      queueBootstrapFeedRefresh(args);
+      expect(callbacks).toHaveLength(2);
+      writeStreamedEntriesPage(queryClient, viewerDid, {
+        publicationId: publicationKey, entries: [], source: "unavailable",
+      });
+      expect(queryClient.getQueryData(queryKey)).toBeUndefined();
+      expect(queryClient.getQueryState(otherKey)?.dataUpdatedAt).toBe(123);
+      expect(queryClient.getQueryData<InfiniteData<EntriesPage>>(otherKey)?.pages[0]).toEqual(page);
+    } finally {
+      timer.mockRestore();
+      queryClient.clear();
+    }
+  });
+
   it("does not seed empty success or automatically retry a failed cache-miss fetch", async () => {
     const queryClient = new QueryClient();
     process.env.NEXT_PUBLIC_SOCIALWIRE_API_URL = "https://api.example.test";
