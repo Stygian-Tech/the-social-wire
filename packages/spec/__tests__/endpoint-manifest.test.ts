@@ -55,6 +55,24 @@ describe("endpoint transport manifest", () => {
     expect(manifest.entries.some((entry) => entry.surface === "tap")).toBe(false);
   });
 
+  it("limits the deployed upstream verb exception to bookmark state", () => {
+    const compatibility = manifest.entries.filter(
+      (entry) => entry.classification === "foreign-xrpc-compatibility"
+    );
+    expect(compatibility).toHaveLength(1);
+    expect(compatibility[0]).toMatchObject({
+      surface: "openapi",
+      method: "PATCH",
+      path: "/xrpc/link.latr.bookmarks.setState",
+      xrpcNsid: "link.latr.bookmarks.setState",
+    });
+    expect(manifest.entries).toContainEqual({
+      surface: "openapi", method: "POST",
+      path: "/xrpc/link.latr.bookmarks.setState",
+      classification: "foreign-xrpc", xrpcNsid: "link.latr.bookmarks.setState",
+    });
+  });
+
   it("uses GET for foreign XRPC queries and POST for foreign XRPC procedures", () => {
     const methods = manifest.entries.filter(
       (entry) => entry.classification === "foreign-xrpc"

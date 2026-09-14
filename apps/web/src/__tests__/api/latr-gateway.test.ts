@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, mock } from "bun:test";
 import { NextRequest } from "next/server";
 
-import { GET } from "@/app/api/latr-gateway/[...path]/route";
+import { GET, PATCH, POST } from "@/app/api/latr-gateway/[...path]/route";
 
 const ORIG_FETCH = globalThis.fetch;
 const ORIG_CONSOLE_WARN = console.warn;
@@ -313,4 +313,31 @@ describe("GET /api/latr-gateway/[...path]", () => {
     expect(JSON.stringify(warnMock.mock.calls)).not.toContain("super-secret");
     expect(JSON.stringify(warnMock.mock.calls)).not.toContain("official-secret");
   });
+});
+
+
+describe("bookmark state proxy method preservation", () => {
+  for (const method of ["PATCH", "POST"] as const) {
+    it(`forwards ${method} and its proof unchanged`, async () => {
+      process.env.LATR_GATEWAY_CLIENT_CREDENTIAL = "the-social-wire-web=official-secret";
+      process.env.LATR_GATEWAY_URL = "https://api.testing.latr.link";
+      process.env.NEXT_PUBLIC_APP_ENV = "test";
+      const body = JSON.stringify({ bookmarkUri: "at://did:plc:viewer/community.lexicon.bookmarks.bookmark/one", state: "archived" });
+      globalThis.fetch = mock(async (_url: string, init?: RequestInit) => {
+        expect(init?.method).toBe(method);
+        expect(new TextDecoder().decode(init?.body as ArrayBuffer)).toBe(body);
+        const headers = new Headers(init?.headers);
+        expect(headers.get("DPoP")).toBe(`${method}-latr-proof`);
+        expect(headers.get("X-Latr-Forwarded-DPoP")).toBe(`${method}-web-proof`);
+        expect(headers.get("X-ATProto-Upstream-DPoP")).toBe("pds-proof");
+        return new Response("{}", { status: 200 });
+      }) as unknown as typeof fetch;
+      const request = new NextRequest("https://testing.thesocialwire.app/api/latr-gateway/xrpc/link.latr.bookmarks.setState", {
+        method, body,
+        headers: { Authorization: "DPoP token", DPoP: `${method}-web-proof`, "X-Latr-Gateway-DPoP": `${method}-latr-proof`, "X-ATProto-Upstream-DPoP": "pds-proof", "Content-Type": "application/json" },
+      });
+      const handler = method === "PATCH" ? PATCH : POST;
+      expect((await handler(request, { params: Promise.resolve({ path: ["xrpc", "link.latr.bookmarks.setState"] }) })).status).toBe(200);
+    });
+  }
 });

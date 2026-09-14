@@ -304,6 +304,14 @@
     },
     {
       "surface": "openapi",
+      "method": "PATCH",
+      "path": "/xrpc/link.latr.bookmarks.setState",
+      "classification": "foreign-xrpc-compatibility",
+      "xrpcNsid": "link.latr.bookmarks.setState",
+      "reason": "Deployed upstream bookmark state handler requires PATCH; clients sign PATCH before forwarding. Canonical Lexicon procedure remains POST."
+    },
+    {
+      "surface": "openapi",
       "method": "POST",
       "path": "/xrpc/link.latr.bookmarks.deleteBookmark",
       "classification": "foreign-xrpc",
