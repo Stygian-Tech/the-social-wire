@@ -107,6 +107,80 @@ struct AppViewFeedErrorTests {
     await run.value
   }
 
+  @Test("typed PostgreSQL transport codes without SQLSTATE remain allowlisted")
+  func postgresTransportCodes() {
+    for code: PSQLError.Code in [
+      .connectionError, .serverClosedConnection, .clientClosedConnection, .poolClosed, .uncleanShutdown,
+    ] {
+      #expect(AppViewFeedErrorClassifier.postgresStatus(code: code, sqlState: nil) == .serviceUnavailable)
+    }
+    #expect(AppViewFeedErrorClassifier.postgresStatus(code: .queryCancelled, sqlState: nil) == .gatewayTimeout)
+    for code: PSQLError.Code in [.server, .saslError, .messageDecodingFailure, .invalidCommandTag, .tooManyParameters] {
+      #expect(AppViewFeedErrorClassifier.postgresStatus(code: code, sqlState: nil) == .internalServerError)
+    }
+    #expect(AppViewFeedErrorClassifier.postgresStatus(code: .connectionError, sqlState: "23505") == .internalServerError)
+  }
+
+  @Test("actual closed PostgreSQL connections classify as retryable with and without transaction wrapping",
+    .enabled(if: ProcessInfo.processInfo.environment["THIN_APPVIEW_TEST_DATABASE_URL"] != nil),
+    arguments: [false, true])
+  func closedPostgresConnection(transactional: Bool) async throws {
+    let url = try #require(ProcessInfo.processInfo.environment["THIN_APPVIEW_TEST_DATABASE_URL"])
+    let logger = Logger(label: "appview-feed-closed-connection.tests")
+    let pool = PostgresClient(configuration: try makePostgresConfig(from: url, logger: logger))
+    let run = Task { await pool.run() }
+    defer { run.cancel() }
+    let transportError = try await pool.withConnection { connection in
+      let pidRows = try await connection.query("SELECT pg_backend_pid()", logger: logger)
+      var backendPID: Int32 = 0
+      for try await row in pidRows { backendPID = try row.decode(Int32.self) }
+      let query = Task {
+        for try await _ in try await connection.query("SELECT pg_sleep(5)", logger: logger) {}
+      }
+      var queryStarted = false
+      for _ in 0..<100 {
+        let activity = try await pool.query(
+          "SELECT wait_event FROM pg_stat_activity WHERE pid = \(backendPID) AND wait_event = 'PgSleep'",
+          logger: logger)
+        for try await _ in activity { queryStarted = true }
+        if queryStarted { break }
+        try await Task.sleep(for: .milliseconds(10))
+      }
+      // Closing while work is in flight yields a real transport error. Submitting
+      // new work after close hangs in this PostgresNIO version, so avoid that fixture.
+      try await connection.close()
+      do {
+        try await query.value
+        Issue.record("Closing the connection must fail its active query")
+        throw HTTPError(.internalServerError)
+      } catch let error as PSQLError {
+        #expect(queryStarted)
+        #expect(error.serverInfo?[.sqlState] == nil)
+        return error
+      }
+    }
+    var observedError: any Error = transportError
+    if transactional {
+      do {
+        // A fresh transaction wraps the real failure without trying to roll back
+        // on an already closed connection (which has the same driver limitation).
+        try await pool.withTransaction(logger: logger) { _ in throw transportError }
+      } catch {
+        #expect(error is PostgresTransactionError)
+        observedError = error
+      }
+    }
+    let classified = AppViewFeedErrorClassifier.classify(observedError, requestId: "req-closed")
+    #expect(classified.status == .serviceUnavailable)
+    #expect(classified.code == "feed_dependency_unavailable")
+    #expect(classified.retryable)
+    #expect(classified.message == "The feed is temporarily unavailable.")
+    // Pool replacement must remain usable after classifying the failed request.
+    for try await row in try await pool.query("SELECT 1", logger: logger) {
+      #expect(try row.decode(Int.self) == 1)
+    }
+  }
+
   @Test("feed failures record request timing without query or exception data")
   func safeFailureEvidence() async throws {
     let capture = AppViewFeedLogCapture()
