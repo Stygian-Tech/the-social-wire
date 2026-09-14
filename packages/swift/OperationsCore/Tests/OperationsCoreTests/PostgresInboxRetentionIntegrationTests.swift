@@ -43,7 +43,9 @@ struct PostgresInboxRetentionIntegrationTests {
         CASE WHEN status = 'dead_letter' THEN \(cutoff) END,
         CASE WHEN seq = 9 THEN \(cutoff) END,
         CASE WHEN seq IN (1, 12) THEN NULL
-          WHEN seq = 10 THEN \(cutoff) + INTERVAL '1 second' ELSE \(cutoff) END,
+          WHEN seq = 10 THEN \(cutoff) + INTERVAL '1 second'
+          WHEN seq = 11 THEN \(cutoff)
+          ELSE \(cutoff) - (20 - seq) * INTERVAL '1 second' END,
         CASE WHEN status = 'filtered_scope' THEN 'test-policy' END,
         CASE WHEN status = 'filtered_scope' THEN \(cutoff) END
       FROM (VALUES (1, 'pending'), (2, 'pending'), (3, 'retry'), (4, 'leased'),
