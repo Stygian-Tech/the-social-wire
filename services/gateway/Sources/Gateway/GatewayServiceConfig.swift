@@ -25,7 +25,7 @@ struct GatewayServiceConfig: Sendable {
   let appViewBaseURL: String?
   /// Dedicated control-plane origin for `/v1/operations/*`.
   let operationsBaseURL: String?
-  /// Projection Pool health origin used by the public readiness aggregation endpoint.
+  /// Projection Pool origin sampled independently for ingestion-health evidence.
   let projectionPoolBaseURL: String?
   /// When set, `link.latr.bookmarks.*` XRPC is proxied to L@tr using iOS server credentials.
   let latrIosProxy: LatrIosProxyCredentials.Config?
