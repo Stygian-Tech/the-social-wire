@@ -513,15 +513,60 @@ struct ATProtoAuthMiddlewareSecurityTests {
     #expect(await handlerCalls.count == 0)
   }
 
-  @Test("cancelled JWKS requests remain cancelled without attestation or route execution")
-  func cancelledJWKSRequest() async throws {
+  @Test("native HTTP timeouts preserve the session without attestation or route execution", arguments: [
+    HTTPClientError.deadlineExceeded, .connectTimeout, .readTimeout, .writeTimeout,
+    .getConnectionFromPoolTimeout, .tlsHandshakeTimeout, .httpProxyHandshakeTimeout,
+    .socksHandshakeTimeout,
+  ])
+  func nativeTimeoutAvailability(failure: HTTPClientError) async throws {
     let fixture = try fallbackFixture()
     let attestorCalls = CallCounter()
     let handlerCalls = CallCounter()
     let response = try await protectedResponse(
       accessToken: fixture.accessToken, dpopProof: fixture.gatewayProof,
       supplementalJWKS: #"{"keys":[]}"#,
-      accessTokenVerifier: { _ in throw CancellationError() },
+      accessTokenVerifier: { _ in throw failure },
+      attestor: StubAttestor(calls: attestorCalls, behavior: .success(fixture.verifiedToken, nil)),
+      handlerCalls: handlerCalls)
+    #expect(response.status == .serviceUnavailable)
+    let body = try #require(JSONSerialization.jsonObject(with: Data(buffer: response.body)) as? [String: Any])
+    let error = try #require(body["error"] as? [String: String])
+    #expect(error["message"] == "Authentication service is temporarily unavailable.")
+    #expect(await attestorCalls.count == 0)
+    #expect(await handlerCalls.count == 0)
+  }
+
+  @Test("JWKS HTTP availability statuses are distinct from invalid authentication", arguments: [
+    nil, 400, 401, 403, 404, 429, 500, 503, 599,
+  ] as [Int?])
+  func jwksHTTPAvailability(status: Int?) async throws {
+    let fixture = try fallbackFixture()
+    let attestorCalls = CallCounter()
+    let handlerCalls = CallCounter()
+    let response = try await protectedResponse(
+      accessToken: fixture.accessToken, dpopProof: fixture.gatewayProof,
+      supplementalJWKS: #"{"keys":[]}"#,
+      accessTokenVerifier: { _ in throw OAuthAccessTokenVerifier.VerifyError.jwksFetch(status) },
+      attestor: StubAttestor(calls: attestorCalls, behavior: .success(fixture.verifiedToken, nil)),
+      handlerCalls: handlerCalls)
+    let unavailable = status.map { $0 == 429 || (500..<600).contains($0) } ?? false
+    #expect(response.status == (unavailable ? .serviceUnavailable : .unauthorized))
+    #expect(await attestorCalls.count == 0)
+    #expect(await handlerCalls.count == 0)
+  }
+
+  @Test("cancelled JWKS requests remain cancelled without attestation or route execution", arguments: [false, true])
+  func cancelledJWKSRequest(native: Bool) async throws {
+    let fixture = try fallbackFixture()
+    let attestorCalls = CallCounter()
+    let handlerCalls = CallCounter()
+    let response = try await protectedResponse(
+      accessToken: fixture.accessToken, dpopProof: fixture.gatewayProof,
+      supplementalJWKS: #"{"keys":[]}"#,
+      accessTokenVerifier: { _ in
+        if native { throw HTTPClientError.cancelled }
+        throw CancellationError()
+      },
       attestor: StubAttestor(calls: attestorCalls, behavior: .success(fixture.verifiedToken, nil)),
       handlerCalls: handlerCalls, observeCancellation: true)
     #expect(response.status == .noContent)
