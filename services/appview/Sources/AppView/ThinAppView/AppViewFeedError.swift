@@ -2,6 +2,7 @@ import Foundation
 import HTTPTypes
 import Hummingbird
 import OperationsCore
+import PostgresNIO
 import ThinAppViewCore
 
 struct AppViewFeedErrorEnvelope: Codable, Sendable {
@@ -43,26 +44,13 @@ enum AppViewFeedErrorClassifier {
     if let feedError = error as? AppViewFeedError {
       return feedError
     }
-    let category = OperationsRedactor.errorCategory(error).lowercased()
-    // OperationsRedactor extracts SQLSTATE from typed PSQLError/transaction errors.
-    let sqlState = category.hasPrefix("postgres_")
-      ? category.split(separator: "_").dropFirst().first.map(String.init) : nil
-    if error is AppViewFeedQueryDeadline.Failure || sqlState == "57014" {
-      return AppViewFeedError(
-        status: .gatewayTimeout, code: "feed_deadline_exceeded",
-        message: "The feed request exceeded its deadline.", requestId: requestId, retryable: true)
+    if error is AppViewFeedQueryDeadline.Failure {
+      return postgresFailure(status: .gatewayTimeout, requestId: requestId)
     }
-    if sqlState == "57p01" || sqlState == "53300" || sqlState?.hasPrefix("08") == true {
-      return AppViewFeedError(
-        status: .serviceUnavailable, code: "feed_dependency_unavailable",
-        message: "The feed is temporarily unavailable.", requestId: requestId, retryable: true)
-    }
-    if sqlState != nil {
-      // A table/column name containing "connection" must not turn a definitive
-      // database error into a retryable dependency failure.
-      return AppViewFeedError(
-        status: .internalServerError, code: "feed_internal_error",
-        message: "The feed could not be loaded.", requestId: requestId, retryable: false)
+    if let postgres = postgresError(error) {
+      return postgresFailure(
+        status: postgresStatus(code: postgres.code, sqlState: postgres.serverInfo?[.sqlState]),
+        requestId: requestId)
     }
     if error is CancellationError {
       return AppViewFeedError(
@@ -95,6 +83,7 @@ enum AppViewFeedErrorClassifier {
         retryable: status == .serviceUnavailable || status == .gatewayTimeout
       )
     }
+    let category = OperationsRedactor.errorCategory(error).lowercased()
     let transientTokens = [
       "connection", "pool", "timeout", "timedout", "temporar", "unavailable",
       "closed", "reset", "brokenpipe", "toomanyconnections",
@@ -109,6 +98,45 @@ enum AppViewFeedErrorClassifier {
       requestId: requestId,
       retryable: transient
     )
+  }
+
+  static func postgresStatus(code: PSQLError.Code, sqlState: String?) -> HTTPResponse.Status {
+    if let sqlState = sqlState?.uppercased() {
+      if sqlState == "57014" { return .gatewayTimeout }
+      if sqlState == "57P01" || sqlState == "53300" || sqlState.hasPrefix("08") {
+        return .serviceUnavailable
+      }
+      // A definitive server error takes precedence over generic transport labels.
+      return .internalServerError
+    }
+    switch code {
+    case .connectionError, .serverClosedConnection, .clientClosedConnection, .poolClosed, .uncleanShutdown:
+      return .serviceUnavailable
+    case .queryCancelled:
+      return .gatewayTimeout
+    default:
+      return .internalServerError
+    }
+  }
+
+  private static func postgresFailure(status: HTTPResponse.Status, requestId: String) -> AppViewFeedError {
+    let message: String
+    switch status {
+    case .gatewayTimeout: message = "The feed request exceeded its deadline."
+    case .serviceUnavailable: message = "The feed is temporarily unavailable."
+    default: message = "The feed could not be loaded."
+    }
+    return AppViewFeedError(
+      status: status, code: code(for: status), message: message, requestId: requestId,
+      retryable: status != .internalServerError)
+  }
+
+  private static func postgresError(_ error: any Error) -> PSQLError? {
+    if let postgres = error as? PSQLError { return postgres }
+    guard let transaction = error as? PostgresTransactionError else { return nil }
+    // Preserve the primary failure if rollback also loses its connection.
+    return [transaction.closureError, transaction.commitError, transaction.beginError, transaction.rollbackError]
+      .compactMap { $0 }.lazy.compactMap(postgresError).first
   }
 
   private static func code(for status: HTTPResponse.Status) -> String {
