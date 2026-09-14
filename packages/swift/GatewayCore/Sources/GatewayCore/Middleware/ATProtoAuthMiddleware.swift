@@ -161,9 +161,14 @@ public struct ATProtoAuthMiddleware: RouterMiddleware {
       resolvedAuthentication = (token, proof, nil, nil)
     } catch is CancellationError {
       throw CancellationError()
+    } catch let error as HTTPClientError where error == .cancelled {
+      throw CancellationError()
     } catch is JWKSVerificationCacheFailure {
       throw HTTPError(.serviceUnavailable, message: "Authentication service is temporarily unavailable.")
     } catch {
+      if Self.isAuthenticationDependencyUnavailable(error) {
+        throw HTTPError(.serviceUnavailable, message: "Authentication service is temporarily unavailable.")
+      }
       guard OAuthAccessTokenVerifier.permitsActivePDSFallback(
         error: error,
         supplementalJwksJSON: supplementalJwksJSON
@@ -318,6 +323,25 @@ public struct ATProtoAuthMiddleware: RouterMiddleware {
       let value = request.headers[name]
     else { return false }
     return value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "true"
+  }
+
+  /// Native network deadlines can win the race with the discovery cache's
+  /// deadline. Neither a timeout nor an upstream outage invalidates a token,
+  /// and neither is permission to attempt the active-PDS fallback.
+  private static func isAuthenticationDependencyUnavailable(_ error: any Error) -> Bool {
+    if let error = error as? HTTPClientError {
+      return [
+        HTTPClientError.deadlineExceeded, .connectTimeout, .readTimeout, .writeTimeout,
+        .getConnectionFromPoolTimeout, .tlsHandshakeTimeout, .httpProxyHandshakeTimeout,
+        .socksHandshakeTimeout,
+      ].contains(error)
+    }
+    if case OAuthAccessTokenVerifier.VerifyError.jwksFetch(let status) = error,
+      let status
+    {
+      return status == 429 || (500..<600).contains(status)
+    }
+    return false
   }
 
   private static func attestationRequiredResponse() -> Response {
