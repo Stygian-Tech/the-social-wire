@@ -31,7 +31,8 @@ struct SQLiteInboxRetentionTests {
             status == "leased" ? (seq == 4 ? "1970-01-03T00:00:00.000Z" : "1970-01-01T00:00:00.000Z") : nil,
             status == "applied" ? cutoff : nil, status == "dead_letter" ? cutoff : nil,
             seq == 9 ? cutoff : nil,
-            [1, 12].contains(seq) ? nil : (seq == 10 ? "1970-01-03T00:00:00.000Z" : cutoff),
+            [1, 12].contains(seq) ? nil : (seq == 10 ? "1970-01-03T00:00:00.000Z"
+              : (seq == 11 ? cutoff : "1970-01-01T23:59:\(40 + seq).000Z")),
             status == "filtered_scope" ? "test-policy" : nil,
             status == "filtered_scope" ? cutoff : nil, cutoff, cutoff])
       }

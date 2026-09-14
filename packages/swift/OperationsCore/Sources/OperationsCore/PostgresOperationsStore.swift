@@ -2279,7 +2279,7 @@ public actor PostgresOperationsStore: OperationsStore {
         WHERE environment = \(environment) AND expires_at <= \(at)
           AND (status IN ('applied', 'filtered_scope')
             OR (status = 'dead_letter' AND reconciled_at IS NOT NULL))
-        ORDER BY expires_at, seq
+        ORDER BY expires_at
         LIMIT \(boundedBatch)
         FOR UPDATE SKIP LOCKED
       )

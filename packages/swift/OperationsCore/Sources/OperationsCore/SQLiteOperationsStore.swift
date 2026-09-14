@@ -2202,7 +2202,7 @@ public actor SQLiteOperationsStore: OperationsStore {
             WHERE environment = ? AND expires_at <= ?
               AND (status IN ('applied', 'filtered_scope')
                 OR (status = 'dead_letter' AND reconciled_at IS NOT NULL))
-            ORDER BY expires_at, seq LIMIT ?)
+            ORDER BY expires_at LIMIT ?)
           """, arguments: [environment, Self.iso(at), batchSize])
       deleted += database.changesCount
       try database.execute(
