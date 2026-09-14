@@ -2,6 +2,7 @@ import Foundation
 import HTTPTypes
 import Hummingbird
 import OperationsCore
+import ThinAppViewCore
 
 struct AppViewFeedErrorEnvelope: Codable, Sendable {
   let error: String
@@ -42,6 +43,27 @@ enum AppViewFeedErrorClassifier {
     if let feedError = error as? AppViewFeedError {
       return feedError
     }
+    let category = OperationsRedactor.errorCategory(error).lowercased()
+    // OperationsRedactor extracts SQLSTATE from typed PSQLError/transaction errors.
+    let sqlState = category.hasPrefix("postgres_")
+      ? category.split(separator: "_").dropFirst().first.map(String.init) : nil
+    if error is AppViewFeedQueryDeadline.Failure || sqlState == "57014" {
+      return AppViewFeedError(
+        status: .gatewayTimeout, code: "feed_deadline_exceeded",
+        message: "The feed request exceeded its deadline.", requestId: requestId, retryable: true)
+    }
+    if sqlState == "57p01" || sqlState == "53300" || sqlState?.hasPrefix("08") == true {
+      return AppViewFeedError(
+        status: .serviceUnavailable, code: "feed_dependency_unavailable",
+        message: "The feed is temporarily unavailable.", requestId: requestId, retryable: true)
+    }
+    if sqlState != nil {
+      // A table/column name containing "connection" must not turn a definitive
+      // database error into a retryable dependency failure.
+      return AppViewFeedError(
+        status: .internalServerError, code: "feed_internal_error",
+        message: "The feed could not be loaded.", requestId: requestId, retryable: false)
+    }
     if error is CancellationError {
       return AppViewFeedError(
         status: .gatewayTimeout,
@@ -73,7 +95,6 @@ enum AppViewFeedErrorClassifier {
         retryable: status == .serviceUnavailable || status == .gatewayTimeout
       )
     }
-    let category = OperationsRedactor.errorCategory(error).lowercased()
     let transientTokens = [
       "connection", "pool", "timeout", "timedout", "temporar", "unavailable",
       "closed", "reset", "brokenpipe", "toomanyconnections",
@@ -110,34 +131,39 @@ enum AppViewFeedExecution {
     requestId: String,
     operation: @Sendable @escaping () async throws -> T
   ) async throws -> T {
-    do {
-      return try await withDeadline(requestId: requestId) {
-        do {
-          return try await operation()
-        } catch {
-          try Task.checkCancellation()
-          let classified = AppViewFeedErrorClassifier.classify(error, requestId: requestId)
-          guard classified.retryable, classified.status == .serviceUnavailable else {
-            throw classified
+    let deadline = AppViewFeedQueryDeadline(duration: requestDeadline)
+    return try await AppViewFeedQueryDeadline.$current.withValue(deadline) {
+      do {
+        return try await withDeadline(requestId: requestId, deadline: deadline) {
+          do {
+            return try await operation()
+          } catch {
+            try Task.checkCancellation()
+            let classified = AppViewFeedErrorClassifier.classify(error, requestId: requestId)
+            guard classified.retryable, classified.status == .serviceUnavailable else {
+              throw classified
+            }
+            try await Task.sleep(for: .milliseconds(Int.random(in: 40...120)))
+            return try await operation()
           }
-          try await Task.sleep(for: .milliseconds(Int.random(in: 40...120)))
-          return try await operation()
         }
+      } catch {
+        try Task.checkCancellation()
+        throw AppViewFeedErrorClassifier.classify(error, requestId: requestId)
       }
-    } catch {
-      try Task.checkCancellation()
-      throw AppViewFeedErrorClassifier.classify(error, requestId: requestId)
     }
   }
 
   private static func withDeadline<T: Sendable>(
     requestId: String,
+    deadline: AppViewFeedQueryDeadline,
     operation: @Sendable @escaping () async throws -> T
   ) async throws -> T {
     try await withThrowingTaskGroup(of: T.self) { group in
+      defer { group.cancelAll() }
       group.addTask(operation: operation)
       group.addTask {
-        try await Task.sleep(for: requestDeadline)
+        try await ContinuousClock().sleep(until: deadline.instant)
         throw AppViewFeedError(
           status: .gatewayTimeout,
           code: "feed_deadline_exceeded",
@@ -149,7 +175,7 @@ enum AppViewFeedExecution {
       guard let result = try await group.next() else {
         throw CancellationError()
       }
-      group.cancelAll()
+      try deadline.check()
       return result
     }
   }
