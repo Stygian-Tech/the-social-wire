@@ -21,6 +21,137 @@ struct WirePostgresServingIntegrationTests {
       domain: "wire-appview-public-payload") : nil
   }
 
+  @Test("global and localized serving preserve ranking order, moderation, and shared-cache viewer isolation",
+        arguments: [false, true])
+  func globalLocalizedModerationParity(usesRedis: Bool) async throws {
+    guard let url = ProcessInfo.processInfo.environment["WIRE_TEST_DATABASE_URL"] else { return }
+    let logger = Logger(label: "wire-appview-postgres.language-moderation-parity")
+    var configuration = try makePostgresConfig(from: url, logger: logger)
+    configuration.options.maximumConnections = 2
+    let pool = PostgresClient(configuration: configuration, backgroundLogger: logger)
+    let runTask = Task { await pool.run() }
+    await Task.yield()
+    defer { runTask.cancel() }
+    let namespace = UUID().uuidString.lowercased()
+    let keys = (0..<12).map { "url:\(namespace)-\($0)" }
+    let generations = [UUID(), UUID()]
+    let labelSource = "did:example:labeler:\(namespace)"
+    let blockedDID = "did:example:blocked:\(namespace)"
+    let mutedDID = "did:example:muted:\(namespace)"
+    let viewer = "did:example:viewer:\(namespace)"
+    let now = Date()
+    // Identical English candidates are deliberately shared by both generations. Candidate
+    // language exclusion is covered separately; this fixture isolates serving parity.
+    let order = [4, 6, 0, 9, 2, 10, 7, 3, 1, 8, 11, 5]
+    let publicOrder = [4, 0, 2, 3, 1].map { keys[$0] }
+    let viewerOrder = [keys[0], keys[1]]
+    do {
+      try await setBaselineLabelState(sourceDID: labelSource, successfulAt: now, pool: pool, logger: logger)
+      for (index, key) in keys.enumerated() {
+        let actor: String? = index == 2 ? blockedDID : nil
+        let representativeURI: String? = index == 3 ? "at://\(mutedDID)/app.bsky.feed.post/fixture" : nil
+        let title = index == 4 ? "Story with muted phrase" : "Story \(index)"
+        try await pool.query("""
+          INSERT INTO wire_items
+            (canonical_key, canonical_url, representative_uri, author_key, source_domain,
+             source_name, title, language_code, provenance, first_seen_at, last_seen_at,
+             source_confidence, eligible, expires_at)
+          VALUES (\(key), \("https://example.com/\(namespace)/\(index)"), \(representativeURI),
+            \(actor), 'example.com', 'Example', \(title), 'en', '["standard_site"]'::jsonb,
+            \(now), \(now), 0.9, \(index != 10), \(now.addingTimeInterval(index == 11 ? -1 : 86_400)))
+          """, logger: logger)
+      }
+      for (index, value) in ["block", "exclude", "adult", "graphic", "spam"].enumerated() {
+        try await pool.query("""
+          INSERT INTO wire_labels (canonical_key, label_key, label_value, source, applied_at, expires_at)
+          VALUES (\(keys[index + 5]), \("parity:\(value)"), \(value), \(labelSource),
+                  \(now), \(now.addingTimeInterval(3_600)))
+          """, logger: logger)
+      }
+      for (generation, language) in zip(generations, ["und", "en"]) {
+        try await insertGeneration(generation, keys: order.map { keys[$0] }, generatedAt: now,
+          active: true, language: language, pool: pool, logger: logger)
+        try await pool.query("""
+          INSERT INTO wire_edition_generations
+            (generation_id, algorithm_version, language_bucket, continuation_ordinal, materialized_at)
+          VALUES (\(generation), 'wire-v10', \(language), \(keys.count), \(now))
+          """, logger: logger)
+        try await pool.query("""
+          INSERT INTO wire_edition_modules (generation_id, module_key, module_kind, title, position)
+          VALUES (\(generation), 'top-stories', 'top_stories', 'Top Stories', 0)
+          """, logger: logger)
+        for (position, index) in order.enumerated() {
+          try await pool.query("""
+            INSERT INTO wire_edition_module_items (generation_id, module_key, position, canonical_key)
+            VALUES (\(generation), 'top-stories', \(position), \(keys[index]))
+            """, logger: logger)
+        }
+      }
+      let moderation = WireViewerModerationCache()
+      await moderation.store(.init(blockedDIDs: [blockedDID], mutedDIDs: [mutedDID],
+        mutedWords: ["muted phrase"], fetchedAt: now), viewerDID: viewer)
+      await moderation.store(.init(blockedDIDs: [], mutedDIDs: [], mutedWords: [],
+        fetchedAt: now.addingTimeInterval(-1_801)), viewerDID: viewer + "-stale")
+      let commands = WirePayloadCacheCommands()
+      let payloadCache = usesRedis ? RedisValidatedPayloadCache(commands: commands,
+        environment: "test", domain: "wire-appview-public-payload") : nil
+      let store = try PostgresWireFeedStore(pool: pool, logger: logger,
+        cursorSecret: String(repeating: "c", count: 32), mode: .visible,
+        moderationCache: moderation, payloadCache: payloadCache)
+      let languages: [String?] = [nil, "und", "en"]
+      var publicPages: [[WireFeedItem]] = []
+      var publicEditions: [[WireFeedItem]] = []
+      for language in languages {
+        let page = try await store.getFeed(cursor: nil, limit: 20, language: language, viewerDid: nil, now: now)
+        let edition = try await store.getEdition(language: language, region: nil, viewerDid: nil, now: now)
+        #expect(page.source == .ranked)
+        #expect(!page.degraded)
+        #expect(page.items.map(\.itemID) == publicOrder)
+        #expect(edition.leadStories.map(\.itemID) == Array(publicOrder.prefix(4)))
+        #expect(page.language == (language ?? "und"))
+        #expect(page.generationID == generations[language == "en" ? 1 : 0].uuidString.lowercased())
+        publicPages.append(page.items)
+        publicEditions.append(edition.leadStories)
+      }
+      #expect(publicPages.dropFirst().allSatisfy { $0 == publicPages[0] })
+      #expect(publicEditions.dropFirst().allSatisfy { $0 == publicEditions[0] })
+      let warmedWrites = await commands.writes
+      if usesRedis { #expect(warmedWrites > 0) }
+      for (index, language) in languages.enumerated() {
+        let page = try await store.getFeed(cursor: nil, limit: 20, language: language, viewerDid: viewer, now: now)
+        let edition = try await store.getEdition(language: language, region: nil, viewerDid: viewer, now: now)
+        #expect(page.items.map(\.itemID) == viewerOrder)
+        #expect(edition.leadStories.map(\.itemID) == viewerOrder)
+        for unavailableViewer in [viewer + "-missing", viewer + "-stale"] {
+          await #expect(throws: WireServingError.moderationUnavailable) {
+            _ = try await store.getFeed(cursor: nil, limit: 20, language: language,
+              viewerDid: unavailableViewer, now: now)
+          }
+          await #expect(throws: WireServingError.moderationUnavailable) {
+            _ = try await store.getEdition(language: language, region: nil,
+              viewerDid: unavailableViewer, now: now)
+          }
+        }
+        let repeated = try await store.getFeed(cursor: nil, limit: 20, language: language, viewerDid: nil, now: now)
+        let repeatedEdition = try await store.getEdition(language: language, region: nil, viewerDid: nil, now: now)
+        #expect(repeated.items == publicPages[index])
+        #expect(repeatedEdition.leadStories == publicEditions[index])
+      }
+      // Viewer filtering must not overwrite public cached rows or bypass the warmed cache.
+      #expect(await commands.writes == warmedWrites)
+    } catch {
+      Issue.record("PostgreSQL language moderation parity failed: \(String(reflecting: error))")
+    }
+    for generation in generations {
+      try await pool.query("DELETE FROM wire_feed_state WHERE active_generation_id = \(generation)", logger: logger)
+      try await pool.query("DELETE FROM wire_rank_generations WHERE generation_id = \(generation)", logger: logger)
+    }
+    for key in keys {
+      try await pool.query("DELETE FROM wire_items WHERE canonical_key = \(key)", logger: logger)
+    }
+    try await pool.query("DELETE FROM wire_label_refresh_state WHERE source_did = \(labelSource)", logger: logger)
+  }
+
   @Test("fresh recovery generations remain degraded until archive replay completes", arguments: [false, true])
   func recoveryBaselineDoesNotClaimCompleteHistory(usesRedis: Bool) async throws {
     guard let url = ProcessInfo.processInfo.environment["WIRE_TEST_DATABASE_URL"] else { return }
@@ -822,14 +953,13 @@ struct WirePostgresServingIntegrationTests {
     await #expect(throws: WireServingError.moderationUnavailable) {
       _ = try await store.getCatalog(now: now)
     }
-    await #expect(throws: WireServingError.moderationUnavailable) {
-      _ = try await store.getFeed(
-        cursor: nil,
-        limit: 30,
-        language: "und",
-        viewerDid: nil,
-        now: now
-      )
+    for language: String? in [nil, "und", "en"] {
+      await #expect(throws: WireServingError.moderationUnavailable) {
+        _ = try await store.getFeed(cursor: nil, limit: 30, language: language, viewerDid: nil, now: now)
+      }
+      await #expect(throws: WireServingError.moderationUnavailable) {
+        _ = try await store.getEdition(language: language, region: nil, viewerDid: nil, now: now)
+      }
     }
     await #expect(throws: WireServingError.moderationUnavailable) {
       _ = try await store.getItem(itemId: "missing", viewerDid: nil)
