@@ -274,7 +274,7 @@ public protocol ThinAppViewStore: Actor {
     scopes: [AppViewPublicationScope],
     cursor: String?,
     limit: Int
-  ) async throws -> AppViewEntryListResponse
+  ) async throws -> UnreadReadMutationPage
 
   func readBoundary(viewerDid: String, publicationId: String) async throws -> ReadWatermarkBoundary?
 

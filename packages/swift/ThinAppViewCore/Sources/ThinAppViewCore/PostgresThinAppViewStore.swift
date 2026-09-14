@@ -1611,9 +1611,9 @@ public init(pool: PostgresClient, logger: Logger) {
     scopes: [AppViewPublicationScope],
     cursor: String?,
     limit: Int
-  ) async throws -> AppViewEntryListResponse {
+  ) async throws -> UnreadReadMutationPage {
     let pageLimit = max(1, min(limit, 100))
-    guard !scopes.isEmpty else { return AppViewEntryListResponse(entries: [], cursor: nil) }
+    guard !scopes.isEmpty else { return UnreadReadMutationPage(entries: [], cursor: nil) }
     let now = Date()
     let overlappingAuthors = UnreadReadMutationScope.overlappingAuthors(scopes)
     var additionalSites: [String] = []
@@ -1645,10 +1645,7 @@ public init(pool: PostgresClient, logger: Logger) {
         SELECT * FROM jsonb_to_recordset(\(scopeJSON)::jsonb)
           AS s("publicationId" text, "authorDid" text, "scopeKeys" jsonb, position integer, unscoped boolean)
       )
-      SELECT ci.uri, ci.author_did, ci.publication_site, ci.created_at,
-             COALESCE(ci.render_json->>'title', ''), ci.render_json->>'publishedAt',
-             ci.render_json->>'summary', ci.render_json->>'thumbnailUrl',
-             ci.render_json->>'articleUrl', scope."publicationId"
+      SELECT ci.uri, ci.created_at, ci.render_json->>'publishedAt', scope."publicationId"
       FROM content_items ci
       JOIN LATERAL (
         SELECT s."publicationId" FROM requested_scopes s
@@ -1681,23 +1678,18 @@ public init(pool: PostgresClient, logger: Logger) {
       """,
       logger: logger
     )
-    var entries: [AppViewEntryListItem] = []
+    var entries: [UnreadReadMutationEntry] = []
     for try await row in rows {
-      let (uri, authorDid, publicationSite, createdAt, title, publishedAt,
-           summary, thumbnailUrl, articleUrl, publicationId) = try row.decode(
-        (String, String, String?, Date, String, String?, String?, String?, String?, String).self
+      let (uri, createdAt, publishedAt, publicationId) = try row.decode(
+        (String, Date, String?, String).self
       )
-      entries.append(AggregateFeedQuerySupport.entry(
-        from: AggregateFeedDatabaseRow(
-          uri: uri, authorDid: authorDid, publicationSite: publicationSite,
-          createdAt: createdAt, title: title, publishedAt: publishedAt,
-          summary: summary, thumbnailUrl: thumbnailUrl, articleUrl: articleUrl
-        ), publicationId: publicationId
-      ).withReadState(false))
+      entries.append(UnreadReadMutationEntry(
+        entryId: uri,
+        publishedAt: publishedAt.flatMap(ThinAppViewQuerySupport.parseISO8601Date) ?? createdAt,
+        feedPositionAt: createdAt, publicationId: publicationId
+      ))
     }
-    return AggregateFeedQuerySupport.response(
-      matches: entries, pageLimit: pageLimit, lastScanned: nil, databaseHasMore: false
-    )
+    return UnreadReadMutationPage.page(matches: entries, limit: pageLimit)
   }
 
   private func listScopedEntries(

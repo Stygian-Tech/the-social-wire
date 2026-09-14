@@ -1949,9 +1949,9 @@ public init(path dbPath: String, logger: Logger) throws {
     scopes: [AppViewPublicationScope],
     cursor: String?,
     limit: Int
-  ) async throws -> AppViewEntryListResponse {
+  ) async throws -> UnreadReadMutationPage {
     let pageLimit = max(1, min(limit, 100))
-    guard !scopes.isEmpty else { return AppViewEntryListResponse(entries: [], cursor: nil) }
+    guard !scopes.isEmpty else { return UnreadReadMutationPage(entries: [], cursor: nil) }
     let overlappingAuthors = UnreadReadMutationScope.overlappingAuthors(scopes)
     let unscopedAuthorsJSON = String(decoding: try JSONEncoder().encode(
       Array(Set(scopes.filter(\.scopeKeys.isEmpty).map(\.authorDid)))
@@ -1991,12 +1991,8 @@ public init(path dbPath: String, logger: Logger) throws {
                    json_extract(value, '$.unscoped') AS unscoped
             FROM json_each(?)
           )
-          SELECT ci.uri, ci.author_did, ci.publication_site, ci.created_at,
-                 COALESCE(json_extract(ci.render_json, '$.title'), '') AS title,
+          SELECT ci.uri, ci.created_at,
                  json_extract(ci.render_json, '$.publishedAt') AS published_at,
-                 json_extract(ci.render_json, '$.summary') AS summary,
-                 json_extract(ci.render_json, '$.thumbnailUrl') AS thumbnail_url,
-                 json_extract(ci.render_json, '$.articleUrl') AS article_url,
                  scope.publication_id
           FROM content_items ci
           JOIN requested_scopes scope ON scope.position = (
@@ -2029,19 +2025,16 @@ public init(path dbPath: String, logger: Logger) throws {
         arguments: [scopeJSON, viewerDid, viewerDid, viewerDid, unscopedAuthorsJSON, scopeKeysJSON, now,
                     decodedCursor != nil, cursorAt, cursorAt, cursorUri, pageLimit + 1]
       )
-      let entries = rows.compactMap { row -> AppViewEntryListItem? in
+      let entries = rows.compactMap { row -> UnreadReadMutationEntry? in
         guard let createdAt = Self.date(fromIso: row["created_at"]) else { return nil }
-        return AggregateFeedQuerySupport.entry(
-          from: AggregateFeedDatabaseRow(
-            uri: row["uri"], authorDid: row["author_did"], publicationSite: row["publication_site"],
-            createdAt: createdAt, title: row["title"], publishedAt: row["published_at"],
-            summary: row["summary"], thumbnailUrl: row["thumbnail_url"], articleUrl: row["article_url"]
-          ), publicationId: row["publication_id"]
-        ).withReadState(false)
+        let publishedAt: String? = row["published_at"]
+        return UnreadReadMutationEntry(
+          entryId: row["uri"],
+          publishedAt: publishedAt.flatMap(ThinAppViewQuerySupport.parseISO8601Date) ?? createdAt,
+          feedPositionAt: createdAt, publicationId: row["publication_id"]
+        )
       }
-      return AggregateFeedQuerySupport.response(
-        matches: entries, pageLimit: pageLimit, lastScanned: nil, databaseHasMore: false
-      )
+      return UnreadReadMutationPage.page(matches: entries, limit: pageLimit)
     }
   }
 
