@@ -53,13 +53,6 @@ struct OperationsCommand: AsyncParsableCommand {
           serviceLogger.warning("Daily viewer history observation unavailable")
         }
       })
-      let viewerHistoryCollector = OperationsViewerHistoryCollector(collect: { at in
-        do {
-          try await store.recordViewerHistory(at: at)
-        } catch {
-          serviceLogger.warning("Daily viewer history observation unavailable")
-        }
-      })
       try await withThrowingTaskGroup(of: Void.self) { group in
         group.addTask { await pool.run() }
         group.addTask { await databaseCostCollector.runForever() }
