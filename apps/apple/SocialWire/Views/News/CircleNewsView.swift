@@ -3,6 +3,7 @@ import SwiftUI
 struct CircleNewsView: View {
     @Environment(SocialWireAppModel.self) private var appModel
     @Environment(\.openURL) private var openURL
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let sceneModel: NewsSceneModel
     @State private var lastHiddenStory: CircleStory?
 
@@ -10,6 +11,9 @@ struct CircleNewsView: View {
         editorialCanvas
         .navigationTitle("Your Circle")
         .task {
+            if appModel.circleCatalog == nil {
+                await appModel.refreshCircleCatalog()
+            }
             if appModel.circleEdition == nil {
                 await appModel.loadCircleEdition()
             }
@@ -34,14 +38,7 @@ struct CircleNewsView: View {
     private var editorialCanvas: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 22) {
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("FROM PEOPLE YOU FOLLOW")
-                        .font(.caption.weight(.semibold))
-                        .tracking(1.2)
-                        .foregroundStyle(.secondary)
-                    Text("Your Circle")
-                        .font(.largeTitle.bold())
-                }
+                CircleMastheadView()
 
                 if let message = appModel.circleErrorMessage {
                     Label(message, systemImage: "exclamationmark.triangle")
@@ -60,7 +57,10 @@ struct CircleNewsView: View {
                     )
                     .frame(maxWidth: .infinity, minHeight: 260)
                 } else {
-                    EditorialCardLayout(spacing: 18, minimumCardWidth: 240) {
+                    EditorialCardLayout(
+                        spacing: 18,
+                        minimumCardWidth: dynamicTypeSize.isAccessibilitySize ? 900 : 240
+                    ) {
                         ForEach(appModel.visibleCircleStories, id: \.storyId) { story in
                             CircleStoryCard(
                                 story: story,
@@ -222,14 +222,14 @@ private struct CircleSharerStrip: View {
     }
 
     private var visibleSharers: [CircleSharer] {
-        Array(sharers.prefix(5))
+        var sourceURIs = Set<String>()
+        return Array(sharers.lazy.filter { sourceURIs.insert($0.sourceUri).inserted }.prefix(5))
     }
 
     private var accessibilitySummary: String {
         let accounts = visibleSharers.map { sharer in
-            let name = sharer.identity.displayName?.isEmpty == false
-                ? sharer.identity.displayName!
-                : sharer.identity.handle
+            let displayName = sharer.identity.displayName
+            let name = displayName?.isEmpty == false ? displayName ?? sharer.identity.handle : sharer.identity.handle
             return sharer.relationship == "one_hop" ? "\(name), one hop away" : name
         }
         let remainder = overflowCount > 0 ? ", and \(overflowCount) more accounts" : ""

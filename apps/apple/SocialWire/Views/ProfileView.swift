@@ -29,14 +29,43 @@ struct ProfileView: View {
                 .padding(.vertical, 4)
             }
 
-            Section {
-                Button {
-                    dismiss()
-                    appModel.openMyPublications()
-                } label: {
-                    Label("My Publications", systemImage: "newspaper")
+            if !appModel.myPublications.isEmpty {
+                Section("My Publications") {
+                    ForEach(appModel.myPublications) { publication in
+                        Button {
+                            openPublication(publication)
+                        } label: {
+                            HStack(spacing: 12) {
+                                PublicationAvatar(publication: publication, size: 40)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(publication.title)
+                                        .font(.headline)
+                                        .foregroundStyle(.primary)
+                                        .lineLimit(2)
+                                    if !publication.authorHandle.isEmpty {
+                                        Text(publication.authorHandle)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                            .lineLimit(1)
+                                    }
+                                }
+                                Spacer(minLength: 8)
+                                Image(systemName: "chevron.right")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.tertiary)
+                            }
+                            .padding(12)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(.thinMaterial, in: .rect(cornerRadius: 14))
+                        }
+                        .buttonStyle(.plain)
+                        .listRowBackground(Color.clear)
+                        .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                    }
                 }
+            }
 
+            Section {
                 NavigationLink {
                     SettingsView(showsDoneButton: false)
                 } label: {
@@ -100,5 +129,13 @@ struct ProfileView: View {
             return handle
         }
         return appModel.viewerDID ?? "Account"
+    }
+
+    private func openPublication(_ publication: DiscoveredPublication) {
+        Task {
+            await appModel.selectPublication(publication)
+            guard appModel.selectedPublication?.publicationId == publication.publicationId else { return }
+            dismiss()
+        }
     }
 }

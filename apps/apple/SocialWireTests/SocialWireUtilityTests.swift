@@ -212,13 +212,20 @@ struct SocialWireUtilityTests {
         defaults.removeObject(forKey: storageKey)
         let did = "did:plc:sidebar-expand-test"
         var snapshot = SidebarExpandedSnapshot.default()
+        snapshot.subscribedFeedExpanded = true
+        snapshot.followingFeedExpanded = false
+        snapshot.foldersSectionExpanded = true
+        snapshot.publicationsSectionExpanded = true
         snapshot.expandedFolderRkeys.insert("folder-a")
         SidebarExpandedKeysStorage.save(viewerDid: did, snapshot: snapshot)
 
         let loaded = SidebarExpandedKeysStorage.load(viewerDid: did)
+        #expect(loaded.subscribedFeedExpanded)
+        #expect(!loaded.followingFeedExpanded)
         #expect(loaded.foldersSectionExpanded)
         #expect(loaded.publicationsSectionExpanded)
         #expect(loaded.expandedFolderRkeys == ["folder-a"])
+        #expect(SidebarExpandedKeysStorage.load(viewerDid: "did:plc:another-viewer") == .default())
     }
 
     @Test("sidebar expanded keys migrate optimistic folder rkeys")

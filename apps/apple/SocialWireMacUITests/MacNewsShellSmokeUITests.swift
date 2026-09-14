@@ -4,23 +4,24 @@ import XCTest
 final class MacNewsShellSmokeUITests: XCTestCase {
     func testAdaptiveDestinationsAndFeedbackCommand() {
         let app = XCUIApplication()
-        app.launchArguments.append("--ui-testing-news-shell")
+        app.launchArguments = ["--ui-testing-news-shell", "--ui-testing-shell-routing"]
         app.launch()
 
         XCTAssertTrue(app.descendants(matching: .any)["news-sidebar-column"].waitForExistence(timeout: 5))
-        XCTAssertTrue(content(for: "wire", in: app).waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["news-detail-column"].waitForExistence(timeout: 5))
+        XCTAssertTrue(content(for: "library", in: app).waitForExistence(timeout: 5))
 
-        for (label, identifier) in [
-            ("Your Circle", "circle"),
-            ("Library", "library"),
-            ("Saved", "saved"),
-            ("Search", "search"),
-        ] {
-            let destination = app.buttons[label]
-            XCTAssertTrue(destination.waitForExistence(timeout: 2), "Missing \(label) destination")
+        for label in ["Read Later", "Archive"] {
+            let destination = app.buttons[label].firstMatch
+            XCTAssertTrue(destination.waitForExistence(timeout: 3), "Missing \(label) destination")
             destination.click()
-            XCTAssertTrue(content(for: identifier, in: app).waitForExistence(timeout: 2))
+            XCTAssertTrue(content(for: "saved", in: app).waitForExistence(timeout: 3))
         }
+
+        app.buttons["fixture-select-publication"].click()
+        XCTAssertTrue(content(for: "library", in: app).waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["Fixture Publication"].firstMatch.waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["Add"].waitForExistence(timeout: 3))
 
         let helpMenu = app.menuBars.menuBarItems["Help"]
         XCTAssertTrue(helpMenu.waitForExistence(timeout: 2))

@@ -2,13 +2,12 @@ import SwiftUI
 
 struct SavedNewsView: View {
     @Environment(SocialWireAppModel.self) private var appModel
-    @Environment(\.openURL) private var openURL
     let sceneModel: NewsSceneModel
     @State private var showingTagManagement = false
 
     var body: some View {
-        savedList
-        .navigationTitle(appModel.savedTabTitle)
+        SavedNewsContent(onSavedLinkTap: openSavedLink, onSembleItemTap: openSembleItem)
+        .navigationTitle(appModel.readerListSource == .archive ? "Archive" : appModel.savedTabTitle)
         .toolbar {
             if !appModel.isSembleReadLaterEnabled {
                 ToolbarItem(placement: .primaryAction) {
@@ -33,54 +32,11 @@ struct SavedNewsView: View {
         .accessibilityIdentifier("news-tab-content-saved")
     }
 
-    private var savedList: some View {
-        Group {
-            if appModel.isSembleReadLaterEnabled {
-                VStack(spacing: 0) {
-                    if appModel.pendingSembleSaveRetry != nil {
-                        HStack {
-                            Label("Save Pending", systemImage: "exclamationmark.arrow.trianglehead.2.clockwise.rotate.90")
-                                .font(.footnote)
-                                .fixedSize(horizontal: false, vertical: true)
-                                .accessibilityLabel("A card is waiting to be added to this collection.")
-                            Spacer()
-                            Button("Resume") { Task { await appModel.resumeSembleSave() } }
-                                .buttonStyle(.borderedProminent)
-                                .lineLimit(1)
-                                .fixedSize(horizontal: true, vertical: false)
-                        }
-                        .padding()
-                        Divider()
-                    }
-                    SembleCollectionListContent(onItemTap: openSembleItem)
-                }
-            } else {
-                VStack(spacing: 0) {
-                    SavedTagFilterBar(
-                        tags: appModel.currentSavedTagCounts,
-                        selection: appModel.selectedSavedTag,
-                        onSelect: appModel.selectSavedTag
-                    )
-
-                    SavedLinksListContent(onSavedLinkTap: openSavedLink)
-                }
-            }
-        }
-    }
-
     private func openSavedLink(_ save: MergedLatrSave) {
-        Task {
-            if let url = SavedLinkEmbedURL.previewURL(for: save) {
-                openURL(url)
-                return
-            }
-            if let entry = await appModel.savedLinkSocialEntry(for: save),
-               let url = entry.canonicalURL {
-                openURL(url)
-                return
-            }
-            appModel.errorMessage = "Couldn't Find A Link For This Saved Story."
-        }
+        appModel.selectedEntry = nil
+        appModel.selectedSembleItem = nil
+        appModel.selectedSavedLink = save
+        sceneModel.navigate(to: .savedLink(id: save.id), in: .saved)
     }
 
     private func openSembleItem(_ item: SembleCollectionItem) {

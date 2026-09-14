@@ -160,4 +160,4 @@ applies only to web metadata), then:
 
 With no plist override, the app uses **`SocialWireAPIEnvironment`**: Release uses **`https://api.thesocialwire.app/ios-client-metadata.json`**; Debug and the XcodeGen **Beta** configuration use **`https://api.testing.thesocialwire.app/...`** and scheme **`app.thesocialwire.testing.api`**. `project.yml` adds `SOCIALWIRE_TESTING_API` to Beta automatically.
 
-**Archives**: use scheme **SocialWire-TestFlight** (Beta) for TestFlight; **SocialWire** (Release) for App Store.
+**Archives**: **SocialWire-TestFlight** and **SocialWire** both archive with **Release**, targeting production. Use an explicit **Beta** configuration only when testing against the Development API.

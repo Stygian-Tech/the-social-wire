@@ -4,14 +4,14 @@ struct NewsSidebarView: View {
     @Environment(SocialWireAppModel.self) private var appModel
     let availableTabs: [NewsTab]
     let sceneModel: NewsSceneModel
-    @Binding var preferredCompactColumn: NavigationSplitViewColumn
+    let onSelection: () -> Void
     @State private var presentedSheet: NewsSidebarSheet?
+    @State private var isReadLaterExpanded = false
 
     var body: some View {
         List {
             savedSection
             feedsSection
-            librarySources
         }
         .listStyle(.sidebar)
         .listItemTint(.indigo)
@@ -49,6 +49,10 @@ struct NewsSidebarView: View {
         }
         .sheet(item: $presentedSheet) { sheet in
             switch sheet {
+            case .profile:
+                NavigationStack {
+                    ProfileView()
+                }
             case .addPublication:
                 AddPublicationView()
             case .newFolder:
@@ -60,77 +64,138 @@ struct NewsSidebarView: View {
     }
 
     private var feedsSection: some View {
-        Section("Feeds") {
+        @Bindable var model = appModel
+
+        return Section("Feeds") {
             if availableTabs.contains(.wire) {
                 destinationRow(.wire)
             }
             if availableTabs.contains(.circle) {
                 destinationRow(.circle)
             }
-            sourceRow(.subscribed)
-            sourceRow(.following)
-        }
-    }
-
-    @ViewBuilder
-    private var librarySources: some View {
-        if sceneModel.selectedTab == .library {
-            if appModel.selectedSidebar == .myPublications {
-                authoredPublicationsSection
-            } else {
-                switch appModel.readerListSource {
-                case .subscribed:
+            if appModel.visibleReaderListSources.contains(.subscribed) {
+                DisclosureGroup(isExpanded: $model.sidebarSubscribedFeedExpanded) {
                     SubscribedPublicationSidebarTree(
                         showingNewFolder: sheetBinding(for: .newFolder),
                         showingAddPublication: sheetBinding(for: .addPublication),
-                        onFolderTap: showDetail,
+                        onFolderTap: showContent,
                         onPublicationTap: openPublication
                     )
-                case .following:
-                    FollowingPublicationSidebarTree(onPublicationTap: openPublication)
-                case .wire, .readLater, .archive:
-                    EmptyView()
+                } label: {
+                    sourceHierarchyLabel(.subscribed)
+                }
+                .readerSidebarListRow()
+                .onChange(of: model.sidebarSubscribedFeedExpanded) { _, _ in
+                    appModel.noteSidebarExpandedPresentationChanged()
                 }
             }
-        }
-    }
 
-    private var authoredPublicationsSection: some View {
-        Section("Publications") {
-            ForEach(appModel.myPublications) { publication in
-                Button {
-                    openPublication(publication)
+            if appModel.visibleReaderListSources.contains(.following) {
+                DisclosureGroup(isExpanded: $model.sidebarFollowingFeedExpanded) {
+                    FollowingPublicationSidebarTree(onPublicationTap: openPublication)
                 } label: {
-                    HStack(spacing: 10) {
-                        PublicationAvatar(publication: publication, size: 32)
-                        Text(publication.title).lineLimit(1)
-                    }
-                    .readerFullWidthTapLabel()
+                    sourceHierarchyLabel(.following)
                 }
-                .buttonStyle(.plain)
                 .readerSidebarListRow()
+                .onChange(of: model.sidebarFollowingFeedExpanded) { _, _ in
+                    appModel.noteSidebarExpandedPresentationChanged()
+                }
             }
         }
     }
 
     private var savedSection: some View {
         Section("Saved") {
-            sourceRow(.readLater)
-            sourceRow(.archive)
+            DisclosureGroup(isExpanded: $isReadLaterExpanded) {
+                if !appModel.currentSavedFeedSources.isEmpty {
+                    Button {
+                        appModel.clearSavedFeedSource()
+                        selectSavedSource()
+                    } label: {
+                        FeedSidebarRowLabel(
+                            title: "All Saved Stories",
+                            systemImage: "tray.full",
+                            unreadCount: appModel.currentSavedLinks.count
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .readerSidebarListRow()
+
+                    ForEach(appModel.currentSavedFeedSources) { source in
+                        Button {
+                            appModel.selectSavedFeedSource(source)
+                            selectSavedSource()
+                        } label: {
+                            HStack(spacing: 8) {
+                                SavedLinkPublicationChip(model: source.model)
+                                Spacer(minLength: 8)
+                                SidebarCountLabel(
+                                    count: source.count,
+                                    accessibilityDescription: "saved articles"
+                                )
+                            }
+                            .readerFullWidthTapLabel()
+                        }
+                        .buttonStyle(.plain)
+                        .readerSidebarListRow()
+                    }
+                }
+            } label: {
+                Button {
+                    appModel.clearSavedFeedSource()
+                    selectSavedSource()
+                } label: {
+                    FeedSidebarRowLabel(
+                        title: ReaderListSource.readLater.rawValue,
+                        systemImage: ReaderListSource.readLater.systemImage,
+                        unreadCount: nil
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+            .readerSidebarListRow()
+            if appModel.visibleReaderListSources.contains(.archive) {
+                sourceRow(.archive)
+            }
         }
+    }
+
+    private func selectSavedSource() {
+        appModel.selectReaderListSource(.readLater)
+        select(.saved)
     }
 
     private func destinationRow(_ tab: NewsTab) -> some View {
         Button {
             select(tab)
         } label: {
-            Label(tab.title, systemImage: tab.systemImage)
-                .readerFullWidthTapLabel()
+            FeedSidebarRowLabel(
+                title: tab.title,
+                systemImage: tab.systemImage,
+                unreadCount: nil
+            )
         }
         .buttonStyle(.plain)
         .readerSidebarListRow()
         .accessibilityIdentifier("news-tab-button-\(tab.rawValue)")
         .accessibilityAddTraits(sceneModel.selectedTab == tab ? .isSelected : [])
+    }
+
+    private func sourceHierarchyLabel(_ source: ReaderListSource) -> some View {
+        Button {
+            appModel.selectReaderListSource(source)
+            select(.library)
+        } label: {
+            FeedSidebarRowLabel(
+                title: source.rawValue,
+                systemImage: source.systemImage,
+                unreadCount: displayedUnreadCount(for: source)
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(
+            sceneModel.selectedTab == .library && appModel.readerListSource == source ? .isSelected : []
+        )
     }
 
     private func sourceRow(_ source: ReaderListSource) -> some View {
@@ -139,8 +204,11 @@ struct NewsSidebarView: View {
             appModel.selectReaderListSource(source)
             select(tab)
         } label: {
-            Label(source.rawValue, systemImage: source.systemImage)
-                .readerFullWidthTapLabel()
+            FeedSidebarRowLabel(
+                title: source.rawValue,
+                systemImage: source.systemImage,
+                unreadCount: displayedUnreadCount(for: source)
+            )
         }
         .buttonStyle(.plain)
         .readerSidebarListRow()
@@ -151,26 +219,30 @@ struct NewsSidebarView: View {
 
     private func select(_ tab: NewsTab) {
         sceneModel.select(tab, availableTabs: availableTabs)
-        sceneModel.resetPath(for: tab)
-        preferredCompactColumn = .detail
+        onSelection()
     }
 
     private func openPublication(_ publication: DiscoveredPublication) {
         Task {
             await appModel.selectPublication(publication)
             guard appModel.selectedPublication?.publicationId == publication.publicationId else { return }
-            showDetail()
+            sceneModel.resetPath(for: .library)
+            showContent()
         }
     }
 
-    private func showDetail() {
-        preferredCompactColumn = .detail
+    private func showContent() {
+        onSelection()
+    }
+
+    private func displayedUnreadCount(for source: ReaderListSource) -> Int? {
+        guard appModel.showsTopLevelFeedUnreadCount(for: source) else { return nil }
+        return appModel.topLevelUnreadCount(for: source)
     }
 
     private var profileButton: some View {
         Button {
-            sceneModel.navigate(to: .profile, in: sceneModel.selectedTab)
-            preferredCompactColumn = .detail
+            presentedSheet = .profile
         } label: {
             ViewerProfileAvatar(size: 30)
         }
@@ -188,6 +260,7 @@ struct NewsSidebarView: View {
 }
 
 private enum NewsSidebarSheet: String, Identifiable {
+    case profile
     case addPublication
     case newFolder
     case importOPML

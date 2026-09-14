@@ -9,7 +9,6 @@ struct WireNewsView: View {
 
     var body: some View {
         editorialCanvas
-        .navigationTitle("The Wire")
         .task {
             if appModel.readerListSource != .wire {
                 appModel.selectReaderListSource(.wire)
@@ -23,7 +22,7 @@ struct WireNewsView: View {
     private var editorialCanvas: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 24) {
-                masthead
+                WireMastheadView()
 
                 if let notice = appModel.wireFeedNotice {
                     Label(notice, systemImage: "exclamationmark.triangle")
@@ -103,18 +102,6 @@ struct WireNewsView: View {
         }
     }
 
-    private var masthead: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text("THE SOCIAL WIRE")
-                .font(.caption.weight(.semibold))
-                .tracking(1.4)
-                .foregroundStyle(.secondary)
-            Text("The Wire")
-                .font(.largeTitle.bold())
-        }
-        .accessibilityElement(children: .combine)
-    }
-
     private func openStory(_ entry: EntryListItem) {
         Task {
             let target = EntryOpenTargetResolver.resolve(
@@ -138,7 +125,10 @@ struct WireNewsView: View {
 
     @ViewBuilder
     private func editionSections(_ edition: WireEditionPage) -> some View {
-        let byID = Dictionary(uniqueKeysWithValues: appModel.entries.map { ($0.entryId, $0) })
+        let byID = Dictionary(
+            appModel.entries.map { ($0.entryId, $0) },
+            uniquingKeysWith: { current, _ in current }
+        )
         let trending = edition.trendingStoryIds.compactMap { byID[$0] }
         if !trending.isEmpty {
             WireEditorialRail(title: "Trending", entries: trending, onOpen: openStory)
@@ -204,13 +194,15 @@ struct WireEditorialRail: View {
                 // a lazy stack can clip taller cards after a horizontal swipe.
                 HStack(alignment: .top, spacing: 16) {
                     ForEach(entries) { entry in
-                        WireStoryCard(entry: entry) { onOpen(entry) }
-                            .containerRelativeFrame(.horizontal) { width, _ in
-                                let count = dynamicTypeSize.isAccessibilitySize
-                                    ? 1 : max(1, ((width + 16) / 296).rounded(.down))
-                                return (width - 16 * (count - 1)) / count
-                            }
-                            .accessibilityIdentifier("wire-card-\(entry.id)")
+                        VStack {
+                            WireStoryCard(entry: entry) { onOpen(entry) }
+                        }
+                        .containerRelativeFrame(.horizontal) { width, _ in
+                            let count = dynamicTypeSize.isAccessibilitySize
+                                ? 1 : max(1, ((width + 16) / 296).rounded(.down))
+                            return (width - 16 * (count - 1)) / count
+                        }
+                        .accessibilityIdentifier("wire-card-\(entry.id)")
                     }
                 }
             }
@@ -272,9 +264,11 @@ struct WireStoryCard: View {
             }
         }
         .buttonStyle(.plain)
+        .accessibilityLabel("Open Story")
         .accessibilityHint("Opens the story")
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityIdentifier("story-open")
         .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, minHeight: 45, alignment: .leading)
         .background(.thinMaterial, in: .rect(cornerRadius: 16))
         .clipShape(.rect(cornerRadius: 16))
         .multilineTextAlignment(.leading)

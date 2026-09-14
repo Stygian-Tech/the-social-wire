@@ -76,6 +76,23 @@ struct NewsSceneModelTests {
         #expect(model.path(for: .library).isEmpty)
     }
 
+    @Test("Active route follows the selected tab without destroying other tab paths")
+    func activeRouteFollowsSelectedTab() {
+        let model = NewsSceneModel()
+        model.navigate(to: .entry(id: "wire-story"), in: .wire)
+        model.navigate(to: .savedLink(id: "saved-story"), in: .saved)
+
+        model.select(.wire, availableTabs: NewsTab.allCases)
+        #expect(model.activeRoute == .entry(id: "wire-story"))
+
+        model.select(.saved, availableTabs: NewsTab.allCases)
+        #expect(model.activeRoute == .savedLink(id: "saved-story"))
+
+        model.resetPath(for: .saved)
+        #expect(model.activeRoute == nil)
+        #expect(model.path(for: .wire) == [.entry(id: "wire-story")])
+    }
+
     @Test("Hiding the active discovery feed selects a visible tab and keeps Settings open")
     func hiddenFeedPreservesSettings() {
         let suiteName = "NewsSceneModelTests.\(UUID().uuidString)"

@@ -70,8 +70,5 @@ struct SocialWireApp: App {
             .modelContainer(Self.readerModelContainer)
             .tint(.indigo)
             .appAppearance()
-            .onOpenURL { url in
-                Task { await appModel.handleOAuthCallback(url) }
-            }
     }
 }

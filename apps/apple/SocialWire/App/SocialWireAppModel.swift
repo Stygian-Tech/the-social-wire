@@ -54,8 +54,10 @@ final class SocialWireAppModel {
     var feedSelection: FeedSelection = .topLevel(.subscribed)
     var publicationSidebarTab: PublicationSidebarTab = .subscribed
     var readerListSource: ReaderListSource = .subscribed
-    var sidebarFoldersSectionExpanded = true
-    var sidebarPublicationsSectionExpanded = true
+    var sidebarSubscribedFeedExpanded = false
+    var sidebarFollowingFeedExpanded = false
+    var sidebarFoldersSectionExpanded = false
+    var sidebarPublicationsSectionExpanded = false
     var sidebarExpandedFolderRkeys: Set<String> = []
     var viewerProfile: ActorProfileResponse?
     var readerFilter: ReaderFilter = .all
@@ -69,11 +71,14 @@ final class SocialWireAppModel {
     /// True once a cached or streamed sidebar snapshot has been applied this session.
     var hasSidebarSnapshot = false
     var errorMessage: String?
+    private(set) var isSignedIn = false
+    private(set) var hasCompletedSessionRestore = false
     /// Next AppView page cursor for the active publication entry list (`nil` when exhausted).
     private var entriesNextCursor: String?
     /// Lexical account preferences returned by **`app.thesocialwire.sync.getPreferences`** (optional read-later hints).
     var preferencesFromGateway: PreferencesRecord?
     var feedPreferences: ReaderFeedPreferences = .defaults
+    private(set) var primaryTabFeeds = NewsPrimaryFeed.defaultFeeds
     private(set) var isSavingDiscoveryFeedVisibility = false
     private(set) var discoveryFeedSaveError: String?
     var wireEdition: WireEditionPage?
@@ -163,6 +168,9 @@ final class SocialWireAppModel {
         userInputFeedbackService = UserInputFeedbackService(auth: authService, xrpc: xrpc)
         gateway = SocialWireGatewayClient(auth: authService)
         latrGateway = LatrGatewayClient(auth: authService)
+        authService.setSessionChangeHandler { [weak self] session in
+            self?.isSignedIn = session != nil
+        }
         applyReaderListSource(ReaderListSourceStorage.load(), persist: false)
     }
 
@@ -175,10 +183,6 @@ final class SocialWireAppModel {
             loadSidebarExpandedKeys(for: viewerDid)
             restoreLastSelectedPublicationEntriesIfCached()
         }
-    }
-
-    var isSignedIn: Bool {
-        authService.session != nil
     }
 
     var viewerDID: String? {
@@ -664,6 +668,7 @@ final class SocialWireAppModel {
     func restoreSession() async {
         launchStartedAt = Date()
         await authService.restoreSession()
+        hasCompletedSessionRestore = true
         if isSignedIn {
             await refreshAll()
         }
@@ -673,19 +678,13 @@ final class SocialWireAppModel {
         do {
             errorMessage = nil
             try await authService.signIn(handle: handle)
-            await refreshAll()
+            Task { [weak self] in
+                await self?.refreshAll()
+            }
         } catch {
-            errorMessage = error.localizedDescription
-        }
-    }
-
-    func handleOAuthCallback(_ url: URL) async {
-        do {
-            errorMessage = nil
-            try await authService.handleCallbackURL(url)
-            await refreshAll()
-        } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = ATProtoOAuthService.isUserCancellation(error)
+                ? nil
+                : error.localizedDescription
         }
     }
 
@@ -760,8 +759,10 @@ final class SocialWireAppModel {
         cachedFolderSections = nil
         cachedFolderRows = nil
         sidebarExpandedKeysViewerDid = nil
-        sidebarFoldersSectionExpanded = true
-        sidebarPublicationsSectionExpanded = true
+        sidebarSubscribedFeedExpanded = false
+        sidebarFollowingFeedExpanded = false
+        sidebarFoldersSectionExpanded = false
+        sidebarPublicationsSectionExpanded = false
         sidebarExpandedFolderRkeys = []
         sidebarProjection.reset()
         sidebarUnread.reset()
@@ -789,6 +790,8 @@ final class SocialWireAppModel {
 
         sidebarExpandedKeysViewerDid = viewerDid
         let snapshot = SidebarExpandedKeysStorage.load(viewerDid: viewerDid)
+        sidebarSubscribedFeedExpanded = snapshot.subscribedFeedExpanded
+        sidebarFollowingFeedExpanded = snapshot.followingFeedExpanded
         sidebarFoldersSectionExpanded = snapshot.foldersSectionExpanded
         sidebarPublicationsSectionExpanded = snapshot.publicationsSectionExpanded
         sidebarExpandedFolderRkeys = snapshot.expandedFolderRkeys
@@ -801,6 +804,8 @@ final class SocialWireAppModel {
         SidebarExpandedKeysStorage.save(
             viewerDid: viewerDID,
             snapshot: SidebarExpandedSnapshot(
+                subscribedFeedExpanded: sidebarSubscribedFeedExpanded,
+                followingFeedExpanded: sidebarFollowingFeedExpanded,
                 foldersSectionExpanded: sidebarFoldersSectionExpanded,
                 publicationsSectionExpanded: sidebarPublicationsSectionExpanded,
                 expandedFolderRkeys: sidebarExpandedFolderRkeys
@@ -986,7 +991,9 @@ final class SocialWireAppModel {
             await prefetchThumbnailImages(for: page.entries)
         } catch {
             markAppViewUnavailableIfNeeded(error)
-            if entries.isEmpty { errorMessage = error.localizedDescription }
+            if entries.isEmpty, !ATProtoOAuthService.isUserCancellation(error) {
+                errorMessage = error.localizedDescription
+            }
         }
     }
 
@@ -1278,7 +1285,11 @@ final class SocialWireAppModel {
     }
 
     var visibleCircleStories: [CircleStory] {
-        circleEdition?.stories.filter { !circleHiddenStoryIds.contains($0.storyId) } ?? []
+        guard let stories = circleEdition?.stories else { return [] }
+        var storyIDs = Set<String>()
+        return stories.filter {
+            !circleHiddenStoryIds.contains($0.storyId) && storyIDs.insert($0.storyId).inserted
+        }
     }
 
     func selectCircleStory(_ story: CircleStory) {
@@ -1329,8 +1340,53 @@ final class SocialWireAppModel {
         return result
     }
 
+    func loadPrimaryTabPreferences() {
+        let availableFeeds = visiblePrimaryTabFeedChoices
+        guard let viewerDID else {
+            primaryTabFeeds = NewsPrimaryFeed.defaultFeeds.filter(availableFeeds.contains)
+            return
+        }
+        let feeds = NewsPrimaryFeedStorage.configuredFeeds(viewerDID: viewerDID)
+            .filter(availableFeeds.contains)
+        primaryTabFeeds = feeds
+        NewsPrimaryFeedStorage.saveConfiguredFeeds(feeds, viewerDID: viewerDID)
+    }
+
+    var visiblePrimaryTabFeedChoices: [NewsPrimaryFeed] {
+        NewsPrimaryFeed.allCases.filter { feed in
+            switch feed {
+            case .wire:
+                feedPreferences.showWire
+            case .circle:
+                feedPreferences.showCircle
+            case .subscribed:
+                visibleReaderListSources.contains(.subscribed)
+            case .following:
+                visibleReaderListSources.contains(.following)
+            }
+        }
+    }
+
+    func setPrimaryTabFeedEnabled(_ enabled: Bool, feed: NewsPrimaryFeed) {
+        var feeds = primaryTabFeeds
+        if enabled {
+            if !feeds.contains(feed), visiblePrimaryTabFeedChoices.contains(feed), feeds.count < 4 {
+                feeds.append(feed)
+            }
+        } else {
+            feeds.removeAll { $0 == feed }
+        }
+        primaryTabFeeds = feeds
+        if let viewerDID {
+            NewsPrimaryFeedStorage.saveConfiguredFeeds(feeds, viewerDID: viewerDID)
+        }
+    }
+
     func setWireVisible(_ visible: Bool) async {
         await setDiscoveryFeedVisible(visible, keyPath: \.showWire)
+        if !feedPreferences.showWire {
+            setPrimaryTabFeedEnabled(false, feed: .wire)
+        }
         if !feedPreferences.showWire, readerListSource == .wire,
            let replacement = feedPreferences.visibleFeeds.first {
             selectReaderListSource(replacement)
@@ -1339,6 +1395,54 @@ final class SocialWireAppModel {
 
     func setCircleVisible(_ visible: Bool) async {
         await setDiscoveryFeedVisible(visible, keyPath: \.showCircle)
+        if !feedPreferences.showCircle {
+            setPrimaryTabFeedEnabled(false, feed: .circle)
+        }
+    }
+
+    func setFeedDisplayOption(_ option: FeedDisplayOption, for source: ReaderListSource) async {
+        var visibleFeeds = feedPreferences.visibleFeeds
+        var feedsWithUnreadCounts = feedPreferences.feedsWithUnreadCounts
+
+        switch option {
+        case .showFeedAndCount:
+            if !visibleFeeds.contains(source) {
+                visibleFeeds.append(source)
+            }
+            if !feedsWithUnreadCounts.contains(source) {
+                feedsWithUnreadCounts.append(source)
+            }
+        case .showFeedOnly:
+            if !visibleFeeds.contains(source) {
+                visibleFeeds.append(source)
+            }
+            feedsWithUnreadCounts.removeAll { $0 == source }
+        case .hideFeed:
+            guard visibleFeeds.count > 1 else { return }
+            visibleFeeds.removeAll { $0 == source }
+            feedsWithUnreadCounts.removeAll { $0 == source }
+            if source == .subscribed {
+                setPrimaryTabFeedEnabled(false, feed: .subscribed)
+            } else if source == .following {
+                setPrimaryTabFeedEnabled(false, feed: .following)
+            }
+        }
+
+        feedPreferences = ReaderFeedPreferences(
+            visibleFeeds: visibleFeeds,
+            feedsWithUnreadCounts: feedsWithUnreadCounts,
+            showWire: feedPreferences.showWire,
+            showCircle: feedPreferences.showCircle,
+            articleOpenMode: feedPreferences.articleOpenMode
+        )
+        if let viewerDID {
+            ReaderFeedPreferencesStorage.save(feedPreferences, viewerDid: viewerDID)
+        }
+        if feedSelection == .topLevel(source), option == .hideFeed,
+           let replacement = nextVisibleReaderFeed(after: source, among: visibleFeeds) {
+            selectReaderListSource(replacement)
+        }
+        try? await pds.upsertFeedDisplayPreferences(feedPreferences)
     }
 
     private func setDiscoveryFeedVisible(
@@ -1487,7 +1591,7 @@ final class SocialWireAppModel {
             }
             startProactiveFeedRefreshLoop()
         } catch {
-            if !hasSidebarSnapshot {
+            if !hasSidebarSnapshot, !ATProtoOAuthService.isUserCancellation(error) {
                 errorMessage = "Could not load publications from the server. \(error.localizedDescription)"
             }
         }
@@ -2303,7 +2407,7 @@ final class SocialWireAppModel {
             await prefetchThumbnailImages(for: page.entries)
         } catch {
             markAppViewUnavailableIfNeeded(error)
-            if entries.isEmpty {
+            if entries.isEmpty, !ATProtoOAuthService.isUserCancellation(error) {
                 errorMessage = error.localizedDescription
             }
         }

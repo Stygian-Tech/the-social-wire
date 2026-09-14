@@ -17,7 +17,7 @@ struct SubscribedPublicationSidebarTree: View {
 
         let tree = appModel.sidebarTreeViewModel
 
-        Section(isExpanded: $model.sidebarFoldersSectionExpanded) {
+        DisclosureGroup(isExpanded: $model.sidebarFoldersSectionExpanded) {
             if appModel.folders.isEmpty,
                tree.loadingFlags.sidebarFetching,
                !tree.loadingFlags.hasSidebarSnapshot
@@ -27,17 +27,18 @@ struct SubscribedPublicationSidebarTree: View {
                 }
             } else {
                 ForEach(appModel.folders) { folder in
-                    folderSection(folder, tree: tree)
+                    folderDisclosure(folder, tree: tree)
                 }
             }
-        } header: {
+        } label: {
             SidebarSectionLabel(title: "Folders", unreadCount: 0)
         }
+        .readerSidebarListRow()
         .onChange(of: model.sidebarFoldersSectionExpanded) { _, _ in
             appModel.noteSidebarExpandedPresentationChanged()
         }
 
-        Section(isExpanded: $model.sidebarPublicationsSectionExpanded) {
+        DisclosureGroup(isExpanded: $model.sidebarPublicationsSectionExpanded) {
             if appModel.subscribedUnfolderedPublications.isEmpty,
                tree.loadingFlags.sidebarFetching,
                !tree.loadingFlags.hasSidebarSnapshot
@@ -50,12 +51,10 @@ struct SubscribedPublicationSidebarTree: View {
                     publicationRow(publication, tree: tree)
                 }
             }
-        } header: {
-            SidebarSectionLabel(
-                title: "Publications",
-                unreadCount: 0
-            )
+        } label: {
+            SidebarSectionLabel(title: "Publications", unreadCount: 0)
         }
+        .readerSidebarListRow()
         .onChange(of: model.sidebarPublicationsSectionExpanded) { _, _ in
             appModel.noteSidebarExpandedPresentationChanged()
         }
@@ -104,28 +103,39 @@ struct SubscribedPublicationSidebarTree: View {
         }
     }
 
-    @ViewBuilder
-    private func folderSection(
+    private func folderDisclosure(
         _ folder: RepoRecord<FolderRecord>,
         tree: SidebarTreeViewModel
     ) -> some View {
         let folderRkey = rkey(from: folder.uri)
-        let pubs = appModel.publications(in: folder)
+        let publications = appModel.publications(in: folder)
         let isExpanded = appModel.sidebarExpandedFolderRkeys.contains(folderRkey)
 
-        HStack(spacing: 4) {
-            Button {
-                appModel.toggleSidebarFolderExpanded(rkey: folderRkey)
-            } label: {
-                Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 28, height: 28)
-                    .accessibilityHidden(true)
+        return DisclosureGroup(
+            isExpanded: Binding(
+                get: { isExpanded },
+                set: { expanded in
+                    guard expanded != isExpanded else { return }
+                    appModel.toggleSidebarFolderExpanded(rkey: folderRkey)
+                }
+            )
+        ) {
+            if publications.isEmpty, tree.loadingFlags.folderPublicationsLoading {
+                ForEach(0 ..< 2, id: \.self) { _ in
+                    SidebarSkeletonRow()
+                }
+            } else {
+                ForEach(publications) { publication in
+                    publicationRow(publication, tree: tree)
+                }
+                if publications.isEmpty {
+                    Text("No publications in this folder.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .readerSidebarListRow()
+                }
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("\(isExpanded ? "Collapse" : "Expand") \(folder.value.name)")
-
+        } label: {
             Button {
                 Task {
                     await appModel.selectFolderFeed(folderRkey: folderRkey)
@@ -133,10 +143,10 @@ struct SubscribedPublicationSidebarTree: View {
                 }
             } label: {
                 HStack(spacing: 8) {
-                Text(folder.value.name)
-                    .lineLimit(1)
-                Spacer(minLength: 6)
-                SidebarCountLabel(count: tree.folderUnread(rkey: folderRkey))
+                    Text(folder.value.name)
+                        .lineLimit(1)
+                    Spacer(minLength: 6)
+                    SidebarCountLabel(count: tree.folderUnread(rkey: folderRkey))
                 }
                 .readerFullWidthTapLabel()
             }
@@ -158,24 +168,6 @@ struct SubscribedPublicationSidebarTree: View {
         .swipeActions {
             Button("Delete", role: .destructive) {
                 folderPendingDelete = folder
-            }
-        }
-
-        if isExpanded {
-            if pubs.isEmpty, tree.loadingFlags.folderPublicationsLoading {
-                ForEach(0 ..< 2, id: \.self) { _ in
-                    SidebarSkeletonRow()
-                }
-            } else {
-                ForEach(pubs) { publication in
-                    publicationRow(publication, tree: tree)
-                }
-                if pubs.isEmpty {
-                    Text("No publications in this folder.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .readerSidebarListRow()
-                }
             }
         }
     }
