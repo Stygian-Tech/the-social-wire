@@ -1380,6 +1380,8 @@ public init(pool: PostgresClient, logger: Logger) {
     let isPublication = selector.kind == .publication
     let databaseStartedAt = Date()
 
+    // Keep full render payloads out of the deduplication and page sorts. Hydrate only the
+    // selected URIs in the same statement so publication, read state, and content share a snapshot.
     let rows = try await pool.query(
       """
       WITH feed_definition AS (
@@ -1434,7 +1436,7 @@ public init(pool: PostgresClient, logger: Logger) {
           scope.viewer_did,
           scope.publication_id,
           ci.uri,
-          ci.render_json,
+          COALESCE(NULLIF(ci.render_json->>'articleUrl', ''), ci.uri) AS article_key,
           ci.created_at,
           ci.author_did,
           ci.publication_site
@@ -1454,7 +1456,7 @@ public init(pool: PostgresClient, logger: Logger) {
           scope.viewer_did,
           scope.publication_id,
           ci.uri,
-          ci.render_json,
+          COALESCE(NULLIF(ci.render_json->>'articleUrl', ''), ci.uri) AS article_key,
           ci.created_at,
           ci.author_did,
           ci.publication_site
@@ -1470,7 +1472,6 @@ public init(pool: PostgresClient, logger: Logger) {
       ), candidates AS (
         SELECT
           content.uri,
-          content.render_json::text AS render_json,
           content.created_at,
           content.publication_id,
           CASE
@@ -1483,7 +1484,7 @@ public init(pool: PostgresClient, logger: Logger) {
             ELSE FALSE
           END AS is_read,
           ROW_NUMBER() OVER (
-            PARTITION BY COALESCE(NULLIF(content.render_json->>'articleUrl', ''), content.uri)
+            PARTITION BY content.article_key
             ORDER BY content.created_at DESC, content.uri DESC
           ) AS duplicate_rank
         FROM matched_content content
@@ -1495,7 +1496,7 @@ public init(pool: PostgresClient, logger: Logger) {
         LEFT JOIN LATERAL appview_effective_entry_read_state(\(viewerDid), content.uri,
           content.author_did, content.publication_site, content.created_at, rm.subject_uri, uo.subject_uri) read_state ON TRUE
         ), page AS (
-        SELECT uri, render_json, created_at, publication_id, is_read
+        SELECT uri, created_at, publication_id, is_read
         FROM candidates
         WHERE duplicate_rank = 1
           AND (
@@ -1509,7 +1510,7 @@ public init(pool: PostgresClient, logger: Logger) {
       SELECT
         definition.updated_at,
         page.uri,
-        page.render_json,
+        rendered.render_json::text,
         page.created_at,
         page.publication_id,
         page.is_read
@@ -1517,6 +1518,7 @@ public init(pool: PostgresClient, logger: Logger) {
       LEFT JOIN LATERAL (
         SELECT * FROM page ORDER BY created_at DESC, uri DESC
       ) page ON TRUE
+      LEFT JOIN content_items rendered ON rendered.uri = page.uri
       WHERE definition.updated_at IS NOT NULL
       ORDER BY page.created_at DESC NULLS LAST, page.uri DESC NULLS LAST
       """,
