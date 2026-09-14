@@ -9,3 +9,9 @@ get {
   body: none
   auth: none
 }
+
+docs {
+  Gateway returns conservative unknown/degraded ingestion evidence. poolReadiness
+  identifies the background sample; checkedAt and validUntil preserve its timestamps
+  and are absent until observed. A ready Pool is not proof of complete recovery.
+}
