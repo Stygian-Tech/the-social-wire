@@ -131,6 +131,8 @@ struct PostgresRoleLeaseAuthorityTests {
       let blocker = Task {
         try await pool.withConnection { connection in
           try await connection.withTransaction(logger: logger) { connection in
+            _ = try await PostgresRoleLeaseBudget.query(
+              "SELECT fencing_token FROM operations_role_leases WHERE environment = \(lease.environment) FOR UPDATE", connection: connection, logger: logger)
             try await connection.query("UPDATE operations_role_leases SET lease_expires_at = clock_timestamp() + INTERVAL '50 milliseconds' WHERE environment = \(lease.environment)", logger: logger)
             await locked.open()
             let rows = try await PostgresRoleLeaseBudget.query("SELECT pg_sleep(0.2)", connection: connection, logger: logger)
