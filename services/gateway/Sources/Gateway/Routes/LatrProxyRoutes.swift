@@ -80,6 +80,15 @@ struct LatrProxyRoutes {
         method: "POST"
       )
     }
+    // Preserve each client's signed HTTP method; POST proofs cannot be rewritten to PATCH.
+    group.patch("/xrpc/link.latr.bookmarks.setState") { request, context async throws -> Response in
+      try await forward(
+        request: request,
+        context: context,
+        path: "/xrpc/link.latr.bookmarks.setState",
+        method: "PATCH"
+      )
+    }
     group.post("/xrpc/link.latr.bookmarks.setState") { request, context async throws -> Response in
       try await forward(
         request: request,

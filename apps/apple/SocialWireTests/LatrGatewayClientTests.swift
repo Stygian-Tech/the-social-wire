@@ -24,6 +24,15 @@ struct LatrGatewayEnvironmentTests {
 
 @Suite("L@tr bookmark proof pools")
 struct LatrBookmarkProofPoolTests {
+    @Test("bookmark state compatibility selects PATCH before gateway proofs")
+    func bookmarkStateTransport() {
+        #expect(LatrGatewayClient.transportMethod(for: .setBookmarkState, requestedMethod: "POST") == "PATCH")
+        #expect(LatrGatewayClient.transportMethod(for: .setBookmarkState, requestedMethod: "PATCH") == "PATCH")
+        #expect(LatrGatewayClient.transportMethod(for: .saveBookmark, requestedMethod: "POST") == "POST")
+        #expect(LatrGatewayClient.transportMethod(for: .listBookmarks, requestedMethod: "GET") == "GET")
+        #expect(LatrGatewayClient.proofSpecs(for: .setBookmarkState).map(\.httpMethod) == ["GET", "POST"])
+    }
+
     @Test("tag writes use the pinned L@tr normalization contract")
     func tagNormalization() throws {
         #expect(
