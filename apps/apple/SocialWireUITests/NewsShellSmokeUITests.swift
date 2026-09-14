@@ -181,7 +181,7 @@ final class NewsShellSmokeUITests: XCTestCase {
             return identified
         }
         return app.buttons.matching(
-            NSPredicate(format: "label BEGINSWITH %@", days == 1 ? "1 Day" : "\(days) Days")
+            NSPredicate(format: "label BEGINSWITH %@", days == 7 ? "1 Week" : days == 1 ? "1 Day" : "\(days) Days")
         ).firstMatch
     }
 
