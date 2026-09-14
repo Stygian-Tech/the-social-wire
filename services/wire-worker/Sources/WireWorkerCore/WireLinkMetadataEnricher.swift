@@ -31,10 +31,6 @@ struct WireLinkMetadataEnricher: Sendable {
     return targets.count
   }
 
-  func healthSnapshot(asOf: Date) async throws -> WireEnrichmentHealthSnapshot? {
-    try await store.healthSnapshot(asOf: asOf)
-  }
-
   private func enrich(_ target: WireLinkMetadataTarget) async throws {
     var target = target
     try Task.checkCancellation()
