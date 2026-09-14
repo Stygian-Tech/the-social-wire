@@ -159,6 +159,10 @@ public struct ATProtoAuthMiddleware: RouterMiddleware {
         accessTokenCnFJkt: token.cnfJkt
       )
       resolvedAuthentication = (token, proof, nil, nil)
+    } catch is CancellationError {
+      throw CancellationError()
+    } catch is JWKSVerificationCacheFailure {
+      throw HTTPError(.serviceUnavailable, message: "Authentication service is temporarily unavailable.")
     } catch {
       guard OAuthAccessTokenVerifier.permitsActivePDSFallback(
         error: error,

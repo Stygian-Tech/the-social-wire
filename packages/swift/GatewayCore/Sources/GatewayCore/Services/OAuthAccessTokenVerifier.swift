@@ -6,9 +6,18 @@ import Logging
 
 /// Verifies ATProto OAuth access JWTs (`issuer` metadata → JWKS) using JWTKit's `JWTKeyCollection`.
 public enum OAuthAccessTokenVerifier {
-  private static let discoveryCache = JWKSVerificationCache<[JwksTarget]>()
+  private static let discoveryCache = JWKSVerificationCache<[JwksTarget]>(
+    loadTimeout: .seconds(20), maximumCost: 4 * 1024 * 1024,
+    cost: { targets in
+      targets.reduce(0) { total, target in
+        switch target {
+        case .remote(let url): total + url.utf8.count
+        case .inline(let json, let source): total + json.utf8.count + source.utf8.count
+        }
+      }
+    })
   private static let contentCache = JWKSVerificationCache<JWKSFetchResult>(
-    maximumCost: 16 * 1024 * 1024,
+    loadTimeout: .seconds(10), maximumCost: 16 * 1024 * 1024,
     cost: {
       switch $0 {
       case .content(let json): json.utf8.count

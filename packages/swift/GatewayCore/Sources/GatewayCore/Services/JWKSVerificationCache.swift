@@ -3,7 +3,7 @@ import Foundation
 /// Bounded discovery cache. Each flight belongs to the cache; cancellation
 /// removes only that request's waiter, preserving the fetch for other callers.
 actor JWKSVerificationCache<Value: Sendable & Equatable> {
-  enum CacheError: Error { case overloaded }
+  typealias CacheError = JWKSVerificationCacheFailure
 
   private struct Entry: Sendable {
     let value: Value
@@ -17,6 +17,7 @@ actor JWKSVerificationCache<Value: Sendable & Equatable> {
 
   private let now: @Sendable () -> Date
   private let maximumEntries: Int
+  private let loadTimeout: Duration
   private let maximumInFlight: Int
   private let maximumWaitersPerFlight: Int
   private let maximumCost: Int
@@ -27,6 +28,7 @@ actor JWKSVerificationCache<Value: Sendable & Equatable> {
 
   init(
     maximumEntries: Int = 10_000,
+    loadTimeout: Duration = .seconds(10),
     maximumInFlight: Int = 64,
     maximumWaitersPerFlight: Int = 256,
     maximumCost: Int = .max,
@@ -34,6 +36,7 @@ actor JWKSVerificationCache<Value: Sendable & Equatable> {
     now: @escaping @Sendable () -> Date = Date.init
   ) {
     self.maximumEntries = max(1, maximumEntries)
+    self.loadTimeout = max(.milliseconds(1), loadTimeout)
     self.maximumInFlight = max(1, maximumInFlight)
     self.maximumWaitersPerFlight = max(1, maximumWaitersPerFlight)
     self.maximumCost = max(1, maximumCost)
@@ -72,11 +75,12 @@ actor JWKSVerificationCache<Value: Sendable & Equatable> {
           return
         }
         inFlight[key] = Flight(waiters: [waiterID: continuation])
+        let deadline = ContinuousClock.now.advanced(by: loadTimeout)
         // Deliberately unstructured: one HTTP fetch serves independently
         // cancellable requests and remains covered by the in-flight limit.
         Task {
           let result: Result<Value, any Error>
-          do { result = .success(try await load()) }
+          do { result = .success(try await Self.loadBeforeDeadline(deadline, load: load)) }
           catch { result = .failure(error) }
           finish(key: key, result: result, ttl: ttl)
         }
@@ -86,6 +90,27 @@ actor JWKSVerificationCache<Value: Sendable & Equatable> {
     }
     try Task.checkCancellation()
     return value
+  }
+
+  /// The deadline owns both response headers and body consumption. Keep the
+  /// flight occupied until cancellation finishes so timed-out work cannot become
+  /// an untracked fetch when the cache admits a replacement.
+  private nonisolated static func loadBeforeDeadline(
+    _ deadline: ContinuousClock.Instant,
+    load: @escaping @Sendable () async throws -> Value
+  ) async throws -> Value {
+    try await withThrowingTaskGroup(of: Value.self) { group in
+      defer { group.cancelAll() }
+      group.addTask { try await load() }
+      group.addTask {
+        try await ContinuousClock().sleep(until: deadline)
+        throw CacheError.timedOut
+      }
+      guard let value = try await group.next() else { throw CancellationError() }
+      try Task.checkCancellation()
+      guard ContinuousClock.now < deadline else { throw CacheError.timedOut }
+      return value
+    }
   }
 
   func cachedValue(forKey key: String) -> Value? {
