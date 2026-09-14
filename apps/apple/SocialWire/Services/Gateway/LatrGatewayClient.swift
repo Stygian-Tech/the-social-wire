@@ -248,6 +248,12 @@ final class LatrGatewayClient {
         )
     }
 
+    /// The deployed bookmark state route accepts PATCH despite its procedure Lexicon.
+    /// Choose the transport verb before generating either gateway-bound proof.
+    nonisolated static func transportMethod(for xrpc: LatrXRPCMethod, requestedMethod: String) -> String {
+        xrpc == .setBookmarkState && requestedMethod == "POST" ? "PATCH" : requestedMethod
+    }
+
     private func request(
         method: String,
         xrpc: LatrXRPCMethod,
@@ -256,6 +262,7 @@ final class LatrGatewayClient {
         bodyCarriesUpstreamProof: Bool = false,
         preparedSession: PreparedGatewaySession? = nil
     ) async throws -> Data {
+        let method = Self.transportMethod(for: xrpc, requestedMethod: method)
         var components = URLComponents(
             url: transportBaseURL.appending(path: "xrpc/\(xrpc.nsid)"),
             resolvingAgainstBaseURL: false

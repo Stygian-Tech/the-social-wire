@@ -56,22 +56,11 @@ async function buildUpstreamDpopHeader(
   method: string,
   gatewayPath: string
 ): Promise<string | undefined> {
-  // latr-packages still selects the setState proof plan with the route's former
-  // PATCH verb. The Lexicon declares a procedure, so the public XRPC request is
-  // POST; reuse the same PDS proof plan until that dependency catches up.
-  const proofPlanMethod =
-    method === "POST" &&
-    gatewayPath === latrXrpcPath(LATR_XRPC.setBookmarkState)
-      ? "PATCH"
-      : method;
-  const bookmarkPlan = bookmarkUpstreamProofPlanForGatewayRequest(
-    proofPlanMethod,
-    gatewayPath
-  );
+  const bookmarkPlan = bookmarkUpstreamProofPlanForGatewayRequest(method, gatewayPath);
   if (bookmarkPlan?.transport === "header") {
     return createBookmarkUpstreamDpopProofPool(
       oauthSession,
-      proofPlanMethod,
+      method,
       gatewayPath
     );
   }
@@ -164,7 +153,14 @@ export async function latrGatewayFetch(
   const gatewayPath = path.startsWith("/") ? path : `/${path}`;
   const proxyUrl = latrGatewayProxyPath(gatewayPath);
   const proxyAuthUrl = latrGatewayProxyAuthUrl(proxyUrl);
-  const method = init?.method ?? "GET";
+  const requestedMethod = (init?.method ?? "GET").toUpperCase();
+  // Deployed L@tr accepts PATCH for this procedure. Select it before signing
+  // both gateway proofs; the proxy must forward the same verb unchanged.
+  const method =
+    requestedMethod === "POST" &&
+    gatewayPathOnly(gatewayPath) === latrXrpcPath(LATR_XRPC.setBookmarkState)
+      ? "PATCH"
+      : requestedMethod;
   const baseHeaders = await buildLatrGatewayProxyRequestHeaders(
     oauthSession,
     method,
@@ -175,6 +171,7 @@ export async function latrGatewayFetch(
 
   const res = await fetch(proxyUrl, {
     ...init,
+    method,
     headers: {
       ...baseHeaders,
       ...(init?.headers ?? {}),
