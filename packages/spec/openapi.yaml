@@ -1596,7 +1596,15 @@ paths:
   /readyz:
     get:
       operationId: readinessCheck
-      summary: Dependency readiness
+      summary: Serving dependency readiness
+      description: |
+        Gateway requires its database and AppView to be available. Projection Pool
+        ingestion health is sampled independently and cannot block serving readiness.
+        Gateway includes cached `projection_pool` and `ingestion_completeness`
+        evidence, with `ingestion_observed_at` and `ingestion_valid_until` only after
+        an observation. Missing or stale evidence is unknown; Pool readiness alone
+        never proves complete ingestion. Worker readiness and recovery gates remain
+        independent of Gateway serving readiness.
       security: []
       tags: [Health]
       responses:
@@ -1607,6 +1615,12 @@ paths:
     get:
       operationId: freshnessCheck
       summary: Data freshness and completeness
+      description: |
+        Gateway reports conservative unknown/degraded ingestion evidence from its
+        bounded background health collection, not the legacy gap count. Its
+        `checkedAt` and `validUntil` describe the original observation and are absent
+        until a sample exists; `poolReadiness` identifies missing, stale, ready, or
+        failed evidence. Reading this endpoint does not launch another ingestion scan.
       security: []
       tags: [Health]
       responses:
