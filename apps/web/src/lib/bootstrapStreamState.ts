@@ -396,9 +396,15 @@ export function applySidebarFoldersEvent(
 export function writeStreamedEntriesPage(
   queryClient: QueryClient,
   viewerDid: string,
-  payload: { publicationId: string; entries: EntriesPage["entries"]; cursor?: string },
+  payload: Extract<ParsedBootstrapStreamEvent, { kind: "entriesPage" }>["payload"],
   articleFilter: "all" | "unread" = "all"
 ): void {
+  // Missing evidence is not an authoritative empty feed, nor a fresh snapshot.
+  if (payload.source === "unavailable") return;
+  const updatedAt = payload.source === "projection_cache"
+    ? Date.parse(payload.cachedAt ?? "")
+    : undefined;
+  if (updatedAt !== undefined && !Number.isFinite(updatedAt)) return;
   const publicationKey = normalizeAtRepoParam(payload.publicationId);
   const page: EntriesPage = {
     entries: dedupeEntryListItems(payload.entries),
@@ -409,7 +415,8 @@ export function writeStreamedEntriesPage(
     {
       pages: [page],
       pageParams: [undefined],
-    }
+    },
+    { updatedAt }
   );
   queryClient.setQueryDefaults(
     [...ENTRIES_QUERY_KEY(viewerDid, publicationKey), articleFilter] as const,

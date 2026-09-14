@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { QueryClient } from "@tanstack/react-query";
+import { QueryClient, type InfiniteData } from "@tanstack/react-query";
 
 import {
   applySidebarPriorityEvent,
@@ -9,7 +9,7 @@ import {
   writeStreamedEntriesPage,
 } from "@/lib/bootstrapStreamState";
 import type { PublicationSidebarProjection } from "@/lib/publicationProjectionClient";
-import { ENTRIES_QUERY_KEY } from "@/hooks/useEntries";
+import { ENTRIES_QUERY_KEY, type EntriesPage } from "@/hooks/useEntries";
 
 function minimalProjection(
   overrides: Partial<PublicationSidebarProjection> = {}
@@ -66,12 +66,81 @@ function row(
 }
 
 describe("writeStreamedEntriesPage", () => {
+  const publicationId = "rss:aHR0cHM6Ly9leGFtcGxlLnRlc3QvcnNz";
+  const queryKey = [...ENTRIES_QUERY_KEY("did:plc:viewer", publicationId), "all"];
+  const cached = {
+    pages: [
+      { entries: [{ entryId: "one", title: "One", publishedAt: "2026-01-01" }], cursor: "next" },
+      { entries: [{ entryId: "two", title: "Two", publishedAt: "2026-01-01" }] },
+    ],
+    pageParams: [undefined, "next"],
+  };
+
+  for (const id of [publicationId, encodeURIComponent(publicationId)]) {
+    it(`preserves all cached pages and freshness when unavailable (${id})`, () => {
+      const qc = new QueryClient();
+      const updatedAt = Date.parse("2026-01-01T00:00:00Z");
+      qc.setQueryData(queryKey, cached, { updatedAt });
+      const before = qc.getQueryData<InfiniteData<EntriesPage>>(queryKey);
+      for (let attempt = 0; attempt < 2; attempt++) {
+        writeStreamedEntriesPage(qc, "did:plc:viewer", {
+          publicationId: id, entries: [], source: "unavailable",
+        });
+      }
+      expect(qc.getQueryData<InfiniteData<EntriesPage>>(queryKey)).toBe(before);
+      expect(qc.getQueryState(queryKey)?.dataUpdatedAt).toBe(updatedAt);
+      expect(qc.getQueryState(queryKey)?.isInvalidated).toBe(false);
+      expect(qc.getQueryCache().getAll()).toHaveLength(1);
+      qc.clear();
+    });
+
+    it(`leaves unavailable cache misses absent (${id})`, () => {
+      const qc = new QueryClient();
+      writeStreamedEntriesPage(qc, "did:plc:viewer", {
+        publicationId: id, entries: [], source: "unavailable",
+      });
+      expect(qc.getQueryState(queryKey)).toBeUndefined();
+      expect(qc.getQueryCache().getAll()).toHaveLength(0);
+      qc.clear();
+    });
+  }
+
+  it("replaces cached rows with an authoritative live empty page", () => {
+    const qc = new QueryClient();
+    qc.setQueryData(queryKey, cached, { updatedAt: 1 });
+    const receivedAt = Date.now();
+    writeStreamedEntriesPage(qc, "did:plc:viewer", {
+      publicationId, entries: [], source: "live_projection",
+    });
+    expect(qc.getQueryData<InfiniteData<EntriesPage>>(queryKey)).toEqual({
+      pages: [{ entries: [], cursor: undefined }], pageParams: [undefined],
+    });
+    expect(qc.getQueryState(queryKey)?.dataUpdatedAt).toBeGreaterThanOrEqual(receivedAt);
+    qc.clear();
+  });
+
+  it("replaces with a valid cached empty page using its original timestamp", () => {
+    const qc = new QueryClient();
+    qc.setQueryData(queryKey, cached, { updatedAt: 1 });
+    const cachedAt = "2026-01-02T00:00:00Z";
+    writeStreamedEntriesPage(qc, "did:plc:viewer", {
+      publicationId, entries: [], source: "projection_cache", cachedAt,
+      expiresAt: "2026-01-03T00:00:00Z",
+    });
+    expect(qc.getQueryData<InfiniteData<EntriesPage>>(queryKey)).toEqual({
+      pages: [{ entries: [], cursor: undefined }], pageParams: [undefined],
+    });
+    expect(qc.getQueryState(queryKey)?.dataUpdatedAt).toBe(Date.parse(cachedAt));
+    qc.clear();
+  });
+
   it("normalizes publication ids for the entries query cache key", () => {
     const qc = new QueryClient();
     writeStreamedEntriesPage(qc, "did:plc:viewer", {
       publicationId: "at://did:plc:author/site.standard.publication/pub1",
       entries: [{ entryId: "at://did:plc:author/site.standard.document/a", title: "A", publishedAt: "2026-01-01T00:00:00.000Z" }],
       cursor: "next",
+      source: "live_projection",
     });
 
     const cached = qc.getQueryData([
