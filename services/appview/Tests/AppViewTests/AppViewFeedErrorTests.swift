@@ -10,6 +10,11 @@ import Testing
 
 @Suite("AppView feed error classification")
 struct AppViewFeedErrorTests {
+  private static var databaseURL: String? {
+    ProcessInfo.processInfo.environment["THIN_APPVIEW_TEST_DATABASE_URL"]
+      ?? ProcessInfo.processInfo.environment["WIRE_TEST_DATABASE_URL"]
+  }
+
   @Test("request errors keep their status and are not retryable")
   func requestErrorClassification() {
     let error = AppViewFeedErrorClassifier.classify(
@@ -80,9 +85,9 @@ struct AppViewFeedErrorTests {
   }
 
   @Test("typed PostgreSQL states preserve timeout, transient, and internal distinctions",
-    .enabled(if: ProcessInfo.processInfo.environment["THIN_APPVIEW_TEST_DATABASE_URL"] != nil))
+    .enabled(if: Self.databaseURL != nil))
   func postgresStates() async throws {
-    let url = try #require(ProcessInfo.processInfo.environment["THIN_APPVIEW_TEST_DATABASE_URL"])
+    let url = try #require(Self.databaseURL)
     let logger = Logger(label: "appview-feed-error.tests")
     let pool = PostgresClient(configuration: try makePostgresConfig(from: url, logger: logger))
     let run = Task { await pool.run() }
@@ -107,6 +112,18 @@ struct AppViewFeedErrorTests {
     await run.value
   }
 
+  @Test("a connection retired before submission remains a dependency failure")
+  func connectionClosedBeforeSubmission() {
+    let closed = AppViewFeedErrorClassifier.classify(PostgresError.connectionClosed, requestId: "req-retired")
+    #expect(closed.status == .serviceUnavailable)
+    #expect(closed.code == "feed_dependency_unavailable")
+    #expect(closed.retryable)
+    let other = AppViewFeedErrorClassifier.classify(PostgresError.protocol("private detail"), requestId: "req-protocol")
+    #expect(other.status == .internalServerError)
+    #expect(!other.retryable)
+    #expect(!other.message.contains("private"))
+  }
+
   @Test("typed PostgreSQL transport codes without SQLSTATE remain allowlisted")
   func postgresTransportCodes() {
     for code: PSQLError.Code in [
@@ -122,10 +139,10 @@ struct AppViewFeedErrorTests {
   }
 
   @Test("actual closed PostgreSQL connections classify as retryable with and without transaction wrapping",
-    .enabled(if: ProcessInfo.processInfo.environment["THIN_APPVIEW_TEST_DATABASE_URL"] != nil),
+    .enabled(if: Self.databaseURL != nil),
     arguments: [false, true])
   func closedPostgresConnection(transactional: Bool) async throws {
-    let url = try #require(ProcessInfo.processInfo.environment["THIN_APPVIEW_TEST_DATABASE_URL"])
+    let url = try #require(Self.databaseURL)
     let logger = Logger(label: "appview-feed-closed-connection.tests")
     let pool = PostgresClient(configuration: try makePostgresConfig(from: url, logger: logger))
     let run = Task { await pool.run() }
