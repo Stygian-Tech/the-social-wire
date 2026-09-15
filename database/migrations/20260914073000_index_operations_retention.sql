@@ -5,6 +5,34 @@
 SET lock_timeout = '5s';
 SET statement_timeout = '30min';
 
+-- Check both names before any DDL. An invalid index with a colliding name is
+-- retryable only when it is an artifact of the exact build this migration owns.
+DO $$
+DECLARE
+  unexpected_index text;
+BEGIN
+  SELECT expected.index_name INTO unexpected_index
+  FROM (VALUES
+    ('public.idx_operations_events_expiry', 'public.operations_events'),
+    ('public.idx_operations_trace_spans_expiry', 'public.operations_trace_spans')
+  ) expected(index_name, table_name)
+  JOIN pg_class c ON c.oid = to_regclass(expected.index_name)
+  LEFT JOIN pg_index i ON i.indexrelid = c.oid
+  LEFT JOIN pg_am am ON am.oid = c.relam
+  WHERE NOT COALESCE(
+    i.indrelid = to_regclass(expected.table_name)
+      AND NOT i.indisunique
+      AND i.indnkeyatts = 2 AND i.indnatts = 2
+      AND i.indpred IS NULL AND i.indexprs IS NULL
+      AND am.amname = 'btree'
+      AND pg_get_indexdef(i.indexrelid, 1, true) = 'environment'
+      AND pg_get_indexdef(i.indexrelid, 2, true) = 'expires_at', false)
+  LIMIT 1;
+  IF unexpected_index IS NOT NULL THEN
+    RAISE EXCEPTION 'unexpected Operations retention index definition: %', unexpected_index;
+  END IF;
+END $$;
+
 SELECT EXISTS (
   SELECT 1 FROM pg_index
   WHERE indexrelid = to_regclass('public.idx_operations_events_expiry')
