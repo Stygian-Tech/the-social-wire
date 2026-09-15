@@ -2,8 +2,9 @@ import Foundation
 import Logging
 import PostgresNIO
 
-/// Only the bounded feed SELECT uses this connection lease. Worker and mutation
-/// statements retain their existing policies and never inherit a global timeout.
+/// Feed, publication-entry, and authoritative read-state SELECTs share the request
+/// budget. Worker and mutation statements keep their existing policies; the timeout
+/// is local to this read-only transaction and never changes the global setting.
 enum PostgresFeedQueryExecutor {
   static func query(_ query: PostgresQuery, pool: PostgresClient, logger: Logger) async throws -> [PostgresRow] {
     guard let deadline = AppViewFeedQueryDeadline.current else {

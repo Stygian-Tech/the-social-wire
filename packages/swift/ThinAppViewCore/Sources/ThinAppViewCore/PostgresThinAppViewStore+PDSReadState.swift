@@ -4,11 +4,11 @@ import ReadStateCore
 
 extension PostgresThinAppViewStore: PDSReadStateStoring {
   public func pdsReadStateStatus(viewerDid: String) async throws -> PDSReadStateStatus {
-    for try await row in try await pool.query(
+    for row in try await PostgresFeedQueryExecutor.query(
       """
       SELECT legacy_revision, manifest::text, manifest_cid, projection_ready
       FROM appview_pds_read_state_authority WHERE viewer_did = \(viewerDid)
-      """, logger: logger) {
+      """, pool: pool, logger: logger) {
       return try Self.pdsStatus(row)
     }
     return PDSReadStateStatus(authority: .appview, migrationState: .notStarted, legacyRevision: 0)
