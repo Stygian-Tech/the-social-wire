@@ -107,9 +107,7 @@ func (r *Runner) Run(ctx context.Context) error {
 		incidentBytes = checkpoint.ReplayBytesDownloaded
 		r.lastSeq.Store(checkpointLastStagedSeq(checkpoint))
 		progressSeed = latestProgressTime(checkpoint.LastStagedAt, checkpoint.ReplayLastProgressAt, progressSeed)
-		if checkpoint.ReplayState == "replaying" {
-			r.evidence.Seed(checkpoint.ReplayRetryCount, checkpoint.ReplayRangeResumeCount, checkpoint.ReplayETag)
-		}
+		r.restoreReplayEvidence(checkpoint)
 	}
 	r.budget.Seed(incidentBytes, buckets)
 	if err := r.store.PruneReplayUsage(ctx); err != nil {
@@ -212,6 +210,12 @@ func (r *Runner) Run(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// A paused or failed recovery retains the same evidence as an active replay.
+// Starting a replacement must not overwrite the durable counters with zeroes.
+func (r *Runner) restoreReplayEvidence(checkpoint *ingest.Checkpoint) {
+	r.evidence.Seed(checkpoint.ReplayRetryCount, checkpoint.ReplayRangeResumeCount, checkpoint.ReplayETag)
 }
 
 func requireBootstrapSeam(checkpoint *ingest.Checkpoint, bootstrapAfterSeq *uint64) error {
