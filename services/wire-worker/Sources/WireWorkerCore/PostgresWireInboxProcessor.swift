@@ -6,7 +6,7 @@ import WireCore
 struct PostgresWireInboxProcessor: Sendable {
   private typealias InboxEvent = WireInboxEvent
 
-  private enum ApplyError: Error {
+  enum ApplyError: Error {
     case unresolvedReference
     case unresolvedPublication
     case malformed
@@ -455,19 +455,7 @@ struct PostgresWireInboxProcessor: Sendable {
       if event.eventKind == "snapshot" || event.cursorKind == "pds_record_snapshot"
         || (event.eventKind == "commit" && ["site.standard.document", "site.standard.entry", "site.standard.publication"].contains(event.collection ?? ""))
       {
-        do {
-          return try await applyStandardRecord(event, asOf: asOf)
-        } catch let transaction as PostgresTransactionError {
-          // A successful rollback preserves the original application outcome.
-          // Keep uncertain begin/commit/rollback failures on the retry path.
-          if transaction.beginError == nil, transaction.commitError == nil,
-            transaction.rollbackError == nil, let cause = transaction.closureError,
-            cause is ApplyError || cause is CancellationError
-          {
-            throw cause
-          }
-          throw transaction
-        }
+        return try await applyStandardRecord(event, asOf: asOf)
       }
       if event.eventKind == "commit",
         event.collection == "site.standard.graph.recommend"
@@ -1047,12 +1035,24 @@ struct PostgresWireInboxProcessor: Sendable {
       }
     } catch {
       if let publicationURI { await publicationResolver.invalidate(publicationURI: publicationURI) }
-      throw error
+      try Task.checkCancellation()
+      throw Self.applicationErrorAfterRollback(error)
     }
     // withTransaction has committed (or rolled back) before invalidating. Doing
     // this inside its closure would let another replica refill pre-commit data.
     if let publicationURI { await publicationResolver.invalidate(publicationURI: publicationURI) }
     return outcome
+  }
+
+  /// Only a completed rollback can restore a known application classification.
+  /// Any begin/rollback/commit failure retains the transaction's uncertainty.
+  static func applicationErrorAfterRollback(_ error: any Error) -> any Error {
+    guard let transaction = error as? PostgresTransactionError,
+      transaction.beginError == nil, transaction.rollbackError == nil,
+      transaction.commitError == nil, let cause = transaction.closureError,
+      cause is ApplyError || cause is CancellationError
+    else { return error }
+    return cause
   }
 
   private func standardRecord(_ event: InboxEvent) throws -> [String: Any]? {
