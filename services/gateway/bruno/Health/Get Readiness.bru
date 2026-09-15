@@ -9,3 +9,10 @@ get {
   body: none
   auth: none
 }
+
+docs {
+  Gateway serving readiness requires the database and AppView. Projection Pool
+  failures remain visible in projection_pool and ingestion_completeness without
+  taking healthy serving replicas out of rotation. Observation timestamps describe
+  the cached sample, not this request. HTTP 200 does not prove ingestion recovery.
+}

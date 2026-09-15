@@ -2,6 +2,8 @@ import type { InfiniteData, QueryClient } from "@tanstack/react-query";
 
 import {
   ENTRIES_QUERY_KEY,
+  ENTRIES_QUERY_STALE_MS,
+  entriesNextPageParam,
   fetchEntriesInfinitePage,
   type EntriesPage,
 } from "@/hooks/useEntries";
@@ -64,6 +66,8 @@ export async function refreshPublicationFeedFirstPage(args: {
   /** When true, skips PDS enroll (lighter poll/focus refresh). */
   skipEnroll?: boolean;
   signal?: AbortSignal;
+  /** Bootstrap recovery may fetch an absent cache through the normal query. */
+  allowCacheMiss?: boolean;
 }): Promise<boolean> {
   const {
     queryClient,
@@ -73,6 +77,7 @@ export async function refreshPublicationFeedFirstPage(args: {
     viewerDid,
     skipEnroll = false,
     signal,
+    allowCacheMiss = false,
   } = args;
 
   if (!viewerDid) return false;
@@ -81,7 +86,28 @@ export async function refreshPublicationFeedFirstPage(args: {
     articleFilter,
   ] as const;
   const existing = queryClient.getQueryData<InfiniteData<EntriesPage>>(queryKey);
-  if (!existing?.pages.length) return false;
+  if (!existing?.pages.length) {
+    if (!allowCacheMiss) return false;
+    // The same query key coalesces with an already mounted feed's initial fetch.
+    await queryClient.fetchInfiniteQuery({
+      queryKey,
+      initialPageParam: undefined as string | undefined,
+      getNextPageParam: entriesNextPageParam,
+      staleTime: ENTRIES_QUERY_STALE_MS,
+      retry: false,
+      queryFn: ({ pageParam, signal: querySignal }) => fetchEntriesInfinitePage({
+        normalizedPublicationKey: publicationKey,
+        pageParam,
+        signal: querySignal,
+        oauthSession,
+        viewerDid,
+        articleFilter,
+        queryClient,
+        skipEnroll,
+      }),
+    });
+    return true;
+  }
 
   const freshPage = await fetchEntriesInfinitePage({
     normalizedPublicationKey: publicationKey,

@@ -111,7 +111,7 @@ actor PostgresWireFeedStore: WireFeedStore {
       if rows.isEmpty { exhausted = true }
     }
     let pageItems = Array(accepted.prefix(safeLimit).map(\.item))
-    if cursor == nil, requestedLanguage != "und", pageItems.isEmpty {
+    if cursor == nil, pageItems.isEmpty {
       return try await simplifiedFallback(
         limit: safeLimit,
         language: requestedLanguage,
@@ -285,8 +285,7 @@ actor PostgresWireFeedStore: WireFeedStore {
         throw WireServingError.unavailable
       }
     }
-    if requestedLanguage != "und",
-      leads.isEmpty, panels.isEmpty, rails.isEmpty, general.isEmpty, trending.isEmpty
+    if leads.isEmpty, panels.isEmpty, rails.isEmpty, general.isEmpty, trending.isEmpty
     {
       return try await simplifiedFallbackEdition(
         language: requestedLanguage,
@@ -756,6 +755,9 @@ actor PostgresWireFeedStore: WireFeedStore {
   }
 
   private func hasFallbackCorpus(now: Date) async throws -> Bool {
+    let ranking = WireRankingConfig()
+    let oldestCandidate = now.addingTimeInterval(-ranking.maximumCandidateAge)
+    let freshPublicationCutoff = now.addingTimeInterval(-3 * 86_400)
     let rows = try await pool.query(
       """
       SELECT COUNT(*)::bigint FROM (SELECT 1
@@ -763,10 +765,21 @@ actor PostgresWireFeedStore: WireFeedStore {
       JOIN wire_signal_rollups rollup ON rollup.canonical_key = item.canonical_key
       LEFT JOIN wire_link_metadata_cache metadata ON metadata.canonical_key = item.canonical_key
       WHERE item.eligible = TRUE AND item.expires_at > \(now)
-        AND item.source_confidence >= 0.25
-        AND (rollup.shares_24h >= 3 OR rollup.recommendations_24h >= 1)
+        AND item.target_kind IN ('external_article', 'standard_site_document')
+        AND item.commercial_class <> 'probable_ad'
+        AND item.source_confidence >= \(ranking.minimumSourceConfidence)
+        AND item.source_confidence < 'Infinity'::double precision
+        AND COALESCE(item.published_at, item.first_seen_at) >= \(oldestCandidate)
         AND (
-          item.provenance ? 'standard_site' OR item.source_confidence >= 0.75
+          rollup.baseline_shares_24h >= \(ranking.backfillMinimumHighIntentActors)
+          OR rollup.baseline_recommendations_24h >= \(ranking.backfillMinimumRecommendations)
+          OR ((item.provenance ? 'standard_site')
+            AND COALESCE(item.published_at, item.first_seen_at) >= \(freshPublicationCutoff)
+            AND item.source_confidence >= \(ranking.standardSiteMinimumSourceConfidence)
+            AND rollup.baseline_shares_24h >= \(ranking.standardSiteMinimumHighIntentActors))
+        )
+        AND (
+          item.provenance ? 'standard_site'
           OR (metadata.source = 'open_graph'
             AND metadata.status IN ('fresh', 'stale')
             AND metadata.stale_until > \(now)
@@ -795,83 +808,148 @@ actor PostgresWireFeedStore: WireFeedStore {
     viewerDID: String?,
     now: Date
   ) async throws -> WirePage {
-    let rows = try await pool.query(
+    // Generation and recovery use the same baseline policy. Only candidate selection is
+    // bounded here; fetching display payload after the cutoff keeps the sort narrow.
+    let ranking = WireRankingConfig()
+    var bindings = PostgresBindings()
+    bindings.append(now)
+    bindings.append(now.addingTimeInterval(-3 * 86_400))
+    bindings.append(language)
+    let metadataEligibility = """
+      COALESCE(metadata.source = 'open_graph'
+        AND metadata.status IN ('fresh', 'stale') AND metadata.stale_until > $1
+        AND num_nonnulls(metadata.title, metadata.description, metadata.image_url,
+          metadata.site_name, metadata.author_name, metadata.published_at::TEXT,
+          metadata.icon_url) >= 2, FALSE)
       """
+    // Global queries project metadata before a possible hash join; localized queries
+    // retain the selective primary-key join used by generation candidate selection.
+    let metadataJoin = language == "und"
+      ? """
+        LEFT JOIN (
+          SELECT metadata.canonical_key, \(metadataEligibility) AS has_usable_open_graph
+          FROM wire_link_metadata_cache metadata OFFSET 0
+        ) metadata ON metadata.canonical_key = item.canonical_key
+        """
+      : "LEFT JOIN wire_link_metadata_cache metadata ON metadata.canonical_key = item.canonical_key"
+    let usableMetadata = language == "und"
+      ? "COALESCE(metadata.has_usable_open_graph, FALSE)" : metadataEligibility
+    let rows = try await pool.query(
+      PostgresQuery(unsafeSQL: """
+      WITH candidate_keys AS MATERIALIZED (
+        SELECT item.canonical_key,
+          CASE WHEN rollup.baseline_shares_24h >= 5
+                 OR rollup.baseline_recommendations_24h >= 2 THEN 0
+            WHEN (item.provenance ? 'standard_site') AND item.published_at >= $2
+                 AND rollup.baseline_shares_24h >= 1 THEN 1
+            WHEN rollup.baseline_shares_24h >= 3
+                 OR rollup.baseline_recommendations_24h >= 1 THEN 2
+            ELSE 3 END AS priority,
+          rollup.baseline_shares_24h, rollup.baseline_recommendations_24h,
+          (item.provenance ? 'standard_site') AS is_standard_site,
+          COALESCE(NULLIF(BTRIM(item.thumbnail_url), '') ~* '^https?://', FALSE)
+            AS has_usable_thumbnail,
+          \(usableMetadata) AS has_usable_open_graph,
+          rollup.baseline_signals_1h
+        FROM wire_items item
+        JOIN wire_signal_rollups rollup ON rollup.canonical_key = item.canonical_key
+        \(metadataJoin)
+        WHERE item.eligible = TRUE AND item.expires_at > $1
+          AND item.target_kind IN ('external_article', 'standard_site_document')
+          AND item.commercial_class <> 'probable_ad'
+          AND ($3 = 'und' OR item.language_code = $3)
+          AND NOT EXISTS (
+            SELECT 1 FROM wire_labels label
+            WHERE label.canonical_key = item.canonical_key AND label.expires_at > $1
+                AND label.label_value IN ('block', 'exclude', 'adult', 'graphic', 'spam')
+          )
+        ORDER BY priority, baseline_shares_24h DESC, baseline_recommendations_24h DESC,
+          is_standard_site DESC, has_usable_thumbnail DESC, has_usable_open_graph DESC,
+          baseline_signals_1h DESC, item.canonical_key
+        LIMIT 5000
+      )
       SELECT item.canonical_key, item.canonical_url, item.representative_uri, item.title,
              item.summary, item.published_at, item.thumbnail_url, item.source_name,
              item.source_domain, item.publication_id, item.author_name,
              item.provenance::text, item.author_key, item.topic_keys::text,
              COALESCE(NULLIF(item.publication_id, ''), item.source_domain),
-             item.publication_homepage_url, item.publication_icon_url
-      FROM wire_items item
-      JOIN wire_signal_rollups rollup ON rollup.canonical_key = item.canonical_key
-      LEFT JOIN wire_link_metadata_cache metadata ON metadata.canonical_key = item.canonical_key
-      WHERE item.eligible = TRUE AND item.expires_at > \(now)
-        AND (\(language) = 'und' OR item.language_code = \(language))
-        AND item.source_confidence >= 0.25
-        AND (rollup.shares_24h >= 3 OR rollup.recommendations_24h >= 1)
-        AND (
-          item.provenance ? 'standard_site' OR item.source_confidence >= 0.75
-          OR (metadata.source = 'open_graph'
-            AND metadata.status IN ('fresh', 'stale')
-            AND metadata.stale_until > \(now)
-            AND num_nonnulls(metadata.title, metadata.description, metadata.image_url,
-              metadata.site_name, metadata.author_name, metadata.published_at::TEXT,
-              metadata.icon_url) >= 2)
-        )
-        AND NOT EXISTS (
-          SELECT 1 FROM wire_labels label
-          WHERE label.canonical_key = item.canonical_key AND label.expires_at > \(now)
-            AND label.label_value IN ('block', 'exclude', 'adult', 'graphic', 'spam')
-        )
-      ORDER BY (item.provenance ? 'standard_site') DESC,
-               rollup.shares_24h DESC, rollup.recommendations_24h DESC,
-               COALESCE(item.published_at, item.first_seen_at) DESC, item.canonical_key
-      LIMIT 5000
-      """,
+             item.publication_homepage_url, item.publication_icon_url,
+             item.first_seen_at, rollup.baseline_last_signal_at, item.source_confidence,
+             selected.is_standard_site, selected.has_usable_open_graph,
+             selected.has_usable_thumbnail, item.target_kind, item.commercial_class,
+             item.commercial_score, rollup.baseline_distinct_actors_1h,
+             rollup.baseline_distinct_actors_24h, rollup.baseline_distinct_actors_7d,
+             rollup.baseline_signals_1h, rollup.baseline_signals_24h, rollup.baseline_signals_7d,
+             rollup.communities_24h, rollup.primary_community_key_hash,
+             rollup.baseline_recommendations_24h, rollup.positive_feedback_24h,
+             rollup.negative_feedback_24h, rollup.baseline_shares_1h, rollup.baseline_shares_24h,
+             rollup.baseline_distinct_likers_24h, rollup.baseline_likes_1h,
+             rollup.baseline_likes_24h, rollup.distinct_reposters_24h,
+             rollup.reposts_1h, rollup.reposts_24h
+      FROM candidate_keys selected
+      JOIN wire_items item ON item.canonical_key = selected.canonical_key
+      JOIN wire_signal_rollups rollup ON rollup.canonical_key = selected.canonical_key
+      ORDER BY selected.priority, selected.baseline_shares_24h DESC,
+        selected.baseline_recommendations_24h DESC, selected.is_standard_site DESC,
+        selected.has_usable_thumbnail DESC, selected.has_usable_open_graph DESC,
+        selected.baseline_signals_1h DESC, selected.canonical_key
+      """, binds: bindings),
       logger: logger
     )
     var itemsByKey: [String: WireFeedItem] = [:]
-    var candidates: [WireScoredCandidate] = []
-    var ordinal = 0
+    var candidates: [WireCandidate] = []
     for try await row in rows {
+      try Task.checkCancellation()
       let cells = row.makeRandomAccess()
       let item = try Self.decodeItem(row: row, reasonsJSON: "[]", metadataOffset: 14)
-      let publication = try cells[9].decode(String?.self)
-      let author = try cells[12].decode(String?.self)
       let topicsJSON = try cells[13].decode(String.self)
       let topics = (try? JSONDecoder().decode([String].self, from: Data(topicsJSON.utf8))) ?? []
       itemsByKey[item.itemID] = item
-      candidates.append(
-        WireScoredCandidate(
-          candidate: WireCandidate(
-            canonicalKey: item.itemID,
-            canonicalURL: item.canonicalURL,
-            representativeURI: item.representativeURI,
-            sourceDomain: item.source.domain,
-            publicationID: publication,
-            authorKey: author,
-            topicKeys: topics,
-            publishedAt: item.publishedAt,
-            firstSeenAt: now
-          ),
-          score: Double(5_000 - ordinal),
-          reasonCodes: []
-        )
-      )
-      ordinal += 1
+      candidates.append(WireCandidate(
+        canonicalKey: item.itemID, canonicalURL: item.canonicalURL,
+        representativeURI: item.representativeURI, sourceDomain: item.source.domain,
+        publicationID: try cells[9].decode(String?.self),
+        authorKey: try cells[12].decode(String?.self), topicKeys: topics,
+        publishedAt: item.publishedAt, firstSeenAt: try cells[17].decode(Date.self),
+        lastSignalAt: try cells[18].decode(Date?.self),
+        distinctActors1h: try cells[26].decode(Int.self),
+        distinctActors24h: try cells[27].decode(Int.self),
+        distinctActors7d: try cells[28].decode(Int.self),
+        signals1h: try cells[29].decode(Int.self), signals24h: try cells[30].decode(Int.self),
+        signals7d: try cells[31].decode(Int.self), communities24h: try cells[32].decode(Int.self),
+        primaryCommunityKey: try cells[33].decode(String?.self),
+        recommendations24h: try cells[34].decode(Int.self),
+        positiveFeedback24h: try cells[35].decode(Int.self),
+        negativeFeedback24h: try cells[36].decode(Int.self),
+        shares1h: try cells[37].decode(Int.self), shares24h: try cells[38].decode(Int.self),
+        distinctLikes24h: try cells[39].decode(Int.self),
+        likes1h: try cells[40].decode(Int.self), likes24h: try cells[41].decode(Int.self),
+        distinctReposts24h: try cells[42].decode(Int.self),
+        reposts1h: try cells[43].decode(Int.self), reposts24h: try cells[44].decode(Int.self),
+        sourceConfidence: try cells[19].decode(Double.self),
+        isStandardSite: try cells[20].decode(Bool.self),
+        hasUsableOpenGraphMetadata: try cells[21].decode(Bool.self),
+        hasUsableThumbnail: try cells[22].decode(Bool.self),
+        targetKind: WireTargetKind(rawValue: try cells[23].decode(String.self)) ?? .unsupported,
+        commercialClass: WireCommercialClass(rawValue: try cells[24].decode(String.self)) ?? .probableAd,
+        commercialScore: try cells[25].decode(Double.self)
+      ))
     }
-    let reranked = WireDiversityReranker.rerank(candidates, policy: WireDiversityPolicy())
+    try Task.checkCancellation()
+    let ranked = try WireRanker.rank(candidates: candidates, asOf: now, config: ranking)
+    try Task.checkCancellation()
     let moderation = try await moderationSnapshot(viewerDID: viewerDID, now: now)
-    let items = reranked.items.compactMap { candidate -> WireFeedItem? in
+    let items = ranked.items.compactMap { candidate -> WireFeedItem? in
       guard let item = itemsByKey[candidate.candidate.canonicalKey] else { return nil }
       guard moderation?.allows(
         item: candidate.candidate.authorKey ?? item.itemID,
-        title: item.title,
-        summary: item.summary,
-        representativeURI: item.representativeURI
+        title: item.title, summary: item.summary, representativeURI: item.representativeURI
       ) ?? true else { return nil }
-      return item
+      return WireFeedItem(
+        itemID: item.itemID, canonicalURL: item.canonicalURL,
+        representativeURI: item.representativeURI, title: item.title, summary: item.summary,
+        publishedAt: item.publishedAt, thumbnailURL: item.thumbnailURL, source: item.source,
+        reasons: candidate.reasonCodes, provenance: item.provenance)
     }.prefix(limit)
     let bucket = Int(now.timeIntervalSince1970 / 300)
     return WirePage(

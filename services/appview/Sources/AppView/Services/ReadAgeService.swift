@@ -12,11 +12,17 @@ struct ReadAgeService: Sendable {
   func options(
     viewerDid: String, rows: [SidebarPublicationRow], timeZone: String, now: Date
   ) async throws -> ReadAgeOptionsResponse {
-    _ = try ReadAgeCalendar.calendar(timeZone: timeZone)
-    let entries = try await unreadSnapshot(viewerDid: viewerDid, rows: rows)
-    return try ReadAgeCalendar.options(
-      publishedDates: entries.map(\.publishedAt), timeZone: timeZone, now: now
-    )
+    var accumulator = try ReadAgeOptionAccumulator(timeZone: timeZone, now: now)
+    let scopes = Self.scopes(viewerDid: viewerDid, rows: rows)
+    guard !scopes.isEmpty else { return try accumulator.response() }
+    try await ReadAgeSnapshot.forEachPage { cursor in
+      try await store.listUnreadEntriesForReadMutation(
+        viewerDid: viewerDid, scopes: scopes, cursor: cursor, limit: 100
+      )
+    } onPage: { entries in
+      accumulator.append(publishedDates: entries.map(\.publishedAt))
+    }
+    return try accumulator.response()
   }
 
   func writeOptionsStream(
@@ -28,7 +34,7 @@ struct ReadAgeService: Sendable {
       let scopes = Self.scopes(viewerDid: viewerDid, rows: rows)
       try await ReadAgeSnapshot.forEachPage { cursor in
         guard !scopes.isEmpty else {
-          return AppViewEntryListResponse(entries: [], cursor: nil)
+          return UnreadReadMutationPage(entries: [], cursor: nil)
         }
         return try await store.listUnreadEntriesForReadMutation(
           viewerDid: viewerDid, scopes: scopes, cursor: cursor, limit: 100
@@ -68,8 +74,9 @@ struct ReadAgeService: Sendable {
     let cutoff = try ReadAgeCalendar.cutoff(before, now: now)
     // Complete the paginated snapshot before changing unread state. Publication dates do not
     // follow feed cursor order, so an old or recent row is never a reason to stop scanning.
-    let entries = try await unreadSnapshot(viewerDid: viewerDid, rows: rows)
-    let entryIds = entries.filter { $0.publishedAt < cutoff }.map(\.entryId)
+    let entryIds = try await unreadIDsBefore(
+      cutoff, viewerDid: viewerDid, rows: rows
+    )
     // The store chunks SQL internally in one transaction, so a failed chunk rolls back all marks.
     try await store.upsertReadMarks(viewerDid: viewerDid, subjectUris: entryIds, createdAt: now)
     let uniqueRows = Self.uniqueRows(rows)
@@ -119,12 +126,12 @@ struct ReadAgeService: Sendable {
     )
   }
 
-  private func unreadSnapshot(
-    viewerDid: String, rows: [SidebarPublicationRow]
-  ) async throws -> [AppViewEntryListItem] {
+  private func unreadIDsBefore(
+    _ cutoff: Date, viewerDid: String, rows: [SidebarPublicationRow]
+  ) async throws -> [String] {
     let scopes = Self.scopes(viewerDid: viewerDid, rows: rows)
     guard !scopes.isEmpty else { return [] }
-    return try await ReadAgeSnapshot.collect { cursor in
+    return try await ReadAgeSnapshot.matchingIDs(before: cutoff) { cursor in
       try await store.listUnreadEntriesForReadMutation(
         viewerDid: viewerDid, scopes: scopes, cursor: cursor, limit: 100
       )

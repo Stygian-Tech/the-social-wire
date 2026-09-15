@@ -144,8 +144,11 @@ After setting the variable:
    projection and reconciliation work can also advance it. The exception is a bounded The Wire
    checkpoint in terminal `snapshot_complete`, where no continuing intake lease is expected and
    the durable state and sealed bounds provide completion evidence.
-5. Check the public Gateway `/readyz` separately. It aggregates Gateway database, App View, and
-   Charybdis readiness, so a failure there is not by itself proof that Charybdis failed.
+5. Check public Gateway `/readyz` separately: it requires Gateway database and AppView
+   serving availability. Its independently collected `projection_pool` and
+   `ingestion_completeness` fields expose ingestion degradation without blocking serving.
+   Check observation timestamps and worker readiness directly; Gateway HTTP 200 does not
+   prove ingestion completeness or resolve dead letters.
 
 For rollback, restore `THIN_APPVIEW_JETSTREAM_MODE=v2_shadow` and apply the same non-skipped
 deployment checks. Preserve all V2 state for diagnosis and a later retry.

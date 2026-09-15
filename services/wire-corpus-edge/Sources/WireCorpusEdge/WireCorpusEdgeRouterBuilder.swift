@@ -40,7 +40,7 @@ enum WireCorpusEdgeRouterBuilder {
     protected.get("/internal/wire/v1/feed") { request, _ async throws -> Response in
       try validateQuery(
         request.uri.query,
-        allowed: ["generationId", "language", "limit", "startOrdinal"]
+        allowed: ["generationId", "language", "limit", "startOrdinal", "fallbackLimit"]
       )
       let language = primaryLanguage(request.uri.queryParameters.get("language"))
       let generationID: UUID?
@@ -68,17 +68,23 @@ enum WireCorpusEdgeRouterBuilder {
           generationID: generationID,
           startOrdinal: startOrdinal,
           limit: limit,
+          fallbackLimit: try request.uri.queryParameters.get("fallbackLimit").map {
+            try boundedInt($0, default: 500, range: 1...5000)
+          },
           now: Date()
         )
       )
     }
     protected.get("/internal/wire/v1/edition") { request, _ async throws -> Response in
-      try validateQuery(request.uri.query, allowed: ["language", "region"])
+      try validateQuery(request.uri.query, allowed: ["language", "region", "fallbackLimit"])
       return try response(
         await store.edition(
           language: primaryLanguage(request.uri.queryParameters.get("language")),
           region: request.uri.queryParameters.get("region")
             .flatMap(WireViewerRegion.init(rawValue:)),
+          fallbackLimit: try request.uri.queryParameters.get("fallbackLimit").map {
+            try boundedInt($0, default: 50, range: 1...5000)
+          },
           now: Date()
         )
       )
