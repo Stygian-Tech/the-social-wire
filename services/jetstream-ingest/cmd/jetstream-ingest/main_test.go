@@ -6,8 +6,11 @@ import (
 	"io"
 	"log/slog"
 	"testing"
+	"testing/synctest"
 	"time"
 
+	"github.com/stygian-tech/the-social-wire/services/jetstream-ingest/internal/config"
+	"github.com/stygian-tech/the-social-wire/services/jetstream-ingest/internal/health"
 	"github.com/stygian-tech/the-social-wire/services/jetstream-ingest/internal/store"
 )
 
@@ -96,4 +99,32 @@ func TestAcquireLeaseWithRetryStopsWhenCancelled(t *testing.T) {
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("error = %v, want context.Canceled", err)
 	}
+}
+
+func TestExpiredCanaryDoesNotOpenDatabase(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, stop := context.WithCancel(context.Background())
+		expires := time.Now().Add(-time.Second)
+		state := &health.State{}
+		done := make(chan error, 1)
+		go func() {
+			done <- runLane(ctx, config.Lane{Name: config.WireLaneName, Config: config.Config{
+				PipelineMode: config.WirePipelineMode, DatabaseURL: "invalid-database-url",
+				ReplayCanaryExpiresAt: &expires,
+			}}, state, slog.New(slog.NewTextHandler(io.Discard, nil)))
+		}()
+		synctest.Wait()
+		select {
+		case err := <-done:
+			t.Fatalf("expired lane reached database or returned: %v", err)
+		default:
+		}
+		if !state.Snapshot().Paused {
+			t.Fatal("expired lane was not paused")
+		}
+		stop()
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+	})
 }
