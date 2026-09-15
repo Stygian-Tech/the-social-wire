@@ -1057,49 +1057,54 @@ public init(pool: PostgresClient, logger: Logger) {
   ) async throws -> [String: Bool] {
     guard !entries.isEmpty else { return [:] }
     let entryIds = Array(Set(entries.map(\.entryId))).sorted()
-    if try await pdsReadStateStatus(viewerDid: viewerDid).authority == .pds {
-      var result: [String: Bool] = [:]
-      for row in try await PostgresFeedQueryExecutor.query(
-        """
-        SELECT subject.uri, COALESCE(appview_pds_entry_is_read(\(viewerDid), subject.uri,
-          ci.author_did, ci.publication_site, ci.created_at), FALSE)
-        FROM unnest(\(entryIds)::text[]) subject(uri)
-        LEFT JOIN content_items ci ON ci.uri = subject.uri
-        """, pool: pool, logger: logger) {
-        let value = try row.decode((String, Bool).self)
-        result[value.0] = value.1
-      }
-      return result
-    }
-
     let publicationIds = Array(Set(entries.compactMap(\.publicationId))).sorted()
-    let readRows = try await PostgresFeedQueryExecutor.query(
+    // Read authority, explicit state and legacy floors from one statement snapshot.
+    // A cached page needs one bounded pool acquisition, and an authority transition
+    // cannot mix PDS state with legacy floors from a later SELECT.
+    let rows = try await PostgresFeedQueryExecutor.query(
       """
-      SELECT subject_uri FROM read_marks
-      WHERE viewer_did = \(viewerDid) AND subject_uri = ANY(\(entryIds))
-      """,
-      pool: pool, logger: logger
-    )
+      WITH authority AS MATERIALIZED (
+        SELECT COALESCE((SELECT manifest_cid IS NOT NULL
+          FROM appview_pds_read_state_authority WHERE viewer_did = \(viewerDid)), FALSE) AS is_pds
+      )
+      SELECT subject.uri, CASE WHEN authority.is_pds THEN 'pds' ELSE 'legacy' END,
+        CASE WHEN authority.is_pds THEN COALESCE(appview_pds_entry_is_read(
+          \(viewerDid), subject.uri, ci.author_did, ci.publication_site, ci.created_at), FALSE)
+          ELSE rm.subject_uri IS NOT NULL END,
+        uo.subject_uri IS NOT NULL, NULL::timestamptz, NULL::text
+      FROM unnest(\(entryIds)::text[]) subject(uri)
+      CROSS JOIN authority
+      LEFT JOIN content_items ci ON authority.is_pds AND ci.uri = subject.uri
+      LEFT JOIN read_marks rm ON NOT authority.is_pds
+        AND rm.viewer_did = \(viewerDid) AND rm.subject_uri = subject.uri
+      LEFT JOIN appview_unread_overrides uo ON NOT authority.is_pds
+        AND uo.viewer_did = \(viewerDid) AND uo.subject_uri = subject.uri
+      UNION ALL
+      SELECT floor.publication_id, 'floor', FALSE, FALSE, floor.read_floor_at, floor.read_floor_uri
+      FROM authority
+      JOIN appview_publication_read_floors floor ON NOT authority.is_pds
+        AND floor.viewer_did = \(viewerDid) AND floor.publication_id = ANY(\(publicationIds))
+      """, pool: pool, logger: logger)
+    var pdsStates: [String: Bool] = [:]
     var explicitReads = Set<String>()
-    for row in readRows {
-      explicitReads.insert(try row.decode(String.self))
-    }
-    let overrideRows = try await PostgresFeedQueryExecutor.query(
-      """
-      SELECT subject_uri FROM appview_unread_overrides
-      WHERE viewer_did = \(viewerDid) AND subject_uri = ANY(\(entryIds))
-      """,
-      pool: pool, logger: logger
-    )
     var unreadOverrides = Set<String>()
-    for row in overrideRows {
-      unreadOverrides.insert(try row.decode(String.self))
+    var boundaries: [String: ReadWatermarkBoundary] = [:]
+    for row in rows {
+      let (key, kind, isRead, isUnreadOverride, floorAt, floorUri) = try row.decode(
+        (String, String, Bool, Bool, Date?, String?).self)
+      switch kind {
+      case "pds": pdsStates[key] = isRead
+      case "floor":
+        if let floorAt {
+          boundaries[key] = ReadWatermarkBoundary(publicationId: key, createdAt: floorAt, entryId: floorUri)
+        }
+      default:
+        if isRead { explicitReads.insert(key) }
+        if isUnreadOverride { unreadOverrides.insert(key) }
+      }
     }
-    let boundaries = try await readBoundaries(
-      viewerDid: viewerDid,
-      publicationIds: publicationIds
-    )
     return Dictionary(uniqueKeysWithValues: entries.map { entry in
+      if let isRead = pdsStates[entry.entryId] { return (entry.entryId, isRead) }
       let covered = entry.publicationId
         .flatMap { boundaries[$0] }?
         .contains(createdAt: entry.feedPositionAt, entryId: entry.entryId) ?? false
