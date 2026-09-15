@@ -10,8 +10,8 @@ struct PostgresPublicationReadTests {
   @Test("publication queries preserve read filters, cursor ties, scope, expiry and complete payloads")
   func publicationParity() async throws {
     try await PostgresInboxFixture.withFixture { fixture in
-      let author = fixture.sourceGeneration + "-publication-author"
-      let viewer = fixture.sourceGeneration + "-publication-viewer"
+      let author = fixture.sourceGeneration + "-read-author"
+      let viewer = fixture.sourceGeneration + "-read-viewer"
       let publication = "at://\(author)/site.standard.publication/main"
       let now = Date(timeIntervalSince1970: floor(Date().timeIntervalSince1970))
       let createdAt = now.addingTimeInterval(-100)
