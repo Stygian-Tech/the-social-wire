@@ -82,6 +82,59 @@ struct PostgresPublicationReadTests {
     }
   }
 
+  @Test("cached legacy read overlays preserve floors, overrides, viewer isolation and missing source rows")
+  func cachedReadStateParity() async throws {
+    try await PostgresInboxFixture.withFixture { fixture in
+      let viewer = fixture.sourceGeneration + "-read-viewer"
+      let otherViewer = fixture.sourceGeneration + "-other-read-viewer"
+      let publication = fixture.sourceGeneration + "-publication"
+      let otherPublication = publication + "-other"
+      let position = Date(timeIntervalSince1970: 1_750_000_000)
+      func uri(_ key: String) -> String { "at://\(viewer)/site.standard.document/\(key)" }
+      func entry(_ key: String, publicationId: String? = nil, offset: Double = 0) -> AppViewEntryListItem {
+        AppViewEntryListItem(entryId: uri(key), title: key,
+          publishedAt: position.addingTimeInterval(86_400), publicationId: publicationId,
+          feedPositionAt: position.addingTimeInterval(offset))
+      }
+      func execute(_ query: PostgresQuery) async throws {
+        for try await _ in try await fixture.pool.query(query, logger: fixture.logger) {}
+      }
+      try await execute("""
+        INSERT INTO appview_publication_read_floors
+          (viewer_did, publication_id, read_floor_at, read_floor_uri, generation, updated_at)
+        VALUES (\(viewer), \(publication), \(position), \(uri("m")), 1, \(position)),
+          (\(viewer), \(otherPublication), \(position), NULL, 1, \(position))
+        """)
+      try await execute("""
+        INSERT INTO read_marks (viewer_did, subject_uri, created_at)
+        VALUES (\(viewer), \(uri("explicit")), \(position)),
+          (\(otherViewer), \(uri("isolated")), \(position))
+        """)
+      try await execute("""
+        INSERT INTO appview_unread_overrides (viewer_did, subject_uri, created_at)
+        VALUES (\(viewer), \(uri("explicit")), \(position)),
+          (\(viewer), \(uri("a")), \(position))
+        """)
+      // None of these cached entries has a content_items row. Legacy floors use
+      // the cached canonical feed position, not the presentation publishedAt.
+      let entries = [entry("a", publicationId: publication), entry("m", publicationId: publication),
+        entry("n", publicationId: publication), entry("old", publicationId: publication, offset: -1),
+        entry("new", publicationId: otherPublication, offset: 1),
+        entry("z", publicationId: otherPublication), entry("explicit"), entry("isolated"), entry("missing")]
+      let states = try await AppViewFeedQueryDeadline.$current.withValue(.init()) {
+        try await fixture.store.readStates(viewerDid: viewer, entries: entries)
+      }
+      let expectedReads = Set([uri("m"), uri("old"), uri("z"), uri("explicit")])
+      #expect(states == Dictionary(uniqueKeysWithValues: entries.map {
+        ($0.entryId, expectedReads.contains($0.entryId))
+      }))
+      #expect(try await fixture.store.readStates(viewerDid: viewer, entries: entries + entries) == states)
+      let isolated = try await fixture.store.readStates(viewerDid: otherViewer, entries: entries)
+      #expect(isolated == Dictionary(uniqueKeysWithValues: entries.map { ($0.entryId, $0.entryId == uri("isolated")) }))
+      #expect(try await fixture.store.readStates(viewerDid: viewer, entries: []).isEmpty)
+    }
+  }
+
   @Test("publication and read-state queries stop waiting for a saturated pool at their original deadline",
     arguments: ["scoped", "author", "boundary", "states"])
   func saturatedPool(path: String) async throws {

@@ -1055,42 +1055,43 @@ public init(pool: PostgresClient, logger: Logger) {
     guard !entries.isEmpty else { return [:] }
     let entryIds = Array(Set(entries.map(\.entryId))).sorted()
     let publicationIds = Array(Set(entries.compactMap(\.publicationId))).sorted()
-    let readRows = try await PostgresFeedQueryExecutor.query(
+    // Read explicit state and legacy floors from one statement snapshot so cached
+    // pages need one bounded pool acquisition rather than three transactions.
+    let rows = try await PostgresFeedQueryExecutor.query(
       """
-      SELECT subject_uri FROM read_marks
-      WHERE viewer_did = \(viewerDid) AND subject_uri = ANY(\(entryIds))
-      """,
-      pool: pool, logger: logger
-    )
+      SELECT subject.uri, 'legacy', rm.subject_uri IS NOT NULL,
+        uo.subject_uri IS NOT NULL, NULL::timestamptz, NULL::text
+      FROM unnest(\(entryIds)::text[]) subject(uri)
+      LEFT JOIN read_marks rm ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = subject.uri
+      LEFT JOIN appview_unread_overrides uo ON uo.viewer_did = \(viewerDid) AND uo.subject_uri = subject.uri
+      UNION ALL
+      SELECT publication_id, 'floor', FALSE, FALSE, read_floor_at, read_floor_uri
+      FROM appview_publication_read_floors
+      WHERE viewer_did = \(viewerDid) AND publication_id = ANY(\(publicationIds))
+      """, pool: pool, logger: logger)
     var explicitReads = Set<String>()
-    for row in readRows {
-      explicitReads.insert(try row.decode(String.self))
-    }
-    let overrideRows = try await PostgresFeedQueryExecutor.query(
-      """
-      SELECT subject_uri FROM appview_unread_overrides
-      WHERE viewer_did = \(viewerDid) AND subject_uri = ANY(\(entryIds))
-      """,
-      pool: pool, logger: logger
-    )
     var unreadOverrides = Set<String>()
-    for row in overrideRows {
-      unreadOverrides.insert(try row.decode(String.self))
+    var boundaries: [String: ReadWatermarkBoundary] = [:]
+    for row in rows {
+      let (key, kind, isRead, isUnreadOverride, floorAt, floorUri) = try row.decode(
+        (String, String, Bool, Bool, Date?, String?).self)
+      switch kind {
+      case "floor":
+        if let floorAt {
+          boundaries[key] = ReadWatermarkBoundary(publicationId: key, createdAt: floorAt, entryId: floorUri)
+        }
+      default:
+        if isRead { explicitReads.insert(key) }
+        if isUnreadOverride { unreadOverrides.insert(key) }
+      }
     }
-    let boundaries = try await readBoundaries(
-      viewerDid: viewerDid,
-      publicationIds: publicationIds
-    )
-    return Dictionary(uniqueKeysWithValues: entries.map { entry in
+    return entries.reduce(into: [String: Bool]()) { states, entry in
       let covered = entry.publicationId
         .flatMap { boundaries[$0] }?
         .contains(createdAt: entry.feedPositionAt, entryId: entry.entryId) ?? false
-      return (
-        entry.entryId,
-        explicitReads.contains(entry.entryId)
-          || (covered && !unreadOverrides.contains(entry.entryId))
-      )
-    })
+      states[entry.entryId] = explicitReads.contains(entry.entryId)
+        || (covered && !unreadOverrides.contains(entry.entryId))
+    }
   }
 
   public func listEntries(
