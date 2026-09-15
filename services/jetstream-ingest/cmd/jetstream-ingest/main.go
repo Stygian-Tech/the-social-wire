@@ -142,6 +142,17 @@ func runLane(
 	lane config.Lane,
 	state *health.State,
 	logger *slog.Logger,
+) error {
+	return service.RunWithReplayCanary(ctx, lane.Config, state, func(laneContext context.Context) error {
+		return runLaneWork(laneContext, lane, state, logger)
+	})
+}
+
+func runLaneWork(
+	ctx context.Context,
+	lane config.Lane,
+	state *health.State,
+	logger *slog.Logger,
 ) (runErr error) {
 	cfg := lane.Config
 	laneLogger := logger.With("lane", lane.Name, "pipelineMode", cfg.PipelineMode)
@@ -246,12 +257,22 @@ func runLane(
 
 	runnerErrors := make(chan error, 1)
 	go func() { runnerErrors <- service.NewRunner(cfg, database, lease, state, laneLogger).Run(workerContext) }()
+	runnerFinished := false
 	select {
 	case <-ctx.Done():
 	case runErr = <-leaseErrors:
 	case runErr = <-runnerErrors:
+		runnerFinished = true
 	}
 	stopWorker()
+	if !runnerFinished {
+		// Cancellation must finish flushing replay usage and fenced staging before
+		// ownership is released or this lane can be restarted.
+		runnerErr := <-runnerErrors
+		if runErr == nil {
+			runErr = runnerErr
+		}
+	}
 	<-leaseDone
 	state.Stream(false)
 	state.Lease(false)

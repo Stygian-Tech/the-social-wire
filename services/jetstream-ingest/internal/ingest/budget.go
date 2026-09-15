@@ -84,6 +84,17 @@ func (b *ReplayBudget) IncidentUsed() int64 {
 	return b.incidentUsed
 }
 
+// CheckIncidentCapacity prevents another archive request after a durable pause.
+// Add still accounts for bytes already in flight when concurrent downloads cross the limit.
+func (b *ReplayBudget) CheckIncidentCapacity() error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.incidentUsed >= b.incidentLimit {
+		return ErrIncidentBudgetExceeded
+	}
+	return nil
+}
+
 func (b *ReplayBudget) ResetIncident() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -138,6 +149,9 @@ func (t BudgetTransport) RoundTrip(request *http.Request) (*http.Response, error
 	}
 	if !isArchiveRequest(request.URL.Path) {
 		return base.RoundTrip(request)
+	}
+	if err := t.Budget.CheckIncidentCapacity(); err != nil {
+		return nil, err
 	}
 	if wait := t.Budget.WaitForDailyCapacity(); wait > 0 {
 		return nil, fmt.Errorf("%w; retry in %s", ErrDailyBudgetExceeded, wait.Round(time.Second))
