@@ -95,6 +95,8 @@ type Config struct {
 	ReplayBeforeSeq      *uint64
 	ReplaySnapshotOnly   bool
 	ExitAfterSnapshot    bool
+
+	ReplayCanaryExpiresAt *time.Time
 }
 
 // Lane is one independently leased Jetstream ingestion pipeline.
@@ -334,6 +336,13 @@ func loadLaneConfiguration(pipelineMode, prefix string, legacy, requireAPIKey bo
 		ReplaySnapshotOnly:   replaySnapshotOnly,
 		ExitAfterSnapshot:    exitAfterSnapshot,
 	}
+	if value := strings.TrimSpace(os.Getenv(prefix + "REPLAY_CANARY_EXPIRES_AT")); value != "" {
+		expiresAt, err := time.Parse(time.RFC3339Nano, value)
+		if err != nil || !strings.HasSuffix(value, "Z") {
+			return Config{}, fmt.Errorf("%sREPLAY_CANARY_EXPIRES_AT must be an absolute RFC3339 UTC timestamp ending in Z", prefix)
+		}
+		cfg.ReplayCanaryExpiresAt = &expiresAt
+	}
 	if value := strings.TrimSpace(os.Getenv(prefix + "BOOTSTRAP_AFTER_SEQ")); value != "" {
 		seq, err := strconv.ParseUint(value, 10, 64)
 		if err != nil {
@@ -421,6 +430,9 @@ func (c Config) validate(requireAPIKey bool) error {
 	}
 	if c.ReplayIncidentBytes <= 0 || c.ReplayDailyBytes < c.ReplayIncidentBytes {
 		problems = append(problems, errors.New("daily replay budget must be at least the positive incident budget"))
+	}
+	if c.ReplayCanaryExpiresAt != nil && c.PipelineMode != WirePipelineMode {
+		problems = append(problems, errors.New("replay canary expiry is supported only for Wire lanes"))
 	}
 	if c.ReplayBudgetPause < time.Minute {
 		problems = append(problems, errors.New("JETSTREAM_REPLAY_BUDGET_PAUSE must be at least 1m"))
