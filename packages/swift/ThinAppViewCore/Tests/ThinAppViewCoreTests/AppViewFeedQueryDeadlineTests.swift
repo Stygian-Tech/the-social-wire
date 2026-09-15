@@ -31,15 +31,22 @@ struct PostgresFeedQueryDeadlineTests {
   func delayedStatement() async throws {
     try await withPool { pool in
       let start = ContinuousClock.now
+      let timings = AppViewFeedRequestTimings()
       do {
-        _ = try await AppViewFeedQueryDeadline.$current.withValue(.init(duration: .milliseconds(300))) {
-          try await PostgresFeedQueryExecutor.query("SELECT pg_sleep(5)", pool: pool, logger: logger)
+        _ = try await AppViewFeedRequestTimings.$current.withValue(timings) {
+          try await AppViewFeedQueryDeadline.$current.withValue(.init(duration: .milliseconds(300))) {
+            try await PostgresFeedQueryExecutor.query("SELECT pg_sleep(5)", pool: pool, logger: logger)
+          }
         }
         Issue.record("delayed query unexpectedly completed")
       } catch {
         #expect(error is AppViewFeedQueryDeadline.Failure || (error as? PSQLError)?.serverInfo?[.sqlState] == "57014")
       }
       #expect(start.duration(to: .now) < .seconds(2))
+      let snapshot = timings.finish()
+      #expect(snapshot["pg_query_count"] == 1)
+      #expect(snapshot["pg_pool_wait_count"] == 1)
+      #expect(snapshot["pg_transaction_count"] == 1)
       try await expectHealthy(pool)
     }
   }
@@ -49,18 +56,45 @@ struct PostgresFeedQueryDeadlineTests {
     try await withPool { pool in
       try await pool.withConnection { held in
         let start = ContinuousClock.now
+        let timings = AppViewFeedRequestTimings()
         do {
-          _ = try await AppViewFeedQueryDeadline.$current.withValue(.init(duration: .milliseconds(150))) {
-            try await PostgresFeedQueryExecutor.query("SELECT 1", pool: pool, logger: logger)
+          _ = try await AppViewFeedRequestTimings.$current.withValue(timings) {
+            try await AppViewFeedQueryDeadline.$current.withValue(.init(duration: .milliseconds(150))) {
+              try await PostgresFeedQueryExecutor.query("SELECT 1", pool: pool, logger: logger)
+            }
           }
           Issue.record("saturated pool unexpectedly provided another lease")
         } catch {
           #expect(error is AppViewFeedQueryDeadline.Failure)
         }
         #expect(start.duration(to: .now) < .seconds(1))
+        let snapshot = timings.finish()
+        #expect(snapshot["pg_pool_wait_count"] == 1)
+        #expect((snapshot["pg_pool_wait_ms"] ?? 0) >= 50)
+        #expect(snapshot["pg_transaction_count"] == 0)
+        #expect(snapshot["pg_query_count"] == 0)
         #expect(!held.isClosed)
         _ = try await held.query("SELECT 1", logger: logger)
       }
+      try await expectHealthy(pool)
+    }
+  }
+
+  @Test("database diagnostics count application reads without counting transaction setup")
+  func queryCounts() async throws {
+    try await withPool { pool in
+      let timings = AppViewFeedRequestTimings()
+      try await AppViewFeedRequestTimings.$current.withValue(timings) {
+        try await AppViewFeedQueryDeadline.$current.withValue(.init()) {
+          for _ in 0..<2 {
+            _ = try await PostgresFeedQueryExecutor.query("SELECT 1", pool: pool, logger: logger)
+          }
+        }
+      }
+      let snapshot = timings.finish()
+      #expect(snapshot["pg_query_count"] == 2)
+      #expect(snapshot["pg_pool_wait_count"] == 2)
+      #expect(snapshot["pg_transaction_count"] == 2)
       try await expectHealthy(pool)
     }
   }
