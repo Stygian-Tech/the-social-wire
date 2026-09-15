@@ -43,6 +43,22 @@ paused/failed restarts. It does not resume this incident or reconstruct lost
 historical evidence. `/startupz` stays database-based; `/readyz` remains 503 for a
 paused lane and for its aggregate controller.
 
+## Provider Plan Evidence
+
+One metadata-only `planSnapshot` request at 01:32 UTC returned HTTP 200 in
+640 ms (40,755 response bytes). It requested the existing inclusive resume
+`afterSeq=24941814726` and capped `beforeSeq=25544509826` at the historical sealed
+target. The provider planned through that target in one page: 260 matched
+segments, 134,742 matched blocks, 486 plan entries. The earliest segment began
+at 24,941,794,474, before the requested seam. No archive objects were downloaded.
+
+This supports availability of a plan for the historical range; it does not prove
+successful byte download, event continuity, or coverage through today's live tip.
+The plan schema contains no compressed-byte sizes. A safe allowance still needs
+provider size metadata (or a separately reviewed bounded HEAD inspection), not
+multiplication of sparse sequence counts. Do not automatically page to a newer
+live target or turn this successful metadata response into a recovery claim.
+
 ## Recovery Review Gate
 
 Do not raise the limit, reset usage, change the generation/bootstrap cursor, mark
