@@ -75,6 +75,12 @@ extension PostgresJetstreamInboxIntegrationTests {
         filter: .all, cursor: nil, limit: 100, readBoundary: nil)
       let readStates = try await store.readStates(viewerDid: viewer, entries: all.entries)
       #expect(readStates == [ids[0]: false, ids[1]: true, ids[2]: false])
+      let boundedReadStates = try await AppViewFeedQueryDeadline.$current.withValue(.init()) {
+        try await store.readStates(viewerDid: viewer, entries: all.entries)
+      }
+      #expect(boundedReadStates == readStates)
+      #expect(try await store.readStates(viewerDid: viewer,
+        entries: all.entries + all.entries) == readStates)
       #expect(try await store.hasReadMark(viewerDid: viewer + "other", subjectUri: ids[1]) == false)
       // The newest covering bulk read must override an earlier explicit unread.
       let allBoundary = ReadStateBoundary(scope: ReadStateScope(publicationId: publication,
@@ -145,6 +151,14 @@ extension PostgresJetstreamInboxIntegrationTests {
         viewerDid: viewer, scopes: [publicationScope], cursor: nil, limit: 100
       ).entries.map(\.entryId) == [ids[2], ids[1]])
       try await pool.query("UPDATE appview_pds_read_state_authority SET projection_ready = FALSE WHERE viewer_did = \(viewer)", logger: logger)
+      do {
+        _ = try await AppViewFeedQueryDeadline.$current.withValue(.init()) {
+          try await store.readStates(viewerDid: viewer, entries: all.entries)
+        }
+        Issue.record("An evicted PDS projection was treated as valid read state")
+      } catch let error as PSQLError {
+        #expect(error.serverInfo?[.sqlState] == "55000")
+      }
       await #expect(throws: (any Error).self) {
         try await store.listUnreadEntriesForReadMutation(
           viewerDid: viewer, scopes: [publicationScope], cursor: nil, limit: 100)
