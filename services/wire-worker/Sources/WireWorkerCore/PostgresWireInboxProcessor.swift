@@ -6,7 +6,7 @@ import WireCore
 struct PostgresWireInboxProcessor: Sendable {
   private typealias InboxEvent = WireInboxEvent
 
-  private enum ApplyError: Error {
+  enum ApplyError: Error {
     case unresolvedReference
     case unresolvedPublication
     case malformed
@@ -1047,12 +1047,24 @@ struct PostgresWireInboxProcessor: Sendable {
       }
     } catch {
       if let publicationURI { await publicationResolver.invalidate(publicationURI: publicationURI) }
-      throw error
+      try Task.checkCancellation()
+      throw Self.applicationErrorAfterRollback(error)
     }
     // withTransaction has committed (or rolled back) before invalidating. Doing
     // this inside its closure would let another replica refill pre-commit data.
     if let publicationURI { await publicationResolver.invalidate(publicationURI: publicationURI) }
     return outcome
+  }
+
+  /// Only a completed rollback can restore a known application classification.
+  /// Any begin/rollback/commit failure retains the transaction's uncertainty.
+  static func applicationErrorAfterRollback(_ error: any Error) -> any Error {
+    guard let transaction = error as? PostgresTransactionError,
+      transaction.beginError == nil, transaction.rollbackError == nil,
+      transaction.commitError == nil, let cause = transaction.closureError,
+      cause is ApplyError || cause is CancellationError
+    else { return error }
+    return cause
   }
 
   private func standardRecord(_ event: InboxEvent) throws -> [String: Any]? {
