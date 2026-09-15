@@ -174,9 +174,13 @@ seam.
 
 `GET /healthz` is liveness. `GET /startupz` succeeds after PostgreSQL connects.
 `GET /readyz` is successful while PostgreSQL, the fenced leader lease, and the
-V2 process are active. A replay-budget pause keeps the service ready so Railway
-does not restart a healthy controlled pause; `GET /status` exposes the pause
-plus non-secret cursor and progress state. Railway deploys against `/startupz`
+V2 process are active and the lane is neither paused nor backpressured. A
+replay-budget pause keeps liveness and database-based startup successful, but
+readiness returns 503. `GET /status` exposes the pause plus non-secret cursor and
+progress state. The controller requires every configured lane to be ready; a
+paused Wire lane does not erase an independently healthy AppView lane. A standby
+replica waiting for its fenced lease is also not ready, but reports `lease=false`
+rather than a budget pause. Railway deploys against `/startupz`
 so a replacement can stay alive while the previous replica releases its fenced
 lease; the replacement retries acquisition and `/readyz` remains unavailable
 until it becomes the active consumer.

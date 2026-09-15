@@ -100,3 +100,35 @@ type roundTripperFunc func(*http.Request) (*http.Response, error)
 func (function roundTripperFunc) RoundTrip(request *http.Request) (*http.Response, error) {
 	return function(request)
 }
+
+func TestExhaustedIncidentDoesNotOpenArchiveRequestsAfterRestart(t *testing.T) {
+	for _, used := range []int64{10, 11} {
+		for _, method := range []string{"planSnapshot", "getSegment", "getBlock"} {
+			budget := NewReplayBudget(10, 100)
+			budget.Seed(used, nil)
+			calls := 0
+			transport := BudgetTransport{Budget: budget, Base: roundTripperFunc(func(*http.Request) (*http.Response, error) {
+				calls++
+				return &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader(nil))}, nil
+			})}
+			request, _ := http.NewRequest(http.MethodGet, "https://example.test/xrpc/network.bsky.jetstream."+method, nil)
+			response, err := transport.RoundTrip(request)
+			if response != nil || !errors.Is(err, ErrIncidentBudgetExceeded) || calls != 0 || budget.IncidentUsed() != used {
+				t.Fatalf("exhausted restart opened %s: response=%v error=%v calls=%d used=%d", method, response, err, calls, budget.IncidentUsed())
+			}
+			request, _ = http.NewRequest(http.MethodGet, "https://example.test/health", nil)
+			response, err = transport.RoundTrip(request)
+			if err != nil || calls != 1 {
+				t.Fatalf("nonarchive request: %v calls=%d", err, calls)
+			}
+			response.Body.Close()
+			budget.ResetIncident()
+			request, _ = http.NewRequest(http.MethodGet, "https://example.test/xrpc/network.bsky.jetstream."+method, nil)
+			response, err = transport.RoundTrip(request)
+			if err != nil || calls != 2 {
+				t.Fatalf("new incident request: %v calls=%d", err, calls)
+			}
+			response.Body.Close()
+		}
+	}
+}
