@@ -43,7 +43,8 @@ struct AppViewFeedTimingEvidenceTests {
       await AppViewFeedRequestTimings.measure(.cacheLookup) { Response(status: .ok) }
     }
     try await Application(router: router, logger: capture.logger()).test(.router) { client in
-      #expect(try await client.execute(uri: "/v1/appview/feed", method: .get).status == .ok)
+      let response = try await client.execute(uri: "/v1/appview/feed", method: .get)
+      #expect(response.status == .ok)
       #expect(capture.records.allSatisfy { $0["cache_lookup_count"] == nil })
     }
   }
@@ -60,7 +61,8 @@ struct AppViewFeedTimingEvidenceTests {
       }
     }
     try await Application(router: router, logger: capture.logger()).test(.router) { client in
-      #expect(try await client.execute(uri: "/v1/appview/feed", method: .get).status == .ok)
+      let response = try await client.execute(uri: "/v1/appview/feed", method: .get)
+      #expect(response.status == .ok)
       let records = capture.records.filter { $0["cache_lookup_count"] != nil }
       #expect(records.count == 1)
       let record = try #require(records.first)
