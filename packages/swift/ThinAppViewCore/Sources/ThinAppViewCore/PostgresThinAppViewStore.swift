@@ -1059,13 +1059,13 @@ public init(pool: PostgresClient, logger: Logger) {
     let entryIds = Array(Set(entries.map(\.entryId))).sorted()
     if try await pdsReadStateStatus(viewerDid: viewerDid).authority == .pds {
       var result: [String: Bool] = [:]
-      for try await row in try await pool.query(
+      for row in try await PostgresFeedQueryExecutor.query(
         """
         SELECT subject.uri, COALESCE(appview_pds_entry_is_read(\(viewerDid), subject.uri,
           ci.author_did, ci.publication_site, ci.created_at), FALSE)
         FROM unnest(\(entryIds)::text[]) subject(uri)
         LEFT JOIN content_items ci ON ci.uri = subject.uri
-        """, logger: logger) {
+        """, pool: pool, logger: logger) {
         let value = try row.decode((String, Bool).self)
         result[value.0] = value.1
       }
@@ -1073,26 +1073,26 @@ public init(pool: PostgresClient, logger: Logger) {
     }
 
     let publicationIds = Array(Set(entries.compactMap(\.publicationId))).sorted()
-    let readRows = try await pool.query(
+    let readRows = try await PostgresFeedQueryExecutor.query(
       """
       SELECT subject_uri FROM read_marks
       WHERE viewer_did = \(viewerDid) AND subject_uri = ANY(\(entryIds))
       """,
-      logger: logger
+      pool: pool, logger: logger
     )
     var explicitReads = Set<String>()
-    for try await row in readRows {
+    for row in readRows {
       explicitReads.insert(try row.decode(String.self))
     }
-    let overrideRows = try await pool.query(
+    let overrideRows = try await PostgresFeedQueryExecutor.query(
       """
       SELECT subject_uri FROM appview_unread_overrides
       WHERE viewer_did = \(viewerDid) AND subject_uri = ANY(\(entryIds))
       """,
-      logger: logger
+      pool: pool, logger: logger
     )
     var unreadOverrides = Set<String>()
-    for try await row in overrideRows {
+    for row in overrideRows {
       unreadOverrides.insert(try row.decode(String.self))
     }
     let boundaries = try await readBoundaries(
@@ -1878,149 +1878,179 @@ public init(pool: PostgresClient, logger: Logger) {
     now: Date,
     readBoundary: ReadWatermarkBoundary?
   ) async throws -> [(uri: String, renderJSON: String, createdAt: Date, publicationSite: String?)] {
-    let rows: PostgresRowSequence
+    let rows: [PostgresRow]
     let unreadFloor = readBoundary?.createdAt ?? Date(timeIntervalSince1970: 0)
     let unreadFloorUri = readBoundary?.entryId
     let hasReadBoundary = readBoundary != nil
     let hasUnreadFloorUri = unreadFloorUri != nil
     switch (filter, cursor) {
     case (.all, nil):
-      rows = try await pool.query(
+      rows = try await PostgresFeedQueryExecutor.query(
         """
-        SELECT ci.uri, ci.render_json::text, ci.created_at, ci.publication_site
-        FROM content_items ci
-        WHERE ci.author_did = \(authorDid)
-          AND ci.expires_at > \(now)
-          AND ci.publication_site = ANY(\(siteKeys))
-        ORDER BY ci.created_at DESC, ci.uri DESC
-        LIMIT \(limit)
+        WITH page AS MATERIALIZED (
+          SELECT ci.uri, ci.created_at
+          FROM content_items ci
+          WHERE ci.author_did = \(authorDid)
+            AND ci.expires_at > \(now)
+            AND ci.publication_site = ANY(\(siteKeys))
+          ORDER BY ci.created_at DESC, ci.uri DESC
+          LIMIT \(limit)
+        )
+        SELECT ci.uri, ci.render_json::text, page.created_at, ci.publication_site
+        FROM page JOIN content_items ci ON ci.uri = page.uri
+        ORDER BY page.created_at DESC, page.uri DESC
         """,
-        logger: logger
+        pool: pool, logger: logger
       )
     case (.unread, nil):
-      rows = try await pool.query(
+      rows = try await PostgresFeedQueryExecutor.query(
         """
-        SELECT ci.uri, ci.render_json::text, ci.created_at, ci.publication_site
-        FROM content_items ci
-        LEFT JOIN read_marks rm ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = ci.uri
-        LEFT JOIN appview_unread_overrides uo ON uo.viewer_did = \(viewerDid) AND uo.subject_uri = ci.uri
-        LEFT JOIN LATERAL appview_effective_entry_read_state(\(viewerDid), ci.uri,
-          ci.author_did, ci.publication_site, ci.created_at, rm.subject_uri, uo.subject_uri) read_state ON TRUE
-        WHERE ci.author_did = \(authorDid)
-          AND ci.expires_at > \(now)
-          AND read_state.read_uri IS NULL
-          AND (
-            \(hasReadBoundary) = FALSE
-            OR ci.created_at > \(unreadFloor)
-            OR (\(hasUnreadFloorUri) = TRUE AND ci.created_at = \(unreadFloor) AND ci.uri > \(unreadFloorUri))
-            OR read_state.unread_uri IS NOT NULL
-          )
-          AND ci.publication_site = ANY(\(siteKeys))
-        ORDER BY ci.created_at DESC, ci.uri DESC
-        LIMIT \(limit)
+        WITH page AS MATERIALIZED (
+          SELECT ci.uri, ci.created_at
+          FROM content_items ci
+          LEFT JOIN read_marks rm ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = ci.uri
+          LEFT JOIN appview_unread_overrides uo ON uo.viewer_did = \(viewerDid) AND uo.subject_uri = ci.uri
+          LEFT JOIN LATERAL appview_effective_entry_read_state(\(viewerDid), ci.uri,
+            ci.author_did, ci.publication_site, ci.created_at, rm.subject_uri, uo.subject_uri) read_state ON TRUE
+          WHERE ci.author_did = \(authorDid)
+            AND ci.expires_at > \(now)
+            AND read_state.read_uri IS NULL
+            AND (
+              \(hasReadBoundary) = FALSE
+              OR ci.created_at > \(unreadFloor)
+              OR (\(hasUnreadFloorUri) = TRUE AND ci.created_at = \(unreadFloor) AND ci.uri > \(unreadFloorUri))
+              OR read_state.unread_uri IS NOT NULL
+            )
+            AND ci.publication_site = ANY(\(siteKeys))
+          ORDER BY ci.created_at DESC, ci.uri DESC
+          LIMIT \(limit)
+        )
+        SELECT ci.uri, ci.render_json::text, page.created_at, ci.publication_site
+        FROM page JOIN content_items ci ON ci.uri = page.uri
+        ORDER BY page.created_at DESC, page.uri DESC
         """,
-        logger: logger
+        pool: pool, logger: logger
       )
     case (.read, nil):
-      rows = try await pool.query(
+      rows = try await PostgresFeedQueryExecutor.query(
         """
-        SELECT ci.uri, ci.render_json::text, ci.created_at, ci.publication_site
-        FROM content_items ci
-        LEFT JOIN read_marks rm ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = ci.uri
-        LEFT JOIN appview_unread_overrides uo ON uo.viewer_did = \(viewerDid) AND uo.subject_uri = ci.uri
-        LEFT JOIN LATERAL appview_effective_entry_read_state(\(viewerDid), ci.uri,
-          ci.author_did, ci.publication_site, ci.created_at, rm.subject_uri, uo.subject_uri) read_state ON TRUE
-        WHERE ci.author_did = \(authorDid)
-          AND ci.expires_at > \(now)
-          AND (
-            read_state.read_uri IS NOT NULL
-            OR (
-              \(hasReadBoundary) = TRUE
-              AND read_state.unread_uri IS NULL
-              AND (
-                ci.created_at < \(unreadFloor)
-                OR (ci.created_at = \(unreadFloor) AND (\(hasUnreadFloorUri) = FALSE OR ci.uri <= \(unreadFloorUri)))
+        WITH page AS MATERIALIZED (
+          SELECT ci.uri, ci.created_at
+          FROM content_items ci
+          LEFT JOIN read_marks rm ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = ci.uri
+          LEFT JOIN appview_unread_overrides uo ON uo.viewer_did = \(viewerDid) AND uo.subject_uri = ci.uri
+          LEFT JOIN LATERAL appview_effective_entry_read_state(\(viewerDid), ci.uri,
+            ci.author_did, ci.publication_site, ci.created_at, rm.subject_uri, uo.subject_uri) read_state ON TRUE
+          WHERE ci.author_did = \(authorDid)
+            AND ci.expires_at > \(now)
+            AND (
+              read_state.read_uri IS NOT NULL
+              OR (
+                \(hasReadBoundary) = TRUE
+                AND read_state.unread_uri IS NULL
+                AND (
+                  ci.created_at < \(unreadFloor)
+                  OR (ci.created_at = \(unreadFloor) AND (\(hasUnreadFloorUri) = FALSE OR ci.uri <= \(unreadFloorUri)))
+                )
               )
             )
-          )
-          AND ci.publication_site = ANY(\(siteKeys))
-        ORDER BY ci.created_at DESC, ci.uri DESC
-        LIMIT \(limit)
+            AND ci.publication_site = ANY(\(siteKeys))
+          ORDER BY ci.created_at DESC, ci.uri DESC
+          LIMIT \(limit)
+        )
+        SELECT ci.uri, ci.render_json::text, page.created_at, ci.publication_site
+        FROM page JOIN content_items ci ON ci.uri = page.uri
+        ORDER BY page.created_at DESC, page.uri DESC
         """,
-        logger: logger
+        pool: pool, logger: logger
       )
     case (.all, let decoded?):
-      rows = try await pool.query(
+      rows = try await PostgresFeedQueryExecutor.query(
         """
-        SELECT ci.uri, ci.render_json::text, ci.created_at, ci.publication_site
-        FROM content_items ci
-        WHERE ci.author_did = \(authorDid)
-          AND ci.expires_at > \(now)
-          AND ci.publication_site = ANY(\(siteKeys))
-          AND (ci.created_at < \(decoded.createdAt) OR (ci.created_at = \(decoded.createdAt) AND ci.uri < \(decoded.uri)))
-        ORDER BY ci.created_at DESC, ci.uri DESC
-        LIMIT \(limit)
+        WITH page AS MATERIALIZED (
+          SELECT ci.uri, ci.created_at
+          FROM content_items ci
+          WHERE ci.author_did = \(authorDid)
+            AND ci.expires_at > \(now)
+            AND ci.publication_site = ANY(\(siteKeys))
+            AND (ci.created_at < \(decoded.createdAt) OR (ci.created_at = \(decoded.createdAt) AND ci.uri < \(decoded.uri)))
+          ORDER BY ci.created_at DESC, ci.uri DESC
+          LIMIT \(limit)
+        )
+        SELECT ci.uri, ci.render_json::text, page.created_at, ci.publication_site
+        FROM page JOIN content_items ci ON ci.uri = page.uri
+        ORDER BY page.created_at DESC, page.uri DESC
         """,
-        logger: logger
+        pool: pool, logger: logger
       )
     case (.unread, let decoded?):
-      rows = try await pool.query(
+      rows = try await PostgresFeedQueryExecutor.query(
         """
-        SELECT ci.uri, ci.render_json::text, ci.created_at, ci.publication_site
-        FROM content_items ci
-        LEFT JOIN read_marks rm ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = ci.uri
-        LEFT JOIN appview_unread_overrides uo ON uo.viewer_did = \(viewerDid) AND uo.subject_uri = ci.uri
-        LEFT JOIN LATERAL appview_effective_entry_read_state(\(viewerDid), ci.uri,
-          ci.author_did, ci.publication_site, ci.created_at, rm.subject_uri, uo.subject_uri) read_state ON TRUE
-        WHERE ci.author_did = \(authorDid)
-          AND ci.expires_at > \(now)
-          AND read_state.read_uri IS NULL
-          AND (
-            \(hasReadBoundary) = FALSE
-            OR ci.created_at > \(unreadFloor)
-            OR (\(hasUnreadFloorUri) = TRUE AND ci.created_at = \(unreadFloor) AND ci.uri > \(unreadFloorUri))
-            OR read_state.unread_uri IS NOT NULL
-          )
-          AND ci.publication_site = ANY(\(siteKeys))
-          AND (ci.created_at < \(decoded.createdAt) OR (ci.created_at = \(decoded.createdAt) AND ci.uri < \(decoded.uri)))
-        ORDER BY ci.created_at DESC, ci.uri DESC
-        LIMIT \(limit)
+        WITH page AS MATERIALIZED (
+          SELECT ci.uri, ci.created_at
+          FROM content_items ci
+          LEFT JOIN read_marks rm ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = ci.uri
+          LEFT JOIN appview_unread_overrides uo ON uo.viewer_did = \(viewerDid) AND uo.subject_uri = ci.uri
+          LEFT JOIN LATERAL appview_effective_entry_read_state(\(viewerDid), ci.uri,
+            ci.author_did, ci.publication_site, ci.created_at, rm.subject_uri, uo.subject_uri) read_state ON TRUE
+          WHERE ci.author_did = \(authorDid)
+            AND ci.expires_at > \(now)
+            AND read_state.read_uri IS NULL
+            AND (
+              \(hasReadBoundary) = FALSE
+              OR ci.created_at > \(unreadFloor)
+              OR (\(hasUnreadFloorUri) = TRUE AND ci.created_at = \(unreadFloor) AND ci.uri > \(unreadFloorUri))
+              OR read_state.unread_uri IS NOT NULL
+            )
+            AND ci.publication_site = ANY(\(siteKeys))
+            AND (ci.created_at < \(decoded.createdAt) OR (ci.created_at = \(decoded.createdAt) AND ci.uri < \(decoded.uri)))
+          ORDER BY ci.created_at DESC, ci.uri DESC
+          LIMIT \(limit)
+        )
+        SELECT ci.uri, ci.render_json::text, page.created_at, ci.publication_site
+        FROM page JOIN content_items ci ON ci.uri = page.uri
+        ORDER BY page.created_at DESC, page.uri DESC
         """,
-        logger: logger
+        pool: pool, logger: logger
       )
     case (.read, let decoded?):
-      rows = try await pool.query(
+      rows = try await PostgresFeedQueryExecutor.query(
         """
-        SELECT ci.uri, ci.render_json::text, ci.created_at, ci.publication_site
-        FROM content_items ci
-        LEFT JOIN read_marks rm ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = ci.uri
-        LEFT JOIN appview_unread_overrides uo ON uo.viewer_did = \(viewerDid) AND uo.subject_uri = ci.uri
-        LEFT JOIN LATERAL appview_effective_entry_read_state(\(viewerDid), ci.uri,
-          ci.author_did, ci.publication_site, ci.created_at, rm.subject_uri, uo.subject_uri) read_state ON TRUE
-        WHERE ci.author_did = \(authorDid)
-          AND ci.expires_at > \(now)
-          AND (
-            read_state.read_uri IS NOT NULL
-            OR (
-              \(hasReadBoundary) = TRUE
-              AND read_state.unread_uri IS NULL
-              AND (
-                ci.created_at < \(unreadFloor)
-                OR (ci.created_at = \(unreadFloor) AND (\(hasUnreadFloorUri) = FALSE OR ci.uri <= \(unreadFloorUri)))
+        WITH page AS MATERIALIZED (
+          SELECT ci.uri, ci.created_at
+          FROM content_items ci
+          LEFT JOIN read_marks rm ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = ci.uri
+          LEFT JOIN appview_unread_overrides uo ON uo.viewer_did = \(viewerDid) AND uo.subject_uri = ci.uri
+          LEFT JOIN LATERAL appview_effective_entry_read_state(\(viewerDid), ci.uri,
+            ci.author_did, ci.publication_site, ci.created_at, rm.subject_uri, uo.subject_uri) read_state ON TRUE
+          WHERE ci.author_did = \(authorDid)
+            AND ci.expires_at > \(now)
+            AND (
+              read_state.read_uri IS NOT NULL
+              OR (
+                \(hasReadBoundary) = TRUE
+                AND read_state.unread_uri IS NULL
+                AND (
+                  ci.created_at < \(unreadFloor)
+                  OR (ci.created_at = \(unreadFloor) AND (\(hasUnreadFloorUri) = FALSE OR ci.uri <= \(unreadFloorUri)))
+                )
               )
             )
-          )
-          AND ci.publication_site = ANY(\(siteKeys))
-          AND (ci.created_at < \(decoded.createdAt) OR (ci.created_at = \(decoded.createdAt) AND ci.uri < \(decoded.uri)))
-        ORDER BY ci.created_at DESC, ci.uri DESC
-        LIMIT \(limit)
+            AND ci.publication_site = ANY(\(siteKeys))
+            AND (ci.created_at < \(decoded.createdAt) OR (ci.created_at = \(decoded.createdAt) AND ci.uri < \(decoded.uri)))
+          ORDER BY ci.created_at DESC, ci.uri DESC
+          LIMIT \(limit)
+        )
+        SELECT ci.uri, ci.render_json::text, page.created_at, ci.publication_site
+        FROM page JOIN content_items ci ON ci.uri = page.uri
+        ORDER BY page.created_at DESC, page.uri DESC
         """,
-        logger: logger
+        pool: pool, logger: logger
       )
     }
 
     var fetched: [(uri: String, renderJSON: String, createdAt: Date, publicationSite: String?)] = []
-    for try await row in rows {
+    for row in rows {
       let (uri, renderJSON, createdAt, publicationSite) = try row.decode(
         (String, String, Date, String?).self
       )
@@ -2038,135 +2068,165 @@ public init(pool: PostgresClient, logger: Logger) {
     now: Date,
     readBoundary: ReadWatermarkBoundary?
   ) async throws -> [(uri: String, renderJSON: String, createdAt: Date, publicationSite: String?)] {
-    let rows: PostgresRowSequence
+    let rows: [PostgresRow]
     let unreadFloor = readBoundary?.createdAt ?? Date(timeIntervalSince1970: 0)
     let unreadFloorUri = readBoundary?.entryId
     let hasReadBoundary = readBoundary != nil
     let hasUnreadFloorUri = unreadFloorUri != nil
     switch (filter, cursor) {
     case (.all, nil):
-      rows = try await pool.query(
+      rows = try await PostgresFeedQueryExecutor.query(
         """
-        SELECT ci.uri, ci.render_json::text, ci.created_at, ci.publication_site
-        FROM content_items ci
-        WHERE ci.author_did = \(authorDid) AND ci.expires_at > \(now)
-        ORDER BY ci.created_at DESC, ci.uri DESC
-        LIMIT \(limit)
+        WITH page AS MATERIALIZED (
+          SELECT ci.uri, ci.created_at
+          FROM content_items ci
+          WHERE ci.author_did = \(authorDid) AND ci.expires_at > \(now)
+          ORDER BY ci.created_at DESC, ci.uri DESC
+          LIMIT \(limit)
+        )
+        SELECT ci.uri, ci.render_json::text, page.created_at, ci.publication_site
+        FROM page JOIN content_items ci ON ci.uri = page.uri
+        ORDER BY page.created_at DESC, page.uri DESC
         """,
-        logger: logger
+        pool: pool, logger: logger
       )
     case (.unread, nil):
-      rows = try await pool.query(
+      rows = try await PostgresFeedQueryExecutor.query(
         """
-        SELECT ci.uri, ci.render_json::text, ci.created_at, ci.publication_site
-        FROM content_items ci
-        LEFT JOIN read_marks rm ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = ci.uri
-        LEFT JOIN appview_unread_overrides uo ON uo.viewer_did = \(viewerDid) AND uo.subject_uri = ci.uri
-        LEFT JOIN LATERAL appview_effective_entry_read_state(\(viewerDid), ci.uri,
-          ci.author_did, ci.publication_site, ci.created_at, rm.subject_uri, uo.subject_uri) read_state ON TRUE
-        WHERE ci.author_did = \(authorDid) AND ci.expires_at > \(now) AND read_state.read_uri IS NULL
-          AND (
-            \(hasReadBoundary) = FALSE
-            OR ci.created_at > \(unreadFloor)
-            OR (\(hasUnreadFloorUri) = TRUE AND ci.created_at = \(unreadFloor) AND ci.uri > \(unreadFloorUri))
-            OR read_state.unread_uri IS NOT NULL
-          )
-        ORDER BY ci.created_at DESC, ci.uri DESC
-        LIMIT \(limit)
+        WITH page AS MATERIALIZED (
+          SELECT ci.uri, ci.created_at
+          FROM content_items ci
+          LEFT JOIN read_marks rm ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = ci.uri
+          LEFT JOIN appview_unread_overrides uo ON uo.viewer_did = \(viewerDid) AND uo.subject_uri = ci.uri
+          LEFT JOIN LATERAL appview_effective_entry_read_state(\(viewerDid), ci.uri,
+            ci.author_did, ci.publication_site, ci.created_at, rm.subject_uri, uo.subject_uri) read_state ON TRUE
+          WHERE ci.author_did = \(authorDid) AND ci.expires_at > \(now) AND read_state.read_uri IS NULL
+            AND (
+              \(hasReadBoundary) = FALSE
+              OR ci.created_at > \(unreadFloor)
+              OR (\(hasUnreadFloorUri) = TRUE AND ci.created_at = \(unreadFloor) AND ci.uri > \(unreadFloorUri))
+              OR read_state.unread_uri IS NOT NULL
+            )
+          ORDER BY ci.created_at DESC, ci.uri DESC
+          LIMIT \(limit)
+        )
+        SELECT ci.uri, ci.render_json::text, page.created_at, ci.publication_site
+        FROM page JOIN content_items ci ON ci.uri = page.uri
+        ORDER BY page.created_at DESC, page.uri DESC
         """,
-        logger: logger
+        pool: pool, logger: logger
       )
     case (.read, nil):
-      rows = try await pool.query(
+      rows = try await PostgresFeedQueryExecutor.query(
         """
-        SELECT ci.uri, ci.render_json::text, ci.created_at, ci.publication_site
-        FROM content_items ci
-        LEFT JOIN read_marks rm ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = ci.uri
-        LEFT JOIN appview_unread_overrides uo ON uo.viewer_did = \(viewerDid) AND uo.subject_uri = ci.uri
-        LEFT JOIN LATERAL appview_effective_entry_read_state(\(viewerDid), ci.uri,
-          ci.author_did, ci.publication_site, ci.created_at, rm.subject_uri, uo.subject_uri) read_state ON TRUE
-        WHERE ci.author_did = \(authorDid) AND ci.expires_at > \(now)
-          AND (
-            read_state.read_uri IS NOT NULL
-            OR (
-              \(hasReadBoundary) = TRUE
-              AND read_state.unread_uri IS NULL
-              AND (
-                ci.created_at < \(unreadFloor)
-                OR (ci.created_at = \(unreadFloor) AND (\(hasUnreadFloorUri) = FALSE OR ci.uri <= \(unreadFloorUri)))
+        WITH page AS MATERIALIZED (
+          SELECT ci.uri, ci.created_at
+          FROM content_items ci
+          LEFT JOIN read_marks rm ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = ci.uri
+          LEFT JOIN appview_unread_overrides uo ON uo.viewer_did = \(viewerDid) AND uo.subject_uri = ci.uri
+          LEFT JOIN LATERAL appview_effective_entry_read_state(\(viewerDid), ci.uri,
+            ci.author_did, ci.publication_site, ci.created_at, rm.subject_uri, uo.subject_uri) read_state ON TRUE
+          WHERE ci.author_did = \(authorDid) AND ci.expires_at > \(now)
+            AND (
+              read_state.read_uri IS NOT NULL
+              OR (
+                \(hasReadBoundary) = TRUE
+                AND read_state.unread_uri IS NULL
+                AND (
+                  ci.created_at < \(unreadFloor)
+                  OR (ci.created_at = \(unreadFloor) AND (\(hasUnreadFloorUri) = FALSE OR ci.uri <= \(unreadFloorUri)))
+                )
               )
             )
-          )
-        ORDER BY ci.created_at DESC, ci.uri DESC
-        LIMIT \(limit)
+          ORDER BY ci.created_at DESC, ci.uri DESC
+          LIMIT \(limit)
+        )
+        SELECT ci.uri, ci.render_json::text, page.created_at, ci.publication_site
+        FROM page JOIN content_items ci ON ci.uri = page.uri
+        ORDER BY page.created_at DESC, page.uri DESC
         """,
-        logger: logger
+        pool: pool, logger: logger
       )
     case (.all, let decoded?):
-      rows = try await pool.query(
+      rows = try await PostgresFeedQueryExecutor.query(
         """
-        SELECT ci.uri, ci.render_json::text, ci.created_at, ci.publication_site
-        FROM content_items ci
-        WHERE ci.author_did = \(authorDid) AND ci.expires_at > \(now)
-          AND (ci.created_at < \(decoded.createdAt) OR (ci.created_at = \(decoded.createdAt) AND ci.uri < \(decoded.uri)))
-        ORDER BY ci.created_at DESC, ci.uri DESC
-        LIMIT \(limit)
+        WITH page AS MATERIALIZED (
+          SELECT ci.uri, ci.created_at
+          FROM content_items ci
+          WHERE ci.author_did = \(authorDid) AND ci.expires_at > \(now)
+            AND (ci.created_at < \(decoded.createdAt) OR (ci.created_at = \(decoded.createdAt) AND ci.uri < \(decoded.uri)))
+          ORDER BY ci.created_at DESC, ci.uri DESC
+          LIMIT \(limit)
+        )
+        SELECT ci.uri, ci.render_json::text, page.created_at, ci.publication_site
+        FROM page JOIN content_items ci ON ci.uri = page.uri
+        ORDER BY page.created_at DESC, page.uri DESC
         """,
-        logger: logger
+        pool: pool, logger: logger
       )
     case (.unread, let decoded?):
-      rows = try await pool.query(
+      rows = try await PostgresFeedQueryExecutor.query(
         """
-        SELECT ci.uri, ci.render_json::text, ci.created_at, ci.publication_site
-        FROM content_items ci
-        LEFT JOIN read_marks rm ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = ci.uri
-        LEFT JOIN appview_unread_overrides uo ON uo.viewer_did = \(viewerDid) AND uo.subject_uri = ci.uri
-        LEFT JOIN LATERAL appview_effective_entry_read_state(\(viewerDid), ci.uri,
-          ci.author_did, ci.publication_site, ci.created_at, rm.subject_uri, uo.subject_uri) read_state ON TRUE
-        WHERE ci.author_did = \(authorDid) AND ci.expires_at > \(now) AND read_state.read_uri IS NULL
-          AND (
-            \(hasReadBoundary) = FALSE
-            OR ci.created_at > \(unreadFloor)
-            OR (\(hasUnreadFloorUri) = TRUE AND ci.created_at = \(unreadFloor) AND ci.uri > \(unreadFloorUri))
-            OR read_state.unread_uri IS NOT NULL
-          )
-          AND (ci.created_at < \(decoded.createdAt) OR (ci.created_at = \(decoded.createdAt) AND ci.uri < \(decoded.uri)))
-        ORDER BY ci.created_at DESC, ci.uri DESC
-        LIMIT \(limit)
+        WITH page AS MATERIALIZED (
+          SELECT ci.uri, ci.created_at
+          FROM content_items ci
+          LEFT JOIN read_marks rm ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = ci.uri
+          LEFT JOIN appview_unread_overrides uo ON uo.viewer_did = \(viewerDid) AND uo.subject_uri = ci.uri
+          LEFT JOIN LATERAL appview_effective_entry_read_state(\(viewerDid), ci.uri,
+            ci.author_did, ci.publication_site, ci.created_at, rm.subject_uri, uo.subject_uri) read_state ON TRUE
+          WHERE ci.author_did = \(authorDid) AND ci.expires_at > \(now) AND read_state.read_uri IS NULL
+            AND (
+              \(hasReadBoundary) = FALSE
+              OR ci.created_at > \(unreadFloor)
+              OR (\(hasUnreadFloorUri) = TRUE AND ci.created_at = \(unreadFloor) AND ci.uri > \(unreadFloorUri))
+              OR read_state.unread_uri IS NOT NULL
+            )
+            AND (ci.created_at < \(decoded.createdAt) OR (ci.created_at = \(decoded.createdAt) AND ci.uri < \(decoded.uri)))
+          ORDER BY ci.created_at DESC, ci.uri DESC
+          LIMIT \(limit)
+        )
+        SELECT ci.uri, ci.render_json::text, page.created_at, ci.publication_site
+        FROM page JOIN content_items ci ON ci.uri = page.uri
+        ORDER BY page.created_at DESC, page.uri DESC
         """,
-        logger: logger
+        pool: pool, logger: logger
       )
     case (.read, let decoded?):
-      rows = try await pool.query(
+      rows = try await PostgresFeedQueryExecutor.query(
         """
-        SELECT ci.uri, ci.render_json::text, ci.created_at, ci.publication_site
-        FROM content_items ci
-        LEFT JOIN read_marks rm ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = ci.uri
-        LEFT JOIN appview_unread_overrides uo ON uo.viewer_did = \(viewerDid) AND uo.subject_uri = ci.uri
-        LEFT JOIN LATERAL appview_effective_entry_read_state(\(viewerDid), ci.uri,
-          ci.author_did, ci.publication_site, ci.created_at, rm.subject_uri, uo.subject_uri) read_state ON TRUE
-        WHERE ci.author_did = \(authorDid) AND ci.expires_at > \(now)
-          AND (
-            read_state.read_uri IS NOT NULL
-            OR (
-              \(hasReadBoundary) = TRUE
-              AND read_state.unread_uri IS NULL
-              AND (
-                ci.created_at < \(unreadFloor)
-                OR (ci.created_at = \(unreadFloor) AND (\(hasUnreadFloorUri) = FALSE OR ci.uri <= \(unreadFloorUri)))
+        WITH page AS MATERIALIZED (
+          SELECT ci.uri, ci.created_at
+          FROM content_items ci
+          LEFT JOIN read_marks rm ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = ci.uri
+          LEFT JOIN appview_unread_overrides uo ON uo.viewer_did = \(viewerDid) AND uo.subject_uri = ci.uri
+          LEFT JOIN LATERAL appview_effective_entry_read_state(\(viewerDid), ci.uri,
+            ci.author_did, ci.publication_site, ci.created_at, rm.subject_uri, uo.subject_uri) read_state ON TRUE
+          WHERE ci.author_did = \(authorDid) AND ci.expires_at > \(now)
+            AND (
+              read_state.read_uri IS NOT NULL
+              OR (
+                \(hasReadBoundary) = TRUE
+                AND read_state.unread_uri IS NULL
+                AND (
+                  ci.created_at < \(unreadFloor)
+                  OR (ci.created_at = \(unreadFloor) AND (\(hasUnreadFloorUri) = FALSE OR ci.uri <= \(unreadFloorUri)))
+                )
               )
             )
-          )
-          AND (ci.created_at < \(decoded.createdAt) OR (ci.created_at = \(decoded.createdAt) AND ci.uri < \(decoded.uri)))
-        ORDER BY ci.created_at DESC, ci.uri DESC
-        LIMIT \(limit)
+            AND (ci.created_at < \(decoded.createdAt) OR (ci.created_at = \(decoded.createdAt) AND ci.uri < \(decoded.uri)))
+          ORDER BY ci.created_at DESC, ci.uri DESC
+          LIMIT \(limit)
+        )
+        SELECT ci.uri, ci.render_json::text, page.created_at, ci.publication_site
+        FROM page JOIN content_items ci ON ci.uri = page.uri
+        ORDER BY page.created_at DESC, page.uri DESC
         """,
-        logger: logger
+        pool: pool, logger: logger
       )
     }
 
     var fetched: [(uri: String, renderJSON: String, createdAt: Date, publicationSite: String?)] = []
-    for try await row in rows {
+    for row in rows {
       let (uri, renderJSON, createdAt, publicationSite) = try row.decode(
         (String, String, Date, String?).self
       )
@@ -3681,17 +3741,17 @@ public init(pool: PostgresClient, logger: Logger) {
     if try await pdsReadStateStatus(viewerDid: viewerDid).authority == .pds { return [:] }
     let uniqueIds = Array(Set(publicationIds)).sorted()
     guard !uniqueIds.isEmpty else { return [:] }
-    let rows = try await pool.query(
+    let rows = try await PostgresFeedQueryExecutor.query(
       """
       SELECT publication_id, read_floor_at, read_floor_uri
       FROM appview_publication_read_floors
       WHERE viewer_did = \(viewerDid)
         AND publication_id = ANY(\(uniqueIds))
       """,
-      logger: logger
+      pool: pool, logger: logger
     )
     var boundaries: [String: ReadWatermarkBoundary] = [:]
-    for try await row in rows {
+    for row in rows {
       let (publicationId, createdAt, entryId) = try row.decode(
         (String, Date, String?).self
       )
@@ -3709,7 +3769,7 @@ public init(pool: PostgresClient, logger: Logger) {
     publicationId: String
   ) async throws -> ReadWatermarkBoundary? {
     if try await pdsReadStateStatus(viewerDid: viewerDid).authority == .pds { return nil }
-    let rows = try await pool.query(
+    let rows = try await PostgresFeedQueryExecutor.query(
       """
       SELECT read_floor_at, read_floor_uri
       FROM appview_publication_read_floors
@@ -3717,9 +3777,9 @@ public init(pool: PostgresClient, logger: Logger) {
         AND publication_id = \(publicationId)
       LIMIT 1
       """,
-      logger: logger
+      pool: pool, logger: logger
     )
-    for try await row in rows {
+    for row in rows {
       let (createdAt, entryId) = try row.decode((Date, String?).self)
       return ReadWatermarkBoundary(
         publicationId: publicationId,
