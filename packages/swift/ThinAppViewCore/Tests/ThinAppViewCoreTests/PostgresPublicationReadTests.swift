@@ -128,6 +128,7 @@ struct PostgresPublicationReadTests {
       #expect(states == Dictionary(uniqueKeysWithValues: entries.map {
         ($0.entryId, expectedReads.contains($0.entryId))
       }))
+      #expect(try await fixture.store.readStates(viewerDid: viewer, entries: entries + entries) == states)
       let isolated = try await fixture.store.readStates(viewerDid: otherViewer, entries: entries)
       #expect(isolated == Dictionary(uniqueKeysWithValues: entries.map { ($0.entryId, $0.entryId == uri("isolated")) }))
       #expect(try await fixture.store.readStates(viewerDid: viewer, entries: []).isEmpty)

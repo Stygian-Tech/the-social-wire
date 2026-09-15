@@ -1103,17 +1103,17 @@ public init(pool: PostgresClient, logger: Logger) {
         if isUnreadOverride { unreadOverrides.insert(key) }
       }
     }
-    return Dictionary(uniqueKeysWithValues: entries.map { entry in
-      if let isRead = pdsStates[entry.entryId] { return (entry.entryId, isRead) }
+    return entries.reduce(into: [String: Bool]()) { states, entry in
+      if let isRead = pdsStates[entry.entryId] {
+        states[entry.entryId] = isRead
+        return
+      }
       let covered = entry.publicationId
         .flatMap { boundaries[$0] }?
         .contains(createdAt: entry.feedPositionAt, entryId: entry.entryId) ?? false
-      return (
-        entry.entryId,
-        explicitReads.contains(entry.entryId)
-          || (covered && !unreadOverrides.contains(entry.entryId))
-      )
-    })
+      states[entry.entryId] = explicitReads.contains(entry.entryId)
+        || (covered && !unreadOverrides.contains(entry.entryId))
+    }
   }
 
   public func listEntries(
