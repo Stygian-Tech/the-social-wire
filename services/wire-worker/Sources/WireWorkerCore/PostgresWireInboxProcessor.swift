@@ -455,19 +455,7 @@ struct PostgresWireInboxProcessor: Sendable {
       if event.eventKind == "snapshot" || event.cursorKind == "pds_record_snapshot"
         || (event.eventKind == "commit" && ["site.standard.document", "site.standard.entry", "site.standard.publication"].contains(event.collection ?? ""))
       {
-        do {
-          return try await applyStandardRecord(event, asOf: asOf)
-        } catch let transaction as PostgresTransactionError {
-          // A successful rollback preserves the original application outcome.
-          // Keep uncertain begin/commit/rollback failures on the retry path.
-          if transaction.beginError == nil, transaction.commitError == nil,
-            transaction.rollbackError == nil, let cause = transaction.closureError,
-            cause is ApplyError || cause is CancellationError
-          {
-            throw cause
-          }
-          throw transaction
-        }
+        return try await applyStandardRecord(event, asOf: asOf)
       }
       if event.eventKind == "commit",
         event.collection == "site.standard.graph.recommend"
