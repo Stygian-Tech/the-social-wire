@@ -589,7 +589,7 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.14
-      - name: Verify telemetry migration guards and interrupted retry
+      - name: Verify telemetry migration guards and bounded inbox diagnostics
         env:
           POSTGRES_MIGRATION_TEST_URL: postgresql://postgres:postgres@127.0.0.1:5432/tsw92_telemetry_test
           PSQL_BIN: /tmp/telemetry-test-psql
@@ -601,7 +601,7 @@ jobs:
           chmod +x "$PSQL_BIN"
           "$PSQL_BIN" postgresql://postgres:postgres@127.0.0.1:5432/socialwire_migrations \
             -X -v ON_ERROR_STOP=1 -c 'CREATE DATABASE tsw92_telemetry_test'
-          bun test --timeout 30000 packages/spec/__tests__/telemetry-index-migration-postgres.test.ts
+          bun test --timeout 30000 packages/spec/__tests__/telemetry-index-migration-postgres.test.ts packages/spec/__tests__/wire-inbox-readiness-postgres.test.ts
       - name: Verify Jetstream V2 drain indexes and query plans
         run: |
           docker run --rm --network host \
