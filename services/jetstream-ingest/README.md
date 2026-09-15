@@ -235,3 +235,36 @@ go vet ./...
 The process requires the provider-neutral database migrations and a disposable
 PostgreSQL database. Never use the hosted Development or Production database
 for local integration tests.
+
+### Optional Wire Recovery Canary Expiry
+
+`JETSTREAM_WIRE_REPLAY_CANARY_EXPIRES_AT` accepts an absolute RFC3339 UTC
+timestamp ending in `Z` (for example `2026-09-15T12:15:00Z`). It is unset by
+default. Named Wire lanes use `JETSTREAM_WIRE_<NAME>_REPLAY_CANARY_EXPIRES_AT`;
+legacy standalone Wire mode uses `JETSTREAM_REPLAY_CANARY_EXPIRES_AT`.
+AppView lanes reject this setting. Invalid timestamps fail configuration loading;
+past timestamps retain the stop instruction and do not start lane work.
+
+The expiry bounds the entire Wire lane, including lease acquisition and archive
+requests. At expiry the lane context cancels, the runner finishes cancellation
+and usage flushing before its lease is released, and the lane remains paused
+without supervisor retries. Co-hosted AppView intake is not cancelled. The
+expired lane stays unready; its startup/database evidence is not fabricated.
+The stop applies even if the canary reaches the live tail before expiry.
+
+Before activation, deploy this code to **every possible owner** and verify that
+all owners retain the same UTC expiry alongside the approved byte cap. A
+restart or failover reuses that absolute time; it must not generate a new
+duration. Hosts must have synchronized clocks. The in-process timer does not
+extend when the wall clock moves backward after it is armed, but this is not
+a distributed clock-skew protection mechanism. Removing or extending the
+configured expiry is a new operator action; an older or unconfigured owner
+cannot enforce it. Keep the setting after expiry until the reviewed recovery
+policy changes. Nothing resets incident bytes, checkpoints, or source identity.
+
+Cancellation stops new work at the deadline; graceful cleanup can finish later.
+An underlying operation that ignores cancellation is joined, never detached or
+represented as safely stopped. Existing fenced commits and usage accounting
+remain authoritative. The byte cap still permits already-in-flight overshoot.
+This guard does not authorize replay or replace the byte/disk/queue stop gates
+in `docs/runbooks/development-wire-replay-budget.md`.
