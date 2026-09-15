@@ -3,29 +3,12 @@ import SwiftUI
 /// Editorial presentation backed by the edition contract with ranked-list fallback.
 struct WireNewsView: View {
     @Environment(SocialWireAppModel.self) private var appModel
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.openURL) private var openURL
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let sceneModel: NewsSceneModel
 
-    private var usesPersistentDetail: Bool {
-        horizontalSizeClass != .compact
-    }
-
     var body: some View {
-        Group {
-            if usesPersistentDetail {
-                HStack(spacing: 0) {
-                    editorialCanvas
-                        .frame(minWidth: 360, idealWidth: 520, maxWidth: 620)
-                    Divider()
-                    detail
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
-            } else {
-                editorialCanvas
-            }
-        }
-        .navigationTitle("The Wire")
+        editorialCanvas
         .task {
             if appModel.readerListSource != .wire {
                 appModel.selectReaderListSource(.wire)
@@ -39,7 +22,7 @@ struct WireNewsView: View {
     private var editorialCanvas: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 24) {
-                masthead
+                WireMastheadView()
 
                 if let notice = appModel.wireFeedNotice {
                     Label(notice, systemImage: "exclamationmark.triangle")
@@ -59,23 +42,19 @@ struct WireNewsView: View {
                     .frame(maxWidth: .infinity, minHeight: 240)
                 } else {
                     WireLeadStoryCard(entry: appModel.entries[0]) {
-                        openInReader(appModel.entries[0])
+                        openStory(appModel.entries[0])
                     }
 
                     let supporting = Array(appModel.entries.dropFirst().prefix(4))
                     if !supporting.isEmpty {
                         WireSectionHeader(title: "Top Stories")
-                        LazyVGrid(
-                            columns: [GridItem(
-                                dynamicTypeSize.isAccessibilitySize ? .flexible() : .adaptive(minimum: 280),
-                                spacing: 18
-                            )],
-                            alignment: .leading,
-                            spacing: 18
+                        EditorialCardLayout(
+                            spacing: 18,
+                            minimumCardWidth: dynamicTypeSize.isAccessibilitySize ? 900 : 240
                         ) {
                             ForEach(supporting) { entry in
                                 WireStoryCard(entry: entry) {
-                                    openInReader(entry)
+                                    openStory(entry)
                                 }
                             }
                         }
@@ -88,16 +67,21 @@ struct WireNewsView: View {
                     let latest = Array(appModel.entries.dropFirst(5))
                     if !latest.isEmpty {
                         WireSectionHeader(title: "Latest")
-                        ForEach(latest) { entry in
-                            WireStoryRow(entry: entry) {
-                                openInReader(entry)
-                            }
-                            .onAppear {
-                                guard entry.id == latest.last?.id else { return }
-                                Task {
-                                    await appModel.loadMoreSelectedFeedIfNeeded(
-                                        triggeredByEntryId: entry.entryId
-                                    )
+                        EditorialCardLayout(
+                            spacing: 18,
+                            minimumCardWidth: dynamicTypeSize.isAccessibilitySize ? 900 : 240
+                        ) {
+                            ForEach(latest) { entry in
+                                WireStoryCard(entry: entry) {
+                                    openStory(entry)
+                                }
+                                .onAppear {
+                                    guard entry.id == latest.last?.id else { return }
+                                    Task {
+                                        await appModel.loadMoreSelectedFeedIfNeeded(
+                                            triggeredByEntryId: entry.entryId
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -118,53 +102,42 @@ struct WireNewsView: View {
         }
     }
 
-    private var masthead: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text("THE SOCIAL WIRE")
-                .font(.caption.weight(.semibold))
-                .tracking(1.4)
-                .foregroundStyle(.secondary)
-            Text("The Wire")
-                .font(.largeTitle.bold())
-        }
-        .accessibilityElement(children: .combine)
-    }
-
-    @ViewBuilder
-    private var detail: some View {
-        if let entry = appModel.selectedEntry {
-            EntryDetailView(entry: entry)
-        } else {
-            ContentUnavailableView(
-                "Select a Story",
-                systemImage: "doc.text",
-                description: Text("Open a story here or continue to the publisher's website.")
-            )
-        }
-    }
-
-    private func openInReader(_ entry: EntryListItem) {
+    private func openStory(_ entry: EntryListItem) {
         Task {
-            await appModel.selectEntry(entry)
-            guard let selected = appModel.selectedEntry, selected.entryId == entry.entryId else { return }
-            if !usesPersistentDetail {
-                sceneModel.navigate(to: .entry(id: selected.entryId), in: .wire)
+            let target = EntryOpenTargetResolver.resolve(
+                entryId: entry.entryId,
+                originalURL: entry.originalUrl,
+                rssArticleOpenMode: appModel.feedPreferences.articleOpenMode
+            )
+            switch target {
+            case .external(let websiteURL):
+                await appModel.recordExternalEntryOpen(entry)
+                openURL(websiteURL)
+            case .nativeRSS:
+                await appModel.selectEntry(entry)
+                guard appModel.selectedEntry?.entryId == entry.entryId else { return }
+                sceneModel.navigate(to: .entry(id: entry.entryId), in: .wire)
+            case nil:
+                appModel.errorMessage = "Couldn't Find A Link For This Article."
             }
         }
     }
 
     @ViewBuilder
     private func editionSections(_ edition: WireEditionPage) -> some View {
-        let byID = Dictionary(uniqueKeysWithValues: appModel.entries.map { ($0.entryId, $0) })
+        let byID = Dictionary(
+            appModel.entries.map { ($0.entryId, $0) },
+            uniquingKeysWith: { current, _ in current }
+        )
         let trending = edition.trendingStoryIds.compactMap { byID[$0] }
         if !trending.isEmpty {
-            WireEditorialRail(title: "Trending", entries: trending, onOpen: openInReader)
+            WireEditorialRail(title: "Trending", entries: trending, onOpen: openStory)
         }
 
         ForEach(edition.storyRails, id: \.id) { rail in
             let stories = rail.storyIds.compactMap { byID[$0] }
             if !stories.isEmpty {
-                WireEditorialRail(title: rail.title, entries: stories, onOpen: openInReader)
+                WireEditorialRail(title: rail.title, entries: stories, onOpen: openStory)
             }
         }
 
@@ -174,8 +147,13 @@ struct WireNewsView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     Text(spotlight.publication.displayName)
                         .font(.title3.bold())
-                    ForEach(spotlight.storyIds.compactMap { byID[$0] }) { story in
-                        WireStoryRow(entry: story) { openInReader(story) }
+                    EditorialCardLayout(
+                        spacing: 18,
+                        minimumCardWidth: dynamicTypeSize.isAccessibilitySize ? 900 : 240
+                    ) {
+                        ForEach(spotlight.storyIds.compactMap { byID[$0] }) { story in
+                            WireStoryCard(entry: story) { openStory(story) }
+                        }
                     }
                 }
             }
@@ -216,13 +194,15 @@ struct WireEditorialRail: View {
                 // a lazy stack can clip taller cards after a horizontal swipe.
                 HStack(alignment: .top, spacing: 16) {
                     ForEach(entries) { entry in
-                        WireStoryCard(entry: entry) { onOpen(entry) }
-                            .containerRelativeFrame(.horizontal) { width, _ in
-                                let count = dynamicTypeSize.isAccessibilitySize
-                                    ? 1 : max(1, ((width + 16) / 296).rounded(.down))
-                                return (width - 16 * (count - 1)) / count
-                            }
-                            .accessibilityIdentifier("wire-card-\(entry.id)")
+                        VStack {
+                            WireStoryCard(entry: entry) { onOpen(entry) }
+                        }
+                        .containerRelativeFrame(.horizontal) { width, _ in
+                            let count = dynamicTypeSize.isAccessibilitySize
+                                ? 1 : max(1, ((width + 16) / 296).rounded(.down))
+                            return (width - 16 * (count - 1)) / count
+                        }
+                        .accessibilityIdentifier("wire-card-\(entry.id)")
                     }
                 }
             }
@@ -236,36 +216,31 @@ struct WireLeadStoryCard: View {
     let onReadInApp: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            WireStoryImage(entry: entry, height: 220)
-            WireSourceLine(entry: entry)
-            websiteTitle
-            if let summary = entry.summary, !summary.isEmpty {
-                Text(summary)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
+        Button(action: onReadInApp) {
+            VStack(alignment: .leading, spacing: 0) {
+                WireStoryImage(entry: entry, height: 220)
+                VStack(alignment: .leading, spacing: 12) {
+                    WireSourceLine(entry: entry)
+                    Text(entry.title)
+                        .font(.title2.bold())
+                        .foregroundStyle(Color.primary)
+                        .multilineTextAlignment(.leading)
+                    if let summary = entry.summary, !summary.isEmpty {
+                        Text(summary)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .padding(18)
             }
-            NewsStoryActions(websiteURL: entry.originalUrl.flatMap(URL.init(string:)), onReadInApp: onReadInApp)
         }
+        .buttonStyle(.plain)
+        .accessibilityHint("Opens the story")
         .accessibilityElement(children: .contain)
-    }
-
-    @ViewBuilder
-    private var websiteTitle: some View {
-        if let url = entry.originalUrl.flatMap(URL.init(string:)) {
-            Link(destination: url) {
-                Text(entry.title)
-                    .font(.title2.bold())
-                    .foregroundStyle(Color.primary)
-                    .multilineTextAlignment(.leading)
-            }
-            .accessibilityHint("Opens the publisher's website")
-        } else {
-            Text(entry.title)
-                .font(.title2.bold())
-        }
+        .background(.thinMaterial, in: .rect(cornerRadius: 18))
+        .clipShape(.rect(cornerRadius: 18))
     }
 }
 
@@ -274,29 +249,28 @@ struct WireStoryCard: View {
     let onReadInApp: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            WireStoryImage(entry: entry, height: 150)
-            WireSourceLine(entry: entry)
-            if let url = entry.originalUrl.flatMap(URL.init(string:)) {
-                Link(destination: url) {
+        Button(action: onReadInApp) {
+            VStack(alignment: .leading, spacing: 0) {
+                WireStoryImage(entry: entry, height: 150)
+                VStack(alignment: .leading, spacing: 9) {
+                    WireSourceLine(entry: entry)
                     Text(entry.title)
                         .font(.headline)
                         .foregroundStyle(Color.primary)
                         .lineLimit(3)
                         .multilineTextAlignment(.leading)
                 }
-                .accessibilityHint("Opens the publisher's website")
-            } else {
-                Text(entry.title)
-                    .font(.headline)
-                    .lineLimit(3)
+                .padding(14)
             }
-            NewsStoryActions(websiteURL: entry.originalUrl.flatMap(URL.init(string:)), onReadInApp: onReadInApp)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .buttonStyle(.plain)
+        .accessibilityLabel("Open Story")
+        .accessibilityHint("Opens the story")
+        .accessibilityIdentifier("story-open")
         .fixedSize(horizontal: false, vertical: true)
-        .padding(14)
+        .frame(maxWidth: .infinity, minHeight: 45, alignment: .leading)
         .background(.thinMaterial, in: .rect(cornerRadius: 16))
+        .clipShape(.rect(cornerRadius: 16))
         .multilineTextAlignment(.leading)
         .accessibilityElement(children: .contain)
     }
@@ -338,7 +312,7 @@ struct WireStoryRow: View {
                         .foregroundStyle(.tertiary)
                 }
             }
-            NewsStoryActions(websiteURL: entry.originalUrl.flatMap(URL.init(string:)), onReadInApp: onReadInApp)
+            NewsStoryActions(onOpenStory: onReadInApp)
         }
         .fixedSize(horizontal: false, vertical: true)
         .padding(.vertical, 8)

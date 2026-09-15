@@ -191,18 +191,18 @@ schemes:
         SocialWireTests: [test]
         SocialWireUITests: [test]
     run:
-      config: Beta
+      config: Release
     test:
-      config: Beta
+      config: Release
       targets:
         - SocialWireTests
         - SocialWireUITests
     profile:
-      config: Beta
+      config: Release
     analyze:
-      config: Beta
+      config: Release
     archive:
-      config: Beta
+      config: Release
   SocialWire-macOS:
     build:
       targets:

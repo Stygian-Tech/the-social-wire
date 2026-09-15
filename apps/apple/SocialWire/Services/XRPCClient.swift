@@ -1,15 +1,23 @@
 import Foundation
+import OSLog
 
 @MainActor
 final class XRPCClient {
+    private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "TheSocialWire", category: "XRPC")
+
     private let auth: ATProtoOAuthService
     private let resolver: ATProtoResolver
+    private let transport: @Sendable (URLRequest) async throws -> (Data, URLResponse)
     private let jsonDecoder = JSONDecoder()
     private let jsonEncoder = JSONEncoder()
 
-    init(auth: ATProtoOAuthService, resolver: ATProtoResolver) {
+    init(auth: ATProtoOAuthService, resolver: ATProtoResolver,
+         transport: @escaping @Sendable (URLRequest) async throws -> (Data, URLResponse) = {
+             try await URLSession.shared.data(for: $0)
+         }) {
         self.auth = auth
         self.resolver = resolver
+        self.transport = transport
     }
 
     func currentDID() async throws -> String {
@@ -71,9 +79,6 @@ final class XRPCClient {
         func parseRepoRecordOptional(_ data: Data, _ http: HTTPURLResponse) throws -> RepoRecord<Value>? {
             if http.statusCode == 404 { return nil }
             guard (200 ..< 300).contains(http.statusCode) else {
-                if http.statusCode == 401 {
-                    auth.invalidateSessionAfterUnauthorizedResponse()
-                }
                 throw SocialWireError.badResponse("XRPC request failed with HTTP \(http.statusCode).")
             }
             return try jsonDecoder.decode(RepoRecord<Value>.self, from: data)
@@ -83,27 +88,8 @@ final class XRPCClient {
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         try await sign(&request, session: session)
 
-        let (firstData, firstResponse) = try await URLSession.shared.data(for: request)
-        guard let firstHttp = firstResponse as? HTTPURLResponse else {
-            throw SocialWireError.badResponse("Missing response.")
-        }
-        await auth.dpop.updateNonce(from: firstHttp)
-
-        if [400, 401].contains(firstHttp.statusCode),
-           firstHttp.value(forHTTPHeaderField: "DPoP-Nonce") != nil {
-            var retry = URLRequest(url: url)
-            retry.setValue("application/json", forHTTPHeaderField: "Accept")
-            try await sign(&retry, session: session)
-
-            let (retryData, retryResponse) = try await URLSession.shared.data(for: retry)
-            guard let retryHttp = retryResponse as? HTTPURLResponse else {
-                throw SocialWireError.badResponse("Missing response.")
-            }
-            await auth.dpop.updateNonce(from: retryHttp)
-            return try parseRepoRecordOptional(retryData, retryHttp)
-        }
-
-        return try parseRepoRecordOptional(firstData, firstHttp)
+        let (data, response) = try await sendAuthorized(request, session: session)
+        return try parseRepoRecordOptional(data, response)
     }
 
     func listRecords<Value: Codable & Sendable>(
@@ -236,30 +222,66 @@ final class XRPCClient {
     }
 
     private func sendWithDPoPRetry<T: Decodable>(_ request: URLRequest, session: AuthSession) async throws -> T {
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse else { throw SocialWireError.badResponse("Missing response.") }
-        await auth.dpop.updateNonce(from: http)
-        if [400, 401].contains(http.statusCode), http.value(forHTTPHeaderField: "DPoP-Nonce") != nil {
-            var retry = request
-            try await sign(&retry, session: session)
-            let (retryData, retryResponse) = try await URLSession.shared.data(for: retry)
-            guard let retryHttp = retryResponse as? HTTPURLResponse else {
-                throw SocialWireError.badResponse("Missing response.")
+        let (data, response) = try await sendAuthorized(request, session: session)
+        return try decode(data: data, response: response)
+    }
+
+    private func sendAuthorized(_ request: URLRequest, session: AuthSession) async throws -> (Data, HTTPURLResponse) {
+        var currentSession = session
+        // A resource rejection permits one token refresh; each token gets the existing bounded
+        // nonce ceremony. Only the viewer's own PDS may trigger credential recovery.
+        for recovery in 0 ... 1 {
+            var currentRequest = request
+            if recovery > 0 { try await sign(&currentRequest, session: currentSession) }
+            for attempt in 1 ... 3 {
+                let (data, response) = try await transport(currentRequest)
+                guard let http = response as? HTTPURLResponse else {
+                    throw SocialWireError.badResponse("Missing response.")
+                }
+                await auth.dpop.updateNonce(from: http)
+                let nonceChallenge = [400, 401].contains(http.statusCode)
+                    && http.value(forHTTPHeaderField: "DPoP-Nonce") != nil
+                if nonceChallenge, attempt < 3 {
+                    Self.logger.debug("XRPC DPoP nonce challenge, attempt \(attempt)")
+                    currentRequest = request
+                    try await sign(&currentRequest, session: currentSession)
+                    continue
+                }
+                let invalidToken = Self.isInvalidTokenResponse(http, data: data)
+                if http.statusCode == 401, (!nonceChallenge || invalidToken),
+                   Self.hasSameOrigin(request.url, currentSession.pdsURL) {
+                    if recovery == 0 {
+                        currentSession = try await auth.refreshedSession(rejected: currentSession)
+                        break
+                    }
+                    if invalidToken {
+                        auth.invalidateSessionAfterUnauthorizedResponse(rejected: currentSession)
+                    }
+                }
+                return (data, http)
             }
-            await auth.dpop.updateNonce(from: retryHttp)
-            if retryHttp.statusCode == 401 {
-                auth.invalidateSessionAfterUnauthorizedResponse()
-            }
-            return try decode(data: retryData, response: retryHttp)
         }
-        if http.statusCode == 401 {
-            auth.invalidateSessionAfterUnauthorizedResponse()
-        }
-        return try decode(data: data, response: http)
+        throw SocialWireError.badResponse("XRPC request exhausted authentication recovery.")
+    }
+
+    nonisolated static func isInvalidTokenResponse(_ response: HTTPURLResponse, data: Data) -> Bool {
+        guard response.statusCode == 401 else { return false }
+        let body = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        let code = (body?["error"] as? String)?.lowercased()
+        return ["invalidtoken", "expiredtoken", "invalid_token", "token_expired"].contains(code ?? "")
+            || response.value(forHTTPHeaderField: "WWW-Authenticate")?.lowercased()
+                .contains("error=\"invalid_token\"") == true
+    }
+
+    nonisolated private static func hasSameOrigin(_ lhs: URL?, _ rhs: URL) -> Bool {
+        guard let lhs else { return false }
+        return lhs.scheme?.lowercased() == rhs.scheme?.lowercased()
+            && lhs.host?.lowercased() == rhs.host?.lowercased()
+            && (lhs.port ?? 443) == (rhs.port ?? 443)
     }
 
     private func send<T: Decodable>(_ request: URLRequest) async throws -> T {
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await transport(request)
         guard let http = response as? HTTPURLResponse else { throw SocialWireError.badResponse("Missing response.") }
         return try decode(data: data, response: http)
     }

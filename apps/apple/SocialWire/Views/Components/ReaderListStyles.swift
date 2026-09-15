@@ -14,6 +14,12 @@ extension View {
             .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
     }
 
+    /// Compact source-list spacing for the macOS-style navigation sidebar.
+    func readerSidebarListRow() -> some View {
+        listRowBackground(Color.clear)
+            .listRowInsets(EdgeInsets(top: 3, leading: 12, bottom: 3, trailing: 12))
+    }
+
     /// Expand button/list row labels to the full row width for reliable taps.
     func readerFullWidthTapLabel() -> some View {
         frame(maxWidth: .infinity, alignment: .leading)

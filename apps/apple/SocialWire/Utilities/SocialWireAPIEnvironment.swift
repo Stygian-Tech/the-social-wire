@@ -5,8 +5,8 @@ enum SocialWireAPIEnvironment {
     private static let productionBaseURLString = "https://api.thesocialwire.app"
     private static let testingBaseURLString = "https://api.testing.thesocialwire.app"
 
-    /// Debug simulators/devices and **TestFlight** (`Beta`) builds hit the testing API.
-    /// **App Store** Release builds (`Release`) use production.
+    /// Debug simulators/devices and explicit `Beta` builds hit the testing API.
+    /// TestFlight and App Store archives use `Release` and production.
     static var baseURLString: String {
         #if DEBUG || SOCIALWIRE_TESTING_API
         testingBaseURLString

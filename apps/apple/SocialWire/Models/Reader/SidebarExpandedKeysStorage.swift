@@ -1,14 +1,18 @@
 import Foundation
 
 struct SidebarExpandedSnapshot: Equatable {
+    var subscribedFeedExpanded: Bool
+    var followingFeedExpanded: Bool
     var foldersSectionExpanded: Bool
     var publicationsSectionExpanded: Bool
     var expandedFolderRkeys: Set<String>
 
     static func `default`() -> Self {
         Self(
-            foldersSectionExpanded: true,
-            publicationsSectionExpanded: true,
+            subscribedFeedExpanded: false,
+            followingFeedExpanded: false,
+            foldersSectionExpanded: false,
+            publicationsSectionExpanded: false,
             expandedFolderRkeys: []
         )
     }
@@ -16,6 +20,8 @@ struct SidebarExpandedSnapshot: Equatable {
 
 enum SidebarExpandedKeysStorage {
     static let storageKey = "the-social-wire.sidebar-expanded-keys.v1"
+    static let subscribedFeedKey = "__sidebar_feed:subscribed"
+    static let followingFeedKey = "__sidebar_feed:following"
     static let foldersSectionKey = "__sidebar_sec:folders"
     static let publicationsSectionKey = "__sidebar_sec:publications"
     private static let folderExpandPrefix = "folder:"
@@ -31,8 +37,8 @@ enum SidebarExpandedKeysStorage {
 
     static func load(viewerDid: String) -> SidebarExpandedSnapshot {
         guard !viewerDid.isEmpty else { return .default() }
-        let keys = storedKeys(for: viewerDid)
-        guard !keys.isEmpty else { return .default() }
+        let store = readStore()
+        guard let keys = store[viewerDid] else { return .default() }
 
         var expandedFolderRkeys = Set<String>()
         for key in keys {
@@ -42,6 +48,8 @@ enum SidebarExpandedKeysStorage {
         }
 
         return SidebarExpandedSnapshot(
+            subscribedFeedExpanded: keys.contains(subscribedFeedKey),
+            followingFeedExpanded: keys.contains(followingFeedKey),
             foldersSectionExpanded: keys.contains(foldersSectionKey),
             publicationsSectionExpanded: keys.contains(publicationsSectionKey),
             expandedFolderRkeys: expandedFolderRkeys
@@ -52,6 +60,12 @@ enum SidebarExpandedKeysStorage {
         guard !viewerDid.isEmpty else { return }
 
         var keys: [String] = []
+        if snapshot.subscribedFeedExpanded {
+            keys.append(subscribedFeedKey)
+        }
+        if snapshot.followingFeedExpanded {
+            keys.append(followingFeedKey)
+        }
         if snapshot.foldersSectionExpanded {
             keys.append(foldersSectionKey)
         }
@@ -81,10 +95,6 @@ enum SidebarExpandedKeysStorage {
     }
 
     private typealias ExpandedKeysStore = [String: [String]]
-
-    private static func storedKeys(for viewerDid: String) -> [String] {
-        readStore()[viewerDid] ?? []
-    }
 
     private static func readStore() -> ExpandedKeysStore {
         guard let raw = UserDefaults.standard.string(forKey: storageKey),
