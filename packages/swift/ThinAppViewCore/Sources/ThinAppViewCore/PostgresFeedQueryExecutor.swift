@@ -17,8 +17,13 @@ enum PostgresFeedQueryExecutor {
     let result = try await withThrowingTaskGroup(of: [PostgresRow].self) { group in
       defer { group.cancelAll() }
       group.addTask {
-        try await withTaskCancellationHandler {
+        let poolWait = AppViewFeedRequestTimings.startPoolWait()
+        defer { poolWait?.finish() }
+        return try await withTaskCancellationHandler {
           try await pool.withConnection { connection in
+            poolWait?.finish()
+            let transaction = AppViewFeedRequestTimings.startTransaction()
+            defer { transaction?.finish() }
             try await lifetime.install(connection)
             do {
               _ = try await lifetime.query("BEGIN READ ONLY", connection: connection, logger: logger)
@@ -26,6 +31,8 @@ enum PostgresFeedQueryExecutor {
               _ = try await lifetime.query(
                 "SELECT set_config('statement_timeout', \(String(milliseconds)), true)",
                 connection: connection, logger: logger)
+              // Count application SELECT attempts, excluding BEGIN/SET/COMMIT.
+              AppViewFeedRequestTimings.recordQuery()
               let rows = try await lifetime.query(query, connection: connection, logger: logger)
               _ = try await lifetime.query("COMMIT", connection: connection, logger: logger)
               await lifetime.finish()
