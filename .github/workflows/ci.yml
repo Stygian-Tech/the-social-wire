@@ -119,12 +119,30 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
+      - name: Prepare iOS simulator
+        id: simulator
+        timeout-minutes: 10
+        run: |
+          xcodebuild -version
+          xcodebuild -runFirstLaunch
+          xcrun simctl list runtimes
+          # Let simctl choose the newest compatible installed runtime, rather
+          # than asking xcodebuild for OS=latest on a pre-created device.
+          if ! simulator_id=$(xcrun simctl create SocialWireCI 'iPhone 17 Pro'); then
+            xcodebuild -downloadPlatform iOS
+            simulator_id=$(xcrun simctl create SocialWireCI 'iPhone 17 Pro')
+          fi
+          xcrun simctl boot "$simulator_id"
+          xcrun simctl bootstatus "$simulator_id" -b
+          echo "id=$simulator_id" >> "$GITHUB_OUTPUT"
       - name: Test iOS app with coverage
+        env:
+          IOS_SIMULATOR_ID: ${{ steps.simulator.outputs.id }}
         run: |
           xcodebuild test \
             -project "apps/apple/The Social Wire.xcodeproj" \
             -scheme SocialWire \
-            -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=latest' \
+            -destination "platform=iOS Simulator,id=$IOS_SIMULATOR_ID" \
             -enableCodeCoverage YES \
             -resultBundlePath "$RUNNER_TEMP/SocialWireTests.xcresult" \
             CODE_SIGNING_ALLOWED=NO
