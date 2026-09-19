@@ -1305,6 +1305,14 @@ final class PostgresInboxFixture: @unchecked Sendable {
         "database/migrations/20260909030000_fence_pds_manifest_maintenance.sql"), encoding: .utf8)
       try await execute(PostgresQuery(unsafeSQL: "DO $fixture$ BEGIN\n" + migration + "\nEND $fixture$;"))
     }
+    // Idempotent CREATE OR REPLACE: reapplying keeps shared fixtures on the current definition.
+    do {
+      var root = URL(fileURLWithPath: #filePath)
+      for _ in 0..<6 { root.deleteLastPathComponent() }
+      let migration = try String(contentsOf: root.appendingPathComponent(
+        "database/migrations/20260919080000_evaluate_pds_read_state_once.sql"), encoding: .utf8)
+      try await execute(PostgresQuery(unsafeSQL: "DO $fixture$ BEGIN\n" + migration + "\nEND $fixture$;"))
+    }
     let recovery = try await connection.query(
       "SELECT to_regclass('appview_repository_recovery_records') IS NOT NULL", logger: logger)
     var needsRecovery = true

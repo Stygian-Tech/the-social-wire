@@ -150,6 +150,42 @@ extension PostgresJetstreamInboxIntegrationTests {
         #expect(try await fixture.store.listFeedEntries(
           viewerDid: viewer + "-other", selector: selector,
           filter: .all, cursor: nil, limit: 2) == nil)
+        // An entry may belong to two scope aliases with different legacy floors. The existing
+        // date/URI duplicate ordering does not choose between identical URI scope matches;
+        // whichever publication wins must retain its own floor, never another alias's state.
+        let aliasPublication = publication + "-alias"
+        try await execute("""
+          INSERT INTO appview_publication_scopes
+            (viewer_did, publication_id, author_did, publication_at_uri, scope_keys, updated_at)
+          VALUES (\(viewer), \(aliasPublication), \(author), \(aliasPublication),
+            jsonb_build_array(\(publication)::text), \(now))
+          """)
+        try await execute("""
+          INSERT INTO appview_publication_scope_keys (viewer_did, publication_id, author_did, scope_key)
+          VALUES (\(viewer), \(aliasPublication), \(author), \(publication))
+          ON CONFLICT (viewer_did, publication_id, scope_key) DO NOTHING
+          """)
+        try await execute("""
+          INSERT INTO appview_feed_publications (viewer_did, feed_kind, feed_id, publication_id)
+          VALUES (\(viewer), 'subscribed', '', \(aliasPublication))
+          """)
+        for filter in [EntryListFilter.all, .unread, .read] {
+          let overlap = try #require(try await fixture.store.listFeedEntries(
+            viewerDid: viewer, selector: selector, filter: filter, cursor: nil, limit: 100))
+          #expect(Set(overlap.response.entries.map(\.entryId)).count == overlap.response.entries.count)
+          for entry in overlap.response.entries {
+            let expectedRead = entry.title == "new-duplicate"
+              || (entry.publicationId == publication && ["a", "old"].contains(entry.title))
+            #expect(entry.isRead == expectedRead)
+            if filter != .all { #expect(entry.isRead == (filter == .read)) }
+            #expect(entry.title != "old-duplicate")
+          }
+        }
+        try await execute("""
+          DELETE FROM appview_feed_publications
+          WHERE viewer_did = \(viewer) AND publication_id = \(aliasPublication)
+          """)
+
         // Development also resolves PDS authority through the author/site-aware lateral function.
         // A newer exact unread must beat a PDS bulk read and the retained legacy read floor.
         try await execute("""
@@ -178,6 +214,70 @@ extension PostgresJetstreamInboxIntegrationTests {
           #expect(page.response.entries.map(\.entryId) == expected.map(uri))
           #expect(page.response.entries.allSatisfy { $0.isRead == (filter == .read) })
         }
+        try await execute("""
+          UPDATE appview_pds_read_state_authority SET projection_ready = FALSE
+          WHERE viewer_did = \(viewer)
+          """)
+        do {
+          _ = try await fixture.store.listFeedEntries(
+            viewerDid: viewer, selector: selector, filter: .all, cursor: nil, limit: 2)
+          Issue.record("All feed returned entries while authoritative PDS read state was unavailable")
+        } catch {}
+        let unavailableEmpty = try #require(try await fixture.store.listFeedEntries(
+          viewerDid: viewer, selector: .init(kind: .folder, id: "empty"),
+          filter: .all, cursor: nil, limit: 2))
+        #expect(unavailableEmpty.response.entries.isEmpty)
+        try await execute("""
+          UPDATE appview_pds_read_state_authority SET projection_ready = TRUE
+          WHERE viewer_did = \(viewer)
+          """)
+
+        // A large older corpus must not turn the All page into a read-state scan of the entire
+        // history. Paired article URLs also exercise duplicate selection beyond the first page.
+        try await execute("""
+          INSERT INTO content_items
+            (uri, cid, author_did, collection, created_at, indexed_at, publication_site, render_json, expires_at)
+          SELECT \(prefix) || 'history-' || n, 'cid', \(author), 'site.standard.document',
+            \(timestamp) - n * interval '1 second', \(now), \(publication),
+            jsonb_build_object('title', 'history-' || n,
+              'publishedAt', \(ISO8601DateFormatter().string(from: timestamp))::text,
+              'summary', \(summary)::text,
+              'articleUrl', 'https://example.com/history/' || (n / 2)),
+            \(now.addingTimeInterval(3600))
+          FROM generate_series(1, 10000) AS n
+          """)
+        let largePage = try #require(try await AppViewFeedQueryDeadline.$current.withValue(.init()) {
+          try await fixture.store.listFeedEntries(
+            viewerDid: viewer, selector: selector, filter: .all, cursor: nil, limit: 24)
+        })
+        let firstHistory = [1] + Array(stride(from: 2, through: 34, by: 2))
+        #expect(largePage.response.entries.map(\.entryId) ==
+          ["new-duplicate", "b", "a", "override", "old", "wild"].map(uri)
+            + firstHistory.map { uri("history-\($0)") })
+        #expect(largePage.response.entries.allSatisfy { $0.summary == summary })
+        for entry in largePage.response.entries {
+          #expect(entry.isRead == !["new-duplicate", "a", "wild"].contains(entry.title))
+        }
+        let largeCursor = try #require(largePage.response.cursor)
+        #expect(ThinAppViewCursor.decode(largeCursor)?.uri == uri("history-34"))
+        let nextLargePage = try #require(try await fixture.store.listFeedEntries(
+          viewerDid: viewer, selector: selector, filter: .all, cursor: largeCursor, limit: 2))
+        // Cursor-before-deduplication deliberately exposes the older paired copy on page two.
+        #expect(nextLargePage.response.entries.map(\.entryId) == [uri("history-35"), uri("history-36")])
+        let largeUnread = try #require(try await AppViewFeedQueryDeadline.$current.withValue(.init()) {
+          try await fixture.store.listFeedEntries(
+            viewerDid: viewer, selector: selector, filter: .unread, cursor: nil, limit: 24)
+        })
+        #expect(largeUnread.response.entries.map(\.entryId) == ["new-duplicate", "a", "wild"].map(uri))
+        #expect(largeUnread.response.cursor == nil)
+        let largeRead = try #require(try await AppViewFeedQueryDeadline.$current.withValue(.init()) {
+          try await fixture.store.listFeedEntries(
+            viewerDid: viewer, selector: selector, filter: .read, cursor: nil, limit: 24)
+        })
+        #expect(largeRead.response.entries.map(\.entryId) ==
+          ["b", "override", "old"].map(uri)
+            + ([1] + Array(stride(from: 2, through: 40, by: 2))).map { uri("history-\($0)") })
+        #expect(largeRead.response.entries.allSatisfy { $0.isRead == true })
       } catch {
         try? await cleanup(fixture, viewer: viewer, author: author)
         throw error
