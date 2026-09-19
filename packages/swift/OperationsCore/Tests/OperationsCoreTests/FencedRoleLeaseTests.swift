@@ -158,9 +158,14 @@ struct FencedRoleLeaseTests {
     defer { try? FileManager.default.removeItem(at: url) }
     let store = try SQLiteOperationsStore(path: url.path, environment: "test", logger: Logger(label: "lease-clock"))
     let skewed = Date(timeIntervalSince1970: 1)
+    let beforeAcquisition = Date()
     let lease = try #require(try await store.acquireRoleLease(
       role: "wire", ownerID: "one", leaseUntil: skewed.addingTimeInterval(30), at: skewed))
-    #expect(abs(lease.updatedAt.timeIntervalSince(Date())) < 1)
+    let afterAcquisition = Date()
+    // Storage serializes fractional seconds to milliseconds; commit/scheduling
+    // latency is not a clock-authority requirement.
+    #expect(lease.updatedAt >= beforeAcquisition.addingTimeInterval(-0.001))
+    #expect(lease.updatedAt <= afterAcquisition.addingTimeInterval(0.001))
     #expect(abs(lease.expiresAt.timeIntervalSince(lease.updatedAt) - 30) < 0.001)
   }
 

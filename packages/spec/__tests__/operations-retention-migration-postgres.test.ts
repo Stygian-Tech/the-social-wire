@@ -71,6 +71,43 @@ function usesIndex(plan: Plan, name: string): boolean {
   return plan["Index Name"] === name || (plan.Plans ?? []).some(child => usesIndex(child, name));
 }
 
+async function interruptedIndexBuild(table: string, index: string, definition: string): Promise<string> {
+  const blockerURL = new URL(testURL);
+  const applicationName = `${databaseName}_writer`;
+  blockerURL.searchParams.set("application_name", applicationName);
+  const blocker = spawn(psql, ["-X", "--set", "ON_ERROR_STOP=1", "--dbname", blockerURL.toString(),
+    "--command", `BEGIN; LOCK TABLE ${table} IN ROW EXCLUSIVE MODE; SELECT pg_sleep(15); ROLLBACK`],
+    { stdio: "ignore" });
+  const exited = new Promise<void>((resolve, reject) => {
+    blocker.once("exit", () => resolve());
+    blocker.once("error", reject);
+  });
+  let invalidOID: string;
+  try {
+    let locked = false;
+    for (let attempt = 0; attempt < 100; attempt++) {
+      locked = sql(`SELECT EXISTS (SELECT 1 FROM pg_locks l JOIN pg_stat_activity a ON a.pid=l.pid
+        WHERE a.datname=current_database() AND a.application_name='${applicationName}'
+          AND l.relation='${table}'::regclass AND l.mode='RowExclusiveLock' AND l.granted)`) === "t";
+      if (locked) break;
+      await new Promise(resolve => setTimeout(resolve, 20));
+    }
+    expect(locked).toBe(true);
+    const interrupted = execute(testURL, [], `SET statement_timeout='250ms';
+      CREATE INDEX CONCURRENTLY ${index} ON ${table}${definition};`);
+    expect(interrupted.status).not.toBe(0);
+    expect(interrupted.stderr).toContain("statement timeout");
+    const invalid = indexState(index);
+    expect(invalid.valid).toBe(false);
+    invalidOID = invalid.oid;
+  } finally {
+    sql(`SELECT pg_terminate_backend(pid) FROM pg_stat_activity
+      WHERE datname=current_database() AND application_name='${applicationName}'`);
+    await exited;
+  }
+  return invalidOID!;
+}
+
 describe.skipIf(!adminURL)("Operations retention index migration PostgreSQL", () => {
   beforeAll(() => {
     const base = new URL(adminURL!);
@@ -114,8 +151,35 @@ describe.skipIf(!adminURL)("Operations retention index migration PostgreSQL", ()
     const original = indexState(targets[0][1]);
     expect(original.valid).toBe(true);
     expect(original.columns).toEqual(["environment", "id"]);
-    expect(() => applyMigration()).toThrow("valid Operations retention indexes are required");
+    expect(() => applyMigration()).toThrow("unexpected Operations retention index definition");
     expect(indexState(targets[0][1])).toEqual(original);
+    expect(sql("SELECT to_regclass('public.idx_operations_trace_spans_expiry') IS NULL")).toBe("t");
+    verifyRows();
+  });
+
+  it.each([
+    ["wrong columns", "operations_trace_spans", "(environment, id)"],
+    ["wrong table", "operations_events", "(environment, expires_at)"],
+    ["partial index", "operations_trace_spans", "(environment, expires_at) WHERE environment='prod'"],
+    ["included column", "operations_trace_spans", "(environment, expires_at) INCLUDE (id)"],
+  ])("preserves an invalid %s collision and leaves the first retry artifact untouched", async (_label, table, definition) => {
+    fixture();
+    await interruptedIndexBuild("operations_events", targets[0][1], "(environment, expires_at)");
+    await interruptedIndexBuild(table, targets[1][1], definition);
+    const before = targets.map(([, index]) => indexState(index));
+    expect(before.every(state => !state.valid)).toBe(true);
+    expect(() => applyMigration()).toThrow("unexpected Operations retention index definition");
+    expect(targets.map(([, index]) => indexState(index))).toEqual(before);
+    verifyRows();
+  });
+
+  it("rejects a colliding non-index object before creating either index", () => {
+    fixture();
+    sql("CREATE VIEW idx_operations_trace_spans_expiry AS SELECT id FROM operations_trace_spans");
+    const oid = sql("SELECT 'public.idx_operations_trace_spans_expiry'::regclass::oid");
+    expect(() => applyMigration()).toThrow("unexpected Operations retention index definition");
+    expect(sql("SELECT 'public.idx_operations_trace_spans_expiry'::regclass::oid")).toBe(oid);
+    expect(sql("SELECT to_regclass('public.idx_operations_events_expiry') IS NULL")).toBe("t");
     verifyRows();
   });
 
@@ -131,39 +195,7 @@ describe.skipIf(!adminURL)("Operations retention index migration PostgreSQL", ()
 
   it("repairs the invalid artifact of an actually interrupted concurrent index build", async () => {
     fixture();
-    const blockerURL = new URL(testURL);
-    const applicationName = `${databaseName}_writer`;
-    blockerURL.searchParams.set("application_name", applicationName);
-    const blocker = spawn(psql, ["-X", "--set", "ON_ERROR_STOP=1", "--dbname", blockerURL.toString(),
-      "--command", "BEGIN; LOCK TABLE operations_events IN ROW EXCLUSIVE MODE; SELECT pg_sleep(15); ROLLBACK"],
-      { stdio: "ignore" });
-    const exited = new Promise<void>((resolve, reject) => {
-      blocker.once("exit", () => resolve());
-      blocker.once("error", reject);
-    });
-    let invalidOID: string;
-    try {
-      let locked = false;
-      for (let attempt = 0; attempt < 100; attempt++) {
-        locked = sql(`SELECT EXISTS (SELECT 1 FROM pg_locks l JOIN pg_stat_activity a ON a.pid=l.pid
-          WHERE a.datname=current_database() AND a.application_name='${applicationName}'
-            AND l.relation='operations_events'::regclass AND l.mode='RowExclusiveLock' AND l.granted)`) === "t";
-        if (locked) break;
-        await new Promise(resolve => setTimeout(resolve, 20));
-      }
-      expect(locked).toBe(true);
-      const interrupted = execute(testURL, [], `SET statement_timeout='250ms';
-        CREATE INDEX CONCURRENTLY idx_operations_events_expiry ON operations_events(environment, expires_at);`);
-      expect(interrupted.status).not.toBe(0);
-      expect(interrupted.stderr).toContain("statement timeout");
-      const invalid = indexState(targets[0][1]);
-      expect(invalid.valid).toBe(false);
-      invalidOID = invalid.oid;
-    } finally {
-      sql(`SELECT pg_terminate_backend(pid) FROM pg_stat_activity
-        WHERE datname=current_database() AND application_name='${applicationName}'`);
-      await exited;
-    }
+    const invalidOID = await interruptedIndexBuild("operations_events", targets[0][1], "(environment, expires_at)");
     applyMigration();
     expect(indexState(targets[0][1]).valid).toBe(true);
     expect(indexState(targets[0][1]).oid).not.toBe(invalidOID!);

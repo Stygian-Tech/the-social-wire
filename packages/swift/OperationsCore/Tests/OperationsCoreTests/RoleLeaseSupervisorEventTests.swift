@@ -83,9 +83,10 @@ struct RoleLeaseSupervisorEventTests {
       onEvent: events.record)
     let task = Task { await supervisor.run { _ in Issue.record("Contended operation must not start") } }
     await events.wait(for: .contended)
+    // Assert contention before teardown can cancel a subsequent acquisition.
+    #expect(!events.snapshot.contains(.acquisitionFailed))
     task.cancel()
     await task.value
-    #expect(!events.snapshot.contains(.acquisitionFailed))
 
     try await fixture.store.db.write { database in
       try database.execute(sql: "DROP TABLE operations_role_leases")
