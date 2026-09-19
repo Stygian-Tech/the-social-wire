@@ -1385,13 +1385,38 @@ public init(pool: PostgresClient, logger: Logger) {
     let isPublication = selector.kind == .publication
     let databaseStartedAt = Date()
 
-    // Keep full render payloads out of the deduplication and page sorts. Hydrate only the
-    // selected URIs in the same statement so publication, read state, and content share a snapshot.
-    // Resolve read state after choosing the newest duplicate. All feeds also select their page
-    // first; filtered feeds must resolve every deduplicated candidate before applying the limit.
+    // All feeds resolve read state for only the selected page. Filtered feeds keep
+    // their existing joins before deduplication: moving those joins after ROW_NUMBER gives
+    // PostgreSQL a poor cardinality estimate and can turn hash joins into per-entry lookups.
+    // These fragments contain fixed SQL grammar only; every request value remains bound.
+    let contentSelection = includeAll ? """
+      , ranked_content AS (
+        SELECT content.*,
+          ROW_NUMBER() OVER (
+            PARTITION BY content.article_key
+            ORDER BY content.created_at DESC, content.uri DESC
+          ) AS duplicate_rank
+        FROM matched_content content
+      ), selected_content AS MATERIALIZED (
+        SELECT * FROM ranked_content
+        WHERE duplicate_rank = 1
+        ORDER BY created_at DESC, uri DESC
+        LIMIT (SELECT page_limit FROM request_limits)
+      )
+      """ : ""
+    let contentSource = includeAll ? "selected_content" : "matched_content"
+    let duplicateRanking = includeAll ? "1" : """
+      ROW_NUMBER() OVER (
+        PARTITION BY content.article_key
+        ORDER BY content.created_at DESC, content.uri DESC
+      )
+      """
+    // Hydrate full render payloads only after page selection, inside the same statement snapshot.
     let rows = try await PostgresFeedQueryExecutor.query(
       """
-      WITH feed_definition AS (
+      WITH request_limits AS (
+        SELECT \(pageLimit + 1)::bigint AS page_limit
+      ), feed_definition AS (
         SELECT MAX(updated_at) AS updated_at
         FROM (
           SELECT vf.updated_at
@@ -1476,20 +1501,9 @@ public init(pool: PostgresClient, logger: Logger) {
             OR ci.created_at < \(cursorAt)
             OR (ci.created_at = \(cursorAt) AND ci.uri < \(cursorUri))
           )
-      ), ranked_content AS (
-        SELECT content.*,
-          ROW_NUMBER() OVER (
-            PARTITION BY content.article_key
-            ORDER BY content.created_at DESC, content.uri DESC
-          ) AS duplicate_rank
-        FROM matched_content content
-      ), selected_content AS MATERIALIZED (
-        SELECT * FROM ranked_content
-        WHERE duplicate_rank = 1
-        ORDER BY CASE WHEN \(includeAll) THEN created_at END DESC,
-          CASE WHEN \(includeAll) THEN uri END DESC
-        LIMIT CASE WHEN \(includeAll) THEN \(pageLimit + 1) ELSE NULL END
-      ), candidates AS (
+      )
+      \(unescaped: contentSelection)
+      , candidates AS (
         SELECT
           content.uri,
           content.created_at,
@@ -1502,8 +1516,9 @@ public init(pool: PostgresClient, logger: Logger) {
             WHEN content.created_at = floor.read_floor_at
               AND (floor.read_floor_uri IS NULL OR content.uri <= floor.read_floor_uri) THEN TRUE
             ELSE FALSE
-          END AS is_read
-        FROM selected_content content
+          END AS is_read,
+          \(unescaped: duplicateRanking) AS duplicate_rank
+        FROM \(unescaped: contentSource) content
         LEFT JOIN appview_publication_read_floors floor
           ON floor.viewer_did = content.viewer_did
          AND floor.publication_id = content.publication_id
@@ -1514,7 +1529,8 @@ public init(pool: PostgresClient, logger: Logger) {
         ), page AS (
         SELECT uri, created_at, publication_id, is_read
         FROM candidates
-        WHERE (
+        WHERE duplicate_rank = 1
+          AND (
             \(includeAll)
             OR (\(includeUnread) AND is_read = FALSE)
             OR (\(includeRead) AND is_read = TRUE)
