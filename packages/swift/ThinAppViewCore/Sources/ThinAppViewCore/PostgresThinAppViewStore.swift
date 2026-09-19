@@ -1363,11 +1363,38 @@ public init(pool: PostgresClient, logger: Logger) {
     let isPublication = selector.kind == .publication
     let databaseStartedAt = Date()
 
-    // Keep full render payloads out of the deduplication and page sorts. Hydrate only the
-    // selected URIs in the same statement so publication, read state, and content share a snapshot.
+    // All feeds resolve legacy read state for only the selected page. Filtered feeds keep
+    // their existing joins before deduplication: moving those joins after ROW_NUMBER gives
+    // PostgreSQL a poor cardinality estimate and can turn hash joins into per-entry lookups.
+    // These fragments contain fixed SQL grammar only; every request value remains bound.
+    let contentSelection = includeAll ? """
+      , ranked_content AS (
+        SELECT content.*,
+          ROW_NUMBER() OVER (
+            PARTITION BY content.article_key
+            ORDER BY content.created_at DESC, content.uri DESC
+          ) AS duplicate_rank
+        FROM matched_content content
+      ), selected_content AS MATERIALIZED (
+        SELECT * FROM ranked_content
+        WHERE duplicate_rank = 1
+        ORDER BY created_at DESC, uri DESC
+        LIMIT (SELECT page_limit FROM request_limits)
+      )
+      """ : ""
+    let contentSource = includeAll ? "selected_content" : "matched_content"
+    let duplicateRanking = includeAll ? "1" : """
+      ROW_NUMBER() OVER (
+        PARTITION BY content.article_key
+        ORDER BY content.created_at DESC, content.uri DESC
+      )
+      """
+    // Hydrate full render payloads only after page selection, inside the same statement snapshot.
     let rows = try await PostgresFeedQueryExecutor.query(
       """
-      WITH feed_definition AS (
+      WITH request_limits AS (
+        SELECT \(pageLimit + 1)::bigint AS page_limit
+      ), feed_definition AS (
         SELECT MAX(updated_at) AS updated_at
         FROM (
           SELECT vf.updated_at
@@ -1448,7 +1475,9 @@ public init(pool: PostgresClient, logger: Logger) {
             OR ci.created_at < \(cursorAt)
             OR (ci.created_at = \(cursorAt) AND ci.uri < \(cursorUri))
           )
-      ), candidates AS (
+      )
+      \(unescaped: contentSelection)
+      , candidates AS (
         SELECT
           content.uri,
           content.created_at,
@@ -1462,11 +1491,8 @@ public init(pool: PostgresClient, logger: Logger) {
               AND (floor.read_floor_uri IS NULL OR content.uri <= floor.read_floor_uri) THEN TRUE
             ELSE FALSE
           END AS is_read,
-          ROW_NUMBER() OVER (
-            PARTITION BY content.article_key
-            ORDER BY content.created_at DESC, content.uri DESC
-          ) AS duplicate_rank
-        FROM matched_content content
+          \(unescaped: duplicateRanking) AS duplicate_rank
+        FROM \(unescaped: contentSource) content
         LEFT JOIN appview_publication_read_floors floor
           ON floor.viewer_did = content.viewer_did
          AND floor.publication_id = content.publication_id
@@ -1591,7 +1617,8 @@ public init(pool: PostgresClient, logger: Logger) {
     cursor: String?,
     limit: Int
   ) async throws -> UnreadReadMutationPage {
-    let pageLimit = max(1, min(limit, 100))
+    // Internal pages carry only mutation identity and dates, so bound them independently of display feeds.
+    let pageLimit = max(1, min(limit, 1_000))
     guard !scopes.isEmpty else { return UnreadReadMutationPage(entries: [], cursor: nil) }
     let now = Date()
     let overlappingAuthors = UnreadReadMutationScope.overlappingAuthors(scopes)

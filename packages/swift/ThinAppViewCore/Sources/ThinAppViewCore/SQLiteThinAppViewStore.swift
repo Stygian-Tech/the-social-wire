@@ -1950,7 +1950,8 @@ public init(path dbPath: String, logger: Logger) throws {
     cursor: String?,
     limit: Int
   ) async throws -> UnreadReadMutationPage {
-    let pageLimit = max(1, min(limit, 100))
+    // Internal pages carry only mutation identity and dates, so bound them independently of display feeds.
+    let pageLimit = max(1, min(limit, 1_000))
     guard !scopes.isEmpty else { return UnreadReadMutationPage(entries: [], cursor: nil) }
     let overlappingAuthors = UnreadReadMutationScope.overlappingAuthors(scopes)
     let unscopedAuthorsJSON = String(decoding: try JSONEncoder().encode(

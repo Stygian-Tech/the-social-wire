@@ -3,6 +3,9 @@ import Hummingbird
 import ThinAppViewCore
 
 enum ReadAgeSnapshot {
+  // Larger skinny-row pages avoid repeating the same scope and read-state scan for each 100 rows.
+  static let pageSize = 1_000
+
   static func matchingIDs(
     before cutoff: Date,
     page: @Sendable (String?) async throws -> UnreadReadMutationPage
@@ -24,6 +27,7 @@ enum ReadAgeSnapshot {
     repeat {
       try Task.checkCancellation()
       let result = try await page(cursor)
+      try Task.checkCancellation()
       let entries = result.entries.filter { seenIds.insert($0.entryId).inserted }
       cursor = result.cursor
       if let cursor, !seenCursors.insert(cursor).inserted {

@@ -49,6 +49,43 @@ struct AppViewFeedTimingEvidenceTests {
     }
   }
 
+  @Test("failure diagnostics allow only bounded feed query categories")
+  func boundedQueryCategories() async throws {
+    let capture = AppViewFeedLogCapture()
+    let router = Router(context: GatewayRequestContext.self)
+    router.add(middleware: AppViewFeedErrorMiddleware())
+    router.get("/v1/appview/feed") { _, _ -> Response in
+      throw HTTPError(.serviceUnavailable)
+    }
+    try await Application(router: router, logger: capture.logger()).test(.router) { client in
+      let response = try await client.execute(
+        uri: "/v1/appview/feed?kind=folder&filter=unread&limit=24&id=private-feed&cursor=private-cursor",
+        method: .get
+      )
+      #expect(response.status == .serviceUnavailable)
+      let record = try #require(capture.records.last { $0["feed_filter"] != nil })
+      #expect(record["feed_kind"]?.description == "folder")
+      #expect(record["feed_filter"]?.description == "unread")
+      #expect(record["feed_limit"]?.description == "24")
+      #expect(record["feed_has_cursor"]?.description == "true")
+      #expect(!record.description.contains("private-feed"))
+      #expect(!record.description.contains("private-cursor"))
+
+      let invalid = try await client.execute(
+        uri: "/v1/appview/feed?kind=private-kind&filter=private-filter&limit=1000000",
+        method: .get
+      )
+      #expect(invalid.status == .serviceUnavailable)
+      let invalidRecord = try #require(capture.records.last { $0["feed_has_cursor"] != nil })
+      #expect(invalidRecord["feed_kind"] == nil)
+      #expect(invalidRecord["feed_filter"] == nil)
+      #expect(invalidRecord["feed_limit"] == nil)
+      #expect(invalidRecord["feed_has_cursor"]?.description == "false")
+      #expect(!invalidRecord.description.contains("private-kind"))
+      #expect(!invalidRecord.description.contains("private-filter"))
+    }
+  }
+
   @Test("slow successful requests emit one stage summary")
   func slowSuccess() async throws {
     let capture = AppViewFeedLogCapture()

@@ -51,6 +51,22 @@ struct ReadAgeSnapshotTests {
     #expect(await recorder.snapshots == [["first"]])
   }
 
+  @Test("cancellation during the final page prevents snapshot consumption")
+  func cancelledFinalPage() async {
+    let recorder = PageRecorder()
+    let first = entry("first")
+    let task = Task {
+      try await ReadAgeSnapshot.forEachPage { _ in
+        withUnsafeCurrentTask { $0?.cancel() }
+        return UnreadReadMutationPage(entries: [first], cursor: nil)
+      } onPage: { entries in
+        await recorder.append(entries.map(\.entryId))
+      }
+    }
+    await #expect(throws: CancellationError.self) { try await task.value }
+    #expect(await recorder.snapshots.isEmpty)
+  }
+
   @Test("rejects both stuck cursors and multi-page cursor cycles")
   func cursorCycles() async {
     await #expect(throws: HTTPError.self) {
