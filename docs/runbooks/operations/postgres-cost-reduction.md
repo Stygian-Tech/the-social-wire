@@ -178,6 +178,31 @@ acceptance and savings evidence must not be reported as complete.
 Run migrations only through Database Migrator. The concurrent index migration
 fails closed unless its surviving unique index is valid and equivalent.
 
+## Bounded Wire inbox readiness diagnostic
+
+Run `psql -X -qAt -f scripts/operations/wire-inbox-readiness.sql` over an
+already authorized database connection. It is read-only, uses a single statement
+cutoff, and stops after three seconds. No repository identifiers or payloads are
+returned. Each due branch selects at most 65 rows and checks at most 64 against the
+existing repository FIFO index; the extra row detects truncation.
+
+This sample is database-wide and includes historical source generations. It is
+not the backlog of a currently configured lane. Do not make readiness or memory
+rollback decisions from this sample alone; correlate it with lane configuration,
+checkpoint freshness, processing throughput, and the existing recovery controls.
+
+Existing `actionable_backlog_count` telemetry counts due rows, including followers
+blocked by an earlier pending, leased, or retry event. Do not sum this global
+count across replicas. The diagnostic separates sampled due rows, FIFO-eligible
+heads, and blocked followers. A zero eligible sample does not establish no
+eligible work when either branch is truncated. Sampled ages are lower bounds,
+not exact oldest ages; NULL means no matching sampled row. `duePresent` is exact
+for the database snapshot, but FIFO eligibility does not test concurrent claim
+locks, lease ownership, worker admission, or current lane configuration. Future
+retries and active leases continue protecting their followers. Timeout is an
+unknown result, never a healthy empty queue. This diagnostic neither retries nor
+reconciles any durable row and does not change public health responses.
+
 ## Baseline and workload
 
 Capture `scripts/capture-postgres-cost.sql` with `psql -X -f` before and after
