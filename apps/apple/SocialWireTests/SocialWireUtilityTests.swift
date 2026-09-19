@@ -257,3 +257,128 @@ struct SocialWireUtilityTests {
         #expect(loaded.expandedFolderRkeys == ["real-folder-rkey"])
     }
 }
+
+@Suite("Image cache request sharing")
+struct ImageCacheRequestSharingTests {
+    private let url = URL(string: "https://example.test/image.png")!
+
+    @Test("Concurrent identical requests share one download and populate the cache")
+    func concurrentRequests() async throws {
+        let downloader = try ImageCacheTestDownloader()
+        defer { downloader.removeFixture() }
+        let cache = ImageCacheService(download: { try await downloader.download($0) })
+        let requests = (0..<8).map { _ in
+            Task { await cache.image(for: url, maxPixelSize: 96) != nil }
+        }
+        try await waitUntil { await cache.pendingRequestCount == 8 }
+        try await waitUntil { await downloader.callCount == 1 }
+        await downloader.complete(call: 1)
+        for request in requests { #expect(await request.value) }
+        #expect(await cache.image(for: url, maxPixelSize: 96) != nil)
+        #expect(await downloader.callCount == 1)
+        #expect(await cache.pendingRequestCount == 0)
+    }
+
+    @Test("Failed shared downloads release all callers and can retry")
+    func failureCanRetry() async throws {
+        let downloader = try ImageCacheTestDownloader()
+        defer { downloader.removeFixture() }
+        let cache = ImageCacheService(download: { try await downloader.download($0) })
+        let first = Task { await cache.image(for: url, maxPixelSize: 96) != nil }
+        let second = Task { await cache.image(for: url, maxPixelSize: 96) != nil }
+        try await waitUntil { await cache.pendingRequestCount == 2 }
+        try await waitUntil { await downloader.callCount == 1 }
+        await downloader.complete(call: 1, fail: true)
+        #expect(await !first.value)
+        #expect(await !second.value)
+        let retry = Task { await cache.image(for: url, maxPixelSize: 96) != nil }
+        try await waitUntil { await downloader.callCount == 2 }
+        await downloader.complete(call: 2)
+        #expect(await retry.value)
+    }
+
+    @Test("Cancelling one caller leaves the other caller's shared download running")
+    func oneCallerCancels() async throws {
+        let downloader = try ImageCacheTestDownloader()
+        defer { downloader.removeFixture() }
+        let cache = ImageCacheService(download: { try await downloader.download($0) })
+        let first = Task { await cache.image(for: url, maxPixelSize: 96) != nil }
+        let second = Task { await cache.image(for: url, maxPixelSize: 96) != nil }
+        try await waitUntil { await cache.pendingRequestCount == 2 }
+        try await waitUntil { await downloader.callCount == 1 }
+        first.cancel()
+        #expect(await !first.value)
+        #expect(await cache.pendingRequestCount == 1)
+        #expect(await downloader.cancelledCalls.isEmpty)
+        await downloader.complete(call: 1)
+        #expect(await second.value)
+        #expect(await downloader.callCount == 1)
+    }
+
+    @Test("Cancelling the last caller cancels the download and permits a fresh request")
+    func allCallersCancel() async throws {
+        let downloader = try ImageCacheTestDownloader()
+        defer { downloader.removeFixture() }
+        let cache = ImageCacheService(download: { try await downloader.download($0) })
+        let first = Task { await cache.image(for: url, maxPixelSize: 96) != nil }
+        try await waitUntil { await downloader.callCount == 1 }
+        first.cancel()
+        #expect(await !first.value)
+        try await waitUntil { await downloader.cancelledCalls == [1] }
+        #expect(await cache.pendingRequestCount == 0)
+        let retry = Task { await cache.image(for: url, maxPixelSize: 96) != nil }
+        try await waitUntil { await downloader.callCount == 2 }
+        await downloader.complete(call: 2)
+        #expect(await retry.value)
+    }
+
+    private func waitUntil(_ condition: @Sendable () async -> Bool) async throws {
+        let deadline = ContinuousClock.now + .seconds(3)
+        while !(await condition()), ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(1))
+        }
+        try #require(await condition())
+    }
+}
+
+private actor ImageCacheTestDownloader {
+    nonisolated let fixture: URL
+    private(set) var callCount = 0
+    private(set) var cancelledCalls: Set<Int> = []
+    private var pending: [Int: CheckedContinuation<(URL, URLResponse), any Error>] = [:]
+
+    init() throws {
+        fixture = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".png")
+        let image = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGP4DwQACfsD/fteaysAAAAASUVORK5CYII=")!
+        try image.write(to: fixture)
+    }
+
+    nonisolated func removeFixture() {
+        try? FileManager.default.removeItem(at: fixture)
+    }
+
+    func download(_ url: URL) async throws -> (URL, URLResponse) {
+        callCount += 1
+        let call = callCount
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { pending[call] = $0 }
+        } onCancel: {
+            Task { await self.cancel(call: call) }
+        }
+    }
+
+    func complete(call: Int, fail: Bool = false) {
+        guard let continuation = pending.removeValue(forKey: call) else { return }
+        if fail {
+            continuation.resume(throwing: URLError(.networkConnectionLost))
+        } else {
+            let response = HTTPURLResponse(url: fixture, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            continuation.resume(returning: (fixture, response))
+        }
+    }
+
+    private func cancel(call: Int) {
+        cancelledCalls.insert(call)
+        pending.removeValue(forKey: call)?.resume(throwing: CancellationError())
+    }
+}
