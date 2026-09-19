@@ -4,6 +4,7 @@ import { cleanup, renderHook, waitFor, act } from "@testing-library/react";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 import type { OutboxState } from "@thesocialwire/read-state";
 import * as Auth from "@/hooks/useAuth";
+import * as Runtime from "@/lib/pdsReadStateRuntime";
 import * as Sync from "@/lib/pdsReadStateSync";
 import { usePendingPDSReadState } from "@/hooks/usePendingPDSReadState";
 import { effectiveEntryReadState, pendingReadStateOverlay, invalidateConfirmedReadStateQueries } from "@/lib/pendingReadStateOverlay";
@@ -19,7 +20,7 @@ function fixture(read: (oauth: OAuthSession) => Promise<OutboxState>) {
   let oauth = alice;
   const getOAuthSession = () => oauth;
   const auth = spyOn(Auth, "useAuth").mockImplementation(() => ({ session: { did: oauth.did }, getOAuthSession, oauthSessionReloadSeq: 0 } as ReturnType<typeof Auth.useAuth>));
-  const enabled = spyOn(Sync, "pdsReadStateEnabled").mockReturnValue(true);
+  const enabled = spyOn(Runtime, "pdsReadStateEnabled").mockReturnValue(true);
   const runtime = spyOn(Sync, "pdsReadStateSync").mockImplementation(value => ({ snapshot: () => read(value) } as Sync.PDSReadStateSync));
   restores.push(() => auth.mockRestore(), () => enabled.mockRestore(), () => runtime.mockRestore());
   return { switchAccount: () => { oauth = bob; } };

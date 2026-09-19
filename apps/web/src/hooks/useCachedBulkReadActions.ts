@@ -7,7 +7,7 @@ import {
   type QueryKey,
 } from "@tanstack/react-query";
 
-import { pdsReadStateEnabled } from "@/lib/pdsReadStateSync";
+import { pdsReadStateEnabled } from "@/lib/pdsReadStateRuntime";
 import { useAuth } from "@/hooks/useAuth";
 import { useReadRoute } from "@/contexts/ReadRouteContext";
 import { useEntriesCacheEpoch } from "@/hooks/useEntriesCacheEpoch";
