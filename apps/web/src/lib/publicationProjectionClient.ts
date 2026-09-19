@@ -1,4 +1,4 @@
-import { pdsReadStateSync, usesPDSReadState } from "@/lib/pdsReadStateSync";
+import { loadPDSReadStateSync, usesPDSReadState } from "@/lib/pdsReadStateRuntime";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 
 import {
@@ -147,7 +147,7 @@ export async function markAllReadOnGateway(
   previewSubjectUris?: string[]
 ): Promise<GatewayMarkAllReadResponse> {
   if (await usesPDSReadState(oauthSession)) {
-    const prepared = await pdsReadStateSync(oauthSession).bulk(scope, undefined, previewSubjectUris);
+    const prepared = await (await loadPDSReadStateSync(oauthSession)).bulk(scope, undefined, previewSubjectUris);
     return { marked: 0, confirmedAt: prepared.actedAt, pendingSync: true,
       boundaries: (prepared.boundaries ?? []).map(boundary => ({ publicationId: boundary.scope.publicationId,
         createdAt: boundary.createdAt, ...(boundary.entryId ? { entryId: boundary.entryId } : {}) })), unreadCounts: {} };

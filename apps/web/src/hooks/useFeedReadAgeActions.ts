@@ -1,6 +1,6 @@
 "use client";
 
-import { pdsReadStateEnabled } from "@/lib/pdsReadStateSync";
+import { pdsReadStateEnabled } from "@/lib/pdsReadStateRuntime";
 import { useCallback, useLayoutEffect, useMemo, useRef } from "react";
 import { useQueryClient, type InfiniteData, type QueryKey } from "@tanstack/react-query";
 

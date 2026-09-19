@@ -1,5 +1,6 @@
 import { afterEach, expect, spyOn, test } from "bun:test";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
+import * as Runtime from "@/lib/pdsReadStateRuntime";
 import * as Sync from "@/lib/pdsReadStateSync";
 import * as Gateway from "@/lib/socialWireGatewayClient";
 import { writeThroughReadMark, writeThroughReadMarkDelete } from "@/lib/thinAppViewClient";
@@ -10,7 +11,7 @@ const oauth = { did: "did:plc:viewer" } as unknown as OAuthSession;
 const cleanup: (() => void)[] = [];
 afterEach(() => { cleanup.splice(0).forEach(restore => restore()); });
 function configure(canonical: boolean) {
-  const authority = spyOn(Sync, "usesPDSReadState").mockResolvedValue(canonical);
+  const authority = spyOn(Runtime, "usesPDSReadState").mockResolvedValue(canonical);
   const gateway = spyOn(Gateway, "gatewayFetch").mockResolvedValue(Response.json({}));
   cleanup.push(() => authority.mockRestore(), () => gateway.mockRestore());
   return { authority, gateway };

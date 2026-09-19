@@ -3,7 +3,7 @@
 import { READ_STATE_RESTORING_MESSAGE, readStateStatusMessage } from "@/lib/pdsReadStateMessages";
 import { Button } from "@/components/ui/button";
 import { usePDSReadStateStatus } from "@/hooks/usePDSReadStateStatus";
-import { PDS_READ_HISTORY_NOTICE } from "@/lib/pdsReadStateSync";
+import { PDS_READ_HISTORY_NOTICE } from "@/lib/pdsReadStateRuntime";
 
 export function PDSReadStateSettingsSection() {
   const { enabled, status, outbox, error, migrating, migrate } = usePDSReadStateStatus();
