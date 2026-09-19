@@ -1626,7 +1626,8 @@ public init(pool: PostgresClient, logger: Logger) {
     cursor: String?,
     limit: Int
   ) async throws -> UnreadReadMutationPage {
-    let pageLimit = max(1, min(limit, 100))
+    // Internal pages carry only mutation identity and dates, so bound them independently of display feeds.
+    let pageLimit = max(1, min(limit, 1_000))
     guard !scopes.isEmpty else { return UnreadReadMutationPage(entries: [], cursor: nil) }
     let now = Date()
     let overlappingAuthors = UnreadReadMutationScope.overlappingAuthors(scopes)
