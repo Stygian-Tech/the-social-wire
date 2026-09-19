@@ -36,7 +36,7 @@ import {
   writeThroughReadMarkDelete,
 } from "@/lib/thinAppViewClient";
 import { publicationEntryIsCached } from "@/lib/unreadCounts";
-import { PDS_READ_STATE_SYNC_EVENT, pdsReadStateEnabled, pdsReadStateSync, usesPDSReadState } from "@/lib/pdsReadStateSync";
+import { PDS_READ_STATE_SYNC_EVENT, loadPDSReadStateSync, pdsReadStateEnabled, usesPDSReadState } from "@/lib/pdsReadStateRuntime";
 import { PDSReadStateSyncNotice } from "@/components/Account/PDSReadStateSyncNotice";
 import type { EntriesPage } from "@/hooks/useEntries";
 
@@ -96,7 +96,7 @@ export function ReadStateProvider({ children }: { children: ReactNode }) {
       if (detail?.viewerDid !== viewerDid || detail.kind !== "confirmed") return;
       const oauth = getOAuthSession();
       if (oauth?.did === viewerDid) {
-        void pdsReadStateSync(oauth).snapshot().then(snapshot => {
+        void loadPDSReadStateSync(oauth).then(runtime => runtime.snapshot()).then(snapshot => {
           if (getOAuthSession() === oauth && snapshot.entries.length === 0) {
             setReadMap({}); saveReadState(window.localStorage, {}, storageKey); bumpReadEpoch();
           }
