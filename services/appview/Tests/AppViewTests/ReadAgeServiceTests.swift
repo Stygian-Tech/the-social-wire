@@ -23,7 +23,7 @@ struct ReadAgeServiceTests {
     let now = date("2026-09-02T17:00:00Z")
     let cutoff = date("2026-09-02T05:00:00Z")
     var oldIds: [String] = []
-    for index in 0..<205 {
+    for index in 0..<2005 {
       let id = "at://did:plc:author/site.standard.document/old-\(index)"
       oldIds.append(id)
       try await store.upsertContentItem(item(
@@ -41,7 +41,7 @@ struct ReadAgeServiceTests {
       (readId, row, cutoff.addingTimeInterval(-200)),
     ] {
       try await store.upsertContentItem(item(
-        id: id, row: publication, createdAt: now.addingTimeInterval(500), publishedAt: published
+        id: id, row: publication, createdAt: now.addingTimeInterval(5000), publishedAt: published
       ))
     }
     try await store.upsertReadMark(viewerDid: "did:plc:viewer", subjectUri: readId, createdAt: now)
@@ -50,7 +50,7 @@ struct ReadAgeServiceTests {
       viewerDid: "did:plc:viewer", rows: [row, row], timeZone: "America/Chicago", now: now
     )
     #expect(options.options.map(\.days) == [1])
-    #expect(options.options.map(\.count) == [205])
+    #expect(options.options.map(\.count) == [2005])
     let recording = ReadAgeStreamRecording()
     var writer: any ResponseBodyWriter = ReadAgeTestWriter(recording: recording)
     try await service.writeOptionsStream(
@@ -63,7 +63,7 @@ struct ReadAgeServiceTests {
     let snapshots = events.filter { $0["type"] as? String == "options" }
     #expect(snapshots.count == 3)
     let counts = snapshots.map { ($0["options"] as! [[String: Any]])[0]["count"] as! Int }
-    #expect(counts == [99, 199, 205])
+    #expect(counts == [999, 1999, 2005])
     #expect(await recording.finished)
     #expect(chunks.allSatisfy { $0.hasSuffix("\n") })
     #expect(try await store.hasReadMark(viewerDid: "did:plc:viewer", subjectUri: oldIds[0]) == false)
@@ -71,7 +71,7 @@ struct ReadAgeServiceTests {
     let marked = try await service.markBefore(
       viewerDid: "did:plc:viewer", rows: [row, row], before: "2026-09-02T05:00:00Z", now: now
     )
-    #expect(marked.marked == 205)
+    #expect(marked.marked == 2005)
     #expect(Set(marked.entryIds) == Set(oldIds))
     #expect(marked.unreadCounts[row.publicationId] == 1)
     #expect(try await store.hasReadMark(viewerDid: "did:plc:viewer", subjectUri: todayId) == false)
@@ -143,7 +143,7 @@ struct ReadAgeServiceTests {
     let now = date("2026-09-02T17:00:00Z")
     let articleUrl = "https://example.com/shared-story"
     var oldIds: [String] = []
-    for index in 0..<205 {
+    for index in 0..<1005 {
       let id = "at://did:plc:author/site.standard.document/duplicate-\(index)"
       oldIds.append(id)
       try await store.upsertContentItem(item(
@@ -153,7 +153,7 @@ struct ReadAgeServiceTests {
     }
     let todayId = "at://did:plc:author/site.standard.document/newer-duplicate"
     try await store.upsertContentItem(item(
-      id: todayId, row: row, createdAt: now.addingTimeInterval(500),
+      id: todayId, row: row, createdAt: now.addingTimeInterval(5000),
       publishedAt: date("2026-09-02T05:00:00Z"), articleUrl: articleUrl
     ))
 
@@ -166,12 +166,12 @@ struct ReadAgeServiceTests {
       viewerDid: viewer, scopes: [scope], filter: .unread, cursor: nil, limit: 100
     )
     #expect(presentation.response.entries.map(\.entryId) == [todayId])
-    #expect(presentation.diagnostics.duplicatesSuppressed == 205)
+    #expect(presentation.diagnostics.duplicatesSuppressed == 1005)
 
     let options = try await service.options(
       viewerDid: viewer, rows: [row], timeZone: "America/Chicago", now: now
     )
-    #expect(options.options.map(\.count) == [205])
+    #expect(options.options.map(\.count) == [1005])
     let result = try await service.markBefore(
       viewerDid: viewer, rows: [row], before: "2026-09-02T05:00:00Z", now: now
     )

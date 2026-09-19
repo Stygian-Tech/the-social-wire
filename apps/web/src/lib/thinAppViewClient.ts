@@ -1,4 +1,4 @@
-import { pdsReadStateSync, usesPDSReadState } from "@/lib/pdsReadStateSync";
+import { loadPDSReadStateSync, usesPDSReadState } from "@/lib/pdsReadStateRuntime";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 
 import { normalizeAppViewPublishedAt } from "@/lib/appViewPublishedAt";
@@ -329,7 +329,7 @@ export async function writeThroughReadMark(
   readAt: string
 ): Promise<void> {
   if (await usesPDSReadState(oauthSession)) {
-    await pdsReadStateSync(oauthSession).exact([subjectUri], "read", readAt);
+    await (await loadPDSReadStateSync(oauthSession)).exact([subjectUri], "read", readAt);
     return;
   }
   const res = await gatewayFetch(oauthSession, socialWireXrpc.putReadMark, {
@@ -339,7 +339,7 @@ export async function writeThroughReadMark(
   });
   if (!res.ok) {
     if (res.status === 409 && await usesPDSReadState(oauthSession, true)) {
-      await pdsReadStateSync(oauthSession).exact([subjectUri], "read", readAt); return;
+      await (await loadPDSReadStateSync(oauthSession)).exact([subjectUri], "read", readAt); return;
     }
     throw new Error(`Thin AppView read-mark upsert failed (${res.status})`);
   }
@@ -350,7 +350,7 @@ export async function writeThroughReadMarkDelete(
   subjectUri: string
 ): Promise<void> {
   if (await usesPDSReadState(oauthSession)) {
-    await pdsReadStateSync(oauthSession).exact([subjectUri], "unread");
+    await (await loadPDSReadStateSync(oauthSession)).exact([subjectUri], "unread");
     return;
   }
   const res = await gatewayFetch(oauthSession, socialWireXrpc.deleteReadMark, {
@@ -360,7 +360,7 @@ export async function writeThroughReadMarkDelete(
   });
   if (!res.ok) {
     if (res.status === 409 && await usesPDSReadState(oauthSession, true)) {
-      await pdsReadStateSync(oauthSession).exact([subjectUri], "unread"); return;
+      await (await loadPDSReadStateSync(oauthSession)).exact([subjectUri], "unread"); return;
     }
     throw new Error(`Thin AppView read-mark delete failed (${res.status}`);
   }

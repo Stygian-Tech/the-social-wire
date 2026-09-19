@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { OutboxState } from "@thesocialwire/read-state";
 import { useAuth } from "@/hooks/useAuth";
 import { pendingReadStateOverlay } from "@/lib/pendingReadStateOverlay";
-import { PDS_READ_STATE_SYNC_EVENT, pdsReadStateEnabled, pdsReadStateSync } from "@/lib/pdsReadStateSync";
+import { PDS_READ_STATE_SYNC_EVENT, loadPDSReadStateSync, pdsReadStateEnabled } from "@/lib/pdsReadStateRuntime";
 
 /** Restore pending intent on mount and foreground, independent of feed refreshes. */
 export function usePendingPDSReadState() {
@@ -17,7 +17,7 @@ export function usePendingPDSReadState() {
     const refresh = async () => {
       const requested = ++revision;
       try {
-        const next = await pdsReadStateSync(oauth).snapshot();
+        const next = await (await loadPDSReadStateSync(oauth)).snapshot();
         if (current && requested === revision && getOAuthSession() === oauth) setSnapshot(next);
       } catch { /* Keep the last durable snapshot while local storage is unavailable. */ }
     };

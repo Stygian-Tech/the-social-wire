@@ -6,9 +6,9 @@ import { OAuthReadStateRepository } from "./pdsReadStateRepository";
 import { PDSReadStateGateway } from "./pdsReadStateGateway";
 import type { GatewayMarkAllReadScope } from "./publicationProjectionClient";
 
-export const PDS_READ_HISTORY_NOTICE = "Read and unread history is public on your PDS. Pending changes remain on this device until synchronization completes.";
-export const pdsReadStateEnabled = () => process.env.NEXT_PUBLIC_PDS_READ_STATE_ENABLED === "true";
-export const PDS_READ_STATE_SYNC_EVENT = "socialwire:pds-read-state-sync";
+import { PDS_READ_STATE_SYNC_EVENT, pdsReadStateEnabled } from "./pdsReadStateRuntime";
+
+export { PDS_READ_HISTORY_NOTICE, PDS_READ_STATE_SYNC_EVENT, pdsReadStateEnabled } from "./pdsReadStateRuntime";
 const runtimes = new WeakMap<OAuthSession, PDSReadStateSync>();
 
 export class PDSReadStateSync {

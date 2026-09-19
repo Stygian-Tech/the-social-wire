@@ -10,7 +10,7 @@ import { useCachedBulkReadActions } from "@/hooks/useCachedBulkReadActions";
 import type { DiscoveredPublication } from "@/lib/atprotoClient";
 import { ENTRIES_QUERY_KEY } from "@/hooks/useEntries";
 import { PUBLICATION_SIDEBAR_PROJECTION_QUERY_KEY } from "@/lib/sidebarQueryKeys";
-import * as PDSState from "@/lib/pdsReadStateSync";
+import * as PDSState from "@/lib/pdsReadStateRuntime";
 import * as AuthHook from "@/hooks/useAuth";
 import * as ReadRouteContext from "@/contexts/ReadRouteContext";
 import * as PublicationProjectionClient from "@/lib/publicationProjectionClient";

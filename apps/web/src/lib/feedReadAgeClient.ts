@@ -1,4 +1,4 @@
-import { pdsReadStateSync, usesPDSReadState } from "@/lib/pdsReadStateSync";
+import { loadPDSReadStateSync, usesPDSReadState } from "@/lib/pdsReadStateRuntime";
 import type { OAuthSession } from "@atproto/oauth-client-browser";
 
 import type { GatewayMarkAllReadScope } from "@/lib/publicationProjectionClient";
@@ -110,7 +110,7 @@ export async function markReadBefore(
   if (await usesPDSReadState(oauthSession)) {
     const timeZone = calendar?.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
     const referenceDate = calendar?.referenceDate ?? new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
-    const prepared = await pdsReadStateSync(oauthSession).bulk(scope, { before, timeZone, referenceDate });
+    const prepared = await (await loadPDSReadStateSync(oauthSession)).bulk(scope, { before, timeZone, referenceDate });
     return { marked: prepared.subjectUris?.length ?? 0, entryIds: prepared.subjectUris ?? [],
       readAt: prepared.actedAt, unreadCounts: {}, pendingSync: true };
   }
