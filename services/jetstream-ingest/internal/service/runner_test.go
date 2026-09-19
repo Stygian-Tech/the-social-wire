@@ -210,3 +210,17 @@ func TestWireRunnerFailsClosedWithoutValidAdmissionLimiter(t *testing.T) {
 func testCursor(value uint64) *uint64 {
 	return &value
 }
+
+func TestReplacementRetainsPausedAndFailedReplayEvidence(t *testing.T) {
+	for _, state := range []string{"replaying", "paused_budget", "failed", "live"} {
+		t.Run(state, func(t *testing.T) {
+			runner := &Runner{evidence: ingest.NewTransportEvidence()}
+			checkpoint := &ingest.Checkpoint{ReplayState: state, ReplayRetryCount: 7, ReplayRangeResumeCount: 3, ReplayETag: "retained-etag"}
+			runner.restoreReplayEvidence(checkpoint)
+			got := runner.evidence.Snapshot()
+			if got.RetryCount != 7 || got.RangeResumeCount != 3 || got.ETag != "retained-etag" {
+				t.Fatalf("replacement erased %s evidence: %+v", state, got)
+			}
+		})
+	}
+}

@@ -315,6 +315,49 @@ struct UnreadMutationQueryTests {
     #expect(result.allSatisfy { $0.feedPositionAt == timestamp && $0.publicationId == publication })
   }
 
+  @Test("SQLite read-age pages retain every record across the bounded larger page")
+  func largerMutationPages() async throws {
+    try await Self.withSQLite { store in
+      let viewer = "did:plc:wide-read-viewer"
+      let author = "did:plc:wide-read-author"
+      let publication = "at://\(author)/site.standard.publication/main"
+      let prefix = "at://\(author)/site.standard.document/"
+      let timestamp = Date(timeIntervalSince1970: 4_102_444_800)
+      let scope = Self.makeScope(viewer: viewer, author: author, publicationId: publication, site: publication)
+      for index in 1...1007 {
+        try await store.upsertContentItem(IndexedContentItem(
+          uri: prefix + String(format: "%04d", index), cid: "fixture", authorDid: author,
+          collection: "site.standard.document", createdAt: timestamp, indexedAt: timestamp,
+          publicationSite: publication,
+          render: ContentRenderFields(title: "entry", publishedAt: "malformed",
+            articleUrl: "https://example.com/shared-story"),
+          expiresAt: timestamp.addingTimeInterval(86_400)))
+      }
+      func snapshot(limit: Int) async throws -> [UnreadReadMutationEntry] {
+        var cursor: String?
+        var entries: [UnreadReadMutationEntry] = []
+        repeat {
+          let page = try await store.listUnreadEntriesForReadMutation(
+            viewerDid: viewer, scopes: [scope], cursor: cursor, limit: limit)
+          entries.append(contentsOf: page.entries)
+          cursor = page.cursor
+        } while cursor != nil
+        return entries
+      }
+      let original = try await snapshot(limit: 100)
+      let larger = try await snapshot(limit: 1000)
+      #expect(larger == original)
+      #expect(larger.count == 1007)
+      #expect(Set(larger.map(\.entryId)).count == 1007)
+      #expect(larger.allSatisfy { $0.publishedAt == timestamp && $0.publicationId == publication })
+      let capped = try await store.listUnreadEntriesForReadMutation(
+        viewerDid: viewer, scopes: [scope], cursor: nil, limit: 10_000)
+      #expect(capped.entries.count == 1000)
+      #expect(capped.entries == Array(larger.prefix(1000)))
+      #expect(ThinAppViewCursor.decode(try #require(capped.cursor))?.uri == prefix + "0008")
+    }
+  }
+
   private static func makeScope(
     viewer: String, author: String, publicationId: String, site: String
   ) -> AppViewPublicationScope {

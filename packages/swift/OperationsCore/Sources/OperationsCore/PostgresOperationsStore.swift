@@ -2274,11 +2274,20 @@ public actor PostgresOperationsStore: OperationsStore {
     for try await row in rows { affected = Int(try row.decode(Int64.self)); break }
     let inboxRows = try await pool.query(
       """
-      DELETE FROM appview_ingestion_inbox WHERE ctid IN (
-        SELECT ctid FROM appview_ingestion_inbox
-        WHERE environment = \(environment) AND expires_at IS NOT NULL AND expires_at <= \(at)
+      WITH expired AS (
+        SELECT environment, source_generation, seq FROM appview_ingestion_inbox
+        WHERE environment = \(environment) AND expires_at <= \(at)
+          AND (status IN ('applied', 'filtered_scope')
+            OR (status = 'dead_letter' AND reconciled_at IS NOT NULL))
+        ORDER BY expires_at
         LIMIT \(boundedBatch)
-      ) RETURNING 1
+        FOR UPDATE SKIP LOCKED
+      )
+      DELETE FROM appview_ingestion_inbox inbox USING expired
+      WHERE inbox.environment = expired.environment
+        AND inbox.source_generation = expired.source_generation
+        AND inbox.seq = expired.seq
+      RETURNING 1
       """, logger: logger)
     for try await _ in inboxRows { affected += 1 }
     let usageRows = try await pool.query(

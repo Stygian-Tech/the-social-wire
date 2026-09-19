@@ -17,7 +17,7 @@ struct ReadAgeService: Sendable {
     guard !scopes.isEmpty else { return try accumulator.response() }
     try await ReadAgeSnapshot.forEachPage { cursor in
       try await store.listUnreadEntriesForReadMutation(
-        viewerDid: viewerDid, scopes: scopes, cursor: cursor, limit: 100
+        viewerDid: viewerDid, scopes: scopes, cursor: cursor, limit: ReadAgeSnapshot.pageSize
       )
     } onPage: { entries in
       accumulator.append(publishedDates: entries.map(\.publishedAt))
@@ -37,7 +37,7 @@ struct ReadAgeService: Sendable {
           return UnreadReadMutationPage(entries: [], cursor: nil)
         }
         return try await store.listUnreadEntriesForReadMutation(
-          viewerDid: viewerDid, scopes: scopes, cursor: cursor, limit: 100
+          viewerDid: viewerDid, scopes: scopes, cursor: cursor, limit: ReadAgeSnapshot.pageSize
         )
       } onPage: { entries in
         accumulator.append(publishedDates: entries.map(\.publishedAt))
@@ -133,7 +133,7 @@ struct ReadAgeService: Sendable {
     guard !scopes.isEmpty else { return [] }
     return try await ReadAgeSnapshot.matchingIDs(before: cutoff) { cursor in
       try await store.listUnreadEntriesForReadMutation(
-        viewerDid: viewerDid, scopes: scopes, cursor: cursor, limit: 100
+        viewerDid: viewerDid, scopes: scopes, cursor: cursor, limit: ReadAgeSnapshot.pageSize
       )
     }
   }
