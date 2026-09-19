@@ -185,6 +185,8 @@ filter_changed database_migrator \
   'scripts/verify-postgres-restore.sh' \
   'scripts/verify-jetstream-v2-drain-indexes.sql' \
   'scripts/verify-wire-inbox-claim-index.sql' \
+  'scripts/operations/wire-inbox-readiness.sql' \
+  'packages/spec/__tests__/wire-inbox-readiness-postgres.test.ts' \
   'scripts/verify-wire-corpus-serving.sql' \
   'services/database-migrator/**' \
   'services/postgres/**' \
