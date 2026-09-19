@@ -716,12 +716,14 @@ final class PostgresInboxFixture: @unchecked Sendable {
     runTask = Task { await pool.run() }
     await Task.yield()
     try await store.ping()
-    // Suites can create their first fixtures concurrently. PostgreSQL's IF NOT EXISTS does not
-    // serialize the underlying pg_type inserts, so use one transaction/connection for all DDL.
-    try await pool.withTransaction(logger: logger) { connection in
-      try await connection.query(
-        "SELECT pg_advisory_xact_lock(hashtextextended('thin-appview-test-schema', 0))", logger: logger)
-      try await self.installMinimalSchema(on: connection)
+    // Install before any fixture uses the schema, not before every individual test.
+    // The advisory lock also coordinates installers in separate test processes.
+    try await PostgresTestSchemaPreparation.shared.prepare(database: url) {
+      try await pool.withTransaction(logger: self.logger) { connection in
+        try await connection.query(
+          "SELECT pg_advisory_xact_lock(hashtextextended('thin-appview-test-schema', 0))", logger: self.logger)
+        try await self.installMinimalSchema(on: connection)
+      }
     }
   }
 

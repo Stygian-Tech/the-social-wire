@@ -162,25 +162,30 @@ enum AppViewFeedExecution {
     requestId: String,
     operation: @Sendable @escaping () async throws -> T
   ) async throws -> T {
-    let deadline = AppViewFeedQueryDeadline(duration: requestDeadline)
-    return try await AppViewFeedQueryDeadline.$current.withValue(deadline) {
-      do {
-        return try await withDeadline(requestId: requestId, deadline: deadline) {
-          do {
-            return try await operation()
-          } catch {
-            try Task.checkCancellation()
-            let classified = AppViewFeedErrorClassifier.classify(error, requestId: requestId)
-            guard classified.retryable, classified.status == .serviceUnavailable else {
-              throw classified
+    let ownsTimings = AppViewFeedRequestTimings.current == nil
+    let timings = AppViewFeedRequestTimings.current ?? AppViewFeedRequestTimings()
+    defer { if ownsTimings { _ = timings.finish() } }
+    return try await AppViewFeedRequestTimings.$current.withValue(timings) {
+      let deadline = AppViewFeedQueryDeadline(duration: requestDeadline)
+      return try await AppViewFeedQueryDeadline.$current.withValue(deadline) {
+        do {
+          return try await withDeadline(requestId: requestId, deadline: deadline) {
+            do {
+              return try await operation()
+            } catch {
+              try Task.checkCancellation()
+              let classified = AppViewFeedErrorClassifier.classify(error, requestId: requestId)
+              guard classified.retryable, classified.status == .serviceUnavailable else {
+                throw classified
+              }
+              try await Task.sleep(for: .milliseconds(Int.random(in: 40...120)))
+              return try await operation()
             }
-            try await Task.sleep(for: .milliseconds(Int.random(in: 40...120)))
-            return try await operation()
           }
+        } catch {
+          try Task.checkCancellation()
+          throw AppViewFeedErrorClassifier.classify(error, requestId: requestId)
         }
-      } catch {
-        try Task.checkCancellation()
-        throw AppViewFeedErrorClassifier.classify(error, requestId: requestId)
       }
     }
   }
