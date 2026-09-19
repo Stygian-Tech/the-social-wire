@@ -1486,7 +1486,8 @@ public init(pool: PostgresClient, logger: Logger) {
       ), selected_content AS MATERIALIZED (
         SELECT * FROM ranked_content
         WHERE duplicate_rank = 1
-        ORDER BY created_at DESC, uri DESC
+        ORDER BY CASE WHEN \(includeAll) THEN created_at END DESC,
+          CASE WHEN \(includeAll) THEN uri END DESC
         LIMIT CASE WHEN \(includeAll) THEN \(pageLimit + 1) ELSE NULL END
       ), candidates AS (
         SELECT
