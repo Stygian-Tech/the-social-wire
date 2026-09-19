@@ -1508,15 +1508,18 @@ public init(pool: PostgresClient, logger: Logger) {
           content.uri,
           content.created_at,
           content.publication_id,
+          content.author_did,
+          content.publication_site,
+          -- Carry flags rather than URIs and floor bounds so the deduplication sort stays narrow.
+          rm.subject_uri IS NOT NULL AS legacy_read,
+          uo.subject_uri IS NOT NULL AS legacy_unread,
           CASE
-            WHEN read_state.unread_uri IS NOT NULL THEN FALSE
-            WHEN read_state.read_uri IS NOT NULL THEN TRUE
             WHEN floor.read_floor_at IS NULL THEN FALSE
             WHEN content.created_at < floor.read_floor_at THEN TRUE
             WHEN content.created_at = floor.read_floor_at
               AND (floor.read_floor_uri IS NULL OR content.uri <= floor.read_floor_uri) THEN TRUE
             ELSE FALSE
-          END AS is_read,
+          END AS floor_read,
           \(unescaped: duplicateRanking) AS duplicate_rank
         FROM \(unescaped: contentSource) content
         LEFT JOIN appview_publication_read_floors floor
@@ -1524,13 +1527,28 @@ public init(pool: PostgresClient, logger: Logger) {
          AND floor.publication_id = content.publication_id
         LEFT JOIN read_marks rm ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = content.uri
         LEFT JOIN appview_unread_overrides uo ON uo.viewer_did = \(viewerDid) AND uo.subject_uri = content.uri
-        LEFT JOIN LATERAL appview_effective_entry_read_state(\(viewerDid), content.uri,
-          content.author_did, content.publication_site, content.created_at, rm.subject_uri, uo.subject_uri) read_state ON TRUE
-        ), page AS (
+      ), resolved AS (
+        -- PDS authority is a per-entry function call, so evaluate it only for the newest
+        -- duplicate. The set-based legacy joins above stay before deduplication.
+        SELECT
+          candidate.uri,
+          candidate.created_at,
+          candidate.publication_id,
+          CASE
+            WHEN read_state.unread_uri IS NOT NULL THEN FALSE
+            WHEN read_state.read_uri IS NOT NULL THEN TRUE
+            ELSE candidate.floor_read
+          END AS is_read
+        FROM candidates candidate
+        LEFT JOIN LATERAL appview_effective_entry_read_state(\(viewerDid), candidate.uri,
+          candidate.author_did, candidate.publication_site, candidate.created_at,
+          CASE WHEN candidate.legacy_read THEN candidate.uri END,
+          CASE WHEN candidate.legacy_unread THEN candidate.uri END) read_state ON TRUE
+        WHERE candidate.duplicate_rank = 1
+      ), page AS (
         SELECT uri, created_at, publication_id, is_read
-        FROM candidates
-        WHERE duplicate_rank = 1
-          AND (
+        FROM resolved
+        WHERE (
             \(includeAll)
             OR (\(includeUnread) AND is_read = FALSE)
             OR (\(includeRead) AND is_read = TRUE)
