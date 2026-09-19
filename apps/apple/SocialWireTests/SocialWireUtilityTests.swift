@@ -277,6 +277,7 @@ struct ImageCacheRequestSharingTests {
         #expect(await cache.image(for: url, maxPixelSize: 96) != nil)
         #expect(await downloader.callCount == 1)
         #expect(await cache.pendingRequestCount == 0)
+        #expect(await downloader.completedFilesAreRemoved)
     }
 
     @Test("Failed shared downloads release all callers and can retry")
@@ -291,10 +292,12 @@ struct ImageCacheRequestSharingTests {
         await downloader.complete(call: 1, fail: true)
         #expect(await !first.value)
         #expect(await !second.value)
+        #expect(await downloader.completedFiles.isEmpty)
         let retry = Task { await cache.image(for: url, maxPixelSize: 96) != nil }
         try await waitUntil { await downloader.callCount == 2 }
         await downloader.complete(call: 2)
         #expect(await retry.value)
+        #expect(await downloader.completedFilesAreRemoved)
     }
 
     @Test("Cancelling one caller leaves the other caller's shared download running")
@@ -313,6 +316,7 @@ struct ImageCacheRequestSharingTests {
         await downloader.complete(call: 1)
         #expect(await second.value)
         #expect(await downloader.callCount == 1)
+        #expect(await downloader.completedFilesAreRemoved)
     }
 
     @Test("Cancelling the last caller cancels the download and permits a fresh request")
@@ -330,6 +334,45 @@ struct ImageCacheRequestSharingTests {
         try await waitUntil { await downloader.callCount == 2 }
         await downloader.complete(call: 2)
         #expect(await retry.value)
+        #expect(await downloader.completedFilesAreRemoved)
+    }
+
+    @Test("Rejected image downloads remove their temporary files", arguments: [
+        "status", "declaredSize", "actualSize", "invalidImage",
+    ])
+    func rejectedDownloadRemovesFile(reason: String) async throws {
+        let downloader = try ImageCacheTestDownloader()
+        defer { downloader.removeFixture() }
+        let cache = ImageCacheService(download: { try await downloader.download($0) })
+        let request = Task { await cache.image(for: url, maxPixelSize: 96) != nil }
+        try await waitUntil { await downloader.callCount == 1 }
+        switch reason {
+        case "status":
+            await downloader.complete(call: 1, statusCode: 404)
+        case "declaredSize":
+            await downloader.complete(call: 1, expectedContentLength: 16 * 1024 * 1024 + 1)
+        case "actualSize":
+            await downloader.complete(call: 1, data: Data(count: 16 * 1024 * 1024 + 1))
+        default:
+            await downloader.complete(call: 1, data: Data("invalid image".utf8))
+        }
+        #expect(await !request.value)
+        #expect(await downloader.completedFilesAreRemoved)
+        #expect(await cache.pendingRequestCount == 0)
+    }
+
+    @Test("A download completing after cancellation still removes its temporary file")
+    func cancelledDownloadRemovesFile() async throws {
+        let downloader = try ImageCacheTestDownloader(completeOnCancellation: true)
+        defer { downloader.removeFixture() }
+        let cache = ImageCacheService(download: { try await downloader.download($0) })
+        let request = Task { await cache.image(for: url, maxPixelSize: 96) != nil }
+        try await waitUntil { await downloader.callCount == 1 }
+        request.cancel()
+        #expect(await !request.value)
+        try await waitUntil { await downloader.cancelledCalls == [1] }
+        try await waitUntil { await downloader.completedFilesAreRemoved }
+        #expect(await cache.pendingRequestCount == 0)
     }
 
     private func waitUntil(_ condition: @Sendable () async -> Bool) async throws {
@@ -342,19 +385,27 @@ struct ImageCacheRequestSharingTests {
 }
 
 private actor ImageCacheTestDownloader {
-    nonisolated let fixture: URL
+    nonisolated let directory: URL
+    private let completeOnCancellation: Bool
     private(set) var callCount = 0
     private(set) var cancelledCalls: Set<Int> = []
+    private(set) var completedFiles: [URL] = []
     private var pending: [Int: CheckedContinuation<(URL, URLResponse), any Error>] = [:]
 
-    init() throws {
-        fixture = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".png")
-        let image = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGP4DwQACfsD/fteaysAAAAASUVORK5CYII=")!
-        try image.write(to: fixture)
+    var completedFilesAreRemoved: Bool {
+        !completedFiles.isEmpty && completedFiles.allSatisfy {
+            !FileManager.default.fileExists(atPath: $0.path)
+        }
+    }
+
+    init(completeOnCancellation: Bool = false) throws {
+        self.completeOnCancellation = completeOnCancellation
+        directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     }
 
     nonisolated func removeFixture() {
-        try? FileManager.default.removeItem(at: fixture)
+        try? FileManager.default.removeItem(at: directory)
     }
 
     func download(_ url: URL) async throws -> (URL, URLResponse) {
@@ -367,18 +418,36 @@ private actor ImageCacheTestDownloader {
         }
     }
 
-    func complete(call: Int, fail: Bool = false) {
+    func complete(
+        call: Int, fail: Bool = false, statusCode: Int = 200,
+        data: Data? = nil, expectedContentLength: Int? = nil
+    ) {
         guard let continuation = pending.removeValue(forKey: call) else { return }
         if fail {
             continuation.resume(throwing: URLError(.networkConnectionLost))
         } else {
-            let response = HTTPURLResponse(url: fixture, statusCode: 200, httpVersion: nil, headerFields: nil)!
-            continuation.resume(returning: (fixture, response))
+            do {
+                let temporaryURL = directory.appendingPathComponent(UUID().uuidString + ".png")
+                let image = data ?? Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGP4DwQACfsD/fteaysAAAAASUVORK5CYII=")!
+                try image.write(to: temporaryURL)
+                completedFiles.append(temporaryURL)
+                let headers = expectedContentLength.map { ["Content-Length": String($0)] }
+                let response = HTTPURLResponse(
+                    url: temporaryURL, statusCode: statusCode, httpVersion: nil, headerFields: headers
+                )!
+                continuation.resume(returning: (temporaryURL, response))
+            } catch {
+                continuation.resume(throwing: error)
+            }
         }
     }
 
     private func cancel(call: Int) {
         cancelledCalls.insert(call)
-        pending.removeValue(forKey: call)?.resume(throwing: CancellationError())
+        if completeOnCancellation {
+            complete(call: call)
+        } else {
+            pending.removeValue(forKey: call)?.resume(throwing: CancellationError())
+        }
     }
 }

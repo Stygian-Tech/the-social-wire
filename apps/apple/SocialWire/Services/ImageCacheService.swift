@@ -103,6 +103,7 @@ actor ImageCacheService {
     private func downloadImage(for url: URL, maxPixelSize: CGFloat) async -> PlatformImage? {
         do {
             let (temporaryURL, response) = try await download(url)
+            defer { try? FileManager.default.removeItem(at: temporaryURL) }
             try Task.checkCancellation()
             guard let http = response as? HTTPURLResponse, (200 ..< 300).contains(http.statusCode) else {
                 return nil
