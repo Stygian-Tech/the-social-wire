@@ -46,6 +46,35 @@ struct NewsSceneModelTests {
         ).contains(.circle))
     }
 
+    @Test("Primary slots follow catalog gates and return when availability recovers")
+    func primarySlotsRespectCatalogAvailability() {
+        let model = SocialWireAppModel()
+        model.loadPrimaryTabPreferences()
+        #expect(!model.primaryTabFeeds.contains(.wire))
+        #expect(model.primaryTabFeeds.contains(.circle))
+
+        model.wireCatalog = WireFeedCatalog(
+            enabled: true, available: true, title: "The Wire", subtitle: "",
+            supportedLanguages: ["en"], latestGenerationId: "g1", generatedAt: nil
+        )
+        model.circleCatalog = CircleFeedCatalog(
+            enabled: false, available: true, title: "Your Circle", subtitle: "",
+            supportedLanguages: ["en"], latestGenerationId: nil, generatedAt: nil
+        )
+        model.loadPrimaryTabPreferences()
+        #expect(model.primaryTabFeeds.contains(.wire))
+        #expect(!model.primaryTabFeeds.contains(.circle))
+
+        model.circleCatalog = CircleFeedCatalog(
+            enabled: true, available: false, title: "Your Circle", subtitle: "",
+            supportedLanguages: ["en"], latestGenerationId: nil, generatedAt: nil
+        )
+        model.feedPreferences.showWire = false
+        model.loadPrimaryTabPreferences()
+        #expect(!model.primaryTabFeeds.contains(.wire))
+        #expect(model.primaryTabFeeds.contains(.circle))
+    }
+
     @Test("Last tab is restored per viewer")
     func restoresSelectedTabPerViewer() {
         let suiteName = "NewsSceneModelTests.\(UUID().uuidString)"
@@ -106,6 +135,23 @@ struct NewsSceneModelTests {
         #expect(model.path(for: .wire) == [.entry(id: "wire-story")])
         #expect(model.path(for: .saved) == [.savedLink(id: "saved-story")])
         #expect(model.path(for: .library).isEmpty)
+    }
+
+    @Test("Active route follows the selected tab without destroying other tab paths")
+    func activeRouteFollowsSelectedTab() {
+        let model = NewsSceneModel()
+        model.navigate(to: .entry(id: "wire-story"), in: .wire)
+        model.navigate(to: .savedLink(id: "saved-story"), in: .saved)
+
+        model.select(.wire, availableTabs: NewsTab.allCases)
+        #expect(model.activeRoute == .entry(id: "wire-story"))
+
+        model.select(.saved, availableTabs: NewsTab.allCases)
+        #expect(model.activeRoute == .savedLink(id: "saved-story"))
+
+        model.resetPath(for: .saved)
+        #expect(model.activeRoute == nil)
+        #expect(model.path(for: .wire) == [.entry(id: "wire-story")])
     }
 
     @Test("Hiding the active discovery feed selects a visible tab and keeps Settings open")

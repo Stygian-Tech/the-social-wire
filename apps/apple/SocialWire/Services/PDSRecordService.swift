@@ -503,7 +503,10 @@ final class PDSRecordService {
     }
 
     nonisolated static func merge(externals: [RepoRecord<LatrSavedExternalRecord>], items: [RepoRecord<LatrSavedItemRecord>]) -> [MergedLatrSave] {
-        let externalByRkey = Dictionary(uniqueKeysWithValues: externals.map { (rkey(from: $0.uri), $0) })
+        let externalByRkey = Dictionary(
+            externals.map { (rkey(from: $0.uri), $0) },
+            uniquingKeysWith: { current, _ in current }
+        )
         var rows: [MergedLatrSave] = []
 
         for item in items {

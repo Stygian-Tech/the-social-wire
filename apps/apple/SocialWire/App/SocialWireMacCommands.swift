@@ -7,13 +7,18 @@ struct SocialWireMacCommands: Commands {
 
     var body: some Commands {
         CommandGroup(after: .newItem) {
-            Button("Open Article in New Window") {
-                if let entryID = appModel.selectedEntry?.entryId {
+            Button("Open RSS Story in New Window") {
+                if let entryID = appModel.selectedEntry?.entryId,
+                   EntryOpenTargetResolver.isRSSEntry(entryID) {
                     openWindow(value: entryID)
                 }
             }
             .keyboardShortcut("n", modifiers: [.command, .shift])
-            .disabled(appModel.selectedEntry == nil)
+            .disabled(
+                appModel.selectedEntry.map {
+                    !EntryOpenTargetResolver.isRSSEntry($0.entryId)
+                } ?? true
+            )
         }
 
         CommandGroup(replacing: .help) {

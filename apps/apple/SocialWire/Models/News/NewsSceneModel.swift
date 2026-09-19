@@ -94,6 +94,10 @@ final class NewsSceneModel {
         }
     }
 
+    var activeRoute: NewsRoute? {
+        path(for: selectedTab).last
+    }
+
     func setPath(_ path: [NewsRoute], for tab: NewsTab) {
         switch tab {
         case .wire: wirePath = path
@@ -159,8 +163,14 @@ final class NewsSceneModel {
                 tab: tab
             )
             guard let data = defaults.data(forKey: key),
-                  let path = try? JSONDecoder().decode([NewsRoute].self, from: data)
+                  let restoredPath = try? JSONDecoder().decode([NewsRoute].self, from: data)
             else { continue }
+            let path = restoredPath.filter { route in
+                route != .profile && route != .settings
+            }
+            if path != restoredPath {
+                persistPath(path, for: tab)
+            }
             switch tab {
             case .wire: wirePath = path
             case .circle: circlePath = path

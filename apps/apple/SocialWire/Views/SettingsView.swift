@@ -29,7 +29,7 @@ struct SettingsView: View {
 
             Section("Articles") {
                 Picker(
-                    "Open Articles In",
+                    "Open RSS Articles In",
                     selection: Binding(
                         get: { appModel.feedPreferences.articleOpenMode },
                         set: { mode in
@@ -42,7 +42,7 @@ struct SettingsView: View {
                     }
                 }
 
-                Text("Original Website opens the publisher's webpage by default. The Native Reader remains available from story actions.")
+                Text("Original Website opens RSS stories on the publisher's webpage. Native Reader keeps RSS stories inside the app. Other stories always open on their publisher's website.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -107,59 +107,86 @@ struct SettingsView: View {
                 }
             }
 
+            Section {
+                ForEach(appModel.visiblePrimaryTabFeedChoices) { feed in
+                    Toggle(
+                        isOn: Binding(
+                            get: { appModel.primaryTabFeeds.contains(feed) },
+                            set: { appModel.setPrimaryTabFeedEnabled($0, feed: feed) }
+                        )
+                    ) {
+                        Label(feed.title, systemImage: feed.systemImage)
+                    }
+                }
+            } header: {
+                Text("Feed Tabs")
+            } footer: {
+                Text("The first selected feed opens when there is no previously viewed feed. Read Later is always available.")
+            }
+
             Section("Feed Display") {
-                Toggle(
-                    "Show The Wire",
-                    isOn: Binding(
-                        get: { appModel.feedPreferences.showWire },
-                        set: { value in Task { await appModel.setWireVisible(value) } }
+                FeedDisplayPicker(
+                    title: "The Wire",
+                    supportsCount: false,
+                    canHide: true,
+                    selection: Binding(
+                        get: {
+                            .current(
+                                isVisible: appModel.feedPreferences.showWire,
+                                showsCount: false
+                            )
+                        },
+                        set: { option in
+                            Task { await appModel.setWireVisible(option != .hideFeed) }
+                        }
                     )
                 )
                 .disabled(appModel.isSavingDiscoveryFeedVisibility)
-                Toggle(
-                    "Show Your Circle",
-                    isOn: Binding(
-                        get: { appModel.feedPreferences.showCircle },
-                        set: { value in Task { await appModel.setCircleVisible(value) } }
+
+                FeedDisplayPicker(
+                    title: "Your Circle",
+                    supportsCount: false,
+                    canHide: true,
+                    selection: Binding(
+                        get: {
+                            .current(
+                                isVisible: appModel.feedPreferences.showCircle,
+                                showsCount: false
+                            )
+                        },
+                        set: { option in
+                            Task { await appModel.setCircleVisible(option != .hideFeed) }
+                        }
                     )
                 )
                 .disabled(appModel.isSavingDiscoveryFeedVisibility)
+
                 if let error = appModel.discoveryFeedSaveError {
                     Text(error)
                         .font(.footnote)
                         .foregroundStyle(.red)
                 }
+
                 ForEach(ReaderListSource.preferenceCases) { source in
-                    let isVisible = appModel.visibleReaderListSources.contains(source)
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(source.rawValue)
-                            .font(.headline)
-                        Toggle(
-                            "Show Feed",
-                            isOn: Binding(
-                                get: { appModel.visibleReaderListSources.contains(source) },
-                                set: { value in
-                                    Task {
-                                        await appModel.setFeedVisible(source, visible: value)
-                                    }
+                    FeedDisplayPicker(
+                        title: source.rawValue,
+                        supportsCount: true,
+                        canHide: appModel.feedPreferences.visibleFeeds.count > 1
+                            || !appModel.visibleReaderListSources.contains(source),
+                        selection: Binding(
+                            get: {
+                                .current(
+                                    isVisible: appModel.visibleReaderListSources.contains(source),
+                                    showsCount: appModel.showsTopLevelFeedUnreadCount(for: source)
+                                )
+                            },
+                            set: { option in
+                                Task {
+                                    await appModel.setFeedDisplayOption(option, for: source)
                                 }
-                            )
+                            }
                         )
-                        .disabled(isVisible && appModel.feedPreferences.visibleFeeds.count == 1)
-                        Toggle(
-                            "Show Count",
-                            isOn: Binding(
-                                get: { appModel.showsTopLevelFeedUnreadCount(for: source) },
-                                set: { value in
-                                    Task {
-                                        await appModel.setFeedUnreadCountVisible(source, visible: value)
-                                    }
-                                }
-                            )
-                        )
-                        .disabled(!isVisible)
-                    }
-                    .padding(.vertical, 4)
+                    )
                 }
             }
 
@@ -177,6 +204,7 @@ struct SettingsView: View {
         }
         .navigationTitle("Settings")
         .task {
+            appModel.loadPrimaryTabPreferences()
             pendingReadLaterProvider = appModel.isSembleReadLaterEnabled ? "semble" : "latr-link"
             if pendingReadLaterProvider == "semble" {
                 await appModel.loadOwnedSembleCollections()
@@ -192,4 +220,5 @@ struct SettingsView: View {
             }
         }
     }
+
 }
