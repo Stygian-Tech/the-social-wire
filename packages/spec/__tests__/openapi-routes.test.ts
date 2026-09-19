@@ -62,6 +62,10 @@ describe("OpenAPI route drift", () => {
     const paths = extractOpenAPIPaths(yaml);
 
     const routePatterns: Record<string, string[]> = {
+      "/xrpc/app.thesocialwire.appview.getReadStateStatus": ['"/xrpc/app.thesocialwire.appview.getReadStateStatus"'],
+      "/xrpc/app.thesocialwire.appview.exportReadState": ['"/xrpc/app.thesocialwire.appview.exportReadState"'],
+      "/xrpc/app.thesocialwire.appview.prepareReadState": ['"/xrpc/app.thesocialwire.appview.prepareReadState"'],
+      "/xrpc/app.thesocialwire.appview.confirmReadState": ['"/xrpc/app.thesocialwire.appview.confirmReadState"'],
       "/health": ['get("/health")'],
       "/livez": ['get("/livez")'],
       "/readyz": ['get("/readyz")'],

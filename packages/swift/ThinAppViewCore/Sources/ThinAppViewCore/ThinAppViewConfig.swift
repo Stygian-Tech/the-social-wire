@@ -32,7 +32,7 @@ public static let canonicalContentCollections: [String] = [
 
 public static let graphSubscriptionCollection = "site.standard.graph.subscription"
 
-private static let relayQuery = "wantedCollections=site.standard.document&wantedCollections=com.standard.document&wantedCollections=site.standard.entry&wantedCollections=com.standard.entry&wantedCollections=app.thesocialwire.entryReadState&wantedCollections=app.skyreader.feed.subscription&wantedCollections=site.standard.graph.subscription"
+private static let relayQuery = "wantedCollections=site.standard.document&wantedCollections=com.standard.document&wantedCollections=site.standard.entry&wantedCollections=com.standard.entry&wantedCollections=app.thesocialwire.entryReadState&wantedCollections=app.thesocialwire.readState&wantedCollections=app.skyreader.feed.subscription&wantedCollections=site.standard.graph.subscription"
 
 public static let defaultRelayWebSocketURLs = [
     "wss://jetstream1.us-east.bsky.network/subscribe?\(relayQuery)",

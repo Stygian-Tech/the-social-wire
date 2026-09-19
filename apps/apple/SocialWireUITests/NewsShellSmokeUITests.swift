@@ -56,15 +56,27 @@ final class NewsShellSmokeUITests: XCTestCase {
         XCTAssertEqual(result.label, "Ready")
 
         markRead.press(forDuration: 1)
+        XCTAssertTrue(app.buttons["mark-read-age-2"].waitForExistence(timeout: 3))
         app.buttons["mark-read-age-2"].tap()
+        XCTAssertTrue(olderConfirmation.waitForExistence(timeout: 3))
         olderConfirmation.buttons["Mark As Read"].tap()
-        XCTAssertTrue(result.waitForExistence(timeout: 3))
+        // The label already exists; wait for the asynchronous action to change it.
+        let olderResult = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "label == %@", "Read Before 2026-09-01T05:00:00Z"),
+            object: result
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [olderResult], timeout: 5), .completed)
         XCTAssertEqual(result.label, "Read Before 2026-09-01T05:00:00Z")
 
         markRead.tap()
         let allConfirmation = app.alerts["Mark All As Read?"]
         XCTAssertTrue(allConfirmation.waitForExistence(timeout: 3))
         allConfirmation.buttons["Mark As Read"].tap()
+        let allResult = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "label == %@", "All Read"),
+            object: result
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [allResult], timeout: 5), .completed)
         XCTAssertEqual(result.label, "All Read")
 
         app.buttons["fixture-read-stories"].tap()

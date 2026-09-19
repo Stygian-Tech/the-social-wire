@@ -491,6 +491,7 @@ actor ThinAppViewReadService {
   }
 
   func upsertReadMark(auth: AuthContext, subjectUri: String, readAt: Date?) async throws {
+    try await requireLegacyReadStateWriter(viewerDid: auth.did)
     let alreadyRead = try? await authoritativeReadState(
       viewerDid: auth.did,
       subjectUri: subjectUri
@@ -511,6 +512,7 @@ actor ThinAppViewReadService {
   }
 
   func deleteReadMark(auth: AuthContext, subjectUri: String) async throws {
+    try await requireLegacyReadStateWriter(viewerDid: auth.did)
     let wasRead = try? await authoritativeReadState(
       viewerDid: auth.did,
       subjectUri: subjectUri
@@ -530,6 +532,13 @@ actor ThinAppViewReadService {
     try await invalidateReadStateCaches(viewerDid: auth.did, subjectUri: subjectUri)
   }
 
+  private func requireLegacyReadStateWriter(viewerDid: String) async throws {
+    if let pdsStore = store as? any PDSReadStateStoring,
+       try await pdsStore.pdsReadStateStatus(viewerDid: viewerDid).authority == .pds {
+      throw HTTPError(.conflict, message: "PDSReadStateRequired: Update your client to change PDS read state")
+    }
+  }
+
   private func authoritativeReadState(
     viewerDid: String,
     subjectUri: String
@@ -541,6 +550,7 @@ actor ThinAppViewReadService {
   }
 
   func purge(auth: AuthContext) async throws {
+    try await requireLegacyReadStateWriter(viewerDid: auth.did)
     try await store.purgeReadMarks(viewerDid: auth.did)
     try await circlePrivateState?.purge(viewerDID: auth.did)
     try await projectionCache?.invalidateUnreadCounts(viewerDid: auth.did, publicationId: nil)
@@ -657,6 +667,7 @@ actor ThinAppViewReadService {
     confirmedAt: Date,
     marked: Int
   ) {
+    try await requireLegacyReadStateWriter(viewerDid: auth.did)
     let publicationIds = rows.map(\.publicationId)
     let existing = (try? await store.fetchUnreadCounters(
       viewerDid: auth.did,
@@ -707,7 +718,8 @@ actor ThinAppViewReadService {
   func markReadBefore(
     auth: AuthContext, rows: [SidebarPublicationRow], before: String, now: Date
   ) async throws -> MarkReadBeforeResponse {
-    try await ReadAgeService(store: store, projectionCache: projectionCache).markBefore(
+    try await requireLegacyReadStateWriter(viewerDid: auth.did)
+    return try await ReadAgeService(store: store, projectionCache: projectionCache).markBefore(
       viewerDid: auth.did, rows: rows, before: before, now: now
     )
   }

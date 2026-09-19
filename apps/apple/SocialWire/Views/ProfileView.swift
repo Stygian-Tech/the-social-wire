@@ -4,6 +4,7 @@ struct ProfileView: View {
     @Environment(SocialWireAppModel.self) private var appModel
     @Environment(\.dismiss) private var dismiss
     @State private var showPurgeIndexedDataConfirm = false
+    @State private var showPublicReadHistoryConfirm = false
     var settingsRoute: NewsRoute? = nil
 
     var body: some View {
@@ -57,6 +58,29 @@ struct ProfileView: View {
                 }
             }
 
+            if PDSReadStateSyncService.isEnabled {
+                Section {
+                    if appModel.readStateSync.isPDSAuthoritative {
+                        Label("Public Read History Enabled", systemImage: "checkmark.circle")
+                    } else {
+                        Button(appModel.readStateSync.isMigrating ? "Publishing Read History…" : "Enable Public Read History") {
+                            showPublicReadHistoryConfirm = true
+                        }
+                        .disabled(appModel.readStateSync.isMigrating || appModel.readStateSync.authority == nil)
+                    }
+                    if let message = appModel.readStateSync.statusMessage {
+                        Text(message).font(.footnote).foregroundStyle(.secondary)
+                    }
+                    if appModel.readStateSync.pendingCount > 0 && !appModel.readStateSync.requiresReauthentication {
+                        Button("Retry Sync") { Task { await appModel.readStateSync.flush() } }
+                    }
+                } header: {
+                    Text("Public Read History")
+                } footer: {
+                    Text(PDSReadStateSyncService.publicHistoryNotice)
+                }
+            }
+
             Section {
                 Button("Log Out", role: .destructive) {
                     appModel.signOut()
@@ -64,15 +88,23 @@ struct ProfileView: View {
                 }
             }
 
-            if SocialWireAPIEnvironment.useThinAppView {
+            if SocialWireAPIEnvironment.useThinAppView && !appModel.readStateSync.isPDSAuthoritative {
                 Section {
                     Button("Purge Indexed Data", role: .destructive) {
                         showPurgeIndexedDataConfirm = true
                     }
+                    .disabled(PDSReadStateSyncService.isEnabled && appModel.readStateSync.authority == nil)
                 } footer: {
                     Text("Removes your AppView read marks from the Social Wire index.")
                 }
             }
+        }
+        .task(id: appModel.viewerDID) { await appModel.refreshPublicReadHistoryStatus() }
+        .alert("Enable Public Read History?", isPresented: $showPublicReadHistoryConfirm) {
+            Button("Enable Public Read History") { Task { await appModel.enablePublicReadHistory() } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(PDSReadStateSyncService.publicHistoryNotice)
         }
         .confirmationDialog(
             "Purge Indexed Data?",

@@ -4,9 +4,9 @@ import Testing
 
 @testable import ThinAppViewCore
 
-@Suite("Postgres feed pagination", .serialized,
-  .enabled(if: ProcessInfo.processInfo.environment["THIN_APPVIEW_TEST_DATABASE_URL"] != nil))
-struct PostgresFeedIntegrationTests {
+// Share the existing serialized PDS integration suite: its failure-injection test temporarily
+// installs a table-wide constraint that must not overlap this fixture's explicit unread rows.
+extension PostgresJetstreamInboxIntegrationTests {
   @Test("late hydration preserves deduplication, read precedence, cursor ties, and empty feeds")
   func lateHydrationParity() async throws {
     try await PostgresInboxFixture.withFixture { fixture in
@@ -186,6 +186,52 @@ struct PostgresFeedIntegrationTests {
           WHERE viewer_did = \(viewer) AND publication_id = \(aliasPublication)
           """)
 
+        // Development also resolves PDS authority through the author/site-aware lateral function.
+        // A newer exact unread must beat a PDS bulk read and the retained legacy read floor.
+        try await execute("""
+          UPDATE appview_pds_read_state_authority
+          SET manifest = '{}'::jsonb, manifest_cid = 'feed-fixture', projection_ready = TRUE
+          WHERE viewer_did = \(viewer)
+          """)
+        try await execute("""
+          INSERT INTO appview_pds_read_state_boundaries
+            (viewer_did, rule_key, sequence, is_read, acted_at, publication_id, author_did,
+             scope_keys, boundary_at, boundary_uri)
+          VALUES (\(viewer), 'feed-fixture', 1, TRUE, \(now), \(publication), \(author),
+            jsonb_build_array(\(publication)::text), \(now), NULL)
+          """)
+        try await execute("""
+          INSERT INTO appview_pds_read_state_exact (viewer_did, subject_uri, sequence, is_read, acted_at)
+          VALUES (\(viewer), \(uri("new-duplicate")), 2, FALSE, \(now)),
+            (\(viewer), \(uri("a")), 2, FALSE, \(now))
+          """)
+        for (filter, expected) in [
+          (EntryListFilter.unread, ["new-duplicate", "a", "wild"]),
+          (.read, ["b", "override", "old"]),
+        ] {
+          let page = try #require(try await fixture.store.listFeedEntries(
+            viewerDid: viewer, selector: selector, filter: filter, cursor: nil, limit: 100))
+          #expect(page.response.entries.map(\.entryId) == expected.map(uri))
+          #expect(page.response.entries.allSatisfy { $0.isRead == (filter == .read) })
+        }
+        try await execute("""
+          UPDATE appview_pds_read_state_authority SET projection_ready = FALSE
+          WHERE viewer_did = \(viewer)
+          """)
+        do {
+          _ = try await fixture.store.listFeedEntries(
+            viewerDid: viewer, selector: selector, filter: .all, cursor: nil, limit: 2)
+          Issue.record("All feed returned entries while authoritative PDS read state was unavailable")
+        } catch {}
+        let unavailableEmpty = try #require(try await fixture.store.listFeedEntries(
+          viewerDid: viewer, selector: .init(kind: .folder, id: "empty"),
+          filter: .all, cursor: nil, limit: 2))
+        #expect(unavailableEmpty.response.entries.isEmpty)
+        try await execute("""
+          UPDATE appview_pds_read_state_authority SET projection_ready = TRUE
+          WHERE viewer_did = \(viewer)
+          """)
+
         // A large older corpus must not turn the All page into a read-state scan of the entire
         // history. Paired article URLs also exercise duplicate selection beyond the first page.
         try await execute("""
@@ -210,7 +256,7 @@ struct PostgresFeedIntegrationTests {
             + firstHistory.map { uri("history-\($0)") })
         #expect(largePage.response.entries.allSatisfy { $0.summary == summary })
         for entry in largePage.response.entries {
-          #expect(entry.isRead == !["b", "override", "wild"].contains(entry.title))
+          #expect(entry.isRead == !["new-duplicate", "a", "wild"].contains(entry.title))
         }
         let largeCursor = try #require(largePage.response.cursor)
         #expect(ThinAppViewCursor.decode(largeCursor)?.uri == uri("history-34"))
@@ -222,14 +268,14 @@ struct PostgresFeedIntegrationTests {
           try await fixture.store.listFeedEntries(
             viewerDid: viewer, selector: selector, filter: .unread, cursor: nil, limit: 24)
         })
-        #expect(largeUnread.response.entries.map(\.entryId) == ["b", "override", "wild"].map(uri))
+        #expect(largeUnread.response.entries.map(\.entryId) == ["new-duplicate", "a", "wild"].map(uri))
         #expect(largeUnread.response.cursor == nil)
         let largeRead = try #require(try await AppViewFeedQueryDeadline.$current.withValue(.init()) {
           try await fixture.store.listFeedEntries(
             viewerDid: viewer, selector: selector, filter: .read, cursor: nil, limit: 24)
         })
         #expect(largeRead.response.entries.map(\.entryId) ==
-          ["new-duplicate", "a", "old"].map(uri)
+          ["b", "override", "old"].map(uri)
             + ([1] + Array(stride(from: 2, through: 40, by: 2))).map { uri("history-\($0)") })
         #expect(largeRead.response.entries.allSatisfy { $0.isRead == true })
       } catch {
@@ -241,6 +287,14 @@ struct PostgresFeedIntegrationTests {
   }
 
   private func cleanup(_ fixture: PostgresInboxFixture, viewer: String, author: String) async throws {
+    for try await _ in try await fixture.pool.query(
+      "DELETE FROM appview_pds_read_state_exact WHERE viewer_did = \(viewer)", logger: fixture.logger) {}
+    for try await _ in try await fixture.pool.query(
+      "DELETE FROM appview_pds_read_state_boundaries WHERE viewer_did = \(viewer)", logger: fixture.logger) {}
+    for try await _ in try await fixture.pool.query("""
+      UPDATE appview_pds_read_state_authority SET manifest = NULL, manifest_cid = NULL
+      WHERE viewer_did = \(viewer)
+      """, logger: fixture.logger) {}
     for try await _ in try await fixture.pool.query(
       "DELETE FROM appview_feed_publications WHERE viewer_did = \(viewer)", logger: fixture.logger) {}
     for try await _ in try await fixture.pool.query(

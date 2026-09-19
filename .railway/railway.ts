@@ -10,11 +10,13 @@ const developmentProfile = {
   ingressRegion: "us-west2",
   workerRegion: "us-west2",
   projectionReplicas: 2,
-  appViewGeneration: "jetstream-v2-us-west-v2",
+  appViewGeneration: "jetstream-v2-us-west-read-state-v1",
   ingress: {
-    JETSTREAM_APPVIEW_BOOTSTRAP_AFTER_SEQ: "24790001258",
+    JETSTREAM_APPVIEW_BOOTSTRAP_AFTER_SEQ: "25681193100",
     JETSTREAM_APPVIEW_ENABLED: "true",
-    JETSTREAM_APPVIEW_SOURCE_GENERATION: "jetstream-v2-us-west-v2",
+    JETSTREAM_APPVIEW_SOURCE_GENERATION: "jetstream-v2-us-west-read-state-v1",
+    JETSTREAM_APPVIEW_COLLECTIONS:
+      "site.standard.document,site.standard.entry,com.standard.document,com.standard.entry,app.skyreader.feed.subscription,site.standard.graph.subscription,app.thesocialwire.readState",
     JETSTREAM_WIRE_BOOTSTRAP_AFTER_SEQ: "24941037520",
     JETSTREAM_WIRE_ENABLED: "true",
     JETSTREAM_WIRE_ADMISSION_BURST_EVENTS: "1",

@@ -70,6 +70,7 @@ public enum ThinAppViewWorkerRuntime {
       projectionCache: projectionCache,
       config: config,
       tapStorageEnabled: tapConfiguration?.mode != .disabled,
+      pdsEviction: PDSReadStateEvictionConfiguration.fromEnvironment(ProcessInfo.processInfo.environment),
       environment: operationsConfig?.environment ?? "unknown",
       logger: logger
     )

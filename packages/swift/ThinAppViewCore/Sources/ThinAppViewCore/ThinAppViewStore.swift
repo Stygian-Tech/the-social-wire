@@ -12,6 +12,7 @@ public enum AppViewIngestionScopePolicy {
   ]
 
   public static let viewerCollections = [
+    "app.thesocialwire.readState",
     "app.skyreader.feed.subscription",
     "site.standard.graph.subscription",
   ]

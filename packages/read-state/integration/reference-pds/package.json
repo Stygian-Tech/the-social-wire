@@ -1,0 +1,1 @@
+{"name":"tsw92-reference-pds-conformance","private":true,"type":"module","scripts":{"test":"tsx conformance.ts"},"dependencies":{"@atproto/pds":"0.5.31","@did-plc/server":"0.0.1","@atproto/repo":"0.10.11","@atproto/crypto":"0.5.4","@atproto/lex-cbor":"0.1.6","buffer":"6.0.3","tsx":"4.20.5"}}

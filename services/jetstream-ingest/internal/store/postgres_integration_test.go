@@ -522,6 +522,29 @@ func TestPostgresStageBatchIntegration(t *testing.T) {
 	if checkpoint == nil || !cursorEquals(checkpoint.LastStagedSeq, 83) {
 		t.Fatalf("sparse admission checkpoint = %#v", checkpoint)
 	}
+	manifestCollection := "app.thesocialwire.readState"
+	chunkCollection := "app.thesocialwire.readStateChunk"
+	manifestEvent := viewerEvent
+	manifestEvent.Seq = 84
+	manifestEvent.Collection = &manifestCollection
+	chunkEvent := manifestEvent
+	chunkEvent.Seq = 85
+	chunkEvent.Collection = &chunkCollection
+	untrackedManifest := manifestEvent
+	untrackedManifest.Seq = 86
+	untrackedManifest.RepoDID = "did:plc:untracked-viewer"
+	if err := postgres.StageBatch(ctx, lease, []ingest.InboxEvent{manifestEvent, chunkEvent, untrackedManifest}, 86, now, ReplayProgress{State: "live", LastProgressAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	var manifestCount, excludedCount int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FILTER (WHERE seq = 84), COUNT(*) FILTER (WHERE seq IN (85,86))
+		FROM appview_ingestion_inbox WHERE environment = $1 AND source_generation = $2`, source.Environment, generation).
+		Scan(&manifestCount, &excludedCount); err != nil {
+		t.Fatal(err)
+	}
+	if manifestCount != 1 || excludedCount != 0 {
+		t.Fatalf("manifest admission: tracked=%d, unreferenced or untracked=%d", manifestCount, excludedCount)
+	}
 }
 
 func cursorEquals(cursor *uint64, expected uint64) bool {

@@ -1,0 +1,351 @@
+{
+  "viewerDid": "did:plc:fixture",
+  "deviceId": "12345678-1234-4234-8234-123456789abc",
+  "manifest": {
+    "$type": "app.thesocialwire.readState",
+    "version": 1,
+    "generation": "fixture",
+    "lastSequence": 9,
+    "head": {
+      "uri": "at://did:plc:fixture/app.thesocialwire.readStateChunk/a",
+      "cid": "fixture"
+    }
+  },
+  "operations": [
+    {
+      "actionId": "a1",
+      "sequence": 1,
+      "state": "read",
+      "actedAt": "2026-11-01T01:30:00-05:00",
+      "selection": "exact",
+      "subjectUris": [
+        "a",
+        "é",
+        "𐀀"
+      ],
+      "calendar": {
+        "cutoff": "2026-11-01T00:00:00-05:00",
+        "timeZone": "America/New_York",
+        "referenceDate": "2026-11-01"
+      }
+    },
+    {
+      "actionId": "a2",
+      "sequence": 2,
+      "state": "unread",
+      "actedAt": "2026-11-01T01:30:00-05:00",
+      "selection": "exact",
+      "subjectUris": [
+        "a"
+      ]
+    },
+    {
+      "actionId": "a3",
+      "sequence": 3,
+      "state": "read",
+      "actedAt": "2026-11-01T01:30:00-05:00",
+      "selection": "boundaries",
+      "boundaries": [
+        {
+          "scope": {
+            "publicationId": "publication",
+            "authorDid": "did:plc:writer",
+            "publicationSiteKeys": [
+              "https://site.example/",
+              "at://did:plc:writer/site.standard.publication/a"
+            ]
+          },
+          "createdAt": "2026-11-01T06:30:00.000010Z"
+        }
+      ]
+    },
+    {
+      "actionId": "a4",
+      "sequence": 4,
+      "state": "unread",
+      "actedAt": "2026-11-01T01:30:00-05:00",
+      "selection": "boundaries",
+      "boundaries": [
+        {
+          "scope": {
+            "publicationId": "publication",
+            "authorDid": "did:plc:writer",
+            "publicationSiteKeys": [
+              "https://site.example/",
+              "at://did:plc:writer/site.standard.publication/a"
+            ]
+          },
+          "createdAt": "2026-11-01T06:30:00.000005Z",
+          "entryId": "𐀀"
+        }
+      ]
+    },
+    {
+      "actionId": "a5",
+      "sequence": 5,
+      "state": "read",
+      "actedAt": "2026-11-01T01:30:00-05:00",
+      "selection": "boundaries",
+      "boundaries": [
+        {
+          "scope": {
+            "publicationId": "publication",
+            "authorDid": "did:plc:writer",
+            "publicationSiteKeys": [
+              "https://site.example/",
+              "at://did:plc:writer/site.standard.publication/a"
+            ]
+          },
+          "createdAt": "2026-11-01T06:30:00.000008Z"
+        }
+      ]
+    },
+    {
+      "actionId": "a6",
+      "sequence": 6,
+      "state": "unread",
+      "actedAt": "2026-11-01T01:30:00-05:00",
+      "selection": "boundaries",
+      "boundaries": [
+        {
+          "scope": {
+            "publicationId": "publication",
+            "authorDid": "did:plc:writer",
+            "publicationSiteKeys": [
+              "https://site.example/",
+              "at://did:plc:writer/site.standard.publication/a"
+            ]
+          },
+          "createdAt": "2026-11-01T06:30:00.000010Z",
+          "entryId": "é"
+        }
+      ]
+    },
+    {
+      "actionId": "a7",
+      "sequence": 7,
+      "state": "read",
+      "actedAt": "2026-11-01T01:30:00-05:00",
+      "selection": "boundaries",
+      "boundaries": [
+        {
+          "scope": {
+            "publicationId": "other-frozen-publication",
+            "authorDid": "did:plc:writer",
+            "publicationSiteKeys": [
+              "https://site.example/",
+              "at://did:plc:writer/site.standard.publication/a"
+            ]
+          },
+          "createdAt": "2026-11-01T06:30:00.000020Z"
+        }
+      ]
+    },
+    {
+      "actionId": "a8",
+      "sequence": 8,
+      "state": "read",
+      "actedAt": "2026-11-01T01:30:00-05:00",
+      "selection": "exact",
+      "subjectUris": [
+        "future"
+      ]
+    },
+    {
+      "actionId": "a9",
+      "sequence": 9,
+      "state": "read",
+      "actedAt": "2026-11-01T01:30:00-05:00",
+      "selection": "boundaries",
+      "boundaries": [
+        {
+          "scope": {
+            "publicationId": "publication",
+            "authorDid": "did:plc:writer",
+            "publicationSiteKeys": [
+              "https://site.example/",
+              "at://did:plc:writer/site.standard.publication/a"
+            ]
+          },
+          "createdAt": "2026-11-01T06:30:00.000007Z"
+        }
+      ]
+    }
+  ],
+  "compactedOperations": [
+    {
+      "actionId": "a1",
+      "sequence": 1,
+      "state": "read",
+      "actedAt": "2026-11-01T01:30:00-05:00",
+      "selection": "exact",
+      "subjectUris": [
+        "é",
+        "𐀀"
+      ],
+      "calendar": {
+        "cutoff": "2026-11-01T00:00:00-05:00",
+        "timeZone": "America/New_York",
+        "referenceDate": "2026-11-01"
+      }
+    },
+    {
+      "actionId": "a2",
+      "sequence": 2,
+      "state": "unread",
+      "actedAt": "2026-11-01T01:30:00-05:00",
+      "selection": "exact",
+      "subjectUris": [
+        "a"
+      ]
+    },
+    {
+      "actionId": "a3",
+      "sequence": 3,
+      "state": "read",
+      "actedAt": "2026-11-01T01:30:00-05:00",
+      "selection": "boundaries",
+      "boundaries": [
+        {
+          "scope": {
+            "publicationId": "publication",
+            "authorDid": "did:plc:writer",
+            "publicationSiteKeys": [
+              "at://did:plc:writer/site.standard.publication/a",
+              "https://site.example/"
+            ]
+          },
+          "createdAt": "2026-11-01T06:30:00.000010Z"
+        }
+      ]
+    },
+    {
+      "actionId": "a6",
+      "sequence": 6,
+      "state": "unread",
+      "actedAt": "2026-11-01T01:30:00-05:00",
+      "selection": "boundaries",
+      "boundaries": [
+        {
+          "scope": {
+            "publicationId": "publication",
+            "authorDid": "did:plc:writer",
+            "publicationSiteKeys": [
+              "at://did:plc:writer/site.standard.publication/a",
+              "https://site.example/"
+            ]
+          },
+          "createdAt": "2026-11-01T06:30:00.000010Z",
+          "entryId": "é"
+        }
+      ]
+    },
+    {
+      "actionId": "a7",
+      "sequence": 7,
+      "state": "read",
+      "actedAt": "2026-11-01T01:30:00-05:00",
+      "selection": "boundaries",
+      "boundaries": [
+        {
+          "scope": {
+            "publicationId": "other-frozen-publication",
+            "authorDid": "did:plc:writer",
+            "publicationSiteKeys": [
+              "at://did:plc:writer/site.standard.publication/a",
+              "https://site.example/"
+            ]
+          },
+          "createdAt": "2026-11-01T06:30:00.000020Z"
+        }
+      ]
+    },
+    {
+      "actionId": "a8",
+      "sequence": 8,
+      "state": "read",
+      "actedAt": "2026-11-01T01:30:00-05:00",
+      "selection": "exact",
+      "subjectUris": [
+        "future"
+      ]
+    },
+    {
+      "actionId": "a9",
+      "sequence": 9,
+      "state": "read",
+      "actedAt": "2026-11-01T01:30:00-05:00",
+      "selection": "boundaries",
+      "boundaries": [
+        {
+          "scope": {
+            "publicationId": "publication",
+            "authorDid": "did:plc:writer",
+            "publicationSiteKeys": [
+              "at://did:plc:writer/site.standard.publication/a",
+              "https://site.example/"
+            ]
+          },
+          "createdAt": "2026-11-01T06:30:00.000007Z"
+        }
+      ]
+    }
+  ],
+  "receipts": [
+    {
+      "actionId": "a1",
+      "originalSequence": 1,
+      "originalIntentHash": "c53969057805cef0a47039453e82e75153520e91002b37bc7896bfece71f5fad"
+    },
+    {
+      "actionId": "a2",
+      "originalSequence": 2,
+      "originalIntentHash": "8badad753e3301e8189eb96e0106d7515eec3c8f1d72f041c1283b2673213ebb"
+    },
+    {
+      "actionId": "a3",
+      "originalSequence": 3,
+      "originalIntentHash": "21ba78adcd3d3c5f95e0090ba31c3dd4e1cd4e03f38d1978358c1ec2374eca18"
+    },
+    {
+      "actionId": "a4",
+      "originalSequence": 4,
+      "originalIntentHash": "a38b47aa15d90a7ac3ae1df33e9fb1dab4a9b90258afa124976d40db2fe943c5"
+    },
+    {
+      "actionId": "a5",
+      "originalSequence": 5,
+      "originalIntentHash": "f2a5a4416ff5887ac0b74ced693043cd2e45c3c101a918bacc103bba6a036efc"
+    },
+    {
+      "actionId": "a6",
+      "originalSequence": 6,
+      "originalIntentHash": "788e5ede9ee358a7a6b66464e22d3dcb46d338a4ddae7861ba4a8bb5c0864f03"
+    },
+    {
+      "actionId": "a7",
+      "originalSequence": 7,
+      "originalIntentHash": "5716bfe6b0754cde8254eab1e3051e1dc90e811d5fafa69eefff3e6c5ca919e0"
+    },
+    {
+      "actionId": "a8",
+      "originalSequence": 8,
+      "originalIntentHash": "5c9ee200ac0bc82f980fd37e6ec49ad6971adfcaaa6d766ab47d50dd0236af5f"
+    },
+    {
+      "actionId": "a9",
+      "originalSequence": 9,
+      "originalIntentHash": "7fc5bdbf03ab46623696c5931965996b77e33bed8d333a9aa5b7bc5fef125df2"
+    }
+  ],
+  "initialReceipt": {
+    "deviceId": "12345678-1234-4234-8234-123456789abc",
+    "committedCounter": 0,
+    "prefixHash": "1b4e4559428b6878ac8658df3c73c61df562b26280efb5f3e5bf59fc6c268ed0"
+  },
+  "advancedReceipt": {
+    "deviceId": "12345678-1234-4234-8234-123456789abc",
+    "committedCounter": 9,
+    "prefixHash": "0af134a1cb12e4c15ce453e9d9fbb8143db7891b15bb36d579ee924e3b0c15f9"
+  }
+}

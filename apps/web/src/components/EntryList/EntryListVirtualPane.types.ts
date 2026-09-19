@@ -7,6 +7,7 @@ export type EntryListVirtualPaneProps = {
   resolvingEntryId?: string | null;
   onSelectEntry: (entryId: string, entry?: EntryListItem) => void;
   isEntryRead: (entryId: string) => boolean;
+  pendingEntryReadState?: (entryId: string) => boolean | undefined;
   readIndicatorsEnabled: boolean;
   hasNextPage: boolean;
   isFetchingNextPage: boolean;

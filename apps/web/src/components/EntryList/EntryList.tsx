@@ -1,5 +1,6 @@
 "use client";
 
+import { effectiveEntryReadState } from "@/lib/pendingReadStateOverlay";
 import {
   useCallback,
   useEffect,
@@ -47,6 +48,7 @@ interface EntryListProps {
   resolvingEntryId?: string | null;
   onSelectEntry: (entryId: string, entry?: EntryListItem) => void;
   isEntryRead: (entryId: string) => boolean;
+  pendingEntryReadState?: (entryId: string) => boolean | undefined;
   readIndicatorsEnabled: boolean;
   /** When false, read/unread visuals are suppressed without changing persisted state. */
   articleFilter: ArticleListFilter;
@@ -69,6 +71,7 @@ export function EntryList({
   resolvingEntryId = null,
   onSelectEntry,
   isEntryRead,
+  pendingEntryReadState,
   readIndicatorsEnabled,
   articleFilter,
   markEntryRead,
@@ -220,9 +223,9 @@ export function EntryList({
     return filterEntriesForArticleFilter(
       allEntries,
       effectiveFilter,
-      (entryId) => isEntryRead(entryId) || authoritativeReadIds.has(entryId)
+      (entryId) => effectiveEntryReadState(entryId, authoritativeReadIds.has(entryId), isEntryRead, pendingEntryReadState)
     );
-  }, [allEntries, effectiveFilter, isEntryRead]);
+  }, [allEntries, effectiveFilter, isEntryRead, pendingEntryReadState]);
 
   /** Remount only when the user changes publication/filter; data churn must not reset scroll. */
   const virtualPaneKey = useMemo(() => {
@@ -332,6 +335,7 @@ export function EntryList({
       resolvingEntryId={resolvingEntryId}
       onSelectEntry={onSelectEntry}
       isEntryRead={isEntryRead}
+      pendingEntryReadState={pendingEntryReadState}
       readIndicatorsEnabled={readIndicatorsEnabled}
       hasNextPage={activeHasNextPage}
       isFetchingNextPage={activeIsFetchingNextPage}

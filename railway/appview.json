@@ -7,6 +7,7 @@
       "/services/appview/**",
       "/packages/swift/GatewayCore/**",
       "/packages/swift/ThinAppViewCore/**",
+      "/packages/swift/ReadStateCore/**",
       "/packages/swift/OperationsCore/**",
       "/packages/swift/SocialWireRedis/**",
       "/packages/swift/WireCore/**",
