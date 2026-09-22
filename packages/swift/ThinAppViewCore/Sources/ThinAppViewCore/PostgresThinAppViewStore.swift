@@ -1527,9 +1527,18 @@ public init(pool: PostgresClient, logger: Logger) {
          AND floor.publication_id = content.publication_id
         LEFT JOIN read_marks rm ON rm.viewer_did = \(viewerDid) AND rm.subject_uri = content.uri
         LEFT JOIN appview_unread_overrides uo ON uo.viewer_did = \(viewerDid) AND uo.subject_uri = content.uri
+      ), ordered_candidates AS (
+        -- Preserve a newest-first stream through read-state resolution. Without this
+        -- boundary the final sort evaluates PDS state for the entire matching history
+        -- before LIMIT can stop, even when the first few entries fill the requested page.
+        -- OFFSET 0 prevents pull-up without capping sparse read/unread searches.
+        SELECT * FROM candidates
+        WHERE duplicate_rank = 1
+        ORDER BY created_at DESC, uri DESC
+        OFFSET 0
       ), resolved AS (
-        -- PDS authority is a per-entry function call, so evaluate it only for the newest
-        -- duplicate. The set-based legacy joins above stay before deduplication.
+        -- Keep the set-based legacy joins before deduplication, but resolve authoritative
+        -- state only as the ordered stream is consumed by the filtered page.
         SELECT
           candidate.uri,
           candidate.created_at,
@@ -1539,12 +1548,11 @@ public init(pool: PostgresClient, logger: Logger) {
             WHEN read_state.read_uri IS NOT NULL THEN TRUE
             ELSE candidate.floor_read
           END AS is_read
-        FROM candidates candidate
+        FROM ordered_candidates candidate
         LEFT JOIN LATERAL appview_effective_entry_read_state(\(viewerDid), candidate.uri,
           candidate.author_did, candidate.publication_site, candidate.created_at,
           CASE WHEN candidate.legacy_read THEN candidate.uri END,
           CASE WHEN candidate.legacy_unread THEN candidate.uri END) read_state ON TRUE
-        WHERE candidate.duplicate_rank = 1
       ), page AS (
         SELECT uri, created_at, publication_id, is_read
         FROM resolved
