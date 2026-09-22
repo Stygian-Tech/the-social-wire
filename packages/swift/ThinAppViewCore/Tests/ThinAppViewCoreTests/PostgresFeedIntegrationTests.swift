@@ -278,6 +278,29 @@ extension PostgresJetstreamInboxIntegrationTests {
           ["b", "override", "old"].map(uri)
             + ([1] + Array(stride(from: 2, through: 40, by: 2))).map { uri("history-\($0)") })
         #expect(largeRead.response.entries.allSatisfy { $0.isRead == true })
+
+        // Ordered resolution must scan past arbitrarily many read rows, not cap the
+        // candidates before filtering. Exercise multiple sparse pages and the extra
+        // matching row used to decide whether another cursor exists.
+        try await execute("""
+          INSERT INTO appview_pds_read_state_exact (viewer_did, subject_uri, sequence, is_read, acted_at)
+          VALUES (\(viewer), \(uri("history-100")), 3, FALSE, \(now)),
+            (\(viewer), \(uri("history-2500")), 3, FALSE, \(now)),
+            (\(viewer), \(uri("history-9998")), 3, FALSE, \(now))
+          """)
+        var sparseCursor: String?
+        for (index, expected) in [
+          ["new-duplicate", "a"], ["wild", "history-100"], ["history-2500", "history-9998"],
+        ].enumerated() {
+          let sparsePage = try #require(try await AppViewFeedQueryDeadline.$current.withValue(.init()) {
+            try await fixture.store.listFeedEntries(
+              viewerDid: viewer, selector: selector, filter: .unread, cursor: sparseCursor, limit: 2)
+          })
+          #expect(sparsePage.response.entries.map(\.entryId) == expected.map(uri))
+          #expect(sparsePage.response.entries.allSatisfy { $0.isRead == false })
+          #expect((sparsePage.response.cursor != nil) == (index < 2))
+          sparseCursor = sparsePage.response.cursor
+        }
       } catch {
         try? await cleanup(fixture, viewer: viewer, author: author)
         throw error
