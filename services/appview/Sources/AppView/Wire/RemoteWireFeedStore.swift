@@ -2,6 +2,10 @@ import Foundation
 import WireCore
 
 actor RemoteWireFeedStore: WireFeedStore {
+  // Share public cache pages across UI limits (1...50), with room for the next
+  // cursor row, without validating and decoding 500 ranked rows on every read.
+  private static let initialRankedBatchLimit = 100
+  private static let continuationRankedBatchLimit = 500
   private let transport: any WireCorpusTransport
   private let cursorCodec: WireCursorCodec
   private let mode: WireDiscoveryMode
@@ -53,11 +57,13 @@ actor RemoteWireFeedStore: WireFeedStore {
     var exhausted = false
     var scanned = 0
     while accepted.count <= safeLimit, !exhausted, scanned < 5_000 {
+      let rankedBatchLimit = min(scanned == 0 ? Self.initialRankedBatchLimit
+        : Self.continuationRankedBatchLimit, 5_000 - scanned)
       let target = Self.feedTarget(
         language: requestedLanguage,
         generationID: generationID,
         startOrdinal: scanOrdinal,
-        limit: 500,
+        limit: rankedBatchLimit,
         fallbackLimit: generationID == nil ? 5000 : nil
       )
       let page: WireCorpusPage
@@ -67,10 +73,10 @@ actor RemoteWireFeedStore: WireFeedStore {
         guard viewerDid == nil else { throw WireServingError.unavailable }
         // Anonymous readers can use the old bounded contract during Edge-first rollout.
         page = try await fetch(target: Self.feedTarget(language: requestedLanguage,
-          generationID: nil, startOrdinal: scanOrdinal, limit: 500))
+          generationID: nil, startOrdinal: scanOrdinal, limit: rankedBatchLimit))
       }
       guard page.language == requestedLanguage,
-        page.rows.count <= (page.source == .simplifiedFallback ? 5000 : 500)
+        page.rows.count <= (page.source == .simplifiedFallback ? 5000 : rankedBatchLimit)
       else { throw WireServingError.unavailable }
       if let pinned = generationID, page.generationID != pinned {
         throw WireServingError.cursorExpired

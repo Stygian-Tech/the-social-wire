@@ -364,7 +364,7 @@ struct RemoteWireFeedStoreTests {
     #expect(anonymous.items.map(\.itemID) == ["muted-0"])
     #expect(viewer.cursor == nil && anonymous.cursor == nil)
     #expect(await transport.targets == Array(repeating:
-      "/internal/wire/v1/feed?fallbackLimit=5000&language=en&limit=500&startOrdinal=0", count: 2))
+      "/internal/wire/v1/feed?fallbackLimit=5000&language=en&limit=100&startOrdinal=0", count: 2))
 
     let shell = WireEditionAssembler.assemble(generationID: page.generationID, generatedAt: now,
       language: "en", source: .simplifiedFallback, degraded: true, rankedItems: Array(rows.prefix(50).map(\.item)))
@@ -397,9 +397,9 @@ struct RemoteWireFeedStoreTests {
       try await store.getFeed(cursor: nil, limit: 1, language: "en", viewerDid: "did:plc:viewer", now: now)
     }
     #expect(await transport.targets == [
-      "/internal/wire/v1/feed?fallbackLimit=5000&language=en&limit=500&startOrdinal=0",
-      "/internal/wire/v1/feed?language=en&limit=500&startOrdinal=0",
-      "/internal/wire/v1/feed?fallbackLimit=5000&language=en&limit=500&startOrdinal=0"])
+      "/internal/wire/v1/feed?fallbackLimit=5000&language=en&limit=100&startOrdinal=0",
+      "/internal/wire/v1/feed?language=en&limit=100&startOrdinal=0",
+      "/internal/wire/v1/feed?fallbackLimit=5000&language=en&limit=100&startOrdinal=0"])
     let edition = WireEditionAssembler.assemble(generationID: "fallback-1", generatedAt: now,
       language: "en", source: .simplifiedFallback, degraded: true, rankedItems: [])
     let editionStore = try RemoteWireFeedStore(transport: StubWireCorpusTransport(responses: [
@@ -418,7 +418,7 @@ struct RemoteWireFeedStoreTests {
       cursorSecret: cursorSecret, mode: .visible, moderationCache: cache)
     _ = try await rankedStore.getFeed(cursor: cursor, limit: 1, language: "en", viewerDid: nil, now: now)
     #expect(await rankedTransport.targets == [
-      "/internal/wire/v1/feed?generationId=\(generation)&language=en&limit=500&startOrdinal=500"])
+      "/internal/wire/v1/feed?generationId=\(generation)&language=en&limit=100&startOrdinal=500"])
   }
 
   @Test("fallback response still fails closed above the eight MiB body cap")
@@ -434,6 +434,69 @@ struct RemoteWireFeedStoreTests {
     await #expect(throws: WireServingError.unavailable) {
       try await store.getFeed(cursor: nil, limit: 1, language: "en", viewerDid: nil, now: now)
     }
+  }
+
+  @Test("ranked batches continue past muted rows and preserve delivery cursors and partial final pages")
+  func rankedBatchModerationAndCursors() async throws {
+    let generation = UUID().uuidString.lowercased()
+    let cache = WireViewerModerationCache()
+    await cache.store(WireViewerModerationSnapshot(blockedDIDs: [], mutedDIDs: [],
+      mutedWords: ["hidden"], fetchedAt: now), viewerDID: "did:plc:viewer")
+    func page(_ range: Range<Int>, exhausted: Bool) throws -> WireCorpusTransportResponse {
+      try encodedResponse(WireCorpusPage(generationID: generation, generatedAt: now,
+        language: "en", source: .ranked, degraded: false,
+        rows: range.map { WireCorpusRow(ordinal: $0,
+          item: item(id: "row-\($0)", title: $0 < 600 ? "Hidden" : "Allowed", actor: nil),
+          sourceActorKey: nil) }, exhausted: exhausted))
+    }
+    let transport = StubWireCorpusTransport(responses: [
+      try page(0..<100, exhausted: false), try page(100..<600, exhausted: false),
+      try page(600..<651, exhausted: true), try page(650..<651, exhausted: true)])
+    let store = try RemoteWireFeedStore(transport: transport, cursorSecret: cursorSecret,
+      mode: .visible, moderationCache: cache)
+    let first = try await store.getFeed(cursor: nil, limit: 50, language: "en",
+      viewerDid: "did:plc:viewer", now: now)
+    #expect(first.items.map(\.itemID) == (600..<650).map { "row-\($0)" })
+    let cursor = try #require(first.cursor)
+    #expect(try WireCursorCodec(secret: cursorSecret).decode(cursor).nextOrdinal == 650)
+    let final = try await store.getFeed(cursor: cursor, limit: 50, language: "en",
+      viewerDid: "did:plc:viewer", now: now)
+    #expect(final.items.map(\.itemID) == ["row-650"])
+    #expect(final.cursor == nil)
+    #expect(await transport.targets == [
+      "/internal/wire/v1/feed?fallbackLimit=5000&language=en&limit=100&startOrdinal=0",
+      "/internal/wire/v1/feed?generationId=\(generation)&language=en&limit=500&startOrdinal=100",
+      "/internal/wire/v1/feed?generationId=\(generation)&language=en&limit=500&startOrdinal=600",
+      "/internal/wire/v1/feed?generationId=\(generation)&language=en&limit=100&startOrdinal=650"])
+  }
+
+  @Test("ranked moderation stops at five thousand scanned rows and returns a continuation")
+  func rankedBatchScanBudget() async throws {
+    let generation = UUID().uuidString.lowercased()
+    let cache = WireViewerModerationCache()
+    await cache.store(WireViewerModerationSnapshot(blockedDIDs: [], mutedDIDs: [],
+      mutedWords: ["hidden"], fetchedAt: now), viewerDID: "did:plc:viewer")
+    let ranges = [0..<100] + stride(from: 100, to: 5000, by: 500).map { $0..<min($0 + 500, 5000) }
+    let responses = try ranges.map { range in
+      try encodedResponse(WireCorpusPage(generationID: generation, generatedAt: now,
+        language: "en", source: .ranked, degraded: false,
+        rows: range.map { WireCorpusRow(ordinal: $0,
+          item: item(id: "row-\($0)", title: "Hidden", actor: nil), sourceActorKey: nil) },
+        exhausted: false))
+    }
+    let transport = StubWireCorpusTransport(responses: responses)
+    let store = try RemoteWireFeedStore(transport: transport, cursorSecret: cursorSecret,
+      mode: .visible, moderationCache: cache)
+    let page = try await store.getFeed(cursor: nil, limit: 50, language: "en",
+      viewerDid: "did:plc:viewer", now: now)
+    #expect(page.items.isEmpty)
+    let cursor = try #require(page.cursor)
+    #expect(try WireCursorCodec(secret: cursorSecret).decode(cursor).nextOrdinal == 5000)
+    let targets = await transport.targets
+    #expect(targets.count == 11)
+    #expect(targets.first?.contains("limit=100&startOrdinal=0") == true)
+    #expect(targets[1].contains("limit=500&startOrdinal=100"))
+    #expect(targets.last?.contains("limit=400&startOrdinal=4600") == true)
   }
 
   private func item(id: String, title: String, actor: String?) -> WireFeedItem {
