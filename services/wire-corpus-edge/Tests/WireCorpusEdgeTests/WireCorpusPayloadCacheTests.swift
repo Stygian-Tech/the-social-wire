@@ -93,6 +93,7 @@ struct WireCorpusPayloadCacheTests {
     #expect(try await read(cache, source, at: now) == "original")
     #expect(await source.loads == 3)
     #expect(await cache.statistics()["feed_redis_error"] == 1)
+    #expect(await cache.statistics()["feed_oversized"] == 3)
   }
 
   @Test("keys isolate environment, generation, region, language and page size")
@@ -124,6 +125,7 @@ struct WireCorpusPayloadCacheTests {
       })
     #expect(value == "changed")
     #expect(await commands.writes == 0)
+    #expect(await cache.statistics()["item_revision_changed"] == 1)
   }
 
   @Test("temporary membership changes cannot poison a stable empty revision")
@@ -135,9 +137,22 @@ struct WireCorpusPayloadCacheTests {
     _ = try await cache.value([String].self, scope: ["feed", "one"], revision: "empty", now: now,
       currentRevision: { "empty" }, validatesMembership: { $0.isEmpty }, load: { ["blocked-story"] })
     #expect(await commands.writes == 0)
+    #expect(await cache.statistics()["feed_membership_changed"] == 1)
     let result = try await cache.value([String].self, scope: ["feed", "one"], revision: "empty", now: now,
       currentRevision: { "empty" }, validatesMembership: { $0.isEmpty }, load: { [] })
     #expect(result.isEmpty)
+  }
+
+  @Test("failed revision validation returns the source without filling Redis")
+  func revisionFailureTelemetry() async throws {
+    let commands = CorpusCacheCommands()
+    let cache = WireCorpusPayloadCache(commands: commands, environment: "prod")
+    let value = try await cache.value(String.self, scope: ["feed", "revision-failure"],
+      revision: "first", now: now,
+      currentRevision: { throw URLError(.timedOut) }, load: { "payload" })
+    #expect(value == "payload")
+    #expect(await commands.writes == 0)
+    #expect(await cache.statistics()["feed_revision_error"] == 1)
   }
 
 

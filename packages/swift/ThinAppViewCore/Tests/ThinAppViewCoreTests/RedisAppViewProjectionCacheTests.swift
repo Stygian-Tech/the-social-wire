@@ -53,6 +53,49 @@ struct RedisAppViewProjectionCacheTests {
     #expect(try await store.cachedUnreadCounts(viewerDid: "did:plc:viewer") == nil)
   }
 
+  @Test("first-page invalidation isolates viewers, publications, and environments")
+  func firstPageInvalidationScopes() async throws {
+    let commands = ProjectionRedisCommands()
+    let store = RedisAppViewProjectionCacheStore(
+      commands: commands, environment: "test", logger: Logger(label: "redis-projection.test"))
+    let otherEnvironment = RedisAppViewProjectionCacheStore(
+      commands: commands, environment: "other", logger: Logger(label: "redis-projection.test"))
+    let viewers = ["did:plc:first", "did:plc:second", AppViewProjectionCacheViewerKeys.sharedFirstPage]
+    let publications = ["at://publication/one", "https://example.com/feed.xml"]
+    for cache in [store, otherEnvironment] {
+      for viewer in viewers {
+        for publication in publications {
+          try await cache.storeFirstPageJSON(
+            viewerDid: viewer, publicationId: publication, jsonBody: "{}",
+            expiresAt: Date().addingTimeInterval(60))
+        }
+      }
+    }
+
+    try await store.invalidateFirstPage(viewerDid: viewers[0], publicationId: nil)
+    for viewer in viewers {
+      for publication in publications {
+        #expect((try await store.cachedFirstPageJSON(viewerDid: viewer, publicationId: publication) != nil)
+          == (viewer != viewers[0]))
+        #expect(try await otherEnvironment.cachedFirstPageJSON(
+          viewerDid: viewer, publicationId: publication) != nil)
+      }
+    }
+
+    try await store.invalidateFirstPageForAllViewers(publicationId: publications[0])
+    for viewer in viewers {
+      #expect(try await store.cachedFirstPageJSON(viewerDid: viewer, publicationId: publications[0]) == nil)
+      #expect((try await store.cachedFirstPageJSON(viewerDid: viewer, publicationId: publications[1]) != nil)
+        == (viewer != viewers[0]))
+    }
+    try await store.invalidateAllProjectionCaches()
+    for viewer in viewers {
+      #expect(try await store.cachedFirstPageJSON(viewerDid: viewer, publicationId: publications[1]) == nil)
+      #expect(try await otherEnvironment.cachedFirstPageJSON(
+        viewerDid: viewer, publicationId: publications[1]) != nil)
+    }
+  }
+
   @Test("broad invalidation uses scan and unlink")
   func broadInvalidation() async throws {
     let commands = ProjectionRedisCommands()
@@ -148,8 +191,9 @@ private actor ProjectionRedisCommands: RedisCommandClient {
     guard command == "SCAN" else { return .null }
     scanCount += 1
     let pattern = arguments.count >= 3 ? arguments[2].string ?? "*" : "*"
-    let prefix = pattern.hasSuffix("*") ? String(pattern.dropLast()) : pattern
-    let keys = values.keys.filter { $0.hasPrefix(prefix) }.sorted()
+    let expression = "^" + NSRegularExpression.escapedPattern(for: pattern)
+      .replacingOccurrences(of: "\\*", with: ".*") + "$"
+    let keys = values.keys.filter { $0.range(of: expression, options: .regularExpression) != nil }.sorted()
     return .array([
       .data(Data("0".utf8)),
       .array(keys.map { .data(Data($0.utf8)) }),
