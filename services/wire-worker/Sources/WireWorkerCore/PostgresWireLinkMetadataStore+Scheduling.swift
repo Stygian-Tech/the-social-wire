@@ -3,7 +3,13 @@ import PostgresNIO
 
 extension PostgresWireLinkMetadataStore {
   func metadataSchedulingReady() async throws -> Bool {
-    let rows = try await pool.query("""
+    try await pool.withConnection { connection in
+      try await metadataSchedulingReady(connection: connection)
+    }
+  }
+
+  func metadataSchedulingReady(connection: PostgresConnection) async throws -> Bool {
+    let rows = try await connection.query("""
       SELECT tracking_enabled AND read_ready
         AND validated_postmaster_started_at IS NOT DISTINCT FROM pg_postmaster_start_time() AND
         EXISTS (SELECT 1 FROM pg_index
