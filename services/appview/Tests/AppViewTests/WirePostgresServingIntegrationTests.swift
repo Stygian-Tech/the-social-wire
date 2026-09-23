@@ -1110,6 +1110,94 @@ struct WirePostgresServingIntegrationTests {
     )
   }
 
+  @Test("ranked scans continue beyond the first hundred moderated rows and respect the 5000 row budget",
+        arguments: [false, true], [false, true])
+  func boundedModeratedRankedPages(usesRedis: Bool, reachesBudget: Bool) async throws {
+    guard let url = ProcessInfo.processInfo.environment["WIRE_TEST_DATABASE_URL"] else { return }
+    let logger = Logger(label: "wire-appview-postgres.bounded-pages")
+    var configuration = try makePostgresConfig(from: url, logger: logger)
+    configuration.options.maximumConnections = 2
+    let pool = PostgresClient(configuration: configuration, backgroundLogger: logger)
+    let runTask = Task { await pool.run() }
+    await Task.yield()
+    defer { runTask.cancel() }
+    let namespace = UUID().uuidString.lowercased()
+    let prefix = "url:\(namespace)-"
+    let generation = UUID()
+    let now = Date()
+    let labelSource = "did:example:labeler:\(namespace)"
+    let viewer = "did:example:viewer:\(namespace)"
+    let count = reachesBudget ? 5_003 : 113
+    do {
+      try await setBaselineLabelState(sourceDID: labelSource, successfulAt: now, pool: pool, logger: logger)
+      try await pool.query("""
+        INSERT INTO wire_items
+          (canonical_key, canonical_url, source_domain, source_name, title, language_code,
+           provenance, first_seen_at, last_seen_at, source_confidence, eligible, expires_at)
+        SELECT \(prefix) || n::text, 'https://example.com/' || \(namespace) || '/' || n::text,
+          'example.com', 'Example',
+          CASE WHEN \(reachesBudget) THEN
+            CASE WHEN n = 0 OR n >= 5000 THEN 'Visible' ELSE 'Suppressed' END
+          ELSE CASE WHEN n >= 110 THEN 'Visible' ELSE 'Suppressed' END END,
+          'en', '["standard_site"]'::jsonb, \(now), \(now), 0.9, TRUE, \(now.addingTimeInterval(86_400))
+        FROM generate_series(0, \(count - 1)) n
+        """, logger: logger)
+      try await insertGeneration(generation, keys: [], generatedAt: now, active: true,
+        pool: pool, logger: logger)
+      try await pool.query("""
+        INSERT INTO wire_ranked_items
+          (generation_id, position, canonical_key, score, reason_codes, diversity_metadata)
+        SELECT \(generation), n, \(prefix) || n::text, (\(count) - n)::double precision,
+          '[]'::jsonb, '{}'::jsonb FROM generate_series(0, \(count - 1)) n
+        """, logger: logger)
+      let moderation = WireViewerModerationCache()
+      await moderation.store(.init(blockedDIDs: [], mutedDIDs: [], mutedWords: ["suppressed"],
+        fetchedAt: now), viewerDID: viewer)
+      let secret = String(repeating: "c", count: 32)
+      let commands = WirePayloadCacheCommands()
+      let payloadCache = usesRedis ? RedisValidatedPayloadCache(commands: commands,
+        environment: "test", domain: "wire-appview-public-payload") : nil
+      let store = try PostgresWireFeedStore(pool: pool, logger: logger, cursorSecret: secret,
+        mode: .visible, moderationCache: moderation, payloadCache: payloadCache)
+      // Warm the same shared public first page before applying viewer-specific moderation.
+      let publicPage = try await store.getFeed(cursor: nil, limit: 2, language: nil, viewerDid: nil, now: now)
+      #expect(publicPage.items.map(\.itemID) == [prefix + "0", prefix + "1"])
+      if usesRedis {
+        let cacheKeys = await commands.keys()
+        #expect(cacheKeys.count == 1)
+        let cacheKey = try #require(cacheKeys.first)
+        let cachedData = try await commands.get(cacheKey)
+        let data = try #require(cachedData)
+        let envelope = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let entry = try #require(envelope["value"] as? [String: Any])
+        let cachedRows = try #require(entry["value"] as? [[String: Any]])
+        #expect(cachedRows.count == 100)
+      }
+      let page = try await store.getFeed(cursor: nil, limit: 2, language: nil, viewerDid: viewer, now: now)
+      #expect(page.items.map(\.itemID) == (reachesBudget ? [prefix + "0"] : [prefix + "110", prefix + "111"]))
+      let cursor = try #require(page.cursor)
+      let decoded = try WireCursorCodec(secret: secret).decode(cursor)
+      #expect(decoded.nextOrdinal == (reachesBudget ? 5_000 : 112))
+      let next = try await store.getFeed(cursor: cursor, limit: 2, language: nil, viewerDid: viewer, now: now)
+      #expect(next.items.map(\.itemID) == (reachesBudget ? [prefix + "5000", prefix + "5001"] : [prefix + "112"]))
+      if reachesBudget {
+        let nextCursor = try #require(next.cursor)
+        let tail = try await store.getFeed(cursor: nextCursor, limit: 2,
+          language: nil, viewerDid: viewer, now: now)
+        #expect(tail.items.map(\.itemID) == [prefix + "5002"])
+        #expect(tail.cursor == nil)
+      } else {
+        #expect(next.cursor == nil)
+      }
+    } catch {
+      Issue.record("PostgreSQL bounded page integration failed: \(String(reflecting: error))")
+    }
+    try await pool.query("DELETE FROM wire_feed_state WHERE active_generation_id = \(generation)", logger: logger)
+    try await pool.query("DELETE FROM wire_rank_generations WHERE generation_id = \(generation)", logger: logger)
+    try await pool.query("DELETE FROM wire_items WHERE canonical_key LIKE \(prefix + "%")", logger: logger)
+    try await pool.query("DELETE FROM wire_label_refresh_state WHERE source_did = \(labelSource)", logger: logger)
+  }
+
   private func setBaselineLabelState(
     sourceDID: String,
     successfulAt: Date,
