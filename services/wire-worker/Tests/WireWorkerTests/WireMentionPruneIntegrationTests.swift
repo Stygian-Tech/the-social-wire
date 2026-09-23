@@ -71,13 +71,14 @@ extension WirePostgresIntegrationTests {
             let (mentions, accounts, metadata, lockedSurvives) = try row.decode((Int64, Int64, Int64, Bool).self)
             #expect(mentions == 4)
             #expect(accounts == 4)
-            #expect(metadata == 8)
+            #expect(metadata == 406)
             #expect(lockedSurvives)
           }
         }
         // The tail advances/wraps first, then the previously locked row is revisited.
-        try await store.pruneExpired(asOf: fixture.now)
-        try await store.pruneExpired(asOf: fixture.now)
+        for _ in 0..<6 {
+          try await store.pruneExpired(asOf: fixture.now)
+        }
         let rows = try await fixture.pool.query(
           """
           SELECT

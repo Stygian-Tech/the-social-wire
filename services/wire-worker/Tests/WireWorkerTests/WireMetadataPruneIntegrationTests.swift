@@ -8,12 +8,12 @@ extension WirePostgresIntegrationTests {
   @Test("metadata cleanup progresses through protected pages and wraps for newly eligible cleanup")
   func metadataPruneProtectedPrefix() async throws {
     try await WireRollupIntegrationFixture.run { fixture in
-      try await seedMetadataPrune(fixture, count: 1_100, protected: 1_000)
+      try await seedMetadataPrune(fixture, count: 1_050, protected: 1_000)
       let store = PostgresWireTalkedAccountMentionStore(
         pool: fixture.pool, logger: fixture.logger, metadataPruneMaximumBatches: 1)
-      for _ in 0..<2 {
+      for _ in 0..<10 {
         try await store.pruneExpired(asOf: fixture.now)
-        #expect(try await metadataPruneCount(fixture) == 1_100)
+        #expect(try await metadataPruneCount(fixture) == 1_050)
       }
       try await store.pruneExpired(asOf: fixture.now)
       #expect(try await metadataPruneCount(fixture) == 1_000)
@@ -28,7 +28,7 @@ extension WirePostgresIntegrationTests {
   @Test("metadata cleanup bounds a fully locked prefix and revisits it after wrap")
   func metadataPruneLockedPrefix() async throws {
     try await WireRollupIntegrationFixture.run(maximumConnections: 4) { fixture in
-      try await seedMetadataPrune(fixture, count: 501, protected: 0)
+      try await seedMetadataPrune(fixture, count: 101, protected: 0)
       let store = PostgresWireTalkedAccountMentionStore(
         pool: fixture.pool, logger: fixture.logger, metadataPruneMaximumBatches: 1)
       try await fixture.pool.withTransaction(logger: fixture.logger) { connection in
@@ -36,12 +36,12 @@ extension WirePostgresIntegrationTests {
           """
           SELECT canonical_key FROM wire_link_metadata_cache
           WHERE canonical_key LIKE \(fixture.prefix + "%")
-          ORDER BY stale_until, canonical_key LIMIT 500 FOR UPDATE
+          ORDER BY stale_until, canonical_key LIMIT 100 FOR UPDATE
           """, logger: fixture.logger)
         try await store.pruneExpired(asOf: fixture.now)
-        #expect(try await metadataPruneCount(fixture) == 501)
+        #expect(try await metadataPruneCount(fixture) == 101)
         try await store.pruneExpired(asOf: fixture.now)
-        #expect(try await metadataPruneCount(fixture) == 500)
+        #expect(try await metadataPruneCount(fixture) == 100)
       }
       try await store.pruneExpired(asOf: fixture.now)
       #expect(try await metadataPruneCount(fixture) == 0)
@@ -51,7 +51,7 @@ extension WirePostgresIntegrationTests {
   @Test("metadata deletion rollback and cancellation preserve both rows and cursor")
   func metadataPruneRollback() async throws {
     try await WireRollupIntegrationFixture.run { fixture in
-      try await seedMetadataPrune(fixture, count: 501, protected: 0)
+      try await seedMetadataPrune(fixture, count: 101, protected: 0)
       let cursor = WireMetadataPruneCursor()
       await #expect(throws: (any Error).self) {
         _ = try await cursor.run(maximumBatches: 1) { position in
@@ -64,7 +64,7 @@ extension WirePostgresIntegrationTests {
           }
         }
       }
-      #expect(try await metadataPruneCount(fixture) == 501)
+      #expect(try await metadataPruneCount(fixture) == 101)
       let cancellation = Task {
         _ = try await cursor.run(maximumBatches: 1) { position in
           #expect(position == nil)
@@ -77,7 +77,7 @@ extension WirePostgresIntegrationTests {
         }
       }
       await #expect(throws: (any Error).self) { try await cancellation.value }
-      #expect(try await metadataPruneCount(fixture) == 501)
+      #expect(try await metadataPruneCount(fixture) == 101)
       _ = try await cursor.run(maximumBatches: 1) { position in
         #expect(position == nil)
         return try await fixture.pool.withTransaction(logger: fixture.logger) { connection in
@@ -125,7 +125,7 @@ extension WirePostgresIntegrationTests {
       WireMetadataPruneQuery.make(asOf: fixture.now, position: position), logger: fixture.logger)
     for try await row in rows {
       let (count, staleUntil, key, deleted) = try row.decode((Int64, String?, String?, Int64).self)
-      if count == 500, let staleUntil, let key {
+      if count == WireMetadataPruneQuery.pageSize, let staleUntil, let key {
         return .init(position: .init(staleUntil: staleUntil, canonicalKey: key), examined: count, deleted: deleted)
       }
       return .init(position: nil, examined: count, deleted: deleted)
