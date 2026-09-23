@@ -7,6 +7,7 @@ import WireCore
 struct PostgresWireLinkMetadataStore: WireLinkMetadataStoring {
   let pool: PostgresClient
   let logger: Logger
+  let priorityClaimPacing = WireMetadataPriorityClaimPacing()
   var schedulingReadEnabled = false
   var roleLeaseAuthority: RoleLeaseAuthority? = nil
 
@@ -94,27 +95,53 @@ struct PostgresWireLinkMetadataStore: WireLinkMetadataStoring {
   func claimDue(limit: Int, asOf: Date) async throws -> [WireLinkMetadataTarget] {
     let boundedLimit = max(1, min(limit, 250))
     let priorityLimit = boundedLimit == 1 ? 1 : max(1, boundedLimit * 3 / 4)
-    let schedulingReady = schedulingReadEnabled ? try await metadataSchedulingReady() : false
     return try await pool.withTransaction(logger: logger) { connection in
+      try Task.checkCancellation()
+      try await connection.query("SET LOCAL statement_timeout = '2s'", logger: logger)
+      try await connection.query("SET LOCAL lock_timeout = '500ms'", logger: logger)
       var targets: [WireLinkMetadataTarget] = []
-      let priorityRows = try await connection.query(
-        Self.metadataPriorityClaimQuery(asOf: asOf, limit: priorityLimit, scheduling: schedulingReady),
-        logger: logger
-      )
-      for try await row in priorityRows {
-        let value = try row.decode((String, String, String?, String?, Date).self)
-        targets.append(
-          WireLinkMetadataTarget(
-            canonicalKey: value.0,
-            canonicalURL: value.1,
-            etag: value.2,
-            lastModified: value.3,
-            leaseExpiresAt: value.4
-          )
-        )
+      if await priorityClaimPacing.begin() {
+        do {
+          // Read readiness on the claim connection so pool pressure cannot strand
+          // this transaction while it waits for a second connection.
+          let schedulingReady = schedulingReadEnabled
+            ? try await metadataSchedulingReady(connection: connection) : false
+          try await connection.query("SAVEPOINT metadata_priority_claim", logger: logger)
+          do {
+            let rows = try await connection.query(
+              Self.metadataPriorityClaimQuery(asOf: asOf, limit: priorityLimit, scheduling: schedulingReady),
+              logger: logger)
+            for try await row in rows {
+              let value = try row.decode((String, String, String?, String?, Date).self)
+              targets.append(.init(canonicalKey: value.0, canonicalURL: value.1,
+                etag: value.2, lastModified: value.3, leaseExpiresAt: value.4))
+            }
+            try Task.checkCancellation()
+            try await connection.query("RELEASE SAVEPOINT metadata_priority_claim", logger: logger)
+            await priorityClaimPacing.succeeded()
+          } catch {
+            // Cancellation can surface as a PostgreSQL query cancellation. Never
+            // recover it into a successful general claim and commit new leases.
+            try Task.checkCancellation()
+            guard let database = error as? PSQLError,
+              ["57014", "55P03"].contains(database.serverInfo?[.sqlState] ?? "")
+            else { throw error }
+            try await connection.query("ROLLBACK TO SAVEPOINT metadata_priority_claim", logger: logger)
+            try await connection.query("RELEASE SAVEPOINT metadata_priority_claim", logger: logger)
+            targets.removeAll()
+            await priorityClaimPacing.failed()
+            logger.warning("The Wire metadata priority claim timed out; continuing general claims")
+          }
+        } catch {
+          await priorityClaimPacing.failed()
+          throw error
+        }
       }
       let remaining = boundedLimit - targets.count
-      guard remaining > 0 else { return targets }
+      guard remaining > 0 else {
+        try Task.checkCancellation()
+        return targets
+      }
       let generalRows = try await connection.query(
         """
         WITH due AS (
@@ -157,6 +184,7 @@ struct PostgresWireLinkMetadataStore: WireLinkMetadataStoring {
           )
         )
       }
+      try Task.checkCancellation()
       return targets
     }
   }
