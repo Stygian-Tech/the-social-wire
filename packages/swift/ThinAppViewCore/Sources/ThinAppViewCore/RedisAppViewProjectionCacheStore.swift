@@ -222,7 +222,10 @@ public actor RedisAppViewProjectionCacheStore: AppViewProjectionCacheStore {
       try await cache.delete([firstPageKey(viewerDid: viewerDid, publicationId: publicationId)])
       return
     }
-    try await deleteKeys(matching: namespace.pattern(domain: "firstpage"))
+    // First-page keys put publication before viewer to support publication-wide
+    // invalidation. A viewer reset must preserve other viewers and the shared cache.
+    let pattern = namespace.pattern(domain: "firstpage") + ":" + RedisKeyNamespace.digest(viewerDid)
+    try await deleteKeys(matching: pattern)
   }
 
   public func invalidateFirstPageForAllViewers(publicationId: String) async throws {
