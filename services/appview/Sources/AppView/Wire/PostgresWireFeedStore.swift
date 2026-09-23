@@ -5,6 +5,9 @@ import SocialWireRedis
 import WireCore
 
 actor PostgresWireFeedStore: WireFeedStore {
+  // Keep shared public cache pages bounded while allowing moderated continuation.
+  private static let initialRankedBatchLimit = 100
+  private static let continuationRankedBatchLimit = 500
   private static let generationFreshnessInterval: TimeInterval = 10 * 60
 
   private struct Generation: Sendable {
@@ -89,15 +92,17 @@ actor PostgresWireFeedStore: WireFeedStore {
     var exhausted = false
     var scanned = 0
     while accepted.count <= safeLimit, !exhausted, scanned < 5_000 {
+      let rankedBatchLimit = min(scanned == 0 ? Self.initialRankedBatchLimit
+        : Self.continuationRankedBatchLimit, 5_000 - scanned)
       let rows = try await rankedItems(
         generationID: generation.id,
         language: generation.language,
         startOrdinal: scanOrdinal,
-        limit: 500,
+        limit: rankedBatchLimit,
         expiresAt: generation.expiresAt,
         now: now
       )
-      exhausted = rows.count < 500
+      exhausted = rows.count < rankedBatchLimit
       scanned += rows.count
       if let last = rows.last { scanOrdinal = last.position + 1 }
       accepted.append(contentsOf: rows.filter { row in
