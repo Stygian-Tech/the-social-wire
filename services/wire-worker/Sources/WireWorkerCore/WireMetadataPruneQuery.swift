@@ -2,6 +2,8 @@ import Foundation
 import PostgresNIO
 
 enum WireMetadataPruneQuery {
+  static let pageSize: Int64 = 100
+
   static func make(asOf: Date, position: WireMetadataPruneCursor.Position?) -> PostgresQuery {
     var query = PostgresQuery.StringInterpolation(literalCapacity: 2_400, interpolationCount: 8)
     query.appendLiteral("""
@@ -22,7 +24,12 @@ enum WireMetadataPruneQuery {
     // unbounded locked prefix. The raw indexed page bounds both locking and protection work.
     query.appendLiteral("""
 
-        ORDER BY stale_until, canonical_key LIMIT 500
+        ORDER BY stale_until, canonical_key LIMIT
+      """)
+    query.appendLiteral(" ")
+    query.appendInterpolation(pageSize)
+    query.appendLiteral("""
+
       ), deletable AS MATERIALIZED (
         SELECT cache.canonical_key FROM candidates candidate
         JOIN wire_link_metadata_cache cache ON cache.canonical_key = candidate.canonical_key
