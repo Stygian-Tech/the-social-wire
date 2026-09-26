@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"unicode/utf8"
 
 	"github.com/stygian-tech/the-social-wire/services/jetstream-ingest/internal/ingest"
 )
@@ -38,6 +39,12 @@ func compactWirePayload(event ingest.InboxEvent) []byte {
 	// Publication, post, recommendation and account envelopes remain intact.
 	if !signal {
 		return payload
+	}
+	// Decoding strings through any replaces invalid UTF-8. Keep the former
+	// RawMessage path for malformed input so retained fields still reach the
+	// database unchanged, including errors PostgreSQL would have rejected.
+	if !utf8.Valid(payload) {
+		return compactWireRawPayload(payload, *event.Operation)
 	}
 	document, ok := decodeWireJSONDocument(payload).(map[string]any)
 	if !ok {
@@ -96,8 +103,12 @@ func compactWirePayload(event ingest.InboxEvent) []byte {
 }
 
 func wireRawRecordSubject(payload []byte) json.RawMessage {
+	return wireRawPathValue(payload, "commit", "record", "subject")
+}
+
+func wireRawPathValue(payload []byte, keys ...string) json.RawMessage {
 	value := json.RawMessage(payload)
-	for _, key := range []string{"commit", "record", "subject"} {
+	for _, key := range keys {
 		var object map[string]json.RawMessage
 		if json.Unmarshal(value, &object) != nil {
 			return nil
@@ -105,6 +116,37 @@ func wireRawRecordSubject(payload []byte) json.RawMessage {
 		value = object[key]
 	}
 	return value
+}
+
+func compactWireRawPayload(payload []byte, operation string) []byte {
+	var document, commit map[string]json.RawMessage
+	if json.Unmarshal(payload, &document) != nil ||
+		json.Unmarshal(document["commit"], &commit) != nil || commit == nil {
+		return payload
+	}
+	if operation == "delete" {
+		delete(commit, "record")
+		delete(commit, "record_cbor")
+	} else {
+		var record map[string]json.RawMessage
+		if json.Unmarshal(commit["record"], &record) != nil || record == nil {
+			return payload
+		}
+		compact := make(map[string]json.RawMessage, 3)
+		for _, key := range []string{"$type", "subject", "createdAt"} {
+			if value, exists := record[key]; exists {
+				compact[key] = value
+			}
+		}
+		commit["record"], _ = json.Marshal(compact)
+		delete(commit, "record_cbor")
+	}
+	document["commit"], _ = json.Marshal(commit)
+	compact, err := json.Marshal(document)
+	if err != nil {
+		return payload
+	}
+	return compact
 }
 
 func passiveWireSignal(event ingest.InboxEvent) bool {
@@ -130,6 +172,18 @@ func decodeWireJSONDocument(payload []byte) any {
 }
 
 func wireSubjectValue(payload []byte) json.RawMessage {
+	if !utf8.Valid(payload) {
+		value := wireRawPathValue(payload, "commit", "record", "subject", "uri")
+		if string(value) == "null" {
+			return nil
+		}
+		var uri string
+		if json.Unmarshal(value, &uri) == nil {
+			canonical, _ := json.Marshal(uri)
+			return canonical
+		}
+		return value
+	}
 	value := decodeWireJSONDocument(payload)
 	for _, key := range []string{"commit", "record", "subject", "uri"} {
 		object, ok := value.(map[string]any)

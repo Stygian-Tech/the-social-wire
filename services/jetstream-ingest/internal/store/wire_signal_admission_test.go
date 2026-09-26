@@ -1,6 +1,7 @@
 package store
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -9,6 +10,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -112,6 +114,36 @@ func TestWireSubjectLookupPreservesExactJSONSemantics(t *testing.T) {
 		if got := string(wireSubjectValue([]byte(tc.payload))); got != tc.want {
 			t.Fatalf("subject lookup for %s = %s, want %s", tc.payload, got, tc.want)
 		}
+	}
+}
+
+func invalidUTF8Signal(field, operation string) ingest.InboxEvent {
+	event := wireSignal("app.bsky.feed.like", operation, `{"uri":"at://known"}`)
+	old := []byte(`"` + field + `":"`)
+	event.Payload = bytes.Replace(event.Payload, old, append(append([]byte(nil), old...), 0xff), 1)
+	return event
+}
+
+func TestCompactWirePayloadPreservesInvalidUTF8Behavior(t *testing.T) {
+	for _, operation := range []string{"create", "update", "delete"} {
+		for _, field := range []string{"rev", "createdAt", "unused"} {
+			event := invalidUTF8Signal(field, operation)
+			if utf8.Valid(event.Payload) {
+				t.Fatal("fixture must contain invalid UTF-8")
+			}
+			got := compactWirePayload(event)
+			retained := field == "rev" || (field == "createdAt" && operation != "delete")
+			if utf8.Valid(got) == retained {
+				t.Fatalf("%s %s changed invalid UTF-8 preservation: %q", operation, field, got)
+			}
+		}
+	}
+	// Malformed object URI values must reach PostgreSQL unchanged. Converting
+	// invalid bytes into a different lookup could incorrectly drop the event.
+	event := wireSignal("app.bsky.feed.like", "create", `{"uri":{"key":"bad"}}`)
+	event.Payload = bytes.Replace(event.Payload, []byte("bad"), []byte{'x', 0xff, 'y'}, 1)
+	if got := wireSubjectValue(event.Payload); !bytes.Contains(got, []byte{0xff}) {
+		t.Fatalf("malformed lookup was repaired: %q", got)
 	}
 }
 

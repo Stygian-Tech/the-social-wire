@@ -3,14 +3,46 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"reflect"
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stygian-tech/the-social-wire/services/jetstream-ingest/internal/ingest"
 )
+
+func TestWireCompactInvalidUTF8PostgresParityIntegration(t *testing.T) {
+	url := os.Getenv("JETSTREAM_INGEST_TEST_DATABASE_URL")
+	if url == "" {
+		t.Skip("JETSTREAM_INGEST_TEST_DATABASE_URL is not set")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	db, err := sql.Open("pgx", url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	for _, operation := range []string{"create", "update", "delete"} {
+		for _, field := range []string{"rev", "createdAt", "unused"} {
+			event := invalidUTF8Signal(field, operation)
+			retained := field == "rev" || (field == "createdAt" && operation != "delete")
+			var encoded string
+			err := db.QueryRowContext(ctx, "SELECT $1::jsonb::text", string(compactWirePayload(event))).Scan(&encoded)
+			if retained {
+				var postgres *pgconn.PgError
+				if !errors.As(err, &postgres) || postgres.Code != "22021" {
+					t.Fatalf("%s retained %s must retain PostgreSQL UTF-8 rejection: %v", operation, field, err)
+				}
+			} else if err != nil {
+				t.Fatalf("%s discarded %s must retain valid compact output: %v", operation, field, err)
+			}
+		}
+	}
+}
 
 func TestWireCompactAdmissionIntegration(t *testing.T) {
 	url := os.Getenv("JETSTREAM_INGEST_TEST_DATABASE_URL")
