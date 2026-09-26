@@ -18,7 +18,7 @@ import subprocess
 import time
 
 parser = argparse.ArgumentParser(description=__doc__)
-parser.add_argument("command", choices=["setup", "query", "ingest"])
+parser.add_argument("command", choices=["setup", "query", "ingest", "paired"])
 parser.add_argument(
     "--container", required=True, help="Existing disposable local Postgres container"
 )
@@ -42,6 +42,9 @@ parser.add_argument(
 parser.add_argument("--key-counts", default="0,100,5000,10000")
 parser.add_argument("--repetitions", type=int, default=5)
 parser.add_argument("--combined-key-count", type=int, default=100)
+parser.add_argument("--duration-seconds", type=int, default=12)
+parser.add_argument("--transactions-per-second", type=int, default=1000)
+parser.add_argument("--pairs", type=int, default=4)
 args = parser.parse_args()
 if not re.fullmatch(r"tsw92-[a-z0-9][a-z0-9-]*", args.container):
     parser.error("Container must have the explicit disposable tsw92- prefix")
@@ -61,6 +64,12 @@ if not 1 <= args.repetitions <= 20:
     parser.error("Repetitions must be between 1 and 20")
 if not 0 <= args.combined_key_count <= 10000:
     parser.error("Combined key count must be between 0 and 10000")
+if not 5 <= args.duration_seconds <= 60:
+    parser.error("Duration must be between 5 and 60 seconds")
+if not 1 <= args.transactions_per_second <= 10000:
+    parser.error("Transaction rate must be between 1 and 10000 per second")
+if not 2 <= args.pairs <= 10:
+    parser.error("Pairs must be between 2 and 10")
 ROOT = args.source_root
 CONTAINER = args.container
 OUT = args.output
@@ -68,6 +77,7 @@ marker = {
     "setup": "setup.json",
     "query": "query-summary.json",
     "ingest": "trigger-summary.json",
+    "paired": "paired-summary.json",
 }[args.command]
 if (OUT / marker).exists():
     parser.error("This output already contains a completed run; choose a new directory")
@@ -427,6 +437,131 @@ def run(kind, enabled, iteration, combined=False):
     return row
 
 
+
+def refresh_sql(incremental):
+    """Extract the complete refresh SQL, including the actual dirty work set.
+
+    The psql harness has no Swift error handler. A PL/pgSQL exception block
+    implements the acknowledgment savepoint's exact 40001-only rollback.
+    """
+    main_queries = re.findall(r'"""(.*?)"""', source, re.S)
+    extra_queries = re.findall(r'"""(.*?)"""', extra_source, re.S)
+
+    def statement(queries, prefix):
+        return next(q for q in queries if q.strip().startswith(prefix))
+
+    def render(q):
+        q = re.sub(
+            r"\\\(asOf.addingTimeInterval\(([-0-9_ *]+)\)\)",
+            lambda m: timestamp(interval_seconds(m.group(1))), q,
+        ).replace(r"\(asOf)", timestamp())
+        q = q.replace(r"\(unescaped: deleteFilter)",
+            "AND current.canonical_key IN (SELECT canonical_key FROM wire_signal_rollup_keys)"
+            if incremental else "")
+        if "\\(" in q:
+            raise RuntimeError("Refresh SQL contains an unsupported Swift interpolation")
+        return q.strip() + ";"
+
+    statements = ["BEGIN;"]
+    if incremental:
+        statements += ["SET TRANSACTION ISOLATION LEVEL REPEATABLE READ;",
+            "LOCK TABLE ONLY wire_signal_events IN SHARE UPDATE EXCLUSIVE MODE NOWAIT;"]
+    statements.append("SELECT pg_advisory_xact_lock(hashtext('wire_signal_rollups_refresh')::bigint);")
+    if incremental:
+        statements.append("SET LOCAL jit=off;")
+        for prefix in ["LOCK TABLE wire_signal_events", "CREATE TEMP TABLE wire_signal_rollup_refresh_state",
+                       "CREATE TEMP TABLE wire_signal_rollup_claimed", "CREATE TEMP TABLE wire_signal_rollup_keys",
+                       "INSERT INTO wire_signal_rollup_keys"]:
+            statements.append(render(statement(extra_queries, prefix)))
+        statements.append("CREATE TEMP TABLE wire_signal_rollup_batch (canonical_key text PRIMARY KEY) ON COMMIT DROP; ANALYZE wire_signal_rollup_keys;")
+    statements.append(render(statement(main_queries, "CREATE TEMP TABLE wire_signal_rollups_next")))
+    stage = statement(main_queries, "INSERT INTO wire_signal_rollups_next")
+    head = stage.split(r"\(unescaped: incremental ?")[0]
+    aggregate = query(incremental)
+    if incremental:
+        aggregate = aggregate.replace("SELECT canonical_key FROM wire_signal_rollup_keys", "SELECT canonical_key FROM wire_signal_rollup_batch")
+        statements.append("""
+DO $batch$ DECLARE after_key text; last_key text; BEGIN LOOP
+  TRUNCATE wire_signal_rollup_batch;
+  INSERT INTO wire_signal_rollup_batch SELECT canonical_key FROM wire_signal_rollup_keys
+    WHERE after_key IS NULL OR canonical_key > after_key ORDER BY canonical_key LIMIT 1000;
+  ANALYZE wire_signal_rollup_batch;
+  SELECT max(canonical_key) INTO last_key FROM wire_signal_rollup_batch;
+  EXIT WHEN last_key IS NULL;
+""" + head + aggregate + "; after_key := last_key; END LOOP; END $batch$;")
+    else:
+        statements.append(head + aggregate + ";")
+    statements.append("ALTER TABLE wire_signal_rollups_next ADD PRIMARY KEY (canonical_key); ANALYZE wire_signal_rollups_next (canonical_key); SET LOCAL work_mem='64MB';")
+    for prefix in ["UPDATE wire_signal_rollups current", "INSERT INTO wire_signal_rollups\n", "DELETE FROM wire_signal_rollups current"]:
+        statements.append(render(statement(main_queries, prefix)))
+    statements.append("SET LOCAL work_mem='4MB';")
+    if incremental:
+        statements.append("""
+DO $identity$ BEGIN
+  IF EXISTS (SELECT 1 FROM wire_signal_rollup_refresh_state
+      WHERE signature IS DISTINCT FROM wire_signal_rollup_relation_signature()) THEN
+    RAISE EXCEPTION 'source relations changed during refresh';
+  END IF;
+END $identity$;
+""")
+        # Keep source drift explicit: this harness must not silently add safe
+        # acknowledgment semantics when benchmarking an older implementation.
+        if 'SAVEPOINT wire_rollup_acknowledgment' not in extra_source:
+            raise RuntimeError("Paired refresh requires the acknowledgment savepoint implementation")
+        for prefix in ["INSERT INTO wire_signal_rollup_schedule", "DELETE FROM wire_signal_rollup_schedule",
+                       "WITH acknowledged AS MATERIALIZED", "UPDATE wire_signal_rollup_control SET last_as_of"]:
+            q = render(statement(extra_queries, prefix))
+            if prefix == "WITH acknowledged AS MATERIALIZED":
+                q = "DO $ack$ BEGIN " + q + " EXCEPTION WHEN serialization_failure THEN RAISE NOTICE 'acknowledgment deferred'; END $ack$;"
+            statements.append(q)
+    else:
+        statements.append("UPDATE wire_signal_rollup_control SET last_as_of=NULL WHERE singleton AND last_as_of IS NOT NULL;")
+    return "\n".join(statements) + "\nCOMMIT;"
+
+
+def paired_sample(kind, enabled, number):
+    # Reset only the explicitly disposable synthetic schema. Rebuild cost is
+    # captured separately from a steady-state refresh under active writers.
+    sql("SELECT wire_set_signal_rollup_tracking(false); DELETE FROM wire_signal_events WHERE canonical_key LIKE 'bench-%'; TRUNCATE wire_signal_rollup_dirty, wire_signal_rollup_schedule, wire_signal_rollups; VACUUM ANALYZE wire_signal_events;")
+    sql("SELECT wire_set_signal_rollup_tracking(" + str(enabled).lower() + ");")
+    refresh = refresh_sql(enabled)
+    started = time.monotonic()
+    sql(refresh)
+    rebuild_seconds = time.monotonic() - started
+    prepare(kind)
+    tag = f"tsw92-paired-{time.time_ns()}"
+    command = ["docker", "exec", CONTAINER, "pgbench", "-U", "postgres", "-d", args.database,
+        "-n", "-c", "8", "-j", "4", "-T", str(args.duration_seconds),
+        "-R", str(args.transactions_per_second), "-r", "-l", f"--log-prefix=/tmp/{tag}",
+        "-f", "/tmp/tsw92-trigger-work.sql"]
+    started = time.monotonic()
+    # communicate() runs from launch so a full stderr pipe cannot stall pgbench.
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        writer = pool.submit(subprocess.run, command, text=True, capture_output=True)
+        time.sleep(2)
+        refresh_started = time.monotonic()
+        sql(refresh)
+        refresh_seconds = time.monotonic() - refresh_started
+        process = writer.result()
+    elapsed = time.monotonic() - started
+    if process.returncode:
+        raise RuntimeError(process.stderr[-3000:])
+    logs = subprocess.run(["docker", "exec", CONTAINER, "sh", "-c", f"cat /tmp/{tag}.*"],
+        text=True, capture_output=True, check=True).stdout
+    latencies = sorted(float(line.split()[2]) / 1000 for line in logs.splitlines() if line.strip())
+    row = {"scenario": kind, "tracking": enabled, "pair": number,
+        "transactions": len(latencies), "elapsed_seconds": elapsed,
+        "transactions_per_second": args.transactions_per_second,
+        "median_ms": statistics.median(latencies),
+        "p95_ms": latencies[int(.95 * (len(latencies) - 1))],
+        "p99_ms": latencies[int(.99 * (len(latencies) - 1))],
+        "refresh_seconds": refresh_seconds, "initial_rebuild_seconds": rebuild_seconds,
+        "pgbench": process.stdout}
+    (OUT / f"paired-{kind}-{number}-{int(enabled)}.json").write_text(json.dumps(row, indent=2))
+    print(json.dumps({key: value for key, value in row.items() if key != "pgbench"}), flush=True)
+    return row
+
+
 if args.command == "setup":
     setup()
 elif args.command == "query":
@@ -467,3 +602,20 @@ elif args.command == "ingest":
         for enabled in [False, True]:
             rows.append(run(kind, enabled, 3, combined=True))
     (OUT / "trigger-summary.json").write_text(json.dumps(rows, indent=2))
+
+elif args.command == "paired":
+    (OUT / "aggregate-source.sha256").write_text(hashlib.sha256((source + "\n" + extra_source).encode()).hexdigest())
+    for enabled in [False, True]:
+        (OUT / f"refresh-{int(enabled)}.sql").write_text(refresh_sql(enabled))
+    rows = []
+    for kind in ["spread", "hot"]:
+        for number in range(args.pairs):
+            for enabled in ([False, True] if number % 2 == 0 else [True, False]):
+                rows.append(paired_sample(kind, enabled, number))
+    (OUT / "paired-summary.json").write_text(json.dumps({"rows": rows, "limitations": [
+        "Controlled arrival rate with synthetic single-row statements, not representative hosted replay",
+        "Full refresh SQL includes dirty and expiry selection, publication and acknowledgment; ranking and Swift transport are omitted",
+        "Minimal schema omits production foreign keys and other concurrent services",
+        "One refresh per trial; the existing production cadence remains unchanged",
+        "pgbench latency includes schedule lag; compare counterbalanced per-trial percentiles, not pooled transactions as independent trials",
+    ]}, indent=2))

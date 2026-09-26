@@ -11,55 +11,47 @@ extension WirePostgresIntegrationTests {
       let early = try await fixture.item("a")
       let late = try await fixture.item("z")
       try await fixture.signal(early, actor: "first", occurredAt: fixture.now)
-      do {
-        try await fixture.pool.withTransaction(logger: fixture.logger) { connection in
-          try await fixture.store.configureRefreshSnapshot(connection: connection)
-          #expect(try await fixture.store.prepareIncrementalRefresh(connection: connection, asOf: fixture.now))
-          try await connection.query(
-            """
-            INSERT INTO wire_signal_rollup_keys (canonical_key)
-            SELECT \(fixture.prefix + "-m") || lpad(n::text, 4, '0') FROM generate_series(1, 1000) n
-            UNION SELECT \(late)
-            """, logger: fixture.logger)
-          try await connection.query(
-            "CREATE TEMP TABLE wire_signal_rollups_next (LIKE wire_signal_rollups INCLUDING DEFAULTS, next_due_at timestamptz) ON COMMIT DROP",
-            logger: fixture.logger)
-          let firstBatch = try #require(try await fixture.store.selectNextIncrementalBatch(
-            connection: connection, afterKey: nil))
-          try await fixture.store.stageAggregates(connection: connection, asOf: fixture.now, incremental: true)
-          try await fixture.pool.query(
-            "UPDATE wire_signal_events SET canonical_key = \(late) WHERE canonical_key = \(early)",
-            logger: fixture.logger)
-          // Force a revised claimed lane as well as the writer's own hint;
-          // backend-PID sharding can otherwise create a different safe lane.
-          try await fixture.pool.query(
-            "UPDATE wire_signal_rollup_dirty SET revision = nextval('wire_signal_rollup_revision') WHERE canonical_key = \(early)",
-            logger: fixture.logger)
-          #expect(try await fixture.store.selectNextIncrementalBatch(connection: connection, afterKey: firstBatch) != nil)
-          try await fixture.store.stageAggregates(connection: connection, asOf: fixture.now, incremental: true)
-          let staged = try await connection.query(
-            "SELECT canonical_key, signals_7d FROM wire_signal_rollups_next ORDER BY canonical_key",
-            logger: fixture.logger)
-          var seen: [String] = []
-          for try await row in staged {
-            let (key, count) = try row.decode((String, Int64).self)
-            seen.append(key)
-            #expect(count == 1)
-          }
-          #expect(seen == [early])
-          try await fixture.store.finishIncrementalRefresh(connection: connection, asOf: fixture.now)
+      try await fixture.pool.withTransaction(logger: fixture.logger) { connection in
+        try await fixture.store.configureRefreshSnapshot(connection: connection)
+        #expect(try await fixture.store.prepareIncrementalRefresh(connection: connection, asOf: fixture.now))
+        try await connection.query(
+          """
+          INSERT INTO wire_signal_rollup_keys (canonical_key)
+          SELECT \(fixture.prefix + "-m") || lpad(n::text, 4, '0') FROM generate_series(1, 1000) n
+          UNION SELECT \(late)
+          """, logger: fixture.logger)
+        try await connection.query(
+          "CREATE TEMP TABLE wire_signal_rollups_next (LIKE wire_signal_rollups INCLUDING DEFAULTS, next_due_at timestamptz) ON COMMIT DROP",
+          logger: fixture.logger)
+        let firstBatch = try #require(try await fixture.store.selectNextIncrementalBatch(
+          connection: connection, afterKey: nil))
+        try await fixture.store.stageAggregates(connection: connection, asOf: fixture.now, incremental: true)
+        try await fixture.pool.query(
+          "UPDATE wire_signal_events SET canonical_key = \(late) WHERE canonical_key = \(early)",
+          logger: fixture.logger)
+        // Force a revised claimed lane as well as the writer's own hint;
+        // backend-PID sharding can otherwise create a different safe lane.
+        try await fixture.pool.query(
+          "UPDATE wire_signal_rollup_dirty SET revision = nextval('wire_signal_rollup_revision') WHERE canonical_key = \(early)",
+          logger: fixture.logger)
+        #expect(try await fixture.store.selectNextIncrementalBatch(connection: connection, afterKey: firstBatch) != nil)
+        try await fixture.store.stageAggregates(connection: connection, asOf: fixture.now, incremental: true)
+        let staged = try await connection.query(
+          "SELECT canonical_key, signals_7d FROM wire_signal_rollups_next ORDER BY canonical_key",
+          logger: fixture.logger)
+        var seen: [String] = []
+        for try await row in staged {
+          let (key, count) = try row.decode((String, Int64).self)
+          seen.append(key)
+          #expect(count == 1)
         }
-        Issue.record("A concurrent dirty revision must abort repeatable-read acknowledgment")
-      } catch {
-        #expect(PostgresWireSignalRollupStore.canRetryRefresh(error))
-        var transaction = try #require(error as? PostgresTransactionError)
-        transaction.commitError = CancellationError()
-        #expect(!PostgresWireSignalRollupStore.canRetryRefresh(transaction))
-        transaction.commitError = nil
-        transaction.rollbackError = CancellationError()
-        #expect(!PostgresWireSignalRollupStore.canRetryRefresh(transaction))
-        #expect(!PostgresWireSignalRollupStore.canRetryRefresh(CancellationError()))
+        #expect(seen == [early])
+        try await fixture.store.finishIncrementalRefresh(connection: connection, asOf: fixture.now)
       }
+      let pending = try await fixture.pool.query(
+        "SELECT count(*) FROM wire_signal_rollup_dirty WHERE canonical_key IN (\(early), \(late))",
+        logger: fixture.logger)
+      for try await row in pending { #expect(try row.decode(Int64.self) >= 2) }
       try await fixture.store.refresh(asOf: fixture.now)
       #expect(try await fixture.values(early) == nil)
       #expect(try await fixture.counts(late)["signals_7d"] == 1)
@@ -92,7 +84,19 @@ extension WirePostgresIntegrationTests {
         logger: fixture.logger)
       do {
         if alwaysFails {
-          await #expect(throws: (any Error).self) { try await fixture.store.refresh(asOf: fixture.now) }
+          do {
+            try await fixture.store.refresh(asOf: fixture.now)
+            Issue.record("Publication serialization failures must exhaust the whole-transaction retry budget")
+          } catch {
+            #expect(PostgresWireSignalRollupStore.canRetryRefresh(error))
+            var transaction = try #require(error as? PostgresTransactionError)
+            transaction.commitError = CancellationError()
+            #expect(!PostgresWireSignalRollupStore.canRetryRefresh(transaction))
+            transaction.commitError = nil
+            transaction.rollbackError = CancellationError()
+            #expect(!PostgresWireSignalRollupStore.canRetryRefresh(transaction))
+            #expect(!PostgresWireSignalRollupStore.canRetryRefresh(CancellationError()))
+          }
           #expect(try await fixture.values(key) == nil)
         } else {
           try await fixture.store.refresh(asOf: fixture.now)
