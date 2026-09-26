@@ -39,4 +39,3 @@ struct LoginBackgroundView: View {
         !reduceMotion && motionManager.isDeviceMotionAvailable
     }
 }
-
