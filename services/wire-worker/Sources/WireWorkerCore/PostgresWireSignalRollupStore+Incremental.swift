@@ -152,6 +152,9 @@ extension PostgresWireSignalRollupStore {
       UNION SELECT canonical_key FROM wire_signal_rollup_schedule
         WHERE (SELECT rebuild FROM wire_signal_rollup_refresh_state)
       """, logger: logger)
+    try await connection.query(
+      "CREATE TEMP TABLE wire_signal_rollup_batch (canonical_key text PRIMARY KEY) ON COMMIT DROP",
+      logger: logger)
     try await connection.query("ANALYZE wire_signal_rollup_keys", logger: logger)
     let observations = try await connection.query(
       """
@@ -168,6 +171,27 @@ extension PostgresWireSignalRollupStore {
       ])
     }
     return true
+  }
+
+  /// Keyset pagination keeps each aggregate bounded without materializing keys
+  /// in Swift or using OFFSET scans. The complete selected set remains intact
+  /// until publication and acknowledgment have both finished.
+  func selectNextIncrementalBatch(
+    connection: PostgresConnection, afterKey: String?
+  ) async throws -> String? {
+    try await connection.query("TRUNCATE wire_signal_rollup_batch", logger: logger)
+    try await connection.query(
+      """
+      INSERT INTO wire_signal_rollup_batch (canonical_key)
+      SELECT canonical_key FROM wire_signal_rollup_keys
+      WHERE (\(afterKey)::text IS NULL OR canonical_key > \(afterKey))
+      ORDER BY canonical_key LIMIT 1000
+      """, logger: logger)
+    try await connection.query("ANALYZE wire_signal_rollup_batch", logger: logger)
+    let rows = try await connection.query(
+      "SELECT max(canonical_key) FROM wire_signal_rollup_batch", logger: logger)
+    for try await row in rows { return try row.decode(String?.self) }
+    return nil
   }
 
   func finishIncrementalRefresh(connection: PostgresConnection, asOf: Date) async throws {

@@ -202,7 +202,7 @@ source = (
     / "services/wire-worker/Sources/WireWorkerCore/PostgresWireSignalRollupStore.swift"
 ).read_text()
 raw = re.search(
-    r'INSERT INTO wire_signal_rollups_next\s*\([^)]*\)\s*(.*?)\n        """',
+    r'INSERT INTO wire_signal_rollups_next\s*\([^)]*\)\s*(.*?)\n\s*"""',
     source,
     re.S,
 ).group(1)
