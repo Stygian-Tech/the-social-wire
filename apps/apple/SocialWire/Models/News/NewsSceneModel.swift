@@ -94,6 +94,10 @@ final class NewsSceneModel {
         }
     }
 
+    var activeRoute: NewsRoute? {
+        path(for: selectedTab).last
+    }
+
     func setPath(_ path: [NewsRoute], for tab: NewsTab) {
         switch tab {
         case .wire: wirePath = path
@@ -113,6 +117,20 @@ final class NewsSceneModel {
 
     func resetPath(for tab: NewsTab) {
         setPath([], for: tab)
+    }
+
+    func prepareForReaderSourceChange(from previous: ReaderListSource, to source: ReaderListSource) {
+        guard previous != source else { return }
+        // Changing reader sources clears the selected article/save. Shared tab paths
+        // must return to their list instead of retaining a now-unavailable detail.
+        switch source {
+        case .readLater, .archive:
+            resetPath(for: .saved)
+        case .subscribed, .following:
+            resetPath(for: .library)
+        case .wire:
+            resetPath(for: .wire)
+        }
     }
 
     static func storageKey(viewerDID: String) -> String {
@@ -159,8 +177,14 @@ final class NewsSceneModel {
                 tab: tab
             )
             guard let data = defaults.data(forKey: key),
-                  let path = try? JSONDecoder().decode([NewsRoute].self, from: data)
+                  let restoredPath = try? JSONDecoder().decode([NewsRoute].self, from: data)
             else { continue }
+            let path = restoredPath.filter { route in
+                route != .profile && route != .settings
+            }
+            if path != restoredPath {
+                persistPath(path, for: tab)
+            }
             switch tab {
             case .wire: wirePath = path
             case .circle: circlePath = path

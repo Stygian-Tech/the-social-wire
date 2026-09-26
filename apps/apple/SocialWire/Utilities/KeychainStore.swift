@@ -1,7 +1,14 @@
 import Foundation
 import Security
 
-final class KeychainStore: @unchecked Sendable {
+/// Minimal credential-storage boundary for OAuth persistence and deterministic transport tests.
+protocol OAuthSessionStoring: Sendable {
+    func string(for key: String) -> String?
+    func set(_ value: String, for key: String)
+    func remove(_ key: String)
+}
+
+final class KeychainStore: OAuthSessionStoring, @unchecked Sendable {
     private let service: String
 
     init(service: String = "com.samclemente.the-social-wire") {

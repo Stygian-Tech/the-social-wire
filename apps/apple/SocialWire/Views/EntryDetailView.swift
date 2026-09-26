@@ -2,7 +2,6 @@ import SwiftUI
 
 struct EntryDetailView: View {
     @Environment(SocialWireAppModel.self) private var appModel
-    @Environment(\.openURL) private var openURL
     let entry: EntryDetail
     @State private var quoteText = ""
     @State private var replyText = ""
@@ -74,25 +73,10 @@ struct EntryDetailView: View {
                 WebPreview(url: url)
                     .accessibilityLabel("Article content")
             } else {
-                emptyBody
+                ArticleBodyUnavailableView(originalURL: nil)
             }
         case nil:
-            emptyBody
-        }
-    }
-
-    @ViewBuilder
-    private var emptyBody: some View {
-        if let url = entry.canonicalURL {
-            Button {
-                openURL(url)
-            } label: {
-                Label("Open Original Article", systemImage: "safari")
-            }
-            .buttonStyle(.borderedProminent)
-            .padding()
-        } else {
-            ContentUnavailableView("No Article Body", systemImage: "doc.text")
+            ArticleBodyUnavailableView(originalURL: entry.canonicalURL)
         }
     }
 

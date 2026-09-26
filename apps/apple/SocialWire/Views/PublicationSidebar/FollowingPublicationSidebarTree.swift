@@ -9,7 +9,7 @@ struct FollowingPublicationSidebarTree: View {
         @Bindable var model = appModel
         let tree = appModel.sidebarTreeViewModel
 
-        Section(isExpanded: $model.sidebarPublicationsSectionExpanded) {
+        DisclosureGroup(isExpanded: $model.sidebarPublicationsSectionExpanded) {
             if appModel.followingTabPublications.isEmpty,
                tree.loadingFlags.sidebarFetching,
                !tree.loadingFlags.hasSidebarSnapshot
@@ -22,12 +22,10 @@ struct FollowingPublicationSidebarTree: View {
                     publicationRow(publication, tree: tree)
                 }
             }
-        } header: {
-            SidebarSectionLabel(
-                title: "Publications",
-                unreadCount: 0
-            )
+        } label: {
+            SidebarSectionLabel(title: "Publications", unreadCount: 0)
         }
+        .readerSidebarListRow()
         .onChange(of: model.sidebarPublicationsSectionExpanded) { _, _ in
             appModel.noteSidebarExpandedPresentationChanged()
         }
@@ -48,7 +46,7 @@ struct FollowingPublicationSidebarTree: View {
             .readerFullWidthTapLabel()
         }
         .buttonStyle(.plain)
-        .readerClearListRow()
+        .readerSidebarListRow()
         .tag(SidebarSelection.publication(publication.publicationId))
         .contextMenu {
             Button {

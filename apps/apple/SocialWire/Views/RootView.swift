@@ -9,15 +9,21 @@ struct RootView: View {
     var body: some View {
         Group {
 #if DEBUG
-            if isNewsShellUITest {
+            if isLoginUITest {
+                LoginView()
+            } else if isNewsShellUITest {
                 NewsShellUITestHarness()
+            } else if !appModel.hasCompletedSessionRestore {
+                sessionRestoreProgress
             } else if appModel.isSignedIn {
                 NewsShellView()
             } else {
                 LoginView()
             }
 #else
-            if appModel.isSignedIn {
+            if !appModel.hasCompletedSessionRestore {
+                sessionRestoreProgress
+            } else if appModel.isSignedIn {
                 NewsShellView()
             } else {
                 LoginView()
@@ -28,7 +34,7 @@ struct RootView: View {
         .background(Color(.systemBackground))
         .task {
 #if DEBUG
-            guard !isNewsShellUITest else { return }
+            guard !isNewsShellUITest, !isLoginUITest else { return }
 #endif
             appModel.configureReaderPersistence(modelContext: modelContext)
             await appModel.restoreSession()
@@ -47,9 +53,18 @@ struct RootView: View {
         }
     }
 
+    private var sessionRestoreProgress: some View {
+        ProgressView("Restoring Session")
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
 #if DEBUG
     private var isNewsShellUITest: Bool {
         ProcessInfo.processInfo.arguments.contains("--ui-testing-news-shell")
+    }
+
+    private var isLoginUITest: Bool {
+        ProcessInfo.processInfo.arguments.contains("--ui-testing-login")
     }
 #endif
 }

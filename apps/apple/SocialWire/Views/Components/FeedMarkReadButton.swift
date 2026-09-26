@@ -24,45 +24,16 @@ struct FeedMarkReadButton: View {
     @State private var refreshTask: Task<Void, Never>?
 
     var body: some View {
-        Button("Mark All As Read", systemImage: "checkmark.circle") {
+        Menu {
+            temporalActions
+        } label: {
+            Label("Mark All As Read", systemImage: "checkmark.circle")
+        } primaryAction: {
             selectedAge = nil
             showsConfirmation = true
         }
         .accessibilityIdentifier("feed-mark-all-read")
         .disabled(isMarking)
-        .contextMenu {
-            Section("Older Than") {
-                ForEach(options) { option in
-                    Button {
-                        selectedAge = option
-                        showsConfirmation = true
-                    } label: {
-                        Text("\(option.title) (\(option.count)\(isLoading ? "+" : ""))")
-                    }
-                    .disabled(isLoading || isMarking || loadedContextID != contextID)
-                    .accessibilityLabel("Older Than \(option.title), \(isLoading ? "At Least " : "")\(option.count) Unread Stories")
-                    .accessibilityIdentifier("mark-read-age-\(option.days)")
-                }
-                if isLoading {
-                    Text(options.isEmpty ? "Loading Days…" : "Counting Stories…")
-                } else if loadFailed {
-                    Button("Retry Loading Days", systemImage: "arrow.clockwise") {
-                        Task { await refreshOptions() }
-                    }
-                } else if options.isEmpty {
-                    Text("No Older Unread Stories")
-                }
-            }
-            Divider()
-            Button("Mark All As Unread") {
-                Task {
-                    isMarking = true
-                    await markAllUnread()
-                    isMarking = false
-                    await refreshOptions()
-                }
-            }
-        }
         .alert(selectedAge == nil ? "Mark All As Read?" : "Mark Older Stories As Read?", isPresented: $showsConfirmation) {
             Button("Mark As Read") {
                 let age = selectedAge
@@ -106,6 +77,41 @@ struct FeedMarkReadButton: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged)) { _ in
             Task { await refreshOptions() }
+        }
+    }
+
+    @ViewBuilder
+    private var temporalActions: some View {
+        Section("Older Than") {
+            ForEach(options) { option in
+                Button {
+                    selectedAge = option
+                    showsConfirmation = true
+                } label: {
+                    Label("\(option.title) (\(option.count)\(isLoading ? "+" : ""))", systemImage: "book")
+                }
+                .disabled(isLoading || isMarking || loadedContextID != contextID)
+                .accessibilityLabel("Older Than \(option.title), \(isLoading ? "At Least " : "")\(option.count) Unread Stories")
+                .accessibilityIdentifier("mark-read-age-\(option.days)")
+            }
+            if isLoading {
+                Text(options.isEmpty ? "Loading Days…" : "Counting Stories…")
+            } else if loadFailed {
+                Button("Retry Loading Days", systemImage: "arrow.clockwise") {
+                    Task { await refreshOptions() }
+                }
+            } else if options.isEmpty {
+                Text("No Older Unread Stories")
+            }
+        }
+        Divider()
+        Button("Mark All As Unread", systemImage: "book.closed") {
+            Task {
+                isMarking = true
+                await markAllUnread()
+                isMarking = false
+                await refreshOptions()
+            }
         }
     }
 
