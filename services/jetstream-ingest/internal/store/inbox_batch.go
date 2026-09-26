@@ -35,7 +35,7 @@ func (p *Postgres) stageInboxEvents(ctx context.Context, tx *sql.Tx, events []in
 	args := make([]any, 0, len(events)*14)
 	for _, event := range events {
 		payload := event.Payload
-		if p.source.IsWire() {
+		if p.source.IsWire() && !p.wireCompactIngestEnabled {
 			payload = wireJSONPayloadForPostgres(payload)
 		}
 		start := len(args) + 1
@@ -62,12 +62,15 @@ func (p *Postgres) stageInboxEvents(ctx context.Context, tx *sql.Tx, events []in
 		table = "wire_ingestion_inbox"
 		extraColumns = ", updated_at, expires_at"
 		extraValues = ", NOW(), 'infinity'::timestamptz"
-		filter = `COALESCE(NOT (
-		  incoming.collection IN ('app.bsky.feed.like', 'app.bsky.feed.repost')
-		  AND incoming.operation IN ('create', 'update')), TRUE)
-		OR EXISTS (SELECT 1 FROM wire_item_aliases alias
-		  WHERE alias.alias_key = incoming.payload #>> '{commit,record,subject,uri}'
-		    AND alias.expires_at > NOW())`
+		filter = "TRUE"
+		if !p.wireCompactIngestEnabled {
+			filter = `COALESCE(NOT (
+    incoming.collection IN ('app.bsky.feed.like', 'app.bsky.feed.repost')
+    AND incoming.operation IN ('create', 'update')), TRUE)
+   OR EXISTS (SELECT 1 FROM wire_item_aliases alias
+    WHERE alias.alias_key = incoming.payload #>> '{commit,record,subject,uri}'
+      AND alias.expires_at > NOW())`
+		}
 	}
 	// All identifiers above are compile-time constants. Only bind parameters carry events.
 	query := "INSERT INTO " + table + " (" + columns + ", status, attempt_count, next_attempt_at, staged_at" + extraColumns + ") " +
