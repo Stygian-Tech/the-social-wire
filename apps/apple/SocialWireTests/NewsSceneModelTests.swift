@@ -154,6 +154,54 @@ struct NewsSceneModelTests {
         #expect(model.path(for: .wire) == [.entry(id: "wire-story")])
     }
 
+    @Test("Switching Read Later and Archive returns to the list and persists the cleared route",
+          arguments: [ReaderListSource.readLater, .archive])
+    func savedSourceSwitchClearsUnavailableDetail(destination: ReaderListSource) {
+        let suiteName = "NewsSavedSourceSwitchTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let model = NewsSceneModel(defaults: defaults)
+        model.updateContext(viewerDID: "did:plc:alice", availableTabs: NewsTab.allCases)
+        model.navigate(to: .savedLink(id: "previous-source-story"), in: .saved)
+        model.navigate(to: .entry(id: "wire-story"), in: .wire)
+
+        model.prepareForReaderSourceChange(
+            from: destination == .archive ? .readLater : .archive, to: destination
+        )
+        model.select(.saved, availableTabs: NewsTab.allCases)
+
+        #expect(model.activeRoute == nil)
+        #expect(model.path(for: .wire) == [.entry(id: "wire-story")])
+        let restored = NewsSceneModel(defaults: defaults)
+        restored.updateContext(viewerDID: "did:plc:alice", availableTabs: NewsTab.allCases)
+        #expect(restored.path(for: .saved).isEmpty)
+    }
+
+    @Test("Switching Subscribed and Following clears the previous feed detail",
+          arguments: [ReaderListSource.subscribed, .following])
+    func librarySourceSwitchClearsUnavailableDetail(destination: ReaderListSource) {
+        let model = NewsSceneModel()
+        model.navigate(to: .publication(id: "previous-publication"), in: .library)
+        model.navigate(to: .entry(id: "previous-source-story"), in: .library)
+        model.navigate(to: .savedLink(id: "saved-story"), in: .saved)
+
+        model.prepareForReaderSourceChange(
+            from: destination == .following ? .subscribed : .following, to: destination
+        )
+        model.select(.library, availableTabs: NewsTab.allCases)
+
+        #expect(model.activeRoute == nil)
+        #expect(model.path(for: .saved) == [.savedLink(id: "saved-story")])
+    }
+
+    @Test("Re-selecting the current source preserves its open article")
+    func unchangedReaderSourcePreservesDetail() {
+        let model = NewsSceneModel()
+        model.navigate(to: .entry(id: "current-story"), in: .library)
+        model.prepareForReaderSourceChange(from: .subscribed, to: .subscribed)
+        #expect(model.path(for: .library) == [.entry(id: "current-story")])
+    }
+
     @Test("Hiding the active discovery feed selects a visible tab and keeps Settings open")
     func hiddenFeedPreservesSettings() {
         let suiteName = "NewsSceneModelTests.\(UUID().uuidString)"

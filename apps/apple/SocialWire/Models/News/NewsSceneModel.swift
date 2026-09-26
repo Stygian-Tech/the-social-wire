@@ -119,6 +119,20 @@ final class NewsSceneModel {
         setPath([], for: tab)
     }
 
+    func prepareForReaderSourceChange(from previous: ReaderListSource, to source: ReaderListSource) {
+        guard previous != source else { return }
+        // Changing reader sources clears the selected article/save. Shared tab paths
+        // must return to their list instead of retaining a now-unavailable detail.
+        switch source {
+        case .readLater, .archive:
+            resetPath(for: .saved)
+        case .subscribed, .following:
+            resetPath(for: .library)
+        case .wire:
+            resetPath(for: .wire)
+        }
+    }
+
     static func storageKey(viewerDID: String) -> String {
         "\(selectedTabKeyPrefix).\(viewerDID)"
     }

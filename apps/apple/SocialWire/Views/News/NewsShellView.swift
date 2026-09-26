@@ -209,6 +209,7 @@ struct NewsShellView: View {
             activatePrimaryFeed(firstFeed)
         } else {
             selectedSlot = .readLater
+            sceneModel.prepareForReaderSourceChange(from: appModel.readerListSource, to: .readLater)
             appModel.selectReaderListSource(.readLater)
             sceneModel.select(.saved, availableTabs: availableTabs)
         }
@@ -218,6 +219,7 @@ struct NewsShellView: View {
     private func selectedSlotChanged(_ oldValue: NewsTabSlot, _ slot: NewsTabSlot) {
         if let source = slot.savedListSource {
             // Read Later and Archive are separate tabs now, so each owns its own source.
+            sceneModel.prepareForReaderSourceChange(from: appModel.readerListSource, to: source)
             appModel.selectReaderListSource(source)
             sceneModel.select(.saved, availableTabs: availableTabs)
         } else if slot == .transient {
@@ -403,6 +405,7 @@ struct NewsShellView: View {
     private func activatePrimaryFeed(_ feed: NewsPrimaryFeed) {
         if let source = feed.readerListSource,
            appModel.readerListSource != source {
+            sceneModel.prepareForReaderSourceChange(from: appModel.readerListSource, to: source)
             appModel.selectReaderListSource(source)
         }
         sceneModel.select(feed.newsTab, availableTabs: availableTabs)
