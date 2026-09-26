@@ -1,10 +1,12 @@
 package store
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io"
 
 	"github.com/stygian-tech/the-social-wire/services/jetstream-ingest/internal/ingest"
 )
@@ -37,37 +39,72 @@ func compactWirePayload(event ingest.InboxEvent) []byte {
 	if !signal {
 		return payload
 	}
-	var document map[string]json.RawMessage
-	if json.Unmarshal(payload, &document) != nil {
+	document, ok := decodeWireJSONDocument(payload).(map[string]any)
+	if !ok {
 		return payload
 	}
-	var commit map[string]json.RawMessage
-	if json.Unmarshal(document["commit"], &commit) != nil || commit == nil {
+	commit, ok := document["commit"].(map[string]any)
+	if !ok || commit == nil {
 		return payload
 	}
 	if *event.Operation == "delete" {
+		_, hasRecord := commit["record"]
+		_, hasCBOR := commit["record_cbor"]
+		if !hasRecord && !hasCBOR {
+			return payload
+		}
 		delete(commit, "record")
 		delete(commit, "record_cbor")
 	} else {
-		var record map[string]json.RawMessage
-		if json.Unmarshal(commit["record"], &record) != nil || record == nil {
+		record, ok := commit["record"].(map[string]any)
+		if !ok || record == nil {
 			return payload
 		}
-		compact := make(map[string]json.RawMessage, 3)
+		// Ordinary signal records already contain only these three fields. Keep
+		// their normalized bytes instead of decoding and re-encoding the envelope.
+		_, hasCBOR := commit["record_cbor"]
+		unchanged := !hasCBOR
+		for key := range record {
+			if key != "$type" && key != "subject" && key != "createdAt" {
+				unchanged = false
+				break
+			}
+		}
+		if unchanged {
+			return payload
+		}
+		compact := make(map[string]any, 3)
 		for _, key := range []string{"$type", "subject", "createdAt"} {
 			if value, ok := record[key]; ok {
 				compact[key] = value
 			}
 		}
-		commit["record"], _ = json.Marshal(compact)
+		// Preserve the subject's original JSON representation as well as its
+		// shape. Only records that actually lose fields need this extra scan.
+		if _, exists := compact["subject"]; exists {
+			compact["subject"] = wireRawRecordSubject(payload)
+		}
+		commit["record"] = compact
 		delete(commit, "record_cbor")
 	}
-	document["commit"], _ = json.Marshal(commit)
+	document["commit"] = commit
 	compact, err := json.Marshal(document)
 	if err != nil {
 		return payload
 	}
 	return compact
+}
+
+func wireRawRecordSubject(payload []byte) json.RawMessage {
+	value := json.RawMessage(payload)
+	for _, key := range []string{"commit", "record", "subject"} {
+		var object map[string]json.RawMessage
+		if json.Unmarshal(value, &object) != nil {
+			return nil
+		}
+		value = object[key]
+	}
+	return value
 }
 
 func passiveWireSignal(event ingest.InboxEvent) bool {
@@ -76,29 +113,38 @@ func passiveWireSignal(event ingest.InboxEvent) bool {
 		(*event.Operation == "create" || *event.Operation == "update")
 }
 
+func decodeWireJSONDocument(payload []byte) any {
+	// Decode once instead of repeatedly scanning and copying each enclosing
+	// object. UseNumber preserves malformed numeric URI semantics in PostgreSQL.
+	decoder := json.NewDecoder(bytes.NewReader(payload))
+	decoder.UseNumber()
+	var value any
+	if decoder.Decode(&value) != nil {
+		return nil
+	}
+	var trailing any
+	if decoder.Decode(&trailing) != io.EOF {
+		return nil
+	}
+	return value
+}
+
 func wireSubjectValue(payload []byte) json.RawMessage {
-	var value json.RawMessage = payload
+	value := decodeWireJSONDocument(payload)
 	for _, key := range []string{"commit", "record", "subject", "uri"} {
-		var object map[string]json.RawMessage
-		if json.Unmarshal(value, &object) != nil {
+		object, ok := value.(map[string]any)
+		if !ok {
 			return nil
 		}
 		value = object[key]
-		if len(value) == 0 {
+		if value == nil {
 			return nil
 		}
 	}
-	if string(value) == "null" {
-		return nil
-	}
 	// Canonicalize only the lookup key, never the payload. Equivalent escaped
 	// strings must share one membership query; malformed scalars retain #>> semantics.
-	var uri string
-	if json.Unmarshal(value, &uri) == nil {
-		canonical, _ := json.Marshal(uri)
-		return canonical
-	}
-	return value
+	canonical, _ := json.Marshal(value)
+	return canonical
 }
 
 // Only compact subject values cross this read boundary, never full event payloads.
@@ -111,7 +157,10 @@ func filterWireSignals(ctx context.Context, tx *sql.Tx, events []ingest.InboxEve
 func filterWireSignalsWithMetrics(ctx context.Context, tx *sql.Tx, events []ingest.InboxEvent, metrics *wireCommittedMetrics) ([]ingest.InboxEvent, error) {
 	subjects := make([]json.RawMessage, 0)
 	indices := make(map[string]int)
-	for _, event := range events {
+	// Retain the normalized membership key once per event. Re-reading every
+	// nested envelope after the lookup doubles JSON parsing on the hot path.
+	eventSubjects := make([]string, len(events))
+	for i, event := range events {
 		if !passiveWireSignal(event) {
 			continue
 		}
@@ -120,6 +169,7 @@ func filterWireSignalsWithMetrics(ctx context.Context, tx *sql.Tx, events []inge
 			continue
 		}
 		key := string(subject)
+		eventSubjects[i] = key
 		if _, exists := indices[key]; !exists {
 			indices[key] = len(subjects)
 			subjects = append(subjects, subject)
@@ -160,8 +210,8 @@ func filterWireSignalsWithMetrics(ctx context.Context, tx *sql.Tx, events []inge
 		start = end
 	}
 	result := make([]ingest.InboxEvent, 0, len(events))
-	for _, event := range events {
-		if !passiveWireSignal(event) || admitted[string(wireSubjectValue(event.Payload))] {
+	for i, event := range events {
+		if !passiveWireSignal(event) || admitted[eventSubjects[i]] {
 			result = append(result, event)
 		}
 	}

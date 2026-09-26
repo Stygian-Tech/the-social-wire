@@ -175,10 +175,10 @@ func TestWireSubjectMembershipLegacyParityIntegration(t *testing.T) {
 	defer tx.Rollback()
 	// A transaction-local fixture exercises the exact legacy JSON path oracle,
 	// including PostgreSQL textualization of malformed numeric and object URIs.
-	if _, err := tx.ExecContext(ctx, `CREATE TEMP TABLE wire_item_aliases (alias_key text PRIMARY KEY, expires_at timestamptz) ON COMMIT DROP; INSERT INTO wire_item_aliases VALUES ('at://known', NOW()+INTERVAL '1 day'), ('1000', NOW()+INTERVAL '1 day'), ('true', NOW()+INTERVAL '1 day'), ('{"a": 1}', NOW()+INTERVAL '1 day')`); err != nil {
+	if _, err := tx.ExecContext(ctx, `CREATE TEMP TABLE wire_item_aliases (alias_key text PRIMARY KEY, expires_at timestamptz) ON COMMIT DROP; INSERT INTO wire_item_aliases VALUES ('at://known', NOW()+INTERVAL '1 day'), ('1000', NOW()+INTERVAL '1 day'), ('9223372036854775807', NOW()+INTERVAL '1 day'), ('true', NOW()+INTERVAL '1 day'), ('{"a": 1}', NOW()+INTERVAL '1 day')`); err != nil {
 		t.Fatal(err)
 	}
-	for _, subject := range []string{`{"uri":"at://known"}`, `"at://known"`, `{"uri":1e3}`, `{"uri":true}`, `{"uri":{"a":1}}`, `{"uri":null}`, `[]`, `{"uri":"missing"}`} {
+	for _, subject := range []string{`{"uri":"at://known"}`, `"at://known"`, `{"uri":1e3}`, `{"uri":9223372036854775807}`, `{"uri":true}`, `{"uri":{"a":1}}`, `{"uri":null}`, `[]`, `{"uri":"missing"}`} {
 		event := wireSignal("app.bsky.feed.like", "create", subject)
 		var legacy bool
 		if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM wire_item_aliases WHERE alias_key = $1::jsonb #>> '{commit,record,subject,uri}' AND expires_at > NOW())`, string(event.Payload)).Scan(&legacy); err != nil {
