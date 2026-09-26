@@ -2,12 +2,14 @@ import XCTest
 
 @MainActor
 final class NewsShellSmokeUITests: XCTestCase {
-    func testRealShellSidebarKeepsPublicationAndArchiveActionsReachable() {
+    func testRealShellNavigationKeepsPublicationAndArchiveActionsReachable() {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-testing-news-shell"]
         app.launch()
         XCTAssertTrue(content(for: "library", in: app).waitForExistence(timeout: 5))
-        openSidebar(in: app)
+        let subscribed = tabButton("Subscribed", in: app)
+        XCTAssertTrue(subscribed.waitForExistence(timeout: 3))
+        XCTAssertTrue(subscribed.isHittable)
         let add = app.buttons["Add"]
         XCTAssertTrue(add.waitForExistence(timeout: 3))
         add.tap()
@@ -19,6 +21,16 @@ final class NewsShellSmokeUITests: XCTestCase {
         XCTAssertTrue(archive.waitForExistence(timeout: 3))
         archive.tap()
         XCTAssertTrue(app.navigationBars["Archive"].waitForExistence(timeout: 3))
+        XCTAssertTrue(content(for: "saved", in: app).waitForExistence(timeout: 3))
+
+        let readLater = tabButton("Read Later", in: app)
+        XCTAssertTrue(readLater.waitForExistence(timeout: 3))
+        readLater.tap()
+        XCTAssertTrue(app.navigationBars["Read Later"].waitForExistence(timeout: 3))
+
+        subscribed.tap()
+        XCTAssertTrue(content(for: "library", in: app).waitForExistence(timeout: 3))
+        XCTAssertTrue(add.waitForExistence(timeout: 3))
     }
 
     func testRealShellReconcilesHydratedVisibilityAndPublicationSelection() {
@@ -47,17 +59,6 @@ final class NewsShellSmokeUITests: XCTestCase {
             return button
         }
         return app.descendants(matching: .any)[label].firstMatch
-    }
-
-    private func openSidebar(in app: XCUIApplication) {
-        let button = app.buttons["news-open-sidebar"]
-        let toggleButton = app.buttons["ToggleSidebar"]
-        if button.waitForExistence(timeout: 2) {
-            button.tap()
-        } else if toggleButton.waitForExistence(timeout: 1), toggleButton.label.contains("Show") {
-            toggleButton.tap()
-        }
-        XCTAssertTrue(app.descendants(matching: .any)["news-sidebar-column"].waitForExistence(timeout: 3))
     }
 
     func testWireCardsFitNarrowCanvas() {
