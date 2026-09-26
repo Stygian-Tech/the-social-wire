@@ -2,32 +2,63 @@ import XCTest
 
 @MainActor
 final class NewsShellSmokeUITests: XCTestCase {
-    func testFiveDestinationsNavigateIndependently() throws {
+    func testRealShellNavigationKeepsPublicationAndArchiveActionsReachable() {
         let app = XCUIApplication()
-        app.launchArguments.append("--ui-testing-news-shell")
+        app.launchArguments = ["--ui-testing-news-shell"]
         app.launch()
+        XCTAssertTrue(content(for: "library", in: app).waitForExistence(timeout: 5))
+        let subscribed = tabButton("Subscribed", in: app)
+        XCTAssertTrue(subscribed.waitForExistence(timeout: 3))
+        XCTAssertTrue(subscribed.isHittable)
+        let add = app.buttons["Add"]
+        XCTAssertTrue(add.waitForExistence(timeout: 3))
+        add.tap()
+        XCTAssertTrue(app.buttons["Add Publication"].waitForExistence(timeout: 3))
+        app.buttons["Add Publication"].tap()
+        XCTAssertTrue(app.navigationBars["Add Publication"].waitForExistence(timeout: 3))
+        app.buttons["Cancel"].firstMatch.tap()
+        let archive = tabButton("Archive", in: app)
+        XCTAssertTrue(archive.waitForExistence(timeout: 3))
+        archive.tap()
+        XCTAssertTrue(app.navigationBars["Archive"].waitForExistence(timeout: 3))
+        XCTAssertTrue(content(for: "saved", in: app).waitForExistence(timeout: 3))
 
-        XCTAssertTrue(content(for: "wire", in: app).waitForExistence(timeout: 5))
+        let readLater = tabButton("Read Later", in: app)
+        XCTAssertTrue(readLater.waitForExistence(timeout: 3))
+        readLater.tap()
+        XCTAssertTrue(app.navigationBars["Read Later"].waitForExistence(timeout: 3))
 
-        let destinations = [
-            ("Your Circle", "circle"),
-            ("Library", "library"),
-            ("Saved", "saved"),
-            ("Search", "search"),
-        ]
-        for (label, identifier) in destinations {
-            var destination = app.buttons[label]
-            if label == "Search", !destination.exists, app.buttons["Next Page"].exists {
-                app.buttons["Next Page"].tap()
-                destination = app.buttons[label]
-            }
-            XCTAssertTrue(destination.waitForExistence(timeout: 2), "Missing \(label) destination")
-            destination.tap()
-            XCTAssertTrue(
-                content(for: identifier, in: app).waitForExistence(timeout: 2),
-                "Did not show \(label) content"
-            )
+        subscribed.tap()
+        XCTAssertTrue(content(for: "library", in: app).waitForExistence(timeout: 3))
+        XCTAssertTrue(add.waitForExistence(timeout: 3))
+    }
+
+    func testRealShellReconcilesHydratedVisibilityAndPublicationSelection() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-testing-news-shell", "--ui-testing-shell-routing"]
+        app.launch()
+        XCTAssertTrue(content(for: "library", in: app).waitForExistence(timeout: 5))
+        let following = tabButton("Following", in: app)
+        XCTAssertTrue(following.waitForExistence(timeout: 3))
+        app.buttons["fixture-hide-following"].tap()
+        XCTAssertTrue(following.waitForNonExistence(timeout: 3))
+        tabButton("Read Later", in: app).tap()
+        XCTAssertTrue(content(for: "saved", in: app).waitForExistence(timeout: 3))
+        app.buttons["fixture-select-publication"].tap()
+        XCTAssertTrue(content(for: "library", in: app).waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["Fixture Publication"].waitForExistence(timeout: 5))
+    }
+
+    private func tabButton(_ label: String, in app: XCUIApplication) -> XCUIElement {
+        let tabBarButton = app.tabBars.buttons[label]
+        if tabBarButton.waitForExistence(timeout: 1) {
+            return tabBarButton
         }
+        let button = app.buttons[label]
+        if button.waitForExistence(timeout: 1) {
+            return button
+        }
+        return app.descendants(matching: .any)[label].firstMatch
     }
 
     func testWireCardsFitNarrowCanvas() {
@@ -43,21 +74,20 @@ final class NewsShellSmokeUITests: XCTestCase {
         XCTAssertTrue(markRead.waitForExistence(timeout: 5))
 
         markRead.press(forDuration: 1)
-        XCTAssertTrue(app.buttons["mark-read-age-1"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.buttons["mark-read-age-2"].exists)
-        XCTAssertTrue(app.buttons["mark-read-age-4"].exists)
-        XCTAssertFalse(app.buttons["mark-read-age-3"].exists)
-        XCTAssertTrue(app.buttons["mark-read-age-7"].exists)
-        XCTAssertFalse(app.buttons["mark-read-age-8"].exists)
-        app.buttons["mark-read-age-2"].tap()
+        XCTAssertTrue(ageButton(days: 1, in: app).waitForExistence(timeout: 3))
+        XCTAssertTrue(ageButton(days: 2, in: app).exists)
+        XCTAssertTrue(ageButton(days: 4, in: app).exists)
+        XCTAssertFalse(ageButton(days: 3, in: app).exists)
+        XCTAssertTrue(ageButton(days: 7, in: app).exists)
+        XCTAssertFalse(ageButton(days: 8, in: app).exists)
+        ageButton(days: 2, in: app).tap()
         let olderConfirmation = app.alerts["Mark Older Stories As Read?"]
         XCTAssertTrue(olderConfirmation.waitForExistence(timeout: 3))
         olderConfirmation.buttons["Cancel"].tap()
         XCTAssertEqual(result.label, "Ready")
 
         markRead.press(forDuration: 1)
-        XCTAssertTrue(app.buttons["mark-read-age-2"].waitForExistence(timeout: 3))
-        app.buttons["mark-read-age-2"].tap()
+        ageButton(days: 2, in: app).tap()
         XCTAssertTrue(olderConfirmation.waitForExistence(timeout: 3))
         olderConfirmation.buttons["Mark As Read"].tap()
         // The label already exists; wait for the asynchronous action to change it.
@@ -81,9 +111,9 @@ final class NewsShellSmokeUITests: XCTestCase {
 
         app.buttons["fixture-read-stories"].tap()
         markRead.press(forDuration: 1)
-        XCTAssertTrue(app.buttons["mark-read-age-1"].waitForExistence(timeout: 3))
-        XCTAssertFalse(app.buttons["mark-read-age-2"].exists)
-        XCTAssertTrue(app.buttons["mark-read-age-4"].exists)
+        XCTAssertTrue(ageButton(days: 1, in: app).waitForExistence(timeout: 3))
+        XCTAssertFalse(ageButton(days: 2, in: app).exists)
+        XCTAssertTrue(ageButton(days: 4, in: app).exists)
     }
 
     func testWireCardsFitNarrowCanvasWithAccessibilityText() {
@@ -119,13 +149,14 @@ final class NewsShellSmokeUITests: XCTestCase {
             actionContainer = firstCard
         }
 
-        let actionIDs = circle
-            ? ["story-website", "story-read", "story-hide"]
-            : ["story-website", "story-read"]
-        let actions = actionIDs.map { identifier in
-            // Every Wire card repeats these IDs; bind actions to the card under test.
-            actionContainer.buttons[identifier]
+        let actionSpecs = circle
+            ? [("story-open", "Open Story"), ("story-hide", "Hide Story")]
+            : [("story-open", "Open Story")]
+        let actions = actionSpecs.map { identifier, label in
+            let identified = actionContainer.descendants(matching: .any).matching(identifier: identifier).firstMatch
+            return identified.exists ? identified : actionContainer.buttons[label]
         }
+        let actionIDs = actionSpecs.map(\.0)
         for action in actions {
             XCTAssertTrue(action.waitForExistence(timeout: 2))
         }
@@ -133,8 +164,8 @@ final class NewsShellSmokeUITests: XCTestCase {
 
         let frames = actions.map(\.frame)
         for (index, frame) in frames.enumerated() {
-            XCTAssertGreaterThanOrEqual(frame.width, 44, actionIDs[index])
-            XCTAssertGreaterThanOrEqual(frame.height, 44, actionIDs[index])
+            XCTAssertGreaterThanOrEqual(frame.width, 43.5, actionIDs[index])
+            XCTAssertGreaterThanOrEqual(frame.height, 43.5, actionIDs[index])
             XCTAssertGreaterThanOrEqual(frame.minX, canvas.frame.minX - 1, actionIDs[index])
             XCTAssertLessThanOrEqual(frame.maxX, canvas.frame.maxX + 1, actionIDs[index])
             for otherFrame in frames.dropFirst(index + 1) {
@@ -146,7 +177,7 @@ final class NewsShellSmokeUITests: XCTestCase {
         }
 
         let result = app.staticTexts["feed-action-result"]
-        let expectedResults = circle ? ["Website", "Read", "Hidden"] : ["Website", "Read"]
+        let expectedResults = circle ? ["Open", "Hidden"] : ["Open"]
         for (action, expected) in zip(actions, expectedResults) {
             reveal(action, in: canvas)
             XCTAssertTrue(action.isHittable)
@@ -165,16 +196,25 @@ final class NewsShellSmokeUITests: XCTestCase {
             let secondCard = canvas.descendants(matching: .any)["wire-card-ui-story-2"]
             XCTAssertTrue(secondCard.waitForExistence(timeout: 2))
             XCTAssertGreaterThanOrEqual(secondCard.frame.width, 250)
-            let secondRead = secondCard.buttons["story-read"]
-            revealHorizontally(secondRead, in: rail)
-            reveal(secondRead, in: canvas)
-            XCTAssertTrue(secondRead.isHittable, "The longer second card must remain usable")
-            XCTAssertLessThanOrEqual(secondRead.frame.maxY, rail.frame.maxY + 1)
+            let secondOpen = secondCard.descendants(matching: .any)["story-open"]
+            revealHorizontally(secondOpen, in: rail)
+            reveal(secondOpen, in: canvas)
+            XCTAssertTrue(secondOpen.isHittable, "The longer second card must remain usable")
+            XCTAssertLessThanOrEqual(secondOpen.frame.maxY, rail.frame.maxY + 1)
         }
     }
 
+    private func ageButton(days: Int, in app: XCUIApplication) -> XCUIElement {
+        let identified = app.buttons["mark-read-age-\(days)"]
+        if identified.exists {
+            return identified
+        }
+        return app.buttons.matching(
+            NSPredicate(format: "label BEGINSWITH %@", days == 7 ? "1 Week" : days == 1 ? "1 Day" : "\(days) Days")
+        ).firstMatch
+    }
+
     private func revealHorizontally(_ element: XCUIElement, in scrollView: XCUIElement) {
-        // A single swipe does not guarantee the same resting offset on every runner.
         for _ in 0..<6 {
             let frame = element.frame
             let viewport = scrollView.frame

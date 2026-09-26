@@ -149,11 +149,14 @@ final class SidebarUnreadController {
 
         subscribedUnfolderedSectionUnreadCount = sumUnread(subscribedUnfoldered)
         followingSectionUnreadCount = sumUnread(following)
-        folderUnreadCountsByRkey = Dictionary(uniqueKeysWithValues: folders.map { folder in
-            let rkey = rkey(from: folder.uri)
-            let pubs = folderMap[rkey] ?? []
-            return (rkey, sumUnread(pubs))
-        })
+        folderUnreadCountsByRkey = Dictionary(
+            folders.map { folder in
+                let rkey = rkey(from: folder.uri)
+                let pubs = folderMap[rkey] ?? []
+                return (rkey, sumUnread(pubs))
+            },
+            uniquingKeysWith: { current, _ in current }
+        )
         foldersSectionUnreadCount = folderUnreadCountsByRkey.values.reduce(0, +)
     }
 }

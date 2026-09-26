@@ -158,10 +158,13 @@ enum PublicationUnreadCountLookup {
 
     static func lookup(in map: [String: Int], publicationId: String) -> Int {
         let target = normalizeATRepoParam(publicationId)
+        if let count = map[target] ?? map[publicationId] {
+            return count
+        }
         for (key, count) in map where normalizeATRepoParam(key) == target {
             return count
         }
-        return map[publicationId] ?? 0
+        return 0
     }
 
     static func remove(for publicationId: String, from map: inout [String: Int]) {

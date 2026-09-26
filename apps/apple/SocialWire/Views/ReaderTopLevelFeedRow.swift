@@ -58,7 +58,7 @@ struct ReaderTopLevelFeedRow: View {
                 }
                 if appModel.isTopLevelFeedSelected(source) {
                     Image(systemName: "checkmark")
-                        .foregroundStyle(Color.accentColor)
+                        .foregroundStyle(Color.indigo)
                         .accessibilityHidden(true)
                 }
             }

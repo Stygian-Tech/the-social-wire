@@ -2,12 +2,11 @@ import SwiftUI
 
 struct CircleNewsView: View {
     @Environment(SocialWireAppModel.self) private var appModel
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.openURL) private var openURL
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let sceneModel: NewsSceneModel
     @State private var lastHiddenStory: CircleStory?
     @State private var isRefreshing = false
-
-    private var usesPersistentDetail: Bool { horizontalSizeClass != .compact }
 
     private var contentState: CircleContentState {
         CircleContentState(
@@ -22,20 +21,7 @@ struct CircleNewsView: View {
     }
 
     var body: some View {
-        Group {
-            if usesPersistentDetail {
-                HStack(spacing: 0) {
-                    editorialCanvas
-                        .frame(minWidth: 360, idealWidth: 560, maxWidth: 680)
-                    Divider()
-                    detail
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
-            } else {
-                editorialCanvas
-            }
-        }
-        .navigationTitle("Your Circle")
+        editorialCanvas
         .task(id: appModel.circleCatalog?.isAvailable) {
             if appModel.circleEdition == nil, !isRefreshing {
                 await appModel.loadCircleEdition()
@@ -61,15 +47,6 @@ struct CircleNewsView: View {
     private var editorialCanvas: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 22) {
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("FROM PEOPLE YOU FOLLOW")
-                        .font(.caption.weight(.semibold))
-                        .tracking(1.2)
-                        .foregroundStyle(.secondary)
-                    Text("Your Circle")
-                        .font(.largeTitle.bold())
-                }
-
                 if let message = appModel.circleErrorMessage {
                     Label(message, systemImage: "exclamationmark.triangle")
                         .font(.footnote)
@@ -116,17 +93,22 @@ struct CircleNewsView: View {
                     )
                     .frame(maxWidth: .infinity, minHeight: 260)
                 case .stories:
-                    ForEach(appModel.visibleCircleStories, id: \.storyId) { story in
-                        CircleStoryCard(
-                            story: story,
-                            onReadInApp: { openInReader(story) },
-                            onHide: { hide(story) }
-                        )
-                        .onAppear {
-                            guard story.storyId == appModel.visibleCircleStories.last?.storyId,
-                                  let cursor = appModel.circleEdition?.moreCursor
-                            else { return }
-                            Task { await appModel.loadCircleEdition(cursor: cursor) }
+                    EditorialCardLayout(
+                        spacing: 18,
+                        minimumCardWidth: dynamicTypeSize.isAccessibilitySize ? 900 : 240
+                    ) {
+                        ForEach(appModel.visibleCircleStories, id: \.storyId) { story in
+                            CircleStoryCard(
+                                story: story,
+                                onReadInApp: { openStory(story) },
+                                onHide: { hide(story) }
+                            )
+                            .onAppear {
+                                guard story.storyId == appModel.visibleCircleStories.last?.storyId,
+                                      let cursor = appModel.circleEdition?.moreCursor
+                                else { return }
+                                Task { await appModel.loadCircleEdition(cursor: cursor) }
+                            }
                         }
                     }
                     if appModel.isLoadingCircle {
@@ -142,7 +124,7 @@ struct CircleNewsView: View {
                 }
             }
             .padding()
-            .frame(maxWidth: 900, alignment: .leading)
+            .frame(maxWidth: ArticleReadingWidth.editorial, alignment: .leading)
             .frame(maxWidth: .infinity)
         }
         .refreshable { await refreshCircle() }
@@ -156,23 +138,21 @@ struct CircleNewsView: View {
         await appModel.loadCircleEdition()
     }
 
-    @ViewBuilder
-    private var detail: some View {
-        if let entry = appModel.selectedEntry {
-            EntryDetailView(entry: entry)
-        } else {
-            ContentUnavailableView(
-                "Select a Story",
-                systemImage: "doc.text",
-                description: Text("Open a story here or continue to the publisher's website.")
-            )
-        }
-    }
-
-    private func openInReader(_ story: CircleStory) {
-        appModel.selectCircleStory(story)
-        if !usesPersistentDetail {
+    private func openStory(_ story: CircleStory) {
+        let target = EntryOpenTargetResolver.resolve(
+            entryId: story.storyId,
+            originalURL: story.canonicalUrl,
+            rssArticleOpenMode: appModel.feedPreferences.articleOpenMode
+        )
+        switch target {
+        case .external(let websiteURL):
+            openURL(websiteURL)
+        case .nativeRSS:
+            appModel.selectCircleStory(story)
+            guard appModel.selectedEntry?.entryId == story.storyId else { return }
             sceneModel.navigate(to: .entry(id: story.storyId), in: .circle)
+        case nil:
+            appModel.errorMessage = "Couldn't Find A Link For This Article."
         }
     }
 
@@ -182,62 +162,113 @@ struct CircleNewsView: View {
     }
 }
 
+/// On macOS this matches the shared article card treatment, with Your Circle's sharer
+/// strip and hide action composed around it. iOS keeps the original metrics for the
+/// same reason The Wire does — a 16:9 banner is too tall for the phone canvas.
 struct CircleStoryCard: View {
     let story: CircleStory
     let onReadInApp: () -> Void
     let onHide: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            if let thumbnailUrl = story.thumbnailUrl {
-                NewsStoryImage(
-                    urls: [URL(string: thumbnailUrl)].compactMap { $0 },
-                    height: 200
+        VStack(alignment: .leading, spacing: 0) {
+            storyImage
+
+            VStack(alignment: .leading, spacing: contentSpacing) {
+                CircleSharerStrip(
+                    sharers: story.sharers,
+                    totalCount: story.sharerCount ?? story.sharers.count
                 )
-            }
 
-            CircleSharerStrip(
-                sharers: story.sharers,
-                totalCount: story.sharerCount ?? story.sharers.count
-            )
-
-            Text(story.source.displayName)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-
-            if let url = URL(string: story.canonicalUrl) {
-                Link(destination: url) {
-                    Text(story.title)
-                        .font(.title3.bold())
-                        .foregroundStyle(Color.primary)
-                        .multilineTextAlignment(.leading)
-                }
-                .accessibilityHint("Opens the publisher's website")
-            } else {
-                Text(story.title).font(.title3.bold())
-            }
-
-            if let summary = story.summary, !summary.isEmpty {
-                Text(summary)
-                    .font(.subheadline)
+                Text(story.source.displayName)
+                    .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+                    .lineLimit(1)
 
-            NewsStoryActions(
-                websiteURL: URL(string: story.canonicalUrl),
-                onReadInApp: onReadInApp,
-                onHide: onHide
-            )
+                if let url = URL(string: story.canonicalUrl) {
+                    Link(destination: url) {
+                        title
+                    }
+                    .accessibilityHint("Opens the publisher's website")
+                } else {
+                    title
+                }
+
+                if let summary = story.summary, !summary.isEmpty {
+                    Text(summary)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                NewsStoryActions(
+                    onOpenStory: onReadInApp,
+                    onHide: onHide
+                )
+
+                #if os(macOS)
+                // Cards in a band share one height; pin the content to the top of it.
+                Spacer(minLength: 0)
+                #endif
+            }
+            .padding(contentPadding)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .fixedSize(horizontal: false, vertical: true)
-        .padding(.bottom, 20)
-        .overlay(alignment: .bottom) { Divider() }
+        .background(.thinMaterial, in: .rect(cornerRadius: 16))
+        .clipShape(.rect(cornerRadius: 16))
         .multilineTextAlignment(.leading)
         .accessibilityElement(children: .contain)
+    }
+
+    @ViewBuilder
+    private var storyImage: some View {
+        #if os(macOS)
+        ArticleCardImage(
+            urls: ThumbnailImageURLAttempts.candidates(
+                primary: story.thumbnailUrl,
+                fallback: nil
+            )
+        )
+        #else
+        if let thumbnailUrl = story.thumbnailUrl {
+            NewsStoryImage(
+                urls: [URL(string: thumbnailUrl)].compactMap { $0 },
+                height: 200
+            )
+        }
+        #endif
+    }
+
+    private var title: some View {
+        #if os(macOS)
+        Text(story.title)
+            .font(.headline)
+            .foregroundStyle(Color.primary)
+            .lineLimit(3)
+            .multilineTextAlignment(.leading)
+        #else
+        Text(story.title)
+            .font(.title3.bold())
+            .foregroundStyle(Color.primary)
+            .multilineTextAlignment(.leading)
+        #endif
+    }
+
+    private var contentSpacing: CGFloat {
+        #if os(macOS)
+        ArticleCardMetrics.spacing
+        #else
+        12
+        #endif
+    }
+
+    private var contentPadding: CGFloat {
+        #if os(macOS)
+        ArticleCardMetrics.padding
+        #else
+        16
+        #endif
     }
 }
 
@@ -291,14 +322,14 @@ private struct CircleSharerStrip: View {
     }
 
     private var visibleSharers: [CircleSharer] {
-        Array(sharers.prefix(5))
+        var sourceURIs = Set<String>()
+        return Array(sharers.lazy.filter { sourceURIs.insert($0.sourceUri).inserted }.prefix(5))
     }
 
     private var accessibilitySummary: String {
         let accounts = visibleSharers.map { sharer in
-            let name = sharer.identity.displayName?.isEmpty == false
-                ? sharer.identity.displayName!
-                : sharer.identity.handle
+            let displayName = sharer.identity.displayName
+            let name = displayName?.isEmpty == false ? displayName ?? sharer.identity.handle : sharer.identity.handle
             return sharer.relationship == "one_hop" ? "\(name), one hop away" : name
         }
         let remainder = overflowCount > 0 ? ", and \(overflowCount) more accounts" : ""

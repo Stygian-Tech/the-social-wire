@@ -3,7 +3,8 @@ import SwiftUI
 
 /// Deterministic shell used only by UI automation so navigation chrome can be tested without live OAuth.
 struct NewsShellUITestHarness: View {
-    @State private var selectedTab = NewsTab.wire
+    @State private var fixtureModel = SocialWireAppModel()
+    @State private var isShellConfigured = false
     @State private var lastFeedAction = "Ready"
     @State private var readAgeRevision = 0
 
@@ -49,40 +50,50 @@ struct NewsShellUITestHarness: View {
     }
 
     private var shell: some View {
-        VStack(spacing: 0) {
-#if os(macOS)
-            HStack {
-                ForEach(NewsTab.allCases) { tab in
-                    Button(tab.title) {
-                        selectedTab = tab
+        Group {
+            if isShellConfigured {
+                NewsShellView()
+                    .environment(fixtureModel)
+                    .safeAreaInset(edge: .bottom) {
+                        if ProcessInfo.processInfo.arguments.contains("--ui-testing-shell-routing") {
+                            HStack {
+                                Button("Hide Following") {
+                                    fixtureModel.feedPreferences.visibleFeeds = [.readLater, .archive, .subscribed]
+                                }
+                                .accessibilityIdentifier("fixture-hide-following")
+                                Button("Select Publication") {
+                                    // Same completed selection observed after Profile/sidebar selection;
+                                    // no live OAuth, repository, or feed network dependency.
+                                    let publication = Self.fixturePublication
+                                    fixtureModel.selectedPublication = publication
+                                    fixtureModel.feedSelection = .publication(publication.publicationId)
+                                    fixtureModel.selectedSidebar = .publication(publication.publicationId)
+                                    fixtureModel.entries = [Self.entry(index: 1)]
+                                }
+                                .accessibilityIdentifier("fixture-select-publication")
+                            }
+                            .buttonStyle(.bordered)
+                        }
                     }
-                    .accessibilityIdentifier("news-tab-button-\(tab.rawValue)")
-                }
+            } else {
+                ProgressView()
+                    .task {
+                        fixtureModel.feedPreferences = ReaderFeedPreferences(
+                            visibleFeeds: [.readLater, .archive, .subscribed, .following],
+                            feedsWithUnreadCounts: [], showWire: false, showCircle: false)
+                        // Start from the default Subscribed selection; avoid live fetch work.
+                        fixtureModel.readerListSource = .subscribed
+                        fixtureModel.feedSelection = .topLevel(.subscribed)
+                        isShellConfigured = true
+                    }
             }
-            .buttonStyle(.borderless)
-            .padding(10)
-            Divider()
-#endif
-            adaptiveTabs
         }
     }
 
-    private var adaptiveTabs: some View {
-        TabView(selection: $selectedTab) {
-            ForEach(NewsTab.allCases) { tab in
-                Tab(tab.title, systemImage: tab.systemImage, value: tab) {
-                    NavigationStack {
-                        Text(tab.title)
-                            .font(.largeTitle.bold())
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .accessibilityIdentifier("news-tab-content-\(tab.rawValue)")
-                            .navigationTitle(tab.title)
-                    }
-                }
-            }
-        }
-        .tabViewStyle(.sidebarAdaptable)
-    }
+    private static let fixturePublication = DiscoveredPublication(
+        publicationId: "at://did:plc:fixture/site.standard.publication/main",
+        authorDid: "did:plc:fixture", authorHandle: "fixture.example",
+        title: "Fixture Publication", discoveredAt: "2026-09-01T00:00:00Z")
 
     private var feedCardFixture: some View {
         VStack(spacing: 12) {
@@ -96,14 +107,14 @@ struct NewsShellUITestHarness: View {
                     if ProcessInfo.processInfo.arguments.contains("--ui-testing-circle") {
                         CircleStoryCard(
                             story: Self.circleStory,
-                            onReadInApp: { lastFeedAction = "Read" },
+                            onReadInApp: { lastFeedAction = "Open" },
                             onHide: { lastFeedAction = "Hidden" }
                         )
                     } else {
                         WireEditorialRail(
                             title: "Trending",
                             entries: [Self.entry(index: 1), Self.entry(index: 2)],
-                            onOpen: { _ in lastFeedAction = "Read" }
+                            onOpen: { _ in lastFeedAction = "Open" }
                         )
                     }
                 }

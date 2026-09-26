@@ -1,3 +1,4 @@
+import AuthenticationServices
 import Foundation
 import Testing
 @testable import SocialWire
@@ -68,12 +69,42 @@ struct ATProtoOAuthServiceTests {
         #expect(!ATProtoOAuthService.hasPDSReadStateScopes(writeOnly + "&unknownConstraint=other"))
     }
 
-    @Test("universal Apple scopes cover parity actions and trigger old-session reauthorization")
+    @Test("universal Apple scopes declare parity action permissions")
     func universalParityScopes() {
         let actual = Set(ATProtoOAuthService.scopes.split(separator: " ").map(String.init))
         #expect(ATProtoOAuthService.requiredFeatureScopes.isSubset(of: actual))
         #expect(ATProtoOAuthService.hasRequiredFeatureScopes(ATProtoOAuthService.scopes))
         #expect(!ATProtoOAuthService.hasRequiredFeatureScopes("atproto"))
         #expect(!ATProtoOAuthService.hasRequiredFeatureScopes(nil))
+    }
+
+    @Test("browser cancellation is recognized without hiding other OAuth failures")
+    func recognizesBrowserCancellation() {
+        let cancellation = NSError(
+            domain: ASWebAuthenticationSessionError.errorDomain,
+            code: ASWebAuthenticationSessionError.Code.canceledLogin.rawValue
+        )
+        let failure = NSError(
+            domain: ASWebAuthenticationSessionError.errorDomain,
+            code: ASWebAuthenticationSessionError.Code.presentationContextNotProvided.rawValue
+        )
+        let requestCancellation = NSError(
+            domain: NSURLErrorDomain,
+            code: NSURLErrorCancelled
+        )
+        let wrappedCancellation = NSError(
+            domain: "OAuthWrapper",
+            code: 1,
+            userInfo: [NSUnderlyingErrorKey: requestCancellation]
+        )
+
+        #expect(ATProtoOAuthService.isUserCancellation(cancellation))
+        #expect(ATProtoOAuthService.isUserCancellation(CancellationError()))
+        #expect(ATProtoOAuthService.isUserCancellation(requestCancellation))
+        #expect(ATProtoOAuthService.isUserCancellation(wrappedCancellation))
+        #expect(!ATProtoOAuthService.isUserCancellation(failure))
+        #expect(ATProtoOAuthService.isOAuthCancellation(code: "access_denied", description: "Cancelled"))
+        #expect(ATProtoOAuthService.isOAuthCancellation(code: "cancelled", description: nil))
+        #expect(!ATProtoOAuthService.isOAuthCancellation(code: "server_error", description: "Try again"))
     }
 }

@@ -13,107 +13,60 @@ struct SavedLinksListContent: View {
 
     var body: some View {
         List {
-            if !appModel.currentSavedFeedSources.isEmpty {
-                Section("Publications") {
-                    Button {
-                        appModel.clearSavedFeedSource()
-                    } label: {
-                        HStack {
-                            Label("All Saved Stories", systemImage: "tray.full")
-                            Spacer(minLength: 8)
-                            SidebarCountLabel(
-                                count: appModel.currentSavedLinks.count,
-                                accessibilityDescription: "saved articles"
-                            )
-                        }
-                        .readerFullWidthTapLabel()
-                    }
-                    .buttonStyle(.plain)
-                    .readerClearListRow()
-
-                    ForEach(appModel.currentSavedFeedSources) { source in
-                        Button {
-                            appModel.selectSavedFeedSource(source)
-                        } label: {
-                            HStack {
-                                SavedLinkPublicationChip(model: source.model)
-                                Spacer(minLength: 8)
-                                SidebarCountLabel(
-                                    count: source.count,
-                                    accessibilityDescription: "saved articles"
-                                )
-                            }
-                            .readerFullWidthTapLabel()
-                        }
-                        .buttonStyle(.plain)
-                        .readerClearListRow()
-                    }
-                }
-            }
-            if appModel.filteredCurrentSavedLinks.isEmpty {
-                ContentUnavailableView(
-                    isArchivedView ? "Nothing Archived Yet" : "Nothing Queued Yet",
-                    systemImage: isArchivedView ? "archivebox" : "bookmark",
-                    description: Text(
-                        isArchivedView
-                            ? "Archived read-later links will appear here."
-                            : "Save an article from the toolbar or article list to queue it here."
-                    )
-                )
-                .readerClearListRow()
-            } else {
-                ForEach(appModel.filteredCurrentSavedLinks) { save in
-                    Button {
-                        if let onSavedLinkTap {
-                            onSavedLinkTap(save)
-                        } else {
-                            appModel.selectedSavedLink = save
-                        }
-                    } label: {
-                        SavedLinkRow(
-                            save: save,
-                            isSelected: appModel.selectedSavedLink?.id == save.id
+            Section {
+                if appModel.filteredCurrentSavedLinks.isEmpty {
+                    ContentUnavailableView(
+                        isArchivedView ? "Nothing Archived Yet" : "Nothing Queued Yet",
+                        systemImage: isArchivedView ? "archivebox" : "bookmark",
+                        description: Text(
+                            isArchivedView
+                                ? "Archived read-later links will appear here."
+                                : "Save an article from the toolbar or article list to queue it here."
                         )
-                    }
-                    .buttonStyle(.plain)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    )
                     .readerClearListRow()
-                    .contextMenu {
-                        Button("Edit Tags") {
-                            tagEditorSave = save
-                        }
-                        if !save.tags.isEmpty {
-                            Button("Clear Tags") {
-                                Task { await appModel.clearTags(on: save) }
+                } else {
+                    ForEach(appModel.filteredCurrentSavedLinks) { save in
+                        savedLinkButton(for: save)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .readerClearListRow()
+                        .contextMenu {
+                            Button("Edit Tags") {
+                                tagEditorSave = save
+                            }
+                            if !save.tags.isEmpty {
+                                Button("Clear Tags") {
+                                    Task { await appModel.clearTags(on: save) }
+                                }
+                            }
+                            if isArchivedView {
+                                Button("Unarchive") {
+                                    Task { await appModel.unarchive(save) }
+                                }
+                            } else {
+                                Button("Archive") {
+                                    Task { await appModel.archive(save) }
+                                }
+                            }
+                            Button("Delete", role: .destructive) {
+                                savePendingDelete = save
                             }
                         }
-                        if isArchivedView {
-                            Button("Unarchive") {
-                                Task { await appModel.unarchive(save) }
+                        .swipeActions {
+                            if isArchivedView {
+                                Button("Unarchive") {
+                                    Task { await appModel.unarchive(save) }
+                                }
+                                .tint(.indigo)
+                            } else {
+                                Button("Archive") {
+                                    Task { await appModel.archive(save) }
+                                }
+                                .tint(.orange)
                             }
-                        } else {
-                            Button("Archive") {
-                                Task { await appModel.archive(save) }
+                            Button("Delete", role: .destructive) {
+                                savePendingDelete = save
                             }
-                        }
-                        Button("Delete", role: .destructive) {
-                            savePendingDelete = save
-                        }
-                    }
-                    .swipeActions {
-                        if isArchivedView {
-                            Button("Unarchive") {
-                                Task { await appModel.unarchive(save) }
-                            }
-                            .tint(.blue)
-                        } else {
-                            Button("Archive") {
-                                Task { await appModel.archive(save) }
-                            }
-                            .tint(.orange)
-                        }
-                        Button("Delete", role: .destructive) {
-                            savePendingDelete = save
                         }
                     }
                 }
@@ -121,7 +74,7 @@ struct SavedLinksListContent: View {
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
-        .contentMargins(.bottom, 12, for: .scrollContent)
+        .contentMargins(.bottom, 16, for: .scrollContent)
         .task(id: appModel.readerListSource) {
             await appModel.refreshSavedLinks()
         }
@@ -156,6 +109,34 @@ struct SavedLinksListContent: View {
             ) { tags in
                 await appModel.replaceTags(on: save, with: tags)
             }
+        }
+    }
+
+    @ViewBuilder
+    private func savedLinkButton(for save: MergedLatrSave) -> some View {
+        let row = SavedLinkRow(
+            save: save,
+            isSelected: appModel.selectedSavedLink?.id == save.id
+        )
+        if isArchivedView {
+            Button {
+                open(save)
+            } label: {
+                row
+            }
+            .buttonStyle(.plain)
+        } else {
+            ArticleListCard(action: { open(save) }) {
+                row
+            }
+        }
+    }
+
+    private func open(_ save: MergedLatrSave) {
+        if let onSavedLinkTap {
+            onSavedLinkTap(save)
+        } else {
+            appModel.selectedSavedLink = save
         }
     }
 }
