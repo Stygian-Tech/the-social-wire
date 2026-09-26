@@ -94,6 +94,9 @@ struct NewsShellView: View {
         // One size-class rule for every device: regular width (iPad, an unfolded iPhone Duo)
         // opens in the sidebar, compact width stays in the tab bar. macOS always has a sidebar,
         // so all three platforms land on the same layout.
+        // Xcode 27's Swift 6.4 SDK introduces defaultTabBarPlacement; a runtime
+        // availability check alone cannot compile that member with Xcode 26.
+        #if compiler(>=6.4)
         if #available(iOS 27.0, *) {
             feedTabsContent
                 .defaultTabBarPlacement(preferredTabBarPlacement)
@@ -102,6 +105,10 @@ struct NewsShellView: View {
             feedTabsContent
                 .defaultAdaptableTabBarPlacement(preferredTabBarPlacement)
         }
+        #else
+        feedTabsContent
+            .defaultAdaptableTabBarPlacement(preferredTabBarPlacement)
+        #endif
         #else
         feedTabsContent
         #endif
