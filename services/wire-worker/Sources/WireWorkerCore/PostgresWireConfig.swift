@@ -8,6 +8,7 @@ enum PostgresWireConfig {
     from urlString: String,
     maximumConnections: Int = 2,
     environment: [String: String] = [:],
+    component: String? = nil,
     logger: Logger
   ) throws -> PostgresClient.Configuration {
     guard let url = URL(string: urlString), let host = url.host, !host.isEmpty else {
@@ -26,20 +27,25 @@ enum PostgresWireConfig {
     )
     config.options.maximumConnections = max(2, min(maximumConnections, 64))
     config.options.additionalStartupParameters = [
-      ("application_name", applicationName(environment: environment, fallback: logger.label))
+      ("application_name", applicationName(environment: environment, fallback: logger.label, component: component))
     ]
     return config
   }
 
-  private static func applicationName(environment: [String: String], fallback: String) -> String {
+  private static func applicationName(
+    environment: [String: String], fallback: String, component: String?
+  ) -> String {
     let supplied = environment["RAILWAY_SERVICE_NAME"]?
       .trimmingCharacters(in: .whitespacesAndNewlines)
     let source = supplied.flatMap { $0.isEmpty ? nil : $0 } ?? fallback
     // Match the shared database config: ASCII labels stay readable in pg_stat_activity,
     // exclude control characters, and fit PostgreSQL's 63-byte application-name limit.
     let allowed = Set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.")
-    let label = String(source.map { allowed.contains($0) ? $0 : "-" }.prefix(63))
-    return label.isEmpty ? "wire-worker" : label
+    let label = String(source.map { allowed.contains($0) ? $0 : "-" })
+    let base = label.isEmpty ? "wire-worker" : label
+    guard let component, !component.isEmpty else { return String(base.prefix(63)) }
+    let suffix = String(component.map { allowed.contains($0) ? $0 : "-" }.prefix(32))
+    return String(base.prefix(62 - suffix.utf8.count)) + ":" + suffix
   }
 }
 

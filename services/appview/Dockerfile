@@ -1,3 +1,13 @@
+FROM golang:1.26-bookworm AS schema-ready-builder
+WORKDIR /src/services/jetstream-ingest
+COPY services/jetstream-ingest/go.mod services/jetstream-ingest/go.sum ./
+RUN go mod download
+COPY services/jetstream-ingest/cmd/schema-ready ./cmd/schema-ready
+COPY services/jetstream-ingest/internal/schemaready ./internal/schemaready
+RUN CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /out/schema-ready ./cmd/schema-ready
+COPY database/migrations /src/database/migrations
+RUN /out/schema-ready --generate-manifest /src/database/migrations > /out/required-migrations.txt
+
 FROM swift:6.2.4-jammy AS builder
 
 WORKDIR /src
@@ -50,4 +60,6 @@ RUN chmod +x /usr/local/bin/AppView
 EXPOSE 8081
 RUN useradd --system --no-create-home appuser
 USER appuser
-ENTRYPOINT ["AppView"]
+COPY --from=schema-ready-builder /out/schema-ready /usr/local/bin/schema-ready
+COPY --from=schema-ready-builder /out/required-migrations.txt /etc/socialwire/required-migrations.txt
+ENTRYPOINT ["/usr/local/bin/schema-ready", "--allow-local-sqlite", "--", "/usr/local/bin/AppView"]

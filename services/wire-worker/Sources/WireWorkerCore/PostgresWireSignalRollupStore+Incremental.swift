@@ -152,6 +152,9 @@ extension PostgresWireSignalRollupStore {
       UNION SELECT canonical_key FROM wire_signal_rollup_schedule
         WHERE (SELECT rebuild FROM wire_signal_rollup_refresh_state)
       """, logger: logger)
+    try await connection.query(
+      "CREATE TEMP TABLE wire_signal_rollup_batch (canonical_key text PRIMARY KEY) ON COMMIT DROP",
+      logger: logger)
     try await connection.query("ANALYZE wire_signal_rollup_keys", logger: logger)
     let observations = try await connection.query(
       """
@@ -168,6 +171,27 @@ extension PostgresWireSignalRollupStore {
       ])
     }
     return true
+  }
+
+  /// Keyset pagination keeps each aggregate bounded without materializing keys
+  /// in Swift or using OFFSET scans. The complete selected set remains intact
+  /// until publication and acknowledgment have both finished.
+  func selectNextIncrementalBatch(
+    connection: PostgresConnection, afterKey: String?
+  ) async throws -> String? {
+    try await connection.query("TRUNCATE wire_signal_rollup_batch", logger: logger)
+    try await connection.query(
+      """
+      INSERT INTO wire_signal_rollup_batch (canonical_key)
+      SELECT canonical_key FROM wire_signal_rollup_keys
+      WHERE (\(afterKey)::text IS NULL OR canonical_key > \(afterKey))
+      ORDER BY canonical_key LIMIT 1000
+      """, logger: logger)
+    try await connection.query("ANALYZE wire_signal_rollup_batch", logger: logger)
+    let rows = try await connection.query(
+      "SELECT max(canonical_key) FROM wire_signal_rollup_batch", logger: logger)
+    for try await row in rows { return try row.decode(String?.self) }
+    return nil
   }
 
   func finishIncrementalRefresh(connection: PostgresConnection, asOf: Date) async throws {
@@ -197,18 +221,32 @@ extension PostgresWireSignalRollupStore {
         WHERE staged.canonical_key = schedule.canonical_key
       )
       """, logger: logger)
-    try await connection.query(
-      """
-      WITH acknowledged AS MATERIALIZED (
-        SELECT dirty.canonical_key, dirty.revision
-        FROM wire_signal_rollup_dirty dirty
-        JOIN wire_signal_rollup_claimed claimed USING (canonical_key, revision)
-        ORDER BY dirty.canonical_key FOR UPDATE OF dirty SKIP LOCKED
-      )
-      DELETE FROM wire_signal_rollup_dirty dirty USING acknowledged
-      WHERE dirty.canonical_key = acknowledged.canonical_key
-        AND dirty.revision = acknowledged.revision
-      """, logger: logger)
+    // A claimed hint can already have a newer committed tuple by the time this
+    // repeatable-read transaction reaches acknowledgment. SKIP LOCKED avoids
+    // active writers, but PostgreSQL still raises 40001 for committed changes.
+    // Retaining every hint is safe: the next refresh will recompute those keys.
+    // Roll back only bookkeeping so sustained ingest cannot starve publication.
+    try await connection.query("SAVEPOINT wire_rollup_acknowledgment", logger: logger)
+    do {
+      try await connection.query(
+        """
+        WITH acknowledged AS MATERIALIZED (
+          SELECT dirty.canonical_key, dirty.revision
+          FROM wire_signal_rollup_dirty dirty
+          JOIN wire_signal_rollup_claimed claimed USING (canonical_key, revision)
+          ORDER BY dirty.canonical_key FOR UPDATE OF dirty SKIP LOCKED
+        )
+        DELETE FROM wire_signal_rollup_dirty dirty USING acknowledged
+        WHERE dirty.canonical_key = acknowledged.canonical_key
+          AND dirty.revision = acknowledged.revision
+        """, logger: logger)
+    } catch let error as PSQLError where error.serverInfo?[.sqlState] == "40001" {
+      try await connection.query("ROLLBACK TO SAVEPOINT wire_rollup_acknowledgment", logger: logger)
+      logger.info("Wire signal rollup acknowledgment deferred", metadata: [
+        "reason": "concurrent_hint_revision",
+      ])
+    }
+    try await connection.query("RELEASE SAVEPOINT wire_rollup_acknowledgment", logger: logger)
     try await connection.query(
       """
       UPDATE wire_signal_rollup_control SET last_as_of = \(asOf),

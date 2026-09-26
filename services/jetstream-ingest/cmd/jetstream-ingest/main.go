@@ -167,14 +167,20 @@ func runLaneWork(
 	}()
 
 	source := ingest.SourceFromConfig(cfg)
-	database, err := store.Open(ctx, cfg.DatabaseURL, source)
+	database, err := store.OpenWithPool(ctx, cfg.DatabaseURL, source, store.PoolOptions{
+		MaxOpen: cfg.DatabasePoolMaxOpen, MaxIdle: cfg.DatabasePoolMaxIdle, IdleTimeout: cfg.DatabasePoolIdleTimeout,
+	}, string(lane.Name))
 	if err != nil {
 		return err
 	}
 	defer database.Close()
 	if cfg.PipelineMode == config.WirePipelineMode {
 		database.ConfigureWireAdmission(cfg.WireInboxMaxRows, cfg.WireDatabaseMaxBytes)
+		database.ConfigureWireCompactIngest(cfg.WireCompactIngestEnabled)
 	}
+	poolContext, stopPoolMetrics := context.WithCancel(ctx)
+	defer stopPoolMetrics()
+	go database.MonitorPool(poolContext, laneLogger)
 	state.Database(true)
 	// Validate an existing generation's immutable source identity before taking
 	// its lease or reconciling the multi-million-row Wire admission counter. A

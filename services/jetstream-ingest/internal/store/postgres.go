@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/stygian-tech/the-social-wire/services/jetstream-ingest/internal/ingest"
 )
@@ -34,10 +35,12 @@ func (e *WireCapacityExceededError) Error() string {
 func (e *WireCapacityExceededError) Unwrap() error { return ErrWireAdmissionPaused }
 
 type Postgres struct {
-	db                   *sql.DB
-	source               ingest.SourceIdentity
-	wireInboxMaxRows     int64
-	wireDatabaseMaxBytes int64
+	wirePreprocessing        wirePreprocessingMetrics
+	wireCompactIngestEnabled bool
+	db                       *sql.DB
+	source                   ingest.SourceIdentity
+	wireInboxMaxRows         int64
+	wireDatabaseMaxBytes     int64
 }
 
 type ReplayProgress struct {
@@ -53,14 +56,22 @@ type ReplayProgress struct {
 }
 
 func Open(ctx context.Context, databaseURL string, source ingest.SourceIdentity) (*Postgres, error) {
+	return OpenWithPool(ctx, databaseURL, source, PoolOptions{MaxOpen: 8, MaxIdle: 1, IdleTimeout: time.Minute}, "ingress")
+}
+
+func OpenWithPool(ctx context.Context, databaseURL string, source ingest.SourceIdentity, pool PoolOptions, component string) (*Postgres, error) {
+	if pool.MaxOpen < 2 || pool.MaxIdle < 0 || pool.MaxIdle > pool.MaxOpen || pool.IdleTimeout <= 0 {
+		return nil, errors.New("invalid PostgreSQL pool configuration")
+	}
 	config, err := pgx.ParseConfig(databaseURL)
 	if err != nil {
 		return nil, errors.New("invalid PostgreSQL connection configuration")
 	}
-	config.RuntimeParams["application_name"] = postgresApplicationName(os.Getenv("RAILWAY_SERVICE_NAME"))
+	config.RuntimeParams["application_name"] = postgresComponentApplicationName(os.Getenv("RAILWAY_SERVICE_NAME"), component)
 	db := stdlib.OpenDB(*config)
-	db.SetMaxOpenConns(8)
-	db.SetMaxIdleConns(4)
+	db.SetMaxOpenConns(pool.MaxOpen)
+	db.SetMaxIdleConns(pool.MaxIdle)
+	db.SetConnMaxIdleTime(pool.IdleTimeout)
 	db.SetConnMaxLifetime(30 * time.Minute)
 	if err := db.PingContext(ctx); err != nil {
 		_ = db.Close()
@@ -72,6 +83,8 @@ func Open(ctx context.Context, databaseURL string, source ingest.SourceIdentity)
 func New(db *sql.DB, source ingest.SourceIdentity) *Postgres {
 	return &Postgres{db: db, source: source}
 }
+
+func (p *Postgres) ConfigureWireCompactIngest(enabled bool) { p.wireCompactIngestEnabled = enabled }
 
 func (p *Postgres) Close() error { return p.db.Close() }
 
@@ -455,7 +468,33 @@ func (p *Postgres) StageBatch(ctx context.Context, lease Lease, events []ingest.
 	if checkpointSeq == 0 {
 		return errors.New("cannot stage a zero Jetstream checkpoint")
 	}
-	tx, err := p.db.BeginTx(ctx, &sql.TxOptions{})
+	// Normalize once before retries; never change caller-owned event payloads.
+	if p.source.IsWire() && p.wireCompactIngestEnabled {
+		prepared := make([]ingest.InboxEvent, len(events))
+		copy(prepared, events)
+		var originalBytes, compactBytes uint64
+		for i := range prepared {
+			originalBytes += uint64(len(prepared[i].Payload))
+			prepared[i].Payload = compactWirePayload(prepared[i])
+			compactBytes += uint64(len(prepared[i].Payload))
+		}
+		p.wirePreprocessing.recordInput(len(prepared), originalBytes, compactBytes)
+		events = prepared
+	}
+	if !p.source.IsWire() || !p.wireCompactIngestEnabled {
+		return p.stageBatchTransaction(ctx, lease, events, checkpointSeq, checkpointEventTime, progress)
+	}
+	return retryStageSerialization(ctx, func() error {
+		return p.stageBatchTransaction(ctx, lease, events, checkpointSeq, checkpointEventTime, progress)
+	})
+}
+
+func (p *Postgres) stageBatchTransaction(ctx context.Context, lease Lease, events []ingest.InboxEvent, checkpointSeq uint64, checkpointEventTime time.Time, progress ReplayProgress) error {
+	isolation := sql.LevelDefault
+	if p.source.IsWire() && p.wireCompactIngestEnabled {
+		isolation = sql.LevelRepeatableRead
+	}
+	tx, err := p.db.BeginTx(ctx, &sql.TxOptions{Isolation: isolation})
 	if err != nil {
 		return fmt.Errorf("begin stage batch: %w", err)
 	}
@@ -496,6 +535,14 @@ func (p *Postgres) StageBatch(ctx context.Context, lease Lease, events []ingest.
 		}
 	}
 
+	var preprocessing wireCommittedMetrics
+	if p.source.IsWire() && p.wireCompactIngestEnabled {
+		var err error
+		events, err = filterWireSignalsWithMetrics(ctx, tx, events, &preprocessing)
+		if err != nil {
+			return err
+		}
+	}
 	for start := 0; start < len(events); {
 		end := inboxBatchEnd(events, start)
 		inserted, err := p.stageInboxEvents(ctx, tx, events[start:end])
@@ -613,6 +660,10 @@ func (p *Postgres) StageBatch(ctx context.Context, lease Lease, events []ingest.
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit stage batch: %w", err)
+	}
+	if p.source.IsWire() && p.wireCompactIngestEnabled {
+		preprocessing.insertedEvents = uint64(admittedWireEvents)
+		p.wirePreprocessing.recordCommitted(preprocessing)
 	}
 	return nil
 }
@@ -888,4 +939,23 @@ func (p *Postgres) ReleaseLease(ctx context.Context, lease Lease) error {
 
 func postgresInterval(duration time.Duration) string {
 	return fmt.Sprintf("%f seconds", duration.Seconds())
+}
+
+// A snapshot conflict must replay the complete fenced unit, including membership,
+// inbox insertion, counters, anchors and checkpoint. Never retry just an INSERT.
+func retryStageSerialization(ctx context.Context, stage func() error) error {
+	for attempt := 0; ; attempt++ {
+		err := stage()
+		var postgresError *pgconn.PgError
+		if !errors.As(err, &postgresError) || postgresError.Code != "40001" || attempt == 4 {
+			return err
+		}
+		timer := time.NewTimer(time.Duration(10<<attempt) * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
+	}
 }

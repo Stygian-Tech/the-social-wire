@@ -43,4 +43,16 @@ struct PostgresConfigTests {
     #expect(postgresApplicationName(fallback: String(repeating: "x", count: 100), environment: [:]).utf8.count == 63)
     #expect(postgresApplicationName(fallback: "hello\nworld", environment: [:]) == "hello-world")
   }
+  @Test("Long service names retain distinct bounded component labels")
+  func componentName() {
+    let environment = ["RAILWAY_SERVICE_NAME": String(repeating: "x", count: 100)]
+    let authority = postgresApplicationName(fallback: "worker", component: "authority", environment: environment)
+    let appview = postgresApplicationName(fallback: "worker", component: "coordinator-appview", environment: environment)
+    #expect(authority.utf8.count == 63)
+    #expect(appview.utf8.count == 63)
+    #expect(authority.hasSuffix(":authority"))
+    #expect(appview.hasSuffix(":coordinator-appview"))
+    #expect(authority != appview)
+  }
+
 }

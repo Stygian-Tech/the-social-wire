@@ -421,6 +421,7 @@ jobs:
       - name: Test
         working-directory: services/jetstream-ingest
         env:
+          SCHEMA_READY_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/socialwire_test?sslmode=disable
           JETSTREAM_INGEST_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/socialwire_test?sslmode=disable
         run: |
           go test -race -coverprofile="$RUNNER_TEMP/jetstream-coverage.out" ./...
@@ -626,7 +627,7 @@ jobs:
           chmod +x "$PSQL_BIN"
           "$PSQL_BIN" postgresql://postgres:postgres@127.0.0.1:5432/socialwire_migrations \
             -X -v ON_ERROR_STOP=1 -c 'CREATE DATABASE tsw92_telemetry_test'
-          bun test --timeout 30000 packages/spec/__tests__/telemetry-index-migration-postgres.test.ts packages/spec/__tests__/operations-retention-migration-postgres.test.ts packages/spec/__tests__/wire-inbox-readiness-postgres.test.ts
+          bun test --timeout 30000 packages/spec/__tests__/telemetry-index-migration-postgres.test.ts packages/spec/__tests__/operations-retention-migration-postgres.test.ts packages/spec/__tests__/operations-change-retention-postgres.test.ts packages/spec/__tests__/wire-inbox-readiness-postgres.test.ts
       - name: Verify Jetstream V2 drain indexes and query plans
         run: |
           docker run --rm --network host \

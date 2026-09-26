@@ -7,11 +7,21 @@ resources while the compatibility fleet remains on grandfathered
 `railway/*.json` configuration during the rollback window. The graph aborts in
 every other environment.
 
-Development uses one AppView lane and one Wire lane. Production preserves the
-live AppView lane plus independently fenced external and publication Wire lanes
-inside the same replicated Ingress Controller. Production's Projection Pool is
-co-located with Postgres and initially keeps the existing V1-V7 source scope;
-widening it to V8 is a separate backlog/corpus decision.
+Development uses the read-state AppView lane and the publication-west Wire lane.
+Production preserves its AppView lane plus independently fenced external and
+publication Wire lanes. The expired publication-west replay canary stays stopped;
+its generation remains in the drain scope. Coordinator additionally retains the
+three external snapshot generations for cleanup and recovery. Applying this
+partial must not reset a cursor, reactivate the expired canary, or narrow either
+scope.
+
+Ingress pools explicitly allow eight open and one idle connection per lane, with
+a 60-second idle timeout. Projection readiness uses its existing component pools;
+Coordinator keeps isolated authority and diagnostic capacity. Compact ingestion
+and selective rollups start disabled so each Development stage can be measured
+separately. Enabling rollups requires both database tracking and the worker flag;
+setting only one is not an activation. Operations retention catch-up is controlled
+by `OPERATIONS_RETENTION_CATCHUP_ENABLED` on Ops, outside this partial.
 
 The partial preserves database, Redis, API-key, HMAC, and migrator-reference
 variables already present on each target service. It does not copy values from

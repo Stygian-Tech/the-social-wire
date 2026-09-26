@@ -12,6 +12,10 @@
       "/packages/swift/SocialWireRedis/**",
       "/packages/swift/WireCore/**",
       "/database/migrations/**",
+      "/services/jetstream-ingest/cmd/schema-ready/**",
+      "/services/jetstream-ingest/internal/schemaready/**",
+      "/services/jetstream-ingest/go.mod",
+      "/services/jetstream-ingest/go.sum",
       "/railway/appview.json"
     ]
   },

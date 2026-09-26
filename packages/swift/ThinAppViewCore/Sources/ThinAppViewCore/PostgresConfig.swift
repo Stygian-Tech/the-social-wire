@@ -9,7 +9,8 @@ public enum PostgresConfigError: Error {
 
 public func makePostgresConfig(
   from urlString: String,
-  logger: Logger
+  logger: Logger,
+  component: String? = nil
 ) throws -> PostgresClient.Configuration {
   guard
     let url = URL(string: urlString),
@@ -42,7 +43,7 @@ public func makePostgresConfig(
 
   config.options.maximumConnections = postgresMaximumConnections()
   config.options.additionalStartupParameters = [
-    ("application_name", postgresApplicationName(fallback: logger.label))
+    ("application_name", postgresApplicationName(fallback: logger.label, component: component))
   ]
 
   return config
@@ -61,12 +62,17 @@ func postgresMaximumConnections(
 
 func postgresApplicationName(
   fallback: String,
+  component: String? = nil,
   environment: [String: String] = ProcessInfo.processInfo.environment
 ) -> String {
   let supplied = environment["RAILWAY_SERVICE_NAME"]?.trimmingCharacters(in: .whitespacesAndNewlines)
   let source = supplied.flatMap { $0.isEmpty ? nil : $0 } ?? fallback
   // ASCII and a byte-bound label keep pg_stat_activity readable and avoid control characters.
   let allowed = Set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.")
-  let label = String(source.map { allowed.contains($0) ? $0 : "-" }.prefix(63))
-  return label.isEmpty ? "thin-appview" : label
+  let base = String(source.map { allowed.contains($0) ? $0 : "-" })
+  let suffix = component.map { String($0.map { allowed.contains($0) ? $0 : "-" }.prefix(40)) }
+  let label = base.isEmpty ? "thin-appview" : base
+  guard let suffix, !suffix.isEmpty else { return String(label.prefix(63)) }
+  // Reserve room for the component even when Railway's service name is long.
+  return String(label.prefix(62 - suffix.utf8.count)) + ":" + suffix
 }

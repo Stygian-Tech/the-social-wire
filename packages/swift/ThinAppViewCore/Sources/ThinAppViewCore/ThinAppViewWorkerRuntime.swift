@@ -243,7 +243,8 @@ public enum ThinAppViewWorkerRuntime {
           tapConfiguration: tapConfiguration,
           pdsReconciliationAvailable: enrollmentBackfill != nil,
           jetstreamMode: config.jetstreamMode,
-          jetstreamV2SourceGeneration: config.jetstreamV2SourceGeneration
+          jetstreamV2SourceGeneration: config.jetstreamV2SourceGeneration,
+          role: role
         )
         let heartbeat = OperationsHeartbeatJob(
           store: operationsStore,
@@ -286,7 +287,8 @@ public enum ThinAppViewWorkerRuntime {
     tapConfiguration: TapConsumerConfiguration?,
     pdsReconciliationAvailable: Bool,
     jetstreamMode: ThinAppViewJetstreamMode = .v1Authoritative,
-    jetstreamV2SourceGeneration: String = "jetstream-v2-us-west-v2"
+    jetstreamV2SourceGeneration: String = "jetstream-v2-us-west-v2",
+    role: ThinAppViewWorkerRole = .combined
   ) -> OperationsServiceDependencyProbe {
     {
       try await store.ping()
@@ -344,7 +346,7 @@ public enum ThinAppViewWorkerRuntime {
         authority = jetstream
       }
 
-      let jetstreamReplay: String
+      var jetstreamReplay: String
       switch jetstreamMode {
       case .v2Authoritative: jetstreamReplay = "enabled_durable_v2"
       case .v2Shadow: jetstreamReplay = "shadow_staging"
@@ -352,7 +354,9 @@ public enum ThinAppViewWorkerRuntime {
         jetstreamReplay = operationsConfig.recoveryEnabled
           ? "enabled_unverified" : "disabled_by_release_gate"
       }
-      let pdsReconciliation = operationsConfig.recoveryEnabled && pdsReconciliationAvailable
+      let runsRecovery = ThinAppViewWorkerRuntimePlan(role: role).runsRecovery
+      if !runsRecovery { jetstreamReplay = "disabled_by_worker_role" }
+      let pdsReconciliation = runsRecovery && operationsConfig.recoveryEnabled && pdsReconciliationAvailable
         ? "enabled_diagnostic_only"
         : "disabled"
       let validationSupport: String
@@ -373,6 +377,7 @@ public enum ThinAppViewWorkerRuntime {
           ? durableProjection.completeness : projectionEvidence.completeness,
         dependencyState: [
           "appview_database": "ready",
+          "worker_role": role.rawValue,
           "ingestion_transport": authority.dependency,
           "ingestion_source": authoritySource,
           "ingestion_authority": authoritySource,

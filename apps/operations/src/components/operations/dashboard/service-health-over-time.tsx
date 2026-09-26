@@ -27,7 +27,7 @@ export function ServiceHealthOverTime({ metricRollups }: { metricRollups: Metric
   return (
     <OperationsSection
       title={<span className="flex items-center gap-2"><HeartPulse className="size-3.5" /> Service Health Over Time</span>}
-      description="Five-minute rolling healthy-sample percentage. Liveness and readiness cover all required services; projection freshness and completeness cover appview-worker. Hard alerts and durability remain separate evidence."
+      description="Five-minute rolling healthy-sample percentage. Liveness and readiness cover all required services; freshness covers projection ingestion; completeness requires projection and active coordinator coverage after consolidation. Hard alerts and durability remain separate evidence."
       action={<Badge tone={minimum === null ? "neutral" : "info"}>{minimum === null ? "No samples" : `${percentage(minimum)} minimum`}</Badge>}
     >
       {trends.length === 0 ? (

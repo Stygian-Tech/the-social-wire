@@ -65,11 +65,19 @@ public actor SQLiteOperationsStore: OperationsStore {
       try Row.fetchAll(
         database,
         sql: """
-          SELECT * FROM operations_service_state
-          WHERE environment = ? AND heartbeat_at > ?
-          ORDER BY service, heartbeat_at DESC
+          SELECT state.*,
+            CASE WHEN lease.owner_id = json_extract(state.dependency_state, '$.coordinator_owner_id')
+              AND CAST(lease.fencing_token AS TEXT) = json_extract(state.dependency_state, '$.coordinator_fencing_token')
+              AND lease.role = json_extract(state.dependency_state, '$.coordinator_role')
+              AND lease.released_at IS NULL AND lease.lease_expires_at > ?
+            THEN 'active' ELSE 'inactive' END AS coordinator_authority
+          FROM operations_service_state state
+          LEFT JOIN operations_role_leases lease ON lease.environment = state.environment
+            AND lease.role = 'indexing.appview-coordinator'
+          WHERE state.environment = ? AND state.heartbeat_at > ?
+          ORDER BY state.service, state.heartbeat_at DESC
           """,
-        arguments: [environment, Self.iso(Date().addingTimeInterval(-120))]
+        arguments: [Self.iso(Date()), environment, Self.iso(Date().addingTimeInterval(-120))]
       ).compactMap { row in
         guard
           let liveness = OperationsHealthState(rawValue: row["liveness"]),
@@ -80,6 +88,10 @@ public actor SQLiteOperationsStore: OperationsStore {
           let heartbeatAt = Self.date(row["heartbeat_at"])
         else { return nil }
         let dependencyJSON: String = row["dependency_state"]
+        var dependencies = Self.decode([String: String].self, dependencyJSON) ?? [:]
+        if row["service"] as String == "coordinator-appview" {
+          dependencies["coordinator_authority"] = row["coordinator_authority"]
+        }
         return OperationsServiceState(
           service: row["service"],
           environment: row["environment"],
@@ -88,7 +100,7 @@ public actor SQLiteOperationsStore: OperationsStore {
           readiness: readiness,
           freshness: freshness,
           completeness: completeness,
-          dependencyState: Self.decode([String: String].self, dependencyJSON) ?? [:],
+          dependencyState: dependencies,
           version: row["version"],
           startedAt: startedAt,
           heartbeatAt: heartbeatAt

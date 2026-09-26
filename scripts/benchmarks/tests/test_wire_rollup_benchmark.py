@@ -86,6 +86,18 @@ class WireRollupBenchmarkSafetyTests(unittest.TestCase):
                     "Combined key count must be between 0 and 10000",
                 )
 
+    def test_rejects_unbounded_paired_workloads(self):
+        for arguments, message in [
+            (["--duration-seconds", "4"], "Duration must be between 5 and 60"),
+            (["--duration-seconds", "61"], "Duration must be between 5 and 60"),
+            (["--transactions-per-second", "0"], "Transaction rate must be between 1 and 10000"),
+            (["--transactions-per-second", "10001"], "Transaction rate must be between 1 and 10000"),
+            (["--pairs", "1"], "Pairs must be between 2 and 10"),
+            (["--pairs", "11"], "Pairs must be between 2 and 10"),
+        ]:
+            with self.subTest(arguments=arguments):
+                self.rejected_before_docker(arguments, message)
+
     def test_rejects_remote_docker_before_connecting(self):
         environment = dict(self.environment, DOCKER_HOST="tcp://example.invalid:2375")
         self.rejected_before_docker(

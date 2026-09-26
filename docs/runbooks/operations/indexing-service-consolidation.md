@@ -1,5 +1,73 @@
 # Indexing service consolidation rollout
 
+## TSW-92 staged completion
+
+The September 26 inventory found both the consolidated and compatibility fleets
+running. Preserve current lane identities and settings from `.railway/railway.ts`;
+the original cutover examples below are historical and must not narrow current
+generation scope to V1–V7 or restart the expired Production west replay canary.
+
+Ship the code with compact ingestion, selective rollups, and telemetry catch-up
+disabled. In Development, validate the following stages independently before
+advancing. Record exact revisions, deployment IDs, flags, checkpoint/lease evidence,
+pool counts, actionable queue age, authenticated latency, and workload counters in
+TSW-92; link telemetry evidence to TSW-94.
+
+1. **Connection ownership:** verify Projection has no wrapper pool, both component
+   readiness probes pass, and Coordinator retains two authority connections plus
+   its lazy diagnostic connection. Ingress uses per-lane maximum-open 8,
+   maximum-idle 1, idle-timeout 60 seconds. Compare component-qualified
+   `application_name` counts and Go pool waits; Swift's pinned pool exposes no
+   public utilization callback, so use existing bounded database observations.
+2. **Compact admission:** enable `JETSTREAM_WIRE_PUBLICATIONWEST_COMPACT_INGEST_ENABLED`
+   in Development after tests and representative passive-signal replay pass.
+   Publication-only live traffic cannot establish passive-signal savings; measure
+   a representative isolated replay as well. Production later uses the matching
+   external/publication lane flags. Rejected like/repost payloads must not cross
+   the database boundary, while checkpoints, follows and deletes remain exact.
+3. **Selective aggregation:** follow the existing incremental trial in
+   `postgres-cost-reduction.md`. Enable tracking through
+   `wire_set_signal_rollup_tracking(true)` with bounded lock/statement timeouts,
+   then set `WIRE_SIGNAL_ROLLUP_INCREMENTAL_ENABLED=true` on Coordinator. Require
+   the initial full refresh, exact oracle parity and at least 80% fewer sparse
+   aggregation buffer accesses. Dirty hints, expiry scheduling, restart recovery,
+   full maintenance cost and popular-key contention must pass too. A synthetic
+   query benchmark alone is insufficient.
+4. **Telemetry:** enable `OPERATIONS_RETENTION_CATCHUP_ENABLED=true` on Ops.
+   Verify 1,000-row/table batches, at most ten calls per round, one-second pacing
+   while work remains, hourly sleep only after a zero-delete result, and capped
+   5/10/20/40/60-second error backoff. Preserve retention, audit/recovery exclusions
+   and SSE earliest-available cursor updates. Deletion frees reusable space; it
+   does not imply immediate file shrinkage.
+
+Keep flags reflected in source after each accepted stage. Complete representative
+replay and a 24-hour Development soak before Production promotion. Require no
+new lease failures or worsening actionable backlog, no greater than 10% p95
+authenticated latency regression, and lower measured connection, payload, and
+aggregation work. Compare total database/Redis/worker costs over matched 24-hour
+and seven-day windows; keep RAM, cadence, backup policy and retention unchanged.
+
+For each environment, hand off legacy intake one service at a time with unchanged
+source generation/filter/checkpoint domain/lease name. Retire dedicated drains
+incrementally only after Projection covers their full scope and demonstrates
+equivalent throughput. Production's `The Wire Worker Production` is a **drain**,
+not a second ranker. Retire Charybdis only after projection, RSS, backfill,
+retention and recovery have verified replacements. Keep two Coordinator replicas
+and test token-incrementing failover. Keep stopped compatibility services
+deployable through the soak; do not delete services, reset cursors, discard
+pending claims or re-seed generations.
+
+Rollback only the failed stage. Disable compact flags to restore the original
+payload/admission path. Disable both incremental controls to remove tracking
+overhead and restore full aggregation. Disable retention catch-up to restore
+hourly scheduling. For service rollback, stop the replacement singleton before
+restoring its compatibility worker; preserve the source/claim state.
+
+Tracking changes acquire the same fail-fast parent lock as selective refreshes.
+If maintenance or an active refresh owns that lock, retry the tracking change
+after it finishes and verify `tracking_enabled` in `wire_signal_rollup_control`;
+a failed enable/disable call does not change the previous tracking state.
+
 This runbook replaces the separate AppView/Wire intake, projection, ranking, enrichment, and cleanup deployments with Ingress Controller, Projection Pool, and Coordinator. Execute Development first. Production requires a separate explicit promotion approval after the Development soak gates pass.
 
 ## Preconditions
@@ -57,12 +125,12 @@ Create snapshots as temporary operator services outside the long-running IaC par
 ## Development cutover
 
 1. Deploy the migration and verify the role-lease table and index exist. Seed each target service with its database, migrator, Redis, API-key, and HMAC references before the first IaC apply; `preserve()` retains existing target values but does not copy them from compatibility services.
-2. Run `railway environment link dev` and review `railway config plan`. The plan must contain only the three Development indexing resources and no destructive changes. The partial aborts outside Development.
-3. Capture the singleton baseline, stop compatibility `Charybdis` and `The Wire Worker`, and verify their deployments are stopped before applying the `indexing-consolidation` partial. This creates a bounded maintenance gap and prevents the old unfenced RSS, recovery, retention, ranking, enrichment, and cleanup loops from overlapping the new Coordinator.
+2. Link Development and review `railway config plan`. The plan must contain only the three Development indexing resources and no destructive changes. The partial explicitly selects the linked Development or Production profile.
+3. Capture the singleton baseline and verify the current roles of compatibility workers. Coordinator is already deployed: retire a compatibility singleton only after proving coverage for each job, and verify it is stopped before changing singleton ownership. Treat a worker configured as a drain as part of the incremental drain handoff.
 4. Apply the partial. Verify Ingress Controller's two lane databases, leases, checkpoints, and `/readyz`. Stop the two superseded intake services only after the controller owns the same two leases and cursor movement is continuous.
 5. Verify Projection Pool claim/ack partitioning, no duplicate terminal rows, and falling or stable actionable age. Stop the old dedicated Wire drains after the new pool is caught up.
 6. Verify Coordinator has exactly one owner for each role, distinct fencing tokens, one active component health endpoint, and one healthy standby path. If the new deployment fails, stop all new Coordinator replicas before restoring either compatibility singleton.
-7. Stop and remove the superseded hosted worker services only after the soak. Keep their config files and executable products through the rollback window.
+7. Keep superseded hosted worker services stopped and available through the soak and rollback window. Service deletion is outside this release.
 
 ## Production cutover
 
@@ -71,18 +139,18 @@ Create snapshots as temporary operator services outside the long-running IaC par
 3. Capture the AppView, external Wire, and publication Wire checkpoints, filter fingerprints, lease tokens, actionable backlog by source generation, role ownership, direct Gateway readiness, Wire response metadata, and database connection/storage headroom.
 4. Seed the three Production target services with the existing database/migrator references and required secrets before `preserve()` is planned. Do not print decrypted values or use `--show-values`.
 5. Link `production` and save a pinned `railway config plan`. Require exactly the three managed service classes, zero deletes, Ingress Controller `2 x us-west2`, Projection Pool `4 x sfo`, and Coordinator `2 x sfo`.
-6. Stop compatibility `Charybdis` and `The Wire Worker Production`; verify both are stopped and wait for the bounded singleton gap before applying the pinned plan. This prevents unfenced AppView maintenance and Wire rank/enrichment/cleanup overlap.
-7. Apply the pinned plan. Coordinator must show exactly one fenced owner for each role and a standby replica. Projection Pool must use the exact V1-V7 `WIRE_INBOX_SOURCE_GENERATIONS` union during the initial cutover; do not let it claim V8 snapshot or live backlog implicitly.
-8. Leave the three legacy intake services running until the new controller replicas are healthy in lease-waiting state. Stop `Jetstream V2 Ingest`, `The Wire Global Ingest Production`, and `The Wire Live Ingest Production`, then require token-incrementing takeover on all three unchanged leases and continuous checkpoint movement.
-9. Let Projection Pool overlap the legacy Wire drains using fenced `SKIP LOCKED` claims. Once AppView remains at zero actionable rows and the scoped Wire backlog/age is no worse than baseline, stop `The Wire Inbox Drain` and `The Wire Fresh Inbox Drain`.
-10. Widen Projection Pool and Coordinator from the initial V1–V7 source union to include both live V8 generations (`wire-global-v8-prod-external-live-v1` and `wire-global-v8-prod-publication-live-tail-v1`). Require the V8 actionable backlog to drain and a fresh, ranked, non-degraded 50-story Wire generation before completing the cutover.
+6. Confirm replacement coverage for every Charybdis projection, RSS, backfill, retention and recovery job before stopping it. `The Wire Worker Production` currently runs as a drain; retire it with the other drains after equivalent Projection throughput is demonstrated.
+7. Apply the pinned plan. Coordinator must show exactly one fenced owner for each role and a standby replica. Preserve the complete live Projection source union, including V8 live and V9 west, and the wider Coordinator recovery union including completed V8 snapshots. Do not narrow either scope to historical examples.
+8. Leave the three legacy intake services running until the new controller replicas are healthy in lease-waiting state. Stop `Jetstream V2 Ingest`, `The Wire Global Ingest Production`, and `The Wire Live Ingest Production` individually, requiring token-incrementing takeover and continuous checkpoint movement after each stop.
+9. Let Projection Pool overlap the legacy Wire drains using fenced `SKIP LOCKED` claims. Once AppView remains at zero actionable rows and the scoped Wire backlog/age is no worse than baseline, stop `The Wire Inbox Drain` replicas, `The Wire Fresh Inbox Drain`, and `The Wire Worker Production` incrementally, checking throughput and claims after each change.
+10. Require progress across every preserved source generation and a fresh, ranked, non-degraded 50-story Wire generation before completing the cutover.
 11. Set Gateway `PROJECTION_POOL_BASE_URL=http://projection-pool.railway.internal:8080` for independent ingestion-health collection. Require Gateway `/readyz` for database/AppView serving availability, and separately require Projection Pool `/readyz` plus complete ingestion evidence before considering Charybdis unavailable for rollback. Gateway can serve while its cached ingestion evidence is degraded or unknown; its HTTP 200 is not a recovery gate.
 12. Force one Ingress Controller replica handoff and one Coordinator replica handoff. Require incremented fencing tokens, no skipped/duplicated committed range, exactly one singleton owner per role, and continuing feed/generation progress.
 13. Keep all compatibility services stopped but deployable through the Production soak. Deletion is a separate rollback-window decision.
 
 ## Soak gates
 
-Hold Development for at least one peak traffic cycle and verify separately:
+Hold Development for at least 24 hours, including representative replay and a peak traffic cycle, and verify separately:
 
 - Ingress: both source checkpoints advance; lease renewal is stable; no replay-budget or admission regressions.
 - Projection: oldest actionable AppView and Wire inbox age stays within SLO; pending/retrying rows do not trend upward; dead letters do not increase unexpectedly.

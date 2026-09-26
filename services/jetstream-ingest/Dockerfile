@@ -6,8 +6,14 @@ RUN go mod download
 COPY services/jetstream-ingest/ ./
 RUN CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /out/jetstream-ingest ./cmd/jetstream-ingest
 
+RUN CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /out/schema-ready ./cmd/schema-ready
+COPY database/migrations /src/database/migrations
+RUN /out/schema-ready --generate-manifest /src/database/migrations > /out/required-migrations.txt
+
 FROM gcr.io/distroless/static-debian12:nonroot
 
 COPY --from=builder /out/jetstream-ingest /usr/local/bin/jetstream-ingest
 EXPOSE 8080
-ENTRYPOINT ["/usr/local/bin/jetstream-ingest"]
+COPY --from=builder /out/schema-ready /usr/local/bin/schema-ready
+COPY --from=builder /out/required-migrations.txt /etc/socialwire/required-migrations.txt
+ENTRYPOINT ["/usr/local/bin/schema-ready", "--", "/usr/local/bin/jetstream-ingest"]

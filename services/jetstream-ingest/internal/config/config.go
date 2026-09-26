@@ -97,6 +97,11 @@ type Config struct {
 	ExitAfterSnapshot    bool
 
 	ReplayCanaryExpiresAt *time.Time
+
+	WireCompactIngestEnabled bool
+	DatabasePoolMaxOpen      int
+	DatabasePoolMaxIdle      int
+	DatabasePoolIdleTimeout  time.Duration
 }
 
 // Lane is one independently leased Jetstream ingestion pipeline.
@@ -303,6 +308,14 @@ func loadLaneConfiguration(pipelineMode, prefix string, legacy, requireAPIKey bo
 		hostFallback = envString("JETSTREAM_HOST", DefaultHost)
 		apiKeyFallback = strings.TrimSpace(os.Getenv("JETSTREAM_API_KEY"))
 	}
+	compactVariable := prefix + "COMPACT_INGEST_ENABLED"
+	if legacy {
+		compactVariable = "JETSTREAM_WIRE_COMPACT_INGEST_ENABLED"
+	}
+	compactIngestEnabled, err := envBool(compactVariable, false)
+	if err != nil {
+		return Config{}, err
+	}
 	cfg := Config{
 		PipelineMode:         pipelineMode,
 		Environment:          strings.TrimSpace(os.Getenv("APP_ENV")),
@@ -335,6 +348,19 @@ func loadLaneConfiguration(pipelineMode, prefix string, legacy, requireAPIKey bo
 		WireAdmissionBurst:   envInt(wireVariable(prefix, legacy, "ADMISSION_BURST_EVENTS"), 1),
 		ReplaySnapshotOnly:   replaySnapshotOnly,
 		ExitAfterSnapshot:    exitAfterSnapshot,
+
+		WireCompactIngestEnabled: compactIngestEnabled,
+		DatabasePoolMaxOpen:      envInt(prefix+"DATABASE_POOL_MAX_OPEN", 8),
+		DatabasePoolMaxIdle:      envInt(prefix+"DATABASE_POOL_MAX_IDLE", 1),
+		DatabasePoolIdleTimeout:  envDuration(prefix+"DATABASE_POOL_IDLE_TIMEOUT", time.Minute),
+	}
+	if raw := strings.TrimSpace(os.Getenv(prefix + "DATABASE_POOL_MAX_IDLE")); raw != "" {
+		if _, err := strconv.Atoi(raw); err != nil {
+			return Config{}, fmt.Errorf("%sDATABASE_POOL_MAX_IDLE must be an integer", prefix)
+		}
+	}
+	if cfg.DatabasePoolMaxOpen < 2 || cfg.DatabasePoolMaxIdle < 0 || cfg.DatabasePoolMaxIdle > cfg.DatabasePoolMaxOpen || cfg.DatabasePoolIdleTimeout <= 0 {
+		return Config{}, fmt.Errorf("%sDATABASE_POOL requires max open >= 2, idle between 0 and max open, and positive idle timeout", prefix)
 	}
 	if value := strings.TrimSpace(os.Getenv(prefix + "REPLAY_CANARY_EXPIRES_AT")); value != "" {
 		expiresAt, err := time.Parse(time.RFC3339Nano, value)

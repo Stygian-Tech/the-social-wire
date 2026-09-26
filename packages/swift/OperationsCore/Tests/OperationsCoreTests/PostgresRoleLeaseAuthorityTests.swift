@@ -288,6 +288,37 @@ struct PostgresRoleLeaseAuthorityTests {
     }
   }
 
+  @Test("Coordinator heartbeat publication and reads require current fenced ownership")
+  func coordinatorHeartbeatAuthority() async throws {
+    try await withPool { pool, _ in
+      let store = PostgresOperationsStore(pool: pool, environment: "dev", logger: logger)
+      let now = Date()
+      let role = "indexing.appview-coordinator"
+      let lease = try #require(try await store.acquireRoleLease(
+        role: role, ownerID: "owner", leaseUntil: now.addingTimeInterval(30), at: now))
+      let coordinator = PostgresOperationsStore(
+        pool: pool, environment: store.environment,
+        coordinatorAuthority: RoleLeaseAuthority(environment: store.environment, role: role,
+          ownerID: "owner", fencingToken: lease.fencingToken), logger: logger)
+      let state = OperationsServiceState(
+        service: "coordinator-appview", environment: store.environment, instanceId: "owner",
+        liveness: .healthy, readiness: .healthy, freshness: .healthy, completeness: .healthy,
+        startedAt: now, heartbeatAt: now)
+      try await coordinator.upsertServiceState(state)
+      #expect(OperationsWorkerEvidence.recovery(try await store.listServiceStates(), at: Date()) != nil)
+      try await store.releaseRoleLease(role: role, ownerID: "owner", fencingToken: lease.fencingToken, at: Date())
+      #expect(OperationsWorkerEvidence.recovery(try await store.listServiceStates(), at: Date()) == nil)
+      _ = try await store.acquireRoleLease(role: role, ownerID: "successor", leaseUntil: Date().addingTimeInterval(30), at: Date())
+      do {
+        try await coordinator.upsertServiceState(state)
+        Issue.record("Former owner must not publish a replacement heartbeat")
+      } catch { #expect(RoleLeaseFailure.classify(error) == .leaseConflict) }
+      #expect(OperationsWorkerEvidence.recovery(try await store.listServiceStates(), at: Date()) == nil)
+      try await pool.query("DELETE FROM operations_service_state WHERE environment = 'dev' AND service = 'coordinator-appview' AND instance_id = 'owner'", logger: logger)
+      try await pool.query("DELETE FROM operations_role_leases WHERE environment = 'dev' AND role = \(role)", logger: logger)
+    }
+  }
+
   private func withPool(
     maximumConnections: Int = 4,
     _ body: @Sendable (PostgresClient, PostgresOperationsStore) async throws -> Void

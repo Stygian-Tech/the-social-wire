@@ -94,6 +94,11 @@ filter_changed apple \
   '.github/workflows/ci.yml'
 
 filter_changed operations \
+  'database/migrations/**' \
+  'services/jetstream-ingest/cmd/schema-ready/**' \
+  'services/jetstream-ingest/internal/schemaready/**' \
+  'services/jetstream-ingest/go.mod' \
+  'services/jetstream-ingest/go.sum' \
   'services/operations/**' \
   'packages/swift/GatewayCore/**' \
   'packages/swift/ThinAppViewCore/**' \
@@ -108,6 +113,11 @@ filter_changed redis \
   '.github/workflows/ci.yml'
 
 filter_changed gateway \
+  'database/migrations/**' \
+  'services/jetstream-ingest/cmd/schema-ready/**' \
+  'services/jetstream-ingest/internal/schemaready/**' \
+  'services/jetstream-ingest/go.mod' \
+  'services/jetstream-ingest/go.sum' \
   'services/gateway/**' \
   'packages/swift/GatewayCore/**' \
   'packages/swift/ThinAppViewCore/**' \
@@ -119,6 +129,10 @@ filter_changed gateway \
   '.github/workflows/ci.yml'
 
 filter_changed appview \
+  'services/jetstream-ingest/cmd/schema-ready/**' \
+  'services/jetstream-ingest/internal/schemaready/**' \
+  'services/jetstream-ingest/go.mod' \
+  'services/jetstream-ingest/go.sum' \
   'services/appview/**' \
   'database/migrations/**' \
   'packages/swift/GatewayCore/**' \
@@ -131,6 +145,11 @@ filter_changed appview \
   '.github/workflows/ci.yml'
 
 filter_changed charybdis \
+  'database/migrations/**' \
+  'services/jetstream-ingest/cmd/schema-ready/**' \
+  'services/jetstream-ingest/internal/schemaready/**' \
+  'services/jetstream-ingest/go.mod' \
+  'services/jetstream-ingest/go.sum' \
   'services/appview-worker/**' \
   'packages/swift/ThinAppViewCore/**' \
   'packages/swift/ReadStateCore/**' \
@@ -154,6 +173,10 @@ filter_changed wire_ingest \
   '.github/workflows/ci.yml'
 
 filter_changed wire_worker \
+  'services/jetstream-ingest/cmd/schema-ready/**' \
+  'services/jetstream-ingest/internal/schemaready/**' \
+  'services/jetstream-ingest/go.mod' \
+  'services/jetstream-ingest/go.sum' \
   'services/wire-worker/**' \
   'packages/swift/WireCore/**' \
   'packages/swift/OperationsCore/**' \
@@ -165,6 +188,10 @@ filter_changed wire_worker \
   '.github/workflows/ci.yml'
 
 filter_changed indexing_worker \
+  'services/jetstream-ingest/cmd/schema-ready/**' \
+  'services/jetstream-ingest/internal/schemaready/**' \
+  'services/jetstream-ingest/go.mod' \
+  'services/jetstream-ingest/go.sum' \
   'services/indexing-worker/**' \
   'services/appview-worker/**' \
   'services/wire-worker/**' \
@@ -209,6 +236,9 @@ filter_changed lexicons \
   '.github/workflows/ci.yml'
 
 filter_changed spec \
+  'services/jetstream-ingest/cmd/schema-ready/**' \
+  'services/jetstream-ingest/internal/schemaready/**' \
+  'services/*/Dockerfile' \
   'packages/read-state/**' \
   'packages/spec/**' \
   'scripts/benchmarks/**' \

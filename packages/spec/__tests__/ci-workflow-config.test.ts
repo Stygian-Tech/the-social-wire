@@ -230,8 +230,14 @@ describe("CI workflow configuration", () => {
       'JETSTREAM_WIRE_ADMISSION_BURST_EVENTS: "1"',
     );
     expect(railwayInfrastructure).toContain(
-      'JETSTREAM_WIRE_LANES: "external,publication,publicationwest"',
+      'JETSTREAM_WIRE_LANES: "external,publication"',
     );
+    expect(railwayInfrastructure).toContain(
+      'JETSTREAM_WIRE_PUBLICATIONWEST_REPLAY_CANARY_EXPIRES_AT: "2026-09-23T00:00:00Z"',
+    );
+    expect(railwayInfrastructure).toContain('"wire-global-v9-prod-publication-west-20260919"');
+    expect(railwayInfrastructure).toContain('WIRE_INBOX_SOURCE_GENERATIONS: productionWireCoordinatorGenerations');
+    expect(railwayInfrastructure).toContain('"wire-global-v8-prod-external-8d-snapshot-b-v1"');
     expect(railwayInfrastructure).toContain('JETSTREAM_WIRE_LANES: "publicationwest"');
     expect(railwayInfrastructure).toContain('WIRE_INBOX_CONCURRENCY: "52"');
     expect(railwayInfrastructure).toContain('workerRegion: "sfo"');
@@ -241,7 +247,7 @@ describe("CI workflow configuration", () => {
       railwayInfrastructure.indexOf("const indexingBuild"),
     );
     const productionWireSourceGenerations = railwayInfrastructure.slice(
-      railwayInfrastructure.indexOf("const productionWireSourceGenerations"),
+      railwayInfrastructure.indexOf("const productionWireLiveGenerations"),
       railwayInfrastructure.indexOf("const productionProfile"),
     );
     expect(productionWireSourceGenerations).toContain(

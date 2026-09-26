@@ -1,3 +1,9 @@
+import {
+  COORDINATOR_APPVIEW_SERVICE,
+  PROJECTION_APPVIEW_SERVICE,
+  hasActiveCoordinatorAuthority,
+  requiredWorkerServices,
+} from "@/lib/worker-service-coverage"
 import type { Health, MetricRollup, Overview, ServiceState } from "@/lib/operations-types"
 import {
   ingestionAuthoritySource,
@@ -96,9 +102,11 @@ export function serviceHealthEvidence(
   reference?: string,
   requiredServices: readonly string[] = requiredOperationsServices,
 ): HealthEvidence {
-  const states = requiredServices.map((serviceName): Health => {
+  const requirements = requiredWorkerServices(requiredServices, dimension, services.map((service) => service.service))
+  const states = requirements.map((serviceName): Health => {
     const currentInstances = services.filter(
-      (service) => service.service === serviceName && serviceHeartbeatIsFresh(service, reference),
+      (service) => service.service === serviceName && serviceHeartbeatIsFresh(service, reference) &&
+        (serviceName !== COORDINATOR_APPVIEW_SERVICE || hasActiveCoordinatorAuthority(service.dependencyState)),
     )
     if (currentInstances.length === 0) return "unknown"
     const instanceStates = currentInstances.map((service) => service[dimension])
@@ -131,7 +139,8 @@ function rollingServiceState(
     if (
       rollup.metricName !== SERVICE_HEALTH_METRIC ||
       rollup.dimensions.service !== service ||
-      rollup.dimensions.dimension !== dimension
+      rollup.dimensions.dimension !== dimension ||
+      (service === COORDINATOR_APPVIEW_SERVICE && !hasActiveCoordinatorAuthority(rollup.dimensions))
     )
       continue
     const bucket = new Date(rollup.bucketStart).getTime()
@@ -165,6 +174,7 @@ export function rollingServiceHealthEvidence(
   dimension: HealthDimension,
   reference: string,
   requiredServices: readonly string[] = requiredOperationsServices,
+  currentServices?: ServiceState[],
 ): RollingHealthEvidence | null {
   const referenceMs = new Date(reference).getTime()
   if (!Number.isFinite(referenceMs)) return null
@@ -173,9 +183,23 @@ export function rollingServiceHealthEvidence(
   const hasHealthSamples = rollups.some((rollup) => rollup.metricName === SERVICE_HEALTH_METRIC)
   if (!hasHealthSamples) return null
 
-  const services = requiredServices.map((service) =>
-    rollingServiceState(rollups, service, dimension, windowStart, windowEnd),
-  )
+  const observedServices = rollups.filter((rollup) => {
+    const bucket = Date.parse(rollup.bucketStart)
+    return rollup.metricName === SERVICE_HEALTH_METRIC && bucket >= windowStart && bucket < windowEnd
+  }).map((rollup) => rollup.dimensions.service ?? "")
+  const requirements = requiredWorkerServices(requiredServices, dimension, [
+    ...observedServices, ...(currentServices ?? []).map((service) => service.service),
+  ])
+  const services = requirements.map((service) => {
+    const rolling = rollingServiceState(rollups, service, dimension, windowStart, windowEnd)
+    if (currentServices && [PROJECTION_APPVIEW_SERVICE, COORDINATOR_APPVIEW_SERVICE].includes(service)) {
+      const covered = currentServices.some((instance) => instance.service === service &&
+        serviceHeartbeatIsFresh(instance, reference) &&
+        (service !== COORDINATOR_APPVIEW_SERVICE || hasActiveCoordinatorAuthority(instance.dependencyState)))
+      if (!covered && rolling.state === "healthy") return { ...rolling, state: "unknown" as const }
+    }
+    return rolling
+  })
   const states = services.map(({ state }) => state)
   const healthy = states.filter((state) => state === "healthy").length
   const state: Health = states.some((value) => value === "unhealthy")
@@ -201,7 +225,7 @@ export function stableServiceHealthEvidence(
   reference = overview.refreshedAt,
   requiredServices: readonly string[] = requiredOperationsServices,
 ): RollingHealthEvidence {
-  return rollingServiceHealthEvidence(overview.metricRollups ?? [], dimension, reference, requiredServices) ?? {
+  return rollingServiceHealthEvidence(overview.metricRollups ?? [], dimension, reference, requiredServices, overview.services) ?? {
     ...serviceHealthEvidence(overview.services, dimension, reference, requiredServices),
     source: "current",
     sampleCount: 0,

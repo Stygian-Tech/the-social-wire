@@ -7,6 +7,7 @@ struct OperationsServiceConfig: Sendable {
   let operations: OperationsConfiguration
   let gatewayOperationsInternalSecret: String?
   let database: Database
+  let retentionCatchUpEnabled: Bool
 
   enum Database: Sendable {
     case sqlite(path: String)
@@ -33,7 +34,8 @@ struct OperationsServiceConfig: Sendable {
       core: core,
       operations: operations,
       gatewayOperationsInternalSecret: core.gatewayOperationsInternalSecret,
-      database: database
+      database: database,
+      retentionCatchUpEnabled: environment["OPERATIONS_RETENTION_CATCHUP_ENABLED"]?.lowercased() == "true"
     )
   }
 }

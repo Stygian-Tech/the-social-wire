@@ -64,6 +64,58 @@ and resumes at the exact next offset after `Retry-After`; striped mode retries a
 part from its beginning after a short body. `JETSTREAM_SEGMENT_STRIPES` remains
 an explicit override for either lane.
 
+## Database pools and compact signal rollout
+
+Each supervised lane owns one independently capped pool. Its existing variable
+prefix accepts `DATABASE_POOL_MAX_OPEN` (default `8`), `DATABASE_POOL_MAX_IDLE`
+(default `1`, with `0` allowed), and `DATABASE_POOL_IDLE_TIMEOUT` (default `60s`).
+Legacy single-lane prefixes use `JETSTREAM_`; controller prefixes include
+`JETSTREAM_APPVIEW_`, `JETSTREAM_WIRE_`, and named `JETSTREAM_WIRE_<NAME>_` lanes.
+At least two open connections are required to leave room for lease renewal.
+PostgreSQL application names start with the lane and include the Railway service
+name, sanitized and bounded to 63 bytes. Each lane logs pool utilization, open,
+idle and in-use connections, and interval wait count/milliseconds once per minute;
+sampling does not query PostgreSQL or add per-event labels.
+
+The same minute sample reports fixed Wire preprocessing counters when compact
+ingest is enabled (all are zero with `wire_preprocessing_enabled=false` otherwise):
+`wire_input_batches`, `wire_input_events`, `wire_original_payload_bytes`, and
+`wire_compact_payload_bytes` count each input batch once, including failed batches;
+internal serialization retries do not repeat preprocessing. `wire_committed_batches`,
+`wire_accepted_submission_events`, `wire_accepted_submission_payload_bytes`,
+`wire_inserted_events`, `wire_filtered_passive_events`, `wire_lookup_subjects`, and
+`wire_lookup_subject_bytes` count only successfully acknowledged commits, excluding
+failed/retried attempts. Accepted submissions include replay duplicates sent to
+INSERT; `wire_inserted_events` uses actual affected rows and excludes those duplicates.
+Lookup bytes measure the serialized JSON subject-key parameters, including array
+framing, and subject counts reflect distinct canonical string URI keys per batch.
+Payload bytes measure Go JSON envelopes, not PostgreSQL physical storage or WAL.
+All counters are process-local interval deltas with fixed field names, no event
+identifiers or content, and no additional database queries.
+
+`JETSTREAM_WIRE_COMPACT_INGEST_ENABLED` defaults to `false` for both legacy Wire
+and the primary controller Wire lane. Named Wire lanes use their own prefix,
+for example `JETSTREAM_WIRE_LIVE_COMPACT_INGEST_ENABLED`. Deploy connection changes
+with this flag off, then enable compact admission separately after baseline
+comparison. Disabling it restores the existing insert-time admission path without
+changing inbox schemas, source generations, or checkpoints.
+
+When enabled, Wire normalizes complete envelopes before stripping unused like,
+repost and follow record fields. It retains all envelope identity, original subject
+shape, record type and created time; signal deletes retain their identity without
+a record body. Publication, post, recommendation and account payloads keep their
+existing shape. Normalization failures remain failures, even in discarded fields.
+Only distinct subject values (at most 500 per query) cross the membership lookup;
+accepted compact envelopes enter the existing bounded inserts. Follows, deletes
+and account events always remain ordered for worker eligibility and retractions.
+
+Membership lookups, fencing, admission counters, recovery anchors and checkpoints
+share one repeatable-read transaction. Serialization conflicts retry that entire
+transaction at most five times with cancellable exponential backoff. A failed
+attempt never advances a checkpoint. Unknown, expired and malformed subjects
+retain the legacy PostgreSQL JSON-path admission behavior; the change does not
+introduce a new follow cache or approximate signal authority.
+
 ## Required Railway variables
 
 - `APP_ENV=dev|prod`

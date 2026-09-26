@@ -1,3 +1,4 @@
+import { currentIngestionWorker } from "@/lib/worker-service-coverage"
 import type {
   BackfillDryRun,
   EnvironmentName,
@@ -23,16 +24,10 @@ export function ingestionSourceLabel(source: string) {
   return source
 }
 
-function currentIngestionWorker(overview: Overview) {
-  return overview.services
-    .filter((service) => service.service === "appview-worker")
-    .sort((left, right) => Date.parse(right.heartbeatAt) - Date.parse(left.heartbeatAt))[0]
-}
-
 export function ingestionAuthoritySource(overview: Overview) {
   if (overview.ingestion?.source) return normalizedSource(overview.ingestion.source)
 
-  const worker = currentIngestionWorker(overview)
+  const worker = currentIngestionWorker(overview.services)
   const advertisedSource = normalizedSource(worker?.dependencyState.ingestion_authority)
   return advertisedSource === LEGACY_JETSTREAM_SOURCE ||
     advertisedSource === "tap" ||
@@ -45,7 +40,7 @@ export function jetstreamV2CheckpointForOverview(overview: Overview) {
   const checkpoints = overview.durability?.checkpoints.filter(
     (checkpoint) => checkpoint.cursorKind === "jetstream_v2_seq",
   ) ?? []
-  const advertisedGeneration = currentIngestionWorker(overview)
+  const advertisedGeneration = currentIngestionWorker(overview.services)
     ?.dependencyState.jetstream_v2_source_generation
   if (advertisedGeneration) {
     return checkpoints.find((checkpoint) => checkpoint.sourceGeneration === advertisedGeneration)

@@ -3,8 +3,6 @@ import AsyncHTTPClient
 import Foundation
 import Logging
 import OperationsCore
-import PostgresNIO
-import ThinAppViewCore
 import WireWorkerCore
 
 public enum IndexingWorkerRuntime {
@@ -18,31 +16,11 @@ public enum IndexingWorkerRuntime {
       throw IndexingWorkerRuntimeError.missingDatabaseURL
     }
     let appEnvironment = try OperationsConfiguration.requireEnvironment(environment)
-    let operationsConfiguration = OperationsConfiguration.fromEnvironment(environment)
-    var postgresConfiguration = try makePostgresConfig(from: databaseURL, logger: logger)
-    if config.role == .coordinator {
-      // Dedicated control capacity: hosted lane workloads have separate pools.
-      postgresConfiguration.options.maximumConnections = 2
-    }
-    let pool = PostgresClient(configuration: postgresConfiguration, backgroundLogger: logger)
-    // Failure diagnostics never borrow the two authority-control connections. This
-    // lazy connection is opened only after a failure and retired after idle time.
-    var diagnosticConfiguration = postgresConfiguration
-    diagnosticConfiguration.options.minimumConnections = 0
-    diagnosticConfiguration.options.maximumConnections = 1
-    diagnosticConfiguration.options.connectionIdleTimeout = .seconds(10)
-    diagnosticConfiguration.options.additionalStartupParameters.removeAll { $0.0 == "application_name" }
-    diagnosticConfiguration.options.additionalStartupParameters.append(("application_name", "coordinator-lease-diagnostics"))
-    let diagnosticPool = PostgresClient(configuration: diagnosticConfiguration,
-      backgroundLogger: Logger(label: "lease-diagnostic-pool", factory: { _ in SwiftLogNoOpLogHandler() }))
-    let leaseDiagnostics = PostgresRoleLeaseDiagnosticSampler(
-      pool: diagnosticPool, environment: appEnvironment, logger: logger)
-    let operationsStore = PostgresOperationsStore(
-      pool: pool,
-      environment: appEnvironment,
-      backfillFingerprintSecret: operationsConfiguration.backfillFingerprintSecret,
-      logger: logger
-    )
+    // Projection owns no wrapper pool: its component probes verify the existing
+    // workload pools. Coordinator alone needs isolated authority and diagnostic capacity.
+    let control = try IndexingWorkerControlDatabase.make(
+      role: config.role, databaseURL: databaseURL, environment: environment,
+      appEnvironment: appEnvironment, logger: logger)
     let healthClient = HTTPClient(eventLoopGroupProvider: .singleton)
     let laneState = IndexingWorkerLaneState()
     // This actor outlives individual materializer lease ownership closures, so
@@ -61,9 +39,9 @@ public enum IndexingWorkerRuntime {
     var runtimeError: Error?
     do {
       try await withThrowingTaskGroup(of: Void.self) { group in
-        group.addTask { await pool.run() }
-        if config.role == .coordinator {
-          group.addTask { await diagnosticPool.run() }
+        if let control {
+          group.addTask { await control.pool.run() }
+          group.addTask { await control.diagnosticPool.run() }
           group.addTask {
             try await IndexingWorkerShutdownWatchdog.run(
               state: laneState, logger: logger, terminate: terminateUnresponsiveProcess)
@@ -77,8 +55,6 @@ public enum IndexingWorkerRuntime {
                 guard await laneState.hasRecentControlEvidence(maximumAge: config.controlEvidenceMaximumAge) else {
                   throw IndexingWorkerRuntimeError.controlEvidenceUnavailable
                 }
-              } else {
-                try await operationsStore.ping()
               }
               try await probeLanes(
                 role: config.role,
@@ -93,8 +69,6 @@ public enum IndexingWorkerRuntime {
                 guard await laneState.hasRecentControlEvidence(maximumAge: config.controlEvidenceMaximumAge) else {
                   throw IndexingWorkerRuntimeError.controlEvidenceUnavailable
                 }
-              } else {
-                try await operationsStore.ping()
               }
               try await probeLanes(
                 role: config.role,
@@ -147,13 +121,14 @@ public enum IndexingWorkerRuntime {
           }
 
         case .coordinator:
+          guard let control else { preconditionFailure("Coordinator requires authority capacity") }
           group.addTask {
             await runCoordinatorLane(
               roleName: "indexing.appview-coordinator",
               lane: .appView,
               state: laneState,
-              store: operationsStore,
-              diagnostics: leaseDiagnostics,
+              store: control.store,
+              diagnostics: control.diagnostics,
               config: config,
               logger: logger
             ) { ownership in
@@ -174,8 +149,8 @@ public enum IndexingWorkerRuntime {
               roleName: "indexing.wire-materializer",
               lane: .wire,
               state: laneState,
-              store: operationsStore,
-              diagnostics: leaseDiagnostics,
+              store: control.store,
+              diagnostics: control.diagnostics,
               config: config,
               logger: logger
             ) { ownership in
@@ -277,6 +252,17 @@ public enum IndexingWorkerRuntime {
     state: IndexingWorkerLaneState,
     client: HTTPClient
   ) async throws {
+    try await probeLanes(role: role, state: state) { lane in
+      let port = lane == .appView ? config.appViewHealthPort : config.wireHealthPort
+      try await IndexingWorkerLocalHealthProbe.run(client: client, port: port, path: path)
+    }
+  }
+
+  static func probeLanes(
+    role: IndexingWorkerRole,
+    state: IndexingWorkerLaneState,
+    probe: @Sendable (IndexingWorkerLane) async throws -> Void
+  ) async throws {
     for lane in IndexingWorkerLane.allCases {
       guard let phase = await state.phase(for: lane) else {
         throw IndexingWorkerHealthError.laneNotStarted(lane)
@@ -285,8 +271,7 @@ public enum IndexingWorkerRuntime {
       case (.coordinator, .standby):
         continue
       case (_, .running):
-        let port = lane == .appView ? config.appViewHealthPort : config.wireHealthPort
-        try await IndexingWorkerLocalHealthProbe.run(client: client, port: port, path: path)
+        try await probe(lane)
       case (_, .starting):
         throw IndexingWorkerHealthError.laneNotStarted(lane)
       case (_, .restarting), (_, .stopping):

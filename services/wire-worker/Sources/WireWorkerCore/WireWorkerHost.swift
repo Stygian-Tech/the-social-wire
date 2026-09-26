@@ -37,6 +37,7 @@ public enum WireWorkerHost {
       from: config.databaseURL,
       maximumConnections: config.postgresMaximumConnections,
       environment: environment,
+      component: "wire-\(config.role.rawValue)",
       logger: logger
     )
     let pool = PostgresClient(configuration: postgresConfig, backgroundLogger: logger)
