@@ -3,14 +3,46 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"reflect"
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stygian-tech/the-social-wire/services/jetstream-ingest/internal/ingest"
 )
+
+func TestWireCompactInvalidUTF8PostgresParityIntegration(t *testing.T) {
+	url := os.Getenv("JETSTREAM_INGEST_TEST_DATABASE_URL")
+	if url == "" {
+		t.Skip("JETSTREAM_INGEST_TEST_DATABASE_URL is not set")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	db, err := sql.Open("pgx", url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	for _, operation := range []string{"create", "update", "delete"} {
+		for _, field := range []string{"rev", "createdAt", "unused"} {
+			event := invalidUTF8Signal(field, operation)
+			retained := field == "rev" || (field == "createdAt" && operation != "delete")
+			var encoded string
+			err := db.QueryRowContext(ctx, "SELECT $1::jsonb::text", string(compactWirePayload(event))).Scan(&encoded)
+			if retained {
+				var postgres *pgconn.PgError
+				if !errors.As(err, &postgres) || postgres.Code != "22021" {
+					t.Fatalf("%s retained %s must retain PostgreSQL UTF-8 rejection: %v", operation, field, err)
+				}
+			} else if err != nil {
+				t.Fatalf("%s discarded %s must retain valid compact output: %v", operation, field, err)
+			}
+		}
+	}
+}
 
 func TestWireCompactAdmissionIntegration(t *testing.T) {
 	url := os.Getenv("JETSTREAM_INGEST_TEST_DATABASE_URL")
@@ -175,10 +207,10 @@ func TestWireSubjectMembershipLegacyParityIntegration(t *testing.T) {
 	defer tx.Rollback()
 	// A transaction-local fixture exercises the exact legacy JSON path oracle,
 	// including PostgreSQL textualization of malformed numeric and object URIs.
-	if _, err := tx.ExecContext(ctx, `CREATE TEMP TABLE wire_item_aliases (alias_key text PRIMARY KEY, expires_at timestamptz) ON COMMIT DROP; INSERT INTO wire_item_aliases VALUES ('at://known', NOW()+INTERVAL '1 day'), ('1000', NOW()+INTERVAL '1 day'), ('true', NOW()+INTERVAL '1 day'), ('{"a": 1}', NOW()+INTERVAL '1 day')`); err != nil {
+	if _, err := tx.ExecContext(ctx, `CREATE TEMP TABLE wire_item_aliases (alias_key text PRIMARY KEY, expires_at timestamptz) ON COMMIT DROP; INSERT INTO wire_item_aliases VALUES ('at://known', NOW()+INTERVAL '1 day'), ('1000', NOW()+INTERVAL '1 day'), ('9223372036854775807', NOW()+INTERVAL '1 day'), ('true', NOW()+INTERVAL '1 day'), ('{"a": 1}', NOW()+INTERVAL '1 day')`); err != nil {
 		t.Fatal(err)
 	}
-	for _, subject := range []string{`{"uri":"at://known"}`, `"at://known"`, `{"uri":1e3}`, `{"uri":true}`, `{"uri":{"a":1}}`, `{"uri":null}`, `[]`, `{"uri":"missing"}`} {
+	for _, subject := range []string{`{"uri":"at://known"}`, `"at://known"`, `{"uri":1e3}`, `{"uri":9223372036854775807}`, `{"uri":true}`, `{"uri":{"a":1}}`, `{"uri":null}`, `[]`, `{"uri":"missing"}`} {
 		event := wireSignal("app.bsky.feed.like", "create", subject)
 		var legacy bool
 		if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM wire_item_aliases WHERE alias_key = $1::jsonb #>> '{commit,record,subject,uri}' AND expires_at > NOW())`, string(event.Payload)).Scan(&legacy); err != nil {

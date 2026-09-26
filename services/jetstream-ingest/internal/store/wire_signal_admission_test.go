@@ -1,6 +1,7 @@
 package store
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -9,6 +10,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -65,6 +67,26 @@ func TestCompactWirePayloadDeleteAndUnchangedCollections(t *testing.T) {
 	}
 }
 
+func TestCompactWirePayloadKeepsAlreadyMinimalNormalizedBytes(t *testing.T) {
+	for _, operation := range []string{"create", "update", "delete"} {
+		event := wireSignal("app.bsky.feed.like", operation, `{"uri":"at://post"}`)
+		if operation == "delete" {
+			event.Payload = []byte(`{ "commit": { "operation": "delete", "rkey": "r", "rev": "rev" } }`)
+		} else {
+			event.Payload = []byte(`{ "commit": { "record": { "$type": "app.bsky.feed.like", "subject": {"uri":"at://post", "cid":"original"}, "createdAt": "2026-01-01T00:00:00Z" }, "rev": "rev" } }`)
+		}
+		if got := compactWirePayload(event); string(got) != string(event.Payload) {
+			t.Fatalf("re-encoded already minimal %s: %s", operation, got)
+		}
+	}
+	// The shortcut must still normalize the complete envelope before returning.
+	event := wireSignal("app.bsky.graph.follow", "create", `"did:plc:followee"`)
+	event.Payload = []byte(`{"commit":{"record":{"subject":"did:plc:before\u0000after"}}}`)
+	if got := compactWirePayload(event); strings.Contains(string(got), `\u0000`) || !strings.Contains(string(got), "before�after") {
+		t.Fatalf("minimal record skipped normalization: %s", got)
+	}
+}
+
 func TestCompactionPreservesMalformedBehavior(t *testing.T) {
 	event := wireSignal("app.bsky.graph.follow", "create", `"did:plc:followee"`)
 	event.Payload = []byte(`{"commit":{"record":{"subject":"did:plc:followee","discarded":{"key\u0000":1,"key\ufffd":2}}}}`)
@@ -76,6 +98,52 @@ func TestCompactionPreservesMalformedBehavior(t *testing.T) {
 		if string(compactWirePayload(event)) != payload {
 			t.Fatalf("malformed record repaired: %s", payload)
 		}
+	}
+}
+
+func TestWireSubjectLookupPreservesExactJSONSemantics(t *testing.T) {
+	for _, tc := range []struct{ payload, want string }{
+		{`{"commit":{"record":{"subject":{"uri":9223372036854775807}}}}`, `9223372036854775807`},
+		{`{"commit":{"record":{"subject":{"uri":1e3}}}}`, `1e3`},
+		{`{"commit":{"record":{"subject":{"uri":{"n":9223372036854775807}}}}}`, `{"n":9223372036854775807}`},
+		{`{"commit":{"record":{"subject":{"uri":"first"}}},"commit":{}}`, ``},
+		{`{"Commit":{"record":{"subject":{"uri":"wrong case"}}}}`, ``},
+		{`{"commit":{"record":{"subject":{"uri":null}}}}`, ``},
+		{`{"commit":{"record":{"subject":{"uri":"first"}}}} {}`, ``},
+	} {
+		if got := string(wireSubjectValue([]byte(tc.payload))); got != tc.want {
+			t.Fatalf("subject lookup for %s = %s, want %s", tc.payload, got, tc.want)
+		}
+	}
+}
+
+func invalidUTF8Signal(field, operation string) ingest.InboxEvent {
+	event := wireSignal("app.bsky.feed.like", operation, `{"uri":"at://known"}`)
+	old := []byte(`"` + field + `":"`)
+	event.Payload = bytes.Replace(event.Payload, old, append(append([]byte(nil), old...), 0xff), 1)
+	return event
+}
+
+func TestCompactWirePayloadPreservesInvalidUTF8Behavior(t *testing.T) {
+	for _, operation := range []string{"create", "update", "delete"} {
+		for _, field := range []string{"rev", "createdAt", "unused"} {
+			event := invalidUTF8Signal(field, operation)
+			if utf8.Valid(event.Payload) {
+				t.Fatal("fixture must contain invalid UTF-8")
+			}
+			got := compactWirePayload(event)
+			retained := field == "rev" || (field == "createdAt" && operation != "delete")
+			if utf8.Valid(got) == retained {
+				t.Fatalf("%s %s changed invalid UTF-8 preservation: %q", operation, field, got)
+			}
+		}
+	}
+	// Malformed object URI values must reach PostgreSQL unchanged. Converting
+	// invalid bytes into a different lookup could incorrectly drop the event.
+	event := wireSignal("app.bsky.feed.like", "create", `{"uri":{"key":"bad"}}`)
+	event.Payload = bytes.Replace(event.Payload, []byte("bad"), []byte{'x', 0xff, 'y'}, 1)
+	if got := wireSubjectValue(event.Payload); !bytes.Contains(got, []byte{0xff}) {
+		t.Fatalf("malformed lookup was repaired: %q", got)
 	}
 }
 
