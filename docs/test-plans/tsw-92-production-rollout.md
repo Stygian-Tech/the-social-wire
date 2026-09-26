@@ -1,0 +1,133 @@
+# TSW-92 Production Rollout Evidence
+
+This follow-up records release validation after PR #479 reached Development at
+`26f9dbf7cff7349bc5438230e48c790df3d5a652`. Production promotion remains pending.
+The earlier implementation report is a historical snapshot, not the current
+deployment checklist. TSW-94 tracks telemetry acceptance.
+
+## September 26 Development Baseline
+
+- All affected backend deployments reached `SUCCESS`. App View's failed Railway
+  snapshot build was replaced by `1cca76dd-8621-45b8-9ef3-58f34a92d3f7`; direct
+  App View and Gateway readiness passed. Required PR CI passed.
+- Connection inspection found only `Projection-Pool:projection-pool-appview` and
+  `Projection-Pool:wire-drain`, with no wrapper pool. Coordinator retains its
+  separate authority pool. Ingress minute metrics report maximum 8, idle 1 and
+  no waits in idle samples; idle samples do not establish throughput parity.
+- The Development publication lane has no likes, reposts or follows. It cannot
+  independently validate engagement payload savings or selective aggregation.
+- Legacy AppView intake, Charybdis and the dedicated Wire drain remain deployed.
+  Source/filter equivalence is verified; takeover, throughput and complete
+  replacement coverage still require live acceptance. No service was deleted.
+- Database rollup tracking and the Coordinator selective reader remain off.
+  Compact admission also remains off pending performance validation.
+
+## Telemetry Stage
+
+Development Ops `OPERATIONS_RETENTION_CATCHUP_ENABLED=true` was set on September
+26 at 18:41:56 UTC. Deployment `5992f3e1-b893-423b-a6d2-3746eab8ef30` reached
+`SUCCESS` and started at 18:42:11 UTC. The canary exposed expensive selection of
+the last expired change events, so the flag was restored to `false` at 18:46:32
+UTC. Rollback deployment `41d975d4-49c6-4b72-970f-9f544e8a0e30` reached `SUCCESS`.
+This aborted canary does not count as a soak. Production remains unchanged.
+
+Immediately before activation, `operations_change_events` occupied
+5,409,456,128 relation bytes with about 3.34 million estimated rows; the bounded
+expired-row sample returned 1,001, a lower bound rather than a full count.
+`operations_metric_rollups` occupied 1,578,393,600 bytes and its expired-row sample
+was zero. Existing expiry indexes are valid. Retention periods and protected
+records are unchanged. Deletion may free reusable space without shrinking files.
+
+The original cursor-ordered selector scanned retained history through the primary
+key and filtered expiration. A two-second read-only selector probe timed out.
+Materializing expired cursors through the existing expiry index before applying
+the same cursor ordering completed in 211.763 ms with 55 expired rows. This
+preserves which cursors a batch removes and how its watermark advances. It does
+not claim the complete cleanup function takes 212 ms or bound the expired index
+range to 1,000 reads. Deletions remain bounded at 1,000 per table per call.
+
+The matched pre-stage usage window is September 25 18:42 through September 26
+18:42 UTC. Machine-local raw evidence is
+`/tmp/tsw92-telemetry-baseline-24h-20260926.json`; compare it with the same-length
+post-stage window by service and environment, including Redis and workers.
+Restart both comparison windows when the repaired stage is activated.
+
+## Serving Acceptance
+
+Public Development Wire reads returned 30 stories, but `degraded=true`. The
+shared Production corpus published a new ranked generation during inspection;
+its recovery health still has unfinished archive replay for the September 8
+epochs of `wire-global-v8-prod-external-live-v1` and
+`wire-global-v8-prod-publication-live-tail-v1`. Publication baselines completed.
+Recovery records and source cursors were not changed. Readiness and successful
+public responses do not satisfy recovery or authenticated acceptance.
+
+A bounded follow-up identified the unfinished conditions more precisely:
+
+- The external source is `paused_budget`, with 17,184,737,949 durable replay bytes
+  downloaded. Its staged sequence is 25,324,864,414 against a sealed sequence of
+  25,470,663,514. The checkpoint last changed September 23 at 00:00:05 UTC.
+- The publication source is live and beyond its sealed sequence, but has 27
+  `malformed_event` dead letters, one `unresolved_subject` retry (1,255 attempts),
+  and 134 pending rows. The retry and oldest pending rows date to September 26
+  at 08:01:59 UTC. These records require diagnosis and normal recovery handling;
+  clearing flags or deleting queued records would conceal the problem.
+- Authenticated acceptance is waiting at the test account's Bluesky password
+  screen in Chrome. No authenticated bootstrap or Circle result is claimed.
+
+## Follow-up Fixes and Local Evidence
+
+- Compact admission now avoids re-encoding already minimal normalized records,
+  decodes JSON once per lookup, and reuses per-event subject membership keys.
+  Numeric and malformed subject semantics remain covered by PostgreSQL parity.
+  A 12,000-event public Jetstream capture, with synthetic relevance assignments,
+  admitted exactly 3,397 events in both paths and preserved replay checkpoints
+  and duplicate behavior. Boundary payload plus lookup bytes decreased 58.62%
+  under that fixture's relevance mix; this is not a production savings estimate.
+  Final counterbalanced StageBatch p95 medians were 7.402 ms original and
+  8.003 ms compact (+8.11%). Individual pairs ranged from -12.5% to +15.1%;
+  fresh-only medians increased 11.3%. The complete latency gate remains open.
+  Go race tests against PostgreSQL, vet and build passed.
+- Selective refresh now contains only dirty-hint acknowledgment in a savepoint.
+  A concurrent committed hint revision can produce SQLSTATE `40001` at that
+  step even with `SKIP LOCKED`. Deferring acknowledgment keeps all hints for
+  another refresh while atomically publishing the current exact snapshot.
+  Other failures retain whole-transaction rollback/retry behavior. A controlled
+  concurrent-write test proves publication excludes the later write, preserves
+  its hint, and incorporates it on the next refresh with full-oracle parity.
+- The repaired full-transaction benchmark ran 16 counterbalanced trials at
+  1,000 synthetic transactions per second. Median refresh duration changed from
+  975.7 to 99.9 ms for spread writes and 961.7 to 78.3 ms for popular-key writes.
+  Ingest p95 paired geometric means changed by +0.73% and +3.79%, respectively.
+  Popular-key individual pairs ranged from -6.96% to +14.58%; the small sample
+  does not establish the required 10% latency bound. Ranking and real worker
+  processing remain outside this synthetic benchmark.
+  All 393 Wire tests passed; benchmark tooling ran 172 tests with 15 optional
+  skips and no failures.
+- The telemetry migration retains cursor-ordered deletion and atomic SSE
+  watermarks while selecting expiry-index candidates first. Focused PostgreSQL
+  tests cover original-function parity, protected records, environment
+  isolation, transactional rollback, repeat installation, and sparse/empty
+  retained-history tails. Runtime SQL timeouts and retention remain unchanged.
+  Five focused tests passed. All 81 migrations applied from an empty disposable
+  PostgreSQL database, followed by a successful idempotent repeat.
+- The complete spec suite passed 135 tests with 38 environment-dependent skips.
+  Its process-cleanup subprocess tests require process inspection permissions;
+  the sandbox-only run could not execute `ps`, and the permitted rerun passed.
+
+## Release Gates Still Required
+
+- Counterbalanced compact-admission replay with exact envelope/admission parity,
+  original versus accepted payload bytes, and no more than 10% p95 regression.
+- Full selective-refresh transactions under concurrent signal writes, including
+  acknowledgment, expiry, initial rebuild, maintenance and restart recovery;
+  exact full-oracle parity and at least 80% sparse-read reduction.
+- Authenticated bootstrap, unread state, Circle participants and fresh Wire
+  generations. Gateway `ingestion_completeness=unknown` is not acceptance.
+- Bounded telemetry catch-up progress, protected history and SSE resume behavior,
+  stable query pressure, no new lease failures and no worsening actionable age.
+- Individual fenced legacy-service handoffs, rollback checks and a 24-hour
+  Development soak after the final accepted stage. The telemetry stage's start
+  alone does not start the whole-release soak.
+- Required CI, reviewed promotion through `main`, exact-revision migration and
+  deployment verification, Production acceptance and matched cost comparisons.
