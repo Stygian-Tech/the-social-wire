@@ -5,6 +5,35 @@ This follow-up records release validation after PR #479 reached Development at
 The earlier implementation report is a historical snapshot, not the current
 deployment checklist. TSW-94 tracks telemetry acceptance.
 
+## PR #480 Development Release
+
+All 20 CI jobs, including `CI — Required`, passed for
+`dac1aa837aa241781dfe22cf763a99ca5d1ce5d0` (run `36264453852`). PR #480 merged
+September 26 at 19:31:22 UTC as `43f0f24edd9fe9e7be77d7a88bfe857873b28cd0`.
+Migrator `96f706ac-91b5-4ca6-87be-1dfbf2a43573` succeeded, with migration
+`20260926190000` recorded at 19:32:12.342589 UTC and the final function verified.
+
+The configured migrator service reference did not enforce startup ordering:
+App View started at 19:31:42 UTC and Ingress was ready at 19:32:05 UTC, before
+migration completion. Railway excludes GitHub-push deployments from reference
+ordering. This backward-compatible migration caused no observed startup failure,
+but an explicit required-schema startup barrier is needed before relying on this
+gate. Do not treat the reference variable alone as ordering evidence.
+
+The repaired Development telemetry canary began at 19:34:16 UTC. Ops deployment
+`4b9eca1e-ef99-413d-8464-c6234690f89f` succeeded at the merge revision, with
+`OPERATIONS_RETENTION_CATCHUP_ENABLED=true`. Its first cleanup round at 19:34:33
+deleted 1,963 rows in three calls, taking 1,342 ms and reaching a zero-delete
+result (`backlog_pending=false`). No cleanup query remained active at 19:36:24;
+the expired change-event sample was 91 and the SSE watermark advanced. Relation
+bytes remained unchanged, as expected. Verify the next hourly cycle around
+20:34 UTC before claiming sustained idle/catch-up behavior.
+
+The repaired-stage usage baseline is September 25 19:35 through September 26
+19:35 UTC, saved in `/tmp/tsw92-telemetry-repaired-24h-baseline-20260926.json`.
+This canary does not start the whole-release soak: compact/selective admission,
+authenticated acceptance, recovery resolution and service handoff remain gated.
+
 ## September 26 Development Baseline
 
 - All affected backend deployments reached `SUCCESS`. App View's failed Railway
