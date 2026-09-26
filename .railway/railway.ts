@@ -207,6 +207,10 @@ const indexingBuild = {
   watchPatterns: [
     "/.railway/**",
     "/services/indexing-worker/**",
+    "/services/jetstream-ingest/cmd/schema-ready/**",
+    "/services/jetstream-ingest/internal/schemaready/**",
+    "/services/jetstream-ingest/go.mod",
+    "/services/jetstream-ingest/go.sum",
     "/services/appview-worker/**",
     "/services/wire-worker/**",
     "/packages/swift/ThinAppViewCore/**",

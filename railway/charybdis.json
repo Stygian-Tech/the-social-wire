@@ -9,6 +9,11 @@
       "/packages/swift/ReadStateCore/**",
       "/packages/swift/OperationsCore/**",
       "/packages/swift/SocialWireRedis/**",
+      "/services/jetstream-ingest/cmd/schema-ready/**",
+      "/services/jetstream-ingest/internal/schemaready/**",
+      "/services/jetstream-ingest/go.mod",
+      "/services/jetstream-ingest/go.sum",
+      "/database/migrations/**",
       "/railway/charybdis.json"
     ]
   },

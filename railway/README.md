@@ -32,14 +32,32 @@ change does not mutate Railway or Production.
 
 The Development environment must track the `dev` branch. The Production environment must track `main`. Railway Postgres and Redis use Railway templates and do not need repository config files.
 
-Database Migrator is the sole schema owner. Give it
-`DATABASE_URL=${{Postgres.DATABASE_URL}}`. Each database-consuming application
-service must also define
-`DATABASE_MIGRATOR_SERVICE_ID=${{Database Migrator.RAILWAY_SERVICE_ID}}` so
-Railway's reference-variable deployment ordering waits for a successful
-migration deployment before starting the new application revision. The
-migrator exits after applying pending migrations and uses restart policy
-`NEVER`; it has no public domain or long-running replica.
+Database Migrator is the sole main-database schema owner. Give it
+`DATABASE_URL=${{Postgres.DATABASE_URL}}`. Keep
+`DATABASE_MIGRATOR_SERVICE_ID=${{Database Migrator.RAILWAY_SERVICE_ID}}` on its
+consumers for batched deployment ordering, but reference ordering **does not
+apply to GitHub push deployments**, including monorepos ([Railway documentation](https://docs.railway.com/deployments/deployment-actions#when-ordering-does-not-apply)).
+The migrator exits after applying pending migrations with restart policy `NEVER`.
+
+Main-database consumer images start through `schema-ready`. Before any application
+listener, intake, lease or maintenance task starts, it checks every migration
+version packaged with that image against committed `public.schema_migrations`
+receipts. A missing ledger or receipt waits up to 90 seconds, then fails startup;
+Railway retains the previous healthy deployment when the replacement fails its
+health check. The migrator remains the only schema writer. The gate holds at most
+one read-only connection, with bounded queries and SIGTERM cancellation, and
+closes it before replacing itself with the application. Extra newer receipts are
+allowed so older compatible images can roll back without resetting schema.
+
+Gateway/AppView images can skip PostgreSQL only for local SQLite (`APP_ENV=local`
+or unset outside Railway). Other covered images require `APP_ENV=dev|prod` and
+`DATABASE_URL`; Railway always requires both. Main-database images cover Ingress,
+Projection Pool/Coordinator, Gateway, App View, Operations, and their legacy
+AppView/Wire workers. Corpus Edge uses its separate schema, migrator and reader
+role, so it is excluded, as are HTTP-only Web/Operations Web and the migrators.
+No service may override the image entrypoint with a custom start command that
+omits `schema-ready`. A gate timeout needs migration completion followed by a
+retry of the same revision; never bypass the gate or insert synthetic receipts.
 
 Redis is currently provisioned in Development and Production with private
 networking, co-located with Gateway/App View/indexing workers and Postgres in US West.
