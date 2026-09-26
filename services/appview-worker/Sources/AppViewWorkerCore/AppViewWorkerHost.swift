@@ -108,7 +108,7 @@ public enum AppViewWorkerHost {
       await redisRuntime?.shutdown()
 
     case .postgres(let urlString):
-      let pgConfig = try makePostgresConfig(from: urlString, logger: logger)
+      let pgConfig = try makePostgresConfig(from: urlString, logger: logger, component: serviceName)
       let pgPool = PostgresClient(configuration: pgConfig, backgroundLogger: logger)
       let store = PostgresThinAppViewStore(pool: pgPool, logger: logger)
       let operationsStore = PostgresOperationsStore(

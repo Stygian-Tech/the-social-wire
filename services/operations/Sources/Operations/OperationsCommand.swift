@@ -161,7 +161,9 @@ struct OperationsCommand: AsyncParsableCommand {
       },
       telemetry: telemetry,
       logger: logger)
-    let retention = OperationsRetentionJob(store: store, logger: logger)
+    let retention = OperationsRetentionJob(
+      store: store, logger: logger, telemetry: config.operations.enabled ? telemetry : nil,
+      catchUpEnabled: config.retentionCatchUpEnabled)
     let evidenceChanges = OperationsEvidenceChangeMonitor(store: store, logger: logger)
     try await withThrowingTaskGroup(of: Void.self) { group in
       group.addTask { try await app.run() }

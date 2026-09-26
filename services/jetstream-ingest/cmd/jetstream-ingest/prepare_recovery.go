@@ -52,7 +52,9 @@ func prepareWireRecovery(ctx context.Context, lane config.Lane, logger *slog.Log
 		return errors.New("recovery preparation requires Wire mode")
 	}
 	source := ingest.SourceFromConfig(cfg)
-	database, err := store.Open(ctx, cfg.DatabaseURL, source)
+	database, err := store.OpenWithPool(ctx, cfg.DatabaseURL, source, store.PoolOptions{
+		MaxOpen: cfg.DatabasePoolMaxOpen, MaxIdle: cfg.DatabasePoolMaxIdle, IdleTimeout: cfg.DatabasePoolIdleTimeout,
+	}, string(lane.Name)+"-recovery")
 	if err != nil {
 		return err
 	}

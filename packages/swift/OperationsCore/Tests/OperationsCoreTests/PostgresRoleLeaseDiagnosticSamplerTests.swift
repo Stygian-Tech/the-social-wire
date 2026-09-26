@@ -111,6 +111,22 @@ struct PostgresRoleLeaseDiagnosticSamplerTests {
     #expect(privateMetadata.contains("unknown") && privateMetadata.contains("unavailable"))
     #expect(!privateMetadata.contains("private_sql_parameter"))
     #expect(!privateMetadata.contains("-123"))
+    for name in [
+      "appview.Ingress-Controller", "wire.Ingress-Controller", "wire-live.Ingress-Controller",
+      "wire-external.Ingress-Controller", "wire-publication.Ingress-Controller",
+      "wire-publicationwest.Ingress-Controller", "appview.Jetstream-V2-Ingest",
+      "wire.The-Wire-Global-Ingest-Production", "wire.The-Wire-Live-Ingest-Production",
+    ] {
+      #expect(RoleLeaseDiagnosticSnapshot.applicationCategory(name) == name)
+    }
+    #expect(RoleLeaseDiagnosticSnapshot.applicationCategory("private-lane.Ingress-Controller") == "unknown")
+    #expect(RoleLeaseDiagnosticSnapshot.applicationCategory("wire.private-service") == "unknown")
+    #expect(RoleLeaseDiagnosticSnapshot.applicationCategory("wire.Ingress-Controller.private") == "unknown")
+    #expect(RoleLeaseDiagnosticSnapshot.applicationCategory("Coordinator:authority") == "Coordinator:authority")
+    #expect(RoleLeaseDiagnosticSnapshot.applicationCategory("Projection-Pool:wire-drain") == "Projection-Pool:wire-drain")
+    #expect(RoleLeaseDiagnosticSnapshot.applicationCategory("private-name:authority") == "unknown")
+    #expect(RoleLeaseDiagnosticSnapshot.applicationCategory("Coordinator:private-component") == "unknown")
+    #expect(RoleLeaseDiagnosticSnapshot.applicationCategory("Coordinator:authority:private") == "unknown")
     #expect(RoleLeaseDiagnosticSnapshot.applicationCategory(nil) == "unknown")
     #expect(RoleLeaseDiagnosticSnapshot.applicationCategory("Coordinator\n") == "unknown")
 

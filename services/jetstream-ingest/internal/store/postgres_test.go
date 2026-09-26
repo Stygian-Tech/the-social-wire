@@ -226,6 +226,7 @@ func TestStageBatchFiltersUnresolvedPassiveWireEngagementBeforeInboxAdmission(t 
 	}
 	defer db.Close()
 	postgres := New(db, wireTestSource())
+	postgres.ConfigureWireCompactIngest(true)
 	postgres.ConfigureWireAdmission(5_000_000, 95<<30)
 	now := time.Unix(1_700_000_000, 0).UTC()
 	collection := "app.bsky.feed.like"
@@ -241,8 +242,9 @@ func TestStageBatchFiltersUnresolvedPassiveWireEngagementBeforeInboxAdmission(t 
 	mock.ExpectQuery("SELECT TRUE").WillReturnRows(sqlmock.NewRows([]string{"valid"}).AddRow(true))
 	mock.ExpectQuery("SELECT retained_rows").
 		WillReturnRows(sqlmock.NewRows([]string{"retained_rows", "database_bytes"}).AddRow(int64(10), int64(20<<30)))
-	mock.ExpectExec("(?s)INSERT INTO wire_ingestion_inbox.*app.bsky.feed.like.*wire_item_aliases").
-		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectQuery("SELECT requested.ordinality").
+		WithArgs(`["at://did:plc:author/app.bsky.feed.post/post"]`).
+		WillReturnRows(sqlmock.NewRows([]string{"ordinality"}))
 	mock.ExpectExec("INSERT INTO wire_ingestion_recovery_anchors").
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec("INSERT INTO appview_jetstream_checkpoints").WillReturnResult(sqlmock.NewResult(0, 1))

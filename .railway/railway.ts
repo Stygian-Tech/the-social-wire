@@ -4,6 +4,14 @@ export const partial = "indexing-consolidation";
 
 const repository = "Stygian-Tech/the-social-wire";
 
+function ingressPoolEnvironment(...prefixes: string[]) {
+  return Object.fromEntries(prefixes.flatMap((prefix) => [
+    [`${prefix}DATABASE_POOL_MAX_OPEN`, "8"],
+    [`${prefix}DATABASE_POOL_MAX_IDLE`, "1"],
+    [`${prefix}DATABASE_POOL_IDLE_TIMEOUT`, "60s"],
+  ]));
+}
+
 const developmentProfile = {
   appEnvironment: "dev",
   branch: "dev",
@@ -12,6 +20,8 @@ const developmentProfile = {
   projectionReplicas: 2,
   appViewGeneration: "jetstream-v2-us-west-read-state-v1",
   ingress: {
+    ...ingressPoolEnvironment("JETSTREAM_APPVIEW_", "JETSTREAM_WIRE_PUBLICATIONWEST_"),
+    JETSTREAM_WIRE_PUBLICATIONWEST_COMPACT_INGEST_ENABLED: "false",
     JETSTREAM_APPVIEW_BOOTSTRAP_AFTER_SEQ: "25681193100",
     JETSTREAM_APPVIEW_ENABLED: "true",
     JETSTREAM_APPVIEW_SOURCE_GENERATION: "jetstream-v2-us-west-read-state-v1",
@@ -50,8 +60,12 @@ const developmentProfile = {
     WIRE_FEED_MODE: "shadow",
     WIRE_INBOX_CONCURRENCY: "24",
     WIRE_POSTGRES_MAX_CONNECTIONS: "12",
+    WIRE_INBOX_CLEANUP_ENABLED: "true",
+    WIRE_DEFERRED_RECOMMENDATIONS_ENABLED: "true",
   },
   coordinator: {
+    // Enable only after exact parity and representative performance gates pass.
+    WIRE_SIGNAL_ROLLUP_INCREMENTAL_ENABLED: "false",
     WIRE_RANK_INTERVAL_SECONDS: "600",
     WIRE_GENERATION_RETENTION_SECONDS: "7200",
     POSTGRES_MAX_CONNECTIONS: "16",
@@ -59,12 +73,16 @@ const developmentProfile = {
     WIRE_FEED_MODE: "shadow",
     WIRE_INBOX_CONCURRENCY: "48",
     WIRE_POSTGRES_MAX_CONNECTIONS: "24",
+    WIRE_EXTERNAL_SIGNAL_MODE: "off",
+    WIRE_GLOBAL_CANDIDATE_PROJECTION_ENABLED: "true",
+    WIRE_METADATA_SCHEDULING_MAINTENANCE_ENABLED: "false",
+    WIRE_METADATA_SCHEDULING_READ_ENABLED: "false",
   },
   wireCleanupBatchSize: "20000",
   wireCleanupIdleMilliseconds: "100",
 } as const;
 
-const productionWireSourceGenerations = [
+const productionWireLiveGenerations = [
   "wire-global-v1-prod-live-v1",
   "wire-global-v3-prod-live-v1",
   "wire-global-v4-prod-live-tail-v1",
@@ -73,6 +91,19 @@ const productionWireSourceGenerations = [
   "wire-global-v7-prod-publication-live-tail-v1",
   "wire-global-v8-prod-external-live-v1",
   "wire-global-v8-prod-publication-live-tail-v1",
+];
+const productionWireWestGeneration = "wire-global-v9-prod-publication-west-20260919";
+const productionWireSourceGenerations = [
+  ...productionWireLiveGenerations, productionWireWestGeneration,
+].join(",");
+
+// Retention/recovery covers completed snapshot generations as well as live drains.
+const productionWireCoordinatorGenerations = [
+  ...productionWireLiveGenerations,
+  "wire-global-v8-prod-external-8d-snapshot-v1",
+  "wire-global-v8-prod-external-8d-snapshot-a-v1",
+  "wire-global-v8-prod-external-8d-snapshot-b-v1",
+  productionWireWestGeneration,
 ].join(",");
 
 const productionProfile = {
@@ -83,10 +114,14 @@ const productionProfile = {
   projectionReplicas: 4,
   appViewGeneration: "jetstream-v2-us-west-v2",
   ingress: {
+    ...ingressPoolEnvironment("JETSTREAM_APPVIEW_", "JETSTREAM_WIRE_EXTERNAL_", "JETSTREAM_WIRE_PUBLICATION_"),
+    JETSTREAM_WIRE_EXTERNAL_COMPACT_INGEST_ENABLED: "false",
+    JETSTREAM_WIRE_PUBLICATION_COMPACT_INGEST_ENABLED: "false",
     JETSTREAM_APPVIEW_BOOTSTRAP_AFTER_SEQ: "24794992678",
     JETSTREAM_APPVIEW_ENABLED: "true",
     JETSTREAM_APPVIEW_SOURCE_GENERATION: "jetstream-v2-us-west-v2",
-    JETSTREAM_WIRE_LANES: "external,publication,publicationwest",
+    // The west replay canary expired. Retain its configuration without restarting it.
+    JETSTREAM_WIRE_LANES: "external,publication",
     JETSTREAM_WIRE_EXTERNAL_ADMISSION_BURST_EVENTS: "1",
     JETSTREAM_WIRE_EXTERNAL_ADMISSION_RATE_PER_SECOND: "3",
     JETSTREAM_WIRE_EXTERNAL_BOOTSTRAP_AFTER_SEQ: "25324903480",
@@ -127,6 +162,7 @@ const productionProfile = {
       "wire-global-v9-prod-publication-west-20260919",
     JETSTREAM_WIRE_PUBLICATIONWEST_MAX_DOWNLOAD_ATTEMPTS: "3",
     JETSTREAM_WIRE_PUBLICATIONWEST_REPLAY_DAILY_BYTES: "5368709120",
+    JETSTREAM_WIRE_PUBLICATIONWEST_REPLAY_CANARY_EXPIRES_AT: "2026-09-23T00:00:00Z",
     JETSTREAM_WIRE_PUBLICATIONWEST_REPLAY_INCIDENT_BYTES: "5368709120",
     JETSTREAM_WIRE_PUBLICATIONWEST_REPLAY_SNAPSHOT_ONLY: "false",
     JETSTREAM_WIRE_PUBLICATIONWEST_SEGMENT_STRIPES: "1",
@@ -140,8 +176,12 @@ const productionProfile = {
     WIRE_INBOX_CONCURRENCY: "52",
     WIRE_INBOX_SOURCE_GENERATIONS: productionWireSourceGenerations,
     WIRE_POSTGRES_MAX_CONNECTIONS: "12",
+    WIRE_INBOX_CLEANUP_ENABLED: "false",
+    WIRE_DEFERRED_RECOMMENDATIONS_ENABLED: "true",
+    THIN_APPVIEW_MAX_ENROLL_RECORDS_PER_AUTHOR: "3000",
   },
   coordinator: {
+    WIRE_SIGNAL_ROLLUP_INCREMENTAL_ENABLED: "false",
     WIRE_RANK_INTERVAL_SECONDS: "600",
     WIRE_GENERATION_RETENTION_SECONDS: "7200",
     POSTGRES_MAX_CONNECTIONS: "16",
@@ -149,10 +189,13 @@ const productionProfile = {
     WIRE_EXTERNAL_SIGNAL_MODE: "off",
     WIRE_FEED_MODE: "visible",
     WIRE_INBOX_CONCURRENCY: "32",
-    WIRE_INBOX_SOURCE_GENERATIONS: productionWireSourceGenerations,
+    WIRE_INBOX_SOURCE_GENERATIONS: productionWireCoordinatorGenerations,
     WIRE_METADATA_BATCH_SIZE: "128",
     WIRE_METADATA_CONCURRENCY: "16",
     WIRE_POSTGRES_MAX_CONNECTIONS: "12",
+    WIRE_GLOBAL_CANDIDATE_PROJECTION_ENABLED: "true",
+    WIRE_METADATA_SCHEDULING_MAINTENANCE_ENABLED: "false",
+    WIRE_METADATA_SCHEDULING_READ_ENABLED: "false",
   },
   wireCleanupBatchSize: "5000",
   wireCleanupIdleMilliseconds: "1000",
@@ -210,6 +253,7 @@ export default defineRailway((context) => {
     THIN_APPVIEW_REPOSITORY_RESTORE_TIMEOUT_SECONDS: "120",
     WIRE_ACTOR_HMAC_SECRET: preserve(),
     WIRE_PUBLICATION_CACHE_ENABLED: "true",
+    WIRE_DEPENDENCY_HYDRATION_ENABLED: "true",
     WIRE_INBOX_BATCH_SIZE: "5000",
     WIRE_INBOX_CLEANUP_BATCH_SIZE: profile.wireCleanupBatchSize,
     WIRE_INBOX_CLEANUP_ENABLED: "true",
@@ -248,7 +292,6 @@ export default defineRailway((context) => {
       ...appViewWorkerEnvironment,
       ...profile.projection,
       INDEXING_WORKER_ROLE: "projection",
-      WIRE_INBOX_CLEANUP_ENABLED: "false",
     },
   });
 

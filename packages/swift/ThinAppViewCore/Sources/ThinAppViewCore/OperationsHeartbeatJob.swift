@@ -131,12 +131,30 @@ public struct OperationsHeartbeatJob: Sendable {
       heartbeatAt: now()
     )
     try await store.upsertServiceState(state)
-    await enqueueHealthSamples(state)
+    if service == "coordinator-appview" {
+      // The store revalidates role ownership in its bounded service-state query.
+      // Publish historical active-owner samples only after the fenced write and
+      // this validation; a fresh standby/replaced-owner heartbeat is insufficient.
+      guard let published = try await store.listServiceStates().first(where: {
+        $0.service == service && $0.instanceId == instanceId
+      }), published.dependencyState["coordinator_authority"] == "active",
+        published.dependencyState["coordinator_role"] == "indexing.appview-coordinator"
+      else { return }
+      await enqueueHealthSamples(published)
+    } else {
+      await enqueueHealthSamples(state)
+    }
   }
 
   private func enqueueHealthSamples(_ state: OperationsServiceState) async {
     guard let telemetry else { return }
     let serviceDimension = String(state.service.prefix(64))
+    var ownershipDimensions: [String: String] = [:]
+    if state.service == "coordinator-appview",
+      state.dependencyState["coordinator_authority"] == "active",
+      state.dependencyState["coordinator_role"] == "indexing.appview-coordinator" {
+      ownershipDimensions = ["coordinator_authority": "active", "coordinator_role": "indexing.appview-coordinator"]
+    }
     for (dimension, healthState) in [
       ("liveness", state.liveness),
       ("readiness", state.readiness),
@@ -150,7 +168,7 @@ public struct OperationsHeartbeatJob: Sendable {
           "service": serviceDimension,
           "dimension": dimension,
           "state": healthState.rawValue,
-        ]
+        ].merging(ownershipDimensions) { _, value in value }
       )))
     }
   }

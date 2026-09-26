@@ -8,7 +8,51 @@ struct PostgresWireSignalRollupStore: Sendable {
   var incrementalEnabled = false
 
   func refresh(asOf: Date) async throws {
+    var attempt = 0
+    while true {
+      try Task.checkCancellation()
+      do {
+        try await refreshSnapshot(asOf: asOf)
+        return
+      } catch {
+        attempt += 1
+        guard attempt < 3, Self.canRetryRefresh(error) else { throw error }
+        logger.warning("Retrying Wire signal rollup snapshot", metadata: [
+          "attempt": .stringConvertible(attempt), "reason": "serialization_conflict",
+        ])
+        try await Task.sleep(for: .milliseconds(50 * attempt))
+      }
+    }
+  }
+
+  static func canRetryRefresh(_ error: any Error) -> Bool {
+    // Only a known successful rollback permits replay. A lost COMMIT response
+    // or interrupted transport cannot establish whether publication occurred.
+    guard let transaction = error as? PostgresTransactionError,
+      transaction.beginError == nil, transaction.commitError == nil,
+      transaction.rollbackError == nil, let postgres = transaction.closureError as? PSQLError
+    else { return false }
+    return postgres.serverInfo?[.sqlState] == "40001"
+  }
+
+  func configureRefreshSnapshot(connection: PostgresConnection) async throws {
+    if incrementalEnabled {
+      // Every bounded aggregate must see the same source snapshot; otherwise
+      // an event moved between keys could be counted in two different batches.
+      try await connection.query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ", logger: logger)
+      // LOCK is a utility command, so acquire this before the first snapshot-
+      // bearing SELECT. Unlike ACCESS SHARE, it excludes ATTACH and concurrent
+      // DETACH while allowing ordinary ROW EXCLUSIVE ingestion. NOWAIT leaves
+      // partition maintenance in control and preserves existing timeout budgets.
+      // The tracking cutover function takes these locks in the same order.
+      try await connection.query(
+        "LOCK TABLE ONLY wire_signal_events IN SHARE UPDATE EXCLUSIVE MODE NOWAIT", logger: logger)
+    }
+  }
+
+  private func refreshSnapshot(asOf: Date) async throws {
     try await pool.withTransaction(logger: logger) { connection in
+      try await configureRefreshSnapshot(connection: connection)
       try await connection.query(
         "SELECT pg_advisory_xact_lock(hashtext('wire_signal_rollups_refresh')::bigint)",
         logger: logger
@@ -16,8 +60,6 @@ struct PostgresWireSignalRollupStore: Sendable {
       let incremental = incrementalEnabled
         ? try await prepareIncrementalRefresh(connection: connection, asOf: asOf) : false
       // SQL fragments are fixed literals, never caller input.
-      let keyFilter = incremental
-        ? "AND canonical_key IN (SELECT canonical_key FROM wire_signal_rollup_keys)" : ""
       let deleteFilter = incremental
         ? "AND current.canonical_key IN (SELECT canonical_key FROM wire_signal_rollup_keys)" : ""
       // Build one exact rolling-window snapshot without holding an exclusive
@@ -29,138 +71,18 @@ struct PostgresWireSignalRollupStore: Sendable {
         """,
         logger: logger
       )
-      try await connection.query(
-        """
-        INSERT INTO wire_signal_rollups_next
-          (canonical_key, distinct_actors_1h, distinct_actors_24h, distinct_actors_7d,
-           signals_1h, signals_24h, signals_7d, communities_24h,
-           primary_community_key_hash, recommendations_24h,
-           positive_feedback_24h, negative_feedback_24h,
-           shares_1h, shares_24h, distinct_likers_24h, likes_1h, likes_24h,
-           distinct_reposters_24h, reposts_1h, reposts_24h,
-           baseline_last_signal_at,
-           baseline_distinct_actors_1h, baseline_distinct_actors_24h,
-           baseline_distinct_actors_7d, baseline_signals_1h, baseline_signals_24h,
-           baseline_signals_7d, baseline_recommendations_24h,
-           baseline_shares_1h, baseline_shares_24h,
-           baseline_distinct_likers_24h, baseline_likes_1h, baseline_likes_24h,
-           updated_at, next_due_at)
-        \(unescaped: incremental ? Self.incrementalSignalPrefix : "")
-        SELECT canonical_key,
-          COUNT(DISTINCT actor_key_hash) FILTER (WHERE occurred_at >= \(asOf.addingTimeInterval(-3_600))),
-          COUNT(DISTINCT actor_key_hash) FILTER (WHERE occurred_at >= \(asOf.addingTimeInterval(-86_400))),
-          COUNT(DISTINCT actor_key_hash),
-          COUNT(*) FILTER (WHERE occurred_at >= \(asOf.addingTimeInterval(-3_600))),
-          COUNT(*) FILTER (WHERE occurred_at >= \(asOf.addingTimeInterval(-86_400))),
-          COUNT(*),
-          COUNT(DISTINCT community_key_hash) FILTER (
-            WHERE occurred_at >= \(asOf.addingTimeInterval(-86_400)) AND community_key_hash IS NOT NULL),
-          MODE() WITHIN GROUP (ORDER BY community_key_hash) FILTER (
-            WHERE occurred_at >= \(asOf.addingTimeInterval(-86_400)) AND community_key_hash IS NOT NULL),
-          COUNT(DISTINCT actor_key_hash) FILTER (WHERE signal_kind = 'recommendation'
-            AND occurred_at >= \(asOf.addingTimeInterval(-86_400))),
-          CASE WHEN \(incremental) THEN 0 ELSE COALESCE((SELECT COUNT(*) FROM wire_article_feedback feedback
-            WHERE feedback.canonical_key = wire_signal_events.canonical_key
-              AND feedback.feedback_value = 'good'
-              AND feedback.occurred_at >= \(asOf.addingTimeInterval(-86_400))
-              AND feedback.expires_at > \(asOf)), 0) END,
-          CASE WHEN \(incremental) THEN 0 ELSE COALESCE((SELECT COUNT(*) FROM wire_article_feedback feedback
-            WHERE feedback.canonical_key = wire_signal_events.canonical_key
-              AND feedback.feedback_value = 'not_good'
-              AND feedback.occurred_at >= \(asOf.addingTimeInterval(-86_400))
-              AND feedback.expires_at > \(asOf)), 0) END,
-          COUNT(DISTINCT actor_key_hash) FILTER (
-            WHERE signal_kind IN ('share','quote','recommendation','publication')
-            AND occurred_at >= \(asOf.addingTimeInterval(-3_600))),
-          COUNT(DISTINCT actor_key_hash) FILTER (
-            WHERE signal_kind IN ('share','quote','recommendation','publication')
-            AND occurred_at >= \(asOf.addingTimeInterval(-86_400))),
-          COUNT(DISTINCT actor_key_hash) FILTER (WHERE signal_kind = 'like'
-            AND occurred_at >= \(asOf.addingTimeInterval(-86_400))),
-          COUNT(DISTINCT actor_key_hash) FILTER (WHERE signal_kind = 'like'
-            AND occurred_at >= \(asOf.addingTimeInterval(-3_600))),
-          COUNT(DISTINCT actor_key_hash) FILTER (WHERE signal_kind = 'like'
-            AND occurred_at >= \(asOf.addingTimeInterval(-86_400))),
-          COUNT(DISTINCT actor_key_hash) FILTER (WHERE signal_kind = 'repost'
-            AND occurred_at >= \(asOf.addingTimeInterval(-86_400))),
-          COUNT(DISTINCT actor_key_hash) FILTER (WHERE signal_kind = 'repost'
-            AND occurred_at >= \(asOf.addingTimeInterval(-3_600))),
-          COUNT(DISTINCT actor_key_hash) FILTER (WHERE signal_kind = 'repost'
-            AND occurred_at >= \(asOf.addingTimeInterval(-86_400))),
-          MAX(occurred_at) FILTER (
-            WHERE source_collection NOT LIKE 'at.margin.%'
-              AND source_collection NOT LIKE 'network.cosmik.%'),
-          COUNT(DISTINCT actor_key_hash) FILTER (
-            WHERE occurred_at >= \(asOf.addingTimeInterval(-3_600))
-              AND source_collection NOT LIKE 'at.margin.%'
-              AND source_collection NOT LIKE 'network.cosmik.%'),
-          COUNT(DISTINCT actor_key_hash) FILTER (
-            WHERE occurred_at >= \(asOf.addingTimeInterval(-86_400))
-              AND source_collection NOT LIKE 'at.margin.%'
-              AND source_collection NOT LIKE 'network.cosmik.%'),
-          COUNT(DISTINCT actor_key_hash) FILTER (
-            WHERE source_collection NOT LIKE 'at.margin.%'
-              AND source_collection NOT LIKE 'network.cosmik.%'),
-          COUNT(*) FILTER (
-            WHERE occurred_at >= \(asOf.addingTimeInterval(-3_600))
-              AND source_collection NOT LIKE 'at.margin.%'
-              AND source_collection NOT LIKE 'network.cosmik.%'),
-          COUNT(*) FILTER (
-            WHERE occurred_at >= \(asOf.addingTimeInterval(-86_400))
-              AND source_collection NOT LIKE 'at.margin.%'
-              AND source_collection NOT LIKE 'network.cosmik.%'),
-          COUNT(*) FILTER (
-            WHERE source_collection NOT LIKE 'at.margin.%'
-              AND source_collection NOT LIKE 'network.cosmik.%'),
-          COUNT(DISTINCT actor_key_hash) FILTER (
-            WHERE signal_kind = 'recommendation'
-              AND occurred_at >= \(asOf.addingTimeInterval(-86_400))
-              AND source_collection NOT LIKE 'at.margin.%'
-              AND source_collection NOT LIKE 'network.cosmik.%'),
-          COUNT(DISTINCT actor_key_hash) FILTER (
-            WHERE signal_kind IN ('share','quote','recommendation','publication')
-              AND occurred_at >= \(asOf.addingTimeInterval(-3_600))
-              AND source_collection NOT LIKE 'at.margin.%'
-              AND source_collection NOT LIKE 'network.cosmik.%'),
-          COUNT(DISTINCT actor_key_hash) FILTER (
-            WHERE signal_kind IN ('share','quote','recommendation','publication')
-              AND occurred_at >= \(asOf.addingTimeInterval(-86_400))
-              AND source_collection NOT LIKE 'at.margin.%'
-              AND source_collection NOT LIKE 'network.cosmik.%'),
-          COUNT(DISTINCT actor_key_hash) FILTER (
-            WHERE signal_kind = 'like'
-              AND occurred_at >= \(asOf.addingTimeInterval(-86_400))
-              AND source_collection NOT LIKE 'at.margin.%'
-              AND source_collection NOT LIKE 'network.cosmik.%'),
-          COUNT(DISTINCT actor_key_hash) FILTER (
-            WHERE signal_kind = 'like'
-              AND occurred_at >= \(asOf.addingTimeInterval(-3_600))
-              AND source_collection NOT LIKE 'at.margin.%'
-              AND source_collection NOT LIKE 'network.cosmik.%'),
-          COUNT(DISTINCT actor_key_hash) FILTER (
-            WHERE signal_kind = 'like'
-              AND occurred_at >= \(asOf.addingTimeInterval(-86_400))
-              AND source_collection NOT LIKE 'at.margin.%'
-              AND source_collection NOT LIKE 'network.cosmik.%'),
-          \(asOf),
-          -- Inclusive event windows change one PostgreSQL microsecond after
-          -- their boundary; expiry is exclusive and changes at expires_at.
-          CASE WHEN \(incremental) THEN LEAST(
-            MIN(expires_at),
-            MIN(occurred_at) FILTER (WHERE occurred_at >= \(asOf.addingTimeInterval(-3_600)))
-              + interval '1 hour 1 microsecond',
-            MIN(occurred_at) FILTER (WHERE occurred_at >= \(asOf.addingTimeInterval(-86_400)))
-              + interval '24 hours 1 microsecond',
-            MIN(occurred_at) + interval '168 hours 1 microsecond'
-          ) ELSE NULL END
-        FROM wire_signal_events
-        WHERE occurred_at >= \(asOf.addingTimeInterval(-7 * 86_400)) AND expires_at > \(asOf)
-        \(unescaped: keyFilter)
-        GROUP BY canonical_key
-        \(unescaped: incremental ? Self.incrementalFeedbackSuffix : "")
-        """,
-        logger: logger
-      )
+      if incremental {
+        var afterKey: String?
+        while let lastKey = try await selectNextIncrementalBatch(
+          connection: connection, afterKey: afterKey
+        ) {
+          try Task.checkCancellation()
+          try await stageAggregates(connection: connection, asOf: asOf, incremental: true)
+          afterKey = lastKey
+        }
+      } else {
+        try await stageAggregates(connection: connection, asOf: asOf, incremental: false)
+      }
       try await connection.query(
         "ALTER TABLE wire_signal_rollups_next ADD PRIMARY KEY (canonical_key)",
         logger: logger
@@ -389,5 +311,146 @@ struct PostgresWireSignalRollupStore: Sendable {
       // All changes commit together. A concurrent parent deletion or any other
       // failure rolls back the refresh, preserving the prior complete snapshot.
     }
+  }
+
+  func stageAggregates(
+    connection: PostgresConnection, asOf: Date, incremental: Bool
+  ) async throws {
+    // Each batch bounds aggregate/sort working memory while every staged row
+    // retains the refresh timestamp and publishes in the same transaction.
+    let keyFilter = incremental
+      ? "AND canonical_key IN (SELECT canonical_key FROM wire_signal_rollup_batch)" : ""
+    try await connection.query(
+      """
+      INSERT INTO wire_signal_rollups_next
+        (canonical_key, distinct_actors_1h, distinct_actors_24h, distinct_actors_7d,
+         signals_1h, signals_24h, signals_7d, communities_24h,
+         primary_community_key_hash, recommendations_24h,
+         positive_feedback_24h, negative_feedback_24h,
+         shares_1h, shares_24h, distinct_likers_24h, likes_1h, likes_24h,
+         distinct_reposters_24h, reposts_1h, reposts_24h,
+         baseline_last_signal_at,
+         baseline_distinct_actors_1h, baseline_distinct_actors_24h,
+         baseline_distinct_actors_7d, baseline_signals_1h, baseline_signals_24h,
+         baseline_signals_7d, baseline_recommendations_24h,
+         baseline_shares_1h, baseline_shares_24h,
+         baseline_distinct_likers_24h, baseline_likes_1h, baseline_likes_24h,
+         updated_at, next_due_at)
+      \(unescaped: incremental ? Self.incrementalSignalPrefix : "")
+      SELECT canonical_key,
+        COUNT(DISTINCT actor_key_hash) FILTER (WHERE occurred_at >= \(asOf.addingTimeInterval(-3_600))),
+        COUNT(DISTINCT actor_key_hash) FILTER (WHERE occurred_at >= \(asOf.addingTimeInterval(-86_400))),
+        COUNT(DISTINCT actor_key_hash),
+        COUNT(*) FILTER (WHERE occurred_at >= \(asOf.addingTimeInterval(-3_600))),
+        COUNT(*) FILTER (WHERE occurred_at >= \(asOf.addingTimeInterval(-86_400))),
+        COUNT(*),
+        COUNT(DISTINCT community_key_hash) FILTER (
+          WHERE occurred_at >= \(asOf.addingTimeInterval(-86_400)) AND community_key_hash IS NOT NULL),
+        MODE() WITHIN GROUP (ORDER BY community_key_hash) FILTER (
+          WHERE occurred_at >= \(asOf.addingTimeInterval(-86_400)) AND community_key_hash IS NOT NULL),
+        COUNT(DISTINCT actor_key_hash) FILTER (WHERE signal_kind = 'recommendation'
+          AND occurred_at >= \(asOf.addingTimeInterval(-86_400))),
+        CASE WHEN \(incremental) THEN 0 ELSE COALESCE((SELECT COUNT(*) FROM wire_article_feedback feedback
+          WHERE feedback.canonical_key = wire_signal_events.canonical_key
+            AND feedback.feedback_value = 'good'
+            AND feedback.occurred_at >= \(asOf.addingTimeInterval(-86_400))
+            AND feedback.expires_at > \(asOf)), 0) END,
+        CASE WHEN \(incremental) THEN 0 ELSE COALESCE((SELECT COUNT(*) FROM wire_article_feedback feedback
+          WHERE feedback.canonical_key = wire_signal_events.canonical_key
+            AND feedback.feedback_value = 'not_good'
+            AND feedback.occurred_at >= \(asOf.addingTimeInterval(-86_400))
+            AND feedback.expires_at > \(asOf)), 0) END,
+        COUNT(DISTINCT actor_key_hash) FILTER (
+          WHERE signal_kind IN ('share','quote','recommendation','publication')
+          AND occurred_at >= \(asOf.addingTimeInterval(-3_600))),
+        COUNT(DISTINCT actor_key_hash) FILTER (
+          WHERE signal_kind IN ('share','quote','recommendation','publication')
+          AND occurred_at >= \(asOf.addingTimeInterval(-86_400))),
+        COUNT(DISTINCT actor_key_hash) FILTER (WHERE signal_kind = 'like'
+          AND occurred_at >= \(asOf.addingTimeInterval(-86_400))),
+        COUNT(DISTINCT actor_key_hash) FILTER (WHERE signal_kind = 'like'
+          AND occurred_at >= \(asOf.addingTimeInterval(-3_600))),
+        COUNT(DISTINCT actor_key_hash) FILTER (WHERE signal_kind = 'like'
+          AND occurred_at >= \(asOf.addingTimeInterval(-86_400))),
+        COUNT(DISTINCT actor_key_hash) FILTER (WHERE signal_kind = 'repost'
+          AND occurred_at >= \(asOf.addingTimeInterval(-86_400))),
+        COUNT(DISTINCT actor_key_hash) FILTER (WHERE signal_kind = 'repost'
+          AND occurred_at >= \(asOf.addingTimeInterval(-3_600))),
+        COUNT(DISTINCT actor_key_hash) FILTER (WHERE signal_kind = 'repost'
+          AND occurred_at >= \(asOf.addingTimeInterval(-86_400))),
+        MAX(occurred_at) FILTER (
+          WHERE source_collection NOT LIKE 'at.margin.%'
+            AND source_collection NOT LIKE 'network.cosmik.%'),
+        COUNT(DISTINCT actor_key_hash) FILTER (
+          WHERE occurred_at >= \(asOf.addingTimeInterval(-3_600))
+            AND source_collection NOT LIKE 'at.margin.%'
+            AND source_collection NOT LIKE 'network.cosmik.%'),
+        COUNT(DISTINCT actor_key_hash) FILTER (
+          WHERE occurred_at >= \(asOf.addingTimeInterval(-86_400))
+            AND source_collection NOT LIKE 'at.margin.%'
+            AND source_collection NOT LIKE 'network.cosmik.%'),
+        COUNT(DISTINCT actor_key_hash) FILTER (
+          WHERE source_collection NOT LIKE 'at.margin.%'
+            AND source_collection NOT LIKE 'network.cosmik.%'),
+        COUNT(*) FILTER (
+          WHERE occurred_at >= \(asOf.addingTimeInterval(-3_600))
+            AND source_collection NOT LIKE 'at.margin.%'
+            AND source_collection NOT LIKE 'network.cosmik.%'),
+        COUNT(*) FILTER (
+          WHERE occurred_at >= \(asOf.addingTimeInterval(-86_400))
+            AND source_collection NOT LIKE 'at.margin.%'
+            AND source_collection NOT LIKE 'network.cosmik.%'),
+        COUNT(*) FILTER (
+          WHERE source_collection NOT LIKE 'at.margin.%'
+            AND source_collection NOT LIKE 'network.cosmik.%'),
+        COUNT(DISTINCT actor_key_hash) FILTER (
+          WHERE signal_kind = 'recommendation'
+            AND occurred_at >= \(asOf.addingTimeInterval(-86_400))
+            AND source_collection NOT LIKE 'at.margin.%'
+            AND source_collection NOT LIKE 'network.cosmik.%'),
+        COUNT(DISTINCT actor_key_hash) FILTER (
+          WHERE signal_kind IN ('share','quote','recommendation','publication')
+            AND occurred_at >= \(asOf.addingTimeInterval(-3_600))
+            AND source_collection NOT LIKE 'at.margin.%'
+            AND source_collection NOT LIKE 'network.cosmik.%'),
+        COUNT(DISTINCT actor_key_hash) FILTER (
+          WHERE signal_kind IN ('share','quote','recommendation','publication')
+            AND occurred_at >= \(asOf.addingTimeInterval(-86_400))
+            AND source_collection NOT LIKE 'at.margin.%'
+            AND source_collection NOT LIKE 'network.cosmik.%'),
+        COUNT(DISTINCT actor_key_hash) FILTER (
+          WHERE signal_kind = 'like'
+            AND occurred_at >= \(asOf.addingTimeInterval(-86_400))
+            AND source_collection NOT LIKE 'at.margin.%'
+            AND source_collection NOT LIKE 'network.cosmik.%'),
+        COUNT(DISTINCT actor_key_hash) FILTER (
+          WHERE signal_kind = 'like'
+            AND occurred_at >= \(asOf.addingTimeInterval(-3_600))
+            AND source_collection NOT LIKE 'at.margin.%'
+            AND source_collection NOT LIKE 'network.cosmik.%'),
+        COUNT(DISTINCT actor_key_hash) FILTER (
+          WHERE signal_kind = 'like'
+            AND occurred_at >= \(asOf.addingTimeInterval(-86_400))
+            AND source_collection NOT LIKE 'at.margin.%'
+            AND source_collection NOT LIKE 'network.cosmik.%'),
+        \(asOf),
+        -- Inclusive event windows change one PostgreSQL microsecond after
+        -- their boundary; expiry is exclusive and changes at expires_at.
+        CASE WHEN \(incremental) THEN LEAST(
+          MIN(expires_at),
+          MIN(occurred_at) FILTER (WHERE occurred_at >= \(asOf.addingTimeInterval(-3_600)))
+            + interval '1 hour 1 microsecond',
+          MIN(occurred_at) FILTER (WHERE occurred_at >= \(asOf.addingTimeInterval(-86_400)))
+            + interval '24 hours 1 microsecond',
+          MIN(occurred_at) + interval '168 hours 1 microsecond'
+        ) ELSE NULL END
+      FROM wire_signal_events
+      WHERE occurred_at >= \(asOf.addingTimeInterval(-7 * 86_400)) AND expires_at > \(asOf)
+      \(unescaped: keyFilter)
+      GROUP BY canonical_key
+      \(unescaped: incremental ? Self.incrementalFeedbackSuffix : "")
+      """,
+      logger: logger
+    )
   }
 }

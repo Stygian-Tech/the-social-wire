@@ -54,4 +54,16 @@ struct PostgresWireConfigTests {
       from: "postgresql://localhost/wire", environment: [:], logger: Logger(label: ""))
     #expect(config.options.additionalStartupParameters.first?.1 == "wire-worker")
   }
+  @Test("component suffix survives long service names and leaves pool sizing unchanged")
+  func componentIdentity() throws {
+    let config = try PostgresWireConfig.make(
+      from: "postgresql://localhost/wire", maximumConnections: 8,
+      environment: ["RAILWAY_SERVICE_NAME": String(repeating: "Projection Pool", count: 10)],
+      component: "wire-drain", logger: Logger(label: "fallback"))
+    let name = try #require(config.options.additionalStartupParameters.first?.1)
+    #expect(name.hasSuffix(":wire-drain"))
+    #expect(name.utf8.count == 63)
+    #expect(config.options.maximumConnections == 8)
+  }
+
 }

@@ -15,9 +15,7 @@ struct OperationsCapabilityResolver: Sendable {
   func resolve(at now: Date = Date()) async -> OperationsCapabilities {
     let eventStreamOperational = (try? await store.changeEventCursorBounds()) != nil
     let states = (try? await store.listServiceStates()) ?? []
-    let worker = states
-      .filter({ $0.service == "appview-worker" })
-      .max(by: { $0.heartbeatAt < $1.heartbeatAt })
+    let worker = OperationsWorkerEvidence.recovery(states, at: now)
 
     let fingerprintReady = config.backfillFingerprintSecret != nil
     let prerequisiteReason: String?
@@ -26,14 +24,14 @@ struct OperationsCapabilityResolver: Sendable {
     } else if !fingerprintReady {
       prerequisiteReason = "The backfill fingerprint signing secret is unavailable."
     } else if worker == nil {
-      prerequisiteReason = "No Charybdis capability evidence is available."
+      prerequisiteReason = "No active recovery worker capability evidence is available."
     } else if let worker, now.timeIntervalSince(worker.heartbeatAt) > 15 {
-      prerequisiteReason = "Charybdis capability evidence has expired."
+      prerequisiteReason = "Recovery worker capability evidence has expired."
     } else if let worker,
       worker.dependencyState["operations_database"] != "ready"
         || worker.dependencyState["appview_database"] != "ready"
     {
-      prerequisiteReason = "Charybdis database dependencies are not ready."
+      prerequisiteReason = "Recovery worker database dependencies are not ready."
     } else {
       prerequisiteReason = nil
     }
