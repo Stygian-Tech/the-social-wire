@@ -12,6 +12,13 @@ const original = readFileSync(join(import.meta.dir,
   "../../../database/migrations/20260722213000_operations_trust_hardening.sql"), "utf8")
   .split("CREATE OR REPLACE FUNCTION operations_cleanup_expired(")[1].split("\nDO $$")[0];
 const originalFunction = `CREATE OR REPLACE FUNCTION operations_cleanup_expired(${original}`;
+const selectedBatch = migration.slice(migration.indexOf("  WITH frontier AS MATERIALIZED"),
+  migration.indexOf("  ), deleted AS (")) + ") SELECT cursor FROM doomed";
+function selectionQuery(batch: number) {
+  return selectedBatch.replaceAll("target_environment", "'dev'")
+    .replaceAll("bounded_batch", String(batch)).replaceAll("cutoff", "'2026-09-26'::timestamptz");
+}
+
 const databaseName = `tsw92_change_retention_${randomUUID().replaceAll("-", "")}`;
 const tables = [...original.matchAll(/SELECT ctid(?:, cursor)? FROM (\w+)/g)].map(match => match[1]);
 let testURL: string;
@@ -56,7 +63,7 @@ it("changes only the change-event selection while preserving other retention and
   // Compare outside the targeted block without depending on a function's SQL formatting.
   const cut = (body: string) => {
     const start = body.indexOf("  WITH doomed AS (\n    SELECT ctid, cursor FROM operations_change_events");
-    const replacementStart = body.indexOf("  -- Isolate the expiry range");
+    const replacementStart = body.indexOf("  -- Probe a bounded cursor prefix");
     const from = start < 0 ? replacementStart : start;
     const end = body.indexOf("\n  affected := affected + row_count;", from);
     return body.slice(0, from) + body.slice(end);
@@ -64,7 +71,9 @@ it("changes only the change-event selection while preserving other retention and
   const candidateFunction = migration.slice(migration.indexOf("CREATE OR REPLACE FUNCTION"))
     .split("\nREVOKE ALL")[0].trim();
   expect(cut(candidateFunction)).toBe(cut(originalFunction.trim()));
-  expect(migration).toContain("expired AS MATERIALIZED");
+  expect(migration).toContain("frontier AS MATERIALIZED");
+  expect(migration).toContain("ORDER BY cursor LIMIT bounded_batch * 4");
+  expect(migration).toContain("AND NOT (SELECT frontier_full FROM selection)");
   expect(migration).toContain("SELECT cursor FROM expired ORDER BY cursor LIMIT bounded_batch");
 });
 
@@ -132,7 +141,43 @@ describe.skipIf(!adminURL)("Operations change-event retention migration PostgreS
     expect(snapshot()).toBe(drained);
   });
 
-  it("uses the covering expiry index for sparse and empty history without scanning retained payloads", () => {
+  it("bounds dense catch-up and never executes the expiry fallback when the frontier fills a batch", () => {
+    apply();
+    sql(`TRUNCATE operations_change_events;
+      INSERT INTO operations_change_events(environment,cursor,expires_at,payload)
+      SELECT 'dev',i,CASE WHEN i % 5 = 0 THEN '2099-01-01'::timestamptz
+        ELSE '2000-01-01'::timestamptz END,repeat(md5(i::text),32)
+      FROM generate_series(1,60000) i;
+      VACUUM ANALYZE operations_change_events`);
+    const originalSelect = "SELECT cursor FROM operations_change_events WHERE environment='dev' AND expires_at<='2026-09-26' ORDER BY cursor LIMIT 1000";
+    expect(sql(selectionQuery(1000))).toBe(sql(originalSelect));
+    const plan = JSON.parse(sql(`EXPLAIN (ANALYZE,BUFFERS,FORMAT JSON) ${selectionQuery(1000)}`))[0].Plan;
+    type QueryPlan = {
+      Plans?: QueryPlan[];
+      "Subplan Name"?: string;
+      "Relation Name"?: string;
+      "Actual Rows": number;
+      "Actual Loops": number;
+    };
+    const nodes: QueryPlan[] = [];
+    const visit = (node: QueryPlan) => {
+      nodes.push(node);
+      for (const child of node.Plans ?? []) visit(child);
+    };
+    visit(plan);
+    const fallback = nodes.find(node => node["Subplan Name"] === "CTE expired");
+    expect(fallback).toBeDefined();
+    expect(fallback!["Actual Rows"]).toBe(0);
+    const scans = nodes.filter(node => node["Relation Name"] === "operations_change_events");
+    expect(scans.filter(node => node["Actual Loops"] > 0)).toHaveLength(1);
+    expect(scans.reduce((count, node) => count + node["Actual Rows"] * node["Actual Loops"], 0)).toBeLessThanOrEqual(4000);
+    // Exercise deletion and the watermark after proving bounded candidate work.
+    expect(sql("SELECT operations_cleanup_expired('dev','2026-09-26',1000)")).toBe("1004");
+    expect(sql("SELECT earliest_available_cursor FROM operations_change_event_watermarks WHERE environment='dev'")).toBe("1250");
+    expect(sql("SELECT count(*) FROM operations_change_events WHERE environment='dev' AND cursor % 5=0")).toBe("12000");
+  });
+
+  it("uses the covering expiry fallback after a bounded prefix for sparse and empty history", () => {
     apply();
     sql(`TRUNCATE operations_change_events;
       INSERT INTO operations_change_events(environment,cursor,expires_at,payload)
@@ -144,7 +189,7 @@ describe.skipIf(!adminURL)("Operations change-event retention migration PostgreS
       UPDATE operations_change_events SET expires_at='2099-01-01' WHERE cursor<=3000;
       VACUUM operations_change_events`);
     const originalSelect = "SELECT ctid,cursor FROM operations_change_events WHERE environment='dev' AND expires_at<='2026-09-26' ORDER BY cursor LIMIT 1000";
-    const newSelect = "WITH expired AS MATERIALIZED (SELECT cursor FROM operations_change_events WHERE environment='dev' AND expires_at<='2026-09-26') SELECT cursor FROM expired ORDER BY cursor LIMIT 1000";
+    const newSelect = selectionQuery(1000);
     for (const expectedRows of [1, 0]) {
       const plan = (query: string) => JSON.parse(sql(`EXPLAIN (ANALYZE,BUFFERS,FORMAT JSON) ${query}`))[0].Plan;
       const old = plan(originalSelect);

@@ -46,6 +46,12 @@ preserves which cursors a batch removes and how its watermark advances. It does
 not claim the complete cleanup function takes 212 ms or bound the expired index
 range to 1,000 reads. Deletions remain bounded at 1,000 per table per call.
 
+Review added a dense-expiry fast path before that fallback: inspect at most four
+times the requested batch size in cursor order, and skip the expiry-range scan
+when that prefix supplies a full exact batch. The final read-only Development
+probe completed in 433.145 ms, reading 4,000 prefix candidates and 127 expired
+candidates. This measures selection only, not the complete cleanup function.
+
 The matched pre-stage usage window is September 25 18:42 through September 26
 18:42 UTC. Machine-local raw evidence is
 `/tmp/tsw92-telemetry-baseline-24h-20260926.json`; compare it with the same-length
@@ -84,10 +90,14 @@ A bounded follow-up identified the unfinished conditions more precisely:
   admitted exactly 3,397 events in both paths and preserved replay checkpoints
   and duplicate behavior. Boundary payload plus lookup bytes decreased 58.62%
   under that fixture's relevance mix; this is not a production savings estimate.
-  Final counterbalanced StageBatch p95 medians were 7.402 ms original and
+  Counterbalanced StageBatch p95 medians before the final malformed-UTF-8
+  compatibility guard were 7.402 ms original and
   8.003 ms compact (+8.11%). Individual pairs ranged from -12.5% to +15.1%;
   fresh-only medians increased 11.3%. The complete latency gate remains open.
-  Go race tests against PostgreSQL, vet and build passed.
+  The final guard retains the former raw-JSON behavior for malformed UTF-8;
+  nine PostgreSQL cases confirm rejection of retained invalid bytes and the
+  existing treatment of discarded fields. Go race tests against PostgreSQL,
+  vet and build passed again after that correction.
 - Selective refresh now contains only dirty-hint acknowledgment in a savepoint.
   A concurrent committed hint revision can produce SQLSTATE `40001` at that
   step even with `SKIP LOCKED`. Deferring acknowledgment keeps all hints for
@@ -105,11 +115,15 @@ A bounded follow-up identified the unfinished conditions more precisely:
   All 393 Wire tests passed; benchmark tooling ran 172 tests with 15 optional
   skips and no failures.
 - The telemetry migration retains cursor-ordered deletion and atomic SSE
-  watermarks while selecting expiry-index candidates first. Focused PostgreSQL
+  watermarks. A bounded cursor prefix serves dense expired batches; an expiry
+  index fallback handles sparse and empty tails without scanning all retained
+  history. Both paths use the same statement snapshot. Focused PostgreSQL
   tests cover original-function parity, protected records, environment
   isolation, transactional rollback, repeat installation, and sparse/empty
   retained-history tails. Runtime SQL timeouts and retention remain unchanged.
-  Five focused tests passed. All 81 migrations applied from an empty disposable
+  Six focused tests passed, including a 60,000-row dense fixture whose fallback
+  never executes and whose candidate work stays at 4,000 rows for a 1,000-row
+  deletion. All 81 migrations applied from an empty disposable
   PostgreSQL database, followed by a successful idempotent repeat.
 - The complete spec suite passed 135 tests with 38 environment-dependent skips.
   Its process-cleanup subprocess tests require process inspection permissions;

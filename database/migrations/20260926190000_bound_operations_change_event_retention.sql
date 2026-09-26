@@ -1,6 +1,6 @@
 -- Preserve the exact cursor-ordered retention batch and atomic SSE watermark.
--- Candidate work is proportional to expired history, not retained payloads;
--- the number of deleted rows remains bounded by the existing batch limit.
+-- Probe a bounded retained cursor prefix, then use the expiry index only when
+-- needed. Deleted rows remain bounded by the existing per-table batch limit.
 SET LOCAL lock_timeout = '2s';
 SET LOCAL statement_timeout = '10s';
 
@@ -44,16 +44,29 @@ BEGIN
   DELETE FROM operations_events target USING doomed WHERE target.ctid = doomed.ctid;
   GET DIAGNOSTICS row_count = ROW_COUNT; affected := affected + row_count;
 
-  -- Isolate the expiry range before sorting by cursor. A cursor-ordered scan
-  -- can otherwise visit every retained payload to prove that fewer than a full
-  -- batch has expired. The existing expiry index covers this cursor-only input.
-  -- Keep the original cursor ordering: changing to expiry order can advance
-  -- the SSE watermark past a different set of retained history.
-  WITH expired AS MATERIALIZED (
+  -- Probe a bounded cursor prefix first. Dense expiry can finish without
+  -- materializing the whole backlog on every cleanup call. If that prefix
+  -- cannot fill the exact cursor-ordered batch, use the expiry index instead
+  -- of walking retained payloads. Both choices share one statement snapshot.
+  WITH frontier AS MATERIALIZED (
+    SELECT cursor, expires_at FROM operations_change_events
+    WHERE environment = target_environment
+    ORDER BY cursor LIMIT bounded_batch * 4
+  ), frontier_expired AS MATERIALIZED (
+    SELECT cursor FROM frontier WHERE expires_at <= cutoff
+    ORDER BY cursor LIMIT bounded_batch
+  ), selection AS MATERIALIZED (
+    SELECT COUNT(*) = bounded_batch AS frontier_full FROM frontier_expired
+  ), expired AS MATERIALIZED (
     SELECT cursor FROM operations_change_events
     WHERE environment = target_environment AND expires_at <= cutoff
+      AND NOT (SELECT frontier_full FROM selection)
   ), doomed AS (
-    SELECT cursor FROM expired ORDER BY cursor LIMIT bounded_batch
+    SELECT cursor FROM frontier_expired WHERE (SELECT frontier_full FROM selection)
+    UNION ALL
+    SELECT cursor FROM (
+      SELECT cursor FROM expired ORDER BY cursor LIMIT bounded_batch
+    ) fallback
   ), deleted AS (
     DELETE FROM operations_change_events target USING doomed
     WHERE target.environment = target_environment AND target.cursor = doomed.cursor
