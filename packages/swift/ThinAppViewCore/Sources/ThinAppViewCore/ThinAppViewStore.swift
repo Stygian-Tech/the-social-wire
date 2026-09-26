@@ -12,6 +12,7 @@ public enum AppViewIngestionScopePolicy {
   ]
 
   public static let viewerCollections = [
+    "app.thesocialwire.readState",
     "app.skyreader.feed.subscription",
     "site.standard.graph.subscription",
   ]
@@ -273,7 +274,7 @@ public protocol ThinAppViewStore: Actor {
     scopes: [AppViewPublicationScope],
     cursor: String?,
     limit: Int
-  ) async throws -> AppViewEntryListResponse
+  ) async throws -> UnreadReadMutationPage
 
   func readBoundary(viewerDid: String, publicationId: String) async throws -> ReadWatermarkBoundary?
 

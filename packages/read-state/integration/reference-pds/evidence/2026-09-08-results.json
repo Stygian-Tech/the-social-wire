@@ -1,0 +1,33 @@
+{
+  "referencePds": "0.5.31",
+  "node": "v22.23.2",
+  "isolatedNetwork": true,
+  "transactions": "actual HTTP against official SQLite PDS",
+  "planner": "unmodified repository source snapshot",
+  "proof": "unmodified Web verifier source snapshot",
+  "grace": "controlled clocks, not a real 24-hour soak",
+  "appview": "confirmation callback checks singleton only; hosted AppView parity is a separate gate",
+  "passed": 5,
+  "results": [
+    {
+      "name": "GC-first real atomic commit invalidates paused manifest writer and preserves all three roots",
+      "elapsedMs": 328
+    },
+    {
+      "name": "Writer-first real swapCommit conflict rolls back both singleton update and every delete",
+      "elapsedMs": 186
+    },
+    {
+      "name": "Candidate replacement after signed proof rejects the real atomic delete",
+      "elapsedMs": 168
+    },
+    {
+      "name": "Same-rkey replacement resets observed grace on the real repository",
+      "elapsedMs": 226
+    },
+    {
+      "name": "Lost successful response and PDS restart recover from signed proofs without replaying deletes",
+      "elapsedMs": 210
+    }
+  ]
+}

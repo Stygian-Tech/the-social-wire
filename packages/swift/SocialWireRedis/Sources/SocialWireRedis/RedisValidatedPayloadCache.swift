@@ -59,6 +59,7 @@ public actor RedisValidatedPayloadCache {
     // change must never join an older request whose database snapshot predates it.
     let flightKey = key + ":" + RedisKeyNamespace.digest(revision)
     if let task = inFlight[flightKey] {
+      record("coalesced", scope: scope, now: now)
       return try JSONDecoder().decode(Value.self, from: await task.value)
     }
     // Bound concurrent miss bookkeeping during a crawl or Redis outage.
@@ -68,18 +69,37 @@ public actor RedisValidatedPayloadCache {
       let data = try JSONEncoder().encode(value)
       // A concurrent source edit or membership change during loading prevents cache fill.
       // Never associate a payload from a later snapshot with an older revision.
-      if data.count <= self.maximumPayloadBytes, lifetime > 0, validatesMembership(value),
-        (try? await currentRevision()) == revision
-      {
-        do {
-          try await self.cache.store(
-            Entry(revision: revision, value: value), key: key,
-            policy: RedisCachePolicy(
-              freshDuration: lifetime, hardDuration: lifetime, maximumJitterFraction: 0), now: now)
-          self.record("fill", scope: scope, now: now)
-        } catch {
-          self.record("redis_error", scope: scope, now: now)
-        }
+      guard data.count <= self.maximumPayloadBytes else {
+        self.record("oversized", scope: scope, now: now)
+        return data
+      }
+      guard lifetime > 0 else {
+        self.record("expired", scope: scope, now: now)
+        return data
+      }
+      guard validatesMembership(value) else {
+        self.record("membership_changed", scope: scope, now: now)
+        return data
+      }
+      let latestRevision: String
+      do {
+        latestRevision = try await currentRevision()
+      } catch {
+        self.record("revision_error", scope: scope, now: now)
+        return data
+      }
+      guard latestRevision == revision else {
+        self.record("revision_changed", scope: scope, now: now)
+        return data
+      }
+      do {
+        try await self.cache.store(
+          Entry(revision: revision, value: value), key: key,
+          policy: RedisCachePolicy(
+            freshDuration: lifetime, hardDuration: lifetime, maximumJitterFraction: 0), now: now)
+        self.record("fill", scope: scope, now: now)
+      } catch {
+        self.record("redis_error", scope: scope, now: now)
       }
       return data
     }

@@ -83,7 +83,7 @@ struct HTTPRouteContractTests {
         router: router, configuration: .init(address: .hostname("127.0.0.1", port: 0)))
       try await app.test(.live) { testClient in
         let response = try await testClient.execute(uri: "/readyz", method: .get)
-        #expect(response.status == .internalServerError)
+        #expect(response.status == .serviceUnavailable)
       }
     }
   }

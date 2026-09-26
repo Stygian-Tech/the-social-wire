@@ -106,7 +106,7 @@ struct BootstrapStreamService {
       var folders: AppViewBootstrapSidebarFoldersPayload?
       var selectedId: String?
       var selectedRow: SidebarPublicationRow?
-      var selectedEnrollTask: Task<Void, Never>?
+      var selectedEnrollTask: BootstrapEnrollment?
       var emittedSelectedEntries = false
       var completionSource = AppViewBootstrapEvidenceSource.liveProjection
       var cachedEntriesEvidenceAt: Date?
@@ -174,7 +174,7 @@ struct BootstrapStreamService {
               BootstrapStreamSelection.row(publicationId: $0, in: priority.response)
             }
             selectedEnrollTask = selectedRow.map { row in
-              Task { await self.enrollAuthorForBootstrap(auth: auth, row: row) }
+              BootstrapEnrollment.start { await self.enrollAuthorForBootstrap(auth: auth, row: row) }
             }
             if let selectedId, let selectedRow {
               emittedSelectedEntries = true
@@ -441,7 +441,7 @@ struct BootstrapStreamService {
     ),
       let row = BootstrapStreamSelection.row(publicationId: selectedId, in: snapshot.priority)
     {
-      let selectedEnrollTask = Task { await self.enrollAuthorForBootstrap(auth: auth, row: row) }
+      let selectedEnrollTask = BootstrapEnrollment.start { await self.enrollAuthorForBootstrap(auth: auth, row: row) }
       try await writeEvent(.selectedPublication(publicationId: selectedId), writer: &writer)
       _ = try await writeBootstrapEntriesPage(
         auth: auth,
@@ -583,10 +583,7 @@ struct BootstrapStreamService {
        let feedUrl = PublicationProjectionLogic.normalizedFeedUrlFromRssPublicationId(row.publicationId)
     {
       do {
-        _ = try await skyreaderIngestionService.ingestViewerSubscriptions(
-          auth: auth,
-          priorityFeedUrls: [feedUrl]
-        )
+        _ = try await skyreaderIngestionService.ingestSelectedFeeds(feedUrls: [feedUrl])
       } catch {
         logger.warning(
           "Bootstrap stream selected RSS feed ingest failed",
@@ -613,55 +610,32 @@ struct BootstrapStreamService {
     auth: AuthContext,
     publicationId: String,
     row: SidebarPublicationRow,
-    enrollTask: Task<Void, Never>?,
+    enrollTask: BootstrapEnrollment?,
     writer: inout any ResponseBodyWriter
   ) async throws -> EntriesPageEvidence {
-    // If PDS backfill finished while folder sidebar loaded, prefer a fresh index read.
-    if await enrollAlreadyFinished(enrollTask),
-       let page = try await readService.liveFirstPage(auth: auth, scope: row.appViewScope, limit: 50)
-    {
-      try await emitBootstrapEntriesPage(
-        publicationId: publicationId,
-        page: page,
-        source: .liveProjection,
-        writer: &writer
-      )
-      return EntriesPageEvidence(source: .liveProjection, cachedAt: nil)
+    let enrollment = enrollTask ?? BootstrapEnrollment.start {
+      await self.enrollAuthorForBootstrap(auth: auth, row: row)
     }
-
-    // Stale-first: paint cached page 1 without blocking on PDS backfill.
-    if let cached = try await readService.cachedFirstPageIfAvailable(
-      auth: auth,
-      publicationId: publicationId,
-      scope: row.appViewScope,
-      limit: 50
-    ) {
-      let cachedSource = AppViewBootstrapEvidenceSource(rawValue: cached.source.rawValue)
-        ?? .unavailable
-      try await emitBootstrapEntriesPage(
-        publicationId: publicationId,
-        page: cached.value,
-        source: cachedSource,
-        cachedAt: cached.cachedAt,
-        expiresAt: cached.expiresAt,
-        writer: &writer
-      )
-      return EntriesPageEvidence(source: cachedSource, cachedAt: cached.cachedAt)
-    }
-
-    // Cold path: do not block the stream on PDS enroll — client refreshes feed after `done`.
-    if let enrollTask {
-      Task { await enrollTask.value }
-    } else {
-      Task { await enrollAuthorForBootstrap(auth: auth, row: row) }
-    }
+    let selected = try await BootstrapEntriesPageSelection.load(
+      enrollment: enrollment,
+      livePage: {
+        try await readService.liveFirstPage(auth: auth, scope: row.appViewScope, limit: 50)
+      },
+      cachedPage: {
+        try await readService.cachedFirstPageIfAvailable(
+          auth: auth, publicationId: publicationId, scope: row.appViewScope, limit: 50
+        )
+      }
+    )
     try await emitBootstrapEntriesPage(
       publicationId: publicationId,
-      page: AppViewEntryListResponse(entries: [], cursor: nil),
-      source: .unavailable,
+      page: selected.page,
+      source: selected.source,
+      cachedAt: selected.cachedAt,
+      expiresAt: selected.expiresAt,
       writer: &writer
     )
-    return EntriesPageEvidence(source: .unavailable, cachedAt: nil)
+    return EntriesPageEvidence(source: selected.source, cachedAt: selected.cachedAt)
   }
 
   /// Stale-first unread map for cached bootstrap; fresh replacement is emitted by `emitCachedBootstrap`.
@@ -757,33 +731,12 @@ struct BootstrapStreamService {
     }
   }
 
-  /// Returns true when enroll finished without waiting (used to pick live vs cached bootstrap page 1).
-  private func enrollAlreadyFinished(_ task: Task<Void, Never>?) async -> Bool {
-    guard let task else { return false }
-    return await withTaskGroup(of: Bool.self) { group in
-      group.addTask {
-        await task.value
-        return true
-      }
-      group.addTask {
-        await Task.yield()
-        return false
-      }
-      let finished = await group.next() ?? false
-      group.cancelAll()
-      return finished
-    }
-  }
-
   /// PDS backfill for bootstrap page 1 — runs in parallel with folder sidebar when possible.
   private func enrollAuthorForBootstrap(auth: AuthContext, row: SidebarPublicationRow) async {
     if row.publicationId.hasPrefix(PublicationLexicons.rssPublicationPrefix),
        let feedUrl = PublicationProjectionLogic.normalizedFeedUrlFromRssPublicationId(row.publicationId)
     {
-      _ = try? await skyreaderIngestionService.ingestViewerSubscriptions(
-        auth: auth,
-        priorityFeedUrls: [feedUrl]
-      )
+      _ = try? await skyreaderIngestionService.ingestSelectedFeeds(feedUrls: [feedUrl])
       return
     }
 

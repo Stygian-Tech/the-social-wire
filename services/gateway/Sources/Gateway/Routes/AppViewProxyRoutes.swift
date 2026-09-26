@@ -206,6 +206,22 @@ struct AppViewProxyRoutes {
         request: request, context: context, path: "/xrpc/app.thesocialwire.appview.markReadBefore",
         method: "POST")
     }
+    group.get("/xrpc/app.thesocialwire.appview.getReadStateStatus") { request, context async throws -> Response in
+      try await forward(request: request, context: context,
+        path: "/xrpc/app.thesocialwire.appview.getReadStateStatus", method: "GET")
+    }
+    group.post("/xrpc/app.thesocialwire.appview.exportReadState") { request, context async throws -> Response in
+      try await forward(request: request, context: context,
+        path: "/xrpc/app.thesocialwire.appview.exportReadState", method: "POST")
+    }
+    group.post("/xrpc/app.thesocialwire.appview.prepareReadState") { request, context async throws -> Response in
+      try await forward(request: request, context: context,
+        path: "/xrpc/app.thesocialwire.appview.prepareReadState", method: "POST")
+    }
+    group.post("/xrpc/app.thesocialwire.appview.confirmReadState") { request, context async throws -> Response in
+      try await forward(request: request, context: context,
+        path: "/xrpc/app.thesocialwire.appview.confirmReadState", method: "POST")
+    }
   }
 
   private func forward(
@@ -213,6 +229,41 @@ struct AppViewProxyRoutes {
     context: GatewayRequestContext,
     path: String,
     method: String
+  ) async throws -> Response {
+    let feedPaths = ["/v1/appview/feed", "/xrpc/app.thesocialwire.appview.getFeed"]
+    let duration: Duration = feedPaths.contains(path) ? .seconds(3) : .seconds(60)
+    let deadline = ContinuousClock.now.advanced(by: duration)
+    let trace = AppViewProxyRequestTrace(path: path, requestID: context.requestId, logger: logger)
+    // HTTPClient.execute's timeout does not cover consuming a response body.
+    // Keep the entire buffered exchange within one budget and await cancellation.
+    return try await withThrowingTaskGroup(of: Response.self) { group in
+      defer { group.cancelAll() }
+      group.addTask {
+        try await forwardBuffered(request: request, context: context, path: path,
+          method: method, trace: trace)
+      }
+      group.addTask {
+        try await ContinuousClock().sleep(until: deadline)
+        trace.finish(failure: .timeout)
+        throw AppViewProxyFailure.timeout.responseError
+      }
+      guard let response = try await group.next() else { throw CancellationError() }
+      try Task.checkCancellation()
+      guard ContinuousClock.now < deadline else {
+        trace.finish(failure: .timeout)
+        throw AppViewProxyFailure.timeout.responseError
+      }
+      trace.finish()
+      return response
+    }
+  }
+
+  private func forwardBuffered(
+    request: Request,
+    context: GatewayRequestContext,
+    path: String,
+    method: String,
+    trace: AppViewProxyRequestTrace
   ) async throws -> Response {
     guard let auth = context.authContext else { throw HTTPError(.unauthorized) }
     let signedPath = GatewayInternalTrust.canonicalSignedPath(path)
@@ -262,7 +313,15 @@ struct AppViewProxyRoutes {
     }
     let feedPaths = ["/v1/appview/feed", "/xrpc/app.thesocialwire.appview.getFeed"]
     let upstreamTimeout: TimeAmount = feedPaths.contains(path) ? .seconds(3) : .seconds(60)
-    let reply = try await httpClient.execute(fwd, timeout: upstreamTimeout)
+    let reply: HTTPClientResponse
+    do {
+      reply = try await httpClient.execute(fwd, timeout: upstreamTimeout)
+      trace.receivedHeaders(status: Int(reply.status.code))
+    } catch {
+      let failure = AppViewProxyFailure(error)
+      trace.finish(failure: failure)
+      throw failure.responseError
+    }
     var headers = HTTPFields()
     headers[.contentType] = "application/json"
     if let requestId = reply.headers.first(name: "X-Request-ID"),
@@ -286,7 +345,23 @@ struct AppViewProxyRoutes {
         headers[fieldName] = value
       }
     }
-    let body = try await reply.body.collect(upTo: 8 * 1024 * 1024)
+    let body: ByteBuffer
+    do {
+      let maximumBytes = 8 * 1024 * 1024
+      var collected = ByteBuffer()
+      for try await chunk in reply.body {
+        trace.receivedBytes(chunk.readableBytes)
+        guard chunk.readableBytes <= maximumBytes - collected.readableBytes else {
+          throw NIOTooManyBytesError(maxBytes: maximumBytes)
+        }
+        collected.writeImmutableBuffer(chunk)
+      }
+      body = collected
+    } catch {
+      let failure = AppViewProxyFailure(error)
+      trace.finish(failure: failure)
+      throw failure.responseError
+    }
     let status = HTTPResponse.Status.from(code: Int(reply.status.code)) ?? .badGateway
     return Response(status: status, headers: headers, body: .init(byteBuffer: body))
   }
@@ -330,34 +405,37 @@ struct AppViewProxyRoutes {
       }
     }
 
-    let reply = try await httpClient.execute(fwd, timeout: .seconds(60))
+    let trace = AppViewProxyRequestTrace(path: path, requestID: context.requestId, logger: logger)
+    let reply: HTTPClientResponse
+    do {
+      reply = try await httpClient.execute(fwd, timeout: .seconds(60))
+      trace.receivedHeaders(status: Int(reply.status.code))
+    } catch {
+      let failure = AppViewProxyFailure(error)
+      trace.finish(failure: failure)
+      throw failure.responseError
+    }
     var headers = HTTPFields()
     headers[.contentType] = reply.headers.first(name: "Content-Type") ?? "application/x-ndjson"
     headers[.cacheControl] = "no-cache"
     let status = HTTPResponse.Status.from(code: Int(reply.status.code)) ?? .badGateway
-    let streamStarted = Date()
-    let byteCounter = BootstrapStreamByteCounter()
     return Response(
       status: status,
       headers: headers,
       body: ResponseBody { writer in
-        for try await buffer in reply.body {
-          byteCounter.record(buffer.readableBytes)
-          byteCounter.logFirstByteIfNeeded(
-            path: path,
-            streamStarted: streamStarted,
-            logger: logger,
-            did: auth.did
-          )
-          try await writer.write(buffer)
+        do {
+          for try await buffer in reply.body {
+            trace.receivedBytes(buffer.readableBytes)
+            try await writer.write(buffer)
+          }
+          try await writer.finish(nil)
+          trace.finish()
+        } catch {
+          trace.finish(failure: AppViewProxyFailure(error))
+          // Headers are already committed; terminate the stream rather than
+          // pretending a partial response is complete or attempting a retry.
+          throw error
         }
-        byteCounter.logComplete(
-          path: path,
-          streamStarted: streamStarted,
-          logger: logger,
-          did: auth.did
-        )
-        try await writer.finish(nil)
       }
     )
   }
@@ -383,61 +461,5 @@ struct AppViewProxyRoutes {
     } else {
       fwd.headers.add(name: "X-Forwarded-Proto", value: "https")
     }
-  }
-}
-
-private final class BootstrapStreamByteCounter: @unchecked Sendable {
-  private let lock = NSLock()
-  private var totalBytes = 0
-  private var firstByteLogged = false
-
-  func record(_ bytes: Int) {
-    lock.withLock {
-      totalBytes += bytes
-    }
-  }
-
-  func logFirstByteIfNeeded(
-    path: String,
-    streamStarted: Date,
-    logger: Logger,
-    did: String
-  ) {
-    lock.withLock {
-      guard !firstByteLogged else { return }
-      firstByteLogged = true
-      let ttfbMs = Int(Date().timeIntervalSince(streamStarted) * 1000)
-      logger.info(
-        "AppView bootstrap stream first byte",
-        metadata: [
-          "path": .string(path),
-          "ttfbMs": .stringConvertible(ttfbMs),
-          "did": .string(did),
-        ]
-      )
-    }
-  }
-
-  func logComplete(
-    path: String,
-    streamStarted: Date,
-    logger: Logger,
-    did: String
-  ) {
-    let (totalMs, bytes) = lock.withLock {
-      (
-        Int(Date().timeIntervalSince(streamStarted) * 1000),
-        totalBytes
-      )
-    }
-    logger.info(
-      "AppView bootstrap stream complete",
-      metadata: [
-        "path": .string(path),
-        "totalMs": .stringConvertible(totalMs),
-        "totalBytes": .stringConvertible(bytes),
-        "did": .string(did),
-      ]
-    )
   }
 }

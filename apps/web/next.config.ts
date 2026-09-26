@@ -24,7 +24,11 @@ const nextConfig: NextConfig = {
     };
   },
   /** Dev-only: avoid ChunkLoadError when Webpack is slow to emit large route chunks after Fast Refresh. */
-  webpack: (config, { dev }) => {
+  webpack: (config, { dev, isServer }) => {
+    if (!isServer) {
+      config.module.rules.push({ test: /@atproto[\\/](?:common[\\/]dist[\\/](?:index|logger)|repo[\\/]dist[\\/]car)\.js$/,
+        use: [path.join(__dirname, "scripts/pds-proof-browser-dependencies.cjs")] });
+    }
     if (dev && config.output && typeof config.output === "object") {
       config.output.chunkLoadTimeout = 180_000;
     }
@@ -37,6 +41,11 @@ const nextConfig: NextConfig = {
    */
   turbopack: {
     root: path.join(__dirname, "..", ".."),
+    rules: {
+      "**/@atproto/common/dist/index.js": { condition: "browser", loaders: ["./scripts/pds-proof-browser-dependencies.cjs"] },
+      "**/@atproto/common/dist/logger.js": { condition: "browser", loaders: ["./scripts/pds-proof-browser-dependencies.cjs"] },
+      "**/@atproto/repo/dist/car.js": { condition: "browser", loaders: ["./scripts/pds-proof-browser-dependencies.cjs"] },
+    },
   },
   async headers() {
     return [

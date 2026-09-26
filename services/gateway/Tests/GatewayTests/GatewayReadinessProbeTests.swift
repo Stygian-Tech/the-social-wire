@@ -9,14 +9,12 @@ struct GatewayReadinessProbeTests {
     let recorder = AppViewProbeRecorder()
     let probe = GatewayReadinessProbe(
       appViewBaseURL: "http://appview.railway.internal:8081/",
-      projectionPoolBaseURL: "http://projection-pool.railway.internal:8080/",
       checkDependency: { baseURL in await recorder.record(baseURL) }
     )
 
     try await probe.run()
     #expect(await recorder.baseURLs == [
       "http://appview.railway.internal:8081",
-      "http://projection-pool.railway.internal:8080",
     ])
   }
 
@@ -25,7 +23,6 @@ struct GatewayReadinessProbeTests {
     let recorder = ReadinessFailureRecorder()
     let probe = GatewayReadinessProbe(
       appViewBaseURL: "http://appview.railway.internal:8081",
-      projectionPoolBaseURL: "http://projection-pool.railway.internal:8080",
       checkDependency: { _ in throw ProbeError.unavailable },
       recordFailure: { dependency in await recorder.record(dependency) }
     )
@@ -36,7 +33,7 @@ struct GatewayReadinessProbeTests {
     #expect(await recorder.dependencies == [.appview])
   }
 
-  @Test("readiness failures identify database, AppView, and Projection Pool")
+  @Test("readiness failures identify database and AppView")
   func attributesRequiredDependencyFailures() async {
     for failedDependency in GatewayReadinessDependency.allCases {
       let recorder = ReadinessFailureRecorder()
@@ -45,10 +42,8 @@ struct GatewayReadinessProbeTests {
           if failedDependency == .database { throw ProbeError.unavailable }
         },
         appViewBaseURL: "http://appview.railway.internal:8081",
-        projectionPoolBaseURL: "http://projection-pool.railway.internal:8080",
         checkDependency: { baseURL in
-          let dependencyToken =
-            failedDependency == .projectionPool ? "projection-pool" : failedDependency.rawValue
+          let dependencyToken = failedDependency.rawValue
           if baseURL.contains(dependencyToken) {
             throw ProbeError.unavailable
           }
@@ -63,12 +58,21 @@ struct GatewayReadinessProbeTests {
     }
   }
 
+  @Test("required dependency cancellation propagates without recording an outage")
+  func cancellation() async {
+    let recorder = ReadinessFailureRecorder()
+    let probe = GatewayReadinessProbe(appViewBaseURL: "http://appview",
+      checkDependency: { _ in throw CancellationError() },
+      recordFailure: { await recorder.record($0) })
+    await #expect(throws: CancellationError.self) { try await probe.run() }
+    #expect(await recorder.dependencies.isEmpty)
+  }
+
   @Test("missing required dependencies fail readiness closed")
   func missingDependency() async {
     let recorder = ReadinessFailureRecorder()
     let probe = GatewayReadinessProbe(
       appViewBaseURL: nil,
-      projectionPoolBaseURL: "http://projection-pool.railway.internal:8080",
       checkDependency: { _ in },
       recordFailure: { dependency in await recorder.record(dependency) }
     )

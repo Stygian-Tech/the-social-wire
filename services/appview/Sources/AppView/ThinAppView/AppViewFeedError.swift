@@ -2,6 +2,8 @@ import Foundation
 import HTTPTypes
 import Hummingbird
 import OperationsCore
+import PostgresNIO
+import ThinAppViewCore
 
 struct AppViewFeedErrorEnvelope: Codable, Sendable {
   let error: String
@@ -41,6 +43,17 @@ enum AppViewFeedErrorClassifier {
   static func classify(_ error: any Error, requestId: String) -> AppViewFeedError {
     if let feedError = error as? AppViewFeedError {
       return feedError
+    }
+    if error is AppViewFeedQueryDeadline.Failure {
+      return postgresFailure(status: .gatewayTimeout, requestId: requestId)
+    }
+    if let postgres = error as? PostgresError, case .connectionClosed = postgres {
+      return postgresFailure(status: .serviceUnavailable, requestId: requestId)
+    }
+    if let postgres = postgresError(error) {
+      return postgresFailure(
+        status: postgresStatus(code: postgres.code, sqlState: postgres.serverInfo?[.sqlState]),
+        requestId: requestId)
     }
     if error is CancellationError {
       return AppViewFeedError(
@@ -90,6 +103,45 @@ enum AppViewFeedErrorClassifier {
     )
   }
 
+  static func postgresStatus(code: PSQLError.Code, sqlState: String?) -> HTTPResponse.Status {
+    if let sqlState = sqlState?.uppercased() {
+      if sqlState == "57014" { return .gatewayTimeout }
+      if sqlState == "57P01" || sqlState == "53300" || sqlState.hasPrefix("08") {
+        return .serviceUnavailable
+      }
+      // A definitive server error takes precedence over generic transport labels.
+      return .internalServerError
+    }
+    switch code {
+    case .connectionError, .serverClosedConnection, .clientClosedConnection, .poolClosed, .uncleanShutdown:
+      return .serviceUnavailable
+    case .queryCancelled:
+      return .gatewayTimeout
+    default:
+      return .internalServerError
+    }
+  }
+
+  private static func postgresFailure(status: HTTPResponse.Status, requestId: String) -> AppViewFeedError {
+    let message: String
+    switch status {
+    case .gatewayTimeout: message = "The feed request exceeded its deadline."
+    case .serviceUnavailable: message = "The feed is temporarily unavailable."
+    default: message = "The feed could not be loaded."
+    }
+    return AppViewFeedError(
+      status: status, code: code(for: status), message: message, requestId: requestId,
+      retryable: status != .internalServerError)
+  }
+
+  private static func postgresError(_ error: any Error) -> PSQLError? {
+    if let postgres = error as? PSQLError { return postgres }
+    guard let transaction = error as? PostgresTransactionError else { return nil }
+    // Preserve the primary failure if rollback also loses its connection.
+    return [transaction.closureError, transaction.commitError, transaction.beginError, transaction.rollbackError]
+      .compactMap { $0 }.lazy.compactMap(postgresError).first
+  }
+
   private static func code(for status: HTTPResponse.Status) -> String {
     switch status.code {
     case 400: return "invalid_request"
@@ -110,34 +162,44 @@ enum AppViewFeedExecution {
     requestId: String,
     operation: @Sendable @escaping () async throws -> T
   ) async throws -> T {
-    do {
-      return try await withDeadline(requestId: requestId) {
+    let ownsTimings = AppViewFeedRequestTimings.current == nil
+    let timings = AppViewFeedRequestTimings.current ?? AppViewFeedRequestTimings()
+    defer { if ownsTimings { _ = timings.finish() } }
+    return try await AppViewFeedRequestTimings.$current.withValue(timings) {
+      let deadline = AppViewFeedQueryDeadline(duration: requestDeadline)
+      return try await AppViewFeedQueryDeadline.$current.withValue(deadline) {
         do {
-          return try await operation()
+          return try await withDeadline(requestId: requestId, deadline: deadline) {
+            do {
+              return try await operation()
+            } catch {
+              try Task.checkCancellation()
+              let classified = AppViewFeedErrorClassifier.classify(error, requestId: requestId)
+              guard classified.retryable, classified.status == .serviceUnavailable else {
+                throw classified
+              }
+              try await Task.sleep(for: .milliseconds(Int.random(in: 40...120)))
+              return try await operation()
+            }
+          }
         } catch {
           try Task.checkCancellation()
-          let classified = AppViewFeedErrorClassifier.classify(error, requestId: requestId)
-          guard classified.retryable, classified.status == .serviceUnavailable else {
-            throw classified
-          }
-          try await Task.sleep(for: .milliseconds(Int.random(in: 40...120)))
-          return try await operation()
+          throw AppViewFeedErrorClassifier.classify(error, requestId: requestId)
         }
       }
-    } catch {
-      try Task.checkCancellation()
-      throw AppViewFeedErrorClassifier.classify(error, requestId: requestId)
     }
   }
 
   private static func withDeadline<T: Sendable>(
     requestId: String,
+    deadline: AppViewFeedQueryDeadline,
     operation: @Sendable @escaping () async throws -> T
   ) async throws -> T {
     try await withThrowingTaskGroup(of: T.self) { group in
+      defer { group.cancelAll() }
       group.addTask(operation: operation)
       group.addTask {
-        try await Task.sleep(for: requestDeadline)
+        try await ContinuousClock().sleep(until: deadline.instant)
         throw AppViewFeedError(
           status: .gatewayTimeout,
           code: "feed_deadline_exceeded",
@@ -149,7 +211,7 @@ enum AppViewFeedExecution {
       guard let result = try await group.next() else {
         throw CancellationError()
       }
-      group.cancelAll()
+      try deadline.check()
       return result
     }
   }

@@ -47,3 +47,15 @@ describe("loadReadState / saveReadState", () => {
     expect(loadReadState(storage)).toEqual({ [uri]: "2026-05-12T12:00:00.000Z" });
   });
 });
+
+it("isolates authenticated viewer caches from other accounts and the former shared cache", async () => {
+  const { viewerReadStateStorageKey } = await import("@/lib/entryReadStateStorage");
+  const items = new Map<string, string>();
+  const storage = { getItem: (key: string) => items.get(key) ?? null, setItem: (key: string, value: string) => { items.set(key, value); } };
+  saveReadState(storage, { shared: "old" });
+  saveReadState(storage, { alice: "today" }, viewerReadStateStorageKey("did:plc:alice"));
+  expect(loadReadState(storage, viewerReadStateStorageKey("did:plc:bob"))).toEqual({});
+  expect(loadReadState(storage, viewerReadStateStorageKey())).toEqual({});
+  expect(loadReadState(storage, viewerReadStateStorageKey("did:plc:alice"))).toEqual({ alice: "today" });
+  expect(loadReadState(storage)).toEqual({ shared: "old" });
+});

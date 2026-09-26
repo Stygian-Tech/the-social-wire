@@ -1,0 +1,89 @@
+{
+  "lexicon": 1,
+  "id": "app.thesocialwire.appview.confirmReadState",
+  "defs": {
+    "main": {
+      "type": "procedure",
+      "description": "Fetch the viewer manifest and complete CID-pinned chain from their resolved PDS. Initial activation requires expectedLegacyRevision and structural parity with the complete legacy export. A manifest CID alone from a client is not proof. No source rows are deleted.",
+      "output": {
+        "encoding": "application/json",
+        "schema": {
+          "type": "object",
+          "required": [
+            "authority",
+            "migrationState",
+            "legacyRevision"
+          ],
+          "properties": {
+            "authority": {
+              "type": "string",
+              "maxLength": 7,
+              "enum": [
+                "appview",
+                "pds"
+              ]
+            },
+            "migrationState": {
+              "type": "string",
+              "maxLength": 10,
+              "enum": [
+                "notStarted",
+                "verified"
+              ]
+            },
+            "legacyRevision": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "manifest": {
+              "type": "ref",
+              "ref": "app.thesocialwire.readState"
+            },
+            "manifestCid": {
+              "type": "string",
+              "maxLength": 256,
+              "format": "cid"
+            },
+            "projectionReady": {
+              "type": "boolean",
+              "description": "False while the rebuildable projection is being restored; read requests fail with a retryable unavailable response."
+            }
+          }
+        }
+      },
+      "errors": [
+        {
+          "name": "InvalidRequest"
+        },
+        {
+          "name": "Conflict"
+        },
+        {
+          "name": "UpstreamUnavailable"
+        }
+      ],
+      "input": {
+        "encoding": "application/json",
+        "schema": {
+          "type": "object",
+          "required": [
+            "manifestCid"
+          ],
+          "properties": {
+            "manifestCid": {
+              "type": "string",
+              "maxLength": 256,
+              "format": "cid"
+            },
+            "expectedLegacyRevision": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          }
+        }
+      }
+    }
+  }
+}

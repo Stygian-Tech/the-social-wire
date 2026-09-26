@@ -70,7 +70,13 @@ export const SEMBLE_REPO_OAUTH_SCOPES = [
   "repo:network.cosmik.connection?action=create&action=update&action=delete",
 ] as const;
 
+export const PDS_READ_STATE_REPO_SCOPES = [
+  "repo:app.thesocialwire.readState?action=create&action=update&action=delete",
+  "repo:app.thesocialwire.readStateChunk?action=create&action=update&action=delete",
+] as const;
+
 export const AT_PROTO_OAUTH_SCOPES = [
+  ...PDS_READ_STATE_REPO_SCOPES,
   "atproto",
   ...SOCIAL_WIRE_REPO_SCOPES,
   ...BLUESKY_SOCIAL_PERMISSION_SCOPES,

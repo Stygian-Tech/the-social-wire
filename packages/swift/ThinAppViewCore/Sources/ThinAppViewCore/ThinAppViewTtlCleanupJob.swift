@@ -2,9 +2,11 @@ import Foundation
 import Logging
 
 actor ThinAppViewTtlCleanupJob {
+  private var pdsEvictionHasMore = false
   private let store: any ThinAppViewStore
   private let projectionCache: (any AppViewProjectionCacheStore)?
   private let config: ThinAppViewConfig
+  private let pdsEviction: PDSReadStateEvictionConfiguration
   private let tapStorageEnabled: Bool
   private let environment: String
   private let batchSize: Int
@@ -16,6 +18,7 @@ actor ThinAppViewTtlCleanupJob {
     projectionCache: (any AppViewProjectionCacheStore)?,
     config: ThinAppViewConfig,
     tapStorageEnabled: Bool = false,
+    pdsEviction: PDSReadStateEvictionConfiguration = .disabled,
     environment: String,
     batchSize: Int = 1_000,
     timeBudget: Duration = .seconds(30),
@@ -25,6 +28,7 @@ actor ThinAppViewTtlCleanupJob {
     self.projectionCache = projectionCache
     self.config = config
     self.tapStorageEnabled = tapStorageEnabled
+    self.pdsEviction = pdsEviction
     self.environment = environment
     self.batchSize = max(1, min(batchSize, 10_000))
     self.timeBudget = timeBudget
@@ -57,7 +61,7 @@ actor ThinAppViewTtlCleanupJob {
       let counts = try await deleteBatch()
       totalDeleted += counts.reduce(0, +)
       batches += 1
-      mayHaveBacklog = counts.contains { $0 >= batchSize }
+      mayHaveBacklog = counts.contains { $0 >= batchSize } || pdsEvictionHasMore
     } while mayHaveBacklog && clock.now < deadline
     logger.info(
       "Thin AppView TTL cleanup sweep",
@@ -109,6 +113,18 @@ actor ThinAppViewTtlCleanupJob {
       before: now,
       batchSize: batchSize
     ) ?? 0
+    var pdsProjectionDeleted = 0
+    if pdsEviction.enabled, let lifecycle = store as? any PDSReadStateLifecycleStoring {
+      let result = try await lifecycle.evictIdlePDSReadState(
+        before: now.addingTimeInterval(-pdsEviction.idleSeconds), at: now, batchSize: batchSize)
+      if let viewer = result.viewerDid {
+        try await projectionCache?.invalidateSidebarProjection(viewerDid: viewer)
+        try await projectionCache?.invalidateUnreadCounts(viewerDid: viewer, publicationId: nil)
+        try await projectionCache?.invalidateFirstPage(viewerDid: viewer, publicationId: nil)
+      }
+      pdsEvictionHasMore = result.hasMore
+      pdsProjectionDeleted = result.deletedRows
+    }
     logger.debug(
       "Thin AppView TTL cleanup batch",
       metadata: [
@@ -122,6 +138,6 @@ actor ThinAppViewTtlCleanupJob {
       ]
     )
     return [contentDeleted, readDeleted, tapReceiptsDeleted,
-      projectionRepairsDeleted, ingestionInboxDeleted, projectionCachesDeleted, circleCachesDeleted]
+      projectionRepairsDeleted, ingestionInboxDeleted, projectionCachesDeleted, circleCachesDeleted, pdsProjectionDeleted]
   }
 }

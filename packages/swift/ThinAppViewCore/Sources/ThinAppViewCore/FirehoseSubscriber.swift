@@ -570,6 +570,7 @@ actor FirehoseSubscriber {
     let allowlist: Set<String> = [
       "site.standard.document", "site.standard.entry", "site.standard.publication",
       "site.standard.graph.subscription",
+      "app.thesocialwire.readState",
       "app.skyreader.feed.subscription", "app.thesocialwire.entryReadState",
     ]
     return allowlist.contains(value) ? value : "other"

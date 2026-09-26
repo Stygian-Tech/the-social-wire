@@ -13,11 +13,13 @@ enum WireMetadataMaintenanceRuntime {
     var databaseSeconds: TimeInterval = 0
     var sweepStarted: Date?
     var lastFullSweepSeconds: TimeInterval?
+    var pacing = WireMetadataRepairPacing(intervalMilliseconds: intervalMilliseconds)
     while !Task.isCancelled {
       do {
         try Task.checkCancellation()
         let started = Date()
         let progress = try await store.repairMetadataPage(asOf: started)
+        pacing.succeeded(progress)
         let completed = Date()
         scanned += progress.scanned
         repaired += progress.repaired
@@ -32,6 +34,7 @@ enum WireMetadataMaintenanceRuntime {
             "rows_repaired": .stringConvertible(repaired),
             "database_wait_and_execution_ms": .stringConvertible(databaseSeconds * 1_000),
             "last_full_sweep_seconds": .string(lastFullSweepSeconds.map(String.init(describing:)) ?? "unknown"),
+            "next_page_delay_ms": .stringConvertible(pacing.delayMilliseconds),
           ])
           nextLogAt = started.addingTimeInterval(60)
           scanned = 0
@@ -40,9 +43,14 @@ enum WireMetadataMaintenanceRuntime {
         }
       } catch is CancellationError { throw CancellationError() }
       catch {
-        logger.error("The Wire metadata repair failed", metadata: ["failure_category": .string(failureCategory(error))])
+        try Task.checkCancellation()
+        pacing.failed()
+        logger.error("The Wire metadata repair failed", metadata: [
+          "failure_category": .string(failureCategory(error)),
+          "retry_milliseconds": .stringConvertible(pacing.delayMilliseconds),
+        ])
       }
-      try await Task.sleep(for: .milliseconds(max(250, intervalMilliseconds)))
+      try await Task.sleep(for: .milliseconds(pacing.delayMilliseconds))
     }
   }
 

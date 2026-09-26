@@ -49,11 +49,34 @@ func TestLoadDefaultsToUSWestAndAllEventKinds(t *testing.T) {
 	if !slices.Contains(cfg.Collections, "site.standard.document") || !slices.Contains(cfg.Collections, "app.skyreader.feed.subscription") {
 		t.Fatalf("collections = %#v", cfg.Collections)
 	}
+	if slices.Contains(cfg.Collections, "app.thesocialwire.readState") {
+		t.Fatalf("manifest intake requires an explicit generation handoff: %#v", cfg.Collections)
+	}
+	if slices.Contains(cfg.Collections, "app.thesocialwire.readStateChunk") {
+		t.Fatalf("unreferenced immutable chunks must not enter the inbox: %#v", cfg.Collections)
+	}
 	if slices.Contains(cfg.Collections, "app.thesocialwire.entryReadState") {
 		t.Fatalf("read-state records should not be consumed by V2: %#v", cfg.Collections)
 	}
 	if cfg.ReplayBeforeSeq != nil || cfg.ReplaySnapshotOnly {
 		t.Fatalf("default replay unexpectedly bounded: before=%v snapshot=%t", cfg.ReplayBeforeSeq, cfg.ReplaySnapshotOnly)
+	}
+}
+
+func TestConfiguredReadStateManifestFilterChangesFingerprint(t *testing.T) {
+	t.Setenv("APP_ENV", "dev")
+	t.Setenv("DATABASE_URL", "postgres://example.invalid/socialwire")
+	t.Setenv("JETSTREAM_API_KEY", "test-key")
+	t.Setenv("JETSTREAM_COLLECTIONS", strings.Join(append(slices.Clone(DefaultCollections), "app.thesocialwire.readState"), ","))
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(cfg.Collections, "app.thesocialwire.readState") || slices.Contains(cfg.Collections, "app.thesocialwire.readStateChunk") {
+		t.Fatalf("manifest-only filter = %#v", cfg.Collections)
+	}
+	if cfg.FilterFingerprint == FilterFingerprint(DefaultStreamNSID, DefaultCollections, DefaultScopePolicy) {
+		t.Fatal("manifest intake must use a distinct filter fingerprint and deliberate cursor handoff")
 	}
 }
 
@@ -157,6 +180,8 @@ func TestLoadControllerLoadsMultipleIndependentWireLanes(t *testing.T) {
 }
 
 func TestLoadControllerPreservesProductionLaneFingerprints(t *testing.T) {
+	// Existing deployments retain their explicitly configured filter until a cursor handoff.
+	t.Setenv("JETSTREAM_APPVIEW_COLLECTIONS", "site.standard.document,site.standard.entry,com.standard.document,com.standard.entry,app.skyreader.feed.subscription,site.standard.graph.subscription")
 	t.Setenv("APP_ENV", "prod")
 	t.Setenv("DATABASE_URL", "postgres://example.invalid/socialwire")
 	t.Setenv("JETSTREAM_API_KEY", "shared-test-key")

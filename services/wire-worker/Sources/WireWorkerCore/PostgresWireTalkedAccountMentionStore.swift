@@ -82,7 +82,7 @@ struct PostgresWireTalkedAccountMentionStore: WireTalkedAccountMentionStoring {
   }
 
   func pruneExpired(asOf: Date) async throws {
-    // Mentions/accounts use one batch each. Metadata scans at most 10,000 raw rows across
+    // Mentions/accounts use one batch each. Metadata scans at most 2,000 raw rows across
     // short transactions so protected prefixes do not prevent eventual cleanup.
     let queries: [PostgresQuery] = [
       """
@@ -124,7 +124,7 @@ struct PostgresWireTalkedAccountMentionStore: WireTalkedAccountMentionStoring {
           let (examined, staleUntil, canonicalKey, deleted) =
             try row.decode((Int64, String?, String?, Int64).self)
           var next: WireMetadataPruneCursor.Position?
-          if examined == 500, let staleUntil, let canonicalKey {
+          if examined == WireMetadataPruneQuery.pageSize, let staleUntil, let canonicalKey {
             next = .init(staleUntil: staleUntil, canonicalKey: canonicalKey)
           }
           batch = .init(position: next, examined: examined, deleted: deleted)

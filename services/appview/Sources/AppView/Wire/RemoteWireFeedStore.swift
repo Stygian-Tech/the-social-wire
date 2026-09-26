@@ -2,6 +2,10 @@ import Foundation
 import WireCore
 
 actor RemoteWireFeedStore: WireFeedStore {
+  // Share public cache pages across UI limits (1...50), with room for the next
+  // cursor row, without validating and decoding 500 ranked rows on every read.
+  private static let initialRankedBatchLimit = 100
+  private static let continuationRankedBatchLimit = 500
   private let transport: any WireCorpusTransport
   private let cursorCodec: WireCursorCodec
   private let mode: WireDiscoveryMode
@@ -53,14 +57,27 @@ actor RemoteWireFeedStore: WireFeedStore {
     var exhausted = false
     var scanned = 0
     while accepted.count <= safeLimit, !exhausted, scanned < 5_000 {
+      let rankedBatchLimit = min(scanned == 0 ? Self.initialRankedBatchLimit
+        : Self.continuationRankedBatchLimit, 5_000 - scanned)
       let target = Self.feedTarget(
         language: requestedLanguage,
         generationID: generationID,
         startOrdinal: scanOrdinal,
-        limit: 500
+        limit: rankedBatchLimit,
+        fallbackLimit: generationID == nil ? 5000 : nil
       )
-      let page: WireCorpusPage = try await fetch(target: target)
-      guard page.language == requestedLanguage else { throw WireServingError.unavailable }
+      let page: WireCorpusPage
+      do {
+        page = try await fetch(target: target)
+      } catch WireServingError.invalidCursor where generationID == nil {
+        guard viewerDid == nil else { throw WireServingError.unavailable }
+        // Anonymous readers can use the old bounded contract during Edge-first rollout.
+        page = try await fetch(target: Self.feedTarget(language: requestedLanguage,
+          generationID: nil, startOrdinal: scanOrdinal, limit: rankedBatchLimit))
+      }
+      guard page.language == requestedLanguage,
+        page.rows.count <= (page.source == .simplifiedFallback ? 5000 : rankedBatchLimit)
+      else { throw WireServingError.unavailable }
       if let pinned = generationID, page.generationID != pinned {
         throw WireServingError.cursorExpired
       }
@@ -126,20 +143,26 @@ actor RemoteWireFeedStore: WireFeedStore {
   ) async throws -> WireEdition {
     guard mode.servesAPI else { throw WireServingError.unavailable }
     let requestedLanguage = Self.primaryLanguage(language)
-    var query = [("language", requestedLanguage)]
+    var query = [("language", requestedLanguage), ("fallbackLimit", "5000")]
     if let region { query.append(("region", region.rawValue)) }
     let target = Self.target(path: "/internal/wire/v1/edition", query: query)
     let response: WireCorpusTransportResponse
     do {
       response = try await transportResponse(target: target, allowsNotFound: false)
-    } catch WireServingError.invalidCursor where region != nil {
-      // During a staged rollout, an older Corpus Edge rejects the new query
-      // parameter. Preserve canonical service until the regional contract lands.
+    } catch WireServingError.invalidCursor {
+      // An older Edge can reject region or fallbackLimit. Only anonymous reads
+      // may retry without bounded fallback identity; signed-in reads fail closed.
+      guard region != nil || viewerDid == nil else { throw WireServingError.unavailable }
       let canonicalTarget = Self.target(
         path: "/internal/wire/v1/edition",
-        query: [("language", requestedLanguage)]
+        query: viewerDid == nil ? [("language", requestedLanguage)]
+          : [("language", requestedLanguage), ("fallbackLimit", "5000")]
       )
-      response = try await transportResponse(target: canonicalTarget, allowsNotFound: false)
+      do {
+        response = try await transportResponse(target: canonicalTarget, allowsNotFound: false)
+      } catch WireServingError.invalidCursor where viewerDid != nil {
+        throw WireServingError.unavailable
+      }
     }
     // Contract v3 adds the authenticated Circle candidate operation without
     // changing the existing Wire edition payload. Accept both revisions during
@@ -149,16 +172,44 @@ actor RemoteWireFeedStore: WireFeedStore {
     else {
       throw WireServingError.unavailable
     }
-    let edition: WireEdition = try decode(response.body)
+    let corpusEdition: WireCorpusEdition = try decode(response.body)
+    var edition = corpusEdition.edition
     guard edition.language == requestedLanguage else { throw WireServingError.unavailable }
     let moderation = try await moderationSnapshot(viewerDID: viewerDid, now: now)
+    // Deploy the additive Corpus Edge payload first. A legacy payload cannot
+    // prove actor identity for external links without representative AT URIs.
+    guard moderation == nil || corpusEdition.sourceActorKeysByItemID != nil else {
+      throw WireServingError.unavailable
+    }
     let allows: (WireFeedItem) -> Bool = { item in
       moderation?.allows(
-        item: item.itemID,
+        item: corpusEdition.sourceActorKeysByItemID?[item.itemID] ?? item.itemID,
         title: item.title,
         summary: item.summary,
         representativeURI: item.representativeURI
       ) ?? true
+    }
+    if edition.source == .simplifiedFallback {
+      if let rows = corpusEdition.fallbackRows {
+        guard rows.count <= 5000 else { throw WireServingError.unavailable }
+        let stories = rows.filter { row in
+          moderation?.allows(item: row.sourceActorKey ?? row.item.itemID,
+            title: row.item.title, summary: row.item.summary,
+            representativeURI: row.item.representativeURI) ?? true
+        }.prefix(50).map(\.item)
+        let assembled = WireEditionAssembler.assemble(generationID: edition.generationID,
+          generatedAt: edition.generatedAt, language: edition.language,
+          source: .simplifiedFallback, degraded: edition.degraded, rankedItems: stories)
+        edition = WireEdition(algorithmVersion: assembled.algorithmVersion,
+          generationID: assembled.generationID, generatedAt: assembled.generatedAt,
+          language: assembled.language, cursor: nil, source: assembled.source,
+          degraded: assembled.degraded, leadStories: assembled.leadStories,
+          publicationPanels: assembled.publicationPanels, storyRails: assembled.storyRails,
+          generalStories: assembled.generalStories, trendingStories: assembled.trendingStories,
+          talkedAboutAccounts: edition.talkedAboutAccounts)
+      } else if moderation != nil {
+        throw WireServingError.unavailable
+      }
     }
     let accounts = edition.talkedAboutAccounts.filter { account in
       moderation?.allows(
@@ -252,6 +303,7 @@ actor RemoteWireFeedStore: WireFeedStore {
     } catch {
       throw WireServingError.unavailable
     }
+    guard response.body.count <= 8 * 1024 * 1024 else { throw WireServingError.unavailable }
     switch response.statusCode {
     case 200:
       guard let contractVersion = response.contractVersion,
@@ -290,13 +342,15 @@ actor RemoteWireFeedStore: WireFeedStore {
     language: String,
     generationID: String?,
     startOrdinal: Int,
-    limit: Int
+    limit: Int,
+    fallbackLimit: Int? = nil
   ) -> String {
     var query: [(String, String)] = [
       ("language", language),
       ("limit", String(limit)),
       ("startOrdinal", String(startOrdinal)),
     ]
+    if let fallbackLimit { query.append(("fallbackLimit", String(fallbackLimit))) }
     if let generationID { query.append(("generationId", generationID)) }
     return target(path: "/internal/wire/v1/feed", query: query)
   }

@@ -230,8 +230,9 @@ describe("CI workflow configuration", () => {
       'JETSTREAM_WIRE_ADMISSION_BURST_EVENTS: "1"',
     );
     expect(railwayInfrastructure).toContain(
-      'JETSTREAM_WIRE_LANES: "external,publication"',
+      'JETSTREAM_WIRE_LANES: "external,publication,publicationwest"',
     );
+    expect(railwayInfrastructure).toContain('JETSTREAM_WIRE_LANES: "publicationwest"');
     expect(railwayInfrastructure).toContain('WIRE_INBOX_CONCURRENCY: "52"');
     expect(railwayInfrastructure).toContain('workerRegion: "sfo"');
     expect(railwayInfrastructure).toContain('branch: "main"');
@@ -255,6 +256,10 @@ describe("CI workflow configuration", () => {
     expect(productionProfile).toContain(
       '"wire-global-v8-prod-publication-live-tail-v1"',
     );
+    expect(productionProfile).toContain(
+      '"wire-global-v9-prod-publication-west-20260919"',
+    );
+    expect(productionProfile).not.toContain("wire-global-v5-dev-publication-west-20260919");
     expect(productionProfile).not.toContain("wire-global-v4-dev-live-20260830");
     expect(productionProfile).not.toContain("24790001258");
     expect(pathFilters.match(/'\.railway\/\*\*'/g)).toHaveLength(3);

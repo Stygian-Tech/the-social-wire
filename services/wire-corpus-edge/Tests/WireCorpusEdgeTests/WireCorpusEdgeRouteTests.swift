@@ -72,6 +72,22 @@ struct WireCorpusEdgeRouteTests {
     #expect(await store.feedCalls == 0)
   }
 
+  @Test("fallback transport limit is independently bounded on both read routes", arguments: ["feed", "edition"])
+  func fallbackTransportLimit(route: String) async throws {
+    let store = TestWireCorpusStore()
+    try await application(store: store).test(.router) { client in
+      for limit in ["0", "5001", "nope"] {
+        let target = "/internal/wire/v1/\(route)?language=en&fallbackLimit=\(limit)"
+        let response = try await client.execute(uri: target, method: .get, headers: try requestHeaders(target: target))
+        #expect(response.status == .badRequest)
+      }
+      let target = "/internal/wire/v1/\(route)?language=en&fallbackLimit=5000"
+      let response = try await client.execute(uri: target, method: .get, headers: try requestHeaders(target: target))
+      #expect(response.status == .ok)
+    }
+    #expect(await store.lastFallbackLimit == 5000)
+  }
+
   @Test("signed edition route returns the bounded internal edition")
   func edition() async throws {
     let store = TestWireCorpusStore()
@@ -81,7 +97,12 @@ struct WireCorpusEdgeRouteTests {
       let response = try await client.execute(uri: target, method: .get, headers: headers)
       #expect(response.status == .ok)
       #expect(response.headers[HTTPField.Name("X-Wire-Corpus-Contract")!] == "3")
-      #expect(response.body.readableBytes > 0)
+      let decoder = JSONDecoder()
+      decoder.dateDecodingStrategy = .iso8601
+      let corpus = try decoder.decode(WireCorpusEdition.self, from: Data(response.body.readableBytesView))
+      #expect(corpus.edition.language == "en")
+      #expect(corpus.sourceActorKeysByItemID == [:])
+      #expect(try decoder.decode(WireEdition.self, from: Data(response.body.readableBytesView)) == corpus.edition)
     }
     #expect(await store.editionCalls == 1)
     #expect(await store.lastEditionRegion == .outsideUnitedStates)
@@ -210,6 +231,7 @@ struct WireCorpusEdgeRouteTests {
 }
 
 private actor TestWireCorpusStore: WireCorpusStoring {
+  private(set) var lastFallbackLimit: Int?
   private(set) var feedCalls = 0
   private(set) var editionCalls = 0
   private(set) var lastEditionRegion: WireViewerRegion?
@@ -227,8 +249,10 @@ private actor TestWireCorpusStore: WireCorpusStoring {
     generationID: UUID?,
     startOrdinal: Int,
     limit: Int,
+    fallbackLimit: Int?,
     now: Date
   ) async throws -> WireCorpusPage {
+    lastFallbackLimit = fallbackLimit
     feedCalls += 1
     return WireCorpusPage(
       generationID: UUID().uuidString.lowercased(),
@@ -244,18 +268,20 @@ private actor TestWireCorpusStore: WireCorpusStoring {
   func edition(
     language: String,
     region: WireViewerRegion?,
+    fallbackLimit: Int?,
     now: Date
-  ) async throws -> WireEdition {
+  ) async throws -> WireCorpusEdition {
+    lastFallbackLimit = fallbackLimit
     editionCalls += 1
     lastEditionRegion = region
-    return WireEditionAssembler.assemble(
+    return WireCorpusEdition(edition: WireEditionAssembler.assemble(
       generationID: UUID().uuidString.lowercased(),
       generatedAt: now,
       language: language,
       source: .ranked,
       degraded: false,
       rankedItems: []
-    )
+    ), sourceActorKeysByItemID: [:])
   }
 
   func item(id: String, now: Date) async throws -> WireCorpusItem? { nil }

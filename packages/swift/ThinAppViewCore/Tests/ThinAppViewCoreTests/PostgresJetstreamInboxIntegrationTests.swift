@@ -14,6 +14,14 @@ import Testing
   )
 )
 struct PostgresJetstreamInboxIntegrationTests {
+  @Test("Postgres minimal read mutation pages preserve dates and cursors")
+  func minimalUnreadMutationProjection() async throws {
+    try await PostgresInboxFixture.withFixture { fixture in
+      try await UnreadMutationQueryTests.verifyMinimalProjection(
+        store: fixture.store, prefix: fixture.sourceGeneration)
+    }
+  }
+
   @Test("Postgres unread mutation queries retain specific aliases ahead of broad scopes")
   func mixedBroadAndSpecificUnreadMutationScopes() async throws {
     try await PostgresInboxFixture.withFixture { fixture in
@@ -129,7 +137,7 @@ struct PostgresJetstreamInboxIntegrationTests {
       #expect(presentation.response.entries.map(\.entryId) == [todayId])
 
       var cursor: String?
-      var snapshot: [AppViewEntryListItem] = []
+      var snapshot: [UnreadReadMutationEntry] = []
       repeat {
         let page = try await store.listUnreadEntriesForReadMutation(
           viewerDid: viewer, scopes: [scope], cursor: cursor, limit: 1
@@ -708,12 +716,14 @@ final class PostgresInboxFixture: @unchecked Sendable {
     runTask = Task { await pool.run() }
     await Task.yield()
     try await store.ping()
-    // Suites can create their first fixtures concurrently. PostgreSQL's IF NOT EXISTS does not
-    // serialize the underlying pg_type inserts, so use one transaction/connection for all DDL.
-    try await pool.withTransaction(logger: logger) { connection in
-      try await connection.query(
-        "SELECT pg_advisory_xact_lock(hashtextextended('thin-appview-test-schema', 0))", logger: logger)
-      try await self.installMinimalSchema(on: connection)
+    // Install before any fixture uses the schema, not before every individual test.
+    // The advisory lock also coordinates installers in separate test processes.
+    try await PostgresTestSchemaPreparation.shared.prepare(database: url) {
+      try await pool.withTransaction(logger: self.logger) { connection in
+        try await connection.query(
+          "SELECT pg_advisory_xact_lock(hashtextextended('thin-appview-test-schema', 0))", logger: self.logger)
+        try await self.installMinimalSchema(on: connection)
+      }
     }
   }
 
@@ -1263,6 +1273,53 @@ final class PostgresInboxFixture: @unchecked Sendable {
       """,
     ]
     for statement in statements { try await execute(statement) }
+    let installed = try await connection.query("SELECT to_regclass('appview_pds_read_state_authority') IS NOT NULL", logger: logger)
+    var needsPDSMigration = true
+    for try await row in installed { needsPDSMigration = !(try row.decode(Bool.self)) }
+    if needsPDSMigration {
+      var root = URL(fileURLWithPath: #filePath)
+      for _ in 0..<6 { root.deleteLastPathComponent() }
+      let migration = try String(contentsOf: root.appendingPathComponent(
+        "database/migrations/20260909010000_add_pds_read_state_projection.sql"), encoding: .utf8)
+      // PostgresNIO uses the extended protocol even for simpleQuery. Wrap the
+      // reviewed migration in one DO statement so its function bodies stay intact.
+      try await execute(PostgresQuery(unsafeSQL: "DO $fixture$ BEGIN\n" + migration + "\nEND $fixture$;"))
+    }
+    let readiness = try await connection.query("SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'appview_pds_read_state_authority' AND column_name = 'projection_ready')", logger: logger)
+    var needsReadiness = true
+    for try await row in readiness { needsReadiness = !(try row.decode(Bool.self)) }
+    if needsReadiness {
+      var root = URL(fileURLWithPath: #filePath)
+      for _ in 0..<6 { root.deleteLastPathComponent() }
+      let migration = try String(contentsOf: root.appendingPathComponent(
+        "database/migrations/20260909020000_add_pds_projection_readiness.sql"), encoding: .utf8)
+      try await execute(PostgresQuery(unsafeSQL: "DO $fixture$ BEGIN\n" + migration + "\nEND $fixture$;"))
+    }
+    let maintenance = try await connection.query("SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'appview_pds_read_state_authority' AND column_name = 'manifest_revision')", logger: logger)
+    var needsMaintenance = true
+    for try await row in maintenance { needsMaintenance = !(try row.decode(Bool.self)) }
+    if needsMaintenance {
+      var root = URL(fileURLWithPath: #filePath)
+      for _ in 0..<6 { root.deleteLastPathComponent() }
+      let migration = try String(contentsOf: root.appendingPathComponent(
+        "database/migrations/20260909030000_fence_pds_manifest_maintenance.sql"), encoding: .utf8)
+      try await execute(PostgresQuery(unsafeSQL: "DO $fixture$ BEGIN\n" + migration + "\nEND $fixture$;"))
+    }
+    // Idempotent CREATE OR REPLACE: reapplying keeps shared fixtures on the current definition.
+    do {
+      var root = URL(fileURLWithPath: #filePath)
+      for _ in 0..<6 { root.deleteLastPathComponent() }
+      let migration = try String(contentsOf: root.appendingPathComponent(
+        "database/migrations/20260919080000_evaluate_pds_read_state_once.sql"), encoding: .utf8)
+      try await execute(PostgresQuery(unsafeSQL: "DO $fixture$ BEGIN\n" + migration + "\nEND $fixture$;"))
+    }
+    do {
+      var root = URL(fileURLWithPath: #filePath)
+      for _ in 0..<6 { root.deleteLastPathComponent() }
+      let migration = try String(contentsOf: root.appendingPathComponent(
+        "database/migrations/20260922120000_bound_pds_boundary_selection.sql"), encoding: .utf8)
+      try await execute(PostgresQuery(unsafeSQL: "DO $fixture$ BEGIN\n" + migration + "\nEND $fixture$;"))
+    }
     let recovery = try await connection.query(
       "SELECT to_regclass('appview_repository_recovery_records') IS NOT NULL", logger: logger)
     var needsRecovery = true

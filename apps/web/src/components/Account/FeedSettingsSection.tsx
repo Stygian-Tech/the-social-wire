@@ -1,5 +1,6 @@
 "use client";
 
+import { PDSReadStateSettingsSection } from "@/components/Account/PDSReadStateSettingsSection";
 import { Switch } from "@/components/ui/switch";
 import { DiscoveryFeedDisplaySettings } from "@/components/Account/DiscoveryFeedDisplaySettings";
 import { AppearanceSettingsSection } from "@/components/Account/AppearanceSettingsSection";
@@ -50,6 +51,7 @@ export function FeedSettingsSection() {
         </header>
         <AppearanceSettingsSection />
         <ReadLaterSettingsSection />
+        <PDSReadStateSettingsSection />
         <section className="rounded-2xl border bg-card p-4 shadow-[var(--soft-elevation)]">
           <h2 className="text-sm font-bold">RSS Articles</h2>
           <div className="mt-3 flex min-h-12 items-center justify-between gap-4">

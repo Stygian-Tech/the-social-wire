@@ -11,14 +11,14 @@ struct ReadAgeSnapshotTests {
   func emptyPagesAndDuplicateIds() async throws {
     let first = entry("first")
     let second = entry("second")
-    let result = try await ReadAgeSnapshot.collect { cursor in
+    let result = try await ReadAgeSnapshot.matchingIDs(before: Date(timeIntervalSince1970: 200)) { cursor in
       switch cursor {
-      case nil: AppViewEntryListResponse(entries: [first], cursor: "empty")
-      case "empty": AppViewEntryListResponse(entries: [], cursor: "last")
-      default: AppViewEntryListResponse(entries: [first, second], cursor: nil)
+      case nil: UnreadReadMutationPage(entries: [first], cursor: "empty")
+      case "empty": UnreadReadMutationPage(entries: [], cursor: "last")
+      default: UnreadReadMutationPage(entries: [first, second], cursor: nil)
       }
     }
-    #expect(result.map(\.entryId) == ["first", "second"])
+    #expect(result == ["first", "second"])
   }
 
   @Test("publishes deduplicated page batches before requesting the next page")
@@ -27,9 +27,9 @@ struct ReadAgeSnapshotTests {
     let second = entry("second")
     let recorder = PageRecorder()
     try await ReadAgeSnapshot.forEachPage { cursor in
-      if cursor == nil { return AppViewEntryListResponse(entries: [first], cursor: "next") }
+      if cursor == nil { return UnreadReadMutationPage(entries: [first], cursor: "next") }
       #expect(await recorder.snapshots == [["first"]])
-      return AppViewEntryListResponse(entries: [first, second], cursor: nil)
+      return UnreadReadMutationPage(entries: [first, second], cursor: nil)
     } onPage: { entries in
       await recorder.append(entries.map(\.entryId))
     }
@@ -43,7 +43,7 @@ struct ReadAgeSnapshotTests {
     await #expect(throws: HTTPError.self) {
       try await ReadAgeSnapshot.forEachPage { cursor in
         guard cursor == nil else { throw HTTPError(.serviceUnavailable) }
-        return AppViewEntryListResponse(entries: [first], cursor: "next")
+        return UnreadReadMutationPage(entries: [first], cursor: "next")
       } onPage: { entries in
         await recorder.append(entries.map(\.entryId))
       }
@@ -51,22 +51,59 @@ struct ReadAgeSnapshotTests {
     #expect(await recorder.snapshots == [["first"]])
   }
 
+  @Test("cancellation during the final page prevents snapshot consumption")
+  func cancelledFinalPage() async {
+    let recorder = PageRecorder()
+    let first = entry("first")
+    let task = Task {
+      try await ReadAgeSnapshot.forEachPage { _ in
+        withUnsafeCurrentTask { $0?.cancel() }
+        return UnreadReadMutationPage(entries: [first], cursor: nil)
+      } onPage: { entries in
+        await recorder.append(entries.map(\.entryId))
+      }
+    }
+    await #expect(throws: CancellationError.self) { try await task.value }
+    #expect(await recorder.snapshots.isEmpty)
+  }
+
   @Test("rejects both stuck cursors and multi-page cursor cycles")
   func cursorCycles() async {
     await #expect(throws: HTTPError.self) {
-      try await ReadAgeSnapshot.collect { _ in
-        AppViewEntryListResponse(entries: [], cursor: "same")
+      try await ReadAgeSnapshot.matchingIDs(before: Date(timeIntervalSince1970: 200)) { _ in
+        UnreadReadMutationPage(entries: [], cursor: "same")
       }
     }
     await #expect(throws: HTTPError.self) {
-      try await ReadAgeSnapshot.collect { cursor in
-        AppViewEntryListResponse(entries: [], cursor: cursor == "first" ? "second" : "first")
+      try await ReadAgeSnapshot.matchingIDs(before: Date(timeIntervalSince1970: 200)) { cursor in
+        UnreadReadMutationPage(entries: [], cursor: cursor == "first" ? "second" : "first")
       }
     }
   }
 
-  private func entry(_ id: String) -> AppViewEntryListItem {
-    AppViewEntryListItem(entryId: id, title: id, publishedAt: Date(timeIntervalSince1970: 100))
+  @Test("matching IDs scan every page and exclude newer or duplicate entries")
+  func matchingIDs() async throws {
+    let old = entry("old")
+    let recent = UnreadReadMutationEntry(entryId: "recent",
+      publishedAt: Date(timeIntervalSince1970: 300),
+      feedPositionAt: Date(timeIntervalSince1970: 1), publicationId: "fixture")
+    let ids = try await ReadAgeSnapshot.matchingIDs(before: Date(timeIntervalSince1970: 200)) { cursor in
+      cursor == nil
+        ? UnreadReadMutationPage(entries: [recent], cursor: "next")
+        : UnreadReadMutationPage(entries: [old, old], cursor: nil)
+    }
+    #expect(ids == ["old"])
+    await #expect(throws: HTTPError.self) {
+      _ = try await ReadAgeSnapshot.matchingIDs(before: Date(timeIntervalSince1970: 200)) { cursor in
+        guard cursor == nil else { throw HTTPError(.serviceUnavailable) }
+        return UnreadReadMutationPage(entries: [old], cursor: "failed")
+      }
+    }
+  }
+
+  private func entry(_ id: String) -> UnreadReadMutationEntry {
+    UnreadReadMutationEntry(entryId: id, publishedAt: Date(timeIntervalSince1970: 100),
+      feedPositionAt: Date(timeIntervalSince1970: 100), publicationId: "fixture")
   }
 }
 

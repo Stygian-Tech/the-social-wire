@@ -492,6 +492,99 @@ struct ATProtoAuthMiddlewareSecurityTests {
     #expect(await calls.count == 1)
   }
 
+  @Test("JWKS admission and deadline failures preserve the session and never authenticate", arguments: [
+    JWKSVerificationCacheFailure.overloaded, .timedOut,
+  ])
+  func jwksAvailabilityFailures(failure: JWKSVerificationCacheFailure) async throws {
+    let fixture = try fallbackFixture()
+    let attestorCalls = CallCounter()
+    let handlerCalls = CallCounter()
+    let response = try await protectedResponse(
+      accessToken: fixture.accessToken, dpopProof: fixture.gatewayProof,
+      supplementalJWKS: #"{"keys":[]}"#,
+      accessTokenVerifier: { _ in throw failure },
+      attestor: StubAttestor(calls: attestorCalls, behavior: .success(fixture.verifiedToken, nil)),
+      handlerCalls: handlerCalls)
+    #expect(response.status == .serviceUnavailable)
+    let body = try #require(JSONSerialization.jsonObject(with: Data(buffer: response.body)) as? [String: Any])
+    let error = try #require(body["error"] as? [String: String])
+    #expect(error["message"] == "Authentication service is temporarily unavailable.")
+    #expect(await attestorCalls.count == 0)
+    #expect(await handlerCalls.count == 0)
+  }
+
+  @Test("native HTTP timeouts preserve the session without attestation or route execution", arguments: [
+    HTTPClientError.deadlineExceeded, .connectTimeout, .readTimeout, .writeTimeout,
+    .getConnectionFromPoolTimeout, .tlsHandshakeTimeout, .httpProxyHandshakeTimeout,
+    .socksHandshakeTimeout,
+  ])
+  func nativeTimeoutAvailability(failure: HTTPClientError) async throws {
+    let fixture = try fallbackFixture()
+    let attestorCalls = CallCounter()
+    let handlerCalls = CallCounter()
+    let response = try await protectedResponse(
+      accessToken: fixture.accessToken, dpopProof: fixture.gatewayProof,
+      supplementalJWKS: #"{"keys":[]}"#,
+      accessTokenVerifier: { _ in throw failure },
+      attestor: StubAttestor(calls: attestorCalls, behavior: .success(fixture.verifiedToken, nil)),
+      handlerCalls: handlerCalls)
+    #expect(response.status == .serviceUnavailable)
+    let body = try #require(JSONSerialization.jsonObject(with: Data(buffer: response.body)) as? [String: Any])
+    let error = try #require(body["error"] as? [String: String])
+    #expect(error["message"] == "Authentication service is temporarily unavailable.")
+    #expect(await attestorCalls.count == 0)
+    #expect(await handlerCalls.count == 0)
+  }
+
+  @Test("JWKS HTTP availability statuses are distinct from invalid authentication", arguments: [
+    nil, 400, 401, 403, 404, 429, 500, 503, 599,
+  ] as [Int?])
+  func jwksHTTPAvailability(status: Int?) async throws {
+    let fixture = try fallbackFixture()
+    let attestorCalls = CallCounter()
+    let handlerCalls = CallCounter()
+    let response = try await protectedResponse(
+      accessToken: fixture.accessToken, dpopProof: fixture.gatewayProof,
+      supplementalJWKS: #"{"keys":[]}"#,
+      accessTokenVerifier: { _ in throw OAuthAccessTokenVerifier.VerifyError.jwksFetch(status) },
+      attestor: StubAttestor(calls: attestorCalls, behavior: .success(fixture.verifiedToken, nil)),
+      handlerCalls: handlerCalls)
+    let unavailable = status.map { $0 == 429 || (500..<600).contains($0) } ?? false
+    #expect(response.status == (unavailable ? .serviceUnavailable : .unauthorized))
+    #expect(await attestorCalls.count == 0)
+    #expect(await handlerCalls.count == 0)
+  }
+
+  @Test("cancelled JWKS requests remain cancelled without attestation or route execution", arguments: [false, true])
+  func cancelledJWKSRequest(native: Bool) async throws {
+    let fixture = try fallbackFixture()
+    let attestorCalls = CallCounter()
+    let handlerCalls = CallCounter()
+    let response = try await protectedResponse(
+      accessToken: fixture.accessToken, dpopProof: fixture.gatewayProof,
+      supplementalJWKS: #"{"keys":[]}"#,
+      accessTokenVerifier: { _ in
+        if native { throw HTTPClientError.cancelled }
+        throw CancellationError()
+      },
+      attestor: StubAttestor(calls: attestorCalls, behavior: .success(fixture.verifiedToken, nil)),
+      handlerCalls: handlerCalls, observeCancellation: true)
+    #expect(response.status == .noContent)
+    #expect(await attestorCalls.count == 0)
+    #expect(await handlerCalls.count == 0)
+  }
+
+  private struct CancellationObserver: RouterMiddleware {
+    typealias Context = GatewayRequestContext
+    func handle(
+      _ request: Request, context: GatewayRequestContext,
+      next: (Request, GatewayRequestContext) async throws -> Response
+    ) async throws -> Response {
+      do { return try await next(request, context) }
+      catch is CancellationError { return Response(status: .noContent) }
+    }
+  }
+
   private func protectedResponse(
     accessToken: String,
     dpopProof: String,
@@ -504,7 +597,8 @@ struct ATProtoAuthMiddlewareSecurityTests {
     upstreamProof: String? = nil,
     upstreamPrepared: Bool = false,
     attestationReceipt: String? = nil,
-    handlerCalls: CallCounter? = nil
+    handlerCalls: CallCounter? = nil,
+    observeCancellation: Bool = false
   ) async throws -> TestResponse {
     let httpClient = HTTPClient(eventLoopGroupProvider: .singleton)
 
@@ -537,6 +631,7 @@ struct ATProtoAuthMiddlewareSecurityTests {
       )
     }
     let router = Router(context: GatewayRequestContext.self)
+    if observeCancellation { router.add(middleware: CancellationObserver()) }
     let protected = router.group().add(middleware: middleware)
     protected.get("/protected") { _, context in
       if let handlerCalls { await handlerCalls.increment() }

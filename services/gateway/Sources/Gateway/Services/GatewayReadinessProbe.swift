@@ -5,34 +5,32 @@ import OperationsCore
 enum GatewayReadinessDependency: String, CaseIterable, Equatable, Sendable {
   case database
   case appview
-  case projectionPool = "projection_pool"
 }
 
 struct GatewayReadinessProbe: Sendable {
   let checkDatabase: @Sendable () async throws -> Void
   let appViewBaseURL: String?
-  let projectionPoolBaseURL: String?
   let checkDependency: @Sendable (String) async throws -> Void
   let recordFailure: @Sendable (GatewayReadinessDependency) async -> Void
 
   init(
     operationsStore: (any OperationsStore)?,
     appViewBaseURL: String?,
-    projectionPoolBaseURL: String?,
     httpClient: HTTPClient,
     recordFailure: @escaping @Sendable (GatewayReadinessDependency) async -> Void = { _ in }
   ) {
-    self.checkDatabase = { try await operationsStore?.ping() }
+    self.checkDatabase = {
+      guard let operationsStore else {
+        throw GatewayReadinessError.dependencyNotConfigured(name: "database")
+      }
+      try await operationsStore.ping()
+    }
     self.appViewBaseURL = appViewBaseURL
-    self.projectionPoolBaseURL = projectionPoolBaseURL
     self.recordFailure = recordFailure
     self.checkDependency = { baseURL in
-      var request = HTTPClientRequest(url: "\(baseURL)/readyz")
-      request.method = .GET
-      let response = try await httpClient.execute(request, timeout: .seconds(5))
-      _ = try await response.body.collect(upTo: 4 * 1024)
-      guard (200..<300).contains(Int(response.status.code)) else {
-        throw GatewayReadinessError.dependencyUnavailable(status: response.status.code)
+      let status = try await GatewayDependencyHTTPProbe.status(baseURL: baseURL, httpClient: httpClient)
+      guard (200..<300).contains(Int(status)) else {
+        throw GatewayReadinessError.dependencyUnavailable(status: status)
       }
     }
   }
@@ -40,13 +38,11 @@ struct GatewayReadinessProbe: Sendable {
   init(
     checkDatabase: @escaping @Sendable () async throws -> Void = {},
     appViewBaseURL: String?,
-    projectionPoolBaseURL: String?,
     checkDependency: @escaping @Sendable (String) async throws -> Void,
     recordFailure: @escaping @Sendable (GatewayReadinessDependency) async -> Void = { _ in }
   ) {
     self.checkDatabase = checkDatabase
     self.appViewBaseURL = appViewBaseURL
-    self.projectionPoolBaseURL = projectionPoolBaseURL
     self.checkDependency = checkDependency
     self.recordFailure = recordFailure
   }
@@ -55,7 +51,6 @@ struct GatewayReadinessProbe: Sendable {
     try await check(.database, operation: checkDatabase)
 
     try await checkRequiredDependency(.appview, baseURL: appViewBaseURL)
-    try await checkRequiredDependency(.projectionPool, baseURL: projectionPoolBaseURL)
   }
 
   private func checkRequiredDependency(
@@ -81,6 +76,8 @@ struct GatewayReadinessProbe: Sendable {
     do {
       try await operation()
     } catch {
+      try Task.checkCancellation()
+      if error is CancellationError { throw error }
       await recordFailure(dependency)
       throw error
     }

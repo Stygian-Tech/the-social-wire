@@ -10,6 +10,8 @@ COPY packages/swift/SocialWireRedis/Package.swift packages/swift/SocialWireRedis
 COPY packages/swift/SocialWireRedis/Sources packages/swift/SocialWireRedis/Sources
 COPY packages/swift/SocialWireRedis/Tests packages/swift/SocialWireRedis/Tests
 
+COPY packages/swift/ReadStateCore packages/swift/ReadStateCore
+
 COPY packages/swift/ThinAppViewCore/Package.swift packages/swift/ThinAppViewCore/Package.resolved* packages/swift/ThinAppViewCore/
 COPY packages/swift/ThinAppViewCore/Sources packages/swift/ThinAppViewCore/Sources
 COPY packages/swift/ThinAppViewCore/Tests packages/swift/ThinAppViewCore/Tests

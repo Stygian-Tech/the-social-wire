@@ -1,0 +1,61 @@
+{
+  "lexicon": 1,
+  "id": "app.thesocialwire.readStateChunk",
+  "defs": {
+    "main": {
+      "type": "record",
+      "key": "any",
+      "description": "Public immutable chunk, at most64KiB. V1 requires operations. V2 requires kind with exactly fragments for state or receipts for devices/legacyReceipts. Applications enforce the complete version/kind shape and all roots before publication; unreferenced chunks are ignored.",
+      "record": {
+        "type": "object",
+        "required": [
+          "version"
+        ],
+        "properties": {
+          "version": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2
+          },
+          "operations": {
+            "type": "array",
+            "items": {
+              "type": "ref",
+              "ref": "app.thesocialwire.readStateDefs#operation"
+            },
+            "maxLength": 128
+          },
+          "previous": {
+            "type": "ref",
+            "ref": "com.atproto.repo.strongRef"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "state",
+              "devices",
+              "legacyReceipts"
+            ],
+            "maxLength": 14
+          },
+          "fragments": {
+            "type": "array",
+            "maxLength": 128,
+            "items": {
+              "type": "ref",
+              "ref": "app.thesocialwire.readStateDefs#fragment"
+            }
+          },
+          "receipts": {
+            "type": "array",
+            "maxLength": 128,
+            "items": {
+              "type": "ref",
+              "ref": "app.thesocialwire.readStateDefs#receipt"
+            }
+          }
+        }
+      }
+    }
+  }
+}

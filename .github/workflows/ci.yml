@@ -73,6 +73,10 @@ jobs:
         run: bunx turbo typecheck --filter=web
       - name: Lint
         run: bunx turbo lint --filter=web
+      - name: Test shared PDS read-state protocol
+        run: bun --cwd packages/read-state test
+      - name: Typecheck shared PDS read-state protocol
+        run: bun --cwd packages/read-state typecheck
       - name: Test
         run: bun --cwd apps/web run test:coverage
         env:
@@ -119,12 +123,30 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
+      - name: Prepare iOS simulator
+        id: simulator
+        timeout-minutes: 10
+        run: |
+          xcodebuild -version
+          xcodebuild -runFirstLaunch
+          xcrun simctl list runtimes
+          # Let simctl choose the newest compatible installed runtime, rather
+          # than asking xcodebuild for OS=latest on a pre-created device.
+          if ! simulator_id=$(xcrun simctl create SocialWireCI 'iPhone 17 Pro'); then
+            xcodebuild -downloadPlatform iOS
+            simulator_id=$(xcrun simctl create SocialWireCI 'iPhone 17 Pro')
+          fi
+          xcrun simctl boot "$simulator_id"
+          xcrun simctl bootstatus "$simulator_id" -b
+          echo "id=$simulator_id" >> "$GITHUB_OUTPUT"
       - name: Test iOS app with coverage
+        env:
+          IOS_SIMULATOR_ID: ${{ steps.simulator.outputs.id }}
         run: |
           xcodebuild test \
             -project "apps/apple/The Social Wire.xcodeproj" \
             -scheme SocialWire \
-            -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=latest' \
+            -destination "platform=iOS Simulator,id=$IOS_SIMULATOR_ID" \
             -enableCodeCoverage YES \
             -resultBundlePath "$RUNNER_TEMP/SocialWireTests.xcresult" \
             CODE_SIGNING_ALLOWED=NO
@@ -228,6 +250,9 @@ jobs:
         with:
           swift-version: "6.2.4"
           skip-verify-signature: true
+      - name: Test portable read-state protocol
+        working-directory: packages/swift/ReadStateCore
+        run: swift test
       - name: Test AppView
         working-directory: services/appview
         env:
@@ -589,7 +614,7 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.14
-      - name: Verify telemetry migration guards and interrupted retry
+      - name: Verify telemetry and retention migration guards, interrupted retry, and bounded inbox diagnostics
         env:
           POSTGRES_MIGRATION_TEST_URL: postgresql://postgres:postgres@127.0.0.1:5432/tsw92_telemetry_test
           PSQL_BIN: /tmp/telemetry-test-psql
@@ -601,7 +626,7 @@ jobs:
           chmod +x "$PSQL_BIN"
           "$PSQL_BIN" postgresql://postgres:postgres@127.0.0.1:5432/socialwire_migrations \
             -X -v ON_ERROR_STOP=1 -c 'CREATE DATABASE tsw92_telemetry_test'
-          bun test --timeout 30000 packages/spec/__tests__/telemetry-index-migration-postgres.test.ts
+          bun test --timeout 30000 packages/spec/__tests__/telemetry-index-migration-postgres.test.ts packages/spec/__tests__/operations-retention-migration-postgres.test.ts packages/spec/__tests__/wire-inbox-readiness-postgres.test.ts
       - name: Verify Jetstream V2 drain indexes and query plans
         run: |
           docker run --rm --network host \

@@ -1,4 +1,5 @@
 import Foundation
+import ReadStateCore
 
 /// Authenticated calls to **`SocialWireAPIEnvironment.baseURL`** (DPoP + access JWT), mirroring PDS **`XRPCClient`** semantics.
 @MainActor
@@ -457,7 +458,7 @@ final class SocialWireGatewayClient {
         return try JSONDecoder().decode(AppViewUnreadCountsResponse.self, from: result.body)
     }
 
-    func upsertReadMark(subjectUri: String, readAt: Date) async throws {
+    func upsertReadMark(subjectUri: String, readAt: Date, expectedViewer: String? = nil) async throws {
         let payload = try JSONEncoder().encode(
             AppViewReadMarkBody(subjectUri: subjectUri, readAt: DateFormatters.string(from: readAt))
         )
@@ -466,21 +467,40 @@ final class SocialWireGatewayClient {
             path: SocialWireXRPCMethod.putReadMark,
             query: [:],
             body: payload,
-            contentType: "application/json"
+            contentType: "application/json", expectedViewer: expectedViewer
         )
         guard (200 ..< 300).contains(result.statusCode) else {
             throw SocialWireError.badResponse("AppView read-mark upsert failed (\(result.statusCode)).")
         }
     }
 
-    func deleteReadMark(subjectUri: String) async throws {
+    func pdsReadStateRequest<T: Decodable>(_ method: String, body: Data? = nil, expectedViewer: String? = nil) async throws -> T {
+        let methods = ["getReadStateStatus": SocialWireXRPCMethod.getReadStateStatus,
+                       "exportReadState": SocialWireXRPCMethod.exportReadState,
+                       "prepareReadState": SocialWireXRPCMethod.prepareReadState,
+                       "confirmReadState": SocialWireXRPCMethod.confirmReadState]
+        guard let path = methods[method] else { throw SocialWireError.unsupported }
+        let result = try await authorizedRequest(method: body == nil ? "GET" : "POST",
+            path: path, query: [:], body: body,
+            contentType: body == nil ? nil : "application/json", expectedViewer: expectedViewer)
+        try ReadStateHTTPFailure.checkGatewayCode(result.body, statusCode: result.statusCode)
+        if result.statusCode == 404 { throw SocialWireError.appViewUnavailable }
+        if result.statusCode == 409 { throw ReadStateSyncFailure.conflict }
+        if [401, 403].contains(result.statusCode) { throw ReadStateSyncFailure.reauthorizationRequired }
+        guard (200..<300).contains(result.statusCode) else {
+            throw SocialWireError.badResponse("Read history sync failed (\(result.statusCode)). Pending changes remain on this device.")
+        }
+        return try JSONDecoder().decode(T.self, from: result.body)
+    }
+
+    func deleteReadMark(subjectUri: String, expectedViewer: String? = nil) async throws {
         let payload = try JSONEncoder().encode(AppViewReadMarkDeleteBody(subjectUri: subjectUri))
         let result = try await authorizedRequest(
             method: "POST",
             path: SocialWireXRPCMethod.deleteReadMark,
             query: [:],
             body: payload,
-            contentType: "application/json"
+            contentType: "application/json", expectedViewer: expectedViewer
         )
         guard (200 ..< 300).contains(result.statusCode) else {
             throw SocialWireError.badResponse("AppView read-mark delete failed (\(result.statusCode)).")
@@ -560,14 +580,14 @@ final class SocialWireGatewayClient {
         }
     }
 
-    func markReadBefore(scope: GatewayMarkAllReadScopeDTO, before: String) async throws -> MarkReadBeforeResponse {
+    func markReadBefore(scope: GatewayMarkAllReadScopeDTO, before: String, expectedViewer: String? = nil) async throws -> MarkReadBeforeResponse {
         let payload = try JSONEncoder().encode(GatewayMarkReadBeforeBody(scope: scope, before: before))
         let result = try await authorizedRequest(
             method: "POST",
             path: SocialWireXRPCMethod.markReadBefore,
             query: [:],
             body: payload,
-            contentType: "application/json"
+            contentType: "application/json", expectedViewer: expectedViewer
         )
         guard (200 ..< 300).contains(result.statusCode) else {
             throw SocialWireError.badResponse("Couldn't mark older stories as read. Please try again.")
@@ -575,14 +595,14 @@ final class SocialWireGatewayClient {
         return try JSONDecoder().decode(MarkReadBeforeResponse.self, from: result.body)
     }
 
-    func markAllRead(scope: GatewayMarkAllReadScopeDTO) async throws -> GatewayMarkAllReadResponseDTO {
+    func markAllRead(scope: GatewayMarkAllReadScopeDTO, expectedViewer: String? = nil) async throws -> GatewayMarkAllReadResponseDTO {
         let payload = try JSONEncoder().encode(GatewayMarkAllReadBody(scope: scope))
         let result = try await authorizedRequest(
             method: "POST",
             path: SocialWireXRPCMethod.markAllRead,
             query: [:],
             body: payload,
-            contentType: "application/json"
+            contentType: "application/json", expectedViewer: expectedViewer
         )
         if result.statusCode == 404 {
             throw SocialWireError.appViewUnavailable
@@ -612,14 +632,14 @@ final class SocialWireGatewayClient {
         return decoded.indexed
     }
 
-    func purgeAppViewPrivacyData() async throws {
+    func purgeAppViewPrivacyData(expectedViewer: String? = nil) async throws {
         let payload = try JSONEncoder().encode(EmptyXRPCInput())
         let result = try await authorizedRequest(
             method: "POST",
             path: SocialWireXRPCMethod.purgeViewerData,
             query: [:],
             body: payload,
-            contentType: "application/json"
+            contentType: "application/json", expectedViewer: expectedViewer
         )
         guard (200 ..< 300).contains(result.statusCode) else {
             throw SocialWireError.badResponse("AppView purge failed (\(result.statusCode)).")
@@ -706,7 +726,8 @@ final class SocialWireGatewayClient {
         path: String,
         query: [String: String],
         includesWireModerationProofs: Bool = false,
-        includesCircleGraphProofs: Bool = false
+        includesCircleGraphProofs: Bool = false,
+        expectedViewer: String? = nil
     ) async throws -> GatewayHTTPResult {
         let first = try await authorizedRequest(
             method: "GET",
@@ -759,7 +780,8 @@ final class SocialWireGatewayClient {
         contentType: String?,
         ifNoneMatch: String? = nil,
         includesWireModerationProofs: Bool = false,
-        includesCircleGraphProofs: Bool = false
+        includesCircleGraphProofs: Bool = false,
+        expectedViewer: String? = nil
     ) async throws -> GatewayHTTPResult {
         guard var comps = URLComponents(url: baseURL.appending(path: path), resolvingAgainstBaseURL: false) else {
             throw SocialWireError.invalidURL
@@ -775,6 +797,7 @@ final class SocialWireGatewayClient {
         }
 
         let session = try await auth.validSession()
+        if let expectedViewer, session.did != expectedViewer { throw ReadStateSyncFailure.accountChanged }
         let wireModerationProofs = includesWireModerationProofs
             ? try await wireViewerModerationProofPool(session: session)
             : nil

@@ -11,6 +11,7 @@ enum GatewayRouterBuilder {
     httpClient: HTTPClient,
     cache: any PdsRepoRecordCacheStore,
     wireLimiter: WireRequestLimiter = WireRequestLimiter(),
+    ingestionHealth: GatewayIngestionHealth? = nil,
     operationsStore: (any OperationsStore)? = nil,
     telemetry: OperationsTelemetryBuffer? = nil,
     telemetryEnvironment: String = "unknown",
@@ -26,22 +27,28 @@ enum GatewayRouterBuilder {
     router.get("/health") { _, _ in ["status": "ok", "service": "gateway"] }
     router.get("/livez") { _, _ in ["status": "live", "service": "gateway"] }
     router.get("/readyz") { _, _ async throws -> [String: String] in
-      try await GatewayReadinessProbe(
-        operationsStore: operationsStore,
-        appViewBaseURL: config.appViewBaseURL,
-        projectionPoolBaseURL: config.projectionPoolBaseURL,
-        httpClient: httpClient,
-        recordFailure: { dependency in
-          logger.error(
-            "Gateway readiness required dependency failed",
-            metadata: ["dependency": .string(dependency.rawValue)]
-          )
-        }
-      ).run()
-      return ["status": "ready", "service": "gateway"]
+      do {
+        try await GatewayReadinessProbe(
+          operationsStore: operationsStore,
+          appViewBaseURL: config.appViewBaseURL,
+          httpClient: httpClient,
+          recordFailure: { dependency in
+            logger.error(
+              "Gateway readiness required dependency failed",
+              metadata: ["dependency": .string(dependency.rawValue)]
+            )
+          }
+        ).run()
+      } catch {
+        try Task.checkCancellation()
+        if error is CancellationError { throw error }
+        throw HTTPError(.serviceUnavailable, message: "Gateway serving dependency unavailable")
+      }
+      let ingestion = await ingestionHealth?.snapshot() ?? .unknown
+      return ingestion.dependencyState.merging(["status": "ready", "service": "gateway"]) { _, new in new }
     }
-    router.get("/freshness") { _, _ async throws -> ServiceFreshnessResponse in
-      try await ServiceFreshnessResponse.evaluate(service: "gateway", store: operationsStore)
+    router.get("/freshness") { _, _ async -> GatewayIngestionHealthSnapshot in
+      await ingestionHealth?.snapshot() ?? .unknown
     }
 
     OAuthMetadataRoutes(
