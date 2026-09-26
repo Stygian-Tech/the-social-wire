@@ -8,6 +8,10 @@
       "/packages/swift/WireCore/**",
       "/packages/swift/SocialWireRedis/**",
       "/database/migrations/**",
+      "/services/jetstream-ingest/cmd/schema-ready/**",
+      "/services/jetstream-ingest/internal/schemaready/**",
+      "/services/jetstream-ingest/go.mod",
+      "/services/jetstream-ingest/go.sum",
       "/railway/wire-inbox-drain.json"
     ]
   },

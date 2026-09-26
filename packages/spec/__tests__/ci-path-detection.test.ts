@@ -103,12 +103,14 @@ describe("CI path detection", () => {
     expect(result.get("web")).toBe("false");
   });
 
-  it("runs database checks without an extra Charybdis job for migrations", () => {
+  it("checks every main-schema consumer image when its migration manifest changes", () => {
     const result = detect(
       repositoryWithChange("database/migrations/20990101000000_example.sql"),
       "pull_request",
     );
-    expect(result.get("charybdis")).toBe("false");
+    expect(result.get("charybdis")).toBe("true");
+    expect(result.get("gateway")).toBe("true");
+    expect(result.get("operations")).toBe("true");
     expect(result.get("appview")).toBe("true");
     expect(result.get("jetstream_ingest")).toBe("true");
     expect(result.get("wire_ingest")).toBe("true");
@@ -117,6 +119,17 @@ describe("CI path detection", () => {
     expect(result.get("wire_corpus_edge")).toBe("true");
     expect(result.get("database_migrator")).toBe("true");
     expect(result.get("spec")).toBe("true");
+  });
+
+  it("checks all images embedding the shared startup gate", () => {
+    const result = detect(
+      repositoryWithChange("services/jetstream-ingest/internal/schemaready/gate.go"),
+      "pull_request",
+    );
+    for (const job of ["gateway", "appview", "operations", "charybdis", "jetstream_ingest", "wire_ingest", "wire_worker", "indexing_worker"]) {
+      expect(result.get(job)).toBe("true");
+    }
+    expect(result.get("wire_corpus_edge")).toBe("false");
   });
 
   it("checks Corpus Edge when its Redis runtime changes", () => {
