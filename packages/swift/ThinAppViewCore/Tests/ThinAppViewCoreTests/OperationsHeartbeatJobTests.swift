@@ -681,6 +681,37 @@ struct OperationsHeartbeatJobTests {
     #expect(samples.allSatisfy { $0.dimensions["instance_id"] == nil })
   }
 
+  @Test("Coordinator health history requires validated active-owner evidence")
+  func coordinatorHealthHistory() async throws {
+    let fixture = try Fixture()
+    let now = Date()
+    let role = "indexing.appview-coordinator"
+    let lease = try #require(try await fixture.store.acquireRoleLease(
+      role: role, ownerID: "owner", leaseUntil: now.addingTimeInterval(30), at: now))
+    let recorder = HealthTelemetryRecorder()
+    let telemetry = OperationsTelemetryBuffer(capacity: 10, batchSize: 10,
+      logger: Logger(label: "heartbeat.owner.samples")) { await recorder.append($0) }
+    let job = OperationsHeartbeatJob(
+      store: fixture.store, service: "coordinator-appview", environment: "test", instanceId: "owner",
+      dependencyProbe: {
+        OperationsServiceProbeResult(liveness: .healthy, readiness: .healthy, freshness: .healthy,
+          completeness: .healthy, dependencyState: [
+            "appview_database": "ready", "coordinator_role": role, "coordinator_owner_id": "owner",
+            "coordinator_fencing_token": String(lease.fencingToken),
+          ], requiredDependencyKeys: ["appview_database"], observedAt: now, validUntil: now.addingTimeInterval(30))
+      }, telemetry: telemetry, logger: Logger(label: "heartbeat.owner"))
+    try await job.runOnce(startedAt: now, at: now)
+    #expect(await telemetry.flushOnce() == 4)
+    let samples = await recorder.metrics(named: "socialwire.service.health.samples_total")
+    #expect(samples.allSatisfy {
+      $0.dimensions["coordinator_authority"] == "active" && $0.dimensions["coordinator_role"] == role
+    })
+    #expect(samples.allSatisfy { $0.dimensions["coordinator_owner_id"] == nil })
+    try await fixture.store.releaseRoleLease(role: role, ownerID: "owner", fencingToken: lease.fencingToken, at: Date())
+    try await job.runOnce(startedAt: now, at: Date())
+    #expect(await telemetry.flushOnce() == 0)
+  }
+
   private enum ProbeFailure: Error {
     case secret(String)
   }

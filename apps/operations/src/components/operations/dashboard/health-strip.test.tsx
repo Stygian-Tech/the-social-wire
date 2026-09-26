@@ -386,3 +386,20 @@ describe("HealthStrip", () => {
     expect(screen.getByText("Service Liveness").nextElementSibling?.textContent).toBe("Healthy")
   })
 })
+
+it("renders complete consolidated coverage without a legacy worker heartbeat", () => {
+  const services = demoOverview.services.filter((service) => service.service !== "appview-worker").map((service) => ({
+    ...service, liveness: "healthy" as const, readiness: "healthy" as const,
+  }))
+  const base = { ...demoOverview.services[0]!, liveness: "healthy" as const, readiness: "healthy" as const,
+    freshness: "healthy" as const, completeness: "healthy" as const }
+  services.push({ ...base, service: "projection-pool-appview", dependencyState: {} },
+    { ...base, service: "coordinator-appview", dependencyState: {
+      coordinator_authority: "active", coordinator_role: "indexing.appview-coordinator",
+    } })
+  render(<HealthStrip overview={{ ...demoOverview, services, metricRollups: [],
+    counts: { ...demoOverview.counts, activeGaps: 0 },
+  }} />)
+  expect(screen.getByText("5 / 5 required services report healthy")).toBeTruthy()
+  expect(screen.getByText(/2 \/ 2 AppView projections complete/)).toBeTruthy()
+})

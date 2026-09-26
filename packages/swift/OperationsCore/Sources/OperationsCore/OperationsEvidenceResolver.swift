@@ -19,13 +19,19 @@ public enum OperationsEvidenceResolver {
     at: Date = Date(),
     validitySeconds: TimeInterval = 45
   ) -> OperationsEvidenceMetadata {
-    let selected = requiredServices.compactMap { requiredService in
-      states.filter { $0.service == requiredService }
-        .max(by: { $0.heartbeatAt < $1.heartbeatAt })
+    let groups = requiredServices.map { requiredService -> [OperationsServiceState] in
+      if requiredService == "appview-worker" {
+        return OperationsWorkerEvidence.requiredStates(states, at: at, validitySeconds: validitySeconds)
+      }
+      return states.filter { $0.service == requiredService }
+        .max(by: { $0.heartbeatAt < $1.heartbeatAt }).map { [$0] } ?? []
     }
-    let freshNames = Set(selected.filter {
-      at.timeIntervalSince($0.heartbeatAt) <= validitySeconds
-    }.map(\.service))
+    let selected = groups.flatMap { $0 }
+    let freshNames = Set(zip(requiredServices, groups).compactMap { name, group in
+      !group.isEmpty && group.allSatisfy {
+        at.timeIntervalSince($0.heartbeatAt) >= -1 && at.timeIntervalSince($0.heartbeatAt) <= validitySeconds
+      } ? name : nil
+    })
     let missingOrExpired = requiredServices.filter { !freshNames.contains($0) }
     let watermark = selected.map(\.heartbeatAt).min()
     let unavailable = freshNames.isEmpty
@@ -50,9 +56,7 @@ public enum OperationsEvidenceResolver {
     durability: IngestionDurabilitySnapshot? = nil,
     at: Date = Date()
   ) -> IngestionAuthorityResolution {
-    let worker = services.filter {
-      $0.service == "appview-worker" && at.timeIntervalSince($0.heartbeatAt) <= 15
-    }.max(by: { $0.heartbeatAt < $1.heartbeatAt })
+    let worker = OperationsWorkerEvidence.ingestion(services, at: at)
     let advertised = worker?.dependencyState["ingestion_authority"]
     let recognizedSources = ["jetstream", "tap", durableJetstreamV2AuthoritySource]
     let authoritySource = advertised.flatMap { recognizedSources.contains($0) ? $0 : nil }

@@ -1,4 +1,9 @@
 import {
+  COORDINATOR_APPVIEW_SERVICE,
+  hasActiveCoordinatorAuthority,
+  requiredWorkerServices,
+} from "@/lib/worker-service-coverage"
+import {
   requiredOperationsServices,
   SERVICE_HEALTH_METRIC,
   SERVICE_HEALTH_WINDOW_MINUTES,
@@ -28,6 +33,7 @@ type HealthSample = {
   service: string
   state: string
   value: number
+  authoritative: boolean
 }
 
 function samplesFromRollups(rollups: MetricRollup[]): HealthSample[] {
@@ -48,7 +54,9 @@ function samplesFromRollups(rollups: MetricRollup[]): HealthSample[] {
       rollup.valueSum < 0
     )
       return []
-    return [{ timestamp, dimension, service, state, value: rollup.valueSum }]
+    return [{ timestamp, dimension, service, state, value: rollup.valueSum,
+      authoritative: service !== COORDINATOR_APPVIEW_SERVICE || hasActiveCoordinatorAuthority(rollup.dimensions),
+    }]
   })
 }
 
@@ -57,12 +65,15 @@ function rollingHealthyPercentage(
   timestamp: number,
   dimension: HealthDimension,
 ): number | null {
-  const services = targetServices[dimension]
+  // Resolve each historical point from evidence available at that time, so
+  // later consolidation does not rewrite the earlier legacy-only timeline.
+  const services = requiredWorkerServices(targetServices[dimension], dimension,
+    samples.filter((sample) => sample.timestamp <= timestamp).map((sample) => sample.service))
   const currentServices = new Set(
     samples
       .filter((sample) =>
         sample.timestamp === timestamp &&
-        sample.dimension === dimension &&
+        sample.dimension === dimension && sample.authoritative &&
         services.includes(sample.service),
       )
       .map((sample) => sample.service),
@@ -76,7 +87,7 @@ function rollingHealthyPercentage(
     if (
       sample.timestamp < windowStart ||
       sample.timestamp > timestamp ||
-      sample.dimension !== dimension ||
+      sample.dimension !== dimension || !sample.authoritative ||
       !services.includes(sample.service)
     )
       continue

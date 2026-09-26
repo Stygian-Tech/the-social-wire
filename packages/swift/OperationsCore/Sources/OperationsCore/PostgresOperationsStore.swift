@@ -45,9 +45,15 @@ public actor PostgresOperationsStore: OperationsStore {
     guard state.environment == environment else {
       throw OperationsStoreError.environmentMismatch(expected: environment, actual: state.environment)
     }
-    let dependencies = try json(state.dependencyState)
-    try await pool.query(
-      """
+    var evidence = state.dependencyState
+    let fencedHeartbeat = state.service == "coordinator-appview" && coordinatorAuthority != nil
+    if fencedHeartbeat, let authority = coordinatorAuthority {
+      evidence["coordinator_role"] = authority.role
+      evidence["coordinator_owner_id"] = authority.ownerID
+      evidence["coordinator_fencing_token"] = String(authority.fencingToken)
+    }
+    let dependencies = try json(evidence)
+    let query: PostgresQuery = """
       INSERT INTO operations_service_state
         (service, environment, instance_id, liveness, readiness, freshness, completeness,
          dependency_state, version, started_at, heartbeat_at)
@@ -63,19 +69,35 @@ public actor PostgresOperationsStore: OperationsStore {
         dependency_state = EXCLUDED.dependency_state,
         version = EXCLUDED.version,
         heartbeat_at = EXCLUDED.heartbeat_at
-      """,
-      logger: logger
-    )
+      """
+    if fencedHeartbeat {
+      try await withCoordinatorTransaction { connection in
+        _ = try await connection.query(query, logger: logger)
+      }
+    } else {
+      try await pool.query(query, logger: logger)
+    }
   }
 
   public func listServiceStates() async throws -> [OperationsServiceState] {
     let rows = try await pool.query(
       """
-      SELECT service, environment, instance_id, liveness, readiness, freshness, completeness,
-             dependency_state::text, version, started_at, heartbeat_at
-      FROM operations_service_state
-      WHERE environment = \(environment) AND heartbeat_at > NOW() - INTERVAL '2 minutes'
-      ORDER BY service, heartbeat_at DESC
+      SELECT state.service, state.environment, state.instance_id, state.liveness, state.readiness,
+             state.freshness, state.completeness,
+             (CASE WHEN state.service = 'coordinator-appview' THEN state.dependency_state ||
+               jsonb_build_object('coordinator_authority', CASE WHEN
+                 lease.owner_id = state.dependency_state->>'coordinator_owner_id'
+                 AND lease.fencing_token::text = state.dependency_state->>'coordinator_fencing_token'
+                 AND lease.role = state.dependency_state->>'coordinator_role'
+                 AND lease.released_at IS NULL AND lease.lease_expires_at > clock_timestamp()
+               THEN 'active' ELSE 'inactive' END)
+               ELSE state.dependency_state END)::text,
+             state.version, state.started_at, state.heartbeat_at
+      FROM operations_service_state state
+      LEFT JOIN operations_role_leases lease ON lease.environment = state.environment
+        AND lease.role = 'indexing.appview-coordinator'
+      WHERE state.environment = \(environment) AND state.heartbeat_at > NOW() - INTERVAL '2 minutes'
+      ORDER BY state.service, state.heartbeat_at DESC
       """,
       logger: logger
     )

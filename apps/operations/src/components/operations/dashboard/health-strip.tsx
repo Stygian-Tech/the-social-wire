@@ -1,3 +1,4 @@
+import { hasConsolidatedWorkerEvidence } from "@/lib/worker-service-coverage"
 import { Activity, CheckCircle2, Clock3, Database, TriangleAlert } from "lucide-react"
 import {
   elapsedSeconds,
@@ -16,15 +17,14 @@ import type { Overview } from "@/lib/operations-types"
 export function HealthStrip({ overview, referenceTime = overview.refreshedAt }: { overview: Overview; referenceTime?: string }) {
   const liveness = stableServiceHealthEvidence(overview, "liveness", referenceTime)
   const readiness = stableServiceHealthEvidence(overview, "readiness", referenceTime)
-  const ingestionWorkers = overview.services.filter((service) => service.service.toLowerCase().includes("worker"))
   const workerFreshness = stableServiceHealthEvidence(
-    { ...overview, services: ingestionWorkers },
+    overview,
     "freshness",
     referenceTime,
     ["appview-worker"],
   )
   const projectionCompleteness = stableServiceHealthEvidence(
-    { ...overview, services: ingestionWorkers },
+    overview,
     "completeness",
     referenceTime,
     ["appview-worker"],
@@ -79,9 +79,11 @@ export function HealthStrip({ overview, referenceTime = overview.refreshedAt }: 
   const projectionsComplete =
     projectionCompleteness.state === "healthy" &&
     (durability ? durabilityHealthy : legacyGapSignals === 0)
+  const projectionLabel = hasConsolidatedWorkerEvidence(overview.services.map((service) => service.service))
+    ? "AppView" : "Charybdis"
   const completenessNote = durability
     ? `${openIncidents} open recovery incidents · staged ${durabilityCheckpoint?.lastStagedSequence?.toLocaleString() ?? "—"} / terminal prefix ${durabilityCheckpoint?.lastAppliedSequence?.toLocaleString() ?? "—"} · oldest inbox ${oldestInboxAge === undefined ? "—" : `${oldestInboxAge.toFixed(1)}s`} (${inboxAgeBudgetSeconds}s ${recoveryActive ? "recovery" : "normal"} budget) · ${deadLetters} unresolved dead letters`
-    : `${legacyGapSignals} legacy gap signals · ${projectionCompleteness.healthy} / ${projectionCompleteness.total} Charybdis projections complete`
+    : `${legacyGapSignals} legacy gap signals · ${projectionCompleteness.healthy} / ${projectionCompleteness.total} ${projectionLabel} projections complete`
   const items = [
     {
       label: "Service Liveness",

@@ -58,6 +58,17 @@ struct RoleLeaseDiagnosticSnapshot: Sendable {
   /// Only exact known labels enter diagnostics; unknown names never become log dimensions.
   static func applicationCategory(_ value: String?) -> String {
     guard let value else { return "unknown" }
+    let parts = value.split(separator: ":", omittingEmptySubsequences: false)
+    if parts.count == 2 {
+      let component = String(parts[1])
+      let knownComponents = [
+        "authority", "lease-diagnostics", "coordinator-appview", "projection-pool-appview",
+        "appview-worker", "wire-combined", "wire-rank", "wire-drain",
+      ]
+      guard knownComponents.contains(component),
+        applicationCategory(String(parts[0])) != "unknown" else { return "unknown" }
+      return value
+    }
     switch value {
     case "Coordinator", "coordinator", "coordinator-appview", "coordinator-wire",
       "coordinator-lease-diagnostics", "Projection-Pool", "projection-pool",
@@ -65,6 +76,13 @@ struct RoleLeaseDiagnosticSnapshot: Sendable {
       "Operations", "operations", "Ops", "Charybdis", "charybdis", "Wire", "wire-worker",
       "Corpus-Edge", "Wire-Corpus-Edge", "wire-corpus-edge", "Jetstream-V2-Ingest",
       "jetstream-ingest", "Ingress-Controller", "ingress-controller", "Database-Migrator",
+      "appview.Ingress-Controller", "wire.Ingress-Controller", "wire-live.Ingress-Controller",
+      "appview.ingress-controller", "wire.ingress-controller", "wire-live.ingress-controller",
+      "wire-external.Ingress-Controller", "wire-publication.Ingress-Controller",
+      "wire-publicationwest.Ingress-Controller", "wire-external.ingress-controller",
+      "wire-publication.ingress-controller", "wire-publicationwest.ingress-controller",
+      "appview.Jetstream-V2-Ingest", "wire.The-Wire-Global-Ingest-Production",
+      "wire.The-Wire-Live-Ingest-Production",
       "The-Wire-Worker-Production", "The-Wire-Global-Ingest-Production",
       "The-Wire-Live-Ingest-Production":
       return value

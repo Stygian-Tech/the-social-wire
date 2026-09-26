@@ -32,8 +32,7 @@ struct AlertEvaluator {
       durability: durability,
       at: now
     )
-    let worker = services.filter { $0.service == "appview-worker" }
-      .max(by: { $0.heartbeatAt < $1.heartbeatAt })
+    let worker = OperationsWorkerEvidence.ingestion(services, at: now)
     let authoritySource = authority.source
     try await reconcile(
       condition: authoritySource == nil,
