@@ -20,8 +20,6 @@ func rkey(from uri: String) -> String {
     uri.split(separator: "/").last.map(String.init) ?? uri
 }
 
-private let atUriPathPattern = #"^at://([^/]+)/([^/]+)/([^/]+)$"#
-
 private func urlDecodedOnce(_ value: String) -> String? {
     guard let decoded = value.removingPercentEncoding, decoded != value else { return nil }
     return decoded
@@ -40,19 +38,15 @@ private func decodeUriEncodingLayers(_ segment: String) -> String {
 }
 
 private func decodeAtUriAuthorityAndCollection(_ uri: String) -> String? {
-    guard let regex = try? NSRegularExpression(pattern: atUriPathPattern) else { return nil }
-    let range = NSRange(uri.startIndex..., in: uri)
-    guard
-        let match = regex.firstMatch(in: uri, range: range),
-        match.numberOfRanges == 4,
-        let authRange = Range(match.range(at: 1), in: uri),
-        let collRange = Range(match.range(at: 2), in: uri),
-        let rkeyRange = Range(match.range(at: 3), in: uri)
-    else { return nil }
+    guard uri.hasPrefix("at://") else { return nil }
+    let components = uri
+        .dropFirst("at://".count)
+        .split(separator: "/", omittingEmptySubsequences: false)
+    guard components.count == 3, components.allSatisfy({ !$0.isEmpty }) else { return nil }
 
-    let auth = String(uri[authRange])
-    let coll = String(uri[collRange])
-    let rkey = String(uri[rkeyRange])
+    let auth = String(components[0])
+    let coll = String(components[1])
+    let rkey = String(components[2])
     let decodedAuth = decodeUriEncodingLayers(auth)
     let decodedColl = decodeUriEncodingLayers(coll)
     guard decodedAuth != auth || decodedColl != coll else { return nil }

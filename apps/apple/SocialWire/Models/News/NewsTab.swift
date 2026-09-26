@@ -46,7 +46,7 @@ enum NewsTab: String, CaseIterable, Codable, Identifiable, Hashable, Sendable {
         circleCatalog: CircleFeedCatalog?
     ) -> [NewsTab] {
         available(
-            wire: preferences.showWire && wireCatalog?.isAvailable == true,
+            wire: preferences.showWire && wireCatalog?.isAvailable != false,
             circle: preferences.showCircle && circleCatalog?.enabled != false
         )
     }

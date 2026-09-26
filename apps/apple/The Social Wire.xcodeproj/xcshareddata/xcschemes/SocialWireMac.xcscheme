@@ -1,10 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Scheme
    LastUpgradeVersion = "2710"
-   version = "1.3">
+   version = "1.7">
    <BuildAction
       parallelizeBuildables = "YES"
-      buildImplicitDependencies = "YES">
+      buildImplicitDependencies = "YES"
+      buildArchitectures = "Automatic">
       <BuildActionEntries>
          <BuildActionEntry
             buildForTesting = "YES"
@@ -14,37 +15,8 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "C54DFF37BB3B55AF48117961"
+               BlueprintIdentifier = "337307595C5D02A8544D547B"
                BuildableName = "SocialWire.app"
-               BlueprintName = "SocialWire"
-               ReferencedContainer = "container:The Social Wire.xcodeproj">
-            </BuildableReference>
-         </BuildActionEntry>
-         <BuildActionEntry
-            buildForTesting = "YES"
-            buildForRunning = "NO"
-            buildForProfiling = "NO"
-            buildForArchiving = "NO"
-            buildForAnalyzing = "NO">
-            <BuildableReference
-               BuildableIdentifier = "primary"
-               BlueprintIdentifier = "B6E09CB32241181C60900F8A"
-               BuildableName = "SocialWireTests.xctest"
-               BlueprintName = "SocialWireTests"
-               ReferencedContainer = "container:The Social Wire.xcodeproj">
-            </BuildableReference>
-         </BuildActionEntry>
-         <BuildActionEntry
-            buildForTesting = "YES"
-            buildForRunning = "NO"
-            buildForProfiling = "NO"
-            buildForArchiving = "NO"
-            buildForAnalyzing = "NO">
-            <BuildableReference
-               BuildableIdentifier = "primary"
-               BlueprintIdentifier = "9A1722904D4F8F525FC6E89F"
-               BuildableName = "SocialWireUITests.xctest"
-               BlueprintName = "SocialWireUITests"
                ReferencedContainer = "container:The Social Wire.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
@@ -54,25 +26,15 @@
       buildConfiguration = "Debug"
       selectedDebuggerIdentifier = "Xcode.DebuggerFoundation.Debugger.LLDB"
       selectedLauncherIdentifier = "Xcode.DebuggerFoundation.Launcher.LLDB"
-      shouldUseLaunchSchemeArgsEnv = "YES">
-      <MacroExpansion>
-         <BuildableReference
-            BuildableIdentifier = "primary"
-            BlueprintIdentifier = "C54DFF37BB3B55AF48117961"
-            BuildableName = "SocialWire.app"
-            BlueprintName = "SocialWire"
-            ReferencedContainer = "container:The Social Wire.xcodeproj">
-         </BuildableReference>
-      </MacroExpansion>
+      shouldUseLaunchSchemeArgsEnv = "YES"
+      shouldAutocreateTestPlan = "YES">
       <Testables>
          <TestableReference
-            skipped = "NO"
-            parallelizable = "NO">
+            skipped = "NO">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "B6E09CB32241181C60900F8A"
-               BuildableName = "SocialWireTests.xctest"
-               BlueprintName = "SocialWireTests"
+               BlueprintIdentifier = "D438D612920601D06A813C9D"
+               BuildableName = "SocialWireMacTests.xctest"
                ReferencedContainer = "container:The Social Wire.xcodeproj">
             </BuildableReference>
          </TestableReference>
@@ -80,9 +42,8 @@
             skipped = "NO">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "9A1722904D4F8F525FC6E89F"
-               BuildableName = "SocialWireUITests.xctest"
-               BlueprintName = "SocialWireUITests"
+               BlueprintIdentifier = "0F26AEE0E5197C40B8BB5902"
+               BuildableName = "SocialWireMacUITests.xctest"
                ReferencedContainer = "container:The Social Wire.xcodeproj">
             </BuildableReference>
          </TestableReference>
@@ -97,14 +58,14 @@
       ignoresPersistentStateOnLaunch = "NO"
       debugDocumentVersioning = "YES"
       debugServiceExtension = "internal"
-      allowLocationSimulation = "YES">
+      allowLocationSimulation = "YES"
+      queueDebuggingEnabled = "No">
       <BuildableProductRunnable
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "C54DFF37BB3B55AF48117961"
+            BlueprintIdentifier = "337307595C5D02A8544D547B"
             BuildableName = "SocialWire.app"
-            BlueprintName = "SocialWire"
             ReferencedContainer = "container:The Social Wire.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
@@ -119,9 +80,8 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "C54DFF37BB3B55AF48117961"
+            BlueprintIdentifier = "337307595C5D02A8544D547B"
             BuildableName = "SocialWire.app"
-            BlueprintName = "SocialWire"
             ReferencedContainer = "container:The Social Wire.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>

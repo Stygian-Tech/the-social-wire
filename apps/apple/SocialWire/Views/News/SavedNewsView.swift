@@ -7,7 +7,6 @@ struct SavedNewsView: View {
 
     var body: some View {
         SavedNewsContent(onSavedLinkTap: openSavedLink, onSembleItemTap: openSembleItem)
-        .navigationTitle(appModel.readerListSource == .archive ? "Archive" : appModel.savedTabTitle)
         .toolbar {
             if !appModel.isSembleReadLaterEnabled {
                 ToolbarItem(placement: .primaryAction) {

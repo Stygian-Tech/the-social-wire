@@ -46,11 +46,11 @@ struct NewsSceneModelTests {
         ).contains(.circle))
     }
 
-    @Test("Primary slots follow catalog gates and return when availability recovers")
+    @Test("Primary slots stay stable while catalogs load and honor resolved gates")
     func primarySlotsRespectCatalogAvailability() {
         let model = SocialWireAppModel()
         model.loadPrimaryTabPreferences()
-        #expect(!model.primaryTabFeeds.contains(.wire))
+        #expect(model.primaryTabFeeds.contains(.wire))
         #expect(model.primaryTabFeeds.contains(.circle))
 
         model.wireCatalog = WireFeedCatalog(

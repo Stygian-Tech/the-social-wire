@@ -6,8 +6,10 @@ struct LibraryNewsView: View {
 
     var body: some View {
         articlesContent
-        .navigationTitle(navigationTitle)
         .accessibilityIdentifier("news-tab-content-library")
+        .task(id: appModel.feedSelection) {
+            await appModel.loadSelectedArticleFeedIfNeeded()
+        }
     }
 
     @ViewBuilder
@@ -24,10 +26,6 @@ struct LibraryNewsView: View {
                 description: Text("Choose a folder or publication from the sidebar to browse its latest stories.")
             )
         }
-    }
-
-    private var navigationTitle: String {
-        appModel.selectedPublication?.title ?? "Library"
     }
 
     private func openSelectedRSSArticle() {

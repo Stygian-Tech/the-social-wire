@@ -22,8 +22,6 @@ struct WireNewsView: View {
     private var editorialCanvas: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 24) {
-                WireMastheadView()
-
                 if let notice = appModel.wireFeedNotice {
                     Label(notice, systemImage: "exclamationmark.triangle")
                         .font(.footnote)
@@ -94,7 +92,7 @@ struct WireNewsView: View {
                 }
             }
             .padding()
-            .frame(maxWidth: 900, alignment: .leading)
+            .frame(maxWidth: ArticleReadingWidth.editorial, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .center)
         }
         .refreshable {
@@ -211,11 +209,24 @@ struct WireEditorialRail: View {
     }
 }
 
+/// On macOS The Wire shares the feed's card treatment so both surfaces read as one
+/// system; the edition sections around these cards are unchanged either way.
+///
+/// iOS keeps the original cards. The shared card sizes its banner at 16:9, which on a
+/// 320pt-wide phone canvas is 180pt tall against the old fixed 150pt — enough extra
+/// height to push the card's action out of the viewport at accessibility text sizes.
 struct WireLeadStoryCard: View {
     let entry: EntryListItem
     let onReadInApp: () -> Void
 
     var body: some View {
+        #if os(macOS)
+        ArticleListCard(action: onReadInApp) {
+            EntryRow(entry: entry, isRead: false, showsReadState: false, style: .lead)
+        }
+        .accessibilityHint("Opens the story")
+        .accessibilityElement(children: .contain)
+        #else
         Button(action: onReadInApp) {
             VStack(alignment: .leading, spacing: 0) {
                 WireStoryImage(entry: entry, height: 220)
@@ -241,6 +252,7 @@ struct WireLeadStoryCard: View {
         .accessibilityElement(children: .contain)
         .background(.thinMaterial, in: .rect(cornerRadius: 18))
         .clipShape(.rect(cornerRadius: 18))
+        #endif
     }
 }
 
@@ -249,6 +261,15 @@ struct WireStoryCard: View {
     let onReadInApp: () -> Void
 
     var body: some View {
+        #if os(macOS)
+        ArticleListCard(action: onReadInApp) {
+            EntryRow(entry: entry, isRead: false, showsReadState: false, style: .grid)
+        }
+        .accessibilityLabel("Open Story")
+        .accessibilityHint("Opens the story")
+        .accessibilityIdentifier("story-open")
+        .accessibilityElement(children: .contain)
+        #else
         Button(action: onReadInApp) {
             VStack(alignment: .leading, spacing: 0) {
                 WireStoryImage(entry: entry, height: 150)
@@ -273,6 +294,7 @@ struct WireStoryCard: View {
         .clipShape(.rect(cornerRadius: 16))
         .multilineTextAlignment(.leading)
         .accessibilityElement(children: .contain)
+        #endif
     }
 }
 

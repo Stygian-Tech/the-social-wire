@@ -6,6 +6,7 @@ struct EntryListCard: View {
     let showsReadState: Bool
     let metadataSaveTitle: String
     let metadataSaveSystemImage: String
+    var style: ArticleFeedCardStyle = .row
     let onOpen: () -> Void
     let onOpenWebsite: (() -> Void)?
     let onOpenInReader: (() -> Void)?
@@ -16,7 +17,12 @@ struct EntryListCard: View {
 
     var body: some View {
         ArticleListCard(action: onOpen) {
-            EntryRow(entry: entry, isRead: isRead, showsReadState: showsReadState)
+            EntryRow(
+                entry: entry,
+                isRead: isRead,
+                showsReadState: showsReadState,
+                style: style
+            )
         }
         .accessibilityElement(children: .combine)
         .accessibilityValue(accessibilityValue)

@@ -22,7 +22,6 @@ struct CircleNewsView: View {
 
     var body: some View {
         editorialCanvas
-        .navigationTitle("Your Circle")
         .task(id: appModel.circleCatalog?.isAvailable) {
             if appModel.circleEdition == nil, !isRefreshing {
                 await appModel.loadCircleEdition()
@@ -48,8 +47,6 @@ struct CircleNewsView: View {
     private var editorialCanvas: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 22) {
-                CircleMastheadView()
-
                 if let message = appModel.circleErrorMessage {
                     Label(message, systemImage: "exclamationmark.triangle")
                         .font(.footnote)
@@ -127,7 +124,7 @@ struct CircleNewsView: View {
                 }
             }
             .padding()
-            .frame(maxWidth: 900, alignment: .leading)
+            .frame(maxWidth: ArticleReadingWidth.editorial, alignment: .leading)
             .frame(maxWidth: .infinity)
         }
         .refreshable { await refreshCircle() }
@@ -165,6 +162,9 @@ struct CircleNewsView: View {
     }
 }
 
+/// On macOS this matches the shared article card treatment, with Your Circle's sharer
+/// strip and hide action composed around it. iOS keeps the original metrics for the
+/// same reason The Wire does — a 16:9 banner is too tall for the phone canvas.
 struct CircleStoryCard: View {
     let story: CircleStory
     let onReadInApp: () -> Void
@@ -172,57 +172,103 @@ struct CircleStoryCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if let thumbnailUrl = story.thumbnailUrl {
-                NewsStoryImage(
-                    urls: [URL(string: thumbnailUrl)].compactMap { $0 },
-                    height: 200
-                )
-            }
+            storyImage
 
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: contentSpacing) {
                 CircleSharerStrip(
                     sharers: story.sharers,
                     totalCount: story.sharerCount ?? story.sharers.count
                 )
 
-            Text(story.source.displayName)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-
-            if let url = URL(string: story.canonicalUrl) {
-                Link(destination: url) {
-                    Text(story.title)
-                        .font(.title3.bold())
-                        .foregroundStyle(Color.primary)
-                        .multilineTextAlignment(.leading)
-                }
-                .accessibilityHint("Opens the publisher's website")
-            } else {
-                Text(story.title).font(.title3.bold())
-            }
-
-            if let summary = story.summary, !summary.isEmpty {
-                Text(summary)
-                    .font(.subheadline)
+                Text(story.source.displayName)
+                    .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+                    .lineLimit(1)
+
+                if let url = URL(string: story.canonicalUrl) {
+                    Link(destination: url) {
+                        title
+                    }
+                    .accessibilityHint("Opens the publisher's website")
+                } else {
+                    title
+                }
+
+                if let summary = story.summary, !summary.isEmpty {
+                    Text(summary)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
 
                 NewsStoryActions(
                     onOpenStory: onReadInApp,
                     onHide: onHide
                 )
+
+                #if os(macOS)
+                // Cards in a band share one height; pin the content to the top of it.
+                Spacer(minLength: 0)
+                #endif
             }
-            .padding(16)
+            .padding(contentPadding)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .fixedSize(horizontal: false, vertical: true)
         .background(.thinMaterial, in: .rect(cornerRadius: 16))
         .clipShape(.rect(cornerRadius: 16))
         .multilineTextAlignment(.leading)
         .accessibilityElement(children: .contain)
+    }
+
+    @ViewBuilder
+    private var storyImage: some View {
+        #if os(macOS)
+        ArticleCardImage(
+            urls: ThumbnailImageURLAttempts.candidates(
+                primary: story.thumbnailUrl,
+                fallback: nil
+            )
+        )
+        #else
+        if let thumbnailUrl = story.thumbnailUrl {
+            NewsStoryImage(
+                urls: [URL(string: thumbnailUrl)].compactMap { $0 },
+                height: 200
+            )
+        }
+        #endif
+    }
+
+    private var title: some View {
+        #if os(macOS)
+        Text(story.title)
+            .font(.headline)
+            .foregroundStyle(Color.primary)
+            .lineLimit(3)
+            .multilineTextAlignment(.leading)
+        #else
+        Text(story.title)
+            .font(.title3.bold())
+            .foregroundStyle(Color.primary)
+            .multilineTextAlignment(.leading)
+        #endif
+    }
+
+    private var contentSpacing: CGFloat {
+        #if os(macOS)
+        ArticleCardMetrics.spacing
+        #else
+        12
+        #endif
+    }
+
+    private var contentPadding: CGFloat {
+        #if os(macOS)
+        ArticleCardMetrics.padding
+        #else
+        16
+        #endif
     }
 }
 

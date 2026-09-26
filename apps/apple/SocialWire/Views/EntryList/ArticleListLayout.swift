@@ -1,32 +1,29 @@
 import SwiftUI
 
 struct ArticleListLayout<Content: View>: View {
-    let title: String
     let notice: String?
+    private let spacing: CGFloat
     private let content: Content
 
-    init(title: String, notice: String? = nil, @ViewBuilder content: () -> Content) {
-        self.title = title
+    init(notice: String? = nil, spacing: CGFloat = 16, @ViewBuilder content: () -> Content) {
         self.notice = notice
+        self.spacing = spacing
         self.content = content()
     }
 
     var body: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 16) {
+            LazyVStack(alignment: .leading, spacing: spacing) {
                 if let notice {
                     Label(notice, systemImage: "exclamationmark.triangle")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .accessibilityLabel(notice)
                 }
-                Text(title)
-                    .font(.title2.bold())
-                    .frame(maxWidth: .infinity, alignment: .leading)
                 content
             }
             .padding()
-            .frame(maxWidth: 700, alignment: .leading)
+            .frame(maxWidth: ArticleReadingWidth.feed, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .center)
         }
     }

@@ -15,7 +15,7 @@ final class NewsShellSmokeUITests: XCTestCase {
         app.buttons["Add Publication"].tap()
         XCTAssertTrue(app.navigationBars["Add Publication"].waitForExistence(timeout: 3))
         app.buttons["Cancel"].firstMatch.tap()
-        let archive = app.buttons["Archive"].firstMatch
+        let archive = tabButton("Archive", in: app)
         XCTAssertTrue(archive.waitForExistence(timeout: 3))
         archive.tap()
         XCTAssertTrue(app.navigationBars["Archive"].waitForExistence(timeout: 3))
@@ -26,20 +26,37 @@ final class NewsShellSmokeUITests: XCTestCase {
         app.launchArguments = ["--ui-testing-news-shell", "--ui-testing-shell-routing"]
         app.launch()
         XCTAssertTrue(content(for: "library", in: app).waitForExistence(timeout: 5))
-        let following = app.tabBars.buttons["Following"]
+        let following = tabButton("Following", in: app)
         XCTAssertTrue(following.waitForExistence(timeout: 3))
         app.buttons["fixture-hide-following"].tap()
         XCTAssertTrue(following.waitForNonExistence(timeout: 3))
-        app.tabBars.buttons["Read Later"].tap()
+        tabButton("Read Later", in: app).tap()
         XCTAssertTrue(content(for: "saved", in: app).waitForExistence(timeout: 3))
         app.buttons["fixture-select-publication"].tap()
-        XCTAssertTrue(content(for: "library", in: app).waitForExistence(timeout: 3))
-        XCTAssertTrue(app.navigationBars["Fixture Publication"].waitForExistence(timeout: 3))
+        XCTAssertTrue(content(for: "library", in: app).waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["Fixture Publication"].waitForExistence(timeout: 5))
+    }
+
+    private func tabButton(_ label: String, in app: XCUIApplication) -> XCUIElement {
+        let tabBarButton = app.tabBars.buttons[label]
+        if tabBarButton.waitForExistence(timeout: 1) {
+            return tabBarButton
+        }
+        let button = app.buttons[label]
+        if button.waitForExistence(timeout: 1) {
+            return button
+        }
+        return app.descendants(matching: .any)[label].firstMatch
     }
 
     private func openSidebar(in app: XCUIApplication) {
         let button = app.buttons["news-open-sidebar"]
-        if button.waitForExistence(timeout: 2) { button.tap() }
+        let toggleButton = app.buttons["ToggleSidebar"]
+        if button.waitForExistence(timeout: 2) {
+            button.tap()
+        } else if toggleButton.waitForExistence(timeout: 1), toggleButton.label.contains("Show") {
+            toggleButton.tap()
+        }
         XCTAssertTrue(app.descendants(matching: .any)["news-sidebar-column"].waitForExistence(timeout: 3))
     }
 

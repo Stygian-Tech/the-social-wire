@@ -122,6 +122,7 @@ final class SocialWireAppModel {
     private var gatewayMyPublications: [DiscoveredPublication] = []
     private var gatewayFollowingTab: [DiscoveredPublication] = []
     private var gatewayAllPublicationRows: [DiscoveredPublication] = []
+    @ObservationIgnored private var publicationByNormalizedId: [String: DiscoveredPublication] = [:]
     private var gatewayFolderMap: [String: [DiscoveredPublication]] = [:]
     private var cachedPriorityProjection: PublicationSidebarResponseDTO?
     private var cachedFolderSections: [PublicationFolderSectionDTO]?
@@ -171,6 +172,7 @@ final class SocialWireAppModel {
         authService.setSessionChangeHandler { [weak self] session in
             self?.isSignedIn = session != nil
         }
+        readerFilter = ReaderFilter.loadSaved()
         applyReaderListSource(ReaderListSourceStorage.load(), persist: false)
     }
 
@@ -516,6 +518,11 @@ final class SocialWireAppModel {
         }
     }
 
+    func loadSelectedArticleFeedIfNeeded() async {
+        guard hasSelectedArticleFeed, entries.isEmpty, !isLoadingEntries else { return }
+        await refreshSelectedArticleFeed()
+    }
+
     var effectiveReadLaterServiceId: String {
         ReadLaterServiceCatalog.defaultServiceId
     }
@@ -859,6 +866,7 @@ final class SocialWireAppModel {
     }
 
     private func rebuildSidebarTreeViewModel() {
+        rebuildPublicationLookup()
         var unreadByPublicationId: [String: Int] = [:]
         for publication in gatewayAllPublicationRows {
             unreadByPublicationId[publication.publicationId] = displayUnreadCount(
@@ -981,7 +989,8 @@ final class SocialWireAppModel {
                 kind: kind,
                 id: id,
                 filter: readerFilter,
-                cursor: cursor
+                cursor: cursor,
+                limit: Self.aggregateFeedPageSize
             )
             applyAuthoritativeReadState(from: page.entries)
             entries = cursor == nil
@@ -991,7 +1000,6 @@ final class SocialWireAppModel {
             if readerFilter == .all {
                 persistAggregateEntriesByPublication(page.entries)
             }
-            await prefetchThumbnailImages(for: page.entries)
         } catch {
             markAppViewUnavailableIfNeeded(error)
             if entries.isEmpty, !ATProtoOAuthService.isUserCancellation(error) {
@@ -1358,7 +1366,7 @@ final class SocialWireAppModel {
         NewsPrimaryFeed.allCases.filter { feed in
             switch feed {
             case .wire:
-                feedPreferences.showWire && wireCatalog?.isAvailable == true
+                feedPreferences.showWire && wireCatalog?.isAvailable != false
             case .circle:
                 feedPreferences.showCircle && circleCatalog?.enabled != false
             case .subscribed:
@@ -1766,6 +1774,12 @@ final class SocialWireAppModel {
     }
 
     private func publicationMatchingId(_ publicationId: String) -> DiscoveredPublication? {
+        let normalizedId = normalizeATRepoParam(publicationId)
+        if let publication = publicationByNormalizedId[normalizedId] {
+            return publication
+        }
+
+        // Keep a fallback for selections restored before the sidebar cache is rebuilt.
         var seen = Set<String>()
         let candidates = gatewayAllPublicationRows
             + myPublications
@@ -1778,6 +1792,20 @@ final class SocialWireAppModel {
             }
         }
         return nil
+    }
+
+    private func rebuildPublicationLookup() {
+        var lookup: [String: DiscoveredPublication] = [:]
+        let candidates = gatewayAllPublicationRows
+            + myPublications
+            + subscribedUnfolderedPublications
+            + subscribedPublications
+            + followingTabPublications
+        lookup.reserveCapacity(candidates.count)
+        for publication in candidates {
+            lookup[normalizeATRepoParam(publication.publicationId), default: publication] = publication
+        }
+        publicationByNormalizedId = lookup
     }
 
     private func applyStreamedPublicationSelection(
@@ -1817,7 +1845,7 @@ final class SocialWireAppModel {
             cachedFolderRows = projection.allPublicationRows
         }
 
-        prefetchPublicationAvatarImages(folderRows)
+        prefetchPriorityPublicationAvatars(folderRows)
         refreshSidebarUnreadSumCaches()
     }
 
@@ -1874,7 +1902,7 @@ final class SocialWireAppModel {
             refreshSidebarUnreadSumCaches()
         }
 
-        prefetchPublicationAvatarImages(discoveredRows)
+        prefetchPriorityPublicationAvatars(discoveredRows)
     }
 
     private func applySectionUnreadCounts(_ counts: [String: Int], publicationIds: [String]) {
@@ -1975,7 +2003,7 @@ final class SocialWireAppModel {
             )
         }
 
-        prefetchPublicationAvatarImages(gatewayAllPublicationRows)
+        prefetchPriorityPublicationAvatars(gatewayAllPublicationRows)
         refreshSidebarUnreadSumCaches()
     }
 
@@ -2175,10 +2203,14 @@ final class SocialWireAppModel {
         }
     }
 
-    private static let entryPrefetchMaxEntries = 50
+    private static let aggregateFeedPageSize = 24
+    private static let entryPrefetchMaxEntries = 20
+    private static let thumbnailPrefetchCount = 8
+    private static let publicationAvatarPrefetchLimit = 12
     private static let feedPostBootstrapRefreshDelay: Duration = .seconds(1)
     private static let feedProactiveRefreshInterval: Duration = .seconds(45)
     private var proactiveFeedRefreshTask: Task<Void, Never>?
+    private var prefetchedPublicationAvatarURLs: Set<URL> = []
 
     private func refreshPublicationIndex(for publication: DiscoveredPublication) async {
         guard useAppViewEntryTimelines else { return }
@@ -2215,23 +2247,36 @@ final class SocialWireAppModel {
         await prefetchThumbnailImages(for: Array(page.entries.prefix(12)))
     }
 
-    private func prefetchPublicationAvatarImages(_ publications: [DiscoveredPublication]) {
-        let urls = publications.compactMap(\.displayImageURL)
+    private func prefetchPriorityPublicationAvatars(_ publications: [DiscoveredPublication]) {
+        let remaining = Self.publicationAvatarPrefetchLimit - prefetchedPublicationAvatarURLs.count
+        guard remaining > 0 else { return }
+
+        let urls = publications
+            .compactMap(\.displayImageURL)
+            .filter { !prefetchedPublicationAvatarURLs.contains($0) }
+            .prefix(remaining)
         guard !urls.isEmpty else { return }
+
+        prefetchedPublicationAvatarURLs.formUnion(urls)
         Task(priority: .utility) {
-            await ImageCacheService.shared.prefetch(urls: urls, maxPixelSize: 96, concurrency: 8)
+            await ImageCacheService.shared.prefetch(
+                urls: Array(urls),
+                maxPixelSize: 96,
+                concurrency: 3
+            )
         }
     }
 
     private func prefetchThumbnailImages(for entries: [EntryListItem]) async {
-        let urls = entries.flatMap {
+        // Warm only the next visible rows. Fallback URLs load on demand if a primary fails.
+        let urls = entries.prefix(Self.thumbnailPrefetchCount).compactMap { entry in
             ThumbnailImageURLAttempts.candidates(
-                primary: $0.thumbnailUrl,
-                fallback: $0.thumbnailFallbackUrl
-            )
+                primary: entry.thumbnailUrl,
+                fallback: entry.thumbnailFallbackUrl
+            ).first
         }
         guard !urls.isEmpty else { return }
-        await ImageCacheService.shared.prefetch(urls: urls, maxPixelSize: 168, concurrency: 8)
+        await ImageCacheService.shared.prefetch(urls: urls, maxPixelSize: 168, concurrency: 3)
     }
 
     private func markAppViewUnavailableIfNeeded(_ error: Error) {
@@ -2502,6 +2547,7 @@ final class SocialWireAppModel {
         let old = readerFilter
         guard old != newValue else { return }
         readerFilter = newValue
+        newValue.save()
 
         if old == .unread, newValue == .all {
             if let id = unreadDeferredEntryId {

@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 77;
+	objectVersion = 63;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -85,6 +85,18 @@
 		20C2F4E816992BDA93B80799 /* FollowProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE96262C34A803291031D0D4 /* FollowProfile.swift */; };
 		21D35F891620329D26F4B7CE /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E275B426D577889172C2DFAA /* RootView.swift */; };
 		2212419412C63500CB854A5F /* ArticleListRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64EED50CC2244B5FEBDAACC4 /* ArticleListRow.swift */; };
+		223C383A305F43AE008E2EF1 /* ArticleFeedRhythm.swift in Sources */ = {isa = PBXBuildFile; fileRef = 223C3839305F43AE008E2EF1 /* ArticleFeedRhythm.swift */; };
+		223C383B305F43AE008E2EF1 /* ArticleFeedRhythm.swift in Sources */ = {isa = PBXBuildFile; fileRef = 223C3839305F43AE008E2EF1 /* ArticleFeedRhythm.swift */; };
+		223C383D305F43B4008E2EF1 /* ArticleCardImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 223C383C305F43B4008E2EF1 /* ArticleCardImage.swift */; };
+		223C383E305F43B4008E2EF1 /* ArticleCardImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 223C383C305F43B4008E2EF1 /* ArticleCardImage.swift */; };
+		223C3840305F43BD008E2EF1 /* ArticleLeadCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 223C383F305F43BD008E2EF1 /* ArticleLeadCard.swift */; };
+		223C3841305F43BD008E2EF1 /* ArticleLeadCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 223C383F305F43BD008E2EF1 /* ArticleLeadCard.swift */; };
+		223C3843305F43D1008E2EF1 /* ArticleGridCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 223C3842305F43D1008E2EF1 /* ArticleGridCard.swift */; };
+		223C3844305F43D1008E2EF1 /* ArticleGridCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 223C3842305F43D1008E2EF1 /* ArticleGridCard.swift */; };
+		223C3846305F4421008E2EF1 /* ArticleReadingWidth.swift in Sources */ = {isa = PBXBuildFile; fileRef = 223C3845305F4421008E2EF1 /* ArticleReadingWidth.swift */; };
+		223C3847305F4421008E2EF1 /* ArticleReadingWidth.swift in Sources */ = {isa = PBXBuildFile; fileRef = 223C3845305F4421008E2EF1 /* ArticleReadingWidth.swift */; };
+		223C3849305F4478008E2EF1 /* ArticleFeedRhythmTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 223C3848305F4478008E2EF1 /* ArticleFeedRhythmTests.swift */; };
+		223C384A305F4478008E2EF1 /* ArticleFeedRhythmTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 223C3848305F4478008E2EF1 /* ArticleFeedRhythmTests.swift */; };
 		23D4A4BA1F983A42099D4865 /* PublicationPrefsRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58D47548254809BE6CA4E294 /* PublicationPrefsRecord.swift */; };
 		23ECA3DC6B723872579B7BB3 /* FeedDisplayOption.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85C6C308108F21C503D0D9B8 /* FeedDisplayOption.swift */; };
 		240942C65A6DB35C975ED975 /* SembleCollectionSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9A2F2F5597D9F19BE3CDF84 /* SembleCollectionSummary.swift */; };
@@ -655,6 +667,12 @@
 		204E3CE22109334CBE1C8179 /* SubscribedPublicationSidebarTree.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubscribedPublicationSidebarTree.swift; sourceTree = "<group>"; };
 		210C545B05ADF78496BCD002 /* OPMLImportFailure.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OPMLImportFailure.swift; sourceTree = "<group>"; };
 		220E2D3CC128A404DB0CDBBA /* CircleStory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CircleStory.swift; sourceTree = "<group>"; };
+		223C3839305F43AE008E2EF1 /* ArticleFeedRhythm.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArticleFeedRhythm.swift; sourceTree = "<group>"; };
+		223C383C305F43B4008E2EF1 /* ArticleCardImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArticleCardImage.swift; sourceTree = "<group>"; };
+		223C383F305F43BD008E2EF1 /* ArticleLeadCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArticleLeadCard.swift; sourceTree = "<group>"; };
+		223C3842305F43D1008E2EF1 /* ArticleGridCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArticleGridCard.swift; sourceTree = "<group>"; };
+		223C3845305F4421008E2EF1 /* ArticleReadingWidth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArticleReadingWidth.swift; sourceTree = "<group>"; };
+		223C3848305F4478008E2EF1 /* ArticleFeedRhythmTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArticleFeedRhythmTests.swift; sourceTree = "<group>"; };
 		24A9E7EEF05DB40A331F4D2B /* StandardSiteRecommendationContract.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StandardSiteRecommendationContract.swift; sourceTree = "<group>"; };
 		24FC407028814D45CD6C851E /* GenericRepoRecord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GenericRepoRecord.swift; sourceTree = "<group>"; };
 		2868ECE4B6B10A2DECE1F578 /* OPMLParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OPMLParser.swift; sourceTree = "<group>"; };
@@ -688,7 +706,7 @@
 		3F0C4AC3AA41E196CE40566A /* SembleRecordService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SembleRecordService.swift; sourceTree = "<group>"; };
 		40E5D2E97D3DECAF899FDD2B /* UserInputFeedbackServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserInputFeedbackServiceTests.swift; sourceTree = "<group>"; };
 		41E56F388F009DD4ABEE9C8F /* PublicationServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicationServiceTests.swift; sourceTree = "<group>"; };
-		4261A541968D0F3B3BC61693 /* SocialWireTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = SocialWireTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		4261A541968D0F3B3BC61693 /* SocialWireTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SocialWireTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		42886B2EFB194BDC75F6ED6E /* NewsStoryImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewsStoryImage.swift; sourceTree = "<group>"; };
 		4331A05710EF603CBD819038 /* OPMLFeed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OPMLFeed.swift; sourceTree = "<group>"; };
 		434E7A421704B13C564BFB59 /* LatrRecordParsing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LatrRecordParsing.swift; sourceTree = "<group>"; };
@@ -794,7 +812,7 @@
 		9A0A6DE2913FB420AA1B36FD /* NewsDetailColumn.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewsDetailColumn.swift; sourceTree = "<group>"; };
 		9B99C3DEA77B798BEAB94D47 /* CircleSharer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CircleSharer.swift; sourceTree = "<group>"; };
 		9BE4674C79C13AA6657B59EA /* OAuthTestTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OAuthTestTransport.swift; sourceTree = "<group>"; };
-		9E5CB30852820D4012F0E503 /* SocialWireMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SocialWireMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		9E5CB30852820D4012F0E503 /* SocialWire.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SocialWire.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A0F6A7CA7D8969DB8EC6E06D /* LibraryNewsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryNewsView.swift; sourceTree = "<group>"; };
 		A1EA114CF5F8F1B62B0678D6 /* SembleSaveOutcome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SembleSaveOutcome.swift; sourceTree = "<group>"; };
 		A2ECAD60E06F9E1DE87289DD /* UserInputBoardReference.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserInputBoardReference.swift; sourceTree = "<group>"; };
@@ -848,7 +866,7 @@
 		CBAB76AF7A801EC162FBE904 /* ArticleBodyUnavailableView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArticleBodyUnavailableView.swift; sourceTree = "<group>"; };
 		CBCF488691421272ABE44ECD /* CachedRemoteImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CachedRemoteImage.swift; sourceTree = "<group>"; };
 		CD5851E158D87C9352ED5311 /* SavedTagMutationProgress.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedTagMutationProgress.swift; sourceTree = "<group>"; };
-		CD69356C6CA572808DF46DA0 /* SocialWireUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = SocialWireUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		CD69356C6CA572808DF46DA0 /* SocialWireUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SocialWireUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		CD8F903C41655955032C9C0E /* FeedSidebarRowLabel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedSidebarRowLabel.swift; sourceTree = "<group>"; };
 		CE90A7372E72E3EBC0E0EB12 /* WireFeedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WireFeedTests.swift; sourceTree = "<group>"; };
 		CE96262C34A803291031D0D4 /* FollowProfile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FollowProfile.swift; sourceTree = "<group>"; };
@@ -909,7 +927,7 @@
 		F882C67A1F7B16BD8549C900 /* SavedLinkSocialTarget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedLinkSocialTarget.swift; sourceTree = "<group>"; };
 		F9FA4887A58F7D69D899005F /* EffectiveUnreadCount.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EffectiveUnreadCount.swift; sourceTree = "<group>"; };
 		FC1CAD6203911E71966365F7 /* SembleContributor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SembleContributor.swift; sourceTree = "<group>"; };
-		FD2D66724B5A486EAEF66080 /* SocialWire.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = SocialWire.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		FD2D66724B5A486EAEF66080 /* SocialWire.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SocialWire.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		FD3FA2EC412B8A82067C7C9F /* ATProtoOAuthServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ATProtoOAuthServiceTests.swift; sourceTree = "<group>"; };
 		FD7ADB21501F70AA450A5970 /* SocialWireError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocialWireError.swift; sourceTree = "<group>"; };
 		FDC408F28017FEBDFF5C0394 /* SidebarCountLabel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarCountLabel.swift; sourceTree = "<group>"; };
@@ -1012,6 +1030,7 @@
 				F3130A8F5508FDC17BA1F4D7 /* SocialWireUtilityTests.swift */,
 				40E5D2E97D3DECAF899FDD2B /* UserInputFeedbackServiceTests.swift */,
 				CE90A7372E72E3EBC0E0EB12 /* WireFeedTests.swift */,
+				223C3848305F4478008E2EF1 /* ArticleFeedRhythmTests.swift */,
 			);
 			path = SocialWireTests;
 			sourceTree = "<group>";
@@ -1079,7 +1098,7 @@
 			isa = PBXGroup;
 			children = (
 				FD2D66724B5A486EAEF66080 /* SocialWire.app */,
-				9E5CB30852820D4012F0E503 /* SocialWireMac.app */,
+				9E5CB30852820D4012F0E503 /* SocialWire.app */,
 				512F860B7BAFA9F00005DB5A /* SocialWireMacTests.xctest */,
 				B6AE7F7BE4066A879A9C4A03 /* SocialWireMacUITests.xctest */,
 				4261A541968D0F3B3BC61693 /* SocialWireTests.xctest */,
@@ -1407,6 +1426,11 @@
 				BD211A0A5A30AEB22D4208B5 /* EntryRow.swift */,
 				ACCC031608820B3D97B620FC /* ReaderFeedEmptyStateView.swift */,
 				8885C654686B03D1DD6CBE8C /* ReaderFeedLoadingView.swift */,
+				223C3839305F43AE008E2EF1 /* ArticleFeedRhythm.swift */,
+				223C383C305F43B4008E2EF1 /* ArticleCardImage.swift */,
+				223C383F305F43BD008E2EF1 /* ArticleLeadCard.swift */,
+				223C3842305F43D1008E2EF1 /* ArticleGridCard.swift */,
+				223C3845305F4421008E2EF1 /* ArticleReadingWidth.swift */,
 			);
 			path = EntryList;
 			sourceTree = "<group>";
@@ -1582,7 +1606,7 @@
 				50D4E6BC3ADBBB37D3677C37 /* LatrKit */,
 			);
 			productName = SocialWireMac;
-			productReference = 9E5CB30852820D4012F0E503 /* SocialWireMac.app */;
+			productReference = 9E5CB30852820D4012F0E503 /* SocialWire.app */;
 			productType = "com.apple.product-type.application";
 		};
 		9A1722904D4F8F525FC6E89F /* SocialWireUITests */ = {
@@ -1666,7 +1690,7 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
-				LastUpgradeCheck = 1430;
+				LastUpgradeCheck = 2710;
 				TargetAttributes = {
 					0F26AEE0E5197C40B8BB5902 = {
 						DevelopmentTeam = G39TU2R26A;
@@ -1709,7 +1733,6 @@
 			packageReferences = (
 				A8E3F05D2CF4903A0D379BF9 /* XCRemoteSwiftPackageReference "latr-kit" */,
 			);
-			preferredProjectObjectVersion = 77;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
@@ -1805,6 +1828,7 @@
 				6E731F8ADA66B244BA28A992 /* EntryOpenTarget.swift in Sources */,
 				B6BA5BDCB48A029D7668C458 /* EntryParser.swift in Sources */,
 				AC979A3389C7B9A846C0098C /* EntryRow.swift in Sources */,
+				223C383D305F43B4008E2EF1 /* ArticleCardImage.swift in Sources */,
 				23ECA3DC6B723872579B7BB3 /* FeedDisplayOption.swift in Sources */,
 				30E3492B360B4638F6AB31DD /* FeedDisplayPicker.swift in Sources */,
 				5DEBA4C49259D2DA662337CE /* FeedMarkReadButton.swift in Sources */,
@@ -1814,6 +1838,7 @@
 				C8D5A9E8072E6F86E596755A /* FeedSelection.swift in Sources */,
 				C4F3D03D8ADB37ECE2FFC695 /* FeedSidebarRowLabel.swift in Sources */,
 				73DEBB4B4CAE6FF6E41B1259 /* FolderAssignmentMenu.swift in Sources */,
+				223C383A305F43AE008E2EF1 /* ArticleFeedRhythm.swift in Sources */,
 				490EED12A0FC15241266F910 /* FolderRecord.swift in Sources */,
 				20C2F4E816992BDA93B80799 /* FollowProfile.swift in Sources */,
 				77CF34AE3D1453DA5EDAA518 /* FollowingPublicationSidebarTree.swift in Sources */,
@@ -1827,6 +1852,7 @@
 				A6BD17E7C31FAD9E12F34B05 /* ImageCacheService.swift in Sources */,
 				E6491274EE0CA086F09D72C6 /* JSONValue.swift in Sources */,
 				8DCB69F5C5AE6C3DCECF97B4 /* KeychainStore.swift in Sources */,
+				223C3841305F43BD008E2EF1 /* ArticleLeadCard.swift in Sources */,
 				A8A0221C0936ED094FDBC32F /* LatrGatewayClient.swift in Sources */,
 				CC890533D7CE389D0AEE7AC2 /* LatrGatewayEnvironment.swift in Sources */,
 				2D9B3C165308FEEEF570FFB2 /* LatrRecordParsing.swift in Sources */,
@@ -1859,6 +1885,7 @@
 				830C7D04CF0AFCF4ED62E0AE /* NewsRoute.swift in Sources */,
 				3CBFB5FA37164ACF1BACE8B6 /* NewsSceneModel.swift in Sources */,
 				48A2F3AA2F7E2819B21236A0 /* NewsShellUITestHarness.swift in Sources */,
+				223C3846305F4421008E2EF1 /* ArticleReadingWidth.swift in Sources */,
 				AB3F5DA9AB595F99A88612A1 /* NewsShellView.swift in Sources */,
 				EC503F1D06B2A694ECE18719 /* NewsSidebarView.swift in Sources */,
 				A061496A29854AE5E684620F /* NewsStoryActions.swift in Sources */,
@@ -1984,6 +2011,7 @@
 				15EE4C7C622EBCE0943417CA /* ThumbnailImageURLAttempts.swift in Sources */,
 				0F404AB96D385F83708C0451 /* TokenResponse.swift in Sources */,
 				F9BC03B5D89CEE35C2CAFCD4 /* UserInputBoardReference.swift in Sources */,
+				223C3843305F43D1008E2EF1 /* ArticleGridCard.swift in Sources */,
 				7D8E5CAB3CAB5329E832F6EE /* UserInputFeedbackInput.swift in Sources */,
 				DCFAF901A1A5290C362B9751 /* UserInputFeedbackPhoto.swift in Sources */,
 				B5F97E5D2AFFF5075F1B6297 /* UserInputFeedbackService.swift in Sources */,
@@ -2026,6 +2054,7 @@
 			files = (
 				0CB5B4B32238F3E8BE68F12F /* ATProtoOAuthServiceTests.swift in Sources */,
 				5001A4B1D412EFD54BE8E9CB /* ATProtoSessionDPoPTests.swift in Sources */,
+				223C384A305F4478008E2EF1 /* ArticleFeedRhythmTests.swift in Sources */,
 				418B1519AC20097B2D047AEF /* ArticleSocialContractTests.swift in Sources */,
 				463BE9EA7974BA375E2481B6 /* BootstrapStreamNDJSONTests.swift in Sources */,
 				9BB02AF9168B308BDA345E80 /* EditorialDiscoveryContractTests.swift in Sources */,
@@ -2142,6 +2171,7 @@
 				C13073065D69288D81B21253 /* LatrSavedExternalRecord.swift in Sources */,
 				735AC8C148DC77D0AE785926 /* LatrSavedItemRecord.swift in Sources */,
 				2A1FFB354E8B0BD41AE658FE /* LibraryNewsView.swift in Sources */,
+				223C3844305F43D1008E2EF1 /* ArticleGridCard.swift in Sources */,
 				53FF3FE8775D5043D24554AC /* ListRecordsResponse.swift in Sources */,
 				C07C541533070183B0E8CBA6 /* ListsView.swift in Sources */,
 				CE58C562223B6C631DD45FD5 /* LoginActorSuggestion.swift in Sources */,
@@ -2156,6 +2186,7 @@
 				02B6F7C443B42D8E01940EE8 /* MergedLatrExternalSave.swift in Sources */,
 				265D14532F740B3619AB7B18 /* MergedLatrNativeSave.swift in Sources */,
 				B92A807B98D8C28817D1F5E8 /* MergedLatrSave.swift in Sources */,
+				223C3847305F4421008E2EF1 /* ArticleReadingWidth.swift in Sources */,
 				EE738DE5CE5BBBA789CEA530 /* NewFolderView.swift in Sources */,
 				F2982EC23348AFE961DB539B /* NewsCompactSidebarContainer.swift in Sources */,
 				67294E8D2D12592952BBFF94 /* NewsContentColumn.swift in Sources */,
@@ -2163,6 +2194,7 @@
 				C767EB948EA77A0983A77AEC /* NewsFeedTabBar.swift in Sources */,
 				E3CA77080F379ADFB3902AAD /* NewsPrimaryFeed.swift in Sources */,
 				F23888A5F9F82425BBD24FC6 /* NewsPrimaryFeedStorage.swift in Sources */,
+				223C3840305F43BD008E2EF1 /* ArticleLeadCard.swift in Sources */,
 				F1204CE6243B7961B77F07F6 /* NewsRoute.swift in Sources */,
 				15EC6AFDF72EAA1D4FF7F32D /* NewsSceneModel.swift in Sources */,
 				FE6FD36706FEE247B031E30C /* NewsShellUITestHarness.swift in Sources */,
@@ -2205,6 +2237,7 @@
 				5DA938B9777EE08CFF54B566 /* PublicationSidebarRow.swift in Sources */,
 				96620D4F3E812E952AC0E3B9 /* PublicationSiteFavicon.swift in Sources */,
 				6718BFDE8EC6ED2769324854 /* PublicationSubscriptionMatch.swift in Sources */,
+				223C383B305F43AE008E2EF1 /* ArticleFeedRhythm.swift in Sources */,
 				A201B6ECF4D1BF95DD6DDA99 /* PublicationSubscriptionRecord.swift in Sources */,
 				190E0FBCCA1B8C8361E29F86 /* PublicationsPaneView.swift in Sources */,
 				D0C76EA20EC3B7705ACBA156 /* RSSService.swift in Sources */,
@@ -2298,6 +2331,7 @@
 				CD395DE16BF408501DDD4926 /* UserInputSubmissionProgress.swift in Sources */,
 				F649A83D5D0DAC0390FD89C6 /* UserInputTag.swift in Sources */,
 				637664FCB43C841CEC775D45 /* ViewerProfileAvatar.swift in Sources */,
+				223C383E305F43B4008E2EF1 /* ArticleCardImage.swift in Sources */,
 				1BB2B9B34875B7D2109ECD08 /* WireArticleFeedbackContract.swift in Sources */,
 				52D68A4D7FC2C5BB68C18056 /* WireArticleFeedbackRecord.swift in Sources */,
 				B61BA3B8B2503896C1A04835 /* WireArticleFeedbackValue.swift in Sources */,
@@ -2325,6 +2359,7 @@
 			files = (
 				A96FD7E9DC94ACFB4C9B18D2 /* ATProtoOAuthServiceTests.swift in Sources */,
 				B53246B0BA1039AEE8DDA9DF /* ATProtoSessionDPoPTests.swift in Sources */,
+				223C3849305F4478008E2EF1 /* ArticleFeedRhythmTests.swift in Sources */,
 				3164A60DD4803F093B709A55 /* ArticleSocialContractTests.swift in Sources */,
 				E2BC3033899266155595F341 /* BootstrapStreamNDJSONTests.swift in Sources */,
 				68CF8CB7A496EFE7AEA135FD /* EditorialDiscoveryContractTests.swift in Sources */,
@@ -2390,7 +2425,10 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = SocialWireMac/SocialWireMac.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
+				DEAD_CODE_STRIPPING = YES;
 				INFOPLIST_FILE = SocialWireMac/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Social Wire";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.news";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -2426,6 +2464,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				COMBINE_HIDPI_IMAGES = YES;
+				DEAD_CODE_STRIPPING = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -2446,6 +2485,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				COMBINE_HIDPI_IMAGES = YES;
+				DEAD_CODE_STRIPPING = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -2483,6 +2523,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				COMBINE_HIDPI_IMAGES = YES;
+				DEAD_CODE_STRIPPING = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -2521,7 +2562,10 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = SocialWireMac/SocialWireMac.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
+				DEAD_CODE_STRIPPING = YES;
 				INFOPLIST_FILE = SocialWireMac/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Social Wire";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.news";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -2539,7 +2583,10 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = SocialWireMac/SocialWireMac.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
+				DEAD_CODE_STRIPPING = YES;
 				INFOPLIST_FILE = SocialWireMac/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Social Wire";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.news";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -2623,10 +2670,12 @@
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = G39TU2R26A;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
@@ -2648,6 +2697,7 @@
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 6.0;
@@ -2659,6 +2709,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				COMBINE_HIDPI_IMAGES = YES;
+				DEAD_CODE_STRIPPING = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -2680,6 +2731,7 @@
 				CODE_SIGN_ENTITLEMENTS = SocialWire/SocialWire.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				INFOPLIST_FILE = SocialWire/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Social Wire";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.news";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -2698,6 +2750,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				COMBINE_HIDPI_IMAGES = YES;
+				DEAD_CODE_STRIPPING = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -2747,10 +2800,12 @@
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = G39TU2R26A;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
@@ -2765,6 +2820,7 @@
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_VERSION = 6.0;
@@ -2807,10 +2863,12 @@
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = G39TU2R26A;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
@@ -2825,6 +2883,7 @@
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_VERSION = 6.0;
@@ -2856,6 +2915,7 @@
 				CODE_SIGN_ENTITLEMENTS = SocialWire/SocialWire.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				INFOPLIST_FILE = SocialWire/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Social Wire";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.news";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -2876,6 +2936,7 @@
 				CODE_SIGN_ENTITLEMENTS = SocialWire/SocialWire.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				INFOPLIST_FILE = SocialWire/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Social Wire";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.news";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -2895,6 +2956,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				COMBINE_HIDPI_IMAGES = YES;
+				DEAD_CODE_STRIPPING = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

@@ -6,9 +6,17 @@ struct EntryRow: View {
     let entry: EntryListItem
     let isRead: Bool
     let showsReadState: Bool
+    var style: ArticleFeedCardStyle = .row
 
     var body: some View {
-        ArticleListRow(model: rowModel)
+        switch style {
+        case .lead:
+            ArticleLeadCard(model: rowModel)
+        case .grid:
+            ArticleGridCard(model: rowModel)
+        case .row:
+            ArticleListRow(model: rowModel)
+        }
     }
 
     private var rowModel: ArticleListRowModel {

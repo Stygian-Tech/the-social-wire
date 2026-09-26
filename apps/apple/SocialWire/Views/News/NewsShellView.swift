@@ -3,10 +3,7 @@ import SwiftUI
 /// Adaptive application shell with configurable feed tabs, Read Later, and a leading-edge sidebar.
 struct NewsShellView: View {
     @Environment(SocialWireAppModel.self) private var appModel
-    #if os(iOS)
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    #endif
-    @State private var isSidebarPresented = false
     @SceneStorage("the-social-wire.news-window-id.v1") private var windowID = UUID().uuidString
     @State private var sceneModel = NewsSceneModel()
     @State private var selectedSlot = NewsTabSlot.primaryOne
@@ -26,18 +23,26 @@ struct NewsShellView: View {
     }
 
     private var activeNewsTab: NewsTab {
-        selectedSlot == .readLater ? .saved : activePrimaryFeed?.newsTab ?? sceneModel.selectedTab
+        selectedSlot.savedListSource != nil
+            ? .saved
+            : activePrimaryFeed?.newsTab ?? sceneModel.selectedTab
     }
 
     private var activePrimaryFeed: NewsPrimaryFeed? {
         if selectedSlot == .transient, let transientPrimaryFeed {
             return transientPrimaryFeed
         }
-        let slot = selectedSlot == .readLater ? lastPrimarySlot : selectedSlot
+        let slot = selectedSlot.savedListSource == nil ? selectedSlot : lastPrimarySlot
         guard let index = slot.primaryIndex, slotFeeds.indices.contains(index) else {
             return slotFeeds.first
         }
         return slotFeeds[index]
+    }
+
+    /// LatrKit owns the archive; the Semble connector has no archived bucket to show.
+    private var showsArchiveTab: Bool {
+        !appModel.isSembleReadLaterEnabled
+            && appModel.visibleReaderListSources.contains(.archive)
     }
 
     var body: some View {
@@ -46,7 +51,7 @@ struct NewsShellView: View {
                 ProgressView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                adaptiveShell
+                detailStack
             }
         }
         .task(bootstrap)
@@ -64,6 +69,9 @@ struct NewsShellView: View {
         .onChange(of: appModel.feedSelection) { _, selection in
             if case .folder = selection { showSelectedLibraryScope() }
         }
+        .onChange(of: showsArchiveTab) { _, showsArchive in
+            if !showsArchive, selectedSlot == .archive { selectedSlot = .readLater }
+        }
         .onChange(of: availableTabs, availableTabsChanged)
         .onChange(of: sceneModel.selectedTab, sceneTabChanged)
         .onChange(of: appModel.readerListSource, readerListSourceChanged)
@@ -75,133 +83,41 @@ struct NewsShellView: View {
         }
     }
 
-    private var isCompactLayout: Bool {
-        #if os(iOS)
-        horizontalSizeClass == .compact
-        #else
-        false
-        #endif
-    }
-
-    @ViewBuilder
-    private var adaptiveShell: some View {
-        if isCompactLayout {
-            NewsCompactSidebarContainer(isSidebarPresented: $isSidebarPresented) {
-                sidebar
-            } content: {
-                detailStack
-            }
-        } else {
-            NavigationSplitView {
-                sidebar
-            } detail: {
-                detailStack
-            }
-            .navigationSplitViewStyle(.balanced)
-        }
-    }
-
-    private var sidebar: some View {
-        NewsSidebarView(
-            availableTabs: availableTabs,
-            sceneModel: sceneModel,
-            onSelection: {
-                sceneModel.resetPath(for: activeNewsTab)
-                withAnimation(.snappy) { isSidebarPresented = false }
-            }
-        )
-        .accessibilityIdentifier("news-sidebar-column")
-    }
-
     private var detailStack: some View {
-        NavigationStack(path: activePathBinding) {
-            feedTabs
-                .navigationTitle(rootNavigationTitle)
-                .toolbar {
-                    if supportsUnreadFilter {
-                        ToolbarItem(placement: .primaryAction) {
-                            Button("Filter Unread", systemImage: unreadFilterSystemImage) {
-                                Task {
-                                    await appModel.applyReaderFilter(
-                                        appModel.readerFilter == .unread ? .all : .unread
-                                    )
-                                }
-                            }
-                            .accessibilityValue(appModel.readerFilter == .unread ? "On" : "Off")
-                        }
-                    }
-                    if bulkReadScope != .unavailable {
-                        ToolbarItem(placement: .primaryAction) {
-                            FeedMarkReadButton(
-                                contextID: "\(appModel.viewerDID ?? ""):news:\(bulkReadScope)",
-                                refreshRevision: appModel.readAgeRevision,
-                                scopeTitle: bulkReadTitle,
-                                loadOptions: { onOptions in
-                                    try await appModel.readAgeOptions(for: bulkReadScope, onOptions: onOptions)
-                                },
-                                markAllRead: { await appModel.markRead(for: bulkReadScope) },
-                                markOlderRead: {
-                                    try await appModel.markRead(for: bulkReadScope, before: $0.before)
-                                },
-                                markAllUnread: { await appModel.markUnread(for: bulkReadScope) }
-                            )
-                        }
-                    }
-                    if isCompactLayout {
-                        ToolbarItem(placement: .navigation) {
-                            Button("Sidebar", systemImage: "sidebar.left") {
-                                withAnimation(.snappy) { isSidebarPresented = true }
-                            }
-                            .accessibilityIdentifier("news-open-sidebar")
-                        }
-                    }
-                    ToolbarItem(placement: .navigation) {
-                        Button {
-                            isProfilePresented = true
-                        } label: {
-                            ViewerProfileAvatar(size: 30)
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Profile")
-                    }
-                }
-                .navigationDestination(for: NewsRoute.self) { route in
-                    NewsRouteDestination(
-                        route: route,
-                        tab: activeNewsTab,
-                        sceneModel: sceneModel
-                    )
-                }
-        }
+        feedTabs
         .accessibilityIdentifier("news-detail-column")
     }
 
-    private var activePathBinding: Binding<[NewsRoute]> {
-        Binding(
-            get: { sceneModel.path(for: activeNewsTab) },
-            set: { sceneModel.setPath($0, for: activeNewsTab) }
-        )
-    }
-
-    // Tab content does not propagate its navigation preferences through TabView.
-    // Own the root title with the shell's toolbar; pushed destinations own theirs.
-    private var rootNavigationTitle: String {
-        switch activeNewsTab {
-        case .wire:
-            ""
-        case .circle:
-            "Your Circle"
-        case .library:
-            appModel.selectedPublication?.title ?? "Library"
-        case .saved:
-            appModel.readerListSource == .archive ? "Archive" : appModel.savedTabTitle
-        case .search:
-            "Search"
-        }
-    }
-
+    @ViewBuilder
     private var feedTabs: some View {
+        #if os(iOS)
+        // One size-class rule for every device: regular width (iPad, an unfolded iPhone Duo)
+        // opens in the sidebar, compact width stays in the tab bar. macOS always has a sidebar,
+        // so all three platforms land on the same layout.
+        if #available(iOS 27.0, *) {
+            feedTabsContent
+                .defaultTabBarPlacement(preferredTabBarPlacement)
+                .defaultAdaptableTabBarPlacement(preferredTabBarPlacement)
+        } else {
+            feedTabsContent
+                .defaultAdaptableTabBarPlacement(preferredTabBarPlacement)
+        }
+        #else
+        feedTabsContent
+        #endif
+    }
+
+    #if os(iOS)
+    private var preferredTabBarPlacement: AdaptableTabBarPlacement {
+        horizontalSizeClass == .regular ? .sidebar : .tabBar
+    }
+    #endif
+
+    private var feedTabsContent: some View {
         TabView(selection: $selectedSlot) {
+            // Every destination stays at the top level. A TabSection would add a sidebar
+            // title, but it also renders as one grouped entry in the iPadOS tab bar and
+            // carries a collapse chevron that no API suppresses.
             ForEach(Array(NewsTabSlot.primarySlots.prefix(slotFeeds.count)), id: \.self) { slot in
                 if let index = slot.primaryIndex, slotFeeds.indices.contains(index) {
                     let feed = slotFeeds[index]
@@ -211,10 +127,13 @@ struct NewsShellView: View {
                         value: slot
                     ) {
                         if selectedSlot == slot {
-                            NewsContentColumn(
-                                selectedTab: feed.newsTab,
-                                submittedSearch: "",
-                                sceneModel: sceneModel
+                            NewsFeedShellView(
+                                title: feed.title,
+                                tab: feed.newsTab,
+                                sceneModel: sceneModel,
+                                isProfilePresented: $isProfilePresented,
+                                supportsUnreadFilter: feed == .subscribed || feed == .following,
+                                bulkReadScope: bulkReadScope(for: feed)
                             )
                         }
                     }
@@ -228,33 +147,47 @@ struct NewsShellView: View {
                     value: NewsTabSlot.transient
                 ) {
                     if selectedSlot == .transient {
-                        NewsContentColumn(
-                            selectedTab: transientPrimaryFeed.newsTab,
-                            submittedSearch: "",
-                            sceneModel: sceneModel
+                        NewsFeedShellView(
+                            title: transientPrimaryFeed.title,
+                            tab: transientPrimaryFeed.newsTab,
+                            sceneModel: sceneModel,
+                            isProfilePresented: $isProfilePresented,
+                            supportsUnreadFilter: transientPrimaryFeed == .subscribed || transientPrimaryFeed == .following,
+                            bulkReadScope: bulkReadScope(for: transientPrimaryFeed)
                         )
                     }
                 }
             }
 
-            Tab(
-                "Read Later",
-                systemImage: "bookmark",
-                value: NewsTabSlot.readLater
-            ) {
-                if selectedSlot == .readLater {
-                    NewsContentColumn(
-                        selectedTab: .saved,
-                        submittedSearch: "",
-                        sceneModel: sceneModel
-                    )
-                }
+            savedTab(.readLater)
+            if showsArchiveTab {
+                savedTab(.archive)
             }
         }
         .tabViewStyle(.sidebarAdaptable)
-        #if os(iOS)
-        .defaultAdaptableTabBarPlacement(.tabBar)
-        #endif
+        .tabViewSidebarHeader {
+            Text("The Social Wire")
+                .font(.headline)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityIdentifier("news-sidebar-column")
+        }
+    }
+
+    private func savedTab(_ slot: NewsTabSlot) -> some TabContent<NewsTabSlot> {
+        let source = slot.savedListSource ?? .readLater
+        let title = source.rawValue
+        return Tab(title, systemImage: source.systemImage, value: slot) {
+            if selectedSlot == slot {
+                NewsFeedShellView(
+                    title: title,
+                    tab: .saved,
+                    sceneModel: sceneModel,
+                    isProfilePresented: $isProfilePresented,
+                    supportsUnreadFilter: false,
+                    bulkReadScope: .unavailable
+                )
+            }
+        }
     }
 
     private func bootstrap() async {
@@ -283,10 +216,9 @@ struct NewsShellView: View {
     }
 
     private func selectedSlotChanged(_ oldValue: NewsTabSlot, _ slot: NewsTabSlot) {
-        if slot == .readLater {
-            if appModel.readerListSource != .archive {
-                appModel.selectReaderListSource(.readLater)
-            }
+        if let source = slot.savedListSource {
+            // Read Later and Archive are separate tabs now, so each owns its own source.
+            appModel.selectReaderListSource(source)
             sceneModel.select(.saved, availableTabs: availableTabs)
         } else if slot == .transient {
             guard let transientPrimaryFeed else { return }
@@ -333,7 +265,7 @@ struct NewsShellView: View {
                 selectedSlot = .primaryOne
                 activatePrimaryFeed(feeds[0])
             }
-        } else if selectedSlot != .readLater, let activePrimaryFeed {
+        } else if selectedSlot.savedListSource == nil, let activePrimaryFeed {
             activatePrimaryFeed(activePrimaryFeed)
         }
     }
@@ -362,7 +294,9 @@ struct NewsShellView: View {
                 selectedSlot = .readLater
             }
         case .saved:
-            selectedSlot = .readLater
+            selectedSlot = appModel.readerListSource == .archive && showsArchiveTab
+                ? .archive
+                : .readLater
         case .search:
             break
         }
@@ -406,6 +340,9 @@ struct NewsShellView: View {
 
     private func reconcileVisibleSelection() {
         guard isTabConfigurationLoaded else { return }
+        if selectedSlot == .archive, !showsArchiveTab {
+            selectedSlot = .readLater
+        }
         if let transientPrimaryFeed,
            !appModel.visiblePrimaryTabFeedChoices.contains(transientPrimaryFeed) {
             self.transientPrimaryFeed = nil
@@ -487,19 +424,141 @@ struct NewsShellView: View {
         }
     }
 
-    private var bulkReadScope: ReaderMarkReadScope {
-        guard selectedSlot != .readLater, let activePrimaryFeed else { return .unavailable }
-        switch activePrimaryFeed {
+    private func bulkReadScope(for feed: NewsPrimaryFeed) -> ReaderMarkReadScope {
+        switch feed {
         case .subscribed, .following:
             return ReaderMarkReadScope.selectedFeed(appModel.feedSelection)
         case .wire, .circle:
             return .unavailable
         }
     }
+}
 
-    private var supportsUnreadFilter: Bool {
-        guard selectedSlot != .readLater, let activePrimaryFeed else { return false }
-        return activePrimaryFeed == .subscribed || activePrimaryFeed == .following
+private struct NewsFeedShellView: View {
+    @Environment(SocialWireAppModel.self) private var appModel
+    @State private var presentedSheet: NewsShellSheet?
+
+    let title: String
+    let tab: NewsTab
+    let sceneModel: NewsSceneModel
+    @Binding var isProfilePresented: Bool
+    let supportsUnreadFilter: Bool
+    let bulkReadScope: ReaderMarkReadScope
+
+    private enum NewsShellSheet: String, Identifiable {
+        case addPublication
+        case newFolder
+        case importOPML
+
+        var id: String { rawValue }
+    }
+
+    private var effectiveTitle: String {
+        if tab == .library, let publication = appModel.selectedPublication {
+            return publication.title
+        }
+        return title
+    }
+
+    var body: some View {
+        NavigationStack(path: pathBinding) {
+            NewsContentColumn(selectedTab: tab, sceneModel: sceneModel)
+                .navigationTitle(effectiveTitle)
+                .toolbar { toolbarContent }
+                .navigationDestination(for: NewsRoute.self) { route in
+                    NewsRouteDestination(route: route, tab: tab, sceneModel: sceneModel)
+                }
+        }
+        .sheet(item: $presentedSheet) { sheet in
+            switch sheet {
+            case .addPublication:
+                AddPublicationView()
+            case .newFolder:
+                NewFolderView()
+            case .importOPML:
+                OPMLImportView()
+            }
+        }
+    }
+
+    @ToolbarContentBuilder
+    private var toolbarContent: some ToolbarContent {
+        ToolbarItem(placement: leadingPlacement) {
+            Button {
+                isProfilePresented = true
+            } label: {
+                ViewerProfileAvatar(size: 30)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Profile")
+        }
+        if tab == .library && appModel.readerListSource == .subscribed {
+            ToolbarItem(placement: trailingPlacement) {
+                Menu {
+                    Button("Add Publication", systemImage: "plus.circle") {
+                        presentedSheet = .addPublication
+                    }
+                    Button("New Folder", systemImage: "folder.badge.plus") {
+                        presentedSheet = .newFolder
+                    }
+                    Button("Import OPML", systemImage: "square.and.arrow.down") {
+                        presentedSheet = .importOPML
+                    }
+                } label: {
+                    Label("Add", systemImage: "plus")
+                }
+                .help("Add a publication, folder, or OPML subscription list")
+            }
+        }
+        if supportsUnreadFilter {
+            ToolbarItem(placement: trailingPlacement) {
+                Button("Filter Unread", systemImage: unreadFilterSystemImage) {
+                    Task {
+                        await appModel.applyReaderFilter(appModel.readerFilter == .unread ? .all : .unread)
+                    }
+                }
+                .accessibilityValue(appModel.readerFilter == .unread ? "On" : "Off")
+            }
+        }
+        if bulkReadScope != .unavailable {
+            ToolbarItem(placement: trailingPlacement) {
+                FeedMarkReadButton(
+                    contextID: "\(appModel.viewerDID ?? ""):news:\(bulkReadScope)",
+                    refreshRevision: appModel.readAgeRevision,
+                    scopeTitle: bulkReadTitle,
+                    loadOptions: { onOptions in
+                        try await appModel.readAgeOptions(for: bulkReadScope, onOptions: onOptions)
+                    },
+                    markAllRead: { await appModel.markRead(for: bulkReadScope) },
+                    markOlderRead: { try await appModel.markRead(for: bulkReadScope, before: $0.before) },
+                    markAllUnread: { await appModel.markUnread(for: bulkReadScope) }
+                )
+            }
+        }
+    }
+
+    /// The bar placements differ by platform; macOS has no top bar edges.
+    private var leadingPlacement: ToolbarItemPlacement {
+        #if os(macOS)
+        .navigation
+        #else
+        .topBarLeading
+        #endif
+    }
+
+    private var trailingPlacement: ToolbarItemPlacement {
+        #if os(macOS)
+        .primaryAction
+        #else
+        .topBarTrailing
+        #endif
+    }
+
+    private var pathBinding: Binding<[NewsRoute]> {
+        Binding(
+            get: { sceneModel.path(for: tab) },
+            set: { sceneModel.setPath($0, for: tab) }
+        )
     }
 
     private var unreadFilterSystemImage: String {
@@ -511,11 +570,11 @@ struct NewsShellView: View {
     private var bulkReadTitle: String {
         switch bulkReadScope {
         case .publication(let id):
-            return appModel.publication(forId: id)?.title ?? "This Publication"
+            appModel.publication(forId: id)?.title ?? "This Publication"
         case .folder(let key):
-            return appModel.folders.first { $0.uri.hasSuffix("/\(key)") }?.value.name ?? "This Folder"
+            appModel.folders.first { $0.uri.hasSuffix("/\(key)") }?.value.name ?? "This Folder"
         default:
-            return activePrimaryFeed?.title ?? "This Feed"
+            effectiveTitle
         }
     }
 }

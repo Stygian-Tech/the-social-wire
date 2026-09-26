@@ -11,14 +11,14 @@ struct EntryListView: View {
     @State private var entryPendingTaggedSave: EntryListItem?
 
     var body: some View {
+        let visibleEntries = appModel.filteredEntries
         EntryListStateView(
-            title: activeFeedTitle,
-            isEmpty: appModel.filteredEntries.isEmpty,
+            isEmpty: visibleEntries.isEmpty,
             isLoading: appModel.isLoadingEntries || appModel.sidebarFetching,
             hasSelectedFeed: appModel.hasSelectedArticleFeed,
             isUnreadFilter: appModel.readerFilter == .unread,
             notice: appModel.readerListSource == .wire ? appModel.wireFeedNotice : nil,
-            entries: appModel.filteredEntries,
+            entries: visibleEntries,
             readAtByEntryId: appModel.readAtByEntryId,
             showsReadState: appModel.readerListSource.supportsReadState,
             isLoadingMore: appModel.isLoadingMoreEntries,
@@ -39,22 +39,6 @@ struct EntryListView: View {
         .sensoryFeedback(.success, trigger: saveFeedback)
         .sheet(item: $entryPendingTaggedSave) { entry in
             taggedSaveSheet(entry)
-        }
-    }
-
-    private var activeFeedTitle: String {
-        if let publication = appModel.selectedPublication {
-            return publication.title
-        }
-        switch appModel.feedSelection {
-        case .topLevel(let source):
-            return source.rawValue
-        case .folder(let folderRkey):
-            return appModel.folders.first { $0.uri.hasSuffix("/\(folderRkey)") }?.value.name ?? "Folder"
-        case .publication(let publicationID):
-            return appModel.publication(forId: publicationID)?.title ?? "Publication"
-        case .savedSource(let source, let sourceID):
-            return appModel.currentSavedFeedSources.first { $0.id == sourceID }?.model.name ?? source.rawValue
         }
     }
 
@@ -179,7 +163,6 @@ struct EntryListView: View {
 }
 
 private struct EntryListStateView: View {
-    let title: String
     let isEmpty: Bool
     let isLoading: Bool
     let hasSelectedFeed: Bool
@@ -207,7 +190,6 @@ private struct EntryListStateView: View {
                 ReaderFeedEmptyStateView(isUnreadFilter: isUnreadFilter, action: onEmptyAction)
             } else {
                 EntryListScrollContent(
-                    title: title,
                     notice: notice,
                     entries: entries,
                     readAtByEntryId: readAtByEntryId,
@@ -228,7 +210,8 @@ private struct EntryListStateView: View {
 }
 
 private struct EntryListScrollContent: View {
-    let title: String
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     let notice: String?
     let entries: [EntryListItem]
     let readAtByEntryId: [String: Date]
@@ -244,33 +227,77 @@ private struct EntryListScrollContent: View {
     let onLastEntryAppear: (EntryListItem) -> Void
 
     var body: some View {
-        ArticleListLayout(title: title, notice: notice) {
-                ForEach(entries) { entry in
-                    EntryListCard(
-                        entry: entry,
-                        isRead: readAtByEntryId[entry.entryId] != nil,
-                        showsReadState: showsReadState,
-                        metadataSaveTitle: isSembleReadLaterEnabled ? "Save With Note" : "Save With Tags",
-                        metadataSaveSystemImage: isSembleReadLaterEnabled ? "note.text.badge.plus" : "tag",
-                        onOpen: { onOpen(entry) },
-                        onOpenWebsite: entry.originalWebsiteURL == nil ? nil : { onOpenWebsite(entry) },
-                        onOpenInReader: entry.originalWebsiteURL != nil && EntryOpenTargetResolver.isRSSEntry(entry.entryId)
-                            ? { onOpenInReader(entry) }
-                            : nil,
-                        onSave: { onSave(entry) },
-                        onSaveWithMetadata: { onSaveWithMetadata(entry) },
-                        onToggleRead: { onToggleRead(entry) },
-                        onAppear: {
-                            guard entry.entryId == entries.last?.entryId else { return }
-                            onLastEntryAppear(entry)
-                        }
-                    )
-                }
+        ArticleListLayout(notice: notice, spacing: sectionSpacing) {
+            #if os(macOS)
+            ForEach(ArticleFeedRhythm.sections(for: entries)) { section in
+                rhythmSection(section)
+            }
+            #else
+            ForEach(entries) { entry in
+                card(for: entry, style: .row)
+            }
+            #endif
 
-                if isLoadingMore {
-                    ProgressView()
-                        .frame(maxWidth: .infinity)
-                }
+            if isLoadingMore {
+                ProgressView()
+                    .frame(maxWidth: .infinity)
+            }
         }
+    }
+
+    private var sectionSpacing: CGFloat {
+        #if os(macOS)
+        24
+        #else
+        16
+        #endif
+    }
+
+    #if os(macOS)
+    @ViewBuilder
+    private func rhythmSection(_ section: ArticleFeedSection<EntryListItem>) -> some View {
+        switch section.style {
+        case .lead:
+            ForEach(section.items) { card(for: $0, style: .lead) }
+        case .grid:
+            // At accessibility sizes a card needs the whole measure, so demand a
+            // minimum width the band can never fit twice.
+            EditorialCardLayout(
+                spacing: 18,
+                minimumCardWidth: dynamicTypeSize.isAccessibilitySize
+                    ? ArticleReadingWidth.feed
+                    : 300
+            ) {
+                ForEach(section.items) { card(for: $0, style: .grid) }
+            }
+        case .row:
+            VStack(alignment: .leading, spacing: 12) {
+                ForEach(section.items) { card(for: $0, style: .row) }
+            }
+        }
+    }
+    #endif
+
+    private func card(for entry: EntryListItem, style: ArticleFeedCardStyle) -> some View {
+        EntryListCard(
+            entry: entry,
+            isRead: readAtByEntryId[entry.entryId] != nil,
+            showsReadState: showsReadState,
+            metadataSaveTitle: isSembleReadLaterEnabled ? "Save With Note" : "Save With Tags",
+            metadataSaveSystemImage: isSembleReadLaterEnabled ? "note.text.badge.plus" : "tag",
+            style: style,
+            onOpen: { onOpen(entry) },
+            onOpenWebsite: entry.originalWebsiteURL == nil ? nil : { onOpenWebsite(entry) },
+            onOpenInReader: entry.originalWebsiteURL != nil && EntryOpenTargetResolver.isRSSEntry(entry.entryId)
+                ? { onOpenInReader(entry) }
+                : nil,
+            onSave: { onSave(entry) },
+            onSaveWithMetadata: { onSaveWithMetadata(entry) },
+            onToggleRead: { onToggleRead(entry) },
+            onAppear: {
+                guard entry.entryId == entries.last?.entryId else { return }
+                onLastEntryAppear(entry)
+            }
+        )
     }
 }

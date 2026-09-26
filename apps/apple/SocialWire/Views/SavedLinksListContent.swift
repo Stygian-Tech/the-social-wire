@@ -70,12 +70,6 @@ struct SavedLinksListContent: View {
                         }
                     }
                 }
-            } header: {
-                if !isArchivedView {
-                    Text(appModel.readerListSource.rawValue)
-                        .font(.title2.bold())
-                        .textCase(nil)
-                }
             }
         }
         .listStyle(.plain)
