@@ -20,6 +20,17 @@ ordering. This backward-compatible migration caused no observed startup failure,
 but an explicit required-schema startup barrier is needed before relying on this
 gate. Do not treat the reference variable alone as ordering evidence.
 
+The follow-up adds a read-only startup check to all seven main-database consumer
+images. It checks all 81 packaged migration receipts before executing the
+application, with a 90-second deadline and no retained connection. Local
+validation passed 153 top-level Go race tests (196 including subtests, zero
+skips), `go vet`, 44 focused deployment/CI tests, and the Railway TypeScript
+configuration check. Both the ingress image and shared Swift gate builder built;
+container checks confirmed missing-schema blocking, committed-schema dispatch,
+and SIGTERM cancellation in 0.083 seconds. Required PR CI and hosted gate
+verification remain pending. Consolidated live watch paths also need scoped
+Development reconciliation after merge.
+
 The repaired Development telemetry canary began at 19:34:16 UTC. Ops deployment
 `4b9eca1e-ef99-413d-8464-c6234690f89f` succeeded at the merge revision, with
 `OPERATIONS_RETENTION_CATCHUP_ENABLED=true`. Its first cleanup round at 19:34:33
@@ -29,8 +40,11 @@ the expired change-event sample was 91 and the SSE watermark advanced. Relation
 bytes remained unchanged, as expected. Verify the next hourly cycle around
 20:34 UTC before claiming sustained idle/catch-up behavior.
 
-The repaired-stage usage baseline is September 25 19:35 through September 26
-19:35 UTC, saved in `/tmp/tsw92-telemetry-repaired-24h-baseline-20260926.json`.
+The precise pre-stage usage windows end September 26 at 19:34:16 UTC, immediately
+before canary activation. The 24-hour and seven-day baselines are saved in
+`/tmp/tsw92-telemetry-repaired-prestage-24h-20260926.json` and
+`/tmp/tsw92-telemetry-repaired-prestage-7d-20260926.json`. These supersede the
+initial 19:35-minute-boundary capture, which included the first canary minute.
 This canary does not start the whole-release soak: compact/selective admission,
 authenticated acceptance, recovery resolution and service handoff remain gated.
 
@@ -159,6 +173,28 @@ A bounded follow-up identified the unfinished conditions more precisely:
   the sandbox-only run could not execute `ps`, and the permitted rerun passed.
 
 ## Release Gates Still Required
+
+### Captured Stage-to-Worker Replay
+
+The September 26 follow-up used the real Go Wire preparation/staging path and
+Swift `PostgresWireInboxProcessor` in isolated local databases. The 12,000-event
+capture produced 10,892 projectable events and 2,289 identically staged records
+under deterministic synthetic alias/follow relevance. Four final off/on/on/off
+drains applied all 2,289 records in 22.94–23.57 seconds, with no actual runtime
+errors or ready/retry/leased residue. One intentional shutdown cancellation was
+recorded separately. Worker apply p95 changes were +3.23% and +2.53% in the two
+paired comparisons. This does not establish the ingress-only or hosted latency
+gate, nor test concurrent staging, ranking, or representative Production load.
+
+Full downstream projection parity remains unresolved. Across eight drains, ten
+unchanged multi-URL posts selected alternative canonical destinations; even two
+baseline runs disagreed. `allStrings` dictionary iteration feeds first-URL
+selection nondeterministically. TSW-131 tracks this existing bug separately.
+Actor/follow/account/version-fence facts and inbox outcomes matched. Do not omit
+the differing posts to declare the full parity gate passed. The temporary test
+file was removed; bounded evidence and the harness remain under `/tmp`.
+
+### Outstanding Acceptance
 
 - Counterbalanced compact-admission replay with exact envelope/admission parity,
   original versus accepted payload bytes, and no more than 10% p95 regression.
