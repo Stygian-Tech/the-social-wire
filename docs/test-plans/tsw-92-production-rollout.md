@@ -1,9 +1,47 @@
 # TSW-92 Production Rollout Evidence
 
 This follow-up records release validation after PR #479 reached Development at
-`26f9dbf7cff7349bc5438230e48c790df3d5a652`. Production promotion remains pending.
+`26f9dbf7cff7349bc5438230e48c790df3d5a652`. Code promotion is complete; optimization
+activation and full rollout acceptance remain separate.
 The earlier implementation report is a historical snapshot, not the current
 deployment checklist. TSW-94 tracks telemetry acceptance.
+
+## September 26 Production Activation
+
+PR #483 promoted the code to `main` as
+`92a0cb5bbdbc5c78d5d5cd28aa95a2273c6d829e` at 23:01:42 UTC after required CI
+passed. All 16 affected Production deployments succeeded. Migrator
+`438fca0e-0618-423b-ba41-cdb202774494` committed both new migrations, bringing
+the schema to 81 receipts; all eight consolidated replicas passed the schema
+gate before starting. This does not close authenticated or recovery acceptance.
+
+The user subsequently authorized advancing the remaining activation stages and
+selected external-card-first with a stable fallback for TSW-131. That source
+fix and full replay validation are in progress. Compact admission and selective
+aggregation remain disabled until their respective measurements pass.
+
+Production telemetry catch-up was enabled at 23:47:39 UTC. Ops deployment
+`70f32482-6e74-40ba-a7e3-b8c83d33a2a3` succeeded at the same release revision and
+returned readiness 200 with the flag enabled. Its 23:48:19 startup round deleted
+1,468 rows in three calls / 1,038 ms and reached zero-delete sleep. At 23:49:12,
+the bounded expired-event sample was 23, expired metrics were absent, no sessions
+were blocked, and the SSE earliest cursor had advanced from 2,212,987 to
+2,214,421. No expired protected records existed in these samples; authenticated
+SSE resume and live ten-call continuation remain unexercised. The next hourly
+round is due around September 27 at 00:48 UTC. Raw provider usage baselines end
+23:47:39 UTC in `/tmp/tsw92-production-telemetry-prestage-{24h,7d}-20260926.json`.
+Relation-file sizes are not expected to shrink immediately after deletion.
+
+The first legacy handoff stopped Jetstream V2 Ingest deployment
+`fa21d717-9ec3-4fc2-a37a-1597cb1871a3` at 23:49:37 UTC. Ingress already held the
+matching AppView intake lease at fence 1413. Post-stop checkpoints advanced
+26,365,085,318 → 26,365,102,351 → 26,365,183,128 over more than four lease windows,
+with unchanged owner and live renewal. Production auto-deploy is disabled only
+for that retained legacy service; Development auto-deploy remains enabled.
+Manual snapshot rollback, service configuration and source remain available.
+Removing an idle contender does not prove a controller failover or projector
+throughput equivalence. Memory/replay caps, source generations, cursors and
+pending work remain unchanged.
 
 ## PR #480 Development Release
 
