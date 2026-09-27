@@ -16,9 +16,12 @@ the schema to 81 receipts; all eight consolidated replicas passed the schema
 gate before starting. This does not close authenticated or recovery acceptance.
 
 The user subsequently authorized advancing the remaining activation stages and
-selected external-card-first with a stable fallback for TSW-131. That source
-fix and full replay validation are in progress. Compact admission and selective
-aggregation remain disabled until their respective measurements pass.
+selected external-card-first with a stable fallback for TSW-131. The fix passed
+focused extraction and PostgreSQL create/update/duplicate/delete tests. Four
+complete Go-to-Swift replay arms admitted and applied all 2,289 events, with
+identical facts across 19 projection tables and inbox outcomes; no differing
+posts were excluded. Compact admission and selective aggregation remain
+disabled until their respective latency measurements pass.
 
 Production telemetry catch-up was enabled at 23:47:39 UTC. Ops deployment
 `70f32482-6e74-40ba-a7e3-b8c83d33a2a3` succeeded at the same release revision and
@@ -42,6 +45,30 @@ Manual snapshot rollback, service configuration and source remain available.
 Removing an idle contender does not prove a controller failover or projector
 throughput equivalence. Memory/replay caps, source generations, cursors and
 pending work remain unchanged.
+
+### September 27 Replay and Performance Follow-up
+
+The corrected complete captured replay compares original/compact/compact/original
+staging against the real Swift worker. All four arms applied 2,289 records without
+errors, retries or residual work; worker apply p95 changed +2.63% and -0.75% in the
+two comparisons. The separate fresh-ingest p95 comparisons were +13.17% and
++7.15%, so the compact-ingest latency gate remains open. Early runs whose local
+seeded aliases expired at midnight were rejected; corrected arms use identical
+still-active seed facts and the untouched full capture. Evidence is
+`/tmp/tsw131-complete-replay-evidence-20260927.json`.
+
+A longer selective-refresh benchmark completed all 40 refreshes and 799,796
+writes, with ten counterbalanced pairs per distribution and no excluded pairs.
+Spread-write p95 increased 9.551% on its paired geometric mean; its two-sided
+95% interval was +6.551% to +12.635%. Hot-key p95 increased 2.004%, with interval
+-2.372% to +6.576%. These controlled results do not establish the 10% bound for
+spread writes. Median full/selective refresh times were 962.4/100.9 ms for
+spread writes and 950.9/82.2 ms for hot keys; initial rebuild was slower. Current
+source's 1% changed-key read work fell from 763,927 to 8,556 buffer accesses
+(98.88%), passing the 80% sparse-read criterion. Real worker plus concurrent
+refresh/candidate-query comparisons remain required. Source evidence is under
+`/tmp/tsw92-selective-activation-paired-20260927/` and
+`/tmp/tsw92-selective-activation-sparse-20260927/`.
 
 ## PR #480 Development Release
 
