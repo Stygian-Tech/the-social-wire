@@ -1251,7 +1251,7 @@ struct PostgresWireInboxProcessor: Sendable {
     sourceURI: String,
     asOf: Date
   ) async throws {
-    guard let rawURL = Self.externalURL(record),
+    guard let rawURL = WirePostLinkExtractor.externalURL(in: record),
       WireContentQualityClassifier.targetKind(for: rawURL).canCreateItem,
       let identity = WireCanonicalizer.canonicalize(rawURL),
       let host = URL(string: identity.canonicalURL)?.host
@@ -2380,16 +2380,6 @@ struct PostgresWireInboxProcessor: Sendable {
     return nil
   }
 
-  private static func externalURL(_ record: [String: Any]) -> String? {
-    let candidates = allStrings(record, keys: ["uri", "url"])
-    return candidates.first { value in
-      guard let url = URL(string: value), let scheme = url.scheme?.lowercased() else {
-        return false
-      }
-      return (scheme == "http" || scheme == "https") && url.host != nil
-    }
-  }
-
   private static func homepageURL(for articleURL: String) -> String? {
     guard let url = URL(string: articleURL), let scheme = url.scheme, let host = url.host else {
       return nil
@@ -2399,19 +2389,6 @@ struct PostgresWireInboxProcessor: Sendable {
     components.host = host
     components.port = url.port
     return components.url?.absoluteString
-  }
-
-  private static func allStrings(_ value: Any, keys: Set<String>) -> [String] {
-    var result: [String] = []
-    if let dictionary = value as? [String: Any] {
-      for (key, child) in dictionary {
-        if keys.contains(key), let string = child as? String { result.append(string) }
-        result.append(contentsOf: allStrings(child, keys: keys))
-      }
-    } else if let array = value as? [Any] {
-      for child in array { result.append(contentsOf: allStrings(child, keys: keys)) }
-    }
-    return result
   }
 
   private static func containsQuote(_ record: [String: Any]) -> Bool {
