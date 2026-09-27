@@ -31,41 +31,56 @@ func wireSubjectBatchEnd(subjects []json.RawMessage, start int) int {
 // normalization failures. Keep the envelope identity and the original subject
 // shape; downstream malformed-record handling must not change during compaction.
 func compactWirePayload(event ingest.InboxEvent) []byte {
+	payload, _ := compactWirePayloadWithSubject(event)
+	return payload
+}
+
+// Prepare the immutable lookup key from the same decoded document as the
+// compact envelope. Only membership results depend on the transaction snapshot.
+func compactWirePayloadWithSubject(event ingest.InboxEvent) ([]byte, json.RawMessage) {
 	payload := wireJSONPayloadForPostgres(event.Payload)
 	if event.Collection == nil || event.Operation == nil {
-		return payload
+		return payload, nil
 	}
 	signal := *event.Collection == "app.bsky.feed.like" || *event.Collection == "app.bsky.feed.repost" || *event.Collection == "app.bsky.graph.follow"
 	// Publication, post, recommendation and account envelopes remain intact.
 	if !signal {
-		return payload
+		return payload, nil
 	}
 	// Decoding strings through any replaces invalid UTF-8. Keep the former
 	// RawMessage path for malformed input so retained fields still reach the
 	// database unchanged, including errors PostgreSQL would have rejected.
 	if !utf8.Valid(payload) {
-		return compactWireRawPayload(payload, *event.Operation)
+		compact := compactWireRawPayload(payload, *event.Operation)
+		if passiveWireSignal(event) {
+			return compact, wireSubjectValue(compact)
+		}
+		return compact, nil
 	}
 	document, ok := decodeWireJSONDocument(payload).(map[string]any)
 	if !ok {
-		return payload
+		return payload, nil
+	}
+	var subject json.RawMessage
+	if passiveWireSignal(event) {
+		subject = wireSubjectFromDocument(document)
 	}
 	commit, ok := document["commit"].(map[string]any)
 	if !ok || commit == nil {
-		return payload
+		return payload, subject
 	}
 	if *event.Operation == "delete" {
 		_, hasRecord := commit["record"]
 		_, hasCBOR := commit["record_cbor"]
 		if !hasRecord && !hasCBOR {
-			return payload
+			return payload, subject
 		}
 		delete(commit, "record")
 		delete(commit, "record_cbor")
 	} else {
 		record, ok := commit["record"].(map[string]any)
 		if !ok || record == nil {
-			return payload
+			return payload, subject
 		}
 		// Ordinary signal records already contain only these three fields. Keep
 		// their normalized bytes instead of decoding and re-encoding the envelope.
@@ -78,7 +93,7 @@ func compactWirePayload(event ingest.InboxEvent) []byte {
 			}
 		}
 		if unchanged {
-			return payload
+			return payload, subject
 		}
 		compact := make(map[string]any, 3)
 		for _, key := range []string{"$type", "subject", "createdAt"} {
@@ -97,9 +112,9 @@ func compactWirePayload(event ingest.InboxEvent) []byte {
 	document["commit"] = commit
 	compact, err := json.Marshal(document)
 	if err != nil {
-		return payload
+		return payload, subject
 	}
-	return compact
+	return compact, subject
 }
 
 func wireRawRecordSubject(payload []byte) json.RawMessage {
@@ -184,7 +199,10 @@ func wireSubjectValue(payload []byte) json.RawMessage {
 		}
 		return value
 	}
-	value := decodeWireJSONDocument(payload)
+	return wireSubjectFromDocument(decodeWireJSONDocument(payload))
+}
+
+func wireSubjectFromDocument(value any) json.RawMessage {
 	for _, key := range []string{"commit", "record", "subject", "uri"} {
 		object, ok := value.(map[string]any)
 		if !ok {
@@ -201,6 +219,28 @@ func wireSubjectValue(payload []byte) json.RawMessage {
 	return canonical
 }
 
+type wireSignalSubjects struct {
+	distinct  []json.RawMessage
+	eventKeys []string
+	indices   map[string]struct{}
+}
+
+func newWireSignalSubjects(eventCount int) wireSignalSubjects {
+	return wireSignalSubjects{eventKeys: make([]string, eventCount), indices: make(map[string]struct{})}
+}
+
+func (subjects *wireSignalSubjects) add(eventIndex int, value json.RawMessage) {
+	if len(value) == 0 {
+		return
+	}
+	key := string(value)
+	subjects.eventKeys[eventIndex] = key
+	if _, exists := subjects.indices[key]; !exists {
+		subjects.indices[key] = struct{}{}
+		subjects.distinct = append(subjects.distinct, value)
+	}
+}
+
 // Only compact subject values cross this read boundary, never full event payloads.
 // Let PostgreSQL apply its #>> scalar/text semantics to malformed URI values too:
 // silently coercing a string subject into a strongRef would change admission.
@@ -209,26 +249,17 @@ func filterWireSignals(ctx context.Context, tx *sql.Tx, events []ingest.InboxEve
 }
 
 func filterWireSignalsWithMetrics(ctx context.Context, tx *sql.Tx, events []ingest.InboxEvent, metrics *wireCommittedMetrics) ([]ingest.InboxEvent, error) {
-	subjects := make([]json.RawMessage, 0)
-	indices := make(map[string]int)
-	// Retain the normalized membership key once per event. Re-reading every
-	// nested envelope after the lookup doubles JSON parsing on the hot path.
-	eventSubjects := make([]string, len(events))
+	prepared := newWireSignalSubjects(len(events))
 	for i, event := range events {
-		if !passiveWireSignal(event) {
-			continue
-		}
-		subject := wireSubjectValue(event.Payload)
-		if len(subject) == 0 {
-			continue
-		}
-		key := string(subject)
-		eventSubjects[i] = key
-		if _, exists := indices[key]; !exists {
-			indices[key] = len(subjects)
-			subjects = append(subjects, subject)
+		if passiveWireSignal(event) {
+			prepared.add(i, wireSubjectValue(event.Payload))
 		}
 	}
+	return filterPreparedWireSignals(ctx, tx, events, prepared, metrics)
+}
+
+func filterPreparedWireSignals(ctx context.Context, tx *sql.Tx, events []ingest.InboxEvent, prepared wireSignalSubjects, metrics *wireCommittedMetrics) ([]ingest.InboxEvent, error) {
+	subjects := prepared.distinct
 	admitted := make(map[string]bool, len(subjects))
 	for start := 0; start < len(subjects); {
 		end := wireSubjectBatchEnd(subjects, start)
@@ -265,7 +296,7 @@ func filterWireSignalsWithMetrics(ctx context.Context, tx *sql.Tx, events []inge
 	}
 	result := make([]ingest.InboxEvent, 0, len(events))
 	for i, event := range events {
-		if !passiveWireSignal(event) || admitted[eventSubjects[i]] {
+		if !passiveWireSignal(event) || admitted[prepared.eventKeys[i]] {
 			result = append(result, event)
 		}
 	}

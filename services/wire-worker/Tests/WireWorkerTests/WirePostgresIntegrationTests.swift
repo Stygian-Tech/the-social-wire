@@ -1416,6 +1416,111 @@ struct WirePostgresIntegrationTests {
       "DELETE FROM wire_active_actors WHERE actor_key_hash = \(actorHash)", logger: logger)
   }
 
+  @Test(
+    "multi-link post replay keeps its card identity and deletion retracts it",
+    arguments: [false, true])
+  func multiLinkPostReplayKeepsCardIdentity(recordWithMedia: Bool) async throws {
+    guard let url = ProcessInfo.processInfo.environment["WIRE_TEST_DATABASE_URL"] else { return }
+    let logger = Logger(label: "wire-multi-link-replay-postgres.integration")
+    let pool = PostgresClient(
+      configuration: try PostgresWireConfig.make(from: url, logger: logger),
+      backgroundLogger: logger)
+    let runTask = Task { await pool.run() }
+    await Task.yield()
+    defer { runTask.cancel() }
+    let suffix = UUID().uuidString.lowercased()
+    let environment = "wire-multi-link-\(suffix)"
+    let generation = "multi-link-v1"
+    let did = "did:plc:multi-link-\(suffix)"
+    let sourceURI = "at://\(did)/app.bsky.feed.post/post"
+    let articleURL = "https://article.example/\(suffix)"
+    let facetURL = "https://facet.example/\(suffix)"
+    let identity = try #require(WireCanonicalizer.canonicalize(articleURL))
+    let alternate = try #require(WireCanonicalizer.canonicalize(facetURL))
+    let card: [String: Any] = [
+      "$type": "app.bsky.embed.external",
+      "external": [
+        "uri": articleURL + "?utm_source=card", "title": "Selected card",
+        "description": "Card summary",
+      ],
+    ]
+    let embed: [String: Any] =
+      recordWithMedia
+      ? [
+        "$type": "app.bsky.embed.recordWithMedia", "media": card,
+        "record": ["record": ["uri": "at://did:plc:quoted/app.bsky.feed.post/one"]],
+      ]
+      : card
+    let record: [String: Any] = [
+      "$type": "app.bsky.feed.post", "text": "Fallback title", "embed": embed,
+      "facets": [["features": [["$type": "app.bsky.richtext.facet#link", "uri": facetURL]]]],
+    ]
+    let payload = String(
+      decoding: try JSONSerialization.data(withJSONObject: ["commit": ["record": record]]),
+      as: UTF8.self)
+    let now = Date()
+    func stage(sequence: Int64, operation: String) async throws {
+      try await pool.query(
+        """
+        INSERT INTO wire_ingestion_inbox
+          (environment, source_generation, seq, source_host, cursor_kind, event_kind, repo_did,
+           collection, operation, repo_rev, record_key, payload, event_time)
+        VALUES (\(environment), \(generation), \(sequence), 'test', 'jetstream_v2_seq', 'commit', \(did),
+          'app.bsky.feed.post', \(operation), \(String(sequence)), 'post', \(payload)::jsonb,
+          \(now.addingTimeInterval(Double(sequence))))
+        ON CONFLICT DO NOTHING
+        """, logger: logger)
+    }
+    let processor = try PostgresWireInboxProcessor(
+      pool: pool, logger: logger, actorSecret: String(repeating: "s", count: 32),
+      sourceScope: .init(environment: environment, sourceGenerations: [generation]))
+    for sequence in [Int64(1), Int64(2)] {
+      try await stage(sequence: sequence, operation: sequence == 1 ? "create" : "update")
+      #expect(
+        try await processor.process(asOf: now.addingTimeInterval(Double(sequence) + 0.5)) == 1)
+      try await stage(sequence: sequence, operation: "create")
+      #expect(
+        try await processor.process(asOf: now.addingTimeInterval(Double(sequence) + 0.5)) == 0)
+      let rows = try await pool.query(
+        """
+        SELECT
+          (SELECT canonical_key FROM wire_item_aliases WHERE alias_key = \(sourceURI)),
+          (SELECT canonical_key FROM wire_signal_events WHERE source_uri = \(sourceURI)),
+          (SELECT title FROM wire_items WHERE canonical_key = \(identity.canonicalKey)),
+          (SELECT COUNT(*)::bigint FROM wire_link_metadata_cache WHERE canonical_key = \(identity.canonicalKey)),
+          (SELECT COUNT(*)::bigint FROM wire_items WHERE canonical_key = \(alternate.canonicalKey))
+        """, logger: logger)
+      for try await row in rows {
+        let values = try row.decode((String, String, String, Int64, Int64).self)
+        #expect(values.0 == identity.canonicalKey)
+        #expect(values.1 == identity.canonicalKey)
+        #expect(values.2 == "Selected card")
+        #expect(values.3 == 1)
+        #expect(values.4 == 0)
+      }
+    }
+    try await stage(sequence: 3, operation: "delete")
+    #expect(try await processor.process(asOf: now.addingTimeInterval(4)) == 1)
+    let deleted = try await pool.query(
+      """
+      SELECT (SELECT COUNT(*)::bigint FROM wire_signal_events WHERE source_uri = \(sourceURI)),
+             (SELECT COUNT(*)::bigint FROM wire_item_aliases WHERE alias_key = \(sourceURI)),
+             (SELECT COUNT(*)::bigint FROM wire_item_mentions WHERE source_uri = \(sourceURI))
+      """, logger: logger)
+    for try await row in deleted {
+      let counts = try row.decode((Int64, Int64, Int64).self)
+      #expect(counts.0 == 0 && counts.1 == 0 && counts.2 == 0)
+    }
+    try await pool.query(
+      "DELETE FROM wire_ingestion_inbox WHERE environment = \(environment)", logger: logger)
+    try await pool.query(
+      "DELETE FROM wire_items WHERE canonical_key = \(identity.canonicalKey)", logger: logger)
+    let actorHash = try WireActorHasher(secret: Data(String(repeating: "s", count: 32).utf8)).hash(
+      did)
+    try await pool.query(
+      "DELETE FROM wire_active_actors WHERE actor_key_hash = \(actorHash)", logger: logger)
+  }
+
   @Test("a linkless post update retracts the previously linked article")
   func linklessPostUpdateRetractsSignal() async throws {
     guard let url = ProcessInfo.processInfo.environment["WIRE_TEST_DATABASE_URL"] else { return }

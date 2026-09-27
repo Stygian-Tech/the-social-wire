@@ -469,27 +469,31 @@ func (p *Postgres) StageBatch(ctx context.Context, lease Lease, events []ingest.
 		return errors.New("cannot stage a zero Jetstream checkpoint")
 	}
 	// Normalize once before retries; never change caller-owned event payloads.
+	var subjects wireSignalSubjects
 	if p.source.IsWire() && p.wireCompactIngestEnabled {
 		prepared := make([]ingest.InboxEvent, len(events))
 		copy(prepared, events)
+		subjects = newWireSignalSubjects(len(events))
 		var originalBytes, compactBytes uint64
 		for i := range prepared {
 			originalBytes += uint64(len(prepared[i].Payload))
-			prepared[i].Payload = compactWirePayload(prepared[i])
+			payload, subject := compactWirePayloadWithSubject(prepared[i])
+			prepared[i].Payload = payload
+			subjects.add(i, subject)
 			compactBytes += uint64(len(prepared[i].Payload))
 		}
 		p.wirePreprocessing.recordInput(len(prepared), originalBytes, compactBytes)
 		events = prepared
 	}
 	if !p.source.IsWire() || !p.wireCompactIngestEnabled {
-		return p.stageBatchTransaction(ctx, lease, events, checkpointSeq, checkpointEventTime, progress)
+		return p.stageBatchTransaction(ctx, lease, events, checkpointSeq, checkpointEventTime, progress, subjects)
 	}
 	return retryStageSerialization(ctx, func() error {
-		return p.stageBatchTransaction(ctx, lease, events, checkpointSeq, checkpointEventTime, progress)
+		return p.stageBatchTransaction(ctx, lease, events, checkpointSeq, checkpointEventTime, progress, subjects)
 	})
 }
 
-func (p *Postgres) stageBatchTransaction(ctx context.Context, lease Lease, events []ingest.InboxEvent, checkpointSeq uint64, checkpointEventTime time.Time, progress ReplayProgress) error {
+func (p *Postgres) stageBatchTransaction(ctx context.Context, lease Lease, events []ingest.InboxEvent, checkpointSeq uint64, checkpointEventTime time.Time, progress ReplayProgress, subjects wireSignalSubjects) error {
 	isolation := sql.LevelDefault
 	if p.source.IsWire() && p.wireCompactIngestEnabled {
 		isolation = sql.LevelRepeatableRead
@@ -538,7 +542,7 @@ func (p *Postgres) stageBatchTransaction(ctx context.Context, lease Lease, event
 	var preprocessing wireCommittedMetrics
 	if p.source.IsWire() && p.wireCompactIngestEnabled {
 		var err error
-		events, err = filterWireSignalsWithMetrics(ctx, tx, events, &preprocessing)
+		events, err = filterPreparedWireSignals(ctx, tx, events, subjects, &preprocessing)
 		if err != nil {
 			return err
 		}

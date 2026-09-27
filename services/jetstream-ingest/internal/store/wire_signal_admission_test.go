@@ -147,6 +147,55 @@ func TestCompactWirePayloadPreservesInvalidUTF8Behavior(t *testing.T) {
 	}
 }
 
+func TestFusedPreparationMatchesCompactedSubjectLookup(t *testing.T) {
+	var events []ingest.InboxEvent
+	for _, collection := range []string{"app.bsky.feed.like", "app.bsky.feed.repost", "app.bsky.graph.follow", "app.bsky.feed.post"} {
+		for _, operation := range []string{"create", "update", "delete"} {
+			for _, subject := range []string{
+				`{"uri":"at://post"}`, `{"uri":"at:\/\/post"}`, `{"uri":null}`, `null`,
+				`"at://post"`, `{"uri":9223372036854775807}`, `{"uri":1e3}`, `{"uri":false}`,
+				`{"uri":{"n":9223372036854775807}}`, `{"uri":["at://post",1]}`,
+				`{"uri":"first","uri":"last"}`, `{"uri":"before\u0000after"}`,
+			} {
+				events = append(events, wireSignal(collection, operation, subject))
+			}
+		}
+	}
+	for _, payload := range []string{
+		`{"commit":{"record":{"subject":{"uri":"at://minimal"}}}}`,
+		`{"commit":{"record":{"subject":{"uri":"first"}}},"commit":{}}`,
+		`{"commit":{"record":null}}`, `{"commit":{"record":"bad"}}`,
+		`{"commit":{"record":{"subject":{"uri":"known"},"unused":{"a\u0000":1,"a\ufffd":2}}}}`,
+		`{"commit":{"record":{"subject":{"uri":"first"}}}} {}`,
+	} {
+		event := wireSignal("app.bsky.feed.like", "create", `null`)
+		event.Payload = []byte(payload)
+		events = append(events, event)
+	}
+	for _, operation := range []string{"create", "update", "delete"} {
+		for _, field := range []string{"rev", "createdAt", "unused", "uri"} {
+			events = append(events, invalidUTF8Signal(field, operation))
+		}
+	}
+	invalidObject := wireSignal("app.bsky.feed.like", "create", `{"uri":{"key":"bad"}}`)
+	invalidObject.Payload = bytes.Replace(invalidObject.Payload, []byte("bad"), []byte{'x', 0xff, 'y'}, 1)
+	events = append(events, invalidObject, ingest.InboxEvent{Kind: "account", Payload: []byte(`{"account":{"active":false}}`)})
+	for i, event := range events {
+		original := append([]byte(nil), event.Payload...)
+		payload, subject := compactWirePayloadWithSubject(event)
+		var want json.RawMessage
+		if passiveWireSignal(event) {
+			want = wireSubjectValue(payload)
+		}
+		if !bytes.Equal(subject, want) {
+			t.Fatalf("case %d fused lookup = %q, compacted lookup = %q", i, subject, want)
+		}
+		if !bytes.Equal(event.Payload, original) {
+			t.Fatalf("case %d changed caller payload", i)
+		}
+	}
+}
+
 func TestWireAdmissionDeduplicatesBoundedKeysAndKeepsOrderedLifecycle(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {
@@ -202,10 +251,20 @@ func TestStageRetriesWholeTransactionAfterSerializationConflict(t *testing.T) {
 	filtered.Seq = 13
 	filtered.Time = event.Time
 	for attempt := 0; attempt < 2; attempt++ {
+		accepted := event
+		if attempt == 1 {
+			// A fresh snapshot can change membership after a serialization retry.
+			accepted = filtered
+		}
 		mock.ExpectBegin()
 		mock.ExpectQuery("SELECT TRUE").WillReturnRows(sqlmock.NewRows([]string{"valid"}).AddRow(true))
-		mock.ExpectQuery("SELECT requested.ordinality").WillReturnRows(sqlmock.NewRows([]string{"ordinality"}).AddRow(1))
-		mock.ExpectExec("INSERT INTO wire_ingestion_inbox").WillReturnResult(sqlmock.NewResult(0, 1))
+		mock.ExpectQuery("SELECT requested.ordinality").WithArgs(`["at://post","at://missing"]`).
+			WillReturnRows(sqlmock.NewRows([]string{"ordinality"}).AddRow(attempt + 1))
+		mock.ExpectExec("INSERT INTO wire_ingestion_inbox").WithArgs(
+			p.source.Environment, p.source.Generation, int64(accepted.Seq), p.source.Host,
+			p.source.CursorKind, accepted.Kind, accepted.RepoDID, accepted.Collection, accepted.Operation,
+			accepted.RepoRev, accepted.RecordKey, accepted.RecordCID, string(compactWirePayload(accepted)), accepted.Time).
+			WillReturnResult(sqlmock.NewResult(0, 1))
 		mock.ExpectExec("UPDATE wire_ingestion_admission").WillReturnResult(sqlmock.NewResult(0, 1))
 		mock.ExpectExec("INSERT INTO wire_ingestion_recovery_anchors").WillReturnResult(sqlmock.NewResult(0, 1))
 		if attempt == 0 {
@@ -225,7 +284,7 @@ func TestStageRetriesWholeTransactionAfterSerializationConflict(t *testing.T) {
 		originalBytes:    uint64(len(event.Payload) + len(filtered.Payload)),
 		compactBytes:     uint64(len(compactWirePayload(event)) + len(compactWirePayload(filtered))),
 		committedBatches: 1, acceptedEvents: 1, insertedEvents: 1,
-		acceptedBytes: uint64(len(compactWirePayload(event))), filteredPassiveEvents: 1,
+		acceptedBytes: uint64(len(compactWirePayload(filtered))), filteredPassiveEvents: 1,
 		lookupSubjects: 2, lookupBytes: uint64(len(`["at://post","at://missing"]`)),
 	}
 	if snapshot != want {

@@ -77,7 +77,11 @@ func TestWireCompactAdmissionIntegration(t *testing.T) {
 		t.Fatal(err)
 	}
 	expiredEvent := wireSignal("app.bsky.feed.like", "create", fmt.Sprintf(`{"uri":%q}`, expired))
-	admitted, err := filterWireSignals(ctx, snapshot, []ingest.InboxEvent{expiredEvent})
+	payload, subject := compactWirePayloadWithSubject(expiredEvent)
+	expiredEvent.Payload = payload
+	prepared := newWireSignalSubjects(1)
+	prepared.add(0, subject)
+	admitted, err := filterPreparedWireSignals(ctx, snapshot, []ingest.InboxEvent{expiredEvent}, prepared, nil)
 	if err != nil || len(admitted) != 0 {
 		snapshot.Rollback()
 		t.Fatalf("initial expired admission: %v %v", admitted, err)
@@ -86,7 +90,7 @@ func TestWireCompactAdmissionIntegration(t *testing.T) {
 		snapshot.Rollback()
 		t.Fatal(err)
 	}
-	admitted, err = filterWireSignals(ctx, snapshot, []ingest.InboxEvent{expiredEvent})
+	admitted, err = filterPreparedWireSignals(ctx, snapshot, []ingest.InboxEvent{expiredEvent}, prepared, nil)
 	snapshot.Rollback()
 	if err != nil || len(admitted) != 0 {
 		t.Fatalf("snapshot changed mid-transaction: %v %v", admitted, err)
@@ -222,6 +226,17 @@ func TestWireSubjectMembershipLegacyParityIntegration(t *testing.T) {
 		}
 		if (len(got) == 1) != legacy {
 			t.Fatalf("subject %s changed admission: legacy=%v got=%d", subject, legacy, len(got))
+		}
+		payload, key := compactWirePayloadWithSubject(event)
+		event.Payload = payload
+		prepared := newWireSignalSubjects(1)
+		prepared.add(0, key)
+		fused, err := filterPreparedWireSignals(ctx, tx, []ingest.InboxEvent{event}, prepared, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if (len(fused) == 1) != legacy {
+			t.Fatalf("subject %s changed fused admission: legacy=%v got=%d", subject, legacy, len(fused))
 		}
 	}
 }
