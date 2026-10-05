@@ -4,6 +4,39 @@ import Testing
 
 @Suite("Finance Feed")
 struct FinanceFeedTests {
+    @Test("asset kinds round-trip while legacy feeds remain visible")
+    func assetKindFeeds() throws {
+        for (kind, group, icon) in [("stock", "Stocks", "chart.line.uptrend.xyaxis"),
+                                   ("etf", "ETFs", "square.stack.3d.up"),
+                                   ("crypto", "Crypto", "bitcoinsign.circle"),
+                                   ("index", "Indices", "chart.bar.xaxis"),
+                                   ("commodity", "Commodities", "shippingbox")] {
+            let feed = FinanceNamedFeed(id: "instrument:asset", title: "Asset", kind: "instrument",
+                                        instrumentIDs: ["asset"], sectorIDs: [], description: "", assetKind: kind)
+            #expect(try JSONDecoder().decode(FinanceNamedFeed.self, from: JSONEncoder().encode(feed)).assetKind == kind)
+            #expect(feed.pickerGroup == group)
+            #expect(feed.systemImage == icon)
+            #expect(feed.isVisible(hideCrypto: false))
+            #expect(feed.isVisible(hideCrypto: true) == (kind != "crypto"))
+        }
+        let legacy = try JSONDecoder().decode(FinanceNamedFeed.self, from: Data(#"{"id":"legacy","title":"Legacy","kind":"instrument","instrumentIDs":["legacy"],"sectorIDs":[],"description":""}"#.utf8))
+        #expect(legacy.assetKind == nil)
+        #expect(legacy.isVisible(hideCrypto: true))
+        #expect(FinanceNamedFeed.all.isVisible(hideCrypto: true))
+    }
+
+    @Test("crypto exclusion remains explicit in server query and cache context")
+    func cryptoQueryIsolation() {
+        let query = SocialWireGatewayClient.financeQuery(language: "en", feed: "asset:crypto", cursor: "opaque", hideCrypto: true)
+        #expect(query["hideCrypto"] == "true")
+        #expect(query["cursor"] == "opaque")
+        #expect(query["feed"] == "asset:crypto")
+        #expect(SocialWireGatewayClient.financeQuery(language: "en", feed: "finance", cursor: nil, hideCrypto: false)["hideCrypto"] == "false")
+        #expect(SocialWireGatewayClient.financeQuery(language: "en", feed: "finance", cursor: nil, hideCrypto: nil)["hideCrypto"] == nil)
+        let visible = FinanceCacheIdentity.key(viewer: "v", language: "en", region: "us", moderation: "m", preferences: "p", generation: "g")
+        #expect(visible != FinanceCacheIdentity.key(viewer: "v", language: "en", region: "us", moderation: "m", preferences: "p", generation: "g", hideCrypto: true))
+    }
+
     @Test("exchange labels use provider names without guessing exchange codes")
     func exchangeLabels() throws {
         var instrument = FinanceInstrument(id: "apple", name: "Apple", symbol: "AAPL", kind: "equity", providerID: "figi", exchange: "UW", currency: "USD", aliases: [], sectorIDs: [], tradingViewSymbol: "NASDAQ:AAPL", isActive: true)
@@ -111,8 +144,10 @@ struct FinanceFeedTests {
         var prefs = try JSONDecoder().decode(ReaderFeedPreferences.self, from: Data("{}".utf8))
         #expect(prefs.showFinance)
         #expect(!prefs.hideFinancePerformance)
+        #expect(!prefs.hideFinanceCrypto)
         prefs.showFinance = false
         prefs.hideFinancePerformance = true
+        prefs.hideFinanceCrypto = true
         let restored = try JSONDecoder().decode(ReaderFeedPreferences.self, from: JSONEncoder().encode(prefs))
         #expect(restored == prefs)
         #expect(NewsPrimaryFeed.defaultFeeds.count == 4)

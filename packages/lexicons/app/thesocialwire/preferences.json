@@ -129,6 +129,10 @@
           "hideSportsScores": {
             "type": "boolean",
             "default": false
+          },
+          "hideFinanceCrypto": {
+            "type": "boolean",
+            "description": "Hide cryptocurrency stories and instruments in Finance. Defaults to false."
           }
         }
       }

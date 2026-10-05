@@ -18,11 +18,11 @@ import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMe
 import { OUTBOUND_WINDOW_FEATURES } from "@/lib/outboundLinks";
 
 export default function FinanceExperience({ feedID = "finance", onFeedChange }: { feedID?: string; onFeedChange?: (id: string) => void }) {
-  const finance = useFinanceFeed(feedID);
-  const definitions = finance.catalog?.data?.feeds ?? [];
+  const { preferences, setHideFinancePerformance, setHideFinanceCrypto } = useFeedDisplayPreferences();
+  const finance = useFinanceFeed(feedID, preferences.hideFinanceCrypto);
+  const definitions = (finance.catalog?.data?.feeds ?? []).filter(feed => !preferences.hideFinanceCrypto || feed.assetKind !== "crypto");
   const [companySearch, setCompanySearch] = useState("");
   const selectedFeed = definitions.find(feed => feed.id === feedID);
-  const { preferences, setHideFinancePerformance } = useFeedDisplayPreferences();
   const [customize, setCustomize] = useState(false);
   const [anonymousPerformanceHidden, setAnonymousPerformanceHidden] = useState(false);
   const performanceHidden = finance.signedIn ? preferences.hideFinancePerformance : anonymousPerformanceHidden;
@@ -68,7 +68,7 @@ export default function FinanceExperience({ feedID = "finance", onFeedChange }: 
           <FinanceFeedPicker definitions={definitions} feedID={feedID} companySearch={companySearch} onFeedChange={onFeedChange} />
         </div>
         <label className="col-start-2 row-start-2 flex min-w-0 items-center text-sm @min-[24rem]/finance:col-start-3 @min-[24rem]/finance:row-start-1">
-          <span className="sr-only">Find a Company</span>
+          <span className="sr-only">Find an Instrument</span>
           <input type="search" value={companySearch} onChange={event => setCompanySearch(event.target.value)} placeholder="Name, Ticker, or Exchange" className="w-full min-w-0 truncate rounded-md border border-input bg-background px-3 py-3 text-foreground placeholder:truncate " />
         </label>
         <DropdownMenu>
@@ -80,10 +80,11 @@ export default function FinanceExperience({ feedID = "finance", onFeedChange }: 
             <DropdownMenuItem className="min-h-11" disabled={finance.refreshing} onClick={() => { void finance.catalog?.refetch(); void finance.refresh(); }}><RefreshCw aria-hidden="true" />Refresh</DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuCheckboxItem className="min-h-11" checked={performanceHidden} onCheckedChange={changePerformanceVisibility}>Hide Performance Data</DropdownMenuCheckboxItem>
+            <DropdownMenuCheckboxItem className="min-h-11" checked={preferences.hideFinanceCrypto} onCheckedChange={setHideFinanceCrypto}>Hide Crypto</DropdownMenuCheckboxItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </header>
-      {companySearch.trim() && !definitions.some(feed => feed.kind === "instrument" && feed.title.toLocaleLowerCase().includes(companySearch.trim().toLocaleLowerCase())) ? <p role="status" className="mb-4 text-sm text-muted-foreground">No companies match your search.</p> : null}
+      {companySearch.trim() && !definitions.some(feed => feed.kind === "instrument" && feed.title.toLocaleLowerCase().includes(companySearch.trim().toLocaleLowerCase())) ? <p role="status" className="mb-4 text-sm text-muted-foreground">No instruments match your search.</p> : null}
       {selectedFeed?.description ? <p className="mb-4 text-sm text-muted-foreground">{selectedFeed.description}</p> : null}
       {finance.catalog?.error ? <p role="alert" className="mb-4 text-sm text-destructive">Feed choices could not load. Try Refresh.</p> : null}
       {finance.error ? <p role="alert" className="mb-4 text-sm text-destructive">{finance.error instanceof Error ? finance.error.message : "Finance could not load. Try Refresh."}</p> : null}

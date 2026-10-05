@@ -7,6 +7,32 @@ struct FinanceNamedFeed: Codable, Equatable, Identifiable, Sendable {
     let instrumentIDs: [String]
     let sectorIDs: [String]
     let description: String
+    var assetKind: String? = nil
+
+    var pickerGroup: String {
+        switch assetKind {
+        case "stock": "Stocks"
+        case "etf": "ETFs"
+        case "crypto": "Crypto"
+        case "index": "Indices"
+        case "commodity": "Commodities"
+        default: kind == "sector" ? "Industries" : "Finance"
+        }
+    }
+
+    var systemImage: String {
+        switch assetKind {
+        case "etf": "square.stack.3d.up"
+        case "crypto": "bitcoinsign.circle"
+        case "index": "chart.bar.xaxis"
+        case "commodity": "shippingbox"
+        default: "chart.line.uptrend.xyaxis"
+        }
+    }
+
+    func isVisible(hideCrypto: Bool) -> Bool {
+        !hideCrypto || assetKind != "crypto"
+    }
 
     func resolvedInstrument(metadata: [String: FinanceInstrument], items: [FinanceFeedItem]) -> FinanceInstrument? {
         guard kind == "instrument", instrumentIDs.count == 1, let reference = instrumentIDs.first else { return nil }

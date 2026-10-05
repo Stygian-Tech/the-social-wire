@@ -364,9 +364,15 @@ final class SocialWireGatewayClient {
             body: payload, contentType: "application/json")
     }
 
-    func fetchFinance(language: String, feed: String = "finance", cursor: String? = nil) async throws -> FinancePage {
-        var query: [String: String] = ["lang": language, "limit": "50", "feed": feed]
+    nonisolated static func financeQuery(language: String, feed: String, cursor: String?, hideCrypto: Bool?) -> [String: String] {
+        var query = ["lang": language, "limit": "50", "feed": feed]
         if let cursor { query["cursor"] = cursor }
+        if let hideCrypto { query["hideCrypto"] = String(hideCrypto) }
+        return query
+    }
+
+    func fetchFinance(language: String, feed: String = "finance", cursor: String? = nil, hideCrypto: Bool? = nil) async throws -> FinancePage {
+        var query = Self.financeQuery(language: language, feed: feed, cursor: cursor, hideCrypto: hideCrypto)
         if cursor == nil { query["refreshSelections"] = "true" }
         if Locale.current.region?.identifier != "US" { query["region"] = "outside-us" }
         let result = try await authorizedFeedGET(

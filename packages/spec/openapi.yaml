@@ -260,7 +260,8 @@ components:
       properties:
         id: { type: string, maxLength: 256 }
         title: { type: string, maxLength: 300 }
-        kind: { type: string, enum: [all, instrument, industry, group] }
+        kind: { type: string, enum: [all, instrument, industry, group, asset] }
+        assetKind: { type: string, enum: [stock, etf, crypto, index, commodity] }
         instrumentIDs: { type: array, maxItems: 1000, items: { type: string, maxLength: 128 } }
         sectorIDs: { type: array, maxItems: 32, items: { type: string, maxLength: 128 } }
         description: { type: string, maxLength: 1000 }
@@ -2239,6 +2240,7 @@ paths:
         - ATProtoOAuthDPoP: []
       description: Article-first Finance. Selections come from public viewer PDS records; current moderation applies to every page. Named feeds contain only matching stories. Cursors bind feed, generation, viewer, language, and preference/catalog revision and expire after 48 hours.
       parameters:
+        - { name: hideCrypto, in: query, schema: { type: boolean, default: false } }
         - { name: feed, in: query, schema: { type: string, maxLength: 256, default: finance } }
         - { name: cursor, in: query, schema: { type: string, maxLength: 4096 } }
         - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 30 } }
