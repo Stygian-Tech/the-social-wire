@@ -55,6 +55,8 @@ components:
 
   schemas:
     PodcastStateSnapshot: {"type": "object", "required": ["revision", "state"], "properties": {"revision": {"type": "integer", "minimum": 0}, "state": {"$ref": "#/components/schemas/PodcastListenerState"}}}
+    PodcastSearchRequest: {"type": "object", "required": ["query"], "properties": {"query": {"type": "string", "minLength": 2, "maxLength": 200}, "scope": {"type": "string", "enum": ["library"], "default": "library"}, "kind": {"type": "string", "enum": ["all", "shows", "episodes"], "default": "all"}, "showId": {"type": "string", "maxLength": 2048}, "limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 20}, "cursor": {"type": "string", "maxLength": 4096}}}
+    PodcastSearchResponse: {"type": "object", "required": ["shows", "episodes", "hasMore"], "properties": {"shows": {"type": "array", "items": {"$ref": "#/components/schemas/PodcastShow"}}, "episodes": {"type": "array", "items": {"$ref": "#/components/schemas/PodcastEpisode"}}, "cursor": {"type": "string"}, "hasMore": {"type": "boolean"}}}
     PodcastResolveResponse: {"type": "object", "required": ["show", "episodes"], "properties": {"show": {"$ref": "#/components/schemas/PodcastShow"}, "episodes": {"type": "array", "items": {"$ref": "#/components/schemas/PodcastEpisode"}}, "shows": {"type": "array", "items": {"$ref": "#/components/schemas/PodcastShow"}}}}
     PodcastShowsResponse: {"type": "object", "required": ["shows"], "properties": {"shows": {"type": "array", "items": {"$ref": "#/components/schemas/PodcastShow"}}}}
     PodcastEpisodesResponse: {"type": "object", "required": ["episodes"], "properties": {"episodes": {"type": "array", "items": {"$ref": "#/components/schemas/PodcastEpisode"}}, "cursor": {"type": "string"}}}
@@ -4419,6 +4421,29 @@ paths:
                   minimum: 0
                   maximum: 9007199254740991
 
+  /v1/podcasts/search:
+    post:
+      tags: [Podcasts]
+      summary: Search The Podcast Library
+      description: Searches stored titles, descriptions and show host names in subscribed public and viewer-owned private podcasts. No directory requests, PDS hydration or feed fetches. Matching ignores case and diacritics and requires every whitespace-separated term. Results order shows before episodes then stable ID. At most 500 stored rows are scanned per page; a page may be empty with hasMore true. Continue with the opaque cursor until hasMore false. Cursors are bound to viewer, normalized query, kind and showId. Responses are private, no-store.
+      security: [{ATProtoOAuthDPoP: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PodcastSearchRequest'}
+            example: {query: technology, scope: library, kind: all, limit: 20}
+      responses:
+        '200':
+          description: Sanitized Library Search Page
+          headers:
+            Cache-Control: {schema: {type: string, example: 'private, no-store'}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PodcastSearchResponse'}
+        '400': {description: Invalid Search Or Cursor}
+        '401': {description: Authentication Required}
+        '503': {description: Private Storage Authentication Failed}
   /v1/podcasts/private/resolve:
     post:
       tags: [Podcasts]

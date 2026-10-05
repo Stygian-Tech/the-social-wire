@@ -40,7 +40,7 @@ struct AppViewProxyRoutes {
         try await forward(request: request, context: context, path: path, method: "GET")
       }
     }
-    for path in ["/v1/podcasts/resolve", "/v1/podcasts/private/resolve", "/v1/podcasts/private/refresh", "/v1/podcasts/analysis", "/v1/podcasts/clips", "/v1/podcasts/clips/publish", "/v1/podcasts/jobs"] {
+    for path in ["/v1/podcasts/search", "/v1/podcasts/resolve", "/v1/podcasts/private/resolve", "/v1/podcasts/private/refresh", "/v1/podcasts/analysis", "/v1/podcasts/clips", "/v1/podcasts/clips/publish", "/v1/podcasts/jobs"] {
       group.post(RouterPath(path)) { request, context async throws -> Response in
         try await forward(request: request, context: context, path: path, method: "POST")
       }
@@ -356,6 +356,7 @@ struct AppViewProxyRoutes {
     }
     var headers = HTTPFields()
     headers[.contentType] = "application/json"
+    if path == "/v1/podcasts/search" { headers[.cacheControl] = "private, no-store" }
     if let requestId = reply.headers.first(name: "X-Request-ID"),
       let requestIdHeader = HTTPField.Name("X-Request-ID")
     {

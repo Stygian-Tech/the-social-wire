@@ -1,0 +1,25 @@
+meta {
+  name: POST Podcast Library Search
+  type: http
+  seq: 25
+}
+
+post {
+  url: {{baseUrl}}/v1/podcasts/search
+  body: json
+  auth: none
+}
+
+body:json {
+{
+  "query": "technology",
+  "scope": "library",
+  "kind": "all",
+  "limit": 20
+}
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}

@@ -1,8 +1,10 @@
 "use client";
+import { PodcastLibrarySearch } from "./PodcastLibrarySearch";
 import { PodcastLibrarySidebar } from "./PodcastLibrarySidebar";
 import { podcastFeedEpisodes, type PodcastFeed } from "@/lib/podcasts/library";
 import { savePodcastAudioToDevice } from "@/lib/podcasts/deviceDownload";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { usePodcastLibrarySearch } from "@/hooks/usePodcastLibrarySearch";
 import { usePodcastViewer } from "@/hooks/usePodcastViewer";
 import { useAuth } from "@/hooks/useAuth";
 import { gatewayFetch } from "@/lib/socialWireGatewayClient";
@@ -53,9 +55,13 @@ function PodcastViewerLibrary() {
   );
   const [feed, setFeed] = useState<PodcastFeed>("recent");
   const [privateFeed, setPrivateFeed] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   const [showAdd, setShowAdd] = useState(false);
   const [loading, setLoading] = useState(false);
   const [preparingEpisode, setPreparingEpisode] = useState<string | null>(null);
+  const downloadEpisodes = useMemo(() => downloads.map(item => item.episode), [downloads]);
+  const searching = !!searchQuery.trim();
+  const search = usePodcastLibrarySearch({ viewer, query: searchQuery, showId: feed === "show" ? showId ?? undefined : undefined, downloaded: feed === "downloads" ? downloadEpisodes : undefined, getOAuthSession });
   const controllers = useRef(new Map<string, AbortController>());
   const libraryGeneration = useRef(0);
   const cancelLibraryLoad = useCallback(() => {
@@ -89,7 +95,7 @@ function PodcastViewerLibrary() {
   }, [load, cancelLibraryLoad]);
   useEffect(() => {
     const oauth = getOAuthSession();
-    if (!oauth || !navigator.onLine || feed === "downloads" || (feed === "show" && !showId)) return;
+    if (searching || !oauth || !navigator.onLine || feed === "downloads" || (feed === "show" && !showId)) return;
     const controller = new AbortController();
     const path = feed === "show"
       ? `episodes?showId=${encodeURIComponent(showId!)}`
@@ -108,7 +114,7 @@ function PodcastViewerLibrary() {
       if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : "Episodes Could Not Load. Please Retry.");
     }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [showId, feed, getOAuthSession, player.state.queue, player.state.subscriptions, downloads]);
+  }, [showId, feed, getOAuthSession, player.state.queue, player.state.subscriptions, downloads, searching]);
   useEffect(() => {
     const oauth = getOAuthSession();
     if (!viewer || !player.episode) return;
@@ -204,7 +210,7 @@ function PodcastViewerLibrary() {
     }
   }
   const downloaded = new Set(downloads.map((item) => item.episode.id));
-  const displayed = podcastFeedEpisodes(feed, episodes, downloads.map((item) => item.episode), player.state.queue);
+  const displayed = searching ? search.episodes : podcastFeedEpisodes(feed, episodes, downloadEpisodes, player.state.queue);
   const selectedShow = feed === "show" ? shows.find((show) => show.id === showId) : undefined;
   const heading = selectedShow?.title ?? ({ recent: "Recently Added", downloads: "Downloaded", queue: "Up Next", show: "Episodes" }[feed]);
   const selectFeed = (next: PodcastFeed, id?: string) => {
@@ -252,6 +258,21 @@ function PodcastViewerLibrary() {
           <h1 className="text-2xl font-semibold">Podcasts</h1>
           <button type="button" className={button} aria-expanded={showAdd} onClick={() => setShowAdd((value) => !value)}>Add a Podcast</button>
         </header>
+        <PodcastLibrarySearch
+          query={searchQuery}
+          label={feed === "downloads" ? "Search Downloaded Episodes" : feed === "show" ? "Search This Show" : "Search Your Library"}
+          valid={search.valid}
+          loading={search.loading}
+          error={search.error}
+          shows={search.shows}
+          onQuery={setSearchQuery}
+          onRetry={search.retry}
+          onShow={show => {
+            setShows(current => [...current.filter(item => item.id !== show.id), show]);
+            setSearchQuery("");
+            selectFeed("show", show.id);
+          }}
+        />
         {showAdd ? <form className="min-w-0 space-y-3 rounded-xl border p-4" onSubmit={(event) => {
           event.preventDefault();
           void action(async () => {
@@ -298,7 +319,8 @@ function PodcastViewerLibrary() {
           })}>Refresh Feed</button> : null}
           {selectedShow.visibility === "private" ? <p className="text-xs text-muted-foreground">Private Feed</p> : null}
         </div> : null}
-        {loading ? <p role="status" className="text-sm text-muted-foreground">Loading Episodes…</p> : null}
+        {searching && search.episodes.length ? <h2 className="text-lg font-semibold">Matching Episodes</h2> : null}
+        {!searching && loading ? <p role="status" className="text-sm text-muted-foreground">Loading Episodes…</p> : null}
         <ul className="space-y-3">
           {displayed.map((item) => (
             <li key={item.id} className="rounded-xl border p-4">
@@ -407,12 +429,14 @@ function PodcastViewerLibrary() {
             </li>
           ))}
         </ul>
-        {!displayed.length ? (
+        {searching && search.valid && !search.loading && !search.error && !search.shows.length && !search.episodes.length ? <p className="text-sm text-muted-foreground">No Matching Shows or Episodes{search.hasMore ? " on This Page" : ""}</p> : null}
+        {!searching && !displayed.length ? (
           <p className="text-sm text-muted-foreground">
             {loading ? "" : feed === "downloads" ? "No Downloaded Episodes" : feed === "queue" ? "Queue Is Empty" : feed === "recent" ? "Subscribe to a Podcast to See New Episodes" : "No Episodes Available"}
           </p>
         ) : null}
-        {cursor && (feed === "show" || feed === "recent") ? (
+        {searching && search.hasMore && search.cursor ? <button type="button" className={button} disabled={search.loading} onClick={() => void search.loadMore()}>Load More Results</button> : null}
+        {!searching && cursor && (feed === "show" || feed === "recent") ? (
           <button
             className={button}
             disabled={busy}

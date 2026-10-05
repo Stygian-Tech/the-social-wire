@@ -119,6 +119,53 @@ struct PodcastListenerTests {
         #expect(try analysis("v2").currentIntervals?.first?.start == 1)
     }
 
+    @Test("Library search retains pagination across empty scan pages and deduplicates results")
+    @MainActor
+    func searchPagination() async throws {
+        let show = try JSONDecoder().decode(PodcastShow.self, from: Data(#"{"id":"show","title":"Show","sourceKind":"rss"}"#.utf8))
+        let model = PodcastSearchModel()
+        let identity = PodcastSearchIdentity(viewer: "did:plc:alice", query: "  show  ")
+        #expect(identity.normalizedQuery == "show")
+        #expect(!PodcastSearchIdentity(viewer: "did:plc:alice", query: "s").isValid)
+        await model.search(identity, debounce: false) { _, cursor in
+            #expect(cursor == nil)
+            return PodcastSearchPage(shows: [], episodes: [], cursor: "next", hasMore: true)
+        }
+        #expect(model.hasMore)
+        await model.loadMore { received, cursor in
+            #expect(received == identity)
+            #expect(cursor == "next")
+            return PodcastSearchPage(shows: [show, show], episodes: [], cursor: nil, hasMore: false)
+        }
+        #expect(model.shows.count == 1)
+        #expect(!model.hasMore)
+    }
+
+    @Test("A previous viewer's suspended search cannot replace current results")
+    @MainActor
+    func searchOwnershipRace() async throws {
+        let model = PodcastSearchModel()
+        let alice = PodcastSearchIdentity(viewer: "did:plc:alice", query: "private")
+        let bob = PodcastSearchIdentity(viewer: "did:plc:bob", query: "other")
+        var pending: CheckedContinuation<PodcastSearchPage, Never>?
+        let first = Task { @MainActor in
+            await model.search(alice, debounce: false) { _, _ in
+                await withCheckedContinuation { pending = $0 }
+            }
+        }
+        while pending == nil { await Task.yield() }
+        await model.search(bob, debounce: false) { _, _ in
+            PodcastSearchPage(shows: [], episodes: [], cursor: "bob-next", hasMore: true)
+        }
+        let privateShow = try JSONDecoder().decode(PodcastShow.self, from: Data(#"{"id":"private","title":"Private Show","sourceKind":"private-rss"}"#.utf8))
+        pending?.resume(returning: PodcastSearchPage(shows: [privateShow], episodes: [], cursor: nil, hasMore: false))
+        await first.value
+        #expect(model.identity == bob)
+        #expect(model.shows.isEmpty)
+        #expect(model.hasMore)
+        #expect(!model.loading)
+    }
+
     @Test("Private listener state keeps intentional rewinds")
     func rewindsPersist() throws {
         var state = PodcastListenerState()

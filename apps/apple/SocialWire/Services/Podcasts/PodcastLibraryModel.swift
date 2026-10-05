@@ -185,6 +185,16 @@ final class PodcastLibraryModel {
         if player.removesSilence, episode.permitsPublicProcessing { await requestSilence() }
     }
 
+    func searchPage(_ identity: PodcastSearchIdentity, cursor: String?) async throws -> PodcastSearchPage {
+        guard identity.isValid, let viewer = identity.viewer, self.viewer == viewer else { throw CancellationError() }
+        var body: [String: JSONValue] = ["query": .string(identity.normalizedQuery), "scope": .string("library"), "kind": .string(identity.kind), "limit": .number(20)]
+        if let cursor { body["cursor"] = .string(cursor) }
+        if let showId = identity.showId { body["showId"] = .string(showId) }
+        let result: PodcastSearchPage = try await request(method: "POST", path: "/v1/podcasts/search", body: body, viewer: viewer)
+        guard !Task.isCancelled, self.viewer == viewer else { throw CancellationError() }
+        return result
+    }
+
     var currentShow: PodcastShow? {
         guard let id = player.episode?.showId else { return nil }
         return shows.first { $0.id == id } ?? downloads.shows[id]
