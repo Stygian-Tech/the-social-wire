@@ -34,6 +34,36 @@ struct PublicMediaFetcherTests {
     } catch { try? await client.shutdown(); throw error }
     try await client.shutdown()
   }
+  @Test("JSON provider responses reject HTML and bound response bytes", arguments: ["application/json; charset=utf-8", "text/html"])
+  func providerContentType(mime: String) async throws {
+    let upstream = Router()
+    upstream.get("/directory") { _, _ -> Response in
+      Response(status: .ok, headers: [.contentType: mime], body: .init(byteBuffer: ByteBuffer(string: "{\"results\":[]}")))
+    }
+    let client = HTTPClient(eventLoopGroupProvider: .singleton)
+    do {
+      try await Application(router: upstream).test(.live) { server in
+        let port = try #require(server.port)
+        let response = try await client.execute(HTTPClientRequest(url: "http://localhost:\(port)/directory"), timeout: .seconds(2))
+        if mime.hasPrefix("application/json") {
+          let body = try await PublicMediaFetcher.collectBeforeDeadline(response, maximumBytes: 1024,
+            deadline: .now.advanced(by: .seconds(1)), requiredContentType: "application/json")
+          #expect(String(decoding: body, as: UTF8.self) == "{\"results\":[]}")
+          let oversized = try await client.execute(HTTPClientRequest(url: "http://localhost:\(port)/directory"), timeout: .seconds(2))
+          await #expect(throws: (any Error).self) {
+            try await PublicMediaFetcher.collectBeforeDeadline(oversized, maximumBytes: 1,
+              deadline: .now.advanced(by: .seconds(1)), requiredContentType: "application/json")
+          }
+        } else {
+          await #expect(throws: PDSAccessTokenAttestationError.unavailable) {
+            try await PublicMediaFetcher.collectBeforeDeadline(response, maximumBytes: 1024,
+              deadline: .now.advanced(by: .seconds(1)), requiredContentType: "application/json")
+          }
+        }
+      }
+    } catch { try? await client.shutdown(); throw error }
+    try await client.shutdown()
+  }
   @Test("feed policy rejects before DNS or networking")
   func feedPolicy() async throws {
     let client = HTTPClient(eventLoopGroupProvider: .singleton)

@@ -10,8 +10,13 @@ struct PodcastSearchTests {
     #expect(PodcastSearch.matches("東京", title: "東京 Podcast", description: nil))
   }
 
+  @Test func olderLibraryResponsesDecodeWithoutDirectoryFields() throws {
+    let page = try JSONDecoder().decode(PodcastSearchResponse.self, from: Data(#"{"shows":[],"episodes":[],"hasMore":false}"#.utf8))
+    #expect(page.candidates.isEmpty && page.directoryLimit == nil)
+  }
+
   @Test func rejectsInvalidQueriesAndUnsupportedScope() throws {
-    for request in [PodcastSearchRequest(query: " "), PodcastSearchRequest(query: "a"), PodcastSearchRequest(query: String(repeating: "a", count: 201)), PodcastSearchRequest(query: "show", scope: "directory"), PodcastSearchRequest(query: "show", kind: "unknown"), PodcastSearchRequest(query: "show", limit: 0), PodcastSearchRequest(query: "show", limit: 101)] {
+    for request in [PodcastSearchRequest(query: " "), PodcastSearchRequest(query: "a"), PodcastSearchRequest(query: String(repeating: "a", count: 201)), PodcastSearchRequest(query: "show", scope: "unknown"), PodcastSearchRequest(query: "show", kind: "unknown"), PodcastSearchRequest(query: "show", limit: 0), PodcastSearchRequest(query: "show", limit: 101)] {
       #expect(throws: PodcastStoreError.invalidRequest) { try request.validate() }
     }
     try PodcastSearchRequest(query: "  show  ", limit: 100).validate()

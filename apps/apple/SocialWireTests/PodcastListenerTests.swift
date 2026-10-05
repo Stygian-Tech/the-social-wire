@@ -166,6 +166,40 @@ struct PodcastListenerTests {
         #expect(!model.loading)
     }
 
+    @Test("Switching to Discover clears private library queries atomically")
+    func discoveryScopePrivacy() {
+        let library = PodcastSearchInput(query: "private subscriber episode", scope: .library)
+        let directory = library.selecting(.discover)
+        #expect(directory.query.isEmpty)
+        #expect(directory.scope == .discover)
+        #expect(!PodcastSearchIdentity(viewer: "did:plc:alice", query: directory.query, scope: directory.scope).isValid)
+        #expect(library.selecting(.library).query == library.query)
+        let request = PodcastSearchIdentity(viewer: "did:plc:alice", query: "  technology  ", scope: .discover, kind: "episodes", showId: "private-show").requestBody(cursor: "private-cursor")
+        #expect(request["scope"]?.string == "directory")
+        #expect(request["query"]?.string == "technology")
+        #expect(request["showId"] == nil)
+        #expect(request["cursor"] == nil)
+        #expect(request["kind"] == nil)
+    }
+
+    @Test("Podcast Index candidates replace library results without subscribing")
+    @MainActor
+    func directoryCandidateResults() async throws {
+        let model = PodcastSearchModel()
+        let page = try JSONDecoder().decode(PodcastSearchPage.self, from: Data(#"{"shows":[],"episodes":[],"candidates":[{"provider":"podcastindex","id":"123","title":"Technology Show","author":"Host","feedUrl":"https://example.com/feed.xml","artworkUrl":"https://example.com/art.jpg"}],"hasMore":false,"directoryLimit":50}"#.utf8))
+        let privateShow = try JSONDecoder().decode(PodcastShow.self, from: Data(#"{"id":"private","title":"Private Show","sourceKind":"private-rss"}"#.utf8))
+        await model.search(PodcastSearchIdentity(viewer: "did:plc:alice", query: "private"), debounce: false) { _, _ in
+            PodcastSearchPage(shows: [privateShow], episodes: [], cursor: nil, hasMore: false)
+        }
+        await model.search(PodcastSearchIdentity(viewer: "did:plc:alice", query: "technology", scope: .discover), debounce: false) { _, _ in page }
+        #expect(model.shows.isEmpty)
+        #expect(model.episodes.isEmpty)
+        #expect(model.candidates.first?.provider == "podcastindex")
+        #expect(model.candidates.first?.author == "Host")
+        #expect(model.candidates.first?.feedUrl == "https://example.com/feed.xml")
+        #expect(!model.hasMore)
+    }
+
     @Test("Private listener state keeps intentional rewinds")
     func rewindsPersist() throws {
         var state = PodcastListenerState()

@@ -100,3 +100,43 @@ it("searches subscribed shows and episodes, clears to the feed, and opens a matc
   expect((screen.getByRole("searchbox", { name: "Search This Show" }) as HTMLInputElement).value).toBe("");
   expect(requests).toContain("episodes?showId=show");
 });
+
+it("clears private library terms before directory search and previews before explicit subscription", async () => {
+  const oauth = { did: "did:plc:viewer" } as unknown as OAuthSession;
+  const getOAuthSession = () => oauth;
+  const state = client.initialPodcastState();
+  const useAuth = spyOn(auth, "useAuth").mockReturnValue({ session: { did: oauth.did }, getOAuthSession } as ReturnType<typeof auth.useAuth>);
+  const changes: Partial<client.PodcastState>[] = [];
+  const player = spyOn(playerModule, "usePodcastPlayer").mockReturnValue({ state, episode: null, playing: false, position: 0, duration: 0, error: null, silence: null, play: async () => {}, toggle() {}, seek() {}, setRemoveSilences: async () => {}, clearError() {}, changeState: async patch => { changes.push(patch); } });
+  const local = spyOn(offline, "listPodcastDownloads").mockResolvedValue([]);
+  const write = spyOn(client, "writePodcastSubscription").mockResolvedValue();
+  const requests: { path: string; method?: string; body?: unknown }[] = [];
+  const show: client.PodcastShow = { id: "discovered", title: "Discovered Science", sourceKind: "rss", feedUrl: "https://example.org/feed" };
+  const request = spyOn(client, "podcastRequest").mockImplementation(async <T,>(_oauth: OAuthSession, path: string, method?: string, body?: unknown): Promise<T> => {
+    requests.push({ path, method, body });
+    if (path === "shows") return { shows: [] } as T;
+    if (path === "search") return { shows: [], episodes: [], hasMore: false, candidates: [{ provider: "podcastindex", id: "pi:1", title: show.title, feedUrl: show.feedUrl, description: "<b>Public Show</b>" }], directoryLimit: 50 } as T;
+    if (path === "resolve") return { show, episodes: [] } as T;
+    return { episodes: [] } as T;
+  });
+  restores.push(() => useAuth.mockRestore(), () => player.mockRestore(), () => local.mockRestore(), () => write.mockRestore(), () => request.mockRestore());
+  render(<PodcastLibrary />);
+  fireEvent.change(screen.getByRole("searchbox"), { target: { value: "private library terms" } });
+  fireEvent.click(screen.getByRole("button", { name: "Discover" }));
+  const input = screen.getByRole("searchbox", { name: "Discover Podcasts" }) as HTMLInputElement;
+  expect(input.value).toBe("");
+  expect(requests.some(request => request.path === "search")).toBe(false);
+  fireEvent.change(input, { target: { value: "science" } });
+  await screen.findByText(show.title);
+  expect(requests.find(request => request.path === "search")?.body).toEqual({ query: "science", scope: "directory", limit: 50 });
+  expect(screen.getByRole("link", { name: "Podcast Index" }).getAttribute("href")).toBe("https://podcastindex.org");
+  expect(write).not.toHaveBeenCalled();
+  expect(changes).toEqual([]);
+  fireEvent.click(screen.getByRole("button", { name: "Preview Podcast" }));
+  await screen.findByRole("button", { name: "Subscribe" });
+  expect(requests.find(request => request.path === "resolve")?.body).toEqual({ url: show.feedUrl });
+  expect(write).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Subscribe" }));
+  await waitFor(() => expect(write).toHaveBeenCalledWith(oauth, oauth.did, show, false));
+  expect(changes).toEqual([{ subscriptions: [show.id] }]);
+});

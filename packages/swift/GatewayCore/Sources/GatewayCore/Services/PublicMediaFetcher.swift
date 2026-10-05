@@ -79,7 +79,8 @@ public enum PublicMediaFetcher {
   }
   public static func fetch(
     url: String, httpClient: HTTPClient, maximumBytes: Int,
-    validateURL: (@Sendable (String) -> Bool)? = nil, timeout: Duration = .seconds(25)
+    validateURL: (@Sendable (String) -> Bool)? = nil, timeout: Duration = .seconds(25),
+    requestHeaders: [(String, String)] = [], requiredContentType: String? = nil
   ) async throws
     -> Data
   {
@@ -101,8 +102,9 @@ public enum PublicMediaFetcher {
         let remaining = ContinuousClock.now.duration(to: deadline).components
         let nanos = remaining.seconds * 1_000_000_000 + remaining.attoseconds / 1_000_000_000
         guard nanos > 0 else { throw PDSAccessTokenAttestationError.unavailable }
-        let response = try await client.execute(
-          HTTPClientRequest(url: current), timeout: .nanoseconds(nanos))
+        var request = HTTPClientRequest(url: current)
+        for (name, value) in requestHeaders { request.headers.add(name: name, value: value) }
+        let response = try await client.execute(request, timeout: .nanoseconds(nanos))
         if [301, 302, 303, 307, 308].contains(response.status.code),
           let location = response.headers.first(name: "location"),
           let next = URL(string: location, relativeTo: URL(string: current))?.absoluteURL
@@ -113,7 +115,7 @@ public enum PublicMediaFetcher {
           continue
         }
         guard response.status.code == 200 else { throw PDSAccessTokenAttestationError.unavailable }
-        let body = try await collectBeforeDeadline(response, maximumBytes: maximumBytes, deadline: deadline)
+        let body = try await collectBeforeDeadline(response, maximumBytes: maximumBytes, deadline: deadline, requiredContentType: requiredContentType)
         try await client.shutdown()
         return body
       } catch {
@@ -125,8 +127,12 @@ public enum PublicMediaFetcher {
   }
   /// AHC's execute timeout ends at response headers; bound body consumption separately.
   static func collectBeforeDeadline(_ response: HTTPClientResponse, maximumBytes: Int,
-    deadline: ContinuousClock.Instant) async throws -> Data {
-    try await withThrowingTaskGroup(of: Data.self) { group in
+    deadline: ContinuousClock.Instant, requiredContentType: String? = nil) async throws -> Data {
+    if let requiredContentType {
+      guard response.headers.first(name: "Content-Type")?.lowercased().split(separator: ";").first?.trimmingCharacters(in: .whitespaces) == requiredContentType.lowercased()
+      else { throw PDSAccessTokenAttestationError.unavailable }
+    }
+    return try await withThrowingTaskGroup(of: Data.self) { group in
       defer { group.cancelAll() }
       group.addTask { Data(buffer: try await response.body.collect(upTo: maximumBytes)) }
       group.addTask {

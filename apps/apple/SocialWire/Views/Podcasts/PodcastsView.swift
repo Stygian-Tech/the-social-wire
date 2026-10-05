@@ -3,14 +3,17 @@ import SwiftUI
 struct PodcastsView: View {
     @Environment(PodcastLibraryModel.self) private var library
     @State private var addingPodcast = false
-    @State private var query = ""
+    @State private var importingOPML = false
+    @State private var input = PodcastSearchInput()
     @State private var search = PodcastSearchModel()
 
     var body: some View {
-        let identity = PodcastSearchIdentity(viewer: library.viewer, query: query)
+        let identity = PodcastSearchIdentity(viewer: library.viewer, query: input.query, scope: input.scope)
         List {
             if !identity.normalizedQuery.isEmpty {
                 PodcastSearchResultsView(identity: identity, search: search)
+            } else if input.scope == .discover {
+                ContentUnavailableView("Discover Podcasts", systemImage: "magnifyingglass", description: Text("Search Podcast Index by title or keyword. Select a show to preview it before subscribing. Use Add Podcast for feed URLs."))
             } else {
                 Section("Library") {
                     ForEach(PodcastLibraryDestination.allCases) { destination in
@@ -39,19 +42,26 @@ struct PodcastsView: View {
                     }
                 }
             }
-            if identity.normalizedQuery.isEmpty, let error = library.error {
+            if input.scope == .library, identity.normalizedQuery.isEmpty, let error = library.error {
                 Section {
                     Text(error).foregroundStyle(.red)
                     Button("Retry") { Task { await library.refresh() } }
                 }
             }
         }
-        .searchable(text: $query, prompt: "Search Your Podcast Library")
+        .searchable(text: $input.query, prompt: input.scope == .library ? "Search Your Podcast Library" : "Search Podcast Index")
+        .searchScopes(Binding(get: { input.scope }, set: { input = input.selecting($0) })) {
+            ForEach(PodcastSearchScope.allCases, id: \.self) { scope in Text(scope.title).tag(scope) }
+        }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                Button("Add Podcast", systemImage: "plus") { addingPodcast = true }
+                Menu {
+                    Button("Add Podcast", systemImage: "plus") { addingPodcast = true }
+                    Button("Import OPML", systemImage: "square.and.arrow.down") { importingOPML = true }
+                } label: { Label("Add Podcast", systemImage: "plus") }
             }
         }
+        .sheet(isPresented: $importingOPML) { OPMLImportView(initialDestination: .podcasts) }
         .sheet(isPresented: $addingPodcast) { NavigationStack { PodcastDiscoveryView() } }
         .refreshable { await library.refresh() }
         .task { await library.refresh() }

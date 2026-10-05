@@ -84,3 +84,36 @@ it("exposes failure and supports explicit retry", async () => {
   expect(result.current.episodes).toEqual([]);
   expect(request).not.toHaveBeenCalled();
 });
+
+it("sends only explicit directory queries, excludes library parameters, and stops directory paging", async () => {
+  online();
+  const request = spyOn(client, "podcastRequest").mockResolvedValue({ ...empty, candidates: [{ provider: "podcastindex", id: "pi:1", title: "Science", feedUrl: "https://example.org/feed" }], directoryLimit: 50 });
+  restores.push(() => request.mockRestore());
+  const downloaded = [episode("private")];
+  const { result, rerender } = renderHook(({ query, scope }: { query: string; scope: "library" | "directory" }) => usePodcastLibrarySearch({ viewer: "did:one", query, scope, showId: "private-show", downloaded, getOAuthSession }), { initialProps: { query: "", scope: "directory" } });
+  expect(request).not.toHaveBeenCalled();
+  rerender({ query: "science", scope: "directory" });
+  await waitFor(() => expect(result.current.candidates).toHaveLength(1));
+  expect(request).toHaveBeenCalledWith(oauth, "search", "POST", { query: "science", scope: "directory", limit: 50 }, expect.any(AbortSignal));
+  expect(result.current.episodes).toEqual([]);
+  await act(async () => result.current.loadMore());
+  expect(request).toHaveBeenCalledTimes(1);
+  rerender({ query: "", scope: "library" });
+  expect(result.current.candidates).toBeUndefined();
+});
+
+it("cancels directory replies when switching back to a library query", async () => {
+  online();
+  const pending: { resolve: (page: PodcastSearchPage) => void; signal?: AbortSignal }[] = [];
+  const request = spyOn(client, "podcastRequest").mockImplementation(<T,>(_oauth: OAuthSession, _path: string, _method?: string, _body?: unknown, signal?: AbortSignal): Promise<T> => new Promise(resolve => pending.push({ resolve: page => resolve(page as T), signal })));
+  restores.push(() => request.mockRestore());
+  const { result, rerender } = renderHook(({ scope }: { scope: "library" | "directory" }) => usePodcastLibrarySearch({ viewer: "did:one", query: "science", scope, getOAuthSession }), { initialProps: { scope: "directory" } });
+  await waitFor(() => expect(pending).toHaveLength(1));
+  rerender({ scope: "library" });
+  expect(pending[0].signal?.aborted).toBe(true);
+  await waitFor(() => expect(pending).toHaveLength(2));
+  await act(async () => pending[1].resolve({ ...empty, episodes: [episode("library")] }));
+  await act(async () => pending[0].resolve({ ...empty, candidates: [{ provider: "podcastindex", id: "pi:1", title: "Science", feedUrl: "https://example.org/feed" }] }));
+  expect(result.current.episodes.map(item => item.id)).toEqual(["library"]);
+  expect(result.current.candidates).toBeUndefined();
+});

@@ -10,10 +10,25 @@ struct PodcastRoutes {
       guard let auth = context.authContext else { throw HTTPError(.unauthorized) }
       let input = try await request.decode(as: PodcastSearchRequest.self, context: context)
       do {
-        let result = try await service.store.search(viewer: auth.did, request: input)
+        let result: PodcastSearchResponse
+        if input.scope == "directory" {
+          result = try await PodcastDirectorySearch.shared.search(input) { query in
+            try await PodcastDirectoryFetcher.fetch(query, http: service.http)
+          }
+        } else {
+          result = try await service.store.search(viewer: auth.did, request: input)
+        }
         var response = PodcastJSON.response(try PodcastJSON.encode(result))
         response.headers[.cacheControl] = "private, no-store"
         return response
+      } catch PodcastDirectoryError.invalidQuery {
+        throw HTTPError(.badRequest, message: "Discover Accepts Podcast Names Or Topics. Add Feed URLs Using Add Podcast.")
+      } catch PodcastDirectoryError.invalidRequest {
+        throw HTTPError(.badRequest, message: "Invalid Podcast Directory Search")
+      } catch PodcastDirectoryError.busy {
+        throw HTTPError(.serviceUnavailable, message: "Podcast Directory Is Busy. Try Again Shortly.")
+      } catch PodcastDirectoryError.unavailable {
+        throw HTTPError(.badGateway, message: "Podcast Index Is Unavailable. Try Again Shortly.")
       } catch PodcastStoreError.invalidRequest {
         throw HTTPError(.badRequest, message: "Invalid Podcast Search")
       }

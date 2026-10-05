@@ -3404,8 +3404,10 @@ final class SocialWireAppModel {
         _ feeds: [OPMLFeed],
         progress: @escaping @MainActor (_ completed: Int, _ total: Int) -> Void
     ) async -> [OPMLImportFailure] {
+        let viewer = viewerDID
         var failures: [OPMLImportFailure] = []
         for (index, feed) in feeds.enumerated() {
+            guard viewer != nil, viewerDID == viewer else { break }
             do {
                 try await pds.createSkyreaderSubscription(
                     feedURL: feed.feedURL,
@@ -3417,7 +3419,7 @@ final class SocialWireAppModel {
             }
             progress(index + 1, feeds.count)
         }
-        await refreshAll()
+        if viewerDID == viewer { await refreshAll() }
         return failures
     }
 

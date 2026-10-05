@@ -4,7 +4,8 @@ import { PodcastLibrarySidebar } from "./PodcastLibrarySidebar";
 import { podcastFeedEpisodes, type PodcastFeed } from "@/lib/podcasts/library";
 import { savePodcastAudioToDevice } from "@/lib/podcasts/deviceDownload";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { usePodcastLibrarySearch } from "@/hooks/usePodcastLibrarySearch";
+import { PodcastDirectoryResults } from "./PodcastDirectoryResults";
+import { usePodcastLibrarySearch, type PodcastDirectoryCandidate } from "@/hooks/usePodcastLibrarySearch";
 import { usePodcastViewer } from "@/hooks/usePodcastViewer";
 import { useAuth } from "@/hooks/useAuth";
 import { gatewayFetch } from "@/lib/socialWireGatewayClient";
@@ -55,14 +56,16 @@ function PodcastViewerLibrary() {
   );
   const [feed, setFeed] = useState<PodcastFeed>("recent");
   const [privateFeed, setPrivateFeed] = useState(false);
+  const [searchScope, setSearchScope] = useState<"library" | "discover">("library");
   const [searchQuery, setSearchQuery] = useState("");
   const [showAdd, setShowAdd] = useState(false);
   const [loading, setLoading] = useState(false);
   const [preparingEpisode, setPreparingEpisode] = useState<string | null>(null);
   const downloadEpisodes = useMemo(() => downloads.map(item => item.episode), [downloads]);
-  const searching = !!searchQuery.trim();
-  const search = usePodcastLibrarySearch({ viewer, query: searchQuery, showId: feed === "show" ? showId ?? undefined : undefined, downloaded: feed === "downloads" ? downloadEpisodes : undefined, getOAuthSession });
+  const searching = searchScope === "discover" || !!searchQuery.trim();
+  const search = usePodcastLibrarySearch({ viewer, query: searchQuery, scope: searchScope === "discover" ? "directory" : "library", showId: feed === "show" ? showId ?? undefined : undefined, downloaded: feed === "downloads" ? downloadEpisodes : undefined, getOAuthSession });
   const controllers = useRef(new Map<string, AbortController>());
+  useEffect(() => () => controllers.current.get("directory-preview")?.abort(), [searchQuery, searchScope]);
   const libraryGeneration = useRef(0);
   const cancelLibraryLoad = useCallback(() => {
     libraryGeneration.current++;
@@ -158,6 +161,31 @@ function PodcastViewerLibrary() {
       setBusy(false);
     }
   }
+  async function previewDirectory(candidate: PodcastDirectoryCandidate) {
+    const oauth = getOAuthSession();
+    if (!viewer || oauth?.did !== viewer) { setError("Account Is Loading. Please Retry."); return; }
+    const controller = new AbortController();
+    controllers.current.get("directory-preview")?.abort();
+    controllers.current.set("directory-preview", controller);
+    setBusy(true);
+    setError(null);
+    try {
+      const resolved = await podcastRequest<{ show: PodcastShow; episodes: PodcastEpisode[] }>(oauth, "resolve", "POST", { url: candidate.feedUrl }, controller.signal);
+      if (controller.signal.aborted || getOAuthSession()?.did !== viewer) return;
+      setShows(current => [...current.filter(show => show.id !== resolved.show.id), resolved.show]);
+      setSearchQuery("");
+      setSearchScope("library");
+      selectFeed("show", resolved.show.id);
+      setEpisodes(resolved.episodes);
+    } catch {
+      if (!controller.signal.aborted) setError("Podcast Preview Could Not Load. Please Retry.");
+    } finally {
+      if (controllers.current.get("directory-preview") === controller) {
+        controllers.current.delete("directory-preview");
+        setBusy(false);
+      }
+    }
+  }
   async function download(item: PodcastEpisode) {
     const oauth = getOAuthSession();
     if (!oauth || !session) return;
@@ -211,9 +239,10 @@ function PodcastViewerLibrary() {
   }
   const downloaded = new Set(downloads.map((item) => item.episode.id));
   const displayed = searching ? search.episodes : podcastFeedEpisodes(feed, episodes, downloadEpisodes, player.state.queue);
-  const selectedShow = feed === "show" ? shows.find((show) => show.id === showId) : undefined;
-  const heading = selectedShow?.title ?? ({ recent: "Recently Added", downloads: "Downloaded", queue: "Up Next", show: "Episodes" }[feed]);
+  const selectedShow = searchScope === "library" && feed === "show" ? shows.find((show) => show.id === showId) : undefined;
+  const heading = searchScope === "discover" ? "Discover Podcasts" : selectedShow?.title ?? ({ recent: "Recently Added", downloads: "Downloaded", queue: "Up Next", show: "Episodes" }[feed]);
   const selectFeed = (next: PodcastFeed, id?: string) => {
+    if (searchScope === "discover") { setSearchScope("library"); setSearchQuery(""); }
     setFeed(next);
     setShowId(id ?? null);
     setEpisodes([]);
@@ -259,8 +288,10 @@ function PodcastViewerLibrary() {
           <button type="button" className={button} aria-expanded={showAdd} onClick={() => setShowAdd((value) => !value)}>Add a Podcast</button>
         </header>
         <PodcastLibrarySearch
+          scope={searchScope}
+          onScope={scope => { setSearchQuery(""); setSearchScope(scope); setError(null); }}
           query={searchQuery}
-          label={feed === "downloads" ? "Search Downloaded Episodes" : feed === "show" ? "Search This Show" : "Search Your Library"}
+          label={searchScope === "discover" ? "Discover Podcasts" : feed === "downloads" ? "Search Downloaded Episodes" : feed === "show" ? "Search This Show" : "Search Your Library"}
           valid={search.valid}
           loading={search.loading}
           error={search.error}
@@ -273,6 +304,15 @@ function PodcastViewerLibrary() {
             selectFeed("show", show.id);
           }}
         />
+        {searchScope === "discover" ? <PodcastDirectoryResults
+          candidates={search.candidates ?? []}
+          directoryLimit={search.directoryLimit ?? 50}
+          query={searchQuery}
+          loading={search.loading}
+          failed={!!search.error}
+          busy={busy}
+          onPreview={candidate => void previewDirectory(candidate)}
+        /> : null}
         {showAdd ? <form className="min-w-0 space-y-3 rounded-xl border p-4" onSubmit={(event) => {
           event.preventDefault();
           void action(async () => {
@@ -429,7 +469,7 @@ function PodcastViewerLibrary() {
             </li>
           ))}
         </ul>
-        {searching && search.valid && !search.loading && !search.error && !search.shows.length && !search.episodes.length ? <p className="text-sm text-muted-foreground">No Matching Shows or Episodes{search.hasMore ? " on This Page" : ""}</p> : null}
+        {searchScope === "library" && searching && search.valid && !search.loading && !search.error && !search.shows.length && !search.episodes.length ? <p className="text-sm text-muted-foreground">No Matching Shows or Episodes{search.hasMore ? " on This Page" : ""}</p> : null}
         {!searching && !displayed.length ? (
           <p className="text-sm text-muted-foreground">
             {loading ? "" : feed === "downloads" ? "No Downloaded Episodes" : feed === "queue" ? "Queue Is Empty" : feed === "recent" ? "Subscribe to a Podcast to See New Episodes" : "No Episodes Available"}
