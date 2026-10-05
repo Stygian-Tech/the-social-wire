@@ -181,7 +181,7 @@ describe("Persistent podcast player", () => {
     expect(screen.getByRole("slider", { name: "Seek Podcast" })).toBeDefined();
     expect(env.element.currentTime).toBe(60);
   });
-  it("reserves measured player space from an empty state through expanded and minimized layouts", async () => {
+  it("reserves expanded player space and releases it while minimized or hidden", async () => {
     environment();
     let height = 300;
     let resize: (() => void) | undefined;
@@ -209,7 +209,7 @@ describe("Persistent podcast player", () => {
     await act(async () => resize?.());
     expect(document.documentElement.style.getPropertyValue("--podcast-player-height")).toBe("514px");
     fireEvent.click(screen.getByRole("button", { name: "Minimize Player" }));
-    expect(document.documentElement.style.getPropertyValue("--podcast-player-height")).toBe("156px");
+    expect(document.documentElement.style.getPropertyValue("--podcast-player-height")).toBe("");
     expect(disconnected).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "Restore Player" }));
     expect(document.documentElement.style.getPropertyValue("--podcast-player-height")).toBe("514px");

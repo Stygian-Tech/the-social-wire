@@ -16,7 +16,7 @@ export function PodcastPlayerView({ player }: { player: PlayerContext }) {
     const root = document.documentElement;
     const clear = () => root.style.removeProperty("--podcast-player-height");
     const element = playerElement.current;
-    if (!element) { clear(); return clear; }
+    if (!element || minimized) { clear(); return clear; }
     let active = true;
     const measure = () => {
       if (!active) return;
