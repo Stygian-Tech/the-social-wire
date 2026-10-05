@@ -19,16 +19,29 @@ struct PodcastRoutes {
       return ["shows": shows.filter { !hidden.contains($0.id) }]
     }
     group.get("/v1/podcasts/episodes") { request, context async throws -> Response in
-      guard context.authContext != nil else { throw HTTPError(.unauthorized) }
-      if let id = request.uri.queryParameters.get("episodeId"),
-        let episode = try await service.store.episode(id: id)
-      {
-        return PodcastJSON.response("{\"episodes\":" + (try PodcastJSON.encode([episode])) + "}")
+      guard let auth = context.authContext else { throw HTTPError(.unauthorized) }
+      if let id = request.uri.queryParameters.get("episodeId") {
+        guard let episode = try await service.episode(id: id, viewer: auth.did) else { throw HTTPError(.notFound) }
+        return try Self.episodesResponse([service.visibleEpisode(episode)], limit: 2)
+      }
+      let limit = max(1, min(Int(request.uri.queryParameters.get("limit") ?? "50") ?? 50, 100))
+      let cursor = request.uri.queryParameters.get("cursor")
+      if request.uri.queryParameters.get("queue") == "true" {
+        let items = try await service.store.queuedEpisodes(viewer: auth.did)
+        return try Self.episodesResponse(items.map(service.visibleEpisode), limit: Int.max)
+      }
+      if request.uri.queryParameters.get("showId") == nil {
+        let items = try await service.store.subscribedEpisodes(viewer: auth.did, cursor: cursor, limit: limit)
+        return try Self.episodesResponse(items.map(service.visibleEpisode), limit: limit)
+      }
+      if let id = request.uri.queryParameters.get("showId"), PodcastPrivateCatalog.isPrivateID(id) {
+        guard try await service.store.privateShow(viewer: auth.did, id: id) != nil else { throw HTTPError(.notFound) }
+        let items = try await service.store.privateEpisodes(viewer: auth.did, showID: id, cursor: cursor, limit: limit)
+        return try Self.episodesResponse(items.map(service.visibleEpisode), limit: limit)
       }
       guard let showID = request.uri.queryParameters.get("showId"),
         let show = try await service.store.show(id: showID)
       else { throw HTTPError(.notFound) }
-      let limit = max(1, min(Int(request.uri.queryParameters.get("limit") ?? "50") ?? 50, 100))
       var items = try await service.store.episodes(
         showID: show.id, cursor: request.uri.queryParameters.get("cursor"), limit: limit)
       if let auth = context.authContext {
@@ -74,6 +87,7 @@ struct PodcastRoutes {
         throw HTTPError(.badRequest, message: "Invalid Podcast State")
       }
       body.state.subscriptions = try await service.store.shows(viewer: auth.did).map(\.id)
+        + service.store.privateShows(viewer: auth.did).map(\.id)
       // Linking remains viewer-private and requires opposite source types.
       for link in body.state.manualLinks {
         guard let rss = try await service.store.show(id: link.rssShowId), rss.sourceKind == "rss",
@@ -94,11 +108,23 @@ struct PodcastRoutes {
       }
     }
     group.get("/v1/podcasts/transcript") { request, context async throws -> Response in
-      guard context.authContext != nil else { throw HTTPError(.unauthorized) }
+      guard let auth = context.authContext else { throw HTTPError(.unauthorized) }
       guard let id = request.uri.queryParameters.get("episodeId"),
-        let episode = try await service.store.episode(id: id)
+        let episode = try await service.episode(id: id, viewer: auth.did)
       else { throw HTTPError(.notFound) }
-      let transcripts = try await service.transcripts(episode: episode)
+      let transcripts = try await service.transcripts(episode: episode).map { original in
+        var transcript = original
+        if episode.visibility == "private" {
+          transcript.url = ""
+          transcript.text = transcript.text.map(PodcastPrivateCatalog.visibleText)
+          transcript.cues = (transcript.cues ?? []).map { original in
+            var cue = original
+            cue.text = PodcastPrivateCatalog.visibleText(cue.text)
+            return cue
+          }
+        }
+        return transcript
+      }
       return PodcastJSON.response(
         "{\"episodeId\":" + (try PodcastJSON.encode(id)) + ",\"transcripts\":"
           + (try PodcastJSON.encode(transcripts)) + "}")
@@ -106,9 +132,10 @@ struct PodcastRoutes {
     group.post("/v1/podcasts/analysis") { request, context async throws -> Response in
       guard let auth = context.authContext else { throw HTTPError(.unauthorized) }
       let body = try await request.decode(as: PodcastEpisodeRequest.self, context: context)
-      guard let episode = try await service.store.episode(id: body.episodeId) else {
+      guard let episode = try await service.episode(id: body.episodeId, viewer: auth.did) else {
         throw HTTPError(.notFound)
       }
+      guard episode.visibility != "private" else { throw HTTPError(.forbidden, message: "Silence Analysis Is Unavailable For Private Podcasts") }
       let fingerprint = try await service.fingerprint(episode: episode)
       let payload = try PodcastJSON.encode(
         PodcastJobPayload(episode: episode, sourceFingerprint: fingerprint))
@@ -126,8 +153,11 @@ struct PodcastRoutes {
     group.get("/v1/podcasts/analysis") { request, context async throws -> Response in
       guard let auth = context.authContext else { throw HTTPError(.unauthorized) }
       guard let id = request.uri.queryParameters.get("episodeId"),
-        let episode = try await service.store.episode(id: id)
+        let episode = try await service.episode(id: id, viewer: auth.did)
       else { throw HTTPError(.badRequest) }
+      if episode.visibility == "private" {
+        return PodcastJSON.response("{\"status\":\"unavailable\",\"reason\":\"private-feed\",\"intervals\":[]}")
+      }
       let expectedFingerprint = try await service.fingerprint(episode: episode)
       let analysisKey = "silence:" + id + ":" + expectedFingerprint
       guard
@@ -178,6 +208,10 @@ struct PodcastRoutes {
     group.post("/v1/podcasts/clips") { request, context async throws -> Response in
       guard let auth = context.authContext else { throw HTTPError(.unauthorized) }
       let body = try await request.decode(as: PodcastClipRequest.self, context: context)
+      if PodcastPrivateCatalog.isPrivateID(body.episodeId) {
+        guard try await service.store.privateEpisode(viewer: auth.did, id: body.episodeId) != nil else { throw HTTPError(.notFound) }
+        throw HTTPError(.forbidden, message: "Clipping Private Podcasts Is Not Supported")
+      }
       guard var episode = try await service.store.episode(id: body.episodeId),
         let show = try await service.store.show(id: episode.showId), body.startSeconds.isFinite,
         body.endSeconds.isFinite, body.startSeconds >= 0, body.endSeconds > body.startSeconds,
@@ -229,6 +263,11 @@ struct PodcastRoutes {
       try await service.store.removeClip(viewer: auth.did, clip: clip, payload: payload)
       return PodcastJSON.response("{}")
     }
+  }
+  private static func episodesResponse(_ items: [PodcastEpisode], limit: Int) throws -> Response {
+    var body = "{\"episodes\":" + (try PodcastJSON.encode(items))
+    if items.count == limit, let last = items.last { body += ",\"cursor\":" + (try PodcastJSON.encode(last.id)) }
+    return PodcastJSON.response(body + "}")
   }
   static func matches(_ record: [String: Any], clip: PodcastClip) -> Bool {
     record["$type"] as? String == "app.thesocialwire.podcast.clip"

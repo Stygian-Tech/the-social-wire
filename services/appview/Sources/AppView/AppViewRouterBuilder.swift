@@ -69,12 +69,14 @@ enum AppViewRouterBuilder {
       let podcastService = PodcastService(store: podcastStore, http: httpClient,
         repo: ATProtoAuthenticatedRepoClient(httpClient: httpClient, plcURL: config.core.atprotoPLCURL, logger: logger))
       let routes = PodcastRoutes(service: podcastService)
-      routes.register(on: protected)
+      let podcasts = protected.group().add(middleware: PodcastPrivateStorageMiddleware())
+      routes.register(on: podcasts)
+      PodcastPrivateRoutes(service: podcastService).register(on: podcasts)
       routes.registerPublic(on: router)
-      PodcastAssetRoutes(service: podcastService, workerURL: "", secret: "").registerMedia(on: protected)
+      PodcastAssetRoutes(service: podcastService, workerURL: "", secret: "").registerMedia(on: podcasts)
       let env = ProcessInfo.processInfo.environment
       if let url = env["PODCAST_MEDIA_WORKER_URL"], let secret = env["PODCAST_MEDIA_INTERNAL_SECRET"], !secret.isEmpty {
-        PodcastAssetRoutes(service: podcastService, workerURL: url, secret: secret).register(on: protected, router: router)
+        PodcastAssetRoutes(service: podcastService, workerURL: url, secret: secret).register(on: podcasts, router: router)
       }
     }
 

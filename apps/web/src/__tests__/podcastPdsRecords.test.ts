@@ -28,6 +28,25 @@ function mockAgent() {
   return writes;
 }
 describe("Podcast public PDS records", () => {
+  it("never creates PDS records for private feeds or private episode clips", async () => {
+    const writes = mockAgent();
+    await expect(writePodcastSubscription(oauth, "did:plc:viewer", {
+      id: "private", title: "Private Show", sourceKind: "private-rss", visibility: "private",
+    })).rejects.toThrow("private RSS service");
+    await expect(publishPodcastClip(oauth, "did:plc:viewer", {
+      id: "clip", episodeId: "private", startSeconds: 0, endSeconds: 10, title: "Clip", status: "complete", createdAt: "2026-10-05", audioUrl: "/private", videoUrl: "/private",
+    }, { id: "private", showId: "private", title: "Private Episode", audioUrl: "/private", publishedAt: "2026-10-05", transcripts: [], visibility: "private" })).rejects.toThrow("Private Feed Episodes");
+    expect(writes).toEqual([]);
+  });
+  it("removes a private subscription through its authenticated private route without PDS writes", async () => {
+    const writes = mockAgent();
+    const fetch = spyOn(gateway, "gatewayFetch").mockResolvedValue(new Response(null, { status: 204 }));
+    restores.push(() => fetch.mockRestore());
+    await writePodcastSubscription(oauth, "did:plc:viewer", { id: "private", title: "Private", sourceKind: "private-rss", visibility: "private" }, true);
+    expect(fetch.mock.calls[0]?.[1]).toBe("/v1/podcasts/private/subscriptions?showId=private");
+    expect(fetch.mock.calls[0]?.[2]?.method).toBe("DELETE");
+    expect(writes).toEqual([]);
+  });
   it("uses authoritative Skyreader collection source fields and a stable show reference", async () => {
     const writes = mockAgent();
     await writePodcastSubscription(oauth, "did:plc:viewer", {

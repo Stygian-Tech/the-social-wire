@@ -14,13 +14,14 @@ public enum PublicMediaFetcher {
       else { throw PDSAccessTokenAttestationError.invalid }
       let address = try await PublicDNSAddressValidator.validatedAddress(for: current)
       var config = HTTPClient.Configuration()
+      config.timeout = .init(connect: .seconds(10), read: .seconds(60))
       config.dnsOverride = [host: address]
       config.redirectConfiguration = .disallow
       let client = HTTPClient(eventLoopGroup: httpClient.eventLoopGroup, configuration: config)
       do {
         var request = HTTPClientRequest(url: current)
         if let range { request.headers.add(name: "Range", value: range) }
-        let response = try await client.execute(request, timeout: .seconds(30))
+        let response = try await client.execute(request, timeout: .hours(6))
         if [301, 302, 303, 307, 308].contains(response.status.code),
           let location = response.headers.first(name: "location"),
           let next = URL(string: location, relativeTo: URL(string: current))?.absoluteURL

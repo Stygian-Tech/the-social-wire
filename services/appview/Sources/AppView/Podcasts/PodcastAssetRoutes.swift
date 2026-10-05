@@ -11,11 +11,16 @@ struct PodcastAssetRoutes {
   let secret: String
   func registerMedia(on group: RouterGroup<GatewayRequestContext>) {
     group.get("/v1/podcasts/media") { request, context async throws -> Response in
-      guard context.authContext != nil, let id = request.uri.queryParameters.get("episodeId"),
-        let episode = try await service.store.episode(id: id)
+      guard let auth = context.authContext, let id = request.uri.queryParameters.get("episodeId"),
+        let episode = try await service.episode(id: id, viewer: auth.did)
       else { throw HTTPError(.notFound) }
-      let result = try await PublicMediaFetcher.stream(
-        url: episode.audioUrl, httpClient: service.http, range: request.headers[.range])
+      let result: (response: HTTPClientResponse, client: HTTPClient)
+      do {
+        result = try await PublicMediaFetcher.stream(
+          url: episode.audioUrl, httpClient: service.http, range: request.headers[.range])
+      } catch {
+        throw HTTPError(.badGateway, message: "Podcast Media Could Not Be Loaded")
+      }
       let reply = result.response
       var headers = HTTPFields()
       for name in ["Content-Type", "Content-Length", "Content-Range", "Accept-Ranges"] {
@@ -33,6 +38,9 @@ struct PodcastAssetRoutes {
             try await writer.finish(nil)
           } catch {
             try? await result.client.shutdown()
+            if episode.visibility == "private" {
+              throw HTTPError(.badGateway, message: "Private Podcast Media Could Not Be Loaded")
+            }
             throw error
           }
         })

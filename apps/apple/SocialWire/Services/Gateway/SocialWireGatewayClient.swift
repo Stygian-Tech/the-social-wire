@@ -880,6 +880,20 @@ final class SocialWireGatewayClient {
         return .badResponse("\(fallback) (\(result.statusCode)).\(requestId)")
     }
 
+    func podcastDownloadRequest(media: String, expectedViewer: String, challenge: HTTPURLResponse? = nil) async throws -> URLRequest {
+        guard let url = URL(string: media, relativeTo: baseURL)?.absoluteURL,
+              url.scheme == baseURL.scheme, url.host == baseURL.host,
+              url.path == "/v1/podcasts/media" else { throw SocialWireError.invalidURL }
+        let session = try await auth.validSession()
+        guard session.did == expectedViewer else { throw ReadStateSyncFailure.accountChanged }
+        if let challenge { await captureNonces(from: challenge, session: session) }
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("audio/*", forHTTPHeaderField: "Accept")
+        try await authorize(&request, session: session)
+        return request
+    }
+
     func podcastAsset(url: URL, expectedViewer: String) async throws -> Data {
         guard url.scheme == baseURL.scheme, url.host == baseURL.host,
               url.path.hasPrefix("/v1/podcasts/") else { throw SocialWireError.invalidURL }

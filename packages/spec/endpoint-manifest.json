@@ -801,6 +801,24 @@
       "method": "GET",
       "path": "/v1/podcasts/public/assets",
       "classification": "media-proxy"
+    },
+    {
+      "surface": "openapi",
+      "method": "POST",
+      "path": "/v1/podcasts/private/resolve",
+      "classification": "first-party-rest"
+    },
+    {
+      "surface": "openapi",
+      "method": "POST",
+      "path": "/v1/podcasts/private/refresh",
+      "classification": "first-party-rest"
+    },
+    {
+      "surface": "openapi",
+      "method": "DELETE",
+      "path": "/v1/podcasts/private/subscriptions",
+      "classification": "first-party-rest"
     }
   ]
 }

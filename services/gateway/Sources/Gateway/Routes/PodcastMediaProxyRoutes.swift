@@ -37,7 +37,7 @@ struct PodcastMediaProxyRoutes {
         secret: secret, did: auth.did, method: "GET", pathWithQuery: path)
       for h in headers { req.headers.add(name: h.name, value: h.value) }
     }
-    let reply = try await httpClient.execute(req, timeout: .seconds(30))
+    let reply = try await httpClient.execute(req, timeout: .hours(6))
     var headers = HTTPFields()
     for name in ["Content-Type", "Content-Length", "Content-Range", "Accept-Ranges"] {
       if let field = HTTPField.Name(name), let value = reply.headers.first(name: name) {

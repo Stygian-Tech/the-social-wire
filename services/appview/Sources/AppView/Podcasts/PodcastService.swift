@@ -114,9 +114,10 @@ struct PodcastService: Sendable {
     var records: [(showID: String, uri: String)] = []
     var cursor: String?
     repeat {
-      let page = try await repo.listRecords(
+      guard let page = try? await repo.listRecords(
         auth: nil, repo: auth.did, collection: "app.skyreader.feed.subscription", limit: 100,
         cursor: cursor, requireResolvedRepository: true)
+      else { return try await store.shows(viewer: auth.did) + privateShows(viewer: auth.did) }
       for item in page.records {
         let value = item.value.values
         let source = value["externalRef"] as? String
@@ -150,7 +151,7 @@ struct PodcastService: Sendable {
         shows[index].bridgeStatus = status["status"] as? String
       }
     }
-    return shows
+    return shows + (try await privateShows(viewer: auth.did))
   }
   func canonicalState(_ original: PodcastListenerState) async throws -> PodcastListenerState {
     var state = original

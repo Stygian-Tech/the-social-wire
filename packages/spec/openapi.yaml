@@ -64,8 +64,8 @@ components:
     PodcastJob: {"type": "object", "required": ["id", "kind", "status"], "properties": {"id": {"type": "string"}, "kind": {"type": "string", "enum": ["bridge", "silence", "clip", "transcript", "cleanup"]}, "status": {"type": "string", "enum": ["queued", "running", "complete", "failed"]}, "result": {"type": "object", "nullable": true}, "error": {"type": "string", "nullable": true}}}
     PodcastAnalysisResponse: {"type": "object", "required": ["status", "intervals"], "properties": {"status": {"type": "string"}, "intervals": {"type": "array", "items": {"type": "object", "required": ["start", "end"], "properties": {"start": {"type": "number"}, "end": {"type": "number"}}}}}}
     PodcastClipPreparationResponse: {"type": "object", "required": ["clipId", "jobId", "status"], "properties": {"clipId": {"type": "string"}, "jobId": {"type": "string"}, "status": {"type": "string"}}}
-    PodcastShow: {"type": "object", "required": ["id", "title", "sourceKind"], "properties": {"id": {"type": "string"}, "title": {"type": "string"}, "description": {"type": "string"}, "artworkUrl": {"type": "string"}, "feedUrl": {"type": "string"}, "sourceKind": {"type": "string"}, "sourceUri": {"type": "string"}, "guid": {"type": "string"}, "episodeCollection": {"type": "string"}}}
-    PodcastEpisode: {"type": "object", "required": ["id", "showId", "title", "publishedAt", "audioUrl", "transcripts"], "properties": {"id": {"type": "string"}, "showId": {"type": "string"}, "title": {"type": "string"}, "description": {"type": "string"}, "publishedAt": {"type": "string"}, "audioUrl": {"type": "string"}, "audioMimeType": {"type": "string"}, "artworkUrl": {"type": "string"}, "guid": {"type": "string"}, "sourceUri": {"type": "string"}, "durationSeconds": {"type": "number"}, "transcripts": {"type": "array", "items": {"$ref": "#/components/schemas/PodcastTranscript"}}}}
+    PodcastShow: {"type": "object", "required": ["id", "title", "sourceKind"], "properties": {"id": {"type": "string"}, "title": {"type": "string"}, "description": {"type": "string"}, "artworkUrl": {"type": "string"}, "feedUrl": {"type": "string"}, "sourceKind": {"type": "string"}, "sourceUri": {"type": "string"}, "guid": {"type": "string"}, "episodeCollection": {"type": "string"}, "visibility": {"type": "string", "enum": ["private"], "description": "Private RSS catalog is viewer scoped; secret source URLs are omitted from responses."}}}
+    PodcastEpisode: {"type": "object", "required": ["id", "showId", "title", "publishedAt", "audioUrl", "transcripts"], "properties": {"id": {"type": "string"}, "showId": {"type": "string"}, "title": {"type": "string"}, "description": {"type": "string"}, "publishedAt": {"type": "string"}, "audioUrl": {"type": "string"}, "audioMimeType": {"type": "string"}, "artworkUrl": {"type": "string"}, "guid": {"type": "string"}, "sourceUri": {"type": "string"}, "durationSeconds": {"type": "number"}, "transcripts": {"type": "array", "items": {"$ref": "#/components/schemas/PodcastTranscript"}}, "visibility": {"type": "string", "enum": ["private"], "description": "Private RSS catalog is viewer scoped; secret source URLs are omitted from responses."}}}
     PodcastTranscript: {"type": "object", "required": ["url", "type"], "properties": {"url": {"type": "string"}, "type": {"type": "string"}, "language": {"type": "string"}, "text": {"type": "string"}, "cues": {"type": "array", "items": {"type": "object", "required": ["startSeconds", "text"], "properties": {"startSeconds": {"type": "number"}, "endSeconds": {"type": "number"}, "text": {"type": "string"}}}}}}
     PodcastListenerState: {"type": "object", "required": ["subscriptions", "queue", "progress", "playbackSpeed", "removeSilences", "manualLinks"], "properties": {"subscriptions": {"type": "array", "items": {"type": "string"}}, "queue": {"type": "array", "items": {"type": "string"}}, "progress": {"type": "object", "additionalProperties": {"type": "object", "required": ["positionSeconds", "updatedAt", "completed"], "properties": {"positionSeconds": {"type": "number", "minimum": 0}, "updatedAt": {"type": "string"}, "completed": {"type": "boolean"}}}}, "playbackSpeed": {"type": "number", "minimum": 0.5, "maximum": 3}, "removeSilences": {"type": "boolean"}, "manualLinks": {"type": "array", "items": {"type": "object", "required": ["rssShowId", "protocolShowId"], "properties": {"rssShowId": {"type": "string"}, "protocolShowId": {"type": "string"}}}}}}
     StandardReaderListPublication:
@@ -4417,6 +4417,59 @@ paths:
                   minimum: 0
                   maximum: 9007199254740991
 
+  /v1/podcasts/private/resolve:
+    post:
+      tags: [Podcasts]
+      summary: Subscribe To A Private RSS Podcast
+      description: Authenticated viewer-owned subscription and catalog. HTTPS path and query tokens remain server-side. No public PDS subscription, catalog, bridge, silence job, or clip is created. URL userinfo is unsupported.
+      security: [{ATProtoOAuthDPoP: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, required: [url], properties: {url: {type: string}}}
+            example: {url: '{{privatePodcastFeedUrl}}'}
+      responses:
+        '200':
+          description: Private Subscription And Redacted Catalog
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PodcastResolveResponse'}
+        '400': {description: Invalid Or Unavailable Private Feed}
+        '401': {description: Authentication Required}
+        '503': {description: Private Storage Key Missing Or Authentication Failed}
+  /v1/podcasts/private/refresh:
+    post:
+      tags: [Podcasts]
+      summary: Refresh A Private RSS Subscription
+      security: [{ATProtoOAuthDPoP: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, required: [showId], properties: {showId: {type: string}}}
+            example: {showId: '{{privatePodcastShowId}}'}
+      responses:
+        '200':
+          description: Viewer-Owned Refreshed Catalog
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PodcastResolveResponse'}
+        '404': {description: Subscription Not Owned By Viewer}
+        '401': {description: Authentication Required}
+        '503': {description: Private Storage Key Missing Or Authentication Failed}
+  /v1/podcasts/private/subscriptions:
+    delete:
+      tags: [Podcasts]
+      summary: Remove A Private RSS Subscription
+      description: Deletes only the viewer's private catalog and removes its episodes from their queue and progress. Source credentials are removed from the application database.
+      security: [{ATProtoOAuthDPoP: []}]
+      parameters: [{in: query, name: showId, required: true, schema: {type: string}}]
+      responses:
+        '200': {description: Subscription Removed}
+        '404': {description: Subscription Not Owned By Viewer}
+        '401': {description: Authentication Required}
+        '503': {description: Private Storage Key Missing Or Authentication Failed}
   /v1/podcasts/resolve:
     post:
       summary: Create or Request Podcast Resolve
@@ -4454,7 +4507,8 @@ paths:
       summary: Read Podcast Episodes
       tags: [Podcasts]
       security: [{ BearerAuth: [] }]
-      parameters: [{"in": "query", "name": "showId", "schema": {"type": "string"}}, {"in": "query", "name": "episodeId", "schema": {"type": "string"}}, {"in": "query", "name": "cursor", "schema": {"type": "string"}}, {"in": "query", "name": "limit", "schema": {"type": "string"}}]
+      description: With no showId returns the viewer subscribed public and private episodes sorted by publication time. queue=true returns owned queued episodes in queue order. Private episodes contain authenticated media proxy URLs.
+      parameters: [{"in": "query", "name": "showId", "schema": {"type": "string"}}, {"in": "query", "name": "episodeId", "schema": {"type": "string"}}, {"in": "query", "name": "cursor", "schema": {"type": "string"}}, {"in": "query", "name": "limit", "schema": {"type": "string"}}, {"in": "query", "name": "queue", "schema": {"type": "boolean"}}]
       responses:
         "200":
           description: Podcast Result

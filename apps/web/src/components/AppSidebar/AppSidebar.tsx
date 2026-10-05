@@ -567,6 +567,9 @@ export function AppSidebar({
           </SidebarGroup>
           ) : null}
           <PublicationTabs
+            podcastsEnabled={podcastsEnabled()}
+            podcastsActive={currentFeed === "podcasts"}
+            onPodcastsSelect={() => selectTopLevelFeed("podcasts")}
             visibleFeeds={visible}
             activeTab={
               currentFeed === "subscribed" || currentFeed === "following"
@@ -586,9 +589,6 @@ export function AppSidebar({
             onCircleSelect={() => selectTopLevelFeed("circle")}
           />
           <SidebarTopicsSection
-            podcastsEnabled={podcastsEnabled()}
-            podcastsActive={currentFeed === "podcasts"}
-            onPodcastsSelect={() => selectTopLevelFeed("podcasts")}
             visibleFeeds={visible}
             sportsEnabled={sportsCatalog.confirmedEnabled}
             sportsActive={currentFeed === "sports"}

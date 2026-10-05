@@ -1,6 +1,6 @@
 "use client";
 
-import { Network, Newspaper, Rss, Users } from "lucide-react";
+import { Headphones, Network, Newspaper, Rss, Users } from "lucide-react";
 
 import {
   SidebarGroup,
@@ -18,6 +18,9 @@ import { WireBetaBadge } from "@/components/Wire/WireBetaBadge";
 
 export function PublicationTabs({
   visibleFeeds,
+  podcastsEnabled = false,
+  podcastsActive = false,
+  onPodcastsSelect,
   activeTab,
   onTabChange,
   subscribedUnread = 0,
@@ -32,6 +35,9 @@ export function PublicationTabs({
   onCircleSelect,
 }: {
   visibleFeeds?: ReadonlySet<ReaderNavigationFeed>;
+  podcastsEnabled?: boolean;
+  podcastsActive?: boolean;
+  onPodcastsSelect?: () => void;
   activeTab: PublicationTab | null;
   onTabChange: (tab: PublicationTab) => void;
   subscribedUnread?: number;
@@ -46,7 +52,7 @@ export function PublicationTabs({
   onCircleSelect?: () => void;
 }) {
   if (
-    visibleFeeds &&
+    !podcastsEnabled && visibleFeeds &&
     !["wire", "circle", "subscribed", "following"].some((feed) =>
       visibleFeeds.has(feed as ReaderNavigationFeed),
     )
@@ -138,6 +144,13 @@ export function PublicationTabs({
                 ) : null}
               </SidebarMenuButton>
             </SidebarReadBulkMenuWrap>
+          </SidebarMenuItem>
+        ) : null}
+        {podcastsEnabled ? (
+          <SidebarMenuItem>
+            <SidebarMenuButton type="button" role="tab" aria-selected={podcastsActive} isActive={podcastsActive} onClick={onPodcastsSelect}>
+              <Headphones /><span>Podcasts</span>
+            </SidebarMenuButton>
           </SidebarMenuItem>
         ) : null}
       </SidebarMenu>

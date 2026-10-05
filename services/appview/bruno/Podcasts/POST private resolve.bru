@@ -1,0 +1,22 @@
+meta {
+  name: POST Podcast private resolve
+  type: http
+  seq: 19
+}
+
+post {
+  url: {{baseUrl}}/v1/podcasts/private/resolve
+  body: json
+  auth: none
+}
+
+body:json {
+{
+  "url": "{{privatePodcastFeedUrl}}"
+}
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}

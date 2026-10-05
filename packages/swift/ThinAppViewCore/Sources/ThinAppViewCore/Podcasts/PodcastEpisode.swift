@@ -13,4 +13,5 @@ public struct PodcastEpisode: Codable, Sendable, Equatable {
   public var guid: String?
   public var sourceUri: String?
   public var transcripts: [PodcastTranscript]
+  public var visibility: String? = nil
 }

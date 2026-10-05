@@ -1,5 +1,7 @@
 "use client";
-import { PodcastSelect } from "./PodcastSelect";
+import { PodcastLibrarySidebar } from "./PodcastLibrarySidebar";
+import { podcastFeedEpisodes, type PodcastFeed } from "@/lib/podcasts/library";
+import { savePodcastAudioToDevice } from "@/lib/podcasts/deviceDownload";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePodcastViewer } from "@/hooks/usePodcastViewer";
 import { useAuth } from "@/hooks/useAuth";
@@ -29,6 +31,10 @@ import { usePodcastPlayer } from "./PodcastPlayerProvider";
 const button =
   "min-h-11 rounded border px-3 text-sm hover:bg-accent disabled:opacity-50";
 export function PodcastLibrary() {
+  const viewer = usePodcastViewer();
+  return <PodcastViewerLibrary key={viewer ?? "signed-out"} />;
+}
+function PodcastViewerLibrary() {
   const { session, getOAuthSession } = useAuth();
   const viewer = usePodcastViewer();
   const player = usePodcastPlayer();
@@ -44,9 +50,11 @@ export function PodcastLibrary() {
   const [downloadStatus, setDownloadStatus] = useState<Record<string, string>>(
     {},
   );
-  const [showDownloads, setShowDownloads] = useState(false);
-  const [linkRss, setLinkRss] = useState("");
-  const [linkProtocol, setLinkProtocol] = useState("");
+  const [feed, setFeed] = useState<PodcastFeed>("recent");
+  const [privateFeed, setPrivateFeed] = useState(false);
+  const [showAdd, setShowAdd] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [preparingEpisode, setPreparingEpisode] = useState<string | null>(null);
   const controllers = useRef(new Map<string, AbortController>());
   const libraryGeneration = useRef(0);
   const cancelLibraryLoad = useCallback(() => {
@@ -67,7 +75,7 @@ export function PodcastLibrary() {
     else if (navigator.onLine) setError(String(catalog.reason));
     if (local.status === "fulfilled") {
       setDownloads(local.value);
-      if (!navigator.onLine) setShowDownloads(true);
+      if (!navigator.onLine) setFeed("downloads");
     }
   }, [getOAuthSession, viewer]);
   useEffect(() => {
@@ -80,24 +88,26 @@ export function PodcastLibrary() {
   }, [load, cancelLibraryLoad]);
   useEffect(() => {
     const oauth = getOAuthSession();
-    if (!oauth || !showId) return;
+    if (!oauth || !navigator.onLine || feed === "downloads" || (feed === "show" && !showId)) return;
     const controller = new AbortController();
-    void podcastRequest<{ episodes: PodcastEpisode[]; cursor?: string }>(
-      oauth,
-      `episodes?showId=${encodeURIComponent(showId)}`,
-      "GET",
-      undefined,
-      controller.signal,
-    )
-      .then((page) => {
-        setEpisodes(page.episodes);
-        setCursor(page.cursor);
-      })
-      .catch((reason) => {
-        if (!controller.signal.aborted) setError(String(reason));
-      });
+    const path = feed === "show"
+      ? `episodes?showId=${encodeURIComponent(showId!)}`
+      : "episodes";
+    setLoading(true);
+    setCursor(undefined);
+    const request = podcastRequest<{ episodes: PodcastEpisode[]; cursor?: string }>(
+      oauth, feed === "queue" ? "episodes?queue=true" : path,
+      "GET", undefined, controller.signal,
+    );
+    void request.then((page) => {
+      if (controller.signal.aborted) return;
+      setEpisodes(page.episodes);
+      setCursor(page.cursor);
+    }).catch((reason) => {
+      if (!controller.signal.aborted) setError(String(reason));
+    }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [showId, getOAuthSession]);
+  }, [showId, feed, getOAuthSession, player.state.queue, player.state.subscriptions, downloads]);
   useEffect(() => {
     const oauth = getOAuthSession();
     if (!viewer || !player.episode) return;
@@ -193,231 +203,104 @@ export function PodcastLibrary() {
     }
   }
   const downloaded = new Set(downloads.map((item) => item.episode.id));
-  const displayed = showDownloads
-    ? downloads.map((item) => item.episode)
-    : episodes;
+  const displayed = podcastFeedEpisodes(feed, episodes, downloads.map((item) => item.episode), player.state.queue);
+  const selectedShow = feed === "show" ? shows.find((show) => show.id === showId) : undefined;
+  const heading = selectedShow?.title ?? ({ recent: "Recently Added", downloads: "Downloaded", queue: "Up Next", show: "Episodes" }[feed]);
+  const selectFeed = (next: PodcastFeed, id?: string) => {
+    setFeed(next);
+    setShowId(id ?? null);
+    setEpisodes([]);
+    setCursor(undefined);
+    setError(null);
+  };
+  async function subscribe(show: PodcastShow) {
+    await action(async () => {
+      const oauth = getOAuthSession();
+      if (!oauth || !session) throw new Error("Sign In to Subscribe");
+      const remove = player.state.subscriptions.includes(show.id);
+      await writePodcastSubscription(oauth, session.did, show, remove);
+      await player.changeState({ subscriptions: remove
+        ? player.state.subscriptions.filter((id) => id !== show.id)
+        : [...new Set([...player.state.subscriptions, show.id])] });
+      if (show.visibility === "private" && remove) {
+        setShows((current) => current.filter((item) => item.id !== show.id));
+        selectFeed("recent");
+      }
+    });
+  }
+  async function playEpisode(item: PodcastEpisode) {
+    if (item.visibility === "private") setPreparingEpisode(item.id);
+    try { await player.play(item); }
+    finally { setPreparingEpisode((id) => id === item.id ? null : id); }
+  }
+  async function saveAudio(item: PodcastEpisode) {
+    if (!viewer) return;
+    try {
+      const result = await savePodcastAudioToDevice(viewer, item, async () => {
+        const oauth = getOAuthSession();
+        if (!oauth) throw new Error("Sign In to Save Audio That Is Not Downloaded");
+        return gatewayFetch(oauth, `/v1/podcasts/${podcastMediaPath(item.id)}`);
+      });
+      setDownloadStatus((current) => ({ ...current, [item.id]: result === "cancelled" ? "Save Cancelled" : "Saved to Device" }));
+    } catch { setError("Audio Could Not Be Saved. Please Retry."); }
+  }
   return (
-    <div className="grid w-full min-w-0 gap-6 p-4 pb-60 md:grid-cols-[16rem_minmax(0,1fr)]">
-      <section className="space-y-4">
-        <h1 className="text-2xl font-semibold">Podcasts</h1>
-        <form
-          className="space-y-2"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void action(async () => {
-              const oauth = getOAuthSession();
-              if (!oauth || !session)
-                throw new Error("Sign In to Add a Podcast");
-              const resolved = await podcastRequest<{
-                show?: PodcastShow;
-                shows?: PodcastShow[];
-                episodes: PodcastEpisode[];
-              }>(oauth, "resolve", "POST", { url });
-              const candidates =
-                resolved.shows ?? (resolved.show ? [resolved.show] : []);
-              setShows((current) => [
-                ...current.filter(
-                  (item) =>
-                    !candidates.some((candidate) => candidate.id === item.id),
-                ),
-                ...candidates,
-              ]);
-              if (candidates[0]) {
-                setShowId(candidates[0].id);
-                setEpisodes(resolved.episodes);
-              }
-              setUrl("");
-            });
-          }}
-        >
-          <label
-            className="block text-sm font-medium"
-            htmlFor="podcast-feed-url"
-          >
-            Add a Podcast
-          </label>
-          <input
-            id="podcast-feed-url"
-            aria-describedby="podcast-feed-disclosure"
-            value={url}
-            onChange={(event) => setUrl(event.target.value)}
-            placeholder="RSS URL, AT URI, or Account"
-            className="min-h-11 w-full rounded border bg-background px-3 text-sm"
-            required
-          />
-          <p
-            id="podcast-feed-disclosure"
-            className="text-xs text-muted-foreground"
-          >
-            Public RSS feeds are mirrored to AT Protocol with source
-            attribution. Private feeds are not supported.
-          </p>
-          <button disabled={busy || !url.trim()} className={button}>
-            Find Podcast
-          </button>
-        </form>
-        <button
-          className={button}
-          aria-pressed={showDownloads}
-          onClick={() => setShowDownloads((value) => !value)}
-        >
-          Downloads ({downloads.length})
-        </button>
-        <p className="text-xs text-muted-foreground">
-          Storage:{" "}
-          {(
-            downloads.reduce((total, item) => total + item.bytes, 0) / 1048576
-          ).toFixed(1)}{" "}
-          MB. Browser storage may be evicted.
-        </p>
-        <ul className="space-y-2">
-          {shows.map((show) => (
-            <li key={show.id} className="rounded border p-3">
-              <button
-                className="flex w-full items-center gap-2 text-left font-medium"
-                aria-current={show.id === showId ? "true" : undefined}
-                onClick={() => {
-                  setShowId(show.id);
-                  setShowDownloads(false);
-                }}
-              >
-                {show.artworkUrl ? (
-                  <Image
-                    unoptimized
-                    src={show.artworkUrl}
-                    alt=""
-                    width={40}
-                    height={40}
-                    className="size-10 shrink-0 rounded object-cover"
-                  />
-                ) : null}
-                <span className="min-w-0 break-words">{show.title}</span>
-              </button>
-              <p className="text-xs text-muted-foreground">
-                {show.sourceKind === "rss" ? "RSS" : "AT Protocol"}
-              </p>
-              <button
-                className="mt-2 min-h-9 text-sm underline"
-                disabled={busy}
-                onClick={() =>
-                  void action(async () => {
-                    const oauth = getOAuthSession();
-                    if (!oauth || !session)
-                      throw new Error("Sign In to Subscribe");
-                    const remove = player.state.subscriptions.includes(show.id);
-                    await writePodcastSubscription(
-                      oauth,
-                      session.did,
-                      show,
-                      remove,
-                    );
-                    await player.changeState({
-                      subscriptions: remove
-                        ? player.state.subscriptions.filter(
-                            (id) => id !== show.id,
-                          )
-                        : [
-                            ...new Set([
-                              ...player.state.subscriptions,
-                              show.id,
-                            ]),
-                          ],
-                    });
-                  })
-                }
-              >
-                {player.state.subscriptions.includes(show.id)
-                  ? "Unsubscribe"
-                  : "Subscribe"}
-              </button>
-              <PodcastBridgeStatus
-                show={show}
-                subscribed={player.state.subscriptions.includes(show.id)}
-              />
-            </li>
-          ))}
-        </ul>
-        {!shows.length ? (
-          <p className="text-sm text-muted-foreground">
-            Add an RSS feed or an on-protocol show to start listening.
-          </p>
-        ) : null}
-        <details className="rounded border p-3">
-          <summary className="cursor-pointer text-sm font-medium">
-            Map RSS to AT Protocol
-          </summary>
-          <p className="my-2 text-xs text-muted-foreground">
-            Link a resolved RSS show to its publisher record. Titles alone are
-            never used to match shows.
-          </p>
-          <label className="block text-sm">
-            RSS Show
-            <PodcastSelect
-              className="my-2 w-full rounded border bg-background p-2"
-              value={linkRss}
-              onChange={(event) => setLinkRss(event.target.value)}
-            >
-              <option value="">Choose RSS Show</option>
-              {shows
-                .filter((show) => show.sourceKind === "rss")
-                .map((show) => (
-                  <option key={show.id} value={show.id}>
-                    {show.title}
-                  </option>
-                ))}
-            </PodcastSelect>
-          </label>
-          <label className="block text-sm">
-            Protocol Show
-            <PodcastSelect
-              className="my-2 w-full rounded border bg-background p-2"
-              value={linkProtocol}
-              onChange={(event) => setLinkProtocol(event.target.value)}
-            >
-              <option value="">Choose Protocol Show</option>
-              {shows
-                .filter((show) => show.sourceKind === "atproto")
-                .map((show) => (
-                  <option key={show.id} value={show.id}>
-                    {show.title}
-                  </option>
-                ))}
-            </PodcastSelect>
-          </label>
-          <button
-            className={button}
-            disabled={!linkRss || !linkProtocol || busy}
-            onClick={() =>
-              void action(() =>
-                player.changeState({
-                  manualLinks: [
-                    ...player.state.manualLinks.filter(
-                      (link) => link.rssShowId !== linkRss,
-                    ),
-                    { rssShowId: linkRss, protocolShowId: linkProtocol },
-                  ],
-                }),
-              )
-            }
-          >
-            Link Shows
-          </button>
-        </details>
-      </section>
+    <div className="mx-auto grid w-full min-w-0 max-w-7xl grid-cols-1 gap-6 p-4 pb-60 lg:grid-cols-[minmax(0,1fr)_18rem] lg:p-6 lg:pb-60">
       <section className="min-w-0 space-y-5">
-        {error ? (
+        <header className="flex flex-wrap items-center justify-between gap-3">
+          <h1 className="text-2xl font-semibold">Podcasts</h1>
+          <button type="button" className={button} aria-expanded={showAdd} onClick={() => setShowAdd((value) => !value)}>Add a Podcast</button>
+        </header>
+        {showAdd ? <form className="min-w-0 space-y-3 rounded-xl border p-4" onSubmit={(event) => {
+          event.preventDefault();
+          void action(async () => {
+            const oauth = getOAuthSession();
+            if (!oauth || !session) throw new Error("Sign In to Add a Podcast");
+            const resolved = await podcastRequest<{ show?: PodcastShow; shows?: PodcastShow[]; episodes: PodcastEpisode[] }>(oauth, privateFeed ? "private/resolve" : "resolve", "POST", { url });
+            const candidates = resolved.shows ?? (resolved.show ? [resolved.show] : []);
+            setShows((current) => [...current.filter((item) => !candidates.some((candidate) => candidate.id === item.id)), ...candidates]);
+            if (candidates[0]) {
+              selectFeed("show", candidates[0].id);
+              setEpisodes(resolved.episodes);
+              if (privateFeed) await player.changeState({ subscriptions: [...new Set([...player.state.subscriptions, candidates[0].id])] });
+            }
+            setUrl("");
+            setShowAdd(false);
+          });
+        }}>
+          <label className="block text-sm font-medium" htmlFor="podcast-feed-url">{privateFeed ? "Private RSS Feed URL" : "RSS URL, AT URI, or Account"}</label>
+          <div className="flex min-w-0 flex-col gap-2 sm:flex-row">
+            <input id="podcast-feed-url" type={privateFeed ? "url" : "text"} aria-describedby="podcast-feed-disclosure" value={url} onChange={(event) => setUrl(event.target.value)} placeholder={privateFeed ? "https://example.com/private-feed" : "Feed URL or AT Protocol Account"} className="min-h-11 w-full min-w-0 flex-1 rounded-lg border bg-background px-3 text-sm" required />
+            <button disabled={busy || !url.trim()} className={button}>{busy ? "Finding…" : privateFeed ? "Subscribe" : "Find Podcast"}</button>
+          </div>
+          <label className="flex min-h-9 items-center gap-2 text-sm"><input type="checkbox" checked={privateFeed} onChange={(event) => setPrivateFeed(event.target.checked)} />Private Feed</label>
+          <p id="podcast-feed-disclosure" className="text-xs text-muted-foreground">{privateFeed ? "Saved privately to your account. No public subscription record or AT Protocol mirror is created." : "Public RSS subscriptions are mirrored to AT Protocol with source attribution. For paid or tokenized feeds, choose Private Feed."}</p>
+        </form> : null}
+        {error || player.error ? (
           <p
             role="alert"
             className="rounded border border-destructive p-3 text-sm text-destructive"
           >
-            {error}
+            {error ?? player.error}
           </p>
         ) : null}
         <h2 className="text-lg font-semibold">
-          {showDownloads
-            ? "Downloaded Episodes"
-            : (shows.find((show) => show.id === showId)?.title ?? "Episodes")}
+{heading}
         </h2>
+        {selectedShow ? <div className="space-y-2">
+          {selectedShow.description ? <p className="line-clamp-3 text-sm text-muted-foreground">{selectedShow.description.replace(/<[^>]*>/g, " ")}</p> : null}
+          <button type="button" className={button} disabled={busy} onClick={() => void subscribe(selectedShow)}>{player.state.subscriptions.includes(selectedShow.id) ? "Unsubscribe" : "Subscribe"}</button>
+          {selectedShow.visibility === "private" ? <button type="button" className={button} disabled={busy} onClick={() => void action(async () => {
+            const oauth = getOAuthSession();
+            if (!oauth) return;
+            await podcastRequest(oauth, "private/refresh", "POST", { showId: selectedShow.id });
+            const page = await podcastRequest<{ episodes: PodcastEpisode[]; cursor?: string }>(oauth, `episodes?showId=${encodeURIComponent(selectedShow.id)}`);
+            setEpisodes(page.episodes);
+            setCursor(page.cursor);
+          })}>Refresh Feed</button> : null}
+          {selectedShow.visibility !== "private" ? <PodcastBridgeStatus show={selectedShow} subscribed={player.state.subscriptions.includes(selectedShow.id)} /> : <p className="text-xs text-muted-foreground">Private Feed</p>}
+        </div> : null}
+        {loading ? <p role="status" className="text-sm text-muted-foreground">Loading Episodes…</p> : null}
         <ul className="space-y-3">
           {displayed.map((item) => (
             <li key={item.id} className="rounded-xl border p-4">
@@ -450,7 +333,8 @@ export function PodcastLibrary() {
               <div className="mt-3 flex flex-wrap gap-2">
                 <button
                   className={button}
-                  onClick={() => void player.play(item)}
+                  disabled={preparingEpisode === item.id}
+                  onClick={() => void playEpisode(item)}
                 >
                   Play
                 </button>
@@ -484,6 +368,15 @@ export function PodcastLibrary() {
                     ? "Mark Unplayed"
                     : "Mark Played"}
                 </button>
+                <button type="button" className={button} onClick={() => void saveAudio(item)}>Save Audio</button>
+                {feed === "queue" ? <button type="button" className={button} disabled={player.state.queue.indexOf(item.id) <= 0} onClick={() => {
+                  const queue = [...player.state.queue];
+                  const index = queue.indexOf(item.id);
+                  if (index <= 0) return;
+                  [queue[index - 1], queue[index]] = [queue[index], queue[index - 1]];
+                  void player.changeState({ queue });
+                }}>Move Up</button> : null}
+                {feed === "queue" ? <button type="button" className={button} onClick={() => void player.changeState({ queue: player.state.queue.filter((id) => id !== item.id) })}>Remove from Queue</button> : null}
                 {controllers.current.has(item.id) ? (
                   <button
                     className={button}
@@ -512,10 +405,11 @@ export function PodcastLibrary() {
                   >
                     {downloadStatus[item.id]?.startsWith("Failed")
                       ? "Retry Download"
-                      : "Download"}
+                      : "Download for Offline"}
                   </button>
                 )}
               </div>
+              {preparingEpisode === item.id ? <p role="status" className="mt-2 text-xs">Preparing Private Audio…</p> : null}
               {downloadStatus[item.id] ? (
                 <p className="mt-2 text-xs" role="status">
                   {downloadStatus[item.id]}
@@ -526,25 +420,23 @@ export function PodcastLibrary() {
         </ul>
         {!displayed.length ? (
           <p className="text-sm text-muted-foreground">
-            {showDownloads
-              ? "No Downloaded Episodes"
-              : "Select a Podcast to See Its Episodes"}
+            {loading ? "" : feed === "downloads" ? "No Downloaded Episodes" : feed === "queue" ? "Queue Is Empty" : feed === "recent" ? "Subscribe to a Podcast to See New Episodes" : "No Episodes Available"}
           </p>
         ) : null}
-        {cursor && !showDownloads ? (
+        {cursor && (feed === "show" || feed === "recent") ? (
           <button
             className={button}
             disabled={busy}
             onClick={() =>
               void action(async () => {
                 const oauth = getOAuthSession();
-                if (!oauth || !showId) return;
+                if (!oauth) return;
                 const page = await podcastRequest<{
                   episodes: PodcastEpisode[];
                   cursor?: string;
                 }>(
                   oauth,
-                  `episodes?showId=${encodeURIComponent(showId)}&cursor=${encodeURIComponent(cursor)}`,
+                  `episodes?${feed === "show" && showId ? `showId=${encodeURIComponent(showId)}&` : ""}cursor=${encodeURIComponent(cursor)}`,
                 );
                 setEpisodes((current) => [
                   ...current,
@@ -560,61 +452,20 @@ export function PodcastLibrary() {
             Load More Episodes
           </button>
         ) : null}
-        <section aria-label="Podcast Queue" className="rounded border p-4">
-          <h2 className="font-semibold">Up Next</h2>
-          {player.state.queue.length ? (
-            <ol className="mt-2 space-y-2">
-              {player.state.queue.map((id, index) => (
-                <li key={id} className="flex items-center gap-2 text-sm">
-                  <span className="min-w-0 flex-1 truncate">
-                    {episodes.find((item) => item.id === id)?.title ??
-                      downloads.find((item) => item.episode.id === id)?.episode
-                        .title ??
-                      id}
-                  </span>
-                  <button
-                    className={button}
-                    disabled={index === 0}
-                    onClick={() => {
-                      const queue = [...player.state.queue];
-                      [queue[index - 1], queue[index]] = [
-                        queue[index],
-                        queue[index - 1],
-                      ];
-                      void player.changeState({ queue });
-                    }}
-                  >
-                    Move Up
-                  </button>
-                  <button
-                    className={button}
-                    onClick={() =>
-                      void player.changeState({
-                        queue: player.state.queue.filter(
-                          (value) => value !== id,
-                        ),
-                      })
-                    }
-                  >
-                    Remove
-                  </button>
-                </li>
-              ))}
-            </ol>
-          ) : (
-            <p className="mt-2 text-sm text-muted-foreground">Queue Is Empty</p>
-          )}
-        </section>
         {player.episode ? (
           <section className="space-y-5 rounded-xl border p-4">
             <h2 className="text-lg font-semibold">
               Now Playing: {player.episode.title}
             </h2>
             <PodcastTranscripts transcripts={transcripts} />
-            <PodcastClips key={player.episode.id} episode={player.episode} />
+            {player.episode.visibility !== "private" ? <PodcastClips key={player.episode.id} episode={player.episode} /> : <p className="text-sm text-muted-foreground">Clips Are Unavailable for Private Feeds</p>}
           </section>
         ) : null}
+        {feed === "downloads" ? <p className="text-xs text-muted-foreground">Offline Audio: {(downloads.reduce((total, item) => total + item.bytes, 0) / 1048576).toFixed(1)} MB. Save Audio exports a file to your device.</p> : null}
       </section>
+      <div className="min-w-0 self-start lg:col-start-2 lg:row-start-1">
+        <PodcastLibrarySidebar feed={feed} showId={showId} shows={shows} subscriptions={player.state.subscriptions} downloadCount={downloads.length} queueCount={player.state.queue.length} onSelect={selectFeed} />
+      </div>
     </div>
   );
 }
