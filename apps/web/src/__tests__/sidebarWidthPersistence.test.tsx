@@ -10,6 +10,8 @@ import {
 import { renderToString } from "react-dom/server";
 import * as Mobile from "@/hooks/use-mobile";
 import {
+  Sidebar,
+  SidebarFooter,
   SidebarProvider,
   SidebarResizeHandle,
   useSidebar,
@@ -203,4 +205,44 @@ describe("browser-wide sidebar width", () => {
     fireEvent(window, new window.Event("pagehide"));
     expect(window.localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY)).toBe("216");
   });
+});
+
+
+it("reserves player height above the desktop sidebar footer while retaining the banner offset and zero fallback", () => {
+  const view = render(<SidebarProvider><Sidebar><SidebarFooter><button>Profile and Log Out</button></SidebarFooter></Sidebar></SidebarProvider>);
+  const sidebar = view.container.querySelector('[data-slot="sidebar-container"]')!;
+  expect(sidebar.classList.contains("bottom-[var(--podcast-player-height,0px)]")).toBe(true);
+  expect(sidebar.classList.contains("top-[var(--environment-banner-height,0px)]")).toBe(true);
+  expect(sidebar.classList.contains("h-[calc(100svh-var(--environment-banner-height,0px)-var(--podcast-player-height,0px))]")).toBe(true);
+  expect(sidebar.contains(screen.getByRole("button", { name: "Profile and Log Out" }))).toBe(true);
+});
+
+function OpenMobileSidebar() {
+  const { setOpenMobile } = useSidebar();
+  return <button onClick={() => setOpenMobile(true)}>Open Sidebar Fixture</button>;
+}
+
+it("reserves mobile sheet space with inline geometry that overrides side-specific full-height defaults", async () => {
+  const mobile = spyOn(Mobile,"useIsMobile").mockReturnValue(true);
+  restores.push(() => mobile.mockRestore());
+  for (const name of ["HTMLElement", "Element", "Node", "MutationObserver", "getComputedStyle"] as const) {
+    const previous = Object.getOwnPropertyDescriptor(globalThis,name);
+    const value = name === "getComputedStyle" ? window.getComputedStyle.bind(window) : window[name];
+    Object.defineProperty(globalThis,name,{configurable:true,value});
+    restores.push(() => {if(previous)Object.defineProperty(globalThis,name,previous);else Reflect.deleteProperty(globalThis,name);});
+  }
+  const raf = Object.getOwnPropertyDescriptor(globalThis,"requestAnimationFrame");
+  const cancelRaf = Object.getOwnPropertyDescriptor(globalThis,"cancelAnimationFrame");
+  Object.defineProperty(globalThis,"requestAnimationFrame",{configurable:true,value:(callback: FrameRequestCallback) => setTimeout(() => callback(performance.now()), 0)});
+  Object.defineProperty(globalThis,"cancelAnimationFrame",{configurable:true,value:clearTimeout});
+  restores.push(() => {
+    if(raf)Object.defineProperty(globalThis,"requestAnimationFrame",raf);else Reflect.deleteProperty(globalThis,"requestAnimationFrame");
+    if(cancelRaf)Object.defineProperty(globalThis,"cancelAnimationFrame",cancelRaf);else Reflect.deleteProperty(globalThis,"cancelAnimationFrame");
+  });
+  render(<SidebarProvider><OpenMobileSidebar /><Sidebar><SidebarFooter><button>Profile and Log Out</button></SidebarFooter></Sidebar></SidebarProvider>);
+  fireEvent.click(screen.getByRole("button", {name:"Open Sidebar Fixture"}));
+  const dialog = await screen.findByRole("dialog",{name:"Sidebar"});
+  expect(dialog.style.bottom).toBe("var(--podcast-player-height,0px)");
+  expect(dialog.style.height).toBe("calc(100% - var(--podcast-player-height,0px))");
+  expect(dialog.contains(screen.getByRole("button",{name:"Profile and Log Out"}))).toBe(true);
 });
