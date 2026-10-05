@@ -203,8 +203,14 @@ struct SportsPostgresServingIntegrationTests {
       try await pool.query("INSERT INTO sports_entities(entity_id,payload,updated_at) VALUES (\(entity.id),\(payload)::jsonb,\(now)) ON CONFLICT(entity_id) DO NOTHING", logger: logger)
     }
     let providerZone = SportsStandingZone(kind: "playoff", label: "Provider Relegation Play-Off", sourceURL: "https://www.thesportsdb.com/")
+    var rows: [SportsStandingRow] = []
+    for rank in 1...20 {
+      let name = rank == 18 ? club.name : "Fixture " + String(rank)
+      let zone: SportsStandingZone? = rank == 19 ? providerZone : nil
+      rows.append(SportsStandingRow(id: key + String(rank), name: name, rank: rank, zone: zone))
+    }
     let table = SportsStandingSnapshot(competitionID: competitionID, season: "2026-2027", status: "available", updatedAt: now,
-      rows: (1...20).map { rank in SportsStandingRow(id: key + String(rank), name: rank == 18 ? club.name : "Fixture " + String(rank), rank: rank, zone: rank == 19 ? providerZone : nil) })
+      rows: rows)
     let payload = String(decoding: try encoder.encode(table), as: UTF8.self)
     try await pool.query("INSERT INTO sports_standings(competition_id,season,payload,updated_at,expires_at) VALUES (\(competitionID),'2026-2027',\(payload)::jsonb,\(now),\(now.addingTimeInterval(86400)))", logger: logger)
     let store = try PostgresSportsFeedStore(pool: pool, logger: logger, config: SportsDiscoveryConfig(mode: .visible, cursorSecret: String(repeating: "s", count: 32), eventsEnabled: true), wire: SportsServingWireStub(items: [], now: now), selections: SportsSelectionProjection(pool: pool, repo: ATProtoAuthenticatedRepoClient(httpClient: http, plcURL: "https://plc.directory", logger: logger), logger: logger))
