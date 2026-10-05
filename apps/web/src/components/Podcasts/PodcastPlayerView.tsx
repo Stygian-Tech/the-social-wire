@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Maximize2, Minimize2, Pause, Play } from "lucide-react";
 import type { PlayerContext } from "./PodcastPlayerProvider";
@@ -11,6 +11,26 @@ import { PodcastChapterTimeline } from "./PodcastChapterTimeline";
 export function PodcastPlayerView({ player }: { player: PlayerContext }) {
   const [minimized, setMinimized] = useState(false);
   const [showControls, setShowControls] = useState(false);
+  const playerElement = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    const root = document.documentElement;
+    const clear = () => root.style.removeProperty("--podcast-player-height");
+    const element = playerElement.current;
+    if (!element) { clear(); return clear; }
+    let active = true;
+    const measure = () => {
+      if (!active) return;
+      const rect = element.getBoundingClientRect();
+      // Include the gap occupied by mobile navigation and the safe-area inset.
+      const occupied = rect.height > 0 ? rect.height + Math.max(0, window.innerHeight - rect.bottom) : 0;
+      root.style.setProperty("--podcast-player-height", `${Math.ceil(occupied)}px`);
+    };
+    measure();
+    const observer = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : undefined;
+    observer?.observe(element);
+    window.addEventListener("resize", measure);
+    return () => { active = false; observer?.disconnect(); window.removeEventListener("resize", measure); clear(); };
+  }, [minimized, player.episode?.id]);
   const episode = player.episode;
   if (!episode) return null;
   const chapter = activePodcastChapter(episode.chapters ?? [], player.position);
@@ -26,7 +46,7 @@ export function PodcastPlayerView({ player }: { player: PlayerContext }) {
   const title = <div className="min-w-0"><Link href="/podcasts" className="block truncate text-sm font-semibold">{episode.title}</Link>
     {chapter ? <p className="truncate text-xs text-muted-foreground">{chapter.title}</p> : null}</div>;
   const error = player.error ? <p role="alert" className="text-sm text-destructive">{player.error}<button type="button" className="ml-2 min-h-9 underline" onClick={player.clearError}>Dismiss</button></p> : null;
-  if (minimized) return <aside aria-label="Podcast Player" className="group fixed right-3 bottom-[calc(4.75rem+env(safe-area-inset-bottom))] z-50 md:bottom-4">
+  if (minimized) return <aside ref={playerElement} aria-label="Podcast Player" className="group fixed right-3 bottom-[calc(4.75rem+env(safe-area-inset-bottom))] z-50 md:bottom-4">
     <div className="relative size-20 rounded-xl border bg-background p-1 shadow-lg">
       <button type="button" aria-label="Show Podcast Controls" aria-expanded={showControls} onClick={() => setShowControls(true)} className="size-full rounded-lg focus-visible:outline-2 focus-visible:outline-ring">
         <PodcastArtwork src={artwork} fallbackSources={[episode.artworkUrl, episode.showArtworkUrl]} alt={artworkLabel} size={80} />
@@ -37,7 +57,7 @@ export function PodcastPlayerView({ player }: { player: PlayerContext }) {
       {title}{transport}{error}
     </div>
   </aside>;
-  return <aside aria-label="Podcast Player" className="fixed inset-x-0 bottom-[calc(4rem+env(safe-area-inset-bottom))] z-50 border-t bg-background p-3 shadow-lg md:bottom-0">
+  return <aside ref={playerElement} aria-label="Podcast Player" className="fixed inset-x-0 bottom-[calc(4rem+env(safe-area-inset-bottom))] z-50 border-t bg-background p-3 shadow-lg md:bottom-0">
     <div className="mx-auto grid max-w-7xl grid-cols-1 items-center gap-x-4 gap-y-2 md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
       <div className="flex min-w-0 items-center gap-3"><div className="size-14 shrink-0"><PodcastArtwork src={artwork} fallbackSources={[episode.artworkUrl, episode.showArtworkUrl]} alt={artworkLabel} size={56} /></div>{title}</div>
       {transport}

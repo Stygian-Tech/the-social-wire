@@ -246,7 +246,7 @@ function PodcastViewerLibrary() {
     } catch { setError("Audio Could Not Be Saved. Please Retry."); }
   }
   return (
-    <div className="mx-auto grid w-full min-w-0 max-w-7xl grid-cols-1 gap-6 p-4 pb-60 lg:grid-cols-[minmax(0,1fr)_18rem] lg:p-6 lg:pb-60">
+    <div className="mx-auto grid w-full min-w-0 max-w-7xl grid-cols-1 gap-6 p-4 lg:grid-cols-[minmax(0,1fr)_18rem] lg:p-6" style={{ paddingBottom: "calc(var(--podcast-player-height, 0px) + 1.5rem)" }}>
       <section className="min-w-0 space-y-5">
         <header className="flex flex-wrap items-center justify-between gap-3">
           <h1 className="text-2xl font-semibold">Podcasts</h1>

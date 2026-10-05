@@ -12,6 +12,7 @@ import * as auth from "@/hooks/useAuth";
 import * as gateway from "@/lib/socialWireGatewayClient";
 import * as offline from "@/lib/podcasts/offline";
 import * as client from "@/lib/podcasts/client";
+import { PodcastPlayerView } from "@/components/Podcasts/PodcastPlayerView";
 import {
   initialPodcastState,
   type PodcastEpisode,
@@ -19,6 +20,7 @@ import {
 import {
   PodcastPlayerProvider,
   usePodcastPlayer,
+  type PlayerContext,
 } from "@/components/Podcasts/PodcastPlayerProvider";
 const episode: PodcastEpisode = {
   id: "episode",
@@ -176,6 +178,42 @@ describe("Persistent podcast player", () => {
     fireEvent.click(screen.getByRole("button", { name: "Restore Player" }));
     expect(screen.getByRole("slider", { name: "Seek Podcast" })).toBeDefined();
     expect(env.element.currentTime).toBe(60);
+  });
+  it("reserves measured player space from an empty state through expanded and minimized layouts", async () => {
+    environment();
+    let height = 300;
+    let resize: (() => void) | undefined;
+    let disconnected = false;
+    const observer = Object.getOwnPropertyDescriptor(globalThis, "ResizeObserver");
+    Object.defineProperty(globalThis, "ResizeObserver", { configurable: true, value: class {
+      constructor(callback: () => void) { resize = callback; }
+      observe() {}
+      disconnect() { disconnected = true; }
+    } });
+    restores.push(() => { if (observer) Object.defineProperty(globalThis, "ResizeObserver", observer); else Reflect.deleteProperty(globalThis, "ResizeObserver"); });
+    const rect = spyOn(window.HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      const measured = this.getAttribute("aria-label") === "Podcast Player" ? (this.classList.contains("group") ? 80 : height) : 0;
+      const gap = this.classList.contains("group") ? 76 : 64;
+      return { x: 0, y: window.innerHeight - measured - gap, width: 384, height: measured, top: window.innerHeight - measured - gap, bottom: window.innerHeight - gap, left: 0, right: 384, toJSON() {} };
+    });
+    restores.push(() => rect.mockRestore());
+    const empty: PlayerContext = { episode: null, playing: false, position: 0, duration: 0, state: initialPodcastState(), error: null, silence: null, play: async () => {}, toggle() {}, seek() {}, changeState: async () => {}, setRemoveSilences: async () => {}, clearError() {} };
+    const view = render(<PodcastPlayerView player={empty} />);
+    expect(document.documentElement.style.getPropertyValue("--podcast-player-height")).toBe("");
+    view.rerender(<PodcastPlayerView player={{ ...empty, episode }} />);
+    await screen.findByRole("complementary", { name: "Podcast Player" });
+    expect(document.documentElement.style.getPropertyValue("--podcast-player-height")).toBe("364px");
+    height = 450;
+    await act(async () => resize?.());
+    expect(document.documentElement.style.getPropertyValue("--podcast-player-height")).toBe("514px");
+    fireEvent.click(screen.getByRole("button", { name: "Minimize Player" }));
+    expect(document.documentElement.style.getPropertyValue("--podcast-player-height")).toBe("156px");
+    expect(disconnected).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Restore Player" }));
+    expect(document.documentElement.style.getPropertyValue("--podcast-player-height")).toBe("514px");
+    view.unmount();
+    resize?.();
+    expect(document.documentElement.style.getPropertyValue("--podcast-player-height")).toBe("");
   });
   it("keeps arbitrary scrubbing available when chapter marks are dense", async () => {
     const env = environment();
