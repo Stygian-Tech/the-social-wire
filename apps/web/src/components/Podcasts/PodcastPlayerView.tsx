@@ -57,20 +57,20 @@ export function PodcastPlayerView({ player }: { player: PlayerContext }) {
       {title}{transport}{error}
     </div>
   </aside>;
-  return <aside ref={playerElement} aria-label="Podcast Player" className="fixed inset-x-0 bottom-[calc(4rem+env(safe-area-inset-bottom))] z-50 border-t bg-background p-3 shadow-lg md:bottom-0">
-    <div className="mx-auto grid max-w-7xl grid-cols-1 items-center gap-x-4 gap-y-2 md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
-      <div className="flex min-w-0 items-center gap-3"><div className="size-14 shrink-0"><PodcastArtwork src={artwork} fallbackSources={[episode.artworkUrl, episode.showArtworkUrl]} alt={artworkLabel} size={56} /></div>{title}</div>
+  return <aside ref={playerElement} aria-label="Podcast Player" className="fixed inset-x-0 bottom-[calc(4rem+env(safe-area-inset-bottom))] z-50 border-t bg-background px-3 py-2 shadow-lg md:bottom-0">
+    <div className="mx-auto grid max-w-7xl grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
+      <div className="flex min-w-0 items-center gap-2"><div className="size-8 shrink-0 sm:size-10"><PodcastArtwork src={artwork} fallbackSources={[episode.artworkUrl, episode.showArtworkUrl]} alt={artworkLabel} size={40} /></div>{title}</div>
       {transport}
-      <div className="flex min-w-0 flex-wrap items-center justify-center gap-x-3 gap-y-1 md:justify-end">
-        <label className="flex items-center gap-2 text-xs">Speed<PodcastSelect aria-label="Playback Speed" value={player.state.playbackSpeed} onChange={(event) => void player.changeState({ playbackSpeed: Number(event.target.value) })} className="rounded border bg-background px-2 py-2">
+      <div className="col-span-2 flex min-w-0 flex-wrap items-center justify-center gap-x-3 gap-y-0 md:col-span-1 md:justify-end">
+        <label className="flex items-center gap-2 text-xs">Speed<PodcastSelect aria-label="Playback Speed" value={player.state.playbackSpeed} onChange={(event) => void player.changeState({ playbackSpeed: Number(event.target.value) })} className="min-h-8 rounded border bg-background px-2 py-1 pointer-coarse:min-h-11">
           {PODCAST_SPEEDS.map((speed) => <option key={speed} value={speed}>{speed}×</option>)}
         </PodcastSelect></label>
-        <label className="flex min-h-11 items-center gap-2 text-xs"><input type="checkbox" disabled={episode.visibility === "private"} checked={episode.visibility === "private" ? false : player.state.removeSilences} onChange={(event) => void player.setRemoveSilences(event.target.checked)} />Remove Silences</label>
-        <button type="button" aria-label="Minimize Player" title="Minimize Player" onClick={() => setMinimized(true)} className="flex min-h-11 min-w-11 items-center justify-center rounded hover:bg-accent"><Minimize2 aria-hidden="true" className="size-4" /></button>
+        <label className="flex min-h-8 items-center gap-2 text-xs pointer-coarse:min-h-11"><input type="checkbox" disabled={episode.visibility === "private"} checked={episode.visibility === "private" ? false : player.state.removeSilences} onChange={(event) => void player.setRemoveSilences(event.target.checked)} />Remove Silences</label>
+        <button type="button" aria-label="Minimize Player" title="Minimize Player" onClick={() => setMinimized(true)} className="flex min-h-8 min-w-8 items-center justify-center rounded hover:bg-accent pointer-coarse:min-h-11 pointer-coarse:min-w-11"><Minimize2 aria-hidden="true" className="size-4" /></button>
       </div>
-      <div className="min-w-0 md:col-span-3"><PodcastChapterTimeline chapters={episode.chapters ?? []} artworkSources={[episode.artworkUrl, episode.showArtworkUrl]} position={player.position} duration={player.duration || episode.durationSeconds || 0} seek={player.seek} /></div>
-      {episode.visibility !== "private" && player.state.removeSilences && player.silence?.status !== "complete" ? <p className="text-xs md:col-span-3" role="status">Silence Analysis: {player.silence?.status ?? "Pending"}{player.silence?.status === "failed" || player.silence?.status === "unavailable" ? <button type="button" className="ml-2 min-h-9 underline" onClick={() => void player.setRemoveSilences(true)}>Retry Analysis</button> : null}</p> : null}
-      {error ? <div className="md:col-span-3">{error}</div> : null}
+      <div className="col-span-2 min-w-0 md:col-span-3"><PodcastChapterTimeline chapters={episode.chapters ?? []} artworkSources={[episode.artworkUrl, episode.showArtworkUrl]} position={player.position} duration={player.duration || episode.durationSeconds || 0} seek={player.seek} /></div>
+      {episode.visibility !== "private" && player.state.removeSilences && player.silence?.status !== "complete" ? <p className="col-span-2 text-xs md:col-span-3" role="status">Silence Analysis: {player.silence?.status ?? "Pending"}{player.silence?.status === "failed" || player.silence?.status === "unavailable" ? <button type="button" className="ml-2 min-h-9 underline" onClick={() => void player.setRemoveSilences(true)}>Retry Analysis</button> : null}</p> : null}
+      {error ? <div className="col-span-2 md:col-span-3">{error}</div> : null}
     </div>
   </aside>;
 }

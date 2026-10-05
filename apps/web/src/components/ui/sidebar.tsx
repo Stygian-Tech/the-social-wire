@@ -178,7 +178,7 @@ function SidebarProvider({
           } as React.CSSProperties
         }
         className={cn(
-          "group/sidebar-wrapper flex min-h-[calc(100svh-var(--environment-banner-height,0px))] w-full min-w-0 has-data-[variant=inset]:bg-sidebar",
+          "group/sidebar-wrapper flex min-h-[calc(100svh-var(--environment-banner-height,0px)-var(--podcast-player-height,0px))] w-full min-w-0 has-data-[variant=inset]:bg-sidebar",
           sidebarResizing &&
             "[&_[data-slot=sidebar-gap]]:transition-none [&_[data-slot=sidebar-container]]:transition-none",
           className

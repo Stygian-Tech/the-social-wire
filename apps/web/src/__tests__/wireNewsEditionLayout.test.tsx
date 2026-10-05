@@ -212,6 +212,7 @@ describe("WireNewsEditionLayout", () => {
       .closest("aside");
     expect(trending?.getAttribute("tabindex")).toBe("0");
     expect(trending?.className).toContain("xl:overflow-y-auto");
+    expect(trending?.className).toContain("xl:max-h-[calc(100svh-var(--environment-banner-height,0px)-var(--podcast-player-height,0px)-5rem)]");
     expect(trending?.className).toContain("xl:[scrollbar-gutter:stable]");
     expect(
       trending?.querySelector("[data-wire-trending-list]")?.className,

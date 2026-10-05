@@ -1,6 +1,10 @@
 "use client";
 
 import { Suspense, useEffect } from "react";
+import {
+  appMobileNavigationPaddingClasses,
+  appViewportHeightClasses,
+} from "@/components/shared/appViewportStyles";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 import { AppSidebar } from "@/components/AppSidebar/AppSidebar";
@@ -52,7 +56,7 @@ export default function ReadLayout({
 
   return (
     <SidebarProvider
-      className="mx-auto h-[calc(100svh-var(--environment-banner-height,0px))] min-h-[calc(100svh-var(--environment-banner-height,0px))] max-h-[calc(100svh-var(--environment-banner-height,0px))] max-w-[var(--reader-shell-width)] overflow-hidden overscroll-none [--reader-shell-width:70rem] has-[[data-wire-route=true]]:max-w-none has-[[data-wire-route=true]]:[--reader-shell-width:82rem] has-[[data-wire-route=true]]:[&_[data-slot=sidebar-gap]]:ml-[max(0px,calc((100vw-var(--reader-shell-width))/2))]"
+      className={`mx-auto ${appViewportHeightClasses} max-w-[var(--reader-shell-width)] overflow-hidden overscroll-none [--reader-shell-width:70rem] has-[[data-wire-route=true]]:max-w-none has-[[data-wire-route=true]]:[--reader-shell-width:82rem] has-[[data-wire-route=true]]:[&_[data-slot=sidebar-gap]]:ml-[max(0px,calc((100vw-var(--reader-shell-width))/2))]`}
     >
       <PublicationSidebarProvider>
         <ReadRouteProvider>
@@ -70,7 +74,7 @@ export default function ReadLayout({
             </Suspense>
             <Suspense
               fallback={
-                <SidebarInset className="flex min-h-0 flex-1 flex-col overflow-hidden pb-16 md:pb-0">
+                <SidebarInset className={`flex min-h-0 flex-1 flex-col overflow-hidden ${appMobileNavigationPaddingClasses}`}>
                   <main className="flex min-h-0 flex-1 overflow-hidden">
                     {children}
                   </main>
@@ -102,7 +106,7 @@ function ReadContentInset({ children }: { children: React.ReactNode }) {
   return (
     <SidebarInset
       data-wire-route={editorialNewsRoute ? "true" : undefined}
-      className={`flex min-h-0 flex-1 flex-col overflow-hidden pb-16 md:pb-0 ${editorialFeed && !searchParams.get("list") ? "" : "lg:mr-64"}`}
+      className={`flex min-h-0 flex-1 flex-col overflow-hidden ${appMobileNavigationPaddingClasses} ${editorialFeed && !searchParams.get("list") ? "" : "lg:mr-64"}`}
     >
       <ReadArticleFilterBar />
       <main className="flex min-h-0 flex-1 overflow-hidden">{children}</main>
