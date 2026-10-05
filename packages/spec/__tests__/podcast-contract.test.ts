@@ -27,3 +27,19 @@ test('podcasts remain gated and isolated from article retention and public priva
  expect(read('packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/Podcasts/PodcastProtocolAdapter.swift')).toContain('place.pod.show');
  expect(read('packages/swift/ThinAppViewCore/Sources/ThinAppViewCore/Podcasts/PodcastProtocolAdapter.swift')).toContain('live.voxport.podcast.series');
 });
+
+test('private RSS subscriptions are viewer-owned and excluded from public processing',()=>{
+ for(const [path,method] of [['/v1/podcasts/private/resolve','post'],['/v1/podcasts/private/refresh','post'],['/v1/podcasts/private/subscriptions','delete']]) {
+  expect(spec.paths[path][method].security).toEqual([{ATProtoOAuthDPoP:[]}]);
+ }
+ for(const service of ['appview','gateway']) for(const action of ['POST private resolve','POST private refresh','DELETE private subscriptions']) expect(read(`services/${service}/bruno/Podcasts/${action}.bru`)).toContain('/v1/podcasts/private/');
+ const privateSchema=read('database/migrations/20261006010000_private_podcast_subscriptions.sql');
+ expect(privateSchema).toContain('PRIMARY KEY(viewer_did,id)');
+ expect(privateSchema).toContain('feed_data text NOT NULL');
+ expect(privateSchema).toContain('episode_data text NOT NULL');
+ expect(privateSchema).not.toContain('feed_url');
+ expect(privateSchema).not.toContain('podcast_jobs');
+ expect(privateSchema).not.toContain('podcast_aliases');
+ expect(spec.components.schemas.PodcastShow.properties.visibility.enum).toEqual(['private']);
+ expect(spec.components.schemas.PodcastEpisode.properties.visibility.enum).toEqual(['private']);
+});

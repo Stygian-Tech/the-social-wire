@@ -40,7 +40,7 @@ struct AppViewProxyRoutes {
         try await forward(request: request, context: context, path: path, method: "GET")
       }
     }
-    for path in ["/v1/podcasts/resolve", "/v1/podcasts/analysis", "/v1/podcasts/clips", "/v1/podcasts/clips/publish", "/v1/podcasts/jobs"] {
+    for path in ["/v1/podcasts/resolve", "/v1/podcasts/private/resolve", "/v1/podcasts/private/refresh", "/v1/podcasts/analysis", "/v1/podcasts/clips", "/v1/podcasts/clips/publish", "/v1/podcasts/jobs"] {
       group.post(RouterPath(path)) { request, context async throws -> Response in
         try await forward(request: request, context: context, path: path, method: "POST")
       }
@@ -50,6 +50,9 @@ struct AppViewProxyRoutes {
     }
     group.delete("/v1/podcasts/clips") { request, context async throws -> Response in
       try await forward(request: request, context: context, path: "/v1/podcasts/clips", method: "DELETE")
+    }
+    group.delete("/v1/podcasts/private/subscriptions") { request, context async throws -> Response in
+      try await forward(request: request, context: context, path: "/v1/podcasts/private/subscriptions", method: "DELETE")
     }
     group.get("/v1/lists") { request, context async throws -> Response in
       try await forward(request: request, context: context, path: "/v1/lists", method: "GET")

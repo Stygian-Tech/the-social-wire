@@ -12,4 +12,5 @@ public struct PodcastShow: Codable, Sendable, Equatable {
   public var episodeCollection: String?
   public var bridgeJobId: String?
   public var bridgeStatus: String?
+  public var visibility: String? = nil
 }

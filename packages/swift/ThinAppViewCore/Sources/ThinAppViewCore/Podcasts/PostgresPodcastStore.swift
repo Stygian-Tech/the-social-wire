@@ -3,19 +3,24 @@ import Logging
 import PostgresNIO
 
 public actor PostgresPodcastStore {
-  private let pool: PostgresClient
-  private let logger: Logger
-  public init(pool: PostgresClient, logger: Logger) {
+  let pool: PostgresClient
+  let logger: Logger
+  let privateStorage: PodcastPrivateStorage?
+  public init(pool: PostgresClient, logger: Logger, privateStorageKey: String? = ProcessInfo.processInfo.environment["PODCAST_PRIVATE_STORAGE_KEY"]) {
     self.pool = pool
     self.logger = logger
+    self.privateStorage = privateStorageKey.flatMap { try? PodcastPrivateStorage(base64Key: $0) }
   }
-  private func json<T: Encodable>(_ value: T) throws -> String {
+  func json<T: Encodable>(_ value: T) throws -> String {
     String(decoding: try JSONEncoder().encode(value), as: UTF8.self)
   }
-  private func decode<T: Decodable>(_ raw: String, _ type: T.Type) throws -> T {
+  func decode<T: Decodable>(_ raw: String, _ type: T.Type) throws -> T {
     try JSONDecoder().decode(type, from: Data(raw.utf8))
   }
   public func upsert(show: PodcastShow, episodes: [PodcastEpisode]) async throws {
+    guard show.visibility != "private", !PodcastPrivateCatalog.isPrivateID(show.id),
+      episodes.allSatisfy({ $0.visibility != "private" && !PodcastPrivateCatalog.isPrivateID($0.id) })
+    else { throw PodcastStoreError.invalidRequest }
     let data = try json(show)
     _ = try await pool.query(
       """
@@ -146,6 +151,8 @@ public actor PostgresPodcastStore {
     -> PodcastStateSnapshot
   {
     guard expected >= 0, state.validate() else { throw PodcastStoreError.invalidState }
+    let privateIDs = Set(state.queue + Array(state.progress.keys)).filter(PodcastPrivateCatalog.isPrivateID)
+    guard try await ownsPrivateEpisodes(viewer: viewer, ids: Array(privateIDs)) else { throw PodcastStoreError.invalidState }
     let data = try json(state)
     let rows = try await pool.query(
       """
@@ -172,6 +179,7 @@ public actor PostgresPodcastStore {
   public func enqueue(
     viewer: String?, episodeID: String?, kind: String, key: String, payload: String
   ) async throws -> String {
+    if let episodeID, PodcastPrivateCatalog.isPrivateID(episodeID) { throw PodcastStoreError.invalidRequest }
     let id = UUID()
     let rows = try await pool.query(
       """
@@ -221,7 +229,8 @@ public actor PostgresPodcastStore {
   }
   public func prepareClip(viewer: String, clip: PodcastClip, payload: String) async throws -> String
   {
-    guard let clipID = UUID(uuidString: clip.id) else { throw PodcastStoreError.invalidRequest }
+    guard let clipID = UUID(uuidString: clip.id), !PodcastPrivateCatalog.isPrivateID(clip.episodeId)
+    else { throw PodcastStoreError.invalidRequest }
     let jobID = UUID()
     let data = try json(clip)
     let key = "clip:" + clip.id

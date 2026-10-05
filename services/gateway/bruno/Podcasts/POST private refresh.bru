@@ -1,0 +1,22 @@
+meta {
+  name: POST Podcast private refresh
+  type: http
+  seq: 20
+}
+
+post {
+  url: {{baseUrl}}/v1/podcasts/private/refresh
+  body: json
+  auth: none
+}
+
+body:json {
+{
+  "showId": "{{privatePodcastShowId}}"
+}
+}
+
+headers {
+  Authorization: Bearer {{oauthAccessToken}}
+  DPoP: {{dpopProof}}
+}

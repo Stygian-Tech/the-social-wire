@@ -301,6 +301,11 @@ jobs:
         env:
           THIN_APPVIEW_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/thin_appview_test?sslmode=disable
         run: swift test
+      - name: Test private podcast PostgreSQL isolation
+        working-directory: packages/swift/ThinAppViewCore
+        env:
+          PODCAST_PRIVATE_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/thin_appview_test?sslmode=disable
+        run: swift test --skip-build --filter PostgresPrivatePodcastIntegrationTests
       - name: Test Charybdis
         working-directory: services/appview-worker
         run: swift test

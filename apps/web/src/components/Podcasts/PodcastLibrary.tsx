@@ -54,6 +54,7 @@ function PodcastViewerLibrary() {
   const [privateFeed, setPrivateFeed] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [preparingEpisode, setPreparingEpisode] = useState<string | null>(null);
   const controllers = useRef(new Map<string, AbortController>());
   const libraryGeneration = useRef(0);
   const cancelLibraryLoad = useCallback(() => {
@@ -227,11 +228,19 @@ function PodcastViewerLibrary() {
       }
     });
   }
+  async function playEpisode(item: PodcastEpisode) {
+    if (item.visibility === "private") setPreparingEpisode(item.id);
+    try { await player.play(item); }
+    finally { setPreparingEpisode((id) => id === item.id ? null : id); }
+  }
   async function saveAudio(item: PodcastEpisode) {
-    const oauth = getOAuthSession();
-    if (!oauth || !viewer) return;
+    if (!viewer) return;
     try {
-      const result = await savePodcastAudioToDevice(viewer, item, () => gatewayFetch(oauth, `/v1/podcasts/${podcastMediaPath(item.id)}`));
+      const result = await savePodcastAudioToDevice(viewer, item, async () => {
+        const oauth = getOAuthSession();
+        if (!oauth) throw new Error("Sign In to Save Audio That Is Not Downloaded");
+        return gatewayFetch(oauth, `/v1/podcasts/${podcastMediaPath(item.id)}`);
+      });
       setDownloadStatus((current) => ({ ...current, [item.id]: result === "cancelled" ? "Save Cancelled" : "Saved to Device" }));
     } catch { setError("Audio Could Not Be Saved. Please Retry."); }
   }
@@ -267,12 +276,12 @@ function PodcastViewerLibrary() {
           <label className="flex min-h-9 items-center gap-2 text-sm"><input type="checkbox" checked={privateFeed} onChange={(event) => setPrivateFeed(event.target.checked)} />Private Feed</label>
           <p id="podcast-feed-disclosure" className="text-xs text-muted-foreground">{privateFeed ? "Saved privately to your account. No public subscription record or AT Protocol mirror is created." : "Public RSS subscriptions are mirrored to AT Protocol with source attribution. For paid or tokenized feeds, choose Private Feed."}</p>
         </form> : null}
-        {error ? (
+        {error || player.error ? (
           <p
             role="alert"
             className="rounded border border-destructive p-3 text-sm text-destructive"
           >
-            {error}
+            {error ?? player.error}
           </p>
         ) : null}
         <h2 className="text-lg font-semibold">
@@ -324,7 +333,8 @@ function PodcastViewerLibrary() {
               <div className="mt-3 flex flex-wrap gap-2">
                 <button
                   className={button}
-                  onClick={() => void player.play(item)}
+                  disabled={preparingEpisode === item.id}
+                  onClick={() => void playEpisode(item)}
                 >
                   Play
                 </button>
@@ -399,6 +409,7 @@ function PodcastViewerLibrary() {
                   </button>
                 )}
               </div>
+              {preparingEpisode === item.id ? <p role="status" className="mt-2 text-xs">Preparing Private Audio…</p> : null}
               {downloadStatus[item.id] ? (
                 <p className="mt-2 text-xs" role="status">
                   {downloadStatus[item.id]}
